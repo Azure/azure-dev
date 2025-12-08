@@ -110,6 +110,13 @@ func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, svcConfig *
 		return nil, fmt.Errorf("generating app host manifest: %w", err)
 	}
 
+	manifestWarnings := manifest.Warnings()
+	if manifestWarnings != "" {
+		ai.console.Message(ctx, "")
+		ai.console.Message(ctx, manifestWarnings)
+		ai.console.Message(ctx, "")
+	}
+
 	azdOperationsEnabled := ai.alphaFeatureManager.IsEnabled(provisioning.AzdOperationsFeatureKey)
 	files, err := apphost.BicepTemplate("main", manifest, apphost.AppHostOptions{
 		AzdOperations: azdOperationsEnabled,
@@ -157,7 +164,7 @@ func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, svcConfig *
 		Options: provisioning.Options{
 			Provider: provisioning.Bicep,
 			Path:     tmpDir,
-			Module:   DefaultModule,
+			Module:   DefaultProvisioningOptions.Module,
 		},
 		cleanupDir: tmpDir,
 	}, nil
@@ -230,10 +237,22 @@ func (ai *DotNetImporter) Services(
 			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
 		}
 
+		// handle container files
+		containerFiles := manifest.Resources[name].ContainerFiles
+		extractedContainerFiles := make(map[string]ContainerFile)
+		for resourceName, containerFilesDetail := range containerFiles {
+			containerFile := ContainerFile{
+				Sources:     containerFilesDetail.Sources,
+				Destination: containerFilesDetail.Destination,
+			}
+			extractedContainerFiles[resourceName] = containerFile
+		}
+
 		svc.DotNetContainerApp = &DotNetContainerAppOptions{
-			Manifest:    manifest,
-			ProjectName: name,
-			AppHostPath: svcConfig.Path(),
+			Manifest:       manifest,
+			ProjectName:    name,
+			AppHostPath:    svcConfig.Path(),
+			ContainerFiles: extractedContainerFiles,
 		}
 
 		services[svc.Name] = svc
@@ -315,8 +334,32 @@ func (ai *DotNetImporter) Services(
 		var dOptions DockerProjectOptions
 
 		if bContainer.Build != nil {
+			infraOptions, err := svcConfig.Project.Infra.GetWithDefaults()
+			if err != nil {
+				return nil, err
+			}
+
 			defaultLanguage = ServiceLanguageDocker
-			relPath, err := filepath.Rel(p.Path, filepath.Dir(bContainer.Build.Dockerfile))
+			// dockerfiles are copied to the infra folder like bicep files to ensure
+			// provision and deploy works after infra gen.
+			bContainer.Build.Dockerfile = filepath.Join(
+				svcConfig.Project.Path, infraOptions.Path, name, filepath.Base(bContainer.Build.Dockerfile))
+
+			// If the dockerfile is not in disk, it could have been manually deleted (after infra gen) or
+			// infra gen was never run. In any case, use the in-memory generated dockerfile to build the container.
+			var inMemDockerfile []byte
+			if _, err := os.Stat(bContainer.Build.Dockerfile); errors.Is(err, os.ErrNotExist) {
+				// write file in the temp folder
+				fileName := filepath.Base(bContainer.Build.Dockerfile)
+				// read content from memory fs in the manifest
+				data, err := fs.ReadFile(manifest.Files, filepath.Join(name, fileName))
+				if err != nil {
+					return nil, fmt.Errorf("reading dockerfile for service %s: %w", name, err)
+				}
+				inMemDockerfile = data
+			}
+
+			relPath, err := filepath.Rel(p.Path, filepath.Dir(bContainer.Build.Context))
 			if err != nil {
 				return nil, err
 			}
@@ -332,12 +375,18 @@ func (ai *DotNetImporter) Services(
 			}
 
 			dOptions = DockerProjectOptions{
-				Path:         bContainer.Build.Dockerfile,
-				Context:      bContainer.Build.Context,
-				BuildArgs:    mapToExpandableStringSlice(bArgs, "="),
-				BuildSecrets: bArgsArray,
-				BuildEnv:     reqEnv,
+				Path:            bContainer.Build.Dockerfile,
+				Context:         bContainer.Build.Context,
+				BuildArgs:       mapToExpandableStringSlice(bArgs, "="),
+				BuildSecrets:    bArgsArray,
+				BuildEnv:        reqEnv,
+				InMemDockerfile: inMemDockerfile,
 			}
+		}
+
+		buildOnly := false
+		if bContainer.Build != nil {
+			buildOnly = bContainer.Build.BuildOnly
 		}
 
 		svc := &ServiceConfig{
@@ -345,6 +394,7 @@ func (ai *DotNetImporter) Services(
 			Language:     defaultLanguage,
 			Host:         DotNetContainerAppTarget,
 			Docker:       dOptions,
+			BuildOnly:    buildOnly,
 		}
 
 		svc.Name = name
@@ -356,15 +406,39 @@ func (ai *DotNetImporter) Services(
 			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
 		}
 
+		// handle container files
+		containerFiles := manifest.Resources[name].ContainerFiles
+		extractedContainerFiles := make(map[string]ContainerFile)
+		for resourceName, containerFilesDetail := range containerFiles {
+			containerFile := ContainerFile{
+				Sources:     containerFilesDetail.Sources,
+				Destination: containerFilesDetail.Destination,
+			}
+			extractedContainerFiles[resourceName] = containerFile
+		}
+
 		svc.DotNetContainerApp = &DotNetContainerAppOptions{
 			ContainerImage: bContainer.Image,
 			Manifest:       manifest,
 			ProjectName:    name,
 			AppHostPath:    svcConfig.Path(),
+			ContainerFiles: extractedContainerFiles,
 		}
 		services[svc.Name] = svc
 
 	}
+
+	// Now that services are resolved - handle container files for each service in a second pass
+	for _, svc := range services {
+		for srcServiceName, containerFile := range svc.DotNetContainerApp.ContainerFiles {
+			// Get the already resolved docker options from the source service
+			srcServiceConfig := services[srcServiceName]
+			containerFile.ServiceConfig = srcServiceConfig
+			// replace the original container file with the updated one
+			svc.DotNetContainerApp.ContainerFiles[srcServiceName] = containerFile
+		}
+	}
+
 	return services, nil
 }
 
@@ -508,7 +582,7 @@ func (ai *DotNetImporter) GenerateAllInfrastructure(ctx context.Context, p *Proj
 
 	generatedFS := memfs.New()
 
-	rootModuleName := DefaultModule
+	rootModuleName := DefaultProvisioningOptions.Module
 	if p.Infra.Module != "" {
 		rootModuleName = p.Infra.Module
 	}
@@ -526,7 +600,7 @@ func (ai *DotNetImporter) GenerateAllInfrastructure(ctx context.Context, p *Proj
 		}
 	}
 
-	infraPathPrefix := DefaultPath
+	infraPathPrefix := DefaultProvisioningOptions.Path
 	if p.Infra.Path != "" {
 		infraPathPrefix = p.Infra.Path
 	}
@@ -624,7 +698,11 @@ func (ai *DotNetImporter) GenerateAllInfrastructure(ctx context.Context, p *Proj
 	if err != nil {
 		return nil, err
 	}
-	for name := range bcs {
+	for name, bc := range bcs {
+		if bc.Build != nil && bc.Build.BuildOnly {
+			// No deployment manifest needed for build-only containers.
+			continue
+		}
 		if err := writeManifestForResource(name); err != nil {
 			return nil, err
 		}

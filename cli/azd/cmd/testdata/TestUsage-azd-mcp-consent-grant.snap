@@ -1,0 +1,25 @@
+
+Grant consent trust rules.
+
+Usage
+  azd mcp consent grant [flags]
+
+Flags
+        --action string     	: Action type: 'all' or 'readonly'
+        --global            	: Apply globally to all servers
+        --operation string  	: Operation type: 'tool' or 'sampling'
+        --permission string 	: Permission: 'allow', 'deny', or 'prompt'
+        --scope string      	: Rule scope: 'global', or 'project'
+        --server string     	: Server name
+        --tool string       	: Specific tool name (requires --server)
+
+Global Flags
+    -C, --cwd string 	: Sets the current working directory.
+        --debug      	: Enables debugging and diagnostics logging.
+        --docs       	: Opens the documentation for azd mcp consent grant in your web browser.
+    -h, --help       	: Gets help for grant.
+        --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
+
+Find a bug? Want to let us know how we're doing? Fill out this brief survey: https://aka.ms/azure-dev/hats.
+
+

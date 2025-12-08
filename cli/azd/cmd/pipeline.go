@@ -10,6 +10,7 @@ import (
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -123,6 +124,7 @@ func newPipelineConfigCmd() *cobra.Command {
 // pipelineConfigAction defines the action for pipeline config command
 type pipelineConfigAction struct {
 	flags               *pipelineConfigFlags
+	alphaFeatureManager *alpha.FeatureManager
 	manager             *pipeline.PipelineManager
 	provisioningManager *provisioning.Manager
 	env                 *environment.Environment
@@ -136,6 +138,7 @@ func newPipelineConfigAction(
 	env *environment.Environment,
 	console input.Console,
 	flags *pipelineConfigFlags,
+	alphaFeatureManager *alpha.FeatureManager,
 	prompters prompt.Prompter,
 	manager *pipeline.PipelineManager,
 	provisioningManager *provisioning.Manager,
@@ -145,6 +148,7 @@ func newPipelineConfigAction(
 	pca := &pipelineConfigAction{
 		flags:               flags,
 		manager:             manager,
+		alphaFeatureManager: alphaFeatureManager,
 		env:                 env,
 		console:             console,
 		prompters:           prompters,
@@ -164,25 +168,31 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 	}
 	defer func() { _ = infra.Cleanup() }()
 
-	err = p.provisioningManager.Initialize(ctx, p.projectConfig.Path, infra.Options)
-	if err != nil {
-		return nil, err
-	}
-
-	pipelineProviderName := p.manager.CiProviderName()
-
 	// Command title
+	pipelineProviderName := p.manager.CiProviderName()
 	p.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title: fmt.Sprintf("Configure your %s pipeline", pipelineProviderName),
 	})
 
-	// Pull provider specific parameters
-	providerParameters, err := p.provisioningManager.Parameters(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get parameters for provider %s: %w", pipelineProviderName, err)
-	}
-	p.manager.SetParameters(providerParameters)
+	layers := infra.Options.GetLayers()
+	allParameters := []provisioning.Parameter{}
 
+	for _, layer := range layers {
+		err = p.provisioningManager.Initialize(ctx, p.projectConfig.Path, layer)
+		if err != nil {
+			return nil, err
+		}
+
+		// Pull provider specific parameters
+		providerParameters, err := p.provisioningManager.Parameters(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get parameters for provider %s: %w", pipelineProviderName, err)
+		}
+
+		allParameters = append(allParameters, providerParameters...)
+	}
+
+	p.manager.SetParameters(allParameters)
 	pipelineResult, err := p.manager.Configure(ctx, p.projectConfig.Name, infra)
 	if err != nil {
 		return nil, err

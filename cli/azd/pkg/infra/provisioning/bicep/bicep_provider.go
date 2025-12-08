@@ -44,11 +44,6 @@ import (
 	"github.com/drone/envsubst"
 )
 
-const (
-	defaultModule = "main"
-	defaultPath   = "infra"
-)
-
 type bicepFileMode int
 
 const (
@@ -62,6 +57,7 @@ type BicepProvider struct {
 	options               provisioning.Options
 	projectPath           string
 	path                  string
+	layer                 string
 	mode                  bicepFileMode
 	ignoreDeploymentState bool
 
@@ -92,36 +88,34 @@ func (p *BicepProvider) Name() string {
 // Initialize initializes provider state from the options.
 // It also calls EnsureEnv, which ensures the client-side state is ready for provisioning.
 func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, opt provisioning.Options) error {
-	if opt.Module == "" {
-		opt.Module = defaultModule
+	infraOptions, err := opt.GetWithDefaults()
+	if err != nil {
+		return err
 	}
 
-	if opt.Path == "" {
-		opt.Path = defaultPath
+	if !filepath.IsAbs(infraOptions.Path) {
+		infraOptions.Path = filepath.Join(projectPath, infraOptions.Path)
 	}
 
-	if !filepath.IsAbs(opt.Path) {
-		opt.Path = filepath.Join(projectPath, opt.Path)
-	}
-
-	bicepparam := opt.Module + ".bicepparam"
-	bicepFile := opt.Module + ".bicep"
+	bicepparam := infraOptions.Module + ".bicepparam"
+	bicepFile := infraOptions.Module + ".bicep"
 
 	// Check if there's a <moduleName>.bicepparam first. It will be preferred over a <moduleName>.bicep
-	if _, err := os.Stat(filepath.Join(opt.Path, bicepparam)); err == nil {
-		p.path = filepath.Join(opt.Path, bicepparam)
+	if _, err := os.Stat(filepath.Join(infraOptions.Path, bicepparam)); err == nil {
+		p.path = filepath.Join(infraOptions.Path, bicepparam)
 		p.mode = bicepparamMode
 	} else {
-		p.path = filepath.Join(opt.Path, bicepFile)
+		p.path = filepath.Join(infraOptions.Path, bicepFile)
 		p.mode = bicepMode
 	}
 
 	p.projectPath = projectPath
-	p.options = opt
-	p.ignoreDeploymentState = opt.IgnoreDeploymentState
+	p.layer = infraOptions.Name
+	p.options = infraOptions
+	p.ignoreDeploymentState = infraOptions.IgnoreDeploymentState
 
 	p.console.ShowSpinner(ctx, "Initialize bicep provider", input.Step)
-	err := p.EnsureEnv(ctx)
+	err = p.EnsureEnv(ctx)
 	p.console.StopSpinner(ctx, "", input.Step)
 	return err
 }
@@ -278,7 +272,7 @@ func (p *BicepProvider) State(ctx context.Context, options *provisioning.StateOp
 
 	var deployment *azapi.ResourceDeployment
 
-	deployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.env.Name(), options.Hint())
+	deployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.env.Name(), p.layer, options.Hint())
 	p.console.StopSpinner(ctx, "", input.StepDone)
 
 	if err != nil {
@@ -327,7 +321,7 @@ func (p *BicepProvider) State(ctx context.Context, options *provisioning.StateOp
 		}
 	}
 
-	state.Outputs = p.createOutputParameters(
+	state.Outputs = provisioning.OutputParametersFromArmOutputs(
 		outputs,
 		azapi.CreateDeploymentOutput(deployment.Outputs),
 	)
@@ -409,7 +403,12 @@ func (p *BicepProvider) plan(ctx context.Context) (*compileBicepResult, error) {
 
 // generateDeploymentObject generates an [infra.Deployment] object from the given plan with a unique name.
 func (p *BicepProvider) generateDeploymentObject(plan *compileBicepResult) (infra.Deployment, error) {
-	uniqueName := p.deploymentManager.GenerateDeploymentName(p.env.Name())
+	baseName := p.env.Name()
+	if p.layer != "" {
+		baseName += "-" + p.layer
+	}
+
+	uniqueName := p.deploymentManager.GenerateDeploymentName(baseName)
 	scope, err := plan.Template.TargetScope()
 	if err != nil {
 		return nil, err
@@ -477,7 +476,7 @@ func (p *BicepProvider) latestDeploymentResult(
 	ctx context.Context,
 	scope infra.Scope,
 ) (*azapi.ResourceDeployment, error) {
-	deployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.env.Name(), "")
+	deployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.env.Name(), p.layer, "")
 	// findCompletedDeployments returns error if no deployments are found
 	// No need to check for empty list
 	if err != nil {
@@ -582,9 +581,30 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 	}
 
 	if !p.ignoreDeploymentState && parametersHashErr == nil {
-		deploymentState, err := p.deploymentState(ctx, planned, deployment, currentParamsHash)
-		if err == nil {
-			result.Outputs = p.createOutputParameters(
+		deploymentState, stateErr := p.deploymentState(ctx, planned, deployment, currentParamsHash)
+		if stateErr == nil {
+			// As a heuristic, we also check the existence of all resource groups
+			// created by the deployment to validate the deployment state.
+			// This handles the scenario of resource group(s) being deleted outside of azd,
+			// which is quite common.
+			// This check adds ~100ms per resource group to the deployment time.
+			for _, res := range deploymentState.Resources {
+				if res != nil && res.ID != nil {
+					resId, err := arm.ParseResourceID(*res.ID)
+					if err == nil && resId.ResourceType.Type == arm.ResourceGroupResourceType.Type {
+						exists, err := p.resourceService.CheckExistenceByID(ctx, *resId, "2025-03-01")
+						if err == nil && !exists {
+							stateErr = fmt.Errorf(
+								"resource group %s no longer exists, invalidating deployment state", resId.ResourceGroupName)
+							break
+						}
+					}
+				}
+			}
+		}
+
+		if stateErr == nil {
+			result.Outputs = provisioning.OutputParametersFromArmOutputs(
 				planned.Template.Outputs,
 				azapi.CreateDeploymentOutput(deploymentState.Outputs),
 			)
@@ -594,11 +614,12 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 				SkippedReason: provisioning.DeploymentStateSkipped,
 			}, nil
 		}
-		logDS("%s", err.Error())
+		logDS("%s", stateErr.Error())
 	}
 
 	deploymentTags := map[string]*string{
-		azure.TagKeyAzdEnvName: to.Ptr(p.env.Name()),
+		azure.TagKeyAzdEnvName:   to.Ptr(p.env.Name()),
+		azure.TagKeyAzdLayerName: &p.layer,
 	}
 	if parametersHashErr == nil {
 		deploymentTags[azure.TagKeyAzdDeploymentStateParamHashName] = to.Ptr(currentParamsHash)
@@ -635,7 +656,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		progressDisplay := p.deploymentManager.ProgressDisplay(deployment)
 		// Make initial delay shorter to be more responsive in displaying initial progress
 		initialDelay := 3 * time.Second
-		regularDelay := 10 * time.Second
+		regularDelay := 3 * time.Second
 		timer := time.NewTimer(initialDelay)
 		queryStartTime := time.Now()
 
@@ -670,7 +691,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		return nil, err
 	}
 
-	result.Outputs = p.createOutputParameters(
+	result.Outputs = provisioning.OutputParametersFromArmOutputs(
 		planned.Template.Outputs,
 		azapi.CreateDeploymentOutput(deployResult.Outputs),
 	)
@@ -728,15 +749,30 @@ func (p *BicepProvider) Preview(ctx context.Context) (*provisioning.DeployPrevie
 
 	var changes []*provisioning.DeploymentPreviewChange
 	for _, change := range deployPreviewResult.Properties.Changes {
-		resourceAfter := change.After.(map[string]interface{})
+		// Use After state if available (e.g., Create, Modify), otherwise use Before state (e.g., Delete).
+		// ARM returns nil for After when a resource is being deleted and nil for Before when created.
+		var resourceState map[string]interface{}
+		if change.After != nil {
+			resourceState, _ = change.After.(map[string]interface{})
+		}
+		if resourceState == nil && change.Before != nil {
+			resourceState, _ = change.Before.(map[string]interface{})
+		}
+		if resourceState == nil {
+			// Skip changes with no resource state information
+			continue
+		}
+
+		resourceType, _ := resourceState["type"].(string)
+		resourceName, _ := resourceState["name"].(string)
 
 		changes = append(changes, &provisioning.DeploymentPreviewChange{
 			ChangeType: provisioning.ChangeType(*change.ChangeType),
 			ResourceId: provisioning.Resource{
 				Id: *change.ResourceID,
 			},
-			ResourceType: resourceAfter["type"].(string),
-			Name:         resourceAfter["name"].(string),
+			ResourceType: resourceType,
+			Name:         resourceName,
 		})
 	}
 
@@ -800,7 +836,7 @@ func (p *BicepProvider) Destroy(
 		return nil, fmt.Errorf("computing deployment scope: %w", err)
 	}
 
-	completedDeployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.env.Name(), "")
+	completedDeployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.env.Name(), p.layer, "")
 	if err != nil {
 		return nil, fmt.Errorf("finding completed deployments: %w", err)
 	}
@@ -917,7 +953,7 @@ func (p *BicepProvider) Destroy(
 	}
 
 	destroyResult := &provisioning.DestroyResult{
-		InvalidatedEnvKeys: slices.Collect(maps.Keys(p.createOutputParameters(
+		InvalidatedEnvKeys: slices.Collect(maps.Keys(provisioning.OutputParametersFromArmOutputs(
 			compileResult.Template.Outputs,
 			azapi.CreateDeploymentOutput(mostRecentDeployment.Outputs),
 		))),
@@ -1486,64 +1522,6 @@ func (p *BicepProvider) purgeAPIManagement(
 	return nil
 }
 
-func (p *BicepProvider) mapBicepTypeToInterfaceType(s string) provisioning.ParameterType {
-	switch s {
-	case "String", "string", "secureString", "securestring":
-		return provisioning.ParameterTypeString
-	case "Bool", "bool":
-		return provisioning.ParameterTypeBoolean
-	case "Int", "int":
-		return provisioning.ParameterTypeNumber
-	case "Object", "object", "secureObject", "secureobject":
-		return provisioning.ParameterTypeObject
-	case "Array", "array":
-		return provisioning.ParameterTypeArray
-	default:
-		panic(fmt.Sprintf("unexpected bicep type: '%s'", s))
-	}
-}
-
-// Creates a normalized view of the azure output parameters and resolves inconsistencies in the output parameter name
-// casings.
-func (p *BicepProvider) createOutputParameters(
-	templateOutputs azure.ArmTemplateOutputs,
-	azureOutputParams map[string]azapi.AzCliDeploymentOutput,
-) map[string]provisioning.OutputParameter {
-	canonicalOutputCasings := make(map[string]string, len(templateOutputs))
-
-	for key := range templateOutputs {
-		canonicalOutputCasings[strings.ToLower(key)] = key
-	}
-
-	outputParams := make(map[string]provisioning.OutputParameter, len(azureOutputParams))
-
-	for key, azureParam := range azureOutputParams {
-		if azureParam.Secured() {
-			// Secured output can't be retrieved, so we skip it.
-			// https://learn.microsoft.com/azure/azure-resource-manager/bicep/outputs?tabs=azure-powershell#secure-outputs
-			log.Println("Skipping secured output parameter:", key)
-			continue
-		}
-		var paramName string
-		canonicalCasing, found := canonicalOutputCasings[strings.ToLower(key)]
-		if found {
-			paramName = canonicalCasing
-		} else {
-			// To support BYOI (bring your own infrastructure) scenarios we will default to UPPER when canonical casing
-			// is not found in the parameters file to workaround strange azure behavior with OUTPUT values that look
-			// like `azurE_RESOURCE_GROUP`
-			paramName = strings.ToUpper(key)
-		}
-
-		outputParams[paramName] = provisioning.OutputParameter{
-			Type:  p.mapBicepTypeToInterfaceType(azureParam.Type),
-			Value: azureParam.Value,
-		}
-	}
-
-	return outputParams
-}
-
 type loadParametersResult struct {
 	parameters     map[string]azure.ArmParameter
 	locationParams []string
@@ -1844,14 +1822,14 @@ func (p *BicepProvider) convertToDeployment(bicepTemplate azure.ArmTemplate) pro
 
 	for key, param := range bicepTemplate.Parameters {
 		parameters[key] = provisioning.InputParameter{
-			Type:         string(p.mapBicepTypeToInterfaceType(param.Type)),
+			Type:         string(provisioning.ParameterTypeFromArmType(param.Type)),
 			DefaultValue: param.DefaultValue,
 		}
 	}
 
 	for key, param := range bicepTemplate.Outputs {
 		outputs[key] = provisioning.OutputParameter{
-			Type:  p.mapBicepTypeToInterfaceType(param.Type),
+			Type:  provisioning.ParameterTypeFromArmType(param.Type),
 			Value: param.Value,
 		}
 	}
@@ -2014,7 +1992,7 @@ func (p *BicepProvider) ensureParameters(
 
 	for _, key := range sortedKeys {
 		param := template.Parameters[key]
-		parameterType := p.mapBicepTypeToInterfaceType(param.Type)
+		parameterType := provisioning.ParameterTypeFromArmType(param.Type)
 		azdMetadata, hasMetadata := param.AzdMetadata()
 
 		// If a value is explicitly configured via a parameters file, use it.

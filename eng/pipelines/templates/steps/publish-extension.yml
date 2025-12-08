@@ -45,11 +45,19 @@ steps:
     displayName: Remove _manifest folder
 
   - pwsh: |
-      gh release create `
-        "$(GH_RELEASE_TAG)" `
-        --title "$(GH_RELEASE_TAG)" `
-        --notes-file changelog/CHANGELOG.md `
-        --repo $(Build.Repository.Name)
+      $version = "${{ parameters.TagVersion }}"
+      $createArgs = @(
+        "$(GH_RELEASE_TAG)",
+        "--title", "$(GH_RELEASE_TAG)",
+        "--notes-file", "changelog/CHANGELOG.md",
+        "--repo", "$(Build.Repository.Name)"
+      )
+
+      if ($version -match "^0\." -or $version -match "-(alpha|beta|preview)") {
+        $createArgs += "--prerelease"
+      }
+
+      gh release create @createArgs
 
       gh release upload $(GH_RELEASE_TAG) release/* --repo $(Build.Repository.Name)
     displayName: Create GitHub Release and upload artifacts

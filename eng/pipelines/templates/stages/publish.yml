@@ -162,7 +162,7 @@ stages:
                 ArtifactName: shield-standalone
                 ArtifactDownloadPath: shields/standalone
                 ArtifactFilename: standalone.json
-                StorageContainerName: ${{ parameters.StorageContainerName }}
+                StorageContainerName: '`$web'
                 PublishDestination: azd/standalone/latest
 
         - job: Increment_Version

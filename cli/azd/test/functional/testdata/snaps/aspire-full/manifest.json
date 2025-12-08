@@ -1,6 +1,13 @@
 {
   "$schema": "https://json.schemastore.org/aspire-8.0.json",
   "resources": {
+    "appHostInfrastructure": {
+      "type": "azure.bicep.v0",
+      "path": "appHostInfrastructure.module.bicep",
+      "params": {
+        "userPrincipalId": ""
+      }
+    },
     "goversion": {
       "type": "parameter.v0",
       "value": "{goversion.inputs.value}",
@@ -13,42 +20,21 @@
         }
       }
     },
-    "pubsub": {
-      "type": "container.v0",
-      "connectionString": "{pubsub.bindings.tcp.host}:{pubsub.bindings.tcp.port}",
-      "image": "docker.io/library/redis:7.4",
-      "bindings": {
-        "tcp": {
-          "scheme": "tcp",
-          "protocol": "tcp",
-          "transport": "tcp",
-          "targetPort": 6379
-        }
-      }
-    },
-    "storage": {
-      "type": "azure.bicep.v0",
-      "path": "storage.module.bicep",
-      "params": {
-        "principalId": "",
-        "principalType": ""
-      }
-    },
-    "requestlog": {
-      "type": "value.v0",
-      "connectionString": "{storage.outputs.tableEndpoint}"
-    },
-    "markdown": {
-      "type": "value.v0",
-      "connectionString": "{storage.outputs.blobEndpoint}"
-    },
-    "messages": {
-      "type": "value.v0",
-      "connectionString": "{storage.outputs.queueEndpoint}"
-    },
     "apiservice": {
-      "type": "project.v0",
+      "type": "project.v1",
       "path": "../AspireAzdTests.ApiService/AspireAzdTests.ApiService.csproj",
+      "deployment": {
+        "type": "azure.bicep.v0",
+        "path": "apiservice.module.bicep",
+        "params": {
+          "apphostinfrastructure_outputs_azure_container_apps_environment_default_domain": "{appHostInfrastructure.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN}",
+          "apphostinfrastructure_outputs_azure_container_apps_environment_id": "{appHostInfrastructure.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID}",
+          "apphostinfrastructure_outputs_azure_container_registry_endpoint": "{appHostInfrastructure.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT}",
+          "apphostinfrastructure_outputs_azure_container_registry_managed_identity_id": "{appHostInfrastructure.outputs.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID}",
+          "apiservice_containerimage": "{apiservice.containerImage}",
+          "apiservice_containerport": "{apiservice.containerPort}"
+        }
+      },
       "env": {
         "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES": "true",
         "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EVENT_LOG_ATTRIBUTES": "true",
@@ -70,8 +56,19 @@
       }
     },
     "worker": {
-      "type": "project.v0",
+      "type": "project.v1",
       "path": "../AspireAzdTests.Worker/AspireAzdTests.Worker.csproj",
+      "deployment": {
+        "type": "azure.bicep.v0",
+        "path": "worker.module.bicep",
+        "params": {
+          "apphostinfrastructure_outputs_azure_container_apps_environment_default_domain": "{appHostInfrastructure.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN}",
+          "apphostinfrastructure_outputs_azure_container_apps_environment_id": "{appHostInfrastructure.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID}",
+          "apphostinfrastructure_outputs_azure_container_registry_endpoint": "{appHostInfrastructure.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT}",
+          "apphostinfrastructure_outputs_azure_container_registry_managed_identity_id": "{appHostInfrastructure.outputs.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID}",
+          "worker_containerimage": "{worker.containerImage}"
+        }
+      },
       "env": {
         "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES": "true",
         "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EVENT_LOG_ATTRIBUTES": "true",
@@ -79,18 +76,27 @@
       }
     },
     "webfrontend": {
-      "type": "project.v0",
+      "type": "project.v1",
       "path": "../AspireAzdTests.Web/AspireAzdTests.Web.csproj",
+      "deployment": {
+        "type": "azure.bicep.v0",
+        "path": "webfrontend.module.bicep",
+        "params": {
+          "apphostinfrastructure_outputs_azure_container_apps_environment_default_domain": "{appHostInfrastructure.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN}",
+          "apphostinfrastructure_outputs_azure_container_apps_environment_id": "{appHostInfrastructure.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID}",
+          "apphostinfrastructure_outputs_azure_container_registry_endpoint": "{appHostInfrastructure.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT}",
+          "apphostinfrastructure_outputs_azure_container_registry_managed_identity_id": "{appHostInfrastructure.outputs.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID}",
+          "webfrontend_containerimage": "{webfrontend.containerImage}",
+          "webfrontend_containerport": "{webfrontend.containerPort}",
+          "goversion_value": "{goversion.value}"
+        }
+      },
       "env": {
         "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES": "true",
         "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EVENT_LOG_ATTRIBUTES": "true",
         "OTEL_DOTNET_EXPERIMENTAL_OTLP_RETRY": "in_memory",
         "ASPNETCORE_FORWARDEDHEADERS_ENABLED": "true",
         "HTTP_PORTS": "{webfrontend.bindings.http.targetPort}",
-        "ConnectionStrings__pubsub": "{pubsub.connectionString}",
-        "ConnectionStrings__requestlog": "{requestlog.connectionString}",
-        "ConnectionStrings__markdown": "{markdown.connectionString}",
-        "ConnectionStrings__messages": "{messages.connectionString}",
         "services__apiservice__http__0": "{apiservice.bindings.http.url}",
         "services__apiservice__https__0": "{apiservice.bindings.https.url}",
         "GOVERSION": "{goversion.value}"

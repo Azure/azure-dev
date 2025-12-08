@@ -10,9 +10,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"go.opentelemetry.io/otel/attribute"
 )
 
 // detectConfirmAppHost handles prompting for confirming the detected project with an app host.
@@ -25,18 +25,20 @@ type detectConfirmAppHost struct {
 
 	// internal state and components
 	console input.Console
+
+	warningMessage string
 }
 
 // Init initializes state from initial detection output
-func (d *detectConfirmAppHost) Init(appHost appdetect.Project, root string) {
+func (d *detectConfirmAppHost) Init(appHost appdetect.Project, root string, manifest *apphost.Manifest) {
 	d.AppHost = appHost
-
+	d.warningMessage = manifest.Warnings()
 	d.captureUsage(
 		fields.AppInitDetectedServices)
 }
 
 func (d *detectConfirmAppHost) captureUsage(
-	services attribute.Key) {
+	services fields.AttributeKey) {
 
 	tracing.SetUsageAttributes(
 		services.StringSlice([]string{string(d.AppHost.Language)}),
@@ -81,6 +83,12 @@ func (d *detectConfirmAppHost) render(ctx context.Context) error {
 	d.console.Message(ctx, "  "+output.WithHighLightFormat(projectDisplayName(d.AppHost)))
 	d.console.Message(ctx, "  "+"Detected in: "+output.WithHighLightFormat(relSafe(d.root, d.AppHost.Path)))
 	d.console.Message(ctx, "")
+
+	if d.warningMessage != "" {
+		d.console.Message(ctx, d.warningMessage)
+		d.console.Message(ctx, "")
+	}
+
 	d.console.Message(ctx, "azd will generate the files necessary to host your app on Azure.")
 
 	return nil

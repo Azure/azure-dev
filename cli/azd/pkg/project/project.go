@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 
+	"dario.cat/mergo"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -70,18 +71,18 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 		}
 	}
 
+	if err := projectConfig.Infra.Validate(); err != nil {
+		return nil, err
+	}
+
 	var err error
 	projectConfig.Infra.Provider, err = provisioning.ParseProvider(projectConfig.Infra.Provider)
 	if err != nil {
 		return nil, fmt.Errorf("parsing project %s: %w", projectConfig.Name, err)
 	}
 
-	if projectConfig.Infra.Path == "" {
-		projectConfig.Infra.Path = "infra"
-	}
-
-	if projectConfig.Infra.Module == "" {
-		projectConfig.Infra.Module = DefaultModule
+	for _, layer := range projectConfig.Infra.Layers {
+		layer.Provider = projectConfig.Infra.Provider
 	}
 
 	if strings.Contains(projectConfig.Infra.Path, "\\") && !strings.Contains(projectConfig.Infra.Path, "/") {
@@ -163,11 +164,15 @@ func Load(ctx context.Context, projectFilePath string) (*ProjectConfig, error) {
 
 	projectConfig.Path = filepath.Dir(projectFilePath)
 
+	provisioningOptions := provisioning.Options{}
+	mergo.Merge(&provisioningOptions, projectConfig.Infra)
+	mergo.Merge(&provisioningOptions, DefaultProvisioningOptions)
+
 	// complement the project config with hooks defined in the infra path using the syntax `<moduleName>.hooks.yaml`
 	// for example `main.hooks.yaml`
 	hooksDefinedAtInfraPath, err := hooksFromInfraModule(
-		filepath.Join(projectConfig.Path, projectConfig.Infra.Path),
-		projectConfig.Infra.Module)
+		filepath.Join(projectConfig.Path, provisioningOptions.Path),
+		provisioningOptions.Module)
 	if err != nil {
 		return nil, fmt.Errorf("failed getting hooks from infra path, %w", err)
 	}

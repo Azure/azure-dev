@@ -1,0 +1,144 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+syntax = "proto3";
+
+package azdext;
+
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext";
+
+import "models.proto";
+import "service_target.proto";
+
+service FrameworkService {
+  // Bidirectional stream for framework service requests and responses
+  rpc Stream(stream FrameworkServiceMessage) returns (stream FrameworkServiceMessage);
+}
+
+// Envelope for all possible framework service messages (requests and responses)
+message FrameworkServiceMessage {
+  string request_id = 1;
+  FrameworkServiceErrorMessage error = 99;
+  oneof message_type {
+    RegisterFrameworkServiceRequest register_framework_service_request = 2;
+    RegisterFrameworkServiceResponse register_framework_service_response = 3;
+    FrameworkServiceInitializeRequest initialize_request = 4;
+    FrameworkServiceInitializeResponse initialize_response = 5;
+    FrameworkServiceRequiredExternalToolsRequest required_external_tools_request = 6;
+    FrameworkServiceRequiredExternalToolsResponse required_external_tools_response = 7;
+    FrameworkServiceRequirementsRequest requirements_request = 8;
+    FrameworkServiceRequirementsResponse requirements_response = 9;
+    FrameworkServiceRestoreRequest restore_request = 10;
+    FrameworkServiceRestoreResponse restore_response = 11;
+    FrameworkServiceBuildRequest build_request = 12;
+    FrameworkServiceBuildResponse build_response = 13;
+    FrameworkServicePackageRequest package_request = 14;
+    FrameworkServicePackageResponse package_response = 15;
+    FrameworkServiceProgressMessage progress_message = 16;
+  }
+}
+
+// Error message for framework service operations
+message FrameworkServiceErrorMessage {
+  string message = 1;
+  string details = 2;
+}
+
+// Request to register a framework service provider
+message RegisterFrameworkServiceRequest {
+  string language = 1; // unique identifier for the language/framework (e.g., "rust", "go", "php")
+}
+
+message RegisterFrameworkServiceResponse {
+  // Empty for now
+}
+
+// Initialize request and response
+message FrameworkServiceInitializeRequest {
+  ServiceConfig service_config = 1;
+}
+
+message FrameworkServiceInitializeResponse {
+  // Empty for now
+}
+
+// Required external tools request and response
+message FrameworkServiceRequiredExternalToolsRequest {
+  ServiceConfig service_config = 1;
+}
+
+message FrameworkServiceRequiredExternalToolsResponse {
+  repeated ExternalTool tools = 1;
+}
+
+// External tool definition
+message ExternalTool {
+  string name = 1;
+  string install_url = 2;
+}
+
+// Requirements request and response
+message FrameworkServiceRequirementsRequest {
+  // Empty - requirements are static for a framework
+}
+
+message FrameworkServiceRequirementsResponse {
+  FrameworkRequirements requirements = 1;
+}
+
+// Framework requirements definition
+message FrameworkRequirements {
+  FrameworkPackageRequirements package = 1;
+}
+
+message FrameworkPackageRequirements {
+  bool require_restore = 1;
+  bool require_build = 2;
+}
+
+// Restore request and response
+message FrameworkServiceRestoreRequest {
+  ServiceConfig service_config = 1;
+  ServiceContext service_context = 2;
+}
+
+message FrameworkServiceRestoreResponse {
+  ServiceRestoreResult restore_result = 1;
+}
+
+// Service restore result
+message ServiceRestoreResult {
+  repeated Artifact artifacts = 1;
+}
+
+// Build request and response
+message FrameworkServiceBuildRequest {
+  ServiceConfig service_config = 1;
+  ServiceContext service_context = 2;
+}
+
+message FrameworkServiceBuildResponse {
+  ServiceBuildResult result = 1;
+}
+
+message ServiceBuildResult {
+  repeated Artifact artifacts = 1;
+}
+
+// Package request and response
+message FrameworkServicePackageRequest {
+  ServiceConfig service_config = 1;
+  ServiceContext service_context = 2;
+}
+
+message FrameworkServicePackageResponse {
+  ServicePackageResult package_result = 1;
+}
+
+// ServicePackageResult is imported from service_target.proto
+
+// Progress message for framework service operations
+message FrameworkServiceProgressMessage {
+  string request_id = 1;
+  string message = 2;
+  int64 timestamp = 3; // Unix timestamp in milliseconds
+}

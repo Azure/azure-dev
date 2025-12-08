@@ -6,6 +6,7 @@ package azapi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"time"
 
@@ -360,10 +361,10 @@ func responseToDeploymentError(title string, respErr *azcore.ResponseError) erro
 }
 
 // Attempts to create an Azure Deployment error from the HTTP response error
-func createDeploymentError(err error) error {
+func createDeploymentError(err error, input string) error {
 	var responseErr *azcore.ResponseError
 	if errors.As(err, &responseErr) {
-		return responseToDeploymentError("Deployment Error Details", responseErr)
+		return responseToDeploymentError(fmt.Sprintf("%s Error Details", input), responseErr)
 	}
 
 	return err

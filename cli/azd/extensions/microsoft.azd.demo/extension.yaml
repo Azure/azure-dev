@@ -4,11 +4,18 @@ namespace: demo
 displayName: Demo Extension
 description: This extension provides examples of the AZD extension framework.
 usage: azd demo <command> [options]
-version: 0.2.0
+version: 0.4.0
 language: go
 capabilities:
   - custom-commands
   - lifecycle-events
+  - mcp-server
+  - service-target-provider
+  - framework-service-provider
+providers:
+  - name: demo
+    type: service-target
+    description: Deploys application components to demo
 examples:
   - name: context
     description: Displays the current `azd` project & environment context.
@@ -16,3 +23,6 @@ examples:
   - name: prompt
     description: Display prompt capabilities.
     usage: azd demo prompt
+  - name: mcp
+    description: Start MCP server with demo tools.
+    usage: azd demo mcp start

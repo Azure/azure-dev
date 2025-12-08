@@ -35,7 +35,7 @@ func (cli *Cli) versionInfoNode() tools.VersionInfo {
 }
 
 func (cli *Cli) CheckInstalled(ctx context.Context) error {
-	err := tools.ToolInPath("npm")
+	err := cli.commandRunner.ToolInPath("npm")
 	if err != nil {
 		return err
 	}

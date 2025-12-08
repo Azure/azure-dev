@@ -164,6 +164,16 @@ func (d *Cli) Inspect(ctx context.Context, imageName string, format string) (str
 	return out.Stdout, nil
 }
 
+// Remove deletes a local Docker image by name or ID
+func (d *Cli) Remove(ctx context.Context, imageName string) error {
+	_, err := d.executeCommand(ctx, "", "rmi", imageName)
+	if err != nil {
+		return fmt.Errorf("removing image %s: %w", imageName, err)
+	}
+
+	return nil
+}
+
 func (d *Cli) versionInfo() tools.VersionInfo {
 	return tools.VersionInfo{
 		MinimumVersion: semver.Version{
@@ -251,7 +261,7 @@ func isSupportedDockerVersion(cliOutput string) (bool, error) {
 }
 func (d *Cli) CheckInstalled(ctx context.Context) error {
 	toolName := d.Name()
-	err := tools.ToolInPath("docker")
+	err := d.commandRunner.ToolInPath("docker")
 	if err != nil {
 		return err
 	}
@@ -280,6 +290,19 @@ func (d *Cli) InstallUrl() string {
 
 func (d *Cli) Name() string {
 	return "Docker"
+}
+
+// IsContainerdEnabled checks if Docker is using containerd as the image store
+func (d *Cli) IsContainerdEnabled(ctx context.Context) (bool, error) {
+	result, err := d.executeCommand(ctx, "", "system", "info", "--format", "{{.DriverStatus}}")
+	if err != nil {
+		return false, fmt.Errorf("checking docker driver status: %w", err)
+	}
+
+	driverStatus := strings.TrimSpace(result.Stdout)
+
+	// Check for containerd snapshotter which indicates containerd image store is enabled
+	return strings.Contains(driverStatus, "io.containerd.snapshotter.v1"), nil
 }
 
 func (d *Cli) executeCommand(ctx context.Context, cwd string, args ...string) (exec.RunResult, error) {

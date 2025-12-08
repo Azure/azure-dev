@@ -81,7 +81,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		hooksManager := NewHooksManager(cwd)
+		hooksManager := NewHooksManager(cwd, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager,
 			mockContext.CommandRunner,
@@ -116,7 +116,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		hooksManager := NewHooksManager(cwd)
+		hooksManager := NewHooksManager(cwd, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager,
 			mockContext.CommandRunner,
@@ -151,7 +151,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		hooksManager := NewHooksManager(cwd)
+		hooksManager := NewHooksManager(cwd, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager,
 			mockContext.CommandRunner,
@@ -182,7 +182,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		hooksManager := NewHooksManager(cwd)
+		hooksManager := NewHooksManager(cwd, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager,
 			mockContext.CommandRunner,
@@ -228,7 +228,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		hooksManager := NewHooksManager(cwd)
+		hooksManager := NewHooksManager(cwd, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager,
 			mockContext.CommandRunner,
@@ -304,7 +304,7 @@ func Test_Hooks_GetScript(t *testing.T) {
 	t.Run("Bash", func(t *testing.T) {
 		hookConfig := hooksMap["bash"][0]
 		mockContext := mocks.NewMockContext(context.Background())
-		hooksManager := NewHooksManager(cwd)
+		hooksManager := NewHooksManager(cwd, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager,
 			mockContext.CommandRunner,
@@ -327,7 +327,7 @@ func Test_Hooks_GetScript(t *testing.T) {
 	t.Run("Powershell", func(t *testing.T) {
 		hookConfig := hooksMap["pwsh"][0]
 		mockContext := mocks.NewMockContext(context.Background())
-		hooksManager := NewHooksManager(cwd)
+		hooksManager := NewHooksManager(cwd, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager,
 			mockContext.CommandRunner,
@@ -353,7 +353,7 @@ func Test_Hooks_GetScript(t *testing.T) {
 
 		hookConfig := hooksMap["inline"][0]
 		mockContext := mocks.NewMockContext(context.Background())
-		hooksManager := NewHooksManager(cwd)
+		hooksManager := NewHooksManager(cwd, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager,
 			mockContext.CommandRunner,
@@ -385,7 +385,7 @@ func Test_Hooks_GetScript(t *testing.T) {
 
 		hookConfig := hooksMap["inlineWithUrl"][0]
 		mockContext := mocks.NewMockContext(context.Background())
-		hooksManager := NewHooksManager(cwd)
+		hooksManager := NewHooksManager(cwd, mockContext.CommandRunner)
 		runner := NewHooksRunner(
 			hooksManager,
 			mockContext.CommandRunner,
@@ -436,7 +436,7 @@ func Test_GetScript_Validation(t *testing.T) {
 	envManager := &mockenv.MockEnvManager{}
 
 	mockContext := mocks.NewMockContext(context.Background())
-	hooksManager := NewHooksManager(tempDir)
+	hooksManager := NewHooksManager(tempDir, mockContext.CommandRunner)
 	runner := NewHooksRunner(
 		hooksManager,
 		mockContext.CommandRunner,
@@ -450,12 +450,12 @@ func Test_GetScript_Validation(t *testing.T) {
 
 	scriptValidations := []scriptValidationTest{
 		{
-			name: "Missing Script Type",
+			name: "Missing Script Type - Should Use Default Shell",
 			config: &HookConfig{
 				Name: "test1",
 				Run:  "echo 'Hello'",
 			},
-			expectedError: ErrScriptTypeUnknown,
+			expectedError: nil, // Should no longer error, should use default shell
 		},
 		{
 			name: "Missing Run param",

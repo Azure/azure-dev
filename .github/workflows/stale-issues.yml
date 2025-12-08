@@ -1,0 +1,37 @@
+name: Marks/closes stale issues
+on:
+  schedule:
+    - cron: "0 3 * * *"
+
+permissions:
+  issues: write
+
+jobs:
+  mark-stale-issues:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@v10
+        with:
+          days-before-issue-stale: 365        # Initial filter to stale yearly ignored issues
+        #   only-issue-labels:                # Not enabled until we have a better idea for what to target
+        #     "needs-author-feedback"         # Only issues with all of these labels can be marked as stale
+          exempt-issue-labels: "keep"         # Issues marked with this label should not be marked as stale
+          stale-issue-label: "stale"          # Mark stale issues with this label
+          stale-issue-message: |
+            This issue has been automatically marked as stale because it has not had any activity in the last year!!,
+            and it will be closed in 30 days if no further activity occurs.
+
+            If you think this is a mistake, please comment on this issue to keep it open.
+
+          days-before-issue-close: 30
+          close-issue-reason: "not_planned"
+          close-issue-message: |
+            This issue has been automatically closed due to inactivity.
+
+            If you think this is a mistake, please comment on this issue.
+
+          # Exclude PRs from closing or being marked as stale
+          days-before-pr-stale: -1
+          days-before-pr-close: -1
+          operations-per-run: 500
+          

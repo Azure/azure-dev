@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 import * as vscode from 'vscode';
-import { AccessToken, GetTokenOptions, TokenCredential } from '@azure/core-auth';
+import type { AccessToken, GetTokenOptions, TokenCredential } from '@azure/core-auth';
 
 // TODO(ellismg): This code is more or less lifted from @microsoft/vscode-azext-azureauth. It would be ideal
 // to share more of it if we can.

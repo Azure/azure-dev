@@ -5,7 +5,9 @@ package grpcserver
 
 import (
 	"context"
+	"fmt"
 
+	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -81,17 +83,14 @@ func (s *projectService) Get(ctx context.Context, req *azdext.EmptyRequest) (*az
 	}
 
 	for name, service := range projectConfig.Services {
-		project.Services[name] = &azdext.ServiceConfig{
-			Name:              service.Name,
-			ResourceGroupName: service.ResourceGroupName.MustEnvsubst(envKeyMapper),
-			ResourceName:      service.ResourceName.MustEnvsubst(envKeyMapper),
-			ApiVersion:        service.ApiVersion,
-			RelativePath:      service.RelativePath,
-			Host:              string(service.Host),
-			Language:          string(service.Language),
-			OutputPath:        service.OutputPath,
-			Image:             service.Image.MustEnvsubst(envKeyMapper),
+		var protoService *azdext.ServiceConfig
+
+		// Use mapper with environment variable resolver
+		if err := mapper.WithResolver(envKeyMapper).Convert(service, &protoService); err != nil {
+			return nil, fmt.Errorf("converting service config to proto: %w", err)
 		}
+
+		project.Services[name] = protoService
 	}
 
 	return &azdext.GetProjectResponse{
@@ -110,12 +109,9 @@ func (s *projectService) AddService(ctx context.Context, req *azdext.AddServiceR
 		return nil, err
 	}
 
-	serviceConfig := &project.ServiceConfig{
-		Project:      projectConfig,
-		Name:         req.Service.Name,
-		RelativePath: req.Service.RelativePath,
-		Language:     project.ServiceLanguageKind(req.Service.Language),
-		Host:         project.ServiceTargetKind(req.Service.Host),
+	serviceConfig := &project.ServiceConfig{}
+	if err := mapper.Convert(req.Service, &serviceConfig); err != nil {
+		return nil, fmt.Errorf("failed converting service configuration, %w", err)
 	}
 
 	if projectConfig.Services == nil {

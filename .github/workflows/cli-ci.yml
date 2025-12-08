@@ -5,7 +5,6 @@ on:
     paths:
       - "cli/**"
       - ".github/workflows/cli-ci.yml"
-      - "go.mod"
     branches: [main]
 
 # If two events are triggered within a short time in the same PR, cancel the run of the oldest event
@@ -24,14 +23,14 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     steps:
-      - uses: actions/setup-go@v3
+      - uses: actions/setup-go@v6
         with:
-          go-version: "^1.24"
+          go-version: "^1.25"
       - uses: actions/checkout@v4
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@v8
         with:
-          version: v2.0
+          version: v2.6
           args: -v --timeout 10m0s
           working-directory: cli/azd
 

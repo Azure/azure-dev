@@ -11,10 +11,12 @@ const (
 	AzureResourceTypeAppInsightComponent       AzureResourceType = "Microsoft.Insights/components"
 	AzureResourceTypeAutomationAccount         AzureResourceType = "Microsoft.Automation/automationAccounts"
 	AzureResourceTypeCacheForRedis             AzureResourceType = "Microsoft.Cache/redis"
+	AzureResourceTypeRedisEnterprise           AzureResourceType = "Microsoft.Cache/redisEnterprise"
 	AzureResourceTypeCDNProfile                AzureResourceType = "Microsoft.Cdn/profiles"
 	AzureResourceTypeCosmosDb                  AzureResourceType = "Microsoft.DocumentDB/databaseAccounts"
 	AzureResourceTypeEventHubsNamespace        AzureResourceType = "Microsoft.EventHub/namespaces"
 	AzureResourceTypeContainerApp              AzureResourceType = "Microsoft.App/containerApps"
+	AzureResourceTypeContainerAppJob           AzureResourceType = "Microsoft.App/jobs"
 	AzureResourceTypeSpringApp                 AzureResourceType = "Microsoft.AppPlatform/Spring"
 	AzureResourceTypeContainerAppEnvironment   AzureResourceType = "Microsoft.App/managedEnvironments"
 	AzureResourceTypeDeployment                AzureResourceType = "Microsoft.Resources/deployments"
@@ -33,6 +35,7 @@ const (
 	AzureResourceTypeSqlServer                 AzureResourceType = "Microsoft.Sql/servers"
 	AzureResourceTypeVirtualNetwork            AzureResourceType = "Microsoft.Network/virtualNetworks"
 	AzureResourceTypeWebSite                   AzureResourceType = "Microsoft.Web/sites"
+	AzureResourceTypeWebSiteSlot               AzureResourceType = "Microsoft.Web/sites/slots"
 	AzureResourceTypeContainerRegistry         AzureResourceType = "Microsoft.ContainerRegistry/registries"
 	AzureResourceTypeManagedCluster            AzureResourceType = "Microsoft.ContainerService/managedClusters"
 	AzureResourceTypeAgentPool                 AzureResourceType = "Microsoft.ContainerService/managedClusters/agentPools"
@@ -80,6 +83,8 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Static Web App"
 	case AzureResourceTypeContainerApp:
 		return "Container App"
+	case AzureResourceTypeContainerAppJob:
+		return "Container App Job"
 	case AzureResourceTypeContainerAppEnvironment:
 		return "Container Apps Environment"
 	case AzureResourceTypeServiceBusNamespace:
@@ -94,6 +99,8 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Azure API Management"
 	case AzureResourceTypeCacheForRedis:
 		return "Cache for Redis"
+	case AzureResourceTypeRedisEnterprise:
+		return "Redis Enterprise"
 	case AzureResourceTypeSqlServer:
 		return "Azure SQL Server"
 	case AzureResourceTypePostgreSqlServer:

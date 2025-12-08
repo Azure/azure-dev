@@ -13,7 +13,7 @@ In general, to make contributions a smooth and easy experience, we encourage the
 
 Prerequisites:
 
-- [Go](https://go.dev/dl/) 1.24
+- [Go](https://go.dev/dl/) 1.25
 
 Build:
 

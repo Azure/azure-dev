@@ -1,0 +1,21 @@
+
+Generate fish completion script.
+
+Usage
+  azd completion fish
+
+Global Flags
+    -C, --cwd string 	: Sets the current working directory.
+        --debug      	: Enables debugging and diagnostics logging.
+        --docs       	: Opens the documentation for azd completion fish in your web browser.
+    -h, --help       	: Gets help for fish.
+        --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
+
+Examples
+  Install completions for all sessions
+    azd completion fish > ~/.config/fish/completions/azd.fish
+
+  Load completions in current session
+    azd completion fish | source
+
+

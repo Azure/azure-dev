@@ -42,23 +42,21 @@ type Manager struct {
 	cloud               *cloud.Cloud
 }
 
-// defaultOptions for this package.
-const (
-	defaultModule = "main"
-	defaultPath   = "infra"
+var (
+	defaultOptions = Options{
+		Module: "main",
+		Path:   "infra",
+	}
 )
 
 func (m *Manager) Initialize(ctx context.Context, projectPath string, options Options) error {
-	// applied defaults if missing
-	if options.Module == "" {
-		options.Module = defaultModule
-	}
-	if options.Path == "" {
-		options.Path = defaultPath
+	infraOptions, err := options.GetWithDefaults()
+	if err != nil {
+		return err
 	}
 
 	m.projectPath = projectPath
-	m.options = &options
+	m.options = &infraOptions
 
 	provider, err := m.newProvider(ctx)
 	if err != nil {
@@ -66,7 +64,7 @@ func (m *Manager) Initialize(ctx context.Context, projectPath string, options Op
 	}
 
 	m.provider = provider
-	return m.provider.Initialize(ctx, projectPath, options)
+	return m.provider.Initialize(ctx, projectPath, infraOptions)
 }
 
 // Parameters gets the list of parameters and its value which will be used to provision the infrastructure.
@@ -103,7 +101,7 @@ func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 		m.console.StopSpinner(ctx, "Didn't find new changes.", input.StepSkipped)
 	}
 
-	if err := m.UpdateEnvironment(ctx, deployResult.Deployment.Outputs); err != nil {
+	if err := UpdateEnvironment(ctx, deployResult.Deployment.Outputs, m.env, m.envManager); err != nil {
 		return nil, fmt.Errorf("updating environment with deployment outputs: %w", err)
 	}
 
@@ -314,9 +312,11 @@ func (m *Manager) Destroy(ctx context.Context, options DestroyOptions) (*Destroy
 	return destroyResult, nil
 }
 
-func (m *Manager) UpdateEnvironment(
+func UpdateEnvironment(
 	ctx context.Context,
 	outputs map[string]OutputParameter,
+	env *environment.Environment,
+	envManager environment.Manager,
 ) error {
 	if len(outputs) > 0 {
 		for key, param := range outputs {
@@ -326,13 +326,13 @@ func (m *Manager) UpdateEnvironment(
 				if err != nil {
 					return fmt.Errorf("invalid value for output parameter '%s' (%s): %w", key, string(param.Type), err)
 				}
-				m.env.DotenvSet(key, string(bytes))
+				env.DotenvSet(key, string(bytes))
 			} else {
-				m.env.DotenvSet(key, fmt.Sprintf("%v", param.Value))
+				env.DotenvSet(key, fmt.Sprintf("%v", param.Value))
 			}
 		}
 
-		if err := m.envManager.Save(ctx, m.env); err != nil {
+		if err := envManager.Save(ctx, env); err != nil {
 			return fmt.Errorf("writing environment: %w", err)
 		}
 	}

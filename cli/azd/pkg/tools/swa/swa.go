@@ -104,7 +104,7 @@ func (cli *Cli) Deploy(
 
 func (cli *Cli) CheckInstalled(_ context.Context) error {
 
-	return tools.ToolInPath("npx")
+	return cli.commandRunner.ToolInPath("npx")
 }
 
 func (cli *Cli) Name() string {

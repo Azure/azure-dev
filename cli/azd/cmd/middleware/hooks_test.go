@@ -6,6 +6,7 @@ package middleware
 import (
 	"context"
 	"errors"
+	osexec "os/exec"
 	"strings"
 	"testing"
 
@@ -14,7 +15,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
-	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
@@ -271,8 +271,9 @@ func Test_ServiceHooks_Registered(t *testing.T) {
 
 	nextFn := func(ctx context.Context) (*actions.ActionResult, error) {
 		err := serviceConfig.Invoke(ctx, project.ServiceEventDeploy, project.ServiceLifecycleEventArgs{
-			Project: &projectConfig,
-			Service: serviceConfig,
+			Project:        &projectConfig,
+			Service:        serviceConfig,
+			ServiceContext: project.NewServiceContext(),
 		}, func() error {
 			return nil
 		})
@@ -342,22 +343,10 @@ func runMiddleware(
 	envManager.On("Save", mock.Anything, mock.Anything).Return(nil)
 	envManager.On("Reload", mock.Anything, mock.Anything).Return(nil)
 
-	lazyEnvManager := lazy.NewLazy(func() (environment.Manager, error) {
-		return envManager, nil
-	})
-
-	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
-		return env, nil
-	})
-
-	lazyProjectConfig := lazy.NewLazy(func() (*project.ProjectConfig, error) {
-		return projectConfig, nil
-	})
-
 	middleware := NewHooksMiddleware(
-		lazyEnvManager,
-		lazyEnv,
-		lazyProjectConfig,
+		envManager,
+		env,
+		projectConfig,
 		project.NewImportManager(nil),
 		mockContext.CommandRunner,
 		mockContext.Console,
@@ -410,4 +399,237 @@ func ensureAzdProject(ctx context.Context, azdContext *azdcontext.AzdContext, pr
 	}
 
 	return nil
+}
+
+func Test_PowerShellWarning_WithPowerShellHooks(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	azdContext := createAzdContext(t)
+
+	envName := "test"
+	runOptions := Options{CommandPath: "command"}
+
+	projectConfig := project.ProjectConfig{
+		Name: envName,
+		Hooks: map[string][]*ext.HookConfig{
+			"preprovision": {
+				{
+					Run:   "Write-Host 'hello'",
+					Shell: ext.ShellTypePowershell,
+				},
+			},
+		},
+	}
+
+	err := ensureAzdValid(mockContext, azdContext, envName, &projectConfig)
+	require.NoError(t, err)
+
+	nextFn, actionRan := createNextFn()
+	setupHookMock(mockContext, 0)
+
+	// Mock toolInPath to simulate pwsh not being available but powershell available
+	mockContext.CommandRunner.MockToolInPath("pwsh", osexec.ErrNotFound)
+	mockContext.CommandRunner.MockToolInPath("powershell", nil) // powershell is available
+
+	result, err := runMiddleware(mockContext, envName, &projectConfig, &runOptions, nextFn)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, *actionRan)
+
+	// Check that PowerShell warning was displayed (specifically for PowerShell 5.1)
+	consoleOutput := mockContext.Console.Output()
+	t.Logf("Console output: %v", consoleOutput)
+	foundWarning := false
+	for _, message := range consoleOutput {
+		if strings.Contains(message, "Your computer only has PowerShell 5.1 (`powershell`) installed") {
+			foundWarning = true
+			break
+		}
+	}
+	require.True(t, foundWarning, "Expected PowerShell 5.1 warning to be displayed")
+}
+
+func Test_PowerShellWarning_WithPs1FileHook(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	azdContext := createAzdContext(t)
+
+	envName := "test"
+	runOptions := Options{CommandPath: "command"}
+
+	projectConfig := project.ProjectConfig{
+		Name: envName,
+		Hooks: map[string][]*ext.HookConfig{
+			"preprovision": {
+				{
+					Run:   "script.ps1",            // PowerShell file extension
+					Shell: ext.ShellTypePowershell, // Explicitly specify shell to avoid detection issues
+				},
+			},
+		},
+	}
+
+	err := ensureAzdValid(mockContext, azdContext, envName, &projectConfig)
+	require.NoError(t, err)
+
+	nextFn, actionRan := createNextFn()
+	setupHookMock(mockContext, 0)
+
+	// Mock toolInPath to simulate pwsh not being available
+	mockContext.CommandRunner.MockToolInPath("pwsh", osexec.ErrNotFound)
+
+	result, err := runMiddleware(mockContext, envName, &projectConfig, &runOptions, nextFn)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, *actionRan)
+
+	// Check that PowerShell warning was displayed
+	consoleOutput := mockContext.Console.Output()
+	foundWarning := false
+	for _, message := range consoleOutput {
+		if strings.Contains(message, "PowerShell 7 (`pwsh`) commands found in project") {
+			foundWarning = true
+			break
+		}
+	}
+	require.True(t, foundWarning, "Expected PowerShell warning to be displayed for .ps1 file")
+}
+
+func Test_PowerShellWarning_WithoutPowerShellHooks(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	azdContext := createAzdContext(t)
+
+	envName := "test"
+	runOptions := Options{CommandPath: "command"}
+
+	projectConfig := project.ProjectConfig{
+		Name: envName,
+		Hooks: map[string][]*ext.HookConfig{
+			"precommand": {
+				{
+					Run:   "echo 'hello'",
+					Shell: ext.ShellTypeBash,
+				},
+			},
+		},
+	}
+
+	err := ensureAzdValid(mockContext, azdContext, envName, &projectConfig)
+	require.NoError(t, err)
+
+	nextFn, actionRan := createNextFn()
+	setupHookMock(mockContext, 0)
+
+	// Mock toolInPath to simulate pwsh not being available
+
+	result, err := runMiddleware(mockContext, envName, &projectConfig, &runOptions, nextFn)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, *actionRan)
+
+	// Check that no PowerShell warning was displayed
+	consoleOutput := mockContext.Console.Output()
+	foundWarning := false
+	for _, message := range consoleOutput {
+		if strings.Contains(message, "PowerShell 7 (`pwsh`) commands found in project") {
+			foundWarning = true
+			break
+		}
+	}
+	require.False(t, foundWarning, "Expected no PowerShell warning for bash hooks")
+}
+
+func Test_PowerShellWarning_WithPwshAvailable(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	azdContext := createAzdContext(t)
+
+	envName := "test"
+	runOptions := Options{CommandPath: "command"}
+
+	projectConfig := project.ProjectConfig{
+		Name: envName,
+		Hooks: map[string][]*ext.HookConfig{
+			"precommand": {
+				{
+					Run:   "Write-Host 'hello'",
+					Shell: ext.ShellTypePowershell,
+				},
+			},
+		},
+	}
+
+	err := ensureAzdValid(mockContext, azdContext, envName, &projectConfig)
+	require.NoError(t, err)
+
+	nextFn, actionRan := createNextFn()
+	setupHookMock(mockContext, 0)
+
+	// Mock toolInPath to simulate pwsh being available
+	mockContext.CommandRunner.MockToolInPath("pwsh", nil)
+
+	result, err := runMiddleware(mockContext, envName, &projectConfig, &runOptions, nextFn)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, *actionRan)
+
+	// Check that no PowerShell warning was displayed
+	consoleOutput := mockContext.Console.Output()
+	foundWarning := false
+	for _, message := range consoleOutput {
+		if strings.Contains(message, "PowerShell 7 (`pwsh`) commands found in project") {
+			foundWarning = true
+			break
+		}
+	}
+	require.False(t, foundWarning, "Expected no PowerShell warning when pwsh is available")
+}
+
+func Test_PowerShellWarning_WithNoPowerShellInstalled(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	azdContext := createAzdContext(t)
+
+	envName := "test"
+	runOptions := Options{CommandPath: "command"}
+
+	projectConfig := project.ProjectConfig{
+		Name: envName,
+		Hooks: map[string][]*ext.HookConfig{
+			"preprovision": {
+				{
+					Run:   "Write-Host 'hello'",
+					Shell: ext.ShellTypePowershell,
+				},
+			},
+		},
+	}
+
+	err := ensureAzdValid(mockContext, azdContext, envName, &projectConfig)
+	require.NoError(t, err)
+
+	nextFn, actionRan := createNextFn()
+	setupHookMock(mockContext, 0)
+
+	// Mock toolInPath to simulate neither pwsh nor powershell being available
+	mockContext.CommandRunner.MockToolInPath("pwsh", osexec.ErrNotFound)
+	mockContext.CommandRunner.MockToolInPath("powershell", osexec.ErrNotFound)
+
+	result, err := runMiddleware(mockContext, envName, &projectConfig, &runOptions, nextFn)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, *actionRan)
+
+	// Check that the correct PowerShell warning was displayed (no PowerShell installation detected)
+	consoleOutput := mockContext.Console.Output()
+	t.Logf("Console output: %v", consoleOutput)
+	foundWarning := false
+	for _, message := range consoleOutput {
+		if strings.Contains(message, "No PowerShell installation detected") {
+			foundWarning = true
+			break
+		}
+	}
+	require.True(t, foundWarning, "Expected 'No PowerShell installation detected' warning to be displayed")
 }

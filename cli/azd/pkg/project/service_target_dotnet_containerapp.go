@@ -4,6 +4,7 @@
 package project
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"text/template"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
@@ -26,10 +28,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/cosmosdb"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/sqldb"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
+	"github.com/drone/envsubst"
 )
 
 type dotnetContainerAppTarget struct {
@@ -99,88 +103,64 @@ func (at *dotnetContainerAppTarget) Initialize(ctx context.Context, serviceConfi
 func (at *dotnetContainerAppTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	packageOutput *ServicePackageResult,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
-	return packageOutput, nil
+	return &ServicePackageResult{}, nil
+}
+
+// TODO: move publish logic from Deploy() into Publish()
+func (at *dotnetContainerAppTarget) Publish(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	serviceContext *ServiceContext,
+	targetResource *environment.TargetResource,
+	progress *async.Progress[ServiceProgress],
+	publishOptions *PublishOptions,
+) (*ServicePublishResult, error) {
+	return &ServicePublishResult{}, nil
 }
 
 // Deploys service container images to ACR and provisions the container app service.
 func (at *dotnetContainerAppTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	packageOutput *ServicePackageResult,
+	serviceContext *ServiceContext,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
+	if serviceConfig.BuildOnly {
+		return &ServiceDeployResult{
+			Artifacts: ArtifactCollection{
+				&Artifact{
+					Kind:         ArtifactKindEndpoint,
+					Location:     "[build-only service; no deployment performed]",
+					LocationKind: LocationKindLocal,
+				},
+			},
+		}, nil
+	}
 	if err := at.validateTargetResource(targetResource); err != nil {
 		return nil, fmt.Errorf("validating target resource: %w", err)
 	}
 
-	progress.SetProgress(NewServiceProgress("Pushing container image"))
+	// Track deployment results for different deployment paths
+	var bicepDeploymentResult *azapi.ResourceDeployment
+	var yamlDeploymentError error
 
-	var remoteImageName string
-	var portNumber int
-
-	// This service target is shared across four different aspire resource types: "dockerfile.v0" (a reference to
-	// an project backed by a dockerfile), "container.v0" (a reference to a project backed by an existing container
-	// image), "project.v0" (a reference to a project backed by a .NET project), and "container.v1" (a reference
-	// to a project which might have an existing container image, or can provide a dockerfile).
-	// Depending on the type, we have different steps for pushing the container image.
-	//
-	// For the dockerfile.v0 and container.v1+dockerfile type, [DotNetImporter] arranges things such that we can
-	// leverage the existing support in `azd` for services backed by a Dockerfile.
-	// This causes the image to be built and pushed to ACR.
-	//
-	// For the container.v0 or container.v1+image type, we assume the container image specified by the manifest is
-	// public and just use it directly.
-	//
-	// For the project.v0 type, we use the .NET CLI to publish the container image to ACR.
-	//
-	// The name of the image that should be referenced in the manifest is stored in `remoteImageName` and presented
-	// to the deployment template as a parameter named `Image`.
-	if serviceConfig.Language == ServiceLanguageDocker {
-		res, err := at.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, false, progress)
-		if err != nil {
-			return nil, err
-		}
-
-		remoteImageName = res.Details.(*dockerDeployResult).RemoteImageTag
-	} else if serviceConfig.DotNetContainerApp.ContainerImage != "" {
-		remoteImageName = serviceConfig.DotNetContainerApp.ContainerImage
-	} else {
-		progress.SetProgress(NewServiceProgress("Logging in to registry"))
-
-		// Login, tag & push container image to ACR
-		dockerCreds, err := at.containerHelper.Credentials(ctx, serviceConfig, targetResource)
-		if err != nil {
-			return nil, fmt.Errorf("logging in to registry: %w", err)
-		}
-
-		imageName := fmt.Sprintf("%s:%s",
-			at.containerHelper.DefaultImageName(serviceConfig),
-			at.containerHelper.DefaultImageTag())
-
-		portNumber, err = at.dotNetCli.PublishContainer(
-			ctx,
-			serviceConfig.Path(),
-			"Release",
-			imageName,
-			dockerCreds.LoginServer,
-			dockerCreds.Username,
-			dockerCreds.Password)
-		if err != nil {
-			return nil, fmt.Errorf("publishing container: %w", err)
-		}
-
-		remoteImageName = fmt.Sprintf("%s/%s", dockerCreds.LoginServer, imageName)
+	// Prepare the container image based on service type and configuration
+	// This handles all four Aspire resource types (dockerfile.v0, container.v0, project.v0, container.v1)
+	imageResult, err := at.prepareContainerImage(ctx, serviceConfig, serviceContext, targetResource, progress)
+	if err != nil {
+		return nil, err
 	}
+
+	remoteImageName := imageResult.ImageName
+	portNumber := imageResult.PortNumber
 
 	progress.SetProgress(NewServiceProgress("Updating application"))
 
 	var manifestTemplate string
-	var armTemplate *azure.RawArmTemplate
-	var armParams azure.ArmParameters
 
 	appHostRoot := serviceConfig.DotNetContainerApp.AppHostPath
 	if f, err := os.Stat(appHostRoot); err == nil && !f.IsDir() {
@@ -264,6 +244,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 		// allows to update the logic of pulling secret parameters in the future, if azd changes the way it
 		// stores the parameter value.
 		"securedParameter": fns.Parameter,
+		"uriEncode":        url.QueryEscape,
 		"secretOutput":     fns.kvSecret,
 		"targetPortOrDefault": func(targetPortFromManifest int) int {
 			// portNumber is 0 for dockerfile.v0, so we use the targetPort from the manifest
@@ -324,12 +305,13 @@ func (at *dotnetContainerAppTarget) Deploy(
 
 	aspireDeploymentType := azapi.AzureResourceTypeContainerApp
 	resourceName := serviceConfig.Name
+	resourceMetadata := map[string]string{}
 	if useBicepForContainerApps {
 		// Compile the bicep template
-		compiled, params, err := func() (azure.RawArmTemplate, azure.ArmParameters, error) {
+		deployment, err := func() (armDeployment, error) {
 			tempFolder, err := os.MkdirTemp("", fmt.Sprintf("%s-build*", projectName))
 			if err != nil {
-				return azure.RawArmTemplate{}, nil, fmt.Errorf("creating temporary build folder: %w", err)
+				return armDeployment{}, fmt.Errorf("creating temporary build folder: %w", err)
 			}
 			defer func() {
 				_ = os.RemoveAll(tempFolder)
@@ -337,15 +319,15 @@ func (at *dotnetContainerAppTarget) Deploy(
 			// write bicepparam content to a new file in the temp folder
 			f, err := os.Create(filepath.Join(tempFolder, "main.bicepparam"))
 			if err != nil {
-				return azure.RawArmTemplate{}, nil, fmt.Errorf("creating bicepparam file: %w", err)
+				return armDeployment{}, fmt.Errorf("creating bicepparam file: %w", err)
 			}
 			_, err = io.Copy(f, strings.NewReader(builder.String()))
 			if err != nil {
-				return azure.RawArmTemplate{}, nil, fmt.Errorf("writing bicepparam file: %w", err)
+				return armDeployment{}, fmt.Errorf("writing bicepparam file: %w", err)
 			}
 			err = f.Close()
 			if err != nil {
-				return azure.RawArmTemplate{}, nil, fmt.Errorf("closing bicepparam file: %w", err)
+				return armDeployment{}, fmt.Errorf("closing bicepparam file: %w", err)
 			}
 
 			// copy module to same path as bicepparam so it can be compiled from the temp folder
@@ -359,77 +341,61 @@ func (at *dotnetContainerAppTarget) Deploy(
 					apphost.AppHostOptions{},
 				)
 				if err != nil {
-					return azure.RawArmTemplate{}, nil, fmt.Errorf("generating bicep file: %w", err)
+					return armDeployment{}, fmt.Errorf("generating bicep file: %w", err)
 				}
 				bicepContent = []byte(generatedBicep)
 			}
 			sourceFile, err := os.Create(filepath.Join(tempFolder, bicepSourceFileName))
 			if err != nil {
-				return azure.RawArmTemplate{}, nil, fmt.Errorf("creating bicep file: %w", err)
+				return armDeployment{}, fmt.Errorf("creating bicep file: %w", err)
 			}
 			_, err = io.Copy(sourceFile, strings.NewReader(string(bicepContent)))
 			if err != nil {
-				return azure.RawArmTemplate{}, nil, fmt.Errorf("writing bicep file: %w", err)
+				return armDeployment{}, fmt.Errorf("writing bicep file: %w", err)
 			}
 			err = sourceFile.Close()
 			if err != nil {
-				return azure.RawArmTemplate{}, nil, fmt.Errorf("closing bicep file: %w", err)
+				return armDeployment{}, fmt.Errorf("closing bicep file: %w", err)
 			}
 
-			res, err := at.bicepCli.BuildBicepParam(ctx, f.Name(), at.env.Environ())
+			deployment, err := compileBicep(at.bicepCli, ctx, f.Name(), at.env)
 			if err != nil {
-				return azure.RawArmTemplate{}, nil, fmt.Errorf("building container app bicep: %w", err)
+				return armDeployment{}, fmt.Errorf("building container app bicep: %w", err)
 			}
-			type compiledBicepParamResult struct {
-				TemplateJson   string `json:"templateJson"`
-				ParametersJson string `json:"parametersJson"`
-			}
-			var bicepParamOutput compiledBicepParamResult
-			if err := json.Unmarshal([]byte(res.Compiled), &bicepParamOutput); err != nil {
-				log.Printf(
-					"failed unmarshalling compiled bicepparam (err: %v), template contents:\n%s", err, res.Compiled)
-				return nil, nil, fmt.Errorf("failed unmarshalling arm template from json: %w", err)
-			}
-			var params azure.ArmParameterFile
-			if err := json.Unmarshal([]byte(bicepParamOutput.ParametersJson), &params); err != nil {
-				log.Printf(
-					"failed unmarshalling compiled bicepparam parameters(err: %v), template contents:\n%s",
-					err,
-					res.Compiled)
-				return nil, nil, fmt.Errorf("failed unmarshalling arm parameters template from json: %w", err)
-			}
-			return azure.RawArmTemplate(bicepParamOutput.TemplateJson), params.Parameters, nil
+			return deployment, nil
 		}()
 		if err != nil {
 			return nil, err
 		}
-		armTemplate = &compiled
-		armParams = params
 
-		deploymentResult, err := at.deploymentService.DeployToResourceGroup(
+		bicepDeploymentResult, err = at.deploymentService.DeployToResourceGroup(
 			ctx,
 			at.env.GetSubscriptionId(),
 			targetResource.ResourceGroupName(),
 			at.deploymentService.GenerateDeploymentName(serviceConfig.Name),
-			*armTemplate,
-			armParams,
+			deployment.Template,
+			deployment.Parameters,
 			nil, nil)
 		if err != nil {
 			return nil, fmt.Errorf("deploying bicep template: %w", err)
 		}
-		deploymentHostDetails, err := deploymentHost(deploymentResult)
+		deploymentHostDetails, err := deploymentHost(bicepDeploymentResult)
 		if err != nil {
 			return nil, fmt.Errorf("getting deployment host type: %w", err)
 		}
 		resourceName = deploymentHostDetails.name
 		aspireDeploymentType = deploymentHostDetails.hostType
 
+		if deploymentHostDetails.parent != "" {
+			resourceMetadata["parentName"] = deploymentHostDetails.parent
+		}
+
 	} else {
 		containerAppOptions := containerapps.ContainerAppOptions{
 			ApiVersion: serviceConfig.ApiVersion,
 		}
 
-		err = at.containerAppService.DeployYaml(
+		yamlDeploymentError = at.containerAppService.DeployYaml(
 			ctx,
 			targetResource.SubscriptionId(),
 			targetResource.ResourceGroupName(),
@@ -437,8 +403,8 @@ func (at *dotnetContainerAppTarget) Deploy(
 			[]byte(builder.String()),
 			&containerAppOptions,
 		)
-		if err != nil {
-			return nil, fmt.Errorf("updating container app service: %w", err)
+		if yamlDeploymentError != nil {
+			return nil, fmt.Errorf("updating container app service: %w", yamlDeploymentError)
 		}
 	}
 
@@ -450,25 +416,359 @@ func (at *dotnetContainerAppTarget) Deploy(
 		resourceName,
 		string(aspireDeploymentType))
 
+	if len(resourceMetadata) > 0 {
+		target.SetMetadata(resourceMetadata)
+	}
+
 	endpoints, err := at.Endpoints(ctx, serviceConfig, target)
 	if err != nil {
 		return nil, err
 	}
 
+	artifacts := ArtifactCollection{}
+
+	// Add deployment result as artifact if Bicep deployment was used
+	if bicepDeploymentResult != nil {
+		if err := artifacts.Add(&Artifact{
+			Kind:         ArtifactKindDeployment,
+			Location:     bicepDeploymentResult.Name,
+			LocationKind: LocationKindRemote,
+			Metadata: map[string]string{
+				"deploymentType":   "bicep",
+				"deploymentStatus": string(bicepDeploymentResult.ProvisioningState),
+				"serviceName":      serviceConfig.Name,
+				"resourceName":     targetResource.ResourceName(),
+				"resourceType":     targetResource.ResourceType(),
+				"subscription":     targetResource.SubscriptionId(),
+				"resourceGroup":    targetResource.ResourceGroupName(),
+				"deploymentName":   bicepDeploymentResult.Name,
+				"deploymentId":     bicepDeploymentResult.DeploymentId,
+			},
+		}); err != nil {
+			return nil, fmt.Errorf("failed to add bicep deployment artifact: %w", err)
+		}
+	} else if yamlDeploymentError == nil {
+		// Add YAML deployment artifact if YAML deployment was successful
+		if err := artifacts.Add(&Artifact{
+			Kind:         ArtifactKindDeployment,
+			Location:     "yaml-deployment-completed",
+			LocationKind: LocationKindRemote,
+			Metadata: map[string]string{
+				"deploymentType": "yaml",
+				"serviceName":    serviceConfig.Name,
+				"resourceName":   targetResource.ResourceName(),
+				"resourceType":   targetResource.ResourceType(),
+				"subscription":   targetResource.SubscriptionId(),
+				"resourceGroup":  targetResource.ResourceGroupName(),
+			},
+		}); err != nil {
+			return nil, fmt.Errorf("failed to add yaml deployment artifact: %w", err)
+		}
+	}
+
+	// Add endpoints as artifacts
+	for _, endpoint := range endpoints {
+		if err := artifacts.Add(&Artifact{
+			Kind:         ArtifactKindEndpoint,
+			Location:     endpoint,
+			LocationKind: LocationKindRemote,
+		}); err != nil {
+			return nil, fmt.Errorf("failed to add endpoint artifact: %w", err)
+		}
+	}
+
+	// Add resource artifact
+	var resourceArtifact *Artifact
+	if err := mapper.Convert(targetResource, &resourceArtifact); err == nil {
+		if err := artifacts.Add(resourceArtifact); err != nil {
+			return nil, fmt.Errorf("failed to add resource artifact: %w", err)
+		}
+	}
+
 	return &ServiceDeployResult{
-		Package: packageOutput,
-		TargetResourceId: azure.ContainerAppRID(
-			targetResource.SubscriptionId(),
-			targetResource.ResourceGroupName(),
-			serviceConfig.Name,
-		),
-		Kind:      ContainerAppTarget,
-		Endpoints: endpoints,
+		Artifacts: artifacts,
 	}, nil
 }
 
+// containerImageResult holds the result of preparing a container image for deployment
+type containerImageResult struct {
+	ImageName  string // Fully qualified image name (e.g., acr.azurecr.io/image:tag)
+	PortNumber int    // Target port from .NET build (0 if not applicable)
+}
+
+// buildPackagePublishContainer executes the full Build→Package→Publish pipeline for a container.
+// This is used when we need all three steps (flows A2 and C2).
+// Note: Uses the provided serviceContext for artifact tracking.
+func (at *dotnetContainerAppTarget) buildPackagePublishContainer(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	serviceContext *ServiceContext,
+	targetResource *environment.TargetResource,
+	progress *async.Progress[ServiceProgress],
+) (string, error) {
+	// Build the container
+	buildResult, err := at.containerHelper.Build(ctx, serviceConfig, serviceContext, progress)
+	if err != nil {
+		return "", fmt.Errorf("building container: %w", err)
+	}
+	if err := serviceContext.Build.Add(buildResult.Artifacts...); err != nil {
+		return "", fmt.Errorf("adding build artifacts: %w", err)
+	}
+
+	// Package the container
+	packageResult, err := at.containerHelper.Package(ctx, serviceConfig, serviceContext, progress)
+	if err != nil {
+		return "", fmt.Errorf("packaging container: %w", err)
+	}
+	if err := serviceContext.Package.Add(packageResult.Artifacts...); err != nil {
+		return "", fmt.Errorf("adding package artifacts: %w", err)
+	}
+
+	// Publish the container to ACR
+	publishResult, err := at.containerHelper.Publish(ctx, serviceConfig, serviceContext, targetResource, progress, nil)
+	if err != nil {
+		return "", fmt.Errorf("publishing container: %w", err)
+	}
+
+	// Extract and return the remote image name
+	artifact, _ := publishResult.Artifacts.FindFirst()
+	return artifact.Location, nil
+}
+
+// prepareDockerfileBasedImage handles image preparation for Dockerfile-based services (flows A1 and A2).
+// - A1 (no ContainerFiles): Calls Publish() ONLY (assumes Build+Package handled elsewhere)
+// - A2 (with ContainerFiles): Builds dependencies as build args, then Build+Package+Publish
+func (at *dotnetContainerAppTarget) prepareDockerfileBasedImage(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	serviceContext *ServiceContext,
+	targetResource *environment.TargetResource,
+	progress *async.Progress[ServiceProgress],
+) (*containerImageResult, error) {
+	if len(serviceConfig.DotNetContainerApp.ContainerFiles) == 0 {
+		// Flow A1: Simple Dockerfile - ONLY call Publish (not Build+Package+Publish)
+		res, err := at.containerHelper.Publish(ctx, serviceConfig, serviceContext, targetResource, progress, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		// Extract remote image from artifacts
+		var remoteImage string
+		if artifact, found := res.Artifacts.FindFirst(WithKind(ArtifactKindContainer)); found {
+			remoteImage = artifact.Location
+		}
+		return &containerImageResult{ImageName: remoteImage, PortNumber: 0}, nil
+	}
+
+	// Flow A2: Multi-container Dockerfile with dependencies
+	// Build dependency containers and add as build args
+	for sName, containerFile := range serviceConfig.DotNetContainerApp.ContainerFiles {
+		sContext := &ServiceContext{}
+		result, err := at.containerHelper.Build(ctx, containerFile.ServiceConfig, sContext, progress)
+		if err != nil {
+			return nil, fmt.Errorf("building container for %s: %w", sName, err)
+		}
+
+		artifact, _ := result.Artifacts.FindFirst()
+		imageName := artifact.Metadata["imageName"]
+
+		// Add the built image name as a build arg for the main image
+		serviceConfig.Docker.BuildArgs = append(
+			serviceConfig.Docker.BuildArgs,
+			osutil.NewExpandableString(fmt.Sprintf("%s_IMAGENAME=%s", strings.ToUpper(sName), imageName)))
+	}
+
+	// Build, package and publish the final container using the provided serviceContext
+	remoteImageName, err := at.buildPackagePublishContainer(
+		ctx, serviceConfig, serviceContext, targetResource, progress)
+	if err != nil {
+		return nil, err
+	}
+
+	return &containerImageResult{ImageName: remoteImageName, PortNumber: 0}, nil
+}
+
+// prepareDotNetProjectImage handles image preparation for .NET project services (flows C1 and C2).
+// - C1 (no ContainerFiles): Direct PublishContainer to ACR, returns port
+// - C2 (with ContainerFiles): BuildLocal + multi-stage Dockerfile + Build+Package+Publish with NEW context
+func (at *dotnetContainerAppTarget) prepareDotNetProjectImage(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	serviceContext *ServiceContext,
+	targetResource *environment.TargetResource,
+	progress *async.Progress[ServiceProgress],
+) (*containerImageResult, error) {
+	defaultImageName, err := at.containerHelper.DefaultImageName(ctx, serviceConfig)
+	if err != nil {
+		return nil, fmt.Errorf("getting default image name: %w", err)
+	}
+
+	if len(serviceConfig.DotNetContainerApp.ContainerFiles) == 0 {
+		// Flow C1: Simple .NET project - publish directly to ACR
+		progress.SetProgress(NewServiceProgress("Logging in to registry"))
+
+		dockerCreds, err := at.containerHelper.Credentials(ctx, serviceConfig, targetResource)
+		if err != nil {
+			return nil, fmt.Errorf("logging in to registry: %w", err)
+		}
+
+		imageName := fmt.Sprintf("%s:%s", defaultImageName, at.containerHelper.DefaultImageTag())
+
+		portNumber, err := at.dotNetCli.PublishContainer(
+			ctx,
+			serviceConfig.Path(),
+			"Release",
+			imageName,
+			dockerCreds.LoginServer,
+			dockerCreds.Username,
+			dockerCreds.Password)
+		if err != nil {
+			return nil, fmt.Errorf("publishing container: %w", err)
+		}
+
+		remoteImageName := fmt.Sprintf("%s/%s", dockerCreds.LoginServer, imageName)
+		return &containerImageResult{
+			ImageName:  remoteImageName,
+			PortNumber: portNumber,
+		}, nil
+	}
+
+	// Flow C2: .NET project with container files - multi-stage composition
+	return at.prepareDotNetMultiStageImage(ctx, serviceConfig, serviceContext, targetResource, progress, defaultImageName)
+}
+
+// prepareDotNetMultiStageImage handles Flow C2: multi-stage .NET container composition.
+// Builds local .NET image, creates multi-stage Dockerfile, and publishes with a NEW ServiceContext.
+func (at *dotnetContainerAppTarget) prepareDotNetMultiStageImage(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	serviceContext *ServiceContext,
+	targetResource *environment.TargetResource,
+	progress *async.Progress[ServiceProgress],
+	defaultImageName string,
+) (*containerImageResult, error) {
+	progress.SetProgress(NewServiceProgress("Composing containers"))
+
+	localImageTag := at.containerHelper.DefaultImageTag()
+
+	// Build local .NET container image (not pushed to ACR)
+	portNumber, localImage, err := at.dotNetCli.BuildContainerLocal(
+		ctx,
+		serviceConfig.Path(),
+		"Release",
+		localImageTag,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("building local container: %w", err)
+	}
+
+	// Ensure cleanup of local image
+	defer func() {
+		cleanupCtx := context.Background()
+		if err := at.containerHelper.RemoveLocalImage(cleanupCtx, localImage); err != nil {
+			log.Printf("warning: failed to remove local image %s: %v", localImage, err)
+		}
+	}()
+
+	// Build multi-stage Dockerfile
+	multiStageDockerfile := at.containerHelper.DockerfileBuilder()
+
+	// Add all dependency stages
+	for _, containerFile := range serviceConfig.DotNetContainerApp.ContainerFiles {
+		if containerFile.ServiceConfig.Project == nil {
+			containerFile.ServiceConfig.Project = serviceConfig.Project
+		}
+
+		result, err := at.containerHelper.Build(ctx, containerFile.ServiceConfig, serviceContext, progress)
+		if err != nil {
+			return nil, fmt.Errorf("building container for %s: %w", containerFile.ServiceConfig.Name, err)
+		}
+
+		artifact, _ := result.Artifacts.FindFirst()
+		stageName := artifact.Metadata["imageName"]
+		multiStageDockerfile.From(stageName, containerFile.ServiceConfig.Name)
+	}
+
+	// Use locally built .NET image as base stage
+	runStage := multiStageDockerfile.From(localImage, "base")
+
+	// Copy files from dependency stages
+	for _, containerFile := range serviceConfig.DotNetContainerApp.ContainerFiles {
+		for _, src := range containerFile.Sources {
+			runStage.CopyFrom(containerFile.ServiceConfig.Name, src, containerFile.Destination)
+		}
+	}
+
+	// Generate Dockerfile content
+	var buf bytes.Buffer
+	if err := multiStageDockerfile.Build(&buf); err != nil {
+		return nil, fmt.Errorf("building multistage dockerfile: %w", err)
+	}
+
+	// CRITICAL: Create NEW ServiceContext (not reusing the provided one)
+	sContext := &ServiceContext{
+		Build:   make(ArtifactCollection, 0),
+		Package: make(ArtifactCollection, 0),
+	}
+
+	// Create service config for the final multi-stage build
+	publishServiceConfig := &ServiceConfig{
+		Name:         serviceConfig.Name,
+		RelativePath: ".",
+		Language:     ServiceLanguageDocker,
+		Project:      serviceConfig.Project,
+		Docker: DockerProjectOptions{
+			InMemDockerfile: buf.Bytes(),
+			Context:         ".",
+			Path:            "in-mem",
+		},
+	}
+
+	// Build, package and publish the final multi-stage image using NEW sContext
+	remoteImageName, err := at.buildPackagePublishContainer(
+		ctx, publishServiceConfig, sContext, targetResource, progress)
+	if err != nil {
+		return nil, err
+	}
+
+	return &containerImageResult{
+		ImageName:  remoteImageName,
+		PortNumber: portNumber,
+	}, nil
+}
+
+// prepareContainerImage determines and prepares the container image based on service configuration.
+// This is the main orchestrator that routes to the appropriate flow (A, B, or C).
+func (at *dotnetContainerAppTarget) prepareContainerImage(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	serviceContext *ServiceContext,
+	targetResource *environment.TargetResource,
+	progress *async.Progress[ServiceProgress],
+) (*containerImageResult, error) {
+	progress.SetProgress(NewServiceProgress("Pushing container image"))
+
+	// BRANCH A: Dockerfile-based service (dockerfile.v0 or container.v1+dockerfile)
+	if serviceConfig.Language == ServiceLanguageDocker {
+		return at.prepareDockerfileBasedImage(ctx, serviceConfig, serviceContext, targetResource, progress)
+	}
+
+	// BRANCH B: Pre-built container image reference (container.v0)
+	if serviceConfig.DotNetContainerApp.ContainerImage != "" {
+		return &containerImageResult{
+			ImageName:  serviceConfig.DotNetContainerApp.ContainerImage,
+			PortNumber: 0,
+		}, nil
+	}
+
+	// BRANCH C: .NET project (project.v0)
+	return at.prepareDotNetProjectImage(ctx, serviceConfig, serviceContext, targetResource, progress)
+}
+
 type appDeploymentHost struct {
-	name     string
+	name string
+	// webapp slot needs to know its parent name
+	parent   string
 	hostType azapi.AzureResourceType
 }
 
@@ -495,14 +795,107 @@ func deploymentHost(deploymentResult *azapi.ResourceDeployment) (appDeploymentHo
 				hostType: azapi.AzureResourceTypeWebSite,
 			}, nil
 		}
+		if rType.String() == string(azapi.AzureResourceTypeWebSiteSlot) {
+			return appDeploymentHost{
+				name:     r.Name,
+				parent:   r.Parent.Name,
+				hostType: azapi.AzureResourceTypeWebSiteSlot,
+			}, nil
+		}
 		if rType.String() == string(azapi.AzureResourceTypeContainerApp) {
 			return appDeploymentHost{
 				name:     r.Name,
 				hostType: azapi.AzureResourceTypeContainerApp,
 			}, nil
 		}
+		if rType.String() == string(azapi.AzureResourceTypeContainerAppJob) {
+			return appDeploymentHost{
+				name:     r.Name,
+				hostType: azapi.AzureResourceTypeContainerAppJob,
+			}, nil
+		}
 	}
 	return appDeploymentHost{}, fmt.Errorf("didn't find any known application host from the deployment")
+}
+
+// armDeployment represents the compiled ARM template and parameters
+// that is ready to be deployed.
+type armDeployment struct {
+	Template   azure.RawArmTemplate
+	Parameters azure.ArmParameters
+}
+
+// compileBicep compiles the specified Bicep module to an ARM template and parameters.
+//
+// The Bicep module can be either a main Bicep file (with .bicep extension) or a Bicep parameters
+// file (with .bicepparam extension).
+//
+// If a Bicep file is provided, the corresponding parameters file must exist in the same directory with the same base name.
+// The environment variables in the parameters file will be substituted using the provided
+// environment before parsing.
+//
+// Returns the compiled ARM template and parameters, or an error if the compilation fails.
+func compileBicep(
+	cli *bicep.Cli,
+	ctx context.Context,
+	bicepModulePath string,
+	env *environment.Environment,
+) (armDeployment, error) {
+	var result armDeployment
+
+	ext := filepath.Ext(bicepModulePath)
+	if ext != ".bicep" && ext != ".bicepparam" {
+		return result, fmt.Errorf("bicep module path must have .bicep or .bicepparam extension")
+	}
+
+	if ext == ".bicep" {
+		paramFilePath := strings.TrimSuffix(bicepModulePath, ext) + ".parameters.json"
+		parametersBytes, err := os.ReadFile(paramFilePath)
+		if err != nil {
+			return result, fmt.Errorf("reading parameters file: %w", err)
+		}
+
+		substituted, err := envsubst.Eval(string(parametersBytes), env.Getenv)
+		if err != nil {
+			return result, fmt.Errorf("performing env substitution: %w", err)
+		}
+
+		var paramFile azure.ArmParameterFile
+		if err := json.Unmarshal([]byte(substituted), &paramFile); err != nil {
+			return result, fmt.Errorf("unmarshaling file: %w", err)
+		}
+
+		res, err := cli.Build(ctx, bicepModulePath)
+		if err != nil {
+			return result, fmt.Errorf("building bicep: %w", err)
+		}
+
+		result.Template = azure.RawArmTemplate(res.Compiled)
+		result.Parameters = paramFile.Parameters
+	} else {
+		res, err := cli.BuildBicepParam(ctx, bicepModulePath, env.Environ())
+		if err != nil {
+			return result, fmt.Errorf("building bicepparam: %w", err)
+		}
+
+		type compiledBicepParamResult struct {
+			TemplateJson   string `json:"templateJson"`
+			ParametersJson string `json:"parametersJson"`
+		}
+		var bicepParamOutput compiledBicepParamResult
+		if err := json.Unmarshal([]byte(res.Compiled), &bicepParamOutput); err != nil {
+			return result, fmt.Errorf("failed unmarshalling arm template from json: %w", err)
+		}
+		var params azure.ArmParameterFile
+		if err := json.Unmarshal([]byte(bicepParamOutput.ParametersJson), &params); err != nil {
+			return result, fmt.Errorf("failed unmarshalling arm parameters template from json: %w", err)
+		}
+
+		result.Template = azure.RawArmTemplate(bicepParamOutput.TemplateJson)
+		result.Parameters = params.Parameters
+	}
+
+	return result, nil
 }
 
 // Gets endpoint for the container app service
@@ -512,15 +905,17 @@ func (at *dotnetContainerAppTarget) Endpoints(
 	targetResource *environment.TargetResource,
 ) ([]string, error) {
 	resourceType := azapi.AzureResourceType(targetResource.ResourceType())
-	// Currently supports ACA and WebApp for Aspire (on reading Endpoints)
+	// Currently supports ACA, ACA Jobs, and WebApp for Aspire (on reading Endpoints)
 	if resourceType != azapi.AzureResourceTypeWebSite &&
-		resourceType != azapi.AzureResourceTypeContainerApp {
+		resourceType != azapi.AzureResourceTypeWebSiteSlot &&
+		resourceType != azapi.AzureResourceTypeContainerApp &&
+		resourceType != azapi.AzureResourceTypeContainerAppJob {
 		return nil, fmt.Errorf("unsupported resource type: %s", resourceType)
 	}
 
 	var hostNames []string
 	switch resourceType {
-	case azapi.AzureResourceTypeContainerApp:
+	case azapi.AzureResourceTypeContainerApp, azapi.AzureResourceTypeContainerAppJob:
 
 		containerAppOptions := containerapps.ContainerAppOptions{
 			ApiVersion: serviceConfig.ApiVersion,
@@ -533,6 +928,11 @@ func (at *dotnetContainerAppTarget) Endpoints(
 			&containerAppOptions,
 		)
 		if err != nil {
+			// Container App Jobs might not have ingress configuration
+			if resourceType == azapi.AzureResourceTypeContainerAppJob {
+				// Return empty endpoints for jobs without ingress
+				return []string{}, nil
+			}
 			return nil, fmt.Errorf("fetching service properties: %w", err)
 		}
 		hostNames = ingressConfig.HostNames
@@ -542,6 +942,23 @@ func (at *dotnetContainerAppTarget) Endpoints(
 			ctx,
 			targetResource.SubscriptionId(),
 			targetResource.ResourceGroupName(),
+			targetResource.ResourceName(),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("fetching service properties: %w", err)
+		}
+
+		hostNames = appServiceProperties.HostNames
+	case azapi.AzureResourceTypeWebSiteSlot:
+		slotParentName, hasParent := targetResource.Metadata()["parentName"]
+		if !hasParent {
+			return nil, fmt.Errorf("missing parent name for web app slot: %s", targetResource.ResourceName())
+		}
+		appServiceProperties, err := at.azureClient.GetAppServiceSlotProperties(
+			ctx,
+			targetResource.SubscriptionId(),
+			targetResource.ResourceGroupName(),
+			slotParentName,
 			targetResource.ResourceName(),
 		)
 		if err != nil {

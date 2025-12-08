@@ -369,15 +369,54 @@ func (pm *PipelineManager) Configure(
 			Description:                &description,
 			ServiceManagementReference: smr,
 		}
-		servicePrincipal, err := pm.entraIdService.CreateOrUpdateServicePrincipal(
-			ctx,
-			subscriptionId,
-			spConfig.appIdOrName,
-			options)
 
-		if err != nil {
-			pm.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
-			return result, fmt.Errorf("failed to create or update service principal: %w", err)
+		var servicePrincipal *graphsdk.ServicePrincipal
+		var err error
+
+		// Loop to handle ServiceTreeNullValueError and prompt user for Service Tree ID
+		for {
+			servicePrincipal, err = pm.entraIdService.CreateOrUpdateServicePrincipal(
+				ctx,
+				subscriptionId,
+				spConfig.appIdOrName,
+				options)
+
+			if err != nil {
+				var serviceTreeError *entraid.ServiceTreeNullValueError
+				var serviceTreeInvalidError *entraid.ServiceTreeInvalidError
+				invalidInput := errors.As(err, &serviceTreeInvalidError)
+				if errors.As(err, &serviceTreeError) || invalidInput {
+					pm.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
+
+					invalidInputNotes := ""
+					if invalidInput {
+						invalidInputNotes = serviceTreeInvalidError.Error()
+					}
+
+					// Prompt user for Service Tree ID (OID)
+					serviceTreeId, promptErr := pm.promptForServiceTreeId(ctx, promptForServiceTreeIdOptions{
+						PreviousWasInvalid: invalidInputNotes,
+					})
+					if promptErr != nil {
+
+						return result, fmt.Errorf("failed to prompt for Service Tree ID: %w", promptErr)
+					}
+
+					// Update options with the provided Service Tree ID
+					options.ServiceManagementReference = &serviceTreeId
+
+					// Restart the spinner and try again
+					pm.console.ShowSpinner(ctx, displayMsg, input.Step)
+					continue
+				}
+
+				// For any other error, stop spinner and return
+				pm.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
+				return result, fmt.Errorf("failed to create or update service principal: %w", err)
+			}
+
+			// Success - break out of the loop
+			break
 		}
 
 		if !strings.Contains(displayMsg, servicePrincipal.AppId) {
@@ -500,6 +539,7 @@ func (pm *PipelineManager) Configure(
 				Id:          msIdentity.Properties.PrincipalID,
 				DisplayName: *msIdentity.Name,
 			},
+			nil,
 		)
 		pm.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
 		if err != nil {
@@ -1457,4 +1497,40 @@ func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context) error {
 	pm.configOptions.projectVariables = slices.Clone(pm.prjConfig.Pipeline.Variables)
 	pm.configOptions.provisioningProvider = &pm.infra.Options
 	return nil
+}
+
+type promptForServiceTreeIdOptions struct {
+	PreviousWasInvalid string
+}
+
+// promptForServiceTreeId prompts the user to input a Service Tree ID (OID)
+// and validates that it's a valid UUID format
+func (pm *PipelineManager) promptForServiceTreeId(ctx context.Context, opts promptForServiceTreeIdOptions) (string, error) {
+	if opts.PreviousWasInvalid != "" {
+		pm.console.Message(ctx, "  The service tree ID you entered is invalid.")
+		pm.console.Message(ctx, "  "+opts.PreviousWasInvalid)
+	} else {
+		pm.console.Message(ctx, "  A Service Tree ID is required for creating the service principal for your Tenant.")
+		pm.console.Message(ctx, "  This should be a valid UUID in the format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx")
+	}
+	pm.console.Message(ctx, "")
+
+	for {
+		serviceTreeId, err := pm.console.Prompt(ctx, input.ConsoleOptions{
+			Message: "Enter Service Tree ID:",
+		})
+		if err != nil {
+			return "", err
+		}
+
+		// Validate UUID format using the google/uuid package
+		if _, err := uuid.Parse(serviceTreeId); err == nil {
+			return serviceTreeId, nil
+		}
+
+		pm.console.Message(ctx, "")
+		pm.console.Message(ctx,
+			"Invalid UUID format. Please enter a valid UUID in the format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx")
+		pm.console.Message(ctx, "")
+	}
 }

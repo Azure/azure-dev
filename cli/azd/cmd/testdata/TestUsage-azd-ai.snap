@@ -1,8 +1,11 @@
 
-This extension provides custom commands for building AI applications using Azure Developer CLI.
+Extension for the Foundry Agent Service. (Preview)
 
 Usage
-  azd ai [flags]
+  azd ai [command]
+
+Available Commands
+  agent	: Extension for the Foundry Agent Service. (Preview)
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.
@@ -10,6 +13,8 @@ Global Flags
         --docs       	: Opens the documentation for azd ai in your web browser.
     -h, --help       	: Gets help for ai.
         --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
+
+Use azd ai [command] --help to view examples and more information about a specific command.
 
 Find a bug? Want to let us know how we're doing? Fill out this brief survey: https://aka.ms/azure-dev/hats.
 

@@ -46,8 +46,8 @@ func Test_MapError(t *testing.T) {
 			},
 			wantErrReason: "tool.any.failed",
 			wantErrDetails: []attribute.KeyValue{
-				fields.ErrorKey(fields.ToolName).String("any"),
-				fields.ErrorKey(fields.ToolExitCode).Int(51),
+				fields.ErrorKey(fields.ToolName.Key).String("any"),
+				fields.ErrorKey(fields.ToolExitCode.Key).Int(51),
 			},
 		},
 		{
@@ -83,24 +83,24 @@ func Test_MapError(t *testing.T) {
 			},
 			wantErrReason: "service.arm.deployment.failed",
 			wantErrDetails: []attribute.KeyValue{
-				fields.ErrorKey(fields.ServiceName).String("arm"),
-				fields.ErrorKey(fields.ServiceErrorCode).String(mustMarshalJson(
+				fields.ErrorKey(fields.ServiceName.Key).String("arm"),
+				fields.ErrorKey(fields.ServiceErrorCode.Key).String(mustMarshalJson(
 					[]map[string]interface{}{
 						{
-							string(fields.ErrCode):  "Conflict,PreconditionFailed",
-							string(fields.ErrFrame): 0,
+							string(fields.ErrCode.Key):  "Conflict,PreconditionFailed",
+							string(fields.ErrFrame.Key): 0,
 						},
 						{
-							string(fields.ErrCode):  "OutOfCapacity,RegionOutOfCapacity",
-							string(fields.ErrFrame): 1,
+							string(fields.ErrCode.Key):  "OutOfCapacity,RegionOutOfCapacity",
+							string(fields.ErrFrame.Key): 1,
 						},
 						{
-							string(fields.ErrCode):  "ServiceUnavailable",
-							string(fields.ErrFrame): 1,
+							string(fields.ErrCode.Key):  "ServiceUnavailable",
+							string(fields.ErrFrame.Key): 1,
 						},
 						{
-							string(fields.ErrCode):  "UnknownError",
-							string(fields.ErrFrame): 2,
+							string(fields.ErrCode.Key):  "UnknownError",
+							string(fields.ErrFrame.Key): 2,
 						},
 					})),
 			},
@@ -120,11 +120,11 @@ func Test_MapError(t *testing.T) {
 			},
 			wantErrReason: "service.arm.503",
 			wantErrDetails: []attribute.KeyValue{
-				fields.ErrorKey(fields.ServiceName).String("arm"),
-				fields.ErrorKey(fields.ServiceHost).String("management.azure.com"),
-				fields.ErrorKey(fields.ServiceMethod).String("GET"),
-				fields.ErrorKey(fields.ServiceErrorCode).String("ServiceUnavailable"),
-				fields.ErrorKey(fields.ServiceStatusCode).Int(503),
+				fields.ErrorKey(fields.ServiceName.Key).String("arm"),
+				fields.ErrorKey(fields.ServiceHost.Key).String("management.azure.com"),
+				fields.ErrorKey(fields.ServiceMethod.Key).String("GET"),
+				fields.ErrorKey(fields.ServiceErrorCode.Key).String("ServiceUnavailable"),
+				fields.ErrorKey(fields.ServiceStatusCode.Key).Int(503),
 			},
 		},
 		{
@@ -142,10 +142,10 @@ func Test_MapError(t *testing.T) {
 			},
 			wantErrReason: "service.aad.failed",
 			wantErrDetails: []attribute.KeyValue{
-				fields.ErrorKey(fields.ServiceName).String("aad"),
-				fields.ErrorKey(fields.ServiceErrorCode).String("50076,50078,50079"),
-				fields.ErrorKey(fields.ServiceStatusCode).String("invalid_grant"),
-				fields.ErrorKey(fields.ServiceCorrelationId).String("12345"),
+				fields.ErrorKey(fields.ServiceName.Key).String("aad"),
+				fields.ErrorKey(fields.ServiceErrorCode.Key).String("50076,50078,50079"),
+				fields.ErrorKey(fields.ServiceStatusCode.Key).String("invalid_grant"),
+				fields.ErrorKey(fields.ServiceCorrelationId.Key).String("12345"),
 			},
 		},
 	}

@@ -26,6 +26,7 @@ type CmdTreeOptions struct {
 type CommandRunner interface {
 	Run(ctx context.Context, args RunArgs) (RunResult, error)
 	RunList(ctx context.Context, commands []string, args RunArgs) (RunResult, error)
+	ToolInPath(name string) error
 }
 
 type RunnerOptions struct {
@@ -64,7 +65,7 @@ func NewCommandRunner(opt *RunnerOptions) CommandRunner {
 		runner.stdout = os.Stdout
 	}
 
-	if runner.stdout == nil {
+	if runner.stderr == nil {
 		runner.stderr = os.Stderr
 	}
 
@@ -251,6 +252,22 @@ func (r *commandRunner) RunList(ctx context.Context, commands []string, args Run
 	}
 
 	return result, err
+}
+
+// ToolInPath checks to see if a program can be found on the PATH, as exec.LookPath
+// does, returns exec.ErrNotFound in the case where os.LookPath would return
+// exec.ErrNotFound and other errors.
+func (r *commandRunner) ToolInPath(name string) error {
+	_, err := exec.LookPath(name)
+
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, exec.ErrNotFound):
+		return exec.ErrNotFound
+	default:
+		return fmt.Errorf("failed searching for `%s` on PATH: %w", name, err)
+	}
 }
 
 func appendEnv(env []string) []string {

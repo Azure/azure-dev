@@ -6,6 +6,7 @@ package project
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
@@ -28,6 +30,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/benbjohnson/clock"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -87,16 +90,22 @@ func Test_ContainerApp_Deploy(t *testing.T) {
 
 	packageResult, err := logProgress(
 		t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
+			serviceContext := NewServiceContext()
+			serviceContext.Package = ArtifactCollection{
+				{
+					Kind:         ArtifactKindContainer,
+					Location:     "test-app/api-test:azd-deploy-0",
+					LocationKind: LocationKindRemote,
+					Metadata: map[string]string{
+						"imageHash":   "IMAGE_HASH",
+						"targetImage": "test-app/api-test:azd-deploy-0",
+					},
+				},
+			}
 			return serviceTarget.Package(
 				*mockContext.Context,
 				serviceConfig,
-				&ServicePackageResult{
-					PackagePath: "test-app/api-test:azd-deploy-0",
-					Details: &dockerPackageResult{
-						ImageHash:   "IMAGE_HASH",
-						TargetImage: "test-app/api-test:azd-deploy-0",
-					},
-				},
+				serviceContext,
 				progress,
 			)
 		},
@@ -104,7 +113,7 @@ func Test_ContainerApp_Deploy(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, packageResult)
-	require.IsType(t, new(dockerPackageResult), packageResult.Details)
+	require.Len(t, packageResult.Artifacts, 0)
 
 	scope := environment.NewTargetResource(
 		"SUBSCRIPTION_ID",
@@ -113,18 +122,101 @@ func Test_ContainerApp_Deploy(t *testing.T) {
 		string(azapi.AzureResourceTypeContainerApp),
 	)
 
+	// Create a mock publish result that would normally come from a Publish operation
+	publishResult := &ServicePublishResult{
+		Artifacts: ArtifactCollection{
+			{
+				Kind:         ArtifactKindContainer,
+				Location:     "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0",
+				LocationKind: LocationKindRemote,
+				Metadata: map[string]string{
+					"remoteImage": "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0",
+				},
+			},
+		},
+	}
+
 	deployResult, err := logProgress(
 		t, func(progress *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
-			return serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageResult, scope, progress)
+			serviceContext := NewServiceContext()
+			serviceContext.Package = packageResult.Artifacts
+			serviceContext.Publish = publishResult.Artifacts
+			return serviceTarget.Deploy(*mockContext.Context, serviceConfig, serviceContext, scope, progress)
 		},
 	)
 
 	require.NoError(t, err)
 	require.NotNil(t, deployResult)
-	require.Equal(t, ContainerAppTarget, deployResult.Kind)
-	require.Greater(t, len(deployResult.Endpoints), 0)
-	// New env variable is created
+	require.Greater(t, len(deployResult.Artifacts), 0)
+
+	// Verify we have deployment artifacts
+	deployArtifacts := deployResult.Artifacts.Find()
+	require.Greater(t, len(deployArtifacts), 0)
+}
+
+func Test_ContainerApp_Publish(t *testing.T) {
+	tempDir := t.TempDir()
+	ostest.Chdir(t, tempDir)
+
+	mockContext := mocks.NewMockContext(context.Background())
+	setupMocksForContainerAppTarget(mockContext)
+
+	serviceConfig := createTestServiceConfig(tempDir, ContainerAppTarget, ServiceLanguageTypeScript)
+	env := createEnv()
+
+	serviceTarget := createContainerAppServiceTarget(mockContext, env)
+
+	serviceContext := NewServiceContext()
+	serviceContext.Package = ArtifactCollection{
+		{
+			Kind:         ArtifactKindContainer,
+			Location:     "test-app/api-test:azd-deploy-0",
+			LocationKind: LocationKindRemote,
+			Metadata: map[string]string{
+				"imageHash":   "IMAGE_HASH",
+				"targetImage": "test-app/api-test:azd-deploy-0",
+			},
+		},
+	}
+
+	packageResult, err := logProgress(
+		t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
+			return serviceTarget.Package(
+				*mockContext.Context,
+				serviceConfig,
+				serviceContext,
+				progress,
+			)
+		},
+	)
+	require.NoError(t, err)
+	require.NotNil(t, packageResult)
+	require.Len(t, packageResult.Artifacts, 0)
+
+	scope := environment.NewTargetResource(
+		"SUBSCRIPTION_ID",
+		"RESOURCE_GROUP",
+		"CONTAINER_APP",
+		string(azapi.AzureResourceTypeContainerApp),
+	)
+
+	publishResult, err := logProgress(
+		t, func(progress *async.Progress[ServiceProgress]) (*ServicePublishResult, error) {
+			return serviceTarget.Publish(
+				*mockContext.Context, serviceConfig, serviceContext, scope, progress, &PublishOptions{})
+		},
+	)
+	require.NoError(t, err)
+	require.NotNil(t, publishResult)
+	require.Len(t, publishResult.Artifacts, 1)
+
+	// Verify the environment variable was set correctly
 	require.Equal(t, "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0", env.Dotenv()["SERVICE_API_IMAGE_NAME"])
+
+	// Verify the publish result contains the expected image location
+	publishArtifacts := publishResult.Artifacts.Find()
+	require.Greater(t, len(publishArtifacts), 0)
+	require.Equal(t, "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0", publishArtifacts[0].Location)
 }
 
 func createContainerAppServiceTarget(
@@ -139,7 +231,17 @@ func createContainerAppServiceTarget(
 		})
 
 	envManager := &mockenv.MockEnvManager{}
+	envManager.On("Get", mock.Anything, env.Name()).Return(env, nil)
 	envManager.On("Save", *mockContext.Context, env).Return(nil)
+
+	azdCtx := azdcontext.NewAzdContextWithDirectory(os.TempDir())
+	err := azdCtx.SetProjectState(azdcontext.ProjectState{
+		DefaultEnvironment: env.Name(),
+	})
+	if err != nil {
+		// Log the error but don't fail the test as this is test setup
+		fmt.Printf("Warning: Failed to set up azdContext: %v\n", err)
+	}
 
 	containerAppService := containerapps.NewContainerAppService(
 		credentialProvider,
@@ -158,11 +260,12 @@ func createContainerAppServiceTarget(
 		mockContext.ArmClientOptions,
 	)
 	containerHelper := NewContainerHelper(
-		env,
+		azdCtx,
 		envManager,
 		clock.NewMock(),
 		containerRegistryService,
 		remoteBuildManager,
+		nil,
 		dockerCli,
 		dotnetCli,
 		mockContext.Console,
@@ -179,6 +282,9 @@ func createContainerAppServiceTarget(
 		containerHelper,
 		containerAppService,
 		resourceManager,
+		deploymentService,
+		mockContext.Console,
+		mockContext.CommandRunner,
 	)
 }
 

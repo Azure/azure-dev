@@ -16,6 +16,10 @@ parameters:
   - name: UploadArtifact
     type: boolean
     default: true
+  - name: ghCopilotClientId
+    type: string
+  - name: ghCopilotIntegrationId
+    type: string
 
 jobs: 
   - job: BuildCLI_${{ parameters.NameSuffix }}
@@ -63,6 +67,8 @@ jobs:
             -SourceVersion $(Build.SourceVersion)
             -CodeCoverageEnabled
             -BuildRecordMode
+            -GitHubCopilotClientId "${{ parameters.ghCopilotClientId }}"
+            -GitHubCopilotIntegrationId "${{ parameters.ghCopilotIntegrationId }}"
           workingDirectory: cli/azd
         displayName: Build Go Binary (For tests)
 
@@ -85,10 +91,18 @@ jobs:
 
       - template: /eng/pipelines/templates/steps/install-docker.yml
 
+      # Adding dotnet 8 and 9 for .Net Aspire tests
       - task: UseDotNet@2
         condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
         inputs:
           version: 8.x
+        displayName: Set up .NET 8
+      
+      - task: UseDotNet@2
+        condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+        inputs:
+          version: '9.x'
+        displayName: Set up .NET 9
 
       - bash: dotnet nuget add source --name dotnet9 https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet9/nuget/v3/index.json
         displayName: Add internal dotnet nuget feed
@@ -107,7 +121,7 @@ jobs:
           SYSTEM_ACCESSTOKEN: $(System.AccessToken)
           AZD_DEBUG_LOGIN_FORCE_SUBSCRIPTION_REFRESH: true
         displayName: AZD Login
-
+      
       - task: AzureCLI@2
         condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
         inputs:
@@ -166,6 +180,8 @@ jobs:
           arguments: >-
             -Version $(CLI_VERSION)
             -SourceVersion $(Build.SourceVersion)
+            -GitHubCopilotClientId "${{ parameters.ghCopilotClientId }}"
+            -GitHubCopilotIntegrationId "${{ parameters.ghCopilotIntegrationId }}"
           workingDirectory: cli/azd
         displayName: Build Go Binary
 

@@ -11,6 +11,8 @@ trigger:
       - /eng/pipelines/templates/jobs/build-cli.yml
       - /eng/pipelines/templates/jobs/cross-build-cli.yml
       - /eng/pipelines/templates/variables/image.yml
+    exclude:
+      - cli/azd/extensions/**
 
 pr:
   paths:
@@ -21,6 +23,9 @@ pr:
       - eng/pipelines/templates/steps/publish-cli.yml
     exclude:
       - cli/azd/docs/**
+      - cli/azd/extensions/**
+      - cli/azd/.vscode/cspell.yaml
+      - cli/azd/.vscode/cspell-azd-dictionary.txt
 
 extends: 
   template: /eng/pipelines/templates/stages/1es-redirect.yml
@@ -35,6 +40,8 @@ extends:
             OS: windows
             ImageKey: image
             UploadArtifact: true
+            GhCopilotClientId: $(GH_COPILOT_CLIENT_ID)
+            GhCopilotIntegrationId: $(GH_COPILOT_INTEGRATION_ID)
             Variables:
               BuildTarget: azd-windows-amd64.exe
               BuildOutputName: azd.exe
@@ -49,6 +56,8 @@ extends:
             OS: linux
             ImageKey: image
             UploadArtifact: true
+            GhCopilotClientId: $(GH_COPILOT_CLIENT_ID)
+            GhCopilotIntegrationId: $(GH_COPILOT_INTEGRATION_ID)
             Variables:
               BuildTarget: azd-linux-amd64
               BuildOutputName: azd
@@ -63,12 +72,20 @@ extends:
               # link the resulting binary which increases backwards 
               # compatibility with older verisons of Linux.
               CGO_ENABLED: 0
+              # Set special temp/cache directory overrides to avoid out of space 
+              # issues on hosted agents
+              DOCKER_TMPDIR: $(Agent.TempDirectory)
+              TMPDIR: $(Agent.TempDirectory)
+              NUGET_PACKAGES: $(Agent.TempDirectory)/nuget
+              GOCACHE: $(Agent.TempDirectory)/go-cache
           Mac:
             Pool: Azure Pipelines
             OSVmImage: $(MACVMIMAGE)
             OS: macOS
             ImageKey: vmImage
             UploadArtifact: true
+            GhCopilotClientId: $(GH_COPILOT_CLIENT_ID)
+            GhCopilotIntegrationId: $(GH_COPILOT_INTEGRATION_ID)
             Variables:
               BuildTarget: azd-darwin-amd64
               BuildOutputName: azd
@@ -86,6 +103,8 @@ extends:
               OS: macOS
               ImageKey: vmImage
               UploadArtifact: false
+              GhCopilotClientId: $(GH_COPILOT_CLIENT_ID)
+              GhCopilotIntegrationId: $(GH_COPILOT_INTEGRATION_ID)
               Variables:
                 BuildTarget: azd-darwin-amd64
                 BuildOutputName: azd

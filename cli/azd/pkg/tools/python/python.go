@@ -37,7 +37,7 @@ func (cli *Cli) versionInfo() tools.VersionInfo {
 }
 
 func (cli *Cli) CheckInstalled(ctx context.Context) error {
-	pyString, err := checkPath()
+	pyString, err := cli.checkPath()
 	if err != nil {
 		return err
 	}
@@ -78,7 +78,7 @@ func (cli *Cli) InstallRequirements(ctx context.Context, workingDir, environment
 }
 
 func (cli *Cli) CreateVirtualEnv(ctx context.Context, workingDir, name string) error {
-	pyString, err := checkPath()
+	pyString, err := cli.checkPath()
 	if err != nil {
 		return err
 	}
@@ -104,7 +104,7 @@ func (cli *Cli) Run(
 	environment string,
 	args ...string,
 ) (*exec.RunResult, error) {
-	pyString, err := checkPath()
+	pyString, err := cli.checkPath()
 	if err != nil {
 		return nil, err
 	}
@@ -131,23 +131,25 @@ func (cli *Cli) Run(
 	return &runResult, nil
 }
 
-func checkPath() (pyString string, err error) {
+func (cli *Cli) checkPath() (string, error) {
 	if runtime.GOOS == "windows" {
 		// py for https://peps.python.org/pep-0397
 		// order is important. we want to resolve 'py', if available, first
-		pyString := [2]string{"py", "python"}
+		pyStrings := [2]string{"py", "python"}
 
-		for _, py := range pyString {
-			err = tools.ToolInPath(py)
+		var lastErr error
+		for _, py := range pyStrings {
+			err := cli.commandRunner.ToolInPath(py)
 			if err == nil {
 				return py, nil
 			}
+			lastErr = err
 		}
-		return "", err
+		return "", lastErr
 	} else {
-		err := tools.ToolInPath("python3")
+		err := cli.commandRunner.ToolInPath("python3")
 		if err == nil {
-			return "python3", err
+			return "python3", nil
 		}
 		return "", err
 	}

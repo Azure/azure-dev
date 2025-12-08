@@ -36,7 +36,7 @@ Write-Host "Running unit tests..."
 # --test.gocoverdir is currently a "under-the-cover" way to pass the coverage directory to a test binary
 # See https://github.com/golang/go/issues/51430#issuecomment-1344711300
 #
-# This may be improved in go1.21 with an official 'go test' flag.
+# As of Go 1.25, it’s still an “under-the-hood” option.
 & $gotestsum -- ./... -short -v -cover -args --test.gocoverdir="$($unitCoverDir.FullName)"
 if ($LASTEXITCODE) {
     exit $LASTEXITCODE

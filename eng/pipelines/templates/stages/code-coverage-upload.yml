@@ -50,13 +50,13 @@ stages:
           go tool covdata textfmt -i=cover -o cover.out
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          go install github.com/axw/gocov/gocov@latest
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          go install github.com/AlekSi/gocov-xml@latest
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          
-          ~/go/bin/gocov convert cover.out | ~/go/bin/gocov-xml > coverage.xml
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # Convert Go coverage to Cobertura XML format using custom script
+          Write-Host "Converting coverage to Cobertura XML format..."
+          pwsh -File "$(Build.SourcesDirectory)/eng/scripts/Convert-GoCoverageToCobertura.ps1" -CoverageFile cover.out -OutputFile coverage.xml -SourceRoot "$(Build.SourcesDirectory)"
+          if ($LASTEXITCODE -ne 0) { 
+              Write-Error "Failed to convert coverage to XML"
+              exit $LASTEXITCODE 
+          }
         displayName: Merge code coverage files
 
       - task: PublishCodeCoverageResults@1

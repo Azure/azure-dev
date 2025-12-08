@@ -6,6 +6,7 @@ package mockexec
 import (
 	"context"
 	"fmt"
+	osexec "os/exec"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -17,13 +18,15 @@ type ResponseFn func(args exec.RunArgs) (exec.RunResult, error)
 
 // MockCommandRunner is used to register and implement mock calls and responses out to dependent CLI applications
 type MockCommandRunner struct {
-	expressions []*CommandExpression
+	expressions     []*CommandExpression
+	toolInPathMocks map[string]error
 }
 
 // Creates a new instance of a mock exec
 func NewMockCommandRunner() *MockCommandRunner {
 	return &MockCommandRunner{
-		expressions: []*CommandExpression{},
+		expressions:     []*CommandExpression{},
+		toolInPathMocks: make(map[string]error),
 	}
 }
 
@@ -79,6 +82,21 @@ func (m *MockCommandRunner) RunList(ctx context.Context, commands []string, args
 	}
 
 	return match.response, match.error
+}
+
+// ToolInPath implements the ToolInPath method of CommandRunner interface for mocking
+func (m *MockCommandRunner) ToolInPath(name string) error {
+	if err, exists := m.toolInPathMocks[name]; exists {
+		return err
+	}
+	// Fallback to real implementation using osexec.LookPath
+	_, err := osexec.LookPath(name)
+	return err
+}
+
+// MockToolInPath allows setting up mock responses for ToolInPath calls
+func (m *MockCommandRunner) MockToolInPath(name string, err error) {
+	m.toolInPathMocks[name] = err
 }
 
 // Registers a mock expression against the mock exec

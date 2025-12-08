@@ -466,7 +466,7 @@ func (p *GitHubCiProvider) setPipelineVariables(
 		environment.TenantIdEnvVarName:       tenantId,
 		"AZURE_CLIENT_ID":                    clientId,
 	} {
-		if err := p.ghCli.SetVariable(ctx, repoSlug, name, value); err != nil {
+		if err := p.ghCli.SetVariable(ctx, repoSlug, name, value, nil); err != nil {
 			return fmt.Errorf("failed setting %s variable: %w", name, err)
 		}
 		p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
@@ -497,7 +497,7 @@ func (p *GitHubCiProvider) setPipelineVariables(
 			}
 
 			// env var was found
-			if err := p.ghCli.SetVariable(ctx, repoSlug, key, value); err != nil {
+			if err := p.ghCli.SetVariable(ctx, repoSlug, key, value, nil); err != nil {
 				return fmt.Errorf("setting terraform remote state variables: %w", err)
 			}
 			p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
@@ -509,7 +509,7 @@ func (p *GitHubCiProvider) setPipelineVariables(
 
 	if infraOptions.Provider == provisioning.Bicep {
 		if rgName, has := p.env.LookupEnv(environment.ResourceGroupEnvVarName); has {
-			if err := p.ghCli.SetVariable(ctx, repoSlug, environment.ResourceGroupEnvVarName, rgName); err != nil {
+			if err := p.ghCli.SetVariable(ctx, repoSlug, environment.ResourceGroupEnvVarName, rgName, nil); err != nil {
 				return fmt.Errorf("failed setting %s variable: %w", environment.ResourceGroupEnvVarName, err)
 			}
 		}
@@ -550,7 +550,7 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 			"ARM_CLIENT_SECRET": {credentials.ClientSecret, true},
 		} {
 			if !info.secret {
-				if err := p.ghCli.SetVariable(ctx, repoSlug, key, info.value); err != nil {
+				if err := p.ghCli.SetVariable(ctx, repoSlug, key, info.value, nil); err != nil {
 					return fmt.Errorf("setting github variable %s:: %w", key, err)
 				}
 				p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
@@ -596,7 +596,7 @@ func (p *GitHubCiProvider) configurePipeline(
 		if err != nil {
 			return nil, fmt.Errorf("unable to get list of repository secrets: %w", err)
 		}
-		ciVariablesInstance, err := p.ghCli.ListVariables(ctx, repoSlug)
+		ciVariablesInstance, err := p.ghCli.ListVariables(ctx, repoSlug, nil)
 		if err != nil {
 			return nil, fmt.Errorf("unable to get list of repository variables: %w", err)
 		}
@@ -990,7 +990,7 @@ func (p *GitHubCiProvider) configurePipeline(
 	}
 
 	for key, value := range toBeSetVariables {
-		if err := p.ghCli.SetVariable(ctx, repoSlug, key, value); err != nil {
+		if err := p.ghCli.SetVariable(ctx, repoSlug, key, value, nil); err != nil {
 			procErr = fmt.Errorf("failed setting %s secret: %w", key, err)
 			return nil, procErr
 		}

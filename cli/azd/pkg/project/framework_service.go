@@ -25,6 +25,7 @@ const (
 	ServiceLanguageJava       ServiceLanguageKind = "java"
 	ServiceLanguageDocker     ServiceLanguageKind = "docker"
 	ServiceLanguageSwa        ServiceLanguageKind = "swa"
+	ServiceLanguageCustom     ServiceLanguageKind = "custom"
 )
 
 func parseServiceLanguage(kind ServiceLanguageKind) (ServiceLanguageKind, error) {
@@ -42,13 +43,16 @@ func parseServiceLanguage(kind ServiceLanguageKind) (ServiceLanguageKind, error)
 		ServiceLanguageTypeScript,
 		ServiceLanguagePython,
 		ServiceLanguageJava,
-		ServiceLanguageDocker:
+		ServiceLanguageDocker,
+		ServiceLanguageCustom:
 		// Excluding ServiceLanguageSwa since it is implicitly derived currently,
 		// and not an actual language
 		return kind, nil
 	}
 
-	return ServiceLanguageKind("Unsupported"), fmt.Errorf("unsupported language '%s'", kind)
+	// Allow unknown languages during parsing - they will be validated later by serviceManager.GetFrameworkService()
+	// This enables framework service extensions to provide custom languages not built into azd core
+	return kind, nil
 }
 
 type FrameworkRequirements struct {
@@ -80,6 +84,7 @@ type FrameworkService interface {
 	Restore(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
+		serviceContext *ServiceContext,
 		progress *async.Progress[ServiceProgress],
 	) (*ServiceRestoreResult, error)
 
@@ -87,7 +92,7 @@ type FrameworkService interface {
 	Build(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
-		restoreOutput *ServiceRestoreResult,
+		serviceContext *ServiceContext,
 		progress *async.Progress[ServiceProgress],
 	) (*ServiceBuildResult, error)
 
@@ -96,7 +101,7 @@ type FrameworkService interface {
 	Package(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
-		buildOutput *ServiceBuildResult,
+		serviceContext *ServiceContext,
 		progress *async.Progress[ServiceProgress],
 	) (*ServicePackageResult, error)
 }

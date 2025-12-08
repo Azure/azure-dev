@@ -1,13 +1,182 @@
 # Release History
 
+## 1.23.0-beta.1 (Unreleased)
+
+### Features Added
+
+### Breaking Changes
+
+### Bugs Fixed
+
+### Other Changes
+
+## 1.22.0 (2025-12-02)
+
+### Features Added
+
+- [[#6256]](https://github.com/Azure/azure-dev/pull/6256) Reduce provisioning progress display polling interval from 10s to 3s for more responsive status updates.
+- [[#6232]](https://github.com/Azure/azure-dev/pull/6232) Add language-specific `.gitignore` templates to extension scaffolding for `azd x init`.
+
+### Bugs Fixed
+
+- [[#6277]](https://github.com/Azure/azure-dev/pull/6277) Fix hooks not running in CI/CD scenarios when `.azure` directory does not exist.
+- [[#6282]](https://github.com/Azure/azure-dev/pull/6282) Fix panic in `azd provision --preview` when ARM returns nil After field during resource deletion.
+- [[#6281]](https://github.com/Azure/azure-dev/pull/6281) Fix `azd provision` skipping deployment when resource groups were deleted outside of azd.
+- [[#6180]](https://github.com/Azure/azure-dev/pull/6180) Relax Aspire binding validation for non-HTTP protocols as simple TCP.
+- [[#6255]](https://github.com/Azure/azure-dev/pull/6255) Fix Container Apps deployment error when using revision-based deployments.
+
+### Other Changes
+
+- [[#6247]](https://github.com/Azure/azure-dev/pull/6247) Update Bicep CLI to v0.39.26.
+- [[#6270]](https://github.com/Azure/azure-dev/pull/6270) Rename Azure AI Foundry to Microsoft Foundry.
+
+## 1.21.3 (2025-11-14)
+
+### Bugs Fixed
+
+- [[#6190]](https://github.com/Azure/azure-dev/pull/6190) Fix default infrastructure settings being incorrectly written to `azure.yaml` files.
+
+## 1.21.2 (2025-11-13)
+
+### Features Added
+
+- [[#6169]](https://github.com/Azure/azure-dev/pull/6169) Promote layered provisioning to beta.
+- [[#6154]](https://github.com/Azure/azure-dev/pull/6154) Add `env` property to service configuration for runtime environment variable management in Container Apps.
+
+## 1.21.1 (2025-11-11)
+
+### Features Added
+
+- [[#6133]](https://github.com/Azure/azure-dev/pull/6133) Add .Net10 to azd auto-gen templates for pipeline config.
+
+## 1.21.0 (2025-11-10)
+
+### Features Added
+
+- [[#6013]](https://github.com/Azure/azure-dev/pull/6013) Adds support for custom ServiceConfig settings for extensions.
+- [[#6074]](https://github.com/Azure/azure-dev/pull/6074) Update azd show to show endpoints from custom service targets.
+- [[#6073]](https://github.com/Azure/azure-dev/pull/6073) Enhance no-prompt support in extensions & prompt service.
+- [[#6083]](https://github.com/Azure/azure-dev/pull/6083) Moving hooks warning from console to logs.
+- [[#6093]](https://github.com/Azure/azure-dev/pull/6093) Support for Aspire 13.
+
+### Bugs Fixed
+
+- [[#6015]](https://github.com/Azure/azure-dev/pull/6015) Fix hyperlink ANSI escape codes appearing in non-terminal output.
+- [[#6032]](https://github.com/Azure/azure-dev/pull/6032) Fix flickering progress bar during agent deployment.
+- [[#6028]](https://github.com/Azure/azure-dev/pull/6028) Fixes lifetime issues with container helper from extension container service.
+- [[#6063]](https://github.com/Azure/azure-dev/pull/6063) Reload env before loading parameters in bicep provider.
+- [[#6098]](https://github.com/Azure/azure-dev/pull/6098) Fixes issues with remote build on agent extension.
+
+## 1.20.3 (2025-10-28)
+
+### Features Added
+
+- [[#5995]](https://github.com/Azure/azure-dev/pull/5995) Add AccountService gRPC API and server implementation.
+- [[#6002]](https://github.com/Azure/azure-dev/pull/6002) Exposes ServiceContext in Service lifecycle events.
+
+### Bugs Fixed
+
+- [[#5985]](https://github.com/Azure/azure-dev/pull/5985) Fix potential concurrent map write panics in FrameworkService.
+- [[#6001]](https://github.com/Azure/azure-dev/pull/6001) fix: prevent index out of range panic in progressLog.Write().
+- [[#6012]](https://github.com/Azure/azure-dev/pull/6012) Fixes issue with duplicate event registration in workflow commands.
+
+## 1.20.2 (2025-10-22)
+
+### Bugs Fixed
+
+- [[#5964]](https://github.com/Azure/azure-dev/pull/5964) Fixes issue where project level events not invoked from extensions.
+
+## 1.20.1 (2025-10-17)
+
+### Features Added
+
+- [[#5693]](https://github.com/Azure/azure-dev/pull/5693) Add GitHub Copilot LLM backend integration for AI-assisted development workflows.
+- [[#5847]](https://github.com/Azure/azure-dev/pull/5847) Add support for language frameworks from extensions.
+- [[#5881]](https://github.com/Azure/azure-dev/pull/5881) Display Aspire dashboard URL for App Service deployments.
+- [[#5841]](https://github.com/Azure/azure-dev/pull/5841) Add `prepublish` and `postpublish` hooks to v1.0 azure.yaml schema.
+
+### Bugs Fixed
+
+- [[#5939]](https://github.com/Azure/azure-dev/pull/5939) Fix Container App resource existence check returning incorrect results.
+- [[#5930]](https://github.com/Azure/azure-dev/pull/5930) Improve diagnostic message clarity for missing --environment flag.
+
+### Other Changes
+
+## 1.20.0 (2025-10-08)
+
+### Features Added
+
+- [[#5856]](https://github.com/Azure/azure-dev/pull/5856) Add service dependencies support with `uses` property for automatic deployment ordering.
+- [[#5663]](https://github.com/Azure/azure-dev/pull/5663) Add `azd publish` command to separate publishing to container registries from deployment.
+- [[#5815]](https://github.com/Azure/azure-dev/pull/5815) Add custom service target support in extension framework.
+- [[#5753]](https://github.com/Azure/azure-dev/pull/5753) Implement auto-installation workflow for extensions.
+- [[#5723]](https://github.com/Azure/azure-dev/pull/5723) Add Container App Jobs support to azd Aspire deployments.
+- [[#5694]](https://github.com/Azure/azure-dev/pull/5694) Support Bicep Container App revisions.
+- [[#5858]](https://github.com/Azure/azure-dev/pull/5858) Promote extensions from alpha to beta.
+- [[#5807]](https://github.com/Azure/azure-dev/pull/5807) Enable MCP Server capability in extension framework.
+- [[#5798]](https://github.com/Azure/azure-dev/pull/5798) Add elicitation support for azd agent.
+- [[#5771]](https://github.com/Azure/azure-dev/pull/5771) Add custom language support.
+- [[#5874]](https://github.com/Azure/azure-dev/pull/5874) Update `azd ext show` command UX with improved extension source display.
+- [[#5809]](https://github.com/Azure/azure-dev/pull/5809) Make hook `shell` attribute optional with OS-based defaults.
+
+### Bugs Fixed
+
+- [[#5736]](https://github.com/Azure/azure-dev/pull/5736) Fix `azd x publish` to automatically set up local extension registry.
+- [[#5812]](https://github.com/Azure/azure-dev/pull/5812) Use the name of the compute env from Aspire Manifest when Aspire owns the env instead of the hardcoded string "resources".
+- [[#5827]](https://github.com/Azure/azure-dev/pull/5827) Bypass agentic error handling flow in non-interactive scenarios.
+- [[#5808]](https://github.com/Azure/azure-dev/pull/5808), [[#5877]](https://github.com/Azure/azure-dev/pull/5877) Improve UX for agentic azd init.
+- [[#5870]](https://github.com/Azure/azure-dev/pull/5870) Update preflight error handling for standard deployment.
+
+### Other Changes
+
+- [[#5869]](https://github.com/Azure/azure-dev/pull/5869) Update Bicep from 0.38.3 to 0.38.33.
+- [[#5867]](https://github.com/Azure/azure-dev/pull/5867) Make language optional in the schema.
+- [[#5770]](https://github.com/Azure/azure-dev/pull/5770) Update gh CLI to latest 2.80.
+- [[#5823]](https://github.com/Azure/azure-dev/pull/5823) Differentiate Azure Managed Redis from Redis Enterprise in provisioning progress.
+
+## 1.19.0 (2025-09-12)
+
+### Features Added
+
+- [[#5492]](https://github.com/Azure/azure-dev/pull/5492) Add support for provisioning layers with `infra.layers` configuration.
+- [[#5641]](https://github.com/Azure/azure-dev/pull/5641) Improve extension management with better ordering, version display, and source disambiguation.
+- [[#5587]](https://github.com/Azure/azure-dev/pull/5587) Add claims support for device-code authentication flow.
+- [[#5598]](https://github.com/Azure/azure-dev/pull/5598) Prompt for App Service Management Reference during service principal creation when required by tenant.
+
+### Bugs Fixed
+
+- [[#5586]](https://github.com/Azure/azure-dev/pull/5586) Improve readability of failed deployment logs with additional line spacing. Thanks @Saipriya-1144 for the contribution!
+- [[#5588]](https://github.com/Azure/azure-dev/pull/5588) Fix CloudShell telemetry not being emitted after the first run.
+- [[#5590]](https://github.com/Azure/azure-dev/pull/5590) Improve warning message formatting with all-caps prefix and better hook suggestion display.
+
+### Other Changes
+
+- [[#5592]](https://github.com/Azure/azure-dev/pull/5592) Update to Go 1.25.0.
+- [[#5559]](https://github.com/Azure/azure-dev/pull/5559) Update Aspire sample to version 9.4.
+- [[#5603]](https://github.com/Azure/azure-dev/pull/5603) Update `microsoft.azd.extensions` in registry to 0.5.0.
+
+## 1.18.2 (2025-08-14)
+
+### Bugs Fixed
+
+- [[5445]](https://github.com/Azure/azure-dev/pull/5445) Prevent package deletion when using `--from-package` flag with `azd deploy`.
+- [[5531]](https://github.com/Azure/azure-dev/pull/5531) Fix extension installation failures on Linux.
+
+### Other Changes
+
+- [[5570]](https://github.com/Azure/azure-dev/pull/5570), [[5585]](https://github.com/Azure/azure-dev/pull/5585) Update hooks engine to warn and fall back to Windows PowerShell 5.1 when PowerShell 7 is not available on the system.
+- [[5582]](https://github.com/Azure/azure-dev/pull/5582) Display warning message for legacy and limited Aspire projects.
+- [[5385]](https://github.com/Azure/azure-dev/pull/5385) Add error suggestion message when `package` fails due to containerd.
+
 ## 1.18.1 (2025-08-06)
 
 ### Bugs Fixed
 
 - [[5501]](https://github.com/Azure/azure-dev/pull/5501) infra gen when dotnet project is present.
-- [[5566]](https://github.com/Azure/azure-dev/pull/5566) [VSServer] Ignoring projects.v1.
-- [[5518]](https://github.com/Azure/azure-dev/pull/5518) [VSServer] Add suggestion text for resource group and Container App un-marshall errors during azd deploy.
+- [[5567]](https://github.com/Azure/azure-dev/pull/5567) [VSServer] Ignoring projects.v1.
+- [[5518]](https://github.com/Azure/azure-dev/pull/5518) Add suggestion text for resource group and Container App unmarshal errors during `azd deploy`.
 - [[5528]](https://github.com/Azure/azure-dev/pull/5528) Fix login guard to skip interactive prompts in CI/CD environments.
+- [[5563]](https://github.com/Azure/azure-dev/pull/5563) Fix invalid branch name characters when generating federated credential names.
 
 ## 1.18.0 (2025-07-17)
 

@@ -23,12 +23,6 @@ overrides:
     - filename: ./README.md
       words:
           - VSIX
-    - filename: generators/repo/src/commands/generate.ts
-      words:
-          - nodir
-    - filename: generators/repo/tsconfig.json
-      words:
-          - tsbuildinfo
     - filename: schemas/**/azure.yaml.json
       words:
           - prodapi

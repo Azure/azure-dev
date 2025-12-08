@@ -44,7 +44,7 @@ func (cli *Cli) versionInfo() tools.VersionInfo {
 }
 
 func (cli *Cli) CheckInstalled(ctx context.Context) error {
-	err := tools.ToolInPath("git")
+	err := cli.commandRunner.ToolInPath("git")
 	if err != nil {
 		return err
 	}

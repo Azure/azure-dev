@@ -8,7 +8,6 @@ import (
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
 // Cli is a wrapper around the kubelogin CLI
@@ -35,7 +34,7 @@ func (cli *Cli) InstallUrl() string {
 
 // Checks whether or not the kubelogin CLI is installed and available within the PATH
 func (cli *Cli) CheckInstalled(ctx context.Context) error {
-	if err := tools.ToolInPath("kubelogin"); err != nil {
+	if err := cli.commandRunner.ToolInPath("kubelogin"); err != nil {
 		return err
 	}
 

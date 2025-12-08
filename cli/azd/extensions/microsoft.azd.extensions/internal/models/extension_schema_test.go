@@ -9,7 +9,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
+
+	"go.yaml.in/yaml/v3"
 )
 
 // TestExtensionSchema_MarshalYAML_OmitsEmptyCollections verifies that empty slices and maps
@@ -144,6 +145,62 @@ func TestExtensionSchema_UnmarshalYAML_WithAdditionalMetadata(t *testing.T) {
 	require.Equal(t, string(yamlData), string(remarshalled), "Round trip failed - YAML content differs")
 
 	snapshot.SnapshotT(t, string(remarshalled))
+}
+
+// TestExtensionSchema_MarshalYAML_WithProviders verifies that providers are correctly
+// marshaled to YAML and preserved in round-trip operations
+func TestExtensionSchema_MarshalYAML_WithProviders(t *testing.T) {
+	s := ExtensionSchema{
+		Id:          "test-extension",
+		Version:     "1.0.0",
+		DisplayName: "Test Extension",
+		Description: "Extension with service target providers",
+		Usage:       "Testing provider marshaling",
+		Capabilities: []extensions.CapabilityType{
+			extensions.ServiceTargetProviderCapability,
+		},
+		Providers: []extensions.Provider{
+			{
+				Name:        "azure-container-apps",
+				Type:        extensions.ServiceTargetProviderType,
+				Description: "Deploys applications to Azure Container Apps",
+			},
+			{
+				Name:        "kubernetes",
+				Type:        extensions.ServiceTargetProviderType,
+				Description: "Deploys applications to Kubernetes clusters",
+			},
+		},
+	}
+
+	// Marshal to YAML
+	yamlData, err := yaml.Marshal(s)
+	require.NoError(t, err, "marshal failed")
+
+	// Snapshot the marshaled data to verify format
+	snapshot.SnapshotT(t, string(yamlData))
+
+	// Unmarshal back to verify round-trip
+	var unmarshalled ExtensionSchema
+	err = yaml.Unmarshal(yamlData, &unmarshalled)
+	require.NoError(t, err, "unmarshal failed")
+
+	// Verify providers were preserved
+	require.Len(t, unmarshalled.Providers, 2, "Expected 2 providers after unmarshal")
+	require.Equal(t, "azure-container-apps", unmarshalled.Providers[0].Name)
+	require.Equal(t, extensions.ServiceTargetProviderType, unmarshalled.Providers[0].Type)
+	require.Equal(t, "Deploys applications to Azure Container Apps", unmarshalled.Providers[0].Description)
+
+	require.Equal(t, "kubernetes", unmarshalled.Providers[1].Name)
+	require.Equal(t, extensions.ServiceTargetProviderType, unmarshalled.Providers[1].Type)
+	require.Equal(t, "Deploys applications to Kubernetes clusters", unmarshalled.Providers[1].Description)
+
+	// Marshal again to verify round-trip consistency
+	remarshalled, err := yaml.Marshal(unmarshalled)
+	require.NoError(t, err, "remarshal failed")
+
+	// Verify the round-trip preserved everything by comparing YAML content
+	require.Equal(t, string(yamlData), string(remarshalled), "Round trip failed - YAML content differs")
 }
 
 // TestExtensionSchema_RoundTrip verifies that marshaling and unmarshaling preserves

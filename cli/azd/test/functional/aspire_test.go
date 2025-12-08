@@ -165,7 +165,7 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 
 		cli := azdcli.NewCLI(t)
 		cli.WorkingDirectory = dir
-		cli.Env = append(cli.Env, os.Environ()...)
+		cli.Env = os.Environ()
 
 		_, err = cli.RunCommand(ctx, "infra", "synth")
 		require.NoError(t, err)
@@ -217,7 +217,7 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 
 		cli := azdcli.NewCLI(t)
 		cli.WorkingDirectory = dir
-		cli.Env = append(cli.Env, os.Environ()...)
+		cli.Env = os.Environ()
 
 		_, err = cli.RunCommand(ctx, "infra", "generate")
 		require.NoError(t, err)
@@ -246,52 +246,6 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 		})
 		require.NoError(t, err)
 	})
-}
-
-// Test_CLI_Aspire_Deploy tests the full deployment of an Aspire project.
-func Test_CLI_Aspire_Deploy(t *testing.T) {
-	t.Parallel()
-	ctx, cancel := newTestContext(t)
-	defer cancel()
-
-	dir, err := os.MkdirTemp("", "aspire-deploy")
-	require.NoError(t, err)
-	t.Logf("DIR: %s", dir)
-	defer func() {
-		if !cfg.CI && t.Failed() {
-			t.Logf("kept directory %s for troubleshooting", dir)
-			return
-		}
-
-		err = os.RemoveAll(dir)
-		if err != nil {
-			t.Logf("failed to remove %s", dir)
-		}
-	}()
-
-	session := recording.Start(t)
-	envName := randomOrStoredEnvName(session)
-	_ = cfgOrStoredSubscription(session)
-	t.Logf("AZURE_ENV_NAME: %s", envName)
-
-	err = copySample(dir, "aspire-full")
-	require.NoError(t, err, "failed expanding sample")
-
-	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
-	cli.WorkingDirectory = dir
-	cli.Env = append(cli.Env, os.Environ()...)
-	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
-
-	defer cleanupDeployments(ctx, t, cli, session, envName)
-
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
-	require.NoError(t, err)
-
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "up")
-	require.NoError(t, err)
-
-	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
-	require.NoError(t, err)
 }
 
 // cleanupDeployments deletes all subscription level deployments tagged with `azd-env-name` equal to envName. If the session

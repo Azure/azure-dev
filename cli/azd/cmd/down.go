@@ -5,7 +5,9 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -13,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	inf "github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -38,6 +41,7 @@ func (i *downFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 		//nolint:lll
 		"Does not require confirmation before it permanently deletes resources that are soft-deleted by default (for example, key vaults).",
 	)
+
 	i.EnvFlag.Bind(local, global)
 	i.global = global
 }
@@ -50,14 +54,17 @@ func newDownFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *do
 }
 
 func newDownCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "down",
+	cmd := &cobra.Command{
+		Use:   "down [<layer>]",
 		Short: "Delete your project's Azure resources.",
 	}
+	cmd.Args = cobra.MaximumNArgs(1)
+	return cmd
 }
 
 type downAction struct {
 	flags               *downFlags
+	args                []string
 	provisionManager    *provisioning.Manager
 	importManager       *project.ImportManager
 	env                 *environment.Environment
@@ -67,6 +74,7 @@ type downAction struct {
 }
 
 func newDownAction(
+	args []string,
 	flags *downFlags,
 	provisionManager *provisioning.Manager,
 	env *environment.Environment,
@@ -83,6 +91,7 @@ func newDownAction(
 		projectConfig:       projectConfig,
 		importManager:       importManager,
 		alphaFeatureManager: alphaFeatureManager,
+		args:                args,
 	}
 }
 
@@ -101,17 +110,43 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 	defer func() { _ = infra.Cleanup() }()
 
-	if err := a.provisionManager.Initialize(ctx, a.projectConfig.Path, infra.Options); err != nil {
-		return nil, fmt.Errorf("initializing provisioning manager: %w", err)
-	}
-
 	if a.alphaFeatureManager.IsEnabled(azapi.FeatureDeploymentStacks) {
 		a.console.WarnForFeature(ctx, azapi.FeatureDeploymentStacks)
 	}
 
-	destroyOptions := provisioning.NewDestroyOptions(a.flags.forceDelete, a.flags.purgeDelete)
-	if _, err := a.provisionManager.Destroy(ctx, destroyOptions); err != nil {
-		return nil, fmt.Errorf("deleting infrastructure: %w", err)
+	downLayer := ""
+	if len(a.args) > 0 {
+		downLayer = a.args[0]
+	}
+
+	layers := infra.Options.GetLayers()
+	if downLayer != "" {
+		layerOpt, err := infra.Options.GetLayer(downLayer)
+		if err != nil {
+			return nil, err
+		}
+		layers = []provisioning.Options{layerOpt}
+	}
+	slices.Reverse(layers)
+
+	for _, layer := range layers {
+		if downLayer != "" || len(layers) > 1 {
+			a.console.EnsureBlankLine(ctx)
+			a.console.Message(ctx, fmt.Sprintf("Layer: %s", output.WithHighLightFormat(layer.Name)))
+			a.console.Message(ctx, "")
+		}
+
+		if err := a.provisionManager.Initialize(ctx, a.projectConfig.Path, layer); err != nil {
+			return nil, fmt.Errorf("initializing provisioning manager: %w", err)
+		}
+
+		destroyOptions := provisioning.NewDestroyOptions(a.flags.forceDelete, a.flags.purgeDelete)
+		_, err := a.provisionManager.Destroy(ctx, destroyOptions)
+		if errors.Is(err, inf.ErrDeploymentsNotFound) || errors.Is(err, inf.ErrDeploymentResourcesNotFound) {
+			a.console.MessageUxItem(ctx, &ux.DoneMessage{Message: "No Azure resources were found."})
+		} else if err != nil {
+			return nil, fmt.Errorf("deleting infrastructure: %w", err)
+		}
 	}
 
 	return &actions.ActionResult{
@@ -124,7 +159,10 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 func getCmdDownHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription(fmt.Sprintf(
 		"Delete Azure resources for an application. Running %s will not delete application"+
-			" files on your local machine.", output.WithHighLightFormat("azd down")), nil)
+			" files on your local machine.", output.WithHighLightFormat("azd down")), []string{
+		"When <layer> is specified, only deletes resources for the given layer." +
+			" When omitted, deletes resources for all layers defined in the project.",
+	})
 }
 
 func getCmdDownHelpFooter(*cobra.Command) string {

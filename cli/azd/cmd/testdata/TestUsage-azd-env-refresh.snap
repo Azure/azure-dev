@@ -1,5 +1,5 @@
 
-Refresh environment settings by using information from a previous infrastructure provision.
+Refresh environment values by using information from a previous infrastructure provision.
 
 Usage
   azd env refresh <environment> [flags]
@@ -7,6 +7,7 @@ Usage
 Flags
     -e, --environment string 	: The name of the environment to use.
         --hint string        	: Hint to help identify the environment to refresh
+        --layer string       	: Provisioning layer to refresh the environment from.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

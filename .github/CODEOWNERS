@@ -13,8 +13,6 @@
 
 /ext/vscode/       @bwateratmsft @vhvb1989 @tg-msft @rajeshkamal5050 @karolz-ms
 
-/generators/repo/  @wbreza @danieljurek @vhvb1989 @tg-msft @rajeshkamal5050
-
 /.github/          @danieljurek @vhvb1989 @tg-msft @rajeshkamal5050
 
 /.config/1espt/    @Azure/azure-sdk-eng
@@ -24,3 +22,5 @@
 /schemas/          @wbreza @vhvb1989 @tg-msft @rajeshkamal5050
 
 /.github/CODEOWNERS   @rajeshkamal5050 @Azure/azure-sdk-eng
+
+/cli/azd/extensions/azure.ai.agents/  @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @trangevi @travisw

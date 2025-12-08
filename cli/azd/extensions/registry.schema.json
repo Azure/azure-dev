@@ -60,6 +60,19 @@
                     "description": "Version number following semantic versioning.",
                     "pattern": "^\\d+\\.\\d+\\.\\d+$"
                 },
+                "capabilities": {
+                    "type": "array",
+                    "description": "List of capabilities provided by this extension version.",
+                    "items": {
+                        "type": "string",
+                        "enum": [
+                            "custom-commands",
+                            "lifecycle-events", 
+                            "mcp-server",
+                            "service-target-provider"
+                        ]
+                    }
+                },
                 "usage": {
                     "type": "string",
                     "description": "Usage instructions for this version."
@@ -106,6 +119,37 @@
                         "$ref": "#/definitions/Dependency"
                     },
                     "minItems": 1
+                },
+                "providers": {
+                    "type": "array",
+                    "description": "List of providers that this extension version registers.",
+                    "items": {
+                        "$ref": "#/definitions/Provider"
+                    }
+                },
+                "entryPoint": {
+                    "type": "string",
+                    "description": "Executable or script that serves as the entry point of the extension version."
+                },
+                "mcp": {
+                    "type": "object",
+                    "description": "MCP server configuration for this extension version.",
+                    "properties": {
+                        "args": {
+                            "type": "array",
+                            "description": "Command-line arguments to pass when starting the MCP server.",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "env": {
+                            "type": "array",
+                            "description": "Additional environment variables to set when starting the MCP server.",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    }
                 }
             },
             "required": [
@@ -180,6 +224,33 @@
             "required": [
                 "id",
                 "version"
+            ]
+        },
+        "Provider": {
+            "type": "object",
+            "title": "Provider",
+            "description": "A provider registered by an extension version.",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Unique identifier for this provider within the extension."
+                },
+                "type": {
+                    "type": "string",
+                    "description": "The type of provider.",
+                    "enum": [
+                        "service-target"
+                    ]
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Description of what this provider does."
+                }
+            },
+            "required": [
+                "name",
+                "type",
+                "description"
             ]
         }
     },

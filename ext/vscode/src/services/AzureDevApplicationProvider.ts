@@ -2,72 +2,37 @@
 // Licensed under the MIT License.
 
 import * as vscode from 'vscode';
-import { merge, mergeMap, Observable, startWith } from 'rxjs';
+import * as path from 'path';
 
 export interface AzureDevApplication {
     configurationPath: vscode.Uri;
+    configurationFolder: string,
     workspaceFolder: vscode.WorkspaceFolder;
 }
 
 export interface AzureDevApplicationProvider {
-    readonly applications: Observable<AzureDevApplication[]>;
-}
-
-const azureYamlFilePattern = '**/azure.{yml,yaml}';
-
-async function getApplications(): Promise<AzureDevApplication[]> {
-    const maxResults = vscode.workspace.getConfiguration('azure-dev').get<number>('maximumAppsToDisplay', 5);
-    const files = await vscode.workspace.findFiles(azureYamlFilePattern, '**/node_modules/**', maxResults);
-    
-    const applications: AzureDevApplication[] = [];
-
-    for (const file of files) {
-        const workspaceFolder = vscode.workspace.getWorkspaceFolder(file);
-
-        if (workspaceFolder) {
-            applications.push({
-                configurationPath: file,
-                workspaceFolder
-            });
-        }
-    }
-
-    return applications;
+    getApplications(): Promise<AzureDevApplication[]>;
 }
 
 export class WorkspaceAzureDevApplicationProvider implements AzureDevApplicationProvider {
-    constructor() {
-        const azureYamlWatcher =
-            new Observable<void>(
-                subscriber => {
-                    const watcher = vscode.workspace.createFileSystemWatcher(azureYamlFilePattern, false, false, false);
+    async getApplications(): Promise<AzureDevApplication[]> {
+        const maxResults = vscode.workspace.getConfiguration('azure-dev').get<number>('maximumAppsToDisplay', 5);
+        const files = await vscode.workspace.findFiles('**/azure.{yml,yaml}', '**/node_modules/**', maxResults);
 
-                    watcher.onDidCreate(uri => subscriber.next());
-                    watcher.onDidChange(uri => subscriber.next());
-                    watcher.onDidDelete(uri => subscriber.next());
+        const applications: AzureDevApplication[] = [];
 
-                    return () => watcher.dispose();
+        for (const file of files) {
+            const workspaceFolder = vscode.workspace.getWorkspaceFolder(file);
+
+            if (workspaceFolder) {
+                applications.push({
+                    configurationPath: file,
+                    configurationFolder: path.dirname(file.fsPath),
+                    workspaceFolder
                 });
+            }
+        }
 
-        const workspaceFolderWatcher =
-            new Observable<void>(
-                subscriber => {
-                    const subscription = vscode.workspace.onDidChangeWorkspaceFolders(
-                        () => {
-                            subscriber.next();
-                        });
-
-                    return () => {
-                        subscription.dispose();
-                    };
-                });
-
-        this.applications =
-            merge(azureYamlWatcher, workspaceFolderWatcher)
-                .pipe(
-                    startWith(undefined),
-                    mergeMap(getApplications));
+        return applications;
     }
-
-    public readonly applications: Observable<AzureDevApplication[]>;
 }

@@ -4,7 +4,10 @@
 package rzip
 
 import (
+	"archive/tar"
 	"archive/zip"
+	"compress/gzip"
+	"errors"
 	"io"
 	"log"
 	"os"
@@ -212,6 +215,89 @@ func ExtractToDirectory(artifactPath string, targetDirectory string) error {
 		_, err = io.Copy(outFile, rc)
 		if err != nil {
 			return err
+		}
+	}
+
+	return nil
+}
+
+// ExtractTarGzToDirectory extracts a .tar.gz archive to the specified target directory
+func ExtractTarGzToDirectory(artifactPath string, targetDirectory string) error {
+	// Open the tar.gz file
+	file, err := os.Open(artifactPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	// Create gzip reader
+	gzReader, err := gzip.NewReader(file)
+	if err != nil {
+		return err
+	}
+	defer gzReader.Close()
+
+	// Create tar reader
+	tarReader := tar.NewReader(gzReader)
+
+	// Ensure the target directory exists
+	err = os.MkdirAll(targetDirectory, os.ModePerm)
+	if err != nil {
+		return err
+	}
+
+	// Iterate through each file in the archive
+	for {
+		header, err := tarReader.Next()
+		if errors.Is(err, io.EOF) {
+			break // End of archive
+		}
+		if err != nil {
+			return err
+		}
+
+		// Handles file path cleaning directly below
+		// nolint:gosec // G305
+		filePath := filepath.Join(targetDirectory, header.Name)
+
+		// Prevent path traversal attacks by ensuring file paths remain within targetDirectory
+		if !strings.HasPrefix(filePath, filepath.Clean(targetDirectory)+string(os.PathSeparator)) {
+			return &os.PathError{
+				Op:   "extract",
+				Path: filePath,
+				Err:  os.ErrPermission,
+			}
+		}
+
+		switch header.Typeflag {
+		case tar.TypeDir:
+			// Create the directory
+			// nolint:gosec // G115
+			err = os.MkdirAll(filePath, os.FileMode(header.Mode))
+			if err != nil {
+				return err
+			}
+
+		case tar.TypeReg:
+			// Create the file
+			err = os.MkdirAll(filepath.Dir(filePath), os.ModePerm)
+			if err != nil {
+				return err
+			}
+
+			// nolint:gosec // G115
+			outFile, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.FileMode(header.Mode))
+			if err != nil {
+				return err
+			}
+
+			// Extract the file content
+			// nolint:gosec // G110
+			_, err = io.Copy(outFile, tarReader)
+			outFile.Close()
+			if err != nil {
+				return err
+			}
 		}
 	}
 

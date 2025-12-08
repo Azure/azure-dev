@@ -8,6 +8,7 @@ type TargetResource struct {
 	resourceGroupName string
 	resourceName      string
 	resourceType      string
+	metadata          map[string]string
 }
 
 func NewTargetResource(
@@ -21,6 +22,7 @@ func NewTargetResource(
 		resourceGroupName: resourceGroupName,
 		resourceName:      resourceName,
 		resourceType:      resourceType,
+		metadata:          nil,
 	}
 }
 
@@ -38,4 +40,31 @@ func (ds *TargetResource) ResourceName() string {
 
 func (ds *TargetResource) ResourceType() string {
 	return ds.resourceType
+}
+
+func (ds *TargetResource) Metadata() map[string]string {
+	if ds.metadata == nil {
+		return nil
+	}
+
+	copyMap := make(map[string]string, len(ds.metadata))
+	for key, value := range ds.metadata {
+		copyMap[key] = value
+	}
+
+	return copyMap
+}
+
+func (ds *TargetResource) SetMetadata(metadata map[string]string) {
+	if metadata == nil {
+		ds.metadata = nil
+		return
+	}
+
+	copyMap := make(map[string]string, len(metadata))
+	for key, value := range metadata {
+		copyMap[key] = value
+	}
+
+	ds.metadata = copyMap
 }

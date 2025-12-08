@@ -11,6 +11,16 @@ type ExtensionExample struct {
 	Usage       string `json:"usage"`
 }
 
+// Provider represents a provider registered by an extension
+type Provider struct {
+	// Name is the unique identifier for this provider within the extension
+	Name string `json:"name"`
+	// Type is the type of provider
+	Type ProviderType `json:"type"`
+	// Description is the description of what this provider does
+	Description string `json:"description"`
+}
+
 // Registry represents the registry.json structure
 type Registry struct {
 	// Extensions is a list of extensions in the registry
@@ -24,6 +34,19 @@ const (
 	CustomCommandCapability CapabilityType = "custom-commands"
 	// Lifecycle events enable extensions to subscribe to AZD project & service lifecycle events
 	LifecycleEventsCapability CapabilityType = "lifecycle-events"
+	// McpServerCapability enables extensions to start an MCP server
+	McpServerCapability CapabilityType = "mcp-server"
+	// Service target providers enable extensions to package, publish, and deploy to custom service targets
+	ServiceTargetProviderCapability CapabilityType = "service-target-provider"
+	// Framework service providers enable extensions to provide custom language frameworks and build systems
+	FrameworkServiceProviderCapability CapabilityType = "framework-service-provider"
+)
+
+type ProviderType string
+
+const (
+	// Service target provider type for custom deployment targets
+	ServiceTargetProviderType ProviderType = "service-target"
 )
 
 // Extension represents an extension in the registry
@@ -54,12 +77,28 @@ type ExtensionDependency struct {
 	Version string `json:"version,omitempty"`
 }
 
+// McpConfig represents the MCP server configuration for an extension
+type McpConfig struct {
+	// Server contains configuration for starting the extension's MCP server
+	Server McpServerConfig `json:"server"`
+}
+
+// McpServerConfig represents the configuration for starting an extension's MCP server
+type McpServerConfig struct {
+	// Args are the command-line arguments to pass when starting the MCP server
+	Args []string `json:"args"`
+	// Env are additional environment variables to set when starting the MCP server
+	Env []string `json:"env,omitempty"`
+}
+
 // ExtensionVersion represents a version of an extension
 type ExtensionVersion struct {
-	// Capabilities is a list of capabilities that the extension provides
-	Capabilities []CapabilityType `json:"capabilities,omitempty"`
 	// Version is the version of the extension
 	Version string `json:"version"`
+	// Capabilities is a list of capabilities that the extension provides
+	Capabilities []CapabilityType `json:"capabilities,omitempty"`
+	// Providers is a list of providers that this extension version registers
+	Providers []Provider `json:"providers,omitempty"`
 	// Usage is show how to use the extension
 	Usage string `json:"usage"`
 	// Examples is a list of examples for the extension
@@ -73,6 +112,8 @@ type ExtensionVersion struct {
 	// Entry point is the entry point for the extension
 	// This will typically be the name of the executable or script to run
 	EntryPoint string `json:"entryPoint,omitempty"`
+	// McpConfig is the MCP server configuration for this extension version
+	McpConfig *McpConfig `json:"mcp,omitempty"`
 }
 
 // ExtensionArtifact represents the artifact information of an extension

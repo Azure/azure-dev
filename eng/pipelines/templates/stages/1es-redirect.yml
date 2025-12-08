@@ -7,7 +7,7 @@ resources:
     - repository: azure-sdk-build-tools
       type: git
       name: internal/azure-sdk-build-tools
-      ref: refs/tags/azure-sdk-build-tools_20250603.2
+      ref: refs/tags/azure-sdk-build-tools_20251112.1
 
 parameters:
 - name: stages
@@ -46,5 +46,7 @@ extends:
       eslint:
         enabled: false
         justificationForDisabling: "ESLint injected task has failures because it uses an old version of mkdirp. We should not fail for tools not controlled by the repo. See: https://dev.azure.com/azure-sdk/internal/_build/results?buildId=3556850"
-
+      ${{ if or(eq(variables['System.TeamProject'], 'public'), eq(variables['Build.Reason'], 'PullRequest')) }}:
+        sbom:
+          enabled: false
     stages: ${{ parameters.stages }}

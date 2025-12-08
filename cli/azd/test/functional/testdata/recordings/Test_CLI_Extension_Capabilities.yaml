@@ -1,0 +1,2120 @@
+---
+version: 2
+interactions:
+    - id: 0
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: aka.ms
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-azd-extensions/1.0.0 (go1.25.0; linux)
+        url: https://aka.ms:443/azd/extensions/registry
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        transfer_encoding: []
+        trailer: {}
+        content_length: 0
+        uncompressed: false
+        body: ""
+        headers:
+            Cache-Control:
+                - max-age=0, no-cache, no-store
+            Connection:
+                - keep-alive
+            Content-Length:
+                - "0"
+            Date:
+                - Wed, 19 Nov 2025 22:11:42 GMT
+            Expires:
+                - Wed, 19 Nov 2025 22:11:42 GMT
+            Location:
+                - https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/registry.json
+            Pragma:
+                - no-cache
+            Request-Context:
+                - appId=cid-v1:d94c0f68-64bf-4036-8409-a0e761bb7ee1
+            Server:
+                - Kestrel
+            Strict-Transport-Security:
+                - max-age=31536000 ; includeSubDomains
+            X-Response-Cache-Status:
+                - "True"
+        status: 301 Moved Permanently
+        code: 301
+        duration: 210.23931ms
+    - id: 1
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: raw.githubusercontent.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            Referer:
+                - https://aka.ms/azd/extensions/registry
+            User-Agent:
+                - azsdk-go-azd-extensions/1.0.0 (go1.25.0; linux)
+        url: https://raw.githubusercontent.com:443/Azure/azure-dev/refs/heads/main/cli/azd/extensions/registry.json
+        method: GET
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        transfer_encoding: []
+        trailer: {}
+        content_length: 42994
+        uncompressed: false
+        body: |-
+            {
+              "extensions": [
+                {
+                  "id": "microsoft.azd.demo",
+                  "namespace": "demo",
+                  "displayName": "Demo Extension",
+                  "description": "This extension provides examples of the AZD extension framework.",
+                  "versions": [
+                    {
+                      "version": "0.1.0-beta.1",
+                      "capabilities": [
+                        "custom-commands",
+                        "lifecycle-events"
+                      ],
+                      "usage": "azd demo \u003ccommand\u003e [options]",
+                      "examples": [
+                        {
+                          "name": "context",
+                          "description": "Displays the current `azd` project \u0026 environment context.",
+                          "usage": "azd demo context"
+                        },
+                        {
+                          "name": "prompt",
+                          "description": "Display prompt capabilities.",
+                          "usage": "azd demo prompt"
+                        }
+                      ],
+                      "artifacts": {
+                        "darwin/amd64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "61e6649e0def06fa5baf73501a5730074c432a3717d885ee3d77c44483b0753b"
+                          },
+                          "entryPoint": "microsoft-azd-demo-darwin-amd64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-demo_0.1.0-beta.1/microsoft-azd-demo-darwin-amd64.zip"
+                        },
+                        "darwin/arm64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "7d9e71c158c864474301696c4a37a28740e5d3f5d94e156e58c2afcc0299b5ac"
+                          },
+                          "entryPoint": "microsoft-azd-demo-darwin-arm64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-demo_0.1.0-beta.1/microsoft-azd-demo-darwin-arm64.zip"
+                        },
+                        "linux/amd64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "749c01818acdaf6969b0b4b73e8c71e136e01461c537fb6b42ef71a8bd3127b0"
+                          },
+                          "entryPoint": "microsoft-azd-demo-linux-amd64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-demo_0.1.0-beta.1/microsoft-azd-demo-linux-amd64.tar.gz"
+                        },
+                        "linux/arm64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "2effed3b21fcc10654b1c4963da97ce079b6c8822539b7b142fc765c96f80f9a"
+                          },
+                          "entryPoint": "microsoft-azd-demo-linux-arm64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-demo_0.1.0-beta.1/microsoft-azd-demo-linux-arm64.tar.gz"
+                        },
+                        "windows/amd64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "8979512bb82be5522f1f5c174027af4109b5165aeef9d305e586e070fcbe3942"
+                          },
+                          "entryPoint": "microsoft-azd-demo-windows-amd64.exe",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-demo_0.1.0-beta.1/microsoft-azd-demo-windows-amd64.zip"
+                        },
+                        "windows/arm64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "c112da4a74a7ebaafaf9b10340ed5da310a57bfba2d5fa8cedbf5dc65551902a"
+                          },
+                          "entryPoint": "microsoft-azd-demo-windows-arm64.exe",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-demo_0.1.0-beta.1/microsoft-azd-demo-windows-arm64.zip"
+                        }
+                      }
+                    },
+                    {
+                      "version": "0.3.0",
+                      "capabilities": [
+                        "custom-commands",
+                        "lifecycle-events",
+                        "mcp-server"
+                      ],
+                      "usage": "azd demo \u003ccommand\u003e [options]",
+                      "examples": [
+                        {
+                          "name": "context",
+                          "description": "Displays the current `azd` project \u0026 environment context.",
+                          "usage": "azd demo context"
+                        },
+                        {
+                          "name": "prompt",
+                          "description": "Display prompt capabilities.",
+                          "usage": "azd demo prompt"
+                        },
+                        {
+                          "name": "mcp",
+                          "description": "Start MCP server with demo tools.",
+                          "usage": "azd demo mcp start"
+                        }
+                      ],
+                      "artifacts": {
+                        "darwin/amd64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "2149dde360286e9010a6263d1c2e4b89424546bf771469aa72bb5918c2746795"
+                          },
+                          "entryPoint": "microsoft-azd-demo-darwin-amd64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-demo_0.3.0/microsoft-azd-demo-darwin-amd64.zip"
+                        },
+                        "darwin/arm64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "aea875c6dede186a751455cc08b127dc88c7309d228f9190b7bc404c7d073279"
+                          },
+                          "entryPoint": "microsoft-azd-demo-darwin-arm64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-demo_0.3.0/microsoft-azd-demo-darwin-arm64.zip"
+                        },
+                        "linux/amd64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "5eb11742c212a1ea517fd4672ef8a4cc32fd54586caf2f442e640420e0e1bf5b"
+                          },
+                          "entryPoint": "microsoft-azd-demo-linux-amd64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-demo_0.3.0/microsoft-azd-demo-linux-amd64.tar.gz"
+                        },
+                        "linux/arm64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "32fc27795bf26d0d20dc6e67c4354b68ec0af5afce225a63307521fdea200c60"
+                          },
+                          "entryPoint": "microsoft-azd-demo-linux-arm64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-demo_0.3.0/microsoft-azd-demo-linux-arm64.tar.gz"
+                        },
+                        "windows/amd64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "c0ce8cb4049f5a4a30e815f9332352d1cc2d46e5cab437cb4aa257174f0e4f99"
+                          },
+                          "entryPoint": "microsoft-azd-demo-windows-amd64.exe",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-demo_0.3.0/microsoft-azd-demo-windows-amd64.zip"
+                        },
+                        "windows/arm64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "9b4ae4aa10b2e35bbd4248c3fcf2f0ce1c81937248a8eccb79dc782411ea17b0"
+                          },
+                          "entryPoint": "microsoft-azd-demo-windows-arm64.exe",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-demo_0.3.0/microsoft-azd-demo-windows-arm64.zip"
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "microsoft.azd.extensions",
+                  "namespace": "x",
+                  "displayName": "AZD Extensions Developer Kit",
+                  "description": "This extension provides a set of tools for AZD extension developers to test and debug their extensions.",
+                  "versions": [
+                    {
+                      "version": "0.4.2",
+                      "capabilities": [
+                        "custom-commands"
+                      ],
+                      "usage": "azd x \u003ccommand\u003e [options]",
+                      "examples": [
+                        {
+                          "name": "init",
+                          "description": "Initialize a new AZD extension project.",
+                          "usage": "azd x init"
+                        },
+                        {
+                          "name": "build",
+                          "description": "Build the AZD extension project.",
+                          "usage": "azd x build"
+                        },
+                        {
+                          "name": "pack",
+                          "description": "Package the AZD extension project into a distributable format and add to local registry.",
+                          "usage": "azd x pack"
+                        },
+                        {
+                          "name": "release",
+                          "description": "Create an new release of the AZD extension project to a Github repository.",
+                          "usage": "azd x release"
+                        },
+                        {
+                          "name": "watch",
+                          "description": "Watch for changes in the extension project and automatically rebuild and reload the extension.",
+                          "usage": "azd x watch"
+                        }
+                      ],
+                      "artifacts": {
+                        "darwin/amd64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "78df8b4078248a30b880c0a93aee821d66b578734954c2c93e4ba2e3627ac05a"
+                          },
+                          "entryPoint": "microsoft-azd-extensions-darwin-amd64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.4.2/microsoft-azd-extensions-darwin-amd64.zip"
+                        },
+                        "darwin/arm64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "abb0decd2f0fe4ae49915e5dd24d6d99d53f35dc25dc8ec358b65d53fd653729"
+                          },
+                          "entryPoint": "microsoft-azd-extensions-darwin-arm64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.4.2/microsoft-azd-extensions-darwin-arm64.zip"
+                        },
+                        "linux/amd64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "dcf1ac57618645bd34a004f55fe3ad0fdd13fbbb2c6558769982302970541d7e"
+                          },
+                          "entryPoint": "microsoft-azd-extensions-linux-amd64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.4.2/microsoft-azd-extensions-linux-amd64.tar.gz"
+                        },
+                        "linux/arm64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "a8b03759afcc24e2d3589fc92ea27c3f846aff9ed5cf0e04ec091d6d4c91ac33"
+                          },
+                          "entryPoint": "microsoft-azd-extensions-linux-arm64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.4.2/microsoft-azd-extensions-linux-arm64.tar.gz"
+                        },
+                        "windows/amd64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "de30d8f238d0301e8e974441d68ad7af1fafc228ef8d4d7ca428c6248d4ea5c4"
+                          },
+                          "entryPoint": "microsoft-azd-extensions-windows-amd64.exe",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.4.2/microsoft-azd-extensions-windows-amd64.zip"
+                        },
+                        "windows/arm64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "3e405787eb03e63eabe33caefb7b00b0bd1fea79f60b57569e94144d5790c2cb"
+                          },
+                          "entryPoint": "microsoft-azd-extensions-windows-arm64.exe",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.4.2/microsoft-azd-extensions-windows-arm64.zip"
+                        }
+                      }
+                    },
+                    {
+                      "version": "0.5.0",
+                      "capabilities": [
+                        "custom-commands"
+                      ],
+                      "usage": "azd x \u003ccommand\u003e [options]",
+                      "examples": [
+                        {
+                          "name": "init",
+                          "description": "Initialize a new AZD extension project.",
+                          "usage": "azd x init"
+                        },
+                        {
+                          "name": "build",
+                          "description": "Build the AZD extension project.",
+                          "usage": "azd x build"
+                        },
+                        {
+                          "name": "pack",
+                          "description": "Package the AZD extension project into a distributable format and add to local registry.",
+                          "usage": "azd x pack"
+                        },
+                        {
+                          "name": "publish",
+                          "description": "Publish the AZD extension project to an extension source.",
+                          "usage": "azd x publish"
+                        },
+                        {
+                          "name": "release",
+                          "description": "Create an new release of the AZD extension project to a Github repository.",
+                          "usage": "azd x release"
+                        },
+                        {
+                          "name": "watch",
+                          "description": "Watch for changes in the extension project and automatically rebuild and reload the extension.",
+                          "usage": "azd x watch"
+                        }
+                      ],
+                      "artifacts": {
+                        "darwin/amd64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "7cb52900550b9ef61146ecac7def6372841f34260e98dc2098607375243e1a90"
+                          },
+                          "entryPoint": "microsoft-azd-extensions-darwin-amd64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.5.0/microsoft-azd-extensions-darwin-amd64.zip"
+                        },
+                        "darwin/arm64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "d502e34339d60fc305bc7edd21ff9052d15b7d24ddb1835b9b5851aeab6373d4"
+                          },
+                          "entryPoint": "microsoft-azd-extensions-darwin-arm64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.5.0/microsoft-azd-extensions-darwin-arm64.zip"
+                        },
+                        "linux/amd64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "77cd944a69d85599b2002097e7049e9cef848bc5c1d10d1c11511d8fe178cccd"
+                          },
+                          "entryPoint": "microsoft-azd-extensions-linux-amd64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.5.0/microsoft-azd-extensions-linux-amd64.tar.gz"
+                        },
+                        "linux/arm64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "4dffb1bb79187e5970816ba118e4721e31cc77bc6106a6db2adfa2767bc7f0a1"
+                          },
+                          "entryPoint": "microsoft-azd-extensions-linux-arm64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.5.0/microsoft-azd-extensions-linux-arm64.tar.gz"
+                        },
+                        "windows/amd64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "6dda5fff5510123148835a71f688c5c7d2bc68bc5aaf2a766eecda23d3ee9638"
+                          },
+                          "entryPoint": "microsoft-azd-extensions-windows-amd64.exe",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.5.0/microsoft-azd-extensions-windows-amd64.zip"
+                        },
+                        "windows/arm64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "7f69dc47976ddeeb04b9a649b7e257a3841502b6fa350f2025eee94e072521ad"
+                          },
+                          "entryPoint": "microsoft-azd-extensions-windows-arm64.exe",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.5.0/microsoft-azd-extensions-windows-arm64.zip"
+                        }
+                      }
+                    },
+                    {
+                      "version": "0.5.1",
+                      "capabilities": [
+                        "custom-commands"
+                      ],
+                      "usage": "azd x \u003ccommand\u003e [options]",
+                      "examples": [
+                        {
+                          "name": "init",
+                          "description": "Initialize a new AZD extension project.",
+                          "usage": "azd x init"
+                        },
+                        {
+                          "name": "build",
+                          "description": "Build the AZD extension project.",
+                          "usage": "azd x build"
+                        },
+                        {
+                          "name": "pack",
+                          "description": "Package the AZD extension project into a distributable format and add to local registry.",
+                          "usage": "azd x pack"
+                        },
+                        {
+                          "name": "publish",
+                          "description": "Publish the AZD extension project to an extension source.",
+                          "usage": "azd x publish"
+                        },
+                        {
+                          "name": "release",
+                          "description": "Create an new release of the AZD extension project to a Github repository.",
+                          "usage": "azd x release"
+                        },
+                        {
+                          "name": "watch",
+                          "description": "Watch for changes in the extension project and automatically rebuild and reload the extension.",
+                          "usage": "azd x watch"
+                        }
+                      ],
+                      "artifacts": {
+                        "darwin/amd64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "93b84245dbe900d689fd964deee9271d9f9d80c576d6fb4c8eb24b0da20518c4"
+                          },
+                          "entryPoint": "microsoft-azd-extensions-darwin-amd64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.5.1/microsoft-azd-extensions-darwin-amd64.zip"
+                        },
+                        "darwin/arm64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "4d5911dc6c3ede547b879a9ccbe6f755af4f6bbd8b0e15449a853ba17403d320"
+                          },
+                          "entryPoint": "microsoft-azd-extensions-darwin-arm64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.5.1/microsoft-azd-extensions-darwin-arm64.zip"
+                        },
+                        "linux/amd64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "7a569e7d27116b4561b74caade85e9cfe3a0b53579a9da5af06fc56e535f37c5"
+                          },
+                          "entryPoint": "microsoft-azd-extensions-linux-amd64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.5.1/microsoft-azd-extensions-linux-amd64.tar.gz"
+                        },
+                        "linux/arm64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "94161fc57d2cb3094bb7bad92595793b26b36af024bba01a28edcd12bb0b5cf6"
+                          },
+                          "entryPoint": "microsoft-azd-extensions-linux-arm64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.5.1/microsoft-azd-extensions-linux-arm64.tar.gz"
+                        },
+                        "windows/amd64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "b766079ceae38148e192b8b7745be6099befe680aa7c7c6bbad180289b112d27"
+                          },
+                          "entryPoint": "microsoft-azd-extensions-windows-amd64.exe",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.5.1/microsoft-azd-extensions-windows-amd64.zip"
+                        },
+                        "windows/arm64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "4c175a279d3f139a42537722bbcb93c28ea8c886f4870e8b0a73b759c9dc5336"
+                          },
+                          "entryPoint": "microsoft-azd-extensions-windows-arm64.exe",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.5.1/microsoft-azd-extensions-windows-arm64.zip"
+                        }
+                      }
+                    },
+                    {
+                      "version": "0.6.0",
+                      "capabilities": [
+                        "custom-commands"
+                      ],
+                      "usage": "azd x \u003ccommand\u003e [options]",
+                      "examples": [
+                        {
+                          "name": "init",
+                          "description": "Initialize a new AZD extension project.",
+                          "usage": "azd x init"
+                        },
+                        {
+                          "name": "build",
+                          "description": "Build the AZD extension project.",
+                          "usage": "azd x build"
+                        },
+                        {
+                          "name": "pack",
+                          "description": "Package the AZD extension project into a distributable format and add to local registry.",
+                          "usage": "azd x pack"
+                        },
+                        {
+                          "name": "publish",
+                          "description": "Publish the AZD extension project to an extension source.",
+                          "usage": "azd x publish"
+                        },
+                        {
+                          "name": "release",
+                          "description": "Create an new release of the AZD extension project to a Github repository.",
+                          "usage": "azd x release"
+                        },
+                        {
+                          "name": "watch",
+                          "description": "Watch for changes in the extension project and automatically rebuild and reload the extension.",
+                          "usage": "azd x watch"
+                        }
+                      ],
+                      "artifacts": {
+                        "darwin/amd64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "c78800b88d7010be996357f0fd823b557b98dcd4ad03c37ba740bcfa798af691"
+                          },
+                          "entryPoint": "microsoft-azd-extensions-darwin-amd64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.6.0/microsoft-azd-extensions-darwin-amd64.zip"
+                        },
+                        "darwin/arm64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "81d05b3f09a20c02f5ff95e6733a365aec26fde247018d1226a6bf7d1fad475e"
+                          },
+                          "entryPoint": "microsoft-azd-extensions-darwin-arm64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.6.0/microsoft-azd-extensions-darwin-arm64.zip"
+                        },
+                        "linux/amd64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "e224f538bc1c8882dfffe8b3719bdbb23e8a300c2b1b17213a7741eb95d260f2"
+                          },
+                          "entryPoint": "microsoft-azd-extensions-linux-amd64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.6.0/microsoft-azd-extensions-linux-amd64.tar.gz"
+                        },
+                        "linux/arm64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "7032f59e5a35b1400a3e586786bdfb9e6c7a06c6be3528ee57fc7327cfcd41dc"
+                          },
+                          "entryPoint": "microsoft-azd-extensions-linux-arm64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.6.0/microsoft-azd-extensions-linux-arm64.tar.gz"
+                        },
+                        "windows/amd64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "544dd88bbda18f80d24a2cde9bd48a5fb14d710ac30b830792f9cec6daf96115"
+                          },
+                          "entryPoint": "microsoft-azd-extensions-windows-amd64.exe",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.6.0/microsoft-azd-extensions-windows-amd64.zip"
+                        },
+                        "windows/arm64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "b4cfa9e6ec1d63f1486007455b67fa91c8930ada99df6dcd58d42d5f781190b1"
+                          },
+                          "entryPoint": "microsoft-azd-extensions-windows-arm64.exe",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.6.0/microsoft-azd-extensions-windows-arm64.zip"
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "azure.coding-agent",
+                  "namespace": "coding-agent",
+                  "displayName": "Coding agent configuration extension",
+                  "description": "This extension configures GitHub Copilot Coding Agent access to Azure",
+                  "versions": [
+                    {
+                      "version": "0.5.0",
+                      "capabilities": [
+                        "custom-commands"
+                      ],
+                      "usage": "azd coding-agent \u003ccommand\u003e [options]",
+                      "examples": null,
+                      "artifacts": {
+                        "darwin/amd64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "71999ce6b4a67986c0166d0cd886aa447b6acd27115caa5d20d3dbc9e594bb01"
+                          },
+                          "entryPoint": "azure-coding-agent-darwin-amd64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-coding-agent_0.5.0/azure-coding-agent-darwin-amd64.zip"
+                        },
+                        "darwin/arm64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "2372d84cd1c76d04d691f2c464d1166ee6f7082d6dc23ba94214ddee060754de"
+                          },
+                          "entryPoint": "azure-coding-agent-darwin-arm64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-coding-agent_0.5.0/azure-coding-agent-darwin-arm64.zip"
+                        },
+                        "linux/amd64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "665dc43d204f6afc8f50b4cc1e1cd05b777ce98b8c31a5d4b93c769b907d5edd"
+                          },
+                          "entryPoint": "azure-coding-agent-linux-amd64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-coding-agent_0.5.0/azure-coding-agent-linux-amd64.tar.gz"
+                        },
+                        "linux/arm64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "34cbe6b5dc0f5713e5558ce180c9a14056ee3d07d0520179470e076d26c02fae"
+                          },
+                          "entryPoint": "azure-coding-agent-linux-arm64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-coding-agent_0.5.0/azure-coding-agent-linux-arm64.tar.gz"
+                        },
+                        "windows/amd64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "54ec94a92595a9d347eca3fb4c8fa6f757acd9da0e7f0b51f3cd2521785dca4f"
+                          },
+                          "entryPoint": "azure-coding-agent-windows-amd64.exe",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-coding-agent_0.5.0/azure-coding-agent-windows-amd64.zip"
+                        },
+                        "windows/arm64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "a1c0eaf60677eaefaec854082ee0561286f74962c9cc2593e10b757252bb6e75"
+                          },
+                          "entryPoint": "azure-coding-agent-windows-arm64.exe",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-coding-agent_0.5.0/azure-coding-agent-windows-arm64.zip"
+                        }
+                      }
+                    },
+                    {
+                      "version": "0.5.1",
+                      "capabilities": [
+                        "custom-commands"
+                      ],
+                      "usage": "azd coding-agent \u003ccommand\u003e [options]",
+                      "examples": null,
+                      "artifacts": {
+                        "darwin/amd64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "964de9002e4b08100714275e23167047fd5621c8fb0efed029b0ed3d1a96420a"
+                          },
+                          "entryPoint": "azure-coding-agent-darwin-amd64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-coding-agent_0.5.1/azure-coding-agent-darwin-amd64.zip"
+                        },
+                        "darwin/arm64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "ad455dce44b4fcb059ef65f9ff24ec92524bd1eac7a916592650d1d046669502"
+                          },
+                          "entryPoint": "azure-coding-agent-darwin-arm64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-coding-agent_0.5.1/azure-coding-agent-darwin-arm64.zip"
+                        },
+                        "linux/amd64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "df33da60669e3080f59ee3d6cbd673bf0d88c2b21e14e09e77d7098ba128816a"
+                          },
+                          "entryPoint": "azure-coding-agent-linux-amd64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-coding-agent_0.5.1/azure-coding-agent-linux-amd64.tar.gz"
+                        },
+                        "linux/arm64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "33fac7f5bcb4c98356df3eb1d4cdb7148c6771dc036d142ac8b7e1e29d19acd5"
+                          },
+                          "entryPoint": "azure-coding-agent-linux-arm64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-coding-agent_0.5.1/azure-coding-agent-linux-arm64.tar.gz"
+                        },
+                        "windows/amd64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "ae16e0dad1e2a0cc1fbb72a29d88382f012b3afc49eb641d168d35bf348478b1"
+                          },
+                          "entryPoint": "azure-coding-agent-windows-amd64.exe",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-coding-agent_0.5.1/azure-coding-agent-windows-amd64.zip"
+                        },
+                        "windows/arm64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "25a45e2c22b864c6e68055a3648a73f9349de4f3a57fa7b716fb959a90b85e3c"
+                          },
+                          "entryPoint": "azure-coding-agent-windows-arm64.exe",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-coding-agent_0.5.1/azure-coding-agent-windows-arm64.zip"
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "azure.ai.agents",
+                  "namespace": "ai.agent",
+                  "displayName": "Azure AI Agents (preview)",
+                  "description": "Azure AI Foundry extension for the Foundry Agent Service. (Preview)",
+                  "versions": [
+                    {
+                      "version": "0.0.6",
+                      "capabilities": [
+                        "custom-commands",
+                        "lifecycle-events",
+                        "mcp-server",
+                        "service-target-provider"
+                      ],
+                      "providers": [
+                        {
+                          "name": "azure.ai.agent",
+                          "type": "service-target",
+                          "description": "Deploys agents to AI Foundry container agent service."
+                        }
+                      ],
+                      "usage": "azd ai agent \u003ccommand\u003e [options]",
+                      "examples": [
+                        {
+                          "name": "init",
+                          "description": "Initialize a new AI agent project.",
+                          "usage": "azd ai agent init"
+                        }
+                      ],
+                      "artifacts": {
+                        "darwin/amd64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "592dbeca411725b0ee7708a54469dfa05c88451793514731ce083d5a1c20bec5"
+                          },
+                          "entryPoint": "azure-ai-agents-darwin-amd64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.0.6/azure-ai-agents-darwin-amd64.zip"
+                        },
+                        "darwin/arm64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "dd76870363590f07fdf3573d108bf6ec8305e1c34eee3169a5878e056505cd96"
+                          },
+                          "entryPoint": "azure-ai-agents-darwin-arm64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.0.6/azure-ai-agents-darwin-arm64.zip"
+                        },
+                        "linux/amd64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "3687c1402cfa9fb9e4c9c704b033d977b317bdc1566f8588713fe91894062727"
+                          },
+                          "entryPoint": "azure-ai-agents-linux-amd64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.0.6/azure-ai-agents-linux-amd64.tar.gz"
+                        },
+                        "linux/arm64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "39dc586c923ddaf12e7a2369263670c39130be8754089feaef492e6048c849a2"
+                          },
+                          "entryPoint": "azure-ai-agents-linux-arm64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.0.6/azure-ai-agents-linux-arm64.tar.gz"
+                        },
+                        "windows/amd64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "f2dcfed5bcb816d84ac2de15c574cc2e8ba14a2611a4627b0a8725682fa041b6"
+                          },
+                          "entryPoint": "azure-ai-agents-windows-amd64.exe",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.0.6/azure-ai-agents-windows-amd64.zip"
+                        },
+                        "windows/arm64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "88bbf844c8126d205764fdace0f0602fd0b2ca5d74ab815fcf6052b371338b9f"
+                          },
+                          "entryPoint": "azure-ai-agents-windows-arm64.exe",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.0.6/azure-ai-agents-windows-arm64.zip"
+                        }
+                      }
+                    },
+                    {
+                      "version": "0.0.7",
+                      "capabilities": [
+                        "custom-commands",
+                        "lifecycle-events",
+                        "mcp-server",
+                        "service-target-provider"
+                      ],
+                      "providers": [
+                        {
+                          "name": "azure.ai.agent",
+                          "type": "service-target",
+                          "description": "Deploys agents to AI Foundry container agent service."
+                        }
+                      ],
+                      "usage": "azd ai agent \u003ccommand\u003e [options]",
+                      "examples": [
+                        {
+                          "name": "init",
+                          "description": "Initialize a new AI agent project.",
+                          "usage": "azd ai agent init"
+                        }
+                      ],
+                      "artifacts": {
+                        "darwin/amd64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "529bf037aa00b425993d2b60a69e166f06901ff55c27c81792aae1b157c9219e"
+                          },
+                          "entryPoint": "azure-ai-agents-darwin-amd64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.0.7/azure-ai-agents-darwin-amd64.zip"
+                        },
+                        "darwin/arm64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "e1faceba27c3d299edbaa98ab76e44d37862c7e503f32b73f60b1c81c9f27cea"
+                          },
+                          "entryPoint": "azure-ai-agents-darwin-arm64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.0.7/azure-ai-agents-darwin-arm64.zip"
+                        },
+                        "linux/amd64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "51cedd928156febc984e5f01be4d8c571c0e4348bda88bfa7883fd08ba2d91a2"
+                          },
+                          "entryPoint": "azure-ai-agents-linux-amd64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.0.7/azure-ai-agents-linux-amd64.tar.gz"
+                        },
+                        "linux/arm64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "2587c7d6fbb713fd50f5d954e50c39f6b97868f8a74d0124edea6cacf5ad061b"
+                          },
+                          "entryPoint": "azure-ai-agents-linux-arm64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.0.7/azure-ai-agents-linux-arm64.tar.gz"
+                        },
+                        "windows/amd64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "a973a38f06b17815fc2bf447f8efbe9bad29025caefc90b3ecdbeb64a86e206e"
+                          },
+                          "entryPoint": "azure-ai-agents-windows-amd64.exe",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.0.7/azure-ai-agents-windows-amd64.zip"
+                        },
+                        "windows/arm64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "b2f00ec525e292d3ea6cb2b46c93051ddb9ca9816a900643c0c5a0b6ae823c21"
+                          },
+                          "entryPoint": "azure-ai-agents-windows-arm64.exe",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.0.7/azure-ai-agents-windows-arm64.zip"
+                        }
+                      }
+                    },
+                    {
+                      "version": "0.1.0-preview",
+                      "capabilities": [
+                        "custom-commands",
+                        "lifecycle-events",
+                        "mcp-server",
+                        "service-target-provider"
+                      ],
+                      "providers": [
+                        {
+                          "name": "azure.ai.agent",
+                          "type": "service-target",
+                          "description": "Deploys agents to AI Foundry container agent service."
+                        }
+                      ],
+                      "usage": "azd ai agent \u003ccommand\u003e [options]",
+                      "examples": [
+                        {
+                          "name": "init",
+                          "description": "Initialize a new AI agent project.",
+                          "usage": "azd ai agent init"
+                        }
+                      ],
+                      "artifacts": {
+                        "darwin/amd64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "056559c98e57616f03b79b529e8b4bbd194d5f41709a2c390d7226acb5975eb0"
+                          },
+                          "entryPoint": "azure-ai-agents-darwin-amd64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.0-preview/azure-ai-agents-darwin-amd64.zip"
+                        },
+                        "darwin/arm64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "74590ec13f42df6a83d7b87286c56a13d5c0136266e7b133bd3501f0cfc834e2"
+                          },
+                          "entryPoint": "azure-ai-agents-darwin-arm64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.0-preview/azure-ai-agents-darwin-arm64.zip"
+                        },
+                        "linux/amd64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "5bf7f7add058e7188b85cd1ec0c64b9e701ab41b09f1fefd1bc9968f988ae5c0"
+                          },
+                          "entryPoint": "azure-ai-agents-linux-amd64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.0-preview/azure-ai-agents-linux-amd64.tar.gz"
+                        },
+                        "linux/arm64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "658d29f454c8fd0d0125bcc3a29ad9d4c60c3c1f463c2f424d90484eb681a366"
+                          },
+                          "entryPoint": "azure-ai-agents-linux-arm64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.0-preview/azure-ai-agents-linux-arm64.tar.gz"
+                        },
+                        "windows/amd64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "e3f6b41d2188eaa1b675ddb80af56baac8b5d90431baacf15113ea5a472fa6f2"
+                          },
+                          "entryPoint": "azure-ai-agents-windows-amd64.exe",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.0-preview/azure-ai-agents-windows-amd64.zip"
+                        },
+                        "windows/arm64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "33f17854250565ccf9c190a8106b12be2995e5f4da33d799a285985158f13d5d"
+                          },
+                          "entryPoint": "azure-ai-agents-windows-arm64.exe",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.0-preview/azure-ai-agents-windows-arm64.zip"
+                        }
+                      }
+                    },
+                    {
+                      "version": "0.1.1-preview",
+                      "capabilities": [
+                        "custom-commands",
+                        "lifecycle-events",
+                        "mcp-server",
+                        "service-target-provider"
+                      ],
+                      "providers": [
+                        {
+                          "name": "azure.ai.agent",
+                          "type": "service-target",
+                          "description": "Deploys agents to AI Foundry container agent service."
+                        }
+                      ],
+                      "usage": "azd ai agent \u003ccommand\u003e [options]",
+                      "examples": [
+                        {
+                          "name": "init",
+                          "description": "Initialize a new AI agent project.",
+                          "usage": "azd ai agent init"
+                        }
+                      ],
+                      "artifacts": {
+                        "darwin/amd64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "ba7bb03a49d72fc7a7e7c407a1dcd929b5e471f7c3a39b1d2d12c077f46a6939"
+                          },
+                          "entryPoint": "azure-ai-agents-darwin-amd64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.1-preview/azure-ai-agents-darwin-amd64.zip"
+                        },
+                        "darwin/arm64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "41bf5fb808ed9e9f35e593afb6b730da045a67856caee37df75c4d36b17e6de7"
+                          },
+                          "entryPoint": "azure-ai-agents-darwin-arm64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.1-preview/azure-ai-agents-darwin-arm64.zip"
+                        },
+                        "linux/amd64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "543e77c4196f75dbe10de53083e2de0f09845d9e1b862f745bafed607e49b80d"
+                          },
+                          "entryPoint": "azure-ai-agents-linux-amd64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.1-preview/azure-ai-agents-linux-amd64.tar.gz"
+                        },
+                        "linux/arm64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "b6624b2946dbae69638e40305ba3b576539413e3a8c2cbb2f6ca5d6d0ae5a7f2"
+                          },
+                          "entryPoint": "azure-ai-agents-linux-arm64",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.1-preview/azure-ai-agents-linux-arm64.tar.gz"
+                        },
+                        "windows/amd64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "4f96fca89b236c435acb44b72758b154d9bde3a51d7de8a600cc8006c540a3b4"
+                          },
+                          "entryPoint": "azure-ai-agents-windows-amd64.exe",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.1-preview/azure-ai-agents-windows-amd64.zip"
+                        },
+                        "windows/arm64": {
+                          "checksum": {
+                            "algorithm": "sha256",
+                            "value": "a3228008738c50113dbe745ea2676107e35d829e444c0ef8af5ca60bae44d074"
+                          },
+                          "entryPoint": "azure-ai-agents-windows-arm64.exe",
+                          "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.1-preview/azure-ai-agents-windows-arm64.zip"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+        headers:
+            Accept-Ranges:
+                - bytes
+            Access-Control-Allow-Origin:
+                - '*'
+            Cache-Control:
+                - max-age=300
+            Content-Length:
+                - "42994"
+            Content-Security-Policy:
+                - default-src 'none'; style-src 'unsafe-inline'; sandbox
+            Content-Type:
+                - text/plain; charset=utf-8
+            Cross-Origin-Resource-Policy:
+                - cross-origin
+            Date:
+                - Wed, 19 Nov 2025 22:11:42 GMT
+            Etag:
+                - W/"3ed38d0876dbf451d07ac47bd9306d31e589e14265b22a626c9c216cb5905ce4"
+            Expires:
+                - Wed, 19 Nov 2025 22:16:42 GMT
+            Source-Age:
+                - "0"
+            Strict-Transport-Security:
+                - max-age=31536000
+            Vary:
+                - Authorization,Accept-Encoding
+            Via:
+                - 1.1 varnish
+            X-Cache:
+                - HIT
+            X-Cache-Hits:
+                - "2"
+            X-Content-Type-Options:
+                - nosniff
+            X-Fastly-Request-Id:
+                - b5737fdd71c483983ca7ba5597051ed75500028b
+            X-Frame-Options:
+                - deny
+            X-Github-Request-Id:
+                - 0B78:E5BB1:16A22F0:1C05762:691E2C11
+            X-Served-By:
+                - cache-bfi-krnt7300057-BFI
+            X-Timer:
+                - S1763590302.292952,VS0,VE93
+            X-Xss-Protection:
+                - 1; mode=block
+        status: 200 OK
+        code: 200
+        duration: 125.330121ms
+    - id: 2
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: management.azure.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept:
+                - application/json
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-armsubscriptions/v1.3.0 (go1.25.0; linux),azdev/0.0.0-dev.0 (Go go1.25.0; linux/amd64)
+            X-Ms-Correlation-Request-Id:
+                - c7b10525d41ed58f3a153299e615e8b4
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations?api-version=2022-12-01
+        method: GET
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        transfer_encoding: []
+        trailer: {}
+        content_length: 47415
+        uncompressed: false
+        body: '{"value":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/eastus","name":"eastus","type":"Region","displayName":"East US","regionalDisplayName":"(US) East US","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"United States","geographyGroup":"US","longitude":"-79.8164","latitude":"37.3719","physicalLocation":"Virginia","pairedRegion":[{"name":"westus","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/westus"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"eastus-az3"},{"logicalZone":"2","physicalZone":"eastus-az1"},{"logicalZone":"3","physicalZone":"eastus-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/westus2","name":"westus2","type":"Region","displayName":"West US 2","regionalDisplayName":"(US) West US 2","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"United States","geographyGroup":"US","longitude":"-119.852","latitude":"47.233","physicalLocation":"Washington","pairedRegion":[{"name":"westcentralus","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/westcentralus"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"westus2-az3"},{"logicalZone":"2","physicalZone":"westus2-az1"},{"logicalZone":"3","physicalZone":"westus2-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/australiaeast","name":"australiaeast","type":"Region","displayName":"Australia East","regionalDisplayName":"(Asia Pacific) Australia East","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Australia","geographyGroup":"Asia Pacific","longitude":"151.2094","latitude":"-33.86","physicalLocation":"New South Wales","pairedRegion":[{"name":"australiasoutheast","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/australiasoutheast"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"australiaeast-az3"},{"logicalZone":"2","physicalZone":"australiaeast-az1"},{"logicalZone":"3","physicalZone":"australiaeast-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/southeastasia","name":"southeastasia","type":"Region","displayName":"Southeast Asia","regionalDisplayName":"(Asia Pacific) Southeast Asia","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Asia Pacific","geographyGroup":"Asia Pacific","longitude":"103.833","latitude":"1.283","physicalLocation":"Singapore","pairedRegion":[{"name":"eastasia","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/eastasia"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"southeastasia-az3"},{"logicalZone":"2","physicalZone":"southeastasia-az1"},{"logicalZone":"3","physicalZone":"southeastasia-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/northeurope","name":"northeurope","type":"Region","displayName":"North Europe","regionalDisplayName":"(Europe) North Europe","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Europe","geographyGroup":"Europe","longitude":"-6.2597","latitude":"53.3478","physicalLocation":"Ireland","pairedRegion":[{"name":"westeurope","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/westeurope"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"northeurope-az3"},{"logicalZone":"2","physicalZone":"northeurope-az1"},{"logicalZone":"3","physicalZone":"northeurope-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/swedencentral","name":"swedencentral","type":"Region","displayName":"Sweden Central","regionalDisplayName":"(Europe) Sweden Central","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Sweden","geographyGroup":"Europe","longitude":"17.14127","latitude":"60.67488","physicalLocation":"Gävle","pairedRegion":[{"name":"swedensouth","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/swedensouth"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"swedencentral-az3"},{"logicalZone":"2","physicalZone":"swedencentral-az1"},{"logicalZone":"3","physicalZone":"swedencentral-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/westeurope","name":"westeurope","type":"Region","displayName":"West Europe","regionalDisplayName":"(Europe) West Europe","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Europe","geographyGroup":"Europe","longitude":"4.9","latitude":"52.3667","physicalLocation":"Netherlands","pairedRegion":[{"name":"northeurope","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/northeurope"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"westeurope-az3"},{"logicalZone":"2","physicalZone":"westeurope-az1"},{"logicalZone":"3","physicalZone":"westeurope-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/uksouth","name":"uksouth","type":"Region","displayName":"UK South","regionalDisplayName":"(UK) UK South","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"United Kingdom","geographyGroup":"UK","longitude":"-0.799","latitude":"50.941","physicalLocation":"London","pairedRegion":[{"name":"ukwest","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/ukwest"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"uksouth-az3"},{"logicalZone":"2","physicalZone":"uksouth-az1"},{"logicalZone":"3","physicalZone":"uksouth-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/centralus","name":"centralus","type":"Region","displayName":"Central US","regionalDisplayName":"(US) Central US","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"United States","geographyGroup":"US","longitude":"-93.6208","latitude":"41.5908","physicalLocation":"Iowa","pairedRegion":[{"name":"eastus2","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/eastus2"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"centralus-az3"},{"logicalZone":"2","physicalZone":"centralus-az1"},{"logicalZone":"3","physicalZone":"centralus-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/southafricanorth","name":"southafricanorth","type":"Region","displayName":"South Africa North","regionalDisplayName":"(Africa) South Africa North","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"South Africa","geographyGroup":"Africa","longitude":"28.21837","latitude":"-25.73134","physicalLocation":"Johannesburg","pairedRegion":[{"name":"southafricawest","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/southafricawest"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"southafricanorth-az3"},{"logicalZone":"2","physicalZone":"southafricanorth-az1"},{"logicalZone":"3","physicalZone":"southafricanorth-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/centralindia","name":"centralindia","type":"Region","displayName":"Central India","regionalDisplayName":"(Asia Pacific) Central India","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"India","geographyGroup":"Asia Pacific","longitude":"73.9197","latitude":"18.5822","physicalLocation":"Pune","pairedRegion":[{"name":"southindia","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/southindia"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"centralindia-az3"},{"logicalZone":"2","physicalZone":"centralindia-az1"},{"logicalZone":"3","physicalZone":"centralindia-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/eastasia","name":"eastasia","type":"Region","displayName":"East Asia","regionalDisplayName":"(Asia Pacific) East Asia","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Asia Pacific","geographyGroup":"Asia Pacific","longitude":"114.188","latitude":"22.267","physicalLocation":"Hong Kong","pairedRegion":[{"name":"southeastasia","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/southeastasia"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"eastasia-az3"},{"logicalZone":"2","physicalZone":"eastasia-az1"},{"logicalZone":"3","physicalZone":"eastasia-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/indonesiacentral","name":"indonesiacentral","type":"Region","displayName":"Indonesia Central","regionalDisplayName":"(Asia Pacific) Indonesia Central","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Indonesia","geographyGroup":"Asia Pacific","longitude":"106.816666","latitude":"-6.2","physicalLocation":"Jakarta","pairedRegion":[]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"indonesiacentral-az3"},{"logicalZone":"2","physicalZone":"indonesiacentral-az1"},{"logicalZone":"3","physicalZone":"indonesiacentral-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/japaneast","name":"japaneast","type":"Region","displayName":"Japan East","regionalDisplayName":"(Asia Pacific) Japan East","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Japan","geographyGroup":"Asia Pacific","longitude":"139.77","latitude":"35.68","physicalLocation":"Tokyo, Saitama","pairedRegion":[{"name":"japanwest","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/japanwest"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"japaneast-az3"},{"logicalZone":"2","physicalZone":"japaneast-az1"},{"logicalZone":"3","physicalZone":"japaneast-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/japanwest","name":"japanwest","type":"Region","displayName":"Japan West","regionalDisplayName":"(Asia Pacific) Japan West","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Japan","geographyGroup":"Asia Pacific","longitude":"135.5022","latitude":"34.6939","physicalLocation":"Osaka","pairedRegion":[{"name":"japaneast","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/japaneast"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"japanwest-az3"},{"logicalZone":"2","physicalZone":"japanwest-az1"},{"logicalZone":"3","physicalZone":"japanwest-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/koreacentral","name":"koreacentral","type":"Region","displayName":"Korea Central","regionalDisplayName":"(Asia Pacific) Korea Central","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Korea","geographyGroup":"Asia Pacific","longitude":"126.978","latitude":"37.5665","physicalLocation":"Seoul","pairedRegion":[{"name":"koreasouth","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/koreasouth"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"koreacentral-az3"},{"logicalZone":"2","physicalZone":"koreacentral-az1"},{"logicalZone":"3","physicalZone":"koreacentral-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/malaysiawest","name":"malaysiawest","type":"Region","displayName":"Malaysia West","regionalDisplayName":"(Asia Pacific) Malaysia West","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Malaysia","geographyGroup":"Asia Pacific","longitude":"101.693207","latitude":"3.140853","physicalLocation":"Kuala Lumpur","pairedRegion":[]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"malaysiawest-az3"},{"logicalZone":"2","physicalZone":"malaysiawest-az1"},{"logicalZone":"3","physicalZone":"malaysiawest-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/newzealandnorth","name":"newzealandnorth","type":"Region","displayName":"New Zealand North","regionalDisplayName":"(Asia Pacific) New Zealand North","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"New Zealand","geographyGroup":"Asia Pacific","longitude":"174.76349","latitude":"-36.84853","physicalLocation":"Auckland","pairedRegion":[]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"newzealandnorth-az3"},{"logicalZone":"2","physicalZone":"newzealandnorth-az1"},{"logicalZone":"3","physicalZone":"newzealandnorth-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/canadacentral","name":"canadacentral","type":"Region","displayName":"Canada Central","regionalDisplayName":"(Canada) Canada Central","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Canada","geographyGroup":"Canada","longitude":"-79.383","latitude":"43.653","physicalLocation":"Toronto","pairedRegion":[{"name":"canadaeast","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/canadaeast"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"canadacentral-az3"},{"logicalZone":"2","physicalZone":"canadacentral-az1"},{"logicalZone":"3","physicalZone":"canadacentral-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/austriaeast","name":"austriaeast","type":"Region","displayName":"Austria East","regionalDisplayName":"(Europe) Austria East","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Austria","geographyGroup":"Europe","longitude":"16.3727779","latitude":"48.2092056","physicalLocation":"Vienna","pairedRegion":[]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"austriaeast-az3"},{"logicalZone":"2","physicalZone":"austriaeast-az1"},{"logicalZone":"3","physicalZone":"austriaeast-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/belgiumcentral","name":"belgiumcentral","type":"Region","displayName":"Belgium Central","regionalDisplayName":"(Europe) Belgium Central","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Belgium","geographyGroup":"Europe","longitude":"4.355707169","latitude":"50.84553528","physicalLocation":"Brussels","pairedRegion":[]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"belgiumcentral-az3"},{"logicalZone":"2","physicalZone":"belgiumcentral-az1"},{"logicalZone":"3","physicalZone":"belgiumcentral-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/francecentral","name":"francecentral","type":"Region","displayName":"France Central","regionalDisplayName":"(Europe) France Central","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"France","geographyGroup":"Europe","longitude":"2.373","latitude":"46.3772","physicalLocation":"Paris","pairedRegion":[{"name":"francesouth","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/francesouth"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"francecentral-az3"},{"logicalZone":"2","physicalZone":"francecentral-az1"},{"logicalZone":"3","physicalZone":"francecentral-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/germanywestcentral","name":"germanywestcentral","type":"Region","displayName":"Germany West Central","regionalDisplayName":"(Europe) Germany West Central","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Germany","geographyGroup":"Europe","longitude":"8.682127","latitude":"50.110924","physicalLocation":"Frankfurt","pairedRegion":[{"name":"germanynorth","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/germanynorth"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"germanywestcentral-az3"},{"logicalZone":"2","physicalZone":"germanywestcentral-az1"},{"logicalZone":"3","physicalZone":"germanywestcentral-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/italynorth","name":"italynorth","type":"Region","displayName":"Italy North","regionalDisplayName":"(Europe) Italy North","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Italy","geographyGroup":"Europe","longitude":"9.18109","latitude":"45.46888","physicalLocation":"Milan","pairedRegion":[]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"italynorth-az3"},{"logicalZone":"2","physicalZone":"italynorth-az1"},{"logicalZone":"3","physicalZone":"italynorth-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/norwayeast","name":"norwayeast","type":"Region","displayName":"Norway East","regionalDisplayName":"(Europe) Norway East","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Norway","geographyGroup":"Europe","longitude":"10.752245","latitude":"59.913868","physicalLocation":"Norway","pairedRegion":[{"name":"norwaywest","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/norwaywest"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"norwayeast-az3"},{"logicalZone":"2","physicalZone":"norwayeast-az1"},{"logicalZone":"3","physicalZone":"norwayeast-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/polandcentral","name":"polandcentral","type":"Region","displayName":"Poland Central","regionalDisplayName":"(Europe) Poland Central","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Poland","geographyGroup":"Europe","longitude":"21.01666","latitude":"52.23334","physicalLocation":"Warsaw","pairedRegion":[]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"polandcentral-az3"},{"logicalZone":"2","physicalZone":"polandcentral-az1"},{"logicalZone":"3","physicalZone":"polandcentral-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/spaincentral","name":"spaincentral","type":"Region","displayName":"Spain Central","regionalDisplayName":"(Europe) Spain Central","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Spain","geographyGroup":"Europe","longitude":"3.4209","latitude":"40.4259","physicalLocation":"Madrid","pairedRegion":[]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"spaincentral-az3"},{"logicalZone":"2","physicalZone":"spaincentral-az1"},{"logicalZone":"3","physicalZone":"spaincentral-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/switzerlandnorth","name":"switzerlandnorth","type":"Region","displayName":"Switzerland North","regionalDisplayName":"(Europe) Switzerland North","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Switzerland","geographyGroup":"Europe","longitude":"8.564572","latitude":"47.451542","physicalLocation":"Zurich","pairedRegion":[{"name":"switzerlandwest","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/switzerlandwest"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"switzerlandnorth-az3"},{"logicalZone":"2","physicalZone":"switzerlandnorth-az1"},{"logicalZone":"3","physicalZone":"switzerlandnorth-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/mexicocentral","name":"mexicocentral","type":"Region","displayName":"Mexico Central","regionalDisplayName":"(Mexico) Mexico Central","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Mexico","geographyGroup":"Mexico","longitude":"-100.389888","latitude":"20.588818","physicalLocation":"Querétaro State","pairedRegion":[]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"mexicocentral-az3"},{"logicalZone":"2","physicalZone":"mexicocentral-az1"},{"logicalZone":"3","physicalZone":"mexicocentral-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/uaenorth","name":"uaenorth","type":"Region","displayName":"UAE North","regionalDisplayName":"(Middle East) UAE North","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"UAE","geographyGroup":"Middle East","longitude":"55.316666","latitude":"25.266666","physicalLocation":"Dubai","pairedRegion":[{"name":"uaecentral","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/uaecentral"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"uaenorth-az3"},{"logicalZone":"2","physicalZone":"uaenorth-az1"},{"logicalZone":"3","physicalZone":"uaenorth-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/brazilsouth","name":"brazilsouth","type":"Region","displayName":"Brazil South","regionalDisplayName":"(South America) Brazil South","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Brazil","geographyGroup":"South America","longitude":"-46.633","latitude":"-23.55","physicalLocation":"Sao Paulo State","pairedRegion":[{"name":"southcentralus","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/southcentralus"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"brazilsouth-az3"},{"logicalZone":"2","physicalZone":"brazilsouth-az1"},{"logicalZone":"3","physicalZone":"brazilsouth-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/chilecentral","name":"chilecentral","type":"Region","displayName":"Chile Central","regionalDisplayName":"(South America) Chile Central","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Chile","geographyGroup":"South America","longitude":"-70.673676","latitude":"-33.447487","physicalLocation":"Santiago","pairedRegion":[]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"chilecentral-az3"},{"logicalZone":"2","physicalZone":"chilecentral-az1"},{"logicalZone":"3","physicalZone":"chilecentral-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/eastus2euap","name":"eastus2euap","type":"Region","displayName":"East US 2 EUAP","regionalDisplayName":"(US) East US 2 EUAP","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Canary (US)","geographyGroup":"US","longitude":"-78.3889","latitude":"36.6681","physicalLocation":"","pairedRegion":[{"name":"centraluseuap","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/centraluseuap"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"eastus2euap-az3"},{"logicalZone":"2","physicalZone":"eastus2euap-az1"},{"logicalZone":"3","physicalZone":"eastus2euap-az2"},{"logicalZone":"4","physicalZone":"eastus2euap-az4"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/israelcentral","name":"israelcentral","type":"Region","displayName":"Israel Central","regionalDisplayName":"(Middle East) Israel Central","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Israel","geographyGroup":"Middle East","longitude":"33.4506633","latitude":"31.2655698","physicalLocation":"Israel","pairedRegion":[]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"israelcentral-az3"},{"logicalZone":"2","physicalZone":"israelcentral-az1"},{"logicalZone":"3","physicalZone":"israelcentral-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/qatarcentral","name":"qatarcentral","type":"Region","displayName":"Qatar Central","regionalDisplayName":"(Middle East) Qatar Central","metadata":{"regionType":"Physical","regionCategory":"Recommended","geography":"Qatar","geographyGroup":"Middle East","longitude":"51.439327","latitude":"25.551462","physicalLocation":"Doha","pairedRegion":[]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"qatarcentral-az3"},{"logicalZone":"2","physicalZone":"qatarcentral-az1"},{"logicalZone":"3","physicalZone":"qatarcentral-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/centralusstage","name":"centralusstage","type":"Region","displayName":"Central US (Stage)","regionalDisplayName":"(US) Central US (Stage)","metadata":{"regionType":"Logical","regionCategory":"Other","geography":"usa","geographyGroup":"US"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/eastusstage","name":"eastusstage","type":"Region","displayName":"East US (Stage)","regionalDisplayName":"(US) East US (Stage)","metadata":{"regionType":"Logical","regionCategory":"Other","geography":"usa","geographyGroup":"US"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/eastus2stage","name":"eastus2stage","type":"Region","displayName":"East US 2 (Stage)","regionalDisplayName":"(US) East US 2 (Stage)","metadata":{"regionType":"Logical","regionCategory":"Other","geography":"usa","geographyGroup":"US"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/northcentralusstage","name":"northcentralusstage","type":"Region","displayName":"North Central US (Stage)","regionalDisplayName":"(US) North Central US (Stage)","metadata":{"regionType":"Logical","regionCategory":"Other","geography":"usa","geographyGroup":"US"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/southcentralusstage","name":"southcentralusstage","type":"Region","displayName":"South Central US (Stage)","regionalDisplayName":"(US) South Central US (Stage)","metadata":{"regionType":"Logical","regionCategory":"Other","geography":"usa","geographyGroup":"US"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/westusstage","name":"westusstage","type":"Region","displayName":"West US (Stage)","regionalDisplayName":"(US) West US (Stage)","metadata":{"regionType":"Logical","regionCategory":"Other","geography":"usa","geographyGroup":"US"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/westus2stage","name":"westus2stage","type":"Region","displayName":"West US 2 (Stage)","regionalDisplayName":"(US) West US 2 (Stage)","metadata":{"regionType":"Logical","regionCategory":"Other","geography":"usa","geographyGroup":"US"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/asia","name":"asia","type":"Region","displayName":"Asia","regionalDisplayName":"Asia","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/asiapacific","name":"asiapacific","type":"Region","displayName":"Asia Pacific","regionalDisplayName":"Asia Pacific","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/australia","name":"australia","type":"Region","displayName":"Australia","regionalDisplayName":"Australia","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/brazil","name":"brazil","type":"Region","displayName":"Brazil","regionalDisplayName":"Brazil","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/canada","name":"canada","type":"Region","displayName":"Canada","regionalDisplayName":"Canada","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/europe","name":"europe","type":"Region","displayName":"Europe","regionalDisplayName":"Europe","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/france","name":"france","type":"Region","displayName":"France","regionalDisplayName":"France","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/germany","name":"germany","type":"Region","displayName":"Germany","regionalDisplayName":"Germany","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/global","name":"global","type":"Region","displayName":"Global","regionalDisplayName":"Global","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/india","name":"india","type":"Region","displayName":"India","regionalDisplayName":"India","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/indonesia","name":"indonesia","type":"Region","displayName":"Indonesia","regionalDisplayName":"Indonesia","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/israel","name":"israel","type":"Region","displayName":"Israel","regionalDisplayName":"Israel","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/italy","name":"italy","type":"Region","displayName":"Italy","regionalDisplayName":"Italy","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/japan","name":"japan","type":"Region","displayName":"Japan","regionalDisplayName":"Japan","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/korea","name":"korea","type":"Region","displayName":"Korea","regionalDisplayName":"Korea","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/malaysia","name":"malaysia","type":"Region","displayName":"Malaysia","regionalDisplayName":"Malaysia","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/mexico","name":"mexico","type":"Region","displayName":"Mexico","regionalDisplayName":"Mexico","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/newzealand","name":"newzealand","type":"Region","displayName":"New Zealand","regionalDisplayName":"New Zealand","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/norway","name":"norway","type":"Region","displayName":"Norway","regionalDisplayName":"Norway","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/poland","name":"poland","type":"Region","displayName":"Poland","regionalDisplayName":"Poland","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/qatar","name":"qatar","type":"Region","displayName":"Qatar","regionalDisplayName":"Qatar","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/singapore","name":"singapore","type":"Region","displayName":"Singapore","regionalDisplayName":"Singapore","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/southafrica","name":"southafrica","type":"Region","displayName":"South Africa","regionalDisplayName":"South Africa","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/spain","name":"spain","type":"Region","displayName":"Spain","regionalDisplayName":"Spain","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/sweden","name":"sweden","type":"Region","displayName":"Sweden","regionalDisplayName":"Sweden","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/switzerland","name":"switzerland","type":"Region","displayName":"Switzerland","regionalDisplayName":"Switzerland","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/taiwan","name":"taiwan","type":"Region","displayName":"Taiwan","regionalDisplayName":"Taiwan","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/uae","name":"uae","type":"Region","displayName":"United Arab Emirates","regionalDisplayName":"United Arab Emirates","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/uk","name":"uk","type":"Region","displayName":"United Kingdom","regionalDisplayName":"United Kingdom","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/unitedstates","name":"unitedstates","type":"Region","displayName":"United States","regionalDisplayName":"United States","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/unitedstateseuap","name":"unitedstateseuap","type":"Region","displayName":"United States EUAP","regionalDisplayName":"United States EUAP","metadata":{"regionType":"Logical","regionCategory":"Other"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/eastasiastage","name":"eastasiastage","type":"Region","displayName":"East Asia (Stage)","regionalDisplayName":"(Asia Pacific) East Asia (Stage)","metadata":{"regionType":"Logical","regionCategory":"Other","geography":"asia","geographyGroup":"Asia Pacific"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/southeastasiastage","name":"southeastasiastage","type":"Region","displayName":"Southeast Asia (Stage)","regionalDisplayName":"(Asia Pacific) Southeast Asia (Stage)","metadata":{"regionType":"Logical","regionCategory":"Other","geography":"asia","geographyGroup":"Asia Pacific"}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/eastus2","name":"eastus2","type":"Region","displayName":"East US 2","regionalDisplayName":"(US) East US 2","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"United States","geographyGroup":"US","longitude":"-78.3889","latitude":"36.6681","physicalLocation":"Virginia","pairedRegion":[{"name":"centralus","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/centralus"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"eastus2-az3"},{"logicalZone":"2","physicalZone":"eastus2-az1"},{"logicalZone":"3","physicalZone":"eastus2-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/eastusstg","name":"eastusstg","type":"Region","displayName":"East US STG","regionalDisplayName":"(US) East US STG","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"Stage (US)","geographyGroup":"US","longitude":"-79.8164","latitude":"37.3719","physicalLocation":"Virginia","pairedRegion":[{"name":"southcentralusstg","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/southcentralusstg"}]}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/southcentralus","name":"southcentralus","type":"Region","displayName":"South Central US","regionalDisplayName":"(US) South Central US","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"United States","geographyGroup":"US","longitude":"-98.5","latitude":"29.4167","physicalLocation":"Texas","pairedRegion":[{"name":"northcentralus","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/northcentralus"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"southcentralus-az3"},{"logicalZone":"2","physicalZone":"southcentralus-az1"},{"logicalZone":"3","physicalZone":"southcentralus-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/westus3","name":"westus3","type":"Region","displayName":"West US 3","regionalDisplayName":"(US) West US 3","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"United States","geographyGroup":"US","longitude":"-112.074036","latitude":"33.448376","physicalLocation":"Phoenix","pairedRegion":[{"name":"eastus","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/eastus"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"westus3-az3"},{"logicalZone":"2","physicalZone":"westus3-az1"},{"logicalZone":"3","physicalZone":"westus3-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/northcentralus","name":"northcentralus","type":"Region","displayName":"North Central US","regionalDisplayName":"(US) North Central US","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"United States","geographyGroup":"US","longitude":"-87.6278","latitude":"41.8819","physicalLocation":"Illinois","pairedRegion":[{"name":"southcentralus","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/southcentralus"}]}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/westus","name":"westus","type":"Region","displayName":"West US","regionalDisplayName":"(US) West US","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"United States","geographyGroup":"US","longitude":"-122.417","latitude":"37.783","physicalLocation":"California","pairedRegion":[{"name":"eastus","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/eastus"}]}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/jioindiawest","name":"jioindiawest","type":"Region","displayName":"Jio India West","regionalDisplayName":"(Asia Pacific) Jio India West","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"India","geographyGroup":"Asia Pacific","longitude":"70.05773","latitude":"22.470701","physicalLocation":"Jamnagar","pairedRegion":[{"name":"jioindiacentral","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/jioindiacentral"}]}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/centraluseuap","name":"centraluseuap","type":"Region","displayName":"Central US EUAP","regionalDisplayName":"(US) Central US EUAP","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"Canary (US)","geographyGroup":"US","longitude":"-93.6208","latitude":"41.5908","physicalLocation":"","pairedRegion":[{"name":"eastus2euap","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/eastus2euap"}]},"availabilityZoneMappings":[{"logicalZone":"1","physicalZone":"centraluseuap-az1"},{"logicalZone":"2","physicalZone":"centraluseuap-az2"}]},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/southcentralusstg","name":"southcentralusstg","type":"Region","displayName":"South Central US STG","regionalDisplayName":"(US) South Central US STG","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"Stage (US)","geographyGroup":"US","longitude":"-98.5","latitude":"29.4167","physicalLocation":"Texas","pairedRegion":[{"name":"eastusstg","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/eastusstg"}]}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/westcentralus","name":"westcentralus","type":"Region","displayName":"West Central US","regionalDisplayName":"(US) West Central US","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"United States","geographyGroup":"US","longitude":"-110.234","latitude":"40.89","physicalLocation":"Wyoming","pairedRegion":[{"name":"westus2","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/westus2"}]}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/southafricawest","name":"southafricawest","type":"Region","displayName":"South Africa West","regionalDisplayName":"(Africa) South Africa West","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"South Africa","geographyGroup":"Africa","longitude":"18.843266","latitude":"-34.075691","physicalLocation":"Cape Town","pairedRegion":[{"name":"southafricanorth","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/southafricanorth"}]}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/australiacentral","name":"australiacentral","type":"Region","displayName":"Australia Central","regionalDisplayName":"(Asia Pacific) Australia Central","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"Australia","geographyGroup":"Asia Pacific","longitude":"149.1244","latitude":"-35.3075","physicalLocation":"Canberra","pairedRegion":[{"name":"australiacentral2","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/australiacentral2"}]}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/australiacentral2","name":"australiacentral2","type":"Region","displayName":"Australia Central 2","regionalDisplayName":"(Asia Pacific) Australia Central 2","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"Australia","geographyGroup":"Asia Pacific","longitude":"149.1244","latitude":"-35.3075","physicalLocation":"Canberra","pairedRegion":[{"name":"australiacentral","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/australiacentral"}]}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/australiasoutheast","name":"australiasoutheast","type":"Region","displayName":"Australia Southeast","regionalDisplayName":"(Asia Pacific) Australia Southeast","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"Australia","geographyGroup":"Asia Pacific","longitude":"144.9631","latitude":"-37.8136","physicalLocation":"Victoria","pairedRegion":[{"name":"australiaeast","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/australiaeast"}]}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/jioindiacentral","name":"jioindiacentral","type":"Region","displayName":"Jio India Central","regionalDisplayName":"(Asia Pacific) Jio India Central","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"India","geographyGroup":"Asia Pacific","longitude":"79.08886","latitude":"21.146633","physicalLocation":"Nagpur","pairedRegion":[{"name":"jioindiawest","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/jioindiawest"}]}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/koreasouth","name":"koreasouth","type":"Region","displayName":"Korea South","regionalDisplayName":"(Asia Pacific) Korea South","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"Korea","geographyGroup":"Asia Pacific","longitude":"129.0756","latitude":"35.1796","physicalLocation":"Busan","pairedRegion":[{"name":"koreacentral","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/koreacentral"}]}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/southindia","name":"southindia","type":"Region","displayName":"South India","regionalDisplayName":"(Asia Pacific) South India","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"India","geographyGroup":"Asia Pacific","longitude":"80.1636","latitude":"12.9822","physicalLocation":"Chennai","pairedRegion":[{"name":"centralindia","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/centralindia"}]}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/westindia","name":"westindia","type":"Region","displayName":"West India","regionalDisplayName":"(Asia Pacific) West India","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"India","geographyGroup":"Asia Pacific","longitude":"72.868","latitude":"19.088","physicalLocation":"Mumbai","pairedRegion":[{"name":"southindia","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/southindia"}]}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/canadaeast","name":"canadaeast","type":"Region","displayName":"Canada East","regionalDisplayName":"(Canada) Canada East","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"Canada","geographyGroup":"Canada","longitude":"-71.217","latitude":"46.817","physicalLocation":"Quebec","pairedRegion":[{"name":"canadacentral","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/canadacentral"}]}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/francesouth","name":"francesouth","type":"Region","displayName":"France South","regionalDisplayName":"(Europe) France South","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"France","geographyGroup":"Europe","longitude":"2.1972","latitude":"43.8345","physicalLocation":"Marseille","pairedRegion":[{"name":"francecentral","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/francecentral"}]}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/germanynorth","name":"germanynorth","type":"Region","displayName":"Germany North","regionalDisplayName":"(Europe) Germany North","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"Germany","geographyGroup":"Europe","longitude":"8.806422","latitude":"53.073635","physicalLocation":"Berlin","pairedRegion":[{"name":"germanywestcentral","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/germanywestcentral"}]}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/norwaywest","name":"norwaywest","type":"Region","displayName":"Norway West","regionalDisplayName":"(Europe) Norway West","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"Norway","geographyGroup":"Europe","longitude":"5.733107","latitude":"58.969975","physicalLocation":"Norway","pairedRegion":[{"name":"norwayeast","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/norwayeast"}]}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/switzerlandwest","name":"switzerlandwest","type":"Region","displayName":"Switzerland West","regionalDisplayName":"(Europe) Switzerland West","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"Switzerland","geographyGroup":"Europe","longitude":"6.143158","latitude":"46.204391","physicalLocation":"Geneva","pairedRegion":[{"name":"switzerlandnorth","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/switzerlandnorth"}]}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/uaecentral","name":"uaecentral","type":"Region","displayName":"UAE Central","regionalDisplayName":"(Middle East) UAE Central","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"UAE","geographyGroup":"Middle East","longitude":"54.366669","latitude":"24.466667","physicalLocation":"Abu Dhabi","pairedRegion":[{"name":"uaenorth","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/uaenorth"}]}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/brazilsoutheast","name":"brazilsoutheast","type":"Region","displayName":"Brazil Southeast","regionalDisplayName":"(South America) Brazil Southeast","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"Brazil","geographyGroup":"South America","longitude":"-43.2075","latitude":"-22.90278","physicalLocation":"Rio","pairedRegion":[{"name":"brazilsouth","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/brazilsouth"}]}},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/ukwest","name":"ukwest","type":"Region","displayName":"UK West","regionalDisplayName":"(UK) UK West","metadata":{"regionType":"Physical","regionCategory":"Other","geography":"United Kingdom","geographyGroup":"UK","longitude":"-3.084","latitude":"53.427","physicalLocation":"Cardiff","pairedRegion":[{"name":"uksouth","id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations/uksouth"}]}}]}'
+        headers:
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "47415"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 19 Nov 2025 22:12:16 GMT
+            Expires:
+                - "-1"
+            Pragma:
+                - no-cache
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - c7b10525d41ed58f3a153299e615e8b4
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
+                - "16499"
+            X-Ms-Ratelimit-Remaining-Subscription-Reads:
+                - "1099"
+            X-Ms-Request-Id:
+                - aec819cd-2d43-4d0b-8a4e-a37d2685a57e
+            X-Ms-Routing-Request-Id:
+                - WESTUS2:20251119T221217Z:aec819cd-2d43-4d0b-8a4e-a37d2685a57e
+            X-Msedge-Ref:
+                - 'Ref A: A5CF00070BDB43F0880B0A4A9D3E412E Ref B: CO1EDGE1211 Ref C: 2025-11-19T22:12:15Z'
+        status: 200 OK
+        code: 200
+        duration: 1.695699519s
+    - id: 3
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: management.azure.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept:
+                - application/json
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-armresources/v1.2.0 (go1.25.0; linux),azdev/0.0.0-dev.0 (Go go1.25.0; linux/amd64)
+            X-Ms-Correlation-Request-Id:
+                - c7b10525d41ed58f3a153299e615e8b4
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01
+        method: GET
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        transfer_encoding: []
+        trailer: {}
+        content_length: 2204454
+        uncompressed: false
+        body: '{"value":[]}'
+        headers:
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "2204454"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 19 Nov 2025 22:12:23 GMT
+            Expires:
+                - "-1"
+            Pragma:
+                - no-cache
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - c7b10525d41ed58f3a153299e615e8b4
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
+                - "16500"
+            X-Ms-Ratelimit-Remaining-Subscription-Reads:
+                - "1100"
+            X-Ms-Request-Id:
+                - 56c11763-a5de-40fb-99d4-e8c7228e83c9
+            X-Ms-Routing-Request-Id:
+                - WESTUS:20251119T221224Z:56c11763-a5de-40fb-99d4-e8c7228e83c9
+            X-Msedge-Ref:
+                - 'Ref A: 5BB4DFE194A14AF7917200CAB810E082 Ref B: CO1EDGE1211 Ref C: 2025-11-19T22:12:17Z'
+        status: 200 OK
+        code: 200
+        duration: 6.939169352s
+    - id: 4
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 3439
+        transfer_encoding: []
+        trailer: {}
+        host: management.azure.com
+        remote_addr: ""
+        request_uri: ""
+        body: '{"location":"eastus2","properties":{"mode":"Incremental","parameters":{"environmentName":{"value":"azdtest-l8f0aee","reference":null},"location":{"value":"eastus2","reference":null}},"template":{"$schema":"https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#","contentVersion":"1.0.0.0","metadata":{"_generator":{"name":"bicep","version":"0.38.33.27573","templateHash":"11175131240872942650"}},"parameters":{"environmentName":{"type":"string","minLength":1,"maxLength":64,"metadata":{"description":"Name of the the environment which is used to generate a short unique hash used in all resources."}},"location":{"type":"string","metadata":{"description":"Primary location for all resources"}},"deleteAfterTime":{"type":"string","defaultValue":"[dateTimeAdd(utcNow(''o''), ''PT1H'')]","metadata":{"description":"A time to mark on created resource groups, so they can be cleaned up via an automated process."}}},"variables":{"tags":{"azd-env-name":"[parameters(''environmentName'')]","DeleteAfter":"[parameters(''deleteAfterTime'')]"}},"resources":[{"type":"Microsoft.Resources/resourceGroups","apiVersion":"2021-04-01","name":"[format(''rg-{0}'', parameters(''environmentName''))]","location":"[parameters(''location'')]","tags":"[variables(''tags'')]"},{"type":"Microsoft.Resources/deployments","apiVersion":"2025-04-01","name":"resources","resourceGroup":"[format(''rg-{0}'', parameters(''environmentName''))]","properties":{"expressionEvaluationOptions":{"scope":"inner"},"mode":"Incremental","parameters":{"environmentName":{"value":"[parameters(''environmentName'')]"},"location":{"value":"[parameters(''location'')]"}},"template":{"$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#","contentVersion":"1.0.0.0","metadata":{"_generator":{"name":"bicep","version":"0.38.33.27573","templateHash":"18165711787331946421"}},"parameters":{"environmentName":{"type":"string"},"location":{"type":"string","defaultValue":"[resourceGroup().location]"}},"variables":{"tags":{"azd-env-name":"[parameters(''environmentName'')]"},"resourceToken":"[toLower(uniqueString(subscription().id, parameters(''environmentName''), parameters(''location'')))]"},"resources":[{"type":"Microsoft.ContainerRegistry/registries","apiVersion":"2023-07-01","name":"[replace(format(''acr-{0}'', variables(''resourceToken'')), ''-'', '''')]","location":"[parameters(''location'')]","sku":{"name":"Basic"},"tags":"[variables(''tags'')]"}],"outputs":{"AZURE_CONTAINER_REGISTRY_ENDPOINT":{"type":"string","value":"[reference(resourceId(''Microsoft.ContainerRegistry/registries'', replace(format(''acr-{0}'', variables(''resourceToken'')), ''-'', '''')), ''2023-07-01'').loginServer]"}}}},"dependsOn":["[subscriptionResourceId(''Microsoft.Resources/resourceGroups'', format(''rg-{0}'', parameters(''environmentName'')))]"]}],"outputs":{"ENV":{"type":"string","value":"[parameters(''environmentName'')]"},"LOC":{"type":"string","value":"[parameters(''location'')]"},"AZURE_CONTAINER_REGISTRY_ENDPOINT":{"type":"string","value":"[reference(extensionResourceId(format(''/subscriptions/{0}/resourceGroups/{1}'', subscription().subscriptionId, format(''rg-{0}'', parameters(''environmentName''))), ''Microsoft.Resources/deployments'', ''resources''), ''2025-04-01'').outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT.value]"}}}},"tags":{"azd-env-name":"azdtest-l8f0aee","azd-layer-name":"","azd-provision-param-hash":"2de3a4ffa9b8a10e7121ae28d9b4e84090fd7b00ffed6ae4c578230d00c51bec"}}'
+        form: {}
+        headers:
+            Accept:
+                - application/json
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            Content-Length:
+                - "3439"
+            Content-Type:
+                - application/json
+            User-Agent:
+                - azsdk-go-armresources/v1.2.0 (go1.25.0; linux),azdev/0.0.0-dev.0 (Go go1.25.0; linux/amd64)
+            X-Ms-Correlation-Request-Id:
+                - c7b10525d41ed58f3a153299e615e8b4
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-l8f0aee-1763590301/validate?api-version=2021-04-01
+        method: POST
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        transfer_encoding: []
+        trailer: {}
+        content_length: 1831
+        uncompressed: false
+        body: '{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-l8f0aee-1763590301","name":"azdtest-l8f0aee-1763590301","type":"Microsoft.Resources/deployments","location":"eastus2","tags":{"azd-env-name":"azdtest-l8f0aee","azd-layer-name":"","azd-provision-param-hash":"2de3a4ffa9b8a10e7121ae28d9b4e84090fd7b00ffed6ae4c578230d00c51bec"},"properties":{"templateHash":"11175131240872942650","parameters":{"environmentName":{"type":"String","value":"azdtest-l8f0aee"},"location":{"type":"String","value":"eastus2"},"deleteAfterTime":{"type":"String","value":"2025-11-19T23:12:25Z"}},"mode":"Incremental","provisioningState":"Succeeded","timestamp":"2025-11-19T22:12:25.1129465Z","duration":"PT0S","correlationId":"c7b10525d41ed58f3a153299e615e8b4","providers":[{"namespace":"Microsoft.Resources","resourceTypes":[{"resourceType":"resourceGroups","locations":["eastus2"]},{"resourceType":"deployments","locations":[null]}]}],"dependencies":[{"dependsOn":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-l8f0aee","resourceType":"Microsoft.Resources/resourceGroups","resourceName":"rg-azdtest-l8f0aee"}],"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-l8f0aee/providers/Microsoft.Resources/deployments/resources","resourceType":"Microsoft.Resources/deployments","resourceName":"resources"}],"validatedResources":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-l8f0aee"},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-l8f0aee/providers/Microsoft.Resources/deployments/resources"},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-l8f0aee/providers/Microsoft.ContainerRegistry/registries/acrcq2iipgkrky3y"}]}}'
+        headers:
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "1831"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 19 Nov 2025 22:12:26 GMT
+            Expires:
+                - "-1"
+            Pragma:
+                - no-cache
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - c7b10525d41ed58f3a153299e615e8b4
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Writes:
+                - "11999"
+            X-Ms-Ratelimit-Remaining-Subscription-Writes:
+                - "799"
+            X-Ms-Request-Id:
+                - c2310eac-e050-48a8-a52e-ccd26e6c7b68
+            X-Ms-Routing-Request-Id:
+                - WESTUS2:20251119T221226Z:c2310eac-e050-48a8-a52e-ccd26e6c7b68
+            X-Msedge-Ref:
+                - 'Ref A: 6F1E919625E1482D9223DCA63E2713EC Ref B: CO1EDGE1211 Ref C: 2025-11-19T22:12:24Z'
+        status: 200 OK
+        code: 200
+        duration: 1.276147006s
+    - id: 5
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 3439
+        transfer_encoding: []
+        trailer: {}
+        host: management.azure.com
+        remote_addr: ""
+        request_uri: ""
+        body: '{"location":"eastus2","properties":{"mode":"Incremental","parameters":{"environmentName":{"value":"azdtest-l8f0aee","reference":null},"location":{"value":"eastus2","reference":null}},"template":{"$schema":"https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#","contentVersion":"1.0.0.0","metadata":{"_generator":{"name":"bicep","version":"0.38.33.27573","templateHash":"11175131240872942650"}},"parameters":{"environmentName":{"type":"string","minLength":1,"maxLength":64,"metadata":{"description":"Name of the the environment which is used to generate a short unique hash used in all resources."}},"location":{"type":"string","metadata":{"description":"Primary location for all resources"}},"deleteAfterTime":{"type":"string","defaultValue":"[dateTimeAdd(utcNow(''o''), ''PT1H'')]","metadata":{"description":"A time to mark on created resource groups, so they can be cleaned up via an automated process."}}},"variables":{"tags":{"azd-env-name":"[parameters(''environmentName'')]","DeleteAfter":"[parameters(''deleteAfterTime'')]"}},"resources":[{"type":"Microsoft.Resources/resourceGroups","apiVersion":"2021-04-01","name":"[format(''rg-{0}'', parameters(''environmentName''))]","location":"[parameters(''location'')]","tags":"[variables(''tags'')]"},{"type":"Microsoft.Resources/deployments","apiVersion":"2025-04-01","name":"resources","resourceGroup":"[format(''rg-{0}'', parameters(''environmentName''))]","properties":{"expressionEvaluationOptions":{"scope":"inner"},"mode":"Incremental","parameters":{"environmentName":{"value":"[parameters(''environmentName'')]"},"location":{"value":"[parameters(''location'')]"}},"template":{"$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#","contentVersion":"1.0.0.0","metadata":{"_generator":{"name":"bicep","version":"0.38.33.27573","templateHash":"18165711787331946421"}},"parameters":{"environmentName":{"type":"string"},"location":{"type":"string","defaultValue":"[resourceGroup().location]"}},"variables":{"tags":{"azd-env-name":"[parameters(''environmentName'')]"},"resourceToken":"[toLower(uniqueString(subscription().id, parameters(''environmentName''), parameters(''location'')))]"},"resources":[{"type":"Microsoft.ContainerRegistry/registries","apiVersion":"2023-07-01","name":"[replace(format(''acr-{0}'', variables(''resourceToken'')), ''-'', '''')]","location":"[parameters(''location'')]","sku":{"name":"Basic"},"tags":"[variables(''tags'')]"}],"outputs":{"AZURE_CONTAINER_REGISTRY_ENDPOINT":{"type":"string","value":"[reference(resourceId(''Microsoft.ContainerRegistry/registries'', replace(format(''acr-{0}'', variables(''resourceToken'')), ''-'', '''')), ''2023-07-01'').loginServer]"}}}},"dependsOn":["[subscriptionResourceId(''Microsoft.Resources/resourceGroups'', format(''rg-{0}'', parameters(''environmentName'')))]"]}],"outputs":{"ENV":{"type":"string","value":"[parameters(''environmentName'')]"},"LOC":{"type":"string","value":"[parameters(''location'')]"},"AZURE_CONTAINER_REGISTRY_ENDPOINT":{"type":"string","value":"[reference(extensionResourceId(format(''/subscriptions/{0}/resourceGroups/{1}'', subscription().subscriptionId, format(''rg-{0}'', parameters(''environmentName''))), ''Microsoft.Resources/deployments'', ''resources''), ''2025-04-01'').outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT.value]"}}}},"tags":{"azd-env-name":"azdtest-l8f0aee","azd-layer-name":"","azd-provision-param-hash":"2de3a4ffa9b8a10e7121ae28d9b4e84090fd7b00ffed6ae4c578230d00c51bec"}}'
+        form: {}
+        headers:
+            Accept:
+                - application/json
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            Content-Length:
+                - "3439"
+            Content-Type:
+                - application/json
+            User-Agent:
+                - azsdk-go-armresources/v1.2.0 (go1.25.0; linux),azdev/0.0.0-dev.0 (Go go1.25.0; linux/amd64)
+            X-Ms-Correlation-Request-Id:
+                - c7b10525d41ed58f3a153299e615e8b4
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-l8f0aee-1763590301?api-version=2021-04-01
+        method: PUT
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        transfer_encoding: []
+        trailer: {}
+        content_length: 1412
+        uncompressed: false
+        body: '{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-l8f0aee-1763590301","name":"azdtest-l8f0aee-1763590301","type":"Microsoft.Resources/deployments","location":"eastus2","tags":{"azd-env-name":"azdtest-l8f0aee","azd-layer-name":"","azd-provision-param-hash":"2de3a4ffa9b8a10e7121ae28d9b4e84090fd7b00ffed6ae4c578230d00c51bec"},"properties":{"templateHash":"11175131240872942650","parameters":{"environmentName":{"type":"String","value":"azdtest-l8f0aee"},"location":{"type":"String","value":"eastus2"},"deleteAfterTime":{"type":"String","value":"2025-11-19T23:12:26Z"}},"mode":"Incremental","provisioningState":"Accepted","timestamp":"2025-11-19T22:12:26.3895773Z","duration":"PT0.0004609S","correlationId":"c7b10525d41ed58f3a153299e615e8b4","providers":[{"namespace":"Microsoft.Resources","resourceTypes":[{"resourceType":"resourceGroups","locations":["eastus2"]},{"resourceType":"deployments","locations":[null]}]}],"dependencies":[{"dependsOn":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-l8f0aee","resourceType":"Microsoft.Resources/resourceGroups","resourceName":"rg-azdtest-l8f0aee"}],"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-l8f0aee/providers/Microsoft.Resources/deployments/resources","resourceType":"Microsoft.Resources/deployments","resourceName":"resources"}]}}'
+        headers:
+            Azure-Asyncoperation:
+                - https://management.azure.com/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-l8f0aee-1763590301/operationStatuses/08584380165390812961?api-version=2021-04-01&t=638991871492334487&c=MIIHhzCCBm-gAwIBAgITfAldUuOkqyWaFWVmdAAACV1S4zANBgkqhkiG9w0BAQsFADBEMRMwEQYKCZImiZPyLGQBGRYDR0JMMRMwEQYKCZImiZPyLGQBGRYDQU1FMRgwFgYDVQQDEw9BTUUgSW5mcmEgQ0EgMDUwHhcNMjUxMDIxMDgxMjA1WhcNMjYwNDE5MDgxMjA1WjBAMT4wPAYDVQQDEzVhc3luY29wZXJhdGlvbnNpZ25pbmdjZXJ0aWZpY2F0ZS5tYW5hZ2VtZW50LmF6dXJlLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAK6VhHo7SMnPI07xSUC0EKrS_gaAU3t2sorvXTakEJppgrr-M5q-yAFDicwNGCe2zSU9ZvGBPI46D9PesTntz4RhQO5-Dkx5G8vC9lZ0WV6mem5Hsnf78kDXgYxzLyAaMKv9WjuZNcTaFQKdrPAx-ZS-2EebUB404VhX1yJ3S4C3QHTpXASyoAbFfGV8tHPGM7q2s_Qr9qBJ5RUnI0t_oD0IJ_dyn_wQvIsgBjpGMentNk7AKNnJ7dWOCU76BFL9ZQAP9lNuU68JHjdsD1lABOX7Jtcv8FrW2zWgZn6TOHf9rY990h8zyuY_EBAr0xrbFD0i_O184Iy9gHWqScS_2CkCAwEAAaOCBHQwggRwMCcGCSsGAQQBgjcVCgQaMBgwCgYIKwYBBQUHAwEwCgYIKwYBBQUHAwIwPQYJKwYBBAGCNxUHBDAwLgYmKwYBBAGCNxUIhpDjDYTVtHiE8Ys-hZvdFs6dEoFghfmRS4WsmTQCAWQCAQcwggHLBggrBgEFBQcBAQSCAb0wggG5MGMGCCsGAQUFBzAChldodHRwOi8vY3JsLm1pY3Jvc29mdC5jb20vcGtpaW5mcmEvQ2VydHMvQ08xUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwNS5jcnQwUwYIKwYBBQUHMAKGR2h0dHA6Ly9jcmwxLmFtZS5nYmwvYWlhL0NPMVBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3J0MFMGCCsGAQUFBzAChkdodHRwOi8vY3JsMi5hbWUuZ2JsL2FpYS9DTzFQS0lJTlRDQTAxLkFNRS5HQkxfQU1FJTIwSW5mcmElMjBDQSUyMDA1LmNydDBTBggrBgEFBQcwAoZHaHR0cDovL2NybDMuYW1lLmdibC9haWEvQ08xUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwNS5jcnQwUwYIKwYBBQUHMAKGR2h0dHA6Ly9jcmw0LmFtZS5nYmwvYWlhL0NPMVBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3J0MB0GA1UdDgQWBBTUpdRlqz5GkJ77fs3HRMz2Z_W49DAOBgNVHQ8BAf8EBAMCBaAwggEmBgNVHR8EggEdMIIBGTCCARWgggERoIIBDYY_aHR0cDovL2NybC5taWNyb3NvZnQuY29tL3BraWluZnJhL0NSTC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsMS5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsMi5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsMy5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsNC5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JsMIGdBgNVHSAEgZUwgZIwDAYKKwYBBAGCN3sBATBmBgorBgEEAYI3ewICMFgwVgYIKwYBBQUHAgIwSh5IADMAMwBlADAAMQA5ADIAMQAtADQAZAA2ADQALQA0AGYAOABjAC0AYQAwADUANQAtADUAYgBkAGEAZgBmAGQANQBlADMAMwBkMAwGCisGAQQBgjd7AwIwDAYKKwYBBAGCN3sEAjAfBgNVHSMEGDAWgBR61hmFKHlscXYeYPjzS--iBUIWHTAdBgNVHSUEFjAUBggrBgEFBQcDAQYIKwYBBQUHAwIwDQYJKoZIhvcNAQELBQADggEBAGQmJdPitlGjIwFSf4WsFmLr4W3CmkUpm4HxfZATnxnP9vV2uH5f01rfg_lA-Q0s4GMqkftMAVNRm0Ta6w_NRSLRZO2GWa65KrQ8ITCuGR12jMTYPqYgqEIaBQAqqxvtTisw6-_rDdMBbWwvTo6h0yR_Rw0GGgX1C4WUYhFJq-o90nFF2qZEFQJht7ni8RYQonaxB281z64rp0rlXCz8r3rJXIR2RLC48IA1los4mZYaxAv_Y_LPYwZUQ_V0_YrSGK5KMJp6exPToKF_DePs6j27AncGilbWo9t96F-yKBPD57WulOVgbYwNKAZ_Klbw0ur-YLdTdCaIbUiNhmGTDvY&s=f4OfJIi_mIXZNPK7X70_fBsX6LAF-KRjAnFjXTxz6wWZ7bvkgjwSaLYSL1_urNeGUboigYaHPnEdb79ma5U0-ahGSGZ0GPn5lIHUN7feZUmESJ0Rc27AiF_buKvvA4QmqJ8dDC6bmYoSWJnbZUJUeNjZYqrC7frPfmDesVrHlwedVByj6eygmzEujp2imRbLyjNuAqGs39gbTqOQHjNq8ITQLvRcsfZGWuuv2bc6pmtYqNOR9u1R7bn3XmA01e8KAnJCjz-iuCLGaIugittBTj0FbbUFz4ulDws-xRFYWPClh8IsZMrwn2POKXuw4BK5cpcjEYMG6dRBZNwTYx9cFw&h=SaBUenJomZUgVEaEHBC8vn5j9N_KqWwZd62vRtE5CSg
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "1412"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 19 Nov 2025 22:12:29 GMT
+            Expires:
+                - "-1"
+            Pragma:
+                - no-cache
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - c7b10525d41ed58f3a153299e615e8b4
+            X-Ms-Deployment-Engine-Version:
+                - 1.533.0
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Writes:
+                - "11999"
+            X-Ms-Ratelimit-Remaining-Subscription-Writes:
+                - "799"
+            X-Ms-Request-Id:
+                - 9cb0ac46-70c8-4996-8063-53546e8ef95a
+            X-Ms-Routing-Request-Id:
+                - WESTUS2:20251119T221229Z:9cb0ac46-70c8-4996-8063-53546e8ef95a
+            X-Msedge-Ref:
+                - 'Ref A: 9DA351F3E4AD42F79B81E506B8D7E7FB Ref B: CO1EDGE1211 Ref C: 2025-11-19T22:12:26Z'
+        status: 201 Created
+        code: 201
+        duration: 3.192244872s
+    - id: 6
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: management.azure.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-armresources/v1.2.0 (go1.25.0; linux),azdev/0.0.0-dev.0 (Go go1.25.0; linux/amd64)
+            X-Ms-Correlation-Request-Id:
+                - c7b10525d41ed58f3a153299e615e8b4
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-l8f0aee-1763590301/operationStatuses/08584380165390812961?api-version=2021-04-01&t=638991871492334487&c=MIIHhzCCBm-gAwIBAgITfAldUuOkqyWaFWVmdAAACV1S4zANBgkqhkiG9w0BAQsFADBEMRMwEQYKCZImiZPyLGQBGRYDR0JMMRMwEQYKCZImiZPyLGQBGRYDQU1FMRgwFgYDVQQDEw9BTUUgSW5mcmEgQ0EgMDUwHhcNMjUxMDIxMDgxMjA1WhcNMjYwNDE5MDgxMjA1WjBAMT4wPAYDVQQDEzVhc3luY29wZXJhdGlvbnNpZ25pbmdjZXJ0aWZpY2F0ZS5tYW5hZ2VtZW50LmF6dXJlLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAK6VhHo7SMnPI07xSUC0EKrS_gaAU3t2sorvXTakEJppgrr-M5q-yAFDicwNGCe2zSU9ZvGBPI46D9PesTntz4RhQO5-Dkx5G8vC9lZ0WV6mem5Hsnf78kDXgYxzLyAaMKv9WjuZNcTaFQKdrPAx-ZS-2EebUB404VhX1yJ3S4C3QHTpXASyoAbFfGV8tHPGM7q2s_Qr9qBJ5RUnI0t_oD0IJ_dyn_wQvIsgBjpGMentNk7AKNnJ7dWOCU76BFL9ZQAP9lNuU68JHjdsD1lABOX7Jtcv8FrW2zWgZn6TOHf9rY990h8zyuY_EBAr0xrbFD0i_O184Iy9gHWqScS_2CkCAwEAAaOCBHQwggRwMCcGCSsGAQQBgjcVCgQaMBgwCgYIKwYBBQUHAwEwCgYIKwYBBQUHAwIwPQYJKwYBBAGCNxUHBDAwLgYmKwYBBAGCNxUIhpDjDYTVtHiE8Ys-hZvdFs6dEoFghfmRS4WsmTQCAWQCAQcwggHLBggrBgEFBQcBAQSCAb0wggG5MGMGCCsGAQUFBzAChldodHRwOi8vY3JsLm1pY3Jvc29mdC5jb20vcGtpaW5mcmEvQ2VydHMvQ08xUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwNS5jcnQwUwYIKwYBBQUHMAKGR2h0dHA6Ly9jcmwxLmFtZS5nYmwvYWlhL0NPMVBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3J0MFMGCCsGAQUFBzAChkdodHRwOi8vY3JsMi5hbWUuZ2JsL2FpYS9DTzFQS0lJTlRDQTAxLkFNRS5HQkxfQU1FJTIwSW5mcmElMjBDQSUyMDA1LmNydDBTBggrBgEFBQcwAoZHaHR0cDovL2NybDMuYW1lLmdibC9haWEvQ08xUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwNS5jcnQwUwYIKwYBBQUHMAKGR2h0dHA6Ly9jcmw0LmFtZS5nYmwvYWlhL0NPMVBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3J0MB0GA1UdDgQWBBTUpdRlqz5GkJ77fs3HRMz2Z_W49DAOBgNVHQ8BAf8EBAMCBaAwggEmBgNVHR8EggEdMIIBGTCCARWgggERoIIBDYY_aHR0cDovL2NybC5taWNyb3NvZnQuY29tL3BraWluZnJhL0NSTC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsMS5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsMi5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsMy5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsNC5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JsMIGdBgNVHSAEgZUwgZIwDAYKKwYBBAGCN3sBATBmBgorBgEEAYI3ewICMFgwVgYIKwYBBQUHAgIwSh5IADMAMwBlADAAMQA5ADIAMQAtADQAZAA2ADQALQA0AGYAOABjAC0AYQAwADUANQAtADUAYgBkAGEAZgBmAGQANQBlADMAMwBkMAwGCisGAQQBgjd7AwIwDAYKKwYBBAGCN3sEAjAfBgNVHSMEGDAWgBR61hmFKHlscXYeYPjzS--iBUIWHTAdBgNVHSUEFjAUBggrBgEFBQcDAQYIKwYBBQUHAwIwDQYJKoZIhvcNAQELBQADggEBAGQmJdPitlGjIwFSf4WsFmLr4W3CmkUpm4HxfZATnxnP9vV2uH5f01rfg_lA-Q0s4GMqkftMAVNRm0Ta6w_NRSLRZO2GWa65KrQ8ITCuGR12jMTYPqYgqEIaBQAqqxvtTisw6-_rDdMBbWwvTo6h0yR_Rw0GGgX1C4WUYhFJq-o90nFF2qZEFQJht7ni8RYQonaxB281z64rp0rlXCz8r3rJXIR2RLC48IA1los4mZYaxAv_Y_LPYwZUQ_V0_YrSGK5KMJp6exPToKF_DePs6j27AncGilbWo9t96F-yKBPD57WulOVgbYwNKAZ_Klbw0ur-YLdTdCaIbUiNhmGTDvY&s=f4OfJIi_mIXZNPK7X70_fBsX6LAF-KRjAnFjXTxz6wWZ7bvkgjwSaLYSL1_urNeGUboigYaHPnEdb79ma5U0-ahGSGZ0GPn5lIHUN7feZUmESJ0Rc27AiF_buKvvA4QmqJ8dDC6bmYoSWJnbZUJUeNjZYqrC7frPfmDesVrHlwedVByj6eygmzEujp2imRbLyjNuAqGs39gbTqOQHjNq8ITQLvRcsfZGWuuv2bc6pmtYqNOR9u1R7bn3XmA01e8KAnJCjz-iuCLGaIugittBTj0FbbUFz4ulDws-xRFYWPClh8IsZMrwn2POKXuw4BK5cpcjEYMG6dRBZNwTYx9cFw&h=SaBUenJomZUgVEaEHBC8vn5j9N_KqWwZd62vRtE5CSg
+        method: GET
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        transfer_encoding: []
+        trailer: {}
+        content_length: 22
+        uncompressed: false
+        body: '{"status":"Succeeded"}'
+        headers:
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "22"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 19 Nov 2025 22:13:00 GMT
+            Expires:
+                - "-1"
+            Pragma:
+                - no-cache
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - c7b10525d41ed58f3a153299e615e8b4
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
+                - "16499"
+            X-Ms-Ratelimit-Remaining-Subscription-Reads:
+                - "1099"
+            X-Ms-Request-Id:
+                - a1cb8542-365c-4b0e-8f58-512962d62510
+            X-Ms-Routing-Request-Id:
+                - WESTUS:20251119T221300Z:a1cb8542-365c-4b0e-8f58-512962d62510
+            X-Msedge-Ref:
+                - 'Ref A: 01364E64C0184A5E89BF0380B9CC1463 Ref B: CO1EDGE1211 Ref C: 2025-11-19T22:12:59Z'
+        status: 200 OK
+        code: 200
+        duration: 373.800132ms
+    - id: 7
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: management.azure.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-armresources/v1.2.0 (go1.25.0; linux),azdev/0.0.0-dev.0 (Go go1.25.0; linux/amd64)
+            X-Ms-Correlation-Request-Id:
+                - c7b10525d41ed58f3a153299e615e8b4
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-l8f0aee-1763590301?api-version=2021-04-01
+        method: GET
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        transfer_encoding: []
+        trailer: {}
+        content_length: 1886
+        uncompressed: false
+        body: '{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-l8f0aee-1763590301","name":"azdtest-l8f0aee-1763590301","type":"Microsoft.Resources/deployments","location":"eastus2","tags":{"azd-env-name":"azdtest-l8f0aee","azd-layer-name":"","azd-provision-param-hash":"2de3a4ffa9b8a10e7121ae28d9b4e84090fd7b00ffed6ae4c578230d00c51bec"},"properties":{"templateHash":"11175131240872942650","parameters":{"environmentName":{"type":"String","value":"azdtest-l8f0aee"},"location":{"type":"String","value":"eastus2"},"deleteAfterTime":{"type":"String","value":"2025-11-19T23:12:26Z"}},"mode":"Incremental","provisioningState":"Succeeded","timestamp":"2025-11-19T22:12:47.8475865Z","duration":"PT21.4580092S","correlationId":"c7b10525d41ed58f3a153299e615e8b4","providers":[{"namespace":"Microsoft.Resources","resourceTypes":[{"resourceType":"resourceGroups","locations":["eastus2"]},{"resourceType":"deployments","locations":[null]}]}],"dependencies":[{"dependsOn":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-l8f0aee","resourceType":"Microsoft.Resources/resourceGroups","resourceName":"rg-azdtest-l8f0aee"}],"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-l8f0aee/providers/Microsoft.Resources/deployments/resources","resourceType":"Microsoft.Resources/deployments","resourceName":"resources"}],"outputs":{"env":{"type":"String","value":"azdtest-l8f0aee"},"loc":{"type":"String","value":"eastus2"},"azurE_CONTAINER_REGISTRY_ENDPOINT":{"type":"String","value":"acrcq2iipgkrky3y.azurecr.io"}},"outputResources":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-l8f0aee"},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-l8f0aee/providers/Microsoft.ContainerRegistry/registries/acrcq2iipgkrky3y"}]}}'
+        headers:
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "1886"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 19 Nov 2025 22:13:00 GMT
+            Expires:
+                - "-1"
+            Pragma:
+                - no-cache
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - c7b10525d41ed58f3a153299e615e8b4
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
+                - "16499"
+            X-Ms-Ratelimit-Remaining-Subscription-Reads:
+                - "1099"
+            X-Ms-Request-Id:
+                - 9fe35c54-f832-4744-bcac-49e2e29c6aa8
+            X-Ms-Routing-Request-Id:
+                - WESTUS2:20251119T221300Z:9fe35c54-f832-4744-bcac-49e2e29c6aa8
+            X-Msedge-Ref:
+                - 'Ref A: 8CC2558A14EA4390B0F3F89D6B03222A Ref B: CO1EDGE1211 Ref C: 2025-11-19T22:13:00Z'
+        status: 200 OK
+        code: 200
+        duration: 356.636333ms
+    - id: 8
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: management.azure.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept:
+                - application/json
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-armresources/v1.2.0 (go1.25.0; linux),azdev/0.0.0-dev.0 (Go go1.25.0; linux/amd64)
+            X-Ms-Correlation-Request-Id:
+                - c7b10525d41ed58f3a153299e615e8b4
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-l8f0aee%27&api-version=2021-04-01
+        method: GET
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        transfer_encoding: []
+        trailer: {}
+        content_length: 325
+        uncompressed: false
+        body: '{"value":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-l8f0aee","name":"rg-azdtest-l8f0aee","type":"Microsoft.Resources/resourceGroups","location":"eastus2","tags":{"azd-env-name":"azdtest-l8f0aee","DeleteAfter":"2025-11-19T23:12:26Z"},"properties":{"provisioningState":"Succeeded"}}]}'
+        headers:
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "325"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 19 Nov 2025 22:13:00 GMT
+            Expires:
+                - "-1"
+            Pragma:
+                - no-cache
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - c7b10525d41ed58f3a153299e615e8b4
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
+                - "16499"
+            X-Ms-Ratelimit-Remaining-Subscription-Reads:
+                - "1099"
+            X-Ms-Request-Id:
+                - 96a4534b-3c3c-4da6-ae8e-9be7e438a1bd
+            X-Ms-Routing-Request-Id:
+                - WESTUS:20251119T221300Z:96a4534b-3c3c-4da6-ae8e-9be7e438a1bd
+            X-Msedge-Ref:
+                - 'Ref A: 55F4B439105C4B43951AEF181AE68F52 Ref B: CO1EDGE1211 Ref C: 2025-11-19T22:13:00Z'
+        status: 200 OK
+        code: 200
+        duration: 85.004285ms
+    - id: 9
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: management.azure.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept:
+                - application/json
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-armresources/v1.2.0 (go1.25.0; linux),azdev/0.0.0-dev.0 (Go go1.25.0; linux/amd64)
+            X-Ms-Correlation-Request-Id:
+                - c7b10525d41ed58f3a153299e615e8b4
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-l8f0aee%27&api-version=2021-04-01
+        method: GET
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        transfer_encoding: []
+        trailer: {}
+        content_length: 325
+        uncompressed: false
+        body: '{"value":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-l8f0aee","name":"rg-azdtest-l8f0aee","type":"Microsoft.Resources/resourceGroups","location":"eastus2","tags":{"azd-env-name":"azdtest-l8f0aee","DeleteAfter":"2025-11-19T23:12:26Z"},"properties":{"provisioningState":"Succeeded"}}]}'
+        headers:
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "325"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 19 Nov 2025 22:13:00 GMT
+            Expires:
+                - "-1"
+            Pragma:
+                - no-cache
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - c7b10525d41ed58f3a153299e615e8b4
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
+                - "16499"
+            X-Ms-Ratelimit-Remaining-Subscription-Reads:
+                - "1099"
+            X-Ms-Request-Id:
+                - 5c98f85f-03ac-4fd4-9e54-10bc8a622453
+            X-Ms-Routing-Request-Id:
+                - WESTCENTRALUS:20251119T221300Z:5c98f85f-03ac-4fd4-9e54-10bc8a622453
+            X-Msedge-Ref:
+                - 'Ref A: 8B2638FC123C4CE0A72F14BCBA6BEFD0 Ref B: CO1EDGE1211 Ref C: 2025-11-19T22:13:00Z'
+        status: 200 OK
+        code: 200
+        duration: 213.704219ms
+    - id: 10
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: management.azure.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept:
+                - application/json
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-armresources/v1.2.0 (go1.25.0; linux),azdev/0.0.0-dev.0 (Go go1.25.0; linux/amd64)
+            X-Ms-Correlation-Request-Id:
+                - c7b10525d41ed58f3a153299e615e8b4
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-l8f0aee/resources?%24filter=tagName+eq+%27azd-service-name%27+and+tagValue+eq+%27demo%27&api-version=2021-04-01
+        method: GET
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        transfer_encoding: []
+        trailer: {}
+        content_length: 12
+        uncompressed: false
+        body: '{"value":[]}'
+        headers:
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "12"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 19 Nov 2025 22:13:01 GMT
+            Expires:
+                - "-1"
+            Pragma:
+                - no-cache
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - c7b10525d41ed58f3a153299e615e8b4
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
+                - "16499"
+            X-Ms-Ratelimit-Remaining-Subscription-Reads:
+                - "1099"
+            X-Ms-Request-Id:
+                - 51ad920a-dc17-4bf8-848c-6d27e8750e98
+            X-Ms-Routing-Request-Id:
+                - WESTUS2:20251119T221301Z:51ad920a-dc17-4bf8-848c-6d27e8750e98
+            X-Msedge-Ref:
+                - 'Ref A: 2685CE61C4F4433CB7611FA174C4E446 Ref B: CO1EDGE1211 Ref C: 2025-11-19T22:13:00Z'
+        status: 200 OK
+        code: 200
+        duration: 306.688848ms
+    - id: 11
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: management.azure.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept:
+                - application/json
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-armresources/v1.2.0 (go1.25.0; linux),azdev/0.0.0-dev.0 (Go go1.25.0; linux/amd64)
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-l8f0aee%27&api-version=2021-04-01
+        method: GET
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        transfer_encoding: []
+        trailer: {}
+        content_length: 325
+        uncompressed: false
+        body: '{"value":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-l8f0aee","name":"rg-azdtest-l8f0aee","type":"Microsoft.Resources/resourceGroups","location":"eastus2","tags":{"azd-env-name":"azdtest-l8f0aee","DeleteAfter":"2025-11-19T23:12:26Z"},"properties":{"provisioningState":"Succeeded"}}]}'
+        headers:
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "325"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 19 Nov 2025 22:13:01 GMT
+            Expires:
+                - "-1"
+            Pragma:
+                - no-cache
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - facd0c13-0305-4395-9923-9a2b8def672f
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
+                - "16499"
+            X-Ms-Ratelimit-Remaining-Subscription-Reads:
+                - "1099"
+            X-Ms-Request-Id:
+                - facd0c13-0305-4395-9923-9a2b8def672f
+            X-Ms-Routing-Request-Id:
+                - WESTUS2:20251119T221301Z:facd0c13-0305-4395-9923-9a2b8def672f
+            X-Msedge-Ref:
+                - 'Ref A: 74EB89D4931C43ED9A7A85CDB7498D30 Ref B: CO1EDGE1211 Ref C: 2025-11-19T22:13:01Z'
+        status: 200 OK
+        code: 200
+        duration: 53.461505ms
+    - id: 12
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: management.azure.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept:
+                - application/json
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-armresources/v1.2.0 (go1.25.0; linux),azdev/0.0.0-dev.0 (Go go1.25.0; linux/amd64)
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-l8f0aee/resources?%24filter=tagName+eq+%27azd-service-name%27+and+tagValue+eq+%27demo%27&api-version=2021-04-01
+        method: GET
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        transfer_encoding: []
+        trailer: {}
+        content_length: 12
+        uncompressed: false
+        body: '{"value":[]}'
+        headers:
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "12"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 19 Nov 2025 22:13:01 GMT
+            Expires:
+                - "-1"
+            Pragma:
+                - no-cache
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - ab126e33-cce2-4ac4-bb6b-a54c0a4fdcf7
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
+                - "16499"
+            X-Ms-Ratelimit-Remaining-Subscription-Reads:
+                - "1099"
+            X-Ms-Request-Id:
+                - ab126e33-cce2-4ac4-bb6b-a54c0a4fdcf7
+            X-Ms-Routing-Request-Id:
+                - WESTUS2:20251119T221301Z:ab126e33-cce2-4ac4-bb6b-a54c0a4fdcf7
+            X-Msedge-Ref:
+                - 'Ref A: 29099187A0EC412FAD3AB0EF957BBD07 Ref B: CO1EDGE1211 Ref C: 2025-11-19T22:13:01Z'
+        status: 200 OK
+        code: 200
+        duration: 332.440795ms
+    - id: 13
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: -1
+        transfer_encoding:
+            - chunked
+        trailer: {}
+        host: acrcq2iipgkrky3y.azurecr.io
+        remote_addr: ""
+        request_uri: ""
+        body: access_token=SANITIZED&grant_type=access_token&service=acrcq2iipgkrky3y.azurecr.io
+        form:
+            access_token:
+                - SANITIZED
+            grant_type:
+                - access_token
+            service:
+                - acrcq2iipgkrky3y.azurecr.io
+        headers:
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            Content-Type:
+                - application/x-www-form-urlencoded
+            User-Agent:
+                - azsdk-go-azd-acr/0.0.0-dev.0 (commit 0000000000000000000000000000000000000000) (go1.25.0; linux),azdev/0.0.0-dev.0 (Go go1.25.0; linux/amd64)
+        url: https://acrcq2iipgkrky3y.azurecr.io:443/oauth2/exchange
+        method: POST
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        transfer_encoding:
+            - chunked
+        trailer: {}
+        content_length: -1
+        uncompressed: false
+        body: '{"refresh_token":"SANITIZED"}'
+        headers:
+            Connection:
+                - keep-alive
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 19 Nov 2025 22:13:02 GMT
+            Server:
+                - AzureContainerRegistry
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Ms-Correlation-Request-Id:
+                - 92fc98cb-80e0-4cac-98e5-3fcefff7be35
+            X-Ms-Ratelimit-Remaining-Calls-Per-Second:
+                - "166.65"
+        status: 200 OK
+        code: 200
+        duration: 404.351605ms
+    - id: 14
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: management.azure.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept:
+                - application/json
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-armresources/v1.2.0 (go1.25.0; linux),azdev/0.0.0-dev.0 (Go go1.25.0; linux/amd64)
+            X-Ms-Correlation-Request-Id:
+                - c7b10525d41ed58f3a153299e615e8b4
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-l8f0aee%27&api-version=2021-04-01
+        method: GET
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        transfer_encoding: []
+        trailer: {}
+        content_length: 325
+        uncompressed: false
+        body: '{"value":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-l8f0aee","name":"rg-azdtest-l8f0aee","type":"Microsoft.Resources/resourceGroups","location":"eastus2","tags":{"azd-env-name":"azdtest-l8f0aee","DeleteAfter":"2025-11-19T23:12:26Z"},"properties":{"provisioningState":"Succeeded"}}]}'
+        headers:
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "325"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 19 Nov 2025 22:13:14 GMT
+            Expires:
+                - "-1"
+            Pragma:
+                - no-cache
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - c7b10525d41ed58f3a153299e615e8b4
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
+                - "16499"
+            X-Ms-Ratelimit-Remaining-Subscription-Reads:
+                - "1099"
+            X-Ms-Request-Id:
+                - 3eb6915b-59b3-48ea-8ab2-bb8a6948672d
+            X-Ms-Routing-Request-Id:
+                - EASTUS2:20251119T221314Z:3eb6915b-59b3-48ea-8ab2-bb8a6948672d
+            X-Msedge-Ref:
+                - 'Ref A: 6F610F9A6B8840938837606BC06002A8 Ref B: CO1EDGE1211 Ref C: 2025-11-19T22:13:14Z'
+        status: 200 OK
+        code: 200
+        duration: 122.235196ms
+    - id: 15
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: management.azure.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept:
+                - application/json
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-armresources/v1.2.0 (go1.25.0; linux),azdev/0.0.0-dev.0 (Go go1.25.0; linux/amd64)
+            X-Ms-Correlation-Request-Id:
+                - c7b10525d41ed58f3a153299e615e8b4
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-l8f0aee/resources?%24filter=tagName+eq+%27azd-service-name%27+and+tagValue+eq+%27demo%27&api-version=2021-04-01
+        method: GET
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        transfer_encoding: []
+        trailer: {}
+        content_length: 12
+        uncompressed: false
+        body: '{"value":[]}'
+        headers:
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "12"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 19 Nov 2025 22:13:14 GMT
+            Expires:
+                - "-1"
+            Pragma:
+                - no-cache
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - c7b10525d41ed58f3a153299e615e8b4
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
+                - "16499"
+            X-Ms-Ratelimit-Remaining-Subscription-Reads:
+                - "1099"
+            X-Ms-Request-Id:
+                - 27826d83-06d1-444d-8ca8-1024d082707f
+            X-Ms-Routing-Request-Id:
+                - WESTCENTRALUS:20251119T221314Z:27826d83-06d1-444d-8ca8-1024d082707f
+            X-Msedge-Ref:
+                - 'Ref A: A6D7B42808DB403CA5BB158ACB2CC69D Ref B: CO1EDGE1211 Ref C: 2025-11-19T22:13:14Z'
+        status: 200 OK
+        code: 200
+        duration: 278.405185ms
+    - id: 16
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: management.azure.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept:
+                - application/json
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-armresources/v1.2.0 (go1.25.0; linux),azdev/0.0.0-dev.0 (Go go1.25.0; linux/amd64)
+            X-Ms-Correlation-Request-Id:
+                - c7b10525d41ed58f3a153299e615e8b4
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-l8f0aee%27&api-version=2021-04-01
+        method: GET
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        transfer_encoding: []
+        trailer: {}
+        content_length: 325
+        uncompressed: false
+        body: '{"value":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-l8f0aee","name":"rg-azdtest-l8f0aee","type":"Microsoft.Resources/resourceGroups","location":"eastus2","tags":{"azd-env-name":"azdtest-l8f0aee","DeleteAfter":"2025-11-19T23:12:26Z"},"properties":{"provisioningState":"Succeeded"}}]}'
+        headers:
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "325"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 19 Nov 2025 22:13:19 GMT
+            Expires:
+                - "-1"
+            Pragma:
+                - no-cache
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - c7b10525d41ed58f3a153299e615e8b4
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
+                - "16499"
+            X-Ms-Ratelimit-Remaining-Subscription-Reads:
+                - "1099"
+            X-Ms-Request-Id:
+                - 76e2e80e-05e8-4ae0-84df-9de50dd37c90
+            X-Ms-Routing-Request-Id:
+                - EASTUS2:20251119T221319Z:76e2e80e-05e8-4ae0-84df-9de50dd37c90
+            X-Msedge-Ref:
+                - 'Ref A: 44EADC8B22864BBE94BE1017F4BA7DF2 Ref B: CO1EDGE1211 Ref C: 2025-11-19T22:13:19Z'
+        status: 200 OK
+        code: 200
+        duration: 131.474848ms
+---
+env_name: azdtest-l8f0aee
+time: "1763590301"

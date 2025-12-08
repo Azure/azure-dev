@@ -16,6 +16,18 @@ func NewProgress[T comparable]() *Progress[T] {
 	}
 }
 
+// NewNoopProgress creates a new instance of Progress that does not report any progress. The progress channel is drained
+func NewNoopProgress[T comparable]() *Progress[T] {
+	p := NewProgress[T]()
+	go func() {
+		for range p.Progress() {
+			// Nothing to do here but we need to drain the channel to avoid blocking
+		}
+	}()
+
+	return p
+}
+
 // Progress returns the read side of the underlying channel. The channel will be closed when [Done] is called, so a `range`
 // loop may be used to consume all progress updates.
 func (p *Progress[T]) Progress() <-chan T {

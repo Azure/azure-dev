@@ -384,6 +384,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 
 	envManager := &mockenv.MockEnvManager{}
 	envManager.On("Save", mock.Anything, mock.Anything).Return(nil)
+	envManager.On("Reload", mock.Anything, mock.Anything).Return(nil)
 
 	bicepCli, err := bicep.NewCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
 	require.NoError(t, err)
@@ -917,12 +918,13 @@ func TestFindCompletedDeployments(t *testing.T) {
 
 	baseDate := "1989-10-31"
 	envTag := "env-tag"
+	layerName := ""
 
 	deployments, err := bicepProvider.deploymentManager.CompletedDeployments(
 		*mockContext.Context, &mockedScope{
 			baseDate: baseDate,
 			envTag:   envTag,
-		}, envTag, "")
+		}, envTag, layerName, "")
 	require.NoError(t, err)
 	require.Equal(t, 1, len(deployments))
 	// should take the base date + 2 years
@@ -1459,4 +1461,101 @@ func TestDefaultLocationToSelectFn(t *testing.T) {
 		result := defaultPromptValue(param)
 		require.Nil(t, result)
 	})
+}
+
+func TestPreviewWithNilResourceState(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	prepareBicepMocks(mockContext)
+
+	// Setup the WhatIf endpoint mock to return changes with nil After (simulating Delete)
+	// and nil Before (simulating Create)
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodPost &&
+			strings.Contains(request.URL.Path, "/providers/Microsoft.Resources/deployments/") &&
+			strings.HasSuffix(request.URL.Path, "/whatIf")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		// Return a WhatIfOperationResult with various scenarios
+		whatIfResult := armresources.WhatIfOperationResult{
+			Status: to.Ptr("Succeeded"),
+			Properties: &armresources.WhatIfOperationProperties{
+				Changes: []*armresources.WhatIfChange{
+					// Create scenario: Before is nil, After has value
+					{
+						ChangeType: to.Ptr(armresources.ChangeTypeCreate),
+						ResourceID: to.Ptr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Web/sites/app1"),
+						Before:     nil,
+						After: map[string]interface{}{
+							"type": "Microsoft.Web/sites",
+							"name": "app1",
+						},
+					},
+					// Delete scenario: After is nil, Before has value
+					{
+						ChangeType: to.Ptr(armresources.ChangeTypeDelete),
+						ResourceID: to.Ptr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Web/sites/app2"),
+						Before: map[string]interface{}{
+							"type": "Microsoft.Web/sites",
+							"name": "app2",
+						},
+						After: nil,
+					},
+					// Modify scenario: Both Before and After have values
+					{
+						ChangeType: to.Ptr(armresources.ChangeTypeModify),
+						ResourceID: to.Ptr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Web/sites/app3"),
+						Before: map[string]interface{}{
+							"type": "Microsoft.Web/sites",
+							"name": "app3",
+						},
+						After: map[string]interface{}{
+							"type": "Microsoft.Web/sites",
+							"name": "app3",
+						},
+					},
+					// Edge case: Both Before and After are nil (should be skipped)
+					{
+						ChangeType: to.Ptr(armresources.ChangeTypeUnsupported),
+						ResourceID: to.Ptr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Unknown/unknown"),
+						Before:     nil,
+						After:      nil,
+					},
+				},
+			},
+		}
+
+		bodyBytes, _ := json.Marshal(whatIfResult)
+		return &http.Response{
+			Request:    request,
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(bodyBytes)),
+		}, nil
+	})
+
+	infraProvider := createBicepProvider(t, mockContext)
+
+	result, err := infraProvider.Preview(*mockContext.Context)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.Preview)
+	require.NotNil(t, result.Preview.Properties)
+
+	// We expect 3 changes (the edge case with both nil should be skipped)
+	changes := result.Preview.Properties.Changes
+	require.Len(t, changes, 3)
+
+	// Verify Create change (uses After)
+	assert.Equal(t, provisioning.ChangeTypeCreate, changes[0].ChangeType)
+	assert.Equal(t, "Microsoft.Web/sites", changes[0].ResourceType)
+	assert.Equal(t, "app1", changes[0].Name)
+
+	// Verify Delete change (uses Before since After is nil)
+	assert.Equal(t, provisioning.ChangeTypeDelete, changes[1].ChangeType)
+	assert.Equal(t, "Microsoft.Web/sites", changes[1].ResourceType)
+	assert.Equal(t, "app2", changes[1].Name)
+
+	// Verify Modify change
+	assert.Equal(t, provisioning.ChangeTypeModify, changes[2].ChangeType)
+	assert.Equal(t, "Microsoft.Web/sites", changes[2].ResourceType)
+	assert.Equal(t, "app3", changes[2].Name)
 }

@@ -1,0 +1,120 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Azure AI Agent Service Target Configuration",
+  "description": "Custom configuration for the Azure AI Agent Service target",
+  "type": "object",
+  "properties": {
+    "env": {
+      "type": "object",
+      "description": "Environment variables as key-value pairs",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "container": {
+      "$ref": "#/definitions/ContainerSettings"
+    },
+    "deployments": {
+      "type": "array",
+      "description": "List of model deployments.",
+      "items": { "$ref": "#/definitions/Deployment" }
+    },
+    "resources": {
+      "type": "array",
+      "description": "List of external resources for agent execution.",
+      "items": { "$ref": "#/definitions/Resource" }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "ContainerSettings": {
+      "type": "object",
+      "description": "Container configuration for the Azure AI Agent Service target",
+      "properties": {
+        "resources": {
+          "$ref": "#/definitions/ResourceSettings"
+        },
+        "scale": {
+          "$ref": "#/definitions/ScaleSettings"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ResourceSettings": {
+      "type": "object",
+      "description": "Resource configuration for the Azure AI Agent Service target",
+      "properties": {
+        "memory": {
+          "type": "string",
+          "description": "Memory allocation (e.g., '1Gi', '512Mi')",
+          "pattern": "^[0-9]+(\\.[0-9]+)?(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$"
+        },
+        "cpu": {
+          "type": "string",
+          "description": "CPU allocation (e.g., '1', '500m')",
+          "pattern": "^[0-9]+(\\.[0-9]+)?m?$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ScaleSettings": {
+      "type": "object",
+      "description": "Scaling configuration for the Azure AI Agent Service target",
+      "properties": {
+        "minReplicas": {
+          "type": "integer",
+          "description": "Minimum number of replicas",
+          "minimum": 0
+        },
+        "maxReplicas": {
+          "type": "integer",
+          "description": "Maximum number of replicas",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "Deployment": {
+      "type": "object",
+      "description": "A single model deployment.",
+      "properties": {
+        "name": { "type": "string", "description": "Name of the model deployment." },
+        "model": { "$ref": "#/definitions/DeploymentModel" },
+        "sku": { "$ref": "#/definitions/DeploymentSku" }
+      },
+      "required": ["name", "model", "sku"],
+      "additionalProperties": false
+    },
+    "DeploymentModel": {
+      "type": "object",
+      "description": "Model configuration for a model deployment.",
+      "properties": {
+        "name": { "type": "string", "description": "Model name." },
+        "format": { "type": "string", "description": "Model format." },
+        "version": { "type": "string", "description": "Model version." }
+      },
+      "required": ["name", "format", "version"],
+      "additionalProperties": false
+    },
+    "DeploymentSku": {
+      "type": "object",
+      "description": "SKU configuration for a deployment.",
+      "properties": {
+        "name": { "type": "string", "description": "SKU name." },
+        "capacity": { "type": "integer", "description": "SKU capacity." }
+      },
+      "required": ["name", "capacity"],
+      "additionalProperties": false
+    },
+    "Resource": {
+      "type": "object",
+      "description": "External resource for agent execution.",
+      "properties": {
+        "resource": { "type": "string", "description": "Resource identifier." },
+        "connectionName": { "type": "string", "description": "Connection name for the resource." }
+      },
+      "required": ["resource", "connectionName"],
+      "additionalProperties": false
+    }
+  }
+}

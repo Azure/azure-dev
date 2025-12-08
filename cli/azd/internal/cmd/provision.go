@@ -92,13 +92,17 @@ func NewProvisionFlagsFromEnvAndOptions(envFlag *internal.EnvFlag, global *inter
 }
 
 func NewProvisionCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "provision",
+	cmd := &cobra.Command{
+		Use:   "provision [<layer>]",
 		Short: "Provision Azure resources for your project.",
 	}
+	cmd.Args = cobra.MaximumNArgs(1)
+
+	return cmd
 }
 
 type ProvisionAction struct {
+	args                []string
 	flags               *ProvisionFlags
 	provisionManager    *provisioning.Manager
 	projectManager      project.ProjectManager
@@ -116,6 +120,7 @@ type ProvisionAction struct {
 }
 
 func NewProvisionAction(
+	args []string,
 	flags *ProvisionFlags,
 	provisionManager *provisioning.Manager,
 	projectManager project.ProjectManager,
@@ -132,6 +137,7 @@ func NewProvisionAction(
 	cloud *cloud.Cloud,
 ) actions.Action {
 	return &ProvisionAction{
+		args:                args,
 		flags:               flags,
 		provisionManager:    provisionManager,
 		projectManager:      projectManager,
@@ -199,73 +205,205 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	}
 	defer func() { _ = infra.Cleanup() }()
 
-	infraOptions := infra.Options
-	infraOptions.IgnoreDeploymentState = p.flags.ignoreDeploymentState
-	if err := p.provisionManager.Initialize(ctx, p.projectConfig.Path, infraOptions); err != nil {
-		return nil, fmt.Errorf("initializing provisioning manager: %w", err)
+	layer := ""
+	if len(p.args) > 0 {
+		layer = p.args[0]
 	}
 
-	// Get Subscription to Display in Command Title Note
-	// Subscription and Location are ONLY displayed when they are available (found from env), otherwise, this message
-	// is not displayed.
-	// This needs to happen after the provisionManager initializes to make sure the env is ready for the provisioning
-	// provider
-	subscription, subErr := p.subManager.GetSubscription(ctx, p.env.GetSubscriptionId())
-	if subErr == nil {
-		location, err := p.subManager.GetLocation(ctx, p.env.GetSubscriptionId(), p.env.GetLocation())
-		var locationDisplay string
+	layers := infra.Options.GetLayers()
+	if layer != "" {
+		layerOption, err := infra.Options.GetLayer(layer)
 		if err != nil {
-			log.Printf("failed getting location: %v", err)
-		} else {
-			locationDisplay = location.DisplayName
+			return nil, err
 		}
 
-		var subscriptionDisplay string
-		if v, err := strconv.ParseBool(os.Getenv("AZD_DEMO_MODE")); err == nil && v {
-			subscriptionDisplay = subscription.Name
-		} else {
-			subscriptionDisplay = fmt.Sprintf("%s (%s)", subscription.Name, subscription.Id)
+		layers = []provisioning.Options{layerOption}
+	}
+
+	if previewMode && len(layers) > 1 {
+		return nil, fmt.Errorf("--preview cannot be used when provisioning multiple layers. Specify a <layer> directly")
+	}
+
+	allSkipped := true
+	for i, layer := range layers {
+		layer.IgnoreDeploymentState = p.flags.ignoreDeploymentState
+		if err := p.provisionManager.Initialize(ctx, p.projectConfig.Path, layer); err != nil {
+			return nil, fmt.Errorf("initializing provisioning manager: %w", err)
 		}
 
-		p.console.MessageUxItem(ctx, &ux.EnvironmentDetails{
-			Subscription: subscriptionDisplay,
-			Location:     locationDisplay,
+		if i == 0 { // only display once
+			// Get Subscription to Display in Command Title Note
+			// Subscription and Location are ONLY displayed when they are available (found from env), otherwise, this message
+			// is not displayed.
+			// This needs to happen after the provisionManager initializes to make sure the env is ready for the provisioning
+			// provider
+			subscription, subErr := p.subManager.GetSubscription(ctx, p.env.GetSubscriptionId())
+			if subErr == nil {
+				location, err := p.subManager.GetLocation(ctx, p.env.GetSubscriptionId(), p.env.GetLocation())
+				var locationDisplay string
+				if err != nil {
+					log.Printf("failed getting location: %v", err)
+				} else {
+					locationDisplay = location.DisplayName
+				}
+
+				var subscriptionDisplay string
+				if v, err := strconv.ParseBool(os.Getenv("AZD_DEMO_MODE")); err == nil && v {
+					subscriptionDisplay = subscription.Name
+				} else {
+					subscriptionDisplay = fmt.Sprintf("%s (%s)", subscription.Name, subscription.Id)
+				}
+
+				p.console.MessageUxItem(ctx, &ux.EnvironmentDetails{
+					Subscription: subscriptionDisplay,
+					Location:     locationDisplay,
+				})
+
+			} else {
+				log.Printf("failed getting subscriptions. Skip displaying sub and location: %v", subErr)
+			}
+		} else {
+			// separation between each layer
+			p.console.Message(ctx, "")
+		}
+
+		if layer.Name != "" {
+			p.console.Message(ctx, fmt.Sprintf("Layer: %s", output.WithHighLightFormat(layer.Name)))
+		}
+		p.console.Message(ctx, "")
+
+		var deployResult *provisioning.DeployResult
+		var deployPreviewResult *provisioning.DeployPreviewResult
+
+		projectEventArgs := project.ProjectLifecycleEventArgs{
+			Project: p.projectConfig,
+			Args: map[string]any{
+				"preview": previewMode,
+			},
+		}
+
+		if p.alphaFeatureManager.IsEnabled(azapi.FeatureDeploymentStacks) {
+			p.console.WarnForFeature(ctx, azapi.FeatureDeploymentStacks)
+		}
+
+		err = p.projectConfig.Invoke(ctx, project.ProjectEventProvision, projectEventArgs, func() error {
+			var err error
+			if previewMode {
+				deployPreviewResult, err = p.provisionManager.Preview(ctx)
+			} else {
+				deployResult, err = p.provisionManager.Deploy(ctx)
+			}
+			return err
 		})
 
-	} else {
-		log.Printf("failed getting subscriptions. Skip displaying sub and location: %v", subErr)
-	}
+		if err != nil {
+			if p.formatter.Kind() == output.JsonFormat {
+				stateResult, err := p.provisionManager.State(ctx, nil)
+				if err != nil {
+					return nil, fmt.Errorf(
+						"deployment failed and the deployment result is unavailable: %w",
+						multierr.Combine(err, err),
+					)
+				}
 
-	var deployResult *provisioning.DeployResult
-	var deployPreviewResult *provisioning.DeployPreviewResult
+				if err := p.formatter.Format(
+					provisioning.NewEnvRefreshResultFromState(stateResult.State), p.writer, nil); err != nil {
+					return nil, fmt.Errorf(
+						"deployment failed and the deployment result could not be displayed: %w",
+						multierr.Combine(err, err),
+					)
+				}
+			}
 
-	projectEventArgs := project.ProjectLifecycleEventArgs{
-		Project: p.projectConfig,
-		Args: map[string]any{
-			"preview": previewMode,
-		},
-	}
+			//if user don't have access to openai
+			errorMsg := err.Error()
+			if strings.Contains(errorMsg, specialFeatureOrQuotaIdRequired) && strings.Contains(errorMsg, "OpenAI") {
+				requestAccessLink := "https://go.microsoft.com/fwlink/?linkid=2259205&clcid=0x409"
+				return nil, &internal.ErrorWithSuggestion{
+					Err: err,
+					Suggestion: "\nSuggested Action: The selected subscription does not have access to" +
+						" Azure OpenAI Services. Please visit " + output.WithLinkFormat("%s", requestAccessLink) +
+						" to request access.",
+				}
+			}
 
-	if p.alphaFeatureManager.IsEnabled(azapi.FeatureDeploymentStacks) {
-		p.console.WarnForFeature(ctx, azapi.FeatureDeploymentStacks)
-	}
+			if strings.Contains(errorMsg, AINotValid) &&
+				strings.Contains(errorMsg, openAIsubscriptionNoQuotaId) {
+				return nil, &internal.ErrorWithSuggestion{
+					Suggestion: "\nSuggested Action: The selected " +
+						"subscription has not been enabled for use of Azure AI service and does not have quota for " +
+						"any pricing tiers. Please visit " + output.WithLinkFormat("%s", p.portalUrlBase) +
+						" and select 'Create' on specific services to request access.",
+					Err: err,
+				}
+			}
 
-	err = p.projectConfig.Invoke(ctx, project.ProjectEventProvision, projectEventArgs, func() error {
-		var err error
-		if previewMode {
-			deployPreviewResult, err = p.provisionManager.Preview(ctx)
-		} else {
-			deployResult, err = p.provisionManager.Deploy(ctx)
+			//if user haven't agree to Responsible AI terms
+			if strings.Contains(errorMsg, responsibleAITerms) {
+				return nil, &internal.ErrorWithSuggestion{
+					Suggestion: "\nSuggested Action: Please visit azure portal in " +
+						output.WithLinkFormat("%s", p.portalUrlBase) + ". Create the resource in azure portal " +
+						"to go through Responsible AI terms, and then delete it. " +
+						"After that, run 'azd provision' again",
+					Err: err,
+				}
+			}
+
+			return nil, fmt.Errorf("deployment failed: %w", err)
 		}
-		return err
-	})
 
-	if err != nil {
+		if previewMode {
+			p.console.MessageUxItem(ctx, deployResultToUx(deployPreviewResult))
+
+			return &actions.ActionResult{
+				Message: &actions.ResultMessage{
+					Header: fmt.Sprintf(
+						"Generated provisioning preview in %s.", ux.DurationAsText(since(startTime))),
+					FollowUp: getResourceGroupFollowUp(
+						ctx,
+						p.formatter,
+						p.portalUrlBase,
+						p.projectConfig,
+						p.resourceManager,
+						p.env,
+						true,
+					),
+				},
+			}, nil
+		}
+
+		skipped := deployResult.SkippedReason == provisioning.DeploymentStateSkipped
+		allSkipped = allSkipped && skipped
+		if skipped {
+			// Simply continue here; message is printed in the provider implementation
+			continue
+		}
+
+		servicesStable, err := p.importManager.ServiceStable(ctx, p.projectConfig)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, svc := range servicesStable {
+			eventArgs := project.ServiceLifecycleEventArgs{
+				Project:        p.projectConfig,
+				Service:        svc,
+				ServiceContext: project.NewServiceContext(),
+				Args: map[string]any{
+					"bicepOutput": deployResult.Deployment.Outputs,
+				},
+			}
+
+			if err := svc.RaiseEvent(ctx, project.ServiceEventEnvUpdated, eventArgs); err != nil {
+				return nil, err
+			}
+		}
+
 		if p.formatter.Kind() == output.JsonFormat {
 			stateResult, err := p.provisionManager.State(ctx, nil)
 			if err != nil {
 				return nil, fmt.Errorf(
-					"deployment failed and the deployment result is unavailable: %w",
+					"deployment succeeded but the deployment result is unavailable: %w",
 					multierr.Combine(err, err),
 				)
 			}
@@ -273,112 +411,19 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 			if err := p.formatter.Format(
 				provisioning.NewEnvRefreshResultFromState(stateResult.State), p.writer, nil); err != nil {
 				return nil, fmt.Errorf(
-					"deployment failed and the deployment result could not be displayed: %w",
+					"deployment succeeded but the deployment result could not be displayed: %w",
 					multierr.Combine(err, err),
 				)
 			}
 		}
-
-		//if user don't have access to openai
-		errorMsg := err.Error()
-		if strings.Contains(errorMsg, specialFeatureOrQuotaIdRequired) && strings.Contains(errorMsg, "OpenAI") {
-			requestAccessLink := "https://go.microsoft.com/fwlink/?linkid=2259205&clcid=0x409"
-			return nil, &internal.ErrorWithSuggestion{
-				Err: err,
-				Suggestion: "\nSuggested Action: The selected subscription does not have access to" +
-					" Azure OpenAI Services. Please visit " + output.WithLinkFormat("%s", requestAccessLink) +
-					" to request access.",
-			}
-		}
-
-		if strings.Contains(errorMsg, AINotValid) &&
-			strings.Contains(errorMsg, openAIsubscriptionNoQuotaId) {
-			return nil, &internal.ErrorWithSuggestion{
-				Suggestion: "\nSuggested Action: The selected " +
-					"subscription has not been enabled for use of Azure AI service and does not have quota for " +
-					"any pricing tiers. Please visit " + output.WithLinkFormat("%s", p.portalUrlBase) +
-					" and select 'Create' on specific services to request access.",
-				Err: err,
-			}
-		}
-
-		//if user haven't agree to Responsible AI terms
-		if strings.Contains(errorMsg, responsibleAITerms) {
-			return nil, &internal.ErrorWithSuggestion{
-				Suggestion: "\nSuggested Action: Please visit azure portal in " +
-					output.WithLinkFormat("%s", p.portalUrlBase) + ". Create the resource in azure portal " +
-					"to go through Responsible AI terms, and then delete it. " +
-					"After that, run 'azd provision' again",
-				Err: err,
-			}
-		}
-
-		return nil, fmt.Errorf("deployment failed: %w", err)
 	}
 
-	if previewMode {
-		p.console.MessageUxItem(ctx, deployResultToUx(deployPreviewResult))
-
-		return &actions.ActionResult{
-			Message: &actions.ResultMessage{
-				Header: fmt.Sprintf(
-					"Generated provisioning preview in %s.", ux.DurationAsText(since(startTime))),
-				FollowUp: getResourceGroupFollowUp(
-					ctx,
-					p.formatter,
-					p.portalUrlBase,
-					p.projectConfig,
-					p.resourceManager,
-					p.env,
-					true,
-				),
-			},
-		}, nil
-	}
-
-	if deployResult.SkippedReason == provisioning.DeploymentStateSkipped {
+	if allSkipped {
 		return &actions.ActionResult{
 			Message: &actions.ResultMessage{
 				Header: "There are no changes to provision for your application.",
 			},
 		}, nil
-	}
-
-	servicesStable, err := p.importManager.ServiceStable(ctx, p.projectConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, svc := range servicesStable {
-		eventArgs := project.ServiceLifecycleEventArgs{
-			Project: p.projectConfig,
-			Service: svc,
-			Args: map[string]any{
-				"bicepOutput": deployResult.Deployment.Outputs,
-			},
-		}
-
-		if err := svc.RaiseEvent(ctx, project.ServiceEventEnvUpdated, eventArgs); err != nil {
-			return nil, err
-		}
-	}
-
-	if p.formatter.Kind() == output.JsonFormat {
-		stateResult, err := p.provisionManager.State(ctx, nil)
-		if err != nil {
-			return nil, fmt.Errorf(
-				"deployment succeeded but the deployment result is unavailable: %w",
-				multierr.Combine(err, err),
-			)
-		}
-
-		if err := p.formatter.Format(
-			provisioning.NewEnvRefreshResultFromState(stateResult.State), p.writer, nil); err != nil {
-			return nil, fmt.Errorf(
-				"deployment succeeded but the deployment result could not be displayed: %w",
-				multierr.Combine(err, err),
-			)
-		}
 	}
 
 	return &actions.ActionResult{
@@ -414,13 +459,16 @@ func deployResultToUx(previewResult *provisioning.DeployPreviewResult) ux.UxItem
 }
 
 func GetCmdProvisionHelpDescription(c *cobra.Command) string {
-	return generateCmdHelpDescription(fmt.Sprintf(
-		"Provision the Azure resources for an application."+
-			" This step may take a while depending on the resources provisioned."+
-			" You should run %s any time you update your Bicep or Terraform file."+
-			"\n\nThis command prompts you to input the following:",
-		output.WithHighLightFormat(c.CommandPath())), []string{
-		formatHelpNote("Azure location: The Azure location where your resources will be deployed."),
-		formatHelpNote("Azure subscription: The Azure subscription where your resources will be deployed."),
-	})
+	return generateCmdHelpDescription(
+		fmt.Sprintf(
+			"Provision the Azure resources for an application."+
+				" This step may take a while depending on the resources provisioned."+
+				" You should run %s any time you update your Bicep or Terraform file."+
+				"\n\nThis command prompts you to input the following:",
+			output.WithHighLightFormat(c.CommandPath())), []string{
+			formatHelpNote("Azure location: The Azure location where your resources will be deployed."),
+			formatHelpNote("Azure subscription: The Azure subscription where your resources will be deployed."),
+			fmt.Sprintf("\nWhen <layer> is specified, only provisions resources for the given layer." +
+				" When omitted, provisions resources for all layers defined in the project."),
+		})
 }

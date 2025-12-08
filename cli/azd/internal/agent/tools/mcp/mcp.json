@@ -1,0 +1,14 @@
+{
+  "servers": {
+    "azure": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@azure/mcp@latest", "server", "start"]
+    },
+    "azd": {
+      "type": "stdio",
+      "command": "azd",
+      "args": ["mcp", "start"]
+    }
+  }
+}

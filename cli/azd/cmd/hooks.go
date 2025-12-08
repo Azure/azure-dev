@@ -129,6 +129,11 @@ func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		),
 	})
 
+	// Validate hooks and display warnings
+	if err := hra.validateAndWarnHooks(ctx); err != nil {
+		return nil, fmt.Errorf("failed validating hooks: %w", err)
+	}
+
 	// Validate service name
 	if hra.flags.service != "" {
 		if has, err := hra.importManager.HasService(ctx, hra.projectConfig, hra.flags.service); err != nil {
@@ -247,7 +252,7 @@ func (hra *hooksRunAction) execHook(
 		hookName: {hook},
 	}
 
-	hooksManager := ext.NewHooksManager(cwd)
+	hooksManager := ext.NewHooksManager(cwd, hra.commandRunner)
 	hooksRunner := ext.NewHooksRunner(
 		hooksManager, hra.commandRunner, hra.envManager, hra.console, cwd, hooksMap, hra.env, hra.serviceLocator)
 
@@ -259,6 +264,44 @@ func (hra *hooksRunAction) execHook(
 	err := hooksRunner.RunHooks(ctx, hookType, runOptions, commandName)
 	if err != nil {
 		return err
+	}
+
+	return nil
+}
+
+// Validates hooks and displays warnings for default shell usage and other issues
+func (hra *hooksRunAction) validateAndWarnHooks(ctx context.Context) error {
+	// Collect all hooks from project and services
+	allHooks := make(map[string][]*ext.HookConfig)
+
+	// Add project hooks
+	for hookName, hookConfigs := range hra.projectConfig.Hooks {
+		allHooks[hookName] = append(allHooks[hookName], hookConfigs...)
+	}
+
+	// Add service hooks
+	stableServices, err := hra.importManager.ServiceStable(ctx, hra.projectConfig)
+	if err == nil {
+		for _, service := range stableServices {
+			for hookName, hookConfigs := range service.Hooks {
+				allHooks[hookName] = append(allHooks[hookName], hookConfigs...)
+			}
+		}
+	}
+
+	// Create hooks manager and validate
+	hooksManager := ext.NewHooksManager(hra.projectConfig.Path, hra.commandRunner)
+	validationResult := hooksManager.ValidateHooks(ctx, allHooks)
+
+	// Display any warnings
+	for _, warning := range validationResult.Warnings {
+		hra.console.MessageUxItem(ctx, &ux.WarningMessage{
+			Description: warning.Message,
+		})
+		if warning.Suggestion != "" {
+			hra.console.Message(ctx, warning.Suggestion)
+		}
+		hra.console.Message(ctx, "")
 	}
 
 	return nil

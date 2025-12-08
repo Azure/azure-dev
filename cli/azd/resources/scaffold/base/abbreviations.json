@@ -1,4 +1,5 @@
 {
+    "aiFoundryAccounts": "aif",
     "analysisServicesServers": "as",
     "apiManagementService": "apim-",
     "appConfigurationStores": "appcs-",

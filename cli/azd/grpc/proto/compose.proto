@@ -1,8 +1,10 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 syntax = "proto3";
 
 package azdext;
 
-option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext;azdext";
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext";
 
 import "models.proto";
 

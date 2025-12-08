@@ -187,6 +187,8 @@ type ActionDescriptorOptions struct {
 	DefaultFormat output.Format
 	// Whether or not telemetry should be disabled for the current action
 	DisableTelemetry bool
+	// Whether or not troubleshooting should be disabled for the current action
+	DisableTroubleshooting bool
 	// The logic that produces the command help
 	HelpOptions ActionHelpOptions
 	// Defines grouping options for the command

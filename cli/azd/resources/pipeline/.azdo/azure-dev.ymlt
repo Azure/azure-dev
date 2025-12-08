@@ -20,7 +20,11 @@ steps:
   #     targetType: 'inline'
   #     script: |
   #       curl -fsSL https://aka.ms/install-azd.sh | bash
-
+{{ if .IsTerraform }}
+  # Install task from https://marketplace.visualstudio.com/acquisition?itemName=ms-devlabs.custom-terraform-tasks
+  - task: TerraformInstaller@1
+    displayName: Install Terraform
+{{ end }}
   # azd delegate auth to az to use service connection with AzureCLI@2
   - pwsh: |
       azd config set auth.useAzCliAuth "true"
@@ -41,6 +45,10 @@ steps:
     inputs:
       version: '9.x'
     displayName: Set up .NET 9
+  - task: UseDotNet@2
+    inputs:
+      version: '10.x'
+    displayName: Set up .NET 10
 {{ end }}
   - task: AzureCLI@2
     displayName: Provision Infrastructure

@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
 type Cli struct {
@@ -36,7 +35,7 @@ func (cli *Cli) InstallUrl() string {
 
 // Checks whether or not the Helm CLI is installed and available within the PATH
 func (cli *Cli) CheckInstalled(ctx context.Context) error {
-	if err := tools.ToolInPath("helm"); err != nil {
+	if err := cli.commandRunner.ToolInPath("helm"); err != nil {
 		return err
 	}
 

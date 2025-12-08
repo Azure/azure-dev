@@ -12,17 +12,18 @@ Table of Contents
     - [Environment Service](#environment-service)
     - [User Config Service](#user-config-service)
     - [Deployment Service](#deployment-service)
+    - [Account Service](#account-service)
     - [Prompt Service](#prompt-service)
     - [Event Service](#event-service)
+    - [Container Service](#container-service)
+    - [Framework Service](#framework-service)
+    - [Service Target Service](#service-target-service)
     - [Compose Service](#compose-service)
     - [Workflow Service](#workflow-service)
 
 ## Getting Started
 
 `azd` extensions are currently an alpha feature within `azd`.
-
-> [!IMPORTANT]
-> Enable `azd` extensions alpha feature by running `azd config set alpha.extensions on`
 
 - Initially official extensions will start shipping at //BUILD 2025.
 - Official extensions must be developed in a fork of the [azure/azure-dev](https://github.com/azure/azure-dev) github repo.
@@ -43,6 +44,14 @@ Extension registries must adhere to the [official extension registry schema](htt
 The official extension source registry is pre-configured in `azd` and is hosted at [https://aka.ms/azd/extensions/registry](https://aka.ms/azd/extensions/registry).
 
 The registry is hosted in the [`azd` github repo](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/registry.json).
+
+If you previously removed it and want to add it back:
+
+```bash
+azd extension source add -n azd -t url -l "https://aka.ms/azd/extensions/registry"
+```
+
+> **Note:** When the `registry.json` file is modified, CI automatically runs snapshot tests to ensure extension commands are properly documented in CLI help output and VS Code IntelliSense. See [Snapshot Testing for Extensions](#snapshot-testing-for-extensions) for details.
 
 #### Development Registry
 
@@ -81,26 +90,32 @@ Extensions are a collection of executable artifacts that extend or enhance funct
 
 #### `azd extension list [flags]`
 
-Lists matching extensions from one or more extension sources
+Lists matching extensions from one or more extension sources.
 
 - `--installed` When set displays a list of installed extensions.
 - `--source` When set will only list extensions from the specified source.
 - `--tags` Allows filtering extensions by tags (e.g., AI, test)
 
-#### `azd extension install <extension-names> [flags]`
+#### `azd extension show <extension-id> [flags]`
+
+Shows detailed information for a specific extension, including description, tags, versions, and installation status.
+
+- `-s, --source` The extension source to use. Use this flag when the same extension ID exists in multiple sources.
+
+#### `azd extension install <extension-ids> [flags]`
 
 Installs one or more extensions from any configured extension source.
 
 - `-v, --version` Specifies the version constraint to apply when installing extensions. Supports any semver constraint notation.
 - `-s, --source` Specifies the extension source used for installations.
 
-#### `azd extension uninstall <extension-names> [flags]`
+#### `azd extension uninstall <extension-ids> [flags]`
 
 Uninstalls one or more previously installed extensions.
 
 - `--all` Removes all installed extensions when specified.
 
-#### `azd extension upgrade <extension-names>`
+#### `azd extension upgrade <extension-ids>`
 
 Upgrades one or more extensions to the latest versions.
 
@@ -118,6 +133,179 @@ The following guide will help you develop and ship extensions for `azd`.
 2. Clone your forked repo or open in a codespace.
 3. Navigate to the `cli/azd/extensions` directory in your favorite terminal.
 4. Install the `azd` [Developer Extension](#developer-extension)
+
+### Capabilities
+
+Extensions can provide different types of capabilities:
+
+#### Event Handlers
+
+Extensions can register handlers for project and service lifecycle events (e.g., `preprovision`, `prepackage`, `predeploy`). These handlers execute custom logic at specific points in the `azd` workflow. The `ExtensionHost` is the preferred way to wire handlers and manage the long-lived connection.
+
+**Example:**
+```go
+host := azdext.NewExtensionHost(azdClient).
+  WithProjectEventHandler(
+    "preprovision",
+    func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+      // Custom logic before provisioning
+      return nil
+    },
+  ).
+  WithServiceEventHandler(
+    "prepackage",
+    func(ctx context.Context, args *azdext.ServiceEventArgs) error {
+      // Custom packaging logic
+      return nil
+    },
+    nil,
+  )
+
+if err := host.Run(ctx); err != nil {
+  return fmt.Errorf("failed to run extension: %w", err)
+}
+```
+
+#### Service Target Providers
+
+Extensions can implement custom service targets that handle the full deployment lifecycle (package, publish, deploy) for specialized Azure services or custom deployment patterns. `ExtensionHost` handles registration and readiness by default.
+
+**Recommended:**
+```go
+// Create a service target provider and register it using the extension host
+provider := project.NewCustomServiceTargetProvider(azdClient)
+host := azdext.NewExtensionHost(azdClient).
+  WithServiceTarget("customtype", provider)
+
+// Run blocks until the azd server shuts down the connection
+if err := host.Run(ctx); err != nil {
+  return fmt.Errorf("failed to run extension: %w", err)
+}
+```
+
+A service target provider must implement the `azdext.ServiceTargetProvider` interface:
+
+```go
+type ServiceTargetProvider interface {
+    Initialize(ctx context.Context, serviceConfig *ServiceConfig) error
+    GetTargetResource(ctx context.Context, subscriptionId string, serviceConfig *ServiceConfig) (*TargetResource, error)
+    Package(ctx context.Context, serviceConfig *ServiceConfig, frameworkPackage *ServicePackageResult, progress ProgressReporter) (*ServicePackageResult, error)
+    Publish(ctx context.Context, serviceConfig *ServiceConfig, servicePackage *ServicePackageResult, targetResource *TargetResource, progress ProgressReporter) (*ServicePublishResult, error)
+    Deploy(ctx context.Context, serviceConfig *ServiceConfig, servicePackage *ServicePackageResult, servicePublish *ServicePublishResult, targetResource *TargetResource, progress ProgressReporter) (*ServiceDeployResult, error)
+    Endpoints(ctx context.Context, serviceConfig *ServiceConfig, targetResource *TargetResource) ([]string, error)
+}
+```
+
+#### Complete Extension Host Builder Pattern
+
+The `ExtensionHost` provides a fluent builder API that allows you to register all extension capabilities in a single, unified pattern. This is the **recommended approach** for extension development as it handles all service registration, readiness signaling, and lifecycle management automatically.
+
+**Complete Example - Registering All Extension Capabilities:**
+
+```go
+func newListenCommand() *cobra.Command {
+    return &cobra.Command{
+        Use:   "listen",
+        Short: "Starts the extension and listens for events.",
+        RunE: func(cmd *cobra.Command, args []string) error {
+            // Create a new context that includes the AZD access token.
+            ctx := azdext.WithAccessToken(cmd.Context())
+
+            // Create a new AZD client.
+            azdClient, err := azdext.NewAzdClient()
+            if err != nil {
+                return fmt.Errorf("failed to create azd client: %w", err)
+            }
+            defer azdClient.Close()
+
+            // Register all extension capabilities using the builder pattern
+            host := azdext.NewExtensionHost(azdClient).
+                // Register a custom service target for specialized deployments
+                WithServiceTarget("demo", func() azdext.ServiceTargetProvider {
+                    return project.NewDemoServiceTargetProvider(azdClient)
+                }).
+                // Register a custom framework service for language support
+                WithFrameworkService("rust", func() azdext.FrameworkServiceProvider {
+                    return project.NewDemoFrameworkServiceProvider(azdClient)
+                }).
+                // Register project-level event handlers
+                WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+                    fmt.Printf("Preparing provisioning for project: %s\n", args.Project.Name)
+                    // Perform pre-provisioning logic
+                    return nil
+                }).
+                WithProjectEventHandler("predeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+                    fmt.Printf("Preparing deployment for project: %s\n", args.Project.Name)
+                    // Perform pre-deployment validation
+                    return nil
+                }).
+                WithProjectEventHandler("postdeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+                    fmt.Printf("Deployment completed for project: %s\n", args.Project.Name)
+                    // Perform post-deployment tasks (e.g., health checks, notifications)
+                    return nil
+                }).
+                // Register service-level event handlers with optional filtering
+                WithServiceEventHandler("prepackage", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
+                    fmt.Printf("Packaging service: %s\n", args.Service.Name)
+                    
+                    // Access artifacts from previous phases
+                    if len(args.ServiceContext.Build) > 0 {
+                        fmt.Printf("Found %d build artifacts\n", len(args.ServiceContext.Build))
+                    }
+                    
+                    return nil
+                }, nil). // No filtering - applies to all services
+                WithServiceEventHandler("postpackage", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
+                    fmt.Printf("Package completed for service: %s\n", args.Service.Name)
+                    
+                    // Check package artifacts
+                    for _, artifact := range args.ServiceContext.Package {
+                        fmt.Printf("Package artifact: %s\n", artifact.Path)
+                    }
+                    
+                    return nil
+                }, &azdext.ServiceEventOptions{
+                    // Optional: Filter to only handle specific service types
+                    Host:     "containerapp",
+                    Language: "python",
+                })
+
+            // Start the extension host - this blocks until shutdown
+            if err := host.Run(ctx); err != nil {
+                return fmt.Errorf("failed to run extension: %w", err)
+            }
+
+            return nil
+        },
+    }
+}
+```
+
+**Key Benefits of the Builder Pattern:**
+
+1. **Unified Registration**: Register all capabilities in one place
+2. **Automatic Lifecycle Management**: ExtensionHost handles readiness signaling and shutdown
+3. **Fluent API**: Chain multiple registrations for clean, readable code
+4. **Type Safety**: Compile-time checking of provider interfaces
+5. **Centralized Configuration**: All extension behavior defined in one location
+
+**Extension Capabilities You Can Register:**
+
+- **Service Target Providers**: Custom deployment targets (e.g., VMs, custom Azure services)
+- **Framework Service Providers**: Language/framework-specific build and package logic
+- **Project Event Handlers**: Project-level lifecycle events (preprovision, predeploy, etc.)
+- **Service Event Handlers**: Service-level lifecycle events with optional filtering
+
+**Event Handler Filtering:**
+
+Service event handlers support optional filtering to only handle specific service types:
+
+```go
+WithServiceEventHandler("prepackage", handler, &azdext.ServiceEventOptions{
+    Host:     "containerapp",  // Only handle Container App services
+    Language: "python",        // Only handle Python services
+})
+```
 
 ### Supported Languages
 
@@ -407,18 +595,18 @@ Common issues you might encounter when developing and publishing extensions:
 
 ### Capabilities
 
-#### Current Capabilities (May 2025)
+#### Current Capabilities (October 2025)
 
-The following lists the current capabilities of `azd extensions`.
+The following lists the current capabilities available to `azd` extensions:
 
-##### Extension Commands
+##### Extension Commands (`custom-commands`)
 
 > Extensions must declare the `custom-commands` capability in their `extension.yaml` file.
 
 Extensions can register commands under a namespace or command group within `azd`.
 For example, installing the AI extension adds a new `ai` command group.
 
-##### Lifecycle Hooks
+##### Lifecycle Events (`lifecycle-events`)
 
 > Extensions must declare the `lifecycle-events` capability in their `extension.yaml` file.
 
@@ -433,18 +621,62 @@ Extensions can subscribe to project and service lifecycle events (both pre and p
 Your extension _**must**_ include a `listen` command to subscribe to these events.
 `azd` will automatically invoke your extension during supported commands to establish bi-directional communication.
 
+##### Service Target Providers (`service-target-provider`)
+
+> Extensions must declare the `service-target-provider` capability in their `extension.yaml` file.
+
+Extensions can provide custom service targets that handle the full deployment lifecycle (package, publish, deploy) for specialized Azure services or custom deployment patterns. Examples include:
+
+- Custom VM deployment targets
+- Specialized container platforms
+- Edge computing platforms
+- Custom cloud providers
+
+##### Framework Service Providers (`framework-service-provider`)
+
+> Extensions must declare the `framework-service-provider` capability in their `extension.yaml` file.
+
+Extensions can provide custom language and framework support for build, restore, and package operations. Examples include:
+
+- Custom language support (Rust, PHP, etc.)
+- Framework-specific build systems
+- Custom package managers
+- Specialized build toolchains
+
+##### Model Context Protocol Server (`mcp-server`)
+
+> Extensions must declare the `mcp-server` capability in their `extension.yaml` file.
+
+Extensions can provide AI agent tools through the Model Context Protocol, enabling:
+
+- Custom AI tools and integrations
+- Specialized knowledge bases
+- Azure service automation for AI agents
+- Custom development workflows for AI-assisted development
+
 #### Future Considerations
 
 Future ideas include:
 
 - Registration of pluggable providers for:
-  - Language support (e.g., Go)
-  - New Azure service targets (e.g., VMs, ACI)
   - Infrastructure providers (e.g., Pulumi)
   - Source control providers (e.g., GitLab)
   - Pipeline providers (e.g., TeamCity)
-
 ---
+
+### Snapshot Testing for Extensions
+
+Extension commands are included in CLI snapshot tests (`TestUsage` and `TestFigSpec`) to ensure they appear in help output and VS Code IntelliSense. Tests run in an **isolated environment** (temporary `AZD_CONFIG_DIR`) that installs all extensions from `registry.json`, generates snapshots, then cleans up.
+
+Update snapshots when modifying `registry.json` or extension commands:
+
+```bash
+# From cli/azd directory
+UPDATE_SNAPSHOTS=true go test ./cmd -run TestUsage
+UPDATE_SNAPSHOTS=true go test ./cmd -run TestFigSpec
+```
+
+The [ext-registry-ci workflow](/.github/workflows/ext-registry-ci.yml) runs these tests automatically when `registry.json` is modified in a PR.
 
 ### Developer Workflow
 
@@ -493,11 +725,194 @@ Once PR has been merged the extension updates are now live in the official `azd`
 
 ### Extension Manifest
 
-Each extension must declare an `extension.yaml` file that describe the metadata for the extension and the capabilities that it supports. This metadata is used within the extension registry to provide details to developers when searching for and installing extensions.
+Each extension must declare an `extension.yaml` file that describes the metadata for the extension and the capabilities that it supports. This metadata is used within the extension registry to provide details to developers when searching for and installing extensions.
 
-A [JSON schema](../extensions/registry.schema.json) is available to support authoring extension manifests.
+A [JSON schema](../extensions/extension.schema.json) is available to support authoring extension manifests.
 
-#### Example
+#### Schema Properties
+
+**Required Properties:**
+- `id`: Unique identifier for the extension
+- `version`: Semantic version following MAJOR.MINOR.PATCH format
+- `capabilities`: Array of extension capabilities (see below)
+- `displayName`: Human-readable name of the extension
+- `description`: Detailed description of the extension
+
+**Optional Properties:**
+- `namespace`: Command namespace for grouping extension commands
+- `entryPoint`: Executable or script that serves as the entry point
+- `usage`: Instructions on how to use the extension
+- `examples`: Array of usage examples with name, description, and usage
+- `tags`: Keywords for categorization and filtering
+- `dependencies`: Other extensions this extension depends on
+- `providers`: List of providers this extension registers
+- `platforms`: Platform-specific metadata
+- `mcp`: Model Context Protocol server configuration
+
+#### Extension Capabilities
+
+Extensions can declare the following capabilities in their manifest:
+
+- **`custom-commands`**: Expose new command groups and commands to azd
+- **`lifecycle-events`**: Subscribe to azd project and service lifecycle events
+- **`mcp-server`**: Provide Model Context Protocol tools for AI agents
+- **`service-target-provider`**: Provide custom service deployment targets
+- **`framework-service-provider`**: Provide custom language frameworks and build systems
+
+#### Complete Extension Manifest Example
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/extension.schema.json
+
+id: microsoft.azd.demo
+namespace: demo
+displayName: Demo Extension
+description: This extension provides examples of the AZD extension framework.
+usage: azd demo <command> [options]
+version: 0.1.0
+entryPoint: demo
+
+capabilities:
+  - custom-commands
+  - lifecycle-events
+  - service-target-provider
+  - framework-service-provider
+  - mcp-server
+
+examples:
+  - name: context
+    description: Displays the current azd project & environment context.
+    usage: azd demo context
+  - name: prompt
+    description: Display prompt capabilities.
+    usage: azd demo prompt
+  - name: deploy-vm
+    description: Deploy application to virtual machine using custom service target.
+    usage: azd demo deploy-vm
+
+tags:
+  - demo
+  - example
+  - development
+
+dependencies:
+  - id: microsoft.azd.core
+    version: "^1.0.0"
+
+providers:
+  - name: demo-vm
+    type: service-target
+    description: Custom VM deployment target for demonstration purposes
+  - name: rust-framework
+    type: framework-service
+    description: Custom Rust language framework support
+
+platforms:
+  windows:
+    executable: demo.exe
+  linux:
+    executable: demo
+  darwin:
+    executable: demo
+
+mcp:
+  serve:
+    args: ["mcp", "serve"]
+    env: ["DEMO_CONFIG=production"]
+```
+
+#### Extension Dependencies
+
+Extensions can declare dependencies on other extensions using the `dependencies` array:
+
+```yaml
+dependencies:
+  - id: microsoft.azd.ai.builder
+    version: "^1.2.0"
+  - id: contoso.custom.tools
+    version: "~2.1.0"
+```
+
+Dependencies support semantic versioning constraints:
+- `^1.0.0`: Compatible with version 1.x.x
+- `~1.2.0`: Compatible with version 1.2.x
+- `>=1.0.0 <2.0.0`: Range specification
+
+#### Provider Registration
+
+When your extension provides custom service targets or framework services, declare them in the `providers` section:
+
+```yaml
+providers:
+  - name: azure-vm
+    type: service-target
+    description: Deploy applications to Azure Virtual Machines
+  - name: go-gin
+    type: framework-service
+    description: Support for Go applications using the Gin framework
+```
+
+This metadata helps azd understand what providers your extension offers and enables proper capability validation.
+
+#### Model Context Protocol (MCP) Configuration
+
+For extensions that provide AI agent tools, configure the MCP server:
+
+```yaml
+capabilities:
+  - mcp-server
+
+mcp:
+  serve:
+    args: ["mcp", "serve"]
+    env: 
+      - "API_KEY=${API_KEY}"
+      - "LOG_LEVEL=info"
+```
+
+The `mcp.serve.args` specifies the command arguments to start your MCP server, while `env` sets additional environment variables.
+
+#### Platform-Specific Configuration
+
+Extensions can provide platform-specific metadata for different operating systems:
+
+```yaml
+platforms:
+  windows:
+    executable: myext.exe
+    installScript: install.ps1
+  linux:
+    executable: myext
+    installScript: install.sh
+  darwin:
+    executable: myext
+    installScript: install.sh
+```
+
+#### Basic Extension Manifest Example
+
+Here's a simple extension manifest for getting started:
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/extension.schema.json
+
+id: microsoft.azd.demo
+namespace: demo
+displayName: Demo Extension
+description: This extension provides examples of the AZD extension framework.
+usage: azd demo <command> [options]
+version: 0.1.0
+capabilities:
+  - custom-commands
+  - lifecycle-events
+examples:
+  - name: context
+    description: Displays the current `azd` project & environment context.
+    usage: azd demo context
+  - name: prompt
+    description: Display prompt capabilities.
+    usage: azd demo prompt
+```
 
 The following is an example of an [extension manifest](../extensions/microsoft.azd.demo/extension.yaml).
 
@@ -594,7 +1009,7 @@ fmt.Println(getProjectResponse.Project.Name)
 
 The following is an example of subscribing to project & service lifecycle events within an `azd` template.
 
-In this example the extension is leveraging the `azdext.EventManager` struct. This struct makes it easier to subscribe and consume the gRPC bi-directional event stream between `azd` and the extension.
+In this example the extension is leveraging the `azdext.NewExtensionHost` constructor. This provides a fluent API to register event handlers, service target providers, and other extension capabilities in a unified way.
 
 Other languages will need to manually handle the different message types invoked by the service.
 
@@ -609,55 +1024,69 @@ if err != nil {
 }
 defer azdClient.Close()
 
-eventManager := azdext.NewEventManager(azdClient)
-defer eventManager.Close()
-
-// Subscribe to a project event
-err = eventManager.AddProjectEventHandler(
-    ctx,
-    "preprovision",
-    func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+// Create an extension host and register event handlers using the fluent API
+host := azdext.NewExtensionHost(azdClient).
+    WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
         // This is your event handler code
-    for i := 1; i <= 20; i++ {
-            fmt.Printf("%d. Doing important work in extension...\n", i)
-            time.Sleep(250 * time.Millisecond)
-        }
-
-        return nil
-    },
-)
-if err != nil {
-    return fmt.Errorf("failed to add preprovision project event handler: %w", err)
-}
-
-// Subscribe to a service event
-err = eventManager.AddServiceEventHandler(
-    ctx,
-    "prepackage",
-    func(ctx context.Context, args *azdext.ServiceEventArgs) error {
-        // This is your event handler
         for i := 1; i <= 20; i++ {
             fmt.Printf("%d. Doing important work in extension...\n", i)
             time.Sleep(250 * time.Millisecond)
         }
 
         return nil
-    },
-    // Optionally filter your subscription by service host and/or language
-    &azdext.ServerEventOptions{
+    }).
+    WithServiceEventHandler("prepackage", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
+        // Access service context with artifacts from previous phases
+        fmt.Printf("Processing service: %s\n", args.Service.Name)
+        
+        // Check build artifacts from previous build phase
+        if len(args.ServiceContext.Build) > 0 {
+            fmt.Printf("Found %d build artifacts:\n", len(args.ServiceContext.Build))
+            for _, artifact := range args.ServiceContext.Build {
+                fmt.Printf("  - %s (kind: %s)\n", artifact.Path, artifact.Kind)
+            }
+        }
+        
+        // Check restore artifacts
+        if len(args.ServiceContext.Restore) > 0 {
+            fmt.Printf("Found %d restore artifacts:\n", len(args.ServiceContext.Restore))
+            for _, artifact := range args.ServiceContext.Restore {
+                fmt.Printf("  - %s\n", artifact.Path)
+            }
+        }
+
+        // Perform your custom packaging logic here
+        for i := 1; i <= 10; i++ {
+            fmt.Printf("%d. Preparing package for %s...\n", i, args.Service.Name)
+            time.Sleep(250 * time.Millisecond)
+        }
+
+        return nil
+    }, &azdext.ServiceEventOptions{
+        // Optionally filter your subscription by service host and/or language
         Host: "containerapp",
         Language: "python",
-    },
-)
+    }).
+    WithServiceEventHandler("postdeploy", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
+        // Access deployment results
+        fmt.Printf("Service %s deployment completed\n", args.Service.Name)
+        
+        // Check deployment artifacts
+        for _, artifact := range args.ServiceContext.Deploy {
+            if artifact.Kind == azdext.ARTIFACT_KIND_ENDPOINT {
+                fmt.Printf("Service endpoint: %s\n", artifact.Path)
+            } else if artifact.Kind == azdext.ARTIFACT_KIND_DEPLOYMENT {
+                fmt.Printf("Deployment ID: %s\n", artifact.Path)
+            }
+        }
 
-if err != nil {
-    return fmt.Errorf("failed to add prepackage event handler: %w", err)
-}
+        return nil
+    }, nil)
 
-// Start listening for events
+// Start the extension host
 // This is a blocking call and will not return until the server connection is closed.
-if err := eventManager.Receive(ctx); err != nil {
-    return fmt.Errorf("failed to receive events: %w", err)
+if err := host.Run(ctx); err != nil {
+    return fmt.Errorf("failed to run extension: %w", err)
 }
 
 ```
@@ -688,8 +1117,12 @@ The following are a list of available gRPC services for extension developer to i
 - [Environment Service](#environment-service)
 - [User Config Service](#user-config-service)
 - [Deployment Service](#deployment-service)
+- [Account Service](#account-service)
 - [Prompt Service](#prompt-service)
 - [Event Service](#event-service)
+- [Container Service](#container-service)
+- [Framework Service](#framework-service)
+- [Service Target Service](#service-target-service)
 - [Compose Service](#compose-service)
 - [Workflow Service](#workflow-service)
 
@@ -1030,6 +1463,57 @@ Prompts the user to select an option from a list.
 - **Response:** _SelectResponse_
   - Contains an optional `value` (int32)
 
+#### MultiSelect
+
+Prompts the user to select multiple options from a list.
+
+- **Request:** _MultiSelectRequest_
+  - `options` (MultiSelectOptions) with:
+    - `message` (string)
+    - `choices` (repeated MultiSelectChoice) with:
+      - `value` (string): The actual value
+      - `display` (string): Display text for the choice
+      - `selected` (bool): Whether initially selected
+    - `help_message` (string)
+    - `hint` (string)
+    - `display_count` (int32)
+- **Response:** _MultiSelectResponse_
+  - Contains a list of selected **MultiSelectChoice** items
+
+**Example Usage (Go):**
+
+```go
+// Prompt for multiple environment selections
+ctx := azdext.WithAccessToken(cmd.Context())
+azdClient, err := azdext.NewAzdClient()
+if err != nil {
+    return fmt.Errorf("failed to create azd client: %w", err)
+}
+defer azdClient.Close()
+
+choices := []*azdext.MultiSelectChoice{
+    {Value: "dev", Display: "Development Environment", Selected: true},
+    {Value: "staging", Display: "Staging Environment", Selected: false},
+    {Value: "prod", Display: "Production Environment", Selected: false},
+}
+
+response, err := azdClient.Prompt().MultiSelect(ctx, &azdext.MultiSelectRequest{
+    Options: &azdext.MultiSelectOptions{
+        Message:     "Select environments to deploy to:",
+        Choices:     choices,
+        HelpMessage: "Choose one or more environments for deployment",
+        Hint:        "Use space to select, enter to confirm",
+    },
+})
+if err != nil {
+    return fmt.Errorf("failed to prompt for environments: %w", err)
+}
+
+for _, choice := range response.Values {
+    fmt.Printf("Selected: %s (%s)\n", choice.Display, choice.Value)
+}
+```
+
 #### PromptSubscriptionResource
 
 Prompts the user to select a resource from a subscription.
@@ -1108,6 +1592,7 @@ Clients can subscribe to events and receive notifications via a bidirectional st
   - `event_name`: The name of the event being invoked.
   - `project`: The project configuration.
   - `service`: The specific service configuration.
+  - `service_context`: The service context containing artifacts from all lifecycle phases (restore, build, package, publish, deploy).
 - **ProjectHandlerStatus**
   Provides status updates for project events.
 
@@ -1123,6 +1608,428 @@ Clients can subscribe to events and receive notifications via a bidirectional st
   - `service_name`: The name of the service.
   - `status`: Status such as "running", "completed", or "failed".
   - `message`: Optional additional details.
+
+#### ServiceContext and Service Event Arguments
+
+When service events are invoked, extensions receive a `ServiceEventArgs` structure that includes:
+
+- `Project`: The current project configuration
+- `Service`: The specific service configuration
+- `ServiceContext`: Artifacts accumulated across all service lifecycle phases
+
+**ServiceContext Structure:**
+
+```go
+type ServiceContext struct {
+    Restore []*Artifact  // Artifacts from restore phase
+    Build   []*Artifact  // Artifacts from build phase
+    Package []*Artifact  // Artifacts from package phase
+    Publish []*Artifact  // Artifacts from publish phase
+    Deploy  []*Artifact  // Artifacts from deploy phase
+}
+```
+
+**Artifact Definition:**
+
+```go
+type Artifact struct {
+    Kind        ArtifactKind    // Type of artifact (Directory, Config, Archive, Container, etc.)
+    Path        string          // Location of the artifact
+    LocationKind LocationKind   // Whether it's local, remote, or service-based
+}
+```
+
+**Artifact Kinds:**
+- `ARTIFACT_KIND_DIRECTORY`: Directory containing project or build artifacts
+- `ARTIFACT_KIND_CONFIG`: Configuration file
+- `ARTIFACT_KIND_ARCHIVE`: Zip/archive package
+- `ARTIFACT_KIND_CONTAINER`: Docker/container image
+- `ARTIFACT_KIND_ENDPOINT`: Service endpoint URL
+- `ARTIFACT_KIND_DEPLOYMENT`: Deployment result or endpoint
+- `ARTIFACT_KIND_RESOURCE`: Azure Resource
+
+**Example: Using ServiceContext in Event Handlers**
+
+```go
+host := azdext.NewExtensionHost(azdClient).
+    WithServiceEventHandler("prepackage", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
+        // Access build artifacts from previous phase
+        for _, artifact := range args.ServiceContext.Build {
+            fmt.Printf("Build artifact: %s (kind: %s)\n", artifact.Path, artifact.Kind)
+        }
+        
+        // Access restore artifacts
+        for _, artifact := range args.ServiceContext.Restore {
+            fmt.Printf("Restore artifact: %s\n", artifact.Path)
+        }
+        
+        return nil
+    }, nil).
+    WithServiceEventHandler("postdeploy", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
+        // Access deployment results
+        for _, artifact := range args.ServiceContext.Deploy {
+            if artifact.Kind == azdext.ARTIFACT_KIND_ENDPOINT {
+                fmt.Printf("Service deployed to: %s\n", artifact.Path)
+            }
+        }
+        
+        return nil
+    }, nil)
+```
+
+---
+
+### Container Service
+
+This service provides container build, package, and publish operations for extensions that need to work with containers but don't want to implement the full complexity of Docker CLI integration, registry authentication, etc.
+
+> See [container.proto](../grpc/proto/container.proto) for more details.
+
+#### Build
+
+Builds a service's container image.
+
+- **Request:** _ContainerBuildRequest_
+  - Contains:
+    - `service_name` (string): Name of the service to build
+    - `service_context` (ServiceContext): Current service context with artifacts
+- **Response:** _ContainerBuildResponse_
+  - Contains:
+    - `result` (ServiceBuildResult): Build result with artifacts
+
+**Example Usage (Go):**
+
+```go
+// Build a container for a service
+buildResponse, err := azdClient.Container().Build(ctx, &azdext.ContainerBuildRequest{
+    ServiceName: "api",
+    ServiceContext: &azdext.ServiceContext{
+        Restore: restoreArtifacts,
+        Build:   buildArtifacts,
+    },
+})
+if err != nil {
+    return fmt.Errorf("failed to build container: %w", err)
+}
+
+// Access build artifacts
+for _, artifact := range buildResponse.Result.Artifacts {
+    fmt.Printf("Built artifact: %s\n", artifact.Path)
+}
+```
+
+#### Package
+
+Packages a service's container for deployment.
+
+- **Request:** _ContainerPackageRequest_
+  - Contains:
+    - `service_name` (string): Name of the service to package
+    - `service_context` (ServiceContext): Current service context with artifacts
+- **Response:** _ContainerPackageResponse_
+  - Contains:
+    - `result` (ServicePackageResult): Package result with artifacts
+
+#### Publish
+
+Publishes a container service to a registry.
+
+- **Request:** _ContainerPublishRequest_
+  - Contains:
+    - `service_name` (string): Name of the service to publish
+    - `service_context` (ServiceContext): Current service context with artifacts
+- **Response:** _ContainerPublishResponse_
+  - Contains:
+    - `result` (ServicePublishResult): Publish result with artifacts
+
+**Complete Container Workflow Example (Go):**
+
+```go
+ctx := azdext.WithAccessToken(cmd.Context())
+azdClient, err := azdext.NewAzdClient()
+if err != nil {
+    return fmt.Errorf("failed to create azd client: %w", err)
+}
+defer azdClient.Close()
+
+serviceName := "web-api"
+serviceContext := &azdext.ServiceContext{}
+
+// Build the container
+buildResp, err := azdClient.Container().Build(ctx, &azdext.ContainerBuildRequest{
+    ServiceName:    serviceName,
+    ServiceContext: serviceContext,
+})
+if err != nil {
+    return fmt.Errorf("container build failed: %w", err)
+}
+
+// Update context with build artifacts
+serviceContext.Build = buildResp.Result.Artifacts
+
+// Package the container
+packageResp, err := azdClient.Container().Package(ctx, &azdext.ContainerPackageRequest{
+    ServiceName:    serviceName,
+    ServiceContext: serviceContext,
+})
+if err != nil {
+    return fmt.Errorf("container package failed: %w", err)
+}
+
+// Update context with package artifacts
+serviceContext.Package = packageResp.Result.Artifacts
+
+// Publish the container
+publishResp, err := azdClient.Container().Publish(ctx, &azdext.ContainerPublishRequest{
+    ServiceName:    serviceName,
+    ServiceContext: serviceContext,
+})
+if err != nil {
+    return fmt.Errorf("container publish failed: %w", err)
+}
+
+fmt.Printf("Container published successfully with %d artifacts\n", len(publishResp.Result.Artifacts))
+```
+
+---
+
+### Framework Service
+
+This service handles language and framework-specific operations like restore, build, and package for services. Extensions can register framework service providers to handle custom languages or override default behavior.
+
+> See [framework_service.proto](../grpc/proto/framework_service.proto) for more details.
+
+#### Provider Interface
+
+Framework service providers implement the `FrameworkServiceProvider` interface:
+
+```go
+type FrameworkServiceProvider interface {
+    Initialize(ctx context.Context, serviceConfig *ServiceConfig) error
+    RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) ([]*ExternalTool, error)
+    Requirements() (*FrameworkRequirements, error)
+    Restore(ctx context.Context, serviceConfig *ServiceConfig, serviceContext *ServiceContext, progress ProgressReporter) (*ServiceRestoreResult, error)
+    Build(ctx context.Context, serviceConfig *ServiceConfig, serviceContext *ServiceContext, progress ProgressReporter) (*ServiceBuildResult, error)
+    Package(ctx context.Context, serviceConfig *ServiceConfig, serviceContext *ServiceContext, progress ProgressReporter) (*ServicePackageResult, error)
+}
+```
+
+#### Stream
+
+The framework service uses a bidirectional stream for communication between azd and the extension.
+
+- **Request/Response:** _FrameworkServiceMessage_ (bidirectional stream)
+  - Contains various message types:
+    - `RegisterFrameworkServiceRequest/Response`: Register a framework provider
+    - `FrameworkServiceInitializeRequest/Response`: Initialize the service
+    - `FrameworkServiceRequiredExternalToolsRequest/Response`: Get required tools
+    - `FrameworkServiceRequirementsRequest/Response`: Get framework requirements
+    - `FrameworkServiceRestoreRequest/Response`: Restore dependencies
+    - `FrameworkServiceBuildRequest/Response`: Build the service
+    - `FrameworkServicePackageRequest/Response`: Package the service
+
+**Example: Registering a Framework Service Provider (Go):**
+
+```go
+// Custom Rust framework provider
+type RustFrameworkProvider struct{}
+
+func (r *RustFrameworkProvider) Initialize(ctx context.Context, serviceConfig *azdext.ServiceConfig) error {
+    // Initialize Rust-specific settings
+    return nil
+}
+
+func (r *RustFrameworkProvider) RequiredExternalTools(ctx context.Context, serviceConfig *azdext.ServiceConfig) ([]*azdext.ExternalTool, error) {
+    return []*azdext.ExternalTool{
+        {
+            Name:       "cargo",
+            InstallUrl: "https://rustup.rs/",
+        },
+    }, nil
+}
+
+func (r *RustFrameworkProvider) Requirements() (*azdext.FrameworkRequirements, error) {
+    return &azdext.FrameworkRequirements{
+        Package: &azdext.FrameworkPackageRequirements{
+            RequireRestore: true,
+            RequireBuild:   true,
+        },
+    }, nil
+}
+
+func (r *RustFrameworkProvider) Restore(ctx context.Context, serviceConfig *azdext.ServiceConfig, serviceContext *azdext.ServiceContext, progress azdext.ProgressReporter) (*azdext.ServiceRestoreResult, error) {
+    // Run cargo fetch or similar
+    return &azdext.ServiceRestoreResult{
+        Artifacts: []*azdext.Artifact{
+            {
+                Kind: azdext.ARTIFACT_KIND_DIRECTORY,
+                Path: "target/deps",
+            },
+        },
+    }, nil
+}
+
+func (r *RustFrameworkProvider) Build(ctx context.Context, serviceConfig *azdext.ServiceConfig, serviceContext *azdext.ServiceContext, progress azdext.ProgressReporter) (*azdext.ServiceBuildResult, error) {
+    // Run cargo build
+    return &azdext.ServiceBuildResult{
+        Artifacts: []*azdext.Artifact{
+            {
+                Kind: azdext.ARTIFACT_KIND_DIRECTORY,
+                Path: "target/release",
+            },
+        },
+    }, nil
+}
+
+func (r *RustFrameworkProvider) Package(ctx context.Context, serviceConfig *azdext.ServiceConfig, serviceContext *azdext.ServiceContext, progress azdext.ProgressReporter) (*azdext.ServicePackageResult, error) {
+    // Package Rust application
+    return &azdext.ServicePackageResult{
+        Artifacts: []*azdext.Artifact{
+            {
+                Kind: azdext.ARTIFACT_KIND_ARCHIVE,
+                Path: "dist/app.tar.gz",
+            },
+        },
+    }, nil
+}
+
+// Register the framework provider
+func main() {
+    ctx := azdext.WithAccessToken(context.Background())
+    azdClient, err := azdext.NewAzdClient()
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer azdClient.Close()
+
+    host := azdext.NewExtensionHost(azdClient).
+        WithFrameworkService("rust", func() azdext.FrameworkServiceProvider {
+            return &RustFrameworkProvider{}
+        })
+
+    if err := host.Run(ctx); err != nil {
+        log.Fatalf("failed to run extension: %v", err)
+    }
+}
+```
+
+---
+
+### Service Target Service
+
+This service handles the full deployment lifecycle for services, including packaging, publishing, and deploying to Azure resources. Extensions can register service target providers for custom deployment scenarios.
+
+> See [service_target.proto](../grpc/proto/service_target.proto) for more details.
+
+#### Provider Interface
+
+Service target providers implement the `ServiceTargetProvider` interface:
+
+```go
+type ServiceTargetProvider interface {
+    Initialize(ctx context.Context, serviceConfig *ServiceConfig) error
+    GetTargetResource(ctx context.Context, subscriptionId string, serviceConfig *ServiceConfig) (*TargetResource, error)
+    Package(ctx context.Context, serviceConfig *ServiceConfig, frameworkPackage *ServicePackageResult, progress ProgressReporter) (*ServicePackageResult, error)
+    Publish(ctx context.Context, serviceConfig *ServiceConfig, servicePackage *ServicePackageResult, targetResource *TargetResource, progress ProgressReporter) (*ServicePublishResult, error)
+    Deploy(ctx context.Context, serviceConfig *ServiceConfig, servicePackage *ServicePackageResult, servicePublish *ServicePublishResult, targetResource *TargetResource, progress ProgressReporter) (*ServiceDeployResult, error)
+    Endpoints(ctx context.Context, serviceConfig *ServiceConfig, targetResource *TargetResource) ([]string, error)
+}
+```
+
+#### Stream
+
+The service target service uses a bidirectional stream for communication between azd and the extension.
+
+- **Request/Response:** _ServiceTargetMessage_ (bidirectional stream)
+  - Contains various message types:
+    - `RegisterServiceTargetRequest/Response`: Register a service target provider
+    - `ServiceTargetInitializeRequest/Response`: Initialize the service target
+    - `GetTargetResourceRequest/Response`: Get the target Azure resource
+    - `ServiceTargetPackageRequest/Response`: Package the service
+    - `ServiceTargetPublishRequest/Response`: Publish the service
+    - `ServiceTargetDeployRequest/Response`: Deploy the service
+    - `ServiceTargetEndpointsRequest/Response`: Get service endpoints
+
+**Example: Custom Service Target Provider (Go):**
+
+```go
+// Custom VM service target provider
+type VMServiceTargetProvider struct{}
+
+func (v *VMServiceTargetProvider) Initialize(ctx context.Context, serviceConfig *azdext.ServiceConfig) error {
+    // Initialize VM-specific settings
+    return nil
+}
+
+func (v *VMServiceTargetProvider) GetTargetResource(ctx context.Context, subscriptionId string, serviceConfig *azdext.ServiceConfig) (*azdext.TargetResource, error) {
+    return &azdext.TargetResource{
+        ResourceId: fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s", 
+            subscriptionId, serviceConfig.ResourceGroupName, serviceConfig.ResourceName),
+    }, nil
+}
+
+func (v *VMServiceTargetProvider) Package(ctx context.Context, serviceConfig *azdext.ServiceConfig, frameworkPackage *azdext.ServicePackageResult, progress azdext.ProgressReporter) (*azdext.ServicePackageResult, error) {
+    // Create deployment package for VM
+    return &azdext.ServicePackageResult{
+        Artifacts: []*azdext.Artifact{
+            {
+                Kind: azdext.ARTIFACT_KIND_ARCHIVE,
+                Path: "vm-deploy.zip",
+            },
+        },
+    }, nil
+}
+
+func (v *VMServiceTargetProvider) Publish(ctx context.Context, serviceConfig *azdext.ServiceConfig, servicePackage *azdext.ServicePackageResult, targetResource *azdext.TargetResource, progress azdext.ProgressReporter) (*azdext.ServicePublishResult, error) {
+    // Upload package to storage or registry
+    return &azdext.ServicePublishResult{
+        Artifacts: []*azdext.Artifact{
+            {
+                Kind: azdext.ARTIFACT_KIND_ENDPOINT,
+                Path: "https://storage.azure.com/packages/vm-deploy.zip",
+            },
+        },
+    }, nil
+}
+
+func (v *VMServiceTargetProvider) Deploy(ctx context.Context, serviceConfig *azdext.ServiceConfig, servicePackage *azdext.ServicePackageResult, servicePublish *azdext.ServicePublishResult, targetResource *azdext.TargetResource, progress azdext.ProgressReporter) (*azdext.ServiceDeployResult, error) {
+    // Deploy to VM using scripts or ARM templates
+    return &azdext.ServiceDeployResult{
+        Artifacts: []*azdext.Artifact{
+            {
+                Kind: azdext.ARTIFACT_KIND_DEPLOYMENT,
+                Path: "deployment-12345",
+            },
+        },
+    }, nil
+}
+
+func (v *VMServiceTargetProvider) Endpoints(ctx context.Context, serviceConfig *azdext.ServiceConfig, targetResource *azdext.TargetResource) ([]string, error) {
+    // Return VM endpoints
+    return []string{"https://myvm.azure.com:8080"}, nil
+}
+
+// Register the service target provider
+func main() {
+    ctx := azdext.WithAccessToken(context.Background())
+    azdClient, err := azdext.NewAzdClient()
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer azdClient.Close()
+
+    host := azdext.NewExtensionHost(azdClient).
+        WithServiceTarget("vm", func() azdext.ServiceTargetProvider {
+            return &VMServiceTargetProvider{}
+        })
+
+    if err := host.Run(ctx); err != nil {
+        log.Fatalf("failed to run extension: %v", err)
+    }
+}
+```
+
+---
 
 ### Compose Service
 
@@ -1195,3 +2102,141 @@ Executes a workflow consisting of sequential steps.
   - Contains:
     - `workflow`: _Workflow_ (with `name` and `steps`)
 - **Response:** _EmptyResponse_
+
+---
+
+### Account Service
+
+This service provides information about the currently logged-in user or identity.
+
+> See [account.proto](../grpc/proto/account.proto) for more details.
+
+#### ListSubscriptions
+
+Lists all subscriptions accessible by the current account.
+
+- **Request:** _ListSubscriptionsRequest_
+  - Contains:
+    - `tenant_id` (optional string): Filter subscriptions by tenant ID
+- **Response:** _ListSubscriptionsResponse_
+  - Contains a list of **Subscription**:
+    - `id` (string): Subscription ID (GUID)
+    - `name` (string): Subscription display name
+    - `tenant_id` (string): The tenant that owns the subscription
+    - `user_tenant_id` (string): The tenant under which the user has access to the subscription
+    - `is_default` (bool): Whether this is the user's default subscription
+
+**Example Usage (Go):**
+
+```go
+ctx := azdext.WithAccessToken(cmd.Context())
+azdClient, err := azdext.NewAzdClient()
+if err != nil {
+    return fmt.Errorf("failed to create azd client: %w", err)
+}
+defer azdClient.Close()
+
+// List all subscriptions
+response, err := azdClient.Account().ListSubscriptions(ctx, &azdext.ListSubscriptionsRequest{})
+if err != nil {
+    return fmt.Errorf("failed to list subscriptions: %w", err)
+}
+
+fmt.Printf("Found %d subscriptions:\n", len(response.Subscriptions))
+for _, sub := range response.Subscriptions {
+    defaultMarker := ""
+    if sub.IsDefault {
+        defaultMarker = " (default)"
+    }
+    fmt.Printf("  %s (%s)%s\n", sub.Name, sub.Id, defaultMarker)
+    fmt.Printf("    Tenant: %s\n", sub.TenantId)
+    if sub.UserTenantId != sub.TenantId {
+        fmt.Printf("    User Tenant: %s\n", sub.UserTenantId)
+    }
+}
+
+// Filter by tenant ID
+tenantId := "your-tenant-id"
+filteredResponse, err := azdClient.Account().ListSubscriptions(ctx, &azdext.ListSubscriptionsRequest{
+    TenantId: &tenantId,
+})
+if err != nil {
+    return fmt.Errorf("failed to list subscriptions for tenant: %w", err)
+}
+
+fmt.Printf("Subscriptions in tenant %s: %d\n", tenantId, len(filteredResponse.Subscriptions))
+```
+
+**Use Cases:**
+
+- List available subscriptions for user selection
+- Filter subscriptions by tenant in multi-tenant scenarios
+- Display subscription details for user confirmation
+- Find default subscription for automated operations
+
+#### LookupTenant
+
+Resolves the tenant ID required by the current account to access a given subscription. This is useful in multi-tenant scenarios where a user may have access to subscriptions through different tenants.
+
+- **Request:** _LookupTenantRequest_
+  - Contains:
+    - `subscription_id` (string): The subscription ID to look up
+- **Response:** _LookupTenantResponse_
+  - Contains:
+    - `tenant_id` (string): The tenant ID that provides access to the subscription
+
+**Example Usage (Go):**
+
+```go
+// Look up the tenant for a specific subscription
+subscriptionId := "12345678-1234-1234-1234-123456789abc"
+response, err := azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
+    SubscriptionId: subscriptionId,
+})
+if err != nil {
+    return fmt.Errorf("failed to lookup tenant for subscription %s: %w", subscriptionId, err)
+}
+
+fmt.Printf("Subscription %s requires tenant %s for access\n", subscriptionId, response.TenantId)
+
+// Complete example: Get subscription info and tenant
+func getSubscriptionDetails(ctx context.Context, azdClient *azdext.AzdClient, subscriptionId string) error {
+    // First lookup the required tenant
+    tenantResp, err := azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
+        SubscriptionId: subscriptionId,
+    })
+    if err != nil {
+        return fmt.Errorf("failed to lookup tenant: %w", err)
+    }
+
+    // Then get subscription details using the tenant filter
+    subsResp, err := azdClient.Account().ListSubscriptions(ctx, &azdext.ListSubscriptionsRequest{
+        TenantId: &tenantResp.TenantId,
+    })
+    if err != nil {
+        return fmt.Errorf("failed to list subscriptions: %w", err)
+    }
+
+    // Find the specific subscription
+    for _, sub := range subsResp.Subscriptions {
+        if sub.Id == subscriptionId {
+            fmt.Printf("Subscription Details:\n")
+            fmt.Printf("  Name: %s\n", sub.Name)
+            fmt.Printf("  ID: %s\n", sub.Id)
+            fmt.Printf("  Tenant: %s\n", sub.TenantId)
+            fmt.Printf("  User Tenant: %s\n", sub.UserTenantId)
+            fmt.Printf("  Is Default: %t\n", sub.IsDefault)
+            break
+        }
+    }
+
+    return nil
+}
+```
+
+**Use Cases:**
+
+- Determine which tenant ID to use when making Azure API calls for a subscription
+- Handle multi-tenant scenarios where users access subscriptions through different tenants
+- Validate subscription access before performing operations
+- Set up proper authentication context for Azure SDK calls

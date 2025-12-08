@@ -114,6 +114,12 @@ func (p *Confirm) Ask(ctx context.Context) (*bool, error) {
 		p.canvas = NewCanvas(p).WithWriter(p.options.Writer)
 	}
 
+	release := cm.Focus(p.canvas)
+	defer func() {
+		release()
+		p.canvas.Close()
+	}()
+
 	inputConfig := &internal.InputConfig{
 		InitialValue: p.displayValue,
 	}

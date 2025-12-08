@@ -4,14 +4,18 @@
 package internal
 
 import (
+	"archive/tar"
 	"archive/zip"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"unicode"
@@ -93,9 +97,16 @@ func InferOSArch(filename string) (string, error) {
 	}
 
 	// Extract OS and ARCH from the filename
-	osPart := parts[len(parts)-2]                                   // Second-to-last part is the OS
-	archPart := parts[len(parts)-1]                                 // Last part is the ARCH (with optional extension)
-	archPart = strings.TrimSuffix(archPart, filepath.Ext(archPart)) // Remove extension
+	osPart := parts[len(parts)-2]   // Second-to-last part is the OS
+	archPart := parts[len(parts)-1] // Last part is the ARCH (with optional extension)
+
+	// Remove extension
+	if strings.HasSuffix(archPart, ".tar.gz") {
+		// Special handling for .tar.gz since filepath.Ext only removes the last extension (.gz)
+		archPart = strings.TrimSuffix(archPart, ".tar.gz")
+	} else {
+		archPart = strings.TrimSuffix(archPart, filepath.Ext(archPart))
+	}
 
 	return fmt.Sprintf("%s/%s", osPart, archPart), nil
 }
@@ -183,6 +194,51 @@ func ZipSource(files []string, target string) error {
 	return nil
 }
 
+func TarGzSource(files []string, target string) error {
+	outputFile, err := os.Create(target)
+	if err != nil {
+		return err
+	}
+	defer outputFile.Close()
+
+	gzipWriter := gzip.NewWriter(outputFile)
+	defer gzipWriter.Close()
+
+	tarWriter := tar.NewWriter(gzipWriter)
+	defer tarWriter.Close()
+
+	for _, file := range files {
+		fileInfo, err := os.Stat(file)
+		if err != nil {
+			return err
+		}
+
+		header := &tar.Header{
+			Name:    filepath.Base(file),
+			Mode:    int64(fileInfo.Mode()),
+			Size:    fileInfo.Size(),
+			ModTime: fileInfo.ModTime(),
+		}
+
+		if err := tarWriter.WriteHeader(header); err != nil {
+			return err
+		}
+
+		file, err := os.Open(file)
+		if err != nil {
+			return err
+		}
+
+		_, err = io.Copy(tarWriter, file)
+		file.Close()
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func LocalRegistryArtifactsPath() (string, error) {
 	azdConfigDir, err := AzdConfigDir()
 	if err != nil {
@@ -210,4 +266,116 @@ func AzdConfigDir() (string, error) {
 	}
 
 	return azdConfigDir, nil
+}
+
+// DefaultArtifactPatterns returns the default glob patterns for finding extension artifacts
+// in the local registry.
+func DefaultArtifactPatterns(extensionId, version string) ([]string, error) {
+	localRegistryArtifactsPath, err := LocalRegistryArtifactsPath()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get registry artifacts path: %w", err)
+	}
+	basePattern := filepath.Join(localRegistryArtifactsPath, extensionId, version)
+	return []string{
+		filepath.Join(basePattern, "*.zip"),
+		filepath.Join(basePattern, "*.tar.gz"),
+	}, nil
+}
+
+// FindArtifacts finds all artifact files for an extension using the provided patterns or defaults.
+func FindArtifacts(patterns []string, extensionId, version string) ([]string, error) {
+	if len(patterns) == 0 {
+		var err error
+		patterns, err = DefaultArtifactPatterns(extensionId, version)
+		if err != nil {
+			return nil, err
+		}
+	}
+	var allFiles []string
+	for _, pattern := range patterns {
+		files, err := filepath.Glob(pattern)
+		if err != nil {
+			return nil, err
+		}
+		allFiles = append(allFiles, files...)
+	}
+	return allFiles, nil
+}
+
+// GetFileNameWithoutExt extracts the filename without its extension
+func GetFileNameWithoutExt(filePath string) string {
+	// Get the base filename
+	fileName := filepath.Base(filePath)
+
+	// Special handling for .tar.gz since filepath.Ext only removes the last extension (.gz)
+	if strings.HasSuffix(fileName, ".tar.gz") {
+		return strings.TrimSuffix(fileName, ".tar.gz")
+	}
+
+	// Remove the extension
+	return strings.TrimSuffix(fileName, filepath.Ext(fileName))
+}
+
+// HasLocalRegistry checks if a local extension source registry exists
+func HasLocalRegistry() (bool, error) {
+	cmdBytes, err := exec.Command("azd", "ext", "source", "list", "-o", "json").Output()
+	if err != nil {
+		return false, fmt.Errorf("failed to execute command: %w", err)
+	}
+
+	var extensionSources []any
+	if err := json.Unmarshal(cmdBytes, &extensionSources); err != nil {
+		return false, fmt.Errorf("failed to unmarshal command output: %w", err)
+	}
+
+	for _, source := range extensionSources {
+		extensionSource, ok := source.(map[string]any)
+		if ok {
+			if extensionSource["name"] == "local" && extensionSource["type"] == "file" {
+				return true, nil
+			}
+		}
+	}
+
+	return false, nil
+}
+
+// CreateLocalRegistry creates a local extension source registry
+func CreateLocalRegistry() error {
+	azdConfigDir := os.Getenv("AZD_CONFIG_DIR")
+	if azdConfigDir == "" {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("failed to get user home directory: %w", err)
+		}
+		azdConfigDir = filepath.Join(homeDir, ".azd")
+	}
+
+	localRegistryPath := filepath.Join(azdConfigDir, "registry.json")
+	emptyRegistry := map[string]any{
+		"registry": []any{},
+	}
+
+	registryJson, err := json.MarshalIndent(emptyRegistry, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal empty registry: %w", err)
+	}
+
+	if err := os.WriteFile(localRegistryPath, registryJson, PermissionFile); err != nil {
+		return fmt.Errorf("failed to create local registry file: %w", err)
+	}
+
+	args := []string{
+		"ext", "source", "add",
+		"--name", "local",
+		"--type", "file",
+		"--location", "registry.json",
+	}
+
+	createExtSourceCmd := exec.Command("azd", args...)
+	if _, err := createExtSourceCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to create local extension source: %w", err)
+	}
+
+	return nil
 }

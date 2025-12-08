@@ -209,7 +209,7 @@ func TestLoginInteractive(t *testing.T) {
 		cloud:             cloud.AzurePublic(),
 	}
 
-	cred, err := m.LoginInteractive(context.Background(), nil, nil)
+	cred, err := m.LoginInteractive(context.Background(), nil, "", nil)
 
 	require.NoError(t, err)
 	require.IsType(t, new(azdCredential), cred)
@@ -238,7 +238,7 @@ func TestLoginDeviceCode(t *testing.T) {
 		cloud:             cloud.AzurePublic(),
 	}
 
-	cred, err := m.LoginWithDeviceCode(context.Background(), "", nil, func(url string) error { return nil })
+	cred, err := m.LoginWithDeviceCode(context.Background(), "", nil, "", func(url string) error { return nil })
 
 	require.Regexp(t, "Start by copying the next code: 123-456", console.Output())
 

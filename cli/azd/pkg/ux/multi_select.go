@@ -133,6 +133,12 @@ func (p *MultiSelect) Ask(ctx context.Context) ([]*MultiSelectChoice, error) {
 		p.canvas = NewCanvas(p).WithWriter(p.options.Writer)
 	}
 
+	release := cm.Focus(p.canvas)
+	defer func() {
+		release()
+		p.canvas.Close()
+	}()
+
 	if !*p.options.EnableFiltering {
 		p.cursor.HideCursor()
 	}

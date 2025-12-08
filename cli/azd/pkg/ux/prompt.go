@@ -44,6 +44,8 @@ type PromptOptions struct {
 	ClearOnCompletion bool
 	// Whether or not to capture hint keys (default: true)
 	IgnoreHintKeys bool
+	// The optional help message that displays on the next line (default: "")
+	HelpMessageOnNextLine string
 }
 
 var DefaultPromptOptions PromptOptions = PromptOptions{
@@ -127,6 +129,12 @@ func (p *Prompt) Ask(ctx context.Context) (string, error) {
 		p.canvas = NewCanvas(p).WithWriter(p.options.Writer)
 	}
 
+	release := cm.Focus(p.canvas)
+	defer func() {
+		release()
+		p.canvas.Close()
+	}()
+
 	inputOptions := &internal.InputConfig{
 		InitialValue:   p.options.DefaultValue,
 		IgnoreHintKeys: p.options.IgnoreHintKeys,
@@ -198,6 +206,11 @@ func (p *Prompt) Render(printer Printer) error {
 		printer.Fprintf("%s ", output.WithHighLightFormat(p.options.Hint))
 	}
 
+	// Always capture cursor position for input, used for SecondLineMessage
+	if p.cursorPosition == nil {
+		p.cursorPosition = Ptr(printer.CursorPosition())
+	}
+
 	// Placeholder
 	if p.value == "" && p.options.PlaceHolder != "" {
 		p.cursorPosition = Ptr(printer.CursorPosition())
@@ -214,6 +227,15 @@ func (p *Prompt) Render(printer Printer) error {
 
 		printer.Fprintf(valueOutput)
 		p.cursorPosition = Ptr(printer.CursorPosition())
+	}
+
+	// Display SecondLineMessage on next line in gray
+	if !p.complete && p.options.HelpMessageOnNextLine != "" {
+		printer.Fprintf("\n%s", output.WithGrayFormat(p.options.HelpMessageOnNextLine))
+		// Reset cursor to the input position after showing the message
+		if p.cursorPosition != nil {
+			printer.SetCursorPosition(*p.cursorPosition)
+		}
 	}
 
 	// Done

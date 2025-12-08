@@ -1,5 +1,6 @@
 .azure-pipelines
 .eslintignore
+eslint.config.mjs
 .vscode/**
 .vscode-test/**
 node_modules/**

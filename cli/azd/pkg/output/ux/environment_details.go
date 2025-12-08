@@ -20,8 +20,9 @@ func (t *EnvironmentDetails) ToString(currentIndentation string) string {
 	if t.Location != "" {
 		location = fmt.Sprintf("\nLocation: %s", output.WithHighLightFormat(t.Location))
 	}
+
 	return fmt.Sprintf(
-		"Subscription: %s%s\n",
+		"Subscription: %s%s",
 		output.WithHighLightFormat(t.Subscription),
 		location,
 	)

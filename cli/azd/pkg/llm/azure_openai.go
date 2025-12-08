@@ -4,71 +4,101 @@
 package llm
 
 import (
+	"context"
 	"fmt"
-	"maps"
-	"os"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/llms/openai"
 )
 
-const (
-	modelEnvVar   = "AZD_AZURE_OPENAI_MODEL"
-	versionEnvVar = "AZD_AZURE_OPENAI_VERSION"
-	urlEnvVar     = "AZD_AZURE_OPENAI_URL"
-	keyEnvVar     = "OPENAI_API_KEY"
-)
-
-type requiredEnvVar struct {
-	name      string
-	value     string
-	isDefined bool
+// AzureOpenAiModelConfig holds configuration settings for Azure OpenAI models
+type AzureOpenAiModelConfig struct {
+	Model       string   `json:"model"`
+	Version     string   `json:"version"`
+	Endpoint    string   `json:"endpoint"`
+	Token       string   `json:"token"`
+	ApiVersion  string   `json:"apiVersion"`
+	Temperature *float64 `json:"temperature"`
+	MaxTokens   *int     `json:"maxTokens"`
 }
 
-var requiredEnvVars = map[string]requiredEnvVar{
-	modelEnvVar:   {name: modelEnvVar},
-	versionEnvVar: {name: versionEnvVar},
-	urlEnvVar:     {name: urlEnvVar},
-	keyEnvVar:     {name: keyEnvVar},
+// AzureOpenAiModelProvider creates Azure OpenAI models from user configuration
+type AzureOpenAiModelProvider struct {
+	userConfigManager config.UserConfigManager
 }
 
-func loadAzureOpenAi() (InfoResponse, error) {
-
-	envVars := maps.Clone(requiredEnvVars)
-	missingEnvVars := []string{}
-	for name, envVar := range envVars {
-		value, isDefined := os.LookupEnv(envVar.name)
-		if !isDefined {
-			missingEnvVars = append(missingEnvVars, envVar.name)
-			continue
-		}
-
-		envVar.value = value
-		envVar.isDefined = true
-		envVars[name] = envVar
+// NewAzureOpenAiModelProvider creates a new Azure OpenAI model provider
+func NewAzureOpenAiModelProvider(userConfigManager config.UserConfigManager) ModelProvider {
+	return &AzureOpenAiModelProvider{
+		userConfigManager: userConfigManager,
 	}
-	if len(missingEnvVars) > 0 {
-		return InfoResponse{}, fmt.Errorf(
-			"missing required environment variable(s): %s", ux.ListAsText(missingEnvVars))
-	}
+}
 
-	_, err := openai.New(
-		openai.WithModel(envVars[modelEnvVar].value),
-		openai.WithAPIType(openai.APITypeAzure),
-		openai.WithAPIVersion(envVars[versionEnvVar].value),
-		openai.WithBaseURL(envVars[urlEnvVar].value),
-	)
+// CreateModelContainer creates a model container for Azure OpenAI with configuration
+// loaded from user settings. It validates required fields and applies optional parameters
+// like temperature and max tokens before creating the OpenAI client.
+func (p *AzureOpenAiModelProvider) CreateModelContainer(_ context.Context, opts ...ModelOption) (*ModelContainer, error) {
+	userConfig, err := p.userConfigManager.Load()
 	if err != nil {
-		return InfoResponse{}, fmt.Errorf("failed to create LLM: %w", err)
+		return nil, err
 	}
 
-	return InfoResponse{
+	var modelConfig AzureOpenAiModelConfig
+	if ok, err := userConfig.GetSection("ai.agent.model.azure", &modelConfig); !ok || err != nil {
+		return nil, err
+	}
+
+	// Validate required attributes
+	requiredFields := map[string]string{
+		"token":      modelConfig.Token,
+		"endpoint":   modelConfig.Endpoint,
+		"apiVersion": modelConfig.ApiVersion,
+		"model":      modelConfig.Model,
+	}
+
+	for fieldName, fieldValue := range requiredFields {
+		if fieldValue == "" {
+			return nil, fmt.Errorf("azure openai model configuration is missing required '%s' field", fieldName)
+		}
+	}
+
+	modelContainer := &ModelContainer{
 		Type:    LlmTypeOpenAIAzure,
 		IsLocal: false,
-		Model: LlmModel{
-			Name:    envVars[modelEnvVar].value,
-			Version: envVars[versionEnvVar].value,
+		Metadata: ModelMetadata{
+			Name:    modelConfig.Model,
+			Version: modelConfig.Version,
 		},
-		Url: envVars[urlEnvVar].value,
-	}, nil
+		Url: modelConfig.Endpoint,
+	}
+
+	for _, opt := range opts {
+		opt(modelContainer)
+	}
+
+	openAiModel, err := openai.New(
+		openai.WithToken(modelConfig.Token),
+		openai.WithBaseURL(modelConfig.Endpoint),
+		openai.WithAPIType(openai.APITypeAzure),
+		openai.WithAPIVersion(modelConfig.ApiVersion),
+		openai.WithModel(modelConfig.Model),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create LLM: %w", err)
+	}
+
+	callOptions := []llms.CallOption{}
+	if modelConfig.Temperature != nil {
+		callOptions = append(callOptions, llms.WithTemperature(*modelConfig.Temperature))
+	}
+
+	if modelConfig.MaxTokens != nil {
+		callOptions = append(callOptions, llms.WithMaxTokens(*modelConfig.MaxTokens))
+	}
+
+	openAiModel.CallbacksHandler = modelContainer.logger
+	modelContainer.Model = newModelWithCallOptions(openAiModel, callOptions...)
+
+	return modelContainer, nil
 }

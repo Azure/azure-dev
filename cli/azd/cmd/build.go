@@ -162,44 +162,57 @@ func (ba *buildAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
-	buildResults := map[string]*project.ServiceBuildResult{}
 	stableServices, err := ba.importManager.ServiceStable(ctx, ba.projectConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	for _, svc := range stableServices {
-		stepMessage := fmt.Sprintf("Building service %s", svc.Name)
-		ba.console.ShowSpinner(ctx, stepMessage, input.Step)
+	projectEventArgs := project.ProjectLifecycleEventArgs{
+		Project: ba.projectConfig,
+	}
 
-		// Skip this service if both cases are true:
-		// 1. The user specified a service name
-		// 2. This service is not the one the user specified
-		if targetServiceName != "" && targetServiceName != svc.Name {
-			ba.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
-			continue
+	buildResults := map[string]*project.ServiceBuildResult{}
+
+	err = ba.projectConfig.Invoke(ctx, project.ProjectEventBuild, projectEventArgs, func() error {
+		for _, svc := range stableServices {
+			stepMessage := fmt.Sprintf("Building service %s", svc.Name)
+			ba.console.ShowSpinner(ctx, stepMessage, input.Step)
+
+			// Skip this service if both cases are true:
+			// 1. The user specified a service name
+			// 2. This service is not the one the user specified
+			if targetServiceName != "" && targetServiceName != svc.Name {
+				ba.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
+				continue
+			}
+
+			buildResult, err := async.RunWithProgress(
+				func(buildProgress project.ServiceProgress) {
+					progressMessage := fmt.Sprintf("Building service %s (%s)", svc.Name, buildProgress.Message)
+					ba.console.ShowSpinner(ctx, progressMessage, input.Step)
+				},
+				func(progress *async.Progress[project.ServiceProgress]) (*project.ServiceBuildResult, error) {
+					return ba.serviceManager.Build(ctx, svc, nil, progress)
+				},
+			)
+
+			if err != nil {
+				ba.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+				return err
+			}
+
+			ba.console.StopSpinner(ctx, stepMessage, input.StepDone)
+			buildResults[svc.Name] = buildResult
+
+			// report build outputs
+			ba.console.MessageUxItem(ctx, buildResult.Artifacts)
 		}
 
-		buildResult, err := async.RunWithProgress(
-			func(buildProgress project.ServiceProgress) {
-				progressMessage := fmt.Sprintf("Building service %s (%s)", svc.Name, buildProgress.Message)
-				ba.console.ShowSpinner(ctx, progressMessage, input.Step)
-			},
-			func(progress *async.Progress[project.ServiceProgress]) (*project.ServiceBuildResult, error) {
-				return ba.serviceManager.Build(ctx, svc, nil, progress)
-			},
-		)
+		return nil
+	})
 
-		if err != nil {
-			ba.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-			return nil, err
-		}
-
-		ba.console.StopSpinner(ctx, stepMessage, input.StepDone)
-		buildResults[svc.Name] = buildResult
-
-		// report build outputs
-		ba.console.MessageUxItem(ctx, buildResult)
+	if err != nil {
+		return nil, err
 	}
 
 	if ba.formatter.Kind() == output.JsonFormat {

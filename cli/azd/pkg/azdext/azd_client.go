@@ -17,15 +17,19 @@ type AzdClientOption func(*AzdClient) error
 
 // AzdClient is the client for the `azd` gRPC server.
 type AzdClient struct {
-	connection        *grpc.ClientConn
-	projectClient     ProjectServiceClient
-	environmentClient EnvironmentServiceClient
-	userConfigClient  UserConfigServiceClient
-	promptClient      PromptServiceClient
-	deploymentClient  DeploymentServiceClient
-	eventsClient      EventServiceClient
-	composeClient     ComposeServiceClient
-	workflowClient    WorkflowServiceClient
+	connection          *grpc.ClientConn
+	projectClient       ProjectServiceClient
+	environmentClient   EnvironmentServiceClient
+	userConfigClient    UserConfigServiceClient
+	promptClient        PromptServiceClient
+	deploymentClient    DeploymentServiceClient
+	eventsClient        EventServiceClient
+	composeClient       ComposeServiceClient
+	workflowClient      WorkflowServiceClient
+	extensionClient     ExtensionServiceClient
+	serviceTargetClient ServiceTargetServiceClient
+	containerClient     ContainerServiceClient
+	accountClient       AccountServiceClient
 }
 
 // WithAddress sets the address of the `azd` gRPC server.
@@ -144,4 +148,44 @@ func (c *AzdClient) Workflow() WorkflowServiceClient {
 	}
 
 	return c.workflowClient
+}
+
+// ServiceTarget returns the service target service client.
+func (c *AzdClient) ServiceTarget() ServiceTargetServiceClient {
+	if c.serviceTargetClient == nil {
+		c.serviceTargetClient = NewServiceTargetServiceClient(c.connection)
+	}
+	return c.serviceTargetClient
+}
+
+// FrameworkService returns the framework service client.
+func (c *AzdClient) FrameworkService() FrameworkServiceClient {
+	// Create framework service client directly as it's not yet added to the client struct
+	return NewFrameworkServiceClient(c.connection)
+}
+
+// Container returns the container service client.
+func (c *AzdClient) Container() ContainerServiceClient {
+	if c.containerClient == nil {
+		c.containerClient = NewContainerServiceClient(c.connection)
+	}
+	return c.containerClient
+}
+
+// Extension returns the extension service client.
+func (c *AzdClient) extensionService() ExtensionServiceClient {
+	if c.extensionClient == nil {
+		c.extensionClient = NewExtensionServiceClient(c.connection)
+	}
+
+	return c.extensionClient
+}
+
+// Account returns the account service client.
+func (c *AzdClient) Account() AccountServiceClient {
+	if c.accountClient == nil {
+		c.accountClient = NewAccountServiceClient(c.connection)
+	}
+
+	return c.accountClient
 }

@@ -4,33 +4,90 @@
 package llm
 
 import (
-	"log"
-	"os"
+	"context"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/llms/ollama"
 )
 
-func loadOllama() (InfoResponse, error) {
-	defaultLlamaVersion := "llama3"
+// OllamaModelConfig holds configuration settings for Ollama models
+type OllamaModelConfig struct {
+	Model       string   `json:"model"`
+	Version     string   `json:"version"`
+	Temperature *float64 `json:"temperature"`
+	MaxTokens   *int     `json:"maxTokens"`
+}
 
-	if value, isDefined := os.LookupEnv("AZD_OLLAMA_MODEL"); isDefined {
-		log.Printf("Found AZD_OLLAMA_MODEL with %s. Using this model", value)
-		defaultLlamaVersion = value
+// OllamaModelProvider creates Ollama models from user configuration with sensible defaults
+type OllamaModelProvider struct {
+	userConfigManager config.UserConfigManager
+}
+
+// NewOllamaModelProvider creates a new Ollama model provider
+func NewOllamaModelProvider(userConfigManager config.UserConfigManager) ModelProvider {
+	return &OllamaModelProvider{
+		userConfigManager: userConfigManager,
 	}
+}
 
-	_, err := ollama.New(
-		ollama.WithModel(defaultLlamaVersion),
-	)
+// CreateModelContainer creates a model container for Ollama with configuration from user settings.
+// It defaults to "llama3" model if none specified and "latest" version if not configured.
+// Applies optional parameters like temperature and max tokens to the Ollama client.
+func (p *OllamaModelProvider) CreateModelContainer(_ context.Context, opts ...ModelOption) (*ModelContainer, error) {
+	userConfig, err := p.userConfigManager.Load()
 	if err != nil {
-		return InfoResponse{}, err
+		return nil, err
 	}
 
-	return InfoResponse{
+	defaultModel := "llama3"
+
+	var modelConfig OllamaModelConfig
+	ok, err := userConfig.GetSection("ai.agent.model.ollama", &modelConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	if ok {
+		defaultModel = modelConfig.Model
+	}
+
+	// Set defaults if not defined
+	if modelConfig.Version == "" {
+		modelConfig.Version = "latest"
+	}
+
+	modelContainer := &ModelContainer{
 		Type:    LlmTypeOllama,
 		IsLocal: true,
-		Model: LlmModel{
-			Name:    defaultLlamaVersion,
-			Version: "latest",
+		Metadata: ModelMetadata{
+			Name:    defaultModel,
+			Version: modelConfig.Version,
 		},
-	}, nil
+	}
+
+	for _, opt := range opts {
+		opt(modelContainer)
+	}
+
+	ollamaModel, err := ollama.New(
+		ollama.WithModel(defaultModel),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	callOptions := []llms.CallOption{}
+	if modelConfig.Temperature != nil {
+		callOptions = append(callOptions, llms.WithTemperature(*modelConfig.Temperature))
+	}
+
+	if modelConfig.MaxTokens != nil {
+		callOptions = append(callOptions, llms.WithMaxTokens(*modelConfig.MaxTokens))
+	}
+
+	ollamaModel.CallbacksHandler = modelContainer.logger
+	modelContainer.Model = newModelWithCallOptions(ollamaModel, callOptions...)
+
+	return modelContainer, nil
 }

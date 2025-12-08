@@ -196,12 +196,26 @@ func (c *AzdClient) Account() AccountServiceClient {
 	return c.accountClient
 }
 
-func tracingUnaryInterceptor(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+func tracingUnaryInterceptor(
+	ctx context.Context,
+	method string,
+	req, reply interface{},
+	cc *grpc.ClientConn,
+	invoker grpc.UnaryInvoker,
+	opts ...grpc.CallOption,
+) error {
 	ctx = WithTracing(ctx)
 	return invoker(ctx, method, req, reply, cc, opts...)
 }
 
-func tracingStreamInterceptor(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+func tracingStreamInterceptor(
+	ctx context.Context,
+	desc *grpc.StreamDesc,
+	cc *grpc.ClientConn,
+	method string,
+	streamer grpc.Streamer,
+	opts ...grpc.CallOption,
+) (grpc.ClientStream, error) {
 	ctx = WithTracing(ctx)
 	return streamer(ctx, desc, cc, method, opts...)
 }

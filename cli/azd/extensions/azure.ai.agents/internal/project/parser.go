@@ -35,7 +35,7 @@ type FoundryParser struct {
 }
 
 // Check if there is a service using containerapp host and contains agent.yaml file in the service path
-func shouldRun(ctx context.Context, project *azdext.ProjectConfig) (bool, error) {
+func (p *FoundryParser) IsContainerAgent(project *azdext.ProjectConfig) (bool, error) {
 	projectPath := project.Path
 	for _, service := range project.Services {
 		if service.Host == "containerapp" {
@@ -83,29 +83,27 @@ func shouldRun(ctx context.Context, project *azdext.ProjectConfig) (bool, error)
 }
 
 func (p *FoundryParser) SetIdentity(ctx context.Context, args *azdext.ProjectEventArgs) error {
-	shouldRun, err := shouldRun(ctx, args.Project)
-	if err != nil {
-		return fmt.Errorf("failed to determine if extension should attach: %w", err)
-	}
-	if !shouldRun {
-		return nil
-	}
-
 	// Get aiFoundryProjectResourceId from environment config
 	azdEnvClient := p.AzdClient.Environment()
-	response, err := azdEnvClient.GetConfigString(ctx, &azdext.GetConfigStringRequest{
-		Path: "infra.parameters.aiFoundryProjectResourceId",
+	currentEnvResponse, err := azdEnvClient.GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return fmt.Errorf("failed to get current environment: %w", err)
+	}
+
+	projectIdResponse, err := azdEnvClient.GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: currentEnvResponse.Environment.Name,
+		Key:     "AZURE_AI_PROJECT_ID",
 	})
 	if err != nil {
-		return fmt.Errorf("failed to get environment config: %w", err)
+		return fmt.Errorf("failed to get AZURE_AI_PROJECT_ID from current environment: %w", err)
 	}
-	aiFoundryProjectResourceID := response.Value
-	fmt.Println("✓ Retrieved aiFoundryProjectResourceId")
+	projectResourceID := projectIdResponse.Value
+	fmt.Println("✓ Retrieved AZURE_AI_PROJECT_ID")
 
 	// Extract subscription ID from resource ID
-	parts := strings.Split(aiFoundryProjectResourceID, "/")
+	parts := strings.Split(projectResourceID, "/")
 	if len(parts) < 3 {
-		return fmt.Errorf("invalid resource ID format: %s", aiFoundryProjectResourceID)
+		return fmt.Errorf("invalid resource ID format: %s", projectResourceID)
 	}
 
 	// Find subscription ID
@@ -118,7 +116,7 @@ func (p *FoundryParser) SetIdentity(ctx context.Context, args *azdext.ProjectEve
 	}
 
 	if subscriptionID == "" {
-		return fmt.Errorf("subscription ID not found in resource ID: %s", aiFoundryProjectResourceID)
+		return fmt.Errorf("subscription ID not found in resource ID: %s", projectResourceID)
 	}
 
 	// Get the tenant ID
@@ -139,7 +137,7 @@ func (p *FoundryParser) SetIdentity(ctx context.Context, args *azdext.ProjectEve
 
 	// Get Microsoft Foundry Project's managed identity
 	fmt.Println("Retrieving Microsoft Foundry Project identity...")
-	projectPrincipalID, err := getProjectPrincipalID(ctx, cred, aiFoundryProjectResourceID, subscriptionID)
+	projectPrincipalID, err := getProjectPrincipalID(ctx, cred, projectResourceID, subscriptionID)
 	if err != nil {
 		return fmt.Errorf("failed to get Project principal ID: %w", err)
 	}
@@ -154,14 +152,8 @@ func (p *FoundryParser) SetIdentity(ctx context.Context, args *azdext.ProjectEve
 
 	fmt.Printf("Application ID: %s\n", projectClientID)
 
-	// Save to environment
-	cResponse, err := azdEnvClient.GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil {
-		return fmt.Errorf("failed to get current environment: %w", err)
-	}
-
 	_, err = azdEnvClient.SetValue(ctx, &azdext.SetEnvRequest{
-		EnvName: cResponse.Environment.Name,
+		EnvName: currentEnvResponse.Environment.Name,
 		Key:     "AI_FOUNDRY_PROJECT_APP_ID",
 		Value:   projectClientID,
 	})
@@ -300,14 +292,6 @@ type DataPlaneResponse struct {
 }
 
 func (p *FoundryParser) CoboPostDeploy(ctx context.Context, args *azdext.ProjectEventArgs) error {
-	shouldRun, err := shouldRun(ctx, args.Project)
-	if err != nil {
-		return fmt.Errorf("failed to determine if extension should attach: %w", err)
-	}
-	if !shouldRun {
-		return nil
-	}
-
 	azdEnvClient := p.AzdClient.Environment()
 	cEnvResponse, err := azdEnvClient.GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil {

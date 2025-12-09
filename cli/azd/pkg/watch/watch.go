@@ -5,7 +5,9 @@ package watch
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
@@ -13,6 +15,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/bmatcuk/doublestar/v4"
+	"github.com/denormal/go-gitignore"
 	"github.com/fatih/color"
 	"github.com/fsnotify/fsnotify"
 )
@@ -26,6 +29,8 @@ type fileWatcher struct {
 	watcher         *fsnotify.Watcher
 	ignoredFolders  map[string]struct{}
 	globIgnorePaths []string
+	ignorer         gitignore.GitIgnore
+	rootDir         string
 	mu              sync.Mutex
 }
 
@@ -47,6 +52,11 @@ func NewWatcher(ctx context.Context) (Watcher, error) {
 		return nil, fmt.Errorf("failed to create watcher: %w", err)
 	}
 
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current working directory: %w", err)
+	}
+
 	// Set up ignore patterns
 	ignoredFolders := map[string]struct{}{
 		".git": {},
@@ -58,11 +68,22 @@ func NewWatcher(ctx context.Context) (Watcher, error) {
 		globIgnorePaths = append(globIgnorePaths, fmt.Sprintf("%s/**/*", folder))
 	}
 
+	// Load .azdxignore file if it exists
+	var ignorer gitignore.GitIgnore
+	azdxIgnorePath := filepath.Join(cwd, ".azdxignore")
+	if ig, err := gitignore.NewFromFile(azdxIgnorePath); err == nil {
+		ignorer = ig
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("failed to load .azdxignore file: %w", err)
+	}
+
 	fw := &fileWatcher{
 		fileChanges:     fileChanges,
 		watcher:         watcher,
 		ignoredFolders:  ignoredFolders,
 		globIgnorePaths: globIgnorePaths,
+		ignorer:         ignorer,
+		rootDir:         cwd,
 	}
 
 	go func() {
@@ -82,6 +103,16 @@ func NewWatcher(ctx context.Context) (Watcher, error) {
 				}
 				if shouldIgnore {
 					continue
+				}
+
+				// Check if the file is ignored by .azdxignore
+				if fw.ignorer != nil {
+					// Check if this is a file or directory for gitignore matching
+					info, statErr := os.Stat(event.Name)
+					isDir := statErr == nil && info.IsDir()
+					if fw.isIgnored(event.Name, isDir) {
+						continue
+					}
 				}
 
 				fw.mu.Lock()
@@ -129,11 +160,6 @@ func NewWatcher(ctx context.Context) (Watcher, error) {
 		}
 	}()
 
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current working directory: %w", err)
-	}
-
 	if err := fw.watchRecursive(cwd, watcher); err != nil {
 		return nil, fmt.Errorf("watcher failed: %w", err)
 	}
@@ -152,6 +178,11 @@ func (fw *fileWatcher) watchRecursive(root string, watcher *fsnotify.Watcher) er
 				return filepath.SkipDir
 			}
 
+			// Check if the directory is ignored by .azdxignore
+			if fw.isIgnored(path, true) {
+				return filepath.SkipDir
+			}
+
 			err = watcher.Add(path)
 			if err != nil {
 				return fmt.Errorf("failed to watch directory %s: %w", path, err)
@@ -159,6 +190,24 @@ func (fw *fileWatcher) watchRecursive(root string, watcher *fsnotify.Watcher) er
 		}
 		return nil
 	})
+}
+
+// isIgnored checks if a path should be ignored based on the .azdxignore file
+func (fw *fileWatcher) isIgnored(path string, isDir bool) bool {
+	if fw.ignorer == nil {
+		return false
+	}
+
+	// Get the relative path from the root directory
+	relPath, err := filepath.Rel(fw.rootDir, path)
+	if err != nil {
+		// If we can't get relative path, use the path as-is
+		relPath = path
+	}
+
+	// Check if the path is ignored
+	match := fw.ignorer.Relative(relPath, isDir)
+	return match != nil
 }
 
 func (fw *fileWatcher) PrintChangedFiles(ctx context.Context) {

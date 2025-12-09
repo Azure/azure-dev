@@ -48,3 +48,14 @@ jobs:
 
       - publish: NOTICE.txt
         artifact: notice
+
+      # Set git credentials to enable pushing changes
+      - template: /eng/pipelines/templates/steps/set-git-credentials.yml
+
+      # Create a PR with the updated NOTICE.txt file
+      - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
+        parameters:
+          PushArgs: -f
+          PRBranchName: update-notice-txt
+          CommitMsg: Update NOTICE.txt
+          PRTitle: Update NOTICE.txt

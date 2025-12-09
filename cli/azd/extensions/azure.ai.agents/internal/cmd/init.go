@@ -971,11 +971,19 @@ func (a *InitAction) downloadAgentYaml(
 		}
 	}
 
-	agentId := agentManifest.Name
+	var agentName string
 
-	// Use targetDir if provided or set to local file pointer, otherwise default to "src/{agentId}"
+	if containerTemplate, ok := agentManifest.Template.(agent_yaml.ContainerAgent); ok {
+		agentName = containerTemplate.Name
+	} else if promptTemplate, ok := agentManifest.Template.(agent_yaml.PromptAgent); ok {
+		agentName = promptTemplate.Name
+	} else {
+		return nil, "", fmt.Errorf("unsupported agent template type")
+	}
+
+	// Use targetDir if provided or set to local file pointer, otherwise default to "src/{agentName}"
 	if targetDir == "" {
-		targetDir = filepath.Join("src", agentId)
+		targetDir = filepath.Join("src", agentName)
 	}
 
 	// Create target directory if it doesn't exist

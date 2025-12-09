@@ -385,11 +385,14 @@ func Test_ProjectService_SetConfigSection(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		// Verify section was set in the project config
-		require.NotNil(t, projectConfig.AdditionalProperties["mysql"])
-		mysqlSection := projectConfig.AdditionalProperties["mysql"].(map[string]any)
+		// Reload config from disk to verify changes were persisted
+		cfg, err := project.LoadConfig(*mockContext.Context, azdContext.ProjectPath())
+		require.NoError(t, err)
+		
+		mysqlSection, found := cfg.GetMap("mysql")
+		require.True(t, found, "mysql section should exist")
 		require.Equal(t, "newhost", mysqlSection["host"])
-		require.Equal(t, float64(3306), mysqlSection["port"])
+		require.Equal(t, 3306, mysqlSection["port"])
 		require.Equal(t, true, mysqlSection["ssl"])
 	})
 
@@ -409,9 +412,12 @@ func Test_ProjectService_SetConfigSection(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		// Verify nested section was set
-		mysqlSection := projectConfig.AdditionalProperties["mysql"].(map[string]any)
-		credentials := mysqlSection["credentials"].(map[string]any)
+		// Reload config from disk to verify changes were persisted
+		cfg, err := project.LoadConfig(*mockContext.Context, azdContext.ProjectPath())
+		require.NoError(t, err)
+		
+		credentials, found := cfg.GetMap("mysql.credentials")
+		require.True(t, found, "mysql.credentials section should exist")
 		require.Equal(t, "admin", credentials["username"])
 		require.Equal(t, "secret123", credentials["password"])
 	})
@@ -455,9 +461,13 @@ func Test_ProjectService_SetConfigValue(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		// Verify value was set
-		appSection := projectConfig.AdditionalProperties["app"].(map[string]any)
-		require.Equal(t, "test-string", appSection["name"])
+		// Reload config from disk to verify value was set
+		cfg, err := project.LoadConfig(*mockContext.Context, azdContext.ProjectPath())
+		require.NoError(t, err)
+		
+		name, found := cfg.Get("app.name")
+		require.True(t, found, "app.name should exist")
+		require.Equal(t, "test-string", name)
 	})
 
 	t.Run("SetConfigValue_Number", func(t *testing.T) {
@@ -470,9 +480,13 @@ func Test_ProjectService_SetConfigValue(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		// Verify value was set
-		appSection := projectConfig.AdditionalProperties["app"].(map[string]any)
-		require.Equal(t, float64(8080), appSection["port"])
+		// Reload config from disk to verify value was set
+		cfg, err := project.LoadConfig(*mockContext.Context, azdContext.ProjectPath())
+		require.NoError(t, err)
+		
+		port, found := cfg.Get("app.port")
+		require.True(t, found, "app.port should exist")
+		require.Equal(t, 8080, port)
 	})
 
 	t.Run("SetConfigValue_Boolean", func(t *testing.T) {
@@ -485,9 +499,13 @@ func Test_ProjectService_SetConfigValue(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		// Verify value was set
-		appSection := projectConfig.AdditionalProperties["app"].(map[string]any)
-		require.Equal(t, true, appSection["debug"])
+		// Reload config from disk to verify value was set
+		cfg, err := project.LoadConfig(*mockContext.Context, azdContext.ProjectPath())
+		require.NoError(t, err)
+		
+		debug, found := cfg.Get("app.debug")
+		require.True(t, found, "app.debug should exist")
+		require.Equal(t, true, debug)
 	})
 }
 
@@ -536,13 +554,16 @@ func Test_ProjectService_UnsetConfig(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		// Verify nested value was removed
-		databaseSection := projectConfig.AdditionalProperties["database"].(map[string]any)
-		credentials := databaseSection["credentials"].(map[string]any)
-		_, exists := credentials["password"]
-		require.False(t, exists)
+		// Reload config from disk to verify nested value was removed
+		cfg, err := project.LoadConfig(*mockContext.Context, azdContext.ProjectPath())
+		require.NoError(t, err)
+		
+		_, exists := cfg.Get("database.credentials.password")
+		require.False(t, exists, "password should be removed")
 		// But username should still exist
-		require.Equal(t, "admin", credentials["username"])
+		username, exists := cfg.Get("database.credentials.username")
+		require.True(t, exists, "username should still exist")
+		require.Equal(t, "admin", username)
 	})
 
 	t.Run("UnsetConfig_EntireSection", func(t *testing.T) {
@@ -551,12 +572,15 @@ func Test_ProjectService_UnsetConfig(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		// Verify entire section was removed
-		_, exists := projectConfig.AdditionalProperties["cache"]
-		require.False(t, exists)
+		// Reload config from disk to verify entire section was removed
+		cfg, err := project.LoadConfig(*mockContext.Context, azdContext.ProjectPath())
+		require.NoError(t, err)
+		
+		_, exists := cfg.GetMap("cache")
+		require.False(t, exists, "cache section should be removed")
 		// But database section should still exist
-		_, exists = projectConfig.AdditionalProperties["database"]
-		require.True(t, exists)
+		_, exists = cfg.GetMap("database")
+		require.True(t, exists, "database section should still exist")
 	})
 
 	t.Run("UnsetConfig_NonexistentPath", func(t *testing.T) {
@@ -612,10 +636,13 @@ func Test_ProjectService_ConfigNilAdditionalProperties(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		// Verify AdditionalProperties was initialized and value was set
-		require.NotNil(t, projectConfig.AdditionalProperties)
-		newSection := projectConfig.AdditionalProperties["new"].(map[string]any)
-		require.Equal(t, "test-value", newSection["value"])
+		// Reload config from disk to verify value was set
+		cfg, err := project.LoadConfig(*mockContext.Context, azdContext.ProjectPath())
+		require.NoError(t, err)
+		
+		val, found := cfg.Get("new.value")
+		require.True(t, found, "new.value should exist")
+		require.Equal(t, "test-value", val)
 	})
 }
 
@@ -659,6 +686,10 @@ func Test_ProjectService_ServiceConfiguration(t *testing.T) {
 	// Mock AzdContext with project path.
 	azdContext := &azdcontext.AzdContext{}
 	azdContext.SetProjectDirectory(temp)
+
+	// Save the initial project config to disk
+	err := project.Save(*mockContext.Context, projectConfig, azdContext.ProjectPath())
+	require.NoError(t, err)
 
 	// Configure and initialize environment manager.
 	fileConfigManager := config.NewFileConfigManager(config.NewManager())
@@ -781,10 +812,12 @@ func Test_ProjectService_ServiceConfiguration(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		// Verify the section was set
-		apiService := projectConfig.Services["api"]
-		require.NotNil(t, apiService.AdditionalProperties)
-		newSection := apiService.AdditionalProperties["newSection"].(map[string]any)
+		// Verify the section was set by loading from disk
+		cfg, err := project.LoadConfig(*mockContext.Context, azdContext.ProjectPath())
+		require.NoError(t, err)
+		
+		newSection, found := cfg.GetMap("services.api.newSection")
+		require.True(t, found, "services.api.newSection should exist")
 		require.Equal(t, "new-value", newSection["newSetting"])
 
 		anotherSetting := newSection["anotherSetting"].(map[string]any)
@@ -815,10 +848,13 @@ func Test_ProjectService_ServiceConfiguration(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		// Verify the value was updated
-		apiService := projectConfig.Services["api"]
-		customSection := apiService.AdditionalProperties["custom"].(map[string]any)
-		require.Equal(t, "updated-value", customSection["setting"])
+		// Verify the value was updated by loading from disk
+		cfg, err := project.LoadConfig(*mockContext.Context, azdContext.ProjectPath())
+		require.NoError(t, err)
+		
+		updatedValue, found := cfg.Get("services.api.custom.setting")
+		require.True(t, found, "services.api.custom.setting should exist")
+		require.Equal(t, "updated-value", updatedValue)
 	})
 
 	t.Run("SetServiceConfigValue_NewPath", func(t *testing.T) {
@@ -832,10 +868,13 @@ func Test_ProjectService_ServiceConfiguration(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		// Verify the new path was created
-		apiService := projectConfig.Services["api"]
-		serverSection := apiService.AdditionalProperties["server"].(map[string]any)
-		require.Equal(t, float64(8080), serverSection["port"])
+		// Verify the new path was created by loading from disk
+		cfg, err := project.LoadConfig(*mockContext.Context, azdContext.ProjectPath())
+		require.NoError(t, err)
+		
+		portValue, found := cfg.Get("services.api.server.port")
+		require.True(t, found, "services.api.server.port should exist")
+		require.Equal(t, 8080, portValue)
 	})
 
 	t.Run("SetServiceConfigValue_ServiceNotFound", func(t *testing.T) {
@@ -858,11 +897,12 @@ func Test_ProjectService_ServiceConfiguration(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		// Verify the value was removed
-		apiService := projectConfig.Services["api"]
-		customSection := apiService.AdditionalProperties["custom"].(map[string]any)
-		_, exists := customSection["setting"]
-		require.False(t, exists)
+		// Verify the value was removed by loading from disk
+		cfg, err := project.LoadConfig(*mockContext.Context, azdContext.ProjectPath())
+		require.NoError(t, err)
+		
+		_, found := cfg.Get("services.api.custom.setting")
+		require.False(t, found, "services.api.custom.setting should not exist after unset")
 	})
 
 	t.Run("UnsetServiceConfig_EntireSection", func(t *testing.T) {
@@ -872,10 +912,12 @@ func Test_ProjectService_ServiceConfiguration(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		// Verify the entire section was removed
-		apiService := projectConfig.Services["api"]
-		_, exists := apiService.AdditionalProperties["database"]
-		require.False(t, exists)
+		// Verify the entire section was removed by loading from disk
+		cfg, err := project.LoadConfig(*mockContext.Context, azdContext.ProjectPath())
+		require.NoError(t, err)
+		
+		_, found := cfg.Get("services.api.database")
+		require.False(t, found, "services.api.database should not exist after unset")
 	})
 
 	t.Run("UnsetServiceConfig_ServiceNotFound", func(t *testing.T) {
@@ -920,6 +962,10 @@ func Test_ProjectService_ServiceConfiguration_NilAdditionalProperties(t *testing
 	// Mock AzdContext with project path.
 	azdContext := &azdcontext.AzdContext{}
 	azdContext.SetProjectDirectory(temp)
+
+	// Save the initial project config to disk
+	err := project.Save(*mockContext.Context, projectConfig, azdContext.ProjectPath())
+	require.NoError(t, err)
 
 	// Configure and initialize environment manager.
 	fileConfigManager := config.NewFileConfigManager(config.NewManager())
@@ -966,10 +1012,85 @@ func Test_ProjectService_ServiceConfiguration_NilAdditionalProperties(t *testing
 		})
 		require.NoError(t, err)
 
-		// Verify AdditionalProperties was initialized and value was set
-		apiService := projectConfig.Services["api"]
-		require.NotNil(t, apiService.AdditionalProperties)
-		newSection := apiService.AdditionalProperties["new"].(map[string]any)
-		require.Equal(t, "test-value", newSection["value"])
+		// Verify AdditionalProperties was initialized and value was set by loading from disk
+		cfg, err := project.LoadConfig(*mockContext.Context, azdContext.ProjectPath())
+		require.NoError(t, err)
+		
+		val, found := cfg.Get("services.api.new.value")
+		require.True(t, found, "services.api.new.value should exist")
+		require.Equal(t, "test-value", val)
 	})
 }
+
+// Test_ProjectService_ChangeServiceHost validates that core service configuration fields
+// (like "host") can be retrieved and modified using the config methods after migrating
+// to the unified LoadConfig/SaveConfig approach.
+func Test_ProjectService_ChangeServiceHost(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	temp := t.TempDir()
+	azdContext := azdcontext.NewAzdContextWithDirectory(temp)
+
+	// Create project with a service that has host=containerapp
+	projectConfig := &project.ProjectConfig{
+		Name: "test",
+		Services: map[string]*project.ServiceConfig{
+			"web": {
+				Name:         "web",
+				Host:         project.ContainerAppTarget,
+				Language:     project.ServiceLanguageTypeScript,
+				RelativePath: "./src/web",
+			},
+		},
+	}
+	err := project.Save(*mockContext.Context, projectConfig, azdContext.ProjectPath())
+	require.NoError(t, err)
+
+	// Setup lazy dependencies
+	lazyAzdContext := lazy.From(azdContext)
+	fileConfigManager := config.NewFileConfigManager(config.NewManager())
+	localDataStore := environment.NewLocalFileDataStore(azdContext, fileConfigManager)
+	envManager, err := environment.NewManager(mockContext.Container, azdContext, mockContext.Console, localDataStore, nil)
+	require.NoError(t, err)
+	lazyEnvManager := lazy.From(envManager)
+	lazyProjectConfig := lazy.From(projectConfig)
+
+	service := NewProjectService(lazyAzdContext, lazyEnvManager, lazyProjectConfig)
+
+	// Test 1: Get the current host value
+	getResp, err := service.GetServiceConfigValue(*mockContext.Context, &azdext.GetServiceConfigValueRequest{
+		ServiceName: "web",
+		Path:        "host",
+	})
+	require.NoError(t, err)
+	require.True(t, getResp.Found, "host field should be found")
+	require.Equal(t, string(project.ContainerAppTarget), getResp.Value.GetStringValue(),
+		"host should be 'containerapp'")
+
+	// Test 2: Change the host to appservice
+	value, err := structpb.NewValue(string(project.AppServiceTarget))
+	require.NoError(t, err)
+
+	_, err = service.SetServiceConfigValue(*mockContext.Context, &azdext.SetServiceConfigValueRequest{
+		ServiceName: "web",
+		Path:        "host",
+		Value:       value,
+	})
+	require.NoError(t, err, "setting core field 'host' should succeed")
+
+	// Test 3: Verify the host was changed
+	getResp2, err := service.GetServiceConfigValue(*mockContext.Context, &azdext.GetServiceConfigValueRequest{
+		ServiceName: "web",
+		Path:        "host",
+	})
+	require.NoError(t, err)
+	require.True(t, getResp2.Found, "host field should still be found")
+	require.Equal(t, string(project.AppServiceTarget), getResp2.Value.GetStringValue(),
+		"host should now be 'appservice'")
+
+	// Test 4: Verify the change was persisted to disk
+	reloadedConfig, err := project.Load(*mockContext.Context, azdContext.ProjectPath())
+	require.NoError(t, err)
+	require.Equal(t, project.AppServiceTarget, reloadedConfig.Services["web"].Host,
+		"persisted host should be 'appservice'")
+}
+

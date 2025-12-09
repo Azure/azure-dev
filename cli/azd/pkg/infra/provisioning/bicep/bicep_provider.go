@@ -119,9 +119,13 @@ func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, opt 
 	p.options = infraOptions
 	p.ignoreDeploymentState = infraOptions.IgnoreDeploymentState
 
-	p.console.ShowSpinner(ctx, "Initialize bicep provider", input.Step)
-	err = p.EnsureEnv(ctx)
-	p.console.StopSpinner(ctx, "", input.Step)
+	if opt.Mode == provisioning.ModeDeploy {
+		// For regular deployments, ensure the environment is in a provision-ready state
+		p.console.ShowSpinner(ctx, "Initialize bicep provider", input.Step)
+		err = p.EnsureEnv(ctx)
+		p.console.StopSpinner(ctx, "", input.Step)
+	}
+
 	return err
 }
 
@@ -870,6 +874,22 @@ func (p *BicepProvider) Destroy(
 	compileResult, err := p.compileBicep(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("creating template: %w", err)
+	}
+
+	targetScope, err := compileResult.Template.TargetScope()
+	if err != nil {
+		return nil, fmt.Errorf("computing deployment scope: %w", err)
+	}
+
+	switch targetScope {
+	case azure.DeploymentScopeResourceGroup:
+		if p.env.Getenv(environment.ResourceGroupEnvVarName) == "" {
+			return nil, azapi.ErrDeploymentNotFound
+		}
+	case azure.DeploymentScopeSubscription:
+		if p.env.Getenv(environment.SubscriptionIdEnvVarName) == "" || p.env.Getenv(environment.LocationEnvVarName) == "" {
+			return nil, azapi.ErrDeploymentNotFound
+		}
 	}
 
 	scope, err := p.scopeForTemplate(compileResult.Template)

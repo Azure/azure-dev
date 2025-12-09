@@ -23,6 +23,17 @@ import (
 
 var _ tools.ExternalTool = (*Cli)(nil)
 
+// Constants for Aspire AppHost detection
+const (
+	// SingleFileAspireHostName is the required filename for single-file Aspire AppHosts
+	SingleFileAspireHostName = "apphost.cs"
+	// AspireSdkDirective is the SDK directive that must be present in single-file Aspire AppHosts
+	AspireSdkDirective = "#:sdk Aspire.AppHost.Sdk"
+)
+
+// DotNetProjectExtensions lists all valid .NET project file extensions
+var DotNetProjectExtensions = []string{".csproj", ".fsproj", ".vbproj"}
+
 type Cli struct {
 	commandRunner exec.CommandRunner
 }
@@ -141,12 +152,28 @@ func (cli *Cli) PublishAppHostManifest(
 		return os.WriteFile(manifestPath, m, osutil.PermissionFile)
 	}
 
-	runArgs := exec.NewRunArgs(
-		"dotnet", "run", "--project", filepath.Base(hostProject), "--publisher", "manifest", "--output-path", manifestPath)
+	// For single-file apphost, we need to use the .cs file directly
+	var runArgs exec.RunArgs
+	if filepath.Ext(hostProject) == ".cs" {
+		// Single-file apphost: use the .cs file directly as the argument
+		runArgs = exec.NewRunArgs(
+			"dotnet", "run", filepath.Base(hostProject), "--publisher", "manifest", "--output-path", manifestPath)
+	} else {
+		// Project-based apphost: use --project flag
+		runArgs = exec.NewRunArgs(
+			"dotnet",
+			"run",
+			"--project",
+			filepath.Base(hostProject),
+			"--publisher",
+			"manifest",
+			"--output-path",
+			manifestPath)
+	}
 
 	runArgs = runArgs.WithCwd(filepath.Dir(hostProject))
 
-	// AppHosts may conditionalize their infrastructure based on the environment, so we need to pass the environment when we
+	// AppHost may conditionalize their infrastructure based on the environment, so we need to pass the environment when we
 	// are `dotnet run`ing the app host project to produce its manifest.
 	var envArgs []string
 
@@ -166,8 +193,55 @@ func (cli *Cli) PublishAppHostManifest(
 	return nil
 }
 
-// PublishContainer runs a `dotnet publish“ with `/t:PublishContainer`to build and publish the container.
+// PublishContainer runs a `dotnet publish" with `/t:PublishContainer`to build and publish the container.
 // It also gets port number by using `--getProperty:GeneratedContainerConfiguration`.
+// For single-file apps (.cs files), it runs from the file's directory to properly resolve relative references.
+// BuildContainerLocal runs `dotnet publish` with `/t:PublishContainer` to build a container image locally
+// without pushing to a registry. Returns the port number and image name.
+func (cli *Cli) BuildContainerLocal(
+	ctx context.Context, project, configuration, imageName string,
+) (int, string, error) {
+	if !strings.Contains(imageName, ":") {
+		imageName = fmt.Sprintf("%s:latest", imageName)
+	}
+
+	imageParts := strings.Split(imageName, ":")
+
+	// For single-file apps, use the basename and set the working directory
+	// For project-based apps, use the full path
+	var runArgs exec.RunArgs
+	if filepath.Ext(project) == ".cs" {
+		// Single-file app: use just the filename and set working directory
+		runArgs = newDotNetRunArgs("publish", filepath.Base(project))
+		runArgs = runArgs.WithCwd(filepath.Dir(project))
+	} else {
+		// Project-based app: use the full path
+		runArgs = newDotNetRunArgs("publish", project)
+	}
+
+	runArgs = runArgs.AppendParams(
+		"-r", "linux-x64",
+		"-c", configuration,
+		"/t:PublishContainer",
+		fmt.Sprintf("-p:ContainerRepository=%s", imageParts[0]),
+		fmt.Sprintf("-p:ContainerImageTag=%s", imageParts[1]),
+		"-p:PublishProfile=DefaultContainer", // Use default container profile for local build
+		"--getProperty:GeneratedContainerConfiguration",
+	)
+
+	result, err := cli.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return 0, "", fmt.Errorf("dotnet publish on project '%s' failed: %w", project, err)
+	}
+
+	port, err := cli.getTargetPort(result.Stdout, project)
+	if err != nil {
+		return 0, "", fmt.Errorf("failed to get dotnet target port: %w with dotnet publish output '%s'", err, result.Stdout)
+	}
+
+	return port, imageName, nil
+}
+
 func (cli *Cli) PublishContainer(
 	ctx context.Context, project, configuration, imageName, server, username, password string,
 ) (int, error) {
@@ -177,7 +251,17 @@ func (cli *Cli) PublishContainer(
 
 	imageParts := strings.Split(imageName, ":")
 
-	runArgs := newDotNetRunArgs("publish", project)
+	// For single-file apps, use the basename and set the working directory
+	// For project-based apps, use the full path
+	var runArgs exec.RunArgs
+	if filepath.Ext(project) == ".cs" {
+		// Single-file app: use just the filename and set working directory
+		runArgs = newDotNetRunArgs("publish", filepath.Base(project))
+		runArgs = runArgs.WithCwd(filepath.Dir(project))
+	} else {
+		// Project-based app: use the full path
+		runArgs = newDotNetRunArgs("publish", project)
+	}
 
 	runArgs = runArgs.AppendParams(
 		"-r", "linux-x64",
@@ -307,7 +391,13 @@ func (cli *Cli) GetMsBuildProperty(ctx context.Context, project string, property
 
 // IsAspireHostProject returns true if the project at the given path has an MS Build Property named "IsAspireHost" which is
 // set to true or has a ProjectCapability named "Aspire".
+// For single-file apphost (apphost.cs), it validates them without running msbuild.
 func (cli *Cli) IsAspireHostProject(ctx context.Context, projectPath string) (bool, error) {
+	// Check if this is a single-file apphost first (to avoid running msbuild on .cs files)
+	if filepath.Ext(projectPath) == ".cs" {
+		return cli.IsSingleFileAspireHost(projectPath)
+	}
+
 	runArgs := newDotNetRunArgs("msbuild",
 		projectPath, "--ignore:.sln", "--getProperty:IsAspireHost", "--getItem:ProjectCapability")
 	res, err := cli.commandRunner.Run(ctx, runArgs)
@@ -340,6 +430,41 @@ func (cli *Cli) IsAspireHostProject(ctx context.Context, projectPath string) (bo
 	}
 
 	return result.Properties.IsAspireHost == "true" || hasAspireCapability, nil
+}
+
+// IsSingleFileAspireHost checks if the given file is a single-file Aspire AppHost.
+// The caller should verify the filename matches SingleFileAspireHostName before calling this function.
+// A file-based Aspire AppHost must meet all of these conditions:
+// 1. File name: Must be named apphost.cs (case-insensitive) - verified by caller
+// 2. No sibling .NET project files: The directory must NOT contain .csproj, .fsproj, or .vbproj files
+// 3. SDK Directive: Must contain the AspireSdkDirective in the file content
+func (cli *Cli) IsSingleFileAspireHost(filePath string) (bool, error) {
+	// Verify filename as a safety check (case-insensitive)
+	fileName := filepath.Base(filePath)
+	if !strings.EqualFold(fileName, SingleFileAspireHostName) {
+		return false, nil
+	}
+
+	// Check if there are no sibling .NET project files
+	dir := filepath.Dir(filePath)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false, fmt.Errorf("reading directory '%s': %w", dir, err)
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() && slices.Contains(DotNetProjectExtensions, filepath.Ext(entry.Name())) {
+			return false, nil
+		}
+	}
+
+	// Check if the file contains the SDK directive
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return false, fmt.Errorf("reading file '%s': %w", filePath, err)
+	}
+
+	return strings.Contains(string(content), AspireSdkDirective), nil
 }
 
 func NewCli(commandRunner exec.CommandRunner) *Cli {

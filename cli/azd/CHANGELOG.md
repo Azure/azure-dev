@@ -1,6 +1,6 @@
 # Release History
 
-## 1.21.0-beta.1 (Unreleased)
+## 1.23.0-beta.1 (Unreleased)
 
 ### Features Added
 
@@ -9,6 +9,82 @@
 ### Bugs Fixed
 
 ### Other Changes
+
+## 1.22.0 (2025-12-02)
+
+### Features Added
+
+- [[#6256]](https://github.com/Azure/azure-dev/pull/6256) Reduce provisioning progress display polling interval from 10s to 3s for more responsive status updates.
+- [[#6232]](https://github.com/Azure/azure-dev/pull/6232) Add language-specific `.gitignore` templates to extension scaffolding for `azd x init`.
+
+### Bugs Fixed
+
+- [[#6277]](https://github.com/Azure/azure-dev/pull/6277) Fix hooks not running in CI/CD scenarios when `.azure` directory does not exist.
+- [[#6282]](https://github.com/Azure/azure-dev/pull/6282) Fix panic in `azd provision --preview` when ARM returns nil After field during resource deletion.
+- [[#6281]](https://github.com/Azure/azure-dev/pull/6281) Fix `azd provision` skipping deployment when resource groups were deleted outside of azd.
+- [[#6180]](https://github.com/Azure/azure-dev/pull/6180) Relax Aspire binding validation for non-HTTP protocols as simple TCP.
+- [[#6255]](https://github.com/Azure/azure-dev/pull/6255) Fix Container Apps deployment error when using revision-based deployments.
+
+### Other Changes
+
+- [[#6247]](https://github.com/Azure/azure-dev/pull/6247) Update Bicep CLI to v0.39.26.
+- [[#6270]](https://github.com/Azure/azure-dev/pull/6270) Rename Azure AI Foundry to Microsoft Foundry.
+
+## 1.21.3 (2025-11-14)
+
+### Bugs Fixed
+
+- [[#6190]](https://github.com/Azure/azure-dev/pull/6190) Fix default infrastructure settings being incorrectly written to `azure.yaml` files.
+
+## 1.21.2 (2025-11-13)
+
+### Features Added
+
+- [[#6169]](https://github.com/Azure/azure-dev/pull/6169) Promote layered provisioning to beta.
+- [[#6154]](https://github.com/Azure/azure-dev/pull/6154) Add `env` property to service configuration for runtime environment variable management in Container Apps.
+
+## 1.21.1 (2025-11-11)
+
+### Features Added
+
+- [[#6133]](https://github.com/Azure/azure-dev/pull/6133) Add .Net10 to azd auto-gen templates for pipeline config.
+
+## 1.21.0 (2025-11-10)
+
+### Features Added
+
+- [[#6013]](https://github.com/Azure/azure-dev/pull/6013) Adds support for custom ServiceConfig settings for extensions.
+- [[#6074]](https://github.com/Azure/azure-dev/pull/6074) Update azd show to show endpoints from custom service targets.
+- [[#6073]](https://github.com/Azure/azure-dev/pull/6073) Enhance no-prompt support in extensions & prompt service.
+- [[#6083]](https://github.com/Azure/azure-dev/pull/6083) Moving hooks warning from console to logs.
+- [[#6093]](https://github.com/Azure/azure-dev/pull/6093) Support for Aspire 13.
+
+### Bugs Fixed
+
+- [[#6015]](https://github.com/Azure/azure-dev/pull/6015) Fix hyperlink ANSI escape codes appearing in non-terminal output.
+- [[#6032]](https://github.com/Azure/azure-dev/pull/6032) Fix flickering progress bar during agent deployment.
+- [[#6028]](https://github.com/Azure/azure-dev/pull/6028) Fixes lifetime issues with container helper from extension container service.
+- [[#6063]](https://github.com/Azure/azure-dev/pull/6063) Reload env before loading parameters in bicep provider.
+- [[#6098]](https://github.com/Azure/azure-dev/pull/6098) Fixes issues with remote build on agent extension.
+
+## 1.20.3 (2025-10-28)
+
+### Features Added
+
+- [[#5995]](https://github.com/Azure/azure-dev/pull/5995) Add AccountService gRPC API and server implementation.
+- [[#6002]](https://github.com/Azure/azure-dev/pull/6002) Exposes ServiceContext in Service lifecycle events.
+
+### Bugs Fixed
+
+- [[#5985]](https://github.com/Azure/azure-dev/pull/5985) Fix potential concurrent map write panics in FrameworkService.
+- [[#6001]](https://github.com/Azure/azure-dev/pull/6001) fix: prevent index out of range panic in progressLog.Write().
+- [[#6012]](https://github.com/Azure/azure-dev/pull/6012) Fixes issue with duplicate event registration in workflow commands.
+
+## 1.20.2 (2025-10-22)
+
+### Bugs Fixed
+
+- [[#5964]](https://github.com/Azure/azure-dev/pull/5964) Fixes issue where project level events not invoked from extensions.
 
 ## 1.20.1 (2025-10-17)
 

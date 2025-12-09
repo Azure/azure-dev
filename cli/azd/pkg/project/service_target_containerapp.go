@@ -189,12 +189,24 @@ func (at *containerAppTarget) Deploy(
 	// If present, build and deploy it.
 	controlledRevision := false
 
-	moduleName := serviceConfig.Module
-	if moduleName == "" {
-		moduleName = serviceConfig.Name
+	nameOverrideOptions := provisioning.Options{
+		Module: serviceConfig.Name,
 	}
 
-	modulePath := filepath.Join(serviceConfig.Project.Infra.Path, moduleName)
+	// Get the infra options with defaults applied
+	// The order of precedence is:
+	// 1. Service-specific settings
+	// 2. Service-specific override (with module name)
+	// 3. Project-level infra options
+	serviceInfraOptions, err := serviceConfig.Infra.GetWithDefaults(
+		nameOverrideOptions,
+		serviceConfig.Project.Infra,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("getting service infra options: %w", err)
+	}
+
+	modulePath := filepath.Join(serviceInfraOptions.Path, serviceInfraOptions.Module)
 	bicepPath := modulePath + ".bicep"
 	bicepParametersPath := modulePath + ".parameters.json"
 	bicepParamPath := modulePath + ".bicepparam"
@@ -278,13 +290,20 @@ func (at *containerAppTarget) Deploy(
 			ApiVersion: serviceConfig.ApiVersion,
 		}
 
+		// Expand environment variables from service config
+		envVars, err := serviceConfig.Environment.Expand(at.env.Getenv)
+		if err != nil {
+			return nil, fmt.Errorf("expanding environment variables: %w", err)
+		}
+
 		progress.SetProgress(NewServiceProgress("Updating container app revision"))
-		err := at.containerAppService.AddRevision(
+		err = at.containerAppService.AddRevision(
 			ctx,
 			targetResource.SubscriptionId(),
 			targetResource.ResourceGroupName(),
 			resourceName,
 			imageName,
+			envVars,
 			&containerAppOptions,
 		)
 		if err != nil {
@@ -303,7 +322,7 @@ func (at *containerAppTarget) Deploy(
 		resourceName,
 		string(resourceTypeContainer))
 
-	resourceArtifact := &Artifact{}
+	var resourceArtifact *Artifact
 	if err := mapper.Convert(target, &resourceArtifact); err == nil {
 		if err := deployArtifacts.Add(resourceArtifact); err != nil {
 			return nil, fmt.Errorf("failed to add resource artifact: %w", err)
@@ -376,20 +395,24 @@ func (at *containerAppTarget) validateTargetResource(
 	return nil
 }
 
-func (at *containerAppTarget) addPreProvisionChecks(_ context.Context, serviceConfig *ServiceConfig) error {
+func (at *containerAppTarget) addPreProvisionChecks(ctx context.Context, serviceConfig *ServiceConfig) error {
 	// Attempt to retrieve the target resource for the current service
 	// This allows the resource deployment to detect whether or not to pull existing container image during
 	// provision operation to avoid resetting the container app back to a default image
-	return serviceConfig.Project.AddHandler("preprovision", func(ctx context.Context, args ProjectLifecycleEventArgs) error {
-		exists := false
+	return serviceConfig.Project.AddHandler(
+		ctx,
+		"preprovision",
+		func(ctx context.Context, args ProjectLifecycleEventArgs) error {
+			exists := false
 
-		// Check if the target resource already exists
-		targetResource, err := at.resourceManager.GetTargetResource(ctx, at.env.GetSubscriptionId(), serviceConfig)
-		if err == nil && targetResource != nil && targetResource.ResourceName() != "" {
-			exists = true
-		}
+			// Check if the target resource already exists
+			targetResource, err := at.resourceManager.GetTargetResource(ctx, at.env.GetSubscriptionId(), serviceConfig)
+			if err == nil && targetResource != nil && targetResource.ResourceName() != "" {
+				exists = true
+			}
 
-		at.env.SetServiceProperty(serviceConfig.Name, "RESOURCE_EXISTS", strconv.FormatBool(exists))
-		return at.envManager.Save(ctx, at.env)
-	})
+			at.env.SetServiceProperty(serviceConfig.Name, "RESOURCE_EXISTS", strconv.FormatBool(exists))
+			return at.envManager.Save(ctx, at.env)
+		},
+	)
 }

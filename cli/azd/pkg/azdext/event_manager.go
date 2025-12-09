@@ -5,20 +5,23 @@ package azdext
 
 import (
 	"context"
-	"errors"
-	"io"
+	"fmt"
 	"log"
+	"sync"
 
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 )
 
 type EventManager struct {
-	azdClient     *AzdClient
-	stream        grpc.BidiStreamingClient[EventMessage, EventMessage]
+	extensionId   string
+	client        *AzdClient
+	broker        *grpcbroker.MessageBroker[EventMessage]
 	projectEvents map[string]ProjectEventHandler
 	serviceEvents map[string]ServiceEventHandler
+	eventsMutex   sync.RWMutex // Protects both projectEvents and serviceEvents maps
+
+	// Synchronization for concurrent access
+	mu sync.RWMutex
 }
 
 type ProjectEventArgs struct {
@@ -26,112 +29,130 @@ type ProjectEventArgs struct {
 }
 
 type ServiceEventArgs struct {
-	Project *ProjectConfig
-	Service *ServiceConfig
+	Project        *ProjectConfig
+	Service        *ServiceConfig
+	ServiceContext *ServiceContext
 }
 
 type ProjectEventHandler func(ctx context.Context, args *ProjectEventArgs) error
 
 type ServiceEventHandler func(ctx context.Context, args *ServiceEventArgs) error
 
-func NewEventManager(azdClient *AzdClient) *EventManager {
+func NewEventManager(extensionId string, azdClient *AzdClient) *EventManager {
 	return &EventManager{
-		azdClient:     azdClient,
+		extensionId:   extensionId,
+		client:        azdClient,
 		projectEvents: make(map[string]ProjectEventHandler),
 		serviceEvents: make(map[string]ServiceEventHandler),
 	}
 }
 
 func (em *EventManager) Close() error {
-	if em.stream != nil {
-		return em.stream.CloseSend()
+	em.mu.Lock()
+	defer em.mu.Unlock()
+
+	if em.broker != nil {
+		em.broker.Close()
+		em.broker = nil
 	}
 
 	return nil
 }
 
-func (em *EventManager) init(ctx context.Context) error {
-	if em.stream == nil {
-		eventStream, err := em.azdClient.Events().EventStream(ctx)
-		if err != nil {
-			return err
-		}
+// ensureStream initializes the broker and stream if they haven't been created yet.
+// This method is thread-safe for concurrent access.
+func (em *EventManager) ensureStream(ctx context.Context) error {
+	// Fast path with read lock
+	em.mu.RLock()
+	if em.broker != nil {
+		em.mu.RUnlock()
+		return nil
+	}
+	em.mu.RUnlock()
 
-		em.stream = eventStream
+	// Slow path with write lock
+	em.mu.Lock()
+	defer em.mu.Unlock()
+
+	// Double-check after acquiring write lock
+	if em.broker != nil {
+		return nil
+	}
+	stream, err := em.client.Events().EventStream(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to create event stream: %w", err)
+	}
+
+	// Create broker with client stream
+	envelope := &EventMessageEnvelope{}
+	// Use client as name since we're on the client side (extension process)
+	em.broker = grpcbroker.NewMessageBroker(stream, envelope, em.extensionId)
+
+	// Register handlers for incoming requests
+	if err := em.broker.On(em.onInvokeProjectHandler); err != nil {
+		return fmt.Errorf("failed to register invoke project handler: %w", err)
+	}
+	if err := em.broker.On(em.onInvokeServiceHandler); err != nil {
+		return fmt.Errorf("failed to register invoke service handler: %w", err)
 	}
 
 	return nil
 }
 
+// Receive starts the broker's message dispatcher and blocks until the stream completes.
+// Returns nil on graceful shutdown, or an error if the stream fails.
+// This method is safe for concurrent access but only allows one active Run() at a time.
+// Receive starts the broker's message dispatcher and blocks until the stream completes.
+// This method ensures the stream is initialized then runs the broker.
 func (em *EventManager) Receive(ctx context.Context) error {
-	if err := em.init(ctx); err != nil {
+	// Ensure stream is initialized (this handles all locking internally)
+	if err := em.ensureStream(ctx); err != nil {
 		return err
 	}
 
-	if err := em.sendReadyEvent(); err != nil {
+	// Run the broker (this blocks until context is canceled or error)
+	return em.broker.Run(ctx)
+}
+
+// Ready blocks until the message broker starts receiving messages or the context is cancelled.
+// This ensures the stream is initialized and then waits for the broker to be ready.
+// Returns nil when ready, or context error if the context is cancelled before ready.
+func (em *EventManager) Ready(ctx context.Context) error {
+	// Ensure stream is initialized (this handles all locking internally)
+	if err := em.ensureStream(ctx); err != nil {
 		return err
 	}
 
-	for {
-		select {
-		case <-ctx.Done():
-			log.Println("Context cancelled by caller, exiting receiveEvents")
-			return nil
-		default:
-			msg, err := em.stream.Recv()
-			if err != nil {
-				if errors.Is(err, io.EOF) {
-					log.Println("Stream closed by server (EOF), treating as expected")
-					return nil
-				}
-
-				if st, ok := status.FromError(err); ok {
-					if st.Code() == codes.Unavailable {
-						log.Println("Stream closed by server (unavailable), treating as expected")
-						return nil
-					}
-				}
-
-				return err
-			}
-
-			switch msg.MessageType.(type) {
-			case *EventMessage_InvokeProjectHandler:
-				invokeMsg := msg.GetInvokeProjectHandler()
-				if err := em.invokeProjectHandler(ctx, invokeMsg); err != nil {
-					log.Printf("invokeProjectHandler error for event %s: %v", invokeMsg.EventName, err)
-				}
-			case *EventMessage_InvokeServiceHandler:
-				invokeMsg := msg.GetInvokeServiceHandler()
-				if err := em.invokeServiceHandler(ctx, invokeMsg); err != nil {
-					log.Printf("invokeServiceHandler error for event %s: %v", invokeMsg.EventName, err)
-				}
-			default:
-				log.Printf("receiveEvents: unhandled message type %T", msg.MessageType)
-			}
-		}
-	}
+	// Now that broker is guaranteed to exist, wait for it to be ready
+	return em.broker.Ready(ctx)
 }
 
 func (em *EventManager) AddProjectEventHandler(ctx context.Context, eventName string, handler ProjectEventHandler) error {
-	if err := em.init(ctx); err != nil {
+	if err := em.ensureStream(ctx); err != nil {
 		return err
 	}
 
-	err := em.stream.Send(&EventMessage{
+	msg := &EventMessage{
 		MessageType: &EventMessage_SubscribeProjectEvent{
 			SubscribeProjectEvent: &SubscribeProjectEvent{
 				EventNames: []string{eventName},
 			},
 		},
-	})
+	}
 
+	err := em.broker.Send(ctx, msg)
+	if err != nil {
+		return err
+	}
+
+	em.eventsMutex.Lock()
+	defer em.eventsMutex.Unlock()
 	em.projectEvents[eventName] = handler
 
-	return err
+	return nil
 }
 
-type ServerEventOptions struct {
+type ServiceEventOptions struct {
 	Host     string
 	Language string
 }
@@ -140,17 +161,17 @@ func (em *EventManager) AddServiceEventHandler(
 	ctx context.Context,
 	eventName string,
 	handler ServiceEventHandler,
-	options *ServerEventOptions,
+	options *ServiceEventOptions,
 ) error {
-	if err := em.init(ctx); err != nil {
+	if err := em.ensureStream(ctx); err != nil {
 		return err
 	}
 
 	if options == nil {
-		options = &ServerEventOptions{}
+		options = &ServiceEventOptions{}
 	}
 
-	err := em.stream.Send(&EventMessage{
+	msg := &EventMessage{
 		MessageType: &EventMessage_SubscribeServiceEvent{
 			SubscribeServiceEvent: &SubscribeServiceEvent{
 				EventNames: []string{eventName},
@@ -158,105 +179,121 @@ func (em *EventManager) AddServiceEventHandler(
 				Language:   options.Language,
 			},
 		},
-	})
+	}
 
+	err := em.broker.Send(ctx, msg)
+	if err != nil {
+		return err
+	}
+
+	em.eventsMutex.Lock()
+	defer em.eventsMutex.Unlock()
 	em.serviceEvents[eventName] = handler
 
-	return err
+	return nil
 }
 
 func (em *EventManager) RemoveProjectEventHandler(eventName string) {
+	em.eventsMutex.Lock()
+	defer em.eventsMutex.Unlock()
 	delete(em.projectEvents, eventName)
 }
 
 func (em *EventManager) RemoveServiceEventHandler(eventName string) {
+	em.eventsMutex.Lock()
+	defer em.eventsMutex.Unlock()
 	delete(em.serviceEvents, eventName)
 }
 
-func (em EventManager) sendReadyEvent() error {
-	return em.stream.Send(&EventMessage{
-		MessageType: &EventMessage_ExtensionReadyEvent{
-			ExtensionReadyEvent: &ExtensionReadyEvent{
-				Status: "ready",
-			},
-		},
-	})
-}
+// Handler methods - these are registered with the broker to handle incoming requests
 
-// New helper to send project handler status.
-func (em *EventManager) sendProjectHandlerStatus(eventName, status, message string) error {
-	return em.stream.Send(&EventMessage{
-		MessageType: &EventMessage_ProjectHandlerStatus{
-			ProjectHandlerStatus: &ProjectHandlerStatus{
-				EventName: eventName,
-				Status:    status,
-				Message:   message,
-			},
-		},
-	})
-}
+// onInvokeProjectHandler handles project event invocations from the server
+func (em *EventManager) onInvokeProjectHandler(
+	ctx context.Context,
+	req *InvokeProjectHandler,
+) (*EventMessage, error) {
+	em.eventsMutex.RLock()
+	defer em.eventsMutex.RUnlock()
+	handler, exists := em.projectEvents[req.EventName]
 
-// New helper to send service handler status.
-func (em *EventManager) sendServiceHandlerStatus(eventName, serviceName, status, message string) error {
-	return em.stream.Send(&EventMessage{
-		MessageType: &EventMessage_ServiceHandlerStatus{
-			ServiceHandlerStatus: &ServiceHandlerStatus{
-				EventName:   eventName,
-				ServiceName: serviceName,
-				Status:      status,
-				Message:     message,
-			},
-		},
-	})
-}
-
-func (em *EventManager) invokeProjectHandler(ctx context.Context, invokeMsg *InvokeProjectHandler) error {
-	handler, exists := em.projectEvents[invokeMsg.EventName]
 	if !exists {
-		return nil
+		// No handler registered, return empty response (not an error)
+		return &EventMessage{}, nil
 	}
 
 	args := &ProjectEventArgs{
-		Project: invokeMsg.Project,
+		Project: req.Project,
 	}
 
-	status := "completed"
-	message := ""
+	handlerStatus := "completed"
+	handlerMessage := ""
 
-	// Call the project event handler.
+	// Call the project event handler
 	err := handler(ctx, args)
 	if err != nil {
-		status = "failed"
-		message = err.Error()
-		log.Printf("invokeProjectHandler error for event %s: %v", invokeMsg.EventName, err)
+		handlerStatus = "failed"
+		handlerMessage = err.Error()
+		log.Printf("invokeProjectHandler error for event %s: %v", req.EventName, err)
 	}
 
-	// Use helper to send completion status.
-	return em.sendProjectHandlerStatus(invokeMsg.EventName, status, message)
+	// Return status message
+	return &EventMessage{
+		MessageType: &EventMessage_ProjectHandlerStatus{
+			ProjectHandlerStatus: &ProjectHandlerStatus{
+				EventName: req.EventName,
+				Status:    handlerStatus,
+				Message:   handlerMessage,
+			},
+		},
+	}, nil
 }
 
-func (em *EventManager) invokeServiceHandler(ctx context.Context, invokeMsg *InvokeServiceHandler) error {
-	handler, exists := em.serviceEvents[invokeMsg.EventName]
+// onInvokeServiceHandler handles service event invocations from the server
+func (em *EventManager) onInvokeServiceHandler(
+	ctx context.Context,
+	req *InvokeServiceHandler,
+) (*EventMessage, error) {
+	em.eventsMutex.RLock()
+	defer em.eventsMutex.RUnlock()
+	handler, exists := em.serviceEvents[req.EventName]
+
 	if !exists {
-		return nil
+		// No handler registered, return empty response (not an error)
+		return &EventMessage{}, nil
+	}
+
+	// Extract ServiceContext from the message, default to empty instance if nil
+	serviceContext := req.ServiceContext
+	if serviceContext == nil {
+		serviceContext = &ServiceContext{}
 	}
 
 	args := &ServiceEventArgs{
-		Project: invokeMsg.Project,
-		Service: invokeMsg.Service,
+		Project:        req.Project,
+		Service:        req.Service,
+		ServiceContext: serviceContext,
 	}
 
-	status := "completed"
-	message := ""
+	handlerStatus := "completed"
+	handlerMessage := ""
 
-	// Call the service event handler.
+	// Call the service event handler
 	err := handler(ctx, args)
 	if err != nil {
-		status = "failed"
-		message = err.Error()
-		log.Printf("invokeServiceHandler error for event %s: %v", invokeMsg.EventName, err)
+		handlerStatus = "failed"
+		handlerMessage = err.Error()
+		log.Printf("invokeServiceHandler error for event %s: %v", req.EventName, err)
 	}
 
-	// Use helper to send completion status.
-	return em.sendServiceHandlerStatus(invokeMsg.EventName, invokeMsg.Service.Name, status, message)
+	// Return status message
+	return &EventMessage{
+		MessageType: &EventMessage_ServiceHandlerStatus{
+			ServiceHandlerStatus: &ServiceHandlerStatus{
+				EventName:   req.EventName,
+				ServiceName: req.Service.Name,
+				Status:      handlerStatus,
+				Message:     handlerMessage,
+			},
+		},
+	}, nil
 }

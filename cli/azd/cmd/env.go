@@ -927,8 +927,6 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	return nil, nil
 }
 
-var featLayers = alpha.MustFeatureKey("layers")
-
 type envRefreshFlags struct {
 	hint   string
 	layer  string
@@ -939,7 +937,6 @@ type envRefreshFlags struct {
 func (er *envRefreshFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.StringVarP(&er.hint, "hint", "", "", "Hint to help identify the environment to refresh")
 	local.StringVarP(&er.layer, "layer", "", "", "Provisioning layer to refresh the environment from.")
-	_ = local.MarkHidden("layer") // alpha: featLayers
 
 	er.EnvFlag.Bind(local, global)
 	er.global = global
@@ -1053,15 +1050,6 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 	}
 	defer func() { _ = infra.Cleanup() }()
 
-	if len(infra.Options.Layers) > 1 {
-		if !ef.alphaFeatureManager.IsEnabled(featLayers) {
-			return nil,
-				fmt.Errorf("Layered provisioning is not enabled. Run '%s' to enable it.", alpha.GetEnableCommand(featLayers))
-		}
-
-		ef.console.WarnForFeature(ctx, featLayers)
-	}
-
 	layers := infra.Options.GetLayers()
 	if ef.flags.layer != "" {
 		layerOpt, err := infra.Options.GetLayer(ef.flags.layer)
@@ -1127,8 +1115,9 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 
 	for _, svc := range servicesStable {
 		eventArgs := project.ServiceLifecycleEventArgs{
-			Project: ef.projectConfig,
-			Service: svc,
+			Project:        ef.projectConfig,
+			Service:        svc,
+			ServiceContext: project.NewServiceContext(),
 			Args: map[string]any{
 				"bicepOutput": state.Outputs,
 			},

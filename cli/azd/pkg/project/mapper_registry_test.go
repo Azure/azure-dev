@@ -5,13 +5,44 @@ package project
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
 )
+
+// compareValues recursively compares expected and actual values, accounting for protobuf type conversions
+func compareValues(t *testing.T, expected, actual any, context string) {
+	switch exp := expected.(type) {
+	case int:
+		// Protobuf converts all numbers to float64
+		require.Equal(t, float64(exp), actual, "Value at %s should match", context)
+	case []any:
+		actualSlice, ok := actual.([]any)
+		require.True(t, ok, "Expected slice at %s but got %T", context, actual)
+		require.Len(t, actualSlice, len(exp), "Slice length at %s should match", context)
+		for i, expectedItem := range exp {
+			compareValues(t, expectedItem, actualSlice[i], fmt.Sprintf("%s[%d]", context, i))
+		}
+	case map[string]any:
+		actualMap, ok := actual.(map[string]any)
+		require.True(t, ok, "Expected map at %s but got %T", context, actual)
+		require.Len(t, actualMap, len(exp), "Map length at %s should match", context)
+		for key, expectedValue := range exp {
+			actualValue, exists := actualMap[key]
+			require.True(t, exists, "Key %s.%s should exist", context, key)
+			compareValues(t, expectedValue, actualValue, fmt.Sprintf("%s.%s", context, key))
+		}
+	default:
+		require.Equal(t, expected, actual, "Value at %s should match", context)
+	}
+}
 
 func TestServiceConfigMapping(t *testing.T) {
 	// ServiceConfig should be automatically registered via init()
@@ -60,6 +91,268 @@ func TestServiceConfigMappingWithResolver(t *testing.T) {
 	require.Equal(t, string(ContainerAppTarget), protoConfig.Host)
 }
 
+func TestServiceConfigMappingWithConfig(t *testing.T) {
+	// Test ServiceConfig with various Config field scenarios
+	tests := []struct {
+		name        string
+		config      map[string]any
+		expectError bool
+	}{
+		{
+			name:   "nil config",
+			config: nil,
+		},
+		{
+			name:   "empty config",
+			config: make(map[string]any),
+		},
+		{
+			name: "simple config",
+			config: map[string]any{
+				"key1": "value1",
+				"key2": 42,
+				"key3": true,
+			},
+		},
+		{
+			name: "nested config",
+			config: map[string]any{
+				"database": map[string]any{
+					"host": "localhost",
+					"port": 5432,
+				},
+				"features": []any{"auth", "logging"}, // Use []any instead of []string for protobuf compatibility
+				"settings": map[string]any{
+					"debug":   true,
+					"timeout": 30,
+				},
+			},
+		},
+		{
+			name: "complex config with various types",
+			config: map[string]any{
+				"string_val":  "test",
+				"int_val":     123,
+				"float_val":   3.14,
+				"bool_val":    true,
+				"array_val":   []any{"a", "b", "c"},
+				"null_val":    nil,
+				"nested_map":  map[string]any{"inner": "value"},
+				"mixed_array": []any{1, "two", true, map[string]any{"key": "value"}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			serviceConfig := &ServiceConfig{
+				Name:         "test-service",
+				Host:         ContainerAppTarget,
+				Language:     ServiceLanguageDotNet,
+				RelativePath: "./src/api",
+				Config:       tt.config,
+			}
+
+			var protoConfig *azdext.ServiceConfig
+			err := mapper.Convert(serviceConfig, &protoConfig)
+
+			if tt.expectError {
+				require.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+			require.NotNil(t, protoConfig)
+			require.Equal(t, "test-service", protoConfig.Name)
+			require.Equal(t, string(ContainerAppTarget), protoConfig.Host)
+			require.Equal(t, string(ServiceLanguageDotNet), protoConfig.Language)
+			require.Equal(t, "./src/api", protoConfig.RelativePath)
+
+			if tt.config == nil {
+				require.Nil(t, protoConfig.Config)
+			} else if len(tt.config) == 0 {
+				require.NotNil(t, protoConfig.Config)
+				// Empty map should convert to empty struct
+				actualMap := protoConfig.Config.AsMap()
+				require.Empty(t, actualMap)
+			} else {
+				require.NotNil(t, protoConfig.Config)
+				// Verify the config was properly converted to structpb.Struct
+				actualMap := protoConfig.Config.AsMap()
+				// Note: protobuf converts all numbers to float64, so we need to do a more nuanced comparison
+				require.Len(t, actualMap, len(tt.config))
+				for key, expectedValue := range tt.config {
+					actualValue, exists := actualMap[key]
+					require.True(t, exists, "Key %s should exist", key)
+
+					// Handle type conversions that happen with protobuf recursively
+					compareValues(t, expectedValue, actualValue, key)
+				}
+			}
+		})
+	}
+}
+
+func TestServiceConfigReverseMapping(t *testing.T) {
+	// Test proto ServiceConfig -> ServiceConfig conversion
+	tests := []struct {
+		name        string
+		setupConfig func() *azdext.ServiceConfig
+		validateFn  func(t *testing.T, result *ServiceConfig)
+	}{
+		{
+			name: "nil config in proto",
+			setupConfig: func() *azdext.ServiceConfig {
+				return &azdext.ServiceConfig{
+					Name:         "test-service",
+					Host:         string(ContainerAppTarget),
+					Language:     string(ServiceLanguageDotNet),
+					RelativePath: "./src/api",
+					Config:       nil,
+				}
+			},
+			validateFn: func(t *testing.T, result *ServiceConfig) {
+				require.Equal(t, "test-service", result.Name)
+				require.Equal(t, ContainerAppTarget, result.Host)
+				require.Equal(t, ServiceLanguageDotNet, result.Language)
+				require.Equal(t, "./src/api", result.RelativePath)
+				require.Nil(t, result.Config)
+			},
+		},
+		{
+			name: "empty config in proto",
+			setupConfig: func() *azdext.ServiceConfig {
+				config, err := structpb.NewStruct(map[string]any{})
+				require.NoError(t, err)
+				return &azdext.ServiceConfig{
+					Name:         "test-service",
+					Host:         string(ContainerAppTarget),
+					Language:     string(ServiceLanguageDotNet),
+					RelativePath: "./src/api",
+					Config:       config,
+				}
+			},
+			validateFn: func(t *testing.T, result *ServiceConfig) {
+				require.Equal(t, "test-service", result.Name)
+				require.NotNil(t, result.Config)
+				require.Empty(t, result.Config)
+			},
+		},
+		{
+			name: "complex config in proto",
+			setupConfig: func() *azdext.ServiceConfig {
+				configData := map[string]any{
+					"database": map[string]any{
+						"host": "localhost",
+						"port": 5432,
+					},
+					"features": []any{"auth", "logging"},
+					"debug":    true,
+				}
+				config, err := structpb.NewStruct(configData)
+				require.NoError(t, err)
+				return &azdext.ServiceConfig{
+					Name:         "test-service",
+					Host:         string(ContainerAppTarget),
+					Language:     string(ServiceLanguageDotNet),
+					RelativePath: "./src/api",
+					Config:       config,
+				}
+			},
+			validateFn: func(t *testing.T, result *ServiceConfig) {
+				require.Equal(t, "test-service", result.Name)
+				require.NotNil(t, result.Config)
+				require.Equal(t, true, result.Config["debug"])
+
+				// Check nested objects
+				database, ok := result.Config["database"].(map[string]any)
+				require.True(t, ok)
+				require.Equal(t, "localhost", database["host"])
+				require.Equal(t, float64(5432), database["port"]) // JSON numbers become float64
+
+				// Check arrays
+				features, ok := result.Config["features"].([]any)
+				require.True(t, ok)
+				require.Len(t, features, 2)
+				require.Equal(t, "auth", features[0])
+				require.Equal(t, "logging", features[1])
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			protoConfig := tt.setupConfig()
+
+			var serviceConfig *ServiceConfig
+			err := mapper.Convert(protoConfig, &serviceConfig)
+			require.NoError(t, err)
+			require.NotNil(t, serviceConfig)
+
+			tt.validateFn(t, serviceConfig)
+		})
+	}
+}
+
+func TestServiceConfigRoundTripMapping(t *testing.T) {
+	// Test that ServiceConfig -> proto -> ServiceConfig preserves Config data
+	originalConfig := map[string]any{
+		"string_val": "test",
+		"int_val":    123,
+		"float_val":  3.14,
+		"bool_val":   true,
+		"array_val":  []any{"a", "b", "c"},
+		"nested": map[string]any{
+			"inner_key": "inner_value",
+			"inner_num": 456,
+		},
+	}
+
+	originalServiceConfig := &ServiceConfig{
+		Name:         "test-service",
+		Host:         ContainerAppTarget,
+		Language:     ServiceLanguageDotNet,
+		RelativePath: "./src/api",
+		Config:       originalConfig,
+	}
+
+	// Convert to proto
+	var protoConfig *azdext.ServiceConfig
+	err := mapper.Convert(originalServiceConfig, &protoConfig)
+	require.NoError(t, err)
+	require.NotNil(t, protoConfig)
+
+	// Convert back to ServiceConfig
+	var roundTripServiceConfig *ServiceConfig
+	err = mapper.Convert(protoConfig, &roundTripServiceConfig)
+	require.NoError(t, err)
+	require.NotNil(t, roundTripServiceConfig)
+
+	// Verify basic fields
+	require.Equal(t, originalServiceConfig.Name, roundTripServiceConfig.Name)
+	require.Equal(t, originalServiceConfig.Host, roundTripServiceConfig.Host)
+	require.Equal(t, originalServiceConfig.Language, roundTripServiceConfig.Language)
+	require.Equal(t, originalServiceConfig.RelativePath, roundTripServiceConfig.RelativePath)
+
+	// Verify config data (note: some type conversions are expected due to JSON/protobuf handling)
+	require.NotNil(t, roundTripServiceConfig.Config)
+	require.Equal(t, "test", roundTripServiceConfig.Config["string_val"])
+	require.Equal(t, float64(123), roundTripServiceConfig.Config["int_val"]) // Numbers become float64
+	require.Equal(t, 3.14, roundTripServiceConfig.Config["float_val"])
+	require.Equal(t, true, roundTripServiceConfig.Config["bool_val"])
+
+	// Check array
+	arrayVal, ok := roundTripServiceConfig.Config["array_val"].([]any)
+	require.True(t, ok)
+	require.Equal(t, []any{"a", "b", "c"}, arrayVal)
+
+	// Check nested object
+	nested, ok := roundTripServiceConfig.Config["nested"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "inner_value", nested["inner_key"])
+	require.Equal(t, float64(456), nested["inner_num"]) // Numbers become float64
+}
+
 func TestDockerProjectOptionsMapping(t *testing.T) {
 	dockerOptions := DockerProjectOptions{
 		Path:        "./Dockerfile",
@@ -80,6 +373,39 @@ func TestDockerProjectOptionsMapping(t *testing.T) {
 	require.True(t, protoOptions.RemoteBuild)
 }
 
+func TestServiceBuildResultMapping(t *testing.T) {
+	buildResult := &ServiceBuildResult{
+		Artifacts: ArtifactCollection{
+			{
+				Kind:         ArtifactKindDirectory,
+				Location:     "./build",
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"buildOutput": "success",
+					"buildTime":   "2023-01-01T10:00:00Z",
+				},
+			},
+		},
+	}
+
+	var protoResult *azdext.ServiceBuildResult
+	err := mapper.Convert(buildResult, &protoResult)
+	require.NoError(t, err)
+	require.NotNil(t, protoResult)
+	require.Len(t, protoResult.Artifacts, 1)
+	require.Equal(t, "./build", protoResult.Artifacts[0].Location)
+	require.Equal(t, azdext.ArtifactKind_ARTIFACT_KIND_DIRECTORY, protoResult.Artifacts[0].Kind)
+	require.Equal(t, "success", protoResult.Artifacts[0].Metadata["buildOutput"])
+}
+
+func TestServiceBuildResultMappingNil(t *testing.T) {
+	// Test with nil input - should return nil
+	var protoResult *azdext.ServiceBuildResult
+	err := mapper.Convert((*ServiceBuildResult)(nil), &protoResult)
+	require.NoError(t, err)
+	require.Nil(t, protoResult)
+}
+
 func TestServicePackageResultMapping(t *testing.T) {
 	packageResult := &ServicePackageResult{
 		Artifacts: ArtifactCollection{
@@ -97,11 +423,47 @@ func TestServicePackageResultMapping(t *testing.T) {
 	}
 
 	var protoResult *azdext.ServicePackageResult
-	err := mapper.Convert(*packageResult, &protoResult)
+	err := mapper.Convert(packageResult, &protoResult)
 	require.NoError(t, err)
 	require.NotNil(t, protoResult)
 	require.Len(t, protoResult.Artifacts, 1)
 	require.Equal(t, "./dist", protoResult.Artifacts[0].Location)
+}
+
+func TestFromProtoServiceBuildResultMapping(t *testing.T) {
+	// Create test input
+	protoResult := &azdext.ServiceBuildResult{
+		Artifacts: []*azdext.Artifact{
+			{
+				Kind:         azdext.ArtifactKind_ARTIFACT_KIND_DIRECTORY,
+				Location:     "/app/build",
+				LocationKind: azdext.LocationKind_LOCATION_KIND_LOCAL,
+				Metadata: map[string]string{
+					"buildOutput": "success",
+					"buildTime":   "2023-01-01T10:00:00Z",
+				},
+			},
+		},
+	}
+
+	var result *ServiceBuildResult
+	err := mapper.Convert(protoResult, &result)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	// Verify the conversion worked correctly
+	require.Len(t, result.Artifacts, 1)
+	require.Equal(t, "/app/build", result.Artifacts[0].Location)
+	require.Equal(t, ArtifactKindDirectory, result.Artifacts[0].Kind)
+	require.Equal(t, "success", result.Artifacts[0].Metadata["buildOutput"])
+}
+
+func TestFromProtoServiceBuildResultMappingNilProto(t *testing.T) {
+	// Test with nil proto result - should return empty result
+	var result *ServiceBuildResult
+	err := mapper.Convert((*azdext.ServiceBuildResult)(nil), &result)
+	require.NoError(t, err)
+	require.Nil(t, result)
 }
 
 func TestFromProtoServicePublishResultMapping(t *testing.T) {
@@ -161,8 +523,7 @@ func TestFromProtoServicePackageResultMappingNilProto(t *testing.T) {
 	var result *ServicePackageResult
 	err := mapper.Convert((*azdext.ServicePackageResult)(nil), &result)
 	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.Len(t, result.Artifacts, 0)
+	require.Nil(t, result)
 }
 
 func TestResourceConfigMapping(t *testing.T) {
@@ -506,6 +867,315 @@ func TestServiceContextMapping(t *testing.T) {
 			assert.Equal(t, projectContext.Build[0].Metadata["type"], roundTripContext.Build[0].Metadata["type"])
 		}
 	})
+}
+
+func TestPublishOptionsMapping(t *testing.T) {
+	t.Run("PublishOptions -> proto PublishOptions", func(t *testing.T) {
+		publishOptions := &PublishOptions{
+			Image: "example.azurecr.io/myapp:v1.2.3",
+		}
+
+		var protoOptions *azdext.PublishOptions
+		err := mapper.Convert(publishOptions, &protoOptions)
+		require.NoError(t, err)
+		require.NotNil(t, protoOptions)
+		require.Equal(t, "example.azurecr.io/myapp:v1.2.3", protoOptions.Image)
+	})
+
+	t.Run("proto PublishOptions -> PublishOptions", func(t *testing.T) {
+		protoOptions := &azdext.PublishOptions{
+			Image: "registry.io/test:latest",
+		}
+
+		var publishOptions *PublishOptions
+		err := mapper.Convert(protoOptions, &publishOptions)
+		require.NoError(t, err)
+		require.NotNil(t, publishOptions)
+		require.Equal(t, "registry.io/test:latest", publishOptions.Image)
+	})
+
+	t.Run("nil proto PublishOptions -> PublishOptions", func(t *testing.T) {
+		var publishOptions *PublishOptions
+		err := mapper.Convert((*azdext.PublishOptions)(nil), &publishOptions)
+		require.NoError(t, err)
+		require.Nil(t, publishOptions)
+	})
+
+	t.Run("round-trip PublishOptions mapping", func(t *testing.T) {
+		original := &PublishOptions{
+			Image: "test.azurecr.io/roundtrip:tag",
+		}
+
+		// Go -> Proto
+		var protoOptions *azdext.PublishOptions
+		err := mapper.Convert(original, &protoOptions)
+		require.NoError(t, err)
+
+		// Proto -> Go
+		var roundTrip *PublishOptions
+		err = mapper.Convert(protoOptions, &roundTrip)
+		require.NoError(t, err)
+		require.NotNil(t, roundTrip)
+		require.Equal(t, original.Image, roundTrip.Image)
+	})
+}
+
+func TestProjectConfigMapping(t *testing.T) {
+	t.Run("ProjectConfig -> proto ProjectConfig", func(t *testing.T) {
+		projectConfig := &ProjectConfig{
+			Name:              "test-project",
+			ResourceGroupName: osutil.NewExpandableString("test-rg-${ENVIRONMENT_NAME}"),
+			Path:              "/path/to/project",
+			Metadata: &ProjectMetadata{
+				Template: "todo-python-mongo@1.0.0",
+			},
+			Services: map[string]*ServiceConfig{
+				"web": {
+					Name:         "web",
+					Host:         ContainerAppTarget,
+					Language:     ServiceLanguagePython,
+					RelativePath: "./src",
+				},
+				"api": {
+					Name:         "api",
+					Host:         AppServiceTarget,
+					Language:     ServiceLanguageJavaScript,
+					RelativePath: "./api",
+				},
+			},
+		}
+
+		testResolver := func(key string) string {
+			if key == "ENVIRONMENT_NAME" {
+				return "dev"
+			}
+			return ""
+		}
+
+		var protoConfig *azdext.ProjectConfig
+		err := mapper.WithResolver(testResolver).Convert(projectConfig, &protoConfig)
+		require.NoError(t, err)
+		require.NotNil(t, protoConfig)
+		require.Equal(t, "test-project", protoConfig.Name)
+		require.Equal(t, "test-rg-dev", protoConfig.ResourceGroupName)
+		require.Equal(t, "/path/to/project", protoConfig.Path)
+		require.NotNil(t, protoConfig.Metadata)
+		require.Equal(t, "todo-python-mongo@1.0.0", protoConfig.Metadata.Template)
+		require.Len(t, protoConfig.Services, 2)
+		require.Contains(t, protoConfig.Services, "web")
+		require.Contains(t, protoConfig.Services, "api")
+		require.Equal(t, "containerapp", protoConfig.Services["web"].Host)
+		require.Equal(t, "appservice", protoConfig.Services["api"].Host)
+	})
+
+	t.Run("proto ProjectConfig -> ProjectConfig", func(t *testing.T) {
+		protoConfig := &azdext.ProjectConfig{
+			Name:              "reverse-test-project",
+			ResourceGroupName: "reverse-test-rg",
+			Path:              "/reverse/path",
+			Metadata: &azdext.ProjectMetadata{
+				Template: "reverse-template@2.0.0",
+			},
+			Services: map[string]*azdext.ServiceConfig{
+				"backend": {
+					Name:         "backend",
+					Host:         "containerapp",
+					Language:     "go",
+					RelativePath: "./backend",
+				},
+			},
+		}
+
+		var projectConfig *ProjectConfig
+		err := mapper.Convert(protoConfig, &projectConfig)
+		require.NoError(t, err)
+		require.NotNil(t, projectConfig)
+		require.Equal(t, "reverse-test-project", projectConfig.Name)
+		require.Equal(t, "reverse-test-rg", projectConfig.ResourceGroupName.MustEnvsubst(func(string) string { return "" }))
+		require.Equal(t, "/reverse/path", projectConfig.Path)
+		require.NotNil(t, projectConfig.Metadata)
+		require.Equal(t, "reverse-template@2.0.0", projectConfig.Metadata.Template)
+		require.Len(t, projectConfig.Services, 1)
+		require.Contains(t, projectConfig.Services, "backend")
+		require.Equal(t, ContainerAppTarget, projectConfig.Services["backend"].Host)
+		require.Equal(t, ServiceLanguageKind("go"), projectConfig.Services["backend"].Language)
+	})
+
+	t.Run("nil proto ProjectConfig -> ProjectConfig", func(t *testing.T) {
+		var projectConfig *ProjectConfig
+		err := mapper.Convert((*azdext.ProjectConfig)(nil), &projectConfig)
+		require.NoError(t, err)
+		require.NotNil(t, projectConfig)
+		require.Equal(t, "", projectConfig.Name)
+		require.Equal(t, "", projectConfig.ResourceGroupName.MustEnvsubst(func(string) string { return "" }))
+	})
+
+	t.Run("round-trip ProjectConfig mapping", func(t *testing.T) {
+		original := &ProjectConfig{
+			Name:              "roundtrip-project",
+			ResourceGroupName: osutil.NewExpandableString("roundtrip-rg"),
+			Path:              "/roundtrip/path",
+			Metadata: &ProjectMetadata{
+				Template: "roundtrip@3.0.0",
+			},
+			Services: map[string]*ServiceConfig{
+				"service1": {
+					Name:         "service1",
+					Host:         AppServiceTarget,
+					Language:     ServiceLanguageTypeScript,
+					RelativePath: "./service1",
+				},
+			},
+		}
+
+		// Go -> Proto
+		var protoConfig *azdext.ProjectConfig
+		err := mapper.Convert(original, &protoConfig)
+		require.NoError(t, err)
+
+		// Proto -> Go
+		var roundTrip *ProjectConfig
+		err = mapper.Convert(protoConfig, &roundTrip)
+		require.NoError(t, err)
+		require.NotNil(t, roundTrip)
+		require.Equal(t, original.Name, roundTrip.Name)
+		require.Equal(t, original.Path, roundTrip.Path)
+		require.Equal(t, original.Metadata.Template, roundTrip.Metadata.Template)
+		require.Len(t, roundTrip.Services, 1)
+		require.Equal(t, original.Services["service1"].Name, roundTrip.Services["service1"].Name)
+		require.Equal(t, original.Services["service1"].Host, roundTrip.Services["service1"].Host)
+		require.Equal(t, original.Services["service1"].Language, roundTrip.Services["service1"].Language)
+	})
+}
+
+func TestServiceDeployResultMapping(t *testing.T) {
+	t.Run("ServiceDeployResult -> proto ServiceDeployResult", func(t *testing.T) {
+		deployResult := &ServiceDeployResult{
+			Artifacts: ArtifactCollection{
+				{
+					Kind:         ArtifactKindResource,
+					Location:     "/subscriptions/123/resourceGroups/rg/providers/Microsoft.Web/sites/myapp",
+					LocationKind: LocationKindRemote,
+					Metadata: map[string]string{
+						"resourceGroup": "rg",
+						"appName":       "myapp",
+					},
+				},
+				{
+					Kind:         ArtifactKindEndpoint,
+					Location:     "https://myapp.azurewebsites.net",
+					LocationKind: LocationKindRemote,
+					Metadata: map[string]string{
+						"type": "primary",
+					},
+				},
+			},
+		}
+
+		var protoResult *azdext.ServiceDeployResult
+		err := mapper.Convert(deployResult, &protoResult)
+		require.NoError(t, err)
+		require.NotNil(t, protoResult)
+		require.Len(t, protoResult.Artifacts, 2)
+		require.Equal(
+			t,
+			"/subscriptions/123/resourceGroups/rg/providers/Microsoft.Web/sites/myapp",
+			protoResult.Artifacts[0].Location,
+		)
+		require.Equal(t, "https://myapp.azurewebsites.net", protoResult.Artifacts[1].Location)
+		require.Equal(t, "rg", protoResult.Artifacts[0].Metadata["resourceGroup"])
+		require.Equal(t, "primary", protoResult.Artifacts[1].Metadata["type"])
+	})
+
+	t.Run("proto ServiceDeployResult -> ServiceDeployResult", func(t *testing.T) {
+		protoResult := &azdext.ServiceDeployResult{
+			Artifacts: []*azdext.Artifact{
+				{
+					Kind: azdext.ArtifactKind_ARTIFACT_KIND_RESOURCE,
+					Location: "/subscriptions/456/resourceGroups/test-rg/providers/" +
+						"Microsoft.ContainerInstance/containerGroups/test-app",
+					LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
+					Metadata: map[string]string{
+						"resourceGroup": "test-rg",
+						"appName":       "test-app",
+					},
+				},
+			},
+		}
+
+		var deployResult *ServiceDeployResult
+		err := mapper.Convert(protoResult, &deployResult)
+		require.NoError(t, err)
+		require.NotNil(t, deployResult)
+		require.Len(t, deployResult.Artifacts, 1)
+		expectedLocation := "/subscriptions/456/resourceGroups/test-rg/providers/" +
+			"Microsoft.ContainerInstance/containerGroups/test-app"
+		require.Equal(t, expectedLocation, deployResult.Artifacts[0].Location)
+		require.Equal(t, "test-rg", deployResult.Artifacts[0].Metadata["resourceGroup"])
+		require.Equal(t, "test-app", deployResult.Artifacts[0].Metadata["appName"])
+	})
+
+	t.Run("nil proto ServiceDeployResult -> ServiceDeployResult", func(t *testing.T) {
+		var deployResult *ServiceDeployResult
+		err := mapper.Convert((*azdext.ServiceDeployResult)(nil), &deployResult)
+		require.NoError(t, err)
+		require.Nil(t, deployResult)
+	})
+
+	t.Run("round-trip ServiceDeployResult mapping", func(t *testing.T) {
+		original := &ServiceDeployResult{
+			Artifacts: ArtifactCollection{
+				{
+					Kind:         ArtifactKindDeployment,
+					Location:     "deployment-12345",
+					LocationKind: LocationKindRemote,
+					Metadata: map[string]string{
+						"status": "succeeded",
+					},
+				},
+			},
+		}
+
+		// Go -> Proto
+		var protoResult *azdext.ServiceDeployResult
+		err := mapper.Convert(original, &protoResult)
+		require.NoError(t, err)
+
+		// Proto -> Go
+		var roundTrip *ServiceDeployResult
+		err = mapper.Convert(protoResult, &roundTrip)
+		require.NoError(t, err)
+		require.NotNil(t, roundTrip)
+		require.Len(t, roundTrip.Artifacts, 1)
+		require.Equal(t, original.Artifacts[0].Kind, roundTrip.Artifacts[0].Kind)
+		require.Equal(t, original.Artifacts[0].Location, roundTrip.Artifacts[0].Location)
+		require.Equal(t, original.Artifacts[0].LocationKind, roundTrip.Artifacts[0].LocationKind)
+		require.Equal(t, original.Artifacts[0].Metadata["status"], roundTrip.Artifacts[0].Metadata["status"])
+	})
+}
+
+func TestTargetResourceToArtifactMapping(t *testing.T) {
+	// Create a target resource using the environment package
+	targetResource := environment.NewTargetResource(
+		"12345678-1234-1234-1234-123456789012",
+		"test-rg",
+		"test-app",
+		"Microsoft.Web/sites",
+	)
+
+	var artifact *Artifact
+	err := mapper.Convert(targetResource, &artifact)
+	require.NoError(t, err)
+
+	expectedResourceId := "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-rg/providers/" +
+		"Microsoft.Web/sites/test-app"
+	require.Equal(t, ArtifactKindResource, artifact.Kind)
+	require.Equal(t, expectedResourceId, artifact.Location)
+	require.Equal(t, LocationKindRemote, artifact.LocationKind)
+	require.Equal(t, "12345678-1234-1234-1234-123456789012", artifact.Metadata["subscriptionId"])
+	require.Equal(t, "test-rg", artifact.Metadata["resourceGroup"])
+	require.Equal(t, "test-app", artifact.Metadata["name"])
+	require.Equal(t, "Microsoft.Web/sites", artifact.Metadata["type"])
 }
 
 func TestArtifactListMapping(t *testing.T) {

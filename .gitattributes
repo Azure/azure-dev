@@ -1,6 +1,7 @@
 *.go text eol=lf
 **/testdata/**/*.snap text eol=lf
 **/testdata/**/*.md text eol=lf
+cli/azd/**/*.ts text eol=lf
 *.txt text eol=lf
 *.snap text eol=lf
 *.txt text eol=lf

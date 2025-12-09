@@ -367,6 +367,7 @@ func Test_CLI_Up_Down_ContainerAppDotNetPublish(t *testing.T) {
 }
 
 func Test_CLI_Up_Down_ContainerApp_RemoteBuild(t *testing.T) {
+	t.Skip("Needs to be re-designed - https://github.com/Azure/azure-dev/issues/6059")
 	t.Parallel()
 
 	ctx, cancel := newTestContext(t)

@@ -39,6 +39,8 @@ func (r *Runner) Invoke(ctx context.Context, extension *Extension, options *Invo
 		return nil, fmt.Errorf("failed to get user config directory: %w", err)
 	}
 
+	extension.ensureInit()
+
 	extensionPath := filepath.Join(userConfigDir, extension.Path)
 	if _, err := os.Stat(extensionPath); err != nil {
 		return nil, fmt.Errorf("extension path '%s' not found: %w", extensionPath, err)
@@ -62,6 +64,18 @@ func (r *Runner) Invoke(ctx context.Context, extension *Extension, options *Invo
 	}
 
 	runResult, err := r.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return &runResult, &ExtensionRunError{Err: err, ExtensionId: extension.Id}
+	}
+	return &runResult, nil
+}
 
-	return &runResult, err
+// ExtensionRunError represents an error that occurred while running an extension.
+type ExtensionRunError struct {
+	ExtensionId string
+	Err         error
+}
+
+func (e *ExtensionRunError) Error() string {
+	return fmt.Sprintf("extension '%s' run failed: %v", e.ExtensionId, e.Err)
 }

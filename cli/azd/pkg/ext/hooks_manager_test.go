@@ -4,7 +4,6 @@
 package ext
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -12,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
-	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/stretchr/testify/require"
@@ -187,45 +185,6 @@ func Test_HookConfig_DefaultShell(t *testing.T) {
 			require.Equal(t, tt.expectingDefault, config.IsUsingDefaultShell())
 		})
 	}
-}
-
-func Test_HooksManager_ValidateDefaultShellWarning(t *testing.T) {
-	tempDir := t.TempDir()
-	mockContext := mocks.NewMockContext(context.Background())
-	hooksManager := NewHooksManager(tempDir, mockContext.CommandRunner)
-
-	// Create hooks without explicit shell configuration
-	// DON'T pre-validate - let ValidateHooks do the validation and warning detection
-	hooksWithoutShell := map[string][]*HookConfig{
-		"prebuild": {
-			{
-				Name: "prebuild",
-				Run:  "echo 'Building...'",
-				// No Shell specified - should trigger default shell warning
-				// No cwd specified - ValidateHooks should set it
-			},
-		},
-	}
-
-	// ValidateHooks should validate the hooks internally and detect default shell usage
-	result := hooksManager.ValidateHooks(context.Background(), hooksWithoutShell)
-
-	// Should have at least one warning about default shell usage
-	hasDefaultShellWarning := false
-	for _, warning := range result.Warnings {
-		if strings.Contains(warning.Message, "Hook configurations found without explicit shell specification") {
-			hasDefaultShellWarning = true
-			break
-		}
-	}
-
-	require.True(t, hasDefaultShellWarning, "Expected warning about default shell usage")
-
-	// Also verify that the hook was actually validated and has the default shell set
-	hook := hooksWithoutShell["prebuild"][0]
-	require.True(t, hook.IsUsingDefaultShell(), "Hook should be marked as using default shell")
-	expectedShell := getDefaultShellForOS()
-	require.Equal(t, expectedShell, hook.Shell, "Hook should have the OS default shell")
 }
 
 func ensureScriptsExist(t *testing.T, configs map[string][]*HookConfig) {

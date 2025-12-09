@@ -7,13 +7,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
-	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/google/uuid"
@@ -44,8 +43,7 @@ type ExternalFrameworkService struct {
 	languageKind ServiceLanguageKind
 	console      input.Console
 
-	stream        azdext.FrameworkService_StreamServer
-	responseChans sync.Map
+	broker *grpcbroker.MessageBroker[azdext.FrameworkServiceMessage]
 }
 
 // NewExternalFrameworkService creates a new external framework service
@@ -53,7 +51,7 @@ func NewExternalFrameworkService(
 	name string,
 	kind ServiceLanguageKind,
 	extension *extensions.Extension,
-	stream azdext.FrameworkService_StreamServer,
+	broker *grpcbroker.MessageBroker[azdext.FrameworkServiceMessage],
 	console input.Console,
 ) FrameworkService {
 	service := &ExternalFrameworkService{
@@ -61,10 +59,8 @@ func NewExternalFrameworkService(
 		languageName: name,
 		languageKind: kind,
 		console:      console,
-		stream:       stream,
+		broker:       broker,
 	}
-
-	service.startResponseDispatcher()
 
 	return service
 }
@@ -89,9 +85,7 @@ func (efs *ExternalFrameworkService) RequiredExternalTools(
 		},
 	}
 
-	resp, err := efs.sendAndWait(ctx, req, func(r *azdext.FrameworkServiceMessage) bool {
-		return r.GetRequiredExternalToolsResponse() != nil
-	})
+	resp, err := efs.broker.SendAndWait(ctx, req)
 	if err != nil {
 		return nil
 	}
@@ -134,9 +128,7 @@ func (efs *ExternalFrameworkService) Initialize(ctx context.Context, serviceConf
 		},
 	}
 
-	_, err = efs.sendAndWait(ctx, req, func(r *azdext.FrameworkServiceMessage) bool {
-		return r.GetInitializeResponse() != nil
-	})
+	_, err = efs.broker.SendAndWait(ctx, req)
 	return err
 }
 
@@ -152,9 +144,7 @@ func (efs *ExternalFrameworkService) Requirements() FrameworkRequirements {
 		},
 	}
 
-	resp, err := efs.sendAndWait(ctx, req, func(r *azdext.FrameworkServiceMessage) bool {
-		return r.GetRequirementsResponse() != nil
-	})
+	resp, err := efs.broker.SendAndWait(ctx, req)
 	if err != nil {
 		// Return default requirements on error
 		return FrameworkRequirements{
@@ -209,9 +199,7 @@ func (efs *ExternalFrameworkService) Restore(
 		},
 	}
 
-	resp, err := efs.sendAndWaitWithProgress(ctx, req, progress, func(r *azdext.FrameworkServiceMessage) bool {
-		return r.GetRestoreResponse() != nil
-	})
+	resp, err := efs.broker.SendAndWaitWithProgress(ctx, req, createProgressFunc(progress))
 	if err != nil {
 		return nil, err
 	}
@@ -257,9 +245,7 @@ func (efs *ExternalFrameworkService) Build(
 		},
 	}
 
-	resp, err := efs.sendAndWaitWithProgress(ctx, req, progress, func(r *azdext.FrameworkServiceMessage) bool {
-		return r.GetBuildResponse() != nil
-	})
+	resp, err := efs.broker.SendAndWaitWithProgress(ctx, req, createProgressFunc(progress))
 	if err != nil {
 		return nil, err
 	}
@@ -305,9 +291,7 @@ func (efs *ExternalFrameworkService) Package(
 		},
 	}
 
-	resp, err := efs.sendAndWaitWithProgress(ctx, req, progress, func(r *azdext.FrameworkServiceMessage) bool {
-		return r.GetPackageResponse() != nil
-	})
+	resp, err := efs.broker.SendAndWaitWithProgress(ctx, req, createProgressFunc(progress))
 	if err != nil {
 		return nil, err
 	}
@@ -326,123 +310,20 @@ func (efs *ExternalFrameworkService) Package(
 	return result, nil
 }
 
-// Private methods for gRPC communication
-
-// helper to send a request and wait for the matching response using async dispatcher
-func (efs *ExternalFrameworkService) sendAndWait(
-	ctx context.Context,
-	req *azdext.FrameworkServiceMessage,
-	match func(*azdext.FrameworkServiceMessage) bool,
-) (*azdext.FrameworkServiceMessage, error) {
-	// Create a response channel for this request
-	respChan := make(chan *azdext.FrameworkServiceMessage, 1)
-	efs.responseChans.Store(req.RequestId, respChan)
-	defer efs.responseChans.Delete(req.RequestId)
-
-	// Send the request
-	if err := efs.stream.Send(req); err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-
-	// Wait for response via the async dispatcher
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case resp, ok := <-respChan:
-		if !ok {
-			return nil, fmt.Errorf("response channel closed")
-		}
-
-		if resp.Error != nil {
-			return nil, fmt.Errorf("framework service error: %s", resp.Error.Message)
-		}
-
-		if !match(resp) {
-			return nil, fmt.Errorf("received unexpected response type")
-		}
-
-		return resp, nil
-	}
-}
-
-// helper to send a request, handle progress updates, and wait for the matching response
-func (efs *ExternalFrameworkService) sendAndWaitWithProgress(
-	ctx context.Context,
-	req *azdext.FrameworkServiceMessage,
-	progress *async.Progress[ServiceProgress],
-	match func(*azdext.FrameworkServiceMessage) bool,
-) (*azdext.FrameworkServiceMessage, error) {
-	respChan := make(chan *azdext.FrameworkServiceMessage, 1)
-	efs.responseChans.Store(req.RequestId, respChan)
-	defer efs.responseChans.Delete(req.RequestId)
-
-	if err := efs.stream.Send(req); err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-
-	for {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case resp := <-respChan:
-			if resp == nil {
-				return nil, fmt.Errorf("stream closed")
-			}
-
-			if resp.Error != nil {
-				return nil, fmt.Errorf("framework service error: %s", resp.Error.Message)
-			}
-
-			if progressMsg := resp.GetProgressMessage(); progressMsg != nil {
-				if progress != nil {
-					progress.SetProgress(ServiceProgress{
-						Message: progressMsg.Message,
-					})
-				}
-				continue // Wait for the actual response
-			}
-
-			if !match(resp) {
-				return nil, fmt.Errorf("received unexpected response type")
-			}
-
-			return resp, nil
-		}
-	}
-}
-
-// goroutine to receive and dispatch responses
-func (efs *ExternalFrameworkService) startResponseDispatcher() {
-	go func() {
-		for {
-			resp, err := efs.stream.Recv()
-			if err != nil {
-				// propagate error to all waiting calls
-				efs.responseChans.Range(func(key, value any) bool {
-					ch := value.(chan *azdext.FrameworkServiceMessage)
-					close(ch)
-					return true
-				})
-				return
-			}
-			if ch, ok := efs.responseChans.Load(resp.RequestId); ok {
-
-				ch.(chan *azdext.FrameworkServiceMessage) <- resp
-			} else {
-				log.Printf("No response channel found for RequestId: %s", resp.RequestId)
-			}
-		}
-	}()
-}
-
 // Convert ServiceConfig to proto message
 func (efs *ExternalFrameworkService) toProtoServiceConfig(serviceConfig *ServiceConfig) (*azdext.ServiceConfig, error) {
 	if serviceConfig == nil {
 		return nil, nil
 	}
 
+	// Use an empty resolver since ExternalFrameworkService doesn't have access to environment
+	// The extension is responsible for handling environment variable substitution
+	emptyResolver := func(key string) string {
+		return ""
+	}
+
 	var protoConfig *azdext.ServiceConfig
-	err := mapper.Convert(serviceConfig, &protoConfig)
+	err := mapper.WithResolver(emptyResolver).Convert(serviceConfig, &protoConfig)
 	if err != nil {
 		return nil, fmt.Errorf("converting service config: %w", err)
 	}

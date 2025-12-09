@@ -10,31 +10,75 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 )
 
 type containerService struct {
 	azdext.UnimplementedContainerServiceServer
+	console             input.Console
 	lazyContainerHelper *lazy.Lazy[*project.ContainerHelper]
-	lazyResourceManager *lazy.Lazy[project.ResourceManager]
+	lazyServiceManager  *lazy.Lazy[project.ServiceManager]
 	lazyProject         *lazy.Lazy[*project.ProjectConfig]
-	lazyEnvironment     *lazy.Lazy[*environment.Environment]
 }
 
 func NewContainerService(
+	console input.Console,
 	lazyContainerHelper *lazy.Lazy[*project.ContainerHelper],
-	lazyResourceManager *lazy.Lazy[project.ResourceManager],
+	lazyServiceManager *lazy.Lazy[project.ServiceManager],
 	lazyProjectConf *lazy.Lazy[*project.ProjectConfig],
-	lazyEnvironment *lazy.Lazy[*environment.Environment],
 ) azdext.ContainerServiceServer {
 	return &containerService{
+		console:             console,
 		lazyContainerHelper: lazyContainerHelper,
-		lazyResourceManager: lazyResourceManager,
+		lazyServiceManager:  lazyServiceManager,
 		lazyProject:         lazyProjectConf,
-		lazyEnvironment:     lazyEnvironment,
 	}
+}
+
+func (c *containerService) Build(
+	ctx context.Context,
+	req *azdext.ContainerBuildRequest,
+) (*azdext.ContainerBuildResponse, error) {
+	projectConfig, err := c.lazyProject.GetValue()
+	if err != nil {
+		return nil, err
+	}
+
+	serviceConfig, has := projectConfig.Services[req.ServiceName]
+	if !has {
+		return nil, fmt.Errorf("service %q not found in project configuration", req.ServiceName)
+	}
+
+	containerHelper, err := c.lazyContainerHelper.GetValue()
+	if err != nil {
+		return nil, err
+	}
+
+	var serviceContext *project.ServiceContext
+	if err := mapper.Convert(req.ServiceContext, &serviceContext); err != nil {
+		return nil, err
+	}
+
+	// Call containerHelper.Build with noop progress reporting to avoid conflicts with outer progress layer
+	progress := async.NewNoopProgress[project.ServiceProgress]()
+	defer progress.Done()
+
+	buildResult, err := containerHelper.Build(ctx, serviceConfig, serviceContext, progress)
+	if err != nil {
+		return nil, err
+	}
+
+	// Use mapper to convert ServiceBuildResult to proto
+	var protoResult *azdext.ServiceBuildResult
+	if err := mapper.Convert(buildResult, &protoResult); err != nil {
+		return nil, fmt.Errorf("failed to convert build result: %w", err)
+	}
+
+	return &azdext.ContainerBuildResponse{
+		Result: protoResult,
+	}, nil
 }
 
 // Package implements azdext.ContainerServiceServer.
@@ -57,12 +101,14 @@ func (c *containerService) Package(
 		return nil, err
 	}
 
-	// Initialize service context with build artifacts if any
-	serviceContext := &project.ServiceContext{}
-	// Build artifacts would typically be provided by a prior build step
-	// For now, initialize empty context
+	var serviceContext *project.ServiceContext
+	if err := mapper.Convert(req.ServiceContext, &serviceContext); err != nil {
+		return nil, err
+	}
 
-	progress := async.NewProgress[project.ServiceProgress]()
+	// Call containerHelper.Package with noop progress reporting to avoid conflicts with outer progress layer
+	progress := async.NewNoopProgress[project.ServiceProgress]()
+	defer progress.Done()
 
 	packageResult, err := containerHelper.Package(ctx, serviceConfig, serviceContext, progress)
 	if err != nil {
@@ -95,41 +141,36 @@ func (c *containerService) Publish(
 		return nil, fmt.Errorf("service %q not found in project configuration", req.ServiceName)
 	}
 
-	env, err := c.lazyEnvironment.GetValue()
-	if err != nil {
-		return nil, err
-	}
-
-	resourceManager, err := c.lazyResourceManager.GetValue()
-	if err != nil {
-		return nil, err
-	}
-
 	containerHelper, err := c.lazyContainerHelper.GetValue()
 	if err != nil {
 		return nil, err
 	}
 
-	targetResource, err := resourceManager.GetTargetResource(ctx, env.GetSubscriptionId(), serviceConfig)
+	serviceManager, err := c.lazyServiceManager.GetValue()
 	if err != nil {
 		return nil, err
 	}
 
-	progress := async.NewProgress[project.ServiceProgress]()
+	serviceTarget, err := serviceManager.GetServiceTarget(ctx, serviceConfig)
+	if err != nil {
+		return nil, err
+	}
 
-	serviceContext := &project.ServiceContext{}
+	targetResource, err := serviceManager.GetTargetResource(ctx, serviceConfig, serviceTarget)
+	if err != nil {
+		return nil, err
+	}
+
+	var serviceContext *project.ServiceContext
 	if err := mapper.Convert(req.ServiceContext, &serviceContext); err != nil {
 		return nil, err
 	}
 
-	publishResult, err := containerHelper.Publish(
-		ctx,
-		serviceConfig,
-		serviceContext,
-		targetResource,
-		progress,
-		nil,
-	)
+	// Call containerHelper.Publish with noop progress reporting to avoid conflicts with outer progress layer
+	progress := async.NewNoopProgress[project.ServiceProgress]()
+	defer progress.Done()
+
+	publishResult, err := containerHelper.Publish(ctx, serviceConfig, serviceContext, targetResource, progress, nil)
 	if err != nil {
 		return nil, err
 	}

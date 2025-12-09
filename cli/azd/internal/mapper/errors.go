@@ -107,7 +107,7 @@ func IsNoMapperError(err error) bool {
 	return err != nil && errors.As(err, &noMapperErr)
 }
 
-// cleanTypeName returns a user-friendly type name without package prefixes
+// cleanTypeName returns a user-friendly type name with package prefixes for clarity
 func cleanTypeName(t reflect.Type) string {
 	if t == nil {
 		return "<nil>"
@@ -146,11 +146,18 @@ func cleanTypeName(t reflect.Type) string {
 		// For functions, show a simplified signature
 		return "func"
 	default:
-		// For basic types and structs, remove package prefix
+		// For basic types and structs, show package.TypeName for clarity
 		name := t.String()
-		if lastDot := strings.LastIndex(name, "."); lastDot >= 0 {
-			return name[lastDot+1:]
+		// Find the last slash to get the package name
+		if lastSlash := strings.LastIndex(name, "/"); lastSlash >= 0 {
+			// Get everything after the last slash (package.TypeName)
+			return name[lastSlash+1:]
 		}
+		// If no slash, check for just package.TypeName format
+		if strings.Contains(name, ".") {
+			return name
+		}
+		// Built-in types like string, int, etc.
 		return name
 	}
 }

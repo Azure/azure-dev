@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/terminal"
 	"github.com/charmbracelet/glamour"
 	"github.com/fatih/color"
 	"github.com/nathan-fiscaletti/consolesize-go"
@@ -95,7 +96,15 @@ func WithMarkdown(markdownText string) string {
 }
 
 // WithHyperlink wraps text with the colored hyperlink format escape sequence.
+// When stdout is not a terminal (e.g., in CI/CD pipelines like GitHub Actions),
+// it returns the plain URL without escape codes to avoid displaying raw ANSI sequences.
 func WithHyperlink(url string, text string) string {
+	// Check if stdout is a terminal
+	if !terminal.IsTerminal(os.Stdout.Fd(), os.Stdin.Fd()) {
+		// Not a terminal - return plain URL without escape codes
+		return url
+	}
+	// Terminal - use hyperlink escape codes
 	return WithLinkFormat(fmt.Sprintf("\033]8;;%s\007%s\033]8;;\007", url, text))
 }
 

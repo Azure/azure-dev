@@ -2,6 +2,7 @@ AADSTS
 ABRT
 ACCESSTOKEN
 Agentic
+agentmanifests
 aiomysql
 aiopg
 akvs
@@ -72,11 +73,13 @@ BUILDID
 BUILDNUMBER
 buildpacks
 byoi
+callstack
 cflags
 charmbracelet
 circleci
 cmdrecord
 cmdsubst
+Cobo
 cognitiveservices
 conditionalize
 consolesize
@@ -155,6 +158,7 @@ lechnerc77
 libc
 llms
 localtools
+maml
 mcptools
 memfs
 mergo
@@ -202,6 +206,7 @@ preinit
 protogen
 proxying
 psanford
+pseudonymized
 psycopg
 psycopgbinary
 pulumi
@@ -252,7 +257,9 @@ teamcity
 testdata
 tmpl
 toplevel
+traceparent
 tracesdk
+tracestate
 tracetest
 trafficmanager
 Truef

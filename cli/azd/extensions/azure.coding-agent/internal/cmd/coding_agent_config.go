@@ -10,9 +10,9 @@ import (
 	"log"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -50,6 +50,7 @@ var prBodyMD string
 
 const copilotEnv = "copilot"
 const readmeURL = "https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.coding-agent/README.md"
+const defaultManagedIdentityName = "mi-copilot-coding-agent"
 
 type flagValues struct {
 	Debug               bool
@@ -89,7 +90,7 @@ func setupFlags(commandFlags *pflag.FlagSet) *flagValues {
 	commandFlags.StringVar(
 		&flagValues.ManagedIdentityName,
 		"managed-identity-name",
-		"mi-copilot-coding-agent",
+		defaultManagedIdentityName,
 		"The name to use for the managed identity, if created.",
 	)
 
@@ -177,7 +178,10 @@ func runConfigCommand(cmd *cobra.Command, flagValues *flagValues) error {
 	}
 
 	// this spot also serves as the "the user has `azd auth login`'d into Azure already"
-	subscriptionResponse, err := promptClient.PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{})
+	subscriptionResponse, err := promptClient.PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{
+		Message:     "Select an Azure subscription to use with the Copilot coding agent",
+		HelpMessage: "The Copilot coding agent will only be given access to a resource group within the Azure subscription you choose",
+	})
 
 	if err != nil {
 		//nolint:lll
@@ -259,7 +263,11 @@ func runConfigCommand(cmd *cobra.Command, flagValues *flagValues) error {
 
 	fmt.Println(mcpJson)
 
-	if err := openBrowserWindows(ctx, promptClient, defaultGitHubCLI, codingAgentURL, gitRepoRoot); err != nil {
+	if err := openBrowserWindows(ctx,
+		promptClient,
+		defaultConsole,
+		codingAgentURL,
+		repoSlug); err != nil {
 		return err
 	}
 
@@ -268,9 +276,9 @@ func runConfigCommand(cmd *cobra.Command, flagValues *flagValues) error {
 
 func openBrowserWindows(ctx context.Context,
 	prompter azdext.PromptServiceClient,
-	githubCLI *azd_tools_github.Cli,
+	defaultConsole input.Console,
 	codingAgentURL string,
-	gitRepoRoot string) error {
+	repoSlug string) error {
 	resp, err := prompter.Confirm(ctx, &azdext.ConfirmRequest{
 		Options: &azdext.ConfirmOptions{
 			Message:      "Open browser window to create a pull request?",
@@ -286,21 +294,16 @@ func openBrowserWindows(ctx context.Context,
 		return nil
 	}
 
-	//nolint:gosec	// defaultGitHubCLI.BinaryPath is derived from our own code, shouldn't be considered tainted.
-	cmd := exec.CommandContext(
-		ctx,
-		githubCLI.BinaryPath(),
-		"pr", "create",
-		"--title", "Updating/adding copilot-setup-steps.yaml to enable the Copilot coding agent to access Azure",
-		"--body", fmt.Sprintf(prBodyMD, codingAgentURL, mcpJson),
-		"--web")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Dir = gitRepoRoot
+	fullURL := fmt.Sprintf("https://github.com/%s/compare/main...azd-enable-copilot-coding-agent-with-azure?body=%s&expand=1&title=%s",
+		repoSlug,
+		url.QueryEscape(fmt.Sprintf(prBodyMD, codingAgentURL, mcpJson)),
+		url.QueryEscape("Updating/adding copilot-setup-steps.yaml to enable the Copilot coding agent to access Azure"),
+	)
 
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to launch gh pr: %w", err)
-	}
+	openWithDefaultBrowser(ctx, defaultConsole, fullURL)
+
+	// if we don't pause here, on Windows, it can kill the child process that's actually starting up the browser.
+	time.Sleep(5 * time.Second)
 
 	return nil
 }
@@ -521,29 +524,39 @@ func pickOrCreateMSI(ctx context.Context,
 
 	// ************************** Pick or create a new MSI **************************
 
-	// Prompt for pick or create a new MSI
-	selectedOption, err := prompter.Select(ctx, &azdext.SelectRequest{
-		Options: &azdext.SelectOptions{
-			Message: "Do you want to create a new User Managed Identity (MSI) or use an existing one?",
-			Choices: []*azdext.SelectChoice{
-				{Label: "Create new User Managed Identity (MSI)"},
-				{Label: "Use existing User Managed Identity (MSI)"},
+	shouldCreateIdentity := true
+
+	if identityName == defaultManagedIdentityName {
+		// Prompt for pick or create a new MSI
+		selectedOption, err := prompter.Select(ctx, &azdext.SelectRequest{
+			Options: &azdext.SelectOptions{
+				Message: "Do you want to create a new Azure user-assigned managed identity or use an existing one?",
+				Choices: []*azdext.SelectChoice{
+					{Label: "Create new user-assigned managed identity"},
+					{Label: "Use existing user-assigned managed identity"},
+				},
+				HelpMessage: "",
 			},
-		},
-	})
-	if err != nil {
-		//nolint:lll
-		return nil, fmt.Errorf(
-			"failed when prompting for MSI option. Try logging in manually with 'azd auth login' before running this command. Error: %w",
-			err,
-		)
+		})
+
+		if err != nil {
+			//nolint:lll
+			return nil, fmt.Errorf(
+				"failed when prompting for managed identity option. Try logging in manually with 'azd auth login' before running this command. Error: %w",
+				err,
+			)
+		}
+
+		shouldCreateIdentity = *selectedOption.Value == 0
 	}
 
 	taskList := ux.NewTaskList(nil)
 
+	// this gets assigned when the task list runs - it's either a brand new identity, or an
+	// existing identity.
 	var managedIdentity rm_armmsi.Identity
 
-	if *selectedOption.Value == 0 {
+	if shouldCreateIdentity {
 		// pick a resource group and location for the new MSI
 		location, err := prompter.PromptLocation(ctx, &azdext.PromptLocationRequest{
 			AzureContext: &azdext.AzureContext{
@@ -643,21 +656,23 @@ func pickOrCreateMSI(ctx context.Context,
 		managedIdentity = msIdentities[*selectedOption.Value]
 	}
 
-	if err := taskList.Run(); err != nil {
-		return nil, err
-	}
-
 	roleNameStrings := strings.Join(roleNames, ", ")
-	parsedID, err := arm.ParseResourceID(*managedIdentity.ID)
-
-	if err != nil {
-		return nil, fmt.Errorf("invalid format for managed identity resource id: %w", err)
-	}
+	var resourceGroup string // filled out when we ensure role assignments
 
 	taskList.AddTask(ux.TaskOptions{
 		Title: fmt.Sprintf("Assigning roles (%s) to User Managed Identity (MSI)", roleNameStrings),
 		Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
-			err := entraIDService.EnsureRoleAssignments(
+			// managedIdentity is filled out by an earlier step in this task list
+			// or chosen by the user when they say "use existing"
+			parsedID, err := arm.ParseResourceID(*managedIdentity.ID)
+
+			if err != nil {
+				return ux.Error, fmt.Errorf("invalid format for managed identity resource id: %w", err)
+			}
+
+			resourceGroup = parsedID.ResourceGroupName
+
+			err = entraIDService.EnsureRoleAssignments(
 				ctx,
 				subscriptionId,
 				roleNames,
@@ -684,7 +699,7 @@ func pickOrCreateMSI(ctx context.Context,
 
 	return &authConfiguration{
 		Name:           *managedIdentity.Name,
-		ResourceGroup:  parsedID.ResourceGroupName,
+		ResourceGroup:  resourceGroup,
 		TenantId:       *managedIdentity.Properties.TenantID,
 		SubscriptionId: subscriptionId,
 		ResourceID:     *managedIdentity.ID,
@@ -773,7 +788,7 @@ func gitPushChanges(ctx context.Context,
 
 	resp, err := prompter.Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
-			Message: fmt.Sprintf("Which git repository would you like push the branch (%s) to?", branchName),
+			Message: fmt.Sprintf("Which git repository should we push the '%s' branch to?", branchName),
 			Choices: choices,
 		},
 	})

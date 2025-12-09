@@ -28,11 +28,13 @@ func newListenCommand() *cobra.Command {
 			}
 			defer azdClient.Close()
 
-			serviceTargetProvider := project.NewDemoServiceTargetProvider(azdClient)
-			frameworkServiceProvider := project.NewDemoFrameworkServiceProvider(azdClient)
 			host := azdext.NewExtensionHost(azdClient).
-				WithServiceTarget("demo", serviceTargetProvider).
-				WithFrameworkService("rust", frameworkServiceProvider).
+				WithServiceTarget("demo", func() azdext.ServiceTargetProvider {
+					return project.NewDemoServiceTargetProvider(azdClient)
+				}).
+				WithFrameworkService("rust", func() azdext.FrameworkServiceProvider {
+					return project.NewDemoFrameworkServiceProvider(azdClient)
+				}).
 				WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 					for i := 1; i <= 20; i++ {
 						fmt.Printf("%d. Doing important work in extension...\n", i)
@@ -41,18 +43,38 @@ func newListenCommand() *cobra.Command {
 
 					return nil
 				}).
-				WithServiceEventHandler("prepackage", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
+				WithProjectEventHandler("predeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 					for i := 1; i <= 20; i++ {
-						fmt.Printf("%d. Doing important work in extension...\n", i)
+						fmt.Printf("%d. Doing important predeploy project work in extension...\n", i)
 						time.Sleep(250 * time.Millisecond)
 					}
 
 					return nil
-				}, &azdext.ServerEventOptions{
-					// Optionally filter your subscription by service host and/or language
-					Host:     "containerapp",
-					Language: "python",
-				})
+				}).
+				WithProjectEventHandler("postdeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+					for i := 1; i <= 20; i++ {
+						fmt.Printf("%d. Doing important postdeploy project work in extension...\n", i)
+						time.Sleep(250 * time.Millisecond)
+					}
+
+					return nil
+				}).
+				WithServiceEventHandler("prepackage", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
+					for i := 1; i <= 20; i++ {
+						fmt.Printf("Service: %s, Artifacts: %d\n", args.Service.Name, len(args.ServiceContext.Package))
+						time.Sleep(250 * time.Millisecond)
+					}
+
+					return nil
+				}, nil).
+				WithServiceEventHandler("postpackage", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
+					for i := 1; i <= 20; i++ {
+						fmt.Printf("Service: %s, Artifacts: %d\n", args.Service.Name, len(args.ServiceContext.Package))
+						time.Sleep(250 * time.Millisecond)
+					}
+
+					return nil
+				}, nil)
 
 			// Start listening for events
 			// This is a blocking call and will not return until the server connection is closed.

@@ -5,9 +5,11 @@ package grpcserver
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
@@ -18,16 +20,32 @@ type promptService struct {
 	azdext.UnimplementedPromptServiceServer
 	prompter        prompt.PromptService
 	resourceService *azapi.ResourceService
+	globalOptions   *internal.GlobalCommandOptions
 }
 
-func NewPromptService(prompter prompt.PromptService, resourceService *azapi.ResourceService) azdext.PromptServiceServer {
+func NewPromptService(
+	prompter prompt.PromptService,
+	resourceService *azapi.ResourceService,
+	globalOptions *internal.GlobalCommandOptions,
+) azdext.PromptServiceServer {
 	return &promptService{
 		prompter:        prompter,
 		resourceService: resourceService,
+		globalOptions:   globalOptions,
 	}
 }
 
 func (s *promptService) Confirm(ctx context.Context, req *azdext.ConfirmRequest) (*azdext.ConfirmResponse, error) {
+	if s.globalOptions.NoPrompt {
+		if req.Options.DefaultValue == nil {
+			return nil, fmt.Errorf("no default response for prompt '%s'", req.Options.Message)
+		} else {
+			return &azdext.ConfirmResponse{
+				Value: req.Options.DefaultValue,
+			}, nil
+		}
+	}
+
 	options := &ux.ConfirmOptions{
 		DefaultValue: req.Options.DefaultValue,
 		Message:      req.Options.Message,
@@ -45,6 +63,16 @@ func (s *promptService) Confirm(ctx context.Context, req *azdext.ConfirmRequest)
 }
 
 func (s *promptService) Select(ctx context.Context, req *azdext.SelectRequest) (*azdext.SelectResponse, error) {
+	if s.globalOptions.NoPrompt {
+		if req.Options.SelectedIndex == nil {
+			return nil, fmt.Errorf("no default selection for prompt '%s'", req.Options.Message)
+		} else {
+			return &azdext.SelectResponse{
+				Value: req.Options.SelectedIndex,
+			}, nil
+		}
+	}
+
 	choices := make([]*ux.SelectChoice, len(req.Options.Choices))
 	for i, choice := range req.Options.Choices {
 		choices[i] = &ux.SelectChoice{
@@ -75,6 +103,19 @@ func (s *promptService) MultiSelect(
 	ctx context.Context,
 	req *azdext.MultiSelectRequest,
 ) (*azdext.MultiSelectResponse, error) {
+	if s.globalOptions.NoPrompt {
+		var selectedChoices []*azdext.MultiSelectChoice
+		for _, choice := range req.Options.Choices {
+			if choice.Selected {
+				selectedChoices = append(selectedChoices, choice)
+			}
+		}
+
+		return &azdext.MultiSelectResponse{
+			Values: selectedChoices,
+		}, nil
+	}
+
 	choices := make([]*ux.MultiSelectChoice, len(req.Options.Choices))
 	for i, choice := range req.Options.Choices {
 		choices[i] = &ux.MultiSelectChoice{
@@ -111,6 +152,16 @@ func (s *promptService) MultiSelect(
 }
 
 func (s *promptService) Prompt(ctx context.Context, req *azdext.PromptRequest) (*azdext.PromptResponse, error) {
+	if s.globalOptions.NoPrompt {
+		if req.Options.Required && req.Options.DefaultValue == "" {
+			return nil, fmt.Errorf("no default response for prompt '%s'", req.Options.Message)
+		} else {
+			return &azdext.PromptResponse{
+				Value: req.Options.DefaultValue,
+			}, nil
+		}
+	}
+
 	options := &ux.PromptOptions{
 		DefaultValue:      req.Options.DefaultValue,
 		Message:           req.Options.Message,
@@ -136,7 +187,11 @@ func (s *promptService) PromptSubscription(
 	ctx context.Context,
 	req *azdext.PromptSubscriptionRequest,
 ) (*azdext.PromptSubscriptionResponse, error) {
-	selectedSubscription, err := s.prompter.PromptSubscription(ctx, nil)
+	// Delegate to prompt service which handles --no-prompt mode
+	selectedSubscription, err := s.prompter.PromptSubscription(ctx, &prompt.SelectOptions{
+		Message:     req.Message,
+		HelpMessage: req.HelpMessage,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -158,6 +213,7 @@ func (s *promptService) PromptLocation(
 	ctx context.Context,
 	req *azdext.PromptLocationRequest,
 ) (*azdext.PromptLocationResponse, error) {
+	// Delegate to prompt service which handles --no-prompt mode
 	azureContext, err := s.createAzureContext(req.AzureContext)
 	if err != nil {
 		return nil, err
@@ -183,6 +239,7 @@ func (s *promptService) PromptResourceGroup(
 	ctx context.Context,
 	req *azdext.PromptResourceGroupRequest,
 ) (*azdext.PromptResourceGroupResponse, error) {
+	// Delegate to prompt service which handles --no-prompt mode
 	azureContext, err := s.createAzureContext(req.AzureContext)
 	if err != nil {
 		return nil, err
@@ -208,6 +265,7 @@ func (s *promptService) PromptSubscriptionResource(
 	ctx context.Context,
 	req *azdext.PromptSubscriptionResourceRequest,
 ) (*azdext.PromptSubscriptionResourceResponse, error) {
+	// Delegate to prompt service which handles --no-prompt mode
 	azureContext, err := s.createAzureContext(req.AzureContext)
 	if err != nil {
 		return nil, err
@@ -235,6 +293,7 @@ func (s *promptService) PromptResourceGroupResource(
 	ctx context.Context,
 	req *azdext.PromptResourceGroupResourceRequest,
 ) (*azdext.PromptResourceGroupResourceResponse, error) {
+	// Delegate to prompt service which handles --no-prompt mode
 	azureContext, err := s.createAzureContext(req.AzureContext)
 	if err != nil {
 		return nil, err

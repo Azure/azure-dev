@@ -72,7 +72,7 @@ func (r ResourceType) String() string {
 	case ResourceTypeStorage:
 		return "Storage Account"
 	case ResourceTypeAiProject:
-		return "AI Foundry"
+		return "Foundry"
 	case ResourceTypeAiSearch:
 		return "AI Search"
 	case ResourceTypeKeyVault:

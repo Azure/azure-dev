@@ -224,7 +224,7 @@ func (h *HooksManager) ValidateHooks(ctx context.Context, allHooks map[string][]
 		}
 	}
 
-	// If we found hooks using default shell, warn the user
+	// If we found hooks using default shell, warn the user - only log
 	if hasDefaultShellHooks {
 		var warningMessage string
 		var defaultShell string
@@ -243,13 +243,7 @@ func (h *HooksManager) ValidateHooks(ctx context.Context, allHooks map[string][]
 			output.WithHyperlink("aka.ms/azd-hooks", "aka.ms/azd-hooks"),
 		)
 
-		result.Warnings = append(result.Warnings, HookWarning{
-			Message: warningMessage,
-			Suggestion: fmt.Sprintf(
-				"Add 'shell: %s' to your hook configurations to remove this warning.",
-				defaultShell,
-			),
-		})
+		log.Println(warningMessage)
 	}
 
 	return result

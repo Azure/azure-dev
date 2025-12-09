@@ -52,6 +52,7 @@ func TestBicepOutputsWithDoubleUnderscoresAreConverted(t *testing.T) {
 	dp := NewDotNetProject(dotNetCli, environment.New("test")).(*dotnetProject)
 
 	err := dp.setUserSecretsFromOutputs(*mockContext.Context, serviceConfig, ServiceLifecycleEventArgs{
+		ServiceContext: NewServiceContext(),
 		Args: map[string]any{
 			"bicepOutput": map[string]provisioning.OutputParameter{
 				"EXAMPLE_OUTPUT":          {Type: "string", Value: "foo"},
@@ -103,8 +104,9 @@ func Test_DotNetProject_Init(t *testing.T) {
 	require.NoError(t, err)
 
 	eventArgs := ServiceLifecycleEventArgs{
-		Project: serviceConfig.Project,
-		Service: serviceConfig,
+		Project:        serviceConfig.Project,
+		Service:        serviceConfig,
+		ServiceContext: NewServiceContext(),
 		Args: map[string]any{
 			"bicepOutput": map[string]provisioning.OutputParameter{
 				"EXAMPLE_OUTPUT": {Type: "string", Value: "value"},

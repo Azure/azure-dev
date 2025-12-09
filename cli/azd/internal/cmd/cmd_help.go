@@ -11,6 +11,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
+// NonPersistentGlobalFlags are flags that appear on all commands but are generated per-command
+// rather than being defined as persistent flags on the root command.
+var NonPersistentGlobalFlags = []string{"help", "docs"}
+
 // formatHelpNote provides the expected format in description notes using `•`.
 func formatHelpNote(note string) string {
 	return fmt.Sprintf("  • %s", note)

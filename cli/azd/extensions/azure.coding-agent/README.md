@@ -80,6 +80,18 @@ This can happen if your azd login token has expired. You can fix this by logging
 azd auth login
 ```
 
+### Must have admin rights to Repository
+
+Configuring a GitHub repository for the coding agent **requires** admin rights. Without these rights, you won't be able to update the Copilot environment to use managed identity credentials, or update the MCP configuration for the repository.
+
+If you see this error, you'll need to elevate your rights.
+
+```shell
+(!) An error occurred, see the readme for troubleshooting and prerequisites:
+    https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.coding-agent/README.md
+Error: failed to create GitHub environment copilot in repository owner/repository: exit code: 1, stdout: {"message":"Must have admin rights to Repository.","documentation_url":"https://docs.github.com/rest/deployments/environments#create-or-update-an-environment","status":"403"}, stderr: gh: Must have admin rights to Repository. (HTTP 403)
+```
+
 ### An internal command is failing, but there's no command output
 
 Use the `--debug` command line option. This will make it so each command (and it's output) is printed to the console, which can give you a better idea of where the overall process is failing.

@@ -18,6 +18,7 @@ words:
   # CDN host name
   - gfgac2cmf7b8cuay
   - goversioninfo
+  - grpcbroker
   - nosec
   - oneof
   - idxs
@@ -26,10 +27,13 @@ words:
   - proto
   - protobuf
   - protoc
-  - protoreflect
   - protoimpl
+  - protojson
+  - protoreflect
+  - structpb
   - Retryable
   - runcontext
+  - surveyterm
   - unmarshals
   - unmarshaling
   - unsetting
@@ -40,6 +44,7 @@ words:
   - tekuri
   - jsonschema
   - rustc
+  - figspec
 languageSettings:
   - languageId: go
     ignoreRegExpList:
@@ -167,14 +172,36 @@ overrides:
       - getenv
       - errorf
       - println
+      - myext
+      - Fatalf
   - filename: extensions/microsoft.azd.ai.builder/internal/cmd/start.go
     words:
       - dall
       - datasource
       - vectorizing
-  - filename: extensions/azure.foundry.ai.agents/internal/cmd/listen.go
+  - filename: extensions/azure.ai.agents/internal/cmd/init.go
+    words:
+      - aoai
+      - azdaiagent
+  - filename: extensions/azure.ai.agents/internal/cmd/listen.go
     words:
       - hostedagent
+  - filename: extensions/azure.ai.agents/internal/pkg/agents/agent_yaml/yaml.go
+    words:
+      - anonymousconnection
+      - mcpservertoolalwaysrequireapprovalmode
+      - mcpservertoolneverrequireapprovalmode
+      - mcpservertoolspecifyapprovalmode
+      - protocolversionrecord
+      - openapitool
+  - filename: extensions/azure.ai.agents/internal/pkg/agents/agent_api/models.go
+    words:
+      - Dataagent
+      - dataagent
+      - webp
+  - filename: extensions/azure.ai.agents/internal/pkg/agents/registry_api/operations.go
+    words:
+      - Dataagent
   - filename: docs/new-azd-command.md
     words:
       - pflag
@@ -188,6 +215,9 @@ overrides:
       - azdcontext
       - azapi
       - eastus
+  - filename: cmd/cmd_help.go
+    words:
+      - cmdinternal
   - filename: .github/copilot-instructions.md
     words:
       - golines
@@ -204,6 +234,15 @@ overrides:
   - filename: cmd/completion.go
     words:
       - compinit
+  - filename: pkg/project/service_target_dotnet_containerapp.go
+    words:
+      - IMAGENAME
+  - filename: extensions/microsoft.azd.extensions/internal/resources/languages/**/.gitignore
+    words:
+      - rsuser
+      - userosscache
+      - docstates
+      - dylib
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

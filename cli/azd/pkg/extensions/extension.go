@@ -32,18 +32,27 @@ type Extension struct {
 
 	readySignal chan error // consolidated channel, buffered with capacity 1
 	readyOnce   sync.Once  // ensures signal is sent only once
+	initialized bool
 }
 
 // init initializes the extension's buffers and signals.
-func (e *Extension) init() {
+func (e *Extension) ensureInit() {
+	if e.initialized {
+		return
+	}
+
 	e.stdin = &bytes.Buffer{}
 	e.stdout = output.NewDynamicMultiWriter()
 	e.stderr = output.NewDynamicMultiWriter()
 	e.readySignal = make(chan error, 1)
+
+	e.initialized = true
 }
 
 // Initialize signals that the extension is ready.
 func (e *Extension) Initialize() {
+	e.ensureInit()
+
 	e.readyOnce.Do(func() {
 		e.readySignal <- nil
 	})
@@ -51,6 +60,8 @@ func (e *Extension) Initialize() {
 
 // Fail signals that the extension has encountered an error.
 func (e *Extension) Fail(err error) {
+	e.ensureInit()
+
 	e.readyOnce.Do(func() {
 		e.readySignal <- err
 	})
@@ -58,6 +69,8 @@ func (e *Extension) Fail(err error) {
 
 // WaitUntilReady blocks until the extension signals readiness or failure.
 func (e *Extension) WaitUntilReady(ctx context.Context) error {
+	e.ensureInit()
+
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -85,15 +98,18 @@ func (e *Extension) HasCapability(capability ...CapabilityType) bool {
 
 // StdIn returns the standard input buffer for the extension.
 func (e *Extension) StdIn() io.Reader {
+	e.ensureInit()
 	return e.stdin
 }
 
 // StdOut returns the standard output writer for the extension.
 func (e *Extension) StdOut() *output.DynamicMultiWriter {
+	e.ensureInit()
 	return e.stdout
 }
 
 // StdErr returns the standard error writer for the extension.
 func (e *Extension) StdErr() *output.DynamicMultiWriter {
+	e.ensureInit()
 	return e.stderr
 }

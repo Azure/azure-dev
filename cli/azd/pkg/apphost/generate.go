@@ -510,13 +510,19 @@ func GenerateProjectArtifacts(
 	return files, nil
 }
 
+type annotatedString struct {
+	Filter string
+	Value  string
+}
+
 type infraGenerator struct {
 	dapr              map[string]genDapr
 	projects          map[string]genProject
 	connectionStrings map[string]string
 	// keeps the value from value.v0 resources if provided.
-	valueStrings  map[string]string
-	resourceTypes map[string]string
+	valueStrings     map[string]string
+	annotatedStrings map[string]annotatedString
+	resourceTypes    map[string]string
 
 	bicepContext                 genBicepTemplateContext
 	containerAppTemplateContexts map[string]genContainerAppManifestTemplateContext
@@ -551,6 +557,8 @@ func newInfraGenerator() *infraGenerator {
 		dapr:                         make(map[string]genDapr),
 		projects:                     make(map[string]genProject),
 		connectionStrings:            make(map[string]string),
+		valueStrings:                 make(map[string]string),
+		annotatedStrings:             make(map[string]annotatedString),
 		resourceTypes:                make(map[string]string),
 		containerAppTemplateContexts: make(map[string]genContainerAppManifestTemplateContext),
 		buildContainers:              make(map[string]genBuildContainer),
@@ -692,7 +700,8 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 
 		switch comp.Type {
 		case "project.v0":
-			b.addProject(name, *comp.Path, comp.Env, comp.Bindings, comp.Args, nil, "")
+			b.addProject(
+				name, *comp.Path, comp.Env, comp.Bindings, comp.Args, nil, "", comp.ContainerFiles)
 		case "project.v1":
 			var deploymentParams map[string]any
 			var deploymentSource string
@@ -700,7 +709,9 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 				deploymentParams = comp.Deployment.Params
 				deploymentSource = filepath.Base(*comp.Deployment.Path)
 			}
-			b.addProject(name, *comp.Path, comp.Env, comp.Bindings, comp.Args, deploymentParams, deploymentSource)
+			b.addProject(
+				name, *comp.Path, comp.Env, comp.Bindings, comp.Args,
+				deploymentParams, deploymentSource, comp.ContainerFiles)
 		case "container.v0":
 			err := b.addBuildContainer(name, comp)
 			if err != nil {
@@ -738,6 +749,11 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 			}
 			if err := b.addInputParameter(name, comp); err != nil {
 				return fmt.Errorf("adding bicep parameter from resource %s (%s): %w", name, comp.Type, err)
+			}
+		case "annotated.string":
+			b.annotatedStrings[name] = annotatedString{
+				Filter: comp.Filter,
+				Value:  comp.Value,
 			}
 		case "azure.bicep.v0", "azure.bicep.v1":
 			if err := b.addBicep(name, comp); err != nil {
@@ -997,6 +1013,7 @@ func (b *infraGenerator) addProject(
 	args []string,
 	deploymentParams map[string]any,
 	deploymentSource string,
+	containerFiles map[string]ContainerFile,
 ) {
 	b.requireCluster()
 	b.requireContainerRegistry()
@@ -1008,6 +1025,7 @@ func (b *infraGenerator) addProject(
 		Args:             args,
 		DeploymentParams: deploymentParams,
 		DeploymentSource: deploymentSource,
+		ContainerFiles:   containerFiles,
 	}
 }
 
@@ -1115,6 +1133,7 @@ func buildContainerFromResource(r *Resource) (*genBuildContainer, error) {
 			Dockerfile: r.Build.Dockerfile,
 			Args:       r.Build.Args,
 			Secrets:    r.Build.Secrets,
+			BuildOnly:  r.Build.BuildOnly,
 		}
 	}
 
@@ -1534,6 +1553,23 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		}
 
 		return res, nil
+	}
+	if annotatedString, has := b.annotatedStrings[resource]; has && prop == "value" {
+		if annotatedString.Filter != "uri" {
+			return "", fmt.Errorf("unsupported annotated.string filter '%s' in binding expression for resource %s",
+				annotatedString.Filter, resource)
+		}
+		// uri is currently the only supported filter for annotated.string
+		res, err := EvalString(annotatedString.Value, func(s string) (string, error) {
+			return b.evalBindingRef(s, emitType)
+		})
+		if err != nil {
+			return "", fmt.Errorf("evaluating annotated.string's value string for %s: %w", resource, err)
+		}
+
+		return strings.ReplaceAll(
+			strings.ReplaceAll(res, "{{ ", "{{ uriEncode ("),
+			"}}", ")}}"), nil
 	}
 
 	if strings.HasPrefix(prop, "inputs.") {

@@ -140,6 +140,7 @@ func (t *aksTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig
 	// Ensure that the k8s context has been configured by the time a deploy operation is performed.
 	// We attach to "postprovision" so that any predeploy or postprovision hooks can take advantage of the configuration
 	err := serviceConfig.Project.AddHandler(
+		ctx,
 		"postprovision",
 		func(ctx context.Context, args ProjectLifecycleEventArgs) error {
 			// Only set the k8s context if we are not in preview mode
@@ -158,7 +159,7 @@ func (t *aksTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig
 
 	// Ensure that the k8s context has been configured by the time a deploy operation is performed.
 	// We attach to "predeploy" so that any predeploy hooks can take advantage of the configuration
-	err = serviceConfig.AddHandler("predeploy", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+	err = serviceConfig.AddHandler(ctx, "predeploy", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
 		return t.setK8sContext(ctx, serviceConfig, "predeploy")
 	})
 
@@ -307,7 +308,7 @@ func (t *aksTarget) Deploy(
 		}
 	}
 
-	resourceArtifact := &Artifact{}
+	var resourceArtifact *Artifact
 	if err := mapper.Convert(targetResource, &resourceArtifact); err == nil {
 		if err := artifacts.Add(resourceArtifact); err != nil {
 			return nil, fmt.Errorf("failed to add resource artifact: %w", err)
@@ -400,13 +401,13 @@ func (t *aksTarget) deployKustomize(
 	// and then generate a .env file that can be used to generate config maps
 	// azd can help here to create an .env file from the map specified within azure.yaml kustomize config section
 	if len(serviceConfig.K8s.Kustomize.Env) > 0 {
-		builder := strings.Builder{}
-		for key, exp := range serviceConfig.K8s.Kustomize.Env {
-			value, err := exp.Envsubst(t.env.Getenv)
-			if err != nil {
-				return false, fmt.Errorf("failed to envsubst kustomize env: %w", err)
-			}
+		expandedEnvVars, err := serviceConfig.K8s.Kustomize.Env.Expand(t.env.Getenv)
+		if err != nil {
+			return false, fmt.Errorf("failed to expand kustomize environment variables: %w", err)
+		}
 
+		builder := strings.Builder{}
+		for key, value := range expandedEnvVars {
 			builder.WriteString(fmt.Sprintf("%s=%s\n", key, value))
 		}
 

@@ -17,6 +17,7 @@ import (
 )
 
 func Test_CLI_Publish_ContainerApp_RemoteBuild(t *testing.T) {
+	t.Skip("taking 53 minutes. Needs to be re-designed - https://github.com/Azure/azure-dev/issues/6059")
 	t.Parallel()
 
 	tests := []struct {

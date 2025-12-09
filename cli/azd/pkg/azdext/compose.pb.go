@@ -568,7 +568,7 @@ const file_compose_proto_rawDesc = "" +
 	"\vGetResource\x12\x1a.azdext.GetResourceRequest\x1a\x1b.azdext.GetResourceResponse\x12L\n" +
 	"\x11ListResourceTypes\x12\x14.azdext.EmptyRequest\x1a!.azdext.ListResourceTypesResponse\x12R\n" +
 	"\x0fGetResourceType\x12\x1e.azdext.GetResourceTypeRequest\x1a\x1f.azdext.GetResourceTypeResponse\x12F\n" +
-	"\vAddResource\x12\x1a.azdext.AddResourceRequest\x1a\x1b.azdext.AddResourceResponseB6Z4github.com/azure/azure-dev/cli/azd/pkg/azdext;azdextb\x06proto3"
+	"\vAddResource\x12\x1a.azdext.AddResourceRequest\x1a\x1b.azdext.AddResourceResponseB/Z-github.com/azure/azure-dev/cli/azd/pkg/azdextb\x06proto3"
 
 var (
 	file_compose_proto_rawDescOnce sync.Once

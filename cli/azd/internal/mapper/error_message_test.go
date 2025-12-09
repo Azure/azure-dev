@@ -43,13 +43,13 @@ func TestErrorMessagesWithDifferentTypes(t *testing.T) {
 			name:          "struct types",
 			srcType:       CustomStruct{},
 			dstType:       "",
-			expectedParts: []string{"CustomStruct", "string"},
+			expectedParts: []string{"mapper.CustomStruct", "string"},
 		},
 		{
 			name:          "pointer to struct",
 			srcType:       (*CustomStruct)(nil),
 			dstType:       (*string)(nil),
-			expectedParts: []string{"*CustomStruct", "string"}, // dst is the element type
+			expectedParts: []string{"*mapper.CustomStruct", "string"}, // dst is the element type
 		},
 		{
 			name:          "slice types",

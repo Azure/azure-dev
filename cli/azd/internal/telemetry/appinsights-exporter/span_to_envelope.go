@@ -61,14 +61,13 @@ func spanToRequestData(span trace.ReadOnlySpan) (*contracts.RequestData, map[str
 	requestData.Properties = map[string]string{}
 	requestData.Measurements = map[string]float64{}
 
-	if span.Status().Code == codes.Error {
-		if len(span.Status().Description) > 0 {
-			requestData.ResponseCode = span.Status().Description
-		} else {
+	requestData.ResponseCode = span.Status().Description
+	if requestData.ResponseCode == "" {
+		if span.Status().Code == codes.Error {
 			requestData.ResponseCode = "UnknownFailure"
+		} else {
+			requestData.ResponseCode = "Success"
 		}
-	} else {
-		requestData.ResponseCode = "Success"
 	}
 
 	for _, resourceAttrib := range span.Resource().Attributes() {

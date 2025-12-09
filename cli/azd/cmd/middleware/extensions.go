@@ -7,7 +7,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"slices"
+	"strconv"
 	"sync"
 	"time"
 
@@ -16,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/fatih/color"
 )
 
@@ -97,20 +100,28 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 	}()
 
 	forceColor := !color.NoColor
-
 	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var failedExtensions []*extensions.Extension
 
+	// Track total time for all extensions to become ready
+	allExtensionsStartTime := time.Now()
+	log.Printf("Starting %d extensions...\n", len(extensionList))
+
+	// Single loop: start goroutines for each extension
 	for _, extension := range extensionList {
-		jwtToken, err := grpcserver.GenerateExtensionToken(extension, serverInfo)
-		if err != nil {
-			return nil, err
-		}
-
 		wg.Add(1)
-		go func(extension *extensions.Extension, jwtToken string) {
+		go func(ext *extensions.Extension) {
 			defer wg.Done()
 
-			// Invoke the extension in a separate goroutine so that we can proceed to waiting for readiness.
+			jwtToken, err := grpcserver.GenerateExtensionToken(ext, serverInfo)
+			if err != nil {
+				log.Printf("failed to generate JWT token for '%s' extension: %v", ext.Id, err)
+				ext.Fail(err)
+				return
+			}
+
+			// Start the extension process in a separate goroutine
 			go func() {
 				allEnv := []string{
 					fmt.Sprintf("AZD_SERVER=%s", serverInfo.Address),
@@ -121,31 +132,97 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 					allEnv = append(allEnv, "FORCE_COLOR=1")
 				}
 
-				options := &extensions.InvokeOptions{
-					Args:   []string{"listen"},
-					Env:    allEnv,
-					StdIn:  extension.StdIn(),
-					StdOut: extension.StdOut(),
-					StdErr: extension.StdErr(),
+				args := []string{"listen"}
+				if debugEnabled, _ := m.options.Flags.GetBool("debug"); debugEnabled {
+					args = append(args, "--debug")
 				}
 
-				if _, err := m.extensionRunner.Invoke(ctx, extension, options); err != nil {
+				options := &extensions.InvokeOptions{
+					Args:   args,
+					Env:    allEnv,
+					StdIn:  ext.StdIn(),
+					StdOut: ext.StdOut(),
+					StdErr: ext.StdErr(),
+				}
+
+				if _, err := m.extensionRunner.Invoke(ctx, ext, options); err != nil {
 					m.console.Message(ctx, err.Error())
-					extension.Fail(err)
+					ext.Fail(err)
 				}
 			}()
 
 			// Wait for the extension to signal readiness or failure.
-			readyCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			// If AZD_EXT_DEBUG is set to a truthy value, wait indefinitely for debugger attachment
+			// If AZD_EXT_TIMEOUT is set to a number (seconds), use that as the timeout (default: 5 seconds)
+			readyCtx, cancel := getReadyContext(ctx)
 			defer cancel()
-			if err := extension.WaitUntilReady(readyCtx); err != nil {
-				log.Printf("extension '%s' failed to become ready: %v\n", extension.Id, err)
+
+			startTime := time.Now()
+			if err := ext.WaitUntilReady(readyCtx); err != nil {
+				elapsed := time.Since(startTime)
+				log.Printf("'%s' extension failed to become ready after %v: %v\n", ext.Id, elapsed, err)
+
+				// Track failed extensions for warning display
+				mu.Lock()
+				failedExtensions = append(failedExtensions, ext)
+				mu.Unlock()
+			} else {
+				elapsed := time.Since(startTime)
+				log.Printf("'%s' extension became ready in %v\n", ext.Id, elapsed)
 			}
-		}(extension, jwtToken)
+		}(extension)
 	}
 
 	// Wait for all extensions to reach a terminal state (ready or failed)
 	wg.Wait()
 
+	// Check for failed extensions and display warnings
+
+	if len(failedExtensions) > 0 {
+		m.console.Message(ctx, output.WithWarningFormat("WARNING: Extension startup failures detected"))
+		m.console.Message(ctx, "The following extensions failed to initialize within the timeout period:")
+		for _, ext := range failedExtensions {
+			m.console.Message(ctx, fmt.Sprintf("  - %s (%s)", ext.DisplayName, ext.Id))
+		}
+		m.console.Message(ctx, "")
+		m.console.Message(
+			ctx,
+			"Some features may be unavailable. Increase timeout with AZD_EXT_TIMEOUT=<seconds> if needed.",
+		)
+		m.console.Message(ctx, "")
+	}
+
+	// Log total time for all extensions to complete startup
+	totalElapsed := time.Since(allExtensionsStartTime)
+	log.Printf("All %d extensions completed startup in %v\n", len(extensionList), totalElapsed)
+
 	return next(ctx)
+}
+
+// isDebug checks if AZD_EXT_DEBUG environment variable is set to a truthy value
+func isDebug() bool {
+	debugValue := os.Getenv("AZD_EXT_DEBUG")
+	if debugValue == "" {
+		return false
+	}
+
+	isDebug, err := strconv.ParseBool(debugValue)
+	return err == nil && isDebug
+}
+
+// getReadyContext returns a context with timeout for normal operation or without timeout for debugging
+func getReadyContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if isDebug() {
+		return context.WithCancel(ctx)
+	}
+
+	// Use custom timeout from environment variable or default to 5 seconds
+	timeout := 5 * time.Second
+	if timeoutValue := os.Getenv("AZD_EXT_TIMEOUT"); timeoutValue != "" {
+		if seconds, err := strconv.Atoi(timeoutValue); err == nil && seconds > 0 {
+			timeout = time.Duration(seconds) * time.Second
+		}
+	}
+
+	return context.WithTimeout(ctx, timeout)
 }

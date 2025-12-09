@@ -5,15 +5,20 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -159,22 +164,17 @@ func promptForExtensionChoice(
 	extensions []*extensions.ExtensionMetadata) (*extensions.ExtensionMetadata, error) {
 
 	if len(extensions) == 0 {
-		return nil, nil
+		return nil, fmt.Errorf("no extensions to choose from")
 	}
 
 	if len(extensions) == 1 {
 		return extensions[0], nil
 	}
 
-	console.Message(ctx, "Multiple extensions found that match your command:")
-	console.Message(ctx, "")
-
 	options := make([]string, len(extensions))
 	for i, ext := range extensions {
-		options[i] = fmt.Sprintf("%s (%s) - %s", ext.Namespace, ext.DisplayName, ext.Description)
-		console.Message(ctx, fmt.Sprintf("  %d. %s", i+1, options[i]))
+		options[i] = fmt.Sprintf("%s (%s) - %s", ext.DisplayName, ext.Source, ext.Description)
 	}
-	console.Message(ctx, "")
 
 	choice, err := console.Select(ctx, input.ConsoleOptions{
 		Message: "Which extension would you like to install?",
@@ -231,21 +231,23 @@ func tryAutoInstallExtension(
 	if resource.IsRunningOnCI() {
 		return false,
 			fmt.Errorf(
-				"Command '%s' not found, but there's an available extension that provides it.\n"+
-					"However, auto-installation is not supported in CI/CD environments.\n"+
+				"Auto-installation is not supported in CI/CD environments.\n"+
 					"Run '%s' to install it manually.",
-				extension.Namespace,
 				fmt.Sprintf("azd extension install %s", extension.Id))
 	}
 
+	console.MessageUxItem(ctx, &ux.WarningMessage{
+		Description: "You are about to install an extension!",
+	})
+	console.Message(ctx, fmt.Sprintf("Source: %s", extension.Source))
+	console.Message(ctx, fmt.Sprintf("Id: %s", extension.Id))
+	console.Message(ctx, fmt.Sprintf("Name: %s", extension.DisplayName))
+	console.Message(ctx, fmt.Sprintf("Description: %s", extension.Description))
+
 	// Ask user for permission to auto-install the extension
-	console.Message(ctx,
-		fmt.Sprintf("Command '%s' not found, but there's an available extension that provides it.\n", extension.Namespace))
-	console.Message(ctx,
-		fmt.Sprintf("Extension: %s (%s)\n", extension.DisplayName, extension.Description))
 	shouldInstall, err := console.Confirm(ctx, input.ConsoleOptions{
 		DefaultValue: true,
-		Message:      "Would you like to install it?",
+		Message:      "Confirm installation",
 	})
 	if err != nil {
 		return false, nil
@@ -268,8 +270,24 @@ func tryAutoInstallExtension(
 
 // ExecuteWithAutoInstall executes the command and handles auto-installation of extensions for unknown commands.
 func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContainer) error {
-	// Creating the RootCmd takes care of registering common dependencies in rootContainer
+	// Parse global flags BEFORE creating the command tree.
+	// This allows us to access flag values (like --no-prompt, --debug) early for auto-install logic.
+	// This also enables the global options to be set in the container for support during extension framework callbacks.
+	globalOpts := &internal.GlobalCommandOptions{}
+	if err := ParseGlobalFlags(os.Args[1:], globalOpts); err != nil {
+		return fmt.Errorf("Warning: failed to parse global flags: %w", err)
+	}
+
+	// Register GlobalCommandOptions as a singleton in the container BEFORE building the command tree.
+	// This ensures all components (FlagsResolver, actions, etc.) get the same pre-parsed instance.
+	ioc.RegisterInstance(rootContainer, globalOpts)
+
+	// Creating the RootCmd takes care of registering common dependencies in rootContainer.
+	// The command tree will retrieve globalOpts from the container via its FlagsResolver.
 	rootCmd := NewRootCmd(false, nil, rootContainer)
+
+	var extensionManager *extensions.Manager
+	var console input.Console
 
 	// rootCmd.Find() returns error if the command is not identified. Cobra checks all the registered commands
 	// and returns error if the input command is not registered.
@@ -277,7 +295,73 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 	_, originalArgs, err := rootCmd.Find(os.Args[1:])
 	if err == nil {
 		// Known command, no need to auto-install
-		return rootCmd.ExecuteContext(ctx)
+		err := rootCmd.ExecuteContext(ctx)
+
+		if err := rootContainer.Resolve(&extensionManager); err != nil {
+			log.Panic("failed to resolve extension manager for auto-install:", err)
+		}
+		if err := rootContainer.Resolve(&console); err != nil {
+			log.Panic("failed to resolve console for unknown flags error:", err)
+		}
+
+		// auto-install for target service
+		var unsupportedErr *project.UnsupportedServiceHostError
+		if !errors.As(err, &unsupportedErr) {
+			return err
+		}
+
+		requiredHost := unsupportedErr.Host
+		availableExtensionsForHost, err := extensionManager.FindExtensions(ctx, &extensions.FilterOptions{
+			Capability: extensions.ServiceTargetProviderCapability,
+			Provider:   requiredHost,
+		})
+		if err != nil {
+			// Do not fail if we couldn't check for extensions - just proceed to normal execution
+			log.Println("Error: check for extensions. Skipping auto-install:", err)
+			console.Message(ctx, unsupportedErr.ErrorMessage)
+			return nil
+		}
+		// Note: We don't need to filter or check which extensions are installed.
+		// If any of these extensions would be installed, the auto-install wouldn't have been triggered because
+		// there would be at least one extensions providing the capability and provider.
+		if len(availableExtensionsForHost) == 0 {
+			// did not find an extension with the capability, just print the original error message
+			console.Message(ctx, unsupportedErr.ErrorMessage)
+			return nil
+		}
+
+		console.Message(ctx,
+			fmt.Sprintf("Your project is using host '%s' which is not supported by default.\n", unsupportedErr.Host))
+
+		var extensionIdToInstall extensions.ExtensionMetadata
+		if len(availableExtensionsForHost) == 1 {
+			extensionIdToInstall = *availableExtensionsForHost[0]
+			console.Message(ctx, "An extension was found that provides support for this host.")
+		} else {
+			console.Message(ctx, "There are multiple extensions that provide support for this host.")
+			// Multiple matches found, prompt user to choose
+			chosenExtension, err := promptForExtensionChoice(ctx, console, availableExtensionsForHost)
+			if err != nil {
+				console.Message(ctx, fmt.Sprintf("Error selecting extension: %v", err))
+				return err
+			}
+			extensionIdToInstall = *chosenExtension
+		}
+
+		installed, installErr := tryAutoInstallExtension(ctx, console, extensionManager, extensionIdToInstall)
+		if installErr != nil {
+			// Error needs to be printed here or else it will be hidden b/c the error printing is handled inside runtime
+			console.Message(ctx, installErr.Error())
+			return installErr
+		}
+
+		if installed {
+			// Extension was installed, build command tree and execute
+			rootCmd := NewRootCmd(false, nil, rootContainer)
+			return rootCmd.ExecuteContext(ctx)
+		}
+
+		return err
 	}
 
 	// Extract flags that take values from the root command
@@ -294,13 +378,15 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 			return rootCmd.ExecuteContext(ctx)
 		}
 
+		if err := rootContainer.Resolve(&extensionManager); err != nil {
+			log.Panic("failed to resolve extension manager for auto-install:", err)
+		}
+		if err := rootContainer.Resolve(&console); err != nil {
+			log.Panic("failed to resolve console for unknown flags error:", err)
+		}
+
 		// If unknown flags were found before a non-built-in command, return an error with helpful guidance
 		if len(unknownFlags) > 0 {
-			var console input.Console
-			if err := rootContainer.Resolve(&console); err != nil {
-				log.Panic("failed to resolve console for unknown flags error:", err)
-			}
-
 			flagsList := strings.Join(unknownFlags, ", ")
 			errorMsg := fmt.Sprintf(
 				"Unknown flags detected before command '%s': %s\n\n"+
@@ -316,11 +402,6 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 
 			console.Message(ctx, errorMsg)
 			return fmt.Errorf("unknown flags before command: %s", flagsList)
-		}
-
-		var extensionManager *extensions.Manager
-		if err := rootContainer.Resolve(&extensionManager); err != nil {
-			log.Panic("failed to resolve extension manager for auto-install:", err)
 		}
 
 		// Get all remaining arguments starting from the command for namespace matching
@@ -352,6 +433,10 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 				log.Panic("failed to resolve console for auto-install:", err)
 			}
 
+			console.Message(ctx,
+				fmt.Sprintf("Command '%s' was not found, but there's an available extension that provides it\n",
+					strings.Join(argsForMatching, " ")))
+
 			// Prompt user to choose if multiple extensions match
 			chosenExtension, err := promptForExtensionChoice(ctx, console, extensionMatches)
 			if err != nil {
@@ -382,4 +467,68 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 
 	// Normal execution path - either no args, no matching extension, or user declined install
 	return rootCmd.ExecuteContext(ctx)
+}
+
+// CreateGlobalFlagSet creates a new flag set with all global flags defined.
+// This is the single source of truth for global flag definitions.
+func CreateGlobalFlagSet() *pflag.FlagSet {
+	globalFlags := pflag.NewFlagSet("global", pflag.ContinueOnError)
+
+	globalFlags.StringP("cwd", "C", "", "Sets the current working directory.")
+	globalFlags.Bool("debug", false, "Enables debugging and diagnostics logging.")
+	globalFlags.Bool(
+		"no-prompt",
+		false,
+		"Accepts the default value instead of prompting, or it fails if there is no default.")
+
+	// The telemetry system is responsible for reading these flags value and using it to configure the telemetry
+	// system, but we still need to add it to our flag set so that when we parse the command line with Cobra we
+	// don't error due to an "unknown flag".
+	globalFlags.String("trace-log-file", "", "Write a diagnostics trace to a file.")
+	_ = globalFlags.MarkHidden("trace-log-file")
+
+	globalFlags.String("trace-log-url", "", "Send traces to an Open Telemetry compatible endpoint.")
+	_ = globalFlags.MarkHidden("trace-log-url")
+
+	return globalFlags
+}
+
+// ParseGlobalFlags parses global flags from the provided arguments and populates the GlobalCommandOptions.
+// Uses ParseErrorsAllowlist to gracefully ignore unknown flags (like extension-specific flags).
+// This function is designed to be called BEFORE Cobra command tree construction to enable
+// early access to global flag values for auto-install and other pre-execution logic.
+func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error {
+	globalFlagSet := CreateGlobalFlagSet()
+
+	// Set output to io.Discard to suppress any error messages from pflag
+	// Cobra will handle all user-facing output
+	globalFlagSet.SetOutput(io.Discard)
+
+	// Configure the flag set to ignore unknown flags. This is critical for extension commands
+	// where extension-specific flags are not yet known and will be handled by the extension's
+	// command parser after the extension is loaded.
+	globalFlagSet.ParseErrorsAllowlist = pflag.ParseErrorsAllowlist{UnknownFlags: true}
+
+	// Parse the arguments - unknown flags will be silently ignored
+	err := globalFlagSet.Parse(args)
+
+	// Ignore help errors - let Cobra handle help requests
+	if err != nil && !errors.Is(err, pflag.ErrHelp) {
+		return fmt.Errorf("failed to parse global flags: %w", err)
+	}
+
+	// Bind parsed values to the options struct
+	if strVal, err := globalFlagSet.GetString("cwd"); err == nil {
+		opts.Cwd = strVal
+	}
+
+	if boolVal, err := globalFlagSet.GetBool("debug"); err == nil {
+		opts.EnableDebugLogging = boolVal
+	}
+
+	if boolVal, err := globalFlagSet.GetBool("no-prompt"); err == nil {
+		opts.NoPrompt = boolVal
+	}
+
+	return nil
 }

@@ -46,6 +46,19 @@ var (
 	}
 )
 
+// UnsupportedServiceHostError represents an error when a service host is not supported,
+// including the specific host name and service name for context
+type UnsupportedServiceHostError struct {
+	Host         string
+	ServiceName  string
+	ErrorMessage string
+}
+
+// Error implements the error interface
+func (e *UnsupportedServiceHostError) Error() string {
+	return fmt.Sprintf("service host '%s' for service '%s' is unsupported", e.Host, e.ServiceName)
+}
+
 // ServiceManager provides a management layer for performing operations against an azd service within a project
 // The component performs all of the heavy lifting for executing all lifecycle operations for a service.
 //
@@ -110,6 +123,13 @@ type ServiceManager interface {
 		serviceContext *ServiceContext,
 		progress *async.Progress[ServiceProgress],
 	) (*ServiceDeployResult, error)
+
+	/// GetTargetResource finds and resolves the target Azure resource for the specified service configuration and host
+	GetTargetResource(
+		ctx context.Context,
+		serviceConfig *ServiceConfig,
+		serviceTarget ServiceTarget,
+	) (*environment.TargetResource, error)
 
 	// Gets the framework service for the specified service config
 	// The framework service performs the restoration and building of the service app code
@@ -213,9 +233,20 @@ func (sm *serviceManager) Restore(
 	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceRestoreResult, error) {
-	cachedResult, ok := sm.getOperationResult(serviceConfig, string(ServiceEventRestore))
+	if serviceContext == nil {
+		serviceContext = NewServiceContext()
+	}
+
+	cachedResult, ok := sm.getOperationResult(serviceConfig, ServiceEventRestore)
 	if ok && cachedResult != nil {
-		return cachedResult.(*ServiceRestoreResult), nil
+		restoreResult, ok := cachedResult.(*ServiceRestoreResult)
+		if ok && restoreResult != nil {
+			if err := appendOperationArtifacts(serviceContext, ServiceEventRestore, restoreResult.Artifacts); err != nil {
+				return nil, err
+			}
+
+			return restoreResult, nil
+		}
 	}
 
 	frameworkService, err := sm.GetFrameworkService(ctx, serviceConfig)
@@ -223,14 +254,11 @@ func (sm *serviceManager) Restore(
 		return nil, fmt.Errorf("getting framework services: %w", err)
 	}
 
-	if serviceContext == nil {
-		serviceContext = NewServiceContext()
-	}
-
 	restoreResult, err := runCommand(
 		ctx,
 		ServiceEventRestore,
 		serviceConfig,
+		serviceContext,
 		func() (*ServiceRestoreResult, error) {
 			return frameworkService.Restore(ctx, serviceConfig, serviceContext, progress)
 		},
@@ -241,11 +269,11 @@ func (sm *serviceManager) Restore(
 	}
 
 	// Update service context with restore artifacts
-	if err := serviceContext.Restore.Add(restoreResult.Artifacts...); err != nil {
+	if err := appendOperationArtifacts(serviceContext, ServiceEventRestore, restoreResult.Artifacts); err != nil {
 		return nil, fmt.Errorf("failed to add restore artifacts: %w", err)
 	}
 
-	sm.setOperationResult(serviceConfig, string(ServiceEventRestore), restoreResult)
+	sm.setOperationResult(serviceConfig, ServiceEventRestore, restoreResult)
 	return restoreResult, nil
 }
 
@@ -257,9 +285,20 @@ func (sm *serviceManager) Build(
 	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceBuildResult, error) {
-	cachedResult, ok := sm.getOperationResult(serviceConfig, string(ServiceEventBuild))
+	if serviceContext == nil {
+		serviceContext = NewServiceContext()
+	}
+
+	cachedResult, ok := sm.getOperationResult(serviceConfig, ServiceEventBuild)
 	if ok && cachedResult != nil {
-		return cachedResult.(*ServiceBuildResult), nil
+		buildResult, ok := cachedResult.(*ServiceBuildResult)
+		if ok && buildResult != nil {
+			if err := appendOperationArtifacts(serviceContext, ServiceEventBuild, buildResult.Artifacts); err != nil {
+				return nil, err
+			}
+
+			return buildResult, nil
+		}
 	}
 
 	frameworkService, err := sm.GetFrameworkService(ctx, serviceConfig)
@@ -267,14 +306,11 @@ func (sm *serviceManager) Build(
 		return nil, fmt.Errorf("getting framework services: %w", err)
 	}
 
-	if serviceContext == nil {
-		serviceContext = NewServiceContext()
-	}
-
 	buildResult, err := runCommand(
 		ctx,
 		ServiceEventBuild,
 		serviceConfig,
+		serviceContext,
 		func() (*ServiceBuildResult, error) {
 			return frameworkService.Build(ctx, serviceConfig, serviceContext, progress)
 		},
@@ -285,11 +321,11 @@ func (sm *serviceManager) Build(
 	}
 
 	// Update service context with build artifacts
-	if err := serviceContext.Build.Add(buildResult.Artifacts...); err != nil {
+	if err := appendOperationArtifacts(serviceContext, ServiceEventBuild, buildResult.Artifacts); err != nil {
 		return nil, fmt.Errorf("failed to add build artifacts: %w", err)
 	}
 
-	sm.setOperationResult(serviceConfig, string(ServiceEventBuild), buildResult)
+	sm.setOperationResult(serviceConfig, ServiceEventBuild, buildResult)
 	return buildResult, nil
 }
 
@@ -303,9 +339,20 @@ func (sm *serviceManager) Package(
 	progress *async.Progress[ServiceProgress],
 	options *PackageOptions,
 ) (*ServicePackageResult, error) {
-	cachedResult, ok := sm.getOperationResult(serviceConfig, string(ServiceEventPackage))
+	if serviceContext == nil {
+		serviceContext = NewServiceContext()
+	}
+
+	cachedResult, ok := sm.getOperationResult(serviceConfig, ServiceEventPackage)
 	if ok && cachedResult != nil {
-		return cachedResult.(*ServicePackageResult), nil
+		packageResult, ok := cachedResult.(*ServicePackageResult)
+		if ok && packageResult != nil {
+			if err := appendOperationArtifacts(serviceContext, ServiceEventPackage, packageResult.Artifacts); err != nil {
+				return nil, err
+			}
+
+			return packageResult, nil
+		}
 	}
 
 	if options == nil {
@@ -320,15 +367,6 @@ func (sm *serviceManager) Package(
 	serviceTarget, err := sm.GetServiceTarget(ctx, serviceConfig)
 	if err != nil {
 		return nil, fmt.Errorf("getting service target: %w", err)
-	}
-
-	if serviceContext == nil {
-		serviceContext = NewServiceContext()
-	}
-
-	eventArgs := ServiceLifecycleEventArgs{
-		Project: serviceConfig.Project,
-		Service: serviceConfig,
 	}
 
 	// Get the language / framework requirements
@@ -348,35 +386,40 @@ func (sm *serviceManager) Package(
 		}
 	}
 
-	var packageResult *ServicePackageResult
+	packageResult, err := runCommand(
+		ctx,
+		ServiceEventPackage,
+		serviceConfig,
+		serviceContext,
+		func() (*ServicePackageResult, error) {
+			frameworkPackageResult, err := frameworkService.Package(ctx, serviceConfig, serviceContext, progress)
+			if err != nil {
+				return nil, err
+			}
 
-	err = serviceConfig.Invoke(ctx, ServiceEventPackage, eventArgs, func() error {
-		frameworkPackageResult, err := frameworkService.Package(ctx, serviceConfig, serviceContext, progress)
-		if err != nil {
-			return err
-		}
+			if err := appendOperationArtifacts(
+				serviceContext, ServiceEventPackage, frameworkPackageResult.Artifacts); err != nil {
+				return nil, fmt.Errorf("failed to add framework package artifacts to service context: %w", err)
+			}
 
-		if err := serviceContext.Package.Add(frameworkPackageResult.Artifacts...); err != nil {
-			return fmt.Errorf("failed to add framework package artifacts to service context: %w", err)
-		}
+			serviceTargetPackageResult, err := serviceTarget.Package(ctx, serviceConfig, serviceContext, progress)
+			if err != nil {
+				return nil, err
+			}
 
-		serviceTargetPackageResult, err := serviceTarget.Package(ctx, serviceConfig, serviceContext, progress)
-		if err != nil {
-			return err
-		}
+			if err := appendOperationArtifacts(
+				serviceContext, ServiceEventPackage, serviceTargetPackageResult.Artifacts); err != nil {
+				return nil, fmt.Errorf("failed to add service target package artifacts to service context: %w", err)
+			}
 
-		if err := serviceContext.Package.Add(serviceTargetPackageResult.Artifacts...); err != nil {
-			return fmt.Errorf("failed to add service target package artifacts to service context: %w", err)
-		}
+			packageResult := &ServicePackageResult{
+				Artifacts: serviceContext.Package,
+			}
 
-		packageResult = &ServicePackageResult{
-			Artifacts: serviceContext.Package,
-		}
-
-		sm.setOperationResult(serviceConfig, string(ServiceEventPackage), packageResult)
-
-		return nil
-	})
+			sm.setOperationResult(serviceConfig, ServiceEventPackage, packageResult)
+			return packageResult, nil
+		},
+	)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed packaging service '%s': %w", serviceConfig.Name, err)
@@ -433,13 +476,20 @@ func (sm *serviceManager) Publish(
 	progress *async.Progress[ServiceProgress],
 	publishOptions *PublishOptions,
 ) (*ServicePublishResult, error) {
-	cachedResult, ok := sm.getOperationResult(serviceConfig, string(ServiceEventPublish))
-	if ok && cachedResult != nil {
-		return cachedResult.(*ServicePublishResult), nil
-	}
-
 	if serviceContext == nil {
 		serviceContext = NewServiceContext()
+	}
+
+	cachedResult, ok := sm.getOperationResult(serviceConfig, ServiceEventPublish)
+	if ok && cachedResult != nil {
+		publishResult, ok := cachedResult.(*ServicePublishResult)
+		if ok && publishResult != nil {
+			if err := appendOperationArtifacts(serviceContext, ServiceEventPublish, publishResult.Artifacts); err != nil {
+				return nil, err
+			}
+
+			return publishResult, nil
+		}
 	}
 
 	// Ensure package has been performed if no package artifacts exist
@@ -454,7 +504,7 @@ func (sm *serviceManager) Publish(
 		return nil, fmt.Errorf("getting service target: %w", err)
 	}
 
-	targetResource, err := sm.getTargetResourceForService(ctx, serviceConfig, serviceTarget)
+	targetResource, err := sm.GetTargetResource(ctx, serviceConfig, serviceTarget)
 	if err != nil {
 		return nil, fmt.Errorf("getting target resource: %w", err)
 	}
@@ -463,6 +513,7 @@ func (sm *serviceManager) Publish(
 		ctx,
 		ServiceEventPublish,
 		serviceConfig,
+		serviceContext,
 		func() (*ServicePublishResult, error) {
 			return serviceTarget.Publish(ctx, serviceConfig, serviceContext, targetResource, progress, publishOptions)
 		},
@@ -473,11 +524,11 @@ func (sm *serviceManager) Publish(
 	}
 
 	// Update service context with publish artifacts
-	if err := serviceContext.Publish.Add(publishResult.Artifacts...); err != nil {
+	if err := appendOperationArtifacts(serviceContext, ServiceEventPublish, publishResult.Artifacts); err != nil {
 		return nil, fmt.Errorf("failed to add publish artifacts: %w", err)
 	}
 
-	sm.setOperationResult(serviceConfig, string(ServiceEventPublish), publishResult)
+	sm.setOperationResult(serviceConfig, ServiceEventPublish, publishResult)
 	return publishResult, nil
 }
 
@@ -490,13 +541,20 @@ func (sm *serviceManager) Deploy(
 	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
-	cachedResult, ok := sm.getOperationResult(serviceConfig, string(ServiceEventDeploy))
-	if ok && cachedResult != nil {
-		return cachedResult.(*ServiceDeployResult), nil
-	}
-
 	if serviceContext == nil {
 		serviceContext = NewServiceContext()
+	}
+
+	cachedResult, ok := sm.getOperationResult(serviceConfig, ServiceEventDeploy)
+	if ok && cachedResult != nil {
+		deployResult, ok := cachedResult.(*ServiceDeployResult)
+		if ok && deployResult != nil {
+			if err := appendOperationArtifacts(serviceContext, ServiceEventDeploy, deployResult.Artifacts); err != nil {
+				return nil, err
+			}
+
+			return deployResult, nil
+		}
 	}
 
 	// Ensure package has been performed if no package artifacts exist
@@ -518,7 +576,7 @@ func (sm *serviceManager) Deploy(
 		return nil, fmt.Errorf("getting service target: %w", err)
 	}
 
-	targetResource, err := sm.getTargetResourceForService(ctx, serviceConfig, serviceTarget)
+	targetResource, err := sm.GetTargetResource(ctx, serviceConfig, serviceTarget)
 	if err != nil {
 		return nil, fmt.Errorf("getting target resource: %w", err)
 	}
@@ -527,6 +585,7 @@ func (sm *serviceManager) Deploy(
 		ctx,
 		ServiceEventDeploy,
 		serviceConfig,
+		serviceContext,
 		func() (*ServiceDeployResult, error) {
 			return serviceTarget.Deploy(ctx, serviceConfig, serviceContext, targetResource, progress)
 		},
@@ -537,7 +596,7 @@ func (sm *serviceManager) Deploy(
 	}
 
 	// Update service context with deploy artifacts
-	if err := serviceContext.Deploy.Add(deployResult.Artifacts...); err != nil {
+	if err := appendOperationArtifacts(serviceContext, ServiceEventDeploy, deployResult.Artifacts); err != nil {
 		return nil, fmt.Errorf("failed to add deploy artifacts: %w", err)
 	}
 
@@ -559,7 +618,7 @@ func (sm *serviceManager) Deploy(
 		}
 	}
 
-	sm.setOperationResult(serviceConfig, string(ServiceEventDeploy), deployResult)
+	sm.setOperationResult(serviceConfig, ServiceEventDeploy, deployResult)
 	return deployResult, nil
 }
 
@@ -581,12 +640,12 @@ func (sm *serviceManager) GetServiceTarget(ctx context.Context, serviceConfig *S
 
 	if err := sm.serviceLocator.ResolveNamed(host, &target); err != nil {
 		if errors.Is(err, ioc.ErrResolveInstance) {
+			unsupportedErr := &UnsupportedServiceHostError{
+				Host:        host,
+				ServiceName: serviceConfig.Name,
+			}
 			return nil, &internal.ErrorWithSuggestion{
-				Err: fmt.Errorf(
-					"service host '%s' for service '%s' is unsupported",
-					host,
-					serviceConfig.Name,
-				),
+				Err: unsupportedErr,
 				Suggestion: fmt.Sprintf(
 					"Suggestion: install an extension that provides this host or update azure.yaml "+
 						"to use one of the supported hosts: %s",
@@ -696,16 +755,16 @@ func OverriddenEndpoints(ctx context.Context, serviceConfig *ServiceConfig, env 
 }
 
 // Attempts to retrieve the result of a previous operation from the cache
-func (sm *serviceManager) getOperationResult(serviceConfig *ServiceConfig, operationName string) (any, bool) {
-	key := fmt.Sprintf("%s:%s:%s", sm.env.Name(), serviceConfig.Name, operationName)
+func (sm *serviceManager) getOperationResult(serviceConfig *ServiceConfig, eventType ext.Event) (any, bool) {
+	key := fmt.Sprintf("%s:%s:%s", sm.env.Name(), serviceConfig.Name, eventType)
 	value, ok := sm.operationCache[key]
 
 	return value, ok
 }
 
 // Sets the result of an operation in the cache
-func (sm *serviceManager) setOperationResult(serviceConfig *ServiceConfig, operationName string, result any) {
-	key := fmt.Sprintf("%s:%s:%s", sm.env.Name(), serviceConfig.Name, operationName)
+func (sm *serviceManager) setOperationResult(serviceConfig *ServiceConfig, eventType ext.Event, result any) {
+	key := fmt.Sprintf("%s:%s:%s", sm.env.Name(), serviceConfig.Name, eventType)
 	sm.operationCache[key] = result
 }
 
@@ -725,15 +784,52 @@ func (sm *serviceManager) isComponentInitialized(serviceConfig *ServiceConfig, c
 	return false
 }
 
+// appendOperationArtifacts adds result artifacts to the appropriate phase in the service context
+// If serviceContext is nil, it will be ignored (caller should handle serviceContext creation)
+func appendOperationArtifacts(serviceContext *ServiceContext, eventType ext.Event, artifacts ArtifactCollection) error {
+	if serviceContext == nil {
+		return nil
+	}
+
+	var targetCollection *ArtifactCollection
+	switch eventType {
+	case ServiceEventRestore:
+		targetCollection = &serviceContext.Restore
+	case ServiceEventBuild:
+		targetCollection = &serviceContext.Build
+	case ServiceEventPackage:
+		targetCollection = &serviceContext.Package
+	case ServiceEventPublish:
+		targetCollection = &serviceContext.Publish
+	case ServiceEventDeploy:
+		targetCollection = &serviceContext.Deploy
+	default:
+		return fmt.Errorf("invalid operation phase '%s', must be one of: %s, %s, %s, %s, %s",
+			eventType, ServiceEventRestore, ServiceEventBuild, ServiceEventPackage, ServiceEventPublish, ServiceEventDeploy)
+	}
+
+	if err := targetCollection.Add(artifacts...); err != nil {
+		return fmt.Errorf("failed to add %s artifacts to service context: %w", eventType, err)
+	}
+
+	return nil
+}
+
 func runCommand[T any](
 	ctx context.Context,
 	eventName ext.Event,
 	serviceConfig *ServiceConfig,
+	serviceContext *ServiceContext,
 	fn func() (T, error),
 ) (T, error) {
+	if serviceContext == nil {
+		serviceContext = NewServiceContext()
+	}
+
 	eventArgs := ServiceLifecycleEventArgs{
-		Project: serviceConfig.Project,
-		Service: serviceConfig,
+		Project:        serviceConfig.Project,
+		Service:        serviceConfig,
+		ServiceContext: serviceContext,
 	}
 
 	var result T
@@ -747,25 +843,14 @@ func runCommand[T any](
 	return result, err
 }
 
-// getTargetResourceForService resolves the target resource for a service configuration.
-// For DotNetContainerAppTarget, it handles container app environment resolution.
-// For other service types, it delegates to the resource manager.
-type targetResourceResolver interface {
-	ResolveTargetResource(
-		ctx context.Context,
-		subscriptionId string,
-		serviceConfig *ServiceConfig,
-		defaultResolver func() (*environment.TargetResource, error),
-	) (*environment.TargetResource, error)
-}
-
-func (sm *serviceManager) getTargetResourceForService(
+// / GetTargetResource finds and resolves the target Azure resource for the specified service configuration and host
+func (sm *serviceManager) GetTargetResource(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	serviceTarget ServiceTarget,
 ) (*environment.TargetResource, error) {
 	if serviceTarget != nil {
-		if resolver, ok := serviceTarget.(targetResourceResolver); ok {
+		if resolver, ok := serviceTarget.(TargetResourceResolver); ok {
 			// Callback for computing the default target resource
 			defaultResolver := func() (*environment.TargetResource, error) {
 				return sm.resourceManager.GetTargetResource(ctx, sm.env.GetSubscriptionId(), serviceConfig)

@@ -184,10 +184,17 @@ elseif ($IsMacOS) {
     Write-Host $msg
 }
 
+# Set output filename to azd (default would be azure-dev based on module path)
+$outputFlag = "-o=azd"
+if ($IsWindows) {
+    $outputFlag = "-o=azd.exe"
+}
+
 # collect flags
 $buildFlags += @(
     $tagsFlag,
-    $ldFlag
+    $ldFlag,
+    $outputFlag
 )
 
 function PrintFlags() {

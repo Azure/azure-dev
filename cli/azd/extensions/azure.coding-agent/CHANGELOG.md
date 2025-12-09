@@ -1,5 +1,24 @@
 # Release History
 
+## 0.5.2
+
+### Bugs fixed
+
+- Managed identity creation code was running multiple times, instead of a single time. This should not have broken anything, as the call itself is idempotent but calling it repeatedly is unnecessary.
+- `--managed-identity-name`, when specified, now assumes you're creating a credential, eliminating a question from the list.
+
+## 0.5.1
+
+### Bugs fixed
+
+- Updated message, and help message, when prompting for the Azure subscription to be more descriptive.
+
+## 0.5.0
+
+### Bugs fixed
+
+- Browser now launches properly on Windows
+
 ## 0.4.0
 
 ### Features Added

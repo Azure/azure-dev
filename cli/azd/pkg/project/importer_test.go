@@ -190,17 +190,17 @@ func TestImportManagerProjectInfrastructureDefaults(t *testing.T) {
 	// ProjectInfrastructure does defaulting when no infra exists (fallback path)
 	r, e := manager.ProjectInfrastructure(*mockContext.Context, &ProjectConfig{})
 	require.NoError(t, e)
-	require.Equal(t, DefaultPath, r.Options.Path)
-	require.Equal(t, DefaultModule, r.Options.Module)
+	require.Equal(t, DefaultProvisioningOptions.Path, r.Options.Path)
+	require.Equal(t, DefaultProvisioningOptions.Module, r.Options.Module)
 
 	// adding infra folder to test defaults
-	expectedDefaultFolder := DefaultPath
+	expectedDefaultFolder := DefaultProvisioningOptions.Path
 	err := os.Mkdir(expectedDefaultFolder, os.ModePerm)
 	require.NoError(t, err)
 	defer os.RemoveAll(expectedDefaultFolder)
 
 	// Create the file
-	expectedDefaultModule := DefaultModule
+	expectedDefaultModule := DefaultProvisioningOptions.Module
 	path := filepath.Join(expectedDefaultFolder, expectedDefaultModule)
 	err = os.WriteFile(path, []byte(""), 0600)
 	require.NoError(t, err)
@@ -313,12 +313,12 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 	})
 
 	// adding infra folder to test defaults
-	err := os.Mkdir(DefaultPath, os.ModePerm)
+	err := os.Mkdir(DefaultProvisioningOptions.Path, os.ModePerm)
 	require.NoError(t, err)
-	defer os.RemoveAll(DefaultPath)
+	defer os.RemoveAll(DefaultProvisioningOptions.Path)
 
 	// Simulating the scenario where a customer is using Aspire and has an infra folder with a module that is not the default
-	path := filepath.Join(DefaultPath, "customModule")
+	path := filepath.Join(DefaultProvisioningOptions.Path, "customModule")
 	err = os.WriteFile(path, []byte(""), 0600)
 	require.NoError(t, err)
 	defer os.Remove(path)
@@ -344,7 +344,7 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 	// dotnet_importer creates a temp path for the infrastructure.
 	// We can't figure the exact path, but it should contain the `azd-infra` label in it
 	require.Contains(t, r.Options.Path, "azd-infra")
-	require.Equal(t, DefaultModule, r.Options.Module)
+	require.Equal(t, DefaultProvisioningOptions.Module, r.Options.Module)
 	require.Equal(t, r.cleanupDir, r.Options.Path)
 
 	// If we fetch the infrastructure again, we expect that the manifest is already cached and `dotnet run` on the apphost
@@ -434,7 +434,7 @@ func TestImportManager_GenerateAllInfrastructure_FromResources(t *testing.T) {
 		"resources.bicep",
 	}
 	for _, f := range files {
-		_, err := projectFs.Open(filepath.Join(DefaultPath, f))
+		_, err := projectFs.Open(filepath.Join(DefaultProvisioningOptions.Path, f))
 		assert.NoError(t, err, "file %s should exist", f)
 	}
 }

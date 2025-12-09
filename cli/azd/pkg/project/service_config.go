@@ -55,8 +55,14 @@ type ServiceConfig struct {
 	// Computed lazily by useDotnetPublishForDockerBuild and cached. This is true when the project
 	// is a dotnet project and there is not an explicit Dockerfile in the project directory.
 	useDotNetPublishForDockerBuild *bool
+	// Environment variables to set for the service
+	Environment osutil.ExpandableMap `yaml:"env,omitempty"`
 
 	*ext.EventDispatcher[ServiceLifecycleEventArgs] `yaml:"-"`
+
+	// Turns service into a service that is only to be built but not deployed.
+	// This is currently used by Aspire.
+	BuildOnly bool `yaml:"-"`
 }
 
 type DotNetContainerAppOptions struct {
@@ -65,6 +71,14 @@ type DotNetContainerAppOptions struct {
 	ProjectName string
 	// ContainerImage is non-empty when a prebuilt container image is being used.
 	ContainerImage string
+	// ContainerFiles is a list of files to include in the container image.
+	ContainerFiles map[string]ContainerFile
+}
+
+type ContainerFile struct {
+	ServiceConfig *ServiceConfig
+	Sources       []string
+	Destination   string
 }
 
 // Path returns the fully qualified path to the project

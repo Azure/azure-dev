@@ -7,7 +7,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
+	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 )
@@ -21,6 +23,7 @@ var (
 )
 
 type EventDispatcher[T any] struct {
+	mu         sync.RWMutex
 	handlers   map[Event][]EventHandlerFn[T]
 	eventNames map[Event]struct{}
 }
@@ -40,23 +43,44 @@ func NewEventDispatcher[T any](validEventNames ...Event) *EventDispatcher[T] {
 }
 
 // Adds an event handler for the specified event name
-func (ed *EventDispatcher[T]) AddHandler(name Event, handler EventHandlerFn[T]) error {
+func (ed *EventDispatcher[T]) AddHandler(ctx context.Context, name Event, handler EventHandlerFn[T]) error {
 	if err := ed.validateEvent(name); err != nil {
 		return err
 	}
 
+	ed.mu.Lock()
+	defer ed.mu.Unlock()
+
 	events := ed.handlers[name]
+
+	// Check if this handler is already registered for this event
+	handlerStr := fmt.Sprintf("%v", handler)
+	for _, existingHandler := range events {
+		if fmt.Sprintf("%v", existingHandler) == handlerStr {
+			log.Printf("Warning: Handler for event '%s' is already registered, skipping duplicate registration", name)
+			return nil
+		}
+	}
+
 	events = append(events, handler)
 	ed.handlers[name] = events
+
+	go func(ctx context.Context, name Event, handler EventHandlerFn[T]) {
+		<-ctx.Done()
+		ed.RemoveHandler(ctx, name, handler)
+	}(ctx, name, handler)
 
 	return nil
 }
 
 // Removes the event handler for the specified event name
-func (ed *EventDispatcher[T]) RemoveHandler(name Event, handler EventHandlerFn[T]) error {
+func (ed *EventDispatcher[T]) RemoveHandler(ctx context.Context, name Event, handler EventHandlerFn[T]) error {
 	if err := ed.validateEvent(name); err != nil {
 		return err
 	}
+
+	ed.mu.Lock()
+	defer ed.mu.Unlock()
 
 	newHandler := fmt.Sprintf("%v", handler)
 	events := ed.handlers[name]
@@ -78,8 +102,12 @@ func (ed *EventDispatcher[T]) RaiseEvent(ctx context.Context, name Event, eventA
 		return err
 	}
 
+	ed.mu.RLock()
+	handlers := make([]EventHandlerFn[T], len(ed.handlers[name]))
+	copy(handlers, ed.handlers[name])
+	ed.mu.RUnlock()
+
 	handlerErrors := []error{}
-	handlers := ed.handlers[name]
 
 	// TODO: Opportunity to dispatch these event handlers in parallel if needed
 	for _, handler := range handlers {

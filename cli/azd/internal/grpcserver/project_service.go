@@ -9,7 +9,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
@@ -53,6 +52,52 @@ func NewProjectService(
 		importManager:  importManager,
 		ghCli:          ghCli,
 	}
+}
+
+// reloadAndCacheProjectConfig reloads the project configuration from disk and updates the lazy cache.
+// It preserves the EventDispatcher from the previous instance to maintain event handler continuity.
+func (s *projectService) reloadAndCacheProjectConfig(ctx context.Context, projectPath string) error {
+	// Get the current config to preserve the EventDispatcher
+	oldConfig, err := s.lazyProjectConfig.GetValue()
+	if err != nil {
+		// If we can't get old config, just reload without preserving dispatcher
+		reloadedConfig, err := project.Load(ctx, projectPath)
+		if err != nil {
+			return err
+		}
+		s.lazyProjectConfig.SetValue(reloadedConfig)
+		return nil
+	}
+
+	// Reload the config from disk
+	reloadedConfig, err := project.Load(ctx, projectPath)
+	if err != nil {
+		return err
+	}
+
+	// Preserve the EventDispatcher from the old config
+	if oldConfig.EventDispatcher != nil {
+		reloadedConfig.EventDispatcher = oldConfig.EventDispatcher
+	}
+
+	// Update the lazy cache
+	s.lazyProjectConfig.SetValue(reloadedConfig)
+	return nil
+}
+
+// validateServiceExists checks if a service exists in the project configuration.
+// Returns an error if the service doesn't exist.
+func (s *projectService) validateServiceExists(ctx context.Context, serviceName string) error {
+	projectConfig, err := s.lazyProjectConfig.GetValue()
+	if err != nil {
+		return err
+	}
+
+	if projectConfig.Services == nil || projectConfig.Services[serviceName] == nil {
+		return fmt.Errorf("service '%s' not found", serviceName)
+	}
+
+	return nil
 }
 
 // Get retrieves the complete project configuration including all services and metadata.
@@ -169,33 +214,35 @@ func (s *projectService) AddService(ctx context.Context, req *azdext.AddServiceR
 	return &azdext.EmptyResponse{}, nil
 }
 
-// GetConfigSection retrieves a configuration section from the project's AdditionalProperties.
-// This method provides access to extension-specific configuration data stored in the project
-// configuration using dot-notation paths (e.g., "extension.database.connection").
+// GetConfigSection retrieves a configuration section from the project configuration.
+// This method provides access to both core struct fields (e.g., "infra", "services")
+// and extension-specific configuration data stored in AdditionalProperties using
+// dot-notation paths (e.g., "extension.database.connection", "infra").
 //
 // Parameters:
-//   - req.Path: Dot-notation path to the configuration section (e.g., "custom.settings")
+//   - req.Path: Dot-notation path to the configuration section (e.g., "custom.settings", "infra")
 //
 // Returns:
 //   - Section: The configuration section as a protobuf Struct if found
 //   - Found: Boolean indicating whether the section exists
 //
-// If AdditionalProperties is nil, it's treated as an empty configuration.
+// Examples:
+//   - "infra" - retrieves the infrastructure configuration section
+//   - "custom.database" - retrieves custom extension configuration
 func (s *projectService) GetConfigSection(
 	ctx context.Context, req *azdext.GetProjectConfigSectionRequest,
 ) (*azdext.GetProjectConfigSectionResponse, error) {
-	projectConfig, err := s.lazyProjectConfig.GetValue()
+	azdContext, err := s.lazyAzdContext.GetValue()
 	if err != nil {
 		return nil, err
 	}
 
-	// Initialize empty map if AdditionalProperties is nil
-	additionalProps := projectConfig.AdditionalProperties
-	if additionalProps == nil {
-		additionalProps = make(map[string]any)
+	// Load entire project config as a map (includes core fields and AdditionalProperties)
+	cfg, err := project.LoadConfig(ctx, azdContext.ProjectPath())
+	if err != nil {
+		return nil, err
 	}
 
-	cfg := config.NewConfig(additionalProps)
 	section, found := cfg.GetMap(req.Path)
 
 	if !found {
@@ -216,35 +263,38 @@ func (s *projectService) GetConfigSection(
 	}, nil
 }
 
-// GetConfigValue retrieves a specific configuration value from the project's AdditionalProperties.
-// This method provides access to individual configuration values stored in the project
-// configuration using dot-notation paths (e.g., "extension.database.port").
+// GetConfigValue retrieves a specific configuration value from the project configuration.
+// This method provides access to both core struct fields (e.g., "name", "infra.provider")
+// and extension-specific configuration values stored in AdditionalProperties using
+// dot-notation paths (e.g., "extension.database.port", "infra.path").
 //
 // Parameters:
-//   - req.Path: Dot-notation path to the configuration value (e.g., "custom.settings.timeout")
+//   - req.Path: Dot-notation path to the configuration value (e.g., "custom.settings.timeout", "infra.provider")
 //
 // Returns:
 //   - Value: The configuration value as a protobuf Value if found
 //   - Found: Boolean indicating whether the value exists
 //
 // Supports all JSON types: strings, numbers, booleans, objects, and arrays.
-// If AdditionalProperties is nil, it's treated as an empty configuration.
+// Examples:
+//   - "name" - retrieves the project name
+//   - "infra.provider" - retrieves the infrastructure provider
+//   - "custom.timeout" - retrieves custom extension configuration
 func (s *projectService) GetConfigValue(
 	ctx context.Context,
 	req *azdext.GetProjectConfigValueRequest,
 ) (*azdext.GetProjectConfigValueResponse, error) {
-	projectConfig, err := s.lazyProjectConfig.GetValue()
+	azdContext, err := s.lazyAzdContext.GetValue()
 	if err != nil {
 		return nil, err
 	}
 
-	// Initialize empty map if AdditionalProperties is nil
-	additionalProps := projectConfig.AdditionalProperties
-	if additionalProps == nil {
-		additionalProps = make(map[string]any)
+	// Load entire project config as a map (includes core fields and AdditionalProperties)
+	cfg, err := project.LoadConfig(ctx, azdContext.ProjectPath())
+	if err != nil {
+		return nil, err
 	}
 
-	cfg := config.NewConfig(additionalProps)
 	value, ok := cfg.Get(req.Path)
 
 	if !ok {
@@ -265,16 +315,16 @@ func (s *projectService) GetConfigValue(
 	}, nil
 }
 
-// SetConfigSection sets or updates a configuration section in the project's AdditionalProperties.
+// SetConfigSection sets or updates a configuration section in the project configuration.
 // This method allows extensions to store complex configuration data as nested objects
-// using dot-notation paths. The changes are immediately persisted to the project file.
+// (both core fields and AdditionalProperties) using dot-notation paths.
+// The changes are immediately persisted to the project file.
 //
 // Parameters:
-//   - req.Path: Dot-notation path where to store the section (e.g., "custom.database")
+//   - req.Path: Dot-notation path where to store the section (e.g., "custom.database", "infra.module")
 //   - req.Section: The configuration section as a protobuf Struct containing the data
 //
 // If the path doesn't exist, it will be created. Existing data at the path will be replaced.
-// If AdditionalProperties is nil, it will be initialized as an empty map.
 func (s *projectService) SetConfigSection(
 	ctx context.Context,
 	req *azdext.SetProjectConfigSectionRequest,
@@ -284,18 +334,11 @@ func (s *projectService) SetConfigSection(
 		return nil, err
 	}
 
-	projectConfig, err := s.lazyProjectConfig.GetValue()
+	// Load entire project config as a map
+	cfg, err := project.LoadConfig(ctx, azdContext.ProjectPath())
 	if err != nil {
 		return nil, err
 	}
-
-	// Initialize empty map if AdditionalProperties is nil
-	additionalProps := projectConfig.AdditionalProperties
-	if additionalProps == nil {
-		additionalProps = make(map[string]any)
-	}
-
-	cfg := config.NewConfig(additionalProps)
 
 	// Convert protobuf Struct to map
 	sectionMap := req.Section.AsMap()
@@ -303,26 +346,29 @@ func (s *projectService) SetConfigSection(
 		return nil, fmt.Errorf("failed to set config section: %w", err)
 	}
 
-	// Update project AdditionalProperties and save
-	projectConfig.AdditionalProperties = cfg.Raw()
-	if err := project.Save(ctx, projectConfig, azdContext.ProjectPath()); err != nil {
+	// Save the updated configuration (validates structure)
+	if err := project.SaveConfig(ctx, cfg, azdContext.ProjectPath()); err != nil {
+		return nil, err
+	}
+
+	// Reload and update the lazy cache, preserving the EventDispatcher
+	if err := s.reloadAndCacheProjectConfig(ctx, azdContext.ProjectPath()); err != nil {
 		return nil, err
 	}
 
 	return &azdext.EmptyResponse{}, nil
 }
 
-// SetConfigValue sets or updates a specific configuration value in the project's AdditionalProperties.
-// This method allows extensions to store individual configuration values using dot-notation paths.
-// The changes are immediately persisted to the project file.
+// SetConfigValue sets or updates a specific configuration value in the project configuration.
+// This method allows extensions to store individual configuration values (both core fields and
+// AdditionalProperties) using dot-notation paths. The changes are immediately persisted to the project file.
 //
 // Parameters:
-//   - req.Path: Dot-notation path where to store the value (e.g., "custom.settings.timeout")
+//   - req.Path: Dot-notation path where to store the value (e.g., "custom.settings.timeout", "name", "infra.provider")
 //   - req.Value: The configuration value as a protobuf Value (string, number, boolean, etc.)
 //
 // If the path doesn't exist, intermediate objects will be created automatically.
 // Existing data at the path will be replaced.
-// If AdditionalProperties is nil, it will be initialized as an empty map.
 func (s *projectService) SetConfigValue(
 	ctx context.Context,
 	req *azdext.SetProjectConfigValueRequest,
@@ -332,18 +378,11 @@ func (s *projectService) SetConfigValue(
 		return nil, err
 	}
 
-	projectConfig, err := s.lazyProjectConfig.GetValue()
+	// Load entire project config as a map
+	cfg, err := project.LoadConfig(ctx, azdContext.ProjectPath())
 	if err != nil {
 		return nil, err
 	}
-
-	// Initialize empty map if AdditionalProperties is nil
-	additionalProps := projectConfig.AdditionalProperties
-	if additionalProps == nil {
-		additionalProps = make(map[string]any)
-	}
-
-	cfg := config.NewConfig(additionalProps)
 
 	// Convert protobuf Value to interface{}
 	value := req.Value.AsInterface()
@@ -351,21 +390,25 @@ func (s *projectService) SetConfigValue(
 		return nil, fmt.Errorf("failed to set config value: %w", err)
 	}
 
-	// Update project AdditionalProperties and save
-	projectConfig.AdditionalProperties = cfg.Raw()
-	if err := project.Save(ctx, projectConfig, azdContext.ProjectPath()); err != nil {
+	// Save the updated configuration (validates structure)
+	if err := project.SaveConfig(ctx, cfg, azdContext.ProjectPath()); err != nil {
+		return nil, err
+	}
+
+	// Reload and update the lazy cache, preserving the EventDispatcher
+	if err := s.reloadAndCacheProjectConfig(ctx, azdContext.ProjectPath()); err != nil {
 		return nil, err
 	}
 
 	return &azdext.EmptyResponse{}, nil
 }
 
-// UnsetConfig removes a configuration value or section from the project's AdditionalProperties.
-// This method allows extensions to clean up configuration data using dot-notation paths.
-// The changes are immediately persisted to the project file.
+// UnsetConfig removes a configuration value or section from the project configuration.
+// This method allows extensions to clean up configuration data (both core fields and AdditionalProperties)
+// using dot-notation paths. The changes are immediately persisted to the project file.
 //
 // Parameters:
-//   - req.Path: Dot-notation path to the configuration to remove (e.g., "custom.settings.timeout")
+//   - req.Path: Dot-notation path to the configuration to remove (e.g., "custom.settings.timeout", "infra.module")
 //
 // If the path points to a value, only that value is removed.
 // If the path points to a section, the entire section and all its contents are removed.
@@ -379,67 +422,69 @@ func (s *projectService) UnsetConfig(
 		return nil, err
 	}
 
-	projectConfig, err := s.lazyProjectConfig.GetValue()
+	// Load entire project config as a map
+	cfg, err := project.LoadConfig(ctx, azdContext.ProjectPath())
 	if err != nil {
 		return nil, err
 	}
 
-	// Initialize empty map if AdditionalProperties is nil
-	additionalProps := projectConfig.AdditionalProperties
-	if additionalProps == nil {
-		additionalProps = make(map[string]any)
-	}
-
-	cfg := config.NewConfig(additionalProps)
 	if err := cfg.Unset(req.Path); err != nil {
 		return nil, fmt.Errorf("failed to unset config: %w", err)
 	}
 
-	// Update project AdditionalProperties and save
-	projectConfig.AdditionalProperties = cfg.Raw()
-	if err := project.Save(ctx, projectConfig, azdContext.ProjectPath()); err != nil {
+	// Save the updated configuration (validates structure)
+	if err := project.SaveConfig(ctx, cfg, azdContext.ProjectPath()); err != nil {
+		return nil, err
+	}
+
+	// Reload and update the lazy cache, preserving the EventDispatcher
+	if err := s.reloadAndCacheProjectConfig(ctx, azdContext.ProjectPath()); err != nil {
 		return nil, err
 	}
 
 	return &azdext.EmptyResponse{}, nil
 }
 
-// GetServiceConfigSection retrieves a configuration section from a specific service's AdditionalProperties.
-// This method provides access to service-specific extension configuration data using dot-notation paths.
+// GetServiceConfigSection retrieves a configuration section from a specific service's configuration.
+// This method provides access to service-specific configuration data (both core fields like "host", "project"
+// and AdditionalProperties) using dot-notation paths.
 //
 // Parameters:
 //   - req.ServiceName: Name of the service to retrieve configuration from
-//   - req.Path: Dot-notation path to the configuration section (e.g., "custom.database")
+//   - req.Path: Dot-notation path to the configuration section (e.g., "custom.database", or empty for entire service config)
 //
 // Returns:
 //   - Section: The configuration section as a protobuf Struct if found
 //   - Found: Boolean indicating whether the section exists
 //
 // Returns an error if the specified service doesn't exist in the project.
-// If the service's AdditionalProperties is nil, it's treated as an empty configuration.
 func (s *projectService) GetServiceConfigSection(
 	ctx context.Context,
 	req *azdext.GetServiceConfigSectionRequest,
 ) (*azdext.GetServiceConfigSectionResponse, error) {
-	projectConfig, err := s.lazyProjectConfig.GetValue()
+	azdContext, err := s.lazyAzdContext.GetValue()
 	if err != nil {
 		return nil, err
 	}
 
-	// Check if service exists
-	service, exists := projectConfig.Services[req.ServiceName]
-	if !exists {
-		return nil, fmt.Errorf("service '%s' not found", req.ServiceName)
+	// Validate service exists
+	if err := s.validateServiceExists(ctx, req.ServiceName); err != nil {
+		return nil, err
 	}
 
-	// Initialize empty map if AdditionalProperties is nil
-	additionalProps := service.AdditionalProperties
-	if additionalProps == nil {
-		additionalProps = make(map[string]any)
+	// Load entire project config as a map
+	cfg, err := project.LoadConfig(ctx, azdContext.ProjectPath())
+	if err != nil {
+		return nil, err
 	}
 
-	cfg := config.NewConfig(additionalProps)
-	section, found := cfg.GetMap(req.Path)
+	// Construct path to service config section: "services.<serviceName>.<path>"
+	servicePath := fmt.Sprintf("services.%s", req.ServiceName)
+	if req.Path != "" {
+		servicePath = fmt.Sprintf("%s.%s", servicePath, req.Path)
+	}
+
+	section, found := cfg.GetMap(servicePath)
 
 	if !found {
 		return &azdext.GetServiceConfigSectionResponse{
@@ -459,12 +504,13 @@ func (s *projectService) GetServiceConfigSection(
 	}, nil
 }
 
-// GetServiceConfigValue retrieves a specific configuration value from a service's AdditionalProperties.
-// This method provides access to individual service-specific configuration values using dot-notation paths.
+// GetServiceConfigValue retrieves a specific configuration value from a service's configuration.
+// This method provides access to individual service-specific configuration values (both core fields
+// like "host", "project" and AdditionalProperties) using dot-notation paths.
 //
 // Parameters:
 //   - req.ServiceName: Name of the service to retrieve configuration from
-//   - req.Path: Dot-notation path to the configuration value (e.g., "custom.database.port")
+//   - req.Path: Dot-notation path to the configuration value (e.g., "custom.database.port", "host", "project")
 //
 // Returns:
 //   - Value: The configuration value as a protobuf Value if found
@@ -472,30 +518,30 @@ func (s *projectService) GetServiceConfigSection(
 //
 // Supports all JSON types: strings, numbers, booleans, objects, and arrays.
 // Returns an error if the specified service doesn't exist in the project.
-// If the service's AdditionalProperties is nil, it's treated as an empty configuration.
 func (s *projectService) GetServiceConfigValue(
 	ctx context.Context,
 	req *azdext.GetServiceConfigValueRequest,
 ) (*azdext.GetServiceConfigValueResponse, error) {
-	projectConfig, err := s.lazyProjectConfig.GetValue()
+	azdContext, err := s.lazyAzdContext.GetValue()
 	if err != nil {
 		return nil, err
 	}
 
-	// Check if service exists
-	service, exists := projectConfig.Services[req.ServiceName]
-	if !exists {
-		return nil, fmt.Errorf("service '%s' not found", req.ServiceName)
+	// Validate service exists
+	if err := s.validateServiceExists(ctx, req.ServiceName); err != nil {
+		return nil, err
 	}
 
-	// Initialize empty map if AdditionalProperties is nil
-	additionalProps := service.AdditionalProperties
-	if additionalProps == nil {
-		additionalProps = make(map[string]any)
+	// Load entire project config as a map
+	cfg, err := project.LoadConfig(ctx, azdContext.ProjectPath())
+	if err != nil {
+		return nil, err
 	}
 
-	cfg := config.NewConfig(additionalProps)
-	value, ok := cfg.Get(req.Path)
+	// Construct path to service config value: "services.<serviceName>.<path>"
+	servicePath := fmt.Sprintf("services.%s.%s", req.ServiceName, req.Path)
+
+	value, ok := cfg.Get(servicePath)
 
 	if !ok {
 		return &azdext.GetServiceConfigValueResponse{
@@ -515,18 +561,17 @@ func (s *projectService) GetServiceConfigValue(
 	}, nil
 }
 
-// SetServiceConfigSection sets or updates a configuration section in a service's AdditionalProperties.
-// This method allows extensions to store complex service-specific configuration data as nested objects.
-// The changes are immediately persisted to the project file.
+// SetServiceConfigSection sets or updates a configuration section in a service's configuration.
+// This method allows extensions to store complex service-specific configuration data (both core fields
+// and AdditionalProperties) as nested objects. The changes are immediately persisted to the project file.
 //
 // Parameters:
 //   - req.ServiceName: Name of the service to update configuration for
-//   - req.Path: Dot-notation path where to store the section (e.g., "custom.database")
+//   - req.Path: Dot-notation path where to store the section (e.g., "custom.database", or empty to replace entire service config)
 //   - req.Section: The configuration section as a protobuf Struct containing the data
 //
 // Returns an error if the specified service doesn't exist in the project.
 // If the path doesn't exist, it will be created. Existing data at the path will be replaced.
-// If the service's AdditionalProperties is nil, it will be initialized as an empty map.
 func (s *projectService) SetServiceConfigSection(
 	ctx context.Context,
 	req *azdext.SetServiceConfigSectionRequest,
@@ -536,53 +581,54 @@ func (s *projectService) SetServiceConfigSection(
 		return nil, err
 	}
 
-	projectConfig, err := s.lazyProjectConfig.GetValue()
+	// Validate service exists
+	if err := s.validateServiceExists(ctx, req.ServiceName); err != nil {
+		return nil, err
+	}
+
+	// Load the full config as a map
+	cfg, err := project.LoadConfig(ctx, azdContext.ProjectPath())
 	if err != nil {
 		return nil, err
 	}
 
-	// Check if service exists
-	service, exists := projectConfig.Services[req.ServiceName]
-	if !exists {
-		return nil, fmt.Errorf("service '%s' not found", req.ServiceName)
+	// Construct path to service config section: "services.<serviceName>.<path>"
+	servicePath := fmt.Sprintf("services.%s", req.ServiceName)
+	if req.Path != "" {
+		servicePath = fmt.Sprintf("%s.%s", servicePath, req.Path)
 	}
-
-	// Initialize empty map if AdditionalProperties is nil
-	additionalProps := service.AdditionalProperties
-	if additionalProps == nil {
-		additionalProps = make(map[string]any)
-	}
-
-	cfg := config.NewConfig(additionalProps)
 
 	// Convert protobuf Struct to map
 	sectionMap := req.Section.AsMap()
-	if err := cfg.Set(req.Path, sectionMap); err != nil {
+	if err := cfg.Set(servicePath, sectionMap); err != nil {
 		return nil, fmt.Errorf("failed to set service config section: %w", err)
 	}
 
-	// Update service AdditionalProperties and save
-	service.AdditionalProperties = cfg.Raw()
-	if err := project.Save(ctx, projectConfig, azdContext.ProjectPath()); err != nil {
+	// Save the updated configuration (validates structure)
+	if err := project.SaveConfig(ctx, cfg, azdContext.ProjectPath()); err != nil {
+		return nil, err
+	}
+
+	// Reload and update the lazy cache, preserving the EventDispatcher
+	if err := s.reloadAndCacheProjectConfig(ctx, azdContext.ProjectPath()); err != nil {
 		return nil, err
 	}
 
 	return &azdext.EmptyResponse{}, nil
 }
 
-// SetServiceConfigValue sets or updates a specific configuration value in a service's AdditionalProperties.
-// This method allows extensions to store individual service-specific configuration values.
-// The changes are immediately persisted to the project file.
+// SetServiceConfigValue sets or updates a specific configuration value in a service's configuration.
+// This method allows extensions to store individual service-specific configuration values (both core
+// fields like "host", "project" and AdditionalProperties). The changes are immediately persisted to the project file.
 //
 // Parameters:
 //   - req.ServiceName: Name of the service to update configuration for
-//   - req.Path: Dot-notation path where to store the value (e.g., "custom.database.port")
+//   - req.Path: Dot-notation path where to store the value (e.g., "custom.database.port", "host", "project")
 //   - req.Value: The configuration value as a protobuf Value (string, number, boolean, etc.)
 //
 // Returns an error if the specified service doesn't exist in the project.
 // If the path doesn't exist, intermediate objects will be created automatically.
 // Existing data at the path will be replaced.
-// If the service's AdditionalProperties is nil, it will be initialized as an empty map.
 func (s *projectService) SetServiceConfigValue(
 	ctx context.Context,
 	req *azdext.SetServiceConfigValueRequest,
@@ -592,47 +638,46 @@ func (s *projectService) SetServiceConfigValue(
 		return nil, err
 	}
 
-	projectConfig, err := s.lazyProjectConfig.GetValue()
+	// Validate service exists
+	if err := s.validateServiceExists(ctx, req.ServiceName); err != nil {
+		return nil, err
+	}
+
+	// Load the full config as a map
+	cfg, err := project.LoadConfig(ctx, azdContext.ProjectPath())
 	if err != nil {
 		return nil, err
 	}
 
-	// Check if service exists
-	service, exists := projectConfig.Services[req.ServiceName]
-	if !exists {
-		return nil, fmt.Errorf("service '%s' not found", req.ServiceName)
-	}
-
-	// Initialize empty map if AdditionalProperties is nil
-	additionalProps := service.AdditionalProperties
-	if additionalProps == nil {
-		additionalProps = make(map[string]any)
-	}
-
-	cfg := config.NewConfig(additionalProps)
+	// Construct path to service config value: "services.<serviceName>.<path>"
+	servicePath := fmt.Sprintf("services.%s.%s", req.ServiceName, req.Path)
 
 	// Convert protobuf Value to interface{}
 	value := req.Value.AsInterface()
-	if err := cfg.Set(req.Path, value); err != nil {
+	if err := cfg.Set(servicePath, value); err != nil {
 		return nil, fmt.Errorf("failed to set service config value: %w", err)
 	}
 
-	// Update service AdditionalProperties and save
-	service.AdditionalProperties = cfg.Raw()
-	if err := project.Save(ctx, projectConfig, azdContext.ProjectPath()); err != nil {
+	// Save the updated configuration (validates structure)
+	if err := project.SaveConfig(ctx, cfg, azdContext.ProjectPath()); err != nil {
+		return nil, err
+	}
+
+	// Reload and update the lazy cache, preserving the EventDispatcher
+	if err := s.reloadAndCacheProjectConfig(ctx, azdContext.ProjectPath()); err != nil {
 		return nil, err
 	}
 
 	return &azdext.EmptyResponse{}, nil
 }
 
-// UnsetServiceConfig removes a configuration value or section from a service's AdditionalProperties.
-// This method allows extensions to clean up service-specific configuration data.
-// The changes are immediately persisted to the project file.
+// UnsetServiceConfig removes a configuration value or section from a service's configuration.
+// This method allows extensions to clean up service-specific configuration data (both core fields
+// and AdditionalProperties). The changes are immediately persisted to the project file.
 //
 // Parameters:
 //   - req.ServiceName: Name of the service to remove configuration from
-//   - req.Path: Dot-notation path to the configuration to remove (e.g., "custom.database.port")
+//   - req.Path: Dot-notation path to the configuration to remove (e.g., "custom.database.port", "module")
 //
 // Returns an error if the specified service doesn't exist in the project.
 // If the path points to a value, only that value is removed.
@@ -647,31 +692,31 @@ func (s *projectService) UnsetServiceConfig(
 		return nil, err
 	}
 
-	projectConfig, err := s.lazyProjectConfig.GetValue()
+	// Validate service exists
+	if err := s.validateServiceExists(ctx, req.ServiceName); err != nil {
+		return nil, err
+	}
+
+	// Load the full config as a map
+	cfg, err := project.LoadConfig(ctx, azdContext.ProjectPath())
 	if err != nil {
 		return nil, err
 	}
 
-	// Check if service exists
-	service, exists := projectConfig.Services[req.ServiceName]
-	if !exists {
-		return nil, fmt.Errorf("service '%s' not found", req.ServiceName)
-	}
+	// Construct path to service config: "services.<serviceName>.<path>"
+	servicePath := fmt.Sprintf("services.%s.%s", req.ServiceName, req.Path)
 
-	// Initialize empty map if AdditionalProperties is nil
-	additionalProps := service.AdditionalProperties
-	if additionalProps == nil {
-		additionalProps = make(map[string]any)
-	}
-
-	cfg := config.NewConfig(additionalProps)
-	if err := cfg.Unset(req.Path); err != nil {
+	if err := cfg.Unset(servicePath); err != nil {
 		return nil, fmt.Errorf("failed to unset service config: %w", err)
 	}
 
-	// Update service AdditionalProperties and save
-	service.AdditionalProperties = cfg.Raw()
-	if err := project.Save(ctx, projectConfig, azdContext.ProjectPath()); err != nil {
+	// Save the updated configuration (validates structure)
+	if err := project.SaveConfig(ctx, cfg, azdContext.ProjectPath()); err != nil {
+		return nil, err
+	}
+
+	// Reload and update the lazy cache, preserving the EventDispatcher
+	if err := s.reloadAndCacheProjectConfig(ctx, azdContext.ProjectPath()); err != nil {
 		return nil, err
 	}
 

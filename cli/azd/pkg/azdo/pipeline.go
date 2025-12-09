@@ -5,7 +5,6 @@ package azdo
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -117,7 +116,6 @@ func CreatePipeline(
 		if err != nil {
 			return nil, err
 		}
-		EscapeBuildDefinitionVariables(buildDefinitionVariables)
 		definition.Variables = buildDefinitionVariables
 		definition, err := client.UpdateDefinition(ctx, build.UpdateDefinitionArgs{
 			Definition:   definition,
@@ -142,28 +140,12 @@ func CreatePipeline(
 		return nil, err
 	}
 
-	EscapeBuildDefinitionVariables(createDefinitionArgs.Definition.Variables)
 	newBuildDefinition, err := client.CreateDefinition(ctx, *createDefinitionArgs)
 	if err != nil {
 		return nil, err
 	}
 
 	return newBuildDefinition, nil
-}
-
-func EscapeBuildDefinitionVariables(vars *map[string]build.BuildDefinitionVariable) {
-	for key, variable := range *vars {
-		if variable.Value != nil {
-			original := *variable.Value
-			b, _ := json.Marshal(original)
-			s := string(b)
-			if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
-				s = s[1 : len(s)-1]
-			}
-			variable.Value = &s
-			(*vars)[key] = variable
-		}
-	}
 }
 
 func getDefinitionVariables(

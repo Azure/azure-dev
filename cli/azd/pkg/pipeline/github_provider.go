@@ -979,8 +979,6 @@ func (p *GitHubCiProvider) configurePipeline(
 		}
 	}
 
-	JsonEscapeVariables(toBeSetSecrets, toBeSetVariables)
-
 	// set the new variables and secrets
 	for key, value := range toBeSetSecrets {
 		if err := p.ghCli.SetSecret(ctx, repoSlug, key, value); err != nil {
@@ -999,19 +997,6 @@ func (p *GitHubCiProvider) configurePipeline(
 	return &workflow{
 		repoDetails: repoDetails,
 	}, nil
-}
-
-func JsonEscapeVariables(vars ...map[string]string) {
-	for _, m := range vars {
-		for key, value := range m {
-			b, _ := json.Marshal(value)
-			s := string(b)
-			if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
-				s = s[1 : len(s)-1]
-			}
-			m[key] = s
-		}
-	}
 }
 
 // workflow is the implementation for a CiPipeline for GitHub

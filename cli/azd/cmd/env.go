@@ -108,6 +108,38 @@ func envActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 		ActionResolver: newEnvGetValueAction,
 	})
 
+	// Add env config sub-command group
+	configGroup := group.Add("config", &actions.ActionDescriptorOptions{
+		Command: &cobra.Command{
+			Use:   "config",
+			Short: "Manage environment configuration (ex: stored in .azure/<environment>/config.json).",
+		},
+		HelpOptions: actions.ActionHelpOptions{
+			Description: getCmdEnvConfigHelpDescription,
+			Footer:      getCmdEnvConfigHelpFooter,
+		},
+	})
+
+	configGroup.Add("get", &actions.ActionDescriptorOptions{
+		Command:        newEnvConfigGetCmd(),
+		FlagsResolver:  newEnvConfigGetFlags,
+		ActionResolver: newEnvConfigGetAction,
+		OutputFormats:  []output.Format{output.JsonFormat},
+		DefaultFormat:  output.JsonFormat,
+	})
+
+	configGroup.Add("set", &actions.ActionDescriptorOptions{
+		Command:        newEnvConfigSetCmd(),
+		FlagsResolver:  newEnvConfigSetFlags,
+		ActionResolver: newEnvConfigSetAction,
+	})
+
+	configGroup.Add("unset", &actions.ActionDescriptorOptions{
+		Command:        newEnvConfigUnsetCmd(),
+		FlagsResolver:  newEnvConfigUnsetFlags,
+		ActionResolver: newEnvConfigUnsetAction,
+	})
+
 	return group
 }
 
@@ -1309,6 +1341,294 @@ func (eg *envGetValueAction) Run(ctx context.Context) (*actions.ActionResult, er
 	}
 
 	return nil, nil
+}
+
+// azd env config get <path>
+
+func newEnvConfigGetCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "get <path>",
+		Short: "Gets a configuration value from the environment.",
+		Long:  "Gets a configuration value from the environment's config.json file.",
+		Args:  cobra.ExactArgs(1),
+	}
+}
+
+type envConfigGetFlags struct {
+	internal.EnvFlag
+	global *internal.GlobalCommandOptions
+}
+
+func newEnvConfigGetFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *envConfigGetFlags {
+	flags := &envConfigGetFlags{}
+	flags.Bind(cmd.Flags(), global)
+	return flags
+}
+
+func (f *envConfigGetFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	f.EnvFlag.Bind(local, global)
+	f.global = global
+}
+
+type envConfigGetAction struct {
+	azdCtx     *azdcontext.AzdContext
+	envManager environment.Manager
+	formatter  output.Formatter
+	writer     io.Writer
+	flags      *envConfigGetFlags
+	args       []string
+}
+
+func newEnvConfigGetAction(
+	azdCtx *azdcontext.AzdContext,
+	envManager environment.Manager,
+	formatter output.Formatter,
+	writer io.Writer,
+	flags *envConfigGetFlags,
+	args []string,
+) actions.Action {
+	return &envConfigGetAction{
+		azdCtx:     azdCtx,
+		envManager: envManager,
+		formatter:  formatter,
+		writer:     writer,
+		flags:      flags,
+		args:       args,
+	}
+}
+
+func (a *envConfigGetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	name, err := a.azdCtx.GetDefaultEnvironmentName()
+	if err != nil {
+		return nil, err
+	}
+	if a.flags.EnvironmentName != "" {
+		name = a.flags.EnvironmentName
+	}
+
+	env, err := a.envManager.Get(ctx, name)
+	if errors.Is(err, environment.ErrNotFound) {
+		return nil, fmt.Errorf(
+			`environment '%s' does not exist. You can create it with "azd env new %s"`,
+			name,
+			name,
+		)
+	} else if err != nil {
+		return nil, fmt.Errorf("getting environment: %w", err)
+	}
+
+	key := a.args[0]
+	value, ok := env.Config.Get(key)
+
+	if !ok {
+		return nil, fmt.Errorf("no value stored at path '%s'", key)
+	}
+
+	if a.formatter.Kind() == output.JsonFormat {
+		err := a.formatter.Format(value, a.writer, nil)
+		if err != nil {
+			return nil, fmt.Errorf("formatting config value: %w", err)
+		}
+	}
+
+	return nil, nil
+}
+
+// azd env config set <path> <value>
+
+func newEnvConfigSetCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "set <path> <value>",
+		Short: "Sets a configuration value in the environment.",
+		Long:  "Sets a configuration value in the environment's config.json file.",
+		Args:  cobra.ExactArgs(2),
+		Example: `$ azd env config set myapp.endpoint https://example.com
+$ azd env config set myapp.debug true`,
+	}
+}
+
+type envConfigSetFlags struct {
+	internal.EnvFlag
+	global *internal.GlobalCommandOptions
+}
+
+func newEnvConfigSetFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *envConfigSetFlags {
+	flags := &envConfigSetFlags{}
+	flags.Bind(cmd.Flags(), global)
+	return flags
+}
+
+func (f *envConfigSetFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	f.EnvFlag.Bind(local, global)
+	f.global = global
+}
+
+type envConfigSetAction struct {
+	azdCtx     *azdcontext.AzdContext
+	envManager environment.Manager
+	flags      *envConfigSetFlags
+	args       []string
+}
+
+func newEnvConfigSetAction(
+	azdCtx *azdcontext.AzdContext,
+	envManager environment.Manager,
+	flags *envConfigSetFlags,
+	args []string,
+) actions.Action {
+	return &envConfigSetAction{
+		azdCtx:     azdCtx,
+		envManager: envManager,
+		flags:      flags,
+		args:       args,
+	}
+}
+
+func (a *envConfigSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	name, err := a.azdCtx.GetDefaultEnvironmentName()
+	if err != nil {
+		return nil, err
+	}
+	if a.flags.EnvironmentName != "" {
+		name = a.flags.EnvironmentName
+	}
+
+	env, err := a.envManager.Get(ctx, name)
+	if errors.Is(err, environment.ErrNotFound) {
+		return nil, fmt.Errorf(
+			`environment '%s' does not exist. You can create it with "azd env new %s"`,
+			name,
+			name,
+		)
+	} else if err != nil {
+		return nil, fmt.Errorf("getting environment: %w", err)
+	}
+
+	path := a.args[0]
+	value := a.args[1]
+
+	err = env.Config.Set(path, value)
+	if err != nil {
+		return nil, fmt.Errorf("failed setting configuration value '%s' to '%s': %w", path, value, err)
+	}
+
+	if err := a.envManager.Save(ctx, env); err != nil {
+		return nil, fmt.Errorf("saving environment: %w", err)
+	}
+
+	return nil, nil
+}
+
+// azd env config unset <path>
+
+func newEnvConfigUnsetCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "unset <path>",
+		Short:   "Unsets a configuration value in the environment.",
+		Long:    "Removes a configuration value from the environment's config.json file.",
+		Example: `$ azd env config unset myapp.endpoint`,
+		Args:    cobra.ExactArgs(1),
+	}
+}
+
+type envConfigUnsetFlags struct {
+	internal.EnvFlag
+	global *internal.GlobalCommandOptions
+}
+
+func newEnvConfigUnsetFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *envConfigUnsetFlags {
+	flags := &envConfigUnsetFlags{}
+	flags.Bind(cmd.Flags(), global)
+	return flags
+}
+
+func (f *envConfigUnsetFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	f.EnvFlag.Bind(local, global)
+	f.global = global
+}
+
+type envConfigUnsetAction struct {
+	azdCtx     *azdcontext.AzdContext
+	envManager environment.Manager
+	flags      *envConfigUnsetFlags
+	args       []string
+}
+
+func newEnvConfigUnsetAction(
+	azdCtx *azdcontext.AzdContext,
+	envManager environment.Manager,
+	flags *envConfigUnsetFlags,
+	args []string,
+) actions.Action {
+	return &envConfigUnsetAction{
+		azdCtx:     azdCtx,
+		envManager: envManager,
+		flags:      flags,
+		args:       args,
+	}
+}
+
+func (a *envConfigUnsetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	name, err := a.azdCtx.GetDefaultEnvironmentName()
+	if err != nil {
+		return nil, err
+	}
+	if a.flags.EnvironmentName != "" {
+		name = a.flags.EnvironmentName
+	}
+
+	env, err := a.envManager.Get(ctx, name)
+	if errors.Is(err, environment.ErrNotFound) {
+		return nil, fmt.Errorf(
+			`environment '%s' does not exist. You can create it with "azd env new %s"`,
+			name,
+			name,
+		)
+	} else if err != nil {
+		return nil, fmt.Errorf("getting environment: %w", err)
+	}
+
+	path := a.args[0]
+
+	err = env.Config.Unset(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed removing configuration with path '%s': %w", path, err)
+	}
+
+	if err := a.envManager.Save(ctx, env); err != nil {
+		return nil, fmt.Errorf("saving environment: %w", err)
+	}
+
+	return nil, nil
+}
+
+// Help functions for env config commands
+
+func getCmdEnvConfigHelpDescription(*cobra.Command) string {
+	return generateCmdHelpDescription(
+		"Manage environment-specific configuration stored in .azure/<environment>/config.json.",
+		[]string{
+			formatHelpNote("Configuration values set with these commands are specific to the environment."),
+			formatHelpNote("These values are separate from environment variables (.env file)."),
+			formatHelpNote(
+				"Environment configuration is stored in .azure/<environment-name>/config.json.",
+			),
+		})
+}
+
+func getCmdEnvConfigHelpFooter(c *cobra.Command) string {
+	return generateCmdHelpSamplesBlock(map[string]string{
+		"Get a configuration value": fmt.Sprintf("%s %s",
+			output.WithHighLightFormat("azd env config get"),
+			output.WithWarningFormat("myapp.endpoint")),
+		"Set a configuration value": fmt.Sprintf("%s %s %s",
+			output.WithHighLightFormat("azd env config set"),
+			output.WithWarningFormat("myapp.endpoint"),
+			output.WithWarningFormat("https://example.com")),
+		"Unset a configuration value": fmt.Sprintf("%s %s",
+			output.WithHighLightFormat("azd env config unset"),
+			output.WithWarningFormat("myapp.endpoint")),
+	})
 }
 
 func getCmdEnvHelpDescription(*cobra.Command) string {

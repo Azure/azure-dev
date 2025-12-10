@@ -509,7 +509,7 @@ func (ds *StandardDeployments) DeleteResourceGroupDeployment(
 		progress.SetProgress(DeleteDeploymentProgress{
 			Name:    resourceGroupName,
 			Message: fmt.Sprintf("Failed resource group %s", output.WithHighLightFormat(resourceGroupName)),
-			State:   DeleteResourceStateInProgress,
+			State:   DeleteResourceStateFailed,
 		})
 
 		return err
@@ -518,7 +518,7 @@ func (ds *StandardDeployments) DeleteResourceGroupDeployment(
 	progress.SetProgress(DeleteDeploymentProgress{
 		Name:    resourceGroupName,
 		Message: fmt.Sprintf("Deleted resource group %s", output.WithHighLightFormat(resourceGroupName)),
-		State:   DeleteResourceStateInProgress,
+		State:   DeleteResourceStateSucceeded,
 	})
 
 	return nil

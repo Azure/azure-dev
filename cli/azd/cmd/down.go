@@ -136,6 +136,7 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			a.console.Message(ctx, "")
 		}
 
+		layer.Mode = provisioning.ModeDestroy
 		if err := a.provisionManager.Initialize(ctx, a.projectConfig.Path, layer); err != nil {
 			return nil, fmt.Errorf("initializing provisioning manager: %w", err)
 		}

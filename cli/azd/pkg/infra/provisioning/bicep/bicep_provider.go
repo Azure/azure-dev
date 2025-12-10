@@ -51,6 +51,11 @@ const (
 	bicepparamMode
 )
 
+const (
+	// apiVersion for checking if a resource group exists
+	apiVersionResourceGroupExistence = "2025-03-01"
+)
+
 // BicepProvider exposes infrastructure provisioning using Azure Bicep templates
 type BicepProvider struct {
 	// Options that are available after Initialize()
@@ -114,9 +119,13 @@ func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, opt 
 	p.options = infraOptions
 	p.ignoreDeploymentState = infraOptions.IgnoreDeploymentState
 
-	p.console.ShowSpinner(ctx, "Initialize bicep provider", input.Step)
-	err = p.EnsureEnv(ctx)
-	p.console.StopSpinner(ctx, "", input.Step)
+	if opt.Mode == provisioning.ModeDeploy {
+		// For regular deployments, ensure the environment is in a provision-ready state
+		p.console.ShowSpinner(ctx, "Initialize bicep provider", input.Step)
+		err = p.EnsureEnv(ctx)
+		p.console.StopSpinner(ctx, "", input.Step)
+	}
+
 	return err
 }
 
@@ -161,19 +170,55 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 	}
 
 	if scope == azure.DeploymentScopeResourceGroup {
-		if p.env.Getenv(environment.ResourceGroupEnvVarName) == "" {
-			// Prompt Resource Group supports creating a new resource group
-			// And prompts for a location as part of creating a new resource group
-			rgName, err := p.prompters.PromptResourceGroup(ctx, prompt.PromptResourceOptions{})
-			if err != nil {
-				return err
-			}
-
-			p.env.DotenvSet(environment.ResourceGroupEnvVarName, rgName)
-			if err := p.envManager.Save(ctx, p.env); err != nil {
-				return fmt.Errorf("saving resource group name: %w", err)
-			}
+		if err := p.ensureResourceGroup(ctx, p.env); err != nil {
+			return err
 		}
+	}
+
+	return nil
+}
+
+// ensureResourceGroup ensures that the resource group with AZURE_RESOURCE_GROUP key exists in the environment,
+// prompting the user to create a resource group if it is unset or does not exist.
+func (p *BicepProvider) ensureResourceGroup(ctx context.Context, env *environment.Environment) error {
+	promptAndSave := func(opt prompt.PromptResourceOptions) error {
+		rgName, err := p.prompters.PromptResourceGroup(ctx, opt)
+		if err != nil {
+			return err
+		}
+
+		p.env.DotenvSet(environment.ResourceGroupEnvVarName, rgName)
+		if err := p.envManager.Save(ctx, p.env); err != nil {
+			return fmt.Errorf("saving resource group name: %w", err)
+		}
+
+		return nil
+	}
+
+	resourceGroup := env.Getenv(environment.ResourceGroupEnvVarName)
+	if resourceGroup == "" {
+		return promptAndSave(prompt.PromptResourceOptions{})
+	}
+
+	resourceId := fmt.Sprintf(
+		"/subscriptions/%s/resourceGroups/%s",
+		p.env.GetSubscriptionId(),
+		resourceGroup)
+
+	resId, err := arm.ParseResourceID(resourceId)
+	if err != nil {
+		return fmt.Errorf("invalid '%s': %w", environment.ResourceGroupEnvVarName, err)
+	}
+
+	exists, err := p.resourceService.CheckExistenceByID(ctx, *resId, apiVersionResourceGroupExistence)
+	if err != nil {
+		return fmt.Errorf("checking if resource group exists: %w", err)
+	}
+
+	if !exists {
+		// Resource group no longer exists, prompt the user to create a new one.
+		// This handles the case where a resource group was deleted.
+		return promptAndSave(prompt.PromptResourceOptions{DefaultName: resourceGroup})
 	}
 
 	return nil
@@ -592,7 +637,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 				if res != nil && res.ID != nil {
 					resId, err := arm.ParseResourceID(*res.ID)
 					if err == nil && resId.ResourceType.Type == arm.ResourceGroupResourceType.Type {
-						exists, err := p.resourceService.CheckExistenceByID(ctx, *resId, "2025-03-01")
+						exists, err := p.resourceService.CheckExistenceByID(ctx, *resId, apiVersionResourceGroupExistence)
 						if err == nil && !exists {
 							stateErr = fmt.Errorf(
 								"resource group %s no longer exists, invalidating deployment state", resId.ResourceGroupName)
@@ -831,6 +876,22 @@ func (p *BicepProvider) Destroy(
 		return nil, fmt.Errorf("creating template: %w", err)
 	}
 
+	targetScope, err := compileResult.Template.TargetScope()
+	if err != nil {
+		return nil, fmt.Errorf("computing deployment scope: %w", err)
+	}
+
+	switch targetScope {
+	case azure.DeploymentScopeResourceGroup:
+		if p.env.Getenv(environment.ResourceGroupEnvVarName) == "" {
+			return nil, azapi.ErrDeploymentNotFound
+		}
+	case azure.DeploymentScopeSubscription:
+		if p.env.Getenv(environment.SubscriptionIdEnvVarName) == "" || p.env.Getenv(environment.LocationEnvVarName) == "" {
+			return nil, azapi.ErrDeploymentNotFound
+		}
+	}
+
 	scope, err := p.scopeForTemplate(compileResult.Template)
 	if err != nil {
 		return nil, fmt.Errorf("computing deployment scope: %w", err)
@@ -957,14 +1018,6 @@ func (p *BicepProvider) Destroy(
 			compileResult.Template.Outputs,
 			azapi.CreateDeploymentOutput(mostRecentDeployment.Outputs),
 		))),
-	}
-
-	// Since we have deleted the resource group, add AZURE_RESOURCE_GROUP to the list of invalidated env vars
-	// so it will be removed from the .env file.
-	if _, ok := scope.(*infra.ResourceGroupScope); ok {
-		destroyResult.InvalidatedEnvKeys = append(
-			destroyResult.InvalidatedEnvKeys, environment.ResourceGroupEnvVarName,
-		)
 	}
 
 	return destroyResult, nil

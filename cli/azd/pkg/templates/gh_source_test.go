@@ -214,22 +214,20 @@ func Test_GhSourceUrlWithTreeAndBranchSlashes(t *testing.T) {
 
 		// Branch API calls during ParseGitHubUrl
 		if strings.Contains(apiURL, "/branches/") {
-			// "feature" alone exists, but "feature/new-feature" also exists and is longer
+			// Only "feature/new-feature" exists. "feature" alone does NOT exist.
+			// Git does not allow both "feature" and "feature/new-feature" to exist simultaneously.
 			// Branch names with slashes are URL-encoded: feature/new-feature -> feature%2Fnew-feature
 			if strings.HasSuffix(apiURL, "/branches/feature%2Fnew-feature") {
 				return exec.RunResult{Stdout: `{"name":"feature/new-feature"}`}, nil
 			}
-			if strings.HasSuffix(apiURL, "/branches/feature") {
-				return exec.RunResult{Stdout: `{"name":"feature"}`}, nil
-			}
+			// "feature" alone does not exist
 			return exec.RunResult{Stdout: "", Stderr: "Not Found", ExitCode: 404}, fmt.Errorf("not found")
 		}
 
 		// Content API call
 		if strings.Contains(apiURL, "/contents/") {
 			require.Contains(t, apiURL, "contents/agent.yaml")
-			require.Contains(t, apiURL, "ref=feature")
-			require.Contains(t, apiURL, "new-feature")
+			require.Contains(t, apiURL, "ref=feature%2Fnew-feature")
 			return exec.RunResult{Stdout: string(expectedResult)}, nil
 		}
 
@@ -279,15 +277,13 @@ func Test_GhSourceRawFileWithBranchSlashes(t *testing.T) {
 
 		// Branch API calls during ParseGitHubUrl - test multiple slashes
 		if strings.Contains(apiURL, "/branches/") {
-			if strings.Contains(apiURL, "/branches/release/v1.0/candidate") {
+			// Only "release/v1.0/candidate" exists.
+			// Git does not allow "release", "release/v1.0", and "release/v1.0/candidate" to coexist.
+			// Branch names with slashes are URL-encoded: release/v1.0/candidate -> release%2Fv1.0%2Fcandidate
+			if strings.HasSuffix(apiURL, "/branches/release%2Fv1.0%2Fcandidate") {
 				return exec.RunResult{Stdout: `{"name":"release/v1.0/candidate"}`}, nil
 			}
-			if strings.Contains(apiURL, "/branches/release/v1.0") {
-				return exec.RunResult{Stdout: `{"name":"release/v1.0"}`}, nil
-			}
-			if strings.Contains(apiURL, "/branches/release") {
-				return exec.RunResult{Stdout: `{"name":"release"}`}, nil
-			}
+			// Shorter prefixes do not exist as branches
 			return exec.RunResult{Stdout: "", Stderr: "Not Found", ExitCode: 404}, fmt.Errorf("not found")
 		}
 

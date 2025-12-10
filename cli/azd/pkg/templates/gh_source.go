@@ -125,7 +125,10 @@ func ParseGitHubUrl(ctx context.Context, urlArg string, ghCli *github.Cli) (*Git
 // resolveBranchAndPath determines the actual branch name by querying the GitHub API.
 // It tries progressively longer branch names (handling slashes) until it finds a valid branch.
 // For example, for "uno/dos/tres/file.txt", it tries: "uno", "uno/dos", "uno/dos/tres"
-// and returns the longest valid branch found along with the remaining path.
+// and returns the first valid branch found along with the remaining path.
+//
+// Note: Git does not allow both "foo/bar" and "foo/bar/longer" to exist as branches simultaneously
+// because branch refs are stored as files. Therefore, we can stop at the first valid branch found.
 func resolveBranchAndPath(
 	ctx context.Context,
 	ghCli *github.Cli,
@@ -148,24 +151,14 @@ func resolveBranchAndPath(
 	}
 
 	// Try progressively longer branch names by combining more segments
-	// Start from shortest ("uno") to longest ("uno/dos/tres")
-	// Keep the longest valid branch found
-	var longestBranch string
-	var correspondingPath string
-
+	// Stop at the first valid branch since Git cannot have both "foo/bar" and "foo/bar/longer"
 	for i := 1; i <= len(parts); i++ {
 		candidateBranch := strings.Join(parts[:i], "/")
 		candidatePath := strings.Join(parts[i:], "/")
 
 		if branchExists(ctx, ghCli, hostname, repoSlug, candidateBranch) {
-			longestBranch = candidateBranch
-			correspondingPath = candidatePath
-			// Continue to find potentially longer branch names
+			return candidateBranch, candidatePath, nil
 		}
-	}
-
-	if longestBranch != "" {
-		return longestBranch, correspondingPath, nil
 	}
 
 	// If no valid branch found, return error

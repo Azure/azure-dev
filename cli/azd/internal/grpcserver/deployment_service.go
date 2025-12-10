@@ -60,7 +60,7 @@ func (s *deploymentService) GetDeployment(
 		return nil, err
 	}
 
-	if err := bicepProvider.Initialize(ctx, azdContext.ProjectDirectory(), projectConfig.Infra.ToProvisioningOptions()); err != nil {
+	if err := bicepProvider.Initialize(ctx, azdContext.ProjectDirectory(), projectConfig.Infra); err != nil {
 		return nil, err
 	}
 

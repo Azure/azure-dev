@@ -8,6 +8,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
@@ -41,7 +42,7 @@ type ServiceConfig struct {
 	// Infrastructure module path relative to the root infra folder
 	Module string `yaml:"module,omitempty"`
 	// The infrastructure provisioning configuration
-	Infra InfraConfig `yaml:"infra,omitempty"`
+	Infra provisioning.Options `yaml:"infra,omitempty"`
 	// Hook configuration for service
 	Hooks HooksConfig `yaml:"hooks,omitempty"`
 	// Dependencies on other services and resources

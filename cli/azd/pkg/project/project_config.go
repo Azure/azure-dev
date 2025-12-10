@@ -9,6 +9,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 	"github.com/azure/azure-dev/cli/azd/pkg/state"
@@ -31,7 +32,7 @@ type ProjectConfig struct {
 	Path              string                     `yaml:"-"`
 	Metadata          *ProjectMetadata           `yaml:"metadata,omitempty"`
 	Services          map[string]*ServiceConfig  `yaml:"services,omitempty"`
-	Infra             InfraConfig                `yaml:"infra,omitempty"`
+	Infra             provisioning.Options       `yaml:"infra,omitempty"`
 	Pipeline          PipelineOptions            `yaml:"pipeline,omitempty"`
 	Hooks             HooksConfig                `yaml:"hooks,omitempty"`
 	State             *state.Config              `yaml:"state,omitempty"`

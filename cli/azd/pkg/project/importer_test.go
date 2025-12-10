@@ -246,10 +246,10 @@ func TestImportManagerProjectInfrastructure(t *testing.T) {
 	defer os.Remove(path)
 
 	r, e := manager.ProjectInfrastructure(*mockContext.Context, &ProjectConfig{
-		Infra: InfraConfigFromProvisioningOptions(provisioning.Options{
+		Infra: provisioning.Options{
 			Path:   expectedDefaultFolder,
 			Module: expectedDefaultModule,
-		}),
+		},
 	})
 
 	require.NoError(t, e)

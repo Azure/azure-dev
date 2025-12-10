@@ -1427,7 +1427,7 @@ func (a *envConfigGetAction) Run(ctx context.Context) (*actions.ActionResult, er
 	if a.formatter.Kind() == output.JsonFormat {
 		err := a.formatter.Format(value, a.writer, nil)
 		if err != nil {
-			return nil, fmt.Errorf("formatting config value: %w", err)
+			return nil, fmt.Errorf("failing formatting config values: %w", err)
 		}
 	}
 
@@ -1509,7 +1509,7 @@ func (a *envConfigSetAction) Run(ctx context.Context) (*actions.ActionResult, er
 
 	err = env.Config.Set(path, value)
 	if err != nil {
-		return nil, fmt.Errorf("failed setting configuration value '%s' to '%s': %w", path, value, err)
+		return nil, fmt.Errorf("failed setting configuration value '%s' to '%s'. %w", path, value, err)
 	}
 
 	if err := a.envManager.Save(ctx, env); err != nil {
@@ -1592,7 +1592,7 @@ func (a *envConfigUnsetAction) Run(ctx context.Context) (*actions.ActionResult, 
 
 	err = env.Config.Unset(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed removing configuration with path '%s': %w", path, err)
+		return nil, fmt.Errorf("failed removing configuration with path '%s'. %w", path, err)
 	}
 
 	if err := a.envManager.Save(ctx, env); err != nil {

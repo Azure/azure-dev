@@ -22,8 +22,9 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ProjectService_Get_FullMethodName        = "/azdext.ProjectService/Get"
-	ProjectService_AddService_FullMethodName = "/azdext.ProjectService/AddService"
+	ProjectService_Get_FullMethodName            = "/azdext.ProjectService/Get"
+	ProjectService_AddService_FullMethodName     = "/azdext.ProjectService/AddService"
+	ProjectService_ParseGitHubUrl_FullMethodName = "/azdext.ProjectService/ParseGitHubUrl"
 )
 
 // ProjectServiceClient is the client API for ProjectService service.
@@ -36,6 +37,8 @@ type ProjectServiceClient interface {
 	Get(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*GetProjectResponse, error)
 	// AddService adds a new service to the project.
 	AddService(ctx context.Context, in *AddServiceRequest, opts ...grpc.CallOption) (*EmptyResponse, error)
+	// ParseGitHubUrl parses a GitHub URL and extracts repository information.
+	ParseGitHubUrl(ctx context.Context, in *ParseGitHubUrlRequest, opts ...grpc.CallOption) (*ParseGitHubUrlResponse, error)
 }
 
 type projectServiceClient struct {
@@ -66,6 +69,16 @@ func (c *projectServiceClient) AddService(ctx context.Context, in *AddServiceReq
 	return out, nil
 }
 
+func (c *projectServiceClient) ParseGitHubUrl(ctx context.Context, in *ParseGitHubUrlRequest, opts ...grpc.CallOption) (*ParseGitHubUrlResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ParseGitHubUrlResponse)
+	err := c.cc.Invoke(ctx, ProjectService_ParseGitHubUrl_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ProjectServiceServer is the server API for ProjectService service.
 // All implementations must embed UnimplementedProjectServiceServer
 // for forward compatibility.
@@ -76,6 +89,8 @@ type ProjectServiceServer interface {
 	Get(context.Context, *EmptyRequest) (*GetProjectResponse, error)
 	// AddService adds a new service to the project.
 	AddService(context.Context, *AddServiceRequest) (*EmptyResponse, error)
+	// ParseGitHubUrl parses a GitHub URL and extracts repository information.
+	ParseGitHubUrl(context.Context, *ParseGitHubUrlRequest) (*ParseGitHubUrlResponse, error)
 	mustEmbedUnimplementedProjectServiceServer()
 }
 
@@ -91,6 +106,9 @@ func (UnimplementedProjectServiceServer) Get(context.Context, *EmptyRequest) (*G
 }
 func (UnimplementedProjectServiceServer) AddService(context.Context, *AddServiceRequest) (*EmptyResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AddService not implemented")
+}
+func (UnimplementedProjectServiceServer) ParseGitHubUrl(context.Context, *ParseGitHubUrlRequest) (*ParseGitHubUrlResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ParseGitHubUrl not implemented")
 }
 func (UnimplementedProjectServiceServer) mustEmbedUnimplementedProjectServiceServer() {}
 func (UnimplementedProjectServiceServer) testEmbeddedByValue()                        {}
@@ -149,6 +167,24 @@ func _ProjectService_AddService_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ProjectService_ParseGitHubUrl_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ParseGitHubUrlRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProjectServiceServer).ParseGitHubUrl(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ProjectService_ParseGitHubUrl_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProjectServiceServer).ParseGitHubUrl(ctx, req.(*ParseGitHubUrlRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ProjectService_ServiceDesc is the grpc.ServiceDesc for ProjectService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -163,6 +199,10 @@ var ProjectService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AddService",
 			Handler:    _ProjectService_AddService_Handler,
+		},
+		{
+			MethodName: "ParseGitHubUrl",
+			Handler:    _ProjectService_ParseGitHubUrl_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

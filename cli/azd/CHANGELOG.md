@@ -6,14 +6,12 @@
 
 - [[#6285]](https://github.com/Azure/azure-dev/pull/6285) Support `azure.yml` as an alternative to `azure.yaml` for project configuration files.
 - [[#6266]](https://github.com/Azure/azure-dev/pull/6266) Prompt to create directory when using `-C`/`--cwd` with non-existent path.
-- [[#6290]](https://github.com/Azure/azure-dev/pull/6290) Add debug logging support for `azure.ai.agents` extension via `--debug` flag or `AZD_EXT_DEBUG` environment variable.
 - [[#6300]](https://github.com/Azure/azure-dev/pull/6300) Add template gallery links in `azd init` and `azd template list` commands.
 - [[#6313]](https://github.com/Azure/azure-dev/pull/6313) Improve error handling flow with three-solution prompt and upgraded langchain dependency.
 
 ### Bugs Fixed
 
 - [[#6346]](https://github.com/Azure/azure-dev/pull/6346) Fix Container App revision deployment to respect service `module` setting in `azure.yaml`.
-- [[#6343]](https://github.com/Azure/azure-dev/pull/6343) Fix `azd ai agent init` message to suggest `azd up` before `azd deploy`.
 - [[#6341]](https://github.com/Azure/azure-dev/pull/6341) Fix Static Web App deployment by ensuring framework service requires restore and produces correct artifacts.
 - [[#5568]](https://github.com/Azure/azure-dev/pull/5568) Fix JSON-escaped environment variables being lost when syncing to remote CI/CD pipelines. Thanks @Menghua1 for the contribution!
 

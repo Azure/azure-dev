@@ -1134,8 +1134,12 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		return fmt.Errorf("adding agent service to project: %w", err)
 	}
 
-	fmt.Printf("Added your agent as a service entry named '%s' under the file azure.yaml. You will be able to deploy this agent using command %s.\n",
+	fmt.Printf(
+		"Added your agent as a service entry named '%s' under the file azure.yaml. "+
+			"To provision a project and your the whole solution, use command %s. "+
+			"If you already have your project provisioned with all requirements for this agent, you can directly use command %s.\n",
 		agentDef.Name,
+		color.HiBlueString("azd up"),
 		color.HiBlueString("azd deploy %s", agentDef.Name))
 	return nil
 }

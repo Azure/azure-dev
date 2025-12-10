@@ -189,24 +189,12 @@ func (at *containerAppTarget) Deploy(
 	// If present, build and deploy it.
 	controlledRevision := false
 
-	nameOverrideOptions := provisioning.Options{
-		Module: serviceConfig.Name,
+	moduleName := serviceConfig.Module
+	if moduleName == "" {
+		moduleName = serviceConfig.Name
 	}
 
-	// Get the infra options with defaults applied
-	// The order of precedence is:
-	// 1. Service-specific settings
-	// 2. Service-specific override (with module name)
-	// 3. Project-level infra options
-	serviceInfraOptions, err := serviceConfig.Infra.GetWithDefaults(
-		nameOverrideOptions,
-		serviceConfig.Project.Infra,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("getting service infra options: %w", err)
-	}
-
-	modulePath := filepath.Join(serviceInfraOptions.Path, serviceInfraOptions.Module)
+	modulePath := filepath.Join(serviceConfig.Project.Infra.Path, moduleName)
 	bicepPath := modulePath + ".bicep"
 	bicepParametersPath := modulePath + ".parameters.json"
 	bicepParamPath := modulePath + ".bicepparam"

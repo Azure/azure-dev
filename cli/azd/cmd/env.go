@@ -735,7 +735,7 @@ func (e *envSelectAction) Run(ctx context.Context) (*actions.ActionResult, error
 		}
 
 		if len(envs) == 0 {
-			return nil, fmt.Errorf("no environments found. You can create one with \"azd env new\"")
+			return nil, fmt.Errorf("no environments found. You can create one with \"azd env new <environment-name>\"")
 		}
 
 		// Build list of environment names

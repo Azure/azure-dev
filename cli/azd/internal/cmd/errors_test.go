@@ -150,8 +150,8 @@ func Test_MapError(t *testing.T) {
 			},
 		},
 		{
-			name: "WithExtensionResponseError",
-			err: &azdext.ExtensionResponseError{
+			name: "WithExtServiceError",
+			err: &azdext.ServiceError{
 				Message:     "Rate limit exceeded",
 				Details:     "Too many requests",
 				ErrorCode:   "RateLimitExceeded",

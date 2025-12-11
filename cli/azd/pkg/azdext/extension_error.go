@@ -10,9 +10,9 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 )
 
-// ExtensionResponseError represents an HTTP response error returned from an extension over gRPC.
-// It mirrors azcore.ResponseError and preserves structured error information for telemetry purposes.
-type ExtensionResponseError struct {
+// ServiceError represents an HTTP/gRPC service error from an extension.
+// It preserves structured error information for telemetry and error handling.
+type ServiceError struct {
 	// Message is the human-readable error message
 	Message string
 	// Details contains additional error details
@@ -21,134 +21,89 @@ type ExtensionResponseError struct {
 	ErrorCode string
 	// StatusCode is the HTTP status code (e.g., 409, 404, 500)
 	StatusCode int
-	// ServiceName is the service name for telemetry (e.g., "ai.azure.com")
+	// ServiceName is the service host/name for telemetry (e.g., "ai.azure.com")
 	ServiceName string
 }
 
 // Error implements the error interface
-func (e *ExtensionResponseError) Error() string {
+func (e *ServiceError) Error() string {
 	if e.Details != "" {
 		return fmt.Sprintf("%s: %s", e.Message, e.Details)
 	}
 	return e.Message
 }
 
-// HasServiceInfo returns true if the error contains service information for telemetry
-func (e *ExtensionResponseError) HasServiceInfo() bool {
-	return e.StatusCode > 0 && e.ServiceName != ""
-}
-
-// errorMessage defines the common interface for protobuf error messages
-// This allows us to write generic unwrap logic for any generated proto message
-type errorMessage interface {
-	comparable
-	GetMessage() string
-	GetDetails() string
-	GetErrorCode() string
-	GetStatusCode() int32
-	GetServiceName() string
-}
-
-// errorInfo is a helper struct to hold extracted error information
-// before converting to a specific protobuf message type
-type errorInfo struct {
-	message    string
-	details    string
-	errorCode  string
-	statusCode int32
-	service    string
-}
-
-// captureErrorInfo extracts structured error information from a Go error.
-// It handles nil errors, ExtensionResponseError, and azcore.ResponseError.
-func captureErrorInfo(err error) errorInfo {
+// WrapError wraps a Go error into an ExtensionError for transmission over gRPC.
+// It detects the error type and populates the appropriate source details.
+func WrapError(err error) *ExtensionError {
 	if err == nil {
-		return errorInfo{}
+		return nil
 	}
 
-	// Default to the error string
-	info := errorInfo{message: err.Error()}
-
-	// If it's already an ExtensionResponseError, preserve all fields including Details
-	var extErr *ExtensionResponseError
-	if errors.As(err, &extErr) {
-		info.message = extErr.Message
-		info.details = extErr.Details
-		info.errorCode = extErr.ErrorCode
-		//nolint:gosec // G115: HTTP status codes are well within int32 range
-		info.statusCode = int32(extErr.StatusCode)
-		info.service = extErr.ServiceName
-		return info
+	extErr := &ExtensionError{
+		Message: err.Error(),
+		Origin:  ErrorOrigin_ERROR_ORIGIN_UNSPECIFIED,
 	}
 
-	// Try to extract structured error information from Azure SDK errors
+	// Check for extension error types (already structured)
+	var extServiceErr *ServiceError
+	if errors.As(err, &extServiceErr) {
+		extErr.Message = extServiceErr.Message
+		extErr.Details = extServiceErr.Details
+		extErr.Origin = ErrorOrigin_ERROR_ORIGIN_SERVICE
+		extErr.Source = &ExtensionError_ServiceError{
+			ServiceError: &ServiceErrorDetail{
+				ErrorCode: extServiceErr.ErrorCode,
+				//nolint:gosec // G115: HTTP status codes are well within int32 range
+				StatusCode:  int32(extServiceErr.StatusCode),
+				ServiceName: extServiceErr.ServiceName,
+			},
+		}
+		return extErr
+	}
+
+	// Try to detect Azure SDK errors
 	var respErr *azcore.ResponseError
 	if errors.As(err, &respErr) {
-		info.errorCode = respErr.ErrorCode
-		//nolint:gosec // G115: HTTP status codes are well within int32 range
-		info.statusCode = int32(respErr.StatusCode)
+		extErr.Origin = ErrorOrigin_ERROR_ORIGIN_SERVICE
+		serviceName := ""
 		if respErr.RawResponse != nil && respErr.RawResponse.Request != nil {
-			info.service = respErr.RawResponse.Request.Host
+			serviceName = respErr.RawResponse.Request.Host
+		}
+		extErr.Source = &ExtensionError_ServiceError{
+			ServiceError: &ServiceErrorDetail{
+				ErrorCode: respErr.ErrorCode,
+				//nolint:gosec // G115: HTTP status codes are well within int32 range
+				StatusCode:  int32(respErr.StatusCode),
+				ServiceName: serviceName,
+			},
 		}
 	}
 
-	return info
+	return extErr
 }
 
-// WrapErrorForServiceTarget wraps a Go error into a ServiceTargetErrorMessage for transmission over gRPC.
-func WrapErrorForServiceTarget(err error) *ServiceTargetErrorMessage {
-	info := captureErrorInfo(err)
-	if info.message == "" {
+// UnwrapError converts an ExtensionError back to a typed Go error.
+// It returns the appropriate error type based on the origin field.
+func UnwrapError(msg *ExtensionError) error {
+	if msg == nil || msg.GetMessage() == "" {
 		return nil
 	}
 
-	return &ServiceTargetErrorMessage{
-		Message:     info.message,
-		Details:     info.details,
-		ErrorCode:   info.errorCode,
-		StatusCode:  info.statusCode,
-		ServiceName: info.service,
-	}
-}
-
-// WrapErrorForFrameworkService wraps a Go error into a FrameworkServiceErrorMessage for transmission over gRPC.
-func WrapErrorForFrameworkService(err error) *FrameworkServiceErrorMessage {
-	info := captureErrorInfo(err)
-	if info.message == "" {
-		return nil
+	// Check for service error details
+	if svcErr := msg.GetServiceError(); svcErr != nil {
+		return &ServiceError{
+			Message:     msg.GetMessage(),
+			Details:     msg.GetDetails(),
+			ErrorCode:   svcErr.GetErrorCode(),
+			StatusCode:  int(svcErr.GetStatusCode()),
+			ServiceName: svcErr.GetServiceName(),
+		}
 	}
 
-	return &FrameworkServiceErrorMessage{
-		Message:     info.message,
-		Details:     info.details,
-		ErrorCode:   info.errorCode,
-		StatusCode:  info.statusCode,
-		ServiceName: info.service,
+	// Return a generic service error with just the message/details
+	return &ServiceError{
+		Message: msg.GetMessage(),
+		Details: msg.GetDetails(),
 	}
-}
-
-// unwrapError is a generic helper to convert protobuf error messages back to Go errors
-func unwrapError[T errorMessage](msg T) error {
-	var zero T
-	if msg == zero || msg.GetMessage() == "" {
-		return nil
-	}
-
-	return &ExtensionResponseError{
-		Message:     msg.GetMessage(),
-		Details:     msg.GetDetails(),
-		ErrorCode:   msg.GetErrorCode(),
-		StatusCode:  int(msg.GetStatusCode()),
-		ServiceName: msg.GetServiceName(),
-	}
-}
-
-// UnwrapErrorFromServiceTarget converts a ServiceTargetErrorMessage back to a Go error.
-func UnwrapErrorFromServiceTarget(msg *ServiceTargetErrorMessage) error {
-	return unwrapError(msg)
-}
-
-// UnwrapErrorFromFrameworkService converts a FrameworkServiceErrorMessage back to a Go error.
-func UnwrapErrorFromFrameworkService(msg *FrameworkServiceErrorMessage) error {
-	return unwrapError(msg)
 }

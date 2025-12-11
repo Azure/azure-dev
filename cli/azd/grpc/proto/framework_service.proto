@@ -8,6 +8,7 @@ option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext";
 
 import "models.proto";
 import "service_target.proto";
+import "errors.proto";
 
 service FrameworkService {
   // Bidirectional stream for framework service requests and responses
@@ -17,7 +18,7 @@ service FrameworkService {
 // Envelope for all possible framework service messages (requests and responses)
 message FrameworkServiceMessage {
   string request_id = 1;
-  FrameworkServiceErrorMessage error = 99;
+  ExtensionError error = 99;
   oneof message_type {
     RegisterFrameworkServiceRequest register_framework_service_request = 2;
     RegisterFrameworkServiceResponse register_framework_service_response = 3;
@@ -35,16 +36,6 @@ message FrameworkServiceMessage {
     FrameworkServicePackageResponse package_response = 15;
     FrameworkServiceProgressMessage progress_message = 16;
   }
-}
-
-// Error message for framework service operations
-message FrameworkServiceErrorMessage {
-  string message = 1;
-  string details = 2;
-  // Structured error information for telemetry
-  string error_code = 3;     // Error code from the service (e.g., "Conflict", "NotFound")
-  int32 status_code = 4;     // HTTP status code (e.g., 409, 404, 500)
-  string service_name = 5;   // Service name for telemetry (e.g., "ai.azure.com", "cognitiveservices")
 }
 
 // Request to register a framework service provider

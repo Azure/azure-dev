@@ -32,15 +32,15 @@ func (ops *ServiceTargetEnvelope) SetRequestId(ctx context.Context, msg *Service
 }
 
 // GetError returns the error from the message as a Go error type.
-// It returns an ExtensionResponseError that preserves structured error information for telemetry.
+// It returns a typed error based on the ErrorOrigin that preserves structured information for telemetry.
 func (ops *ServiceTargetEnvelope) GetError(msg *ServiceTargetMessage) error {
-	return UnwrapErrorFromServiceTarget(msg.Error)
+	return UnwrapError(msg.Error)
 }
 
 // SetError sets an error on the message.
-// It extracts structured error information from known error types like azcore.ResponseError.
+// It detects the error type and populates the appropriate source details.
 func (ops *ServiceTargetEnvelope) SetError(msg *ServiceTargetMessage, err error) {
-	msg.Error = WrapErrorForServiceTarget(err)
+	msg.Error = WrapError(err)
 }
 
 // GetInnerMessage returns the inner message from the oneof field

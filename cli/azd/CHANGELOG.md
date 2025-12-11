@@ -1,12 +1,21 @@
 # Release History
 
-## 1.23.0-beta.1 (Unreleased)
+## 1.22.1 (2025-12-10)
 
 ### Features Added
 
-### Breaking Changes
+- [[#6285]](https://github.com/Azure/azure-dev/pull/6285) Support `azure.yml` as an alternative to `azure.yaml` for project configuration files.
+- [[#6266]](https://github.com/Azure/azure-dev/pull/6266) Prompt to create directory when using `-C`/`--cwd` with non-existent path.
+- [[#6300]](https://github.com/Azure/azure-dev/pull/6300) Add template gallery links in `azd init` and `azd template list` commands.
+- [[#6313]](https://github.com/Azure/azure-dev/pull/6313) Improve error handling flow with three-solution prompt and upgraded langchain dependency.
 
 ### Bugs Fixed
+
+- [[#6353]](https://github.com/Azure/azure-dev/pull/6353) Fix unclear error message when deploying to improperly-tagged Container App in non-revision mode.
+- [[#6346]](https://github.com/Azure/azure-dev/pull/6346) Fix Container App revision deployment to respect service `module` setting in `azure.yaml`.
+- [[#6345]](https://github.com/Azure/azure-dev/pull/6345) Improve `azd down` deletion behavior for resource-group-scoped deployments.
+- [[#6341]](https://github.com/Azure/azure-dev/pull/6341) Fix Static Web App deployment by ensuring framework service requires restore and produces correct artifacts.
+- [[#5568]](https://github.com/Azure/azure-dev/pull/5568) Fix JSON-escaped environment variables being lost when syncing to remote CI/CD pipelines. Thanks @Menghua1 for the contribution!
 
 ### Other Changes
 

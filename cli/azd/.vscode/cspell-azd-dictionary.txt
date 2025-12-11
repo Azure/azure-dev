@@ -286,3 +286,4 @@ yacspin
 yamlnode
 ymlt
 zerr
+langchain

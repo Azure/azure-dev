@@ -196,7 +196,12 @@ func (at *containerAppTarget) Deploy(
 		moduleName = serviceConfig.Name
 	}
 
-	modulePath := filepath.Join(serviceConfig.Project.Infra.Path, moduleName)
+	infraOptions, err := serviceConfig.Project.Infra.GetWithDefaults()
+	if err != nil {
+		return nil, fmt.Errorf("getting infra options: %w", err)
+	}
+
+	modulePath := filepath.Join(infraOptions.Path, moduleName)
 	bicepPath := modulePath + ".bicep"
 	bicepParametersPath := modulePath + ".parameters.json"
 	bicepParamPath := modulePath + ".bicepparam"

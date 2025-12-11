@@ -6,14 +6,17 @@ package grpcserver
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -24,6 +27,13 @@ func Test_ProjectService_NoProject(t *testing.T) {
 	// Setup a mock context.
 	mockContext := mocks.NewMockContext(context.Background())
 
+	// Mock GitHub CLI version check.
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "--version"
+	}).Respond(exec.RunResult{
+		Stdout: github.Version.String(),
+	})
+
 	// Lazy loaders return a "no project" error.
 	lazyAzdContext := lazy.NewLazy(func() (*azdcontext.AzdContext, error) {
 		return nil, azdcontext.ErrNoProject
@@ -32,9 +42,13 @@ func Test_ProjectService_NoProject(t *testing.T) {
 		return nil, azdcontext.ErrNoProject
 	})
 
+	// Create mock GitHub CLI.
+	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
+	require.NoError(t, err)
+
 	// Create the service.
-	service := NewProjectService(lazyAzdContext, lazyEnvManager)
-	_, err := service.Get(*mockContext.Context, &azdext.EmptyRequest{})
+	service := NewProjectService(lazyAzdContext, lazyEnvManager, ghCli)
+	_, err = service.Get(*mockContext.Context, &azdext.EmptyRequest{})
 	require.Error(t, err)
 }
 
@@ -44,6 +58,13 @@ func Test_ProjectService_Flow(t *testing.T) {
 	// Setup a mock context and temporary project directory.
 	mockContext := mocks.NewMockContext(context.Background())
 	temp := t.TempDir()
+
+	// Mock GitHub CLI version check.
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "--version"
+	}).Respond(exec.RunResult{
+		Stdout: github.Version.String(),
+	})
 
 	// Initialize AzdContext with the temporary directory.
 	azdContext := azdcontext.NewAzdContextWithDirectory(temp)
@@ -76,8 +97,12 @@ func Test_ProjectService_Flow(t *testing.T) {
 	err = envManager.Save(*mockContext.Context, testEnv1)
 	require.NoError(t, err)
 
+	// Create mock GitHub CLI.
+	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
+	require.NoError(t, err)
+
 	// Create the service.
-	service := NewProjectService(lazyAzdContext, lazyEnvManager)
+	service := NewProjectService(lazyAzdContext, lazyEnvManager, ghCli)
 
 	// Test: Retrieve project details.
 	getResponse, err := service.Get(*mockContext.Context, &azdext.EmptyRequest{})
@@ -90,6 +115,13 @@ func Test_ProjectService_AddService(t *testing.T) {
 	// Setup a mock context and temporary project directory.
 	mockContext := mocks.NewMockContext(context.Background())
 	temp := t.TempDir()
+
+	// Mock GitHub CLI version check.
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "--version"
+	}).Respond(exec.RunResult{
+		Stdout: github.Version.String(),
+	})
 
 	// Initialize AzdContext with the temporary directory.
 	azdContext := azdcontext.NewAzdContextWithDirectory(temp)
@@ -112,8 +144,12 @@ func Test_ProjectService_AddService(t *testing.T) {
 	lazyAzdContext := lazy.From(azdContext)
 	lazyEnvManager := lazy.From(envManager)
 
+	// Create mock GitHub CLI.
+	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
+	require.NoError(t, err)
+
 	// Create the project service.
-	service := NewProjectService(lazyAzdContext, lazyEnvManager)
+	service := NewProjectService(lazyAzdContext, lazyEnvManager, ghCli)
 
 	// Prepare a new service addition request.
 	serviceRequest := &azdext.AddServiceRequest{

@@ -114,6 +114,120 @@ func (x *AddServiceRequest) GetService() *ServiceConfig {
 	return nil
 }
 
+// ParseGitHubUrlRequest message definition
+type ParseGitHubUrlRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Url           string                 `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ParseGitHubUrlRequest) Reset() {
+	*x = ParseGitHubUrlRequest{}
+	mi := &file_project_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ParseGitHubUrlRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ParseGitHubUrlRequest) ProtoMessage() {}
+
+func (x *ParseGitHubUrlRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_project_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ParseGitHubUrlRequest.ProtoReflect.Descriptor instead.
+func (*ParseGitHubUrlRequest) Descriptor() ([]byte, []int) {
+	return file_project_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *ParseGitHubUrlRequest) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+// ParseGitHubUrlResponse message definition
+type ParseGitHubUrlResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Hostname      string                 `protobuf:"bytes,1,opt,name=hostname,proto3" json:"hostname,omitempty"`
+	RepoSlug      string                 `protobuf:"bytes,2,opt,name=repo_slug,json=repoSlug,proto3" json:"repo_slug,omitempty"`
+	Branch        string                 `protobuf:"bytes,3,opt,name=branch,proto3" json:"branch,omitempty"`
+	FilePath      string                 `protobuf:"bytes,4,opt,name=file_path,json=filePath,proto3" json:"file_path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ParseGitHubUrlResponse) Reset() {
+	*x = ParseGitHubUrlResponse{}
+	mi := &file_project_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ParseGitHubUrlResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ParseGitHubUrlResponse) ProtoMessage() {}
+
+func (x *ParseGitHubUrlResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_project_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ParseGitHubUrlResponse.ProtoReflect.Descriptor instead.
+func (*ParseGitHubUrlResponse) Descriptor() ([]byte, []int) {
+	return file_project_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ParseGitHubUrlResponse) GetHostname() string {
+	if x != nil {
+		return x.Hostname
+	}
+	return ""
+}
+
+func (x *ParseGitHubUrlResponse) GetRepoSlug() string {
+	if x != nil {
+		return x.RepoSlug
+	}
+	return ""
+}
+
+func (x *ParseGitHubUrlResponse) GetBranch() string {
+	if x != nil {
+		return x.Branch
+	}
+	return ""
+}
+
+func (x *ParseGitHubUrlResponse) GetFilePath() string {
+	if x != nil {
+		return x.FilePath
+	}
+	return ""
+}
+
 var File_project_proto protoreflect.FileDescriptor
 
 const file_project_proto_rawDesc = "" +
@@ -122,11 +236,19 @@ const file_project_proto_rawDesc = "" +
 	"\x12GetProjectResponse\x12/\n" +
 	"\aproject\x18\x01 \x01(\v2\x15.azdext.ProjectConfigR\aproject\"D\n" +
 	"\x11AddServiceRequest\x12/\n" +
-	"\aservice\x18\x01 \x01(\v2\x15.azdext.ServiceConfigR\aservice2\x89\x01\n" +
+	"\aservice\x18\x01 \x01(\v2\x15.azdext.ServiceConfigR\aservice\")\n" +
+	"\x15ParseGitHubUrlRequest\x12\x10\n" +
+	"\x03url\x18\x01 \x01(\tR\x03url\"\x86\x01\n" +
+	"\x16ParseGitHubUrlResponse\x12\x1a\n" +
+	"\bhostname\x18\x01 \x01(\tR\bhostname\x12\x1b\n" +
+	"\trepo_slug\x18\x02 \x01(\tR\brepoSlug\x12\x16\n" +
+	"\x06branch\x18\x03 \x01(\tR\x06branch\x12\x1b\n" +
+	"\tfile_path\x18\x04 \x01(\tR\bfilePath2\xda\x01\n" +
 	"\x0eProjectService\x127\n" +
 	"\x03Get\x12\x14.azdext.EmptyRequest\x1a\x1a.azdext.GetProjectResponse\x12>\n" +
 	"\n" +
-	"AddService\x12\x19.azdext.AddServiceRequest\x1a\x15.azdext.EmptyResponseB/Z-github.com/azure/azure-dev/cli/azd/pkg/azdextb\x06proto3"
+	"AddService\x12\x19.azdext.AddServiceRequest\x1a\x15.azdext.EmptyResponse\x12O\n" +
+	"\x0eParseGitHubUrl\x12\x1d.azdext.ParseGitHubUrlRequest\x1a\x1e.azdext.ParseGitHubUrlResponseB/Z-github.com/azure/azure-dev/cli/azd/pkg/azdextb\x06proto3"
 
 var (
 	file_project_proto_rawDescOnce sync.Once
@@ -140,24 +262,28 @@ func file_project_proto_rawDescGZIP() []byte {
 	return file_project_proto_rawDescData
 }
 
-var file_project_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_project_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_project_proto_goTypes = []any{
-	(*GetProjectResponse)(nil), // 0: azdext.GetProjectResponse
-	(*AddServiceRequest)(nil),  // 1: azdext.AddServiceRequest
-	(*ProjectConfig)(nil),      // 2: azdext.ProjectConfig
-	(*ServiceConfig)(nil),      // 3: azdext.ServiceConfig
-	(*EmptyRequest)(nil),       // 4: azdext.EmptyRequest
-	(*EmptyResponse)(nil),      // 5: azdext.EmptyResponse
+	(*GetProjectResponse)(nil),     // 0: azdext.GetProjectResponse
+	(*AddServiceRequest)(nil),      // 1: azdext.AddServiceRequest
+	(*ParseGitHubUrlRequest)(nil),  // 2: azdext.ParseGitHubUrlRequest
+	(*ParseGitHubUrlResponse)(nil), // 3: azdext.ParseGitHubUrlResponse
+	(*ProjectConfig)(nil),          // 4: azdext.ProjectConfig
+	(*ServiceConfig)(nil),          // 5: azdext.ServiceConfig
+	(*EmptyRequest)(nil),           // 6: azdext.EmptyRequest
+	(*EmptyResponse)(nil),          // 7: azdext.EmptyResponse
 }
 var file_project_proto_depIdxs = []int32{
-	2, // 0: azdext.GetProjectResponse.project:type_name -> azdext.ProjectConfig
-	3, // 1: azdext.AddServiceRequest.service:type_name -> azdext.ServiceConfig
-	4, // 2: azdext.ProjectService.Get:input_type -> azdext.EmptyRequest
+	4, // 0: azdext.GetProjectResponse.project:type_name -> azdext.ProjectConfig
+	5, // 1: azdext.AddServiceRequest.service:type_name -> azdext.ServiceConfig
+	6, // 2: azdext.ProjectService.Get:input_type -> azdext.EmptyRequest
 	1, // 3: azdext.ProjectService.AddService:input_type -> azdext.AddServiceRequest
-	0, // 4: azdext.ProjectService.Get:output_type -> azdext.GetProjectResponse
-	5, // 5: azdext.ProjectService.AddService:output_type -> azdext.EmptyResponse
-	4, // [4:6] is the sub-list for method output_type
-	2, // [2:4] is the sub-list for method input_type
+	2, // 4: azdext.ProjectService.ParseGitHubUrl:input_type -> azdext.ParseGitHubUrlRequest
+	0, // 5: azdext.ProjectService.Get:output_type -> azdext.GetProjectResponse
+	7, // 6: azdext.ProjectService.AddService:output_type -> azdext.EmptyResponse
+	3, // 7: azdext.ProjectService.ParseGitHubUrl:output_type -> azdext.ParseGitHubUrlResponse
+	5, // [5:8] is the sub-list for method output_type
+	2, // [2:5] is the sub-list for method input_type
 	2, // [2:2] is the sub-list for extension type_name
 	2, // [2:2] is the sub-list for extension extendee
 	0, // [0:2] is the sub-list for field type_name
@@ -175,7 +301,7 @@ func file_project_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_project_proto_rawDesc), len(file_project_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

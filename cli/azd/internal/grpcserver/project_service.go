@@ -13,6 +13,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/templates"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 )
 
 type projectService struct {
@@ -20,15 +22,18 @@ type projectService struct {
 
 	lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]
 	lazyEnvManager *lazy.Lazy[environment.Manager]
+	ghCli          *github.Cli
 }
 
 func NewProjectService(
 	lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext],
 	lazyEnvManager *lazy.Lazy[environment.Manager],
+	ghCli *github.Cli,
 ) azdext.ProjectServiceServer {
 	return &projectService{
 		lazyAzdContext: lazyAzdContext,
 		lazyEnvManager: lazyEnvManager,
+		ghCli:          ghCli,
 	}
 }
 
@@ -124,4 +129,23 @@ func (s *projectService) AddService(ctx context.Context, req *azdext.AddServiceR
 	}
 
 	return &azdext.EmptyResponse{}, nil
+}
+
+func (
+	s *projectService,
+) ParseGitHubUrl(
+	ctx context.Context,
+	req *azdext.ParseGitHubUrlRequest,
+) (*azdext.ParseGitHubUrlResponse, error) {
+	urlInfo, err := templates.ParseGitHubUrl(ctx, req.Url, s.ghCli)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse GitHub URL: %w", err)
+	}
+
+	return &azdext.ParseGitHubUrlResponse{
+		Hostname: urlInfo.Hostname,
+		RepoSlug: urlInfo.RepoSlug,
+		Branch:   urlInfo.Branch,
+		FilePath: urlInfo.FilePath,
+	}, nil
 }

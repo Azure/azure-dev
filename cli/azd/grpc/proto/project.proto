@@ -15,6 +15,9 @@ service ProjectService {
 
   // AddService adds a new service to the project.
   rpc AddService(AddServiceRequest) returns (EmptyResponse);
+
+  // ParseGitHubUrl parses a GitHub URL and extracts repository information.
+  rpc ParseGitHubUrl(ParseGitHubUrlRequest) returns (ParseGitHubUrlResponse);
 }
 
 // GetProjectResponse message definition
@@ -25,4 +28,17 @@ message GetProjectResponse {
 // AddServiceRequest message definition
 message AddServiceRequest {
   ServiceConfig service = 1;
+}
+
+// ParseGitHubUrlRequest message definition
+message ParseGitHubUrlRequest {
+  string url = 1;
+}
+
+// ParseGitHubUrlResponse message definition
+message ParseGitHubUrlResponse {
+  string hostname = 1;
+  string repo_slug = 2;
+  string branch = 3;
+  string file_path = 4;
 }

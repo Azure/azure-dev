@@ -334,11 +334,16 @@ func (ai *DotNetImporter) Services(
 		var dOptions DockerProjectOptions
 
 		if bContainer.Build != nil {
+			infraOptions, err := svcConfig.Project.Infra.GetWithDefaults()
+			if err != nil {
+				return nil, err
+			}
+
 			defaultLanguage = ServiceLanguageDocker
 			// dockerfiles are copied to the infra folder like bicep files to ensure
 			// provision and deploy works after infra gen.
 			bContainer.Build.Dockerfile = filepath.Join(
-				svcConfig.Project.Path, svcConfig.Project.Infra.Path, name, filepath.Base(bContainer.Build.Dockerfile))
+				svcConfig.Project.Path, infraOptions.Path, name, filepath.Base(bContainer.Build.Dockerfile))
 
 			// If the dockerfile is not in disk, it could have been manually deleted (after infra gen) or
 			// infra gen was never run. In any case, use the in-memory generated dockerfile to build the container.

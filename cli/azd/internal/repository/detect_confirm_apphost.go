@@ -13,7 +13,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"go.opentelemetry.io/otel/attribute"
 )
 
 // detectConfirmAppHost handles prompting for confirming the detected project with an app host.
@@ -39,7 +38,7 @@ func (d *detectConfirmAppHost) Init(appHost appdetect.Project, root string, mani
 }
 
 func (d *detectConfirmAppHost) captureUsage(
-	services attribute.Key) {
+	services fields.AttributeKey) {
 
 	tracing.SetUsageAttributes(
 		services.StringSlice([]string{string(d.AppHost.Language)}),

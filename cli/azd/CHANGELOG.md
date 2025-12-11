@@ -1,14 +1,43 @@
 # Release History
 
-## 1.22.0-beta.1 (Unreleased)
+## 1.22.1 (2025-12-10)
 
 ### Features Added
 
-### Breaking Changes
+- [[#6285]](https://github.com/Azure/azure-dev/pull/6285) Support `azure.yml` as an alternative to `azure.yaml` for project configuration files.
+- [[#6266]](https://github.com/Azure/azure-dev/pull/6266) Prompt to create directory when using `-C`/`--cwd` with non-existent path.
+- [[#6300]](https://github.com/Azure/azure-dev/pull/6300) Add template gallery links in `azd init` and `azd template list` commands.
+- [[#6313]](https://github.com/Azure/azure-dev/pull/6313) Improve error handling flow with three-solution prompt and upgraded langchain dependency.
 
 ### Bugs Fixed
 
+- [[#6353]](https://github.com/Azure/azure-dev/pull/6353) Fix unclear error message when deploying to improperly-tagged Container App in non-revision mode.
+- [[#6346]](https://github.com/Azure/azure-dev/pull/6346) Fix Container App revision deployment to respect service `module` setting in `azure.yaml`.
+- [[#6345]](https://github.com/Azure/azure-dev/pull/6345) Improve `azd down` deletion behavior for resource-group-scoped deployments.
+- [[#6341]](https://github.com/Azure/azure-dev/pull/6341) Fix Static Web App deployment by ensuring framework service requires restore and produces correct artifacts.
+- [[#5568]](https://github.com/Azure/azure-dev/pull/5568) Fix JSON-escaped environment variables being lost when syncing to remote CI/CD pipelines. Thanks @Menghua1 for the contribution!
+
 ### Other Changes
+
+## 1.22.0 (2025-12-02)
+
+### Features Added
+
+- [[#6256]](https://github.com/Azure/azure-dev/pull/6256) Reduce provisioning progress display polling interval from 10s to 3s for more responsive status updates.
+- [[#6232]](https://github.com/Azure/azure-dev/pull/6232) Add language-specific `.gitignore` templates to extension scaffolding for `azd x init`.
+
+### Bugs Fixed
+
+- [[#6277]](https://github.com/Azure/azure-dev/pull/6277) Fix hooks not running in CI/CD scenarios when `.azure` directory does not exist.
+- [[#6282]](https://github.com/Azure/azure-dev/pull/6282) Fix panic in `azd provision --preview` when ARM returns nil After field during resource deletion.
+- [[#6281]](https://github.com/Azure/azure-dev/pull/6281) Fix `azd provision` skipping deployment when resource groups were deleted outside of azd.
+- [[#6180]](https://github.com/Azure/azure-dev/pull/6180) Relax Aspire binding validation for non-HTTP protocols as simple TCP.
+- [[#6255]](https://github.com/Azure/azure-dev/pull/6255) Fix Container Apps deployment error when using revision-based deployments.
+
+### Other Changes
+
+- [[#6247]](https://github.com/Azure/azure-dev/pull/6247) Update Bicep CLI to v0.39.26.
+- [[#6270]](https://github.com/Azure/azure-dev/pull/6270) Rename Azure AI Foundry to Microsoft Foundry.
 
 ## 1.21.3 (2025-11-14)
 

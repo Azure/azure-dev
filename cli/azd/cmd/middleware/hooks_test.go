@@ -15,7 +15,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
-	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
@@ -344,22 +343,10 @@ func runMiddleware(
 	envManager.On("Save", mock.Anything, mock.Anything).Return(nil)
 	envManager.On("Reload", mock.Anything, mock.Anything).Return(nil)
 
-	lazyEnvManager := lazy.NewLazy(func() (environment.Manager, error) {
-		return envManager, nil
-	})
-
-	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
-		return env, nil
-	})
-
-	lazyProjectConfig := lazy.NewLazy(func() (*project.ProjectConfig, error) {
-		return projectConfig, nil
-	})
-
 	middleware := NewHooksMiddleware(
-		lazyEnvManager,
-		lazyEnv,
-		lazyProjectConfig,
+		envManager,
+		env,
+		projectConfig,
 		project.NewImportManager(nil),
 		mockContext.CommandRunner,
 		mockContext.Console,

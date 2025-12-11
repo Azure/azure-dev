@@ -111,8 +111,6 @@ func (p *TestProvider) Destroy(
 	ctx context.Context,
 	options provisioning.DestroyOptions,
 ) (*provisioning.DestroyResult, error) {
-	// TODO: progress, "Starting destroy"
-
 	destroyResult := provisioning.DestroyResult{
 		InvalidatedEnvKeys: []string{},
 	}

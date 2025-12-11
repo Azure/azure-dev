@@ -678,7 +678,10 @@ func (p *AgentServiceTargetProvider) createAgent(
 	azdEnv map[string]string,
 ) (*agent_api.AgentVersionObject, error) {
 	// Create agent client
-	agentClient := agent_api.NewAgentClient(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], p.credential)
+	agentClient := agent_api.NewAgentClient(
+		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+		p.credential,
+	)
 
 	// Use constant API version
 	const apiVersion = "2025-05-15-preview"
@@ -725,7 +728,10 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 	fmt.Fprintln(os.Stderr)
 
 	// Create agent client
-	agentClient := agent_api.NewAgentClient(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], p.credential)
+	agentClient := agent_api.NewAgentClient(
+		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+		p.credential,
+	)
 
 	var minReplicas, maxReplicas *int32
 	if foundryAgentConfig.Container != nil && foundryAgentConfig.Container.Scale != nil {

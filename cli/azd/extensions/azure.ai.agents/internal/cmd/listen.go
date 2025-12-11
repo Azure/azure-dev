@@ -93,7 +93,7 @@ func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, proje
 				return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
 			}
 		case ContainerAppHost:
-			if err := containerAgentHandling(ctx, azdClient, args.Project, svc, projectParser, args); err != nil {
+			if err := containerAgentHandling(ctx, azdClient, projectParser, args); err != nil {
 				return fmt.Errorf("failed to handle container agent for service %q: %w", svc.Name, err)
 			}
 		}
@@ -113,7 +113,7 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, projectP
 				return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
 			}
 		case ContainerAppHost:
-			if err := containerAgentHandling(ctx, azdClient, args.Project, svc, projectParser, args); err != nil {
+			if err := containerAgentHandling(ctx, azdClient, projectParser, args); err != nil {
 				return fmt.Errorf("failed to handle container agent for service %q: %w", svc.Name, err)
 			}
 		}

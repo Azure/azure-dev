@@ -10,6 +10,16 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 )
 
+const (
+	TraceparentKey = "traceparent"
+	TracestateKey  = "tracestate"
+
+	// https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/context/env-carriers.md
+
+	TraceparentEnv = "TRACEPARENT"
+	TracestateEnv  = "TRACESTATE"
+)
+
 // NewContext initializes a new context with tracing information extracted from environment variables.
 func NewContext() context.Context {
 	ctx := context.Background()

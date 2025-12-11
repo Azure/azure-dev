@@ -336,7 +336,7 @@ The build process automatically creates binaries for multiple platforms and arch
 
 ### Distributed Tracing
 
-`azd` uses OpenTelemetry and W3C Trace Context for distributed tracing. Trace context is propagated through gRPC metadata, and `azd` sets `TRACEPARENT` in the environment when it launches an extension.
+`azd` uses OpenTelemetry and W3C Trace Context for distributed tracing. `azd` sets `TRACEPARENT` in the environment when it launches the extension process.
 
 Use `azdext.NewContext()` to hydrate the root context with trace context:
 

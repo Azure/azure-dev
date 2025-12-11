@@ -9,10 +9,12 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"reflect"
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
@@ -20,22 +22,38 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 )
 
 // MapError maps the given error to a telemetry span, setting relevant status and attributes.
 func MapError(err error, span tracing.Span) {
-	errCode := "UnknownError"
+	var errCode string
 	var errDetails []attribute.KeyValue
 
+	// external service errors
 	var respErr *azcore.ResponseError
 	var armDeployErr *azapi.AzureDeploymentError
-	var toolExecErr *exec.ExitError
 	var authFailedErr *auth.AuthFailedError
-	var extensionRunErr *extensions.ExtensionRunError
 	var extServiceErr *azdext.ServiceError
-	if errors.As(err, &respErr) {
+
+	// external tool errors
+	var toolExecErr *exec.ExitError
+	var toolCheckErr *tools.MissingToolErrors
+	var extensionRunErr *extensions.ExtensionRunError
+
+	// internal errors
+	var errWithSuggestion *internal.ErrorWithSuggestion
+	var loginErr *auth.ReLoginRequiredError
+
+	if errors.As(err, &loginErr) {
+		errCode = "auth.login_required"
+	} else if errors.As(err, &errWithSuggestion) {
+		errCode = "error.suggestion"
+		errType := errorType(errWithSuggestion.Unwrap())
+		span.SetAttributes(fields.ErrType.String(errType))
+	} else if errors.As(err, &respErr) {
 		serviceName := "other"
 		statusCode := -1
 		errDetails = append(errDetails, fields.ServiceErrorCode.String(respErr.ErrorCode))
@@ -114,6 +132,15 @@ func MapError(err error, span tracing.Span) {
 			fields.ToolName.String(toolName))
 
 		errCode = fmt.Sprintf("tool.%s.failed", toolName)
+	} else if errors.As(err, &toolCheckErr) {
+		if len(toolCheckErr.ToolNames) == 1 {
+			toolName := toolCheckErr.ToolNames[0]
+			errCode = fmt.Sprintf("tool.%s.missing", toolName)
+			errDetails = append(errDetails, fields.ToolName.String(toolName))
+		} else {
+			errCode = "tool.multiple.missing"
+			errDetails = append(errDetails, fields.ToolName.String(strings.Join(toolCheckErr.ToolNames, ",")))
+		}
 	} else if errors.As(err, &authFailedErr) {
 		errDetails = append(errDetails, fields.ServiceName.String("aad"))
 		if authFailedErr.Parsed != nil {
@@ -130,6 +157,11 @@ func MapError(err error, span tracing.Span) {
 		errCode = "service.aad.failed"
 	} else if errors.Is(err, terminal.InterruptErr) {
 		errCode = "user.canceled"
+	} else {
+		errType := errorType(err)
+		span.SetAttributes(fields.ErrType.String(errType))
+		errCode = fmt.Sprintf("internal.%s",
+			strings.ReplaceAll(strings.ReplaceAll(errType, ".", "_"), "*", ""))
 	}
 
 	if len(errDetails) > 0 {
@@ -141,6 +173,38 @@ func MapError(err error, span tracing.Span) {
 	}
 
 	span.SetStatus(codes.Error, errCode)
+}
+
+func errorType(err error) string {
+	if err == nil {
+		return "<nil>"
+	}
+
+	//nolint:errorlint // Type switch is intentionally used to check for Unwrap() methods
+	for {
+		switch x := err.(type) {
+		case interface{ Unwrap() error }:
+			err = x.Unwrap()
+			if err == nil {
+				return reflect.TypeOf(x).String()
+			}
+		case interface{ Unwrap() []error }:
+			result := ""
+			for _, err := range x.Unwrap() {
+				if err == nil {
+					continue
+				}
+				if result != "" {
+					result += ","
+				}
+
+				result += reflect.TypeOf(err).String()
+			}
+			return result
+		default:
+			return reflect.TypeOf(x).String()
+		}
+	}
 }
 
 type deploymentErrorCode struct {

@@ -320,6 +320,13 @@ var (
 		Purpose:        PerformanceAndHealth,
 	}
 
+	// Error type.
+	ErrType = AttributeKey{
+		Key:            attribute.Key("error.type"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
+
 	// Inner error.
 	ErrInner = AttributeKey{
 		Key:            attribute.Key("error.inner"),

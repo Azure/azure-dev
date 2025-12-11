@@ -212,7 +212,7 @@ func (at *containerAppTarget) Deploy(
 	}
 
 	if controlledRevision {
-		tracing.AppendUsageAttributeUnique(fields.FeaturesKey.String(fields.FeatLayers))
+		tracing.AppendUsageAttributeUnique(fields.FeaturesKey.String(fields.FeatRevisionDeployment))
 
 		fetchBicepCli := at.bicepCli
 		if fetchBicepCli == nil {

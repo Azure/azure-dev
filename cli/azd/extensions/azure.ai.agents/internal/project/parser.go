@@ -25,7 +25,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/braydonk/yaml"
 	"github.com/google/uuid"
 )
@@ -82,148 +81,6 @@ func (p *FoundryParser) IsContainerAgent(project *azdext.ProjectConfig) (bool, e
 	return false, nil
 }
 
-func (p *FoundryParser) SetIdentity(ctx context.Context, args *azdext.ProjectEventArgs) error {
-	// Get aiFoundryProjectResourceId from environment config
-	azdEnvClient := p.AzdClient.Environment()
-	currentEnvResponse, err := azdEnvClient.GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil {
-		return fmt.Errorf("failed to get current environment: %w", err)
-	}
-
-	projectIdResponse, err := azdEnvClient.GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: currentEnvResponse.Environment.Name,
-		Key:     "AZURE_AI_PROJECT_ID",
-	})
-	if err != nil {
-		return fmt.Errorf("failed to get AZURE_AI_PROJECT_ID from current environment: %w", err)
-	}
-	projectResourceID := projectIdResponse.Value
-	fmt.Println("✓ Retrieved AZURE_AI_PROJECT_ID")
-
-	// Extract subscription ID from resource ID
-	parts := strings.Split(projectResourceID, "/")
-	if len(parts) < 3 {
-		return fmt.Errorf("invalid resource ID format: %s", projectResourceID)
-	}
-
-	// Find subscription ID
-	var subscriptionID string
-	for i, part := range parts {
-		if part == "subscriptions" && i+1 < len(parts) {
-			subscriptionID = parts[i+1]
-			break
-		}
-	}
-
-	if subscriptionID == "" {
-		return fmt.Errorf("subscription ID not found in resource ID: %s", projectResourceID)
-	}
-
-	// Get the tenant ID
-	tenantResponse, err := p.AzdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
-		SubscriptionId: subscriptionID,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to get tenant ID: %w", err)
-	}
-
-	cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
-		TenantID:                   tenantResponse.TenantId,
-		AdditionallyAllowedTenants: []string{"*"},
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create Azure credential: %w", err)
-	}
-
-	// Get Microsoft Foundry Project's managed identity
-	fmt.Println("Retrieving Microsoft Foundry Project identity...")
-	projectPrincipalID, err := getProjectPrincipalID(ctx, cred, projectResourceID, subscriptionID)
-	if err != nil {
-		return fmt.Errorf("failed to get Project principal ID: %w", err)
-	}
-	fmt.Printf("Principal ID: %s\n", projectPrincipalID)
-
-	// Get Application ID from Principal ID
-	fmt.Println("Retrieving Application ID...")
-	projectClientID, err := getApplicationID(context.Background(), cred, projectPrincipalID)
-	if err != nil {
-		return fmt.Errorf("failed to get Application ID: %w", err)
-	}
-
-	fmt.Printf("Application ID: %s\n", projectClientID)
-
-	_, err = azdEnvClient.SetValue(ctx, &azdext.SetEnvRequest{
-		EnvName: currentEnvResponse.Environment.Name,
-		Key:     "AZURE_AI_PROJECT_PRINCIPAL_ID",
-		Value:   projectClientID,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to set AZURE_AI_PROJECT_PRINCIPAL_ID in environment: %w", err)
-	}
-
-	fmt.Println("✓ Application ID saved to environment")
-
-	return nil
-}
-
-// getProjectPrincipalID retrieves the principal ID from the Microsoft Foundry Project using Azure SDK
-func getProjectPrincipalID(ctx context.Context, cred *azidentity.AzureDeveloperCLICredential, resourceID, subscriptionID string) (string, error) {
-	// Create resources client
-	client, err := armresources.NewClient(subscriptionID, cred, nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to create resources client: %w", err)
-	}
-
-	// Get the resource
-	// API version for Microsoft Foundry projects (Machine Learning workspaces)
-	apiVersion := "2025-06-01"
-	resp, err := client.GetByID(ctx, resourceID, apiVersion, nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to retrieve resource: %w", err)
-	}
-
-	// Extract principal ID from identity
-	if resp.Identity == nil {
-		return "", fmt.Errorf("resource does not have an identity")
-	}
-
-	if resp.Identity.PrincipalID == nil {
-		return "", fmt.Errorf("resource identity does not have a principal ID")
-	}
-
-	principalID := *resp.Identity.PrincipalID
-	if principalID == "" {
-		return "", fmt.Errorf("principal ID is empty")
-	}
-
-	return principalID, nil
-}
-
-// getApplicationID retrieves the application ID from the principal ID using Microsoft Graph API
-func getApplicationID(ctx context.Context, cred *azidentity.AzureDeveloperCLICredential, principalID string) (string, error) {
-	// Create Graph client
-	graphClient, err := graphsdk.NewGraphClient(cred, nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to create Graph client: %w", err)
-	}
-
-	// Get service principal directly by object ID (principal ID)
-	servicePrincipal, err := graphClient.
-		ServicePrincipalById(principalID).
-		Get(ctx)
-
-	if err != nil {
-		return "", fmt.Errorf("failed to retrieve service principal with principal ID '%s': %w", principalID, err)
-	}
-
-	appID := servicePrincipal.AppId
-	if appID == "" {
-		return "", fmt.Errorf("application ID is empty")
-	}
-
-	return appID, nil
-}
-
 // getCognitiveServicesAccountLocation retrieves the location of a Cognitive Services account using Azure SDK
 func getCognitiveServicesAccountLocation(ctx context.Context, cred *azidentity.AzureDeveloperCLICredential, subscriptionID, resourceGroupName, accountName string) (string, error) {
 	// Create cognitive services accounts client
@@ -250,8 +107,6 @@ func getCognitiveServicesAccountLocation(ctx context.Context, cred *azidentity.A
 
 	return location, nil
 }
-
-/////////////////////////////////////////////////////////////////////////////
 
 // Config structures for JSON parsing
 type AgentRegistrationPayload struct {

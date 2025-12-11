@@ -255,10 +255,6 @@ func containerAgentHandling(ctx context.Context, azdClient *azdext.AzdClient, pr
 		return err
 	}
 
-	if err := projectParser.SetIdentity(ctx, args); err != nil {
-		return fmt.Errorf("failed to set identity: %w", err)
-	}
-
 	return nil
 }
 

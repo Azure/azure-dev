@@ -215,8 +215,8 @@ var (
 
 // Machine-level configuration related attribute.
 var (
-	// Tracks what alpha features are enabled on each command
-	AlphaFeaturesKey = AttributeKey{
+	// Tracks features associated to the current event.
+	FeaturesKey = AttributeKey{
 		Key:            attribute.Key("config.features"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,

@@ -13,6 +13,8 @@ import (
 	"strconv"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -210,6 +212,8 @@ func (at *containerAppTarget) Deploy(
 	}
 
 	if controlledRevision {
+		tracing.AppendUsageAttributeUnique(fields.FeaturesKey.String(fields.FeatLayers))
+
 		fetchBicepCli := at.bicepCli
 		if fetchBicepCli == nil {
 			fetchBicepCli = func() (*bicep.Cli, error) {

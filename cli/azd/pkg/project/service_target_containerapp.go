@@ -6,6 +6,7 @@ package project
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -381,6 +383,45 @@ func (at *containerAppTarget) validateTargetResource(
 	}
 
 	return nil
+}
+
+// ResolveTargetResource implements TargetResourceResolver for containerAppTarget.
+// It attempts to find an existing container app resource. If not found, it returns a partial
+// target resource (with resource group but no resource name) to support bicep-based deployments
+// that provision the container app on-demand.
+func (at *containerAppTarget) ResolveTargetResource(
+	ctx context.Context,
+	subscriptionId string,
+	serviceConfig *ServiceConfig,
+	defaultResolver func() (*environment.TargetResource, error),
+) (*environment.TargetResource, error) {
+	targetResource, err := defaultResolver()
+	if err == nil {
+		return targetResource, nil
+	}
+
+	var resourceNotFoundError *azureutil.ResourceNotFoundError
+	if errors.As(err, &resourceNotFoundError) {
+		resourceGroupTemplate := serviceConfig.ResourceGroupName
+		if resourceGroupTemplate.Empty() {
+			resourceGroupTemplate = serviceConfig.Project.ResourceGroupName
+		}
+
+		resourceGroupName, rgErr := at.resourceManager.GetResourceGroupName(ctx, subscriptionId, resourceGroupTemplate)
+		if rgErr != nil {
+			return nil, err
+		}
+
+		// Return partial target resource to enable bicep-based deployments
+		return environment.NewTargetResource(
+			subscriptionId,
+			resourceGroupName,
+			"",
+			string(azapi.AzureResourceTypeContainerApp),
+		), nil
+	}
+
+	return nil, err
 }
 
 func (at *containerAppTarget) addPreProvisionChecks(ctx context.Context, serviceConfig *ServiceConfig) error {

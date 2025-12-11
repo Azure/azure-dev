@@ -194,7 +194,7 @@
             "explorer/context": [
                 {
                     "submenu": "azure-dev.explorer.submenu",
-                    "when": "resourceFilename =~ /(azure.yaml|pom.xml)/i",
+                    "when": "resourceFilename =~ /(azure.ya?ml|pom.xml)/i",
                     "group": "azure-dev"
                 }
             ],
@@ -205,62 +205,62 @@
                     "group": "10provision@10"
                 },
                 {
-                    "when": "resourceFilename =~ /azure.yaml/i",
+                    "when": "resourceFilename =~ /azure.ya?ml/i",
                     "command": "azure-dev.commands.cli.provision",
                     "group": "10provision@10"
                 },
                 {
-                    "when": "resourceFilename =~ /azure.yaml/i",
+                    "when": "resourceFilename =~ /azure.ya?ml/i",
                     "command": "azure-dev.commands.cli.deploy",
                     "group": "10provision@20"
                 },
                 {
-                    "when": "resourceFilename =~ /azure.yaml/i",
+                    "when": "resourceFilename =~ /azure.ya?ml/i",
                     "command": "azure-dev.commands.cli.up",
                     "group": "10provision@30"
                 },
                 {
-                    "when": "resourceFilename =~ /azure.yaml/i",
+                    "when": "resourceFilename =~ /azure.ya?ml/i",
                     "command": "azure-dev.commands.cli.down",
                     "group": "10provision@40"
                 },
                 {
-                    "when": "resourceFilename =~ /azure.yaml/i",
+                    "when": "resourceFilename =~ /azure.ya?ml/i",
                     "command": "azure-dev.commands.cli.env-new",
                     "group": "20env@10"
                 },
                 {
-                    "when": "resourceFilename =~ /azure.yaml/i",
+                    "when": "resourceFilename =~ /azure.ya?ml/i",
                     "command": "azure-dev.commands.cli.env-select",
                     "group": "20env@20"
                 },
                 {
-                    "when": "resourceFilename =~ /azure.yaml/i",
+                    "when": "resourceFilename =~ /azure.ya?ml/i",
                     "command": "azure-dev.commands.cli.env-refresh",
                     "group": "20env@30"
                 },
                 {
-                    "when": "resourceFilename =~ /azure.yaml/i",
+                    "when": "resourceFilename =~ /azure.ya?ml/i",
                     "command": "azure-dev.commands.cli.env-list",
                     "group": "20env@40"
                 },
                 {
-                    "when": "resourceFilename =~ /azure.yaml/i",
+                    "when": "resourceFilename =~ /azure.ya?ml/i",
                     "command": "azure-dev.commands.cli.restore",
                     "group": "30develop@10"
                 },
                 {
-                    "when": "resourceFilename =~ /azure.yaml/i",
+                    "when": "resourceFilename =~ /azure.ya?ml/i",
                     "command": "azure-dev.commands.cli.package",
                     "group": "30develop@20"
                 },
                 {
-                    "when": "resourceFilename =~ /azure.yaml/i",
+                    "when": "resourceFilename =~ /azure.ya?ml/i",
                     "command": "azure-dev.commands.cli.pipeline-config",
                     "group": "30develop@30"
                 },
                 {
-                    "when": "resourceFilename =~ /azure.yaml/i",
+                    "when": "resourceFilename =~ /azure.ya?ml/i",
                     "command": "azure-dev.commands.cli.monitor",
                     "group": "40monitor@10"
                 }
@@ -499,6 +499,10 @@
         "yamlValidation": [
             {
                 "fileMatch": "azure.yaml",
+                "url": "https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json"
+            },
+            {
+                "fileMatch": "azure.yml",
                 "url": "https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json"
             }
         ]

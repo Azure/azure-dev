@@ -5,7 +5,11 @@ package infra
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"net/http"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -215,7 +219,14 @@ func (s *ResourceGroupScope) ResourceGroupName() string {
 
 // ListDeployments returns all the deployments in this resource group.
 func (s *ResourceGroupScope) ListDeployments(ctx context.Context) ([]*azapi.ResourceDeployment, error) {
-	return s.deploymentService.ListResourceGroupDeployments(ctx, s.subscriptionId, s.resourceGroupName)
+	deployments, err := s.deploymentService.ListResourceGroupDeployments(ctx, s.subscriptionId, s.resourceGroupName)
+
+	var respErr *azcore.ResponseError
+	if errors.As(err, &respErr) && respErr.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("%w: %w", ErrDeploymentsNotFound, respErr)
+	}
+
+	return deployments, err
 }
 
 // Deployment gets the deployment with the specified name.

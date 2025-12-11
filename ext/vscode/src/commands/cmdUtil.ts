@@ -10,10 +10,10 @@ import { createAzureDevCli } from '../utils/azureDevCli';
 import { execAsync } from '../utils/execAsync';
 import { fileExists } from '../utils/fileUtils';
 
-const AzureYamlGlobPattern: vscode.GlobPattern = '**/[aA][zZ][uU][rR][eE].[yY][aA][mM][lL]';
+const AzureYamlGlobPattern: vscode.GlobPattern = '**/[aA][zZ][uU][rR][eE].{[yY][aA][mM][lL],[yY][mM][lL]}';
 
 // If the command was invoked with a specific file context, use the file context as the working directory for running Azure developer CLI commands.
-// Otherwise search the workspace for "azure.yaml" files. If only one is found, use it (i.e. its folder). If more than one is found, ask the user which one to use.
+// Otherwise search the workspace for "azure.yaml" or "azure.yml" files. If only one is found, use it (i.e. its folder). If more than one is found, ask the user which one to use.
 // If at this point we still do not have a working directory, prompt the user to select one.
 export async function getWorkingFolder(context: IActionContext, selectedFile?: vscode.Uri): Promise<string> {
     let folderPath = selectedFile ? path.dirname(selectedFile.fsPath) : undefined;
@@ -39,10 +39,11 @@ export async function getWorkingFolder(context: IActionContext, selectedFile?: v
 
         const folderUri = localFolderUris[0];
         const azureYamlUri = vscode.Uri.joinPath(folderUri, 'azure.yaml');
+        const azureYmlUri = vscode.Uri.joinPath(folderUri, 'azure.yml');
 
-        if (!await fileExists(azureYamlUri)) {
+        if (!await fileExists(azureYamlUri) && !await fileExists(azureYmlUri)) {
             context.errorHandling.suppressReportIssue = true;
-            throw new Error(vscode.l10n.t("The selected folder does not contain 'azure.yaml' file and cannot be used to run Azure Developer CLI commands"));
+            throw new Error(vscode.l10n.t("The selected folder does not contain 'azure.yaml' or 'azure.yml' file and cannot be used to run Azure Developer CLI commands"));
         }
 
         folderPath = folderUri.fsPath;
@@ -66,7 +67,7 @@ export async function pickAzureYamlFile(context: IActionContext): Promise<vscode
             const chosenFile = await context.ui.showQuickPick(choices, {
                 canPickMany: false,
                 suppressPersistence: true,
-                placeHolder: vscode.l10n.t("Select configuration file ('azure.yaml') to use for running Azure developer CLI commands")
+                placeHolder: vscode.l10n.t("Select configuration file ('azure.yaml' or 'azure.yml') to use for running Azure developer CLI commands")
             });
 
             filePath = chosenFile.data;

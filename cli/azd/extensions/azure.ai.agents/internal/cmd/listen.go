@@ -236,7 +236,7 @@ func resourcesEnvUpdate(ctx context.Context, resources []project.Resource, azdCl
 	return setEnvVar(ctx, azdClient, envName, "AI_PROJECT_DEPENDENT_RESOURCES", escapedJsonString)
 }
 
-func containerAgentHandling(ctx context.Context, azdClient *azdext.AzdClient, project *azdext.ProjectConfig, svc *azdext.ServiceConfig, projectParser *project.FoundryParser, args *azdext.ProjectEventArgs) error {
+func containerAgentHandling(ctx context.Context, azdClient *azdext.AzdClient, projectParser *project.FoundryParser, args *azdext.ProjectEventArgs) error {
 	isContainerAgent, err := projectParser.IsContainerAgent(args.Project)
 	if err != nil {
 		return fmt.Errorf("failed to determine if extension should attach: %w", err)

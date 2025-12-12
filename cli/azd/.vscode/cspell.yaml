@@ -45,6 +45,9 @@ words:
   - jsonschema
   - rustc
   - figspec
+  - bubbletea
+  - lipgloss
+  - gopxl
 languageSettings:
   - languageId: go
     ignoreRegExpList:

@@ -63,6 +63,13 @@ func (r *Runner) Invoke(ctx context.Context, extension *Extension, options *Invo
 		runArgs = runArgs.WithStdErr(options.StdErr)
 	}
 
+	// Enable interactive mode for extensions that opt-in via the "interactive" property
+	// in their extension.yaml. This ensures stdin/stdout/stderr are directly connected
+	// to the terminal, which is required for TUI applications like Bubble Tea.
+	if extension.Interactive {
+		runArgs = runArgs.WithInteractive(true)
+	}
+
 	runResult, err := r.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return &runResult, &ExtensionRunError{Err: err, ExtensionId: extension.Id}

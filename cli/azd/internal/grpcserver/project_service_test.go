@@ -46,8 +46,9 @@ func Test_ProjectService_NoProject(t *testing.T) {
 	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
 	require.NoError(t, err)
 
-	// Create the service.
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, ghCli)
+	// Create the service with ImportManager.
+	importManager := project.NewImportManager(&project.DotNetImporter{})
+	service := NewProjectService(lazyAzdContext, lazyEnvManager, importManager, ghCli)
 	_, err = service.Get(*mockContext.Context, &azdext.EmptyRequest{})
 	require.Error(t, err)
 }
@@ -101,8 +102,9 @@ func Test_ProjectService_Flow(t *testing.T) {
 	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
 	require.NoError(t, err)
 
-	// Create the service.
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, ghCli)
+	// Create the service with ImportManager.
+	importManager := project.NewImportManager(&project.DotNetImporter{})
+	service := NewProjectService(lazyAzdContext, lazyEnvManager, importManager, ghCli)
 
 	// Test: Retrieve project details.
 	getResponse, err := service.Get(*mockContext.Context, &azdext.EmptyRequest{})
@@ -148,8 +150,9 @@ func Test_ProjectService_AddService(t *testing.T) {
 	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
 	require.NoError(t, err)
 
-	// Create the project service.
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, ghCli)
+	// Create the project service with ImportManager.
+	importManager := project.NewImportManager(&project.DotNetImporter{})
+	service := NewProjectService(lazyAzdContext, lazyEnvManager, importManager, ghCli)
 
 	// Prepare a new service addition request.
 	serviceRequest := &azdext.AddServiceRequest{

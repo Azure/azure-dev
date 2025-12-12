@@ -23,8 +23,6 @@ type springAppTarget struct {
 }
 
 // NewSpringAppTarget creates the spring app service target.
-//
-// Deprecated: Support for Azure Spring Apps has been removed.
 func NewSpringAppTarget(
 	env *environment.Environment,
 	envManager environment.Manager,

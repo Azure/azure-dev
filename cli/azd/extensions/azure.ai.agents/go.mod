@@ -10,7 +10,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices v1.8.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.2.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions v1.3.0
-	github.com/azure/azure-dev/cli/azd v0.0.0-20251121010829-d5e0a142e813
+	github.com/azure/azure-dev/cli/azd v0.0.0-20251212003342-848978091314
 	github.com/braydonk/yaml v0.9.0
 	github.com/drone/envsubst v1.0.3
 	github.com/fatih/color v1.18.0
@@ -97,5 +97,3 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20251007200510-49b9836ed3ff // indirect
 	google.golang.org/grpc v1.76.0 // indirect
 )
-
-replace github.com/azure/azure-dev/cli/azd => ../..

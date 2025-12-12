@@ -4,11 +4,11 @@
 package main
 
 import (
-	"context"
 	"os"
 
 	"azureaiagent/internal/cmd"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
 )
 
@@ -21,14 +21,7 @@ func init() {
 
 func main() {
 	// Execute the root command
-	ctx := context.Background()
-
-	// TODO: Rebase and uncomment after #6321 is merged
-	// Hydrate context with traceparent from environment if present
-	// if traceparent := os.Getenv("TRACEPARENT"); traceparent != "" {
-	// 	ctx = azdext.ContextFromTraceParent(ctx, traceparent)
-	// }
-
+	ctx := azdext.NewContext()
 	rootCmd := cmd.NewRootCommand()
 
 	if err := rootCmd.ExecuteContext(ctx); err != nil {

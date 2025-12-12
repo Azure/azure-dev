@@ -8,14 +8,16 @@ import (
 	"fmt"
 	"time"
 
+	"azure.ai.finetune/internal/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
 
 func newListenCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "listen",
-		Short: "Starts the extension and listens for events.",
+		Use:    "listen",
+		Short:  "Starts the extension and listens for events.",
+		Hidden: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Create a new context that includes the AZD access token.
 			ctx := azdext.WithAccessToken(cmd.Context())
@@ -27,51 +29,46 @@ func newListenCommand() *cobra.Command {
 			}
 			defer azdClient.Close()
 
-			eventManager := azdext.NewEventManager(azdClient)
-			defer eventManager.Close()
-
-			// Register the event handlers
-			err = eventManager.AddProjectEventHandler(
-				ctx,
-				"preprovision",
-				func(ctx context.Context, args *azdext.ProjectEventArgs) error {
-					for i := 1; i <= 20; i++ {
-						fmt.Printf("%d. Doing important work in extension...\n", i)
-						time.Sleep(250 * time.Millisecond)
-					}
-
-					return nil
-				},
-			)
-			if err != nil {
-				return fmt.Errorf("failed to add preprovision project event handler: %w", err)
-			}
-
-			err = eventManager.AddServiceEventHandler(
-				ctx,
-				"prepackage",
-				func(ctx context.Context, args *azdext.ServiceEventArgs) error {
-					for i := 1; i <= 20; i++ {
-						fmt.Printf("%d. Doing important work in extension...\n", i)
-						time.Sleep(250 * time.Millisecond)
-					}
-
-					return nil
-				},
-				nil,
-			)
-
-			if err != nil {
-				return fmt.Errorf("failed to add predeploy event handler: %w", err)
-			}
+			// IMPORTANT: service target name here must match the name used in the extension manifest.
+			host := azdext.NewExtensionHost(azdClient).
+				WithServiceTarget(AiFineTuningHost, func() azdext.ServiceTargetProvider {
+					return project.NewFineTuneServiceTargetProvider(azdClient)
+				}).
+				WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+					return preprovisionHandler(ctx, azdClient, args)
+				}).
+				WithProjectEventHandler("predeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+					return predeployHandler(ctx, azdClient, args)
+				}).
+				WithProjectEventHandler("postdeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+					return postdeployHandler(ctx, azdClient, args)
+				})
 
 			// Start listening for events
 			// This is a blocking call and will not return until the server connection is closed.
-			if err := eventManager.Receive(ctx); err != nil {
-				return fmt.Errorf("failed to receive events: %w", err)
+			if err := host.Run(ctx); err != nil {
+				return fmt.Errorf("failed to run extension: %w", err)
 			}
 
 			return nil
 		},
 	}
+}
+
+func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
+	fmt.Println("preprovisionHandler: Starting pre-provision event handling")
+	time.Sleep(2 * time.Second)
+	return nil
+}
+
+func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
+	fmt.Println("predeployHandler: Starting pre-deploy event handling")
+	time.Sleep(2 * time.Second)
+	return nil
+}
+
+func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
+	fmt.Println("postdeployHandler: Starting post-deploy event handling")
+	time.Sleep(2 * time.Second)
+	return nil
 }

@@ -243,6 +243,12 @@ overrides:
       - userosscache
       - docstates
       - dylib
+  - filename: docs/recording-functional-tests-guide.md
+    words:
+      - httptest
+      - Logf
+      - Getenv
+      - httptest      
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

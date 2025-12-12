@@ -1,0 +1,79 @@
+# Continuous deployment trigger
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - ext/azuredevops/
+      - eng/pipelines/release-azdo-setupazd.yml
+
+pr:
+  paths:
+    include:
+      - ext/azuredevops/
+      - eng/pipelines/release-azdo-setupazd.yml
+
+extends:
+  template: /eng/pipelines/templates/stages/1es-redirect.yml
+  parameters:
+    stages:
+      - stage: BuildAndTest
+
+        variables:
+          - template: /eng/pipelines/templates/variables/image.yml
+
+        jobs:
+          - job: BuildSetupAzd
+            displayName: BuildSetupAzd
+
+            variables:
+              ExtensionDirectory: ext/azuredevops
+              SetupAzdDirectory: ext/azuredevops/setupAzd
+
+            pool:
+              name: $(LINUXPOOL)
+              image: $(LINUXNEXTVMIMAGE)
+              os: linux
+
+            steps:
+              - template: /eng/common/pipelines/templates/steps/sparse-checkout.yml
+                parameters:
+                  Paths:
+                    - ext/azuredevops/
+
+              - pwsh: npm i -g tfx-cli
+                displayName: Install tfx-cli
+
+              - pwsh: npm ci
+                displayName: npm ci
+                workingDirectory: $(SetupAzdDirectory)
+
+              - pwsh: npm run build
+                displayName: Build
+                workingDirectory: $(SetupAzdDirectory)
+
+              - pwsh: npm run test
+                displayName: Test
+                workingDirectory: $(SetupAzdDirectory)
+
+              - pwsh: |
+                  tfx extension create `
+                    --manifest-globs vss-extension.json `
+                    --output-path build/
+                displayName: tfx extension create
+                workingDirectory: $(ExtensionDirectory)
+
+            templateContext:
+              outputs:
+                - output: pipelinArtifact
+                  path: ext/azuredevops/build
+                  artifact: vsix
+
+      - template: /eng/pipelines/templates/stages/vscode-sign.yml
+
+      - stage: Publish
+        jobs:
+          - job: hello
+            steps:
+              - pwsh: Write-Host "Publishing step goes here"

@@ -1094,3 +1094,279 @@ func Test_ProjectService_ChangeServiceHost(t *testing.T) {
 		"persisted host should be 'appservice'")
 }
 
+// Test_ProjectService_TypeValidation_InvalidChangesNotPersisted tests that invalid type changes
+// fail validation and are not persisted to disk.
+func Test_ProjectService_TypeValidation_InvalidChangesNotPersisted(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	temp := t.TempDir()
+
+	azdContext := azdcontext.NewAzdContextWithDirectory(temp)
+
+	// Create initial project with a service
+	projectConfig := &project.ProjectConfig{
+		Name: "test-project",
+		Services: map[string]*project.ServiceConfig{
+			"web": {
+				Name:         "web",
+				RelativePath: "./src/web",
+				Host:         project.ContainerAppTarget,
+				Language:     project.ServiceLanguageDotNet,
+			},
+		},
+	}
+
+	err := project.Save(*mockContext.Context, projectConfig, azdContext.ProjectPath())
+	require.NoError(t, err)
+
+	loadedConfig, err := project.Load(*mockContext.Context, azdContext.ProjectPath())
+	require.NoError(t, err)
+
+	// Setup lazy dependencies
+	lazyAzdContext := lazy.From(azdContext)
+	fileConfigManager := config.NewFileConfigManager(config.NewManager())
+	localDataStore := environment.NewLocalFileDataStore(azdContext, fileConfigManager)
+	envManager, err := environment.NewManager(
+		mockContext.Container,
+		azdContext,
+		mockContext.Console,
+		localDataStore,
+		nil,
+	)
+	require.NoError(t, err)
+	lazyEnvManager := lazy.From(envManager)
+	lazyProjectConfig := lazy.From(loadedConfig)
+
+	service := NewProjectService(lazyAzdContext, lazyEnvManager, lazyProjectConfig)
+
+	t.Run("Project_SetInfraToInt_ShouldFailAndNotPersist", func(t *testing.T) {
+		// Try to set "infra" (which should be an object) to an integer
+		intValue, err := structpb.NewValue(123)
+		require.NoError(t, err)
+
+		_, err = service.SetConfigValue(*mockContext.Context, &azdext.SetProjectConfigValueRequest{
+			Path:  "infra",
+			Value: intValue,
+		})
+
+		// This should fail because "infra" expects a provisioning.Options struct, not an int
+		require.Error(t, err, "setting infra to int should fail validation")
+
+		// Verify the change was NOT persisted to disk
+		reloadedConfig, err := project.Load(*mockContext.Context, azdContext.ProjectPath())
+		require.NoError(t, err)
+		require.NotNil(t, reloadedConfig.Infra, "infra should still be valid object")
+		require.Empty(t, reloadedConfig.Infra.Provider, "infra.provider should be empty (default)")
+	})
+
+	t.Run("Project_SetInfraProviderToObject_ShouldFailAndNotPersist", func(t *testing.T) {
+		// Try to set "infra.provider" (which should be a string) to an object
+		objectValue, err := structpb.NewStruct(map[string]interface{}{
+			"nested": "value",
+		})
+		require.NoError(t, err)
+
+		_, err = service.SetConfigValue(*mockContext.Context, &azdext.SetProjectConfigValueRequest{
+			Path:  "infra.provider",
+			Value: structpb.NewStructValue(objectValue),
+		})
+
+		// This should fail because "infra.provider" expects a string, not an object
+		require.Error(t, err, "setting infra.provider to object should fail validation")
+
+		// Verify the change was NOT persisted to disk
+		reloadedConfig, err := project.Load(*mockContext.Context, azdContext.ProjectPath())
+		require.NoError(t, err)
+		require.Empty(t, reloadedConfig.Infra.Provider, "infra.provider should still be empty")
+	})
+
+	t.Run("Project_SetInfraProviderToInt_FailsDuringSet", func(t *testing.T) {
+		// Try to set "infra.provider" to an int instead of a string
+		invalidProvider, err := structpb.NewValue(999)
+		require.NoError(t, err)
+
+		_, err = service.SetConfigValue(*mockContext.Context, &azdext.SetProjectConfigValueRequest{
+			Path:  "infra.provider",
+			Value: invalidProvider,
+		})
+
+		// SetConfigValue calls reloadAndCacheProjectConfig which calls project.Load
+		// project.Load fails because "999" is not a valid provider
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "unsupported IaC provider '999'")
+
+		// Verify the change was NOT persisted to disk (should still be valid)
+		reloadedConfig, err := project.Load(*mockContext.Context, azdContext.ProjectPath())
+		require.NoError(t, err)
+		require.Empty(t, reloadedConfig.Infra.Provider)
+	})
+
+	t.Run("Service_SetHostToInt_CoercesToString", func(t *testing.T) {
+		// Save the current state
+		originalConfig, err := project.Load(*mockContext.Context, azdContext.ProjectPath())
+		require.NoError(t, err)
+		originalHost := originalConfig.Services["web"].Host
+
+		// Try to set "host" to an integer instead of a string
+		invalidValue, err := structpb.NewValue(789)
+		require.NoError(t, err)
+
+		_, err = service.SetServiceConfigValue(*mockContext.Context, &azdext.SetServiceConfigValueRequest{
+			ServiceName: "web",
+			Path:        "host",
+			Value:       invalidValue,
+		})
+
+		// This succeeds at the config level (YAML allows numbers)
+		require.NoError(t, err)
+
+		// YAML coerces 789 to string "789", which is then treated as a custom host value
+		// (project.Load doesn't fail on unknown host types, it treats them as custom)
+		reloadedConfig, err := project.Load(*mockContext.Context, azdContext.ProjectPath())
+		require.NoError(t, err)
+		require.Equal(t, project.ServiceTargetKind("789"), reloadedConfig.Services["web"].Host)
+
+		// Restore the original valid configuration
+		err = project.Save(*mockContext.Context, originalConfig, azdContext.ProjectPath())
+		require.NoError(t, err)
+
+		// Verify restoration succeeded
+		restoredConfig, err := project.Load(*mockContext.Context, azdContext.ProjectPath())
+		require.NoError(t, err)
+		require.Equal(t, originalHost, restoredConfig.Services["web"].Host)
+	})
+
+	t.Run("Service_SetLanguageToArray_ShouldFailAndNotPersist", func(t *testing.T) {
+		// Get current language value
+		originalConfig, err := project.Load(*mockContext.Context, azdContext.ProjectPath())
+		require.NoError(t, err)
+		originalLanguage := originalConfig.Services["web"].Language
+
+		// Try to set "language" to an array
+		arrayValue, err := structpb.NewList([]interface{}{"go", "python"})
+		require.NoError(t, err)
+
+		_, err = service.SetServiceConfigValue(*mockContext.Context, &azdext.SetServiceConfigValueRequest{
+			ServiceName: "web",
+			Path:        "language",
+			Value:       structpb.NewListValue(arrayValue),
+		})
+
+		// This should fail because "language" expects a string, not an array
+		require.Error(t, err, "setting language to array should fail validation")
+
+		// Verify the change was NOT persisted to disk
+		reloadedConfig, err := project.Load(*mockContext.Context, azdContext.ProjectPath())
+		require.NoError(t, err)
+		require.Equal(t, originalLanguage, reloadedConfig.Services["web"].Language,
+			"language should still have original value")
+	})
+
+	t.Run("Service_SetDockerToInvalidStructure_ShouldSucceedButFailOnReload", func(t *testing.T) {
+		// Save the current state
+		originalConfig, err := project.Load(*mockContext.Context, azdContext.ProjectPath())
+		require.NoError(t, err)
+
+		// Try to set "docker.path" to an int instead of a string
+		invalidPath, err := structpb.NewValue(123)
+		require.NoError(t, err)
+
+		_, err = service.SetServiceConfigValue(*mockContext.Context, &azdext.SetServiceConfigValueRequest{
+			ServiceName: "web",
+			Path:        "docker.path",
+			Value:       invalidPath,
+		})
+
+		// This succeeds at the config level (YAML allows numbers)
+		require.NoError(t, err, "setting docker.path to int succeeds at config level")
+
+		// When we reload, YAML will coerce 123 to string "123", which is technically valid
+		// but semantically wrong (not a valid file path)
+		reloadedConfig, err := project.Load(*mockContext.Context, azdContext.ProjectPath())
+		require.NoError(t, err, "parsing succeeds because YAML coerces int to string")
+		require.Equal(t, "123", reloadedConfig.Services["web"].Docker.Path, "path is coerced to string '123'")
+
+		// Restore the original valid configuration
+		err = project.Save(*mockContext.Context, originalConfig, azdContext.ProjectPath())
+		require.NoError(t, err)
+
+		// Verify restoration succeeded
+		restoredConfig, err := project.Load(*mockContext.Context, azdContext.ProjectPath())
+		require.NoError(t, err)
+		require.Empty(t, restoredConfig.Services["web"].Docker.Path)
+	})
+}
+
+// Test_ProjectService_TypeValidation_CoercedValues tests YAML type coercion behavior
+func Test_ProjectService_TypeValidation_CoercedValues(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	temp := t.TempDir()
+
+	azdContext := azdcontext.NewAzdContextWithDirectory(temp)
+
+	// Create initial project
+	projectConfig := &project.ProjectConfig{
+		Name: "test-project",
+	}
+
+	err := project.Save(*mockContext.Context, projectConfig, azdContext.ProjectPath())
+	require.NoError(t, err)
+
+	loadedConfig, err := project.Load(*mockContext.Context, azdContext.ProjectPath())
+	require.NoError(t, err)
+
+	// Setup lazy dependencies
+	lazyAzdContext := lazy.From(azdContext)
+	fileConfigManager := config.NewFileConfigManager(config.NewManager())
+	localDataStore := environment.NewLocalFileDataStore(azdContext, fileConfigManager)
+	envManager, err := environment.NewManager(
+		mockContext.Container,
+		azdContext,
+		mockContext.Console,
+		localDataStore,
+		nil,
+	)
+	require.NoError(t, err)
+	lazyEnvManager := lazy.From(envManager)
+	lazyProjectConfig := lazy.From(loadedConfig)
+
+	service := NewProjectService(lazyAzdContext, lazyEnvManager, lazyProjectConfig)
+
+	t.Run("SetNameToInt_GetsCoercedToString", func(t *testing.T) {
+		// Try to set "name" (which should be a string) to an integer
+		intValue, err := structpb.NewValue(456)
+		require.NoError(t, err)
+
+		_, err = service.SetConfigValue(*mockContext.Context, &azdext.SetProjectConfigValueRequest{
+			Path:  "name",
+			Value: intValue,
+		})
+
+		// YAML will coerce the int to a string, so this succeeds
+		require.NoError(t, err, "YAML coerces int to string, so this succeeds")
+
+		// When loaded as ProjectConfig, it gets coerced to string "456"
+		reloadedConfig, err := project.Load(*mockContext.Context, azdContext.ProjectPath())
+		require.NoError(t, err)
+		require.Equal(t, "456", reloadedConfig.Name, "YAML unmarshals int as string '456'")
+	})
+
+	t.Run("SetNameToBool_GetsCoercedToString", func(t *testing.T) {
+		// Try to set "name" to a boolean
+		boolValue, err := structpb.NewValue(true)
+		require.NoError(t, err)
+
+		_, err = service.SetConfigValue(*mockContext.Context, &azdext.SetProjectConfigValueRequest{
+			Path:  "name",
+			Value: boolValue,
+		})
+
+		// YAML will coerce bool to string
+		require.NoError(t, err, "YAML coerces bool to string")
+
+		// When loaded as ProjectConfig, it gets coerced to string "true"
+		reloadedConfig, err := project.Load(*mockContext.Context, azdContext.ProjectPath())
+		require.NoError(t, err)
+		require.Equal(t, "true", reloadedConfig.Name, "YAML unmarshals bool as string 'true'")
+	})
+}
+

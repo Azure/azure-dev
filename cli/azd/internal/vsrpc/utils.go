@@ -17,6 +17,8 @@ import (
 )
 
 // appHostServiceForProject returns the ServiceConfig of the service for the AppHost project for the given azd project.
+//
+// If the project does not have an AppHost project, nil is returned.
 func appHostForProject(
 	ctx context.Context, pc *project.ProjectConfig, dotnetCli *dotnet.Cli,
 ) (*project.ServiceConfig, error) {
@@ -24,15 +26,16 @@ func appHostForProject(
 		if service.Language == project.ServiceLanguageDotNet {
 			isAppHost, err := dotnetCli.IsAspireHostProject(ctx, service.Path())
 			if err != nil {
-				log.Printf("error checking if %s is an app host project: %v", service.Path(), err)
+				return nil, fmt.Errorf("error checking if %s is an app host project: %w", service.Path(), err)
 			}
+
 			if isAppHost {
 				return service, nil
 			}
 		}
 	}
 
-	return nil, fmt.Errorf("no app host project found for project: %s", pc.Name)
+	return nil, nil
 }
 
 func servicesFromManifest(manifest *apphost.Manifest) []*Service {
@@ -42,6 +45,19 @@ func servicesFromManifest(manifest *apphost.Manifest) []*Service {
 		services = append(services, &Service{
 			Name: name,
 			Path: path,
+		})
+	}
+
+	return services
+}
+
+func servicesFromProjectConfig(ctx context.Context, pc *project.ProjectConfig) []*Service {
+	var services []*Service
+
+	for _, service := range pc.Services {
+		services = append(services, &Service{
+			Name: service.Name,
+			Path: service.Path(),
 		})
 	}
 
@@ -75,16 +91,16 @@ func azdContext(hostProjectPath string) (*azdcontext.AzdContext, error) {
 		return nil, err
 	}
 
+	found := false
 	for _, svc := range prjConfig.Services {
-		if svc.Language == project.ServiceLanguageDotNet && svc.Host == project.ContainerAppTarget {
-			if svc.Path() != hostProjectPath {
-				log.Printf("ignoring %s due to mismatch, using app host directory", azdCtx.ProjectPath())
-				return azdcontext.NewAzdContextWithDirectory(hostProjectDir), nil
-			}
+		if svc.Path() == hostProjectPath {
+			found = true
 		}
+	}
 
-		// there can only be one app host project
-		break
+	if !found {
+		log.Printf("ignoring %s due to mismatch, using host project directory", azdCtx.ProjectPath())
+		return azdcontext.NewAzdContextWithDirectory(hostProjectDir), nil
 	}
 
 	log.Printf("use nearest directory: %s", azdCtx.ProjectDirectory())

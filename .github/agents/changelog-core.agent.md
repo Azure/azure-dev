@@ -1,9 +1,10 @@
 ---
-name: Changelog (core)
-description: Update cli/azd release changelog and version based on merged PRs.
+name: Generate changelog (azd core)
+description: Update azd core release changelog and version based on merged PRs.
+infer: true
 ---
 
-# Changelog (core)
+# Changelog (azd core)
 
 You maintain the Azure Developer CLI (azd) release changelog.
 
@@ -61,7 +62,7 @@ For **each** commit newer than the cutoff, do this workflow fully (steps 1-6) be
    - CI/build/release infrastructure changes
    - Automated dependency bumps that are purely dependency maintenance (updates to tools like Bicep CLI, GitHub CLI can remain in the changelog)
    - Extension-only changes under `cli/azd/extensions/` (e.g. azure.ai.agent, microsoft.azd.demo, etc.)
-6. Write the changelog entry:
+6. Write the changelog entry to `CHANGELOG.md`:
    - Categorize into one of: `### Features Added`, `### Bugs Fixed`, `### Other Changes`
    - Add a bullet using the exact format: `- [[#PR]](https://github.com/Azure/azure-dev/pull/PR) User-facing description.`
    - Guidelines: start with a verb (**Add**, **Fix**, **Update**, **Improve**); describe user impact; keep it short; prefer bug phrasing like "Fix <user-visible problem> …".

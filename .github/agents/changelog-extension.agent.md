@@ -1,6 +1,7 @@
 ---
-name: Changelog (extensions)
+name: Generate changelog (extensions)
 description: Update an azd extension changelog and bump its version.
+infer: true
 ---
 
 # Changelog (extensions)
@@ -15,7 +16,7 @@ For the **target extension folder** (for example `cli/azd/extensions/microsoft.a
 - `<extension>/version.txt`
 - `<extension>/extension.yaml` (the `version:` field)
 
-Do not update the core CLI changelog (`cli/azd/CHANGELOG.md`).
+**DO NOT** update the core CLI changelog (`cli/azd/CHANGELOG.md`) or `registry.json`.
 
 ## Goal
 
@@ -74,7 +75,7 @@ For each commit/PR in scope, do the full workflow (steps 1-6) before moving to t
    - Documentation-only changes
    - Pure refactors/cleanup/renames with no user impact
    - CI/build/release infra changes
-6. Write the changelog entry
+6. Write the changelog entry to `CHANGELOG.md`:
 
    Add concise, user-facing bullets under the new version section.
 

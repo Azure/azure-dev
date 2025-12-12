@@ -42,7 +42,7 @@ func NewRegistryAgentManifestClient(registryName string, cred azcore.TokenCreden
 	}
 
 	pipeline := runtime.NewPipeline(
-		"azure-ml-registry",
+		"azure-ai-agents",
 		"v1.0.0",
 		runtime.PipelineOptions{},
 		clientOptions,

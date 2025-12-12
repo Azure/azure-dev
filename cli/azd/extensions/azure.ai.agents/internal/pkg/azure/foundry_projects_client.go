@@ -42,7 +42,7 @@ func NewFoundryProjectsClient(accountName string, projectName string, cred azcor
 	}
 
 	pipeline := runtime.NewPipeline(
-		"azure-foundry-projects",
+		"azure-ai-agents",
 		"v1.0.0",
 		runtime.PipelineOptions{},
 		clientOptions,

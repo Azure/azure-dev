@@ -35,7 +35,9 @@ func NewAgentClient(endpoint string, cred azcore.TokenCredential) *AgentClient {
 	clientOptions := &policy.ClientOptions{
 		Logging: policy.LogOptions{
 			AllowedHeaders: []string{"X-Ms-Correlation-Request-Id", "X-Request-Id"},
-			IncludeBody:    true,
+			// Include request/response bodies in logs when debug mode is enabled.
+			// Sensitive data is sanitized in internal/cmd/debug.go.
+			IncludeBody: true,
 		},
 		PerCallPolicies: []policy.Policy{
 			runtime.NewBearerTokenPolicy(cred, []string{"https://ai.azure.com/.default"}, nil),

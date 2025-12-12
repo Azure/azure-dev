@@ -34,6 +34,9 @@ func NewAgentClient(endpoint string, cred azcore.TokenCredential) *AgentClient {
 
 	clientOptions := &policy.ClientOptions{
 		Logging: policy.LogOptions{
+			AllowedHeaders: []string{"X-Ms-Correlation-Request-Id", "X-Request-Id"},
+			// Include request/response bodies in logs when debug mode is enabled.
+			// Sensitive data is sanitized in internal/cmd/debug.go.
 			IncludeBody: true,
 		},
 		PerCallPolicies: []policy.Policy{
@@ -71,13 +74,13 @@ func (c *AgentClient) GetAgent(ctx context.Context, agentName, apiVersion string
 	}
 	defer resp.Body.Close()
 
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to get agent. Status code: %d, Response: %s", resp.StatusCode, string(body))
 	}
 
 	var agent AgentObject
@@ -112,13 +115,13 @@ func (c *AgentClient) CreateAgent(ctx context.Context, request *CreateAgentReque
 	}
 	defer resp.Body.Close()
 
+	if !runtime.HasStatusCode(resp, http.StatusOK, http.StatusCreated) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	if resp.StatusCode != 200 && resp.StatusCode != 201 {
-		return nil, fmt.Errorf("failed to create agent. Status code: %d, Response: %s", resp.StatusCode, string(body))
 	}
 
 	var agent AgentObject
@@ -153,13 +156,13 @@ func (c *AgentClient) UpdateAgent(ctx context.Context, agentName string, request
 	}
 	defer resp.Body.Close()
 
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to update agent. Status code: %d, Response: %s", resp.StatusCode, string(body))
 	}
 
 	var agent AgentObject
@@ -185,13 +188,13 @@ func (c *AgentClient) DeleteAgent(ctx context.Context, agentName, apiVersion str
 	}
 	defer resp.Body.Close()
 
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to delete agent. Status code: %d, Response: %s", resp.StatusCode, string(body))
 	}
 
 	var deleteResponse DeleteAgentResponse
@@ -245,13 +248,13 @@ func (c *AgentClient) ListAgents(ctx context.Context, params *ListAgentQueryPara
 	}
 	defer resp.Body.Close()
 
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list agents. Status code: %d, Response: %s", resp.StatusCode, string(body))
 	}
 
 	var agentList AgentList
@@ -286,13 +289,13 @@ func (c *AgentClient) CreateAgentVersion(ctx context.Context, agentName string, 
 	}
 	defer resp.Body.Close()
 
+	if !runtime.HasStatusCode(resp, http.StatusOK, http.StatusCreated) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	if resp.StatusCode != 200 && resp.StatusCode != 201 {
-		return nil, fmt.Errorf("failed to create agent version. Status code: %d, Response: %s", resp.StatusCode, string(body))
 	}
 
 	var agentVersion AgentVersionObject
@@ -318,13 +321,13 @@ func (c *AgentClient) GetAgentVersion(ctx context.Context, agentName, agentVersi
 	}
 	defer resp.Body.Close()
 
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to get agent version. Status code: %d, Response: %s", resp.StatusCode, string(body))
 	}
 
 	var version AgentVersionObject
@@ -350,13 +353,13 @@ func (c *AgentClient) DeleteAgentVersion(ctx context.Context, agentName, agentVe
 	}
 	defer resp.Body.Close()
 
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to delete agent version. Status code: %d, Response: %s", resp.StatusCode, string(body))
 	}
 
 	var deleteResponse DeleteAgentVersionResponse
@@ -415,13 +418,13 @@ func (c *AgentClient) ListAgentVersions(ctx context.Context, agentName string, p
 	}
 	defer resp.Body.Close()
 
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list agent versions. Status code: %d, Response: %s", resp.StatusCode, string(body))
 	}
 
 	var versionList AgentVersionList
@@ -458,13 +461,13 @@ func (c *AgentClient) CreateOrUpdateAgentEventHandler(ctx context.Context, agent
 	}
 	defer resp.Body.Close()
 
+	if !runtime.HasStatusCode(resp, http.StatusOK, http.StatusCreated) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	if resp.StatusCode != 200 && resp.StatusCode != 201 {
-		return nil, fmt.Errorf("failed to create/update event handler. Status code: %d, Response: %s", resp.StatusCode, string(body))
 	}
 
 	var eventHandler AgentEventHandlerObject
@@ -490,13 +493,13 @@ func (c *AgentClient) GetAgentEventHandler(ctx context.Context, agentName, event
 	}
 	defer resp.Body.Close()
 
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to get event handler. Status code: %d, Response: %s", resp.StatusCode, string(body))
 	}
 
 	var eventHandler AgentEventHandlerObject
@@ -522,13 +525,13 @@ func (c *AgentClient) DeleteAgentEventHandler(ctx context.Context, agentName, ev
 	}
 	defer resp.Body.Close()
 
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to delete event handler. Status code: %d, Response: %s", resp.StatusCode, string(body))
 	}
 
 	var deleteResponse DeleteAgentEventHandlerResponse
@@ -578,13 +581,13 @@ func (c *AgentClient) StartAgentContainer(ctx context.Context, agentName, agentV
 	}
 	defer resp.Body.Close()
 
+	if !runtime.HasStatusCode(resp, http.StatusAccepted) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	if resp.StatusCode != 202 {
-		return nil, fmt.Errorf("failed to start agent container. Status code: %d, Response: %s", resp.StatusCode, string(body))
 	}
 
 	var operation AgentContainerOperationObject
@@ -632,13 +635,13 @@ func (c *AgentClient) UpdateAgentContainer(ctx context.Context, agentName, agent
 	}
 	defer resp.Body.Close()
 
+	if !runtime.HasStatusCode(resp, http.StatusAccepted) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	if resp.StatusCode != 202 {
-		return nil, fmt.Errorf("failed to update agent container. Status code: %d, Response: %s", resp.StatusCode, string(body))
 	}
 
 	var operation AgentContainerOperationObject
@@ -673,13 +676,13 @@ func (c *AgentClient) StopAgentContainer(ctx context.Context, agentName, agentVe
 	}
 	defer resp.Body.Close()
 
+	if !runtime.HasStatusCode(resp, http.StatusAccepted) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	if resp.StatusCode != 202 {
-		return nil, fmt.Errorf("failed to stop agent container. Status code: %d, Response: %s", resp.StatusCode, string(body))
 	}
 
 	var operation AgentContainerOperationObject
@@ -714,13 +717,13 @@ func (c *AgentClient) DeleteAgentContainer(ctx context.Context, agentName, agent
 	}
 	defer resp.Body.Close()
 
+	if !runtime.HasStatusCode(resp, http.StatusAccepted) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	if resp.StatusCode != 202 {
-		return nil, fmt.Errorf("failed to delete agent container. Status code: %d, Response: %s", resp.StatusCode, string(body))
 	}
 
 	var operation AgentContainerOperationObject
@@ -751,13 +754,13 @@ func (c *AgentClient) GetAgentContainer(ctx context.Context, agentName, agentVer
 	}
 	defer resp.Body.Close()
 
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to get agent container. Status code: %d, Response: %s", resp.StatusCode, string(body))
 	}
 
 	var container AgentContainerObject
@@ -783,13 +786,13 @@ func (c *AgentClient) GetAgentContainerOperation(ctx context.Context, agentName,
 	}
 	defer resp.Body.Close()
 
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to get container operation. Status code: %d, Response: %s", resp.StatusCode, string(body))
 	}
 
 	var operation AgentContainerOperationObject

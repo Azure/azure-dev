@@ -91,6 +91,8 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 
+			setupDebugLogging(cmd.Flags())
+
 			azdClient, err := azdext.NewAzdClient()
 			if err != nil {
 				return fmt.Errorf("failed to create azd client: %w", err)
@@ -317,7 +319,7 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 		}
 
 		// Create Cognitive Services Projects client
-		projectsClient, err := armcognitiveservices.NewProjectsClient(foundryProject.SubscriptionId, credential, nil)
+		projectsClient, err := armcognitiveservices.NewProjectsClient(foundryProject.SubscriptionId, credential, azure.NewArmClientOptions())
 		if err != nil {
 			return nil, fmt.Errorf("failed to create Cognitive Services Projects client: %w", err)
 		}
@@ -1739,7 +1741,7 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 			accountName = parts[8]   // accounts/{account}
 		}
 
-		deploymentsClient, err := armcognitiveservices.NewDeploymentsClient(subscription, a.credential, nil)
+		deploymentsClient, err := armcognitiveservices.NewDeploymentsClient(subscription, a.credential, azure.NewArmClientOptions())
 		if err != nil {
 			return nil, fmt.Errorf("failed to create deployments client: %w", err)
 		}

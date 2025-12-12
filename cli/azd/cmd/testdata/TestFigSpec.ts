@@ -535,6 +535,7 @@ const completionSpec: Fig.Spec = {
 					description: 'Set the default environment.',
 					args: {
 						name: 'environment',
+						isOptional: true,
 						generators: azdGenerators.listEnvironments,
 					},
 				},

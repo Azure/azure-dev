@@ -14,8 +14,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
-	"google.golang.org/protobuf/types/known/structpb"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 type projectService struct {
@@ -23,9 +23,9 @@ type projectService struct {
 
 	lazyAzdContext    *lazy.Lazy[*azdcontext.AzdContext]
 	lazyEnvManager    *lazy.Lazy[environment.Manager]
-	importManager  *project.ImportManager
+	importManager     *project.ImportManager
 	lazyProjectConfig *lazy.Lazy[*project.ProjectConfig]
-	ghCli          *github.Cli
+	ghCli             *github.Cli
 }
 
 // NewProjectService creates a new project service instance with lazy-loaded dependencies.
@@ -49,8 +49,8 @@ func NewProjectService(
 		lazyAzdContext:    lazyAzdContext,
 		lazyEnvManager:    lazyEnvManager,
 		lazyProjectConfig: lazyProjectConfig,
-		importManager:  importManager,
-		ghCli:          ghCli,
+		importManager:     importManager,
+		ghCli:             ghCli,
 	}
 }
 
@@ -560,7 +560,7 @@ func (s *projectService) GetServiceConfigValue(
 //
 // Parameters:
 //   - req.ServiceName: Name of the service to update configuration for
-//   - req.Path: Dot-notation path where to store the section (e.g., "custom.database", or empty to replace entire service config)
+//   - req.Path: Dot-notation path where to store the section
 //   - req.Section: The configuration section as a protobuf Struct containing the data
 //
 // Returns an error if the specified service doesn't exist in the project.

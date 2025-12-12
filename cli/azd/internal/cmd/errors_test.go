@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mocktracing"
 	"github.com/stretchr/testify/require"
@@ -146,6 +147,23 @@ func Test_MapError(t *testing.T) {
 				fields.ErrorKey(fields.ServiceErrorCode.Key).String("50076,50078,50079"),
 				fields.ErrorKey(fields.ServiceStatusCode.Key).String("invalid_grant"),
 				fields.ErrorKey(fields.ServiceCorrelationId.Key).String("12345"),
+			},
+		},
+		{
+			name: "WithExtServiceError",
+			err: &azdext.ServiceError{
+				Message:     "Rate limit exceeded",
+				Details:     "Too many requests",
+				ErrorCode:   "RateLimitExceeded",
+				StatusCode:  429,
+				ServiceName: "openai.azure.com",
+			},
+			wantErrReason: "ext.service.openai.429",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrorKey(fields.ServiceName.Key).String("openai"),
+				fields.ErrorKey(fields.ServiceHost.Key).String("openai.azure.com"),
+				fields.ErrorKey(fields.ServiceStatusCode.Key).Int(429),
+				fields.ErrorKey(fields.ServiceErrorCode.Key).String("RateLimitExceeded"),
 			},
 		},
 	}

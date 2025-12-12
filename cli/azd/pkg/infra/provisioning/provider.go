@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"dario.cat/mergo"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 )
 
 type ProviderKind string
@@ -82,6 +84,7 @@ func (o *Options) GetLayers() []Options {
 		return []Options{*o}
 	}
 
+	tracing.AppendUsageAttributeUnique(fields.FeaturesKey.String(fields.FeatLayers))
 	return o.Layers
 }
 

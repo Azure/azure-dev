@@ -697,39 +697,78 @@ func newEnvSetSecretAction(
 
 func newEnvSelectCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "select <environment>",
+		Use:   "select [<environment>]",
 		Short: "Set the default environment.",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.MaximumNArgs(1),
 	}
 }
 
 type envSelectAction struct {
 	azdCtx     *azdcontext.AzdContext
 	envManager environment.Manager
+	console    input.Console
 	args       []string
 }
 
-func newEnvSelectAction(azdCtx *azdcontext.AzdContext, envManager environment.Manager, args []string) actions.Action {
+func newEnvSelectAction(
+	azdCtx *azdcontext.AzdContext,
+	envManager environment.Manager,
+	console input.Console,
+	args []string,
+) actions.Action {
 	return &envSelectAction{
 		azdCtx:     azdCtx,
 		envManager: envManager,
+		console:    console,
 		args:       args,
 	}
 }
 
 func (e *envSelectAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	_, err := e.envManager.Get(ctx, e.args[0])
+	var environmentName string
+
+	// If no argument provided, prompt the user to select an environment
+	if len(e.args) == 0 {
+		envs, err := e.envManager.List(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("listing environments: %w", err)
+		}
+
+		if len(envs) == 0 {
+			return nil, fmt.Errorf("no environments found. You can create one with \"azd env new <environment-name>\"")
+		}
+
+		// Build list of environment names
+		envNames := make([]string, len(envs))
+		for i, env := range envs {
+			envNames[i] = env.Name
+		}
+
+		selection, err := e.console.Select(ctx, input.ConsoleOptions{
+			Message: "Select an environment:",
+			Options: envNames,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("selecting environment: %w", err)
+		}
+
+		environmentName = envNames[selection]
+	} else {
+		environmentName = e.args[0]
+	}
+
+	_, err := e.envManager.Get(ctx, environmentName)
 	if errors.Is(err, environment.ErrNotFound) {
 		return nil, fmt.Errorf(
 			`environment '%s' does not exist. You can create it with "azd env new %s"`,
-			e.args[0],
-			e.args[0],
+			environmentName,
+			environmentName,
 		)
 	} else if err != nil {
 		return nil, fmt.Errorf("ensuring environment exists: %w", err)
 	}
 
-	if err := e.azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: e.args[0]}); err != nil {
+	if err := e.azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: environmentName}); err != nil {
 		return nil, fmt.Errorf("setting default environment: %w", err)
 	}
 

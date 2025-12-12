@@ -1,0 +1,39 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+syntax = "proto3";
+
+package azdext;
+
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext";
+
+// ErrorOrigin indicates where an error originated from.
+// This helps with telemetry categorization and error handling strategies.
+enum ErrorOrigin {
+  ERROR_ORIGIN_UNSPECIFIED = 0;  // Default/unknown origin
+  ERROR_ORIGIN_LOCAL       = 1;  // Local errors: config, filesystem, auth state, validation, etc.
+  ERROR_ORIGIN_SERVICE     = 2;  // HTTP/gRPC upstream service errors
+  ERROR_ORIGIN_TOOL        = 3;  // Subprocess, plugin, or external tool errors
+}
+
+// ServiceErrorDetail contains structured error information from an HTTP/gRPC service.
+// Used when ErrorOrigin is ERROR_ORIGIN_SERVICE.
+message ServiceErrorDetail {
+  string error_code   = 1;  // Error code from the service (e.g., "Conflict", "NotFound", "RateLimitExceeded")
+  int32 status_code   = 2;  // HTTP status code (e.g., 409, 404, 500)
+  string service_name = 3;  // Service host/name for telemetry (e.g., "ai.azure.com", "management.azure.com")
+}
+
+// ExtensionError is a unified error message that can represent errors from different sources.
+// It provides structured error information for telemetry and error handling.
+message ExtensionError {
+  string message = 2;       // Human-readable error message
+  string details = 3;       // Additional error details
+  ErrorOrigin origin = 4;   // Where the error originated from
+
+  // Source-specific structured details. Only one should be set based on origin.
+  oneof source {
+    ServiceErrorDetail service_error = 10;
+    // ToolErrorDetail tool_error    = 11;  // Reserved for future use
+    // LocalErrorDetail local_error  = 12;  // Reserved for future use
+  }
+}

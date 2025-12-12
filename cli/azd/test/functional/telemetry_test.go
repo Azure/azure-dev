@@ -369,7 +369,7 @@ func Test_Telemetry_AlphaFeatures_Enabled(t *testing.T) {
 	var alphaFeaturesAttribute attribute.KeyValue
 
 	for _, attrib := range usageAttributes {
-		if attrib.Key == fields.AlphaFeaturesKey.Key {
+		if attrib.Key == fields.FeaturesKey.Key {
 			found = true
 			alphaFeaturesAttribute = attrib
 			break

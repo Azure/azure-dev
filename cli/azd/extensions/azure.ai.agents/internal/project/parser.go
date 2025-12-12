@@ -34,47 +34,44 @@ type FoundryParser struct {
 }
 
 // Check if there is a service using containerapp host and contains agent.yaml file in the service path
-func (p *FoundryParser) IsContainerAgent(project *azdext.ProjectConfig) (bool, error) {
-	projectPath := project.Path
-	for _, service := range project.Services {
-		if service.Host == "containerapp" {
-			servicePath := filepath.Join(projectPath, service.RelativePath)
+func (p *FoundryParser) IsContainerAgent(service *azdext.ServiceConfig, projectPath string) (bool, error) {
+	if service.Host == "containerapp" {
+		servicePath := filepath.Join(projectPath, service.RelativePath)
 
-			agentYamlPath := filepath.Join(servicePath, "agent.yaml")
-			agentYmlPath := filepath.Join(servicePath, "agent.yml")
-			agentPath := ""
+		agentYamlPath := filepath.Join(servicePath, "agent.yaml")
+		agentYmlPath := filepath.Join(servicePath, "agent.yml")
+		agentPath := ""
 
-			if _, err := os.Stat(agentYamlPath); err == nil {
-				agentPath = agentYamlPath
+		if _, err := os.Stat(agentYamlPath); err == nil {
+			agentPath = agentYamlPath
+		}
+
+		if _, err := os.Stat(agentYmlPath); err == nil {
+			agentPath = agentYmlPath
+		}
+		if agentPath != "" {
+			// read the file content into bytes and close the file
+			content, err := os.ReadFile(agentPath)
+			if err != nil {
+				return false, fmt.Errorf("failed to read agent yaml file: %w", err)
 			}
 
-			if _, err := os.Stat(agentYmlPath); err == nil {
-				agentPath = agentYmlPath
+			err = agent_yaml.ValidateAgentDefinition(content)
+			if err != nil {
+				return false, fmt.Errorf("agent.yaml is not valid to run: %w", err)
 			}
-			if agentPath != "" {
-				// read the file content into bytes and close the file
-				content, err := os.ReadFile(agentPath)
-				if err != nil {
-					return false, fmt.Errorf("failed to read agent yaml file: %w", err)
-				}
 
-				err = agent_yaml.ValidateAgentDefinition(content)
-				if err != nil {
-					return false, fmt.Errorf("agent.yaml is not valid to run: %w", err)
-				}
-
-				var genericTemplate map[string]interface{}
-				if err := yaml.Unmarshal(content, &genericTemplate); err != nil {
-					return false, fmt.Errorf("YAML content is not valid to run: %w", err)
-				}
-
-				kind, ok := genericTemplate["kind"].(string)
-				if !ok {
-					return false, fmt.Errorf("kind field is not a valid string to check should run: %w", err)
-				}
-
-				return kind == string(agent_yaml.AgentKindHosted), nil
+			var genericTemplate map[string]interface{}
+			if err := yaml.Unmarshal(content, &genericTemplate); err != nil {
+				return false, fmt.Errorf("YAML content is not valid to run: %w", err)
 			}
+
+			kind, ok := genericTemplate["kind"].(string)
+			if !ok {
+				return false, fmt.Errorf("kind field is not a valid string to check should run: %w", err)
+			}
+
+			return kind == string(agent_yaml.AgentKindHosted), nil
 		}
 	}
 

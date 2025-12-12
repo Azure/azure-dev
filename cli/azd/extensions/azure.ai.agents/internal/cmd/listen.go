@@ -93,7 +93,7 @@ func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, proje
 				return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
 			}
 		case ContainerAppHost:
-			if err := containerAgentHandling(ctx, azdClient, projectParser, args); err != nil {
+			if err := containerAgentHandling(ctx, azdClient, projectParser, svc, args.Project.Path); err != nil {
 				return fmt.Errorf("failed to handle container agent for service %q: %w", svc.Name, err)
 			}
 		}
@@ -113,7 +113,7 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, projectP
 				return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
 			}
 		case ContainerAppHost:
-			if err := containerAgentHandling(ctx, azdClient, projectParser, args); err != nil {
+			if err := containerAgentHandling(ctx, azdClient, projectParser, svc, args.Project.Path); err != nil {
 				return fmt.Errorf("failed to handle container agent for service %q: %w", svc.Name, err)
 			}
 		}
@@ -126,7 +126,7 @@ func postdeployHandler(ctx context.Context, projectParser *project.FoundryParser
 	for _, svc := range args.Project.Services {
 		switch svc.Host {
 		case ContainerAppHost:
-			isContainerAgent, err := projectParser.IsContainerAgent(args.Project)
+			isContainerAgent, err := projectParser.IsContainerAgent(svc, args.Project.Path)
 			if err != nil {
 				return fmt.Errorf("failed to determine if extension should attach: %w", err)
 			}
@@ -236,8 +236,8 @@ func resourcesEnvUpdate(ctx context.Context, resources []project.Resource, azdCl
 	return setEnvVar(ctx, azdClient, envName, "AI_PROJECT_DEPENDENT_RESOURCES", escapedJsonString)
 }
 
-func containerAgentHandling(ctx context.Context, azdClient *azdext.AzdClient, projectParser *project.FoundryParser, args *azdext.ProjectEventArgs) error {
-	isContainerAgent, err := projectParser.IsContainerAgent(args.Project)
+func containerAgentHandling(ctx context.Context, azdClient *azdext.AzdClient, projectParser *project.FoundryParser, service *azdext.ServiceConfig, projectPath string) error {
+	isContainerAgent, err := projectParser.IsContainerAgent(service, projectPath)
 	if err != nil {
 		return fmt.Errorf("failed to determine if extension should attach: %w", err)
 	}

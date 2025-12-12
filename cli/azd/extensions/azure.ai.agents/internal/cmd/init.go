@@ -68,14 +68,6 @@ type InitAction struct {
 	deploymentDetails   []project.Deployment
 }
 
-// GitHubUrlInfo holds parsed information from a GitHub URL
-type GitHubUrlInfo struct {
-	RepoSlug string
-	Branch   string
-	FilePath string
-	Hostname string
-}
-
 const AiAgentHost = "azure.ai.agent"
 const ContainerAppHost = "containerapp"
 
@@ -788,7 +780,7 @@ func (a *InitAction) downloadAgentYaml(
 	var content []byte
 	var err error
 	var isGitHubUrl bool
-	var urlInfo *GitHubUrlInfo
+	var urlInfo *azdext.ParseGitHubUrlResponse
 	var ghCli *github.Cli
 	var console input.Console
 
@@ -862,7 +854,10 @@ func (a *InitAction) downloadAgentYaml(
 			return nil, "", fmt.Errorf("creating GitHub CLI: %w", err)
 		}
 
-		urlInfo, err = parseGitHubUrl(manifestPointer)
+		// urlInfo, err = parseGitHubUrl(manifestPointer)
+		urlInfo, err = a.azdClient.Project().ParseGitHubUrl(ctx, &azdext.ParseGitHubUrlRequest{
+			Url: manifestPointer,
+		})
 		if err != nil {
 			return nil, "", err
 		}
@@ -1223,7 +1218,7 @@ func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.Co
 }
 
 func downloadGithubManifest(
-	ctx context.Context, urlInfo *GitHubUrlInfo, apiPath string, ghCli *github.Cli, console input.Console) (string, error) {
+	ctx context.Context, urlInfo *azdext.ParseGitHubUrlResponse, apiPath string, ghCli *github.Cli, console input.Console) (string, error) {
 	// manifestPointer validation:
 	// - accepts only URLs with the following format:
 	//  - https://raw.<hostname>/<owner>/<repo>/refs/heads/<branch>/<path>/<file>.json
@@ -1257,81 +1252,8 @@ func downloadGithubManifest(
 	return content, nil
 }
 
-// parseGitHubUrl extracts repository information from various GitHub URL formats
-// TODO: This will fail if the branch contains a slash. Update to handle that case if needed.
-func parseGitHubUrl(manifestPointer string) (*GitHubUrlInfo, error) {
-	parsedURL, err := url.Parse(manifestPointer)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse URL: %w", err)
-	}
-
-	hostname := parsedURL.Hostname()
-	var repoSlug, branch, filePath string
-
-	if strings.HasPrefix(hostname, "raw.") {
-		// https://raw.githubusercontent.com/<owner>/<repo>/refs/heads/<branch>/[...path]/<file>.yaml
-		pathParts := strings.Split(parsedURL.Path, "/")
-		if len(pathParts) < 7 {
-			return nil, fmt.Errorf("invalid URL format using 'raw.'. Expected the form of " +
-				"'https://raw.<hostname>/<owner>/<repo>/refs/heads/<branch>/[...path]/<fileName>.json'")
-		}
-		if pathParts[3] != "refs" || pathParts[4] != "heads" {
-			return nil, fmt.Errorf("invalid raw GitHub URL format. Expected 'refs/heads' in the URL path")
-		}
-		repoSlug = fmt.Sprintf("%s/%s", pathParts[1], pathParts[2])
-		branch = pathParts[5]
-		filePath = strings.Join(pathParts[6:], "/")
-	} else if strings.HasPrefix(hostname, "api.") {
-		// https://api.github.com/repos/<owner>/<repo>/contents/[...path]/<file>.yaml
-		pathParts := strings.Split(parsedURL.Path, "/")
-		if len(pathParts) < 6 {
-			return nil, fmt.Errorf("invalid URL format using 'api.'. Expected the form of " +
-				"'https://api.<hostname>/repos/<owner>/<repo>/contents/[...path]/<fileName>.json[?ref=<branch>]'")
-		}
-		repoSlug = fmt.Sprintf("%s/%s", pathParts[2], pathParts[3])
-		filePath = strings.Join(pathParts[5:], "/")
-		// For API URLs, branch is specified in the query parameter ref
-		branch = parsedURL.Query().Get("ref")
-		if branch == "" {
-			branch = "main" // default branch if not specified
-		}
-	} else if strings.HasPrefix(manifestPointer, "https://") {
-		// https://github.com/<owner>/<repo>/blob/<branch>/[...path]/<file>.yaml
-		pathParts := strings.Split(parsedURL.Path, "/")
-		if len(pathParts) < 6 {
-			return nil, fmt.Errorf("invalid URL format. Expected the form of " +
-				"'https://<hostname>/<owner>/<repo>/blob/<branch>/[...path]/<fileName>.json'")
-		}
-		if pathParts[3] != "blob" {
-			return nil, fmt.Errorf("invalid GitHub URL format. Expected 'blob' in the URL path")
-		}
-		repoSlug = fmt.Sprintf("%s/%s", pathParts[1], pathParts[2])
-		branch = pathParts[4]
-		filePath = strings.Join(pathParts[5:], "/")
-	} else {
-		return nil, fmt.Errorf(
-			"invalid URL format. Expected formats are:\n" +
-				"  - 'https://raw.<hostname>/<owner>/<repo>/refs/heads/<branch>/[...path]/<fileName>.json'\n" +
-				"  - 'https://<hostname>/<owner>/<repo>/blob/<branch>/[...path]/<fileName>.json'\n" +
-				"  - 'https://api.<hostname>/repos/<owner>/<repo>/contents/[...path]/<fileName>.json[?ref=<branch>]'",
-		)
-	}
-
-	// Normalize hostname for API calls
-	if hostname == "raw.githubusercontent.com" {
-		hostname = "github.com"
-	}
-
-	return &GitHubUrlInfo{
-		RepoSlug: repoSlug,
-		Branch:   branch,
-		FilePath: filePath,
-		Hostname: hostname,
-	}, nil
-}
-
 func downloadParentDirectory(
-	ctx context.Context, urlInfo *GitHubUrlInfo, targetDir string, ghCli *github.Cli, console input.Console) error {
+	ctx context.Context, urlInfo *azdext.ParseGitHubUrlResponse, targetDir string, ghCli *github.Cli, console input.Console) error {
 
 	// Get parent directory by removing the filename from the file path
 	pathParts := strings.Split(urlInfo.FilePath, "/")

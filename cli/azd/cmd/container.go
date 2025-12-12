@@ -637,7 +637,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(containerregistry.NewRemoteBuildManager)
 	container.MustRegisterSingleton(keyvault.NewKeyVaultService)
 	container.MustRegisterSingleton(storage.NewFileShareService)
-	container.MustRegisterSingleton(azapi.NewSpringService)
 
 	container.MustRegisterScoped(project.NewContainerHelper)
 	container.MustRegisterScoped(func(serviceLocator ioc.ServiceLocator) *lazy.Lazy[*project.ContainerHelper] {

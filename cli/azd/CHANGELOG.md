@@ -1,5 +1,20 @@
 # Release History
 
+## 1.22.2 (2025-12-12)
+
+### Features Added
+
+- [[#6321]](https://github.com/Azure/azure-dev/pull/6321) Add distributed tracing and structured error handling for extensions.
+
+### Bugs Fixed
+
+- [[#6360]](https://github.com/Azure/azure-dev/pull/6360) Fix Container App deployment to correctly resolve infrastructure path from defaults when using layered provisioning with service module settings.
+- [[#6351]](https://github.com/Azure/azure-dev/pull/6351) Fix GitHub URL parsing to support branch names containing slashes.
+
+### Other Changes
+
+- [[#6357]](https://github.com/Azure/azure-dev/pull/6357) Add usage tracking telemetry for layered provisioning and revision-based ACA deployments.
+
 ## 1.22.1 (2025-12-10)
 
 ### Features Added

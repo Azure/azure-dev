@@ -14,6 +14,8 @@ import (
 	"strconv"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -196,7 +198,12 @@ func (at *containerAppTarget) Deploy(
 		moduleName = serviceConfig.Name
 	}
 
-	modulePath := filepath.Join(serviceConfig.Project.Infra.Path, moduleName)
+	infraOptions, err := serviceConfig.Project.Infra.GetWithDefaults()
+	if err != nil {
+		return nil, fmt.Errorf("getting infra options: %w", err)
+	}
+
+	modulePath := filepath.Join(infraOptions.Path, moduleName)
 	bicepPath := modulePath + ".bicep"
 	bicepParametersPath := modulePath + ".parameters.json"
 	bicepParamPath := modulePath + ".bicepparam"
@@ -212,6 +219,8 @@ func (at *containerAppTarget) Deploy(
 	}
 
 	if controlledRevision {
+		tracing.AppendUsageAttributeUnique(fields.FeaturesKey.String(fields.FeatRevisionDeployment))
+
 		fetchBicepCli := at.bicepCli
 		if fetchBicepCli == nil {
 			fetchBicepCli = func() (*bicep.Cli, error) {

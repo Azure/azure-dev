@@ -7,6 +7,7 @@ import (
 	"context"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -388,7 +389,7 @@ func Test_ProjectService_SetConfigSection(t *testing.T) {
 		// Reload config from disk to verify changes were persisted
 		cfg, err := project.LoadConfig(*mockContext.Context, azdContext.ProjectPath())
 		require.NoError(t, err)
-		
+
 		mysqlSection, found := cfg.GetMap("mysql")
 		require.True(t, found, "mysql section should exist")
 		require.Equal(t, "newhost", mysqlSection["host"])
@@ -415,7 +416,7 @@ func Test_ProjectService_SetConfigSection(t *testing.T) {
 		// Reload config from disk to verify changes were persisted
 		cfg, err := project.LoadConfig(*mockContext.Context, azdContext.ProjectPath())
 		require.NoError(t, err)
-		
+
 		credentials, found := cfg.GetMap("mysql.credentials")
 		require.True(t, found, "mysql.credentials section should exist")
 		require.Equal(t, "admin", credentials["username"])
@@ -464,7 +465,7 @@ func Test_ProjectService_SetConfigValue(t *testing.T) {
 		// Reload config from disk to verify value was set
 		cfg, err := project.LoadConfig(*mockContext.Context, azdContext.ProjectPath())
 		require.NoError(t, err)
-		
+
 		name, found := cfg.Get("app.name")
 		require.True(t, found, "app.name should exist")
 		require.Equal(t, "test-string", name)
@@ -483,7 +484,7 @@ func Test_ProjectService_SetConfigValue(t *testing.T) {
 		// Reload config from disk to verify value was set
 		cfg, err := project.LoadConfig(*mockContext.Context, azdContext.ProjectPath())
 		require.NoError(t, err)
-		
+
 		port, found := cfg.Get("app.port")
 		require.True(t, found, "app.port should exist")
 		require.Equal(t, 8080, port)
@@ -502,7 +503,7 @@ func Test_ProjectService_SetConfigValue(t *testing.T) {
 		// Reload config from disk to verify value was set
 		cfg, err := project.LoadConfig(*mockContext.Context, azdContext.ProjectPath())
 		require.NoError(t, err)
-		
+
 		debug, found := cfg.Get("app.debug")
 		require.True(t, found, "app.debug should exist")
 		require.Equal(t, true, debug)
@@ -557,7 +558,7 @@ func Test_ProjectService_UnsetConfig(t *testing.T) {
 		// Reload config from disk to verify nested value was removed
 		cfg, err := project.LoadConfig(*mockContext.Context, azdContext.ProjectPath())
 		require.NoError(t, err)
-		
+
 		_, exists := cfg.Get("database.credentials.password")
 		require.False(t, exists, "password should be removed")
 		// But username should still exist
@@ -575,7 +576,7 @@ func Test_ProjectService_UnsetConfig(t *testing.T) {
 		// Reload config from disk to verify entire section was removed
 		cfg, err := project.LoadConfig(*mockContext.Context, azdContext.ProjectPath())
 		require.NoError(t, err)
-		
+
 		_, exists := cfg.GetMap("cache")
 		require.False(t, exists, "cache section should be removed")
 		// But database section should still exist
@@ -639,7 +640,7 @@ func Test_ProjectService_ConfigNilAdditionalProperties(t *testing.T) {
 		// Reload config from disk to verify value was set
 		cfg, err := project.LoadConfig(*mockContext.Context, azdContext.ProjectPath())
 		require.NoError(t, err)
-		
+
 		val, found := cfg.Get("new.value")
 		require.True(t, found, "new.value should exist")
 		require.Equal(t, "test-value", val)
@@ -815,7 +816,7 @@ func Test_ProjectService_ServiceConfiguration(t *testing.T) {
 		// Verify the section was set by loading from disk
 		cfg, err := project.LoadConfig(*mockContext.Context, azdContext.ProjectPath())
 		require.NoError(t, err)
-		
+
 		newSection, found := cfg.GetMap("services.api.newSection")
 		require.True(t, found, "services.api.newSection should exist")
 		require.Equal(t, "new-value", newSection["newSetting"])
@@ -851,7 +852,7 @@ func Test_ProjectService_ServiceConfiguration(t *testing.T) {
 		// Verify the value was updated by loading from disk
 		cfg, err := project.LoadConfig(*mockContext.Context, azdContext.ProjectPath())
 		require.NoError(t, err)
-		
+
 		updatedValue, found := cfg.Get("services.api.custom.setting")
 		require.True(t, found, "services.api.custom.setting should exist")
 		require.Equal(t, "updated-value", updatedValue)
@@ -871,7 +872,7 @@ func Test_ProjectService_ServiceConfiguration(t *testing.T) {
 		// Verify the new path was created by loading from disk
 		cfg, err := project.LoadConfig(*mockContext.Context, azdContext.ProjectPath())
 		require.NoError(t, err)
-		
+
 		portValue, found := cfg.Get("services.api.server.port")
 		require.True(t, found, "services.api.server.port should exist")
 		require.Equal(t, 8080, portValue)
@@ -900,7 +901,7 @@ func Test_ProjectService_ServiceConfiguration(t *testing.T) {
 		// Verify the value was removed by loading from disk
 		cfg, err := project.LoadConfig(*mockContext.Context, azdContext.ProjectPath())
 		require.NoError(t, err)
-		
+
 		_, found := cfg.Get("services.api.custom.setting")
 		require.False(t, found, "services.api.custom.setting should not exist after unset")
 	})
@@ -915,7 +916,7 @@ func Test_ProjectService_ServiceConfiguration(t *testing.T) {
 		// Verify the entire section was removed by loading from disk
 		cfg, err := project.LoadConfig(*mockContext.Context, azdContext.ProjectPath())
 		require.NoError(t, err)
-		
+
 		_, found := cfg.Get("services.api.database")
 		require.False(t, found, "services.api.database should not exist after unset")
 	})
@@ -1015,7 +1016,7 @@ func Test_ProjectService_ServiceConfiguration_NilAdditionalProperties(t *testing
 		// Verify AdditionalProperties was initialized and value was set by loading from disk
 		cfg, err := project.LoadConfig(*mockContext.Context, azdContext.ProjectPath())
 		require.NoError(t, err)
-		
+
 		val, found := cfg.Get("services.api.new.value")
 		require.True(t, found, "services.api.new.value should exist")
 		require.Equal(t, "test-value", val)
@@ -1054,7 +1055,8 @@ func Test_ProjectService_ChangeServiceHost(t *testing.T) {
 	lazyEnvManager := lazy.From(envManager)
 	lazyProjectConfig := lazy.From(projectConfig)
 
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, lazyProjectConfig)
+	importManager := project.NewImportManager(&project.DotNetImporter{})
+	service := NewProjectService(lazyAzdContext, lazyEnvManager, lazyProjectConfig, importManager, nil)
 
 	// Test 1: Get the current host value
 	getResp, err := service.GetServiceConfigValue(*mockContext.Context, &azdext.GetServiceConfigValueRequest{
@@ -1136,7 +1138,8 @@ func Test_ProjectService_TypeValidation_InvalidChangesNotPersisted(t *testing.T)
 	lazyEnvManager := lazy.From(envManager)
 	lazyProjectConfig := lazy.From(loadedConfig)
 
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, lazyProjectConfig)
+	importManager := project.NewImportManager(&project.DotNetImporter{})
+	service := NewProjectService(lazyAzdContext, lazyEnvManager, lazyProjectConfig, importManager, nil)
 
 	t.Run("Project_SetInfraToInt_ShouldFailAndNotPersist", func(t *testing.T) {
 		// Try to set "infra" (which should be an object) to an integer
@@ -1329,7 +1332,8 @@ func Test_ProjectService_TypeValidation_CoercedValues(t *testing.T) {
 	lazyEnvManager := lazy.From(envManager)
 	lazyProjectConfig := lazy.From(loadedConfig)
 
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, lazyProjectConfig)
+	importManager := project.NewImportManager(&project.DotNetImporter{})
+	service := NewProjectService(lazyAzdContext, lazyEnvManager, lazyProjectConfig, importManager, nil)
 
 	t.Run("SetNameToInt_GetsCoercedToString", func(t *testing.T) {
 		// Try to set "name" (which should be a string) to an integer
@@ -1370,3 +1374,306 @@ func Test_ProjectService_TypeValidation_CoercedValues(t *testing.T) {
 	})
 }
 
+// Test_ProjectService_EventDispatcherPreservation validates that EventDispatchers
+// are preserved across configuration updates for both projects and services.
+// This ensures that event handlers registered by azure.yaml hooks and azd extensions
+// continue to work after configuration modifications.
+func Test_ProjectService_EventDispatcherPreservation(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	temp := t.TempDir()
+
+	azdContext := azdcontext.NewAzdContextWithDirectory(temp)
+
+	// Step 1: Load project using lazy project config
+	projectConfig := &project.ProjectConfig{
+		Name: "test-project",
+		Services: map[string]*project.ServiceConfig{
+			"web": {
+				Name:         "web",
+				RelativePath: "./src/web",
+				Host:         project.ContainerAppTarget,
+				Language:     project.ServiceLanguageDotNet,
+			},
+			"api": {
+				Name:         "api",
+				RelativePath: "./src/api",
+				Host:         project.ContainerAppTarget,
+				Language:     project.ServiceLanguagePython,
+			},
+		},
+	}
+
+	// Save initial project configuration
+	err := project.Save(*mockContext.Context, projectConfig, azdContext.ProjectPath())
+	require.NoError(t, err)
+
+	// Load project config to get proper initialization
+	loadedConfig, err := project.Load(*mockContext.Context, azdContext.ProjectPath())
+	require.NoError(t, err)
+
+	// Setup lazy dependencies
+	lazyAzdContext := lazy.From(azdContext)
+	fileConfigManager := config.NewFileConfigManager(config.NewManager())
+	localDataStore := environment.NewLocalFileDataStore(azdContext, fileConfigManager)
+	envManager, err := environment.NewManager(
+		mockContext.Container,
+		azdContext,
+		mockContext.Console,
+		localDataStore,
+		nil,
+	)
+	require.NoError(t, err)
+	lazyEnvManager := lazy.From(envManager)
+	lazyProjectConfig := lazy.From(loadedConfig)
+
+	// Step 2: Register event handlers for project and services
+	// EventDispatchers are already initialized by project.Load()
+	projectEventCount := atomic.Int32{}
+	webServiceEventCount := atomic.Int32{}
+	apiServiceEventCount := atomic.Int32{}
+
+	// Register project-level event handler
+	err = loadedConfig.AddHandler(
+		*mockContext.Context,
+		project.ProjectEventDeploy,
+		func(ctx context.Context, args project.ProjectLifecycleEventArgs) error {
+			projectEventCount.Add(1)
+			return nil
+		},
+	)
+	require.NoError(t, err)
+
+	// Register service-level event handlers
+	err = loadedConfig.Services["web"].AddHandler(
+		*mockContext.Context,
+		project.ServiceEventDeploy,
+		func(ctx context.Context, args project.ServiceLifecycleEventArgs) error {
+			webServiceEventCount.Add(1)
+			return nil
+		},
+	)
+	require.NoError(t, err)
+
+	err = loadedConfig.Services["api"].AddHandler(
+		*mockContext.Context,
+		project.ServiceEventDeploy,
+		func(ctx context.Context, args project.ServiceLifecycleEventArgs) error {
+			apiServiceEventCount.Add(1)
+			return nil
+		},
+	)
+	require.NoError(t, err)
+
+	// Create project service
+	importManager := project.NewImportManager(&project.DotNetImporter{})
+	service := NewProjectService(lazyAzdContext, lazyEnvManager, lazyProjectConfig, importManager, nil)
+
+	// Step 3: Modify project configuration
+	customValue, err := structpb.NewValue("project-custom-value")
+	require.NoError(t, err)
+
+	_, err = service.SetConfigValue(*mockContext.Context, &azdext.SetProjectConfigValueRequest{
+		Path:  "custom.setting",
+		Value: customValue,
+	})
+	require.NoError(t, err)
+
+	// Step 4: Modify service configuration (web)
+	webCustomValue, err := structpb.NewValue("web-custom-value")
+	require.NoError(t, err)
+
+	_, err = service.SetServiceConfigValue(*mockContext.Context, &azdext.SetServiceConfigValueRequest{
+		ServiceName: "web",
+		Path:        "custom.endpoint",
+		Value:       webCustomValue,
+	})
+	require.NoError(t, err)
+
+	// Modify service configuration (api)
+	apiCustomValue, err := structpb.NewValue("api-custom-value")
+	require.NoError(t, err)
+
+	_, err = service.SetServiceConfigValue(*mockContext.Context, &azdext.SetServiceConfigValueRequest{
+		ServiceName: "api",
+		Path:        "custom.port",
+		Value:       apiCustomValue,
+	})
+	require.NoError(t, err)
+
+	// Step 5: Get the updated project config from lazy loader to verify event dispatchers are preserved
+	updatedConfig, err := lazyProjectConfig.GetValue()
+	require.NoError(t, err)
+
+	// The project config should be a NEW instance (reloaded from disk)
+	require.NotSame(t, loadedConfig, updatedConfig, "project config should be a new instance after reload")
+
+	// But the EventDispatchers should be the SAME instances (preserved pointers)
+	require.Same(t, loadedConfig.EventDispatcher, updatedConfig.EventDispatcher,
+		"project EventDispatcher should be the same instance (preserved)")
+	require.Same(t, loadedConfig.Services["web"].EventDispatcher, updatedConfig.Services["web"].EventDispatcher,
+		"web service EventDispatcher should be the same instance (preserved)")
+	require.Same(t, loadedConfig.Services["api"].EventDispatcher, updatedConfig.Services["api"].EventDispatcher,
+		"api service EventDispatcher should be the same instance (preserved)")
+
+	// Verify event dispatchers are not nil
+	require.NotNil(t, updatedConfig.EventDispatcher, "project EventDispatcher should be preserved")
+	require.NotNil(
+		t,
+		updatedConfig.Services["web"].EventDispatcher,
+		"web service EventDispatcher should be preserved",
+	)
+	require.NotNil(
+		t,
+		updatedConfig.Services["api"].EventDispatcher,
+		"api service EventDispatcher should be preserved",
+	)
+
+	// Step 6: Invoke event handlers on project by raising the event directly
+	err = updatedConfig.RaiseEvent(
+		*mockContext.Context,
+		project.ProjectEventDeploy,
+		project.ProjectLifecycleEventArgs{
+			Project: updatedConfig,
+		},
+	)
+	require.NoError(t, err)
+
+	// Step 7: Invoke event handlers on services by raising the events directly
+	err = updatedConfig.Services["web"].RaiseEvent(
+		*mockContext.Context,
+		project.ServiceEventDeploy,
+		project.ServiceLifecycleEventArgs{
+			Project: updatedConfig,
+			Service: updatedConfig.Services["web"],
+		},
+	)
+	require.NoError(t, err)
+
+	err = updatedConfig.Services["api"].RaiseEvent(
+		*mockContext.Context,
+		project.ServiceEventDeploy,
+		project.ServiceLifecycleEventArgs{
+			Project: updatedConfig,
+			Service: updatedConfig.Services["api"],
+		},
+	)
+	require.NoError(t, err)
+
+	// Step 8: Validate event handlers were invoked
+	require.Equal(t, int32(1), projectEventCount.Load(), "project event handler should be invoked once")
+	require.Equal(t, int32(1), webServiceEventCount.Load(), "web service event handler should be invoked once")
+	require.Equal(t, int32(1), apiServiceEventCount.Load(), "api service event handler should be invoked once")
+
+	// Additional verification: Ensure configuration changes were persisted
+	verifyResp, err := service.GetConfigValue(*mockContext.Context, &azdext.GetProjectConfigValueRequest{
+		Path: "custom.setting",
+	})
+	require.NoError(t, err)
+	require.True(t, verifyResp.Found)
+	require.Equal(t, "project-custom-value", verifyResp.Value.GetStringValue())
+
+	webVerifyResp, err := service.GetServiceConfigValue(*mockContext.Context, &azdext.GetServiceConfigValueRequest{
+		ServiceName: "web",
+		Path:        "custom.endpoint",
+	})
+	require.NoError(t, err)
+	require.True(t, webVerifyResp.Found)
+	require.Equal(t, "web-custom-value", webVerifyResp.Value.GetStringValue())
+
+	apiVerifyResp, err := service.GetServiceConfigValue(*mockContext.Context, &azdext.GetServiceConfigValueRequest{
+		ServiceName: "api",
+		Path:        "custom.port",
+	})
+	require.NoError(t, err)
+	require.True(t, apiVerifyResp.Found)
+	require.Equal(t, "api-custom-value", apiVerifyResp.Value.GetStringValue())
+}
+
+// Test_ProjectService_EventDispatcherPreservation_MultipleUpdates tests that event dispatchers
+// remain functional after multiple sequential configuration updates.
+func Test_ProjectService_EventDispatcherPreservation_MultipleUpdates(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	temp := t.TempDir()
+
+	azdContext := azdcontext.NewAzdContextWithDirectory(temp)
+
+	projectConfig := &project.ProjectConfig{
+		Name: "test-project",
+		Services: map[string]*project.ServiceConfig{
+			"web": {
+				Name:         "web",
+				RelativePath: "./src/web",
+				Host:         project.ContainerAppTarget,
+				Language:     project.ServiceLanguageDotNet,
+			},
+		},
+	}
+
+	err := project.Save(*mockContext.Context, projectConfig, azdContext.ProjectPath())
+	require.NoError(t, err)
+
+	loadedConfig, err := project.Load(*mockContext.Context, azdContext.ProjectPath())
+	require.NoError(t, err)
+
+	lazyAzdContext := lazy.From(azdContext)
+	fileConfigManager := config.NewFileConfigManager(config.NewManager())
+	localDataStore := environment.NewLocalFileDataStore(azdContext, fileConfigManager)
+	envManager, err := environment.NewManager(
+		mockContext.Container,
+		azdContext,
+		mockContext.Console,
+		localDataStore,
+		nil,
+	)
+	require.NoError(t, err)
+	lazyEnvManager := lazy.From(envManager)
+	lazyProjectConfig := lazy.From(loadedConfig)
+
+	// Register event handler (EventDispatcher already initialized by project.Load())
+	eventCount := atomic.Int32{}
+	err = loadedConfig.AddHandler(
+		*mockContext.Context,
+		project.ProjectEventDeploy,
+		func(ctx context.Context, args project.ProjectLifecycleEventArgs) error {
+			eventCount.Add(1)
+			return nil
+		},
+	)
+	require.NoError(t, err)
+
+	importManager := project.NewImportManager(&project.DotNetImporter{})
+	service := NewProjectService(lazyAzdContext, lazyEnvManager, lazyProjectConfig, importManager, nil)
+
+	// Perform multiple configuration updates
+	for i := 1; i <= 3; i++ {
+		value, err := structpb.NewValue(i)
+		require.NoError(t, err)
+
+		_, err = service.SetConfigValue(*mockContext.Context, &azdext.SetProjectConfigValueRequest{
+			Path:  "custom.counter",
+			Value: value,
+		})
+		require.NoError(t, err)
+	}
+
+	// Verify event dispatcher still works after multiple updates
+	updatedConfig, err := lazyProjectConfig.GetValue()
+	require.NoError(t, err)
+
+	// The project config should be a NEW instance (reloaded from disk)
+	require.NotSame(t, loadedConfig, updatedConfig, "project config should be a new instance after reload")
+
+	// But the EventDispatcher should be the SAME instance (preserved pointer)
+	require.Same(t, loadedConfig.EventDispatcher, updatedConfig.EventDispatcher,
+		"project EventDispatcher should be the same instance (preserved)")
+	require.NotNil(t, updatedConfig.EventDispatcher)
+
+	err = updatedConfig.RaiseEvent(
+		*mockContext.Context,
+		project.ProjectEventDeploy,
+		project.ProjectLifecycleEventArgs{Project: updatedConfig},
+	)
+	require.NoError(t, err)
+
+	require.Equal(t, int32(1), eventCount.Load(), "event handler should be invoked after multiple config updates")
+}

@@ -55,12 +55,20 @@ func NewProjectService(
 }
 
 // reloadAndCacheProjectConfig reloads the project configuration from disk and updates the lazy cache.
-// It preserves the EventDispatcher from the previous instance to maintain event handler continuity.
+// It preserves the EventDispatcher from the previous instance to maintain event handler continuity
+// for both the project and all services.
+//
+// Event dispatchers must be preserved because they contain event handlers that were registered by:
+//   - azure.yaml hooks (prepackage, postdeploy, etc.)
+//   - azd extensions that registered custom event handlers
+//
+// Without preserving these dispatchers, any event handlers registered before the reload would be lost,
+// causing hooks and extension-registered handlers to stop working after configuration updates.
 func (s *projectService) reloadAndCacheProjectConfig(ctx context.Context, projectPath string) error {
-	// Get the current config to preserve the EventDispatcher
+	// Get the current config to preserve the EventDispatchers
 	oldConfig, err := s.lazyProjectConfig.GetValue()
 	if err != nil {
-		// If we can't get old config, just reload without preserving dispatcher
+		// If we can't get old config, just reload without preserving dispatchers
 		reloadedConfig, err := project.Load(ctx, projectPath)
 		if err != nil {
 			return err
@@ -75,9 +83,18 @@ func (s *projectService) reloadAndCacheProjectConfig(ctx context.Context, projec
 		return err
 	}
 
-	// Preserve the EventDispatcher from the old config
+	// Preserve the EventDispatcher from the old project config
 	if oldConfig.EventDispatcher != nil {
 		reloadedConfig.EventDispatcher = oldConfig.EventDispatcher
+	}
+
+	// Preserve the EventDispatcher for each service
+	if oldConfig.Services != nil && reloadedConfig.Services != nil {
+		for serviceName, oldService := range oldConfig.Services {
+			if reloadedService, exists := reloadedConfig.Services[serviceName]; exists && oldService.EventDispatcher != nil {
+				reloadedService.EventDispatcher = oldService.EventDispatcher
+			}
+		}
 	}
 
 	// Update the lazy cache
@@ -143,33 +160,9 @@ func (s *projectService) Get(ctx context.Context, req *azdext.EmptyRequest) (*az
 		}
 	}
 
-	project := &azdext.ProjectConfig{
-		Name:              projectConfig.Name,
-		ResourceGroupName: projectConfig.ResourceGroupName.MustEnvsubst(envKeyMapper),
-		Path:              projectConfig.Path,
-		Infra: &azdext.InfraOptions{
-			Provider: string(projectConfig.Infra.Provider),
-			Path:     projectConfig.Infra.Path,
-			Module:   projectConfig.Infra.Module,
-		},
-		Services: map[string]*azdext.ServiceConfig{},
-	}
-
-	if projectConfig.Metadata != nil {
-		project.Metadata = &azdext.ProjectMetadata{
-			Template: projectConfig.Metadata.Template,
-		}
-	}
-
-	for name, service := range projectConfig.Services {
-		var protoService *azdext.ServiceConfig
-
-		// Use mapper with environment variable resolver
-		if err := mapper.WithResolver(envKeyMapper).Convert(service, &protoService); err != nil {
-			return nil, fmt.Errorf("converting service config to proto: %w", err)
-		}
-
-		project.Services[name] = protoService
+	var project *azdext.ProjectConfig
+	if err := mapper.WithResolver(envKeyMapper).Convert(projectConfig, &project); err != nil {
+		return nil, fmt.Errorf("converting project config to proto: %w", err)
 	}
 
 	return &azdext.GetProjectResponse{

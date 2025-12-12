@@ -68,6 +68,14 @@ type InitAction struct {
 	deploymentDetails   []project.Deployment
 }
 
+// GitHubUrlInfo holds parsed information from a GitHub URL
+type GitHubUrlInfo struct {
+	RepoSlug string
+	Branch   string
+	FilePath string
+	Hostname string
+}
+
 const AiAgentHost = "azure.ai.agent"
 const ContainerAppHost = "containerapp"
 
@@ -780,7 +788,7 @@ func (a *InitAction) downloadAgentYaml(
 	var content []byte
 	var err error
 	var isGitHubUrl bool
-	var urlInfo *azdext.ParseGitHubUrlResponse
+	var urlInfo *GitHubUrlInfo
 	var ghCli *github.Cli
 	var console input.Console
 
@@ -854,10 +862,7 @@ func (a *InitAction) downloadAgentYaml(
 			return nil, "", fmt.Errorf("creating GitHub CLI: %w", err)
 		}
 
-		// urlInfo, err = parseGitHubUrl(manifestPointer)
-		urlInfo, err = a.azdClient.Project().ParseGitHubUrl(ctx, &azdext.ParseGitHubUrlRequest{
-			Url: manifestPointer,
-		})
+		urlInfo, err = a.parseGitHubUrl(ctx, manifestPointer)
 		if err != nil {
 			return nil, "", err
 		}
@@ -1218,7 +1223,7 @@ func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.Co
 }
 
 func downloadGithubManifest(
-	ctx context.Context, urlInfo *azdext.ParseGitHubUrlResponse, apiPath string, ghCli *github.Cli, console input.Console) (string, error) {
+	ctx context.Context, urlInfo *GitHubUrlInfo, apiPath string, ghCli *github.Cli, console input.Console) (string, error) {
 	// manifestPointer validation:
 	// - accepts only URLs with the following format:
 	//  - https://raw.<hostname>/<owner>/<repo>/refs/heads/<branch>/<path>/<file>.json
@@ -1252,8 +1257,25 @@ func downloadGithubManifest(
 	return content, nil
 }
 
+// parseGitHubUrl extracts repository information from various GitHub URL formats using extension framework
+func (a *InitAction) parseGitHubUrl(ctx context.Context, manifestPointer string) (*GitHubUrlInfo, error) {
+	urlInfo, err := a.azdClient.Project().ParseGitHubUrl(ctx, &azdext.ParseGitHubUrlRequest{
+		Url: manifestPointer,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &GitHubUrlInfo{
+		RepoSlug: urlInfo.RepoSlug,
+		Branch:   urlInfo.Branch,
+		FilePath: urlInfo.FilePath,
+		Hostname: urlInfo.Hostname,
+	}, nil
+}
+
 func downloadParentDirectory(
-	ctx context.Context, urlInfo *azdext.ParseGitHubUrlResponse, targetDir string, ghCli *github.Cli, console input.Console) error {
+	ctx context.Context, urlInfo *GitHubUrlInfo, targetDir string, ghCli *github.Cli, console input.Console) error {
 
 	// Get parent directory by removing the filename from the file path
 	pathParts := strings.Split(urlInfo.FilePath, "/")

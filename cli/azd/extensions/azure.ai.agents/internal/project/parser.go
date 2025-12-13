@@ -25,7 +25,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/braydonk/yaml"
 	"github.com/google/uuid"
 )
@@ -35,201 +34,48 @@ type FoundryParser struct {
 }
 
 // Check if there is a service using containerapp host and contains agent.yaml file in the service path
-func shouldRun(ctx context.Context, project *azdext.ProjectConfig) (bool, error) {
-	projectPath := project.Path
-	for _, service := range project.Services {
-		if service.Host == "containerapp" {
-			servicePath := filepath.Join(projectPath, service.RelativePath)
+func (p *FoundryParser) IsContainerAgent(service *azdext.ServiceConfig, projectPath string) (bool, error) {
+	if service.Host == "containerapp" {
+		servicePath := filepath.Join(projectPath, service.RelativePath)
 
-			agentYamlPath := filepath.Join(servicePath, "agent.yaml")
-			agentYmlPath := filepath.Join(servicePath, "agent.yml")
-			agentPath := ""
+		agentYamlPath := filepath.Join(servicePath, "agent.yaml")
+		agentYmlPath := filepath.Join(servicePath, "agent.yml")
+		agentPath := ""
 
-			if _, err := os.Stat(agentYamlPath); err == nil {
-				agentPath = agentYamlPath
+		if _, err := os.Stat(agentYamlPath); err == nil {
+			agentPath = agentYamlPath
+		}
+
+		if _, err := os.Stat(agentYmlPath); err == nil {
+			agentPath = agentYmlPath
+		}
+		if agentPath != "" {
+			// read the file content into bytes and close the file
+			content, err := os.ReadFile(agentPath)
+			if err != nil {
+				return false, fmt.Errorf("failed to read agent yaml file: %w", err)
 			}
 
-			if _, err := os.Stat(agentYmlPath); err == nil {
-				agentPath = agentYmlPath
+			err = agent_yaml.ValidateAgentDefinition(content)
+			if err != nil {
+				return false, fmt.Errorf("agent.yaml is not valid to run: %w", err)
 			}
-			if agentPath != "" {
-				// read the file content into bytes and close the file
-				content, err := os.ReadFile(agentPath)
-				if err != nil {
-					return false, fmt.Errorf("failed to read agent yaml file: %w", err)
-				}
 
-				err = agent_yaml.ValidateAgentDefinition(content)
-				if err != nil {
-					return false, fmt.Errorf("agent.yaml is not valid to run: %w", err)
-				}
-
-				var genericTemplate map[string]interface{}
-				if err := yaml.Unmarshal(content, &genericTemplate); err != nil {
-					return false, fmt.Errorf("YAML content is not valid to run: %w", err)
-				}
-
-				kind, ok := genericTemplate["kind"].(string)
-				if !ok {
-					return false, fmt.Errorf("kind field is not a valid string to check should run: %w", err)
-				}
-
-				return kind == string(agent_yaml.AgentKindHosted), nil
+			var genericTemplate map[string]interface{}
+			if err := yaml.Unmarshal(content, &genericTemplate); err != nil {
+				return false, fmt.Errorf("YAML content is not valid to run: %w", err)
 			}
+
+			kind, ok := genericTemplate["kind"].(string)
+			if !ok {
+				return false, fmt.Errorf("kind field is not a valid string to check should run: %w", err)
+			}
+
+			return kind == string(agent_yaml.AgentKindHosted), nil
 		}
 	}
 
 	return false, nil
-}
-
-func (p *FoundryParser) SetIdentity(ctx context.Context, args *azdext.ProjectEventArgs) error {
-	shouldRun, err := shouldRun(ctx, args.Project)
-	if err != nil {
-		return fmt.Errorf("failed to determine if extension should attach: %w", err)
-	}
-	if !shouldRun {
-		return nil
-	}
-
-	// Get aiFoundryProjectResourceId from environment config
-	azdEnvClient := p.AzdClient.Environment()
-	response, err := azdEnvClient.GetConfigString(ctx, &azdext.GetConfigStringRequest{
-		Path: "infra.parameters.aiFoundryProjectResourceId",
-	})
-	if err != nil {
-		return fmt.Errorf("failed to get environment config: %w", err)
-	}
-	aiFoundryProjectResourceID := response.Value
-	fmt.Println("✓ Retrieved aiFoundryProjectResourceId")
-
-	// Extract subscription ID from resource ID
-	parts := strings.Split(aiFoundryProjectResourceID, "/")
-	if len(parts) < 3 {
-		return fmt.Errorf("invalid resource ID format: %s", aiFoundryProjectResourceID)
-	}
-
-	// Find subscription ID
-	var subscriptionID string
-	for i, part := range parts {
-		if part == "subscriptions" && i+1 < len(parts) {
-			subscriptionID = parts[i+1]
-			break
-		}
-	}
-
-	if subscriptionID == "" {
-		return fmt.Errorf("subscription ID not found in resource ID: %s", aiFoundryProjectResourceID)
-	}
-
-	// Get the tenant ID
-	tenantResponse, err := p.AzdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
-		SubscriptionId: subscriptionID,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to get tenant ID: %w", err)
-	}
-
-	cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
-		TenantID:                   tenantResponse.TenantId,
-		AdditionallyAllowedTenants: []string{"*"},
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create Azure credential: %w", err)
-	}
-
-	// Get Microsoft Foundry Project's managed identity
-	fmt.Println("Retrieving Microsoft Foundry Project identity...")
-	projectPrincipalID, err := getProjectPrincipalID(ctx, cred, aiFoundryProjectResourceID, subscriptionID)
-	if err != nil {
-		return fmt.Errorf("failed to get Project principal ID: %w", err)
-	}
-	fmt.Printf("Principal ID: %s\n", projectPrincipalID)
-
-	// Get Application ID from Principal ID
-	fmt.Println("Retrieving Application ID...")
-	projectClientID, err := getApplicationID(context.Background(), cred, projectPrincipalID)
-	if err != nil {
-		return fmt.Errorf("failed to get Application ID: %w", err)
-	}
-
-	fmt.Printf("Application ID: %s\n", projectClientID)
-
-	// Save to environment
-	cResponse, err := azdEnvClient.GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil {
-		return fmt.Errorf("failed to get current environment: %w", err)
-	}
-
-	_, err = azdEnvClient.SetValue(ctx, &azdext.SetEnvRequest{
-		EnvName: cResponse.Environment.Name,
-		Key:     "AZURE_AI_PROJECT_PRINCIPAL_ID",
-		Value:   projectClientID,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to set AZURE_AI_PROJECT_PRINCIPAL_ID in environment: %w", err)
-	}
-
-	fmt.Println("✓ Application ID saved to environment")
-
-	return nil
-}
-
-// getProjectPrincipalID retrieves the principal ID from the Microsoft Foundry Project using Azure SDK
-func getProjectPrincipalID(ctx context.Context, cred *azidentity.AzureDeveloperCLICredential, resourceID, subscriptionID string) (string, error) {
-	// Create resources client
-	client, err := armresources.NewClient(subscriptionID, cred, nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to create resources client: %w", err)
-	}
-
-	// Get the resource
-	// API version for Microsoft Foundry projects (Machine Learning workspaces)
-	apiVersion := "2025-06-01"
-	resp, err := client.GetByID(ctx, resourceID, apiVersion, nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to retrieve resource: %w", err)
-	}
-
-	// Extract principal ID from identity
-	if resp.Identity == nil {
-		return "", fmt.Errorf("resource does not have an identity")
-	}
-
-	if resp.Identity.PrincipalID == nil {
-		return "", fmt.Errorf("resource identity does not have a principal ID")
-	}
-
-	principalID := *resp.Identity.PrincipalID
-	if principalID == "" {
-		return "", fmt.Errorf("principal ID is empty")
-	}
-
-	return principalID, nil
-}
-
-// getApplicationID retrieves the application ID from the principal ID using Microsoft Graph API
-func getApplicationID(ctx context.Context, cred *azidentity.AzureDeveloperCLICredential, principalID string) (string, error) {
-	// Create Graph client
-	graphClient, err := graphsdk.NewGraphClient(cred, nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to create Graph client: %w", err)
-	}
-
-	// Get service principal directly by object ID (principal ID)
-	servicePrincipal, err := graphClient.
-		ServicePrincipalById(principalID).
-		Get(ctx)
-
-	if err != nil {
-		return "", fmt.Errorf("failed to retrieve service principal with principal ID '%s': %w", principalID, err)
-	}
-
-	appID := servicePrincipal.AppId
-	if appID == "" {
-		return "", fmt.Errorf("application ID is empty")
-	}
-
-	return appID, nil
 }
 
 // getCognitiveServicesAccountLocation retrieves the location of a Cognitive Services account using Azure SDK
@@ -258,8 +104,6 @@ func getCognitiveServicesAccountLocation(ctx context.Context, cred *azidentity.A
 
 	return location, nil
 }
-
-/////////////////////////////////////////////////////////////////////////////
 
 // Config structures for JSON parsing
 type AgentRegistrationPayload struct {
@@ -300,14 +144,6 @@ type DataPlaneResponse struct {
 }
 
 func (p *FoundryParser) CoboPostDeploy(ctx context.Context, args *azdext.ProjectEventArgs) error {
-	shouldRun, err := shouldRun(ctx, args.Project)
-	if err != nil {
-		return fmt.Errorf("failed to determine if extension should attach: %w", err)
-	}
-	if !shouldRun {
-		return nil
-	}
-
 	azdEnvClient := p.AzdClient.Environment()
 	cEnvResponse, err := azdEnvClient.GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil {
@@ -326,9 +162,8 @@ func (p *FoundryParser) CoboPostDeploy(ctx context.Context, args *azdext.Project
 	}
 
 	// Get required values from azd environment
-	containerAppPrincipalID := azdEnv["SERVICE_API_IDENTITY_PRINCIPAL_ID"]
+	containerAppPrincipalID := azdEnv["COBO_ACA_IDENTITY_PRINCIPAL_ID"]
 	aiFoundryProjectResourceID := azdEnv["AZURE_AI_PROJECT_ID"]
-	deploymentName := azdEnv["DEPLOYMENT_NAME"]
 	resourceID := azdEnv["SERVICE_API_RESOURCE_ID"]
 	agentName := azdEnv["AGENT_NAME"]
 	//aiProjectEndpoint := azdEnv["AI_PROJECT_ENDPOINT"]
@@ -352,10 +187,7 @@ func (p *FoundryParser) CoboPostDeploy(ctx context.Context, args *azdext.Project
 	if err := validateRequired("AZURE_AI_PROJECT_ID", aiFoundryProjectResourceID); err != nil {
 		return err
 	}
-	if err := validateRequired("SERVICE_API_IDENTITY_PRINCIPAL_ID", containerAppPrincipalID); err != nil {
-		return err
-	}
-	if err := validateRequired("DEPLOYMENT_NAME", deploymentName); err != nil {
+	if err := validateRequired("COBO_ACA_IDENTITY_PRINCIPAL_ID", containerAppPrincipalID); err != nil {
 		return err
 	}
 	if err := validateRequired("AGENT_NAME", agentName); err != nil {
@@ -391,7 +223,6 @@ func (p *FoundryParser) CoboPostDeploy(ctx context.Context, args *azdext.Project
 
 	fmt.Printf("Microsoft Foundry region: %s\n", aiFoundryRegion)
 	fmt.Printf("Project: %s\n", projectName)
-	fmt.Printf("Deployment: %s\n", deploymentName)
 	fmt.Printf("Agent: %s\n", agentName)
 
 	// Assign Azure AI User role

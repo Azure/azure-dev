@@ -50,7 +50,9 @@ func newListenCommand() *cobra.Command {
 				WithProjectEventHandler("predeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 					return predeployHandler(ctx, azdClient, projectParser, args)
 				}).
-				WithProjectEventHandler("postdeploy", projectParser.CoboPostDeploy)
+				WithProjectEventHandler("postdeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+					return postdeployHandler(ctx, projectParser, args)
+				})
 
 			// Start listening for events
 			// This is a blocking call and will not return until the server connection is closed.
@@ -64,10 +66,6 @@ func newListenCommand() *cobra.Command {
 }
 
 func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, projectParser *project.FoundryParser, args *azdext.ProjectEventArgs) error {
-	if err := projectParser.SetIdentity(ctx, args); err != nil {
-		return fmt.Errorf("failed to set identity: %w", err)
-	}
-
 	for _, svc := range args.Project.Services {
 		switch svc.Host {
 		case AiAgentHost:
@@ -78,7 +76,7 @@ func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, proje
 				return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
 			}
 		case ContainerAppHost:
-			if err := containerAgentHandling(ctx, azdClient, args.Project, svc); err != nil {
+			if err := containerAgentHandling(ctx, azdClient, projectParser, svc, args.Project.Path); err != nil {
 				return fmt.Errorf("failed to handle container agent for service %q: %w", svc.Name, err)
 			}
 		}
@@ -88,10 +86,6 @@ func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, proje
 }
 
 func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, projectParser *project.FoundryParser, args *azdext.ProjectEventArgs) error {
-	if err := projectParser.SetIdentity(ctx, args); err != nil {
-		return fmt.Errorf("failed to set identity: %w", err)
-	}
-
 	for _, svc := range args.Project.Services {
 		switch svc.Host {
 		case AiAgentHost:
@@ -101,6 +95,29 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, projectP
 			if err := envUpdate(ctx, azdClient, args.Project, svc); err != nil {
 				return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
 			}
+		case ContainerAppHost:
+			if err := containerAgentHandling(ctx, azdClient, projectParser, svc, args.Project.Path); err != nil {
+				return fmt.Errorf("failed to handle container agent for service %q: %w", svc.Name, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+func postdeployHandler(ctx context.Context, projectParser *project.FoundryParser, args *azdext.ProjectEventArgs) error {
+	for _, svc := range args.Project.Services {
+		switch svc.Host {
+		case ContainerAppHost:
+			isContainerAgent, err := projectParser.IsContainerAgent(svc, args.Project.Path)
+			if err != nil {
+				return fmt.Errorf("failed to determine if extension should attach: %w", err)
+			}
+			if !isContainerAgent {
+				return nil
+			}
+
+			return projectParser.CoboPostDeploy(ctx, args)
 		}
 	}
 
@@ -202,19 +219,13 @@ func resourcesEnvUpdate(ctx context.Context, resources []project.Resource, azdCl
 	return setEnvVar(ctx, azdClient, envName, "AI_PROJECT_DEPENDENT_RESOURCES", escapedJsonString)
 }
 
-func containerAgentHandling(ctx context.Context, azdClient *azdext.AzdClient, project *azdext.ProjectConfig, svc *azdext.ServiceConfig) error {
-	servicePath := svc.RelativePath
-	fullPath := filepath.Join(project.Path, servicePath)
-	agentYamlPath := filepath.Join(fullPath, "agent.yaml")
-
-	data, err := os.ReadFile(agentYamlPath)
+func containerAgentHandling(ctx context.Context, azdClient *azdext.AzdClient, projectParser *project.FoundryParser, service *azdext.ServiceConfig, projectPath string) error {
+	isContainerAgent, err := projectParser.IsContainerAgent(service, projectPath)
 	if err != nil {
-		return nil
+		return fmt.Errorf("failed to determine if extension should attach: %w", err)
 	}
-
-	var agentDef agent_yaml.AgentDefinition
-	if err := yaml.Unmarshal(data, &agentDef); err != nil {
-		return fmt.Errorf("YAML content is not valid: %w", err)
+	if !isContainerAgent {
+		return nil
 	}
 
 	// If there is an agent.yaml in the project, and it can be properly parsed into an agent definition, add the env var to enable container agents

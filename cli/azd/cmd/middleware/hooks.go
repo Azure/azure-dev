@@ -55,11 +55,6 @@ func NewHooksMiddleware(
 
 // Runs the Hooks middleware
 func (m *HooksMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
-	if m.env == nil {
-		log.Println("azd environment is not available, skipping all hook registrations.")
-		return next(ctx)
-	}
-
 	projectConfig, err := m.lazyProjectConfig.GetValue()
 	if err != nil || projectConfig == nil {
 		log.Println("azd project is not available, skipping all hook registrations.")

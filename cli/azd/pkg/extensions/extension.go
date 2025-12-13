@@ -25,6 +25,7 @@ type Extension struct {
 	Source       string           `json:"source"`
 	Providers    []Provider       `json:"providers,omitempty"`
 	McpConfig    *McpConfig       `json:"mcp,omitempty"`
+	Interactive  bool             `json:"interactive,omitempty"`
 
 	stdin  *bytes.Buffer
 	stdout *output.DynamicMultiWriter

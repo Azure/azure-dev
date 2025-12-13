@@ -7,3 +7,4 @@ language: go
 namespace: concurx
 usage: azd concurx <command> [options]
 version: 0.0.1
+interactive: true

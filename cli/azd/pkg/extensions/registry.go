@@ -114,6 +114,9 @@ type ExtensionVersion struct {
 	EntryPoint string `json:"entryPoint,omitempty"`
 	// McpConfig is the MCP server configuration for this extension version
 	McpConfig *McpConfig `json:"mcp,omitempty"`
+	// Interactive indicates whether the extension should run in interactive mode
+	// with stdin/stdout/stderr directly connected to the terminal (required for TUI apps)
+	Interactive bool `json:"interactive,omitempty"`
 }
 
 // ExtensionArtifact represents the artifact information of an extension

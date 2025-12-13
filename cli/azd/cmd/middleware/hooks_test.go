@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
+	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
@@ -288,6 +289,34 @@ func Test_ServiceHooks_Registered(t *testing.T) {
 	require.Equal(t, 1, preDeployCount)
 }
 
+func Test_HooksMiddleware_SkipsWhenProjectUnavailable(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	envManager := &mockenv.MockEnvManager{}
+	env := environment.New("test")
+
+	lazyProjectConfig := lazy.NewLazy(func() (*project.ProjectConfig, error) {
+		return nil, errors.New("failed to load project")
+	})
+
+	middleware := NewHooksMiddleware(
+		envManager,
+		env,
+		lazyProjectConfig,
+		project.NewImportManager(nil),
+		mockContext.CommandRunner,
+		mockContext.Console,
+		&Options{CommandPath: "command"},
+		mockContext.Container,
+	)
+
+	nextFn, actionRan := createNextFn()
+	result, err := middleware.Run(*mockContext.Context, nextFn)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, *actionRan)
+}
+
 func createAzdContext(t *testing.T) *azdcontext.AzdContext {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
@@ -343,10 +372,12 @@ func runMiddleware(
 	envManager.On("Save", mock.Anything, mock.Anything).Return(nil)
 	envManager.On("Reload", mock.Anything, mock.Anything).Return(nil)
 
+	lazyProjectConfig := lazy.From(projectConfig)
+
 	middleware := NewHooksMiddleware(
 		envManager,
 		env,
-		projectConfig,
+		lazyProjectConfig,
 		project.NewImportManager(nil),
 		mockContext.CommandRunner,
 		mockContext.Console,

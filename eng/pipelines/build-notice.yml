@@ -48,3 +48,11 @@ jobs:
 
       - publish: NOTICE.txt
         artifact: notice
+
+      # Create a PR with the updated NOTICE.txt file
+      - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
+        parameters:
+          PushArgs: -f
+          PRBranchName: eng/update-notice-txt
+          CommitMsg: Update NOTICE.txt from $(System.CollectionUri)$(System.TeamProject)/_build/results?buildId=$(Build.BuildId)
+          PRTitle: Update NOTICE.txt

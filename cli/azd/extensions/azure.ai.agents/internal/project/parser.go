@@ -164,7 +164,6 @@ func (p *FoundryParser) CoboPostDeploy(ctx context.Context, args *azdext.Project
 	// Get required values from azd environment
 	containerAppPrincipalID := azdEnv["COBO_ACA_IDENTITY_PRINCIPAL_ID"]
 	aiFoundryProjectResourceID := azdEnv["AZURE_AI_PROJECT_ID"]
-	deploymentName := azdEnv["DEPLOYMENT_NAME"]
 	resourceID := azdEnv["SERVICE_API_RESOURCE_ID"]
 	agentName := azdEnv["AGENT_NAME"]
 	//aiProjectEndpoint := azdEnv["AI_PROJECT_ENDPOINT"]
@@ -189,9 +188,6 @@ func (p *FoundryParser) CoboPostDeploy(ctx context.Context, args *azdext.Project
 		return err
 	}
 	if err := validateRequired("COBO_ACA_IDENTITY_PRINCIPAL_ID", containerAppPrincipalID); err != nil {
-		return err
-	}
-	if err := validateRequired("DEPLOYMENT_NAME", deploymentName); err != nil {
 		return err
 	}
 	if err := validateRequired("AGENT_NAME", agentName); err != nil {
@@ -227,7 +223,6 @@ func (p *FoundryParser) CoboPostDeploy(ctx context.Context, args *azdext.Project
 
 	fmt.Printf("Microsoft Foundry region: %s\n", aiFoundryRegion)
 	fmt.Printf("Project: %s\n", projectName)
-	fmt.Printf("Deployment: %s\n", deploymentName)
 	fmt.Printf("Agent: %s\n", agentName)
 
 	// Assign Azure AI User role

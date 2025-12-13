@@ -162,7 +162,7 @@ func (p *FoundryParser) CoboPostDeploy(ctx context.Context, args *azdext.Project
 	}
 
 	// Get required values from azd environment
-	containerAppPrincipalID := azdEnv["SERVICE_API_IDENTITY_PRINCIPAL_ID"]
+	containerAppPrincipalID := azdEnv["COBO_ACA_IDENTITY_PRINCIPAL_ID"]
 	aiFoundryProjectResourceID := azdEnv["AZURE_AI_PROJECT_ID"]
 	deploymentName := azdEnv["DEPLOYMENT_NAME"]
 	resourceID := azdEnv["SERVICE_API_RESOURCE_ID"]
@@ -188,7 +188,7 @@ func (p *FoundryParser) CoboPostDeploy(ctx context.Context, args *azdext.Project
 	if err := validateRequired("AZURE_AI_PROJECT_ID", aiFoundryProjectResourceID); err != nil {
 		return err
 	}
-	if err := validateRequired("SERVICE_API_IDENTITY_PRINCIPAL_ID", containerAppPrincipalID); err != nil {
+	if err := validateRequired("COBO_ACA_IDENTITY_PRINCIPAL_ID", containerAppPrincipalID); err != nil {
 		return err
 	}
 	if err := validateRequired("DEPLOYMENT_NAME", deploymentName); err != nil {

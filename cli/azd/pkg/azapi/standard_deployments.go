@@ -456,7 +456,18 @@ func (ds *StandardDeployments) DeleteSubscriptionDeployment(
 		})
 	}
 
-	// Deploy empty template to void provision state and keep deployment history instead of deleting previous deployments
+	// Void the deployment state
+	return ds.voidSubscriptionDeploymentState(ctx, subscriptionId, deploymentName, options)
+}
+
+// voidSubscriptionDeploymentState deploys an empty template to void the provision state
+// and keep deployment history instead of deleting previous deployments.
+func (ds *StandardDeployments) voidSubscriptionDeploymentState(
+	ctx context.Context,
+	subscriptionId string,
+	deploymentName string,
+	options map[string]any,
+) error {
 	// Get deployment metadata
 	deployment, err := ds.GetSubscriptionDeployment(ctx, subscriptionId, deploymentName)
 	if err != nil {

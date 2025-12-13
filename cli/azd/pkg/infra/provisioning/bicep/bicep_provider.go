@@ -1072,44 +1072,6 @@ func getDeploymentOptions(deployments []*azapi.ResourceDeployment) []string {
 	return promptValues
 }
 
-// resourceGroupsToDelete collects the resource groups from an existing deployment which should be removed as part of a
-// destroy operation.
-func resourceGroupsToDelete(deployment *azapi.ResourceDeployment) []string {
-	// NOTE: it's possible for a deployment to list a resource group more than once. We're only interested in the
-	// unique set.
-	resourceGroups := map[string]struct{}{}
-
-	if deployment.ProvisioningState == azapi.DeploymentProvisioningStateSucceeded {
-		// For a successful deployment, we can use the output resources property to see the resource groups that were
-		// provisioned from this.
-		for _, resourceId := range deployment.Resources {
-			if resourceId != nil && resourceId.ID != nil {
-				resId, err := arm.ParseResourceID(*resourceId.ID)
-				if err == nil && resId.ResourceGroupName != "" {
-					resourceGroups[resId.ResourceGroupName] = struct{}{}
-				}
-			}
-		}
-	} else {
-		// For a failed deployment, the `outputResources` field is not populated. Instead, we assume that any resource
-		// groups which this deployment itself deployed into should be deleted. This matches what a deployment likes
-		// for the common pattern of having a subscription level deployment which allocates a set of resource groups
-		// and then does nested deployments into them.
-		for _, dependency := range deployment.Dependencies {
-			if *dependency.ResourceType == string(azapi.AzureResourceTypeDeployment) {
-				for _, dependent := range dependency.DependsOn {
-					if *dependent.ResourceType == arm.ResourceGroupResourceType.String() {
-						resourceGroups[*dependent.ResourceName] = struct{}{}
-					}
-				}
-			}
-
-		}
-	}
-
-	return slices.Collect(maps.Keys(resourceGroups))
-}
-
 func (p *BicepProvider) generateResourcesToDelete(groupedResources map[string][]*azapi.Resource) []string {
 	lines := []string{"Resource(s) to be deleted:"}
 

@@ -8,7 +8,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
+	"slices"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -343,32 +345,17 @@ func (ds *StandardDeployments) ListSubscriptionDeploymentResources(
 		return nil, fmt.Errorf("getting subscription deployment: %w", err)
 	}
 
-	// Get the environment name from the deployment tags
-	envName, has := subscriptionDeployment.Tags[azure.TagKeyAzdEnvName]
-	if !has || envName == nil {
-		return nil, fmt.Errorf("environment name not found in deployment tags")
-	}
-
-	// Get all resource groups tagged with the azd-env-name tag
-	resourceGroups, err := ds.resourceService.ListResourceGroup(ctx, subscriptionId, &ListResourceGroupOptions{
-		TagFilter: &Filter{Key: azure.TagKeyAzdEnvName, Value: *envName},
-	})
-
-	if err != nil {
-		return nil, fmt.Errorf("listing resource groups: %w", err)
-	}
-
+	resourceGroupNames := resourceGroupsFromDeployment(subscriptionDeployment)
 	allResources := []*armresources.ResourceReference{}
 
-	// Find all the resources from all the resource groups
-	for _, resourceGroup := range resourceGroups {
-
-		resources, err := ds.resourceService.ListResourceGroupResources(ctx, subscriptionId, resourceGroup.Name, nil)
+	// Find all the resources from the deployment's resource groups
+	for _, resourceGroupName := range resourceGroupNames {
+		resources, err := ds.resourceService.ListResourceGroupResources(ctx, subscriptionId, resourceGroupName, nil)
 		if err != nil {
 			return nil, fmt.Errorf("listing resource group resources: %w", err)
 		}
 
-		resourceGroupId := azure.ResourceGroupRID(subscriptionId, resourceGroup.Name)
+		resourceGroupId := azure.ResourceGroupRID(subscriptionId, resourceGroupName)
 		allResources = append(allResources, &armresources.ResourceReference{
 			ID: &resourceGroupId,
 		})
@@ -381,6 +368,39 @@ func (ds *StandardDeployments) ListSubscriptionDeploymentResources(
 	}
 
 	return allResources, nil
+}
+
+// resourceGroupsFromDeployment extracts the unique resource groups associated to a deployment.
+func resourceGroupsFromDeployment(deployment *ResourceDeployment) []string {
+	resourceGroups := map[string]struct{}{}
+
+	if deployment.ProvisioningState == DeploymentProvisioningStateSucceeded {
+		// For a successful deployment, use the output resources property to find the resource groups.
+		for _, resourceId := range deployment.Resources {
+			if resourceId != nil && resourceId.ID != nil {
+				resId, err := arm.ParseResourceID(*resourceId.ID)
+				if err == nil && resId.ResourceGroupName != "" {
+					resourceGroups[resId.ResourceGroupName] = struct{}{}
+				}
+			}
+		}
+	} else {
+		// For a failed deployment, the outputResources field is not populated.
+		// Instead, look at the dependencies to find resource groups that this deployment deployed into.
+		for _, dependency := range deployment.Dependencies {
+			if dependency.ResourceType != nil && *dependency.ResourceType == string(AzureResourceTypeDeployment) {
+				for _, dependent := range dependency.DependsOn {
+					if dependent.ResourceType != nil && *dependent.ResourceType == arm.ResourceGroupResourceType.String() {
+						if dependent.ResourceName != nil {
+							resourceGroups[*dependent.ResourceName] = struct{}{}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return slices.Collect(maps.Keys(resourceGroups))
 }
 
 func (ds *StandardDeployments) ListResourceGroupDeploymentResources(

@@ -74,15 +74,6 @@ func ContainerAppRID(subscriptionId, resourceGroupName, containerAppName string)
 	return returnValue
 }
 
-func SpringAppRID(subscriptionId, resourceGroupName, springAppName string) string {
-	returnValue := fmt.Sprintf(
-		"%s/providers/Microsoft.AppPlatform/Spring/%s",
-		ResourceGroupRID(subscriptionId, resourceGroupName),
-		springAppName,
-	)
-	return returnValue
-}
-
 func KubernetesServiceRID(subscriptionId, resourceGroupName, clusterName string) string {
 	return fmt.Sprintf(
 		"%s/providers/Microsoft.ContainerService/managedClusters/%s",

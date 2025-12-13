@@ -42,5 +42,4 @@ As of `1.21.1`, each Azure Developer CLI feature has been evaluated and assigned
 | Host         | Azure Container Apps     | Stable    |
 | Host         | Azure Functions          | Stable    |
 | Host         | Azure Kubernetes Service | Beta      |
-| Host         | Azure Spring Apps        | Beta      |
 | Host         | Azure AI                 | Beta      |

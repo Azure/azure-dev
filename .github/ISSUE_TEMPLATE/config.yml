@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Discussions
+    url: https://github.com/Azure/azure-dev/discussions
+    about: Ask questions and discuss with the community
+  - name: 📖 Documentation
+    url: https://learn.microsoft.com/azure/developer/azure-developer-cli/
+    about: Read the official Azure Developer CLI documentation
+  - name: 🚀 Samples
+    url: https://github.com/topics/azd-templates
+    about: Browse azd templates and samples

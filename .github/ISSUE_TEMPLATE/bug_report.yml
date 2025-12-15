@@ -1,0 +1,165 @@
+name: Bug Report
+description: Report a bug or issue with Azure Developer CLI
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report! Please provide as much detail as possible to help us reproduce and fix the issue.
+        
+        Before submitting, please:
+        - Make sure you've installed the latest version using [these instructions](https://github.com/Azure/azure-dev?tab=readme-ov-file#installupgrade-azure-developer-cli)
+        - Search existing issues to see if this has already been reported
+  
+  - type: input
+    id: azd-version
+    attributes:
+      label: azd version
+      description: Run `azd version` and paste the output here
+      placeholder: "azd version 1.5.0 (commit abc123def456)"
+    validations:
+      required: true
+  
+  - type: dropdown
+    id: operating-system
+    attributes:
+      label: Operating System
+      description: What operating system are you using?
+      options:
+        - Windows
+        - macOS
+        - Linux (Ubuntu)
+        - Linux (Debian)
+        - Linux (Fedora)
+        - Linux (Other)
+        - WSL (Windows Subsystem for Linux)
+        - Other
+    validations:
+      required: true
+  
+  - type: input
+    id: os-version
+    attributes:
+      label: OS Version
+      description: What version of the operating system? (e.g., Windows 11 22H2, macOS 14.1, Ubuntu 22.04)
+      placeholder: "e.g., Windows 11 22H2"
+    validations:
+      required: true
+  
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug
+      description: A clear and concise description of what the bug is.
+      placeholder: Tell us what you see!
+    validations:
+      required: true
+  
+  - type: textarea
+    id: command-executed
+    attributes:
+      label: Command executed
+      description: What azd command did you run? Please include the full command with all arguments and flags.
+      placeholder: "azd up --environment dev"
+      render: shell
+    validations:
+      required: true
+  
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+      placeholder: A clear and concise description of what you expected to happen.
+    validations:
+      required: true
+  
+  - type: textarea
+    id: actual-behavior
+    attributes:
+      label: Actual behavior
+      description: What actually happened? Please include the full error message or output.
+      placeholder: Include error messages, stack traces, or unexpected output
+      render: shell
+    validations:
+      required: true
+  
+  - type: textarea
+    id: repro-steps
+    attributes:
+      label: Steps to reproduce
+      description: |
+        Provide detailed steps to reproduce the issue. The more specific you are, the easier it will be for us to identify and fix the problem.
+      placeholder: |
+        1. Run `azd init`
+        2. Select template '...'
+        3. Run `azd up`
+        4. See error
+    validations:
+      required: true
+  
+  - type: input
+    id: template-name
+    attributes:
+      label: azd template used (if applicable)
+      description: If you're using an azd template, which one? (e.g., Azure-Samples/todo-nodejs-mongo)
+      placeholder: "Azure-Samples/todo-nodejs-mongo"
+    validations:
+      required: false
+  
+  - type: input
+    id: azure-region
+    attributes:
+      label: Azure region
+      description: Which Azure region are you deploying to? (if applicable)
+      placeholder: "eastus"
+    validations:
+      required: false
+  
+  - type: textarea
+    id: environment-details
+    attributes:
+      label: Additional environment details
+      description: |
+        Any other relevant environment information:
+        - Programming language and version (e.g., Node.js 18.x, Python 3.11)
+        - IDE and version (e.g., VS Code 1.85, Visual Studio 2022)
+        - Shell/Terminal (e.g., PowerShell 7.x, bash 5.x)
+        - Docker version (if using containers)
+      placeholder: |
+        - Node.js: 18.17.0
+        - IDE: VS Code 1.85
+        - Shell: PowerShell 7.3
+    validations:
+      required: false
+  
+  - type: textarea
+    id: logs
+    attributes:
+      label: Full error logs
+      description: |
+        Please provide complete logs if available. You can get verbose logs by running azd with debug flags:
+        - Use `azd <command> --debug` for debug output
+        - Check logs in `~/.azd/logs/` or `%USERPROFILE%\.azd\logs\` on Windows
+      placeholder: Paste full logs here
+      render: shell
+    validations:
+      required: false
+  
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Add any other context about the problem here (screenshots, workarounds you've tried, etc.)
+    validations:
+      required: false
+  
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Code of Conduct
+      description: By submitting this issue, you agree to follow this project's Code of Conduct
+      options:
+        - label: I agree to follow this project's Code of Conduct
+          required: true

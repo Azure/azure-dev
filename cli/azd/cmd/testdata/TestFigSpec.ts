@@ -430,6 +430,71 @@ const completionSpec: Fig.Spec = {
 			description: 'Manage environments (ex: default environment, environment variables).',
 			subcommands: [
 				{
+					name: ['config'],
+					description: 'Manage environment configuration (ex: stored in .azure/<environment>/config.json).',
+					subcommands: [
+						{
+							name: ['get'],
+							description: 'Gets a configuration value from the environment.',
+							options: [
+								{
+									name: ['--environment', '-e'],
+									description: 'The name of the environment to use.',
+									args: [
+									{
+										name: 'environment',
+									},
+									],
+								},
+							],
+							args: {
+								name: 'path',
+							},
+						},
+						{
+							name: ['set'],
+							description: 'Sets a configuration value in the environment.',
+							options: [
+								{
+									name: ['--environment', '-e'],
+									description: 'The name of the environment to use.',
+									args: [
+									{
+										name: 'environment',
+									},
+									],
+								},
+							],
+							args: [
+							{
+								name: 'path',
+							},
+							{
+								name: 'value',
+							},
+							],
+						},
+						{
+							name: ['unset'],
+							description: 'Unsets a configuration value in the environment.',
+							options: [
+								{
+									name: ['--environment', '-e'],
+									description: 'The name of the environment to use.',
+									args: [
+									{
+										name: 'environment',
+									},
+									],
+								},
+							],
+							args: {
+								name: 'path',
+							},
+						},
+					],
+				},
+				{
 					name: ['get-value'],
 					description: 'Get specific environment value.',
 					options: [
@@ -1617,6 +1682,24 @@ const completionSpec: Fig.Spec = {
 					name: ['env'],
 					description: 'Manage environments (ex: default environment, environment variables).',
 					subcommands: [
+						{
+							name: ['config'],
+							description: 'Manage environment configuration (ex: stored in .azure/<environment>/config.json).',
+							subcommands: [
+								{
+									name: ['get'],
+									description: 'Gets a configuration value from the environment.',
+								},
+								{
+									name: ['set'],
+									description: 'Sets a configuration value in the environment.',
+								},
+								{
+									name: ['unset'],
+									description: 'Unsets a configuration value in the environment.',
+								},
+							],
+						},
 						{
 							name: ['get-value'],
 							description: 'Get specific environment value.',

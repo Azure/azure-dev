@@ -15,6 +15,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -180,6 +182,10 @@ func (s *projectService) Get(ctx context.Context, req *azdext.EmptyRequest) (*az
 // The service name from req.Service.Name is used as the key in the services map.
 // If the services map doesn't exist, it will be initialized.
 func (s *projectService) AddService(ctx context.Context, req *azdext.AddServiceRequest) (*azdext.EmptyResponse, error) {
+	if req.Service == nil || req.Service.Name == "" {
+		return nil, status.Error(codes.InvalidArgument, "service name cannot be empty")
+	}
+
 	azdContext, err := s.lazyAzdContext.GetValue()
 	if err != nil {
 		return nil, err
@@ -277,6 +283,10 @@ func (s *projectService) GetConfigValue(
 	ctx context.Context,
 	req *azdext.GetProjectConfigValueRequest,
 ) (*azdext.GetProjectConfigValueResponse, error) {
+	if req.Path == "" {
+		return nil, status.Error(codes.InvalidArgument, "path cannot be empty")
+	}
+
 	azdContext, err := s.lazyAzdContext.GetValue()
 	if err != nil {
 		return nil, err
@@ -322,6 +332,10 @@ func (s *projectService) SetConfigSection(
 	ctx context.Context,
 	req *azdext.SetProjectConfigSectionRequest,
 ) (*azdext.EmptyResponse, error) {
+	if req.Path == "" {
+		return nil, status.Error(codes.InvalidArgument, "path cannot be empty")
+	}
+
 	azdContext, err := s.lazyAzdContext.GetValue()
 	if err != nil {
 		return nil, err
@@ -366,6 +380,10 @@ func (s *projectService) SetConfigValue(
 	ctx context.Context,
 	req *azdext.SetProjectConfigValueRequest,
 ) (*azdext.EmptyResponse, error) {
+	if req.Path == "" {
+		return nil, status.Error(codes.InvalidArgument, "path cannot be empty")
+	}
+
 	azdContext, err := s.lazyAzdContext.GetValue()
 	if err != nil {
 		return nil, err
@@ -410,6 +428,10 @@ func (s *projectService) UnsetConfig(
 	ctx context.Context,
 	req *azdext.UnsetProjectConfigRequest,
 ) (*azdext.EmptyResponse, error) {
+	if req.Path == "" {
+		return nil, status.Error(codes.InvalidArgument, "path cannot be empty")
+	}
+
 	azdContext, err := s.lazyAzdContext.GetValue()
 	if err != nil {
 		return nil, err
@@ -455,6 +477,10 @@ func (s *projectService) GetServiceConfigSection(
 	ctx context.Context,
 	req *azdext.GetServiceConfigSectionRequest,
 ) (*azdext.GetServiceConfigSectionResponse, error) {
+	if req.ServiceName == "" {
+		return nil, status.Error(codes.InvalidArgument, "service name cannot be empty")
+	}
+
 	azdContext, err := s.lazyAzdContext.GetValue()
 	if err != nil {
 		return nil, err
@@ -515,6 +541,13 @@ func (s *projectService) GetServiceConfigValue(
 	ctx context.Context,
 	req *azdext.GetServiceConfigValueRequest,
 ) (*azdext.GetServiceConfigValueResponse, error) {
+	if req.ServiceName == "" {
+		return nil, status.Error(codes.InvalidArgument, "service name cannot be empty")
+	}
+	if req.Path == "" {
+		return nil, status.Error(codes.InvalidArgument, "path cannot be empty")
+	}
+
 	azdContext, err := s.lazyAzdContext.GetValue()
 	if err != nil {
 		return nil, err
@@ -569,6 +602,10 @@ func (s *projectService) SetServiceConfigSection(
 	ctx context.Context,
 	req *azdext.SetServiceConfigSectionRequest,
 ) (*azdext.EmptyResponse, error) {
+	if req.ServiceName == "" {
+		return nil, status.Error(codes.InvalidArgument, "service name cannot be empty")
+	}
+
 	azdContext, err := s.lazyAzdContext.GetValue()
 	if err != nil {
 		return nil, err
@@ -626,6 +663,13 @@ func (s *projectService) SetServiceConfigValue(
 	ctx context.Context,
 	req *azdext.SetServiceConfigValueRequest,
 ) (*azdext.EmptyResponse, error) {
+	if req.ServiceName == "" {
+		return nil, status.Error(codes.InvalidArgument, "service name cannot be empty")
+	}
+	if req.Path == "" {
+		return nil, status.Error(codes.InvalidArgument, "path cannot be empty")
+	}
+
 	azdContext, err := s.lazyAzdContext.GetValue()
 	if err != nil {
 		return nil, err
@@ -680,6 +724,13 @@ func (s *projectService) UnsetServiceConfig(
 	ctx context.Context,
 	req *azdext.UnsetServiceConfigRequest,
 ) (*azdext.EmptyResponse, error) {
+	if req.ServiceName == "" {
+		return nil, status.Error(codes.InvalidArgument, "service name cannot be empty")
+	}
+	if req.Path == "" {
+		return nil, status.Error(codes.InvalidArgument, "path cannot be empty")
+	}
+
 	azdContext, err := s.lazyAzdContext.GetValue()
 	if err != nil {
 		return nil, err

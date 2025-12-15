@@ -1677,3 +1677,208 @@ func Test_ProjectService_EventDispatcherPreservation_MultipleUpdates(t *testing.
 
 	require.Equal(t, int32(1), eventCount.Load(), "event handler should be invoked after multiple config updates")
 }
+
+func Test_ProjectService_ServiceConfigValue_EmptyPath(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	temp := t.TempDir()
+
+	// Initialize AzdContext with the temporary directory
+	azdContext := azdcontext.NewAzdContextWithDirectory(temp)
+
+	// Define and save project configuration with a service
+	projectConfig := project.ProjectConfig{
+		Name: "test",
+		Services: map[string]*project.ServiceConfig{
+			"api": {
+				Name:     "api",
+				Host:     "containerapp",
+				Language: "go",
+			},
+		},
+	}
+	err := project.Save(*mockContext.Context, &projectConfig, azdContext.ProjectPath())
+	require.NoError(t, err)
+
+	// Configure and initialize environment manager
+	fileConfigManager := config.NewFileConfigManager(config.NewManager())
+	localDataStore := environment.NewLocalFileDataStore(azdContext, fileConfigManager)
+	envManager, err := environment.NewManager(mockContext.Container, azdContext, mockContext.Console, localDataStore, nil)
+	require.NoError(t, err)
+
+	// Create lazy-loaded instances
+	lazyAzdContext := lazy.From(azdContext)
+	lazyEnvManager := lazy.From(envManager)
+	lazyProjectConfig := lazy.From(&projectConfig)
+
+	// Create the service
+	importManager := project.NewImportManager(&project.DotNetImporter{})
+	projectService := NewProjectService(lazyAzdContext, lazyEnvManager, lazyProjectConfig, importManager, nil)
+
+	t.Run("GetServiceConfigValue_EmptyPath", func(t *testing.T) {
+		_, err := projectService.GetServiceConfigValue(*mockContext.Context, &azdext.GetServiceConfigValueRequest{
+			ServiceName: "api",
+			Path:        "",
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "path cannot be empty")
+	})
+
+	t.Run("SetServiceConfigValue_EmptyPath", func(t *testing.T) {
+		_, err := projectService.SetServiceConfigValue(*mockContext.Context, &azdext.SetServiceConfigValueRequest{
+			ServiceName: "api",
+			Path:        "",
+			Value:       structpb.NewStringValue("test"),
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "path cannot be empty")
+	})
+
+	t.Run("UnsetServiceConfig_EmptyPath", func(t *testing.T) {
+		_, err := projectService.UnsetServiceConfig(*mockContext.Context, &azdext.UnsetServiceConfigRequest{
+			ServiceName: "api",
+			Path:        "",
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "path cannot be empty")
+	})
+}
+
+func Test_ProjectService_EmptyStringValidation(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	temp := t.TempDir()
+
+	// Initialize AzdContext with the temporary directory
+	azdContext := azdcontext.NewAzdContextWithDirectory(temp)
+
+	// Define and save project configuration with a service
+	projectConfig := project.ProjectConfig{
+		Name: "test",
+		Services: map[string]*project.ServiceConfig{
+			"api": {
+				Name:     "api",
+				Host:     "containerapp",
+				Language: "go",
+			},
+		},
+	}
+	err := project.Save(*mockContext.Context, &projectConfig, azdContext.ProjectPath())
+	require.NoError(t, err)
+
+	// Configure and initialize environment manager
+	fileConfigManager := config.NewFileConfigManager(config.NewManager())
+	localDataStore := environment.NewLocalFileDataStore(azdContext, fileConfigManager)
+	envManager, err := environment.NewManager(mockContext.Container, azdContext, mockContext.Console, localDataStore, nil)
+	require.NoError(t, err)
+
+	// Create lazy-loaded instances
+	lazyAzdContext := lazy.From(azdContext)
+	lazyEnvManager := lazy.From(envManager)
+	lazyProjectConfig := lazy.From(&projectConfig)
+
+	// Create the service
+	importManager := project.NewImportManager(&project.DotNetImporter{})
+	projectService := NewProjectService(lazyAzdContext, lazyEnvManager, lazyProjectConfig, importManager, nil)
+
+	// Project-level config method validations
+	t.Run("GetConfigValue_EmptyPath", func(t *testing.T) {
+		_, err := projectService.GetConfigValue(*mockContext.Context, &azdext.GetProjectConfigValueRequest{
+			Path: "",
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "path cannot be empty")
+	})
+
+	t.Run("SetConfigSection_EmptyPath", func(t *testing.T) {
+		_, err := projectService.SetConfigSection(*mockContext.Context, &azdext.SetProjectConfigSectionRequest{
+			Path:    "",
+			Section: &structpb.Struct{},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "path cannot be empty")
+	})
+
+	t.Run("SetConfigValue_EmptyPath", func(t *testing.T) {
+		_, err := projectService.SetConfigValue(*mockContext.Context, &azdext.SetProjectConfigValueRequest{
+			Path:  "",
+			Value: structpb.NewStringValue("test"),
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "path cannot be empty")
+	})
+
+	t.Run("UnsetConfig_EmptyPath", func(t *testing.T) {
+		_, err := projectService.UnsetConfig(*mockContext.Context, &azdext.UnsetProjectConfigRequest{
+			Path: "",
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "path cannot be empty")
+	})
+
+	// Service-level config method validations - empty serviceName
+	t.Run("GetServiceConfigSection_EmptyServiceName", func(t *testing.T) {
+		_, err := projectService.GetServiceConfigSection(*mockContext.Context, &azdext.GetServiceConfigSectionRequest{
+			ServiceName: "",
+			Path:        "host",
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "service name cannot be empty")
+	})
+
+	t.Run("GetServiceConfigValue_EmptyServiceName", func(t *testing.T) {
+		_, err := projectService.GetServiceConfigValue(*mockContext.Context, &azdext.GetServiceConfigValueRequest{
+			ServiceName: "",
+			Path:        "host",
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "service name cannot be empty")
+	})
+
+	t.Run("SetServiceConfigSection_EmptyServiceName", func(t *testing.T) {
+		_, err := projectService.SetServiceConfigSection(*mockContext.Context, &azdext.SetServiceConfigSectionRequest{
+			ServiceName: "",
+			Path:        "custom",
+			Section:     &structpb.Struct{},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "service name cannot be empty")
+	})
+
+	t.Run("SetServiceConfigValue_EmptyServiceName", func(t *testing.T) {
+		_, err := projectService.SetServiceConfigValue(*mockContext.Context, &azdext.SetServiceConfigValueRequest{
+			ServiceName: "",
+			Path:        "host",
+			Value:       structpb.NewStringValue("test"),
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "service name cannot be empty")
+	})
+
+	t.Run("UnsetServiceConfig_EmptyServiceName", func(t *testing.T) {
+		_, err := projectService.UnsetServiceConfig(*mockContext.Context, &azdext.UnsetServiceConfigRequest{
+			ServiceName: "",
+			Path:        "host",
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "service name cannot be empty")
+	})
+
+	// AddService validations
+	t.Run("AddService_NilService", func(t *testing.T) {
+		_, err := projectService.AddService(*mockContext.Context, &azdext.AddServiceRequest{
+			Service: nil,
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "service name cannot be empty")
+	})
+
+	t.Run("AddService_EmptyServiceName", func(t *testing.T) {
+		_, err := projectService.AddService(*mockContext.Context, &azdext.AddServiceRequest{
+			Service: &azdext.ServiceConfig{
+				Name: "",
+				Host: "containerapp",
+			},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "service name cannot be empty")
+	})
+}

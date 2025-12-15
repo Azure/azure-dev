@@ -224,7 +224,8 @@ func (rm *AzureResourceManager) GetResourceTypeDisplayName(
 		} else {
 			return resourceTypeDisplayName, nil
 		}
-	} else if resourceType == azapi.AzureResourceTypeCognitiveServiceAccount {
+	} else if resourceType == azapi.AzureResourceTypeCognitiveServiceAccount ||
+		resourceType == azapi.AzureResourceTypeCognitiveServiceAccountProject {
 		resourceTypeDisplayName, err := rm.getCognitiveServiceResourceTypeDisplayName(ctx, subscriptionId, resourceId)
 
 		if err != nil {
@@ -277,6 +278,11 @@ func (rm *AzureResourceManager) getCognitiveServiceResourceTypeDisplayName(
 	subscriptionId string,
 	resourceId string,
 ) (string, error) {
+	// Check if this is a Foundry project resource (child resource)
+	if strings.Contains(resourceId, "/projects/") {
+		return "Foundry project", nil
+	}
+
 	resource, err := rm.resourceService.GetResource(ctx, subscriptionId, resourceId, cognitiveServiceApiVersion)
 
 	if err != nil {
@@ -287,6 +293,10 @@ func (rm *AzureResourceManager) getCognitiveServiceResourceTypeDisplayName(
 		return "Azure OpenAI", nil
 	} else if strings.Contains(resource.Kind, "FormRecognizer") {
 		return "Document Intelligence", nil
+	} else if strings.Contains(resource.Kind, "AIHub") {
+		return "Foundry", nil
+	} else if resource.Kind == "AIServices" {
+		return "Foundry", nil
 	} else {
 		return "Azure AI Services", nil
 	}

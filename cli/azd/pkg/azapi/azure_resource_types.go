@@ -52,6 +52,7 @@ const (
 	//nolint:lll
 	AzureResourceTypeMachineLearningEndpoint           AzureResourceType = "Microsoft.MachineLearningServices/workspaces/onlineEndpoints"
 	AzureResourceTypeCognitiveServiceAccountDeployment AzureResourceType = "Microsoft.CognitiveServices/accounts/deployments"
+	AzureResourceTypeCognitiveServiceAccountProject    AzureResourceType = "Microsoft.CognitiveServices/accounts/projects"
 )
 
 // GetResourceTypeDisplayName retrieves the display name for the given resource type.
@@ -123,6 +124,8 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Azure AI Services"
 	case AzureResourceTypeCognitiveServiceAccountDeployment:
 		return "Azure AI Services Model Deployment"
+	case AzureResourceTypeCognitiveServiceAccountProject:
+		return "Foundry project"
 	case AzureResourceTypeSearchService:
 		return "Search service"
 	case AzureResourceTypeVideoIndexer:

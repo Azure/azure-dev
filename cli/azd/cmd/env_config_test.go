@@ -66,12 +66,12 @@ func setupTestEnvironment(t *testing.T, envName string, configData map[string]an
 // TestEnvConfigGet tests the azd env config get command
 func TestEnvConfigGet(t *testing.T) {
 	tests := []struct {
-		name           string
-		configData     map[string]any
-		path           string
-		expectedValue  any
-		expectError    bool
-		errorContains  string
+		name          string
+		configData    map[string]any
+		path          string
+		expectedValue any
+		expectError   bool
+		errorContains string
 	}{
 		{
 			name: "GetSimpleValue",

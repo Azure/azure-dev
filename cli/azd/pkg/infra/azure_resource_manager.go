@@ -295,7 +295,7 @@ func (rm *AzureResourceManager) getCognitiveServiceResourceTypeDisplayName(
 		return "Document Intelligence", nil
 	} else if strings.Contains(resource.Kind, "AIHub") {
 		return "Foundry", nil
-	} else if resource.Kind == "AIServices" {
+	} else if strings.Contains(resource.Kind, "AIServices") {
 		return "Foundry", nil
 	} else {
 		return "Azure AI Services", nil

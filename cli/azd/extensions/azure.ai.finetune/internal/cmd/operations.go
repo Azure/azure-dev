@@ -4,23 +4,55 @@
 package cmd
 
 import (
-	"bufio"
+	"context"
 	"fmt"
-	"os"
 	"strings"
+	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/fatih/color"
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/azure"
 	"github.com/spf13/cobra"
 )
 
 func newOperationCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "operation",
-		Short: "Manage fine-tuning operations",
+		Use:   "jobs",
+		Short: "Manage fine-tuning jobs",
 	}
 
+	cmd.AddCommand(newOperationSubmitCommand())
 	cmd.AddCommand(newOperationShowCommand())
 	cmd.AddCommand(newOperationListCommand())
 	cmd.AddCommand(newOperationCheckpointsCommand())
+
+	return cmd
+}
+
+func newOperationSubmitCommand() *cobra.Command {
+	var filename string
+	cmd := &cobra.Command{
+		Use:   "submit",
+		Short: "Submit fine tuning job",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			color.Green("Uploading training data...")
+			time.Sleep(2 * time.Second)
+			color.Green("Uploading validation data...")
+			time.Sleep(2 * time.Second)
+
+			fmt.Println(strings.Repeat("=", 120))
+			fmt.Println("\nSuccessfully submitted fine-tuning Job, Details:")
+			fmt.Println("Job Id : ftjob-6b28b3b718624765af75be18cd63170c")
+			fmt.Println("Job Url: https://ai.azure.com/nextgen/r/hWyA_fFOQ2u0NPvESpED9w,foundrysdk-eastus2-rg,,foundrysdk-eastus2-foundry-resou,foundrysdk-eastus2-project/build/fine-tune/ftjob-6b28b3b718624765af75be18cd63170c/details")
+			fmt.Println(strings.Repeat("=", 120))
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVarP(&filename, "file", "f", "", "Path to the config file")
 
 	return cmd
 }
@@ -32,78 +64,168 @@ func newOperationShowCommand() *cobra.Command {
 		Use:   "show",
 		Short: "Show the fine tuning job details",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			filePath := `D:\finetune\config-files\Job.txt`
-
-			file, err := os.Open(filePath)
+			ctx := azdext.WithAccessToken(cmd.Context())
+			azdClient, err := azdext.NewAzdClient()
 			if err != nil {
-				return fmt.Errorf("failed to open job details file: %w", err)
+				return fmt.Errorf("failed to create azd client: %w", err)
 			}
-			defer file.Close()
+			defer azdClient.Close()
+			client, err := getOpenAIClientFromAzdClient(ctx, azdClient)
+			if err != nil {
+				return fmt.Errorf("failed to create openai client: %w", err)
+			}
+			fmt.Print("\n")
+			color.Green("\nFine-tuning Job details:%s\n", jobID)
+			fmt.Println(strings.Repeat("-", 120))
 
-			fmt.Println("\nFine-tuning Job Details:")
-			fmt.Println(strings.Repeat("=", 80))
-
-			scanner := bufio.NewScanner(file)
-			for scanner.Scan() {
-				line := scanner.Text()
-				fmt.Println(line)
+			job, err := client.FineTuning.Jobs.Get(ctx, jobID)
+			if err != nil {
+				fmt.Printf("failed to list fine-tuning jobs: %v", err)
+			}
+			fmt.Printf("Job ID: %s\n", job.ID)
+			fmt.Printf("Status: %s\n", job.Status)
+			fmt.Printf("Model: %s\n", job.Model)
+			fmt.Printf("Hyperparameters: %v\n", job.Hyperparameters)
+			fmt.Printf("Fine-tuned Model: %s\n", job.FineTunedModel)
+			fmt.Println()
+			color.Green("List the events")
+			fmt.Println(strings.Repeat("-", 120))
+			page, err := client.FineTuning.Jobs.ListEvents(ctx, job.ID, openai.FineTuningJobListEventsParams{
+				Limit: openai.Int(100),
+			})
+			if err != nil {
+				panic(err)
+			}
+			events := make(map[string]openai.FineTuningJobEvent)
+			for i := len(page.Data) - 1; i >= 0; i-- {
+				event := page.Data[i]
+				if _, exists := events[event.ID]; exists {
+					continue
+				}
+				events[event.ID] = event
+				timestamp := time.Unix(int64(event.CreatedAt), 0)
+				fmt.Printf("- %s: %s\n", timestamp.Format(time.Kitchen), event.Message)
 			}
 
-			if err := scanner.Err(); err != nil {
-				return fmt.Errorf("error reading job details file: %w", err)
-			}
-
-			fmt.Println(strings.Repeat("=", 80))
-
-			if jobID != "" {
-				fmt.Printf("\nJob ID: %s\n", jobID)
+			if job.Status == "succeeded" {
+				color.Green("\nList of checkpoints!")
+				fmt.Println(strings.Repeat("-", 120))
+				checkpoints, err := client.FineTuning.Jobs.Checkpoints.List(ctx, job.ID, openai.FineTuningJobCheckpointListParams{
+					Limit: openai.Int(100),
+				})
+				if err != nil {
+					panic(err)
+				}
+				for _, checkpint := range checkpoints.Data {
+					fmt.Printf("Checkpoint ID: %s\n", checkpint.ID)
+				}
 			}
 
 			return nil
 		},
 	}
-
 	cmd.Flags().StringVarP(&jobID, "job-id", "i", "", "Fine-tuning job ID")
-
+	cmd.MarkFlagRequired("job-id")
 	return cmd
 }
 
 func newOperationListCommand() *cobra.Command {
-	return &cobra.Command{
+	var top int
+	var after string
+	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List the fine tuning jobs",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			filePath := `D:\finetune\config-files\jobs.txt`
-
-			file, err := os.Open(filePath)
+			ctx := azdext.WithAccessToken(cmd.Context())
+			azdClient, err := azdext.NewAzdClient()
 			if err != nil {
-				return fmt.Errorf("failed to open jobs file: %w", err)
+				return fmt.Errorf("failed to create azd client: %w", err)
 			}
-			defer file.Close()
+			defer azdClient.Close()
 
-			fmt.Println("\nFine-tuning Jobs:")
-			fmt.Println(strings.Repeat("-", 80))
+			fmt.Println("\nFine-tuning Jobs: Top ", top)
+			fmt.Println(strings.Repeat("-", 120))
 
-			scanner := bufio.NewScanner(file)
+			// List fine-tuning jobs
+			client, err := getOpenAIClientFromAzdClient(ctx, azdClient)
+			if err != nil {
+				return fmt.Errorf("failed to create openai client: %w", err)
+			}
+			jobs, err := client.FineTuning.Jobs.List(ctx, openai.FineTuningJobListParams{
+				Limit: openai.Int(int64(top)), // optional pagination control
+				After: openai.String(after),
+			})
+			if err != nil {
+				fmt.Printf("failed to list fine-tuning jobs: %v", err)
+			}
 			lineNum := 0
-			for scanner.Scan() {
-				line := scanner.Text()
-				if strings.TrimSpace(line) != "" {
-					lineNum++
-					fmt.Printf("%d. %s\n", lineNum, line)
-				}
+			for _, job := range jobs.Data {
+				lineNum++
+				fmt.Printf("Job ID: %s | Status: %s | Model: %s | Created: %d\n",
+					job.ID, job.Status, job.Model, job.CreatedAt)
 			}
 
-			if err := scanner.Err(); err != nil {
-				return fmt.Errorf("error reading jobs file: %w", err)
-			}
-
-			fmt.Println(strings.Repeat("-", 80))
 			fmt.Printf("\nTotal jobs: %d\n", lineNum)
 
 			return nil
 		},
 	}
+	cmd.Flags().IntVarP(&top, "top", "t", 50, "Number of fine-tuning jobs to list")
+	cmd.Flags().StringVarP(&after, "after", "a", "", "Cursor for pagination")
+	return cmd
+}
+
+func getOpenAIClientFromAzdClient(ctx context.Context, azdClient *azdext.AzdClient) (*openai.Client, error) {
+	// Create Azure credential - TODO
+	envValueMap := make(map[string]string)
+
+	if envResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{}); err == nil {
+		env := envResponse.Environment
+		envValues, err := azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
+			Name: env.Name,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get environment values: %w", err)
+		}
+
+		for _, value := range envValues.KeyValues {
+			envValueMap[value.Key] = value.Value
+		}
+	}
+
+	azureContext := &azdext.AzureContext{
+		Scope: &azdext.AzureScope{
+			TenantId:       envValueMap["AZURE_TENANT_ID"],
+			SubscriptionId: envValueMap["AZURE_SUBSCRIPTION_ID"],
+			Location:       envValueMap["AZURE_LOCATION"],
+		},
+		Resources: []string{},
+	}
+
+	credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
+		TenantID:                   azureContext.Scope.TenantId,
+		AdditionallyAllowedTenants: []string{"*"},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create azure credential: %w", err)
+	}
+
+	// Get Azure credentials and endpoint - TODO
+	// You'll need to get these from your environment or config
+	accountName := envValueMap["AZURE_ACCOUNT_NAME"]
+	endpoint := fmt.Sprintf("https://%s.cognitiveservices.azure.com", accountName)
+
+	if endpoint == "" {
+		return nil, fmt.Errorf("AZURE_OPENAI_ENDPOINT environment variable not set")
+	}
+
+	// Create OpenAI client
+	apiVersion := "2025-04-01-preview"
+	client := openai.NewClient(
+		azure.WithEndpoint(endpoint, apiVersion),
+		azure.WithTokenCredential(credential),
+	)
+	return &client, nil
 }
 
 func newOperationCheckpointsCommand() *cobra.Command {
@@ -113,66 +235,33 @@ func newOperationCheckpointsCommand() *cobra.Command {
 		Use:   "checkpoints",
 		Short: "Show fine tuning job checkpoints",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Println("\nFine-tuning Checkpoints:")
-			fmt.Println(strings.Repeat("=", 100))
-
-			checkpoints := []struct {
-				ModelID      string
-				Timestamp    string
-				Step         int
-				CheckpointID string
-				FullName     string
-			}{
-				{
-					ModelID:      "gpt-4o-2024-08-06.ft-4485dc4da8694d3b8c13c516baa18bc0",
-					Timestamp:    "Dec 8, 2025 5:43 PM",
-					Step:         100,
-					CheckpointID: "ftchkpt-5e19eb50b09444009e7878ffcfc5dc32",
-					FullName:     "gpt-4o-2024-08-06.ft-4485dc4da8694d3b8c13c516baa18bc0:ckpt-step-90",
-				},
-				{
-					ModelID:      "gpt-4o-2024-08-06.ft-4485dc4da8694d3b8c13c516baa18bc0",
-					Timestamp:    "Dec 8, 2025 5:43 PM",
-					Step:         90,
-					CheckpointID: "ftchkpt-4b12715397204e57bddeb9534387b913",
-					FullName:     "gpt-4o-2024-08-06.ft-4485dc4da8694d3b8c13c516baa18bc0:ckpt-step-80",
-				},
-				{
-					ModelID:      "gpt-4o-2024-08-06.ft-4485dc4da8694d3b8c13c516baa18bc0",
-					Timestamp:    "Dec 8, 2025 5:42 PM",
-					Step:         80,
-					CheckpointID: "ftchkpt-a46e21965c054580848dc8ff636e6a3d",
-					FullName:     "gpt-4o-2024-08-06.ft-4485dc4da8694d3b8c13c516baa18bc0:ckpt-step-1",
-				},
-				{
-					ModelID:      "gpt-4o-2024-08-06.ft-4485dc4da8694d3b8c13c516baa18bc0",
-					Timestamp:    "Dec 8, 2025 3:30 PM",
-					Step:         1,
-					CheckpointID: "ftchkpt-31cce4b265984d3482a9f980c4f2ebcf",
-					FullName:     "",
-				},
+			ctx := azdext.WithAccessToken(cmd.Context())
+			azdClient, err := azdext.NewAzdClient()
+			if err != nil {
+				return fmt.Errorf("failed to create azd client: %w", err)
 			}
-
-			for i, cp := range checkpoints {
-				fmt.Printf("\nCheckpoint #%d:\n", i+1)
-				fmt.Printf("  Model ID:      %s\n", cp.ModelID)
-				fmt.Printf("  Timestamp:     %s\n", cp.Timestamp)
-				fmt.Printf("  Step:          %d\n", cp.Step)
-				fmt.Printf("  Checkpoint ID: %s\n", cp.CheckpointID)
-				if cp.FullName != "" {
-					fmt.Printf("  Full Name:     %s\n", cp.FullName)
+			defer azdClient.Close()
+			if envResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{}); err == nil {
+				env := envResponse.Environment
+				envValues, err := azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
+					Name: env.Name,
+				})
+				if err != nil {
+					return fmt.Errorf("failed to get environment values: %w", err)
 				}
-				if i < len(checkpoints)-1 {
-					fmt.Println(strings.Repeat("-", 100))
+
+				envValueMap := make(map[string]string)
+				for _, value := range envValues.KeyValues {
+					envValueMap[value.Key] = value.Value
+					fmt.Println(value.Key, "=", value.Value)
 				}
 			}
 
-			fmt.Println(strings.Repeat("=", 100))
-			fmt.Printf("\nTotal checkpoints: %d\n", len(checkpoints))
-
-			if jobID != "" {
-				fmt.Printf("Job ID: %s\n", jobID)
+			projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+			if err != nil {
+				return fmt.Errorf("failed to get project: %w", err)
 			}
+			fmt.Print(projectResponse)
 
 			return nil
 		},

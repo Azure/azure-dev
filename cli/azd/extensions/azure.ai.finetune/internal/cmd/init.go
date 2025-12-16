@@ -61,7 +61,7 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 	}
 
 	cmd := &cobra.Command{
-		Use:   "init [-m <manifest pointer>] [--src <source directory>]",
+		Use:   "init [-m <manifest pointer>] [-p <foundry project arm id>]",
 		Short: fmt.Sprintf("Initialize a new AI Fine-tuning project. %s", color.YellowString("(Preview)")),
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -126,10 +126,7 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 		"Existing Microsoft Foundry Project Id to initialize your azd environment with")
 
 	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "",
-		"Path or URI to an agent manifest to add to your azd project")
-
-	cmd.Flags().StringVarP(&flags.src, "src", "s", "",
-		"[Optional] Directory to download the agent definition to (defaults to 'src/<agent-id>')")
+		"Path or URI to an fine-tuning configuration to add to your azd project")
 
 	cmd.Flags().StringVarP(&flags.env, "environment", "e", "", "The name of the azd environment to use.")
 
@@ -263,6 +260,26 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 			return nil, fmt.Errorf("azd environment not found, please create an environment (azd env new) and try again")
 		}
 	} else if flags.projectResourceId != "" {
+		currentAccount, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+			EnvName: existingEnv.Name,
+			Key:     "AZURE_ACCOUNT_NAME",
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current AZURE_ACCOUNT_NAME from azd environment: %w", err)
+		}
+
+		if currentAccount.Value != foundryProject.AiAccountName {
+			// Set the subscription ID in the environment
+			_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+				EnvName: existingEnv.Name,
+				Key:     "AZURE_ACCOUNT_NAME",
+				Value:   foundryProject.AiAccountName,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("failed to set AZURE_ACCOUNT_NAME in azd environment: %w", err)
+			}
+		}
+
 		currentSubscription, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 			EnvName: existingEnv.Name,
 			Key:     "AZURE_SUBSCRIPTION_ID",

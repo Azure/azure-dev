@@ -30,7 +30,6 @@ type ExtensionSchema struct {
 	Examples     []extensions.ExtensionExample    `yaml:"examples"     json:"examples"`
 	Tags         []string                         `yaml:"tags"         json:"tags,omitempty"`
 	Dependencies []extensions.ExtensionDependency `yaml:"dependencies" json:"dependencies,omitempty"`
-	Interactive  bool                             `yaml:"interactive"  json:"interactive,omitempty"`
 	Platforms    map[string]map[string]any        `yaml:"platforms"    json:"platforms,omitempty"`
 	Path         string                           `yaml:"-"            json:"-"`
 }
@@ -72,9 +71,6 @@ func (e ExtensionSchema) MarshalYAML() (interface{}, error) {
 	}
 	if len(e.Providers) > 0 {
 		base["providers"] = e.Providers
-	}
-	if e.Interactive {
-		base["interactive"] = e.Interactive
 	}
 	if len(e.Platforms) > 0 {
 		base["platforms"] = e.Platforms

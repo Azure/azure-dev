@@ -15,11 +15,12 @@ import (
 )
 
 type InvokeOptions struct {
-	Args   []string
-	Env    []string
-	StdIn  io.Reader
-	StdOut io.Writer
-	StdErr io.Writer
+	Args        []string
+	Env         []string
+	StdIn       io.Reader
+	StdOut      io.Writer
+	StdErr      io.Writer
+	Interactive bool
 }
 
 type Runner struct {
@@ -51,9 +52,7 @@ func (r *Runner) Invoke(ctx context.Context, extension *Extension, options *Invo
 		runArgs = runArgs.WithEnv(options.Env)
 	}
 
-	// Interactive extensions bypass custom stdio and connect directly to the terminal.
-	// Non-interactive extensions use provided stdio for capture/processing.
-	if extension.Interactive {
+	if options.Interactive {
 		runArgs = runArgs.WithInteractive(true)
 	} else {
 		if options.StdIn != nil {

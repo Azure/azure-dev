@@ -401,7 +401,6 @@ func addOrUpdateExtension(
 				Examples:     extensionMetadata.Examples,
 				Dependencies: extensionMetadata.Dependencies,
 				Providers:    extensionMetadata.Providers,
-				Interactive:  extensionMetadata.Interactive,
 				Artifacts:    artifacts,
 			}
 
@@ -418,7 +417,6 @@ func addOrUpdateExtension(
 		Examples:     extensionMetadata.Examples,
 		Dependencies: extensionMetadata.Dependencies,
 		Providers:    extensionMetadata.Providers,
-		Interactive:  extensionMetadata.Interactive,
 		Artifacts:    artifacts,
 	})
 }

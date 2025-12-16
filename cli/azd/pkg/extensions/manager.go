@@ -482,7 +482,6 @@ func (m *Manager) Install(
 		Source:       extension.Source,
 		Providers:    selectedVersion.Providers,
 		McpConfig:    selectedVersion.McpConfig,
-		Interactive:  selectedVersion.Interactive,
 	}
 
 	if err := m.userConfig.Set(installedConfigKey, extensions); err != nil {

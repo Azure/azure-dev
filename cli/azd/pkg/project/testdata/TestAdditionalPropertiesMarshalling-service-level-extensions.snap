@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: test-service-extension
+services:
+    api:
+        project: ./src/api
+        host: containerapp
+        language: js
+        customServiceField: service-level-extension
+        extensionSettings:
+            caching: redis
+            features:
+                featureA: true
+                featureB: false
+            timeout: 30
+        monitoring:
+            alerts:
+                - cpu > 80%
+                - memory > 90%
+            logging: verbose
+            metrics: true
+    web:
+        project: ./src/web
+        host: staticwebapp
+        language: ts
+        deployment:
+            region: eastus
+            strategy: blue-green
+

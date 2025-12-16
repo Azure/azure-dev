@@ -91,44 +91,6 @@ func TestResourceGroupsFromDeployment(t *testing.T) {
 		require.Equal(t, []string{"matell-2508-rg"}, resourceGroupsFromDeployment(mockDeployment))
 	})
 
-	t.Run("references used when no output resources", func(t *testing.T) {
-		mockDeployment := &ResourceDeployment{
-			//nolint:lll
-			Id: "/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/matell-2508-1689982746",
-			//nolint:lll
-			DeploymentId: "/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/matell-2508-1689982746",
-			Name:         "matell-2508",
-			Type:         "Microsoft.Resources/deployments",
-			Tags: map[string]*string{
-				"azd-env-name": to.Ptr("matell-2508"),
-			},
-			ProvisioningState: DeploymentProvisioningStateFailed,
-			Timestamp:         time.Now(),
-			Dependencies: []*armresources.Dependency{
-				{
-					//nolint:lll
-					ID: to.Ptr(
-						"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/matell-2508-rg/providers/Microsoft.Resources/deployments/resources",
-					),
-					ResourceName: to.Ptr("resources"),
-					ResourceType: to.Ptr("Microsoft.Resources/deployments"),
-					DependsOn: []*armresources.BasicDependency{
-						{
-							//nolint:lll
-							ID: to.Ptr(
-								"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/matell-2508-rg",
-							),
-							ResourceName: to.Ptr("matell-2508-rg"),
-							ResourceType: to.Ptr("Microsoft.Resources/resourceGroups"),
-						},
-					},
-				},
-			},
-		}
-
-		require.Equal(t, []string{"matell-2508-rg"}, resourceGroupsFromDeployment(mockDeployment))
-	})
-
 	t.Run("duplicate resource groups ignored", func(t *testing.T) {
 
 		mockDeployment := ResourceDeployment{

@@ -224,13 +224,7 @@ func (rm *AzureResourceManager) GetResourceTypeDisplayName(
 		} else {
 			return resourceTypeDisplayName, nil
 		}
-	} else if resourceType == azapi.AzureResourceTypeCognitiveServiceAccount ||
-		resourceType == azapi.AzureResourceTypeCognitiveServiceAccountProject {
-		// For project resources, we can return the display name directly
-		if resourceType == azapi.AzureResourceTypeCognitiveServiceAccountProject {
-			return "Foundry project", nil
-		}
-
+	} else if resourceType == azapi.AzureResourceTypeCognitiveServiceAccount {
 		resourceTypeDisplayName, err := rm.getCognitiveServiceResourceTypeDisplayName(ctx, subscriptionId, resourceId)
 
 		if err != nil {
@@ -283,13 +277,6 @@ func (rm *AzureResourceManager) getCognitiveServiceResourceTypeDisplayName(
 	subscriptionId string,
 	resourceId string,
 ) (string, error) {
-	// Check if this is a Foundry project resource (child resource) based on path
-	// This handles cases where the resource type is Microsoft.CognitiveServices/accounts
-	// but the resource ID points to a project
-	if strings.Contains(resourceId, "/projects/") {
-		return "Foundry project", nil
-	}
-
 	resource, err := rm.resourceService.GetResource(ctx, subscriptionId, resourceId, cognitiveServiceApiVersion)
 
 	if err != nil {

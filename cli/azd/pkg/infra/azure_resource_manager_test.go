@@ -564,18 +564,7 @@ func TestGetResourceTypeDisplayNameForCognitiveServices(t *testing.T) {
 			expectedName: "Foundry",
 		},
 		{
-			name: "Foundry project (account resource type)",
-			resourceId: fmt.Sprintf(
-				"/subscriptions/%s/resourceGroups/test-rg/providers/"+
-					"Microsoft.CognitiveServices/accounts/test-foundry/projects/test-project",
-				SUBSCRIPTION_ID,
-			),
-			resourceType: azapi.AzureResourceTypeCognitiveServiceAccount,
-			kind:         "AIServices",
-			expectedName: "Foundry project",
-		},
-		{
-			name: "Foundry project (project resource type)",
+			name: "Foundry project",
 			resourceId: fmt.Sprintf(
 				"/subscriptions/%s/resourceGroups/test-rg/providers/"+
 					"Microsoft.CognitiveServices/accounts/test-foundry/projects/test-project",

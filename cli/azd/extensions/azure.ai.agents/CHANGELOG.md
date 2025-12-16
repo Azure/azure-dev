@@ -1,5 +1,12 @@
 # Release History
 
+## 0.1.4-preview (2025-12-15)
+
+- [[#6326]](https://github.com/Azure/azure-dev/pull/6326) Fix correlation ID propagation and improve tracing for API calls
+- [[#6343]](https://github.com/Azure/azure-dev/pull/6343) Improve `azd ai agent init` completion message to recommend `azd up` first
+- [[#6344]](https://github.com/Azure/azure-dev/pull/6344) Rename `AI_FOUNDRY_PROJECT_APP_ID` environment variable to `AZURE_AI_PROJECT_PRINCIPAL_ID`
+- [[#6366]](https://github.com/Azure/azure-dev/pull/6366) Fix manifest URL path when branch name contains "/"
+
 ## 0.1.3-preview (2025-12-03)
 
 - Improve agent service debug logging via `AZD_EXT_DEBUG` env var and `--debug` flag

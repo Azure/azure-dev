@@ -10,8 +10,11 @@
 ### Bugs Fixed
 
 - [[#6356]](https://github.com/Azure/azure-dev/pull/6356) Fix resource discovery logic to correctly identify resources associated with deployments during deletion.
-- [[#6392]](https://github.com/Azure/azure-dev/pull/6392) Fix error when releasing extensions with `--prerelease` flag.
 - [[#6385]](https://github.com/Azure/azure-dev/pull/6385) Fix display names for Foundry and Foundry project resources in output.
+
+### Other Changes
+
+- [[#6389]](https://github.com/Azure/azure-dev/pull/6389) Improve error telemetry with specific error type classification.
 
 ## 1.22.3 (2025-12-15)
 

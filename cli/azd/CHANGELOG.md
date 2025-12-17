@@ -1,14 +1,17 @@
 # Release History
 
-## 1.23.0-beta.1 (Unreleased)
+## 1.22.4 (2025-12-17)
 
 ### Features Added
 
-### Breaking Changes
+- [[#6196]](https://github.com/Azure/azure-dev/pull/6196) Add support for custom configuration properties in project and service configuration for extensions.
+- [[#6367]](https://github.com/Azure/azure-dev/pull/6367) Add interactive mode support for extensions to enable TUI applications.
 
 ### Bugs Fixed
 
-### Other Changes
+- [[#6356]](https://github.com/Azure/azure-dev/pull/6356) Fix resource discovery logic to correctly identify resources associated with deployments during deletion.
+- [[#6392]](https://github.com/Azure/azure-dev/pull/6392) Fix error when releasing extensions with `--prerelease` flag.
+- [[#6385]](https://github.com/Azure/azure-dev/pull/6385) Fix display names for Foundry and Foundry project resources in output.
 
 ## 1.22.3 (2025-12-15)
 

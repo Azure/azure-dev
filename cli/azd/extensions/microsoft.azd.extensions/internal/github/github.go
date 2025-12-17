@@ -166,14 +166,17 @@ func (gh *GitHubCli) ViewRelease(cwd string, repo string, tagName string) (*Rele
 func (gh *GitHubCli) CreateRelease(cwd string, tagName string, opts map[string]string, assets []string) (*Release, error) {
 	args := []string{"release", "create", tagName}
 
-	// Add optional arguments
+	// Define boolean flags that should be added without values
+	booleanFlags := map[string]bool{"prerelease": true, "draft": true}
+
+	// Add optional arguments (skip boolean flags)
 	for key, value := range opts {
-		if value != "" {
+		if value != "" && !booleanFlags[key] {
 			args = append(args, fmt.Sprintf("--%s", key), value)
 		}
 	}
 
-	// Add boolean flags
+	// Add boolean flags (without values)
 	for _, flag := range []string{"prerelease", "draft"} {
 		if value, ok := opts[flag]; ok && value == "true" {
 			args = append(args, fmt.Sprintf("--%s", flag))

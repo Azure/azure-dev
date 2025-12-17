@@ -169,6 +169,17 @@ $ azd config set defaults.location eastus`,
 		ActionResolver: newConfigListAlphaAction,
 	})
 
+	group.Add("options", &actions.ActionDescriptorOptions{
+		Command: &cobra.Command{
+			Short: "List all available configuration settings.",
+			Long: "List all possible configuration settings that can be set with azd, " +
+				"including descriptions and allowed values.",
+		},
+		ActionResolver: newConfigOptionsAction,
+		OutputFormats:  []output.Format{output.JsonFormat, output.TableFormat},
+		DefaultFormat:  output.TableFormat,
+	})
+
 	return group
 }
 
@@ -509,4 +520,94 @@ func getCmdListAlphaHelpFooter(*cobra.Command) string {
 			"azd config set alpha.all off",
 		),
 	})
+}
+
+// azd config options
+
+type configOptionsAction struct {
+	console   input.Console
+	formatter output.Formatter
+	writer    io.Writer
+	args      []string
+}
+
+func newConfigOptionsAction(
+	console input.Console,
+	formatter output.Formatter,
+	writer io.Writer,
+	args []string) actions.Action {
+	return &configOptionsAction{
+		console:   console,
+		formatter: formatter,
+		writer:    writer,
+		args:      args,
+	}
+}
+
+func (a *configOptionsAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	options := config.GetAllConfigOptions()
+
+	if a.formatter.Kind() == output.JsonFormat {
+		err := a.formatter.Format(options, a.writer, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed formatting config options: %w", err)
+		}
+		return nil, nil
+	}
+
+	// Table format
+	type tableRow struct {
+		Key           string
+		Description   string
+		Type          string
+		AllowedValues string
+		Example       string
+	}
+
+	var rows []tableRow
+	for _, option := range options {
+		allowedValues := ""
+		if len(option.AllowedValues) > 0 {
+			allowedValues = strings.Join(option.AllowedValues, ", ")
+		}
+		rows = append(rows, tableRow{
+			Key:           option.Key,
+			Description:   option.Description,
+			Type:          option.Type,
+			AllowedValues: allowedValues,
+			Example:       option.Example,
+		})
+	}
+
+	columns := []output.Column{
+		{
+			Heading:       "Key",
+			ValueTemplate: "{{.Key}}",
+		},
+		{
+			Heading:       "Description",
+			ValueTemplate: "{{.Description}}",
+		},
+		{
+			Heading:       "Type",
+			ValueTemplate: "{{.Type}}",
+		},
+		{
+			Heading:       "Allowed Values",
+			ValueTemplate: "{{.AllowedValues}}",
+		},
+		{
+			Heading:       "Example",
+			ValueTemplate: "{{.Example}}",
+		},
+	}
+
+	err := a.formatter.Format(rows, a.writer, output.TableFormatterOptions{
+		Columns: columns,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed formatting config options: %w", err)
+	}
+
+	return nil, nil
 }

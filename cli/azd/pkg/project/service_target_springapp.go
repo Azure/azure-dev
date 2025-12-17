@@ -13,7 +13,7 @@ import (
 )
 
 var errSpringAppDeprecated = errors.New(
-	"support for Azure Spring Apps has been removed from azd. " +
+	"Azure Spring Apps is no longer supported. Recommend using Azure Container Apps." +
 		"For more information, please refer to https://aka.ms/asaretirement",
 )
 

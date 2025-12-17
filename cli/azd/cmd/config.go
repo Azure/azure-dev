@@ -525,27 +525,37 @@ func getCmdListAlphaHelpFooter(*cobra.Command) string {
 // azd config options
 
 type configOptionsAction struct {
-	console   input.Console
-	formatter output.Formatter
-	writer    io.Writer
-	args      []string
+	console       input.Console
+	formatter     output.Formatter
+	writer        io.Writer
+	configManager config.UserConfigManager
+	args          []string
 }
 
 func newConfigOptionsAction(
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
+	configManager config.UserConfigManager,
 	args []string) actions.Action {
 	return &configOptionsAction{
-		console:   console,
-		formatter: formatter,
-		writer:    writer,
-		args:      args,
+		console:       console,
+		formatter:     formatter,
+		writer:        writer,
+		configManager: configManager,
+		args:          args,
 	}
 }
 
 func (a *configOptionsAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	options := config.GetAllConfigOptions()
+
+	// Load current config to show current values
+	currentConfig, err := a.configManager.Load()
+	if err != nil {
+		// If config doesn't exist or can't be loaded, continue with empty config
+		currentConfig = config.NewEmptyConfig()
+	}
 
 	if a.formatter.Kind() == output.JsonFormat {
 		err := a.formatter.Format(options, a.writer, nil)
@@ -560,6 +570,7 @@ func (a *configOptionsAction) Run(ctx context.Context) (*actions.ActionResult, e
 		Key           string
 		Description   string
 		Type          string
+		CurrentValue  string
 		AllowedValues string
 		EnvVar        string
 		Example       string
@@ -571,10 +582,31 @@ func (a *configOptionsAction) Run(ctx context.Context) (*actions.ActionResult, e
 		if len(option.AllowedValues) > 0 {
 			allowedValues = strings.Join(option.AllowedValues, ", ")
 		}
+
+		// Get current value from config
+		currentValue := ""
+		// Skip environment-only variables (those with keys starting with "(env)")
+		if !strings.HasPrefix(option.Key, "(env)") {
+			if val, ok := currentConfig.Get(option.Key); ok {
+				// Convert value to string representation
+				switch v := val.(type) {
+				case string:
+					currentValue = v
+				case map[string]any:
+					currentValue = "<object>"
+				case []any:
+					currentValue = "<array>"
+				default:
+					currentValue = fmt.Sprintf("%v", v)
+				}
+			}
+		}
+
 		rows = append(rows, tableRow{
 			Key:           option.Key,
 			Description:   option.Description,
 			Type:          option.Type,
+			CurrentValue:  currentValue,
 			AllowedValues: allowedValues,
 			EnvVar:        option.EnvVar,
 			Example:       option.Example,
@@ -595,6 +627,10 @@ func (a *configOptionsAction) Run(ctx context.Context) (*actions.ActionResult, e
 			ValueTemplate: "{{.Type}}",
 		},
 		{
+			Heading:       "Current Value",
+			ValueTemplate: "{{.CurrentValue}}",
+		},
+		{
 			Heading:       "Allowed Values",
 			ValueTemplate: "{{.AllowedValues}}",
 		},
@@ -608,7 +644,7 @@ func (a *configOptionsAction) Run(ctx context.Context) (*actions.ActionResult, e
 		},
 	}
 
-	err := a.formatter.Format(rows, a.writer, output.TableFormatterOptions{
+	err = a.formatter.Format(rows, a.writer, output.TableFormatterOptions{
 		Columns: columns,
 	})
 	if err != nil {

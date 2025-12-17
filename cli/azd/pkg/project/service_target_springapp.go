@@ -14,7 +14,7 @@ import (
 
 var errSpringAppDeprecated = errors.New(
 	"Azure Spring Apps is no longer supported. Recommend using Azure Container Apps." +
-		"For more information, please refer to https://aka.ms/asaretirement",
+		" For more information, please refer to https://aka.ms/asaretirement",
 )
 
 type springAppTarget struct {

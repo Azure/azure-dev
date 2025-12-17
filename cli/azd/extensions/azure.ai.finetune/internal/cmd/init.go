@@ -259,7 +259,8 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 		if existingEnv == nil {
 			return nil, fmt.Errorf("azd environment not found, please create an environment (azd env new) and try again")
 		}
-	} else if flags.projectResourceId != "" {
+	}
+	if flags.projectResourceId != "" {
 		currentAccount, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 			EnvName: existingEnv.Name,
 			Key:     "AZURE_ACCOUNT_NAME",
@@ -495,7 +496,15 @@ func (a *InitAction) Run(ctx context.Context) error {
 		return err
 	}
 	fmt.Printf("Base model : %s, Fine-tuning method: %s\n", modelDeploymentInput.Value, ftMethodInput.Value)
-	copyDirectory("D:\\finetune\\config-files\\FT", "D:\\finetune\\ft-cli-demo\\Demo-1")
+	if a.flags.manifestPointer != "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("failed to get current working directory: %w", err)
+		}
+		if err := copyDirectory(a.flags.manifestPointer, cwd); err != nil {
+			return fmt.Errorf("failed to copy directory: %w", err)
+		}
+	}
 	fmt.Println()
 	color.Green("Initialized fine-tuning Project.")
 

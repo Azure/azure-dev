@@ -10,6 +10,50 @@
 
 ### Other Changes
 
+## 1.22.3 (2025-12-15)
+
+### Features Added
+
+- [[#6347]](https://github.com/Azure/azure-dev/pull/6347) Add interactive environment selector to `azd env select` when no environment is specified.
+
+### Bugs Fixed
+
+- [[#6373]](https://github.com/Azure/azure-dev/pull/6373) Fix error handling to display proper error messages when loading invalid `azure.yaml` files instead of panicking.
+
+## 1.22.2 (2025-12-12)
+
+### Features Added
+
+- [[#6321]](https://github.com/Azure/azure-dev/pull/6321) Add distributed tracing and structured error handling for extensions.
+
+### Bugs Fixed
+
+- [[#6360]](https://github.com/Azure/azure-dev/pull/6360) Fix Container App deployment to correctly resolve infrastructure path from defaults when using layered provisioning with service module settings.
+- [[#6351]](https://github.com/Azure/azure-dev/pull/6351) Fix GitHub URL parsing to support branch names containing slashes.
+
+### Other Changes
+
+- [[#6357]](https://github.com/Azure/azure-dev/pull/6357) Add usage tracking telemetry for layered provisioning and revision-based ACA deployments.
+
+## 1.22.1 (2025-12-10)
+
+### Features Added
+
+- [[#6285]](https://github.com/Azure/azure-dev/pull/6285) Support `azure.yml` as an alternative to `azure.yaml` for project configuration files.
+- [[#6266]](https://github.com/Azure/azure-dev/pull/6266) Prompt to create directory when using `-C`/`--cwd` with non-existent path.
+- [[#6300]](https://github.com/Azure/azure-dev/pull/6300) Add template gallery links in `azd init` and `azd template list` commands.
+- [[#6313]](https://github.com/Azure/azure-dev/pull/6313) Improve error handling flow with three-solution prompt and upgraded langchain dependency.
+
+### Bugs Fixed
+
+- [[#6353]](https://github.com/Azure/azure-dev/pull/6353) Fix unclear error message when deploying to improperly-tagged Container App in non-revision mode.
+- [[#6346]](https://github.com/Azure/azure-dev/pull/6346) Fix Container App revision deployment to respect service `module` setting in `azure.yaml`.
+- [[#6345]](https://github.com/Azure/azure-dev/pull/6345) Improve `azd down` deletion behavior for resource-group-scoped deployments.
+- [[#6341]](https://github.com/Azure/azure-dev/pull/6341) Fix Static Web App deployment by ensuring framework service requires restore and produces correct artifacts.
+- [[#5568]](https://github.com/Azure/azure-dev/pull/5568) Fix JSON-escaped environment variables being lost when syncing to remote CI/CD pipelines. Thanks @Menghua1 for the contribution!
+
+### Other Changes
+
 ## 1.22.0 (2025-12-02)
 
 ### Features Added

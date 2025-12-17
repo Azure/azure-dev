@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"dario.cat/mergo"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 )
 
 type ProviderKind string
@@ -22,6 +24,15 @@ const (
 	Test         ProviderKind = "test"
 )
 
+type Mode string
+
+const (
+	// Default mode for deploying or previewing the deployment.
+	ModeDeploy Mode = ""
+	// Mode for destroying the deployment.
+	ModeDestroy Mode = "destroy"
+)
+
 // Options for a provisioning provider.
 type Options struct {
 	Provider         ProviderKind   `yaml:"provider,omitempty"`
@@ -29,11 +40,15 @@ type Options struct {
 	Module           string         `yaml:"module,omitempty"`
 	Name             string         `yaml:"name,omitempty"`
 	DeploymentStacks map[string]any `yaml:"deploymentStacks,omitempty"`
-	// Not expected to be defined at azure.yaml
-	IgnoreDeploymentState bool `yaml:"-"`
-
 	// Provisioning options for each individually defined layer.
 	Layers []Options `yaml:"layers,omitempty"`
+
+	// Runtime options
+
+	// IgnoreDeploymentState when true, skips the deployment state check.
+	IgnoreDeploymentState bool `yaml:"-"`
+	// The mode in which the deployment is being run.
+	Mode Mode `yaml:"-"`
 }
 
 // GetWithDefaults merges the provided infra options with the default provisioning options
@@ -69,6 +84,7 @@ func (o *Options) GetLayers() []Options {
 		return []Options{*o}
 	}
 
+	tracing.AppendUsageAttributeUnique(fields.FeaturesKey.String(fields.FeatLayers))
 	return o.Layers
 }
 

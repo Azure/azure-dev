@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -804,82 +803,6 @@ func httpRespondFn(request *http.Request) (*http.Response, error) {
 		StatusCode: http.StatusOK,
 		Body:       http.NoBody,
 	}, nil
-}
-
-func TestResourceGroupsFromDeployment(t *testing.T) {
-	t.Parallel()
-
-	t.Run("references used when no output resources", func(t *testing.T) {
-		mockDeployment := &azapi.ResourceDeployment{
-			//nolint:lll
-			Id: "/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/matell-2508-1689982746",
-			//nolint:lll
-			DeploymentId: "/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/matell-2508-1689982746",
-			Name:         "matell-2508",
-			Type:         "Microsoft.Resources/deployments",
-			Tags: map[string]*string{
-				"azd-env-name": to.Ptr("matell-2508"),
-			},
-			ProvisioningState: azapi.DeploymentProvisioningStateFailed,
-			Timestamp:         time.Now(),
-			Dependencies: []*armresources.Dependency{
-				{
-					//nolint:lll
-					ID: to.Ptr(
-						"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/matell-2508-rg/providers/Microsoft.Resources/deployments/resources",
-					),
-					ResourceName: to.Ptr("resources"),
-					ResourceType: to.Ptr("Microsoft.Resources/deployments"),
-					DependsOn: []*armresources.BasicDependency{
-						{
-							//nolint:lll
-							ID: to.Ptr(
-								"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/matell-2508-rg",
-							),
-							ResourceName: to.Ptr("matell-2508-rg"),
-							ResourceType: to.Ptr("Microsoft.Resources/resourceGroups"),
-						},
-					},
-				},
-			},
-		}
-
-		require.Equal(t, []string{"matell-2508-rg"}, resourceGroupsToDelete(mockDeployment))
-	})
-
-	t.Run("duplicate resource groups ignored", func(t *testing.T) {
-
-		mockDeployment := azapi.ResourceDeployment{
-			Id:   "DEPLOYMENT_ID",
-			Name: "test-env",
-			Resources: []*armresources.ResourceReference{
-				{
-					ID: to.Ptr("/subscriptions/sub-id/resourceGroups/groupA"),
-				},
-				{
-					ID: to.Ptr(
-						"/subscriptions/sub-id/resourceGroups/groupA/Microsoft.Storage/storageAccounts/storageAccount",
-					),
-				},
-				{
-					ID: to.Ptr("/subscriptions/sub-id/resourceGroups/groupB"),
-				},
-				{
-					ID: to.Ptr("/subscriptions/sub-id/resourceGroups/groupB/Microsoft.web/sites/test"),
-				},
-				{
-					ID: to.Ptr("/subscriptions/sub-id/resourceGroups/groupC"),
-				},
-			},
-			ProvisioningState: azapi.DeploymentProvisioningStateSucceeded,
-			Timestamp:         time.Now(),
-		}
-
-		groups := resourceGroupsToDelete(&mockDeployment)
-
-		sort.Strings(groups)
-		require.Equal(t, []string{"groupA", "groupB", "groupC"}, groups)
-	})
 }
 
 // From a mocked list of deployments where there are multiple deployments with the matching tag, expect to pick the most

@@ -334,6 +334,34 @@ The build process automatically creates binaries for multiple platforms and arch
 > [!NOTE]
 > Build times may vary depending on your hardware and extension complexity.
 
+### Distributed Tracing
+
+`azd` uses OpenTelemetry and W3C Trace Context for distributed tracing. `azd` sets `TRACEPARENT` in the environment when it launches the extension process.
+
+Use `azdext.NewContext()` to hydrate the root context with trace context:
+
+```go
+func main() {
+  ctx := azdext.NewContext()
+  rootCmd := cmd.NewRootCommand()
+  if err := rootCmd.ExecuteContext(ctx); err != nil {
+    // Handle error
+  }
+}
+```
+
+To correlate Azure SDK calls with the parent trace, add the correlation policy to your client options:
+
+```go
+import "github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+
+clientOptions := &policy.ClientOptions{
+    PerCallPolicies: []policy.Policy{
+        azsdk.NewMsCorrelationPolicy(),
+    },
+}
+```
+
 ### Developer Extension
 
 The easiest way to get started building extensions is to install the `azd` Developer extension.
@@ -1130,7 +1158,7 @@ The following are a list of available gRPC services for extension developer to i
 
 ### Project Service
 
-This service manages project configuration retrieval and related operations.
+This service manages project configuration retrieval and related operations, including project and service-level configuration management.
 
 > See [project.proto](../grpc/proto/project.proto) for more details.
 
@@ -1155,6 +1183,107 @@ Adds a new service to the project.
 - **Request:** _AddServiceRequest_
   - Contains:
     - `service`: _ServiceConfig_
+- **Response:** _EmptyResponse_
+
+#### GetConfigSection
+
+Retrieves a project configuration section by path from AdditionalProperties.
+
+- **Request:** _GetProjectConfigSectionRequest_
+  - `path` (string): Dot-notation path to the config section
+- **Response:** _GetProjectConfigSectionResponse_
+  - Contains:
+    - `section` (google.protobuf.Struct): The configuration section
+    - `found` (bool): Whether the section exists
+
+#### SetConfigSection
+
+Sets a project configuration section at the specified path in AdditionalProperties.
+
+- **Request:** _SetProjectConfigSectionRequest_
+  - `path` (string): Dot-notation path to the config section
+  - `section` (google.protobuf.Struct): The configuration section to set
+- **Response:** _EmptyResponse_
+
+#### GetConfigValue
+
+Retrieves a single project configuration value by path from AdditionalProperties.
+
+- **Request:** _GetProjectConfigValueRequest_
+  - `path` (string): Dot-notation path to the config value
+- **Response:** _GetProjectConfigValueResponse_
+  - Contains:
+    - `value` (google.protobuf.Value): The configuration value
+    - `found` (bool): Whether the value exists
+
+#### SetConfigValue
+
+Sets a single project configuration value at the specified path in AdditionalProperties.
+
+- **Request:** _SetProjectConfigValueRequest_
+  - `path` (string): Dot-notation path to the config value
+  - `value` (google.protobuf.Value): The configuration value to set
+- **Response:** _EmptyResponse_
+
+#### UnsetConfig
+
+Removes a project configuration value or section at the specified path from AdditionalProperties.
+
+- **Request:** _UnsetProjectConfigRequest_
+  - `path` (string): Dot-notation path to the config to remove
+- **Response:** _EmptyResponse_
+
+#### GetServiceConfigSection
+
+Retrieves a service configuration section by path from service AdditionalProperties.
+
+- **Request:** _GetServiceConfigSectionRequest_
+  - `service_name` (string): Name of the service
+  - `path` (string): Dot-notation path to the config section
+- **Response:** _GetServiceConfigSectionResponse_
+  - Contains:
+    - `section` (google.protobuf.Struct): The configuration section
+    - `found` (bool): Whether the section exists
+
+#### SetServiceConfigSection
+
+Sets a service configuration section at the specified path in service AdditionalProperties.
+
+- **Request:** _SetServiceConfigSectionRequest_
+  - `service_name` (string): Name of the service
+  - `path` (string): Dot-notation path to the config section
+  - `section` (google.protobuf.Struct): The configuration section to set
+- **Response:** _EmptyResponse_
+
+#### GetServiceConfigValue
+
+Retrieves a single service configuration value by path from service AdditionalProperties.
+
+- **Request:** _GetServiceConfigValueRequest_
+  - `service_name` (string): Name of the service
+  - `path` (string): Dot-notation path to the config value
+- **Response:** _GetServiceConfigValueResponse_
+  - Contains:
+    - `value` (google.protobuf.Value): The configuration value
+    - `found` (bool): Whether the value exists
+
+#### SetServiceConfigValue
+
+Sets a single service configuration value at the specified path in service AdditionalProperties.
+
+- **Request:** _SetServiceConfigValueRequest_
+  - `service_name` (string): Name of the service
+  - `path` (string): Dot-notation path to the config value
+  - `value` (google.protobuf.Value): The configuration value to set
+- **Response:** _EmptyResponse_
+
+#### UnsetServiceConfig
+
+Removes a service configuration value or section at the specified path from service AdditionalProperties.
+
+- **Request:** _UnsetServiceConfigRequest_
+  - `service_name` (string): Name of the service
+  - `path` (string): Dot-notation path to the config to remove
 - **Response:** _EmptyResponse_
 
 ---
@@ -1895,7 +2024,7 @@ func (r *RustFrameworkProvider) Package(ctx context.Context, serviceConfig *azde
 
 // Register the framework provider
 func main() {
-    ctx := azdext.WithAccessToken(context.Background())
+    ctx := azdext.WithAccessToken(azdext.NewContext())
     azdClient, err := azdext.NewAzdClient()
     if err != nil {
         log.Fatal(err)
@@ -2011,7 +2140,7 @@ func (v *VMServiceTargetProvider) Endpoints(ctx context.Context, serviceConfig *
 
 // Register the service target provider
 func main() {
-    ctx := azdext.WithAccessToken(context.Background())
+    ctx := azdext.WithAccessToken(azdext.NewContext())
     azdClient, err := azdext.NewAzdClient()
     if err != nil {
         log.Fatal(err)

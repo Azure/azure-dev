@@ -34,7 +34,12 @@ type Prompter interface {
 		msg string,
 		filter LocationFilterPredicate,
 		defaultLocation *string) (string, error)
+
+	// PromptResourceGroup prompts for an existing or optionally a new resource group.
+	// A location saved as AZURE_LOCATION is also prompted as part of creating a new resource group.
 	PromptResourceGroup(ctx context.Context, options PromptResourceOptions) (string, error)
+
+	// PromptResourceGroupFrom is like PromptResourceGroup, but it takes an existing subscription ID and location.
 	PromptResourceGroupFrom(
 		ctx context.Context, subscriptionId string, location string, options PromptResourceGroupFromOptions) (string, error)
 }
@@ -123,10 +128,20 @@ func (p *DefaultPrompter) PromptLocation(
 }
 
 type PromptResourceOptions struct {
+	// DisableCreateNew disables the option to create a new resource group.
 	DisableCreateNew bool
+
+	// DefaultName is the default name to use when creating a new resource group.
+	// If not specified, the default name will be generated based on the environment name.
+	DefaultName string
 }
 
 func (p *DefaultPrompter) PromptResourceGroup(ctx context.Context, options PromptResourceOptions) (string, error) {
+	name := options.DefaultName
+	if name == "" {
+		name = fmt.Sprintf("rg-%s", p.env.Name())
+	}
+
 	return p.PromptResourceGroupFrom(
 		ctx,
 		p.env.GetSubscriptionId(),
@@ -135,7 +150,7 @@ func (p *DefaultPrompter) PromptResourceGroup(ctx context.Context, options Promp
 			Tags: map[string]string{
 				azure.TagKeyAzdEnvName: p.env.Name(),
 			},
-			DefaultName:      fmt.Sprintf("rg-%s", p.env.Name()),
+			DefaultName:      name,
 			DisableCreateNew: options.DisableCreateNew,
 		})
 }

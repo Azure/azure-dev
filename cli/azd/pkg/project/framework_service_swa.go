@@ -56,7 +56,7 @@ func NewSwaProjectAsFrameworkService(
 func (p *swaProject) Requirements() FrameworkRequirements {
 	return FrameworkRequirements{
 		Package: FrameworkPackageRequirements{
-			RequireRestore: false,
+			RequireRestore: true,
 			RequireBuild:   true,
 		},
 	}
@@ -137,7 +137,7 @@ func (p *swaProject) Package(
 	return &ServicePackageResult{
 		Artifacts: ArtifactCollection{
 			{
-				Kind:         ArtifactKindDirectory,
+				Kind:         ArtifactKindConfig,
 				Location:     serviceConfig.Path(),
 				LocationKind: LocationKindLocal,
 				Metadata: map[string]string{

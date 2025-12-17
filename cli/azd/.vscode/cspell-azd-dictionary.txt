@@ -81,6 +81,7 @@ cmdrecord
 cmdsubst
 Cobo
 cognitiveservices
+concurx
 conditionalize
 consolesize
 containeragent
@@ -151,6 +152,7 @@ jmes
 jquery
 keychain
 kubelogin
+langchain
 langchaingo
 LASTEXITCODE
 ldflags

@@ -134,7 +134,6 @@ func createUI(services map[string]*azdext.ServiceConfig, cancel context.CancelFu
 	model := newDeploymentModel(serviceNames, cancel)
 	return tea.NewProgram(
 		model,
-		tea.WithAltScreen(),       // Use alternate screen buffer
-		tea.WithMouseCellMotion(), // Enable mouse support
+		tea.WithAltScreen(), // Use alternate screen buffer
 	)
 }

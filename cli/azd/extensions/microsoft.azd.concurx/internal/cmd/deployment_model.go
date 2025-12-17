@@ -6,10 +6,13 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -35,6 +38,14 @@ type ServiceState struct {
 	EndTime   time.Time
 }
 
+// viewMode represents the current view
+type viewMode int
+
+const (
+	viewDeployment viewMode = iota
+	viewLogs
+)
+
 // deploymentModel is the Bubble Tea model for deployment visualization
 type deploymentModel struct {
 	services         map[string]*ServiceState
@@ -48,6 +59,15 @@ type deploymentModel struct {
 	provisionLogPath string
 	provisionErr     error
 	cancel           context.CancelFunc // Cancel function to stop all deployments
+	// Logs view state
+	viewMode    viewMode
+	selectedTab int
+	tabNames    []string // "provision" followed by service names
+	logContents map[string]string
+	viewport    viewport.Model
+	width       int
+	height      int
+	ready       bool
 }
 
 // Messages that can be sent to the Bubble Tea program
@@ -109,11 +129,24 @@ func newDeploymentModel(serviceNames []string, cancel context.CancelFunc) deploy
 		}
 	}
 
+	// Initialize tab names: provision first, then services
+	tabNames := make([]string, 0, len(serviceNames)+1)
+	tabNames = append(tabNames, "provision")
+	tabNames = append(tabNames, serviceNames...)
+
+	// Create viewport with default key mappings
+	vp := viewport.New(120, 25)
+
 	return deploymentModel{
 		services:     services,
 		serviceOrder: serviceNames,
 		spinner:      s,
 		cancel:       cancel,
+		viewMode:     viewDeployment,
+		selectedTab:  0,
+		tabNames:     tabNames,
+		logContents:  make(map[string]string),
+		viewport:     vp,
 	}
 }
 
@@ -132,6 +165,21 @@ func tickCmd() tea.Cmd {
 
 func (m deploymentModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		if !m.ready {
+			m.ready = true
+		}
+		// Update viewport size when in logs view
+		if m.viewMode == viewLogs {
+			headerHeight := 7 // title + instructions + tabs + spacing
+			m.viewport.Width = msg.Width - 4
+			m.viewport.Height = msg.Height - headerHeight
+			m.updateViewportContent()
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "ctrl+c":
@@ -142,6 +190,49 @@ func (m deploymentModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cancel()
 			}
 			return m, tea.Quit
+		case "l", "L":
+			// Toggle to logs view
+			if m.viewMode == viewDeployment {
+				m.viewMode = viewLogs
+				m.refreshLogContents()
+				// Update viewport size based on current terminal size
+				if m.ready {
+					headerHeight := 7
+					m.viewport.Width = m.width - 4
+					m.viewport.Height = m.height - headerHeight
+				}
+				m.updateViewportContent()
+			}
+			return m, nil
+		case "b", "B":
+			// Back to deployment view
+			if m.viewMode == viewLogs {
+				m.viewMode = viewDeployment
+			}
+			return m, nil
+		case "left":
+			// Previous tab
+			if m.viewMode == viewLogs && m.selectedTab > 0 {
+				m.selectedTab--
+				m.refreshLogContents()
+				m.updateViewportContent()
+			}
+			return m, nil
+		case "right":
+			// Next tab
+			if m.viewMode == viewLogs && m.selectedTab < len(m.tabNames)-1 {
+				m.selectedTab++
+				m.refreshLogContents()
+				m.updateViewportContent()
+			}
+			return m, nil
+		}
+
+		// Handle viewport scrolling when in logs view
+		if m.viewMode == viewLogs {
+			var cmd tea.Cmd
+			m.viewport, cmd = m.viewport.Update(msg)
+			return m, cmd
 		}
 
 	case provisionUpdateMsg:
@@ -204,6 +295,10 @@ func (m deploymentModel) View() string {
 		return m.renderFinalView()
 	}
 
+	if m.viewMode == viewLogs {
+		return m.renderLogsView()
+	}
+
 	var b strings.Builder
 
 	// Title
@@ -252,7 +347,7 @@ func (m deploymentModel) View() string {
 	b.WriteString("\n")
 	b.WriteString(lipgloss.NewStyle().
 		Foreground(lipgloss.Color("240")).
-		Render("Press q or Ctrl+C to quit"))
+		Render("Press L to see logs • Press q or Ctrl+C to quit"))
 
 	return b.String()
 }
@@ -347,4 +442,121 @@ func formatDuration(d time.Duration) string {
 	minutes := int(d.Minutes())
 	seconds := int(d.Seconds()) % 60
 	return fmt.Sprintf("%dm%ds", minutes, seconds)
+}
+
+// refreshLogContents reads log files and updates the log contents map
+func (m *deploymentModel) refreshLogContents() {
+	// Only refresh the currently selected tab to avoid reading all files
+	if m.selectedTab < 0 || m.selectedTab >= len(m.tabNames) {
+		return
+	}
+
+	tabName := m.tabNames[m.selectedTab]
+	var logPath string
+
+	if tabName == "provision" {
+		logPath = m.provisionLogPath
+	} else if svc, ok := m.services[tabName]; ok {
+		logPath = svc.LogPath
+	}
+
+	if logPath == "" {
+		m.logContents[tabName] = "No log file available yet"
+		return
+	}
+
+	content, err := readLogFile(logPath)
+	if err != nil {
+		m.logContents[tabName] = fmt.Sprintf("Error reading log file: %v", err)
+		return
+	}
+
+	m.logContents[tabName] = content
+	// Update viewport if in logs view
+	if m.viewMode == viewLogs {
+		m.updateViewportContent()
+	}
+}
+
+// readLogFile reads the entire content of a log file
+func readLogFile(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	content, err := io.ReadAll(file)
+	if err != nil {
+		return "", err
+	}
+
+	return string(content), nil
+}
+
+// renderLogsView renders the logs viewer with tabs
+func (m deploymentModel) renderLogsView() string {
+	var b strings.Builder
+
+	// Title
+	b.WriteString(titleStyle.Render("📋 Deployment Logs"))
+	b.WriteString("\n\n")
+
+	// Instructions
+	helpText := "← → navigate tabs • ↑↓ scroll • PgUp/PgDn page scroll • B back • q quit"
+	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(helpText))
+	b.WriteString("\n\n")
+
+	// Render tabs
+	b.WriteString(m.renderTabs())
+	b.WriteString("\n\n")
+
+	// Render viewport with scrollable log content
+	b.WriteString(m.viewport.View())
+
+	return b.String()
+}
+
+// updateViewportContent updates the viewport with current log content
+func (m *deploymentModel) updateViewportContent() {
+	if m.selectedTab < 0 || m.selectedTab >= len(m.tabNames) {
+		return
+	}
+
+	tabName := m.tabNames[m.selectedTab]
+	content, ok := m.logContents[tabName]
+	if !ok || content == "" {
+		content = "Loading logs..."
+	}
+
+	m.viewport.SetContent(content)
+	m.viewport.GotoTop()
+}
+
+// renderTabs renders the tab navigation bar
+func (m deploymentModel) renderTabs() string {
+	var tabs []string
+
+	activeTabStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("15")).
+		Background(lipgloss.Color("39")).
+		Padding(0, 2)
+
+	inactiveTabStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("240")).
+		Background(lipgloss.Color("236")).
+		Padding(0, 2)
+
+	for i, tabName := range m.tabNames {
+		var style lipgloss.Style
+		if i == m.selectedTab {
+			style = activeTabStyle
+		} else {
+			style = inactiveTabStyle
+		}
+		tabs = append(tabs, style.Render(tabName))
+	}
+
+	return lipgloss.JoinHorizontal(lipgloss.Top, tabs...)
 }

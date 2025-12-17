@@ -11,6 +11,7 @@ Usage
 Available Commands
   get       	: Gets a configuration.
   list-alpha	: Display the list of available features in alpha stage.
+  options   	: List all available configuration settings.
   reset     	: Resets configuration to default.
   set       	: Sets a configuration.
   show      	: Show all the configuration values.

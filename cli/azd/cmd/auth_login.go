@@ -292,7 +292,7 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	if loginMode != auth.AzdBuiltIn {
+	if loginMode != auth.AzdBuiltIn && !la.flags.onlyCheckStatus {
 		la.console.MessageUxItem(ctx, &ux.WarningAltMessage{
 			Message: fmt.Sprintf(
 				"Azd is not using the built-in authentication mode, but rather '%s'", loginMode),

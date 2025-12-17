@@ -237,12 +237,6 @@
         }
       },
       "required": ["serve"]
-    },
-    "interactive": {
-      "type": "boolean",
-      "title": "Interactive Mode",
-      "description": "When true, the extension runs in interactive mode with stdin/stdout/stderr directly connected to the terminal. This is required for TUI (Terminal User Interface) applications that use libraries like Bubble Tea. Default is false.",
-      "default": false
     }
   },
   "required": [

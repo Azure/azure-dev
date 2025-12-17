@@ -73,9 +73,6 @@ func (e ExtensionSchema) MarshalYAML() (interface{}, error) {
 	if len(e.Providers) > 0 {
 		base["providers"] = e.Providers
 	}
-	if e.Interactive {
-		base["interactive"] = e.Interactive
-	}
 	if len(e.Platforms) > 0 {
 		base["platforms"] = e.Platforms
 	}

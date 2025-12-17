@@ -58,6 +58,7 @@ func Test_MapError(t *testing.T) {
 		{
 			name: "WithArmDeploymentError",
 			err: &azapi.AzureDeploymentError{
+				Operation: azapi.DeploymentOperationDeploy,
 				Details: &azapi.DeploymentErrorLine{
 					Code: "",
 					Inner: []*azapi.DeploymentErrorLine{
@@ -106,6 +107,33 @@ func Test_MapError(t *testing.T) {
 						{
 							string(fields.ErrCode.Key):  "UnknownError",
 							string(fields.ErrFrame.Key): 2,
+						},
+					})),
+			},
+		},
+		{
+			name: "WithArmValidationError",
+			err: &azapi.AzureDeploymentError{
+				Operation: azapi.DeploymentOperationValidate,
+				Details: &azapi.DeploymentErrorLine{
+					Code: "InvalidTemplate",
+					Inner: []*azapi.DeploymentErrorLine{
+						{Code: "TemplateValidationFailed"},
+					},
+				},
+			},
+			wantErrReason: "service.arm.validate.failed",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrorKey(fields.ServiceName.Key).String("arm"),
+				fields.ErrorKey(fields.ServiceErrorCode.Key).String(mustMarshalJson(
+					[]map[string]interface{}{
+						{
+							string(fields.ErrCode.Key):  "InvalidTemplate",
+							string(fields.ErrFrame.Key): 0,
+						},
+						{
+							string(fields.ErrCode.Key):  "TemplateValidationFailed",
+							string(fields.ErrFrame.Key): 1,
 						},
 					})),
 			},

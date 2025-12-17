@@ -101,7 +101,13 @@ func MapError(err error, span tracing.Span) {
 			}
 		}
 
-		errCode = "service.arm.deployment.failed"
+		// Use operation-specific error code if available
+		operation := armDeployErr.Operation
+		if operation == azapi.DeploymentOperationDeploy {
+			// use 'deployment' instead of 'deploy' for consistency with prior naming
+			operation = "deployment"
+		}
+		errCode = fmt.Sprintf("service.arm.%s.failed", operation)
 	} else if errors.As(err, &extensionRunErr) {
 		errCode = "ext.run.failed"
 	} else if errors.As(err, &extServiceErr) {
@@ -175,6 +181,7 @@ func MapError(err error, span tracing.Span) {
 	span.SetStatus(codes.Error, errCode)
 }
 
+// errorType returns the type name of the given error, unwrapping as needed to find the root cause(s).
 func errorType(err error) string {
 	if err == nil {
 		return "<nil>"

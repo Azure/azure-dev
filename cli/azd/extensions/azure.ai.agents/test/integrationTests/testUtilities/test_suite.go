@@ -129,7 +129,9 @@ func (s *IntegrationTestSuite) initializeAzdProject() error {
 	}
 
 	// Initialize a calculator agent into the project so we have the model we need
-	if err := ExecuteInitCommandForAgent(context.Background(),
+	if err := ExecuteInitCommandForAgent(
+		context.Background(),
+		nil,
 		"https://github.com/azure-ai-foundry/foundry-samples/blob/main/samples/python/hosted-agents/calculator-agent/agent.yaml",
 		"", s); err != nil {
 		return fmt.Errorf("failed to initialize calculator agent: %w", err)
@@ -172,7 +174,7 @@ func (s *IntegrationTestSuite) runAzdInit(withTemplate bool) error {
 		args = append(args, "-t", "Azure-Samples/azd-ai-starter-basic")
 	}
 
-	_, err := executeAzdCommand(context.Background(), s, 5*time.Minute, args)
+	_, err := executeAzdCommandWithExec(context.Background(), s, 5*time.Minute, args)
 	if err != nil {
 		return fmt.Errorf("azd init command failed: %w", err)
 	}
@@ -186,7 +188,7 @@ func (s *IntegrationTestSuite) runAzdUp() error {
 
 	args := []string{"up", "--no-prompt"}
 
-	_, err := executeAzdCommand(context.Background(), s, 10*time.Minute, args)
+	_, err := executeAzdCommandWithExec(context.Background(), s, 10*time.Minute, args)
 	if err != nil {
 		return fmt.Errorf("azd up command failed: %w", err)
 	}
@@ -200,7 +202,7 @@ func (s *IntegrationTestSuite) runAzdDown() error {
 
 	args := []string{"down", "--force", "--purge", "--no-prompt"}
 
-	_, err := executeAzdCommand(context.Background(), s, 10*time.Minute, args)
+	_, err := executeAzdCommandWithExec(context.Background(), s, 10*time.Minute, args)
 	if err != nil {
 		Logf("Warning: Azure cleanup failed: %v", err)
 	}

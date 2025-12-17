@@ -18,6 +18,8 @@ import (
 
 	"azureaiagent/test/integrationTests/testUtilities"
 
+	"github.com/azure/azure-dev/cli/azd/test/azdcli"
+	"github.com/azure/azure-dev/cli/azd/test/recording"
 	"github.com/stretchr/testify/require"
 )
 
@@ -84,8 +86,13 @@ func TestDeployCommand_Integration(t *testing.T) {
 			testUtilities.SetCurrentTestName(tt.name)
 			testUtilities.Logf("Running test: %s", tt.name)
 
+			session := recording.Start(t)
+
+			cli := azdcli.NewCLI(t, azdcli.WithSession(session))
+			cli.WorkingDirectory = deployTestSuite.AzdProjectDir
+
 			// Execute init command
-			err := testUtilities.ExecuteInitCommandForAgent(context.Background(), tt.manifestURL, "", deployTestSuite)
+			err := testUtilities.ExecuteInitCommandForAgent(context.Background(), cli, tt.manifestURL, "", deployTestSuite)
 
 			require.NoError(t, err)
 
@@ -93,7 +100,7 @@ func TestDeployCommand_Integration(t *testing.T) {
 			testUtilities.VerifyInitializedProject(t, deployTestSuite, "", tt.agentName)
 
 			// Execute deploy command
-			agentVersion, err := testUtilities.ExecuteDeployCommandForAgent(context.Background(), tt.agentName, deployTestSuite)
+			agentVersion, err := testUtilities.ExecuteDeployCommandForAgent(context.Background(), cli, tt.agentName, deployTestSuite)
 			if tt.wantErr {
 				require.Error(t, err)
 				testUtilities.Logf("Test completed (expected error)")

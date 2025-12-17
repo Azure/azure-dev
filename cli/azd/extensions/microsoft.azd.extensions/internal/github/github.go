@@ -177,7 +177,7 @@ func (gh *GitHubCli) CreateRelease(cwd string, tagName string, opts map[string]s
 	}
 
 	// Add boolean flags (without values)
-	for _, flag := range []string{"prerelease", "draft"} {
+	for flag := range booleanFlags {
 		if value, ok := opts[flag]; ok && value == "true" {
 			args = append(args, fmt.Sprintf("--%s", flag))
 		}

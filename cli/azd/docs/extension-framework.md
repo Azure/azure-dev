@@ -649,6 +649,9 @@ Extensions can subscribe to project and service lifecycle events (both pre and p
 Your extension _**must**_ include a `listen` command to subscribe to these events.
 `azd` will automatically invoke your extension during supported commands to establish bi-directional communication.
 
+> [!NOTE]
+> Provision lifecycle events (`preprovision`, `postprovision`) are **not** fired when running `azd provision --preview`.
+
 ##### Service Target Providers (`service-target-provider`)
 
 > Extensions must declare the `service-target-provider` capability in their `extension.yaml` file.

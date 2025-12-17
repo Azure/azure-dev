@@ -24,7 +24,7 @@ var allConfigOptions []ConfigOption
 func init() {
 	err := yaml.Unmarshal(resources.ConfigOptions, &allConfigOptions)
 	if err != nil {
-		log.Panic("Can't unmarshal config options! %w", err)
+		log.Panicf("Can't unmarshal config options! %v", err)
 	}
 }
 

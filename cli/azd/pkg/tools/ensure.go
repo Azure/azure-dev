@@ -12,21 +12,22 @@ import (
 	osexec "os/exec"
 )
 
-// missingToolErrors wraps a set of errors discovered when
+// MissingToolErrors wraps a set of errors discovered when
 // probing for tools and implements the Error interface to pretty
 // print the underlying errors. We use this instead of the existing
 // `multierr` package we use elsewhere, because we want to control
 // the error string (the default one produced by multierr is not
 // as nice as what we do here).
-type missingToolErrors struct {
-	errs []error
+type MissingToolErrors struct {
+	Errs      []error
+	ToolNames []string
 }
 
-func (m *missingToolErrors) Error() string {
+func (m *MissingToolErrors) Error() string {
 	buf := bytes.Buffer{}
 
 	fmt.Fprintf(&buf, "required external tools are missing:")
-	for _, err := range m.errs {
+	for _, err := range m.Errs {
 		fmt.Fprintf(&buf, "\n - %s", err.Error())
 	}
 
@@ -37,6 +38,7 @@ func (m *missingToolErrors) Error() string {
 // error if one or more tools are not.
 func EnsureInstalled(ctx context.Context, tools ...ExternalTool) error {
 	var allErrors []error
+	var toolsInError []string
 	errorsEncountered := map[string]struct{}{}
 
 	confirmedTools := make(map[string]struct{})
@@ -57,16 +59,19 @@ func EnsureInstalled(ctx context.Context, tools ...ExternalTool) error {
 			errorMsg := err.Error()
 			if _, hasV := errorsEncountered[errorMsg]; !hasV {
 				allErrors = append(allErrors, err)
+				toolsInError = append(toolsInError, tool.Name())
 				errorsEncountered[errorMsg] = struct{}{}
 			}
 		} else if errors.Is(err, osexec.ErrNotFound) {
 			allErrors = append(
 				allErrors, fmt.Errorf("%s is not installed, see %s to install", tool.Name(), tool.InstallUrl()))
-
+			toolsInError = append(toolsInError, tool.Name())
 		} else if err != nil {
 			errorMsg := err.Error()
 			if _, hasV := errorsEncountered[errorMsg]; !hasV {
 				allErrors = append(allErrors, fmt.Errorf("error checking for external tool %s: %w", tool.Name(), err))
+				toolsInError = append(toolsInError, tool.Name())
+
 				errorsEncountered[errorMsg] = struct{}{}
 			}
 		}
@@ -76,7 +81,7 @@ func EnsureInstalled(ctx context.Context, tools ...ExternalTool) error {
 	}
 
 	if len(allErrors) > 0 {
-		return &missingToolErrors{errs: allErrors}
+		return &MissingToolErrors{Errs: allErrors, ToolNames: toolsInError}
 	}
 
 	return nil

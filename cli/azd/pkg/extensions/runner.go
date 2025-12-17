@@ -15,11 +15,12 @@ import (
 )
 
 type InvokeOptions struct {
-	Args   []string
-	Env    []string
-	StdIn  io.Reader
-	StdOut io.Writer
-	StdErr io.Writer
+	Args        []string
+	Env         []string
+	StdIn       io.Reader
+	StdOut      io.Writer
+	StdErr      io.Writer
+	Interactive bool
 }
 
 type Runner struct {
@@ -51,16 +52,20 @@ func (r *Runner) Invoke(ctx context.Context, extension *Extension, options *Invo
 		runArgs = runArgs.WithEnv(options.Env)
 	}
 
-	if options.StdIn != nil {
-		runArgs = runArgs.WithStdIn(options.StdIn)
-	}
+	if options.Interactive {
+		runArgs = runArgs.WithInteractive(true)
+	} else {
+		if options.StdIn != nil {
+			runArgs = runArgs.WithStdIn(options.StdIn)
+		}
 
-	if options.StdOut != nil {
-		runArgs = runArgs.WithStdOut(options.StdOut)
-	}
+		if options.StdOut != nil {
+			runArgs = runArgs.WithStdOut(options.StdOut)
+		}
 
-	if options.StdErr != nil {
-		runArgs = runArgs.WithStdErr(options.StdErr)
+		if options.StdErr != nil {
+			runArgs = runArgs.WithStdErr(options.StdErr)
+		}
 	}
 
 	// Enable interactive mode for extensions that opt-in via the "interactive" property

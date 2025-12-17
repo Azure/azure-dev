@@ -10,6 +10,16 @@
 
 ### Other Changes
 
+## 1.22.3 (2025-12-15)
+
+### Features Added
+
+- [[#6347]](https://github.com/Azure/azure-dev/pull/6347) Add interactive environment selector to `azd env select` when no environment is specified.
+
+### Bugs Fixed
+
+- [[#6373]](https://github.com/Azure/azure-dev/pull/6373) Fix error handling to display proper error messages when loading invalid `azure.yaml` files instead of panicking.
+
 ## 1.22.2 (2025-12-12)
 
 ### Features Added

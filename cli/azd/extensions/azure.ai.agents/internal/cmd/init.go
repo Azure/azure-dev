@@ -91,6 +91,8 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 
+			setupDebugLogging(cmd.Flags())
+
 			azdClient, err := azdext.NewAzdClient()
 			if err != nil {
 				return fmt.Errorf("failed to create azd client: %w", err)
@@ -317,7 +319,7 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 		}
 
 		// Create Cognitive Services Projects client
-		projectsClient, err := armcognitiveservices.NewProjectsClient(foundryProject.SubscriptionId, credential, nil)
+		projectsClient, err := armcognitiveservices.NewProjectsClient(foundryProject.SubscriptionId, credential, azure.NewArmClientOptions())
 		if err != nil {
 			return nil, fmt.Errorf("failed to create Cognitive Services Projects client: %w", err)
 		}
@@ -862,7 +864,7 @@ func (a *InitAction) downloadAgentYaml(
 			return nil, "", fmt.Errorf("creating GitHub CLI: %w", err)
 		}
 
-		urlInfo, err = parseGitHubUrl(manifestPointer)
+		urlInfo, err = a.parseGitHubUrl(ctx, manifestPointer)
 		if err != nil {
 			return nil, "", err
 		}
@@ -1257,76 +1259,20 @@ func downloadGithubManifest(
 	return content, nil
 }
 
-// parseGitHubUrl extracts repository information from various GitHub URL formats
-// TODO: This will fail if the branch contains a slash. Update to handle that case if needed.
-func parseGitHubUrl(manifestPointer string) (*GitHubUrlInfo, error) {
-	parsedURL, err := url.Parse(manifestPointer)
+// parseGitHubUrl extracts repository information from various GitHub URL formats using extension framework
+func (a *InitAction) parseGitHubUrl(ctx context.Context, manifestPointer string) (*GitHubUrlInfo, error) {
+	urlInfo, err := a.azdClient.Project().ParseGitHubUrl(ctx, &azdext.ParseGitHubUrlRequest{
+		Url: manifestPointer,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse URL: %w", err)
-	}
-
-	hostname := parsedURL.Hostname()
-	var repoSlug, branch, filePath string
-
-	if strings.HasPrefix(hostname, "raw.") {
-		// https://raw.githubusercontent.com/<owner>/<repo>/refs/heads/<branch>/[...path]/<file>.yaml
-		pathParts := strings.Split(parsedURL.Path, "/")
-		if len(pathParts) < 7 {
-			return nil, fmt.Errorf("invalid URL format using 'raw.'. Expected the form of " +
-				"'https://raw.<hostname>/<owner>/<repo>/refs/heads/<branch>/[...path]/<fileName>.json'")
-		}
-		if pathParts[3] != "refs" || pathParts[4] != "heads" {
-			return nil, fmt.Errorf("invalid raw GitHub URL format. Expected 'refs/heads' in the URL path")
-		}
-		repoSlug = fmt.Sprintf("%s/%s", pathParts[1], pathParts[2])
-		branch = pathParts[5]
-		filePath = strings.Join(pathParts[6:], "/")
-	} else if strings.HasPrefix(hostname, "api.") {
-		// https://api.github.com/repos/<owner>/<repo>/contents/[...path]/<file>.yaml
-		pathParts := strings.Split(parsedURL.Path, "/")
-		if len(pathParts) < 6 {
-			return nil, fmt.Errorf("invalid URL format using 'api.'. Expected the form of " +
-				"'https://api.<hostname>/repos/<owner>/<repo>/contents/[...path]/<fileName>.json[?ref=<branch>]'")
-		}
-		repoSlug = fmt.Sprintf("%s/%s", pathParts[2], pathParts[3])
-		filePath = strings.Join(pathParts[5:], "/")
-		// For API URLs, branch is specified in the query parameter ref
-		branch = parsedURL.Query().Get("ref")
-		if branch == "" {
-			branch = "main" // default branch if not specified
-		}
-	} else if strings.HasPrefix(manifestPointer, "https://") {
-		// https://github.com/<owner>/<repo>/blob/<branch>/[...path]/<file>.yaml
-		pathParts := strings.Split(parsedURL.Path, "/")
-		if len(pathParts) < 6 {
-			return nil, fmt.Errorf("invalid URL format. Expected the form of " +
-				"'https://<hostname>/<owner>/<repo>/blob/<branch>/[...path]/<fileName>.json'")
-		}
-		if pathParts[3] != "blob" {
-			return nil, fmt.Errorf("invalid GitHub URL format. Expected 'blob' in the URL path")
-		}
-		repoSlug = fmt.Sprintf("%s/%s", pathParts[1], pathParts[2])
-		branch = pathParts[4]
-		filePath = strings.Join(pathParts[5:], "/")
-	} else {
-		return nil, fmt.Errorf(
-			"invalid URL format. Expected formats are:\n" +
-				"  - 'https://raw.<hostname>/<owner>/<repo>/refs/heads/<branch>/[...path]/<fileName>.json'\n" +
-				"  - 'https://<hostname>/<owner>/<repo>/blob/<branch>/[...path]/<fileName>.json'\n" +
-				"  - 'https://api.<hostname>/repos/<owner>/<repo>/contents/[...path]/<fileName>.json[?ref=<branch>]'",
-		)
-	}
-
-	// Normalize hostname for API calls
-	if hostname == "raw.githubusercontent.com" {
-		hostname = "github.com"
+		return nil, err
 	}
 
 	return &GitHubUrlInfo{
-		RepoSlug: repoSlug,
-		Branch:   branch,
-		FilePath: filePath,
-		Hostname: hostname,
+		RepoSlug: urlInfo.RepoSlug,
+		Branch:   urlInfo.Branch,
+		FilePath: urlInfo.FilePath,
+		Hostname: urlInfo.Hostname,
 	}, nil
 }
 
@@ -1739,7 +1685,7 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 			accountName = parts[8]   // accounts/{account}
 		}
 
-		deploymentsClient, err := armcognitiveservices.NewDeploymentsClient(subscription, a.credential, nil)
+		deploymentsClient, err := armcognitiveservices.NewDeploymentsClient(subscription, a.credential, azure.NewArmClientOptions())
 		if err != nil {
 			return nil, fmt.Errorf("failed to create deployments client: %w", err)
 		}

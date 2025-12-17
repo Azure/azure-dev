@@ -33,6 +33,7 @@ type ConcurrentDeployer struct {
 	provision         *provisionState
 	finalSummaryMu    sync.Mutex
 	finalSummary      string
+	debug             bool
 }
 
 // NewConcurrentDeployer creates a new concurrent deployer
@@ -41,6 +42,7 @@ func NewConcurrentDeployer(
 	_ azdext.WorkflowServiceClient,
 	services map[string]*azdext.ServiceConfig,
 	ui *tea.Program,
+	debug bool,
 ) (*ConcurrentDeployer, error) {
 	// Create logs directory with unique timestamp
 	timestamp := time.Now().Format("20060102-150405")
@@ -62,6 +64,7 @@ func NewConcurrentDeployer(
 		errChan:          make(chan error, len(services)),
 		buildGate:        newBuildGate(),
 		provision:        newProvisionState(),
+		debug:            debug,
 	}, nil
 }
 
@@ -110,7 +113,11 @@ func (cd *ConcurrentDeployer) runProvision() {
 	defer logFile.Close()
 
 	// Run azd provision as a subprocess to capture output
-	cmd := exec.CommandContext(cd.ctx, "azd", "provision")
+	args := []string{"provision"}
+	if cd.debug {
+		args = append(args, "--debug")
+	}
+	cmd := exec.CommandContext(cd.ctx, "azd", args...)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	cmd.Dir, _ = os.Getwd()
@@ -151,6 +158,7 @@ func (cd *ConcurrentDeployer) startServiceDeployments() {
 			cd.buildGate,
 			cd.provision,
 			cd.errChan,
+			cd.debug,
 		)
 
 		go func() {
@@ -289,6 +297,7 @@ type serviceDeployer struct {
 	errChan     chan error
 	logFile     *os.File
 	logPath     string
+	debug       bool
 }
 
 func newServiceDeployer(
@@ -300,6 +309,7 @@ func newServiceDeployer(
 	buildGate *buildGate,
 	provision *provisionState,
 	errChan chan error,
+	debug bool,
 ) *serviceDeployer {
 	return &serviceDeployer{
 		ctx:         ctx,
@@ -310,6 +320,7 @@ func newServiceDeployer(
 		buildGate:   buildGate,
 		provision:   provision,
 		errChan:     errChan,
+		debug:       debug,
 	}
 }
 
@@ -404,7 +415,12 @@ func (sd *serviceDeployer) runDeployment(isFirstAspire bool) error {
 	}
 
 	// #nosec G204 - serviceName is from validated azd context, not user input
-	cmd := exec.CommandContext(sd.ctx, "azd", "deploy", sd.serviceName)
+	args := []string{"deploy", sd.serviceName}
+	if sd.debug {
+		args = append(args, "--debug")
+	}
+	// #nosec G204 - args constructed from validated inputs
+	cmd := exec.CommandContext(sd.ctx, "azd", args...)
 	cmd.Stdout = outputWriter
 	cmd.Stderr = outputWriter
 	cmd.Dir, _ = os.Getwd()

@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -68,6 +70,7 @@ type deploymentModel struct {
 	width       int
 	height      int
 	ready       bool
+	autoRefresh bool // Auto-refresh logs when enabled
 }
 
 // Messages that can be sent to the Bubble Tea program
@@ -88,6 +91,8 @@ type provisionUpdateMsg struct {
 type deploymentCompleteMsg struct{}
 
 type tickMsg time.Time
+
+type logRefreshMsg time.Time
 
 // Styles
 var (
@@ -163,6 +168,12 @@ func tickCmd() tea.Cmd {
 	})
 }
 
+func logRefreshCmd() tea.Cmd {
+	return tea.Tick(time.Millisecond*500, func(t time.Time) tea.Msg {
+		return logRefreshMsg(t)
+	})
+}
+
 func (m deploymentModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -226,6 +237,28 @@ func (m deploymentModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.updateViewportContent()
 			}
 			return m, nil
+		case "i", "I":
+			// Jump to beginning of log
+			if m.viewMode == viewLogs {
+				m.viewport.GotoTop()
+			}
+			return m, nil
+		case "o", "O":
+			// Open log file in default editor
+			if m.viewMode == viewLogs {
+				m.openCurrentLogFile()
+			}
+			return m, nil
+		case "a", "A":
+			// Toggle auto-refresh
+			if m.viewMode == viewLogs {
+				m.autoRefresh = !m.autoRefresh
+				if m.autoRefresh {
+					// Start refresh ticker
+					return m, logRefreshCmd()
+				}
+			}
+			return m, nil
 		}
 
 		// Handle viewport scrolling when in logs view
@@ -271,6 +304,28 @@ func (m deploymentModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		// Continue ticking for spinner animation
 		return m, tickCmd()
+
+	case logRefreshMsg:
+		// Auto-refresh logs if enabled
+		if m.viewMode == viewLogs && m.autoRefresh {
+			// Check if we're at the bottom before refreshing
+			atBottom := m.viewport.AtBottom()
+			m.refreshLogContents()
+			// Update viewport content
+			if m.selectedTab >= 0 && m.selectedTab < len(m.tabNames) {
+				tabName := m.tabNames[m.selectedTab]
+				if content, ok := m.logContents[tabName]; ok {
+					m.viewport.SetContent(content)
+					// Stay at bottom if we were there
+					if atBottom {
+						m.viewport.GotoBottom()
+					}
+				}
+			}
+			// Continue refresh ticker
+			return m, logRefreshCmd()
+		}
+		return m, nil
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -472,10 +527,6 @@ func (m *deploymentModel) refreshLogContents() {
 	}
 
 	m.logContents[tabName] = content
-	// Update viewport if in logs view
-	if m.viewMode == viewLogs {
-		m.updateViewportContent()
-	}
 }
 
 // readLogFile reads the entire content of a log file
@@ -502,9 +553,17 @@ func (m deploymentModel) renderLogsView() string {
 	b.WriteString(titleStyle.Render("📋 Deployment Logs"))
 	b.WriteString("\n\n")
 
-	// Instructions
-	helpText := "← → navigate tabs • ↑↓ scroll • PgUp/PgDn page scroll • B back • q quit"
+	// Instructions with auto-refresh status
+	autoRefreshStatus := ""
+	if m.autoRefresh {
+		autoRefreshStatus = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("46")).
+			Bold(true).
+			Render(" [AUTO-REFRESH ON]")
+	}
+	helpText := "← → tabs • ↑↓ scroll • I top • A toggle refresh • O open • B back • q quit"
 	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(helpText))
+	b.WriteString(autoRefreshStatus)
 	b.WriteString("\n\n")
 
 	// Render tabs
@@ -529,8 +588,14 @@ func (m *deploymentModel) updateViewportContent() {
 		content = "Loading logs..."
 	}
 
+	// Remember if we were at bottom before updating
+	atBottom := m.viewport.AtBottom()
 	m.viewport.SetContent(content)
-	m.viewport.GotoTop()
+
+	// Scroll to bottom by default to show latest logs, or maintain position
+	if atBottom || !m.autoRefresh {
+		m.viewport.GotoBottom()
+	}
 }
 
 // renderTabs renders the tab navigation bar
@@ -559,4 +624,67 @@ func (m deploymentModel) renderTabs() string {
 	}
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, tabs...)
+}
+
+// openCurrentLogFile opens the current log file in the default editor
+func (m *deploymentModel) openCurrentLogFile() {
+	if m.selectedTab < 0 || m.selectedTab >= len(m.tabNames) {
+		return
+	}
+
+	tabName := m.tabNames[m.selectedTab]
+	var logPath string
+
+	if tabName == "provision" {
+		logPath = m.provisionLogPath
+	} else if svc, ok := m.services[tabName]; ok {
+		logPath = svc.LogPath
+	}
+
+	if logPath == "" {
+		return
+	}
+
+	// Try to open in VS Code first
+	if m.openInVSCode(logPath) {
+		return
+	}
+
+	// Fallback: Open file with default application based on OS
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		// #nosec G204 - logPath comes from internally controlled log file paths
+		cmd = exec.Command("open", logPath)
+	case "windows":
+		// #nosec G204 - logPath comes from internally controlled log file paths
+		cmd = exec.Command("cmd", "/c", "start", logPath)
+	default: // linux, bsd, etc.
+		// #nosec G204 - logPath comes from internally controlled log file paths
+		cmd = exec.Command("xdg-open", logPath)
+	}
+
+	// Run asynchronously - we don't care about errors here
+	_ = cmd.Start()
+}
+
+// openInVSCode attempts to open a file in VS Code, returns true if successful
+func (m *deploymentModel) openInVSCode(filePath string) bool {
+	// Determine the VS Code command name based on OS
+	codeCmd := "code"
+	if runtime.GOOS == "windows" {
+		codeCmd = "code.exe"
+	}
+
+	// Check if VS Code is available in PATH
+	_, err := exec.LookPath(codeCmd)
+	if err != nil {
+		return false
+	}
+
+	// Try to open the file in VS Code
+	// #nosec G204 - filePath comes from internally controlled log file paths
+	cmd := exec.Command(codeCmd, filePath)
+	err = cmd.Run()
+	return err == nil
 }

@@ -60,11 +60,13 @@ func (bw *buildGateWriter) Write(p []byte) (n int, err error) {
 }
 
 func newUpCommand() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "up",
 		Short: "Runs azd up in concurrent mode",
 		RunE:  runUpCommand,
 	}
+	cmd.Flags().Bool("debug", false, "Enable debug logging for azd commands")
+	return cmd
 }
 
 func runUpCommand(cmd *cobra.Command, args []string) error {
@@ -81,11 +83,14 @@ func runUpCommand(cmd *cobra.Command, args []string) error {
 	}
 	defer cleanup()
 
+	// Get debug flag
+	debug, _ := cmd.Flags().GetBool("debug")
+
 	// Create Bubble Tea UI with cancel function
 	ui := createUI(services, cancel)
 
 	// Create and run concurrent deployer
-	deployer, err := NewConcurrentDeployer(ctx, workflowClient, services, ui)
+	deployer, err := NewConcurrentDeployer(ctx, workflowClient, services, ui, debug)
 	if err != nil {
 		return err
 	}

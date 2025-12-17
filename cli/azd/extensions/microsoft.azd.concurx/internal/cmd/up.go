@@ -70,6 +70,10 @@ func newUpCommand() *cobra.Command {
 func runUpCommand(cmd *cobra.Command, args []string) error {
 	ctx := azdext.WithAccessToken(cmd.Context())
 
+	// Create cancellable context for handling Ctrl+C in UI
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	// Initialize AZD client and get services
 	services, workflowClient, cleanup, err := initializeAzdClient(ctx)
 	if err != nil {
@@ -77,8 +81,8 @@ func runUpCommand(cmd *cobra.Command, args []string) error {
 	}
 	defer cleanup()
 
-	// Create Bubble Tea UI
-	ui := createUI(services)
+	// Create Bubble Tea UI with cancel function
+	ui := createUI(services, cancel)
 
 	// Create and run concurrent deployer
 	deployer, err := NewConcurrentDeployer(ctx, workflowClient, services, ui)
@@ -121,13 +125,13 @@ func initializeAzdClient(ctx context.Context) (
 }
 
 // createUI initializes the Bubble Tea program
-func createUI(services map[string]*azdext.ServiceConfig) *tea.Program {
+func createUI(services map[string]*azdext.ServiceConfig, cancel context.CancelFunc) *tea.Program {
 	serviceNames := make([]string, 0, len(services))
 	for name := range services {
 		serviceNames = append(serviceNames, name)
 	}
 
-	model := newDeploymentModel(serviceNames)
+	model := newDeploymentModel(serviceNames, cancel)
 	return tea.NewProgram(
 		model,
 		tea.WithAltScreen(),       // Use alternate screen buffer

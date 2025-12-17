@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -40,11 +41,13 @@ type deploymentModel struct {
 	serviceOrder     []string
 	spinner          spinner.Model
 	quitting         bool
+	cancelled        bool // True if user cancelled with Ctrl+C
 	err              error
 	provisionStatus  string // "running", "completed", "failed"
 	provisionMsg     string
 	provisionLogPath string
 	provisionErr     error
+	cancel           context.CancelFunc // Cancel function to stop all deployments
 }
 
 // Messages that can be sent to the Bubble Tea program
@@ -93,7 +96,7 @@ var (
 			Italic(true)
 )
 
-func newDeploymentModel(serviceNames []string) deploymentModel {
+func newDeploymentModel(serviceNames []string, cancel context.CancelFunc) deploymentModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
@@ -110,6 +113,7 @@ func newDeploymentModel(serviceNames []string) deploymentModel {
 		services:     services,
 		serviceOrder: serviceNames,
 		spinner:      s,
+		cancel:       cancel,
 	}
 }
 
@@ -132,6 +136,11 @@ func (m deploymentModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "q", "ctrl+c":
 			m.quitting = true
+			m.cancelled = true
+			// Cancel context to stop all running deployments
+			if m.cancel != nil {
+				m.cancel()
+			}
 			return m, tea.Quit
 		}
 

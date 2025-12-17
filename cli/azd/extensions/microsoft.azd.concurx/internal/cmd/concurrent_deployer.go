@@ -110,7 +110,7 @@ func (cd *ConcurrentDeployer) runProvision() {
 	defer logFile.Close()
 
 	// Run azd provision as a subprocess to capture output
-	cmd := exec.Command("azd", "provision")
+	cmd := exec.CommandContext(cd.ctx, "azd", "provision")
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	cmd.Dir, _ = os.Getwd()
@@ -176,9 +176,17 @@ func (cd *ConcurrentDeployer) collectResults() error {
 	}
 
 	if m, ok := finalModel.(deploymentModel); ok {
-		cd.finalSummaryMu.Lock()
-		cd.finalSummary = renderPersistedSummary(&m)
-		cd.finalSummaryMu.Unlock()
+		// Only render summary if deployment was not cancelled by user
+		if !m.cancelled {
+			cd.finalSummaryMu.Lock()
+			cd.finalSummary = renderPersistedSummary(&m)
+			cd.finalSummaryMu.Unlock()
+		}
+	}
+
+	// Check if user cancelled the deployment
+	if m, ok := finalModel.(deploymentModel); ok && m.cancelled {
+		return fmt.Errorf("deployment cancelled by user")
 	}
 
 	// Collect deployment errors
@@ -396,7 +404,7 @@ func (sd *serviceDeployer) runDeployment(isFirstAspire bool) error {
 	}
 
 	// #nosec G204 - serviceName is from validated azd context, not user input
-	cmd := exec.Command("azd", "deploy", sd.serviceName)
+	cmd := exec.CommandContext(sd.ctx, "azd", "deploy", sd.serviceName)
 	cmd.Stdout = outputWriter
 	cmd.Stderr = outputWriter
 	cmd.Dir, _ = os.Getwd()

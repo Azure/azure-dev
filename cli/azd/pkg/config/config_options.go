@@ -17,6 +17,7 @@ type ConfigOption struct {
 	Type          string   `yaml:"type"`
 	AllowedValues []string `yaml:"allowedValues,omitempty"`
 	Example       string   `yaml:"example,omitempty"`
+	EnvVar        string   `yaml:"envVar,omitempty"`
 }
 
 var allConfigOptions []ConfigOption

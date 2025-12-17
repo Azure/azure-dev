@@ -561,6 +561,7 @@ func (a *configOptionsAction) Run(ctx context.Context) (*actions.ActionResult, e
 		Description   string
 		Type          string
 		AllowedValues string
+		EnvVar        string
 		Example       string
 	}
 
@@ -575,6 +576,7 @@ func (a *configOptionsAction) Run(ctx context.Context) (*actions.ActionResult, e
 			Description:   option.Description,
 			Type:          option.Type,
 			AllowedValues: allowedValues,
+			EnvVar:        option.EnvVar,
 			Example:       option.Example,
 		})
 	}
@@ -595,6 +597,10 @@ func (a *configOptionsAction) Run(ctx context.Context) (*actions.ActionResult, e
 		{
 			Heading:       "Allowed Values",
 			ValueTemplate: "{{.AllowedValues}}",
+		},
+		{
+			Heading:       "Environment Variable",
+			ValueTemplate: "{{.EnvVar}}",
 		},
 		{
 			Heading:       "Example",

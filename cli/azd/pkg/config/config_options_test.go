@@ -40,6 +40,7 @@ func TestGetAllConfigOptions(t *testing.T) {
 			require.Equal(t, "string", option.Type)
 			require.Contains(t, option.AllowedValues, "on")
 			require.Contains(t, option.AllowedValues, "off")
+			require.Equal(t, "AZD_ALPHA_ENABLE_ALL", option.EnvVar)
 		}
 	}
 

@@ -27,7 +27,6 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newColorsCommand())
 	rootCmd.AddCommand(newVersionCommand())
 	rootCmd.AddCommand(newMcpCommand())
-	rootCmd.AddCommand(newConfigCommand())
 	rootCmd.AddCommand(newGhUrlParseCommand())
 
 	return rootCmd

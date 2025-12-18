@@ -5,17 +5,22 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
@@ -521,12 +526,236 @@ func (a *InitAction) Run(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("failed to get current working directory: %w", err)
 		}
-		if err := copyDirectory(a.flags.manifestPointer, cwd); err != nil {
-			return fmt.Errorf("failed to copy directory: %w", err)
+		if a.isGitHubUrl(a.flags.manifestPointer) {
+			// For container agents, download the entire parent directory
+			fmt.Println("Downloading full directory for fine-tuning configuration from GitHub...")
+			var ghCli *github.Cli
+			var console input.Console
+			var urlInfo *GitHubUrlInfo
+			// Create a simple console and command runner for GitHub CLI
+			commandRunner := exec.NewCommandRunner(&exec.RunnerOptions{
+				Stdout: os.Stdout,
+				Stderr: os.Stderr,
+			})
+
+			console = input.NewConsole(
+				false, // noPrompt
+				true,  // isTerminal
+				input.Writers{Output: os.Stdout},
+				input.ConsoleHandles{
+					Stderr: os.Stderr,
+					Stdin:  os.Stdin,
+					Stdout: os.Stdout,
+				},
+				nil, // formatter
+				nil, // externalPromptCfg
+			)
+			ghCli, err = github.NewGitHubCli(ctx, console, commandRunner)
+			if err != nil {
+				return fmt.Errorf("creating GitHub CLI: %w", err)
+			}
+
+			urlInfo, err = parseGitHubUrl(a.flags.manifestPointer)
+			if err != nil {
+				return err
+			}
+
+			apiPath := fmt.Sprintf("/repos/%s/contents/%s", urlInfo.RepoSlug, urlInfo.FilePath)
+			if urlInfo.Branch != "" {
+				fmt.Printf("Downloaded manifest from branch: %s\n", urlInfo.Branch)
+				apiPath += fmt.Sprintf("?ref=%s", urlInfo.Branch)
+			}
+			err := downloadParentDirectory(ctx, urlInfo, cwd, ghCli, console)
+			if err != nil {
+				return fmt.Errorf("downloading parent directory: %w", err)
+			}
+		} else {
+			if err := copyDirectory(a.flags.manifestPointer, cwd); err != nil {
+				return fmt.Errorf("failed to copy directory: %w", err)
+			}
 		}
 	}
 	fmt.Println()
 	color.Green("Initialized fine-tuning Project.")
+
+	return nil
+}
+
+// parseGitHubUrl extracts repository information from various GitHub URL formats
+// TODO: This will fail if the branch contains a slash. Update to handle that case if needed.
+func parseGitHubUrl(manifestPointer string) (*GitHubUrlInfo, error) {
+	parsedURL, err := url.Parse(manifestPointer)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse URL: %w", err)
+	}
+
+	hostname := parsedURL.Hostname()
+	var repoSlug, branch, filePath string
+
+	if strings.HasPrefix(hostname, "raw.") {
+		// https://raw.githubusercontent.com/<owner>/<repo>/refs/heads/<branch>/[...path]/<file>.yaml
+		pathParts := strings.Split(parsedURL.Path, "/")
+		if len(pathParts) < 7 {
+			return nil, fmt.Errorf("invalid URL format using 'raw.'. Expected the form of " +
+				"'https://raw.<hostname>/<owner>/<repo>/refs/heads/<branch>/[...path]/<fileName>.json'")
+		}
+		if pathParts[3] != "refs" || pathParts[4] != "heads" {
+			return nil, fmt.Errorf("invalid raw GitHub URL format. Expected 'refs/heads' in the URL path")
+		}
+		repoSlug = fmt.Sprintf("%s/%s", pathParts[1], pathParts[2])
+		branch = pathParts[5]
+		filePath = strings.Join(pathParts[6:], "/")
+	} else if strings.HasPrefix(hostname, "api.") {
+		// https://api.github.com/repos/<owner>/<repo>/contents/[...path]/<file>.yaml
+		pathParts := strings.Split(parsedURL.Path, "/")
+		if len(pathParts) < 6 {
+			return nil, fmt.Errorf("invalid URL format using 'api.'. Expected the form of " +
+				"'https://api.<hostname>/repos/<owner>/<repo>/contents/[...path]/<fileName>.json[?ref=<branch>]'")
+		}
+		repoSlug = fmt.Sprintf("%s/%s", pathParts[2], pathParts[3])
+		filePath = strings.Join(pathParts[5:], "/")
+		// For API URLs, branch is specified in the query parameter ref
+		branch = parsedURL.Query().Get("ref")
+		if branch == "" {
+			branch = "main" // default branch if not specified
+		}
+	} else if strings.HasPrefix(manifestPointer, "https://") {
+		// https://github.com/<owner>/<repo>/blob/<branch>/[...path]/<file>.yaml
+		pathParts := strings.Split(parsedURL.Path, "/")
+		if len(pathParts) < 6 {
+			return nil, fmt.Errorf("invalid URL format. Expected the form of " +
+				"'https://<hostname>/<owner>/<repo>/blob/<branch>/[...path]/<fileName>.json'")
+		}
+		if pathParts[3] != "blob" {
+			return nil, fmt.Errorf("invalid GitHub URL format. Expected 'blob' in the URL path")
+		}
+		repoSlug = fmt.Sprintf("%s/%s", pathParts[1], pathParts[2])
+		branch = pathParts[4]
+		filePath = strings.Join(pathParts[5:], "/")
+	} else {
+		return nil, fmt.Errorf(
+			"invalid URL format. Expected formats are:\n" +
+				"  - 'https://raw.<hostname>/<owner>/<repo>/refs/heads/<branch>/[...path]/<fileName>.json'\n" +
+				"  - 'https://<hostname>/<owner>/<repo>/blob/<branch>/[...path]/<fileName>.json'\n" +
+				"  - 'https://api.<hostname>/repos/<owner>/<repo>/contents/[...path]/<fileName>.json[?ref=<branch>]'",
+		)
+	}
+
+	// Normalize hostname for API calls
+	if hostname == "raw.githubusercontent.com" {
+		hostname = "github.com"
+	}
+
+	return &GitHubUrlInfo{
+		RepoSlug: repoSlug,
+		Branch:   branch,
+		FilePath: filePath,
+		Hostname: hostname,
+	}, nil
+}
+
+func (a *InitAction) isGitHubUrl(manifestPointer string) bool {
+	// Check if it's a GitHub URL based on the patterns from downloadGithubManifest
+	parsedURL, err := url.Parse(manifestPointer)
+	if err != nil {
+		return false
+	}
+	hostname := parsedURL.Hostname()
+
+	// Check for GitHub URL patterns as defined in downloadGithubManifest
+	return strings.HasPrefix(hostname, "raw.githubusercontent") ||
+		strings.HasPrefix(hostname, "api.github") ||
+		strings.Contains(hostname, "github")
+}
+
+func downloadParentDirectory(
+	ctx context.Context, urlInfo *GitHubUrlInfo, targetDir string, ghCli *github.Cli, console input.Console) error {
+
+	// Get parent directory by removing the filename from the file path
+	pathParts := strings.Split(urlInfo.FilePath, "/")
+	if len(pathParts) <= 1 {
+		fmt.Println("The file agent.yaml is at repository root, no parent directory to download")
+		return nil
+	}
+
+	parentDirPath := strings.Join(pathParts[:len(pathParts)-1], "/")
+	fmt.Printf("Downloading parent directory '%s' from repository '%s', branch '%s'\n", parentDirPath, urlInfo.RepoSlug, urlInfo.Branch)
+
+	// Download directory contents
+	if err := downloadDirectoryContents(ctx, urlInfo.Hostname, urlInfo.RepoSlug, parentDirPath, urlInfo.Branch, targetDir, ghCli, console); err != nil {
+		return fmt.Errorf("failed to download directory contents: %w", err)
+	}
+
+	fmt.Printf("Successfully downloaded parent directory to: %s\n", targetDir)
+	return nil
+}
+
+func downloadDirectoryContents(
+	ctx context.Context, hostname string, repoSlug string, dirPath string, branch string, localPath string, ghCli *github.Cli, console input.Console) error {
+
+	// Get directory contents using GitHub API
+	apiPath := fmt.Sprintf("/repos/%s/contents/%s", repoSlug, dirPath)
+	if branch != "" {
+		apiPath += fmt.Sprintf("?ref=%s", branch)
+	}
+
+	dirContentsJson, err := ghCli.ApiCall(ctx, hostname, apiPath, github.ApiCallOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to get directory contents: %w", err)
+	}
+
+	// Parse the directory contents JSON
+	var dirContents []map[string]interface{}
+	if err := json.Unmarshal([]byte(dirContentsJson), &dirContents); err != nil {
+		return fmt.Errorf("failed to parse directory contents JSON: %w", err)
+	}
+
+	// Download each file and subdirectory
+	for _, item := range dirContents {
+		name, ok := item["name"].(string)
+		if !ok {
+			continue
+		}
+
+		itemType, ok := item["type"].(string)
+		if !ok {
+			continue
+		}
+
+		itemPath := fmt.Sprintf("%s/%s", dirPath, name)
+		itemLocalPath := filepath.Join(localPath, name)
+
+		if itemType == "file" {
+			// Download file
+			fmt.Printf("Downloading file: %s\n", itemPath)
+			fileApiPath := fmt.Sprintf("/repos/%s/contents/%s", repoSlug, itemPath)
+			if branch != "" {
+				fileApiPath += fmt.Sprintf("?ref=%s", branch)
+			}
+
+			fileContent, err := ghCli.ApiCall(ctx, hostname, fileApiPath, github.ApiCallOptions{
+				Headers: []string{"Accept: application/vnd.github.v3.raw"},
+			})
+			if err != nil {
+				return fmt.Errorf("failed to download file %s: %w", itemPath, err)
+			}
+
+			if err := os.WriteFile(itemLocalPath, []byte(fileContent), 0644); err != nil {
+				return fmt.Errorf("failed to write file %s: %w", itemLocalPath, err)
+			}
+		} else if itemType == "dir" {
+			// Recursively download subdirectory
+			fmt.Printf("Downloading directory: %s\n", itemPath)
+			if err := os.MkdirAll(itemLocalPath, 0755); err != nil {
+				return fmt.Errorf("failed to create directory %s: %w", itemLocalPath, err)
+			}
+
+			// Recursively download directory contents
+			if err := downloadDirectoryContents(ctx, hostname, repoSlug, itemPath, branch, itemLocalPath, ghCli, console); err != nil {
+				return fmt.Errorf("failed to download subdirectory %s: %w", itemPath, err)
+			}
+		}
+	}
 
 	return nil
 }

@@ -592,8 +592,9 @@ func newOperationDeployModelCommand() *cobra.Command {
 				fmt.Printf("failed to create client: %v", err)
 			}
 			poller, err := clientFactory.NewDeploymentsClient().BeginCreateOrUpdate(ctx,
-				envValueMap["AZURE_SUBSCRIPTION_ID"],
-				envValueMap["AZURE_RESOURCE_GROUP_NAME"], deploymentName,
+				envValueMap["AZURE_RESOURCE_GROUP_NAME"],
+				envValueMap["AZURE_ACCOUNT_NAME"],
+				deploymentName,
 				armcognitiveservices.Deployment{
 					Properties: &armcognitiveservices.DeploymentProperties{
 						Model: &armcognitiveservices.DeploymentModel{

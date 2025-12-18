@@ -6,7 +6,7 @@ The `X` extension is used for developing `azd` extensions.
 
 ```bash
 # Use current version of 'microsoft.azd.extensions' in the registry for bootstrapping
-azd x pack --skip-install
+azd x build --skip-install
 
 # Perform a manual installation
 cp -f bin/* ~/.azd/extensions/microsoft.azd.extensions/

@@ -58,9 +58,6 @@ type ServiceConfig struct {
 	// Environment variables to set for the service
 	Environment osutil.ExpandableMap `yaml:"env,omitempty"`
 
-	// AdditionalProperties captures any unknown YAML fields for extension support
-	AdditionalProperties map[string]interface{} `yaml:",inline"`
-
 	*ext.EventDispatcher[ServiceLifecycleEventArgs] `yaml:"-"`
 
 	// Turns service into a service that is only to be built but not deployed.

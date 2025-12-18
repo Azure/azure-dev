@@ -287,13 +287,7 @@ func NewRootCmd(
 			}
 			return true
 		}).
-		UseMiddlewareWhen("extensions", middleware.NewExtensionsMiddleware, func(descriptor *actions.ActionDescriptor) bool {
-			if onPreview, _ := descriptor.Options.Command.Flags().GetBool("preview"); onPreview {
-				log.Println("Skipping provision hooks due to preview flag.")
-				return false
-			}
-			return true
-		})
+		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 
 	root.
 		Add("package", &actions.ActionDescriptorOptions{

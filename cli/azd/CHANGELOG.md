@@ -1,14 +1,11 @@
 # Release History
 
-## 1.23.0-beta.1 (Unreleased)
-
-### Features Added
-
-### Breaking Changes
+## 1.22.5 (2025-12-18)
 
 ### Bugs Fixed
 
-### Other Changes
+- [[#6398]](https://github.com/Azure/azure-dev/pull/6398) Fix `azd provision --preview` incorrectly prompting to install extensions for custom service targets when the extension is already installed.
+- [[#6408]](https://github.com/Azure/azure-dev/pull/6408) Fix panic during provisioning by reverting custom configuration properties feature introduced in v1.22.4.
 
 ## 1.22.4 (2025-12-17)
 

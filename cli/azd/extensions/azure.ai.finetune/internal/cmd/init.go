@@ -261,6 +261,26 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 		}
 	}
 	if flags.projectResourceId != "" {
+		currentResouceGroupName, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+			EnvName: existingEnv.Name,
+			Key:     "AZURE_RESOURCE_GROUP_NAME",
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current AZURE_RESOURCE_GROUP_NAME from azd environment: %w", err)
+		}
+
+		if currentResouceGroupName.Value != foundryProject.ResourceGroupName {
+			// Set the subscription ID in the environment
+			_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+				EnvName: existingEnv.Name,
+				Key:     "AZURE_RESOURCE_GROUP_NAME",
+				Value:   foundryProject.ResourceGroupName,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("failed to set AZURE_ACCOUNT_NAME in azd environment: %w", err)
+			}
+		}
+
 		currentAccount, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 			EnvName: existingEnv.Name,
 			Key:     "AZURE_ACCOUNT_NAME",

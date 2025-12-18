@@ -7,11 +7,11 @@
       "description": "This extension provides examples of the AZD extension framework.",
       "versions": [
         {
-          "version": "0.1.0-beta.1",
           "capabilities": [
             "custom-commands",
             "lifecycle-events"
           ],
+          "version": "0.1.0-beta.1",
           "usage": "azd demo \u003ccommand\u003e [options]",
           "examples": [
             {
@@ -77,12 +77,12 @@
           }
         },
         {
-          "version": "0.3.0",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
             "mcp-server"
           ],
+          "version": "0.3.0",
           "usage": "azd demo \u003ccommand\u003e [options]",
           "examples": [
             {
@@ -161,10 +161,10 @@
       "description": "This extension provides a set of tools for AZD extension developers to test and debug their extensions.",
       "versions": [
         {
-          "version": "0.4.2",
           "capabilities": [
             "custom-commands"
           ],
+          "version": "0.4.2",
           "usage": "azd x \u003ccommand\u003e [options]",
           "examples": [
             {
@@ -245,10 +245,10 @@
           }
         },
         {
-          "version": "0.5.0",
           "capabilities": [
             "custom-commands"
           ],
+          "version": "0.5.0",
           "usage": "azd x \u003ccommand\u003e [options]",
           "examples": [
             {
@@ -334,10 +334,10 @@
           }
         },
         {
-          "version": "0.5.1",
           "capabilities": [
             "custom-commands"
           ],
+          "version": "0.5.1",
           "usage": "azd x \u003ccommand\u003e [options]",
           "examples": [
             {
@@ -423,10 +423,10 @@
           }
         },
         {
-          "version": "0.6.0",
           "capabilities": [
             "custom-commands"
           ],
+          "version": "0.6.0",
           "usage": "azd x \u003ccommand\u003e [options]",
           "examples": [
             {
@@ -520,10 +520,10 @@
       "description": "This extension configures GitHub Copilot Coding Agent access to Azure",
       "versions": [
         {
-          "version": "0.5.0",
           "capabilities": [
             "custom-commands"
           ],
+          "version": "0.5.0",
           "usage": "azd coding-agent \u003ccommand\u003e [options]",
           "examples": null,
           "artifacts": {
@@ -578,10 +578,10 @@
           }
         },
         {
-          "version": "0.5.1",
           "capabilities": [
             "custom-commands"
           ],
+          "version": "0.5.1",
           "usage": "azd coding-agent \u003ccommand\u003e [options]",
           "examples": null,
           "artifacts": {
@@ -636,10 +636,10 @@
           }
         },
         {
-          "version": "0.5.2",
           "capabilities": [
             "custom-commands"
           ],
+          "version": "0.5.2",
           "usage": "azd coding-agent \u003ccommand\u003e [options]",
           "examples": null,
           "artifacts": {
@@ -702,20 +702,13 @@
       "description": "Extension for the Foundry Agent Service. (Preview)",
       "versions": [
         {
-          "version": "0.0.6",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
             "mcp-server",
             "service-target-provider"
           ],
-          "providers": [
-            {
-              "name": "azure.ai.agent",
-              "type": "service-target",
-              "description": "Deploys agents to the Foundry Agent Service"
-            }
-          ],
+          "version": "0.0.6",
           "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
@@ -776,20 +769,13 @@
           }
         },
         {
-          "version": "0.0.7",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
             "mcp-server",
             "service-target-provider"
           ],
-          "providers": [
-            {
-              "name": "azure.ai.agent",
-              "type": "service-target",
-              "description": "Deploys agents to the Foundry Agent Service."
-            }
-          ],
+          "version": "0.0.7",
           "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
@@ -850,20 +836,13 @@
           }
         },
         {
-          "version": "0.1.0-preview",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
             "mcp-server",
             "service-target-provider"
           ],
-          "providers": [
-            {
-              "name": "azure.ai.agent",
-              "type": "service-target",
-              "description": "Deploys agents to the Foundry Agent Service."
-            }
-          ],
+          "version": "0.1.0-preview",
           "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
@@ -924,20 +903,13 @@
           }
         },
         {
-          "version": "0.1.1-preview",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
             "mcp-server",
             "service-target-provider"
           ],
-          "providers": [
-            {
-              "name": "azure.ai.agent",
-              "type": "service-target",
-              "description": "Deploys agents to the Foundry Agent Service."
-            }
-          ],
+          "version": "0.1.1-preview",
           "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
@@ -998,20 +970,13 @@
           }
         },
         {
-          "version": "0.1.2-preview",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
             "mcp-server",
             "service-target-provider"
           ],
-          "providers": [
-            {
-              "name": "azure.ai.agent",
-              "type": "service-target",
-              "description": "Deploys agents to the Foundry Agent Service"
-            }
-          ],
+          "version": "0.1.2-preview",
           "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
@@ -1068,6 +1033,85 @@
               },
               "entryPoint": "azure-ai-agents-windows-arm64.exe",
               "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.2-preview/azure-ai-agents-windows-arm64.zip"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "azure.ai.finetune",
+      "namespace": "ai.finetuning",
+      "displayName": "Foundry Fine Tuning (Preview)",
+      "description": "Extension for Foundry Fine Tuning. (Preview)",
+      "versions": [
+        {
+          "capabilities": [
+            "custom-commands",
+            "lifecycle-events",
+            "service-target-provider"
+          ],
+          "version": "0.0.2-preview",
+          "usage": "azd ai finetuning \u003ccommand\u003e [options]",
+          "examples": [
+            {
+              "name": "init",
+              "description": "Initialize a new AI fine-tuning project.",
+              "usage": "azd ai finetuning init"
+            },
+            {
+              "name": "deploy",
+              "description": "Deploy AI fine-tuning job to Azure.",
+              "usage": "azd ai finetuning deploy"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "af11047544db004c13d0c68b781fb57edeb6358656b1cf3b4b1bf80e6dffd13b"
+              },
+              "entryPoint": "azure-ai-finetune-darwin-amd64",
+              "url": "https://github.com/achauhan-scc/azure-dev/releases/download/azd-ext-azure-ai-finetune_0.0.2-preview/azure-ai-finetune-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "6aaee61a6eb0eb0bb5b7697dfd3b9e7d10cbab6c34cc64219597532478291d67"
+              },
+              "entryPoint": "azure-ai-finetune-darwin-arm64",
+              "url": "https://github.com/achauhan-scc/azure-dev/releases/download/azd-ext-azure-ai-finetune_0.0.2-preview/azure-ai-finetune-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "5d936e7f00b77bf9e871d00f176cb7dc85109f87b468c433c1627560625cd4d4"
+              },
+              "entryPoint": "azure-ai-finetune-linux-amd64",
+              "url": "https://github.com/achauhan-scc/azure-dev/releases/download/azd-ext-azure-ai-finetune_0.0.2-preview/azure-ai-finetune-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "ebc9e8dfa519d373347600b4cb281e166b74de9ef51f16b9fbe9dbd6055b2d4f"
+              },
+              "entryPoint": "azure-ai-finetune-linux-arm64",
+              "url": "https://github.com/achauhan-scc/azure-dev/releases/download/azd-ext-azure-ai-finetune_0.0.2-preview/azure-ai-finetune-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "8a1a3b1a2bbb76d19157190b6580e1291b2fcda827edc98bb5e91f569b3a1bad"
+              },
+              "entryPoint": "azure-ai-finetune-windows-amd64.exe",
+              "url": "https://github.com/achauhan-scc/azure-dev/releases/download/azd-ext-azure-ai-finetune_0.0.2-preview/azure-ai-finetune-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "f58ff5240fbef59ccd85fa3073c4aed71f171f903304a7b057ff517af5447807"
+              },
+              "entryPoint": "azure-ai-finetune-windows-arm64.exe",
+              "url": "https://github.com/achauhan-scc/azure-dev/releases/download/azd-ext-azure-ai-finetune_0.0.2-preview/azure-ai-finetune-windows-arm64.zip"
             }
           }
         }

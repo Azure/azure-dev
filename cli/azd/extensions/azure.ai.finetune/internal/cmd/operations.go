@@ -11,7 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/braydonk/yaml"
@@ -33,7 +35,7 @@ func newOperationCommand() *cobra.Command {
 	cmd.AddCommand(newOperationSubmitCommand())
 	cmd.AddCommand(newOperationShowCommand())
 	cmd.AddCommand(newOperationListCommand())
-	cmd.AddCommand(newOperationPauseJobCommand())
+	cmd.AddCommand(newOperationDeployModelCommand())
 
 	return cmd
 }
@@ -516,6 +518,114 @@ func newOperationPauseJobCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&jobID, "job-id", "i", "", "Fine-tuning job ID")
+
+	return cmd
+}
+
+func newOperationDeployModelCommand() *cobra.Command {
+	var jobID string
+	var deploymentName string
+	var modelFormat string
+	var sku string
+	var version string
+	var capacity int32
+
+	cmd := &cobra.Command{
+		Use:   "Deploy",
+		Short: "Pause fine tuned",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := azdext.WithAccessToken(cmd.Context())
+			azdClient, err := azdext.NewAzdClient()
+			if err != nil {
+				return fmt.Errorf("failed to create azd client: %w", err)
+			}
+			defer azdClient.Close()
+			// Create Azure credential - TODO
+			envValueMap := make(map[string]string)
+
+			if envResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{}); err == nil {
+				env := envResponse.Environment
+				envValues, err := azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
+					Name: env.Name,
+				})
+				if err != nil {
+					return fmt.Errorf("failed to get environment values: %w", err)
+				}
+
+				for _, value := range envValues.KeyValues {
+					envValueMap[value.Key] = value.Value
+				}
+			}
+
+			azureContext := &azdext.AzureContext{
+				Scope: &azdext.AzureScope{
+					TenantId:       envValueMap["AZURE_TENANT_ID"],
+					SubscriptionId: envValueMap["AZURE_SUBSCRIPTION_ID"],
+					Location:       envValueMap["AZURE_LOCATION"],
+				},
+				Resources: []string{},
+			}
+			openAiClient, err := getOpenAIClientFromAzdClient(ctx, azdClient)
+			if err != nil {
+				return fmt.Errorf("failed to create openai client: %w", err)
+			}
+			fineTunedModel, err := openAiClient.FineTuning.Jobs.Get(ctx, jobID)
+			credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
+				TenantID:                   azureContext.Scope.TenantId,
+				AdditionallyAllowedTenants: []string{"*"},
+			})
+			if err != nil {
+				return fmt.Errorf("failed to create azure credential: %w", err)
+			}
+
+			// Get Azure credentials and endpoint - TODO
+			// You'll need to get these from your environment or config
+			accountName := envValueMap["AZURE_ACCOUNT_NAME"]
+			endpoint := fmt.Sprintf("https://%s.cognitiveservices.azure.com", accountName)
+
+			if endpoint == "" {
+				return fmt.Errorf("AZURE_OPENAI_ENDPOINT environment variable not set")
+			}
+
+			clientFactory, err := armcognitiveservices.NewClientFactory(envValueMap["AZURE_SUBSCRIPTION_ID"], credential, nil)
+			if err != nil {
+				fmt.Printf("failed to create client: %v", err)
+			}
+			poller, err := clientFactory.NewDeploymentsClient().BeginCreateOrUpdate(ctx,
+				envValueMap["AZURE_SUBSCRIPTION_ID"],
+				envValueMap["AZURE_RESOURCE_GROUP_NAME"], deploymentName,
+				armcognitiveservices.Deployment{
+					Properties: &armcognitiveservices.DeploymentProperties{
+						Model: &armcognitiveservices.DeploymentModel{
+							Name:    to.Ptr(fineTunedModel.FineTunedModel),
+							Format:  to.Ptr(modelFormat),
+							Version: to.Ptr(version),
+						},
+					},
+					SKU: &armcognitiveservices.SKU{
+						Name:     to.Ptr(sku),
+						Capacity: to.Ptr[int32](capacity),
+					},
+				}, nil)
+			if err != nil {
+				fmt.Printf("failed to finish the request: %v", err)
+			}
+			res, err := poller.PollUntilDone(ctx, nil)
+			if err != nil {
+				fmt.Printf("failed to pull the result: %v", err)
+			}
+			_ = res
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVarP(&jobID, "job-id", "i", "", "Fine-tuning job ID")
+	cmd.Flags().StringVarP(&deploymentName, "deployment-name", "d", "", "Deployment name")
+	cmd.Flags().StringVarP(&modelFormat, "model-format", "m", "OpenAI", "Model format")
+	cmd.Flags().StringVarP(&sku, "sku", "s", "Standard", "SKU for deployment")
+	cmd.Flags().StringVarP(&version, "version", "v", "1", "Model version")
+	cmd.Flags().Int32VarP(&capacity, "capacity", "c", 1, "Capacity for deployment")
 
 	return cmd
 }

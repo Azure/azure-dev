@@ -18,7 +18,7 @@ export class MyProjectTreeDataProvider implements vscode.TreeDataProvider<AzureD
 
     constructor() {
         this.applicationProvider = new WorkspaceAzureDevApplicationProvider();
-        
+
         // Listen to azure.yaml file changes globally
         this.configFileWatcher = vscode.workspace.createFileSystemWatcher(
             '**/azure.{yml,yaml}',
@@ -68,7 +68,7 @@ export class MyProjectTreeDataProvider implements vscode.TreeDataProvider<AzureD
                 this.showProvider,
                 this.envListProvider
             );
-            
+
             children.push(appModel);
         }
 

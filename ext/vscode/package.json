@@ -169,6 +169,10 @@
                     "name": "My Project"
                 },
                 {
+                    "id": "azure-dev.views.environments",
+                    "name": "Environments"
+                },
+                {
                     "id": "azure-dev.views.helpAndFeedback",
                     "name": "Help and Feedback"
                 }

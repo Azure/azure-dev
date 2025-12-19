@@ -153,6 +153,27 @@
                 "title": "%azure-dev.commands.disableDevCenterMode.title%"
             }
         ],
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "azure-dev-view",
+                    "title": "Azure Developer CLI",
+                    "icon": "resources/icon.png"
+                }
+            ]
+        },
+        "views": {
+            "azure-dev-view": [
+                {
+                    "id": "azure-dev.views.myProject",
+                    "name": "My Project"
+                },
+                {
+                    "id": "azure-dev.views.helpAndFeedback",
+                    "name": "Help and Feedback"
+                }
+            ]
+        },
         "configuration": {
             "title": "Azure Developer CLI",
             "properties": {

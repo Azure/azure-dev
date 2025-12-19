@@ -188,6 +188,7 @@ func getExistingEnvironment(ctx context.Context, flags *initFlags, azdClient *az
 func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.AzdClient) (*azdext.Environment, error) {
 	var foundryProject *FoundryProject
 	var foundryProjectLocation string
+	var tenantId string
 
 	if flags.projectResourceId != "" {
 		var err error
@@ -203,7 +204,7 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 		if err != nil {
 			return nil, fmt.Errorf("failed to get tenant ID: %w", err)
 		}
-
+		tenantId = tenantResponse.TenantId
 		credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
 			TenantID:                   tenantResponse.TenantId,
 			AdditionallyAllowedTenants: []string{"*"},
@@ -284,6 +285,21 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 			if err != nil {
 				return nil, fmt.Errorf("failed to set AZURE_ACCOUNT_NAME in azd environment: %w", err)
 			}
+		}
+
+		currentTenantId, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+			EnvName: existingEnv.Name,
+			Key:     "AZURE_TENANT_ID",
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current AZURE_TENANT_ID from azd environment: %w", err)
+		}
+		if currentTenantId.Value == "" {
+			_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+				EnvName: existingEnv.Name,
+				Key:     "AZURE_TENANT_ID",
+				Value:   tenantId,
+			})
 		}
 
 		currentAccount, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{

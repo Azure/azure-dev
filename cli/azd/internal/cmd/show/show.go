@@ -284,7 +284,8 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 					}
 				} else {
 					log.Printf(
-						"ignoring error determining resource group for environment %s, resource ids will not be available: %v",
+						"ignoring error determining resource group for environment %s, "+
+							"resource ids will not be available: %v",
 						env.Name(),
 						err)
 				}

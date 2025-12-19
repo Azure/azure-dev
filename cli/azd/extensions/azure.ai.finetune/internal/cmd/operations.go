@@ -20,10 +20,10 @@ import (
 	"github.com/fatih/color"
 
 	"github.com/openai/openai-go/v3"
-	"github.com/openai/openai-go/v3/azure"
-	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/shared/constant"
 	"github.com/spf13/cobra"
+
+	JobWrapper "azure.ai.finetune/internal/tools"
 )
 
 func newOperationCommand() *cobra.Command {
@@ -83,6 +83,32 @@ type EnvVariable struct {
 	Value string `yaml:"value"`
 }
 
+// getStatusSymbol returns a symbol representation for job status
+func getStatusSymbol(status string) string {
+	switch status {
+	case "queued":
+		return "⏳"
+	case "running":
+		return "🔄"
+	case "succeeded":
+		return "✅"
+	case "failed":
+		return "💥"
+	case "cancelled":
+		return "❌"
+	default:
+		return "❓"
+	}
+}
+
+// formatFineTunedModel returns the model name or "NA" if blank
+func formatFineTunedModel(model string) string {
+	if model == "" {
+		return "NA"
+	}
+	return model
+}
+
 func newOperationSubmitCommand() *cobra.Command {
 	var filename string
 	cmd := &cobra.Command{
@@ -102,7 +128,7 @@ func newOperationSubmitCommand() *cobra.Command {
 			}
 			defer azdClient.Close()
 
-			client, err := getOpenAIClientFromAzdClient(ctx, azdClient)
+			client, err := JobWrapper.GetOpenAIClientFromAzdClient(ctx, azdClient)
 			if err != nil {
 				return fmt.Errorf("failed to create openai client: %w", err)
 			}
@@ -330,56 +356,101 @@ func newOperationShowCommand() *cobra.Command {
 				return fmt.Errorf("failed to create azd client: %w", err)
 			}
 			defer azdClient.Close()
-			client, err := getOpenAIClientFromAzdClient(ctx, azdClient)
-			if err != nil {
-				return fmt.Errorf("failed to create openai client: %w", err)
-			}
-			fmt.Print("\n")
-			color.Green("\nFine-tuning Job details:%s\n", jobID)
-			fmt.Println(strings.Repeat("-", 120))
-
-			job, err := client.FineTuning.Jobs.Get(ctx, jobID)
-			if err != nil {
-				fmt.Printf("failed to list fine-tuning jobs: %v", err)
-			}
-			fmt.Printf("Job ID: %s\n", job.ID)
-			fmt.Printf("Status: %s\n", job.Status)
-			fmt.Printf("Model: %s\n", job.Model)
-			fmt.Printf("Hyperparameters: %v\n", job.Hyperparameters)
-			fmt.Printf("Fine-tuned Model: %s\n", job.FineTunedModel)
-			fmt.Println()
-			color.Green("List the events")
-			fmt.Println(strings.Repeat("-", 120))
-			page, err := client.FineTuning.Jobs.ListEvents(ctx, job.ID, openai.FineTuningJobListEventsParams{
-				Limit: openai.Int(100),
+			// Show spinner while fetching jobs
+			spinner := ux.NewSpinner(&ux.SpinnerOptions{
+				Text: fmt.Sprintf("Fetching fine-tuning job %s...", jobID),
 			})
-			if err != nil {
-				panic(err)
-			}
-			events := make(map[string]openai.FineTuningJobEvent)
-			for i := len(page.Data) - 1; i >= 0; i-- {
-				event := page.Data[i]
-				if _, exists := events[event.ID]; exists {
-					continue
-				}
-				events[event.ID] = event
-				timestamp := time.Unix(int64(event.CreatedAt), 0)
-				fmt.Printf("- %s: %s\n", timestamp.Format(time.Kitchen), event.Message)
+			if err := spinner.Start(ctx); err != nil {
+				fmt.Printf("Failed to start spinner: %v\n", err)
 			}
 
-			if job.Status == "succeeded" {
-				color.Green("\nList of checkpoints!")
-				fmt.Println(strings.Repeat("-", 120))
-				checkpoints, err := client.FineTuning.Jobs.Checkpoints.List(ctx, job.ID, openai.FineTuningJobCheckpointListParams{
-					Limit: openai.Int(100),
-				})
-				if err != nil {
-					panic(err)
+			// Fetch fine-tuning job details using job wrapper
+			job, err := JobWrapper.GetJobDetails(ctx, azdClient, jobID)
+			_ = spinner.Stop(ctx)
+
+			if err != nil {
+				return fmt.Errorf("failed to get fine-tuning job details: %w", err)
+			}
+
+			// Print job details
+			color.Green("\nFine-Tuning Job Details\n")
+			fmt.Printf("Job ID:              %s\n", job.Id)
+			fmt.Printf("Status:              %s %s\n", getStatusSymbol(job.Status), job.Status)
+			fmt.Printf("Model:               %s\n", job.Model)
+			fmt.Printf("Fine-tuned Model:    %s\n", formatFineTunedModel(job.FineTunedModel))
+			fmt.Printf("Created At:          %s\n", job.CreatedAt)
+			if job.FinishedAt != "" {
+				fmt.Printf("Finished At:         %s\n", job.FinishedAt)
+			}
+			fmt.Printf("Method:              %s\n", job.Method)
+			fmt.Printf("Training File:       %s\n", job.TrainingFile)
+			if job.ValidationFile != "" {
+				fmt.Printf("Validation File:     %s\n", job.ValidationFile)
+			}
+
+			// Print hyperparameters if available
+			if job.Hyperparameters != nil {
+				fmt.Println("\nHyperparameters:")
+				fmt.Printf("  Batch Size:              %d\n", job.Hyperparameters.BatchSize)
+				fmt.Printf("  Learning Rate Multiplier: %f\n", job.Hyperparameters.LearningRateMultiplier)
+				fmt.Printf("  N Epochs:                %d\n", job.Hyperparameters.NEpochs)
+			}
+
+			// Fetch and print events
+			eventsSpinner := ux.NewSpinner(&ux.SpinnerOptions{
+				Text: "Fetching job events...",
+			})
+			if err := eventsSpinner.Start(ctx); err != nil {
+				fmt.Printf("Failed to start spinner: %v\n", err)
+			}
+
+			events, err := JobWrapper.GetJobEvents(ctx, azdClient, jobID)
+			_ = eventsSpinner.Stop(ctx)
+
+			if err != nil {
+				fmt.Printf("Warning: failed to fetch job events: %v\n", err)
+			} else if events != nil && len(events.Data) > 0 {
+				fmt.Println("\nJob Events:")
+				for i, event := range events.Data {
+					fmt.Printf("  %d. [%s] %s - %s\n", i+1, event.Level, event.CreatedAt, event.Message)
 				}
-				for _, checkpint := range checkpoints.Data {
-					fmt.Printf("Checkpoint ID: %s\n", checkpint.ID)
+				if events.HasMore {
+					fmt.Println("  ... (more events available)")
 				}
 			}
+
+			// Fetch and print checkpoints if job is completed
+			if job.Status == "succeeded" {
+				checkpointsSpinner := ux.NewSpinner(&ux.SpinnerOptions{
+					Text: "Fetching job checkpoints...",
+				})
+				if err := checkpointsSpinner.Start(ctx); err != nil {
+					fmt.Printf("Failed to start spinner: %v\n", err)
+				}
+
+				checkpoints, err := JobWrapper.GetJobCheckPoints(ctx, azdClient, jobID)
+				_ = checkpointsSpinner.Stop(ctx)
+
+				if err != nil {
+					fmt.Printf("Warning: failed to fetch job checkpoints: %v\n", err)
+				} else if checkpoints != nil && len(checkpoints.Data) > 0 {
+					fmt.Println("\nJob Checkpoints:")
+					for i, checkpoint := range checkpoints.Data {
+						fmt.Printf("  %d. Checkpoint ID: %s\n", i+1, checkpoint.ID)
+						fmt.Printf("     Checkpoint Name:       %s\n", checkpoint.FineTunedModelCheckpoint)
+						fmt.Printf("     Created On:            %s\n", checkpoint.CreatedAt)
+						fmt.Printf("     Step Number:           %d\n", checkpoint.StepNumber)
+						if checkpoint.Metrics != nil {
+							fmt.Printf("     Full Validation Loss:  %.6f\n", checkpoint.Metrics.FullValidLoss)
+						}
+					}
+					if checkpoints.HasMore {
+						fmt.Println("  ... (more checkpoints available)")
+					}
+				}
+			}
+
+			fmt.Println(strings.Repeat("=", 120))
 
 			return nil
 		},
@@ -403,29 +474,28 @@ func newOperationListCommand() *cobra.Command {
 			}
 			defer azdClient.Close()
 
-			fmt.Println("\nFine-tuning Jobs: Top ", top)
-			fmt.Println(strings.Repeat("-", 120))
-
-			// List fine-tuning jobs
-			client, err := getOpenAIClientFromAzdClient(ctx, azdClient)
-			if err != nil {
-				return fmt.Errorf("failed to create openai client: %w", err)
-			}
-			jobs, err := client.FineTuning.Jobs.List(ctx, openai.FineTuningJobListParams{
-				Limit: openai.Int(int64(top)), // optional pagination control
-				After: openai.String(after),
+			// Show spinner while fetching jobs
+			spinner := ux.NewSpinner(&ux.SpinnerOptions{
+				Text: "Fetching fine-tuning jobs...",
 			})
-			if err != nil {
-				fmt.Printf("failed to list fine-tuning jobs: %v", err)
-			}
-			lineNum := 0
-			for _, job := range jobs.Data {
-				lineNum++
-				fmt.Printf("Job ID: %s | Status: %s | Model: %s | Created: %d\n",
-					job.ID, job.Status, job.Model, job.CreatedAt)
+			if err := spinner.Start(ctx); err != nil {
+				fmt.Printf("Failed to start spinner: %v\n", err)
 			}
 
-			fmt.Printf("\nTotal jobs: %d\n", lineNum)
+			// List fine-tuning jobs using job wrapper
+			jobs, err := JobWrapper.ListJobs(ctx, azdClient, top, after)
+			_ = spinner.Stop(ctx)
+
+			if err != nil {
+				return fmt.Errorf("failed to list fine-tuning jobs: %w", err)
+			}
+
+			for i, job := range jobs {
+				fmt.Printf("\n%d. Job ID: %s | Status: %s %s | Model: %s | Fine-tuned: %s | Created: %s",
+					i+1, job.Id, getStatusSymbol(job.Status), job.Status, job.Model, formatFineTunedModel(job.FineTunedModel), job.CreatedAt)
+			}
+
+			fmt.Printf("\nTotal jobs: %d\n", len(jobs))
 
 			return nil
 		},
@@ -433,61 +503,6 @@ func newOperationListCommand() *cobra.Command {
 	cmd.Flags().IntVarP(&top, "top", "t", 50, "Number of fine-tuning jobs to list")
 	cmd.Flags().StringVarP(&after, "after", "a", "", "Cursor for pagination")
 	return cmd
-}
-
-func getOpenAIClientFromAzdClient(ctx context.Context, azdClient *azdext.AzdClient) (*openai.Client, error) {
-	// Create Azure credential - TODO
-	envValueMap := make(map[string]string)
-
-	if envResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{}); err == nil {
-		env := envResponse.Environment
-		envValues, err := azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
-			Name: env.Name,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to get environment values: %w", err)
-		}
-
-		for _, value := range envValues.KeyValues {
-			envValueMap[value.Key] = value.Value
-		}
-	}
-
-	azureContext := &azdext.AzureContext{
-		Scope: &azdext.AzureScope{
-			TenantId:       envValueMap["AZURE_TENANT_ID"],
-			SubscriptionId: envValueMap["AZURE_SUBSCRIPTION_ID"],
-			Location:       envValueMap["AZURE_LOCATION"],
-		},
-		Resources: []string{},
-	}
-
-	credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
-		TenantID:                   azureContext.Scope.TenantId,
-		AdditionallyAllowedTenants: []string{"*"},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create azure credential: %w", err)
-	}
-
-	// Get Azure credentials and endpoint - TODO
-	// You'll need to get these from your environment or config
-	accountName := envValueMap["AZURE_ACCOUNT_NAME"]
-	endpoint := fmt.Sprintf("https://%s.cognitiveservices.azure.com", accountName)
-
-	if endpoint == "" {
-		return nil, fmt.Errorf("AZURE_OPENAI_ENDPOINT environment variable not set")
-	}
-
-	// Create OpenAI client
-	apiVersion := "2025-04-01-preview"
-	client := openai.NewClient(
-		//azure.WithEndpoint(endpoint, apiVersion),
-		option.WithBaseURL(fmt.Sprintf("%s/openai", endpoint)),
-		option.WithQuery("api-version", apiVersion),
-		azure.WithTokenCredential(credential),
-	)
-	return &client, nil
 }
 
 func newOperationPauseJobCommand() *cobra.Command {
@@ -507,7 +522,7 @@ func newOperationPauseJobCommand() *cobra.Command {
 			fmt.Println(strings.Repeat("-", 120))
 
 			// List fine-tuning jobs
-			client, err := getOpenAIClientFromAzdClient(ctx, azdClient)
+			client, err := JobWrapper.GetOpenAIClientFromAzdClient(ctx, azdClient)
 			if err != nil {
 				return fmt.Errorf("failed to create openai client: %w", err)
 			}
@@ -565,7 +580,7 @@ func newOperationDeployModelCommand() *cobra.Command {
 				},
 				Resources: []string{},
 			}
-			openAiClient, err := getOpenAIClientFromAzdClient(ctx, azdClient)
+			openAiClient, err := JobWrapper.GetOpenAIClientFromAzdClient(ctx, azdClient)
 			if err != nil {
 				return fmt.Errorf("failed to create openai client: %w", err)
 			}

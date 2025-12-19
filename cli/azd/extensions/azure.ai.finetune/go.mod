@@ -3,13 +3,13 @@ module azure.ai.finetune
 go 1.25
 
 require (
-	github.com/Azure/azure-sdk-for-go/sdk/ai/azopenai v0.9.0
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.20.0
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.1
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices v1.8.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.2.0
 	github.com/azure/azure-dev/cli/azd v0.0.0-20251121010829-d5e0a142e813
 	github.com/fatih/color v1.18.0
+	github.com/openai/openai-go/v3 v3.2.0
 	github.com/spf13/cobra v1.10.1
 )
 
@@ -59,7 +59,6 @@ require (
 	github.com/muesli/reflow v0.3.0 // indirect
 	github.com/muesli/termenv v0.16.0 // indirect
 	github.com/nathan-fiscaletti/consolesize-go v0.0.0-20220204101620-317176b6684d // indirect
-	github.com/openai/openai-go/v3 v3.2.0 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect

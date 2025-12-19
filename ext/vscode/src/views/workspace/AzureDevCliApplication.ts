@@ -19,7 +19,8 @@ export class AzureDevCliApplication implements AzureDevCliModel {
         private readonly resource: WorkspaceResource,
         private readonly refresh: RefreshHandler,
         private readonly showProvider: AzureDevShowProvider,
-        private readonly envListProvider: AzureDevEnvListProvider) {
+        private readonly envListProvider: AzureDevEnvListProvider,
+        private readonly includeEnvironments: boolean = true) {
         this.results = new AsyncLazy(() => this.getResults());
     }
 
@@ -30,10 +31,15 @@ export class AzureDevCliApplication implements AzureDevCliModel {
     async getChildren(): Promise<AzureDevCliModel[]> {
         const results = await this.results.getValue();
 
-        return [
-            new AzureDevCliServices(this.context, Object.keys(results?.services ?? {})),
-            new AzureDevCliEnvironments(this.context, this.refresh, this.envListProvider)
+        const children: AzureDevCliModel[] = [
+            new AzureDevCliServices(this.context, Object.keys(results?.services ?? {}))
         ];
+
+        if (this.includeEnvironments) {
+            children.push(new AzureDevCliEnvironments(this.context, this.refresh, this.envListProvider));
+        }
+
+        return children;
     }
 
     async getTreeItem(): Promise<vscode.TreeItem> {

@@ -146,7 +146,7 @@ export class EnvironmentsTreeDataProvider implements vscode.TreeDataProvider<Env
 
     private async getEnvironmentVariables(context: IActionContext, env: EnvironmentItem): Promise<EnvironmentTreeItem[]> {
         const values = await this.envValuesProvider.getEnvValues(context, env.configurationFile, env.name);
-        
+
         return Object.entries(values).map(([key, value]) => {
             const item = new EnvironmentTreeItem(
                 'Detail',

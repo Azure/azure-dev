@@ -66,7 +66,8 @@ export class MyProjectTreeDataProvider implements vscode.TreeDataProvider<AzureD
                 workspaceResource,
                 (model) => this._onDidChangeTreeData.fire(model),
                 this.showProvider,
-                this.envListProvider
+                this.envListProvider,
+                false // Do not include environments
             );
 
             children.push(appModel);

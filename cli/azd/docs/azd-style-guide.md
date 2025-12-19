@@ -165,6 +165,88 @@ move to root directory.
 - **Colorization**: Use consistent colors (green=success, red=error, yellow=warning)
 - **URLs**: Always include relevant portal/console URLs for created resources
 
+### CLI Color Standards
+
+The CLI uses industry-standard [ANSI defined colors](https://en.wikipedia.org/wiki/ANSI_escape_code#Colors) to ensure accessibility and compatibility across all terminals. This allows users to customize color palettes through their IDE or terminal preferences.
+
+**Important**: Colors will appear differently depending on which terminal and theme (dark/light) the customer prefers. Always test output in both dark and light terminal themes.
+
+#### Color Naming Convention
+
+Each color set has a pair: standard and bright variants:
+
+- **ANSI naming**: "[color]" (FG 30-37) and "Bright [color]" (FG 90-97)
+- **PowerShell naming**: "Dark [color]" and "[color]"
+
+Note: There is a discrepancy in the naming convention between ANSI Color coding (which uses "Bright [color]" and "[color]") and PowerShell (which uses "[color]" and "Dark [color]"). Developers working with ANSI Color definitions should use the darker version of the two.
+
+#### ANSI Color Code Reference
+
+**Standard 3/4-bit Colors** (Theme-adaptive - Recommended):
+
+| FG | BG | Name | Foreground Code | Background Code | Standard RGB |
+| --- | --- | --- | --- | --- | --- |
+| 30 | 40 | Black | `\033[30m` | `\033[40m` | 0, 0, 0 |
+| 31 | 41 | Red | `\033[31m` | `\033[41m` | 170, 0, 0 |
+| 32 | 42 | Green | `\033[32m` | `\033[42m` | 0, 170, 0 |
+| 33 | 43 | Yellow | `\033[33m` | `\033[43m` | 170, 85, 0 |
+| 34 | 44 | Blue | `\033[34m` | `\033[44m` | 0, 0, 170 |
+| 35 | 45 | Magenta | `\033[35m` | `\033[45m` | 170, 0, 170 |
+| 36 | 46 | Cyan | `\033[36m` | `\033[46m` | 0, 170, 170 |
+| 37 | 47 | White | `\033[37m` | `\033[47m` | 170, 170, 170 |
+| 90 | 100 | Bright Black (Gray) | `\033[90m` | `\033[100m` | 85, 85, 85 |
+| 91 | 101 | Bright Red | `\033[91m` | `\033[101m` | 255, 85, 85 |
+| 92 | 102 | Bright Green | `\033[92m` | `\033[102m` | 85, 255, 85 |
+| 93 | 103 | Bright Yellow | `\033[93m` | `\033[103m` | 255, 255, 85 |
+| 94 | 104 | Bright Blue | `\033[94m` | `\033[104m` | 85, 85, 255 |
+| 95 | 105 | Bright Magenta | `\033[95m` | `\033[105m` | 255, 85, 255 |
+| 96 | 106 | Bright Cyan | `\033[96m` | `\033[106m` | 85, 255, 255 |
+| 97 | 107 | Bright White | `\033[97m` | `\033[107m` | 255, 255, 255 |
+
+**24-bit RGB Colors** (Exact colors - Use sparingly):
+- Foreground: `\033[38;2;R;G;Bm` where R, G, B are 0-255
+- Background: `\033[48;2;R;G;Bm` where R, G, B are 0-255
+- Example: `\033[38;2;255;0;0m` for exact red foreground
+
+**Note**: `\033` is the escape character in octal notation (can also be written as `\x1b` in hex or `\e` in some languages). Standard RGB values shown are from the VGA specification, but actual rendering varies by terminal and user theme preferences.
+
+**Recommendation**: Use standard 3/4-bit colors (30-37, 90-97) as they adapt to the user's terminal theme preferences (dark/light mode). Only use 24-bit RGB colors when exact color matching is required. For complete ANSI escape code documentation, see [ANSI escape code - Colors](https://en.wikipedia.org/wiki/ANSI_escape_code#Colors).
+
+#### Standard Color Usage
+
+| Purpose | Color | ANSI Code | Usage |
+| --- | --- | --- | --- |
+| **Primary text** | Black (on light) / White (on dark) | Default | Standard command output |
+| **Commands & parameters** | Bright Blue | `\033[94m` | Command names, parameters, system events |
+| **Hyperlinks** | Bright Cyan | `\033[96m` | URLs, portal links |
+| **Success** | Green | `\033[32m` | Success messages, completed operations |
+| **Warning** | Yellow / Bright Yellow | `\033[33m` / `\033[93m` | Warning messages, non-critical issues |
+| **Error** | Red | `\033[31m` | Error messages, failures |
+
+#### Implementation Guidelines
+
+- **Consistency**: Use the same color for the same purpose across all commands
+- **Accessibility**: Never rely solely on color to convey information (use icons/symbols too)
+- **Terminal compatibility**: Colors will render differently across terminals - test in multiple environments
+- **Theme support**: Test in both light and dark terminal themes
+- **Fallback**: Ensure output remains readable if colors are disabled
+
+#### Examples
+
+```go
+// Success message
+fmt.Println("\033[32m(✓) Done:\033[0m Creating resource")
+
+// Warning message
+fmt.Println("\033[33m(!) Warning:\033[0m Configuration may need update")
+
+// Error message
+fmt.Println("\033[31m(✗) Failed:\033[0m Unable to connect")
+
+// Hyperlink (using OSC 8 hyperlinks when supported)
+fmt.Printf("View in portal: \033[96m%s\033[0m\n", url)
+```
+
 ## Testing Standards
 
 ### Test Structure

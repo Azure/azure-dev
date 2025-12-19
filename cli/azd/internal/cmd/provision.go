@@ -20,11 +20,13 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"go.uber.org/multierr"
@@ -117,6 +119,7 @@ type ProvisionAction struct {
 	importManager       *project.ImportManager
 	alphaFeatureManager *alpha.FeatureManager
 	portalUrlBase       string
+	azdCtx              *azdcontext.AzdContext
 }
 
 func NewProvisionAction(
@@ -135,6 +138,7 @@ func NewProvisionAction(
 	subManager *account.SubscriptionsManager,
 	alphaFeatureManager *alpha.FeatureManager,
 	cloud *cloud.Cloud,
+	azdCtx *azdcontext.AzdContext,
 ) actions.Action {
 	return &ProvisionAction{
 		args:                args,
@@ -152,6 +156,7 @@ func NewProvisionAction(
 		importManager:       importManager,
 		alphaFeatureManager: alphaFeatureManager,
 		portalUrlBase:       cloud.PortalUrlBase,
+		azdCtx:              azdCtx,
 	}
 }
 
@@ -413,6 +418,12 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 					multierr.Combine(err, err),
 				)
 			}
+		}
+
+		// Invalidate cache after successful provisioning so next azd show will refresh
+		stateCacheManager := state.NewStateCacheManager(p.azdCtx.EnvironmentDirectory())
+		if err := stateCacheManager.Invalidate(ctx, p.env.Name()); err != nil {
+			log.Printf("warning: failed to invalidate state cache: %v", err)
 		}
 	}
 

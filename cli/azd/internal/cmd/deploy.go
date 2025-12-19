@@ -28,6 +28,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -360,6 +361,12 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		if fmtErr := da.formatter.Format(deployResult, da.writer, nil); fmtErr != nil {
 			return nil, fmt.Errorf("deploy result could not be displayed: %w", fmtErr)
 		}
+	}
+
+	// Invalidate cache after successful deploy so azd show will refresh
+	stateCacheManager := state.NewStateCacheManager(da.azdCtx.EnvironmentDirectory())
+	if err := stateCacheManager.Invalidate(ctx, da.env.Name()); err != nil {
+		log.Printf("warning: failed to invalidate state cache: %v", err)
 	}
 
 	return &actions.ActionResult{

@@ -63,6 +63,7 @@ AZURESUBSCRIPTION
 azuretools
 azureutil
 azureyaml
+AZURETENANT
 Backticks
 bicepparam
 bicept
@@ -71,12 +72,14 @@ BOOLSLICE
 buildargs
 BUILDID
 BUILDNUMBER
+Buildpacks
 buildpacks
 byoi
 callstack
 cflags
 charmbracelet
 circleci
+CLOUDSHELL
 cmdrecord
 cmdsubst
 Cobo
@@ -259,11 +262,13 @@ teamcity
 testdata
 tmpl
 toplevel
+APPHOST
 traceparent
 tracesdk
 tracestate
 tracetest
 trafficmanager
+USERPROFILE
 Truef
 typeflag
 unhide
@@ -282,6 +287,7 @@ vsrpc
 vuejs
 webappignore
 webfrontend
+westus
 westus2
 wireinject
 yacspin

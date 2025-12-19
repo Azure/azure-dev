@@ -1,17 +1,24 @@
 import: ../../../.vscode/cspell.global.yaml
 words:
+  - ACCESSTOKEN
+  - APPHOST
+  - AZURESUBSCRIPTION
   - azcloud
   - azdext
   - azurefd
   - azcontainerregistry
   - backoff
+  - Buildpacks
   - Canonicalize
   - Chans
   - chinacloudapi
+  - CLOUDSHELL
   - Codespace
   - Codespaces
   - customtype
+  - devcenter
   - devcontainers
+  - eastus
   - errgroup
   - extendee
   - eiannone
@@ -37,6 +44,7 @@ words:
   - unmarshals
   - unmarshaling
   - unsetting
+  - USERPROFILE
   - usgovcloudapi
   - jdbc
   - springframework
@@ -45,6 +53,7 @@ words:
   - jsonschema
   - rustc
   - figspec
+  - westus
 languageSettings:
   - languageId: go
     ignoreRegExpList:
@@ -243,6 +252,17 @@ overrides:
       - userosscache
       - docstates
       - dylib
+  - filename: "**/environment-variables.md"
+    words:
+      - USERPROFILE
+      - eastus
+      - westus
+      - devcenter
+      - Buildpacks
+      - ACCESSTOKEN
+      - AZURESUBSCRIPTION
+      - CLOUDSHELL
+      - APPHOST
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

@@ -12,4 +12,5 @@ export function registerViews(context: vscode.ExtensionContext): void {
     context.subscriptions.push(
         vscode.window.registerTreeDataProvider('azure-dev.views.myProject', myProjectProvider)
     );
+    context.subscriptions.push(myProjectProvider);
 }

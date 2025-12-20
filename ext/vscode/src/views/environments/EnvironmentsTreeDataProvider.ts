@@ -6,21 +6,26 @@ import { WorkspaceAzureDevApplicationProvider } from '../../services/AzureDevApp
 import { WorkspaceAzureDevEnvListProvider } from '../../services/AzureDevEnvListProvider';
 import { WorkspaceAzureDevEnvValuesProvider } from '../../services/AzureDevEnvValuesProvider';
 
-interface EnvironmentItem {
+export interface EnvironmentItem {
     name: string;
     isDefault: boolean;
     dotEnvPath?: string;
     configurationFile: vscode.Uri;
 }
 
-type TreeItemType = 'Environment' | 'Group' | 'Detail';
+export interface EnvironmentVariableItem extends EnvironmentItem {
+    key: string;
+    value: string;
+}
 
-class EnvironmentTreeItem extends vscode.TreeItem {
+type TreeItemType = 'Environment' | 'Group' | 'Detail' | 'Variable';
+
+export class EnvironmentTreeItem extends vscode.TreeItem {
     constructor(
         public readonly type: TreeItemType,
         label: string,
         collapsibleState: vscode.TreeItemCollapsibleState,
-        public readonly data?: EnvironmentItem
+        public readonly data?: EnvironmentItem | EnvironmentVariableItem
     ) {
         super(label, collapsibleState);
     }
@@ -34,10 +39,17 @@ export class EnvironmentsTreeDataProvider implements vscode.TreeDataProvider<Env
     private readonly envListProvider = new WorkspaceAzureDevEnvListProvider();
     private readonly envValuesProvider = new WorkspaceAzureDevEnvValuesProvider();
     private readonly configFileWatcher: vscode.FileSystemWatcher;
+    private readonly envDirWatcher: vscode.FileSystemWatcher;
+    private readonly visibleEnvVars = new Set<string>();
 
     constructor() {
         this.configFileWatcher = vscode.workspace.createFileSystemWatcher(
             '**/azure.{yml,yaml}',
+            false, false, false
+        );
+
+        this.envDirWatcher = vscode.workspace.createFileSystemWatcher(
+            '**/.azure/**',
             false, false, false
         );
 
@@ -48,10 +60,32 @@ export class EnvironmentsTreeDataProvider implements vscode.TreeDataProvider<Env
         this.configFileWatcher.onDidCreate(onFileChange);
         this.configFileWatcher.onDidChange(onFileChange);
         this.configFileWatcher.onDidDelete(onFileChange);
+
+        this.envDirWatcher.onDidCreate(onFileChange);
+        this.envDirWatcher.onDidChange(onFileChange);
+        this.envDirWatcher.onDidDelete(onFileChange);
     }
 
     refresh(): void {
         this._onDidChangeTreeData.fire();
+    }
+
+    toggleVisibility(item: EnvironmentTreeItem): void {
+        if (item.type === 'Variable' && item.data) {
+            const data = item.data as EnvironmentVariableItem;
+            const id = `${data.name}/${data.key}`;
+            if (this.visibleEnvVars.has(id)) {
+                this.visibleEnvVars.delete(id);
+            } else {
+                this.visibleEnvVars.add(id);
+            }
+
+            const isVisible = this.visibleEnvVars.has(id);
+            item.label = isVisible ? `${data.key}=${data.value}` : `${data.key}=Hidden value. Click to view.`;
+            item.tooltip = isVisible ? `${data.key}=${data.value}` : 'Click to view value';
+
+            this._onDidChangeTreeData.fire(item);
+        }
     }
 
     getTreeItem(element: EnvironmentTreeItem): vscode.TreeItem {
@@ -99,11 +133,20 @@ export class EnvironmentsTreeDataProvider implements vscode.TreeDataProvider<Env
                 } as EnvironmentItem
             );
             item.contextValue = 'ms-azuretools.azure-dev.views.environments.environment';
-            item.iconPath = new vscode.ThemeIcon('cloud');
+
             if (env.IsDefault) {
-                item.description = '(default)';
+                item.description = vscode.l10n.t('(Current)');
                 item.contextValue += ';default';
+                item.iconPath = new vscode.ThemeIcon('pass', new vscode.ThemeColor('testing.iconPassed'));
+            } else {
+                item.iconPath = new vscode.ThemeIcon('circle-large-outline');
+                item.command = {
+                    command: 'azure-dev.commands.cli.env-select',
+                    title: vscode.l10n.t('Select Environment'),
+                    arguments: [item]
+                };
             }
+
             return item;
         });
     }
@@ -123,24 +166,6 @@ export class EnvironmentsTreeDataProvider implements vscode.TreeDataProvider<Env
         variablesGroup.iconPath = new vscode.ThemeIcon('symbol-variable');
         items.push(variablesGroup);
 
-        // Add other details if needed, e.g. location, subscription if available from other commands
-        // For now, maybe just show the .env path if it exists
-        if (env.dotEnvPath) {
-            const dotEnvItem = new EnvironmentTreeItem(
-                'Detail',
-                `.env: ${path.basename(env.dotEnvPath)}`,
-                vscode.TreeItemCollapsibleState.None
-            );
-            dotEnvItem.tooltip = env.dotEnvPath;
-            dotEnvItem.iconPath = new vscode.ThemeIcon('file');
-            dotEnvItem.command = {
-                command: 'vscode.open',
-                title: 'Open .env file',
-                arguments: [vscode.Uri.file(env.dotEnvPath)]
-            };
-            items.push(dotEnvItem);
-        }
-
         return items;
     }
 
@@ -148,19 +173,32 @@ export class EnvironmentsTreeDataProvider implements vscode.TreeDataProvider<Env
         const values = await this.envValuesProvider.getEnvValues(context, env.configurationFile, env.name);
 
         return Object.entries(values).map(([key, value]) => {
+            const id = `${env.name}/${key}`;
+            const isVisible = this.visibleEnvVars.has(id);
+            const label = isVisible ? `${key}=${value}` : `${key}=Hidden value. Click to view.`;
+
             const item = new EnvironmentTreeItem(
-                'Detail',
-                `${key}=${value}`, // Be careful with secrets, maybe mask them?
-                vscode.TreeItemCollapsibleState.None
+                'Variable',
+                label,
+                vscode.TreeItemCollapsibleState.None,
+                { ...env, key, value } as EnvironmentVariableItem
             );
-            item.tooltip = `${key}=${value}`;
+
+            item.tooltip = isVisible ? `${key}=${value}` : 'Click to view value';
             item.iconPath = new vscode.ThemeIcon('key');
+            item.command = {
+                command: 'azure-dev.views.environments.toggleVisibility',
+                title: 'Toggle Visibility',
+                arguments: [item]
+            };
+
             return item;
         });
     }
 
     dispose(): void {
         this.configFileWatcher.dispose();
+        this.envDirWatcher.dispose();
         this._onDidChangeTreeData.dispose();
     }
 }

@@ -61,6 +61,18 @@ export enum TelemetryId {
     // Reported when 'env list' CLI command is invoked.
     EnvListCli = 'azure-dev.commands.cli.env-list.task',
 
+    // Reported when 'extension install' CLI command is invoked.
+    ExtensionInstallCli = 'azure-dev.commands.cli.extension-install.task',
+
+    // Reported when 'extension uninstall' CLI command is invoked.
+    ExtensionUninstallCli = 'azure-dev.commands.cli.extension-uninstall.task',
+
+    // Reported when 'extension upgrade' CLI command is invoked.
+    ExtensionUpgradeCli = 'azure-dev.commands.cli.extension-upgrade.task',
+
+    // Reported when 'extension source add' CLI command is invoked.
+    ExtensionSourceAddCli = 'azure-dev.commands.cli.extension-source-add.task',
+
     // Reported when the product evaluates whether to prompt the user for a survey.
     // We capture
     // - whether the user was already offered the survey,
@@ -74,6 +86,7 @@ export enum TelemetryId {
 
     WorkspaceViewApplicationResolve = 'azure-dev.views.workspace.application.resolve',
     WorkspaceViewEnvironmentResolve = 'azure-dev.views.workspace.environment.resolve',
+    WorkspaceViewExtensionResolve = 'azure-dev.views.workspace.extension.resolve',
 
     // Reported when diagnostics are provided on an azure.yaml document
     AzureYamlProvideDiagnostics = 'azure-dev.azureYaml.provideDiagnostics',

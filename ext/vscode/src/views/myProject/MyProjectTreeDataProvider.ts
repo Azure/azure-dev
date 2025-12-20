@@ -5,6 +5,7 @@ import { AzureDevApplicationProvider, WorkspaceAzureDevApplicationProvider } fro
 import { AzureDevCliApplication } from '../workspace/AzureDevCliApplication';
 import { WorkspaceAzureDevShowProvider } from '../../services/AzureDevShowProvider';
 import { WorkspaceAzureDevEnvListProvider } from '../../services/AzureDevEnvListProvider';
+import { WorkspaceAzureDevEnvValuesProvider } from '../../services/AzureDevEnvValuesProvider';
 import { WorkspaceResource } from '@microsoft/vscode-azureresources-api';
 
 export class MyProjectTreeDataProvider implements vscode.TreeDataProvider<AzureDevCliModel> {
@@ -14,6 +15,7 @@ export class MyProjectTreeDataProvider implements vscode.TreeDataProvider<AzureD
     private readonly applicationProvider: AzureDevApplicationProvider;
     private readonly showProvider = new WorkspaceAzureDevShowProvider();
     private readonly envListProvider = new WorkspaceAzureDevEnvListProvider();
+    private readonly envValuesProvider = new WorkspaceAzureDevEnvValuesProvider();
     private readonly configFileWatcher: vscode.FileSystemWatcher;
 
     constructor() {
@@ -63,12 +65,15 @@ export class MyProjectTreeDataProvider implements vscode.TreeDataProvider<AzureD
             };
 
             const appModel = new AzureDevCliApplication(
-                workspaceResource,
-                (model) => this._onDidChangeTreeData.fire(model),
-                this.showProvider,
-                this.envListProvider,
-                false // Do not include environments
-            );
+                    workspaceResource,
+                    (model: AzureDevCliModel) => this._onDidChangeTreeData.fire(model),
+                    this.showProvider,
+                    this.envListProvider,
+                    this.envValuesProvider,
+                    new Set<string>(),
+                    () => {},
+                    false // Do not include environments
+                ); // Fixed arguments
 
             children.push(appModel);
         }

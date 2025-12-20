@@ -8,7 +8,7 @@ import { getAzDevTerminalTitle, getWorkingFolder } from './cmdUtil';
 import { TelemetryId } from '../telemetry/telemetryId';
 import { createAzureDevCli } from '../utils/azureDevCli';
 import { executeAsTask } from '../utils/executeAsTask';
-import { isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
+import { isAzureDevCliModel, isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
 import { AzureDevCliApplication } from '../views/workspace/AzureDevCliApplication';
 
 /**
@@ -19,7 +19,14 @@ export type PipelineConfigCommandArguments = [ vscode.Uri | undefined, boolean? 
 export async function pipelineConfig(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel, fromAgent: boolean = false): Promise<void> {
     context.telemetry.properties.fromAgent = fromAgent.toString();
 
-    const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliApplication>().context.configurationFile : selectedItem;
+    let selectedFile: vscode.Uri | undefined;
+    if (isTreeViewModel(selectedItem)) {
+        selectedFile = selectedItem.unwrap<AzureDevCliApplication>().context.configurationFile;
+    } else if (isAzureDevCliModel(selectedItem)) {
+        selectedFile = selectedItem.context.configurationFile;
+    } else {
+        selectedFile = selectedItem as vscode.Uri;
+    }
     const workingFolder = await getWorkingFolder(context, selectedFile);
 
     const azureCli = await createAzureDevCli(context);

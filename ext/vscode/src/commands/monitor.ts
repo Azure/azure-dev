@@ -6,7 +6,7 @@ import { composeArgs, withArg } from '@microsoft/vscode-processutils';
 import * as vscode from 'vscode';
 import { createAzureDevCli } from '../utils/azureDevCli';
 import { execAsync } from '../utils/execAsync';
-import { isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
+import { isAzureDevCliModel, isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
 import { AzureDevCliApplication } from '../views/workspace/AzureDevCliApplication';
 import { getWorkingFolder } from './cmdUtil';
 
@@ -27,7 +27,14 @@ const MonitorChoices: IAzureQuickPickItem<string>[] = [
 ];
 
 export async function monitor(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {
-    const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliApplication>().context.configurationFile : selectedItem;
+    let selectedFile: vscode.Uri | undefined;
+    if (isTreeViewModel(selectedItem)) {
+        selectedFile = selectedItem.unwrap<AzureDevCliApplication>().context.configurationFile;
+    } else if (isAzureDevCliModel(selectedItem)) {
+        selectedFile = selectedItem.context.configurationFile;
+    } else {
+        selectedFile = selectedItem as vscode.Uri;
+    }
     const workingFolder = await getWorkingFolder(context, selectedFile);
 
     const monitorChoices = await context.ui.showQuickPick(MonitorChoices, {

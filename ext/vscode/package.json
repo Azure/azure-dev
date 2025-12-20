@@ -129,6 +129,22 @@
             },
             {
                 "category": "%azure-dev.commands_category%",
+                "command": "azure-dev.commands.cli.extension-install",
+                "title": "Install Extension",
+                "icon": "$(add)"
+            },
+            {
+                "category": "%azure-dev.commands_category%",
+                "command": "azure-dev.commands.cli.extension-uninstall",
+                "title": "Uninstall Extension"
+            },
+            {
+                "category": "%azure-dev.commands_category%",
+                "command": "azure-dev.commands.cli.extension-upgrade",
+                "title": "Upgrade Extension"
+            },
+            {
+                "category": "%azure-dev.commands_category%",
                 "command": "azure-dev.commands.getDotEnvFilePath",
                 "title": "%azure-dev.commands.getDotEnvFilePath.title%"
             },
@@ -151,6 +167,19 @@
                 "category": "%azure-dev.commands_category%",
                 "command": "azure-dev.commands.disableDevCenterMode",
                 "title": "%azure-dev.commands.disableDevCenterMode.title%"
+            },
+            {
+                "command": "azure-dev.views.environments.toggleVisibility",
+                "title": "Toggle Visibility"
+            },
+            {
+                "command": "azure-dev.commands.workspace.toggleVisibility",
+                "title": "Toggle Visibility"
+            },
+            {
+                "command": "azure-dev.views.environments.viewDotEnv",
+                "title": "View .env file",
+                "icon": "$(go-to-file)"
             }
         ],
         "viewsContainers": {
@@ -171,6 +200,10 @@
                 {
                     "id": "azure-dev.views.environments",
                     "name": "Environments"
+                },
+                {
+                    "id": "azure-dev.views.extensions",
+                    "name": "Extensions"
                 },
                 {
                     "id": "azure-dev.views.helpAndFeedback",
@@ -194,6 +227,18 @@
             }
         },
         "menus": {
+            "view/title": [
+                {
+                    "command": "azure-dev.commands.cli.env-new",
+                    "when": "view == azure-dev.views.environments",
+                    "group": "navigation"
+                },
+                {
+                    "command": "azure-dev.commands.cli.extension-install",
+                    "when": "view == azure-dev.views.extensions",
+                    "group": "navigation"
+                }
+            ],
             "commandPalette": [
                 {
                     "command": "azure-dev.commands.cli.initFromPom",
@@ -342,6 +387,11 @@
                     "group": "20env@20"
                 },
                 {
+                    "command": "azure-dev.commands.cli.env-select",
+                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.environments.environment(?!.*default)/i",
+                    "group": "10env@10"
+                },
+                {
                     "command": "azure-dev.commands.cli.env-refresh",
                     "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.environment(?!s)/i",
                     "group": "20env@30"
@@ -390,6 +440,21 @@
                     "command": "azure-dev.commands.azureWorkspace.revealAzureResourceGroup",
                     "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.environment(?!s)/i",
                     "group": "50navigation@20"
+                },
+                {
+                    "command": "azure-dev.views.environments.viewDotEnv",
+                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.environments.environment/i",
+                    "group": "inline"
+                },
+                {
+                    "command": "azure-dev.commands.cli.extension-upgrade",
+                    "when": "view == azure-dev.views.extensions && viewItem == ms-azuretools.azure-dev.views.extensions.extension",
+                    "group": "10extension@10"
+                },
+                {
+                    "command": "azure-dev.commands.cli.extension-uninstall",
+                    "when": "view == azure-dev.views.extensions && viewItem == ms-azuretools.azure-dev.views.extensions.extension",
+                    "group": "10extension@20"
                 }
             ]
         },

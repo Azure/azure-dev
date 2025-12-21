@@ -21,14 +21,14 @@ export class HelpAndFeedbackTreeDataProvider implements vscode.TreeDataProvider<
         };
         items.push(documentation);
 
-        const resources = new vscode.TreeItem('Resources', vscode.TreeItemCollapsibleState.None);
-        resources.iconPath = new vscode.ThemeIcon('library');
-        resources.command = {
+        const blogPosts = new vscode.TreeItem('AZD Blog Posts', vscode.TreeItemCollapsibleState.None);
+        blogPosts.iconPath = new vscode.ThemeIcon('library');
+        blogPosts.command = {
             command: 'vscode.open',
-            title: 'Open Resources',
-            arguments: [vscode.Uri.parse('https://azure.microsoft.com/products/developer-cli/')]
+            title: 'Open AZD Blog Posts',
+            arguments: [vscode.Uri.parse('https://devblogs.microsoft.com/azure-sdk/tag/azure-developer-cli/')]
         };
-        items.push(resources);
+        items.push(blogPosts);
 
         const getStarted = new vscode.TreeItem('Get Started', vscode.TreeItemCollapsibleState.None);
         getStarted.iconPath = new vscode.ThemeIcon('rocket');

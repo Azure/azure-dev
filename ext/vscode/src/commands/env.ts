@@ -13,7 +13,6 @@ import { isAzureDevCliModel, isTreeViewModel, TreeViewModel } from '../utils/isT
 import { quickPickWorkspaceFolder } from '../utils/quickPickWorkspaceFolder';
 import { AzureDevCliEnvironments } from '../views/workspace/AzureDevCliEnvironments';
 import { AzureDevCliEnvironment } from '../views/workspace/AzureDevCliEnvironment';
-import { AzureDevCliModel } from '../views/workspace/AzureDevCliModel';
 import { EnvironmentItem, EnvironmentTreeItem } from '../views/environments/EnvironmentsTreeDataProvider';
 import { EnvironmentInfo, getAzDevTerminalTitle, getEnvironments } from './cmdUtil';
 

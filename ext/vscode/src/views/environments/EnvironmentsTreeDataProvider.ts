@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
 import { callWithTelemetryAndErrorHandling, IActionContext } from '@microsoft/vscode-azext-utils';
 import { TelemetryId } from '../../telemetry/telemetryId';
 import { WorkspaceAzureDevApplicationProvider } from '../../services/AzureDevApplicationProvider';

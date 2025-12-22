@@ -29,11 +29,8 @@ export class PickResourceStep extends SkipIfOneStep<RevealResourceWizardContext,
             context.azureResourceId = await this.promptInternal(context);
             console.log('[PickResourceStep] Selected resource:', context.azureResourceId);
         } catch (error) {
-            // Ensure error is shown to user
+            // Log the error and let the wizard framework handle user-facing error display
             console.error('[PickResourceStep] Error during prompt:', error);
-            if (error instanceof Error) {
-                await vscode.window.showErrorMessage(error.message);
-            }
             throw error;
         }
     }

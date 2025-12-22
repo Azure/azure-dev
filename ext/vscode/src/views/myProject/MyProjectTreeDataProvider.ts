@@ -73,7 +73,7 @@ export class MyProjectTreeDataProvider implements vscode.TreeDataProvider<AzureD
                     new Set<string>(),
                     () => {},
                     false // Do not include environments
-                ); // Fixed arguments
+                );
 
             children.push(appModel);
         }

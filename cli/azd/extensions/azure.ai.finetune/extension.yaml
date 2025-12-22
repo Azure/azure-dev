@@ -9,6 +9,10 @@ capabilities:
     - custom-commands
     - lifecycle-events
     - service-target-provider
+providers:
+  - name: azure.ai.finetune
+    type: service-target
+    description: Deploys fine-tuning jobs to Azure Foundry
 examples:
     - name: init
       description: Initialize a new AI fine-tuning project.

@@ -28,16 +28,20 @@ export class RevealStep extends AzureWizardExecuteStep<RevealResourceWizardConte
         console.log('[RevealStep] View focused');
 
         // Extract provider from resource ID to determine which extension to activate
-        const providerMatch = azureResourceId.match(/\/providers\/([^\/]+)/i);
+        const providerMatch = azureResourceId.match(/\/providers\/([^/]+)/i);
         const provider = providerMatch ? providerMatch[1] : null;
         console.log('[RevealStep] Resource provider:', provider);
 
         // Activate the appropriate Azure extension based on provider
         if (provider) {
             const extensionMap: Record<string, string> = {
+                // eslint-disable-next-line @typescript-eslint/naming-convention
                 'Microsoft.App': 'ms-azuretools.vscode-azurecontainerapps',
+                // eslint-disable-next-line @typescript-eslint/naming-convention
                 'Microsoft.Web': 'ms-azuretools.vscode-azurefunctions',
+                // eslint-disable-next-line @typescript-eslint/naming-convention
                 'Microsoft.Storage': 'ms-azuretools.vscode-azurestorage',
+                // eslint-disable-next-line @typescript-eslint/naming-convention
                 'Microsoft.DocumentDB': 'ms-azuretools.azure-cosmos',
             };
 
@@ -67,11 +71,11 @@ export class RevealStep extends AzureWizardExecuteStep<RevealResourceWizardConte
                 console.log('[RevealStep] Refresh command not available or failed:', refreshError);
             }
 
-            // Extract subscription and resource group from the resource ID
-            const resourceIdParts = azureResourceId.match(/\/subscriptions\/([^\/]+)\/resourceGroups\/([^\/]+)/i);
-            if (resourceIdParts) {
-                const subscriptionId = resourceIdParts[1];
-                const resourceGroupName = resourceIdParts[2];
+            // Extract subscription and resource group from the resource ID to reveal the RG first
+            const resourceIdMatch = azureResourceId.match(/\/subscriptions\/([^/]+)\/resourceGroups\/([^/]+)/i);
+            if (resourceIdMatch) {
+                const subscriptionId = resourceIdMatch[1];
+                const resourceGroupName = resourceIdMatch[2];
                 console.log('[RevealStep] Subscription:', subscriptionId, 'Resource Group:', resourceGroupName);
 
                 // Try revealing the resource group first to ensure the tree is expanded
@@ -89,13 +93,17 @@ export class RevealStep extends AzureWizardExecuteStep<RevealResourceWizardConte
             const result = await api.resources.revealAzureResource(azureResourceId, { select: true, focus: true, expand: true });
             console.log('[RevealStep] revealAzureResource returned:', result);
 
+            // Note: The focusGroup command to trigger "Focused Resources" view requires internal
+            // tree item context that's not accessible through the public API. Users can manually
+            // click the zoom-in icon on the resource group if they want the focused view.
+
             // Try a second time if needed
             if (result === undefined) {
                 console.log('[RevealStep] First reveal returned undefined, trying again after delay...');
                 await new Promise(resolve => setTimeout(resolve, 1000));
                 const secondResult = await api.resources.revealAzureResource(azureResourceId, { select: true, focus: true, expand: true });
                 console.log('[RevealStep] Second attempt returned:', secondResult);
-                
+
                 // Try using the openInPortal command as an alternative
                 if (secondResult === undefined) {
                     console.log('[RevealStep] Reveal API not working as expected, trying alternative approach');

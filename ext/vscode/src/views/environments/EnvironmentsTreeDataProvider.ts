@@ -140,11 +140,6 @@ export class EnvironmentsTreeDataProvider implements vscode.TreeDataProvider<Env
                 item.iconPath = new vscode.ThemeIcon('pass', new vscode.ThemeColor('testing.iconPassed'));
             } else {
                 item.iconPath = new vscode.ThemeIcon('circle-large-outline');
-                item.command = {
-                    command: 'azure-dev.commands.cli.env-select',
-                    title: vscode.l10n.t('Select Environment'),
-                    arguments: [item]
-                };
             }
 
             return item;

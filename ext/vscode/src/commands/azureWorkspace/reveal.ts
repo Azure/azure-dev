@@ -7,6 +7,7 @@ import { isTreeViewModel, TreeViewModel } from '../../utils/isTreeViewModel';
 import { AzureDevCliApplication } from '../../views/workspace/AzureDevCliApplication';
 import { AzureDevCliEnvironment } from '../../views/workspace/AzureDevCliEnvironment';
 import { AzureDevCliService } from '../../views/workspace/AzureDevCliService';
+import { EnvironmentItem, EnvironmentTreeItem } from '../../views/environments/EnvironmentsTreeDataProvider';
 import { PickEnvironmentStep } from './wizard/PickEnvironmentStep';
 import { PickResourceGroupStep, RevealResourceGroupWizardContext } from './wizard/PickResourceGroupStep';
 import { PickResourceStep, RevealResourceWizardContext } from './wizard/PickResourceStep';
@@ -50,19 +51,33 @@ export async function revealAzureResource(context: IActionContext, treeItem?: Tr
     console.log('[revealAzureResource] wizard.execute() completed');
 }
 
-export async function revealAzureResourceGroup(context: IActionContext, treeItem?: TreeViewModel | AzureDevCliApplication | AzureDevCliEnvironment): Promise<void> {
+export async function revealAzureResourceGroup(context: IActionContext, treeItem?: TreeViewModel | AzureDevCliApplication | AzureDevCliEnvironment | EnvironmentTreeItem): Promise<void> {
     if (!treeItem) {
         throw new Error(vscode.l10n.t('This command must be run from an application or environment item in the Azure Developer CLI view'));
     }
 
-    const selectedItem = isTreeViewModel(treeItem) ? treeItem.unwrap<AzureDevCliApplication | AzureDevCliEnvironment>() : treeItem;
-    context.telemetry.properties.revealSource = selectedItem.constructor.name;
+    let configurationFile: vscode.Uri;
+    let environmentName: string | undefined;
+
+    if (treeItem instanceof EnvironmentTreeItem) {
+        const data = treeItem.data as EnvironmentItem;
+        configurationFile = data.configurationFile;
+        environmentName = data.name;
+    } else {
+        const selectedItem = isTreeViewModel(treeItem) ? treeItem.unwrap<AzureDevCliApplication | AzureDevCliEnvironment>() : treeItem;
+        context.telemetry.properties.revealSource = selectedItem.constructor.name;
+
+        configurationFile = selectedItem.context.configurationFile;
+        if (selectedItem instanceof AzureDevCliEnvironment) {
+            environmentName = selectedItem.name;
+        }
+    }
 
     const wizardContext = context as RevealResourceGroupWizardContext;
-    wizardContext.configurationFile = selectedItem.context.configurationFile;
+    wizardContext.configurationFile = configurationFile;
 
-    if (selectedItem instanceof AzureDevCliEnvironment) {
-        wizardContext.environment = selectedItem.name;
+    if (environmentName) {
+        wizardContext.environment = environmentName;
     }
 
     const wizard = new AzureWizard(context,

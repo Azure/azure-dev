@@ -22,6 +22,11 @@ export function registerViews(context: vscode.ExtensionContext): void {
         vscode.window.registerTreeDataProvider('azure-dev.views.environments', environmentsProvider)
     );
     context.subscriptions.push(environmentsProvider);
+    context.subscriptions.push(
+        vscode.commands.registerCommand('azure-dev.views.environments.refresh', () => {
+            environmentsProvider.refresh();
+        })
+    );
 
     const extensionsProvider = new ExtensionsTreeDataProvider();
     context.subscriptions.push(

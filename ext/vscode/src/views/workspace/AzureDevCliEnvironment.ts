@@ -41,11 +41,6 @@ export class AzureDevCliEnvironment implements AzureDevCliModel {
             treeItem.iconPath = new vscode.ThemeIcon('pass', new vscode.ThemeColor('testing.iconPassed'));
         } else {
             treeItem.iconPath = new vscode.ThemeIcon('circle-large-outline');
-            treeItem.command = {
-                command: 'azure-dev.commands.cli.env-select',
-                title: vscode.l10n.t('Select Environment'),
-                arguments: [this]
-            };
         }
 
         return treeItem;

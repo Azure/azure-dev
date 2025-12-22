@@ -415,16 +415,17 @@ func newOperationDeployModelCommand() *cobra.Command {
 
 			// Create deployment configuration
 			deployConfig := JobWrapper.DeploymentConfig{
-				JobID:          jobID,
-				DeploymentName: deploymentName,
-				ModelFormat:    modelFormat,
-				SKU:            sku,
-				Version:        version,
-				Capacity:       capacity,
-				SubscriptionID: envValueMap["AZURE_SUBSCRIPTION_ID"],
-				ResourceGroup:  envValueMap["AZURE_RESOURCE_GROUP_NAME"],
-				AccountName:    envValueMap["AZURE_ACCOUNT_NAME"],
-				TenantID:       envValueMap["AZURE_TENANT_ID"],
+				JobID:             jobID,
+				DeploymentName:    deploymentName,
+				ModelFormat:       modelFormat,
+				SKU:               sku,
+				Version:           version,
+				Capacity:          capacity,
+				SubscriptionID:    envValueMap["AZURE_SUBSCRIPTION_ID"],
+				ResourceGroup:     envValueMap["AZURE_RESOURCE_GROUP_NAME"],
+				AccountName:       envValueMap["AZURE_ACCOUNT_NAME"],
+				TenantID:          envValueMap["AZURE_TENANT_ID"],
+				WaitForCompletion: true,
 			}
 
 			// Deploy the model using the wrapper

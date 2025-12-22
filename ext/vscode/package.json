@@ -160,6 +160,11 @@
             },
             {
                 "category": "%azure-dev.commands_category%",
+                "command": "azure-dev.commands.azureWorkspace.showInAzurePortal",
+                "title": "%azure-dev.commands.azureWorkspace.showInAzurePortal.title%"
+            },
+            {
+                "category": "%azure-dev.commands_category%",
                 "command": "azure-dev.commands.enableDevCenterMode",
                 "title": "%azure-dev.commands.enableDevCenterMode.title%"
             },
@@ -430,6 +435,11 @@
                     "command": "azure-dev.commands.azureWorkspace.revealAzureResource",
                     "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.service(?!s)/i",
                     "group": "50navigation@10"
+                },
+                {
+                    "command": "azure-dev.commands.azureWorkspace.showInAzurePortal",
+                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.service(?!s)/i",
+                    "group": "50navigation@20"
                 },
                 {
                     "command": "azure-dev.commands.azureWorkspace.revealAzureResourceGroup",

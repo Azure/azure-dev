@@ -17,7 +17,7 @@ import { pipelineConfig } from './pipeline';
 import { installCli } from './installCli';
 import { loginCli } from './loginCli';
 import { getDotEnvFilePath } from './getDotEnvFilePath';
-import { revealAzureResource, revealAzureResourceGroup } from './azureWorkspace/reveal';
+import { revealAzureResource, revealAzureResourceGroup, showInAzurePortal } from './azureWorkspace/reveal';
 import { disableDevCenterMode, enableDevCenterMode } from './devCenterMode';
 import { installExtension, uninstallExtension, upgradeExtension } from './extensions';
 
@@ -46,6 +46,7 @@ export function registerCommands(): void {
 
     registerActivityCommand('azure-dev.commands.azureWorkspace.revealAzureResource', revealAzureResource);
     registerActivityCommand('azure-dev.commands.azureWorkspace.revealAzureResourceGroup', revealAzureResourceGroup);
+    registerActivityCommand('azure-dev.commands.azureWorkspace.showInAzurePortal', showInAzurePortal);
 
     registerActivityCommand('azure-dev.commands.enableDevCenterMode', enableDevCenterMode);
     registerActivityCommand('azure-dev.commands.disableDevCenterMode', disableDevCenterMode);

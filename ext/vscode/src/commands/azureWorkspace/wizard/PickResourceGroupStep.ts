@@ -20,12 +20,21 @@ export class PickResourceGroupStep extends SkipIfOneStep<RevealResourceGroupWiza
     ) {
         super(
             vscode.l10n.t('Select a resource group'),
-            vscode.l10n.t('No resource groups found')
+            vscode.l10n.t('No resource groups found for the selected environment')
         );
     }
 
     public async prompt(context: RevealResourceGroupWizardContext): Promise<void> {
-        context.azureResourceId = await this.promptInternal(context);
+        try {
+            context.azureResourceId = await this.promptInternal(context);
+        } catch (error) {
+            // Ensure error is shown to user
+            console.error('[PickResourceGroupStep] Error during prompt:', error);
+            if (error instanceof Error) {
+                await vscode.window.showErrorMessage(error.message);
+            }
+            throw error;
+        }
     }
 
     public shouldPrompt(context: RevealResourceGroupWizardContext): boolean {
@@ -33,7 +42,8 @@ export class PickResourceGroupStep extends SkipIfOneStep<RevealResourceGroupWiza
     }
 
     protected override async getPicks(context: RevealResourceGroupWizardContext): Promise<IAzureQuickPickItem<string>[]> {
-        const showResults = await this.showProvider.getShowResults(context, context.configurationFile, context.environment);
+        try {
+            const showResults = await this.showProvider.getShowResults(context, context.configurationFile, context.environment);
 
         if (!showResults?.services && !showResults?.resources) {
             return [];
@@ -75,6 +85,12 @@ export class PickResourceGroupStep extends SkipIfOneStep<RevealResourceGroupWiza
                     data: resourceGroupId
                 };
             });
+        }
+        } catch (error) {
+            // Log the error for diagnostics
+            console.error('[PickResourceGroupStep] Failed to get resource groups:', error);
+            // Re-throw to let the wizard handle it
+            throw error;
         }
     }
 }

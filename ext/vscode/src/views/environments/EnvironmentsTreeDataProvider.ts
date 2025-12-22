@@ -80,15 +80,33 @@ export class EnvironmentsTreeDataProvider implements vscode.TreeDataProvider<Env
                 this.visibleEnvVars.add(id);
             }
 
-            const isVisible = this.visibleEnvVars.has(id);
-            item.label = isVisible ? `${data.key}=${data.value}` : `${data.key}=Hidden value. Click to view.`;
-            item.tooltip = isVisible ? `${data.key}=${data.value}` : 'Click to view value';
-
+            // Signal that this item's representation has changed; getTreeItem will
+            // recreate the TreeItem with the appropriate label and tooltip.
             this._onDidChangeTreeData.fire(item);
         }
     }
 
     getTreeItem(element: EnvironmentTreeItem): vscode.TreeItem {
+        if (element.type === 'Variable' && element.data) {
+            const data = element.data as EnvironmentVariableItem;
+            const id = `${data.name}/${data.key}`;
+            const isVisible = this.visibleEnvVars.has(id);
+
+            const label = isVisible
+                ? `${data.key}=${data.value}`
+                : `${data.key}=Hidden value. Click to view.`;
+            const tooltip = isVisible
+                ? `${data.key}=${data.value}`
+                : 'Click to view value';
+
+            const treeItem = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.None);
+            treeItem.tooltip = tooltip;
+            treeItem.contextValue = element.contextValue;
+            treeItem.command = element.command;
+            treeItem.iconPath = element.iconPath;
+
+            return treeItem;
+        }
         return element;
     }
 

@@ -6,10 +6,14 @@ package JobWrapper
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/azure"
 	"github.com/openai/openai-go/v3/option"
@@ -140,6 +144,50 @@ func ListJobs(ctx context.Context, azdClient *azdext.AzdClient, top int, after s
 	}
 
 	return jobs, nil
+}
+
+// CreateJob creates a new fine-tuning job with the provided parameters
+func CreateJob(ctx context.Context, azdClient *azdext.AzdClient, params openai.FineTuningJobNewParams) (*JobContract, error) {
+	client, err := GetOpenAIClientFromAzdClient(ctx, azdClient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create OpenAI client: %w", err)
+	}
+
+	// Validate required parameters
+	if params.Model == "" {
+		return nil, fmt.Errorf("model is required for fine-tuning job")
+	}
+
+	if params.TrainingFile == "" {
+		return nil, fmt.Errorf("training_file is required for fine-tuning job")
+	}
+
+	// Show spinner while creating job
+	spinner := ux.NewSpinner(&ux.SpinnerOptions{
+		Text: "Submitting fine-tuning job...",
+	})
+	if err := spinner.Start(ctx); err != nil {
+		fmt.Printf("Failed to start spinner: %v\n", err)
+	}
+
+	// Create the fine-tuning job
+	job, err := client.FineTuning.Jobs.New(ctx, params)
+	_ = spinner.Stop(ctx)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to create fine-tuning job: %w", err)
+	}
+
+	// Convert to JobContract
+	jobContract := &JobContract{
+		Id:             job.ID,
+		Status:         string(job.Status),
+		Model:          job.Model,
+		CreatedAt:      formatUnixTimestampToUTC(job.CreatedAt),
+		FineTunedModel: job.FineTunedModel,
+	}
+
+	return jobContract, nil
 }
 
 // formatUnixTimestampToUTC converts Unix timestamp (seconds) to UTC time string
@@ -321,4 +369,175 @@ func GetOpenAIClientFromAzdClient(ctx context.Context, azdClient *azdext.AzdClie
 		azure.WithTokenCredential(credential),
 	)
 	return &client, nil
+}
+
+// UploadFileIfLocal handles local file upload or returns the file ID if it's already uploaded
+func UploadFileIfLocal(ctx context.Context, azdClient *azdext.AzdClient, filePath string) (string, error) {
+	client, err := GetOpenAIClientFromAzdClient(ctx, azdClient)
+	if err != nil {
+		return "", fmt.Errorf("failed to create OpenAI client: %w", err)
+	}
+	// Check if it's a local file
+	if strings.HasPrefix(filePath, "local:") {
+		// Remove "local:" prefix and get the actual path
+		localPath := strings.TrimPrefix(filePath, "local:")
+		localPath = strings.TrimSpace(localPath)
+
+		// Resolve absolute path
+		absPath, err := filepath.Abs(localPath)
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve absolute path for %s: %w", localPath, err)
+		}
+
+		// Open the file
+		data, err := os.Open(absPath)
+		if err != nil {
+			return "", fmt.Errorf("failed to open file %s: %w", localPath, err)
+		}
+		defer data.Close()
+
+		// Upload the file
+		uploadedFile, err := client.Files.New(ctx, openai.FileNewParams{
+			File:    data,
+			Purpose: openai.FilePurposeFineTune,
+		})
+		if err != nil {
+			return "", fmt.Errorf("failed to upload file: %w", err)
+		}
+
+		// Wait for file processing
+		spinner := ux.NewSpinner(&ux.SpinnerOptions{
+			Text: "Waiting for file processing...",
+		})
+		if err := spinner.Start(ctx); err != nil {
+			fmt.Printf("Failed to start spinner: %v\n", err)
+		}
+		for {
+			f, err := client.Files.Get(ctx, uploadedFile.ID)
+			if err != nil {
+				_ = spinner.Stop(ctx)
+				return "", fmt.Errorf("\nfailed to check file status: %w", err)
+			}
+
+			if f.Status == openai.FileObjectStatusProcessed {
+				_ = spinner.Stop(ctx)
+				break
+			}
+
+			if f.Status == openai.FileObjectStatusError {
+				_ = spinner.Stop(ctx)
+				return "", fmt.Errorf("\nfile processing failed with status: %s", f.Status)
+			}
+
+			fmt.Print(".")
+			time.Sleep(2 * time.Second)
+		}
+		fmt.Printf("  Uploaded: %s -> %s, status:%s\n", localPath, uploadedFile.ID, uploadedFile.Status)
+		return uploadedFile.ID, nil
+	}
+
+	// If it's not a local file, assume it's already a file ID
+	return filePath, nil
+}
+
+// PauseJob pauses a fine-tuning job
+func PauseJob(ctx context.Context, azdClient *azdext.AzdClient, jobId string) (*JobContract, error) {
+	client, err := GetOpenAIClientFromAzdClient(ctx, azdClient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create OpenAI client: %w", err)
+	}
+
+	// Show spinner while pausing job
+	spinner := ux.NewSpinner(&ux.SpinnerOptions{
+		Text: fmt.Sprintf("Pausing fine-tuning job %s...", jobId),
+	})
+	if err := spinner.Start(ctx); err != nil {
+		fmt.Printf("Failed to start spinner: %v\n", err)
+	}
+
+	job, err := client.FineTuning.Jobs.Pause(ctx, jobId)
+	_ = spinner.Stop(ctx)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to pause fine-tuning job: %w", err)
+	}
+
+	// Convert to JobContract
+	jobContract := &JobContract{
+		Id:             job.ID,
+		Status:         string(job.Status),
+		Model:          job.Model,
+		CreatedAt:      formatUnixTimestampToUTC(job.CreatedAt),
+		FineTunedModel: job.FineTunedModel,
+	}
+
+	return jobContract, nil
+}
+
+// ResumeJob resumes a fine-tuning job
+func ResumeJob(ctx context.Context, azdClient *azdext.AzdClient, jobId string) (*JobContract, error) {
+	client, err := GetOpenAIClientFromAzdClient(ctx, azdClient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create OpenAI client: %w", err)
+	}
+
+	// Show spinner while resuming job
+	spinner := ux.NewSpinner(&ux.SpinnerOptions{
+		Text: fmt.Sprintf("Resuming fine-tuning job %s...", jobId),
+	})
+	if err := spinner.Start(ctx); err != nil {
+		fmt.Printf("Failed to start spinner: %v\n", err)
+	}
+
+	job, err := client.FineTuning.Jobs.Resume(ctx, jobId)
+	_ = spinner.Stop(ctx)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to resume fine-tuning job: %w", err)
+	}
+
+	// Convert to JobContract
+	jobContract := &JobContract{
+		Id:             job.ID,
+		Status:         string(job.Status),
+		Model:          job.Model,
+		CreatedAt:      formatUnixTimestampToUTC(job.CreatedAt),
+		FineTunedModel: job.FineTunedModel,
+	}
+
+	return jobContract, nil
+}
+
+// CancelJob cancels a fine-tuning job
+func CancelJob(ctx context.Context, azdClient *azdext.AzdClient, jobId string) (*JobContract, error) {
+	client, err := GetOpenAIClientFromAzdClient(ctx, azdClient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create OpenAI client: %w", err)
+	}
+
+	// Show spinner while cancelling job
+	spinner := ux.NewSpinner(&ux.SpinnerOptions{
+		Text: fmt.Sprintf("Cancelling fine-tuning job %s...", jobId),
+	})
+	if err := spinner.Start(ctx); err != nil {
+		fmt.Printf("Failed to start spinner: %v\n", err)
+	}
+
+	job, err := client.FineTuning.Jobs.Cancel(ctx, jobId)
+	_ = spinner.Stop(ctx)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to cancel fine-tuning job: %w", err)
+	}
+
+	// Convert to JobContract
+	jobContract := &JobContract{
+		Id:             job.ID,
+		Status:         string(job.Status),
+		Model:          job.Model,
+		CreatedAt:      formatUnixTimestampToUTC(job.CreatedAt),
+		FineTunedModel: job.FineTunedModel,
+	}
+
+	return jobContract, nil
 }

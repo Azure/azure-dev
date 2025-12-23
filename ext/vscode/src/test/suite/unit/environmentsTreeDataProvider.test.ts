@@ -156,8 +156,10 @@ suite('EnvironmentsTreeDataProvider', () => {
 
             provider.toggleVisibility(varTreeItem);
 
-            assert.ok(typeof varTreeItem.label === 'string' && varTreeItem.label.includes('test-sub-id'));
-            assert.ok(typeof varTreeItem.tooltip === 'string' && varTreeItem.tooltip.includes('test-sub-id'));
+            // After toggling, getTreeItem should return a new tree item with visible value
+            const updatedTreeItem = provider.getTreeItem(varTreeItem);
+            assert.ok(typeof updatedTreeItem.label === 'string' && updatedTreeItem.label.includes('test-sub-id'));
+            assert.ok(typeof updatedTreeItem.tooltip === 'string' && updatedTreeItem.tooltip.includes('test-sub-id'));
         });
 
         test('toggles environment variable visibility from visible to hidden', async () => {
@@ -181,8 +183,10 @@ suite('EnvironmentsTreeDataProvider', () => {
             // Second toggle to hidden
             provider.toggleVisibility(varTreeItem);
 
-            assert.ok(typeof varTreeItem.label === 'string' && varTreeItem.label.includes('Hidden value'));
-            assert.ok(typeof varTreeItem.tooltip === 'string' && varTreeItem.tooltip.includes('Click to view value'));
+            // After toggling back, getTreeItem should return a new tree item with hidden value
+            const updatedTreeItem = provider.getTreeItem(varTreeItem);
+            assert.ok(typeof updatedTreeItem.label === 'string' && updatedTreeItem.label.includes('Hidden value'));
+            assert.ok(typeof updatedTreeItem.tooltip === 'string' && updatedTreeItem.tooltip.includes('Click to view value'));
         });
 
         test('does not toggle visibility for non-variable items', async () => {

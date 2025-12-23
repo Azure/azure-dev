@@ -8,6 +8,7 @@ import { AzureResourcesExtensionApi } from '@microsoft/vscode-azureresources-api
 import { RevealStep } from '../../../commands/azureWorkspace/wizard/RevealStep';
 import { RevealResourceWizardContext } from '../../../commands/azureWorkspace/wizard/PickResourceStep';
 import * as getAzureResourceExtensionApiModule from '../../../utils/getAzureResourceExtensionApi';
+import ext from '../../../ext';
 
 suite('RevealStep', () => {
     let step: RevealStep;
@@ -16,6 +17,11 @@ suite('RevealStep', () => {
     setup(() => {
         sandbox = sinon.createSandbox();
         step = new RevealStep();
+        
+        // Mock ext.outputChannel
+        ext.outputChannel = {
+            appendLog: sandbox.stub()
+        } as any;
     });
 
     teardown(() => {

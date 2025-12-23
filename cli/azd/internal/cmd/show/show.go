@@ -116,9 +116,6 @@ func NewShowAction(
 	lazyResourceManager *lazy.Lazy[project.ResourceManager],
 	cloud *cloud.Cloud,
 ) actions.Action {
-	// Create state cache manager with the environment directory
-	stateCacheManager := state.NewStateCacheManager(azdCtx.EnvironmentDirectory())
-
 	return &showAction{
 		projectConfig:        projectConfig,
 		importManager:        importManager,
@@ -138,7 +135,7 @@ func NewShowAction(
 		lazyServiceManager:   lazyServiceManager,
 		lazyResourceManager:  lazyResourceManager,
 		portalUrlBase:        cloud.PortalUrlBase,
-		stateCacheManager:    stateCacheManager,
+		stateCacheManager:    envManager.GetStateCacheManager(),
 	}
 }
 

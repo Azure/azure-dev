@@ -28,7 +28,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -114,6 +113,7 @@ type DeployAction struct {
 	projectConfig       *project.ProjectConfig
 	azdCtx              *azdcontext.AzdContext
 	env                 *environment.Environment
+	envManager          environment.Manager
 	projectManager      project.ProjectManager
 	serviceManager      project.ServiceManager
 	resourceManager     project.ResourceManager
@@ -137,6 +137,7 @@ func NewDeployAction(
 	resourceManager project.ResourceManager,
 	azdCtx *azdcontext.AzdContext,
 	environment *environment.Environment,
+	envManager environment.Manager,
 	accountManager account.Manager,
 	cloud *cloud.Cloud,
 	azCli *azapi.AzureClient,
@@ -153,6 +154,7 @@ func NewDeployAction(
 		projectConfig:       projectConfig,
 		azdCtx:              azdCtx,
 		env:                 environment,
+		envManager:          envManager,
 		projectManager:      projectManager,
 		serviceManager:      serviceManager,
 		resourceManager:     resourceManager,
@@ -364,8 +366,7 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	}
 
 	// Invalidate cache after successful deploy so azd show will refresh
-	stateCacheManager := state.NewStateCacheManager(da.azdCtx.EnvironmentDirectory())
-	if err := stateCacheManager.Invalidate(ctx, da.env.Name()); err != nil {
+	if err := da.envManager.InvalidateEnvCache(ctx, da.env.Name()); err != nil {
 		log.Printf("warning: failed to invalidate state cache: %v", err)
 	}
 

@@ -73,6 +73,11 @@ func (m *StateCacheManager) GetStateChangePath() string {
 
 // Load loads the state cache for an environment
 func (m *StateCacheManager) Load(ctx context.Context, envName string) (*StateCache, error) {
+	// Check for context cancellation
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	cachePath := m.GetCachePath(envName)
 
 	data, err := os.ReadFile(cachePath)
@@ -98,6 +103,11 @@ func (m *StateCacheManager) Load(ctx context.Context, envName string) (*StateCac
 
 // Save saves the state cache for an environment
 func (m *StateCacheManager) Save(ctx context.Context, envName string, cache *StateCache) error {
+	// Check for context cancellation
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	cache.Version = StateCacheVersion
 	cache.UpdatedAt = time.Now()
 
@@ -117,6 +127,11 @@ func (m *StateCacheManager) Save(ctx context.Context, envName string, cache *Sta
 		return fmt.Errorf("writing cache file: %w", err)
 	}
 
+	// Check for context cancellation before updating state change file
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	// Update the state change notification file
 	if err := m.TouchStateChange(); err != nil {
 		return fmt.Errorf("updating state change file: %w", err)
@@ -127,11 +142,21 @@ func (m *StateCacheManager) Save(ctx context.Context, envName string, cache *Sta
 
 // Invalidate removes the cache for an environment
 func (m *StateCacheManager) Invalidate(ctx context.Context, envName string) error {
+	// Check for context cancellation
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	cachePath := m.GetCachePath(envName)
 
 	err := os.Remove(cachePath)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("removing cache file: %w", err)
+	}
+
+	// Check for context cancellation before updating state change file
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
 	// Update the state change notification file

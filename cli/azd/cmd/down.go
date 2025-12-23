@@ -16,14 +16,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	inf "github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -71,10 +69,10 @@ type downAction struct {
 	provisionManager    *provisioning.Manager
 	importManager       *project.ImportManager
 	env                 *environment.Environment
+	envManager          environment.Manager
 	console             input.Console
 	projectConfig       *project.ProjectConfig
 	alphaFeatureManager *alpha.FeatureManager
-	azdCtx              *azdcontext.AzdContext
 }
 
 func newDownAction(
@@ -82,22 +80,22 @@ func newDownAction(
 	flags *downFlags,
 	provisionManager *provisioning.Manager,
 	env *environment.Environment,
+	envManager environment.Manager,
 	projectConfig *project.ProjectConfig,
 	console input.Console,
 	alphaFeatureManager *alpha.FeatureManager,
 	importManager *project.ImportManager,
-	azdCtx *azdcontext.AzdContext,
 ) actions.Action {
 	return &downAction{
 		flags:               flags,
 		provisionManager:    provisionManager,
 		env:                 env,
+		envManager:          envManager,
 		console:             console,
 		projectConfig:       projectConfig,
 		importManager:       importManager,
 		alphaFeatureManager: alphaFeatureManager,
 		args:                args,
-		azdCtx:              azdCtx,
 	}
 }
 
@@ -157,8 +155,7 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	// Invalidate cache after successful down so azd show will refresh
-	stateCacheManager := state.NewStateCacheManager(a.azdCtx.EnvironmentDirectory())
-	if err := stateCacheManager.Invalidate(ctx, a.env.Name()); err != nil {
+	if err := a.envManager.InvalidateEnvCache(ctx, a.env.Name()); err != nil {
 		log.Printf("warning: failed to invalidate state cache: %v", err)
 	}
 

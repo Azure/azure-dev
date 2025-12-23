@@ -82,6 +82,12 @@ type Manager interface {
 
 	EnvPath(env *Environment) string
 	ConfigPath(env *Environment) string
+
+	// InvalidateEnvCache invalidates the state cache for the given environment
+	InvalidateEnvCache(ctx context.Context, envName string) error
+
+	// GetStateCacheManager returns the state cache manager for accessing cached state
+	GetStateCacheManager() *state.StateCacheManager
 }
 
 type manager struct {
@@ -94,6 +100,9 @@ type manager struct {
 	// across different scopes, enabling shared state mutation (e.g., from extensions)
 	cacheMu  sync.RWMutex
 	envCache map[string]*Environment
+
+	// State cache manager for managing cached Azure resource information
+	stateCacheManager *state.StateCacheManager
 }
 
 // NewManager creates a new Manager instance
@@ -125,11 +134,12 @@ func NewManager(
 	}
 
 	return &manager{
-		azdContext: azdContext,
-		local:      local,
-		remote:     remote,
-		console:    console,
-		envCache:   make(map[string]*Environment),
+		azdContext:        azdContext,
+		local:             local,
+		remote:            remote,
+		console:           console,
+		envCache:          make(map[string]*Environment),
+		stateCacheManager: state.NewStateCacheManager(azdContext.EnvironmentDirectory()),
 	}, nil
 }
 
@@ -562,6 +572,16 @@ func (m *manager) ensureValidEnvironmentName(ctx context.Context, spec *Spec) er
 	}
 
 	return nil
+}
+
+// InvalidateEnvCache invalidates the state cache for the given environment
+func (m *manager) InvalidateEnvCache(ctx context.Context, envName string) error {
+	return m.stateCacheManager.Invalidate(ctx, envName)
+}
+
+// GetStateCacheManager returns the state cache manager for accessing cached state
+func (m *manager) GetStateCacheManager() *state.StateCacheManager {
+	return m.stateCacheManager
 }
 
 func invalidEnvironmentNameMsg(environmentName string) string {

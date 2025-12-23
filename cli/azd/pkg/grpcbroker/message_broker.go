@@ -206,6 +206,8 @@ func (mb *MessageBroker[TMessage]) SendAndWait(ctx context.Context, msg *TMessag
 	// Send request in goroutine to ensure we're waiting before response arrives
 	errCh := make(chan error, 1)
 	go func() {
+		mb.sendMu.Lock()
+		defer mb.sendMu.Unlock()
 		errCh <- mb.stream.Send(msg)
 	}()
 
@@ -312,6 +314,8 @@ func (mb *MessageBroker[TMessage]) SendAndWaitWithProgress(
 	log.Printf("[%s] [RequestId=%s] Sending request, MessageType=%v", mb.name, requestId, msgType)
 	errCh := make(chan error, 1)
 	go func() {
+		mb.sendMu.Lock()
+		defer mb.sendMu.Unlock()
 		errCh <- mb.stream.Send(msg)
 	}()
 

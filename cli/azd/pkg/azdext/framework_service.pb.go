@@ -26,9 +26,9 @@ const (
 
 // Envelope for all possible framework service messages (requests and responses)
 type FrameworkServiceMessage struct {
-	state     protoimpl.MessageState        `protogen:"open.v1"`
-	RequestId string                        `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
-	Error     *FrameworkServiceErrorMessage `protobuf:"bytes,99,opt,name=error,proto3" json:"error,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	RequestId string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Error     *ExtensionError        `protobuf:"bytes,99,opt,name=error,proto3" json:"error,omitempty"`
 	// Types that are valid to be assigned to MessageType:
 	//
 	//	*FrameworkServiceMessage_RegisterFrameworkServiceRequest
@@ -88,7 +88,7 @@ func (x *FrameworkServiceMessage) GetRequestId() string {
 	return ""
 }
 
-func (x *FrameworkServiceMessage) GetError() *FrameworkServiceErrorMessage {
+func (x *FrameworkServiceMessage) GetError() *ExtensionError {
 	if x != nil {
 		return x.Error
 	}
@@ -335,59 +335,6 @@ func (*FrameworkServiceMessage_PackageResponse) isFrameworkServiceMessage_Messag
 
 func (*FrameworkServiceMessage_ProgressMessage) isFrameworkServiceMessage_MessageType() {}
 
-// Error message for framework service operations
-type FrameworkServiceErrorMessage struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Message       string                 `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
-	Details       string                 `protobuf:"bytes,2,opt,name=details,proto3" json:"details,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *FrameworkServiceErrorMessage) Reset() {
-	*x = FrameworkServiceErrorMessage{}
-	mi := &file_framework_service_proto_msgTypes[1]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *FrameworkServiceErrorMessage) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*FrameworkServiceErrorMessage) ProtoMessage() {}
-
-func (x *FrameworkServiceErrorMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_framework_service_proto_msgTypes[1]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use FrameworkServiceErrorMessage.ProtoReflect.Descriptor instead.
-func (*FrameworkServiceErrorMessage) Descriptor() ([]byte, []int) {
-	return file_framework_service_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *FrameworkServiceErrorMessage) GetMessage() string {
-	if x != nil {
-		return x.Message
-	}
-	return ""
-}
-
-func (x *FrameworkServiceErrorMessage) GetDetails() string {
-	if x != nil {
-		return x.Details
-	}
-	return ""
-}
-
 // Request to register a framework service provider
 type RegisterFrameworkServiceRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -398,7 +345,7 @@ type RegisterFrameworkServiceRequest struct {
 
 func (x *RegisterFrameworkServiceRequest) Reset() {
 	*x = RegisterFrameworkServiceRequest{}
-	mi := &file_framework_service_proto_msgTypes[2]
+	mi := &file_framework_service_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -410,7 +357,7 @@ func (x *RegisterFrameworkServiceRequest) String() string {
 func (*RegisterFrameworkServiceRequest) ProtoMessage() {}
 
 func (x *RegisterFrameworkServiceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_framework_service_proto_msgTypes[2]
+	mi := &file_framework_service_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -423,7 +370,7 @@ func (x *RegisterFrameworkServiceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterFrameworkServiceRequest.ProtoReflect.Descriptor instead.
 func (*RegisterFrameworkServiceRequest) Descriptor() ([]byte, []int) {
-	return file_framework_service_proto_rawDescGZIP(), []int{2}
+	return file_framework_service_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *RegisterFrameworkServiceRequest) GetLanguage() string {
@@ -441,7 +388,7 @@ type RegisterFrameworkServiceResponse struct {
 
 func (x *RegisterFrameworkServiceResponse) Reset() {
 	*x = RegisterFrameworkServiceResponse{}
-	mi := &file_framework_service_proto_msgTypes[3]
+	mi := &file_framework_service_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -453,7 +400,7 @@ func (x *RegisterFrameworkServiceResponse) String() string {
 func (*RegisterFrameworkServiceResponse) ProtoMessage() {}
 
 func (x *RegisterFrameworkServiceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_framework_service_proto_msgTypes[3]
+	mi := &file_framework_service_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -466,7 +413,7 @@ func (x *RegisterFrameworkServiceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterFrameworkServiceResponse.ProtoReflect.Descriptor instead.
 func (*RegisterFrameworkServiceResponse) Descriptor() ([]byte, []int) {
-	return file_framework_service_proto_rawDescGZIP(), []int{3}
+	return file_framework_service_proto_rawDescGZIP(), []int{2}
 }
 
 // Initialize request and response
@@ -479,7 +426,7 @@ type FrameworkServiceInitializeRequest struct {
 
 func (x *FrameworkServiceInitializeRequest) Reset() {
 	*x = FrameworkServiceInitializeRequest{}
-	mi := &file_framework_service_proto_msgTypes[4]
+	mi := &file_framework_service_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -491,7 +438,7 @@ func (x *FrameworkServiceInitializeRequest) String() string {
 func (*FrameworkServiceInitializeRequest) ProtoMessage() {}
 
 func (x *FrameworkServiceInitializeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_framework_service_proto_msgTypes[4]
+	mi := &file_framework_service_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -504,7 +451,7 @@ func (x *FrameworkServiceInitializeRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use FrameworkServiceInitializeRequest.ProtoReflect.Descriptor instead.
 func (*FrameworkServiceInitializeRequest) Descriptor() ([]byte, []int) {
-	return file_framework_service_proto_rawDescGZIP(), []int{4}
+	return file_framework_service_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *FrameworkServiceInitializeRequest) GetServiceConfig() *ServiceConfig {
@@ -522,7 +469,7 @@ type FrameworkServiceInitializeResponse struct {
 
 func (x *FrameworkServiceInitializeResponse) Reset() {
 	*x = FrameworkServiceInitializeResponse{}
-	mi := &file_framework_service_proto_msgTypes[5]
+	mi := &file_framework_service_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -534,7 +481,7 @@ func (x *FrameworkServiceInitializeResponse) String() string {
 func (*FrameworkServiceInitializeResponse) ProtoMessage() {}
 
 func (x *FrameworkServiceInitializeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_framework_service_proto_msgTypes[5]
+	mi := &file_framework_service_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -547,7 +494,7 @@ func (x *FrameworkServiceInitializeResponse) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use FrameworkServiceInitializeResponse.ProtoReflect.Descriptor instead.
 func (*FrameworkServiceInitializeResponse) Descriptor() ([]byte, []int) {
-	return file_framework_service_proto_rawDescGZIP(), []int{5}
+	return file_framework_service_proto_rawDescGZIP(), []int{4}
 }
 
 // Required external tools request and response
@@ -560,7 +507,7 @@ type FrameworkServiceRequiredExternalToolsRequest struct {
 
 func (x *FrameworkServiceRequiredExternalToolsRequest) Reset() {
 	*x = FrameworkServiceRequiredExternalToolsRequest{}
-	mi := &file_framework_service_proto_msgTypes[6]
+	mi := &file_framework_service_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -572,7 +519,7 @@ func (x *FrameworkServiceRequiredExternalToolsRequest) String() string {
 func (*FrameworkServiceRequiredExternalToolsRequest) ProtoMessage() {}
 
 func (x *FrameworkServiceRequiredExternalToolsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_framework_service_proto_msgTypes[6]
+	mi := &file_framework_service_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -585,7 +532,7 @@ func (x *FrameworkServiceRequiredExternalToolsRequest) ProtoReflect() protorefle
 
 // Deprecated: Use FrameworkServiceRequiredExternalToolsRequest.ProtoReflect.Descriptor instead.
 func (*FrameworkServiceRequiredExternalToolsRequest) Descriptor() ([]byte, []int) {
-	return file_framework_service_proto_rawDescGZIP(), []int{6}
+	return file_framework_service_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *FrameworkServiceRequiredExternalToolsRequest) GetServiceConfig() *ServiceConfig {
@@ -604,7 +551,7 @@ type FrameworkServiceRequiredExternalToolsResponse struct {
 
 func (x *FrameworkServiceRequiredExternalToolsResponse) Reset() {
 	*x = FrameworkServiceRequiredExternalToolsResponse{}
-	mi := &file_framework_service_proto_msgTypes[7]
+	mi := &file_framework_service_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -616,7 +563,7 @@ func (x *FrameworkServiceRequiredExternalToolsResponse) String() string {
 func (*FrameworkServiceRequiredExternalToolsResponse) ProtoMessage() {}
 
 func (x *FrameworkServiceRequiredExternalToolsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_framework_service_proto_msgTypes[7]
+	mi := &file_framework_service_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -629,7 +576,7 @@ func (x *FrameworkServiceRequiredExternalToolsResponse) ProtoReflect() protorefl
 
 // Deprecated: Use FrameworkServiceRequiredExternalToolsResponse.ProtoReflect.Descriptor instead.
 func (*FrameworkServiceRequiredExternalToolsResponse) Descriptor() ([]byte, []int) {
-	return file_framework_service_proto_rawDescGZIP(), []int{7}
+	return file_framework_service_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *FrameworkServiceRequiredExternalToolsResponse) GetTools() []*ExternalTool {
@@ -650,7 +597,7 @@ type ExternalTool struct {
 
 func (x *ExternalTool) Reset() {
 	*x = ExternalTool{}
-	mi := &file_framework_service_proto_msgTypes[8]
+	mi := &file_framework_service_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -662,7 +609,7 @@ func (x *ExternalTool) String() string {
 func (*ExternalTool) ProtoMessage() {}
 
 func (x *ExternalTool) ProtoReflect() protoreflect.Message {
-	mi := &file_framework_service_proto_msgTypes[8]
+	mi := &file_framework_service_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -675,7 +622,7 @@ func (x *ExternalTool) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExternalTool.ProtoReflect.Descriptor instead.
 func (*ExternalTool) Descriptor() ([]byte, []int) {
-	return file_framework_service_proto_rawDescGZIP(), []int{8}
+	return file_framework_service_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ExternalTool) GetName() string {
@@ -701,7 +648,7 @@ type FrameworkServiceRequirementsRequest struct {
 
 func (x *FrameworkServiceRequirementsRequest) Reset() {
 	*x = FrameworkServiceRequirementsRequest{}
-	mi := &file_framework_service_proto_msgTypes[9]
+	mi := &file_framework_service_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -713,7 +660,7 @@ func (x *FrameworkServiceRequirementsRequest) String() string {
 func (*FrameworkServiceRequirementsRequest) ProtoMessage() {}
 
 func (x *FrameworkServiceRequirementsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_framework_service_proto_msgTypes[9]
+	mi := &file_framework_service_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -726,7 +673,7 @@ func (x *FrameworkServiceRequirementsRequest) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use FrameworkServiceRequirementsRequest.ProtoReflect.Descriptor instead.
 func (*FrameworkServiceRequirementsRequest) Descriptor() ([]byte, []int) {
-	return file_framework_service_proto_rawDescGZIP(), []int{9}
+	return file_framework_service_proto_rawDescGZIP(), []int{8}
 }
 
 type FrameworkServiceRequirementsResponse struct {
@@ -738,7 +685,7 @@ type FrameworkServiceRequirementsResponse struct {
 
 func (x *FrameworkServiceRequirementsResponse) Reset() {
 	*x = FrameworkServiceRequirementsResponse{}
-	mi := &file_framework_service_proto_msgTypes[10]
+	mi := &file_framework_service_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -750,7 +697,7 @@ func (x *FrameworkServiceRequirementsResponse) String() string {
 func (*FrameworkServiceRequirementsResponse) ProtoMessage() {}
 
 func (x *FrameworkServiceRequirementsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_framework_service_proto_msgTypes[10]
+	mi := &file_framework_service_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -763,7 +710,7 @@ func (x *FrameworkServiceRequirementsResponse) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use FrameworkServiceRequirementsResponse.ProtoReflect.Descriptor instead.
 func (*FrameworkServiceRequirementsResponse) Descriptor() ([]byte, []int) {
-	return file_framework_service_proto_rawDescGZIP(), []int{10}
+	return file_framework_service_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *FrameworkServiceRequirementsResponse) GetRequirements() *FrameworkRequirements {
@@ -783,7 +730,7 @@ type FrameworkRequirements struct {
 
 func (x *FrameworkRequirements) Reset() {
 	*x = FrameworkRequirements{}
-	mi := &file_framework_service_proto_msgTypes[11]
+	mi := &file_framework_service_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -795,7 +742,7 @@ func (x *FrameworkRequirements) String() string {
 func (*FrameworkRequirements) ProtoMessage() {}
 
 func (x *FrameworkRequirements) ProtoReflect() protoreflect.Message {
-	mi := &file_framework_service_proto_msgTypes[11]
+	mi := &file_framework_service_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -808,7 +755,7 @@ func (x *FrameworkRequirements) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FrameworkRequirements.ProtoReflect.Descriptor instead.
 func (*FrameworkRequirements) Descriptor() ([]byte, []int) {
-	return file_framework_service_proto_rawDescGZIP(), []int{11}
+	return file_framework_service_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *FrameworkRequirements) GetPackage() *FrameworkPackageRequirements {
@@ -828,7 +775,7 @@ type FrameworkPackageRequirements struct {
 
 func (x *FrameworkPackageRequirements) Reset() {
 	*x = FrameworkPackageRequirements{}
-	mi := &file_framework_service_proto_msgTypes[12]
+	mi := &file_framework_service_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -840,7 +787,7 @@ func (x *FrameworkPackageRequirements) String() string {
 func (*FrameworkPackageRequirements) ProtoMessage() {}
 
 func (x *FrameworkPackageRequirements) ProtoReflect() protoreflect.Message {
-	mi := &file_framework_service_proto_msgTypes[12]
+	mi := &file_framework_service_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -853,7 +800,7 @@ func (x *FrameworkPackageRequirements) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FrameworkPackageRequirements.ProtoReflect.Descriptor instead.
 func (*FrameworkPackageRequirements) Descriptor() ([]byte, []int) {
-	return file_framework_service_proto_rawDescGZIP(), []int{12}
+	return file_framework_service_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *FrameworkPackageRequirements) GetRequireRestore() bool {
@@ -881,7 +828,7 @@ type FrameworkServiceRestoreRequest struct {
 
 func (x *FrameworkServiceRestoreRequest) Reset() {
 	*x = FrameworkServiceRestoreRequest{}
-	mi := &file_framework_service_proto_msgTypes[13]
+	mi := &file_framework_service_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -893,7 +840,7 @@ func (x *FrameworkServiceRestoreRequest) String() string {
 func (*FrameworkServiceRestoreRequest) ProtoMessage() {}
 
 func (x *FrameworkServiceRestoreRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_framework_service_proto_msgTypes[13]
+	mi := &file_framework_service_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -906,7 +853,7 @@ func (x *FrameworkServiceRestoreRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FrameworkServiceRestoreRequest.ProtoReflect.Descriptor instead.
 func (*FrameworkServiceRestoreRequest) Descriptor() ([]byte, []int) {
-	return file_framework_service_proto_rawDescGZIP(), []int{13}
+	return file_framework_service_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *FrameworkServiceRestoreRequest) GetServiceConfig() *ServiceConfig {
@@ -932,7 +879,7 @@ type FrameworkServiceRestoreResponse struct {
 
 func (x *FrameworkServiceRestoreResponse) Reset() {
 	*x = FrameworkServiceRestoreResponse{}
-	mi := &file_framework_service_proto_msgTypes[14]
+	mi := &file_framework_service_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -944,7 +891,7 @@ func (x *FrameworkServiceRestoreResponse) String() string {
 func (*FrameworkServiceRestoreResponse) ProtoMessage() {}
 
 func (x *FrameworkServiceRestoreResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_framework_service_proto_msgTypes[14]
+	mi := &file_framework_service_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -957,7 +904,7 @@ func (x *FrameworkServiceRestoreResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FrameworkServiceRestoreResponse.ProtoReflect.Descriptor instead.
 func (*FrameworkServiceRestoreResponse) Descriptor() ([]byte, []int) {
-	return file_framework_service_proto_rawDescGZIP(), []int{14}
+	return file_framework_service_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *FrameworkServiceRestoreResponse) GetRestoreResult() *ServiceRestoreResult {
@@ -977,7 +924,7 @@ type ServiceRestoreResult struct {
 
 func (x *ServiceRestoreResult) Reset() {
 	*x = ServiceRestoreResult{}
-	mi := &file_framework_service_proto_msgTypes[15]
+	mi := &file_framework_service_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -989,7 +936,7 @@ func (x *ServiceRestoreResult) String() string {
 func (*ServiceRestoreResult) ProtoMessage() {}
 
 func (x *ServiceRestoreResult) ProtoReflect() protoreflect.Message {
-	mi := &file_framework_service_proto_msgTypes[15]
+	mi := &file_framework_service_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1002,7 +949,7 @@ func (x *ServiceRestoreResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServiceRestoreResult.ProtoReflect.Descriptor instead.
 func (*ServiceRestoreResult) Descriptor() ([]byte, []int) {
-	return file_framework_service_proto_rawDescGZIP(), []int{15}
+	return file_framework_service_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ServiceRestoreResult) GetArtifacts() []*Artifact {
@@ -1023,7 +970,7 @@ type FrameworkServiceBuildRequest struct {
 
 func (x *FrameworkServiceBuildRequest) Reset() {
 	*x = FrameworkServiceBuildRequest{}
-	mi := &file_framework_service_proto_msgTypes[16]
+	mi := &file_framework_service_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1035,7 +982,7 @@ func (x *FrameworkServiceBuildRequest) String() string {
 func (*FrameworkServiceBuildRequest) ProtoMessage() {}
 
 func (x *FrameworkServiceBuildRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_framework_service_proto_msgTypes[16]
+	mi := &file_framework_service_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1048,7 +995,7 @@ func (x *FrameworkServiceBuildRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FrameworkServiceBuildRequest.ProtoReflect.Descriptor instead.
 func (*FrameworkServiceBuildRequest) Descriptor() ([]byte, []int) {
-	return file_framework_service_proto_rawDescGZIP(), []int{16}
+	return file_framework_service_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *FrameworkServiceBuildRequest) GetServiceConfig() *ServiceConfig {
@@ -1074,7 +1021,7 @@ type FrameworkServiceBuildResponse struct {
 
 func (x *FrameworkServiceBuildResponse) Reset() {
 	*x = FrameworkServiceBuildResponse{}
-	mi := &file_framework_service_proto_msgTypes[17]
+	mi := &file_framework_service_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1086,7 +1033,7 @@ func (x *FrameworkServiceBuildResponse) String() string {
 func (*FrameworkServiceBuildResponse) ProtoMessage() {}
 
 func (x *FrameworkServiceBuildResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_framework_service_proto_msgTypes[17]
+	mi := &file_framework_service_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1099,7 +1046,7 @@ func (x *FrameworkServiceBuildResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FrameworkServiceBuildResponse.ProtoReflect.Descriptor instead.
 func (*FrameworkServiceBuildResponse) Descriptor() ([]byte, []int) {
-	return file_framework_service_proto_rawDescGZIP(), []int{17}
+	return file_framework_service_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *FrameworkServiceBuildResponse) GetResult() *ServiceBuildResult {
@@ -1118,7 +1065,7 @@ type ServiceBuildResult struct {
 
 func (x *ServiceBuildResult) Reset() {
 	*x = ServiceBuildResult{}
-	mi := &file_framework_service_proto_msgTypes[18]
+	mi := &file_framework_service_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1130,7 +1077,7 @@ func (x *ServiceBuildResult) String() string {
 func (*ServiceBuildResult) ProtoMessage() {}
 
 func (x *ServiceBuildResult) ProtoReflect() protoreflect.Message {
-	mi := &file_framework_service_proto_msgTypes[18]
+	mi := &file_framework_service_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1143,7 +1090,7 @@ func (x *ServiceBuildResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServiceBuildResult.ProtoReflect.Descriptor instead.
 func (*ServiceBuildResult) Descriptor() ([]byte, []int) {
-	return file_framework_service_proto_rawDescGZIP(), []int{18}
+	return file_framework_service_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ServiceBuildResult) GetArtifacts() []*Artifact {
@@ -1164,7 +1111,7 @@ type FrameworkServicePackageRequest struct {
 
 func (x *FrameworkServicePackageRequest) Reset() {
 	*x = FrameworkServicePackageRequest{}
-	mi := &file_framework_service_proto_msgTypes[19]
+	mi := &file_framework_service_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1176,7 +1123,7 @@ func (x *FrameworkServicePackageRequest) String() string {
 func (*FrameworkServicePackageRequest) ProtoMessage() {}
 
 func (x *FrameworkServicePackageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_framework_service_proto_msgTypes[19]
+	mi := &file_framework_service_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1189,7 +1136,7 @@ func (x *FrameworkServicePackageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FrameworkServicePackageRequest.ProtoReflect.Descriptor instead.
 func (*FrameworkServicePackageRequest) Descriptor() ([]byte, []int) {
-	return file_framework_service_proto_rawDescGZIP(), []int{19}
+	return file_framework_service_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *FrameworkServicePackageRequest) GetServiceConfig() *ServiceConfig {
@@ -1215,7 +1162,7 @@ type FrameworkServicePackageResponse struct {
 
 func (x *FrameworkServicePackageResponse) Reset() {
 	*x = FrameworkServicePackageResponse{}
-	mi := &file_framework_service_proto_msgTypes[20]
+	mi := &file_framework_service_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1227,7 +1174,7 @@ func (x *FrameworkServicePackageResponse) String() string {
 func (*FrameworkServicePackageResponse) ProtoMessage() {}
 
 func (x *FrameworkServicePackageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_framework_service_proto_msgTypes[20]
+	mi := &file_framework_service_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1240,7 +1187,7 @@ func (x *FrameworkServicePackageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FrameworkServicePackageResponse.ProtoReflect.Descriptor instead.
 func (*FrameworkServicePackageResponse) Descriptor() ([]byte, []int) {
-	return file_framework_service_proto_rawDescGZIP(), []int{20}
+	return file_framework_service_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *FrameworkServicePackageResponse) GetPackageResult() *ServicePackageResult {
@@ -1262,7 +1209,7 @@ type FrameworkServiceProgressMessage struct {
 
 func (x *FrameworkServiceProgressMessage) Reset() {
 	*x = FrameworkServiceProgressMessage{}
-	mi := &file_framework_service_proto_msgTypes[21]
+	mi := &file_framework_service_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1274,7 +1221,7 @@ func (x *FrameworkServiceProgressMessage) String() string {
 func (*FrameworkServiceProgressMessage) ProtoMessage() {}
 
 func (x *FrameworkServiceProgressMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_framework_service_proto_msgTypes[21]
+	mi := &file_framework_service_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1287,7 +1234,7 @@ func (x *FrameworkServiceProgressMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FrameworkServiceProgressMessage.ProtoReflect.Descriptor instead.
 func (*FrameworkServiceProgressMessage) Descriptor() ([]byte, []int) {
-	return file_framework_service_proto_rawDescGZIP(), []int{21}
+	return file_framework_service_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *FrameworkServiceProgressMessage) GetRequestId() string {
@@ -1315,11 +1262,11 @@ var File_framework_service_proto protoreflect.FileDescriptor
 
 const file_framework_service_proto_rawDesc = "" +
 	"\n" +
-	"\x17framework_service.proto\x12\x06azdext\x1a\fmodels.proto\x1a\x14service_target.proto\"\xc0\f\n" +
+	"\x17framework_service.proto\x12\x06azdext\x1a\fmodels.proto\x1a\x14service_target.proto\x1a\ferrors.proto\"\xb2\f\n" +
 	"\x17FrameworkServiceMessage\x12\x1d\n" +
 	"\n" +
-	"request_id\x18\x01 \x01(\tR\trequestId\x12:\n" +
-	"\x05error\x18c \x01(\v2$.azdext.FrameworkServiceErrorMessageR\x05error\x12v\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12,\n" +
+	"\x05error\x18c \x01(\v2\x16.azdext.ExtensionErrorR\x05error\x12v\n" +
 	"\"register_framework_service_request\x18\x02 \x01(\v2'.azdext.RegisterFrameworkServiceRequestH\x00R\x1fregisterFrameworkServiceRequest\x12y\n" +
 	"#register_framework_service_response\x18\x03 \x01(\v2(.azdext.RegisterFrameworkServiceResponseH\x00R registerFrameworkServiceResponse\x12Z\n" +
 	"\x12initialize_request\x18\x04 \x01(\v2).azdext.FrameworkServiceInitializeRequestH\x00R\x11initializeRequest\x12]\n" +
@@ -1336,10 +1283,7 @@ const file_framework_service_proto_rawDesc = "" +
 	"\x0fpackage_request\x18\x0e \x01(\v2&.azdext.FrameworkServicePackageRequestH\x00R\x0epackageRequest\x12T\n" +
 	"\x10package_response\x18\x0f \x01(\v2'.azdext.FrameworkServicePackageResponseH\x00R\x0fpackageResponse\x12T\n" +
 	"\x10progress_message\x18\x10 \x01(\v2'.azdext.FrameworkServiceProgressMessageH\x00R\x0fprogressMessageB\x0e\n" +
-	"\fmessage_type\"R\n" +
-	"\x1cFrameworkServiceErrorMessage\x12\x18\n" +
-	"\amessage\x18\x01 \x01(\tR\amessage\x12\x18\n" +
-	"\adetails\x18\x02 \x01(\tR\adetails\"=\n" +
+	"\fmessage_type\"=\n" +
 	"\x1fRegisterFrameworkServiceRequest\x12\x1a\n" +
 	"\blanguage\x18\x01 \x01(\tR\blanguage\"\"\n" +
 	" RegisterFrameworkServiceResponse\"a\n" +
@@ -1401,64 +1345,64 @@ func file_framework_service_proto_rawDescGZIP() []byte {
 	return file_framework_service_proto_rawDescData
 }
 
-var file_framework_service_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
+var file_framework_service_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_framework_service_proto_goTypes = []any{
 	(*FrameworkServiceMessage)(nil),                       // 0: azdext.FrameworkServiceMessage
-	(*FrameworkServiceErrorMessage)(nil),                  // 1: azdext.FrameworkServiceErrorMessage
-	(*RegisterFrameworkServiceRequest)(nil),               // 2: azdext.RegisterFrameworkServiceRequest
-	(*RegisterFrameworkServiceResponse)(nil),              // 3: azdext.RegisterFrameworkServiceResponse
-	(*FrameworkServiceInitializeRequest)(nil),             // 4: azdext.FrameworkServiceInitializeRequest
-	(*FrameworkServiceInitializeResponse)(nil),            // 5: azdext.FrameworkServiceInitializeResponse
-	(*FrameworkServiceRequiredExternalToolsRequest)(nil),  // 6: azdext.FrameworkServiceRequiredExternalToolsRequest
-	(*FrameworkServiceRequiredExternalToolsResponse)(nil), // 7: azdext.FrameworkServiceRequiredExternalToolsResponse
-	(*ExternalTool)(nil),                                  // 8: azdext.ExternalTool
-	(*FrameworkServiceRequirementsRequest)(nil),           // 9: azdext.FrameworkServiceRequirementsRequest
-	(*FrameworkServiceRequirementsResponse)(nil),          // 10: azdext.FrameworkServiceRequirementsResponse
-	(*FrameworkRequirements)(nil),                         // 11: azdext.FrameworkRequirements
-	(*FrameworkPackageRequirements)(nil),                  // 12: azdext.FrameworkPackageRequirements
-	(*FrameworkServiceRestoreRequest)(nil),                // 13: azdext.FrameworkServiceRestoreRequest
-	(*FrameworkServiceRestoreResponse)(nil),               // 14: azdext.FrameworkServiceRestoreResponse
-	(*ServiceRestoreResult)(nil),                          // 15: azdext.ServiceRestoreResult
-	(*FrameworkServiceBuildRequest)(nil),                  // 16: azdext.FrameworkServiceBuildRequest
-	(*FrameworkServiceBuildResponse)(nil),                 // 17: azdext.FrameworkServiceBuildResponse
-	(*ServiceBuildResult)(nil),                            // 18: azdext.ServiceBuildResult
-	(*FrameworkServicePackageRequest)(nil),                // 19: azdext.FrameworkServicePackageRequest
-	(*FrameworkServicePackageResponse)(nil),               // 20: azdext.FrameworkServicePackageResponse
-	(*FrameworkServiceProgressMessage)(nil),               // 21: azdext.FrameworkServiceProgressMessage
+	(*RegisterFrameworkServiceRequest)(nil),               // 1: azdext.RegisterFrameworkServiceRequest
+	(*RegisterFrameworkServiceResponse)(nil),              // 2: azdext.RegisterFrameworkServiceResponse
+	(*FrameworkServiceInitializeRequest)(nil),             // 3: azdext.FrameworkServiceInitializeRequest
+	(*FrameworkServiceInitializeResponse)(nil),            // 4: azdext.FrameworkServiceInitializeResponse
+	(*FrameworkServiceRequiredExternalToolsRequest)(nil),  // 5: azdext.FrameworkServiceRequiredExternalToolsRequest
+	(*FrameworkServiceRequiredExternalToolsResponse)(nil), // 6: azdext.FrameworkServiceRequiredExternalToolsResponse
+	(*ExternalTool)(nil),                                  // 7: azdext.ExternalTool
+	(*FrameworkServiceRequirementsRequest)(nil),           // 8: azdext.FrameworkServiceRequirementsRequest
+	(*FrameworkServiceRequirementsResponse)(nil),          // 9: azdext.FrameworkServiceRequirementsResponse
+	(*FrameworkRequirements)(nil),                         // 10: azdext.FrameworkRequirements
+	(*FrameworkPackageRequirements)(nil),                  // 11: azdext.FrameworkPackageRequirements
+	(*FrameworkServiceRestoreRequest)(nil),                // 12: azdext.FrameworkServiceRestoreRequest
+	(*FrameworkServiceRestoreResponse)(nil),               // 13: azdext.FrameworkServiceRestoreResponse
+	(*ServiceRestoreResult)(nil),                          // 14: azdext.ServiceRestoreResult
+	(*FrameworkServiceBuildRequest)(nil),                  // 15: azdext.FrameworkServiceBuildRequest
+	(*FrameworkServiceBuildResponse)(nil),                 // 16: azdext.FrameworkServiceBuildResponse
+	(*ServiceBuildResult)(nil),                            // 17: azdext.ServiceBuildResult
+	(*FrameworkServicePackageRequest)(nil),                // 18: azdext.FrameworkServicePackageRequest
+	(*FrameworkServicePackageResponse)(nil),               // 19: azdext.FrameworkServicePackageResponse
+	(*FrameworkServiceProgressMessage)(nil),               // 20: azdext.FrameworkServiceProgressMessage
+	(*ExtensionError)(nil),                                // 21: azdext.ExtensionError
 	(*ServiceConfig)(nil),                                 // 22: azdext.ServiceConfig
 	(*ServiceContext)(nil),                                // 23: azdext.ServiceContext
 	(*Artifact)(nil),                                      // 24: azdext.Artifact
 	(*ServicePackageResult)(nil),                          // 25: azdext.ServicePackageResult
 }
 var file_framework_service_proto_depIdxs = []int32{
-	1,  // 0: azdext.FrameworkServiceMessage.error:type_name -> azdext.FrameworkServiceErrorMessage
-	2,  // 1: azdext.FrameworkServiceMessage.register_framework_service_request:type_name -> azdext.RegisterFrameworkServiceRequest
-	3,  // 2: azdext.FrameworkServiceMessage.register_framework_service_response:type_name -> azdext.RegisterFrameworkServiceResponse
-	4,  // 3: azdext.FrameworkServiceMessage.initialize_request:type_name -> azdext.FrameworkServiceInitializeRequest
-	5,  // 4: azdext.FrameworkServiceMessage.initialize_response:type_name -> azdext.FrameworkServiceInitializeResponse
-	6,  // 5: azdext.FrameworkServiceMessage.required_external_tools_request:type_name -> azdext.FrameworkServiceRequiredExternalToolsRequest
-	7,  // 6: azdext.FrameworkServiceMessage.required_external_tools_response:type_name -> azdext.FrameworkServiceRequiredExternalToolsResponse
-	9,  // 7: azdext.FrameworkServiceMessage.requirements_request:type_name -> azdext.FrameworkServiceRequirementsRequest
-	10, // 8: azdext.FrameworkServiceMessage.requirements_response:type_name -> azdext.FrameworkServiceRequirementsResponse
-	13, // 9: azdext.FrameworkServiceMessage.restore_request:type_name -> azdext.FrameworkServiceRestoreRequest
-	14, // 10: azdext.FrameworkServiceMessage.restore_response:type_name -> azdext.FrameworkServiceRestoreResponse
-	16, // 11: azdext.FrameworkServiceMessage.build_request:type_name -> azdext.FrameworkServiceBuildRequest
-	17, // 12: azdext.FrameworkServiceMessage.build_response:type_name -> azdext.FrameworkServiceBuildResponse
-	19, // 13: azdext.FrameworkServiceMessage.package_request:type_name -> azdext.FrameworkServicePackageRequest
-	20, // 14: azdext.FrameworkServiceMessage.package_response:type_name -> azdext.FrameworkServicePackageResponse
-	21, // 15: azdext.FrameworkServiceMessage.progress_message:type_name -> azdext.FrameworkServiceProgressMessage
+	21, // 0: azdext.FrameworkServiceMessage.error:type_name -> azdext.ExtensionError
+	1,  // 1: azdext.FrameworkServiceMessage.register_framework_service_request:type_name -> azdext.RegisterFrameworkServiceRequest
+	2,  // 2: azdext.FrameworkServiceMessage.register_framework_service_response:type_name -> azdext.RegisterFrameworkServiceResponse
+	3,  // 3: azdext.FrameworkServiceMessage.initialize_request:type_name -> azdext.FrameworkServiceInitializeRequest
+	4,  // 4: azdext.FrameworkServiceMessage.initialize_response:type_name -> azdext.FrameworkServiceInitializeResponse
+	5,  // 5: azdext.FrameworkServiceMessage.required_external_tools_request:type_name -> azdext.FrameworkServiceRequiredExternalToolsRequest
+	6,  // 6: azdext.FrameworkServiceMessage.required_external_tools_response:type_name -> azdext.FrameworkServiceRequiredExternalToolsResponse
+	8,  // 7: azdext.FrameworkServiceMessage.requirements_request:type_name -> azdext.FrameworkServiceRequirementsRequest
+	9,  // 8: azdext.FrameworkServiceMessage.requirements_response:type_name -> azdext.FrameworkServiceRequirementsResponse
+	12, // 9: azdext.FrameworkServiceMessage.restore_request:type_name -> azdext.FrameworkServiceRestoreRequest
+	13, // 10: azdext.FrameworkServiceMessage.restore_response:type_name -> azdext.FrameworkServiceRestoreResponse
+	15, // 11: azdext.FrameworkServiceMessage.build_request:type_name -> azdext.FrameworkServiceBuildRequest
+	16, // 12: azdext.FrameworkServiceMessage.build_response:type_name -> azdext.FrameworkServiceBuildResponse
+	18, // 13: azdext.FrameworkServiceMessage.package_request:type_name -> azdext.FrameworkServicePackageRequest
+	19, // 14: azdext.FrameworkServiceMessage.package_response:type_name -> azdext.FrameworkServicePackageResponse
+	20, // 15: azdext.FrameworkServiceMessage.progress_message:type_name -> azdext.FrameworkServiceProgressMessage
 	22, // 16: azdext.FrameworkServiceInitializeRequest.service_config:type_name -> azdext.ServiceConfig
 	22, // 17: azdext.FrameworkServiceRequiredExternalToolsRequest.service_config:type_name -> azdext.ServiceConfig
-	8,  // 18: azdext.FrameworkServiceRequiredExternalToolsResponse.tools:type_name -> azdext.ExternalTool
-	11, // 19: azdext.FrameworkServiceRequirementsResponse.requirements:type_name -> azdext.FrameworkRequirements
-	12, // 20: azdext.FrameworkRequirements.package:type_name -> azdext.FrameworkPackageRequirements
+	7,  // 18: azdext.FrameworkServiceRequiredExternalToolsResponse.tools:type_name -> azdext.ExternalTool
+	10, // 19: azdext.FrameworkServiceRequirementsResponse.requirements:type_name -> azdext.FrameworkRequirements
+	11, // 20: azdext.FrameworkRequirements.package:type_name -> azdext.FrameworkPackageRequirements
 	22, // 21: azdext.FrameworkServiceRestoreRequest.service_config:type_name -> azdext.ServiceConfig
 	23, // 22: azdext.FrameworkServiceRestoreRequest.service_context:type_name -> azdext.ServiceContext
-	15, // 23: azdext.FrameworkServiceRestoreResponse.restore_result:type_name -> azdext.ServiceRestoreResult
+	14, // 23: azdext.FrameworkServiceRestoreResponse.restore_result:type_name -> azdext.ServiceRestoreResult
 	24, // 24: azdext.ServiceRestoreResult.artifacts:type_name -> azdext.Artifact
 	22, // 25: azdext.FrameworkServiceBuildRequest.service_config:type_name -> azdext.ServiceConfig
 	23, // 26: azdext.FrameworkServiceBuildRequest.service_context:type_name -> azdext.ServiceContext
-	18, // 27: azdext.FrameworkServiceBuildResponse.result:type_name -> azdext.ServiceBuildResult
+	17, // 27: azdext.FrameworkServiceBuildResponse.result:type_name -> azdext.ServiceBuildResult
 	24, // 28: azdext.ServiceBuildResult.artifacts:type_name -> azdext.Artifact
 	22, // 29: azdext.FrameworkServicePackageRequest.service_config:type_name -> azdext.ServiceConfig
 	23, // 30: azdext.FrameworkServicePackageRequest.service_context:type_name -> azdext.ServiceContext
@@ -1479,6 +1423,7 @@ func file_framework_service_proto_init() {
 	}
 	file_models_proto_init()
 	file_service_target_proto_init()
+	file_errors_proto_init()
 	file_framework_service_proto_msgTypes[0].OneofWrappers = []any{
 		(*FrameworkServiceMessage_RegisterFrameworkServiceRequest)(nil),
 		(*FrameworkServiceMessage_RegisterFrameworkServiceResponse)(nil),
@@ -1502,7 +1447,7 @@ func file_framework_service_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_framework_service_proto_rawDesc), len(file_framework_service_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   22,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

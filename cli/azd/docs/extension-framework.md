@@ -334,6 +334,34 @@ The build process automatically creates binaries for multiple platforms and arch
 > [!NOTE]
 > Build times may vary depending on your hardware and extension complexity.
 
+### Distributed Tracing
+
+`azd` uses OpenTelemetry and W3C Trace Context for distributed tracing. `azd` sets `TRACEPARENT` in the environment when it launches the extension process.
+
+Use `azdext.NewContext()` to hydrate the root context with trace context:
+
+```go
+func main() {
+  ctx := azdext.NewContext()
+  rootCmd := cmd.NewRootCommand()
+  if err := rootCmd.ExecuteContext(ctx); err != nil {
+    // Handle error
+  }
+}
+```
+
+To correlate Azure SDK calls with the parent trace, add the correlation policy to your client options:
+
+```go
+import "github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+
+clientOptions := &policy.ClientOptions{
+    PerCallPolicies: []policy.Policy{
+        azsdk.NewMsCorrelationPolicy(),
+    },
+}
+```
+
 ### Developer Extension
 
 The easiest way to get started building extensions is to install the `azd` Developer extension.
@@ -620,6 +648,9 @@ Extensions can subscribe to project and service lifecycle events (both pre and p
 
 Your extension _**must**_ include a `listen` command to subscribe to these events.
 `azd` will automatically invoke your extension during supported commands to establish bi-directional communication.
+
+> [!NOTE]
+> Provision lifecycle events (`preprovision`, `postprovision`) are **not** fired when running `azd provision --preview`.
 
 ##### Service Target Providers (`service-target-provider`)
 
@@ -1895,7 +1926,7 @@ func (r *RustFrameworkProvider) Package(ctx context.Context, serviceConfig *azde
 
 // Register the framework provider
 func main() {
-    ctx := azdext.WithAccessToken(context.Background())
+    ctx := azdext.WithAccessToken(azdext.NewContext())
     azdClient, err := azdext.NewAzdClient()
     if err != nil {
         log.Fatal(err)
@@ -2011,7 +2042,7 @@ func (v *VMServiceTargetProvider) Endpoints(ctx context.Context, serviceConfig *
 
 // Register the service target provider
 func main() {
-    ctx := azdext.WithAccessToken(context.Background())
+    ctx := azdext.WithAccessToken(azdext.NewContext())
     azdClient, err := azdext.NewAzdClient()
     if err != nil {
         log.Fatal(err)

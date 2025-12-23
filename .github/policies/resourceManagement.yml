@@ -73,15 +73,14 @@ configuration:
           reply: "Hi @${issueAuthor}.  Thank you for your contribution.  Since there hasn't been recent engagement, we're going to close this out.  Feel free to respond with a comment containing \"/reopen\" if you'd like to continue working on these changes.  Please be sure to use the command to reopen or remove the \"no-recent-activity\" label; otherwise, this is likely to be closed again with the next cleanup pass.  "
     - description: 
       frequencies:
-      - weekday:
-          day: Friday
-          time: 5:0
+      - hourly:
+          hour: 6
       filters:
       - isOpen
       - isNotLabeledWith:
           label: no-recent-activity
       - noActivitySince:
-          days: 60
+          days: 7
       - isPullRequest
       actions:
       - addLabel:

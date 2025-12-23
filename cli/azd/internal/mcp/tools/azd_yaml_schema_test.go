@@ -136,7 +136,8 @@ func TestHandleAzdYamlSchema_YamlValidButSchemaInvalid(t *testing.T) {
 	tmpFile, err := os.CreateTemp(tmpDir, "azure.yaml")
 	require.NoError(t, err)
 
-	invalidSchemaYaml := []byte("not_a_schema_field: true\n") // valid YAML, but not valid against schema
+	// Valid YAML syntax, but missing required 'name' field for schema validation
+	invalidSchemaYaml := []byte("some_field: value\n")
 	_, err = tmpFile.Write(invalidSchemaYaml)
 	require.NoError(t, err)
 	tmpFile.Close()
@@ -157,7 +158,7 @@ func TestHandleAzdYamlSchema_YamlValidButSchemaInvalid(t *testing.T) {
 	// Assert
 	require.NoError(t, err)
 	text := getText(result)
-	require.Contains(t, text, "additional properties 'not_a_schema_field' not allowed")
+	require.Contains(t, text, "missing property 'name'")
 }
 
 func TestHandleAzdYamlSchema_InvalidYaml_Structural(t *testing.T) {

@@ -110,14 +110,28 @@ func (p *recorderProxy) ServeConn(conn io.Writer, req *http.Request) {
 	resp, err := p.Recorder.RoundTrip(req)
 	if err != nil {
 		p.panic(req, fmt.Sprintf("%s %s: %s", req.Method, req.URL.String(), err.Error()))
-	}
 
-	if err != nil {
 		// report the error back to the client
-		resp = &http.Response{}
-		resp.StatusCode = http.StatusBadRequest
-		resp.Header.Add("x-ms-error-code", err.Error())
-		resp.Body = io.NopCloser(strings.NewReader(fmt.Sprintf(`{"error":{"code":"%s"}}`, err.Error())))
+		errorBody := fmt.Sprintf(`{"error":{"code":"%s"}}`, err.Error())
+		resp = &http.Response{
+			Status:        "400 Bad Request",
+			StatusCode:    http.StatusBadRequest,
+			Proto:         "HTTP/1.1",
+			ProtoMajor:    1,
+			ProtoMinor:    1,
+			Header:        make(http.Header),
+			Body:          io.NopCloser(strings.NewReader(errorBody)),
+			ContentLength: int64(len(errorBody)),
+			Request:       req,
+		}
+		resp.Header.Set("Content-Type", "application/json")
+		resp.Header.Set("Content-Length", fmt.Sprintf("%d", len(errorBody)))
+		resp.Header.Set("x-ms-error-code", fmt.Sprintf("recordingProxy: %s", err.Error()))
+		if writeErr := resp.Write(conn); writeErr != nil {
+			p.Log.Error("failed to write error response", "error", writeErr.Error())
+		}
+
+		return
 	}
 
 	// Always use chunked encoding for transferring the response back, which handles large response bodies, except in the

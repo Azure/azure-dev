@@ -1,5 +1,10 @@
 # Release History
 
+## Unreleased
+
+- Fixes bug during `release` when setting `--prerelease` flag
+- Fixes bug during `build` - execute permissions not set on binary for POSIX systems
+
 ## 0.7.0 (2025-12-03)
 
 - Add language-specific .gitignore templates for `init` command

@@ -176,12 +176,16 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		fmt.Sprintf("AZD_ACCESS_TOKEN=%s", jwtToken),
 	)
 
+	// Propagate trace context to the extension process
+	if traceEnv := tracing.Environ(ctx); len(traceEnv) > 0 {
+		allEnv = append(allEnv, traceEnv...)
+	}
+
 	options := &extensions.InvokeOptions{
-		Args:   a.args,
-		Env:    allEnv,
-		StdIn:  a.console.Handles().Stdin,
-		StdOut: a.console.Handles().Stdout,
-		StdErr: a.console.Handles().Stderr,
+		Args: a.args,
+		Env:  allEnv,
+		// cmd extensions are always interactive (connected to terminal)
+		Interactive: true,
 	}
 
 	_, err = a.extensionRunner.Invoke(ctx, extension, options)

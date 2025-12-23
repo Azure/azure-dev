@@ -27,6 +27,7 @@ import (
 func TestFigSpec(t *testing.T) {
 	configDir := t.TempDir()
 	t.Setenv("AZD_CONFIG_DIR", configDir)
+	t.Setenv("AZURE_DEV_COLLECT_TELEMETRY", "no")
 
 	cli := azdcli.NewCLI(t)
 

@@ -278,6 +278,10 @@ func copyBinaryFiles(extensionId, sourcePath, destPath string) error {
 					if err := internal.CopyFile(path, destFilePath); err != nil {
 						return fmt.Errorf("failed to copy file %s to %s: %w", path, destFilePath, err)
 					}
+					// Set execute permissions on the copied binary
+					if err := os.Chmod(destFilePath, 0755); err != nil {
+						return fmt.Errorf("failed to set execute permissions on %s: %w", destFilePath, err)
+					}
 				}
 			}
 		}

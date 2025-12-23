@@ -18,7 +18,7 @@ export class RevealStep extends AzureWizardExecuteStep<RevealResourceWizardConte
     }
 
     public async execute(context: RevealResourceWizardContext | RevealResourceGroupWizardContext): Promise<void> {
-        ext.outputChannel.appendLog(vscode.l10n.t('RevealStep starting execute with azureResourceId: {0}', context.azureResourceId));
+        ext.outputChannel.appendLog(vscode.l10n.t('RevealStep starting execute with azureResourceId: {0}', context.azureResourceId || 'undefined'));
         const azureResourceId = nonNullProp(context, 'azureResourceId');
         ext.outputChannel.appendLog(vscode.l10n.t('Getting Azure Resource Extension API...'));
         const api = await getAzureResourceExtensionApi();

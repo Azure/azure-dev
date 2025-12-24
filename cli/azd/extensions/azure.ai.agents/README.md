@@ -32,20 +32,6 @@
    azd x publish
    ```
 
-   > **Troubleshooting**: If `azd x publish` fails with "(Failed to load registry)":
-   > 1. Create the registry file (needs to be valid JSON):
-   >    ```bash
-   >    echo '{}' > ~/.azd/registry.json
-   >    ```
-   > 2. Add the local registry as a source:
-   >    ```bash
-   >    azd ext source add -n local -l registry.json -t file
-   >    ```
-   > 3. Retry the publish command:
-   >    ```bash
-   >    azd x publish
-   >    ```
-
 3. **Install the extension**:
    ```bash
    azd ext install azure.ai.agents

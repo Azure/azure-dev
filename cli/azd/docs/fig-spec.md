@@ -35,6 +35,15 @@ UPDATE_SNAPSHOTS=true go test ./cmd -run TestFigSpec
 
 The snapshot is stored at `cli/azd/cmd/testdata/TestFigSpec.ts`.
 
+### Extension commands in snapshots
+
+The `TestFigSpec` and `TestUsage` tests automatically include all extension commands to ensure complete IntelliSense and CLI help coverage. Tests run in an **isolated environment** (temporary `AZD_CONFIG_DIR`) that doesn't affect your local installation:
+
+1. Adds a local extension source pointing to `cli/azd/extensions/registry.json`
+2. Installs all registry extensions, generates snapshots, then cleans up
+
+The [ext-registry-ci workflow](/.github/workflows/ext-registry-ci.yml) runs these tests when `registry.json` is modified in a PR.
+
 ## Updating the spec in VS Code
 
 After azd command or flag changes have been released, update the Fig spec in the VS Code repository to keep IntelliSense up to date.

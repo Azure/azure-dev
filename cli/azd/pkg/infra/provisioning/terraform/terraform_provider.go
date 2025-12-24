@@ -14,7 +14,6 @@ import (
 	"slices"
 	"strings"
 
-	"dario.cat/mergo"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -83,12 +82,13 @@ func NewTerraformProvider(
 }
 
 func (t *TerraformProvider) Initialize(ctx context.Context, projectPath string, options provisioning.Options) error {
-	mergedOptions := provisioning.Options{}
-	mergo.Merge(&mergedOptions, options)
-	mergo.Merge(&mergedOptions, defaultOptions)
+	infraOptions, err := options.GetWithDefaults(defaultOptions)
+	if err != nil {
+		return fmt.Errorf("merging terraform provider options: %w", err)
+	}
 
 	t.projectPath = projectPath
-	t.options = mergedOptions
+	t.options = infraOptions
 
 	requiredTools := t.RequiredExternalTools()
 	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {

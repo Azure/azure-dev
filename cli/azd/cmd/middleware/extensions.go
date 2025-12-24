@@ -15,6 +15,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -132,8 +133,18 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 					allEnv = append(allEnv, "FORCE_COLOR=1")
 				}
 
+				// Propagate trace context to the extension process
+				if traceEnv := tracing.Environ(ctx); len(traceEnv) > 0 {
+					allEnv = append(allEnv, traceEnv...)
+				}
+
+				args := []string{"listen"}
+				if debugEnabled, _ := m.options.Flags.GetBool("debug"); debugEnabled {
+					args = append(args, "--debug")
+				}
+
 				options := &extensions.InvokeOptions{
-					Args:   []string{"listen"},
+					Args:   args,
 					Env:    allEnv,
 					StdIn:  ext.StdIn(),
 					StdOut: ext.StdOut(),

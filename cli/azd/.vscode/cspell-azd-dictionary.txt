@@ -73,6 +73,7 @@ BUILDID
 BUILDNUMBER
 buildpacks
 byoi
+callstack
 cflags
 charmbracelet
 circleci
@@ -80,6 +81,7 @@ cmdrecord
 cmdsubst
 Cobo
 cognitiveservices
+concurx
 conditionalize
 consolesize
 containeragent
@@ -150,6 +152,7 @@ jmes
 jquery
 keychain
 kubelogin
+langchain
 langchaingo
 LASTEXITCODE
 ldflags
@@ -205,6 +208,7 @@ preinit
 protogen
 proxying
 psanford
+pseudonymized
 psycopg
 psycopgbinary
 pulumi

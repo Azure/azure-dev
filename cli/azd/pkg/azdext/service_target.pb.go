@@ -27,9 +27,9 @@ const (
 
 // Envelope for all possible service target messages (requests and responses)
 type ServiceTargetMessage struct {
-	state     protoimpl.MessageState     `protogen:"open.v1"`
-	RequestId string                     `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
-	Error     *ServiceTargetErrorMessage `protobuf:"bytes,99,opt,name=error,proto3" json:"error,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	RequestId string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Error     *ExtensionError        `protobuf:"bytes,99,opt,name=error,proto3" json:"error,omitempty"`
 	// Types that are valid to be assigned to MessageType:
 	//
 	//	*ServiceTargetMessage_RegisterServiceTargetRequest
@@ -89,7 +89,7 @@ func (x *ServiceTargetMessage) GetRequestId() string {
 	return ""
 }
 
-func (x *ServiceTargetMessage) GetError() *ServiceTargetErrorMessage {
+func (x *ServiceTargetMessage) GetError() *ExtensionError {
 	if x != nil {
 		return x.Error
 	}
@@ -736,58 +736,6 @@ func (*RegisterServiceTargetResponse) Descriptor() ([]byte, []int) {
 	return file_service_target_proto_rawDescGZIP(), []int{8}
 }
 
-type ServiceTargetErrorMessage struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
-	Details       string                 `protobuf:"bytes,3,opt,name=details,proto3" json:"details,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ServiceTargetErrorMessage) Reset() {
-	*x = ServiceTargetErrorMessage{}
-	mi := &file_service_target_proto_msgTypes[9]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ServiceTargetErrorMessage) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ServiceTargetErrorMessage) ProtoMessage() {}
-
-func (x *ServiceTargetErrorMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_service_target_proto_msgTypes[9]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ServiceTargetErrorMessage.ProtoReflect.Descriptor instead.
-func (*ServiceTargetErrorMessage) Descriptor() ([]byte, []int) {
-	return file_service_target_proto_rawDescGZIP(), []int{9}
-}
-
-func (x *ServiceTargetErrorMessage) GetMessage() string {
-	if x != nil {
-		return x.Message
-	}
-	return ""
-}
-
-func (x *ServiceTargetErrorMessage) GetDetails() string {
-	if x != nil {
-		return x.Details
-	}
-	return ""
-}
-
 // GetTargetResource request and response
 type GetTargetResourceRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
@@ -805,7 +753,7 @@ type GetTargetResourceRequest struct {
 
 func (x *GetTargetResourceRequest) Reset() {
 	*x = GetTargetResourceRequest{}
-	mi := &file_service_target_proto_msgTypes[10]
+	mi := &file_service_target_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -817,7 +765,7 @@ func (x *GetTargetResourceRequest) String() string {
 func (*GetTargetResourceRequest) ProtoMessage() {}
 
 func (x *GetTargetResourceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_service_target_proto_msgTypes[10]
+	mi := &file_service_target_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -830,7 +778,7 @@ func (x *GetTargetResourceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTargetResourceRequest.ProtoReflect.Descriptor instead.
 func (*GetTargetResourceRequest) Descriptor() ([]byte, []int) {
-	return file_service_target_proto_rawDescGZIP(), []int{10}
+	return file_service_target_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *GetTargetResourceRequest) GetSubscriptionId() string {
@@ -870,7 +818,7 @@ type GetTargetResourceResponse struct {
 
 func (x *GetTargetResourceResponse) Reset() {
 	*x = GetTargetResourceResponse{}
-	mi := &file_service_target_proto_msgTypes[11]
+	mi := &file_service_target_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -882,7 +830,7 @@ func (x *GetTargetResourceResponse) String() string {
 func (*GetTargetResourceResponse) ProtoMessage() {}
 
 func (x *GetTargetResourceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_service_target_proto_msgTypes[11]
+	mi := &file_service_target_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -895,7 +843,7 @@ func (x *GetTargetResourceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTargetResourceResponse.ProtoReflect.Descriptor instead.
 func (*GetTargetResourceResponse) Descriptor() ([]byte, []int) {
-	return file_service_target_proto_rawDescGZIP(), []int{11}
+	return file_service_target_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *GetTargetResourceResponse) GetTargetResource() *TargetResource {
@@ -919,7 +867,7 @@ type TargetResource struct {
 
 func (x *TargetResource) Reset() {
 	*x = TargetResource{}
-	mi := &file_service_target_proto_msgTypes[12]
+	mi := &file_service_target_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -931,7 +879,7 @@ func (x *TargetResource) String() string {
 func (*TargetResource) ProtoMessage() {}
 
 func (x *TargetResource) ProtoReflect() protoreflect.Message {
-	mi := &file_service_target_proto_msgTypes[12]
+	mi := &file_service_target_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -944,7 +892,7 @@ func (x *TargetResource) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TargetResource.ProtoReflect.Descriptor instead.
 func (*TargetResource) Descriptor() ([]byte, []int) {
-	return file_service_target_proto_rawDescGZIP(), []int{12}
+	return file_service_target_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *TargetResource) GetSubscriptionId() string {
@@ -994,7 +942,7 @@ type ServiceTargetDeployRequest struct {
 
 func (x *ServiceTargetDeployRequest) Reset() {
 	*x = ServiceTargetDeployRequest{}
-	mi := &file_service_target_proto_msgTypes[13]
+	mi := &file_service_target_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1006,7 +954,7 @@ func (x *ServiceTargetDeployRequest) String() string {
 func (*ServiceTargetDeployRequest) ProtoMessage() {}
 
 func (x *ServiceTargetDeployRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_service_target_proto_msgTypes[13]
+	mi := &file_service_target_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1019,7 +967,7 @@ func (x *ServiceTargetDeployRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServiceTargetDeployRequest.ProtoReflect.Descriptor instead.
 func (*ServiceTargetDeployRequest) Descriptor() ([]byte, []int) {
-	return file_service_target_proto_rawDescGZIP(), []int{13}
+	return file_service_target_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ServiceTargetDeployRequest) GetServiceConfig() *ServiceConfig {
@@ -1052,7 +1000,7 @@ type ServiceTargetDeployResponse struct {
 
 func (x *ServiceTargetDeployResponse) Reset() {
 	*x = ServiceTargetDeployResponse{}
-	mi := &file_service_target_proto_msgTypes[14]
+	mi := &file_service_target_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1064,7 +1012,7 @@ func (x *ServiceTargetDeployResponse) String() string {
 func (*ServiceTargetDeployResponse) ProtoMessage() {}
 
 func (x *ServiceTargetDeployResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_service_target_proto_msgTypes[14]
+	mi := &file_service_target_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1077,7 +1025,7 @@ func (x *ServiceTargetDeployResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServiceTargetDeployResponse.ProtoReflect.Descriptor instead.
 func (*ServiceTargetDeployResponse) Descriptor() ([]byte, []int) {
-	return file_service_target_proto_rawDescGZIP(), []int{14}
+	return file_service_target_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ServiceTargetDeployResponse) GetResult() *ServiceDeployResult {
@@ -1097,7 +1045,7 @@ type ServicePackageResult struct {
 
 func (x *ServicePackageResult) Reset() {
 	*x = ServicePackageResult{}
-	mi := &file_service_target_proto_msgTypes[15]
+	mi := &file_service_target_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1109,7 +1057,7 @@ func (x *ServicePackageResult) String() string {
 func (*ServicePackageResult) ProtoMessage() {}
 
 func (x *ServicePackageResult) ProtoReflect() protoreflect.Message {
-	mi := &file_service_target_proto_msgTypes[15]
+	mi := &file_service_target_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1122,7 +1070,7 @@ func (x *ServicePackageResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServicePackageResult.ProtoReflect.Descriptor instead.
 func (*ServicePackageResult) Descriptor() ([]byte, []int) {
-	return file_service_target_proto_rawDescGZIP(), []int{15}
+	return file_service_target_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ServicePackageResult) GetArtifacts() []*Artifact {
@@ -1142,7 +1090,7 @@ type ServicePublishResult struct {
 
 func (x *ServicePublishResult) Reset() {
 	*x = ServicePublishResult{}
-	mi := &file_service_target_proto_msgTypes[16]
+	mi := &file_service_target_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1154,7 +1102,7 @@ func (x *ServicePublishResult) String() string {
 func (*ServicePublishResult) ProtoMessage() {}
 
 func (x *ServicePublishResult) ProtoReflect() protoreflect.Message {
-	mi := &file_service_target_proto_msgTypes[16]
+	mi := &file_service_target_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1167,7 +1115,7 @@ func (x *ServicePublishResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServicePublishResult.ProtoReflect.Descriptor instead.
 func (*ServicePublishResult) Descriptor() ([]byte, []int) {
-	return file_service_target_proto_rawDescGZIP(), []int{16}
+	return file_service_target_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ServicePublishResult) GetArtifacts() []*Artifact {
@@ -1187,7 +1135,7 @@ type ServiceDeployResult struct {
 
 func (x *ServiceDeployResult) Reset() {
 	*x = ServiceDeployResult{}
-	mi := &file_service_target_proto_msgTypes[17]
+	mi := &file_service_target_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1199,7 +1147,7 @@ func (x *ServiceDeployResult) String() string {
 func (*ServiceDeployResult) ProtoMessage() {}
 
 func (x *ServiceDeployResult) ProtoReflect() protoreflect.Message {
-	mi := &file_service_target_proto_msgTypes[17]
+	mi := &file_service_target_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1212,7 +1160,7 @@ func (x *ServiceDeployResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServiceDeployResult.ProtoReflect.Descriptor instead.
 func (*ServiceDeployResult) Descriptor() ([]byte, []int) {
-	return file_service_target_proto_rawDescGZIP(), []int{17}
+	return file_service_target_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ServiceDeployResult) GetArtifacts() []*Artifact {
@@ -1233,7 +1181,7 @@ type ServiceTargetPackageRequest struct {
 
 func (x *ServiceTargetPackageRequest) Reset() {
 	*x = ServiceTargetPackageRequest{}
-	mi := &file_service_target_proto_msgTypes[18]
+	mi := &file_service_target_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1245,7 +1193,7 @@ func (x *ServiceTargetPackageRequest) String() string {
 func (*ServiceTargetPackageRequest) ProtoMessage() {}
 
 func (x *ServiceTargetPackageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_service_target_proto_msgTypes[18]
+	mi := &file_service_target_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1258,7 +1206,7 @@ func (x *ServiceTargetPackageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServiceTargetPackageRequest.ProtoReflect.Descriptor instead.
 func (*ServiceTargetPackageRequest) Descriptor() ([]byte, []int) {
-	return file_service_target_proto_rawDescGZIP(), []int{18}
+	return file_service_target_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ServiceTargetPackageRequest) GetServiceConfig() *ServiceConfig {
@@ -1284,7 +1232,7 @@ type ServiceTargetPackageResponse struct {
 
 func (x *ServiceTargetPackageResponse) Reset() {
 	*x = ServiceTargetPackageResponse{}
-	mi := &file_service_target_proto_msgTypes[19]
+	mi := &file_service_target_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1296,7 +1244,7 @@ func (x *ServiceTargetPackageResponse) String() string {
 func (*ServiceTargetPackageResponse) ProtoMessage() {}
 
 func (x *ServiceTargetPackageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_service_target_proto_msgTypes[19]
+	mi := &file_service_target_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1309,7 +1257,7 @@ func (x *ServiceTargetPackageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServiceTargetPackageResponse.ProtoReflect.Descriptor instead.
 func (*ServiceTargetPackageResponse) Descriptor() ([]byte, []int) {
-	return file_service_target_proto_rawDescGZIP(), []int{19}
+	return file_service_target_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ServiceTargetPackageResponse) GetResult() *ServicePackageResult {
@@ -1332,7 +1280,7 @@ type ServiceTargetPublishRequest struct {
 
 func (x *ServiceTargetPublishRequest) Reset() {
 	*x = ServiceTargetPublishRequest{}
-	mi := &file_service_target_proto_msgTypes[20]
+	mi := &file_service_target_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1344,7 +1292,7 @@ func (x *ServiceTargetPublishRequest) String() string {
 func (*ServiceTargetPublishRequest) ProtoMessage() {}
 
 func (x *ServiceTargetPublishRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_service_target_proto_msgTypes[20]
+	mi := &file_service_target_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1357,7 +1305,7 @@ func (x *ServiceTargetPublishRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServiceTargetPublishRequest.ProtoReflect.Descriptor instead.
 func (*ServiceTargetPublishRequest) Descriptor() ([]byte, []int) {
-	return file_service_target_proto_rawDescGZIP(), []int{20}
+	return file_service_target_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ServiceTargetPublishRequest) GetServiceConfig() *ServiceConfig {
@@ -1397,7 +1345,7 @@ type ServiceTargetPublishResponse struct {
 
 func (x *ServiceTargetPublishResponse) Reset() {
 	*x = ServiceTargetPublishResponse{}
-	mi := &file_service_target_proto_msgTypes[21]
+	mi := &file_service_target_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1409,7 +1357,7 @@ func (x *ServiceTargetPublishResponse) String() string {
 func (*ServiceTargetPublishResponse) ProtoMessage() {}
 
 func (x *ServiceTargetPublishResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_service_target_proto_msgTypes[21]
+	mi := &file_service_target_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1422,7 +1370,7 @@ func (x *ServiceTargetPublishResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServiceTargetPublishResponse.ProtoReflect.Descriptor instead.
 func (*ServiceTargetPublishResponse) Descriptor() ([]byte, []int) {
-	return file_service_target_proto_rawDescGZIP(), []int{21}
+	return file_service_target_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ServiceTargetPublishResponse) GetResult() *ServicePublishResult {
@@ -1443,7 +1391,7 @@ type PublishOptions struct {
 
 func (x *PublishOptions) Reset() {
 	*x = PublishOptions{}
-	mi := &file_service_target_proto_msgTypes[22]
+	mi := &file_service_target_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1455,7 +1403,7 @@ func (x *PublishOptions) String() string {
 func (*PublishOptions) ProtoMessage() {}
 
 func (x *PublishOptions) ProtoReflect() protoreflect.Message {
-	mi := &file_service_target_proto_msgTypes[22]
+	mi := &file_service_target_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1468,7 +1416,7 @@ func (x *PublishOptions) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublishOptions.ProtoReflect.Descriptor instead.
 func (*PublishOptions) Descriptor() ([]byte, []int) {
-	return file_service_target_proto_rawDescGZIP(), []int{22}
+	return file_service_target_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *PublishOptions) GetImage() string {
@@ -1489,7 +1437,7 @@ type ServiceTargetEndpointsRequest struct {
 
 func (x *ServiceTargetEndpointsRequest) Reset() {
 	*x = ServiceTargetEndpointsRequest{}
-	mi := &file_service_target_proto_msgTypes[23]
+	mi := &file_service_target_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1501,7 +1449,7 @@ func (x *ServiceTargetEndpointsRequest) String() string {
 func (*ServiceTargetEndpointsRequest) ProtoMessage() {}
 
 func (x *ServiceTargetEndpointsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_service_target_proto_msgTypes[23]
+	mi := &file_service_target_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1514,7 +1462,7 @@ func (x *ServiceTargetEndpointsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServiceTargetEndpointsRequest.ProtoReflect.Descriptor instead.
 func (*ServiceTargetEndpointsRequest) Descriptor() ([]byte, []int) {
-	return file_service_target_proto_rawDescGZIP(), []int{23}
+	return file_service_target_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ServiceTargetEndpointsRequest) GetServiceConfig() *ServiceConfig {
@@ -1540,7 +1488,7 @@ type ServiceTargetEndpointsResponse struct {
 
 func (x *ServiceTargetEndpointsResponse) Reset() {
 	*x = ServiceTargetEndpointsResponse{}
-	mi := &file_service_target_proto_msgTypes[24]
+	mi := &file_service_target_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1552,7 +1500,7 @@ func (x *ServiceTargetEndpointsResponse) String() string {
 func (*ServiceTargetEndpointsResponse) ProtoMessage() {}
 
 func (x *ServiceTargetEndpointsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_service_target_proto_msgTypes[24]
+	mi := &file_service_target_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1565,7 +1513,7 @@ func (x *ServiceTargetEndpointsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServiceTargetEndpointsResponse.ProtoReflect.Descriptor instead.
 func (*ServiceTargetEndpointsResponse) Descriptor() ([]byte, []int) {
-	return file_service_target_proto_rawDescGZIP(), []int{24}
+	return file_service_target_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ServiceTargetEndpointsResponse) GetEndpoints() []string {
@@ -1587,7 +1535,7 @@ type ServiceTargetProgressMessage struct {
 
 func (x *ServiceTargetProgressMessage) Reset() {
 	*x = ServiceTargetProgressMessage{}
-	mi := &file_service_target_proto_msgTypes[25]
+	mi := &file_service_target_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1599,7 +1547,7 @@ func (x *ServiceTargetProgressMessage) String() string {
 func (*ServiceTargetProgressMessage) ProtoMessage() {}
 
 func (x *ServiceTargetProgressMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_service_target_proto_msgTypes[25]
+	mi := &file_service_target_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1612,7 +1560,7 @@ func (x *ServiceTargetProgressMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServiceTargetProgressMessage.ProtoReflect.Descriptor instead.
 func (*ServiceTargetProgressMessage) Descriptor() ([]byte, []int) {
-	return file_service_target_proto_rawDescGZIP(), []int{25}
+	return file_service_target_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *ServiceTargetProgressMessage) GetRequestId() string {
@@ -1640,11 +1588,11 @@ var File_service_target_proto protoreflect.FileDescriptor
 
 const file_service_target_proto_rawDesc = "" +
 	"\n" +
-	"\x14service_target.proto\x12\x06azdext\x1a$include/google/protobuf/struct.proto\x1a\fmodels.proto\"\xc2\v\n" +
+	"\x14service_target.proto\x12\x06azdext\x1a$include/google/protobuf/struct.proto\x1a\fmodels.proto\x1a\ferrors.proto\"\xb7\v\n" +
 	"\x14ServiceTargetMessage\x12\x1d\n" +
 	"\n" +
-	"request_id\x18\x01 \x01(\tR\trequestId\x127\n" +
-	"\x05error\x18c \x01(\v2!.azdext.ServiceTargetErrorMessageR\x05error\x12m\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12,\n" +
+	"\x05error\x18c \x01(\v2\x16.azdext.ExtensionErrorR\x05error\x12m\n" +
 	"\x1fregister_service_target_request\x18\x02 \x01(\v2$.azdext.RegisterServiceTargetRequestH\x00R\x1cregisterServiceTargetRequest\x12p\n" +
 	" register_service_target_response\x18\x03 \x01(\v2%.azdext.RegisterServiceTargetResponseH\x00R\x1dregisterServiceTargetResponse\x12W\n" +
 	"\x12initialize_request\x18\x06 \x01(\v2&.azdext.ServiceTargetInitializeRequestH\x00R\x11initializeRequest\x12Z\n" +
@@ -1686,10 +1634,7 @@ const file_service_target_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"2\n" +
 	"\x1cRegisterServiceTargetRequest\x12\x12\n" +
 	"\x04host\x18\x01 \x01(\tR\x04host\"\x1f\n" +
-	"\x1dRegisterServiceTargetResponse\"O\n" +
-	"\x19ServiceTargetErrorMessage\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\x12\x18\n" +
-	"\adetails\x18\x03 \x01(\tR\adetails\"\xf6\x01\n" +
+	"\x1dRegisterServiceTargetResponse\"\xf6\x01\n" +
 	"\x18GetTargetResourceRequest\x12'\n" +
 	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionId\x12<\n" +
 	"\x0eservice_config\x18\x02 \x01(\v2\x15.azdext.ServiceConfigR\rserviceConfig\x12N\n" +
@@ -1757,7 +1702,7 @@ func file_service_target_proto_rawDescGZIP() []byte {
 	return file_service_target_proto_rawDescData
 }
 
-var file_service_target_proto_msgTypes = make([]protoimpl.MessageInfo, 28)
+var file_service_target_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
 var file_service_target_proto_goTypes = []any{
 	(*ServiceTargetMessage)(nil),            // 0: azdext.ServiceTargetMessage
 	(*ServiceTargetInputParameter)(nil),     // 1: azdext.ServiceTargetInputParameter
@@ -1768,71 +1713,71 @@ var file_service_target_proto_goTypes = []any{
 	(*ServiceTargetOptions)(nil),            // 6: azdext.ServiceTargetOptions
 	(*RegisterServiceTargetRequest)(nil),    // 7: azdext.RegisterServiceTargetRequest
 	(*RegisterServiceTargetResponse)(nil),   // 8: azdext.RegisterServiceTargetResponse
-	(*ServiceTargetErrorMessage)(nil),       // 9: azdext.ServiceTargetErrorMessage
-	(*GetTargetResourceRequest)(nil),        // 10: azdext.GetTargetResourceRequest
-	(*GetTargetResourceResponse)(nil),       // 11: azdext.GetTargetResourceResponse
-	(*TargetResource)(nil),                  // 12: azdext.TargetResource
-	(*ServiceTargetDeployRequest)(nil),      // 13: azdext.ServiceTargetDeployRequest
-	(*ServiceTargetDeployResponse)(nil),     // 14: azdext.ServiceTargetDeployResponse
-	(*ServicePackageResult)(nil),            // 15: azdext.ServicePackageResult
-	(*ServicePublishResult)(nil),            // 16: azdext.ServicePublishResult
-	(*ServiceDeployResult)(nil),             // 17: azdext.ServiceDeployResult
-	(*ServiceTargetPackageRequest)(nil),     // 18: azdext.ServiceTargetPackageRequest
-	(*ServiceTargetPackageResponse)(nil),    // 19: azdext.ServiceTargetPackageResponse
-	(*ServiceTargetPublishRequest)(nil),     // 20: azdext.ServiceTargetPublishRequest
-	(*ServiceTargetPublishResponse)(nil),    // 21: azdext.ServiceTargetPublishResponse
-	(*PublishOptions)(nil),                  // 22: azdext.PublishOptions
-	(*ServiceTargetEndpointsRequest)(nil),   // 23: azdext.ServiceTargetEndpointsRequest
-	(*ServiceTargetEndpointsResponse)(nil),  // 24: azdext.ServiceTargetEndpointsResponse
-	(*ServiceTargetProgressMessage)(nil),    // 25: azdext.ServiceTargetProgressMessage
-	nil,                                     // 26: azdext.ServiceTargetOptions.DeploymentStacksEntry
-	nil,                                     // 27: azdext.TargetResource.MetadataEntry
+	(*GetTargetResourceRequest)(nil),        // 9: azdext.GetTargetResourceRequest
+	(*GetTargetResourceResponse)(nil),       // 10: azdext.GetTargetResourceResponse
+	(*TargetResource)(nil),                  // 11: azdext.TargetResource
+	(*ServiceTargetDeployRequest)(nil),      // 12: azdext.ServiceTargetDeployRequest
+	(*ServiceTargetDeployResponse)(nil),     // 13: azdext.ServiceTargetDeployResponse
+	(*ServicePackageResult)(nil),            // 14: azdext.ServicePackageResult
+	(*ServicePublishResult)(nil),            // 15: azdext.ServicePublishResult
+	(*ServiceDeployResult)(nil),             // 16: azdext.ServiceDeployResult
+	(*ServiceTargetPackageRequest)(nil),     // 17: azdext.ServiceTargetPackageRequest
+	(*ServiceTargetPackageResponse)(nil),    // 18: azdext.ServiceTargetPackageResponse
+	(*ServiceTargetPublishRequest)(nil),     // 19: azdext.ServiceTargetPublishRequest
+	(*ServiceTargetPublishResponse)(nil),    // 20: azdext.ServiceTargetPublishResponse
+	(*PublishOptions)(nil),                  // 21: azdext.PublishOptions
+	(*ServiceTargetEndpointsRequest)(nil),   // 22: azdext.ServiceTargetEndpointsRequest
+	(*ServiceTargetEndpointsResponse)(nil),  // 23: azdext.ServiceTargetEndpointsResponse
+	(*ServiceTargetProgressMessage)(nil),    // 24: azdext.ServiceTargetProgressMessage
+	nil,                                     // 25: azdext.ServiceTargetOptions.DeploymentStacksEntry
+	nil,                                     // 26: azdext.TargetResource.MetadataEntry
+	(*ExtensionError)(nil),                  // 27: azdext.ExtensionError
 	(*ServiceConfig)(nil),                   // 28: azdext.ServiceConfig
 	(*structpb.Struct)(nil),                 // 29: google.protobuf.Struct
 	(*ServiceContext)(nil),                  // 30: azdext.ServiceContext
 	(*Artifact)(nil),                        // 31: azdext.Artifact
 }
 var file_service_target_proto_depIdxs = []int32{
-	9,  // 0: azdext.ServiceTargetMessage.error:type_name -> azdext.ServiceTargetErrorMessage
+	27, // 0: azdext.ServiceTargetMessage.error:type_name -> azdext.ExtensionError
 	7,  // 1: azdext.ServiceTargetMessage.register_service_target_request:type_name -> azdext.RegisterServiceTargetRequest
 	8,  // 2: azdext.ServiceTargetMessage.register_service_target_response:type_name -> azdext.RegisterServiceTargetResponse
 	4,  // 3: azdext.ServiceTargetMessage.initialize_request:type_name -> azdext.ServiceTargetInitializeRequest
 	5,  // 4: azdext.ServiceTargetMessage.initialize_response:type_name -> azdext.ServiceTargetInitializeResponse
-	10, // 5: azdext.ServiceTargetMessage.get_target_resource_request:type_name -> azdext.GetTargetResourceRequest
-	11, // 6: azdext.ServiceTargetMessage.get_target_resource_response:type_name -> azdext.GetTargetResourceResponse
-	13, // 7: azdext.ServiceTargetMessage.deploy_request:type_name -> azdext.ServiceTargetDeployRequest
-	14, // 8: azdext.ServiceTargetMessage.deploy_response:type_name -> azdext.ServiceTargetDeployResponse
-	25, // 9: azdext.ServiceTargetMessage.progress_message:type_name -> azdext.ServiceTargetProgressMessage
-	18, // 10: azdext.ServiceTargetMessage.package_request:type_name -> azdext.ServiceTargetPackageRequest
-	19, // 11: azdext.ServiceTargetMessage.package_response:type_name -> azdext.ServiceTargetPackageResponse
-	20, // 12: azdext.ServiceTargetMessage.publish_request:type_name -> azdext.ServiceTargetPublishRequest
-	21, // 13: azdext.ServiceTargetMessage.publish_response:type_name -> azdext.ServiceTargetPublishResponse
-	23, // 14: azdext.ServiceTargetMessage.endpoints_request:type_name -> azdext.ServiceTargetEndpointsRequest
-	24, // 15: azdext.ServiceTargetMessage.endpoints_response:type_name -> azdext.ServiceTargetEndpointsResponse
+	9,  // 5: azdext.ServiceTargetMessage.get_target_resource_request:type_name -> azdext.GetTargetResourceRequest
+	10, // 6: azdext.ServiceTargetMessage.get_target_resource_response:type_name -> azdext.GetTargetResourceResponse
+	12, // 7: azdext.ServiceTargetMessage.deploy_request:type_name -> azdext.ServiceTargetDeployRequest
+	13, // 8: azdext.ServiceTargetMessage.deploy_response:type_name -> azdext.ServiceTargetDeployResponse
+	24, // 9: azdext.ServiceTargetMessage.progress_message:type_name -> azdext.ServiceTargetProgressMessage
+	17, // 10: azdext.ServiceTargetMessage.package_request:type_name -> azdext.ServiceTargetPackageRequest
+	18, // 11: azdext.ServiceTargetMessage.package_response:type_name -> azdext.ServiceTargetPackageResponse
+	19, // 12: azdext.ServiceTargetMessage.publish_request:type_name -> azdext.ServiceTargetPublishRequest
+	20, // 13: azdext.ServiceTargetMessage.publish_response:type_name -> azdext.ServiceTargetPublishResponse
+	22, // 14: azdext.ServiceTargetMessage.endpoints_request:type_name -> azdext.ServiceTargetEndpointsRequest
+	23, // 15: azdext.ServiceTargetMessage.endpoints_response:type_name -> azdext.ServiceTargetEndpointsResponse
 	28, // 16: azdext.ServiceTargetInitializeRequest.service_config:type_name -> azdext.ServiceConfig
-	26, // 17: azdext.ServiceTargetOptions.deployment_stacks:type_name -> azdext.ServiceTargetOptions.DeploymentStacksEntry
+	25, // 17: azdext.ServiceTargetOptions.deployment_stacks:type_name -> azdext.ServiceTargetOptions.DeploymentStacksEntry
 	29, // 18: azdext.ServiceTargetOptions.config:type_name -> google.protobuf.Struct
 	28, // 19: azdext.GetTargetResourceRequest.service_config:type_name -> azdext.ServiceConfig
-	12, // 20: azdext.GetTargetResourceRequest.default_target_resource:type_name -> azdext.TargetResource
-	12, // 21: azdext.GetTargetResourceResponse.target_resource:type_name -> azdext.TargetResource
-	27, // 22: azdext.TargetResource.metadata:type_name -> azdext.TargetResource.MetadataEntry
+	11, // 20: azdext.GetTargetResourceRequest.default_target_resource:type_name -> azdext.TargetResource
+	11, // 21: azdext.GetTargetResourceResponse.target_resource:type_name -> azdext.TargetResource
+	26, // 22: azdext.TargetResource.metadata:type_name -> azdext.TargetResource.MetadataEntry
 	28, // 23: azdext.ServiceTargetDeployRequest.service_config:type_name -> azdext.ServiceConfig
 	30, // 24: azdext.ServiceTargetDeployRequest.service_context:type_name -> azdext.ServiceContext
-	12, // 25: azdext.ServiceTargetDeployRequest.target_resource:type_name -> azdext.TargetResource
-	17, // 26: azdext.ServiceTargetDeployResponse.result:type_name -> azdext.ServiceDeployResult
+	11, // 25: azdext.ServiceTargetDeployRequest.target_resource:type_name -> azdext.TargetResource
+	16, // 26: azdext.ServiceTargetDeployResponse.result:type_name -> azdext.ServiceDeployResult
 	31, // 27: azdext.ServicePackageResult.artifacts:type_name -> azdext.Artifact
 	31, // 28: azdext.ServicePublishResult.artifacts:type_name -> azdext.Artifact
 	31, // 29: azdext.ServiceDeployResult.artifacts:type_name -> azdext.Artifact
 	28, // 30: azdext.ServiceTargetPackageRequest.service_config:type_name -> azdext.ServiceConfig
 	30, // 31: azdext.ServiceTargetPackageRequest.service_context:type_name -> azdext.ServiceContext
-	15, // 32: azdext.ServiceTargetPackageResponse.result:type_name -> azdext.ServicePackageResult
+	14, // 32: azdext.ServiceTargetPackageResponse.result:type_name -> azdext.ServicePackageResult
 	28, // 33: azdext.ServiceTargetPublishRequest.service_config:type_name -> azdext.ServiceConfig
 	30, // 34: azdext.ServiceTargetPublishRequest.service_context:type_name -> azdext.ServiceContext
-	12, // 35: azdext.ServiceTargetPublishRequest.target_resource:type_name -> azdext.TargetResource
-	22, // 36: azdext.ServiceTargetPublishRequest.publish_options:type_name -> azdext.PublishOptions
-	16, // 37: azdext.ServiceTargetPublishResponse.result:type_name -> azdext.ServicePublishResult
+	11, // 35: azdext.ServiceTargetPublishRequest.target_resource:type_name -> azdext.TargetResource
+	21, // 36: azdext.ServiceTargetPublishRequest.publish_options:type_name -> azdext.PublishOptions
+	15, // 37: azdext.ServiceTargetPublishResponse.result:type_name -> azdext.ServicePublishResult
 	28, // 38: azdext.ServiceTargetEndpointsRequest.service_config:type_name -> azdext.ServiceConfig
-	12, // 39: azdext.ServiceTargetEndpointsRequest.target_resource:type_name -> azdext.TargetResource
+	11, // 39: azdext.ServiceTargetEndpointsRequest.target_resource:type_name -> azdext.TargetResource
 	0,  // 40: azdext.ServiceTargetService.Stream:input_type -> azdext.ServiceTargetMessage
 	0,  // 41: azdext.ServiceTargetService.Stream:output_type -> azdext.ServiceTargetMessage
 	41, // [41:42] is the sub-list for method output_type
@@ -1848,6 +1793,7 @@ func file_service_target_proto_init() {
 		return
 	}
 	file_models_proto_init()
+	file_errors_proto_init()
 	file_service_target_proto_msgTypes[0].OneofWrappers = []any{
 		(*ServiceTargetMessage_RegisterServiceTargetRequest)(nil),
 		(*ServiceTargetMessage_RegisterServiceTargetResponse)(nil),
@@ -1871,7 +1817,7 @@ func file_service_target_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_service_target_proto_rawDesc), len(file_service_target_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   28,
+			NumMessages:   27,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -262,7 +262,7 @@ func (d *StackDeployments) DeployToSubscription(
 
 	_, err = poller.PollUntilDone(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("deploying to subscription: %w", createDeploymentError(err, "Deployment"))
+		return nil, fmt.Errorf("deploying to subscription: %w", createDeploymentError(err, DeploymentOperationDeploy))
 	}
 
 	return d.GetSubscriptionDeployment(ctx, subscriptionId, deploymentName)
@@ -336,7 +336,7 @@ func (d *StackDeployments) DeployToResourceGroup(
 
 	_, err = poller.PollUntilDone(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("deploying to resource group: %w", createDeploymentError(err, "Deployment"))
+		return nil, fmt.Errorf("deploying to resource group: %w", createDeploymentError(err, DeploymentOperationDeploy))
 	}
 
 	return d.GetResourceGroupDeployment(ctx, subscriptionId, resourceGroup, deploymentName)
@@ -788,7 +788,10 @@ func (d *StackDeployments) ValidatePreflightToResourceGroup(
 	}
 	_, err = validateResult.PollUntilDone(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("validating deployment to resource group: %w", createDeploymentError(err, "Validation"))
+		return fmt.Errorf(
+			"validating deployment to resource group: %w",
+			createDeploymentError(err, DeploymentOperationValidate),
+		)
 	}
 
 	return nil
@@ -864,7 +867,10 @@ func (d *StackDeployments) ValidatePreflightToSubscription(
 	}
 	_, err = validateResult.PollUntilDone(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("validating deployment to subscription: %w", createDeploymentError(err, "Validation"))
+		return fmt.Errorf(
+			"validating deployment to subscription: %w",
+			createDeploymentError(err, DeploymentOperationValidate),
+		)
 	}
 
 	return nil

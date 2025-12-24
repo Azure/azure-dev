@@ -162,11 +162,11 @@ func (p *FoundryParser) SetIdentity(ctx context.Context, args *azdext.ProjectEve
 
 	_, err = azdEnvClient.SetValue(ctx, &azdext.SetEnvRequest{
 		EnvName: cResponse.Environment.Name,
-		Key:     "AI_FOUNDRY_PROJECT_APP_ID",
+		Key:     "AZURE_AI_PROJECT_PRINCIPAL_ID",
 		Value:   projectClientID,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to set AI_FOUNDRY_PROJECT_APP_ID in environment: %w", err)
+		return fmt.Errorf("failed to set AZURE_AI_PROJECT_PRINCIPAL_ID in environment: %w", err)
 	}
 
 	fmt.Println("✓ Application ID saved to environment")

@@ -14,7 +14,6 @@ import (
 	"slices"
 	"strings"
 
-	"dario.cat/mergo"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -285,11 +284,12 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		SuccessMessage: "azure.yaml updated.",
 	})
 
-	mergedOptions := provisioning.Options{}
-	mergo.Merge(&mergedOptions, prjConfig.Infra)
-	mergo.Merge(&mergedOptions, project.DefaultProvisioningOptions)
+	infraOptions, err := prjConfig.Infra.GetWithDefaults()
+	if err != nil {
+		return nil, err
+	}
 
-	infraRoot := mergedOptions.Path
+	infraRoot := infraOptions.Path
 	if !filepath.IsAbs(infraRoot) {
 		infraRoot = filepath.Join(prjConfig.Path, infraRoot)
 	}
@@ -302,7 +302,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		"\nRun '%s' to add a secret to the key vault.",
 		output.WithHighLightFormat("azd env set-secret <name>"))
 
-	if _, err := pathHasInfraModule(infraRoot, mergedOptions.Module); err == nil {
+	if _, err := pathHasInfraModule(infraRoot, infraOptions.Module); err == nil {
 		followUpMessage = fmt.Sprintf(
 			"Run '%s' to re-generate the infrastructure, "+
 				"then run '%s' to provision these changes anytime later.",
@@ -403,9 +403,10 @@ func ensureCompatibleProject(
 		}
 	}
 
-	mergedOptions := provisioning.Options{}
-	mergo.Merge(&mergedOptions, prjConfig.Infra)
-	mergo.Merge(&mergedOptions, project.DefaultProvisioningOptions)
+	mergedOptions, err := prjConfig.Infra.GetWithDefaults()
+	if err != nil {
+		return err
+	}
 
 	infraRoot := mergedOptions.Path
 	if !filepath.IsAbs(infraRoot) {

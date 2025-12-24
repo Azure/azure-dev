@@ -143,13 +143,7 @@ func (t *aksTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig
 		ctx,
 		"postprovision",
 		func(ctx context.Context, args ProjectLifecycleEventArgs) error {
-			// Only set the k8s context if we are not in preview mode
-			previewMode, has := args.Args["preview"]
-			if !has || !previewMode.(bool) {
-				return t.setK8sContext(ctx, serviceConfig, "postprovision")
-			}
-
-			return nil
+			return t.setK8sContext(ctx, serviceConfig, "postprovision")
 		},
 	)
 

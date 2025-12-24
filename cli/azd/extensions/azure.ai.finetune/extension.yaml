@@ -1,0 +1,28 @@
+id: azure.ai.finetune
+namespace: ai.finetuning
+displayName: Foundry Fine Tuning (Preview)
+description: Extension for Foundry Fine Tuning. (Preview)
+usage: azd ai finetuning <command> [options]
+version: 0.0.6-preview
+language: go
+capabilities:
+    - custom-commands
+    - lifecycle-events
+    - service-target-provider
+providers:
+  - name: azure.ai.finetune
+    type: service-target
+    description: Deploys fine-tuning jobs to Azure Foundry
+examples:
+    - name: init
+      description: Initialize a new AI fine-tuning project.
+      usage: azd ai finetuning init
+    - name: deploy
+      description: Deploy AI fine-tuning job to Azure.
+      usage: azd ai finetuning deploy
+
+
+
+
+
+

@@ -14,7 +14,8 @@ import (
 	"github.com/spf13/cobra"
 
 	FTYaml "azure.ai.finetune/internal/fine_tuning_yaml"
-	JobWrapper "azure.ai.finetune/internal/tools"
+    JobWrapper "azure.ai.finetune/internal/tools"
+	"azure.ai.finetune/internal/services"
 )
 
 func newOperationCommand() *cobra.Command {
@@ -275,8 +276,8 @@ func newOperationListCommand() *cobra.Command {
 				fmt.Printf("Failed to start spinner: %v\n", err)
 			}
 
-			// List fine-tuning jobs using job wrapper
-			jobs, err := JobWrapper.ListJobs(ctx, azdClient, top, after)
+			fineTuneSvc, err := services.NewFineTuningService(ctx, azdClient, nil)
+			jobs, err := fineTuneSvc.ListFineTuningJobs(ctx, top, after)
 			_ = spinner.Stop(ctx)
 
 			if err != nil {
@@ -285,7 +286,7 @@ func newOperationListCommand() *cobra.Command {
 
 			for i, job := range jobs {
 				fmt.Printf("\n%d. Job ID: %s | Status: %s %s | Model: %s | Fine-tuned: %s | Created: %s",
-					i+1, job.Id, getStatusSymbol(job.Status), job.Status, job.Model, formatFineTunedModel(job.FineTunedModel), job.CreatedAt)
+					i+1, job.ID, getStatusSymbol(string(job.Status)), job.Status, job.BaseModel, formatFineTunedModel(job.FineTunedModel), job.CreatedAt)
 			}
 
 			fmt.Printf("\nTotal jobs: %d\n", len(jobs))

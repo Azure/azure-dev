@@ -6,14 +6,7 @@ package azure
 import (
 	"context"
 
-	"azure.ai.finetune/internal/providers"
 	"azure.ai.finetune/pkg/models"
-)
-
-// Ensure AzureProvider implements FineTuningProvider and ModelDeploymentProvider interfaces
-var (
-	_ providers.FineTuningProvider      = (*AzureProvider)(nil)
-	_ providers.ModelDeploymentProvider = (*AzureProvider)(nil)
 )
 
 // AzureProvider implements the provider interface for Azure APIs

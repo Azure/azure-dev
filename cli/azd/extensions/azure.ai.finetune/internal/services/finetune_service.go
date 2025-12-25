@@ -10,6 +10,7 @@ import (
 	"azure.ai.finetune/internal/providers"
 	"azure.ai.finetune/internal/providers/factory"
 	"azure.ai.finetune/pkg/models"
+	"azure.ai.finetune/internal/utils"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
@@ -31,7 +32,7 @@ func NewFineTuningService(ctx context.Context, azdClient *azdext.AzdClient, stat
 	}
 
 	return &fineTuningServiceImpl{
-		azdClient: azdClient,
+		azdClient:  azdClient,
 		provider:   provider,
 		stateStore: stateStore,
 	}, nil
@@ -56,13 +57,20 @@ func (s *fineTuningServiceImpl) GetFineTuningStatus(ctx context.Context, jobID s
 
 // ListFineTuningJobs lists all fine-tuning jobs for the user
 func (s *fineTuningServiceImpl) ListFineTuningJobs(ctx context.Context, limit int, after string) ([]*models.FineTuningJob, error) {
-	
-	// jobs, err := JobWrapper.ListJobs(ctx, azdClient, top, after)
-	jobs, err := s.provider.ListFineTuningJobs(ctx, limit, after)
+	var jobs []*models.FineTuningJob
+
+	// Use retry utility for list operation
+	err := utils.RetryOperation(ctx, utils.DefaultRetryConfig(), func() error {
+		var err error
+		jobs, err = s.provider.ListFineTuningJobs(ctx, limit, after)
+		return err
+	})
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to list fine-tuning jobs: %w", err)
 	}
-	return jobs, err
+
+	return jobs, nil
 }
 
 // GetFineTuningJobDetails retrieves detailed information about a job

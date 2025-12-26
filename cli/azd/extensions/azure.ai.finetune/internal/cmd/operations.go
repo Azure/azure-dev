@@ -259,7 +259,7 @@ func newOperationListCommand() *cobra.Command {
 	var after string
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List the fine tuning jobs",
+		Short: "list the fine tuning jobs",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			azdClient, err := azdext.NewAzdClient()
@@ -270,18 +270,21 @@ func newOperationListCommand() *cobra.Command {
 
 			// Show spinner while fetching jobs
 			spinner := ux.NewSpinner(&ux.SpinnerOptions{
-				Text: "Fetching fine-tuning jobs...",
+				Text: "fetching fine-tuning jobs...",
 			})
 			if err := spinner.Start(ctx); err != nil {
-				fmt.Printf("Failed to start spinner: %v\n", err)
+				fmt.Printf("failed to start spinner: %v\n", err)
 			}
 
 			fineTuneSvc, err := services.NewFineTuningService(ctx, azdClient, nil)
+			if err != nil {
+				return err
+			}
+
 			jobs, err := fineTuneSvc.ListFineTuningJobs(ctx, top, after)
 			_ = spinner.Stop(ctx)
-
 			if err != nil {
-				return fmt.Errorf("failed to list fine-tuning jobs: %w", err)
+				return err
 			}
 
 			for i, job := range jobs {
@@ -289,13 +292,13 @@ func newOperationListCommand() *cobra.Command {
 					i+1, job.ID, getStatusSymbol(string(job.Status)), job.Status, job.BaseModel, formatFineTunedModel(job.FineTunedModel), job.CreatedAt)
 			}
 
-			fmt.Printf("\nTotal jobs: %d\n", len(jobs))
+			fmt.Printf("\ntotal jobs: %d\n", len(jobs))
 
 			return nil
 		},
 	}
-	cmd.Flags().IntVarP(&top, "top", "t", 50, "Number of fine-tuning jobs to list")
-	cmd.Flags().StringVarP(&after, "after", "a", "", "Cursor for pagination")
+	cmd.Flags().IntVarP(&top, "top", "t", 50, "number of fine-tuning jobs to list")
+	cmd.Flags().StringVarP(&after, "after", "a", "", "cursor for pagination")
 	return cmd
 }
 

@@ -28,7 +28,7 @@ type fineTuningServiceImpl struct {
 func NewFineTuningService(ctx context.Context, azdClient *azdext.AzdClient, stateStore StateStore) (FineTuningService, error) {
 	provider, err := factory.NewFineTuningProvider(ctx, azdClient)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize provider: %w", err)
+		return nil, fmt.Errorf("failed to initialize fine-tuning service: %w", err)
 	}
 
 	return &fineTuningServiceImpl{

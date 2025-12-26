@@ -5,7 +5,6 @@ package openai
 
 import (
 	"context"
-	"fmt"
 
 	"azure.ai.finetune/pkg/models"
 	"github.com/openai/openai-go/v3"
@@ -46,7 +45,7 @@ func (p *OpenAIProvider) ListFineTuningJobs(ctx context.Context, limit int, afte
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to list fine-tuning jobs: %w", err)
+		return nil, err
 	}
 
 	var jobs []*models.FineTuningJob

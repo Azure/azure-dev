@@ -11,10 +11,7 @@ import (
 )
 
 // AzureProvider implements the provider interface for Azure APIs
-// This includes both Azure OpenAI and Azure Cognitive Services APIs
 type AzureProvider struct {
-	// TODO: Add Azure SDK clients
-	// cognitiveServicesClient *armcognitiveservices.Client
 	clientFactory *armcognitiveservices.ClientFactory
 }
 

@@ -7,6 +7,7 @@ import (
 	"context"
 
 	"azure.ai.finetune/pkg/models"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 )
 
 // AzureProvider implements the provider interface for Azure APIs
@@ -14,15 +15,13 @@ import (
 type AzureProvider struct {
 	// TODO: Add Azure SDK clients
 	// cognitiveServicesClient *armcognitiveservices.Client
-	endpoint string
-	apiKey   string
+	clientFactory *armcognitiveservices.ClientFactory
 }
 
 // NewAzureProvider creates a new Azure provider instance
-func NewAzureProvider(endpoint, apiKey string) *AzureProvider {
+func NewAzureProvider(clientFactory *armcognitiveservices.ClientFactory) *AzureProvider {
 	return &AzureProvider{
-		endpoint: endpoint,
-		apiKey:   apiKey,
+		clientFactory: clientFactory,
 	}
 }
 

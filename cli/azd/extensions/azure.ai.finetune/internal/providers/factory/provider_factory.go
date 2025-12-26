@@ -1,13 +1,16 @@
 package factory
 
 import (
-    "context"
-    "fmt"
+	"context"
+	"fmt"
 
-    "github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-    "azure.ai.finetune/internal/providers"
-    openaiprovider "azure.ai.finetune/internal/providers/openai"
-    "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"azure.ai.finetune/internal/providers"
+	openaiprovider "azure.ai.finetune/internal/providers/openai"
+	azureprovider "azure.ai.finetune/internal/providers/azure"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/azure"
 	"github.com/openai/openai-go/v3/option"
@@ -24,7 +27,7 @@ const (
 	// OpenAI API version for Azure cognitive services
 	apiVersion = "2025-04-01-preview"
 	// Azure cognitive services endpoint URL pattern
-	azureCognitiveServicesEndpoint = "https://%s.cognitiveservices.azure.com"
+	azureCognitiveServicesEndpoint = "https://%s.cognitiveservices.azure.com/openai"
 )
 
 func GetOpenAIClientFromAzdClient(ctx context.Context, azdClient *azdext.AzdClient) (*openai.Client, error) {
@@ -64,16 +67,16 @@ func GetOpenAIClientFromAzdClient(ctx context.Context, azdClient *azdext.AzdClie
 	// Get Azure credentials and endpoint - TODO
 	// You'll need to get these from your environment or config
 	accountName := envValueMap["AZURE_ACCOUNT_NAME"]
-	endpoint := fmt.Sprintf(azureCognitiveServicesEndpoint, accountName)
 
-	if endpoint == "" {
-		return nil, fmt.Errorf("AZURE_OPENAI_ENDPOINT environment variable not set")
+	if accountName == "" {
+		return nil, fmt.Errorf("AZURE_ACCOUNT_NAME environment variable not set")
 	}
 
+	endpoint := fmt.Sprintf(azureCognitiveServicesEndpoint, accountName)
 	// Create OpenAI client
 	client := openai.NewClient(
 		//azure.WithEndpoint(endpoint, apiVersion),
-		option.WithBaseURL(fmt.Sprintf("%s/openai", endpoint)),
+		option.WithBaseURL(endpoint),
 		option.WithQuery("api-version", apiVersion),
 		azure.WithTokenCredential(credential),
 	)
@@ -87,7 +90,14 @@ func NewFineTuningProvider(ctx context.Context, azdClient *azdext.AzdClient) (pr
 }
 
 // NewModelDeploymentProvider creates a ModelDeploymentProvider based on provider type
-func NewModelDeploymentProvider(ctx context.Context, azdClient *azdext.AzdClient) (providers.ModelDeploymentProvider, error) {
-    client, err := GetOpenAIClientFromAzdClient(ctx, azdClient);    
-    return openaiprovider.NewOpenAIProvider(client), err;
+func NewModelDeploymentProvider(subscriptionId string, credential azcore.TokenCredential) (providers.ModelDeploymentProvider, error) {
+    clientFactory, err := armcognitiveservices.NewClientFactory(
+		subscriptionId,
+		credential,
+		nil,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create armcognitiveservices client factory: %w", err)
+	}
+	return azureprovider.NewAzureProvider(clientFactory), err;
 }

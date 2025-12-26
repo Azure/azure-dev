@@ -14,13 +14,16 @@ import (
 	"github.com/spf13/cobra"
 
 	FTYaml "azure.ai.finetune/internal/fine_tuning_yaml"
-	JobWrapper "azure.ai.finetune/internal/tools"
 	"azure.ai.finetune/internal/services"
+	JobWrapper "azure.ai.finetune/internal/tools"
 )
 
 func newOperationCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "jobs",
+		Use: "jobs",
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			return validateEnvironment(cmd.Context())
+		},
 		Short: "Manage fine-tuning jobs",
 	}
 

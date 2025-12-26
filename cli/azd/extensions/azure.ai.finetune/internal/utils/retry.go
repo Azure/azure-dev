@@ -9,6 +9,13 @@ import (
 	"time"
 )
 
+const (
+	// DefaultMaxAttempts is the default number of retry attempts
+	DefaultMaxAttempts = 3
+	// DefaultDelaySeconds is the default initial delay in seconds
+	DefaultDelaySeconds = 2
+)
+
 // RetryConfig holds configuration for retry operations
 type RetryConfig struct {
 	MaxAttempts int
@@ -19,8 +26,8 @@ type RetryConfig struct {
 // DefaultRetryConfig returns a sensible default retry configuration
 func DefaultRetryConfig() *RetryConfig {
 	return &RetryConfig{
-		MaxAttempts: 3,
-		Delay:       2 * time.Second,
+		MaxAttempts: DefaultMaxAttempts,
+		Delay:       DefaultDelaySeconds * time.Second,
 		BackoffFunc: func(attempt int, delay time.Duration) time.Duration {
 			// Exponential backoff: 2s, 4s, 8s
 			return delay * time.Duration(1<<(attempt-1))

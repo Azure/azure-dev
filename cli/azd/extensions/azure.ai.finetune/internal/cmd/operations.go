@@ -282,12 +282,14 @@ func newOperationListCommand() *cobra.Command {
 			fineTuneSvc, err := services.NewFineTuningService(ctx, azdClient, nil)
 			if err != nil {
 				_ = spinner.Stop(ctx)
+				fmt.Println()
 				return err
 			}
 
 			jobs, err := fineTuneSvc.ListFineTuningJobs(ctx, limit, after)
 			_ = spinner.Stop(ctx)
 			if err != nil {
+			    fmt.Println()
 				return err
 			}
 

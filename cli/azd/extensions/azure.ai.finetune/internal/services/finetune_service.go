@@ -9,8 +9,8 @@ import (
 
 	"azure.ai.finetune/internal/providers"
 	"azure.ai.finetune/internal/providers/factory"
-	"azure.ai.finetune/pkg/models"
 	"azure.ai.finetune/internal/utils"
+	"azure.ai.finetune/pkg/models"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 

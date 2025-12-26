@@ -70,5 +70,5 @@ func RetryOperation(ctx context.Context, config *RetryConfig, operation func() e
 		}
 	}
 
-	return fmt.Errorf("operation failed after %d attempts: %w", config.MaxAttempts, lastErr)
+	return lastErr
 }

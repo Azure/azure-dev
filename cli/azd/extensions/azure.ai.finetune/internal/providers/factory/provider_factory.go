@@ -5,8 +5,9 @@ import (
 	"fmt"
 
 	"azure.ai.finetune/internal/providers"
-	openaiprovider "azure.ai.finetune/internal/providers/openai"
 	azureprovider "azure.ai.finetune/internal/providers/azure"
+	openaiprovider "azure.ai.finetune/internal/providers/openai"
+	"azure.ai.finetune/internal/utils"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
@@ -19,8 +20,8 @@ import (
 type ProviderType string
 
 const (
-    ProviderTypeOpenAI ProviderType = "openai"
-    ProviderTypeAzure  ProviderType = "azure"
+	ProviderTypeOpenAI ProviderType = "openai"
+	ProviderTypeAzure  ProviderType = "azure"
 )
 
 const (
@@ -31,27 +32,16 @@ const (
 )
 
 func GetOpenAIClientFromAzdClient(ctx context.Context, azdClient *azdext.AzdClient) (*openai.Client, error) {
-	envValueMap := make(map[string]string)
-
-	if envResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{}); err == nil {
-		env := envResponse.Environment
-		envValues, err := azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
-			Name: env.Name,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to get environment values: %w", err)
-		}
-
-		for _, value := range envValues.KeyValues {
-			envValueMap[value.Key] = value.Value
-		}
+	envValueMap, err := utils.GetEnvironmentValues(ctx, azdClient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get environment values: %w", err)
 	}
 
 	azureContext := &azdext.AzureContext{
 		Scope: &azdext.AzureScope{
-			TenantId:       envValueMap["AZURE_TENANT_ID"],
-			SubscriptionId: envValueMap["AZURE_SUBSCRIPTION_ID"],
-			Location:       envValueMap["AZURE_LOCATION"],
+			TenantId:       envValueMap[utils.EnvAzureTenantID],
+			SubscriptionId: envValueMap[utils.EnvAzureSubscriptionID],
+			Location:       envValueMap[utils.EnvAzureLocation],
 		},
 		Resources: []string{},
 	}
@@ -67,11 +57,6 @@ func GetOpenAIClientFromAzdClient(ctx context.Context, azdClient *azdext.AzdClie
 	// Get Azure credentials and endpoint - TODO
 	// You'll need to get these from your environment or config
 	accountName := envValueMap["AZURE_ACCOUNT_NAME"]
-
-	if accountName == "" {
-		return nil, fmt.Errorf("AZURE_ACCOUNT_NAME environment variable not set")
-	}
-
 	endpoint := fmt.Sprintf(azureCognitiveServicesEndpoint, accountName)
 	// Create OpenAI client
 	client := openai.NewClient(
@@ -85,13 +70,13 @@ func GetOpenAIClientFromAzdClient(ctx context.Context, azdClient *azdext.AzdClie
 
 // NewFineTuningProvider creates a FineTuningProvider based on provider type
 func NewFineTuningProvider(ctx context.Context, azdClient *azdext.AzdClient) (providers.FineTuningProvider, error) {
-    client, err := GetOpenAIClientFromAzdClient(ctx, azdClient);    
-    return openaiprovider.NewOpenAIProvider(client), err;
+	client, err := GetOpenAIClientFromAzdClient(ctx, azdClient)
+	return openaiprovider.NewOpenAIProvider(client), err
 }
 
 // NewModelDeploymentProvider creates a ModelDeploymentProvider based on provider type
 func NewModelDeploymentProvider(subscriptionId string, credential azcore.TokenCredential) (providers.ModelDeploymentProvider, error) {
-    clientFactory, err := armcognitiveservices.NewClientFactory(
+	clientFactory, err := armcognitiveservices.NewClientFactory(
 		subscriptionId,
 		credential,
 		nil,
@@ -99,5 +84,5 @@ func NewModelDeploymentProvider(subscriptionId string, credential azcore.TokenCr
 	if err != nil {
 		return nil, fmt.Errorf("failed to create armcognitiveservices client factory: %w", err)
 	}
-	return azureprovider.NewAzureProvider(clientFactory), err;
+	return azureprovider.NewAzureProvider(clientFactory), err
 }

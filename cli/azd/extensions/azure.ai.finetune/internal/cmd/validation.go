@@ -12,6 +12,8 @@ import (
 )
 
 func validateEnvironment(ctx context.Context) error {
+	ctx = azdext.WithAccessToken(ctx)
+
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
 		return err
@@ -19,7 +21,6 @@ func validateEnvironment(ctx context.Context) error {
 	defer azdClient.Close()
 
 	envValues, _ := utils.GetEnvironmentValues(ctx, azdClient)
-
 	required := []string{utils.EnvAzureTenantID, utils.EnvAzureSubscriptionID, utils.EnvAzureLocation, utils.EnvAzureAccountName}
 
 	for _, varName := range required {

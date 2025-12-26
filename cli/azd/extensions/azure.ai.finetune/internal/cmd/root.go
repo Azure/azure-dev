@@ -34,21 +34,19 @@ func NewRootCommand() *cobra.Command {
 		"Enable debug mode",
 	)
 
-	// Adds support for `--no-prompt` global flag in azd
-	// Without this the extension command will error when the flag is provided
+	// Adds support for `--no-prompt` global flag in azd.
+	// Without this the extension command will error when the flag is provided.
 	rootCmd.PersistentFlags().BoolVar(
 		&rootFlags.NoPrompt,
 		"no-prompt",
 		false,
-		"Accepts the default value instead of prompting, or it fails if there is no default.",
+		"accepts the default value instead of prompting, or fails if there is no default",
 	)
 
 	rootCmd.AddCommand(newListenCommand())
 	rootCmd.AddCommand(newVersionCommand())
 	rootCmd.AddCommand(newInitCommand(rootFlags))
 	rootCmd.AddCommand(newOperationCommand())
-	// rootCmd.AddCommand(newOperationListCommand())
-	//rootCmd.AddCommand(newOperationCheckpointsCommand())
 
 	return rootCmd
 }

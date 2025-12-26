@@ -17,13 +17,6 @@ import (
 	"github.com/openai/openai-go/v3/option"
 )
 
-type ProviderType string
-
-const (
-	ProviderTypeOpenAI ProviderType = "openai"
-	ProviderTypeAzure  ProviderType = "azure"
-)
-
 const (
 	// OpenAI API version for Azure cognitive services
 	apiVersion = "2025-04-01-preview"
@@ -56,7 +49,7 @@ func GetOpenAIClientFromAzdClient(ctx context.Context, azdClient *azdext.AzdClie
 
 	// Get Azure credentials and endpoint - TODO
 	// You'll need to get these from your environment or config
-	accountName := envValueMap["AZURE_ACCOUNT_NAME"]
+	accountName := envValueMap[utils.EnvAzureAccountName]
 	endpoint := fmt.Sprintf(azureCognitiveServicesEndpoint, accountName)
 	// Create OpenAI client
 	client := openai.NewClient(

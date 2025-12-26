@@ -44,6 +44,6 @@ func convertOpenAIJobToModel(openaiJob openai.FineTuningJob) *models.FineTuningJ
 		Status:         mapOpenAIStatusToJobStatus(openaiJob.Status),
 		BaseModel:      openaiJob.Model,
 		FineTunedModel: openaiJob.FineTunedModel,
-		CreatedAt:      utils.FormatUnixTimestampToUTC(openaiJob.CreatedAt),
+		CreatedAt:      utils.UnixTimestampToUTC(openaiJob.CreatedAt),
 	}
 }

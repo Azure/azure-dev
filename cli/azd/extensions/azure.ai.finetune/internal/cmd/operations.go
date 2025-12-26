@@ -10,7 +10,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/fatih/color"
-
 	"github.com/spf13/cobra"
 
 	FTYaml "azure.ai.finetune/internal/fine_tuning_yaml"
@@ -257,8 +256,9 @@ func newOperationShowCommand() *cobra.Command {
 	return cmd
 }
 
+// newOperationListCommand creates a command to list fine-tuning jobs
 func newOperationListCommand() *cobra.Command {
-	var top int
+	var limit int
 	var after string
 	cmd := &cobra.Command{
 		Use:   "list",
@@ -281,10 +281,11 @@ func newOperationListCommand() *cobra.Command {
 
 			fineTuneSvc, err := services.NewFineTuningService(ctx, azdClient, nil)
 			if err != nil {
+				_ = spinner.Stop(ctx)
 				return err
 			}
 
-			jobs, err := fineTuneSvc.ListFineTuningJobs(ctx, top, after)
+			jobs, err := fineTuneSvc.ListFineTuningJobs(ctx, limit, after)
 			_ = spinner.Stop(ctx)
 			if err != nil {
 				return err
@@ -300,7 +301,7 @@ func newOperationListCommand() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().IntVarP(&top, "top", "t", 50, "number of fine-tuning jobs to list")
+	cmd.Flags().IntVarP(&limit, "top", "t", 50, "number of fine-tuning jobs to list")
 	cmd.Flags().StringVarP(&after, "after", "a", "", "cursor for pagination")
 	return cmd
 }

@@ -245,7 +245,7 @@ export async function newEnvironment(context: IActionContext, selectedItem?: vsc
     try {
         const envs = await getEnvironments(context, folder.uri.fsPath);
         currentEnv = envs.find(e => e.IsDefault)?.Name;
-    } catch (err) {
+    } catch (_err) {
         // Ignore error, maybe no environments yet
     }
 

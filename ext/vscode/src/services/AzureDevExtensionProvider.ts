@@ -30,7 +30,7 @@ export class WorkspaceAzureDevExtensionProvider implements AzureDevExtensionProv
         try {
             const { stdout } = await execAsync(azureCli.invocation, args, azureCli.spawnOptions());
             return JSON.parse(stdout) as AzDevExtensionListResults;
-        } catch (err) {
+        } catch (_err) {
             // If command fails (e.g. not supported or no extensions), return empty list
             return [];
         }

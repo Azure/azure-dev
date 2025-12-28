@@ -13,3 +13,9 @@ containerapp
 staticwebapp
 devcenter
 processutils
+azurecontainerapps
+azurefunctions
+azurestorage
+eastus
+mystorageaccount
+mycosmosdb

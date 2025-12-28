@@ -21,7 +21,7 @@ suite('RevealStep', () => {
         // Mock ext.outputChannel
         ext.outputChannel = {
             appendLog: sandbox.stub()
-        } as any;
+        } as Partial<typeof ext.outputChannel> as typeof ext.outputChannel;
     });
 
     teardown(() => {

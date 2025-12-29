@@ -110,42 +110,6 @@ type CheckpointsListContract struct {
 	HasMore bool                 `json:"has_more"`
 }
 
-// ListJobs retrieves a list of fine-tuning jobs and returns them as JobContract objects
-func ListJobs(ctx context.Context, azdClient *azdext.AzdClient, top int, after string) ([]JobContract, error) {
-	client, err := GetOpenAIClientFromAzdClient(ctx, azdClient)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create OpenAI client: %w", err)
-	}
-
-	jobList, err := client.FineTuning.Jobs.List(ctx, openai.FineTuningJobListParams{
-		Limit: openai.Int(int64(top)), // optional pagination control
-		After: openai.String(after),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list fine-tuning jobs: %w", err)
-	}
-
-	var jobs []JobContract
-
-	if err != nil {
-		fmt.Printf("failed to list fine-tuning jobs: %v", err)
-	}
-	lineNum := 0
-	for _, job := range jobList.Data {
-		lineNum++
-		jobContract := JobContract{
-			Id:             job.ID,
-			Status:         string(job.Status),
-			Model:          job.Model,
-			CreatedAt:      formatUnixTimestampToUTC(job.CreatedAt),
-			FineTunedModel: job.FineTunedModel,
-		}
-		jobs = append(jobs, jobContract)
-	}
-
-	return jobs, nil
-}
-
 // CreateJob creates a new fine-tuning job with the provided parameters
 func CreateJob(ctx context.Context, azdClient *azdext.AzdClient, params openai.FineTuningJobNewParams) (*JobContract, error) {
 	client, err := GetOpenAIClientFromAzdClient(ctx, azdClient)

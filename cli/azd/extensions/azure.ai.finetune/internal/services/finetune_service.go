@@ -5,9 +5,13 @@ package services
 
 import (
 	"context"
+	"fmt"
 
 	"azure.ai.finetune/internal/providers"
+	"azure.ai.finetune/internal/providers/factory"
+	"azure.ai.finetune/internal/utils"
 	"azure.ai.finetune/pkg/models"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
 // Ensure fineTuningServiceImpl implements FineTuningService interface
@@ -15,16 +19,23 @@ var _ FineTuningService = (*fineTuningServiceImpl)(nil)
 
 // fineTuningServiceImpl implements the FineTuningService interface
 type fineTuningServiceImpl struct {
+	azdClient  *azdext.AzdClient
 	provider   providers.FineTuningProvider
 	stateStore StateStore
 }
 
 // NewFineTuningService creates a new instance of FineTuningService
-func NewFineTuningService(provider providers.FineTuningProvider, stateStore StateStore) FineTuningService {
+func NewFineTuningService(ctx context.Context, azdClient *azdext.AzdClient, stateStore StateStore) (FineTuningService, error) {
+	provider, err := factory.NewFineTuningProvider(ctx, azdClient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize fine-tuning service: %w", err)
+	}
+
 	return &fineTuningServiceImpl{
+		azdClient:  azdClient,
 		provider:   provider,
 		stateStore: stateStore,
-	}
+	}, nil
 }
 
 // CreateFineTuningJob creates a new fine-tuning job with business validation
@@ -46,8 +57,20 @@ func (s *fineTuningServiceImpl) GetFineTuningStatus(ctx context.Context, jobID s
 
 // ListFineTuningJobs lists all fine-tuning jobs for the user
 func (s *fineTuningServiceImpl) ListFineTuningJobs(ctx context.Context, limit int, after string) ([]*models.FineTuningJob, error) {
-	// TODO: Implement
-	return nil, nil
+	var jobs []*models.FineTuningJob
+
+	// Use retry utility for list operation
+	err := utils.RetryOperation(ctx, utils.DefaultRetryConfig(), func() error {
+		var err error
+		jobs, err = s.provider.ListFineTuningJobs(ctx, limit, after)
+		return err
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to list fine-tuning jobs: %w", err)
+	}
+
+	return jobs, nil
 }
 
 // GetFineTuningJobDetails retrieves detailed information about a job

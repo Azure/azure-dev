@@ -6,30 +6,19 @@ package azure
 import (
 	"context"
 
-	"azure.ai.finetune/internal/providers"
 	"azure.ai.finetune/pkg/models"
-)
-
-// Ensure AzureProvider implements FineTuningProvider and ModelDeploymentProvider interfaces
-var (
-	_ providers.FineTuningProvider      = (*AzureProvider)(nil)
-	_ providers.ModelDeploymentProvider = (*AzureProvider)(nil)
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 )
 
 // AzureProvider implements the provider interface for Azure APIs
-// This includes both Azure OpenAI and Azure Cognitive Services APIs
 type AzureProvider struct {
-	// TODO: Add Azure SDK clients
-	// cognitiveServicesClient *armcognitiveservices.Client
-	endpoint string
-	apiKey   string
+	clientFactory *armcognitiveservices.ClientFactory
 }
 
 // NewAzureProvider creates a new Azure provider instance
-func NewAzureProvider(endpoint, apiKey string) *AzureProvider {
+func NewAzureProvider(clientFactory *armcognitiveservices.ClientFactory) *AzureProvider {
 	return &AzureProvider{
-		endpoint: endpoint,
-		apiKey:   apiKey,
+		clientFactory: clientFactory,
 	}
 }
 

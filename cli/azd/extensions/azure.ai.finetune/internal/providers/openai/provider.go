@@ -6,29 +6,19 @@ package openai
 import (
 	"context"
 
-	"azure.ai.finetune/internal/providers"
 	"azure.ai.finetune/pkg/models"
-)
-
-// Ensure OpenAIProvider implements FineTuningProvider and ModelDeploymentProvider interfaces
-var (
-	_ providers.FineTuningProvider      = (*OpenAIProvider)(nil)
-	_ providers.ModelDeploymentProvider = (*OpenAIProvider)(nil)
+	"github.com/openai/openai-go/v3"
 )
 
 // OpenAIProvider implements the provider interface for OpenAI APIs
 type OpenAIProvider struct {
-	// TODO: Add OpenAI SDK client
-	// client *openai.Client
-	apiKey   string
-	endpoint string
+	client *openai.Client
 }
 
 // NewOpenAIProvider creates a new OpenAI provider instance
-func NewOpenAIProvider(apiKey, endpoint string) *OpenAIProvider {
+func NewOpenAIProvider(client *openai.Client) *OpenAIProvider {
 	return &OpenAIProvider{
-		apiKey:   apiKey,
-		endpoint: endpoint,
+		client: client,
 	}
 }
 
@@ -49,8 +39,22 @@ func (p *OpenAIProvider) GetFineTuningStatus(ctx context.Context, jobID string) 
 
 // ListFineTuningJobs lists all fine-tuning jobs
 func (p *OpenAIProvider) ListFineTuningJobs(ctx context.Context, limit int, after string) ([]*models.FineTuningJob, error) {
-	// TODO: Implement
-	return nil, nil
+	jobList, err := p.client.FineTuning.Jobs.List(ctx, openai.FineTuningJobListParams{
+		Limit: openai.Int(int64(limit)), // optional pagination control
+		After: openai.String(after),
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	var jobs []*models.FineTuningJob
+
+	for _, job := range jobList.Data {
+		finetuningJob := convertOpenAIJobToModel(job)
+		jobs = append(jobs, finetuningJob)
+	}
+	return jobs, nil
 }
 
 // GetFineTuningJobDetails retrieves detailed information about a job

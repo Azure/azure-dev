@@ -3,6 +3,7 @@
 
 import { AzExtFsExtra, IActionContext, callWithTelemetryAndErrorHandling } from '@microsoft/vscode-azext-utils';
 import * as vscode from 'vscode';
+import * as yaml from 'yaml';
 import { documentDebounce } from './documentDebounce';
 import { getAzureYamlProjectInformation } from './azureYamlUtils';
 import { TelemetryId } from '../telemetry/telemetryId';
@@ -71,7 +72,6 @@ export class AzureYamlDiagnosticProvider extends vscode.Disposable {
         const text = document.getText();
 
         try {
-            const yaml = require('yaml');
             const doc = yaml.parseDocument(text);
 
             if (!doc || doc.errors.length > 0) {
@@ -91,11 +91,11 @@ export class AzureYamlDiagnosticProvider extends vscode.Disposable {
 
             // Validate services structure
             if (content.services) {
+<<<<<<< HEAD
                 for (const [serviceName, service] of Object.entries(content.services as Record<string, any>)) {
-                    const serviceLineNumber = this.findLineNumber(text, serviceName);
-
-                    // Warn about missing language
-                    if (!service.language) {
+=======
+                for (const [serviceName, service] of Object.entries(content.services as Record<string, { language?: string; host?: string; project?: string }>)) {
+                for (const [serviceName, service] of Object.entries(content.services as Record<string, { language?: string; host?: string; project?: string }>)) {
                         diagnostics.push(new vscode.Diagnostic(
                             new vscode.Range(serviceLineNumber, 0, serviceLineNumber, 100),
                             vscode.l10n.t('Service "{0}" is missing "language" property. This helps azd understand your project.', serviceName),

@@ -93,7 +93,7 @@ export class AzureYamlDiagnosticProvider extends vscode.Disposable {
             if (content.services) {
                 for (const [serviceName, service] of Object.entries(content.services as Record<string, { language?: string; host?: string; project?: string }>)) {
                     const serviceLineNumber = this.findLineNumber(text, serviceName);
-                    
+
                     // Warn about missing language
                     if (!service.language) {
                         diagnostics.push(new vscode.Diagnostic(

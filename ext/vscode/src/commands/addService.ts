@@ -97,7 +97,7 @@ export async function addService(context: IActionContext, node?: AzureDevCliMode
                 const edit = new vscode.WorkspaceEdit();
                 edit.insert(documentUri, insertPosition, serviceSnippet);
                 const success = await vscode.workspace.applyEdit(edit);
-                
+
                 if (success) {
                     void vscode.window.showInformationMessage(`Service '${serviceName}' added to azure.yaml`);
                 }

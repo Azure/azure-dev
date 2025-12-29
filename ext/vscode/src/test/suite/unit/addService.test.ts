@@ -65,7 +65,7 @@ suite('addService', () => {
         const validator = inputBoxOptions?.validateInput;
 
         assert.ok(validator, 'Validator should be provided');
-        
+
         if (validator) {
             // Valid names
             assert.strictEqual(validator('my-service'), undefined);
@@ -133,7 +133,7 @@ suite('addService', () => {
 
         assert.ok(applyEditStub.called, 'applyEdit should be called');
         assert.ok(showInformationMessageStub.called, 'Success message should be shown');
-        
+
         const successMessage = showInformationMessageStub.firstCall.args[0] as string;
         assert.ok(successMessage.includes('api'), 'Success message should include service name');
     });
@@ -241,7 +241,7 @@ suite('addService', () => {
             await addService(mockContext, mockNode);
 
             assert.ok(applyEditStub.called, `applyEdit should be called for host ${host.label}`);
-            
+
             // Reset stubs for next iteration
             applyEditStub.resetHistory();
             showQuickPickStub.resetHistory();

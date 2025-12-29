@@ -91,11 +91,11 @@ export class AzureYamlDiagnosticProvider extends vscode.Disposable {
 
             // Validate services structure
             if (content.services) {
-<<<<<<< HEAD
-                for (const [serviceName, service] of Object.entries(content.services as Record<string, any>)) {
-=======
                 for (const [serviceName, service] of Object.entries(content.services as Record<string, { language?: string; host?: string; project?: string }>)) {
-                for (const [serviceName, service] of Object.entries(content.services as Record<string, { language?: string; host?: string; project?: string }>)) {
+                    const serviceLineNumber = this.findLineNumber(text, serviceName);
+                    
+                    // Warn about missing language
+                    if (!service.language) {
                         diagnostics.push(new vscode.Diagnostic(
                             new vscode.Range(serviceLineNumber, 0, serviceLineNumber, 100),
                             vscode.l10n.t('Service "{0}" is missing "language" property. This helps azd understand your project.', serviceName),

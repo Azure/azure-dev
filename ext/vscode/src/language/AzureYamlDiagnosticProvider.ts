@@ -54,6 +54,9 @@ export class AzureYamlDiagnosticProvider extends vscode.Disposable {
 
                     results.push(diagnostic);
                 }
+
+                // Additional validation checks
+                results.push(...this.validateYamlStructure(document));
             } catch {
                 // Best effort--the YAML extension will show parsing errors for us if it is present
             }
@@ -61,6 +64,93 @@ export class AzureYamlDiagnosticProvider extends vscode.Disposable {
             context.telemetry.measurements.diagnosticCount = results.length;
             return results;
         });
+    }
+
+    private validateYamlStructure(document: vscode.TextDocument): vscode.Diagnostic[] {
+        const diagnostics: vscode.Diagnostic[] = [];
+        const text = document.getText();
+
+        try {
+            const yaml = require('yaml');
+            const doc = yaml.parseDocument(text);
+
+            if (!doc || doc.errors.length > 0) {
+                return diagnostics;
+            }
+
+            const content = doc.toJSON();
+
+            // Validate required name property
+            if (!content.name) {
+                diagnostics.push(new vscode.Diagnostic(
+                    new vscode.Range(0, 0, 0, 0),
+                    vscode.l10n.t('Missing required "name" property. Add a name for your application.'),
+                    vscode.DiagnosticSeverity.Warning
+                ));
+            }
+
+            // Validate services structure
+            if (content.services) {
+                for (const [serviceName, service] of Object.entries(content.services as Record<string, any>)) {
+                    const serviceLineNumber = this.findLineNumber(text, serviceName);
+
+                    // Warn about missing language
+                    if (!service.language) {
+                        diagnostics.push(new vscode.Diagnostic(
+                            new vscode.Range(serviceLineNumber, 0, serviceLineNumber, 100),
+                            vscode.l10n.t('Service "{0}" is missing "language" property. This helps azd understand your project.', serviceName),
+                            vscode.DiagnosticSeverity.Information
+                        ));
+                    }
+
+                    // Warn about missing host
+                    if (!service.host) {
+                        diagnostics.push(new vscode.Diagnostic(
+                            new vscode.Range(serviceLineNumber, 0, serviceLineNumber, 100),
+                            vscode.l10n.t('Service "{0}" is missing "host" property. Specify the Azure platform for deployment.', serviceName),
+                            vscode.DiagnosticSeverity.Information
+                        ));
+                    }
+
+                    // Validate host value
+                    if (service.host) {
+                        const validHosts = ['containerapp', 'appservice', 'function', 'aks', 'staticwebapp'];
+                        if (!validHosts.includes(service.host)) {
+                            const hostLineNumber = this.findLineNumber(text, 'host:', serviceLineNumber);
+                            diagnostics.push(new vscode.Diagnostic(
+                                new vscode.Range(hostLineNumber, 0, hostLineNumber, 100),
+                                vscode.l10n.t('Invalid host type "{0}". Valid options: {1}', service.host, validHosts.join(', ')),
+                                vscode.DiagnosticSeverity.Warning
+                            ));
+                        }
+                    }
+
+                    // Validate project path format
+                    if (service.project && !service.project.startsWith('./')) {
+                        const projectLineNumber = this.findLineNumber(text, 'project:', serviceLineNumber);
+                        diagnostics.push(new vscode.Diagnostic(
+                            new vscode.Range(projectLineNumber, 0, projectLineNumber, 100),
+                            vscode.l10n.t('Project paths should start with "./" for clarity.'),
+                            vscode.DiagnosticSeverity.Information
+                        ));
+                    }
+                }
+            }
+        } catch {
+            // Ignore parsing errors - YAML extension handles those
+        }
+
+        return diagnostics;
+    }
+
+    private findLineNumber(text: string, searchString: string, startLine: number = 0): number {
+        const lines = text.split('\n');
+        for (let i = startLine; i < lines.length; i++) {
+            if (lines[i].includes(searchString)) {
+                return i;
+            }
+        }
+        return startLine;
     }
 
     private async updateDiagnosticsFor(document: vscode.TextDocument, delay: boolean = true): Promise<void> {

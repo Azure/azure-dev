@@ -19,3 +19,12 @@ azurestorage
 eastus
 mystorageaccount
 mycosmosdb
+azext
+prerestore
+postrestore
+preprovision
+postprovision
+predeploy
+postdeploy
+invalidhost
+unknownkeyword

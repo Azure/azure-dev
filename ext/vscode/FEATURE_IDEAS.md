@@ -24,11 +24,16 @@ This document outlines potential features and enhancements for the Azure Develop
 
 ## Workflow & Productivity
 
-### 4. Smart Templates & Scaffolding
+### 4. Smart Templates & Scaffolding ~~(COMPLETED)~~
 
-- Template preview before init (show what services will be created)
-- Custom template wizard with live preview
+- ~~Template preview before init (show what services will be created)~~
+- ~~Custom template wizard with live preview~~
 - ~~"Add service" command to existing azure.yaml (add database, cache, etc.)~~
+- ~~Browse templates from awesome-azd gallery (https://aka.ms/awesome-azd)~~
+- ~~Filter templates by AI/ML focus (https://aka.ms/aiapps)~~
+- ~~Search templates by language, framework, or Azure service~~
+- ~~Quick start options for users without azure.yaml (init from code, minimal project)~~
+- ~~Category-based template browsing (AI, Web Apps, APIs, Containers, Databases)~~
 
 ### 5. Environment Diff & Management
 

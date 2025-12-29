@@ -21,6 +21,7 @@ import { revealAzureResource, revealAzureResourceGroup, showInAzurePortal } from
 import { disableDevCenterMode, enableDevCenterMode } from './devCenterMode';
 import { installExtension, uninstallExtension, upgradeExtension } from './extensions';
 import { addService } from './addService';
+import { initFromCode, initMinimal, initFromTemplate, searchTemplates, openGallery, openReadme, openGitHubRepo } from './templateTools';
 
 export function registerCommands(): void {
     registerActivityCommand('azure-dev.commands.cli.init', init);
@@ -52,6 +53,15 @@ export function registerCommands(): void {
 
     registerActivityCommand('azure-dev.commands.enableDevCenterMode', enableDevCenterMode);
     registerActivityCommand('azure-dev.commands.disableDevCenterMode', disableDevCenterMode);
+
+    registerActivityCommand('azure-dev.views.templateTools.initFromCode', initFromCode);
+    registerActivityCommand('azure-dev.views.templateTools.initMinimal', initMinimal);
+    registerActivityCommand('azure-dev.views.templateTools.initFromTemplate', initFromTemplate);
+    registerActivityCommand('azure-dev.views.templateTools.initFromTemplateInline', initFromTemplate);
+    registerActivityCommand('azure-dev.views.templateTools.search', searchTemplates);
+    registerActivityCommand('azure-dev.views.templateTools.openGallery', openGallery);
+    registerActivityCommand('azure-dev.views.templateTools.openReadme', openReadme);
+    registerActivityCommand('azure-dev.views.templateTools.openGitHub', openGitHubRepo);
 
     // getDotEnvFilePath() is a utility command that does not deserve "user activity" designation.
     registerCommandAzUI('azure-dev.commands.getDotEnvFilePath', getDotEnvFilePath);

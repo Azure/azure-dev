@@ -4,6 +4,7 @@ import { MyProjectTreeDataProvider } from './myProject/MyProjectTreeDataProvider
 import { EnvironmentsTreeDataProvider, EnvironmentTreeItem, EnvironmentItem } from './environments/EnvironmentsTreeDataProvider';
 import { AzureDevCliEnvironmentVariable } from './workspace/AzureDevCliEnvironmentVariables';
 import { ExtensionsTreeDataProvider } from './extensions/ExtensionsTreeDataProvider';
+import { TemplateToolsTreeDataProvider } from './templateTools/TemplateToolsTreeDataProvider';
 
 export function registerViews(context: vscode.ExtensionContext): void {
     const helpAndFeedbackProvider = new HelpAndFeedbackTreeDataProvider();
@@ -58,6 +59,17 @@ export function registerViews(context: vscode.ExtensionContext): void {
                     void vscode.commands.executeCommand('vscode.open', vscode.Uri.file(envItem.dotEnvPath));
                 }
             }
+        })
+    );
+
+    const templateToolsProvider = new TemplateToolsTreeDataProvider();
+    context.subscriptions.push(
+        vscode.window.registerTreeDataProvider('azure-dev.views.templateTools', templateToolsProvider)
+    );
+    context.subscriptions.push(templateToolsProvider);
+    context.subscriptions.push(
+        vscode.commands.registerCommand('azure-dev.views.templateTools.refresh', () => {
+            templateToolsProvider.refresh();
         })
     );
 }

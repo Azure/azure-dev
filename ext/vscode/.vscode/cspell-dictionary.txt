@@ -28,3 +28,11 @@ predeploy
 postdeploy
 invalidhost
 unknownkeyword
+aicollection
+webapps
+reactjs
+azuresql
+azuredb
+retval
+LOCALAPPDATA
+ellismg

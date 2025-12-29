@@ -34,6 +34,12 @@ Intelligent editing support for your `azure.yaml` configuration files:
 
 - **My Project** - View your azure.yaml configuration and services
 - **Environments** - Manage development, staging, and production environments
+- **Template Tools** - Discover and initialize projects from templates
+  - **Quick Start** (shown when no azure.yaml exists) - Initialize from existing code or create minimal project
+  - **Browse by Category** - Explore templates organized by type (AI, Web Apps, APIs, Containers, Databases, Functions)
+  - **AI Templates** - Quick access to AI-focused templates from [aka.ms/aiapps](https://aka.ms/aiapps)
+  - **Search Templates** - Find templates by name, description, or tags
+  - **Template Gallery** - Open the full [awesome-azd](https://aka.ms/awesome-azd) gallery in browser
 - **Extensions** - Browse and manage Azure Developer CLI extensions
 - **Help and Feedback** - Quick access to documentation and support
 

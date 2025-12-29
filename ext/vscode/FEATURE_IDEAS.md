@@ -28,7 +28,7 @@ This document outlines potential features and enhancements for the Azure Develop
 
 - Template preview before init (show what services will be created)
 - Custom template wizard with live preview
-- "Add service" command to existing azure.yaml (add database, cache, etc.)
+- ~~"Add service" command to existing azure.yaml (add database, cache, etc.)~~
 
 ### 5. Environment Diff & Management
 

@@ -20,6 +20,7 @@ import { getDotEnvFilePath } from './getDotEnvFilePath';
 import { revealAzureResource, revealAzureResourceGroup, showInAzurePortal } from './azureWorkspace/reveal';
 import { disableDevCenterMode, enableDevCenterMode } from './devCenterMode';
 import { installExtension, uninstallExtension, upgradeExtension } from './extensions';
+import { addService } from './addService';
 
 export function registerCommands(): void {
     registerActivityCommand('azure-dev.commands.cli.init', init);
@@ -43,6 +44,7 @@ export function registerCommands(): void {
     registerActivityCommand('azure-dev.commands.cli.extension-install', installExtension);
     registerActivityCommand('azure-dev.commands.cli.extension-uninstall', uninstallExtension);
     registerActivityCommand('azure-dev.commands.cli.extension-upgrade', upgradeExtension);
+    registerActivityCommand('azure-dev.commands.addService', addService);
 
     registerActivityCommand('azure-dev.commands.azureWorkspace.revealAzureResource', revealAzureResource);
     registerActivityCommand('azure-dev.commands.azureWorkspace.revealAzureResourceGroup', revealAzureResourceGroup);

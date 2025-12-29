@@ -145,6 +145,12 @@
             },
             {
                 "category": "%azure-dev.commands_category%",
+                "command": "azure-dev.commands.addService",
+                "title": "Add Service...",
+                "icon": "$(add)"
+            },
+            {
+                "category": "%azure-dev.commands_category%",
                 "command": "azure-dev.commands.getDotEnvFilePath",
                 "title": "%azure-dev.commands.getDotEnvFilePath.title%"
             },
@@ -250,6 +256,10 @@
                     "when": "false"
                 },
                 {
+                    "command": "azure-dev.commands.addService",
+                    "when": "false"
+                },
+                {
                     "command": "azure-dev.commands.getDotEnvFilePath",
                     "when": "false"
                 },
@@ -341,6 +351,11 @@
                 }
             ],
             "view/item/context": [
+                {
+                    "command": "azure-dev.commands.addService",
+                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.services/i",
+                    "group": "inline@10"
+                },
                 {
                     "command": "azure-dev.commands.cli.up",
                     "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.application/i",

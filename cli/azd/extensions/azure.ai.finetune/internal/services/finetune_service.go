@@ -76,7 +76,15 @@ func (s *fineTuningServiceImpl) ListFineTuningJobs(ctx context.Context, limit in
 
 // GetFineTuningJobDetails retrieves detailed information about a job
 func (s *fineTuningServiceImpl) GetFineTuningJobDetails(ctx context.Context, jobID string) (*models.FineTuningJobDetail, error) {
-	jobDetail, err := s.provider.GetFineTuningJobDetails(ctx, jobID)
+	var jobDetail *models.FineTuningJobDetail
+
+	// Use retry utility for job detail operation
+	err := utils.RetryOperation(ctx, utils.DefaultRetryConfig(), func() error {
+		var err error
+		jobDetail, err = s.provider.GetFineTuningJobDetails(ctx, jobID)
+		return err
+	})
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to get job details: %w", err)
 	}
@@ -86,7 +94,15 @@ func (s *fineTuningServiceImpl) GetFineTuningJobDetails(ctx context.Context, job
 
 // GetJobEvents retrieves events for a job with filtering and pagination
 func (s *fineTuningServiceImpl) GetJobEvents(ctx context.Context, jobID string) (*models.JobEventsList, error) {
-	eventsList, err := s.provider.GetJobEvents(ctx, jobID)
+	var eventsList *models.JobEventsList
+
+	// Use retry utility for job events operation
+	err := utils.RetryOperation(ctx, utils.DefaultRetryConfig(), func() error {
+		var err error
+		eventsList, err = s.provider.GetJobEvents(ctx, jobID)
+		return err
+	})
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to get job events: %w", err)
 	}
@@ -96,10 +112,19 @@ func (s *fineTuningServiceImpl) GetJobEvents(ctx context.Context, jobID string) 
 
 // GetJobCheckpoints retrieves checkpoints for a job with pagination
 func (s *fineTuningServiceImpl) GetJobCheckpoints(ctx context.Context, jobID string) (*models.JobCheckpointsList, error) {
-	checkpointList, err := s.provider.GetJobCheckpoints(ctx, jobID)
+	var checkpointList *models.JobCheckpointsList
+
+	// Use retry utility for job checkpoints operation
+	err := utils.RetryOperation(ctx, utils.DefaultRetryConfig(), func() error {
+		var err error
+		checkpointList, err = s.provider.GetJobCheckpoints(ctx, jobID)
+		return err
+	})
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to get job checkpoints: %w", err)
 	}
+
 	return checkpointList, nil
 }
 

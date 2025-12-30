@@ -15,6 +15,7 @@ import (
 	FTYaml "azure.ai.finetune/internal/fine_tuning_yaml"
 	"azure.ai.finetune/internal/services"
 	JobWrapper "azure.ai.finetune/internal/tools"
+	"azure.ai.finetune/internal/utils"
 )
 
 func newOperationCommand() *cobra.Command {
@@ -181,9 +182,9 @@ func newOperationShowCommand() *cobra.Command {
 			fmt.Printf("Status:              %s %s\n", getStatusSymbol(string(job.Status)), job.Status)
 			fmt.Printf("Model:               %s\n", job.Model)
 			fmt.Printf("Fine-tuned Model:    %s\n", formatFineTunedModel(job.FineTunedModel))
-			fmt.Printf("Created At:          %s\n", job.CreatedAt)
+			fmt.Printf("Created At:          %s\n", utils.FormatTime(job.CreatedAt))
 			if !job.FinishedAt.IsZero() {
-				fmt.Printf("Finished At:         %s\n", job.FinishedAt)
+				fmt.Printf("Finished At:         %s\n", utils.FormatTime(job.FinishedAt))
 			}
 			fmt.Printf("Method:              %s\n", job.Method)
 			fmt.Printf("Training File:       %s\n", job.TrainingFile)
@@ -215,7 +216,7 @@ func newOperationShowCommand() *cobra.Command {
 			} else if events != nil && len(events.Data) > 0 {
 				fmt.Println("\nJob Events:")
 				for i, event := range events.Data {
-					fmt.Printf("  %d. [%s] %s - %s\n", i+1, event.Level, event.CreatedAt, event.Message)
+					fmt.Printf("  %d. [%s] %s - %s\n", i+1, event.Level, utils.FormatTime(event.CreatedAt), event.Message)
 				}
 				if events.HasMore {
 					fmt.Println("  ... (more events available)")
@@ -241,7 +242,7 @@ func newOperationShowCommand() *cobra.Command {
 					for i, checkpoint := range checkpoints.Data {
 						fmt.Printf("  %d. Checkpoint ID: %s\n", i+1, checkpoint.ID)
 						fmt.Printf("     Checkpoint Name:       %s\n", checkpoint.FineTunedModelCheckpoint)
-						fmt.Printf("     Created On:            %s\n", checkpoint.CreatedAt)
+						fmt.Printf("     Created On:            %s\n", utils.FormatTime(checkpoint.CreatedAt))
 						fmt.Printf("     Step Number:           %d\n", checkpoint.StepNumber)
 						if checkpoint.Metrics != nil {
 							fmt.Printf("     Full Validation Loss:  %.6f\n", checkpoint.Metrics.FullValidLoss)
@@ -302,7 +303,7 @@ func newOperationListCommand() *cobra.Command {
 
 			for i, job := range jobs {
 				fmt.Printf("\n%d. Job ID: %s | Status: %s %s | Model: %s | Fine-tuned: %s | Created: %s",
-					i+1, job.ID, getStatusSymbol(string(job.Status)), job.Status, job.BaseModel, formatFineTunedModel(job.FineTunedModel), job.CreatedAt)
+					i+1, job.ID, getStatusSymbol(string(job.Status)), job.Status, job.BaseModel, formatFineTunedModel(job.FineTunedModel), utils.FormatTime(job.CreatedAt))
 			}
 
 			fmt.Printf("\ntotal jobs: %d\n", len(jobs))

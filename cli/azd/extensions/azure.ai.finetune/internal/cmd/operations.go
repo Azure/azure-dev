@@ -175,14 +175,6 @@ func newOperationShowCommand() *cobra.Command {
 				return err
 			}
 			
-			// // Fetch fine-tuning job details using job wrapper
-			// job, err := JobWrapper.GetJobDetails(ctx, azdClient, jobID)
-			// _ = spinner.Stop(ctx)
-
-			// if err != nil {
-			// 	return fmt.Errorf("failed to get fine-tuning job details: %w", err)
-			// }
-
 			// Print job details
 			color.Green("\nfine-tuning job details\n")
 			fmt.Printf("Job ID:              %s\n", job.ID)
@@ -216,7 +208,6 @@ func newOperationShowCommand() *cobra.Command {
 			}
 
 			events, err := fineTuneSvc.GetJobEvents(ctx, jobID)
-			// events, err := JobWrapper.GetJobEvents(ctx, azdClient, jobID)
 			_ = eventsSpinner.Stop(ctx)
 
 			if err != nil {
@@ -241,7 +232,6 @@ func newOperationShowCommand() *cobra.Command {
 				}
 
 				checkpoints, err := fineTuneSvc.GetJobCheckpoints(ctx, jobID)
-				// checkpoints, err := JobWrapper.GetJobCheckPoints(ctx, azdClient, jobID)
 				_ = checkpointsSpinner.Stop(ctx)
 
 				if err != nil {

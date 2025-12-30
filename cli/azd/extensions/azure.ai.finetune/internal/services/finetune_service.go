@@ -7,11 +7,12 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+
 	"azure.ai.finetune/internal/providers"
 	"azure.ai.finetune/internal/providers/factory"
 	"azure.ai.finetune/internal/utils"
 	"azure.ai.finetune/pkg/models"
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
 // Ensure fineTuningServiceImpl implements FineTuningService interface
@@ -84,17 +85,17 @@ func (s *fineTuningServiceImpl) GetFineTuningJobDetails(ctx context.Context, job
 }
 
 // GetJobEvents retrieves events for a job with filtering and pagination
-func (s *fineTuningServiceImpl) GetJobEvents(ctx context.Context, jobID string) (*models.JobEventsListContract, error) {
+func (s *fineTuningServiceImpl) GetJobEvents(ctx context.Context, jobID string) (*models.JobEventsList, error) {
 	eventsList, err := s.provider.GetJobEvents(ctx, jobID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get job events: %w", err)
 	}
-	
+
 	return eventsList, nil
 }
 
 // GetJobCheckpoints retrieves checkpoints for a job with pagination
-func (s *fineTuningServiceImpl) GetJobCheckpoints(ctx context.Context, jobID string) (*models.JobCheckpointsListContract, error) {
+func (s *fineTuningServiceImpl) GetJobCheckpoints(ctx context.Context, jobID string) (*models.JobCheckpointsList, error) {
 	checkpointList, err := s.provider.GetJobCheckpoints(ctx, jobID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get job checkpoints: %w", err)

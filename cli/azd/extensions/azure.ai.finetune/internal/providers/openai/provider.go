@@ -6,8 +6,9 @@ package openai
 import (
 	"context"
 
-	"azure.ai.finetune/pkg/models"
 	"github.com/openai/openai-go/v3"
+
+	"azure.ai.finetune/pkg/models"
 )
 
 // OpenAIProvider implements the provider interface for OpenAI APIs
@@ -54,6 +55,7 @@ func (p *OpenAIProvider) ListFineTuningJobs(ctx context.Context, limit int, afte
 		finetuningJob := convertOpenAIJobToModel(job)
 		jobs = append(jobs, finetuningJob)
 	}
+
 	return jobs, nil
 }
 
@@ -64,35 +66,38 @@ func (p *OpenAIProvider) GetFineTuningJobDetails(ctx context.Context, jobID stri
 		return nil, err
 	}
 	finetuningJobDetail := convertOpenAIJobToDetailModel(job)
+
 	return finetuningJobDetail, nil
 }
 
 // GetJobEvents retrieves events for a fine-tuning job
-func (p *OpenAIProvider) GetJobEvents(ctx context.Context, jobID string) (*models.JobEventsListContract, error) {
-	eventsList, err := p.client.FineTuning.Jobs.ListEvents(
-		ctx, 
-		jobID, 
+func (p *OpenAIProvider) GetJobEvents(ctx context.Context, jobID string) (*models.JobEventsList, error) {
+	eventsPage, err := p.client.FineTuning.Jobs.ListEvents(
+		ctx,
+		jobID,
 		openai.FineTuningJobListEventsParams{},
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	events := convertOpenAIJobEventsToModel(eventsList)
+	events := convertOpenAIJobEventsToModel(eventsPage)
+
 	return events, nil
 }
 
 // GetJobCheckpoints retrieves checkpoints for a fine-tuning job
-func (p *OpenAIProvider) GetJobCheckpoints(ctx context.Context, jobID string) (*models.JobCheckpointsListContract, error) {
-	checkpointList, err := p.client.FineTuning.Jobs.Checkpoints.List(
-		ctx, 
-		jobID, 
+func (p *OpenAIProvider) GetJobCheckpoints(ctx context.Context, jobID string) (*models.JobCheckpointsList, error) {
+	checkpointsPage, err := p.client.FineTuning.Jobs.Checkpoints.List(
+		ctx,
+		jobID,
 		openai.FineTuningJobCheckpointListParams{},
 	)
 	if err != nil {
 		return nil, err
 	}
-	checkpoints := convertOpenAIJobCheckpointsToModel(checkpointList)
+	checkpoints := convertOpenAIJobCheckpointsToModel(checkpointsPage)
+
 	return checkpoints, nil
 }
 

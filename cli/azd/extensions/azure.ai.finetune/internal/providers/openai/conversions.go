@@ -4,10 +4,11 @@
 package openai
 
 import (
-	"azure.ai.finetune/internal/utils"
-	"azure.ai.finetune/pkg/models"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/packages/pagination"
+
+	"azure.ai.finetune/internal/utils"
+	"azure.ai.finetune/pkg/models"
 )
 
 // OpenAI Status Constants - matches OpenAI SDK values
@@ -49,8 +50,9 @@ func convertOpenAIJobToModel(openaiJob openai.FineTuningJob) *models.FineTuningJ
 	}
 }
 
+// convertOpenAIJobToDetailModel converts OpenAI SDK job to detailed domain model
 func convertOpenAIJobToDetailModel(openaiJob *openai.FineTuningJob) *models.FineTuningJobDetail {
-	// Extract hyperparameters based on method type
+	// Extract hyperparameters from OpenAI job
 	hyperparameters := &models.Hyperparameters{}
 	hyperparameters.BatchSize = openaiJob.Hyperparameters.BatchSize.OfInt
 	hyperparameters.LearningRateMultiplier = openaiJob.Hyperparameters.LearningRateMultiplier.OfFloat
@@ -68,13 +70,15 @@ func convertOpenAIJobToDetailModel(openaiJob *openai.FineTuningJob) *models.Fine
 		ValidationFile:  openaiJob.ValidationFile,
 		Hyperparameters: hyperparameters,
 	}
+
 	return jobDetail
 }
 
-func convertOpenAIJobEventsToModel(eventsList *pagination.CursorPage[openai.FineTuningJobEvent]) *models.JobEventsListContract {
+// convertOpenAIJobEventsToModel converts OpenAI SDK job events to domain model
+func convertOpenAIJobEventsToModel(eventsPage *pagination.CursorPage[openai.FineTuningJobEvent]) *models.JobEventsList {
 	var events []models.JobEvent
-	for _, event := range eventsList.Data {
-		eventContract := models.JobEvent{
+	for _, event := range eventsPage.Data {
+		jobEvent := models.JobEvent{
 			ID:        event.ID,
 			CreatedAt: utils.UnixTimestampToUTC(event.CreatedAt),
 			Level:     string(event.Level),
@@ -82,36 +86,38 @@ func convertOpenAIJobEventsToModel(eventsList *pagination.CursorPage[openai.Fine
 			Data:      event.Data,
 			Type:      string(event.Type),
 		}
-		events = append(events, eventContract)
+		events = append(events, jobEvent)
 	}
 
-	return &models.JobEventsListContract{
+	return &models.JobEventsList{
 		Data:    events,
-		HasMore: eventsList.HasMore,
+		HasMore: eventsPage.HasMore,
 	}
 }
 
-func convertOpenAIJobCheckpointsToModel(openaiJobCheckpointsList *pagination.CursorPage[openai.FineTuningJobCheckpoint]) *models.JobCheckpointsListContract {
+// convertOpenAIJobCheckpointsToModel converts OpenAI SDK job checkpoints to domain model
+func convertOpenAIJobCheckpointsToModel(checkpointsPage *pagination.CursorPage[openai.FineTuningJobCheckpoint]) *models.JobCheckpointsList {
 	var checkpoints []models.JobCheckpoint
 
-	for _, checkpoint := range openaiJobCheckpointsList.Data {
+	for _, checkpoint := range checkpointsPage.Data {
 		metrics := &models.CheckpointMetrics{
-			FullValidLoss: checkpoint.Metrics.FullValidLoss,
+			FullValidLoss:              checkpoint.Metrics.FullValidLoss,
 			FullValidMeanTokenAccuracy: checkpoint.Metrics.FullValidMeanTokenAccuracy,
 		}
 
 		jobCheckpoint := models.JobCheckpoint{
-			ID: checkpoint.ID,
-			CreatedAt: utils.UnixTimestampToUTC(checkpoint.CreatedAt),
+			ID:                       checkpoint.ID,
+			CreatedAt:                utils.UnixTimestampToUTC(checkpoint.CreatedAt),
 			FineTunedModelCheckpoint: checkpoint.FineTunedModelCheckpoint,
-			Metrics: metrics,
-			FineTuningJobID: checkpoint.FineTuningJobID,
-			StepNumber: checkpoint.StepNumber,
+			Metrics:                  metrics,
+			FineTuningJobID:          checkpoint.FineTuningJobID,
+			StepNumber:               checkpoint.StepNumber,
 		}
 		checkpoints = append(checkpoints, jobCheckpoint)
 	}
-	return &models.JobCheckpointsListContract{
-		Data: checkpoints,
-		HasMore: openaiJobCheckpointsList.HasMore,
+
+	return &models.JobCheckpointsList{
+		Data:    checkpoints,
+		HasMore: checkpointsPage.HasMore,
 	}
 }

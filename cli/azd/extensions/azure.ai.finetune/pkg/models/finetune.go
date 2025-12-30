@@ -88,11 +88,11 @@ type JobEvent struct {
 	Type      string
 }
 
-type JobEventsListContract struct {
+// JobEventsList represents a paginated list of job events
+type JobEventsList struct {
 	Data    []JobEvent
 	HasMore bool
 }
-
 
 // JobCheckpoint represents a checkpoint of a fine-tuning job
 type JobCheckpoint struct {
@@ -104,8 +104,9 @@ type JobCheckpoint struct {
 	StepNumber               int64
 }
 
-type JobCheckpointsListContract struct {
-	Data []JobCheckpoint
+// JobCheckpointsList represents a list of job checkpoints
+type JobCheckpointsList struct {
+	Data    []JobCheckpoint
 	HasMore bool
 }
 

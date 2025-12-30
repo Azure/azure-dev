@@ -625,7 +625,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 			// Extension is already installed - apply smart upgrade/downgrade logic
 
 			// Check if same version (regardless of source)
-			if installedExtension.Version == targetVersion {
+			if installedExtension.Version == targetVersion && !a.flags.force {
 				stepMessage += output.WithGrayFormat(" (version %s already installed)", installedExtension.Version)
 				a.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
 				continue

@@ -235,7 +235,8 @@ func newOperationShowCommand() *cobra.Command {
 			_ = eventsSpinner.Stop(ctx)
 
 			if err != nil {
-				fmt.Printf("WARNING: failed to fetch job events: %v\n", err)
+				fmt.Println()
+				return err
 			} else if events != nil && len(events.Data) > 0 {
 				fmt.Println("\nJob Events:")
 				for i, event := range events.Data {
@@ -259,7 +260,8 @@ func newOperationShowCommand() *cobra.Command {
 				_ = checkpointsSpinner.Stop(ctx)
 
 				if err != nil {
-					fmt.Printf("WARNING: failed to fetch job checkpoints: %v\n", err)
+					fmt.Println()
+					return err
 				} else if checkpoints != nil && len(checkpoints.Data) > 0 {
 					fmt.Println("\nJob Checkpoints:")
 					for i, checkpoint := range checkpoints.Data {

@@ -6,6 +6,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"azure.ai.finetune/internal/providers"
 	"azure.ai.finetune/internal/providers/factory"
@@ -40,13 +41,34 @@ func NewFineTuningService(ctx context.Context, azdClient *azdext.AzdClient, stat
 
 // CreateFineTuningJob creates a new fine-tuning job with business validation
 func (s *fineTuningServiceImpl) CreateFineTuningJob(ctx context.Context, req *models.CreateFineTuningRequest) (*models.FineTuningJob, error) {
-	// TODO: Implement
-	// 1. Validate request (model exists, data size valid, etc.)
-	// 2. Call provider.CreateFineTuningJob()
-	// 3. Transform any errors to standardized ErrorDetail
-	// 4. Persist job to state store
-	// 5. Return job
-	return nil, nil
+	// Validate request
+	if req == nil {
+		return nil, fmt.Errorf("request cannot be nil")
+	}
+	if req.BaseModel == "" {
+		return nil, fmt.Errorf("base model is required")
+	}
+	if req.TrainingDataID == "" {
+		return nil, fmt.Errorf("training file is required")
+	}
+
+	// Call provider with retry logic
+	var job *models.FineTuningJob
+	err := utils.RetryOperation(ctx, utils.DefaultRetryConfig(), func() error {
+		var err error
+		job, err = s.provider.CreateFineTuningJob(ctx, req)
+		return err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create fine-tuning job: %w", err)
+	}
+
+	// Persist job to state store
+	if err := s.stateStore.SaveJob(ctx, job); err != nil {
+		return nil, fmt.Errorf("failed to persist job: %w", err)
+	}
+
+	return job, nil
 }
 
 // GetFineTuningStatus retrieves the current status of a job
@@ -111,14 +133,49 @@ func (s *fineTuningServiceImpl) CancelJob(ctx context.Context, jobID string) (*m
 
 // UploadTrainingFile uploads and validates a training file
 func (s *fineTuningServiceImpl) UploadTrainingFile(ctx context.Context, filePath string) (string, error) {
-	// TODO: Implement
-	return "", nil
+	if filePath == "" {
+		return "", fmt.Errorf("training file path cannot be empty")
+	}
+	uploadedFileId, err := s._uploadFile(ctx, filePath)
+	if err != nil || uploadedFileId == "" {
+		return "", fmt.Errorf("failed to upload training file: %w", err)
+	}
+	return uploadedFileId, nil
 }
 
 // UploadValidationFile uploads and validates a validation file
 func (s *fineTuningServiceImpl) UploadValidationFile(ctx context.Context, filePath string) (string, error) {
-	// TODO: Implement
-	return "", nil
+	if filePath == "" {
+		return "", nil // Validation file is optional
+	}
+	uploadedFileId, err := s._uploadFile(ctx, filePath)
+	if err != nil || uploadedFileId == "" {
+		return "", fmt.Errorf("failed to upload validation file: %w", err)
+	}
+	return uploadedFileId, nil
+}
+
+func (s *fineTuningServiceImpl) _uploadFile(ctx context.Context, filePath string) (string, error) {
+	// validate file existence
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("file does not exist: %s", filePath)
+		}
+		return "", fmt.Errorf("failed to stat file %s: %w", filePath, err)
+	}
+	if fileInfo.IsDir() {
+		return "", fmt.Errorf("path is a directory, not a file: %s", filePath)
+	}
+
+	// upload file with retry
+	uploadedFileId := ""
+	err = utils.RetryOperation(ctx, utils.DefaultRetryConfig(), func() error {
+		var err error
+		uploadedFileId, err = s.provider.UploadFile(ctx, filePath)
+		return err
+	})
+	return uploadedFileId, err
 }
 
 // PollJobUntilCompletion polls a job until it completes or fails

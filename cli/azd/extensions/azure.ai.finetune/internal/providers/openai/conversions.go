@@ -47,3 +47,35 @@ func convertOpenAIJobToModel(openaiJob openai.FineTuningJob) *models.FineTuningJ
 		CreatedAt:      utils.UnixTimestampToUTC(openaiJob.CreatedAt),
 	}
 }
+
+// ConvertYAMLToJobParams converts a YAML fine-tuning configuration to OpenAI job parameters
+func convertInternalJobParamToOpenAiJobParams(config *models.CreateFineTuningRequest) (openai.FineTuningJobNewParams, error) {
+	jobParams := openai.FineTuningJobNewParams{
+		Model:        openai.FineTuningJobNewParamsModel(config.BaseModel),
+		TrainingFile: config.TrainingDataID,
+	}
+
+	if config.ValidationDataID != "" {
+		jobParams.ValidationFile = openai.String(config.ValidationDataID)
+	}
+
+	// Set optional fields
+	if config.Suffix != "" {
+		jobParams.Suffix = openai.String(config.Suffix)
+	}
+
+	if config.Seed != 0 {
+		jobParams.Seed = openai.Int(config.Seed)
+	}
+
+	// Set metadata if provided
+	if len(config.Metadata) > 0 {
+		jobParams.Metadata = make(map[string]string)
+		for k, v := range config.Metadata {
+			jobParams.Metadata[k] = v
+		}
+	}
+
+	//TODO Need to set hyperparameters, method, integrations
+	return jobParams, nil
+}

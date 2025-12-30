@@ -5,6 +5,8 @@ package openai
 
 import (
 	"context"
+	"fmt"
+	"os"
 
 	"azure.ai.finetune/pkg/models"
 	"github.com/openai/openai-go/v3"
@@ -24,11 +26,18 @@ func NewOpenAIProvider(client *openai.Client) *OpenAIProvider {
 
 // CreateFineTuningJob creates a new fine-tuning job via OpenAI API
 func (p *OpenAIProvider) CreateFineTuningJob(ctx context.Context, req *models.CreateFineTuningRequest) (*models.FineTuningJob, error) {
-	// TODO: Implement
-	// 1. Convert domain model to OpenAI SDK format
-	// 2. Call OpenAI SDK CreateFineTuningJob
-	// 3. Convert OpenAI response to domain model
-	return nil, nil
+
+	params, err := convertInternalJobParamToOpenAiJobParams(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert internal model to openai: %w", err)
+	}
+
+	job, err := p.client.FineTuning.Jobs.New(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create fine-tuning job: %w", err)
+	}
+
+	return convertOpenAIJobToModel(*job), nil
 }
 
 // GetFineTuningStatus retrieves the status of a fine-tuning job
@@ -95,8 +104,29 @@ func (p *OpenAIProvider) CancelJob(ctx context.Context, jobID string) (*models.F
 
 // UploadFile uploads a file for fine-tuning
 func (p *OpenAIProvider) UploadFile(ctx context.Context, filePath string) (string, error) {
-	// TODO: Implement
-	return "", nil
+	if filePath == "" {
+		return "", fmt.Errorf("file path cannot be empty")
+	}
+
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to open file %s: %w", filePath, err)
+	}
+	defer file.Close()
+
+	uploadedFile, err := p.client.Files.New(ctx, openai.FileNewParams{
+		File:    file,
+		Purpose: openai.FilePurposeFineTune,
+	})
+
+	if err != nil {
+		return "", fmt.Errorf("failed to upload file: %w", err)
+	}
+	if uploadedFile == nil || uploadedFile.ID == "" {
+		return "", fmt.Errorf("uploaded file is empty")
+	}
+
+	return uploadedFile.ID, nil
 }
 
 // GetUploadedFile retrieves information about an uploaded file

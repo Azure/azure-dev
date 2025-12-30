@@ -47,6 +47,11 @@ type CreateFineTuningRequest struct {
 	BaseModel        string
 	TrainingDataID   string
 	ValidationDataID string
+	Suffix           string
+	Seed             int64
+	Metadata         map[string]string
+	Method           interface{} // Can be dpo, supervised or reinforcement
+	Integrations     []interface{}
 	Hyperparameters  *Hyperparameters
 }
 

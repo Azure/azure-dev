@@ -24,7 +24,7 @@ type FineTuningConfig struct {
 	TrainingFile string `yaml:"training_file"`
 
 	// Optional: Path to validation file
-	ValidationFile string `yaml:"validation_file,omitempty"`
+	ValidationFile *string `yaml:"validation_file,omitempty"`
 
 	// Optional: Fine-tuning method configuration (supervised, dpo, or reinforcement)
 	Method MethodConfig `yaml:"method,omitempty"`

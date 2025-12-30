@@ -25,17 +25,28 @@ var _ tools.ExternalTool = (*Cli)(nil)
 
 func NewCli(commandRunner exec.CommandRunner) *Cli {
 	return &Cli{
-		commandRunner: commandRunner,
+		commandRunner:   commandRunner,
+		containerEngine: "",
 	}
 }
 
 type Cli struct {
-	commandRunner exec.CommandRunner
+	commandRunner   exec.CommandRunner
+	containerEngine string // "docker" or "podman", detected during CheckInstalled
+}
+
+// getContainerEngine returns the container engine command to use ("docker" or "podman")
+func (d *Cli) getContainerEngine() string {
+	if d.containerEngine != "" {
+		return d.containerEngine
+	}
+	// Default to "docker" if not yet detected
+	return "docker"
 }
 
 func (d *Cli) Login(ctx context.Context, loginServer string, username string, password string) error {
 	runArgs := exec.NewRunArgs(
-		"docker", "login",
+		d.getContainerEngine(), "login",
 		"--username", username,
 		"--password-stdin",
 		loginServer,
@@ -43,7 +54,7 @@ func (d *Cli) Login(ctx context.Context, loginServer string, username string, pa
 
 	_, err := d.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return fmt.Errorf("failed logging into docker: %w", err)
+		return fmt.Errorf("failed logging into %s: %w", d.Name(), err)
 	}
 
 	return nil
@@ -108,7 +119,7 @@ func (d *Cli) Build(
 	args = append(args, "--iidfile", imgIdFile)
 
 	// Build and produce output
-	runArgs := exec.NewRunArgs("docker", args...).WithCwd(cwd).WithEnv(buildEnv)
+	runArgs := exec.NewRunArgs(d.getContainerEngine(), args...).WithCwd(cwd).WithEnv(buildEnv)
 
 	if buildProgress != nil {
 		// setting stderr and stdout both, as it's been noticed
@@ -180,13 +191,18 @@ func (d *Cli) versionInfo() tools.VersionInfo {
 			Major: 17,
 			Minor: 9,
 			Patch: 0},
-		UpdateCommand: "Visit https://docs.docker.com/engine/release-notes/ to upgrade",
+		UpdateCommand: "Visit https://docs.docker.com/engine/release-notes/ or " +
+			"https://podman.io/getting-started/installation to upgrade",
 	}
 }
 
 // dockerVersionRegexp is a regular expression which matches the text printed by "docker --version"
 // and captures the version and build components.
 var dockerVersionStringRegexp = regexp.MustCompile(`Docker version ([^,]*), build ([a-f0-9]*)`)
+
+// podmanVersionStringRegexp is a regular expression which matches the text printed by "podman --version"
+// and captures the version component.
+var podmanVersionStringRegexp = regexp.MustCompile(`podman version ([^\s]+)`)
 
 // dockerVersionReleaseBuildRegexp is a regular expression which matches the three part version number
 // from a docker version from an official release. The major and minor components are captured.
@@ -259,28 +275,105 @@ func isSupportedDockerVersion(cliOutput string) (bool, error) {
 	// If we reach this point, we don't understand how to validate the version based on its scheme.
 	return false, fmt.Errorf("could not determine version from docker version string: %s", version)
 }
+
+// isSupportedPodmanVersion returns true if the version string appears to be for a podman version
+// of 3.0 or later (podman 3.0 was released in 2021 with stable docker compatibility)
+func isSupportedPodmanVersion(cliOutput string) (bool, error) {
+	log.Printf("determining version from podman --version string: %s", cliOutput)
+
+	matches := podmanVersionStringRegexp.FindStringSubmatch(cliOutput)
+
+	// (2 matches, the entire string, and the version capture)
+	if len(matches) != 2 {
+		return false, fmt.Errorf("could not extract version component from podman version string")
+	}
+
+	versionStr := matches[1]
+	log.Printf("extracted podman version: %s from version string", versionStr)
+
+	// Podman uses semantic versioning, so we can parse it directly
+	version, err := semver.Parse(versionStr)
+	if err != nil {
+		return false, fmt.Errorf("failed to parse podman version %s: %w", versionStr, err)
+	}
+
+	// Require podman 3.0 or later for stable docker compatibility
+	minVersion := semver.Version{Major: 3, Minor: 0, Patch: 0}
+	return version.GTE(minVersion), nil
+}
 func (d *Cli) CheckInstalled(ctx context.Context) error {
-	toolName := d.Name()
-	err := d.commandRunner.ToolInPath("docker")
+	// Check for environment variable override first
+	containerRuntime := os.Getenv("AZURE_CONTAINER_RUNTIME")
+
+	// Try the specified runtime if set
+	if containerRuntime != "" {
+		if containerRuntime != "docker" && containerRuntime != "podman" {
+			return fmt.Errorf(
+				"unsupported container runtime '%s' specified in AZURE_CONTAINER_RUNTIME. "+
+					"Supported values: docker, podman",
+				containerRuntime)
+		}
+		return d.checkContainerEngine(ctx, containerRuntime)
+	}
+
+	// Otherwise, try docker first, then fall back to podman
+	if err := d.checkContainerEngine(ctx, "docker"); err == nil {
+		return nil
+	}
+
+	// If docker is not available, try podman
+	if err := d.checkContainerEngine(ctx, "podman"); err == nil {
+		return nil
+	}
+
+	// Neither docker nor podman is available
+	return fmt.Errorf(
+		"neither docker nor podman is installed or running. "+
+			"Please install Docker or Podman: %s",
+		d.InstallUrl())
+}
+
+// checkContainerEngine checks if a specific container engine (docker or podman) is installed and running
+func (d *Cli) checkContainerEngine(ctx context.Context, engineName string) error {
+	// Check if command is in path
+	err := d.commandRunner.ToolInPath(engineName)
 	if err != nil {
 		return err
 	}
-	dockerRes, err := tools.ExecuteCommand(ctx, d.commandRunner, "docker", "--version")
+
+	// Check version
+	versionOutput, err := tools.ExecuteCommand(ctx, d.commandRunner, engineName, "--version")
 	if err != nil {
-		return fmt.Errorf("checking %s version: %w", toolName, err)
+		return fmt.Errorf("checking %s version: %w", engineName, err)
 	}
-	log.Printf("docker version: %s", dockerRes)
-	supported, err := isSupportedDockerVersion(dockerRes)
+	log.Printf("%s version: %s", engineName, versionOutput)
+
+	var supported bool
+	if engineName == "docker" {
+		supported, err = isSupportedDockerVersion(versionOutput)
+	} else if engineName == "podman" {
+		supported, err = isSupportedPodmanVersion(versionOutput)
+	} else {
+		return fmt.Errorf("unknown container engine: %s", engineName)
+	}
+
 	if err != nil {
 		return err
 	}
 	if !supported {
-		return &tools.ErrSemver{ToolName: toolName, VersionInfo: d.versionInfo()}
+		return &tools.ErrSemver{ToolName: d.Name(), VersionInfo: d.versionInfo()}
 	}
-	// Check if docker daemon is running
-	if _, err := tools.ExecuteCommand(ctx, d.commandRunner, "docker", "ps"); err != nil {
-		return fmt.Errorf("the %s daemon is not running, please start the %s service: %w", toolName, toolName, err)
+
+	// Check if daemon/service is running
+	if _, err := tools.ExecuteCommand(ctx, d.commandRunner, engineName, "ps"); err != nil {
+		if engineName == "podman" {
+			return fmt.Errorf("the Podman service is not running, please start the %s service: %w", engineName, err)
+		}
+		return fmt.Errorf("the Docker daemon is not running, please start the %s service: %w", engineName, err)
 	}
+
+	// Store the detected container engine for future use
+	d.containerEngine = engineName
 	return nil
 }
 
@@ -289,6 +382,9 @@ func (d *Cli) InstallUrl() string {
 }
 
 func (d *Cli) Name() string {
+	if d.containerEngine == "podman" {
+		return "Podman"
+	}
 	return "Docker"
 }
 
@@ -306,7 +402,7 @@ func (d *Cli) IsContainerdEnabled(ctx context.Context) (bool, error) {
 }
 
 func (d *Cli) executeCommand(ctx context.Context, cwd string, args ...string) (exec.RunResult, error) {
-	runArgs := exec.NewRunArgs("docker", args...).
+	runArgs := exec.NewRunArgs(d.getContainerEngine(), args...).
 		WithCwd(cwd)
 
 	return d.commandRunner.Run(ctx, runArgs)

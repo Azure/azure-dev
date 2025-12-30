@@ -511,7 +511,7 @@ func Test_DockerLogin(t *testing.T) {
 
 		require.Equal(t, true, ran)
 		require.NotNil(t, err)
-		require.Equal(t, fmt.Sprintf("failed logging into docker: %s", customErrorMessage), err.Error())
+		require.Equal(t, fmt.Sprintf("failed logging into %s: %s", "Docker", customErrorMessage), err.Error())
 	})
 }
 
@@ -571,6 +571,209 @@ func Test_IsSupportedDockerVersion(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_IsSupportedPodmanVersion(t *testing.T) {
+	cases := []struct {
+		name        string
+		version     string
+		supported   bool
+		expectError bool
+	}{
+		{
+			name:        "Podman_4_3_1",
+			version:     "podman version 4.3.1",
+			supported:   true,
+			expectError: false,
+		},
+		{
+			name:        "Podman_3_0_0",
+			version:     "podman version 3.0.0",
+			supported:   true,
+			expectError: false,
+		},
+		{
+			name:        "Podman_3_4_4",
+			version:     "podman version 3.4.4",
+			supported:   true,
+			expectError: false,
+		},
+		{
+			name:        "Podman_5_0_0",
+			version:     "podman version 5.0.0",
+			supported:   true,
+			expectError: false,
+		},
+		{
+			name:        "Podman_TooOld",
+			version:     "podman version 2.9.0",
+			supported:   false,
+			expectError: false,
+		},
+		{
+			name:        "InvalidFormat",
+			version:     "podman ver 4.3.1",
+			supported:   false,
+			expectError: true,
+		},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			supported, err := isSupportedPodmanVersion(testCase.version)
+			require.Equal(t, testCase.supported, supported)
+			if testCase.expectError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func Test_CheckInstalled_Docker(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	docker := NewCli(mockContext.CommandRunner)
+
+	// Mock ToolInPath for docker
+	mockContext.CommandRunner.MockToolInPath("docker", nil)
+
+	// Mock docker --version
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "docker --version")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{
+			Stdout:   "Docker version 20.10.17, build 100c701",
+			ExitCode: 0,
+		}, nil
+	})
+
+	// Mock docker ps
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "docker ps")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{
+			Stdout:   "CONTAINER ID   IMAGE     COMMAND   CREATED   STATUS    PORTS     NAMES",
+			ExitCode: 0,
+		}, nil
+	})
+
+	err := docker.CheckInstalled(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "docker", docker.containerEngine)
+	require.Equal(t, "Docker", docker.Name())
+}
+
+func Test_CheckInstalled_Podman(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	docker := NewCli(mockContext.CommandRunner)
+
+	// Mock ToolInPath - docker fails, podman succeeds
+	mockContext.CommandRunner.MockToolInPath("docker", errors.New("docker not found"))
+	mockContext.CommandRunner.MockToolInPath("podman", nil)
+
+	// Mock podman --version
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "podman --version")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{
+			Stdout:   "podman version 4.3.1",
+			ExitCode: 0,
+		}, nil
+	})
+
+	// Mock podman ps
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "podman ps")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{
+			Stdout:   "CONTAINER ID  IMAGE  COMMAND  CREATED  STATUS  PORTS  NAMES",
+			ExitCode: 0,
+		}, nil
+	})
+
+	err := docker.CheckInstalled(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "podman", docker.containerEngine)
+	require.Equal(t, "Podman", docker.Name())
+}
+
+func Test_CheckInstalled_EnvVarOverride(t *testing.T) {
+	t.Run("DockerOverride", func(t *testing.T) {
+		os.Setenv("AZURE_CONTAINER_RUNTIME", "docker")
+		defer os.Unsetenv("AZURE_CONTAINER_RUNTIME")
+
+		mockContext := mocks.NewMockContext(context.Background())
+		docker := NewCli(mockContext.CommandRunner)
+
+		mockContext.CommandRunner.MockToolInPath("docker", nil)
+
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "docker --version")
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			return exec.RunResult{
+				Stdout:   "Docker version 20.10.17, build 100c701",
+				ExitCode: 0,
+			}, nil
+		})
+
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "docker ps")
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			return exec.RunResult{
+				Stdout:   "CONTAINER ID   IMAGE     COMMAND   CREATED   STATUS    PORTS     NAMES",
+				ExitCode: 0,
+			}, nil
+		})
+
+		err := docker.CheckInstalled(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, "docker", docker.containerEngine)
+	})
+
+	t.Run("PodmanOverride", func(t *testing.T) {
+		os.Setenv("AZURE_CONTAINER_RUNTIME", "podman")
+		defer os.Unsetenv("AZURE_CONTAINER_RUNTIME")
+
+		mockContext := mocks.NewMockContext(context.Background())
+		docker := NewCli(mockContext.CommandRunner)
+
+		mockContext.CommandRunner.MockToolInPath("podman", nil)
+
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "podman --version")
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			return exec.RunResult{
+				Stdout:   "podman version 4.3.1",
+				ExitCode: 0,
+			}, nil
+		})
+
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "podman ps")
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			return exec.RunResult{
+				Stdout:   "CONTAINER ID  IMAGE  COMMAND  CREATED  STATUS  PORTS  NAMES",
+				ExitCode: 0,
+			}, nil
+		})
+
+		err := docker.CheckInstalled(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, "podman", docker.containerEngine)
+	})
+
+	t.Run("InvalidOverride", func(t *testing.T) {
+		os.Setenv("AZURE_CONTAINER_RUNTIME", "invalid")
+		defer os.Unsetenv("AZURE_CONTAINER_RUNTIME")
+
+		mockContext := mocks.NewMockContext(context.Background())
+		docker := NewCli(mockContext.CommandRunner)
+
+		err := docker.CheckInstalled(context.Background())
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "unsupported container runtime")
+	})
 }
 
 func TestSplitDockerImage(t *testing.T) {

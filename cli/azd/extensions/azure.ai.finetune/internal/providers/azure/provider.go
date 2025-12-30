@@ -50,13 +50,13 @@ func (p *AzureProvider) GetFineTuningJobDetails(ctx context.Context, jobID strin
 }
 
 // GetJobEvents retrieves events for a fine-tuning job
-func (p *AzureProvider) GetJobEvents(ctx context.Context, jobID string, limit int, after string) ([]*models.JobEvent, error) {
+func (p *AzureProvider) GetJobEvents(ctx context.Context, jobID string) (*models.JobEventsListContract, error) {
 	// TODO: Implement
 	return nil, nil
 }
 
 // GetJobCheckpoints retrieves checkpoints for a fine-tuning job
-func (p *AzureProvider) GetJobCheckpoints(ctx context.Context, jobID string, limit int, after string) ([]*models.JobCheckpoint, error) {
+func (p *AzureProvider) GetJobCheckpoints(ctx context.Context, jobID string) (*models.JobCheckpointsListContract, error) {
 	// TODO: Implement
 	return nil, nil
 }

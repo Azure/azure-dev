@@ -59,20 +59,41 @@ func (p *OpenAIProvider) ListFineTuningJobs(ctx context.Context, limit int, afte
 
 // GetFineTuningJobDetails retrieves detailed information about a job
 func (p *OpenAIProvider) GetFineTuningJobDetails(ctx context.Context, jobID string) (*models.FineTuningJobDetail, error) {
-	// TODO: Implement
-	return nil, nil
+	job, err := p.client.FineTuning.Jobs.Get(ctx, jobID)
+	if err != nil {
+		return nil, err
+	}
+	finetuningJobDetail := convertOpenAIJobToDetailModel(job)
+	return finetuningJobDetail, nil
 }
 
 // GetJobEvents retrieves events for a fine-tuning job
-func (p *OpenAIProvider) GetJobEvents(ctx context.Context, jobID string, limit int, after string) ([]*models.JobEvent, error) {
-	// TODO: Implement
-	return nil, nil
+func (p *OpenAIProvider) GetJobEvents(ctx context.Context, jobID string) (*models.JobEventsListContract, error) {
+	eventsList, err := p.client.FineTuning.Jobs.ListEvents(
+		ctx, 
+		jobID, 
+		openai.FineTuningJobListEventsParams{},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	events := convertOpenAIJobEventsToModel(eventsList)
+	return events, nil
 }
 
 // GetJobCheckpoints retrieves checkpoints for a fine-tuning job
-func (p *OpenAIProvider) GetJobCheckpoints(ctx context.Context, jobID string, limit int, after string) ([]*models.JobCheckpoint, error) {
-	// TODO: Implement
-	return nil, nil
+func (p *OpenAIProvider) GetJobCheckpoints(ctx context.Context, jobID string) (*models.JobCheckpointsListContract, error) {
+	checkpointList, err := p.client.FineTuning.Jobs.Checkpoints.List(
+		ctx, 
+		jobID, 
+		openai.FineTuningJobCheckpointListParams{},
+	)
+	if err != nil {
+		return nil, err
+	}
+	checkpoints := convertOpenAIJobCheckpointsToModel(checkpointList)
+	return checkpoints, nil
 }
 
 // PauseJob pauses a fine-tuning job

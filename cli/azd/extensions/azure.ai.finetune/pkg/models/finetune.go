@@ -70,7 +70,7 @@ type FineTuningJobDetail struct {
 	Model           string
 	FineTunedModel  string
 	CreatedAt       time.Time
-	FinishedAt      *time.Time
+	FinishedAt      time.Time
 	Method          string
 	TrainingFile    string
 	ValidationFile  string
@@ -88,6 +88,12 @@ type JobEvent struct {
 	Type      string
 }
 
+type JobEventsListContract struct {
+	Data    []JobEvent
+	HasMore bool
+}
+
+
 // JobCheckpoint represents a checkpoint of a fine-tuning job
 type JobCheckpoint struct {
 	ID                       string
@@ -96,6 +102,11 @@ type JobCheckpoint struct {
 	Metrics                  *CheckpointMetrics
 	FineTuningJobID          string
 	StepNumber               int64
+}
+
+type JobCheckpointsListContract struct {
+	Data []JobCheckpoint
+	HasMore bool
 }
 
 // CheckpointMetrics represents metrics for a checkpoint

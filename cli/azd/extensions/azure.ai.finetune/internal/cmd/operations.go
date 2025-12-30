@@ -144,7 +144,7 @@ func newOperationShowCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "show",
-		Short: "Show the fine tuning job details",
+		Short: "show the fine tuning job details",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			azdClient, err := azdext.NewAzdClient()
@@ -152,30 +152,45 @@ func newOperationShowCommand() *cobra.Command {
 				return fmt.Errorf("failed to create azd client: %w", err)
 			}
 			defer azdClient.Close()
+
 			// Show spinner while fetching jobs
 			spinner := ux.NewSpinner(&ux.SpinnerOptions{
-				Text: fmt.Sprintf("Fetching fine-tuning job %s...", jobID),
+				Text: fmt.Sprintf("fetching fine-tuning job %s...", jobID),
 			})
 			if err := spinner.Start(ctx); err != nil {
-				fmt.Printf("Failed to start spinner: %v\n", err)
+				fmt.Printf("failed to start spinner: %v\n", err)
 			}
 
-			// Fetch fine-tuning job details using job wrapper
-			job, err := JobWrapper.GetJobDetails(ctx, azdClient, jobID)
-			_ = spinner.Stop(ctx)
-
+			fineTuneSvc, err := services.NewFineTuningService(ctx, azdClient, nil)
 			if err != nil {
-				return fmt.Errorf("failed to get fine-tuning job details: %w", err)
+				_ = spinner.Stop(ctx)
+				fmt.Println()
+				return err
 			}
+
+			job, err := fineTuneSvc.GetFineTuningJobDetails(ctx, jobID)
+			_ = spinner.Stop(ctx)
+			if err != nil {
+				fmt.Println()
+				return err
+			}
+			
+			// // Fetch fine-tuning job details using job wrapper
+			// job, err := JobWrapper.GetJobDetails(ctx, azdClient, jobID)
+			// _ = spinner.Stop(ctx)
+
+			// if err != nil {
+			// 	return fmt.Errorf("failed to get fine-tuning job details: %w", err)
+			// }
 
 			// Print job details
-			color.Green("\nFine-Tuning Job Details\n")
-			fmt.Printf("Job ID:              %s\n", job.Id)
-			fmt.Printf("Status:              %s %s\n", getStatusSymbol(job.Status), job.Status)
+			color.Green("\nfine-tuning job details\n")
+			fmt.Printf("Job ID:              %s\n", job.ID)
+			fmt.Printf("Status:              %s %s\n", getStatusSymbol(string(job.Status)), job.Status)
 			fmt.Printf("Model:               %s\n", job.Model)
 			fmt.Printf("Fine-tuned Model:    %s\n", formatFineTunedModel(job.FineTunedModel))
 			fmt.Printf("Created At:          %s\n", job.CreatedAt)
-			if job.FinishedAt != "" {
+			if !job.FinishedAt.IsZero() {
 				fmt.Printf("Finished At:         %s\n", job.FinishedAt)
 			}
 			fmt.Printf("Method:              %s\n", job.Method)
@@ -194,17 +209,18 @@ func newOperationShowCommand() *cobra.Command {
 
 			// Fetch and print events
 			eventsSpinner := ux.NewSpinner(&ux.SpinnerOptions{
-				Text: "Fetching job events...",
+				Text: "fetching job events...",
 			})
 			if err := eventsSpinner.Start(ctx); err != nil {
-				fmt.Printf("Failed to start spinner: %v\n", err)
+				fmt.Printf("failed to start spinner: %v\n", err)
 			}
 
-			events, err := JobWrapper.GetJobEvents(ctx, azdClient, jobID)
+			events, err := fineTuneSvc.GetJobEvents(ctx, jobID)
+			// events, err := JobWrapper.GetJobEvents(ctx, azdClient, jobID)
 			_ = eventsSpinner.Stop(ctx)
 
 			if err != nil {
-				fmt.Printf("Warning: failed to fetch job events: %v\n", err)
+				fmt.Printf("WARNING: failed to fetch job events: %v\n", err)
 			} else if events != nil && len(events.Data) > 0 {
 				fmt.Println("\nJob Events:")
 				for i, event := range events.Data {
@@ -218,17 +234,18 @@ func newOperationShowCommand() *cobra.Command {
 			// Fetch and print checkpoints if job is completed
 			if job.Status == "succeeded" {
 				checkpointsSpinner := ux.NewSpinner(&ux.SpinnerOptions{
-					Text: "Fetching job checkpoints...",
+					Text: "fetching job checkpoints...",
 				})
 				if err := checkpointsSpinner.Start(ctx); err != nil {
-					fmt.Printf("Failed to start spinner: %v\n", err)
+					fmt.Printf("failed to start spinner: %v\n", err)
 				}
 
-				checkpoints, err := JobWrapper.GetJobCheckPoints(ctx, azdClient, jobID)
+				checkpoints, err := fineTuneSvc.GetJobCheckpoints(ctx, jobID)
+				// checkpoints, err := JobWrapper.GetJobCheckPoints(ctx, azdClient, jobID)
 				_ = checkpointsSpinner.Stop(ctx)
 
 				if err != nil {
-					fmt.Printf("Warning: failed to fetch job checkpoints: %v\n", err)
+					fmt.Printf("warning: failed to fetch job checkpoints: %v\n", err)
 				} else if checkpoints != nil && len(checkpoints.Data) > 0 {
 					fmt.Println("\nJob Checkpoints:")
 					for i, checkpoint := range checkpoints.Data {

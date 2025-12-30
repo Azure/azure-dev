@@ -75,20 +75,31 @@ func (s *fineTuningServiceImpl) ListFineTuningJobs(ctx context.Context, limit in
 
 // GetFineTuningJobDetails retrieves detailed information about a job
 func (s *fineTuningServiceImpl) GetFineTuningJobDetails(ctx context.Context, jobID string) (*models.FineTuningJobDetail, error) {
-	// TODO: Implement
-	return nil, nil
+	jobDetail, err := s.provider.GetFineTuningJobDetails(ctx, jobID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get job details: %w", err)
+	}
+
+	return jobDetail, nil
 }
 
 // GetJobEvents retrieves events for a job with filtering and pagination
-func (s *fineTuningServiceImpl) GetJobEvents(ctx context.Context, jobID string, limit int, after string) ([]*models.JobEvent, error) {
-	// TODO: Implement
-	return nil, nil
+func (s *fineTuningServiceImpl) GetJobEvents(ctx context.Context, jobID string) (*models.JobEventsListContract, error) {
+	eventsList, err := s.provider.GetJobEvents(ctx, jobID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get job events: %w", err)
+	}
+	
+	return eventsList, nil
 }
 
 // GetJobCheckpoints retrieves checkpoints for a job with pagination
-func (s *fineTuningServiceImpl) GetJobCheckpoints(ctx context.Context, jobID string, limit int, after string) ([]*models.JobCheckpoint, error) {
-	// TODO: Implement
-	return nil, nil
+func (s *fineTuningServiceImpl) GetJobCheckpoints(ctx context.Context, jobID string) (*models.JobCheckpointsListContract, error) {
+	checkpointList, err := s.provider.GetJobCheckpoints(ctx, jobID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get job checkpoints: %w", err)
+	}
+	return checkpointList, nil
 }
 
 // PauseJob pauses a running job (if applicable)

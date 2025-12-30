@@ -700,8 +700,8 @@ func Test_CheckInstalled_Podman(t *testing.T) {
 
 func Test_CheckInstalled_EnvVarOverride(t *testing.T) {
 	t.Run("DockerOverride", func(t *testing.T) {
-		os.Setenv("AZURE_CONTAINER_RUNTIME", "docker")
-		defer os.Unsetenv("AZURE_CONTAINER_RUNTIME")
+		os.Setenv("AZD_CONTAINER_RUNTIME", "docker")
+		defer os.Unsetenv("AZD_CONTAINER_RUNTIME")
 
 		mockContext := mocks.NewMockContext(context.Background())
 		docker := NewCli(mockContext.CommandRunner)
@@ -732,8 +732,8 @@ func Test_CheckInstalled_EnvVarOverride(t *testing.T) {
 	})
 
 	t.Run("PodmanOverride", func(t *testing.T) {
-		os.Setenv("AZURE_CONTAINER_RUNTIME", "podman")
-		defer os.Unsetenv("AZURE_CONTAINER_RUNTIME")
+		os.Setenv("AZD_CONTAINER_RUNTIME", "podman")
+		defer os.Unsetenv("AZD_CONTAINER_RUNTIME")
 
 		mockContext := mocks.NewMockContext(context.Background())
 		docker := NewCli(mockContext.CommandRunner)
@@ -764,8 +764,8 @@ func Test_CheckInstalled_EnvVarOverride(t *testing.T) {
 	})
 
 	t.Run("InvalidOverride", func(t *testing.T) {
-		os.Setenv("AZURE_CONTAINER_RUNTIME", "invalid")
-		defer os.Unsetenv("AZURE_CONTAINER_RUNTIME")
+		os.Setenv("AZD_CONTAINER_RUNTIME", "invalid")
+		defer os.Unsetenv("AZD_CONTAINER_RUNTIME")
 
 		mockContext := mocks.NewMockContext(context.Background())
 		docker := NewCli(mockContext.CommandRunner)

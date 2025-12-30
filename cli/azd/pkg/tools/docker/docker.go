@@ -303,13 +303,13 @@ func isSupportedPodmanVersion(cliOutput string) (bool, error) {
 }
 func (d *Cli) CheckInstalled(ctx context.Context) error {
 	// Check for environment variable override first
-	containerRuntime := os.Getenv("AZURE_CONTAINER_RUNTIME")
+	containerRuntime := os.Getenv("AZD_CONTAINER_RUNTIME")
 
 	// Try the specified runtime if set
 	if containerRuntime != "" {
 		if containerRuntime != "docker" && containerRuntime != "podman" {
 			return fmt.Errorf(
-				"unsupported container runtime '%s' specified in AZURE_CONTAINER_RUNTIME. "+
+				"unsupported container runtime '%s' specified in AZD_CONTAINER_RUNTIME. "+
 					"Supported values: docker, podman",
 				containerRuntime)
 		}

@@ -269,14 +269,15 @@ func newOperationShowCommand() *cobra.Command {
 		},
 	}
 	
-	cmd.Flags().IntVarP(&eventsLimit, "top", "t", 50, "Number of events to retrieve")
-	cmd.Flags().StringVarP(&eventsAfter, "after", "a", "", "Identifier for the last event from the previous pagination request")
+	cmd.Flags().IntVar(&eventsLimit, "events-top", 50, "Number of events to retrieve")
+	cmd.Flags().StringVar(&eventsAfter, "events-after", "", "Identifier for the last event from the previous pagination request")
 
-	cmd.Flags().IntVarP(&checkpointsLimit, "top", "t", 50, "Number of checkpoints to retrieve")
-	cmd.Flags().StringVarP(&checkpointsAfter, "after", "a", "", "Identifier for the last checkpoint ID from the previous pagination request")
-
+	cmd.Flags().IntVar(&checkpointsLimit, "checkpoints-top", 50, "Number of checkpoints to retrieve")
+	cmd.Flags().StringVar(&checkpointsAfter, "checkpoints-after", "", "Identifier for the last checkpoint ID from the previous pagination request")
+	
 	cmd.Flags().StringVarP(&jobID, "job-id", "i", "", "Fine-tuning job ID")
 	cmd.MarkFlagRequired("job-id")
+	
 	return cmd
 }
 

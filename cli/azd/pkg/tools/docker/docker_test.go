@@ -616,6 +616,24 @@ func Test_IsSupportedPodmanVersion(t *testing.T) {
 			supported:   false,
 			expectError: true,
 		},
+		{
+			name:        "Podman_WithPreRelease",
+			version:     "podman version 4.3.1-dev",
+			supported:   true,
+			expectError: false,
+		},
+		{
+			name:        "Podman_WithBuildMetadata",
+			version:     "podman version 4.3.1+build123",
+			supported:   true,
+			expectError: false,
+		},
+		{
+			name:        "Podman_WithPreReleaseAndBuild",
+			version:     "podman version 4.3.1-rc1+build456",
+			supported:   true,
+			expectError: false,
+		},
 	}
 
 	for _, testCase := range cases {
@@ -700,8 +718,7 @@ func Test_CheckInstalled_Podman(t *testing.T) {
 
 func Test_CheckInstalled_EnvVarOverride(t *testing.T) {
 	t.Run("DockerOverride", func(t *testing.T) {
-		os.Setenv("AZD_CONTAINER_RUNTIME", "docker")
-		defer os.Unsetenv("AZD_CONTAINER_RUNTIME")
+		t.Setenv("AZD_CONTAINER_RUNTIME", "docker")
 
 		mockContext := mocks.NewMockContext(context.Background())
 		docker := NewCli(mockContext.CommandRunner)
@@ -732,8 +749,7 @@ func Test_CheckInstalled_EnvVarOverride(t *testing.T) {
 	})
 
 	t.Run("PodmanOverride", func(t *testing.T) {
-		os.Setenv("AZD_CONTAINER_RUNTIME", "podman")
-		defer os.Unsetenv("AZD_CONTAINER_RUNTIME")
+		t.Setenv("AZD_CONTAINER_RUNTIME", "podman")
 
 		mockContext := mocks.NewMockContext(context.Background())
 		docker := NewCli(mockContext.CommandRunner)
@@ -764,8 +780,7 @@ func Test_CheckInstalled_EnvVarOverride(t *testing.T) {
 	})
 
 	t.Run("InvalidOverride", func(t *testing.T) {
-		os.Setenv("AZD_CONTAINER_RUNTIME", "invalid")
-		defer os.Unsetenv("AZD_CONTAINER_RUNTIME")
+		t.Setenv("AZD_CONTAINER_RUNTIME", "invalid")
 
 		mockContext := mocks.NewMockContext(context.Background())
 		docker := NewCli(mockContext.CommandRunner)
@@ -774,6 +789,19 @@ func Test_CheckInstalled_EnvVarOverride(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "unsupported container runtime")
 	})
+}
+
+func Test_CheckInstalled_NeitherAvailable(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	docker := NewCli(mockContext.CommandRunner)
+
+	// Mock both docker and podman as not available
+	mockContext.CommandRunner.MockToolInPath("docker", errors.New("docker not found"))
+	mockContext.CommandRunner.MockToolInPath("podman", errors.New("podman not found"))
+
+	err := docker.CheckInstalled(context.Background())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "neither docker nor podman is installed or running")
 }
 
 func TestSplitDockerImage(t *testing.T) {

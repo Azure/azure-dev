@@ -35,13 +35,16 @@ type Cli struct {
 	containerEngine string // "docker" or "podman", detected during CheckInstalled
 }
 
-// getContainerEngine returns the container engine command to use ("docker" or "podman")
+// getContainerEngine returns the container engine command to use ("docker" or "podman").
+// CheckInstalled() should be called first to detect and set the container engine.
+// If not set, defaults to "docker" for backward compatibility.
 func (d *Cli) getContainerEngine() string {
-	if d.containerEngine != "" {
-		return d.containerEngine
+	if d.containerEngine == "" {
+		// Default to "docker" for backward compatibility with existing code
+		// that may not call CheckInstalled() first
+		return "docker"
 	}
-	// Default to "docker" if not yet detected
-	return "docker"
+	return d.containerEngine
 }
 
 func (d *Cli) Login(ctx context.Context, loginServer string, username string, password string) error {
@@ -196,13 +199,23 @@ func (d *Cli) versionInfo() tools.VersionInfo {
 	}
 }
 
+func (d *Cli) podmanVersionInfo() tools.VersionInfo {
+	return tools.VersionInfo{
+		MinimumVersion: semver.Version{
+			Major: 3,
+			Minor: 0,
+			Patch: 0},
+		UpdateCommand: "Visit https://podman.io/getting-started/installation to upgrade",
+	}
+}
+
 // dockerVersionRegexp is a regular expression which matches the text printed by "docker --version"
 // and captures the version and build components.
 var dockerVersionStringRegexp = regexp.MustCompile(`Docker version ([^,]*), build ([a-f0-9]*)`)
 
 // podmanVersionStringRegexp is a regular expression which matches the text printed by "podman --version"
 // and captures the version component.
-var podmanVersionStringRegexp = regexp.MustCompile(`podman version ([^\s]+)`)
+var podmanVersionStringRegexp = regexp.MustCompile(`podman version (\S+)`)
 
 // dockerVersionReleaseBuildRegexp is a regular expression which matches the three part version number
 // from a docker version from an official release. The major and minor components are captured.
@@ -349,10 +362,13 @@ func (d *Cli) checkContainerEngine(ctx context.Context, engineName string) error
 	log.Printf("%s version: %s", engineName, versionOutput)
 
 	var supported bool
+	var versionInfo tools.VersionInfo
 	if engineName == "docker" {
 		supported, err = isSupportedDockerVersion(versionOutput)
+		versionInfo = d.versionInfo()
 	} else if engineName == "podman" {
 		supported, err = isSupportedPodmanVersion(versionOutput)
+		versionInfo = d.podmanVersionInfo()
 	} else {
 		return fmt.Errorf("unknown container engine: %s", engineName)
 	}
@@ -361,15 +377,12 @@ func (d *Cli) checkContainerEngine(ctx context.Context, engineName string) error
 		return err
 	}
 	if !supported {
-		return &tools.ErrSemver{ToolName: d.Name(), VersionInfo: d.versionInfo()}
+		return &tools.ErrSemver{ToolName: d.Name(), VersionInfo: versionInfo}
 	}
 
 	// Check if daemon/service is running
 	if _, err := tools.ExecuteCommand(ctx, d.commandRunner, engineName, "ps"); err != nil {
-		if engineName == "podman" {
-			return fmt.Errorf("the Podman service is not running, please start the %s service: %w", engineName, err)
-		}
-		return fmt.Errorf("the Docker daemon is not running, please start the %s service: %w", engineName, err)
+		return fmt.Errorf("the %s service is not running, please start it: %w", engineName, err)
 	}
 
 	// Store the detected container engine for future use

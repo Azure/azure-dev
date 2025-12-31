@@ -38,26 +38,6 @@ func newOperationCommand() *cobra.Command {
 	return cmd
 }
 
-// getStatusSymbol returns a symbol representation for job status
-func getStatusSymbol(status models.JobStatus) string {
-	switch status {
-	case models.StatusPending:
-		return "⌛"
-	case models.StatusQueued:
-		return "📚"
-	case models.StatusRunning:
-		return "🔄"
-	case models.StatusSucceeded:
-		return "✅"
-	case models.StatusFailed:
-		return "💥"
-	case models.StatusCancelled:
-		return "❌"
-	default:
-		return "❓"
-	}
-}
-
 // getStatusSymbolFromString returns a symbol representation for job status
 func getStatusSymbolFromString(status string) string {
 	switch status {
@@ -202,7 +182,7 @@ func newOperationShowCommand() *cobra.Command {
 			// Display job details
 			color.Green("\nFine-tuning Job Details\n")
 			fmt.Printf("Job ID:              %s\n", job.ID)
-			fmt.Printf("Status:              %s %s\n", getStatusSymbol(job.Status), job.Status)
+			fmt.Printf("Status:              %s %s\n", utils.GetStatusSymbol(job.Status), job.Status)
 			fmt.Printf("Model:               %s\n", job.Model)
 			fmt.Printf("Fine-tuned Model:    %s\n", formatFineTunedModel(job.FineTunedModel))
 			fmt.Printf("Created At:          %s\n", utils.FormatTime(job.CreatedAt))
@@ -329,7 +309,7 @@ func newOperationListCommand() *cobra.Command {
 			// Display job list
 			for i, job := range jobs {
 				fmt.Printf("\n%d. Job ID: %s | Status: %s %s | Model: %s | Fine-tuned: %s | Created: %s",
-					i+1, job.ID, getStatusSymbol(job.Status), job.Status, job.BaseModel, 
+					i+1, job.ID, utils.GetStatusSymbol(job.Status), job.Status, job.BaseModel, 
 					formatFineTunedModel(job.FineTunedModel), utils.FormatTime(job.CreatedAt))
 			}
 

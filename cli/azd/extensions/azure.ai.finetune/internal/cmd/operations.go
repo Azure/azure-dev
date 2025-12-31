@@ -230,6 +230,8 @@ func newOperationShowCommand() *cobra.Command {
 				if events.HasMore {
 					fmt.Println("  ... (more events available)")
 				}
+			} else if eventsAfter != "" {
+				fmt.Println("\nNo events found after the specified identifier")
 			}
 
 			// Fetch and print checkpoints if job is completed
@@ -261,6 +263,8 @@ func newOperationShowCommand() *cobra.Command {
 					if checkpoints.HasMore {
 						fmt.Println("  ... (more checkpoints available)")
 					}
+				} else if checkpointsAfter != "" {
+					fmt.Println("\nNo checkpoints found after the specified identifier")
 				}
 			}
 

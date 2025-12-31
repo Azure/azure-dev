@@ -145,6 +145,8 @@ func newOperationSubmitCommand() *cobra.Command {
 // newOperationShowCommand creates a command to show the fine-tuning job details
 func newOperationShowCommand() *cobra.Command {
 	var jobID string
+	var limit int
+	var after string
 
 	cmd := &cobra.Command{
 		Use:   "show",
@@ -211,7 +213,7 @@ func newOperationShowCommand() *cobra.Command {
 				fmt.Printf("failed to start spinner: %v\n", err)
 			}
 
-			events, err := fineTuneSvc.GetJobEvents(ctx, jobID)
+			events, err := fineTuneSvc.GetJobEvents(ctx, jobID, limit, after)
 			_ = eventsSpinner.Stop(ctx)
 
 			if err != nil {
@@ -236,7 +238,7 @@ func newOperationShowCommand() *cobra.Command {
 					fmt.Printf("failed to start spinner: %v\n", err)
 				}
 
-				checkpoints, err := fineTuneSvc.GetJobCheckpoints(ctx, jobID)
+				checkpoints, err := fineTuneSvc.GetJobCheckpoints(ctx, jobID, limit, after)
 				_ = checkpointsSpinner.Stop(ctx)
 
 				if err != nil {
@@ -264,6 +266,9 @@ func newOperationShowCommand() *cobra.Command {
 			return nil
 		},
 	}
+	
+	cmd.Flags().IntVarP(&limit, "top", "t", 50, "Number of fine-tuning jobs to list")
+	cmd.Flags().StringVarP(&after, "after", "a", "", "Cursor for pagination")
 	cmd.Flags().StringVarP(&jobID, "job-id", "i", "", "Fine-tuning job ID")
 	cmd.MarkFlagRequired("job-id")
 	return cmd

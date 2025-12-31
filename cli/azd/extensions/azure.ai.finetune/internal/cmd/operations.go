@@ -182,7 +182,7 @@ func newOperationShowCommand() *cobra.Command {
 				fmt.Println()
 				return err
 			}
-			
+
 			// Display job details
 			color.Green("\nFine-tuning Job Details\n")
 			fmt.Printf("Job ID:              %s\n", job.ID)
@@ -224,7 +224,8 @@ func newOperationShowCommand() *cobra.Command {
 			} else if events != nil && len(events.Data) > 0 {
 				fmt.Println("\nJob Events:")
 				for i, event := range events.Data {
-					fmt.Printf("  %d. [%s] %s - %s\n", i+1, event.Level, utils.FormatTime(event.CreatedAt), event.Message)
+					fmt.Printf("  %d. Event ID: %s\n", i+1, event.ID)
+					fmt.Printf("     [%s] %s - %s\n", event.Level, utils.FormatTime(event.CreatedAt), event.Message)
 				}
 				if events.HasMore {
 					fmt.Println("  ... (more events available)")
@@ -268,16 +269,16 @@ func newOperationShowCommand() *cobra.Command {
 			return nil
 		},
 	}
-	
+
 	cmd.Flags().IntVar(&eventsLimit, "events-top", 50, "Number of events to retrieve")
 	cmd.Flags().StringVar(&eventsAfter, "events-after", "", "Identifier for the last event from the previous pagination request")
 
 	cmd.Flags().IntVar(&checkpointsLimit, "checkpoints-top", 50, "Number of checkpoints to retrieve")
 	cmd.Flags().StringVar(&checkpointsAfter, "checkpoints-after", "", "Identifier for the last checkpoint ID from the previous pagination request")
-	
+
 	cmd.Flags().StringVarP(&jobID, "job-id", "i", "", "Fine-tuning job ID")
 	cmd.MarkFlagRequired("job-id")
-	
+
 	return cmd
 }
 
@@ -314,14 +315,14 @@ func newOperationListCommand() *cobra.Command {
 			jobs, err := fineTuneSvc.ListFineTuningJobs(ctx, limit, after)
 			_ = spinner.Stop(ctx)
 			if err != nil {
-			    fmt.Println()
+				fmt.Println()
 				return err
 			}
 
 			// Display job list
 			for i, job := range jobs {
 				fmt.Printf("\n%d. Job ID: %s | Status: %s %s | Model: %s | Fine-tuned: %s | Created: %s",
-					i+1, job.ID, utils.GetStatusSymbol(job.Status), job.Status, job.BaseModel, 
+					i+1, job.ID, utils.GetStatusSymbol(job.Status), job.Status, job.BaseModel,
 					formatFineTunedModel(job.FineTunedModel), utils.FormatTime(job.CreatedAt))
 			}
 

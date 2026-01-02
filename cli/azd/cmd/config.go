@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -553,7 +554,11 @@ func (a *configOptionsAction) Run(ctx context.Context) (*actions.ActionResult, e
 	// Load current config to show current values
 	currentConfig, err := a.configManager.Load()
 	if err != nil {
-		// If config doesn't exist or can't be loaded, continue with empty config
+		// Only ignore "file not found" errors; other errors should be logged
+		if !os.IsNotExist(err) {
+			// Log the error but continue with empty config to ensure the command still works
+			fmt.Fprintf(a.console.Handles().Stderr, "Warning: failed to load config: %v\n", err)
+		}
 		currentConfig = config.NewEmptyConfig()
 	}
 
@@ -585,8 +590,8 @@ func (a *configOptionsAction) Run(ctx context.Context) (*actions.ActionResult, e
 
 		// Get current value from config
 		currentValue := ""
-		// Skip environment-only variables (those with keys starting with "(env)")
-		if !strings.HasPrefix(option.Key, "(env)") {
+		// Skip environment-only variables (those with keys starting with EnvOnlyPrefix)
+		if !strings.HasPrefix(option.Key, config.EnvOnlyPrefix) {
 			if val, ok := currentConfig.Get(option.Key); ok {
 				// Convert value to string representation
 				switch v := val.(type) {

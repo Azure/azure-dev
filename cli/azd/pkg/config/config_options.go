@@ -10,6 +10,9 @@ import (
 	"github.com/braydonk/yaml"
 )
 
+// EnvOnlyPrefix is the prefix used to mark environment-only configuration options
+const EnvOnlyPrefix = "(env) "
+
 // ConfigOption defines a configuration setting that can be set in azd config
 type ConfigOption struct {
 	Key           string   `yaml:"key"`

@@ -25,10 +25,10 @@ type FineTuningProvider interface {
 	GetFineTuningJobDetails(ctx context.Context, jobID string) (*models.FineTuningJobDetail, error)
 
 	// GetJobEvents retrieves events for a fine-tuning job
-	GetJobEvents(ctx context.Context, jobID string, limit int, after string) ([]*models.JobEvent, error)
+	GetJobEvents(ctx context.Context, jobID string) (*models.JobEventsList, error)
 
 	// GetJobCheckpoints retrieves checkpoints for a fine-tuning job
-	GetJobCheckpoints(ctx context.Context, jobID string, limit int, after string) ([]*models.JobCheckpoint, error)
+	GetJobCheckpoints(ctx context.Context, jobID string) (*models.JobCheckpointsList, error)
 
 	// PauseJob pauses a fine-tuning job
 	PauseJob(ctx context.Context, jobID string) (*models.FineTuningJob, error)

@@ -4,9 +4,12 @@
 package cmd
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/figspec"
+	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 	"github.com/stretchr/testify/require"
 )
@@ -22,6 +25,26 @@ import (
 // For Pwsh,
 // $env:UPDATE_SNAPSHOTS='true'; go test ./cmd -run TestFigSpec; $env:UPDATE_SNAPSHOTS=$null
 func TestFigSpec(t *testing.T) {
+	configDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", configDir)
+	t.Setenv("AZURE_DEV_COLLECT_TELEMETRY", "no")
+
+	cli := azdcli.NewCLI(t)
+
+	sourceName := addLocalRegistrySource(t.Context(), t, cli)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+		defer cancel()
+		removeLocalExtensionSource(ctx, t, cli)
+	})
+
+	installAllExtensions(t.Context(), t, cli, sourceName)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+		defer cancel()
+		uninstallAllExtensions(ctx, t, cli)
+	})
+
 	root := NewRootCmd(false, nil, nil)
 
 	builder := figspec.NewSpecBuilder(false)

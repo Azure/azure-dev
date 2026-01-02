@@ -134,7 +134,7 @@ func TestBuildAcaIngress(t *testing.T) {
 		assert.Equal(t, []string{"http"}, ingressBinding)
 	})
 
-	t.Run("invalid schema", func(t *testing.T) {
+	t.Run("invalid_schema", func(t *testing.T) {
 		bindingsManifest := `{
 			"http": {
 				"scheme":    "invalid",
@@ -145,11 +145,14 @@ func TestBuildAcaIngress(t *testing.T) {
 		err := json.Unmarshal([]byte(bindingsManifest), &bindings)
 		assert.NoError(t, err)
 
+		// Custom schemes are now allowed (e.g., redis, postgres, etc.)
+		// The scheme should be treated as non-HTTP and use TCP transport
 		ingress, ingressBinding, err := buildAcaIngress(bindings, 8080)
-		assert.Error(t, err)
-		assert.EqualError(t, err, `binding "http" has invalid scheme "invalid"`)
-		assert.Nil(t, ingress)
-		assert.Equal(t, []string(nil), ingressBinding)
+		assert.NoError(t, err)
+		assert.NotNil(t, ingress)
+		assert.Equal(t, "tcp", ingress.Transport)
+		assert.Equal(t, 33, ingress.TargetPort)
+		assert.Equal(t, []string{"http"}, ingressBinding)
 	})
 
 	t.Run("additional ports", func(t *testing.T) {

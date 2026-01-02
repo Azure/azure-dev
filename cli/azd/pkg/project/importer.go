@@ -13,7 +13,6 @@ import (
 	"slices"
 	"strings"
 
-	"dario.cat/mergo"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 )
 
@@ -237,27 +236,28 @@ var (
 // The configuration can be explicitly defined on azure.yaml using path and module, or in case these values
 // are not explicitly defined, the project importer uses default values to find the infrastructure.
 func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (*Infra, error) {
-	mergedOptions := provisioning.Options{}
-	mergo.Merge(&mergedOptions, projectConfig.Infra)
-	mergo.Merge(&mergedOptions, DefaultProvisioningOptions)
+	infraOptions, err := projectConfig.Infra.GetWithDefaults()
+	if err != nil {
+		return nil, err
+	}
 
-	infraRoot := mergedOptions.Path
+	infraRoot := infraOptions.Path
 	if !filepath.IsAbs(infraRoot) {
 		infraRoot = filepath.Join(projectConfig.Path, infraRoot)
 	}
 
 	// short-circuit: If layers are defined, we know it's an explicit infrastructure
-	if len(mergedOptions.Layers) > 0 {
+	if len(infraOptions.Layers) > 0 {
 		return &Infra{
-			Options: mergedOptions,
+			Options: infraOptions,
 		}, nil
 	}
 
 	// short-circuit: If infra files exist, we know it's an explicit infrastructure
-	if moduleExists, err := pathHasModule(infraRoot, mergedOptions.Module); err == nil && moduleExists {
+	if moduleExists, err := pathHasModule(infraRoot, infraOptions.Module); err == nil && moduleExists {
 		log.Printf("using infrastructure from %s directory", infraRoot)
 		return &Infra{
-			Options: mergedOptions,
+			Options: infraOptions,
 		}, nil
 	}
 
@@ -287,7 +287,7 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 
 	// Return default project infra
 	return &Infra{
-		Options: mergedOptions,
+		Options: infraOptions,
 	}, nil
 }
 

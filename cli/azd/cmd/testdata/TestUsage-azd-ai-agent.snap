@@ -1,5 +1,5 @@
 
-This extension provides custom commands for working with agents using Azure Developer CLI.
+Extension for the Foundry Agent Service. (Preview)
 
 Usage
   azd ai agent [flags]

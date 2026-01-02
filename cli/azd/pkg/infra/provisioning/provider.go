@@ -7,6 +7,10 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"dario.cat/mergo"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 )
 
 type ProviderKind string
@@ -20,6 +24,15 @@ const (
 	Test         ProviderKind = "test"
 )
 
+type Mode string
+
+const (
+	// Default mode for deploying or previewing the deployment.
+	ModeDeploy Mode = ""
+	// Mode for destroying the deployment.
+	ModeDestroy Mode = "destroy"
+)
+
 // Options for a provisioning provider.
 type Options struct {
 	Provider         ProviderKind   `yaml:"provider,omitempty"`
@@ -27,11 +40,39 @@ type Options struct {
 	Module           string         `yaml:"module,omitempty"`
 	Name             string         `yaml:"name,omitempty"`
 	DeploymentStacks map[string]any `yaml:"deploymentStacks,omitempty"`
-	// Not expected to be defined at azure.yaml
-	IgnoreDeploymentState bool `yaml:"-"`
-
 	// Provisioning options for each individually defined layer.
 	Layers []Options `yaml:"layers,omitempty"`
+
+	// Runtime options
+
+	// IgnoreDeploymentState when true, skips the deployment state check.
+	IgnoreDeploymentState bool `yaml:"-"`
+	// The mode in which the deployment is being run.
+	Mode Mode `yaml:"-"`
+}
+
+// GetWithDefaults merges the provided infra options with the default provisioning options
+func (o Options) GetWithDefaults(other ...Options) (Options, error) {
+	mergedOptions := Options{}
+
+	// Merge in the provided infra options first
+	if err := mergo.Merge(&mergedOptions, o); err != nil {
+		return Options{}, fmt.Errorf("merging infra options: %w", err)
+	}
+
+	// Merge in any other provided options
+	for _, opt := range other {
+		if err := mergo.Merge(&mergedOptions, opt); err != nil {
+			return Options{}, fmt.Errorf("merging other options: %w", err)
+		}
+	}
+
+	// Finally, merge in the default provisioning options
+	if err := mergo.Merge(&mergedOptions, defaultOptions); err != nil {
+		return Options{}, fmt.Errorf("merging default infra options: %w", err)
+	}
+
+	return mergedOptions, nil
 }
 
 // GetLayers return the provisioning layers defined.
@@ -43,6 +84,7 @@ func (o *Options) GetLayers() []Options {
 		return []Options{*o}
 	}
 
+	tracing.AppendUsageAttributeUnique(fields.FeaturesKey.String(fields.FeatLayers))
 	return o.Layers
 }
 

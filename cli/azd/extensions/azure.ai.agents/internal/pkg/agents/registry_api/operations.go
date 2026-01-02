@@ -5,6 +5,7 @@ package registry_api
 
 import (
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/version"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -13,22 +14,43 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 )
 
 // RegistryAgentManifestClient provides methods to interact with Azure ML registry agent manifests
 type RegistryAgentManifestClient struct {
 	baseEndpoint string
-	cred         azcore.TokenCredential
-	client       *http.Client
+	pipeline     runtime.Pipeline
 }
 
 // NewRegistryAgentManifestClient creates a new instance of RegistryAgentManifestClient
 func NewRegistryAgentManifestClient(registryName string, cred azcore.TokenCredential) *RegistryAgentManifestClient {
 	baseEndpoint := fmt.Sprintf("https://int.api.azureml-test.ms/agent-asset/v1.0/registries/%s/agentManifests", registryName)
+
+	userAgent := fmt.Sprintf("azd-ext-azure-ai-agents/%s", version.Version)
+
+	clientOptions := &policy.ClientOptions{
+		Logging: policy.LogOptions{
+			AllowedHeaders: []string{azsdk.MsCorrelationIdHeader},
+		},
+		PerCallPolicies: []policy.Policy{
+			runtime.NewBearerTokenPolicy(cred, []string{"https://ai.azure.com/.default"}, nil),
+			azsdk.NewMsCorrelationPolicy(),
+			azsdk.NewUserAgentPolicy(userAgent),
+		},
+	}
+
+	pipeline := runtime.NewPipeline(
+		"azure-ai-agents",
+		"v1.0.0",
+		runtime.PipelineOptions{},
+		clientOptions,
+	)
+
 	return &RegistryAgentManifestClient{
 		baseEndpoint: baseEndpoint,
-		cred:         cred,
-		client:       &http.Client{},
+		pipeline:     pipeline,
 	}
 }
 
@@ -36,15 +58,25 @@ func NewRegistryAgentManifestClient(registryName string, cred azcore.TokenCreden
 func (c *RegistryAgentManifestClient) GetManifest(ctx context.Context, manifestName string, manifestVersion string) (*Manifest, error) {
 	targetEndpoint := fmt.Sprintf("%s/%s/versions/%s", c.baseEndpoint, manifestName, manifestVersion)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", targetEndpoint, nil)
+	req, err := runtime.NewRequest(ctx, http.MethodGet, targetEndpoint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	fmt.Println("Making HTTP request to retrieve manifest...")
-	body, err := c.makeHTTPRequest(ctx, req)
+	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	var manifest Manifest
@@ -214,14 +246,24 @@ func HandleTools(manifest *Manifest) ([]any, error) {
 
 // GetAllLatest retrieves all latest agent manifests from the specified registry
 func (c *RegistryAgentManifestClient) GetAllLatest(ctx context.Context) ([]Manifest, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", c.baseEndpoint, nil)
+	req, err := runtime.NewRequest(ctx, http.MethodGet, c.baseEndpoint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	body, err := c.makeHTTPRequest(ctx, req)
+	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	var manifestList ManifestList
@@ -230,95 +272,4 @@ func (c *RegistryAgentManifestClient) GetAllLatest(ctx context.Context) ([]Manif
 	}
 
 	return manifestList.Value, nil
-}
-
-// Helper methods
-
-// makeHTTPRequest makes an HTTP request with proper authentication and error handling
-func (c *RegistryAgentManifestClient) makeHTTPRequest(ctx context.Context, req *http.Request) ([]byte, error) {
-	// Log the request details - uncomment for debugging
-	// c.logRequest(req.Method, req.URL.String(), nil)
-
-	// Add authentication header
-	if err := c.setAuthHeader(ctx, req); err != nil {
-		return nil, fmt.Errorf("failed to set authentication header: %w", err)
-	}
-
-	// Set common headers
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-
-	// Make the HTTP request
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to make HTTP request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Read response body
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	// Log the response details - uncomment for debugging
-	// c.logResponse(body)
-
-	// Check for HTTP errors
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("HTTP request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	return body, nil
-}
-
-// setAuthHeader sets the authorization header using the credential
-func (c *RegistryAgentManifestClient) setAuthHeader(ctx context.Context, req *http.Request) error {
-	token, err := c.getAiFoundryAzureToken(ctx, c.cred)
-	if err != nil {
-		return fmt.Errorf("failed to get Azure token: %w", err)
-	}
-
-	req.Header.Set("Authorization", "Bearer "+token)
-	return nil
-}
-
-// getAiFoundryAzureToken gets an Azure access token using the provided credential
-func (c *RegistryAgentManifestClient) getAiFoundryAzureToken(ctx context.Context, cred azcore.TokenCredential) (string, error) {
-	tokenRequestOptions := policy.TokenRequestOptions{
-		Scopes: []string{"https://ai.azure.com/.default"},
-	}
-
-	token, err := cred.GetToken(ctx, tokenRequestOptions)
-	if err != nil {
-		return "", err
-	}
-
-	return token.Token, nil
-}
-
-// logRequest logs the request details to stderr for debugging
-func (c *RegistryAgentManifestClient) logRequest(method, url string, payload []byte) {
-	fmt.Printf("%s %s\n", method, url)
-	if len(payload) > 0 {
-		var prettyPayload interface{}
-		if err := json.Unmarshal(payload, &prettyPayload); err == nil {
-			prettyJSON, _ := json.MarshalIndent(prettyPayload, "", "  ")
-			fmt.Printf("Payload:\n%s\n", string(prettyJSON))
-		} else {
-			fmt.Printf("Payload: %s\n", string(payload))
-		}
-	}
-}
-
-// logResponse logs the response body to stderr for debugging
-func (c *RegistryAgentManifestClient) logResponse(body []byte) {
-	fmt.Println("Response:")
-	var jsonResponse interface{}
-	if err := json.Unmarshal(body, &jsonResponse); err == nil {
-		prettyJSON, _ := json.MarshalIndent(jsonResponse, "", "  ")
-		fmt.Println(string(prettyJSON))
-	} else {
-		fmt.Println(string(body))
-	}
 }

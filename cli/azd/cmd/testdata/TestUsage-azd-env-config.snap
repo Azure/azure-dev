@@ -1,0 +1,35 @@
+
+Manage environment-specific configuration stored in .azure/<environment>/config.json.
+
+  • Configuration values set with these commands are specific to the environment.
+  • These values are separate from environment variables (.env file).
+  • Environment configuration is stored in .azure/<environment-name>/config.json.
+
+Usage
+  azd env config [command]
+
+Available Commands
+  get  	: Gets a configuration value from the environment.
+  set  	: Sets a configuration value in the environment.
+  unset	: Unsets a configuration value in the environment.
+
+Global Flags
+    -C, --cwd string 	: Sets the current working directory.
+        --debug      	: Enables debugging and diagnostics logging.
+        --docs       	: Opens the documentation for azd env config in your web browser.
+    -h, --help       	: Gets help for config.
+        --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
+
+Use azd env config [command] --help to view examples and more information about a specific command.
+
+Examples
+  Get a configuration value
+    azd env config get myapp.endpoint
+
+  Set a configuration value
+    azd env config set myapp.endpoint https://example.com
+
+  Unset a configuration value
+    azd env config unset myapp.endpoint
+
+

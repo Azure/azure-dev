@@ -15,6 +15,7 @@ import (
 
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/azure"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -173,7 +174,7 @@ func (p *AgentServiceTargetProvider) Endpoints(
 
 	// Check if required environment variables are set
 	if azdEnv["AZURE_AI_PROJECT_ENDPOINT"] == "" {
-		return nil, fmt.Errorf("AZURE_AI_PROJECT_ENDPOINT environment variable is required and could not be found in your current azd environment. Either you haven't provisioned an Azure AI Foundry project yet (azd provision), or you haven't connected to an existing project (azd ai agent init --project-id [id])")
+		return nil, fmt.Errorf("AZURE_AI_PROJECT_ENDPOINT environment variable is required and could not be found in your current azd environment. Either you haven't provisioned a Microsoft Foundry project yet (azd provision), or you haven't connected to an existing project (azd ai agent init --project-id [id])")
 	}
 
 	serviceKey := p.getServiceKey(serviceConfig.Name)
@@ -210,15 +211,15 @@ func (p *AgentServiceTargetProvider) GetTargetResource(
 	projectName := p.foundryProject.Name
 
 	// Create Cognitive Services Projects client
-	projectsClient, err := armcognitiveservices.NewProjectsClient(p.foundryProject.SubscriptionID, p.credential, nil)
+	projectsClient, err := armcognitiveservices.NewProjectsClient(p.foundryProject.SubscriptionID, p.credential, azure.NewArmClientOptions())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Cognitive Services Projects client: %w", err)
 	}
 
-	// Get the AI Foundry project
+	// Get the Microsoft Foundry project
 	projectResp, err := projectsClient.Get(ctx, p.foundryProject.ResourceGroupName, accountName, projectName, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get Azure AI Foundry project: %w", err)
+		return nil, fmt.Errorf("failed to get Microsoft Foundry project: %w", err)
 	}
 
 	// Construct the target resource
@@ -442,7 +443,7 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 ) (*azdext.ServiceDeployResult, error) {
 	// Check if environment variable is set
 	if azdEnv["AZURE_AI_PROJECT_ENDPOINT"] == "" {
-		return nil, fmt.Errorf("AZURE_AI_PROJECT_ENDPOINT environment variable is required and could not be found in your current azd environment. Either you haven't provisioned an Azure AI Foundry project yet (azd provision), or you haven't connected to an existing project (azd ai agent init --project-id [id])")
+		return nil, fmt.Errorf("AZURE_AI_PROJECT_ENDPOINT environment variable is required and could not be found in your current azd environment. Either you haven't provisioned a Microsoft Foundry project yet (azd provision), or you haven't connected to an existing project (azd ai agent init --project-id [id])")
 	}
 
 	fmt.Fprintf(os.Stderr, "Deploying Prompt Agent\n")
@@ -497,7 +498,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 ) (*azdext.ServiceDeployResult, error) {
 	// Check if environment variable is set
 	if azdEnv["AZURE_AI_PROJECT_ENDPOINT"] == "" {
-		return nil, fmt.Errorf("AZURE_AI_PROJECT_ENDPOINT environment variable is required and could not be found in your current azd environment. Either you haven't provisioned an Azure AI Foundry project yet (azd provision), or you haven't connected to an existing project (azd ai agent init --project-id [id])")
+		return nil, fmt.Errorf("AZURE_AI_PROJECT_ENDPOINT environment variable is required and could not be found in your current azd environment. Either you haven't provisioned a Microsoft Foundry project yet (azd provision), or you haven't connected to an existing project (azd ai agent init --project-id [id])")
 	}
 
 	progress("Deploying hosted agent")
@@ -659,7 +660,7 @@ func (p *AgentServiceTargetProvider) agentPlaygroundUrl(projectResourceId, agent
 
 	resourceGroup := resourceId.ResourceGroupName
 	if resourceId.Parent == nil {
-		return "", fmt.Errorf("invalid Azure AI Foundry project ID: %s", projectResourceId)
+		return "", fmt.Errorf("invalid Microsoft Foundry project ID: %s", projectResourceId)
 	}
 
 	accountName := resourceId.Parent.Name
@@ -678,7 +679,10 @@ func (p *AgentServiceTargetProvider) createAgent(
 	azdEnv map[string]string,
 ) (*agent_api.AgentVersionObject, error) {
 	// Create agent client
-	agentClient := agent_api.NewAgentClient(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], p.credential)
+	agentClient := agent_api.NewAgentClient(
+		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+		p.credential,
+	)
 
 	// Use constant API version
 	const apiVersion = "2025-05-15-preview"
@@ -725,7 +729,10 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 	fmt.Fprintln(os.Stderr)
 
 	// Create agent client
-	agentClient := agent_api.NewAgentClient(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], p.credential)
+	agentClient := agent_api.NewAgentClient(
+		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+		p.credential,
+	)
 
 	var minReplicas, maxReplicas *int32
 	if foundryAgentConfig.Container != nil && foundryAgentConfig.Container.Scale != nil {
@@ -938,11 +945,11 @@ func (p *AgentServiceTargetProvider) ensureFoundryProject(ctx context.Context) e
 		return fmt.Errorf("failed to get environment values: %w", err)
 	}
 
-	// Check for AI Foundry project resource ID (try both env var names)
+	// Check for Microsoft Foundry project resource ID (try both env var names)
 	foundryResourceID := resp.Value
 	if foundryResourceID == "" {
 		return fmt.Errorf(
-			"Azure AI Foundry project ID is required. " +
+			"Microsoft Foundry project ID is required. " +
 				"Please set AZURE_AI_PROJECT_ID environment variable",
 		)
 	}
@@ -950,7 +957,7 @@ func (p *AgentServiceTargetProvider) ensureFoundryProject(ctx context.Context) e
 	// Parse the resource ID
 	parsedResource, err := arm.ParseResourceID(foundryResourceID)
 	if err != nil {
-		return fmt.Errorf("failed to parse Azure AI Foundry project ID: %w", err)
+		return fmt.Errorf("failed to parse Microsoft Foundry project ID: %w", err)
 	}
 
 	p.foundryProject = parsedResource

@@ -26,6 +26,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/cmd/show"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/spf13/cobra"
 )
 
@@ -79,6 +80,44 @@ func NewRootCmd(
 				}
 
 				prevDir = current
+
+				// Check if the directory exists
+				if _, err := os.Stat(opts.Cwd); os.IsNotExist(err) {
+					// Directory doesn't exist, prompt user to create it
+					shouldCreate := true // Default to Yes
+
+					if !opts.NoPrompt {
+						// Prompt the user
+						defaultValue := true
+						confirm := ux.NewConfirm(&ux.ConfirmOptions{
+							Message: fmt.Sprintf(
+								"Directory '%s' does not exist. Would you like to create it?",
+								opts.Cwd,
+							),
+							DefaultValue: &defaultValue,
+						})
+
+						result, err := confirm.Ask(cmd.Context())
+						if err != nil {
+							return fmt.Errorf("failed to prompt for directory creation: %w", err)
+						}
+
+						if result == nil {
+							return fmt.Errorf("no response received for directory creation prompt")
+						}
+
+						shouldCreate = *result
+					}
+
+					if !shouldCreate {
+						return fmt.Errorf("directory '%s' does not exist and creation was declined", opts.Cwd)
+					}
+
+					// Create the directory
+					if err := os.MkdirAll(opts.Cwd, 0755); err != nil {
+						return fmt.Errorf("failed to create directory '%s': %w", opts.Cwd, err)
+					}
+				}
 
 				if err := os.Chdir(opts.Cwd); err != nil {
 					return fmt.Errorf("failed to change directory to %s: %w", opts.Cwd, err)
@@ -164,25 +203,6 @@ func NewRootCmd(
 		}).
 		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 
-	//deprecate:cmd hide login
-	login := newLoginCmd("")
-	login.Hidden = true
-	root.Add("login", &actions.ActionDescriptorOptions{
-		Command:        login,
-		FlagsResolver:  newLoginFlags,
-		ActionResolver: newLoginAction,
-		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
-		DefaultFormat:  output.NoneFormat,
-	})
-
-	//deprecate:cmd hide logout
-	logout := newLogoutCmd("")
-	logout.Hidden = true
-	root.Add("logout", &actions.ActionDescriptorOptions{
-		Command:        logout,
-		ActionResolver: newLogoutAction,
-	})
-
 	root.Add("init", &actions.ActionDescriptorOptions{
 		Command:        newInitCmd(),
 		FlagsResolver:  newInitFlags,
@@ -248,13 +268,7 @@ func NewRootCmd(
 			}
 			return true
 		}).
-		UseMiddlewareWhen("extensions", middleware.NewExtensionsMiddleware, func(descriptor *actions.ActionDescriptor) bool {
-			if onPreview, _ := descriptor.Options.Command.Flags().GetBool("preview"); onPreview {
-				log.Println("Skipping provision hooks due to preview flag.")
-				return false
-			}
-			return true
-		})
+		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 
 	root.
 		Add("package", &actions.ActionDescriptorOptions{

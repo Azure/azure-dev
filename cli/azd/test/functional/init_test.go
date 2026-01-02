@@ -291,6 +291,56 @@ func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 	require.FileExists(t, filepath.Join(dir, "README.md"))
 }
 
+// Test_CLI_Init_WithCwdAutoCreate tests the automatic directory creation when using -C/--cwd flag.
+func Test_CLI_Init_WithCwdAutoCreate(t *testing.T) {
+	tests := []struct {
+		name   string
+		subDir string // subdirectory to create within temp dir (using -C flag)
+		args   []string
+	}{
+		{
+			name:   "single level directory",
+			subDir: "new-project",
+			args:   []string{"init", "-t", "azure-samples/todo-nodejs-mongo", "--no-prompt"},
+		},
+		{
+			name:   "nested directory",
+			subDir: "parent/child/project",
+			args:   []string{"init", "-t", "azure-samples/todo-nodejs-mongo", "--no-prompt"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := newTestContext(t)
+			defer cancel()
+
+			// Create a parent temp directory
+			parentDir := tempDirWithDiagnostics(t)
+			cli := azdcli.NewCLI(t)
+			cli.WorkingDirectory = parentDir
+
+			// Add -C flag with the subdirectory path
+			targetDir := filepath.Join(parentDir, tt.subDir)
+			args := append([]string{"-C", tt.subDir}, tt.args...)
+
+			// Directory should not exist before running the command
+			require.NoDirExists(t, targetDir)
+
+			// Run the command
+			// Note: We expect an error because --no-prompt will fail on environment name prompt
+			// but the directory creation should succeed before that
+			cli.RunCommand(ctx, args...)
+
+			// Verify the directory was created
+			require.DirExists(t, targetDir)
+
+			// Verify that the template was initialized in the created directory
+			require.FileExists(t, filepath.Join(targetDir, azdcontext.ProjectFileName))
+		})
+	}
+}
+
 // verifyEnvInitialized is a helper function that returns a verification function.
 // This avoids duplicating the verification logic in the test table.
 func verifyEnvInitialized(envName string) func(t *testing.T, dir string) {

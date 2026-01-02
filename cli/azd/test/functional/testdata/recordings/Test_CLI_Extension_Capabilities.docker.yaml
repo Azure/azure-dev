@@ -1,0 +1,36 @@
+version: "1.0"
+tool: docker
+interactions:
+    - id: 0
+      args:
+        - login
+        - --username
+        - 00000000-0000-0000-0000-000000000000
+        - --password-stdin
+        - acrcq2iipgkrky3y.azurecr.io
+      exitCode: 0
+      stdout: |
+        Login Succeeded
+      stderr: ""
+    - id: 1
+      args:
+        - push
+        - acrcq2iipgkrky3y.azurecr.io/extension-capabilities/demo-azdtest-l8f0aee:azd-deploy-1763590301
+      exitCode: 0
+      stdout: |
+        The push refers to repository [acrcq2iipgkrky3y.azurecr.io/extension-capabilities/demo-azdtest-l8f0aee]
+        cb63a093e6f7: Preparing
+        4abab3825028: Preparing
+        82140d9a70a7: Preparing
+        f3b40b0cdb1c: Preparing
+        0b1f26057bd0: Preparing
+        08000c18d16d: Preparing
+        08000c18d16d: Waiting
+        4abab3825028: Pushed
+        cb63a093e6f7: Pushed
+        82140d9a70a7: Pushed
+        f3b40b0cdb1c: Pushed
+        08000c18d16d: Pushed
+        0b1f26057bd0: Pushed
+        azd-deploy-1763590301: digest: sha256:9ee75d8cd3a167ea91c1c0e949d3898720d0e63bd4e580d7c7a7e8969ad03e16 size: 1571
+      stderr: ""

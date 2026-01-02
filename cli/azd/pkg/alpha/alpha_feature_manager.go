@@ -110,7 +110,7 @@ func (m *FeatureManager) IsEnabled(featureId FeatureId) bool {
 	} else if allOn := isEnabled(m.userConfigCache, AllId); allOn {
 		//check if all features is ON
 		enabled = true
-		tracing.AppendUsageAttributeUnique(fields.AlphaFeaturesKey.String(string(AllId)))
+		tracing.AppendUsageAttributeUnique(fields.FeaturesKey.String(string(AllId)))
 	} else if featureOn := isEnabled(m.userConfigCache, featureId); featureOn {
 		// check if the feature is ON
 		enabled = true
@@ -120,7 +120,7 @@ func (m *FeatureManager) IsEnabled(featureId FeatureId) bool {
 	}
 
 	if enabled {
-		tracing.AppendUsageAttributeUnique(fields.AlphaFeaturesKey.String(string(featureId)))
+		tracing.AppendUsageAttributeUnique(fields.FeaturesKey.String(string(featureId)))
 	}
 
 	return enabled

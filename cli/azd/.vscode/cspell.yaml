@@ -237,6 +237,18 @@ overrides:
   - filename: pkg/project/service_target_dotnet_containerapp.go
     words:
       - IMAGENAME
+  - filename: extensions/microsoft.azd.extensions/internal/resources/languages/**/.gitignore
+    words:
+      - rsuser
+      - userosscache
+      - docstates
+      - dylib
+  - filename: docs/recording-functional-tests-guide.md
+    words:
+      - httptest
+      - Logf
+      - Getenv
+      - httptest      
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

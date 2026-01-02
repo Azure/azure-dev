@@ -5,7 +5,6 @@ package azdext
 
 import (
 	"context"
-	"errors"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 )
@@ -32,23 +31,16 @@ func (ops *FrameworkServiceEnvelope) SetRequestId(ctx context.Context, msg *Fram
 	msg.RequestId = id
 }
 
-// GetError returns the error from the message as a Go error type
+// GetError returns the error from the message as a Go error type.
+// It returns a typed error based on the ErrorOrigin that preserves structured information for telemetry.
 func (ops *FrameworkServiceEnvelope) GetError(msg *FrameworkServiceMessage) error {
-	if msg.Error == nil || msg.Error.Message == "" {
-		return nil
-	}
-	return errors.New(msg.Error.Message)
+	return UnwrapError(msg.Error)
 }
 
-// SetError sets an error on the message
+// SetError sets an error on the message.
+// It detects the error type and populates the appropriate source details.
 func (ops *FrameworkServiceEnvelope) SetError(msg *FrameworkServiceMessage, err error) {
-	if err == nil {
-		msg.Error = nil
-		return
-	}
-	msg.Error = &FrameworkServiceErrorMessage{
-		Message: err.Error(),
-	}
+	msg.Error = WrapError(err)
 }
 
 // GetInnerMessage returns the inner message from the oneof field

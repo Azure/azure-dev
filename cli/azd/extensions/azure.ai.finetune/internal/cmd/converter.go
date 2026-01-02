@@ -7,42 +7,10 @@ import (
 	"github.com/openai/openai-go/v3"
 
 	FTYaml "azure.ai.finetune/internal/fine_tuning_yaml"
-	"azure.ai.finetune/pkg/models"
 )
 
-func ConvertYAMLToInternalJobParams(config *FTYaml.FineTuningConfig, trainingFileID, validationFileID string) (models.CreateFineTuningRequest, error) {
-	jobParams := models.CreateFineTuningRequest{
-		BaseModel:      config.Model,
-		TrainingDataID: trainingFileID,
-	}
-
-	if validationFileID != "" {
-		jobParams.ValidationDataID = validationFileID
-	}
-
-	if config.Suffix != nil {
-		jobParams.Suffix = *config.Suffix
-	}
-
-	if config.Seed != nil {
-		jobParams.Seed = *config.Seed
-	}
-
-	// Set metadata if provided
-	if len(config.Metadata) > 0 {
-		jobParams.Metadata = make(map[string]string)
-		for k, v := range config.Metadata {
-			jobParams.Metadata[k] = v
-		}
-	}
-
-	//TODO Need to set hyperparameters, method, integrations
-	return jobParams, nil
-}
-
-// TODO Get rid of this method
 // ConvertYAMLToJobParams converts a YAML fine-tuning configuration to OpenAI job parameters
-func ConvertYAMLToOpenAiJobParams(config *FTYaml.FineTuningConfig, trainingFileID, validationFileID string) (openai.FineTuningJobNewParams, error) {
+func ConvertYAMLToJobParams(config *FTYaml.FineTuningConfig, trainingFileID, validationFileID string) (openai.FineTuningJobNewParams, error) {
 	jobParams := openai.FineTuningJobNewParams{
 		Model:        openai.FineTuningJobNewParamsModel(config.Model),
 		TrainingFile: trainingFileID,
@@ -62,7 +30,7 @@ func ConvertYAMLToOpenAiJobParams(config *FTYaml.FineTuningConfig, trainingFileI
 	}
 
 	// Set metadata if provided
-	if len(config.Metadata) > 0 {
+	if config.Metadata != nil && len(config.Metadata) > 0 {
 		jobParams.Metadata = make(map[string]string)
 		for k, v := range config.Metadata {
 			jobParams.Metadata[k] = v

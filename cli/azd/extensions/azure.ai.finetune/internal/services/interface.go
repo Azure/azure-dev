@@ -24,10 +24,10 @@ type FineTuningService interface {
 	GetFineTuningJobDetails(ctx context.Context, jobID string) (*models.FineTuningJobDetail, error)
 
 	// GetJobEvents retrieves events for a job with filtering and pagination
-	GetJobEvents(ctx context.Context, jobID string, limit int, after string) (*models.JobEventsList, error)
+	GetJobEvents(ctx context.Context, jobID string) (*models.JobEventsList, error)
 
 	// GetJobCheckpoints retrieves checkpoints for a job with pagination
-	GetJobCheckpoints(ctx context.Context, jobID string, limit int, after string) (*models.JobCheckpointsList, error)
+	GetJobCheckpoints(ctx context.Context, jobID string) (*models.JobCheckpointsList, error)
 
 	// PauseJob pauses a running job (if applicable)
 	PauseJob(ctx context.Context, jobID string) (*models.FineTuningJob, error)

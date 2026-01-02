@@ -71,14 +71,11 @@ func (p *OpenAIProvider) GetFineTuningJobDetails(ctx context.Context, jobID stri
 }
 
 // GetJobEvents retrieves events for a fine-tuning job
-func (p *OpenAIProvider) GetJobEvents(ctx context.Context, jobID string, limit int, after string) (*models.JobEventsList, error) {
+func (p *OpenAIProvider) GetJobEvents(ctx context.Context, jobID string) (*models.JobEventsList, error) {
 	eventsPage, err := p.client.FineTuning.Jobs.ListEvents(
 		ctx,
 		jobID,
-		openai.FineTuningJobListEventsParams{
-			Limit: openai.Int(int64(limit)), // optional pagination control
-			After: openai.String(after),
-		},
+		openai.FineTuningJobListEventsParams{},
 	)
 	if err != nil {
 		return nil, err
@@ -90,14 +87,11 @@ func (p *OpenAIProvider) GetJobEvents(ctx context.Context, jobID string, limit i
 }
 
 // GetJobCheckpoints retrieves checkpoints for a fine-tuning job
-func (p *OpenAIProvider) GetJobCheckpoints(ctx context.Context, jobID string, limit int, after string) (*models.JobCheckpointsList, error) {
+func (p *OpenAIProvider) GetJobCheckpoints(ctx context.Context, jobID string) (*models.JobCheckpointsList, error) {
 	checkpointsPage, err := p.client.FineTuning.Jobs.Checkpoints.List(
 		ctx,
 		jobID,
-		openai.FineTuningJobCheckpointListParams{
-			Limit: openai.Int(int64(limit)), // optional pagination control
-			After: openai.String(after),
-		},
+		openai.FineTuningJobCheckpointListParams{},
 	)
 	if err != nil {
 		return nil, err

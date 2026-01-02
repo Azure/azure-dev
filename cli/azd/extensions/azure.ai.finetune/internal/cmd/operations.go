@@ -145,10 +145,6 @@ func newOperationSubmitCommand() *cobra.Command {
 // newOperationShowCommand creates a command to show the fine-tuning job details
 func newOperationShowCommand() *cobra.Command {
 	var jobID string
-	var eventsLimit int
-	var eventsAfter string
-	var checkpointsLimit int
-	var checkpointsAfter string
 
 	cmd := &cobra.Command{
 		Use:   "show",
@@ -215,7 +211,7 @@ func newOperationShowCommand() *cobra.Command {
 				fmt.Printf("failed to start spinner: %v\n", err)
 			}
 
-			events, err := fineTuneSvc.GetJobEvents(ctx, jobID, eventsLimit, eventsAfter)
+			events, err := fineTuneSvc.GetJobEvents(ctx, jobID)
 			_ = eventsSpinner.Stop(ctx)
 
 			if err != nil {
@@ -230,8 +226,6 @@ func newOperationShowCommand() *cobra.Command {
 				if events.HasMore {
 					fmt.Println("  ... (more events available)")
 				}
-			} else if eventsAfter != "" {
-				fmt.Println("\nNo events found after the specified identifier")
 			}
 
 			// Fetch and print checkpoints if job is completed
@@ -243,7 +237,7 @@ func newOperationShowCommand() *cobra.Command {
 					fmt.Printf("failed to start spinner: %v\n", err)
 				}
 
-				checkpoints, err := fineTuneSvc.GetJobCheckpoints(ctx, jobID, checkpointsLimit, checkpointsAfter)
+				checkpoints, err := fineTuneSvc.GetJobCheckpoints(ctx, jobID)
 				_ = checkpointsSpinner.Stop(ctx)
 
 				if err != nil {
@@ -263,8 +257,6 @@ func newOperationShowCommand() *cobra.Command {
 					if checkpoints.HasMore {
 						fmt.Println("  ... (more checkpoints available)")
 					}
-				} else if checkpointsAfter != "" {
-					fmt.Println("\nNo checkpoints found after the specified identifier")
 				}
 			}
 
@@ -273,12 +265,6 @@ func newOperationShowCommand() *cobra.Command {
 			return nil
 		},
 	}
-
-	cmd.Flags().IntVar(&eventsLimit, "events-top", 50, "Number of events to retrieve")
-	cmd.Flags().StringVar(&eventsAfter, "events-after", "", "Identifier for the last event from the previous pagination request")
-
-	cmd.Flags().IntVar(&checkpointsLimit, "checkpoints-top", 50, "Number of checkpoints to retrieve")
-	cmd.Flags().StringVar(&checkpointsAfter, "checkpoints-after", "", "Identifier for the last checkpoint ID from the previous pagination request")
 
 	cmd.Flags().StringVarP(&jobID, "job-id", "i", "", "Fine-tuning job ID")
 	cmd.MarkFlagRequired("job-id")

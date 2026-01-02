@@ -93,13 +93,13 @@ func (s *fineTuningServiceImpl) GetFineTuningJobDetails(ctx context.Context, job
 }
 
 // GetJobEvents retrieves events for a job with filtering and pagination
-func (s *fineTuningServiceImpl) GetJobEvents(ctx context.Context, jobID string, limit int, after string) (*models.JobEventsList, error) {
+func (s *fineTuningServiceImpl) GetJobEvents(ctx context.Context, jobID string) (*models.JobEventsList, error) {
 	var eventsList *models.JobEventsList
 
 	// Use retry utility for job events operation
 	err := utils.RetryOperation(ctx, utils.DefaultRetryConfig(), func() error {
 		var err error
-		eventsList, err = s.provider.GetJobEvents(ctx, jobID, limit, after)
+		eventsList, err = s.provider.GetJobEvents(ctx, jobID)
 		return err
 	})
 
@@ -111,13 +111,13 @@ func (s *fineTuningServiceImpl) GetJobEvents(ctx context.Context, jobID string, 
 }
 
 // GetJobCheckpoints retrieves checkpoints for a job with pagination
-func (s *fineTuningServiceImpl) GetJobCheckpoints(ctx context.Context, jobID string, limit int, after string) (*models.JobCheckpointsList, error) {
+func (s *fineTuningServiceImpl) GetJobCheckpoints(ctx context.Context, jobID string) (*models.JobCheckpointsList, error) {
 	var checkpointList *models.JobCheckpointsList
 
 	// Use retry utility for job checkpoints operation
 	err := utils.RetryOperation(ctx, utils.DefaultRetryConfig(), func() error {
 		var err error
-		checkpointList, err = s.provider.GetJobCheckpoints(ctx, jobID, limit, after)
+		checkpointList, err = s.provider.GetJobCheckpoints(ctx, jobID)
 		return err
 	})
 

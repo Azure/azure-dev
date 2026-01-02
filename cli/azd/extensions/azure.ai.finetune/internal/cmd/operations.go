@@ -91,7 +91,7 @@ func newOperationSubmitCommand() *cobra.Command {
 			}
 
 			// Parse and validate the YAML configuration file
-			color.Green("parsing configuration file...")
+			color.Green("\nparsing configuration file...")
 			config, err := Utils.ParseCreateFineTuningRequestConfig(filename)
 			if err != nil {
 				_ = spinner.Stop(ctx)

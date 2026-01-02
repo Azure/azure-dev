@@ -11,6 +11,7 @@ import (
 
 	"azure.ai.finetune/pkg/models"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
+	"github.com/fatih/color"
 	"github.com/openai/openai-go/v3"
 )
 
@@ -141,7 +142,7 @@ func (p *OpenAIProvider) UploadFile(ctx context.Context, filePath string) (strin
 	}
 
 	// Poll for file processing status
-	fmt.Print("Waiting for file to be processed")
+	color.Yellow("\nWaiting for file to be processed")
 	for {
 		f, err := p.client.Files.Get(ctx, uploadedFile.ID)
 		if err != nil {
@@ -156,7 +157,7 @@ func (p *OpenAIProvider) UploadFile(ctx context.Context, filePath string) (strin
 			_ = spinner.Stop(ctx)
 			return "", fmt.Errorf("\nfile processing failed with status: %s", f.Status)
 		}
-		fmt.Print(".")
+		color.Yellow(".")
 		time.Sleep(2 * time.Second)
 	}
 

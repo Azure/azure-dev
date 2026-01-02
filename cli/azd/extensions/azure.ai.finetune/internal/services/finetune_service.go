@@ -69,14 +69,14 @@ func (s *fineTuningServiceImpl) CreateFineTuningJob(ctx context.Context, req *mo
 	// Upload validation file if provided
 	if req.ValidationFile != nil && *req.ValidationFile != "" {
 		if Utils.IsLocalFilePath(*req.ValidationFile) {
-			color.Green("uploading validation file...")
+			color.Green("\nuploading validation file...")
 			validationDataID, err := s.UploadFile(ctx, Utils.GetLocalFilePath(*req.ValidationFile))
 			if err != nil {
 				return nil, fmt.Errorf("failed to upload validation file: %w", err)
 			}
 			req.ValidationFile = &validationDataID
 		} else {
-			color.Yellow("Provided validation file is non-local, skipping upload...")
+			color.Yellow("\nProvided validation file is non-local, skipping upload...")
 		}
 	}
 

@@ -63,9 +63,11 @@ func (s *fineTuningServiceImpl) CreateFineTuningJob(ctx context.Context, req *mo
 		return nil, fmt.Errorf("failed to create fine-tuning job: %w", err)
 	}
 
-	// Persist job to state store
-	if err := s.stateStore.SaveJob(ctx, job); err != nil {
-		return nil, fmt.Errorf("failed to persist job: %w", err)
+	// Persist job to state store if available
+	if s.stateStore != nil {
+		if err := s.stateStore.SaveJob(ctx, job); err != nil {
+			return nil, fmt.Errorf("failed to persist job: %w", err)
+		}
 	}
 
 	return job, nil

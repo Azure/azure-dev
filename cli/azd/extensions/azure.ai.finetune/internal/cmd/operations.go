@@ -115,7 +115,7 @@ func newOperationSubmitCommand() *cobra.Command {
 			}
 
 			// Print success message
-			fmt.Println(strings.Repeat("=", 120))
+			fmt.Println("\n", strings.Repeat("=", 120))
 			color.Green("\nsuccessfully submitted fine-tuning Job!\n")
 			fmt.Printf("Job ID:     %s\n", job.ID)
 			fmt.Printf("Model:      %s\n", job.BaseModel)

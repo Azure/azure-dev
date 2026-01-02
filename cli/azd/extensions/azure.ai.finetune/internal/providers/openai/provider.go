@@ -7,8 +7,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"azure.ai.finetune/pkg/models"
+	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/openai/openai-go/v3"
 )
 
@@ -27,17 +29,17 @@ func NewOpenAIProvider(client *openai.Client) *OpenAIProvider {
 // CreateFineTuningJob creates a new fine-tuning job via OpenAI API
 func (p *OpenAIProvider) CreateFineTuningJob(ctx context.Context, req *models.CreateFineTuningRequest) (*models.FineTuningJob, error) {
 
-	params, err := convertInternalJobParamToOpenAiJobParams(req)
+	params, err := ConvertInternalJobParamToOpenAiJobParams(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert internal model to openai: %w", err)
 	}
 
-	job, err := p.client.FineTuning.Jobs.New(ctx, params)
+	job, err := p.client.FineTuning.Jobs.New(ctx, *params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create fine-tuning job: %w", err)
 	}
 
-	return convertOpenAIJobToModel(*job), nil
+	return ConvertOpenAIJobToModel(*job), nil
 }
 
 // GetFineTuningStatus retrieves the status of a fine-tuning job
@@ -60,7 +62,7 @@ func (p *OpenAIProvider) ListFineTuningJobs(ctx context.Context, limit int, afte
 	var jobs []*models.FineTuningJob
 
 	for _, job := range jobList.Data {
-		finetuningJob := convertOpenAIJobToModel(job)
+		finetuningJob := ConvertOpenAIJobToModel(job)
 		jobs = append(jobs, finetuningJob)
 	}
 	return jobs, nil
@@ -108,9 +110,18 @@ func (p *OpenAIProvider) UploadFile(ctx context.Context, filePath string) (strin
 		return "", fmt.Errorf("file path cannot be empty")
 	}
 
+	// Show spinner while creating job
+	spinner := ux.NewSpinner(&ux.SpinnerOptions{
+		Text: "uploading the file using openai provider",
+	})
+	if err := spinner.Start(ctx); err != nil {
+		fmt.Printf("failed to start spinner: %v\n", err)
+	}
+
 	file, err := os.Open(filePath)
 	if err != nil {
-		return "", fmt.Errorf("failed to open file %s: %w", filePath, err)
+		_ = spinner.Stop(ctx)
+		return "", fmt.Errorf("\nfailed to open file %s: %w", filePath, err)
 	}
 	defer file.Close()
 
@@ -120,10 +131,33 @@ func (p *OpenAIProvider) UploadFile(ctx context.Context, filePath string) (strin
 	})
 
 	if err != nil {
-		return "", fmt.Errorf("failed to upload file: %w", err)
+		_ = spinner.Stop(ctx)
+		return "", fmt.Errorf("\nfailed to upload file: %w", err)
 	}
+
 	if uploadedFile == nil || uploadedFile.ID == "" {
-		return "", fmt.Errorf("uploaded file is empty")
+		_ = spinner.Stop(ctx)
+		return "", fmt.Errorf("\nuploaded file is empty")
+	}
+
+	// Poll for file processing status
+	fmt.Print("Waiting for file to be processed")
+	for {
+		f, err := p.client.Files.Get(ctx, uploadedFile.ID)
+		if err != nil {
+			_ = spinner.Stop(ctx)
+			return "", fmt.Errorf("\nfailed to check file status: %w", err)
+		}
+		if f.Status == openai.FileObjectStatusProcessed {
+			_ = spinner.Stop(ctx)
+			break
+		}
+		if f.Status == openai.FileObjectStatusError {
+			_ = spinner.Stop(ctx)
+			return "", fmt.Errorf("\nfile processing failed with status: %s", f.Status)
+		}
+		fmt.Print(".")
+		time.Sleep(2 * time.Second)
 	}
 
 	return uploadedFile.ID, nil

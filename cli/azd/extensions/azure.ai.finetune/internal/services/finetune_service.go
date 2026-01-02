@@ -11,8 +11,10 @@ import (
 	"azure.ai.finetune/internal/providers"
 	"azure.ai.finetune/internal/providers/factory"
 	"azure.ai.finetune/internal/utils"
+	Utils "azure.ai.finetune/internal/utils"
 	"azure.ai.finetune/pkg/models"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/fatih/color"
 )
 
 // Ensure fineTuningServiceImpl implements FineTuningService interface
@@ -48,8 +50,34 @@ func (s *fineTuningServiceImpl) CreateFineTuningJob(ctx context.Context, req *mo
 	if req.BaseModel == "" {
 		return nil, fmt.Errorf("base model is required")
 	}
-	if req.TrainingDataID == "" {
+	if req.TrainingFile == "" {
 		return nil, fmt.Errorf("training file is required")
+	}
+
+	if Utils.IsLocalFilePath(req.TrainingFile) {
+		color.Green("uploading training file...")
+
+		trainingDataID, err := s.UploadFile(ctx, Utils.GetLocalFilePath(req.TrainingFile))
+		if err != nil {
+			return nil, fmt.Errorf("failed to upload training file: %w", err)
+		}
+		req.TrainingFile = trainingDataID
+	} else {
+		color.Yellow("Provided training file is non-local, skipping upload...")
+	}
+
+	// Upload validation file if provided
+	if req.ValidationFile != nil && *req.ValidationFile != "" {
+		if Utils.IsLocalFilePath(*req.ValidationFile) {
+			color.Green("uploading validation file...")
+			validationDataID, err := s.UploadFile(ctx, Utils.GetLocalFilePath(*req.ValidationFile))
+			if err != nil {
+				return nil, fmt.Errorf("failed to upload validation file: %w", err)
+			}
+			req.ValidationFile = &validationDataID
+		} else {
+			color.Yellow("Provided validation file is non-local, skipping upload...")
+		}
 	}
 
 	// Call provider with retry logic
@@ -133,26 +161,14 @@ func (s *fineTuningServiceImpl) CancelJob(ctx context.Context, jobID string) (*m
 	return nil, nil
 }
 
-// UploadTrainingFile uploads and validates a training file
-func (s *fineTuningServiceImpl) UploadTrainingFile(ctx context.Context, filePath string) (string, error) {
+// UploadFile uploads and validates a file
+func (s *fineTuningServiceImpl) UploadFile(ctx context.Context, filePath string) (string, error) {
 	if filePath == "" {
-		return "", fmt.Errorf("training file path cannot be empty")
+		return "", fmt.Errorf("file path cannot be empty")
 	}
 	uploadedFileId, err := s._uploadFile(ctx, filePath)
 	if err != nil || uploadedFileId == "" {
-		return "", fmt.Errorf("failed to upload training file: %w", err)
-	}
-	return uploadedFileId, nil
-}
-
-// UploadValidationFile uploads and validates a validation file
-func (s *fineTuningServiceImpl) UploadValidationFile(ctx context.Context, filePath string) (string, error) {
-	if filePath == "" {
-		return "", nil // Validation file is optional
-	}
-	uploadedFileId, err := s._uploadFile(ctx, filePath)
-	if err != nil || uploadedFileId == "" {
-		return "", fmt.Errorf("failed to upload validation file: %w", err)
+		return "", fmt.Errorf("failed to upload file: %w", err)
 	}
 	return uploadedFileId, nil
 }

@@ -12,9 +12,9 @@ import (
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
-	FTYaml "azure.ai.finetune/internal/fine_tuning_yaml"
 	"azure.ai.finetune/internal/services"
 	JobWrapper "azure.ai.finetune/internal/tools"
+	Utils "azure.ai.finetune/internal/utils"
 )
 
 func newOperationCommand() *cobra.Command {
@@ -92,7 +92,7 @@ func newOperationSubmitCommand() *cobra.Command {
 
 			// Parse and validate the YAML configuration file
 			color.Green("parsing configuration file...")
-			config, err := FTYaml.ParseFineTuningConfig(filename)
+			config, err := Utils.ParseCreateFineTuningRequestConfig(filename)
 			if err != nil {
 				_ = spinner.Stop(ctx)
 				fmt.Println()
@@ -106,35 +106,8 @@ func newOperationSubmitCommand() *cobra.Command {
 				return err
 			}
 
-			trainingFileID, err := fineTuneSvc.UploadTrainingFile(ctx, config.TrainingFile)
-			if err != nil {
-				_ = spinner.Stop(ctx)
-				fmt.Println()
-				return fmt.Errorf("failed to upload training file: %w", err)
-			}
-
-			// Upload validation file if provided
-			var validationFileID string
-			if config.ValidationFile != nil && *config.ValidationFile != "" {
-				validationFileID, err = fineTuneSvc.UploadValidationFile(ctx, *config.ValidationFile)
-				if err != nil {
-					_ = spinner.Stop(ctx)
-					fmt.Println()
-					return fmt.Errorf("failed to upload validation file: %w", err)
-				}
-			}
-
-			// Create fine-tuning job
-			// Convert YAML configuration to service layer job parameters
-			ftRequest, err := ConvertYAMLToInternalJobParams(config, trainingFileID, validationFileID)
-			if err != nil {
-				_ = spinner.Stop(ctx)
-				fmt.Println()
-				return fmt.Errorf("failed to convert configuration to job parameters: %w", err)
-			}
-
 			// Submit the fine-tuning job using CreateJob from JobWrapper
-			job, err := fineTuneSvc.CreateFineTuningJob(ctx, &ftRequest)
+			job, err := fineTuneSvc.CreateFineTuningJob(ctx, config)
 			if err != nil {
 				_ = spinner.Stop(ctx)
 				fmt.Println()
@@ -145,7 +118,7 @@ func newOperationSubmitCommand() *cobra.Command {
 			fmt.Println(strings.Repeat("=", 120))
 			color.Green("\nsuccessfully submitted fine-tuning Job!\n")
 			fmt.Printf("Job ID:     %s\n", job.ID)
-			fmt.Printf("Base Model:      %s\n", job.BaseModel)
+			fmt.Printf("Model:      %s\n", job.BaseModel)
 			fmt.Printf("Status:     %s\n", job.Status)
 			fmt.Printf("Created:    %s\n", job.CreatedAt)
 			if job.FineTunedModel != "" {
@@ -153,6 +126,8 @@ func newOperationSubmitCommand() *cobra.Command {
 			}
 			fmt.Println(strings.Repeat("=", 120))
 
+			_ = spinner.Stop(ctx)
+			fmt.Println()
 			return nil
 		},
 	}

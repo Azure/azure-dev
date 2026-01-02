@@ -10,7 +10,6 @@ import (
 	"azure.ai.finetune/internal/utils"
 	"azure.ai.finetune/pkg/models"
 	"github.com/openai/openai-go/v3"
-	"github.com/openai/openai-go/v3/shared/constant"
 )
 
 // OpenAI Status Constants - matches OpenAI SDK values
@@ -92,10 +91,6 @@ func ConvertInternalJobParamToOpenAiJobParams(config *models.CreateFineTuningReq
 				supervisedMethod.Hyperparameters.BatchSize = openai.SupervisedHyperparametersBatchSizeUnion{
 					OfInt: openai.Int(*batchSize),
 				}
-			} else if strVal, ok := hp.BatchSize.(string); ok && strVal == "auto" {
-				supervisedMethod.Hyperparameters.BatchSize = openai.SupervisedHyperparametersBatchSizeUnion{
-					OfAuto: constant.ValueOf[constant.Auto](),
-				}
 			}
 		}
 
@@ -104,10 +99,6 @@ func ConvertInternalJobParamToOpenAiJobParams(config *models.CreateFineTuningReq
 				supervisedMethod.Hyperparameters.LearningRateMultiplier = openai.SupervisedHyperparametersLearningRateMultiplierUnion{
 					OfFloat: openai.Float(*lr),
 				}
-			} else if strVal, ok := hp.LearningRateMultiplier.(string); ok && strVal == "auto" {
-				supervisedMethod.Hyperparameters.LearningRateMultiplier = openai.SupervisedHyperparametersLearningRateMultiplierUnion{
-					OfAuto: constant.ValueOf[constant.Auto](),
-				}
 			}
 		}
 
@@ -115,10 +106,6 @@ func ConvertInternalJobParamToOpenAiJobParams(config *models.CreateFineTuningReq
 			if epochs := convertHyperparameterToInt(hp.Epochs); epochs != nil {
 				supervisedMethod.Hyperparameters.NEpochs = openai.SupervisedHyperparametersNEpochsUnion{
 					OfInt: openai.Int(*epochs),
-				}
-			} else if strVal, ok := hp.Epochs.(string); ok && strVal == "auto" {
-				supervisedMethod.Hyperparameters.NEpochs = openai.SupervisedHyperparametersNEpochsUnion{
-					OfAuto: constant.ValueOf[constant.Auto](),
 				}
 			}
 		}
@@ -140,20 +127,12 @@ func ConvertInternalJobParamToOpenAiJobParams(config *models.CreateFineTuningReq
 					OfInt: openai.Int(*batchSize),
 				}
 			}
-		} else if strVal, ok := hp.BatchSize.(string); ok && strVal == "auto" {
-			dpoMethod.Hyperparameters.BatchSize = openai.DpoHyperparametersBatchSizeUnion{
-				OfAuto: constant.ValueOf[constant.Auto](),
-			}
 		}
 
 		if hp.LearningRateMultiplier != nil {
 			if lr := convertHyperparameterToFloat(hp.LearningRateMultiplier); lr != nil {
 				dpoMethod.Hyperparameters.LearningRateMultiplier = openai.DpoHyperparametersLearningRateMultiplierUnion{
 					OfFloat: openai.Float(*lr),
-				}
-			} else if strVal, ok := hp.LearningRateMultiplier.(string); ok && strVal == "auto" {
-				dpoMethod.Hyperparameters.LearningRateMultiplier = openai.DpoHyperparametersLearningRateMultiplierUnion{
-					OfAuto: constant.ValueOf[constant.Auto](),
 				}
 			}
 		}
@@ -163,10 +142,6 @@ func ConvertInternalJobParamToOpenAiJobParams(config *models.CreateFineTuningReq
 				dpoMethod.Hyperparameters.NEpochs = openai.DpoHyperparametersNEpochsUnion{
 					OfInt: openai.Int(*epochs),
 				}
-			} else if strVal, ok := hp.Epochs.(string); ok && strVal == "auto" {
-				dpoMethod.Hyperparameters.NEpochs = openai.DpoHyperparametersNEpochsUnion{
-					OfAuto: constant.ValueOf[constant.Auto](),
-				}
 			}
 		}
 
@@ -174,10 +149,6 @@ func ConvertInternalJobParamToOpenAiJobParams(config *models.CreateFineTuningReq
 			if beta := convertHyperparameterToFloat(hp.Beta); beta != nil {
 				dpoMethod.Hyperparameters.Beta = openai.DpoHyperparametersBetaUnion{
 					OfFloat: openai.Float(*beta),
-				}
-			} else if strVal, ok := hp.Beta.(string); ok && strVal == "auto" {
-				dpoMethod.Hyperparameters.Beta = openai.DpoHyperparametersBetaUnion{
-					OfAuto: constant.ValueOf[constant.Auto](),
 				}
 			}
 		}
@@ -198,10 +169,6 @@ func ConvertInternalJobParamToOpenAiJobParams(config *models.CreateFineTuningReq
 				reinforcementMethod.Hyperparameters.BatchSize = openai.ReinforcementHyperparametersBatchSizeUnion{
 					OfInt: openai.Int(*batchSize),
 				}
-			} else if strVal, ok := hp.BatchSize.(string); ok && strVal == "auto" {
-				reinforcementMethod.Hyperparameters.BatchSize = openai.ReinforcementHyperparametersBatchSizeUnion{
-					OfAuto: constant.ValueOf[constant.Auto](),
-				}
 			}
 		}
 
@@ -209,10 +176,6 @@ func ConvertInternalJobParamToOpenAiJobParams(config *models.CreateFineTuningReq
 			if lr := convertHyperparameterToFloat(hp.LearningRateMultiplier); lr != nil {
 				reinforcementMethod.Hyperparameters.LearningRateMultiplier = openai.ReinforcementHyperparametersLearningRateMultiplierUnion{
 					OfFloat: openai.Float(*lr),
-				}
-			} else if strVal, ok := hp.LearningRateMultiplier.(string); ok && strVal == "auto" {
-				reinforcementMethod.Hyperparameters.LearningRateMultiplier = openai.ReinforcementHyperparametersLearningRateMultiplierUnion{
-					OfAuto: constant.ValueOf[constant.Auto](),
 				}
 			}
 		}
@@ -222,10 +185,6 @@ func ConvertInternalJobParamToOpenAiJobParams(config *models.CreateFineTuningReq
 				reinforcementMethod.Hyperparameters.NEpochs = openai.ReinforcementHyperparametersNEpochsUnion{
 					OfInt: openai.Int(*epochs),
 				}
-			} else if strVal, ok := hp.Epochs.(string); ok && strVal == "auto" {
-				reinforcementMethod.Hyperparameters.NEpochs = openai.ReinforcementHyperparametersNEpochsUnion{
-					OfAuto: constant.ValueOf[constant.Auto](),
-				}
 			}
 		}
 
@@ -233,10 +192,6 @@ func ConvertInternalJobParamToOpenAiJobParams(config *models.CreateFineTuningReq
 			if compute := convertHyperparameterToFloat(hp.ComputeMultiplier); compute != nil {
 				reinforcementMethod.Hyperparameters.ComputeMultiplier = openai.ReinforcementHyperparametersComputeMultiplierUnion{
 					OfFloat: openai.Float(*compute),
-				}
-			} else if strVal, ok := hp.ComputeMultiplier.(string); ok && strVal == "auto" {
-				reinforcementMethod.Hyperparameters.ComputeMultiplier = openai.ReinforcementHyperparametersComputeMultiplierUnion{
-					OfAuto: constant.ValueOf[constant.Auto](),
 				}
 			}
 		}
@@ -246,10 +201,6 @@ func ConvertInternalJobParamToOpenAiJobParams(config *models.CreateFineTuningReq
 				reinforcementMethod.Hyperparameters.EvalInterval = openai.ReinforcementHyperparametersEvalIntervalUnion{
 					OfInt: openai.Int(*evalSteps),
 				}
-			} else if strVal, ok := hp.EvalInterval.(string); ok && strVal == "auto" {
-				reinforcementMethod.Hyperparameters.EvalInterval = openai.ReinforcementHyperparametersEvalIntervalUnion{
-					OfAuto: constant.ValueOf[constant.Auto](),
-				}
 			}
 		}
 
@@ -257,10 +208,6 @@ func ConvertInternalJobParamToOpenAiJobParams(config *models.CreateFineTuningReq
 			if evalSamples := convertHyperparameterToInt(hp.EvalSamples); evalSamples != nil {
 				reinforcementMethod.Hyperparameters.EvalSamples = openai.ReinforcementHyperparametersEvalSamplesUnion{
 					OfInt: openai.Int(*evalSamples),
-				}
-			} else if strVal, ok := hp.EvalSamples.(string); ok && strVal == "auto" {
-				reinforcementMethod.Hyperparameters.EvalSamples = openai.ReinforcementHyperparametersEvalSamplesUnion{
-					OfAuto: constant.ValueOf[constant.Auto](),
 				}
 			}
 		}

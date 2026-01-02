@@ -142,7 +142,6 @@ func (p *OpenAIProvider) UploadFile(ctx context.Context, filePath string) (strin
 	}
 
 	// Poll for file processing status
-	color.Yellow("\nWaiting for file to be processed")
 	for {
 		f, err := p.client.Files.Get(ctx, uploadedFile.ID)
 		if err != nil {

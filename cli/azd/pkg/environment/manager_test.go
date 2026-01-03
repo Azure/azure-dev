@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
@@ -382,7 +383,7 @@ func registerContainerComponents(t *testing.T, mockContext *mocks.MockContext) {
 	})
 
 	// Register a mock SubscriptionTenantResolver for tests
-	mockContext.Container.MustRegisterSingleton(func() storage.SubscriptionTenantResolver {
+	mockContext.Container.MustRegisterSingleton(func() account.SubscriptionTenantResolver {
 		return &mockSubscriptionTenantResolver{}
 	})
 
@@ -413,6 +414,8 @@ func registerContainerComponents(t *testing.T, mockContext *mocks.MockContext) {
 
 // mockSubscriptionTenantResolver is a simple mock for testing
 type mockSubscriptionTenantResolver struct{}
+
+var _ account.SubscriptionTenantResolver = (*mockSubscriptionTenantResolver)(nil)
 
 func (m *mockSubscriptionTenantResolver) LookupTenant(ctx context.Context, subscriptionId string) (string, error) {
 	// For tests, just return empty string (home tenant)

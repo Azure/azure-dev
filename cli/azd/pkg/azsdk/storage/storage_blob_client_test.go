@@ -5,12 +5,13 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -33,6 +34,8 @@ func (m *mockMultiTenantCredentialProvider) GetTokenCredential(
 type mockSubscriptionTenantResolver struct {
 	mock.Mock
 }
+
+var _ account.SubscriptionTenantResolver = (*mockSubscriptionTenantResolver)(nil)
 
 func (m *mockSubscriptionTenantResolver) LookupTenant(
 	ctx context.Context, subscriptionId string) (string, error) {
@@ -78,7 +81,7 @@ func Test_NewBlobSdkClient_UsesHomeTenantWhenNoSubscriptionId(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, client)
 	mockCredProvider.AssertExpectations(t)
-	
+
 	// TenantResolver should NOT be called when no subscription ID is provided
 	mockTenantResolver.AssertNotCalled(t, "LookupTenant", mock.Anything, mock.Anything)
 }

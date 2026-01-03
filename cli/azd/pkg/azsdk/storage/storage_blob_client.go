@@ -13,16 +13,10 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 )
-
-// SubscriptionTenantResolver allows resolving the correct tenant ID
-// that allows the current account access to a given subscription.
-type SubscriptionTenantResolver interface {
-	// Resolve the tenant ID required by the current account to access the given subscription.
-	LookupTenant(ctx context.Context, subscriptionId string) (tenantId string, err error)
-}
 
 // AccountConfig contains the configuration for connecting to a storage account
 type AccountConfig struct {
@@ -180,7 +174,7 @@ func NewBlobSdkClient(
 	accountConfig *AccountConfig,
 	coreClientOptions *azcore.ClientOptions,
 	cloud *cloud.Cloud,
-	tenantResolver SubscriptionTenantResolver,
+	tenantResolver account.SubscriptionTenantResolver,
 ) (*azblob.Client, error) {
 	blobOptions := &azblob.ClientOptions{
 		ClientOptions: *coreClientOptions,

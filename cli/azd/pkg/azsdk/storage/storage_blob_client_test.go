@@ -67,9 +67,6 @@ func Test_NewBlobSdkClient_UsesHomeTenantWhenNoSubscriptionId(t *testing.T) {
 	// Expect credential provider to be called with empty tenant ID (home tenant)
 	mockCredProvider.On("GetTokenCredential", mock.Anything, "").Return(mockCred, nil)
 
-	// TenantResolver should NOT be called when no subscription ID is provided
-	mockTenantResolver.AssertNotCalled(t, "LookupTenant", mock.Anything, mock.Anything)
-
 	client, err := NewBlobSdkClient(
 		mockCredProvider,
 		accountConfig,
@@ -81,7 +78,9 @@ func Test_NewBlobSdkClient_UsesHomeTenantWhenNoSubscriptionId(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, client)
 	mockCredProvider.AssertExpectations(t)
-	mockTenantResolver.AssertExpectations(t)
+	
+	// TenantResolver should NOT be called when no subscription ID is provided
+	mockTenantResolver.AssertNotCalled(t, "LookupTenant", mock.Anything, mock.Anything)
 }
 
 func Test_NewBlobSdkClient_ResolvesTenantWhenSubscriptionIdProvided(t *testing.T) {

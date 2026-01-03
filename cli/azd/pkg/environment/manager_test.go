@@ -380,6 +380,12 @@ func registerContainerComponents(t *testing.T, mockContext *mocks.MockContext) {
 	mockContext.Container.MustRegisterSingleton(func() *azcore.ClientOptions {
 		return mockContext.CoreClientOptions
 	})
+
+	// Register a mock SubscriptionTenantResolver for tests
+	mockContext.Container.MustRegisterSingleton(func() storage.SubscriptionTenantResolver {
+		return &mockSubscriptionTenantResolver{}
+	})
+
 	mockContext.Container.MustRegisterSingleton(storage.NewBlobSdkClient)
 	mockContext.Container.MustRegisterSingleton(config.NewManager)
 	mockContext.Container.MustRegisterSingleton(storage.NewBlobClient)
@@ -403,6 +409,14 @@ func registerContainerComponents(t *testing.T, mockContext *mocks.MockContext) {
 	mockContext.Container.MustRegisterSingleton(func() *cloud.Cloud {
 		return cloud.AzurePublic()
 	})
+}
+
+// mockSubscriptionTenantResolver is a simple mock for testing
+type mockSubscriptionTenantResolver struct{}
+
+func (m *mockSubscriptionTenantResolver) LookupTenant(ctx context.Context, subscriptionId string) (string, error) {
+	// For tests, just return empty string (home tenant)
+	return "", nil
 }
 
 type MockDataStore struct {

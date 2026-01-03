@@ -17,11 +17,19 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 )
 
+// SubscriptionTenantResolver allows resolving the correct tenant ID
+// that allows the current account access to a given subscription.
+type SubscriptionTenantResolver interface {
+	// Resolve the tenant ID required by the current account to access the given subscription.
+	LookupTenant(ctx context.Context, subscriptionId string) (tenantId string, err error)
+}
+
 // AccountConfig contains the configuration for connecting to a storage account
 type AccountConfig struct {
-	AccountName   string
-	ContainerName string
-	Endpoint      string
+	AccountName    string
+	ContainerName  string
+	Endpoint       string
+	SubscriptionId string
 }
 
 var (
@@ -172,6 +180,7 @@ func NewBlobSdkClient(
 	accountConfig *AccountConfig,
 	coreClientOptions *azcore.ClientOptions,
 	cloud *cloud.Cloud,
+	tenantResolver SubscriptionTenantResolver,
 ) (*azblob.Client, error) {
 	blobOptions := &azblob.ClientOptions{
 		ClientOptions: *coreClientOptions,
@@ -181,8 +190,20 @@ func NewBlobSdkClient(
 		accountConfig.Endpoint = cloud.StorageEndpointSuffix
 	}
 
-	// Use home tenant ID
-	credential, err := credentialProvider.GetTokenCredential(context.Background(), "")
+	// Determine which tenant to use for authentication
+	tenantId := ""
+	if accountConfig.SubscriptionId != "" {
+		// If a subscription ID is configured, resolve the tenant ID for that subscription
+		resolvedTenantId, err := tenantResolver.LookupTenant(context.Background(), accountConfig.SubscriptionId)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"failed to resolve tenant for subscription '%s': %w", accountConfig.SubscriptionId, err)
+		}
+		tenantId = resolvedTenantId
+	}
+	// Otherwise, use home tenant ID (empty string)
+
+	credential, err := credentialProvider.GetTokenCredential(context.Background(), tenantId)
 	if err != nil {
 		return nil, err
 	}

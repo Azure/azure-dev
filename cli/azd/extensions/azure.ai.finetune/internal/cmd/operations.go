@@ -15,6 +15,7 @@ import (
 	"azure.ai.finetune/internal/services"
 	JobWrapper "azure.ai.finetune/internal/tools"
 	Utils "azure.ai.finetune/internal/utils"
+	"azure.ai.finetune/pkg/models"
 )
 
 func newOperationCommand() *cobra.Command {
@@ -65,15 +66,18 @@ func formatFineTunedModel(model string) string {
 
 func newOperationSubmitCommand() *cobra.Command {
 	var filename string
+	var model string
+	var trainingFile string
+	var validationFile string
+	var suffix string
+	var seed int64
 	cmd := &cobra.Command{
 		Use:   "submit",
 		Short: "submit fine tuning job",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
-
-			// Validate filename is provided
-			if filename == "" {
-				return fmt.Errorf("config file is required, use -f or --file flag")
+			if filename == "" && (model == "" || trainingFile == "") {
+				return fmt.Errorf("either config file or model and training-file parameters are required")
 			}
 
 			azdClient, err := azdext.NewAzdClient()
@@ -90,13 +94,36 @@ func newOperationSubmitCommand() *cobra.Command {
 				fmt.Printf("failed to start spinner: %v\n", err)
 			}
 
-			// Parse and validate the YAML configuration file
-			color.Green("\nparsing configuration file...")
-			config, err := Utils.ParseCreateFineTuningRequestConfig(filename)
-			if err != nil {
-				_ = spinner.Stop(ctx)
-				fmt.Println()
-				return err
+			// Parse and validate the YAML configuration file if provided
+			var config *models.CreateFineTuningRequest
+			if filename != "" {
+				color.Green("\nparsing configuration file...")
+				config, err = Utils.ParseCreateFineTuningRequestConfig(filename)
+				if err != nil {
+					_ = spinner.Stop(ctx)
+					fmt.Println()
+					return err
+				}
+			} else {
+				config = &models.CreateFineTuningRequest{}
+			}
+
+			// Override config values with command-line parameters if provided
+			if model != "" {
+				config.BaseModel = model
+			}
+			if trainingFile != "" {
+
+				config.TrainingFile = trainingFile
+			}
+			if validationFile != "" {
+				config.ValidationFile = &validationFile
+			}
+			if suffix != "" {
+				config.Suffix = &suffix
+			}
+			if seed != 0 {
+				config.Seed = &seed
 			}
 
 			fineTuneSvc, err := services.NewFineTuningService(ctx, azdClient, nil)
@@ -108,14 +135,15 @@ func newOperationSubmitCommand() *cobra.Command {
 
 			// Submit the fine-tuning job using CreateJob from JobWrapper
 			job, err := fineTuneSvc.CreateFineTuningJob(ctx, config)
+			_ = spinner.Stop(ctx)
+			fmt.Println()
+
 			if err != nil {
-				_ = spinner.Stop(ctx)
-				fmt.Println()
 				return err
 			}
 
 			// Print success message
-			fmt.Println("\n", strings.Repeat("=", 120))
+			fmt.Println("\n", strings.Repeat("=", 60))
 			color.Green("\nsuccessfully submitted fine-tuning Job!\n")
 			fmt.Printf("Job ID:     %s\n", job.ID)
 			fmt.Printf("Model:      %s\n", job.BaseModel)
@@ -124,16 +152,22 @@ func newOperationSubmitCommand() *cobra.Command {
 			if job.FineTunedModel != "" {
 				fmt.Printf("Fine-tuned: %s\n", job.FineTunedModel)
 			}
-			fmt.Println(strings.Repeat("=", 120))
-
-			_ = spinner.Stop(ctx)
-			fmt.Println()
+			fmt.Println(strings.Repeat("=", 60))
 			return nil
 		},
 	}
 
-	cmd.Flags().StringVarP(&filename, "file", "f", "", "Path to the config file")
+	cmd.Flags().StringVarP(&filename, "file", "f", "", "Path to the config file.")
+	cmd.Flags().StringVarP(&model, "model", "m", "", "Base model to fine-tune. Overrides config file. Required if --file is not provided")
+	cmd.Flags().StringVarP(&trainingFile, "training-file", "t", "", "Training file ID or local path. Use 'local:' prefix for local paths. Required if --file is not provided")
+	cmd.Flags().StringVarP(&validationFile, "validation-file", "v", "", "Validation file ID or local path. Use 'local:' prefix for local paths.")
+	cmd.Flags().StringVarP(&suffix, "suffix", "s", "", "An optional string of up to 64 characters that will be added to your fine-tuned model name. Overrides config file.")
+	cmd.Flags().Int64VarP(&seed, "seed", "r", 0, "Random seed for reproducibility of the job. If a seed is not specified, one will be generated for you. Overrides config file.")
 
+	//Either config file should be provided or at least `model` & `training-file` parameters
+	cmd.MarkFlagFilename("file", "yaml", "yml")
+	cmd.MarkFlagsOneRequired("file", "model")
+	cmd.MarkFlagsRequiredTogether("model", "training-file")
 	return cmd
 }
 

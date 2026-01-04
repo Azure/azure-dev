@@ -55,7 +55,7 @@ func (s *fineTuningServiceImpl) CreateFineTuningJob(ctx context.Context, req *mo
 	}
 
 	if Utils.IsLocalFilePath(req.TrainingFile) {
-		color.Green("uploading training file...")
+		color.Green("\nuploading training file...")
 
 		trainingDataID, err := s.UploadFile(ctx, Utils.GetLocalFilePath(req.TrainingFile))
 		if err != nil {
@@ -63,7 +63,7 @@ func (s *fineTuningServiceImpl) CreateFineTuningJob(ctx context.Context, req *mo
 		}
 		req.TrainingFile = trainingDataID
 	} else {
-		color.Yellow("Provided training file is non-local, skipping upload...")
+		color.Yellow("\nProvided training file is non-local, skipping upload...")
 	}
 
 	// Upload validation file if provided

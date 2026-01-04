@@ -113,7 +113,7 @@ func (p *OpenAIProvider) UploadFile(ctx context.Context, filePath string) (strin
 
 	// Show spinner while creating job
 	spinner := ux.NewSpinner(&ux.SpinnerOptions{
-		Text: "uploading the file using openai provider",
+		Text: "uploading the file for fine-tuning",
 	})
 	if err := spinner.Start(ctx); err != nil {
 		fmt.Printf("failed to start spinner: %v\n", err)

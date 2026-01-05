@@ -338,14 +338,24 @@
                         }
                     },
                     {
-                        "comment": "AKS host - requires project, supports docker and k8s config",
+                        "comment": "AKS host - requires project OR k8s.helm config, supports docker and k8s config",
                         "if": {
                             "properties": {
                                 "host": { "const": "aks" }
                             }
                         },
                         "then": {
-                            "required": ["project"],
+                            "anyOf": [
+                                { "required": ["project"] },
+                                {
+                                    "properties": {
+                                        "k8s": {
+                                            "required": ["helm"]
+                                        }
+                                    },
+                                    "required": ["k8s"]
+                                }
+                            ],
                             "properties": {
                                 "image": false,
                                 "apiVersion": false,

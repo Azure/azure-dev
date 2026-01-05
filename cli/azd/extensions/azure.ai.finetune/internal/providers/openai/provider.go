@@ -5,10 +5,14 @@ package openai
 
 import (
 	"context"
-
-	"github.com/openai/openai-go/v3"
+	"fmt"
+	"os"
+	"time"
 
 	"azure.ai.finetune/pkg/models"
+	"github.com/azure/azure-dev/cli/azd/pkg/ux"
+	"github.com/fatih/color"
+	"github.com/openai/openai-go/v3"
 )
 
 // OpenAIProvider implements the provider interface for OpenAI APIs
@@ -25,11 +29,18 @@ func NewOpenAIProvider(client *openai.Client) *OpenAIProvider {
 
 // CreateFineTuningJob creates a new fine-tuning job via OpenAI API
 func (p *OpenAIProvider) CreateFineTuningJob(ctx context.Context, req *models.CreateFineTuningRequest) (*models.FineTuningJob, error) {
-	// TODO: Implement
-	// 1. Convert domain model to OpenAI SDK format
-	// 2. Call OpenAI SDK CreateFineTuningJob
-	// 3. Convert OpenAI response to domain model
-	return nil, nil
+
+	params, err := convertInternalJobParamToOpenAiJobParams(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert internal model to openai: %w", err)
+	}
+
+	job, err := p.client.FineTuning.Jobs.New(ctx, *params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create fine-tuning job: %w", err)
+	}
+
+	return convertOpenAIJobToModel(*job), nil
 }
 
 // GetFineTuningStatus retrieves the status of a fine-tuning job
@@ -121,8 +132,60 @@ func (p *OpenAIProvider) CancelJob(ctx context.Context, jobID string) (*models.F
 
 // UploadFile uploads a file for fine-tuning
 func (p *OpenAIProvider) UploadFile(ctx context.Context, filePath string) (string, error) {
-	// TODO: Implement
-	return "", nil
+	if filePath == "" {
+		return "", fmt.Errorf("file path cannot be empty")
+	}
+
+	// Show spinner while creating job
+	spinner := ux.NewSpinner(&ux.SpinnerOptions{
+		Text: "uploading the file for fine-tuning",
+	})
+	if err := spinner.Start(ctx); err != nil {
+		fmt.Printf("failed to start spinner: %v\n", err)
+	}
+
+	file, err := os.Open(filePath)
+	if err != nil {
+		_ = spinner.Stop(ctx)
+		return "", fmt.Errorf("\nfailed to open file %s: %w", filePath, err)
+	}
+	defer file.Close()
+
+	uploadedFile, err := p.client.Files.New(ctx, openai.FileNewParams{
+		File:    file,
+		Purpose: openai.FilePurposeFineTune,
+	})
+
+	if err != nil {
+		_ = spinner.Stop(ctx)
+		return "", fmt.Errorf("\nfailed to upload file: %w", err)
+	}
+
+	if uploadedFile == nil || uploadedFile.ID == "" {
+		_ = spinner.Stop(ctx)
+		return "", fmt.Errorf("\nuploaded file is empty")
+	}
+
+	// Poll for file processing status
+	for {
+		f, err := p.client.Files.Get(ctx, uploadedFile.ID)
+		if err != nil {
+			_ = spinner.Stop(ctx)
+			return "", fmt.Errorf("\nfailed to check file status: %w", err)
+		}
+		if f.Status == openai.FileObjectStatusProcessed {
+			_ = spinner.Stop(ctx)
+			break
+		}
+		if f.Status == openai.FileObjectStatusError {
+			_ = spinner.Stop(ctx)
+			return "", fmt.Errorf("\nfile processing failed with status: %s", f.Status)
+		}
+		color.Yellow(".")
+		time.Sleep(2 * time.Second)
+	}
+
+	return uploadedFile.ID, nil
 }
 
 // GetUploadedFile retrieves information about an uploaded file

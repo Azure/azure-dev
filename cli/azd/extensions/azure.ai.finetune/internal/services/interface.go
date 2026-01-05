@@ -38,11 +38,8 @@ type FineTuningService interface {
 	// CancelJob cancels a job with proper state validation
 	CancelJob(ctx context.Context, jobID string) (*models.FineTuningJob, error)
 
-	// UploadTrainingFile uploads and validates a training file
-	UploadTrainingFile(ctx context.Context, filePath string) (string, error)
-
-	// UploadValidationFile uploads and validates a validation file
-	UploadValidationFile(ctx context.Context, filePath string) (string, error)
+	// UploadFile uploads and validates a file
+	UploadFile(ctx context.Context, filePath string) (string, error)
 
 	// PollJobUntilCompletion polls a job until it completes or fails
 	PollJobUntilCompletion(ctx context.Context, jobID string, intervalSeconds int) (*models.FineTuningJob, error)

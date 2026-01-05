@@ -57,9 +57,32 @@ func convertOpenAIJobToModel(openaiJob openai.FineTuningJob) *models.FineTuningJ
 func convertOpenAIJobToDetailModel(openaiJob *openai.FineTuningJob) *models.FineTuningJobDetail {
 	// Extract hyperparameters from OpenAI job
 	hyperparameters := &models.Hyperparameters{}
-	hyperparameters.BatchSize = openaiJob.Hyperparameters.BatchSize.OfInt
-	hyperparameters.LearningRateMultiplier = openaiJob.Hyperparameters.LearningRateMultiplier.OfFloat
-	hyperparameters.NEpochs = openaiJob.Hyperparameters.NEpochs.OfInt
+	if openaiJob.Method.Type == "supervised" {
+		hyperparameters.BatchSize = openaiJob.Method.Supervised.Hyperparameters.BatchSize.OfInt
+		hyperparameters.LearningRateMultiplier = openaiJob.Method.Supervised.Hyperparameters.LearningRateMultiplier.OfFloat
+		hyperparameters.NEpochs = openaiJob.Method.Supervised.Hyperparameters.NEpochs.OfInt
+	} else if openaiJob.Method.Type == "dpo" {
+		hyperparameters.BatchSize = openaiJob.Method.Dpo.Hyperparameters.BatchSize.OfInt
+		hyperparameters.LearningRateMultiplier = openaiJob.Method.Dpo.Hyperparameters.LearningRateMultiplier.OfFloat
+		hyperparameters.NEpochs = openaiJob.Method.Dpo.Hyperparameters.NEpochs.OfInt
+		hyperparameters.Beta = openaiJob.Method.Dpo.Hyperparameters.Beta.OfFloat
+	} else if openaiJob.Method.Type == "reinforcement" {
+		hyperparameters.BatchSize = openaiJob.Method.Reinforcement.Hyperparameters.BatchSize.OfInt
+		hyperparameters.LearningRateMultiplier = openaiJob.Method.Reinforcement.Hyperparameters.LearningRateMultiplier.OfFloat
+		hyperparameters.NEpochs = openaiJob.Method.Reinforcement.Hyperparameters.NEpochs.OfInt
+		hyperparameters.ComputeMultiplier = openaiJob.Method.Reinforcement.Hyperparameters.ComputeMultiplier.OfFloat
+		hyperparameters.EvalInterval = openaiJob.Method.Reinforcement.Hyperparameters.EvalInterval.OfInt
+		hyperparameters.EvalSamples = openaiJob.Method.Reinforcement.Hyperparameters.EvalSamples.OfInt
+		if openaiJob.Method.Reinforcement.Hyperparameters.ReasoningEffort != "" {
+			hyperparameters.ReasoningEffort = string(openaiJob.Method.Reinforcement.Hyperparameters.ReasoningEffort)
+		}
+
+	} else {
+		// Fallback to top-level hyperparameters (for backward compatibility)
+		hyperparameters.BatchSize = openaiJob.Hyperparameters.BatchSize.OfInt
+		hyperparameters.LearningRateMultiplier = openaiJob.Hyperparameters.LearningRateMultiplier.OfFloat
+		hyperparameters.NEpochs = openaiJob.Hyperparameters.NEpochs.OfInt
+	}
 
 	jobDetail := &models.FineTuningJobDetail{
 		ID:              openaiJob.ID,
@@ -72,6 +95,7 @@ func convertOpenAIJobToDetailModel(openaiJob *openai.FineTuningJob) *models.Fine
 		TrainingFile:    openaiJob.TrainingFile,
 		ValidationFile:  openaiJob.ValidationFile,
 		Hyperparameters: hyperparameters,
+		Seed:            openaiJob.Seed,
 	}
 
 	return jobDetail

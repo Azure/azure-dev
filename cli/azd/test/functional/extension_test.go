@@ -4,15 +4,134 @@
 package cli_test
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/azure/azure-dev/cli/azd/test/recording"
 	"github.com/stretchr/testify/require"
 )
+
+// Test_CLI_Extension_ForceInstall tests the --force flag behavior for extension install.
+// This test verifies that:
+// 1. Installing an extension works normally
+// 2. Downgrading with --force installs the lower version
+// 3. The installed version is verified to be the lower version
+func Test_CLI_Extension_ForceInstall(t *testing.T) {
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	cli := azdcli.NewCLI(t)
+	cli.Env = append(cli.Env, os.Environ()...)
+
+	// Setup: Add local extension source
+	sourcePath := azdcli.GetSourcePath()
+	registryPath := filepath.Join(sourcePath, "extensions", "registry.json")
+	t.Logf("Adding local extension source from: %s", registryPath)
+	_, err := cli.RunCommand(ctx, "ext", "source", "add", "-n", "test-local", "-t", "file", "-l", registryPath)
+	require.NoError(t, err)
+
+	// Cleanup function to ensure extension is uninstalled and source removed
+	defer func() {
+		t.Log("Cleaning up: uninstalling microsoft.azd.demo extension")
+		_, _ = cli.RunCommand(ctx, "ext", "uninstall", "microsoft.azd.demo")
+		t.Log("Cleaning up: removing test-local source")
+		_, _ = cli.RunCommand(ctx, "ext", "source", "remove", "test-local")
+	}()
+
+	// Step 1: Install the latest version of microsoft.azd.demo extension
+	t.Log("Installing microsoft.azd.demo extension (latest version)")
+	result, err := cli.RunCommand(ctx, "ext", "install", "microsoft.azd.demo", "-s", "test-local")
+	require.NoError(t, err)
+	require.Contains(t, result.Stdout, "microsoft.azd.demo")
+
+	// Step 2: List installed extensions and get the current version
+	t.Log("Checking installed version")
+	result, err = cli.RunCommand(ctx, "ext", "list", "--installed", "--output", "json")
+	require.NoError(t, err)
+
+	var installedExtensions []struct {
+		ID               string `json:"id"`
+		Version          string `json:"version"`
+		InstalledVersion string `json:"installedVersion"`
+	}
+	err = json.Unmarshal([]byte(result.Stdout), &installedExtensions)
+	require.NoError(t, err)
+
+	var installedVersion string
+	for _, ext := range installedExtensions {
+		if ext.ID == "microsoft.azd.demo" {
+			installedVersion = ext.InstalledVersion
+			break
+		}
+	}
+	require.NotEmpty(t, installedVersion, "microsoft.azd.demo should be installed")
+	t.Logf("Currently installed version: %s", installedVersion)
+
+	// Step 3: Try to downgrade to version 0.3.0 with --force
+	targetVersion := "0.3.0"
+	t.Logf("Downgrading to version %s with --force flag", targetVersion)
+	result, err = cli.RunCommand(ctx, "ext", "install", "microsoft.azd.demo", "-s", "test-local", "-v", targetVersion, "--force")
+	require.NoError(t, err)
+	require.Contains(t, result.Stdout, "microsoft.azd.demo")
+
+	// Step 4: Verify the downgrade was successful
+	t.Log("Verifying downgraded version")
+	result, err = cli.RunCommand(ctx, "ext", "list", "--installed", "--output", "json")
+	require.NoError(t, err)
+
+	err = json.Unmarshal([]byte(result.Stdout), &installedExtensions)
+	require.NoError(t, err)
+
+	var downgradedVersion string
+	for _, ext := range installedExtensions {
+		if ext.ID == "microsoft.azd.demo" {
+			downgradedVersion = ext.InstalledVersion
+			break
+		}
+	}
+	require.Equal(t, targetVersion, downgradedVersion, "Extension should be downgraded to %s", targetVersion)
+	t.Logf("Successfully downgraded to version: %s", downgradedVersion)
+
+	// Step 5: Test that --force also works for reinstalling the same version
+	t.Logf("Testing reinstall of same version (%s) with --force", targetVersion)
+	
+	// Get the extension binary path before deletion
+	homeDir, err := os.UserHomeDir()
+	require.NoError(t, err)
+	extPath := filepath.Join(homeDir, ".azd", "extensions", "microsoft.azd.demo")
+	
+	// Delete the extension files but keep the metadata
+	t.Log("Deleting extension files to simulate corruption")
+	err = os.RemoveAll(extPath)
+	require.NoError(t, err)
+	
+	// Try to install without --force (should skip)
+	t.Log("Attempting install without --force (should skip)")
+	result, err = cli.RunCommand(ctx, "ext", "install", "microsoft.azd.demo", "-s", "test-local", "-v", targetVersion)
+	require.NoError(t, err)
+	require.Contains(t, strings.ToLower(result.Stdout), "skipped", "Should skip installation without --force")
+	
+	// Verify files are still missing
+	_, err = os.Stat(extPath)
+	require.True(t, os.IsNotExist(err), "Extension files should still be missing after skipped install")
+	
+	// Now install with --force (should reinstall)
+	t.Log("Attempting install with --force (should reinstall)")
+	result, err = cli.RunCommand(ctx, "ext", "install", "microsoft.azd.demo", "-s", "test-local", "-v", targetVersion, "--force")
+	require.NoError(t, err)
+	require.NotContains(t, strings.ToLower(result.Stdout), "skipped", "Should not skip installation with --force")
+	
+	// Verify files are restored
+	_, err = os.Stat(extPath)
+	require.NoError(t, err, "Extension files should be restored after --force install")
+	
+	t.Log("Successfully verified --force flag behavior for reinstalling same version")
+}
 
 // Test_CLI_Extension_Capabilities tests the extension framework capabilities using the demo extension.
 // This test verifies that:

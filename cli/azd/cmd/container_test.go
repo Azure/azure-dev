@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
 
@@ -156,4 +157,132 @@ type testLazyComponent[T comparable] struct {
 
 type testConcreteComponent[T comparable] struct {
 	concrete T
+}
+
+// Test_WorkflowCmdAdapter_ContextPropagation validates that the workflowCmdAdapter
+// properly sets fresh contexts on both root and subcommands when reused across
+// multiple workflow steps, preventing stale cancelled contexts from affecting
+// subsequent executions.
+func Test_WorkflowCmdAdapter_ContextPropagation(t *testing.T) {
+	t.Run("SubcommandReceivesFreshContext", func(t *testing.T) {
+		// Track which contexts were seen by the subcommand
+		var receivedContexts []context.Context
+
+		// Create a root command with a subcommand
+		rootCmd := &cobra.Command{
+			Use: "root",
+		}
+
+		subCmd := &cobra.Command{
+			Use: "sub",
+			RunE: func(cmd *cobra.Command, args []string) error {
+				// Capture the context that the subcommand receives
+				receivedContexts = append(receivedContexts, cmd.Context())
+				return nil
+			},
+		}
+
+		rootCmd.AddCommand(subCmd)
+
+		// Create the adapter
+		adapter := &workflowCmdAdapter{cmd: rootCmd}
+
+		// Simulate first workflow step
+		ctx1, cancel1 := context.WithCancel(context.Background())
+		adapter.SetArgs([]string{"sub"})
+		err := adapter.ExecuteContext(ctx1)
+		require.NoError(t, err)
+		require.Len(t, receivedContexts, 1, "First execution should have received context")
+
+		// Verify first context is not cancelled
+		select {
+		case <-receivedContexts[0].Done():
+			t.Fatal("First context should not be cancelled during execution")
+		default:
+			// Expected: context is still valid
+		}
+
+		// Cancel the first context (simulating workflow step completion)
+		cancel1()
+
+		// Verify first context is now cancelled
+		select {
+		case <-receivedContexts[0].Done():
+			// Expected: context is cancelled
+		default:
+			t.Fatal("First context should be cancelled after cancel1()")
+		}
+
+		// Simulate second workflow step with a fresh context
+		ctx2 := context.Background()
+		adapter.SetArgs([]string{"sub"})
+		err = adapter.ExecuteContext(ctx2)
+		require.NoError(t, err)
+		require.Len(t, receivedContexts, 2, "Second execution should have received context")
+
+		// CRITICAL TEST: Verify second execution received a valid context,
+		// not the cancelled context from the first execution
+		select {
+		case <-receivedContexts[1].Done():
+			t.Fatal("Second execution should have received a fresh valid context, not the cancelled one from first execution")
+		default:
+			// Expected: second context is valid
+		}
+
+		// Verify the two contexts are different
+		require.NotSame(t, receivedContexts[0], receivedContexts[1],
+			"Second execution should receive a different context than the first")
+	})
+
+	t.Run("NestedSubcommandReceivesFreshContext", func(t *testing.T) {
+		// Track which contexts were seen
+		var receivedContexts []context.Context
+
+		// Create a root command with nested subcommands
+		rootCmd := &cobra.Command{
+			Use: "root",
+		}
+
+		parentCmd := &cobra.Command{
+			Use: "parent",
+		}
+
+		childCmd := &cobra.Command{
+			Use: "child",
+			RunE: func(cmd *cobra.Command, args []string) error {
+				receivedContexts = append(receivedContexts, cmd.Context())
+				return nil
+			},
+		}
+
+		parentCmd.AddCommand(childCmd)
+		rootCmd.AddCommand(parentCmd)
+
+		adapter := &workflowCmdAdapter{cmd: rootCmd}
+
+		// First execution
+		ctx1, cancel1 := context.WithCancel(context.Background())
+		adapter.SetArgs([]string{"parent", "child"})
+		err := adapter.ExecuteContext(ctx1)
+		require.NoError(t, err)
+		require.Len(t, receivedContexts, 1)
+
+		// Cancel first context
+		cancel1()
+
+		// Second execution with fresh context
+		ctx2 := context.Background()
+		adapter.SetArgs([]string{"parent", "child"})
+		err = adapter.ExecuteContext(ctx2)
+		require.NoError(t, err)
+		require.Len(t, receivedContexts, 2)
+
+		// Verify second execution got a valid context
+		select {
+		case <-receivedContexts[1].Done():
+			t.Fatal("Nested subcommand should have received a fresh valid context in second execution")
+		default:
+			// Expected: context is valid
+		}
+	})
 }

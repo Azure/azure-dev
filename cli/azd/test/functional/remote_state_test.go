@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
@@ -91,12 +92,30 @@ func createBlobClient(
 	)
 	require.NoError(t, err)
 
+	// Create a mock SubscriptionTenantResolver that returns empty tenant (home tenant)
+	tenantResolver := &mockTenantResolver{}
+
 	sdkClient, err := storage.NewBlobSdkClient(
-		auth.NewMultiTenantCredentialProvider(authManager), storageConfig, coreClientOptions, cloud.AzurePublic())
+		auth.NewMultiTenantCredentialProvider(authManager),
+		storageConfig,
+		coreClientOptions,
+		cloud.AzurePublic(),
+		tenantResolver,
+	)
 	require.NoError(t, err)
 	require.NotNil(t, sdkClient)
 
 	return storage.NewBlobClient(storageConfig, sdkClient)
+}
+
+// mockTenantResolver is a simple mock implementation for testing
+type mockTenantResolver struct{}
+
+var _ account.SubscriptionTenantResolver = (*mockTenantResolver)(nil)
+
+func (m *mockTenantResolver) LookupTenant(ctx context.Context, subscriptionId string) (string, error) {
+	// For tests, just return empty string (home tenant)
+	return "", nil
 }
 
 type remoteStateTestFunc func(storageConfig *storage.AccountConfig)

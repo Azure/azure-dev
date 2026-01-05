@@ -7,14 +7,16 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/ux"
+
+	FTYaml "azure.ai.finetune/internal/fine_tuning_yaml"
 	"azure.ai.finetune/internal/services"
 	JobWrapper "azure.ai.finetune/internal/tools"
-	Utils "azure.ai.finetune/internal/utils"
+	"azure.ai.finetune/internal/utils"
 	"azure.ai.finetune/pkg/models"
 )
 
@@ -36,8 +38,8 @@ func newOperationCommand() *cobra.Command {
 	return cmd
 }
 
-// getStatusSymbol returns a symbol representation for job status
-func getStatusSymbol(status string) string {
+// getStatusSymbolFromString returns a symbol representation for job status
+func getStatusSymbolFromString(status string) string {
 	switch status {
 	case "pending":
 		return "⌛"
@@ -171,12 +173,13 @@ func newOperationSubmitCommand() *cobra.Command {
 	return cmd
 }
 
+// newOperationShowCommand creates a command to show the fine-tuning job details
 func newOperationShowCommand() *cobra.Command {
 	var jobID string
 
 	cmd := &cobra.Command{
 		Use:   "show",
-		Short: "Show the fine tuning job details",
+		Short: "Show fine-tuning job details.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			azdClient, err := azdext.NewAzdClient()
@@ -184,31 +187,38 @@ func newOperationShowCommand() *cobra.Command {
 				return fmt.Errorf("failed to create azd client: %w", err)
 			}
 			defer azdClient.Close()
-			// Show spinner while fetching jobs
+
+			// Show spinner while fetching job
 			spinner := ux.NewSpinner(&ux.SpinnerOptions{
 				Text: fmt.Sprintf("Fetching fine-tuning job %s...", jobID),
 			})
 			if err := spinner.Start(ctx); err != nil {
-				fmt.Printf("Failed to start spinner: %v\n", err)
+				fmt.Printf("failed to start spinner: %v\n", err)
 			}
 
-			// Fetch fine-tuning job details using job wrapper
-			job, err := JobWrapper.GetJobDetails(ctx, azdClient, jobID)
-			_ = spinner.Stop(ctx)
-
+			fineTuneSvc, err := services.NewFineTuningService(ctx, azdClient, nil)
 			if err != nil {
-				return fmt.Errorf("failed to get fine-tuning job details: %w", err)
+				_ = spinner.Stop(ctx)
+				fmt.Println()
+				return err
 			}
 
-			// Print job details
-			color.Green("\nFine-Tuning Job Details\n")
-			fmt.Printf("Job ID:              %s\n", job.Id)
-			fmt.Printf("Status:              %s %s\n", getStatusSymbol(job.Status), job.Status)
+			job, err := fineTuneSvc.GetFineTuningJobDetails(ctx, jobID)
+			_ = spinner.Stop(ctx)
+			if err != nil {
+				fmt.Println()
+				return err
+			}
+
+			// Display job details
+			color.Green("\nFine-tuning Job Details\n")
+			fmt.Printf("Job ID:              %s\n", job.ID)
+			fmt.Printf("Status:              %s %s\n", utils.GetStatusSymbol(job.Status), job.Status)
 			fmt.Printf("Model:               %s\n", job.Model)
 			fmt.Printf("Fine-tuned Model:    %s\n", formatFineTunedModel(job.FineTunedModel))
-			fmt.Printf("Created At:          %s\n", job.CreatedAt)
-			if job.FinishedAt != "" {
-				fmt.Printf("Finished At:         %s\n", job.FinishedAt)
+			fmt.Printf("Created At:          %s\n", utils.FormatTime(job.CreatedAt))
+			if !job.FinishedAt.IsZero() {
+				fmt.Printf("Finished At:         %s\n", utils.FormatTime(job.FinishedAt))
 			}
 			fmt.Printf("Method:              %s\n", job.Method)
 			fmt.Printf("Training File:       %s\n", job.TrainingFile)
@@ -229,18 +239,20 @@ func newOperationShowCommand() *cobra.Command {
 				Text: "Fetching job events...",
 			})
 			if err := eventsSpinner.Start(ctx); err != nil {
-				fmt.Printf("Failed to start spinner: %v\n", err)
+				fmt.Printf("failed to start spinner: %v\n", err)
 			}
 
-			events, err := JobWrapper.GetJobEvents(ctx, azdClient, jobID)
+			events, err := fineTuneSvc.GetJobEvents(ctx, jobID)
 			_ = eventsSpinner.Stop(ctx)
 
 			if err != nil {
-				fmt.Printf("Warning: failed to fetch job events: %v\n", err)
+				fmt.Println()
+				return err
 			} else if events != nil && len(events.Data) > 0 {
 				fmt.Println("\nJob Events:")
 				for i, event := range events.Data {
-					fmt.Printf("  %d. [%s] %s - %s\n", i+1, event.Level, event.CreatedAt, event.Message)
+					fmt.Printf("  %d. Event ID: %s\n", i+1, event.ID)
+					fmt.Printf("     [%s] %s - %s\n", event.Level, utils.FormatTime(event.CreatedAt), event.Message)
 				}
 				if events.HasMore {
 					fmt.Println("  ... (more events available)")
@@ -248,25 +260,26 @@ func newOperationShowCommand() *cobra.Command {
 			}
 
 			// Fetch and print checkpoints if job is completed
-			if job.Status == "succeeded" {
+			if job.Status == models.StatusSucceeded {
 				checkpointsSpinner := ux.NewSpinner(&ux.SpinnerOptions{
 					Text: "Fetching job checkpoints...",
 				})
 				if err := checkpointsSpinner.Start(ctx); err != nil {
-					fmt.Printf("Failed to start spinner: %v\n", err)
+					fmt.Printf("failed to start spinner: %v\n", err)
 				}
 
-				checkpoints, err := JobWrapper.GetJobCheckPoints(ctx, azdClient, jobID)
+				checkpoints, err := fineTuneSvc.GetJobCheckpoints(ctx, jobID)
 				_ = checkpointsSpinner.Stop(ctx)
 
 				if err != nil {
-					fmt.Printf("Warning: failed to fetch job checkpoints: %v\n", err)
+					fmt.Println()
+					return err
 				} else if checkpoints != nil && len(checkpoints.Data) > 0 {
 					fmt.Println("\nJob Checkpoints:")
 					for i, checkpoint := range checkpoints.Data {
 						fmt.Printf("  %d. Checkpoint ID: %s\n", i+1, checkpoint.ID)
 						fmt.Printf("     Checkpoint Name:       %s\n", checkpoint.FineTunedModelCheckpoint)
-						fmt.Printf("     Created On:            %s\n", checkpoint.CreatedAt)
+						fmt.Printf("     Created On:            %s\n", utils.FormatTime(checkpoint.CreatedAt))
 						fmt.Printf("     Step Number:           %d\n", checkpoint.StepNumber)
 						if checkpoint.Metrics != nil {
 							fmt.Printf("     Full Validation Loss:  %.6f\n", checkpoint.Metrics.FullValidLoss)
@@ -283,8 +296,10 @@ func newOperationShowCommand() *cobra.Command {
 			return nil
 		},
 	}
+
 	cmd.Flags().StringVarP(&jobID, "job-id", "i", "", "Fine-tuning job ID")
 	cmd.MarkFlagRequired("job-id")
+
 	return cmd
 }
 
@@ -294,7 +309,7 @@ func newOperationListCommand() *cobra.Command {
 	var after string
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "list the fine tuning jobs",
+		Short: "List fine-tuning jobs.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			azdClient, err := azdext.NewAzdClient()
@@ -305,7 +320,7 @@ func newOperationListCommand() *cobra.Command {
 
 			// Show spinner while fetching jobs
 			spinner := ux.NewSpinner(&ux.SpinnerOptions{
-				Text: "fetching fine-tuning jobs...",
+				Text: "Fetching fine-tuning jobs...",
 			})
 			if err := spinner.Start(ctx); err != nil {
 				fmt.Printf("failed to start spinner: %v\n", err)
@@ -325,18 +340,21 @@ func newOperationListCommand() *cobra.Command {
 				return err
 			}
 
+			// Display job list
 			for i, job := range jobs {
 				fmt.Printf("\n%d. Job ID: %s | Status: %s %s | Model: %s | Fine-tuned: %s | Created: %s",
-					i+1, job.ID, getStatusSymbol(string(job.Status)), job.Status, job.BaseModel, formatFineTunedModel(job.FineTunedModel), job.CreatedAt)
+					i+1, job.ID, utils.GetStatusSymbol(job.Status), job.Status, job.BaseModel,
+					formatFineTunedModel(job.FineTunedModel), utils.FormatTime(job.CreatedAt))
 			}
 
-			fmt.Printf("\ntotal jobs: %d\n", len(jobs))
+			fmt.Printf("\nTotal jobs: %d\n", len(jobs))
 
 			return nil
 		},
 	}
-	cmd.Flags().IntVarP(&limit, "top", "t", 50, "number of fine-tuning jobs to list")
-	cmd.Flags().StringVarP(&after, "after", "a", "", "cursor for pagination")
+
+	cmd.Flags().IntVarP(&limit, "top", "t", 50, "Number of fine-tuning jobs to list")
+	cmd.Flags().StringVarP(&after, "after", "a", "", "Cursor for pagination")
 	return cmd
 }
 
@@ -393,7 +411,7 @@ func newOperationActionCommand() *cobra.Command {
 			color.Green(fmt.Sprintf("\nSuccessfully %sd fine-tuning Job!\n", action))
 			fmt.Printf("Job ID:     %s\n", job.Id)
 			fmt.Printf("Model:      %s\n", job.Model)
-			fmt.Printf("Status:     %s %s\n", getStatusSymbol(job.Status), job.Status)
+			fmt.Printf("Status:     %s %s\n", getStatusSymbolFromString(job.Status), job.Status)
 			fmt.Printf("Created:    %s\n", job.CreatedAt)
 			if job.FineTunedModel != "" {
 				fmt.Printf("Fine-tuned: %s\n", job.FineTunedModel)

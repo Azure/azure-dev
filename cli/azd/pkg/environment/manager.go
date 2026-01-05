@@ -133,13 +133,20 @@ func NewManager(
 		}
 	}
 
+	// Initialize state cache manager with environment directory path
+	// If azdContext is nil (no project), use empty path (cache won't be usable)
+	envDir := ""
+	if azdContext != nil {
+		envDir = azdContext.EnvironmentDirectory()
+	}
+
 	return &manager{
 		azdContext:        azdContext,
 		local:             local,
 		remote:            remote,
 		console:           console,
 		envCache:          make(map[string]*Environment),
-		stateCacheManager: state.NewStateCacheManager(azdContext.EnvironmentDirectory()),
+		stateCacheManager: state.NewStateCacheManager(envDir),
 	}, nil
 }
 

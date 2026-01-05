@@ -6,6 +6,7 @@ package openai
 import (
 	"encoding/json"
 	"strings"
+
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/packages/pagination"
 
@@ -123,9 +124,9 @@ func convertOpenAIJobCheckpointsToModel(checkpointsPage *pagination.CursorPage[o
 		HasMore: checkpointsPage.HasMore,
 	}
 }
-	
+
 // Converts the internal create finetuning request model to OpenAI job parameters
-func ConvertInternalJobParamToOpenAiJobParams(config *models.CreateFineTuningRequest) (*openai.FineTuningJobNewParams, error) {
+func convertInternalJobParamToOpenAiJobParams(config *models.CreateFineTuningRequest) (*openai.FineTuningJobNewParams, error) {
 	jobParams := openai.FineTuningJobNewParams{
 		Model:        openai.FineTuningJobNewParamsModel(config.BaseModel),
 		TrainingFile: config.TrainingFile,

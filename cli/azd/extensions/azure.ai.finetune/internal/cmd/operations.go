@@ -13,7 +13,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 
-	FTYaml "azure.ai.finetune/internal/fine_tuning_yaml"
 	"azure.ai.finetune/internal/services"
 	JobWrapper "azure.ai.finetune/internal/tools"
 	"azure.ai.finetune/internal/utils"
@@ -100,7 +99,7 @@ func newOperationSubmitCommand() *cobra.Command {
 			var config *models.CreateFineTuningRequest
 			if filename != "" {
 				color.Green("\nparsing configuration file...")
-				config, err = Utils.ParseCreateFineTuningRequestConfig(filename)
+				config, err = utils.ParseCreateFineTuningRequestConfig(filename)
 				if err != nil {
 					_ = spinner.Stop(ctx)
 					fmt.Println()

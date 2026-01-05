@@ -30,7 +30,7 @@ func NewOpenAIProvider(client *openai.Client) *OpenAIProvider {
 // CreateFineTuningJob creates a new fine-tuning job via OpenAI API
 func (p *OpenAIProvider) CreateFineTuningJob(ctx context.Context, req *models.CreateFineTuningRequest) (*models.FineTuningJob, error) {
 
-	params, err := ConvertInternalJobParamToOpenAiJobParams(req)
+	params, err := convertInternalJobParamToOpenAiJobParams(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert internal model to openai: %w", err)
 	}
@@ -40,7 +40,7 @@ func (p *OpenAIProvider) CreateFineTuningJob(ctx context.Context, req *models.Cr
 		return nil, fmt.Errorf("failed to create fine-tuning job: %w", err)
 	}
 
-	return ConvertOpenAIJobToModel(*job), nil
+	return convertOpenAIJobToModel(*job), nil
 }
 
 // GetFineTuningStatus retrieves the status of a fine-tuning job

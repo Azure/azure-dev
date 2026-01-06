@@ -73,6 +73,7 @@ type BicepProvider struct {
 	bicepCli            *bicep.Cli
 	azapi               *azapi.AzureClient
 	resourceService     *azapi.ResourceService
+	resourceManager     infra.ResourceManager
 	deploymentManager   *infra.DeploymentManager
 	prompters           prompt.Prompter
 	curPrincipal        provisioning.CurrentPrincipalIdProvider
@@ -1082,7 +1083,10 @@ func getDeploymentOptions(deployments []*azapi.ResourceDeployment) []string {
 	return promptValues
 }
 
-func (p *BicepProvider) generateResourcesToDelete(groupedResources map[string][]*azapi.Resource) []string {
+func (p *BicepProvider) generateResourcesToDelete(
+	ctx context.Context,
+	groupedResources map[string][]*azapi.Resource,
+) []string {
 	lines := []string{"Resource(s) to be deleted:"}
 
 	for resourceGroupName, resources := range groupedResources {
@@ -1104,7 +1108,16 @@ func (p *BicepProvider) generateResourcesToDelete(groupedResources map[string][]
 
 		// Resources in each group
 		for _, resource := range resources {
-			resourceTypeName := azapi.GetResourceTypeDisplayName(azapi.AzureResourceType(resource.Type))
+			resourceTypeName, err := p.resourceManager.GetResourceTypeDisplayName(
+				ctx,
+				p.env.GetSubscriptionId(),
+				resource.Id,
+				azapi.AzureResourceType(resource.Type),
+			)
+			if err != nil {
+				// Fall back to static lookup if dynamic lookup fails
+				resourceTypeName = azapi.GetResourceTypeDisplayName(azapi.AzureResourceType(resource.Type))
+			}
 			if resourceTypeName == "" {
 				continue
 			}
@@ -1129,7 +1142,7 @@ func (p *BicepProvider) promptDeletion(
 	}
 
 	p.console.MessageUxItem(ctx, &ux.MultilineMessage{
-		Lines: p.generateResourcesToDelete(groupedResources)},
+		Lines: p.generateResourcesToDelete(ctx, groupedResources)},
 	)
 	confirmDestroy, err := p.console.Confirm(ctx, input.ConsoleOptions{
 		Message: fmt.Sprintf(
@@ -2276,6 +2289,7 @@ func NewBicepProvider(
 	azapi *azapi.AzureClient,
 	bicepCli *bicep.Cli,
 	resourceService *azapi.ResourceService,
+	resourceManager infra.ResourceManager,
 	deploymentManager *infra.DeploymentManager,
 	envManager environment.Manager,
 	env *environment.Environment,
@@ -2293,6 +2307,7 @@ func NewBicepProvider(
 		azapi:               azapi,
 		bicepCli:            bicepCli,
 		resourceService:     resourceService,
+		resourceManager:     resourceManager,
 		deploymentManager:   deploymentManager,
 		prompters:           prompters,
 		curPrincipal:        curPrincipal,

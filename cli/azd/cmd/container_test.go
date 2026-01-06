@@ -224,7 +224,7 @@ func Test_WorkflowCmdAdapter_ContextPropagation(t *testing.T) {
 		// not the cancelled context from the first execution
 		select {
 		case <-receivedContexts[1].Done():
-			t.Fatal("Second execution should have received a fresh valid context, not the cancelled one from first execution")
+			t.Fatal("2nd execution should have received a fresh valid context, not the cancelled one from 1st execution")
 		default:
 			// Expected: second context is valid
 		}

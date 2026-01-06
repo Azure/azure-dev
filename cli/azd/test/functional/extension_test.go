@@ -21,6 +21,8 @@ import (
 // 1. Installing an extension works normally
 // 2. Downgrading with --force installs the lower version
 // 3. The installed version is verified to be the lower version
+// 4. Installing without --force skips reinstall when the requested version matches the installed version
+// 5. Installing with --force reinstalls even when the requested version matches the installed version
 func Test_CLI_Extension_ForceInstall(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
@@ -75,7 +77,8 @@ func Test_CLI_Extension_ForceInstall(t *testing.T) {
 	// Step 3: Try to downgrade to version 0.3.0 with --force
 	targetVersion := "0.3.0"
 	t.Logf("Downgrading to version %s with --force flag", targetVersion)
-	result, err = cli.RunCommand(ctx, "ext", "install", "microsoft.azd.demo", "-s", "test-local", "-v", targetVersion, "--force")
+	result, err = cli.RunCommand(
+		ctx, "ext", "install", "microsoft.azd.demo", "-s", "test-local", "-v", targetVersion, "--force")
 	require.NoError(t, err)
 	require.Contains(t, result.Stdout, "microsoft.azd.demo")
 
@@ -122,7 +125,8 @@ func Test_CLI_Extension_ForceInstall(t *testing.T) {
 	
 	// Now install with --force (should reinstall)
 	t.Log("Attempting install with --force (should reinstall)")
-	result, err = cli.RunCommand(ctx, "ext", "install", "microsoft.azd.demo", "-s", "test-local", "-v", targetVersion, "--force")
+	result, err = cli.RunCommand(
+		ctx, "ext", "install", "microsoft.azd.demo", "-s", "test-local", "-v", targetVersion, "--force")
 	require.NoError(t, err)
 	require.NotContains(t, strings.ToLower(result.Stdout), "skipped", "Should not skip installation with --force")
 	

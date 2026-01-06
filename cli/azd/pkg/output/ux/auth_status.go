@@ -36,5 +36,5 @@ func (v *AuthStatusView) ToString(currentIndentation string) string {
 }
 
 func (v *AuthStatusView) MarshalJSON() ([]byte, error) {
-	return json.Marshal(output.EventForMessage(v.ToString("")))
+	return json.Marshal(v.Result)
 }

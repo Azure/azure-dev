@@ -110,16 +110,7 @@ func (a *authStatusAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		return nil, nil
 	}
 
-	if res.Status == contracts.AuthStatusUnauthenticated {
-		a.console.Message(ctx, "Not logged in, run `azd auth login` to login to Azure")
-		return nil, nil
-	}
-
-	a.console.MessageUxItem(ctx, &ux.LoggedIn{
-		LoggedInAs: details.Account,
-		LoginType:  ux.LoginType(details.LoginType),
-	})
-
+	a.console.MessageUxItem(ctx, &ux.AuthStatusView{Result: &res})
 	return nil, nil
 }
 

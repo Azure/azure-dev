@@ -102,38 +102,38 @@ func Test_CLI_Extension_ForceInstall(t *testing.T) {
 
 	// Step 5: Test that --force also works for reinstalling the same version
 	t.Logf("Testing reinstall of same version (%s) with --force", targetVersion)
-	
+
 	// Get the extension binary path before deletion
 	homeDir, err := os.UserHomeDir()
 	require.NoError(t, err)
 	extPath := filepath.Join(homeDir, ".azd", "extensions", "microsoft.azd.demo")
-	
+
 	// Delete the extension files but keep the metadata
 	t.Log("Deleting extension files to simulate corruption")
 	err = os.RemoveAll(extPath)
 	require.NoError(t, err)
-	
+
 	// Try to install without --force (should skip)
 	t.Log("Attempting install without --force (should skip)")
 	result, err = cli.RunCommand(ctx, "ext", "install", "microsoft.azd.demo", "-s", "test-local", "-v", targetVersion)
 	require.NoError(t, err)
 	require.Contains(t, strings.ToLower(result.Stdout), "skipped", "Should skip installation without --force")
-	
+
 	// Verify files are still missing
 	_, err = os.Stat(extPath)
 	require.True(t, os.IsNotExist(err), "Extension files should still be missing after skipped install")
-	
+
 	// Now install with --force (should reinstall)
 	t.Log("Attempting install with --force (should reinstall)")
 	result, err = cli.RunCommand(
 		ctx, "ext", "install", "microsoft.azd.demo", "-s", "test-local", "-v", targetVersion, "--force")
 	require.NoError(t, err)
 	require.NotContains(t, strings.ToLower(result.Stdout), "skipped", "Should not skip installation with --force")
-	
+
 	// Verify files are restored
 	_, err = os.Stat(extPath)
 	require.NoError(t, err, "Extension files should be restored after --force install")
-	
+
 	t.Log("Successfully verified --force flag behavior for reinstalling same version")
 }
 

@@ -5,7 +5,7 @@
     "required": [
         "name"
     ],
-    "additionalProperties": false,
+    "additionalProperties": true,
     "properties": {
         "name": {
             "type": "string",
@@ -159,7 +159,7 @@
             "minProperties": 1,
             "additionalProperties": {
                 "type": "object",
-                "additionalProperties": false,
+                "additionalProperties": true,
                 "required": [
                     "host"
                 ],

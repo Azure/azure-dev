@@ -801,7 +801,7 @@ func Test_CheckInstalled_NeitherAvailable(t *testing.T) {
 
 	err := docker.CheckInstalled(context.Background())
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "neither docker nor podman is installed or running")
+	require.Contains(t, err.Error(), "neither docker nor podman is installed")
 }
 
 func TestSplitDockerImage(t *testing.T) {

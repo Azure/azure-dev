@@ -15,6 +15,7 @@ import (
 
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/azure"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -210,7 +211,7 @@ func (p *AgentServiceTargetProvider) GetTargetResource(
 	projectName := p.foundryProject.Name
 
 	// Create Cognitive Services Projects client
-	projectsClient, err := armcognitiveservices.NewProjectsClient(p.foundryProject.SubscriptionID, p.credential, nil)
+	projectsClient, err := armcognitiveservices.NewProjectsClient(p.foundryProject.SubscriptionID, p.credential, azure.NewArmClientOptions())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Cognitive Services Projects client: %w", err)
 	}
@@ -678,7 +679,10 @@ func (p *AgentServiceTargetProvider) createAgent(
 	azdEnv map[string]string,
 ) (*agent_api.AgentVersionObject, error) {
 	// Create agent client
-	agentClient := agent_api.NewAgentClient(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], p.credential)
+	agentClient := agent_api.NewAgentClient(
+		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+		p.credential,
+	)
 
 	// Use constant API version
 	const apiVersion = "2025-05-15-preview"
@@ -725,7 +729,10 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 	fmt.Fprintln(os.Stderr)
 
 	// Create agent client
-	agentClient := agent_api.NewAgentClient(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], p.credential)
+	agentClient := agent_api.NewAgentClient(
+		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+		p.credential,
+	)
 
 	var minReplicas, maxReplicas *int32
 	if foundryAgentConfig.Container != nil && foundryAgentConfig.Container.Scale != nil {

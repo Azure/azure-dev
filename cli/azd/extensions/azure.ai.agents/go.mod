@@ -10,14 +10,13 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices v1.8.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.2.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions v1.3.0
-	github.com/azure/azure-dev/cli/azd v0.0.0
+	github.com/azure/azure-dev/cli/azd v0.0.0-20251212003342-848978091314
 	github.com/braydonk/yaml v0.9.0
 	github.com/drone/envsubst v1.0.3
 	github.com/fatih/color v1.18.0
 	github.com/google/uuid v1.6.0
 	github.com/mark3labs/mcp-go v0.41.1
 	github.com/spf13/cobra v1.10.1
-	github.com/stretchr/testify v1.11.1
 	go.yaml.in/yaml/v3 v3.0.4
 	google.golang.org/protobuf v1.36.10
 	gopkg.in/yaml.v3 v3.0.1
@@ -78,7 +77,6 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/sethvargo/go-retry v0.3.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
-	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/theckman/yacspin v0.13.12 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
@@ -100,5 +98,3 @@ require (
 	google.golang.org/grpc v1.76.0 // indirect
 	gopkg.in/dnaeon/go-vcr.v3 v3.2.0 // indirect
 )
-
-replace github.com/azure/azure-dev/cli/azd => ../..

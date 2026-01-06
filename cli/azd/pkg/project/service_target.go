@@ -30,12 +30,12 @@ const (
 
 // DotNetContainerAppTarget is intentionally omitted because it is only used internally when
 // containerizing .NET projects and is not a valid service host value in azure.yaml.
+// SpringAppTarget is intentionally omitted because support has been removed.
 var builtInServiceTargetKinds = []ServiceTargetKind{
 	AppServiceTarget,
 	ContainerAppTarget,
 	AzureFunctionTarget,
 	StaticWebAppTarget,
-	SpringAppTarget,
 	AksTarget,
 	AiEndpointTarget,
 }
@@ -147,13 +147,15 @@ func (st ServiceTargetKind) IgnoreFile() string {
 	}
 }
 
-// SupportsDelayedProvisioning returns true if the service target kind
-// supports delayed provisioning resources at deployment time, otherwise false.
+// SupportsDelayedProvisioning returns true if the service target supports provisioning
+// resources during deployment when they don't exist yet.
 //
-// As an example, ContainerAppTarget is able to provision the container app as part of deployment,
-// and thus returns true.
+// Deprecated: Use TargetResourceResolver interface for custom resource resolution instead.
+// Container Apps supports delayed provisioning but implements TargetResourceResolver to
+// provide better error messages when resources are missing in non-bicep deployment scenarios.
+// Retained only for AKS backward compatibility.
 func (st ServiceTargetKind) SupportsDelayedProvisioning() bool {
-	return st == AksTarget || st == ContainerAppTarget
+	return st == AksTarget
 }
 
 func checkResourceType(resource *environment.TargetResource, expectedResourceType azapi.AzureResourceType) error {

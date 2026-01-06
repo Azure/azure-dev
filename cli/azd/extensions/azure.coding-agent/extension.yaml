@@ -7,4 +7,4 @@ language: go
 namespace: coding-agent
 usage: azd coding-agent <command> [options]
 # NOTE: Make sure version.txt is in sync with this version.
-version: 0.5.1
+version: 0.5.2

@@ -131,6 +131,12 @@ func (tl *templateListAction) Run(ctx context.Context) (*actions.ActionResult, e
 		err = tl.formatter.Format(listedTemplates, tl.writer, output.TableFormatterOptions{
 			Columns: columns,
 		})
+
+		if err == nil {
+			templates.PrintGalleryLinks(tl.writer)
+			fmt.Fprintf(tl.writer, "Select a template from the gallery, then run %s\n",
+				output.WithHighLightFormat("azd init -t <template name>"))
+		}
 	} else {
 		err = tl.formatter.Format(listedTemplates, tl.writer, nil)
 	}

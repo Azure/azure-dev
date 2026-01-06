@@ -151,6 +151,91 @@
               "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-demo_0.3.0/microsoft-azd-demo-windows-arm64.zip"
             }
           }
+        },
+        {
+          "version": "0.4.0",
+          "capabilities": [
+            "custom-commands",
+            "lifecycle-events",
+            "mcp-server",
+            "service-target-provider",
+            "framework-service-provider"
+          ],
+          "providers": [
+            {
+              "name": "demo",
+              "type": "service-target",
+              "description": "Deploys application components to demo"
+            }
+          ],
+          "usage": "azd demo \u003ccommand\u003e [options]",
+          "examples": [
+            {
+              "name": "context",
+              "description": "Displays the current `azd` project \u0026 environment context.",
+              "usage": "azd demo context"
+            },
+            {
+              "name": "prompt",
+              "description": "Display prompt capabilities.",
+              "usage": "azd demo prompt"
+            },
+            {
+              "name": "mcp",
+              "description": "Start MCP server with demo tools.",
+              "usage": "azd demo mcp start"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "d955061b14ca788a398f5e89e66f0a22f431d0660ff14c11264301856ea3e0db"
+              },
+              "entryPoint": "microsoft-azd-demo-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-demo_0.4.0/microsoft-azd-demo-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "61b088773af2d2690f2429235894c749ec0db22dfc79cab93f5b768457805d3c"
+              },
+              "entryPoint": "microsoft-azd-demo-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-demo_0.4.0/microsoft-azd-demo-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "d929b42b5e3eeff51e6b59775302a4625cd880b9a0fc6c30daae9eb964b41cd8"
+              },
+              "entryPoint": "microsoft-azd-demo-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-demo_0.4.0/microsoft-azd-demo-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "d6b4eae71c96bf7b73e9669c918918b738659d426315880c265fd5cef2ebbb28"
+              },
+              "entryPoint": "microsoft-azd-demo-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-demo_0.4.0/microsoft-azd-demo-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "dd52a10207ca1e401494257e0a435c1844a72fe052af1bbafec8cbaadc1302e2"
+              },
+              "entryPoint": "microsoft-azd-demo-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-demo_0.4.0/microsoft-azd-demo-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "4dc82efddac26fb79b011c2d22ffc05be49470f8170e56fdeee686f2266bb34d"
+              },
+              "entryPoint": "microsoft-azd-demo-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-demo_0.4.0/microsoft-azd-demo-windows-arm64.zip"
+            }
+          }
         }
       ]
     },
@@ -510,6 +595,184 @@
               "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.6.0/microsoft-azd-extensions-windows-arm64.zip"
             }
           }
+        },
+        {
+          "version": "0.7.0",
+          "capabilities": [
+            "custom-commands"
+          ],
+          "usage": "azd x \u003ccommand\u003e [options]",
+          "examples": [
+            {
+              "name": "init",
+              "description": "Initialize a new AZD extension project.",
+              "usage": "azd x init"
+            },
+            {
+              "name": "build",
+              "description": "Build the AZD extension project.",
+              "usage": "azd x build"
+            },
+            {
+              "name": "pack",
+              "description": "Package the AZD extension project into a distributable format and add to local registry.",
+              "usage": "azd x pack"
+            },
+            {
+              "name": "publish",
+              "description": "Publish the AZD extension project to an extension source.",
+              "usage": "azd x publish"
+            },
+            {
+              "name": "release",
+              "description": "Create an new release of the AZD extension project to a Github repository.",
+              "usage": "azd x release"
+            },
+            {
+              "name": "watch",
+              "description": "Watch for changes in the extension project and automatically rebuild and reload the extension.",
+              "usage": "azd x watch"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "70de5bed03991d9bc7905e8b60665fec423c9b81cb6e4527cab720f52c229560"
+              },
+              "entryPoint": "microsoft-azd-extensions-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.7.0/microsoft-azd-extensions-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "108c2661e36da5bebf5ab98ea0c0bbd2aa1cdd35703e321f22ea9b0d9cdcfa18"
+              },
+              "entryPoint": "microsoft-azd-extensions-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.7.0/microsoft-azd-extensions-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "d3524de84401cedecfe42ea8909ea0e4d5ff3363c36d8a6a89dfcf7a15580baa"
+              },
+              "entryPoint": "microsoft-azd-extensions-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.7.0/microsoft-azd-extensions-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "9f871c80875f591a188c8e8ad05bae01a9ceea3fdb6ee3c04abaaeb22868d9b3"
+              },
+              "entryPoint": "microsoft-azd-extensions-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.7.0/microsoft-azd-extensions-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "1a0c672841a9ed839c69655e467144bc3244169a00f2d70e2decdbe58e2d34fb"
+              },
+              "entryPoint": "microsoft-azd-extensions-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.7.0/microsoft-azd-extensions-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "38693fd9ecb02847195f2c23e3ea9c3aa12ab84192b64999cd0d3e0c299aeadb"
+              },
+              "entryPoint": "microsoft-azd-extensions-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.7.0/microsoft-azd-extensions-windows-arm64.zip"
+            }
+          }
+        },
+        {
+          "version": "0.7.1",
+          "capabilities": [
+            "custom-commands"
+          ],
+          "usage": "azd x \u003ccommand\u003e [options]",
+          "examples": [
+            {
+              "name": "init",
+              "description": "Initialize a new AZD extension project.",
+              "usage": "azd x init"
+            },
+            {
+              "name": "build",
+              "description": "Build the AZD extension project.",
+              "usage": "azd x build"
+            },
+            {
+              "name": "pack",
+              "description": "Package the AZD extension project into a distributable format and add to local registry.",
+              "usage": "azd x pack"
+            },
+            {
+              "name": "publish",
+              "description": "Publish the AZD extension project to an extension source.",
+              "usage": "azd x publish"
+            },
+            {
+              "name": "release",
+              "description": "Create an new release of the AZD extension project to a Github repository.",
+              "usage": "azd x release"
+            },
+            {
+              "name": "watch",
+              "description": "Watch for changes in the extension project and automatically rebuild and reload the extension.",
+              "usage": "azd x watch"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "d301b37411b82d7d58a0ef40a41b8a941624f93e075697328f24e09177c8ce60"
+              },
+              "entryPoint": "microsoft-azd-extensions-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.7.1/microsoft-azd-extensions-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "289ef95281803ce270c59d7d204a1e0582ec7b90200cee6c351e1a124ab19f8b"
+              },
+              "entryPoint": "microsoft-azd-extensions-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.7.1/microsoft-azd-extensions-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "59d71e51c7a0c1776d4c43f2a98c7728440cfe76a392849bdb8f9da914018a04"
+              },
+              "entryPoint": "microsoft-azd-extensions-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.7.1/microsoft-azd-extensions-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "6d91fa6a478441a1ba8f852eb7aa333ef8c3f369be609e0bab56984c6da5db84"
+              },
+              "entryPoint": "microsoft-azd-extensions-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.7.1/microsoft-azd-extensions-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "20585d0509ef2bf6b6b1987344f1d386e3a3093f0c3faf52ab3870c30fc511ef"
+              },
+              "entryPoint": "microsoft-azd-extensions-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.7.1/microsoft-azd-extensions-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "ee33c49e08d37d367d0fca05ecc86236b6a4473e5283bdfb97c7d42b0c75bb09"
+              },
+              "entryPoint": "microsoft-azd-extensions-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.7.1/microsoft-azd-extensions-windows-arm64.zip"
+            }
+          }
         }
       ]
     },
@@ -632,6 +895,64 @@
               },
               "entryPoint": "azure-coding-agent-windows-arm64.exe",
               "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-coding-agent_0.5.1/azure-coding-agent-windows-arm64.zip"
+            }
+          }
+        },
+        {
+          "version": "0.5.2",
+          "capabilities": [
+            "custom-commands"
+          ],
+          "usage": "azd coding-agent \u003ccommand\u003e [options]",
+          "examples": null,
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "8eacae357e2863775df67cbc5de9016767ccc5a557bf6c581a10d8b1a561ae68"
+              },
+              "entryPoint": "azure-coding-agent-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-coding-agent_0.5.2/azure-coding-agent-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "8f941c3605f4439a48ffe142d075af80918e3539f207b91fa9a5bd5ef6597167"
+              },
+              "entryPoint": "azure-coding-agent-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-coding-agent_0.5.2/azure-coding-agent-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "7e27d8d1a424027fdb8b5540a2aef9383fb09deff14339c15cf426a0c2330e1e"
+              },
+              "entryPoint": "azure-coding-agent-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-coding-agent_0.5.2/azure-coding-agent-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "8e4cd57e8da4226627f4d8fbb57985810257ff7e620fb4d09eeedb092d9752b3"
+              },
+              "entryPoint": "azure-coding-agent-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-coding-agent_0.5.2/azure-coding-agent-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "3caf51c197cce0ef20ecb82c40208938f2cacc757fd0b32d2dff74bdcd61f45e"
+              },
+              "entryPoint": "azure-coding-agent-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-coding-agent_0.5.2/azure-coding-agent-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "cefd5193d58840b02f4d66093a13be33b271622953c2a455fc153e6660ee9932"
+              },
+              "entryPoint": "azure-coding-agent-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-coding-agent_0.5.2/azure-coding-agent-windows-arm64.zip"
             }
           }
         }
@@ -936,6 +1257,228 @@
               },
               "entryPoint": "azure-ai-agents-windows-arm64.exe",
               "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.1-preview/azure-ai-agents-windows-arm64.zip"
+            }
+          }
+        },
+        {
+          "version": "0.1.2-preview",
+          "capabilities": [
+            "custom-commands",
+            "lifecycle-events",
+            "mcp-server",
+            "service-target-provider"
+          ],
+          "providers": [
+            {
+              "name": "azure.ai.agent",
+              "type": "service-target",
+              "description": "Deploys agents to the Foundry Agent Service"
+            }
+          ],
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
+          "examples": [
+            {
+              "name": "init",
+              "description": "Initialize a new AI agent project.",
+              "usage": "azd ai agent init"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "12293a86ee951d99bc0903e0436573f5da853eeb0f21d894f0fb5c5de670cfdb"
+              },
+              "entryPoint": "azure-ai-agents-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.2-preview/azure-ai-agents-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "81449a1df145676cb20a002a3496177c823873deae31d4ca51edd9ff691d08b6"
+              },
+              "entryPoint": "azure-ai-agents-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.2-preview/azure-ai-agents-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "790de2fa0cd241e2daeb487483cbe5c9b1d2f5bb4a904daa753b5a03ac20b632"
+              },
+              "entryPoint": "azure-ai-agents-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.2-preview/azure-ai-agents-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "d7943130b400a89eac4f1622d34fd1fff10821a14507ea8a0f3a37aaf15697e2"
+              },
+              "entryPoint": "azure-ai-agents-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.2-preview/azure-ai-agents-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "20352ae5d05604ad4ebac5c42b9d4f049afc5f921759a4534967ba672c78448e"
+              },
+              "entryPoint": "azure-ai-agents-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.2-preview/azure-ai-agents-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "06e7865cfed0f7e4b4dad9bde06f4763210b9afb67012676455b50b0c9629432"
+              },
+              "entryPoint": "azure-ai-agents-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.2-preview/azure-ai-agents-windows-arm64.zip"
+            }
+          }
+        },
+        {
+          "version": "0.1.3-preview",
+          "capabilities": [
+            "custom-commands",
+            "lifecycle-events",
+            "mcp-server",
+            "service-target-provider"
+          ],
+          "providers": [
+            {
+              "name": "azure.ai.agent",
+              "type": "service-target",
+              "description": "Deploys agents to the Foundry Agent Service"
+            }
+          ],
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
+          "examples": [
+            {
+              "name": "init",
+              "description": "Initialize a new AI agent project.",
+              "usage": "azd ai agent init"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "2b5a065bf221bf1df09c1db384daaecf1855156e6f0690fb3671bef4c026104c"
+              },
+              "entryPoint": "azure-ai-agents-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.3-preview/azure-ai-agents-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "b6df8f0aada9f1f942ca144301f915ab6a47dc5b0c9588a6f2eb5fa5df088e20"
+              },
+              "entryPoint": "azure-ai-agents-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.3-preview/azure-ai-agents-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "ae1e4b6a9db29b878bdedbecb3fef542e10c166d8096ac4d8db10acb225f2821"
+              },
+              "entryPoint": "azure-ai-agents-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.3-preview/azure-ai-agents-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "e0b530151be2e212eae528fa05e9c18002d08f6aabec0ba599c3773e5ae0e808"
+              },
+              "entryPoint": "azure-ai-agents-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.3-preview/azure-ai-agents-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "88521aacfa86ef7c2291760c713a7c1ec4ad215aad3880949ed9c75cfaf3c97e"
+              },
+              "entryPoint": "azure-ai-agents-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.3-preview/azure-ai-agents-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "1faa940eb4bbe184a638d39ee9edfba645f0294b256c955a6b296874d41a04c6"
+              },
+              "entryPoint": "azure-ai-agents-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.3-preview/azure-ai-agents-windows-arm64.zip"
+            }
+          }
+        },
+        {
+          "version": "0.1.4-preview",
+          "capabilities": [
+            "custom-commands",
+            "lifecycle-events",
+            "mcp-server",
+            "service-target-provider"
+          ],
+          "providers": [
+            {
+              "name": "azure.ai.agent",
+              "type": "service-target",
+              "description": "Deploys agents to the Foundry Agent Service"
+            }
+          ],
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
+          "examples": [
+            {
+              "name": "init",
+              "description": "Initialize a new AI agent project.",
+              "usage": "azd ai agent init"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "7e6254a22f58c428c433fc763668eba1117d071f48e246201f1e558c376efefe"
+              },
+              "entryPoint": "azure-ai-agents-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.4-preview/azure-ai-agents-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "4b851f18e2a6da956fbc0ff963d07cea6a82010c89204abe3a5ce06eee15ff07"
+              },
+              "entryPoint": "azure-ai-agents-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.4-preview/azure-ai-agents-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "bf780cd9490a8dbc5ef834193e4108bc406b7a9342c944fb076d8aecbf8c7dec"
+              },
+              "entryPoint": "azure-ai-agents-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.4-preview/azure-ai-agents-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "cdb9674d53eee5517fcfc4514cc1cc0ec8116ec8699950afedf4203d1687c65b"
+              },
+              "entryPoint": "azure-ai-agents-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.4-preview/azure-ai-agents-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "fb44e21b0211f3ec0200ca4ae9dd972b49f112e190547d09527d92c9d6756ae6"
+              },
+              "entryPoint": "azure-ai-agents-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.4-preview/azure-ai-agents-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "ed513d182eaee078def74fe23f3f2fa3a04acf90a59f22165cd5628b077db8ab"
+              },
+              "entryPoint": "azure-ai-agents-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.4-preview/azure-ai-agents-windows-arm64.zip"
             }
           }
         }

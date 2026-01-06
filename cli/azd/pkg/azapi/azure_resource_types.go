@@ -17,7 +17,6 @@ const (
 	AzureResourceTypeEventHubsNamespace        AzureResourceType = "Microsoft.EventHub/namespaces"
 	AzureResourceTypeContainerApp              AzureResourceType = "Microsoft.App/containerApps"
 	AzureResourceTypeContainerAppJob           AzureResourceType = "Microsoft.App/jobs"
-	AzureResourceTypeSpringApp                 AzureResourceType = "Microsoft.AppPlatform/Spring"
 	AzureResourceTypeContainerAppEnvironment   AzureResourceType = "Microsoft.App/managedEnvironments"
 	AzureResourceTypeDeployment                AzureResourceType = "Microsoft.Resources/deployments"
 	AzureResourceTypeKeyVault                  AzureResourceType = "Microsoft.KeyVault/vaults"
@@ -50,8 +49,13 @@ const (
 	AzureResourceTypeRoleAssignment            AzureResourceType = "Microsoft.Authorization/roleAssignments"
 
 	//nolint:lll
-	AzureResourceTypeMachineLearningEndpoint           AzureResourceType = "Microsoft.MachineLearningServices/workspaces/onlineEndpoints"
+	AzureResourceTypeMachineLearningEndpoint AzureResourceType = "Microsoft.MachineLearningServices/workspaces/onlineEndpoints"
+	//nolint:lll
 	AzureResourceTypeCognitiveServiceAccountDeployment AzureResourceType = "Microsoft.CognitiveServices/accounts/deployments"
+	//nolint:lll
+	AzureResourceTypeCognitiveServiceAccountProject AzureResourceType = "Microsoft.CognitiveServices/accounts/projects"
+	//nolint:lll
+	AzureResourceTypeCognitiveServiceAccountCapabilityHost AzureResourceType = "Microsoft.CognitiveServices/accounts/capabilityHosts"
 )
 
 // GetResourceTypeDisplayName retrieves the display name for the given resource type.
@@ -123,12 +127,14 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Azure AI Services"
 	case AzureResourceTypeCognitiveServiceAccountDeployment:
 		return "Azure AI Services Model Deployment"
+	case AzureResourceTypeCognitiveServiceAccountProject:
+		return "Foundry project"
+	case AzureResourceTypeCognitiveServiceAccountCapabilityHost:
+		return "Foundry capability host"
 	case AzureResourceTypeSearchService:
 		return "Search service"
 	case AzureResourceTypeVideoIndexer:
 		return "Video Indexer"
-	case AzureResourceTypeSpringApp:
-		return "Azure Spring Apps"
 	case AzureResourceTypePrivateEndpoint:
 		return "Private Endpoint"
 	case AzureResourceTypeDevCenter:

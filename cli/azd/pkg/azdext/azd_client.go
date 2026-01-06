@@ -123,7 +123,7 @@ func (c *AzdClient) Deployment() DeploymentServiceClient {
 	return c.deploymentClient
 }
 
-// Deployment returns the deployment service client.
+// Events returns the event service client.
 func (c *AzdClient) Events() EventServiceClient {
 	if c.eventsClient == nil {
 		c.eventsClient = NewEventServiceClient(c.connection)

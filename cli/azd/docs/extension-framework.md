@@ -51,6 +51,8 @@ If you previously removed it and want to add it back:
 azd extension source add -n azd -t url -l "https://aka.ms/azd/extensions/registry"
 ```
 
+> **Note:** When the `registry.json` file is modified, CI automatically runs snapshot tests to ensure extension commands are properly documented in CLI help output and VS Code IntelliSense. See [Snapshot Testing for Extensions](#snapshot-testing-for-extensions) for details.
+
 #### Development Registry
 
 > [!CAUTION]
@@ -331,6 +333,34 @@ The build process automatically creates binaries for multiple platforms and arch
 
 > [!NOTE]
 > Build times may vary depending on your hardware and extension complexity.
+
+### Distributed Tracing
+
+`azd` uses OpenTelemetry and W3C Trace Context for distributed tracing. `azd` sets `TRACEPARENT` in the environment when it launches the extension process.
+
+Use `azdext.NewContext()` to hydrate the root context with trace context:
+
+```go
+func main() {
+  ctx := azdext.NewContext()
+  rootCmd := cmd.NewRootCommand()
+  if err := rootCmd.ExecuteContext(ctx); err != nil {
+    // Handle error
+  }
+}
+```
+
+To correlate Azure SDK calls with the parent trace, add the correlation policy to your client options:
+
+```go
+import "github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+
+clientOptions := &policy.ClientOptions{
+    PerCallPolicies: []policy.Policy{
+        azsdk.NewMsCorrelationPolicy(),
+    },
+}
+```
 
 ### Developer Extension
 
@@ -619,6 +649,9 @@ Extensions can subscribe to project and service lifecycle events (both pre and p
 Your extension _**must**_ include a `listen` command to subscribe to these events.
 `azd` will automatically invoke your extension during supported commands to establish bi-directional communication.
 
+> [!NOTE]
+> Provision lifecycle events (`preprovision`, `postprovision`) are **not** fired when running `azd provision --preview`.
+
 ##### Service Target Providers (`service-target-provider`)
 
 > Extensions must declare the `service-target-provider` capability in their `extension.yaml` file.
@@ -661,6 +694,20 @@ Future ideas include:
   - Source control providers (e.g., GitLab)
   - Pipeline providers (e.g., TeamCity)
 ---
+
+### Snapshot Testing for Extensions
+
+Extension commands are included in CLI snapshot tests (`TestUsage` and `TestFigSpec`) to ensure they appear in help output and VS Code IntelliSense. Tests run in an **isolated environment** (temporary `AZD_CONFIG_DIR`) that installs all extensions from `registry.json`, generates snapshots, then cleans up.
+
+Update snapshots when modifying `registry.json` or extension commands:
+
+```bash
+# From cli/azd directory
+UPDATE_SNAPSHOTS=true go test ./cmd -run TestUsage
+UPDATE_SNAPSHOTS=true go test ./cmd -run TestFigSpec
+```
+
+The [ext-registry-ci workflow](/.github/workflows/ext-registry-ci.yml) runs these tests automatically when `registry.json` is modified in a PR.
 
 ### Developer Workflow
 
@@ -1879,7 +1926,7 @@ func (r *RustFrameworkProvider) Package(ctx context.Context, serviceConfig *azde
 
 // Register the framework provider
 func main() {
-    ctx := azdext.WithAccessToken(context.Background())
+    ctx := azdext.WithAccessToken(azdext.NewContext())
     azdClient, err := azdext.NewAzdClient()
     if err != nil {
         log.Fatal(err)
@@ -1995,7 +2042,7 @@ func (v *VMServiceTargetProvider) Endpoints(ctx context.Context, serviceConfig *
 
 // Register the service target provider
 func main() {
-    ctx := azdext.WithAccessToken(context.Background())
+    ctx := azdext.WithAccessToken(azdext.NewContext())
     azdClient, err := azdext.NewAzdClient()
     if err != nil {
         log.Fatal(err)

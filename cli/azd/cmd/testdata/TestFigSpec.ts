@@ -277,6 +277,10 @@ const completionSpec: Fig.Spec = {
 					name: ['logout'],
 					description: 'Log out of Azure.',
 				},
+				{
+					name: ['status'],
+					description: 'Show the current authentication status.',
+				},
 			],
 		},
 		{
@@ -1604,6 +1608,10 @@ const completionSpec: Fig.Spec = {
 						{
 							name: ['logout'],
 							description: 'Log out of Azure.',
+						},
+						{
+							name: ['status'],
+							description: 'Show the current authentication status.',
 						},
 					],
 				},

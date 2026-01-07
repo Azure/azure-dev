@@ -1410,15 +1410,15 @@ func (m *Manager) LogInDetails(ctx context.Context) (*LogInDetails, error) {
 	return nil, ErrNoCurrentUser
 }
 
-type AuthMode string
+type AuthSource string
 
 const (
-	AzdBuiltIn      AuthMode = "azd built in"
-	AzDelegated     AuthMode = "delegated to az cli"
-	ExternalRequest AuthMode = "external token request"
+	AzdBuiltIn      AuthSource = "azd built in"
+	AzDelegated     AuthSource = "az cli"
+	ExternalRequest AuthSource = "external endpoint"
 )
 
-func (m *Manager) Mode() (AuthMode, error) {
+func (m *Manager) Mode() (AuthSource, error) {
 	// Check external
 	if m.UseExternalAuth() {
 		return ExternalRequest, nil
@@ -1449,7 +1449,7 @@ func (m *Manager) SetBuiltInAuthMode() error {
 
 	if currentMode == ExternalRequest {
 		return fmt.Errorf("cannot change auth mode when external token mode is set. See %s",
-			"https://github.com/Azure/azure-dev/blob/main/cli/azd/docs/external-authentication.md")
+			"https://aka.ms/azd-auth")
 	}
 
 	// protecting against unexpected modes. There should be only azDelegated left.

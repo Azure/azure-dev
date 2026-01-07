@@ -295,14 +295,15 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if loginMode != auth.AzdBuiltIn && !la.flags.onlyCheckStatus {
 		la.console.MessageUxItem(ctx, &ux.WarningAltMessage{
 			Message: fmt.Sprintf(
-				"Azd is not using the built-in authentication mode, but rather '%s'", loginMode),
+				"azd is not using the built-in authentication mode, but rather '%s'", loginMode),
 		})
 		la.console.Message(ctx, "If you want to use 'azd auth login', you need to disable the current auth mode.")
 		response, err := la.console.Confirm(ctx, input.ConsoleOptions{
 			Message:      "Do you want to switch back to azd built-in authentication?",
 			DefaultValue: false,
-			Help: "Azd supports multiple authentication modes, including Azure CLI authentication and External " +
-				"request for Auth. Switching back to azd built-in authentication will try to disable the current mode.",
+			Help: "azd supports multiple authentication modes, including " + string(auth.AzDelegated) + " and " +
+				string(auth.ExternalRequest) + " for Auth." +
+				" Switching back to azd built-in authentication will try to disable the current mode.",
 		})
 		if err != nil {
 			return nil, err

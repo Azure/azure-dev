@@ -14,7 +14,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 
 	"azure.ai.finetune/internal/services"
-	JobWrapper "azure.ai.finetune/internal/tools"
 	"azure.ai.finetune/internal/utils"
 	"azure.ai.finetune/pkg/models"
 )
@@ -31,30 +30,10 @@ func newOperationCommand() *cobra.Command {
 	cmd.AddCommand(newOperationSubmitCommand())
 	cmd.AddCommand(newOperationShowCommand())
 	cmd.AddCommand(newOperationListCommand())
-	cmd.AddCommand(newOperationActionCommand())
-	cmd.AddCommand(newOperationDeployModelCommand())
+	// cmd.AddCommand(newOperationActionCommand())
+	// cmd.AddCommand(newOperationDeployModelCommand())
 
 	return cmd
-}
-
-// getStatusSymbolFromString returns a symbol representation for job status
-func getStatusSymbolFromString(status string) string {
-	switch status {
-	case "pending":
-		return "⌛"
-	case "queued":
-		return "📚"
-	case "running":
-		return "🔄"
-	case "succeeded":
-		return "✅"
-	case "failed":
-		return "💥"
-	case "cancelled":
-		return "❌"
-	default:
-		return "❓"
-	}
 }
 
 // formatFineTunedModel returns the model name or "NA" if blank
@@ -354,165 +333,5 @@ func newOperationListCommand() *cobra.Command {
 
 	cmd.Flags().IntVarP(&limit, "top", "t", 50, "Number of fine-tuning jobs to list")
 	cmd.Flags().StringVarP(&after, "after", "a", "", "Cursor for pagination")
-	return cmd
-}
-
-func newOperationActionCommand() *cobra.Command {
-	var jobID string
-	var action string
-
-	cmd := &cobra.Command{
-		Use:   "action",
-		Short: "Perform an action on a fine-tuning job (pause, resume, cancel)",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := azdext.WithAccessToken(cmd.Context())
-			azdClient, err := azdext.NewAzdClient()
-			if err != nil {
-				return fmt.Errorf("failed to create azd client: %w", err)
-			}
-			defer azdClient.Close()
-
-			// Validate job ID is provided
-			if jobID == "" {
-				return fmt.Errorf("job-id is required")
-			}
-
-			// Validate action is provided and valid
-			if action == "" {
-				return fmt.Errorf("action is required (pause, resume, or cancel)")
-			}
-
-			action = strings.ToLower(action)
-			if action != "pause" && action != "resume" && action != "cancel" {
-				return fmt.Errorf("invalid action '%s'. Allowed values: pause, resume, cancel", action)
-			}
-
-			var job *JobWrapper.JobContract
-			var err2 error
-
-			// Execute the requested action
-			switch action {
-			case "pause":
-				job, err2 = JobWrapper.PauseJob(ctx, azdClient, jobID)
-			case "resume":
-				job, err2 = JobWrapper.ResumeJob(ctx, azdClient, jobID)
-			case "cancel":
-				job, err2 = JobWrapper.CancelJob(ctx, azdClient, jobID)
-			}
-
-			if err2 != nil {
-				return err2
-			}
-
-			// Print success message
-			fmt.Println()
-			fmt.Println(strings.Repeat("=", 120))
-			color.Green(fmt.Sprintf("\nSuccessfully %sd fine-tuning Job!\n", action))
-			fmt.Printf("Job ID:     %s\n", job.Id)
-			fmt.Printf("Model:      %s\n", job.Model)
-			fmt.Printf("Status:     %s %s\n", getStatusSymbolFromString(job.Status), job.Status)
-			fmt.Printf("Created:    %s\n", job.CreatedAt)
-			if job.FineTunedModel != "" {
-				fmt.Printf("Fine-tuned: %s\n", job.FineTunedModel)
-			}
-			fmt.Println(strings.Repeat("=", 120))
-
-			return nil
-		},
-	}
-
-	cmd.Flags().StringVarP(&jobID, "job-id", "i", "", "Fine-tuning job ID")
-	cmd.Flags().StringVarP(&action, "action", "a", "", "Action to perform: pause, resume, or cancel")
-	cmd.MarkFlagRequired("job-id")
-	cmd.MarkFlagRequired("action")
-
-	return cmd
-}
-
-func newOperationDeployModelCommand() *cobra.Command {
-	var jobID string
-	var deploymentName string
-	var modelFormat string
-	var sku string
-	var version string
-	var capacity int32
-
-	cmd := &cobra.Command{
-		Use:   "deploy",
-		Short: "Deploy a fine-tuned model to Azure Cognitive Services",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := azdext.WithAccessToken(cmd.Context())
-			azdClient, err := azdext.NewAzdClient()
-			if err != nil {
-				return fmt.Errorf("failed to create azd client: %w", err)
-			}
-			defer azdClient.Close()
-
-			// Validate required parameters
-			if jobID == "" {
-				return fmt.Errorf("job-id is required")
-			}
-			if deploymentName == "" {
-				return fmt.Errorf("deployment-name is required")
-			}
-
-			// Get environment values
-			envValueMap := make(map[string]string)
-			if envResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{}); err == nil {
-				env := envResponse.Environment
-				envValues, err := azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
-					Name: env.Name,
-				})
-				if err != nil {
-					return fmt.Errorf("failed to get environment values: %w", err)
-				}
-
-				for _, value := range envValues.KeyValues {
-					envValueMap[value.Key] = value.Value
-				}
-			}
-
-			// Create deployment configuration
-			deployConfig := JobWrapper.DeploymentConfig{
-				JobID:             jobID,
-				DeploymentName:    deploymentName,
-				ModelFormat:       modelFormat,
-				SKU:               sku,
-				Version:           version,
-				Capacity:          capacity,
-				SubscriptionID:    envValueMap["AZURE_SUBSCRIPTION_ID"],
-				ResourceGroup:     envValueMap["AZURE_RESOURCE_GROUP_NAME"],
-				AccountName:       envValueMap["AZURE_ACCOUNT_NAME"],
-				TenantID:          envValueMap["AZURE_TENANT_ID"],
-				WaitForCompletion: true,
-			}
-
-			// Deploy the model using the wrapper
-			result, err := JobWrapper.DeployModel(ctx, azdClient, deployConfig)
-			if err != nil {
-				return err
-			}
-
-			// Print success message
-			fmt.Println(strings.Repeat("=", 120))
-			color.Green("\nSuccessfully deployed fine-tuned model!\n")
-			fmt.Printf("Deployment Name:  %s\n", result.DeploymentName)
-			fmt.Printf("Status:           %s\n", result.Status)
-			fmt.Printf("Message:          %s\n", result.Message)
-			fmt.Println(strings.Repeat("=", 120))
-
-			return nil
-		},
-	}
-
-	cmd.Flags().StringVarP(&jobID, "job-id", "i", "", "Fine-tuning job ID")
-	cmd.Flags().StringVarP(&deploymentName, "deployment-name", "d", "", "Deployment name")
-	cmd.Flags().StringVarP(&modelFormat, "model-format", "m", "OpenAI", "Model format")
-	cmd.Flags().StringVarP(&sku, "sku", "s", "Standard", "SKU for deployment")
-	cmd.Flags().StringVarP(&version, "version", "v", "1", "Model version")
-	cmd.Flags().Int32VarP(&capacity, "capacity", "c", 1, "Capacity for deployment")
-	cmd.MarkFlagRequired("job-id")
-	cmd.MarkFlagRequired("deployment-name")
-
 	return cmd
 }

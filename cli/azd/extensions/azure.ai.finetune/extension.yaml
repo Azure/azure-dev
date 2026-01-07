@@ -3,12 +3,10 @@ namespace: ai.finetuning
 displayName: Foundry Fine Tuning (Preview)
 description: Extension for Foundry Fine Tuning. (Preview)
 usage: azd ai finetuning <command> [options]
-version: 0.0.7-preview
+version: 0.0.8-preview
 language: go
 capabilities:
     - custom-commands
-    - lifecycle-events
-    - service-target-provider
 providers:
   - name: azure.ai.finetune
     type: service-target

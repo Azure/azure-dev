@@ -43,7 +43,7 @@ func NewRootCommand() *cobra.Command {
 		"accepts the default value instead of prompting, or fails if there is no default",
 	)
 
-	rootCmd.AddCommand(newListenCommand())
+	// rootCmd.AddCommand(newListenCommand())
 	rootCmd.AddCommand(newVersionCommand())
 	rootCmd.AddCommand(newInitCommand(rootFlags))
 	rootCmd.AddCommand(newOperationCommand())

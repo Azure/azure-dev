@@ -385,6 +385,18 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 			log.Panic("failed to resolve console for unknown flags error:", err)
 		}
 
+		// Check for deprecated commands and provide helpful redirection messages
+		if unknownCommand == "login" {
+			console.Message(ctx, "Error: The 'azd login' command has been removed.")
+			console.Message(ctx, "Please use 'azd auth login' instead.")
+			return fmt.Errorf("unknown command 'login'")
+		}
+		if unknownCommand == "logout" {
+			console.Message(ctx, "Error: The 'azd logout' command has been removed.")
+			console.Message(ctx, "Please use 'azd auth logout' instead.")
+			return fmt.Errorf("unknown command 'logout'")
+		}
+
 		// If unknown flags were found before a non-built-in command, return an error with helpful guidance
 		if len(unknownFlags) > 0 {
 			flagsList := strings.Join(unknownFlags, ", ")

@@ -198,16 +198,3 @@ func TestMyFunction(t *testing.T) {
 When asked to prepare a release changelog, use the appropriate custom agent instructions:
 - `.github/agents/changelog-core.agent.md` for core CLI releases
 - `.github/agents/changelog-extension.agent.md` for extension releases
-
-## Extensions Development
-
-### Building Extensions
-Extensions are located in `extensions/` directory and use the extension framework:
-```bash
-# Build and install extension (example using demo extension)
-cd extensions/microsoft.azd.demo
-azd x build
-
-# Test extension (using extension's namespace from extension.yaml)
-azd demo <command>
-```

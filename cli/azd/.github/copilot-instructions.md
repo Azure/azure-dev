@@ -96,19 +96,6 @@ All Go files must include Microsoft copyright header:
 // Licensed under the MIT License.
 ```
 
-## Extensions Development
-
-### Building Extensions
-Extensions are located in `extensions/` directory and use the extension framework:
-```bash
-# Build and install extension (example using demo extension)
-cd extensions/microsoft.azd.demo
-azd x build
-
-# Test extension (using extension's namespace from extension.yaml)
-azd demo <command>
-```
-
 ## MCP Tools Development
 
 ### Tool Pattern

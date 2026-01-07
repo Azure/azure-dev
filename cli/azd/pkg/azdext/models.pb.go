@@ -677,16 +677,15 @@ func (x *ResourceExtended) GetKind() string {
 
 // ProjectConfig message definition
 type ProjectConfig struct {
-	state                protoimpl.MessageState    `protogen:"open.v1"`
-	Name                 string                    `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	ResourceGroupName    string                    `protobuf:"bytes,2,opt,name=resource_group_name,json=resourceGroupName,proto3" json:"resource_group_name,omitempty"`
-	Path                 string                    `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`
-	Metadata             *ProjectMetadata          `protobuf:"bytes,4,opt,name=metadata,proto3" json:"metadata,omitempty"`
-	Services             map[string]*ServiceConfig `protobuf:"bytes,5,rep,name=services,proto3" json:"services,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	Infra                *InfraOptions             `protobuf:"bytes,6,opt,name=infra,proto3" json:"infra,omitempty"`
-	AdditionalProperties *structpb.Struct          `protobuf:"bytes,7,opt,name=additional_properties,json=additionalProperties,proto3" json:"additional_properties,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	state             protoimpl.MessageState    `protogen:"open.v1"`
+	Name              string                    `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	ResourceGroupName string                    `protobuf:"bytes,2,opt,name=resource_group_name,json=resourceGroupName,proto3" json:"resource_group_name,omitempty"`
+	Path              string                    `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`
+	Metadata          *ProjectMetadata          `protobuf:"bytes,4,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	Services          map[string]*ServiceConfig `protobuf:"bytes,5,rep,name=services,proto3" json:"services,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Infra             *InfraOptions             `protobuf:"bytes,6,opt,name=infra,proto3" json:"infra,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *ProjectConfig) Reset() {
@@ -757,13 +756,6 @@ func (x *ProjectConfig) GetServices() map[string]*ServiceConfig {
 func (x *ProjectConfig) GetInfra() *InfraOptions {
 	if x != nil {
 		return x.Infra
-	}
-	return nil
-}
-
-func (x *ProjectConfig) GetAdditionalProperties() *structpb.Struct {
-	if x != nil {
-		return x.AdditionalProperties
 	}
 	return nil
 }
@@ -860,21 +852,20 @@ func (x *ProjectMetadata) GetTemplate() string {
 
 // ServiceConfig message definition
 type ServiceConfig struct {
-	state                protoimpl.MessageState `protogen:"open.v1"`
-	Name                 string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	ResourceGroupName    string                 `protobuf:"bytes,2,opt,name=resource_group_name,json=resourceGroupName,proto3" json:"resource_group_name,omitempty"`
-	ResourceName         string                 `protobuf:"bytes,3,opt,name=resource_name,json=resourceName,proto3" json:"resource_name,omitempty"`
-	ApiVersion           string                 `protobuf:"bytes,4,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
-	RelativePath         string                 `protobuf:"bytes,5,opt,name=relative_path,json=relativePath,proto3" json:"relative_path,omitempty"`
-	Host                 string                 `protobuf:"bytes,6,opt,name=host,proto3" json:"host,omitempty"`
-	Language             string                 `protobuf:"bytes,7,opt,name=language,proto3" json:"language,omitempty"`
-	OutputPath           string                 `protobuf:"bytes,8,opt,name=output_path,json=outputPath,proto3" json:"output_path,omitempty"`
-	Image                string                 `protobuf:"bytes,9,opt,name=image,proto3" json:"image,omitempty"`
-	Docker               *DockerProjectOptions  `protobuf:"bytes,10,opt,name=docker,proto3" json:"docker,omitempty"`
-	Config               *structpb.Struct       `protobuf:"bytes,11,opt,name=config,proto3" json:"config,omitempty"`
-	AdditionalProperties *structpb.Struct       `protobuf:"bytes,12,opt,name=additional_properties,json=additionalProperties,proto3" json:"additional_properties,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Name              string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	ResourceGroupName string                 `protobuf:"bytes,2,opt,name=resource_group_name,json=resourceGroupName,proto3" json:"resource_group_name,omitempty"`
+	ResourceName      string                 `protobuf:"bytes,3,opt,name=resource_name,json=resourceName,proto3" json:"resource_name,omitempty"`
+	ApiVersion        string                 `protobuf:"bytes,4,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
+	RelativePath      string                 `protobuf:"bytes,5,opt,name=relative_path,json=relativePath,proto3" json:"relative_path,omitempty"`
+	Host              string                 `protobuf:"bytes,6,opt,name=host,proto3" json:"host,omitempty"`
+	Language          string                 `protobuf:"bytes,7,opt,name=language,proto3" json:"language,omitempty"`
+	OutputPath        string                 `protobuf:"bytes,8,opt,name=output_path,json=outputPath,proto3" json:"output_path,omitempty"`
+	Image             string                 `protobuf:"bytes,9,opt,name=image,proto3" json:"image,omitempty"`
+	Docker            *DockerProjectOptions  `protobuf:"bytes,10,opt,name=docker,proto3" json:"docker,omitempty"`
+	Config            *structpb.Struct       `protobuf:"bytes,11,opt,name=config,proto3" json:"config,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *ServiceConfig) Reset() {
@@ -980,13 +971,6 @@ func (x *ServiceConfig) GetDocker() *DockerProjectOptions {
 func (x *ServiceConfig) GetConfig() *structpb.Struct {
 	if x != nil {
 		return x.Config
-	}
-	return nil
-}
-
-func (x *ServiceConfig) GetAdditionalProperties() *structpb.Struct {
-	if x != nil {
-		return x.AdditionalProperties
 	}
 	return nil
 }
@@ -1393,22 +1377,21 @@ const file_models_proto_rawDesc = "" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
 	"\x04type\x18\x03 \x01(\tR\x04type\x12\x1a\n" +
 	"\blocation\x18\x04 \x01(\tR\blocation\x12\x12\n" +
-	"\x04kind\x18\x05 \x01(\tR\x04kind\"\xab\x03\n" +
+	"\x04kind\x18\x05 \x01(\tR\x04kind\"\xdd\x02\n" +
 	"\rProjectConfig\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12.\n" +
 	"\x13resource_group_name\x18\x02 \x01(\tR\x11resourceGroupName\x12\x12\n" +
 	"\x04path\x18\x03 \x01(\tR\x04path\x123\n" +
 	"\bmetadata\x18\x04 \x01(\v2\x17.azdext.ProjectMetadataR\bmetadata\x12?\n" +
 	"\bservices\x18\x05 \x03(\v2#.azdext.ProjectConfig.ServicesEntryR\bservices\x12*\n" +
-	"\x05infra\x18\x06 \x01(\v2\x14.azdext.InfraOptionsR\x05infra\x12L\n" +
-	"\x15additional_properties\x18\a \x01(\v2\x17.google.protobuf.StructR\x14additionalProperties\x1aR\n" +
+	"\x05infra\x18\x06 \x01(\v2\x14.azdext.InfraOptionsR\x05infra\x1aR\n" +
 	"\rServicesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12+\n" +
 	"\x05value\x18\x02 \x01(\v2\x15.azdext.ServiceConfigR\x05value:\x028\x01\"$\n" +
 	"\x10RequiredVersions\x12\x10\n" +
 	"\x03azd\x18\x01 \x01(\tR\x03azd\"-\n" +
 	"\x0fProjectMetadata\x12\x1a\n" +
-	"\btemplate\x18\x01 \x01(\tR\btemplate\"\xda\x03\n" +
+	"\btemplate\x18\x01 \x01(\tR\btemplate\"\x8c\x03\n" +
 	"\rServiceConfig\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12.\n" +
 	"\x13resource_group_name\x18\x02 \x01(\tR\x11resourceGroupName\x12#\n" +
@@ -1423,8 +1406,7 @@ const file_models_proto_rawDesc = "" +
 	"\x05image\x18\t \x01(\tR\x05image\x124\n" +
 	"\x06docker\x18\n" +
 	" \x01(\v2\x1c.azdext.DockerProjectOptionsR\x06docker\x12/\n" +
-	"\x06config\x18\v \x01(\v2\x17.google.protobuf.StructR\x06config\x12L\n" +
-	"\x15additional_properties\x18\f \x01(\v2\x17.google.protobuf.StructR\x14additionalProperties\"V\n" +
+	"\x06config\x18\v \x01(\v2\x17.google.protobuf.StructR\x06config\"V\n" +
 	"\fInfraOptions\x12\x1a\n" +
 	"\bprovider\x18\x01 \x01(\tR\bprovider\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x16\n" +
@@ -1514,25 +1496,23 @@ var file_models_proto_depIdxs = []int32{
 	13, // 1: azdext.ProjectConfig.metadata:type_name -> azdext.ProjectMetadata
 	20, // 2: azdext.ProjectConfig.services:type_name -> azdext.ProjectConfig.ServicesEntry
 	15, // 3: azdext.ProjectConfig.infra:type_name -> azdext.InfraOptions
-	22, // 4: azdext.ProjectConfig.additional_properties:type_name -> google.protobuf.Struct
-	16, // 5: azdext.ServiceConfig.docker:type_name -> azdext.DockerProjectOptions
-	22, // 6: azdext.ServiceConfig.config:type_name -> google.protobuf.Struct
-	22, // 7: azdext.ServiceConfig.additional_properties:type_name -> google.protobuf.Struct
-	19, // 8: azdext.ServiceContext.restore:type_name -> azdext.Artifact
-	19, // 9: azdext.ServiceContext.build:type_name -> azdext.Artifact
-	19, // 10: azdext.ServiceContext.package:type_name -> azdext.Artifact
-	19, // 11: azdext.ServiceContext.publish:type_name -> azdext.Artifact
-	19, // 12: azdext.ServiceContext.deploy:type_name -> azdext.Artifact
-	19, // 13: azdext.ArtifactList.artifacts:type_name -> azdext.Artifact
-	0,  // 14: azdext.Artifact.kind:type_name -> azdext.ArtifactKind
-	1,  // 15: azdext.Artifact.location_kind:type_name -> azdext.LocationKind
-	21, // 16: azdext.Artifact.metadata:type_name -> azdext.Artifact.MetadataEntry
-	14, // 17: azdext.ProjectConfig.ServicesEntry.value:type_name -> azdext.ServiceConfig
-	18, // [18:18] is the sub-list for method output_type
-	18, // [18:18] is the sub-list for method input_type
-	18, // [18:18] is the sub-list for extension type_name
-	18, // [18:18] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	16, // 4: azdext.ServiceConfig.docker:type_name -> azdext.DockerProjectOptions
+	22, // 5: azdext.ServiceConfig.config:type_name -> google.protobuf.Struct
+	19, // 6: azdext.ServiceContext.restore:type_name -> azdext.Artifact
+	19, // 7: azdext.ServiceContext.build:type_name -> azdext.Artifact
+	19, // 8: azdext.ServiceContext.package:type_name -> azdext.Artifact
+	19, // 9: azdext.ServiceContext.publish:type_name -> azdext.Artifact
+	19, // 10: azdext.ServiceContext.deploy:type_name -> azdext.Artifact
+	19, // 11: azdext.ArtifactList.artifacts:type_name -> azdext.Artifact
+	0,  // 12: azdext.Artifact.kind:type_name -> azdext.ArtifactKind
+	1,  // 13: azdext.Artifact.location_kind:type_name -> azdext.LocationKind
+	21, // 14: azdext.Artifact.metadata:type_name -> azdext.Artifact.MetadataEntry
+	14, // 15: azdext.ProjectConfig.ServicesEntry.value:type_name -> azdext.ServiceConfig
+	16, // [16:16] is the sub-list for method output_type
+	16, // [16:16] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_models_proto_init() }

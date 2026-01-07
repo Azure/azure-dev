@@ -36,3 +36,8 @@ azuredb
 retval
 LOCALAPPDATA
 ellismg
+networkidle
+qbsearch
+mystorageacct
+aiapps
+itemprop

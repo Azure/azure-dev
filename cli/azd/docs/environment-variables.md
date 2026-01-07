@@ -29,6 +29,7 @@ These environment variables are typically set automatically by azd in the enviro
 - `AZURE_PRINCIPAL_ID`: The ID of the identity (user or service principal) used for authentication.
 - `AZURE_PRINCIPAL_TYPE`: The type of the principal (e.g., `User`, `ServicePrincipal`).
 - `AZURE_RESOURCE_GROUP`: The name of the Azure resource group containing deployed resources.
+- `AZURE_RESOURCE_VAULT_ID`: The Azure resource ID of the Key Vault created by `azd add` for composability scenarios. Provides shortcuts for Key Vault operations.
 - `AZURE_CONTAINER_REGISTRY_ENDPOINT`: The endpoint URL of the Azure Container Registry used for container image storage.
 - `AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN`: The default domain for Azure Container Apps environments.
 - `AZURE_AKS_CLUSTER_NAME`: The name of the Azure Kubernetes Service (AKS) cluster.

@@ -27,13 +27,13 @@ echo "(*) Installing Azure Developer CLI"
 curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version $AZD_VERSION -a $(dpkg --print-architecture)
 
 
-# If Azure CLI extensions are requested, loop through and install 
-if [ ${#AZD_EXTENSIONS[@]} -gt 0 ]; then
+# If Azure Developer CLI extensions are requested, loop through and install 
+if [ -n "${AZD_EXTENSIONS}" ]; then
     echo "Installing Azure Developer CLI extensions: ${AZD_EXTENSIONS}"
-    extensions=(`echo ${AZD_EXTENSIONS} | tr ',' ' '`)
+    extensions=(`echo "${AZD_EXTENSIONS}" | tr ',' ' '`)
     for i in "${extensions[@]}"
     do
         echo "Installing ${i}"
-        su ${_REMOTE_USER} -c "azd extension install ${i}" || continue
+        su "${_REMOTE_USER}" -c "azd extension install ${i}" || continue
     done
 fi

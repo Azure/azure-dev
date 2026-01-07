@@ -672,7 +672,7 @@ const completionSpec: Fig.Spec = {
 					options: [
 						{
 							name: ['--force', '-f'],
-							description: 'Force installation even if it would downgrade the current version',
+							description: 'Force installation, including downgrades and reinstalls',
 							isDangerous: true,
 						},
 						{

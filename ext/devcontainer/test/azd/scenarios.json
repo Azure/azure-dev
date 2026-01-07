@@ -1,0 +1,10 @@
+{
+	"with_extensions": {
+		"image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+		"features": {
+			"azd": {
+				"extensions": "azure.coding-agent"
+			}
+		}
+	}
+}

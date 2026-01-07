@@ -59,6 +59,11 @@ type Hyperparameters struct {
 	BatchSize              int64
 	LearningRateMultiplier float64
 	NEpochs                int64
+	Beta                   float64 // For DPO
+	ComputeMultiplier      float64 // For Reinforcement
+	EvalInterval           int64   // For Reinforcement
+	EvalSamples            int64   // For Reinforcement
+	ReasoningEffort        string  // For Reinforcement
 }
 
 // ListFineTuningJobsRequest represents a request to list fine-tuning jobs
@@ -80,6 +85,8 @@ type FineTuningJobDetail struct {
 	ValidationFile  string
 	Hyperparameters *Hyperparameters
 	VendorMetadata  map[string]interface{}
+	TrainingType    string
+	Seed            int64
 }
 
 // JobEvent represents an event associated with a fine-tuning job

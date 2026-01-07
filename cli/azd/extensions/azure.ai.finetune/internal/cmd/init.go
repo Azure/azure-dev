@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -23,12 +22,15 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
+
+	"azure.ai.finetune/internal/services"
 )
 
 type initFlags struct {
 	rootFlagsDefinition
+	template          string
 	projectResourceId string
-	manifestPointer   string
+	jobId             string
 	src               string
 	env               string
 }
@@ -66,7 +68,7 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 	}
 
 	cmd := &cobra.Command{
-		Use:   "init [-m <manifest pointer>] [-p <foundry project arm id>]",
+		Use:   "init [-t <fine tuning job template>] [-p <foundry project arm id>]",
 		Short: fmt.Sprintf("Initialize a new AI Fine-tuning project. %s", color.YellowString("(Preview)")),
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -127,11 +129,17 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&flags.projectResourceId, "project-id", "p", "",
+	cmd.Flags().StringVarP(&flags.template, "template", "t", "",
+		"URL or path to a fine-tune job template")
+
+	cmd.Flags().StringVarP(&flags.projectResourceId, "project", "p", "",
 		"Existing Microsoft Foundry Project Id to initialize your azd environment with")
 
-	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "",
-		"Path or URI to an fine-tuning configuration to add to your azd project")
+	cmd.Flags().StringVarP(&flags.src, "source", "s", "",
+		"Local path for project output")
+
+	cmd.Flags().StringVarP(&flags.jobId, "from-job", "j", "",
+		"Clone configuration from an existing job ID")
 
 	cmd.Flags().StringVarP(&flags.env, "environment", "e", "", "The name of the azd environment to use.")
 
@@ -139,7 +147,9 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 }
 
 type FoundryProject struct {
+	TenantId          string `json:"tenantId"`
 	SubscriptionId    string `json:"subscriptionId"`
+	Location          string `json:"location"`
 	ResourceGroupName string `json:"resourceGroupName"`
 	AiAccountName     string `json:"aiAccountName"`
 	AiProjectName     string `json:"aiProjectName"`
@@ -187,9 +197,8 @@ func getExistingEnvironment(ctx context.Context, flags *initFlags, azdClient *az
 
 func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.AzdClient) (*azdext.Environment, error) {
 	var foundryProject *FoundryProject
-	var foundryProjectLocation string
-	var tenantId string
 
+	// Parse the Microsoft Foundry project resource ID if provided & Fetch Tenant Id and Location using parsed information
 	if flags.projectResourceId != "" {
 		var err error
 		foundryProject, err = extractProjectDetails(flags.projectResourceId)
@@ -204,9 +213,9 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 		if err != nil {
 			return nil, fmt.Errorf("failed to get tenant ID: %w", err)
 		}
-		tenantId = tenantResponse.TenantId
+		foundryProject.TenantId = tenantResponse.TenantId
 		credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
-			TenantID:                   tenantResponse.TenantId,
+			TenantID:                   foundryProject.TenantId,
 			AdditionallyAllowedTenants: []string{"*"},
 		})
 		if err != nil {
@@ -225,7 +234,7 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 			return nil, fmt.Errorf("failed to get Microsoft Foundry project: %w", err)
 		}
 
-		foundryProjectLocation = *projectResp.Location
+		foundryProject.Location = *projectResp.Location
 	}
 
 	// Get specified or current environment if it exists
@@ -241,7 +250,7 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 
 		if flags.projectResourceId != "" {
 			envArgs = append(envArgs, "--subscription", foundryProject.SubscriptionId)
-			envArgs = append(envArgs, "--location", foundryProjectLocation)
+			envArgs = append(envArgs, "--location", foundryProject.Location)
 		}
 
 		// Dispatch a workflow to create a new environment
@@ -266,106 +275,55 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 			return nil, fmt.Errorf("azd environment not found, please create an environment (azd env new) and try again")
 		}
 	}
+
+	// Set TenantId, SubscriptionId, ResourceGroupName, AiAccountName, and Location in the environment
 	if flags.projectResourceId != "" {
-		currentResouceGroupName, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-			EnvName: existingEnv.Name,
-			Key:     "AZURE_RESOURCE_GROUP_NAME",
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to get current AZURE_RESOURCE_GROUP_NAME from azd environment: %w", err)
-		}
 
-		if currentResouceGroupName.Value != foundryProject.ResourceGroupName {
-			// Set the subscription ID in the environment
-			_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-				EnvName: existingEnv.Name,
-				Key:     "AZURE_RESOURCE_GROUP_NAME",
-				Value:   foundryProject.ResourceGroupName,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("failed to set AZURE_ACCOUNT_NAME in azd environment: %w", err)
-			}
-		}
-
-		currentTenantId, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		_, err := azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 			EnvName: existingEnv.Name,
 			Key:     "AZURE_TENANT_ID",
+			Value:   foundryProject.TenantId,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to get current AZURE_TENANT_ID from azd environment: %w", err)
-		}
-		if currentTenantId.Value == "" {
-			_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-				EnvName: existingEnv.Name,
-				Key:     "AZURE_TENANT_ID",
-				Value:   tenantId,
-			})
+			return nil, fmt.Errorf("failed to set AZURE_TENANT_ID in azd environment: %w", err)
 		}
 
-		currentAccount, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-			EnvName: existingEnv.Name,
-			Key:     "AZURE_ACCOUNT_NAME",
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to get current AZURE_ACCOUNT_NAME from azd environment: %w", err)
-		}
-
-		if currentAccount.Value != foundryProject.AiAccountName {
-			// Set the subscription ID in the environment
-			_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-				EnvName: existingEnv.Name,
-				Key:     "AZURE_ACCOUNT_NAME",
-				Value:   foundryProject.AiAccountName,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("failed to set AZURE_ACCOUNT_NAME in azd environment: %w", err)
-			}
-		}
-
-		currentSubscription, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 			EnvName: existingEnv.Name,
 			Key:     "AZURE_SUBSCRIPTION_ID",
+			Value:   foundryProject.SubscriptionId,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to get current AZURE_SUBSCRIPTION_ID from azd environment: %w", err)
+			return nil, fmt.Errorf("failed to set AZURE_SUBSCRIPTION_ID in azd environment: %w", err)
 		}
 
-		if currentSubscription.Value == "" {
-			// Set the subscription ID in the environment
-			_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-				EnvName: existingEnv.Name,
-				Key:     "AZURE_SUBSCRIPTION_ID",
-				Value:   foundryProject.SubscriptionId,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("failed to set AZURE_SUBSCRIPTION_ID in azd environment: %w", err)
-			}
-		} else if currentSubscription.Value != foundryProject.SubscriptionId {
-			return nil, fmt.Errorf("the value for subscription ID (%s) stored in your azd environment does not match the provided Microsoft Foundry project subscription ID (%s), please update or recreate your environment (azd env new)", currentSubscription.Value, foundryProject.SubscriptionId)
+		_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: existingEnv.Name,
+			Key:     "AZURE_RESOURCE_GROUP_NAME",
+			Value:   foundryProject.ResourceGroupName,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to set AZURE_RESOURCE_GROUP_NAME in azd environment: %w", err)
 		}
 
-		// Get current location from environment
-		currentLocation, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: existingEnv.Name,
+			Key:     "AZURE_ACCOUNT_NAME",
+			Value:   foundryProject.AiAccountName,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to set AZURE_ACCOUNT_NAME in azd environment: %w", err)
+		}
+
+		_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 			EnvName: existingEnv.Name,
 			Key:     "AZURE_LOCATION",
+			Value:   foundryProject.Location,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to get AZURE_LOCATION from azd environment: %w", err)
+			return nil, fmt.Errorf("failed to set AZURE_LOCATION in environment: %w", err)
 		}
 
-		if currentLocation.Value == "" {
-			// Set the location in the environment
-			_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-				EnvName: existingEnv.Name,
-				Key:     "AZURE_LOCATION",
-				Value:   foundryProjectLocation,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("failed to set AZURE_LOCATION in environment: %w", err)
-			}
-		} else if currentLocation.Value != foundryProjectLocation {
-			return nil, fmt.Errorf("the value for location (%s) stored in your azd environment does not match the provided Microsoft Foundry project location (%s), please update or recreate your environment (azd env new)", currentLocation.Value, foundryProjectLocation)
-		}
 	}
 
 	return existingEnv, nil
@@ -444,6 +402,7 @@ func ensureAzureContext(
 			TenantId:       envValueMap["AZURE_TENANT_ID"],
 			SubscriptionId: envValueMap["AZURE_SUBSCRIPTION_ID"],
 			Location:       envValueMap["AZURE_LOCATION"],
+			ResourceGroup:  envValueMap["AZURE_RESOURCE_GROUP_NAME"],
 		},
 		Resources: []string{},
 	}
@@ -480,69 +439,158 @@ func ensureAzureContext(
 			return nil, nil, nil, fmt.Errorf("failed to set AZURE_SUBSCRIPTION_ID in environment: %w", err)
 		}
 	}
+	if azureContext.Scope.ResourceGroup == "" {
+		fmt.Print()
 
-	if azureContext.Scope.Location == "" {
-		fmt.Println()
-		fmt.Println(
-			"Next, we need to select a default Azure location that will be used as the target for your infrastructure.",
-		)
-
-		locationResponse, err := azdClient.Prompt().PromptLocation(ctx, &azdext.PromptLocationRequest{
-			AzureContext: azureContext,
-		})
+		resourceGroupResponse, err := azdClient.Prompt().
+			PromptResourceGroup(ctx, &azdext.PromptResourceGroupRequest{
+				AzureContext: azureContext,
+			})
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to prompt for location: %w", err)
+			return nil, nil, nil, fmt.Errorf("failed to prompt for resource group: %w", err)
 		}
 
-		azureContext.Scope.Location = locationResponse.Location.Name
+		azureContext.Scope.ResourceGroup = resourceGroupResponse.ResourceGroup.Name
+
+		// Set the subscription ID in the environment
+		_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: env.Name,
+			Key:     "AZURE_RESOURCE_GROUP_NAME",
+			Value:   azureContext.Scope.ResourceGroup,
+		})
+
+	}
+
+	if envValueMap["AZURE_ACCOUNT_NAME"] == "" {
+
+		aiAccountResponse, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+			Options: &azdext.PromptOptions{
+				Message: "Please enter your Azure AI Account name",
+			},
+		})
+
+		aiProjectName, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+			Options: &azdext.PromptOptions{
+				Message: "Please enter your Azure AI Project name",
+			},
+		})
+		credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
+			TenantID:                   azureContext.Scope.TenantId,
+			AdditionallyAllowedTenants: []string{"*"},
+		})
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to create Azure credential: %w", err)
+		}
+
+		// Create Cognitive Services Projects client
+		projectsClient, err := armcognitiveservices.NewProjectsClient(azureContext.Scope.SubscriptionId, credential, nil)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to create Cognitive Services Projects client: %w", err)
+		}
+
+		// Get the Microsoft Foundry project
+		projectResp, err := projectsClient.Get(ctx, azureContext.Scope.ResourceGroup, aiAccountResponse.Value, aiProjectName.Value, nil)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to get Microsoft Foundry project: %w", err)
+		}
+
+		// Set the subscription ID in the environment
+		_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: env.Name,
+			Key:     "AZURE_ACCOUNT_NAME",
+			Value:   aiAccountResponse.Value,
+		})
+
+		location := *projectResp.Location
 
 		// Set the location in the environment
 		_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 			EnvName: env.Name,
 			Key:     "AZURE_LOCATION",
-			Value:   azureContext.Scope.Location,
+			Value:   location,
 		})
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to set AZURE_LOCATION in environment: %w", err)
-		}
 	}
 
 	return azureContext, project, env, nil
 }
 
 func (a *InitAction) Run(ctx context.Context) error {
-	color.Green("Initializing Fine tuning project...")
-	time.Sleep(1 * time.Second)
-	color.Green("Downloading template files...")
-	time.Sleep(2 * time.Second)
+	// Validate that either template or from-job is provided, but not both
+	if a.flags.template != "" && a.flags.jobId != "" {
+		return fmt.Errorf("cannot specify both --template and --from-job flags")
+	}
 
 	color.Green("Creating fine-tuning Job definition...")
-	defaultModel := "gpt-4o-mini"
-	defaultMethod := "supervised"
-	modelDeploymentInput, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-		Options: &azdext.PromptOptions{
-			Message:        "Enter base model name for fine tuning  (defaults to model name)",
-			IgnoreHintKeys: true,
-			DefaultValue:   defaultModel,
-		},
-	})
-	ftMethodInput, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-		Options: &azdext.PromptOptions{
-			Message:        "Enter fine-tuning method (defaults to supervised)",
-			IgnoreHintKeys: true,
-			DefaultValue:   defaultMethod,
-		},
-	})
-	if err != nil {
-		return err
-	}
-	fmt.Printf("Base model : %s, Fine-tuning method: %s\n", modelDeploymentInput.Value, ftMethodInput.Value)
-	if a.flags.manifestPointer != "" {
-		cwd, err := os.Getwd()
+
+	var cwd string
+	var err error
+
+	// Use src flag if provided, otherwise use current working directory
+	if a.flags.src != "" {
+		cwd = a.flags.src
+	} else {
+		cwd, err = os.Getwd()
 		if err != nil {
 			return fmt.Errorf("failed to get current working directory: %w", err)
 		}
-		if a.isGitHubUrl(a.flags.manifestPointer) {
+	}
+
+	if a.flags.template == "" && a.flags.jobId == "" {
+		defaultBaseModel := "gpt-4o-mini"
+		defaultMethod := "supervised"
+		baseModelForFineTuningInput, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+			Options: &azdext.PromptOptions{
+				Message:        "Enter base model name for fine tuning  (defaults to model name)",
+				IgnoreHintKeys: true,
+				DefaultValue:   defaultBaseModel,
+			},
+		})
+		ftMethodInput, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+			Options: &azdext.PromptOptions{
+				Message:        "Enter fine-tuning method (defaults to supervised)",
+				IgnoreHintKeys: true,
+				DefaultValue:   defaultMethod,
+			},
+		})
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Base model : %s, Fine-tuning method: %s\n", baseModelForFineTuningInput.Value, ftMethodInput.Value)
+
+		// Create YAML file with the fine-tuning job template
+		yamlContent := fmt.Sprintf(`name: ft-cli-job
+description: Template to demonstrate fine-tuning via CLI
+model: %s
+method:
+  type: %s
+`, baseModelForFineTuningInput.Value, ftMethodInput.Value)
+
+		// Determine the output directory (use src flag or current directory)
+		outputDir := a.flags.src
+		if outputDir == "" {
+			var err error
+			outputDir, err = os.Getwd()
+			if err != nil {
+				return fmt.Errorf("failed to get current working directory: %w", err)
+			}
+		}
+
+		yamlFilePath := filepath.Join(outputDir, "config", "job.yaml")
+		if err := os.MkdirAll(filepath.Dir(yamlFilePath), 0755); err != nil {
+			return fmt.Errorf("failed to create config directory: %w", err)
+		}
+
+		if err := os.WriteFile(yamlFilePath, []byte(yamlContent), 0644); err != nil {
+			return fmt.Errorf("failed to write job.yaml file: %w", err)
+		}
+
+		fmt.Printf("Created fine-tuning job template at: %s\n", yamlFilePath)
+
+		// Set the template flag to the newly created YAML file
+		a.flags.template = yamlFilePath
+	} else if a.flags.template != "" {
+
+		if a.isGitHubUrl(a.flags.template) {
 			// For container agents, download the entire parent directory
 			fmt.Println("Downloading full directory for fine-tuning configuration from GitHub...")
 			var ghCli *github.Cli
@@ -571,7 +619,7 @@ func (a *InitAction) Run(ctx context.Context) error {
 				return fmt.Errorf("creating GitHub CLI: %w", err)
 			}
 
-			urlInfo, err = parseGitHubUrl(a.flags.manifestPointer)
+			urlInfo, err = parseGitHubUrl(a.flags.template)
 			if err != nil {
 				return err
 			}
@@ -586,10 +634,85 @@ func (a *InitAction) Run(ctx context.Context) error {
 				return fmt.Errorf("downloading parent directory: %w", err)
 			}
 		} else {
-			if err := copyDirectory(a.flags.manifestPointer, cwd); err != nil {
+			if err := copyDirectory(a.flags.template, cwd); err != nil {
 				return fmt.Errorf("failed to copy directory: %w", err)
 			}
 		}
+	} else if a.flags.jobId != "" {
+		fmt.Printf("Cloning fine-tuning job configuration from job ID: %s\n", a.flags.jobId)
+		fineTuneSvc, err := services.NewFineTuningService(ctx, a.azdClient, nil)
+		if err != nil {
+			return fmt.Errorf("failed to create fine-tuning service: %w", err)
+		}
+
+		// Fetch job details
+		fmt.Printf("Fetching fine-tuning job %s...\n", a.flags.jobId)
+		job, err := fineTuneSvc.GetFineTuningJobDetails(ctx, a.flags.jobId)
+		if err != nil {
+			return fmt.Errorf("failed to fetch fine-tuning job details: %w", err)
+		}
+
+		// Create YAML file with job configuration
+		yamlContent := fmt.Sprintf(`name: %s
+description: Cloned configuration from job %s
+model: %s
+seed: %d
+method:
+  type: %s
+`, a.flags.jobId, a.flags.jobId, job.Model, job.Seed, job.Method)
+
+		// Add hyperparameters nested under method type if present
+		if job.Hyperparameters != nil {
+			yamlContent += fmt.Sprintf(`  %s:
+    hyperparameters:
+      epochs: %d
+      batch_size: %d
+      learning_rate_multiplier: %f
+`, job.Method, job.Hyperparameters.NEpochs, job.Hyperparameters.BatchSize, job.Hyperparameters.LearningRateMultiplier)
+
+			// Add beta parameter only for DPO method
+			if strings.ToLower(job.Method) == "dpo" {
+				yamlContent += fmt.Sprintf("      beta: %v\n", job.Hyperparameters.Beta)
+			}
+
+			// Add reinforcement-specific hyperparameters
+			if strings.ToLower(job.Method) == "reinforcement" {
+				yamlContent += fmt.Sprintf("      compute_multiplier: %f\n", job.Hyperparameters.ComputeMultiplier)
+				yamlContent += fmt.Sprintf("      eval_interval: %d\n", job.Hyperparameters.EvalInterval)
+				yamlContent += fmt.Sprintf("      eval_samples: %d\n", job.Hyperparameters.EvalSamples)
+				yamlContent += fmt.Sprintf("      reasoning_effort: %s\n", job.Hyperparameters.ReasoningEffort)
+			}
+		}
+
+		// Add training and validation files
+		yamlContent += fmt.Sprintf("training_file: %s\n", job.TrainingFile)
+		if job.ValidationFile != "" {
+			yamlContent += fmt.Sprintf("validation_file: %s\n", job.ValidationFile)
+		}
+
+		// Determine the output directory (use src flag or current directory)
+		outputDir := a.flags.src
+		if outputDir == "" {
+			var err error
+			outputDir, err = os.Getwd()
+			if err != nil {
+				return fmt.Errorf("failed to get current working directory: %w", err)
+			}
+		}
+
+		yamlFilePath := filepath.Join(outputDir, "config", "job.yaml")
+		if err := os.MkdirAll(filepath.Dir(yamlFilePath), 0755); err != nil {
+			return fmt.Errorf("failed to create config directory: %w", err)
+		}
+
+		if err := os.WriteFile(yamlFilePath, []byte(yamlContent), 0644); err != nil {
+			return fmt.Errorf("failed to write job.yaml file: %w", err)
+		}
+
+		fmt.Printf("Created fine-tuning job configuration at: %s\n", yamlFilePath)
+
+		// Set the template flag to the newly created YAML file
+		a.flags.template = yamlFilePath
 	}
 	fmt.Println()
 	color.Green("Initialized fine-tuning Project.")

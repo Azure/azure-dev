@@ -194,7 +194,7 @@ func executeAzdCommand(ctx context.Context, cli *azdcli.CLI, testSuite *Integrat
 	LogCommandOutput(strings.Join(args, " "), []byte(output))
 
 	if err != nil {
-		var exitCode int
+		var exitCode int = -1 // Default to -1 when result is nil (command failed to start)
 		if result != nil {
 			exitCode = result.ExitCode
 		}
@@ -205,6 +205,9 @@ func executeAzdCommand(ctx context.Context, cli *azdcli.CLI, testSuite *Integrat
 		}
 	}
 
+	// Defensive check: handle case where err is nil but exit code is non-zero
+	// This shouldn't normally happen based on RunCommandWithStdIn implementation,
+	// but we check defensively in case the implementation changes
 	if result != nil && result.ExitCode != 0 {
 		Logf("Command failed with exit code: %d", result.ExitCode)
 		return "", &InitError{

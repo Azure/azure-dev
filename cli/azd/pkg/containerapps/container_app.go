@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"slices"
@@ -34,6 +35,7 @@ const (
 	pathTemplate                           = "properties.template"
 	pathTemplateRevisionSuffix             = "properties.template.revisionSuffix"
 	pathTemplateContainers                 = "properties.template.containers"
+	pathTemplateScaleRules                 = "properties.template.scale.rules"
 	pathConfigurationActiveRevisionsMode   = "properties.configuration.activeRevisionsMode"
 	pathConfigurationSecrets               = "properties.configuration.secrets"
 	pathConfigurationIngressTraffic        = "properties.configuration.ingress.traffic"
@@ -307,8 +309,16 @@ func (cas *containerAppService) AddRevision(
 	}
 
 	var revisionMap map[string]any
-	if err := convert.FromHttpResponse(revisionResponse, &revisionMap); err != nil {
-		return err
+	body, err := io.ReadAll(revisionResponse.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	log.Println("GET revision response:", string(body))
+
+	revisionResponse.Body.Close()
+	if err := json.Unmarshal(body, &revisionMap); err != nil {
+		return fmt.Errorf("failed to unmarshal response body: %w", err)
 	}
 
 	revision := config.NewConfig(revisionMap)
@@ -376,6 +386,17 @@ func (cas *containerAppService) AddRevision(
 		return fmt.Errorf("syncing secrets: %w", err)
 	}
 
+	kind, ok := containerApp.GetString("kind")
+	if ok && strings.Contains(kind, "functionapp") {
+		scaleRules, ok := containerApp.Get(pathTemplateScaleRules)
+		if ok && scaleRules != nil {
+			scaleRulesStr, _ := json.Marshal(scaleRules)
+			log.Println("Removing scale rules:", string(scaleRulesStr))
+		}
+
+		_ = containerApp.Unset(pathTemplateScaleRules)
+	}
+
 	// Update the container app
 	err = cas.updateContainerApp(ctx, subscriptionId, resourceGroupName, appName, containerApp, options)
 	if err != nil {
@@ -389,6 +410,8 @@ func (cas *containerAppService) AddRevision(
 
 	// If the container app is in multiple revision mode, update the traffic to point to the new revision
 	if revisionMode == string(armappcontainers.ActiveRevisionsModeMultiple) {
+		log.Println("Setting traffic to new revision in multi-revision mode")
+
 		revisionSuffix, ok := revision.GetString(pathTemplateRevisionSuffix)
 		if !ok {
 			return fmt.Errorf("getting revision suffix: %w", err)
@@ -526,6 +549,8 @@ func (cas *containerAppService) updateContainerApp(
 	if err != nil {
 		return fmt.Errorf("marshalling container app: %w", err)
 	}
+
+	log.Println("PATCH revision request:", string(containerAppJson))
 
 	apiVersionPolicy := createApiVersionPolicy(options)
 	if apiVersionPolicy != nil {

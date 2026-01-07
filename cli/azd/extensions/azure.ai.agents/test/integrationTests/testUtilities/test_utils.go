@@ -206,10 +206,10 @@ func executeAzdCommand(ctx context.Context, cli *azdcli.CLI, testSuite *Integrat
 	}
 
 	if result.ExitCode != 0 {
-		Logf("Command failed with error: %v, exit code: %d", err, result.ExitCode)
+		Logf("Command failed with exit code: %d", result.ExitCode)
 		return "", &InitError{
 			Message: output,
-			Err:     fmt.Errorf("exit code %d: %w", result.ExitCode, err),
+			Err:     fmt.Errorf("exit code %d", result.ExitCode),
 		}
 	}
 	Logf("Command completed successfully")

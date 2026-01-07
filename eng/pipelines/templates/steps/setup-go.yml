@@ -40,6 +40,10 @@ steps:
       Write-Host "##vso[task.prependpath]$goBin"
     displayName: Add Go bin to PATH
 
+  - pwsh: |
+      Write-Host "GOPROXY: $($env:GOPROXY)"
+    displayName: GOPROXY
+
   - pwsh: go install gotest.tools/gotestsum@latest
     condition: ${{ parameters.Condition }}
     displayName: Install gotest

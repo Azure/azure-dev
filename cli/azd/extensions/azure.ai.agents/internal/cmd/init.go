@@ -622,9 +622,22 @@ func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context) error {
 	} else {
 		// Filter connections by ContainerRegistry type
 		var acrConnections []azure.Connection
+		var appInsightsConnections []azure.Connection
 		for _, conn := range connections {
-			if conn.Type == azure.ConnectionTypeContainerRegistry {
+			switch conn.Type {
+			case azure.ConnectionTypeContainerRegistry:
 				acrConnections = append(acrConnections, conn)
+			case azure.ConnectionTypeAppInsights:
+				connWithCreds, err := foundryClient.GetConnectionWithCredentials(ctx, conn.Name)
+				if err != nil {
+					fmt.Printf("Could not get full details for Application Insights connection '%s': %v\n", conn.Name, err)
+					continue
+				}
+				if connWithCreds != nil {
+					conn = *connWithCreds
+				}
+
+				appInsightsConnections = append(appInsightsConnections, conn)
 			}
 		}
 
@@ -686,6 +699,69 @@ func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context) error {
 			}
 
 			if err := a.setEnvVar(ctx, "AZURE_CONTAINER_REGISTRY_ENDPOINT", selectedConnection.Target); err != nil {
+				return err
+			}
+		}
+
+		// Handle App Insights connections
+		if len(appInsightsConnections) == 0 {
+			fmt.Println(output.WithWarningFormat(
+				"No Application Insights connection found. To enable telemetry for this agent, you will need to " +
+					"provision an Application Insights resource and grant the required permissions. " +
+					"You can either do this manually before deployment, or use an infrastructure template. " +
+					"See aka.ms/azdaiagent/docs for details."))
+
+			resp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+				Options: &azdext.PromptOptions{
+					Message: "If you have an Application Insights resource that you want to use with this agent, enter the connection string. " +
+						"If you plan to provision one through the `azd provision` or `azd up` flow, leave blank.",
+					IgnoreHintKeys: true,
+				},
+			})
+			if err != nil {
+				return fmt.Errorf("prompting for Application Insights connection string: %w", err)
+			}
+
+			if resp.Value != "" {
+				if err := a.setEnvVar(ctx, "APPLICATIONINSIGHTS_CONNECTION_STRING", resp.Value); err != nil {
+					return err
+				}
+			}
+		} else {
+			var selectedConnection *azure.Connection
+
+			if len(appInsightsConnections) == 1 {
+				selectedConnection = &appInsightsConnections[0]
+
+				fmt.Printf("Using Application Insights connection: %s (%s)\n", selectedConnection.Name, selectedConnection.Target)
+			} else {
+				// Multiple connections found, prompt user to select
+				fmt.Printf("Found %d Application Insights connections:\n", len(appInsightsConnections))
+
+				choices := make([]*azdext.SelectChoice, len(appInsightsConnections))
+				for i, conn := range appInsightsConnections {
+					choices[i] = &azdext.SelectChoice{
+						Label: conn.Name,
+						Value: fmt.Sprintf("%d", i),
+					}
+				}
+
+				defaultIndex := int32(0)
+				selectResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+					Options: &azdext.SelectOptions{
+						Message:       "Select an Application Insights connection to use for this agent",
+						Choices:       choices,
+						SelectedIndex: &defaultIndex,
+					},
+				})
+				if err != nil {
+					fmt.Printf("failed to prompt for connection selection: %v\n", err)
+				} else {
+					selectedConnection = &appInsightsConnections[int(*selectResp.Value)]
+				}
+			}
+
+			if err := a.setEnvVar(ctx, "APPLICATIONINSIGHTS_CONNECTION_STRING", selectedConnection.Credentials.Key); err != nil {
 				return err
 			}
 		}

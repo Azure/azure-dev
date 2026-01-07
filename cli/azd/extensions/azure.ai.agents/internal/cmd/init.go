@@ -761,8 +761,10 @@ func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context) error {
 				}
 			}
 
-			if err := a.setEnvVar(ctx, "APPLICATIONINSIGHTS_CONNECTION_STRING", selectedConnection.Credentials.Key); err != nil {
-				return err
+			if selectedConnection != nil && selectedConnection.Credentials.Key != "" {
+				if err := a.setEnvVar(ctx, "APPLICATIONINSIGHTS_CONNECTION_STRING", selectedConnection.Credentials.Key); err != nil {
+					return err
+				}
 			}
 		}
 	}

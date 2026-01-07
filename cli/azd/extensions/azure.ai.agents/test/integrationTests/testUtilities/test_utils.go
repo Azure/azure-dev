@@ -220,7 +220,7 @@ func executeAzdCommand(ctx context.Context, cli *azdcli.CLI, testSuite *Integrat
 	return output, nil
 }
 
-// executeAzdCommand executes an azd command and returns output and agent version if available
+// executeAzdCommandWithExec executes an azd command using exec.Command and returns the output
 func executeAzdCommandWithExec(ctx context.Context, testSuite *IntegrationTestSuite, timeout time.Duration, args []string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()

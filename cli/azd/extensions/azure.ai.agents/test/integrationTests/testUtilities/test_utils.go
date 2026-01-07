@@ -185,11 +185,27 @@ func executeAzdCommand(ctx context.Context, cli *azdcli.CLI, testSuite *Integrat
 
 	cli.WorkingDirectory = testSuite.AzdProjectDir
 	result, err := cli.RunCommandWithStdIn(ctx, "", args...)
-	output := result.Stdout + result.Stderr
+
+	var output string
+	if result != nil {
+		output = result.Stdout + result.Stderr
+	}
 
 	LogCommandOutput(strings.Join(args, " "), []byte(output))
 
-	if err != nil || result.ExitCode != 0 {
+	if err != nil {
+		var exitCode int
+		if result != nil {
+			exitCode = result.ExitCode
+		}
+		Logf("Command failed with error: %v, exit code: %d", err, exitCode)
+		return "", &InitError{
+			Message: output,
+			Err:     fmt.Errorf("exit code %d: %w", exitCode, err),
+		}
+	}
+
+	if result.ExitCode != 0 {
 		Logf("Command failed with error: %v, exit code: %d", err, result.ExitCode)
 		return "", &InitError{
 			Message: output,

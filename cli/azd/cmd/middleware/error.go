@@ -5,7 +5,6 @@ package middleware
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -24,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
+	"github.com/tidwall/gjson"
 	"go.opentelemetry.io/otel/codes"
 )
 
@@ -378,52 +378,20 @@ func promptForErrorHandlingConsent(
 	return choices[*choiceIndex].Value, nil
 }
 
-// AgentResponse represents the structured JSON response from the LLM agent
-type AgentResponse struct {
-	Analysis  string   `json:"analysis"`
-	Solutions []string `json:"solutions"`
-}
-
 // extractSuggestedSolutions extracts solutions from the LLM response.
 // It expects a JSON response with the structure: {"analysis": "...", "solutions": ["...", "...", "..."]}
 // If JSON parsing fails, it returns an empty slice.
 func extractSuggestedSolutions(llmResponse string) []string {
-	var response AgentResponse
-	if err := json.Unmarshal([]byte(llmResponse), &response); err == nil {
-		return response.Solutions
-	}
-
-	// If that fails, try to extract JSON object from the response
-	start := strings.Index(llmResponse, "{")
-	if start == -1 {
+	result := gjson.Get(llmResponse, "solutions")
+	if !result.Exists() {
 		return []string{}
 	}
 
-	// Find the matching closing brace
-	braceCount := 0
-	end := -1
-	for i := start; i < len(llmResponse); i++ {
-		if llmResponse[i] == '{' {
-			braceCount++
-		} else if llmResponse[i] == '}' {
-			braceCount--
-			if braceCount == 0 {
-				end = i + 1
-				break
-			}
-		}
+	var solutions []string
+	for _, solution := range result.Array() {
+		solutions = append(solutions, solution.String())
 	}
-
-	if end == -1 {
-		return []string{}
-	}
-
-	jsonPart := llmResponse[start:end]
-	if err := json.Unmarshal([]byte(jsonPart), &response); err != nil {
-		return []string{}
-	}
-
-	return response.Solutions
+	return solutions
 }
 
 // promptUserForSolution displays extracted solutions to the user and prompts them to select which solution to try.

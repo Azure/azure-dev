@@ -72,12 +72,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		return next(ctx)
 	}
 
-	// Preserve a non-cancellable parent context BEFORE making the first attempt
-	// This ensures that if the context gets cancelled during the first attempt,
-	// retries can use a fresh context
-	parentCtx := context.WithoutCancel(ctx)
-
-	actionResult, err := next(parentCtx)
+	actionResult, err := next(ctx)
 
 	// Stop the spinner always to un-hide cursor
 	e.console.StopSpinner(ctx, "", input.Step)
@@ -228,7 +223,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
                 "Solution 3 Short description (one sentence)"
               ]
             }
-            Provide 1-3 solutions. Each solution must be concise (one sentence).
+            Provide up to 3 solutions. Each solution must be concise (one sentence).
             Error details: %s`, errorInput))
 
 		// Extract solutions from agent output even if there's a parsing error
@@ -290,12 +285,8 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			}
 		}
 
-		// Use a fresh child context per retry to avoid reusing a canceled ctx
-		attemptCtx, cancel := context.WithCancel(parentCtx)
-		// Clear check cache to prevent skip of tool related error
-		attemptCtx = tools.WithInstalledCheckCache(attemptCtx)
-		actionResult, err = next(attemptCtx)
-		cancel()
+		ctx = tools.WithInstalledCheckCache(ctx)
+		actionResult, err = next(ctx)
 		originalError = err
 	}
 
@@ -398,7 +389,37 @@ type AgentResponse struct {
 // If JSON parsing fails, it returns an empty slice.
 func extractSuggestedSolutions(llmResponse string) []string {
 	var response AgentResponse
-	if err := json.Unmarshal([]byte(llmResponse), &response); err != nil {
+	if err := json.Unmarshal([]byte(llmResponse), &response); err == nil {
+		return response.Solutions
+	}
+
+	// If that fails, try to extract JSON object from the response
+	start := strings.Index(llmResponse, "{")
+	if start == -1 {
+		return []string{}
+	}
+
+	// Find the matching closing brace
+	braceCount := 0
+	end := -1
+	for i := start; i < len(llmResponse); i++ {
+		if llmResponse[i] == '{' {
+			braceCount++
+		} else if llmResponse[i] == '}' {
+			braceCount--
+			if braceCount == 0 {
+				end = i + 1
+				break
+			}
+		}
+	}
+
+	if end == -1 {
+		return []string{}
+	}
+
+	jsonPart := llmResponse[start:end]
+	if err := json.Unmarshal([]byte(jsonPart), &response); err != nil {
 		return []string{}
 	}
 

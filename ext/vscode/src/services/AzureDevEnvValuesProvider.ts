@@ -7,6 +7,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { createAzureDevCli } from '../utils/azureDevCli';
 import { execAsync } from '../utils/execAsync';
+import ext from '../ext';
 
 export type AzDevEnvValuesResults = Record<string, string>;
 
@@ -32,7 +33,7 @@ export class WorkspaceAzureDevEnvValuesProvider implements AzureDevEnvValuesProv
         } catch (error) {
             // Fallback or handle error if json output is not supported or command fails
             // For now, assuming JSON output is supported in recent azd versions
-            console.error('Failed to get env values', error);
+            ext.outputChannel.appendLog(vscode.l10n.t('Failed to get env values: {0}', error instanceof Error ? error.message : String(error)));
             return {};
         }
     }

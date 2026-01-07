@@ -7,6 +7,7 @@ import { AzureDevShowProvider, WorkspaceAzureDevShowProvider } from '../../../se
 import { parseAzureResourceId } from '../../../utils/parseAzureResourceId';
 import { RevealWizardContext } from './PickEnvironmentStep';
 import { SkipIfOneStep } from './SkipIfOneStep';
+import ext from '../../../ext';
 
 const resourceGroupType = 'Microsoft.Resources/resourceGroups';
 
@@ -25,16 +26,7 @@ export class PickResourceGroupStep extends SkipIfOneStep<RevealResourceGroupWiza
     }
 
     public async prompt(context: RevealResourceGroupWizardContext): Promise<void> {
-        try {
-            context.azureResourceId = await this.promptInternal(context);
-        } catch (error) {
-            // Ensure error is shown to user
-            console.error('[PickResourceGroupStep] Error during prompt:', error);
-            if (error instanceof Error) {
-                await vscode.window.showErrorMessage(error.message);
-            }
-            throw error;
-        }
+        context.azureResourceId = await this.promptInternal(context);
     }
 
     public shouldPrompt(context: RevealResourceGroupWizardContext): boolean {
@@ -87,9 +79,7 @@ export class PickResourceGroupStep extends SkipIfOneStep<RevealResourceGroupWiza
             });
         }
         } catch (error) {
-            // Log the error for diagnostics
-            console.error('[PickResourceGroupStep] Failed to get resource groups:', error);
-            // Re-throw to let the wizard handle it
+            ext.outputChannel.appendLog(vscode.l10n.t('Failed to get resource groups: {0}', error instanceof Error ? error.message : String(error)));
             throw error;
         }
     }

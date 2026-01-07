@@ -15,7 +15,6 @@ import { RevealStep } from './wizard/RevealStep';
 import { OpenInPortalStep } from './wizard/OpenInPortalStep';
 
 export async function revealAzureResource(context: IActionContext, treeItem?: TreeViewModel | AzureDevCliService): Promise<void> {
-    console.log('[revealAzureResource] Starting...');
     if (!treeItem) {
         throw new Error(vscode.l10n.t('This command must be run from a service item in the Azure Developer CLI view'));
     }
@@ -26,7 +25,6 @@ export async function revealAzureResource(context: IActionContext, treeItem?: Tr
     const wizardContext = context as RevealResourceWizardContext;
     wizardContext.configurationFile = selectedItem.context.configurationFile;
     wizardContext.service = selectedItem.name;
-    console.log('[revealAzureResource] Service:', selectedItem.name, 'ConfigFile:', selectedItem.context.configurationFile.fsPath);
 
     const wizard = new AzureWizard(context,
         {
@@ -42,13 +40,8 @@ export async function revealAzureResource(context: IActionContext, treeItem?: Tr
         }
     );
 
-    console.log('[revealAzureResource] Starting wizard.prompt()...');
     await wizard.prompt();
-    console.log('[revealAzureResource] wizard.prompt() completed');
-
-    console.log('[revealAzureResource] Starting wizard.execute()...');
     await wizard.execute();
-    console.log('[revealAzureResource] wizard.execute() completed');
 }
 
 export async function revealAzureResourceGroup(context: IActionContext, treeItem?: TreeViewModel | AzureDevCliApplication | AzureDevCliEnvironment | EnvironmentTreeItem): Promise<void> {
@@ -94,17 +87,11 @@ export async function revealAzureResourceGroup(context: IActionContext, treeItem
         }
     );
 
-    console.log('[revealAzureResourceGroup] Starting wizard.prompt()...');
     await wizard.prompt();
-    console.log('[revealAzureResourceGroup] wizard.prompt() completed');
-
-    console.log('[revealAzureResourceGroup] Starting wizard.execute()...');
     await wizard.execute();
-    console.log('[revealAzureResourceGroup] wizard.execute() completed');
 }
 
 export async function showInAzurePortal(context: IActionContext, treeItem?: TreeViewModel | AzureDevCliService): Promise<void> {
-    console.log('[showInAzurePortal] Starting...');
     if (!treeItem) {
         throw new Error(vscode.l10n.t('This command must be run from a service item in the Azure Developer CLI view'));
     }
@@ -115,7 +102,6 @@ export async function showInAzurePortal(context: IActionContext, treeItem?: Tree
     const wizardContext = context as RevealResourceWizardContext;
     wizardContext.configurationFile = selectedItem.context.configurationFile;
     wizardContext.service = selectedItem.name;
-    console.log('[showInAzurePortal] Service:', selectedItem.name, 'ConfigFile:', selectedItem.context.configurationFile.fsPath);
 
     const wizard = new AzureWizard(context,
         {
@@ -131,11 +117,6 @@ export async function showInAzurePortal(context: IActionContext, treeItem?: Tree
         }
     );
 
-    console.log('[showInAzurePortal] Starting wizard.prompt()...');
     await wizard.prompt();
-    console.log('[showInAzurePortal] wizard.prompt() completed');
-
-    console.log('[showInAzurePortal] Starting wizard.execute()...');
     await wizard.execute();
-    console.log('[showInAzurePortal] wizard.execute() completed');
 }

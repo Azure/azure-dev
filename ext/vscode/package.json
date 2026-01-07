@@ -180,29 +180,35 @@
                 "title": "%azure-dev.commands.disableDevCenterMode.title%"
             },
             {
+                "category": "%azure-dev.commands_category%",
                 "command": "azure-dev.views.environments.toggleVisibility",
                 "title": "Toggle Visibility"
             },
             {
+                "category": "%azure-dev.commands_category%",
                 "command": "azure-dev.commands.workspace.toggleVisibility",
                 "title": "Toggle Visibility"
             },
             {
+                "category": "%azure-dev.commands_category%",
                 "command": "azure-dev.views.environments.viewDotEnv",
                 "title": "View .env file",
                 "icon": "$(go-to-file)"
             },
             {
+                "category": "%azure-dev.commands_category%",
                 "command": "azure-dev.views.templateTools.openReadme",
                 "title": "View README",
                 "icon": "$(book)"
             },
             {
+                "category": "%azure-dev.commands_category%",
                 "command": "azure-dev.views.templateTools.openGitHub",
                 "title": "View on GitHub",
                 "icon": "$(github)"
             },
             {
+                "category": "%azure-dev.commands_category%",
                 "command": "azure-dev.views.templateTools.initFromTemplateInline",
                 "title": "Initialize from Template",
                 "icon": "$(rocket)"

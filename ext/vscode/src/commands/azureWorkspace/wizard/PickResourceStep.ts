@@ -7,6 +7,7 @@ import { AzureDevShowProvider, WorkspaceAzureDevShowProvider } from '../../../se
 import { parseAzureResourceId } from '../../../utils/parseAzureResourceId';
 import { RevealWizardContext } from './PickEnvironmentStep';
 import { SkipIfOneStep } from './SkipIfOneStep';
+import ext from '../../../ext';
 
 export interface RevealResourceWizardContext extends RevealWizardContext {
     service: string;
@@ -24,36 +25,22 @@ export class PickResourceStep extends SkipIfOneStep<RevealResourceWizardContext,
     }
 
     public async prompt(context: RevealResourceWizardContext): Promise<void> {
-        console.log('[PickResourceStep] Starting prompt for service:', context.service);
-        try {
-            context.azureResourceId = await this.promptInternal(context);
-            console.log('[PickResourceStep] Selected resource:', context.azureResourceId);
-        } catch (error) {
-            // Log the error and let the wizard framework handle user-facing error display
-            console.error('[PickResourceStep] Error during prompt:', error);
-            throw error;
-        }
+        context.azureResourceId = await this.promptInternal(context);
     }
 
     public shouldPrompt(context: RevealResourceWizardContext): boolean {
-        const shouldPrompt = !context.azureResourceId;
-        console.log('[PickResourceStep] shouldPrompt:', shouldPrompt);
-        return shouldPrompt;
+        return !context.azureResourceId;
     }
 
     protected override async getPicks(context: RevealResourceWizardContext): Promise<IAzureQuickPickItem<string>[]> {
-        console.log('[PickResourceStep] getPicks called for service:', context.service, 'environment:', context.environment);
         try {
             const showResults = await this.showProvider.getShowResults(context, context.configurationFile, context.environment);
-            console.log('[PickResourceStep] showResults received:', !!showResults, 'services:', Object.keys(showResults?.services || {}));
 
             if (!showResults?.services?.[context.service]?.target?.resourceIds) {
-                console.log('[PickResourceStep] No resourceIds found for service:', context.service);
                 return [];
             }
 
             const resourceIds = showResults.services[context.service].target.resourceIds;
-            console.log('[PickResourceStep] Found', resourceIds.length, 'resources for service:', context.service);
             return resourceIds.map(resourceId => {
                 const { resourceName, provider } = parseAzureResourceId(resourceId);
                 return {
@@ -63,9 +50,7 @@ export class PickResourceStep extends SkipIfOneStep<RevealResourceWizardContext,
                 };
             });
         } catch (error) {
-            // Log the error for diagnostics
-            console.error('[PickResourceStep] Failed to get resources:', error);
-            // Re-throw to let the wizard handle it
+            ext.outputChannel.appendLog(vscode.l10n.t('Failed to get resources: {0}', error instanceof Error ? error.message : String(error)));
             throw error;
         }
     }

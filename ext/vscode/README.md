@@ -68,14 +68,16 @@ For more information about Azure Developer CLI and this VS Code extension, pleas
 
 ## Getting Started
 
-1. Install the [Azure Developer CLI](https://aka.ms/azure-dev/install)
+1. Install the Azure Developer CLI:
+   - **Option A**: Use the extension command `Azure Developer CLI: Install CLI` from the Command Palette
+   - **Option B**: Manually install from [aka.ms/azure-dev/install](https://aka.ms/azure-dev/install)
 2. Open a folder containing an `azure.yaml` file, or create a new project with `azd init`
 3. Right-click `azure.yaml` and select deployment commands from the context menu
 4. Use the Azure Developer CLI view panel for quick access to all features
 
 ## Requirements
 
-- [Azure Developer CLI](https://aka.ms/azure-dev/install) version 1.0.0 or higher
+- [Azure Developer CLI](https://aka.ms/azure-dev/install) version 1.8.0 or higher
 - [VS Code](https://code.visualstudio.com/) version 1.90.0 or higher
 
 ## Extension Settings

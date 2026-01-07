@@ -29,16 +29,10 @@ Before submitting any changes or pushing code, **always run the following checks
    - Runs fast unit tests without full VS Code integration
    - All tests must pass before committing
 
-4. **CI Test Suite**: `pwsh ./ci-test.ps1` (or `./ci-test.ps1` on Windows)
-   - Runs the full CI test pipeline locally
-   - This is the same test suite that runs in CI/CD
-   - **Must pass before pushing to avoid pipeline failures**
-
 ### Pre-Commit Checklist
 ✅ Run `npm run lint` and fix all issues
 ✅ Run `npx cspell "src/**/*.ts"` and fix spelling errors
 ✅ Run `npm run unit-test` and ensure all tests pass
-✅ Run `pwsh ./ci-test.ps1` and verify CI tests pass
 ✅ Update [README.md](../README.md) if functionality changed
 ✅ Verify merge conflicts are resolved (no `<<<<<<<`, `=======`, `>>>>>>>` markers)
 
@@ -183,4 +177,3 @@ When working on `azure.yaml` language support in `src/language/`:
 - [Azure Developer CLI Documentation](https://learn.microsoft.com/azure/developer/azure-developer-cli/)
 - [VS Code Extension API](https://code.visualstudio.com/api)
 - [Contributing Guide](../CONTRIBUTING.md)
-- [Test Coverage](../TEST_COVERAGE.md)

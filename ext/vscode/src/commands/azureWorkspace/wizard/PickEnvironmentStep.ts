@@ -23,9 +23,7 @@ export class PickEnvironmentStep extends SkipIfOneStep<RevealWizardContext, stri
     }
 
     public async prompt(context: RevealWizardContext): Promise<void> {
-        console.log('[PickEnvironmentStep] Starting prompt...');
         context.environment = await this.promptInternal(context);
-        console.log('[PickEnvironmentStep] Selected environment:', context.environment);
     }
 
     public shouldPrompt(context: RevealWizardContext): boolean {

@@ -17,23 +17,18 @@ This extension makes it easier to run, create Azure Resources, and deploy Azure 
 
 Intelligent editing support for your `azure.yaml` configuration files:
 
-
-- **Auto-Completion** - Smart suggestions for service properties, host types, and lifecycle hooks
-- **Hover Documentation** - Inline help with examples for all azure.yaml properties
+- **Schema Validation** - Full IntelliSense support via the [YAML extension](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml) including:
+  - Auto-completion for properties, host types, and lifecycle hooks
+  - Hover documentation with examples
+  - Validation for required properties, valid values, and YAML syntax
 - **Quick Fixes** - One-click solutions for common issues:
   - Create missing project folders
-  - Add missing language or host properties
-  - Fix invalid configurations
-- **Validation** - Real-time diagnostics for:
-  - Empty or malformed azure.yaml files
-  - YAML syntax errors with helpful guidance
-  - Missing or invalid project paths
-  - Missing required properties (name, services)
-  - Invalid host types
-  - Missing recommended properties (language, host)
-  - Configuration best practices
+  - Browse for existing folders
+- **Project Path Validation** - Real-time diagnostics for missing or invalid project paths
+- **Drag & Drop** - Add services by dragging folders onto azure.yaml (hold Shift)
+- **Automatic Path Updates** - Project paths update when folders are renamed
 
-The extension validates your `azure.yaml` file as you type, catching errors before deployment and providing actionable suggestions in the Problems panel.
+The extension works with the YAML extension to provide comprehensive editing support for `azure.yaml` files.
 
 ### 🌲 View Panels
 

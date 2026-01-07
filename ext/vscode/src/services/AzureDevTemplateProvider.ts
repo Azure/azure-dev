@@ -72,7 +72,7 @@ export class AzureDevTemplateProvider {
         }
     ];
 
-    async getTemplates(forceRefresh: boolean = false): Promise<Template[]> {
+    public async getTemplates(forceRefresh: boolean = false): Promise<Template[]> {
         const now = Date.now();
         const cacheExpired = (now - this.lastFetchTime) > this.CACHE_DURATION_MS;
 
@@ -93,12 +93,12 @@ export class AzureDevTemplateProvider {
         return this.templatesCache || [];
     }
 
-    async getAITemplates(): Promise<Template[]> {
+    public async getAITemplates(): Promise<Template[]> {
         const templates = await this.getTemplates();
         return templates.filter(t => t.tags?.includes('aicollection'));
     }
 
-    async getTemplatesByCategory(categoryName: string): Promise<Template[]> {
+    public async getTemplatesByCategory(categoryName: string): Promise<Template[]> {
         const templates = await this.getTemplates();
         const category = this.categories.find(c => c.name === categoryName);
         if (!category) {
@@ -107,7 +107,7 @@ export class AzureDevTemplateProvider {
         return templates.filter(category.filter);
     }
 
-    async searchTemplates(query: string): Promise<Template[]> {
+    public async searchTemplates(query: string): Promise<Template[]> {
         const templates = await this.getTemplates();
         const lowerQuery = query.toLowerCase();
 
@@ -122,18 +122,17 @@ export class AzureDevTemplateProvider {
         });
     }
 
-    getCategories(): TemplateCategory[] {
+    public getCategories(): TemplateCategory[] {
         return this.categories;
     }
 
-    extractTemplatePath(sourceUrl: string): string {
+    public extractTemplatePath(sourceUrl: string): string {
         // Convert GitHub URL to format accepted by azd init
         // https://github.com/Azure-Samples/todo-csharp-cosmos-sql -> Azure-Samples/todo-csharp-cosmos-sql
-        const match = sourceUrl.match(/github\.com\/([^/]+\/[^/]+)/);
-        return match ? match[1] : sourceUrl;
+        return sourceUrl.replace(/^https?:\/\/github\.com\//, '');
     }
 
-    async getTemplateCount(): Promise<number> {
+    public async getTemplateCount(): Promise<number> {
         const templates = await this.getTemplates();
         return templates.length;
     }

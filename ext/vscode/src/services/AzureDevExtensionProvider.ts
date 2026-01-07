@@ -12,14 +12,12 @@ export interface AzureDevExtension {
     readonly version: string;
 }
 
-export type AzDevExtensionListResults = AzureDevExtension[];
-
 export interface AzureDevExtensionProvider {
-    getExtensionListResults(context: IActionContext): Promise<AzDevExtensionListResults>;
+    getExtensionListResults(context: IActionContext): Promise<AzureDevExtension[]>;
 }
 
 export class WorkspaceAzureDevExtensionProvider implements AzureDevExtensionProvider {
-    public async getExtensionListResults(context: IActionContext): Promise<AzDevExtensionListResults> {
+    public async getExtensionListResults(context: IActionContext): Promise<AzureDevExtension[]> {
         const azureCli = await createAzureDevCli(context);
 
         const args = composeArgs(
@@ -29,7 +27,7 @@ export class WorkspaceAzureDevExtensionProvider implements AzureDevExtensionProv
 
         try {
             const { stdout } = await execAsync(azureCli.invocation, args, azureCli.spawnOptions());
-            return JSON.parse(stdout) as AzDevExtensionListResults;
+            return JSON.parse(stdout) as AzureDevExtension[];
         } catch {
             // If command fails (e.g. not supported or no extensions), return empty list
             return [];

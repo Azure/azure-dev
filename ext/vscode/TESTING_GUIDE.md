@@ -100,61 +100,44 @@ This guide provides a comprehensive list of all extension features and how to te
 
 ## 📝 Enhanced azure.yaml Editing
 
-### 10. Auto-Completion
-**What it does**: Smart suggestions for service properties, host types, hooks
+### 10. Schema Validation (via YAML Extension)
+**What it does**: Full IntelliSense support including auto-completion, hover documentation, and schema validation
+
+**Prerequisites**: Install the [YAML extension](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml)
 
 **How to test**:
 - Open `azure.yaml`
-- Start typing inside a service definition
-- Press `Ctrl+Space` to trigger IntelliSense
-- Should see suggestions for: `language`, `host`, `project`, `hooks`, etc.
-- Verify suggestions are contextually appropriate
+- Press `Ctrl+Space` to trigger IntelliSense - should see property suggestions
+- Hover over properties - should see documentation from schema
+- Add invalid property values - should see validation errors
+- These features are provided by the YAML extension using the azure.yaml JSON schema
 
-### 11. Hover Documentation
-**What it does**: Inline help with examples for properties
-
-**How to test**:
-- Open `azure.yaml`
-- Hover over any property (e.g., `services`, `name`, `host`)
-- Should see documentation popup with examples
-- Verify documentation is helpful and accurate
-
-### 12. Validation & Diagnostics
-**What it does**: Real-time error checking
+### 11. Project Path Validation & Diagnostics
+**What it does**: Real-time validation for project paths (schema validation handled by YAML extension)
 
 **How to test**:
 - Open `azure.yaml`
-- Test empty file validation:
-  - Create empty azure.yaml file
-  - Should see error diagnostic: "azure.yaml file is empty"
-- Test missing required properties:
-  - Create azure.yaml without "name" property → Error diagnostic
-  - Create azure.yaml without "services" section → Error diagnostic
-- Test invalid project path → Red squiggles and error in Problems panel
-- Test invalid host type (e.g., `host: invalidhost`) → Warning diagnostic
-- Test missing recommended properties:
-  - Missing "language" property → Information diagnostic
-  - Missing "host" property → Information diagnostic
-- Test YAML syntax errors:
-  - Invalid indentation → Error diagnostic with helpful message
-  - Malformed YAML → Parse error with link to schema
-- Verify all error messages are clear and actionable
-- Check that errors appear in Problems panel in real-time
+- Test invalid project path:
+  - Set `project: ./nonexistent` for a path that doesn't exist
+  - Should see error diagnostic in Problems panel
+- Test valid project path:
+  - Set `project: ./existing-folder` for a path that exists
+  - Should see no error
+- Note: Schema validation (required properties, valid values, YAML syntax) is handled by the YAML extension
 
-### 13. Quick Fixes
-**What it does**: One-click solutions for common issues
+### 12. Quick Fixes
+**What it does**: One-click solutions for missing project paths
 
 **How to test**:
-- Create diagnostic errors in `azure.yaml`
+- Create a service with a non-existent project path in `azure.yaml`
 - Click lightbulb icon or press `Cmd+.`
 - Options should include:
   - Create missing project folder
-  - Add missing language property
-  - Add missing host property
+  - Browse for existing folder
 - Verify quick fixes work correctly
 
-### 14. Project Renaming
-**What it does**: Rename project paths across azure.yaml
+### 13. Project Renaming
+**What it does**: Automatically updates project paths when folders are renamed
 
 **How to test**:
 - Right-click on a project folder referenced in `azure.yaml`
@@ -162,7 +145,7 @@ This guide provides a comprehensive list of all extension features and how to te
 - `azure.yaml` should automatically update the path
 - Verify references are updated correctly
 
-### 15. Drag & Drop Service Addition
+### 14. Drag & Drop Service Addition
 **What it does**: Add service to azure.yaml by dragging folder
 
 **How to test**:
@@ -175,7 +158,7 @@ This guide provides a comprehensive list of all extension features and how to te
 
 ## 🌲 View Panels
 
-### 16. My Project View
+### 15. My Project View
 **What it does**: Shows azure.yaml configuration and services
 
 **How to test**:
@@ -185,7 +168,7 @@ This guide provides a comprehensive list of all extension features and how to te
 - Test inline actions (up, down, monitor, deploy)
 - Verify tree structure matches azure.yaml
 
-### 17. Environments View
+### 16. Environments View
 **What it does**: Manage dev, staging, prod environments
 
 **How to test**:
@@ -195,7 +178,7 @@ This guide provides a comprehensive list of all extension features and how to te
 - Expand environment to see variables
 - Verify environment details are accurate
 
-### 18. Template Tools View
+### 17. Template Tools View
 **What it does**: Discover and initialize projects from templates
 
 **How to test**:
@@ -233,7 +216,7 @@ This guide provides a comprehensive list of all extension features and how to te
 - Follow prompts to create project
 - Verify template is cloned and initialized
 
-### 19. Extensions View
+### 18. Extensions View
 **What it does**: Browse and manage azd CLI extensions
 
 **How to test**:
@@ -245,7 +228,7 @@ This guide provides a comprehensive list of all extension features and how to te
   - Uninstall extension
 - Verify extension operations complete successfully
 
-### 20. Help and Feedback View
+### 19. Help and Feedback View
 **What it does**: Quick access to docs and support
 
 **How to test**:
@@ -262,7 +245,7 @@ This guide provides a comprehensive list of all extension features and how to te
 
 ## 🔄 Environment Management
 
-### 21. Create Environment
+### 20. Create Environment
 **What it does**: Create new environment (e.g., dev, staging, prod)
 
 **How to test**:
@@ -272,7 +255,7 @@ This guide provides a comprehensive list of all extension features and how to te
 - Verify created in `.azure/<env-name>/` folder
 - Check `.env` file is created
 
-### 22. Select Environment
+### 21. Select Environment
 **What it does**: Switch active environment
 
 **How to test**:
@@ -282,7 +265,7 @@ This guide provides a comprehensive list of all extension features and how to te
 - Verify `.azure/<env-name>/.env` is now active
 - Run `azd env get-values` to confirm
 
-### 23. Delete Environment
+### 22. Delete Environment
 **What it does**: Remove environment (not default)
 
 **How to test**:
@@ -292,7 +275,7 @@ This guide provides a comprehensive list of all extension features and how to te
 - Verify removed from `.azure/` folder
 - Cannot delete default environment (option disabled)
 
-### 24. Refresh Environment
+### 23. Refresh Environment
 **What it does**: Sync environment config from Azure
 
 **How to test**:
@@ -301,7 +284,7 @@ This guide provides a comprehensive list of all extension features and how to te
 - Environment variables should update from Azure deployment
 - Check `.env` file for new values
 
-### 25. Edit Environment Variables
+### 24. Edit Environment Variables
 **What it does**: Open .env file for environment
 
 **How to test**:
@@ -310,7 +293,7 @@ This guide provides a comprehensive list of all extension features and how to te
 - Make changes and save
 - Verify changes persist
 
-### 26. View Environment Variables
+### 25. View Environment Variables
 **What it does**: Show/hide environment variables in tree
 
 **How to test**:
@@ -320,7 +303,7 @@ This guide provides a comprehensive list of all extension features and how to te
 - Sensitive values should be masked (••••••)
 - Clicking again reveals value
 
-### 27. View .env File
+### 26. View .env File
 **What it does**: Quick access to environment .env file
 
 **How to test**:
@@ -332,7 +315,7 @@ This guide provides a comprehensive list of all extension features and how to te
 
 ## 🔗 Azure Integration
 
-### 28. Reveal Azure Resource
+### 27. Reveal Azure Resource
 **What it does**: Navigate to resource in Azure Resources extension
 
 **How to test**:
@@ -341,7 +324,7 @@ This guide provides a comprehensive list of all extension features and how to te
 - Azure Resources tree should expand and highlight resource
 - Verify correct resource is shown
 
-### 29. Reveal Resource Group
+### 28. Reveal Resource Group
 **What it does**: Navigate to resource group in Azure Resources extension
 
 **How to test**:
@@ -349,7 +332,7 @@ This guide provides a comprehensive list of all extension features and how to te
 - Azure Resources tree should expand to resource group
 - All resources in group should be visible
 
-### 30. Open in Azure Portal
+### 29. Open in Azure Portal
 **What it does**: Open resource in Azure Portal in browser
 
 **How to test**:
@@ -358,7 +341,7 @@ This guide provides a comprehensive list of all extension features and how to te
 - Verify correct resource page loads
 - Test with different resource types (Web App, Storage, Cosmos DB, etc.)
 
-### 31. Azure Resources Workspace Integration
+### 30. Azure Resources Workspace Integration
 **What it does**: Shows azd apps in Azure Resources workspace view
 
 **How to test**:
@@ -372,7 +355,7 @@ This guide provides a comprehensive list of all extension features and how to te
 
 ## ⚙️ Configuration & Settings
 
-### 32. Maximum Apps to Display Setting
+### 31. Maximum Apps to Display Setting
 **What it does**: Limit number of apps shown in workspace view
 
 **How to test**:
@@ -382,7 +365,7 @@ This guide provides a comprehensive list of all extension features and how to te
 - Reload window
 - Verify workspace view respects limit
 
-### 33. Integrated Authentication (Alpha)
+### 32. Integrated Authentication (Alpha)
 **What it does**: Use VS Code auth instead of CLI auth
 
 **How to test**:
@@ -396,7 +379,7 @@ This guide provides a comprehensive list of all extension features and how to te
 
 ## 🔧 Utility Commands
 
-### 34. Install CLI
+### 33. Install CLI
 **What it does**: Download and install azd CLI
 
 **How to test**:
@@ -405,7 +388,7 @@ This guide provides a comprehensive list of all extension features and how to te
 - Verify installation with `azd --version` in terminal
 - Should show version number
 
-### 35. Login
+### 34. Login
 **What it does**: Authenticate with Azure
 
 **How to test**:
@@ -415,7 +398,7 @@ This guide provides a comprehensive list of all extension features and how to te
 - Verify login success message in terminal
 - Run `azd auth login --check-status` to confirm
 
-### 36. Get .env File Path (Programmatic)
+### 35. Get .env File Path (Programmatic)
 **What it does**: Returns path to environment .env file
 
 **How to test**:
@@ -423,7 +406,7 @@ This guide provides a comprehensive list of all extension features and how to te
 - Used by other extensions to get environment configuration
 - Can verify by checking extension contribution in package.json
 
-### 37. Dev Center Mode
+### 36. Dev Center Mode
 **What it does**: Enable/disable Azure Dev Center integration
 
 **How to test**:
@@ -437,7 +420,7 @@ This guide provides a comprehensive list of all extension features and how to te
 
 ## 📚 Onboarding & Walkthrough
 
-### 38. Getting Started Walkthrough
+### 37. Getting Started Walkthrough
 **What it does**: Interactive tutorial for new users
 
 **How to test**:
@@ -488,10 +471,10 @@ This guide provides a comprehensive list of all extension features and how to te
 - [ ] Test restore and package commands
 
 #### azure.yaml Editing Features
-- [ ] Auto-completion works with Ctrl+Space
-- [ ] Hover documentation appears
-- [ ] Invalid paths show red squiggles
-- [ ] Quick fixes available for errors
+- [ ] YAML extension provides auto-completion (Ctrl+Space)
+- [ ] YAML extension provides hover documentation
+- [ ] Invalid project paths show red squiggles
+- [ ] Quick fixes available for missing project paths
 - [ ] Drag & drop adds service (with Shift key)
 - [ ] Project renaming updates azure.yaml
 
@@ -535,9 +518,8 @@ This guide provides a comprehensive list of all extension features and how to te
 #### Error Handling Testing
 - [ ] Missing CLI prompts installation
 - [ ] Not logged in prompts login
-- [ ] Invalid azure.yaml shows helpful errors in Problems panel (not pop-ups)
-- [ ] Empty azure.yaml file detected and reported in Problems panel
-- [ ] Malformed YAML shows user-friendly error messages
+- [ ] Invalid project paths show errors in Problems panel
+- [ ] YAML extension handles schema validation errors
 - [ ] Failed deployments show error details
 
 #### Performance Testing

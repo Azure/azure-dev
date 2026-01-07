@@ -7,6 +7,14 @@ import * as sinon from 'sinon';
 import { AzureYamlDiagnosticProvider } from '../../../language/AzureYamlDiagnosticProvider';
 import * as azureYamlUtils from '../../../language/azureYamlUtils';
 
+/**
+ * Tests for AzureYamlDiagnosticProvider
+ *
+ * Note: Schema validation (required properties, valid values, YAML syntax, etc.) is handled by
+ * the RedHat YAML extension using the azure.yaml JSON schema. This provider only
+ * handles validation that requires runtime checks, such as verifying that project
+ * paths exist on disk.
+ */
 suite('Azure YAML Validation Tests', () => {
     let diagnosticProvider: AzureYamlDiagnosticProvider;
     let sandbox: sinon.SinonSandbox;
@@ -20,97 +28,6 @@ suite('Azure YAML Validation Tests', () => {
     teardown(() => {
         sandbox.restore();
         diagnosticProvider.dispose();
-    });
-
-    test('Empty azure.yaml file shows error diagnostic', async () => {
-        const document = createMockDocument('');
-        const diagnostics = await diagnosticProvider.provideDiagnostics(document);
-
-        assert.ok(diagnostics, 'Diagnostics should be returned');
-        assert.strictEqual(diagnostics!.length, 1, 'Should have one diagnostic');
-        assert.strictEqual(diagnostics![0].severity, vscode.DiagnosticSeverity.Error);
-        assert.ok(diagnostics![0].message.includes('empty'), 'Error message should mention file is empty');
-    });
-
-    test('Whitespace-only azure.yaml file shows error diagnostic', async () => {
-        const document = createMockDocument('   \n\n   \t   \n');
-        const diagnostics = await diagnosticProvider.provideDiagnostics(document);
-
-        assert.ok(diagnostics, 'Diagnostics should be returned');
-        assert.strictEqual(diagnostics!.length, 1, 'Should have one diagnostic');
-        assert.strictEqual(diagnostics![0].severity, vscode.DiagnosticSeverity.Error);
-    });
-
-    test('Missing name property shows error diagnostic', async () => {
-        const content = `services:
-  web:
-    project: ./src
-    host: containerapp`;
-
-        const document = createMockDocument(content);
-        const diagnostics = await diagnosticProvider.provideDiagnostics(document);
-
-        assert.ok(diagnostics, 'Diagnostics should be returned');
-        const nameDiagnostic = diagnostics!.find(d => d.message.includes('name'));
-        assert.ok(nameDiagnostic, 'Should have diagnostic about missing name');
-        assert.strictEqual(nameDiagnostic!.severity, vscode.DiagnosticSeverity.Error);
-    });
-
-    test('Empty name property shows error diagnostic', async () => {
-        const content = `name: ""
-services:
-  web:
-    project: ./src
-    host: containerapp`;
-
-        const document = createMockDocument(content);
-        const diagnostics = await diagnosticProvider.provideDiagnostics(document);
-
-        assert.ok(diagnostics, 'Diagnostics should be returned');
-        const emptyNameDiagnostic = diagnostics!.find(d => d.message.includes('name'));
-        assert.ok(emptyNameDiagnostic, 'Should have diagnostic about name');
-    });
-
-    test('Missing services section shows error diagnostic', async () => {
-        const content = `name: my-app`;
-
-        const document = createMockDocument(content);
-        const diagnostics = await diagnosticProvider.provideDiagnostics(document);
-
-        assert.ok(diagnostics, 'Diagnostics should be returned');
-        const servicesDiagnostic = diagnostics!.find(d => d.message.includes('No services'));
-        assert.ok(servicesDiagnostic, 'Should have diagnostic about missing services');
-        assert.strictEqual(servicesDiagnostic!.severity, vscode.DiagnosticSeverity.Error);
-    });
-
-    test('Empty services section shows error diagnostic', async () => {
-        const content = `name: my-app
-services:`;
-
-        const document = createMockDocument(content);
-        const diagnostics = await diagnosticProvider.provideDiagnostics(document);
-
-        assert.ok(diagnostics, 'Diagnostics should be returned');
-        const servicesDiagnostic = diagnostics!.find(d => d.message.includes('No services'));
-        assert.ok(servicesDiagnostic, 'Should have diagnostic about no services defined');
-    });
-
-    test('Invalid YAML syntax shows error diagnostic', async () => {
-        const content = `name: my-app
-services:
-  web:
-    project: ./src
-    host: containerapp
-  api
-    project: ./api`;
-
-        const document = createMockDocument(content);
-        const diagnostics = await diagnosticProvider.provideDiagnostics(document);
-
-        assert.ok(diagnostics, 'Diagnostics should be returned');
-        assert.ok(diagnostics!.length > 0, 'Should have at least one diagnostic');
-        const syntaxError = diagnostics!.find(d => d.severity === vscode.DiagnosticSeverity.Error);
-        assert.ok(syntaxError, 'Should have error diagnostic for syntax');
     });
 
     test('Valid minimal azure.yaml shows no errors', async () => {
@@ -130,40 +47,6 @@ services:
         assert.strictEqual(errors.length, 0, 'Valid YAML should have no errors');
 
         stub.restore();
-    });
-
-    test('Missing language property shows information diagnostic', async () => {
-        const content = `name: my-app
-services:
-  web:
-    project: ./src
-    host: containerapp`;
-
-        const document = createMockDocument(content);
-        const stub = sandbox.stub(azureYamlUtils, 'getAzureYamlProjectInformation').resolves([]);
-
-        const diagnostics = await diagnosticProvider.provideDiagnostics(document);
-
-        const languageDiagnostic = diagnostics?.find(d => d.message.includes('language'));
-        assert.ok(languageDiagnostic, 'Should suggest adding language property');
-        assert.strictEqual(languageDiagnostic!.severity, vscode.DiagnosticSeverity.Information);
-
-        stub.restore();
-    });
-
-    test('Malformed YAML with indentation error shows helpful message', async () => {
-        const content = `name: my-app
-services:
-web:
-  project: ./src`;
-
-        const document = createMockDocument(content);
-        const diagnostics = await diagnosticProvider.provideDiagnostics(document);
-
-        assert.ok(diagnostics, 'Diagnostics should be returned');
-        assert.ok(diagnostics!.length > 0, 'Should have diagnostics');
-        const error = diagnostics!.find(d => d.severity === vscode.DiagnosticSeverity.Error);
-        assert.ok(error, 'Should have error diagnostic');
     });
 
     test('Valid complex azure.yaml with multiple services shows no errors', async () => {
@@ -193,44 +76,61 @@ services:
         stub.restore();
     });
 
-    test('Project path without ./ prefix shows information diagnostic', async () => {
+    test('Non-existent project path shows error diagnostic', async () => {
         const content = `name: my-app
 services:
   web:
-    project: src
+    project: ./nonexistent
     host: containerapp
     language: python`;
 
         const document = createMockDocument(content);
-        const stub = sandbox.stub(azureYamlUtils, 'getAzureYamlProjectInformation').resolves([]);
+        // Mock to return the project info with a non-existent path
+        const stub = sandbox.stub(azureYamlUtils, 'getAzureYamlProjectInformation').resolves([
+            {
+                azureYamlUri: vscode.Uri.file('/test/azure.yaml'),
+                serviceName: 'web',
+                projectValue: './nonexistent',
+                projectUri: vscode.Uri.file('/test/nonexistent'),
+                projectValueNodeRange: new vscode.Range(4, 13, 4, 27)
+            }
+        ]);
 
         const diagnostics = await diagnosticProvider.provideDiagnostics(document);
 
-        const pathDiagnostic = diagnostics?.find(d => d.message.includes('should start with'));
-        assert.ok(pathDiagnostic, 'Should suggest using ./ prefix');
-        assert.strictEqual(pathDiagnostic!.severity, vscode.DiagnosticSeverity.Information);
+        const pathDiagnostic = diagnostics?.find(d => d.message.includes('project path'));
+        assert.ok(pathDiagnostic, 'Should have diagnostic about missing project path');
+        assert.strictEqual(pathDiagnostic!.severity, vscode.DiagnosticSeverity.Error);
 
         stub.restore();
     });
 
-    test('Invalid host type shows warning diagnostic', async () => {
+    test('Handles empty file gracefully', async () => {
+        const document = createMockDocument('');
+
+        // Should not throw
+        const diagnostics = await diagnosticProvider.provideDiagnostics(document);
+
+        // May return undefined or empty array for empty file
+        assert.ok(diagnostics === undefined || Array.isArray(diagnostics));
+    });
+
+    test('Handles malformed YAML gracefully', async () => {
         const content = `name: my-app
 services:
   web:
     project: ./src
-    host: invalid-host-type
-    language: python`;
+    host: containerapp
+  api
+    project: ./api`;
 
         const document = createMockDocument(content);
-        const stub = sandbox.stub(azureYamlUtils, 'getAzureYamlProjectInformation').resolves([]);
 
+        // Should not throw
         const diagnostics = await diagnosticProvider.provideDiagnostics(document);
 
-        const hostDiagnostic = diagnostics?.find(d => d.message.includes('Invalid host type'));
-        assert.ok(hostDiagnostic, 'Should warn about invalid host type');
-        assert.strictEqual(hostDiagnostic!.severity, vscode.DiagnosticSeverity.Warning);
-
-        stub.restore();
+        // May return undefined or empty array for malformed YAML
+        assert.ok(diagnostics === undefined || Array.isArray(diagnostics));
     });
 
     function createMockDocument(content: string): vscode.TextDocument {

@@ -36,7 +36,7 @@ suite('AzureYamlDiagnosticProvider - Enhanced Validation', () => {
             assert.ok(diagnostics);
             const nameDiagnostic = diagnostics.find(d => d.message.includes('name'));
             assert.ok(nameDiagnostic);
-            assert.equal(nameDiagnostic.severity, vscode.DiagnosticSeverity.Warning);
+            assert.equal(nameDiagnostic.severity, vscode.DiagnosticSeverity.Error);
         });
 
         test('provides info for missing language property', async () => {

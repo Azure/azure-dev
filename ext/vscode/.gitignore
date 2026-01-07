@@ -110,3 +110,8 @@ node_modules
 package.nls.*.json
 *.vsix
 *.zip
+
+# Playwright Test Artifacts
+playwright-report/
+test-results/
+playwright/.cache/

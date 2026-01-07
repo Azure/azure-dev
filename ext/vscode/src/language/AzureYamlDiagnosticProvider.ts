@@ -38,8 +38,35 @@ export class AzureYamlDiagnosticProvider extends vscode.Disposable {
     public provideDiagnostics(document: vscode.TextDocument, token?: vscode.CancellationToken): Promise<vscode.Diagnostic[] | undefined> {
         return callWithTelemetryAndErrorHandling(TelemetryId.AzureYamlProvideDiagnostics, async (context: IActionContext) => {
             const results: vscode.Diagnostic[] = [];
+            const text = document.getText();
+
+            // Check for empty file first
+            if (!text || text.trim().length === 0) {
+                const diagnostic = new vscode.Diagnostic(
+                    new vscode.Range(0, 0, 0, 0),
+                    vscode.l10n.t('azure.yaml file is empty. Add configuration like:\n\nname: my-app\nservices:\n  web:\n    project: ./src\n    language: python\n    host: containerapp'),
+                    vscode.DiagnosticSeverity.Error
+                );
+                diagnostic.code = {
+                    value: 'azure-yaml-empty',
+                    target: vscode.Uri.parse('https://aka.ms/azure-dev/schema')
+                };
+                results.push(diagnostic);
+                context.telemetry.measurements.diagnosticCount = results.length;
+                context.telemetry.properties.isEmpty = 'true';
+                return results;
+            }
 
             try {
+                // Try to parse the YAML first to provide friendly errors
+                const parseResult = this.validateYamlParsing(document);
+                if (parseResult.length > 0) {
+                    results.push(...parseResult);
+                    context.telemetry.measurements.diagnosticCount = results.length;
+                    context.telemetry.properties.hasParseErrors = 'true';
+                    return results;
+                }
+
                 const projectInformation = await getAzureYamlProjectInformation(document);
 
                 for (const project of projectInformation) {
@@ -59,12 +86,100 @@ export class AzureYamlDiagnosticProvider extends vscode.Disposable {
                 // Additional validation checks
                 results.push(...this.validateYamlStructure(document));
             } catch {
-                // Best effort--the YAML extension will show parsing errors for us if it is present
+                // If we can't parse, provide a helpful error
+                const diagnostic = new vscode.Diagnostic(
+                    new vscode.Range(0, 0, 0, 0),
+                    vscode.l10n.t('Unable to parse azure.yaml. Check for YAML syntax errors.'),
+                    vscode.DiagnosticSeverity.Error
+                );
+                diagnostic.code = {
+                    value: 'azure-yaml-parse-error',
+                    target: vscode.Uri.parse('https://aka.ms/azure-dev/schema')
+                };
+                results.push(diagnostic);
             }
 
             context.telemetry.measurements.diagnosticCount = results.length;
             return results;
         });
+    }
+
+    private validateYamlParsing(document: vscode.TextDocument): vscode.Diagnostic[] {
+        const diagnostics: vscode.Diagnostic[] = [];
+        const text = document.getText();
+
+        try {
+            const doc = yaml.parseDocument(text);
+
+            // Check for YAML parsing errors
+            if (doc.errors && doc.errors.length > 0) {
+                for (const error of doc.errors) {
+                    let range: vscode.Range;
+                    let message = error.message;
+
+                    // Try to get position from error
+                    if (error.pos && error.pos.length >= 2) {
+                        const start = document.positionAt(error.pos[0]);
+                        const end = document.positionAt(error.pos[1] || error.pos[0]);
+                        range = new vscode.Range(start, end);
+                    } else {
+                        range = new vscode.Range(0, 0, 0, 0);
+                    }
+
+                    // Provide more user-friendly messages
+                    if (message.includes('Unexpected token') || message.includes('Plain value cannot start with block scalar indicator')) {
+                        message = vscode.l10n.t('YAML syntax error: {0}. Check your indentation and formatting.', message);
+                    }
+
+                    const diagnostic = new vscode.Diagnostic(
+                        range,
+                        message,
+                        vscode.DiagnosticSeverity.Error
+                    );
+                    diagnostic.code = {
+                        value: 'azure-yaml-syntax',
+                        target: vscode.Uri.parse('https://aka.ms/azure-dev/schema')
+                    };
+                    diagnostics.push(diagnostic);
+                }
+                return diagnostics;
+            }
+
+            // Check for warnings
+            if (doc.warnings && doc.warnings.length > 0) {
+                for (const warning of doc.warnings) {
+                    let range: vscode.Range;
+                    if (warning.pos && warning.pos.length >= 2) {
+                        const start = document.positionAt(warning.pos[0]);
+                        const end = document.positionAt(warning.pos[1] || warning.pos[0]);
+                        range = new vscode.Range(start, end);
+                    } else {
+                        range = new vscode.Range(0, 0, 0, 0);
+                    }
+
+                    const diagnostic = new vscode.Diagnostic(
+                        range,
+                        warning.message,
+                        vscode.DiagnosticSeverity.Warning
+                    );
+                    diagnostics.push(diagnostic);
+                }
+            }
+        } catch {
+            // Fatal parsing error
+            const diagnostic = new vscode.Diagnostic(
+                new vscode.Range(0, 0, 0, 0),
+                vscode.l10n.t('Unable to parse azure.yaml file. Ensure the file contains valid YAML syntax.'),
+                vscode.DiagnosticSeverity.Error
+            );
+            diagnostic.code = {
+                value: 'azure-yaml-fatal',
+                target: vscode.Uri.parse('https://aka.ms/azure-dev/schema')
+            };
+            diagnostics.push(diagnostic);
+        }
+
+        return diagnostics;
     }
 
     private validateYamlStructure(document: vscode.TextDocument): vscode.Diagnostic[] {
@@ -80,13 +195,44 @@ export class AzureYamlDiagnosticProvider extends vscode.Disposable {
 
             const content = doc.toJSON();
 
+            // If content is null or not an object, the file structure is invalid
+            if (!content || typeof content !== 'object') {
+                diagnostics.push(new vscode.Diagnostic(
+                    new vscode.Range(0, 0, 0, 0),
+                    vscode.l10n.t('azure.yaml must contain a valid YAML object. Start with:\n\nname: my-app\nservices:\n  web:\n    project: ./src'),
+                    vscode.DiagnosticSeverity.Error
+                ));
+                return diagnostics;
+            }
+
             // Validate required name property
             if (!content.name) {
                 diagnostics.push(new vscode.Diagnostic(
                     new vscode.Range(0, 0, 0, 0),
                     vscode.l10n.t('Missing required "name" property. Add a name for your application.'),
-                    vscode.DiagnosticSeverity.Warning
+                    vscode.DiagnosticSeverity.Error
                 ));
+            }
+
+            // Validate that name is not empty
+            if (content.name && typeof content.name === 'string' && content.name.trim().length === 0) {
+                const nameLine = this.findLineNumber(text, 'name:');
+                diagnostics.push(new vscode.Diagnostic(
+                    new vscode.Range(nameLine, 0, nameLine, 100),
+                    vscode.l10n.t('Application name cannot be empty.'),
+                    vscode.DiagnosticSeverity.Error
+                ));
+            }
+
+            // Validate services exist
+            if (!content.services || typeof content.services !== 'object' || Object.keys(content.services).length === 0) {
+                const servicesLine = this.findLineNumber(text, 'services:');
+                diagnostics.push(new vscode.Diagnostic(
+                    new vscode.Range(servicesLine >= 0 ? servicesLine : 0, 0, servicesLine >= 0 ? servicesLine : 0, 100),
+                    vscode.l10n.t('No services defined. Add at least one service to deploy.'),
+                    vscode.DiagnosticSeverity.Error
+                ));
+                return diagnostics;
             }
 
             // Validate services structure

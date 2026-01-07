@@ -25,10 +25,15 @@ Intelligent editing support for your `azure.yaml` configuration files:
   - Add missing language or host properties
   - Fix invalid configurations
 - **Validation** - Real-time diagnostics for:
+  - Empty or malformed azure.yaml files
+  - YAML syntax errors with helpful guidance
   - Missing or invalid project paths
+  - Missing required properties (name, services)
   - Invalid host types
-  - Missing recommended properties
+  - Missing recommended properties (language, host)
   - Configuration best practices
+
+The extension validates your `azure.yaml` file as you type, catching errors before deployment and providing actionable suggestions in the Problems panel.
 
 ### 🌲 View Panels
 

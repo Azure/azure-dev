@@ -281,6 +281,31 @@ func Test_EnvManager_Get(t *testing.T) {
 
 		localDataStore.AssertCalled(t, "Save", *mockContext.Context, foundEnv, mock.Anything)
 	})
+
+	t.Run("InvalidEnvironmentName", func(t *testing.T) {
+		localDataStore := &MockDataStore{}
+
+		manager := newManagerForTest(azdContext, mockContext.Console, localDataStore, nil)
+
+		// Test various invalid names
+		invalidNames := []string{
+			"#invalid",
+			"$bad%name",
+			"no spaces",
+			"no*asterisk",
+		}
+
+		for _, invalidName := range invalidNames {
+			env, err := manager.Get(*mockContext.Context, invalidName)
+			require.Error(t, err, "Should error for invalid name: %s", invalidName)
+			require.Nil(t, env)
+			require.Contains(t, err.Error(), "invalid")
+			require.Contains(t, err.Error(), "Valid names can only contain")
+		}
+
+		// localDataStore.Get should never be called for invalid names
+		localDataStore.AssertNotCalled(t, "Get")
+	})
 }
 
 func Test_EnvManager_Save(t *testing.T) {

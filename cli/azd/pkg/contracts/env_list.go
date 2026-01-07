@@ -8,4 +8,5 @@ type EnvListEnvironment struct {
 	IsDefault  bool   `json:"IsDefault"`
 	DotEnvPath string `json:"DotEnvPath"`
 	ConfigPath string `json:"ConfigPath"`
+	IsValid    bool   `json:"IsValid"`
 }

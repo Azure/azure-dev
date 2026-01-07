@@ -919,98 +919,108 @@ func (p *BicepProvider) Destroy(
 		return nil, fmt.Errorf("mapping resources to resource groups: %w", err)
 	}
 
+	// If no resources found, we still need to void the deployment state.
+	// This can happen when resources have been manually deleted before running azd down.
+	// Voiding the state ensures that subsequent azd provision commands work correctly
+	// by creating a new empty deployment that becomes the last successful deployment.
 	if len(groupedResources) == 0 {
-		return nil, fmt.Errorf("%w, '%s'", infra.ErrDeploymentResourcesNotFound, deploymentToDelete.Name())
-	}
-
-	keyVaults, err := p.getKeyVaultsToPurge(ctx, groupedResources)
-	if err != nil {
-		return nil, fmt.Errorf("getting key vaults to purge: %w", err)
-	}
-
-	managedHSMs, err := p.getManagedHSMsToPurge(ctx, groupedResources)
-	if err != nil {
-		return nil, fmt.Errorf("getting managed hsms to purge: %w", err)
-	}
-
-	appConfigs, err := p.getAppConfigsToPurge(ctx, groupedResources)
-	if err != nil {
-		return nil, fmt.Errorf("getting app configurations to purge: %w", err)
-	}
-
-	apiManagements, err := p.getApiManagementsToPurge(ctx, groupedResources)
-	if err != nil {
-		return nil, fmt.Errorf("getting API managements to purge: %w", err)
-	}
-
-	cognitiveAccounts, err := p.getCognitiveAccountsToPurge(ctx, groupedResources)
-	if err != nil {
-		return nil, fmt.Errorf("getting cognitive accounts to purge: %w", err)
-	}
-
-	p.console.StopSpinner(ctx, "", input.StepDone)
-	if err := p.destroyDeploymentWithConfirmation(
-		ctx,
-		options,
-		deploymentToDelete,
-		groupedResources,
-		len(resourcesToDelete),
-	); err != nil {
-		return nil, fmt.Errorf("deleting resource groups: %w", err)
-	}
-
-	keyVaultsPurge := itemToPurge{
-		resourceType: "Key Vault",
-		count:        len(keyVaults),
-		purge: func(skipPurge bool, self *itemToPurge) error {
-			return p.purgeKeyVaults(ctx, keyVaults, skipPurge)
-		},
-	}
-	managedHSMsPurge := itemToPurge{
-		resourceType: "Managed HSM",
-		count:        len(managedHSMs),
-		purge: func(skipPurge bool, self *itemToPurge) error {
-			return p.purgeManagedHSMs(ctx, managedHSMs, skipPurge)
-		},
-	}
-	appConfigsPurge := itemToPurge{
-		resourceType: "App Configuration",
-		count:        len(appConfigs),
-		purge: func(skipPurge bool, self *itemToPurge) error {
-			return p.purgeAppConfigs(ctx, appConfigs, skipPurge)
-		},
-	}
-	aPIManagement := itemToPurge{
-		resourceType: "API Management",
-		count:        len(apiManagements),
-		purge: func(skipPurge bool, self *itemToPurge) error {
-			return p.purgeAPIManagement(ctx, apiManagements, skipPurge)
-		},
-	}
-
-	var purgeItem []itemToPurge
-	for _, item := range []itemToPurge{keyVaultsPurge, managedHSMsPurge, appConfigsPurge, aPIManagement} {
-		if item.count > 0 {
-			purgeItem = append(purgeItem, item)
+		p.console.StopSpinner(ctx, "", input.StepDone)
+		// Call deployment.Delete to void the state even though there are no resources to delete
+		if err := p.destroyDeployment(ctx, deploymentToDelete); err != nil {
+			return nil, fmt.Errorf("voiding deployment state: %w", err)
 		}
-	}
+	} else {
+		keyVaults, err := p.getKeyVaultsToPurge(ctx, groupedResources)
+		if err != nil {
+			return nil, fmt.Errorf("getting key vaults to purge: %w", err)
+		}
 
-	// cognitive services are grouped by resource group because the name of the resource group is required to purge
-	groupByKind := cognitiveAccountsByKind(cognitiveAccounts)
-	for name, cogAccounts := range groupByKind {
-		addPurgeItem := itemToPurge{
-			resourceType: name,
-			count:        len(cogAccounts),
+		managedHSMs, err := p.getManagedHSMsToPurge(ctx, groupedResources)
+		if err != nil {
+			return nil, fmt.Errorf("getting managed hsms to purge: %w", err)
+		}
+
+		appConfigs, err := p.getAppConfigsToPurge(ctx, groupedResources)
+		if err != nil {
+			return nil, fmt.Errorf("getting app configurations to purge: %w", err)
+		}
+
+		apiManagements, err := p.getApiManagementsToPurge(ctx, groupedResources)
+		if err != nil {
+			return nil, fmt.Errorf("getting API managements to purge: %w", err)
+		}
+
+		cognitiveAccounts, err := p.getCognitiveAccountsToPurge(ctx, groupedResources)
+		if err != nil {
+			return nil, fmt.Errorf("getting cognitive accounts to purge: %w", err)
+		}
+
+		p.console.StopSpinner(ctx, "", input.StepDone)
+
+		// Prompt for confirmation before deleting resources
+		if err := p.promptDeletion(ctx, options, groupedResources, len(resourcesToDelete)); err != nil {
+			return nil, err
+		}
+
+		p.console.Message(ctx, output.WithGrayFormat("Deleting your resources can take some time.\n"))
+
+		if err := p.destroyDeployment(ctx, deploymentToDelete); err != nil {
+			return nil, fmt.Errorf("deleting resource groups: %w", err)
+		}
+
+		keyVaultsPurge := itemToPurge{
+			resourceType: "Key Vault",
+			count:        len(keyVaults),
 			purge: func(skipPurge bool, self *itemToPurge) error {
-				return p.purgeCognitiveAccounts(ctx, self.cognitiveAccounts, skipPurge)
+				return p.purgeKeyVaults(ctx, keyVaults, skipPurge)
 			},
-			cognitiveAccounts: groupByKind[name],
 		}
-		purgeItem = append(purgeItem, addPurgeItem)
-	}
+		managedHSMsPurge := itemToPurge{
+			resourceType: "Managed HSM",
+			count:        len(managedHSMs),
+			purge: func(skipPurge bool, self *itemToPurge) error {
+				return p.purgeManagedHSMs(ctx, managedHSMs, skipPurge)
+			},
+		}
+		appConfigsPurge := itemToPurge{
+			resourceType: "App Configuration",
+			count:        len(appConfigs),
+			purge: func(skipPurge bool, self *itemToPurge) error {
+				return p.purgeAppConfigs(ctx, appConfigs, skipPurge)
+			},
+		}
+		aPIManagement := itemToPurge{
+			resourceType: "API Management",
+			count:        len(apiManagements),
+			purge: func(skipPurge bool, self *itemToPurge) error {
+				return p.purgeAPIManagement(ctx, apiManagements, skipPurge)
+			},
+		}
 
-	if err := p.purgeItems(ctx, purgeItem, options); err != nil {
-		return nil, fmt.Errorf("purging resources: %w", err)
+		var purgeItem []itemToPurge
+		for _, item := range []itemToPurge{keyVaultsPurge, managedHSMsPurge, appConfigsPurge, aPIManagement} {
+			if item.count > 0 {
+				purgeItem = append(purgeItem, item)
+			}
+		}
+
+		// cognitive services are grouped by resource group because the name of the resource group is required to purge
+		groupByKind := cognitiveAccountsByKind(cognitiveAccounts)
+		for name, cogAccounts := range groupByKind {
+			addPurgeItem := itemToPurge{
+				resourceType: name,
+				count:        len(cogAccounts),
+				purge: func(skipPurge bool, self *itemToPurge) error {
+					return p.purgeCognitiveAccounts(ctx, self.cognitiveAccounts, skipPurge)
+				},
+				cognitiveAccounts: groupByKind[name],
+			}
+			purgeItem = append(purgeItem, addPurgeItem)
+		}
+
+		if err := p.purgeItems(ctx, purgeItem, options); err != nil {
+			return nil, fmt.Errorf("purging resources: %w", err)
+		}
 	}
 
 	destroyResult := &provisioning.DestroyResult{
@@ -1106,38 +1116,46 @@ func (p *BicepProvider) generateResourcesToDelete(groupedResources map[string][]
 	return append(lines, "\n")
 }
 
-// Deletes the azure resources within the deployment
-func (p *BicepProvider) destroyDeploymentWithConfirmation(
+// promptDeletion prompts the user for confirmation before deleting resources.
+// Returns nil if the user confirms, or an error if they deny or an error occurs.
+func (p *BicepProvider) promptDeletion(
 	ctx context.Context,
 	options provisioning.DestroyOptions,
-	deployment infra.Deployment,
 	groupedResources map[string][]*azapi.Resource,
 	resourceCount int,
 ) error {
-	if !options.Force() {
-		p.console.MessageUxItem(ctx, &ux.MultilineMessage{
-			Lines: p.generateResourcesToDelete(groupedResources)},
-		)
-		confirmDestroy, err := p.console.Confirm(ctx, input.ConsoleOptions{
-			Message: fmt.Sprintf(
-				"Total resources to %s: %d, are you sure you want to continue?",
-				output.WithErrorFormat("delete"),
-				resourceCount,
-			),
-			DefaultValue: false,
-		})
-
-		if err != nil {
-			return fmt.Errorf("prompting for delete confirmation: %w", err)
-		}
-
-		if !confirmDestroy {
-			return errors.New("user denied delete confirmation")
-		}
+	if options.Force() {
+		return nil
 	}
 
-	p.console.Message(ctx, output.WithGrayFormat("Deleting your resources can take some time.\n"))
+	p.console.MessageUxItem(ctx, &ux.MultilineMessage{
+		Lines: p.generateResourcesToDelete(groupedResources)},
+	)
+	confirmDestroy, err := p.console.Confirm(ctx, input.ConsoleOptions{
+		Message: fmt.Sprintf(
+			"Total resources to %s: %d, are you sure you want to continue?",
+			output.WithErrorFormat("delete"),
+			resourceCount,
+		),
+		DefaultValue: false,
+	})
 
+	if err != nil {
+		return fmt.Errorf("prompting for delete confirmation: %w", err)
+	}
+
+	if !confirmDestroy {
+		return errors.New("user denied delete confirmation")
+	}
+
+	return nil
+}
+
+// destroyDeployment deletes the azure resources within the deployment and voids the deployment state.
+func (p *BicepProvider) destroyDeployment(
+	ctx context.Context,
+	deployment infra.Deployment,
+) error {
 	err := async.RunWithProgressE(func(progressMessage azapi.DeleteDeploymentProgress) {
 		switch progressMessage.State {
 		case azapi.DeleteResourceStateInProgress:

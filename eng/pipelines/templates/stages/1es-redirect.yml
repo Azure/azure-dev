@@ -26,6 +26,10 @@ extends:
   ${{ else }}:
     template: v1/1ES.Unofficial.PipelineTemplate.yml@1ESPipelineTemplates
   parameters:
+    featureFlags:
+      golang:
+        internalModuleProxy:
+          enabled: true
     settings:
       skipBuildTagsForGitHubPullRequests: true
       networkIsolationPolicy: Permissive

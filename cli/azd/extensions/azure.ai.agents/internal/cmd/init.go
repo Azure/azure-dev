@@ -755,14 +755,9 @@ func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context) error {
 					},
 				})
 				if err != nil {
-					fmt.Printf("failed to prompt for connection selection: %v\n", err)
-				} else {
-					selectedConnection = &appInsightsConnections[int(*selectResp.Value)]
+					return fmt.Errorf("prompting for Application Insights connection selection: %w", err)
 				}
-			}
-
-			if selectedConnection == nil {
-				return fmt.Errorf("no Application Insights connection was selected")
+				selectedConnection = &appInsightsConnections[int(*selectResp.Value)]
 			}
 
 			if selectedConnection.Credentials.Key == "" {

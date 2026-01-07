@@ -761,6 +761,14 @@ func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context) error {
 				}
 			}
 
+			if selectedConnection == nil {
+				return fmt.Errorf("no Application Insights connection was selected")
+			}
+
+			if selectedConnection.Credentials.Key == "" {
+				return fmt.Errorf("Application Insights connection '%s' has no credentials key", selectedConnection.Name)
+			}
+
 			if err := a.setEnvVar(ctx, "APPLICATIONINSIGHTS_CONNECTION_STRING", selectedConnection.Credentials.Key); err != nil {
 				return err
 			}

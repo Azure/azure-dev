@@ -15,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/stretchr/testify/require"
 )
 
@@ -64,7 +63,7 @@ func SetCurrentTestName(name string) {
 }
 
 // ExecuteInitCommandForAgent executes the AI agent init command with the given parameters
-func ExecuteInitCommandForAgent(ctx context.Context, cli *azdcli.CLI, manifestURL, targetPath string, testSuite *IntegrationTestSuite) error {
+func ExecuteInitCommandForAgent(ctx context.Context, manifestURL, targetPath string, testSuite *IntegrationTestSuite) error {
 	// Prepare command arguments
 	args := []string{"ai", "agent", "init", "--no-prompt"}
 
@@ -81,14 +80,7 @@ func ExecuteInitCommandForAgent(ctx context.Context, cli *azdcli.CLI, manifestUR
 		args = append(args, "--project-id", testSuite.ProjectID)
 	}
 
-	var err error
-
-	if cli != nil {
-		_, err = executeAzdCommand(ctx, cli, testSuite, 2*time.Minute, args)
-	} else {
-		_, err = executeAzdCommandWithExec(ctx, testSuite, 2*time.Minute, args)
-	}
-
+	_, err := executeAzdCommand(ctx, testSuite, 2*time.Minute, args)
 	if err != nil {
 		return err
 	}
@@ -176,33 +168,7 @@ func (e *InitError) Unwrap() error {
 }
 
 // executeAzdCommand executes an azd command and returns output and agent version if available
-func executeAzdCommand(ctx context.Context, cli *azdcli.CLI, testSuite *IntegrationTestSuite, timeout time.Duration, args []string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	Logf("Executing command: %s", strings.Join(args, " "))
-	Logf("Working directory: %s", testSuite.AzdProjectDir)
-
-	cli.WorkingDirectory = testSuite.AzdProjectDir
-	result, err := cli.RunCommandWithStdIn(ctx, "", args...)
-	output := result.Stdout + result.Stderr
-
-	LogCommandOutput(strings.Join(args, " "), []byte(output))
-
-	if err != nil || result.ExitCode != 0 {
-		Logf("Command failed with error: %v, exit code: %d", err, result.ExitCode)
-		return "", &InitError{
-			Message: output,
-			Err:     fmt.Errorf("exit code %d: %w", result.ExitCode, err),
-		}
-	}
-	Logf("Command completed successfully")
-
-	return output, nil
-}
-
-// executeAzdCommand executes an azd command and returns output and agent version if available
-func executeAzdCommandWithExec(ctx context.Context, testSuite *IntegrationTestSuite, timeout time.Duration, args []string) (string, error) {
+func executeAzdCommand(ctx context.Context, testSuite *IntegrationTestSuite, timeout time.Duration, args []string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -256,10 +222,10 @@ func parseOutputForAgentVersion(output string) string {
 
 // ExecuteUpCommandForAgent executes the AZD up command with the given parameters
 // Returns the deployed agent version number if successful
-func ExecuteUpCommandForAgent(ctx context.Context, cli *azdcli.CLI, testSuite *IntegrationTestSuite) (string, error) {
+func ExecuteUpCommandForAgent(ctx context.Context, testSuite *IntegrationTestSuite) (string, error) {
 	args := []string{"up", "--no-prompt"}
 
-	output, err := executeAzdCommand(ctx, cli, testSuite, 20*time.Minute, args)
+	output, err := executeAzdCommand(ctx, testSuite, 20*time.Minute, args)
 	if err != nil {
 		return "", err
 	}
@@ -271,7 +237,7 @@ func ExecuteUpCommandForAgent(ctx context.Context, cli *azdcli.CLI, testSuite *I
 
 // ExecuteDeployCommandForAgent executes the AZD deploy command with the given parameters
 // Returns the deployed agent version number if successful
-func ExecuteDeployCommandForAgent(ctx context.Context, cli *azdcli.CLI, agentName string, testSuite *IntegrationTestSuite) (string, error) {
+func ExecuteDeployCommandForAgent(ctx context.Context, agentName string, testSuite *IntegrationTestSuite) (string, error) {
 	// Prepare command arguments
 	args := []string{"deploy"}
 	if agentName != "" {
@@ -279,7 +245,7 @@ func ExecuteDeployCommandForAgent(ctx context.Context, cli *azdcli.CLI, agentNam
 	}
 	args = append(args, "--no-prompt")
 
-	output, err := executeAzdCommand(ctx, cli, testSuite, 20*time.Minute, args)
+	output, err := executeAzdCommand(ctx, testSuite, 20*time.Minute, args)
 	if err != nil {
 		return "", err
 	}

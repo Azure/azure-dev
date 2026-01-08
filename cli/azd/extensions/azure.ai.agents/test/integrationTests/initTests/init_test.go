@@ -12,7 +12,6 @@ import (
 
 	"azureaiagent/test/integrationTests/testUtilities"
 
-	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/stretchr/testify/require"
 )
 
@@ -105,10 +104,8 @@ func TestInitCommand_Integration(t *testing.T) {
 			testUtilities.SetCurrentTestName(tt.name)
 			testUtilities.Logf("Running test: %s", tt.name)
 
-			cli := azdcli.NewCLI(t)
-
 			// Execute init command
-			err := testUtilities.ExecuteInitCommandForAgent(context.Background(), cli, tt.manifestURL, tt.targetDir, testSuite)
+			err := testUtilities.ExecuteInitCommandForAgent(context.Background(), tt.manifestURL, tt.targetDir, testSuite)
 			if tt.wantErr {
 				require.Error(t, err)
 				testUtilities.Logf("Test completed (expected error)")

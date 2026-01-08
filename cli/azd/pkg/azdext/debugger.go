@@ -15,9 +15,10 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
-// waitForDebugger checks if AZD_EXT_DEBUG environment variable is set to a truthy value.
+// WaitForDebugger checks if AZD_EXT_DEBUG environment variable is set to a truthy value.
 // If set, prompts the user to attach a debugger to the current process.
-func waitForDebugger(ctx context.Context, extensionId string, azdClient *AzdClient) {
+// This should be called at the start of extension command implementations to enable debugging.
+func WaitForDebugger(ctx context.Context, azdClient *AzdClient) {
 	debugValue := os.Getenv("AZD_EXT_DEBUG")
 	if debugValue == "" {
 		return
@@ -28,6 +29,7 @@ func waitForDebugger(ctx context.Context, extensionId string, azdClient *AzdClie
 		return
 	}
 
+	extensionId := getExtensionId(ctx)
 	message := fmt.Sprintf("Extension '%s' ready to debug (pid: %d).", extensionId, os.Getpid())
 
 	_, err = azdClient.Prompt().Confirm(ctx, &ConfirmRequest{

@@ -6,6 +6,6 @@ azure.identity== 1.21.0
 azure.mgmt.resource== 22.0.0
 rich==14.0.0
 typer==0.15.2
-aiohttp==3.12.14
+aiohttp==3.13.3
 asyncio==3.4.3
 pyinstaller==6.13.0

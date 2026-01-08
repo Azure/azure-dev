@@ -5,7 +5,6 @@ package middleware
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -24,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
+	"github.com/tidwall/gjson"
 	"go.opentelemetry.io/otel/codes"
 )
 
@@ -72,12 +72,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		return next(ctx)
 	}
 
-	// Preserve a non-cancellable parent context BEFORE making the first attempt
-	// This ensures that if the context gets cancelled during the first attempt,
-	// retries can use a fresh context
-	parentCtx := context.WithoutCancel(ctx)
-
-	actionResult, err := next(parentCtx)
+	actionResult, err := next(ctx)
 
 	// Stop the spinner always to un-hide cursor
 	e.console.StopSpinner(ctx, "", input.Step)
@@ -228,7 +223,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
                 "Solution 3 Short description (one sentence)"
               ]
             }
-            Provide 1-3 solutions. Each solution must be concise (one sentence).
+            Provide up to 3 solutions. Each solution must be concise (one sentence).
             Error details: %s`, errorInput))
 
 		// Extract solutions from agent output even if there's a parsing error
@@ -290,12 +285,8 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			}
 		}
 
-		// Use a fresh child context per retry to avoid reusing a canceled ctx
-		attemptCtx, cancel := context.WithCancel(parentCtx)
-		// Clear check cache to prevent skip of tool related error
-		attemptCtx = tools.WithInstalledCheckCache(attemptCtx)
-		actionResult, err = next(attemptCtx)
-		cancel()
+		ctx = tools.WithInstalledCheckCache(ctx)
+		actionResult, err = next(ctx)
 		originalError = err
 	}
 
@@ -387,22 +378,20 @@ func promptForErrorHandlingConsent(
 	return choices[*choiceIndex].Value, nil
 }
 
-// AgentResponse represents the structured JSON response from the LLM agent
-type AgentResponse struct {
-	Analysis  string   `json:"analysis"`
-	Solutions []string `json:"solutions"`
-}
-
 // extractSuggestedSolutions extracts solutions from the LLM response.
 // It expects a JSON response with the structure: {"analysis": "...", "solutions": ["...", "...", "..."]}
 // If JSON parsing fails, it returns an empty slice.
 func extractSuggestedSolutions(llmResponse string) []string {
-	var response AgentResponse
-	if err := json.Unmarshal([]byte(llmResponse), &response); err != nil {
+	result := gjson.Get(llmResponse, "solutions")
+	if !result.Exists() {
 		return []string{}
 	}
 
-	return response.Solutions
+	var solutions []string
+	for _, solution := range result.Array() {
+		solutions = append(solutions, solution.String())
+	}
+	return solutions
 }
 
 // promptUserForSolution displays extracted solutions to the user and prompts them to select which solution to try.

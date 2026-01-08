@@ -2,7 +2,7 @@
 
 ## 0.8.0 (2026-01-08)
 
-- Remove Default Azure Credential from JS and Python scaffolding
+- [[#6474]](https://github.com/Azure/azure-dev/pull/6474) Remove Default Azure Credential from JS and Python scaffolding
 
 ## 0.7.1 (2025-12-17)
 

@@ -52,6 +52,13 @@ Before submitting any changes or pushing code, **always run the following checks
 - Use descriptive names that clearly indicate purpose
 - Prefix private members with underscore if needed for clarity
 
+### Copyright Headers
+All TypeScript source files MUST include the Microsoft copyright header at the very top of the file:
+```typescript
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+```
+
 ### TypeScript Guidelines
 - Use explicit types where possible, avoid `any`
 - Leverage VS Code API types from `vscode` module

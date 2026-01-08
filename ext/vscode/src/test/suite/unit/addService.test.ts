@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-import * as assert from 'assert';
+import { expect } from 'chai';
 import * as vscode from 'vscode';
 import * as sinon from 'sinon';
 import { addService } from '../../../commands/addService';
@@ -44,7 +44,7 @@ suite('addService', () => {
 
         await addService(mockContext, mockNode);
 
-        assert.strictEqual(showQuickPickStub.called, false, 'showQuickPick should not be called if service name is cancelled');
+        expect(showQuickPickStub.called).to.equal(false, 'showQuickPick should not be called if service name is cancelled');
     });
 
     test('validates service name input correctly', async () => {
@@ -60,22 +60,22 @@ suite('addService', () => {
         await addService(mockContext, mockNode);
 
         // Get the validator function
-        assert.ok(showInputBoxStub.called, 'showInputBox should be called');
+        expect(showInputBoxStub.called, 'showInputBox should be called').to.exist;
         const inputBoxOptions = showInputBoxStub.firstCall?.args[0] as vscode.InputBoxOptions;
         const validator = inputBoxOptions?.validateInput;
 
-        assert.ok(validator, 'Validator should be provided');
+        expect(validator, 'Validator should be provided').to.exist;
 
         if (validator) {
             // Valid names
-            assert.strictEqual(validator('my-service'), undefined);
-            assert.strictEqual(validator('my_service'), undefined);
-            assert.strictEqual(validator('myService123'), undefined);
+            expect(validator('my-service')).to.equal(undefined);
+            expect(validator('my_service')).to.equal(undefined);
+            expect(validator('myService123')).to.equal(undefined);
 
             // Invalid names
-            assert.ok(validator(''), 'Empty string should be invalid');
-            assert.ok(validator('my service'), 'Space should be invalid');
-            assert.ok(validator('my@service'), 'Special character should be invalid');
+            expect(validator(''), 'Empty string should be invalid').to.exist;
+            expect(validator('my service'), 'Space should be invalid').to.exist;
+            expect(validator('my@service'), 'Special character should be invalid').to.exist;
         }
     });
 
@@ -91,7 +91,7 @@ suite('addService', () => {
 
         await addService(mockContext, mockNode);
 
-        assert.strictEqual(showQuickPickStub.callCount, 1, 'Should only call showQuickPick once for language');
+        expect(showQuickPickStub.callCount).to.equal(1, 'Should only call showQuickPick once for language');
     });
 
     test('returns early when user cancels host selection', async () => {
@@ -107,8 +107,8 @@ suite('addService', () => {
 
         await addService(mockContext, mockNode);
 
-        assert.strictEqual(showQuickPickStub.callCount, 2, 'Should call showQuickPick twice (language and host)');
-        assert.strictEqual(openTextDocumentStub.called, false, 'Should not open document if host is cancelled');
+        expect(showQuickPickStub.callCount).to.equal(2, 'Should call showQuickPick twice (language and host)');
+        expect(openTextDocumentStub.called).to.equal(false, 'Should not open document if host is cancelled');
     });
 
     test('adds service with correct YAML structure when all inputs provided', async () => {
@@ -131,11 +131,11 @@ suite('addService', () => {
 
         await addService(mockContext, mockNode);
 
-        assert.ok(applyEditStub.called, 'applyEdit should be called');
-        assert.ok(showInformationMessageStub.called, 'Success message should be shown');
+        expect(applyEditStub.called, 'applyEdit should be called').to.exist;
+        expect(showInformationMessageStub.called, 'Success message should be shown').to.exist;
 
         const successMessage = showInformationMessageStub.firstCall.args[0] as string;
-        assert.ok(successMessage.includes('api'), 'Success message should include service name');
+        expect(successMessage, 'Success message should include service name').to.include('api');
     });
 
     test('shows error when services section not found in azure.yaml', async () => {
@@ -157,9 +157,9 @@ suite('addService', () => {
 
         await addService(mockContext, mockNode);
 
-        assert.ok(showErrorMessageStub.called, 'Error message should be shown');
+        expect(showErrorMessageStub.called, 'Error message should be shown').to.be.true;
         const errorMessage = showErrorMessageStub.firstCall.args[0] as string;
-        assert.ok(errorMessage.includes('No services section'), 'Error should mention missing services section');
+        expect(errorMessage, 'Error should mention missing services section').to.include('No services section');
     });
 
     test('searches for azure.yaml when node has no configuration file', async () => {
@@ -183,8 +183,8 @@ suite('addService', () => {
 
         await addService(mockContext);
 
-        assert.ok(findFilesStub.called, 'Should search for azure.yaml files');
-        assert.ok(openTextDocumentStub.called, 'Should open the found azure.yaml file');
+        expect(findFilesStub.called, 'Should search for azure.yaml files').to.exist;
+        expect(openTextDocumentStub.called, 'Should open the found azure.yaml file').to.exist;
     });
 
     test('shows error when no workspace folder is open', async () => {
@@ -192,9 +192,9 @@ suite('addService', () => {
 
         await addService(mockContext);
 
-        assert.ok(showErrorMessageStub.called, 'Error message should be shown');
+        expect(showErrorMessageStub.called, 'Error message should be shown').to.be.true;
         const errorMessage = showErrorMessageStub.firstCall.args[0] as string;
-        assert.ok(errorMessage.includes('No workspace folder'), 'Error should mention no workspace folder');
+        expect(errorMessage, 'Error should mention no workspace folder').to.include('No workspace folder');
     });
 
     test('shows error when no azure.yaml found in workspace', async () => {
@@ -207,9 +207,9 @@ suite('addService', () => {
 
         await addService(mockContext);
 
-        assert.ok(showErrorMessageStub.called, 'Error message should be shown');
+        expect(showErrorMessageStub.called, 'Error message should be shown').to.be.true;
         const errorMessage = showErrorMessageStub.firstCall.args[0] as string;
-        assert.ok(errorMessage.includes('No azure.yaml file found'), 'Error should mention no azure.yaml found');
+        expect(errorMessage, 'Error should mention no azure.yaml found').to.include('No azure.yaml file found');
     });
 
     test('generates correct service snippet with different host types', async () => {
@@ -240,7 +240,7 @@ suite('addService', () => {
 
             await addService(mockContext, mockNode);
 
-            assert.ok(applyEditStub.called, `applyEdit should be called for host ${host.label}`);
+            expect(applyEditStub.called, `applyEdit should be called for host ${host.label}`).to.exist;
 
             // Reset stubs for next iteration
             applyEditStub.resetHistory();

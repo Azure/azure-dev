@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-import * as assert from 'assert';
+import { expect } from 'chai';
 import * as vscode from 'vscode';
 import * as sinon from 'sinon';
 import { TemplateToolsTreeDataProvider } from '../../../views/templateTools/TemplateToolsTreeDataProvider';
@@ -26,12 +26,12 @@ suite('TemplateToolsTreeDataProvider', () => {
 
         const children = await provider.getChildren();
 
-        assert.ok(Array.isArray(children), 'Should return an array');
-        assert.ok(children.length > 0, 'Should have root items');
+        expect(children, 'Should return an array').to.be.an('array');
+        expect(children.length, 'Should have root items').to.be.greaterThan(0);
 
         // Should have Quick Start section when no azure.yaml
         const hasQuickStart = children.some(child => child.label === 'Quick Start');
-        assert.ok(hasQuickStart, 'Should have Quick Start section when no azure.yaml');
+        expect(hasQuickStart, 'Should have Quick Start section when no azure.yaml').to.be.true;
     });
 
     test('getChildren does not show Quick Start when azure.yaml exists', async () => {
@@ -41,11 +41,11 @@ suite('TemplateToolsTreeDataProvider', () => {
 
         const children = await provider.getChildren();
 
-        assert.ok(Array.isArray(children), 'Should return an array');
+        expect(children, 'Should return an array').to.be.an('array');
 
         // Should NOT have Quick Start section when azure.yaml exists
         const hasQuickStart = children.some(child => child.label === 'Quick Start');
-        assert.ok(!hasQuickStart, 'Should not have Quick Start section when azure.yaml exists');
+        expect(hasQuickStart, 'Should not have Quick Start section when azure.yaml exists').to.be.false;
     });
 
     test('getTreeItem returns the same tree item', async () => {
@@ -54,7 +54,7 @@ suite('TemplateToolsTreeDataProvider', () => {
 
         if (children.length > 0) {
             const treeItem = provider.getTreeItem(children[0]);
-            assert.strictEqual(treeItem, children[0], 'Should return the same tree item');
+            expect(treeItem, 'Should return the same tree item').to.equal(children[0]);
         }
     });
 
@@ -74,7 +74,7 @@ suite('TemplateToolsTreeDataProvider', () => {
         const children = await provider.getChildren();
 
         const hasCategoryGroup = children.some(child => child.label === 'Browse by Category');
-        assert.ok(hasCategoryGroup, 'Should have category group');
+        expect(hasCategoryGroup, 'Should have category group').to.be.true;
     });
 
     test('root items include AI templates', async () => {
@@ -83,7 +83,7 @@ suite('TemplateToolsTreeDataProvider', () => {
         const children = await provider.getChildren();
 
         const hasAITemplates = children.some(child => child.label === 'AI Templates');
-        assert.ok(hasAITemplates, 'Should have AI templates section');
+        expect(hasAITemplates, 'Should have AI templates section').to.be.true;
     });
 
     test('root items include search', async () => {
@@ -92,7 +92,7 @@ suite('TemplateToolsTreeDataProvider', () => {
         const children = await provider.getChildren();
 
         const hasSearch = children.some(child => child.label === 'Search Templates...');
-        assert.ok(hasSearch, 'Should have search option');
+        expect(hasSearch, 'Should have search option').to.be.true;
     });
 
     test('Quick Start items have correct properties', async () => {
@@ -101,30 +101,30 @@ suite('TemplateToolsTreeDataProvider', () => {
         const rootChildren = await provider.getChildren();
         const quickStartGroup = rootChildren.find(child => child.label === 'Quick Start');
 
-        assert.ok(quickStartGroup, 'Should have Quick Start group');
+        expect(quickStartGroup, 'Should have Quick Start group').to.exist;
 
         if (quickStartGroup) {
             const quickStartItems = await provider.getChildren(quickStartGroup);
 
-            assert.ok(quickStartItems.length >= 3, 'Should have at least 3 Quick Start items');
+            expect(quickStartItems.length, 'Should have at least 3 Quick Start items').to.be.at.least(3);
 
             const initFromCode = quickStartItems.find(item =>
                 (item.label as string).includes('Initialize from Current Code')
             );
-            assert.ok(initFromCode, 'Should have Initialize from Code option');
-            assert.ok(initFromCode.command, 'Should have command');
+            expect(initFromCode, 'Should have Initialize from Code option').to.exist;
+            expect(initFromCode!.command, 'Should have command').to.exist;
 
             const initMinimal = quickStartItems.find(item =>
                 (item.label as string).includes('Create Minimal Project')
             );
-            assert.ok(initMinimal, 'Should have Create Minimal option');
-            assert.ok(initMinimal.command, 'Should have command');
+            expect(initMinimal, 'Should have Create Minimal option').to.exist;
+            expect(initMinimal!.command, 'Should have command').to.exist;
 
             const browseGallery = quickStartItems.find(item =>
                 (item.label as string).includes('Browse Template Gallery')
             );
-            assert.ok(browseGallery, 'Should have Browse Gallery option');
-            assert.ok(browseGallery.command, 'Should have command');
+            expect(browseGallery, 'Should have Browse Gallery option').to.exist;
+            expect(browseGallery!.command, 'Should have command').to.exist;
         }
     });
 
@@ -134,13 +134,12 @@ suite('TemplateToolsTreeDataProvider', () => {
         const children = await provider.getChildren();
         const searchItem = children.find(child => child.label === 'Search Templates...');
 
-        assert.ok(searchItem, 'Should have search item');
-        assert.ok(searchItem.command, 'Search item should have command');
-        assert.strictEqual(
-            searchItem.command.command,
-            'azure-dev.views.templateTools.search',
+        expect(searchItem, 'Should have search item').to.exist;
+        expect(searchItem!.command, 'Search item should have command').to.exist;
+        expect(
+            searchItem!.command!.command,
             'Should have correct command ID'
-        );
+        ).to.equal('azure-dev.views.templateTools.search');
     });
 
     test('template item opens README on click', async () => {
@@ -153,15 +152,14 @@ suite('TemplateToolsTreeDataProvider', () => {
         const templateItems = await provider.getChildren(aiSection);
         const templateItem = templateItems[0] as vscode.TreeItem & { command?: vscode.Command };
 
-        assert.strictEqual(
+        expect(
             templateItem.command?.command,
-            'azure-dev.views.templateTools.openReadme',
             'Should open README on click'
-        );
-        assert.ok(
+        ).to.equal('azure-dev.views.templateTools.openReadme');
+        expect(
             templateItem.command?.arguments,
             'Should have command arguments'
-        );
+        ).to.exist;
     });
 
     test('template item has correct context value for inline actions', async () => {
@@ -174,10 +172,9 @@ suite('TemplateToolsTreeDataProvider', () => {
         const templateItems = await provider.getChildren(aiSection);
         const templateItem = templateItems[0] as vscode.TreeItem;
 
-        assert.strictEqual(
+        expect(
             templateItem.contextValue,
-            'template',
             'Should have template context value for inline menu actions'
-        );
+        ).to.equal('template');
     });
 });

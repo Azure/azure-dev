@@ -111,7 +111,5 @@ package.nls.*.json
 *.vsix
 *.zip
 
-# Playwright Test Artifacts
-playwright-report/
-test-results/
-playwright/.cache/
+# Source maps
+*.js.map

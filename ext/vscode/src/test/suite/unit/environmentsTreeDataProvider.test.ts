@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-import * as assert from 'assert';
+import { expect } from 'chai';
 import * as vscode from 'vscode';
 import * as sinon from 'sinon';
 import { EnvironmentsTreeDataProvider, EnvironmentTreeItem, EnvironmentItem, EnvironmentVariableItem } from '../../../views/environments/EnvironmentsTreeDataProvider';
@@ -37,7 +37,7 @@ suite('EnvironmentsTreeDataProvider', () => {
 
             const children = await provider.getChildren();
 
-            assert.strictEqual(children.length, 0);
+            expect(children).to.have.lengthOf(0);
         });
 
         test('returns environment items when applications exist', async () => {
@@ -58,11 +58,11 @@ suite('EnvironmentsTreeDataProvider', () => {
 
             const children = await provider.getChildren();
 
-            assert.strictEqual(children.length, 2);
-            assert.strictEqual(children[0].label, 'dev');
-            assert.strictEqual(children[0].type, 'Environment');
-            assert.strictEqual(children[0].description, '(Current)');
-            assert.strictEqual(children[1].label, 'prod');
+            expect(children).to.have.lengthOf(2);
+            expect(children[0].label).to.equal('dev');
+            expect(children[0].type).to.equal('Environment');
+            expect(children[0].description).to.equal('(Current)');
+            expect(children[1].label).to.equal('prod');
         });
 
         test('marks default environment with appropriate icon and description', async () => {
@@ -82,9 +82,9 @@ suite('EnvironmentsTreeDataProvider', () => {
 
             const children = await provider.getChildren();
 
-            assert.strictEqual(children.length, 1);
-            assert.strictEqual(children[0].description, '(Current)');
-            assert.ok(children[0].contextValue?.includes('default'));
+            expect(children).to.have.lengthOf(1);
+            expect(children[0].description).to.equal('(Current)');
+            expect(children[0].contextValue).to.include('default');
         });
 
         test('returns environment details when environment node is expanded', async () => {
@@ -103,9 +103,9 @@ suite('EnvironmentsTreeDataProvider', () => {
 
             const children = await provider.getChildren(envTreeItem);
 
-            assert.ok(children.length > 0);
-            assert.strictEqual(children[0].label, 'Environment Variables');
-            assert.strictEqual(children[0].type, 'Group');
+            expect(children.length).to.be.greaterThan(0);
+            expect(children[0].label).to.equal('Environment Variables');
+            expect(children[0].type).to.equal('Group');
         });
 
         test('returns environment variables when variables group is expanded', async () => {
@@ -131,9 +131,9 @@ suite('EnvironmentsTreeDataProvider', () => {
 
             const children = await provider.getChildren(variablesGroup);
 
-            assert.strictEqual(children.length, 2);
-            assert.strictEqual(children[0].type, 'Variable');
-            assert.ok(typeof children[0].label === 'string' && children[0].label.includes('Hidden value'));
+            expect(children).to.have.lengthOf(2);
+            expect(children[0].type).to.equal('Variable');
+            expect(typeof children[0].label === 'string' && children[0].label.includes('Hidden value')).to.be.true;
         });
     });
 
@@ -158,8 +158,8 @@ suite('EnvironmentsTreeDataProvider', () => {
 
             // After toggling, getTreeItem should return a new tree item with visible value
             const updatedTreeItem = provider.getTreeItem(varTreeItem);
-            assert.ok(typeof updatedTreeItem.label === 'string' && updatedTreeItem.label.includes('test-sub-id'));
-            assert.ok(typeof updatedTreeItem.tooltip === 'string' && updatedTreeItem.tooltip.includes('test-sub-id'));
+            expect(typeof updatedTreeItem.label === 'string' && updatedTreeItem.label.includes('test-sub-id')).to.be.true;
+            expect(typeof updatedTreeItem.tooltip === 'string' && updatedTreeItem.tooltip.includes('test-sub-id')).to.be.true;
         });
 
         test('toggles environment variable visibility from visible to hidden', async () => {
@@ -185,8 +185,8 @@ suite('EnvironmentsTreeDataProvider', () => {
 
             // After toggling back, getTreeItem should return a new tree item with hidden value
             const updatedTreeItem = provider.getTreeItem(varTreeItem);
-            assert.ok(typeof updatedTreeItem.label === 'string' && updatedTreeItem.label.includes('Hidden value'));
-            assert.ok(typeof updatedTreeItem.tooltip === 'string' && updatedTreeItem.tooltip.includes('Click to view value'));
+            expect(typeof updatedTreeItem.label === 'string' && updatedTreeItem.label.includes('Hidden value')).to.be.true;
+            expect(typeof updatedTreeItem.tooltip === 'string' && updatedTreeItem.tooltip.includes('Click to view value')).to.be.true;
         });
 
         test('does not toggle visibility for non-variable items', async () => {
@@ -206,7 +206,7 @@ suite('EnvironmentsTreeDataProvider', () => {
             const originalLabel = envTreeItem.label;
             provider.toggleVisibility(envTreeItem);
 
-            assert.strictEqual(envTreeItem.label, originalLabel);
+            expect(envTreeItem.label).to.equal(originalLabel);
         });
     });
 
@@ -237,7 +237,7 @@ suite('EnvironmentsTreeDataProvider', () => {
 
             const result = provider.getTreeItem(treeItem);
 
-            assert.strictEqual(result, treeItem);
+            expect(result).to.equal(treeItem);
         });
     });
 });

@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-import * as assert from 'assert';
+import { expect } from 'chai';
 import * as sinon from 'sinon';
 import * as vscode from 'vscode';
 import { WorkspaceAzureDevShowProvider } from '../../../services/AzureDevShowProvider';
@@ -50,11 +50,11 @@ suite('AzureDevShowProvider Error Handling Tests', () => {
 
         try {
             await provider.getShowResults(mockContext, configUri);
-            assert.fail('Should have thrown an error');
+            expect.fail('Should have thrown an error');
         } catch (error) {
-            assert.ok(error instanceof Error);
-            assert.ok(error.message.includes('invalid or empty'), 'Error message should be user-friendly');
-            assert.ok(error.message.includes('Problems panel'), 'Error should direct user to Problems panel');
+            expect(error).to.be.instanceOf(Error);
+            expect((error as Error).message, 'Error message should be user-friendly').to.include('invalid or empty');
+            expect((error as Error).message, 'Error should direct user to Problems panel').to.include('Problems panel');
         }
     });
 
@@ -73,11 +73,11 @@ suite('AzureDevShowProvider Error Handling Tests', () => {
 
         try {
             await provider.getShowResults(mockContext, configUri);
-            assert.fail('Should have thrown an error');
+            expect.fail('Should have thrown an error');
         } catch (error) {
-            assert.ok(error instanceof Error);
-            assert.ok(error.message.includes('Failed to parse'), 'Error message should be user-friendly');
-            assert.ok(error.message.includes('Problems panel'), 'Error should direct user to Problems panel');
+            expect(error).to.be.instanceOf(Error);
+            expect((error as Error).message, 'Error message should be user-friendly').to.include('Failed to parse');
+            expect((error as Error).message, 'Error should direct user to Problems panel').to.include('Problems panel');
         }
     });
 
@@ -95,9 +95,9 @@ suite('AzureDevShowProvider Error Handling Tests', () => {
 
         try {
             await provider.getShowResults(mockContext, configUri);
-            assert.fail('Should have thrown an error');
+            expect.fail('Should have thrown an error');
         } catch (error) {
-            assert.strictEqual(error, originalError, 'Original error should be re-thrown');
+            expect(error).to.equal(originalError, 'Original error should be re-thrown');
         }
     });
 
@@ -123,6 +123,6 @@ suite('AzureDevShowProvider Error Handling Tests', () => {
         const configUri = vscode.Uri.file('/test/azure.yaml');
         const results = await provider.getShowResults(mockContext, configUri);
 
-        assert.deepStrictEqual(results, mockResults);
+        expect(results).to.deep.equal(mockResults);
     });
 });

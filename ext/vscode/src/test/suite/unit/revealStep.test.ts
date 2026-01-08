@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-import * as assert from 'assert';
+import { expect } from 'chai';
 import * as sinon from 'sinon';
 import * as vscode from 'vscode';
 import { AzureResourcesExtensionApi } from '@microsoft/vscode-azureresources-api';
@@ -17,7 +17,7 @@ suite('RevealStep', () => {
     setup(() => {
         sandbox = sinon.createSandbox();
         step = new RevealStep();
-        
+
         // Mock ext.outputChannel
         ext.outputChannel = {
             appendLog: sandbox.stub()
@@ -36,7 +36,7 @@ suite('RevealStep', () => {
 
             const result = step.shouldExecute(context as RevealResourceWizardContext);
 
-            assert.strictEqual(result, true);
+            expect(result).to.equal(true);
         });
 
         test('returns false when azureResourceId is missing', () => {
@@ -44,7 +44,7 @@ suite('RevealStep', () => {
 
             const result = step.shouldExecute(context as RevealResourceWizardContext);
 
-            assert.strictEqual(result, false);
+            expect(result).to.equal(false);
         });
 
         test('returns false when azureResourceId is empty string', () => {
@@ -54,7 +54,7 @@ suite('RevealStep', () => {
 
             const result = step.shouldExecute(context as RevealResourceWizardContext);
 
-            assert.strictEqual(result, false);
+            expect(result).to.equal(false);
         });
     });
 
@@ -85,7 +85,7 @@ suite('RevealStep', () => {
 
             await step.execute(context as RevealResourceWizardContext);
 
-            assert.ok(executeCommandStub.calledWith('azureResourceGroups.focus'));
+            expect(executeCommandStub.calledWith('azureResourceGroups.focus')).to.be.true;
         });
 
         test('activates appropriate extension for Microsoft.Web provider', async () => {
@@ -103,7 +103,7 @@ suite('RevealStep', () => {
 
             await step.execute(context as RevealResourceWizardContext);
 
-            assert.ok(mockExtension.activate.calledOnce);
+            expect(mockExtension.activate.calledOnce).to.be.true;
         });
 
         test('activates appropriate extension for Microsoft.Storage provider', async () => {
@@ -121,7 +121,7 @@ suite('RevealStep', () => {
 
             await step.execute(context as RevealResourceWizardContext);
 
-            assert.ok(mockExtension.activate.calledOnce);
+            expect(mockExtension.activate.calledOnce).to.be.true;
         });
 
         test('activates appropriate extension for Microsoft.DocumentDB provider', async () => {
@@ -139,7 +139,7 @@ suite('RevealStep', () => {
 
             await step.execute(context as RevealResourceWizardContext);
 
-            assert.ok(mockExtension.activate.calledOnce);
+            expect(mockExtension.activate.calledOnce).to.be.true;
         });
 
         test('activates appropriate extension for Microsoft.App provider', async () => {
@@ -157,7 +157,7 @@ suite('RevealStep', () => {
 
             await step.execute(context as RevealResourceWizardContext);
 
-            assert.ok(mockExtension.activate.calledOnce);
+            expect(mockExtension.activate.calledOnce).to.be.true;
         });
 
         test('does not activate extension if already active', async () => {
@@ -175,7 +175,7 @@ suite('RevealStep', () => {
 
             await step.execute(context as RevealResourceWizardContext);
 
-            assert.ok(mockExtension.activate.notCalled);
+            expect(mockExtension.activate.notCalled).to.be.true;
         });
 
         test('attempts to refresh Azure Resources tree', async () => {
@@ -187,7 +187,7 @@ suite('RevealStep', () => {
 
             await step.execute(context as RevealResourceWizardContext);
 
-            assert.ok(executeCommandStub.calledWith('azureResourceGroups.refresh'));
+            expect(executeCommandStub.calledWith('azureResourceGroups.refresh')).to.be.true;
         });
 
         test('calls revealAzureResource with correct resource ID and options', async () => {
@@ -207,8 +207,8 @@ suite('RevealStep', () => {
 
             await step.execute(context as RevealResourceWizardContext);
 
-            assert.ok(mockRevealAzureResource.called);
-            assert.ok(mockRevealAzureResource.calledWith(azureResourceId, { select: true, focus: true, expand: true }));
+            expect(mockRevealAzureResource.called).to.be.true;
+            expect(mockRevealAzureResource.calledWith(azureResourceId, { select: true, focus: true, expand: true })).to.be.true;
         });
 
         test('attempts to reveal resource group first when resource has RG in path', async () => {
@@ -229,11 +229,11 @@ suite('RevealStep', () => {
             await step.execute(context as RevealResourceWizardContext);
 
             // Should be called twice: once for RG, once for the resource
-            assert.ok(mockRevealAzureResource.callCount >= 2);
+            expect(mockRevealAzureResource.callCount >= 2).to.be.true;
 
             // First call should be for the resource group
             const rgResourceId = '/subscriptions/test-sub-id/resourceGroups/test-rg';
-            assert.ok(mockRevealAzureResource.calledWith(rgResourceId, { select: false, focus: false, expand: true }));
+            expect(mockRevealAzureResource.calledWith(rgResourceId, { select: false, focus: false, expand: true })).to.be.true;
         });
 
         test('shows error message when reveal fails', async () => {
@@ -251,12 +251,14 @@ suite('RevealStep', () => {
 
             const showErrorMessageStub = sandbox.stub(vscode.window, 'showErrorMessage').resolves();
 
-            await assert.rejects(
-                async () => await step.execute(context as RevealResourceWizardContext),
-                (error: Error) => error.message === 'Reveal failed'
-            );
+            try {
+                await step.execute(context as RevealResourceWizardContext);
+                expect.fail('Should have thrown an error');
+            } catch (error) {
+                expect((error as Error).message).to.equal('Reveal failed');
+            }
 
-            assert.ok(showErrorMessageStub.called);
+            expect(showErrorMessageStub.called).to.be.true;
         });
 
         test('shows info message with Copy and Portal options when reveal returns undefined', async () => {
@@ -283,14 +285,14 @@ suite('RevealStep', () => {
 
             await step.execute(context as RevealResourceWizardContext);
 
-            assert.ok(showInfoMessageStub.called);
-            assert.ok(showInfoMessageStub.firstCall.args[0].includes('Unable to automatically reveal resource'));
+            expect(showInfoMessageStub.called).to.be.true;
+            expect(showInfoMessageStub.firstCall.args[0].includes('Unable to automatically reveal resource')).to.be.true;
         });
     });
 
     suite('priority', () => {
         test('has correct priority value', () => {
-            assert.strictEqual(step.priority, 100);
+            expect(step.priority).to.equal(100);
         });
     });
 });

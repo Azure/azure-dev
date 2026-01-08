@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-import * as assert from 'assert';
+import { expect } from 'chai';
 import * as sinon from 'sinon';
 import { ExtensionsTreeDataProvider, ExtensionTreeItem } from '../../../views/extensions/ExtensionsTreeDataProvider';
 import { WorkspaceAzureDevExtensionProvider, AzureDevExtension } from '../../../services/AzureDevExtensionProvider';
@@ -29,7 +29,7 @@ suite('ExtensionsTreeDataProvider', () => {
 
             const children = await provider.getChildren();
 
-            assert.strictEqual(children.length, 0);
+            expect(children).to.have.lengthOf(0);
         });
 
         test('returns extension items when extensions are installed', async () => {
@@ -42,12 +42,12 @@ suite('ExtensionsTreeDataProvider', () => {
 
             const children = await provider.getChildren();
 
-            assert.strictEqual(children.length, 2);
-            assert.strictEqual(children[0].extension.name, 'test-extension-1');
-            assert.strictEqual(children[0].extension.version, '1.0.0');
-            assert.strictEqual(children[0].description, '1.0.0');
-            assert.strictEqual(children[1].extension.name, 'test-extension-2');
-            assert.strictEqual(children[1].extension.version, '2.1.3');
+            expect(children).to.have.lengthOf(2);
+            expect(children[0].extension.name).to.equal('test-extension-1');
+            expect(children[0].extension.version).to.equal('1.0.0');
+            expect(children[0].description).to.equal('1.0.0');
+            expect(children[1].extension.name).to.equal('test-extension-2');
+            expect(children[1].extension.version).to.equal('2.1.3');
         });
 
         test('returns empty array for children of extension items', async () => {
@@ -61,7 +61,7 @@ suite('ExtensionsTreeDataProvider', () => {
 
             const children = await provider.getChildren(extensionTreeItem);
 
-            assert.strictEqual(children.length, 0);
+            expect(children).to.have.lengthOf(0);
         });
     });
 
@@ -76,7 +76,7 @@ suite('ExtensionsTreeDataProvider', () => {
             const treeItem = new ExtensionTreeItem(mockExtension);
             const result = provider.getTreeItem(treeItem);
 
-            assert.strictEqual(result, treeItem);
+            expect(result).to.equal(treeItem);
         });
     });
 
@@ -100,10 +100,10 @@ suite('ExtensionsTreeDataProvider', () => {
 
             const treeItem = new ExtensionTreeItem(mockExtension);
 
-            assert.strictEqual(treeItem.label, 'my-extension');
-            assert.strictEqual(treeItem.description, '3.2.1');
-            assert.strictEqual(treeItem.contextValue, 'ms-azuretools.azure-dev.views.extensions.extension');
-            assert.strictEqual(treeItem.collapsibleState, 0); // None
+            expect(treeItem.label).to.equal('my-extension');
+            expect(treeItem.description).to.equal('3.2.1');
+            expect(treeItem.contextValue).to.equal('ms-azuretools.azure-dev.views.extensions.extension');
+            expect(treeItem.collapsibleState).to.equal(0); // None
         });
     });
 });

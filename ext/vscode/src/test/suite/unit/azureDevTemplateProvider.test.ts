@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-import * as assert from 'assert';
+import { expect } from 'chai';
 import { AzureDevTemplateProvider } from '../../../services/AzureDevTemplateProvider';
 
 suite('AzureDevTemplateProvider', () => {
@@ -14,32 +14,32 @@ suite('AzureDevTemplateProvider', () => {
     test('getTemplates returns array of templates', async () => {
         const templates = await provider.getTemplates();
 
-        assert.ok(Array.isArray(templates), 'Should return an array');
+        expect(templates, 'Should return an array').to.be.an('array');
         if (templates.length > 0) {
             const template = templates[0];
-            assert.ok(template.id, 'Template should have an id');
-            assert.ok(template.title, 'Template should have a title');
-            assert.ok(template.description, 'Template should have a description');
-            assert.ok(template.source, 'Template should have a source');
+            expect(template.id, 'Template should have an id').to.exist;
+            expect(template.title, 'Template should have a title').to.exist;
+            expect(template.description, 'Template should have a description').to.exist;
+            expect(template.source, 'Template should have a source').to.exist;
         }
     });
 
     test('getAITemplates returns only AI-tagged templates', async () => {
         const aiTemplates = await provider.getAITemplates();
 
-        assert.ok(Array.isArray(aiTemplates), 'Should return an array');
+        expect(aiTemplates, 'Should return an array').to.be.an('array');
         aiTemplates.forEach(template => {
-            assert.ok(
+            expect(
                 template.tags?.includes('aicollection'),
                 `Template "${template.title}" should have aicollection tag`
-            );
+            ).to.be.true;
         });
     });
 
     test('searchTemplates filters by query', async () => {
         const searchResults = await provider.searchTemplates('react');
 
-        assert.ok(Array.isArray(searchResults), 'Should return an array');
+        expect(searchResults, 'Should return an array').to.be.an('array');
         searchResults.forEach(template => {
             const matchesQuery =
                 template.title.toLowerCase().includes('react') ||
@@ -48,31 +48,31 @@ suite('AzureDevTemplateProvider', () => {
                 template.languages?.some(lang => lang.toLowerCase().includes('react')) ||
                 template.frameworks?.some(fw => fw.toLowerCase().includes('react'));
 
-            assert.ok(matchesQuery, `Template "${template.title}" should match "react" query`);
+            expect(matchesQuery, `Template "${template.title}" should match "react" query`).to.be.true;
         });
     });
 
     test('getTemplatesByCategory returns correct category templates', async () => {
         const categories = provider.getCategories();
-        assert.ok(categories.length > 0, 'Should have categories');
+        expect(categories.length, 'Should have categories').to.be.greaterThan(0);
 
         const firstCategory = categories[0];
         const categoryTemplates = await provider.getTemplatesByCategory(firstCategory.name);
 
-        assert.ok(Array.isArray(categoryTemplates), 'Should return an array');
+        expect(categoryTemplates, 'Should return an array').to.be.an('array');
     });
 
     test('getCategories returns array of categories', () => {
         const categories = provider.getCategories();
 
-        assert.ok(Array.isArray(categories), 'Should return an array');
-        assert.ok(categories.length > 0, 'Should have at least one category');
+        expect(categories, 'Should return an array').to.be.an('array');
+        expect(categories.length, 'Should have at least one category').to.be.greaterThan(0);
 
         categories.forEach(category => {
-            assert.ok(category.name, 'Category should have a name');
-            assert.ok(category.displayName, 'Category should have a display name');
-            assert.ok(category.icon, 'Category should have an icon');
-            assert.ok(typeof category.filter === 'function', 'Category should have a filter function');
+            expect(category.name, 'Category should have a name').to.exist;
+            expect(category.displayName, 'Category should have a display name').to.exist;
+            expect(category.icon, 'Category should have an icon').to.exist;
+            expect(typeof category.filter, 'Category should have a filter function').to.equal('function');
         });
     });
 
@@ -90,15 +90,15 @@ suite('AzureDevTemplateProvider', () => {
 
         testCases.forEach(testCase => {
             const result = provider.extractTemplatePath(testCase.input);
-            assert.strictEqual(result, testCase.expected, `Should extract path from ${testCase.input}`);
+            expect(result, `Should extract path from ${testCase.input}`).to.equal(testCase.expected);
         });
     });
 
     test('getTemplateCount returns number of templates', async () => {
         const count = await provider.getTemplateCount();
 
-        assert.ok(typeof count === 'number', 'Should return a number');
-        assert.ok(count >= 0, 'Count should be non-negative');
+        expect(count, 'Should return a number').to.be.a('number');
+        expect(count, 'Count should be non-negative').to.be.at.least(0);
     });
 
     test('caching works - second call is faster', async () => {
@@ -114,20 +114,20 @@ suite('AzureDevTemplateProvider', () => {
 
         // Cache should be significantly faster (at least 10x)
         // Note: This is a heuristic and may not always pass due to network conditions
-        assert.ok(duration2 < duration1 / 5 || duration2 < 10,
-            `Second call should be faster (${duration2}ms) than first (${duration1}ms)`);
+        expect(duration2 < duration1 / 5 || duration2 < 10,
+            `Second call should be faster (${duration2}ms) than first (${duration1}ms)`).to.be.true;
     });
 
     test('forceRefresh parameter refreshes cache', async () => {
         // Load into cache
         const templates1 = await provider.getTemplates();
-        assert.ok(templates1.length > 0, 'Should have templates');
+        expect(templates1.length, 'Should have templates').to.be.greaterThan(0);
 
         // Force refresh
         const templates2 = await provider.getTemplates(true);
-        assert.ok(templates2.length > 0, 'Should have templates after refresh');
+        expect(templates2.length, 'Should have templates after refresh').to.be.greaterThan(0);
 
         // Both should have same data
-        assert.strictEqual(templates1.length, templates2.length, 'Should have same number of templates');
+        expect(templates1.length, 'Should have same number of templates').to.equal(templates2.length);
     });
 });

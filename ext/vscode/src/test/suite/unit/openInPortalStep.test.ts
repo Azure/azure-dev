@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-import * as assert from 'assert';
+import { expect } from 'chai';
 import * as sinon from 'sinon';
 import * as vscode from 'vscode';
 import { OpenInPortalStep } from '../../../commands/azureWorkspace/wizard/OpenInPortalStep';
@@ -28,7 +28,7 @@ suite('OpenInPortalStep', () => {
 
             const result = step.shouldExecute(context as RevealResourceWizardContext);
 
-            assert.strictEqual(result, true);
+            expect(result).to.equal(true);
         });
 
         test('returns false when azureResourceId is missing', () => {
@@ -36,7 +36,7 @@ suite('OpenInPortalStep', () => {
 
             const result = step.shouldExecute(context as RevealResourceWizardContext);
 
-            assert.strictEqual(result, false);
+            expect(result).to.equal(false);
         });
 
         test('returns false when azureResourceId is empty string', () => {
@@ -46,7 +46,7 @@ suite('OpenInPortalStep', () => {
 
             const result = step.shouldExecute(context as RevealResourceWizardContext);
 
-            assert.strictEqual(result, false);
+            expect(result).to.equal(false);
         });
     });
 
@@ -61,10 +61,10 @@ suite('OpenInPortalStep', () => {
 
             await step.execute(context as RevealResourceWizardContext);
 
-            assert.ok(openExternalStub.calledOnce);
+            expect(openExternalStub.calledOnce).to.exist;
             const calledUri = openExternalStub.firstCall.args[0] as vscode.Uri;
             const expectedUri = vscode.Uri.parse(`https://portal.azure.com/#@/resource${azureResourceId}`);
-            assert.strictEqual(calledUri.toString(), expectedUri.toString());
+            expect(calledUri.toString()).to.equal(expectedUri.toString());
         });
 
         test('constructs correct portal URL for Storage Account resource', async () => {
@@ -77,10 +77,10 @@ suite('OpenInPortalStep', () => {
 
             await step.execute(context as RevealResourceWizardContext);
 
-            assert.ok(openExternalStub.calledOnce);
+            expect(openExternalStub.calledOnce).to.exist;
             const calledUri = openExternalStub.firstCall.args[0] as vscode.Uri;
             const expectedUri = vscode.Uri.parse(`https://portal.azure.com/#@/resource${azureResourceId}`);
-            assert.strictEqual(calledUri.toString(), expectedUri.toString());
+            expect(calledUri.toString()).to.equal(expectedUri.toString());
         });
 
         test('constructs correct portal URL for Cosmos DB resource', async () => {
@@ -93,10 +93,10 @@ suite('OpenInPortalStep', () => {
 
             await step.execute(context as RevealResourceWizardContext);
 
-            assert.ok(openExternalStub.calledOnce);
+            expect(openExternalStub.calledOnce).to.exist;
             const calledUri = openExternalStub.firstCall.args[0] as vscode.Uri;
             const expectedUri = vscode.Uri.parse(`https://portal.azure.com/#@/resource${azureResourceId}`);
-            assert.strictEqual(calledUri.toString(), expectedUri.toString());
+            expect(calledUri.toString()).to.equal(expectedUri.toString());
         });
 
         test('constructs correct portal URL for Resource Group', async () => {
@@ -109,10 +109,10 @@ suite('OpenInPortalStep', () => {
 
             await step.execute(context as RevealResourceWizardContext);
 
-            assert.ok(openExternalStub.calledOnce);
+            expect(openExternalStub.calledOnce).to.exist;
             const calledUri = openExternalStub.firstCall.args[0] as vscode.Uri;
             const expectedUri = vscode.Uri.parse(`https://portal.azure.com/#@/resource${azureResourceId}`);
-            assert.strictEqual(calledUri.toString(), expectedUri.toString());
+            expect(calledUri.toString()).to.equal(expectedUri.toString());
         });
 
         test('constructs correct portal URL for Container Apps resource', async () => {
@@ -125,27 +125,27 @@ suite('OpenInPortalStep', () => {
 
             await step.execute(context as RevealResourceWizardContext);
 
-            assert.ok(openExternalStub.calledOnce);
+            expect(openExternalStub.calledOnce).to.exist;
             const calledUri = openExternalStub.firstCall.args[0] as vscode.Uri;
             const expectedUri = vscode.Uri.parse(`https://portal.azure.com/#@/resource${azureResourceId}`);
-            assert.strictEqual(calledUri.toString(), expectedUri.toString());
+            expect(calledUri.toString()).to.equal(expectedUri.toString());
         });
 
         test('throws error when azureResourceId is missing', async () => {
             const context: Partial<RevealResourceWizardContext> = {};
 
-            await assert.rejects(
-                async () => await step.execute(context as RevealResourceWizardContext),
-                (error: Error) => {
-                    return error.message.includes('azureResourceId');
-                }
-            );
+            try {
+                await step.execute(context as RevealResourceWizardContext);
+                expect.fail('Should have thrown an error');
+            } catch (error) {
+                expect((error as Error).message).to.include('azureResourceId');
+            }
         });
     });
 
     suite('priority', () => {
         test('has correct priority value', () => {
-            assert.strictEqual(step.priority, 100);
+            expect(step.priority).to.equal(100);
         });
     });
 });

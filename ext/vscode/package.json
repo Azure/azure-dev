@@ -703,16 +703,11 @@
         "lint": "eslint src --ext ts",
         "test": "npm run compile && node ./out/test/runAllTests.js",
         "unit-test": "npm run compile && node ./out/test/runUnitTests.js",
-        "test:e2e": "playwright test",
-        "test:e2e:ui": "playwright test --ui",
-        "test:e2e:headed": "playwright test --headed",
-        "test:e2e:debug": "playwright test --debug",
         "package": "vsce package",
         "ci-package": "npm run ci-build && vsce package"
     },
     "devDependencies": {
         "@azure/core-auth": "~1",
-        "@playwright/test": "~1.49",
         "@types/chai": "~5",
         "@types/mocha": "~10",
         "@types/node": "~20",

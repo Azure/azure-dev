@@ -202,14 +202,14 @@ func (s *fineTuningServiceImpl) UploadFile(ctx context.Context, filePath string)
 	if filePath == "" {
 		return "", fmt.Errorf("file path cannot be empty")
 	}
-	uploadedFileId, err := s._uploadFile(ctx, filePath)
+	uploadedFileId, err := s.uploadFile(ctx, filePath)
 	if err != nil || uploadedFileId == "" {
 		return "", fmt.Errorf("failed to upload file: %w", err)
 	}
 	return uploadedFileId, nil
 }
 
-func (s *fineTuningServiceImpl) _uploadFile(ctx context.Context, filePath string) (string, error) {
+func (s *fineTuningServiceImpl) uploadFile(ctx context.Context, filePath string) (string, error) {
 	// validate file existence
 	fileInfo, err := os.Stat(filePath)
 	if err != nil {

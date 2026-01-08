@@ -657,8 +657,8 @@ func Test_ParseGitHubUrl_NotAuthenticated(t *testing.T) {
 		return strings.Contains(
 			command, string(filepath.Separator)+"gh") && args.Args[0] == "auth" && args.Args[1] == "status"
 	}).Respond(exec.RunResult{
-		Stdout: "",
-		Stderr: "To get started with GitHub CLI, please run:  gh auth login",
+		Stdout:   "",
+		Stderr:   "To get started with GitHub CLI, please run:  gh auth login",
 		ExitCode: 1,
 	})
 

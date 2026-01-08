@@ -219,7 +219,7 @@
                 {
                     "id": "azure-dev-view",
                     "title": "Azure Developer CLI",
-                    "icon": "resources/icon.png"
+                    "icon": "resources/icon.svg"
                 }
             ]
         },

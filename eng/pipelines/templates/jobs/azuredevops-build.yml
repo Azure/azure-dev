@@ -1,0 +1,70 @@
+parameters:
+  - name: NameSuffix
+    type: string
+  - name: Pool
+    type: string
+  - name: ImageKey
+    type: string  
+    default: image
+  - name: OSVmImage
+    type: string
+  - name: OS
+    type: string
+
+jobs:
+  - job: Build_${{ parameters.NameSuffix }}
+    displayName: Build ${{ parameters.NameSuffix }}
+
+    pool:
+      name: ${{ parameters.Pool }}
+      ${{ parameters.ImageKey }}: ${{ parameters.OSVmImage }}
+      os: ${{ parameters.OS }}
+
+    variables:
+      # TODO: What version of Node to use for Azure DevOps extension build?
+      NodeVersion: 20.x
+      ${{ insert }}: ${{ parameters.Variables }}
+
+    steps:
+      - checkout: self
+
+      - task: NodeTool@0
+        inputs:
+          versionSpec: $(NodeVersion)
+
+      - pwsh: |
+          npm i -g npm tfx-cli
+          npm ci
+        displayName: Install build tools and dependencies
+        workingDirectory: ext/azuredevops
+
+      # TODO: If private build, update vss-extension.json and other JSONs to 
+      # set a dev version
+
+      - task: PowerShell@2
+        inputs:
+          targetType: 'filePath'
+          filePath: '$(Build.SourcesDirectory)/ext/azuredevops/ci-test.ps1'
+          workingDirectory: '$(Build.SourcesDirectory)/ext/azuredevops'
+        displayName: Test
+
+      - task: PowerShell@2
+        inputs:
+          targetType: 'filePath'
+          filePath: '$(Build.SourcesDirectory)/ext/azuredevops/ci-package.ps1'
+          workingDirectory: '$(Build.SourcesDirectory)/ext/azuredevops'
+        displayName: Package Extension
+
+      - pwsh: |
+          Copy-Item `
+            -Path "$(Build.SourcesDirectory)/ext/azuredevops/*.vsix" `
+            -Destination "$(Build.ArtifactStagingDirectory)/"
+        condition: and(succeeded(), eq('true', variables['UploadArtifact']))
+        displayName: Copy VSIX to staging directory
+
+    templateContext:
+      outputs:
+        - output: pipelineArtifact
+          path: $(Build.ArtifactStagingDirectory)
+          condition: and(succeeded(), eq('true', variables['UploadArtifact']))
+          artifact: vsix

@@ -10,6 +10,8 @@ parameters:
     type: string
   - name: OS
     type: string
+  - name: Variables
+    type: object
 
 jobs:
   - job: Build_${{ parameters.NameSuffix }}

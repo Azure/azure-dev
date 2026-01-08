@@ -654,10 +654,8 @@ method:
 				Hostname: parseResponse.Hostname,
 			}
 
-			apiPath := fmt.Sprintf("/repos/%s/contents/%s", urlInfo.RepoSlug, urlInfo.FilePath)
 			if urlInfo.Branch != "" {
 				fmt.Printf("Downloaded manifest from branch: %s\n", urlInfo.Branch)
-				apiPath += fmt.Sprintf("?ref=%s", urlInfo.Branch)
 			}
 			err = downloadParentDirectory(ctx, urlInfo, cwd, ghCli, console)
 			if err != nil {

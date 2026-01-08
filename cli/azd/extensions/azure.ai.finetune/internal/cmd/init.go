@@ -643,7 +643,7 @@ method:
 				Url: a.flags.template,
 			})
 			if err != nil {
-				return err
+				return fmt.Errorf("parsing GitHub URL via azd extension: %w", err)
 			}
 
 			// Map the response to GitHubUrlInfo

@@ -7,10 +7,6 @@ version: 0.0.8-preview
 language: go
 capabilities:
     - custom-commands
-providers:
-  - name: azure.ai.finetune
-    type: service-target
-    description: Deploys fine-tuning jobs to Azure Foundry
 examples:
     - name: init
       description: Initialize a new AI fine-tuning project.
@@ -18,9 +14,3 @@ examples:
     - name: deploy
       description: Deploy AI fine-tuning job to Azure.
       usage: azd ai finetuning deploy
-
-
-
-
-
-

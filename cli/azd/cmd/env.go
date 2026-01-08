@@ -853,7 +853,7 @@ func (e *envListAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		if invalidCount > 0 {
 			warning := fmt.Sprintf(
 				"\n⚠ Warning: %d environment(s) have invalid names and may cause issues with azd commands. "+
-					"Valid names can only contain: a-z, A-Z, 0-9, -, (, ), _, . (max 64 chars)\n",
+					"Environment names must follow the same naming rules enforced when creating or renaming environments.\n",
 				invalidCount,
 			)
 			fmt.Fprint(e.writer, warning)

@@ -22,20 +22,10 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ProjectService_Get_FullMethodName                     = "/azdext.ProjectService/Get"
-	ProjectService_AddService_FullMethodName              = "/azdext.ProjectService/AddService"
-	ProjectService_GetResolvedServices_FullMethodName     = "/azdext.ProjectService/GetResolvedServices"
-	ProjectService_ParseGitHubUrl_FullMethodName          = "/azdext.ProjectService/ParseGitHubUrl"
-	ProjectService_GetConfigSection_FullMethodName        = "/azdext.ProjectService/GetConfigSection"
-	ProjectService_GetConfigValue_FullMethodName          = "/azdext.ProjectService/GetConfigValue"
-	ProjectService_SetConfigSection_FullMethodName        = "/azdext.ProjectService/SetConfigSection"
-	ProjectService_SetConfigValue_FullMethodName          = "/azdext.ProjectService/SetConfigValue"
-	ProjectService_UnsetConfig_FullMethodName             = "/azdext.ProjectService/UnsetConfig"
-	ProjectService_GetServiceConfigSection_FullMethodName = "/azdext.ProjectService/GetServiceConfigSection"
-	ProjectService_GetServiceConfigValue_FullMethodName   = "/azdext.ProjectService/GetServiceConfigValue"
-	ProjectService_SetServiceConfigSection_FullMethodName = "/azdext.ProjectService/SetServiceConfigSection"
-	ProjectService_SetServiceConfigValue_FullMethodName   = "/azdext.ProjectService/SetServiceConfigValue"
-	ProjectService_UnsetServiceConfig_FullMethodName      = "/azdext.ProjectService/UnsetServiceConfig"
+	ProjectService_Get_FullMethodName                 = "/azdext.ProjectService/Get"
+	ProjectService_AddService_FullMethodName          = "/azdext.ProjectService/AddService"
+	ProjectService_GetResolvedServices_FullMethodName = "/azdext.ProjectService/GetResolvedServices"
+	ProjectService_ParseGitHubUrl_FullMethodName      = "/azdext.ProjectService/ParseGitHubUrl"
 )
 
 // ProjectServiceClient is the client API for ProjectService service.
@@ -53,26 +43,6 @@ type ProjectServiceClient interface {
 	GetResolvedServices(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*GetResolvedServicesResponse, error)
 	// ParseGitHubUrl parses a GitHub URL and extracts repository information.
 	ParseGitHubUrl(ctx context.Context, in *ParseGitHubUrlRequest, opts ...grpc.CallOption) (*ParseGitHubUrlResponse, error)
-	// Gets a configuration section by path.
-	GetConfigSection(ctx context.Context, in *GetProjectConfigSectionRequest, opts ...grpc.CallOption) (*GetProjectConfigSectionResponse, error)
-	// Gets a configuration value by path.
-	GetConfigValue(ctx context.Context, in *GetProjectConfigValueRequest, opts ...grpc.CallOption) (*GetProjectConfigValueResponse, error)
-	// Sets a configuration section by path.
-	SetConfigSection(ctx context.Context, in *SetProjectConfigSectionRequest, opts ...grpc.CallOption) (*EmptyResponse, error)
-	// Sets a configuration value by path.
-	SetConfigValue(ctx context.Context, in *SetProjectConfigValueRequest, opts ...grpc.CallOption) (*EmptyResponse, error)
-	// Removes configuration by path.
-	UnsetConfig(ctx context.Context, in *UnsetProjectConfigRequest, opts ...grpc.CallOption) (*EmptyResponse, error)
-	// Gets a service configuration section by path.
-	GetServiceConfigSection(ctx context.Context, in *GetServiceConfigSectionRequest, opts ...grpc.CallOption) (*GetServiceConfigSectionResponse, error)
-	// Gets a service configuration value by path.
-	GetServiceConfigValue(ctx context.Context, in *GetServiceConfigValueRequest, opts ...grpc.CallOption) (*GetServiceConfigValueResponse, error)
-	// Sets a service configuration section by path.
-	SetServiceConfigSection(ctx context.Context, in *SetServiceConfigSectionRequest, opts ...grpc.CallOption) (*EmptyResponse, error)
-	// Sets a service configuration value by path.
-	SetServiceConfigValue(ctx context.Context, in *SetServiceConfigValueRequest, opts ...grpc.CallOption) (*EmptyResponse, error)
-	// Removes service configuration by path.
-	UnsetServiceConfig(ctx context.Context, in *UnsetServiceConfigRequest, opts ...grpc.CallOption) (*EmptyResponse, error)
 }
 
 type projectServiceClient struct {
@@ -123,106 +93,6 @@ func (c *projectServiceClient) ParseGitHubUrl(ctx context.Context, in *ParseGitH
 	return out, nil
 }
 
-func (c *projectServiceClient) GetConfigSection(ctx context.Context, in *GetProjectConfigSectionRequest, opts ...grpc.CallOption) (*GetProjectConfigSectionResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetProjectConfigSectionResponse)
-	err := c.cc.Invoke(ctx, ProjectService_GetConfigSection_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *projectServiceClient) GetConfigValue(ctx context.Context, in *GetProjectConfigValueRequest, opts ...grpc.CallOption) (*GetProjectConfigValueResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetProjectConfigValueResponse)
-	err := c.cc.Invoke(ctx, ProjectService_GetConfigValue_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *projectServiceClient) SetConfigSection(ctx context.Context, in *SetProjectConfigSectionRequest, opts ...grpc.CallOption) (*EmptyResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(EmptyResponse)
-	err := c.cc.Invoke(ctx, ProjectService_SetConfigSection_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *projectServiceClient) SetConfigValue(ctx context.Context, in *SetProjectConfigValueRequest, opts ...grpc.CallOption) (*EmptyResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(EmptyResponse)
-	err := c.cc.Invoke(ctx, ProjectService_SetConfigValue_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *projectServiceClient) UnsetConfig(ctx context.Context, in *UnsetProjectConfigRequest, opts ...grpc.CallOption) (*EmptyResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(EmptyResponse)
-	err := c.cc.Invoke(ctx, ProjectService_UnsetConfig_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *projectServiceClient) GetServiceConfigSection(ctx context.Context, in *GetServiceConfigSectionRequest, opts ...grpc.CallOption) (*GetServiceConfigSectionResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetServiceConfigSectionResponse)
-	err := c.cc.Invoke(ctx, ProjectService_GetServiceConfigSection_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *projectServiceClient) GetServiceConfigValue(ctx context.Context, in *GetServiceConfigValueRequest, opts ...grpc.CallOption) (*GetServiceConfigValueResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetServiceConfigValueResponse)
-	err := c.cc.Invoke(ctx, ProjectService_GetServiceConfigValue_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *projectServiceClient) SetServiceConfigSection(ctx context.Context, in *SetServiceConfigSectionRequest, opts ...grpc.CallOption) (*EmptyResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(EmptyResponse)
-	err := c.cc.Invoke(ctx, ProjectService_SetServiceConfigSection_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *projectServiceClient) SetServiceConfigValue(ctx context.Context, in *SetServiceConfigValueRequest, opts ...grpc.CallOption) (*EmptyResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(EmptyResponse)
-	err := c.cc.Invoke(ctx, ProjectService_SetServiceConfigValue_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *projectServiceClient) UnsetServiceConfig(ctx context.Context, in *UnsetServiceConfigRequest, opts ...grpc.CallOption) (*EmptyResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(EmptyResponse)
-	err := c.cc.Invoke(ctx, ProjectService_UnsetServiceConfig_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // ProjectServiceServer is the server API for ProjectService service.
 // All implementations must embed UnimplementedProjectServiceServer
 // for forward compatibility.
@@ -238,26 +108,6 @@ type ProjectServiceServer interface {
 	GetResolvedServices(context.Context, *EmptyRequest) (*GetResolvedServicesResponse, error)
 	// ParseGitHubUrl parses a GitHub URL and extracts repository information.
 	ParseGitHubUrl(context.Context, *ParseGitHubUrlRequest) (*ParseGitHubUrlResponse, error)
-	// Gets a configuration section by path.
-	GetConfigSection(context.Context, *GetProjectConfigSectionRequest) (*GetProjectConfigSectionResponse, error)
-	// Gets a configuration value by path.
-	GetConfigValue(context.Context, *GetProjectConfigValueRequest) (*GetProjectConfigValueResponse, error)
-	// Sets a configuration section by path.
-	SetConfigSection(context.Context, *SetProjectConfigSectionRequest) (*EmptyResponse, error)
-	// Sets a configuration value by path.
-	SetConfigValue(context.Context, *SetProjectConfigValueRequest) (*EmptyResponse, error)
-	// Removes configuration by path.
-	UnsetConfig(context.Context, *UnsetProjectConfigRequest) (*EmptyResponse, error)
-	// Gets a service configuration section by path.
-	GetServiceConfigSection(context.Context, *GetServiceConfigSectionRequest) (*GetServiceConfigSectionResponse, error)
-	// Gets a service configuration value by path.
-	GetServiceConfigValue(context.Context, *GetServiceConfigValueRequest) (*GetServiceConfigValueResponse, error)
-	// Sets a service configuration section by path.
-	SetServiceConfigSection(context.Context, *SetServiceConfigSectionRequest) (*EmptyResponse, error)
-	// Sets a service configuration value by path.
-	SetServiceConfigValue(context.Context, *SetServiceConfigValueRequest) (*EmptyResponse, error)
-	// Removes service configuration by path.
-	UnsetServiceConfig(context.Context, *UnsetServiceConfigRequest) (*EmptyResponse, error)
 	mustEmbedUnimplementedProjectServiceServer()
 }
 
@@ -279,36 +129,6 @@ func (UnimplementedProjectServiceServer) GetResolvedServices(context.Context, *E
 }
 func (UnimplementedProjectServiceServer) ParseGitHubUrl(context.Context, *ParseGitHubUrlRequest) (*ParseGitHubUrlResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ParseGitHubUrl not implemented")
-}
-func (UnimplementedProjectServiceServer) GetConfigSection(context.Context, *GetProjectConfigSectionRequest) (*GetProjectConfigSectionResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetConfigSection not implemented")
-}
-func (UnimplementedProjectServiceServer) GetConfigValue(context.Context, *GetProjectConfigValueRequest) (*GetProjectConfigValueResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetConfigValue not implemented")
-}
-func (UnimplementedProjectServiceServer) SetConfigSection(context.Context, *SetProjectConfigSectionRequest) (*EmptyResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method SetConfigSection not implemented")
-}
-func (UnimplementedProjectServiceServer) SetConfigValue(context.Context, *SetProjectConfigValueRequest) (*EmptyResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method SetConfigValue not implemented")
-}
-func (UnimplementedProjectServiceServer) UnsetConfig(context.Context, *UnsetProjectConfigRequest) (*EmptyResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method UnsetConfig not implemented")
-}
-func (UnimplementedProjectServiceServer) GetServiceConfigSection(context.Context, *GetServiceConfigSectionRequest) (*GetServiceConfigSectionResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetServiceConfigSection not implemented")
-}
-func (UnimplementedProjectServiceServer) GetServiceConfigValue(context.Context, *GetServiceConfigValueRequest) (*GetServiceConfigValueResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetServiceConfigValue not implemented")
-}
-func (UnimplementedProjectServiceServer) SetServiceConfigSection(context.Context, *SetServiceConfigSectionRequest) (*EmptyResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method SetServiceConfigSection not implemented")
-}
-func (UnimplementedProjectServiceServer) SetServiceConfigValue(context.Context, *SetServiceConfigValueRequest) (*EmptyResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method SetServiceConfigValue not implemented")
-}
-func (UnimplementedProjectServiceServer) UnsetServiceConfig(context.Context, *UnsetServiceConfigRequest) (*EmptyResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method UnsetServiceConfig not implemented")
 }
 func (UnimplementedProjectServiceServer) mustEmbedUnimplementedProjectServiceServer() {}
 func (UnimplementedProjectServiceServer) testEmbeddedByValue()                        {}
@@ -403,186 +223,6 @@ func _ProjectService_ParseGitHubUrl_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
-func _ProjectService_GetConfigSection_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetProjectConfigSectionRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ProjectServiceServer).GetConfigSection(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ProjectService_GetConfigSection_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ProjectServiceServer).GetConfigSection(ctx, req.(*GetProjectConfigSectionRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _ProjectService_GetConfigValue_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetProjectConfigValueRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ProjectServiceServer).GetConfigValue(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ProjectService_GetConfigValue_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ProjectServiceServer).GetConfigValue(ctx, req.(*GetProjectConfigValueRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _ProjectService_SetConfigSection_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SetProjectConfigSectionRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ProjectServiceServer).SetConfigSection(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ProjectService_SetConfigSection_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ProjectServiceServer).SetConfigSection(ctx, req.(*SetProjectConfigSectionRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _ProjectService_SetConfigValue_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SetProjectConfigValueRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ProjectServiceServer).SetConfigValue(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ProjectService_SetConfigValue_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ProjectServiceServer).SetConfigValue(ctx, req.(*SetProjectConfigValueRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _ProjectService_UnsetConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(UnsetProjectConfigRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ProjectServiceServer).UnsetConfig(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ProjectService_UnsetConfig_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ProjectServiceServer).UnsetConfig(ctx, req.(*UnsetProjectConfigRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _ProjectService_GetServiceConfigSection_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetServiceConfigSectionRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ProjectServiceServer).GetServiceConfigSection(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ProjectService_GetServiceConfigSection_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ProjectServiceServer).GetServiceConfigSection(ctx, req.(*GetServiceConfigSectionRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _ProjectService_GetServiceConfigValue_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetServiceConfigValueRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ProjectServiceServer).GetServiceConfigValue(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ProjectService_GetServiceConfigValue_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ProjectServiceServer).GetServiceConfigValue(ctx, req.(*GetServiceConfigValueRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _ProjectService_SetServiceConfigSection_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SetServiceConfigSectionRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ProjectServiceServer).SetServiceConfigSection(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ProjectService_SetServiceConfigSection_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ProjectServiceServer).SetServiceConfigSection(ctx, req.(*SetServiceConfigSectionRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _ProjectService_SetServiceConfigValue_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SetServiceConfigValueRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ProjectServiceServer).SetServiceConfigValue(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ProjectService_SetServiceConfigValue_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ProjectServiceServer).SetServiceConfigValue(ctx, req.(*SetServiceConfigValueRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _ProjectService_UnsetServiceConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(UnsetServiceConfigRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ProjectServiceServer).UnsetServiceConfig(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ProjectService_UnsetServiceConfig_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ProjectServiceServer).UnsetServiceConfig(ctx, req.(*UnsetServiceConfigRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 // ProjectService_ServiceDesc is the grpc.ServiceDesc for ProjectService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -605,46 +245,6 @@ var ProjectService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ParseGitHubUrl",
 			Handler:    _ProjectService_ParseGitHubUrl_Handler,
-		},
-		{
-			MethodName: "GetConfigSection",
-			Handler:    _ProjectService_GetConfigSection_Handler,
-		},
-		{
-			MethodName: "GetConfigValue",
-			Handler:    _ProjectService_GetConfigValue_Handler,
-		},
-		{
-			MethodName: "SetConfigSection",
-			Handler:    _ProjectService_SetConfigSection_Handler,
-		},
-		{
-			MethodName: "SetConfigValue",
-			Handler:    _ProjectService_SetConfigValue_Handler,
-		},
-		{
-			MethodName: "UnsetConfig",
-			Handler:    _ProjectService_UnsetConfig_Handler,
-		},
-		{
-			MethodName: "GetServiceConfigSection",
-			Handler:    _ProjectService_GetServiceConfigSection_Handler,
-		},
-		{
-			MethodName: "GetServiceConfigValue",
-			Handler:    _ProjectService_GetServiceConfigValue_Handler,
-		},
-		{
-			MethodName: "SetServiceConfigSection",
-			Handler:    _ProjectService_SetServiceConfigSection_Handler,
-		},
-		{
-			MethodName: "SetServiceConfigValue",
-			Handler:    _ProjectService_SetServiceConfigValue_Handler,
-		},
-		{
-			MethodName: "UnsetServiceConfig",
-			Handler:    _ProjectService_UnsetServiceConfig_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

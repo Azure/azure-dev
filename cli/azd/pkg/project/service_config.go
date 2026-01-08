@@ -37,8 +37,6 @@ type ServiceConfig struct {
 	Docker DockerProjectOptions `yaml:"docker,omitempty"`
 	// The optional K8S / AKS options
 	K8s AksOptions `yaml:"k8s,omitempty"`
-	// The optional Azure Spring Apps options
-	Spring SpringOptions `yaml:"spring,omitempty"`
 	// Infrastructure module path relative to the root infra folder
 	Module string `yaml:"module,omitempty"`
 	// The infrastructure provisioning configuration
@@ -57,9 +55,6 @@ type ServiceConfig struct {
 	useDotNetPublishForDockerBuild *bool
 	// Environment variables to set for the service
 	Environment osutil.ExpandableMap `yaml:"env,omitempty"`
-
-	// AdditionalProperties captures any unknown YAML fields for extension support
-	AdditionalProperties map[string]interface{} `yaml:",inline"`
 
 	*ext.EventDispatcher[ServiceLifecycleEventArgs] `yaml:"-"`
 

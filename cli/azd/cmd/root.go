@@ -203,25 +203,6 @@ func NewRootCmd(
 		}).
 		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 
-	//deprecate:cmd hide login
-	login := newLoginCmd("")
-	login.Hidden = true
-	root.Add("login", &actions.ActionDescriptorOptions{
-		Command:        login,
-		FlagsResolver:  newLoginFlags,
-		ActionResolver: newLoginAction,
-		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
-		DefaultFormat:  output.NoneFormat,
-	})
-
-	//deprecate:cmd hide logout
-	logout := newLogoutCmd("")
-	logout.Hidden = true
-	root.Add("logout", &actions.ActionDescriptorOptions{
-		Command:        logout,
-		ActionResolver: newLogoutAction,
-	})
-
 	root.Add("init", &actions.ActionDescriptorOptions{
 		Command:        newInitCmd(),
 		FlagsResolver:  newInitFlags,
@@ -287,13 +268,7 @@ func NewRootCmd(
 			}
 			return true
 		}).
-		UseMiddlewareWhen("extensions", middleware.NewExtensionsMiddleware, func(descriptor *actions.ActionDescriptor) bool {
-			if onPreview, _ := descriptor.Options.Command.Flags().GetBool("preview"); onPreview {
-				log.Println("Skipping provision hooks due to preview flag.")
-				return false
-			}
-			return true
-		})
+		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 
 	root.
 		Add("package", &actions.ActionDescriptorOptions{

@@ -234,7 +234,7 @@ func (ds *StandardDeployments) DeployToSubscription(
 	// wait for deployment creation
 	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("deploying to subscription: %w", createDeploymentError(err, "Deployment"))
+		return nil, fmt.Errorf("deploying to subscription: %w", createDeploymentError(err, DeploymentOperationDeploy))
 	}
 
 	return ds.convertFromArmDeployment(&deployResult.DeploymentExtended), nil
@@ -270,7 +270,7 @@ func (ds *StandardDeployments) DeployToResourceGroup(
 	// wait for deployment creation
 	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("deploying to resource group: %w", createDeploymentError(err, "Deployment"))
+		return nil, fmt.Errorf("deploying to resource group: %w", createDeploymentError(err, DeploymentOperationDeploy))
 	}
 
 	return ds.convertFromArmDeployment(&deployResult.DeploymentExtended), nil
@@ -476,7 +476,18 @@ func (ds *StandardDeployments) DeleteSubscriptionDeployment(
 		})
 	}
 
-	// Deploy empty template to void provision state and keep deployment history instead of deleting previous deployments
+	// Void the deployment state
+	return ds.voidSubscriptionDeploymentState(ctx, subscriptionId, deploymentName, options)
+}
+
+// voidSubscriptionDeploymentState deploys an empty template to void the provision state
+// and keep deployment history instead of deleting previous deployments.
+func (ds *StandardDeployments) voidSubscriptionDeploymentState(
+	ctx context.Context,
+	subscriptionId string,
+	deploymentName string,
+	options map[string]any,
+) error {
 	// Get deployment metadata
 	deployment, err := ds.GetSubscriptionDeployment(ctx, subscriptionId, deploymentName)
 	if err != nil {
@@ -575,7 +586,7 @@ func (ds *StandardDeployments) WhatIfDeployToSubscription(
 	// wait for deployment creation
 	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("deploying to subscription: %w", createDeploymentError(err, "Deployment"))
+		return nil, fmt.Errorf("deploying to subscription: %w", createDeploymentError(err, DeploymentOperationPreview))
 	}
 
 	return &deployResult.WhatIfOperationResult, nil
@@ -608,7 +619,7 @@ func (ds *StandardDeployments) WhatIfDeployToResourceGroup(
 	// wait for deployment creation
 	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("deploying to resource group: %w", createDeploymentError(err, "Deployment"))
+		return nil, fmt.Errorf("deploying to resource group: %w", createDeploymentError(err, DeploymentOperationPreview))
 	}
 
 	return &deployResult.WhatIfOperationResult, nil
@@ -729,7 +740,10 @@ func (ds *StandardDeployments) ValidatePreflightToSubscription(
 	}
 	_, err = validateResult.PollUntilDone(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("validating deployment to subscription: %w", createDeploymentError(err, "Validation"))
+		return fmt.Errorf(
+			"validating deployment to subscription: %w",
+			createDeploymentError(err, DeploymentOperationValidate),
+		)
 	}
 
 	return nil
@@ -764,7 +778,10 @@ func (ds *StandardDeployments) ValidatePreflightToResourceGroup(
 	}
 	_, err = validateResult.PollUntilDone(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("validating deployment to resource group: %w", createDeploymentError(err, "Validation"))
+		return fmt.Errorf(
+			"validating deployment to resource group: %w",
+			createDeploymentError(err, DeploymentOperationValidate),
+		)
 	}
 
 	return nil

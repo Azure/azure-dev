@@ -5,7 +5,7 @@
     "required": [
         "name"
     ],
-    "additionalProperties": true,
+    "additionalProperties": false,
     "properties": {
         "name": {
             "type": "string",
@@ -159,7 +159,7 @@
             "minProperties": 1,
             "additionalProperties": {
                 "type": "object",
-                "additionalProperties": true,
+                "additionalProperties": false,
                 "required": [
                     "host"
                 ],
@@ -338,14 +338,13 @@
                         }
                     },
                     {
-                        "comment": "AKS host - requires project, supports docker and k8s config",
+                        "comment": "AKS host - project is optional, supports docker and k8s config",
                         "if": {
                             "properties": {
                                 "host": { "const": "aks" }
                             }
                         },
                         "then": {
-                            "required": ["project"],
                             "properties": {
                                 "image": false,
                                 "apiVersion": false,

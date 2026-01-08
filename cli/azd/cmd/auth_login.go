@@ -196,13 +196,6 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 	lf.global = global
 }
 
-func newLoginFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *loginFlags {
-	flags := &loginFlags{}
-	flags.Bind(cmd.Flags(), global)
-
-	return flags
-}
-
 func newLoginCmd(parent string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "login",
@@ -237,9 +230,6 @@ type loginAction struct {
 	commandRunner     exec.CommandRunner
 }
 
-// it is important to update both newAuthLoginAction and newLoginAction at the same time
-// newAuthLoginAction is the action that is bound to `azd auth login`,
-// and newLoginAction is the action that is bound to `azd login`
 func newAuthLoginAction(
 	formatter output.Formatter,
 	writer io.Writer,
@@ -257,31 +247,6 @@ func newAuthLoginAction(
 		authManager:       authManager,
 		accountSubManager: accountSubManager,
 		flags:             &flags.loginFlags,
-		annotations:       annotations,
-		commandRunner:     commandRunner,
-	}
-}
-
-// it is important to update both newAuthLoginAction and newLoginAction at the same time
-// newAuthLoginAction is the action that is bound to `azd auth login`,
-// and newLoginAction is the action that is bound to `azd login`
-func newLoginAction(
-	formatter output.Formatter,
-	writer io.Writer,
-	authManager *auth.Manager,
-	accountSubManager *account.SubscriptionsManager,
-	flags *loginFlags,
-	console input.Console,
-	annotations CmdAnnotations,
-	commandRunner exec.CommandRunner,
-) actions.Action {
-	return &loginAction{
-		formatter:         formatter,
-		writer:            writer,
-		console:           console,
-		authManager:       authManager,
-		accountSubManager: accountSubManager,
-		flags:             flags,
 		annotations:       annotations,
 		commandRunner:     commandRunner,
 	}

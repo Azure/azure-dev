@@ -30,12 +30,12 @@ const (
 
 // DotNetContainerAppTarget is intentionally omitted because it is only used internally when
 // containerizing .NET projects and is not a valid service host value in azure.yaml.
+// SpringAppTarget is intentionally omitted because support has been removed.
 var builtInServiceTargetKinds = []ServiceTargetKind{
 	AppServiceTarget,
 	ContainerAppTarget,
 	AzureFunctionTarget,
 	StaticWebAppTarget,
-	SpringAppTarget,
 	AksTarget,
 	AiEndpointTarget,
 }

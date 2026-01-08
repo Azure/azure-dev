@@ -10,6 +10,29 @@
 
 ### Other Changes
 
+## 1.22.5 (2025-12-18)
+
+### Bugs Fixed
+
+- [[#6398]](https://github.com/Azure/azure-dev/pull/6398) Fix `azd provision --preview` incorrectly prompting to install extensions for custom service targets when the extension is already installed.
+- [[#6408]](https://github.com/Azure/azure-dev/pull/6408) Fix panic during provisioning by reverting custom configuration properties feature introduced in v1.22.4.
+
+## 1.22.4 (2025-12-17)
+
+### Features Added
+
+- [[#6196]](https://github.com/Azure/azure-dev/pull/6196) Add support for custom configuration properties in project and service configuration for extensions.
+- [[#6367]](https://github.com/Azure/azure-dev/pull/6367) Add interactive mode support for extensions to enable TUI applications.
+
+### Bugs Fixed
+
+- [[#6356]](https://github.com/Azure/azure-dev/pull/6356) Fix resource discovery logic to correctly identify resources associated with deployments during deletion.
+- [[#6385]](https://github.com/Azure/azure-dev/pull/6385) Fix display names for Foundry and Foundry project resources in output.
+
+### Other Changes
+
+- [[#6389]](https://github.com/Azure/azure-dev/pull/6389) Improve error telemetry with specific error type classification.
+
 ## 1.22.3 (2025-12-15)
 
 ### Features Added

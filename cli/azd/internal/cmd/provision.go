@@ -277,24 +277,22 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 		projectEventArgs := project.ProjectLifecycleEventArgs{
 			Project: p.projectConfig,
-			Args: map[string]any{
-				"preview": previewMode,
-			},
 		}
 
 		if p.alphaFeatureManager.IsEnabled(azapi.FeatureDeploymentStacks) {
 			p.console.WarnForFeature(ctx, azapi.FeatureDeploymentStacks)
 		}
 
-		err = p.projectConfig.Invoke(ctx, project.ProjectEventProvision, projectEventArgs, func() error {
-			var err error
-			if previewMode {
-				deployPreviewResult, err = p.provisionManager.Preview(ctx)
-			} else {
+		// Do not raise pre/postprovision events in preview mode
+		if previewMode {
+			deployPreviewResult, err = p.provisionManager.Preview(ctx)
+		} else {
+			err = p.projectConfig.Invoke(ctx, project.ProjectEventProvision, projectEventArgs, func() error {
+				var err error
 				deployResult, err = p.provisionManager.Deploy(ctx)
-			}
-			return err
-		})
+				return err
+			})
+		}
 
 		if err != nil {
 			if p.formatter.Kind() == output.JsonFormat {

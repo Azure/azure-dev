@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -463,17 +464,28 @@ func ensureAzureContext(
 
 	if envValueMap["AZURE_ACCOUNT_NAME"] == "" {
 
-		aiAccountResponse, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-			Options: &azdext.PromptOptions{
-				Message: "Please enter your Azure AI Account name",
+		foundryProjectResponse, err := azdClient.Prompt().PromptResourceGroupResource(ctx, &azdext.PromptResourceGroupResourceRequest{
+			AzureContext: azureContext,
+			Options: &azdext.PromptResourceOptions{
+				ResourceType:            "Microsoft.CognitiveServices/accounts/projects",
+				ResourceTypeDisplayName: "AI Foundry project",
+				SelectOptions: &azdext.PromptResourceSelectOptions{
+					AllowNewResource: to.Ptr(false),
+					Message:          "Select a Foundry project",
+					LoadingMessage:   "Fetching Foundry projects...",
+				},
 			},
 		})
 
-		aiProjectName, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-			Options: &azdext.PromptOptions{
-				Message: "Please enter your Azure AI Project name",
-			},
-		})
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to get Microsoft Foundry project: %w", err)
+		}
+
+		fpDetails, err := extractProjectDetails(foundryProjectResponse.Resource.Id)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to parse Microsoft Foundry project ID: %w", err)
+		}
+
 		credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
 			TenantID:                   azureContext.Scope.TenantId,
 			AdditionallyAllowedTenants: []string{"*"},
@@ -489,7 +501,7 @@ func ensureAzureContext(
 		}
 
 		// Get the Microsoft Foundry project
-		projectResp, err := projectsClient.Get(ctx, azureContext.Scope.ResourceGroup, aiAccountResponse.Value, aiProjectName.Value, nil)
+		projectResp, err := projectsClient.Get(ctx, azureContext.Scope.ResourceGroup, fpDetails.AiAccountName, fpDetails.AiProjectName, nil)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("failed to get Microsoft Foundry project: %w", err)
 		}
@@ -498,7 +510,7 @@ func ensureAzureContext(
 		_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 			EnvName: env.Name,
 			Key:     "AZURE_ACCOUNT_NAME",
-			Value:   aiAccountResponse.Value,
+			Value:   fpDetails.AiAccountName,
 		})
 
 		location := *projectResp.Location

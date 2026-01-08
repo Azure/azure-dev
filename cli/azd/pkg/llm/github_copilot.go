@@ -393,7 +393,7 @@ func newCopilotToken(githubToken string) (*tokenData, error) {
 	// Set headers to mimic an approved Copilot client
 	req.Header.Set("Authorization", "token "+githubToken)
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "Azd/1.17.0")
+	req.Header.Set("User-Agent", "azd/1.17.0")
 
 	resp, err := client.Do(req)
 	if err != nil {

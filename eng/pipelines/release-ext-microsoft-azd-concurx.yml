@@ -27,5 +27,5 @@ extends:
       - template: /eng/pipelines/templates/stages/release-azd-extension.yml
         parameters: 
           AzdExtensionId: microsoft.azd.concurx
-          SanitizedExtensionId: azure-coding-agent
+          SanitizedExtensionId: microsoft-azd-concurx
           AzdExtensionDirectory: cli/azd/extensions/microsoft.azd.concurx

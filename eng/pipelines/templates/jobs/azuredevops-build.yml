@@ -38,7 +38,7 @@ jobs:
           npm i -g npm tfx-cli
           npm ci
         displayName: Install build tools and dependencies
-        workingDirectory: ext/azuredevops
+        workingDirectory: ext/azuredevops/setupAzd
 
       # TODO: If private build, update vss-extension.json and other JSONs to 
       # set a dev version

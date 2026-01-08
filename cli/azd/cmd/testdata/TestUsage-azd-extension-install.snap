@@ -5,7 +5,7 @@ Usage
   azd extension install <extension-id> [flags]
 
 Flags
-    -f, --force          	: Force installation even if it would downgrade the current version
+    -f, --force          	: Force installation, including downgrades and reinstalls
     -s, --source string  	: The extension source to use for installs
     -v, --version string 	: The version of the extension to install
 

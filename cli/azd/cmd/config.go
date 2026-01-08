@@ -176,6 +176,9 @@ $ azd config set defaults.location eastus`,
 			Long: "List all possible configuration settings that can be set with azd, " +
 				"including descriptions and allowed values.",
 		},
+		HelpOptions: actions.ActionHelpOptions{
+			Footer: getCmdConfigOptionsHelpFooter,
+		},
 		ActionResolver: newConfigOptionsAction,
 		OutputFormats:  []output.Format{output.JsonFormat, output.TableFormat},
 		DefaultFormat:  output.TableFormat,
@@ -519,6 +522,21 @@ func getCmdListAlphaHelpFooter(*cobra.Command) string {
 		),
 		"Turn off all alpha features": output.WithHighLightFormat(
 			"azd config set alpha.all off",
+		),
+	})
+}
+
+func getCmdConfigOptionsHelpFooter(*cobra.Command) string {
+	return generateCmdHelpSamplesBlock(map[string]string{
+		"List all available configuration settings in table format": output.WithHighLightFormat(
+			"azd config options",
+		),
+		"List all available configuration settings in JSON format": output.WithHighLightFormat(
+			"azd config options -o json",
+		),
+		"View a setting and set it": output.WithHighLightFormat(
+			"azd config options") + "\n    " + output.WithHighLightFormat(
+			"azd config set <key> <value>",
 		),
 	})
 }

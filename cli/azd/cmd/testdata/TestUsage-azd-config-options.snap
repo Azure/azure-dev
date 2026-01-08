@@ -11,6 +11,15 @@ Global Flags
     -h, --help       	: Gets help for options.
         --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
 
-Find a bug? Want to let us know how we're doing? Fill out this brief survey: https://aka.ms/azure-dev/hats.
+Examples
+  List all available configuration settings in JSON format
+    azd config options -o json
+
+  List all available configuration settings in table format
+    azd config options
+
+  View a setting and set it
+    azd config options
+    azd config set <key> <value>
 
 

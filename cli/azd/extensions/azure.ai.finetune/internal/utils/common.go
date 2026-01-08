@@ -2,14 +2,10 @@
 // Licensed under the MIT License.
 package utils
 
+import "strings"
+
 func IsLocalFilePath(fileID string) bool {
-	if fileID == "" {
-		return false
-	}
-	if len(fileID) > 6 && fileID[:6] == "local:" {
-		return true
-	}
-	return false
+	return strings.HasPrefix(fileID, "local:")
 }
 
 func GetLocalFilePath(fileID string) string {

@@ -195,7 +195,7 @@ func (s *IntegrationTestSuite) runAzdUp() error {
 }
 
 // runAzdDown executes the azd down command to clean up Azure resources
-func (s *IntegrationTestSuite) runAzdDown() error {
+func (s *IntegrationTestSuite) runAzdDown() {
 	Logf("Cleaning up Azure resources...")
 
 	args := []string{"down", "--force", "--purge", "--no-prompt"}
@@ -204,8 +204,6 @@ func (s *IntegrationTestSuite) runAzdDown() error {
 	if err != nil {
 		Logf("Warning: Azure cleanup failed: %v", err)
 	}
-
-	return nil // Always return nil to not block cleanup
 }
 
 // GetAzdEnvValue retrieves an environment variable value from the azd environment

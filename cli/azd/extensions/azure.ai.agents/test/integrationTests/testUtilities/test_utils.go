@@ -214,6 +214,8 @@ func parseOutputForAgentVersion(output string) string {
 		agentVersion = matches[1]
 		Logf("Parsed agent version: %s", agentVersion)
 	} else {
+		// Don't fail in the case we can't parse the agent version, just log a warning
+		// This allows tests to individually handle whether they require the version or not
 		Logf("Warning: Could not parse agent version from output")
 	}
 

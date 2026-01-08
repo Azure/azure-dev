@@ -158,12 +158,15 @@ func Test_CLI_Up_Down_FuncApp(t *testing.T) {
 	dir := tempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
-	envName := randomEnvName()
+	session := recording.Start(t)
+
+	envName := randomOrStoredEnvName(session)
 	t.Logf("AZURE_ENV_NAME: %s", envName)
 
-	cli := azdcli.NewCLI(t)
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
 	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
 
 	err := copySample(dir, "funcapp")
 	require.NoError(t, err, "failed expanding sample")
@@ -188,16 +191,24 @@ func Test_CLI_Up_Down_FuncApp(t *testing.T) {
 	err = json.Unmarshal([]byte(result.Stdout), &envValues)
 	require.NoError(t, err)
 
-	url := fmt.Sprintf("%s/api/httptrigger", envValues["AZURE_FUNCTION_URI"])
+	if session != nil {
+		session.Variables[recording.SubscriptionIdKey] = envValues[environment.SubscriptionIdEnvVarName].(string)
+	}
 
+	url := fmt.Sprintf("%s/api/httptrigger", envValues["AZURE_FUNCTION_URI"])
 	t.Logf("Issuing GET request to function\n")
 
 	// We've seen some cases in CI where issuing a get right after a deploy ends up with us getting a 404, so retry the
 	// request a
 	// handful of times if it fails with a 404.
 	err = retry.Do(ctx, retry.WithMaxRetries(10, retry.NewConstant(5*time.Second)), func(ctx context.Context) error {
+		client := http.DefaultClient
+		if session != nil {
+			client = session.ProxyClient
+		}
+
 		/* #nosec G107 - Potential HTTP request made with variable url false positive */
-		res, err := http.Get(url)
+		res, err := client.Get(url)
 		if err != nil {
 			return retry.RetryableError(err)
 		}

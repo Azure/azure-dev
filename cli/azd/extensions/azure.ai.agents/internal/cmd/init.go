@@ -904,7 +904,7 @@ func (a *InitAction) downloadAgentYaml(
 			if isSubpath(absManifestPath, srcDir) {
 				confirmResponse, err := a.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
 					Options: &azdext.ConfirmOptions{
-						Message:      "This operation will overwrite the provided manifest file. Do you want to continue?",
+						Message:      "This operation will overwrite the provided manifest file. Continue?",
 						DefaultValue: to.Ptr(false),
 					},
 				})

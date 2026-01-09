@@ -45,8 +45,8 @@ func (a *InitAction) validateLocalContainerAgentCopy(ctx context.Context, manife
 
 	if isSubpath(dstAbs, srcAbs) {
 		return fmt.Errorf(
-			"destination '%s' is inside the agent manifest directory '%s'. "+
-				"Move the manifest to a separate directory to avoid copying into itself",
+			"cannot copy agent files: target '%s' is inside the manifest directory '%s'.\n"+
+				"Move the manifest to a separate directory containing only the agent files.",
 			dstAbs,
 			srcAbs,
 		)
@@ -67,11 +67,11 @@ func (a *InitAction) validateLocalContainerAgentCopy(ctx context.Context, manife
 
 	preview, err := formatDirectoryPreview(entries, previewLimit)
 	if err != nil {
-		return fmt.Errorf("enumerating files and folders in %s: %w", srcAbs, err)
+		return fmt.Errorf("enumerating items in %s: %w", srcAbs, err)
 	}
 
 	fmt.Printf("%s", output.WithWarningFormat(
-		"\nThe agent manifest directory '%s' contains %d files and folders that will be copied into '%s': %s\n\n",
+		"\nThe manifest directory '%s' contains %d items that will be copied into '%s': %s\n\n",
 		srcAbs,
 		entryCount,
 		dstAbs,
@@ -81,7 +81,7 @@ func (a *InitAction) validateLocalContainerAgentCopy(ctx context.Context, manife
 		Options: &azdext.ConfirmOptions{
 			Message:      "Continue?",
 			DefaultValue: to.Ptr(false),
-			HelpMessage:  "To avoid copying too much, place the manifest in a dedicated folder with only the agent files you want to include.",
+			HelpMessage:  "To avoid copying too much, move the manifest to a separate directory with only the agent files you want to include.",
 		},
 	})
 	if err != nil {

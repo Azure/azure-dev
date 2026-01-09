@@ -135,18 +135,29 @@ func registerProjectMappings() {
 			}
 		}
 
+		// Convert additional properties if present
+		var protoAdditionalProperties *structpb.Struct
+		if src.AdditionalProperties != nil {
+			var err error
+			protoAdditionalProperties, err = structpb.NewStruct(src.AdditionalProperties)
+			if err != nil {
+				return nil, fmt.Errorf("converting service additional properties to structpb: %w", err)
+			}
+		}
+
 		return &azdext.ServiceConfig{
-			Name:              src.Name,
-			ResourceGroupName: resourceGroupName,
-			ResourceName:      resourceName,
-			ApiVersion:        src.ApiVersion,
-			RelativePath:      src.RelativePath,
-			Host:              string(src.Host),
-			Language:          string(src.Language),
-			OutputPath:        src.OutputPath,
-			Image:             image,
-			Docker:            docker,
-			Config:            protoConfig,
+			Name:                 src.Name,
+			ResourceGroupName:    resourceGroupName,
+			ResourceName:         resourceName,
+			ApiVersion:           src.ApiVersion,
+			RelativePath:         src.RelativePath,
+			Host:                 string(src.Host),
+			Language:             string(src.Language),
+			OutputPath:           src.OutputPath,
+			Image:                image,
+			Docker:               docker,
+			Config:               protoConfig,
+			AdditionalProperties: protoAdditionalProperties,
 		}, nil
 	})
 
@@ -378,6 +389,10 @@ func registerProjectMappings() {
 
 		if src.Config != nil {
 			result.Config = src.Config.AsMap()
+		}
+
+		if src.AdditionalProperties != nil {
+			result.AdditionalProperties = src.AdditionalProperties.AsMap()
 		}
 
 		return result, nil
@@ -687,6 +702,16 @@ func registerProjectMappings() {
 			services[i] = serviceConfig
 		}
 
+		// Convert additional properties if present
+		var protoAdditionalProperties *structpb.Struct
+		if src.AdditionalProperties != nil {
+			var err error
+			protoAdditionalProperties, err = structpb.NewStruct(src.AdditionalProperties)
+			if err != nil {
+				return nil, fmt.Errorf("converting project additional properties to structpb: %w", err)
+			}
+		}
+
 		projectConfig := &azdext.ProjectConfig{
 			Name:              src.Name,
 			ResourceGroupName: resourceGroupName,
@@ -702,7 +727,8 @@ func registerProjectMappings() {
 				Path:     src.Infra.Path,
 				Module:   src.Infra.Module,
 			},
-			Services: services,
+			Services:             services,
+			AdditionalProperties: protoAdditionalProperties,
 		}
 
 		return projectConfig, nil
@@ -744,6 +770,11 @@ func registerProjectMappings() {
 				Path:     src.Infra.Path,
 				Module:   src.Infra.Module,
 			}
+		}
+
+		// Convert additional properties if present
+		if src.AdditionalProperties != nil {
+			result.AdditionalProperties = src.AdditionalProperties.AsMap()
 		}
 
 		return result, nil

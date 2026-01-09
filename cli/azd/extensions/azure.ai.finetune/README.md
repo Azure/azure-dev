@@ -1,3 +1,3 @@
-# `azd` Demo Extension
+# `azd` Finetune Extension
 
-An AZD Demo extension
+An AZD Finetune extension

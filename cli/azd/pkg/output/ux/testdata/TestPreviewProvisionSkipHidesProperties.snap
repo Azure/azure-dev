@@ -1,0 +1,6 @@
+   Resources:
+
+   Modify   : Microsoft.Storage/storageAccounts : mystorageaccount
+       ~ properties.sku.name: "Standard_LRS" => "Premium_LRS"
+   Skip     : Microsoft.KeyVault/vaults         : skippedvault
+   Skip     : Microsoft.Network/virtualNetworks : unchangedvnet

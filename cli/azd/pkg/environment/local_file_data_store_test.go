@@ -5,10 +5,12 @@ package environment
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
@@ -39,6 +41,46 @@ func Test_LocalFileDataStore_List(t *testing.T) {
 		envList, err := dataStore.List(*mockContext.Context)
 		require.NoError(t, err)
 		require.NotNil(t, envList)
+	})
+
+	t.Run("ValidatesEnvironmentNames", func(t *testing.T) {
+		// Create a fresh temporary directory for this test to avoid interference
+		tempDir := t.TempDir()
+		freshAzdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
+		freshDataStore := NewLocalFileDataStore(freshAzdContext, fileConfigManager)
+
+		// Create an environment with a valid name
+		validEnv := New("valid-env")
+		err := freshDataStore.Save(*mockContext.Context, validEnv, nil)
+		require.NoError(t, err)
+
+		// Manually create a directory with an invalid name
+		invalidEnvDir := filepath.Join(freshAzdContext.EnvironmentDirectory(), "#invalid$name")
+		err = os.MkdirAll(invalidEnvDir, 0755)
+		require.NoError(t, err)
+
+		// List environments
+		envList, err := freshDataStore.List(*mockContext.Context)
+		require.NoError(t, err)
+		require.NotNil(t, envList)
+		require.Equal(t, 2, len(envList))
+
+		// Check that valid environment has IsValid=true
+		var validEnvResult *contracts.EnvListEnvironment
+		var invalidEnvResult *contracts.EnvListEnvironment
+		for _, env := range envList {
+			if env.Name == "valid-env" {
+				validEnvResult = env
+			} else if env.Name == "#invalid$name" {
+				invalidEnvResult = env
+			}
+		}
+
+		require.NotNil(t, validEnvResult, "valid-env should be in the list")
+		require.True(t, validEnvResult.IsValid, "valid-env should be marked as valid")
+
+		require.NotNil(t, invalidEnvResult, "#invalid$name should be in the list")
+		require.False(t, invalidEnvResult.IsValid, "#invalid$name should be marked as invalid")
 	})
 }
 

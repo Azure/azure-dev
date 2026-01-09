@@ -70,6 +70,7 @@ func (fs *LocalFileDataStore) List(ctx context.Context) ([]*contracts.EnvListEnv
 				IsDefault:  ent.Name() == defaultEnv,
 				DotEnvPath: filepath.Join(fs.azdContext.EnvironmentRoot(ent.Name()), DotEnvFileName),
 				ConfigPath: filepath.Join(fs.azdContext.EnvironmentRoot(ent.Name()), ConfigFileName),
+				IsValid:    IsValidEnvironmentName(ent.Name()),
 			}
 			envs = append(envs, ev)
 		}

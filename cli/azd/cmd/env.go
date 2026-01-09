@@ -854,6 +854,10 @@ func (e *envListAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 				ValueTemplate: "{{.IsDefault}}",
 			},
 			{
+				Heading:       "STATUS",
+				ValueTemplate: "{{if .IsValid}}✓{{else}}⚠ INVALID NAME{{end}}",
+			},
+			{
 				Heading:       "LOCAL",
 				ValueTemplate: "{{.HasLocal}}",
 			},
@@ -866,11 +870,31 @@ func (e *envListAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		err = e.formatter.Format(envs, e.writer, output.TableFormatterOptions{
 			Columns: columns,
 		})
+		if err != nil {
+			return nil, err
+		}
+
+		// Count invalid environments and display warning if any exist
+		invalidCount := 0
+		for _, env := range envs {
+			if !env.IsValid {
+				invalidCount++
+			}
+		}
+
+		if invalidCount > 0 {
+			warning := fmt.Sprintf(
+				"\n⚠ Warning: %d environment(s) have invalid names and may cause issues with azd commands. "+
+					"Environment names must follow the same naming rules enforced when creating or renaming environments.\n",
+				invalidCount,
+			)
+			fmt.Fprint(e.writer, warning)
+		}
 	} else {
 		err = e.formatter.Format(envs, e.writer, nil)
-	}
-	if err != nil {
-		return nil, err
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return nil, nil

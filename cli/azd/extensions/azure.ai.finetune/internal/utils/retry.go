@@ -5,8 +5,9 @@ package utils
 
 import (
 	"context"
-	"fmt"
 	"time"
+
+	"github.com/sethvargo/go-retry"
 )
 
 const (
@@ -16,59 +17,25 @@ const (
 	DefaultDelaySeconds = 2
 )
 
-// RetryConfig holds configuration for retry operations
-type RetryConfig struct {
-	MaxAttempts int
-	Delay       time.Duration
-	BackoffFunc func(attempt int, delay time.Duration) time.Duration
-}
-
-// DefaultRetryConfig returns a sensible default retry configuration
-func DefaultRetryConfig() *RetryConfig {
-	return &RetryConfig{
-		MaxAttempts: DefaultMaxAttempts,
-		Delay:       DefaultDelaySeconds * time.Second,
-		BackoffFunc: func(attempt int, delay time.Duration) time.Duration {
-			// Exponential backoff: 2s, 4s, 8s
-			return delay * time.Duration(1<<(attempt-1))
-		},
-	}
+// DefaultRetryConfig returns a default exponential backoff strategy
+func DefaultRetryConfig() retry.Backoff {
+	return retry.WithMaxRetries(
+		DefaultMaxAttempts,
+		retry.NewExponential(DefaultDelaySeconds*time.Second),
+	)
 }
 
 // RetryOperation executes the given operation with retry logic
-// The operation should return an error if it should be retried
-func RetryOperation(ctx context.Context, config *RetryConfig, operation func() error) error {
-	if config == nil {
-		config = DefaultRetryConfig()
+// All errors returned by the operation are considered retryable
+func RetryOperation(ctx context.Context, backoff retry.Backoff, operation func() error) error {
+	if backoff == nil {
+		backoff = DefaultRetryConfig()
 	}
 
-	var lastErr error
-
-	for attempt := 1; attempt <= config.MaxAttempts; attempt++ {
-		// Execute the operation
-		err := operation()
-		if err == nil {
-			return nil // Success!
+	return retry.Do(ctx, backoff, func(ctx context.Context) error {
+		if err := operation(); err != nil {
+			return retry.RetryableError(err)
 		}
-
-		lastErr = err
-
-		// If this was the last attempt, don't wait
-		if attempt == config.MaxAttempts {
-			break
-		}
-
-		// Calculate delay for this attempt
-		delay := config.BackoffFunc(attempt, config.Delay)
-
-		// Wait before retrying, respecting context cancellation
-		select {
-		case <-time.After(delay):
-			// Continue to next attempt
-		case <-ctx.Done():
-			return fmt.Errorf("operation cancelled: %w", ctx.Err())
-		}
-	}
-
-	return lastErr
+		return nil
+	})
 }

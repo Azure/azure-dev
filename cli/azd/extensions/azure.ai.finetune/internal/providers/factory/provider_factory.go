@@ -67,7 +67,7 @@ func GetOpenAIClientFromAzdClient(ctx context.Context, azdClient *azdext.AzdClie
 		apiVersion = DefaultApiVersion
 	}
 
-	scope := envValueMap[utils.EnvFineturningTokenScope]
+	scope := envValueMap[utils.EnvFinetuningTokenScope]
 	if scope == "" {
 		scope = DefaultAzureFinetuningScope
 	}
@@ -89,7 +89,7 @@ func WithTokenCredential(tokenCredential azcore.TokenCredential, scope string) o
 	bearerTokenPolicy := runtime.NewBearerTokenPolicy(tokenCredential, []string{scope}, nil)
 	// add in a middleware that uses the bearer token generated from the token credential
 	return option.WithMiddleware(func(req *http.Request, next option.MiddlewareNext) (*http.Response, error) {
-		pipeline := runtime.NewPipeline("azopenai-extensions", version, runtime.PipelineOptions{}, &policy.ClientOptions{
+		pipeline := runtime.NewPipeline("finetune-extensions", version, runtime.PipelineOptions{}, &policy.ClientOptions{
 			InsecureAllowCredentialWithHTTP: true, // allow for plain HTTP proxies, etc..
 			PerRetryPolicies: []policy.Policy{
 				bearerTokenPolicy,

@@ -104,11 +104,6 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 				return fmt.Errorf("failed to ground into a project context: %w", err)
 			}
 
-			// getComposedResourcesResponse, err := azdClient.Compose().ListResources(ctx, &azdext.EmptyRequest{})
-			// if err != nil {
-			// 	return fmt.Errorf("failed to get composed resources: %w", err)
-			// }
-
 			credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
 				TenantID:                   azureContext.Scope.TenantId,
 				AdditionallyAllowedTenants: []string{"*"},
@@ -893,24 +888,32 @@ func (a *InitAction) downloadAgentYaml(
 			name = ""
 		}
 
-		// Check if the manifest file is under current directory + "src"
-		currentDir, _ := os.Getwd()
-		srcDir := filepath.Join(currentDir, "src", name)
-		absManifestPath, _ := filepath.Abs(manifestPointer)
-
-		// Check if manifest is under src directory
-		if strings.HasPrefix(absManifestPath, srcDir) {
-			confirmResponse, err := a.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
-				Options: &azdext.ConfirmOptions{
-					Message:      "This operation will overwrite the provided manifest file. Do you want to continue?",
-					DefaultValue: to.Ptr(false),
-				},
-			})
+		if name != "" {
+			// Check if the manifest file is under current directory + "src/<name>"
+			currentDir, err := os.Getwd()
 			if err != nil {
-				return nil, "", fmt.Errorf("prompting for confirmation: %w", err)
+				return nil, "", fmt.Errorf("getting current directory: %w", err)
 			}
-			if !*confirmResponse.Value {
-				return nil, "", fmt.Errorf("operation cancelled by user")
+			srcDir := filepath.Join(currentDir, "src", name)
+			absManifestPath, err := filepath.Abs(manifestPointer)
+			if err != nil {
+				return nil, "", fmt.Errorf("getting absolute path for manifest %s: %w", manifestPointer, err)
+			}
+
+			// Check if manifest is under src directory
+			if isSubpath(absManifestPath, srcDir) {
+				confirmResponse, err := a.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+					Options: &azdext.ConfirmOptions{
+						Message:      "This operation will overwrite the provided manifest file. Do you want to continue?",
+						DefaultValue: to.Ptr(false),
+					},
+				})
+				if err != nil {
+					return nil, "", fmt.Errorf("prompting for confirmation: %w", err)
+				}
+				if !*confirmResponse.Value {
+					return nil, "", fmt.Errorf("operation cancelled by user")
+				}
 			}
 		}
 	} else if a.isGitHubUrl(manifestPointer) {
@@ -1016,6 +1019,12 @@ func (a *InitAction) downloadAgentYaml(
 			return nil, "", fmt.Errorf("marshaling agent manifest to YAML: %w", err)
 		}
 		content = manifestBytes
+	} else {
+		// If we reach here, the manifest pointer didn't match any known type
+		return nil, "", fmt.Errorf(
+			"manifest pointer '%s' is not a valid local file path, GitHub URL, or registry URL",
+			manifestPointer,
+		)
 	}
 
 	// Parse and validate the YAML content against AgentManifest structure
@@ -1025,6 +1034,22 @@ func (a *InitAction) downloadAgentYaml(
 	}
 
 	fmt.Println("✓ YAML content successfully validated against AgentManifest format")
+
+	agentId := agentManifest.Name
+
+	// Use targetDir if provided, otherwise default to "src/{agentId}"
+	if targetDir == "" {
+		targetDir = filepath.Join("src", agentId)
+	}
+
+	// Safety checks for local container-based agents should happen before prompting for model SKU, etc.
+	if a.isLocalFilePath(manifestPointer) {
+		if _, isContainerAgent := agentManifest.Template.(agent_yaml.ContainerAgent); isContainerAgent {
+			if err := a.validateLocalContainerAgentCopy(ctx, manifestPointer, targetDir); err != nil {
+				return nil, "", err
+			}
+		}
+	}
 
 	agentManifest, err = registry_api.ProcessManifestParameters(ctx, agentManifest, a.azdClient, a.flags.NoPrompt)
 	if err != nil {
@@ -1046,13 +1071,6 @@ func (a *InitAction) downloadAgentYaml(
 		}
 	}
 
-	agentId := agentManifest.Name
-
-	// Use targetDir if provided or set to local file pointer, otherwise default to "src/{agentId}"
-	if targetDir == "" {
-		targetDir = filepath.Join("src", agentId)
-	}
-
 	// Create target directory if it doesn't exist
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		return nil, "", fmt.Errorf("creating target directory %s: %w", targetDir, err)
@@ -1063,12 +1081,23 @@ func (a *InitAction) downloadAgentYaml(
 		_, isHostedContainer := agentManifest.Template.(agent_yaml.ContainerAgent)
 
 		if isHostedContainer {
-			// For container agents, copy the entire parent directory
-			fmt.Println("Copying full directory for container agent")
+			// For container agents, copy the entire parent directory.
+			// If the manifest already lives in the target directory (re-init), skip the copy.
 			manifestDir := filepath.Dir(manifestPointer)
-			err := copyDirectory(manifestDir, targetDir)
+			srcAbs, err := filepath.Abs(manifestDir)
 			if err != nil {
-				return nil, "", fmt.Errorf("copying parent directory: %w", err)
+				return nil, "", fmt.Errorf("resolving manifest directory %s: %w", manifestDir, err)
+			}
+			dstAbs, err := filepath.Abs(targetDir)
+			if err != nil {
+				return nil, "", fmt.Errorf("resolving target directory %s: %w", targetDir, err)
+			}
+			if !isSamePath(srcAbs, dstAbs) {
+				fmt.Println("Copying full directory for container agent")
+				err := copyDirectory(manifestDir, targetDir)
+				if err != nil {
+					return nil, "", fmt.Errorf("copying parent directory: %w", err)
+				}
 			}
 		}
 	} else if isGitHubUrl {
@@ -2018,54 +2047,4 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 	fmt.Println("Model deployment details processed and injected into agent definition. Deployment details can also be found in the JSON formatted AI_PROJECT_DEPLOYMENTS environment variable.")
 
 	return updatedManifest, deploymentDetails, nil
-}
-
-// copyDirectory recursively copies all files and directories from src to dst
-func copyDirectory(src, dst string) error {
-	return filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-
-		// Calculate the destination path
-		relPath, err := filepath.Rel(src, path)
-		if err != nil {
-			return err
-		}
-		dstPath := filepath.Join(dst, relPath)
-
-		if d.IsDir() {
-			// Create directory and continue processing its contents
-			return os.MkdirAll(dstPath, 0755)
-		} else {
-			// Copy file
-			return copyFile(path, dstPath)
-		}
-	})
-}
-
-// copyFile copies a single file from src to dst
-func copyFile(src, dst string) error {
-	// Create the destination directory if it doesn't exist
-	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
-		return err
-	}
-
-	// Open source file
-	srcFile, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer srcFile.Close()
-
-	// Create destination file
-	dstFile, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer dstFile.Close()
-
-	// Copy file contents
-	_, err = srcFile.WriteTo(dstFile)
-	return err
 }

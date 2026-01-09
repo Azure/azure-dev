@@ -10,10 +10,10 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
@@ -152,25 +152,23 @@ type FoundryProject struct {
 }
 
 func extractProjectDetails(projectResourceId string) (*FoundryProject, error) {
-	/// Define the regex pattern for the project resource ID
-	pattern := `^/subscriptions/([^/]+)/resourceGroups/([^/]+)/providers/Microsoft\.CognitiveServices/accounts/([^/]+)/projects/([^/]+)$`
-
-	regex, err := regexp.Compile(pattern)
+	resourceId, err := arm.ParseResourceID(projectResourceId)
 	if err != nil {
-		return nil, fmt.Errorf("failed to compile regex pattern: %w", err)
+		return nil, fmt.Errorf("failed to parse project resource ID: %w", err)
 	}
 
-	matches := regex.FindStringSubmatch(projectResourceId)
-	if matches == nil || len(matches) != 5 {
-		return nil, fmt.Errorf("the given Microsoft Foundry project ID does not match expected format: /subscriptions/[SUBSCRIPTION_ID]/resourceGroups/[RESOURCE_GROUP]/providers/Microsoft.CognitiveServices/accounts/[ACCOUNT_NAME]/projects/[PROJECT_NAME]")
+	// Validate that this is a Cognitive Services project resource
+	if resourceId.ResourceType.Namespace != "Microsoft.CognitiveServices" || len(resourceId.ResourceType.Types) != 2 ||
+		resourceId.ResourceType.Types[0] != "accounts" || resourceId.ResourceType.Types[1] != "projects" {
+		return nil, fmt.Errorf("the given resource ID is not a Microsoft Foundry project. Expected format: /subscriptions/[SUBSCRIPTION_ID]/resourceGroups/[RESOURCE_GROUP]/providers/Microsoft.CognitiveServices/accounts/[ACCOUNT_NAME]/projects/[PROJECT_NAME]")
 	}
 
 	// Extract the components
 	return &FoundryProject{
-		SubscriptionId:    matches[1],
-		ResourceGroupName: matches[2],
-		AiAccountName:     matches[3],
-		AiProjectName:     matches[4],
+		SubscriptionId:    resourceId.SubscriptionID,
+		ResourceGroupName: resourceId.ResourceGroupName,
+		AiAccountName:     resourceId.Parent.Name,
+		AiProjectName:     resourceId.Name,
 	}, nil
 }
 

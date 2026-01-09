@@ -71,5 +71,11 @@ export default defineConfig([{
         "no-throw-literal": "warn", // Elevate this from suggestion to warning
         semi: "warn",
     },
+}, {
+    // Override for test files to allow Chai assertion expressions
+    files: ["src/test/**/*.ts"],
+    rules: {
+        "@typescript-eslint/no-unused-expressions": "off",
+    },
 }]);
 /* eslint-enable @typescript-eslint/naming-convention */

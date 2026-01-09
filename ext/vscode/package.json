@@ -129,6 +129,28 @@
             },
             {
                 "category": "%azure-dev.commands_category%",
+                "command": "azure-dev.commands.cli.extension-install",
+                "title": "Install Extension",
+                "icon": "$(add)"
+            },
+            {
+                "category": "%azure-dev.commands_category%",
+                "command": "azure-dev.commands.cli.extension-uninstall",
+                "title": "Uninstall Extension"
+            },
+            {
+                "category": "%azure-dev.commands_category%",
+                "command": "azure-dev.commands.cli.extension-upgrade",
+                "title": "Upgrade Extension"
+            },
+            {
+                "category": "%azure-dev.commands_category%",
+                "command": "azure-dev.commands.addService",
+                "title": "Add Service...",
+                "icon": "$(add)"
+            },
+            {
+                "category": "%azure-dev.commands_category%",
                 "command": "azure-dev.commands.getDotEnvFilePath",
                 "title": "%azure-dev.commands.getDotEnvFilePath.title%"
             },
@@ -144,6 +166,11 @@
             },
             {
                 "category": "%azure-dev.commands_category%",
+                "command": "azure-dev.commands.azureWorkspace.showInAzurePortal",
+                "title": "%azure-dev.commands.azureWorkspace.showInAzurePortal.title%"
+            },
+            {
+                "category": "%azure-dev.commands_category%",
                 "command": "azure-dev.commands.enableDevCenterMode",
                 "title": "%azure-dev.commands.enableDevCenterMode.title%"
             },
@@ -151,8 +178,75 @@
                 "category": "%azure-dev.commands_category%",
                 "command": "azure-dev.commands.disableDevCenterMode",
                 "title": "%azure-dev.commands.disableDevCenterMode.title%"
+            },
+            {
+                "category": "%azure-dev.commands_category%",
+                "command": "azure-dev.views.environments.toggleVisibility",
+                "title": "Toggle Visibility"
+            },
+            {
+                "category": "%azure-dev.commands_category%",
+                "command": "azure-dev.commands.workspace.toggleVisibility",
+                "title": "Toggle Visibility"
+            },
+            {
+                "category": "%azure-dev.commands_category%",
+                "command": "azure-dev.views.environments.viewDotEnv",
+                "title": "View .env file",
+                "icon": "$(go-to-file)"
+            },
+            {
+                "category": "%azure-dev.commands_category%",
+                "command": "azure-dev.views.templateTools.openReadme",
+                "title": "View README",
+                "icon": "$(book)"
+            },
+            {
+                "category": "%azure-dev.commands_category%",
+                "command": "azure-dev.views.templateTools.openGitHub",
+                "title": "View on GitHub",
+                "icon": "$(github)"
+            },
+            {
+                "category": "%azure-dev.commands_category%",
+                "command": "azure-dev.views.templateTools.initFromTemplateInline",
+                "title": "Initialize from Template",
+                "icon": "$(rocket)"
             }
         ],
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "azure-dev-view",
+                    "title": "Azure Developer CLI",
+                    "icon": "resources/icon.svg"
+                }
+            ]
+        },
+        "views": {
+            "azure-dev-view": [
+                {
+                    "id": "azure-dev.views.myProject",
+                    "name": "My Project"
+                },
+                {
+                    "id": "azure-dev.views.environments",
+                    "name": "Environments"
+                },
+                {
+                    "id": "azure-dev.views.templateTools",
+                    "name": "Template Tools"
+                },
+                {
+                    "id": "azure-dev.views.extensions",
+                    "name": "Extensions"
+                },
+                {
+                    "id": "azure-dev.views.helpAndFeedback",
+                    "name": "Help and Feedback"
+                }
+            ]
+        },
         "configuration": {
             "title": "Azure Developer CLI",
             "properties": {
@@ -169,9 +263,31 @@
             }
         },
         "menus": {
+            "view/title": [
+                {
+                    "command": "azure-dev.commands.cli.env-new",
+                    "when": "view == azure-dev.views.environments",
+                    "group": "navigation"
+                },
+                {
+                    "command": "azure-dev.commands.cli.extension-install",
+                    "when": "view == azure-dev.views.extensions",
+                    "group": "navigation"
+                },
+                {
+                    "command": "azure-dev.views.templateTools.refresh",
+                    "when": "view == azure-dev.views.templateTools",
+                    "group": "navigation@1",
+                    "icon": "$(refresh)"
+                }
+            ],
             "commandPalette": [
                 {
                     "command": "azure-dev.commands.cli.initFromPom",
+                    "when": "false"
+                },
+                {
+                    "command": "azure-dev.commands.addService",
                     "when": "false"
                 },
                 {
@@ -267,6 +383,31 @@
             ],
             "view/item/context": [
                 {
+                    "command": "azure-dev.views.templateTools.initFromTemplateInline",
+                    "when": "viewItem == template",
+                    "group": "inline@10"
+                },
+                {
+                    "command": "azure-dev.views.templateTools.openGitHub",
+                    "when": "viewItem == template",
+                    "group": "inline@20"
+                },
+                {
+                    "command": "azure-dev.views.templateTools.openReadme",
+                    "when": "viewItem == template",
+                    "group": "10template@10"
+                },
+                {
+                    "command": "azure-dev.views.templateTools.openGitHub",
+                    "when": "viewItem == template",
+                    "group": "10template@20"
+                },
+                {
+                    "command": "azure-dev.commands.addService",
+                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.services/i",
+                    "group": "inline@10"
+                },
+                {
                     "command": "azure-dev.commands.cli.up",
                     "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.application/i",
                     "group": "inline@10"
@@ -317,9 +458,19 @@
                     "group": "20env@20"
                 },
                 {
+                    "command": "azure-dev.commands.cli.env-select",
+                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.environments.environment(?!.*default)/i",
+                    "group": "10env@10"
+                },
+                {
                     "command": "azure-dev.commands.cli.env-refresh",
                     "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.environment(?!s)/i",
                     "group": "20env@30"
+                },
+                {
+                    "command": "azure-dev.commands.cli.env-refresh",
+                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.environments.environment/i",
+                    "group": "10env@20"
                 },
                 {
                     "command": "azure-dev.commands.cli.env-edit",
@@ -327,9 +478,19 @@
                     "group": "20env@40"
                 },
                 {
+                    "command": "azure-dev.commands.cli.env-edit",
+                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.environments.environment/i",
+                    "group": "10env@30"
+                },
+                {
                     "command": "azure-dev.commands.cli.env-delete",
                     "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.environment(?!s)(?!.*default)/i",
                     "group": "20env@50"
+                },
+                {
+                    "command": "azure-dev.commands.cli.env-delete",
+                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.environments.environment(?!.*default)/i",
+                    "group": "10env@40"
                 },
                 {
                     "command": "azure-dev.commands.cli.restore",
@@ -357,6 +518,11 @@
                     "group": "50navigation@10"
                 },
                 {
+                    "command": "azure-dev.commands.azureWorkspace.showInAzurePortal",
+                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.service(?!s)/i",
+                    "group": "50navigation@20"
+                },
+                {
                     "command": "azure-dev.commands.azureWorkspace.revealAzureResourceGroup",
                     "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.application/i",
                     "group": "50navigation@20"
@@ -365,6 +531,26 @@
                     "command": "azure-dev.commands.azureWorkspace.revealAzureResourceGroup",
                     "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.environment(?!s)/i",
                     "group": "50navigation@20"
+                },
+                {
+                    "command": "azure-dev.commands.azureWorkspace.revealAzureResourceGroup",
+                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.environments.environment/i",
+                    "group": "10env@50"
+                },
+                {
+                    "command": "azure-dev.views.environments.viewDotEnv",
+                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.environments.environment/i",
+                    "group": "inline"
+                },
+                {
+                    "command": "azure-dev.commands.cli.extension-upgrade",
+                    "when": "view == azure-dev.views.extensions && viewItem == ms-azuretools.azure-dev.views.extensions.extension",
+                    "group": "10extension@10"
+                },
+                {
+                    "command": "azure-dev.commands.cli.extension-uninstall",
+                    "when": "view == azure-dev.views.extensions && viewItem == ms-azuretools.azure-dev.views.extensions.extension",
+                    "group": "10extension@20"
                 }
             ]
         },
@@ -526,6 +712,7 @@
         "@types/mocha": "~10",
         "@types/node": "~20",
         "@types/semver": "~7",
+        "@types/sinon": "~17",
         "@types/vscode": "~1.90",
         "@typescript-eslint/eslint-plugin": "~8",
         "@typescript-eslint/parser": "~8",
@@ -536,6 +723,7 @@
         "glob": "~11",
         "mocha": "~11",
         "node-loader": "~2",
+        "sinon": "~19",
         "ts-loader": "~9",
         "typescript": "~5.9",
         "webpack": "~5",

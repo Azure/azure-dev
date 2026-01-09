@@ -13,6 +13,7 @@ import { LoginStatus, getAzdLoginStatus, scheduleAzdSignInCheck, scheduleAzdVers
 import { activeSurveys } from './telemetry/activeSurveys';
 import { scheduleRegisterWorkspaceComponents } from './views/workspace/scheduleRegisterWorkspaceComponents';
 import { registerLanguageFeatures } from './language/languageFeatures';
+import { registerViews } from './views/registerViews';
 
 type LoadStats = {
     // Both are the values returned by Date.now()==milliseconds since Unix epoch.
@@ -54,6 +55,7 @@ export async function activateInternal(vscodeCtx: vscode.ExtensionContext, loadS
         registerCommands();
         registerDisposable(vscode.tasks.registerTaskProvider('dotenv', new DotEnvTaskProvider()));
         registerLanguageFeatures();
+        registerViews(vscodeCtx);
         scheduleRegisterWorkspaceComponents(vscodeCtx);
         scheduleSurveys(vscodeCtx.globalState, activeSurveys);
         scheduleAzdVersionCheck(); // Temporary

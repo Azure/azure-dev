@@ -86,11 +86,6 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 				return fmt.Errorf("failed to ground into a project context: %w", err)
 			}
 
-			// getComposedResourcesResponse, err := azdClient.Compose().ListResources(ctx, &azdext.EmptyRequest{})
-			// if err != nil {
-			// 	return fmt.Errorf("failed to get composed resources: %w", err)
-			// }
-
 			credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
 				TenantID:                   azureContext.Scope.TenantId,
 				AdditionallyAllowedTenants: []string{"*"},
@@ -179,21 +174,25 @@ func extractProjectDetails(projectResourceId string) (*FoundryProject, error) {
 	}, nil
 }
 
-func getExistingEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.AzdClient) *azdext.Environment {
+func getExistingEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.AzdClient) (*azdext.Environment, error) {
 	var env *azdext.Environment
 	if flags.env == "" {
-		if envResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{}); err == nil {
-			env = envResponse.Environment
+		envResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current environment: %w", err)
 		}
+		env = envResponse.Environment
 	} else {
-		if envResponse, err := azdClient.Environment().Get(ctx, &azdext.GetEnvironmentRequest{
+		envResponse, err := azdClient.Environment().Get(ctx, &azdext.GetEnvironmentRequest{
 			Name: flags.env,
-		}); err == nil {
-			env = envResponse.Environment
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get environment '%s': %w", flags.env, err)
 		}
+		env = envResponse.Environment
 	}
 
-	return env
+	return env, nil
 }
 
 func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.AzdClient) (*azdext.Environment, error) {
@@ -239,7 +238,10 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 	}
 
 	// Get specified or current environment if it exists
-	existingEnv := getExistingEnvironment(ctx, flags, azdClient)
+	existingEnv, err := getExistingEnvironment(ctx, flags, azdClient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get existing environment: %w", err)
+	}
 	if existingEnv == nil {
 		// Dispatch `azd env new` to create a new environment with interactive flow
 		fmt.Println("Lets create a new default azd environment for your project.")
@@ -271,9 +273,9 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 		}
 
 		// Re-fetch the environment after creation
-		existingEnv = getExistingEnvironment(ctx, flags, azdClient)
-		if existingEnv == nil {
-			return nil, fmt.Errorf("azd environment not found, please create an environment (azd env new) and try again")
+		existingEnv, err = getExistingEnvironment(ctx, flags, azdClient)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get environment after creation: %w", err)
 		}
 	}
 

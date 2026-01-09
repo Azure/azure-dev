@@ -1016,9 +1016,14 @@ func (a *InitAction) downloadAgentYaml(
 			return nil, "", fmt.Errorf("marshaling agent manifest to YAML: %w", err)
 		}
 		content = manifestBytes
+	} else {
+		return nil, "", fmt.Errorf("unrecognized manifest pointer format: %s. Expected local file path, GitHub URL, or registry URL", manifestPointer)
 	}
 
 	// Parse and validate the YAML content against AgentManifest structure
+	if len(content) == 0 {
+		return nil, "", fmt.Errorf("manifest content is empty or could not be retrieved")
+	}
 	agentManifest, err := agent_yaml.LoadAndValidateAgentManifest(content)
 	if err != nil {
 		return nil, "", fmt.Errorf("AgentManifest %w", err)
@@ -1046,11 +1051,19 @@ func (a *InitAction) downloadAgentYaml(
 		}
 	}
 
-	agentId := agentManifest.Name
+	var agentName string
 
-	// Use targetDir if provided or set to local file pointer, otherwise default to "src/{agentId}"
+	if containerTemplate, ok := agentManifest.Template.(agent_yaml.ContainerAgent); ok {
+		agentName = containerTemplate.Name
+	} else if promptTemplate, ok := agentManifest.Template.(agent_yaml.PromptAgent); ok {
+		agentName = promptTemplate.Name
+	} else {
+		return nil, "", fmt.Errorf("unsupported agent template type")
+	}
+
+	// Use targetDir if provided or set to local file pointer, otherwise default to "src/{agentName}"
 	if targetDir == "" {
-		targetDir = filepath.Join("src", agentId)
+		targetDir = filepath.Join("src", agentName)
 	}
 
 	// Create target directory if it doesn't exist

@@ -11,7 +11,6 @@ import (
 	"azure.ai.finetune/internal/providers"
 	"azure.ai.finetune/internal/providers/factory"
 	"azure.ai.finetune/internal/utils"
-	Utils "azure.ai.finetune/internal/utils"
 	"azure.ai.finetune/pkg/models"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
@@ -54,10 +53,10 @@ func (s *fineTuningServiceImpl) CreateFineTuningJob(ctx context.Context, req *mo
 		return nil, fmt.Errorf("training file is required")
 	}
 
-	if Utils.IsLocalFilePath(req.TrainingFile) {
+	if utils.IsLocalFilePath(req.TrainingFile) {
 		color.Green("\nuploading training file...")
 
-		trainingDataID, err := s.UploadFile(ctx, Utils.GetLocalFilePath(req.TrainingFile))
+		trainingDataID, err := s.UploadFile(ctx, utils.GetLocalFilePath(req.TrainingFile))
 		if err != nil {
 			return nil, fmt.Errorf("failed to upload training file: %w", err)
 		}
@@ -68,9 +67,9 @@ func (s *fineTuningServiceImpl) CreateFineTuningJob(ctx context.Context, req *mo
 
 	// Upload validation file if provided
 	if req.ValidationFile != nil && *req.ValidationFile != "" {
-		if Utils.IsLocalFilePath(*req.ValidationFile) {
+		if utils.IsLocalFilePath(*req.ValidationFile) {
 			color.Green("\nuploading validation file...")
-			validationDataID, err := s.UploadFile(ctx, Utils.GetLocalFilePath(*req.ValidationFile))
+			validationDataID, err := s.UploadFile(ctx, utils.GetLocalFilePath(*req.ValidationFile))
 			if err != nil {
 				return nil, fmt.Errorf("failed to upload validation file: %w", err)
 			}
@@ -202,14 +201,14 @@ func (s *fineTuningServiceImpl) UploadFile(ctx context.Context, filePath string)
 	if filePath == "" {
 		return "", fmt.Errorf("file path cannot be empty")
 	}
-	uploadedFileId, err := s._uploadFile(ctx, filePath)
+	uploadedFileId, err := s.uploadFile(ctx, filePath)
 	if err != nil || uploadedFileId == "" {
 		return "", fmt.Errorf("failed to upload file: %w", err)
 	}
 	return uploadedFileId, nil
 }
 
-func (s *fineTuningServiceImpl) _uploadFile(ctx context.Context, filePath string) (string, error) {
+func (s *fineTuningServiceImpl) uploadFile(ctx context.Context, filePath string) (string, error) {
 	// validate file existence
 	fileInfo, err := os.Stat(filePath)
 	if err != nil {

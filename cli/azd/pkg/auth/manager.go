@@ -141,6 +141,11 @@ func NewManager(
 		public.WithHTTPClient(httpClient),
 	}
 
+	if _, disableCP1 := os.LookupEnv("AZURE_IDENTITY_DISABLE_CP1"); !disableCP1 {
+		// `cp1` indicates that our client can handle claims challenges
+		options = append(options, public.WithClientCapabilities([]string{"cp1"}))
+	}
+
 	publicClientApp, err := public.New(azdClientID, options...)
 	if err != nil {
 		return nil, fmt.Errorf("creating msal client: %w", err)

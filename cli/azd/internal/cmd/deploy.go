@@ -327,7 +327,7 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			// clean up for packages automatically created in temp dir
 			if da.flags.fromPackage == "" {
 				for _, artifact := range serviceContext.Package {
-					if strings.HasPrefix(artifact.Location, os.TempDir()) {
+					if artifact.Kind == project.ArtifactKindArchive && strings.HasPrefix(artifact.Location, os.TempDir()) {
 						if err := os.RemoveAll(artifact.Location); err != nil {
 							log.Printf("failed to remove temporary package: %s : %s", artifact.Location, err)
 						}

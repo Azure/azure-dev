@@ -20,7 +20,7 @@ const (
 // DefaultRetryConfig returns a default exponential backoff strategy
 func DefaultRetryConfig() retry.Backoff {
 	return retry.WithMaxRetries(
-		DefaultMaxAttempts,
+		DefaultMaxAttempts-1,
 		retry.NewExponential(DefaultDelaySeconds*time.Second),
 	)
 }

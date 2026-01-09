@@ -174,9 +174,9 @@ func extractProjectDetails(projectResourceId string) (*FoundryProject, error) {
 	}, nil
 }
 
-func getExistingEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.AzdClient) (*azdext.Environment, error) {
+func getExistingEnvironment(ctx context.Context, name *string, azdClient *azdext.AzdClient) (*azdext.Environment, error) {
 	var env *azdext.Environment
-	if flags.env == "" {
+	if name == nil || *name == "" {
 		envResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 		if err != nil {
 			return nil, fmt.Errorf("failed to get current environment: %w", err)
@@ -184,10 +184,10 @@ func getExistingEnvironment(ctx context.Context, flags *initFlags, azdClient *az
 		env = envResponse.Environment
 	} else {
 		envResponse, err := azdClient.Environment().Get(ctx, &azdext.GetEnvironmentRequest{
-			Name: flags.env,
+			Name: *name,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to get environment '%s': %w", flags.env, err)
+			return nil, fmt.Errorf("failed to get environment '%s': %w", *name, err)
 		}
 		env = envResponse.Environment
 	}
@@ -238,7 +238,7 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 	}
 
 	// Get specified or current environment if it exists
-	existingEnv, err := getExistingEnvironment(ctx, flags, azdClient)
+	existingEnv, err := getExistingEnvironment(ctx, &flags.env, azdClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get existing environment: %w", err)
 	}
@@ -273,7 +273,7 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 		}
 
 		// Re-fetch the environment after creation
-		existingEnv, err = getExistingEnvironment(ctx, flags, azdClient)
+		existingEnv, err = getExistingEnvironment(ctx, &flags.env, azdClient)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get environment after creation: %w", err)
 		}

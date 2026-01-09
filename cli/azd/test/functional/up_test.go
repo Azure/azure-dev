@@ -175,14 +175,14 @@ func Test_CLI_Up_Down_FuncApp(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Logf("Starting infra create\n")
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--cwd", dir)
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
 	require.NoError(t, err)
 
 	t.Logf("Starting deploy\n")
-	_, err = cli.RunCommand(ctx, "deploy", "--cwd", dir)
+	_, err = cli.RunCommand(ctx, "deploy")
 	require.NoError(t, err)
 
-	result, err := cli.RunCommand(ctx, "env", "get-values", "-o", "json", "--cwd", dir)
+	result, err := cli.RunCommand(ctx, "env", "get-values", "-o", "json")
 	require.NoError(t, err)
 
 	t.Logf("env get-values command output: %s\n", result.Stdout)
@@ -223,7 +223,7 @@ func Test_CLI_Up_Down_FuncApp(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Logf("Starting infra delete\n")
-	_, err = cli.RunCommand(ctx, "down", "--cwd", dir, "--force", "--purge")
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)
 
 	t.Logf("Done\n")

@@ -46,6 +46,9 @@ words:
   - rustc
   - figspec
   - finetune
+  - bubbletea
+  - lipgloss
+  - gopxl
 languageSettings:
   - languageId: go
     ignoreRegExpList:

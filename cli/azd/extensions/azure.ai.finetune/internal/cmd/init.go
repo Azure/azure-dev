@@ -10,10 +10,10 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
@@ -86,11 +86,6 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 				return fmt.Errorf("failed to ground into a project context: %w", err)
 			}
 
-			// getComposedResourcesResponse, err := azdClient.Compose().ListResources(ctx, &azdext.EmptyRequest{})
-			// if err != nil {
-			// 	return fmt.Errorf("failed to get composed resources: %w", err)
-			// }
-
 			credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
 				TenantID:                   azureContext.Scope.TenantId,
 				AdditionallyAllowedTenants: []string{"*"},
@@ -157,43 +152,45 @@ type FoundryProject struct {
 }
 
 func extractProjectDetails(projectResourceId string) (*FoundryProject, error) {
-	/// Define the regex pattern for the project resource ID
-	pattern := `^/subscriptions/([^/]+)/resourceGroups/([^/]+)/providers/Microsoft\.CognitiveServices/accounts/([^/]+)/projects/([^/]+)$`
-
-	regex, err := regexp.Compile(pattern)
+	resourceId, err := arm.ParseResourceID(projectResourceId)
 	if err != nil {
-		return nil, fmt.Errorf("failed to compile regex pattern: %w", err)
+		return nil, fmt.Errorf("failed to parse project resource ID: %w", err)
 	}
 
-	matches := regex.FindStringSubmatch(projectResourceId)
-	if matches == nil || len(matches) != 5 {
-		return nil, fmt.Errorf("the given Microsoft Foundry project ID does not match expected format: /subscriptions/[SUBSCRIPTION_ID]/resourceGroups/[RESOURCE_GROUP]/providers/Microsoft.CognitiveServices/accounts/[ACCOUNT_NAME]/projects/[PROJECT_NAME]")
+	// Validate that this is a Cognitive Services project resource
+	if resourceId.ResourceType.Namespace != "Microsoft.CognitiveServices" || len(resourceId.ResourceType.Types) != 2 ||
+		resourceId.ResourceType.Types[0] != "accounts" || resourceId.ResourceType.Types[1] != "projects" {
+		return nil, fmt.Errorf("the given resource ID is not a Microsoft Foundry project. Expected format: /subscriptions/[SUBSCRIPTION_ID]/resourceGroups/[RESOURCE_GROUP]/providers/Microsoft.CognitiveServices/accounts/[ACCOUNT_NAME]/projects/[PROJECT_NAME]")
 	}
 
 	// Extract the components
 	return &FoundryProject{
-		SubscriptionId:    matches[1],
-		ResourceGroupName: matches[2],
-		AiAccountName:     matches[3],
-		AiProjectName:     matches[4],
+		SubscriptionId:    resourceId.SubscriptionID,
+		ResourceGroupName: resourceId.ResourceGroupName,
+		AiAccountName:     resourceId.Parent.Name,
+		AiProjectName:     resourceId.Name,
 	}, nil
 }
 
-func getExistingEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.AzdClient) *azdext.Environment {
+func getExistingEnvironment(ctx context.Context, name *string, azdClient *azdext.AzdClient) (*azdext.Environment, error) {
 	var env *azdext.Environment
-	if flags.env == "" {
-		if envResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{}); err == nil {
-			env = envResponse.Environment
+	if name == nil || *name == "" {
+		envResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current environment: %w", err)
 		}
+		env = envResponse.Environment
 	} else {
-		if envResponse, err := azdClient.Environment().Get(ctx, &azdext.GetEnvironmentRequest{
-			Name: flags.env,
-		}); err == nil {
-			env = envResponse.Environment
+		envResponse, err := azdClient.Environment().Get(ctx, &azdext.GetEnvironmentRequest{
+			Name: *name,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get environment '%s': %w", *name, err)
 		}
+		env = envResponse.Environment
 	}
 
-	return env
+	return env, nil
 }
 
 func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.AzdClient) (*azdext.Environment, error) {
@@ -239,7 +236,10 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 	}
 
 	// Get specified or current environment if it exists
-	existingEnv := getExistingEnvironment(ctx, flags, azdClient)
+	existingEnv, err := getExistingEnvironment(ctx, &flags.env, azdClient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get existing environment: %w", err)
+	}
 	if existingEnv == nil {
 		// Dispatch `azd env new` to create a new environment with interactive flow
 		fmt.Println("Lets create a new default azd environment for your project.")
@@ -271,9 +271,9 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 		}
 
 		// Re-fetch the environment after creation
-		existingEnv = getExistingEnvironment(ctx, flags, azdClient)
-		if existingEnv == nil {
-			return nil, fmt.Errorf("azd environment not found, please create an environment (azd env new) and try again")
+		existingEnv, err = getExistingEnvironment(ctx, &flags.env, azdClient)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get environment after creation: %w", err)
 		}
 	}
 

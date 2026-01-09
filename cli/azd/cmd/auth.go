@@ -36,6 +36,14 @@ func authActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 		DefaultFormat:  output.NoneFormat,
 	})
 
+	group.Add("status", &actions.ActionDescriptorOptions{
+		Command:        newAuthStatusCmd(),
+		FlagsResolver:  newAuthStatusFlags,
+		ActionResolver: newAuthStatusAction,
+		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+		DefaultFormat:  output.NoneFormat,
+	})
+
 	group.Add("logout", &actions.ActionDescriptorOptions{
 		Command:        newLogoutCmd("auth"),
 		ActionResolver: newLogoutAction,

@@ -424,6 +424,11 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		}, nil
 	}
 
+	// Invalidate cache after successful provisioning so next azd show will refresh
+	if err := p.envManager.InvalidateEnvCache(ctx, p.env.Name()); err != nil {
+		log.Printf("warning: failed to invalidate state cache: %v", err)
+	}
+
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header: fmt.Sprintf(

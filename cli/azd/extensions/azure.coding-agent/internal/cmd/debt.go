@@ -78,5 +78,5 @@ func openWithDefaultBrowser(ctx context.Context, console input.Console, url stri
 	}
 
 	log.Printf("warning: failed to use manual launch: %v\n", err)
-	console.Message(ctx, fmt.Sprintf("Azd was unable to open the next url. Please try it manually: %s", url))
+	console.Message(ctx, fmt.Sprintf("azd was unable to open the next url. Please try it manually: %s", url))
 }

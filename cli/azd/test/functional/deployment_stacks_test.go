@@ -21,7 +21,6 @@ import (
 )
 
 func Test_DeploymentStacks(t *testing.T) {
-	t.Skip("Skipping tests as they become unreliable with error when trying to delete the deployment stack")
 	t.Run("Subscription_Scope_Up_Down", func(t *testing.T) {
 		t.Parallel()
 		ctx, cancel := newTestContext(t)

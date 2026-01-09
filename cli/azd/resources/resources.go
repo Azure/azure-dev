@@ -13,6 +13,9 @@ var TemplatesJson []byte
 //go:embed alpha_features.yaml
 var AlphaFeatures []byte
 
+//go:embed config_options.yaml
+var ConfigOptions []byte
+
 //go:embed minimal/main.bicep
 var MinimalBicep []byte
 

@@ -329,6 +329,10 @@ const completionSpec: Fig.Spec = {
 					description: 'Display the list of available features in alpha stage.',
 				},
 				{
+					name: ['options'],
+					description: 'List all available configuration settings.',
+				},
+				{
 					name: ['reset'],
 					description: 'Resets configuration to default.',
 					options: [
@@ -1656,6 +1660,10 @@ const completionSpec: Fig.Spec = {
 						{
 							name: ['list-alpha'],
 							description: 'Display the list of available features in alpha stage.',
+						},
+						{
+							name: ['options'],
+							description: 'List all available configuration settings.',
 						},
 						{
 							name: ['reset'],

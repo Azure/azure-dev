@@ -67,7 +67,7 @@ func (a *InitAction) validateLocalContainerAgentCopy(ctx context.Context, manife
 
 	preview, err := formatDirectoryPreview(entries, previewLimit)
 	if err != nil {
-		return fmt.Errorf("enumerating items in %s: %w", srcAbs, err)
+		return fmt.Errorf("formatting directory preview for %s: %w", srcAbs, err)
 	}
 
 	fmt.Printf("%s", output.WithWarningFormat(

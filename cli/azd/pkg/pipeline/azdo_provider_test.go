@@ -220,8 +220,9 @@ func Test_parseAzDoRemote(t *testing.T) {
 	t.Run("valid HTTPS remote", func(t *testing.T) {
 		remoteUrl := "https://dev.azure.com/org/project/_git/repo"
 		expected := &azdoRemote{
-			Project:        "project",
-			RepositoryName: "repo",
+			Project:           "project",
+			RepositoryName:    "repo",
+			IsNonStandardHost: false,
 		}
 
 		result, err := parseAzDoRemote(remoteUrl)
@@ -235,8 +236,9 @@ func Test_parseAzDoRemote(t *testing.T) {
 	t.Run("valid user HTTPS remote", func(t *testing.T) {
 		remoteUrl := "https://user@visualstudio.com/org/project/_git/repo"
 		expected := &azdoRemote{
-			Project:        "project",
-			RepositoryName: "repo",
+			Project:           "project",
+			RepositoryName:    "repo",
+			IsNonStandardHost: false,
 		}
 
 		result, err := parseAzDoRemote(remoteUrl)
@@ -250,8 +252,9 @@ func Test_parseAzDoRemote(t *testing.T) {
 	t.Run("valid legacy HTTPS remote", func(t *testing.T) {
 		remoteUrl := "https://visualstudio.com/org/project/_git/repo"
 		expected := &azdoRemote{
-			Project:        "project",
-			RepositoryName: "repo",
+			Project:           "project",
+			RepositoryName:    "repo",
+			IsNonStandardHost: false,
 		}
 
 		result, err := parseAzDoRemote(remoteUrl)
@@ -263,8 +266,9 @@ func Test_parseAzDoRemote(t *testing.T) {
 	t.Run("valid legacy HTTPS remote with org", func(t *testing.T) {
 		remoteUrl := "https://org.visualstudio.com/org/project/_git/repo"
 		expected := &azdoRemote{
-			Project:        "project",
-			RepositoryName: "repo",
+			Project:           "project",
+			RepositoryName:    "repo",
+			IsNonStandardHost: false,
 		}
 
 		result, err := parseAzDoRemote(remoteUrl)
@@ -280,8 +284,9 @@ func Test_parseAzDoRemote(t *testing.T) {
 	t.Run("valid SSH remote", func(t *testing.T) {
 		remoteUrl := "git@ssh.dev.azure.com:v3/org/project/repo"
 		expected := &azdoRemote{
-			Project:        "project",
-			RepositoryName: "repo",
+			Project:           "project",
+			RepositoryName:    "repo",
+			IsNonStandardHost: false,
 		}
 
 		result, err := parseAzDoRemote(remoteUrl)
@@ -293,8 +298,9 @@ func Test_parseAzDoRemote(t *testing.T) {
 	t.Run("valid legacy SSH remote", func(t *testing.T) {
 		remoteUrl := "git@vs-ssh.visualstudio.com:v3/org/project/repo"
 		expected := &azdoRemote{
-			Project:        "project",
-			RepositoryName: "repo",
+			Project:           "project",
+			RepositoryName:    "repo",
+			IsNonStandardHost: false,
 		}
 
 		result, err := parseAzDoRemote(remoteUrl)
@@ -306,8 +312,38 @@ func Test_parseAzDoRemote(t *testing.T) {
 	t.Run("valid legacy SSH remote", func(t *testing.T) {
 		remoteUrl := "git@ssh.visualstudio.com:v3/org/project/repo"
 		expected := &azdoRemote{
-			Project:        "project",
-			RepositoryName: "repo",
+			Project:           "project",
+			RepositoryName:    "repo",
+			IsNonStandardHost: false,
+		}
+
+		result, err := parseAzDoRemote(remoteUrl)
+
+		require.NoError(t, err)
+		require.Equal(t, expected, result)
+	})
+
+	// Self-hosted Azure DevOps Server
+	t.Run("valid self-hosted Azure DevOps Server HTTPS remote", func(t *testing.T) {
+		remoteUrl := "https://devops1.mydomain.com/ABC/MyProject/_git/MyProject"
+		expected := &azdoRemote{
+			Project:           "MyProject",
+			RepositoryName:    "MyProject",
+			IsNonStandardHost: true,
+		}
+
+		result, err := parseAzDoRemote(remoteUrl)
+
+		require.NoError(t, err)
+		require.Equal(t, expected, result)
+	})
+
+	t.Run("valid self-hosted Azure DevOps Server with collection HTTPS remote", func(t *testing.T) {
+		remoteUrl := "https://azuredevops.example.org/DefaultCollection/Project/_git/Repo"
+		expected := &azdoRemote{
+			Project:           "Project",
+			RepositoryName:    "Repo",
+			IsNonStandardHost: true,
 		}
 
 		result, err := parseAzDoRemote(remoteUrl)

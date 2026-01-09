@@ -425,6 +425,9 @@ var ErrSSHNotSupported = errors.New("ssh git remote is not supported. " +
 type azdoRemote struct {
 	Project        string
 	RepositoryName string
+	// IsNonStandardHost indicates if the remote URL is from a non-standard Azure DevOps host
+	// (e.g., self-hosted or on-premises installations)
+	IsNonStandardHost bool
 }
 
 // parseAzDoRemote extracts the organization, project and repository name from an Azure DevOps remote url
@@ -435,13 +438,13 @@ type azdoRemote struct {
 //   - git@ssh.dev.azure.com:v[1-3]/[user|org]/[project]/[repo]
 //   - git@vs-ssh.visualstudio.com:v[1-3]/[user|org]/[project]/[repo]
 //   - git@ssh.visualstudio.com:v[1-3]/[user|org]/[project]/[repo]
+//   - Self-hosted Azure DevOps Server: https://[custom-domain]/[collection]/[project]/_git/[repo]
 func parseAzDoRemote(remoteUrl string) (*azdoRemote, error) {
 	// Initialize the azdoRemote struct
 	azdoRemote := &azdoRemote{}
 
-	if !strings.Contains(remoteUrl, "visualstudio.com") && !strings.Contains(remoteUrl, "dev.azure.com") {
-		return nil, fmt.Errorf("%w: %s", ErrRemoteHostIsNotAzDo, remoteUrl)
-	}
+	// Check if this is a standard Azure DevOps host
+	isStandardHost := strings.Contains(remoteUrl, "visualstudio.com") || strings.Contains(remoteUrl, "dev.azure.com")
 
 	if strings.Contains(remoteUrl, "/_git/") {
 		// applies to http or https
@@ -458,15 +461,21 @@ func parseAzDoRemote(remoteUrl string) (*azdoRemote, error) {
 
 		azdoRemote.Project = parts[0][projectNameStart+1:]
 		azdoRemote.RepositoryName = parts[1]
+		azdoRemote.IsNonStandardHost = !isStandardHost
 		return azdoRemote, nil
 	}
 
 	if strings.Contains(remoteUrl, "git@") {
 		// applies to git@ -> project and repo always in the last two parts
+		if !isStandardHost {
+			// For non-standard hosts with git@, we cannot reliably parse the URL
+			return nil, fmt.Errorf("%w: %s", ErrRemoteHostIsNotAzDo, remoteUrl)
+		}
 		parts := strings.Split(remoteUrl, "/")
 		partsLen := len(parts)
 		azdoRemote.Project = parts[partsLen-2]
 		azdoRemote.RepositoryName = parts[partsLen-1]
+		azdoRemote.IsNonStandardHost = false
 		return azdoRemote, nil
 	}
 
@@ -510,6 +519,27 @@ func (p *AzdoScmProvider) gitRepoDetails(ctx context.Context, remoteUrl string) 
 		azdoRemote, err := parseAzDoRemote(remoteUrl)
 		if err != nil {
 			return nil, fmt.Errorf("parsing Azure DevOps remote url: %s: %w", remoteUrl, err)
+		}
+
+		// If this is a non-standard host (e.g., self-hosted Azure DevOps Server),
+		// prompt the user to confirm this is indeed an Azure DevOps remote
+		if azdoRemote.IsNonStandardHost {
+			confirmed, err := p.console.Confirm(ctx, input.ConsoleOptions{
+				Message: fmt.Sprintf(
+					"The remote URL '%s' does not appear to be a standard Azure DevOps host. "+
+						"Is this a self-hosted Azure DevOps Server or Azure DevOps Services instance?",
+					remoteUrl),
+				DefaultValue: true,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("prompting for remote confirmation: %w", err)
+			}
+			if !confirmed {
+				return nil, fmt.Errorf(
+					"remote URL not confirmed as Azure DevOps: %s. "+
+						"Please use 'azd pipeline config' to configure a different remote",
+					remoteUrl)
+			}
 		}
 
 		repoDetails.projectName = azdoRemote.Project

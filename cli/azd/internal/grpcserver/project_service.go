@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
@@ -204,6 +205,19 @@ func (s *projectService) AddService(ctx context.Context, req *azdext.AddServiceR
 	if projectConfig.Services == nil {
 		projectConfig.Services = map[string]*project.ServiceConfig{}
 	}
+
+	// Check if service already exists to preserve EventDispatcher
+	if existingService, exists := projectConfig.Services[req.Service.Name]; exists &&
+		existingService.EventDispatcher != nil {
+		serviceConfig.EventDispatcher = existingService.EventDispatcher
+	} else {
+		// Initialize EventDispatcher for new service
+		serviceConfig.EventDispatcher = ext.NewEventDispatcher[project.ServiceLifecycleEventArgs]()
+	}
+
+	// Set the Project reference and Name (required fields not set by mapper)
+	serviceConfig.Project = projectConfig
+	serviceConfig.Name = req.Service.Name
 
 	projectConfig.Services[req.Service.Name] = serviceConfig
 	if err := project.Save(ctx, projectConfig, azdContext.ProjectPath()); err != nil {

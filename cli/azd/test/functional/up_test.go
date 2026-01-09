@@ -182,20 +182,14 @@ func Test_CLI_Up_Down_FuncApp(t *testing.T) {
 	_, err = cli.RunCommand(ctx, "deploy")
 	require.NoError(t, err)
 
-	result, err := cli.RunCommand(ctx, "env", "get-values", "-o", "json")
-	require.NoError(t, err)
-
-	t.Logf("env get-values command output: %s\n", result.Stdout)
-
-	var envValues map[string]interface{}
-	err = json.Unmarshal([]byte(result.Stdout), &envValues)
+	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
 	require.NoError(t, err)
 
 	if session != nil {
-		session.Variables[recording.SubscriptionIdKey] = envValues[environment.SubscriptionIdEnvVarName].(string)
+		session.Variables[recording.SubscriptionIdKey] = env[environment.SubscriptionIdEnvVarName]
 	}
 
-	url := fmt.Sprintf("%s/api/httptrigger", envValues["AZURE_FUNCTION_URI"])
+	url := fmt.Sprintf("%s/api/httptrigger", env["AZURE_FUNCTION_URI"])
 	t.Logf("Issuing GET request to function\n")
 
 	// We've seen some cases in CI where issuing a get right after a deploy ends up with us getting a 404, so retry the

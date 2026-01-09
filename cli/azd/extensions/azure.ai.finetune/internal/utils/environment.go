@@ -11,10 +11,14 @@ import (
 )
 
 const (
-	EnvAzureTenantID       = "AZURE_TENANT_ID"
-	EnvAzureSubscriptionID = "AZURE_SUBSCRIPTION_ID"
-	EnvAzureLocation       = "AZURE_LOCATION"
-	EnvAzureAccountName    = "AZURE_ACCOUNT_NAME"
+	EnvAzureTenantID          = "AZURE_TENANT_ID"
+	EnvAzureSubscriptionID    = "AZURE_SUBSCRIPTION_ID"
+	EnvAzureLocation          = "AZURE_LOCATION"
+	EnvAzureAccountName       = "AZURE_ACCOUNT_NAME"
+	EnvAzureOpenAIProjectName = "AZURE_PROJECT_NAME"
+	EnvAPIVersion             = "AZURE_API_VERSION"
+	EnvFinetuningRoute        = "AZURE_FINETUNING_ROUTE"
+	EnvFineturningTokenScope  = "AZURE_FINETUNING_TOKEN_SCOPE"
 )
 
 // GetEnvironmentValues retrieves Azure environment configuration from azd client.

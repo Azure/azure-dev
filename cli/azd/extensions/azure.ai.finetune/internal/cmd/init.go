@@ -318,6 +318,15 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 
 		_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 			EnvName: existingEnv.Name,
+			Key:     "AZURE_PROJECT_NAME",
+			Value:   foundryProject.AiProjectName,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to set AZURE_PROJECT_NAME in azd environment: %w", err)
+		}
+
+		_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: existingEnv.Name,
 			Key:     "AZURE_LOCATION",
 			Value:   foundryProject.Location,
 		})
@@ -511,6 +520,12 @@ func ensureAzureContext(
 			EnvName: env.Name,
 			Key:     "AZURE_ACCOUNT_NAME",
 			Value:   fpDetails.AiAccountName,
+		})
+
+		_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: env.Name,
+			Key:     "AZURE_PROJECT_NAME",
+			Value:   fpDetails.AiProjectName,
 		})
 
 		location := *projectResp.Location

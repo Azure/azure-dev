@@ -6,25 +6,28 @@ package factory
 import (
 	"context"
 	"fmt"
+	"net/http"
 
 	"azure.ai.finetune/internal/providers"
 	azureprovider "azure.ai.finetune/internal/providers/azure"
 	openaiprovider "azure.ai.finetune/internal/providers/openai"
 	"azure.ai.finetune/internal/utils"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/openai/openai-go/v3"
-	"github.com/openai/openai-go/v3/azure"
 	"github.com/openai/openai-go/v3/option"
 )
 
 const (
 	// OpenAI API version for Azure cognitive services
-	apiVersion = "2025-04-01-preview"
+	DefaultApiVersion = "2025-11-15-preview"
 	// Azure cognitive services endpoint URL pattern
-	azureCognitiveServicesEndpoint = "https://%s.cognitiveservices.azure.com/openai"
+	DefaultCognitiveServicesEndpoint = "https://%s.services.ai.azure.com/api/projects/%s"
+	DefaultAzureFinetuningScope      = "https://ai.azure.com/.default"
 )
 
 func GetOpenAIClientFromAzdClient(ctx context.Context, azdClient *azdext.AzdClient) (*openai.Client, error) {
@@ -53,15 +56,55 @@ func GetOpenAIClientFromAzdClient(ctx context.Context, azdClient *azdext.AzdClie
 	// Get Azure credentials and endpoint - TODO
 	// You'll need to get these from your environment or config
 	accountName := envValueMap[utils.EnvAzureAccountName]
-	endpoint := fmt.Sprintf(azureCognitiveServicesEndpoint, accountName)
+	projectName := envValueMap[utils.EnvAzureOpenAIProjectName]
+	endpoint := envValueMap[utils.EnvFinetuningRoute]
+	if endpoint == "" {
+		endpoint = fmt.Sprintf(DefaultCognitiveServicesEndpoint, accountName, projectName)
+	}
+
+	apiVersion := envValueMap[utils.EnvAPIVersion]
+	if apiVersion == "" {
+		apiVersion = DefaultApiVersion
+	}
+
+	scope := envValueMap[utils.EnvFineturningTokenScope]
+	if scope == "" {
+		scope = DefaultAzureFinetuningScope
+	}
 	// Create OpenAI client
 	client := openai.NewClient(
 		//azure.WithEndpoint(endpoint, apiVersion),
 		option.WithBaseURL(endpoint),
 		option.WithQuery("api-version", apiVersion),
-		azure.WithTokenCredential(credential),
+		WithTokenCredential(credential, scope),
 	)
 	return &client, nil
+}
+
+// WithTokenCredential configures this client to authenticate using an [Azure Identity] TokenCredential.
+// This function should be paired with a call to [WithEndpoint] to point to your Azure OpenAI instance.
+//
+// [Azure Identity]: https://pkg.go.dev/github.com/Azure/azure-sdk-for-go/sdk/azidentity
+func WithTokenCredential(tokenCredential azcore.TokenCredential, scope string) option.RequestOption {
+	bearerTokenPolicy := runtime.NewBearerTokenPolicy(tokenCredential, []string{scope}, nil)
+	// add in a middleware that uses the bearer token generated from the token credential
+	return option.WithMiddleware(func(req *http.Request, next option.MiddlewareNext) (*http.Response, error) {
+		pipeline := runtime.NewPipeline("azopenai-extensions", version, runtime.PipelineOptions{}, &policy.ClientOptions{
+			InsecureAllowCredentialWithHTTP: true, // allow for plain HTTP proxies, etc..
+			PerRetryPolicies: []policy.Policy{
+				bearerTokenPolicy,
+				policyAdapter(next),
+			},
+		})
+
+		req2, err := runtime.NewRequestFromRequest(req)
+
+		if err != nil {
+			return nil, err
+		}
+
+		return pipeline.Do(req2)
+	})
 }
 
 // NewFineTuningProvider creates a FineTuningProvider based on provider type
@@ -82,3 +125,11 @@ func NewModelDeploymentProvider(subscriptionId string, credential azcore.TokenCr
 	}
 	return azureprovider.NewAzureProvider(clientFactory), err
 }
+
+type policyAdapter option.MiddlewareNext
+
+func (mp policyAdapter) Do(req *policy.Request) (*http.Response, error) {
+	return (option.MiddlewareNext)(mp)(req.Raw())
+}
+
+const version = "v.0.1.0"

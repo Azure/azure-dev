@@ -1,0 +1,31 @@
+# Continuous deployment trigger
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - cli/azd/extensions/microsoft.azd.concurx
+      - eng/pipelines/release-azd-extension.yml
+      - /eng/pipelines/templates/jobs/build-azd-extension.yml
+      - /eng/pipelines/templates/jobs/cross-build-azd-extension.yml
+      - /eng/pipelines/templates/variables/image.yml
+
+pr:
+  paths:
+    include:
+      - cli/azd/extensions/microsoft.azd.concurx
+      - eng/pipelines/release-azd-extension.yml
+      - eng/pipelines/templates/steps/publish-cli.yml
+    exclude:
+      - cli/azd/docs/**
+
+extends:
+  template: /eng/pipelines/templates/stages/1es-redirect.yml
+  parameters:
+    stages:
+      - template: /eng/pipelines/templates/stages/release-azd-extension.yml
+        parameters: 
+          AzdExtensionId: microsoft.azd.concurx
+          SanitizedExtensionId: azure-coding-agent
+          AzdExtensionDirectory: cli/azd/extensions/microsoft.azd.concurx

@@ -89,6 +89,7 @@ const (
 // BaseCredentials represents the base class for connection credentials
 type BaseCredentials struct {
 	Type CredentialType `json:"type"`
+	Key  string         `json:"key,omitempty"`
 }
 
 // Connection represents a connection response from the API
@@ -138,6 +139,38 @@ func (c *FoundryProjectsClient) GetPagedConnections(ctx context.Context) (*Paged
 	}
 
 	return &pagedConnections, nil
+}
+
+// GetConnectionWithCredentials retrieves a specific connection with its credentials
+func (c *FoundryProjectsClient) GetConnectionWithCredentials(ctx context.Context, name string) (*Connection, error) {
+	targetEndpoint := fmt.Sprintf("%s/connections/%s/getConnectionWithCredentials?api-version=%s", c.baseEndpoint, name, c.apiVersion)
+
+	req, err := runtime.NewRequest(ctx, http.MethodPost, targetEndpoint)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	var connection Connection
+	if err := json.Unmarshal(body, &connection); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal connection response: %w", err)
+	}
+
+	return &connection, nil
 }
 
 // GetAllConnections retrieves all connections from the project, handling pagination

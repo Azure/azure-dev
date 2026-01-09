@@ -58,3 +58,5 @@ module web 'br/public:avm/res/app/container-app:0.8.0' = {
     tags: { 'azd-env-name': environmentName, 'azd-service-name': 'web' }
   }
 }
+
+output WEBSITE_URL string = 'https://${web.outputs.fqdn}'

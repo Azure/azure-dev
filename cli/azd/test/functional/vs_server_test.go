@@ -156,7 +156,6 @@ func Test_CLI_VsServerExternalAuth(t *testing.T) {
 }
 
 func Test_CLI_VsServer(t *testing.T) {
-	t.Skip("Needs to be re-designed - https://github.com/Azure/azure-dev/issues/6059")
 	t.Parallel()
 
 	testDir := filepath.Join("testdata", "vs-server", "tests")
@@ -232,6 +231,7 @@ func Test_CLI_VsServer(t *testing.T) {
 			}
 
 			cli := azdcli.NewCLI(t, azdcli.WithSession(session))
+			cli.Env = append(cli.Env, os.Environ()...)
 			/* #nosec G204 - Subprocess launched with a potential tainted input or cmd arguments false positive */
 			cmd := exec.CommandContext(ctx, cli.AzdPath, "vs-server", "--use-tls")
 			cmd.Env = append(cli.Env, os.Environ()...)

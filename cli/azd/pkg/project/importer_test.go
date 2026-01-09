@@ -771,3 +771,126 @@ func TestImportManagerServiceStableWithDependencies(t *testing.T) {
 	assert.True(t, backendIdx < frontendIdx, "backend should come before frontend")
 	assert.True(t, authIdx < frontendIdx, "auth should come before frontend")
 }
+
+func TestDetectProviderFromFiles(t *testing.T) {
+	tests := []struct {
+		name           string
+		files          []string
+		expectedResult provisioning.ProviderKind
+		expectError    bool
+		errorContains  string
+	}{
+		{
+			name:           "only bicep files",
+			files:          []string{"main.bicep", "modules.bicep"},
+			expectedResult: provisioning.Bicep,
+			expectError:    false,
+		},
+		{
+			name:           "only bicepparam files",
+			files:          []string{"main.bicepparam"},
+			expectedResult: provisioning.Bicep,
+			expectError:    false,
+		},
+		{
+			name:           "only terraform files",
+			files:          []string{"main.tf", "variables.tf"},
+			expectedResult: provisioning.Terraform,
+			expectError:    false,
+		},
+		{
+			name:           "only tfvars files",
+			files:          []string{"terraform.tfvars"},
+			expectedResult: provisioning.Terraform,
+			expectError:    false,
+		},
+		{
+			name:           "both bicep and terraform files",
+			files:          []string{"main.bicep", "main.tf"},
+			expectedResult: provisioning.NotSpecified,
+			expectError:    true,
+			errorContains:  "both Bicep and Terraform files detected",
+		},
+		{
+			name:           "no IaC files",
+			files:          []string{"readme.md", "config.json"},
+			expectedResult: provisioning.NotSpecified,
+			expectError:    false,
+		},
+		{
+			name:           "empty directory",
+			files:          []string{},
+			expectedResult: provisioning.NotSpecified,
+			expectError:    false,
+		},
+		{
+			name:           "mixed with bicep and non-IaC files",
+			files:          []string{"main.bicep", "readme.md", "config.json"},
+			expectedResult: provisioning.Bicep,
+			expectError:    false,
+		},
+		{
+			name:           "mixed with terraform and non-IaC files",
+			files:          []string{"main.tf", "readme.md", "LICENSE"},
+			expectedResult: provisioning.Terraform,
+			expectError:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create temporary directory
+			tmpDir, err := os.MkdirTemp("", "test-detect-provider-*")
+			require.NoError(t, err)
+			defer os.RemoveAll(tmpDir)
+
+			// Create test files
+			for _, fileName := range tt.files {
+				filePath := filepath.Join(tmpDir, fileName)
+				err := os.WriteFile(filePath, []byte("test content"), 0600)
+				require.NoError(t, err)
+			}
+
+			// Test detectProviderFromFiles
+			result, err := detectProviderFromFiles(tmpDir)
+
+			if tt.expectError {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tt.errorContains)
+			} else {
+				require.NoError(t, err)
+			}
+
+			require.Equal(t, tt.expectedResult, result)
+		})
+	}
+}
+
+func TestDetectProviderFromFilesNonExistentDirectory(t *testing.T) {
+	// Test with non-existent directory
+	result, err := detectProviderFromFiles("/nonexistent/path/that/does/not/exist")
+	require.NoError(t, err, "should not error when directory doesn't exist")
+	require.Equal(t, provisioning.NotSpecified, result)
+}
+
+func TestDetectProviderFromFilesIgnoresDirectories(t *testing.T) {
+	// Create temporary directory structure
+	tmpDir, err := os.MkdirTemp("", "test-detect-provider-dirs-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	// Create subdirectories with IaC-like names
+	err = os.Mkdir(filepath.Join(tmpDir, "main.bicep"), 0755)
+	require.NoError(t, err)
+	err = os.Mkdir(filepath.Join(tmpDir, "main.tf"), 0755)
+	require.NoError(t, err)
+
+	// Create a real Bicep file
+	err = os.WriteFile(filepath.Join(tmpDir, "resources.bicep"), []byte("test"), 0600)
+	require.NoError(t, err)
+
+	// Should detect Bicep and ignore directories
+	result, err := detectProviderFromFiles(tmpDir)
+	require.NoError(t, err)
+	require.Equal(t, provisioning.Bicep, result)
+}

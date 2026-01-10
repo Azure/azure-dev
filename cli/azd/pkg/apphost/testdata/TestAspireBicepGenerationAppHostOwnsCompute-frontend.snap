@@ -37,17 +37,17 @@ properties:
           - name: AZURE_CLIENT_ID
             value: {{ .Env.MANAGED_IDENTITY_CLIENT_ID }}
           - name: ACE
-            value: '{{ .Env.TEST_AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}'
+            value: '{{ .Env.ASPIRE_OWNED_ENV_AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}'
           - name: ACR
-            value: '{{ .Env.TEST_AZURE_CONTAINER_REGISTRY_ENDPOINT }}'
+            value: '{{ .Env.ASPIRE_OWNED_ENV_AZURE_CONTAINER_REGISTRY_ENDPOINT }}'
           - name: OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EVENT_LOG_ATTRIBUTES
             value: "true"
           - name: OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES
             value: "true"
           - name: bicepValue0
-            value: '{{ .Env.TEST_VAL0 }}'
+            value: '{{ .Env.ASPIRE_OWNED_ENV_VAL0 }}'
           - name: bicepValue_test
-            value: '{{ .Env.TEST_TEST }}'
+            value: '{{ .Env.ASPIRE_OWNED_ENV_TEST }}'
           - name: APPLICATIONINSIGHTS_CONNECTION_STRING
             secretRef: applicationinsights-connection-string
           - name: ConnectionStrings__db

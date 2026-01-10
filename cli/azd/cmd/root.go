@@ -15,11 +15,9 @@ import (
 
 	// Importing for infrastructure provider plugin registrations
 
-	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azd"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
-	"github.com/azure/azure-dev/cli/azd/pkg/llm"
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -28,6 +26,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/cmd/show"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/spf13/cobra"
 )
 
@@ -42,7 +41,20 @@ func NewRootCmd(
 	rootContainer *ioc.NestedContainer,
 ) *cobra.Command {
 	prevDir := ""
-	opts := &internal.GlobalCommandOptions{GenerateStaticHelp: staticHelp}
+
+	// Register common dependencies for the IoC rootContainer
+	if rootContainer == nil {
+		rootContainer = ioc.NewNestedContainer(nil)
+	}
+
+	// Try to get GlobalCommandOptions from container (if already registered by ExecuteWithAutoInstall).
+	// If not found, create a new instance with defaults.
+	opts := &internal.GlobalCommandOptions{}
+	if err := rootContainer.Resolve(&opts); err != nil {
+		opts = &internal.GlobalCommandOptions{}
+	}
+
+	opts.GenerateStaticHelp = staticHelp
 	opts.EnableTelemetry = telemetry.IsTelemetryEnabled()
 
 	productName := "The Azure Developer CLI"
@@ -69,6 +81,44 @@ func NewRootCmd(
 
 				prevDir = current
 
+				// Check if the directory exists
+				if _, err := os.Stat(opts.Cwd); os.IsNotExist(err) {
+					// Directory doesn't exist, prompt user to create it
+					shouldCreate := true // Default to Yes
+
+					if !opts.NoPrompt {
+						// Prompt the user
+						defaultValue := true
+						confirm := ux.NewConfirm(&ux.ConfirmOptions{
+							Message: fmt.Sprintf(
+								"Directory '%s' does not exist. Would you like to create it?",
+								opts.Cwd,
+							),
+							DefaultValue: &defaultValue,
+						})
+
+						result, err := confirm.Ask(cmd.Context())
+						if err != nil {
+							return fmt.Errorf("failed to prompt for directory creation: %w", err)
+						}
+
+						if result == nil {
+							return fmt.Errorf("no response received for directory creation prompt")
+						}
+
+						shouldCreate = *result
+					}
+
+					if !shouldCreate {
+						return fmt.Errorf("directory '%s' does not exist and creation was declined", opts.Cwd)
+					}
+
+					// Create the directory
+					if err := os.MkdirAll(opts.Cwd, 0755); err != nil {
+						return fmt.Errorf("failed to create directory '%s': %w", opts.Cwd, err)
+					}
+				}
+
 				if err := os.Chdir(opts.Cwd); err != nil {
 					return fmt.Errorf("failed to change directory to %s: %w", opts.Cwd, err)
 				}
@@ -93,29 +143,16 @@ func NewRootCmd(
 	root := actions.NewActionDescriptor("azd", &actions.ActionDescriptorOptions{
 		Command: rootCmd,
 		FlagsResolver: func(cmd *cobra.Command) *internal.GlobalCommandOptions {
-			rootCmd.PersistentFlags().StringVarP(&opts.Cwd, "cwd", "C", "", "Sets the current working directory.")
-			rootCmd.PersistentFlags().
-				BoolVar(&opts.EnableDebugLogging, "debug", false, "Enables debugging and diagnostics logging.")
-			rootCmd.PersistentFlags().
-				BoolVar(
-					&opts.NoPrompt,
-					"no-prompt",
-					false,
-					"Accepts the default value instead of prompting, or it fails if there is no default.")
+			// Add the global flag set to Cobra's persistent flags for help text and validation.
+			// The actual flag values were already parsed and stored in opts before command tree creation.
+			globalFlagSet := CreateGlobalFlagSet()
+			rootCmd.PersistentFlags().AddFlagSet(globalFlagSet)
 
-			// The telemetry system is responsible for reading these flags value and using it to configure the telemetry
-			// system, but we still need to add it to our flag set so that when we parse the command line with Cobra we
-			// don't error due to an "unknown flag".
-			var traceLogFile string
-			var traceLogEndpoint string
-
-			rootCmd.PersistentFlags().StringVar(&traceLogFile, "trace-log-file", "", "Write a diagnostics trace to a file.")
-			_ = rootCmd.PersistentFlags().MarkHidden("trace-log-file")
-
-			rootCmd.PersistentFlags().StringVar(
-				&traceLogEndpoint, "trace-log-url", "", "Send traces to an Open Telemetry compatible endpoint.")
-			_ = rootCmd.PersistentFlags().MarkHidden("trace-log-url")
-
+			// Return the pre-parsed opts instance that was either:
+			// 1. Registered in the container by ExecuteWithAutoInstall, OR
+			// 2. Created above when retrieving from container
+			// Cobra will re-parse the flags during ExecuteContext, which is fine - it validates
+			// and handles remaining arguments, but we use the pre-parsed values for logic.
 			return opts
 		},
 	})
@@ -129,6 +166,7 @@ func NewRootCmd(
 	templatesActions(root)
 	authActions(root)
 	hooksActions(root)
+	mcpActions(root)
 
 	root.Add("version", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
@@ -152,35 +190,18 @@ func NewRootCmd(
 		DefaultFormat:  output.NoneFormat,
 	})
 
-	root.Add("show", &actions.ActionDescriptorOptions{
-		Command:        show.NewShowCmd(),
-		FlagsResolver:  show.NewShowFlags,
-		ActionResolver: show.NewShowAction,
-		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
-		DefaultFormat:  output.NoneFormat,
-		GroupingOptions: actions.CommandGroupOptions{
-			RootLevelHelp: actions.CmdGroupManage,
-		},
-	})
-
-	//deprecate:cmd hide login
-	login := newLoginCmd("")
-	login.Hidden = true
-	root.Add("login", &actions.ActionDescriptorOptions{
-		Command:        login,
-		FlagsResolver:  newLoginFlags,
-		ActionResolver: newLoginAction,
-		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
-		DefaultFormat:  output.NoneFormat,
-	})
-
-	//deprecate:cmd hide logout
-	logout := newLogoutCmd("")
-	logout.Hidden = true
-	root.Add("logout", &actions.ActionDescriptorOptions{
-		Command:        logout,
-		ActionResolver: newLogoutAction,
-	})
+	root.
+		Add("show", &actions.ActionDescriptorOptions{
+			Command:        show.NewShowCmd(),
+			FlagsResolver:  show.NewShowFlags,
+			ActionResolver: show.NewShowAction,
+			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+			DefaultFormat:  output.NoneFormat,
+			GroupingOptions: actions.CommandGroupOptions{
+				RootLevelHelp: actions.CmdGroupManage,
+			},
+		}).
+		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 
 	root.Add("init", &actions.ActionDescriptorOptions{
 		Command:        newInitCmd(),
@@ -247,13 +268,7 @@ func NewRootCmd(
 			}
 			return true
 		}).
-		UseMiddlewareWhen("extensions", middleware.NewExtensionsMiddleware, func(descriptor *actions.ActionDescriptor) bool {
-			if onPreview, _ := descriptor.Options.Command.Flags().GetBool("preview"); onPreview {
-				log.Println("Skipping provision hooks due to preview flag.")
-				return false
-			}
-			return true
-		})
+		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 
 	root.
 		Add("package", &actions.ActionDescriptorOptions{
@@ -283,6 +298,25 @@ func NewRootCmd(
 			HelpOptions: actions.ActionHelpOptions{
 				Description: cmd.GetCmdDeployHelpDescription,
 				Footer:      cmd.GetCmdDeployHelpFooter,
+			},
+			GroupingOptions: actions.CommandGroupOptions{
+				RootLevelHelp: actions.CmdGroupAzure,
+			},
+			RequireLogin: true,
+		}).
+		UseMiddleware("hooks", middleware.NewHooksMiddleware).
+		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
+
+	root.
+		Add("publish", &actions.ActionDescriptorOptions{
+			Command:        cmd.NewPublishCmd(),
+			FlagsResolver:  cmd.NewPublishFlags,
+			ActionResolver: cmd.NewPublishAction,
+			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+			DefaultFormat:  output.NoneFormat,
+			HelpOptions: actions.ActionHelpOptions{
+				Description: cmd.GetCmdPublishHelpDescription,
+				Footer:      cmd.GetCmdPublishHelpFooter,
 			},
 			GroupingOptions: actions.CommandGroupOptions{
 				RootLevelHelp: actions.CmdGroupAzure,
@@ -361,9 +395,11 @@ func NewRootCmd(
 	root.
 		UseMiddleware("debug", middleware.NewDebugMiddleware).
 		UseMiddleware("ux", middleware.NewUxMiddleware).
-		UseMiddleware("error", middleware.NewErrorMiddleware).
 		UseMiddlewareWhen("telemetry", middleware.NewTelemetryMiddleware, func(descriptor *actions.ActionDescriptor) bool {
 			return !descriptor.Options.DisableTelemetry
+		}).
+		UseMiddlewareWhen("error", middleware.NewErrorMiddleware, func(descriptor *actions.ActionDescriptor) bool {
+			return !descriptor.Options.DisableTroubleshooting
 		}).
 		UseMiddlewareWhen("loginGuard", middleware.NewLoginGuardMiddleware, func(descriptor *actions.ActionDescriptor) bool {
 			// Check if the command or any of its parents require login
@@ -379,38 +415,27 @@ func NewRootCmd(
 			return false
 		})
 
-	// Register common dependencies for the IoC rootContainer
-	if rootContainer == nil {
-		rootContainer = ioc.NewNestedContainer(nil)
-	}
 	ioc.RegisterNamedInstance(rootContainer, "root-cmd", rootCmd)
 	registerCommonDependencies(rootContainer)
 
-	// Conditionally register the 'extension' commands if the feature is enabled
-	err := rootContainer.Invoke(func(alphaFeatureManager *alpha.FeatureManager, extensionManager *extensions.Manager) error {
-		if alphaFeatureManager.IsEnabled(extensions.FeatureExtensions) {
-			// Enables the "extension (ext)" command group.
-			extensionActions(root)
+	// Register the 'extension' commands
+	err := rootContainer.Invoke(func(extensionManager *extensions.Manager) error {
+		// Enables the "extension (ext)" command group.
+		extensionActions(root)
 
-			// Enables custom extension commands
-			installedExtensions, err := extensionManager.ListInstalled()
-			if err != nil {
-				return fmt.Errorf("Failed to get installed extensions: %w", err)
-			}
-
-			// Bind custom extension commands for extensions that expose the capability
-			for _, ext := range installedExtensions {
-				if ext.HasCapability(extensions.CustomCommandCapability) {
-					if err := bindExtension(rootContainer, root, ext); err != nil {
-						return fmt.Errorf("Failed to bind extension commands: %w", err)
-					}
-				}
-			}
+		// Enables custom extension commands
+		installedExtensions, err := extensionManager.ListInstalled()
+		if err != nil {
+			return fmt.Errorf("Failed to get installed extensions: %w", err)
 		}
 
-		// Enable MCP commands when LLM feature is enabled
-		if alphaFeatureManager.IsEnabled(llm.FeatureLlm) {
-			mcpActions(root)
+		// Bind custom extension commands for extensions that expose the capability
+		for _, ext := range installedExtensions {
+			if ext.HasCapability(extensions.CustomCommandCapability) {
+				if err := bindExtension(root, ext); err != nil {
+					return fmt.Errorf("Failed to bind extension commands: %w", err)
+				}
+			}
 		}
 
 		return nil

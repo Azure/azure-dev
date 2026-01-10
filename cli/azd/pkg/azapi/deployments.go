@@ -22,6 +22,14 @@ const (
 	DeploymentTypeStacks   DeploymentType = "deployments.stacks"
 )
 
+type DeploymentOperation string
+
+const (
+	DeploymentOperationDeploy   DeploymentOperation = "deploy"
+	DeploymentOperationValidate DeploymentOperation = "validate"
+	DeploymentOperationPreview  DeploymentOperation = "preview"
+)
+
 var ErrPreviewNotSupported = errors.New("preview not supported")
 
 const emptySubscriptionArmTemplate = `{
@@ -348,7 +356,7 @@ func CreateDeploymentOutput(rawOutputs interface{}) (result map[string]AzCliDepl
 	return result
 }
 
-func responseToDeploymentError(title string, respErr *azcore.ResponseError) error {
+func responseToDeploymentError(title string, respErr *azcore.ResponseError, operation DeploymentOperation) error {
 	var errorText string
 	rawBody, err := io.ReadAll(respErr.RawResponse.Body)
 	if err != nil {
@@ -356,14 +364,21 @@ func responseToDeploymentError(title string, respErr *azcore.ResponseError) erro
 	} else {
 		errorText = string(rawBody)
 	}
-	return NewAzureDeploymentError(title, errorText)
+	return NewAzureDeploymentError(title, errorText, operation)
 }
 
 // Attempts to create an Azure Deployment error from the HTTP response error
-func createDeploymentError(err error) error {
+func createDeploymentError(err error, operation DeploymentOperation) error {
 	var responseErr *azcore.ResponseError
 	if errors.As(err, &responseErr) {
-		return responseToDeploymentError("Deployment Error Details", responseErr)
+		title := "Deployment Error Details"
+		switch operation {
+		case DeploymentOperationValidate:
+			title = "Validation Error Details"
+		case DeploymentOperationPreview:
+			title = "Preview Error Details"
+		}
+		return responseToDeploymentError(title, responseErr, operation)
 	}
 
 	return err

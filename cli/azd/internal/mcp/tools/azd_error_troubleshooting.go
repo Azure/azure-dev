@@ -15,7 +15,7 @@ import (
 func NewAzdErrorTroubleShootingTool() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.NewTool(
-			"azd_error_troubleshooting",
+			"error_troubleshooting",
 			mcp.WithReadOnlyHintAnnotation(true),
 			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDestructiveHintAnnotation(false),

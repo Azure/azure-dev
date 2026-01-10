@@ -30,6 +30,11 @@ func Test_Server_Start(t *testing.T) {
 		azdext.UnimplementedEventServiceServer{},
 		azdext.UnimplementedComposeServiceServer{},
 		azdext.UnimplementedWorkflowServiceServer{},
+		azdext.UnimplementedExtensionServiceServer{},
+		azdext.UnimplementedServiceTargetServiceServer{},
+		azdext.UnimplementedFrameworkServiceServer{},
+		azdext.UnimplementedContainerServiceServer{},
+		azdext.UnimplementedAccountServiceServer{},
 	)
 
 	serverInfo, err := server.Start()

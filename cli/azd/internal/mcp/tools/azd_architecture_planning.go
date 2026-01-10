@@ -15,7 +15,7 @@ import (
 func NewAzdArchitecturePlanningTool() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.NewTool(
-			"azd_architecture_planning",
+			"architecture_planning",
 			mcp.WithReadOnlyHintAnnotation(true),
 			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDestructiveHintAnnotation(false),

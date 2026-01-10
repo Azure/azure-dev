@@ -65,7 +65,7 @@ func NewCommandRunner(opt *RunnerOptions) CommandRunner {
 		runner.stdout = os.Stdout
 	}
 
-	if runner.stdout == nil {
+	if runner.stderr == nil {
 		runner.stderr = os.Stderr
 	}
 

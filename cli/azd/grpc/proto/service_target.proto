@@ -1,0 +1,180 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+syntax = "proto3";
+
+package azdext;
+
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext";
+
+import "include/google/protobuf/struct.proto";
+import "models.proto";
+import "errors.proto";
+
+service ServiceTargetService {
+  // Bidirectional stream for service target requests and responses
+  rpc Stream(stream ServiceTargetMessage) returns (stream ServiceTargetMessage);
+}
+
+// Envelope for all possible service target messages (requests and responses)
+message ServiceTargetMessage {
+  string request_id = 1;
+  ExtensionError error = 99;
+  oneof message_type {
+    RegisterServiceTargetRequest register_service_target_request = 2;
+    RegisterServiceTargetResponse register_service_target_response = 3;
+    ServiceTargetInitializeRequest initialize_request = 6;
+    ServiceTargetInitializeResponse initialize_response = 7;
+    GetTargetResourceRequest get_target_resource_request = 10;
+    GetTargetResourceResponse get_target_resource_response = 11;
+    ServiceTargetDeployRequest deploy_request = 12;
+    ServiceTargetDeployResponse deploy_response = 13;
+    ServiceTargetProgressMessage progress_message = 14;
+    ServiceTargetPackageRequest package_request = 15;
+    ServiceTargetPackageResponse package_response = 16;
+    ServiceTargetPublishRequest publish_request = 17;
+    ServiceTargetPublishResponse publish_response = 18;
+    ServiceTargetEndpointsRequest endpoints_request = 19;
+    ServiceTargetEndpointsResponse endpoints_response = 20;
+  }
+}
+
+// InputParameter
+message ServiceTargetInputParameter {
+  string type = 1;
+  string default_value = 2;
+  string value = 3;
+}
+
+// OutputParameter
+message ServiceTargetOutputParameter {
+  string type = 1;
+  string value = 2;
+}
+
+// Resource
+message ServiceTargetResource {
+  string id = 1;
+}
+
+// --- Request and response messages for each Provider method ---
+
+message ServiceTargetInitializeRequest {
+  ServiceConfig service_config = 1;
+}
+message ServiceTargetInitializeResponse {}
+
+// Core options and result wrappers
+message ServiceTargetOptions {
+  string provider = 1;
+  string path = 2;
+  string module = 3;
+  map<string, string> deployment_stacks = 4;
+  bool ignore_deployment_state = 5;
+  google.protobuf.Struct config = 6;
+}
+
+message RegisterServiceTargetRequest {
+  string host = 1;// unique identifier for the provider
+}
+
+message RegisterServiceTargetResponse {
+  // Add fields as needed (empty for now)
+}
+
+// GetTargetResource request and response
+message GetTargetResourceRequest {
+  string subscription_id = 1;
+  ServiceConfig service_config = 2;
+  // Optional: The default target resource computed by azd core.
+  // Extensions can use this as a fallback or ignore it completely.
+  TargetResource default_target_resource = 3;
+  // Optional: Error message from default target resource resolution.
+  // If set, default_target_resource will be nil and this contains the error.
+  string default_error = 4;
+}
+
+message GetTargetResourceResponse {
+  TargetResource target_resource = 1;
+}
+
+// TargetResource represents the resolved target resource
+message TargetResource {
+  string subscription_id = 1;
+  string resource_group_name = 2;
+  string resource_name = 3;
+  string resource_type = 4;
+  map<string, string> metadata = 5;
+}
+
+// Deploy request and response
+message ServiceTargetDeployRequest {
+  ServiceConfig service_config = 1;
+  ServiceContext service_context = 2;
+  TargetResource target_resource = 3;
+}
+
+message ServiceTargetDeployResponse {
+  ServiceDeployResult result = 1;
+}
+
+// ServicePackageResult represents the package result for deployment
+message ServicePackageResult {
+  repeated Artifact artifacts = 1;
+  }
+
+// ServicePublishResult represents the result of a publish operation
+message ServicePublishResult {
+  repeated Artifact artifacts = 1;
+}
+
+// ServiceDeployResult represents the result of a deployment operation
+message ServiceDeployResult {
+  repeated Artifact artifacts = 1;
+}
+
+// ServiceTargetPackageRequest represents a request to package a service
+message ServiceTargetPackageRequest {
+  ServiceConfig service_config = 1;
+  ServiceContext service_context = 2;
+}
+
+message ServiceTargetPackageResponse {
+  ServicePackageResult result = 1;
+}
+
+// ServiceTargetPublishRequest represents a request to publish a service package
+message ServiceTargetPublishRequest {
+  ServiceConfig service_config = 1;
+  ServiceContext service_context = 2;
+  TargetResource target_resource = 3;
+  PublishOptions publish_options = 4;
+}
+
+message ServiceTargetPublishResponse {
+  ServicePublishResult result = 1;
+}
+
+// PublishOptions holds options for publish operations
+message PublishOptions {
+  // Image specifies the target image in the form '[registry/]repository[:tag]'
+  string image = 1;
+}
+
+// ServiceTargetEndpointsRequest represents a request to resolve endpoints for a service target
+message ServiceTargetEndpointsRequest {
+  ServiceConfig service_config = 1;
+  TargetResource target_resource = 2;
+}
+
+message ServiceTargetEndpointsResponse {
+  repeated string endpoints = 1;
+}
+
+// ServiceTargetProgressMessage represents a progress update from an extension
+message ServiceTargetProgressMessage {
+  string request_id = 1;
+  string message = 2;
+  int64 timestamp = 3;// Unix timestamp in milliseconds
+}
+
+

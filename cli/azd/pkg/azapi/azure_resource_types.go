@@ -16,7 +16,7 @@ const (
 	AzureResourceTypeCosmosDb                  AzureResourceType = "Microsoft.DocumentDB/databaseAccounts"
 	AzureResourceTypeEventHubsNamespace        AzureResourceType = "Microsoft.EventHub/namespaces"
 	AzureResourceTypeContainerApp              AzureResourceType = "Microsoft.App/containerApps"
-	AzureResourceTypeSpringApp                 AzureResourceType = "Microsoft.AppPlatform/Spring"
+	AzureResourceTypeContainerAppJob           AzureResourceType = "Microsoft.App/jobs"
 	AzureResourceTypeContainerAppEnvironment   AzureResourceType = "Microsoft.App/managedEnvironments"
 	AzureResourceTypeDeployment                AzureResourceType = "Microsoft.Resources/deployments"
 	AzureResourceTypeKeyVault                  AzureResourceType = "Microsoft.KeyVault/vaults"
@@ -34,6 +34,7 @@ const (
 	AzureResourceTypeSqlServer                 AzureResourceType = "Microsoft.Sql/servers"
 	AzureResourceTypeVirtualNetwork            AzureResourceType = "Microsoft.Network/virtualNetworks"
 	AzureResourceTypeWebSite                   AzureResourceType = "Microsoft.Web/sites"
+	AzureResourceTypeWebSiteSlot               AzureResourceType = "Microsoft.Web/sites/slots"
 	AzureResourceTypeContainerRegistry         AzureResourceType = "Microsoft.ContainerRegistry/registries"
 	AzureResourceTypeManagedCluster            AzureResourceType = "Microsoft.ContainerService/managedClusters"
 	AzureResourceTypeAgentPool                 AzureResourceType = "Microsoft.ContainerService/managedClusters/agentPools"
@@ -48,8 +49,13 @@ const (
 	AzureResourceTypeRoleAssignment            AzureResourceType = "Microsoft.Authorization/roleAssignments"
 
 	//nolint:lll
-	AzureResourceTypeMachineLearningEndpoint           AzureResourceType = "Microsoft.MachineLearningServices/workspaces/onlineEndpoints"
+	AzureResourceTypeMachineLearningEndpoint AzureResourceType = "Microsoft.MachineLearningServices/workspaces/onlineEndpoints"
+	//nolint:lll
 	AzureResourceTypeCognitiveServiceAccountDeployment AzureResourceType = "Microsoft.CognitiveServices/accounts/deployments"
+	//nolint:lll
+	AzureResourceTypeCognitiveServiceAccountProject AzureResourceType = "Microsoft.CognitiveServices/accounts/projects"
+	//nolint:lll
+	AzureResourceTypeCognitiveServiceAccountCapabilityHost AzureResourceType = "Microsoft.CognitiveServices/accounts/capabilityHosts"
 )
 
 // GetResourceTypeDisplayName retrieves the display name for the given resource type.
@@ -81,6 +87,8 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Static Web App"
 	case AzureResourceTypeContainerApp:
 		return "Container App"
+	case AzureResourceTypeContainerAppJob:
+		return "Container App Job"
 	case AzureResourceTypeContainerAppEnvironment:
 		return "Container Apps Environment"
 	case AzureResourceTypeServiceBusNamespace:
@@ -119,12 +127,14 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Azure AI Services"
 	case AzureResourceTypeCognitiveServiceAccountDeployment:
 		return "Azure AI Services Model Deployment"
+	case AzureResourceTypeCognitiveServiceAccountProject:
+		return "Foundry project"
+	case AzureResourceTypeCognitiveServiceAccountCapabilityHost:
+		return "Foundry capability host"
 	case AzureResourceTypeSearchService:
 		return "Search service"
 	case AzureResourceTypeVideoIndexer:
 		return "Video Indexer"
-	case AzureResourceTypeSpringApp:
-		return "Azure Spring Apps"
 	case AzureResourceTypePrivateEndpoint:
 		return "Private Endpoint"
 	case AzureResourceTypeDevCenter:

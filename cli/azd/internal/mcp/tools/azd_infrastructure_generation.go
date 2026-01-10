@@ -15,7 +15,7 @@ import (
 func NewAzdInfrastructureGenerationTool() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.NewTool(
-			"azd_infrastructure_generation",
+			"infrastructure_generation",
 			mcp.WithReadOnlyHintAnnotation(true),
 			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDestructiveHintAnnotation(false),

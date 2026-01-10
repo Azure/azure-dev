@@ -17,7 +17,7 @@ jobs:
       - name: Upgrade bicep
         run: |
           which bicep
-          sudo curl -o $(which bicep) -L https://github.com/Azure/bicep/releases/download/v0.37.4/bicep-linux-x64
+          sudo curl -o $(which bicep) -L https://github.com/Azure/bicep/releases/download/v0.39.26/bicep-linux-x64
           sudo chmod +x $(which bicep)
       - name: Lint .bicep files
         run: $ErrorActionPreference='Continue'; eng/scripts/Test-BicepLint.ps1 -Verbose

@@ -4,8 +4,14 @@
 package provisioning
 
 import (
+	"fmt"
+	"log"
 	"maps"
 	"slices"
+	"strings"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 )
 
 type Deployment struct {
@@ -23,6 +29,26 @@ const (
 	ParameterTypeArray   ParameterType = "array"
 )
 
+// ParameterTypeFromArmType maps an ARM parameter type to a provisioning.ParameterType.
+//
+// Panics if the provided armType is not recognized.
+func ParameterTypeFromArmType(armType string) ParameterType {
+	switch armType {
+	case "String", "string", "secureString", "securestring":
+		return ParameterTypeString
+	case "Bool", "bool":
+		return ParameterTypeBoolean
+	case "Int", "int":
+		return ParameterTypeNumber
+	case "Object", "object", "secureObject", "secureobject":
+		return ParameterTypeObject
+	case "Array", "array":
+		return ParameterTypeArray
+	default:
+		panic(fmt.Sprintf("unexpected arm type: '%s'", armType))
+	}
+}
+
 type InputParameter struct {
 	Type         string
 	DefaultValue interface{}
@@ -32,6 +58,51 @@ type InputParameter struct {
 type OutputParameter struct {
 	Type  ParameterType
 	Value interface{}
+}
+
+// OutputParametersFromArmOutputs converts the outputs from an ARM deployment to a map of provisioning.OutputParameter.
+//
+// The casing of the output parameter names will match the casing in the provided templateOutputs. If an output is
+// present in azureOutputParams but not in templateOutputs, the output name will be upper-cased to work around
+// inconsistent casing behavior in Azure (e.g. `azurE_RESOURCE_GROUP`).
+//
+// Secured outputs are skipped and not included in the result.
+func OutputParametersFromArmOutputs(
+	templateOutputs azure.ArmTemplateOutputs,
+	azureOutputParams map[string]azapi.AzCliDeploymentOutput) map[string]OutputParameter {
+	canonicalOutputCasings := make(map[string]string, len(templateOutputs))
+
+	for key := range templateOutputs {
+		canonicalOutputCasings[strings.ToLower(key)] = key
+	}
+
+	outputParams := make(map[string]OutputParameter, len(azureOutputParams))
+
+	for key, azureParam := range azureOutputParams {
+		if azureParam.Secured() {
+			// Secured output can't be retrieved, so we skip it.
+			// https://learn.microsoft.com/azure/azure-resource-manager/bicep/outputs?tabs=azure-powershell#secure-outputs
+			log.Println("Skipping secured output parameter:", key)
+			continue
+		}
+		var paramName string
+		canonicalCasing, found := canonicalOutputCasings[strings.ToLower(key)]
+		if found {
+			paramName = canonicalCasing
+		} else {
+			// To support BYOI (bring your own infrastructure) scenarios we will default to UPPER when canonical casing
+			// is not found in the parameters file to workaround strange azure behavior with OUTPUT values that look
+			// like `azurE_RESOURCE_GROUP`
+			paramName = strings.ToUpper(key)
+		}
+
+		outputParams[paramName] = OutputParameter{
+			Type:  ParameterTypeFromArmType(azureParam.Type),
+			Value: azureParam.Value,
+		}
+	}
+
+	return outputParams
 }
 
 // State represents the "current state" of the infrastructure, which is the result of the most recent deployment. For ARM

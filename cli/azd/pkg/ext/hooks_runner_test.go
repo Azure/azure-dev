@@ -450,12 +450,12 @@ func Test_GetScript_Validation(t *testing.T) {
 
 	scriptValidations := []scriptValidationTest{
 		{
-			name: "Missing Script Type",
+			name: "Missing Script Type - Should Use Default Shell",
 			config: &HookConfig{
 				Name: "test1",
 				Run:  "echo 'Hello'",
 			},
-			expectedError: ErrScriptTypeUnknown,
+			expectedError: nil, // Should no longer error, should use default shell
 		},
 		{
 			name: "Missing Run param",

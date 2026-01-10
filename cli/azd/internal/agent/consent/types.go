@@ -36,8 +36,9 @@ const (
 type OperationType string
 
 const (
-	OperationTypeTool     OperationType = "tool"     // running tools
-	OperationTypeSampling OperationType = "sampling" // sampling requests
+	OperationTypeTool        OperationType = "tool"        // running tools
+	OperationTypeSampling    OperationType = "sampling"    // sampling requests
+	OperationTypeElicitation OperationType = "elicitation" // elicitation requests
 )
 
 // Permission is the consent outcome for a rule
@@ -94,6 +95,7 @@ func (t Target) Validate() error {
 var AllowedOperationTypes = []OperationType{
 	OperationTypeTool,
 	OperationTypeSampling,
+	OperationTypeElicitation,
 }
 
 // ParseOperationType converts a string to OperationType with validation

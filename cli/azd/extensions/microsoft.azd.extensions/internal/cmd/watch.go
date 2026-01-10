@@ -56,6 +56,7 @@ func runWatchAction(ctx context.Context, flags *watchFlags) error {
 		"obj":          {},
 		"build":        {},
 		"node_modules": {},
+		".git":         {},
 	}
 
 	globIgnorePaths := []string{}

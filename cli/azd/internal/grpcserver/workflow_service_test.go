@@ -17,12 +17,13 @@ import (
 
 func Test_WorkflowService_Run_Success(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	contextType := mock.AnythingOfType("*context.cancelCtx")
 
 	t.Run("Success", func(t *testing.T) {
 		testRunner := &TestWorkflowRunner{}
 		runner := workflow.NewRunner(testRunner, mockContext.Console)
 		testRunner.On("SetArgs", mock.Anything)
-		testRunner.On("ExecuteContext", *mockContext.Context).Return(nil)
+		testRunner.On("ExecuteContext", contextType).Return(nil)
 
 		service := NewWorkflowService(runner)
 
@@ -49,7 +50,7 @@ func Test_WorkflowService_Run_Success(t *testing.T) {
 
 		// Verify that the runner's Run method was invoked.
 		testRunner.AssertCalled(t, "SetArgs", []string{"provision"})
-		testRunner.AssertCalled(t, "ExecuteContext", *mockContext.Context)
+		testRunner.AssertCalled(t, "ExecuteContext", contextType)
 	})
 
 	t.Run("Failure", func(t *testing.T) {
@@ -57,7 +58,7 @@ func Test_WorkflowService_Run_Success(t *testing.T) {
 		testRunner := &TestWorkflowRunner{}
 		runner := workflow.NewRunner(testRunner, mockContext.Console)
 		testRunner.On("SetArgs", mock.Anything)
-		testRunner.On("ExecuteContext", *mockContext.Context).Return(expectedErr)
+		testRunner.On("ExecuteContext", contextType).Return(expectedErr)
 
 		service := NewWorkflowService(runner)
 
@@ -84,7 +85,7 @@ func Test_WorkflowService_Run_Success(t *testing.T) {
 
 		// Verify that the runner's Run method was invoked.
 		testRunner.AssertCalled(t, "SetArgs", []string{"provision"})
-		testRunner.AssertCalled(t, "ExecuteContext", *mockContext.Context)
+		testRunner.AssertCalled(t, "ExecuteContext", contextType)
 	})
 }
 

@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/llm"
 	"github.com/fatih/color"
+	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/tmc/langchaingo/llms"
 )
@@ -43,7 +44,7 @@ func NewMcpSamplingHandler(
 	console input.Console,
 	llm *llm.ModelContainer,
 	opts ...SamplingHandlerOption,
-) *McpSamplingHandler {
+) client.SamplingHandler {
 	handler := &McpSamplingHandler{
 		consentManager: consentManager,
 		console:        console,

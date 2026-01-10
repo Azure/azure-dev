@@ -2,7 +2,6 @@
 // Licensed under the MIT License.
 
 //go:build unix
-// +build unix
 
 package auth
 

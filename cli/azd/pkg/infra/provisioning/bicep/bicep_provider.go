@@ -44,16 +44,16 @@ import (
 	"github.com/drone/envsubst"
 )
 
-const (
-	defaultModule = "main"
-	defaultPath   = "infra"
-)
-
 type bicepFileMode int
 
 const (
 	bicepMode bicepFileMode = iota
 	bicepparamMode
+)
+
+const (
+	// apiVersion for checking if a resource group exists
+	apiVersionResourceGroupExistence = "2025-03-01"
 )
 
 // BicepProvider exposes infrastructure provisioning using Azure Bicep templates
@@ -73,6 +73,7 @@ type BicepProvider struct {
 	bicepCli            *bicep.Cli
 	azapi               *azapi.AzureClient
 	resourceService     *azapi.ResourceService
+	resourceManager     infra.ResourceManager
 	deploymentManager   *infra.DeploymentManager
 	prompters           prompt.Prompter
 	curPrincipal        provisioning.CurrentPrincipalIdProvider
@@ -93,38 +94,39 @@ func (p *BicepProvider) Name() string {
 // Initialize initializes provider state from the options.
 // It also calls EnsureEnv, which ensures the client-side state is ready for provisioning.
 func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, opt provisioning.Options) error {
-	if opt.Module == "" {
-		opt.Module = defaultModule
+	infraOptions, err := opt.GetWithDefaults()
+	if err != nil {
+		return err
 	}
 
-	if opt.Path == "" {
-		opt.Path = defaultPath
+	if !filepath.IsAbs(infraOptions.Path) {
+		infraOptions.Path = filepath.Join(projectPath, infraOptions.Path)
 	}
 
-	if !filepath.IsAbs(opt.Path) {
-		opt.Path = filepath.Join(projectPath, opt.Path)
-	}
-
-	bicepparam := opt.Module + ".bicepparam"
-	bicepFile := opt.Module + ".bicep"
+	bicepparam := infraOptions.Module + ".bicepparam"
+	bicepFile := infraOptions.Module + ".bicep"
 
 	// Check if there's a <moduleName>.bicepparam first. It will be preferred over a <moduleName>.bicep
-	if _, err := os.Stat(filepath.Join(opt.Path, bicepparam)); err == nil {
-		p.path = filepath.Join(opt.Path, bicepparam)
+	if _, err := os.Stat(filepath.Join(infraOptions.Path, bicepparam)); err == nil {
+		p.path = filepath.Join(infraOptions.Path, bicepparam)
 		p.mode = bicepparamMode
 	} else {
-		p.path = filepath.Join(opt.Path, bicepFile)
+		p.path = filepath.Join(infraOptions.Path, bicepFile)
 		p.mode = bicepMode
 	}
 
 	p.projectPath = projectPath
-	p.layer = opt.Name
-	p.options = opt
-	p.ignoreDeploymentState = opt.IgnoreDeploymentState
+	p.layer = infraOptions.Name
+	p.options = infraOptions
+	p.ignoreDeploymentState = infraOptions.IgnoreDeploymentState
 
-	p.console.ShowSpinner(ctx, "Initialize bicep provider", input.Step)
-	err := p.EnsureEnv(ctx)
-	p.console.StopSpinner(ctx, "", input.Step)
+	if opt.Mode == provisioning.ModeDeploy {
+		// For regular deployments, ensure the environment is in a provision-ready state
+		p.console.ShowSpinner(ctx, "Initialize bicep provider", input.Step)
+		err = p.EnsureEnv(ctx)
+		p.console.StopSpinner(ctx, "", input.Step)
+	}
+
 	return err
 }
 
@@ -169,19 +171,55 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 	}
 
 	if scope == azure.DeploymentScopeResourceGroup {
-		if p.env.Getenv(environment.ResourceGroupEnvVarName) == "" {
-			// Prompt Resource Group supports creating a new resource group
-			// And prompts for a location as part of creating a new resource group
-			rgName, err := p.prompters.PromptResourceGroup(ctx, prompt.PromptResourceOptions{})
-			if err != nil {
-				return err
-			}
-
-			p.env.DotenvSet(environment.ResourceGroupEnvVarName, rgName)
-			if err := p.envManager.Save(ctx, p.env); err != nil {
-				return fmt.Errorf("saving resource group name: %w", err)
-			}
+		if err := p.ensureResourceGroup(ctx, p.env); err != nil {
+			return err
 		}
+	}
+
+	return nil
+}
+
+// ensureResourceGroup ensures that the resource group with AZURE_RESOURCE_GROUP key exists in the environment,
+// prompting the user to create a resource group if it is unset or does not exist.
+func (p *BicepProvider) ensureResourceGroup(ctx context.Context, env *environment.Environment) error {
+	promptAndSave := func(opt prompt.PromptResourceOptions) error {
+		rgName, err := p.prompters.PromptResourceGroup(ctx, opt)
+		if err != nil {
+			return err
+		}
+
+		p.env.DotenvSet(environment.ResourceGroupEnvVarName, rgName)
+		if err := p.envManager.Save(ctx, p.env); err != nil {
+			return fmt.Errorf("saving resource group name: %w", err)
+		}
+
+		return nil
+	}
+
+	resourceGroup := env.Getenv(environment.ResourceGroupEnvVarName)
+	if resourceGroup == "" {
+		return promptAndSave(prompt.PromptResourceOptions{})
+	}
+
+	resourceId := fmt.Sprintf(
+		"/subscriptions/%s/resourceGroups/%s",
+		p.env.GetSubscriptionId(),
+		resourceGroup)
+
+	resId, err := arm.ParseResourceID(resourceId)
+	if err != nil {
+		return fmt.Errorf("invalid '%s': %w", environment.ResourceGroupEnvVarName, err)
+	}
+
+	exists, err := p.resourceService.CheckExistenceByID(ctx, *resId, apiVersionResourceGroupExistence)
+	if err != nil {
+		return fmt.Errorf("checking if resource group exists: %w", err)
+	}
+
+	if !exists {
+		// Resource group no longer exists, prompt the user to create a new one.
+		// This handles the case where a resource group was deleted.
+		return promptAndSave(prompt.PromptResourceOptions{DefaultName: resourceGroup})
 	}
 
 	return nil
@@ -329,7 +367,7 @@ func (p *BicepProvider) State(ctx context.Context, options *provisioning.StateOp
 		}
 	}
 
-	state.Outputs = p.createOutputParameters(
+	state.Outputs = provisioning.OutputParametersFromArmOutputs(
 		outputs,
 		azapi.CreateDeploymentOutput(deployment.Outputs),
 	)
@@ -589,9 +627,30 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 	}
 
 	if !p.ignoreDeploymentState && parametersHashErr == nil {
-		deploymentState, err := p.deploymentState(ctx, planned, deployment, currentParamsHash)
-		if err == nil {
-			result.Outputs = p.createOutputParameters(
+		deploymentState, stateErr := p.deploymentState(ctx, planned, deployment, currentParamsHash)
+		if stateErr == nil {
+			// As a heuristic, we also check the existence of all resource groups
+			// created by the deployment to validate the deployment state.
+			// This handles the scenario of resource group(s) being deleted outside of azd,
+			// which is quite common.
+			// This check adds ~100ms per resource group to the deployment time.
+			for _, res := range deploymentState.Resources {
+				if res != nil && res.ID != nil {
+					resId, err := arm.ParseResourceID(*res.ID)
+					if err == nil && resId.ResourceType.Type == arm.ResourceGroupResourceType.Type {
+						exists, err := p.resourceService.CheckExistenceByID(ctx, *resId, apiVersionResourceGroupExistence)
+						if err == nil && !exists {
+							stateErr = fmt.Errorf(
+								"resource group %s no longer exists, invalidating deployment state", resId.ResourceGroupName)
+							break
+						}
+					}
+				}
+			}
+		}
+
+		if stateErr == nil {
+			result.Outputs = provisioning.OutputParametersFromArmOutputs(
 				planned.Template.Outputs,
 				azapi.CreateDeploymentOutput(deploymentState.Outputs),
 			)
@@ -601,7 +660,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 				SkippedReason: provisioning.DeploymentStateSkipped,
 			}, nil
 		}
-		logDS("%s", err.Error())
+		logDS("%s", stateErr.Error())
 	}
 
 	deploymentTags := map[string]*string{
@@ -643,7 +702,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		progressDisplay := p.deploymentManager.ProgressDisplay(deployment)
 		// Make initial delay shorter to be more responsive in displaying initial progress
 		initialDelay := 3 * time.Second
-		regularDelay := 10 * time.Second
+		regularDelay := 3 * time.Second
 		timer := time.NewTimer(initialDelay)
 		queryStartTime := time.Now()
 
@@ -678,7 +737,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		return nil, err
 	}
 
-	result.Outputs = p.createOutputParameters(
+	result.Outputs = provisioning.OutputParametersFromArmOutputs(
 		planned.Template.Outputs,
 		azapi.CreateDeploymentOutput(deployResult.Outputs),
 	)
@@ -736,15 +795,30 @@ func (p *BicepProvider) Preview(ctx context.Context) (*provisioning.DeployPrevie
 
 	var changes []*provisioning.DeploymentPreviewChange
 	for _, change := range deployPreviewResult.Properties.Changes {
-		resourceAfter := change.After.(map[string]interface{})
+		// Use After state if available (e.g., Create, Modify), otherwise use Before state (e.g., Delete).
+		// ARM returns nil for After when a resource is being deleted and nil for Before when created.
+		var resourceState map[string]interface{}
+		if change.After != nil {
+			resourceState, _ = change.After.(map[string]interface{})
+		}
+		if resourceState == nil && change.Before != nil {
+			resourceState, _ = change.Before.(map[string]interface{})
+		}
+		if resourceState == nil {
+			// Skip changes with no resource state information
+			continue
+		}
+
+		resourceType, _ := resourceState["type"].(string)
+		resourceName, _ := resourceState["name"].(string)
 
 		changes = append(changes, &provisioning.DeploymentPreviewChange{
 			ChangeType: provisioning.ChangeType(*change.ChangeType),
 			ResourceId: provisioning.Resource{
 				Id: *change.ResourceID,
 			},
-			ResourceType: resourceAfter["type"].(string),
-			Name:         resourceAfter["name"].(string),
+			ResourceType: resourceType,
+			Name:         resourceName,
 		})
 	}
 
@@ -803,6 +877,22 @@ func (p *BicepProvider) Destroy(
 		return nil, fmt.Errorf("creating template: %w", err)
 	}
 
+	targetScope, err := compileResult.Template.TargetScope()
+	if err != nil {
+		return nil, fmt.Errorf("computing deployment scope: %w", err)
+	}
+
+	switch targetScope {
+	case azure.DeploymentScopeResourceGroup:
+		if p.env.Getenv(environment.ResourceGroupEnvVarName) == "" {
+			return nil, azapi.ErrDeploymentNotFound
+		}
+	case azure.DeploymentScopeSubscription:
+		if p.env.Getenv(environment.SubscriptionIdEnvVarName) == "" || p.env.Getenv(environment.LocationEnvVarName) == "" {
+			return nil, azapi.ErrDeploymentNotFound
+		}
+	}
+
 	scope, err := p.scopeForTemplate(compileResult.Template)
 	if err != nil {
 		return nil, fmt.Errorf("computing deployment scope: %w", err)
@@ -830,113 +920,115 @@ func (p *BicepProvider) Destroy(
 		return nil, fmt.Errorf("mapping resources to resource groups: %w", err)
 	}
 
+	// If no resources found, we still need to void the deployment state.
+	// This can happen when resources have been manually deleted before running azd down.
+	// Voiding the state ensures that subsequent azd provision commands work correctly
+	// by creating a new empty deployment that becomes the last successful deployment.
 	if len(groupedResources) == 0 {
-		return nil, fmt.Errorf("%w, '%s'", infra.ErrDeploymentResourcesNotFound, deploymentToDelete.Name())
-	}
-
-	keyVaults, err := p.getKeyVaultsToPurge(ctx, groupedResources)
-	if err != nil {
-		return nil, fmt.Errorf("getting key vaults to purge: %w", err)
-	}
-
-	managedHSMs, err := p.getManagedHSMsToPurge(ctx, groupedResources)
-	if err != nil {
-		return nil, fmt.Errorf("getting managed hsms to purge: %w", err)
-	}
-
-	appConfigs, err := p.getAppConfigsToPurge(ctx, groupedResources)
-	if err != nil {
-		return nil, fmt.Errorf("getting app configurations to purge: %w", err)
-	}
-
-	apiManagements, err := p.getApiManagementsToPurge(ctx, groupedResources)
-	if err != nil {
-		return nil, fmt.Errorf("getting API managements to purge: %w", err)
-	}
-
-	cognitiveAccounts, err := p.getCognitiveAccountsToPurge(ctx, groupedResources)
-	if err != nil {
-		return nil, fmt.Errorf("getting cognitive accounts to purge: %w", err)
-	}
-
-	p.console.StopSpinner(ctx, "", input.StepDone)
-	if err := p.destroyDeploymentWithConfirmation(
-		ctx,
-		options,
-		deploymentToDelete,
-		groupedResources,
-		len(resourcesToDelete),
-	); err != nil {
-		return nil, fmt.Errorf("deleting resource groups: %w", err)
-	}
-
-	keyVaultsPurge := itemToPurge{
-		resourceType: "Key Vault",
-		count:        len(keyVaults),
-		purge: func(skipPurge bool, self *itemToPurge) error {
-			return p.purgeKeyVaults(ctx, keyVaults, skipPurge)
-		},
-	}
-	managedHSMsPurge := itemToPurge{
-		resourceType: "Managed HSM",
-		count:        len(managedHSMs),
-		purge: func(skipPurge bool, self *itemToPurge) error {
-			return p.purgeManagedHSMs(ctx, managedHSMs, skipPurge)
-		},
-	}
-	appConfigsPurge := itemToPurge{
-		resourceType: "App Configuration",
-		count:        len(appConfigs),
-		purge: func(skipPurge bool, self *itemToPurge) error {
-			return p.purgeAppConfigs(ctx, appConfigs, skipPurge)
-		},
-	}
-	aPIManagement := itemToPurge{
-		resourceType: "API Management",
-		count:        len(apiManagements),
-		purge: func(skipPurge bool, self *itemToPurge) error {
-			return p.purgeAPIManagement(ctx, apiManagements, skipPurge)
-		},
-	}
-
-	var purgeItem []itemToPurge
-	for _, item := range []itemToPurge{keyVaultsPurge, managedHSMsPurge, appConfigsPurge, aPIManagement} {
-		if item.count > 0 {
-			purgeItem = append(purgeItem, item)
+		p.console.StopSpinner(ctx, "", input.StepDone)
+		// Call deployment.Delete to void the state even though there are no resources to delete
+		if err := p.destroyDeployment(ctx, deploymentToDelete); err != nil {
+			return nil, fmt.Errorf("voiding deployment state: %w", err)
 		}
-	}
+	} else {
+		keyVaults, err := p.getKeyVaultsToPurge(ctx, groupedResources)
+		if err != nil {
+			return nil, fmt.Errorf("getting key vaults to purge: %w", err)
+		}
 
-	// cognitive services are grouped by resource group because the name of the resource group is required to purge
-	groupByKind := cognitiveAccountsByKind(cognitiveAccounts)
-	for name, cogAccounts := range groupByKind {
-		addPurgeItem := itemToPurge{
-			resourceType: name,
-			count:        len(cogAccounts),
+		managedHSMs, err := p.getManagedHSMsToPurge(ctx, groupedResources)
+		if err != nil {
+			return nil, fmt.Errorf("getting managed hsms to purge: %w", err)
+		}
+
+		appConfigs, err := p.getAppConfigsToPurge(ctx, groupedResources)
+		if err != nil {
+			return nil, fmt.Errorf("getting app configurations to purge: %w", err)
+		}
+
+		apiManagements, err := p.getApiManagementsToPurge(ctx, groupedResources)
+		if err != nil {
+			return nil, fmt.Errorf("getting API managements to purge: %w", err)
+		}
+
+		cognitiveAccounts, err := p.getCognitiveAccountsToPurge(ctx, groupedResources)
+		if err != nil {
+			return nil, fmt.Errorf("getting cognitive accounts to purge: %w", err)
+		}
+
+		p.console.StopSpinner(ctx, "", input.StepDone)
+
+		// Prompt for confirmation before deleting resources
+		if err := p.promptDeletion(ctx, options, groupedResources, len(resourcesToDelete)); err != nil {
+			return nil, err
+		}
+
+		p.console.Message(ctx, output.WithGrayFormat("Deleting your resources can take some time.\n"))
+
+		if err := p.destroyDeployment(ctx, deploymentToDelete); err != nil {
+			return nil, fmt.Errorf("deleting resource groups: %w", err)
+		}
+
+		keyVaultsPurge := itemToPurge{
+			resourceType: "Key Vault",
+			count:        len(keyVaults),
 			purge: func(skipPurge bool, self *itemToPurge) error {
-				return p.purgeCognitiveAccounts(ctx, self.cognitiveAccounts, skipPurge)
+				return p.purgeKeyVaults(ctx, keyVaults, skipPurge)
 			},
-			cognitiveAccounts: groupByKind[name],
 		}
-		purgeItem = append(purgeItem, addPurgeItem)
-	}
+		managedHSMsPurge := itemToPurge{
+			resourceType: "Managed HSM",
+			count:        len(managedHSMs),
+			purge: func(skipPurge bool, self *itemToPurge) error {
+				return p.purgeManagedHSMs(ctx, managedHSMs, skipPurge)
+			},
+		}
+		appConfigsPurge := itemToPurge{
+			resourceType: "App Configuration",
+			count:        len(appConfigs),
+			purge: func(skipPurge bool, self *itemToPurge) error {
+				return p.purgeAppConfigs(ctx, appConfigs, skipPurge)
+			},
+		}
+		aPIManagement := itemToPurge{
+			resourceType: "API Management",
+			count:        len(apiManagements),
+			purge: func(skipPurge bool, self *itemToPurge) error {
+				return p.purgeAPIManagement(ctx, apiManagements, skipPurge)
+			},
+		}
 
-	if err := p.purgeItems(ctx, purgeItem, options); err != nil {
-		return nil, fmt.Errorf("purging resources: %w", err)
+		var purgeItem []itemToPurge
+		for _, item := range []itemToPurge{keyVaultsPurge, managedHSMsPurge, appConfigsPurge, aPIManagement} {
+			if item.count > 0 {
+				purgeItem = append(purgeItem, item)
+			}
+		}
+
+		// cognitive services are grouped by resource group because the name of the resource group is required to purge
+		groupByKind := cognitiveAccountsByKind(cognitiveAccounts)
+		for name, cogAccounts := range groupByKind {
+			addPurgeItem := itemToPurge{
+				resourceType: name,
+				count:        len(cogAccounts),
+				purge: func(skipPurge bool, self *itemToPurge) error {
+					return p.purgeCognitiveAccounts(ctx, self.cognitiveAccounts, skipPurge)
+				},
+				cognitiveAccounts: groupByKind[name],
+			}
+			purgeItem = append(purgeItem, addPurgeItem)
+		}
+
+		if err := p.purgeItems(ctx, purgeItem, options); err != nil {
+			return nil, fmt.Errorf("purging resources: %w", err)
+		}
 	}
 
 	destroyResult := &provisioning.DestroyResult{
-		InvalidatedEnvKeys: slices.Collect(maps.Keys(p.createOutputParameters(
+		InvalidatedEnvKeys: slices.Collect(maps.Keys(provisioning.OutputParametersFromArmOutputs(
 			compileResult.Template.Outputs,
 			azapi.CreateDeploymentOutput(mostRecentDeployment.Outputs),
 		))),
-	}
-
-	// Since we have deleted the resource group, add AZURE_RESOURCE_GROUP to the list of invalidated env vars
-	// so it will be removed from the .env file.
-	if _, ok := scope.(*infra.ResourceGroupScope); ok {
-		destroyResult.InvalidatedEnvKeys = append(
-			destroyResult.InvalidatedEnvKeys, environment.ResourceGroupEnvVarName,
-		)
 	}
 
 	return destroyResult, nil
@@ -991,45 +1083,10 @@ func getDeploymentOptions(deployments []*azapi.ResourceDeployment) []string {
 	return promptValues
 }
 
-// resourceGroupsToDelete collects the resource groups from an existing deployment which should be removed as part of a
-// destroy operation.
-func resourceGroupsToDelete(deployment *azapi.ResourceDeployment) []string {
-	// NOTE: it's possible for a deployment to list a resource group more than once. We're only interested in the
-	// unique set.
-	resourceGroups := map[string]struct{}{}
-
-	if deployment.ProvisioningState == azapi.DeploymentProvisioningStateSucceeded {
-		// For a successful deployment, we can use the output resources property to see the resource groups that were
-		// provisioned from this.
-		for _, resourceId := range deployment.Resources {
-			if resourceId != nil && resourceId.ID != nil {
-				resId, err := arm.ParseResourceID(*resourceId.ID)
-				if err == nil && resId.ResourceGroupName != "" {
-					resourceGroups[resId.ResourceGroupName] = struct{}{}
-				}
-			}
-		}
-	} else {
-		// For a failed deployment, the `outputResources` field is not populated. Instead, we assume that any resource
-		// groups which this deployment itself deployed into should be deleted. This matches what a deployment likes
-		// for the common pattern of having a subscription level deployment which allocates a set of resource groups
-		// and then does nested deployments into them.
-		for _, dependency := range deployment.Dependencies {
-			if *dependency.ResourceType == string(azapi.AzureResourceTypeDeployment) {
-				for _, dependent := range dependency.DependsOn {
-					if *dependent.ResourceType == arm.ResourceGroupResourceType.String() {
-						resourceGroups[*dependent.ResourceName] = struct{}{}
-					}
-				}
-			}
-
-		}
-	}
-
-	return slices.Collect(maps.Keys(resourceGroups))
-}
-
-func (p *BicepProvider) generateResourcesToDelete(groupedResources map[string][]*azapi.Resource) []string {
+func (p *BicepProvider) generateResourcesToDelete(
+	ctx context.Context,
+	groupedResources map[string][]*azapi.Resource,
+) []string {
 	lines := []string{"Resource(s) to be deleted:"}
 
 	for resourceGroupName, resources := range groupedResources {
@@ -1051,7 +1108,16 @@ func (p *BicepProvider) generateResourcesToDelete(groupedResources map[string][]
 
 		// Resources in each group
 		for _, resource := range resources {
-			resourceTypeName := azapi.GetResourceTypeDisplayName(azapi.AzureResourceType(resource.Type))
+			resourceTypeName, err := p.resourceManager.GetResourceTypeDisplayName(
+				ctx,
+				p.env.GetSubscriptionId(),
+				resource.Id,
+				azapi.AzureResourceType(resource.Type),
+			)
+			if err != nil {
+				// Fall back to static lookup if dynamic lookup fails
+				resourceTypeName = azapi.GetResourceTypeDisplayName(azapi.AzureResourceType(resource.Type))
+			}
 			if resourceTypeName == "" {
 				continue
 			}
@@ -1063,38 +1129,46 @@ func (p *BicepProvider) generateResourcesToDelete(groupedResources map[string][]
 	return append(lines, "\n")
 }
 
-// Deletes the azure resources within the deployment
-func (p *BicepProvider) destroyDeploymentWithConfirmation(
+// promptDeletion prompts the user for confirmation before deleting resources.
+// Returns nil if the user confirms, or an error if they deny or an error occurs.
+func (p *BicepProvider) promptDeletion(
 	ctx context.Context,
 	options provisioning.DestroyOptions,
-	deployment infra.Deployment,
 	groupedResources map[string][]*azapi.Resource,
 	resourceCount int,
 ) error {
-	if !options.Force() {
-		p.console.MessageUxItem(ctx, &ux.MultilineMessage{
-			Lines: p.generateResourcesToDelete(groupedResources)},
-		)
-		confirmDestroy, err := p.console.Confirm(ctx, input.ConsoleOptions{
-			Message: fmt.Sprintf(
-				"Total resources to %s: %d, are you sure you want to continue?",
-				output.WithErrorFormat("delete"),
-				resourceCount,
-			),
-			DefaultValue: false,
-		})
-
-		if err != nil {
-			return fmt.Errorf("prompting for delete confirmation: %w", err)
-		}
-
-		if !confirmDestroy {
-			return errors.New("user denied delete confirmation")
-		}
+	if options.Force() {
+		return nil
 	}
 
-	p.console.Message(ctx, output.WithGrayFormat("Deleting your resources can take some time.\n"))
+	p.console.MessageUxItem(ctx, &ux.MultilineMessage{
+		Lines: p.generateResourcesToDelete(ctx, groupedResources)},
+	)
+	confirmDestroy, err := p.console.Confirm(ctx, input.ConsoleOptions{
+		Message: fmt.Sprintf(
+			"Total resources to %s: %d, are you sure you want to continue?",
+			output.WithErrorFormat("delete"),
+			resourceCount,
+		),
+		DefaultValue: false,
+	})
 
+	if err != nil {
+		return fmt.Errorf("prompting for delete confirmation: %w", err)
+	}
+
+	if !confirmDestroy {
+		return errors.New("user denied delete confirmation")
+	}
+
+	return nil
+}
+
+// destroyDeployment deletes the azure resources within the deployment and voids the deployment state.
+func (p *BicepProvider) destroyDeployment(
+	ctx context.Context,
+	deployment infra.Deployment,
+) error {
 	err := async.RunWithProgressE(func(progressMessage azapi.DeleteDeploymentProgress) {
 		switch progressMessage.State {
 		case azapi.DeleteResourceStateInProgress:
@@ -1494,64 +1568,6 @@ func (p *BicepProvider) purgeAPIManagement(
 	return nil
 }
 
-func (p *BicepProvider) mapBicepTypeToInterfaceType(s string) provisioning.ParameterType {
-	switch s {
-	case "String", "string", "secureString", "securestring":
-		return provisioning.ParameterTypeString
-	case "Bool", "bool":
-		return provisioning.ParameterTypeBoolean
-	case "Int", "int":
-		return provisioning.ParameterTypeNumber
-	case "Object", "object", "secureObject", "secureobject":
-		return provisioning.ParameterTypeObject
-	case "Array", "array":
-		return provisioning.ParameterTypeArray
-	default:
-		panic(fmt.Sprintf("unexpected bicep type: '%s'", s))
-	}
-}
-
-// Creates a normalized view of the azure output parameters and resolves inconsistencies in the output parameter name
-// casings.
-func (p *BicepProvider) createOutputParameters(
-	templateOutputs azure.ArmTemplateOutputs,
-	azureOutputParams map[string]azapi.AzCliDeploymentOutput,
-) map[string]provisioning.OutputParameter {
-	canonicalOutputCasings := make(map[string]string, len(templateOutputs))
-
-	for key := range templateOutputs {
-		canonicalOutputCasings[strings.ToLower(key)] = key
-	}
-
-	outputParams := make(map[string]provisioning.OutputParameter, len(azureOutputParams))
-
-	for key, azureParam := range azureOutputParams {
-		if azureParam.Secured() {
-			// Secured output can't be retrieved, so we skip it.
-			// https://learn.microsoft.com/azure/azure-resource-manager/bicep/outputs?tabs=azure-powershell#secure-outputs
-			log.Println("Skipping secured output parameter:", key)
-			continue
-		}
-		var paramName string
-		canonicalCasing, found := canonicalOutputCasings[strings.ToLower(key)]
-		if found {
-			paramName = canonicalCasing
-		} else {
-			// To support BYOI (bring your own infrastructure) scenarios we will default to UPPER when canonical casing
-			// is not found in the parameters file to workaround strange azure behavior with OUTPUT values that look
-			// like `azurE_RESOURCE_GROUP`
-			paramName = strings.ToUpper(key)
-		}
-
-		outputParams[paramName] = provisioning.OutputParameter{
-			Type:  p.mapBicepTypeToInterfaceType(azureParam.Type),
-			Value: azureParam.Value,
-		}
-	}
-
-	return outputParams
-}
-
 type loadParametersResult struct {
 	parameters     map[string]azure.ArmParameter
 	locationParams []string
@@ -1852,14 +1868,14 @@ func (p *BicepProvider) convertToDeployment(bicepTemplate azure.ArmTemplate) pro
 
 	for key, param := range bicepTemplate.Parameters {
 		parameters[key] = provisioning.InputParameter{
-			Type:         string(p.mapBicepTypeToInterfaceType(param.Type)),
+			Type:         string(provisioning.ParameterTypeFromArmType(param.Type)),
 			DefaultValue: param.DefaultValue,
 		}
 	}
 
 	for key, param := range bicepTemplate.Outputs {
 		outputs[key] = provisioning.OutputParameter{
-			Type:  p.mapBicepTypeToInterfaceType(param.Type),
+			Type:  provisioning.ParameterTypeFromArmType(param.Type),
 			Value: param.Value,
 		}
 	}
@@ -2022,7 +2038,7 @@ func (p *BicepProvider) ensureParameters(
 
 	for _, key := range sortedKeys {
 		param := template.Parameters[key]
-		parameterType := p.mapBicepTypeToInterfaceType(param.Type)
+		parameterType := provisioning.ParameterTypeFromArmType(param.Type)
 		azdMetadata, hasMetadata := param.AzdMetadata()
 
 		// If a value is explicitly configured via a parameters file, use it.
@@ -2273,6 +2289,7 @@ func NewBicepProvider(
 	azapi *azapi.AzureClient,
 	bicepCli *bicep.Cli,
 	resourceService *azapi.ResourceService,
+	resourceManager infra.ResourceManager,
 	deploymentManager *infra.DeploymentManager,
 	envManager environment.Manager,
 	env *environment.Environment,
@@ -2290,6 +2307,7 @@ func NewBicepProvider(
 		azapi:               azapi,
 		bicepCli:            bicepCli,
 		resourceService:     resourceService,
+		resourceManager:     resourceManager,
 		deploymentManager:   deploymentManager,
 		prompters:           prompters,
 		curPrincipal:        curPrincipal,

@@ -29,19 +29,7 @@ module resources 'resources.bicep' = {
 }
 
 
-module web 'web.bicep' = {
-  name: 'web'
-  scope: rg
-  params: {
-    containerRegistryName: resources.outputs.containerRegistryName
-    containerAppsEnvironmentName: resources.outputs.containerAppsEnvironmentName
-    environmentName: environmentName
-    location: location
-    imageName: 'nginx:latest'
-  }
-}
-
 output AZURE_CONTAINER_REGISTRY_NAME string = resources.outputs.containerRegistryName
 output AZURE_CONTAINER_ENVIRONMENT_NAME string = resources.outputs.containerAppsEnvironmentName
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.containerRegistryloginServer
-output WEBSITE_URL string = web.outputs.WEBSITE_URL
+output SERVICE_WEB_IDENTITY_ID string = resources.outputs.managedIdentityId

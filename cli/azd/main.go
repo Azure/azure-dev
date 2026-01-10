@@ -26,6 +26,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/installer"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -45,24 +46,31 @@ func main() {
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
-	if isDebugEnabled() {
+	debugEnabled := isDebugEnabled()
+	logFileCleanup := setupLogging(debugEnabled)
+	defer logFileCleanup()
+
+	if debugEnabled {
 		azcorelog.SetListener(func(event azcorelog.Event, msg string) {
 			log.Printf("%s: %s\n", event, msg)
 		})
-	} else {
-		log.SetOutput(io.Discard)
 	}
 
 	log.Printf("azd version: %s", internal.Version)
 
 	ts := telemetry.GetTelemetrySystem()
+	if ts != nil {
+		ctx = tracing.ContextFromEnv(ctx)
+	}
 
 	latest := make(chan semver.Version)
 	go fetchLatestVersion(latest)
 
 	rootContainer := ioc.NewNestedContainer(nil)
 	ioc.RegisterInstance(rootContainer, ctx)
-	cmdErr := cmd.NewRootCmd(false, nil, rootContainer).ExecuteContext(ctx)
+
+	// Execute command with auto-installation support for extensions
+	cmdErr := cmd.ExecuteWithAutoInstall(ctx, rootContainer)
 
 	oneauth.Shutdown()
 
@@ -320,7 +328,7 @@ func isDebugEnabled() bool {
 	// running). Setting UnknownFlags instructs `flags.Parse` to continue parsing the command line
 	// even if a flag is not in the flag set (instead of just returning an error saying the flag was not
 	// found).
-	flags.ParseErrorsWhitelist.UnknownFlags = true
+	flags.ParseErrorsAllowlist.UnknownFlags = true
 	flags.BoolVar(&debug, "debug", false, "")
 
 	// if flag `-h` of `--help` is within the command, the usage is automatically shown.
@@ -341,7 +349,7 @@ func isJsonOutput() bool {
 	// running). Setting UnknownFlags instructs `flags.Parse` to continue parsing the command line
 	// even if a flag is not in the flag set (instead of just returning an error saying the flag was not
 	// found).
-	flags.ParseErrorsWhitelist.UnknownFlags = true
+	flags.ParseErrorsAllowlist.UnknownFlags = true
 	flags.StringVarP(&output, "output", "o", "", "")
 
 	// if flag `-h` of `--help` is within the command, the usage is automatically shown.
@@ -358,6 +366,69 @@ func readToEndAndClose(r io.ReadCloser) (string, error) {
 	var buf strings.Builder
 	_, err := io.Copy(&buf, r)
 	return buf.String(), err
+}
+
+// setupLogging configures log output based on AZD_DEBUG_LOG environment variable
+// Returns a cleanup function that should be called when the program exits
+func setupLogging(debugEnabled bool) func() {
+	debugLogValue := os.Getenv("AZD_DEBUG_LOG")
+
+	var logOutput io.Writer = io.Discard
+	var cleanupFunc func() = func() {}
+
+	// Check if debug logging is enabled and valid
+	if debugLogValue != "" {
+		if isDebugLogEnabled, err := strconv.ParseBool(debugLogValue); err == nil && isDebugLogEnabled {
+			// Create daily log files adjacent to azd binary
+			if logFile, err := createDailyLogFile(); err == nil {
+				if debugEnabled {
+					// When --debug is used, write to both stderr and log file
+					logOutput = io.MultiWriter(os.Stderr, logFile)
+				} else {
+					// When only AZD_DEBUG_LOG is set, write only to log file
+					logOutput = logFile
+				}
+
+				// Set cleanup function to close the log file
+				cleanupFunc = func() {
+					logFile.Close()
+				}
+			}
+		}
+	}
+
+	// If debug is enabled but no log file was created, use stderr
+	if debugEnabled && logOutput == io.Discard {
+		logOutput = os.Stderr
+	}
+
+	log.SetOutput(logOutput)
+	return cleanupFunc
+}
+
+// createDailyLogFile creates a daily log file adjacent to the azd binary
+func createDailyLogFile() (*os.File, error) {
+	// Get the path to the current executable
+	execPath, err := os.Executable()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current executable path: %w", err)
+	}
+
+	// Get the directory containing the executable
+	execDir := filepath.Dir(execPath)
+
+	// Create log filename with current date
+	currentDate := time.Now().Format("2006-01-02")
+	logFileName := fmt.Sprintf("azd-%s.log", currentDate)
+	logFilePath := filepath.Join(execDir, logFileName)
+
+	// Open or create the log file (append mode)
+	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create/open log file %s: %w", logFilePath, err)
+	}
+
+	return logFile, nil
 }
 
 func startBackgroundUploadProcess() error {

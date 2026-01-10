@@ -511,3 +511,207 @@ func TestFindResourceGroupForEnvironment(t *testing.T) {
 		})
 	}
 }
+
+func TestGetResourceTypeDisplayNameForCognitiveServices(t *testing.T) {
+	const SUBSCRIPTION_ID = "273f1e6b-6c19-4c9e-8b67-5fbe78b14063"
+
+	tests := []struct {
+		name         string
+		resourceId   string
+		resourceType azapi.AzureResourceType
+		kind         string
+		expectedName string
+	}{
+		{
+			name: "Azure OpenAI",
+			resourceId: fmt.Sprintf(
+				"/subscriptions/%s/resourceGroups/test-rg/providers/Microsoft.CognitiveServices/accounts/test-openai",
+				SUBSCRIPTION_ID,
+			),
+			resourceType: azapi.AzureResourceTypeCognitiveServiceAccount,
+			kind:         "OpenAI",
+			expectedName: "Azure OpenAI",
+		},
+		{
+			name: "Document Intelligence (FormRecognizer)",
+			resourceId: fmt.Sprintf(
+				"/subscriptions/%s/resourceGroups/test-rg/providers/"+
+					"Microsoft.CognitiveServices/accounts/test-formrecognizer",
+				SUBSCRIPTION_ID,
+			),
+			resourceType: azapi.AzureResourceTypeCognitiveServiceAccount,
+			kind:         "FormRecognizer",
+			expectedName: "Document Intelligence",
+		},
+		{
+			name: "Foundry (AIServices)",
+			resourceId: fmt.Sprintf(
+				"/subscriptions/%s/resourceGroups/test-rg/providers/Microsoft.CognitiveServices/accounts/test-foundry",
+				SUBSCRIPTION_ID,
+			),
+			resourceType: azapi.AzureResourceTypeCognitiveServiceAccount,
+			kind:         "AIServices",
+			expectedName: "Foundry",
+		},
+		{
+			name: "Foundry (AIHub)",
+			resourceId: fmt.Sprintf(
+				"/subscriptions/%s/resourceGroups/test-rg/providers/Microsoft.CognitiveServices/accounts/test-aihub",
+				SUBSCRIPTION_ID,
+			),
+			resourceType: azapi.AzureResourceTypeCognitiveServiceAccount,
+			kind:         "AIHub",
+			expectedName: "Foundry",
+		},
+		{
+			name: "Foundry project",
+			resourceId: fmt.Sprintf(
+				"/subscriptions/%s/resourceGroups/test-rg/providers/"+
+					"Microsoft.CognitiveServices/accounts/test-foundry/projects/test-project",
+				SUBSCRIPTION_ID,
+			),
+			resourceType: azapi.AzureResourceTypeCognitiveServiceAccountProject,
+			kind:         "AIServices",
+			expectedName: "Foundry project",
+		},
+		{
+			name: "Azure AI Services (CognitiveServices)",
+			resourceId: fmt.Sprintf(
+				"/subscriptions/%s/resourceGroups/test-rg/providers/Microsoft.CognitiveServices/accounts/test-cogservices",
+				SUBSCRIPTION_ID,
+			),
+			resourceType: azapi.AzureResourceTypeCognitiveServiceAccount,
+			kind:         "CognitiveServices",
+			expectedName: "Azure AI Services",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(context.Background())
+			resourceService := azapi.NewResourceService(
+				mockContext.SubscriptionCredentialProvider,
+				mockContext.ArmClientOptions,
+			)
+			deploymentService := mockazapi.NewStandardDeploymentsFromMockContext(mockContext)
+
+			mockContext.HttpClient.When(func(request *http.Request) bool {
+				return request.Method == http.MethodGet &&
+					strings.Contains(request.URL.Path, "/Microsoft.CognitiveServices/accounts/")
+			}).RespondFn(func(request *http.Request) (*http.Response, error) {
+				response := map[string]interface{}{
+					"id":       tt.resourceId,
+					"name":     "test-resource",
+					"type":     "Microsoft.CognitiveServices/accounts",
+					"location": "eastus2",
+					"kind":     tt.kind,
+				}
+
+				body, err := json.Marshal(response)
+				if err != nil {
+					return nil, err
+				}
+
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(bytes.NewReader(body)),
+					Request: &http.Request{
+						Method: http.MethodGet,
+						URL:    request.URL,
+					},
+				}, nil
+			})
+
+			arm := NewAzureResourceManager(resourceService, deploymentService)
+			displayName, err := arm.GetResourceTypeDisplayName(
+				*mockContext.Context,
+				SUBSCRIPTION_ID,
+				tt.resourceId,
+				tt.resourceType,
+			)
+
+			require.NoError(t, err)
+			require.Equal(t, tt.expectedName, displayName)
+		})
+	}
+}
+
+func TestGetResourceTypeDisplayNameForRedisEnterprise(t *testing.T) {
+	const SUBSCRIPTION_ID = "273f1e6b-6c19-4c9e-8b67-5fbe78b14063"
+
+	tests := []struct {
+		name         string
+		kind         string
+		expectedName string
+	}{
+		{
+			name:         "Azure Managed Redis (v2)",
+			kind:         "v2",
+			expectedName: "Azure Managed Redis",
+		},
+		{
+			name:         "Redis Enterprise (v1)",
+			kind:         "v1",
+			expectedName: "Redis Enterprise",
+		},
+		{
+			name:         "Redis Enterprise (default/empty)",
+			kind:         "",
+			expectedName: "Redis Enterprise",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(context.Background())
+			resourceService := azapi.NewResourceService(
+				mockContext.SubscriptionCredentialProvider,
+				mockContext.ArmClientOptions,
+			)
+			deploymentService := mockazapi.NewStandardDeploymentsFromMockContext(mockContext)
+
+			resourceId := fmt.Sprintf(
+				"/subscriptions/%s/resourceGroups/test-rg/providers/Microsoft.Cache/redisEnterprise/test-redis",
+				SUBSCRIPTION_ID,
+			)
+
+			mockContext.HttpClient.When(func(request *http.Request) bool {
+				return request.Method == http.MethodGet &&
+					strings.Contains(request.URL.Path, "/Microsoft.Cache/redisEnterprise/test-redis")
+			}).RespondFn(func(request *http.Request) (*http.Response, error) {
+				response := map[string]interface{}{
+					"id":       resourceId,
+					"name":     "test-redis",
+					"type":     "Microsoft.Cache/redisEnterprise",
+					"location": "eastus2",
+					"kind":     tt.kind,
+				}
+
+				body, err := json.Marshal(response)
+				if err != nil {
+					return nil, err
+				}
+
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(bytes.NewReader(body)),
+					Request: &http.Request{
+						Method: http.MethodGet,
+						URL:    request.URL,
+					},
+				}, nil
+			})
+
+			arm := NewAzureResourceManager(resourceService, deploymentService)
+			displayName, err := arm.GetResourceTypeDisplayName(
+				*mockContext.Context,
+				SUBSCRIPTION_ID,
+				resourceId,
+				azapi.AzureResourceTypeRedisEnterprise,
+			)
+
+			require.NoError(t, err)
+			require.Equal(t, tt.expectedName, displayName)
+		})
+	}
+}

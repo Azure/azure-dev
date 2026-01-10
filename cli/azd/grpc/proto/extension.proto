@@ -1,0 +1,17 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+syntax = "proto3";
+
+package azdext;
+
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext";
+
+// Top-level service for extension registration and lifecycle
+service ExtensionService {
+  // Signal that the extension is done registering all capabilities
+  rpc Ready(ReadyRequest) returns (ReadyResponse);
+}
+
+message ReadyRequest {}
+
+message ReadyResponse {}

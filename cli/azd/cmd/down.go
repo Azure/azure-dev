@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"slices"
 	"time"
 
@@ -55,7 +56,7 @@ func newDownFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *do
 
 func newDownCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "down",
+		Use:   "down [<layer>]",
 		Short: "Delete your project's Azure resources.",
 	}
 	cmd.Args = cobra.MaximumNArgs(1)
@@ -68,6 +69,7 @@ type downAction struct {
 	provisionManager    *provisioning.Manager
 	importManager       *project.ImportManager
 	env                 *environment.Environment
+	envManager          environment.Manager
 	console             input.Console
 	projectConfig       *project.ProjectConfig
 	alphaFeatureManager *alpha.FeatureManager
@@ -78,6 +80,7 @@ func newDownAction(
 	flags *downFlags,
 	provisionManager *provisioning.Manager,
 	env *environment.Environment,
+	envManager environment.Manager,
 	projectConfig *project.ProjectConfig,
 	console input.Console,
 	alphaFeatureManager *alpha.FeatureManager,
@@ -87,6 +90,7 @@ func newDownAction(
 		flags:               flags,
 		provisionManager:    provisionManager,
 		env:                 env,
+		envManager:          envManager,
 		console:             console,
 		projectConfig:       projectConfig,
 		importManager:       importManager,
@@ -114,15 +118,6 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		a.console.WarnForFeature(ctx, azapi.FeatureDeploymentStacks)
 	}
 
-	if len(infra.Options.Layers) > 1 {
-		if !a.alphaFeatureManager.IsEnabled(featLayers) {
-			return nil, fmt.Errorf(
-				"Layered provisioning is not enabled. Run '%s' to enable it.", alpha.GetEnableCommand(featLayers))
-		}
-
-		a.console.WarnForFeature(ctx, featLayers)
-	}
-
 	downLayer := ""
 	if len(a.args) > 0 {
 		downLayer = a.args[0]
@@ -145,6 +140,7 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			a.console.Message(ctx, "")
 		}
 
+		layer.Mode = provisioning.ModeDestroy
 		if err := a.provisionManager.Initialize(ctx, a.projectConfig.Path, layer); err != nil {
 			return nil, fmt.Errorf("initializing provisioning manager: %w", err)
 		}
@@ -158,6 +154,11 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
+	// Invalidate cache after successful down so azd show will refresh
+	if err := a.envManager.InvalidateEnvCache(ctx, a.env.Name()); err != nil {
+		log.Printf("warning: failed to invalidate state cache: %v", err)
+	}
+
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header: fmt.Sprintf("Your application was removed from Azure in %s.", ux.DurationAsText(since(startTime))),
@@ -168,7 +169,10 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 func getCmdDownHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription(fmt.Sprintf(
 		"Delete Azure resources for an application. Running %s will not delete application"+
-			" files on your local machine.", output.WithHighLightFormat("azd down")), nil)
+			" files on your local machine.", output.WithHighLightFormat("azd down")), []string{
+		"When <layer> is specified, only deletes resources for the given layer." +
+			" When omitted, deletes resources for all layers defined in the project.",
+	})
 }
 
 func getCmdDownHelpFooter(*cobra.Command) string {

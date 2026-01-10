@@ -8,13 +8,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
+	"maps"
 	"net/url"
+	"slices"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
@@ -235,7 +234,7 @@ func (ds *StandardDeployments) DeployToSubscription(
 	// wait for deployment creation
 	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("deploying to subscription: %w", createDeploymentError(err))
+		return nil, fmt.Errorf("deploying to subscription: %w", createDeploymentError(err, DeploymentOperationDeploy))
 	}
 
 	return ds.convertFromArmDeployment(&deployResult.DeploymentExtended), nil
@@ -271,7 +270,7 @@ func (ds *StandardDeployments) DeployToResourceGroup(
 	// wait for deployment creation
 	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("deploying to resource group: %w", createDeploymentError(err))
+		return nil, fmt.Errorf("deploying to resource group: %w", createDeploymentError(err, DeploymentOperationDeploy))
 	}
 
 	return ds.convertFromArmDeployment(&deployResult.DeploymentExtended), nil
@@ -346,32 +345,17 @@ func (ds *StandardDeployments) ListSubscriptionDeploymentResources(
 		return nil, fmt.Errorf("getting subscription deployment: %w", err)
 	}
 
-	// Get the environment name from the deployment tags
-	envName, has := subscriptionDeployment.Tags[azure.TagKeyAzdEnvName]
-	if !has || envName == nil {
-		return nil, fmt.Errorf("environment name not found in deployment tags")
-	}
-
-	// Get all resource groups tagged with the azd-env-name tag
-	resourceGroups, err := ds.resourceService.ListResourceGroup(ctx, subscriptionId, &ListResourceGroupOptions{
-		TagFilter: &Filter{Key: azure.TagKeyAzdEnvName, Value: *envName},
-	})
-
-	if err != nil {
-		return nil, fmt.Errorf("listing resource groups: %w", err)
-	}
-
+	resourceGroupNames := resourceGroupsFromDeployment(subscriptionDeployment)
 	allResources := []*armresources.ResourceReference{}
 
-	// Find all the resources from all the resource groups
-	for _, resourceGroup := range resourceGroups {
-
-		resources, err := ds.resourceService.ListResourceGroupResources(ctx, subscriptionId, resourceGroup.Name, nil)
+	// Find all the resources from the deployment's resource groups
+	for _, resourceGroupName := range resourceGroupNames {
+		resources, err := ds.resourceService.ListResourceGroupResources(ctx, subscriptionId, resourceGroupName, nil)
 		if err != nil {
 			return nil, fmt.Errorf("listing resource group resources: %w", err)
 		}
 
-		resourceGroupId := azure.ResourceGroupRID(subscriptionId, resourceGroup.Name)
+		resourceGroupId := azure.ResourceGroupRID(subscriptionId, resourceGroupName)
 		allResources = append(allResources, &armresources.ResourceReference{
 			ID: &resourceGroupId,
 		})
@@ -384,6 +368,39 @@ func (ds *StandardDeployments) ListSubscriptionDeploymentResources(
 	}
 
 	return allResources, nil
+}
+
+// resourceGroupsFromDeployment extracts the unique resource groups associated to a deployment.
+func resourceGroupsFromDeployment(deployment *ResourceDeployment) []string {
+	resourceGroups := map[string]struct{}{}
+
+	if deployment.ProvisioningState == DeploymentProvisioningStateSucceeded {
+		// For a successful deployment, use the output resources property to find the resource groups.
+		for _, resourceId := range deployment.Resources {
+			if resourceId != nil && resourceId.ID != nil {
+				resId, err := arm.ParseResourceID(*resourceId.ID)
+				if err == nil && resId.ResourceGroupName != "" {
+					resourceGroups[resId.ResourceGroupName] = struct{}{}
+				}
+			}
+		}
+	} else {
+		// For a failed deployment, the outputResources field is not populated.
+		// Instead, look at the dependencies to find resource groups that this deployment deployed into.
+		for _, dependency := range deployment.Dependencies {
+			if dependency.ResourceType != nil && *dependency.ResourceType == string(AzureResourceTypeDeployment) {
+				for _, dependent := range dependency.DependsOn {
+					if dependent.ResourceType != nil && *dependent.ResourceType == arm.ResourceGroupResourceType.String() {
+						if dependent.ResourceName != nil {
+							resourceGroups[*dependent.ResourceName] = struct{}{}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return slices.Collect(maps.Keys(resourceGroups))
 }
 
 func (ds *StandardDeployments) ListResourceGroupDeploymentResources(
@@ -459,7 +476,18 @@ func (ds *StandardDeployments) DeleteSubscriptionDeployment(
 		})
 	}
 
-	// Deploy empty template to void provision state and keep deployment history instead of deleting previous deployments
+	// Void the deployment state
+	return ds.voidSubscriptionDeploymentState(ctx, subscriptionId, deploymentName, options)
+}
+
+// voidSubscriptionDeploymentState deploys an empty template to void the provision state
+// and keep deployment history instead of deleting previous deployments.
+func (ds *StandardDeployments) voidSubscriptionDeploymentState(
+	ctx context.Context,
+	subscriptionId string,
+	deploymentName string,
+	options map[string]any,
+) error {
 	// Get deployment metadata
 	deployment, err := ds.GetSubscriptionDeployment(ctx, subscriptionId, deploymentName)
 	if err != nil {
@@ -512,7 +540,7 @@ func (ds *StandardDeployments) DeleteResourceGroupDeployment(
 		progress.SetProgress(DeleteDeploymentProgress{
 			Name:    resourceGroupName,
 			Message: fmt.Sprintf("Failed resource group %s", output.WithHighLightFormat(resourceGroupName)),
-			State:   DeleteResourceStateInProgress,
+			State:   DeleteResourceStateFailed,
 		})
 
 		return err
@@ -521,7 +549,7 @@ func (ds *StandardDeployments) DeleteResourceGroupDeployment(
 	progress.SetProgress(DeleteDeploymentProgress{
 		Name:    resourceGroupName,
 		Message: fmt.Sprintf("Deleted resource group %s", output.WithHighLightFormat(resourceGroupName)),
-		State:   DeleteResourceStateInProgress,
+		State:   DeleteResourceStateSucceeded,
 	})
 
 	return nil
@@ -558,7 +586,7 @@ func (ds *StandardDeployments) WhatIfDeployToSubscription(
 	// wait for deployment creation
 	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("deploying to subscription: %w", createDeploymentError(err))
+		return nil, fmt.Errorf("deploying to subscription: %w", createDeploymentError(err, DeploymentOperationPreview))
 	}
 
 	return &deployResult.WhatIfOperationResult, nil
@@ -591,7 +619,7 @@ func (ds *StandardDeployments) WhatIfDeployToResourceGroup(
 	// wait for deployment creation
 	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("deploying to resource group: %w", createDeploymentError(err))
+		return nil, fmt.Errorf("deploying to resource group: %w", createDeploymentError(err, DeploymentOperationPreview))
 	}
 
 	return &deployResult.WhatIfOperationResult, nil
@@ -696,9 +724,6 @@ func (ds *StandardDeployments) ValidatePreflightToSubscription(
 		return fmt.Errorf("creating deployments client: %w", err)
 	}
 
-	var rawResponse *http.Response
-	ctx = policy.WithCaptureResponse(ctx, &rawResponse)
-
 	validateResult, err := deploymentClient.BeginValidateAtSubscriptionScope(
 		ctx, deploymentName,
 		armresources.Deployment{
@@ -711,46 +736,17 @@ func (ds *StandardDeployments) ValidatePreflightToSubscription(
 			Tags:     tags,
 		}, nil)
 	if err != nil {
-		return validatePreflightError(rawResponse, err, "subscription")
+		return fmt.Errorf("validating deployment to subscription:\n\nValidation Error Details:\n%w", err)
 	}
 	_, err = validateResult.PollUntilDone(ctx, nil)
 	if err != nil {
-		return validatePreflightError(rawResponse, err, "subscription")
+		return fmt.Errorf(
+			"validating deployment to subscription: %w",
+			createDeploymentError(err, DeploymentOperationValidate),
+		)
 	}
 
 	return nil
-}
-
-func validatePreflightError(
-	rawResponse *http.Response,
-	err error,
-	typeMessage string,
-) error {
-	title := "Validation Error Details"
-	var respErr *azcore.ResponseError
-	if errors.As(err, &respErr) {
-		err = responseToDeploymentError(title, respErr)
-	} else if err != nil {
-		// Error returned from azure sdk go bug: we receive a 400 Bad Request from the API,
-		// but the client-handling in azure sdk fails internally with a different error
-		// This special-cased handling and rawResponse capture can be removed once
-		// https://github.com/Azure/azure-sdk-for-go/issues/23350 is fixed
-		if rawResponse != nil && rawResponse.StatusCode == 400 {
-			defer rawResponse.Body.Close()
-			body, errOnRawResponse := io.ReadAll(rawResponse.Body)
-			if errOnRawResponse != nil {
-				return fmt.Errorf("failed to read response error body from validation api to %s: %w",
-					typeMessage, errOnRawResponse)
-			}
-
-			err = NewAzureDeploymentError(title, string(body))
-		}
-	}
-	return fmt.Errorf(
-		"validating deployment to %s: %w",
-		typeMessage,
-		err,
-	)
 }
 
 // Preflight API validates whether the specified template is syntactically correct
@@ -768,9 +764,6 @@ func (ds *StandardDeployments) ValidatePreflightToResourceGroup(
 		return fmt.Errorf("creating deployments client: %w", err)
 	}
 
-	var rawResponse *http.Response
-	ctx = policy.WithCaptureResponse(ctx, &rawResponse)
-
 	validateResult, err := deploymentClient.BeginValidate(ctx, resourceGroup, deploymentName,
 		armresources.Deployment{
 			Properties: &armresources.DeploymentProperties{
@@ -781,11 +774,14 @@ func (ds *StandardDeployments) ValidatePreflightToResourceGroup(
 			Tags: tags,
 		}, nil)
 	if err != nil {
-		return validatePreflightError(rawResponse, err, "resource group")
+		return fmt.Errorf("validating deployment to resource group:\n\nValidation Error Details:\n%w", err)
 	}
 	_, err = validateResult.PollUntilDone(ctx, nil)
 	if err != nil {
-		return validatePreflightError(rawResponse, err, "resource group")
+		return fmt.Errorf(
+			"validating deployment to resource group: %w",
+			createDeploymentError(err, DeploymentOperationValidate),
+		)
 	}
 
 	return nil

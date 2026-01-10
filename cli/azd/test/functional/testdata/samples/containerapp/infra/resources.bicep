@@ -3,7 +3,7 @@ param location string = resourceGroup().location
 var tags = { 'azd-env-name': environmentName }
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 
-param adminUserEnabled bool = true
+param adminUserEnabled bool = false
 param anonymousPullEnabled bool = false
 param dataEndpointEnabled bool = false
 param encryption object = {
@@ -65,6 +65,23 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2022-10
   })
 }
 
+resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: 'mi-${resourceToken}'
+  location: location
+  tags: tags
+}
+
+resource caeMiRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(containerRegistry.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d'))
+  scope: containerRegistry
+  properties: {
+    principalId: managedIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
+  }
+}
+
 output containerRegistryName string = containerRegistry.name
 output containerAppsEnvironmentName string = containerAppsEnvironment.name
 output containerRegistryloginServer string = containerRegistry.properties.loginServer
+output managedIdentityId string = managedIdentity.id

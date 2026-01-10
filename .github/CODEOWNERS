@@ -22,3 +22,5 @@
 /schemas/          @wbreza @vhvb1989 @tg-msft @rajeshkamal5050
 
 /.github/CODEOWNERS   @rajeshkamal5050 @Azure/azure-sdk-eng
+
+/cli/azd/extensions/azure.ai.agents/  @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @trangevi @travisw

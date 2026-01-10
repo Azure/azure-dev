@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -384,6 +383,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 
 	envManager := &mockenv.MockEnvManager{}
 	envManager.On("Save", mock.Anything, mock.Anything).Return(nil)
+	envManager.On("Reload", mock.Anything, mock.Anything).Return(nil)
 
 	bicepCli, err := bicep.NewCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
 	require.NoError(t, err)
@@ -412,6 +412,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 		azCli,
 		bicepCli,
 		resourceService,
+		&mockResourceManager{},
 		deploymentManager,
 		envManager,
 		env,
@@ -805,82 +806,6 @@ func httpRespondFn(request *http.Request) (*http.Response, error) {
 	}, nil
 }
 
-func TestResourceGroupsFromDeployment(t *testing.T) {
-	t.Parallel()
-
-	t.Run("references used when no output resources", func(t *testing.T) {
-		mockDeployment := &azapi.ResourceDeployment{
-			//nolint:lll
-			Id: "/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/matell-2508-1689982746",
-			//nolint:lll
-			DeploymentId: "/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/matell-2508-1689982746",
-			Name:         "matell-2508",
-			Type:         "Microsoft.Resources/deployments",
-			Tags: map[string]*string{
-				"azd-env-name": to.Ptr("matell-2508"),
-			},
-			ProvisioningState: azapi.DeploymentProvisioningStateFailed,
-			Timestamp:         time.Now(),
-			Dependencies: []*armresources.Dependency{
-				{
-					//nolint:lll
-					ID: to.Ptr(
-						"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/matell-2508-rg/providers/Microsoft.Resources/deployments/resources",
-					),
-					ResourceName: to.Ptr("resources"),
-					ResourceType: to.Ptr("Microsoft.Resources/deployments"),
-					DependsOn: []*armresources.BasicDependency{
-						{
-							//nolint:lll
-							ID: to.Ptr(
-								"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/matell-2508-rg",
-							),
-							ResourceName: to.Ptr("matell-2508-rg"),
-							ResourceType: to.Ptr("Microsoft.Resources/resourceGroups"),
-						},
-					},
-				},
-			},
-		}
-
-		require.Equal(t, []string{"matell-2508-rg"}, resourceGroupsToDelete(mockDeployment))
-	})
-
-	t.Run("duplicate resource groups ignored", func(t *testing.T) {
-
-		mockDeployment := azapi.ResourceDeployment{
-			Id:   "DEPLOYMENT_ID",
-			Name: "test-env",
-			Resources: []*armresources.ResourceReference{
-				{
-					ID: to.Ptr("/subscriptions/sub-id/resourceGroups/groupA"),
-				},
-				{
-					ID: to.Ptr(
-						"/subscriptions/sub-id/resourceGroups/groupA/Microsoft.Storage/storageAccounts/storageAccount",
-					),
-				},
-				{
-					ID: to.Ptr("/subscriptions/sub-id/resourceGroups/groupB"),
-				},
-				{
-					ID: to.Ptr("/subscriptions/sub-id/resourceGroups/groupB/Microsoft.web/sites/test"),
-				},
-				{
-					ID: to.Ptr("/subscriptions/sub-id/resourceGroups/groupC"),
-				},
-			},
-			ProvisioningState: azapi.DeploymentProvisioningStateSucceeded,
-			Timestamp:         time.Now(),
-		}
-
-		groups := resourceGroupsToDelete(&mockDeployment)
-
-		sort.Strings(groups)
-		require.Equal(t, []string{"groupA", "groupB", "groupC"}, groups)
-	})
-}
-
 // From a mocked list of deployments where there are multiple deployments with the matching tag, expect to pick the most
 // recent one.
 func TestFindCompletedDeployments(t *testing.T) {
@@ -938,6 +863,41 @@ func TestFindCompletedDeployments(t *testing.T) {
 type mockedScope struct {
 	envTag   string
 	baseDate string
+}
+
+type mockResourceManager struct{}
+
+func (m *mockResourceManager) GetDeploymentResourceOperations(
+	ctx context.Context,
+	deployment infra.Deployment,
+	queryStart *time.Time,
+) ([]*armresources.DeploymentOperation, error) {
+	return nil, nil
+}
+
+func (m *mockResourceManager) GetResourceTypeDisplayName(
+	ctx context.Context,
+	subscriptionId string,
+	resourceId string,
+	resourceType azapi.AzureResourceType,
+) (string, error) {
+	return azapi.GetResourceTypeDisplayName(resourceType), nil
+}
+
+func (m *mockResourceManager) GetResourceGroupsForEnvironment(
+	ctx context.Context,
+	subscriptionId string,
+	envName string,
+) ([]*azapi.Resource, error) {
+	return nil, nil
+}
+
+func (m *mockResourceManager) FindResourceGroupForEnvironment(
+	ctx context.Context,
+	subscriptionId string,
+	envName string,
+) (string, error) {
+	return "", nil
 }
 
 func (m *mockedScope) SubscriptionId() string {
@@ -1006,6 +966,7 @@ func TestUserDefinedTypes(t *testing.T) {
 		azCli,
 		bicepCli,
 		nil,
+		&mockResourceManager{},
 		nil,
 		&mockenv.MockEnvManager{},
 		env,
@@ -1460,4 +1421,101 @@ func TestDefaultLocationToSelectFn(t *testing.T) {
 		result := defaultPromptValue(param)
 		require.Nil(t, result)
 	})
+}
+
+func TestPreviewWithNilResourceState(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	prepareBicepMocks(mockContext)
+
+	// Setup the WhatIf endpoint mock to return changes with nil After (simulating Delete)
+	// and nil Before (simulating Create)
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodPost &&
+			strings.Contains(request.URL.Path, "/providers/Microsoft.Resources/deployments/") &&
+			strings.HasSuffix(request.URL.Path, "/whatIf")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		// Return a WhatIfOperationResult with various scenarios
+		whatIfResult := armresources.WhatIfOperationResult{
+			Status: to.Ptr("Succeeded"),
+			Properties: &armresources.WhatIfOperationProperties{
+				Changes: []*armresources.WhatIfChange{
+					// Create scenario: Before is nil, After has value
+					{
+						ChangeType: to.Ptr(armresources.ChangeTypeCreate),
+						ResourceID: to.Ptr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Web/sites/app1"),
+						Before:     nil,
+						After: map[string]interface{}{
+							"type": "Microsoft.Web/sites",
+							"name": "app1",
+						},
+					},
+					// Delete scenario: After is nil, Before has value
+					{
+						ChangeType: to.Ptr(armresources.ChangeTypeDelete),
+						ResourceID: to.Ptr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Web/sites/app2"),
+						Before: map[string]interface{}{
+							"type": "Microsoft.Web/sites",
+							"name": "app2",
+						},
+						After: nil,
+					},
+					// Modify scenario: Both Before and After have values
+					{
+						ChangeType: to.Ptr(armresources.ChangeTypeModify),
+						ResourceID: to.Ptr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Web/sites/app3"),
+						Before: map[string]interface{}{
+							"type": "Microsoft.Web/sites",
+							"name": "app3",
+						},
+						After: map[string]interface{}{
+							"type": "Microsoft.Web/sites",
+							"name": "app3",
+						},
+					},
+					// Edge case: Both Before and After are nil (should be skipped)
+					{
+						ChangeType: to.Ptr(armresources.ChangeTypeUnsupported),
+						ResourceID: to.Ptr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Unknown/unknown"),
+						Before:     nil,
+						After:      nil,
+					},
+				},
+			},
+		}
+
+		bodyBytes, _ := json.Marshal(whatIfResult)
+		return &http.Response{
+			Request:    request,
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(bodyBytes)),
+		}, nil
+	})
+
+	infraProvider := createBicepProvider(t, mockContext)
+
+	result, err := infraProvider.Preview(*mockContext.Context)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.Preview)
+	require.NotNil(t, result.Preview.Properties)
+
+	// We expect 3 changes (the edge case with both nil should be skipped)
+	changes := result.Preview.Properties.Changes
+	require.Len(t, changes, 3)
+
+	// Verify Create change (uses After)
+	assert.Equal(t, provisioning.ChangeTypeCreate, changes[0].ChangeType)
+	assert.Equal(t, "Microsoft.Web/sites", changes[0].ResourceType)
+	assert.Equal(t, "app1", changes[0].Name)
+
+	// Verify Delete change (uses Before since After is nil)
+	assert.Equal(t, provisioning.ChangeTypeDelete, changes[1].ChangeType)
+	assert.Equal(t, "Microsoft.Web/sites", changes[1].ResourceType)
+	assert.Equal(t, "app2", changes[1].Name)
+
+	// Verify Modify change
+	assert.Equal(t, provisioning.ChangeTypeModify, changes[2].ChangeType)
+	assert.Equal(t, "Microsoft.Web/sites", changes[2].ResourceType)
+	assert.Equal(t, "app3", changes[2].Name)
 }

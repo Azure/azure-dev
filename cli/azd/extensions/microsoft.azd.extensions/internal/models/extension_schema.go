@@ -13,7 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 type ExtensionSchema struct {
@@ -23,6 +23,7 @@ type ExtensionSchema struct {
 	EntryPoint   string                           `yaml:"entryPoint"   json:"entryPoint,omitempty"`
 	Version      string                           `yaml:"version"      json:"version"`
 	Capabilities []extensions.CapabilityType      `yaml:"capabilities" json:"capabilities"`
+	Providers    []extensions.Provider            `yaml:"providers"    json:"providers,omitempty"`
 	DisplayName  string                           `yaml:"displayName"  json:"displayName"`
 	Description  string                           `yaml:"description"  json:"description"`
 	Usage        string                           `yaml:"usage"        json:"usage"`
@@ -67,6 +68,9 @@ func (e ExtensionSchema) MarshalYAML() (interface{}, error) {
 	}
 	if len(e.Dependencies) > 0 {
 		base["dependencies"] = e.Dependencies
+	}
+	if len(e.Providers) > 0 {
+		base["providers"] = e.Providers
 	}
 	if len(e.Platforms) > 0 {
 		base["platforms"] = e.Platforms

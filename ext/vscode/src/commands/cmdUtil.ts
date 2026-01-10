@@ -1,18 +1,19 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-import * as vscode from 'vscode';
-import * as path from 'path';
-import { createHash } from 'crypto';
 import { IActionContext, IAzureQuickPickItem, UserCancelledError } from '@microsoft/vscode-azext-utils';
-import { createAzureDevCli } from "../utils/azureDevCli";
-import { execAsync } from "../utils/process";
+import { composeArgs, withArg, withNamedArg } from '@microsoft/vscode-processutils';
+import { createHash } from 'crypto';
+import * as path from 'path';
+import * as vscode from 'vscode';
+import { createAzureDevCli } from '../utils/azureDevCli';
+import { execAsync } from '../utils/execAsync';
 import { fileExists } from '../utils/fileUtils';
 
-const AzureYamlGlobPattern: vscode.GlobPattern = '**/[aA][zZ][uU][rR][eE].[yY][aA][mM][lL]';
+const AzureYamlGlobPattern: vscode.GlobPattern = '**/[aA][zZ][uU][rR][eE].{[yY][aA][mM][lL],[yY][mM][lL]}';
 
 // If the command was invoked with a specific file context, use the file context as the working directory for running Azure developer CLI commands.
-// Otherwise search the workspace for "azure.yaml" files. If only one is found, use it (i.e. its folder). If more than one is found, ask the user which one to use.
+// Otherwise search the workspace for "azure.yaml" or "azure.yml" files. If only one is found, use it (i.e. its folder). If more than one is found, ask the user which one to use.
 // If at this point we still do not have a working directory, prompt the user to select one.
 export async function getWorkingFolder(context: IActionContext, selectedFile?: vscode.Uri): Promise<string> {
     let folderPath = selectedFile ? path.dirname(selectedFile.fsPath) : undefined;
@@ -38,10 +39,11 @@ export async function getWorkingFolder(context: IActionContext, selectedFile?: v
 
         const folderUri = localFolderUris[0];
         const azureYamlUri = vscode.Uri.joinPath(folderUri, 'azure.yaml');
+        const azureYmlUri = vscode.Uri.joinPath(folderUri, 'azure.yml');
 
-        if (!await fileExists(azureYamlUri)) {
+        if (!await fileExists(azureYamlUri) && !await fileExists(azureYmlUri)) {
             context.errorHandling.suppressReportIssue = true;
-            throw new Error(vscode.l10n.t("The selected folder does not contain 'azure.yaml' file and cannot be used to run Azure Developer CLI commands"));
+            throw new Error(vscode.l10n.t("The selected folder does not contain 'azure.yaml' or 'azure.yml' file and cannot be used to run Azure Developer CLI commands"));
         }
 
         folderPath = folderUri.fsPath;
@@ -65,7 +67,7 @@ export async function pickAzureYamlFile(context: IActionContext): Promise<vscode
             const chosenFile = await context.ui.showQuickPick(choices, {
                 canPickMany: false,
                 suppressPersistence: true,
-                placeHolder: vscode.l10n.t("Select configuration file ('azure.yaml') to use for running Azure developer CLI commands")
+                placeHolder: vscode.l10n.t("Select configuration file ('azure.yaml' or 'azure.yml') to use for running Azure developer CLI commands")
             });
 
             filePath = chosenFile.data;
@@ -87,12 +89,13 @@ export async function selectApplicationTemplate(context: IActionContext): Promis
     let templateUrl: string = '';
 
     const azureCli = await createAzureDevCli(context);
-    const command = azureCli.commandBuilder
-        .withArg('template').withArg('list')
-        .withArg('--output').withArg('json')
-        .build();
-    const result = await execAsync(command, azureCli.spawnOptions());
-    const templates = JSON.parse(result.stdout) as { name: string, description: string, repositoryPath: string }[];
+    const args = composeArgs(
+        withArg('template', 'list'),
+        withNamedArg('--output', 'json'),
+    )();
+
+    const { stdout } = await execAsync(azureCli.invocation, args, azureCli.spawnOptions());
+    const templates = JSON.parse(stdout) as { name: string, description: string, repositoryPath: string }[];
     const choices = templates.map(t => { return { label: t.name, detail: t.description, data: t.repositoryPath } as IAzureQuickPickItem<string>; });
     choices.unshift({ label: vscode.l10n.t('Use another template...'), data: '', id: UseCustomTemplate });
 
@@ -118,19 +121,18 @@ export type EnvironmentInfo = {
     IsDefault: boolean,
     HasLocal?: boolean,
     HasRemote?: boolean,
-    DotEnvPath: string
+    DotEnvPath: string,
 };
 
 export async function getEnvironments(context: IActionContext, cwd: string): Promise<EnvironmentInfo[]> {
     const azureCli = await createAzureDevCli(context);
-    const command = azureCli.commandBuilder
-        .withArg('env').withArg('list')
-        .withArg('--no-prompt')
-        .withNamedArg('--output', 'json')
-        .build();
+    const args = composeArgs(
+        withArg('env', 'list', '--no-prompt'),
+        withNamedArg('--output', 'json'),
+    )();
 
-    const result = await execAsync(command, azureCli.spawnOptions(cwd));
-    const envInfo = JSON.parse(result.stdout) as EnvironmentInfo[];
+    const { stdout } = await execAsync(azureCli.invocation, args, azureCli.spawnOptions(cwd));
+    const envInfo = JSON.parse(stdout) as EnvironmentInfo[];
     context.telemetry.properties.environmentCount = envInfo.length.toString();
     return envInfo;
 }

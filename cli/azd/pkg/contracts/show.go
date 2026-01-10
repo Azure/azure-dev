@@ -11,6 +11,7 @@ const (
 	ShowTypePython ShowType = "python"
 	ShowTypeNode   ShowType = "node"
 	ShowTypeJava   ShowType = "java"
+	ShowTypeCustom ShowType = "custom"
 )
 
 // ShowResult is the contract for the output of `azd show`

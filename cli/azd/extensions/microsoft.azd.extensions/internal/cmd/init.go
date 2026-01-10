@@ -6,7 +6,6 @@ package cmd
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -26,7 +25,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 type initFlags struct {
@@ -112,7 +111,8 @@ func newInitCommand() *cobra.Command {
 	initCmd.Flags().StringSliceVar(
 		&flags.capabilities,
 		"capabilities", []string{},
-		"The list of capabilities for the extension (e.g., custom-commands,lifecycle-events).",
+		"The list of capabilities for the extension "+
+			"(e.g., custom-commands,lifecycle-events,mcp-server,service-target-provider).",
 	)
 
 	initCmd.Flags().StringVar(
@@ -179,12 +179,12 @@ func runInitAction(ctx context.Context, flags *initFlags) error {
 	localRegistryExists := false
 
 	createLocalExtensionSourceAction := func(spf ux.SetProgressFunc) (ux.TaskState, error) {
-		if has, err := hasLocalRegistry(); err == nil && has {
+		if has, err := internal.HasLocalRegistry(); err == nil && has {
 			localRegistryExists = true
 			return ux.Skipped, nil
 		}
 
-		if err := createLocalRegistry(); err != nil {
+		if err := internal.CreateLocalRegistry(); err != nil {
 			return ux.Error, common.NewDetailedError(
 				"Registry creation failed",
 				fmt.Errorf("failed to create local registry: %w", err),
@@ -350,6 +350,24 @@ func collectExtensionMetadataFromFlags(flags *initFlags) (*models.ExtensionSchem
 		)
 	}
 
+	// Validate capabilities
+	validCapabilities := map[string]bool{
+		"custom-commands":         true,
+		"lifecycle-events":        true,
+		"mcp-server":              true,
+		"service-target-provider": true,
+	}
+
+	for _, cap := range flags.capabilities {
+		if !validCapabilities[cap] {
+			return nil, fmt.Errorf(
+				"invalid capability '%s', supported capabilities are: "+
+					"custom-commands, lifecycle-events, mcp-server, service-target-provider",
+				cap,
+			)
+		}
+	}
+
 	// Convert capabilities from string slice to CapabilityType slice
 	capabilities := make([]extensions.CapabilityType, len(flags.capabilities))
 	for i, cap := range flags.capabilities {
@@ -473,6 +491,14 @@ func collectExtensionMetadata(ctx context.Context, azdClient *azdext.AzdClient) 
 				{
 					Label: "Lifecycle Events",
 					Value: "lifecycle-events",
+				},
+				{
+					Label: "MCP Server",
+					Value: "mcp-server",
+				},
+				{
+					Label: "Service Target Provider",
+					Value: "service-target-provider",
 				},
 			},
 			EnableFiltering: internal.ToPtr(false),
@@ -668,68 +694,6 @@ func copyAndProcessTemplates(srcFS fs.FS, srcDir, destDir string, data any) erro
 
 		return nil
 	})
-}
-
-func hasLocalRegistry() (bool, error) {
-	cmdBytes, err := exec.Command("azd", "ext", "source", "list", "-o", "json").CombinedOutput()
-	if err != nil {
-		return false, fmt.Errorf("failed to execute command: %w", err)
-	}
-
-	var extensionSources []any
-	if err := json.Unmarshal(cmdBytes, &extensionSources); err != nil {
-		return false, fmt.Errorf("failed to unmarshal command output: %w", err)
-	}
-
-	for _, source := range extensionSources {
-		extensionSource, ok := source.(map[string]any)
-		if ok {
-			if extensionSource["name"] == "local" && extensionSource["type"] == "file" {
-				return true, nil
-			}
-		}
-	}
-
-	return false, nil
-}
-
-func createLocalRegistry() error {
-	azdConfigDir := os.Getenv("AZD_CONFIG_DIR")
-	if azdConfigDir == "" {
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("failed to get user home directory: %w", err)
-		}
-		azdConfigDir = filepath.Join(homeDir, ".azd")
-	}
-
-	localRegistryPath := filepath.Join(azdConfigDir, "registry.json")
-	emptyRegistry := map[string]any{
-		"registry": []any{},
-	}
-
-	registryJson, err := json.MarshalIndent(emptyRegistry, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal empty registry: %w", err)
-	}
-
-	if err := os.WriteFile(localRegistryPath, registryJson, internal.PermissionFile); err != nil {
-		return fmt.Errorf("failed to create local registry file: %w", err)
-	}
-
-	args := []string{
-		"ext", "source", "add",
-		"--name", "local",
-		"--type", "file",
-		"--location", "registry.json",
-	}
-
-	createExtSourceCmd := exec.Command("azd", args...)
-	if _, err := createExtSourceCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to create local extension source: %w", err)
-	}
-
-	return nil
 }
 
 type ExtensionTemplate struct {

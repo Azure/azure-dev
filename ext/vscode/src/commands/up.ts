@@ -1,14 +1,15 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-import * as vscode from 'vscode';
 import { IActionContext } from "@microsoft/vscode-azext-utils";
-import { getAzDevTerminalTitle, getWorkingFolder } from './cmdUtil';
+import { composeArgs, withArg } from '@microsoft/vscode-processutils';
+import * as vscode from 'vscode';
+import { TelemetryId } from '../telemetry/telemetryId';
 import { createAzureDevCli } from '../utils/azureDevCli';
 import { executeAsTask } from '../utils/executeAsTask';
-import { TelemetryId } from '../telemetry/telemetryId';
-import { AzureDevCliApplication } from '../views/workspace/AzureDevCliApplication';
 import { isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
+import { AzureDevCliApplication } from '../views/workspace/AzureDevCliApplication';
+import { getAzDevTerminalTitle, getWorkingFolder } from './cmdUtil';
 
 /**
  * A tuple representing the arguments that must be passed to the `up` command when executed via {@link vscode.commands.executeCommand}
@@ -22,14 +23,13 @@ export async function up(context: IActionContext, selectedItem?: vscode.Uri | Tr
     const workingFolder = await getWorkingFolder(context, selectedFile);
 
     const azureCli = await createAzureDevCli(context);
-    const command = azureCli.commandBuilder
-        .withArg('up');
+    const args = composeArgs(
+        withArg('up'),
+    )();
 
     // Don't wait
-    void executeAsTask(command.build(), getAzDevTerminalTitle(), {
+    void executeAsTask(azureCli.invocation, args, getAzDevTerminalTitle(), azureCli.spawnOptions(workingFolder), {
         focus: true,
         alwaysRunNew: true,
-        cwd: workingFolder,
-        env: azureCli.env
     }, TelemetryId.UpCli);
 }

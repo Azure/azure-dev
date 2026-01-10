@@ -174,16 +174,6 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 		Title: fmt.Sprintf("Configure your %s pipeline", pipelineProviderName),
 	})
 
-	if len(infra.Options.Layers) > 0 {
-		if !p.alphaFeatureManager.IsEnabled(featLayers) {
-			return nil, fmt.Errorf(
-				"Layered provisioning is not enabled. Run '%s' to enable it.",
-				alpha.GetEnableCommand(featLayers))
-		}
-
-		p.console.WarnForFeature(ctx, featLayers)
-	}
-
 	layers := infra.Options.GetLayers()
 	allParameters := []provisioning.Parameter{}
 

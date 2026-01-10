@@ -142,81 +142,95 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		return nil, err
 	}
 
-	packageResults := map[string]*project.ServicePackageResult{}
-
 	serviceTable, err := pa.importManager.ServiceStable(ctx, pa.projectConfig)
 	if err != nil {
 		return nil, err
 	}
+
 	serviceCount := len(serviceTable)
-	for index, svc := range serviceTable {
-		// TODO(ellismg): We need to figure out what packaging an containerized dotnet app means. For now, just skip it.
-		//  We "package" the app during deploy when we call `dotnet publish /p:PublishProfile=DefaultContainer` to build
-		//  and push the container image.
-		//
-		// Doing this skip here means that during `azd up` we don't show output like:
-		// /* cSpell:disable */
-		//
-		// Packaging services (azd package)
-		//
-		// (✓) Done: Packaging service basketservice
-		// - Package Output: /var/folders/6n/sxbj12js5ksg6ztn0kslqp400000gn/T/azd472091284
-		//
-		// (✓) Done: Packaging service catalogservice
-		// - Package Output: /var/folders/6n/sxbj12js5ksg6ztn0kslqp400000gn/T/azd2265185954
-		//
-		// (✓) Done: Packaging service frontend
-		// - Package Output: /var/folders/6n/sxbj12js5ksg6ztn0kslqp400000gn/T/azd2956031596
-		//
-		// /* cSpell:enable */
-		// Which is nice - since the above is not the package that we publish (instead it's the raw output of
-		// `dotnet publish`, as if you were going to run on App Service.).
-		//
-		// With .NET 8, we'll be able to build just the container image, by setting ContainerArchiveOutputPath
-		// as a property when we run `dotnet publish`.  If we set this to the filepath of a tgz (doesn't need to exist)
-		// the the action will just produce a container image and save it to that tgz, as `docker save` would have. It will
-		// not push the container image.
-		//
-		// It's probably right for us to think about "package" for a containerized application as meaning "produce the tgz"
-		// of the image, as would be done by `docker save` and then do this for both DotNetContainerAppTargets and
-		// ContainerAppTargets.
-		if svc.Host == project.DotNetContainerAppTarget {
-			continue
+
+	projectEventArgs := project.ProjectLifecycleEventArgs{
+		Project: pa.projectConfig,
+	}
+
+	packageResults := map[string]*project.ServicePackageResult{}
+
+	err = pa.projectConfig.Invoke(ctx, project.ProjectEventPackage, projectEventArgs, func() error {
+		for index, svc := range serviceTable {
+			// TODO(ellismg): We need to figure out what packaging an containerized dotnet app means. For now, just skip it.
+			//  We "package" the app during deploy when we call `dotnet publish /p:PublishProfile=DefaultContainer` to build
+			//  and push the container image.
+			//
+			// Doing this skip here means that during `azd up` we don't show output like:
+			// /* cSpell:disable */
+			//
+			// Packaging services (azd package)
+			//
+			// (✓) Done: Packaging service basketservice
+			// - Package Output: /var/folders/6n/sxbj12js5ksg6ztn0kslqp400000gn/T/azd472091284
+			//
+			// (✓) Done: Packaging service catalogservice
+			// - Package Output: /var/folders/6n/sxbj12js5ksg6ztn0kslqp400000gn/T/azd2265185954
+			//
+			// (✓) Done: Packaging service frontend
+			// - Package Output: /var/folders/6n/sxbj12js5ksg6ztn0kslqp400000gn/T/azd2956031596
+			//
+			// /* cSpell:enable */
+			// Which is nice - since the above is not the package that we publish (instead it's the raw output of
+			// `dotnet publish`, as if you were going to run on App Service.).
+			//
+			// With .NET 8, we'll be able to build just the container image, by setting ContainerArchiveOutputPath
+			// as a property when we run `dotnet publish`.  If we set this to the filepath of a tgz (doesn't need to exist)
+			// the the action will just produce a container image and save it to that tgz, as `docker save` would have.
+			// It will not push the container image.
+			//
+			// It's probably right for us to think about "package" for a containerized application as meaning
+			// "produce the tgz" of the image, as would be done by `docker save` and then do this for both
+			// DotNetContainerAppTargets and ContainerAppTargets.
+			if svc.Host == project.DotNetContainerAppTarget {
+				continue
+			}
+
+			stepMessage := fmt.Sprintf("Packaging service %s", svc.Name)
+			pa.console.ShowSpinner(ctx, stepMessage, input.Step)
+
+			// Skip this service if both cases are true:
+			// 1. The user specified a service name
+			// 2. This service is not the one the user specified
+			if targetServiceName != "" && targetServiceName != svc.Name {
+				pa.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
+				continue
+			}
+
+			options := &project.PackageOptions{OutputPath: pa.flags.outputPath}
+			packageResult, err := async.RunWithProgress(
+				func(packageProgress project.ServiceProgress) {
+					progressMessage := fmt.Sprintf("Packaging service %s (%s)", svc.Name, packageProgress.Message)
+					pa.console.ShowSpinner(ctx, progressMessage, input.Step)
+				},
+				func(progress *async.Progress[project.ServiceProgress]) (*project.ServicePackageResult, error) {
+					return pa.serviceManager.Package(ctx, svc, nil, progress, options)
+				},
+			)
+			pa.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
+
+			if err != nil {
+				return err
+			}
+			packageResults[svc.Name] = packageResult
+
+			// report package output
+			pa.console.MessageUxItem(ctx, packageResult.Artifacts)
+			if index < serviceCount-1 {
+				pa.console.Message(ctx, "")
+			}
 		}
 
-		stepMessage := fmt.Sprintf("Packaging service %s", svc.Name)
-		pa.console.ShowSpinner(ctx, stepMessage, input.Step)
+		return nil
+	})
 
-		// Skip this service if both cases are true:
-		// 1. The user specified a service name
-		// 2. This service is not the one the user specified
-		if targetServiceName != "" && targetServiceName != svc.Name {
-			pa.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
-			continue
-		}
-
-		options := &project.PackageOptions{OutputPath: pa.flags.outputPath}
-		packageResult, err := async.RunWithProgress(
-			func(packageProgress project.ServiceProgress) {
-				progressMessage := fmt.Sprintf("Packaging service %s (%s)", svc.Name, packageProgress.Message)
-				pa.console.ShowSpinner(ctx, progressMessage, input.Step)
-			},
-			func(progress *async.Progress[project.ServiceProgress]) (*project.ServicePackageResult, error) {
-				return pa.serviceManager.Package(ctx, svc, nil, progress, options)
-			},
-		)
-		pa.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
-
-		if err != nil {
-			return nil, err
-		}
-		packageResults[svc.Name] = packageResult
-
-		// report package output
-		pa.console.MessageUxItem(ctx, packageResult)
-		if index < serviceCount-1 {
-			pa.console.Message(ctx, "")
-		}
+	if err != nil {
+		return nil, err
 	}
 
 	if pa.formatter.Kind() == output.JsonFormat {

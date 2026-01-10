@@ -2,11 +2,11 @@
 // Licensed under the MIT License.
 
 import { IActionContext } from '@microsoft/vscode-azext-utils';
+import { composeArgs, withArg, withNamedArg } from '@microsoft/vscode-processutils';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { createAzureDevCli } from '../utils/azureDevCli';
-import { execAsync } from '../utils/process';
-import { withTimeout } from '../utils/withTimeout';
+import { execAsync } from '../utils/execAsync';
 
 interface AzureDevService {
     readonly project: {
@@ -40,18 +40,15 @@ export class WorkspaceAzureDevShowProvider implements AzureDevShowProvider {
 
         const configurationFileDirectory = path.dirname(configurationFile.fsPath);
 
-        const command = azureCli.commandBuilder
-            .withArg('show')
-            .withArg('--no-prompt')
-            .withNamedArg('--cwd', configurationFileDirectory)
-            .withNamedArg('--environment', environmentName)
-            .withNamedArg('--output', 'json')
-            .build();
+        const args = composeArgs(
+            withArg('show', '--no-prompt'),
+            withNamedArg('--cwd', configurationFileDirectory, { shouldQuote: true }),
+            withNamedArg('--environment', environmentName, { shouldQuote: true }),
+            withNamedArg('--output', 'json'),
+        )();
 
-        const options = azureCli.spawnOptions(configurationFileDirectory);
+        const { stdout } = await execAsync(azureCli.invocation, args, azureCli.spawnOptions(configurationFileDirectory));
 
-        const showResultsJson = await withTimeout(execAsync(command, options), 30000);
-
-        return JSON.parse(showResultsJson.stdout) as AzDevShowResults;
+        return JSON.parse(stdout) as AzDevShowResults;
     }
 }

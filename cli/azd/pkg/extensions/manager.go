@@ -24,8 +24,9 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	azruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Masterminds/semver/v3"
-	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/rzip"
@@ -40,36 +41,101 @@ var (
 	ErrInstalledExtensionNotFound = errors.New("extension not found")
 	ErrRegistryExtensionNotFound  = errors.New("extension not found in registry")
 	ErrExtensionInstalled         = errors.New("extension already installed")
-
-	FeatureExtensions = alpha.MustFeatureKey("extensions")
 )
 
-// ListOptions is used to filter extensions by source and tags
-type ListOptions struct {
-	// Source is used to specify the source of the extension to install
-	Source string
-	// Tags is used to specify the tags of the extension to install
-	Tags []string
-}
-
-// FilterOptions is used to filter extensions by version and source
+// FilterOptions is used to filter, lookup, and list extensions with various criteria
 type FilterOptions struct {
-	// Version is used to specify the version of the extension to install
-	Version string
-	// Source is used to specify the source of the extension to install
-	Source string
-}
-
-// LookupOptions is used to lookup extensions by id or namespace
-type LookupOptions struct {
 	// Id is used to specify the id of the extension to install
 	Id string
 	// Namespace is used to specify the namespace of the extension to install
 	Namespace string
+	// Version is used to specify the version of the extension to install
+	Version string
+	// Source is used to specify the source of the extension to install
+	Source string
+	// Tags is used to specify the tags of the extension to install
+	Tags []string
+	// Capability is used to filter extensions by capability type
+	Capability CapabilityType
+	// Provider is used to filter extensions by provider name
+	Provider string
 }
 
 type sourceFilterPredicate func(config *SourceConfig) bool
 type extensionFilterPredicate func(extension *ExtensionMetadata) bool
+
+// createExtensionFilter creates a comprehensive filter that checks ALL criteria with AND logic
+func createExtensionFilter(options *FilterOptions) extensionFilterPredicate {
+	return func(extension *ExtensionMetadata) bool {
+		// Check Id filter
+		if options.Id != "" {
+			if !strings.EqualFold(extension.Id, options.Id) {
+				return false
+			}
+		}
+
+		// Check Namespace filter
+		if options.Namespace != "" {
+			if !strings.EqualFold(extension.Namespace, options.Namespace) {
+				return false
+			}
+		}
+
+		// Check Version filter - extension must have the specified version
+		if options.Version != "" && options.Version != "latest" {
+			hasVersion := slices.ContainsFunc(extension.Versions, func(version ExtensionVersion) bool {
+				return strings.EqualFold(version.Version, options.Version)
+			})
+			if !hasVersion {
+				return false
+			}
+		}
+
+		// Check Source filter
+		if options.Source != "" {
+			if !strings.EqualFold(extension.Source, options.Source) {
+				return false
+			}
+		}
+
+		// Check Tags filter - extension must have ALL specified tags
+		if len(options.Tags) > 0 {
+			for _, optionTag := range options.Tags {
+				hasTag := slices.ContainsFunc(extension.Tags, func(extensionTag string) bool {
+					return strings.EqualFold(optionTag, extensionTag)
+				})
+				if !hasTag {
+					return false
+				}
+			}
+		}
+
+		// Check Capability filter - extension must have at least one version with the specified capability
+		if options.Capability != "" {
+			hasCapability := slices.ContainsFunc(extension.Versions, func(version ExtensionVersion) bool {
+				return slices.Contains(version.Capabilities, options.Capability)
+			})
+			if !hasCapability {
+				return false
+			}
+		}
+
+		// Check Provider filter - extension must have at least one version with a provider matching the specified name
+		if options.Provider != "" {
+			hasProvider := slices.ContainsFunc(extension.Versions, func(version ExtensionVersion) bool {
+				return slices.ContainsFunc(version.Providers, func(provider Provider) bool {
+					return strings.EqualFold(provider.Name, options.Provider)
+				})
+			})
+			if !hasProvider {
+				return false
+			}
+		}
+
+		// All criteria passed
+		return true
+	}
+}
 
 // Manager is responsible for managing extensions
 type Manager struct {
@@ -122,110 +188,44 @@ func (m *Manager) ListInstalled() (map[string]*Extension, error) {
 		extensions = map[string]*Extension{}
 	}
 
-	// Initialize the extensions since this are instantiated from JSON unmarshalling.
-	for _, extension := range extensions {
-		extension.init()
-	}
-
 	m.installed = extensions
 
 	return m.installed, nil
 }
 
-// GetInstalled retrieves an installed extension by name
-func (m *Manager) GetInstalled(options LookupOptions) (*Extension, error) {
+// GetInstalled retrieves an installed extension by filter criteria
+func (m *Manager) GetInstalled(options FilterOptions) (*Extension, error) {
 	extensions, err := m.ListInstalled()
 	if err != nil {
 		return nil, err
 	}
 
-	if options.Id != "" {
-		extension, has := extensions[options.Id]
-		if !has {
-			return nil, fmt.Errorf("%s %w", options.Id, ErrInstalledExtensionNotFound)
+	isExtensionMatch := createExtensionFilter(&options)
+
+	// Convert installed extensions to ExtensionMetadata for filtering
+	for _, extension := range extensions {
+		// Create metadata representation for filtering
+		metadata := &ExtensionMetadata{
+			Id:        extension.Id,
+			Namespace: extension.Namespace,
+			Source:    extension.Source,
+			Tags:      []string{}, // Installed extensions don't store tags
 		}
 
-		return extension, nil
-	}
-
-	if options.Namespace != "" {
-		for _, extension := range extensions {
-			if strings.EqualFold(extension.Namespace, options.Namespace) {
-				return extension, nil
-			}
+		// Apply the same filter logic as other methods
+		if isExtensionMatch(metadata) {
+			return extension, nil
 		}
 	}
 
 	return nil, ErrInstalledExtensionNotFound
 }
 
-// GetFromRegistry retrieves an extension from the registry by name.
-// Returns an error if multiple extensions with the same ID are found across different sources.
-func (m *Manager) GetFromRegistry(
-	ctx context.Context,
-	extensionId string,
-	options *FilterOptions,
-) (*ExtensionMetadata, error) {
-	if options == nil {
-		options = &FilterOptions{}
-	}
-
-	filterPredicate := func(config *SourceConfig) bool {
-		if options.Source == "" {
-			return true
-		}
-
-		return strings.EqualFold(config.Name, options.Source)
-	}
-
-	sources, err := m.getSources(ctx, filterPredicate)
-	if err != nil {
-		return nil, fmt.Errorf("failed getting extension sources: %w", err)
-	}
-
-	var matches []*ExtensionMetadata
-	var sourceErr error
-
-	for _, source := range sources {
-		extension, err := source.GetExtension(ctx, extensionId)
-		if err != nil {
-			sourceErr = err
-		} else if extension != nil {
-			matches = append(matches, extension)
-		}
-	}
-
-	if len(matches) > 1 {
-		sourceNames := make([]string, len(matches))
-		for i, match := range matches {
-			sourceNames[i] = match.Source
-		}
-		return nil, &internal.ErrorWithSuggestion{
-			Err: fmt.Errorf(
-				"extension '%s' found in multiple sources: %s",
-				extensionId,
-				strings.Join(sourceNames, ", "),
-			),
-			Suggestion: "Suggestion: specify the exact source using --source or -s.",
-		}
-	}
-
-	if len(matches) == 1 {
-		return matches[0], nil
-	}
-
-	if sourceErr != nil {
-		return nil, fmt.Errorf("failed getting extension: %w", sourceErr)
-	}
-
-	return nil, fmt.Errorf("%s %w", extensionId, ErrRegistryExtensionNotFound)
-}
-
-func (m *Manager) ListFromRegistry(ctx context.Context, options *ListOptions) ([]*ExtensionMetadata, error) {
+func (m *Manager) FindExtensions(ctx context.Context, options *FilterOptions) ([]*ExtensionMetadata, error) {
 	allExtensions := []*ExtensionMetadata{}
 
 	if options == nil {
-		options = &ListOptions{}
+		options = &FilterOptions{}
 	}
 
 	var sourceFilterPredicate sourceFilterPredicate
@@ -235,24 +235,8 @@ func (m *Manager) ListFromRegistry(ctx context.Context, options *ListOptions) ([
 		}
 	}
 
-	var extensionFilterPredicate extensionFilterPredicate
-	if len(options.Tags) > 0 {
-		// Find extensions that match all the incoming tags
-		extensionFilterPredicate = func(extension *ExtensionMetadata) bool {
-			match := false
-			for _, optionTag := range options.Tags {
-				match = slices.ContainsFunc(extension.Tags, func(extensionTag string) bool {
-					return strings.EqualFold(optionTag, extensionTag)
-				})
-
-				if !match {
-					break
-				}
-			}
-
-			return match
-		}
-	}
+	// Use the centralized extension filter
+	extensionFilter := createExtensionFilter(options)
 
 	sources, err := m.getSources(ctx, sourceFilterPredicate)
 	if err != nil {
@@ -267,7 +251,7 @@ func (m *Manager) ListFromRegistry(ctx context.Context, options *ListOptions) ([
 		}
 
 		for _, extension := range sourceExtensions {
-			if extensionFilterPredicate == nil || extensionFilterPredicate(extension) {
+			if extensionFilter(extension) {
 				filteredExtensions = append(filteredExtensions, extension)
 			}
 		}
@@ -287,26 +271,29 @@ func (m *Manager) ListFromRegistry(ctx context.Context, options *ListOptions) ([
 	return allExtensions, nil
 }
 
-// Install an extension by name and optional version
+// Install an extension from metadata with optional version preference
 // If no version is provided, the latest version is installed
 // Latest version is determined by the last element in the Versions slice
-func (m *Manager) Install(ctx context.Context, id string, options *FilterOptions) (*ExtensionVersion, error) {
-	if options == nil {
-		options = &FilterOptions{}
+func (m *Manager) Install(
+	ctx context.Context,
+	extension *ExtensionMetadata,
+	versionPreference string,
+) (extVersion *ExtensionVersion, err error) {
+	if extension == nil {
+		return nil, fmt.Errorf("extension metadata cannot be nil")
 	}
 
-	installed, err := m.GetInstalled(LookupOptions{Id: id})
+	ctx, span := tracing.Start(ctx, events.ExtensionInstallEvent)
+	defer func() {
+		span.EndWithStatus(err)
+	}()
+
+	installed, err := m.GetInstalled(FilterOptions{Id: extension.Id})
 	if err == nil && installed != nil {
-		return nil, fmt.Errorf("%s %w", id, ErrExtensionInstalled)
+		return nil, fmt.Errorf("%s %w", extension.Id, ErrExtensionInstalled)
 	}
 
-	// Step 1: Find the extension by name
-	extension, err := m.GetFromRegistry(ctx, id, options)
-	if err != nil {
-		return nil, err
-	}
-
-	// Step 2: Determine the version to install
+	// Step 1: Determine the version to install
 	var selectedVersion *ExtensionVersion
 
 	availableVersions := []*semver.Version{}
@@ -326,12 +313,12 @@ func (m *Manager) Install(ctx context.Context, id string, options *FilterOptions
 
 	sort.Sort(semver.Collection(availableVersions))
 
-	if options.Version == "" || options.Version == "latest" {
+	if versionPreference == "" || versionPreference == "latest" {
 		latestVersion := availableVersions[len(availableVersions)-1]
 		selectedVersion = availableVersionMap[latestVersion]
 	} else {
 		// Find the best match for the version constraint
-		constraint, err := semver.NewConstraint(options.Version)
+		constraint, err := semver.NewConstraint(versionPreference)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse version constraint: %w", err)
 		}
@@ -347,7 +334,7 @@ func (m *Manager) Install(ctx context.Context, id string, options *FilterOptions
 		if bestMatch == nil {
 			return nil, fmt.Errorf(
 				"no matching version found for extension: %s and constraint: %s",
-				id, options.Version,
+				extension.Id, versionPreference,
 			)
 		}
 
@@ -355,7 +342,7 @@ func (m *Manager) Install(ctx context.Context, id string, options *FilterOptions
 	}
 
 	if selectedVersion == nil {
-		return nil, fmt.Errorf("no compatible version found for extension: %s", id)
+		return nil, fmt.Errorf("no compatible version found for extension: %s", extension.Id)
 	}
 
 	// Binaries are optional as long as dependencies are provided
@@ -367,11 +354,29 @@ func (m *Manager) Install(ctx context.Context, id string, options *FilterOptions
 	// Install dependencies
 	if len(selectedVersion.Dependencies) > 0 {
 		for _, dependency := range selectedVersion.Dependencies {
-			dependencyInstallOptions := &FilterOptions{
+			// Find the dependency extension metadata first
+			dependencyOptions := &FilterOptions{
+				Id:      dependency.Id,
 				Version: dependency.Version,
-				Source:  options.Source,
+				Source:  extension.Source, // Use same source as parent extension
 			}
-			if _, err := m.Install(ctx, dependency.Id, dependencyInstallOptions); err != nil {
+
+			dependencyMatches, err := m.FindExtensions(ctx, dependencyOptions)
+			if err != nil {
+				return nil, fmt.Errorf("failed to find dependency %s: %w", dependency.Id, err)
+			}
+
+			if len(dependencyMatches) == 0 {
+				return nil, fmt.Errorf("dependency %s not found", dependency.Id)
+			}
+
+			if len(dependencyMatches) > 1 {
+				return nil, fmt.Errorf("dependency %s found in multiple sources, specify exact source", dependency.Id)
+			}
+
+			dependencyMetadata := dependencyMatches[0]
+
+			if _, err := m.Install(ctx, dependencyMetadata, dependency.Version); err != nil {
 				if !errors.Is(err, ErrExtensionInstalled) {
 					return nil, fmt.Errorf("failed to install dependency: %w", err)
 				}
@@ -465,8 +470,8 @@ func (m *Manager) Install(ctx context.Context, id string, options *FilterOptions
 		return nil, fmt.Errorf("failed to list installed extensions: %w", err)
 	}
 
-	extensions[id] = &Extension{
-		Id:           id,
+	extensions[extension.Id] = &Extension{
+		Id:           extension.Id,
 		Capabilities: selectedVersion.Capabilities,
 		Namespace:    extension.Namespace,
 		DisplayName:  extension.DisplayName,
@@ -475,6 +480,8 @@ func (m *Manager) Install(ctx context.Context, id string, options *FilterOptions
 		Usage:        selectedVersion.Usage,
 		Path:         relativeExtensionPath,
 		Source:       extension.Source,
+		Providers:    selectedVersion.Providers,
+		McpConfig:    selectedVersion.McpConfig,
 	}
 
 	if err := m.userConfig.Set(installedConfigKey, extensions); err != nil {
@@ -485,7 +492,16 @@ func (m *Manager) Install(ctx context.Context, id string, options *FilterOptions
 		return nil, fmt.Errorf("failed to save user config: %w", err)
 	}
 
-	log.Printf("Extension '%s' (version %s) installed successfully to %s\n", id, selectedVersion.Version, targetPath)
+	span.SetAttributes(
+		fields.ExtensionId.String(extension.Id),
+		fields.ExtensionVersion.String(selectedVersion.Version))
+
+	log.Printf(
+		"Extension '%s' (version %s) installed successfully to %s\n",
+		extension.Id,
+		selectedVersion.Version,
+		targetPath,
+	)
 
 	return selectedVersion, nil
 }
@@ -493,7 +509,7 @@ func (m *Manager) Install(ctx context.Context, id string, options *FilterOptions
 // Uninstall an extension by name
 func (m *Manager) Uninstall(id string) error {
 	// Get the installed extension
-	extension, err := m.GetInstalled(LookupOptions{Id: id})
+	extension, err := m.GetInstalled(FilterOptions{Id: id})
 	if err != nil {
 		return fmt.Errorf("failed to get installed extension: %w", err)
 	}
@@ -539,16 +555,20 @@ func (m *Manager) Uninstall(id string) error {
 // Upgrade upgrades the extension to the specified version
 // This is a convenience method that uninstalls the existing extension and installs the new version
 // If the version is not specified, the latest version is installed
-func (m *Manager) Upgrade(ctx context.Context, extensionId string, options *FilterOptions) (*ExtensionVersion, error) {
-	if options == nil {
-		options = &FilterOptions{}
+func (m *Manager) Upgrade(
+	ctx context.Context,
+	extension *ExtensionMetadata,
+	versionPreference string,
+) (*ExtensionVersion, error) {
+	if extension == nil {
+		return nil, fmt.Errorf("extension metadata cannot be nil")
 	}
 
-	if err := m.Uninstall(extensionId); err != nil {
+	if err := m.Uninstall(extension.Id); err != nil {
 		return nil, fmt.Errorf("failed to uninstall extension: %w", err)
 	}
 
-	extensionVersion, err := m.Install(ctx, extensionId, options)
+	extensionVersion, err := m.Install(ctx, extension, versionPreference)
 	if err != nil {
 		return nil, fmt.Errorf("failed to install extension: %w", err)
 	}

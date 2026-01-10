@@ -1,3 +1,6 @@
+# Ensure script fails on any error
+$ErrorActionPreference = 'Stop'
+
 # Get the directory of the script
 $EXTENSION_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
 
@@ -17,6 +20,10 @@ if (-not (Test-Path -Path $OUTPUT_DIR)) {
 
 # Get Git commit hash and build date
 $COMMIT = git rev-parse HEAD
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Error: Failed to get git commit hash"
+    exit 1
+}
 $BUILD_DATE = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")
 
 # List of OS and architecture combinations

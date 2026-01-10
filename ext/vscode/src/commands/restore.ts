@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import { IActionContext } from '@microsoft/vscode-azext-utils';
+import { composeArgs, withArg } from '@microsoft/vscode-processutils';
 import * as vscode from 'vscode';
 import { TelemetryId } from '../telemetry/telemetryId';
 import { createAzureDevCli } from '../utils/azureDevCli';
@@ -17,20 +18,12 @@ export async function restore(context: IActionContext, selectedItem?: vscode.Uri
     const workingFolder = await getWorkingFolder(context, selectedFile);
 
     const azureCli = await createAzureDevCli(context);
+    const args = composeArgs(
+        withArg('restore'),
+        withArg(selectedModel instanceof AzureDevCliService ? selectedModel.name : '--all'),
+    )();
 
-    const commandBuilder = azureCli.commandBuilder.withArg('restore');
-
-    if (selectedModel instanceof AzureDevCliService) {
-        commandBuilder.withArg(selectedModel.name);
-    } else {
-        commandBuilder.withArg('--all');
-    }
-
-    const command = commandBuilder.build();
-
-    void executeAsTask(command, getAzDevTerminalTitle(), {
+    void executeAsTask(azureCli.invocation, args, getAzDevTerminalTitle(), azureCli.spawnOptions(workingFolder), {
         alwaysRunNew: true,
-        cwd: workingFolder,
-        env: azureCli.env
     }, TelemetryId.RestoreCli);
 }

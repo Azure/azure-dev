@@ -15,15 +15,15 @@ variables:
   - name: LINUXNEXTVMIMAGE
     value: ubuntu-24.04
   - name: LINUXARMVMIMAGE
-    value: azsdk-pool-mms-mariner-2-arm-1espt
+    value: azure-linux-3-arm64
   - name: WINDOWSVMIMAGE
     value: windows-2022
   - name: WINDOWSARMVMIMAGE
     value: windows-2022-arm64-1espt
   - name: MACVMIMAGE
     value: macos-latest
-  - name: MACVMIMAGE13
-    value: macos-13
+  - name: MACVMIMAGE14
+    value: macos-14
   - name: MACVMIMAGEM1
     value: macos-latest-internal
 

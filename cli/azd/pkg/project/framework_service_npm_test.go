@@ -39,7 +39,8 @@ func Test_NpmProject_Restore(t *testing.T) {
 
 	npmProject := NewNpmProject(npmCli, env)
 	result, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
-		return npmProject.Restore(*mockContext.Context, serviceConfig, progess)
+		serviceContext := NewServiceContext()
+		return npmProject.Restore(*mockContext.Context, serviceConfig, serviceContext, progess)
 	})
 
 	require.NoError(t, err)
@@ -111,19 +112,28 @@ func Test_NpmProject_Package(t *testing.T) {
 
 	npmProject := NewNpmProject(npmCli, env)
 	result, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
+		serviceContext := NewServiceContext()
+		serviceContext.Build = ArtifactCollection{
+			{
+				Kind:         ArtifactKindDirectory,
+				Location:     serviceConfig.Path(),
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"framework": "npm",
+				},
+			},
+		}
 		return npmProject.Package(
 			*mockContext.Context,
 			serviceConfig,
-			&ServiceBuildResult{
-				BuildOutputPath: serviceConfig.Path(),
-			},
+			serviceContext,
 			progress,
 		)
 	})
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.NotEmpty(t, result.PackagePath)
+	require.NotEmpty(t, result.Artifacts[0].Location)
 	require.Equal(t, "npm", runArgs.Cmd)
 	require.Equal(t,
 		[]string{"run", "build", "--if-present"},

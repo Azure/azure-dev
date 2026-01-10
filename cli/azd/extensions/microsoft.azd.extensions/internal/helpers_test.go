@@ -6,6 +6,7 @@ package internal
 import (
 	"archive/tar"
 	"compress/gzip"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -299,4 +300,59 @@ func TestGetFileNameWithoutExt(t *testing.T) {
 			require.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+func TestAzdConfigDir(t *testing.T) {
+	// Test with AZD_CONFIG_DIR set
+	tempDir := t.TempDir()
+	originalAzdConfigDir := os.Getenv("AZD_CONFIG_DIR")
+	os.Setenv("AZD_CONFIG_DIR", tempDir)
+	defer os.Setenv("AZD_CONFIG_DIR", originalAzdConfigDir)
+
+	configDir, err := AzdConfigDir()
+	require.NoError(t, err, "Should be able to get AZD config dir")
+	require.Equal(t, tempDir, configDir, "Should return set AZD_CONFIG_DIR")
+
+	// Test without AZD_CONFIG_DIR set
+	os.Unsetenv("AZD_CONFIG_DIR")
+
+	configDir, err = AzdConfigDir()
+	require.NoError(t, err, "Should be able to get AZD config dir even without env var")
+	require.Contains(t, configDir, ".azd", "Should contain .azd directory")
+}
+
+func TestCreateLocalRegistryFile(t *testing.T) {
+	// Create a temporary directory for testing
+	tempDir := t.TempDir()
+
+	// Set AZD_CONFIG_DIR to our temp directory
+	originalAzdConfigDir := os.Getenv("AZD_CONFIG_DIR")
+	os.Setenv("AZD_CONFIG_DIR", tempDir)
+	defer os.Setenv("AZD_CONFIG_DIR", originalAzdConfigDir)
+
+	// Verify the registry file doesn't exist initially
+	registryPath := filepath.Join(tempDir, "registry.json")
+	_, err := os.Stat(registryPath)
+	require.True(t, os.IsNotExist(err), "Registry file should not exist initially")
+
+	// Test creating the registry file (just the file creation part, not the full CreateLocalRegistry)
+	emptyRegistry := map[string]any{
+		"registry": []any{},
+	}
+
+	registryJson, err := json.MarshalIndent(emptyRegistry, "", "  ")
+	require.NoError(t, err, "Should be able to marshal empty registry")
+
+	err = os.WriteFile(registryPath, registryJson, PermissionFile)
+	require.NoError(t, err, "Should be able to write registry file")
+
+	// Verify the file was created
+	_, err = os.Stat(registryPath)
+	require.NoError(t, err, "Registry file should exist after creation")
+
+	// Verify the content is correct
+	content, err := os.ReadFile(registryPath)
+	require.NoError(t, err, "Should be able to read registry file")
+	require.Contains(t, string(content), "\"registry\"", "Registry file should contain registry field")
+	require.Contains(t, string(content), "[]", "Registry should be empty array")
 }

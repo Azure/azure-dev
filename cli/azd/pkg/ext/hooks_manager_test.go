@@ -45,16 +45,18 @@ func Test_GetAllHookConfigs(t *testing.T) {
 	})
 
 	t.Run("With Invalid Configuration", func(t *testing.T) {
-		// All hooksMap are invalid because they are missing a script type
+		// All hooksMap are invalid because they are missing the run parameter
 		hooksMap := map[string][]*HookConfig{
 			"preinit": {
 				{
-					Run: "echo 'Hello'",
+					Shell: ShellTypeBash,
+					// Run is missing - this should cause an error
 				},
 			},
 			"postinit": {
 				{
-					Run: "echo 'Hello'",
+					Shell: ShellTypeBash,
+					// Run is missing - this should cause an error
 				},
 			},
 		}
@@ -115,16 +117,18 @@ func Test_GetByParams(t *testing.T) {
 	})
 
 	t.Run("With Invalid Configuration", func(t *testing.T) {
-		// All hooksMap are invalid because they are missing a script type
+		// All hooksMap are invalid because they are missing the run parameter
 		hooksMap := map[string][]*HookConfig{
 			"preinit": {
 				{
-					Run: "echo 'Hello'",
+					Shell: ShellTypeBash,
+					// Run is missing - this should cause an error
 				},
 			},
 			"postinit": {
 				{
-					Run: "echo 'Hello'",
+					Shell: ShellTypeBash,
+					// Run is missing - this should cause an error
 				},
 			},
 		}
@@ -138,6 +142,49 @@ func Test_GetByParams(t *testing.T) {
 		require.Nil(t, validHooks)
 		require.Error(t, err)
 	})
+}
+
+func Test_HookConfig_DefaultShell(t *testing.T) {
+	tests := []struct {
+		name             string
+		hookConfig       *HookConfig
+		expectedShell    ShellType
+		expectingDefault bool
+	}{
+		{
+			name: "No shell specified - should use OS default",
+			hookConfig: &HookConfig{
+				Name: "test",
+				Run:  "echo 'hello'",
+			},
+			expectedShell:    getDefaultShellForOS(),
+			expectingDefault: true,
+		},
+		{
+			name: "Shell explicitly specified - should not use default",
+			hookConfig: &HookConfig{
+				Name:  "test",
+				Shell: ShellTypeBash,
+				Run:   "echo 'hello'",
+			},
+			expectedShell:    ShellTypeBash,
+			expectingDefault: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Clone the config to avoid modifying the test case
+			config := *tt.hookConfig
+			config.cwd = t.TempDir()
+
+			err := config.validate()
+			require.NoError(t, err)
+
+			require.Equal(t, tt.expectedShell, config.Shell)
+			require.Equal(t, tt.expectingDefault, config.IsUsingDefaultShell())
+		})
+	}
 }
 
 func ensureScriptsExist(t *testing.T, configs map[string][]*HookConfig) {

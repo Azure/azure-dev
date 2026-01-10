@@ -12,6 +12,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/agent"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -19,7 +23,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
-	"github.com/fatih/color"
+	"github.com/tidwall/gjson"
+	"go.opentelemetry.io/otel/codes"
 )
 
 type ErrorMiddleware struct {
@@ -48,14 +53,30 @@ func NewErrorMiddleware(
 	}
 }
 
-func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
-	actionResult, err := next(ctx)
-	if !e.featuresManager.IsEnabled(llm.FeatureLlm) {
-		return actionResult, err
+func (e *ErrorMiddleware) displayAgentResponse(ctx context.Context, response string, disclaimer string) {
+	if response != "" {
+		e.console.Message(ctx, disclaimer)
+		e.console.Message(ctx, "")
+		e.console.Message(ctx, fmt.Sprintf("%s:", output.AzdAgentLabel()))
+		e.console.Message(ctx, output.WithMarkdown(response))
+		e.console.Message(ctx, "")
 	}
+}
+
+func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
+	// Short-circuit agentic error handling in non-interactive scenarios:
+	// - LLM feature is disabled
+	// - User specified --no-prompt (non-interactive mode)
+	// - Running in CI/CD environment where user interaction is not possible
+	if !e.featuresManager.IsEnabled(llm.FeatureLlm) || e.global.NoPrompt || resource.IsRunningOnCI() {
+		return next(ctx)
+	}
+
+	actionResult, err := next(ctx)
 
 	// Stop the spinner always to un-hide cursor
 	e.console.StopSpinner(ctx, "", input.Step)
+
 	if err == nil || e.options.IsChildAction(ctx) {
 		return actionResult, err
 	}
@@ -72,6 +93,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		"environment already initialized",
 		"interrupt",
 		"no project exists",
+		"tool execution denied",
 	}
 	for _, s := range skipAnalyzingErrors {
 		if strings.Contains(err.Error(), s) {
@@ -82,12 +104,16 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 	// Warn user that this is an alpha feature
 	e.console.WarnForFeature(ctx, llm.FeatureLlm)
 
+	ctx, span := tracing.Start(ctx, events.AgentTroubleshootEvent)
+	defer span.End()
+
 	originalError := err
 	azdAgent, err := e.agentFactory.Create(
+		ctx,
 		agent.WithDebug(e.global.EnableDebugLogging),
-		agent.WithFileWatching(true),
 	)
 	if err != nil {
+		span.SetStatus(codes.Error, "agent.creation.failed")
 		return nil, err
 	}
 
@@ -101,6 +127,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 	for {
 		if originalError == nil {
+			span.SetStatus(codes.Ok, "agent.fix.succeeded")
 			break
 		}
 
@@ -108,9 +135,12 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 		if previousError != nil && originalError.Error() == previousError.Error() {
 			attempt++
+			span.SetAttributes(fields.AgentFixAttempts.Int(attempt))
+
 			if attempt >= 3 {
 				e.console.Message(ctx, fmt.Sprintf("Please review the error and fix it manually, "+
 					"%s was unable to resolve the error after multiple attempts.", agentName))
+				span.SetStatus(codes.Error, "agent.fix.max_attempts_reached")
 				return actionResult, originalError
 			}
 		}
@@ -122,7 +152,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		errorInput := originalError.Error()
 
 		e.console.Message(ctx, "")
-		confirm, err := e.checkErrorHandlingConsent(
+		confirmTroubleshoot, err := e.checkErrorHandlingConsent(
 			ctx,
 			"mcp.errorHandling.troubleshooting",
 			fmt.Sprintf("Generate troubleshooting steps using %s?", agentName),
@@ -132,126 +162,135 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			true,
 		)
 		if err != nil {
+			span.SetStatus(codes.Error, "agent.consent.failed")
 			return nil, fmt.Errorf("prompting to provide troubleshooting steps: %w", err)
 		}
 
-		if confirm {
+		if confirmTroubleshoot {
 			// Provide manual steps for troubleshooting
 			agentOutput, err := azdAgent.SendMessage(ctx, fmt.Sprintf(
 				`Steps to follow:
 			1. Use available tool including azd_error_troubleshooting tool to identify and explain the error.
 			Diagnose its root cause when running azd command.
-			2. Provide actionable troubleshooting steps. Do not perform any file changes.
+			2. Provide actionable troubleshooting steps in natural language format with clear sections.
+			DO NOT return JSON. Use readable narrative text with markdown formatting.
+			Do not perform any file changes.
 			Error details: %s`, errorInput))
 
 			if err != nil {
-				if agentOutput != "" {
-					e.console.Message(ctx, AIDisclaimer)
-					e.console.Message(ctx, output.WithMarkdown(agentOutput))
-				}
-
+				e.displayAgentResponse(ctx, agentOutput, AIDisclaimer)
+				span.SetStatus(codes.Error, "agent.send_message.failed")
 				return nil, err
 			}
 
-			e.console.Message(ctx, AIDisclaimer)
-			e.console.Message(ctx, "")
-			e.console.Message(ctx, fmt.Sprintf("%s:", output.AzdAgentLabel()))
-			e.console.Message(ctx, output.WithMarkdown(agentOutput))
-			e.console.Message(ctx, "")
+			e.displayAgentResponse(ctx, agentOutput, AIDisclaimer)
 		}
 
-		// Ask user if they want to let AI fix the
-		confirm, err = e.checkErrorHandlingConsent(
+		// Ask user if they want to let AI fix the error
+		confirmFix, err := e.checkErrorHandlingConsent(
 			ctx,
 			"mcp.errorHandling.fix",
-			fmt.Sprintf("Fix this error using %s?", agentName),
+			fmt.Sprintf("Brainstorm solutions using %s?", agentName),
 			fmt.Sprintf("This action will run AI tools to help fix the error."+
 				" Edit permissions for AI tools anytime by running %s.",
 				output.WithHighLightFormat("azd mcp consent")),
 			false,
 		)
 		if err != nil {
+			span.SetStatus(codes.Error, "agent.consent.failed")
 			return nil, fmt.Errorf("prompting to fix error using %s: %w", agentName, err)
 		}
 
-		if !confirm {
+		if !confirmFix {
+			if confirmTroubleshoot {
+				span.SetStatus(codes.Ok, "agent.troubleshoot.only")
+			} else {
+				span.SetStatus(codes.Error, "agent.fix.declined")
+			}
 			return actionResult, err
 		}
 
 		previousError = originalError
 		agentOutput, err := azdAgent.SendMessage(ctx, fmt.Sprintf(
 			`Steps to follow:
-			1. Use available tool to identify, explain and diagnose this error when running azd command and its root cause.
-			2. Resolve the error by making the minimal, targeted change required to the code or configuration.
-			Avoid unnecessary modifications and focus only on what is essential to restore correct functionality.
-			3. Remove any changes that were created solely for validation and are not part of the actual error fix.
-			Error details: %s`, errorInput))
+            1. Use available tools to identify, explain and diagnose this error when running azd command and its root cause.
+            2. Only return a JSON object in the following format:
+            {
+              "analysis": "Brief explanation of the error and its root cause",
+              "solutions": [
+                "Solution 1 Short description (one sentence)",
+                "Solution 2 Short description (one sentence)",
+                "Solution 3 Short description (one sentence)"
+              ]
+            }
+            Provide up to 3 solutions. Each solution must be concise (one sentence).
+            Error details: %s`, errorInput))
 
+		// Extract solutions from agent output even if there's a parsing error
+		// The agent may return valid content
+		solutions := extractSuggestedSolutions(agentOutput)
+
+		// Only fail if we got an error AND couldn't extract any solutions
+		if err != nil && len(solutions) == 0 {
+			e.displayAgentResponse(ctx, agentOutput, AIDisclaimer)
+			span.SetStatus(codes.Error, "agent.send_message.failed")
+			return nil, fmt.Errorf("failed to generate solutions: %w", err)
+		}
+
+		e.console.Message(ctx, "")
+		selectedSolution, continueWithFix, err := promptUserForSolution(ctx, solutions, agentName)
 		if err != nil {
-			if agentOutput != "" {
-				e.console.Message(ctx, AIDisclaimer)
-				e.console.Message(ctx, output.WithMarkdown(agentOutput))
+			return nil, fmt.Errorf("prompting for solution selection: %w", err)
+		}
+
+		if continueWithFix {
+			agentOutput, err := azdAgent.SendMessage(ctx, fmt.Sprintf(
+				`Steps to follow:
+            1. Use available tools to identify, explain and diagnose this error when running azd command and its root cause.
+            2. Resolve the error by making the minimal, targeted change required to the code or configuration.
+            Avoid unnecessary modifications and focus only on what is essential to restore correct functionality.
+            3. Remove any changes that were created solely for validation and are not part of the actual error fix.
+			4. You are currently in the middle of executing '%s'. Never run this command.
+            Error details: %s`, e.options.CommandPath, errorInput))
+
+			if err != nil {
+				e.displayAgentResponse(ctx, agentOutput, AIDisclaimer)
+				span.SetStatus(codes.Error, "agent.send_message.failed")
+				return nil, err
 			}
 
-			return nil, err
+			span.SetStatus(codes.Ok, "agent.fix.agent")
+		} else {
+			if selectedSolution != "" {
+				// User selected a solution
+				agentOutput, err = azdAgent.SendMessage(ctx, fmt.Sprintf(
+					`Steps to follow:
+						1. Perform the following actions to resolve the error: %s. 
+						During this, make minimal changes and avoid unnecessary modifications.
+						2. Remove any changes that were created solely for validation and
+						 are not part of the actual error fix.
+						3. You are currently in the middle of executing '%s'. Never run this command.
+						Error details: %s`, selectedSolution, e.options.CommandPath, errorInput))
+
+				if err != nil {
+					e.displayAgentResponse(ctx, agentOutput, AIDisclaimer)
+					span.SetStatus(codes.Error, "agent.send_message.failed")
+					return nil, err
+				}
+				span.SetStatus(codes.Ok, "agent.fix.solution")
+			} else {
+				// User selected cancel
+				span.SetStatus(codes.Error, "agent.fix.cancelled")
+				return actionResult, originalError
+			}
 		}
 
-		// Ask the user to add feedback
-		if err := e.collectAndApplyFeedback(ctx, azdAgent, AIDisclaimer); err != nil {
-			return nil, err
-		}
-
-		// Clear check cache to prevent skip of tool related error
 		ctx = tools.WithInstalledCheckCache(ctx)
-
 		actionResult, err = next(ctx)
 		originalError = err
 	}
 
 	return actionResult, err
-}
-
-// collectAndApplyFeedback prompts for user feedback and applies it using the agent
-func (e *ErrorMiddleware) collectAndApplyFeedback(
-	ctx context.Context,
-	azdAgent agent.Agent,
-	AIDisclaimer string,
-) error {
-	userInputPrompt := uxlib.NewPrompt(&uxlib.PromptOptions{
-		Message:  "Any changes you'd like to make?",
-		Hint:     "Describe your changes or press enter to skip.",
-		Required: false,
-	})
-
-	userInput, err := userInputPrompt.Ask(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to collect feedback for user input: %w", err)
-	}
-
-	if userInput == "" {
-		e.console.Message(ctx, "")
-		return nil
-	}
-
-	e.console.Message(ctx, "")
-	e.console.Message(ctx, color.MagentaString("Feedback"))
-
-	feedbackOutput, err := azdAgent.SendMessage(ctx, userInput)
-	if err != nil {
-		if feedbackOutput != "" {
-			e.console.Message(ctx, AIDisclaimer)
-			e.console.Message(ctx, output.WithMarkdown(feedbackOutput))
-		}
-		return err
-	}
-
-	e.console.Message(ctx, AIDisclaimer)
-	e.console.Message(ctx, "")
-	e.console.Message(ctx, fmt.Sprintf("%s:", output.AzdAgentLabel()))
-	e.console.Message(ctx, output.WithMarkdown(feedbackOutput))
-	e.console.Message(ctx, "")
-
-	return nil
 }
 
 func (e *ErrorMiddleware) checkErrorHandlingConsent(
@@ -324,7 +363,7 @@ func promptForErrorHandlingConsent(
 		HelpMessage:     helpMessage,
 		Choices:         choices,
 		EnableFiltering: uxlib.Ptr(false),
-		DisplayCount:    5,
+		DisplayCount:    len(choices),
 	})
 
 	choiceIndex, err := selector.Ask(ctx)
@@ -337,4 +376,75 @@ func promptForErrorHandlingConsent(
 	}
 
 	return choices[*choiceIndex].Value, nil
+}
+
+// extractSuggestedSolutions extracts solutions from the LLM response.
+// It expects a JSON response with the structure: {"analysis": "...", "solutions": ["...", "...", "..."]}
+// If JSON parsing fails, it returns an empty slice.
+func extractSuggestedSolutions(llmResponse string) []string {
+	result := gjson.Get(llmResponse, "solutions")
+	if !result.Exists() {
+		return []string{}
+	}
+
+	var solutions []string
+	for _, solution := range result.Array() {
+		solutions = append(solutions, solution.String())
+	}
+	return solutions
+}
+
+// promptUserForSolution displays extracted solutions to the user and prompts them to select which solution to try.
+// Returns the selected solution text, a flag indicating if user wants to continue with AI fix, and error if any.
+func promptUserForSolution(ctx context.Context, solutions []string, agentName string) (string, bool, error) {
+	choices := make([]*uxlib.SelectChoice, len(solutions)+2)
+
+	if len(solutions) > 0 {
+		// Add the three solutions
+		for i, solution := range solutions {
+			choices[i] = &uxlib.SelectChoice{
+				Value: solution,
+				Label: "Yes. " + solution,
+			}
+		}
+	}
+
+	choices[len(solutions)] = &uxlib.SelectChoice{
+		Value: "continue",
+		Label: fmt.Sprintf("Yes, let %s choose the best approach", agentName),
+	}
+
+	choices[len(solutions)+1] = &uxlib.SelectChoice{
+		Value: "cancel",
+		Label: "No, cancel",
+	}
+
+	selector := uxlib.NewSelect(&uxlib.SelectOptions{
+		Message:         fmt.Sprintf("Allow %s to fix the error?", agentName),
+		HelpMessage:     "Select a suggested fix, or let AI decide",
+		Choices:         choices,
+		EnableFiltering: uxlib.Ptr(false),
+		DisplayCount:    len(choices),
+	})
+
+	choiceIndex, err := selector.Ask(ctx)
+	if err != nil {
+		return "", false, err
+	}
+
+	if choiceIndex == nil || *choiceIndex < 0 || *choiceIndex >= len(choices) {
+		return "", false, fmt.Errorf("invalid choice selected")
+	}
+
+	selectedValue := choices[*choiceIndex].Value
+
+	// Handle different selections
+	switch selectedValue {
+	case "continue":
+		return "", true, nil // Continue to AI fix
+	case "cancel":
+		return "", false, nil // Cancel and return error
+	default:
+		return selectedValue, false, nil // User selected a solution
+	}
 }

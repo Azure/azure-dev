@@ -36,6 +36,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -66,7 +67,7 @@ func NewShowFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *sh
 
 func NewShowCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "show [resource name or ID]",
+		Use:   "show [resource-name|resource-id]",
 		Short: "Display information about your project and its resources.",
 	}
 
@@ -92,6 +93,7 @@ type showAction struct {
 	lazyServiceManager   *lazy.Lazy[project.ServiceManager]
 	lazyResourceManager  *lazy.Lazy[project.ResourceManager]
 	portalUrlBase        string
+	stateCacheManager    *state.StateCacheManager
 }
 
 func NewShowAction(
@@ -133,6 +135,7 @@ func NewShowAction(
 		lazyServiceManager:   lazyServiceManager,
 		lazyResourceManager:  lazyResourceManager,
 		portalUrlBase:        cloud.PortalUrlBase,
+		stateCacheManager:    envManager.GetStateCacheManager(),
 	}
 }
 
@@ -196,11 +199,6 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		if subId = env.GetSubscriptionId(); subId == "" {
 			log.Printf("provision has not been run, resource ids will not be available")
 		} else {
-			resourceManager, err := s.lazyResourceManager.GetValue()
-			if err != nil {
-				return nil, err
-			}
-
 			envName := env.Name()
 
 			if len(s.args) > 0 {
@@ -213,32 +211,81 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				return nil, nil
 			}
 
-			rgName, err = s.infraResourceManager.FindResourceGroupForEnvironment(ctx, subId, envName)
-			if err == nil {
-				for _, serviceConfig := range stableServices {
-					svcName := serviceConfig.Name
-					resources, err := resourceManager.GetServiceResources(ctx, subId, rgName, serviceConfig)
-					if err == nil {
-						resourceIds := make([]string, len(resources))
-						for idx, res := range resources {
-							resourceIds[idx] = res.Id
-						}
+			// Try to load from cache first
+			cachedState, err := s.stateCacheManager.Load(ctx, envName)
+			if err != nil {
+				log.Printf("error loading cache: %v, will query Azure directly", err)
+			}
 
-						resSvc := res.Services[svcName]
-						resSvc.Target = &contracts.ShowTargetArm{
-							ResourceIds: resourceIds,
+			if cachedState != nil && cachedState.SubscriptionId == subId {
+				// Use cached data
+				rgName = cachedState.ResourceGroupName
+				for svcName, cachedSvc := range cachedState.ServiceResources {
+					if resSvc, exists := res.Services[svcName]; exists {
+						if len(cachedSvc.ResourceIds) > 0 {
+							resSvc.Target = &contracts.ShowTargetArm{
+								ResourceIds: cachedSvc.ResourceIds,
+							}
 						}
-						resSvc.IngresUrl = s.serviceEndpoint(ctx, subId, serviceConfig, env)
+						resSvc.IngresUrl = cachedSvc.IngressUrl
 						res.Services[svcName] = resSvc
-					} else {
-						log.Printf("ignoring error determining resource id for service %s: %v", svcName, err)
 					}
 				}
 			} else {
-				log.Printf(
-					"ignoring error determining resource group for environment %s, resource ids will not be available: %v",
-					env.Name(),
-					err)
+				// Cache miss or invalid, query Azure and update cache
+				resourceManager, err := s.lazyResourceManager.GetValue()
+				if err != nil {
+					return nil, err
+				}
+
+				rgName, err = s.infraResourceManager.FindResourceGroupForEnvironment(ctx, subId, envName)
+				if err == nil {
+					// Create cache for this query
+					newCache := &state.StateCache{
+						SubscriptionId:    subId,
+						ResourceGroupName: rgName,
+						ServiceResources:  make(map[string]state.ServiceResourceCache),
+					}
+
+					for _, serviceConfig := range stableServices {
+						svcName := serviceConfig.Name
+						resources, err := resourceManager.GetServiceResources(ctx, subId, rgName, serviceConfig)
+						if err == nil {
+							resourceIds := make([]string, len(resources))
+							for idx, res := range resources {
+								resourceIds[idx] = res.Id
+							}
+
+							ingressUrl := s.serviceEndpoint(ctx, subId, serviceConfig, env)
+
+							resSvc := res.Services[svcName]
+							resSvc.Target = &contracts.ShowTargetArm{
+								ResourceIds: resourceIds,
+							}
+							resSvc.IngresUrl = ingressUrl
+							res.Services[svcName] = resSvc
+
+							// Add to cache
+							newCache.ServiceResources[svcName] = state.ServiceResourceCache{
+								ResourceIds: resourceIds,
+								IngressUrl:  ingressUrl,
+							}
+						} else {
+							log.Printf("ignoring error determining resource id for service %s: %v", svcName, err)
+						}
+					}
+
+					// Save cache
+					if err := s.stateCacheManager.Save(ctx, envName, newCache); err != nil {
+						log.Printf("error saving cache: %v", err)
+					}
+				} else {
+					log.Printf(
+						"ignoring error determining resource group for environment %s, "+
+							"resource ids will not be available: %v",
+						env.Name(),
+						err)
+				}
 			}
 		}
 	}
@@ -491,12 +538,7 @@ func (s *showAction) serviceEndpoint(
 	ctx context.Context, subId string, serviceConfig *project.ServiceConfig, env *environment.Environment) string {
 	resourceManager, err := s.lazyResourceManager.GetValue()
 	if err != nil {
-		log.Printf("error: getting lazy target-resource. Endpoints will be empty: %v", err)
-		return ""
-	}
-	targetResource, err := resourceManager.GetTargetResource(ctx, subId, serviceConfig)
-	if err != nil {
-		log.Printf("error: getting target-resource. Endpoints will be empty: %v", err)
+		log.Printf("error: getting lazy resource manager. Endpoints will be empty: %v", err)
 		return ""
 	}
 
@@ -505,11 +547,25 @@ func (s *showAction) serviceEndpoint(
 		log.Printf("error: getting lazy service manager. Endpoints will be empty: %v", err)
 		return ""
 	}
+
+	// Initialize the service to ensure external service targets can create provider instances
+	if err := serviceManager.Initialize(ctx, serviceConfig); err != nil {
+		log.Printf("error: initializing service. Endpoints will be empty: %v", err)
+		return ""
+	}
+
 	st, err := serviceManager.GetServiceTarget(ctx, serviceConfig)
 	if err != nil {
 		log.Printf("error: getting service target. Endpoints will be empty: %v", err)
 		return ""
 	}
+
+	targetResource, err := s.resolveTargetResource(ctx, st, resourceManager, subId, serviceConfig)
+	if err != nil {
+		log.Printf("error: getting target-resource. Endpoints will be empty: %v", err)
+		return ""
+	}
+
 	endpoints, err := st.Endpoints(ctx, serviceConfig, targetResource)
 	if err != nil {
 		log.Printf("error: getting service endpoints. Endpoints might be empty: %v", err)
@@ -527,6 +583,30 @@ func (s *showAction) serviceEndpoint(
 	return endpoints[0]
 }
 
+func (s *showAction) resolveTargetResource(
+	ctx context.Context,
+	st project.ServiceTarget,
+	resourceManager project.ResourceManager,
+	subId string,
+	serviceConfig *project.ServiceConfig,
+) (*environment.TargetResource, error) {
+	// Handle custom service targets with their own custom GetTargetResource resolution
+	if resolver, ok := st.(project.TargetResourceResolver); ok {
+		defaultResolver := func() (*environment.TargetResource, error) {
+			return resourceManager.GetTargetResource(ctx, subId, serviceConfig)
+		}
+
+		resource, err := resolver.ResolveTargetResource(ctx, subId, serviceConfig, defaultResolver)
+		if err != nil {
+			return nil, fmt.Errorf("resolving target resource via external service target: %w", err)
+		}
+		return resource, nil
+	}
+
+	// Default target resource resolution
+	return resourceManager.GetTargetResource(ctx, subId, serviceConfig)
+}
+
 func showTypeFromLanguage(language project.ServiceLanguageKind) contracts.ShowType {
 	switch language {
 	case project.ServiceLanguageNone:
@@ -539,8 +619,12 @@ func showTypeFromLanguage(language project.ServiceLanguageKind) contracts.ShowTy
 		return contracts.ShowTypeNode
 	case project.ServiceLanguageJava:
 		return contracts.ShowTypeJava
+	case project.ServiceLanguageCustom:
+		return contracts.ShowTypeCustom
 	default:
-		panic(fmt.Sprintf("unknown language %s", language))
+		// Handle extension languages gracefully by returning a generic type
+		// Extension framework services will handle the actual operations
+		return contracts.ShowTypeNone
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	osexec "os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -142,17 +143,57 @@ func (h *HooksManager) ValidateHooks(ctx context.Context, allHooks map[string][]
 	}
 
 	hasPowerShellHooks := false
+	hasDefaultShellHooks := false
 
-	// Check all hooks
+	// Two-pass validation is required because:
+	// 1. First pass: Set shell defaults and detect inline scripts for each hook configuration
+	// 2. Second pass: Generate warnings only after all hooks have been processed and we know
+	//    the complete state (e.g., whether ANY hook uses PowerShell or default shell)
+	// We cannot merge these loops because warnings depend on global state across all hooks.
+
+	// First pass: perform lightweight validation to set flags like usingDefaultShell
+	// without creating temporary files (which full validation does)
+	for _, hookConfigs := range allHooks {
+		for _, hookConfig := range hookConfigs {
+			// Set the working directory for validation
+			if hookConfig.cwd == "" {
+				hookConfig.cwd = h.cwd
+			}
+
+			// Only perform shell detection for warning purposes, not full validation
+			if !hookConfig.validated && hookConfig.Run != "" {
+				// Check if it's an inline script (no file exists)
+				relativeCheckPath := strings.ReplaceAll(hookConfig.Run, "/", string(os.PathSeparator))
+				fullCheckPath := relativeCheckPath
+				if hookConfig.cwd != "" {
+					fullCheckPath = filepath.Join(hookConfig.cwd, hookConfig.Run)
+				}
+
+				_, err := os.Stat(fullCheckPath)
+				isInlineScript := err != nil // File doesn't exist, so it's inline
+
+				// If shell is not specified and it's an inline script, set default for warning
+				if hookConfig.Shell == ScriptTypeUnknown && isInlineScript {
+					if runtime.GOOS == "windows" {
+						hookConfig.Shell = ShellTypePowershell
+					} else {
+						hookConfig.Shell = ShellTypeBash
+					}
+					hookConfig.usingDefaultShell = true
+				}
+			}
+		}
+	}
+
+	// Second pass: check all hooks for warning conditions using the state set in first pass
 	for _, hookConfigs := range allHooks {
 		for _, hookConfig := range hookConfigs {
 			if hookConfig.IsPowerShellHook() {
 				hasPowerShellHooks = true
-				break
 			}
-		}
-		if hasPowerShellHooks {
-			break
+			if hookConfig.IsUsingDefaultShell() {
+				hasDefaultShellHooks = true
+			}
 		}
 	}
 
@@ -181,6 +222,28 @@ func (h *HooksManager) ValidateHooks(ctx context.Context, allHooks map[string][]
 				),
 			})
 		}
+	}
+
+	// If we found hooks using default shell, warn the user - only log
+	if hasDefaultShellHooks {
+		var warningMessage string
+		var defaultShell string
+
+		if runtime.GOOS == "windows" {
+			defaultShell = "pwsh"
+		} else {
+			defaultShell = "sh"
+		}
+
+		warningMessage = fmt.Sprintf(
+			"Hook configurations found without explicit shell specification. Using OS default shell '%s'. "+
+				"For better reliability, consider specifying the shell explicitly in your hook configuration.\n"+
+				"More about using hooks: %s",
+			defaultShell,
+			output.WithHyperlink("aka.ms/azd-hooks", "aka.ms/azd-hooks"),
+		)
+
+		log.Println(warningMessage)
 	}
 
 	return result

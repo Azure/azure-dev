@@ -1,0 +1,37 @@
+
+Publish a service to a container registry.
+
+  • Supports Container App services only.
+  • Target registry set by AZURE_CONTAINER_REGISTRY_ENDPOINT environment variable, docker.registry in azure.yaml, or '--to' flag.
+  • Use '--from-package' to publish an existing container image, otherwise azd automatically packages the container image before publishing.
+
+Usage
+  azd publish <service> [flags]
+
+Flags
+        --all                 	: Publishes all services that are listed in azure.yaml
+    -e, --environment string  	: The name of the environment to use.
+        --from-package string 	: Publishes the service from a container image (image tag).
+        --to string           	: The target container image in the form '[registry/]repository[:tag]' to publish to.
+
+Global Flags
+    -C, --cwd string 	: Sets the current working directory.
+        --debug      	: Enables debugging and diagnostics logging.
+        --docs       	: Opens the documentation for azd publish in your web browser.
+    -h, --help       	: Gets help for publish.
+        --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
+
+Examples
+  Publish all services in the current project.
+    azd publish --all
+
+  Publish the service named 'api' from a previously generated package.
+    azd publish api --from-package <image-tag>
+
+  Publish the service named 'api' with custom image name and tag.
+    azd publish api --to app/api:prod
+
+  Publish the service named 'api'.
+    azd publish api
+
+

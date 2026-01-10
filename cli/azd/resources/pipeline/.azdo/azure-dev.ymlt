@@ -45,6 +45,10 @@ steps:
     inputs:
       version: '9.x'
     displayName: Set up .NET 9
+  - task: UseDotNet@2
+    inputs:
+      version: '10.x'
+    displayName: Set up .NET 10
 {{ end }}
   - task: AzureCLI@2
     displayName: Provision Infrastructure

@@ -284,15 +284,12 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		SuccessMessage: "azure.yaml updated.",
 	})
 
-	// Use default project values for Infra when not specified in azure.yaml
-	if prjConfig.Infra.Module == "" {
-		prjConfig.Infra.Module = project.DefaultModule
-	}
-	if prjConfig.Infra.Path == "" {
-		prjConfig.Infra.Path = project.DefaultPath
+	infraOptions, err := prjConfig.Infra.GetWithDefaults()
+	if err != nil {
+		return nil, err
 	}
 
-	infraRoot := prjConfig.Infra.Path
+	infraRoot := infraOptions.Path
 	if !filepath.IsAbs(infraRoot) {
 		infraRoot = filepath.Join(prjConfig.Path, infraRoot)
 	}
@@ -305,7 +302,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		"\nRun '%s' to add a secret to the key vault.",
 		output.WithHighLightFormat("azd env set-secret <name>"))
 
-	if _, err := pathHasInfraModule(infraRoot, prjConfig.Infra.Module); err == nil {
+	if _, err := pathHasInfraModule(infraRoot, infraOptions.Module); err == nil {
 		followUpMessage = fmt.Sprintf(
 			"Run '%s' to re-generate the infrastructure, "+
 				"then run '%s' to provision these changes anytime later.",
@@ -406,13 +403,18 @@ func ensureCompatibleProject(
 		}
 	}
 
-	infraRoot := prjConfig.Infra.Path
+	mergedOptions, err := prjConfig.Infra.GetWithDefaults()
+	if err != nil {
+		return err
+	}
+
+	infraRoot := mergedOptions.Path
 	if !filepath.IsAbs(infraRoot) {
 		infraRoot = filepath.Join(prjConfig.Path, infraRoot)
 	}
 
 	hasResources := len(prjConfig.Resources) > 0
-	hasInfra, err := pathHasInfraModule(infraRoot, prjConfig.Infra.Module)
+	hasInfra, err := pathHasInfraModule(infraRoot, mergedOptions.Module)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			hasInfra = false

@@ -11,17 +11,17 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
-func StringHashed(k attribute.Key, v string) attribute.KeyValue {
+func StringHashed(k AttributeKey, v string) attribute.KeyValue {
 	return attribute.KeyValue{
-		Key:   attribute.Key(k),
+		Key:   k.Key,
 		Value: attribute.StringValue(CaseInsensitiveHash(v)),
 	}
 }
 
-func StringSliceHashed(k attribute.Key, v []string) attribute.KeyValue {
+func StringSliceHashed(k AttributeKey, v []string) attribute.KeyValue {
 	val := CaseInsensitiveSliceHash(v)
 	return attribute.KeyValue{
-		Key:   attribute.Key(k),
+		Key:   k.Key,
 		Value: attribute.StringSliceValue(val),
 	}
 }

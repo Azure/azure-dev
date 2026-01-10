@@ -4,6 +4,8 @@
 package io
 
 import (
+	"context"
+
 	"github.com/azure/azure-dev/cli/azd/internal/agent/security"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 )
@@ -35,7 +37,7 @@ func NewIoToolsLoaderWithSecurityRoot(securityRoot string) common.ToolLoader {
 }
 
 // LoadTools loads and returns all IO-related tools
-func (l *IoToolsLoader) LoadTools() ([]common.AnnotatedTool, error) {
+func (l *IoToolsLoader) LoadTools(ctx context.Context) ([]common.AnnotatedTool, error) {
 	return []common.AnnotatedTool{
 		&CurrentDirectoryTool{},
 		&ChangeDirectoryTool{securityManager: l.securityManager},

@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
@@ -26,6 +27,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/benbjohnson/clock"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -49,6 +51,13 @@ services:
 
 	mockContext := mocks.NewMockContext(context.Background())
 	envManager := &mockenv.MockEnvManager{}
+	envManager.On("Get", mock.Anything, "test-env").Return(env, nil)
+
+	azdCtx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	err := azdCtx.SetProjectState(azdcontext.ProjectState{
+		DefaultEnvironment: "test-env",
+	})
+	require.NoError(t, err)
 
 	mockarmresources.AddAzResourceListMock(
 		mockContext.HttpClient,
@@ -110,7 +119,8 @@ services:
 		env,
 		docker,
 		NewContainerHelper(
-			env, envManager, clock.NewMock(), nil, nil, docker, dotnetCli, mockContext.Console, cloud.AzurePublic()),
+			azdCtx, envManager, clock.NewMock(), nil, nil, mockContext.CommandRunner,
+			docker, dotnetCli, mockContext.Console, cloud.AzurePublic()),
 		mockinput.NewMockConsole(),
 		mockContext.AlphaFeaturesManager,
 		mockContext.CommandRunner)
@@ -125,7 +135,8 @@ services:
 		},
 	)
 
-	require.Equal(t, "imageId", buildResult.BuildOutputPath)
+	require.Len(t, buildResult.Artifacts, 1)
+	require.Equal(t, "imageId", buildResult.Artifacts[0].Location)
 	require.Nil(t, err)
 	require.Len(t, progressMessages, 1)
 	require.Equal(t, "Building Docker image", progressMessages[0])
@@ -153,6 +164,13 @@ services:
 	env.SetSubscriptionId("sub")
 	mockContext := mocks.NewMockContext(context.Background())
 	envManager := &mockenv.MockEnvManager{}
+	envManager.On("Get", mock.Anything, "test-env").Return(env, nil)
+
+	azdCtx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	err := azdCtx.SetProjectState(azdcontext.ProjectState{
+		DefaultEnvironment: "test-env",
+	})
+	require.NoError(t, err)
 
 	mockarmresources.AddAzResourceListMock(
 		mockContext.HttpClient,
@@ -216,7 +234,8 @@ services:
 		env,
 		docker,
 		NewContainerHelper(
-			env, envManager, clock.NewMock(), nil, nil, docker, dotnetCli, mockContext.Console, cloud.AzurePublic()),
+			azdCtx, envManager, clock.NewMock(), nil, nil, mockContext.CommandRunner,
+			docker, dotnetCli, mockContext.Console, cloud.AzurePublic()),
 		mockinput.NewMockConsole(),
 		mockContext.AlphaFeaturesManager,
 		mockContext.CommandRunner)
@@ -230,7 +249,8 @@ services:
 		},
 	)
 
-	require.Equal(t, "imageId", buildResult.BuildOutputPath)
+	require.Len(t, buildResult.Artifacts, 1)
+	require.Equal(t, "imageId", buildResult.Artifacts[0].Location)
 	require.Nil(t, err)
 	require.Equal(t, "Building Docker image", status)
 	require.Equal(t, true, ran)
@@ -258,10 +278,17 @@ func Test_DockerProject_Build(t *testing.T) {
 			language:      ServiceLanguageJavaScript,
 			hasDockerFile: true,
 			expectedBuildResult: &ServiceBuildResult{
-				BuildOutputPath: "IMAGE_ID",
-				Details: &dockerBuildResult{
-					ImageName: "test-app-api",
-					ImageId:   "IMAGE_ID",
+				Artifacts: ArtifactCollection{
+					{
+						Kind:         ArtifactKindContainer,
+						Location:     "IMAGE_ID",
+						LocationKind: LocationKindLocal,
+						Metadata: map[string]string{
+							"imageId":   "IMAGE_ID",
+							"imageName": "test-app-api",
+							"framework": "docker",
+						},
+					},
 				},
 			},
 			expectedDockerBuildArgs: []string{
@@ -287,10 +314,17 @@ func Test_DockerProject_Build(t *testing.T) {
 				Target:   "custom-target",
 			},
 			expectedBuildResult: &ServiceBuildResult{
-				BuildOutputPath: "IMAGE_ID",
-				Details: &dockerBuildResult{
-					ImageName: "test-app-api",
-					ImageId:   "IMAGE_ID",
+				Artifacts: ArtifactCollection{
+					{
+						Kind:         ArtifactKindContainer,
+						Location:     "IMAGE_ID",
+						LocationKind: LocationKindLocal,
+						Metadata: map[string]string{
+							"imageId":   "IMAGE_ID",
+							"imageName": "test-app-api",
+							"framework": "docker",
+						},
+					},
 				},
 			},
 			expectedDockerBuildArgs: []string{
@@ -312,10 +346,17 @@ func Test_DockerProject_Build(t *testing.T) {
 			language:      ServiceLanguageDocker,
 			hasDockerFile: true,
 			expectedBuildResult: &ServiceBuildResult{
-				BuildOutputPath: "IMAGE_ID",
-				Details: &dockerBuildResult{
-					ImageName: "test-app-api",
-					ImageId:   "IMAGE_ID",
+				Artifacts: ArtifactCollection{
+					{
+						Kind:         ArtifactKindContainer,
+						Location:     "IMAGE_ID",
+						LocationKind: LocationKindLocal,
+						Metadata: map[string]string{
+							"imageId":   "IMAGE_ID",
+							"imageName": "test-app-api",
+							"framework": "docker",
+						},
+					},
 				},
 			},
 			expectedDockerBuildArgs: []string{
@@ -344,10 +385,17 @@ func Test_DockerProject_Build(t *testing.T) {
 			language:      ServiceLanguageJavaScript,
 			hasDockerFile: false,
 			expectedBuildResult: &ServiceBuildResult{
-				BuildOutputPath: "IMAGE_ID",
-				Details: &dockerBuildResult{
-					ImageName: "test-app-api",
-					ImageId:   "IMAGE_ID",
+				Artifacts: ArtifactCollection{
+					{
+						Kind:         ArtifactKindContainer,
+						Location:     "IMAGE_ID",
+						LocationKind: LocationKindLocal,
+						Metadata: map[string]string{
+							"imageId":   "IMAGE_ID",
+							"imageName": "test-app-api",
+							"framework": "docker",
+						},
+					},
 				},
 			},
 			expectedDockerBuildArgs: nil,
@@ -401,6 +449,21 @@ func Test_DockerProject_Build(t *testing.T) {
 			mockContext := mocks.NewMockContext(context.Background())
 			envManager := &mockenv.MockEnvManager{}
 
+			// Set up env based on test case or default
+			var env *environment.Environment
+			if tt.env != nil {
+				env = tt.env
+			} else {
+				env = environment.NewWithValues("test-env", nil)
+			}
+			envManager.On("Get", mock.Anything, env.Name()).Return(env, nil)
+
+			azdCtx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+			err := azdCtx.SetProjectState(azdcontext.ProjectState{
+				DefaultEnvironment: env.Name(),
+			})
+			require.NoError(t, err)
+
 			mockContext.CommandRunner.
 				When(func(args exec.RunArgs, command string) bool {
 					return strings.Contains(command, "docker build")
@@ -443,7 +506,7 @@ func Test_DockerProject_Build(t *testing.T) {
 
 			temp := t.TempDir()
 
-			env := tt.env
+			// env is already set up above, no need to reassign
 			if env == nil {
 				env = environment.New("test")
 			}
@@ -472,8 +535,8 @@ func Test_DockerProject_Build(t *testing.T) {
 				env,
 				dockerCli,
 				NewContainerHelper(
-					env, envManager, clock.NewMock(), nil, nil, dockerCli, dotnetCli, mockContext.Console,
-					cloud.AzurePublic()),
+					azdCtx, envManager, clock.NewMock(), nil, nil, mockContext.CommandRunner,
+					dockerCli, dotnetCli, mockContext.Console, cloud.AzurePublic()),
 				mockinput.NewMockConsole(),
 				mockContext.AlphaFeaturesManager,
 				mockContext.CommandRunner)
@@ -508,17 +571,21 @@ func Test_DockerProject_Package(t *testing.T) {
 		image                  string
 		project                string
 		docker                 DockerProjectOptions
-		expectedPackageResult  dockerPackageResult
+		expectedArtifact       Artifact
 		expectDockerPullCalled bool
 		expectDockerTagCalled  bool
 	}{
 		{
 			name:    "source with defaults",
 			project: "./src/api",
-			expectedPackageResult: dockerPackageResult{
-				ImageHash:   "IMAGE_ID",
-				SourceImage: "",
-				TargetImage: "test-app/api-test:azd-deploy-0",
+			expectedArtifact: Artifact{
+				Kind:     ArtifactKindContainer,
+				Location: "test-app/api-test:azd-deploy-0",
+				Metadata: map[string]string{
+					"imageHash":   "IMAGE_ID",
+					"sourceImage": "",
+					"targetImage": "test-app/api-test:azd-deploy-0",
+				},
 			},
 			expectDockerPullCalled: false,
 			expectDockerTagCalled:  true,
@@ -530,10 +597,14 @@ func Test_DockerProject_Package(t *testing.T) {
 				Image: osutil.NewExpandableString("foo/bar"),
 				Tag:   osutil.NewExpandableString("latest"),
 			},
-			expectedPackageResult: dockerPackageResult{
-				ImageHash:   "IMAGE_ID",
-				SourceImage: "",
-				TargetImage: "foo/bar:latest",
+			expectedArtifact: Artifact{
+				Kind:     ArtifactKindContainer,
+				Location: "foo/bar:latest",
+				Metadata: map[string]string{
+					"imageHash":   "IMAGE_ID",
+					"sourceImage": "",
+					"targetImage": "foo/bar:latest",
+				},
 			},
 			expectDockerPullCalled: false,
 			expectDockerTagCalled:  true,
@@ -541,10 +612,14 @@ func Test_DockerProject_Package(t *testing.T) {
 		{
 			name:  "image with defaults",
 			image: "nginx:latest",
-			expectedPackageResult: dockerPackageResult{
-				ImageHash:   "",
-				SourceImage: "nginx:latest",
-				TargetImage: "test-app/api-test:azd-deploy-0",
+			expectedArtifact: Artifact{
+				Kind:     ArtifactKindContainer,
+				Location: "test-app/api-test:azd-deploy-0",
+				Metadata: map[string]string{
+					"imageHash":   "",
+					"sourceImage": "nginx:latest",
+					"targetImage": "test-app/api-test:azd-deploy-0",
+				},
 			},
 			expectDockerPullCalled: true,
 			expectDockerTagCalled:  true,
@@ -556,10 +631,14 @@ func Test_DockerProject_Package(t *testing.T) {
 				Image: osutil.NewExpandableString("foo/bar"),
 				Tag:   osutil.NewExpandableString("latest"),
 			},
-			expectedPackageResult: dockerPackageResult{
-				ImageHash:   "",
-				SourceImage: "nginx:latest",
-				TargetImage: "foo/bar:latest",
+			expectedArtifact: Artifact{
+				Kind:     ArtifactKindContainer,
+				Location: "foo/bar:latest",
+				Metadata: map[string]string{
+					"imageHash":   "",
+					"sourceImage": "nginx:latest",
+					"targetImage": "foo/bar:latest",
+				},
 			},
 			expectDockerPullCalled: true,
 			expectDockerTagCalled:  true,
@@ -571,10 +650,14 @@ func Test_DockerProject_Package(t *testing.T) {
 				Image: osutil.NewExpandableString("myapp-service"),
 				Tag:   osutil.NewExpandableString("latest"),
 			},
-			expectedPackageResult: dockerPackageResult{
-				ImageHash:   "",
-				SourceImage: "docker.io/repository/image:latest",
-				TargetImage: "myapp-service:latest",
+			expectedArtifact: Artifact{
+				Kind:     ArtifactKindContainer,
+				Location: "myapp-service:latest",
+				Metadata: map[string]string{
+					"imageHash":   "",
+					"sourceImage": "docker.io/repository/image:latest",
+					"targetImage": "myapp-service:latest",
+				},
 			},
 			expectDockerPullCalled: true,
 			expectDockerTagCalled:  true,
@@ -588,6 +671,13 @@ func Test_DockerProject_Package(t *testing.T) {
 			envManager := &mockenv.MockEnvManager{}
 
 			env := environment.NewWithValues("test", map[string]string{})
+			envManager.On("Get", mock.Anything, "test").Return(env, nil)
+
+			azdCtx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+			err := azdCtx.SetProjectState(azdcontext.ProjectState{
+				DefaultEnvironment: "test",
+			})
+			require.NoError(t, err)
 			dockerCli := docker.NewCli(mockContext.CommandRunner)
 			dotnetCli := dotnet.NewCli(mockContext.CommandRunner)
 			serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
@@ -596,13 +686,11 @@ func Test_DockerProject_Package(t *testing.T) {
 				env,
 				dockerCli,
 				NewContainerHelper(
-					env, envManager, clock.NewMock(), nil, nil, dockerCli, dotnetCli, mockContext.Console,
-					cloud.AzurePublic()),
+					azdCtx, envManager, clock.NewMock(), nil, nil, mockContext.CommandRunner,
+					dockerCli, dotnetCli, mockContext.Console, cloud.AzurePublic()),
 				mockinput.NewMockConsole(),
 				mockContext.AlphaFeaturesManager,
-				mockContext.CommandRunner)
-
-			// Set the custom test options
+				mockContext.CommandRunner) // Set the custom test options
 			serviceConfig.Docker = tt.docker
 			serviceConfig.RelativePath = tt.project
 			serviceConfig.Image = osutil.NewExpandableString(tt.image)
@@ -620,23 +708,43 @@ func Test_DockerProject_Package(t *testing.T) {
 				buildOutputPath = "IMAGE_ID"
 			}
 
+			serviceContext := NewServiceContext()
+			if buildOutputPath != "" {
+				serviceContext.Build = ArtifactCollection{
+					{
+						Kind:         ArtifactKindContainer,
+						Location:     buildOutputPath,
+						LocationKind: LocationKindLocal,
+						Metadata: map[string]string{
+							"imageId":   buildOutputPath,
+							"imageName": "test-app-api",
+							"framework": "docker",
+						},
+					},
+				}
+			}
+
 			result, err := logProgress(
 				t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
 					return dockerProject.Package(
 						*mockContext.Context,
 						serviceConfig,
-						&ServiceBuildResult{
-							BuildOutputPath: buildOutputPath,
-						},
+						serviceContext,
 						progress,
 					)
 				},
 			)
 
 			require.NoError(t, err)
-			dockerDetails, ok := result.Details.(*dockerPackageResult)
-			require.True(t, ok)
-			require.Equal(t, tt.expectedPackageResult, *dockerDetails)
+			require.Len(t, result.Artifacts, 1)
+			artifact := result.Artifacts[0]
+			require.Equal(t, ArtifactKindContainer, artifact.Kind)
+
+			// Compare the artifact with expected values
+			require.Equal(t, tt.expectedArtifact.Location, artifact.Location)
+			require.Equal(t, tt.expectedArtifact.Metadata["imageHash"], artifact.Metadata["imageHash"])
+			require.Equal(t, tt.expectedArtifact.Metadata["sourceImage"], artifact.Metadata["sourceImage"])
+			require.Equal(t, tt.expectedArtifact.Metadata["targetImage"], artifact.Metadata["targetImage"])
 
 			_, dockerPullCalled := mockResults["docker-pull"]
 			_, dockerTagCalled := mockResults["docker-tag"]

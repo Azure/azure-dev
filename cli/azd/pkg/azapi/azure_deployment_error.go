@@ -29,15 +29,16 @@ func newErrorLine(code string, message string, inner []*DeploymentErrorLine) *De
 }
 
 type AzureDeploymentError struct {
-	Json  string
-	Inner error
-	Title string
+	Json      string
+	Inner     error
+	Title     string
+	Operation DeploymentOperation
 
 	Details *DeploymentErrorLine
 }
 
-func NewAzureDeploymentError(title string, jsonErrorResponse string) *AzureDeploymentError {
-	err := &AzureDeploymentError{Title: title, Json: jsonErrorResponse}
+func NewAzureDeploymentError(title string, jsonErrorResponse string, operation DeploymentOperation) *AzureDeploymentError {
+	err := &AzureDeploymentError{Title: title, Json: jsonErrorResponse, Operation: operation}
 	err.init()
 	return err
 }

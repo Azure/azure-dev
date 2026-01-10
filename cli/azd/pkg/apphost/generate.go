@@ -61,13 +61,20 @@ func AspireDashboardUrl(
 	alphaFeatureManager *alpha.FeatureManager) *AspireDashboard {
 
 	ContainersManagedEnvHost, exists := env.LookupEnv("AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN")
-	if !exists {
-		return nil
+	if exists {
+		return &AspireDashboard{
+			Link: fmt.Sprintf("https://aspire-dashboard.ext.%s", ContainersManagedEnvHost),
+		}
 	}
 
-	return &AspireDashboard{
-		Link: fmt.Sprintf("https://aspire-dashboard.ext.%s", ContainersManagedEnvHost),
+	AppServiceAspireDashboardUrl, exists := env.LookupEnv(environment.AppServiceAspireDashboardUrlEnvVarName)
+	if exists {
+		return &AspireDashboard{
+			Link: AppServiceAspireDashboardUrl,
+		}
 	}
+
+	return nil
 }
 
 func init() {
@@ -300,7 +307,7 @@ func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*me
 	// use the filesystem coming from the manifest
 	// the in-memory filesystem from the manifest is guaranteed to be initialized and contains all the bicep files
 	// referenced by the Aspire manifest.
-	fs := manifest.BicepFiles
+	fs := manifest.Files
 
 	// bicepContext merges the bicepContext with the inputs from the manifest to execute the main.bicep template
 	// this allows the template to access the auto-gen inputs from the generator
@@ -365,13 +372,13 @@ func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*me
 		genBicepTemplateContext: generator.bicepContext,
 		WithMetadataParameters:  parameters,
 		MainToResourcesParams:   mapToResourceParams,
-		AppHostInfraMigration:   generator.options.appHostOwnsCompute,
+		AppHostInfraMigration:   generator.options.appHostOwnsCompute(),
 	}
 	if err := executeToFS(fs, genTemplates, "main.bicep", name+".bicep", context); err != nil {
 		return nil, fmt.Errorf("generating infra/main.bicep: %w", err)
 	}
 
-	if !generator.options.appHostOwnsCompute {
+	if !generator.options.appHostOwnsCompute() {
 		if err := executeToFS(fs, genTemplates, "resources.bicep", "resources.bicep", context); err != nil {
 			return nil, fmt.Errorf("generating infra/resources.bicep: %w", err)
 		}
@@ -503,13 +510,19 @@ func GenerateProjectArtifacts(
 	return files, nil
 }
 
+type annotatedString struct {
+	Filter string
+	Value  string
+}
+
 type infraGenerator struct {
 	dapr              map[string]genDapr
 	projects          map[string]genProject
 	connectionStrings map[string]string
 	// keeps the value from value.v0 resources if provided.
-	valueStrings  map[string]string
-	resourceTypes map[string]string
+	valueStrings     map[string]string
+	annotatedStrings map[string]annotatedString
+	resourceTypes    map[string]string
 
 	bicepContext                 genBicepTemplateContext
 	containerAppTemplateContexts map[string]genContainerAppManifestTemplateContext
@@ -520,8 +533,13 @@ type infraGenerator struct {
 }
 
 type infraGeneratorOptions struct {
-	// When true, generator will include a bicep module to create a container app environment and identity.
-	appHostOwnsCompute bool
+	// When not empty, generator will include a bicep module to create a container app environment and identity
+	// and we'll keep the name of the module here.
+	appHostComputeModuleName string
+}
+
+func (o *infraGeneratorOptions) appHostOwnsCompute() bool {
+	return o.appHostComputeModuleName != ""
 }
 
 func newInfraGenerator() *infraGenerator {
@@ -539,6 +557,8 @@ func newInfraGenerator() *infraGenerator {
 		dapr:                         make(map[string]genDapr),
 		projects:                     make(map[string]genProject),
 		connectionStrings:            make(map[string]string),
+		valueStrings:                 make(map[string]string),
+		annotatedStrings:             make(map[string]annotatedString),
 		resourceTypes:                make(map[string]string),
 		containerAppTemplateContexts: make(map[string]genContainerAppManifestTemplateContext),
 		buildContainers:              make(map[string]genBuildContainer),
@@ -574,10 +594,20 @@ func evaluateForOutputs(value string, appHostOwnsCompute bool) (map[string]genOu
 				Value: noBrackets,
 			}
 		}
+
 		// Same for AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN as it is required to display the Aspire Dashboard link
 		// at the end of the deployment.
 		if strings.Contains(outputName, environment.ContainerEnvironmentEndpointEnvVarName) && appHostOwnsCompute {
 			outputs[environment.ContainerEnvironmentEndpointEnvVarName] = genOutputParameter{
+				Type:  "string",
+				Value: noBrackets,
+			}
+		}
+
+		// Same for AZURE_APP_SERVICE_DASHBOARD_URI as it is required to display the Aspire Dashboard link
+		// at the end of the deployment.
+		if strings.Contains(outputName, environment.AppServiceAspireDashboardUrlEnvVarName) && appHostOwnsCompute {
+			outputs[environment.AppServiceAspireDashboardUrlEnvVarName] = genOutputParameter{
 				Type:  "string",
 				Value: noBrackets,
 			}
@@ -595,7 +625,7 @@ func evaluateForOutputs(value string, appHostOwnsCompute bool) (map[string]genOu
 func (b *infraGenerator) extractOutputs(resource *Resource) error {
 	// from connection string
 	if resource.ConnectionString != nil {
-		outputs, err := evaluateForOutputs(*resource.ConnectionString, b.options.appHostOwnsCompute)
+		outputs, err := evaluateForOutputs(*resource.ConnectionString, b.options.appHostOwnsCompute())
 		if err != nil {
 			return err
 		}
@@ -610,7 +640,7 @@ func (b *infraGenerator) extractOutputs(resource *Resource) error {
 
 	feedFrom := func(from map[string]string, to *genBicepTemplateContext) error {
 		for _, value := range from {
-			outputs, err := evaluateForOutputs(value, b.options.appHostOwnsCompute)
+			outputs, err := evaluateForOutputs(value, b.options.appHostOwnsCompute())
 			if err != nil {
 				return err
 			}
@@ -670,7 +700,8 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 
 		switch comp.Type {
 		case "project.v0":
-			b.addProject(name, *comp.Path, comp.Env, comp.Bindings, comp.Args, nil, "")
+			b.addProject(
+				name, *comp.Path, comp.Env, comp.Bindings, comp.Args, nil, "", comp.ContainerFiles)
 		case "project.v1":
 			var deploymentParams map[string]any
 			var deploymentSource string
@@ -678,7 +709,9 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 				deploymentParams = comp.Deployment.Params
 				deploymentSource = filepath.Base(*comp.Deployment.Path)
 			}
-			b.addProject(name, *comp.Path, comp.Env, comp.Bindings, comp.Args, deploymentParams, deploymentSource)
+			b.addProject(
+				name, *comp.Path, comp.Env, comp.Bindings, comp.Args,
+				deploymentParams, deploymentSource, comp.ContainerFiles)
 		case "container.v0":
 			err := b.addBuildContainer(name, comp)
 			if err != nil {
@@ -716,6 +749,11 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 			}
 			if err := b.addInputParameter(name, comp); err != nil {
 				return fmt.Errorf("adding bicep parameter from resource %s (%s): %w", name, comp.Type, err)
+			}
+		case "annotated.string":
+			b.annotatedStrings[name] = annotatedString{
+				Filter: comp.Filter,
+				Value:  comp.Value,
 			}
 		case "azure.bicep.v0", "azure.bicep.v1":
 			if err := b.addBicep(name, comp); err != nil {
@@ -850,7 +888,7 @@ func (b *infraGenerator) addBicep(name string, comp *Resource) error {
 	// by converting to string, we can evaluate arrays and objects with placeholders.
 	stringParams := make(map[string]string)
 	for p, pVal := range comp.Params {
-		paramValue, injected, err := injectValueForBicepParameter(name, p, pVal, b.options.appHostOwnsCompute)
+		paramValue, injected, err := injectValueForBicepParameter(name, p, pVal, b.options.appHostOwnsCompute())
 		if err != nil {
 			return fmt.Errorf("injecting value for bicep parameter %s: %w", p, err)
 		}
@@ -873,7 +911,7 @@ func (b *infraGenerator) addBicep(name string, comp *Resource) error {
 			return fmt.Errorf("bicep resource %s has a scope without a resource group", name)
 		}
 		paramValue, _, err := injectValueForBicepParameter(
-			name, "scope", *comp.Scope.ResourceGroup, b.options.appHostOwnsCompute)
+			name, "scope", *comp.Scope.ResourceGroup, b.options.appHostOwnsCompute())
 		if err != nil {
 			return err
 		}
@@ -975,6 +1013,7 @@ func (b *infraGenerator) addProject(
 	args []string,
 	deploymentParams map[string]any,
 	deploymentSource string,
+	containerFiles map[string]ContainerFile,
 ) {
 	b.requireCluster()
 	b.requireContainerRegistry()
@@ -986,6 +1025,7 @@ func (b *infraGenerator) addProject(
 		Args:             args,
 		DeploymentParams: deploymentParams,
 		DeploymentSource: deploymentSource,
+		ContainerFiles:   containerFiles,
 	}
 }
 
@@ -1093,6 +1133,7 @@ func buildContainerFromResource(r *Resource) (*genBuildContainer, error) {
 			Dockerfile: r.Build.Dockerfile,
 			Args:       r.Build.Args,
 			Secrets:    r.Build.Secrets,
+			BuildOnly:  r.Build.BuildOnly,
 		}
 	}
 
@@ -1241,8 +1282,8 @@ func (b *infraGenerator) compileIngress() error {
 // any required options or configurations needed for the compilation process.
 func (b *infraGenerator) initCompilerOptions(m *Manifest) error {
 	// start by assuming the manifest requires a compute environment
-	generatorOwnsComputeEnv := true
-	for _, comp := range m.Resources {
+	generatorComputeEnvResourceName := ""
+	for resourceName, comp := range m.Resources {
 		if comp.Type == "azure.bicep.v0" || comp.Type == "azure.bicep.v1" {
 			for pKey, pValue := range comp.Params {
 				if pKey == knownParameterUserPrincipalId {
@@ -1250,7 +1291,7 @@ func (b *infraGenerator) initCompilerOptions(m *Manifest) error {
 						if value, castOk := pValue.(string); castOk && value == "" {
 							// Found a bicep resource asking for a principalId. This is the convention Aspire follows
 							// when the AppHost is owning the compute environment.
-							generatorOwnsComputeEnv = false
+							generatorComputeEnvResourceName = resourceName
 						}
 					}
 				}
@@ -1259,7 +1300,7 @@ func (b *infraGenerator) initCompilerOptions(m *Manifest) error {
 	}
 	// Set options
 	b.options = infraGeneratorOptions{
-		appHostOwnsCompute: !generatorOwnsComputeEnv,
+		appHostComputeModuleName: generatorComputeEnvResourceName,
 	}
 	return nil
 }
@@ -1513,6 +1554,23 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 
 		return res, nil
 	}
+	if annotatedString, has := b.annotatedStrings[resource]; has && prop == "value" {
+		if annotatedString.Filter != "uri" {
+			return "", fmt.Errorf("unsupported annotated.string filter '%s' in binding expression for resource %s",
+				annotatedString.Filter, resource)
+		}
+		// uri is currently the only supported filter for annotated.string
+		res, err := EvalString(annotatedString.Value, func(s string) (string, error) {
+			return b.evalBindingRef(s, emitType)
+		})
+		if err != nil {
+			return "", fmt.Errorf("evaluating annotated.string's value string for %s: %w", resource, err)
+		}
+
+		return strings.ReplaceAll(
+			strings.ReplaceAll(res, "{{ ", "{{ uriEncode ("),
+			"}}", ")}}"), nil
+	}
 
 	if strings.HasPrefix(prop, "inputs.") {
 		parts := strings.Split(prop[len("inputs."):], ".")
@@ -1625,7 +1683,11 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 			case inputEmitTypeYaml:
 				suffix = "{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}"
 			case inputEmitTypeBicep:
-				suffix = "${resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN}"
+				envNameResourceName := "resources"
+				if b.options.appHostComputeModuleName != "" {
+					envNameResourceName = b.options.appHostComputeModuleName
+				}
+				suffix = fmt.Sprintf("${%s.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN}", envNameResourceName)
 			default:
 				panic(fmt.Sprintf("unexpected inputEmitType %s", string(emitType)))
 			}

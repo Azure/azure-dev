@@ -1,5 +1,28 @@
 # Release History
 
+## 0.8.0 (2026-01-08)
+
+- [[#6474]](https://github.com/Azure/azure-dev/pull/6474) Remove Default Azure Credential from JS and Python scaffolding
+
+## 0.7.1 (2025-12-17)
+
+- Fixes bug during `release` when setting `--prerelease` flag
+- Fixes bug during `build` - execute permissions not set on binary for POSIX systems
+
+## 0.7.0 (2025-12-03)
+
+- Add language-specific .gitignore templates for `init` command
+
+## 0.6.0 (2025-10-14)
+
+- Improve extension metadata validation
+- Update `publish` command to include `providers` field in extension schema and registry
+- Add MCP and service target provider capabilities to `init` command
+
+## 0.5.1 (2025-09-22)
+
+- Updates `azd x publish` to automatically set up local registry if not configured
+
 ## 0.5.0
 
 - Adds .tar.gz support for Linux extensions

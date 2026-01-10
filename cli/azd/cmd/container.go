@@ -27,6 +27,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
+	"github.com/azure/azure-dev/cli/azd/internal/terminal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
@@ -132,7 +133,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		}
 
 		isTerminal := cmd.OutOrStdout() == os.Stdout &&
-			cmd.InOrStdin() == os.Stdin && input.IsTerminal(os.Stdout.Fd(), os.Stdin.Fd())
+			cmd.InOrStdin() == os.Stdin && terminal.IsTerminal(os.Stdout.Fd(), os.Stdin.Fd())
 
 		return input.NewConsole(rootOptions.NoPrompt, isTerminal, input.Writers{Output: writer}, input.ConsoleHandles{
 			Stdin:  cmd.InOrStdin(),
@@ -181,7 +182,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		// semantics to follow.
 		envValue, err := cmd.Flags().GetString(internal.EnvironmentNameFlagName)
 		if err != nil {
-			log.Printf("'%s'command asked for envFlag, but envFlag was not included in cmd.Flags().", cmd.CommandPath())
+			log.Printf("'%s' command did not include --environment so using default environment instead.", cmd.CommandPath())
 			envValue = ""
 		}
 
@@ -375,17 +376,18 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	)
 
 	// Project Config
-	container.MustRegisterScoped(
+	container.MustRegisterSingleton(
 		func(lazyConfig *lazy.Lazy[*project.ProjectConfig]) (*project.ProjectConfig, error) {
 			return lazyConfig.GetValue()
 		},
 	)
 
 	// Lazy loads the project config from the Azd Context when it becomes available
-	container.MustRegisterScoped(
+	container.MustRegisterSingleton(
 		func(
 			ctx context.Context,
 			lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext],
+			alphaManager *alpha.FeatureManager,
 		) *lazy.Lazy[*project.ProjectConfig] {
 			return lazy.NewLazy(func() (*project.ProjectConfig, error) {
 				azdCtx, err := lazyAzdContext.GetValue()
@@ -396,6 +398,18 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 				projectConfig, err := project.Load(ctx, azdCtx.ProjectPath())
 				if err != nil {
 					return nil, err
+				}
+
+				featureCustomLanguage := alpha.MustFeatureKey("language.custom")
+				for sName, sConfig := range projectConfig.Services {
+					if sConfig.Language == project.ServiceLanguageCustom &&
+						!alphaManager.IsEnabled(featureCustomLanguage) {
+						return nil, fmt.Errorf(
+							"%s service is using language 'custom' (alpha) but it is not enabled.\n"+
+								"Please enable it using the command: \"%s\"",
+							sName,
+							alpha.GetEnableCommand(featureCustomLanguage))
+					}
 				}
 
 				return projectConfig, nil
@@ -557,6 +571,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterScoped(consent.NewConsentManager)
 	container.MustRegisterNamedSingleton("ollama", llm.NewOllamaModelProvider)
 	container.MustRegisterNamedSingleton("azure", llm.NewAzureOpenAiModelProvider)
+	registerGitHubCopilotProvider(container)
 
 	// Agent security manager
 	container.MustRegisterSingleton(func() (*security.Manager, error) {
@@ -622,8 +637,16 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(containerregistry.NewRemoteBuildManager)
 	container.MustRegisterSingleton(keyvault.NewKeyVaultService)
 	container.MustRegisterSingleton(storage.NewFileShareService)
+
 	container.MustRegisterScoped(project.NewContainerHelper)
-	container.MustRegisterSingleton(azapi.NewSpringService)
+	container.MustRegisterScoped(func(serviceLocator ioc.ServiceLocator) *lazy.Lazy[*project.ContainerHelper] {
+		return lazy.NewLazy(func() (*project.ContainerHelper, error) {
+			var containerHelper *project.ContainerHelper
+			err := serviceLocator.Resolve(&containerHelper)
+
+			return containerHelper, err
+		})
+	})
 
 	container.MustRegisterSingleton(func(subManager *account.SubscriptionsManager) account.SubscriptionTenantResolver {
 		return subManager
@@ -726,6 +749,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		project.ServiceLanguageJava:       project.NewMavenProject,
 		project.ServiceLanguageDocker:     project.NewDockerProject,
 		project.ServiceLanguageSwa:        project.NewSwaProject,
+		project.ServiceLanguageCustom:     project.NewCustomProject,
 	}
 
 	for language, constructor := range frameworkServiceMap {
@@ -860,9 +884,14 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterScoped(grpcserver.NewPromptService)
 	container.MustRegisterScoped(grpcserver.NewDeploymentService)
 	container.MustRegisterScoped(grpcserver.NewEventService)
+	container.MustRegisterScoped(grpcserver.NewContainerService)
+	container.MustRegisterSingleton(grpcserver.NewAccountService)
 	container.MustRegisterSingleton(grpcserver.NewUserConfigService)
 	container.MustRegisterSingleton(grpcserver.NewComposeService)
 	container.MustRegisterSingleton(grpcserver.NewWorkflowService)
+	container.MustRegisterSingleton(grpcserver.NewExtensionService)
+	container.MustRegisterSingleton(grpcserver.NewServiceTargetService)
+	container.MustRegisterSingleton(grpcserver.NewFrameworkService)
 
 	// Required for nested actions called from composite actions like 'up'
 	registerAction[*cmd.ProvisionAction](container, "azd-provision-action")
@@ -882,7 +911,27 @@ func (w *workflowCmdAdapter) SetArgs(args []string) {
 // ExecuteContext implements workflow.AzdCommandRunner
 func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context) error {
 	childCtx := middleware.WithChildAction(ctx)
+
+	// CRITICAL FIX: Explicitly set the context on the command before calling ExecuteContext.
+	// When the same command instance is reused across workflow steps, cobra may retain
+	// a stale cancelled context from a previous execution. Setting the context on both
+	// the root command and all subcommands (recursively) ensures the fresh context is used.
+	setContextRecursively(w.cmd, childCtx)
+
 	return w.cmd.ExecuteContext(childCtx)
+}
+
+// setContextRecursively sets the context on a command and all its subcommands recursively
+func setContextRecursively(cmd *cobra.Command, ctx context.Context) {
+	// Always set the context, even if the command hasn't been initialized yet.
+	// cobra.Command.Context() returns context.Background() if no context is set,
+	// so SetContext is safe to call on any command. This ensures all commands
+	// in the tree start with the correct context, preventing stale contexts
+	// from previous executions when commands are reused.
+	cmd.SetContext(ctx)
+	for _, subCmd := range cmd.Commands() {
+		setContextRecursively(subCmd, ctx)
+	}
 }
 
 // ArmClientInitializer is a function definition for all Azure SDK ARM Client

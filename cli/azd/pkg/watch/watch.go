@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/fatih/color"
 	"github.com/fsnotify/fsnotify"
 )
@@ -21,8 +22,11 @@ type Watcher interface {
 }
 
 type fileWatcher struct {
-	fileChanges *fileChanges
-	mu          sync.Mutex
+	fileChanges     *fileChanges
+	watcher         *fsnotify.Watcher
+	ignoredFolders  map[string]struct{}
+	globIgnorePaths []string
+	mu              sync.Mutex
 }
 
 type fileChanges struct {
@@ -43,8 +47,22 @@ func NewWatcher(ctx context.Context) (Watcher, error) {
 		return nil, fmt.Errorf("failed to create watcher: %w", err)
 	}
 
+	// Set up ignore patterns
+	ignoredFolders := map[string]struct{}{
+		".git": {},
+	}
+
+	globIgnorePaths := []string{}
+	for folder := range ignoredFolders {
+		globIgnorePaths = append(globIgnorePaths, folder)
+		globIgnorePaths = append(globIgnorePaths, fmt.Sprintf("%s/**/*", folder))
+	}
+
 	fw := &fileWatcher{
-		fileChanges: fileChanges,
+		fileChanges:     fileChanges,
+		watcher:         watcher,
+		ignoredFolders:  ignoredFolders,
+		globIgnorePaths: globIgnorePaths,
 	}
 
 	go func() {
@@ -53,21 +71,53 @@ func NewWatcher(ctx context.Context) (Watcher, error) {
 		for {
 			select {
 			case event := <-watcher.Events:
+				// Ignore events matching glob patterns
+				shouldIgnore := false
+				for _, pattern := range fw.globIgnorePaths {
+					matched, _ := doublestar.PathMatch(pattern, event.Name)
+					if matched {
+						shouldIgnore = true
+						break
+					}
+				}
+				if shouldIgnore {
+					continue
+				}
+
 				fw.mu.Lock()
 				name := event.Name
+
+				// Check if this is a file or directory
+				info, err := os.Stat(name)
+				isDir := err == nil && info.IsDir()
+
 				switch {
 				case event.Has(fsnotify.Create):
-					fileChanges.Created[name] = true
+					if isDir {
+						// New directory created - start watching it if not ignored
+						if _, ignored := fw.ignoredFolders[filepath.Base(name)]; !ignored {
+							if err := fw.watchRecursive(name, watcher); err != nil {
+								log.Printf("failed to watch new directory %s: %v", name, err)
+							}
+						}
+					} else {
+						// Only track file creation, not directory creation
+						fileChanges.Created[name] = true
+					}
 				case event.Has(fsnotify.Write) || event.Has(fsnotify.Rename):
-					if !fileChanges.Created[name] && !fileChanges.Deleted[name] {
+					// Only track file changes, not directory changes
+					if !isDir && !fileChanges.Created[name] && !fileChanges.Deleted[name] {
 						fileChanges.Modified[name] = true
 					}
 				case event.Has(fsnotify.Remove):
-					if fileChanges.Created[name] {
-						delete(fileChanges.Created, name)
-					} else {
-						fileChanges.Deleted[name] = true
-						delete(fileChanges.Modified, name)
+					// Handle both file and directory removal, but only track files
+					if !isDir {
+						if fileChanges.Created[name] {
+							delete(fileChanges.Created, name)
+						} else {
+							fileChanges.Deleted[name] = true
+							delete(fileChanges.Modified, name)
+						}
 					}
 				}
 				fw.mu.Unlock()
@@ -84,19 +134,24 @@ func NewWatcher(ctx context.Context) (Watcher, error) {
 		return nil, fmt.Errorf("failed to get current working directory: %w", err)
 	}
 
-	if err := watchRecursive(cwd, watcher); err != nil {
+	if err := fw.watchRecursive(cwd, watcher); err != nil {
 		return nil, fmt.Errorf("watcher failed: %w", err)
 	}
 
 	return fw, nil
 }
 
-func watchRecursive(root string, watcher *fsnotify.Watcher) error {
+func (fw *fileWatcher) watchRecursive(root string, watcher *fsnotify.Watcher) error {
 	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 		if info.IsDir() {
+			// Check if this directory should be ignored
+			if _, ignored := fw.ignoredFolders[info.Name()]; ignored {
+				return filepath.SkipDir
+			}
+
 			err = watcher.Add(path)
 			if err != nil {
 				return fmt.Errorf("failed to watch directory %s: %w", path, err)
@@ -119,22 +174,33 @@ func (fw *fileWatcher) PrintChangedFiles(ctx context.Context) {
 
 	fmt.Println(output.WithGrayFormat("\n| Files changed:"))
 
+	cwd, err := os.Getwd()
+	getDisplayPath := func(file string) string {
+		if err != nil {
+			return file // fallback to absolute path if cwd failed
+		}
+		if relPath, relErr := filepath.Rel(cwd, file); relErr == nil {
+			return relPath
+		}
+
+		return file // fallback to absolute path if relative conversion failed
+	}
+
 	if createdFileLength > 0 {
 		for file := range fw.fileChanges.Created {
-			fmt.Println(output.WithGrayFormat("| "), color.GreenString("+ Created  "), file)
+			fmt.Println(output.WithGrayFormat("| "), color.GreenString("+ Created  "), getDisplayPath(file))
 		}
 	}
 
 	if modifiedFileLength > 0 {
 		for file := range fw.fileChanges.Modified {
-			fmt.Println(output.WithGrayFormat("| "), color.YellowString(output.WithUnderline("+")),
-				color.YellowString("Modified "), file)
+			fmt.Println(output.WithGrayFormat("| "), color.YellowString("± Modified "), getDisplayPath(file))
 		}
 	}
 
 	if deletedFileLength > 0 {
 		for file := range fw.fileChanges.Deleted {
-			fmt.Println(output.WithGrayFormat("| "), color.RedString("- Deleted  "), file)
+			fmt.Println(output.WithGrayFormat("| "), color.RedString("- Deleted  "), getDisplayPath(file))
 		}
 	}
 

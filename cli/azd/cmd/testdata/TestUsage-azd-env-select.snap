@@ -2,7 +2,7 @@
 Set the default environment.
 
 Usage
-  azd env select <environment> [flags]
+  azd env select [<environment>] [flags]
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

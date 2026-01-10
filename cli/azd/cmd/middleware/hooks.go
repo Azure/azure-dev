@@ -20,8 +20,8 @@ import (
 )
 
 type HooksMiddleware struct {
-	lazyEnvManager    *lazy.Lazy[environment.Manager]
-	lazyEnv           *lazy.Lazy[*environment.Environment]
+	envManager        environment.Manager
+	env               *environment.Environment
 	lazyProjectConfig *lazy.Lazy[*project.ProjectConfig]
 	importManager     *project.ImportManager
 	commandRunner     exec.CommandRunner
@@ -32,8 +32,8 @@ type HooksMiddleware struct {
 
 // Creates a new instance of the Hooks middleware
 func NewHooksMiddleware(
-	lazyEnvManager *lazy.Lazy[environment.Manager],
-	lazyEnv *lazy.Lazy[*environment.Environment],
+	envManager environment.Manager,
+	env *environment.Environment,
 	lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
 	importManager *project.ImportManager,
 	commandRunner exec.CommandRunner,
@@ -42,8 +42,8 @@ func NewHooksMiddleware(
 	serviceLocator ioc.ServiceLocator,
 ) Middleware {
 	return &HooksMiddleware{
-		lazyEnvManager:    lazyEnvManager,
-		lazyEnv:           lazyEnv,
+		envManager:        envManager,
+		env:               env,
 		lazyProjectConfig: lazyProjectConfig,
 		importManager:     importManager,
 		commandRunner:     commandRunner,
@@ -55,12 +55,6 @@ func NewHooksMiddleware(
 
 // Runs the Hooks middleware
 func (m *HooksMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
-	env, err := m.lazyEnv.GetValue()
-	if err != nil {
-		log.Println("azd environment is not available, skipping all hook registrations.")
-		return next(ctx)
-	}
-
 	projectConfig, err := m.lazyProjectConfig.GetValue()
 	if err != nil || projectConfig == nil {
 		log.Println("azd project is not available, skipping all hook registrations.")
@@ -74,42 +68,37 @@ func (m *HooksMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		}
 	}
 
-	if err := m.registerServiceHooks(ctx, env, projectConfig); err != nil {
+	if err := m.registerServiceHooks(ctx, projectConfig); err != nil {
 		return nil, fmt.Errorf("failed registering service hooks, %w", err)
 	}
 
-	return m.registerCommandHooks(ctx, env, projectConfig, next)
+	return m.registerCommandHooks(ctx, projectConfig, next)
 }
 
 // Register command level hooks for the executing cobra command & action
 // Invokes the middleware next function
+
 func (m *HooksMiddleware) registerCommandHooks(
 	ctx context.Context,
-	env *environment.Environment,
 	projectConfig *project.ProjectConfig,
 	next NextFn,
 ) (*actions.ActionResult, error) {
 	if len(projectConfig.Hooks) == 0 {
 		log.Println(
-			"azd project is not available or does not contain any command hooks, skipping command hook registrations.",
+			"azd project does not contain any command hooks, skipping command hook registrations.",
 		)
 		return next(ctx)
-	}
-
-	envManager, err := m.lazyEnvManager.GetValue()
-	if err != nil {
-		return nil, fmt.Errorf("failed getting environment manager, %w", err)
 	}
 
 	hooksManager := ext.NewHooksManager(projectConfig.Path, m.commandRunner)
 	hooksRunner := ext.NewHooksRunner(
 		hooksManager,
 		m.commandRunner,
-		envManager,
+		m.envManager,
 		m.console,
 		projectConfig.Path,
 		projectConfig.Hooks,
-		env,
+		m.env,
 		m.serviceLocator,
 	)
 
@@ -118,7 +107,7 @@ func (m *HooksMiddleware) registerCommandHooks(
 	commandNames := []string{m.options.CommandPath}
 	commandNames = append(commandNames, m.options.Aliases...)
 
-	err = hooksRunner.Invoke(ctx, commandNames, func() error {
+	err := hooksRunner.Invoke(ctx, commandNames, func() error {
 		result, err := next(ctx)
 		if err != nil {
 			return err
@@ -139,14 +128,8 @@ func (m *HooksMiddleware) registerCommandHooks(
 // Runs hooks for each matching event handler
 func (m *HooksMiddleware) registerServiceHooks(
 	ctx context.Context,
-	env *environment.Environment,
 	projectConfig *project.ProjectConfig,
 ) error {
-	envManager, err := m.lazyEnvManager.GetValue()
-	if err != nil {
-		return fmt.Errorf("failed getting environment manager, %w", err)
-	}
-
 	stableServices, err := m.importManager.ServiceStable(ctx, projectConfig)
 	if err != nil {
 		return fmt.Errorf("failed getting services: %w", err)
@@ -164,11 +147,11 @@ func (m *HooksMiddleware) registerServiceHooks(
 		serviceHooksRunner := ext.NewHooksRunner(
 			serviceHooksManager,
 			m.commandRunner,
-			envManager,
+			m.envManager,
 			m.console,
 			service.Path(),
 			service.Hooks,
-			env,
+			m.env,
 			m.serviceLocator,
 		)
 
@@ -180,6 +163,7 @@ func (m *HooksMiddleware) registerServiceHooks(
 			}
 
 			if err := service.AddHandler(
+				ctx,
 				ext.Event(hookName),
 				m.createServiceEventHandler(hookType, eventName, serviceHooksRunner),
 			); err != nil {

@@ -5,7 +5,6 @@ package project
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -29,6 +28,32 @@ const (
 	AiEndpointTarget         ServiceTargetKind = "ai.endpoint"
 )
 
+// DotNetContainerAppTarget is intentionally omitted because it is only used internally when
+// containerizing .NET projects and is not a valid service host value in azure.yaml.
+// SpringAppTarget is intentionally omitted because support has been removed.
+var builtInServiceTargetKinds = []ServiceTargetKind{
+	AppServiceTarget,
+	ContainerAppTarget,
+	AzureFunctionTarget,
+	StaticWebAppTarget,
+	AksTarget,
+	AiEndpointTarget,
+}
+
+func builtInServiceTargetNames() []string {
+	names := make([]string, 0, len(builtInServiceTargetKinds))
+	for _, kind := range builtInServiceTargetKinds {
+		names = append(names, string(kind))
+	}
+
+	return names
+}
+
+// BuiltInServiceTargetKinds returns the slice of built-in service target kinds
+func BuiltInServiceTargetKinds() []ServiceTargetKind {
+	return builtInServiceTargetKinds
+}
+
 // RequiresContainer returns true if the service target runs a container image.
 func (stk ServiceTargetKind) RequiresContainer() bool {
 	switch stk {
@@ -41,23 +66,15 @@ func (stk ServiceTargetKind) RequiresContainer() bool {
 }
 
 func parseServiceHost(kind ServiceTargetKind) (ServiceTargetKind, error) {
-	switch kind {
-
-	// NOTE: We do not support DotNetContainerAppTarget as a listed service host type in azure.yaml, hence
-	// it not include in this switch statement. We should think about if we should support this in azure.yaml because
-	// presently it's the only service target that is tied to a language.
-	case AppServiceTarget,
-		ContainerAppTarget,
-		AzureFunctionTarget,
-		StaticWebAppTarget,
-		SpringAppTarget,
-		AksTarget,
-		AiEndpointTarget:
-
+	// Allow any non-empty service target kind through.
+	// Built-in kinds are handled by the hardcoded service target constructors in container.go
+	// External kinds are handled by extensions that register via gRPC
+	// If a kind is not supported, resolution will fail later with a clear error message
+	if string(kind) != "" {
 		return kind, nil
 	}
 
-	return ServiceTargetKind(""), fmt.Errorf("unsupported host '%s'", kind)
+	return ServiceTargetKind(""), fmt.Errorf("host cannot be empty")
 }
 
 type ServiceTarget interface {
@@ -73,15 +90,25 @@ type ServiceTarget interface {
 	Package(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
-		frameworkPackageOutput *ServicePackageResult,
+		serviceContext *ServiceContext,
 		progress *async.Progress[ServiceProgress],
 	) (*ServicePackageResult, error)
+
+	// Publish pushes the prepared artifacts without performing deployment.
+	Publish(
+		ctx context.Context,
+		serviceConfig *ServiceConfig,
+		serviceContext *ServiceContext,
+		targetResource *environment.TargetResource,
+		progress *async.Progress[ServiceProgress],
+		publishOptions *PublishOptions,
+	) (*ServicePublishResult, error)
 
 	// Deploys the given deployment artifact to the target resource
 	Deploy(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
-		servicePackage *ServicePackageResult,
+		serviceContext *ServiceContext,
 		targetResource *environment.TargetResource,
 		progress *async.Progress[ServiceProgress],
 	) (*ServiceDeployResult, error)
@@ -92,32 +119,6 @@ type ServiceTarget interface {
 		serviceConfig *ServiceConfig,
 		targetResource *environment.TargetResource,
 	) ([]string, error)
-}
-
-// NewServiceDeployResult is a helper function to create a new ServiceDeployResult
-func NewServiceDeployResult(
-	relatedResourceId string,
-	kind ServiceTargetKind,
-	rawResult string,
-	endpoints []string,
-) *ServiceDeployResult {
-	returnValue := &ServiceDeployResult{
-		TargetResourceId: relatedResourceId,
-		Kind:             kind,
-		Endpoints:        endpoints,
-	}
-
-	// If the result can be parsed as JSON, store it as such.
-	// Otherwise, just preserve in raw (string) format.
-	var detailsObj interface{}
-	err := json.Unmarshal([]byte(rawResult), &detailsObj)
-	if err != nil {
-		returnValue.Details = rawResult
-	} else {
-		returnValue.Details = detailsObj
-	}
-
-	return returnValue
 }
 
 func resourceTypeMismatchError(
@@ -146,11 +147,13 @@ func (st ServiceTargetKind) IgnoreFile() string {
 	}
 }
 
-// SupportsDelayedProvisioning returns true if the service target kind
-// supports delayed provisioning resources at deployment time, otherwise false.
+// SupportsDelayedProvisioning returns true if the service target supports provisioning
+// resources during deployment when they don't exist yet.
 //
-// As an example, ContainerAppTarget is able to provision the container app as part of deployment,
-// and thus returns true.
+// Deprecated: Use TargetResourceResolver interface for custom resource resolution instead.
+// Container Apps supports delayed provisioning but implements TargetResourceResolver to
+// provide better error messages when resources are missing in non-bicep deployment scenarios.
+// Retained only for AKS backward compatibility.
 func (st ServiceTargetKind) SupportsDelayedProvisioning() bool {
 	return st == AksTarget
 }

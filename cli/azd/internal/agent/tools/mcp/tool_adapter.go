@@ -9,32 +9,30 @@ import (
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
-	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/mark3labs/mcp-go/server"
 )
 
 // McpToolAdapter wraps an MCP tool with full schema fidelity preservation
 type McpToolAdapter struct {
-	server    string
-	tool      mcp.Tool
-	mcpClient client.MCPClient
+	server string
+	proxy  server.ServerTool
 }
 
 // Ensure McpToolAdapter implements AnnotatedTool interface
 var _ common.AnnotatedTool = (*McpToolAdapter)(nil)
 
 // NewMcpToolAdapter creates a new adapter that preserves full MCP tool schema fidelity
-func NewMcpToolAdapter(server string, tool mcp.Tool, mcpClient client.MCPClient) *McpToolAdapter {
+func NewMcpToolAdapter(server string, tool server.ServerTool) *McpToolAdapter {
 	return &McpToolAdapter{
-		server:    server,
-		tool:      tool,
-		mcpClient: mcpClient,
+		server: server,
+		proxy:  tool,
 	}
 }
 
 // Name implements tools.Tool interface
 func (m *McpToolAdapter) Name() string {
-	return m.tool.Name
+	return m.proxy.Tool.Name
 }
 
 func (m *McpToolAdapter) Server() string {
@@ -42,12 +40,12 @@ func (m *McpToolAdapter) Server() string {
 }
 
 func (m *McpToolAdapter) Description() string {
-	return m.tool.Description
+	return m.proxy.Tool.Description
 }
 
 // GetAnnotations returns tool behavior annotations
 func (m *McpToolAdapter) Annotations() mcp.ToolAnnotation {
-	return m.tool.Annotations
+	return m.proxy.Tool.Annotations
 }
 
 // Call implements tools.Tool interface
@@ -64,11 +62,11 @@ func (m *McpToolAdapter) Call(ctx context.Context, input string) (string, error)
 			Method: "tools/call",
 		},
 	}
-	req.Params.Name = m.tool.Name
+	req.Params.Name = m.proxy.Tool.Name
 	req.Params.Arguments = args
 
 	// Call the MCP tool
-	result, err := m.mcpClient.CallTool(ctx, req)
+	result, err := m.proxy.Handler(ctx, req)
 	if err != nil {
 		return "", fmt.Errorf("MCP tool call failed: %w", err)
 	}

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/azure/azure-dev/cli/azd/internal/terminal"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux/internal"
 	"github.com/fatih/color"
 	"github.com/nathan-fiscaletti/consolesize-go"
@@ -26,11 +27,20 @@ func init() {
 }
 
 // Hyperlink returns a hyperlink formatted string.
+// When stdout is not a terminal (e.g., in CI/CD pipelines like GitHub Actions),
+// it returns the plain URL without escape codes to avoid displaying raw ANSI sequences.
 func Hyperlink(url string, text ...string) string {
 	if len(text) == 0 {
 		text = []string{url}
 	}
 
+	// Check if stdout is a terminal
+	if !terminal.IsTerminal(os.Stdout.Fd(), os.Stdin.Fd()) {
+		// Not a terminal - return plain URL without escape codes
+		return url
+	}
+
+	// Terminal - use hyperlink escape codes
 	return fmt.Sprintf("\033]8;;%s\007%s\033]8;;\007", url, text[0])
 }
 

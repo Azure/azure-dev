@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -81,6 +82,12 @@ type Manager interface {
 
 	EnvPath(env *Environment) string
 	ConfigPath(env *Environment) string
+
+	// InvalidateEnvCache invalidates the state cache for the given environment
+	InvalidateEnvCache(ctx context.Context, envName string) error
+
+	// GetStateCacheManager returns the state cache manager for accessing cached state
+	GetStateCacheManager() *state.StateCacheManager
 }
 
 type manager struct {
@@ -88,6 +95,14 @@ type manager struct {
 	remote     DataStore
 	azdContext *azdcontext.AzdContext
 	console    input.Console
+
+	// Instance cache to ensure the same environment name returns the same *Environment instance
+	// across different scopes, enabling shared state mutation (e.g., from extensions)
+	cacheMu  sync.RWMutex
+	envCache map[string]*Environment
+
+	// State cache manager for managing cached Azure resource information
+	stateCacheManager *state.StateCacheManager
 }
 
 // NewManager creates a new Manager instance
@@ -118,11 +133,20 @@ func NewManager(
 		}
 	}
 
+	// Initialize state cache manager with environment directory path
+	// If azdContext is nil (no project), use empty path (cache won't be usable)
+	envDir := ""
+	if azdContext != nil {
+		envDir = azdContext.EnvironmentDirectory()
+	}
+
 	return &manager{
-		azdContext: azdContext,
-		local:      local,
-		remote:     remote,
-		console:    console,
+		azdContext:        azdContext,
+		local:             local,
+		remote:            remote,
+		console:           console,
+		envCache:          make(map[string]*Environment),
+		stateCacheManager: state.NewStateCacheManager(envDir),
 	}, nil
 }
 
@@ -393,6 +417,16 @@ func (m *manager) Get(ctx context.Context, name string) (*Environment, error) {
 		return nil, ErrNameNotSpecified
 	}
 
+	// Check cache first
+	cached, err := m.getFromCache(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	if cached != nil {
+		return cached, nil
+	}
+
+	// Not in cache, load from data store
 	localEnv, err := m.local.Get(ctx, name)
 	if err != nil {
 		if m.remote == nil {
@@ -420,7 +454,32 @@ func (m *manager) Get(ctx context.Context, name string) (*Environment, error) {
 		}
 	}
 
+	// Cache the instance before returning
+	m.cacheMu.Lock()
+	m.envCache[name] = localEnv
+	m.cacheMu.Unlock()
+
 	return localEnv, nil
+}
+
+// getFromCache retrieves an environment from the cache if it exists.
+// If found, the cached instance is reloaded from disk to ensure it has the latest data.
+// Returns the cached instance and any error from the reload operation.
+func (m *manager) getFromCache(ctx context.Context, name string) (*Environment, error) {
+	m.cacheMu.RLock()
+	cached, ok := m.envCache[name]
+	m.cacheMu.RUnlock()
+
+	if !ok {
+		return nil, nil
+	}
+
+	// Reload cached instance to ensure it has latest data from disk
+	if err := m.Reload(ctx, cached); err != nil {
+		return nil, err
+	}
+
+	return cached, nil
 }
 
 // Save saves the environment to the persistent data store
@@ -463,6 +522,11 @@ func (m *manager) Delete(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
+
+	// Remove from cache if present
+	m.cacheMu.Lock()
+	delete(m.envCache, name)
+	m.cacheMu.Unlock()
 
 	defaultEnvName, err := m.azdContext.GetDefaultEnvironmentName()
 	if err != nil {
@@ -515,6 +579,16 @@ func (m *manager) ensureValidEnvironmentName(ctx context.Context, spec *Spec) er
 	}
 
 	return nil
+}
+
+// InvalidateEnvCache invalidates the state cache for the given environment
+func (m *manager) InvalidateEnvCache(ctx context.Context, envName string) error {
+	return m.stateCacheManager.Invalidate(ctx, envName)
+}
+
+// GetStateCacheManager returns the state cache manager for accessing cached state
+func (m *manager) GetStateCacheManager() *state.StateCacheManager {
+	return m.stateCacheManager
 }
 
 func invalidEnvironmentNameMsg(environmentName string) string {

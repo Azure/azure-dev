@@ -19,7 +19,7 @@ import (
 // It manages multiple models for different purposes and maintains an executor for tool execution.
 type agentBase struct {
 	debug               bool
-	fileWatchingEnabled bool
+	watchForFileChanges bool
 	defaultModel        llms.Model
 	executor            *agents.Executor
 	tools               []common.AnnotatedTool
@@ -36,6 +36,10 @@ type AgentCleanup func() error
 type Agent interface {
 	// SendMessage sends a message to the agent and returns the response
 	SendMessage(ctx context.Context, args ...string) (string, error)
+
+	// SendMessageWithRetry sends a message to the agent but prompts the user to retry
+	// when the agent replies with an invalid response format (Not ReAct)
+	SendMessageWithRetry(ctx context.Context, args ...string) (string, error)
 
 	// Stop terminates the agent and performs any necessary cleanup
 	Stop() error
@@ -61,9 +65,9 @@ func WithDebug(debug bool) AgentCreateOption {
 }
 
 // WithFileWatching returns an option that enables or disables file watching for the agent
-func WithFileWatching(fileWatchingEnabled bool) AgentCreateOption {
+func WithFileWatching(enabled bool) AgentCreateOption {
 	return func(agent *agentBase) {
-		agent.fileWatchingEnabled = fileWatchingEnabled
+		agent.watchForFileChanges = enabled
 	}
 }
 

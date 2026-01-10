@@ -11,11 +11,14 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/spf13/cobra"
 )
 
@@ -28,7 +31,7 @@ func extensionActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 			Short:   "Manage azd extensions.",
 		},
 		GroupingOptions: actions.CommandGroupOptions{
-			RootLevelHelp: actions.CmdGroupAlpha,
+			RootLevelHelp: actions.CmdGroupBeta,
 		},
 	})
 
@@ -47,7 +50,7 @@ func extensionActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 	// azd extension show
 	group.Add("show", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Use:   "show <extension-name>",
+			Use:   "show <extension-id>",
 			Short: "Show details for a specific extension.",
 		},
 		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
@@ -56,30 +59,30 @@ func extensionActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 		FlagsResolver:  newExtensionShowFlags,
 	})
 
-	// azd extension install <extension-name>
+	// azd extension install <extension-id>
 	group.Add("install", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Use:   "install <extension-name>",
+			Use:   "install <extension-id>",
 			Short: "Installs specified extensions.",
 		},
 		ActionResolver: newExtensionInstallAction,
 		FlagsResolver:  newExtensionInstallFlags,
 	})
 
-	// azd extension uninstall <extension-name>
+	// azd extension uninstall <extension-id>
 	group.Add("uninstall", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Use:   "uninstall <extension-name>",
+			Use:   "uninstall [extension-id]",
 			Short: "Uninstall specified extensions.",
 		},
 		ActionResolver: newExtensionUninstallAction,
 		FlagsResolver:  newExtensionUninstallFlags,
 	})
 
-	// azd extension upgrade <extension-name>
+	// azd extension upgrade <extension-id>
 	group.Add("upgrade", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Use:   "upgrade <extension-name>",
+			Use:   "upgrade [extension-id]",
 			Short: "Upgrade specified extensions.",
 		},
 		ActionResolver: newExtensionUpgradeAction,
@@ -180,7 +183,7 @@ type extensionListItem struct {
 }
 
 func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	options := &extensions.ListOptions{
+	options := &extensions.FilterOptions{
 		Source: a.flags.source,
 		Tags:   a.flags.tags,
 	}
@@ -191,7 +194,7 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 		}
 	}
 
-	registryExtensions, err := a.extensionManager.ListFromRegistry(ctx, options)
+	registryExtensions, err := a.extensionManager.FindExtensions(ctx, options)
 	if err != nil {
 		return nil, fmt.Errorf("failed listing extensions from registry: %w", err)
 	}
@@ -231,7 +234,7 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 			a.console.Message(ctx, output.WithWarningFormat("WARNING: No extensions installed.\n"))
 			a.console.Message(ctx, fmt.Sprintf(
 				"Run %s to install extensions.",
-				output.WithHighLightFormat("azd extension install <extension-name>"),
+				output.WithHighLightFormat("azd extension install <extension-id>"),
 			))
 		} else {
 			a.console.Message(ctx, output.WithWarningFormat("WARNING: No extensions found in configured sources.\n"))
@@ -283,10 +286,13 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 // azd extension show
 type extensionShowFlags struct {
 	source string
+	global *internal.GlobalCommandOptions
 }
 
-func newExtensionShowFlags(cmd *cobra.Command) *extensionShowFlags {
-	flags := &extensionShowFlags{}
+func newExtensionShowFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *extensionShowFlags {
+	flags := &extensionShowFlags{
+		global: global,
+	}
 	cmd.Flags().StringVarP(&flags.source, "source", "s", "", "The extension source to use.")
 	return flags
 }
@@ -294,6 +300,7 @@ func newExtensionShowFlags(cmd *cobra.Command) *extensionShowFlags {
 type extensionShowAction struct {
 	args             []string
 	flags            *extensionShowFlags
+	console          input.Console
 	formatter        output.Formatter
 	writer           io.Writer
 	extensionManager *extensions.Manager
@@ -302,6 +309,7 @@ type extensionShowAction struct {
 func newExtensionShowAction(
 	args []string,
 	flags *extensionShowFlags,
+	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
 	extensionManager *extensions.Manager,
@@ -309,6 +317,7 @@ func newExtensionShowAction(
 	return &extensionShowAction{
 		args:             args,
 		flags:            flags,
+		console:          console,
 		formatter:        formatter,
 		writer:           writer,
 		extensionManager: extensionManager,
@@ -316,55 +325,136 @@ func newExtensionShowAction(
 }
 
 type extensionShowItem struct {
-	Id               string
-	Source           string
-	Namespace        string
-	Description      string
-	Tags             []string
-	LatestVersion    string
-	InstalledVersion string
-	Usage            string
-	Examples         []extensions.ExtensionExample
+	Id                string
+	Name              string
+	Source            string
+	Namespace         string
+	Description       string
+	Tags              []string
+	LatestVersion     string
+	InstalledVersion  string
+	AvailableVersions []string
+	Usage             string
+	Examples          []extensions.ExtensionExample
+	Providers         []extensions.Provider
+	Capabilities      []extensions.CapabilityType
 }
 
 func (t *extensionShowItem) Display(writer io.Writer) error {
-	tabs := tabwriter.NewWriter(
-		writer,
-		0,
-		output.TableTabSize,
-		1,
-		output.TablePadCharacter,
-		output.TableFlags)
-	text := [][]string{
+	// Helper function to write a section with its own tabwriter
+	writeSection := func(header string, rows [][]string) error {
+		if len(rows) == 0 {
+			return nil
+		}
+
+		// Write bold and underlined header
+		underlinedHeader := output.WithUnderline("%s", header)
+		boldUnderlinedHeader := output.WithBold("%s", underlinedHeader)
+		_, err := fmt.Fprintf(writer, "%s\n", boldUnderlinedHeader)
+		if err != nil {
+			return err
+		} // Create tabwriter for this section
+		tabs := tabwriter.NewWriter(
+			writer,
+			0,
+			output.TableTabSize,
+			1,
+			output.TablePadCharacter,
+			output.TableFlags)
+
+		// Write rows
+		for _, row := range rows {
+			_, err := tabs.Write([]byte(strings.Join(row, "\t") + "\n"))
+			if err != nil {
+				return err
+			}
+		}
+
+		// Flush and add spacing
+		if err := tabs.Flush(); err != nil {
+			return err
+		}
+		_, err = fmt.Fprintln(writer)
+		return err
+	}
+
+	// Extension Information section
+	extensionInfo := [][]string{
 		{"Id", ":", t.Id},
+		{"Name", ":", t.Name},
+		{"Description", ":", t.Description},
 		{"Source", ":", t.Source},
 		{"Namespace", ":", t.Namespace},
-		{"Description", ":", t.Description},
+	}
+	if err := writeSection("Extension Information", extensionInfo); err != nil {
+		return err
+	}
+
+	// Version Information section
+	versionInfo := [][]string{
 		{"Latest Version", ":", t.LatestVersion},
 		{"Installed Version", ":", t.InstalledVersion},
-		{"Tags", ":", strings.Join(t.Tags, ", ")},
-		{"", "", ""},
-		{"Usage", ":", t.Usage},
-		{"Examples", ":", ""},
+	}
+	// Only add Available Versions if there are any
+	if len(t.AvailableVersions) > 0 {
+		versionInfo = append(versionInfo, []string{"Available Versions", ":", strings.Join(t.AvailableVersions, ", ")})
+	}
+	// Only add Tags if they are defined
+	if len(t.Tags) > 0 {
+		versionInfo = append(versionInfo, []string{"Tags", ":", strings.Join(t.Tags, ", ")})
+	}
+	if err := writeSection("Version Information", versionInfo); err != nil {
+		return err
 	}
 
-	for _, example := range t.Examples {
-		text = append(text, []string{"", "", example.Usage})
-	}
-
-	for _, line := range text {
-		_, err := tabs.Write([]byte(strings.Join(line, "\t") + "\n"))
-		if err != nil {
+	// Capabilities section - only if there are capabilities
+	if len(t.Capabilities) > 0 {
+		capabilityRows := [][]string{}
+		for _, capability := range t.Capabilities {
+			capabilityRows = append(capabilityRows, []string{"-", string(capability)})
+		}
+		if err := writeSection("Capabilities", capabilityRows); err != nil {
 			return err
 		}
 	}
 
-	return tabs.Flush()
+	// Providers section - only if there are providers
+	if len(t.Providers) > 0 {
+		providerRows := [][]string{}
+		for _, provider := range t.Providers {
+			providerInfo := fmt.Sprintf("%s (%s) - %s", provider.Name, provider.Type, provider.Description)
+			providerRows = append(providerRows, []string{"", "", providerInfo})
+		}
+		if err := writeSection("Providers", providerRows); err != nil {
+			return err
+		}
+	}
+
+	// Usage section
+	usageRows := [][]string{
+		{"", "", t.Usage},
+	}
+	if err := writeSection("Usage", usageRows); err != nil {
+		return err
+	}
+
+	// Examples section - only if there are examples
+	if len(t.Examples) > 0 {
+		exampleRows := [][]string{}
+		for _, example := range t.Examples {
+			exampleRows = append(exampleRows, []string{"", "", example.Usage})
+		}
+		if err := writeSection("Examples", exampleRows); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (a *extensionShowAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if len(a.args) == 0 {
-		return nil, fmt.Errorf("must specify an extension name")
+		return nil, fmt.Errorf("must specify an extension id")
 	}
 	if len(a.args) > 1 {
 		return nil, fmt.Errorf("cannot specify multiple extensions")
@@ -372,29 +462,46 @@ func (a *extensionShowAction) Run(ctx context.Context) (*actions.ActionResult, e
 	extensionId := a.args[0]
 	filterOptions := &extensions.FilterOptions{
 		Source: a.flags.source,
+		Id:     extensionId,
 	}
 
-	registryExtension, err := a.extensionManager.GetFromRegistry(ctx, extensionId, filterOptions)
+	extensionMatches, err := a.extensionManager.FindExtensions(ctx, filterOptions)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get extension details: %w", err)
+		return nil, fmt.Errorf("failed to find extension: %w", err)
+	}
+
+	registryExtension, err := selectDistinctExtension(ctx, a.console, extensionId, extensionMatches, a.flags.global)
+	if err != nil {
+		return nil, err
 	}
 
 	latestVersion := registryExtension.Versions[len(registryExtension.Versions)-1]
 
+	var otherVersions []string
+	for _, version := range registryExtension.Versions {
+		if version.Version != latestVersion.Version {
+			otherVersions = append(otherVersions, version.Version)
+		}
+	}
+
 	extensionDetails := extensionShowItem{
-		Id:               registryExtension.Id,
-		Source:           registryExtension.Source,
-		Namespace:        registryExtension.Namespace,
-		Description:      registryExtension.DisplayName,
-		Tags:             registryExtension.Tags,
-		LatestVersion:    latestVersion.Version,
-		Usage:            latestVersion.Usage,
-		Examples:         latestVersion.Examples,
-		InstalledVersion: "N/A",
+		Id:                registryExtension.Id,
+		Name:              registryExtension.DisplayName,
+		Source:            registryExtension.Source,
+		Namespace:         registryExtension.Namespace,
+		Description:       registryExtension.Description,
+		Tags:              registryExtension.Tags,
+		LatestVersion:     latestVersion.Version,
+		AvailableVersions: otherVersions,
+		Usage:             latestVersion.Usage,
+		Examples:          latestVersion.Examples,
+		Providers:         latestVersion.Providers,
+		Capabilities:      latestVersion.Capabilities,
+		InstalledVersion:  "N/A",
 	}
 
 	installedExtension, err := a.extensionManager.GetInstalled(
-		extensions.LookupOptions{Id: extensionId},
+		extensions.FilterOptions{Id: extensionId},
 	)
 	if err == nil && installedExtension.Source == extensionDetails.Source {
 		extensionDetails.InstalledVersion = installedExtension.Version
@@ -414,12 +521,19 @@ func (a *extensionShowAction) Run(ctx context.Context) (*actions.ActionResult, e
 type extensionInstallFlags struct {
 	version string
 	source  string
+	force   bool
+	global  *internal.GlobalCommandOptions
 }
 
-func newExtensionInstallFlags(cmd *cobra.Command) *extensionInstallFlags {
-	flags := &extensionInstallFlags{}
+func newExtensionInstallFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *extensionInstallFlags {
+	flags := &extensionInstallFlags{
+		global: global,
+	}
+
 	cmd.Flags().StringVarP(&flags.source, "source", "s", "", "The extension source to use for installs")
 	cmd.Flags().StringVarP(&flags.version, "version", "v", "", "The version of the extension to install")
+	cmd.Flags().
+		BoolVarP(&flags.force, "force", "f", false, "Force installation, including downgrades and reinstalls")
 
 	return flags
 }
@@ -454,7 +568,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 
 	extensionIds := a.args
 	if len(extensionIds) == 0 {
-		return nil, fmt.Errorf("must specify an extension name")
+		return nil, fmt.Errorf("must specify an extension id")
 	}
 
 	if len(extensionIds) > 1 && a.flags.version != "" {
@@ -469,34 +583,103 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 		stepMessage := fmt.Sprintf("Installing %s extension", output.WithHighLightFormat(extensionId))
 		a.console.ShowSpinner(ctx, stepMessage, input.Step)
 
-		installed, err := a.extensionManager.GetInstalled(extensions.LookupOptions{
-			Id: extensionId,
-		})
-		if err == nil {
-			stepMessage += output.WithGrayFormat(" (version %s already installed)", installed.Version)
-			a.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
-			continue
+		// Check if extension is already installed (any source)
+		allInstalled, err := a.extensionManager.ListInstalled()
+		if err != nil {
+			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			return nil, fmt.Errorf("failed to list installed extensions: %w", err)
 		}
 
+		installedExtension, alreadyInstalled := allInstalled[extensionId]
+
+		// Find the extension metadata first
 		filterOptions := &extensions.FilterOptions{
 			Source:  a.flags.source,
 			Version: a.flags.version,
+			Id:      extensionId,
 		}
-		extensionVersion, err := a.extensionManager.Install(ctx, extensionId, filterOptions)
+
+		extensionMatches, err := a.extensionManager.FindExtensions(ctx, filterOptions)
 		if err != nil {
 			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-			return nil, fmt.Errorf("failed to install extension: %w", err)
+			return nil, fmt.Errorf("failed to find extension: %w", err)
 		}
 
-		stepMessage += output.WithGrayFormat(" (%s)", extensionVersion.Version)
-		a.console.StopSpinner(ctx, stepMessage, input.StepDone)
-
-		a.console.Message(ctx, fmt.Sprintf("      %s %s", output.WithBold("Usage: "), extensionVersion.Usage))
-		a.console.Message(ctx, output.WithBold("      Examples:"))
-
-		for _, example := range extensionVersion.Examples {
-			a.console.Message(ctx, "        "+output.WithHighLightFormat(example.Usage))
+		selectedExtension, err := selectDistinctExtension(ctx, a.console, extensionId, extensionMatches, a.flags.global)
+		if err != nil {
+			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			return nil, err
 		}
+
+		a.console.ShowSpinner(ctx, stepMessage, input.Step)
+
+		// Determine target version
+		targetVersion := a.flags.version
+		if targetVersion == "" || targetVersion == "latest" {
+			targetVersion = selectedExtension.Versions[len(selectedExtension.Versions)-1].Version
+		}
+
+		var extensionVersion *extensions.ExtensionVersion
+
+		if alreadyInstalled {
+			// Extension is already installed - apply smart upgrade/downgrade logic
+
+			// Check if same version (regardless of source)
+			if installedExtension.Version == targetVersion && !a.flags.force {
+				stepMessage += output.WithGrayFormat(" (version %s already installed)", installedExtension.Version)
+				a.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
+				continue
+			}
+
+			// Parse versions for semantic comparison
+			installedSemver, err := semver.NewVersion(installedExtension.Version)
+			if err != nil {
+				a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+				return nil, fmt.Errorf("failed to parse installed version '%s': %w", installedExtension.Version, err)
+			}
+
+			targetSemver, err := semver.NewVersion(targetVersion)
+			if err != nil {
+				a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+				return nil, fmt.Errorf("failed to parse target version '%s': %w", targetVersion, err)
+			}
+
+			if targetSemver.LessThan(installedSemver) && !a.flags.force {
+				// Would be a downgrade - require --force
+				stepMessage += output.WithGrayFormat(
+					" (would downgrade from %s to %s, use --force to override)",
+					installedExtension.Version,
+					targetVersion,
+				)
+				a.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
+				continue
+			}
+
+			// Use upgrade logic for existing installations
+			a.console.ShowSpinner(ctx, stepMessage, input.Step)
+			extensionVersion, err = a.extensionManager.Upgrade(ctx, selectedExtension, a.flags.version)
+			if err != nil {
+				a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+				return nil, fmt.Errorf("failed to upgrade extension: %w", err)
+			}
+
+			stepMessage += output.WithGrayFormat(" (%s)", extensionVersion.Version)
+			a.console.StopSpinner(ctx, stepMessage, input.StepDone)
+
+		} else {
+			// Extension not installed - proceed with fresh install
+			a.console.ShowSpinner(ctx, stepMessage, input.Step)
+			extensionVersion, err = a.extensionManager.Install(ctx, selectedExtension, a.flags.version)
+			if err != nil {
+				a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+				return nil, fmt.Errorf("failed to install extension: %w", err)
+			}
+
+			stepMessage += output.WithGrayFormat(" (%s)", extensionVersion.Version)
+			a.console.StopSpinner(ctx, stepMessage, input.StepDone)
+		}
+
+		displayExtensionUsageAndExamples(ctx, a.console, extensionVersion)
 	}
 
 	return &actions.ActionResult{
@@ -545,7 +728,7 @@ func (a *extensionUninstallAction) Run(ctx context.Context) (*actions.ActionResu
 	}
 
 	if len(a.args) == 0 && !a.flags.all {
-		return nil, fmt.Errorf("must specify an extension name or use --all flag")
+		return nil, fmt.Errorf("must specify an extension id or use --all flag")
 	}
 
 	a.console.MessageUxItem(ctx, &ux.MessageTitle{
@@ -573,7 +756,7 @@ func (a *extensionUninstallAction) Run(ctx context.Context) (*actions.ActionResu
 	for _, extensionId := range extensionIds {
 		stepMessage := fmt.Sprintf("Uninstalling %s extension", output.WithHighLightFormat(extensionId))
 
-		installed, err := a.extensionManager.GetInstalled(extensions.LookupOptions{
+		installed, err := a.extensionManager.GetInstalled(extensions.FilterOptions{
 			Id: extensionId,
 		})
 		if err != nil {
@@ -605,10 +788,13 @@ type extensionUpgradeFlags struct {
 	version string
 	source  string
 	all     bool
+	global  *internal.GlobalCommandOptions
 }
 
-func newExtensionUpgradeFlags(cmd *cobra.Command) *extensionUpgradeFlags {
-	flags := &extensionUpgradeFlags{}
+func newExtensionUpgradeFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *extensionUpgradeFlags {
+	flags := &extensionUpgradeFlags{
+		global: global,
+	}
 	cmd.Flags().StringVarP(&flags.version, "version", "v", "", "The version of the extension to upgrade to")
 	cmd.Flags().StringVarP(&flags.source, "source", "s", "", "The extension source to use for upgrades")
 	cmd.Flags().BoolVar(&flags.all, "all", false, "Upgrade all installed extensions")
@@ -648,7 +834,7 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 	}
 
 	if len(a.args) == 0 && !a.flags.all {
-		return nil, fmt.Errorf("must specify an extension name or use --all flag")
+		return nil, fmt.Errorf("must specify an extension id or use --all flag")
 	}
 
 	a.console.MessageUxItem(ctx, &ux.MessageTitle{
@@ -681,7 +867,7 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 		stepMessage := fmt.Sprintf("Upgrading %s extension", output.WithHighLightFormat(extensionId))
 		a.console.ShowSpinner(ctx, stepMessage, input.Step)
 
-		installed, err := a.extensionManager.GetInstalled(extensions.LookupOptions{
+		installed, err := a.extensionManager.GetInstalled(extensions.FilterOptions{
 			Id: extensionId,
 		})
 		if err != nil {
@@ -690,21 +876,56 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 		}
 
 		filterOptions := &extensions.FilterOptions{
+			Id:      extensionId,
 			Source:  a.flags.source,
 			Version: a.flags.version,
 		}
-		extension, err := a.extensionManager.GetFromRegistry(ctx, extensionId, filterOptions)
+
+		matches, err := a.extensionManager.FindExtensions(ctx, filterOptions)
 		if err != nil {
 			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, fmt.Errorf("failed to get extension %s: %w", extensionId, err)
 		}
 
-		latestVersion := extension.Versions[len(extension.Versions)-1]
-		if latestVersion.Version == installed.Version {
+		if len(matches) == 0 {
+			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			return nil, fmt.Errorf("extension %s not found", extensionId)
+		}
+
+		selectedExtension, err := selectDistinctExtension(ctx, a.console, extensionId, matches, a.flags.global)
+		if err != nil {
+			return nil, err
+		}
+
+		a.console.ShowSpinner(ctx, stepMessage, input.Step)
+		latestVersion := selectedExtension.Versions[len(selectedExtension.Versions)-1]
+
+		// Parse semantic versions for proper comparison
+		installedSemver, err := semver.NewVersion(installed.Version)
+		if err != nil {
+			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			return nil, fmt.Errorf("failed to parse installed version '%s': %w", installed.Version, err)
+		}
+
+		latestSemver, err := semver.NewVersion(latestVersion.Version)
+		if err != nil {
+			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			return nil, fmt.Errorf("failed to parse latest version '%s': %w", latestVersion.Version, err)
+		}
+
+		// Compare versions: skip if installed version >= latest version
+		if installedSemver.GreaterThan(latestSemver) {
+			stepMessage += output.WithGrayFormat(
+				" (Installed version %s is newer than available %s)",
+				installed.Version,
+				latestVersion.Version,
+			)
+			a.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
+		} else if installedSemver.Equal(latestSemver) {
 			stepMessage += output.WithGrayFormat(" (No upgrade available)")
 			a.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
 		} else {
-			extensionVersion, err := a.extensionManager.Upgrade(ctx, extensionId, filterOptions)
+			extensionVersion, err := a.extensionManager.Upgrade(ctx, selectedExtension, a.flags.version)
 			if err != nil {
 				return nil, fmt.Errorf("failed to upgrade extension: %w", err)
 			}
@@ -712,12 +933,7 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 			stepMessage += output.WithGrayFormat(" (%s)", extensionVersion.Version)
 			a.console.StopSpinner(ctx, stepMessage, input.StepDone)
 
-			a.console.Message(ctx, fmt.Sprintf("      %s %s", output.WithBold("Usage: "), extensionVersion.Usage))
-			a.console.Message(ctx, output.WithBold("      Examples:"))
-
-			for _, example := range extensionVersion.Examples {
-				a.console.Message(ctx, "        "+output.WithHighLightFormat(example.Usage))
-			}
+			displayExtensionUsageAndExamples(ctx, a.console, extensionVersion)
 		}
 	}
 
@@ -906,4 +1122,67 @@ func (a *extensionSourceRemoveAction) Run(ctx context.Context) (*actions.ActionR
 			),
 		},
 	}, nil
+}
+
+func displayExtensionUsageAndExamples(
+	ctx context.Context,
+	console input.Console,
+	extensionVersion *extensions.ExtensionVersion,
+) {
+	console.Message(ctx, fmt.Sprintf("      %s %s", output.WithBold("Usage: "), extensionVersion.Usage))
+	console.Message(ctx, output.WithBold("      Examples:"))
+
+	for _, example := range extensionVersion.Examples {
+		console.Message(ctx, "        "+output.WithHighLightFormat(example.Usage))
+	}
+}
+
+func selectDistinctExtension(
+	ctx context.Context,
+	console input.Console,
+	extensionId string,
+	matches []*extensions.ExtensionMetadata,
+	global *internal.GlobalCommandOptions,
+) (*extensions.ExtensionMetadata, error) {
+	if len(matches) == 0 {
+		return nil, fmt.Errorf("no extensions found")
+	}
+
+	if len(matches) == 1 {
+		return matches[0], nil
+	}
+
+	if global.NoPrompt {
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        fmt.Errorf("the %s extension was found in multiple sources.", extensionId),
+			Suggestion: "Specify the extension source using the --source flag.",
+		}
+	}
+
+	console.StopSpinner(ctx, "", input.Step)
+
+	sourceChoices := make([]*uxlib.SelectChoice, len(matches))
+	for i, ext := range matches {
+		sourceChoices[i] = &uxlib.SelectChoice{
+			Value: ext.Source,
+			Label: ext.Source,
+		}
+	}
+
+	selectSource := uxlib.NewSelect(&uxlib.SelectOptions{
+		Message: fmt.Sprintf(
+			"The %s extension was found in multiple sources.\nSelect the source to continue",
+			output.WithHighLightFormat(extensionId),
+		),
+		Choices: sourceChoices,
+	})
+
+	sourceResponseIndex, err := selectSource.Ask(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to select extension source: %w", err)
+	}
+
+	console.Message(ctx, "")
+
+	return matches[*sourceResponseIndex], nil
 }

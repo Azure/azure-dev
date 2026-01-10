@@ -5,6 +5,7 @@ package pipeline
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"os"
@@ -231,7 +232,42 @@ func mergeProjectVariablesAndSecrets(
 		}
 	}
 
+	// Escape values for safe transmission to pipeline providers.
+	// This ensures that values containing JSON-like content (e.g., `["api://..."]`)
+	// are properly escaped (e.g., `[\"api://...\"]`) before being sent to GitHub Actions or Azure DevOps.
+	// Without this, the remote pipeline may incorrectly parse the value as JSON instead of treating it as a string.
+	escapeValuesForPipeline(variables)
+	escapeValuesForPipeline(secrets)
+
 	return variables, secrets, nil
+}
+
+// escapeValuesForPipeline applies JSON escaping to values to ensure they are correctly
+// interpreted as strings by pipeline providers (GitHub Actions, Azure DevOps).
+//
+// When a value contains special characters (e.g., quotes, backslashes, brackets), it needs
+// to be escaped before being sent to the remote pipeline. This function uses JSON marshaling
+// to properly escape the value, then strips the outer quotes added by marshaling.
+//
+// Example: the value `["api://guid"]` becomes `[\"api://guid\"]` after escaping.
+func escapeValuesForPipeline(values map[string]string) {
+	for key, value := range values {
+		// Use JSON marshaling to properly escape special characters
+		escapedBytes, err := json.Marshal(value)
+		if err != nil {
+			// If marshaling fails, keep the original value
+			continue
+		}
+
+		escapedStr := string(escapedBytes)
+		// JSON marshaling wraps the string in quotes; remove them
+		// Example: json.Marshal("test") produces "\"test\"", we want just the inner content
+		if len(escapedStr) >= 2 && escapedStr[0] == '"' && escapedStr[len(escapedStr)-1] == '"' {
+			escapedStr = escapedStr[1 : len(escapedStr)-1]
+		}
+
+		values[key] = escapedStr
+	}
 }
 
 const (

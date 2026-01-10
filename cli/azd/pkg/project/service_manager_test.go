@@ -39,6 +39,7 @@ const (
 	frameworkPackageCalled     contextKey = "frameworkPackageCalled"
 	serviceTargetPackageCalled contextKey = "serviceTargetPackageCalled"
 	serviceTargetDeployCalled  contextKey = "serviceTargetDeployCalled"
+	serviceTargetPublishCalled contextKey = "serviceTargetPublishCalled"
 )
 
 func createServiceManager(
@@ -94,20 +95,27 @@ func Test_ServiceManager_Restore(t *testing.T) {
 	raisedPreRestoreEvent := false
 	raisedPostRestoreEvent := false
 
-	_ = serviceConfig.AddHandler("prerestore", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
-		raisedPreRestoreEvent = true
-		return nil
-	})
+	_ = serviceConfig.AddHandler(
+		*mockContext.Context,
+		"prerestore",
+		func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+			raisedPreRestoreEvent = true
+			return nil
+		})
 
-	_ = serviceConfig.AddHandler("postrestore", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
-		raisedPostRestoreEvent = true
-		return nil
-	})
+	_ = serviceConfig.AddHandler(
+		*mockContext.Context,
+		"postrestore",
+		func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+			raisedPostRestoreEvent = true
+			return nil
+		})
 
 	restoreCalled := to.Ptr(false)
 	ctx := context.WithValue(*mockContext.Context, frameworkRestoreCalled, restoreCalled)
 	result, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
-		return sm.Restore(ctx, serviceConfig, progess)
+		serviceContext := NewServiceContext()
+		return sm.Restore(ctx, serviceConfig, serviceContext, progess)
 	})
 
 	require.NoError(t, err)
@@ -127,15 +135,21 @@ func Test_ServiceManager_Build(t *testing.T) {
 	raisedPreBuildEvent := false
 	raisedPostBuildEvent := false
 
-	_ = serviceConfig.AddHandler("prebuild", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
-		raisedPreBuildEvent = true
-		return nil
-	})
+	_ = serviceConfig.AddHandler(
+		*mockContext.Context,
+		"prebuild",
+		func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+			raisedPreBuildEvent = true
+			return nil
+		})
 
-	_ = serviceConfig.AddHandler("postbuild", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
-		raisedPostBuildEvent = true
-		return nil
-	})
+	_ = serviceConfig.AddHandler(
+		*mockContext.Context,
+		"postbuild",
+		func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+			raisedPostBuildEvent = true
+			return nil
+		})
 
 	buildCalled := to.Ptr(false)
 	ctx := context.WithValue(*mockContext.Context, frameworkBuildCalled, buildCalled)
@@ -161,15 +175,21 @@ func Test_ServiceManager_Package(t *testing.T) {
 	raisedPrePackageEvent := false
 	raisedPostPackageEvent := false
 
-	_ = serviceConfig.AddHandler("prepackage", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
-		raisedPrePackageEvent = true
-		return nil
-	})
+	_ = serviceConfig.AddHandler(
+		*mockContext.Context,
+		"prepackage",
+		func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+			raisedPrePackageEvent = true
+			return nil
+		})
 
-	_ = serviceConfig.AddHandler("postpackage", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
-		raisedPostPackageEvent = true
-		return nil
-	})
+	_ = serviceConfig.AddHandler(
+		*mockContext.Context,
+		"postpackage",
+		func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+			raisedPostPackageEvent = true
+			return nil
+		})
 
 	fakeFrameworkPackageCalled := to.Ptr(false)
 	fakeServiceTargetPackageCalled := to.Ptr(false)
@@ -200,21 +220,28 @@ func Test_ServiceManager_Deploy(t *testing.T) {
 	raisedPreDeployEvent := false
 	raisedPostDeployEvent := false
 
-	_ = serviceConfig.AddHandler("predeploy", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
-		raisedPreDeployEvent = true
-		return nil
-	})
+	_ = serviceConfig.AddHandler(
+		*mockContext.Context,
+		"predeploy",
+		func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+			raisedPreDeployEvent = true
+			return nil
+		})
 
-	_ = serviceConfig.AddHandler("postdeploy", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
-		raisedPostDeployEvent = true
-		return nil
-	})
+	_ = serviceConfig.AddHandler(
+		*mockContext.Context,
+		"postdeploy",
+		func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+			raisedPostDeployEvent = true
+			return nil
+		})
 
 	deployCalled := to.Ptr(false)
 	ctx := context.WithValue(*mockContext.Context, serviceTargetDeployCalled, deployCalled)
 
 	result, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
-		return sm.Deploy(ctx, serviceConfig, nil, progess)
+		serviceContext := NewServiceContext()
+		return sm.Deploy(ctx, serviceConfig, serviceContext, progess)
 	})
 
 	require.NoError(t, err)
@@ -222,6 +249,51 @@ func Test_ServiceManager_Deploy(t *testing.T) {
 	require.True(t, *deployCalled)
 	require.True(t, raisedPreDeployEvent)
 	require.True(t, raisedPostDeployEvent)
+}
+
+func Test_ServiceManager_Publish(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	setupMocksForServiceManager(mockContext)
+	env := environment.NewWithValues("test", map[string]string{
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+	})
+	sm := createServiceManager(mockContext, env, ServiceOperationCache{})
+	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
+
+	raisedPrePublishEvent := false
+	raisedPostPublishEvent := false
+
+	_ = serviceConfig.AddHandler(
+		*mockContext.Context,
+		"prepublish",
+		func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+			raisedPrePublishEvent = true
+			return nil
+		})
+
+	_ = serviceConfig.AddHandler(
+		*mockContext.Context,
+		"postpublish",
+		func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+			raisedPostPublishEvent = true
+			return nil
+		})
+
+	publishCalled := to.Ptr(false)
+	ctx := context.WithValue(*mockContext.Context, serviceTargetPublishCalled, publishCalled)
+
+	// Create a proper ServiceContext for the publish operation
+	serviceContext := NewServiceContext()
+
+	result, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServicePublishResult, error) {
+		return sm.Publish(ctx, serviceConfig, serviceContext, progess, nil)
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, *publishCalled)
+	require.True(t, raisedPrePublishEvent)
+	require.True(t, raisedPostPublishEvent)
 }
 
 func Test_ServiceManager_GetFrameworkService(t *testing.T) {
@@ -279,6 +351,18 @@ func Test_ServiceManager_GetServiceTarget(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, serviceTarget)
 	require.IsType(t, new(fakeServiceTarget), serviceTarget)
+}
+
+func Test_ServiceManager_GetServiceTarget_UnsupportedHost(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	setupMocksForServiceManager(mockContext)
+	env := environment.New("test")
+	sm := createServiceManager(mockContext, env, ServiceOperationCache{})
+	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetKind("missing-target"), ServiceLanguageFake)
+
+	_, err := sm.GetServiceTarget(*mockContext.Context, serviceConfig)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "service host 'missing-target' for service 'api' is unsupported")
 }
 
 func Test_ServiceManager_CacheResults(t *testing.T) {
@@ -354,7 +438,8 @@ func Test_ServiceManager_Events_With_Errors(t *testing.T) {
 			run: func(ctx context.Context, serviceManager ServiceManager, serviceConfig *ServiceConfig) (any, error) {
 				return logProgress(
 					t, func(progess *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
-						return serviceManager.Restore(ctx, serviceConfig, progess)
+						serviceContext := NewServiceContext()
+						return serviceManager.Restore(ctx, serviceConfig, serviceContext, progess)
 					})
 			},
 		},
@@ -381,7 +466,8 @@ func Test_ServiceManager_Events_With_Errors(t *testing.T) {
 			run: func(ctx context.Context, serviceManager ServiceManager, serviceConfig *ServiceConfig) (any, error) {
 				return logProgress(
 					t, func(progress *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
-						return serviceManager.Deploy(ctx, serviceConfig, nil, progress)
+						serviceContext := NewServiceContext()
+						return serviceManager.Deploy(ctx, serviceConfig, serviceContext, progress)
 					})
 			},
 		},
@@ -402,6 +488,7 @@ func Test_ServiceManager_Events_With_Errors(t *testing.T) {
 				t.Run(test.eventName, func(t *testing.T) {
 					test.eventName = eventType + test.name
 					_ = serviceConfig.AddHandler(
+						*mockContext.Context,
 						ext.Event(test.eventName),
 						func(ctx context.Context, args ServiceLifecycleEventArgs) error {
 							return errors.New("error")
@@ -508,6 +595,7 @@ func (f *fakeFramework) Initialize(ctx context.Context, serviceConfig *ServiceCo
 func (f *fakeFramework) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
+	serviceContext *ServiceContext,
 	_ *async.Progress[ServiceProgress],
 ) (*ServiceRestoreResult, error) {
 	restoreCalled, ok := ctx.Value(frameworkRestoreCalled).(*bool)
@@ -522,14 +610,23 @@ func (f *fakeFramework) Restore(
 	}
 
 	return &ServiceRestoreResult{
-		Details: result,
+		Artifacts: ArtifactCollection{
+			{
+				Kind:         ArtifactKindDirectory,
+				Location:     "/fake/restore/path",
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"command": result.Stdout,
+				},
+			},
+		},
 	}, nil
 }
 
 func (f *fakeFramework) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	restoreOutput *ServiceRestoreResult,
+	serviceContext *ServiceContext,
 	_ *async.Progress[ServiceProgress],
 ) (*ServiceBuildResult, error) {
 	buildCalled, ok := ctx.Value(frameworkBuildCalled).(*bool)
@@ -544,15 +641,23 @@ func (f *fakeFramework) Build(
 	}
 
 	return &ServiceBuildResult{
-		Restore: restoreOutput,
-		Details: result,
+		Artifacts: ArtifactCollection{
+			{
+				Kind:         ArtifactKindDirectory,
+				Location:     "/fake/build/path",
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"command": result.Stdout,
+				},
+			},
+		},
 	}, nil
 }
 
 func (f *fakeFramework) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	buildOutput *ServiceBuildResult,
+	serviceContext *ServiceContext,
 	_ *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
 	packageCalled, ok := ctx.Value(frameworkPackageCalled).(*bool)
@@ -567,8 +672,16 @@ func (f *fakeFramework) Package(
 	}
 
 	return &ServicePackageResult{
-		Build:   buildOutput,
-		Details: result,
+		Artifacts: ArtifactCollection{
+			{
+				Kind:         ArtifactKindArchive,
+				Location:     "/fake/package/path",
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"command": result.Stdout,
+				},
+			},
+		},
 	}, nil
 }
 
@@ -594,7 +707,7 @@ func (st *fakeServiceTarget) RequiredExternalTools(ctx context.Context, serviceC
 func (st *fakeServiceTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	packageOutput *ServicePackageResult,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
 	packageCalled, ok := ctx.Value(serviceTargetPackageCalled).(*bool)
@@ -609,15 +722,49 @@ func (st *fakeServiceTarget) Package(
 	}
 
 	return &ServicePackageResult{
-		Build:   packageOutput.Build,
-		Details: result,
+		Artifacts: ArtifactCollection{
+			{
+				Kind:         ArtifactKindArchive,
+				Location:     "/fake/service-target/package/path",
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"command": result.Stdout,
+				},
+			},
+		},
+	}, nil
+}
+
+func (st *fakeServiceTarget) Publish(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	serviceContext *ServiceContext,
+	targetResource *environment.TargetResource,
+	progress *async.Progress[ServiceProgress],
+	options *PublishOptions,
+) (*ServicePublishResult, error) {
+	publishCalled, ok := ctx.Value(serviceTargetPublishCalled).(*bool)
+	if ok {
+		*publishCalled = true
+	}
+	return &ServicePublishResult{
+		Artifacts: ArtifactCollection{
+			{
+				Kind:         ArtifactKindEndpoint,
+				Location:     "https://fake-published.azurewebsites.net",
+				LocationKind: LocationKindRemote,
+				Metadata: map[string]string{
+					"imageHash": "sha256:fake123",
+				},
+			},
+		},
 	}, nil
 }
 
 func (st *fakeServiceTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	packageOutput *ServicePackageResult,
+	serviceContext *ServiceContext,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
@@ -633,8 +780,16 @@ func (st *fakeServiceTarget) Deploy(
 	}
 
 	return &ServiceDeployResult{
-		Package: packageOutput,
-		Details: result,
+		Artifacts: ArtifactCollection{
+			{
+				Kind:         ArtifactKindDeployment,
+				Location:     "https://fake-app.azurewebsites.net",
+				LocationKind: LocationKindRemote,
+				Metadata: map[string]string{
+					"command": result.Stdout,
+				},
+			},
+		},
 	}, nil
 }
 

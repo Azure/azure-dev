@@ -1,10 +1,18 @@
+@minLength(1)
+@maxLength(64)
+@description('Name of the the environment which is used to generate a short unique hash used in all resources.')
 param environmentName string
-param location string = resourceGroup().location
-param imageName string
+
+@minLength(1)
+@description('Primary location for all resources')
+param location string
+
 param containerRegistryName string
 param containerAppsEnvironmentName string
-var tags = { 'azd-env-name': environmentName }
-var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
+
+param imageName string
+
+param identityId string
 
 resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-01-01-preview' existing = {
   name: containerRegistryName
@@ -14,43 +22,39 @@ resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2022-03-01'
   name: containerAppsEnvironmentName
 }
 
-resource app 'Microsoft.App/containerApps@2023-05-02-preview' = {
-  name: 'ca-${resourceToken}'
-  location: location
-  tags: union(tags, { 'azd-service-name': 'web' })
-  properties: {
-    managedEnvironmentId: containerAppsEnvironment.id
-    configuration: {
-      activeRevisionsMode: 'single'
-      ingress: {
-        external: true
-        targetPort: 8080
-        transport: 'auto'
+module web 'br/public:avm/res/app/container-app:0.8.0' = {
+  name: 'web'
+  params: {
+    name: 'web'
+    ingressTargetPort: 8080
+    scaleMinReplicas: 1
+    scaleMaxReplicas: 10
+    secrets: {
+      secureList:  [
+      ]
+    }
+    containers: [
+      {
+        image: imageName
+        name: 'main'
+        resources: {
+          cpu: json('0.5')
+          memory: '1.0Gi'
+        }
       }
-      secrets: [
-        {
-          name: 'registry-password'
-          value: containerRegistry.listCredentials().passwords[0].value
-        }
-      ]
-      registries: [
-        {
-          server: '${containerRegistry.name}.azurecr.io'
-          username: containerRegistry.name
-          passwordSecretRef: 'registry-password'
-        }
-      ]
+    ]
+    managedIdentities:{
+      systemAssigned: false
+      userAssignedResourceIds: [identityId]
     }
-    template: {
-      containers: [
-        {
-          image: imageName
-          name: 'main'
-          env: []
-        }
-      ]
-    }
+    registries:[
+      {
+        server: containerRegistry.properties.loginServer
+        identity: identityId
+      }
+    ]
+    environmentResourceId: containerAppsEnvironment.id
+    location: location
+    tags: { 'azd-env-name': environmentName, 'azd-service-name': 'web' }
   }
 }
-
-output WEBSITE_URL string = 'https://${app.properties.configuration.ingress.fqdn}'

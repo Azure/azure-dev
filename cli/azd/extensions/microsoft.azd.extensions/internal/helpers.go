@@ -9,11 +9,13 @@ import (
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"unicode"
@@ -312,4 +314,68 @@ func GetFileNameWithoutExt(filePath string) string {
 
 	// Remove the extension
 	return strings.TrimSuffix(fileName, filepath.Ext(fileName))
+}
+
+// HasLocalRegistry checks if a local extension source registry exists
+func HasLocalRegistry() (bool, error) {
+	cmdBytes, err := exec.Command("azd", "ext", "source", "list", "-o", "json").Output()
+	if err != nil {
+		return false, fmt.Errorf("failed to execute command: %w", err)
+	}
+
+	var extensionSources []any
+	if err := json.Unmarshal(cmdBytes, &extensionSources); err != nil {
+		return false, fmt.Errorf("failed to unmarshal command output: %w", err)
+	}
+
+	for _, source := range extensionSources {
+		extensionSource, ok := source.(map[string]any)
+		if ok {
+			if extensionSource["name"] == "local" && extensionSource["type"] == "file" {
+				return true, nil
+			}
+		}
+	}
+
+	return false, nil
+}
+
+// CreateLocalRegistry creates a local extension source registry
+func CreateLocalRegistry() error {
+	azdConfigDir := os.Getenv("AZD_CONFIG_DIR")
+	if azdConfigDir == "" {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("failed to get user home directory: %w", err)
+		}
+		azdConfigDir = filepath.Join(homeDir, ".azd")
+	}
+
+	localRegistryPath := filepath.Join(azdConfigDir, "registry.json")
+	emptyRegistry := map[string]any{
+		"registry": []any{},
+	}
+
+	registryJson, err := json.MarshalIndent(emptyRegistry, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal empty registry: %w", err)
+	}
+
+	if err := os.WriteFile(localRegistryPath, registryJson, PermissionFile); err != nil {
+		return fmt.Errorf("failed to create local registry file: %w", err)
+	}
+
+	args := []string{
+		"ext", "source", "add",
+		"--name", "local",
+		"--type", "file",
+		"--location", "registry.json",
+	}
+
+	createExtSourceCmd := exec.Command("azd", args...)
+	if _, err := createExtSourceCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to create local extension source: %w", err)
+	}
+
+	return nil
 }

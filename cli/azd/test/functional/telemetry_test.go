@@ -116,15 +116,15 @@ func Test_CLI_Telemetry_UsageData_Simple_Command(t *testing.T) {
 		if strings.HasPrefix(span.Name, "cmd.") {
 			usageCmdFound = true
 			m := attributesMap(span.Attributes)
-			require.Contains(t, m, fields.EnvNameKey)
-			require.Equal(t, fields.CaseInsensitiveHash(envName), m[fields.EnvNameKey])
+			require.Contains(t, m, fields.EnvNameKey.Key)
+			require.Equal(t, fields.CaseInsensitiveHash(envName), m[fields.EnvNameKey.Key])
 
-			require.Contains(t, m, fields.CmdFlags)
-			require.ElementsMatch(t, m[fields.CmdFlags], []string{"trace-log-file"})
+			require.Contains(t, m, fields.CmdFlags.Key)
+			require.ElementsMatch(t, m[fields.CmdFlags.Key], []string{"trace-log-file"})
 
 			// env new provides a single position argument.
-			require.Contains(t, m, fields.CmdArgsCount)
-			require.Equal(t, float64(1), m[fields.CmdArgsCount])
+			require.Contains(t, m, fields.CmdArgsCount.Key)
+			require.Equal(t, float64(1), m[fields.CmdArgsCount.Key])
 		}
 	}
 
@@ -184,22 +184,22 @@ func Test_CLI_Telemetry_UsageData_EnvProjectLoad(t *testing.T) {
 		if span.Name == "cmd.restore" {
 			usageCmdFound = true
 			m := attributesMap(span.Attributes)
-			require.Contains(t, m, fields.SubscriptionIdKey)
-			require.Equal(t, getEnvSubscriptionId(t, dir, envName), m[fields.SubscriptionIdKey])
+			require.Contains(t, m, fields.SubscriptionIdKey.Key)
+			require.Equal(t, getEnvSubscriptionId(t, dir, envName), m[fields.SubscriptionIdKey.Key])
 
 			templateAndVersion := strings.Split(projConfig.Metadata.Template, "@")
 			require.Len(t, templateAndVersion, 2)
-			require.Contains(t, m, fields.ProjectTemplateIdKey)
-			require.Equal(t, fields.CaseInsensitiveHash(templateAndVersion[0]), m[fields.ProjectTemplateIdKey])
+			require.Contains(t, m, fields.ProjectTemplateIdKey.Key)
+			require.Equal(t, fields.CaseInsensitiveHash(templateAndVersion[0]), m[fields.ProjectTemplateIdKey.Key])
 
-			require.Contains(t, m, fields.ProjectTemplateVersionKey)
-			require.Equal(t, fields.CaseInsensitiveHash(templateAndVersion[1]), m[fields.ProjectTemplateVersionKey])
+			require.Contains(t, m, fields.ProjectTemplateVersionKey.Key)
+			require.Equal(t, fields.CaseInsensitiveHash(templateAndVersion[1]), m[fields.ProjectTemplateVersionKey.Key])
 
-			require.Contains(t, m, fields.ProjectNameKey)
-			require.Equal(t, fields.CaseInsensitiveHash(projConfig.Name), m[fields.ProjectNameKey])
+			require.Contains(t, m, fields.ProjectNameKey.Key)
+			require.Equal(t, fields.CaseInsensitiveHash(projConfig.Name), m[fields.ProjectNameKey.Key])
 
-			require.Contains(t, m, fields.EnvNameKey)
-			require.Equal(t, fields.CaseInsensitiveHash(envName), m[fields.EnvNameKey])
+			require.Contains(t, m, fields.EnvNameKey.Key)
+			require.Equal(t, fields.CaseInsensitiveHash(envName), m[fields.EnvNameKey.Key])
 
 			hosts := []string{}
 			languages := []string{}
@@ -207,17 +207,17 @@ func Test_CLI_Telemetry_UsageData_EnvProjectLoad(t *testing.T) {
 				hosts = append(hosts, string(svc.Host))
 				languages = append(languages, string(svc.Language))
 			}
-			require.Contains(t, m, fields.ProjectServiceHostsKey)
-			require.ElementsMatch(t, m[fields.ProjectServiceHostsKey], hosts)
+			require.Contains(t, m, fields.ProjectServiceHostsKey.Key)
+			require.ElementsMatch(t, m[fields.ProjectServiceHostsKey.Key], hosts)
 
-			require.Contains(t, m, fields.ProjectServiceLanguagesKey)
-			require.ElementsMatch(t, m[fields.ProjectServiceLanguagesKey], languages)
+			require.Contains(t, m, fields.ProjectServiceLanguagesKey.Key)
+			require.ElementsMatch(t, m[fields.ProjectServiceLanguagesKey.Key], languages)
 
-			require.Contains(t, m, fields.CmdFlags)
-			require.ElementsMatch(t, m[fields.CmdFlags], []string{"trace-log-file"})
+			require.Contains(t, m, fields.CmdFlags.Key)
+			require.ElementsMatch(t, m[fields.CmdFlags.Key], []string{"trace-log-file"})
 
-			require.Contains(t, m, fields.CmdArgsCount)
-			require.Equal(t, float64(1), m[fields.CmdArgsCount])
+			require.Contains(t, m, fields.CmdArgsCount.Key)
+			require.Equal(t, float64(1), m[fields.CmdArgsCount.Key])
 		}
 	}
 	require.True(t, usageCmdFound)
@@ -240,15 +240,19 @@ func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
 
 	// set environment modifier
 	cli.Env = append(cli.Env, "AZURE_DEV_USER_AGENT=azure_app_space_portal:v1.0.0")
+
+	// set a fixed traceparent to verify trace ID propagation for commands and nested commands
+	traceId := "246cfb7e1b1c5978f4b0fc2e41e98db6"
+	cli.Env = append(cli.Env, "TRACEPARENT="+fmt.Sprintf("00-%s-a16efae62fc848c9-01", traceId))
 	cli.WorkingDirectory = dir
 
 	envName := randomEnvName()
 
 	_, err := cli.RunCommandWithStdIn(
 		ctx,
-		// Choose the default minimal template
-		"Select a template\n\n"+stdinForInit(envName),
-		"init")
+		// Choose default name
+		"\n",
+		"init", "--minimal")
 	require.NoError(t, err)
 
 	// Remove infra folder to avoid lengthy Azure operations while asserting the intended telemetry behavior.
@@ -263,7 +267,9 @@ func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
 	require.NoError(t, err)
 	defer file.Close()
 
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "up", "--trace-log-file", traceFilePath)
+	_, err = cli.RunCommandWithStdIn(ctx,
+		stdinForInit(envName)+stdinForProvision(),
+		"up", "--trace-log-file", traceFilePath)
 	require.Error(t, err)
 
 	traceContent, err := os.ReadFile(traceFilePath)
@@ -274,7 +280,6 @@ func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
 	packageCmdFound := false
 	provisionCmdFound := false
 	upCmdFound := false
-	traceId := ""
 	for scanner.Scan() {
 		if scanner.Text() == "" {
 			continue
@@ -292,59 +297,57 @@ func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
 		if !packageCmdFound {
 			require.Equal(t, "cmd.package", span.Name)
 			packageCmdFound = true
-			require.NoError(t, span.SpanContext.Validate(), "invalid span context")
-			// set the traceID
-			traceId = span.SpanContext.TraceID
+			require.Equal(t, traceId, span.SpanContext.TraceID, "commands do not share a traceID")
 
 			m := attributesMap(span.Attributes)
-			require.Contains(t, m, fields.SubscriptionIdKey)
-			require.Equal(t, getEnvSubscriptionId(t, dir, envName), m[fields.SubscriptionIdKey])
+			require.Contains(t, m, fields.SubscriptionIdKey.Key)
+			require.Equal(t, getEnvSubscriptionId(t, dir, envName), m[fields.SubscriptionIdKey.Key])
 
-			require.Contains(t, m, fields.EnvNameKey)
-			require.Equal(t, fields.CaseInsensitiveHash(envName), m[fields.EnvNameKey])
+			require.Contains(t, m, fields.EnvNameKey.Key)
+			require.Equal(t, fields.CaseInsensitiveHash(envName), m[fields.EnvNameKey.Key])
 
-			require.Contains(t, m, fields.CmdEntry)
-			require.Equal(t, "cmd.up", m[fields.CmdEntry])
+			require.Contains(t, m, fields.CmdEntry.Key)
+			require.Equal(t, "cmd.up", m[fields.CmdEntry.Key])
 
-			require.Contains(t, m, fields.CmdFlags)
-			require.ElementsMatch(t, []string{"all", "trace-log-file"}, m[fields.CmdFlags])
+			require.Contains(t, m, fields.CmdFlags.Key)
+			require.ElementsMatch(t, []string{"all", "trace-log-file"}, m[fields.CmdFlags.Key])
 		} else if !provisionCmdFound {
 			require.Equal(t, "cmd.provision", span.Name)
 			provisionCmdFound = true
 			require.Equal(t, traceId, span.SpanContext.TraceID, "commands do not share a traceID")
 
 			m := attributesMap(span.Attributes)
-			require.Contains(t, m, fields.SubscriptionIdKey)
-			require.Equal(t, getEnvSubscriptionId(t, dir, envName), m[fields.SubscriptionIdKey])
+			require.Contains(t, m, fields.SubscriptionIdKey.Key)
+			require.Equal(t, getEnvSubscriptionId(t, dir, envName), m[fields.SubscriptionIdKey.Key])
 
-			require.Contains(t, m, fields.EnvNameKey)
-			require.Equal(t, fields.CaseInsensitiveHash(envName), m[fields.EnvNameKey])
+			require.Contains(t, m, fields.EnvNameKey.Key)
+			require.Equal(t, fields.CaseInsensitiveHash(envName), m[fields.EnvNameKey.Key])
 
-			require.Contains(t, m, fields.CmdEntry)
-			require.Equal(t, "cmd.up", m[fields.CmdEntry])
+			require.Contains(t, m, fields.CmdEntry.Key)
+			require.Equal(t, "cmd.up", m[fields.CmdEntry.Key])
 
-			require.Contains(t, m, fields.CmdFlags)
-			require.ElementsMatch(t, []string{"trace-log-file"}, m[fields.CmdFlags])
+			require.Contains(t, m, fields.CmdFlags.Key)
+			require.ElementsMatch(t, []string{"trace-log-file"}, m[fields.CmdFlags.Key])
 		} else if !upCmdFound {
 			require.Equal(t, "cmd.up", span.Name)
 			upCmdFound = true
 			require.Equal(t, traceId, span.SpanContext.TraceID, "commands do not share a traceID")
 
 			m := attributesMap(span.Attributes)
-			require.Contains(t, m, fields.SubscriptionIdKey)
-			require.Equal(t, getEnvSubscriptionId(t, dir, envName), m[fields.SubscriptionIdKey])
+			require.Contains(t, m, fields.SubscriptionIdKey.Key)
+			require.Equal(t, getEnvSubscriptionId(t, dir, envName), m[fields.SubscriptionIdKey.Key])
 
-			require.Contains(t, m, fields.EnvNameKey)
-			require.Equal(t, fields.CaseInsensitiveHash(envName), m[fields.EnvNameKey])
+			require.Contains(t, m, fields.EnvNameKey.Key)
+			require.Equal(t, fields.CaseInsensitiveHash(envName), m[fields.EnvNameKey.Key])
 
-			require.Contains(t, m, fields.CmdEntry)
-			require.Equal(t, "cmd.up", m[fields.CmdEntry])
+			require.Contains(t, m, fields.CmdEntry.Key)
+			require.Equal(t, "cmd.up", m[fields.CmdEntry.Key])
 
-			require.Contains(t, m, fields.CmdFlags)
-			require.ElementsMatch(t, []string{"trace-log-file"}, m[fields.CmdFlags])
+			require.Contains(t, m, fields.CmdFlags.Key)
+			require.ElementsMatch(t, []string{"trace-log-file"}, m[fields.CmdFlags.Key])
 
-			require.Contains(t, m, fields.CmdArgsCount)
-			require.Equal(t, float64(0), m[fields.CmdArgsCount])
+			require.Contains(t, m, fields.CmdArgsCount.Key)
+			require.Equal(t, float64(0), m[fields.CmdArgsCount.Key])
 		}
 	}
 	require.True(t, packageCmdFound, "cmd.package not found")
@@ -355,11 +358,7 @@ func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
 func Test_Telemetry_AlphaFeatures_Enabled(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 
-	t.Setenv("AZD_ALPHA_ENABLE_EXTENSIONS", "true")
 	t.Setenv("AZD_ALPHA_ENABLE_AKS_HELM", "false")
-
-	extensionsEnabled := mockContext.AlphaFeaturesManager.IsEnabled("extensions")
-	require.True(t, extensionsEnabled)
 
 	helmEnabled := mockContext.AlphaFeaturesManager.IsEnabled("aks.helm")
 	require.False(t, helmEnabled)
@@ -370,18 +369,17 @@ func Test_Telemetry_AlphaFeatures_Enabled(t *testing.T) {
 	var alphaFeaturesAttribute attribute.KeyValue
 
 	for _, attrib := range usageAttributes {
-		if attrib.Key == fields.AlphaFeaturesKey {
+		if attrib.Key == fields.FeaturesKey.Key {
 			found = true
 			alphaFeaturesAttribute = attrib
 			break
 		}
 	}
 
-	require.True(t, found)
+	require.False(t, found)
 	values := alphaFeaturesAttribute.Value.AsStringSlice()
 
-	require.Len(t, values, 1)
-	require.Contains(t, values, "extensions")
+	require.Len(t, values, 0)
 	require.NotContains(t, values, "aks.helm")
 }
 
@@ -409,28 +407,28 @@ func verifyResource(
 	attributes []Attribute) {
 	m := attributesMap(attributes)
 
-	require.Contains(t, m, fields.MachineIdKey)
-	machineId, ok := m[fields.MachineIdKey].(string)
+	require.Contains(t, m, fields.MachineIdKey.Key)
+	machineId, ok := m[fields.MachineIdKey.Key].(string)
 	require.True(t, ok, "expected machine ID to be string type")
 	isSha256 := Sha256Regex.MatchString(machineId)
 	_, err := uuid.Parse(machineId)
 	isUuid := err == nil
 	require.True(t, isSha256 || isUuid, "invalid machine ID format. expected sha256 or uuid")
 
-	require.Contains(t, m, fields.ServiceVersionKey)
-	require.Equal(t, m[fields.ServiceVersionKey], getExpectedVersion(t))
+	require.Contains(t, m, fields.ServiceVersionKey.Key)
+	require.Equal(t, m[fields.ServiceVersionKey.Key], getExpectedVersion(t))
 
-	require.Contains(t, m, fields.ServiceVersionKey)
-	require.Equal(t, m[fields.ServiceNameKey], fields.ServiceNameAzd)
+	require.Contains(t, m, fields.ServiceVersionKey.Key)
+	require.Equal(t, m[fields.ServiceNameKey.Key], fields.ServiceNameAzd)
 
-	require.Contains(t, m, fields.ExecutionEnvironmentKey)
+	require.Contains(t, m, fields.ExecutionEnvironmentKey.Key)
 
-	require.Contains(t, m, fields.DevDeviceIdKey)
+	require.Contains(t, m, fields.DevDeviceIdKey.Key)
 
 	env := ""
 	if os.Getenv("BUILD_BUILDID") != "" {
 		env = fields.EnvAzurePipelines
-		require.Regexp(t, regexp.MustCompile("^"+fields.EnvAzurePipelines), m[fields.ExecutionEnvironmentKey])
+		require.Regexp(t, regexp.MustCompile("^"+fields.EnvAzurePipelines), m[fields.ExecutionEnvironmentKey.Key])
 	} else if os.Getenv("GITHUB_RUN_ID") != "" {
 		env = fields.EnvGitHubActions
 	}
@@ -438,17 +436,17 @@ func verifyResource(
 	if env != "" {
 		// basic regex that matches a very simple expression (not the entire grammar):
 		// env followed by an optional (;modifier)
-		require.Regexp(t, regexp.MustCompile("^"+env+"(;\\w)?"), m[fields.ExecutionEnvironmentKey])
+		require.Regexp(t, regexp.MustCompile("^"+env+"(;\\w)?"), m[fields.ExecutionEnvironmentKey.Key])
 	}
 
 	for _, env := range cmdEnv {
 		if strings.HasPrefix(env, "AZURE_DEV_USER_AGENT=") && strings.Contains(env, "azure_app_space_portal") {
-			require.Contains(t, m[fields.ExecutionEnvironmentKey], ";"+fields.EnvModifierAzureSpace)
+			require.Contains(t, m[fields.ExecutionEnvironmentKey.Key], ";"+fields.EnvModifierAzureSpace)
 		}
 	}
 
-	require.Contains(t, m, fields.OSTypeKey)
-	require.Contains(t, m, fields.OSVersionKey)
-	require.Contains(t, m, fields.HostArchKey)
-	require.Contains(t, m, fields.ProcessRuntimeVersionKey)
+	require.Contains(t, m, fields.OSTypeKey.Key)
+	require.Contains(t, m, fields.OSVersionKey.Key)
+	require.Contains(t, m, fields.HostArchKey.Key)
+	require.Contains(t, m, fields.ProcessRuntimeVersionKey.Key)
 }

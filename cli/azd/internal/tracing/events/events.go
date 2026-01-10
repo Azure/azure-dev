@@ -17,3 +17,12 @@ const VsRpcEventPrefix = "vsrpc."
 
 // PackBuildEvent is the name of the event which tracks the overall pack build operation.
 const PackBuildEvent = "tools.pack.build"
+
+// AgentTroubleshootEvent is the name of the event which tracks agent troubleshoot operations.
+const AgentTroubleshootEvent = "agent.troubleshoot"
+
+// Extension related events.
+const (
+	ExtensionRunEvent     = "ext.run"
+	ExtensionInstallEvent = "ext.install"
+)

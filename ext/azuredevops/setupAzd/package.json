@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "tsc && mocha tests/Install*.js"
+    "test": "tsc && mocha tests/Install*.js",
+    "build": "tsc"
   },
   "keywords": [],
   "author": "",

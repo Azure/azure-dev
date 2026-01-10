@@ -1,0 +1,25 @@
+# Continuous deployment trigger
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - ext/azuredevops
+      - eng/pipelines/release-azuredevops.yml
+
+pr:
+  paths:
+    include:
+      - ext/azuredevops
+      - eng/pipelines/release-azuredevops.yml
+
+extends: 
+  template: /eng/pipelines/templates/stages/1es-redirect.yml
+  parameters:
+    stages:
+    - template: /eng/pipelines/templates/stages/azuredevops-build-and-test.yml
+
+    - template: /eng/pipelines/templates/stages/azuredevops-sign.yml
+
+    - template: /eng/pipelines/templates/stages/azuredevops-publish-manual.yml

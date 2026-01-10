@@ -139,9 +139,10 @@ func createExtensionFilter(options *FilterOptions) extensionFilterPredicate {
 
 // Manager is responsible for managing extensions
 type Manager struct {
-	sourceManager *SourceManager
-	sources       []Source
-	installed     map[string]*Extension
+	sourceManager   *SourceManager
+	sources         []Source
+	installed       map[string]*Extension
+	metadataManager *MetadataManager
 
 	configManager config.UserConfigManager
 	userConfig    config.Config
@@ -164,10 +165,11 @@ func NewManager(
 	})
 
 	return &Manager{
-		userConfig:    userConfig,
-		configManager: configManager,
-		sourceManager: sourceManager,
-		pipeline:      pipeline,
+		userConfig:      userConfig,
+		configManager:   configManager,
+		sourceManager:   sourceManager,
+		pipeline:        pipeline,
+		metadataManager: NewMetadataManager(configManager),
 	}, nil
 }
 
@@ -502,6 +504,13 @@ func (m *Manager) Install(
 		selectedVersion.Version,
 		targetPath,
 	)
+
+	// Fetch and cache metadata if extension supports it
+	installedExtension := extensions[extension.Id]
+	if err := m.metadataManager.FetchAndCache(ctx, installedExtension); err != nil {
+		// Log warning but don't fail installation
+		log.Printf("Warning: Failed to fetch extension metadata for '%s': %v\n", extension.Id, err)
+	}
 
 	return selectedVersion, nil
 }

@@ -1,0 +1,165 @@
+{
+  "schemaVersion": "1.0",
+  "id": "microsoft.azd.demo",
+  "version": "0.4.0",
+  "commands": [
+    {
+      "name": [
+        "colors"
+      ],
+      "short": "Displays all ASCII colors with their standard and high-intensity variants.",
+      "usage": "azd colors"
+    },
+    {
+      "name": [
+        "context"
+      ],
+      "short": "Get the context of the AZD project \u0026 environment.",
+      "usage": "azd context"
+    },
+    {
+      "name": [
+        "gh-url-parse"
+      ],
+      "short": "Parse a GitHub URL and extract repository information.",
+      "long": "Parse a GitHub URL and extract repository information including hostname, \nrepository slug, branch name, and file path. Supports various GitHub URL formats \nincluding blob, tree, raw, and API URLs. Handles branch names containing slashes.",
+      "usage": "azd gh-url-parse \u003cgithub-url\u003e"
+    },
+    {
+      "name": [
+        "listen"
+      ],
+      "short": "Starts the extension and listens for events.",
+      "usage": "azd listen"
+    },
+    {
+      "name": [
+        "mcp"
+      ],
+      "short": "MCP server commands for demo extension",
+      "usage": "azd mcp",
+      "subcommands": [
+        {
+          "name": [
+            "mcp",
+            "start"
+          ],
+          "short": "Start MCP server with demo tools",
+          "usage": "azd mcp start"
+        }
+      ]
+    },
+    {
+      "name": [
+        "prompt"
+      ],
+      "short": "Examples of prompting the user for input.",
+      "usage": "azd prompt"
+    },
+    {
+      "name": [
+        "version"
+      ],
+      "short": "Prints the version of the application",
+      "usage": "azd version"
+    }
+  ],
+  "configuration": {
+    "project": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "https://github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.demo/internal/config/custom-project-config",
+      "$ref": "#/$defs/CustomProjectConfig",
+      "$defs": {
+        "CustomProjectConfig": {
+          "properties": {
+            "enableColors": {
+              "type": "boolean",
+              "description": "Enable color output",
+              "default": true
+            },
+            "maxItems": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Max items to display",
+              "default": 10
+            },
+            "labels": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object",
+              "description": "Custom project labels"
+            }
+          },
+          "additionalProperties": false,
+          "type": "object"
+        }
+      }
+    },
+    "service": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "https://github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.demo/internal/config/custom-service-config",
+      "$ref": "#/$defs/CustomServiceConfig",
+      "$defs": {
+        "CustomServiceConfig": {
+          "properties": {
+            "endpoint": {
+              "type": "string",
+              "format": "uri",
+              "description": "Service endpoint URL"
+            },
+            "port": {
+              "type": "integer",
+              "maximum": 65535,
+              "minimum": 1,
+              "description": "Service port",
+              "default": 8080
+            },
+            "environment": {
+              "type": "string",
+              "enum": [
+                "development",
+                "staging",
+                "production"
+              ],
+              "description": "Environment"
+            },
+            "healthCheck": {
+              "$ref": "#/$defs/HealthCheckConfig",
+              "description": "Health check configuration"
+            }
+          },
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "endpoint"
+          ]
+        },
+        "HealthCheckConfig": {
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Enable health checks",
+              "default": true
+            },
+            "path": {
+              "type": "string",
+              "description": "Health check path",
+              "default": "/health"
+            },
+            "interval": {
+              "type": "integer",
+              "maximum": 300,
+              "minimum": 5,
+              "description": "Check interval (sec)",
+              "default": 30
+            }
+          },
+          "additionalProperties": false,
+          "type": "object"
+        }
+      }
+    }
+  }
+}

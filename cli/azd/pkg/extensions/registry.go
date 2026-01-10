@@ -40,6 +40,8 @@ const (
 	ServiceTargetProviderCapability CapabilityType = "service-target-provider"
 	// Framework service providers enable extensions to provide custom language frameworks and build systems
 	FrameworkServiceProviderCapability CapabilityType = "framework-service-provider"
+	// Metadata capability enables extensions to provide comprehensive metadata about their commands and capabilities
+	MetadataCapability CapabilityType = "metadata"
 )
 
 type ProviderType string

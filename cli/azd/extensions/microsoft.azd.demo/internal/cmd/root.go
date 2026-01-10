@@ -28,6 +28,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newVersionCommand())
 	rootCmd.AddCommand(newMcpCommand())
 	rootCmd.AddCommand(newGhUrlParseCommand())
+	rootCmd.AddCommand(newMetadataCommand())
 
 	return rootCmd
 }

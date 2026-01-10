@@ -58,6 +58,48 @@ Displays a list of Azure resources based on the current logged in user, and subs
 
 Displays a list of Azure resources based on the current logged in user, subscription and resource group filtered by resource type and kind.
 
+### `metadata`
+
+The `metadata` command demonstrates the metadata capability, which provides command structure and configuration schemas.
+
+#### Usage: `azd demo metadata`
+
+This command generates JSON metadata including:
+- **Command Tree**: All available commands, subcommands, flags, and arguments with descriptions
+- **Configuration Schemas**: Type-safe JSON schemas for project and service-level configuration
+
+Example configuration in `azure.yaml`:
+
+```yaml
+extensions:
+  demo:
+    project:
+      enableColors: true
+      maxItems: 20
+      labels:
+        team: "platform"
+        env: "dev"
+    
+services:
+  web:
+    extensions:
+      demo:
+        service:
+          endpoint: "https://api.example.com"
+          port: 8080
+          environment: "staging"
+          healthCheck:
+            enabled: true
+            path: "/health"
+            interval: 30
+```
+
+The metadata capability enables:
+- IDE autocomplete and validation for extension configuration
+- Automatic help generation
+- Configuration validation before deployment
+- Better discoverability of extension features
+
 ### `listen`
 
 This `listen` command is required when your extension leverages `LifecycleEvents` capability.

@@ -1,0 +1,34 @@
+# Example: Supervised Fine-Tuning Configuration
+# Use this for standard supervised learning tasks
+
+model: gpt-4o-mini
+training_file: "local:./training_data.jsonl"
+validation_file: "local:./validation_data.jsonl"
+
+# Optional: Custom suffix for fine-tuned model name
+suffix: "my-custom-model"
+
+# Optional: Seed for reproducibility
+seed: 42
+
+# Fine-tuning method configuration
+method:
+  type: supervised
+  supervised:
+    hyperparameters:
+      epochs: 3              # Number of training epochs
+      batch_size: 8          # Batch size (or "auto")
+      learning_rate_multiplier: 1.0  # Learning rate multiplier (or "auto")
+
+# Optional: Custom metadata
+metadata:
+  project: "customer-support"
+  team: "ml-engineering"
+  version: "v1.0"
+
+# Optional: Integration with Weights & Biases for monitoring
+integrations:
+  - type: wandb
+    config:
+      project: "fine-tuning-experiments"
+      name: "supervised-training"

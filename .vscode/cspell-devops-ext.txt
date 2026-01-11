@@ -1,4 +1,7 @@
-vsix
-tsbuildinfo
-codepaths
 azuretools
+codepaths
+LASTEXITCODE
+tmrm
+toolrunner
+tsbuildinfo
+vsix

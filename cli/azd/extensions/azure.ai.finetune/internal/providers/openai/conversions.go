@@ -6,6 +6,7 @@ package openai
 import (
 	"encoding/json"
 	"strings"
+	"time"
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/packages/pagination"
@@ -50,7 +51,15 @@ func convertOpenAIJobToModel(openaiJob openai.FineTuningJob) *models.FineTuningJ
 		BaseModel:      openaiJob.Model,
 		FineTunedModel: openaiJob.FineTunedModel,
 		CreatedAt:      utils.UnixTimestampToUTC(openaiJob.CreatedAt),
+		Duration:       models.Duration(calculateDuration(openaiJob.CreatedAt, openaiJob.FinishedAt)),
 	}
+}
+
+func calculateDuration(createdAt, finishedAt int64) time.Duration {
+	if finishedAt > 0 {
+		return time.Duration(finishedAt-createdAt) * time.Second
+	}
+	return 0
 }
 
 // convertOpenAIJobToDetailModel converts OpenAI SDK job to detailed domain model

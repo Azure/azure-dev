@@ -30,6 +30,26 @@ const (
 	Reinforcement MethodType = "reinforcement"
 )
 
+type Duration time.Duration
+
+func (d Duration) MarshalJSON() ([]byte, error) {
+    if d == 0 {
+        return []byte(`"-"`), nil
+    }
+    h := int(time.Duration(d).Hours())
+    m := int(time.Duration(d).Minutes()) % 60
+    return []byte(fmt.Sprintf(`"%dh %02dm"`, h, m)), nil
+}
+
+func (d Duration) MarshalYAML() (interface{}, error) {
+    if d == 0 {
+        return "-", nil
+    }
+    h := int(time.Duration(d).Hours())
+    m := int(time.Duration(d).Minutes()) % 60
+    return fmt.Sprintf("%dh %02dm", h, m), nil
+}
+
 // FineTuningJob represents a vendor-agnostic fine-tuning job
 type FineTuningJob struct {
 	// Core identification
@@ -37,12 +57,13 @@ type FineTuningJob struct {
 	VendorJobID string `json:"-" table:"-"` // Vendor-specific ID (e.g., OpenAI's ftjob-xxx)
 
 	// Job details
-	Status         JobStatus `json:"status" table:"STATUS"`
 	BaseModel      string    `json:"model" table:"MODEL"`
+	Status         JobStatus `json:"status" table:"STATUS"`
 	FineTunedModel string    `json:"-" table:"-"`
 
 	// Timestamps
 	CreatedAt   time.Time  `json:"created_at" table:"CREATED"`
+	Duration    Duration `json:"duration" table:"DURATION"`
 	CompletedAt *time.Time `json:"-" table:"-"`
 
 	// Files

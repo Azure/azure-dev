@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -226,6 +227,17 @@ func formatFieldValue(v reflect.Value) string {
 		if t, ok := v.Interface().(interface{ Format(string) string }); ok {
 			return t.Format("2006-01-02 15:04")
 		}
+	}
+
+	// Handle time.Duration
+	if v.Type().String() == "time.Duration" || v.Type().String() == "models.Duration" {
+		d := time.Duration(v.Int())
+		if d == 0 {
+			return "-"
+		}
+		h := int(d.Hours())
+		m := int(d.Minutes()) % 60
+		return fmt.Sprintf("%dh %02dm", h, m)
 	}
 
 	switch v.Kind() {

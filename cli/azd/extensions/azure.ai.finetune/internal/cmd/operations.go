@@ -296,6 +296,7 @@ func newOperationShowCommand() *cobra.Command {
 func newOperationListCommand() *cobra.Command {
 	var limit int
 	var after string
+	var output string
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List fine-tuning jobs.",
@@ -309,7 +310,7 @@ func newOperationListCommand() *cobra.Command {
 
 			// Show spinner while fetching jobs
 			spinner := ux.NewSpinner(&ux.SpinnerOptions{
-				Text: "Fetching fine-tuning jobs...",
+				Text: "Fine-tuning Jobs",
 			})
 			if err := spinner.Start(ctx); err != nil {
 				fmt.Printf("failed to start spinner: %v\n", err)
@@ -324,27 +325,23 @@ func newOperationListCommand() *cobra.Command {
 
 			jobs, err := fineTuneSvc.ListFineTuningJobs(ctx, limit, after)
 			_ = spinner.Stop(ctx)
+			fmt.Print("\n\n")
+
 			if err != nil {
-				fmt.Println()
 				return err
 			}
 
-			// Display job list
-			for i, job := range jobs {
-				fmt.Printf("\n%d. Job ID: %s | Status: %s %s | Model: %s | Fine-tuned: %s | Created: %s",
-					i+1, job.ID, utils.GetStatusSymbol(job.Status), job.Status, job.BaseModel,
-					formatFineTunedModel(job.FineTunedModel), utils.FormatTime(job.CreatedAt))
+			if output == "json" {
+				utils.PrintObject(jobs, utils.FormatJSON)
+			} else {
+				utils.PrintObject(jobs, utils.FormatTable)
 			}
-
-			fmt.Printf("\nTotal jobs: %d\n", len(jobs))
-
-			utils.PrintObject(jobs, utils.FormatTable)
-			utils.PrintObject(jobs, utils.FormatJSON)
 			return nil
 		},
 	}
 
-	cmd.Flags().IntVarP(&limit, "top", "t", 50, "Number of fine-tuning jobs to list")
-	cmd.Flags().StringVarP(&after, "after", "a", "", "Cursor for pagination")
+	cmd.Flags().IntVarP(&limit, "top", "t", 10, "Number of jobs to return")
+	cmd.Flags().StringVar(&after, "after", "", "Pagination cursor")
+	cmd.Flags().StringVarP(&output, "output", "o", "table", "Output format: table, json")
 	return cmd
 }

@@ -180,8 +180,8 @@ $ azd config set defaults.location eastus`,
 			Footer: getCmdConfigOptionsHelpFooter,
 		},
 		ActionResolver: newConfigOptionsAction,
-		OutputFormats:  []output.Format{output.JsonFormat, output.TableFormat},
-		DefaultFormat:  output.TableFormat,
+		OutputFormats:  []output.Format{output.JsonFormat, output.TableFormat, output.NoneFormat},
+		DefaultFormat:  output.NoneFormat,
 	})
 
 	return group
@@ -528,15 +528,14 @@ func getCmdListAlphaHelpFooter(*cobra.Command) string {
 
 func getCmdConfigOptionsHelpFooter(*cobra.Command) string {
 	return generateCmdHelpSamplesBlock(map[string]string{
-		"List all available configuration settings in table format": output.WithHighLightFormat(
+		"List all available configuration settings": output.WithHighLightFormat(
 			"azd config options",
 		),
 		"List all available configuration settings in JSON format": output.WithHighLightFormat(
 			"azd config options -o json",
 		),
-		"View a setting and set it": output.WithHighLightFormat(
-			"azd config options") + "\n    " + output.WithHighLightFormat(
-			"azd config set <key> <value>",
+		"List all available configuration settings in table format": output.WithHighLightFormat(
+			"azd config options -o table",
 		),
 	})
 }
@@ -588,30 +587,107 @@ func (a *configOptionsAction) Run(ctx context.Context) (*actions.ActionResult, e
 		return nil, nil
 	}
 
-	// Table format
-	type tableRow struct {
-		Key           string
-		Description   string
-		Type          string
-		CurrentValue  string
-		AllowedValues string
-		EnvVar        string
-		Example       string
-	}
-
-	var rows []tableRow
-	for _, option := range options {
-		allowedValues := ""
-		if len(option.AllowedValues) > 0 {
-			allowedValues = strings.Join(option.AllowedValues, ", ")
+	if a.formatter.Kind() == output.TableFormat {
+		// Table format
+		type tableRow struct {
+			Key           string
+			Description   string
+			Type          string
+			CurrentValue  string
+			AllowedValues string
+			EnvVar        string
+			Example       string
 		}
 
-		// Get current value from config
-		currentValue := ""
-		// Skip environment-only variables (those with keys starting with EnvOnlyPrefix)
+		var rows []tableRow
+		for _, option := range options {
+			allowedValues := ""
+			if len(option.AllowedValues) > 0 {
+				allowedValues = strings.Join(option.AllowedValues, ", ")
+			}
+
+			// Get current value from config
+			currentValue := ""
+			// Skip environment-only variables (those with keys starting with EnvOnlyPrefix)
+			if !strings.HasPrefix(option.Key, config.EnvOnlyPrefix) {
+				if val, ok := currentConfig.Get(option.Key); ok {
+					// Convert value to string representation
+					switch v := val.(type) {
+					case string:
+						currentValue = v
+					case map[string]any:
+						currentValue = "<object>"
+					case []any:
+						currentValue = "<array>"
+					default:
+						currentValue = fmt.Sprintf("%v", v)
+					}
+				}
+			}
+
+			rows = append(rows, tableRow{
+				Key:           option.Key,
+				Description:   option.Description,
+				Type:          option.Type,
+				CurrentValue:  currentValue,
+				AllowedValues: allowedValues,
+				EnvVar:        option.EnvVar,
+				Example:       option.Example,
+			})
+		}
+
+		columns := []output.Column{
+			{
+				Heading:       "Key",
+				ValueTemplate: "{{.Key}}",
+			},
+			{
+				Heading:       "Description",
+				ValueTemplate: "{{.Description}}",
+			},
+			{
+				Heading:       "Type",
+				ValueTemplate: "{{.Type}}",
+			},
+			{
+				Heading:       "Current Value",
+				ValueTemplate: "{{.CurrentValue}}",
+			},
+			{
+				Heading:       "Allowed Values",
+				ValueTemplate: "{{.AllowedValues}}",
+			},
+			{
+				Heading:       "Environment Variable",
+				ValueTemplate: "{{.EnvVar}}",
+			},
+			{
+				Heading:       "Example",
+				ValueTemplate: "{{.Example}}",
+			},
+		}
+
+		err = a.formatter.Format(rows, a.writer, output.TableFormatterOptions{
+			Columns: columns,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed formatting config options: %w", err)
+		}
+
+		return nil, nil
+	}
+
+	// Default format: human-readable list (similar to list-alpha)
+	var optionsOutput []string
+	for _, option := range options {
+		var parts []string
+		parts = append(parts, fmt.Sprintf("Key: %s", option.Key))
+		parts = append(parts, fmt.Sprintf("Description: %s", option.Description))
+
+		// Get current value from config if available
 		if !strings.HasPrefix(option.Key, config.EnvOnlyPrefix) {
 			if val, ok := currentConfig.Get(option.Key); ok {
-				// Convert value to string representation
+				var currentValue string
 				switch v := val.(type) {
 				case string:
 					currentValue = v
@@ -622,57 +698,27 @@ func (a *configOptionsAction) Run(ctx context.Context) (*actions.ActionResult, e
 				default:
 					currentValue = fmt.Sprintf("%v", v)
 				}
+				parts = append(parts, fmt.Sprintf("Current Value: %s", currentValue))
 			}
 		}
 
-		rows = append(rows, tableRow{
-			Key:           option.Key,
-			Description:   option.Description,
-			Type:          option.Type,
-			CurrentValue:  currentValue,
-			AllowedValues: allowedValues,
-			EnvVar:        option.EnvVar,
-			Example:       option.Example,
-		})
+		if len(option.AllowedValues) > 0 {
+			parts = append(parts, fmt.Sprintf("Allowed Values: %s", strings.Join(option.AllowedValues, ", ")))
+		}
+
+		if option.EnvVar != "" {
+			parts = append(parts, fmt.Sprintf("Environment Variable: %s", option.EnvVar))
+		}
+
+		if option.Example != "" {
+			parts = append(parts, fmt.Sprintf("Example: %s", option.Example))
+		}
+
+		optionsOutput = append(optionsOutput, strings.Join(parts, "\n"))
 	}
 
-	columns := []output.Column{
-		{
-			Heading:       "Key",
-			ValueTemplate: "{{.Key}}",
-		},
-		{
-			Heading:       "Description",
-			ValueTemplate: "{{.Description}}",
-		},
-		{
-			Heading:       "Type",
-			ValueTemplate: "{{.Type}}",
-		},
-		{
-			Heading:       "Current Value",
-			ValueTemplate: "{{.CurrentValue}}",
-		},
-		{
-			Heading:       "Allowed Values",
-			ValueTemplate: "{{.AllowedValues}}",
-		},
-		{
-			Heading:       "Environment Variable",
-			ValueTemplate: "{{.EnvVar}}",
-		},
-		{
-			Heading:       "Example",
-			ValueTemplate: "{{.Example}}",
-		},
-	}
+	a.console.Message(ctx, strings.Join(optionsOutput, "\n\n"))
 
-	err = a.formatter.Format(rows, a.writer, output.TableFormatterOptions{
-		Columns: columns,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed formatting config options: %w", err)
-	}
-
+	// No UX output
 	return nil, nil
 }

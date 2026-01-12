@@ -12,14 +12,13 @@ Global Flags
         --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
 
 Examples
+  List all available configuration settings
+    azd config options
+
   List all available configuration settings in JSON format
     azd config options -o json
 
   List all available configuration settings in table format
-    azd config options
-
-  View a setting and set it
-    azd config options
-    azd config set <key> <value>
+    azd config options -o table
 
 

@@ -594,11 +594,7 @@ func promptInitType(console input.Console, ctx context.Context, featuresManager 
 	options := []string{
 		"Scan current directory", // This now covers minimal project creation too
 		"Select a template",
-	}
-
-	// Only include AZD agent option if the LLM feature is enabled
-	if featuresManager.IsEnabled(llm.FeatureLlm) {
-		options = append(options, fmt.Sprintf("Use agent mode %s", color.YellowString("(Alpha)")))
+		fmt.Sprintf("Use agent mode %s", color.YellowString("(Alpha)")),
 	}
 
 	selection, err := console.Select(ctx, input.ConsoleOptions{
@@ -618,8 +614,11 @@ func promptInitType(console input.Console, ctx context.Context, featuresManager 
 		// Only return initWithCopilot if the LLM feature is enabled and we have 3 options
 		if featuresManager.IsEnabled(llm.FeatureLlm) {
 			return initWithAgent, nil
+		} else {
+			return initUnknown, errors.New("To use this feature, run `azd config set alpha.llm on`, " +
+				"set the agent model type with `azd config set ai.agent.model.type github-copilot`, " +
+				"then run `azd init` again.")
 		}
-		fallthrough
 	default:
 		panic("unhandled selection")
 	}

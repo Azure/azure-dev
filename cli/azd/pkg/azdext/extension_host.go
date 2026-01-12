@@ -146,7 +146,7 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	er.init(extensionId)
 
 	// Wait for debugger if AZD_EXT_DEBUG is set
-	waitForDebugger(ctx, extensionId, er.client)
+	WaitForDebugger(ctx, er.client)
 
 	// Determine which managers will be active
 	hasServiceTargets := len(er.serviceTargets) > 0

@@ -1,6 +1,6 @@
 const { Command } = require('commander');
 const AzdClient = require('../azdClient');
-const { DefaultAzureCredential } = require('@azure/identity');
+const { AzureDeveloperCliCredential } = require('@azure/identity');
 const { ResourceManagementClient } = require('@azure/arm-resources');
 const logger = require('../logger');
 
@@ -87,7 +87,7 @@ function createPromptCommand() {
     logger.info('Subscription selected', { subscription_id });
     logger.info('Tenant', { tenant_id });
 
-    const credential = new DefaultAzureCredential();
+    const credential = new AzureDeveloperCliCredential({ tenantId: tenant_id });
     const armClient = new ResourceManagementClient(credential, subscription_id);
 
     let resource_type = '';

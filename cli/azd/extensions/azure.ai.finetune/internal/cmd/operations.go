@@ -211,6 +211,17 @@ func newOperationShowCommand() *cobra.Command {
 				fmt.Printf("  Learning Rate Multiplier: %f\n", job.Hyperparameters.LearningRateMultiplier)
 				fmt.Printf("  N Epochs:                %d\n", job.Hyperparameters.NEpochs)
 			}
+			fmt.Println("saa1")
+			utils.PrintObject(job, utils.FormatTable)
+			if job.Hyperparameters != nil {
+				fmt.Println("\nConfiguration:")
+				utils.PrintObjectWithIndent(job.Hyperparameters, utils.FormatTable, "  ")
+			}
+			fmt.Println("saa2")
+			utils.PrintObject(job, utils.FormatJSON)
+			fmt.Println("saa3")
+			utils.PrintObject(job, utils.FormatYAML)
+			fmt.Println("saa4")
 
 			// Fetch and print events
 			eventsSpinner := ux.NewSpinner(&ux.SpinnerOptions{
@@ -327,6 +338,8 @@ func newOperationListCommand() *cobra.Command {
 
 			fmt.Printf("\nTotal jobs: %d\n", len(jobs))
 
+			utils.PrintObject(jobs, utils.FormatTable)
+			utils.PrintObject(jobs, utils.FormatJSON)
 			return nil
 		},
 	}

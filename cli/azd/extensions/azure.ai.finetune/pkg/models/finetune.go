@@ -33,37 +33,37 @@ const (
 // FineTuningJob represents a vendor-agnostic fine-tuning job
 type FineTuningJob struct {
 	// Core identification
-	ID          string
-	VendorJobID string // Vendor-specific ID (e.g., OpenAI's ftjob-xxx)
+	ID          string `json:"id" table:"ID"`
+	VendorJobID string `json:"-" table:"-"` // Vendor-specific ID (e.g., OpenAI's ftjob-xxx)
 
 	// Job details
-	Status         JobStatus
-	BaseModel      string
-	FineTunedModel string
+	Status         JobStatus `json:"status" table:"STATUS"`
+	BaseModel      string    `json:"model" table:"MODEL"`
+	FineTunedModel string    `json:"-" table:"-"`
 
 	// Timestamps
-	CreatedAt   time.Time
-	CompletedAt *time.Time
+	CreatedAt   time.Time  `json:"created_at" table:"CREATED"`
+	CompletedAt *time.Time `json:"-" table:"-"`
 
 	// Files
-	TrainingFileID   string
-	ValidationFileID string
+	TrainingFileID   string `json:"-" table:"-"`
+	ValidationFileID string `json:"-" table:"-"`
 
 	// Metadata
-	VendorMetadata map[string]interface{} // Store vendor-specific details
-	ErrorDetails   *ErrorDetail
+	VendorMetadata map[string]interface{} `json:"-" table:"-"` // Store vendor-specific details
+	ErrorDetails   *ErrorDetail           `json:"-" table:"-"`
 }
 
 // Hyperparameters represents fine-tuning hyperparameters
 type Hyperparameters struct {
-	BatchSize              int64
-	LearningRateMultiplier float64
-	NEpochs                int64
-	Beta                   float64 // For DPO
-	ComputeMultiplier      float64 // For Reinforcement
-	EvalInterval           int64   // For Reinforcement
-	EvalSamples            int64   // For Reinforcement
-	ReasoningEffort        string  // For Reinforcement
+	BatchSize              int64   `json:"batch_size" yaml:"batch_size" table:"BATCH SIZE"`
+	LearningRateMultiplier float64 `json:"learning_rate_multiplier" yaml:"learning_rate_multiplier" table:"LEARNING RATE MULTIPLIER"`
+	NEpochs                int64   `json:"n_epochs" yaml:"n_epochs" table:"N EPOCHS"`
+	Beta                   float64 `json:"beta,omitempty" yaml:"beta,omitempty" table:"-"`                             // For DPO
+	ComputeMultiplier      float64 `json:"compute_multiplier,omitempty" yaml:"compute_multiplier,omitempty" table:"-"` // For Reinforcement
+	EvalInterval           int64   `json:"eval_interval,omitempty" yaml:"eval_interval,omitempty" table:"-"`           // For Reinforcement
+	EvalSamples            int64   `json:"eval_samples,omitempty" yaml:"eval_samples,omitempty" table:"-"`             // For Reinforcement
+	ReasoningEffort        string  `json:"reasoning_effort,omitempty" yaml:"reasoning_effort,omitempty" table:"-"`     // For Reinforcement
 }
 
 // ListFineTuningJobsRequest represents a request to list fine-tuning jobs
@@ -74,19 +74,19 @@ type ListFineTuningJobsRequest struct {
 
 // FineTuningJobDetail represents detailed information about a fine-tuning job
 type FineTuningJobDetail struct {
-	ID              string
-	Status          JobStatus
-	Model           string
-	FineTunedModel  string
-	CreatedAt       time.Time
-	FinishedAt      time.Time
-	Method          string
-	TrainingFile    string
-	ValidationFile  string
-	Hyperparameters *Hyperparameters
-	VendorMetadata  map[string]interface{}
-	TrainingType    string
-	Seed            int64
+	ID              string                 `json:"id" yaml:"id" table:"ID"`
+	Status          JobStatus              `json:"status" yaml:"status" table:"STATUS"`
+	Model           string                 `json:"model" yaml:"model" table:"MODEL"`
+	FineTunedModel  string                 `json:"fine_tuned_model" yaml:"fine_tuned_model" table:"FINE-TUNED MODEL"`
+	CreatedAt       time.Time              `json:"created_at" yaml:"created_at" table:"CREATED"`
+	FinishedAt      time.Time              `json:"-" yaml:"-" table:"-"`
+	Method          string                 `json:"training_type" yaml:"training_type" table:"TRAINING TYPE"`
+	TrainingFile    string                 `json:"training_file" yaml:"training_file" table:"TRAINING FILE"`
+	ValidationFile  string                 `json:"validation_file" yaml:"validation_file" table:"VALIDATION FILE"`
+	Hyperparameters *Hyperparameters       `json:"hyperparameters" yaml:"hyperparameters" table:"-"`
+	VendorMetadata  map[string]interface{} `json:"-" yaml:"-" table:"-"`
+	TrainingType    string                 `json:"-" yaml:"-" table:"-"`
+	Seed            int64                  `json:"-" yaml:"-" table:"-"`
 }
 
 // JobEvent represents an event associated with a fine-tuning job

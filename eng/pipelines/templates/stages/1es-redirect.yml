@@ -7,8 +7,7 @@ resources:
     - repository: azure-sdk-build-tools
       type: git
       name: internal/azure-sdk-build-tools
-      # TODO: Revert before merging
-      ref: refs/heads/djurek/devops-extension-signing
+      ref: refs/tags/azure-sdk-build-tools_20251112.1
 
 parameters:
 - name: stages

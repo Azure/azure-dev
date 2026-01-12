@@ -93,13 +93,30 @@ func convertOpenAIJobToDetailModel(openaiJob *openai.FineTuningJob) *models.Fine
 		hyperparameters.NEpochs = openaiJob.Hyperparameters.NEpochs.OfInt
 	}
 
+	status := mapOpenAIStatusToJobStatus(openaiJob.Status)
+
+	// Only set FinishedAt for terminal states
+	var finishedAt *time.Time
+	if utils.IsTerminalStatus(status) && openaiJob.FinishedAt > 0 {
+		t := utils.UnixTimestampToUTC(openaiJob.FinishedAt)
+		finishedAt = &t
+	}
+
+	// Only set EstimatedFinish for non-terminal states
+	var estimatedFinish *time.Time
+	if !utils.IsTerminalStatus(status) && openaiJob.EstimatedFinish > 0 {
+		t := utils.UnixTimestampToUTC(openaiJob.EstimatedFinish)
+		estimatedFinish = &t
+	}
+
 	jobDetail := &models.FineTuningJobDetail{
 		ID:              openaiJob.ID,
-		Status:          mapOpenAIStatusToJobStatus(openaiJob.Status),
+		Status:          status,
 		Model:           openaiJob.Model,
 		FineTunedModel:  openaiJob.FineTunedModel,
 		CreatedAt:       utils.UnixTimestampToUTC(openaiJob.CreatedAt),
-		FinishedAt:      utils.UnixTimestampToUTC(openaiJob.FinishedAt),
+		FinishedAt:      finishedAt,
+		EstimatedFinish: estimatedFinish,
 		Method:          openaiJob.Method.Type,
 		TrainingFile:    openaiJob.TrainingFile,
 		ValidationFile:  openaiJob.ValidationFile,

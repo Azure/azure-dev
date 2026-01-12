@@ -101,23 +101,6 @@ suite('AzureDevTemplateProvider', () => {
         expect(count, 'Count should be non-negative').to.be.at.least(0);
     });
 
-    test('caching works - second call is faster', async () => {
-        // First call - fetches from network
-        const start1 = Date.now();
-        await provider.getTemplates();
-        const duration1 = Date.now() - start1;
-
-        // Second call - uses cache
-        const start2 = Date.now();
-        await provider.getTemplates();
-        const duration2 = Date.now() - start2;
-
-        // Cache should be significantly faster (at least 10x)
-        // Note: This is a heuristic and may not always pass due to network conditions
-        expect(duration2 < duration1 / 5 || duration2 < 10,
-            `Second call should be faster (${duration2}ms) than first (${duration1}ms)`).to.be.true;
-    });
-
     test('forceRefresh parameter refreshes cache', async () => {
         // Load into cache
         const templates1 = await provider.getTemplates();

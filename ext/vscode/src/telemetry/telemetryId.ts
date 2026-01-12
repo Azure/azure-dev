@@ -86,7 +86,7 @@ export enum TelemetryId {
 
     WorkspaceViewApplicationResolve = 'azure-dev.views.workspace.application.resolve',
     WorkspaceViewEnvironmentResolve = 'azure-dev.views.workspace.environment.resolve',
-    WorkspaceViewExtensionResolve = 'azure-dev.views.workspace.extension.resolve',
+    ExtensionsViewResolve = 'azure-dev.views.extensions.resolve',
 
     // Reported when diagnostics are provided on an azure.yaml document
     AzureYamlProvideDiagnostics = 'azure-dev.azureYaml.provideDiagnostics',

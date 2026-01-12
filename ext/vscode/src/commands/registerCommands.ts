@@ -70,7 +70,7 @@ export function registerCommands(): void {
 // registerActivityCommand wraps a command callback with activity recording.
 // The command ID is automatically used as the telemetry event name by registerCommandAzUI.
 // For CLI task executions, telemetry is separately tracked via executeAsTask() with TelemetryId enum values.
-function registerActivityCommand(commandId: string, callback: CommandCallback, debounce?: number): void {
+function registerActivityCommand(commandId: string, callback: CommandCallback, debounce?: number, telemetryId?: string): void {
     registerCommandAzUI(
         commandId,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -78,6 +78,7 @@ function registerActivityCommand(commandId: string, callback: CommandCallback, d
             void ext.activitySvc.recordActivity();
             return callback(context, ...args);
         },
-        debounce
+        debounce,
+        telemetryId
     );
 }

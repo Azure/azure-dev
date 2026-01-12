@@ -219,7 +219,7 @@ class TemplateItem extends TreeItemModel {
         private templateProvider: AzureDevTemplateProvider
     ) {
         super(template.title, vscode.TreeItemCollapsibleState.None);
-        this.contextValue = 'template';
+        this.contextValue = 'ms-azuretools.azure-dev.views.templateTools.template';
         this.tooltip = new vscode.MarkdownString(
             `**${template.title}**\n\n${template.description}\n\n` +
             `Author: ${template.author}\n\n` +

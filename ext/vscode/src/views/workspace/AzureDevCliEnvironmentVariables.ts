@@ -62,8 +62,8 @@ export class AzureDevCliEnvironmentVariable implements AzureDevCliModel {
         item.contextValue = 'ms-azuretools.azure-dev.views.workspace.environmentVariable';
 
         item.command = {
-            command: 'azure-dev.commands.workspace.toggleVisibility',
-            title: vscode.l10n.t('Toggle Visibility'),
+            command: 'azure-dev.views.workspace.toggleEnvVarVisibility',
+            title: vscode.l10n.t('Toggle Environment Variable Visibility'),
             arguments: [this]
         };
 

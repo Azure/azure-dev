@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 import * as vscode from 'vscode';
 import { HelpAndFeedbackTreeDataProvider } from './helpAndFeedback/HelpAndFeedbackTreeDataProvider';
 import { MyProjectTreeDataProvider } from './myProject/MyProjectTreeDataProvider';
@@ -40,13 +43,13 @@ export function registerViews(context: vscode.ExtensionContext): void {
     );
 
     context.subscriptions.push(
-        vscode.commands.registerCommand('azure-dev.views.environments.toggleVisibility', (item: EnvironmentTreeItem) => {
+        vscode.commands.registerCommand('azure-dev.views.environments.toggleEnvVarVisibility', (item: EnvironmentTreeItem) => {
             environmentsProvider.toggleVisibility(item);
         })
     );
 
     context.subscriptions.push(
-        vscode.commands.registerCommand('azure-dev.commands.workspace.toggleVisibility', (item: AzureDevCliEnvironmentVariable) => {
+        vscode.commands.registerCommand('azure-dev.views.workspace.toggleEnvVarVisibility', (item: AzureDevCliEnvironmentVariable) => {
             item.toggleVisibility();
         })
     );

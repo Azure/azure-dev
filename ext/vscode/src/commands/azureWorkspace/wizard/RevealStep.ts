@@ -53,7 +53,8 @@ export class RevealStep extends AzureWizardExecuteStep<RevealResourceWizardConte
                 if (extension && !extension.isActive) {
                     await extension.activate();
                     ext.outputChannel.appendLog(vscode.l10n.t('Extension activated'));
-                    // Give it time to register its tree data provider
+                    // Delay to allow the extension to register its tree data provider.
+                    // The Azure Resources API doesn't provide an event for when provider registration completes.
                     await new Promise(resolve => setTimeout(resolve, 1000));
                 }
             }
@@ -67,6 +68,9 @@ export class RevealStep extends AzureWizardExecuteStep<RevealResourceWizardConte
             try {
                 await vscode.commands.executeCommand('azureResourceGroups.refresh');
                 ext.outputChannel.appendLog(vscode.l10n.t('Refresh command executed'));
+                // Delay to allow the tree to fully populate after refresh.
+                // The Azure Resources API doesn't expose an event for tree load completion,
+                // so we use a delay as a pragmatic workaround.
                 await new Promise(resolve => setTimeout(resolve, 1500));
             } catch (refreshError) {
                 ext.outputChannel.appendLog(vscode.l10n.t('Refresh command not available or failed: {0}', refreshError instanceof Error ? refreshError.message : String(refreshError)));
@@ -84,6 +88,8 @@ export class RevealStep extends AzureWizardExecuteStep<RevealResourceWizardConte
                 ext.outputChannel.appendLog(vscode.l10n.t('Revealing resource group first: {0}', rgResourceId));
                 try {
                     await api.resources.revealAzureResource(rgResourceId, { select: false, focus: false, expand: true });
+                    // Delay to allow the tree node to expand before revealing the child resource.
+                    // The revealAzureResource API returns before the tree UI fully updates.
                     await new Promise(resolve => setTimeout(resolve, 1000));
                 } catch (rgError) {
                     ext.outputChannel.appendLog(vscode.l10n.t('Resource group reveal failed: {0}', rgError instanceof Error ? rgError.message : String(rgError)));
@@ -101,6 +107,8 @@ export class RevealStep extends AzureWizardExecuteStep<RevealResourceWizardConte
             // Try a second time if needed
             if (result === undefined) {
                 ext.outputChannel.appendLog(vscode.l10n.t('First reveal returned undefined, trying again after delay...'));
+                // Retry delay: the first reveal may fail if the tree hasn't finished loading.
+                // A brief delay before retry often succeeds where the first attempt failed.
                 await new Promise(resolve => setTimeout(resolve, 1000));
                 const secondResult = await api.resources.revealAzureResource(azureResourceId, { select: true, focus: true, expand: true });
                 ext.outputChannel.appendLog(vscode.l10n.t('Second attempt returned: {0}', String(secondResult)));

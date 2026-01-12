@@ -130,23 +130,23 @@
             {
                 "category": "%azure-dev.commands_category%",
                 "command": "azure-dev.commands.cli.extension-install",
-                "title": "Install Extension",
+                "title": "%azure-dev.commands.cli.extension-install.title%",
                 "icon": "$(add)"
             },
             {
                 "category": "%azure-dev.commands_category%",
                 "command": "azure-dev.commands.cli.extension-uninstall",
-                "title": "Uninstall Extension"
+                "title": "%azure-dev.commands.cli.extension-uninstall.title%"
             },
             {
                 "category": "%azure-dev.commands_category%",
                 "command": "azure-dev.commands.cli.extension-upgrade",
-                "title": "Upgrade Extension"
+                "title": "%azure-dev.commands.cli.extension-upgrade.title%"
             },
             {
                 "category": "%azure-dev.commands_category%",
                 "command": "azure-dev.commands.addService",
-                "title": "Add Service...",
+                "title": "%azure-dev.commands.addService.title%",
                 "icon": "$(add)"
             },
             {
@@ -181,37 +181,43 @@
             },
             {
                 "category": "%azure-dev.commands_category%",
-                "command": "azure-dev.views.environments.toggleVisibility",
-                "title": "Toggle Visibility"
+                "command": "azure-dev.views.environments.toggleEnvVarVisibility",
+                "title": "%azure-dev.views.environments.toggleEnvVarVisibility.title%"
             },
             {
                 "category": "%azure-dev.commands_category%",
-                "command": "azure-dev.commands.workspace.toggleVisibility",
-                "title": "Toggle Visibility"
+                "command": "azure-dev.views.workspace.toggleEnvVarVisibility",
+                "title": "%azure-dev.views.workspace.toggleEnvVarVisibility.title%"
             },
             {
                 "category": "%azure-dev.commands_category%",
                 "command": "azure-dev.views.environments.viewDotEnv",
-                "title": "View .env file",
+                "title": "%azure-dev.views.environments.viewDotEnv.title%",
                 "icon": "$(go-to-file)"
             },
             {
                 "category": "%azure-dev.commands_category%",
                 "command": "azure-dev.views.templateTools.openReadme",
-                "title": "View README",
+                "title": "%azure-dev.views.templateTools.openReadme.title%",
                 "icon": "$(book)"
             },
             {
                 "category": "%azure-dev.commands_category%",
                 "command": "azure-dev.views.templateTools.openGitHub",
-                "title": "View on GitHub",
+                "title": "%azure-dev.views.templateTools.openGitHub.title%",
                 "icon": "$(github)"
             },
             {
                 "category": "%azure-dev.commands_category%",
                 "command": "azure-dev.views.templateTools.initFromTemplateInline",
-                "title": "Initialize from Template",
+                "title": "%azure-dev.views.templateTools.initFromTemplateInline.title%",
                 "icon": "$(rocket)"
+            },
+            {
+                "category": "%azure-dev.commands_category%",
+                "command": "azure-dev.views.templateTools.refresh",
+                "title": "%azure-dev.views.templateTools.refresh.title%",
+                "icon": "$(refresh)"
             }
         ],
         "viewsContainers": {
@@ -243,7 +249,8 @@
                 },
                 {
                     "id": "azure-dev.views.helpAndFeedback",
-                    "name": "Help and Feedback"
+                    "name": "Help and Feedback",
+                    "visibility": "collapsed"
                 }
             ]
         },
@@ -277,8 +284,7 @@
                 {
                     "command": "azure-dev.views.templateTools.refresh",
                     "when": "view == azure-dev.views.templateTools",
-                    "group": "navigation@1",
-                    "icon": "$(refresh)"
+                    "group": "navigation"
                 }
             ],
             "commandPalette": [
@@ -384,22 +390,22 @@
             "view/item/context": [
                 {
                     "command": "azure-dev.views.templateTools.initFromTemplateInline",
-                    "when": "viewItem == template",
+                    "when": "viewItem == ms-azuretools.azure-dev.views.templateTools.template",
                     "group": "inline@10"
                 },
                 {
                     "command": "azure-dev.views.templateTools.openGitHub",
-                    "when": "viewItem == template",
+                    "when": "viewItem == ms-azuretools.azure-dev.views.templateTools.template",
                     "group": "inline@20"
                 },
                 {
                     "command": "azure-dev.views.templateTools.openReadme",
-                    "when": "viewItem == template",
+                    "when": "viewItem == ms-azuretools.azure-dev.views.templateTools.template",
                     "group": "10template@10"
                 },
                 {
                     "command": "azure-dev.views.templateTools.openGitHub",
-                    "when": "viewItem == template",
+                    "when": "viewItem == ms-azuretools.azure-dev.views.templateTools.template",
                     "group": "10template@20"
                 },
                 {
@@ -454,43 +460,23 @@
                 },
                 {
                     "command": "azure-dev.commands.cli.env-select",
-                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.environment(?!s)(?!.*default)/i",
+                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.(workspace.environment(?!s)|environments.environment)(?!.*default)/i",
                     "group": "20env@20"
                 },
                 {
-                    "command": "azure-dev.commands.cli.env-select",
-                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.environments.environment(?!.*default)/i",
-                    "group": "10env@10"
-                },
-                {
                     "command": "azure-dev.commands.cli.env-refresh",
-                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.environment(?!s)/i",
+                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.(workspace.environment(?!s)|environments.environment)/i",
                     "group": "20env@30"
                 },
                 {
-                    "command": "azure-dev.commands.cli.env-refresh",
-                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.environments.environment/i",
-                    "group": "10env@20"
-                },
-                {
                     "command": "azure-dev.commands.cli.env-edit",
-                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.environment(?!s)/i",
+                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.(workspace.environment(?!s)|environments.environment)/i",
                     "group": "20env@40"
                 },
                 {
-                    "command": "azure-dev.commands.cli.env-edit",
-                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.environments.environment/i",
-                    "group": "10env@30"
-                },
-                {
                     "command": "azure-dev.commands.cli.env-delete",
-                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.environment(?!s)(?!.*default)/i",
+                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.(workspace.environment(?!s)|environments.environment)(?!.*default)/i",
                     "group": "20env@50"
-                },
-                {
-                    "command": "azure-dev.commands.cli.env-delete",
-                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.environments.environment(?!.*default)/i",
-                    "group": "10env@40"
                 },
                 {
                     "command": "azure-dev.commands.cli.restore",
@@ -524,18 +510,8 @@
                 },
                 {
                     "command": "azure-dev.commands.azureWorkspace.revealAzureResourceGroup",
-                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.application/i",
+                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.(workspace.application|workspace.environment(?!s)|environments.environment)/i",
                     "group": "50navigation@20"
-                },
-                {
-                    "command": "azure-dev.commands.azureWorkspace.revealAzureResourceGroup",
-                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.environment(?!s)/i",
-                    "group": "50navigation@20"
-                },
-                {
-                    "command": "azure-dev.commands.azureWorkspace.revealAzureResourceGroup",
-                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.environments.environment/i",
-                    "group": "10env@50"
                 },
                 {
                     "command": "azure-dev.views.environments.viewDotEnv",

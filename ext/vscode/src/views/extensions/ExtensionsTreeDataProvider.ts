@@ -36,7 +36,7 @@ export class ExtensionsTreeDataProvider implements vscode.TreeDataProvider<Exten
             return [];
         }
 
-        return await callWithTelemetryAndErrorHandling(TelemetryId.WorkspaceViewExtensionResolve, async (context) => {
+        return await callWithTelemetryAndErrorHandling(TelemetryId.ExtensionsViewResolve, async (context) => {
             const extensions = await this.extensionProvider.getExtensionListResults(context);
             return extensions.map(ext => new ExtensionTreeItem(ext));
         }) ?? [];

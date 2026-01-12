@@ -175,6 +175,6 @@ suite('TemplateToolsTreeDataProvider', () => {
         expect(
             templateItem.contextValue,
             'Should have template context value for inline menu actions'
-        ).to.equal('template');
+        ).to.equal('ms-azuretools.azure-dev.views.templateTools.template');
     });
 });

@@ -353,8 +353,6 @@ export async function refreshEnvironment(context: IActionContext, selectedItem?:
         }
         // Refresh standalone environments view
         void vscode.commands.executeCommand('azure-dev.views.environments.refresh');
-        // Refresh workspace resource view
-        void vscode.commands.executeCommand('azureWorkspace.refresh');
     });
 }
 

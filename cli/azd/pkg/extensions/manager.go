@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hash"
@@ -20,6 +21,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	azruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
@@ -28,6 +30,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/rzip"
 )
@@ -139,20 +142,22 @@ func createExtensionFilter(options *FilterOptions) extensionFilterPredicate {
 
 // Manager is responsible for managing extensions
 type Manager struct {
-	sourceManager   *SourceManager
-	sources         []Source
-	installed       map[string]*Extension
-	metadataManager *MetadataManager
-
+	sourceManager *SourceManager
+	sources       []Source
+	installed     map[string]*Extension
 	configManager config.UserConfigManager
 	userConfig    config.Config
 	pipeline      azruntime.Pipeline
+
+	// Lazy runner to avoid circular dependency issues since extension manager is used during command bootstrapping
+	lazyRunner *lazy.Lazy[*Runner]
 }
 
 // NewManager creates a new extension manager
 func NewManager(
 	configManager config.UserConfigManager,
 	sourceManager *SourceManager,
+	lazyRunner *lazy.Lazy[*Runner],
 	transport policy.Transporter,
 ) (*Manager, error) {
 	userConfig, err := configManager.Load()
@@ -165,11 +170,11 @@ func NewManager(
 	})
 
 	return &Manager{
-		userConfig:      userConfig,
-		configManager:   configManager,
-		sourceManager:   sourceManager,
-		pipeline:        pipeline,
-		metadataManager: NewMetadataManager(configManager),
+		userConfig:    userConfig,
+		configManager: configManager,
+		sourceManager: sourceManager,
+		lazyRunner:    lazyRunner,
+		pipeline:      pipeline,
 	}, nil
 }
 
@@ -507,7 +512,7 @@ func (m *Manager) Install(
 
 	// Fetch and cache metadata if extension supports it
 	installedExtension := extensions[extension.Id]
-	if err := m.metadataManager.FetchAndCache(ctx, installedExtension); err != nil {
+	if err := m.fetchAndCacheMetadata(ctx, installedExtension); err != nil {
 		// Log warning but don't fail installation
 		log.Printf("Warning: Failed to fetch extension metadata for '%s': %v\n", extension.Id, err)
 	}
@@ -785,4 +790,155 @@ func copyFile(src, dst string) error {
 	}
 
 	return nil
+}
+
+const (
+	metadataFileName    = "metadata.json"
+	metadataCommandName = "metadata"
+	metadataTimeout     = 10 * time.Second
+)
+
+// fetchAndCacheMetadata fetches metadata from an extension and caches it to disk
+// Returns nil error if metadata was successfully fetched and cached, or if extension doesn't support metadata
+// Returns warning-level error if metadata fetch failed (installation should still succeed)
+func (m *Manager) fetchAndCacheMetadata(
+	ctx context.Context,
+	extension *Extension,
+) error {
+	// Check if extension has metadata capability
+	if !extension.HasCapability(MetadataCapability) {
+		return nil // Extension doesn't support metadata - this is fine
+	}
+
+	userConfigDir, err := config.GetUserConfigDir()
+	if err != nil {
+		return fmt.Errorf("failed to get user config directory: %w", err)
+	}
+
+	extensionDir := filepath.Join(userConfigDir, "extensions", extension.Id)
+	metadataPath := filepath.Join(extensionDir, metadataFileName)
+
+	// Check if metadata.json already exists (pre-packaged)
+	if _, err := os.Stat(metadataPath); err == nil {
+		log.Printf("Extension '%s' has pre-packaged metadata.json, skipping metadata command", extension.Id)
+		return nil
+	}
+
+	// Execute metadata command with timeout using the runner
+	cmdCtx, cancel := context.WithTimeout(ctx, metadataTimeout)
+	defer cancel()
+
+	runner, err := m.lazyRunner.GetValue()
+	if err != nil {
+		return fmt.Errorf("failed to resolve extension runner: %w", err)
+	}
+
+	runResult, err := runner.Invoke(cmdCtx, extension, &InvokeOptions{
+		Args: []string{metadataCommandName},
+	})
+	if err != nil {
+		if cmdCtx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("metadata command timed out after %v", metadataTimeout)
+		}
+		return fmt.Errorf("metadata command failed: %w", err)
+	}
+	if runResult.ExitCode != 0 {
+		return fmt.Errorf("metadata command exited with code %d", runResult.ExitCode)
+	}
+
+	// Parse metadata JSON from stdout
+	var metadata ExtensionCommandMetadata
+	if err := json.Unmarshal([]byte(runResult.Stdout), &metadata); err != nil {
+		return fmt.Errorf("failed to parse metadata JSON: %w", err)
+	}
+
+	// Validate metadata
+	if metadata.ID != extension.Id {
+		return fmt.Errorf(
+			"metadata ID '%s' does not match extension ID '%s'",
+			metadata.ID,
+			extension.Id,
+		)
+	}
+
+	if metadata.Version != extension.Version {
+		log.Printf(
+			"Warning: metadata version '%s' does not match extension version '%s'",
+			metadata.Version,
+			extension.Version,
+		)
+	}
+
+	// Write metadata to cache
+	metadataJSON, err := json.MarshalIndent(metadata, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+
+	if err := os.WriteFile(metadataPath, metadataJSON, 0600); err != nil {
+		return fmt.Errorf("failed to write metadata file: %w", err)
+	}
+
+	log.Printf("Extension '%s' metadata cached successfully", extension.Id)
+	return nil
+}
+
+// LoadMetadata loads cached metadata for an extension
+func (m *Manager) LoadMetadata(extensionId string) (*ExtensionCommandMetadata, error) {
+	userConfigDir, err := config.GetUserConfigDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user config directory: %w", err)
+	}
+
+	extensionDir := filepath.Join(userConfigDir, "extensions", extensionId)
+	metadataPath := filepath.Join(extensionDir, metadataFileName)
+
+	data, err := os.ReadFile(metadataPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("metadata not found for extension '%s'", extensionId)
+		}
+		return nil, fmt.Errorf("failed to read metadata file: %w", err)
+	}
+
+	var metadata ExtensionCommandMetadata
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		return nil, fmt.Errorf("failed to parse metadata JSON: %w", err)
+	}
+
+	return &metadata, nil
+}
+
+// DeleteMetadata removes cached metadata for an extension
+func (m *Manager) DeleteMetadata(extensionId string) error {
+	userConfigDir, err := config.GetUserConfigDir()
+	if err != nil {
+		return fmt.Errorf("failed to get user config directory: %w", err)
+	}
+
+	extensionDir := filepath.Join(userConfigDir, "extensions", extensionId)
+	metadataPath := filepath.Join(extensionDir, metadataFileName)
+
+	if err := os.Remove(metadataPath); err != nil {
+		if !os.IsNotExist(err) {
+			return fmt.Errorf("failed to remove metadata file: %w", err)
+		}
+		// File doesn't exist, which is fine
+	}
+
+	return nil
+}
+
+// MetadataExists checks if cached metadata exists for an extension
+func (m *Manager) MetadataExists(extensionId string) bool {
+	userConfigDir, err := config.GetUserConfigDir()
+	if err != nil {
+		return false
+	}
+
+	extensionDir := filepath.Join(userConfigDir, "extensions", extensionId)
+	metadataPath := filepath.Join(extensionDir, metadataFileName)
+
+	_, err = os.Stat(metadataPath)
+	return err == nil
 }

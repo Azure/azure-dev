@@ -3,6 +3,25 @@
 
 package config
 
+// CustomGlobalConfig defines global-level configuration for the demo extension
+// Uses namespacing to avoid conflicts with other extensions or azd configuration
+type CustomGlobalConfig struct {
+	// Demo extension settings namespace
+	Demo *DemoGlobalSettings `json:"demo,omitempty" jsonschema:"description=Demo extension global settings"`
+}
+
+// DemoGlobalSettings contains the actual global configuration for the demo extension
+type DemoGlobalSettings struct {
+	// API key for external services
+	APIKey string `json:"apiKey,omitempty" jsonschema:"description=API key for external service integration"`
+	// Log level for demo extension
+	LogLevel string `json:"logLevel,omitempty" jsonschema:"description=Logging level,enum=debug,enum=info,enum=warn,enum=error,default=info"`
+	// Enable telemetry collection
+	EnableTelemetry bool `json:"enableTelemetry,omitempty" jsonschema:"description=Enable telemetry collection,default=false"`
+	// Timeout for operations in seconds
+	Timeout int `json:"timeout,omitempty" jsonschema:"description=Operation timeout in seconds,minimum=1,maximum=300,default=30"`
+}
+
 // CustomProjectConfig defines project-level configuration for the demo extension
 type CustomProjectConfig struct {
 	// Demo feature flags for project-level configuration

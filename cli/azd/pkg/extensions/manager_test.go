@@ -8,12 +8,16 @@ import (
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -147,7 +151,10 @@ func Test_List_Install_Uninstall_Flow(t *testing.T) {
 
 	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
 	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
-	manager, err := NewManager(userConfigManager, sourceManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
 	require.NoError(t, err)
 
 	// List installed extensions (expect 0)
@@ -191,7 +198,10 @@ func Test_Install_With_SemverConstraints(t *testing.T) {
 
 	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
 	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
-	manager, err := NewManager(userConfigManager, sourceManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
 	require.NoError(t, err)
 
 	// Generate a list of tests cases to validate the semver constraints of the Install function.
@@ -295,7 +305,10 @@ func Test_DownloadArtifact_Remote(t *testing.T) {
 
 	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
 	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
-	manager, err := NewManager(userConfigManager, sourceManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
 	require.NoError(t, err)
 
 	tempFilePath, err := manager.downloadArtifact(*mockContext.Context, "https://example.com/artifact.zip")
@@ -321,7 +334,10 @@ func Test_DownloadArtifact_Local(t *testing.T) {
 
 	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
 	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
-	manager, err := NewManager(userConfigManager, sourceManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
 	require.NoError(t, err)
 
 	tempFilePath, err := manager.downloadArtifact(*mockContext.Context, tempFile.Name())
@@ -337,7 +353,10 @@ func Test_DownloadArtifact_Local_Error(t *testing.T) {
 
 	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
 	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
-	manager, err := NewManager(userConfigManager, sourceManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
 	require.NoError(t, err)
 
 	// Provide an invalid local file path
@@ -361,7 +380,10 @@ func Test_DownloadArtifact_Remote_Error(t *testing.T) {
 
 	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
 	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
-	manager, err := NewManager(userConfigManager, sourceManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
 	require.NoError(t, err)
 
 	tempFilePath, err := manager.downloadArtifact(*mockContext.Context, "https://example.com/invalid-artifact.zip")
@@ -641,7 +663,10 @@ func Test_FindExtensions_MultipleMatches_ErrorHandling(t *testing.T) {
 	})
 
 	// Create a manager and mock two sources
-	manager, err := NewManager(userConfigManager, sourceManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
 	require.NoError(t, err)
 
 	// Create mock sources that will return the same extension
@@ -719,7 +744,10 @@ func Test_Install_WithMcpConfig(t *testing.T) {
 
 	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
 	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
-	manager, err := NewManager(userConfigManager, sourceManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
 	require.NoError(t, err)
 
 	// Install extension with MCP configuration
@@ -781,7 +809,10 @@ func Test_FilterExtensions_ByCapabilityAndProvider(t *testing.T) {
 
 	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
 	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
-	manager, err := NewManager(userConfigManager, sourceManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
 	require.NoError(t, err)
 
 	t.Run("filter by service-target-provider capability", func(t *testing.T) {
@@ -910,5 +941,139 @@ func Test_FilterExtensions_ByCapabilityAndProvider(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.Len(t, extensions, 0, "Should find no extensions with MCP capability AND containerapp provider")
+	})
+}
+
+func Test_FetchAndCacheMetadata(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	createRegistryMocks(mockContext)
+
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+
+	// Create a temporary directory for test extensions
+	tempDir := t.TempDir()
+	extDir := filepath.Join(tempDir, "extensions", "test.metadata.extension")
+	err := os.MkdirAll(extDir, os.ModePerm)
+	require.NoError(t, err)
+
+	// Create a dummy extension binary
+	extBinary := filepath.Join(extDir, "test-ext.exe")
+	err = os.WriteFile(extBinary, []byte("fake binary"), 0755)
+	require.NoError(t, err)
+
+	// Get relative path from temp dir
+	relPath, err := filepath.Rel(tempDir, extBinary)
+	require.NoError(t, err)
+
+	// Override user config directory for this test
+	t.Setenv("AZD_CONFIG_DIR", tempDir)
+
+	// Create a mock extension that supports metadata capability
+	extension := &Extension{
+		Id:           "test.metadata.extension",
+		Namespace:    "test",
+		DisplayName:  "Test Metadata Extension",
+		Version:      "1.0.0",
+		Path:         relPath,
+		Capabilities: []CapabilityType{MetadataCapability},
+	}
+
+	// Mock the runner to return metadata JSON
+	mockMetadata := ExtensionCommandMetadata{
+		SchemaVersion: "1.0",
+		ID:            "test.metadata.extension",
+		Version:       "1.0.0",
+		Commands: []Command{
+			{
+				Name:  []string{"test"},
+				Short: "Test command",
+				Usage: "azd test",
+			},
+		},
+	}
+
+	metadataJSON, err := json.Marshal(mockMetadata)
+	require.NoError(t, err)
+
+	// Mock CommandRunner to return metadata JSON
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "metadata")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{
+			Stdout:   string(metadataJSON),
+			ExitCode: 0,
+		}, nil
+	})
+
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	t.Run("fetch metadata for extension with metadata capability", func(t *testing.T) {
+		// Install extension first (simulate by adding to config)
+		extensions, err := manager.ListInstalled()
+		require.NoError(t, err)
+		extensions[extension.Id] = extension
+		err = manager.userConfig.Set(installedConfigKey, extensions)
+		require.NoError(t, err)
+
+		// Fetch and cache metadata
+		err = manager.fetchAndCacheMetadata(*mockContext.Context, extension)
+		require.NoError(t, err)
+
+		// Verify metadata exists
+		exists := manager.MetadataExists(extension.Id)
+		require.True(t, exists, "Metadata should exist after fetch")
+
+		// Load and verify metadata
+		loadedMetadata, err := manager.LoadMetadata(extension.Id)
+		require.NoError(t, err)
+		require.NotNil(t, loadedMetadata)
+		require.Equal(t, mockMetadata.ID, loadedMetadata.ID)
+		require.Equal(t, mockMetadata.Version, loadedMetadata.Version)
+		require.Len(t, loadedMetadata.Commands, 1)
+		require.Equal(t, "test", loadedMetadata.Commands[0].Name[0])
+	})
+
+	t.Run("skip metadata fetch for extension without metadata capability", func(t *testing.T) {
+		extensionNoMetadata := &Extension{
+			Id:           "test.no.metadata",
+			Namespace:    "test",
+			DisplayName:  "Test No Metadata Extension",
+			Version:      "1.0.0",
+			Path:         "extensions/test.no.metadata/test-ext.exe",
+			Capabilities: []CapabilityType{}, // No metadata capability
+		}
+
+		// Should not error even though extension doesn't support metadata
+		err := manager.fetchAndCacheMetadata(*mockContext.Context, extensionNoMetadata)
+		require.NoError(t, err)
+
+		// Metadata should not exist
+		exists := manager.MetadataExists(extensionNoMetadata.Id)
+		require.False(t, exists, "Metadata should not exist for extension without capability")
+	})
+
+	t.Run("delete metadata", func(t *testing.T) {
+		// Ensure metadata exists first
+		exists := manager.MetadataExists(extension.Id)
+		require.True(t, exists)
+
+		// Delete metadata
+		err := manager.DeleteMetadata(extension.Id)
+		require.NoError(t, err)
+
+		// Verify metadata no longer exists
+		exists = manager.MetadataExists(extension.Id)
+		require.False(t, exists, "Metadata should not exist after deletion")
+	})
+
+	t.Run("load non-existent metadata returns error", func(t *testing.T) {
+		_, err := manager.LoadMetadata("non.existent.extension")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "metadata not found")
 	})
 }

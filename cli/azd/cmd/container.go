@@ -142,7 +142,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		}, formatter, nil)
 	})
 
-	container.MustRegisterSingleton(
+	container.MustRegisterScoped(
 		func(console input.Console, rootOptions *internal.GlobalCommandOptions) exec.CommandRunner {
 			return exec.NewCommandRunner(
 				&exec.RunnerOptions{
@@ -873,9 +873,16 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterScoped(prompt.NewPromptService)
 
 	// Extensions
-	container.MustRegisterSingleton(extensions.NewManager)
-	container.MustRegisterSingleton(extensions.NewRunner)
 	container.MustRegisterSingleton(extensions.NewSourceManager)
+	container.MustRegisterScoped(extensions.NewRunner)
+	container.MustRegisterScoped(func(serviceLocator ioc.ServiceLocator) *lazy.Lazy[*extensions.Runner] {
+		return lazy.NewLazy(func() (*extensions.Runner, error) {
+			var runner *extensions.Runner
+			err := serviceLocator.Resolve(&runner)
+			return runner, err
+		})
+	})
+	container.MustRegisterSingleton(extensions.NewManager)
 
 	// gRPC Server
 	container.MustRegisterScoped(grpcserver.NewServer)

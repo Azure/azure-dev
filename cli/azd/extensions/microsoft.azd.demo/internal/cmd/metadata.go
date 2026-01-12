@@ -52,6 +52,7 @@ func newMetadataCommand() *cobra.Command {
 func generateConfigurationMetadata() *extensions.ConfigurationMetadata {
 	// Generate schemas from Go types automatically
 	return &extensions.ConfigurationMetadata{
+		Global:  jsonschema.Reflect(&config.CustomGlobalConfig{}),
 		Project: jsonschema.Reflect(&config.CustomProjectConfig{}),
 		Service: jsonschema.Reflect(&config.CustomServiceConfig{}),
 	}

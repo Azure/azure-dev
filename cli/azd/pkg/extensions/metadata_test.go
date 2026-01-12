@@ -16,7 +16,6 @@ func TestExtensionCommandMetadata_Marshaling(t *testing.T) {
 	metadata := &ExtensionCommandMetadata{
 		SchemaVersion: "1.0",
 		ID:            "microsoft.azd.demo",
-		Version:       "1.0.0",
 		Commands: []Command{
 			{
 				Name:  []string{"demo", "greet"},
@@ -65,7 +64,6 @@ func TestExtensionCommandMetadata_Marshaling(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(data), `"schemaVersion":"1.0"`)
 	assert.Contains(t, string(data), `"id":"microsoft.azd.demo"`)
-	assert.Contains(t, string(data), `"version":"1.0.0"`)
 	assert.Contains(t, string(data), `"name":["demo","greet"]`)
 }
 
@@ -113,7 +111,6 @@ func TestExtensionMetadata_UnmarshalJSON(t *testing.T) {
 
 	assert.Equal(t, "1.0", metadata.SchemaVersion)
 	assert.Equal(t, "microsoft.azd.demo", metadata.ID)
-	assert.Equal(t, "1.0.0", metadata.Version)
 	assert.Len(t, metadata.Commands, 1)
 
 	cmd := metadata.Commands[0]
@@ -138,7 +135,6 @@ func TestCommand_NestedSubcommands(t *testing.T) {
 	metadata := ExtensionCommandMetadata{
 		SchemaVersion: "1.0",
 		ID:            "microsoft.azd.test",
-		Version:       "1.0.0",
 		Commands: []Command{
 			{
 				Name:  []string{"test"},
@@ -268,7 +264,6 @@ func TestConfigurationMetadata_Optional(t *testing.T) {
 	metadata := ExtensionCommandMetadata{
 		SchemaVersion: "1.0",
 		ID:            "test",
-		Version:       "1.0.0",
 		Commands:      []Command{},
 	}
 
@@ -286,7 +281,6 @@ func TestConfigurationMetadata_Optional(t *testing.T) {
 	metadata2 := ExtensionCommandMetadata{
 		SchemaVersion: "1.0",
 		ID:            "test",
-		Version:       "1.0.0",
 		Commands:      []Command{},
 		Configuration: &ConfigurationMetadata{
 			Global: &jsonschema.Schema{
@@ -321,6 +315,5 @@ func TestExtensionMetadata_FutureSchemaVersion(t *testing.T) {
 	// Should parse known fields successfully
 	assert.Equal(t, "2.0", metadata.SchemaVersion)
 	assert.Equal(t, "test", metadata.ID)
-	assert.Equal(t, "1.0.0", metadata.Version)
 	assert.Empty(t, metadata.Commands)
 }

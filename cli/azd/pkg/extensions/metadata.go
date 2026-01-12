@@ -13,8 +13,6 @@ type ExtensionCommandMetadata struct {
 	SchemaVersion string `json:"schemaVersion"`
 	// ID is the extension identifier matching extension.yaml
 	ID string `json:"id"`
-	// Version is the extension version matching extension.yaml
-	Version string `json:"version"`
 	// Commands is the list of root-level commands provided by the extension
 	Commands []Command `json:"commands"`
 	// Configuration describes extension configuration options (Phase 2)

@@ -27,7 +27,6 @@ func newMetadataCommand() *cobra.Command {
 			metadata := azdext.GenerateExtensionMetadata(
 				"1.0",                // schema version
 				"microsoft.azd.demo", // extension id
-				"0.4.0",              // extension version
 				rootCmd,
 			)
 

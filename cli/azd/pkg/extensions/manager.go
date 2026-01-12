@@ -861,14 +861,6 @@ func (m *Manager) fetchAndCacheMetadata(
 		)
 	}
 
-	if metadata.Version != extension.Version {
-		log.Printf(
-			"Warning: metadata version '%s' does not match extension version '%s'",
-			metadata.Version,
-			extension.Version,
-		)
-	}
-
 	// Write metadata to cache
 	metadataJSON, err := json.MarshalIndent(metadata, "", "  ")
 	if err != nil {

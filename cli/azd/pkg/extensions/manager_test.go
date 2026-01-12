@@ -983,7 +983,6 @@ func Test_FetchAndCacheMetadata(t *testing.T) {
 	mockMetadata := ExtensionCommandMetadata{
 		SchemaVersion: "1.0",
 		ID:            "test.metadata.extension",
-		Version:       "1.0.0",
 		Commands: []Command{
 			{
 				Name:  []string{"test"},
@@ -1033,7 +1032,6 @@ func Test_FetchAndCacheMetadata(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, loadedMetadata)
 		require.Equal(t, mockMetadata.ID, loadedMetadata.ID)
-		require.Equal(t, mockMetadata.Version, loadedMetadata.Version)
 		require.Len(t, loadedMetadata.Commands, 1)
 		require.Equal(t, "test", loadedMetadata.Commands[0].Name[0])
 	})

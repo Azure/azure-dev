@@ -11,11 +11,10 @@ import (
 
 // GenerateExtensionMetadata generates ExtensionCommandMetadata from a Cobra root command
 // This function is typically called by extensions to generate their metadata
-func GenerateExtensionMetadata(schemaVersion, id, version string, root *cobra.Command) *extensions.ExtensionCommandMetadata {
+func GenerateExtensionMetadata(schemaVersion, id string, root *cobra.Command) *extensions.ExtensionCommandMetadata {
 	return &extensions.ExtensionCommandMetadata{
 		SchemaVersion: schemaVersion,
 		ID:            id,
-		Version:       version,
 		Commands:      generateCommands(root),
 	}
 }

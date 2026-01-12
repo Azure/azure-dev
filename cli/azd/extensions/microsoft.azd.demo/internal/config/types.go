@@ -13,13 +13,13 @@ type CustomGlobalConfig struct {
 // DemoGlobalSettings contains the actual global configuration for the demo extension
 type DemoGlobalSettings struct {
 	// API key for external services
-	APIKey string `json:"apiKey,omitempty" jsonschema:"description=API key for external service integration"`
+	APIKey string `json:"apiKey,omitempty" jsonschema:"description=API key for service integration"`
 	// Log level for demo extension
-	LogLevel string `json:"logLevel,omitempty" jsonschema:"description=Logging level,enum=debug,enum=info,enum=warn,enum=error,default=info"`
+	LogLevel string `json:"logLevel,omitempty" jsonschema:"description=Log level,enum=debug,enum=info,enum=warn,enum=error"`
 	// Enable telemetry collection
-	EnableTelemetry bool `json:"enableTelemetry,omitempty" jsonschema:"description=Enable telemetry collection,default=false"`
+	EnableTelemetry bool `json:"enableTelemetry,omitempty" jsonschema:"description=Enable telemetry,default=false"`
 	// Timeout for operations in seconds
-	Timeout int `json:"timeout,omitempty" jsonschema:"description=Operation timeout in seconds,minimum=1,maximum=300,default=30"`
+	Timeout int `json:"timeout,omitempty" jsonschema:"description=Operation timeout (sec),minimum=1,maximum=300,default=30"`
 }
 
 // CustomProjectConfig defines project-level configuration for the demo extension
@@ -27,7 +27,7 @@ type CustomProjectConfig struct {
 	// Demo feature flags for project-level configuration
 	EnableColors bool `json:"enableColors,omitempty" jsonschema:"description=Enable color output,default=true"`
 	// Maximum number of items to display
-	MaxItems int `json:"maxItems,omitempty" jsonschema:"description=Max items to display,minimum=1,maximum=100,default=10"`
+	MaxItems int `json:"maxItems,omitempty" jsonschema:"description=Max items,minimum=1,maximum=100,default=10"`
 	// Project labels for demo purposes
 	Labels map[string]string `json:"labels,omitempty" jsonschema:"description=Custom project labels"`
 }
@@ -39,14 +39,14 @@ type CustomServiceConfig struct {
 	// Port for the demo service
 	Port int `json:"port,omitempty" jsonschema:"description=Service port,minimum=1,maximum=65535,default=8080"`
 	// Environment for demo deployment
-	Environment string `json:"environment,omitempty" jsonschema:"description=Environment,enum=development,enum=staging,enum=production"`
+	Environment string `json:"environment,omitempty" jsonschema:"enum=development,enum=staging,enum=production"`
 	// Health check configuration
-	HealthCheck *HealthCheckConfig `json:"healthCheck,omitempty" jsonschema:"description=Health check configuration"`
+	HealthCheck *HealthCheckConfig `json:"healthCheck,omitempty" jsonschema:"description=Health check config"`
 }
 
 // HealthCheckConfig defines health check configuration
 type HealthCheckConfig struct {
 	Enabled  bool   `json:"enabled,omitempty" jsonschema:"description=Enable health checks,default=true"`
 	Path     string `json:"path,omitempty" jsonschema:"description=Health check path,default=/health"`
-	Interval int    `json:"interval,omitempty" jsonschema:"description=Check interval (sec),minimum=5,maximum=300,default=30"`
+	Interval int    `json:"interval,omitempty" jsonschema:"description=Check interval (sec),minimum=5,maximum=300"`
 }

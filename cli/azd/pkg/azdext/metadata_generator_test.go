@@ -28,12 +28,11 @@ func TestGenerateExtensionMetadata(t *testing.T) {
 
 	rootCmd.AddCommand(greetCmd)
 
-	metadata := GenerateExtensionMetadata("1.0", "test.extension", "1.0.0", rootCmd)
+	metadata := GenerateExtensionMetadata("1.0", "test.extension", rootCmd)
 
 	require.NotNil(t, metadata)
 	assert.Equal(t, "1.0", metadata.SchemaVersion)
 	assert.Equal(t, "test.extension", metadata.ID)
-	assert.Equal(t, "1.0.0", metadata.Version)
 	assert.Len(t, metadata.Commands, 1)
 
 	cmd := metadata.Commands[0]
@@ -80,7 +79,7 @@ func TestGenerateExtensionMetadata_NestedCommands(t *testing.T) {
 	demoCmd.AddCommand(farewellCmd)
 	rootCmd.AddCommand(demoCmd)
 
-	metadata := GenerateExtensionMetadata("1.0", "test.extension", "1.0.0", rootCmd)
+	metadata := GenerateExtensionMetadata("1.0", "test.extension", rootCmd)
 
 	require.Len(t, metadata.Commands, 1)
 	assert.Equal(t, []string{"demo"}, metadata.Commands[0].Name)
@@ -123,7 +122,7 @@ func TestGenerateExtensionMetadata_HiddenCommands(t *testing.T) {
 	rootCmd.AddCommand(visibleCmd)
 	rootCmd.AddCommand(hiddenCmd)
 
-	metadata := GenerateExtensionMetadata("1.0", "test.extension", "1.0.0", rootCmd)
+	metadata := GenerateExtensionMetadata("1.0", "test.extension", rootCmd)
 
 	// Hidden commands should not be included
 	assert.Len(t, metadata.Commands, 1)
@@ -146,7 +145,7 @@ func TestGenerateExtensionMetadata_HiddenFlags(t *testing.T) {
 
 	rootCmd.AddCommand(testCmd)
 
-	metadata := GenerateExtensionMetadata("1.0", "test.extension", "1.0.0", rootCmd)
+	metadata := GenerateExtensionMetadata("1.0", "test.extension", rootCmd)
 
 	require.Len(t, metadata.Commands, 1)
 	// Hidden flags should not be included
@@ -168,7 +167,7 @@ func TestGenerateExtensionMetadata_DeprecatedCommands(t *testing.T) {
 
 	rootCmd.AddCommand(deprecatedCmd)
 
-	metadata := GenerateExtensionMetadata("1.0", "test.extension", "1.0.0", rootCmd)
+	metadata := GenerateExtensionMetadata("1.0", "test.extension", rootCmd)
 
 	require.Len(t, metadata.Commands, 1)
 	assert.Equal(t, "use 'new-command' instead", metadata.Commands[0].Deprecated)
@@ -188,7 +187,7 @@ func TestGenerateExtensionMetadata_Aliases(t *testing.T) {
 
 	rootCmd.AddCommand(cmdWithAliases)
 
-	metadata := GenerateExtensionMetadata("1.0", "test.extension", "1.0.0", rootCmd)
+	metadata := GenerateExtensionMetadata("1.0", "test.extension", rootCmd)
 
 	require.Len(t, metadata.Commands, 1)
 	assert.Equal(t, []string{"cmd", "c"}, metadata.Commands[0].Aliases)
@@ -208,7 +207,7 @@ func TestGenerateExtensionMetadata_Examples(t *testing.T) {
 
 	rootCmd.AddCommand(cmdWithExamples)
 
-	metadata := GenerateExtensionMetadata("1.0", "test.extension", "1.0.0", rootCmd)
+	metadata := GenerateExtensionMetadata("1.0", "test.extension", rootCmd)
 
 	require.Len(t, metadata.Commands, 1)
 	require.Len(t, metadata.Commands[0].Examples, 1)
@@ -234,7 +233,7 @@ func TestGenerateExtensionMetadata_FlagTypes(t *testing.T) {
 
 	rootCmd.AddCommand(testCmd)
 
-	metadata := GenerateExtensionMetadata("1.0", "test.extension", "1.0.0", rootCmd)
+	metadata := GenerateExtensionMetadata("1.0", "test.extension", rootCmd)
 
 	require.Len(t, metadata.Commands, 1)
 	flags := metadata.Commands[0].Flags

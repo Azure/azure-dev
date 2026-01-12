@@ -959,7 +959,7 @@ func Test_FetchAndCacheMetadata(t *testing.T) {
 
 	// Create a dummy extension binary
 	extBinary := filepath.Join(extDir, "test-ext.exe")
-	err = os.WriteFile(extBinary, []byte("fake binary"), 0755)
+	err = os.WriteFile(extBinary, []byte("fake binary"), 0600)
 	require.NoError(t, err)
 
 	// Get relative path from temp dir

@@ -25,6 +25,10 @@ func generateCommands(cmd *cobra.Command) []extensions.Command {
 	var commands []extensions.Command
 
 	for _, subCmd := range cmd.Commands() {
+		// Skip hidden commands
+		if subCmd.Hidden {
+			continue
+		}
 		command := generateCommand(subCmd)
 		commands = append(commands, command)
 	}

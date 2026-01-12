@@ -3,7 +3,6 @@
 ## 0.1.5-preview (2026-01-12)
 
 - [[#6468]](https://github.com/Azure/azure-dev/pull/6468) Add support for retrieving existing Application Insights connections when using `--project-id`
-- [[#6482]](https://github.com/Azure/azure-dev/pull/6482) Improve `azd ai agent init -m` validation and fix GitHub URL parsing issue
 
 ## 0.1.4-preview (2025-12-15)
 

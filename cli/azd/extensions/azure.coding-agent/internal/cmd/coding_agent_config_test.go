@@ -101,13 +101,7 @@ func TestCodingAgent_promptForRepoSlug(t *testing.T) {
 		promptClient := NewMockPromptServiceClient(ctrl)
 		gitCLI := NewMockgitCLI(ctrl)
 
-		slug, err := promptForCodingAgentRepoSlug(
-			context.Background(),
-			promptClient,
-			gitCLI,
-			"repo-root-ignored",
-			repoSlugForTests,
-		) //nolint:lll
+		slug, err := promptForCodingAgentRepoSlug(context.Background(), promptClient, gitCLI, "repo-root-ignored", repoSlugForTests) //nolint:lll
 
 		require.Equal(t, slug, repoSlugForTests)
 		require.NoError(t, err)
@@ -120,13 +114,9 @@ func TestCodingAgent_promptForRepoSlug(t *testing.T) {
 
 		gitCLI.EXPECT().ListRemotes(gomock.Any(), "repo-root-used").Return([]string{"origin", "upstream"}, nil)
 		//nolint:lll
-		gitCLI.EXPECT().
-			GetRemoteUrl(gomock.Any(), "repo-root-used", "origin").
-			Return("https://github.com/richardpark-msft/tawnygardenslug", nil)
+		gitCLI.EXPECT().GetRemoteUrl(gomock.Any(), "repo-root-used", "origin").Return("https://github.com/richardpark-msft/tawnygardenslug", nil)
 		//nolint:lll
-		gitCLI.EXPECT().
-			GetRemoteUrl(gomock.Any(), "repo-root-used", "upstream").
-			Return("https://github.com/slugs/tawnygardenslug", nil)
+		gitCLI.EXPECT().GetRemoteUrl(gomock.Any(), "repo-root-used", "upstream").Return("https://github.com/slugs/tawnygardenslug", nil)
 
 		promptClient.EXPECT().Select(gomock.Any(), gomock.Any()).Return(&azdext.SelectResponse{
 			// simulate they chose option 1
@@ -226,10 +216,7 @@ func TestCodingAgent_pickOrCreateMSI(t *testing.T) {
 		promptService, msiService, entraService, resourceService := setup(t)
 
 		promptService.EXPECT().Select(gomock.Any(),
-			SelectMatcher{
-				T:                t,
-				ExpectedQuestion: "Do you want to create a new Azure user-assigned managed identity or use an existing one?",
-			}).
+			SelectMatcher{T: t, ExpectedQuestion: "Do you want to create a new Azure user-assigned managed identity or use an existing one?"}).
 			Return(&azdext.SelectResponse{
 				Value: to.Ptr(int32(0)), // ie, "create a new one"
 			}, nil)
@@ -243,14 +230,7 @@ func TestCodingAgent_pickOrCreateMSI(t *testing.T) {
 					TenantID:    to.Ptr(fakeTenantID),
 				},
 				Name: to.Ptr(string(defaultManagedIdentityName)),
-				ID: to.Ptr(
-					fmt.Sprintf(
-						"/subscriptions/%s/resourcegroups/%s/providers/Microsoft.ManagedIdentity/userAssignedIdentities/%s",
-						fakeSubscriptionID,
-						fakeResourceGroup,
-						defaultManagedIdentityName,
-					),
-				),
+				ID:   to.Ptr(fmt.Sprintf("/subscriptions/%s/resourcegroups/%s/providers/Microsoft.ManagedIdentity/userAssignedIdentities/%s", fakeSubscriptionID, fakeResourceGroup, defaultManagedIdentityName)),
 			}, nil)
 
 		entraService.EXPECT().EnsureRoleAssignments(gomock.Any(),
@@ -293,21 +273,13 @@ func TestCodingAgent_pickOrCreateMSI(t *testing.T) {
 					TenantID:    to.Ptr(fakeTenantID),
 				},
 				Name: to.Ptr(customManagedIdentityName),
-				ID: to.Ptr(
-					fmt.Sprintf(
-						"/subscriptions/%s/resourcegroups/%s/providers/Microsoft.ManagedIdentity/userAssignedIdentities/%s",
-						fakeSubscriptionID,
-						fakeResourceGroup,
-						customManagedIdentityName,
-					),
-				),
+				ID:   to.Ptr(fmt.Sprintf("/subscriptions/%s/resourcegroups/%s/providers/Microsoft.ManagedIdentity/userAssignedIdentities/%s", fakeSubscriptionID, fakeResourceGroup, customManagedIdentityName)),
 			}, nil)
 
-		entraService.EXPECT().
-			EnsureRoleAssignments(gomock.Any(), fakeSubscriptionID, []string{"custom-role-name"}, &graphsdk.ServicePrincipal{
-				Id:          to.Ptr("principal-id"),
-				DisplayName: customManagedIdentityName,
-			}, gomock.Any()).
+		entraService.EXPECT().EnsureRoleAssignments(gomock.Any(), fakeSubscriptionID, []string{"custom-role-name"}, &graphsdk.ServicePrincipal{
+			Id:          to.Ptr("principal-id"),
+			DisplayName: customManagedIdentityName,
+		}, gomock.Any()).
 			Return(nil)
 
 		authConfig, err := pickOrCreateMSI(context.Background(),
@@ -331,10 +303,7 @@ func TestCodingAgent_pickOrCreateMSI(t *testing.T) {
 		promptService, msiService, entraService, resourceService := setup(t)
 
 		promptService.EXPECT().Select(gomock.Any(),
-			SelectMatcher{
-				T:                t,
-				ExpectedQuestion: "Do you want to create a new Azure user-assigned managed identity or use an existing one?",
-			}).
+			SelectMatcher{T: t, ExpectedQuestion: "Do you want to create a new Azure user-assigned managed identity or use an existing one?"}).
 			Return(&azdext.SelectResponse{
 				Value: to.Ptr(int32(1)), // ie, "use an existing one"
 			}, nil)
@@ -348,15 +317,8 @@ func TestCodingAgent_pickOrCreateMSI(t *testing.T) {
 						ClientID:    to.Ptr(fakeClientID),
 						TenantID:    to.Ptr(fakeTenantID),
 					},
-					Name: to.Ptr(string(defaultManagedIdentityName)),
-					ID: to.Ptr(
-						fmt.Sprintf(
-							"/subscriptions/%s/resourcegroups/%s/providers/Microsoft.ManagedIdentity/userAssignedIdentities/%s",
-							fakeSubscriptionID,
-							fakeResourceGroup,
-							defaultManagedIdentityName,
-						),
-					),
+					Name:     to.Ptr(string(defaultManagedIdentityName)),
+					ID:       to.Ptr(fmt.Sprintf("/subscriptions/%s/resourcegroups/%s/providers/Microsoft.ManagedIdentity/userAssignedIdentities/%s", fakeSubscriptionID, fakeResourceGroup, defaultManagedIdentityName)),
 					Location: to.Ptr(fakeLocation),
 				},
 			}, nil)

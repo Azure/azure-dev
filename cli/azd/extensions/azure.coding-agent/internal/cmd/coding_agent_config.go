@@ -114,19 +114,14 @@ func newConfigCommand() *cobra.Command {
 	cc := &cobra.Command{
 		Use:   "config",
 		Short: "Configure the GitHub Copilot coding agent to access Azure resources via the Azure MCP",
-		Long: "Configure the GitHub Copilot coding agent to access Azure resources via the Azure MCP.\n\nFor more information about this command, including prerequisites and troubleshooting, view the readme at " + ux.Hyperlink(
-			"https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.coding-agent/README.md",
-		),
+		Long:  "Configure the GitHub Copilot coding agent to access Azure resources via the Azure MCP.\n\nFor more information about this command, including prerequisites and troubleshooting, view the readme at " + ux.Hyperlink("https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.coding-agent/README.md"),
 	}
 
 	flagValues := setupFlags(cc.Flags())
 
 	cc.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := runConfigCommand(cmd, flagValues); err != nil {
-			message := fmt.Sprintf(
-				"(!) An error occurred, see the readme for troubleshooting and prerequisites:\n    %s",
-				ux.Hyperlink(readmeURL),
-			) //nolint:lll
+			message := fmt.Sprintf("(!) An error occurred, see the readme for troubleshooting and prerequisites:\n    %s", ux.Hyperlink(readmeURL)) //nolint:lll
 			fmt.Println(ux.BoldString(message))
 			return err
 		}
@@ -190,10 +185,7 @@ func runConfigCommand(cmd *cobra.Command, flagValues *flagValues) error {
 
 	if err != nil {
 		//nolint:lll
-		return fmt.Errorf(
-			"failed getting a subscription from prompt. Try logging in manually with 'azd auth login' before running this command %w",
-			err,
-		)
+		return fmt.Errorf("failed getting a subscription from prompt. Try logging in manually with 'azd auth login' before running this command %w", err)
 	}
 
 	tenantID := subscriptionResponse.Subscription.TenantId
@@ -257,16 +249,8 @@ func runConfigCommand(cmd *cobra.Command, flagValues *flagValues) error {
 		return fmt.Errorf("failed to push files to git: %w", err)
 	}
 
-	codingAgentURL := fmt.Sprintf(
-		"https://github.com/%s/settings/copilot/coding_agent#:~:text=JSON%%20MCP%%20configuration-,MCP%%20configuration,-1",
-		repoSlug,
-	) //nolint:lll
-	managedIdentityPortalURL := formatPortalLinkForManagedIdentity(
-		tenantID,
-		subscriptionID,
-		authConfig.ResourceGroup,
-		authConfig.Name,
-	) //nolint:lll
+	codingAgentURL := fmt.Sprintf("https://github.com/%s/settings/copilot/coding_agent#:~:text=JSON%%20MCP%%20configuration-,MCP%%20configuration,-1", repoSlug) //nolint:lll
+	managedIdentityPortalURL := formatPortalLinkForManagedIdentity(tenantID, subscriptionID, authConfig.ResourceGroup, authConfig.Name)                          //nolint:lll
 
 	fmt.Println("")
 	fmt.Println(output.WithHighLightFormat("(!)"))
@@ -274,10 +258,7 @@ func runConfigCommand(cmd *cobra.Command, flagValues *flagValues) error {
 	fmt.Println(output.WithHighLightFormat("(!)"))
 	fmt.Println("")
 	fmt.Printf("1. The branch created at %s/%s must be merged to %s/main\n", remote, flagValues.BranchName, repoSlug)
-	fmt.Printf(
-		"2. Configure Copilot coding agent's managed identity roles in the Azure portal: %s\n",
-		ux.Hyperlink(managedIdentityPortalURL),
-	) // nolint:lll
+	fmt.Printf("2. Configure Copilot coding agent's managed identity roles in the Azure portal: %s\n", ux.Hyperlink(managedIdentityPortalURL)) // nolint:lll
 	fmt.Printf("3. Visit '%s' and update the \"MCP configuration\" field with this JSON:\n\n", ux.Hyperlink(codingAgentURL))
 
 	fmt.Println(mcpJson)
@@ -313,8 +294,7 @@ func openBrowserWindows(ctx context.Context,
 		return nil
 	}
 
-	fullURL := fmt.Sprintf(
-		"https://github.com/%s/compare/main...azd-enable-copilot-coding-agent-with-azure?body=%s&expand=1&title=%s",
+	fullURL := fmt.Sprintf("https://github.com/%s/compare/main...azd-enable-copilot-coding-agent-with-azure?body=%s&expand=1&title=%s",
 		repoSlug,
 		url.QueryEscape(fmt.Sprintf(prBodyMD, codingAgentURL, mcpJson)),
 		url.QueryEscape("Updating/adding copilot-setup-steps.yaml to enable the Copilot coding agent to access Azure"),
@@ -983,11 +963,9 @@ func formatPortalLinkForManagedIdentity(tenantID string,
 	resourceGroupName string,
 	managedIdentityName string) string {
 	//nolint:lll
-	return fmt.Sprintf(
-		"https://portal.azure.com/#@%s/resource/subscriptions/%s/resourceGroups/%s/providers/Microsoft.ManagedIdentity/userAssignedIdentities/%s/azure_resources",
+	return fmt.Sprintf("https://portal.azure.com/#@%s/resource/subscriptions/%s/resourceGroups/%s/providers/Microsoft.ManagedIdentity/userAssignedIdentities/%s/azure_resources",
 		tenantID,
 		subscriptionID,
 		resourceGroupName,
-		managedIdentityName,
-	)
+		managedIdentityName)
 }

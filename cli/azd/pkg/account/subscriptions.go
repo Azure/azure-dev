@@ -173,7 +173,8 @@ func (s *SubscriptionsService) ListSubscriptionLocationsWithFilter(
 	// Check resource type availability for each location
 	filteredLocations := []Location{}
 	for _, location := range allLocations {
-		supported, err := s.checkResourceTypesAvailability(ctx, subscriptionId, tenantId, location.Name, options.ResourceTypes)
+		supported, err := s.checkResourceTypesAvailability(
+			ctx, subscriptionId, tenantId, location.Name, options.ResourceTypes)
 		if err != nil {
 			// Log error but continue with other locations
 			continue

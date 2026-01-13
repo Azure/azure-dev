@@ -27,7 +27,67 @@ func PromptLocationWithFilter(
 	shouldDisplay func(account.Location) bool,
 	defaultSelectedLocation *string,
 ) (string, error) {
-	allLocations, err := accountManager.GetLocations(ctx, subscriptionId)
+	return promptLocationWithFilterAndResourceTypes(
+		ctx,
+		subscriptionId,
+		message,
+		help,
+		console,
+		accountManager,
+		shouldDisplay,
+		defaultSelectedLocation,
+		nil, // No resource type filtering
+	)
+}
+
+// PromptLocationWithResourceTypeFilter asks the user to select a location from a list of supported azure locations
+// for a given subscription, filtered by resource type availability.
+// Only locations that support ALL specified resource types are presented.
+func PromptLocationWithResourceTypeFilter(
+	ctx context.Context,
+	subscriptionId string,
+	message string,
+	help string,
+	console input.Console,
+	accountManager account.Manager,
+	shouldDisplay func(account.Location) bool,
+	defaultSelectedLocation *string,
+	resourceTypes []string,
+) (string, error) {
+	return promptLocationWithFilterAndResourceTypes(
+		ctx,
+		subscriptionId,
+		message,
+		help,
+		console,
+		accountManager,
+		shouldDisplay,
+		defaultSelectedLocation,
+		resourceTypes,
+	)
+}
+
+func promptLocationWithFilterAndResourceTypes(
+	ctx context.Context,
+	subscriptionId string,
+	message string,
+	help string,
+	console input.Console,
+	accountManager account.Manager,
+	shouldDisplay func(account.Location) bool,
+	defaultSelectedLocation *string,
+	resourceTypes []string,
+) (string, error) {
+	var allLocations []account.Location
+	var err error
+
+	// Use filtered or unfiltered location retrieval based on resource types
+	if len(resourceTypes) > 0 {
+		allLocations, err = accountManager.GetLocationsWithFilter(ctx, subscriptionId, resourceTypes)
+	} else {
+		allLocations, err = accountManager.GetLocations(ctx, subscriptionId)
+	}
+
 	if err != nil {
 		return "", fmt.Errorf("listing locations: %w", err)
 	}

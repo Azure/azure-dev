@@ -84,6 +84,9 @@ type BicepProvider struct {
 	// Internal state
 	// compileBicepResult is cached to avoid recompiling the same bicep file multiple times in the same azd run.
 	compileBicepMemoryCache *compileBicepResult
+	// extractedResourceTypes contains resource types extracted from the compiled bicep template.
+	// Used for filtering locations by resource provider availability.
+	extractedResourceTypes []string
 }
 
 // Name gets the name of the infra provider
@@ -149,10 +152,19 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 		return fmt.Errorf("%w%w", ErrEnsureEnvPreReqBicepCompileFailed, compileErr)
 	}
 
+	// Extract resource types from compiled template for location filtering
+	resourceTypes, err := azure.ExtractResourceTypes(compileResult.RawArmTemplate)
+	if err != nil {
+		// If extraction fails, we continue without filtering
+		resourceTypes = []string{}
+	}
+	// Store for use during parameter prompting
+	p.extractedResourceTypes = resourceTypes
+
 	// for .bicep, azd must load a parameters.json file and create the ArmParameters so we know if the are filters
 	// to apply for location (using the allowedValues or the location azd metadata)
 	if p.mode == bicepMode {
-		err := provisioning.EnsureSubscription(
+		err = provisioning.EnsureSubscription(
 			ctx, p.envManager, p.env, p.prompters)
 		if err != nil {
 			return err

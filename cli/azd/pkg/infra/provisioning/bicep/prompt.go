@@ -276,10 +276,10 @@ func (p *BicepProvider) promptForParameter(
 			allowedLocations = withQuotaLocations
 		}
 
-		location, err := p.prompters.PromptLocation(
+		location, err := p.prompters.PromptLocationWithResourceTypes(
 			ctx, p.env.GetSubscriptionId(), msg, func(loc account.Location) bool {
 				return locationParameterFilterImpl(allowedLocations, loc)
-			}, defaultPromptValue(param))
+			}, defaultPromptValue(param), p.extractedResourceTypes)
 		if err != nil {
 			return nil, err
 		}

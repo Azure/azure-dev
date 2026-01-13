@@ -380,6 +380,30 @@ func (m *SubscriptionsManager) listLocations(
 	return m.service.ListSubscriptionLocations(ctx, subscriptionId, tenantId)
 }
 
+// ListLocationsWithFilter lists locations for a subscription with optional resource type filtering.
+// When resourceTypes are provided, only locations that support ALL specified resource types are returned.
+func (m *SubscriptionsManager) ListLocationsWithFilter(
+	ctx context.Context,
+	subscriptionId string,
+	resourceTypes []string,
+) ([]Location, error) {
+	var err error
+	msg := "Retrieving locations..."
+	m.console.ShowSpinner(ctx, msg, input.Step)
+	defer m.console.StopSpinner(ctx, "", input.GetStepResultFormat(err))
+
+	tenantId, err := m.LookupTenant(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	options := &LocationFilterOptions{
+		ResourceTypes: resourceTypes,
+	}
+
+	return m.service.ListSubscriptionLocationsWithFilter(ctx, subscriptionId, tenantId, options)
+}
+
 func (m *SubscriptionsManager) getSubscription(ctx context.Context, subscriptionId string) (*Subscription, error) {
 	tenantId, err := m.LookupTenant(ctx, subscriptionId)
 	if err != nil {

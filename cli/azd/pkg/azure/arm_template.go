@@ -202,3 +202,38 @@ type ArmTemplateOutput struct {
 	Metadata map[string]any `json:"metadata"`
 	Ref      string         `json:"$ref"`
 }
+
+// ArmTemplateResource represents a resource in an ARM template
+type ArmTemplateResource struct {
+	Type     string `json:"type"`
+	Name     string `json:"name"`
+	Location any    `json:"location,omitempty"`
+}
+
+// ExtractResourceTypes extracts unique resource types from a compiled ARM template.
+// Returns a list of resource types in the format "Microsoft.Provider/resourceType".
+func ExtractResourceTypes(rawTemplate RawArmTemplate) ([]string, error) {
+	var templateWithResources struct {
+		Resources []ArmTemplateResource `json:"resources"`
+	}
+
+	if err := json.Unmarshal(rawTemplate, &templateWithResources); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal ARM template: %w", err)
+	}
+
+	// Use a map to track unique resource types
+	uniqueTypes := make(map[string]struct{})
+	for _, resource := range templateWithResources.Resources {
+		if resource.Type != "" {
+			uniqueTypes[resource.Type] = struct{}{}
+		}
+	}
+
+	// Convert map to slice
+	resourceTypes := make([]string, 0, len(uniqueTypes))
+	for resourceType := range uniqueTypes {
+		resourceTypes = append(resourceTypes, resourceType)
+	}
+
+	return resourceTypes, nil
+}

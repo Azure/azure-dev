@@ -19,18 +19,18 @@ func TestConfigOptionsAction_JSON(t *testing.T) {
 	buf := &bytes.Buffer{}
 	mockContext := mocks.NewMockContext(context.Background())
 	console := mockContext.Console
-	
+
 	// Create a temporary config file
 	tempDir := t.TempDir()
 	configPath := tempDir + "/config.json"
 	manager := config.NewManager()
 	fileConfigManager := config.NewFileConfigManager(manager)
 	userConfigManager := config.NewUserConfigManager(fileConfigManager)
-	
+
 	// Save an empty config
 	err := fileConfigManager.Save(config.NewEmptyConfig(), configPath)
 	require.NoError(t, err)
-	
+
 	action := newConfigOptionsAction(
 		console,
 		&output.JsonFormatter{},
@@ -46,7 +46,7 @@ func TestConfigOptionsAction_JSON(t *testing.T) {
 	err = json.Unmarshal(buf.Bytes(), &options)
 	require.NoError(t, err)
 	require.NotEmpty(t, options)
-	
+
 	// Verify expected options are present
 	foundDefaults := false
 	foundAlpha := false
@@ -69,16 +69,16 @@ func TestConfigOptionsAction_Table(t *testing.T) {
 	buf := &bytes.Buffer{}
 	mockContext := mocks.NewMockContext(context.Background())
 	console := mockContext.Console
-	
+
 	tempDir := t.TempDir()
 	configPath := tempDir + "/config.json"
 	manager := config.NewManager()
 	fileConfigManager := config.NewFileConfigManager(manager)
 	userConfigManager := config.NewUserConfigManager(fileConfigManager)
-	
+
 	err := fileConfigManager.Save(config.NewEmptyConfig(), configPath)
 	require.NoError(t, err)
-	
+
 	action := newConfigOptionsAction(
 		console,
 		&output.TableFormatter{},
@@ -101,16 +101,16 @@ func TestConfigOptionsAction_DefaultFormat(t *testing.T) {
 	buf := &bytes.Buffer{}
 	mockContext := mocks.NewMockContext(context.Background())
 	console := mockContext.Console
-	
+
 	tempDir := t.TempDir()
 	configPath := tempDir + "/config.json"
 	manager := config.NewManager()
 	fileConfigManager := config.NewFileConfigManager(manager)
 	userConfigManager := config.NewUserConfigManager(fileConfigManager)
-	
+
 	err := fileConfigManager.Save(config.NewEmptyConfig(), configPath)
 	require.NoError(t, err)
-	
+
 	action := newConfigOptionsAction(
 		console,
 		&output.NoneFormatter{},

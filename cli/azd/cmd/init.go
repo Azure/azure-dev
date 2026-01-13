@@ -611,7 +611,7 @@ func promptInitType(console input.Console, ctx context.Context, featuresManager 
 	case 1:
 		return initAppTemplate, nil
 	case 2:
-		// Only return initWithCopilot if the LLM feature is enabled and we have 3 options
+		// Only return initWithAgent if the LLM feature is enabled and we have 3 options
 		if featuresManager.IsEnabled(llm.FeatureLlm) {
 			return initWithAgent, nil
 		} else {

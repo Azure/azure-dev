@@ -27,3 +27,12 @@ func FormatTime(t time.Time) string {
 	}
 	return t.Format(TimeFormat)
 }
+
+// calculateDuration computes the duration between creation and finish timestamps.
+// Returns 0 if the job has not finished yet.
+func CalculateDuration(createdAt, finishedAt int64) time.Duration {
+	if finishedAt > 0 {
+		return time.Duration(finishedAt-createdAt) * time.Second
+	}
+	return 0
+}

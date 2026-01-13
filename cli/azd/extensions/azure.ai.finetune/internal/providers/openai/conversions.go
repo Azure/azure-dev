@@ -51,15 +51,8 @@ func convertOpenAIJobToModel(openaiJob openai.FineTuningJob) *models.FineTuningJ
 		BaseModel:      openaiJob.Model,
 		FineTunedModel: openaiJob.FineTunedModel,
 		CreatedAt:      utils.UnixTimestampToUTC(openaiJob.CreatedAt),
-		Duration:       models.Duration(calculateDuration(openaiJob.CreatedAt, openaiJob.FinishedAt)),
+		Duration:       models.Duration(utils.CalculateDuration(openaiJob.CreatedAt, openaiJob.FinishedAt)),
 	}
-}
-
-func calculateDuration(createdAt, finishedAt int64) time.Duration {
-	if finishedAt > 0 {
-		return time.Duration(finishedAt-createdAt) * time.Second
-	}
-	return 0
 }
 
 // convertOpenAIJobToDetailModel converts OpenAI SDK job to detailed domain model
@@ -85,7 +78,6 @@ func convertOpenAIJobToDetailModel(openaiJob *openai.FineTuningJob) *models.Fine
 		if openaiJob.Method.Reinforcement.Hyperparameters.ReasoningEffort != "" {
 			hyperparameters.ReasoningEffort = string(openaiJob.Method.Reinforcement.Hyperparameters.ReasoningEffort)
 		}
-
 	} else {
 		// Fallback to top-level hyperparameters (for backward compatibility)
 		hyperparameters.BatchSize = openaiJob.Hyperparameters.BatchSize.OfInt

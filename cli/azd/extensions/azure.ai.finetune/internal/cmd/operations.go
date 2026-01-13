@@ -36,14 +36,6 @@ func newOperationCommand() *cobra.Command {
 	return cmd
 }
 
-// formatFineTunedModel returns the model name or "NA" if blank
-func formatFineTunedModel(model string) string {
-	if model == "" {
-		return "NA"
-	}
-	return model
-}
-
 func newOperationSubmitCommand() *cobra.Command {
 	var filename string
 	var model string
@@ -179,7 +171,7 @@ func newOperationShowCommand() *cobra.Command {
 			fineTuneSvc, err := services.NewFineTuningService(ctx, azdClient, nil)
 			if err != nil {
 				_ = spinner.Stop(ctx)
-				fmt.Println()
+				fmt.Print("\n\n")
 				return err
 			}
 
@@ -195,18 +187,20 @@ func newOperationShowCommand() *cobra.Command {
 				utils.PrintObject(job, utils.FormatJSON)
 			case "yaml":
 				utils.PrintObject(job, utils.FormatYAML)
-			default:
+			case "table", "":
 				views := job.ToDetailViews()
-				utils.PrintObjectWithIndent(views.Details, utils.FormatTable, "  ")
+				indent := "  "
+				utils.PrintObjectWithIndent(views.Details, utils.FormatTable, indent)
 
 				fmt.Println("\nTimestamps:")
-				utils.PrintObjectWithIndent(views.Timestamps, utils.FormatTable, "  ")
-
+				utils.PrintObjectWithIndent(views.Timestamps, utils.FormatTable, indent)
 				fmt.Println("\nConfiguration:")
-				utils.PrintObjectWithIndent(views.Configuration, utils.FormatTable, "  ")
+				utils.PrintObjectWithIndent(views.Configuration, utils.FormatTable, indent)
 
 				fmt.Println("\nData:")
-				utils.PrintObjectWithIndent(views.Data, utils.FormatTable, "  ")
+				utils.PrintObjectWithIndent(views.Data, utils.FormatTable, indent)
+			default:
+				return fmt.Errorf("unsupported output format: %s (supported: table, json, yaml)", output)
 			}
 
 			if logs {
@@ -226,47 +220,15 @@ func newOperationShowCommand() *cobra.Command {
 				if err != nil {
 					return err
 				} else if events != nil && len(events.Data) > 0 {
+					const eventIndent = "     "
 					for _, event := range events.Data {
-						fmt.Printf("     [%s] %s\n", utils.FormatTime(event.CreatedAt), event.Message)
+						fmt.Printf("%s[%s] %s\n", eventIndent, utils.FormatTime(event.CreatedAt), event.Message)
 					}
 					if events.HasMore {
 						fmt.Println("  ... (more events available)")
 					}
 				}
 			}
-			// // Fetch and print checkpoints if job is completed
-			// if job.Status == models.StatusSucceeded {
-			// 	checkpointsSpinner := ux.NewSpinner(&ux.SpinnerOptions{
-			// 		Text: "Fetching job checkpoints...",
-			// 	})
-			// 	if err := checkpointsSpinner.Start(ctx); err != nil {
-			// 		fmt.Printf("failed to start spinner: %v\n", err)
-			// 	}
-
-			// 	checkpoints, err := fineTuneSvc.GetJobCheckpoints(ctx, jobID)
-			// 	_ = checkpointsSpinner.Stop(ctx)
-
-			// 	if err != nil {
-			// 		fmt.Println()
-			// 		return err
-			// 	} else if checkpoints != nil && len(checkpoints.Data) > 0 {
-			// 		fmt.Println("\nJob Checkpoints:")
-			// 		for i, checkpoint := range checkpoints.Data {
-			// 			fmt.Printf("  %d. Checkpoint ID: %s\n", i+1, checkpoint.ID)
-			// 			fmt.Printf("     Checkpoint Name:       %s\n", checkpoint.FineTunedModelCheckpoint)
-			// 			fmt.Printf("     Created On:            %s\n", utils.FormatTime(checkpoint.CreatedAt))
-			// 			fmt.Printf("     Step Number:           %d\n", checkpoint.StepNumber)
-			// 			if checkpoint.Metrics != nil {
-			// 				fmt.Printf("     Full Validation Loss:  %.6f\n", checkpoint.Metrics.FullValidLoss)
-			// 			}
-			// 		}
-			// 		if checkpoints.HasMore {
-			// 			fmt.Println("  ... (more checkpoints available)")
-			// 		}
-			// 	}
-			// }
-
-			// fmt.Println(strings.Repeat("=", 120))
 
 			return nil
 		},
@@ -298,7 +260,7 @@ func newOperationListCommand() *cobra.Command {
 
 			// Show spinner while fetching jobs
 			spinner := ux.NewSpinner(&ux.SpinnerOptions{
-				Text: "Fine-tuning Jobs",
+				Text: "Fine-Tuning Jobs",
 			})
 			if err := spinner.Start(ctx); err != nil {
 				fmt.Printf("failed to start spinner: %v\n", err)
@@ -322,8 +284,10 @@ func newOperationListCommand() *cobra.Command {
 			switch output {
 			case "json":
 				utils.PrintObject(jobs, utils.FormatJSON)
-			default:
+			case "table", "":
 				utils.PrintObject(jobs, utils.FormatTable)
+			default:
+				return fmt.Errorf("unsupported output format: %s (supported: table, json)", output)
 			}
 			return nil
 		},

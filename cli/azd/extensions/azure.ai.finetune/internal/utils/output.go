@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"azure.ai.finetune/pkg/models"
 )
 
 // OutputFormat represents the output format type
@@ -22,6 +24,14 @@ const (
 	FormatTable OutputFormat = "table"
 	FormatJSON  OutputFormat = "json"
 	FormatYAML  OutputFormat = "yaml"
+
+	// dateTimeFormat is the standard format for displaying timestamps
+	dateTimeFormat = "2006-01-02 15:04"
+)
+
+var (
+	timeDurationType   = reflect.TypeOf(time.Duration(0))
+	modelsDurationType = reflect.TypeOf(models.Duration(0))
 )
 
 // PrintObject prints a struct or slice in the specified format
@@ -117,7 +127,7 @@ func printSliceAsTable(v reflect.Value) error {
 
 	cols := getTableColumns(firstElem.Type())
 	if len(cols) == 0 {
-		return fmt.Errorf("no fields with table tags found")
+		return fmt.Errorf("no fields with 'table' struct tags found in type %s", firstElem.Type().Name())
 	}
 
 	// Create tabwriter
@@ -223,14 +233,12 @@ func formatFieldValue(v reflect.Value) string {
 	}
 
 	// Handle time.Time
-	if v.Type().String() == "time.Time" {
-		if t, ok := v.Interface().(interface{ Format(string) string }); ok {
-			return t.Format("2006-01-02 15:04")
-		}
+	if t, ok := v.Interface().(time.Time); ok {
+		return t.Format(dateTimeFormat)
 	}
 
 	// Handle time.Duration
-	if v.Type().String() == "time.Duration" || v.Type().String() == "models.Duration" {
+	if v.Type() == timeDurationType || v.Type() == modelsDurationType {
 		d := time.Duration(v.Int())
 		if d == 0 {
 			return "-"
@@ -257,28 +265,4 @@ func formatFieldValue(v reflect.Value) string {
 	default:
 		return fmt.Sprintf("%v", v.Interface())
 	}
-}
-
-// addSpaces inserts spaces before capital letters
-func addSpaces(s string) string {
-	var result strings.Builder
-	for i, r := range s {
-		if i > 0 && r >= 'A' && r <= 'Z' {
-			result.WriteRune(' ')
-		}
-		result.WriteRune(r)
-	}
-	return result.String()
-}
-
-// toTitleCase converts snake_case to Title Case
-func toTitleCase(s string) string {
-	s = strings.ReplaceAll(s, "_", " ")
-	words := strings.Fields(s)
-	for i, word := range words {
-		if len(word) > 0 {
-			words[i] = strings.ToUpper(string(word[0])) + strings.ToLower(word[1:])
-		}
-	}
-	return strings.Join(words, " ")
 }

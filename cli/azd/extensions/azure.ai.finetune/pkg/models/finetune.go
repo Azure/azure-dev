@@ -11,6 +11,7 @@ import (
 // JobStatus represents the status of a fine-tuning job
 type JobStatus string
 
+// JobStatus constants define the possible states of a fine-tuning job
 const (
 	StatusPending   JobStatus = "pending"
 	StatusQueued    JobStatus = "queued"
@@ -24,27 +25,35 @@ const (
 // Represents the type of method used for fine-tuning
 type MethodType string
 
+// MethodType constants define the available fine-tuning methods
 const (
 	Supervised    MethodType = "supervised"
 	DPO           MethodType = "dpo"
 	Reinforcement MethodType = "reinforcement"
 )
 
+// Duration is a custom duration type that formats as "Xh XXm" in JSON/YAML output
 type Duration time.Duration
 
+// MarshalJSON implements json.Marshaler for Duration
+// Returns the duration formatted as "Xh XXm" or "-" if zero
 func (d Duration) MarshalJSON() ([]byte, error) {
 	if d == 0 {
 		return []byte(`"-"`), nil
 	}
+
 	h := int(time.Duration(d).Hours())
 	m := int(time.Duration(d).Minutes()) % 60
 	return []byte(fmt.Sprintf(`"%dh %02dm"`, h, m)), nil
 }
 
+// MarshalYAML implements yaml.Marshaler for Duration
+// Returns the duration formatted as "Xh XXm" or "-" if zero
 func (d Duration) MarshalYAML() (interface{}, error) {
 	if d == 0 {
 		return "-", nil
 	}
+
 	h := int(time.Duration(d).Hours())
 	m := int(time.Duration(d).Minutes()) % 60
 	return fmt.Sprintf("%dh %02dm", h, m), nil

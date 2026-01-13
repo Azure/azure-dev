@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// TimeFormat defines the standard time format used for display output
+// TimeFormat defines the standard time format used for display output.
 const TimeFormat = "2006-01-02 15:04:05 UTC"
 
 // UnixTimestampToUTC converts a Unix timestamp (seconds since epoch) to a UTC time.Time.

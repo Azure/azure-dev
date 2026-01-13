@@ -35,7 +35,7 @@ stages:
 
           - pwsh: |
               New-Item -ItemType Directory -Path signed
-              Copy-Item vsix/ signed/ -Recurse
+              Copy-Item vsix/*.vsix signed/
             displayName: Copy signing outputs
             condition: always()
 

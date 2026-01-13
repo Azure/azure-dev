@@ -33,21 +33,21 @@ const (
 type Duration time.Duration
 
 func (d Duration) MarshalJSON() ([]byte, error) {
-    if d == 0 {
-        return []byte(`"-"`), nil
-    }
-    h := int(time.Duration(d).Hours())
-    m := int(time.Duration(d).Minutes()) % 60
-    return []byte(fmt.Sprintf(`"%dh %02dm"`, h, m)), nil
+	if d == 0 {
+		return []byte(`"-"`), nil
+	}
+	h := int(time.Duration(d).Hours())
+	m := int(time.Duration(d).Minutes()) % 60
+	return []byte(fmt.Sprintf(`"%dh %02dm"`, h, m)), nil
 }
 
 func (d Duration) MarshalYAML() (interface{}, error) {
-    if d == 0 {
-        return "-", nil
-    }
-    h := int(time.Duration(d).Hours())
-    m := int(time.Duration(d).Minutes()) % 60
-    return fmt.Sprintf("%dh %02dm", h, m), nil
+	if d == 0 {
+		return "-", nil
+	}
+	h := int(time.Duration(d).Hours())
+	m := int(time.Duration(d).Minutes()) % 60
+	return fmt.Sprintf("%dh %02dm", h, m), nil
 }
 
 // FineTuningJob represents a vendor-agnostic fine-tuning job
@@ -63,7 +63,7 @@ type FineTuningJob struct {
 
 	// Timestamps
 	CreatedAt   time.Time  `json:"created_at" table:"CREATED"`
-	Duration    Duration `json:"duration" table:"DURATION"`
+	Duration    Duration   `json:"duration" table:"DURATION"`
 	CompletedAt *time.Time `json:"-" table:"-"`
 
 	// Files

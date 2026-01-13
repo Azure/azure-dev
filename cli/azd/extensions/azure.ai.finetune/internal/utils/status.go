@@ -26,5 +26,5 @@ func GetStatusSymbol(status models.JobStatus) string {
 }
 
 func IsTerminalStatus(s models.JobStatus) bool {
-    return s == models.StatusSucceeded || s == models.StatusFailed || s == models.StatusCancelled
+	return s == models.StatusSucceeded || s == models.StatusFailed || s == models.StatusCancelled
 }

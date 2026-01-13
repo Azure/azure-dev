@@ -53,17 +53,12 @@ stages:
                     Write-Host "##vso[task.setvariable variable=VSIX_FILE]$vsixFile"
                   displayName: Get VSIX Filename
 
-                - pwsh: |
-                    Write-Host "Preparing to publish VSIX file: $(VSIX_FILE)"
-                  displayName: Prepare for Publishing
-
-                # TODO: Uncomment before merge
-                # - task: 1ES.PublishAzureDevOpsExtension@1
-                #   displayName: Publish Extension
-                #   inputs:
-                #     targetPath: "$(Build.SourcesDirectory)/signed"
-                #     connectedServiceNameAzureRM: azure-sdk-vsmarketplace
-                #     fileType: vsix
-                #     vsixFile: "$(VSIX_FILE)"
-                #     useV5: true
-                #     validateExtension: false
+                - task: 1ES.PublishAzureDevOpsExtension@1
+                  displayName: Publish Extension
+                  inputs:
+                    targetPath: "$(Build.SourcesDirectory)/signed"
+                    connectedServiceNameAzureRM: azure-sdk-vsmarketplace
+                    fileType: vsix
+                    vsixFile: "$(VSIX_FILE)"
+                    useV5: true
+                    validateExtension: false

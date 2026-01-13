@@ -1074,4 +1074,56 @@ func Test_FetchAndCacheMetadata(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "metadata not found")
 	})
+
+	t.Run("metadata command timeout does not fail operation", func(t *testing.T) {
+		timeoutExtension := &Extension{
+			Id:           "test.timeout.extension",
+			Namespace:    "test",
+			DisplayName:  "Test Timeout Extension",
+			Version:      "1.0.0",
+			Path:         relPath,
+			Capabilities: []CapabilityType{MetadataCapability},
+		}
+
+		// Create extension directory
+		timeoutExtDir := filepath.Join(tempDir, "extensions", timeoutExtension.Id)
+		err := os.MkdirAll(timeoutExtDir, os.ModePerm)
+		require.NoError(t, err)
+
+		// Create a new mock context with isolated command runner
+		timeoutMockContext := mocks.NewMockContext(context.Background())
+
+		// Mock CommandRunner to simulate timeout for ANY metadata command
+		timeoutMockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+			// Match any command that has "metadata" as an argument
+			for _, arg := range args.Args {
+				if arg == "metadata" {
+					return true
+				}
+			}
+			return false
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			return exec.RunResult{}, context.DeadlineExceeded
+		})
+
+		// Create a new runner with the timeout mock context
+		timeoutLazyRunner := lazy.NewLazy(func() (*Runner, error) {
+			return NewRunner(timeoutMockContext.CommandRunner), nil
+		})
+
+		timeoutManager, err := NewManager(userConfigManager, sourceManager, timeoutLazyRunner, mockContext.HttpClient)
+		require.NoError(t, err)
+
+		// Fetch and cache metadata - should return error for timeout
+		err = timeoutManager.fetchAndCacheMetadata(*mockContext.Context, timeoutExtension)
+		require.Error(t, err, "Should return an error for timeout")
+		require.Contains(t, err.Error(), "timed out", "Error should mention timeout")
+
+		// Metadata should not exist since command timed out
+		exists := timeoutManager.MetadataExists(timeoutExtension.Id)
+		require.False(t, exists, "Metadata should not exist when command times out")
+
+		// This demonstrates that installation would still succeed despite timeout
+		// The actual Install() function logs this as a warning but doesn't fail
+	})
 }

@@ -210,23 +210,24 @@ func TestConfigurationMetadata_JSONMarshaling(t *testing.T) {
 func TestConfigurationMetadata_FromGoTypes(t *testing.T) {
 	// Define configuration structures using Go types
 	type CustomGlobalConfig struct {
-		APIKey string `json:"apiKey" jsonschema:"required,description=API key for authentication,minLength=10"`
+		APIKey string `json:"apiKey"            jsonschema:"required,description=API key for authentication,minLength=10"`
 		// Timeout in seconds (1-300, default 60)
 		Timeout int  `json:"timeout,omitempty" jsonschema:"minimum=1,maximum=300,default=60"`
-		Debug   bool `json:"debug,omitempty" jsonschema:"description=Enable debug logging"`
+		Debug   bool `json:"debug,omitempty"   jsonschema:"description=Enable debug logging"`
 	}
 
 	type CustomProjectConfig struct {
-		ProjectName string `json:"projectName" jsonschema:"required,description=Name of the project"`
+		ProjectName string `json:"projectName"           jsonschema:"required,description=Name of the project"`
 		// Deployment environment: dev, staging, or prod
 		Environment string   `json:"environment,omitempty" jsonschema:"enum=dev,enum=staging,enum=prod"`
-		Features    []string `json:"features,omitempty" jsonschema:"description=Enabled features"`
+		Features    []string `json:"features,omitempty"    jsonschema:"description=Enabled features"`
 	}
 
 	type CustomServiceConfig struct {
-		Port     int               `json:"port" jsonschema:"required,description=Service port,minimum=1,maximum=65535"`
+		// Service port (1-65535)
+		Port     int               `json:"port"               jsonschema:"required,minimum=1,maximum=65535"`
 		HostName string            `json:"hostName,omitempty" jsonschema:"description=Service hostname"`
-		Labels   map[string]string `json:"labels,omitempty" jsonschema:"description=Service labels"`
+		Labels   map[string]string `json:"labels,omitempty"   jsonschema:"description=Service labels"`
 	}
 
 	// Generate schemas from Go types - THIS IS THE EASIEST WAY!

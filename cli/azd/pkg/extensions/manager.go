@@ -837,7 +837,7 @@ func (m *Manager) fetchAndCacheMetadata(
 		Args: []string{metadataCommandName},
 	})
 	if err != nil {
-		if cmdCtx.Err() == context.DeadlineExceeded {
+		if errors.Is(err, context.DeadlineExceeded) {
 			return fmt.Errorf("metadata command timed out after %v", metadataTimeout)
 		}
 		return fmt.Errorf("metadata command failed: %w", err)

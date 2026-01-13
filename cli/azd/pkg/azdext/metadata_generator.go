@@ -24,10 +24,6 @@ func generateCommands(cmd *cobra.Command) []extensions.Command {
 	var commands []extensions.Command
 
 	for _, subCmd := range cmd.Commands() {
-		// Skip hidden commands
-		if subCmd.Hidden {
-			continue
-		}
 		command := generateCommand(subCmd)
 		commands = append(commands, command)
 	}
@@ -122,11 +118,6 @@ func generateFlags(cmd *cobra.Command) []extensions.Flag {
 	var flags []extensions.Flag
 
 	cmd.Flags().VisitAll(func(flag *pflag.Flag) {
-		// Skip hidden flags
-		if flag.Hidden {
-			return
-		}
-
 		flagMeta := extensions.Flag{
 			Name:        flag.Name,
 			Shorthand:   flag.Shorthand,

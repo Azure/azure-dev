@@ -176,7 +176,9 @@ func (s *SubscriptionsService) ListSubscriptionLocationsWithFilter(
 		supported, err := s.checkResourceTypesAvailability(
 			ctx, subscriptionId, tenantId, location.Name, options.ResourceTypes)
 		if err != nil {
-			// Log error but continue with other locations
+			// Log error but continue with other locations to provide best-effort filtering.
+			// If all locations fail, an empty list will be returned, prompting the user to check permissions.
+			fmt.Printf("warning: failed to check resource availability for location %s: %v\n", location.Name, err)
 			continue
 		}
 
@@ -205,7 +207,12 @@ func (s *SubscriptionsService) checkResourceTypesAvailability(
 	for _, resourceType := range resourceTypes {
 		parts := strings.SplitN(resourceType, "/", 2)
 		if len(parts) != 2 {
-			continue // Skip invalid resource types
+			// Skip invalid resource types (should be in format "Provider/Type")
+			// This could indicate a template parsing issue, so log for debugging
+			fmt.Printf(
+				"warning: skipping invalid resource type format '%s' (expected 'Provider/Type')\n",
+				resourceType)
+			continue
 		}
 		providerNamespace := parts[0]
 		typeName := parts[1]

@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package models
 
 import (
@@ -13,7 +16,7 @@ type FineTuningJobTableView struct {
 	CreatedAt time.Time `table:"Created"`
 }
 
-// JobDetailsView is the basic job info section
+// JobDetailsView represents the basic job information section for display
 type JobDetailsView struct {
 	ID             string    `table:"ID"`
 	Status         JobStatus `table:"Status"`
@@ -21,14 +24,14 @@ type JobDetailsView struct {
 	FineTunedModel string    `table:"Fine-tuned Model"`
 }
 
-// TimestampsView is the timestamps section
+// TimestampsView represents the timestamps section for display
 type TimestampsView struct {
 	Created      string `table:"Created"`
 	Finished     string `table:"Finished"`
 	EstimatedETA string `table:"Estimated ETA"`
 }
 
-// BaseConfigurationView has fields common to all methods
+// BaseConfigurationView represents configuration fields common to all training methods
 type BaseConfigurationView struct {
 	TrainingType string `table:"Training Type"`
 	Epochs       int64  `table:"Epochs"`
@@ -36,7 +39,7 @@ type BaseConfigurationView struct {
 	LearningRate string `table:"Learning Rate"`
 }
 
-// DPOConfigurationView has DPO-specific fields
+// DPOConfigurationView represents DPO-specific configuration fields
 type DPOConfigurationView struct {
 	TrainingType string `table:"Training Type"`
 	Epochs       int64  `table:"Epochs"`
@@ -45,7 +48,7 @@ type DPOConfigurationView struct {
 	Beta         string `table:"Beta"`
 }
 
-// ReinforcementConfigurationView has reinforcement-specific fields
+// ReinforcementConfigurationView represents reinforcement learning configuration fields
 type ReinforcementConfigurationView struct {
 	TrainingType      string `table:"Training Type"`
 	Epochs            int64  `table:"Epochs"`
@@ -57,7 +60,7 @@ type ReinforcementConfigurationView struct {
 	ReasoningEffort   string `table:"Reasoning Effort"`
 }
 
-// DataView is the training/validation data section
+// DataView represents the training/validation data section for display
 type DataView struct {
 	TrainingFile   string `table:"Training File"`
 	ValidationFile string `table:"Validation File"`
@@ -71,7 +74,7 @@ type JobDetailViews struct {
 	Data          *DataView
 }
 
-// ToTableView converts a FineTuningJob to its table view (for list command)
+// ToTableView converts a FineTuningJob to its table view representation
 func (j *FineTuningJob) ToTableView() *FineTuningJobTableView {
 	return &FineTuningJobTableView{
 		ID:        j.ID,
@@ -88,34 +91,40 @@ func (j *FineTuningJobDetail) ToDetailViews() *JobDetailViews {
 		fineTunedModel = "-"
 	}
 
+	// Handle nil hyperparameters
+	hp := j.Hyperparameters
+	if hp == nil {
+		hp = &Hyperparameters{}
+	}
+
 	// Build configuration view based on method type
 	var configView interface{}
 	switch j.Method {
 	case string(DPO):
 		configView = &DPOConfigurationView{
 			TrainingType: j.Method,
-			Epochs:       j.Hyperparameters.NEpochs,
-			BatchSize:    j.Hyperparameters.BatchSize,
-			LearningRate: formatFloatOrDash(j.Hyperparameters.LearningRateMultiplier),
-			Beta:         formatFloatOrDash(j.Hyperparameters.Beta),
+			Epochs:       hp.NEpochs,
+			BatchSize:    hp.BatchSize,
+			LearningRate: formatFloatOrDash(hp.LearningRateMultiplier),
+			Beta:         formatFloatOrDash(hp.Beta),
 		}
 	case string(Reinforcement):
 		configView = &ReinforcementConfigurationView{
 			TrainingType:      j.Method,
-			Epochs:            j.Hyperparameters.NEpochs,
-			BatchSize:         j.Hyperparameters.BatchSize,
-			LearningRate:      formatFloatOrDash(j.Hyperparameters.LearningRateMultiplier),
-			ComputeMultiplier: formatFloatOrDash(j.Hyperparameters.ComputeMultiplier),
-			EvalInterval:      formatInt64OrDash(j.Hyperparameters.EvalInterval),
-			EvalSamples:       formatInt64OrDash(j.Hyperparameters.EvalSamples),
-			ReasoningEffort:   stringOrDash(j.Hyperparameters.ReasoningEffort),
+			Epochs:            hp.NEpochs,
+			BatchSize:         hp.BatchSize,
+			LearningRate:      formatFloatOrDash(hp.LearningRateMultiplier),
+			ComputeMultiplier: formatFloatOrDash(hp.ComputeMultiplier),
+			EvalInterval:      formatInt64OrDash(hp.EvalInterval),
+			EvalSamples:       formatInt64OrDash(hp.EvalSamples),
+			ReasoningEffort:   stringOrDash(hp.ReasoningEffort),
 		}
 	default: // supervised or unknown
 		configView = &BaseConfigurationView{
 			TrainingType: j.Method,
-			Epochs:       j.Hyperparameters.NEpochs,
-			BatchSize:    j.Hyperparameters.BatchSize,
-			LearningRate: formatFloatOrDash(j.Hyperparameters.LearningRateMultiplier),
+			Epochs:       hp.NEpochs,
+			BatchSize:    hp.BatchSize,
+			LearningRate: formatFloatOrDash(hp.LearningRateMultiplier),
 		}
 	}
 
@@ -137,16 +146,6 @@ func (j *FineTuningJobDetail) ToDetailViews() *JobDetailViews {
 			ValidationFile: stringOrDash(j.ValidationFile),
 		},
 	}
-}
-
-// ToTableViews converts a slice of jobs to table views
-func ToTableViews(job *FineTuningJob) *FineTuningJobTableView {
-	view := job.ToTableView()
-	return view
-}
-
-func formatFloat(f float64) string {
-	return fmt.Sprintf("%g", f)
 }
 
 func formatFloatOrDash(f float64) string {

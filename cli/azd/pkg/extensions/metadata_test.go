@@ -317,3 +317,93 @@ func TestExtensionMetadata_FutureSchemaVersion(t *testing.T) {
 	assert.Equal(t, "test", metadata.ID)
 	assert.Empty(t, metadata.Commands)
 }
+
+func TestEnvironmentVariable_Marshaling(t *testing.T) {
+	envVars := []EnvironmentVariable{
+		{
+			Name:        "DEMO_API_KEY",
+			Description: "API key for external service authentication",
+			Example:     "abc123xyz",
+		},
+		{
+			Name:        "DEMO_LOG_LEVEL",
+			Description: "Set the logging level for the extension",
+			Default:     "info",
+			Example:     "debug",
+		},
+	}
+
+	metadata := &ExtensionCommandMetadata{
+		SchemaVersion: "1.0",
+		ID:            "test.extension",
+		Commands:      []Command{},
+		Configuration: &ConfigurationMetadata{
+			EnvironmentVariables: envVars,
+		},
+	}
+
+	data, err := json.Marshal(metadata)
+	require.NoError(t, err)
+
+	jsonStr := string(data)
+	assert.Contains(t, jsonStr, "environmentVariables")
+	assert.Contains(t, jsonStr, "DEMO_API_KEY")
+	assert.Contains(t, jsonStr, "API key for external service authentication")
+	assert.Contains(t, jsonStr, "DEMO_LOG_LEVEL")
+	assert.Contains(t, jsonStr, `"default":"info"`)
+}
+
+func TestEnvironmentVariable_UnmarshalJSON(t *testing.T) {
+	jsonData := `{
+		"schemaVersion": "1.0",
+		"id": "test.extension",
+		"commands": [],
+		"configuration": {
+			"environmentVariables": [
+				{
+					"name": "TEST_API_KEY",
+					"description": "API key for testing",
+					"example": "test-key-123"
+				},
+				{
+					"name": "TEST_TIMEOUT",
+					"description": "Operation timeout in seconds",
+					"default": "30",
+					"example": "60"
+				}
+			]
+		}
+	}`
+
+	var metadata ExtensionCommandMetadata
+	err := json.Unmarshal([]byte(jsonData), &metadata)
+	require.NoError(t, err)
+
+	require.NotNil(t, metadata.Configuration)
+	require.Len(t, metadata.Configuration.EnvironmentVariables, 2)
+
+	envVar1 := metadata.Configuration.EnvironmentVariables[0]
+	assert.Equal(t, "TEST_API_KEY", envVar1.Name)
+	assert.Equal(t, "API key for testing", envVar1.Description)
+	assert.Equal(t, "test-key-123", envVar1.Example)
+	assert.Empty(t, envVar1.Default)
+
+	envVar2 := metadata.Configuration.EnvironmentVariables[1]
+	assert.Equal(t, "TEST_TIMEOUT", envVar2.Name)
+	assert.Equal(t, "Operation timeout in seconds", envVar2.Description)
+	assert.Equal(t, "30", envVar2.Default)
+	assert.Equal(t, "60", envVar2.Example)
+}
+
+func TestEnvironmentVariable_Optional(t *testing.T) {
+	// Without environment variables
+	metadata := ExtensionCommandMetadata{
+		SchemaVersion: "1.0",
+		ID:            "test",
+		Commands:      []Command{},
+	}
+
+	data, err := json.Marshal(metadata)
+	require.NoError(t, err)
+	assert.NotContains(t, string(data), "environmentVariables")
+}

@@ -30,7 +30,7 @@ func newMetadataCommand() *cobra.Command {
 				rootCmd,
 			)
 
-			// Add custom configuration schemas
+			// Add custom configuration schemas and environment variables
 			metadata.Configuration = generateConfigurationMetadata()
 
 			// Output as JSON
@@ -51,8 +51,38 @@ func newMetadataCommand() *cobra.Command {
 func generateConfigurationMetadata() *extensions.ConfigurationMetadata {
 	// Generate schemas from Go types automatically
 	return &extensions.ConfigurationMetadata{
-		Global:  jsonschema.Reflect(&config.CustomGlobalConfig{}),
-		Project: jsonschema.Reflect(&config.CustomProjectConfig{}),
-		Service: jsonschema.Reflect(&config.CustomServiceConfig{}),
+		Global:               jsonschema.Reflect(&config.CustomGlobalConfig{}),
+		Project:              jsonschema.Reflect(&config.CustomProjectConfig{}),
+		Service:              jsonschema.Reflect(&config.CustomServiceConfig{}),
+		EnvironmentVariables: generateEnvironmentVariables(),
+	}
+}
+
+// generateEnvironmentVariables documents environment variables used by the demo extension.
+// This helps users understand what environment variables are available and how to use them.
+func generateEnvironmentVariables() []extensions.EnvironmentVariable {
+	return []extensions.EnvironmentVariable{
+		{
+			Name:        "DEMO_API_KEY",
+			Description: "API key for external service integration. Used for authentication with external services.",
+			Example:     "sk-abc123xyz456",
+		},
+		{
+			Name:        "DEMO_LOG_LEVEL",
+			Description: "Set logging verbosity level. Controls the amount of detail logged during operations.",
+			Default:     "info",
+			Example:     "debug",
+		},
+		{
+			Name:        "DEMO_TIMEOUT",
+			Description: "Default timeout in seconds. Use for longer timeouts on slow networks or large transfers.",
+			Default:     "30",
+			Example:     "60",
+		},
+		{
+			Name:        "DEMO_CACHE_DIR",
+			Description: "Custom directory path for extension cache files. Controls where temporary files are stored.",
+			Example:     "/tmp/demo-cache",
+		},
 	}
 }

@@ -12,8 +12,7 @@ import (
 )
 
 // CompileSchema compiles a JSON Schema for validation.
-// Accepts either *jsonschema.Schema (from invopop/jsonschema) or json.RawMessage.
-// Returns a compiled schema from santhosh-tekuri/jsonschema/v6 for validation.
+// Returns a compiled JSON Schema
 func CompileSchema(schema *jsonschema.Schema) (*jsonschemav6.Schema, error) {
 	if schema == nil {
 		return nil, fmt.Errorf("schema cannot be nil")

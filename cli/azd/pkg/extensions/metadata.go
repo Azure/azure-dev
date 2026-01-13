@@ -89,6 +89,18 @@ type Flag struct {
 	Deprecated string `json:"deprecated,omitempty"`
 }
 
+// EnvironmentVariable represents an environment variable used or recognized by the extension
+type EnvironmentVariable struct {
+	// Name is the environment variable name (e.g., "EXTENSION_API_KEY")
+	Name string `json:"name"`
+	// Description explains when and why to use this environment variable
+	Description string `json:"description"`
+	// Default is the default value used if the environment variable is not set
+	Default string `json:"default,omitempty"`
+	// Example provides an example value for documentation purposes
+	Example string `json:"example,omitempty"`
+}
+
 // ConfigurationMetadata describes extension configuration options (Phase 2).
 // Each field contains a JSON Schema (github.com/invopop/jsonschema) that defines
 // the structure and validation rules for extension configuration at different scopes.
@@ -126,4 +138,6 @@ type ConfigurationMetadata struct {
 	Project *jsonschema.Schema `json:"project,omitempty"`
 	// Service contains JSON Schema for service-level configuration options
 	Service *jsonschema.Schema `json:"service,omitempty"`
+	// EnvironmentVariables describes environment variables used by the extension
+	EnvironmentVariables []EnvironmentVariable `json:"environmentVariables,omitempty"`
 }

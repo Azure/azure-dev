@@ -39,19 +39,19 @@ stages:
             deploy:
               steps:
                 - pwsh: | 
-                    $files = Get-ChildItem -Path "$(Build.StagingDirectory)/signed/*.vsix"
+                    $files = Get-ChildItem -Path "$(Build.SourcesDirectory)/signed/*.vsix"
                     if ($files -is [Array]) { 
                       if ($files.Count -gt 1) {
                         Write-Host "More than one VSIX file found in signed artifact."
                         exit 1
                       }
-                      $vsixFile = $files[0].FullName
+                      $vsixFile = $files[0].Name
                     } else {
-                      $vsixFile = $files.FullName
+                      $vsixFile = $files.Name
                     }
 
                     Write-Host "##vso[task.setvariable variable=VSIX_FILE]$vsixFile"
-                  displayName: Get VSIX File Path
+                  displayName: Get VSIX Filename
 
                 - pwsh: |
                     Write-Host "Preparing to publish VSIX file: $(VSIX_FILE)"
@@ -61,7 +61,7 @@ stages:
                 # - task: 1ES.PublishAzureDevOpsExtension@1
                 #   displayName: Publish Extension
                 #   inputs:
-                #     targetPath: "$(Build.StagingDirectory)/signed"
+                #     targetPath: "$(Build.SourcesDirectory)/signed"
                 #     connectedServiceNameAzureRM: azure-sdk-vsmarketplace
                 #     fileType: vsix
                 #     vsixFile: "$(VSIX_FILE)"

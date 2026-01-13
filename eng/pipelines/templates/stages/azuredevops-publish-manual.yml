@@ -45,9 +45,9 @@ stages:
                         Write-Host "More than one VSIX file found in signed artifact."
                         exit 1
                       }
-                      $vsixFile = $files[0].Name
+                      $vsixFile = $files[0].FullName
                     } else {
-                      $vsixFile = $files.Name
+                      $vsixFile = $files.FullName
                     }
 
                     Write-Host "##vso[task.setvariable variable=VSIX_FILE]$vsixFile"

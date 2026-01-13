@@ -5,15 +5,20 @@ import * as ttm from 'azure-pipelines-task-lib/mock-test';
 describe('Setup azd task tests', function () {
 
     before(function() {
-        // Setup before tests
+        // Disable tool download for tests to prevent actual network calls
+        process.env.AGENT_TOOLSDIRECTORY = '/tmp/test-tools';
+        process.env.RUNNER_TOOL_CACHE = '/tmp/test-tools';
     });
 
     after(() => {
         // Cleanup after tests
+        delete process.env.AGENT_TOOLSDIRECTORY;
+        delete process.env.RUNNER_TOOL_CACHE;
     });
 
     it('should succeed with default version (latest)', function(done: Mocha.Done) {
-        this.timeout(5000);
+        // Increased timeout for macOS where tool cache operations can take longer
+        this.timeout(30000);
 
         const tp: string = path.join(__dirname, 'success.js');
         const tr: ttm.MockTestRunner = new ttm.MockTestRunner(tp);
@@ -30,7 +35,8 @@ describe('Setup azd task tests', function () {
     });
 
     it('should succeed with specific version', function(done: Mocha.Done) {
-        this.timeout(5000);
+        // Increased timeout for macOS compatibility
+        this.timeout(30000);
 
         const tp: string = path.join(__dirname, 'successVersion.js');
         const tr: ttm.MockTestRunner = new ttm.MockTestRunner(tp);
@@ -47,7 +53,8 @@ describe('Setup azd task tests', function () {
     });
 
     it('should fail with invalid version', function(done: Mocha.Done) {
-        this.timeout(5000);
+        // Increased timeout for macOS compatibility
+        this.timeout(30000);
 
         const tp: string = path.join(__dirname, 'invalidVersion.js');
         const tr: ttm.MockTestRunner = new ttm.MockTestRunner(tp);

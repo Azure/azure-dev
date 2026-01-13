@@ -188,7 +188,7 @@ const completionSpec: Fig.Spec = {
 		},
 		{
 			name: ['ai'],
-			description: 'Extension for the Foundry Agent Service. (Preview)',
+			description: 'Extension for Foundry Fine Tuning. (Preview)',
 			subcommands: [
 				{
 					name: ['agent'],
@@ -601,6 +601,29 @@ const completionSpec: Fig.Spec = {
 								name: 'layer',
 							},
 							],
+						},
+					],
+					args: {
+						name: 'environment',
+					},
+				},
+				{
+					name: ['remove', 'rm'],
+					description: 'Remove an environment.',
+					options: [
+						{
+							name: ['--environment', '-e'],
+							description: 'The name of the environment to use.',
+							args: [
+							{
+								name: 'environment',
+							},
+							],
+						},
+						{
+							name: ['--force'],
+							description: 'Skips confirmation before performing removal.',
+							isDangerous: true,
 						},
 					],
 					args: {
@@ -1597,7 +1620,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['ai'],
-					description: 'Extension for the Foundry Agent Service. (Preview)',
+					description: 'Extension for Foundry Fine Tuning. (Preview)',
 					subcommands: [
 						{
 							name: ['agent'],
@@ -1744,6 +1767,10 @@ const completionSpec: Fig.Spec = {
 						{
 							name: ['refresh'],
 							description: 'Refresh environment values by using information from a previous infrastructure provision.',
+						},
+						{
+							name: ['remove', 'rm'],
+							description: 'Remove an environment.',
 						},
 						{
 							name: ['select'],

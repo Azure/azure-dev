@@ -1036,7 +1036,7 @@ func Test_FetchAndCacheMetadata(t *testing.T) {
 		require.Equal(t, "test", loadedMetadata.Commands[0].Name[0])
 	})
 
-	t.Run("skip metadata fetch for extension without metadata capability", func(t *testing.T) {
+	t.Run("caller should check capability before calling fetchAndCacheMetadata", func(t *testing.T) {
 		extensionNoMetadata := &Extension{
 			Id:           "test.no.metadata",
 			Namespace:    "test",
@@ -1046,9 +1046,9 @@ func Test_FetchAndCacheMetadata(t *testing.T) {
 			Capabilities: []CapabilityType{}, // No metadata capability
 		}
 
-		// Should not error even though extension doesn't support metadata
-		err := manager.fetchAndCacheMetadata(*mockContext.Context, extensionNoMetadata)
-		require.NoError(t, err)
+		// Caller should check capability before calling
+		hasCapability := extensionNoMetadata.HasCapability(MetadataCapability)
+		require.False(t, hasCapability, "Extension should not have metadata capability")
 
 		// Metadata should not exist
 		exists := manager.MetadataExists(extensionNoMetadata.Id)

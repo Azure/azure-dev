@@ -45,6 +45,7 @@ words:
   - jsonschema
   - rustc
   - figspec
+  - finetune
   - bubbletea
   - lipgloss
   - gopxl
@@ -263,6 +264,9 @@ overrides:
     words:
       - WORKDIR
       - workdir
+  - filename: extensions/microsoft.azd.demo/internal/cmd/metadata.go
+    words:
+      - invopop
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

@@ -512,9 +512,11 @@ func (m *Manager) Install(
 
 	// Fetch and cache metadata if extension supports it
 	installedExtension := extensions[extension.Id]
-	if err := m.fetchAndCacheMetadata(ctx, installedExtension); err != nil {
-		// Log warning but don't fail installation
-		log.Printf("Warning: Failed to fetch extension metadata for '%s': %v\n", extension.Id, err)
+	if installedExtension.HasCapability(MetadataCapability) {
+		if err := m.fetchAndCacheMetadata(ctx, installedExtension); err != nil {
+			// Log warning but don't fail installation
+			log.Printf("Warning: Failed to fetch extension metadata for '%s': %v\n", extension.Id, err)
+		}
 	}
 
 	return selectedVersion, nil
@@ -798,18 +800,13 @@ const (
 	metadataTimeout     = 10 * time.Second
 )
 
-// fetchAndCacheMetadata fetches metadata from an extension and caches it to disk
-// Returns nil error if metadata was successfully fetched and cached, or if extension doesn't support metadata
-// Returns warning-level error if metadata fetch failed (installation should still succeed)
+// fetchAndCacheMetadata fetches metadata from an extension and caches it to disk.
+// Caller must verify that extension has MetadataCapability before calling.
+// Returns nil error if metadata was successfully fetched and cached.
 func (m *Manager) fetchAndCacheMetadata(
 	ctx context.Context,
 	extension *Extension,
 ) error {
-	// Check if extension has metadata capability
-	if !extension.HasCapability(MetadataCapability) {
-		return nil // Extension doesn't support metadata - this is fine
-	}
-
 	userConfigDir, err := config.GetUserConfigDir()
 	if err != nil {
 		return fmt.Errorf("failed to get user config directory: %w", err)

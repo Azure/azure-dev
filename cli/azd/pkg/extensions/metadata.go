@@ -31,7 +31,7 @@ type Command struct {
 	Usage string `json:"usage,omitempty"`
 	// Examples contains example usages of the command
 	Examples []CommandExample `json:"examples,omitempty"`
-	// Args defines the positional arguments accepted by the command
+	// Args defines the positional arguments accepted by the command, in the order it is received
 	Args []Argument `json:"args,omitempty"`
 	// Flags defines the flags/options accepted by the command
 	Flags []Flag `json:"flags,omitempty"`

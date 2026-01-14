@@ -34,13 +34,21 @@ var networkErrorKeywords = []string{
 // resilientHttpTransport wraps an HTTP transport with retry logic for network failures.
 // This makes the test recorder more robust to transient network issues without affecting recorded interactions.
 type resilientHttpTransport struct {
-	transport http.RoundTripper
+	transport       http.RoundTripper
+	backoffDuration time.Duration
 }
 
 // NewResilientHttpTransport creates a new resilient HTTP transport that wraps the provided transport
 func NewResilientHttpTransport(transport http.RoundTripper) *resilientHttpTransport {
+	return NewResilientHttpTransportWithBackoff(transport, 2*time.Second)
+}
+
+// NewResilientHttpTransportWithBackoff creates a new resilient HTTP transport with configurable backoff duration
+func NewResilientHttpTransportWithBackoff(
+	transport http.RoundTripper, backoffDuration time.Duration) *resilientHttpTransport {
 	return &resilientHttpTransport{
-		transport: transport,
+		transport:       transport,
+		backoffDuration: backoffDuration,
 	}
 }
 
@@ -67,7 +75,7 @@ func (r *resilientHttpTransport) RoundTrip(req *http.Request) (*http.Response, e
 	// Retry logic with exponential backoff for network failures
 	retryErr := retry.Do(
 		req.Context(),
-		retry.WithMaxRetries(3, retry.NewExponential(2*time.Second)),
+		retry.WithMaxRetries(3, retry.NewExponential(r.backoffDuration)),
 		func(ctx context.Context) error {
 			resp, err = r.transport.RoundTrip(req)
 			if err != nil {

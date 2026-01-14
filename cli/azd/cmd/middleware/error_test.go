@@ -277,6 +277,137 @@ func Test_ExtractSuggestedSolutions(t *testing.T) {
 			expectedCount: 2,
 			expectedFirst: "  First solution with spaces  ",
 		},
+		{
+			name: "JSON Mixed with Text Before",
+			llmResponse: `Here's the analysis of the error:
+
+			{
+				"analysis": "The deployment failed due to a configuration issue",
+				"solutions": [
+					"Update the configuration file",
+					"Restart the service"
+				]
+			}`,
+			expectedCount: 2,
+			expectedFirst: "Update the configuration file",
+		},
+		{
+			name: "JSON Mixed with Text After",
+			llmResponse: `{
+				"analysis": "Authentication failed",
+				"solutions": [
+					"Run az login to authenticate",
+					"Check your subscription permissions"
+				]
+			}
+			
+			That should resolve the authentication issues.`,
+			expectedCount: 2,
+			expectedFirst: "Run az login to authenticate",
+		},
+		{
+			name: "JSON Mixed with Text Before and After",
+			llmResponse: `I analyzed the error and found the following:
+			
+			{
+				"analysis": "Network connectivity issue",
+				"solutions": [
+					"Check network connectivity",
+					"Retry with different endpoint",
+					"Contact network administrator"
+				]
+			}
+			
+			Please try these solutions in order.`,
+			expectedCount: 3,
+			expectedFirst: "Check network connectivity",
+		},
+		{
+			name: "JSON with Braces in Strings",
+			llmResponse: `{
+				"analysis": "Error contains { and } characters in message",
+				"solutions": [
+					"Fix the {configuration} file issue",
+					"Update values in {section} configuration"
+				]
+			}`,
+			expectedCount: 2,
+			expectedFirst: "Fix the {configuration} file issue",
+		},
+		{
+			name: "JSON with Escaped Quotes",
+			llmResponse: `{
+				"analysis": "String parsing error",
+				"solutions": [
+					"Fix the \"quoted value\" in configuration",
+					"Escape the \\\"special characters\\\" properly"
+				]
+			}`,
+			expectedCount: 2,
+			expectedFirst: "Fix the \"quoted value\" in configuration",
+		},
+		{
+			name: "JSON with Nested Objects",
+			llmResponse: `{
+				"analysis": "Complex configuration error",
+				"metadata": {
+					"severity": "high",
+					"details": {
+						"cause": "invalid syntax"
+					}
+				},
+				"solutions": [
+					"Fix nested configuration",
+					"Validate JSON structure"
+				]
+			}`,
+			expectedCount: 2,
+			expectedFirst: "Fix nested configuration",
+		},
+		{
+			name: "Multiple JSON Objects - First One Wins",
+			llmResponse: `{
+				"analysis": "First analysis",
+				"solutions": [
+					"First solution"
+				]
+			}
+			{
+				"analysis": "Second analysis",
+				"solutions": [
+					"Second solution"
+				]
+			}`,
+			expectedCount: 1,
+			expectedFirst: "First solution",
+		},
+		{
+			name:          "Empty Response",
+			llmResponse:   "",
+			expectedCount: 0,
+		},
+		{
+			name:          "Only Opening Brace",
+			llmResponse:   "{",
+			expectedCount: 0,
+		},
+		{
+			name:          "Only Closing Brace",
+			llmResponse:   "}",
+			expectedCount: 0,
+		},
+		{
+			name: "JSON with Line Breaks in Strings",
+			llmResponse: `{
+				"analysis": "Multi-line error message",
+				"solutions": [
+					"Fix the multi-line\nconfiguration issue",
+					"Handle\r\nCRLF line endings"
+				]
+			}`,
+			expectedCount: 2,
+			expectedFirst: "Fix the multi-line\nconfiguration issue",
+		},
 	}
 
 	for _, tt := range tests {

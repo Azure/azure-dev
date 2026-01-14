@@ -2,7 +2,7 @@ import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from azd_client import AzdClient
-from azure.identity import DefaultAzureCredential
+from azure.identity import AzureDeveloperCliCredential
 from azure.mgmt.resource import ResourceManagementClient
 from rich.console import Console
 import prompt_pb2
@@ -60,7 +60,7 @@ class PromptCommand:
         context["scope"]["tenant_id"] = sub_response.subscription.tenant_id
 
         # Setup Azure credentials and clients
-        credential = DefaultAzureCredential(exclude_interactive_browser_credential=False)
+        credential = AzureDeveloperCliCredential(tenant_id=context["scope"]["tenant_id"])
         arm_client = ResourceManagementClient(credential, context["scope"]["subscription_id"])
 
         providers = list(arm_client.providers.list())

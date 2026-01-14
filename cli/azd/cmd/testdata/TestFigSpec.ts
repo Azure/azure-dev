@@ -277,6 +277,10 @@ const completionSpec: Fig.Spec = {
 					name: ['logout'],
 					description: 'Log out of Azure.',
 				},
+				{
+					name: ['status'],
+					description: 'Show the current authentication status.',
+				},
 			],
 		},
 		{
@@ -308,6 +312,10 @@ const completionSpec: Fig.Spec = {
 					description: 'Generate zsh completion script.',
 				},
 			],
+		},
+		{
+			name: ['concurx'],
+			description: 'Concurrent execution for azd deployment',
 		},
 		{
 			name: ['config'],
@@ -429,6 +437,71 @@ const completionSpec: Fig.Spec = {
 			name: ['env'],
 			description: 'Manage environments (ex: default environment, environment variables).',
 			subcommands: [
+				{
+					name: ['config'],
+					description: 'Manage environment configuration (ex: stored in .azure/<environment>/config.json).',
+					subcommands: [
+						{
+							name: ['get'],
+							description: 'Gets a configuration value from the environment.',
+							options: [
+								{
+									name: ['--environment', '-e'],
+									description: 'The name of the environment to use.',
+									args: [
+									{
+										name: 'environment',
+									},
+									],
+								},
+							],
+							args: {
+								name: 'path',
+							},
+						},
+						{
+							name: ['set'],
+							description: 'Sets a configuration value in the environment.',
+							options: [
+								{
+									name: ['--environment', '-e'],
+									description: 'The name of the environment to use.',
+									args: [
+									{
+										name: 'environment',
+									},
+									],
+								},
+							],
+							args: [
+							{
+								name: 'path',
+							},
+							{
+								name: 'value',
+							},
+							],
+						},
+						{
+							name: ['unset'],
+							description: 'Unsets a configuration value in the environment.',
+							options: [
+								{
+									name: ['--environment', '-e'],
+									description: 'The name of the environment to use.',
+									args: [
+									{
+										name: 'environment',
+									},
+									],
+								},
+							],
+							args: {
+								name: 'path',
+							},
+						},
+					],
+				},
 				{
 					name: ['get-value'],
 					description: 'Get specific environment value.',
@@ -603,7 +676,7 @@ const completionSpec: Fig.Spec = {
 					options: [
 						{
 							name: ['--force', '-f'],
-							description: 'Force installation even if it would downgrade the current version',
+							description: 'Force installation, including downgrades and reinstalls',
 							isDangerous: true,
 						},
 						{
@@ -1540,6 +1613,10 @@ const completionSpec: Fig.Spec = {
 							name: ['logout'],
 							description: 'Log out of Azure.',
 						},
+						{
+							name: ['status'],
+							description: 'Show the current authentication status.',
+						},
 					],
 				},
 				{
@@ -1571,6 +1648,10 @@ const completionSpec: Fig.Spec = {
 							description: 'Generate zsh completion script.',
 						},
 					],
+				},
+				{
+					name: ['concurx'],
+					description: 'Concurrent execution for azd deployment',
 				},
 				{
 					name: ['config'],
@@ -1618,6 +1699,24 @@ const completionSpec: Fig.Spec = {
 					name: ['env'],
 					description: 'Manage environments (ex: default environment, environment variables).',
 					subcommands: [
+						{
+							name: ['config'],
+							description: 'Manage environment configuration (ex: stored in .azure/<environment>/config.json).',
+							subcommands: [
+								{
+									name: ['get'],
+									description: 'Gets a configuration value from the environment.',
+								},
+								{
+									name: ['set'],
+									description: 'Sets a configuration value in the environment.',
+								},
+								{
+									name: ['unset'],
+									description: 'Unsets a configuration value in the environment.',
+								},
+							],
+						},
 						{
 							name: ['get-value'],
 							description: 'Get specific environment value.',

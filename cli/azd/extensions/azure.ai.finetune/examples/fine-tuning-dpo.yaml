@@ -1,0 +1,24 @@
+# Example: Direct Preference Optimization (DPO) Configuration
+# Use this for preference-based fine-tuning with preferred vs non-preferred outputs
+
+model: gpt-4o-mini
+training_file: "local:./dpo_training_data.jsonl"
+
+# Optional: Validation data for monitoring
+validation_file: "local:./dpo_validation_data.jsonl"
+
+suffix: "dpo-optimized"
+
+# DPO method configuration
+method:
+  type: dpo
+  dpo:
+    hyperparameters:
+      epochs: 2
+      batch_size: 16
+      learning_rate_multiplier: 0.5
+      beta: 0.1              # Temperature parameter for DPO (can be float or "auto")
+
+metadata:
+  project: "preference-tuning"
+  model-type: "dpo"

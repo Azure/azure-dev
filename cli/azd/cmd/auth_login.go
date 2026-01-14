@@ -196,13 +196,6 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 	lf.global = global
 }
 
-func newLoginFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *loginFlags {
-	flags := &loginFlags{}
-	flags.Bind(cmd.Flags(), global)
-
-	return flags
-}
-
 func newLoginCmd(parent string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "login",
@@ -237,9 +230,6 @@ type loginAction struct {
 	commandRunner     exec.CommandRunner
 }
 
-// it is important to update both newAuthLoginAction and newLoginAction at the same time
-// newAuthLoginAction is the action that is bound to `azd auth login`,
-// and newLoginAction is the action that is bound to `azd login`
 func newAuthLoginAction(
 	formatter output.Formatter,
 	writer io.Writer,
@@ -262,32 +252,36 @@ func newAuthLoginAction(
 	}
 }
 
-// it is important to update both newAuthLoginAction and newLoginAction at the same time
-// newAuthLoginAction is the action that is bound to `azd auth login`,
-// and newLoginAction is the action that is bound to `azd login`
-func newLoginAction(
-	formatter output.Formatter,
-	writer io.Writer,
-	authManager *auth.Manager,
-	accountSubManager *account.SubscriptionsManager,
-	flags *loginFlags,
-	console input.Console,
-	annotations CmdAnnotations,
-	commandRunner exec.CommandRunner,
-) actions.Action {
-	return &loginAction{
-		formatter:         formatter,
-		writer:            writer,
-		console:           console,
-		authManager:       authManager,
-		accountSubManager: accountSubManager,
-		flags:             flags,
-		annotations:       annotations,
-		commandRunner:     commandRunner,
-	}
-}
-
 func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	loginMode, err := la.authManager.Mode()
+	if err != nil {
+		return nil, err
+	}
+	if loginMode != auth.AzdBuiltIn && !la.flags.onlyCheckStatus {
+		la.console.MessageUxItem(ctx, &ux.WarningAltMessage{
+			Message: fmt.Sprintf(
+				"azd is not using the built-in authentication mode, but rather '%s'", loginMode),
+		})
+		la.console.Message(ctx, "If you want to use 'azd auth login', you need to disable the current auth mode.")
+		response, err := la.console.Confirm(ctx, input.ConsoleOptions{
+			Message:      "Do you want to switch back to azd built-in authentication?",
+			DefaultValue: false,
+			Help: "azd supports multiple authentication modes, including " + string(auth.AzDelegated) + " and " +
+				string(auth.ExternalRequest) + " for Auth." +
+				" Switching back to azd built-in authentication will try to disable the current mode.",
+		})
+		if err != nil {
+			return nil, err
+		}
+		if !response {
+			return nil, fmt.Errorf("log in is not supported on current mode: %s", loginMode)
+		}
+		if err := la.authManager.SetBuiltInAuthMode(); err != nil {
+			return nil, fmt.Errorf("setting auth mode: %w", err)
+		}
+		la.console.Message(ctx, "Authentication mode set to azd built-in. Continuing login...")
+	}
+
 	if len(la.flags.scopes) == 0 {
 		la.flags.scopes = la.authManager.LoginScopes()
 	}

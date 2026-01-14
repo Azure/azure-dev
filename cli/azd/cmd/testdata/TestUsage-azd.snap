@@ -40,6 +40,7 @@ Commands
   Enabled extensions commands 
     ai          	: Extension for the Foundry Agent Service. (Preview)
     coding-agent	: This extension configures GitHub Copilot Coding Agent access to Azure
+    concurx     	: Concurrent execution for azd deployment
     demo        	: This extension provides examples of the AZD extension framework.
     x           	: This extension provides a set of tools for AZD extension developers to test and debug their extensions.
 

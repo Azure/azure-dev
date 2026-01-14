@@ -7,6 +7,7 @@ import (
 	"context"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -66,4 +67,17 @@ func (m *MockEnvManager) ConfigPath(env *environment.Environment) string {
 func (m *MockEnvManager) Delete(ctx context.Context, name string) error {
 	args := m.Called(name)
 	return args.Error(0)
+}
+
+func (m *MockEnvManager) InvalidateEnvCache(ctx context.Context, envName string) error {
+	args := m.Called(ctx, envName)
+	return args.Error(0)
+}
+
+func (m *MockEnvManager) GetStateCacheManager() *state.StateCacheManager {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*state.StateCacheManager)
 }

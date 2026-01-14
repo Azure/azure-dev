@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// AuthTokenResult is the value returned by `azd get-access-token`. It matches the shape of `azcore.AccessToken`
+// AuthTokenResult is the value returned by `azd auth token`. It matches the shape of `azcore.AccessToken`
 type AuthTokenResult struct {
 	// Token is the opaque access token, which may be provided to an Azure service.
 	Token string `json:"token"`

@@ -1481,6 +1481,146 @@
               "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.4-preview/azure-ai-agents-windows-arm64.zip"
             }
           }
+        },
+        {
+          "version": "0.1.5-preview",
+          "capabilities": [
+            "custom-commands",
+            "lifecycle-events",
+            "mcp-server",
+            "service-target-provider"
+          ],
+          "providers": [
+            {
+              "name": "azure.ai.agent",
+              "type": "service-target",
+              "description": "Deploys agents to the Foundry Agent Service"
+            }
+          ],
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
+          "examples": [
+            {
+              "name": "init",
+              "description": "Initialize a new AI agent project.",
+              "usage": "azd ai agent init"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "42bbc048f0c3b9bae4f6ade74a3ffff60c65d5ae44b96673234b6cdf135ad34a"
+              },
+              "entryPoint": "azure-ai-agents-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.5-preview/azure-ai-agents-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "141cd0cf795ed292c8349bb7959404abafc65c38dc30e4f50d6eb9b619787dc8"
+              },
+              "entryPoint": "azure-ai-agents-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.5-preview/azure-ai-agents-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "bcd08ff98d33cef16cef1e70317def7ec48bc005a9776680d169ee686e650a45"
+              },
+              "entryPoint": "azure-ai-agents-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.5-preview/azure-ai-agents-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "6136a93aed132cd8e96d5332278a6d79dcad2f5aa10ae86f4a8c5d274017e816"
+              },
+              "entryPoint": "azure-ai-agents-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.5-preview/azure-ai-agents-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "c1105cee5a3e11fab42ff6aa8722c48506c293e97e484c47b9a1d67aad45e653"
+              },
+              "entryPoint": "azure-ai-agents-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.5-preview/azure-ai-agents-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "35a5cf98d074bfb7f1a4536b89b4913a6fde1057a8c4a46f35e51d0c6a6412bd"
+              },
+              "entryPoint": "azure-ai-agents-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.5-preview/azure-ai-agents-windows-arm64.zip"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "microsoft.azd.concurx",
+      "namespace": "concurx",
+      "displayName": "Concurx",
+      "description": "Concurrent execution for azd deployment",
+      "versions": [
+        {
+          "version": "0.0.1",
+          "capabilities": [
+            "custom-commands"
+          ],
+          "usage": "azd concurx \u003ccommand\u003e [options]",
+          "examples": null,
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "91aee92ffa7fa3942d7935421090d3d9a3e11ef349bd055ecc192f797e3c7550"
+              },
+              "entryPoint": "microsoft-azd-concurx-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-concurx_0.0.1/microsoft-azd-concurx-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "8c57a10fa99f708d8d2239dbf2d9da054779d8d4d1722fe7594604163e9fc5ce"
+              },
+              "entryPoint": "microsoft-azd-concurx-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-concurx_0.0.1/microsoft-azd-concurx-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "49610ff4ce2c68fed22f8b5104df210a2fb193e5602fd257278b89b692d9a6d6"
+              },
+              "entryPoint": "microsoft-azd-concurx-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-concurx_0.0.1/microsoft-azd-concurx-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "ed0f6d1b7de9f1f377db8a61e02d4a1e77e14f1bd85ee56cd2102003a1826e93"
+              },
+              "entryPoint": "microsoft-azd-concurx-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-concurx_0.0.1/microsoft-azd-concurx-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "048d8951105fb1620b4de27c66dd825d27eb43403bab6a3bff8f9824035a7adb"
+              },
+              "entryPoint": "microsoft-azd-concurx-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-concurx_0.0.1/microsoft-azd-concurx-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "858ebcaff372a78d85f3a192b67173d3843bec34d68cfc67e79e81417908f74e"
+              },
+              "entryPoint": "microsoft-azd-concurx-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-concurx_0.0.1/microsoft-azd-concurx-windows-arm64.zip"
+            }
+          }
         }
       ]
     }

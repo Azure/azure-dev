@@ -62,14 +62,8 @@ func TestDetect(t *testing.T) {
 				},
 				{
 					Language:      Java,
-					Path:          "java-multimodules/module1",
+					Path:          "java-multimodules/module",
 					RootPath:      filepath.Join(dir, "java-multimodules"),
-					DetectionRule: "Inferred by presence of: pom.xml",
-				},
-				{
-					Language:      Java,
-					Path:          "java-multimodules/module2/submodule1",
-					RootPath:      filepath.Join(dir, "java-multimodules"), // point to the root, not direct parent
 					DetectionRule: "Inferred by presence of: pom.xml",
 				},
 				{

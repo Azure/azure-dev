@@ -6,6 +6,7 @@ package ux
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
@@ -14,6 +15,8 @@ import (
 type WarningMessage struct {
 	Description string
 	HidePrefix  bool
+	// Hints are optional additional lines displayed as bullets below the warning
+	Hints []string
 }
 
 func (t *WarningMessage) ToString(currentIndentation string) string {
@@ -21,7 +24,16 @@ func (t *WarningMessage) ToString(currentIndentation string) string {
 	if !t.HidePrefix {
 		prefix = "WARNING: "
 	}
-	return output.WithWarningFormat("%s%s%s", currentIndentation, prefix, t.Description)
+
+	var sb strings.Builder
+	sb.WriteString(output.WithWarningFormat("%s%s%s", currentIndentation, prefix, t.Description))
+
+	// Render hints as bulleted lines (not in warning color)
+	for _, hint := range t.Hints {
+		sb.WriteString(fmt.Sprintf("\n%s  \u2022 %s", currentIndentation, hint))
+	}
+
+	return sb.String()
 }
 
 func (t *WarningMessage) MarshalJSON() ([]byte, error) {
@@ -30,5 +42,10 @@ func (t *WarningMessage) MarshalJSON() ([]byte, error) {
 		prefix = "WARNING: "
 	}
 
-	return json.Marshal(output.EventForMessage(fmt.Sprintf("%s%s", prefix, t.Description)))
+	msg := fmt.Sprintf("%s%s", prefix, t.Description)
+	for _, hint := range t.Hints {
+		msg += fmt.Sprintf("\n  \u2022 %s", hint)
+	}
+
+	return json.Marshal(output.EventForMessage(msg))
 }

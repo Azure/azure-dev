@@ -11,6 +11,7 @@ import (
 // JobStatus represents the status of a fine-tuning job
 type JobStatus string
 
+// JobStatus constants define the possible states of a fine-tuning job
 const (
 	StatusPending   JobStatus = "pending"
 	StatusQueued    JobStatus = "queued"
@@ -24,46 +25,75 @@ const (
 // Represents the type of method used for fine-tuning
 type MethodType string
 
+// MethodType constants define the available fine-tuning methods
 const (
 	Supervised    MethodType = "supervised"
 	DPO           MethodType = "dpo"
 	Reinforcement MethodType = "reinforcement"
 )
 
+// Duration is a custom duration type that formats as "Xh XXm" in JSON/YAML output
+type Duration time.Duration
+
+// MarshalJSON implements json.Marshaler for Duration
+// Returns the duration formatted as "Xh XXm" or "-" if zero
+func (d Duration) MarshalJSON() ([]byte, error) {
+	if d == 0 {
+		return []byte(`"-"`), nil
+	}
+
+	h := int(time.Duration(d).Hours())
+	m := int(time.Duration(d).Minutes()) % 60
+	return []byte(fmt.Sprintf(`"%dh %02dm"`, h, m)), nil
+}
+
+// MarshalYAML implements yaml.Marshaler for Duration
+// Returns the duration formatted as "Xh XXm" or "-" if zero
+func (d Duration) MarshalYAML() (interface{}, error) {
+	if d == 0 {
+		return "-", nil
+	}
+
+	h := int(time.Duration(d).Hours())
+	m := int(time.Duration(d).Minutes()) % 60
+	return fmt.Sprintf("%dh %02dm", h, m), nil
+}
+
 // FineTuningJob represents a vendor-agnostic fine-tuning job
 type FineTuningJob struct {
 	// Core identification
-	ID          string
-	VendorJobID string // Vendor-specific ID (e.g., OpenAI's ftjob-xxx)
+	ID          string `json:"id" table:"ID"`
+	VendorJobID string `json:"-" table:"-"` // Vendor-specific ID (e.g., OpenAI's ftjob-xxx)
 
 	// Job details
-	Status         JobStatus
-	BaseModel      string
-	FineTunedModel string
+	BaseModel      string    `json:"model" table:"MODEL"`
+	Status         JobStatus `json:"status" table:"STATUS"`
+	FineTunedModel string    `json:"-" table:"-"`
 
 	// Timestamps
-	CreatedAt   time.Time
-	CompletedAt *time.Time
+	CreatedAt   time.Time  `json:"created_at" table:"CREATED"`
+	Duration    Duration   `json:"duration" table:"DURATION"`
+	CompletedAt *time.Time `json:"-" table:"-"`
 
 	// Files
-	TrainingFileID   string
-	ValidationFileID string
+	TrainingFileID   string `json:"-" table:"-"`
+	ValidationFileID string `json:"-" table:"-"`
 
 	// Metadata
-	VendorMetadata map[string]interface{} // Store vendor-specific details
-	ErrorDetails   *ErrorDetail
+	VendorMetadata map[string]interface{} `json:"-" table:"-"` // Store vendor-specific details
+	ErrorDetails   *ErrorDetail           `json:"-" table:"-"`
 }
 
 // Hyperparameters represents fine-tuning hyperparameters
 type Hyperparameters struct {
-	BatchSize              int64
-	LearningRateMultiplier float64
-	NEpochs                int64
-	Beta                   float64 // For DPO
-	ComputeMultiplier      float64 // For Reinforcement
-	EvalInterval           int64   // For Reinforcement
-	EvalSamples            int64   // For Reinforcement
-	ReasoningEffort        string  // For Reinforcement
+	BatchSize              int64   `json:"batch_size" yaml:"batch_size"`
+	LearningRateMultiplier float64 `json:"learning_rate_multiplier" yaml:"learning_rate_multiplier"`
+	NEpochs                int64   `json:"n_epochs" yaml:"n_epochs"`
+	Beta                   float64 `json:"beta,omitempty" yaml:"beta,omitempty"`                             // For DPO
+	ComputeMultiplier      float64 `json:"compute_multiplier,omitempty" yaml:"compute_multiplier,omitempty"` // For Reinforcement
+	EvalInterval           int64   `json:"eval_interval,omitempty" yaml:"eval_interval,omitempty"`           // For Reinforcement
+	EvalSamples            int64   `json:"eval_samples,omitempty" yaml:"eval_samples,omitempty"`             // For Reinforcement
+	ReasoningEffort        string  `json:"reasoning_effort,omitempty" yaml:"reasoning_effort,omitempty"`     // For Reinforcement
 }
 
 // ListFineTuningJobsRequest represents a request to list fine-tuning jobs
@@ -74,19 +104,19 @@ type ListFineTuningJobsRequest struct {
 
 // FineTuningJobDetail represents detailed information about a fine-tuning job
 type FineTuningJobDetail struct {
-	ID              string
-	Status          JobStatus
-	Model           string
-	FineTunedModel  string
-	CreatedAt       time.Time
-	FinishedAt      time.Time
-	Method          string
-	TrainingFile    string
-	ValidationFile  string
-	Hyperparameters *Hyperparameters
-	VendorMetadata  map[string]interface{}
-	TrainingType    string
-	Seed            int64
+	ID              string                 `json:"id" yaml:"id"`
+	Status          JobStatus              `json:"status" yaml:"status"`
+	Model           string                 `json:"model" yaml:"model"`
+	FineTunedModel  string                 `json:"fine_tuned_model" yaml:"fine_tuned_model"`
+	CreatedAt       time.Time              `json:"created_at" yaml:"created_at"`
+	FinishedAt      *time.Time             `json:"finished_at,omitempty" yaml:"finished_at,omitempty"`
+	EstimatedFinish *time.Time             `json:"estimated_finish,omitempty" yaml:"estimated_finish,omitempty"`
+	Method          string                 `json:"training_type" yaml:"training_type"`
+	TrainingFile    string                 `json:"training_file" yaml:"training_file"`
+	ValidationFile  string                 `json:"validation_file,omitempty" yaml:"validation_file,omitempty"`
+	Hyperparameters *Hyperparameters       `json:"hyperparameters" yaml:"hyperparameters"`
+	VendorMetadata  map[string]interface{} `json:"-" yaml:"-"`
+	Seed            int64                  `json:"-" yaml:"-"`
 }
 
 // JobEvent represents an event associated with a fine-tuning job

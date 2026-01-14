@@ -6,6 +6,7 @@ package openai
 import (
 	"encoding/json"
 	"strings"
+	"time"
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/packages/pagination"
@@ -50,6 +51,7 @@ func convertOpenAIJobToModel(openaiJob openai.FineTuningJob) *models.FineTuningJ
 		BaseModel:      openaiJob.Model,
 		FineTunedModel: openaiJob.FineTunedModel,
 		CreatedAt:      utils.UnixTimestampToUTC(openaiJob.CreatedAt),
+		Duration:       models.Duration(utils.CalculateDuration(openaiJob.CreatedAt, openaiJob.FinishedAt)),
 	}
 }
 
@@ -76,7 +78,6 @@ func convertOpenAIJobToDetailModel(openaiJob *openai.FineTuningJob) *models.Fine
 		if openaiJob.Method.Reinforcement.Hyperparameters.ReasoningEffort != "" {
 			hyperparameters.ReasoningEffort = string(openaiJob.Method.Reinforcement.Hyperparameters.ReasoningEffort)
 		}
-
 	} else {
 		// Fallback to top-level hyperparameters (for backward compatibility)
 		hyperparameters.BatchSize = openaiJob.Hyperparameters.BatchSize.OfInt
@@ -84,13 +85,30 @@ func convertOpenAIJobToDetailModel(openaiJob *openai.FineTuningJob) *models.Fine
 		hyperparameters.NEpochs = openaiJob.Hyperparameters.NEpochs.OfInt
 	}
 
+	status := mapOpenAIStatusToJobStatus(openaiJob.Status)
+
+	// Only set FinishedAt for terminal states
+	var finishedAt *time.Time
+	if utils.IsTerminalStatus(status) && openaiJob.FinishedAt > 0 {
+		t := utils.UnixTimestampToUTC(openaiJob.FinishedAt)
+		finishedAt = &t
+	}
+
+	// Only set EstimatedFinish for non-terminal states
+	var estimatedFinish *time.Time
+	if !utils.IsTerminalStatus(status) && openaiJob.EstimatedFinish > 0 {
+		t := utils.UnixTimestampToUTC(openaiJob.EstimatedFinish)
+		estimatedFinish = &t
+	}
+
 	jobDetail := &models.FineTuningJobDetail{
 		ID:              openaiJob.ID,
-		Status:          mapOpenAIStatusToJobStatus(openaiJob.Status),
+		Status:          status,
 		Model:           openaiJob.Model,
 		FineTunedModel:  openaiJob.FineTunedModel,
 		CreatedAt:       utils.UnixTimestampToUTC(openaiJob.CreatedAt),
-		FinishedAt:      utils.UnixTimestampToUTC(openaiJob.FinishedAt),
+		FinishedAt:      finishedAt,
+		EstimatedFinish: estimatedFinish,
 		Method:          openaiJob.Method.Type,
 		TrainingFile:    openaiJob.TrainingFile,
 		ValidationFile:  openaiJob.ValidationFile,

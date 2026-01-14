@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// TimeFormat defines the standard time format used for display output
+// TimeFormat defines the standard time format used for display output.
 const TimeFormat = "2006-01-02 15:04:05 UTC"
 
 // UnixTimestampToUTC converts a Unix timestamp (seconds since epoch) to a UTC time.Time.
@@ -26,4 +26,14 @@ func FormatTime(t time.Time) string {
 		return ""
 	}
 	return t.Format(TimeFormat)
+}
+
+// calculateDuration computes the duration between creation and finish timestamps.
+// Returns 0 if the job has not finished yet.
+func CalculateDuration(createdAt, finishedAt int64) time.Duration {
+	if finishedAt <= 0 || finishedAt < createdAt {
+		return 0
+	}
+
+	return time.Duration(finishedAt-createdAt) * time.Second
 }

@@ -5,7 +5,7 @@ package utils
 
 import "azure.ai.finetune/pkg/models"
 
-// getStatusSymbol returns a symbol representation for job status
+// GetStatusSymbol returns a symbol representation for job status.
 func GetStatusSymbol(status models.JobStatus) string {
 	switch status {
 	case models.StatusPending:
@@ -23,4 +23,10 @@ func GetStatusSymbol(status models.JobStatus) string {
 	default:
 		return "❓"
 	}
+}
+
+// IsTerminalStatus returns true if the job status represents a terminal state
+// (succeeded, failed, or cancelled).
+func IsTerminalStatus(status models.JobStatus) bool {
+	return status == models.StatusSucceeded || status == models.StatusFailed || status == models.StatusCancelled
 }

@@ -36,14 +36,6 @@ func newOperationCommand() *cobra.Command {
 	return cmd
 }
 
-// formatFineTunedModel returns the model name or "NA" if blank
-func formatFineTunedModel(model string) string {
-	if model == "" {
-		return "NA"
-	}
-	return model
-}
-
 func newOperationSubmitCommand() *cobra.Command {
 	var filename string
 	var model string
@@ -154,10 +146,12 @@ func newOperationSubmitCommand() *cobra.Command {
 // newOperationShowCommand creates a command to show the fine-tuning job details
 func newOperationShowCommand() *cobra.Command {
 	var jobID string
+	var logs bool
+	var output string
 
 	cmd := &cobra.Command{
 		Use:   "show",
-		Short: "Show fine-tuning job details.",
+		Short: "Shows detailed information about a specific job.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			azdClient, err := azdext.NewAzdClient()
@@ -168,7 +162,7 @@ func newOperationShowCommand() *cobra.Command {
 
 			// Show spinner while fetching job
 			spinner := ux.NewSpinner(&ux.SpinnerOptions{
-				Text: fmt.Sprintf("Fetching fine-tuning job %s...", jobID),
+				Text: "Fine-Tuning Job Details",
 			})
 			if err := spinner.Start(ctx); err != nil {
 				fmt.Printf("failed to start spinner: %v\n", err)
@@ -177,106 +171,73 @@ func newOperationShowCommand() *cobra.Command {
 			fineTuneSvc, err := services.NewFineTuningService(ctx, azdClient, nil)
 			if err != nil {
 				_ = spinner.Stop(ctx)
-				fmt.Println()
+				fmt.Print("\n\n")
 				return err
 			}
 
 			job, err := fineTuneSvc.GetFineTuningJobDetails(ctx, jobID)
 			_ = spinner.Stop(ctx)
+			fmt.Print("\n\n")
 			if err != nil {
-				fmt.Println()
 				return err
 			}
 
-			// Display job details
-			color.Green("\nFine-tuning Job Details\n")
-			fmt.Printf("Job ID:              %s\n", job.ID)
-			fmt.Printf("Status:              %s %s\n", utils.GetStatusSymbol(job.Status), job.Status)
-			fmt.Printf("Model:               %s\n", job.Model)
-			fmt.Printf("Fine-tuned Model:    %s\n", formatFineTunedModel(job.FineTunedModel))
-			fmt.Printf("Created At:          %s\n", utils.FormatTime(job.CreatedAt))
-			if !job.FinishedAt.IsZero() {
-				fmt.Printf("Finished At:         %s\n", utils.FormatTime(job.FinishedAt))
-			}
-			fmt.Printf("Method:              %s\n", job.Method)
-			fmt.Printf("Training File:       %s\n", job.TrainingFile)
-			if job.ValidationFile != "" {
-				fmt.Printf("Validation File:     %s\n", job.ValidationFile)
-			}
+			switch output {
+			case "json":
+				utils.PrintObject(job, utils.FormatJSON)
+			case "yaml":
+				utils.PrintObject(job, utils.FormatYAML)
+			case "table", "":
+				views := job.ToDetailViews()
+				indent := "  "
+				utils.PrintObjectWithIndent(views.Details, utils.FormatTable, indent)
 
-			// Print hyperparameters if available
-			if job.Hyperparameters != nil {
-				fmt.Println("\nHyperparameters:")
-				fmt.Printf("  Batch Size:              %d\n", job.Hyperparameters.BatchSize)
-				fmt.Printf("  Learning Rate Multiplier: %f\n", job.Hyperparameters.LearningRateMultiplier)
-				fmt.Printf("  N Epochs:                %d\n", job.Hyperparameters.NEpochs)
+				fmt.Println("\nTimestamps:")
+				utils.PrintObjectWithIndent(views.Timestamps, utils.FormatTable, indent)
+				fmt.Println("\nConfiguration:")
+				utils.PrintObjectWithIndent(views.Configuration, utils.FormatTable, indent)
+
+				fmt.Println("\nData:")
+				utils.PrintObjectWithIndent(views.Data, utils.FormatTable, indent)
+			default:
+				return fmt.Errorf("unsupported output format: %s (supported: table, json, yaml)", output)
 			}
 
-			// Fetch and print events
-			eventsSpinner := ux.NewSpinner(&ux.SpinnerOptions{
-				Text: "Fetching job events...",
-			})
-			if err := eventsSpinner.Start(ctx); err != nil {
-				fmt.Printf("failed to start spinner: %v\n", err)
-			}
-
-			events, err := fineTuneSvc.GetJobEvents(ctx, jobID)
-			_ = eventsSpinner.Stop(ctx)
-
-			if err != nil {
+			if logs {
 				fmt.Println()
-				return err
-			} else if events != nil && len(events.Data) > 0 {
-				fmt.Println("\nJob Events:")
-				for i, event := range events.Data {
-					fmt.Printf("  %d. Event ID: %s\n", i+1, event.ID)
-					fmt.Printf("     [%s] %s - %s\n", event.Level, utils.FormatTime(event.CreatedAt), event.Message)
-				}
-				if events.HasMore {
-					fmt.Println("  ... (more events available)")
-				}
-			}
-
-			// Fetch and print checkpoints if job is completed
-			if job.Status == models.StatusSucceeded {
-				checkpointsSpinner := ux.NewSpinner(&ux.SpinnerOptions{
-					Text: "Fetching job checkpoints...",
+				// Fetch and print events
+				eventsSpinner := ux.NewSpinner(&ux.SpinnerOptions{
+					Text: "Events:",
 				})
-				if err := checkpointsSpinner.Start(ctx); err != nil {
+				if err := eventsSpinner.Start(ctx); err != nil {
 					fmt.Printf("failed to start spinner: %v\n", err)
 				}
 
-				checkpoints, err := fineTuneSvc.GetJobCheckpoints(ctx, jobID)
-				_ = checkpointsSpinner.Stop(ctx)
+				events, err := fineTuneSvc.GetJobEvents(ctx, jobID)
+				_ = eventsSpinner.Stop(ctx)
+				fmt.Println()
 
 				if err != nil {
-					fmt.Println()
 					return err
-				} else if checkpoints != nil && len(checkpoints.Data) > 0 {
-					fmt.Println("\nJob Checkpoints:")
-					for i, checkpoint := range checkpoints.Data {
-						fmt.Printf("  %d. Checkpoint ID: %s\n", i+1, checkpoint.ID)
-						fmt.Printf("     Checkpoint Name:       %s\n", checkpoint.FineTunedModelCheckpoint)
-						fmt.Printf("     Created On:            %s\n", utils.FormatTime(checkpoint.CreatedAt))
-						fmt.Printf("     Step Number:           %d\n", checkpoint.StepNumber)
-						if checkpoint.Metrics != nil {
-							fmt.Printf("     Full Validation Loss:  %.6f\n", checkpoint.Metrics.FullValidLoss)
-						}
+				} else if events != nil && len(events.Data) > 0 {
+					const eventIndent = "     "
+					for _, event := range events.Data {
+						fmt.Printf("%s[%s] %s\n", eventIndent, utils.FormatTime(event.CreatedAt), event.Message)
 					}
-					if checkpoints.HasMore {
-						fmt.Println("  ... (more checkpoints available)")
+					if events.HasMore {
+						fmt.Println("  ... (more events available)")
 					}
 				}
 			}
-
-			fmt.Println(strings.Repeat("=", 120))
 
 			return nil
 		},
 	}
 
-	cmd.Flags().StringVarP(&jobID, "job-id", "i", "", "Fine-tuning job ID")
-	cmd.MarkFlagRequired("job-id")
+	cmd.Flags().StringVarP(&jobID, "id", "i", "", "Job ID")
+	cmd.Flags().BoolVar(&logs, "logs", false, "Include recent training logs")
+	cmd.Flags().StringVarP(&output, "output", "o", "table", "Output format: table, json, yaml")
+	cmd.MarkFlagRequired("id")
 
 	return cmd
 }
@@ -285,6 +246,7 @@ func newOperationShowCommand() *cobra.Command {
 func newOperationListCommand() *cobra.Command {
 	var limit int
 	var after string
+	var output string
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List fine-tuning jobs.",
@@ -298,7 +260,7 @@ func newOperationListCommand() *cobra.Command {
 
 			// Show spinner while fetching jobs
 			spinner := ux.NewSpinner(&ux.SpinnerOptions{
-				Text: "Fetching fine-tuning jobs...",
+				Text: "Fine-Tuning Jobs",
 			})
 			if err := spinner.Start(ctx); err != nil {
 				fmt.Printf("failed to start spinner: %v\n", err)
@@ -313,25 +275,26 @@ func newOperationListCommand() *cobra.Command {
 
 			jobs, err := fineTuneSvc.ListFineTuningJobs(ctx, limit, after)
 			_ = spinner.Stop(ctx)
+			fmt.Print("\n\n")
+
 			if err != nil {
-				fmt.Println()
 				return err
 			}
 
-			// Display job list
-			for i, job := range jobs {
-				fmt.Printf("\n%d. Job ID: %s | Status: %s %s | Model: %s | Fine-tuned: %s | Created: %s",
-					i+1, job.ID, utils.GetStatusSymbol(job.Status), job.Status, job.BaseModel,
-					formatFineTunedModel(job.FineTunedModel), utils.FormatTime(job.CreatedAt))
+			switch output {
+			case "json":
+				utils.PrintObject(jobs, utils.FormatJSON)
+			case "table", "":
+				utils.PrintObject(jobs, utils.FormatTable)
+			default:
+				return fmt.Errorf("unsupported output format: %s (supported: table, json)", output)
 			}
-
-			fmt.Printf("\nTotal jobs: %d\n", len(jobs))
-
 			return nil
 		},
 	}
 
-	cmd.Flags().IntVarP(&limit, "top", "t", 50, "Number of fine-tuning jobs to list")
-	cmd.Flags().StringVarP(&after, "after", "a", "", "Cursor for pagination")
+	cmd.Flags().IntVarP(&limit, "top", "t", 10, "Number of jobs to return")
+	cmd.Flags().StringVar(&after, "after", "", "Pagination cursor")
+	cmd.Flags().StringVarP(&output, "output", "o", "table", "Output format: table, json")
 	return cmd
 }

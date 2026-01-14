@@ -38,7 +38,7 @@ Commands
     mcp         	: Manage Model Context Protocol (MCP) server. (Alpha)
 
   Enabled extensions commands 
-    ai          	: Extension for the Foundry Agent Service. (Preview)
+    ai          	: Commands for the ai extension namespace.
     coding-agent	: This extension configures GitHub Copilot Coding Agent access to Azure
     concurx     	: Concurrent execution for azd deployment
     demo        	: This extension provides examples of the AZD extension framework.

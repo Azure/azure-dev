@@ -50,9 +50,12 @@ func bindExtension(
 
 		// If not found, create a new command
 		if !found {
+			// Build the full namespace path up to this point for the description
+			namespacePath := strings.Join(namespaceParts[:i+1], ".")
+			description := fmt.Sprintf("Commands for the %s extension namespace.", namespacePath)
 			cmd := &cobra.Command{
 				Use:   part,
-				Short: extension.Description,
+				Short: description,
 			}
 
 			current = current.Add(part, &actions.ActionDescriptorOptions{

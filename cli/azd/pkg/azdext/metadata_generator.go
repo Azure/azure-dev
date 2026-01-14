@@ -126,9 +126,18 @@ func generateArgs(cmd *cobra.Command) []extensions.Argument {
 
 // generateFlags generates Flag metadata from Cobra command flags
 func generateFlags(cmd *cobra.Command) []extensions.Flag {
-	var flags []extensions.Flag
+	// Ensure the default help flag is initialized (Cobra adds it lazily during execution)
+	cmd.InitDefaultHelpFlag()
 
-	cmd.Flags().VisitAll(func(flag *pflag.Flag) {
+	var flags []extensions.Flag
+	seen := make(map[string]bool)
+
+	addFlag := func(flag *pflag.Flag) {
+		if seen[flag.Name] {
+			return
+		}
+		seen[flag.Name] = true
+
 		flagMeta := extensions.Flag{
 			Name:        flag.Name,
 			Shorthand:   flag.Shorthand,
@@ -146,7 +155,13 @@ func generateFlags(cmd *cobra.Command) []extensions.Flag {
 		}
 
 		flags = append(flags, flagMeta)
-	})
+	}
+
+	// Local flags
+	cmd.Flags().VisitAll(addFlag)
+
+	// Inherited flags from parent commands
+	cmd.InheritedFlags().VisitAll(addFlag)
 
 	return flags
 }

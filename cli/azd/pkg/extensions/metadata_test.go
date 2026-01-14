@@ -131,6 +131,113 @@ func TestExtensionMetadata_UnmarshalJSON(t *testing.T) {
 	assert.Equal(t, []string{"text", "json"}, cmd.Flags[0].ValidValues)
 }
 
+func TestResolveCommandPath(t *testing.T) {
+	metadata := &ExtensionCommandMetadata{
+		Commands: []Command{
+			{Name: []string{"version"}},
+			{Name: []string{"colors"}, Aliases: []string{"colours"}},
+			{
+				Name: []string{"mcp"},
+				Subcommands: []Command{
+					{Name: []string{"mcp", "start"}},
+				},
+			},
+		},
+	}
+
+	tests := []struct {
+		name     string
+		metadata *ExtensionCommandMetadata
+		args     []string
+		want     []string
+	}{
+		{name: "MatchRootCommand", metadata: metadata, args: []string{"version"}, want: []string{"version"}},
+		{name: "MatchSubcommand", metadata: metadata, args: []string{"mcp", "start"}, want: []string{"mcp", "start"}},
+		{name: "MatchAlias", metadata: metadata, args: []string{"colours"}, want: []string{"colours"}},
+		{name: "StopAtFlags", metadata: metadata, args: []string{"version", "--verbose"}, want: []string{"version"}},
+		{name: "NoMatch", metadata: metadata, args: []string{"unknown"}, want: nil},
+		{name: "NoArgs", metadata: metadata, args: nil, want: nil},
+		{name: "EmptyArgs", metadata: metadata, args: []string{}, want: nil},
+		{name: "NilMetadata", metadata: nil, args: []string{"version"}, want: nil},
+		{name: "EmptyCommands", metadata: &ExtensionCommandMetadata{Commands: []Command{}}, args: []string{"version"}, want: nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, ResolveCommandPath(tt.metadata, tt.args))
+		})
+	}
+}
+
+func TestResolveCommandFlags(t *testing.T) {
+	metadata := &ExtensionCommandMetadata{
+		Commands: []Command{
+			{
+				Name: []string{"version"},
+				Flags: []Flag{
+					{Name: "verbose", Shorthand: "v", Type: "bool"},
+					{Name: "quiet", Shorthand: "q", Type: "bool"},
+					{Name: "output", Shorthand: "o", Type: "string"},
+				},
+			},
+			{
+				Name:    []string{"colors"},
+				Aliases: []string{"colours"},
+				Flags: []Flag{
+					{Name: "format", Shorthand: "f", Type: "string"},
+				},
+			},
+			{
+				Name: []string{"mcp"},
+				Subcommands: []Command{
+					{
+						Name:  []string{"mcp", "start"},
+						Flags: []Flag{{Name: "debug", Shorthand: "d", Type: "bool"}},
+					},
+				},
+			},
+			{
+				Name:  []string{"noflags"},
+				Flags: []Flag{},
+			},
+		},
+	}
+
+	tests := []struct {
+		name     string
+		metadata *ExtensionCommandMetadata
+		args     []string
+		want     []string
+	}{
+		{name: "MatchLongFlag", metadata: metadata, args: []string{"version", "--verbose"}, want: []string{"verbose"}},
+		{name: "MatchShorthandFlag", metadata: metadata, args: []string{"version", "-v"}, want: []string{"verbose"}},
+		{name: "MatchFlagWithValue", metadata: metadata, args: []string{"version", "--output", "json"}, want: []string{"output"}},
+		{name: "MatchFlagWithEquals", metadata: metadata, args: []string{"version", "--output=json"}, want: []string{"output"}},
+		{name: "MatchShortValue", metadata: metadata, args: []string{"version", "-o", "json"}, want: []string{"output"}},
+		{name: "MatchShortAttachedValue", metadata: metadata, args: []string{"version", "-ojson"}, want: []string{"output"}},
+		{name: "MatchCombinedShort", metadata: metadata, args: []string{"version", "-vq"}, want: []string{"verbose", "quiet"}},
+		{name: "MatchMultipleFlags", metadata: metadata, args: []string{"version", "--verbose", "--output", "json"}, want: []string{"verbose", "output"}},
+		{name: "MatchAliasCommand", metadata: metadata, args: []string{"colours", "--format", "json"}, want: []string{"format"}},
+		{name: "MatchSubcommand", metadata: metadata, args: []string{"mcp", "start", "--debug"}, want: []string{"debug"}},
+		{name: "StopAtDoubleDash", metadata: metadata, args: []string{"version", "--", "--verbose"}, want: nil},
+		{name: "NoMatch", metadata: metadata, args: []string{"unknown", "--verbose"}, want: nil},
+		{name: "UnknownFlagsIgnored", metadata: metadata, args: []string{"version", "--unknown", "--verbose"}, want: []string{"verbose"}},
+		{name: "CommandWithNoFlags", metadata: metadata, args: []string{"noflags", "--something"}, want: nil},
+		{name: "NilMetadata", metadata: nil, args: []string{"version", "--verbose"}, want: nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ResolveCommandFlags(tt.metadata, tt.args)
+			if tt.want == nil {
+				require.Nil(t, result)
+			} else {
+				require.ElementsMatch(t, tt.want, result)
+			}
+		})
+	}
+}
+
 func TestCommand_NestedSubcommands(t *testing.T) {
 	metadata := ExtensionCommandMetadata{
 		SchemaVersion: "1.0",

@@ -38,7 +38,10 @@ stages:
           runOnce:
             deploy:
               steps:
-                - pwsh: | 
+                - pwsh: npm i -g npm tfx-cli
+                  displayName: Install tfx-cli
+
+                - pwsh: |
                     $files = Get-ChildItem -Path "$(Build.SourcesDirectory)/signed/*.vsix"
                     if ($files -is [Array]) { 
                       if ($files.Count -gt 1) {
@@ -49,7 +52,8 @@ stages:
                     } else {
                       $vsixFile = $files.FullName
                     }
-
+                    
+                    Write-Host "Setting VSIX_FILE to $vsixFile"
                     Write-Host "##vso[task.setvariable variable=VSIX_FILE]$vsixFile"
                   displayName: Get VSIX Filename
 

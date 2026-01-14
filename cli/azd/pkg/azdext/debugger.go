@@ -5,34 +5,38 @@ package azdext
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/golang-jwt/jwt/v5"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 // WaitForDebugger checks if AZD_EXT_DEBUG environment variable is set to a truthy value.
 // If set, prompts the user to attach a debugger to the current process.
 // This should be called at the start of extension command implementations to enable debugging.
-func WaitForDebugger(ctx context.Context, azdClient *AzdClient) {
+// Returns nil if debugging is not enabled or if user confirms.
+// Returns an error if user declines or cancels the prompt, or if the context is cancelled.
+func WaitForDebugger(ctx context.Context, azdClient *AzdClient) error {
 	debugValue := os.Getenv("AZD_EXT_DEBUG")
 	if debugValue == "" {
-		return
+		return nil
 	}
 
 	isDebug, err := strconv.ParseBool(debugValue)
 	if err != nil || !isDebug {
-		return
+		return nil
 	}
 
 	extensionId := getExtensionId(ctx)
 	message := fmt.Sprintf("Extension '%s' ready to debug (pid: %d).", extensionId, os.Getpid())
 
-	_, err = azdClient.Prompt().Confirm(ctx, &ConfirmRequest{
+	response, err := azdClient.Prompt().Confirm(ctx, &ConfirmRequest{
 		Options: &ConfirmOptions{
 			Message:      message,
 			DefaultValue: ux.Ptr(true),
@@ -40,8 +44,19 @@ func WaitForDebugger(ctx context.Context, azdClient *AzdClient) {
 	})
 
 	if err != nil {
-		log.Printf("failed to prompt for debugger: %v\n", err)
+		// Check if the error is due to context cancellation (Ctrl+C)
+		if status.Code(err) == codes.Canceled || errors.Is(err, context.Canceled) {
+			return context.Canceled
+		}
+		return fmt.Errorf("failed to prompt for debugger: %w", err)
 	}
+
+	// If user selected 'N', abort
+	if !response.GetValue() {
+		return errors.New("debugger attach aborted")
+	}
+
+	return nil
 }
 
 // getExtensionId extracts the extension ID from the JWT token in the context metadata

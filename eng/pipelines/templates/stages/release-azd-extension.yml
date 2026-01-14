@@ -71,8 +71,8 @@ stages:
               SetExecutableBit: true
               AZURE_DEV_CI_OS: mac-arm64
 
-  # Only sign and release on manual builds
-  - ${{ if eq(variables['Build.Reason'], 'Manual') }}:
+  # Only sign and release on manual builds from internal
+  - ${{ if and(eq(variables['System.TeamProject'], 'internal'), eq(variables['Build.Reason'], 'Manual')) }}:
     - template: /eng/pipelines/templates/stages/sign-extension.yml
       parameters:
         SanitizedExtensionId: ${{ parameters.SanitizedExtensionId }}

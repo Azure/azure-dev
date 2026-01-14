@@ -30,9 +30,6 @@
 - [[#6267]](https://github.com/Azure/azure-dev/pull/6267) Fix `azd down` to handle deployment state correctly when resources are manually deleted.
 - [[#6435]](https://github.com/Azure/azure-dev/pull/6435) Fix `azd ext install --force` to properly reinstall extensions when version matches.
 
-### Other Changes
-
-
 ## 1.22.5 (2025-12-18)
 
 ### Bugs Fixed

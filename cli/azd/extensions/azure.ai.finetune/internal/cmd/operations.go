@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 
 	"azure.ai.finetune/internal/services"
+	JobWrapper "azure.ai.finetune/internal/tools"
 	"azure.ai.finetune/internal/utils"
 	"azure.ai.finetune/pkg/models"
 )
@@ -296,5 +297,97 @@ func newOperationListCommand() *cobra.Command {
 	cmd.Flags().IntVarP(&limit, "top", "t", 10, "Number of jobs to return")
 	cmd.Flags().StringVar(&after, "after", "", "Pagination cursor")
 	cmd.Flags().StringVarP(&output, "output", "o", "table", "Output format: table, json")
+	return cmd
+}
+
+// getStatusSymbolFromString returns a symbol representation for job status
+func getStatusSymbolFromString(status string) string {
+	switch status {
+	case "pending":
+		return "⌛"
+	case "queued":
+		return "📚"
+	case "running":
+		return "🔄"
+	case "succeeded":
+		return "✅"
+	case "failed":
+		return "💥"
+	case "cancelled":
+		return "❌"
+	default:
+		return "❓"
+	}
+}
+
+func newOperationActionCommand() *cobra.Command {
+	var jobID string
+	var action string
+
+	cmd := &cobra.Command{
+		Use:   "action",
+		Short: "Perform an action on a fine-tuning job (pause, resume, cancel)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := azdext.WithAccessToken(cmd.Context())
+			azdClient, err := azdext.NewAzdClient()
+			if err != nil {
+				return fmt.Errorf("failed to create azd client: %w", err)
+			}
+			defer azdClient.Close()
+
+			// Validate job ID is provided
+			if jobID == "" {
+				return fmt.Errorf("job-id is required")
+			}
+
+			// Validate action is provided and valid
+			if action == "" {
+				return fmt.Errorf("action is required (pause, resume, or cancel)")
+			}
+
+			action = strings.ToLower(action)
+			if action != "pause" && action != "resume" && action != "cancel" {
+				return fmt.Errorf("invalid action '%s'. Allowed values: pause, resume, cancel", action)
+			}
+
+			var job *JobWrapper.JobContract
+			var err2 error
+
+			// Execute the requested action
+			switch action {
+			case "pause":
+				job, err2 = JobWrapper.PauseJob(ctx, azdClient, jobID)
+			case "resume":
+				job, err2 = JobWrapper.ResumeJob(ctx, azdClient, jobID)
+			case "cancel":
+				job, err2 = JobWrapper.CancelJob(ctx, azdClient, jobID)
+			}
+
+			if err2 != nil {
+				return err2
+			}
+
+			// Print success message
+			fmt.Println()
+			fmt.Println(strings.Repeat("=", 120))
+			color.Green(fmt.Sprintf("\nSuccessfully %sd fine-tuning Job!\n", action))
+			fmt.Printf("Job ID:     %s\n", job.Id)
+			fmt.Printf("Model:      %s\n", job.Model)
+			fmt.Printf("Status:     %s %s\n", getStatusSymbolFromString(job.Status), job.Status)
+			fmt.Printf("Created:    %s\n", job.CreatedAt)
+			if job.FineTunedModel != "" {
+				fmt.Printf("Fine-tuned: %s\n", job.FineTunedModel)
+			}
+			fmt.Println(strings.Repeat("=", 120))
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVarP(&jobID, "job-id", "i", "", "Fine-tuning job ID")
+	cmd.Flags().StringVarP(&action, "action", "a", "", "Action to perform: pause, resume, or cancel")
+	cmd.MarkFlagRequired("job-id")
+	cmd.MarkFlagRequired("action")
+
 	return cmd
 }

@@ -24,7 +24,18 @@ func generateCommands(cmd *cobra.Command) []extensions.Command {
 	var commands []extensions.Command
 
 	for _, subCmd := range cmd.Commands() {
+		// Skip commands with empty Use field (e.g., auto-generated help commands)
+		if subCmd.Use == "" {
+			continue
+		}
+
 		command := generateCommand(subCmd)
+
+		// Skip commands that result in an empty name path
+		if len(command.Name) == 0 {
+			continue
+		}
+
 		commands = append(commands, command)
 	}
 

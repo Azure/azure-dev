@@ -124,9 +124,16 @@ func TestGenerateExtensionMetadata_HiddenCommands(t *testing.T) {
 
 	metadata := GenerateExtensionMetadata("1.0", "test.extension", rootCmd)
 
-	// Hidden commands should not be included
-	assert.Len(t, metadata.Commands, 1)
-	assert.Equal(t, []string{"visible"}, metadata.Commands[0].Name)
+	// Both commands should be included; hidden commands have Hidden=true
+	assert.Len(t, metadata.Commands, 2)
+
+	visibleFound := findCommand(metadata.Commands, "visible")
+	require.NotNil(t, visibleFound)
+	assert.False(t, visibleFound.Hidden)
+
+	hiddenFound := findCommand(metadata.Commands, "hidden")
+	require.NotNil(t, hiddenFound)
+	assert.True(t, hiddenFound.Hidden)
 }
 
 func TestGenerateExtensionMetadata_HiddenFlags(t *testing.T) {
@@ -148,9 +155,16 @@ func TestGenerateExtensionMetadata_HiddenFlags(t *testing.T) {
 	metadata := GenerateExtensionMetadata("1.0", "test.extension", rootCmd)
 
 	require.Len(t, metadata.Commands, 1)
-	// Hidden flags should not be included
-	assert.Len(t, metadata.Commands[0].Flags, 1)
-	assert.Equal(t, "visible", metadata.Commands[0].Flags[0].Name)
+	// Both flags should be included; hidden flags have Hidden=true
+	assert.Len(t, metadata.Commands[0].Flags, 2)
+
+	visibleFlag := findFlag(metadata.Commands[0].Flags, "visible")
+	require.NotNil(t, visibleFlag)
+	assert.False(t, visibleFlag.Hidden)
+
+	hiddenFlag := findFlag(metadata.Commands[0].Flags, "hidden")
+	require.NotNil(t, hiddenFlag)
+	assert.True(t, hiddenFlag.Hidden)
 }
 
 func TestGenerateExtensionMetadata_DeprecatedCommands(t *testing.T) {
@@ -267,4 +281,48 @@ func findFlag(flags []extensions.Flag, name string) *extensions.Flag {
 		}
 	}
 	return nil
+}
+
+// Helper function to find a command by name (first element of Name path)
+func findCommand(commands []extensions.Command, name string) *extensions.Command {
+	for i := range commands {
+		if len(commands[i].Name) > 0 && commands[i].Name[0] == name {
+			return &commands[i]
+		}
+	}
+	return nil
+}
+
+func TestGenerateExtensionMetadata_SkipsEmptyCommands(t *testing.T) {
+	rootCmd := &cobra.Command{
+		Use:   "test-ext",
+		Short: "Test extension",
+	}
+
+	// Add a normal command
+	normalCmd := &cobra.Command{
+		Use:   "normal",
+		Short: "Normal command",
+	}
+	rootCmd.AddCommand(normalCmd)
+
+	// Add a command with empty Use (simulating auto-generated help-like commands)
+	emptyCmd := &cobra.Command{
+		Use:    "",
+		Short:  "Empty command",
+		Hidden: true,
+	}
+	rootCmd.AddCommand(emptyCmd)
+
+	metadata := GenerateExtensionMetadata("1.0", "test.extension", rootCmd)
+
+	// Only the normal command should be included; empty Use commands are skipped
+	assert.Len(t, metadata.Commands, 1)
+	assert.Equal(t, []string{"normal"}, metadata.Commands[0].Name)
+
+	// Verify no command has a nil/empty name
+	for _, cmd := range metadata.Commands {
+		assert.NotNil(t, cmd.Name, "Command name should not be nil")
+		assert.NotEmpty(t, cmd.Name, "Command name should not be empty")
+	}
 }

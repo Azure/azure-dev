@@ -137,7 +137,7 @@ func Test_UpdateChecker_WarningCooldown_Expired(t *testing.T) {
 		LastUpdateWarning: time.Now().UTC().Add(-25 * time.Hour).Format(time.RFC3339),
 	}
 
-	// Should show warning (cooldown expired)
+	// Should show warning (cool down expired)
 	require.True(t, updateChecker.ShouldShowWarning(extension))
 }
 

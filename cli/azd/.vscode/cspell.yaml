@@ -10,6 +10,7 @@ words:
   - chinacloudapi
   - Codespace
   - Codespaces
+  - cooldown
   - customtype
   - devcontainers
   - errgroup
@@ -24,6 +25,7 @@ words:
   - idxs
   # Looks like the protogen has a spelling error for panics
   - pancis
+  - pkgux
   - proto
   - protobuf
   - protoc
@@ -206,6 +208,17 @@ overrides:
   - filename: extensions/azure.ai.agents/internal/pkg/agents/registry_api/operations.go
     words:
       - Dataagent
+  - filename: extensions/azure.ai.agents/internal/project/parser.go
+    words:
+      - helloworld
+  - filename: extensions/azure.ai.agents/internal/project/service_target_agent.go
+    words:
+      - curr
+      - kval
+  - filename: pkg/project/dockerfile_builder.go
+    words:
+      - WORKDIR
+      - workdir
   - filename: docs/new-azd-command.md
     words:
       - pflag

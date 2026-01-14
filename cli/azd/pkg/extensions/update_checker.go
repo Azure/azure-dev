@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	// Warning cooldown period - don't show same warning within this duration
-	warningCooldownPeriod = 24 * time.Hour
+	// Warning cool down period - don't show same warning within this duration
+	warningCoolDownPeriod = 24 * time.Hour
 )
 
 // UpdateCheckResult contains the result of checking for extension updates
@@ -34,7 +34,7 @@ type UpdateCheckResult struct {
 	ExtensionName string
 }
 
-// UpdateChecker checks for extension updates and manages warning cooldowns
+// UpdateChecker checks for extension updates and manages warning cool downs
 type UpdateChecker struct {
 	cacheManager *RegistryCacheManager
 }
@@ -89,7 +89,7 @@ func (c *UpdateChecker) CheckForUpdate(
 	return result, nil
 }
 
-// ShouldShowWarning checks if a warning should be shown (respecting cooldown)
+// ShouldShowWarning checks if a warning should be shown (respecting cool down)
 // Uses the extension's LastUpdateWarning field
 func (c *UpdateChecker) ShouldShowWarning(extension *Extension) bool {
 	if extension.LastUpdateWarning == "" {
@@ -101,7 +101,7 @@ func (c *UpdateChecker) ShouldShowWarning(extension *Extension) bool {
 		return true
 	}
 
-	return time.Now().UTC().After(lastTime.Add(warningCooldownPeriod))
+	return time.Now().UTC().After(lastTime.Add(warningCoolDownPeriod))
 }
 
 // RecordWarningShown updates the extension's LastUpdateWarning timestamp

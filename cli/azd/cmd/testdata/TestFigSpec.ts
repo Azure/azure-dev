@@ -194,6 +194,10 @@ const completionSpec: Fig.Spec = {
 					name: ['agent'],
 					description: 'Extension for the Foundry Agent Service. (Preview)',
 				},
+				{
+					name: ['finetuning'],
+					description: 'Extension for Foundry Fine Tuning. (Preview)',
+				},
 			],
 		},
 		{
@@ -1594,6 +1598,10 @@ const completionSpec: Fig.Spec = {
 						{
 							name: ['agent'],
 							description: 'Extension for the Foundry Agent Service. (Preview)',
+						},
+						{
+							name: ['finetuning'],
+							description: 'Extension for Foundry Fine Tuning. (Preview)',
 						},
 					],
 				},

@@ -32,7 +32,6 @@
 
 ### Other Changes
 
-- [[#5954]](https://github.com/Azure/azure-dev/pull/5954) Improve authentication handling for various authentication scenarios.
 
 ## 1.22.5 (2025-12-18)
 

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
@@ -160,6 +161,41 @@ func Test_Middleware_RunAction(t *testing.T) {
 		result, err := middlewareRunner.RunAction(*mockContext.Context, &Options{Name: "test"}, "test-action")
 		require.Nil(t, result)
 		require.NoError(t, err)
+	})
+
+	// Test that interrupt errors during middleware resolution are propagated and not ignored
+	t.Run("interrupt error during middleware resolution", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		middlewareRunner := NewMiddlewareRunner(mockContext.Container)
+
+		// Register a middleware constructor that returns an interrupt error
+		// This simulates what happens when a user cancels a prompt during dependency initialization
+		err := middlewareRunner.Use("interrupt-middleware", func() (Middleware, error) {
+			return nil, terminal.InterruptErr
+		})
+		require.NoError(t, err)
+
+		// Register an action that should not run if interrupt occurs
+		actionRan := false
+		err = mockContext.Container.RegisterNamedTransient("test-action", func() actions.Action {
+			return &testAction{
+				runFunc: func(ctx context.Context) (*actions.ActionResult, error) {
+					actionRan = true
+					return &actions.ActionResult{
+						Message: &actions.ResultMessage{Header: "Action"},
+					}, nil
+				},
+			}
+		})
+		require.NoError(t, err)
+
+		result, err := middlewareRunner.RunAction(*mockContext.Context, &Options{Name: "test"}, "test-action")
+
+		// Verify that the interrupt error is returned and the action does not run
+		require.Nil(t, result)
+		require.Error(t, err)
+		require.ErrorIs(t, err, terminal.InterruptErr)
+		require.False(t, actionRan)
 	})
 }
 

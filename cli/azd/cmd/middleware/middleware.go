@@ -10,6 +10,7 @@ import (
 	"log"
 	"slices"
 
+	"github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/spf13/pflag"
@@ -99,6 +100,11 @@ func (r *MiddlewareRunner) RunAction(
 
 			var middleware Middleware
 			if err := actionContainer.ResolveNamed(middlewareName, &middleware); err != nil {
+				// Check if the error is an interrupt error (user cancelled a prompt)
+				// In this case, we should not continue and return the error immediately
+				if errors.Is(err, terminal.InterruptErr) {
+					return nil, err
+				}
 				log.Printf("failed resolving middleware '%s' : %v\n", middlewareName, err)
 			}
 

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -167,6 +168,20 @@ $ azd config set defaults.location eastus`,
 			Footer: getCmdListAlphaHelpFooter,
 		},
 		ActionResolver: newConfigListAlphaAction,
+	})
+
+	group.Add("options", &actions.ActionDescriptorOptions{
+		Command: &cobra.Command{
+			Short: "List all available configuration settings.",
+			Long: "List all possible configuration settings that can be set with azd, " +
+				"including descriptions and allowed values.",
+		},
+		HelpOptions: actions.ActionHelpOptions{
+			Footer: getCmdConfigOptionsHelpFooter,
+		},
+		ActionResolver: newConfigOptionsAction,
+		OutputFormats:  []output.Format{output.JsonFormat, output.TableFormat, output.NoneFormat},
+		DefaultFormat:  output.NoneFormat,
 	})
 
 	return group
@@ -509,4 +524,201 @@ func getCmdListAlphaHelpFooter(*cobra.Command) string {
 			"azd config set alpha.all off",
 		),
 	})
+}
+
+func getCmdConfigOptionsHelpFooter(*cobra.Command) string {
+	return generateCmdHelpSamplesBlock(map[string]string{
+		"List all available configuration settings": output.WithHighLightFormat(
+			"azd config options",
+		),
+		"List all available configuration settings in JSON format": output.WithHighLightFormat(
+			"azd config options -o json",
+		),
+		"List all available configuration settings in table format": output.WithHighLightFormat(
+			"azd config options -o table",
+		),
+	})
+}
+
+// azd config options
+
+type configOptionsAction struct {
+	console       input.Console
+	formatter     output.Formatter
+	writer        io.Writer
+	configManager config.UserConfigManager
+	args          []string
+}
+
+func newConfigOptionsAction(
+	console input.Console,
+	formatter output.Formatter,
+	writer io.Writer,
+	configManager config.UserConfigManager,
+	args []string) actions.Action {
+	return &configOptionsAction{
+		console:       console,
+		formatter:     formatter,
+		writer:        writer,
+		configManager: configManager,
+		args:          args,
+	}
+}
+
+func (a *configOptionsAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	options := config.GetAllConfigOptions()
+
+	// Load current config to show current values
+	currentConfig, err := a.configManager.Load()
+	if err != nil {
+		// Only ignore "file not found" errors; other errors should be logged
+		if !os.IsNotExist(err) {
+			// Log the error but continue with empty config to ensure the command still works
+			fmt.Fprintf(a.console.Handles().Stderr, "Warning: failed to load config: %v\n", err)
+		}
+		currentConfig = config.NewEmptyConfig()
+	}
+
+	if a.formatter.Kind() == output.JsonFormat {
+		err := a.formatter.Format(options, a.writer, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed formatting config options: %w", err)
+		}
+		return nil, nil
+	}
+
+	if a.formatter.Kind() == output.TableFormat {
+		// Table format
+		type tableRow struct {
+			Key           string
+			Description   string
+			Type          string
+			CurrentValue  string
+			AllowedValues string
+			EnvVar        string
+			Example       string
+		}
+
+		var rows []tableRow
+		for _, option := range options {
+			allowedValues := ""
+			if len(option.AllowedValues) > 0 {
+				allowedValues = strings.Join(option.AllowedValues, ", ")
+			}
+
+			// Get current value from config
+			currentValue := ""
+			// Skip environment-only variables (those with keys starting with EnvOnlyPrefix)
+			if !strings.HasPrefix(option.Key, config.EnvOnlyPrefix) {
+				if val, ok := currentConfig.Get(option.Key); ok {
+					// Convert value to string representation
+					switch v := val.(type) {
+					case string:
+						currentValue = v
+					case map[string]any:
+						currentValue = "<object>"
+					case []any:
+						currentValue = "<array>"
+					default:
+						currentValue = fmt.Sprintf("%v", v)
+					}
+				}
+			}
+
+			rows = append(rows, tableRow{
+				Key:           option.Key,
+				Description:   option.Description,
+				Type:          option.Type,
+				CurrentValue:  currentValue,
+				AllowedValues: allowedValues,
+				EnvVar:        option.EnvVar,
+				Example:       option.Example,
+			})
+		}
+
+		columns := []output.Column{
+			{
+				Heading:       "Key",
+				ValueTemplate: "{{.Key}}",
+			},
+			{
+				Heading:       "Description",
+				ValueTemplate: "{{.Description}}",
+			},
+			{
+				Heading:       "Type",
+				ValueTemplate: "{{.Type}}",
+			},
+			{
+				Heading:       "Current Value",
+				ValueTemplate: "{{.CurrentValue}}",
+			},
+			{
+				Heading:       "Allowed Values",
+				ValueTemplate: "{{.AllowedValues}}",
+			},
+			{
+				Heading:       "Environment Variable",
+				ValueTemplate: "{{.EnvVar}}",
+			},
+			{
+				Heading:       "Example",
+				ValueTemplate: "{{.Example}}",
+			},
+		}
+
+		err = a.formatter.Format(rows, a.writer, output.TableFormatterOptions{
+			Columns: columns,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed formatting config options: %w", err)
+		}
+
+		return nil, nil
+	}
+
+	// Default format: human-readable list (similar to list-alpha)
+	var optionsOutput []string
+	for _, option := range options {
+		var parts []string
+		parts = append(parts, fmt.Sprintf("Key: %s", option.Key))
+		parts = append(parts, fmt.Sprintf("Description: %s", option.Description))
+
+		// Get current value from config if available
+		if !strings.HasPrefix(option.Key, config.EnvOnlyPrefix) {
+			if val, ok := currentConfig.Get(option.Key); ok {
+				var currentValue string
+				switch v := val.(type) {
+				case string:
+					currentValue = v
+				case map[string]any:
+					currentValue = "<object>"
+				case []any:
+					currentValue = "<array>"
+				default:
+					currentValue = fmt.Sprintf("%v", v)
+				}
+				parts = append(parts, fmt.Sprintf("Current Value: %s", currentValue))
+			}
+		}
+
+		if len(option.AllowedValues) > 0 {
+			parts = append(parts, fmt.Sprintf("Allowed Values: %s", strings.Join(option.AllowedValues, ", ")))
+		}
+
+		if option.EnvVar != "" {
+			parts = append(parts, fmt.Sprintf("Environment Variable: %s", option.EnvVar))
+		}
+
+		if option.Example != "" {
+			parts = append(parts, fmt.Sprintf("Example: %s", option.Example))
+		}
+
+		optionsOutput = append(optionsOutput, strings.Join(parts, "\n"))
+	}
+
+	a.console.Message(ctx, strings.Join(optionsOutput, "\n\n"))
+
+	// No UX output
+	return nil, nil
 }

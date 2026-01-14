@@ -1557,6 +1557,72 @@
           }
         }
       ]
+    },
+    {
+      "id": "microsoft.azd.concurx",
+      "namespace": "concurx",
+      "displayName": "Concurx",
+      "description": "Concurrent execution for azd deployment",
+      "versions": [
+        {
+          "version": "0.0.1",
+          "capabilities": [
+            "custom-commands"
+          ],
+          "usage": "azd concurx \u003ccommand\u003e [options]",
+          "examples": null,
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "91aee92ffa7fa3942d7935421090d3d9a3e11ef349bd055ecc192f797e3c7550"
+              },
+              "entryPoint": "microsoft-azd-concurx-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-concurx_0.0.1/microsoft-azd-concurx-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "8c57a10fa99f708d8d2239dbf2d9da054779d8d4d1722fe7594604163e9fc5ce"
+              },
+              "entryPoint": "microsoft-azd-concurx-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-concurx_0.0.1/microsoft-azd-concurx-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "49610ff4ce2c68fed22f8b5104df210a2fb193e5602fd257278b89b692d9a6d6"
+              },
+              "entryPoint": "microsoft-azd-concurx-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-concurx_0.0.1/microsoft-azd-concurx-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "ed0f6d1b7de9f1f377db8a61e02d4a1e77e14f1bd85ee56cd2102003a1826e93"
+              },
+              "entryPoint": "microsoft-azd-concurx-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-concurx_0.0.1/microsoft-azd-concurx-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "048d8951105fb1620b4de27c66dd825d27eb43403bab6a3bff8f9824035a7adb"
+              },
+              "entryPoint": "microsoft-azd-concurx-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-concurx_0.0.1/microsoft-azd-concurx-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "858ebcaff372a78d85f3a192b67173d3843bec34d68cfc67e79e81417908f74e"
+              },
+              "entryPoint": "microsoft-azd-concurx-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-concurx_0.0.1/microsoft-azd-concurx-windows-arm64.zip"
+            }
+          }
+        }
+      ]
     }
   ]
 }

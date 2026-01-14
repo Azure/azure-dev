@@ -314,6 +314,10 @@ const completionSpec: Fig.Spec = {
 			],
 		},
 		{
+			name: ['concurx'],
+			description: 'Concurrent execution for azd deployment',
+		},
+		{
 			name: ['config'],
 			description: 'Manage azd configurations (ex: default Azure subscription, location).',
 			subcommands: [
@@ -1644,6 +1648,10 @@ const completionSpec: Fig.Spec = {
 							description: 'Generate zsh completion script.',
 						},
 					],
+				},
+				{
+					name: ['concurx'],
+					description: 'Concurrent execution for azd deployment',
 				},
 				{
 					name: ['config'],

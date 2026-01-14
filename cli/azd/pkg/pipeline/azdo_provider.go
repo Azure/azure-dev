@@ -529,7 +529,7 @@ func (p *AzdoScmProvider) gitRepoDetails(ctx context.Context, remoteUrl string) 
 					"The remote URL '%s' does not appear to be a standard Azure DevOps host. "+
 						"Is this a self-hosted Azure DevOps Server or Azure DevOps Services instance?",
 					remoteUrl),
-				DefaultValue: true,
+				DefaultValue: false,
 			})
 			if err != nil {
 				return nil, fmt.Errorf("prompting for remote confirmation: %w", err)

@@ -5,7 +5,8 @@ Usage
   azd ai [command]
 
 Available Commands
-  agent	: Extension for the Foundry Agent Service. (Preview)
+  agent     	: Extension for the Foundry Agent Service. (Preview)
+  finetuning	: Extension for Foundry Fine Tuning. (Preview)
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

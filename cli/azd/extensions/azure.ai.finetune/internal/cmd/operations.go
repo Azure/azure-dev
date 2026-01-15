@@ -299,13 +299,12 @@ func newOperationListCommand() *cobra.Command {
 	return cmd
 }
 
-func newOperationActionCommand() *cobra.Command {
+func newOperationResumeCommand() *cobra.Command {
 	var jobID string
-	var action string
 
 	cmd := &cobra.Command{
-		Use:   "action",
-		Short: "Perform an action on a fine-tuning job (pause, resume, cancel).",
+		Use:   "resume",
+		Short: "Resume a paused fine-tuning job.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			azdClient, err := azdext.NewAzdClient()
@@ -314,8 +313,6 @@ func newOperationActionCommand() *cobra.Command {
 			}
 			defer azdClient.Close()
 
-			jobAction := models.JobAction(strings.ToLower(action))
-
 			fineTuneSvc, err := services.NewFineTuningService(ctx, azdClient, nil)
 			if err != nil {
 				fmt.Println()
@@ -323,16 +320,7 @@ func newOperationActionCommand() *cobra.Command {
 			}
 
 			var job *models.FineTuningJob
-			switch jobAction {
-			case models.JobActionPause:
-				job, err = fineTuneSvc.PauseJob(ctx, jobID)
-			case models.JobActionResume:
-				job, err = fineTuneSvc.ResumeJob(ctx, jobID)
-			case models.JobActionCancel:
-				job, err = fineTuneSvc.CancelJob(ctx, jobID)
-			default:
-				return fmt.Errorf("invalid action '%s'. Allowed values: pause, resume, cancel", action)
-			}
+			job, err = fineTuneSvc.ResumeJob(ctx, jobID)
 
 			if err != nil {
 				return err
@@ -341,7 +329,7 @@ func newOperationActionCommand() *cobra.Command {
 			// Print success message
 			fmt.Println()
 			fmt.Println(strings.Repeat("=", 120))
-			color.Green(fmt.Sprintf("\nSuccessfully %sd fine-tuning Job!\n", action))
+			color.Green(fmt.Sprintf("\nSuccessfully resumed fine-tuning Job!\n"))
 			fmt.Printf("Job ID:     %s\n", job.ID)
 			fmt.Printf("Model:      %s\n", job.BaseModel)
 			fmt.Printf("Status:     %s %s\n", utils.GetStatusSymbol(job.Status), job.Status)
@@ -356,9 +344,107 @@ func newOperationActionCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&jobID, "job-id", "i", "", "Fine-tuning job ID")
-	cmd.Flags().StringVarP(&action, "action", "a", "", "Action to perform: pause, resume, or cancel")
 	cmd.MarkFlagRequired("job-id")
-	cmd.MarkFlagRequired("action")
+
+	return cmd
+}
+
+func newOperationPauseCommand() *cobra.Command {
+	var jobID string
+
+	cmd := &cobra.Command{
+		Use:   "pause",
+		Short: "Pause a running fine-tuning job.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := azdext.WithAccessToken(cmd.Context())
+			azdClient, err := azdext.NewAzdClient()
+			if err != nil {
+				return fmt.Errorf("failed to create azd client: %w", err)
+			}
+			defer azdClient.Close()
+
+			fineTuneSvc, err := services.NewFineTuningService(ctx, azdClient, nil)
+			if err != nil {
+				fmt.Println()
+				return err
+			}
+
+			var job *models.FineTuningJob
+			job, err = fineTuneSvc.PauseJob(ctx, jobID)
+
+			if err != nil {
+				return err
+			}
+
+			// Print success message
+			fmt.Println()
+			fmt.Println(strings.Repeat("=", 120))
+			color.Green(fmt.Sprintf("\nSuccessfully resumed fine-tuning Job!\n"))
+			fmt.Printf("Job ID:     %s\n", job.ID)
+			fmt.Printf("Model:      %s\n", job.BaseModel)
+			fmt.Printf("Status:     %s %s\n", utils.GetStatusSymbol(job.Status), job.Status)
+			fmt.Printf("Created:    %s\n", job.CreatedAt)
+			if job.FineTunedModel != "" {
+				fmt.Printf("Fine-tuned: %s\n", job.FineTunedModel)
+			}
+			fmt.Println(strings.Repeat("=", 120))
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVarP(&jobID, "job-id", "i", "", "Fine-tuning job ID")
+	cmd.MarkFlagRequired("job-id")
+
+	return cmd
+}
+
+func newOperationCancelCommand() *cobra.Command {
+	var jobID string
+
+	cmd := &cobra.Command{
+		Use:   "cancel",
+		Short: "Cancel a running fine-tuning job.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := azdext.WithAccessToken(cmd.Context())
+			azdClient, err := azdext.NewAzdClient()
+			if err != nil {
+				return fmt.Errorf("failed to create azd client: %w", err)
+			}
+			defer azdClient.Close()
+
+			fineTuneSvc, err := services.NewFineTuningService(ctx, azdClient, nil)
+			if err != nil {
+				fmt.Println()
+				return err
+			}
+
+			var job *models.FineTuningJob
+			job, err = fineTuneSvc.CancelJob(ctx, jobID)
+
+			if err != nil {
+				return err
+			}
+
+			// Print success message
+			fmt.Println()
+			fmt.Println(strings.Repeat("=", 120))
+			color.Green(fmt.Sprintf("\nSuccessfully resumed fine-tuning Job!\n"))
+			fmt.Printf("Job ID:     %s\n", job.ID)
+			fmt.Printf("Model:      %s\n", job.BaseModel)
+			fmt.Printf("Status:     %s %s\n", utils.GetStatusSymbol(job.Status), job.Status)
+			fmt.Printf("Created:    %s\n", job.CreatedAt)
+			if job.FineTunedModel != "" {
+				fmt.Printf("Fine-tuned: %s\n", job.FineTunedModel)
+			}
+			fmt.Println(strings.Repeat("=", 120))
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVarP(&jobID, "job-id", "i", "", "Fine-tuning job ID")
+	cmd.MarkFlagRequired("job-id")
 
 	return cmd
 }

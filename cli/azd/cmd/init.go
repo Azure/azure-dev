@@ -23,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -141,6 +142,7 @@ type initAction struct {
 	azd               workflow.AzdCommandRunner
 	agentFactory      *agent.AgentFactory
 	consentManager    consent.ConsentManager
+	configManager     config.UserConfigManager
 }
 
 func newInitAction(
@@ -157,6 +159,7 @@ func newInitAction(
 	azd workflow.AzdCommandRunner,
 	agentFactory *agent.AgentFactory,
 	consentManager consent.ConsentManager,
+	configManager config.UserConfigManager,
 ) actions.Action {
 	return &initAction{
 		lazyAzdCtx:        lazyAzdCtx,
@@ -172,6 +175,7 @@ func newInitAction(
 		azd:               azd,
 		agentFactory:      agentFactory,
 		consentManager:    consentManager,
+		configManager:     configManager,
 	}
 }
 
@@ -252,7 +256,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			initTypeSelect = initEnvironment
 		} else {
 			// Prompt for init type for new projects
-			initTypeSelect, err = promptInitType(i.console, ctx, i.featuresManager)
+			initTypeSelect, err = promptInitType(i.console, ctx, i.featuresManager, i.configManager)
 			if err != nil {
 				return nil, err
 			}
@@ -590,7 +594,7 @@ const (
 	initWithAgent
 )
 
-func promptInitType(console input.Console, ctx context.Context, featuresManager *alpha.FeatureManager) (initType, error) {
+func promptInitType(console input.Console, ctx context.Context, featuresManager *alpha.FeatureManager, configManager config.UserConfigManager) (initType, error) {
 	options := []string{
 		"Scan current directory", // This now covers minimal project creation too
 		"Select a template",
@@ -611,14 +615,58 @@ func promptInitType(console input.Console, ctx context.Context, featuresManager 
 	case 1:
 		return initAppTemplate, nil
 	case 2:
-		// Only return initWithAgent if the LLM feature is enabled and we have 3 options
-		if featuresManager.IsEnabled(llm.FeatureLlm) {
-			return initWithAgent, nil
-		} else {
-			return initUnknown, errors.New("To use this feature, run `azd config set alpha.llm on`, " +
-				"set the agent model type with `azd config set ai.agent.model.type github-copilot`, " +
-				"then run `azd init` again.")
+		if !featuresManager.IsEnabled(llm.FeatureLlm) {
+			confirm, err := console.Confirm(ctx, input.ConsoleOptions{
+				Message:      "alpha.llm feature is not enabled. Do you want to enable it to use agent mode?",
+				DefaultValue: true,
+			})
+
+			if !confirm {
+				return initUnknown, errors.New("To use this feature, run `azd config set alpha.llm on`, " +
+					"set the agent model type with `azd config set ai.agent.model.type github-copilot`, " +
+					"then run `azd init` again.")
+			}
+
+			azdConfig, err := configManager.Load()
+			if err != nil {
+				return initUnknown, fmt.Errorf("failed to load config: %w", err)
+			}
+
+			err = azdConfig.Set("alpha.llm", "on")
+			if err != nil {
+				return initUnknown, fmt.Errorf("failed to set alpha.llm config: %w", err)
+			}
+
+			err = configManager.Save(azdConfig)
+			if err != nil {
+				return initUnknown, fmt.Errorf("failed to save config: %w", err)
+			}
+
+			console.Message(ctx, "\nThe azd agent feature has been enabled to support this new experience."+
+				" To turn off in the future run `azd config unset alpha.llm`.")
+
+			console.Message(ctx, "")
+			confirm, err = console.Confirm(ctx, input.ConsoleOptions{
+				Message:      "This feature requires a LLM model. Do you want to enable it with github copilot?",
+				DefaultValue: true,
+			})
+			console.Message(ctx, "")
+
+			if !confirm {
+				return initUnknown, errors.New("To set the agent model type, run `azd config set ai.agent.model.type github-copilot`, " +
+					"then run `azd init` again.")
+			}
+
+			err = azdConfig.Set("ai.agent.model.type", "github-copilot")
+			if err != nil {
+				return initUnknown, fmt.Errorf("failed to set ai.agent.model.type config: %w", err)
+			}
+
+			console.Message(ctx, "\nGitHub Copilot has been enabled to support this new experience."+
+				" To turn off in the future run `azd config unset ai.agent.model.type`.")
 		}
+
+		return initWithAgent, nil
 	default:
 		panic("unhandled selection")
 	}

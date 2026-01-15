@@ -188,7 +188,7 @@ const completionSpec: Fig.Spec = {
 		},
 		{
 			name: ['ai'],
-			description: 'Extension for Foundry Fine Tuning. (Preview)',
+			description: 'Extension for the Foundry Agent Service. (Preview)',
 			subcommands: [
 				{
 					name: ['agent'],
@@ -1620,7 +1620,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['ai'],
-					description: 'Extension for Foundry Fine Tuning. (Preview)',
+					description: 'Extension for the Foundry Agent Service. (Preview)',
 					subcommands: [
 						{
 							name: ['agent'],

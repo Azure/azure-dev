@@ -160,7 +160,22 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	showUpdateWarning := !isJsonOutputFromArgs(os.Args)
 	if showUpdateWarning {
 		updateResultChan := make(chan *updateCheckOutcome, 1)
-		go a.checkForUpdateAsync(ctx, extension, updateResultChan)
+		// Create a shallow copy of extension data for the goroutine to avoid race condition.
+		// The goroutine mutates LastUpdateWarning, so we copy only the needed fields.
+		// Cannot copy the full Extension due to sync.Once (contains sync.noCopy).
+		extForCheck := &extensions.Extension{
+			Id:                extension.Id,
+			Namespace:         extension.Namespace,
+			DisplayName:       extension.DisplayName,
+			Description:       extension.Description,
+			Version:           extension.Version,
+			Source:            extension.Source,
+			LastUpdateWarning: extension.LastUpdateWarning,
+		}
+		go a.checkForUpdateAsync(ctx, extForCheck, updateResultChan)
+		// Note: This defer runs AFTER the defer for a.azdServer.Stop() registered later,
+		// because defers execute in LIFO order. This is intentional - we want to show
+		// the warning after the extension completes but the server stop doesn't affect us.
 		defer func() {
 			// Collect result and show warning if needed (non-blocking read)
 			select {
@@ -271,12 +286,7 @@ func (a *extensionAction) checkForUpdateAsync(
 	}
 
 	// Create update checker
-	updateChecker, err := extensions.NewUpdateChecker(cacheManager)
-	if err != nil {
-		log.Printf("failed to create update checker: %v", err)
-		resultChan <- outcome
-		return
-	}
+	updateChecker := extensions.NewUpdateChecker(cacheManager)
 
 	// Check if we should show a warning (respecting cooldown)
 	// Uses extension's LastUpdateWarning field

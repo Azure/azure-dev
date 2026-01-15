@@ -35,8 +35,7 @@ func Test_UpdateChecker_CheckForUpdate(t *testing.T) {
 	err = cacheManager.Set(ctx, sourceName, extensions)
 	require.NoError(t, err)
 
-	updateChecker, err := NewUpdateChecker(cacheManager)
-	require.NoError(t, err)
+	updateChecker := NewUpdateChecker(cacheManager)
 
 	// Test with older installed version
 	extension := &Extension{
@@ -72,8 +71,7 @@ func Test_UpdateChecker_CheckForUpdate_CacheMiss(t *testing.T) {
 	cacheManager, err := NewRegistryCacheManager()
 	require.NoError(t, err)
 
-	updateChecker, err := NewUpdateChecker(cacheManager)
-	require.NoError(t, err)
+	updateChecker := NewUpdateChecker(cacheManager)
 
 	ctx := context.Background()
 
@@ -97,8 +95,7 @@ func Test_UpdateChecker_WarningCooldown(t *testing.T) {
 	cacheManager, err := NewRegistryCacheManager()
 	require.NoError(t, err)
 
-	updateChecker, err := NewUpdateChecker(cacheManager)
-	require.NoError(t, err)
+	updateChecker := NewUpdateChecker(cacheManager)
 
 	extension := &Extension{
 		Id:          "test.extension",
@@ -125,8 +122,7 @@ func Test_UpdateChecker_WarningCooldown_Expired(t *testing.T) {
 	cacheManager, err := NewRegistryCacheManager()
 	require.NoError(t, err)
 
-	updateChecker, err := NewUpdateChecker(cacheManager)
-	require.NoError(t, err)
+	updateChecker := NewUpdateChecker(cacheManager)
 
 	// Extension with old warning timestamp (25 hours ago)
 	extension := &Extension{
@@ -201,8 +197,7 @@ func Test_UpdateChecker_PrereleaseVersions(t *testing.T) {
 	err = cacheManager.Set(ctx, sourceName, extensions)
 	require.NoError(t, err)
 
-	updateChecker, err := NewUpdateChecker(cacheManager)
-	require.NoError(t, err)
+	updateChecker := NewUpdateChecker(cacheManager)
 
 	// Installed stable version should see prerelease as update
 	extension := &Extension{
@@ -241,8 +236,7 @@ func Test_UpdateChecker_InvalidVersions(t *testing.T) {
 	err = cacheManager.Set(ctx, sourceName, extensions)
 	require.NoError(t, err)
 
-	updateChecker, err := NewUpdateChecker(cacheManager)
-	require.NoError(t, err)
+	updateChecker := NewUpdateChecker(cacheManager)
 
 	// Extension with invalid version string
 	extension := &Extension{

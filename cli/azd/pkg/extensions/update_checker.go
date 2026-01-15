@@ -40,10 +40,10 @@ type UpdateChecker struct {
 }
 
 // NewUpdateChecker creates a new update checker
-func NewUpdateChecker(cacheManager *RegistryCacheManager) (*UpdateChecker, error) {
+func NewUpdateChecker(cacheManager *RegistryCacheManager) *UpdateChecker {
 	return &UpdateChecker{
 		cacheManager: cacheManager,
-	}, nil
+	}
 }
 
 // CheckForUpdate checks if an extension has an available update
@@ -105,7 +105,7 @@ func (c *UpdateChecker) ShouldShowWarning(extension *Extension) bool {
 }
 
 // RecordWarningShown updates the extension's LastUpdateWarning timestamp
-// Returns the updated extension (caller should save it via Manager.UpdateInstalled)
+// Mutates the provided extension in place (caller should save it via Manager.UpdateInstalled)
 func (c *UpdateChecker) RecordWarningShown(extension *Extension) {
 	extension.LastUpdateWarning = time.Now().UTC().Format(time.RFC3339)
 }

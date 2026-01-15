@@ -249,6 +249,9 @@ func (m *Manager) UpdateInstalled(extension *Extension) error {
 		return fmt.Errorf("failed to save user config: %w", err)
 	}
 
+	// Invalidate cache so subsequent calls reflect the updated extension
+	m.installed = nil
+
 	return nil
 }
 

@@ -919,25 +919,27 @@ func (w *workflowCmdAdapter) SetArgs(args []string) {
 func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context) error {
 	childCtx := middleware.WithChildAction(ctx)
 
-	// CRITICAL FIX: Explicitly set the context on the command before calling ExecuteContext.
+	// Clear any stale context from previous workflow step executions.
 	// When the same command instance is reused across workflow steps, cobra may retain
-	// a stale cancelled context from a previous execution. Setting the context on both
-	// the root command and all subcommands (recursively) ensures the fresh context is used.
-	setContextRecursively(w.cmd, childCtx)
+	// a cancelled context from a previous execution. We clear with context.TODO() rather
+	// than setting childCtx to avoid polluting the cobra command tree with a context that
+	// will be cancelled after this step completes. The actual context is properly passed
+	// via ExecuteContext which sets it on the root command and propagates to subcommands.
+	clearContextRecursively(w.cmd)
 
 	return w.cmd.ExecuteContext(childCtx)
 }
 
-// setContextRecursively sets the context on a command and all its subcommands recursively
-func setContextRecursively(cmd *cobra.Command, ctx context.Context) {
-	// Always set the context, even if the command hasn't been initialized yet.
-	// cobra.Command.Context() returns context.Background() if no context is set,
-	// so SetContext is safe to call on any command. This ensures all commands
-	// in the tree start with the correct context, preventing stale contexts
-	// from previous executions when commands are reused.
-	cmd.SetContext(ctx)
+// clearContextRecursively clears the context on a command and all its subcommands recursively
+// to remove any stale cancelled contexts from previous workflow step executions.
+func clearContextRecursively(cmd *cobra.Command) {
+	// Set context to TODO() to clear any stale context. cobra.Command.Context() returns
+	// context.Background() if no context is set, so SetContext is safe to call on any command.
+	// The actual context will be set by ExecuteContext on the root command and propagated
+	// to the executed subcommand by cobra's internal execution flow.
+	cmd.SetContext(context.TODO())
 	for _, subCmd := range cmd.Commands() {
-		setContextRecursively(subCmd, ctx)
+		clearContextRecursively(subCmd)
 	}
 }
 

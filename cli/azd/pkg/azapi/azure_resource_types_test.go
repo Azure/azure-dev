@@ -36,6 +36,11 @@ func TestGetResourceTypeDisplayName(t *testing.T) {
 			expected:     "Container App Job",
 		},
 		{
+			name:         "CosmosDB",
+			resourceType: AzureResourceTypeCosmosDb,
+			expected:     "Azure Cosmos DB (DocumentDB)",
+		},
+		{
 			name:         "UnknownResourceType",
 			resourceType: AzureResourceType("Microsoft.Unknown/unknownResource"),
 			expected:     "",

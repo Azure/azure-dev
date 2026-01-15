@@ -98,7 +98,7 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 	case AzureResourceTypeServicePlan:
 		return "App Service plan"
 	case AzureResourceTypeCosmosDb:
-		return "Azure Cosmos DB"
+		return "Azure Cosmos DB (DocumentDB)"
 	case AzureResourceTypeApim:
 		return "Azure API Management"
 	case AzureResourceTypeCacheForRedis:

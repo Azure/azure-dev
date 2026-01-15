@@ -252,7 +252,21 @@ overrides:
       - httptest
       - Logf
       - Getenv
-      - httptest      
+      - httptest
+  - filename: pkg/extensions/metadata.go
+    words:
+      - invopop
+  - filename: pkg/extensions/schema_validator.go
+    words:
+      - invopop
+      - jsonschemav
+  - filename: pkg/project/dockerfile_builder.go
+    words:
+      - WORKDIR
+      - workdir
+  - filename: extensions/microsoft.azd.demo/internal/cmd/metadata.go
+    words:
+      - invopop
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

@@ -874,8 +874,15 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Extensions
 	container.MustRegisterSingleton(extensions.NewManager)
-	container.MustRegisterSingleton(extensions.NewRunner)
 	container.MustRegisterSingleton(extensions.NewSourceManager)
+	container.MustRegisterSingleton(extensions.NewRunner)
+	container.MustRegisterSingleton(func(serviceLocator ioc.ServiceLocator) *lazy.Lazy[*extensions.Runner] {
+		return lazy.NewLazy(func() (*extensions.Runner, error) {
+			var runner *extensions.Runner
+			err := serviceLocator.Resolve(&runner)
+			return runner, err
+		})
+	})
 
 	// gRPC Server
 	container.MustRegisterScoped(grpcserver.NewServer)

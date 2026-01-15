@@ -253,6 +253,9 @@ overrides:
       - Logf
       - Getenv
       - httptest
+  - filename: docs/extension-framework.md
+    words:
+      - invopop
   - filename: pkg/extensions/metadata.go
     words:
       - invopop

@@ -75,17 +75,21 @@ func (m *TelemetryMiddleware) Run(ctx context.Context, next NextFn) (*actions.Ac
 
 	if extensionId != "" {
 		span.SetAttributes(fields.CmdFlags.StringSlice(extensionFlags))
-	} else if m.options.Flags != nil {
-		changedFlags := []string{}
-		m.options.Flags.VisitAll(func(f *pflag.Flag) {
-			if f.Changed {
-				changedFlags = append(changedFlags, f.Name)
-			}
-		})
-		span.SetAttributes(fields.CmdFlags.StringSlice(changedFlags))
+		// Extension commands use DisableFlagParsing, so Args contains raw unparsed arguments.
+		// Emit 0 since we cannot accurately determine positional arg count.
+		span.SetAttributes(fields.CmdArgsCount.Int(0))
+	} else {
+		if m.options.Flags != nil {
+			changedFlags := []string{}
+			m.options.Flags.VisitAll(func(f *pflag.Flag) {
+				if f.Changed {
+					changedFlags = append(changedFlags, f.Name)
+				}
+			})
+			span.SetAttributes(fields.CmdFlags.StringSlice(changedFlags))
+		}
+		span.SetAttributes(fields.CmdArgsCount.Int(len(m.options.Args)))
 	}
-
-	span.SetAttributes(fields.CmdArgsCount.Int(len(m.options.Args)))
 
 	// Set the platform type when available
 	// Valid platform types are validating in the platform config resolver and will error here if not known & valid
@@ -128,6 +132,7 @@ func (m *TelemetryMiddleware) Run(ctx context.Context, next NextFn) (*actions.Ac
 	return result, err
 }
 
+// extensionCmdInfo retrieves telemetry command info for an extension, returning the command event name and flags.
 func (m *TelemetryMiddleware) extensionCmdInfo(extensionId string) (string, []string) {
 	if m.extensionManager == nil {
 		return "", nil

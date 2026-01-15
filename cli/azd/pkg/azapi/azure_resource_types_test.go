@@ -38,7 +38,12 @@ func TestGetResourceTypeDisplayName(t *testing.T) {
 		{
 			name:         "CosmosDB",
 			resourceType: AzureResourceTypeCosmosDb,
-			expected:     "Azure Cosmos DB (DocumentDB)",
+			expected:     "Azure Cosmos DB",
+		},
+		{
+			name:         "DocumentDB",
+			resourceType: AzureResourceTypeDocumentDB,
+			expected:     "Azure DocumentDB",
 		},
 		{
 			name:         "UnknownResourceType",

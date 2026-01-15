@@ -332,13 +332,13 @@ func newOperationResumeCommand() *cobra.Command {
 
 			job, err := fineTuneSvc.ResumeJob(ctx, jobID)
 			_ = spinner.Stop(ctx)
+			fmt.Println()
 
 			if err != nil {
 				return err
 			}
 
 			// Print success message
-			fmt.Println()
 			fmt.Println("✓ Job resume request submitted successfully")
 			fmt.Println()
 			fmt.Printf("  Job ID:  %s\n", job.ID)
@@ -386,13 +386,12 @@ func newOperationPauseCommand() *cobra.Command {
 
 			job, err := fineTuneSvc.PauseJob(ctx, jobID)
 			_ = spinner.Stop(ctx)
-
+			fmt.Println()
 			if err != nil {
 				return err
 			}
 
 			// Print success message
-			fmt.Println()
 			fmt.Println("✓ Job pause request submitted successfully")
 			fmt.Println()
 			fmt.Printf("  Job ID:  %s\n", job.ID)
@@ -431,7 +430,7 @@ func newOperationCancelCommand() *cobra.Command {
 				fmt.Scanln(&response)
 				response = strings.ToLower(strings.TrimSpace(response))
 				if response != "y" && response != "yes" {
-					fmt.Println("Cancelled.")
+					fmt.Println("Operation aborted.")
 					return nil
 				}
 			}
@@ -453,13 +452,13 @@ func newOperationCancelCommand() *cobra.Command {
 
 			job, err := fineTuneSvc.CancelJob(ctx, jobID)
 			_ = spinner.Stop(ctx)
+			fmt.Println()
 
 			if err != nil {
 				return err
 			}
 
 			// Print success message
-			fmt.Println()
 			fmt.Println("✓ Job cancel request submitted successfully")
 			fmt.Println()
 			fmt.Printf("  Job ID:  %s\n", job.ID)

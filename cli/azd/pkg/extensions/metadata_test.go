@@ -159,7 +159,12 @@ func TestResolveCommandPath(t *testing.T) {
 		{name: "NoArgs", metadata: metadata, args: nil, want: nil},
 		{name: "EmptyArgs", metadata: metadata, args: []string{}, want: nil},
 		{name: "NilMetadata", metadata: nil, args: []string{"version"}, want: nil},
-		{name: "EmptyCommands", metadata: &ExtensionCommandMetadata{Commands: []Command{}}, args: []string{"version"}, want: nil},
+		{
+			name:     "EmptyCommands",
+			metadata: &ExtensionCommandMetadata{Commands: []Command{}},
+			args:     []string{"version"},
+			want:     nil,
+		},
 	}
 
 	for _, tt := range tests {
@@ -211,19 +216,49 @@ func TestResolveCommandFlags(t *testing.T) {
 	}{
 		{name: "MatchLongFlag", metadata: metadata, args: []string{"version", "--verbose"}, want: []string{"verbose"}},
 		{name: "MatchShorthandFlag", metadata: metadata, args: []string{"version", "-v"}, want: []string{"verbose"}},
-		{name: "MatchFlagWithValue", metadata: metadata, args: []string{"version", "--output", "json"}, want: []string{"output"}},
-		{name: "MatchFlagWithEquals", metadata: metadata, args: []string{"version", "--output=json"}, want: []string{"output"}},
 		{name: "MatchShortValue", metadata: metadata, args: []string{"version", "-o", "json"}, want: []string{"output"}},
 		{name: "MatchShortAttachedValue", metadata: metadata, args: []string{"version", "-ojson"}, want: []string{"output"}},
-		{name: "MatchCombinedShort", metadata: metadata, args: []string{"version", "-vq"}, want: []string{"verbose", "quiet"}},
-		{name: "MatchMultipleFlags", metadata: metadata, args: []string{"version", "--verbose", "--output", "json"}, want: []string{"verbose", "output"}},
-		{name: "MatchAliasCommand", metadata: metadata, args: []string{"colours", "--format", "json"}, want: []string{"format"}},
 		{name: "MatchSubcommand", metadata: metadata, args: []string{"mcp", "start", "--debug"}, want: []string{"debug"}},
 		{name: "StopAtDoubleDash", metadata: metadata, args: []string{"version", "--", "--verbose"}, want: nil},
 		{name: "NoMatch", metadata: metadata, args: []string{"unknown", "--verbose"}, want: nil},
-		{name: "UnknownFlagsIgnored", metadata: metadata, args: []string{"version", "--unknown", "--verbose"}, want: []string{"verbose"}},
 		{name: "CommandWithNoFlags", metadata: metadata, args: []string{"noflags", "--something"}, want: nil},
 		{name: "NilMetadata", metadata: nil, args: []string{"version", "--verbose"}, want: nil},
+		{
+			name:     "MatchFlagWithValue",
+			metadata: metadata,
+			args:     []string{"version", "--output", "json"},
+			want:     []string{"output"},
+		},
+		{
+			name:     "MatchFlagWithEquals",
+			metadata: metadata,
+			args:     []string{"version", "--output=json"},
+			want:     []string{"output"},
+		},
+		{
+			name:     "MatchCombinedShort",
+			metadata: metadata,
+			args:     []string{"version", "-vq"},
+			want:     []string{"verbose", "quiet"},
+		},
+		{
+			name:     "MatchMultipleFlags",
+			metadata: metadata,
+			args:     []string{"version", "--verbose", "--output", "json"},
+			want:     []string{"verbose", "output"},
+		},
+		{
+			name:     "MatchAliasCommand",
+			metadata: metadata,
+			args:     []string{"colours", "--format", "json"},
+			want:     []string{"format"},
+		},
+		{
+			name:     "UnknownFlagsIgnored",
+			metadata: metadata,
+			args:     []string{"version", "--unknown", "--verbose"},
+			want:     []string{"verbose"},
+		},
 	}
 
 	for _, tt := range tests {

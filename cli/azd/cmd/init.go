@@ -621,20 +621,6 @@ func promptInitType(
 		return initAppTemplate, nil
 	case 2:
 		if !featuresManager.IsEnabled(llm.FeatureLlm) {
-			confirm, err := console.Confirm(ctx, input.ConsoleOptions{
-				Message:      "alpha.llm feature is not enabled. Do you want to enable it to use agent mode?",
-				DefaultValue: true,
-			})
-			if err != nil {
-				return initUnknown, err
-			}
-
-			if !confirm {
-				return initUnknown, errors.New("To use this feature, run `azd config set alpha.llm on`, " +
-					"set the agent model type with `azd config set ai.agent.model.type github-copilot`, " +
-					"then run `azd init` again.")
-			}
-
 			azdConfig, err := configManager.Load()
 			if err != nil {
 				return initUnknown, fmt.Errorf("failed to load config: %w", err)
@@ -652,22 +638,6 @@ func promptInitType(
 
 			console.Message(ctx, "\nThe azd agent feature has been enabled to support this new experience."+
 				" To turn off in the future run `azd config unset alpha.llm`.")
-
-			console.Message(ctx, "")
-			confirm, err = console.Confirm(ctx, input.ConsoleOptions{
-				Message:      "This feature requires a LLM model. Do you want to enable it with github copilot?",
-				DefaultValue: true,
-			})
-			if err != nil {
-				return initUnknown, err
-			}
-			console.Message(ctx, "")
-
-			if !confirm {
-				return initUnknown, errors.New("To set the agent model type, run " +
-					"`azd config set ai.agent.model.type github-copilot`, " +
-					"then run `azd init` again.")
-			}
 
 			err = azdConfig.Set("ai.agent.model.type", "github-copilot")
 			if err != nil {

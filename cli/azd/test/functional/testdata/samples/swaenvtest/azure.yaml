@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+name: swaenvtest
+metadata:
+  template: azd-test/swaenvtest@v1
+services:
+  web:
+    project: .
+    language: js
+    host: appservice
+    # Service-level environment variables passed to build tools
+    env:
+      # Reference azd environment variables using ${VAR_NAME} syntax
+      VITE_API_URL: ${TEST_API_URL}
+      VITE_APP_NAME: ${TEST_APP_NAME}
+      # Static value
+      VITE_BUILD_ENV: "test"

@@ -39,7 +39,13 @@ func TestGenerateExtensionMetadata(t *testing.T) {
 	assert.Equal(t, []string{"greet"}, cmd.Name)
 	assert.Equal(t, "Greet someone", cmd.Short)
 	assert.Equal(t, "This command greets someone with a friendly message.", cmd.Long)
-	assert.Len(t, cmd.Flags, 2)
+	assert.Len(t, cmd.Flags, 3) // format, verbose, and auto-generated help flag
+
+	// Check help flag is included
+	helpFlag := findFlag(cmd.Flags, "help")
+	require.NotNil(t, helpFlag)
+	assert.Equal(t, "h", helpFlag.Shorthand)
+	assert.Equal(t, "bool", helpFlag.Type)
 
 	// Check flags
 	formatFlag := findFlag(cmd.Flags, "format")
@@ -156,7 +162,11 @@ func TestGenerateExtensionMetadata_HiddenFlags(t *testing.T) {
 
 	require.Len(t, metadata.Commands, 1)
 	// Both flags should be included; hidden flags have Hidden=true
-	assert.Len(t, metadata.Commands[0].Flags, 2)
+	// Also includes auto-generated help flag
+	assert.Len(t, metadata.Commands[0].Flags, 3)
+
+	helpFlag := findFlag(metadata.Commands[0].Flags, "help")
+	require.NotNil(t, helpFlag)
 
 	visibleFlag := findFlag(metadata.Commands[0].Flags, "visible")
 	require.NotNil(t, visibleFlag)

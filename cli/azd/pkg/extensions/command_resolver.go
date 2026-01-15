@@ -46,6 +46,7 @@ type commandEntry struct {
 
 // matchCommand returns the longest matching command entry for the provided args.
 // It searches the command tree recursively, matching both primary command names and aliases.
+// When an alias matches, the primary command name is returned (not the alias).
 func matchCommand(commands []Command, args []string) *commandEntry {
 	cmdArgs := extractCommandArgs(args)
 	if len(cmdArgs) == 0 {
@@ -70,7 +71,7 @@ func matchCommand(commands []Command, args []string) *commandEntry {
 				}
 			}
 
-			// Check aliases
+			// Check aliases - but return primary command name for consistent telemetry
 			for _, alias := range cmd.Aliases {
 				if alias == "" {
 					continue
@@ -79,7 +80,8 @@ func matchCommand(commands []Command, args []string) *commandEntry {
 				aliasPath[len(aliasPath)-1] = alias
 				if len(aliasPath) <= len(cmdArgs) && slices.Equal(cmdArgs[:len(aliasPath)], aliasPath) {
 					if bestMatch == nil || len(aliasPath) > len(bestMatch.path) {
-						bestMatch = &commandEntry{path: aliasPath, command: cmd}
+						// Use primary command name, not alias
+						bestMatch = &commandEntry{path: cmd.Name, command: cmd}
 					}
 				}
 			}

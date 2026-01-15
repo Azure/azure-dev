@@ -153,7 +153,7 @@ func TestResolveCommandPath(t *testing.T) {
 	}{
 		{name: "MatchRootCommand", metadata: metadata, args: []string{"version"}, want: []string{"version"}},
 		{name: "MatchSubcommand", metadata: metadata, args: []string{"mcp", "start"}, want: []string{"mcp", "start"}},
-		{name: "MatchAlias", metadata: metadata, args: []string{"colours"}, want: []string{"colours"}},
+		{name: "MatchAlias", metadata: metadata, args: []string{"colours"}, want: []string{"colors"}},
 		{name: "StopAtFlags", metadata: metadata, args: []string{"version", "--verbose"}, want: []string{"version"}},
 		{name: "NoMatch", metadata: metadata, args: []string{"unknown"}, want: nil},
 		{name: "NoArgs", metadata: metadata, args: nil, want: nil},

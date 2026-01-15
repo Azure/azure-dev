@@ -25,10 +25,11 @@ const (
 // JobAction represents an action that can be performed on a fine-tuning job
 type JobAction string
 
+// JobAction constants define the available actions for a fine-tuning job
 const (
-    JobActionPause  JobAction = "pause"
-    JobActionResume JobAction = "resume"
-    JobActionCancel JobAction = "cancel"
+	JobActionPause  JobAction = "pause"
+	JobActionResume JobAction = "resume"
+	JobActionCancel JobAction = "cancel"
 )
 
 // Represents the type of method used for fine-tuning

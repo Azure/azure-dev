@@ -22,6 +22,15 @@ const (
 	StatusPaused    JobStatus = "paused"
 )
 
+// JobAction represents an action that can be performed on a fine-tuning job
+type JobAction string
+
+const (
+    JobActionPause  JobAction = "pause"
+    JobActionResume JobAction = "resume"
+    JobActionCancel JobAction = "cancel"
+)
+
 // Represents the type of method used for fine-tuning
 type MethodType string
 

@@ -14,7 +14,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 
 	"azure.ai.finetune/internal/services"
-	JobWrapper "azure.ai.finetune/internal/tools"
 	"azure.ai.finetune/internal/utils"
 	"azure.ai.finetune/pkg/models"
 )
@@ -31,7 +30,7 @@ func newOperationCommand() *cobra.Command {
 	cmd.AddCommand(newOperationSubmitCommand())
 	cmd.AddCommand(newOperationShowCommand())
 	cmd.AddCommand(newOperationListCommand())
-	// cmd.AddCommand(newOperationActionCommand())
+	cmd.AddCommand(newOperationActionCommand())
 	// cmd.AddCommand(newOperationDeployModelCommand())
 
 	return cmd
@@ -300,33 +299,13 @@ func newOperationListCommand() *cobra.Command {
 	return cmd
 }
 
-// getStatusSymbolFromString returns a symbol representation for job status
-func getStatusSymbolFromString(status string) string {
-	switch status {
-	case "pending":
-		return "⌛"
-	case "queued":
-		return "📚"
-	case "running":
-		return "🔄"
-	case "succeeded":
-		return "✅"
-	case "failed":
-		return "💥"
-	case "cancelled":
-		return "❌"
-	default:
-		return "❓"
-	}
-}
-
 func newOperationActionCommand() *cobra.Command {
 	var jobID string
 	var action string
 
 	cmd := &cobra.Command{
 		Use:   "action",
-		Short: "Perform an action on a fine-tuning job (pause, resume, cancel)",
+		Short: "Perform an action on a fine-tuning job (pause, resume, cancel).",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			azdClient, err := azdext.NewAzdClient()
@@ -335,45 +314,37 @@ func newOperationActionCommand() *cobra.Command {
 			}
 			defer azdClient.Close()
 
-			// Validate job ID is provided
-			if jobID == "" {
-				return fmt.Errorf("job-id is required")
+			jobAction := models.JobAction(strings.ToLower(action))
+
+			fineTuneSvc, err := services.NewFineTuningService(ctx, azdClient, nil)
+			if err != nil {
+				fmt.Println()
+				return err
 			}
 
-			// Validate action is provided and valid
-			if action == "" {
-				return fmt.Errorf("action is required (pause, resume, or cancel)")
-			}
-
-			action = strings.ToLower(action)
-			if action != "pause" && action != "resume" && action != "cancel" {
+			var job *models.FineTuningJob
+			switch jobAction {
+			case models.JobActionPause:
+				job, err = fineTuneSvc.PauseJob(ctx, jobID)
+			case models.JobActionResume:
+				job, err = fineTuneSvc.ResumeJob(ctx, jobID)
+			case models.JobActionCancel:
+				job, err = fineTuneSvc.CancelJob(ctx, jobID)
+			default:
 				return fmt.Errorf("invalid action '%s'. Allowed values: pause, resume, cancel", action)
 			}
 
-			var job *JobWrapper.JobContract
-			var err2 error
-
-			// Execute the requested action
-			switch action {
-			case "pause":
-				job, err2 = JobWrapper.PauseJob(ctx, azdClient, jobID)
-			case "resume":
-				job, err2 = JobWrapper.ResumeJob(ctx, azdClient, jobID)
-			case "cancel":
-				job, err2 = JobWrapper.CancelJob(ctx, azdClient, jobID)
-			}
-
-			if err2 != nil {
-				return err2
+			if err != nil {
+				return err
 			}
 
 			// Print success message
 			fmt.Println()
 			fmt.Println(strings.Repeat("=", 120))
 			color.Green(fmt.Sprintf("\nSuccessfully %sd fine-tuning Job!\n", action))
-			fmt.Printf("Job ID:     %s\n", job.Id)
-			fmt.Printf("Model:      %s\n", job.Model)
-			fmt.Printf("Status:     %s %s\n", getStatusSymbolFromString(job.Status), job.Status)
+			fmt.Printf("Job ID:     %s\n", job.ID)
+			fmt.Printf("Model:      %s\n", job.BaseModel)
+			fmt.Printf("Status:     %s %s\n", utils.GetStatusSymbol(job.Status), job.Status)
 			fmt.Printf("Created:    %s\n", job.CreatedAt)
 			if job.FineTunedModel != "" {
 				fmt.Printf("Fine-tuned: %s\n", job.FineTunedModel)

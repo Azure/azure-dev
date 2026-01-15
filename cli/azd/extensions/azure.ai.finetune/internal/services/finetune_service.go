@@ -178,22 +178,42 @@ func (s *fineTuningServiceImpl) GetJobCheckpoints(ctx context.Context, jobID str
 	return checkpointList, nil
 }
 
+func (s *fineTuningServiceImpl) executeJobAction(ctx context.Context, jobID string, action string) (*models.FineTuningJob, error) {
+	
+	var job *models.FineTuningJob
+
+	err := utils.RetryOperation(ctx, utils.DefaultRetryConfig(), func() error {
+		var err error
+		switch action {
+		case string(models.JobActionPause):
+			job, err = s.provider.PauseJob(ctx, jobID)
+		case string(models.JobActionResume):
+			job, err = s.provider.ResumeJob(ctx, jobID)
+		case string(models.JobActionCancel):
+			job, err = s.provider.CancelJob(ctx, jobID)
+		}
+		return err
+	})
+	
+	if err != nil {
+		return nil, fmt.Errorf("failed to %s fine-tuning job: %w", action, err)
+	}
+	return job, err
+}
+
 // PauseJob pauses a running job (if applicable)
 func (s *fineTuningServiceImpl) PauseJob(ctx context.Context, jobID string) (*models.FineTuningJob, error) {
-	// TODO: Implement
-	return nil, nil
+	return s.executeJobAction(ctx, jobID, string(models.JobActionPause))
 }
 
 // ResumeJob resumes a paused job (if applicable)
 func (s *fineTuningServiceImpl) ResumeJob(ctx context.Context, jobID string) (*models.FineTuningJob, error) {
-	// TODO: Implement
-	return nil, nil
+	return s.executeJobAction(ctx, jobID, string(models.JobActionResume))
 }
 
 // CancelJob cancels a job with proper state validation
 func (s *fineTuningServiceImpl) CancelJob(ctx context.Context, jobID string) (*models.FineTuningJob, error) {
-	// TODO: Implement
-	return nil, nil
+	return s.executeJobAction(ctx, jobID, string(models.JobActionCancel))
 }
 
 // UploadFile uploads and validates a file

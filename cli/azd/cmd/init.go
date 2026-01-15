@@ -594,7 +594,12 @@ const (
 	initWithAgent
 )
 
-func promptInitType(console input.Console, ctx context.Context, featuresManager *alpha.FeatureManager, configManager config.UserConfigManager) (initType, error) {
+func promptInitType(
+	console input.Console,
+	ctx context.Context,
+	featuresManager *alpha.FeatureManager,
+	configManager config.UserConfigManager,
+) (initType, error) {
 	options := []string{
 		"Scan current directory", // This now covers minimal project creation too
 		"Select a template",
@@ -620,6 +625,9 @@ func promptInitType(console input.Console, ctx context.Context, featuresManager 
 				Message:      "alpha.llm feature is not enabled. Do you want to enable it to use agent mode?",
 				DefaultValue: true,
 			})
+			if err != nil {
+				return initUnknown, err
+			}
 
 			if !confirm {
 				return initUnknown, errors.New("To use this feature, run `azd config set alpha.llm on`, " +
@@ -650,10 +658,14 @@ func promptInitType(console input.Console, ctx context.Context, featuresManager 
 				Message:      "This feature requires a LLM model. Do you want to enable it with github copilot?",
 				DefaultValue: true,
 			})
+			if err != nil {
+				return initUnknown, err
+			}
 			console.Message(ctx, "")
 
 			if !confirm {
-				return initUnknown, errors.New("To set the agent model type, run `azd config set ai.agent.model.type github-copilot`, " +
+				return initUnknown, errors.New("To set the agent model type, run " +
+					"`azd config set ai.agent.model.type github-copilot`, " +
 					"then run `azd init` again.")
 			}
 

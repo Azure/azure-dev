@@ -4,6 +4,8 @@
 package project
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
@@ -88,4 +90,26 @@ func (sc *ServiceConfig) Path() string {
 		return sc.RelativePath
 	}
 	return filepath.Join(sc.Project.Path, sc.RelativePath)
+}
+
+// ExpandEnv expands the service-level environment variables defined in azure.yaml
+// using the provided lookup function and merges them with the current OS environment.
+// Service-defined variables take precedence over OS environment variables.
+// Returns nil if no service environment variables are configured.
+func (sc *ServiceConfig) ExpandEnv(lookup func(string) string) ([]string, error) {
+	if len(sc.Environment) == 0 {
+		return nil, nil
+	}
+
+	expanded, err := sc.Environment.Expand(lookup)
+	if err != nil {
+		return nil, err
+	}
+
+	env := os.Environ()
+	for key, value := range expanded {
+		env = append(env, fmt.Sprintf("%s=%s", key, value))
+	}
+
+	return env, nil
 }

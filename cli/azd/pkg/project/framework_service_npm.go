@@ -56,7 +56,14 @@ func (np *npmProject) Restore(
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceRestoreResult, error) {
 	progress.SetProgress(NewServiceProgress("Installing NPM dependencies"))
-	if err := np.cli.Install(ctx, serviceConfig.Path()); err != nil {
+
+	// Expand service environment variables
+	envVars, err := serviceConfig.ExpandEnv(np.env.Getenv)
+	if err != nil {
+		return nil, fmt.Errorf("expanding service environment variables: %w", err)
+	}
+
+	if err := np.cli.Install(ctx, serviceConfig.Path(), envVars); err != nil {
 		return nil, err
 	}
 
@@ -87,7 +94,14 @@ func (np *npmProject) Build(
 	// Exec custom `build` script if available
 	// If `build`` script is not defined in the package.json the NPM script will NOT fail
 	progress.SetProgress(NewServiceProgress("Running NPM build script"))
-	if err := np.cli.RunScript(ctx, serviceConfig.Path(), "build"); err != nil {
+
+	// Expand service environment variables
+	envVars, err := serviceConfig.ExpandEnv(np.env.Getenv)
+	if err != nil {
+		return nil, fmt.Errorf("expanding service environment variables: %w", err)
+	}
+
+	if err := np.cli.RunScript(ctx, serviceConfig.Path(), "build", envVars); err != nil {
 		return nil, err
 	}
 
@@ -122,10 +136,16 @@ func (np *npmProject) Package(
 ) (*ServicePackageResult, error) {
 	progress.SetProgress(NewServiceProgress("Running NPM package script"))
 
+	// Expand service environment variables
+	envVars, err := serviceConfig.ExpandEnv(np.env.Getenv)
+	if err != nil {
+		return nil, fmt.Errorf("expanding service environment variables: %w", err)
+	}
+
 	// Long term this script we call should better align with our inner-loop scenarios
 	// Keeping this defaulted to `build` will create confusion for users when we start to support
 	// both local dev / debug builds and production bundled builds
-	if err := np.cli.RunScript(ctx, serviceConfig.Path(), "build"); err != nil {
+	if err := np.cli.RunScript(ctx, serviceConfig.Path(), "build", envVars); err != nil {
 		return nil, err
 	}
 

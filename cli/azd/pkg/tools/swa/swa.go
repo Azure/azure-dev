@@ -37,9 +37,9 @@ type Cli struct {
 	commandRunner exec.CommandRunner
 }
 
-func (cli *Cli) Build(ctx context.Context, cwd string, buildProgress io.Writer) error {
+func (cli *Cli) Build(ctx context.Context, cwd string, buildProgress io.Writer, env []string) error {
 	fullAppFolderPath := filepath.Join(cwd)
-	result, err := cli.run(ctx, fullAppFolderPath, buildProgress, "build", "-V")
+	result, err := cli.run(ctx, fullAppFolderPath, buildProgress, env, "build", "-V")
 
 	if err != nil {
 		return fmt.Errorf("swa build: %w", err)
@@ -116,14 +116,24 @@ func (cli *Cli) InstallUrl() string {
 }
 
 func (cli *Cli) executeCommand(ctx context.Context, cwd string, args ...string) (exec.RunResult, error) {
-	return cli.run(ctx, cwd, nil, args...)
+	return cli.run(ctx, cwd, nil, nil, args...)
 }
 
-func (cli *Cli) run(ctx context.Context, cwd string, buildProgress io.Writer, args ...string) (exec.RunResult, error) {
+func (cli *Cli) run(
+	ctx context.Context,
+	cwd string,
+	buildProgress io.Writer,
+	env []string,
+	args ...string,
+) (exec.RunResult, error) {
 	runArgs := exec.
 		NewRunArgs("npx", "-y", swaCliPackage).
 		AppendParams(args...).
 		WithCwd(cwd)
+
+	if len(env) > 0 {
+		runArgs = runArgs.WithEnv(env)
+	}
 
 	if buildProgress != nil {
 		runArgs = runArgs.WithStdOut(buildProgress).WithStdErr(buildProgress)

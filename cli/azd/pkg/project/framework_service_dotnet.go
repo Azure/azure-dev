@@ -94,7 +94,12 @@ func (dp *dotnetProject) Restore(
 		return nil, err
 	}
 
-	if err := dp.dotnetCli.Restore(ctx, projFile); err != nil {
+	env, err := serviceConfig.ExpandEnv(dp.env.Getenv)
+	if err != nil {
+		return nil, fmt.Errorf("expanding service environment variables: %w", err)
+	}
+
+	if err := dp.dotnetCli.Restore(ctx, projFile, env); err != nil {
 		return nil, err
 	}
 
@@ -123,7 +128,13 @@ func (dp *dotnetProject) Build(
 	if err != nil {
 		return nil, err
 	}
-	if err := dp.dotnetCli.Build(ctx, projFile, defaultDotNetBuildConfiguration, ""); err != nil {
+
+	env, err := serviceConfig.ExpandEnv(dp.env.Getenv)
+	if err != nil {
+		return nil, fmt.Errorf("expanding service environment variables: %w", err)
+	}
+
+	if err := dp.dotnetCli.Build(ctx, projFile, defaultDotNetBuildConfiguration, "", env); err != nil {
 		return nil, err
 	}
 
@@ -189,7 +200,13 @@ func (dp *dotnetProject) Package(
 	if err != nil {
 		return nil, err
 	}
-	if err := dp.dotnetCli.Publish(ctx, projFile, defaultDotNetBuildConfiguration, packageDest); err != nil {
+
+	env, err := serviceConfig.ExpandEnv(dp.env.Getenv)
+	if err != nil {
+		return nil, fmt.Errorf("expanding service environment variables: %w", err)
+	}
+
+	if err := dp.dotnetCli.Publish(ctx, projFile, defaultDotNetBuildConfiguration, packageDest, env); err != nil {
 		return nil, err
 	}
 

@@ -65,10 +65,16 @@ func (cli *Cli) Name() string {
 	return "npm CLI"
 }
 
-func (cli *Cli) Install(ctx context.Context, project string) error {
+// Install runs npm install in the specified project directory.
+// Optional env parameter allows passing additional environment variables to the npm process.
+func (cli *Cli) Install(ctx context.Context, project string, env []string) error {
 	runArgs := exec.
 		NewRunArgs("npm", "install").
 		WithCwd(project)
+
+	if len(env) > 0 {
+		runArgs = runArgs.WithEnv(env)
+	}
 
 	_, err := cli.commandRunner.Run(ctx, runArgs)
 
@@ -78,10 +84,16 @@ func (cli *Cli) Install(ctx context.Context, project string) error {
 	return nil
 }
 
-func (cli *Cli) RunScript(ctx context.Context, projectPath string, scriptName string) error {
+// RunScript runs an npm script in the specified project directory.
+// Optional env parameter allows passing additional environment variables to the npm process.
+func (cli *Cli) RunScript(ctx context.Context, projectPath string, scriptName string, env []string) error {
 	runArgs := exec.
 		NewRunArgs("npm", "run", scriptName, "--if-present").
 		WithCwd(projectPath)
+
+	if len(env) > 0 {
+		runArgs = runArgs.WithEnv(env)
+	}
 
 	_, err := cli.commandRunner.Run(ctx, runArgs)
 
@@ -92,13 +104,19 @@ func (cli *Cli) RunScript(ctx context.Context, projectPath string, scriptName st
 	return nil
 }
 
-func (cli *Cli) Prune(ctx context.Context, projectPath string, production bool) error {
+// Prune removes extraneous packages from the node_modules directory.
+// Optional env parameter allows passing additional environment variables to the npm process.
+func (cli *Cli) Prune(ctx context.Context, projectPath string, production bool, env []string) error {
 	runArgs := exec.
 		NewRunArgs("npm", "prune").
 		WithCwd(projectPath)
 
 	if production {
 		runArgs = runArgs.AppendParams("--production")
+	}
+
+	if len(env) > 0 {
+		runArgs = runArgs.WithEnv(env)
 	}
 
 	_, err := cli.commandRunner.Run(ctx, runArgs)

@@ -30,7 +30,7 @@ func Test_Python_Run(t *testing.T) {
 		return strings.Contains(command, pyString)
 	}).Respond(exec.NewRunResult(0, "", ""))
 
-	runResult, err := cli.Run(*mockContext.Context, tempDir, ".venv", "pf_client.py", "arg1", "arg2", "arg3")
+	runResult, err := cli.Run(*mockContext.Context, tempDir, ".venv", nil, "pf_client.py", "arg1", "arg2", "arg3")
 	require.NoError(t, err)
 	require.NotNil(t, runResult)
 	require.NotNil(t, runArgs)
@@ -57,7 +57,7 @@ func Test_Python_InstallRequirements(t *testing.T) {
 		return strings.Contains(command, "requirements.txt")
 	}).Respond(exec.NewRunResult(0, "", ""))
 
-	err = cli.InstallRequirements(*mockContext.Context, tempDir, ".venv", "requirements.txt")
+	err = cli.InstallRequirements(*mockContext.Context, tempDir, ".venv", "requirements.txt", nil)
 	require.NoError(t, err)
 	require.NotNil(t, runArgs)
 	require.Equal(t, tempDir, runArgs.Cwd)

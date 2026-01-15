@@ -458,11 +458,24 @@ func (ch *ContainerHelper) Build(
 
 	// Include full environment variables for the docker build including:
 	// 1. Environment variables from the host
-	// 2. Environment variables from the service configuration
-	// 3. Environment variables from the docker configuration
+	// 2. Environment variables from the azd environment
+	// 3. Environment variables from the service configuration (azure.yaml env)
+	// 4. Environment variables from the docker configuration
 	dockerEnv := []string{}
 	dockerEnv = append(dockerEnv, os.Environ()...)
 	dockerEnv = append(dockerEnv, env.Environ()...)
+
+	// Expand and add service-level environment variables from azure.yaml
+	if len(serviceConfig.Environment) > 0 {
+		expandedServiceEnv, err := serviceConfig.Environment.Expand(env.Getenv)
+		if err != nil {
+			return nil, fmt.Errorf("expanding service environment variables: %w", err)
+		}
+		for key, value := range expandedServiceEnv {
+			dockerEnv = append(dockerEnv, fmt.Sprintf("%s=%s", key, value))
+		}
+	}
+
 	dockerEnv = append(dockerEnv, dockerOptions.BuildEnv...)
 
 	// Build the container

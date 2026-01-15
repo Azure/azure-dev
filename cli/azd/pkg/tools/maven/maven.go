@@ -172,13 +172,18 @@ func (cli *Cli) extractVersion(ctx context.Context) (string, error) {
 	return parts[1], nil
 }
 
-func (cli *Cli) Compile(ctx context.Context, projectPath string) error {
+// Compile runs mvn compile on the project.
+// Optional env parameter allows passing additional environment variables to the maven process.
+func (cli *Cli) Compile(ctx context.Context, projectPath string, env []string) error {
 	mvnCmd, err := cli.mvnCmd()
 	if err != nil {
 		return err
 	}
 
 	runArgs := exec.NewRunArgs(mvnCmd, "compile").WithCwd(projectPath)
+	if len(env) > 0 {
+		runArgs = runArgs.WithEnv(env)
+	}
 	_, err = cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("mvn compile on project '%s' failed: %w", projectPath, err)
@@ -187,7 +192,9 @@ func (cli *Cli) Compile(ctx context.Context, projectPath string) error {
 	return nil
 }
 
-func (cli *Cli) Package(ctx context.Context, projectPath string) error {
+// Package runs mvn package on the project.
+// Optional env parameter allows passing additional environment variables to the maven process.
+func (cli *Cli) Package(ctx context.Context, projectPath string, env []string) error {
 	mvnCmd, err := cli.mvnCmd()
 	if err != nil {
 		return err
@@ -195,6 +202,9 @@ func (cli *Cli) Package(ctx context.Context, projectPath string) error {
 
 	// Maven's package phase includes tests by default. Skip it explicitly.
 	runArgs := exec.NewRunArgs(mvnCmd, "package", "-DskipTests").WithCwd(projectPath)
+	if len(env) > 0 {
+		runArgs = runArgs.WithEnv(env)
+	}
 	_, err = cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("mvn package on project '%s' failed: %w", projectPath, err)
@@ -203,12 +213,17 @@ func (cli *Cli) Package(ctx context.Context, projectPath string) error {
 	return nil
 }
 
-func (cli *Cli) ResolveDependencies(ctx context.Context, projectPath string) error {
+// ResolveDependencies runs mvn dependency:resolve on the project.
+// Optional env parameter allows passing additional environment variables to the maven process.
+func (cli *Cli) ResolveDependencies(ctx context.Context, projectPath string, env []string) error {
 	mvnCmd, err := cli.mvnCmd()
 	if err != nil {
 		return err
 	}
 	runArgs := exec.NewRunArgs(mvnCmd, "dependency:resolve").WithCwd(projectPath)
+	if len(env) > 0 {
+		runArgs = runArgs.WithEnv(env)
+	}
 	_, err = cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("mvn dependency:resolve on project '%s' failed: %w", projectPath, err)

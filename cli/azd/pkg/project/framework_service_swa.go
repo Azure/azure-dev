@@ -5,6 +5,7 @@ package project
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -96,16 +97,22 @@ func (p *swaProject) Build(
 	serviceContext *ServiceContext,
 	_ *async.Progress[ServiceProgress],
 ) (*ServiceBuildResult, error) {
+	env, err := serviceConfig.ExpandEnv(p.env.Getenv)
+	if err != nil {
+		return nil, fmt.Errorf("expanding service environment variables: %w", err)
+	}
+
 	previewerWriter := p.console.ShowPreviewer(ctx,
 		&input.ShowPreviewerOptions{
 			Prefix:       "  ",
 			MaxLineCount: 8,
 			Title:        "Build SWA Project",
 		})
-	err := p.swa.Build(
+	err = p.swa.Build(
 		ctx,
 		serviceConfig.Path(),
 		previewerWriter,
+		env,
 	)
 	p.console.StopPreviewer(ctx, false)
 

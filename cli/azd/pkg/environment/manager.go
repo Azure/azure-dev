@@ -31,6 +31,8 @@ type Description struct {
 	HasRemote bool
 	// Specifies when the environment is the default environment
 	IsDefault bool
+	// Specifies whether the environment name is valid
+	IsValid bool
 }
 
 // Spec is the specification for creating a new environment
@@ -374,6 +376,7 @@ func (m *manager) List(ctx context.Context) ([]*Description, error) {
 			Name:       env.Name,
 			HasLocal:   true,
 			DotEnvPath: env.DotEnvPath,
+			IsValid:    env.IsValid,
 		}
 	}
 
@@ -389,9 +392,12 @@ func (m *manager) List(ctx context.Context) ([]*Description, error) {
 				existing = &Description{
 					Name:      env.Name,
 					HasRemote: true,
+					IsValid:   env.IsValid,
 				}
 			} else {
 				existing.HasRemote = true
+				// For environments that exist both locally and remotely,
+				// use the local validity check (already set above)
 			}
 			envMap[env.Name] = existing
 		}
@@ -415,6 +421,11 @@ func (m *manager) List(ctx context.Context) ([]*Description, error) {
 func (m *manager) Get(ctx context.Context, name string) (*Environment, error) {
 	if name == "" {
 		return nil, ErrNameNotSpecified
+	}
+
+	// Validate environment name
+	if !IsValidEnvironmentName(name) {
+		return nil, fmt.Errorf(invalidEnvironmentNameMsg(name))
 	}
 
 	// Check cache first

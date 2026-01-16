@@ -69,7 +69,13 @@ func (m *mavenProject) Restore(
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceRestoreResult, error) {
 	progress.SetProgress(NewServiceProgress("Resolving maven dependencies"))
-	if err := m.mavenCli.ResolveDependencies(ctx, serviceConfig.Path()); err != nil {
+
+	env, err := serviceConfig.ExpandEnv(m.env.Getenv)
+	if err != nil {
+		return nil, fmt.Errorf("getting service environment variables: %w", err)
+	}
+
+	if err := m.mavenCli.ResolveDependencies(ctx, serviceConfig.Path(), env); err != nil {
 		return nil, fmt.Errorf("resolving maven dependencies: %w", err)
 	}
 
@@ -98,7 +104,13 @@ func (m *mavenProject) Build(
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceBuildResult, error) {
 	progress.SetProgress(NewServiceProgress("Compiling maven project"))
-	if err := m.mavenCli.Compile(ctx, serviceConfig.Path()); err != nil {
+
+	env, err := serviceConfig.ExpandEnv(m.env.Getenv)
+	if err != nil {
+		return nil, fmt.Errorf("getting service environment variables: %w", err)
+	}
+
+	if err := m.mavenCli.Compile(ctx, serviceConfig.Path(), env); err != nil {
 		return nil, err
 	}
 	// Create build artifact for maven compile output
@@ -125,7 +137,13 @@ func (m *mavenProject) Package(
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
 	progress.SetProgress(NewServiceProgress("Packaging maven project"))
-	if err := m.mavenCli.Package(ctx, serviceConfig.Path()); err != nil {
+
+	env, err := serviceConfig.ExpandEnv(m.env.Getenv)
+	if err != nil {
+		return nil, fmt.Errorf("getting service environment variables: %w", err)
+	}
+
+	if err := m.mavenCli.Package(ctx, serviceConfig.Path(), env); err != nil {
 		return nil, err
 	}
 

@@ -79,8 +79,14 @@ func (pp *pythonProject) Restore(
 		}
 	}
 
+	// Expand service environment variables
+	envVars, err := serviceConfig.ExpandEnv(pp.env.Getenv)
+	if err != nil {
+		return nil, fmt.Errorf("expanding service environment variables: %w", err)
+	}
+
 	progress.SetProgress(NewServiceProgress("Installing Python PIP dependencies"))
-	err = pp.cli.InstallRequirements(ctx, serviceConfig.Path(), vEnvName, "requirements.txt")
+	err = pp.cli.InstallRequirements(ctx, serviceConfig.Path(), vEnvName, "requirements.txt", envVars)
 	if err != nil {
 		return nil, fmt.Errorf("requirements for project '%s' could not be installed: %w", serviceConfig.Path(), err)
 	}

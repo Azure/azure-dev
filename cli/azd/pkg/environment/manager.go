@@ -413,9 +413,6 @@ func (m *manager) Get(ctx context.Context, name string) (*Environment, error) {
 
 	// Check cache first
 	cached, err := m.getFromCache(ctx, name)
-
-	// Check cache first
-	cached, err := m.getFromCache(ctx, name)
 	if err != nil {
 		return nil, err
 	}

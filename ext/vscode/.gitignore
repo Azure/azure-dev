@@ -110,3 +110,6 @@ node_modules
 package.nls.*.json
 *.vsix
 *.zip
+
+# Source maps
+*.js.map

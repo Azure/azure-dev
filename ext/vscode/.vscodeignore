@@ -1,8 +1,11 @@
 .azure-pipelines
 .eslintignore
 eslint.config.mjs
+.github/**
 .vscode/**
 .vscode-test/**
+FEATURE_IDEAS.md
+TESTING_GUIDE.md
 node_modules/**
 !node_modules/vscode-nls
 out/**

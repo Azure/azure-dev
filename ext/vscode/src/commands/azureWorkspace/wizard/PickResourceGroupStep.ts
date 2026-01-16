@@ -7,6 +7,7 @@ import { AzureDevShowProvider, WorkspaceAzureDevShowProvider } from '../../../se
 import { parseAzureResourceId } from '../../../utils/parseAzureResourceId';
 import { RevealWizardContext } from './PickEnvironmentStep';
 import { SkipIfOneStep } from './SkipIfOneStep';
+import ext from '../../../ext';
 
 const resourceGroupType = 'Microsoft.Resources/resourceGroups';
 
@@ -20,7 +21,7 @@ export class PickResourceGroupStep extends SkipIfOneStep<RevealResourceGroupWiza
     ) {
         super(
             vscode.l10n.t('Select a resource group'),
-            vscode.l10n.t('No resource groups found')
+            vscode.l10n.t('No resource groups found for the selected environment')
         );
     }
 
@@ -33,7 +34,8 @@ export class PickResourceGroupStep extends SkipIfOneStep<RevealResourceGroupWiza
     }
 
     protected override async getPicks(context: RevealResourceGroupWizardContext): Promise<IAzureQuickPickItem<string>[]> {
-        const showResults = await this.showProvider.getShowResults(context, context.configurationFile, context.environment);
+        try {
+            const showResults = await this.showProvider.getShowResults(context, context.configurationFile, context.environment);
 
         if (!showResults?.services && !showResults?.resources) {
             return [];
@@ -75,6 +77,10 @@ export class PickResourceGroupStep extends SkipIfOneStep<RevealResourceGroupWiza
                     data: resourceGroupId
                 };
             });
+        }
+        } catch (error) {
+            ext.outputChannel.appendLog(vscode.l10n.t('Failed to get resource groups: {0}', error instanceof Error ? error.message : String(error)));
+            throw error;
         }
     }
 }

@@ -228,6 +228,33 @@ func (m *Manager) GetInstalled(options FilterOptions) (*Extension, error) {
 	return nil, ErrInstalledExtensionNotFound
 }
 
+// UpdateInstalled updates an installed extension's metadata in the config
+func (m *Manager) UpdateInstalled(extension *Extension) error {
+	extensions, err := m.ListInstalled()
+	if err != nil {
+		return fmt.Errorf("failed to list installed extensions: %w", err)
+	}
+
+	if _, exists := extensions[extension.Id]; !exists {
+		return ErrInstalledExtensionNotFound
+	}
+
+	extensions[extension.Id] = extension
+
+	if err := m.userConfig.Set(installedConfigKey, extensions); err != nil {
+		return fmt.Errorf("failed to set extensions section: %w", err)
+	}
+
+	if err := m.configManager.Save(m.userConfig); err != nil {
+		return fmt.Errorf("failed to save user config: %w", err)
+	}
+
+	// Invalidate cache so subsequent calls reflect the updated extension
+	m.installed = nil
+
+	return nil
+}
+
 func (m *Manager) FindExtensions(ctx context.Context, options *FilterOptions) ([]*ExtensionMetadata, error) {
 	allExtensions := []*ExtensionMetadata{}
 

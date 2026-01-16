@@ -345,6 +345,9 @@ type EnsureSubscriptionAndLocationOptions struct {
 	LocationFiler prompt.LocationFilterPredicate
 	// SelectDefaultLocation is the default location that azd mark as selected when prompting the user for the location.
 	SelectDefaultLocation *string
+	// ResourceTypes filters locations by resource type availability. Only locations that support ALL specified
+	// resource types are displayed.
+	ResourceTypes []string
 }
 
 // EnsureSubscriptionAndLocation ensures that that that subscription (AZURE_SUBSCRIPTION_ID) and location (AZURE_LOCATION)
@@ -377,13 +380,29 @@ func EnsureSubscriptionAndLocation(
 
 	location := env.GetLocation()
 	if env.GetLocation() == "" {
-		loc, err := prompter.PromptLocation(
-			ctx,
-			env.GetSubscriptionId(),
-			"Select an Azure location to use:",
-			options.LocationFiler,
-			options.SelectDefaultLocation,
-		)
+		var loc string
+		var err error
+
+		// Use resource type filtering if provided
+		if len(options.ResourceTypes) > 0 {
+			loc, err = prompter.PromptLocationWithResourceTypes(
+				ctx,
+				env.GetSubscriptionId(),
+				"Select an Azure location to use:",
+				options.LocationFiler,
+				options.SelectDefaultLocation,
+				options.ResourceTypes,
+			)
+		} else {
+			loc, err = prompter.PromptLocation(
+				ctx,
+				env.GetSubscriptionId(),
+				"Select an Azure location to use:",
+				options.LocationFiler,
+				options.SelectDefaultLocation,
+			)
+		}
+
 		if err != nil {
 			return err
 		}

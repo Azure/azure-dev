@@ -34,6 +34,13 @@ type Prompter interface {
 		msg string,
 		filter LocationFilterPredicate,
 		defaultLocation *string) (string, error)
+	PromptLocationWithResourceTypes(
+		ctx context.Context,
+		subId string,
+		msg string,
+		filter LocationFilterPredicate,
+		defaultLocation *string,
+		resourceTypes []string) (string, error)
 
 	// PromptResourceGroup prompts for an existing or optionally a new resource group.
 	// A location saved as AZURE_LOCATION is also prompted as part of creating a new resource group.
@@ -114,6 +121,29 @@ func (p *DefaultPrompter) PromptLocation(
 	defaultLocation *string,
 ) (string, error) {
 	loc, err := azureutil.PromptLocationWithFilter(ctx, subId, msg, "", p.console, p.accountManager, filter, defaultLocation)
+	if err != nil {
+		return "", err
+	}
+
+	if !p.accountManager.HasDefaultLocation() {
+		if _, err := p.accountManager.SetDefaultLocation(ctx, subId, loc); err != nil {
+			log.Printf("failed setting default location. %v\n", err)
+		}
+	}
+
+	return loc, nil
+}
+
+func (p *DefaultPrompter) PromptLocationWithResourceTypes(
+	ctx context.Context,
+	subId string,
+	msg string,
+	filter LocationFilterPredicate,
+	defaultLocation *string,
+	resourceTypes []string,
+) (string, error) {
+	loc, err := azureutil.PromptLocationWithResourceTypeFilter(
+		ctx, subId, msg, "", p.console, p.accountManager, filter, defaultLocation, resourceTypes)
 	if err != nil {
 		return "", err
 	}

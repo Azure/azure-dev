@@ -18,7 +18,7 @@ const (
 	EnvAzureOpenAIProjectName = "AZURE_PROJECT_NAME"
 	EnvAPIVersion             = "AZURE_API_VERSION"
 	EnvFinetuningRoute        = "AZURE_FINETUNING_ROUTE"
-	EnvFinetuningTokenScope  = "AZURE_FINETUNING_TOKEN_SCOPE"
+	EnvFinetuningTokenScope   = "AZURE_FINETUNING_TOKEN_SCOPE"
 )
 
 // GetEnvironmentValues retrieves Azure environment configuration from azd client.

@@ -37,6 +37,7 @@ type Manager interface {
 	GetSubscriptions(ctx context.Context) ([]Subscription, error)
 	GetSubscriptionsWithDefaultSet(ctx context.Context) ([]Subscription, error)
 	GetLocations(ctx context.Context, subscriptionId string) ([]Location, error)
+	GetLocationsWithFilter(ctx context.Context, subscriptionId string, resourceTypes []string) ([]Location, error)
 	SetDefaultSubscription(ctx context.Context, subscriptionId string) (*Subscription, error)
 	SetDefaultLocation(ctx context.Context, subscriptionId string, location string) (*Location, error)
 }
@@ -145,6 +146,21 @@ func (m *manager) GetLocations(ctx context.Context, subscriptionId string) ([]Lo
 	locations, err := m.subManager.ListLocations(ctx, subscriptionId)
 	if err != nil {
 		return nil, fmt.Errorf("failed retrieving Azure location for account '%s': %w", subscriptionId, err)
+	}
+
+	return locations, nil
+}
+
+// GetLocationsWithFilter gets the available Azure locations for the specified Azure subscription,
+// filtered by resource type availability. Only locations that support ALL specified resource types are returned.
+func (m *manager) GetLocationsWithFilter(
+	ctx context.Context,
+	subscriptionId string,
+	resourceTypes []string,
+) ([]Location, error) {
+	locations, err := m.subManager.ListLocationsWithFilter(ctx, subscriptionId, resourceTypes)
+	if err != nil {
+		return nil, fmt.Errorf("failed retrieving Azure locations for account '%s': %w", subscriptionId, err)
 	}
 
 	return locations, nil

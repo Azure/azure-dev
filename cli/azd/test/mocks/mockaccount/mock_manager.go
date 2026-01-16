@@ -72,6 +72,16 @@ func (a *MockAccountManager) GetLocations(ctx context.Context, subscriptionId st
 	return a.Locations, nil
 }
 
+func (a *MockAccountManager) GetLocationsWithFilter(
+	ctx context.Context,
+	subscriptionId string,
+	resourceTypes []string,
+) ([]account.Location, error) {
+	// For mock purposes, just return all locations
+	// In a real implementation with more complex testing, this could filter based on resourceTypes
+	return a.Locations, nil
+}
+
 func (a *MockAccountManager) SetDefaultSubscription(
 	ctx context.Context, subscriptionId string) (*account.Subscription, error) {
 	a.DefaultSubscription = subscriptionId

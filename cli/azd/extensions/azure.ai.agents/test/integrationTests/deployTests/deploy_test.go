@@ -18,6 +18,7 @@ import (
 
 	"azureaiagent/test/integrationTests/testUtilities"
 
+	"github.com/sethvargo/go-retry"
 	"github.com/stretchr/testify/require"
 )
 
@@ -106,47 +107,66 @@ func TestDeployCommand_Integration(t *testing.T) {
 			}
 
 			// Wait for agent service to be fully ready after deployment
-			testUtilities.Logf("Waiting 30 seconds for agent service to initialize...")
-			time.Sleep(30 * time.Second)
+			testUtilities.Logf("Waiting for agent service to initialize...")
 
-			// Verify deployment was successful
-			verifyAgentDeployment(t, tt.agentName, agentVersion)
+			// Verify deployment was successful with retries
+			err = retry.Do(
+				context.Background(),
+				retry.WithMaxRetries(5, retry.NewConstant(30*time.Second)),
+				func(_ context.Context) error {
+					return verifyAgentDeploymentWithError(t, tt.agentName, agentVersion)
+				},
+			)
+			require.NoError(t, err, "Failed to verify agent deployment after retries")
 			testUtilities.Logf("Test completed successfully")
 		})
 	}
 }
 
-// verifyAgentDeployment checks that the agent was deployed successfully by making API calls
-func verifyAgentDeployment(t *testing.T, agentName string, agentVersion string) {
+// verifyAgentDeploymentWithError checks that the agent was deployed successfully and returns an error instead of failing the test
+func verifyAgentDeploymentWithError(t *testing.T, agentName string, agentVersion string) error {
 	t.Helper()
 	testUtilities.Logf("Verifying deployment for %s (version: %s)...", agentName, agentVersion)
 
 	// Get required environment variables from azd environment
 	endpoint, err := deployTestSuite.GetAzdEnvValue("AZURE_AI_PROJECT_ENDPOINT")
-	require.NoError(t, err, "Failed to get AZURE_AI_PROJECT_ENDPOINT")
-	require.NotEmpty(t, endpoint, "AZURE_AI_PROJECT_ENDPOINT should be set")
+	if err != nil {
+		return fmt.Errorf("failed to get AZURE_AI_PROJECT_ENDPOINT: %w", err)
+	}
+	if endpoint == "" {
+		return fmt.Errorf("AZURE_AI_PROJECT_ENDPOINT should be set")
+	}
 	testUtilities.Logf("Using endpoint: %s", endpoint)
 
 	apiVersion := getEnvOrDefault("AGENT_API_VERSION", "2025-05-15-preview")
 	// Agent version is required - fail if not provided
-	require.NotEmpty(t, agentVersion, "Agent version should be parsed from deploy command output")
+	if agentVersion == "" {
+		return fmt.Errorf("agent version should be parsed from deploy command output")
+	}
 	testMessage := getEnvOrDefault("AGENT_TEST_MESSAGE", "What is 2 + 2?")
 
 	// Get Azure access token
 	token, err := getAzureAccessToken(t)
-	require.NoError(t, err, "Failed to get Azure access token")
+	if err != nil {
+		return retry.RetryableError(fmt.Errorf("failed to get Azure access token: %w", err))
+	}
 	testUtilities.Logf("Successfully obtained Azure access token")
 
 	// Step 1: Create a conversation
 	conversationID, err := createConversation(t, endpoint, apiVersion, token)
-	require.NoError(t, err, "Failed to create conversation")
+	if err != nil {
+		return retry.RetryableError(fmt.Errorf("failed to create conversation: %w", err))
+	}
 	testUtilities.Logf("Created conversation with ID: %s", conversationID)
 
 	// Step 2: Get response from agent
 	err = testAgentResponse(t, endpoint, apiVersion, token, agentName, agentVersion, testMessage)
-	require.NoError(t, err, "Failed to get valid response from agent")
+	if err != nil {
+		return retry.RetryableError(fmt.Errorf("failed to get valid response from agent: %w", err))
+	}
 
 	testUtilities.Logf("Deployment verification completed successfully")
+	return nil
 }
 
 // getEnvOrDefault gets an environment variable or returns a default value

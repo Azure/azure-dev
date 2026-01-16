@@ -17,11 +17,17 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// ErrDebuggerAborted is returned when the user declines to attach a debugger.
+var ErrDebuggerAborted = errors.New("debugger attach aborted")
+
 // WaitForDebugger checks if AZD_EXT_DEBUG environment variable is set to a truthy value.
 // If set, prompts the user to attach a debugger to the current process.
 // This should be called at the start of extension command implementations to enable debugging.
+//
 // Returns nil if debugging is not enabled or if user confirms.
-// Returns an error if user declines or cancels the prompt, or if the context is cancelled.
+//
+// Returns [ErrDebuggerAborted] if the user declines to attach a debugger.
+// Returns [context.Canceled] if the user cancels the prompt (e.g., via Ctrl+C).
 func WaitForDebugger(ctx context.Context, azdClient *AzdClient) error {
 	debugValue := os.Getenv("AZD_EXT_DEBUG")
 	if debugValue == "" {
@@ -53,7 +59,7 @@ func WaitForDebugger(ctx context.Context, azdClient *AzdClient) error {
 
 	// If user selected 'N', abort
 	if !response.GetValue() {
-		return errors.New("debugger attach aborted")
+		return ErrDebuggerAborted
 	}
 
 	return nil

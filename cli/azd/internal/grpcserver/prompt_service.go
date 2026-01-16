@@ -449,14 +449,21 @@ func convertToInt(input *int32) *int {
 	return &value        // Return the address of the new int value
 }
 
+// promptLock is a context-aware mutual exclusion mechanism for serializing interactive prompts.
+// It prevents concurrent prompt access which could cause prompts to freeze up when multiple
+// extensions with "listen" capability are installed and running simultaneously.
 type promptLock struct {
 	ch chan struct{}
 }
 
+// newPromptLock creates a new promptLock instance.
 func newPromptLock() *promptLock {
 	return &promptLock{ch: make(chan struct{}, 1)}
 }
 
+// acquirePromptLock acquires the prompt lock, blocking until available or context is cancelled.
+// Returns a release function that must be called to release the lock (typically via defer).
+// Returns an error if the context is cancelled while waiting for the lock.
 func (s *promptService) acquirePromptLock(ctx context.Context) (func(), error) {
 	select {
 	case s.lock.ch <- struct{}{}:

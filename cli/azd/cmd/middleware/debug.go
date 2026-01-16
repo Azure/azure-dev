@@ -17,6 +17,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 )
 
+// ErrDebuggerAborted is returned when the user declines to attach a debugger.
+var ErrDebuggerAborted = errors.New("debugger attach aborted")
+
 // Adds support to easily debug and attach a debugger to AZD for development purposes
 type DebugMiddleware struct {
 	options *Options
@@ -77,7 +80,7 @@ func (m *DebugMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 	// If user selected 'N', abort
 	if !isReady {
-		return nil, errors.New("debugger attach aborted")
+		return nil, ErrDebuggerAborted
 	}
 
 	return next(ctx)

@@ -27,6 +27,7 @@ Select a specific `azd` version [here](https://github.com/Azure/azure-dev/releas
 | Options Id | Description | Type | Default Value |
 |-----|-----|-----|-----|
 | version | Select or enter an Azure Developer CLI version. (Available versions may vary by Linux distribution.) | string | stable |
+| extensions | Comma-separated list of Azure Developer CLI extensions to install. | string | (empty) |
 
 ## Customizations
 

@@ -142,6 +142,13 @@ func runInitAction(ctx context.Context, flags *initFlags) error {
 
 	defer azdClient.Close()
 
+	if err := azdext.WaitForDebugger(ctx, azdClient); err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, azdext.ErrDebuggerAborted) {
+			return nil
+		}
+		return fmt.Errorf("failed waiting for debugger: %w", err)
+	}
+
 	var extensionMetadata *models.ExtensionSchema
 	if flags.noPrompt {
 		// In headless mode, use the provided command-line arguments

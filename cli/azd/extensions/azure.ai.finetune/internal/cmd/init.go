@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -80,6 +81,14 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 				return fmt.Errorf("failed to create azd client: %w", err)
 			}
 			defer azdClient.Close()
+
+			// Wait for debugger if AZD_EXT_DEBUG is set
+			if err := azdext.WaitForDebugger(ctx, azdClient); err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, azdext.ErrDebuggerAborted) {
+					return nil
+				}
+				return fmt.Errorf("failed waiting for debugger: %w", err)
+			}
 
 			azureContext, projectConfig, environment, err := ensureAzureContext(ctx, flags, azdClient)
 			if err != nil {

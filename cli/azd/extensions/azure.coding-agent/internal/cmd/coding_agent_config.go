@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -150,6 +151,14 @@ func runConfigCommand(cmd *cobra.Command, flagValues *flagValues) error {
 	}
 
 	defer azdClient.Close()
+
+	// Wait for debugger if AZD_EXT_DEBUG is set
+	if err := azdext.WaitForDebugger(ctx, azdClient); err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, azdext.ErrDebuggerAborted) {
+			return nil
+		}
+		return fmt.Errorf("failed waiting for debugger: %w", err)
+	}
 
 	promptClient := azdClient.Prompt()
 

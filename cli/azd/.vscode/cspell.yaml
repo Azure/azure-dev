@@ -136,6 +136,10 @@ overrides:
     words:
       - GUNICORN
       - MULTIWORKERS
+  - filename: pkg/extensions/command_resolver.go
+    words:
+      - intarray
+      - stringarray
   - filename: CHANGELOG.md
     words:
       - aistudio

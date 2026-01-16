@@ -126,6 +126,9 @@ func generateArgs(cmd *cobra.Command) []extensions.Argument {
 
 // generateFlags generates Flag metadata from Cobra command flags
 func generateFlags(cmd *cobra.Command) []extensions.Flag {
+	// Ensure the default help flag is initialized (Cobra adds it lazily during execution)
+	cmd.InitDefaultHelpFlag()
+
 	var flags []extensions.Flag
 
 	cmd.Flags().VisitAll(func(flag *pflag.Flag) {

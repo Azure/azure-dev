@@ -16,6 +16,7 @@ Available Commands
   list      	: List environments.
   new       	: Create a new environment and set it as the default.
   refresh   	: Refresh environment values by using information from a previous infrastructure provision.
+  remove    	: Remove an environment.
   select    	: Set the default environment.
   set       	: Set one or more environment values.
   set-secret	: Set a name as a reference to a Key Vault secret in the environment.

@@ -612,6 +612,29 @@ const completionSpec: Fig.Spec = {
 					},
 				},
 				{
+					name: ['remove', 'rm'],
+					description: 'Remove an environment.',
+					options: [
+						{
+							name: ['--environment', '-e'],
+							description: 'The name of the environment to use.',
+							args: [
+							{
+								name: 'environment',
+							},
+							],
+						},
+						{
+							name: ['--force'],
+							description: 'Skips confirmation before performing removal.',
+							isDangerous: true,
+						},
+					],
+					args: {
+						name: 'environment',
+					},
+				},
+				{
 					name: ['select'],
 					description: 'Set the default environment.',
 					args: {
@@ -1752,6 +1775,10 @@ const completionSpec: Fig.Spec = {
 						{
 							name: ['refresh'],
 							description: 'Refresh environment values by using information from a previous infrastructure provision.',
+						},
+						{
+							name: ['remove', 'rm'],
+							description: 'Remove an environment.',
 						},
 						{
 							name: ['select'],

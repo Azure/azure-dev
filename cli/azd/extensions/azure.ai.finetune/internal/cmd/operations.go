@@ -30,7 +30,9 @@ func newOperationCommand() *cobra.Command {
 	cmd.AddCommand(newOperationSubmitCommand())
 	cmd.AddCommand(newOperationShowCommand())
 	cmd.AddCommand(newOperationListCommand())
-	// cmd.AddCommand(newOperationActionCommand())
+	cmd.AddCommand(newOperationPauseCommand())
+	cmd.AddCommand(newOperationResumeCommand())
+	cmd.AddCommand(newOperationCancelCommand())
 	// cmd.AddCommand(newOperationDeployModelCommand())
 
 	return cmd
@@ -296,5 +298,182 @@ func newOperationListCommand() *cobra.Command {
 	cmd.Flags().IntVarP(&limit, "top", "t", 10, "Number of jobs to return")
 	cmd.Flags().StringVar(&after, "after", "", "Pagination cursor")
 	cmd.Flags().StringVarP(&output, "output", "o", "table", "Output format: table, json")
+	return cmd
+}
+
+// newOperationPauseCommand creates a command to pause a running fine-tuning job
+func newOperationPauseCommand() *cobra.Command {
+	var jobID string
+
+	cmd := &cobra.Command{
+		Use:   "pause",
+		Short: "Pauses a running fine-tuning job.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := azdext.WithAccessToken(cmd.Context())
+			azdClient, err := azdext.NewAzdClient()
+			if err != nil {
+				return fmt.Errorf("failed to create azd client: %w", err)
+			}
+			defer azdClient.Close()
+
+			// Show spinner while pausing job
+			spinner := ux.NewSpinner(&ux.SpinnerOptions{
+				Text: "Pausing fine-tuning job...",
+			})
+			if err := spinner.Start(ctx); err != nil {
+				fmt.Printf("failed to start spinner: %v\n", err)
+			}
+
+			fineTuneSvc, err := services.NewFineTuningService(ctx, azdClient, nil)
+			if err != nil {
+				_ = spinner.Stop(ctx)
+				fmt.Println()
+				return err
+			}
+
+			job, err := fineTuneSvc.PauseJob(ctx, jobID)
+			_ = spinner.Stop(ctx)
+			fmt.Println()
+
+			if err != nil {
+				return err
+			}
+
+			// Print success message
+			fmt.Println("✓ Job pause request submitted successfully")
+			fmt.Println()
+			fmt.Printf("  Job ID:  %s\n", job.ID)
+			fmt.Printf("  Status:  %s\n", job.Status)
+			fmt.Println()
+			fmt.Printf("Resume with: azd ai finetune jobs resume --id %s\n", job.ID)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVarP(&jobID, "id", "i", "", "Job ID")
+	cmd.MarkFlagRequired("id")
+
+	return cmd
+}
+
+// newOperationResumeCommand creates a command to resume a paused fine-tuning job
+func newOperationResumeCommand() *cobra.Command {
+	var jobID string
+
+	cmd := &cobra.Command{
+		Use:   "resume",
+		Short: "Resumes a paused fine-tuning job.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := azdext.WithAccessToken(cmd.Context())
+			azdClient, err := azdext.NewAzdClient()
+			if err != nil {
+				return fmt.Errorf("failed to create azd client: %w", err)
+			}
+			defer azdClient.Close()
+
+			// Show spinner while resuming job
+			spinner := ux.NewSpinner(&ux.SpinnerOptions{
+				Text: "Resuming fine-tuning job...",
+			})
+			if err := spinner.Start(ctx); err != nil {
+				fmt.Printf("failed to start spinner: %v\n", err)
+			}
+
+			fineTuneSvc, err := services.NewFineTuningService(ctx, azdClient, nil)
+			if err != nil {
+				_ = spinner.Stop(ctx)
+				fmt.Println()
+				return err
+			}
+
+			job, err := fineTuneSvc.ResumeJob(ctx, jobID)
+			_ = spinner.Stop(ctx)
+			fmt.Println()
+
+			if err != nil {
+				return err
+			}
+
+			// Print success message
+			fmt.Println("✓ Job resume request submitted successfully")
+			fmt.Println()
+			fmt.Printf("  Job ID:  %s\n", job.ID)
+			fmt.Printf("  Status:  %s\n", job.Status)
+			fmt.Println()
+			fmt.Printf("View progress: azd ai finetune jobs show --id %s\n", job.ID)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVarP(&jobID, "id", "i", "", "Job ID")
+	cmd.MarkFlagRequired("id")
+
+	return cmd
+}
+
+// newOperationCancelCommand creates a command to cancel a fine-tuning job
+func newOperationCancelCommand() *cobra.Command {
+	var jobID string
+	var force bool
+
+	cmd := &cobra.Command{
+		Use:   "cancel",
+		Short: "Cancels a running or queued fine-tuning job.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := azdext.WithAccessToken(cmd.Context())
+			azdClient, err := azdext.NewAzdClient()
+			if err != nil {
+				return fmt.Errorf("failed to create azd client: %w", err)
+			}
+			defer azdClient.Close()
+
+			// Prompt for confirmation unless --force is specified
+			if !force {
+				fmt.Printf("Cancel fine-tuning job %s? (y/N): ", jobID)
+				var response string
+				fmt.Scanln(&response)
+				response = strings.ToLower(strings.TrimSpace(response))
+				if response != "y" && response != "yes" {
+					fmt.Println("Operation aborted.")
+					return nil
+				}
+			}
+
+			// Show spinner while canceling job
+			spinner := ux.NewSpinner(&ux.SpinnerOptions{
+				Text: "Cancelling fine-tuning job...",
+			})
+			if err := spinner.Start(ctx); err != nil {
+				fmt.Printf("failed to start spinner: %v\n", err)
+			}
+
+			fineTuneSvc, err := services.NewFineTuningService(ctx, azdClient, nil)
+			if err != nil {
+				_ = spinner.Stop(ctx)
+				fmt.Println()
+				return err
+			}
+
+			job, err := fineTuneSvc.CancelJob(ctx, jobID)
+			_ = spinner.Stop(ctx)
+			fmt.Println()
+
+			if err != nil {
+				return err
+			}
+
+			// Print success message
+			fmt.Println("✓ Job cancel request submitted successfully")
+			fmt.Println()
+			fmt.Printf("  Job ID:  %s\n", job.ID)
+			fmt.Printf("  Status:  %s\n", job.Status)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVarP(&jobID, "id", "i", "", "Job ID")
+	cmd.Flags().BoolVar(&force, "force", false, "Skip confirmation prompt")
+	cmd.MarkFlagRequired("id")
+
 	return cmd
 }

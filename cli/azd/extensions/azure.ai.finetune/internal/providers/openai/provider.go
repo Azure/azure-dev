@@ -114,20 +114,38 @@ func (p *OpenAIProvider) GetJobCheckpoints(ctx context.Context, jobID string) (*
 
 // PauseJob pauses a fine-tuning job
 func (p *OpenAIProvider) PauseJob(ctx context.Context, jobID string) (*models.FineTuningJob, error) {
-	// TODO: Implement
-	return nil, nil
+	job, err := p.client.FineTuning.Jobs.Pause(ctx, jobID)
+	if err != nil {
+		return nil, err
+	}
+
+	finetuningJob := convertOpenAIJobToModel(*job)
+
+	return finetuningJob, nil
 }
 
 // ResumeJob resumes a paused fine-tuning job
 func (p *OpenAIProvider) ResumeJob(ctx context.Context, jobID string) (*models.FineTuningJob, error) {
-	// TODO: Implement
-	return nil, nil
+	job, err := p.client.FineTuning.Jobs.Resume(ctx, jobID)
+	if err != nil {
+		return nil, err
+	}
+
+	finetuningJob := convertOpenAIJobToModel(*job)
+
+	return finetuningJob, nil
 }
 
 // CancelJob cancels a fine-tuning job
 func (p *OpenAIProvider) CancelJob(ctx context.Context, jobID string) (*models.FineTuningJob, error) {
-	// TODO: Implement
-	return nil, nil
+	job, err := p.client.FineTuning.Jobs.Cancel(ctx, jobID)
+	if err != nil {
+		return nil, err
+	}
+
+	finetuningJob := convertOpenAIJobToModel(*job)
+
+	return finetuningJob, nil
 }
 
 // UploadFile uploads a file for fine-tuning

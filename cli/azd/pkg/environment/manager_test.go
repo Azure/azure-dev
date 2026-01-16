@@ -300,7 +300,7 @@ func Test_EnvManager_Get(t *testing.T) {
 			require.Error(t, err, "Should error for invalid name: %s", invalidName)
 			require.Nil(t, env)
 			require.Contains(t, err.Error(), "invalid")
-			require.Contains(t, err.Error(), "Valid names can only contain")
+			require.Contains(t, err.Error(), "alphanumeric")
 		}
 
 		// localDataStore.Get should never be called for invalid names

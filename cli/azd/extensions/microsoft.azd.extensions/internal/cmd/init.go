@@ -496,8 +496,16 @@ func collectExtensionMetadata(ctx context.Context, azdClient *azdext.AzdClient) 
 					Value: "custom-commands",
 				},
 				{
+					Label: "Framework Service Provider",
+					Value: "framework-service-provider",
+				},
+				{
 					Label: "Lifecycle Events",
 					Value: "lifecycle-events",
+				},
+				{
+					Label: "Metadata",
+					Value: "metadata",
 				},
 				{
 					Label: "MCP Server",

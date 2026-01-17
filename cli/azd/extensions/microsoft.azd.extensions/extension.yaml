@@ -8,6 +8,7 @@ usage: azd x <command> [options]
 version: 0.8.0
 capabilities:
   - custom-commands
+  - metadata
 examples:
   - name: init
     description: Initialize a new AZD extension project.

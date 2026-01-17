@@ -135,7 +135,8 @@ func (m Manager) GetDefaultModel(ctx context.Context, opts ...ModelOption) (*Mod
 
 	defaultModelType, ok := userConfig.GetString("ai.agent.model.type")
 	if !ok {
-		return nil, fmt.Errorf("Default model type has not been set")
+		return nil, fmt.Errorf("Default model type has not been set. Set the agent model type with" +
+			" `azd config set ai.agent.model.type github-copilot`.")
 	}
 
 	return m.ModelFactory.CreateModelContainer(ctx, LlmType(defaultModelType), opts...)

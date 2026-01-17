@@ -12,6 +12,7 @@ capabilities:
   - lifecycle-events
   - mcp-server
   - service-target-provider
+  - metadata
 providers:
   - name: azure.ai.agent
     type: service-target

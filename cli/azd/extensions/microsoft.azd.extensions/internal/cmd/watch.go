@@ -5,12 +5,14 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/fatih/color"
 	"github.com/fsnotify/fsnotify"
@@ -45,6 +47,24 @@ func newWatchCommand() *cobra.Command {
 }
 
 func runWatchAction(ctx context.Context, flags *watchFlags) error {
+	// Create a new context that includes the AZD access token
+	ctx = azdext.WithAccessToken(ctx)
+
+	// Create a new AZD client
+	azdClient, err := azdext.NewAzdClient()
+	if err != nil {
+		return fmt.Errorf("failed to create azd client: %w", err)
+	}
+
+	defer azdClient.Close()
+
+	if err := azdext.WaitForDebugger(ctx, azdClient); err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, azdext.ErrDebuggerAborted) {
+			return nil
+		}
+		return fmt.Errorf("failed waiting for debugger: %w", err)
+	}
+
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return fmt.Errorf("Error creating watcher: %w", err)

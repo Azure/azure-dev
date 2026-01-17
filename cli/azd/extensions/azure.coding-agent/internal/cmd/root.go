@@ -23,6 +23,7 @@ func NewRootCommand() *cobra.Command {
 
 	rootCmd.AddCommand(newConfigCommand())
 	rootCmd.AddCommand(newVersionCommand())
+	rootCmd.AddCommand(newMetadataCommand())
 
 	return rootCmd
 }

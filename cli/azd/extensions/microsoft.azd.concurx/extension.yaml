@@ -1,5 +1,6 @@
 capabilities:
     - custom-commands
+    - metadata
 description: Concurrent execution for azd deployment
 displayName: Concurx
 id: microsoft.azd.concurx

@@ -46,6 +46,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newReleaseCommand())
 	rootCmd.AddCommand(newPublishCommand())
 	rootCmd.AddCommand(newVersionCommand())
+	rootCmd.AddCommand(newMetadataCommand())
 
 	rootCmd.PersistentFlags().StringVar(
 		&flags.cwd,

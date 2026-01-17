@@ -4,6 +4,8 @@
 package cmd
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -59,6 +61,14 @@ func newOperationSubmitCommand() *cobra.Command {
 				return fmt.Errorf("failed to create azd client: %w", err)
 			}
 			defer azdClient.Close()
+
+			// Wait for debugger if AZD_EXT_DEBUG is set
+			if err := azdext.WaitForDebugger(ctx, azdClient); err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, azdext.ErrDebuggerAborted) {
+					return nil
+				}
+				return fmt.Errorf("failed waiting for debugger: %w", err)
+			}
 
 			// Show spinner while creating job
 			spinner := ux.NewSpinner(&ux.SpinnerOptions{
@@ -162,6 +172,14 @@ func newOperationShowCommand() *cobra.Command {
 			}
 			defer azdClient.Close()
 
+			// Wait for debugger if AZD_EXT_DEBUG is set
+			if err := azdext.WaitForDebugger(ctx, azdClient); err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, azdext.ErrDebuggerAborted) {
+					return nil
+				}
+				return fmt.Errorf("failed waiting for debugger: %w", err)
+			}
+
 			// Show spinner while fetching job
 			spinner := ux.NewSpinner(&ux.SpinnerOptions{
 				Text: "Fine-Tuning Job Details",
@@ -259,6 +277,14 @@ func newOperationListCommand() *cobra.Command {
 				return fmt.Errorf("failed to create azd client: %w", err)
 			}
 			defer azdClient.Close()
+
+			// Wait for debugger if AZD_EXT_DEBUG is set
+			if err := azdext.WaitForDebugger(ctx, azdClient); err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, azdext.ErrDebuggerAborted) {
+					return nil
+				}
+				return fmt.Errorf("failed waiting for debugger: %w", err)
+			}
 
 			// Show spinner while fetching jobs
 			spinner := ux.NewSpinner(&ux.SpinnerOptions{

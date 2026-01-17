@@ -1,5 +1,11 @@
 # Release History
 
+## 0.9.0 (2026-01-22)
+
+- [[#6541]](https://github.com/Azure/azure-dev/pull/6541) Add metadata capability
+- [[#6541]](https://github.com/Azure/azure-dev/pull/6541) Support `AZD_EXT_DEBUG=true` for debugging
+- [[#6541]](https://github.com/Azure/azure-dev/pull/6541) Add missing capabilities to `init` command and update Go scaffolding
+
 ## 0.8.0 (2026-01-08)
 
 - [[#6474]](https://github.com/Azure/azure-dev/pull/6474) Remove Default Azure Credential from JS and Python scaffolding

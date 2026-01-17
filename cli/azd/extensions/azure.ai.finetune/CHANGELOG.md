@@ -1,5 +1,10 @@
 # Release History
 
+## 0.0.11-preview (2026-01-22)
+
+- Add metadata capability
+- Support `AZD_EXT_DEBUG=true` for debugging
+
 ## 0.0.10-preview (2026-01-21)
 
 - Bug fixes

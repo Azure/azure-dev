@@ -50,7 +50,7 @@ type FineTuningProvider interface {
 // All providers must implement this interface for deployment functionality
 type ModelDeploymentProvider interface {
 	// DeployModel deploys a fine-tuned or base model
-	DeployModel(ctx context.Context, req *models.DeploymentRequest) (*models.Deployment, error)
+	DeployModel(ctx context.Context, req *models.DeploymentRequest) (*models.DeployModelResult, error)
 
 	// GetDeploymentStatus retrieves the status of a deployment
 	GetDeploymentStatus(ctx context.Context, deploymentID string) (*models.Deployment, error)

@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 
+	"azure.ai.finetune/internal/providers/factory"
 	"azure.ai.finetune/internal/services"
 	"azure.ai.finetune/internal/utils"
 	"azure.ai.finetune/pkg/models"
@@ -31,7 +33,7 @@ func newOperationCommand() *cobra.Command {
 	cmd.AddCommand(newOperationShowCommand())
 	cmd.AddCommand(newOperationListCommand())
 	// cmd.AddCommand(newOperationActionCommand())
-	// cmd.AddCommand(newOperationDeployModelCommand())
+	cmd.AddCommand(newOperationDeployModelCommand())
 
 	return cmd
 }
@@ -333,5 +335,140 @@ func newOperationListCommand() *cobra.Command {
 
 	cmd.Flags().IntVarP(&limit, "top", "t", 50, "Number of fine-tuning jobs to list")
 	cmd.Flags().StringVarP(&after, "after", "a", "", "Cursor for pagination")
+	return cmd
+}
+
+func newOperationDeployModelCommand() *cobra.Command {
+	var jobID string
+	var deploymentName string
+	var modelFormat string
+	var sku string
+	var version string
+	var capacity int32
+
+	cmd := &cobra.Command{
+		Use:   "deploy",
+		Short: "Deploy a fine-tuned model to Azure Cognitive Services",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Validate required parameters
+			ctx := azdext.WithAccessToken(cmd.Context())
+			if jobID == "" {
+				return fmt.Errorf("job Id is required")
+			}
+			if deploymentName == "" {
+				return fmt.Errorf("deployment-name is required")
+			}
+
+			// Create azd client
+			azdClient, err := azdext.NewAzdClient()
+			if err != nil {
+				return fmt.Errorf("failed to create azd client: %w", err)
+			}
+			defer azdClient.Close()
+
+			// Show spinner while creating job
+			spinner := ux.NewSpinner(&ux.SpinnerOptions{
+				Text: "creating deployment...",
+			})
+			if err := spinner.Start(ctx); err != nil {
+				fmt.Printf("failed to start spinner: %v\n", err)
+			}
+
+			// Get environment values
+			envValueMap := make(map[string]string)
+			if envResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{}); err == nil {
+				env := envResponse.Environment
+				envValues, err := azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
+					Name: env.Name,
+				})
+				if err != nil {
+					_ = spinner.Stop(ctx)
+					fmt.Println()
+					return fmt.Errorf("failed to get environment values: %w", err)
+				}
+
+				for _, value := range envValues.KeyValues {
+					envValueMap[value.Key] = value.Value
+				}
+			}
+
+			// Create deployment configuration
+			deployConfig := models.DeploymentConfig{
+				JobID:             jobID,
+				DeploymentName:    deploymentName,
+				ModelFormat:       modelFormat,
+				SKU:               sku,
+				Version:           version,
+				Capacity:          capacity,
+				SubscriptionID:    envValueMap["AZURE_SUBSCRIPTION_ID"],
+				ResourceGroup:     envValueMap["AZURE_RESOURCE_GROUP_NAME"],
+				AccountName:       envValueMap["AZURE_ACCOUNT_NAME"],
+				TenantID:          envValueMap["AZURE_TENANT_ID"],
+				WaitForCompletion: true,
+			}
+
+			// Create Azure credential
+			credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
+				TenantID:                   deployConfig.TenantID,
+				AdditionallyAllowedTenants: []string{"*"},
+			})
+			if err != nil {
+				_ = spinner.Stop(ctx)
+				fmt.Println()
+				return fmt.Errorf("failed to create azure credential: %w", err)
+			}
+
+			// Initialize fine-tuning provider
+			ftProvider, err := factory.NewFineTuningProvider(ctx, azdClient)
+			if err != nil {
+				_ = spinner.Stop(ctx)
+				fmt.Println()
+				return fmt.Errorf("failed to create fine-tuning provider: %w", err)
+			}
+
+			// Initialize deployment service
+			deployProvider, err := factory.NewModelDeploymentProvider(envValueMap["AZURE_SUBSCRIPTION_ID"], credential)
+			if err != nil {
+				_ = spinner.Stop(ctx)
+				fmt.Println()
+				return fmt.Errorf("failed to create deployment provider: %w", err)
+			}
+			deploymentSvc := services.NewDeploymentService(deployProvider, ftProvider, nil)
+
+			// Deploy the model using the wrapper
+			result, err := deploymentSvc.DeployModel(ctx, &deployConfig)
+			if err != nil {
+				_ = spinner.Stop(ctx)
+				fmt.Println()
+				return fmt.Errorf("failed to deploy model: %w", err)
+			}
+
+			_ = spinner.Stop(ctx)
+			fmt.Println()
+
+			// Print success message
+			fmt.Println(strings.Repeat("=", 60))
+			color.Green("\nSuccessfully deployed fine-tuned model!\n")
+			if result.Deployment.ID != "" {
+				fmt.Printf("Deployment ID:   %s\n", result.Deployment.ID)
+			}
+			fmt.Printf("Deployment Name:  %s\n", result.Deployment.Name)
+			fmt.Printf("Status:           %s\n", result.Status)
+			fmt.Printf("Message:          %s\n", result.Message)
+			fmt.Println(strings.Repeat("=", 60))
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVarP(&jobID, "job-id", "i", "", "Fine-tuning job ID (required)")
+	cmd.Flags().StringVarP(&deploymentName, "deployment-name", "d", "", "Deployment name (required)")
+	cmd.Flags().StringVarP(&modelFormat, "model-format", "m", "OpenAI", "Model format")
+	cmd.Flags().StringVarP(&sku, "sku", "s", "GlobalStandard", "SKU for deployment")
+	cmd.Flags().StringVarP(&version, "version", "v", "1", "Model version")
+	cmd.Flags().Int32VarP(&capacity, "capacity", "c", 1, "Capacity units")
+	cmd.MarkFlagRequired("job-id")
+	cmd.MarkFlagRequired("deployment-name")
+
 	return cmd
 }

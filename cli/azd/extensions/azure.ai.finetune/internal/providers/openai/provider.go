@@ -195,7 +195,7 @@ func (p *OpenAIProvider) GetUploadedFile(ctx context.Context, fileID string) (in
 }
 
 // DeployModel deploys a fine-tuned or base model
-func (p *OpenAIProvider) DeployModel(ctx context.Context, req *models.DeploymentRequest) (*models.Deployment, error) {
+func (p *OpenAIProvider) DeployModel(ctx context.Context, req *models.DeploymentRequest) (*models.DeployModelResult, error) {
 	// TODO: Implement
 	return nil, nil
 }

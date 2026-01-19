@@ -527,6 +527,21 @@ func newOperationDeployModelCommand() *cobra.Command {
 				}
 			}
 
+			// Validate required environment variables
+			requiredEnvVars := []string{
+				"AZURE_SUBSCRIPTION_ID",
+				"AZURE_RESOURCE_GROUP_NAME",
+				"AZURE_ACCOUNT_NAME",
+				"AZURE_TENANT_ID",
+			}
+			for _, envVar := range requiredEnvVars {
+				if envValueMap[envVar] == "" {
+					_ = spinner.Stop(ctx)
+					fmt.Println()
+					return fmt.Errorf("required environment variable %s is not set or empty", envVar)
+				}
+			}
+
 			// Create deployment configuration
 			deployConfig := models.DeploymentConfig{
 				JobID:             jobID,

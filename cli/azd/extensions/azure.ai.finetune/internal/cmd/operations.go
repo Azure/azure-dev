@@ -501,9 +501,9 @@ func newOperationDeployModelCommand() *cobra.Command {
 			}
 			defer azdClient.Close()
 
-			// Show spinner while creating job
+			// Show spinner while deploying model
 			spinner := ux.NewSpinner(&ux.SpinnerOptions{
-				Text: "creating deployment...",
+				Text: "deploying model...",
 			})
 			if err := spinner.Start(ctx); err != nil {
 				fmt.Printf("failed to start spinner: %v\n", err)

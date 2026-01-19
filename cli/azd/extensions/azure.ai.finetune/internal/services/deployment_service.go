@@ -48,7 +48,7 @@ func (s *deploymentServiceImpl) DeployModel(ctx context.Context, req *models.Dep
 		return nil, fmt.Errorf("failed to get fine-tuning job details: %w", err)
 	}
 
-	if (jobDetails == nil) || (jobDetails.FineTunedModel == "") {
+	if jobDetails == nil || jobDetails.FineTunedModel == "" {
 		return nil, fmt.Errorf("fine-tuned model not found for job ID: %s", req.JobID)
 	}
 

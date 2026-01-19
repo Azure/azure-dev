@@ -147,11 +147,23 @@ func (p *AzureProvider) DeployModel(ctx context.Context, config *models.Deployme
 			return nil, fmt.Errorf("deployment failed: %w", err)
 		}
 
+		// Extract values with nil checks
+		var deploymentID, deploymentName, modelName string
+		if pollResult.ID != nil {
+			deploymentID = *pollResult.ID
+		}
+		if pollResult.Name != nil {
+			deploymentName = *pollResult.Name
+		}
+		if pollResult.Properties != nil && pollResult.Properties.Model != nil && pollResult.Properties.Model.Name != nil {
+			modelName = *pollResult.Properties.Model.Name
+		}
+
 		return &models.DeployModelResult{
 			Deployment: models.Deployment{
-				ID:             *pollResult.ID,
-				Name:           *pollResult.Name,
-				FineTunedModel: *pollResult.Properties.Model.Name,
+				ID:             deploymentID,
+				Name:           deploymentName,
+				FineTunedModel: modelName,
 			},
 			Status:  "succeeded",
 			Message: fmt.Sprintf("Model deployed successfully to %s", config.DeploymentName),

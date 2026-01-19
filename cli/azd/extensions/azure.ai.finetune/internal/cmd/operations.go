@@ -492,14 +492,7 @@ func newOperationDeployModelCommand() *cobra.Command {
 		Use:   "deploy",
 		Short: "Deploy a fine-tuned model to Azure Cognitive Services",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Validate required parameters
 			ctx := azdext.WithAccessToken(cmd.Context())
-			if jobID == "" {
-				return fmt.Errorf("job Id is required")
-			}
-			if deploymentName == "" {
-				return fmt.Errorf("deployment-name is required")
-			}
 
 			// Create azd client
 			azdClient, err := azdext.NewAzdClient()

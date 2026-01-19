@@ -570,7 +570,7 @@ func newOperationDeployModelCommand() *cobra.Command {
 			}
 			deploymentSvc := services.NewDeploymentService(deployProvider, ftProvider, nil)
 
-			// Deploy the model using the wrapper
+			// Deploy the model
 			result, err := deploymentSvc.DeployModel(ctx, &deployConfig)
 			if err != nil {
 				_ = spinner.Stop(ctx)

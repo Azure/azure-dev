@@ -5,9 +5,11 @@ package services
 
 import (
 	"context"
+	"fmt"
 
 	"azure.ai.finetune/internal/providers"
 	"azure.ai.finetune/pkg/models"
+	"github.com/fatih/color"
 )
 
 // Ensure deploymentServiceImpl implements DeploymentService interface
@@ -16,26 +18,61 @@ var _ DeploymentService = (*deploymentServiceImpl)(nil)
 // deploymentServiceImpl implements the DeploymentService interface
 type deploymentServiceImpl struct {
 	provider   providers.ModelDeploymentProvider
+	ftProvider providers.FineTuningProvider
 	stateStore StateStore
 }
 
 // NewDeploymentService creates a new instance of DeploymentService
-func NewDeploymentService(provider providers.ModelDeploymentProvider, stateStore StateStore) DeploymentService {
+func NewDeploymentService(provider providers.ModelDeploymentProvider, ftProvider providers.FineTuningProvider, stateStore StateStore) DeploymentService {
 	return &deploymentServiceImpl{
 		provider:   provider,
+		ftProvider: ftProvider,
 		stateStore: stateStore,
 	}
 }
 
 // DeployModel deploys a fine-tuned or base model with validation
-func (s *deploymentServiceImpl) DeployModel(ctx context.Context, req *models.DeploymentRequest) (*models.Deployment, error) {
-	// TODO: Implement
-	// 1. Validate request (deployment name format, SKU valid, capacity valid, etc.)
-	// 2. Call provider.DeployModel()
-	// 3. Transform any errors to standardized ErrorDetail
-	// 4. Persist deployment to state store
-	// 5. Return deployment
-	return nil, nil
+func (s *deploymentServiceImpl) DeployModel(ctx context.Context, req *models.DeploymentConfig) (*models.DeployModelResult, error) {
+	if req == nil {
+		return nil, fmt.Errorf("deployment request cannot be nil")
+	}
+
+	if req.JobID == "" && req.DeploymentName == "" {
+		return nil, fmt.Errorf("JobID and DeploymentName must be provided")
+	}
+
+	// Get job details and extract fine-tuned model name
+	color.Yellow("\nFetching fine-tuned job details...")
+	jobDetails, err := s.ftProvider.GetFineTuningJobDetails(ctx, req.JobID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get fine-tuning job details: %w", err)
+	}
+
+	if (jobDetails == nil) || (jobDetails.FineTunedModel == "") {
+		return nil, fmt.Errorf("fine-tuned model not found for job ID: %s", req.JobID)
+	}
+
+	// Create new request with fine-tuned model name
+	internalReq := &models.DeploymentRequest{
+		DeploymentName:    req.DeploymentName,
+		ModelName:         jobDetails.FineTunedModel,
+		SKU:               req.SKU,
+		Capacity:          req.Capacity,
+		SubscriptionID:    req.SubscriptionID,
+		ResourceGroup:     req.ResourceGroup,
+		AccountName:       req.AccountName,
+		TenantID:          req.TenantID,
+		Version:           req.Version,
+		ModelFormat:       req.ModelFormat,
+		WaitForCompletion: req.WaitForCompletion,
+	}
+
+	deployedModel, err := s.provider.DeployModel(ctx, internalReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to deploy model: %w", err)
+	}
+
+	return deployedModel, nil
 }
 
 // GetDeploymentStatus retrieves the current status of a deployment

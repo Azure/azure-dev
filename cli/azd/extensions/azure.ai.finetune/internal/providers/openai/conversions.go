@@ -168,7 +168,7 @@ func convertOpenAIJobCheckpointsToModel(checkpointsPage *pagination.CursorPage[o
 }
 
 // Converts the internal create finetuning request model to OpenAI job parameters
-func convertInternalJobParamToOpenAiJobParams(config *models.CreateFineTuningRequest) (*openai.FineTuningJobNewParams, error) {
+func convertInternalJobParamToOpenAiJobParams(config *models.CreateFineTuningRequest) (*openai.FineTuningJobNewParams, map[string]interface{}, error) {
 	jobParams := openai.FineTuningJobNewParams{
 		Model:        openai.FineTuningJobNewParamsModel(config.BaseModel),
 		TrainingFile: config.TrainingFile,
@@ -337,13 +337,13 @@ func convertInternalJobParamToOpenAiJobParams(config *models.CreateFineTuningReq
 			// Convert grader to JSON and unmarshal to ReinforcementMethodGraderUnionParam
 			graderJSON, err := json.Marshal(grader)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 
 			var graderUnion openai.ReinforcementMethodGraderUnionParam
 			err = json.Unmarshal(graderJSON, &graderUnion)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			reinforcementMethod.Grader = graderUnion
 		}
@@ -363,13 +363,13 @@ func convertInternalJobParamToOpenAiJobParams(config *models.CreateFineTuningReq
 
 				wandbConfigJSON, err := json.Marshal(integration.Config)
 				if err != nil {
-					return nil, err
+					return nil, nil, err
 				}
 
 				var wandbConfig openai.FineTuningJobNewParamsIntegrationWandb
 				err = json.Unmarshal(wandbConfigJSON, &wandbConfig)
 				if err != nil {
-					return nil, err
+					return nil, nil, err
 				}
 				integrations = append(integrations, openai.FineTuningJobNewParamsIntegration{
 					Type:  "wandb",
@@ -383,7 +383,8 @@ func convertInternalJobParamToOpenAiJobParams(config *models.CreateFineTuningReq
 		}
 	}
 
-	return &jobParams, nil
+	// Return extraBody as second value for passing via WithJSONSet
+	return &jobParams, config.ExtraBody, nil
 }
 
 // convertHyperparameterToInt converts interface{} hyperparameter to *int64

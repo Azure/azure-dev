@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/fatih/color"
 	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/option"
 )
 
 // OpenAIProvider implements the provider interface for OpenAI APIs
@@ -30,12 +31,18 @@ func NewOpenAIProvider(client *openai.Client) *OpenAIProvider {
 // CreateFineTuningJob creates a new fine-tuning job via OpenAI API
 func (p *OpenAIProvider) CreateFineTuningJob(ctx context.Context, req *models.CreateFineTuningRequest) (*models.FineTuningJob, error) {
 
-	params, err := convertInternalJobParamToOpenAiJobParams(req)
+	params, extraBody, err := convertInternalJobParamToOpenAiJobParams(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert internal model to openai: %w", err)
 	}
 
-	job, err := p.client.FineTuning.Jobs.New(ctx, *params)
+	// Build request options for extra body fields
+	var opts []option.RequestOption
+	for key, value := range extraBody {
+		opts = append(opts, option.WithJSONSet(key, value))
+	}
+
+	job, err := p.client.FineTuning.Jobs.New(ctx, *params, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create fine-tuning job: %w", err)
 	}

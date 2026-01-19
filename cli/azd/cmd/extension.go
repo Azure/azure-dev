@@ -533,7 +533,7 @@ func newExtensionInstallFlags(cmd *cobra.Command, global *internal.GlobalCommand
 	cmd.Flags().StringVarP(&flags.source, "source", "s", "", "The extension source to use for installs")
 	cmd.Flags().StringVarP(&flags.version, "version", "v", "", "The version of the extension to install")
 	cmd.Flags().
-		BoolVarP(&flags.force, "force", "f", false, "Force installation even if it would downgrade the current version")
+		BoolVarP(&flags.force, "force", "f", false, "Force installation, including downgrades and reinstalls")
 
 	return flags
 }
@@ -625,7 +625,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 			// Extension is already installed - apply smart upgrade/downgrade logic
 
 			// Check if same version (regardless of source)
-			if installedExtension.Version == targetVersion {
+			if installedExtension.Version == targetVersion && !a.flags.force {
 				stepMessage += output.WithGrayFormat(" (version %s already installed)", installedExtension.Version)
 				a.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
 				continue

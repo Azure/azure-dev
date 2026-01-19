@@ -338,14 +338,13 @@
                         }
                     },
                     {
-                        "comment": "AKS host - requires project, supports docker and k8s config",
+                        "comment": "AKS host - project is optional, supports docker and k8s config",
                         "if": {
                             "properties": {
                                 "host": { "const": "aks" }
                             }
                         },
                         "then": {
-                            "required": ["project"],
                             "properties": {
                                 "image": false,
                                 "apiVersion": false,

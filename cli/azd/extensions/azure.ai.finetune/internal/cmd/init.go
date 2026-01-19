@@ -10,10 +10,11 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -85,11 +86,6 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 				return fmt.Errorf("failed to ground into a project context: %w", err)
 			}
 
-			// getComposedResourcesResponse, err := azdClient.Compose().ListResources(ctx, &azdext.EmptyRequest{})
-			// if err != nil {
-			// 	return fmt.Errorf("failed to get composed resources: %w", err)
-			// }
-
 			credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
 				TenantID:                   azureContext.Scope.TenantId,
 				AdditionallyAllowedTenants: []string{"*"},
@@ -156,43 +152,45 @@ type FoundryProject struct {
 }
 
 func extractProjectDetails(projectResourceId string) (*FoundryProject, error) {
-	/// Define the regex pattern for the project resource ID
-	pattern := `^/subscriptions/([^/]+)/resourceGroups/([^/]+)/providers/Microsoft\.CognitiveServices/accounts/([^/]+)/projects/([^/]+)$`
-
-	regex, err := regexp.Compile(pattern)
+	resourceId, err := arm.ParseResourceID(projectResourceId)
 	if err != nil {
-		return nil, fmt.Errorf("failed to compile regex pattern: %w", err)
+		return nil, fmt.Errorf("failed to parse project resource ID: %w", err)
 	}
 
-	matches := regex.FindStringSubmatch(projectResourceId)
-	if matches == nil || len(matches) != 5 {
-		return nil, fmt.Errorf("the given Microsoft Foundry project ID does not match expected format: /subscriptions/[SUBSCRIPTION_ID]/resourceGroups/[RESOURCE_GROUP]/providers/Microsoft.CognitiveServices/accounts/[ACCOUNT_NAME]/projects/[PROJECT_NAME]")
+	// Validate that this is a Cognitive Services project resource
+	if resourceId.ResourceType.Namespace != "Microsoft.CognitiveServices" || len(resourceId.ResourceType.Types) != 2 ||
+		resourceId.ResourceType.Types[0] != "accounts" || resourceId.ResourceType.Types[1] != "projects" {
+		return nil, fmt.Errorf("the given resource ID is not a Microsoft Foundry project. Expected format: /subscriptions/[SUBSCRIPTION_ID]/resourceGroups/[RESOURCE_GROUP]/providers/Microsoft.CognitiveServices/accounts/[ACCOUNT_NAME]/projects/[PROJECT_NAME]")
 	}
 
 	// Extract the components
 	return &FoundryProject{
-		SubscriptionId:    matches[1],
-		ResourceGroupName: matches[2],
-		AiAccountName:     matches[3],
-		AiProjectName:     matches[4],
+		SubscriptionId:    resourceId.SubscriptionID,
+		ResourceGroupName: resourceId.ResourceGroupName,
+		AiAccountName:     resourceId.Parent.Name,
+		AiProjectName:     resourceId.Name,
 	}, nil
 }
 
-func getExistingEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.AzdClient) *azdext.Environment {
+func getExistingEnvironment(ctx context.Context, name *string, azdClient *azdext.AzdClient) (*azdext.Environment, error) {
 	var env *azdext.Environment
-	if flags.env == "" {
-		if envResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{}); err == nil {
-			env = envResponse.Environment
+	if name == nil || *name == "" {
+		envResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current environment: %w", err)
 		}
+		env = envResponse.Environment
 	} else {
-		if envResponse, err := azdClient.Environment().Get(ctx, &azdext.GetEnvironmentRequest{
-			Name: flags.env,
-		}); err == nil {
-			env = envResponse.Environment
+		envResponse, err := azdClient.Environment().Get(ctx, &azdext.GetEnvironmentRequest{
+			Name: *name,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get environment '%s': %w", *name, err)
 		}
+		env = envResponse.Environment
 	}
 
-	return env
+	return env, nil
 }
 
 func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.AzdClient) (*azdext.Environment, error) {
@@ -238,7 +236,10 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 	}
 
 	// Get specified or current environment if it exists
-	existingEnv := getExistingEnvironment(ctx, flags, azdClient)
+	existingEnv, err := getExistingEnvironment(ctx, &flags.env, azdClient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get existing environment: %w", err)
+	}
 	if existingEnv == nil {
 		// Dispatch `azd env new` to create a new environment with interactive flow
 		fmt.Println("Lets create a new default azd environment for your project.")
@@ -270,9 +271,9 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 		}
 
 		// Re-fetch the environment after creation
-		existingEnv = getExistingEnvironment(ctx, flags, azdClient)
-		if existingEnv == nil {
-			return nil, fmt.Errorf("azd environment not found, please create an environment (azd env new) and try again")
+		existingEnv, err = getExistingEnvironment(ctx, &flags.env, azdClient)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get environment after creation: %w", err)
 		}
 	}
 
@@ -313,6 +314,15 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to set AZURE_ACCOUNT_NAME in azd environment: %w", err)
+		}
+
+		_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: existingEnv.Name,
+			Key:     "AZURE_PROJECT_NAME",
+			Value:   foundryProject.AiProjectName,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to set AZURE_PROJECT_NAME in azd environment: %w", err)
 		}
 
 		_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
@@ -463,17 +473,28 @@ func ensureAzureContext(
 
 	if envValueMap["AZURE_ACCOUNT_NAME"] == "" {
 
-		aiAccountResponse, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-			Options: &azdext.PromptOptions{
-				Message: "Please enter your Azure AI Account name",
+		foundryProjectResponse, err := azdClient.Prompt().PromptResourceGroupResource(ctx, &azdext.PromptResourceGroupResourceRequest{
+			AzureContext: azureContext,
+			Options: &azdext.PromptResourceOptions{
+				ResourceType:            "Microsoft.CognitiveServices/accounts/projects",
+				ResourceTypeDisplayName: "AI Foundry project",
+				SelectOptions: &azdext.PromptResourceSelectOptions{
+					AllowNewResource: to.Ptr(false),
+					Message:          "Select a Foundry project",
+					LoadingMessage:   "Fetching Foundry projects...",
+				},
 			},
 		})
 
-		aiProjectName, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-			Options: &azdext.PromptOptions{
-				Message: "Please enter your Azure AI Project name",
-			},
-		})
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to get Microsoft Foundry project: %w", err)
+		}
+
+		fpDetails, err := extractProjectDetails(foundryProjectResponse.Resource.Id)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to parse Microsoft Foundry project ID: %w", err)
+		}
+
 		credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
 			TenantID:                   azureContext.Scope.TenantId,
 			AdditionallyAllowedTenants: []string{"*"},
@@ -489,7 +510,7 @@ func ensureAzureContext(
 		}
 
 		// Get the Microsoft Foundry project
-		projectResp, err := projectsClient.Get(ctx, azureContext.Scope.ResourceGroup, aiAccountResponse.Value, aiProjectName.Value, nil)
+		projectResp, err := projectsClient.Get(ctx, azureContext.Scope.ResourceGroup, fpDetails.AiAccountName, fpDetails.AiProjectName, nil)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("failed to get Microsoft Foundry project: %w", err)
 		}
@@ -498,7 +519,13 @@ func ensureAzureContext(
 		_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 			EnvName: env.Name,
 			Key:     "AZURE_ACCOUNT_NAME",
-			Value:   aiAccountResponse.Value,
+			Value:   fpDetails.AiAccountName,
+		})
+
+		_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: env.Name,
+			Key:     "AZURE_PROJECT_NAME",
+			Value:   fpDetails.AiProjectName,
 		})
 
 		location := *projectResp.Location
@@ -619,17 +646,33 @@ method:
 				return fmt.Errorf("creating GitHub CLI: %w", err)
 			}
 
-			urlInfo, err = parseGitHubUrl(a.flags.template)
+			// Create a new AZD client
+			azdClient, err := azdext.NewAzdClient()
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to create azd client: %w", err)
+			}
+			defer azdClient.Close()
+
+			// Call the ParseGitHubUrl RPC method
+			parseResponse, err := azdClient.Project().ParseGitHubUrl(ctx, &azdext.ParseGitHubUrlRequest{
+				Url: a.flags.template,
+			})
+			if err != nil {
+				return fmt.Errorf("parsing GitHub URL via azd extension: %w", err)
 			}
 
-			apiPath := fmt.Sprintf("/repos/%s/contents/%s", urlInfo.RepoSlug, urlInfo.FilePath)
+			// Map the response to GitHubUrlInfo
+			urlInfo = &GitHubUrlInfo{
+				RepoSlug: parseResponse.RepoSlug,
+				Branch:   parseResponse.Branch,
+				FilePath: parseResponse.FilePath,
+				Hostname: parseResponse.Hostname,
+			}
+
 			if urlInfo.Branch != "" {
 				fmt.Printf("Downloaded manifest from branch: %s\n", urlInfo.Branch)
-				apiPath += fmt.Sprintf("?ref=%s", urlInfo.Branch)
 			}
-			err := downloadParentDirectory(ctx, urlInfo, cwd, ghCli, console)
+			err = downloadParentDirectory(ctx, urlInfo, cwd, ghCli, console)
 			if err != nil {
 				return fmt.Errorf("downloading parent directory: %w", err)
 			}
@@ -718,79 +761,6 @@ method:
 	color.Green("Initialized fine-tuning Project.")
 
 	return nil
-}
-
-// parseGitHubUrl extracts repository information from various GitHub URL formats
-// TODO: This will fail if the branch contains a slash. Update to handle that case if needed.
-func parseGitHubUrl(manifestPointer string) (*GitHubUrlInfo, error) {
-	parsedURL, err := url.Parse(manifestPointer)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse URL: %w", err)
-	}
-
-	hostname := parsedURL.Hostname()
-	var repoSlug, branch, filePath string
-
-	if strings.HasPrefix(hostname, "raw.") {
-		// https://raw.githubusercontent.com/<owner>/<repo>/refs/heads/<branch>/[...path]/<file>.yaml
-		pathParts := strings.Split(parsedURL.Path, "/")
-		if len(pathParts) < 7 {
-			return nil, fmt.Errorf("invalid URL format using 'raw.'. Expected the form of " +
-				"'https://raw.<hostname>/<owner>/<repo>/refs/heads/<branch>/[...path]/<fileName>.json'")
-		}
-		if pathParts[3] != "refs" || pathParts[4] != "heads" {
-			return nil, fmt.Errorf("invalid raw GitHub URL format. Expected 'refs/heads' in the URL path")
-		}
-		repoSlug = fmt.Sprintf("%s/%s", pathParts[1], pathParts[2])
-		branch = pathParts[5]
-		filePath = strings.Join(pathParts[6:], "/")
-	} else if strings.HasPrefix(hostname, "api.") {
-		// https://api.github.com/repos/<owner>/<repo>/contents/[...path]/<file>.yaml
-		pathParts := strings.Split(parsedURL.Path, "/")
-		if len(pathParts) < 6 {
-			return nil, fmt.Errorf("invalid URL format using 'api.'. Expected the form of " +
-				"'https://api.<hostname>/repos/<owner>/<repo>/contents/[...path]/<fileName>.json[?ref=<branch>]'")
-		}
-		repoSlug = fmt.Sprintf("%s/%s", pathParts[2], pathParts[3])
-		filePath = strings.Join(pathParts[5:], "/")
-		// For API URLs, branch is specified in the query parameter ref
-		branch = parsedURL.Query().Get("ref")
-		if branch == "" {
-			branch = "main" // default branch if not specified
-		}
-	} else if strings.HasPrefix(manifestPointer, "https://") {
-		// https://github.com/<owner>/<repo>/blob/<branch>/[...path]/<file>.yaml
-		pathParts := strings.Split(parsedURL.Path, "/")
-		if len(pathParts) < 6 {
-			return nil, fmt.Errorf("invalid URL format. Expected the form of " +
-				"'https://<hostname>/<owner>/<repo>/blob/<branch>/[...path]/<fileName>.json'")
-		}
-		if pathParts[3] != "blob" {
-			return nil, fmt.Errorf("invalid GitHub URL format. Expected 'blob' in the URL path")
-		}
-		repoSlug = fmt.Sprintf("%s/%s", pathParts[1], pathParts[2])
-		branch = pathParts[4]
-		filePath = strings.Join(pathParts[5:], "/")
-	} else {
-		return nil, fmt.Errorf(
-			"invalid URL format. Expected formats are:\n" +
-				"  - 'https://raw.<hostname>/<owner>/<repo>/refs/heads/<branch>/[...path]/<fileName>.json'\n" +
-				"  - 'https://<hostname>/<owner>/<repo>/blob/<branch>/[...path]/<fileName>.json'\n" +
-				"  - 'https://api.<hostname>/repos/<owner>/<repo>/contents/[...path]/<fileName>.json[?ref=<branch>]'",
-		)
-	}
-
-	// Normalize hostname for API calls
-	if hostname == "raw.githubusercontent.com" {
-		hostname = "github.com"
-	}
-
-	return &GitHubUrlInfo{
-		RepoSlug: repoSlug,
-		Branch:   branch,
-		FilePath: filePath,
-		Hostname: hostname,
-	}, nil
 }
 
 func (a *InitAction) isGitHubUrl(manifestPointer string) bool {

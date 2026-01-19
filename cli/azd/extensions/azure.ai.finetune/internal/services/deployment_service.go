@@ -9,7 +9,6 @@ import (
 
 	"azure.ai.finetune/internal/providers"
 	"azure.ai.finetune/pkg/models"
-	"github.com/fatih/color"
 )
 
 // Ensure deploymentServiceImpl implements DeploymentService interface
@@ -42,7 +41,7 @@ func (s *deploymentServiceImpl) DeployModel(ctx context.Context, req *models.Dep
 	}
 
 	// Get job details and extract fine-tuned model name
-	color.Yellow("\nFetching fine-tuned job details...")
+	fmt.Println("\nRetrieving fine-tuning job details...")
 	jobDetails, err := s.ftProvider.GetFineTuningJobDetails(ctx, req.JobID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get fine-tuning job details: %w", err)

@@ -43,8 +43,8 @@ type Deployment struct {
 
 // DeploymentRequest represents a request to create a deployment
 type DeploymentRequest struct {
+	ModelName         string
 	DeploymentName    string
-	ModelID           string
 	ModelFormat       string
 	SKU               string
 	Version           string
@@ -69,6 +69,13 @@ type DeploymentConfig struct {
 	AccountName       string
 	TenantID          string
 	WaitForCompletion bool
+}
+
+// DeployModelResult represents the result of a deployment operation
+type DeployModelResult struct {
+	Deployment Deployment
+	Status     string
+	Message    string
 }
 
 // BaseModel represents information about a base model

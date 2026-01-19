@@ -37,7 +37,7 @@ func (s *deploymentServiceImpl) DeployModel(ctx context.Context, req *models.Dep
 		return nil, fmt.Errorf("deployment request cannot be nil")
 	}
 
-	if req.JobID == "" && req.DeploymentName == "" {
+	if req.JobID == "" || req.DeploymentName == "" {
 		return nil, fmt.Errorf("JobID and DeploymentName must be provided")
 	}
 

@@ -167,7 +167,7 @@ overrides:
   - filename: pkg/apphost/generate.go
     words:
       - alue
-  - filename: docs/extension-framework.md
+  - filename: docs/extensions/extension-framework.md
     words:
       - getenv
       - errorf
@@ -202,7 +202,7 @@ overrides:
   - filename: extensions/azure.ai.agents/internal/pkg/agents/registry_api/operations.go
     words:
       - Dataagent
-  - filename: docs/contributing/new-azd-command.md
+  - filename: docs/style-guidelines/new-azd-command.md
     words:
       - pflag
       - struct

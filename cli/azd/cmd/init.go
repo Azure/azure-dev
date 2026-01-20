@@ -644,11 +644,11 @@ func promptInitType(
 				return initUnknown, fmt.Errorf("failed to set ai.agent.model.type config: %w", err)
 			}
 
-            err = configManager.Save(azdConfig)
+			err = configManager.Save(azdConfig)
 			if err != nil {
 				return initUnknown, fmt.Errorf("failed to save config: %w", err)
 			}
-			
+
 			console.Message(ctx, "\nGitHub Copilot has been enabled to support this new experience."+
 				" To turn off in the future run `azd config unset ai.agent.model.type`.")
 		}

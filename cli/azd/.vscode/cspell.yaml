@@ -243,6 +243,21 @@ overrides:
       - userosscache
       - docstates
       - dylib
+  - filename: docs/azd-style-guide.md
+    words:
+      - camelCase
+      - checkmark
+      - Colorization
+      - gofmt
+      - myService
+      - NewMyService
+      - PascalCase
+      - SomeDependency
+      - testify
+      - userConfig
+  - filename: docs/extensions-style-guide.md
+    words:
+      - subcommand
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

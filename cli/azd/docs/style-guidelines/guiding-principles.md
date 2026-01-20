@@ -61,7 +61,7 @@ The Azure Developer CLI (`azd`) follows a systematic approach to command structu
 
 ## Extension Development
 
-For guidelines on developing extensions to `azd`, see [extensions-style-guide.md](extensions-style-guide.md).
+For guidelines on developing extensions to `azd`, see [extensions-style-guide.md](../extensions/extensions-style-guide.md).
 
 ---
 

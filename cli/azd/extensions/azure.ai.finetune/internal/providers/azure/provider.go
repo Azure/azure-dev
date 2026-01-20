@@ -5,8 +5,10 @@ package azure
 
 import (
 	"context"
+	"fmt"
 
 	"azure.ai.finetune/pkg/models"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 )
 
@@ -92,9 +94,91 @@ func (p *AzureProvider) GetUploadedFile(ctx context.Context, fileID string) (int
 }
 
 // DeployModel deploys a fine-tuned or base model via Azure Cognitive Services
-func (p *AzureProvider) DeployModel(ctx context.Context, req *models.DeploymentRequest) (*models.Deployment, error) {
-	// TODO: Implement
-	return nil, nil
+func (p *AzureProvider) DeployModel(ctx context.Context, config *models.DeploymentRequest) (*models.DeployModelResult, error) {
+	// Validate required fields
+	if config.ModelName == "" {
+		return nil, fmt.Errorf("could not find model name in deployment request")
+	}
+	if config.DeploymentName == "" {
+		return nil, fmt.Errorf("deployment name is required")
+	}
+	if config.SubscriptionID == "" {
+		return nil, fmt.Errorf("subscription ID is required")
+	}
+	if config.ResourceGroup == "" {
+		return nil, fmt.Errorf("resource group is required")
+	}
+	if config.AccountName == "" {
+		return nil, fmt.Errorf("account name is required")
+	}
+	if config.TenantID == "" {
+		return nil, fmt.Errorf("tenant ID is required")
+	}
+
+	// Create or update the deployment
+	poller, err := p.clientFactory.NewDeploymentsClient().BeginCreateOrUpdate(
+		ctx,
+		config.ResourceGroup,
+		config.AccountName,
+		config.DeploymentName,
+		armcognitiveservices.Deployment{
+			Properties: &armcognitiveservices.DeploymentProperties{
+				Model: &armcognitiveservices.DeploymentModel{
+					Name:    to.Ptr(config.ModelName),
+					Format:  to.Ptr(config.ModelFormat),
+					Version: to.Ptr(config.Version),
+				},
+			},
+			SKU: &armcognitiveservices.SKU{
+				Name:     to.Ptr(config.SKU),
+				Capacity: to.Ptr(config.Capacity),
+			},
+		},
+		nil,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to start deployment: %w", err)
+	}
+
+	// Wait for deployment to complete if requested
+	if config.WaitForCompletion {
+		pollResult, err := poller.PollUntilDone(ctx, nil)
+		if err != nil {
+			return nil, fmt.Errorf("deployment failed: %w", err)
+		}
+
+		// Extract values with nil checks
+		var deploymentID, deploymentName, modelName string
+		if pollResult.ID != nil {
+			deploymentID = *pollResult.ID
+		}
+		if pollResult.Name != nil {
+			deploymentName = *pollResult.Name
+		}
+		if pollResult.Properties != nil && pollResult.Properties.Model != nil && pollResult.Properties.Model.Name != nil {
+			modelName = *pollResult.Properties.Model.Name
+		}
+
+		return &models.DeployModelResult{
+			Deployment: models.Deployment{
+				ID:             deploymentID,
+				Name:           deploymentName,
+				FineTunedModel: modelName,
+			},
+			Status:  "succeeded",
+			Message: fmt.Sprintf("Model deployed successfully to %s", config.DeploymentName),
+		}, nil
+
+	} else {
+		return &models.DeployModelResult{
+			Deployment: models.Deployment{
+				Name:           config.DeploymentName,
+				FineTunedModel: config.ModelName,
+			},
+			Status:  "in_progress",
+			Message: fmt.Sprintf("Deployment %s initiated. Check deployment status in Azure Portal", config.DeploymentName),
+		}, nil
+	}
 }
 
 // GetDeploymentStatus retrieves the status of a deployment

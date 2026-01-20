@@ -48,7 +48,7 @@ type FineTuningService interface {
 // DeploymentService defines the business logic interface for model deployment operations
 type DeploymentService interface {
 	// DeployModel deploys a fine-tuned or base model with validation
-	DeployModel(ctx context.Context, req *models.DeploymentRequest) (*models.Deployment, error)
+	DeployModel(ctx context.Context, req *models.DeploymentConfig) (*models.DeployModelResult, error)
 
 	// GetDeploymentStatus retrieves the current status of a deployment
 	GetDeploymentStatus(ctx context.Context, deploymentID string) (*models.Deployment, error)

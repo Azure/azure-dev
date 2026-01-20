@@ -493,7 +493,6 @@ func newOperationDeployModelCommand() *cobra.Command {
 		Use:   "deploy",
 		Short: "Deploy a fine-tuned model to Azure Cognitive Services",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Println("value of noWait:", noWait)
 			ctx := azdext.WithAccessToken(cmd.Context())
 
 			// Create azd client

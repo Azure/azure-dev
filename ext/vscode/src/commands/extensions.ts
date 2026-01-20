@@ -71,14 +71,10 @@ export async function installExtension(context: IActionContext): Promise<void> {
         await runExtensionCommand(context, args, vscode.l10n.t('Adding extension source...'), TelemetryId.ExtensionSourceAddCli);
     }
 
-    const id = await vscode.window.showInputBox({
+    const id = await context.ui.showInputBox({
         prompt: vscode.l10n.t('Enter the ID of the extension to install'),
         placeHolder: vscode.l10n.t('Extension ID')
     });
-
-    if (!id) {
-        return;
-    }
 
     const args = composeArgs(
         withArg('extension', 'install'),
@@ -92,14 +88,10 @@ export async function uninstallExtension(context: IActionContext, item?: Extensi
     let id = item?.extension.id;
 
     if (!id) {
-        id = await vscode.window.showInputBox({
+        id = await context.ui.showInputBox({
             prompt: vscode.l10n.t('Enter the ID of the extension to uninstall'),
             placeHolder: vscode.l10n.t('Extension ID')
         });
-    }
-
-    if (!id) {
-        return;
     }
 
     const args = composeArgs(
@@ -114,14 +106,10 @@ export async function upgradeExtension(context: IActionContext, item?: Extension
     let id = item?.extension.id;
 
     if (!id) {
-        id = await vscode.window.showInputBox({
+        id = await context.ui.showInputBox({
             prompt: vscode.l10n.t('Enter the ID of the extension to upgrade'),
             placeHolder: vscode.l10n.t('Extension ID')
         });
-    }
-
-    if (!id) {
-        return;
     }
 
     const args = composeArgs(

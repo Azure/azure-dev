@@ -172,6 +172,14 @@ When working on `azure.yaml` language support in `src/language/`:
 - Use telemetry to measure and track performance metrics
 - Follow the patterns in `src/views/` for efficient tree providers
 
+### User Interface Best Practices
+- All user-facing strings shown in the UI, error messages, etc. must use `vscode.l10n.t()`
+- All user-facing strings in package.json must be extracted into package.nls.json
+- Instead of `vscode.window.showQuickPick`, use `IActionContext.ui.showQuickPick`
+- Instead of `vscode.window.showInputBox`, use `IActionContext.ui.showInputBox`
+- The same applies for `showWarningMessage`, `showOpenDialog`, and `showWorkspaceFolderPick`
+- FileSystemWatchers are a scarce resource on some systems - consolidate into shared watchers when possible
+
 ## Build & Package
 - Development build: `npm run dev-build`
 - Production build: `npm run build`

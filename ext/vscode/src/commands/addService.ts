@@ -22,14 +22,14 @@ export async function addService(context: IActionContext, node?: AzureDevCliMode
     if (!documentUri) {
         const workspaceFolders = vscode.workspace.workspaceFolders;
         if (!workspaceFolders || workspaceFolders.length === 0) {
-            void vscode.window.showErrorMessage('No workspace folder is open.');
+            void vscode.window.showErrorMessage(vscode.l10n.t('No workspace folder is open.'));
             return;
         }
 
         // Search for azure.yaml or azure.yml files in workspace
         const azureYamlFiles = await vscode.workspace.findFiles('**/azure.{yml,yaml}', '**/node_modules/**', 1);
         if (azureYamlFiles.length === 0) {
-            void vscode.window.showErrorMessage('No azure.yaml file found in workspace.');
+            void vscode.window.showErrorMessage(vscode.l10n.t('No azure.yaml file found in workspace.'));
             return;
         }
 
@@ -37,44 +37,32 @@ export async function addService(context: IActionContext, node?: AzureDevCliMode
     }
 
     // Prompt for service name
-    const serviceName = await vscode.window.showInputBox({
-        prompt: 'Enter service name',
+    const serviceName = await context.ui.showInputBox({
+        prompt: vscode.l10n.t('Enter service name'),
         placeHolder: 'api',
         validateInput: (value) => {
             if (!value || !/^[a-zA-Z0-9-_]+$/.test(value)) {
-                return 'Service name must contain only letters, numbers, hyphens, and underscores';
+                return vscode.l10n.t('Service name must contain only letters, numbers, hyphens, and underscores');
             }
             return undefined;
         }
     });
 
-    if (!serviceName) {
-        return;
-    }
-
     // Prompt for programming language
-    const language = await vscode.window.showQuickPick(
-        ['python', 'js', 'ts', 'csharp', 'java', 'go'],
-        { placeHolder: 'Select programming language' }
+    const language = await context.ui.showQuickPick(
+        ['python', 'js', 'ts', 'csharp', 'java', 'go'].map(lang => ({ label: lang })),
+        { placeHolder: vscode.l10n.t('Select programming language') }
     );
-
-    if (!language) {
-        return;
-    }
 
     // Prompt for Azure host
-    const host = await vscode.window.showQuickPick(
+    const host = await context.ui.showQuickPick(
         [
-            { label: 'containerapp', description: 'Azure Container Apps' },
-            { label: 'appservice', description: 'Azure App Service' },
-            { label: 'function', description: 'Azure Functions' }
+            { label: 'containerapp', description: vscode.l10n.t('Azure Container Apps') },
+            { label: 'appservice', description: vscode.l10n.t('Azure App Service') },
+            { label: 'function', description: vscode.l10n.t('Azure Functions') }
         ],
-        { placeHolder: 'Select Azure host' }
+        { placeHolder: vscode.l10n.t('Select Azure host') }
     );
-
-    if (!host) {
-        return;
-    }
 
     try {
         const document = await vscode.workspace.openTextDocument(documentUri);
@@ -83,11 +71,11 @@ export async function addService(context: IActionContext, node?: AzureDevCliMode
 
         const services = doc.get('services') as yaml.YAMLMap;
         if (!services) {
-            void vscode.window.showErrorMessage('No services section found in azure.yaml');
+            void vscode.window.showErrorMessage(vscode.l10n.t('No services section found in azure.yaml'));
             return;
         }
 
-        const serviceSnippet = `\n  ${serviceName}:\n    project: ./${serviceName}\n    language: ${language}\n    host: ${host.label}`;
+        const serviceSnippet = `\n  ${serviceName}:\n    project: ./${serviceName}\n    language: ${language.label}\n    host: ${host.label}`;
 
         // Find the end of the services section
         if (doc.contents && yaml.isMap(doc.contents)) {
@@ -99,11 +87,11 @@ export async function addService(context: IActionContext, node?: AzureDevCliMode
                 const success = await vscode.workspace.applyEdit(edit);
 
                 if (success) {
-                    void vscode.window.showInformationMessage(`Service '${serviceName}' added to azure.yaml`);
+                    void vscode.window.showInformationMessage(vscode.l10n.t('Service \'{0}\' added to azure.yaml', serviceName));
                 }
             }
         }
     } catch (error) {
-        void vscode.window.showErrorMessage(`Failed to add service: ${error instanceof Error ? error.message : String(error)}`);
+        void vscode.window.showErrorMessage(vscode.l10n.t('Failed to add service: {0}', error instanceof Error ? error.message : String(error)));
     }
 }

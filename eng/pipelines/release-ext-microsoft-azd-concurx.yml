@@ -15,6 +15,7 @@ pr:
   paths:
     include:
       - cli/azd/extensions/microsoft.azd.concurx
+      - eng/pipelines/release-ext-microsoft-azd-concurx.yml
       - eng/pipelines/release-azd-extension.yml
       - eng/pipelines/templates/steps/publish-cli.yml
     exclude:

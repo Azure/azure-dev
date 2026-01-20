@@ -16,6 +16,7 @@ pr:
   paths:
     include:
       - cli/azd/extensions/azure.ai.agents
+      - eng/pipelines/release-ext-azure-ai-agents.yml
       - eng/pipelines/release-azd-extension.yml
       - eng/pipelines/templates/steps/publish-cli.yml
     exclude:

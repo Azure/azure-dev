@@ -56,4 +56,4 @@ This framework enables:
 
 ---
 
-*For core design principles that apply to all `azd` functionality, see [guiding-principles.md](guiding-principles.md).*
+*For core design principles that apply to all `azd` functionality, see [guiding-principles.md](../style-guidelines/guiding-principles.md).*

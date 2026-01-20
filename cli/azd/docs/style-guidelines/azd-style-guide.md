@@ -419,5 +419,5 @@ cli/azd/
 
 ---
 
-*For extension development guidelines, see [extensions-style-guide.md](extensions-style-guide.md).*
+*For extension development guidelines, see [extensions-style-guide.md](../extensions/extensions-style-guide.md).*
 *For core design principles, see [guiding-principles.md](guiding-principles.md).*

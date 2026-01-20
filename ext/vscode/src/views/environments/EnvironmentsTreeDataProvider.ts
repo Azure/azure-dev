@@ -7,6 +7,7 @@ import { TelemetryId } from '../../telemetry/telemetryId';
 import { WorkspaceAzureDevApplicationProvider } from '../../services/AzureDevApplicationProvider';
 import { WorkspaceAzureDevEnvListProvider } from '../../services/AzureDevEnvListProvider';
 import { WorkspaceAzureDevEnvValuesProvider } from '../../services/AzureDevEnvValuesProvider';
+import { FileSystemWatcherService } from '../../services/FileSystemWatcherService';
 
 export interface EnvironmentItem {
     name: string;
@@ -40,32 +41,24 @@ export class EnvironmentsTreeDataProvider implements vscode.TreeDataProvider<Env
     private readonly applicationProvider = new WorkspaceAzureDevApplicationProvider();
     private readonly envListProvider = new WorkspaceAzureDevEnvListProvider();
     private readonly envValuesProvider = new WorkspaceAzureDevEnvValuesProvider();
-    private readonly configFileWatcher: vscode.FileSystemWatcher;
-    private readonly envDirWatcher: vscode.FileSystemWatcher;
+    private readonly configFileWatcherDisposable: vscode.Disposable;
+    private readonly envDirWatcherDisposable: vscode.Disposable;
     private readonly visibleEnvVars = new Set<string>();
 
-    constructor() {
-        this.configFileWatcher = vscode.workspace.createFileSystemWatcher(
-            '**/azure.{yml,yaml}',
-            false, false, false
-        );
-
-        this.envDirWatcher = vscode.workspace.createFileSystemWatcher(
-            '**/.azure/**',
-            false, false, false
-        );
-
+    constructor(private fileSystemWatcherService: FileSystemWatcherService) {
         const onFileChange = () => {
             this.refresh();
         };
 
-        this.configFileWatcher.onDidCreate(onFileChange);
-        this.configFileWatcher.onDidChange(onFileChange);
-        this.configFileWatcher.onDidDelete(onFileChange);
+        this.configFileWatcherDisposable = this.fileSystemWatcherService.watch(
+            '**/azure.{yml,yaml}',
+            onFileChange
+        );
 
-        this.envDirWatcher.onDidCreate(onFileChange);
-        this.envDirWatcher.onDidChange(onFileChange);
-        this.envDirWatcher.onDidDelete(onFileChange);
+        this.envDirWatcherDisposable = this.fileSystemWatcherService.watch(
+            '**/.azure/**',
+            onFileChange
+        );
     }
 
     refresh(): void {
@@ -174,7 +167,7 @@ export class EnvironmentsTreeDataProvider implements vscode.TreeDataProvider<Env
         // Let's add a group for Variables
         const variablesGroup = new EnvironmentTreeItem(
             'Group',
-            'Environment Variables',
+            vscode.l10n.t('Environment Variables'),
             vscode.TreeItemCollapsibleState.Collapsed,
             env
         );
@@ -190,7 +183,7 @@ export class EnvironmentsTreeDataProvider implements vscode.TreeDataProvider<Env
         return Object.entries(values).map(([key, value]) => {
             const id = `${env.name}/${key}`;
             const isVisible = this.visibleEnvVars.has(id);
-            const label = isVisible ? `${key}=${value}` : `${key}=Hidden value. Click to view.`;
+            const label = isVisible ? `${key}=${value}` : vscode.l10n.t('{0}=Hidden value. Click to view.', key);
 
             const item = new EnvironmentTreeItem(
                 'Variable',
@@ -199,11 +192,11 @@ export class EnvironmentsTreeDataProvider implements vscode.TreeDataProvider<Env
                 { ...env, key, value } as EnvironmentVariableItem
             );
 
-            item.tooltip = isVisible ? `${key}=${value}` : 'Click to view value';
+            item.tooltip = isVisible ? `${key}=${value}` : vscode.l10n.t('Click to view value');
             item.iconPath = new vscode.ThemeIcon('key');
             item.command = {
                 command: 'azure-dev.views.environments.toggleEnvVarVisibility',
-                title: 'Toggle Environment Variable Visibility',
+                title: vscode.l10n.t('Toggle Environment Variable Visibility'),
                 arguments: [item]
             };
 
@@ -212,8 +205,8 @@ export class EnvironmentsTreeDataProvider implements vscode.TreeDataProvider<Env
     }
 
     dispose(): void {
-        this.configFileWatcher.dispose();
-        this.envDirWatcher.dispose();
+        this.configFileWatcherDisposable.dispose();
+        this.envDirWatcherDisposable.dispose();
         this._onDidChangeTreeData.dispose();
     }
 }

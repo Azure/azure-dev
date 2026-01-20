@@ -10,6 +10,7 @@ import { WorkspaceAzureDevShowProvider } from '../../services/AzureDevShowProvid
 import { WorkspaceAzureDevEnvListProvider } from '../../services/AzureDevEnvListProvider';
 import { WorkspaceAzureDevEnvValuesProvider } from '../../services/AzureDevEnvValuesProvider';
 import { WorkspaceResource } from '@microsoft/vscode-azureresources-api';
+import { FileSystemWatcherService } from '../../services/FileSystemWatcherService';
 
 export class MyProjectTreeDataProvider implements vscode.TreeDataProvider<AzureDevCliModel> {
     private _onDidChangeTreeData: vscode.EventEmitter<AzureDevCliModel | undefined | null | void> = new vscode.EventEmitter<AzureDevCliModel | undefined | null | void>();
@@ -19,24 +20,20 @@ export class MyProjectTreeDataProvider implements vscode.TreeDataProvider<AzureD
     private readonly showProvider = new WorkspaceAzureDevShowProvider();
     private readonly envListProvider = new WorkspaceAzureDevEnvListProvider();
     private readonly envValuesProvider = new WorkspaceAzureDevEnvValuesProvider();
-    private readonly configFileWatcher: vscode.FileSystemWatcher;
+    private readonly configFileWatcherDisposable: vscode.Disposable;
 
-    constructor() {
+    constructor(private fileSystemWatcherService: FileSystemWatcherService) {
         this.applicationProvider = new WorkspaceAzureDevApplicationProvider();
 
         // Listen to azure.yaml file changes globally
-        this.configFileWatcher = vscode.workspace.createFileSystemWatcher(
-            '**/azure.{yml,yaml}',
-            false, false, false
-        );
-
         const onFileChange = () => {
             this.refresh();
         };
 
-        this.configFileWatcher.onDidCreate(onFileChange);
-        this.configFileWatcher.onDidChange(onFileChange);
-        this.configFileWatcher.onDidDelete(onFileChange);
+        this.configFileWatcherDisposable = this.fileSystemWatcherService.watch(
+            '**/azure.{yml,yaml}',
+            onFileChange
+        );
     }
 
     refresh(): void {
@@ -85,7 +82,7 @@ export class MyProjectTreeDataProvider implements vscode.TreeDataProvider<AzureD
     }
 
     dispose(): void {
-        this.configFileWatcher.dispose();
+        this.configFileWatcherDisposable.dispose();
         this._onDidChangeTreeData.dispose();
     }
 }

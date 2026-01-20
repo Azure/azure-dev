@@ -36,37 +36,37 @@ export class AzureDevTemplateProvider {
     private readonly categories: TemplateCategory[] = [
         {
             name: 'ai',
-            displayName: 'AI & Machine Learning',
+            displayName: vscode.l10n.t('AI & Machine Learning'),
             icon: '🤖',
             filter: (t) => t.tags?.some(tag => ['ai', 'gpt', 'aicollection'].includes(tag)) ?? false
         },
         {
             name: 'webapp',
-            displayName: 'Web Applications',
+            displayName: vscode.l10n.t('Web Applications'),
             icon: '🌐',
             filter: (t) => t.tags?.some(tag => ['webapps', 'reactjs', 'angular', 'vuejs'].includes(tag)) ?? false
         },
         {
             name: 'api',
-            displayName: 'APIs & Functions',
+            displayName: vscode.l10n.t('APIs & Functions'),
             icon: '🔧',
             filter: (t) => (t.tags?.includes('functions') || t.azureServices?.includes('functions')) ?? false
         },
         {
             name: 'container',
-            displayName: 'Containers & Kubernetes',
+            displayName: vscode.l10n.t('Containers & Kubernetes'),
             icon: '📦',
             filter: (t) => (t.tags?.includes('kubernetes') || t.azureServices?.some(s => ['aks', 'aca'].includes(s))) ?? false
         },
         {
             name: 'database',
-            displayName: 'Databases & Storage',
+            displayName: vscode.l10n.t('Databases & Storage'),
             icon: '💾',
             filter: (t) => t.azureServices?.some(s => ['cosmosdb', 'azuresql', 'azuredb-postgreSQL', 'azuredb-mySQL'].includes(s)) ?? false
         },
         {
             name: 'starter',
-            displayName: 'Starter Templates',
+            displayName: vscode.l10n.t('Starter Templates'),
             icon: '🚀',
             filter: (t) => t.title.toLowerCase().includes('starter') || t.title.toLowerCase().includes('quickstart')
         }

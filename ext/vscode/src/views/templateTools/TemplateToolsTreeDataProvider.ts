@@ -3,29 +3,27 @@
 
 import * as vscode from 'vscode';
 import { AzureDevTemplateProvider, Template, TemplateCategory } from '../../services/AzureDevTemplateProvider';
+import { FileSystemWatcherService } from '../../services/FileSystemWatcherService';
 
 export class TemplateToolsTreeDataProvider implements vscode.TreeDataProvider<TreeItemModel> {
     private _onDidChangeTreeData: vscode.EventEmitter<TreeItemModel | undefined | null | void> = new vscode.EventEmitter<TreeItemModel | undefined | null | void>();
     readonly onDidChangeTreeData: vscode.Event<TreeItemModel | undefined | null | void> = this._onDidChangeTreeData.event;
 
     private readonly templateProvider: AzureDevTemplateProvider;
-    private configFileWatcher: vscode.FileSystemWatcher;
+    private configFileWatcherDisposable: vscode.Disposable;
 
-    constructor() {
+    constructor(private fileSystemWatcherService: FileSystemWatcherService) {
         this.templateProvider = new AzureDevTemplateProvider();
 
         // Listen to azure.yaml file changes to toggle Quick Start visibility
-        this.configFileWatcher = vscode.workspace.createFileSystemWatcher(
-            '**/azure.{yml,yaml}',
-            false, false, false
-        );
-
         const onFileChange = () => {
             this.refresh();
         };
 
-        this.configFileWatcher.onDidCreate(onFileChange);
-        this.configFileWatcher.onDidDelete(onFileChange);
+        this.configFileWatcherDisposable = this.fileSystemWatcherService.watch(
+            '**/azure.{yml,yaml}',
+            onFileChange
+        );
     }
 
     refresh(): void {
@@ -96,7 +94,7 @@ export class TemplateToolsTreeDataProvider implements vscode.TreeDataProvider<Tr
     }
 
     dispose(): void {
-        this.configFileWatcher.dispose();
+        this.configFileWatcherDisposable.dispose();
         this._onDidChangeTreeData.dispose();
     }
 }
@@ -107,45 +105,45 @@ abstract class TreeItemModel extends vscode.TreeItem {}
 // Root level items
 class QuickStartGroupItem extends TreeItemModel {
     constructor() {
-        super('Quick Start', vscode.TreeItemCollapsibleState.Expanded);
+        super(vscode.l10n.t('Quick Start'), vscode.TreeItemCollapsibleState.Expanded);
         this.contextValue = 'quickStartGroup';
-        this.tooltip = 'Get started with Azure Developer CLI';
+        this.tooltip = vscode.l10n.t('Get started with Azure Developer CLI');
         this.iconPath = new vscode.ThemeIcon('rocket');
     }
 }
 
 class CategoryGroupItem extends TreeItemModel {
     constructor(private templateProvider: AzureDevTemplateProvider) {
-        super('Browse by Category', vscode.TreeItemCollapsibleState.Collapsed);
+        super(vscode.l10n.t('Browse by Category'), vscode.TreeItemCollapsibleState.Collapsed);
         this.contextValue = 'categoryGroup';
-        this.tooltip = 'Browse templates by category';
+        this.tooltip = vscode.l10n.t('Browse templates by category');
         this.iconPath = new vscode.ThemeIcon('folder-library');
     }
 }
 
 class AITemplatesItem extends TreeItemModel {
     constructor(private templateProvider: AzureDevTemplateProvider) {
-        super('AI Templates', vscode.TreeItemCollapsibleState.Collapsed);
+        super(vscode.l10n.t('AI Templates'), vscode.TreeItemCollapsibleState.Collapsed);
         this.contextValue = 'aiTemplates';
-        this.tooltip = 'AI and Machine Learning focused templates';
+        this.tooltip = vscode.l10n.t('AI and Machine Learning focused templates');
         this.iconPath = new vscode.ThemeIcon('sparkle');
 
         // Async description update
         void this.templateProvider.getAITemplates().then(templates => {
-            this.description = `${templates.length} templates`;
+            this.description = vscode.l10n.t('{0} templates', templates.length);
         });
     }
 }
 
 class SearchTemplatesItem extends TreeItemModel {
     constructor() {
-        super('Search Templates...', vscode.TreeItemCollapsibleState.None);
+        super(vscode.l10n.t('Search Templates...'), vscode.TreeItemCollapsibleState.None);
         this.contextValue = 'searchTemplates';
-        this.tooltip = 'Search for templates';
+        this.tooltip = vscode.l10n.t('Search for templates');
         this.iconPath = new vscode.ThemeIcon('search');
         this.command = {
             command: 'azure-dev.views.templateTools.search',
-            title: 'Search Templates'
+            title: vscode.l10n.t('Search Templates')
         };
     }
 }
@@ -153,39 +151,39 @@ class SearchTemplatesItem extends TreeItemModel {
 // Quick start items
 class InitFromCodeItem extends TreeItemModel {
     constructor() {
-        super('Initialize from Current Code', vscode.TreeItemCollapsibleState.None);
+        super(vscode.l10n.t('Initialize from Current Code'), vscode.TreeItemCollapsibleState.None);
         this.contextValue = 'initFromCode';
-        this.tooltip = 'Scan your current directory and generate Azure infrastructure';
+        this.tooltip = vscode.l10n.t('Scan your current directory and generate Azure infrastructure');
         this.iconPath = new vscode.ThemeIcon('code');
         this.command = {
             command: 'azure-dev.views.templateTools.initFromCode',
-            title: 'Initialize from Code'
+            title: vscode.l10n.t('Initialize from Code')
         };
     }
 }
 
 class InitMinimalItem extends TreeItemModel {
     constructor() {
-        super('Create Minimal Project', vscode.TreeItemCollapsibleState.None);
+        super(vscode.l10n.t('Create Minimal Project'), vscode.TreeItemCollapsibleState.None);
         this.contextValue = 'initMinimal';
-        this.tooltip = 'Create a minimal azure.yaml project file';
+        this.tooltip = vscode.l10n.t('Create a minimal azure.yaml project file');
         this.iconPath = new vscode.ThemeIcon('file');
         this.command = {
             command: 'azure-dev.views.templateTools.initMinimal',
-            title: 'Create Minimal Project'
+            title: vscode.l10n.t('Create Minimal Project')
         };
     }
 }
 
 class BrowseGalleryItem extends TreeItemModel {
     constructor() {
-        super('Browse Template Gallery', vscode.TreeItemCollapsibleState.None);
+        super(vscode.l10n.t('Browse Template Gallery'), vscode.TreeItemCollapsibleState.None);
         this.contextValue = 'browseGallery';
-        this.tooltip = 'Open Azure Developer CLI templates gallery in browser';
+        this.tooltip = vscode.l10n.t('Open Azure Developer CLI templates gallery in browser');
         this.iconPath = new vscode.ThemeIcon('globe');
         this.command = {
             command: 'azure-dev.views.templateTools.openGallery',
-            title: 'Browse Gallery'
+            title: vscode.l10n.t('Browse Gallery')
         };
     }
 }
@@ -198,12 +196,12 @@ class CategoryItem extends TreeItemModel {
     ) {
         super(category.displayName, vscode.TreeItemCollapsibleState.Collapsed);
         this.contextValue = 'templateCategory';
-        this.tooltip = `Browse ${category.displayName} templates`;
+        this.tooltip = vscode.l10n.t('Browse {0} templates', category.displayName);
         this.iconPath = new vscode.ThemeIcon('folder');
 
         // Async description update
         void this.templateProvider.getTemplatesByCategory(category.name).then(templates => {
-            this.description = `${templates.length} templates`;
+            this.description = vscode.l10n.t('{0} templates', templates.length);
         });
     }
 
@@ -222,8 +220,8 @@ class TemplateItem extends TreeItemModel {
         this.contextValue = 'ms-azuretools.azure-dev.views.templateTools.template';
         this.tooltip = new vscode.MarkdownString(
             `**${template.title}**\n\n${template.description}\n\n` +
-            `Author: ${template.author}\n\n` +
-            `[View on GitHub](${template.source})`
+            `${vscode.l10n.t('Author')}: ${template.author}\n\n` +
+            `[${vscode.l10n.t('View on GitHub')}](${template.source})`
         );
         this.description = template.author;
         this.iconPath = new vscode.ThemeIcon('symbol-class');
@@ -231,7 +229,7 @@ class TemplateItem extends TreeItemModel {
         // Click to open README
         this.command = {
             command: 'azure-dev.views.templateTools.openReadme',
-            title: 'View README',
+            title: vscode.l10n.t('View README'),
             arguments: [template]
         };
     }

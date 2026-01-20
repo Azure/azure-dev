@@ -8,20 +8,25 @@ import { EnvironmentsTreeDataProvider, EnvironmentTreeItem, EnvironmentItem } fr
 import { AzureDevCliEnvironmentVariable } from './workspace/AzureDevCliEnvironmentVariables';
 import { ExtensionsTreeDataProvider } from './extensions/ExtensionsTreeDataProvider';
 import { TemplateToolsTreeDataProvider } from './templateTools/TemplateToolsTreeDataProvider';
+import { FileSystemWatcherService } from '../services/FileSystemWatcherService';
 
 export function registerViews(context: vscode.ExtensionContext): void {
+    // Create shared FileSystemWatcherService
+    const fileSystemWatcherService = new FileSystemWatcherService();
+    context.subscriptions.push(fileSystemWatcherService);
+
     const helpAndFeedbackProvider = new HelpAndFeedbackTreeDataProvider();
     context.subscriptions.push(
         vscode.window.registerTreeDataProvider('azure-dev.views.helpAndFeedback', helpAndFeedbackProvider)
     );
 
-    const myProjectProvider = new MyProjectTreeDataProvider();
+    const myProjectProvider = new MyProjectTreeDataProvider(fileSystemWatcherService);
     context.subscriptions.push(
         vscode.window.registerTreeDataProvider('azure-dev.views.myProject', myProjectProvider)
     );
     context.subscriptions.push(myProjectProvider);
 
-    const environmentsProvider = new EnvironmentsTreeDataProvider();
+    const environmentsProvider = new EnvironmentsTreeDataProvider(fileSystemWatcherService);
     context.subscriptions.push(
         vscode.window.registerTreeDataProvider('azure-dev.views.environments', environmentsProvider)
     );
@@ -65,7 +70,7 @@ export function registerViews(context: vscode.ExtensionContext): void {
         })
     );
 
-    const templateToolsProvider = new TemplateToolsTreeDataProvider();
+    const templateToolsProvider = new TemplateToolsTreeDataProvider(fileSystemWatcherService);
     context.subscriptions.push(
         vscode.window.registerTreeDataProvider('azure-dev.views.templateTools', templateToolsProvider)
     );

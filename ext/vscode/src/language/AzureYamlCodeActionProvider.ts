@@ -4,6 +4,7 @@
 import { AzExtFsExtra } from '@microsoft/vscode-azext-utils';
 import * as vscode from 'vscode';
 import * as yaml from 'yaml';
+import { SUPPORTED_LANGUAGES } from '../constants/languages';
 import { getContainingFolderUri } from './azureYamlUtils';
 
 /**
@@ -47,14 +48,14 @@ export class AzureYamlCodeActionProvider implements vscode.CodeActionProvider {
     }
 
     private createCreateFolderAction(document: vscode.TextDocument, diagnostic: vscode.Diagnostic): vscode.CodeAction {
-        const action = new vscode.CodeAction('Create folder', vscode.CodeActionKind.QuickFix);
+        const action = new vscode.CodeAction(vscode.l10n.t('Create folder'), vscode.CodeActionKind.QuickFix);
         action.diagnostics = [diagnostic];
         action.isPreferred = true;
 
         const projectPath = this.extractProjectPath(document, diagnostic.range);
         if (projectPath) {
             action.command = {
-                title: 'Create folder',
+                title: vscode.l10n.t('Create folder'),
                 command: 'azure-dev.codeAction.createProjectFolder',
                 arguments: [document.uri, projectPath]
             };
@@ -64,11 +65,11 @@ export class AzureYamlCodeActionProvider implements vscode.CodeActionProvider {
     }
 
     private createBrowseForFolderAction(document: vscode.TextDocument, diagnostic: vscode.Diagnostic): vscode.CodeAction {
-        const action = new vscode.CodeAction('Browse for existing folder...', vscode.CodeActionKind.QuickFix);
+        const action = new vscode.CodeAction(vscode.l10n.t('Browse for existing folder...'), vscode.CodeActionKind.QuickFix);
         action.diagnostics = [diagnostic];
 
         action.command = {
-            title: 'Browse for folder',
+            title: vscode.l10n.t('Browse for folder'),
             command: 'azure-dev.codeAction.browseForProjectFolder',
             arguments: [document.uri, diagnostic.range]
         };
@@ -77,9 +78,8 @@ export class AzureYamlCodeActionProvider implements vscode.CodeActionProvider {
     }
 
     private createAddLanguageActions(document: vscode.TextDocument, diagnostic: vscode.Diagnostic): vscode.CodeAction[] {
-        const languages = ['python', 'js', 'ts', 'csharp', 'java', 'go'];
-        return languages.map(lang => {
-            const action = new vscode.CodeAction(`Add language: ${lang}`, vscode.CodeActionKind.QuickFix);
+        return SUPPORTED_LANGUAGES.map(lang => {
+            const action = new vscode.CodeAction(vscode.l10n.t('Add language: {0}', lang), vscode.CodeActionKind.QuickFix);
             action.diagnostics = [diagnostic];
             action.edit = new vscode.WorkspaceEdit();
 
@@ -93,13 +93,13 @@ export class AzureYamlCodeActionProvider implements vscode.CodeActionProvider {
 
     private createAddHostActions(document: vscode.TextDocument, diagnostic: vscode.Diagnostic): vscode.CodeAction[] {
         const hosts = [
-            { value: 'containerapp', label: 'Container Apps' },
-            { value: 'appservice', label: 'App Service' },
-            { value: 'function', label: 'Functions' }
+            { value: 'containerapp', label: vscode.l10n.t('Container Apps') },
+            { value: 'appservice', label: vscode.l10n.t('App Service') },
+            { value: 'function', label: vscode.l10n.t('Functions') }
         ];
 
         return hosts.map(host => {
-            const action = new vscode.CodeAction(`Add host: ${host.label}`, vscode.CodeActionKind.QuickFix);
+            const action = new vscode.CodeAction(vscode.l10n.t('Add host: {0}', host.label), vscode.CodeActionKind.QuickFix);
             action.diagnostics = [diagnostic];
             action.edit = new vscode.WorkspaceEdit();
 
@@ -114,9 +114,9 @@ export class AzureYamlCodeActionProvider implements vscode.CodeActionProvider {
         const actions: vscode.CodeAction[] = [];
 
         // Add "Add new service" refactoring action
-        const addServiceAction = new vscode.CodeAction('Add new service...', vscode.CodeActionKind.Refactor);
+        const addServiceAction = new vscode.CodeAction(vscode.l10n.t('Add new service...'), vscode.CodeActionKind.Refactor);
         addServiceAction.command = {
-            title: 'Add new service',
+            title: vscode.l10n.t('Add new service'),
             command: 'azure-dev.codeAction.addService',
             arguments: [document.uri]
         };
@@ -145,9 +145,9 @@ export async function registerCodeActionCommands(context: vscode.ExtensionContex
             try {
                 const folderUri = vscode.Uri.joinPath(getContainingFolderUri(documentUri), projectPath);
                 await AzExtFsExtra.ensureDir(folderUri.fsPath);
-                void vscode.window.showInformationMessage(`Created folder: ${projectPath}`);
+                void vscode.window.showInformationMessage(vscode.l10n.t('Created folder: {0}', projectPath));
             } catch (error) {
-                void vscode.window.showErrorMessage(`Failed to create folder: ${error instanceof Error ? error.message : String(error)}`);
+                void vscode.window.showErrorMessage(vscode.l10n.t('Failed to create folder: {0}', error instanceof Error ? error.message : String(error)));
             }
         })
     );
@@ -160,7 +160,7 @@ export async function registerCodeActionCommands(context: vscode.ExtensionContex
                 canSelectFolders: true,
                 canSelectMany: false,
                 defaultUri: workspaceFolder?.uri,
-                openLabel: 'Select Project Folder'
+                openLabel: vscode.l10n.t('Select Project Folder')
             });
 
             if (selected && selected[0]) {
@@ -187,11 +187,11 @@ export async function registerCodeActionCommands(context: vscode.ExtensionContex
     context.subscriptions.push(
         vscode.commands.registerCommand('azure-dev.codeAction.addService', async (documentUri: vscode.Uri) => {
             const serviceName = await vscode.window.showInputBox({
-                prompt: 'Enter service name',
+                prompt: vscode.l10n.t('Enter service name'),
                 placeHolder: 'api',
                 validateInput: (value) => {
                     if (!value || !/^[a-zA-Z0-9-_]+$/.test(value)) {
-                        return 'Service name must contain only letters, numbers, hyphens, and underscores';
+                        return vscode.l10n.t('Service name must contain only letters, numbers, hyphens, and underscores');
                     }
                     return undefined;
                 }
@@ -202,8 +202,8 @@ export async function registerCodeActionCommands(context: vscode.ExtensionContex
             }
 
             const language = await vscode.window.showQuickPick(
-                ['python', 'js', 'ts', 'csharp', 'java', 'go'],
-                { placeHolder: 'Select programming language' }
+                [...SUPPORTED_LANGUAGES],
+                { placeHolder: vscode.l10n.t('Select programming language') }
             );
 
             if (!language) {
@@ -212,11 +212,11 @@ export async function registerCodeActionCommands(context: vscode.ExtensionContex
 
             const host = await vscode.window.showQuickPick(
                 [
-                    { label: 'containerapp', description: 'Azure Container Apps' },
-                    { label: 'appservice', description: 'Azure App Service' },
-                    { label: 'function', description: 'Azure Functions' }
+                    { label: 'containerapp', description: vscode.l10n.t('Azure Container Apps') },
+                    { label: 'appservice', description: vscode.l10n.t('Azure App Service') },
+                    { label: 'function', description: vscode.l10n.t('Azure Functions') }
                 ],
-                { placeHolder: 'Select Azure host' }
+                { placeHolder: vscode.l10n.t('Select Azure host') }
             );
 
             if (!host) {
@@ -229,7 +229,7 @@ export async function registerCodeActionCommands(context: vscode.ExtensionContex
 
             const services = doc.get('services') as yaml.YAMLMap;
             if (!services) {
-                void vscode.window.showErrorMessage('No services section found in azure.yaml');
+                void vscode.window.showErrorMessage(vscode.l10n.t('No services section found in azure.yaml'));
                 return;
             }
 

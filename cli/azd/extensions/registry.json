@@ -1698,6 +1698,75 @@
               "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-finetune_0.0.8-preview/azure-ai-finetune-windows-arm64.zip"
             }
           }
+        },
+        {
+          "version": "0.0.9-preview",
+          "capabilities": [
+            "custom-commands"
+          ],
+          "usage": "azd ai finetuning \u003ccommand\u003e [options]",
+          "examples": [
+            {
+              "name": "init",
+              "description": "Initialize a new AI fine-tuning project.",
+              "usage": "azd ai finetuning init"
+            },
+            {
+              "name": "deploy",
+              "description": "Deploy AI fine-tuning job to Azure.",
+              "usage": "azd ai finetuning deploy"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "90b18b9e15429b7fe10d6eb0dbe9e882cf95a06e9be3a127657653a4ff6755b3"
+              },
+              "entryPoint": "azure-ai-finetune-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-finetune_0.0.9-preview/azure-ai-finetune-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "7be2843e419c2e7d16f849110c2b659fa5230135a2f52ccd151fbd7e3f3aeb64"
+              },
+              "entryPoint": "azure-ai-finetune-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-finetune_0.0.9-preview/azure-ai-finetune-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "1fbedf42d4bd61f68d62df58f21b62a9a4d500870da0ac90ac55d4c6eb02f11c"
+              },
+              "entryPoint": "azure-ai-finetune-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-finetune_0.0.9-preview/azure-ai-finetune-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "d76e9c78bbf453d00f39404ebe5786f351e3394b1ab33e710d2d7f261d61c9bd"
+              },
+              "entryPoint": "azure-ai-finetune-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-finetune_0.0.9-preview/azure-ai-finetune-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "ae99e9336650abcb39fe41621380986cda125dae266d5b976306df182f2c0ef7"
+              },
+              "entryPoint": "azure-ai-finetune-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-finetune_0.0.9-preview/azure-ai-finetune-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "e9ccf8b5a0bde6d4e2fe30a96736c5187bd85ebe4d1f1d9c7aff921a830152f0"
+              },
+              "entryPoint": "azure-ai-finetune-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-finetune_0.0.9-preview/azure-ai-finetune-windows-arm64.zip"
+            }
+          }
         }
       ]
     }

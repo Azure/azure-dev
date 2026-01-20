@@ -108,7 +108,7 @@
     "capabilities": {
       "type": "array",
       "title": "Capabilities",
-      "description": "List of capabilities provided by the extension. Supported values: custom-commands, lifecycle-events, mcp-server, service-target-provider. Select one or more from the allowed list. Each value must be unique.",
+      "description": "List of capabilities provided by the extension. Supported values: custom-commands, lifecycle-events, mcp-server, service-target-provider, metadata. Select one or more from the allowed list. Each value must be unique.",
       "minItems": 1,
       "uniqueItems": true,
       "items": {
@@ -142,6 +142,12 @@
             "const": "framework-service-provider",
             "title": "Framework Service Provider",
             "description": "Framework service provider enables extensions to provide custom language frameworks and build systems."
+          },
+          {
+            "type": "string",
+            "const": "metadata",
+            "title": "Metadata",
+            "description": "Metadata capability enables extensions to provide comprehensive metadata about their commands and capabilities via a metadata command."
           }
         ]
       }

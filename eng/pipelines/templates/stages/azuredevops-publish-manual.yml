@@ -1,0 +1,74 @@
+stages:
+  - stage: PublishManual
+    dependsOn: Sign
+    condition: >-
+      and(
+        succeeded(),
+        ne(variables['Skip.Release'], 'true'),
+        or(
+          eq('Manual', variables['BuildReasonOverride']),
+          and(
+            eq('', variables['BuildReasonOverride']),
+            eq(variables['Build.Reason'], 'Manual')
+          )
+        )
+      )
+
+    variables:
+      - template: /eng/pipelines/templates/variables/globals.yml
+      - template: /eng/pipelines/templates/variables/image.yml
+
+    jobs:
+      - deployment: Publish_Release
+        environment: package-publish
+        pool:
+          name: azsdk-pool
+          image: ubuntu-24.04
+          os: linux
+
+        templateContext:
+          type: releaseJob
+          isProduction: true
+          inputs:
+            - input: pipelineArtifact
+              artifactName: signed
+              targetPath: signed
+
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: NodeTool@0
+                  inputs:
+                    versionSpec: 20.x
+
+                - task: TfxInstaller@5
+                  displayName: Install tfx-cli for release
+                  inputs:
+                    version: 0.23.x
+
+                - pwsh: |
+                    $files = Get-ChildItem -Path "$(Build.SourcesDirectory)/signed/*.vsix"
+                    if ($files -is [Array]) { 
+                      if ($files.Count -gt 1) {
+                        Write-Host "More than one VSIX file found in signed artifact."
+                        exit 1
+                      }
+                      $vsixFile = $files[0].FullName
+                    } else {
+                      $vsixFile = $files.FullName
+                    }
+                    
+                    Write-Host "Setting VSIX_FILE to $vsixFile"
+                    Write-Host "##vso[task.setvariable variable=VSIX_FILE]$vsixFile"
+                  displayName: Get VSIX Filename
+
+                - task: 1ES.PublishAzureDevOpsExtension@1
+                  displayName: Publish Extension
+                  inputs:
+                    targetPath: "$(Build.SourcesDirectory)/signed"
+                    connectedServiceNameAzureRM: azure-sdk-vsmarketplace
+                    fileType: vsix
+                    vsixFile: "$(VSIX_FILE)"
+                    useV5: true
+                    validateExtension: false

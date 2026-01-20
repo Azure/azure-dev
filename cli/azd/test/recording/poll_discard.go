@@ -87,6 +87,14 @@ func NewPoller(i *cassette.Interaction) (poller, error) {
 		return newOpPoll(i)
 	}
 
+	// Azure Functions flex consumption publish polling.
+	// Must be checked before isLocationPoll since publish responses also have Location header + 202 status,
+	// which would match the Location poller but requires different polling logic
+	// (status-based specific to Functions rather than header-based).
+	if isFuncPublishPoll(i) {
+		return newFuncPublishPoll(i)
+	}
+
 	if isLocationPoll(i) {
 		return newLocationPoll(i)
 	}

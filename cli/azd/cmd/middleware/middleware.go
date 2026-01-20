@@ -99,14 +99,7 @@ func (r *MiddlewareRunner) RunAction(
 
 			var middleware Middleware
 			if err := actionContainer.ResolveNamed(middlewareName, &middleware); err != nil {
-				log.Printf("failed resolving middleware '%s' : %v\n", middlewareName, err)
-			}
-
-			// It is an expected scenario that the middleware cannot be resolved
-			// due to missing dependency or other project configuration.
-			// In this case simply continue the chain with `nextFn`
-			if middleware == nil {
-				return nextFn(ctx)
+				return nil, err
 			}
 
 			log.Printf("running middleware '%s'\n", middlewareName)

@@ -41,6 +41,9 @@ type ProjectConfig struct {
 	Cloud             *cloud.Config              `yaml:"cloud,omitempty"`
 	Resources         map[string]*ResourceConfig `yaml:"resources,omitempty"`
 
+	// AdditionalProperties captures any unknown YAML fields for extension support
+	AdditionalProperties map[string]interface{} `yaml:",inline"`
+
 	*ext.EventDispatcher[ProjectLifecycleEventArgs] `yaml:"-"`
 }
 

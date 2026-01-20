@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -202,25 +204,6 @@ func NewRootCmd(
 			},
 		}).
 		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
-
-	//deprecate:cmd hide login
-	login := newLoginCmd("")
-	login.Hidden = true
-	root.Add("login", &actions.ActionDescriptorOptions{
-		Command:        login,
-		FlagsResolver:  newLoginFlags,
-		ActionResolver: newLoginAction,
-		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
-		DefaultFormat:  output.NoneFormat,
-	})
-
-	//deprecate:cmd hide logout
-	logout := newLogoutCmd("")
-	logout.Hidden = true
-	root.Add("logout", &actions.ActionDescriptorOptions{
-		Command:        logout,
-		ActionResolver: newLogoutAction,
-	})
 
 	root.Add("init", &actions.ActionDescriptorOptions{
 		Command:        newInitCmd(),
@@ -448,8 +431,13 @@ func NewRootCmd(
 			return fmt.Errorf("Failed to get installed extensions: %w", err)
 		}
 
+		// Sort extensions by ID for deterministic command binding order
+		sortedExtensions := slices.SortedFunc(maps.Values(installedExtensions), func(a, b *extensions.Extension) int {
+			return strings.Compare(a.Id, b.Id)
+		})
+
 		// Bind custom extension commands for extensions that expose the capability
-		for _, ext := range installedExtensions {
+		for _, ext := range sortedExtensions {
 			if ext.HasCapability(extensions.CustomCommandCapability) {
 				if err := bindExtension(root, ext); err != nil {
 					return fmt.Errorf("Failed to bind extension commands: %w", err)

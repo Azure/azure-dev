@@ -19,7 +19,11 @@ import (
 func CreateGraphClient(mockContext *mocks.MockContext) (*graphsdk.GraphClient, error) {
 	clientOptions := &azcore.ClientOptions{
 		Transport: mockContext.HttpClient,
-		Retry:     policy.RetryOptions{RetryDelay: -1},
+		Retry: policy.RetryOptions{
+			MaxRetries:    -1,
+			MaxRetryDelay: -1,
+			RetryDelay:    -1,
+		},
 	}
 	return graphsdk.NewGraphClient(mockContext.Credentials, clientOptions)
 }

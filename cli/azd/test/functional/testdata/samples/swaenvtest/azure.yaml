@@ -6,7 +6,7 @@ services:
   web:
     project: .
     language: js
-    host: appservice
+    host: staticwebapp
     # Service-level environment variables passed to build tools
     env:
       # Reference azd environment variables using ${VAR_NAME} syntax

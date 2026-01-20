@@ -72,7 +72,7 @@ func (m *mavenProject) Restore(
 
 	env, err := serviceConfig.ExpandEnv(m.env.Getenv)
 	if err != nil {
-		return nil, fmt.Errorf("getting service environment variables: %w", err)
+		return nil, fmt.Errorf("expanding service environment variables: %w", err)
 	}
 
 	if err := m.mavenCli.ResolveDependencies(ctx, serviceConfig.Path(), env); err != nil {
@@ -107,7 +107,7 @@ func (m *mavenProject) Build(
 
 	env, err := serviceConfig.ExpandEnv(m.env.Getenv)
 	if err != nil {
-		return nil, fmt.Errorf("getting service environment variables: %w", err)
+		return nil, fmt.Errorf("expanding service environment variables: %w", err)
 	}
 
 	if err := m.mavenCli.Compile(ctx, serviceConfig.Path(), env); err != nil {
@@ -140,7 +140,7 @@ func (m *mavenProject) Package(
 
 	env, err := serviceConfig.ExpandEnv(m.env.Getenv)
 	if err != nil {
-		return nil, fmt.Errorf("getting service environment variables: %w", err)
+		return nil, fmt.Errorf("expanding service environment variables: %w", err)
 	}
 
 	if err := m.mavenCli.Package(ctx, serviceConfig.Path(), env); err != nil {

@@ -90,6 +90,8 @@ func (cli *Cli) CheckInstalled(ctx context.Context) error {
 	return nil
 }
 
+// Restore runs dotnet restore on the specified project.
+// Optional env parameter allows passing additional environment variables to the dotnet process.
 func (cli *Cli) Restore(ctx context.Context, project string, env []string) error {
 	runArgs := newDotNetRunArgs("restore", project)
 	if len(env) > 0 {
@@ -102,6 +104,8 @@ func (cli *Cli) Restore(ctx context.Context, project string, env []string) error
 	return nil
 }
 
+// Build runs dotnet build on the specified project.
+// Optional env parameter allows passing additional environment variables to the dotnet process.
 func (cli *Cli) Build(ctx context.Context, project string, configuration string, output string, env []string) error {
 	runArgs := newDotNetRunArgs("build", project)
 	if configuration != "" {
@@ -123,6 +127,8 @@ func (cli *Cli) Build(ctx context.Context, project string, configuration string,
 	return nil
 }
 
+// Publish runs dotnet publish on the specified project.
+// Optional env parameter allows passing additional environment variables to the dotnet process.
 func (cli *Cli) Publish(ctx context.Context, project string, configuration string, output string, env []string) error {
 	runArgs := newDotNetRunArgs("publish", project)
 	if configuration != "" {

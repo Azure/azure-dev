@@ -8,41 +8,41 @@ This style guide establishes standards for code, user experience, testing, and d
 
 ### Go Conventions
 
-#### Required Before Each Commit
+#### Pre-commit Checks
 
-**CRITICAL**: Before committing any changes:
+Run these commands from `cli/azd/` and ensure all files include the copyright header:
 
-1. Run `gofmt -s -w .` from `cli/azd/` directory for proper formatting
-2. Run `golangci-lint run ./...` from `cli/azd/` directory to check for linting issues
-3. Run `cspell lint "**/*.go" --relative --config ./.vscode/cspell.yaml --no-progress` to check spelling
-4. All Go files must include the standard copyright header:
-
-   ```go
-   // Copyright (c) Microsoft Corporation. All rights reserved.
-   // Licensed under the MIT License.
-   ```
-
-#### Naming Conventions
-
-- **Packages**: Use short, lowercase, single-word names (e.g., `auth`, `project`, `telemetry`)
-- **Interfaces**: Use descriptive names ending in `-er` when appropriate (e.g., `Runner`, `Provider`)
-- **Constructors**: Prefix with `New` and use dependency injection (e.g., `NewProjectService`)
-- **Private fields**: Use camelCase with leading lowercase (e.g., `userConfig`)
-- **Public fields**: Use PascalCase (e.g., `ProjectName`)
-
-#### Dependency Injection
-
-**ALWAYS** use the IoC container for service registration and resolution:
+```bash
+gofmt -s -w .
+golangci-lint run ./...
+cspell lint "**/*.go" --relative --config ./.vscode/cspell.yaml --no-progress
+```
 
 ```go
-// Register services in container
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+```
+
+#### Naming
+
+- **Packages**: Short, lowercase, single-word (e.g., `auth`, `project`).
+- **Interfaces**: Descriptive, typically ending in `-er` (e.g., `Runner`).
+- **Constructors**: `New` prefix, injecting dependencies (e.g., `NewProjectService`).
+- **Fields**: `PascalCase` for public, `camelCase` for private.
+
+#### Dependency Injection (IoC)
+
+**ALWAYS** use the IoC container. **NEVER** use direct instantiation for major components.
+
+```go
+// 1. Register with container
 ioc.RegisterSingleton(container, func() *MyService {
     return &MyService{
         dependency: ioc.Get[*SomeDependency](container),
     }
 })
 
-// Constructor pattern
+// 2. Definition & Constructor
 type myService struct {
     dependency *SomeDependency
 }
@@ -52,29 +52,19 @@ func NewMyService(dep *SomeDependency) *myService {
 }
 ```
 
-**NEVER** use direct instantiation for major components.
+### Error Handling & Context
 
-### Error Handling
-
-- **Context**: Provide rich error context with user-facing messages
-- **Wrapping**: Use `fmt.Errorf` with `%w` verb to wrap errors
-- **User messages**: Make error messages actionable and clear
-- **Trace IDs**: Include trace IDs for server errors when available
+- **Errors**: Wrap with `fmt.Errorf` ("%w") to add actionable context and trace IDs.
+- **Context**: **ALWAYS** propagate `context.Context` for cancellation and telemetry.
 
 ```go
-if err != nil {
-    return fmt.Errorf("failed to provision resources: %w", err)
+func (s *Service) Run(ctx context.Context) error {
+    if err := s.doWork(ctx); err != nil {
+        return fmt.Errorf("failed to provision resources: %w", err)
+    }
+    return nil
 }
 ```
-
-### Context Propagation
-
-**ALWAYS** propagate `context.Context` through call chains for:
-
-- Cancellation support
-- Timeout management
-- Request-scoped values
-- Telemetry span propagation
 
 ## User Experience Patterns
 

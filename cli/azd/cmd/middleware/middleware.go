@@ -39,11 +39,6 @@ type Options struct {
 	Annotations map[string]string
 }
 
-func (o *Options) IsChildAction(ctx context.Context) bool {
-	value, ok := ctx.Value(childActionKey).(bool)
-	return ok && value
-}
-
 // Sets the container to be used for resolving middleware components
 func (o *Options) WithContainer(container *ioc.NestedContainer) {
 	o.container = container
@@ -142,4 +137,11 @@ func (r *MiddlewareRunner) Use(name string, resolveFn any) error {
 
 func WithChildAction(ctx context.Context) context.Context {
 	return context.WithValue(ctx, childActionKey, true)
+}
+
+// IsChildAction checks if the given context was created by WithChildAction.
+// This is used to determine if a command is being executed as part of a workflow step.
+func IsChildAction(ctx context.Context) bool {
+	value, ok := ctx.Value(childActionKey).(bool)
+	return ok && value
 }

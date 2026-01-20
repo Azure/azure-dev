@@ -33,6 +33,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/oneauth"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/blang/semver/v4"
 	"github.com/mattn/go-colorable"
 	"github.com/spf13/pflag"
@@ -67,6 +68,11 @@ func main() {
 	go fetchLatestVersion(latest)
 
 	rootContainer := ioc.NewNestedContainer(nil)
+
+	ctx = context.WithoutCancel(ctx)
+	ctx = tools.WithInstalledCheckCache(ctx)
+
+	// Register the context for singleton resolution
 	ioc.RegisterInstance(rootContainer, ctx)
 
 	// Execute command with auto-installation support for extensions

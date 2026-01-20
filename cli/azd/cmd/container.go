@@ -174,7 +174,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return writer
 	})
 
-	container.MustRegisterScoped(func(cmd *cobra.Command) internal.EnvFlag {
+	container.MustRegisterScoped(func(ctx context.Context, cmd *cobra.Command) internal.EnvFlag {
 		// The env flag `-e, --environment` is available on most azd commands but not all
 		// This is typically used to override the default environment and is used for bootstrapping other components
 		// such as the azd environment.
@@ -190,7 +190,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			// If no explicit environment flag was set, but one was provided
 			// in the context, use that instead.
 			// This is used in workflow execution (in `up`) to influence the environment used.
-			if envFlag, ok := cmd.Context().Value(envFlagCtxKey).(internal.EnvFlag); ok {
+			if envFlag, ok := ctx.Value(envFlagCtxKey).(internal.EnvFlag); ok {
 				return envFlag
 			}
 		}
@@ -918,29 +918,7 @@ func (w *workflowCmdAdapter) SetArgs(args []string) {
 // ExecuteContext implements workflow.AzdCommandRunner
 func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context) error {
 	childCtx := middleware.WithChildAction(ctx)
-
-	// Clear any stale context from previous workflow step executions.
-	// When the same command instance is reused across workflow steps, cobra may retain
-	// a cancelled context from a previous execution. We clear with context.TODO() rather
-	// than setting childCtx to avoid polluting the cobra command tree with a context that
-	// will be cancelled after this step completes. The actual context is properly passed
-	// via ExecuteContext which sets it on the root command and propagates to subcommands.
-	clearContextRecursively(w.cmd)
-
 	return w.cmd.ExecuteContext(childCtx)
-}
-
-// clearContextRecursively clears the context on a command and all its subcommands recursively
-// to remove any stale cancelled contexts from previous workflow step executions.
-func clearContextRecursively(cmd *cobra.Command) {
-	// Set context to TODO() to clear any stale context. cobra.Command.Context() returns
-	// context.Background() if no context is set, so SetContext is safe to call on any command.
-	// The actual context will be set by ExecuteContext on the root command and propagated
-	// to the executed subcommand by cobra's internal execution flow.
-	cmd.SetContext(context.TODO())
-	for _, subCmd := range cmd.Commands() {
-		clearContextRecursively(subCmd)
-	}
 }
 
 // ArmClientInitializer is a function definition for all Azure SDK ARM Client

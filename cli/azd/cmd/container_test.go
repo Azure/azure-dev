@@ -7,6 +7,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
@@ -160,11 +161,12 @@ type testConcreteComponent[T comparable] struct {
 }
 
 // Test_WorkflowCmdAdapter_ContextPropagation validates that the workflowCmdAdapter
-// properly sets fresh contexts on both root and subcommands when reused across
-// multiple workflow steps, preventing stale cancelled contexts from affecting
-// subsequent executions.
+// properly marks contexts as child actions when executing subcommands.
+// The main.go entrypoint wraps the root context with context.WithoutCancel,
+// so workflow steps always receive a non-cancellable context.
+// See: https://github.com/Azure/azure-dev/issues/6530
 func Test_WorkflowCmdAdapter_ContextPropagation(t *testing.T) {
-	t.Run("SubcommandReceivesFreshContext", func(t *testing.T) {
+	t.Run("SubcommandReceivesChildActionContext", func(t *testing.T) {
 		// Track which contexts were seen by the subcommand
 		var receivedContexts []context.Context
 
@@ -187,48 +189,38 @@ func Test_WorkflowCmdAdapter_ContextPropagation(t *testing.T) {
 		// Create the adapter
 		adapter := &workflowCmdAdapter{cmd: rootCmd}
 
-		// Simulate first workflow step
-		ctx1, cancel1 := context.WithCancel(context.Background())
+		// In production, main.go wraps with context.WithoutCancel.
+		// Simulate this by using a non-cancellable context.
+		ctx := context.WithoutCancel(context.Background())
 		adapter.SetArgs([]string{"sub"})
-		err := adapter.ExecuteContext(ctx1)
+		err := adapter.ExecuteContext(ctx)
 		require.NoError(t, err)
-		require.Len(t, receivedContexts, 1, "First execution should have received context")
+		require.Len(t, receivedContexts, 1, "Execution should have received context")
 
-		// Verify first context is not cancelled during execution
+		// Verify context is marked as child action
+		require.True(t, middleware.IsChildAction(receivedContexts[0]),
+			"Context should be marked as child action")
+
+		// Verify context is not cancelled (since we used WithoutCancel)
 		select {
 		case <-receivedContexts[0].Done():
-			t.Fatal("First context should not be cancelled during execution")
+			t.Fatal("Context should not be cancelled")
 		default:
 			// Expected: context is still valid
 		}
 
-		// Cancel the first context (simulating workflow step completion)
-		// Note: The workflowCmdAdapter intentionally clears contexts using context.TODO()
-		// to prevent stale context propagation. The subcommand receives a fresh context
-		// each time, so cancelling ctx1 won't affect receivedContexts[0].
-		cancel1()
-
-		// Simulate second workflow step with a fresh context
-		ctx2 := context.Background()
+		// Execute again - should still work
 		adapter.SetArgs([]string{"sub"})
-		err = adapter.ExecuteContext(ctx2)
+		err = adapter.ExecuteContext(ctx)
 		require.NoError(t, err)
 		require.Len(t, receivedContexts, 2, "Second execution should have received context")
 
-		// CRITICAL TEST: Verify second execution received a valid context,
-		// not the cancelled context from the first execution
-		select {
-		case <-receivedContexts[1].Done():
-			t.Fatal("2nd execution should have received a fresh valid context, not the cancelled one from 1st execution")
-		default:
-			// Expected: second context is valid
-		}
-
-		// Note: Both contexts will be context.TODO() since clearContextRecursively
-		// sets this on subcommands. The important thing is that neither is cancelled.
+		// Both contexts should be marked as child actions
+		require.True(t, middleware.IsChildAction(receivedContexts[1]),
+			"Second context should also be marked as child action")
 	})
 
-	t.Run("NestedSubcommandReceivesFreshContext", func(t *testing.T) {
+	t.Run("NestedSubcommandReceivesChildActionContext", func(t *testing.T) {
 		// Track which contexts were seen
 		var receivedContexts []context.Context
 
@@ -254,29 +246,32 @@ func Test_WorkflowCmdAdapter_ContextPropagation(t *testing.T) {
 
 		adapter := &workflowCmdAdapter{cmd: rootCmd}
 
-		// First execution
-		ctx1, cancel1 := context.WithCancel(context.Background())
+		// In production, main.go wraps with context.WithoutCancel.
+		ctx := context.WithoutCancel(context.Background())
 		adapter.SetArgs([]string{"parent", "child"})
-		err := adapter.ExecuteContext(ctx1)
+		err := adapter.ExecuteContext(ctx)
 		require.NoError(t, err)
 		require.Len(t, receivedContexts, 1)
 
-		// Cancel first context
-		cancel1()
+		// Verify context is marked as child action
+		require.True(t, middleware.IsChildAction(receivedContexts[0]),
+			"Nested context should be marked as child action")
 
-		// Second execution with fresh context
-		ctx2 := context.Background()
+		// Second execution should also work
 		adapter.SetArgs([]string{"parent", "child"})
-		err = adapter.ExecuteContext(ctx2)
+		err = adapter.ExecuteContext(ctx)
 		require.NoError(t, err)
 		require.Len(t, receivedContexts, 2)
 
-		// Verify second execution got a valid context
+		// Verify second execution got a valid context marked as child
 		select {
 		case <-receivedContexts[1].Done():
-			t.Fatal("Nested subcommand should have received a fresh valid context in second execution")
+			t.Fatal("Nested subcommand should have received a valid context")
 		default:
 			// Expected: context is valid
 		}
+
+		require.True(t, middleware.IsChildAction(receivedContexts[1]),
+			"Second nested context should also be marked as child action")
 	})
 }

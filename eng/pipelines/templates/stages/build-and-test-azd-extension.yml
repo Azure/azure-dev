@@ -5,6 +5,9 @@ parameters:
     type: string
   - name: AzdExtensionDirectory
     type: string
+  - name: SkipTests
+    type: boolean
+    default: false
   - name: CrossBuildMatrix
     type: object
     default:
@@ -81,6 +84,7 @@ stages:
               UploadArtifact: ${{ build.value.UploadArtifact}}
               Variables: ${{ build.value.Variables }}
               AzdExtensionDirectory: ${{ parameters.AzdExtensionDirectory }}
+              SkipTests: ${{ parameters.SkipTests }}
 
       - ${{ each build in parameters.CrossBuildMatrix }}:
         - template: /eng/pipelines/templates/jobs/cross-build-azd-extension.yml

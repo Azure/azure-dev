@@ -14,6 +14,7 @@ stages:
     parameters:
       AzdExtensionId: ${{ parameters.AzdExtensionId }}
       AzdExtensionDirectory: ${{ parameters.AzdExtensionDirectory }}
+      SkipTests: ${{ parameters.SkipTests }}
       BuildMatrix:
         Windows:
           Pool: $(WINDOWSPOOL)

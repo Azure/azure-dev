@@ -5,6 +5,9 @@ parameters:
     type: string
   - name: SanitizedExtensionId
     type: string
+  - name: SkipTests
+    type: boolean
+    default: false
 
 stages: 
   - template: /eng/pipelines/templates/stages/build-and-test-azd-extension.yml

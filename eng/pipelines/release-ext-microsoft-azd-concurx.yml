@@ -29,3 +29,4 @@ extends:
           AzdExtensionId: microsoft.azd.concurx
           SanitizedExtensionId: microsoft-azd-concurx
           AzdExtensionDirectory: cli/azd/extensions/microsoft.azd.concurx
+          SkipTests: true

@@ -30,3 +30,4 @@ extends:
           AzdExtensionId: azure.ai.finetune
           SanitizedExtensionId: azure-ai-finetune
           AzdExtensionDirectory: cli/azd/extensions/azure.ai.finetune
+          SkipTests: true

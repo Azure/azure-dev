@@ -36,8 +36,6 @@ jobs:
       - checkout: self
 
       - template: /eng/pipelines/templates/steps/setup-go.yml
-        parameters:
-          Condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
 
       - task: PowerShell@2
         inputs:
@@ -61,10 +59,12 @@ jobs:
           workingDirectory: ${{ parameters.AzdExtensionDirectory }}
         displayName: Build Go Binary (for tests)
 
-      - pwsh: Write-Host "Tests would run here..."
-        condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
-        workingDirectory: ${{ parameters.AzdExtensionDirectory }}
+      - task: PowerShell@2
         displayName: Run tests
+        inputs:
+          pwsh: true
+          targetType: filePath
+          filePath: ${{ parameters.AzdExtensionDirectory }}/ci-test.ps1
 
       - task: PublishTestResults@2
         inputs:

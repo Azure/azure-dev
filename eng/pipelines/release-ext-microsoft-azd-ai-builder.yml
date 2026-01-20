@@ -31,3 +31,4 @@ extends:
           AzdExtensionId: microsoft.azd.ai.builder
           SanitizedExtensionId: microsoft-azd-ai-builder
           AzdExtensionDirectory: cli/azd/extensions/microsoft.azd.ai.builder
+          SkipTests: true

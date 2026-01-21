@@ -557,6 +557,7 @@ func getCmdRootHelpCommands(cmd *cobra.Command) (result string) {
 // This prevents stale context issues where a cancelled context might be reused by singletons
 // or cached components. See: https://github.com/Azure/azure-dev/issues/6530
 func clearCommandContext(cmd *cobra.Command) {
+	//nolint:staticcheck // SA1012: Intentionally passing nil to clear the context and reset to cobra's default state
 	cmd.SetContext(nil)
 	for _, child := range cmd.Commands() {
 		clearCommandContext(child)

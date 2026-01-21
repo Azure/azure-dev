@@ -22,8 +22,8 @@ const (
 	HintDeploymentName = "Deployment name can be any unique identifier for your endpoint"
 
 	HintSubmitJobUsage = `Usage options:
-  1. Provide a config file:    azd ai finetune jobs submit --file config.yaml
-  2. Provide model and data:   azd ai finetune jobs submit --model <model> --training-file <file>`
+  1. Provide a config file:    azd ai finetuning jobs submit --file config.yaml
+  2. Provide model and data:   azd ai finetuning jobs submit --model <model> --training-file <file>`
 )
 
 // validateRequiredFlags checks if any of the provided flag values are empty and returns
@@ -119,7 +119,7 @@ func validateEnvironment(ctx context.Context) error {
 
 	for _, varName := range required {
 		if envValues[varName] == "" {
-			return fmt.Errorf("required environment variables not set. Please run 'azd ai finetune init' command to configure your environment")
+			return fmt.Errorf("required environment variables not set. Please run 'azd ai finetuning init' command to configure your environment")
 		}
 	}
 	return nil

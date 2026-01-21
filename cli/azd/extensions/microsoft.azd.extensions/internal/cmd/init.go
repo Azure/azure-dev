@@ -182,7 +182,7 @@ func runInitAction(ctx context.Context, flags *initFlags) error {
 	}
 
 	extensionPath := filepath.Join(cwd, extensionMetadata.Id)
-	if info, statErr := os.Stat(extensionPath); statErr == nil && info.IsDir() {
+	if info, err := os.Stat(extensionPath); err == nil && info.IsDir() {
 		confirmResponse, err := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
 			Options: &azdext.ConfirmOptions{
 				Message: fmt.Sprintf(
@@ -220,7 +220,7 @@ func runInitAction(ctx context.Context, flags *initFlags) error {
 	}
 
 	createExtensionDirectoryAction := func(spf ux.SetProgressFunc) (ux.TaskState, error) {
-		if err := createExtensionDirectory(ctx, azdClient, extensionMetadata); err != nil {
+		if err := createExtensionDirectory(ctx, azdClient, extensionMetadata, cwd); err != nil {
 			return ux.Error, common.NewDetailedError(
 				"Error creating directory",
 				fmt.Errorf("failed to create extension directory: %w", err),
@@ -606,12 +606,8 @@ func createExtensionDirectory(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	extensionMetadata *models.ExtensionSchema,
+	cwd string,
 ) error {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("failed to get current working directory: %w", err)
-	}
-
 	extensionPath := filepath.Join(cwd, extensionMetadata.Id)
 
 	info, err := os.Stat(extensionPath)

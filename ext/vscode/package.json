@@ -233,23 +233,23 @@
             "azure-dev-view": [
                 {
                     "id": "azure-dev.views.myProject",
-                    "name": "My Project"
+                    "name": "%azure-dev.views.myProject.name%"
                 },
                 {
                     "id": "azure-dev.views.environments",
-                    "name": "Environments"
+                    "name": "%azure-dev.views.environments.name%"
                 },
                 {
                     "id": "azure-dev.views.templateTools",
-                    "name": "Template Tools"
+                    "name": "%azure-dev.views.templateTools.name%"
                 },
                 {
                     "id": "azure-dev.views.extensions",
-                    "name": "Extensions"
+                    "name": "%azure-dev.views.extensions.name%"
                 },
                 {
                     "id": "azure-dev.views.helpAndFeedback",
-                    "name": "Help and Feedback",
+                    "name": "%azure-dev.views.helpAndFeedback.name%",
                     "visibility": "collapsed"
                 }
             ]

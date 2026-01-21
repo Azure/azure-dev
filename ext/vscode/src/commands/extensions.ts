@@ -47,15 +47,17 @@ async function runExtensionCommand(context: IActionContext, args: CommandLineArg
 }
 
 export async function installExtension(context: IActionContext): Promise<void> {
-    const registryName = await vscode.window.showInputBox({
+    const registryName = await context.ui.showInputBox({
         prompt: vscode.l10n.t('Enter the registry name (optional)'),
-        placeHolder: vscode.l10n.t('Registry Name (Press Enter to skip)')
+        placeHolder: vscode.l10n.t('Registry Name (Press Enter to skip)'),
+        stepName: 'registryName'
     });
 
     if (registryName) {
-        const location = await vscode.window.showInputBox({
+        const location = await context.ui.showInputBox({
             prompt: vscode.l10n.t('Enter the registry location (URL)'),
-            placeHolder: vscode.l10n.t('https://...')
+            placeHolder: vscode.l10n.t('https://...'),
+            stepName: 'registryLocation'
         });
 
         if (!location) {

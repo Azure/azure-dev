@@ -5,18 +5,22 @@ import { expect } from 'chai';
 import * as vscode from 'vscode';
 import * as sinon from 'sinon';
 import { TemplateToolsTreeDataProvider } from '../../../views/templateTools/TemplateToolsTreeDataProvider';
+import { FileSystemWatcherService } from '../../../services/FileSystemWatcherService';
 
 suite('TemplateToolsTreeDataProvider', () => {
     let provider: TemplateToolsTreeDataProvider;
     let workspaceFindFilesStub: sinon.SinonStub;
+    let fileSystemWatcherService: FileSystemWatcherService;
 
     setup(() => {
-        provider = new TemplateToolsTreeDataProvider();
+        fileSystemWatcherService = new FileSystemWatcherService();
+        provider = new TemplateToolsTreeDataProvider(fileSystemWatcherService);
         workspaceFindFilesStub = sinon.stub(vscode.workspace, 'findFiles');
     });
 
     teardown(() => {
         provider.dispose();
+        fileSystemWatcherService.dispose();
         sinon.restore();
     });
 
@@ -143,13 +147,14 @@ suite('TemplateToolsTreeDataProvider', () => {
     });
 
     test('template item opens README on click', async () => {
-        const provider = new TemplateToolsTreeDataProvider();
+        const testFileSystemWatcherService = new FileSystemWatcherService();
+        const testProvider = new TemplateToolsTreeDataProvider(testFileSystemWatcherService);
         workspaceFindFilesStub.resolves([]);
 
         // Get AI templates section children
-        const rootItems = await provider.getChildren();
+        const rootItems = await testProvider.getChildren();
         const aiSection = rootItems.find((item: vscode.TreeItem) => item.contextValue === 'aiTemplates');
-        const templateItems = await provider.getChildren(aiSection);
+        const templateItems = await testProvider.getChildren(aiSection);
         const templateItem = templateItems[0] as vscode.TreeItem & { command?: vscode.Command };
 
         expect(
@@ -160,21 +165,28 @@ suite('TemplateToolsTreeDataProvider', () => {
             templateItem.command?.arguments,
             'Should have command arguments'
         ).to.exist;
+
+        testProvider.dispose();
+        testFileSystemWatcherService.dispose();
     });
 
     test('template item has correct context value for inline actions', async () => {
-        const provider = new TemplateToolsTreeDataProvider();
+        const testFileSystemWatcherService = new FileSystemWatcherService();
+        const testProvider = new TemplateToolsTreeDataProvider(testFileSystemWatcherService);
         workspaceFindFilesStub.resolves([]);
 
         // Get AI templates section children
-        const rootItems = await provider.getChildren();
+        const rootItems = await testProvider.getChildren();
         const aiSection = rootItems.find((item: vscode.TreeItem) => item.contextValue === 'aiTemplates');
-        const templateItems = await provider.getChildren(aiSection);
+        const templateItems = await testProvider.getChildren(aiSection);
         const templateItem = templateItems[0] as vscode.TreeItem;
 
         expect(
             templateItem.contextValue,
             'Should have template context value for inline menu actions'
         ).to.equal('ms-azuretools.azure-dev.views.templateTools.template');
+
+        testProvider.dispose();
+        testFileSystemWatcherService.dispose();
     });
 });

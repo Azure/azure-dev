@@ -8,6 +8,7 @@ import { EnvironmentsTreeDataProvider, EnvironmentTreeItem, EnvironmentItem, Env
 import { WorkspaceAzureDevApplicationProvider } from '../../../services/AzureDevApplicationProvider';
 import { WorkspaceAzureDevEnvListProvider } from '../../../services/AzureDevEnvListProvider';
 import { WorkspaceAzureDevEnvValuesProvider } from '../../../services/AzureDevEnvValuesProvider';
+import { FileSystemWatcherService } from '../../../services/FileSystemWatcherService';
 
 suite('EnvironmentsTreeDataProvider', () => {
     let provider: EnvironmentsTreeDataProvider;
@@ -15,10 +16,12 @@ suite('EnvironmentsTreeDataProvider', () => {
     let appProviderStub: sinon.SinonStubbedInstance<WorkspaceAzureDevApplicationProvider>;
     let envListProviderStub: sinon.SinonStubbedInstance<WorkspaceAzureDevEnvListProvider>;
     let envValuesProviderStub: sinon.SinonStubbedInstance<WorkspaceAzureDevEnvValuesProvider>;
+    let fileSystemWatcherService: FileSystemWatcherService;
 
     setup(() => {
         sandbox = sinon.createSandbox();
-        provider = new EnvironmentsTreeDataProvider();
+        fileSystemWatcherService = new FileSystemWatcherService();
+        provider = new EnvironmentsTreeDataProvider(fileSystemWatcherService);
 
         // Stub the providers
         appProviderStub = sandbox.stub(WorkspaceAzureDevApplicationProvider.prototype);
@@ -28,6 +31,7 @@ suite('EnvironmentsTreeDataProvider', () => {
 
     teardown(() => {
         provider.dispose();
+        fileSystemWatcherService.dispose();
         sandbox.restore();
     });
 

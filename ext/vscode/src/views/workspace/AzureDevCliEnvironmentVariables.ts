@@ -54,10 +54,10 @@ export class AzureDevCliEnvironmentVariable implements AzureDevCliModel {
     getTreeItem(): vscode.TreeItem {
         const id = `${this.environmentName}/${this.key}`;
         const isVisible = this.visibleEnvVars.has(id);
-        const label = isVisible ? `${this.key}=${this.value}` : `${this.key}=Hidden value. Click to view.`;
+        const label = isVisible ? `${this.key}=${this.value}` : vscode.l10n.t('{0}=Hidden value. Click to view.', this.key);
 
         const item = new vscode.TreeItem(label);
-        item.tooltip = isVisible ? `${this.key}=${this.value}` : 'Click to view value';
+        item.tooltip = isVisible ? `${this.key}=${this.value}` : vscode.l10n.t('Click to view value');
         item.iconPath = new vscode.ThemeIcon('key');
         item.contextValue = 'ms-azuretools.azure-dev.views.workspace.environmentVariable';
 

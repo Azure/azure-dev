@@ -37,6 +37,12 @@
     "azure-dev.commands.disableDevCenterMode.title": "Disable Dev Center Mode (config unset platform.type)",
     "azure-dev.commands.getDotEnvFilePath.title": "Get Azure developer environment's .env file path",
 
+    "azure-dev.views.myProject.name": "My Project",
+    "azure-dev.views.environments.name": "Environments",
+    "azure-dev.views.templateTools.name": "Template Tools",
+    "azure-dev.views.extensions.name": "Extensions",
+    "azure-dev.views.helpAndFeedback.name": "Help and Feedback",
+
     "azure-dev.maximumAppsToDisplay.description": "Maximum number of Azure Developer CLI apps to display in the Workspace Resource view",
     "azure-dev.auth.useIntegratedAuth.description": "Use the VS Code integrated authentication with the Azure Developer CLI, instead of its own authentication. Note: This feature is currently in alpha and active under development, and requires a version of the Azure Development CLI that supports it.",
 

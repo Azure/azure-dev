@@ -143,6 +143,11 @@ func runInitAction(ctx context.Context, flags *initFlags) error {
 	defer azdClient.Close()
 
 	var extensionMetadata *models.ExtensionSchema
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get current working directory: %w", err)
+	}
+
 	if flags.noPrompt {
 		// In headless mode, use the provided command-line arguments
 		extensionMetadata, err = collectExtensionMetadataFromFlags(flags)
@@ -169,6 +174,26 @@ func runInitAction(ctx context.Context, flags *initFlags) error {
 			})
 		if err != nil {
 			return fmt.Errorf("failed to confirm extension, %w", err)
+		}
+
+		if !*confirmResponse.Value {
+			return errors.New("extension creation cancelled by user")
+		}
+	}
+
+	extensionPath := filepath.Join(cwd, extensionMetadata.Id)
+	if info, statErr := os.Stat(extensionPath); statErr == nil && info.IsDir() {
+		confirmResponse, err := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+			Options: &azdext.ConfirmOptions{
+				Message: fmt.Sprintf(
+					"The extension directory '%s' already exists. Do you want to continue?",
+					extensionMetadata.Id,
+				),
+				DefaultValue: internal.ToPtr(false),
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("failed to confirm existing extension directory: %w", err)
 		}
 
 		if !*confirmResponse.Value {
@@ -590,16 +615,12 @@ func createExtensionDirectory(
 	extensionPath := filepath.Join(cwd, extensionMetadata.Id)
 
 	info, err := os.Stat(extensionPath)
-	if err == nil && info.IsDir() {
-		azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
-			Options: &azdext.ConfirmOptions{
-				Message: fmt.Sprintf(
-					"The extension directory '%s' already exists. Do you want to continue?",
-					extensionMetadata.Id,
-				),
-				DefaultValue: internal.ToPtr(false),
-			},
-		})
+	if err == nil && !info.IsDir() {
+		return fmt.Errorf("a file named '%s' already exists", extensionMetadata.Id)
+	}
+
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to check extension directory: %w", err)
 	}
 
 	if os.IsNotExist(err) {

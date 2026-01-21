@@ -621,8 +621,13 @@ func createExtensionDirectory(
 		return fmt.Errorf("a file named '%s' already exists", extensionMetadata.Id)
 	}
 
-	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to check extension directory: %w", err)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return fmt.Errorf("failed to check extension directory: %w", err)
+		}
+	} else {
+		// Directory exists, nothing to create.
+		return nil
 	}
 
 	if os.IsNotExist(err) {

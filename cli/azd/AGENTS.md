@@ -100,7 +100,7 @@ func (a *myAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 }
 ```
 
-Commands should support `--output` flag for output formats: `json`, `table`.
+Commands can support different output formats like `json` and `table` via the `--output` flag.
 
 ### Code Organization
 

@@ -18,6 +18,8 @@ import (
 const (
 	HintFindJobID = "To find job IDs, run: azd ai finetuning jobs list"
 
+	HintDeploymentName = "Choose a unique name to identify your deployment endpoint"
+
 	HintSubmitJobUsage = `Usage options:
   1. Provide a config file:    azd ai finetune jobs submit --file config.yaml
   2. Provide model and data:   azd ai finetune jobs submit --model <model> --training-file <file>`
@@ -54,6 +56,9 @@ func validateRequiredFlags(flags map[string]string) error {
 	for _, name := range missingFlags {
 		if name == "job-id" || name == "id" {
 			hint := color.YellowString("\n\n%s\n", HintFindJobID)
+			return fmt.Errorf("%s%s", errorMsg, hint)
+		} else if name == "deployment-name" {
+			hint := color.YellowString("\n\n%s\n", HintDeploymentName)
 			return fmt.Errorf("%s%s", errorMsg, hint)
 		}
 	}

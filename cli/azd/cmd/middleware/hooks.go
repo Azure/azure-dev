@@ -55,7 +55,7 @@ func NewHooksMiddleware(
 // Runs the Hooks middleware
 func (m *HooksMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
 	// Validate hooks and display any warnings
-	if !m.options.IsChildAction(ctx) {
+	if !IsChildAction(ctx) {
 		if err := m.validateHooks(ctx, m.projectConfig); err != nil {
 			return nil, fmt.Errorf("failed validating hooks, %w", err)
 		}

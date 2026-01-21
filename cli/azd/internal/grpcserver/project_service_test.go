@@ -48,13 +48,12 @@ func Test_ProjectService_NoProject(t *testing.T) {
 	})
 
 	// Create mock GitHub CLI.
-	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
-	require.NoError(t, err)
+	ghCli := github.NewGitHubCli(mockContext.Console, mockContext.CommandRunner)
 
 	// Create the service with ImportManager.
 	importManager := project.NewImportManager(&project.DotNetImporter{})
 	service := NewProjectService(lazyAzdContext, lazyEnvManager, lazyProjectConfig, importManager, ghCli)
-	_, err = service.Get(*mockContext.Context, &azdext.EmptyRequest{})
+	_, err := service.Get(*mockContext.Context, &azdext.EmptyRequest{})
 	require.Error(t, err)
 }
 
@@ -105,8 +104,7 @@ func Test_ProjectService_Flow(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create mock GitHub CLI.
-	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
-	require.NoError(t, err)
+	ghCli := github.NewGitHubCli(mockContext.Console, mockContext.CommandRunner)
 
 	// Create the service with ImportManager.
 	importManager := project.NewImportManager(&project.DotNetImporter{})
@@ -154,8 +152,7 @@ func Test_ProjectService_AddService(t *testing.T) {
 	lazyProjectConfig := lazy.From(&projectConfig)
 
 	// Create mock GitHub CLI.
-	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
-	require.NoError(t, err)
+	ghCli := github.NewGitHubCli(mockContext.Console, mockContext.CommandRunner)
 
 	// Create the project service with ImportManager.
 	importManager := project.NewImportManager(&project.DotNetImporter{})

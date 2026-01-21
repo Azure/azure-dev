@@ -77,7 +77,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 	// Stop the spinner always to un-hide cursor
 	e.console.StopSpinner(ctx, "", input.Step)
 
-	if err == nil || e.options.IsChildAction(ctx) {
+	if err == nil || IsChildAction(ctx) {
 		return actionResult, err
 	}
 

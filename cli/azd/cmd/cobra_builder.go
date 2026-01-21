@@ -94,9 +94,7 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 	}
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		// Register root go context that will be used for resolving singleton dependencies
-		ctx := tools.WithInstalledCheckCache(cmd.Context())
-		ioc.RegisterInstance(cb.container, ctx)
+		ctx := cmd.Context()
 
 		// Create new container scope for the current command
 		cmdContainer, err := cb.container.NewScope()

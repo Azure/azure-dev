@@ -95,6 +95,11 @@ func (p *BicepProvider) Name() string {
 // Initialize initializes provider state from the options.
 // It also calls EnsureEnv, which ensures the client-side state is ready for provisioning.
 func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, opt provisioning.Options) error {
+	// Ensure bicep CLI is installed before any operations
+	if err := p.bicepCli.EnsureInstalled(ctx); err != nil {
+		return fmt.Errorf("ensuring bicep is installed: %w", err)
+	}
+
 	infraOptions, err := opt.GetWithDefaults()
 	if err != nil {
 		return err

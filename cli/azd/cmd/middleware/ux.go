@@ -34,7 +34,7 @@ func NewUxMiddleware(options *Options, console input.Console, featuresManager *a
 
 func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
 	// Don't run for sub actions
-	if m.options.IsChildAction(ctx) {
+	if IsChildAction(ctx) {
 		return next(ctx)
 	}
 

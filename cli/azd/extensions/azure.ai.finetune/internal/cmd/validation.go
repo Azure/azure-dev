@@ -6,10 +6,12 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strings"
 
-	"azure.ai.finetune/internal/utils"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
+
+	"azure.ai.finetune/internal/utils"
 )
 
 // Common hints for required flags
@@ -18,21 +20,45 @@ const (
 
 	HintSubmitJobUsage = `Usage options:
   1. Provide a config file:    azd ai finetune jobs submit --file config.yaml
-  2. Provide model and trailing file:   azd ai finetune jobs submit --model <model> --training-file <file>`
+  2. Provide model and data:   azd ai finetune jobs submit --model <model> --training-file <file>`
 )
 
-// validateRequiredFlag returns a user-friendly error for missing required flags.
-// For known flags (like "id"), it includes a helpful hint in yellow.
-func validateRequiredFlag(flagName string) error {
-	errorMsg := fmt.Sprintf("--%s is required", flagName)
-
-	switch flagName {
-	case "id":
-		hint := color.YellowString("\n\n%s\n", HintFindJobID)
-		return fmt.Errorf("%s%s", errorMsg, hint)
-	default:
-		return fmt.Errorf("%s", errorMsg)
+// validateRequiredFlags checks if any of the provided flag values are empty and returns
+// a user-friendly error with hints for known flags.
+func validateRequiredFlags(flags map[string]string) error {
+	var missingFlags []string
+	for name, value := range flags {
+		if value == "" {
+			missingFlags = append(missingFlags, name)
+		}
 	}
+
+	if len(missingFlags) == 0 {
+		return nil
+	}
+
+	// Format flags: --flag1, --flag2
+	formatted := make([]string, len(missingFlags))
+	for i, name := range missingFlags {
+		formatted[i] = "--" + name
+	}
+
+	var errorMsg string
+	if len(missingFlags) == 1 {
+		errorMsg = fmt.Sprintf("%s is required", formatted[0])
+	} else {
+		errorMsg = fmt.Sprintf("%s are required", strings.Join(formatted, ", "))
+	}
+
+	// Add hint if job-id is among missing flags
+	for _, name := range missingFlags {
+		if name == "job-id" || name == "id" {
+			hint := color.YellowString("\n\n%s\n", HintFindJobID)
+			return fmt.Errorf("%s%s", errorMsg, hint)
+		}
+	}
+
+	return fmt.Errorf("%s", errorMsg)
 }
 
 // validateSubmitFlags validates the submit command flag combinations.

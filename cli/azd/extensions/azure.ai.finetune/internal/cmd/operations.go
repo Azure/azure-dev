@@ -158,10 +158,7 @@ func newOperationShowCommand() *cobra.Command {
 		Use:   "show",
 		Short: "Shows detailed information about a specific job.",
 		PreRunE: func(cmd *cobra.Command, args []string) error {
-			if jobID == "" {
-				return validateRequiredFlag(requiredFlag)
-			}
-			return nil
+			return validateRequiredFlags(map[string]string{"id": jobID})
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
@@ -319,10 +316,7 @@ func newOperationPauseCommand() *cobra.Command {
 		Use:   "pause",
 		Short: "Pauses a running fine-tuning job.",
 		PreRunE: func(cmd *cobra.Command, args []string) error {
-			if jobID == "" {
-				return validateRequiredFlag(requiredFlag)
-			}
-			return nil
+			return validateRequiredFlags(map[string]string{"id": jobID})
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
@@ -381,10 +375,7 @@ func newOperationResumeCommand() *cobra.Command {
 		Use:   "resume",
 		Short: "Resumes a paused fine-tuning job.",
 		PreRunE: func(cmd *cobra.Command, args []string) error {
-			if jobID == "" {
-				return validateRequiredFlag(requiredFlag)
-			}
-			return nil
+			return validateRequiredFlags(map[string]string{"id": jobID})
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
@@ -444,10 +435,7 @@ func newOperationCancelCommand() *cobra.Command {
 		Use:   "cancel",
 		Short: "Cancels a running or queued fine-tuning job.",
 		PreRunE: func(cmd *cobra.Command, args []string) error {
-			if jobID == "" {
-				return validateRequiredFlag(requiredFlag)
-			}
-			return nil
+			return validateRequiredFlags(map[string]string{"id": jobID})
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
@@ -516,10 +504,18 @@ func newOperationDeployModelCommand() *cobra.Command {
 	var version string
 	var capacity int32
 	var noWait bool
+	requiredFlagJobID := "job-id"
+	requiredFlagDeploymentName := "deployment-name"
 
 	cmd := &cobra.Command{
 		Use:   "deploy",
 		Short: "Deploy a fine-tuned model to Azure Cognitive Services",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			return validateRequiredFlags(map[string]string{
+				"job-id":          jobID,
+				"deployment-name": deploymentName,
+			})
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 
@@ -647,8 +643,8 @@ func newOperationDeployModelCommand() *cobra.Command {
 	cmd.Flags().StringVarP(&version, "version", "v", "1", "Model version")
 	cmd.Flags().Int32VarP(&capacity, "capacity", "c", 1, "Capacity units")
 	cmd.Flags().BoolVar(&noWait, "no-wait", false, "Do not wait for deployment to complete")
-	cmd.MarkFlagRequired("job-id")
-	cmd.MarkFlagRequired("deployment-name")
+	cmd.MarkFlagRequired(requiredFlagJobID)
+	cmd.MarkFlagRequired(requiredFlagDeploymentName)
 
 	return cmd
 }

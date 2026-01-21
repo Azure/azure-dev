@@ -18,6 +18,9 @@ parameters:
     default: true
   - name: AzdExtensionDirectory
     type: string
+  - name: SkipTests
+    type: boolean
+    default: false
 
 jobs:
   - job: BuildExtension_${{ parameters.NameSuffix }}
@@ -36,8 +39,6 @@ jobs:
       - checkout: self
 
       - template: /eng/pipelines/templates/steps/setup-go.yml
-        parameters:
-          Condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
 
       - task: PowerShell@2
         inputs:
@@ -46,35 +47,38 @@ jobs:
           filePath: eng/scripts/Set-ExtensionVersionVariable.ps1
           arguments: >-
             -ExtensionDirectory ${{ parameters.AzdExtensionDirectory }}
+      
+      - ${{ if not(parameters.SkipTests) }}:
+        - task: PowerShell@2
+          inputs:
+            pwsh: true
+            targetType: filePath
+            filePath: ${{ parameters.AzdExtensionDirectory }}/ci-build.ps1
+            arguments: >-
+              -OutputFileName $(BuildTarget)
+              -Version $(EXT_VERSION)
+              -SourceVersion $(Build.SourceVersion)
+              -CodeCoverageEnabled
+              -BuildRecordMode
+            workingDirectory: ${{ parameters.AzdExtensionDirectory }}
+          displayName: Build Go Binary (for tests)
 
-      - task: PowerShell@2
-        inputs:
-          pwsh: true
-          targetType: filePath
-          filePath: ${{ parameters.AzdExtensionDirectory }}/ci-build.ps1
-          arguments: >-
-            -OutputFileName $(BuildTarget)
-            -Version $(EXT_VERSION)
-            -SourceVersion $(Build.SourceVersion)
-            -CodeCoverageEnabled
-            -BuildRecordMode
-          workingDirectory: ${{ parameters.AzdExtensionDirectory }}
-        displayName: Build Go Binary (for tests)
+        - task: PowerShell@2
+          displayName: Run tests
+          inputs:
+            pwsh: true
+            targetType: filePath
+            filePath: ${{ parameters.AzdExtensionDirectory }}/ci-test.ps1
 
-      - pwsh: Write-Host "Tests would run here..."
-        condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
-        workingDirectory: ${{ parameters.AzdExtensionDirectory }}
-        displayName: Run tests
-
-      - task: PublishTestResults@2
-        inputs:
-          testResultsFormat: JUnit
-          testResultsFiles: "**/junitTestReport.xml"
-          testRunTitle: $(Agent.JobName)
-          searchFolder: ${{ parameters.AzdExtensionDirectory }}
-          publishRunAttachments: true
-        displayName: Publish test results
-        condition: succeededOrFailed()
+        - task: PublishTestResults@2
+          inputs:
+            testResultsFormat: JUnit
+            testResultsFiles: "**/junitTestReport.xml"
+            testRunTitle: $(Agent.JobName)
+            searchFolder: ${{ parameters.AzdExtensionDirectory }}
+            publishRunAttachments: true
+          displayName: Publish test results
+          condition: succeededOrFailed()
 
       - task: PowerShell@2
         inputs:

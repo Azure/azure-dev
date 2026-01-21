@@ -12,11 +12,7 @@ export interface AzureDevExtension {
     readonly version: string;
 }
 
-export interface AzureDevExtensionProvider {
-    getExtensionListResults(context: IActionContext): Promise<AzureDevExtension[]>;
-}
-
-export class WorkspaceAzureDevExtensionProvider implements AzureDevExtensionProvider {
+export class WorkspaceAzureDevExtensionProvider {
     public async getExtensionListResults(context: IActionContext): Promise<AzureDevExtension[]> {
         const azureCli = await createAzureDevCli(context);
 

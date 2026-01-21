@@ -49,12 +49,12 @@ export class TemplateToolsTreeDataProvider implements vscode.TreeDataProvider<Tr
 
         if (element instanceof CategoryItem) {
             const templates = await this.templateProvider.getTemplatesByCategory(element.categoryName);
-            return templates.map(t => new TemplateItem(t, this.templateProvider));
+            return templates.map(t => new TemplateItem(t));
         }
 
         if (element instanceof AITemplatesItem) {
             const templates = await this.templateProvider.getAITemplates();
-            return templates.map(t => new TemplateItem(t, this.templateProvider));
+            return templates.map(t => new TemplateItem(t));
         }
 
         return [];
@@ -68,7 +68,7 @@ export class TemplateToolsTreeDataProvider implements vscode.TreeDataProvider<Tr
             items.push(new QuickStartGroupItem());
         }
 
-        items.push(new CategoryGroupItem(this.templateProvider));
+        items.push(new CategoryGroupItem());
         items.push(new AITemplatesItem(this.templateProvider));
         items.push(new SearchTemplatesItem());
 
@@ -113,7 +113,7 @@ class QuickStartGroupItem extends TreeItemModel {
 }
 
 class CategoryGroupItem extends TreeItemModel {
-    constructor(private templateProvider: AzureDevTemplateProvider) {
+    constructor() {
         super(vscode.l10n.t('Browse by Category'), vscode.TreeItemCollapsibleState.Collapsed);
         this.contextValue = 'categoryGroup';
         this.tooltip = vscode.l10n.t('Browse templates by category');
@@ -213,8 +213,7 @@ class CategoryItem extends TreeItemModel {
 // Template item
 class TemplateItem extends TreeItemModel {
     constructor(
-        public readonly template: Template,
-        private templateProvider: AzureDevTemplateProvider
+        public readonly template: Template
     ) {
         super(template.title, vscode.TreeItemCollapsibleState.None);
         this.contextValue = 'ms-azuretools.azure-dev.views.templateTools.template';

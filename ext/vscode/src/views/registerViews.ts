@@ -60,11 +60,12 @@ export function registerViews(context: vscode.ExtensionContext): void {
     );
 
     context.subscriptions.push(
-        vscode.commands.registerCommand('azure-dev.views.environments.viewDotEnv', (item: EnvironmentTreeItem) => {
+        vscode.commands.registerCommand('azure-dev.views.environments.viewDotEnv', async (item: EnvironmentTreeItem) => {
             if (item.data && (item.data as EnvironmentItem).dotEnvPath) {
                 const envItem = item.data as EnvironmentItem;
                 if (envItem.dotEnvPath) {
-                    void vscode.commands.executeCommand('vscode.open', vscode.Uri.file(envItem.dotEnvPath));
+                    const document = await vscode.workspace.openTextDocument(vscode.Uri.file(envItem.dotEnvPath));
+                    await vscode.window.showTextDocument(document);
                 }
             }
         })

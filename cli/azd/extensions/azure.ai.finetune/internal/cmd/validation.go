@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -18,7 +19,7 @@ import (
 const (
 	HintFindJobID = "To find job IDs, run: azd ai finetuning jobs list"
 
-	HintDeploymentName = "Choose a unique name to identify your deployment endpoint"
+	HintDeploymentName = "Deployment name can be any unique identifier for your endpoint"
 
 	HintSubmitJobUsage = `Usage options:
   1. Provide a config file:    azd ai finetune jobs submit --file config.yaml
@@ -39,6 +40,9 @@ func validateRequiredFlags(flags map[string]string) error {
 		return nil
 	}
 
+	// Sort for consistent output
+	sort.Strings(missingFlags)
+
 	// Format flags: --flag1, --flag2
 	formatted := make([]string, len(missingFlags))
 	for i, name := range missingFlags {
@@ -52,15 +56,20 @@ func validateRequiredFlags(flags map[string]string) error {
 		errorMsg = fmt.Sprintf("%s are required", strings.Join(formatted, ", "))
 	}
 
-	// Add hint if job-id is among missing flags
+	// Collect hints for known flags (in priority order)
+	var hints []string
 	for _, name := range missingFlags {
-		if name == "job-id" || name == "id" {
-			hint := color.YellowString("\n\n%s\n", HintFindJobID)
-			return fmt.Errorf("%s%s", errorMsg, hint)
-		} else if name == "deployment-name" {
-			hint := color.YellowString("\n\n%s\n", HintDeploymentName)
-			return fmt.Errorf("%s%s", errorMsg, hint)
+		switch name {
+		case "job-id", "id":
+			hints = append(hints, fmt.Sprintf("  • %s: %s", name, HintFindJobID))
+		case "deployment-name":
+			hints = append(hints, fmt.Sprintf("  • %s: %s", name, HintDeploymentName))
 		}
+	}
+
+	if len(hints) > 0 {
+		hintBlock := color.YellowString("\n\nUsage:\n%s", strings.Join(hints, "\n"))
+		return fmt.Errorf("%s%s", errorMsg, hintBlock)
 	}
 
 	return fmt.Errorf("%s", errorMsg)

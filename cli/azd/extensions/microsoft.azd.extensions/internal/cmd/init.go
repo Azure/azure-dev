@@ -182,7 +182,11 @@ func runInitAction(ctx context.Context, flags *initFlags) error {
 	}
 
 	extensionPath := filepath.Join(cwd, extensionMetadata.Id)
-	if info, err := os.Stat(extensionPath); err == nil && info.IsDir() {
+	if info, err := os.Stat(extensionPath); err == nil {
+		if !info.IsDir() {
+			return fmt.Errorf("a file named '%s' already exists", extensionMetadata.Id)
+		}
+
 		confirmResponse, err := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
 			Options: &azdext.ConfirmOptions{
 				Message: fmt.Sprintf(
@@ -199,6 +203,8 @@ func runInitAction(ctx context.Context, flags *initFlags) error {
 		if !*confirmResponse.Value {
 			return errors.New("extension creation cancelled by user")
 		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("failed to check extension directory: %w", err)
 	}
 
 	localRegistryExists := false

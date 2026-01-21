@@ -177,7 +177,7 @@ overrides:
   - filename: pkg/apphost/generate.go
     words:
       - alue
-  - filename: docs/extension-framework.md
+  - filename: docs/extensions/extension-framework.md
     words:
       - getenv
       - errorf
@@ -223,7 +223,7 @@ overrides:
     words:
       - WORKDIR
       - workdir
-  - filename: docs/new-azd-command.md
+  - filename: docs/style-guidelines/new-azd-command.md
     words:
       - pflag
       - struct
@@ -270,9 +270,24 @@ overrides:
       - Logf
       - Getenv
       - httptest
-  - filename: docs/extension-framework.md
+  - filename: docs/extensions/extension-framework.md
     words:
       - invopop
+  - filename: docs/style-guidelines/azd-style-guide.md
+    words:
+      - camelCase
+      - checkmark
+      - Colorization
+      - gofmt
+      - myService
+      - NewMyService
+      - PascalCase
+      - SomeDependency
+      - testify
+      - userConfig
+      - Println
+      - adrz
+      - rvwxu
   - filename: pkg/extensions/metadata.go
     words:
       - invopop

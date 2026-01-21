@@ -487,6 +487,7 @@ func newOperationDeployModelCommand() *cobra.Command {
 	var sku string
 	var version string
 	var capacity int32
+	var noWait bool
 
 	cmd := &cobra.Command{
 		Use:   "deploy",
@@ -554,7 +555,7 @@ func newOperationDeployModelCommand() *cobra.Command {
 				ResourceGroup:     envValueMap["AZURE_RESOURCE_GROUP_NAME"],
 				AccountName:       envValueMap["AZURE_ACCOUNT_NAME"],
 				TenantID:          envValueMap["AZURE_TENANT_ID"],
-				WaitForCompletion: true,
+				WaitForCompletion: !noWait,
 			}
 
 			// Create Azure credential
@@ -617,6 +618,7 @@ func newOperationDeployModelCommand() *cobra.Command {
 	cmd.Flags().StringVarP(&sku, "sku", "s", "GlobalStandard", "SKU for deployment")
 	cmd.Flags().StringVarP(&version, "version", "v", "1", "Model version")
 	cmd.Flags().Int32VarP(&capacity, "capacity", "c", 1, "Capacity units")
+	cmd.Flags().BoolVar(&noWait, "no-wait", false, "Do not wait for deployment to complete")
 	cmd.MarkFlagRequired("job-id")
 	cmd.MarkFlagRequired("deployment-name")
 

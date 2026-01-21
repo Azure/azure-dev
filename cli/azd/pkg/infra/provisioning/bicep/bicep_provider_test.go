@@ -412,6 +412,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 		azCli,
 		bicepCli,
 		resourceService,
+		&mockResourceManager{},
 		deploymentManager,
 		envManager,
 		env,
@@ -864,6 +865,41 @@ type mockedScope struct {
 	baseDate string
 }
 
+type mockResourceManager struct{}
+
+func (m *mockResourceManager) GetDeploymentResourceOperations(
+	ctx context.Context,
+	deployment infra.Deployment,
+	queryStart *time.Time,
+) ([]*armresources.DeploymentOperation, error) {
+	return nil, nil
+}
+
+func (m *mockResourceManager) GetResourceTypeDisplayName(
+	ctx context.Context,
+	subscriptionId string,
+	resourceId string,
+	resourceType azapi.AzureResourceType,
+) (string, error) {
+	return azapi.GetResourceTypeDisplayName(resourceType), nil
+}
+
+func (m *mockResourceManager) GetResourceGroupsForEnvironment(
+	ctx context.Context,
+	subscriptionId string,
+	envName string,
+) ([]*azapi.Resource, error) {
+	return nil, nil
+}
+
+func (m *mockResourceManager) FindResourceGroupForEnvironment(
+	ctx context.Context,
+	subscriptionId string,
+	envName string,
+) (string, error) {
+	return "", nil
+}
+
 func (m *mockedScope) SubscriptionId() string {
 	return "sub-id"
 }
@@ -930,6 +966,7 @@ func TestUserDefinedTypes(t *testing.T) {
 		azCli,
 		bicepCli,
 		nil,
+		&mockResourceManager{},
 		nil,
 		&mockenv.MockEnvManager{},
 		env,

@@ -21,6 +21,7 @@ type promptService struct {
 	prompter        prompt.PromptService
 	resourceService *azapi.ResourceService
 	globalOptions   *internal.GlobalCommandOptions
+	lock            *promptLock
 }
 
 func NewPromptService(
@@ -32,6 +33,7 @@ func NewPromptService(
 		prompter:        prompter,
 		resourceService: resourceService,
 		globalOptions:   globalOptions,
+		lock:            newPromptLock(),
 	}
 }
 
@@ -45,6 +47,12 @@ func (s *promptService) Confirm(ctx context.Context, req *azdext.ConfirmRequest)
 			}, nil
 		}
 	}
+
+	release, err := s.acquirePromptLock(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 
 	options := &ux.ConfirmOptions{
 		DefaultValue: req.Options.DefaultValue,
@@ -72,6 +80,12 @@ func (s *promptService) Select(ctx context.Context, req *azdext.SelectRequest) (
 			}, nil
 		}
 	}
+
+	release, err := s.acquirePromptLock(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 
 	choices := make([]*ux.SelectChoice, len(req.Options.Choices))
 	for i, choice := range req.Options.Choices {
@@ -115,6 +129,12 @@ func (s *promptService) MultiSelect(
 			Values: selectedChoices,
 		}, nil
 	}
+
+	release, err := s.acquirePromptLock(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 
 	choices := make([]*ux.MultiSelectChoice, len(req.Options.Choices))
 	for i, choice := range req.Options.Choices {
@@ -162,6 +182,12 @@ func (s *promptService) Prompt(ctx context.Context, req *azdext.PromptRequest) (
 		}
 	}
 
+	release, err := s.acquirePromptLock(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+
 	options := &ux.PromptOptions{
 		DefaultValue:      req.Options.DefaultValue,
 		Message:           req.Options.Message,
@@ -188,6 +214,12 @@ func (s *promptService) PromptSubscription(
 	req *azdext.PromptSubscriptionRequest,
 ) (*azdext.PromptSubscriptionResponse, error) {
 	// Delegate to prompt service which handles --no-prompt mode
+	release, err := s.acquirePromptLock(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+
 	selectedSubscription, err := s.prompter.PromptSubscription(ctx, &prompt.SelectOptions{
 		Message:     req.Message,
 		HelpMessage: req.HelpMessage,
@@ -214,6 +246,12 @@ func (s *promptService) PromptLocation(
 	req *azdext.PromptLocationRequest,
 ) (*azdext.PromptLocationResponse, error) {
 	// Delegate to prompt service which handles --no-prompt mode
+	release, err := s.acquirePromptLock(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+
 	azureContext, err := s.createAzureContext(req.AzureContext)
 	if err != nil {
 		return nil, err
@@ -240,6 +278,12 @@ func (s *promptService) PromptResourceGroup(
 	req *azdext.PromptResourceGroupRequest,
 ) (*azdext.PromptResourceGroupResponse, error) {
 	// Delegate to prompt service which handles --no-prompt mode
+	release, err := s.acquirePromptLock(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+
 	azureContext, err := s.createAzureContext(req.AzureContext)
 	if err != nil {
 		return nil, err
@@ -266,6 +310,12 @@ func (s *promptService) PromptSubscriptionResource(
 	req *azdext.PromptSubscriptionResourceRequest,
 ) (*azdext.PromptSubscriptionResourceResponse, error) {
 	// Delegate to prompt service which handles --no-prompt mode
+	release, err := s.acquirePromptLock(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+
 	azureContext, err := s.createAzureContext(req.AzureContext)
 	if err != nil {
 		return nil, err
@@ -294,6 +344,12 @@ func (s *promptService) PromptResourceGroupResource(
 	req *azdext.PromptResourceGroupResourceRequest,
 ) (*azdext.PromptResourceGroupResourceResponse, error) {
 	// Delegate to prompt service which handles --no-prompt mode
+	release, err := s.acquirePromptLock(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+
 	azureContext, err := s.createAzureContext(req.AzureContext)
 	if err != nil {
 		return nil, err
@@ -391,4 +447,30 @@ func convertToInt(input *int32) *int {
 	}
 	value := int(*input) // Convert the dereferenced value to int
 	return &value        // Return the address of the new int value
+}
+
+// promptLock is a context-aware mutual exclusion mechanism for serializing interactive prompts.
+// It prevents concurrent prompt access which could cause prompts to freeze up when multiple
+// extensions with "listen" capability are installed and running simultaneously.
+type promptLock struct {
+	ch chan struct{}
+}
+
+// newPromptLock creates a new promptLock instance.
+func newPromptLock() *promptLock {
+	return &promptLock{ch: make(chan struct{}, 1)}
+}
+
+// acquirePromptLock acquires the prompt lock, blocking until available or context is cancelled.
+// Returns a release function that must be called to release the lock (typically via defer).
+// Returns an error if the context is cancelled while waiting for the lock.
+func (s *promptService) acquirePromptLock(ctx context.Context) (func(), error) {
+	select {
+	case s.lock.ch <- struct{}{}:
+		return func() {
+			<-s.lock.ch
+		}, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }

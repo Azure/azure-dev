@@ -113,6 +113,7 @@ type DeployAction struct {
 	projectConfig       *project.ProjectConfig
 	azdCtx              *azdcontext.AzdContext
 	env                 *environment.Environment
+	envManager          environment.Manager
 	projectManager      project.ProjectManager
 	serviceManager      project.ServiceManager
 	resourceManager     project.ResourceManager
@@ -136,6 +137,7 @@ func NewDeployAction(
 	resourceManager project.ResourceManager,
 	azdCtx *azdcontext.AzdContext,
 	environment *environment.Environment,
+	envManager environment.Manager,
 	accountManager account.Manager,
 	cloud *cloud.Cloud,
 	azCli *azapi.AzureClient,
@@ -152,6 +154,7 @@ func NewDeployAction(
 		projectConfig:       projectConfig,
 		azdCtx:              azdCtx,
 		env:                 environment,
+		envManager:          envManager,
 		projectManager:      projectManager,
 		serviceManager:      serviceManager,
 		resourceManager:     resourceManager,
@@ -324,7 +327,7 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			// clean up for packages automatically created in temp dir
 			if da.flags.fromPackage == "" {
 				for _, artifact := range serviceContext.Package {
-					if strings.HasPrefix(artifact.Location, os.TempDir()) {
+					if artifact.Kind == project.ArtifactKindArchive && strings.HasPrefix(artifact.Location, os.TempDir()) {
 						if err := os.RemoveAll(artifact.Location); err != nil {
 							log.Printf("failed to remove temporary package: %s : %s", artifact.Location, err)
 						}
@@ -360,6 +363,11 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		if fmtErr := da.formatter.Format(deployResult, da.writer, nil); fmtErr != nil {
 			return nil, fmt.Errorf("deploy result could not be displayed: %w", fmtErr)
 		}
+	}
+
+	// Invalidate cache after successful deploy so azd show will refresh
+	if err := da.envManager.InvalidateEnvCache(ctx, da.env.Name()); err != nil {
+		log.Printf("warning: failed to invalidate state cache: %v", err)
 	}
 
 	return &actions.ActionResult{

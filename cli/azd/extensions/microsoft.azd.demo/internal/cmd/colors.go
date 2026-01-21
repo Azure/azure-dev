@@ -14,8 +14,9 @@ import (
 
 func newColorsCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "colors",
-		Short: "Displays all ASCII colors with their standard and high-intensity variants.",
+		Use:     "colors",
+		Aliases: []string{"colours"},
+		Short:   "Displays all ASCII colors with their standard and high-intensity variants.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Create a tab writer for proper column alignment
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)

@@ -1,0 +1,551 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package extensions
+
+import (
+	"encoding/json"
+	"testing"
+
+	"github.com/invopop/jsonschema"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestExtensionCommandMetadata_Marshaling(t *testing.T) {
+	metadata := &ExtensionCommandMetadata{
+		SchemaVersion: "1.0",
+		ID:            "microsoft.azd.demo",
+		Commands: []Command{
+			{
+				Name:  []string{"demo", "greet"},
+				Short: "Greet the user",
+				Long:  "This command greets the user with a friendly message.",
+				Usage: "greet [name]",
+				Examples: []CommandExample{
+					{
+						Description: "Greet with default name",
+						Command:     "azd x demo greet",
+					},
+					{
+						Description: "Greet with custom name",
+						Command:     "azd x demo greet Alice",
+					},
+				},
+				Args: []Argument{
+					{
+						Name:        "name",
+						Description: "The name to greet",
+						Required:    false,
+					},
+				},
+				Flags: []Flag{
+					{
+						Name:        "format",
+						Shorthand:   "f",
+						Description: "Output format",
+						Type:        "string",
+						Default:     "text",
+						ValidValues: []string{"text", "json"},
+					},
+					{
+						Name:        "verbose",
+						Shorthand:   "v",
+						Description: "Enable verbose output",
+						Type:        "bool",
+						Default:     false,
+					},
+				},
+			},
+		},
+	}
+
+	data, err := json.Marshal(metadata)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), `"schemaVersion":"1.0"`)
+	assert.Contains(t, string(data), `"id":"microsoft.azd.demo"`)
+	assert.Contains(t, string(data), `"name":["demo","greet"]`)
+}
+
+func TestExtensionMetadata_UnmarshalJSON(t *testing.T) {
+	jsonData := `{
+		"schemaVersion": "1.0",
+		"id": "microsoft.azd.demo",
+		"version": "1.0.0",
+		"commands": [
+			{
+				"name": ["demo", "greet"],
+				"short": "Greet the user",
+				"long": "This command greets the user with a friendly message.",
+				"usage": "greet [name]",
+				"examples": [
+					{
+						"description": "Greet with default name",
+						"command": "azd x demo greet"
+					}
+				],
+				"args": [
+					{
+						"name": "name",
+						"description": "The name to greet",
+						"required": false
+					}
+				],
+				"flags": [
+					{
+						"name": "format",
+						"shorthand": "f",
+						"description": "Output format",
+						"type": "string",
+						"default": "text",
+						"validValues": ["text", "json"]
+					}
+				]
+			}
+		]
+	}`
+
+	var metadata ExtensionCommandMetadata
+	err := json.Unmarshal([]byte(jsonData), &metadata)
+	require.NoError(t, err)
+
+	assert.Equal(t, "1.0", metadata.SchemaVersion)
+	assert.Equal(t, "microsoft.azd.demo", metadata.ID)
+	assert.Len(t, metadata.Commands, 1)
+
+	cmd := metadata.Commands[0]
+	assert.Equal(t, []string{"demo", "greet"}, cmd.Name)
+	assert.Equal(t, "Greet the user", cmd.Short)
+	assert.Equal(t, "This command greets the user with a friendly message.", cmd.Long)
+	assert.Len(t, cmd.Examples, 1)
+	assert.Len(t, cmd.Args, 1)
+	assert.Len(t, cmd.Flags, 1)
+
+	assert.Equal(t, "name", cmd.Args[0].Name)
+	assert.False(t, cmd.Args[0].Required)
+
+	assert.Equal(t, "format", cmd.Flags[0].Name)
+	assert.Equal(t, "f", cmd.Flags[0].Shorthand)
+	assert.Equal(t, "string", cmd.Flags[0].Type)
+	assert.Equal(t, "text", cmd.Flags[0].Default)
+	assert.Equal(t, []string{"text", "json"}, cmd.Flags[0].ValidValues)
+}
+
+func TestResolveCommandPath(t *testing.T) {
+	metadata := &ExtensionCommandMetadata{
+		Commands: []Command{
+			{Name: []string{"version"}},
+			{Name: []string{"colors"}, Aliases: []string{"colours"}},
+			{
+				Name: []string{"mcp"},
+				Subcommands: []Command{
+					{Name: []string{"mcp", "start"}},
+				},
+			},
+		},
+	}
+
+	tests := []struct {
+		name     string
+		metadata *ExtensionCommandMetadata
+		args     []string
+		want     []string
+	}{
+		{name: "MatchRootCommand", metadata: metadata, args: []string{"version"}, want: []string{"version"}},
+		{name: "MatchSubcommand", metadata: metadata, args: []string{"mcp", "start"}, want: []string{"mcp", "start"}},
+		{name: "MatchAlias", metadata: metadata, args: []string{"colours"}, want: []string{"colors"}},
+		{name: "StopAtFlags", metadata: metadata, args: []string{"version", "--verbose"}, want: []string{"version"}},
+		{name: "NoMatch", metadata: metadata, args: []string{"unknown"}, want: nil},
+		{name: "NoArgs", metadata: metadata, args: nil, want: nil},
+		{name: "EmptyArgs", metadata: metadata, args: []string{}, want: nil},
+		{name: "NilMetadata", metadata: nil, args: []string{"version"}, want: nil},
+		{
+			name:     "EmptyCommands",
+			metadata: &ExtensionCommandMetadata{Commands: []Command{}},
+			args:     []string{"version"},
+			want:     nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, ResolveCommandPath(tt.metadata, tt.args))
+		})
+	}
+}
+
+func TestResolveCommandFlags(t *testing.T) {
+	metadata := &ExtensionCommandMetadata{
+		Commands: []Command{
+			{
+				Name: []string{"version"},
+				Flags: []Flag{
+					{Name: "verbose", Shorthand: "v", Type: "bool"},
+					{Name: "quiet", Shorthand: "q", Type: "bool"},
+					{Name: "output", Shorthand: "o", Type: "string"},
+				},
+			},
+			{
+				Name:    []string{"colors"},
+				Aliases: []string{"colours"},
+				Flags: []Flag{
+					{Name: "format", Shorthand: "f", Type: "string"},
+				},
+			},
+			{
+				Name: []string{"mcp"},
+				Subcommands: []Command{
+					{
+						Name:  []string{"mcp", "start"},
+						Flags: []Flag{{Name: "debug", Shorthand: "d", Type: "bool"}},
+					},
+				},
+			},
+			{
+				Name:  []string{"noflags"},
+				Flags: []Flag{},
+			},
+		},
+	}
+
+	tests := []struct {
+		name     string
+		metadata *ExtensionCommandMetadata
+		args     []string
+		want     []string
+	}{
+		{name: "MatchLongFlag", metadata: metadata, args: []string{"version", "--verbose"}, want: []string{"verbose"}},
+		{name: "MatchShorthandFlag", metadata: metadata, args: []string{"version", "-v"}, want: []string{"verbose"}},
+		{name: "MatchShortValue", metadata: metadata, args: []string{"version", "-o", "json"}, want: []string{"output"}},
+		{name: "MatchShortAttachedValue", metadata: metadata, args: []string{"version", "-ojson"}, want: []string{"output"}},
+		{name: "MatchSubcommand", metadata: metadata, args: []string{"mcp", "start", "--debug"}, want: []string{"debug"}},
+		{name: "StopAtDoubleDash", metadata: metadata, args: []string{"version", "--", "--verbose"}, want: nil},
+		{name: "NoMatch", metadata: metadata, args: []string{"unknown", "--verbose"}, want: nil},
+		{name: "CommandWithNoFlags", metadata: metadata, args: []string{"noflags", "--something"}, want: nil},
+		{name: "NilMetadata", metadata: nil, args: []string{"version", "--verbose"}, want: nil},
+		{
+			name:     "MatchFlagWithValue",
+			metadata: metadata,
+			args:     []string{"version", "--output", "json"},
+			want:     []string{"output"},
+		},
+		{
+			name:     "MatchFlagWithEquals",
+			metadata: metadata,
+			args:     []string{"version", "--output=json"},
+			want:     []string{"output"},
+		},
+		{
+			name:     "MatchCombinedShort",
+			metadata: metadata,
+			args:     []string{"version", "-vq"},
+			want:     []string{"verbose", "quiet"},
+		},
+		{
+			name:     "MatchMultipleFlags",
+			metadata: metadata,
+			args:     []string{"version", "--verbose", "--output", "json"},
+			want:     []string{"verbose", "output"},
+		},
+		{
+			name:     "MatchAliasCommand",
+			metadata: metadata,
+			args:     []string{"colours", "--format", "json"},
+			want:     []string{"format"},
+		},
+		{
+			name:     "UnknownFlagsIgnored",
+			metadata: metadata,
+			args:     []string{"version", "--unknown", "--verbose"},
+			want:     []string{"verbose"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ResolveCommandFlags(tt.metadata, tt.args)
+			if tt.want == nil {
+				require.Nil(t, result)
+			} else {
+				require.ElementsMatch(t, tt.want, result)
+			}
+		})
+	}
+}
+
+func TestCommand_NestedSubcommands(t *testing.T) {
+	metadata := ExtensionCommandMetadata{
+		SchemaVersion: "1.0",
+		ID:            "microsoft.azd.test",
+		Commands: []Command{
+			{
+				Name:  []string{"test"},
+				Short: "Test commands",
+				Subcommands: []Command{
+					{
+						Name:  []string{"test", "unit"},
+						Short: "Run unit tests",
+					},
+					{
+						Name:  []string{"test", "integration"},
+						Short: "Run integration tests",
+					},
+				},
+			},
+		},
+	}
+
+	data, err := json.Marshal(metadata)
+	require.NoError(t, err)
+
+	var unmarshaled ExtensionCommandMetadata
+	err = json.Unmarshal(data, &unmarshaled)
+	require.NoError(t, err)
+
+	assert.Len(t, unmarshaled.Commands, 1)
+	assert.Len(t, unmarshaled.Commands[0].Subcommands, 2)
+	assert.Equal(t, []string{"test", "unit"}, unmarshaled.Commands[0].Subcommands[0].Name)
+	assert.Equal(t, []string{"test", "integration"}, unmarshaled.Commands[0].Subcommands[1].Name)
+}
+
+func TestFlag_AllTypes(t *testing.T) {
+	flags := []Flag{
+		{
+			Name:        "string-flag",
+			Type:        "string",
+			Description: "A string flag",
+			Default:     "default",
+		},
+		{
+			Name:        "bool-flag",
+			Type:        "bool",
+			Description: "A boolean flag",
+			Default:     true,
+		},
+		{
+			Name:        "int-flag",
+			Type:        "int",
+			Description: "An integer flag",
+			Default:     42,
+		},
+		{
+			Name:        "string-array-flag",
+			Type:        "stringArray",
+			Description: "A string array flag",
+			Default:     []string{"value1", "value2"},
+		},
+		{
+			Name:        "int-array-flag",
+			Type:        "intArray",
+			Description: "An integer array flag",
+			Default:     []int{1, 2, 3},
+		},
+	}
+
+	data, err := json.Marshal(flags)
+	require.NoError(t, err)
+
+	var unmarshaled []Flag
+	err = json.Unmarshal(data, &unmarshaled)
+	require.NoError(t, err)
+
+	assert.Len(t, unmarshaled, 5)
+	assert.Equal(t, "string", unmarshaled[0].Type)
+	assert.Equal(t, "bool", unmarshaled[1].Type)
+	assert.Equal(t, "int", unmarshaled[2].Type)
+	assert.Equal(t, "stringArray", unmarshaled[3].Type)
+	assert.Equal(t, "intArray", unmarshaled[4].Type)
+}
+
+func TestCommand_OptionalFields(t *testing.T) {
+	cmd := Command{
+		Name:       []string{"test"},
+		Short:      "Test command",
+		Hidden:     true,
+		Aliases:    []string{"t", "tst"},
+		Deprecated: "Use 'new-test' instead",
+	}
+
+	data, err := json.Marshal(cmd)
+	require.NoError(t, err)
+
+	var unmarshaled Command
+	err = json.Unmarshal(data, &unmarshaled)
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"test"}, unmarshaled.Name)
+	assert.True(t, unmarshaled.Hidden)
+	assert.Equal(t, []string{"t", "tst"}, unmarshaled.Aliases)
+	assert.Equal(t, "Use 'new-test' instead", unmarshaled.Deprecated)
+}
+
+func TestArgument_Variadic(t *testing.T) {
+	arg := Argument{
+		Name:        "files",
+		Description: "Files to process",
+		Required:    true,
+		Variadic:    true,
+		ValidValues: []string{".txt", ".md"},
+	}
+
+	data, err := json.Marshal(arg)
+	require.NoError(t, err)
+
+	var unmarshaled Argument
+	err = json.Unmarshal(data, &unmarshaled)
+	require.NoError(t, err)
+
+	assert.Equal(t, "files", unmarshaled.Name)
+	assert.True(t, unmarshaled.Required)
+	assert.True(t, unmarshaled.Variadic)
+	assert.Equal(t, []string{".txt", ".md"}, unmarshaled.ValidValues)
+}
+
+func TestConfigurationMetadata_Optional(t *testing.T) {
+	// Without configuration
+	metadata := ExtensionCommandMetadata{
+		SchemaVersion: "1.0",
+		ID:            "test",
+		Commands:      []Command{},
+	}
+
+	data1, err := json.Marshal(metadata)
+	require.NoError(t, err)
+	assert.NotContains(t, string(data1), "configuration")
+
+	// With configuration
+	globalProps := jsonschema.NewProperties()
+	globalProps.Set("apiKey", &jsonschema.Schema{
+		Type:        "string",
+		Description: "API key for the service",
+	})
+
+	metadata2 := ExtensionCommandMetadata{
+		SchemaVersion: "1.0",
+		ID:            "test",
+		Commands:      []Command{},
+		Configuration: &ConfigurationMetadata{
+			Global: &jsonschema.Schema{
+				Type:       "object",
+				Properties: globalProps,
+			},
+		},
+	}
+
+	data2, err := json.Marshal(metadata2)
+	require.NoError(t, err)
+	assert.Contains(t, string(data2), "configuration")
+	assert.Contains(t, string(data2), "global")
+	assert.Contains(t, string(data2), "apiKey")
+}
+
+func TestExtensionMetadata_FutureSchemaVersion(t *testing.T) {
+	// Simulate future schema version with unknown fields
+	jsonData := `{
+		"schemaVersion": "2.0",
+		"id": "test",
+		"version": "1.0.0",
+		"commands": [],
+		"newFeature": "some value",
+		"anotherNewField": 123
+	}`
+
+	var metadata ExtensionCommandMetadata
+	err := json.Unmarshal([]byte(jsonData), &metadata)
+	require.NoError(t, err)
+
+	// Should parse known fields successfully
+	assert.Equal(t, "2.0", metadata.SchemaVersion)
+	assert.Equal(t, "test", metadata.ID)
+	assert.Empty(t, metadata.Commands)
+}
+
+func TestEnvironmentVariable_Marshaling(t *testing.T) {
+	envVars := []EnvironmentVariable{
+		{
+			Name:        "DEMO_API_KEY",
+			Description: "API key for external service authentication",
+			Example:     "abc123xyz",
+		},
+		{
+			Name:        "DEMO_LOG_LEVEL",
+			Description: "Set the logging level for the extension",
+			Default:     "info",
+			Example:     "debug",
+		},
+	}
+
+	metadata := &ExtensionCommandMetadata{
+		SchemaVersion: "1.0",
+		ID:            "test.extension",
+		Commands:      []Command{},
+		Configuration: &ConfigurationMetadata{
+			EnvironmentVariables: envVars,
+		},
+	}
+
+	data, err := json.Marshal(metadata)
+	require.NoError(t, err)
+
+	jsonStr := string(data)
+	assert.Contains(t, jsonStr, "environmentVariables")
+	assert.Contains(t, jsonStr, "DEMO_API_KEY")
+	assert.Contains(t, jsonStr, "API key for external service authentication")
+	assert.Contains(t, jsonStr, "DEMO_LOG_LEVEL")
+	assert.Contains(t, jsonStr, `"default":"info"`)
+}
+
+func TestEnvironmentVariable_UnmarshalJSON(t *testing.T) {
+	jsonData := `{
+		"schemaVersion": "1.0",
+		"id": "test.extension",
+		"commands": [],
+		"configuration": {
+			"environmentVariables": [
+				{
+					"name": "TEST_API_KEY",
+					"description": "API key for testing",
+					"example": "test-key-123"
+				},
+				{
+					"name": "TEST_TIMEOUT",
+					"description": "Operation timeout in seconds",
+					"default": "30",
+					"example": "60"
+				}
+			]
+		}
+	}`
+
+	var metadata ExtensionCommandMetadata
+	err := json.Unmarshal([]byte(jsonData), &metadata)
+	require.NoError(t, err)
+
+	require.NotNil(t, metadata.Configuration)
+	require.Len(t, metadata.Configuration.EnvironmentVariables, 2)
+
+	envVar1 := metadata.Configuration.EnvironmentVariables[0]
+	assert.Equal(t, "TEST_API_KEY", envVar1.Name)
+	assert.Equal(t, "API key for testing", envVar1.Description)
+	assert.Equal(t, "test-key-123", envVar1.Example)
+	assert.Empty(t, envVar1.Default)
+
+	envVar2 := metadata.Configuration.EnvironmentVariables[1]
+	assert.Equal(t, "TEST_TIMEOUT", envVar2.Name)
+	assert.Equal(t, "Operation timeout in seconds", envVar2.Description)
+	assert.Equal(t, "30", envVar2.Default)
+	assert.Equal(t, "60", envVar2.Example)
+}
+
+func TestEnvironmentVariable_Optional(t *testing.T) {
+	// Without environment variables
+	metadata := ExtensionCommandMetadata{
+		SchemaVersion: "1.0",
+		ID:            "test",
+		Commands:      []Command{},
+	}
+
+	data, err := json.Marshal(metadata)
+	require.NoError(t, err)
+	assert.NotContains(t, string(data), "environmentVariables")
+}

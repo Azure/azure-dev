@@ -5,32 +5,44 @@ package azdext
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/golang-jwt/jwt/v5"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
-// waitForDebugger checks if AZD_EXT_DEBUG environment variable is set to a truthy value.
+// ErrDebuggerAborted is returned when the user declines to attach a debugger.
+var ErrDebuggerAborted = errors.New("debugger attach aborted")
+
+// WaitForDebugger checks if AZD_EXT_DEBUG environment variable is set to a truthy value.
 // If set, prompts the user to attach a debugger to the current process.
-func waitForDebugger(ctx context.Context, extensionId string, azdClient *AzdClient) {
+// This should be called at the start of extension command implementations to enable debugging.
+//
+// Returns nil if debugging is not enabled or if user confirms.
+//
+// Returns [ErrDebuggerAborted] if the user declines to attach a debugger.
+// Returns [context.Canceled] if the user cancels the prompt (e.g., via Ctrl+C).
+func WaitForDebugger(ctx context.Context, azdClient *AzdClient) error {
 	debugValue := os.Getenv("AZD_EXT_DEBUG")
 	if debugValue == "" {
-		return
+		return nil
 	}
 
 	isDebug, err := strconv.ParseBool(debugValue)
 	if err != nil || !isDebug {
-		return
+		return nil
 	}
 
+	extensionId := getExtensionId(ctx)
 	message := fmt.Sprintf("Extension '%s' ready to debug (pid: %d).", extensionId, os.Getpid())
 
-	_, err = azdClient.Prompt().Confirm(ctx, &ConfirmRequest{
+	response, err := azdClient.Prompt().Confirm(ctx, &ConfirmRequest{
 		Options: &ConfirmOptions{
 			Message:      message,
 			DefaultValue: ux.Ptr(true),
@@ -38,8 +50,19 @@ func waitForDebugger(ctx context.Context, extensionId string, azdClient *AzdClie
 	})
 
 	if err != nil {
-		log.Printf("failed to prompt for debugger: %v\n", err)
+		// Check if the error is due to context cancellation (Ctrl+C)
+		if status.Code(err) == codes.Canceled || errors.Is(err, context.Canceled) {
+			return context.Canceled
+		}
+		return fmt.Errorf("failed to prompt for debugger: %w", err)
 	}
+
+	// If user selected 'N', abort
+	if !response.GetValue() {
+		return ErrDebuggerAborted
+	}
+
+	return nil
 }
 
 // getExtensionId extracts the extension ID from the JWT token in the context metadata

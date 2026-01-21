@@ -196,6 +196,141 @@ type ServiceTargetProvider interface {
 }
 ```
 
+#### Metadata
+
+Extensions with the `metadata` capability provide comprehensive metadata about their commands and configuration schemas. This enables:
+
+- **CLI Help Integration**: Rich help text and usage information for extension commands
+- **IntelliSense Support**: IDE autocompletion for extension flags and arguments  
+- **Configuration Validation**: JSON Schema-based validation for extension configuration
+- **Environment Variable Documentation**: Clear documentation of environment variables used by the extension
+
+When an extension with the `metadata` capability is installed, `azd` automatically invokes the extension's `metadata` command to fetch and cache command metadata.
+
+**Implementing Metadata Support:**
+
+**Step 1: Add the capability** to your `extension.yaml`:
+
+```yaml
+capabilities:
+  - custom-commands
+  - metadata
+```
+
+**Step 2: Create a hidden `metadata` command** that outputs JSON to stdout:
+
+```go
+func newMetadataCommand() *cobra.Command {
+    return &cobra.Command{
+        Use:    "metadata",
+        Short:  "Generate extension metadata",
+        Hidden: true,
+        RunE: func(cmd *cobra.Command, args []string) error {
+            rootCmd := cmd.Root()
+
+            // Use the helper to generate metadata from Cobra commands
+            metadata := azdext.GenerateExtensionMetadata(
+                "1.0",           // schema version
+                "my.extension",  // extension id (must match extension.yaml)
+                rootCmd,
+            )
+
+            // Add configuration schemas (optional)
+            metadata.Configuration = generateConfigurationMetadata()
+
+            jsonBytes, err := json.MarshalIndent(metadata, "", "  ")
+            if err != nil {
+                return err
+            }
+
+            fmt.Println(string(jsonBytes))
+            return nil
+        },
+    }
+}
+```
+
+**Step 3: Define configuration schemas** using Go types with JSON schema tags:
+
+```go
+import (
+    "github.com/azure/azure-dev/cli/azd/pkg/extensions"
+    "github.com/invopop/jsonschema"
+)
+
+// Define configuration structures using Go types
+type GlobalConfig struct {
+    APIKey  string `json:"apiKey"  jsonschema:"required,description=API key,minLength=10"`
+    Timeout int    `json:"timeout" jsonschema:"minimum=1,maximum=300,default=60"`
+    Debug   bool   `json:"debug"   jsonschema:"description=Enable debug logging"`
+}
+
+type ProjectConfig struct {
+    ProjectName string   `json:"projectName" jsonschema:"required,description=Project name"`
+    Environment string   `json:"environment" jsonschema:"enum=dev,enum=staging,enum=prod"`
+    Features    []string `json:"features"    jsonschema:"description=Enabled features"`
+}
+
+type ServiceConfig struct {
+    Port     int               `json:"port"     jsonschema:"required,minimum=1,maximum=65535"`
+    HostName string            `json:"hostName" jsonschema:"description=Service hostname"`
+    Labels   map[string]string `json:"labels"   jsonschema:"description=Service labels"`
+}
+
+func generateConfigurationMetadata() *extensions.ConfigurationMetadata {
+    return &extensions.ConfigurationMetadata{
+        // Generate schemas automatically from Go types
+        Global:  jsonschema.Reflect(&GlobalConfig{}),
+        Project: jsonschema.Reflect(&ProjectConfig{}),
+        Service: jsonschema.Reflect(&ServiceConfig{}),
+        // Document environment variables
+        EnvironmentVariables: []extensions.EnvironmentVariable{
+            {
+                Name:        "MY_EXT_API_KEY",
+                Description: "API key for service integration",
+                Example:     "sk-abc123xyz456",
+            },
+            {
+                Name:        "MY_EXT_LOG_LEVEL",
+                Description: "Logging verbosity level",
+                Default:     "info",
+                Example:     "debug",
+            },
+        },
+    }
+}
+```
+
+**Metadata Schema Structure:**
+
+The metadata JSON includes:
+
+- **`schemaVersion`**: Version of the metadata schema (e.g., "1.0")
+- **`id`**: Extension identifier (must match `extension.yaml`)
+- **`commands`**: Array of command definitions with:
+  - `name`: Command path as array (e.g., `["demo", "context"]`)
+  - `short`: Brief one-line description
+  - `long`: Detailed description (markdown supported)
+  - `usage`: Usage template string
+  - `examples`: Example usages with description and command
+  - `args`: Positional arguments with name, description, required flag
+  - `flags`: Command flags with name, shorthand, type, default, validValues
+  - `subcommands`: Nested subcommand definitions
+  - `hidden`, `aliases`, `deprecated`: Optional command metadata
+- **`configuration`**: Optional configuration schemas:
+  - `global`: JSON Schema for global-level configuration
+  - `project`: JSON Schema for project-level configuration
+  - `service`: JSON Schema for service-level configuration
+  - `environmentVariables`: Array of environment variable documentation
+
+**Pre-packaged Metadata:**
+
+Extensions can include a pre-packaged `metadata.json` file in their distribution. If present in the extension directory, `azd` uses it directly instead of invoking the `metadata` command. This is useful for:
+
+- Faster installation (no need to run the extension)
+- Extensions in languages that have slower startup times
+- Ensuring consistent metadata across installations
+
 #### Complete Extension Host Builder Pattern
 
 The `ExtensionHost` provides a fluent builder API that allows you to register all extension capabilities in a single, unified pattern. This is the **recommended approach** for extension development as it handles all service registration, readiness signaling, and lifecycle management automatically.
@@ -789,6 +924,7 @@ Extensions can declare the following capabilities in their manifest:
 - **`mcp-server`**: Provide Model Context Protocol tools for AI agents
 - **`service-target-provider`**: Provide custom service deployment targets
 - **`framework-service-provider`**: Provide custom language frameworks and build systems
+- **`metadata`**: Provide comprehensive metadata about commands and configuration schemas
 
 #### Complete Extension Manifest Example
 
@@ -809,6 +945,7 @@ capabilities:
   - service-target-provider
   - framework-service-provider
   - mcp-server
+  - metadata
 
 examples:
   - name: context
@@ -1161,7 +1298,7 @@ The following are a list of available gRPC services for extension developer to i
 
 ### Project Service
 
-This service manages project configuration retrieval and related operations.
+This service manages project configuration retrieval and related operations, including project and service-level configuration management.
 
 > See [project.proto](../grpc/proto/project.proto) for more details.
 
@@ -1186,6 +1323,107 @@ Adds a new service to the project.
 - **Request:** _AddServiceRequest_
   - Contains:
     - `service`: _ServiceConfig_
+- **Response:** _EmptyResponse_
+
+#### GetConfigSection
+
+Retrieves a project configuration section by path from AdditionalProperties.
+
+- **Request:** _GetProjectConfigSectionRequest_
+  - `path` (string): Dot-notation path to the config section
+- **Response:** _GetProjectConfigSectionResponse_
+  - Contains:
+    - `section` (google.protobuf.Struct): The configuration section
+    - `found` (bool): Whether the section exists
+
+#### SetConfigSection
+
+Sets a project configuration section at the specified path in AdditionalProperties.
+
+- **Request:** _SetProjectConfigSectionRequest_
+  - `path` (string): Dot-notation path to the config section
+  - `section` (google.protobuf.Struct): The configuration section to set
+- **Response:** _EmptyResponse_
+
+#### GetConfigValue
+
+Retrieves a single project configuration value by path from AdditionalProperties.
+
+- **Request:** _GetProjectConfigValueRequest_
+  - `path` (string): Dot-notation path to the config value
+- **Response:** _GetProjectConfigValueResponse_
+  - Contains:
+    - `value` (google.protobuf.Value): The configuration value
+    - `found` (bool): Whether the value exists
+
+#### SetConfigValue
+
+Sets a single project configuration value at the specified path in AdditionalProperties.
+
+- **Request:** _SetProjectConfigValueRequest_
+  - `path` (string): Dot-notation path to the config value
+  - `value` (google.protobuf.Value): The configuration value to set
+- **Response:** _EmptyResponse_
+
+#### UnsetConfig
+
+Removes a project configuration value or section at the specified path from AdditionalProperties.
+
+- **Request:** _UnsetProjectConfigRequest_
+  - `path` (string): Dot-notation path to the config to remove
+- **Response:** _EmptyResponse_
+
+#### GetServiceConfigSection
+
+Retrieves a service configuration section by path from service AdditionalProperties.
+
+- **Request:** _GetServiceConfigSectionRequest_
+  - `service_name` (string): Name of the service
+  - `path` (string): Dot-notation path to the config section
+- **Response:** _GetServiceConfigSectionResponse_
+  - Contains:
+    - `section` (google.protobuf.Struct): The configuration section
+    - `found` (bool): Whether the section exists
+
+#### SetServiceConfigSection
+
+Sets a service configuration section at the specified path in service AdditionalProperties.
+
+- **Request:** _SetServiceConfigSectionRequest_
+  - `service_name` (string): Name of the service
+  - `path` (string): Dot-notation path to the config section
+  - `section` (google.protobuf.Struct): The configuration section to set
+- **Response:** _EmptyResponse_
+
+#### GetServiceConfigValue
+
+Retrieves a single service configuration value by path from service AdditionalProperties.
+
+- **Request:** _GetServiceConfigValueRequest_
+  - `service_name` (string): Name of the service
+  - `path` (string): Dot-notation path to the config value
+- **Response:** _GetServiceConfigValueResponse_
+  - Contains:
+    - `value` (google.protobuf.Value): The configuration value
+    - `found` (bool): Whether the value exists
+
+#### SetServiceConfigValue
+
+Sets a single service configuration value at the specified path in service AdditionalProperties.
+
+- **Request:** _SetServiceConfigValueRequest_
+  - `service_name` (string): Name of the service
+  - `path` (string): Dot-notation path to the config value
+  - `value` (google.protobuf.Value): The configuration value to set
+- **Response:** _EmptyResponse_
+
+#### UnsetServiceConfig
+
+Removes a service configuration value or section at the specified path from service AdditionalProperties.
+
+- **Request:** _UnsetServiceConfigRequest_
+  - `service_name` (string): Name of the service
+  - `path` (string): Dot-notation path to the config to remove
 - **Response:** _EmptyResponse_
 
 ---

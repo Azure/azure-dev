@@ -188,11 +188,15 @@ const completionSpec: Fig.Spec = {
 		},
 		{
 			name: ['ai'],
-			description: 'Extension for the Foundry Agent Service. (Preview)',
+			description: 'Commands for the ai extension namespace.',
 			subcommands: [
 				{
 					name: ['agent'],
 					description: 'Extension for the Foundry Agent Service. (Preview)',
+				},
+				{
+					name: ['finetuning'],
+					description: 'Extension for Foundry Fine Tuning. (Preview)',
 				},
 			],
 		},
@@ -277,6 +281,10 @@ const completionSpec: Fig.Spec = {
 					name: ['logout'],
 					description: 'Log out of Azure.',
 				},
+				{
+					name: ['status'],
+					description: 'Show the current authentication status.',
+				},
 			],
 		},
 		{
@@ -310,6 +318,10 @@ const completionSpec: Fig.Spec = {
 			],
 		},
 		{
+			name: ['concurx'],
+			description: 'Concurrent execution for azd deployment',
+		},
+		{
 			name: ['config'],
 			description: 'Manage azd configurations (ex: default Azure subscription, location).',
 			subcommands: [
@@ -323,6 +335,10 @@ const completionSpec: Fig.Spec = {
 				{
 					name: ['list-alpha'],
 					description: 'Display the list of available features in alpha stage.',
+				},
+				{
+					name: ['options'],
+					description: 'List all available configuration settings.',
 				},
 				{
 					name: ['reset'],
@@ -668,7 +684,7 @@ const completionSpec: Fig.Spec = {
 					options: [
 						{
 							name: ['--force', '-f'],
-							description: 'Force installation even if it would downgrade the current version',
+							description: 'Force installation, including downgrades and reinstalls',
 							isDangerous: true,
 						},
 						{
@@ -1585,11 +1601,15 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['ai'],
-					description: 'Extension for the Foundry Agent Service. (Preview)',
+					description: 'Commands for the ai extension namespace.',
 					subcommands: [
 						{
 							name: ['agent'],
 							description: 'Extension for the Foundry Agent Service. (Preview)',
+						},
+						{
+							name: ['finetuning'],
+							description: 'Extension for Foundry Fine Tuning. (Preview)',
 						},
 					],
 				},
@@ -1604,6 +1624,10 @@ const completionSpec: Fig.Spec = {
 						{
 							name: ['logout'],
 							description: 'Log out of Azure.',
+						},
+						{
+							name: ['status'],
+							description: 'Show the current authentication status.',
 						},
 					],
 				},
@@ -1638,6 +1662,10 @@ const completionSpec: Fig.Spec = {
 					],
 				},
 				{
+					name: ['concurx'],
+					description: 'Concurrent execution for azd deployment',
+				},
+				{
 					name: ['config'],
 					description: 'Manage azd configurations (ex: default Azure subscription, location).',
 					subcommands: [
@@ -1648,6 +1676,10 @@ const completionSpec: Fig.Spec = {
 						{
 							name: ['list-alpha'],
 							description: 'Display the list of available features in alpha stage.',
+						},
+						{
+							name: ['options'],
+							description: 'List all available configuration settings.',
 						},
 						{
 							name: ['reset'],

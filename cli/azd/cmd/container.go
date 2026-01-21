@@ -874,8 +874,15 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Extensions
 	container.MustRegisterSingleton(extensions.NewManager)
-	container.MustRegisterSingleton(extensions.NewRunner)
 	container.MustRegisterSingleton(extensions.NewSourceManager)
+	container.MustRegisterSingleton(extensions.NewRunner)
+	container.MustRegisterSingleton(func(serviceLocator ioc.ServiceLocator) *lazy.Lazy[*extensions.Runner] {
+		return lazy.NewLazy(func() (*extensions.Runner, error) {
+			var runner *extensions.Runner
+			err := serviceLocator.Resolve(&runner)
+			return runner, err
+		})
+	})
 
 	// gRPC Server
 	container.MustRegisterScoped(grpcserver.NewServer)
@@ -911,7 +918,27 @@ func (w *workflowCmdAdapter) SetArgs(args []string) {
 // ExecuteContext implements workflow.AzdCommandRunner
 func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context) error {
 	childCtx := middleware.WithChildAction(ctx)
+
+	// CRITICAL FIX: Explicitly set the context on the command before calling ExecuteContext.
+	// When the same command instance is reused across workflow steps, cobra may retain
+	// a stale cancelled context from a previous execution. Setting the context on both
+	// the root command and all subcommands (recursively) ensures the fresh context is used.
+	setContextRecursively(w.cmd, childCtx)
+
 	return w.cmd.ExecuteContext(childCtx)
+}
+
+// setContextRecursively sets the context on a command and all its subcommands recursively
+func setContextRecursively(cmd *cobra.Command, ctx context.Context) {
+	// Always set the context, even if the command hasn't been initialized yet.
+	// cobra.Command.Context() returns context.Background() if no context is set,
+	// so SetContext is safe to call on any command. This ensures all commands
+	// in the tree start with the correct context, preventing stale contexts
+	// from previous executions when commands are reused.
+	cmd.SetContext(ctx)
+	for _, subCmd := range cmd.Commands() {
+		setContextRecursively(subCmd, ctx)
+	}
 }
 
 // ArmClientInitializer is a function definition for all Azure SDK ARM Client

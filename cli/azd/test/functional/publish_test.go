@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
@@ -17,7 +18,6 @@ import (
 )
 
 func Test_CLI_Publish_ContainerApp_RemoteBuild(t *testing.T) {
-	t.Skip("taking 53 minutes. Needs to be re-designed - https://github.com/Azure/azure-dev/issues/6059")
 	t.Parallel()
 
 	tests := []struct {
@@ -42,6 +42,8 @@ func Test_CLI_Publish_ContainerApp_RemoteBuild(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			ctx, cancel := newTestContext(t)
 			defer cancel()
 
@@ -94,6 +96,10 @@ func Test_CLI_Publish_ContainerApp_RemoteBuild(t *testing.T) {
 
 			_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 			require.NoError(t, err)
+
+			if session != nil {
+				session.Variables[recording.SubscriptionIdKey] = env[environment.SubscriptionIdEnvVarName]
+			}
 		})
 	}
 }

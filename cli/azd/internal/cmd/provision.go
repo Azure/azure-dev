@@ -424,6 +424,11 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		}, nil
 	}
 
+	// Invalidate cache after successful provisioning so next azd show will refresh
+	if err := p.envManager.InvalidateEnvCache(ctx, p.env.Name()); err != nil {
+		log.Printf("warning: failed to invalidate state cache: %v", err)
+	}
+
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header: fmt.Sprintf(
@@ -445,10 +450,22 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 func deployResultToUx(previewResult *provisioning.DeployPreviewResult) ux.UxItem {
 	var operations []*ux.Resource
 	for _, change := range previewResult.Preview.Properties.Changes {
+		// Convert property deltas to UX format
+		var propertyDeltas []ux.PropertyDelta
+		for _, delta := range change.Delta {
+			propertyDeltas = append(propertyDeltas, ux.PropertyDelta{
+				Path:       delta.Path,
+				ChangeType: string(delta.ChangeType),
+				Before:     delta.Before,
+				After:      delta.After,
+			})
+		}
+
 		operations = append(operations, &ux.Resource{
-			Operation: ux.OperationType(change.ChangeType),
-			Type:      change.ResourceType,
-			Name:      change.Name,
+			Operation:      ux.OperationType(change.ChangeType),
+			Type:           change.ResourceType,
+			Name:           change.Name,
+			PropertyDeltas: propertyDeltas,
 		})
 	}
 	return &ux.PreviewProvision{

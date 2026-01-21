@@ -246,6 +246,18 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 		infraRoot = filepath.Join(projectConfig.Path, infraRoot)
 	}
 
+	// Auto-detect provider if not explicitly set
+	if infraOptions.Provider == provisioning.NotSpecified {
+		detectedProvider, err := detectProviderFromFiles(infraRoot)
+		if err != nil {
+			return nil, err
+		}
+		if detectedProvider != provisioning.NotSpecified {
+			log.Printf("auto-detected infrastructure provider: %s", detectedProvider)
+			infraOptions.Provider = detectedProvider
+		}
+	}
+
 	// short-circuit: If layers are defined, we know it's an explicit infrastructure
 	if len(infraOptions.Layers) > 0 {
 		return &Infra{
@@ -289,6 +301,55 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 	return &Infra{
 		Options: infraOptions,
 	}, nil
+}
+
+// detectProviderFromFiles scans the infra directory and detects the IaC provider
+// based on file extensions present. Returns an error if both bicep and terraform files exist.
+func detectProviderFromFiles(infraPath string) (provisioning.ProviderKind, error) {
+	files, err := os.ReadDir(infraPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return provisioning.NotSpecified, nil
+		}
+		return provisioning.NotSpecified, fmt.Errorf("reading infra directory: %w", err)
+	}
+
+	hasBicep := false
+	hasTerraform := false
+
+	for _, file := range files {
+		if file.IsDir() {
+			continue
+		}
+
+		ext := filepath.Ext(file.Name())
+		switch ext {
+		case ".bicep", ".bicepparam":
+			hasBicep = true
+		case ".tf", ".tfvars":
+			hasTerraform = true
+		}
+
+		// Early exit if both found
+		if hasBicep && hasTerraform {
+			break
+		}
+	}
+
+	// Decision logic
+	switch {
+	case hasBicep && hasTerraform:
+		return provisioning.NotSpecified, fmt.Errorf(
+			"both Bicep and Terraform files detected in %s. "+
+				"Please specify 'infra.provider' in azure.yaml as either 'bicep' or 'terraform'",
+			infraPath)
+	case hasBicep:
+		return provisioning.Bicep, nil
+	case hasTerraform:
+		return provisioning.Terraform, nil
+	default:
+		return provisioning.NotSpecified, nil
+	}
 }
 
 // pathHasModule returns true if there is a file named "<module>" or "<module.bicep>" in path.

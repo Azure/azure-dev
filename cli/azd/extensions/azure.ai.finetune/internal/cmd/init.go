@@ -238,7 +238,7 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 	// Get specified or current environment if it exists
 	existingEnv, err := getExistingEnvironment(ctx, &flags.env, azdClient)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get existing environment: %w", err)
+		fmt.Printf("Warning: failed to get existing environment: %v\n", err)
 	}
 	if existingEnv == nil {
 		// Dispatch `azd env new` to create a new environment with interactive flow

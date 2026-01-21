@@ -971,7 +971,7 @@ func (p *BicepProvider) Destroy(
 	if len(groupedResources) == 0 {
 		p.console.StopSpinner(ctx, "", input.StepDone)
 		// Call deployment.Delete to void the state even though there are no resources to delete
-		if err := p.destroyDeployment(ctx, options.Purge(), deploymentToDelete, []*azapi.AzCliLogAnalyticsWorkspace{}); err != nil {
+		if err := p.destroyDeployment(ctx, options, deploymentToDelete, []*azapi.AzCliLogAnalyticsWorkspace{}); err != nil {
 			return nil, fmt.Errorf("voiding deployment state: %w", err)
 		}
 	} else {
@@ -1014,7 +1014,7 @@ func (p *BicepProvider) Destroy(
 
 		p.console.Message(ctx, output.WithGrayFormat("Deleting your resources can take some time.\n"))
 
-		if err := p.destroyDeployment(ctx, options.Purge(), deploymentToDelete, logAnalyticsWorkspaces); err != nil {
+		if err := p.destroyDeployment(ctx, options, deploymentToDelete, logAnalyticsWorkspaces); err != nil {
 			return nil, fmt.Errorf("deleting resource groups: %w", err)
 		}
 
@@ -1216,14 +1216,14 @@ func (p *BicepProvider) promptDeletion(
 // destroyDeployment deletes the azure resources within the deployment and voids the deployment state.
 func (p *BicepProvider) destroyDeployment(
 	ctx context.Context,
-	purgeLogalyticsWorkspaces bool,
+	options provisioning.DestroyOptions,
 	deployment infra.Deployment,
 	logAnalyticsWorkspaces []*azapi.AzCliLogAnalyticsWorkspace,
 ) error {
 	// Handle Log Analytics Workspaces separately with Force option when purge is enabled
 	// Log Analytics Workspaces doesn't have purge function after soft-delete as
 	// So we need to handle it before deleting the resource group
-	if purgeLogalyticsWorkspaces && len(logAnalyticsWorkspaces) > 0 {
+	if options.Purge() && len(logAnalyticsWorkspaces) > 0 {
 		logAnalyticsWorkspacesPurge := itemToPurge{
 			resourceType: "Log Analytics Workspace",
 			count:        len(logAnalyticsWorkspaces),

@@ -41,7 +41,7 @@ func mapOpenAIStatusToJobStatus(openaiStatus openai.FineTuningJobStatus) models.
 	case OpenAIStatusCancelled:
 		return models.StatusCancelled
 	case OpenAIStatusPausing:
-		return models.StatusPaused
+		return models.StatusPausing
 	case OpenAIStatusResuming:
 		return models.StatusResuming
 	default:

@@ -152,10 +152,17 @@ func newOperationShowCommand() *cobra.Command {
 	var jobID string
 	var logs bool
 	var output string
+	requiredFlag := "id"
 
 	cmd := &cobra.Command{
 		Use:   "show",
 		Short: "Shows detailed information about a specific job.",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if jobID == "" {
+				return validateRequiredFlag(requiredFlag)
+			}
+			return nil
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			azdClient, err := azdext.NewAzdClient()
@@ -241,7 +248,7 @@ func newOperationShowCommand() *cobra.Command {
 	cmd.Flags().StringVarP(&jobID, "id", "i", "", "Job ID (required)")
 	cmd.Flags().BoolVar(&logs, "logs", false, "Include recent training logs")
 	cmd.Flags().StringVarP(&output, "output", "o", "table", "Output format: table, json, yaml")
-	cmd.MarkFlagRequired("id")
+	cmd.MarkFlagRequired(requiredFlag)
 
 	return cmd
 }
@@ -306,10 +313,17 @@ func newOperationListCommand() *cobra.Command {
 // newOperationPauseCommand creates a command to pause a running fine-tuning job
 func newOperationPauseCommand() *cobra.Command {
 	var jobID string
+	requiredFlag := "id"
 
 	cmd := &cobra.Command{
 		Use:   "pause",
 		Short: "Pauses a running fine-tuning job.",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if jobID == "" {
+				return validateRequiredFlag(requiredFlag)
+			}
+			return nil
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			azdClient, err := azdext.NewAzdClient()
@@ -353,7 +367,7 @@ func newOperationPauseCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&jobID, "id", "i", "", "Job ID (required)")
-	cmd.MarkFlagRequired("id")
+	cmd.MarkFlagRequired(requiredFlag)
 
 	return cmd
 }
@@ -361,10 +375,17 @@ func newOperationPauseCommand() *cobra.Command {
 // newOperationResumeCommand creates a command to resume a paused fine-tuning job
 func newOperationResumeCommand() *cobra.Command {
 	var jobID string
+	requiredFlag := "id"
 
 	cmd := &cobra.Command{
 		Use:   "resume",
 		Short: "Resumes a paused fine-tuning job.",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if jobID == "" {
+				return validateRequiredFlag(requiredFlag)
+			}
+			return nil
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			azdClient, err := azdext.NewAzdClient()
@@ -408,7 +429,7 @@ func newOperationResumeCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&jobID, "id", "i", "", "Job ID (required)")
-	cmd.MarkFlagRequired("id")
+	cmd.MarkFlagRequired(requiredFlag)
 
 	return cmd
 }
@@ -417,10 +438,17 @@ func newOperationResumeCommand() *cobra.Command {
 func newOperationCancelCommand() *cobra.Command {
 	var jobID string
 	var force bool
+	requiredFlag := "id"
 
 	cmd := &cobra.Command{
 		Use:   "cancel",
 		Short: "Cancels a running or queued fine-tuning job.",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if jobID == "" {
+				return validateRequiredFlag(requiredFlag)
+			}
+			return nil
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			azdClient, err := azdext.NewAzdClient()
@@ -475,7 +503,7 @@ func newOperationCancelCommand() *cobra.Command {
 
 	cmd.Flags().StringVarP(&jobID, "id", "i", "", "Job ID (required)")
 	cmd.Flags().BoolVar(&force, "force", false, "Skip confirmation prompt")
-	cmd.MarkFlagRequired("id")
+	cmd.MarkFlagRequired(requiredFlag)
 
 	return cmd
 }

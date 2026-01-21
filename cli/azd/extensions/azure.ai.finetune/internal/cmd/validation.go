@@ -9,7 +9,25 @@ import (
 
 	"azure.ai.finetune/internal/utils"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/fatih/color"
 )
+
+// Common hints for required flags
+const (
+	HintFindJobID = "To find job IDs, run: azd ai finetuning jobs list"
+)
+
+// validateRequiredFlag returns a user-friendly error for missing required flags
+// The error message is in red, the hint is in yellow
+func validateRequiredFlag(flagName string) error {
+	switch flagName {
+	case "id":
+		errorMsg := fmt.Sprintf("--%s is required", flagName)
+		hint := color.YellowString("\n\n%s\n", HintFindJobID)
+		return fmt.Errorf("%s%s", errorMsg, hint)
+	}
+	return fmt.Errorf("--%s is required", flagName)
+}
 
 func validateEnvironment(ctx context.Context) error {
 	ctx = azdext.WithAccessToken(ctx)

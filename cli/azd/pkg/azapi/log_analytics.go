@@ -53,6 +53,8 @@ func (cli *AzureClient) PurgeLogAnalyticsWorkspace(
 		Force: to.Ptr(true),
 	}
 
+	// https://learn.microsoft.com/rest/api/loganalytics/workspaces/delete?view=rest-loganalytics-2025-07-01&tabs=HTTP
+	// Purging a workspace is done by setting the Force parameter to true when deleting the workspace
 	poller, err := workspacesClient.BeginDelete(ctx, resourceGroupName, workspaceName, deleteOpts)
 	if err != nil {
 		return fmt.Errorf("starting purging log analytics workspace: %w", err)

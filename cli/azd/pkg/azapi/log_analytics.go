@@ -7,8 +7,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/operationalinsights/armoperationalinsights/v2"
-	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 )
 
 type AzCliLogAnalyticsWorkspace struct {
@@ -44,16 +44,16 @@ func (cli *AzureClient) PurgeLogAnalyticsWorkspace(
 	resourceGroupName string,
 	workspaceName string,
 ) error {
-	workspacesDeletedClient, err := cli.createLogAnalyticsWorkspacesClient(ctx, subscriptionId)
+	workspacesClient, err := cli.createLogAnalyticsWorkspacesClient(ctx, subscriptionId)
 	if err != nil {
 		return err
 	}
 
 	deleteOpts := &armoperationalinsights.WorkspacesClientBeginDeleteOptions{
-		Force: common.ToPtr(true),
+		Force: to.Ptr(true),
 	}
 
-	poller, err := workspacesDeletedClient.BeginDelete(ctx, resourceGroupName, workspaceName, deleteOpts)
+	poller, err := workspacesClient.BeginDelete(ctx, resourceGroupName, workspaceName, deleteOpts)
 	if err != nil {
 		return fmt.Errorf("starting purging log analytics workspace: %w", err)
 	}

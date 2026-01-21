@@ -135,6 +135,7 @@ go-imath
 GOARCH
 GOCOVERDIR
 godotenv
+gofmt
 golangci
 gosec
 goterm

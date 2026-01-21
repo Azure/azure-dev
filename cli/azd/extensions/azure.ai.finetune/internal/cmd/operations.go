@@ -50,11 +50,11 @@ func newOperationSubmitCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "submit",
 		Short: "submit fine tuning job",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			return validateSubmitFlags(filename, model, trainingFile)
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
-			if filename == "" && (model == "" || trainingFile == "") {
-				return fmt.Errorf("either config file or model and training-file parameters are required")
-			}
 
 			azdClient, err := azdext.NewAzdClient()
 			if err != nil {

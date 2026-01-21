@@ -680,7 +680,7 @@ func downloadGh(
 		return fmt.Errorf("unsupported platform")
 	}
 
-	// example: https://github.com/cli/cli/releases/download/v2.86.0/gh_2.86.0_linux_arm64.rpm
+	// example: https://github.com/cli/cli/releases/download/v2.86.0/gh_2.86.0_linux_arm64.tar.gz
 	ghReleaseUrl := fmt.Sprintf("https://github.com/cli/cli/releases/download/v%s/%s", ghVersion, releaseName)
 
 	log.Printf("downloading github cli release %s -> %s", ghReleaseUrl, releaseName)

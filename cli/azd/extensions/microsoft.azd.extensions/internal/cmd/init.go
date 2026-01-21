@@ -630,11 +630,9 @@ func createExtensionDirectory(
 		return nil
 	}
 
-	if os.IsNotExist(err) {
-		// Create the extension directory
-		if err := os.MkdirAll(extensionPath, internal.PermissionDirectory); err != nil {
-			return fmt.Errorf("failed to create extension directory: %w", err)
-		}
+	// Create the extension directory
+	if err := os.MkdirAll(extensionPath, internal.PermissionDirectory); err != nil {
+		return fmt.Errorf("failed to create extension directory: %w", err)
 	}
 
 	// Create project from template.

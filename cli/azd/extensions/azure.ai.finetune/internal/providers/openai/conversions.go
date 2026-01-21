@@ -23,6 +23,8 @@ const (
 	OpenAIStatusSucceeded       = "succeeded"
 	OpenAIStatusFailed          = "failed"
 	OpenAIStatusCancelled       = "cancelled"
+	OpenAIStatusPausing         = "pausing"
+	OpenAIStatusResuming        = "resuming"
 )
 
 // mapOpenAIStatusToJobStatus converts OpenAI SDK status to domain model JobStatus
@@ -38,6 +40,10 @@ func mapOpenAIStatusToJobStatus(openaiStatus openai.FineTuningJobStatus) models.
 		return models.StatusFailed
 	case OpenAIStatusCancelled:
 		return models.StatusCancelled
+	case OpenAIStatusPausing:
+		return models.StatusPaused
+	case OpenAIStatusResuming:
+		return models.StatusResuming
 	default:
 		return models.StatusPending // Default fallback
 	}

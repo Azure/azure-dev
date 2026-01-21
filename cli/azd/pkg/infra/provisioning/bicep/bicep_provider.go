@@ -1221,8 +1221,9 @@ func (p *BicepProvider) destroyDeployment(
 	logAnalyticsWorkspaces []*azapi.AzCliLogAnalyticsWorkspace,
 ) error {
 	// Handle Log Analytics Workspaces separately with Force option when purge is enabled.
-	// Unlike many other resources, Log Analytics Workspaces are not automatically purged after soft-delete
-	// when their resource group is deleted, so we must purge them explicitly before deleting the resource group.
+	// Unlike many other resources, Log Analytics Workspaces are not able to be purged after soft-delete
+	// because purge function only support for purge tables not a whole workspace and force delete must happen
+	// when their resource group is not deleted, so we must purge them explicitly before deleting the resource group.
 	if options.Purge() && len(logAnalyticsWorkspaces) > 0 {
 		logAnalyticsWorkspacesPurge := itemToPurge{
 			resourceType: "Log Analytics Workspace",

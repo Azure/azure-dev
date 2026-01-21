@@ -157,9 +157,57 @@ move to root directory.
 
 ### CLI Color Standards
 
-The CLI uses industry-standard [ANSI defined colors](https://en.wikipedia.org/wiki/ANSI_escape_code#Colors) to ensure accessibility and compatibility across all terminals. This allows users to customize color palettes through their IDE or terminal preferences.
+The CLI uses consistent color formatting through helper functions defined in [`cli/azd/pkg/output/colors.go`](../../pkg/output/colors.go). **Always use these helper functions** instead of writing raw ANSI escape codes.
 
 **Important**: Colors will appear differently depending on which terminal and theme (dark/light) the customer prefers. Always test output in both dark and light terminal themes.
+
+#### Standard Color Helper Functions
+
+Use these functions for consistent color formatting across the CLI:
+
+| Purpose | Function | Usage Example |
+| --- | --- | --- |
+| **Hyperlinks** | `WithLinkFormat(text string)` | URLs, portal links |
+| **Commands & parameters** | `WithHighLightFormat(text string)` | Command names, parameters, system events |
+| **Success** | `WithSuccessFormat(text string)` | Success messages, completed operations |
+| **Warning** | `WithWarningFormat(text string)` | Warning messages, non-critical issues |
+| **Error** | `WithErrorFormat(text string)` | Error messages, failures |
+| **Gray text** | `WithGrayFormat(text string)` | Secondary information, muted text |
+| **Hint text** | `WithHintFormat(text string)` | Helpful suggestions, tips |
+| **Bold text** | `WithBold(text string)` | Emphasis, headers |
+| **Underline** | `WithUnderline(text string)` | Emphasis (use sparingly) |
+
+#### Examples
+
+```go
+// Success message
+fmt.Println(output.WithSuccessFormat("(✓) Done:") + " Creating resource")
+
+// Warning message
+fmt.Println(output.WithWarningFormat("(!) Warning:") + " Configuration may need update")
+
+// Error message
+fmt.Println(output.WithErrorFormat("(✗) Failed:") + " Unable to connect")
+
+// Hyperlink
+fmt.Printf("View in portal: %s\n", output.WithLinkFormat(url))
+
+// Command highlight
+fmt.Printf("Run %s to deploy\n", output.WithHighLightFormat("azd deploy"))
+```
+
+#### Implementation Guidelines
+
+- **Consistency**: Always use the helper functions for the same purpose across all commands
+- **Accessibility**: Never rely solely on color to convey information (use icons/symbols too)
+- **Terminal compatibility**: Colors will render differently across terminals - test in multiple environments
+- **Theme support**: Test in both light and dark terminal themes
+- **Fallback**: Ensure output remains readable if colors are disabled
+
+<details>
+<summary>📚 Learn more about ANSI color codes (optional reference)</summary>
+
+The CLI uses industry-standard [ANSI defined colors](https://en.wikipedia.org/wiki/ANSI_escape_code#Colors) to ensure accessibility and compatibility across all terminals. This allows users to customize color palettes through their IDE or terminal preferences.
 
 #### Color Naming Convention
 
@@ -202,40 +250,7 @@ Note: There is a discrepancy in the naming convention between ANSI Color coding 
 
 **Recommendation**: Use standard 3/4-bit colors (30-37, 90-97) as they adapt to the user's terminal theme preferences (dark/light mode). Only use 24-bit RGB colors when exact color matching is required. For complete ANSI escape code documentation, see [ANSI escape code - Colors](https://en.wikipedia.org/wiki/ANSI_escape_code#Colors).
 
-#### Standard Color Usage
-
-| Purpose | Color | ANSI Code | Usage |
-| --- | --- | --- | --- |
-| **Primary text** | Black (on light) / White (on dark) | Default | Standard command output |
-| **Commands & parameters** | Bright Blue | `\033[94m` | Command names, parameters, system events |
-| **Hyperlinks** | Bright Cyan | `\033[96m` | URLs, portal links |
-| **Success** | Green | `\033[32m` | Success messages, completed operations |
-| **Warning** | Yellow / Bright Yellow | `\033[33m` / `\033[93m` | Warning messages, non-critical issues |
-| **Error** | Red | `\033[31m` | Error messages, failures |
-
-#### Implementation Guidelines
-
-- **Consistency**: Use the same color for the same purpose across all commands
-- **Accessibility**: Never rely solely on color to convey information (use icons/symbols too)
-- **Terminal compatibility**: Colors will render differently across terminals - test in multiple environments
-- **Theme support**: Test in both light and dark terminal themes
-- **Fallback**: Ensure output remains readable if colors are disabled
-
-#### Examples
-
-```go
-// Success message
-fmt.Println("\033[32m(✓) Done:\033[0m Creating resource")
-
-// Warning message
-fmt.Println("\033[33m(!) Warning:\033[0m Configuration may need update")
-
-// Error message
-fmt.Println("\033[31m(✗) Failed:\033[0m Unable to connect")
-
-// Hyperlink (using OSC 8 hyperlinks when supported)
-fmt.Printf("View in portal: \033[96m%s\033[0m\n", url)
-```
+</details>
 
 ## Testing Standards
 

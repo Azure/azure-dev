@@ -238,7 +238,7 @@ func newOperationShowCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&jobID, "id", "i", "", "Job ID")
+	cmd.Flags().StringVarP(&jobID, "id", "i", "", "Job ID (required)")
 	cmd.Flags().BoolVar(&logs, "logs", false, "Include recent training logs")
 	cmd.Flags().StringVarP(&output, "output", "o", "table", "Output format: table, json, yaml")
 	cmd.MarkFlagRequired("id")
@@ -352,7 +352,7 @@ func newOperationPauseCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&jobID, "id", "i", "", "Job ID")
+	cmd.Flags().StringVarP(&jobID, "id", "i", "", "Job ID (required)")
 	cmd.MarkFlagRequired("id")
 
 	return cmd
@@ -407,7 +407,7 @@ func newOperationResumeCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&jobID, "id", "i", "", "Job ID")
+	cmd.Flags().StringVarP(&jobID, "id", "i", "", "Job ID (required)")
 	cmd.MarkFlagRequired("id")
 
 	return cmd
@@ -473,7 +473,7 @@ func newOperationCancelCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&jobID, "id", "i", "", "Job ID")
+	cmd.Flags().StringVarP(&jobID, "id", "i", "", "Job ID (required)")
 	cmd.Flags().BoolVar(&force, "force", false, "Skip confirmation prompt")
 	cmd.MarkFlagRequired("id")
 

@@ -621,18 +621,14 @@ func createExtensionDirectory(
 		return fmt.Errorf("a file named '%s' already exists", extensionMetadata.Id)
 	}
 
-	if err != nil {
-		if !os.IsNotExist(err) {
-			return fmt.Errorf("failed to check extension directory: %w", err)
+	if os.IsNotExist(err) {
+		if err := os.MkdirAll(extensionPath, internal.PermissionDirectory); err != nil {
+			return fmt.Errorf("failed to create extension directory: %w", err)
 		}
+	} else if err != nil {
+		return fmt.Errorf("failed to check extension directory: %w", err)
 	} else {
-		// Directory exists, nothing to create.
 		return nil
-	}
-
-	// Create the extension directory
-	if err := os.MkdirAll(extensionPath, internal.PermissionDirectory); err != nil {
-		return fmt.Errorf("failed to create extension directory: %w", err)
 	}
 
 	// Create project from template.

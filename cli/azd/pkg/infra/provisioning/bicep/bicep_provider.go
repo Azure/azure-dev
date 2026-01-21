@@ -948,6 +948,11 @@ func (p *BicepProvider) Destroy(
 		return nil, fmt.Errorf("getting cognitive accounts to purge: %w", err)
 	}
 
+	logAnalyticsWorkspaces, err := p.getLogAnalyticsWorkspacesToPurge(ctx, groupedResources)
+	if err != nil {
+		return nil, fmt.Errorf("getting log analytics workspaces to purge: %w", err)
+	}
+
 	p.console.StopSpinner(ctx, "", input.StepDone)
 	if err := p.destroyDeploymentWithConfirmation(
 		ctx,
@@ -955,6 +960,7 @@ func (p *BicepProvider) Destroy(
 		deploymentToDelete,
 		groupedResources,
 		len(resourcesToDelete),
+		logAnalyticsWorkspaces,
 	); err != nil {
 		return nil, fmt.Errorf("deleting resource groups: %w", err)
 	}
@@ -1113,6 +1119,7 @@ func (p *BicepProvider) destroyDeploymentWithConfirmation(
 	deployment infra.Deployment,
 	groupedResources map[string][]*azapi.Resource,
 	resourceCount int,
+	logAnalyticsWorkspaces []*azapi.AzCliLogAnalyticsWorkspace,
 ) error {
 	if !options.Force() {
 		p.console.MessageUxItem(ctx, &ux.MultilineMessage{
@@ -1137,6 +1144,28 @@ func (p *BicepProvider) destroyDeploymentWithConfirmation(
 	}
 
 	p.console.Message(ctx, output.WithGrayFormat("Deleting your resources can take some time.\n"))
+
+	// Handle Log Analytics Workspaces separately with Force option when purge is enabled
+	// Log Analytics Workspaces doesn't have purge function after soft-delete as
+	// So we need to handle it before deleting the resource group
+	if options.Purge() && len(logAnalyticsWorkspaces) > 0 {
+		logAnalyticsWorkspacesPurge := itemToPurge{
+			resourceType: "Log Analytics Workspace",
+			count:        len(logAnalyticsWorkspaces),
+			purge: func(skipPurge bool, self *itemToPurge) error {
+				return p.purgeLogAnalyticsWorkspaces(ctx, logAnalyticsWorkspaces, skipPurge)
+			},
+		}
+		var purgeItem []itemToPurge
+		for _, item := range []itemToPurge{logAnalyticsWorkspacesPurge} {
+			if item.count > 0 {
+				purgeItem = append(purgeItem, item)
+			}
+		}
+		if err := p.purgeItems(ctx, purgeItem, options); err != nil {
+			return fmt.Errorf("purging resources: %w", err)
+		}
+	}
 
 	err := async.RunWithProgressE(func(progressMessage azapi.DeleteDeploymentProgress) {
 		switch progressMessage.State {
@@ -1491,6 +1520,33 @@ func (p *BicepProvider) getApiManagementsToPurge(
 	return apims, nil
 }
 
+func (p *BicepProvider) getLogAnalyticsWorkspacesToPurge(
+	ctx context.Context,
+	groupedResources map[string][]*azapi.Resource,
+) ([]*azapi.AzCliLogAnalyticsWorkspace, error) {
+	workspaces := []*azapi.AzCliLogAnalyticsWorkspace{}
+
+	for resourceGroup, groupResources := range groupedResources {
+		for _, resource := range groupResources {
+			if resource.Type == string(azapi.AzureResourceTypeLogAnalyticsWorkspace) {
+				workspace, err := p.azapi.GetLogAnalyticsWorkspace(
+					ctx,
+					azure.SubscriptionFromRID(resource.Id),
+					resourceGroup,
+					resource.Name,
+				)
+				if err != nil {
+					return nil, fmt.Errorf("listing log analytics workspace %s properties: %w", resource.Name, err)
+				}
+
+				workspaces = append(workspaces, workspace)
+			}
+		}
+	}
+
+	return workspaces, nil
+}
+
 // Azure AppConfigurations have a "soft delete" functionality (now enabled by default) where a configuration store
 // may be marked such that when it is deleted it can be recovered for a period of time. During that time,
 // the name may not be reused.
@@ -1531,6 +1587,24 @@ func (p *BicepProvider) purgeAPIManagement(
 		}, skip)
 		if err != nil {
 			return fmt.Errorf("purging api management service %s: %w", apim.Name, err)
+		}
+	}
+
+	return nil
+}
+
+func (p *BicepProvider) purgeLogAnalyticsWorkspaces(
+	ctx context.Context,
+	workspaces []*azapi.AzCliLogAnalyticsWorkspace,
+	skip bool,
+) error {
+	for _, workspace := range workspaces {
+		err := p.runPurgeAsStep(ctx, "log analytics workspace", workspace.Name, func() error {
+			return p.azapi.PurgeLogAnalyticsWorkspace(
+				ctx, azure.SubscriptionFromRID(workspace.Id), *azure.GetResourceGroupName(workspace.Id), workspace.Name)
+		}, skip)
+		if err != nil {
+			return fmt.Errorf("purging log analytics workspace %s: %w", workspace.Name, err)
 		}
 	}
 

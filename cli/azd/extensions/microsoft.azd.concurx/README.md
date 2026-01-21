@@ -66,7 +66,7 @@ azd concurx up --debug
 Logs are stored in your project's `.azure` directory:
 
 ```
-.azure/logs/deploy/YYYYMMDD-HHMMSS/
+.azure/logs/deploy/20060102-150405/  # e.g. 20250120-143025
   ├── provision.log
   ├── deploy-api.log
   ├── deploy-web.log

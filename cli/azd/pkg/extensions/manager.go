@@ -305,6 +305,33 @@ func (m *Manager) FindExtensions(ctx context.Context, options *FilterOptions) ([
 	return allExtensions, nil
 }
 
+// RefreshSourceCache updates the registry cache for all sources represented in the provided extensions.
+// This should be called after fetching fresh extension data to ensure the cache is up-to-date.
+func (m *Manager) RefreshSourceCache(ctx context.Context, extensions []*ExtensionMetadata) {
+	if len(extensions) == 0 {
+		return
+	}
+
+	cacheManager, err := NewRegistryCacheManager()
+	if err != nil {
+		log.Printf("failed to create cache manager: %v", err)
+		return
+	}
+
+	// Group extensions by source
+	extensionsBySource := make(map[string][]*ExtensionMetadata)
+	for _, ext := range extensions {
+		extensionsBySource[ext.Source] = append(extensionsBySource[ext.Source], ext)
+	}
+
+	// Update cache for each source
+	for sourceName, sourceExtensions := range extensionsBySource {
+		if err := cacheManager.Set(ctx, sourceName, sourceExtensions); err != nil {
+			log.Printf("failed to cache extensions for source %s: %v", sourceName, err)
+		}
+	}
+}
+
 // Install an extension from metadata with optional version preference
 // If no version is provided, the latest version is installed
 // Latest version is determined by the last element in the Versions slice

@@ -199,6 +199,9 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 		return nil, fmt.Errorf("failed listing extensions from registry: %w", err)
 	}
 
+	// Update the registry cache with the fetched extensions
+	a.extensionManager.RefreshSourceCache(ctx, registryExtensions)
+
 	installedExtensions, err := a.extensionManager.ListInstalled()
 	if err != nil {
 		return nil, fmt.Errorf("failed listing installed extensions: %w", err)
@@ -470,6 +473,9 @@ func (a *extensionShowAction) Run(ctx context.Context) (*actions.ActionResult, e
 		return nil, fmt.Errorf("failed to find extension: %w", err)
 	}
 
+	// Update the registry cache with the fetched extensions
+	a.extensionManager.RefreshSourceCache(ctx, extensionMatches)
+
 	registryExtension, err := selectDistinctExtension(ctx, a.console, extensionId, extensionMatches, a.flags.global)
 	if err != nil {
 		return nil, err
@@ -604,6 +610,9 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, fmt.Errorf("failed to find extension: %w", err)
 		}
+
+		// Update the registry cache with the fetched extensions
+		a.extensionManager.RefreshSourceCache(ctx, extensionMatches)
 
 		selectedExtension, err := selectDistinctExtension(ctx, a.console, extensionId, extensionMatches, a.flags.global)
 		if err != nil {
@@ -891,6 +900,9 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, fmt.Errorf("extension %s not found", extensionId)
 		}
+
+		// Update the registry cache with the fetched extensions
+		a.extensionManager.RefreshSourceCache(ctx, matches)
 
 		selectedExtension, err := selectDistinctExtension(ctx, a.console, extensionId, matches, a.flags.global)
 		if err != nil {

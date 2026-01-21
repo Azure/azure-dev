@@ -1127,3 +1127,104 @@ func Test_FetchAndCacheMetadata(t *testing.T) {
 		// The actual Install() function logs this as a warning but doesn't fail
 	})
 }
+
+func Test_Manager_RefreshSourceCache(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", tempDir)
+
+	mockContext := mocks.NewMockContext(context.Background())
+
+	// Create a mock user config manager
+	userConfigManager := config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager()))
+
+	// Create a mock source manager
+	sourceManager := NewSourceManager(nil, userConfigManager, mockContext.HttpClient)
+
+	// Create a mock lazy runner
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+
+	// Create the extension manager
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	// Create test extensions from different sources
+	extensions := []*ExtensionMetadata{
+		{
+			Id:          "test.extension1",
+			DisplayName: "Test Extension 1",
+			Source:      "source-a",
+			Versions:    []ExtensionVersion{{Version: "1.0.0"}},
+		},
+		{
+			Id:          "test.extension2",
+			DisplayName: "Test Extension 2",
+			Source:      "source-a",
+			Versions:    []ExtensionVersion{{Version: "2.0.0"}},
+		},
+		{
+			Id:          "test.extension3",
+			DisplayName: "Test Extension 3",
+			Source:      "source-b",
+			Versions:    []ExtensionVersion{{Version: "3.0.0"}},
+		},
+	}
+
+	// Call RefreshSourceCache
+	manager.RefreshSourceCache(ctx, extensions)
+
+	// Verify that the cache was updated for both sources
+	cacheManager, err := NewRegistryCacheManager()
+	require.NoError(t, err)
+
+	// Check source-a cache
+	cacheA, err := cacheManager.Get(ctx, "source-a")
+	require.NoError(t, err)
+	require.NotNil(t, cacheA)
+	require.Len(t, cacheA.Extensions, 2)
+
+	// Check source-b cache
+	cacheB, err := cacheManager.Get(ctx, "source-b")
+	require.NoError(t, err)
+	require.NotNil(t, cacheB)
+	require.Len(t, cacheB.Extensions, 1)
+	require.Equal(t, "test.extension3", cacheB.Extensions[0].Id)
+}
+
+func Test_Manager_RefreshSourceCache_EmptyExtensions(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", tempDir)
+
+	mockContext := mocks.NewMockContext(context.Background())
+
+	// Create a mock user config manager
+	userConfigManager := config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager()))
+
+	// Create a mock source manager
+	sourceManager := NewSourceManager(nil, userConfigManager, mockContext.HttpClient)
+
+	// Create a mock lazy runner
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+
+	// Create the extension manager
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	// Call RefreshSourceCache with empty extensions - should not error
+	manager.RefreshSourceCache(ctx, []*ExtensionMetadata{})
+
+	// Verify that no cache files were created
+	cacheManager, err := NewRegistryCacheManager()
+	require.NoError(t, err)
+
+	// Trying to get a non-existent cache should return an error
+	_, err = cacheManager.Get(ctx, "some-source")
+	require.Error(t, err)
+}

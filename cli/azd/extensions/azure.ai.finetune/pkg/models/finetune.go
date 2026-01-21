@@ -20,6 +20,8 @@ const (
 	StatusFailed    JobStatus = "failed"
 	StatusCancelled JobStatus = "cancelled"
 	StatusPaused    JobStatus = "paused"
+	StatusPausing   JobStatus = "pausing"
+	StatusResuming  JobStatus = "resuming"
 )
 
 // JobAction represents an action that can be performed on a fine-tuning job

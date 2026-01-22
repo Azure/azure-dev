@@ -464,6 +464,11 @@ func ensureAzureContext(
 		resourceGroupResponse, err := azdClient.Prompt().
 			PromptResourceGroup(ctx, &azdext.PromptResourceGroupRequest{
 				AzureContext: azureContext,
+				Options: &azdext.PromptResourceGroupOptions{
+					SelectOptions: &azdext.PromptResourceSelectOptions{
+						AllowNewResource: to.Ptr(false),
+					},
+				},
 			})
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("failed to prompt for resource group: %w", err)
@@ -629,7 +634,6 @@ method:
 		if a.isGitHubUrl(a.flags.template) {
 			// For container agents, download the entire parent directory
 			fmt.Println("Downloading full directory for fine-tuning configuration from GitHub...")
-			var ghCli *github.Cli
 			var console input.Console
 			var urlInfo *GitHubUrlInfo
 			// Create a simple console and command runner for GitHub CLI
@@ -650,10 +654,8 @@ method:
 				nil, // formatter
 				nil, // externalPromptCfg
 			)
-			ghCli, err = github.NewGitHubCli(ctx, console, commandRunner)
-			if err != nil {
-				return fmt.Errorf("creating GitHub CLI: %w", err)
-			}
+
+			ghCli := github.NewGitHubCli(console, commandRunner)
 
 			// Create a new AZD client
 			azdClient, err := azdext.NewAzdClient()

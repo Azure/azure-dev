@@ -209,8 +209,9 @@ func (x *PromptLocationResponse) GetLocation() *Location {
 }
 
 type PromptResourceGroupRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AzureContext  *AzureContext          `protobuf:"bytes,1,opt,name=azure_context,json=azureContext,proto3" json:"azure_context,omitempty"`
+	state         protoimpl.MessageState      `protogen:"open.v1"`
+	AzureContext  *AzureContext               `protobuf:"bytes,1,opt,name=azure_context,json=azureContext,proto3" json:"azure_context,omitempty"`
+	Options       *PromptResourceGroupOptions `protobuf:"bytes,2,opt,name=options,proto3" json:"options,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -248,6 +249,13 @@ func (*PromptResourceGroupRequest) Descriptor() ([]byte, []int) {
 func (x *PromptResourceGroupRequest) GetAzureContext() *AzureContext {
 	if x != nil {
 		return x.AzureContext
+	}
+	return nil
+}
+
+func (x *PromptResourceGroupRequest) GetOptions() *PromptResourceGroupOptions {
+	if x != nil {
+		return x.Options
 	}
 	return nil
 }
@@ -1415,6 +1423,8 @@ type PromptResourceSelectOptions struct {
 	LoadingMessage     string                 `protobuf:"bytes,7,opt,name=loading_message,json=loadingMessage,proto3" json:"loading_message,omitempty"`
 	DisplayNumbers     *bool                  `protobuf:"varint,8,opt,name=display_numbers,json=displayNumbers,proto3,oneof" json:"display_numbers,omitempty"`
 	DisplayCount       int32                  `protobuf:"varint,9,opt,name=display_count,json=displayCount,proto3" json:"display_count,omitempty"`
+	Hint               string                 `protobuf:"bytes,10,opt,name=hint,proto3" json:"hint,omitempty"`
+	EnableFiltering    *bool                  `protobuf:"varint,11,opt,name=enable_filtering,json=enableFiltering,proto3,oneof" json:"enable_filtering,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -1512,6 +1522,64 @@ func (x *PromptResourceSelectOptions) GetDisplayCount() int32 {
 	return 0
 }
 
+func (x *PromptResourceSelectOptions) GetHint() string {
+	if x != nil {
+		return x.Hint
+	}
+	return ""
+}
+
+func (x *PromptResourceSelectOptions) GetEnableFiltering() bool {
+	if x != nil && x.EnableFiltering != nil {
+		return *x.EnableFiltering
+	}
+	return false
+}
+
+type PromptResourceGroupOptions struct {
+	state         protoimpl.MessageState       `protogen:"open.v1"`
+	SelectOptions *PromptResourceSelectOptions `protobuf:"bytes,1,opt,name=select_options,json=selectOptions,proto3" json:"select_options,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PromptResourceGroupOptions) Reset() {
+	*x = PromptResourceGroupOptions{}
+	mi := &file_prompt_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PromptResourceGroupOptions) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PromptResourceGroupOptions) ProtoMessage() {}
+
+func (x *PromptResourceGroupOptions) ProtoReflect() protoreflect.Message {
+	mi := &file_prompt_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PromptResourceGroupOptions.ProtoReflect.Descriptor instead.
+func (*PromptResourceGroupOptions) Descriptor() ([]byte, []int) {
+	return file_prompt_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *PromptResourceGroupOptions) GetSelectOptions() *PromptResourceSelectOptions {
+	if x != nil {
+		return x.SelectOptions
+	}
+	return nil
+}
+
 var File_prompt_proto protoreflect.FileDescriptor
 
 const file_prompt_proto_rawDesc = "" +
@@ -1525,9 +1593,10 @@ const file_prompt_proto_rawDesc = "" +
 	"\x15PromptLocationRequest\x129\n" +
 	"\razure_context\x18\x01 \x01(\v2\x14.azdext.AzureContextR\fazureContext\"F\n" +
 	"\x16PromptLocationResponse\x12,\n" +
-	"\blocation\x18\x01 \x01(\v2\x10.azdext.LocationR\blocation\"W\n" +
+	"\blocation\x18\x01 \x01(\v2\x10.azdext.LocationR\blocation\"\x95\x01\n" +
 	"\x1aPromptResourceGroupRequest\x129\n" +
-	"\razure_context\x18\x01 \x01(\v2\x14.azdext.AzureContextR\fazureContext\"[\n" +
+	"\razure_context\x18\x01 \x01(\v2\x14.azdext.AzureContextR\fazureContext\x12<\n" +
+	"\aoptions\x18\x02 \x01(\v2\".azdext.PromptResourceGroupOptionsR\aoptions\"[\n" +
 	"\x1bPromptResourceGroupResponse\x12<\n" +
 	"\x0eresource_group\x18\x01 \x01(\v2\x15.azdext.ResourceGroupR\rresourceGroup\"B\n" +
 	"\x0eConfirmRequest\x120\n" +
@@ -1610,7 +1679,7 @@ const file_prompt_proto_rawDesc = "" +
 	"\rresource_type\x18\x01 \x01(\tR\fresourceType\x12\x14\n" +
 	"\x05kinds\x18\x02 \x03(\tR\x05kinds\x12;\n" +
 	"\x1aresource_type_display_name\x18\x03 \x01(\tR\x17resourceTypeDisplayName\x12J\n" +
-	"\x0eselect_options\x18\x04 \x01(\v2#.azdext.PromptResourceSelectOptionsR\rselectOptions\"\xdb\x03\n" +
+	"\x0eselect_options\x18\x04 \x01(\v2#.azdext.PromptResourceSelectOptionsR\rselectOptions\"\xb4\x04\n" +
 	"\x1bPromptResourceSelectOptions\x121\n" +
 	"\x12force_new_resource\x18\x01 \x01(\bH\x00R\x10forceNewResource\x88\x01\x01\x121\n" +
 	"\x12allow_new_resource\x18\x02 \x01(\bH\x01R\x10allowNewResource\x88\x01\x01\x120\n" +
@@ -1620,10 +1689,16 @@ const file_prompt_proto_rawDesc = "" +
 	"\fhelp_message\x18\x06 \x01(\tR\vhelpMessage\x12'\n" +
 	"\x0floading_message\x18\a \x01(\tR\x0eloadingMessage\x12,\n" +
 	"\x0fdisplay_numbers\x18\b \x01(\bH\x02R\x0edisplayNumbers\x88\x01\x01\x12#\n" +
-	"\rdisplay_count\x18\t \x01(\x05R\fdisplayCountB\x15\n" +
+	"\rdisplay_count\x18\t \x01(\x05R\fdisplayCount\x12\x12\n" +
+	"\x04hint\x18\n" +
+	" \x01(\tR\x04hint\x12.\n" +
+	"\x10enable_filtering\x18\v \x01(\bH\x03R\x0fenableFiltering\x88\x01\x01B\x15\n" +
 	"\x13_force_new_resourceB\x15\n" +
 	"\x13_allow_new_resourceB\x12\n" +
-	"\x10_display_numbers2\x80\x06\n" +
+	"\x10_display_numbersB\x13\n" +
+	"\x11_enable_filtering\"h\n" +
+	"\x1aPromptResourceGroupOptions\x12J\n" +
+	"\x0eselect_options\x18\x01 \x01(\v2#.azdext.PromptResourceSelectOptionsR\rselectOptions2\x80\x06\n" +
 	"\rPromptService\x12[\n" +
 	"\x12PromptSubscription\x12!.azdext.PromptSubscriptionRequest\x1a\".azdext.PromptSubscriptionResponse\x12O\n" +
 	"\x0ePromptLocation\x12\x1d.azdext.PromptLocationRequest\x1a\x1e.azdext.PromptLocationResponse\x12^\n" +
@@ -1647,7 +1722,7 @@ func file_prompt_proto_rawDescGZIP() []byte {
 	return file_prompt_proto_rawDescData
 }
 
-var file_prompt_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
+var file_prompt_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
 var file_prompt_proto_goTypes = []any{
 	(*PromptSubscriptionRequest)(nil),           // 0: azdext.PromptSubscriptionRequest
 	(*PromptSubscriptionResponse)(nil),          // 1: azdext.PromptSubscriptionResponse
@@ -1675,55 +1750,58 @@ var file_prompt_proto_goTypes = []any{
 	(*MultiSelectOptions)(nil),                  // 23: azdext.MultiSelectOptions
 	(*PromptResourceOptions)(nil),               // 24: azdext.PromptResourceOptions
 	(*PromptResourceSelectOptions)(nil),         // 25: azdext.PromptResourceSelectOptions
-	(*Subscription)(nil),                        // 26: azdext.Subscription
-	(*AzureContext)(nil),                        // 27: azdext.AzureContext
-	(*Location)(nil),                            // 28: azdext.Location
-	(*ResourceGroup)(nil),                       // 29: azdext.ResourceGroup
-	(*ResourceExtended)(nil),                    // 30: azdext.ResourceExtended
+	(*PromptResourceGroupOptions)(nil),          // 26: azdext.PromptResourceGroupOptions
+	(*Subscription)(nil),                        // 27: azdext.Subscription
+	(*AzureContext)(nil),                        // 28: azdext.AzureContext
+	(*Location)(nil),                            // 29: azdext.Location
+	(*ResourceGroup)(nil),                       // 30: azdext.ResourceGroup
+	(*ResourceExtended)(nil),                    // 31: azdext.ResourceExtended
 }
 var file_prompt_proto_depIdxs = []int32{
-	26, // 0: azdext.PromptSubscriptionResponse.subscription:type_name -> azdext.Subscription
-	27, // 1: azdext.PromptLocationRequest.azure_context:type_name -> azdext.AzureContext
-	28, // 2: azdext.PromptLocationResponse.location:type_name -> azdext.Location
-	27, // 3: azdext.PromptResourceGroupRequest.azure_context:type_name -> azdext.AzureContext
-	29, // 4: azdext.PromptResourceGroupResponse.resource_group:type_name -> azdext.ResourceGroup
-	18, // 5: azdext.ConfirmRequest.options:type_name -> azdext.ConfirmOptions
-	19, // 6: azdext.PromptRequest.options:type_name -> azdext.PromptOptions
-	22, // 7: azdext.SelectRequest.options:type_name -> azdext.SelectOptions
-	23, // 8: azdext.MultiSelectRequest.options:type_name -> azdext.MultiSelectOptions
-	21, // 9: azdext.MultiSelectResponse.values:type_name -> azdext.MultiSelectChoice
-	27, // 10: azdext.PromptSubscriptionResourceRequest.azure_context:type_name -> azdext.AzureContext
-	24, // 11: azdext.PromptSubscriptionResourceRequest.options:type_name -> azdext.PromptResourceOptions
-	30, // 12: azdext.PromptSubscriptionResourceResponse.resource:type_name -> azdext.ResourceExtended
-	27, // 13: azdext.PromptResourceGroupResourceRequest.azure_context:type_name -> azdext.AzureContext
-	24, // 14: azdext.PromptResourceGroupResourceRequest.options:type_name -> azdext.PromptResourceOptions
-	30, // 15: azdext.PromptResourceGroupResourceResponse.resource:type_name -> azdext.ResourceExtended
-	20, // 16: azdext.SelectOptions.choices:type_name -> azdext.SelectChoice
-	21, // 17: azdext.MultiSelectOptions.choices:type_name -> azdext.MultiSelectChoice
-	25, // 18: azdext.PromptResourceOptions.select_options:type_name -> azdext.PromptResourceSelectOptions
-	0,  // 19: azdext.PromptService.PromptSubscription:input_type -> azdext.PromptSubscriptionRequest
-	2,  // 20: azdext.PromptService.PromptLocation:input_type -> azdext.PromptLocationRequest
-	4,  // 21: azdext.PromptService.PromptResourceGroup:input_type -> azdext.PromptResourceGroupRequest
-	6,  // 22: azdext.PromptService.Confirm:input_type -> azdext.ConfirmRequest
-	8,  // 23: azdext.PromptService.Prompt:input_type -> azdext.PromptRequest
-	10, // 24: azdext.PromptService.Select:input_type -> azdext.SelectRequest
-	12, // 25: azdext.PromptService.MultiSelect:input_type -> azdext.MultiSelectRequest
-	14, // 26: azdext.PromptService.PromptSubscriptionResource:input_type -> azdext.PromptSubscriptionResourceRequest
-	16, // 27: azdext.PromptService.PromptResourceGroupResource:input_type -> azdext.PromptResourceGroupResourceRequest
-	1,  // 28: azdext.PromptService.PromptSubscription:output_type -> azdext.PromptSubscriptionResponse
-	3,  // 29: azdext.PromptService.PromptLocation:output_type -> azdext.PromptLocationResponse
-	5,  // 30: azdext.PromptService.PromptResourceGroup:output_type -> azdext.PromptResourceGroupResponse
-	7,  // 31: azdext.PromptService.Confirm:output_type -> azdext.ConfirmResponse
-	9,  // 32: azdext.PromptService.Prompt:output_type -> azdext.PromptResponse
-	11, // 33: azdext.PromptService.Select:output_type -> azdext.SelectResponse
-	13, // 34: azdext.PromptService.MultiSelect:output_type -> azdext.MultiSelectResponse
-	15, // 35: azdext.PromptService.PromptSubscriptionResource:output_type -> azdext.PromptSubscriptionResourceResponse
-	17, // 36: azdext.PromptService.PromptResourceGroupResource:output_type -> azdext.PromptResourceGroupResourceResponse
-	28, // [28:37] is the sub-list for method output_type
-	19, // [19:28] is the sub-list for method input_type
-	19, // [19:19] is the sub-list for extension type_name
-	19, // [19:19] is the sub-list for extension extendee
-	0,  // [0:19] is the sub-list for field type_name
+	27, // 0: azdext.PromptSubscriptionResponse.subscription:type_name -> azdext.Subscription
+	28, // 1: azdext.PromptLocationRequest.azure_context:type_name -> azdext.AzureContext
+	29, // 2: azdext.PromptLocationResponse.location:type_name -> azdext.Location
+	28, // 3: azdext.PromptResourceGroupRequest.azure_context:type_name -> azdext.AzureContext
+	26, // 4: azdext.PromptResourceGroupRequest.options:type_name -> azdext.PromptResourceGroupOptions
+	30, // 5: azdext.PromptResourceGroupResponse.resource_group:type_name -> azdext.ResourceGroup
+	18, // 6: azdext.ConfirmRequest.options:type_name -> azdext.ConfirmOptions
+	19, // 7: azdext.PromptRequest.options:type_name -> azdext.PromptOptions
+	22, // 8: azdext.SelectRequest.options:type_name -> azdext.SelectOptions
+	23, // 9: azdext.MultiSelectRequest.options:type_name -> azdext.MultiSelectOptions
+	21, // 10: azdext.MultiSelectResponse.values:type_name -> azdext.MultiSelectChoice
+	28, // 11: azdext.PromptSubscriptionResourceRequest.azure_context:type_name -> azdext.AzureContext
+	24, // 12: azdext.PromptSubscriptionResourceRequest.options:type_name -> azdext.PromptResourceOptions
+	31, // 13: azdext.PromptSubscriptionResourceResponse.resource:type_name -> azdext.ResourceExtended
+	28, // 14: azdext.PromptResourceGroupResourceRequest.azure_context:type_name -> azdext.AzureContext
+	24, // 15: azdext.PromptResourceGroupResourceRequest.options:type_name -> azdext.PromptResourceOptions
+	31, // 16: azdext.PromptResourceGroupResourceResponse.resource:type_name -> azdext.ResourceExtended
+	20, // 17: azdext.SelectOptions.choices:type_name -> azdext.SelectChoice
+	21, // 18: azdext.MultiSelectOptions.choices:type_name -> azdext.MultiSelectChoice
+	25, // 19: azdext.PromptResourceOptions.select_options:type_name -> azdext.PromptResourceSelectOptions
+	25, // 20: azdext.PromptResourceGroupOptions.select_options:type_name -> azdext.PromptResourceSelectOptions
+	0,  // 21: azdext.PromptService.PromptSubscription:input_type -> azdext.PromptSubscriptionRequest
+	2,  // 22: azdext.PromptService.PromptLocation:input_type -> azdext.PromptLocationRequest
+	4,  // 23: azdext.PromptService.PromptResourceGroup:input_type -> azdext.PromptResourceGroupRequest
+	6,  // 24: azdext.PromptService.Confirm:input_type -> azdext.ConfirmRequest
+	8,  // 25: azdext.PromptService.Prompt:input_type -> azdext.PromptRequest
+	10, // 26: azdext.PromptService.Select:input_type -> azdext.SelectRequest
+	12, // 27: azdext.PromptService.MultiSelect:input_type -> azdext.MultiSelectRequest
+	14, // 28: azdext.PromptService.PromptSubscriptionResource:input_type -> azdext.PromptSubscriptionResourceRequest
+	16, // 29: azdext.PromptService.PromptResourceGroupResource:input_type -> azdext.PromptResourceGroupResourceRequest
+	1,  // 30: azdext.PromptService.PromptSubscription:output_type -> azdext.PromptSubscriptionResponse
+	3,  // 31: azdext.PromptService.PromptLocation:output_type -> azdext.PromptLocationResponse
+	5,  // 32: azdext.PromptService.PromptResourceGroup:output_type -> azdext.PromptResourceGroupResponse
+	7,  // 33: azdext.PromptService.Confirm:output_type -> azdext.ConfirmResponse
+	9,  // 34: azdext.PromptService.Prompt:output_type -> azdext.PromptResponse
+	11, // 35: azdext.PromptService.Select:output_type -> azdext.SelectResponse
+	13, // 36: azdext.PromptService.MultiSelect:output_type -> azdext.MultiSelectResponse
+	15, // 37: azdext.PromptService.PromptSubscriptionResource:output_type -> azdext.PromptSubscriptionResourceResponse
+	17, // 38: azdext.PromptService.PromptResourceGroupResource:output_type -> azdext.PromptResourceGroupResourceResponse
+	30, // [30:39] is the sub-list for method output_type
+	21, // [21:30] is the sub-list for method input_type
+	21, // [21:21] is the sub-list for extension type_name
+	21, // [21:21] is the sub-list for extension extendee
+	0,  // [0:21] is the sub-list for field type_name
 }
 
 func init() { file_prompt_proto_init() }
@@ -1744,7 +1822,7 @@ func file_prompt_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_prompt_proto_rawDesc), len(file_prompt_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   26,
+			NumMessages:   27,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

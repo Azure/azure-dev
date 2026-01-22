@@ -204,6 +204,11 @@ func newPromptCommand() *cobra.Command {
 					Prompt().
 					PromptResourceGroup(ctx, &azdext.PromptResourceGroupRequest{
 						AzureContext: &azureContext,
+						Options: &azdext.PromptResourceGroupOptions{
+							SelectOptions: &azdext.PromptResourceSelectOptions{
+								AllowNewResource: to.Ptr(false),
+							},
+						},
 					})
 				if err != nil {
 					return err

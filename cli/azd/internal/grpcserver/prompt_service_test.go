@@ -5,6 +5,8 @@ package grpcserver
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -539,4 +541,108 @@ func Test_CreateResourceOptions(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_WrapErrorWithSuggestion(t *testing.T) {
+	tests := []struct {
+		name        string
+		err         error
+		wantNil     bool
+		wantContain string
+	}{
+		{
+			name:    "nil error returns nil",
+			err:     nil,
+			wantNil: true,
+		},
+		{
+			name:        "error without suggestion is returned as-is",
+			err:         errors.New("some error"),
+			wantContain: "some error",
+		},
+		{
+			name: "error with suggestion includes suggestion text",
+			err: &internal.ErrorWithSuggestion{
+				Err:        errors.New("authentication failed"),
+				Suggestion: "Suggestion: run `azd auth login` to acquire a new token.",
+			},
+			wantContain: "azd auth login",
+		},
+		{
+			name: "wrapped error with suggestion includes suggestion text",
+			err: fmt.Errorf("failed to prompt: %w", &internal.ErrorWithSuggestion{
+				Err:        errors.New("token expired"),
+				Suggestion: "Suggestion: login expired, run `azd auth login` to acquire a new token.",
+			}),
+			wantContain: "azd auth login",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := wrapErrorWithSuggestion(tt.err)
+			if tt.wantNil {
+				require.Nil(t, result)
+				return
+			}
+			require.NotNil(t, result)
+			require.Contains(t, result.Error(), tt.wantContain)
+		})
+	}
+}
+
+func Test_PromptService_PromptSubscription_ErrorWithSuggestion(t *testing.T) {
+	mockPrompter := &mockprompt.MockPromptService{}
+	globalOptions := &internal.GlobalCommandOptions{NoPrompt: false}
+
+	authErr := &internal.ErrorWithSuggestion{
+		Err:        errors.New("AADSTS70043: The refresh token has expired"),
+		Suggestion: "Suggestion: login expired, run `azd auth login` to acquire a new token.",
+	}
+
+	mockPrompter.
+		On("PromptSubscription", mock.Anything, mock.Anything).
+		Return(nil, authErr)
+
+	service := NewPromptService(mockPrompter, nil, globalOptions)
+
+	_, err := service.PromptSubscription(context.Background(), &azdext.PromptSubscriptionRequest{
+		Message: "Select subscription:",
+	})
+
+	require.Error(t, err)
+	// Verify that the suggestion text is included in the error message
+	require.Contains(t, err.Error(), "azd auth login")
+	require.Contains(t, err.Error(), "AADSTS70043")
+	mockPrompter.AssertExpectations(t)
+}
+
+func Test_PromptService_PromptResourceGroup_ErrorWithSuggestion(t *testing.T) {
+	mockPrompter := &mockprompt.MockPromptService{}
+	globalOptions := &internal.GlobalCommandOptions{NoPrompt: false}
+
+	authErr := &internal.ErrorWithSuggestion{
+		Err:        errors.New("AADSTS70043: The refresh token has expired"),
+		Suggestion: "Suggestion: login expired, run `azd auth login` to acquire a new token.",
+	}
+
+	mockPrompter.
+		On("PromptResourceGroup", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, authErr)
+
+	service := NewPromptService(mockPrompter, nil, globalOptions)
+
+	_, err := service.PromptResourceGroup(context.Background(), &azdext.PromptResourceGroupRequest{
+		AzureContext: &azdext.AzureContext{
+			Scope: &azdext.AzureScope{
+				SubscriptionId: "sub-123",
+			},
+		},
+	})
+
+	require.Error(t, err)
+	// Verify that the suggestion text is included in the error message
+	require.Contains(t, err.Error(), "azd auth login")
+	require.Contains(t, err.Error(), "AADSTS70043")
+	mockPrompter.AssertExpectations(t)
 }

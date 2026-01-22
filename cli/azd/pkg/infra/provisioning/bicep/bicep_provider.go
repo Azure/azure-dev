@@ -1652,8 +1652,10 @@ func (p *BicepProvider) purgeAPIManagement(
 	return nil
 }
 
-// forceDeleteLogAnalyticsWorkspaces directly force deletes Log Analytics Workspaces.
-// This must be called before deleting resource groups when using --purge to avoid soft-delete behavior.
+// Handle Log Analytics Workspaces separately with Force option when purge is enabled.
+// Unlike many other resources, Log Analytics Workspaces are not able to be purged after soft-delete
+// because purge function only support for purge tables not a whole workspace and force delete must happen
+// when their resource group is not deleted, so we must purge them explicitly before deleting the resource
 func (p *BicepProvider) forceDeleteLogAnalyticsWorkspaces(
 	ctx context.Context,
 	workspaces []*azapi.AzCliLogAnalyticsWorkspace,

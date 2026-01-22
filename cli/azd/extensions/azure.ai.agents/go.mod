@@ -16,6 +16,7 @@ require (
 	github.com/fatih/color v1.18.0
 	github.com/google/uuid v1.6.0
 	github.com/mark3labs/mcp-go v0.41.1
+	github.com/sethvargo/go-retry v0.3.0
 	github.com/spf13/cobra v1.10.1
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.11.1
@@ -75,8 +76,8 @@ require (
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
-	github.com/sethvargo/go-retry v0.3.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
+	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/theckman/yacspin v0.13.12 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect

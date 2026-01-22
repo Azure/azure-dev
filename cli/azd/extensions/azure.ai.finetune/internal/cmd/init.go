@@ -656,6 +656,9 @@ method:
 			)
 
 			ghCli := github.NewGitHubCli(console, commandRunner)
+			if err := ghCli.EnsureInstalled(ctx); err != nil {
+				return fmt.Errorf("ensuring gh is installed: %w", err)
+			}
 
 			// Create a new AZD client
 			azdClient, err := azdext.NewAzdClient()

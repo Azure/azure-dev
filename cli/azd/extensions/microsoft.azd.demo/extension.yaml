@@ -12,6 +12,7 @@ capabilities:
   - mcp-server
   - service-target-provider
   - framework-service-provider
+  - metadata
 providers:
   - name: demo
     type: service-target

@@ -19,6 +19,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -31,67 +32,31 @@ import (
 
 var _ tools.ExternalTool = (*Cli)(nil)
 
-func NewGitHubCli(ctx context.Context, console input.Console, commandRunner exec.CommandRunner) (*Cli, error) {
-	return newGitHubCliImplementation(ctx, console, commandRunner, http.DefaultClient, downloadGh, extractGhCli)
+// NewGitHubCli creates a new GitHub CLI wrapper. The CLI is not yet installed; call EnsureInstalled
+// before using methods that require the gh binary.
+func NewGitHubCli(console input.Console, commandRunner exec.CommandRunner) *Cli {
+	return newGitHubCliImplementation(console, commandRunner, http.DefaultClient, downloadGh, extractGhCli)
 }
 
 // Version is the minimum version of GitHub cli that we require (and the one we fetch when we fetch gh on
 // behalf of a user).
-var Version semver.Version = semver.MustParse("2.80.0")
+var Version semver.Version = semver.MustParse("2.86.0")
 
-// newGitHubCliImplementation is like NewGitHubCli but allows providing a custom transport to use when downloading the
-// GitHub CLI, for testing purposes.
+// newGitHubCliImplementation is like NewGitHubCli but allows providing a custom transport for testing.
 func newGitHubCliImplementation(
-	ctx context.Context,
 	console input.Console,
 	commandRunner exec.CommandRunner,
 	transporter policy.Transporter,
 	acquireGitHubCliImpl getGitHubCliImplementation,
 	extractImplementation extractGitHubCliFromFileImplementation,
-) (*Cli, error) {
-	if override := os.Getenv("AZD_GH_TOOL_PATH"); override != "" {
-		log.Printf("using external github cli tool: %s", override)
-		cli := &Cli{
-			path:          override,
-			commandRunner: commandRunner,
-		}
-		cli.logVersion(ctx)
-
-		return cli, nil
+) *Cli {
+	return &Cli{
+		commandRunner:         commandRunner,
+		console:               console,
+		transporter:           transporter,
+		acquireGitHubCliImpl:  acquireGitHubCliImpl,
+		extractImplementation: extractImplementation,
 	}
-
-	githubCliPath, err := azdGithubCliPath()
-	if err != nil {
-		return nil, fmt.Errorf("getting github cli default path: %w", err)
-	}
-
-	if _, err = os.Stat(githubCliPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("getting file information from github cli default path: %w", err)
-	}
-	var installGhCli bool
-	if errors.Is(err, os.ErrNotExist) || !expectedVersionInstalled(ctx, commandRunner, githubCliPath) {
-		installGhCli = true
-	}
-	if installGhCli {
-		if err := os.MkdirAll(filepath.Dir(githubCliPath), osutil.PermissionDirectory); err != nil {
-			return nil, fmt.Errorf("creating github cli default path: %w", err)
-		}
-
-		msg := "setting up github connection"
-		console.ShowSpinner(ctx, msg, input.Step)
-		err = acquireGitHubCliImpl(ctx, transporter, Version, extractImplementation, githubCliPath)
-		console.StopSpinner(ctx, "", input.Step)
-		if err != nil {
-			return nil, fmt.Errorf("setting up github connection: %w", err)
-		}
-	}
-
-	cli := &Cli{
-		path:          githubCliPath,
-		commandRunner: commandRunner,
-	}
-	cli.logVersion(ctx)
-	return cli, nil
 }
 
 // azdGithubCliPath returns the path where we store our local copy of github cli ($AZD_CONFIG_DIR/bin).
@@ -124,12 +89,68 @@ var (
 )
 
 type Cli struct {
-	commandRunner exec.CommandRunner
-	path          string
+	commandRunner         exec.CommandRunner
+	console               input.Console
+	transporter           policy.Transporter
+	acquireGitHubCliImpl  getGitHubCliImplementation
+	extractImplementation extractGitHubCliFromFileImplementation
+	path                  string
+
+	installOnce sync.Once
+	installErr  error
+}
+
+// EnsureInstalled checks if GitHub CLI is available and downloads/upgrades if needed.
+// This is safe to call multiple times; installation only happens once.
+// Should be called with a request-scoped context before first use.
+func (cli *Cli) EnsureInstalled(ctx context.Context) error {
+	cli.installOnce.Do(func() {
+		cli.installErr = cli.ensureInstalled(ctx)
+	})
+	return cli.installErr
+}
+
+func (cli *Cli) ensureInstalled(ctx context.Context) error {
+	if override := os.Getenv("AZD_GH_TOOL_PATH"); override != "" {
+		log.Printf("using external github cli tool: %s", override)
+		cli.path = override
+		cli.logVersion(ctx)
+		return nil
+	}
+
+	githubCliPath, err := azdGithubCliPath()
+	if err != nil {
+		return fmt.Errorf("getting github cli default path: %w", err)
+	}
+
+	if _, err = os.Stat(githubCliPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("getting file information from github cli default path: %w", err)
+	}
+	var installGhCli bool
+	if errors.Is(err, os.ErrNotExist) || !expectedVersionInstalled(ctx, cli.commandRunner, githubCliPath) {
+		installGhCli = true
+	}
+	if installGhCli {
+		if err := os.MkdirAll(filepath.Dir(githubCliPath), osutil.PermissionDirectory); err != nil {
+			return fmt.Errorf("creating github cli default path: %w", err)
+		}
+
+		msg := "setting up github connection"
+		cli.console.ShowSpinner(ctx, msg, input.Step)
+		err = cli.acquireGitHubCliImpl(ctx, cli.transporter, Version, cli.extractImplementation, githubCliPath)
+		cli.console.StopSpinner(ctx, "", input.Step)
+		if err != nil {
+			return fmt.Errorf("setting up github connection: %w", err)
+		}
+	}
+
+	cli.path = githubCliPath
+	cli.logVersion(ctx)
+	return nil
 }
 
 func (cli *Cli) CheckInstalled(ctx context.Context) error {
-	return nil
+	return cli.EnsureInstalled(ctx)
 }
 
 func expectedVersionInstalled(ctx context.Context, commandRunner exec.CommandRunner, binaryPath string) bool {
@@ -659,7 +680,7 @@ func downloadGh(
 		return fmt.Errorf("unsupported platform")
 	}
 
-	// example: https://github.com/cli/cli/releases/download/v2.80.0/gh_2.80.0_linux_arm64.rpm
+	// example: https://github.com/cli/cli/releases/download/v2.86.0/gh_2.86.0_linux_arm64.tar.gz
 	ghReleaseUrl := fmt.Sprintf("https://github.com/cli/cli/releases/download/v%s/%s", ghVersion, releaseName)
 
 	log.Printf("downloading github cli release %s -> %s", ghReleaseUrl, releaseName)

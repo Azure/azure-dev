@@ -142,7 +142,19 @@ func runInitAction(ctx context.Context, flags *initFlags) error {
 
 	defer azdClient.Close()
 
+	if err := azdext.WaitForDebugger(ctx, azdClient); err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, azdext.ErrDebuggerAborted) {
+			return nil
+		}
+		return fmt.Errorf("failed waiting for debugger: %w", err)
+	}
+
 	var extensionMetadata *models.ExtensionSchema
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get current working directory: %w", err)
+	}
+
 	if flags.noPrompt {
 		// In headless mode, use the provided command-line arguments
 		extensionMetadata, err = collectExtensionMetadataFromFlags(flags)
@@ -176,6 +188,35 @@ func runInitAction(ctx context.Context, flags *initFlags) error {
 		}
 	}
 
+	extensionPath := filepath.Join(cwd, extensionMetadata.Id)
+	if info, err := os.Stat(extensionPath); err == nil {
+		if !info.IsDir() {
+			return fmt.Errorf("a file named '%s' already exists", extensionMetadata.Id)
+		}
+
+		// Skip confirmation prompt in headless mode
+		if !flags.noPrompt {
+			confirmResponse, err := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+				Options: &azdext.ConfirmOptions{
+					Message: fmt.Sprintf(
+						"The extension directory '%s' already exists. Do you want to continue?",
+						extensionMetadata.Id,
+					),
+					DefaultValue: internal.ToPtr(false),
+				},
+			})
+			if err != nil {
+				return fmt.Errorf("failed to confirm existing extension directory: %w", err)
+			}
+
+			if !*confirmResponse.Value {
+				return errors.New("extension creation cancelled by user")
+			}
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("failed to check extension directory: %w", err)
+	}
+
 	localRegistryExists := false
 
 	createLocalExtensionSourceAction := func(spf ux.SetProgressFunc) (ux.TaskState, error) {
@@ -195,7 +236,7 @@ func runInitAction(ctx context.Context, flags *initFlags) error {
 	}
 
 	createExtensionDirectoryAction := func(spf ux.SetProgressFunc) (ux.TaskState, error) {
-		if err := createExtensionDirectory(ctx, azdClient, extensionMetadata); err != nil {
+		if err := createExtensionDirectory(ctx, azdClient, extensionMetadata, cwd); err != nil {
 			return ux.Error, common.NewDetailedError(
 				"Error creating directory",
 				fmt.Errorf("failed to create extension directory: %w", err),
@@ -489,8 +530,16 @@ func collectExtensionMetadata(ctx context.Context, azdClient *azdext.AzdClient) 
 					Value: "custom-commands",
 				},
 				{
+					Label: "Framework Service Provider",
+					Value: "framework-service-provider",
+				},
+				{
 					Label: "Lifecycle Events",
 					Value: "lifecycle-events",
+				},
+				{
+					Label: "Metadata",
+					Value: "metadata",
 				},
 				{
 					Label: "MCP Server",
@@ -581,33 +630,23 @@ func createExtensionDirectory(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	extensionMetadata *models.ExtensionSchema,
+	cwd string,
 ) error {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("failed to get current working directory: %w", err)
-	}
-
 	extensionPath := filepath.Join(cwd, extensionMetadata.Id)
 
 	info, err := os.Stat(extensionPath)
-	if err == nil && info.IsDir() {
-		azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
-			Options: &azdext.ConfirmOptions{
-				Message: fmt.Sprintf(
-					"The extension directory '%s' already exists. Do you want to continue?",
-					extensionMetadata.Id,
-				),
-				DefaultValue: internal.ToPtr(false),
-			},
-		})
+	if err == nil && !info.IsDir() {
+		return fmt.Errorf("a file named '%s' already exists", extensionMetadata.Id)
 	}
 
 	if os.IsNotExist(err) {
-		// Create the extension directory
 		if err := os.MkdirAll(extensionPath, internal.PermissionDirectory); err != nil {
 			return fmt.Errorf("failed to create extension directory: %w", err)
 		}
+	} else if err != nil {
+		return fmt.Errorf("failed to check extension directory: %w", err)
 	}
+	// If directory already exists (err == nil), continue to create/update files
 
 	// Create project from template.
 	templateMetadata := &ExtensionTemplate{

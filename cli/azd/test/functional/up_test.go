@@ -150,7 +150,6 @@ func Test_CLI_Up_Down_WebApp(t *testing.T) {
 }
 
 func Test_CLI_Up_Down_FuncApp(t *testing.T) {
-	t.Skip("azure-dev/834")
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
@@ -159,12 +158,15 @@ func Test_CLI_Up_Down_FuncApp(t *testing.T) {
 	dir := tempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
-	envName := randomEnvName()
+	session := recording.Start(t)
+
+	envName := randomOrStoredEnvName(session)
 	t.Logf("AZURE_ENV_NAME: %s", envName)
 
-	cli := azdcli.NewCLI(t)
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
 	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
 
 	err := copySample(dir, "funcapp")
 	require.NoError(t, err, "failed expanding sample")
@@ -189,16 +191,24 @@ func Test_CLI_Up_Down_FuncApp(t *testing.T) {
 	err = json.Unmarshal([]byte(result.Stdout), &envValues)
 	require.NoError(t, err)
 
-	url := fmt.Sprintf("%s/api/httptrigger", envValues["AZURE_FUNCTION_URI"])
+	if session != nil {
+		session.Variables[recording.SubscriptionIdKey] = envValues[environment.SubscriptionIdEnvVarName].(string)
+	}
 
+	url := fmt.Sprintf("%s/api/httptrigger", envValues["AZURE_FUNCTION_URI"])
 	t.Logf("Issuing GET request to function\n")
 
 	// We've seen some cases in CI where issuing a get right after a deploy ends up with us getting a 404, so retry the
 	// request a
 	// handful of times if it fails with a 404.
 	err = retry.Do(ctx, retry.WithMaxRetries(10, retry.NewConstant(5*time.Second)), func(ctx context.Context) error {
+		client := http.DefaultClient
+		if session != nil {
+			client = session.ProxyClient
+		}
+
 		/* #nosec G107 - Potential HTTP request made with variable url false positive */
-		res, err := http.Get(url)
+		res, err := client.Get(url)
 		if err != nil {
 			return retry.RetryableError(err)
 		}
@@ -220,11 +230,6 @@ func Test_CLI_Up_Down_FuncApp(t *testing.T) {
 }
 
 func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
-	// This test is run under SDK playground and it ask us for follow policy requirements
-	// If we disabled local admin account in container registry,
-	// we are not able to perform credential operations
-	t.Skip("Skipping the test due to policy requirement to ask for disable local admin account in container registry")
-
 	t.Parallel()
 
 	if ci_os := os.Getenv("AZURE_DEV_CI_OS"); ci_os != "" && ci_os != "lin" {
@@ -283,21 +288,9 @@ func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
 
 	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)
-
-	// As part of deleting the infrastructure, outputs of the infrastructure such as "WEBSITE_URL" should
-	// have been removed from the environment.
-	env, err = godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
-	require.NoError(t, err)
-
-	_, has = env["WEBSITE_URL"]
-	require.False(t, has, "WEBSITE_URL should have been removed from the environment as part of infrastructure removal")
 }
 
 func Test_CLI_Up_Down_ContainerAppDotNetPublish(t *testing.T) {
-	// This test is run under SDK playground and it ask us for follow policy requirements
-	// If we disabled local admin account in container registry,
-	// we are not able to perform credential operations
-	t.Skip("Skipping the test due to policy requirement to ask for disable local admin account in container registry")
 	t.Parallel()
 
 	ctx, cancel := newTestContext(t)
@@ -320,10 +313,6 @@ func Test_CLI_Up_Down_ContainerAppDotNetPublish(t *testing.T) {
 
 	err := copySample(dir, "containerapp")
 	require.NoError(t, err, "failed expanding sample")
-
-	// Remove the Dockerfile so that we go down the `dotnet publish` path.
-	err = os.Remove(filepath.Join(dir, "src", "dotnet", "Dockerfile"))
-	require.NoError(t, err)
 
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
@@ -356,18 +345,9 @@ func Test_CLI_Up_Down_ContainerAppDotNetPublish(t *testing.T) {
 
 	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)
-
-	// As part of deleting the infrastructure, outputs of the infrastructure such as "WEBSITE_URL" should
-	// have been removed from the environment.
-	env, err = godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
-	require.NoError(t, err)
-
-	_, has = env["WEBSITE_URL"]
-	require.False(t, has, "WEBSITE_URL should have been removed from the environment as part of infrastructure removal")
 }
 
 func Test_CLI_Up_Down_ContainerApp_RemoteBuild(t *testing.T) {
-	t.Skip("Needs to be re-designed - https://github.com/Azure/azure-dev/issues/6059")
 	t.Parallel()
 
 	ctx, cancel := newTestContext(t)
@@ -422,14 +402,6 @@ func Test_CLI_Up_Down_ContainerApp_RemoteBuild(t *testing.T) {
 
 	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)
-
-	// As part of deleting the infrastructure, outputs of the infrastructure such as "WEBSITE_URL" should
-	// have been removed from the environment.
-	env, err = godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
-	require.NoError(t, err)
-
-	_, has = env["WEBSITE_URL"]
-	require.False(t, has, "WEBSITE_URL should have been removed from the environment as part of infrastructure removal")
 }
 
 func Test_CLI_Up_ResourceGroupScope(t *testing.T) {

@@ -5,15 +5,20 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
 	"strconv"
 	"strings"
 
+	surveyterm "github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 )
+
+// ErrDebuggerAborted is returned when the user declines to attach a debugger.
+var ErrDebuggerAborted = errors.New("debugger attach aborted")
 
 // Adds support to easily debug and attach a debugger to AZD for development purposes
 type DebugMiddleware struct {
@@ -33,7 +38,7 @@ func NewDebugMiddleware(options *Options, console input.Console) Middleware {
 // a debugger before continuing invocation of the action
 func (m *DebugMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
 	// Don't run for sub actions
-	if m.options.IsChildAction(ctx) {
+	if IsChildAction(ctx) {
 		return next(ctx)
 	}
 
@@ -60,18 +65,23 @@ func (m *DebugMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		return next(ctx)
 	}
 
-	for {
-		isReady, err := m.console.Confirm(ctx, input.ConsoleOptions{
-			Message:      fmt.Sprintf("Debugger Ready? (pid: %d)", os.Getpid()),
-			DefaultValue: true,
-		})
+	isReady, err := m.console.Confirm(ctx, input.ConsoleOptions{
+		Message:      fmt.Sprintf("Debugger Ready? (pid: %d)", os.Getpid()),
+		DefaultValue: true,
+	})
 
-		if err != nil {
-			m.console.Message(ctx, fmt.Sprintf("confirmation failed! %s", err.Error()))
+	if err != nil {
+		// Check if the error is due to user interrupt (Ctrl+C)
+		if errors.Is(err, surveyterm.InterruptErr) {
+			return nil, surveyterm.InterruptErr
 		}
-
-		if isReady {
-			return next(ctx)
-		}
+		return nil, fmt.Errorf("debugger prompt failed: %w", err)
 	}
+
+	// If user selected 'N', abort
+	if !isReady {
+		return nil, ErrDebuggerAborted
+	}
+
+	return next(ctx)
 }

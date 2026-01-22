@@ -7,7 +7,7 @@ resources:
     - repository: azure-sdk-build-tools
       type: git
       name: internal/azure-sdk-build-tools
-      ref: refs/tags/azure-sdk-build-tools_20251112.1
+      ref: refs/tags/azure-sdk-build-tools_20260112.5
 
 parameters:
 - name: stages
@@ -16,6 +16,9 @@ parameters:
 - name: Use1ESOfficial
   type: boolean
   default: true
+- name: GenerateBaselines
+  type: boolean
+  default: false
 
 extends:
   ${{ if and(parameters.Use1ESOfficial, eq(variables['System.TeamProject'], 'internal')) }}:
@@ -23,12 +26,20 @@ extends:
   ${{ else }}:
     template: v1/1ES.Unofficial.PipelineTemplate.yml@1ESPipelineTemplates
   parameters:
+    featureFlags:
+      golang:
+        internalModuleProxy:
+          enabled: true
     settings:
       skipBuildTagsForGitHubPullRequests: true
+      networkIsolationPolicy: Permissive
     sdl:
-      ${{ if and(eq(variables['Build.DefinitionName'], 'azure-dev - cli'), eq(variables['Build.SourceBranchName'], 'main'), eq(variables['System.TeamProject'], 'internal')) }}:
+      # Turn off the build warnings caused by disabling some sdl checks
+      createAdoIssuesForJustificationsForDisablement: false
+      ${{ if and(parameters.GenerateBaselines, eq(variables['Build.DefinitionName'], 'azure-dev - cli'), eq(variables['Build.SourceBranchName'], 'main'), eq(variables['System.TeamProject'], 'internal')) }}:
         autobaseline:
           isMainPipeline: true
+          disableAutoBaselineOnNonDefaultBranches: true
           enableForGitHub: true
       credscan:
         suppressionsFile: $(Build.SourcesDirectory)/eng/CredScanSuppression.json
@@ -39,14 +50,19 @@ extends:
         name: azsdk-pool
         image: windows-2022
         os: windows
+      eslint:
+        enabled: false
+        justificationForDisabling: 'ESLint injected task has failures because it uses an old version of mkdirp. We should not fail for tools not controlled by the repo. See: https://dev.azure.com/azure-sdk/internal/_build/results?buildId=3499746'
+      codeql:
+        compiled:
+          enabled: false
+          justificationForDisabling: CodeQL times our pipelines out by running for 2+ hours before being force canceled.
+      componentgovernance:
+        enabled: false
+        justificationForDisabling: Manually enabling only on the main build job instead of running it on every job.
       psscriptanalyzer:
         compiled: true
         break: true
       policy: M365
-      eslint:
-        enabled: false
-        justificationForDisabling: "ESLint injected task has failures because it uses an old version of mkdirp. We should not fail for tools not controlled by the repo. See: https://dev.azure.com/azure-sdk/internal/_build/results?buildId=3556850"
-      ${{ if or(eq(variables['System.TeamProject'], 'public'), eq(variables['Build.Reason'], 'PullRequest')) }}:
-        sbom:
-          enabled: false
+
     stages: ${{ parameters.stages }}

@@ -23,6 +23,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -73,6 +74,7 @@ type BicepProvider struct {
 	bicepCli            *bicep.Cli
 	azapi               *azapi.AzureClient
 	resourceService     *azapi.ResourceService
+	resourceManager     infra.ResourceManager
 	deploymentManager   *infra.DeploymentManager
 	prompters           prompt.Prompter
 	curPrincipal        provisioning.CurrentPrincipalIdProvider
@@ -93,6 +95,11 @@ func (p *BicepProvider) Name() string {
 // Initialize initializes provider state from the options.
 // It also calls EnsureEnv, which ensures the client-side state is ready for provisioning.
 func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, opt provisioning.Options) error {
+	// Ensure bicep CLI is installed before any operations
+	if err := p.bicepCli.EnsureInstalled(ctx); err != nil {
+		return fmt.Errorf("ensuring bicep is installed: %w", err)
+	}
+
 	infraOptions, err := opt.GetWithDefaults()
 	if err != nil {
 		return err
@@ -811,6 +818,12 @@ func (p *BicepProvider) Preview(ctx context.Context) (*provisioning.DeployPrevie
 		resourceType, _ := resourceState["type"].(string)
 		resourceName, _ := resourceState["name"].(string)
 
+		// Convert Delta (property-level changes) from Azure SDK format to our format
+		var delta []provisioning.DeploymentPreviewPropertyChange
+		if change.Delta != nil {
+			delta = convertPropertyChanges(change.Delta)
+		}
+
 		changes = append(changes, &provisioning.DeploymentPreviewChange{
 			ChangeType: provisioning.ChangeType(*change.ChangeType),
 			ResourceId: provisioning.Resource{
@@ -818,6 +831,9 @@ func (p *BicepProvider) Preview(ctx context.Context) (*provisioning.DeployPrevie
 			},
 			ResourceType: resourceType,
 			Name:         resourceName,
+			Before:       change.Before,
+			After:        change.After,
+			Delta:        delta,
 		})
 	}
 
@@ -829,6 +845,40 @@ func (p *BicepProvider) Preview(ctx context.Context) (*provisioning.DeployPrevie
 			},
 		},
 	}, nil
+}
+
+// convertPropertyChanges converts Azure SDK's WhatIfPropertyChange to our DeploymentPreviewPropertyChange
+func convertPropertyChanges(changes []*armresources.WhatIfPropertyChange) []provisioning.DeploymentPreviewPropertyChange {
+	if changes == nil {
+		return nil
+	}
+
+	result := make([]provisioning.DeploymentPreviewPropertyChange, 0, len(changes))
+	for _, change := range changes {
+		if change == nil {
+			continue
+		}
+
+		propertyChange := provisioning.DeploymentPreviewPropertyChange{
+			Path:   convert.ToValueWithDefault(change.Path, ""),
+			Before: change.Before,
+			After:  change.After,
+		}
+
+		// Convert PropertyChangeType
+		if change.PropertyChangeType != nil {
+			propertyChange.ChangeType = provisioning.PropertyChangeType(*change.PropertyChangeType)
+		}
+
+		// Recursively convert children if present
+		if change.Children != nil {
+			propertyChange.Children = convertPropertyChanges(change.Children)
+		}
+
+		result = append(result, propertyChange)
+	}
+
+	return result
 }
 
 type itemToPurge struct {
@@ -919,98 +969,108 @@ func (p *BicepProvider) Destroy(
 		return nil, fmt.Errorf("mapping resources to resource groups: %w", err)
 	}
 
+	// If no resources found, we still need to void the deployment state.
+	// This can happen when resources have been manually deleted before running azd down.
+	// Voiding the state ensures that subsequent azd provision commands work correctly
+	// by creating a new empty deployment that becomes the last successful deployment.
 	if len(groupedResources) == 0 {
-		return nil, fmt.Errorf("%w, '%s'", infra.ErrDeploymentResourcesNotFound, deploymentToDelete.Name())
-	}
-
-	keyVaults, err := p.getKeyVaultsToPurge(ctx, groupedResources)
-	if err != nil {
-		return nil, fmt.Errorf("getting key vaults to purge: %w", err)
-	}
-
-	managedHSMs, err := p.getManagedHSMsToPurge(ctx, groupedResources)
-	if err != nil {
-		return nil, fmt.Errorf("getting managed hsms to purge: %w", err)
-	}
-
-	appConfigs, err := p.getAppConfigsToPurge(ctx, groupedResources)
-	if err != nil {
-		return nil, fmt.Errorf("getting app configurations to purge: %w", err)
-	}
-
-	apiManagements, err := p.getApiManagementsToPurge(ctx, groupedResources)
-	if err != nil {
-		return nil, fmt.Errorf("getting API managements to purge: %w", err)
-	}
-
-	cognitiveAccounts, err := p.getCognitiveAccountsToPurge(ctx, groupedResources)
-	if err != nil {
-		return nil, fmt.Errorf("getting cognitive accounts to purge: %w", err)
-	}
-
-	p.console.StopSpinner(ctx, "", input.StepDone)
-	if err := p.destroyDeploymentWithConfirmation(
-		ctx,
-		options,
-		deploymentToDelete,
-		groupedResources,
-		len(resourcesToDelete),
-	); err != nil {
-		return nil, fmt.Errorf("deleting resource groups: %w", err)
-	}
-
-	keyVaultsPurge := itemToPurge{
-		resourceType: "Key Vault",
-		count:        len(keyVaults),
-		purge: func(skipPurge bool, self *itemToPurge) error {
-			return p.purgeKeyVaults(ctx, keyVaults, skipPurge)
-		},
-	}
-	managedHSMsPurge := itemToPurge{
-		resourceType: "Managed HSM",
-		count:        len(managedHSMs),
-		purge: func(skipPurge bool, self *itemToPurge) error {
-			return p.purgeManagedHSMs(ctx, managedHSMs, skipPurge)
-		},
-	}
-	appConfigsPurge := itemToPurge{
-		resourceType: "App Configuration",
-		count:        len(appConfigs),
-		purge: func(skipPurge bool, self *itemToPurge) error {
-			return p.purgeAppConfigs(ctx, appConfigs, skipPurge)
-		},
-	}
-	aPIManagement := itemToPurge{
-		resourceType: "API Management",
-		count:        len(apiManagements),
-		purge: func(skipPurge bool, self *itemToPurge) error {
-			return p.purgeAPIManagement(ctx, apiManagements, skipPurge)
-		},
-	}
-
-	var purgeItem []itemToPurge
-	for _, item := range []itemToPurge{keyVaultsPurge, managedHSMsPurge, appConfigsPurge, aPIManagement} {
-		if item.count > 0 {
-			purgeItem = append(purgeItem, item)
+		p.console.StopSpinner(ctx, "", input.StepDone)
+		// Call deployment.Delete to void the state even though there are no resources to delete
+		if err := p.destroyDeployment(ctx, deploymentToDelete); err != nil {
+			return nil, fmt.Errorf("voiding deployment state: %w", err)
 		}
-	}
+	} else {
+		keyVaults, err := p.getKeyVaultsToPurge(ctx, groupedResources)
+		if err != nil {
+			return nil, fmt.Errorf("getting key vaults to purge: %w", err)
+		}
 
-	// cognitive services are grouped by resource group because the name of the resource group is required to purge
-	groupByKind := cognitiveAccountsByKind(cognitiveAccounts)
-	for name, cogAccounts := range groupByKind {
-		addPurgeItem := itemToPurge{
-			resourceType: name,
-			count:        len(cogAccounts),
+		managedHSMs, err := p.getManagedHSMsToPurge(ctx, groupedResources)
+		if err != nil {
+			return nil, fmt.Errorf("getting managed hsms to purge: %w", err)
+		}
+
+		appConfigs, err := p.getAppConfigsToPurge(ctx, groupedResources)
+		if err != nil {
+			return nil, fmt.Errorf("getting app configurations to purge: %w", err)
+		}
+
+		apiManagements, err := p.getApiManagementsToPurge(ctx, groupedResources)
+		if err != nil {
+			return nil, fmt.Errorf("getting API managements to purge: %w", err)
+		}
+
+		cognitiveAccounts, err := p.getCognitiveAccountsToPurge(ctx, groupedResources)
+		if err != nil {
+			return nil, fmt.Errorf("getting cognitive accounts to purge: %w", err)
+		}
+
+		p.console.StopSpinner(ctx, "", input.StepDone)
+
+		// Prompt for confirmation before deleting resources
+		if err := p.promptDeletion(ctx, options, groupedResources, len(resourcesToDelete)); err != nil {
+			return nil, err
+		}
+
+		p.console.Message(ctx, output.WithGrayFormat("Deleting your resources can take some time.\n"))
+
+		if err := p.destroyDeployment(ctx, deploymentToDelete); err != nil {
+			return nil, fmt.Errorf("deleting resource groups: %w", err)
+		}
+
+		keyVaultsPurge := itemToPurge{
+			resourceType: "Key Vault",
+			count:        len(keyVaults),
 			purge: func(skipPurge bool, self *itemToPurge) error {
-				return p.purgeCognitiveAccounts(ctx, self.cognitiveAccounts, skipPurge)
+				return p.purgeKeyVaults(ctx, keyVaults, skipPurge)
 			},
-			cognitiveAccounts: groupByKind[name],
 		}
-		purgeItem = append(purgeItem, addPurgeItem)
-	}
+		managedHSMsPurge := itemToPurge{
+			resourceType: "Managed HSM",
+			count:        len(managedHSMs),
+			purge: func(skipPurge bool, self *itemToPurge) error {
+				return p.purgeManagedHSMs(ctx, managedHSMs, skipPurge)
+			},
+		}
+		appConfigsPurge := itemToPurge{
+			resourceType: "App Configuration",
+			count:        len(appConfigs),
+			purge: func(skipPurge bool, self *itemToPurge) error {
+				return p.purgeAppConfigs(ctx, appConfigs, skipPurge)
+			},
+		}
+		aPIManagement := itemToPurge{
+			resourceType: "API Management",
+			count:        len(apiManagements),
+			purge: func(skipPurge bool, self *itemToPurge) error {
+				return p.purgeAPIManagement(ctx, apiManagements, skipPurge)
+			},
+		}
 
-	if err := p.purgeItems(ctx, purgeItem, options); err != nil {
-		return nil, fmt.Errorf("purging resources: %w", err)
+		var purgeItem []itemToPurge
+		for _, item := range []itemToPurge{keyVaultsPurge, managedHSMsPurge, appConfigsPurge, aPIManagement} {
+			if item.count > 0 {
+				purgeItem = append(purgeItem, item)
+			}
+		}
+
+		// cognitive services are grouped by resource group because the name of the resource group is required to purge
+		groupByKind := cognitiveAccountsByKind(cognitiveAccounts)
+		for name, cogAccounts := range groupByKind {
+			addPurgeItem := itemToPurge{
+				resourceType: name,
+				count:        len(cogAccounts),
+				purge: func(skipPurge bool, self *itemToPurge) error {
+					return p.purgeCognitiveAccounts(ctx, self.cognitiveAccounts, skipPurge)
+				},
+				cognitiveAccounts: groupByKind[name],
+			}
+			purgeItem = append(purgeItem, addPurgeItem)
+		}
+
+		if err := p.purgeItems(ctx, purgeItem, options); err != nil {
+			return nil, fmt.Errorf("purging resources: %w", err)
+		}
 	}
 
 	destroyResult := &provisioning.DestroyResult{
@@ -1072,7 +1132,10 @@ func getDeploymentOptions(deployments []*azapi.ResourceDeployment) []string {
 	return promptValues
 }
 
-func (p *BicepProvider) generateResourcesToDelete(groupedResources map[string][]*azapi.Resource) []string {
+func (p *BicepProvider) generateResourcesToDelete(
+	ctx context.Context,
+	groupedResources map[string][]*azapi.Resource,
+) []string {
 	lines := []string{"Resource(s) to be deleted:"}
 
 	for resourceGroupName, resources := range groupedResources {
@@ -1094,7 +1157,16 @@ func (p *BicepProvider) generateResourcesToDelete(groupedResources map[string][]
 
 		// Resources in each group
 		for _, resource := range resources {
-			resourceTypeName := azapi.GetResourceTypeDisplayName(azapi.AzureResourceType(resource.Type))
+			resourceTypeName, err := p.resourceManager.GetResourceTypeDisplayName(
+				ctx,
+				p.env.GetSubscriptionId(),
+				resource.Id,
+				azapi.AzureResourceType(resource.Type),
+			)
+			if err != nil {
+				// Fall back to static lookup if dynamic lookup fails
+				resourceTypeName = azapi.GetResourceTypeDisplayName(azapi.AzureResourceType(resource.Type))
+			}
 			if resourceTypeName == "" {
 				continue
 			}
@@ -1106,38 +1178,46 @@ func (p *BicepProvider) generateResourcesToDelete(groupedResources map[string][]
 	return append(lines, "\n")
 }
 
-// Deletes the azure resources within the deployment
-func (p *BicepProvider) destroyDeploymentWithConfirmation(
+// promptDeletion prompts the user for confirmation before deleting resources.
+// Returns nil if the user confirms, or an error if they deny or an error occurs.
+func (p *BicepProvider) promptDeletion(
 	ctx context.Context,
 	options provisioning.DestroyOptions,
-	deployment infra.Deployment,
 	groupedResources map[string][]*azapi.Resource,
 	resourceCount int,
 ) error {
-	if !options.Force() {
-		p.console.MessageUxItem(ctx, &ux.MultilineMessage{
-			Lines: p.generateResourcesToDelete(groupedResources)},
-		)
-		confirmDestroy, err := p.console.Confirm(ctx, input.ConsoleOptions{
-			Message: fmt.Sprintf(
-				"Total resources to %s: %d, are you sure you want to continue?",
-				output.WithErrorFormat("delete"),
-				resourceCount,
-			),
-			DefaultValue: false,
-		})
-
-		if err != nil {
-			return fmt.Errorf("prompting for delete confirmation: %w", err)
-		}
-
-		if !confirmDestroy {
-			return errors.New("user denied delete confirmation")
-		}
+	if options.Force() {
+		return nil
 	}
 
-	p.console.Message(ctx, output.WithGrayFormat("Deleting your resources can take some time.\n"))
+	p.console.MessageUxItem(ctx, &ux.MultilineMessage{
+		Lines: p.generateResourcesToDelete(ctx, groupedResources)},
+	)
+	confirmDestroy, err := p.console.Confirm(ctx, input.ConsoleOptions{
+		Message: fmt.Sprintf(
+			"Total resources to %s: %d, are you sure you want to continue?",
+			output.WithErrorFormat("delete"),
+			resourceCount,
+		),
+		DefaultValue: false,
+	})
 
+	if err != nil {
+		return fmt.Errorf("prompting for delete confirmation: %w", err)
+	}
+
+	if !confirmDestroy {
+		return errors.New("user denied delete confirmation")
+	}
+
+	return nil
+}
+
+// destroyDeployment deletes the azure resources within the deployment and voids the deployment state.
+func (p *BicepProvider) destroyDeployment(
+	ctx context.Context,
+	deployment infra.Deployment,
+) error {
 	err := async.RunWithProgressE(func(progressMessage azapi.DeleteDeploymentProgress) {
 		switch progressMessage.State {
 		case azapi.DeleteResourceStateInProgress:
@@ -2258,6 +2338,7 @@ func NewBicepProvider(
 	azapi *azapi.AzureClient,
 	bicepCli *bicep.Cli,
 	resourceService *azapi.ResourceService,
+	resourceManager infra.ResourceManager,
 	deploymentManager *infra.DeploymentManager,
 	envManager environment.Manager,
 	env *environment.Environment,
@@ -2275,6 +2356,7 @@ func NewBicepProvider(
 		azapi:               azapi,
 		bicepCli:            bicepCli,
 		resourceService:     resourceService,
+		resourceManager:     resourceManager,
 		deploymentManager:   deploymentManager,
 		prompters:           prompters,
 		curPrincipal:        curPrincipal,

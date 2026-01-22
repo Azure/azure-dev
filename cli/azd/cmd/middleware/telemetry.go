@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -17,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 	"github.com/spf13/pflag"
@@ -26,13 +28,19 @@ import (
 type TelemetryMiddleware struct {
 	options            *Options
 	lazyPlatformConfig *lazy.Lazy[*platform.Config]
+	extensionManager   *extensions.Manager
 }
 
 // Creates a new Telemetry middleware instance
-func NewTelemetryMiddleware(options *Options, lazyPlatformConfig *lazy.Lazy[*platform.Config]) Middleware {
+func NewTelemetryMiddleware(
+	options *Options,
+	lazyPlatformConfig *lazy.Lazy[*platform.Config],
+	extensionManager *extensions.Manager,
+) Middleware {
 	return &TelemetryMiddleware{
 		options:            options,
 		lazyPlatformConfig: lazyPlatformConfig,
+		extensionManager:   extensionManager,
 	}
 }
 
@@ -40,37 +48,48 @@ func NewTelemetryMiddleware(options *Options, lazyPlatformConfig *lazy.Lazy[*pla
 func (m *TelemetryMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
 	// Note: CommandPath is constructed using the Use member on each command up to the root.
 	// It does not contain user input, and is safe for telemetry emission.
-	cmdPath := events.GetCommandEventName(m.options.CommandPath)
-
-	eventName := cmdPath
+	cmdEntry := events.GetCommandEventName(m.options.CommandPath)
+	eventName := cmdEntry
 	extensionId := m.options.Annotations["extension.id"]
+	extensionFlags := []string{}
 	if extensionId != "" {
 		eventName = events.ExtensionRunEvent
+		extensionCmdEntry, cmdFlags := m.extensionCmdInfo(extensionId)
+		if extensionCmdEntry != "" {
+			cmdEntry = extensionCmdEntry
+		}
+		extensionFlags = cmdFlags
 	}
 
 	spanCtx, span := tracing.Start(ctx, eventName)
 
 	log.Printf("TraceID: %s", span.SpanContext().TraceID())
 
-	if !m.options.IsChildAction(ctx) {
+	if !IsChildAction(ctx) {
 		// Set the command name as a baggage item on the span context.
 		// This allow inner actions to have command name attached.
 		spanCtx = tracing.SetBaggageInContext(
 			spanCtx,
-			fields.CmdEntry.String(cmdPath))
+			fields.CmdEntry.String(cmdEntry))
 	}
 
-	if m.options.Flags != nil {
-		changedFlags := []string{}
-		m.options.Flags.VisitAll(func(f *pflag.Flag) {
-			if f.Changed {
-				changedFlags = append(changedFlags, f.Name)
-			}
-		})
-		span.SetAttributes(fields.CmdFlags.StringSlice(changedFlags))
+	if extensionId != "" {
+		span.SetAttributes(fields.CmdFlags.StringSlice(extensionFlags))
+		// Extension commands use DisableFlagParsing, so Args contains raw unparsed arguments.
+		// Emit 0 since we cannot accurately determine positional arg count.
+		span.SetAttributes(fields.CmdArgsCount.Int(0))
+	} else {
+		if m.options.Flags != nil {
+			changedFlags := []string{}
+			m.options.Flags.VisitAll(func(f *pflag.Flag) {
+				if f.Changed {
+					changedFlags = append(changedFlags, f.Name)
+				}
+			})
+			span.SetAttributes(fields.CmdFlags.StringSlice(changedFlags))
+		}
+		span.SetAttributes(fields.CmdArgsCount.Int(len(m.options.Args)))
 	}
-
-	span.SetAttributes(fields.CmdArgsCount.Int(len(m.options.Args)))
 
 	// Set the platform type when available
 	// Valid platform types are validating in the platform config resolver and will error here if not known & valid
@@ -111,4 +130,31 @@ func (m *TelemetryMiddleware) Run(ctx context.Context, next NextFn) (*actions.Ac
 	}
 
 	return result, err
+}
+
+// extensionCmdInfo retrieves telemetry command info for an extension, returning the command event name and flags.
+func (m *TelemetryMiddleware) extensionCmdInfo(extensionId string) (string, []string) {
+	if m.extensionManager == nil {
+		return "", nil
+	}
+
+	extension, err := m.extensionManager.GetInstalled(extensions.FilterOptions{Id: extensionId})
+	if err != nil || extension == nil || !extension.HasCapability(extensions.MetadataCapability) {
+		return "", nil
+	}
+
+	metadata, err := m.extensionManager.LoadMetadata(extensionId)
+	if err != nil {
+		return "", nil
+	}
+
+	commandPath := extensions.ResolveCommandPath(metadata, m.options.Args)
+	commandFlags := extensions.ResolveCommandFlags(metadata, m.options.Args)
+	if len(commandPath) == 0 {
+		return "", commandFlags
+	}
+
+	namespacePath := strings.ReplaceAll(extension.Namespace, ".", " ")
+	fullPath := strings.Join(append([]string{"azd", namespacePath}, commandPath...), " ")
+	return events.GetCommandEventName(fullPath), commandFlags
 }

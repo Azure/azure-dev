@@ -26,7 +26,7 @@
 
 # AZURE_RECORD_MODE is used for running tests in a specific recording mode.
 if (-not $env:AZURE_RECORD_MODE) {
-    $recordMode = "live"
+    $recordMode = "playback"
 
     if ($BuildReason -eq "PullRequest") {
         $recordMode = "playback"

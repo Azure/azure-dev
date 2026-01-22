@@ -14,6 +14,7 @@ const (
 	AzureResourceTypeRedisEnterprise           AzureResourceType = "Microsoft.Cache/redisEnterprise"
 	AzureResourceTypeCDNProfile                AzureResourceType = "Microsoft.Cdn/profiles"
 	AzureResourceTypeCosmosDb                  AzureResourceType = "Microsoft.DocumentDB/databaseAccounts"
+	AzureResourceTypeDocumentDB                AzureResourceType = "Microsoft.DocumentDB/mongoClusters"
 	AzureResourceTypeEventHubsNamespace        AzureResourceType = "Microsoft.EventHub/namespaces"
 	AzureResourceTypeContainerApp              AzureResourceType = "Microsoft.App/containerApps"
 	AzureResourceTypeContainerAppJob           AzureResourceType = "Microsoft.App/jobs"
@@ -99,6 +100,8 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "App Service plan"
 	case AzureResourceTypeCosmosDb:
 		return "Azure Cosmos DB"
+	case AzureResourceTypeDocumentDB:
+		return "Azure DocumentDB"
 	case AzureResourceTypeApim:
 		return "Azure API Management"
 	case AzureResourceTypeCacheForRedis:

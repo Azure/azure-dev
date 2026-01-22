@@ -174,13 +174,13 @@ func TestNewPackCliInstall(t *testing.T) {
 		return src, nil
 	}
 
-	cli, err := newPackCliImpl(
-		*mockContext.Context,
+	cli := newPackCliImpl(
 		mockContext.Console,
 		mockContext.CommandRunner,
 		mockContext.HttpClient,
 		mockExtract,
 	)
+	err := cli.EnsureInstalled(*mockContext.Context)
 	require.NoError(t, err)
 	require.NotNil(t, cli)
 
@@ -228,13 +228,13 @@ func TestNewPackCliUpgrade(t *testing.T) {
 		return src, nil
 	}
 
-	cli, err := newPackCliImpl(
-		*mockContext.Context,
+	cli := newPackCliImpl(
 		mockContext.Console,
 		mockContext.CommandRunner,
 		mockContext.HttpClient,
 		mockExtract,
 	)
+	err = cli.EnsureInstalled(*mockContext.Context)
 	require.NoError(t, err)
 	require.NotNil(t, cli)
 

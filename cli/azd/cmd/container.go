@@ -174,7 +174,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return writer
 	})
 
-	container.MustRegisterScoped(func(cmd *cobra.Command) internal.EnvFlag {
+	container.MustRegisterScoped(func(ctx context.Context, cmd *cobra.Command) internal.EnvFlag {
 		// The env flag `-e, --environment` is available on most azd commands but not all
 		// This is typically used to override the default environment and is used for bootstrapping other components
 		// such as the azd environment.
@@ -190,7 +190,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			// If no explicit environment flag was set, but one was provided
 			// in the context, use that instead.
 			// This is used in workflow execution (in `up`) to influence the environment used.
-			if envFlag, ok := cmd.Context().Value(envFlagCtxKey).(internal.EnvFlag); ok {
+			if envFlag, ok := ctx.Value(envFlagCtxKey).(internal.EnvFlag); ok {
 				return envFlag
 			}
 		}
@@ -874,8 +874,15 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Extensions
 	container.MustRegisterSingleton(extensions.NewManager)
-	container.MustRegisterSingleton(extensions.NewRunner)
 	container.MustRegisterSingleton(extensions.NewSourceManager)
+	container.MustRegisterSingleton(extensions.NewRunner)
+	container.MustRegisterSingleton(func(serviceLocator ioc.ServiceLocator) *lazy.Lazy[*extensions.Runner] {
+		return lazy.NewLazy(func() (*extensions.Runner, error) {
+			var runner *extensions.Runner
+			err := serviceLocator.Resolve(&runner)
+			return runner, err
+		})
+	})
 
 	// gRPC Server
 	container.MustRegisterScoped(grpcserver.NewServer)

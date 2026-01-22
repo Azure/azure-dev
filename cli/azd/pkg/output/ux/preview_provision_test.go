@@ -48,3 +48,92 @@ func TestPreviewProvisionNoChanges(t *testing.T) {
 	output := pp.ToString("   ")
 	require.Equal(t, "", output)
 }
+
+func TestPreviewProvisionWithPropertyChanges(t *testing.T) {
+	pp := &PreviewProvision{
+		Operations: []*Resource{
+			{
+				Type:      "Microsoft.Storage/storageAccounts",
+				Name:      "mystorageaccount",
+				Operation: OperationTypeModify,
+				PropertyDeltas: []PropertyDelta{
+					{
+						Path:       "properties.sku.name",
+						ChangeType: "Modify",
+						Before:     "Standard_LRS",
+						After:      "Premium_LRS",
+					},
+					{
+						Path:       "properties.minimumTlsVersion",
+						ChangeType: "Create",
+						After:      "TLS1_2",
+					},
+				},
+			},
+			{
+				Type:      "Microsoft.KeyVault/vaults",
+				Name:      "mykeyvault",
+				Operation: OperationTypeCreate,
+				PropertyDeltas: []PropertyDelta{
+					{
+						Path:       "properties.sku.name",
+						ChangeType: "Create",
+						After:      "standard",
+					},
+				},
+			},
+		},
+	}
+
+	output := pp.ToString("   ")
+	snapshot.SnapshotT(t, output)
+}
+
+func TestPreviewProvisionSkipHidesProperties(t *testing.T) {
+	pp := &PreviewProvision{
+		Operations: []*Resource{
+			{
+				Type:      "Microsoft.Storage/storageAccounts",
+				Name:      "mystorageaccount",
+				Operation: OperationTypeModify,
+				PropertyDeltas: []PropertyDelta{
+					{
+						Path:       "properties.sku.name",
+						ChangeType: "Modify",
+						Before:     "Standard_LRS",
+						After:      "Premium_LRS",
+					},
+				},
+			},
+			{
+				Type:      "Microsoft.KeyVault/vaults",
+				Name:      "skippedvault",
+				Operation: OperationTypeIgnore,
+				PropertyDeltas: []PropertyDelta{
+					{
+						Path:       "properties.sku.name",
+						ChangeType: "NoEffect",
+						Before:     "standard",
+						After:      "standard",
+					},
+				},
+			},
+			{
+				Type:      "Microsoft.Network/virtualNetworks",
+				Name:      "unchangedvnet",
+				Operation: OperationTypeNoChange,
+				PropertyDeltas: []PropertyDelta{
+					{
+						Path:       "properties.addressSpace",
+						ChangeType: "NoEffect",
+						Before:     "10.0.0.0/16",
+						After:      "10.0.0.0/16",
+					},
+				},
+			},
+		},
+	}
+
+	output := pp.ToString("   ")
+	snapshot.SnapshotT(t, output)
+}

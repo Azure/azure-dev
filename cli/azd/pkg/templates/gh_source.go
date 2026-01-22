@@ -59,6 +59,11 @@ func ParseGitHubUrl(ctx context.Context, urlArg string, ghCli *github.Cli) (*Git
 			hostname = "github.com"
 		}
 
+		// Ensure gh is authenticated before trying to resolve the branch
+		if err := ensureGitHubAuthenticated(ctx, ghCli, hostname); err != nil {
+			return nil, err
+		}
+
 		// Resolve the actual branch by checking with GitHub API
 		branch, filePath, err = resolveBranchAndPath(ctx, ghCli, hostname, repoSlug, branchAndPath)
 		if err != nil {
@@ -98,6 +103,11 @@ func ParseGitHubUrl(ctx context.Context, urlArg string, ghCli *github.Cli) (*Git
 		} else {
 			// Legacy format without blob/tree: /<owner>/<repo>/<branch>/[...path]/<file>
 			branchAndPath = strings.Join(pathParts[3:], "/")
+		}
+
+		// Ensure gh is authenticated before trying to resolve the branch
+		if err := ensureGitHubAuthenticated(ctx, ghCli, hostname); err != nil {
+			return nil, err
 		}
 
 		// Resolve the actual branch by checking with GitHub API
@@ -173,9 +183,35 @@ func branchExists(ctx context.Context, ghCli *github.Cli, hostname string, repoS
 	return err == nil
 }
 
+// ensureGitHubAuthenticated checks if the user is authenticated to GitHub and initiates login if not.
+// This ensures that subsequent GitHub API calls will not fail due to authentication issues.
+func ensureGitHubAuthenticated(ctx context.Context, ghCli *github.Cli, hostname string) error {
+	// Ensure GitHub CLI is installed before using it
+	if err := ghCli.EnsureInstalled(ctx); err != nil {
+		return fmt.Errorf("failed to ensure GitHub CLI is installed: %w", err)
+	}
+
+	authResult, err := ghCli.GetAuthStatus(ctx, hostname)
+	if err != nil {
+		return fmt.Errorf("failed to get auth status: %w", err)
+	}
+	if !authResult.LoggedIn {
+		err := ghCli.Login(ctx, hostname)
+		if err != nil {
+			return fmt.Errorf("failed to login: %w", err)
+		}
+	}
+	return nil
+}
+
 // newGhTemplateSource creates a new template source from a Github repository.
 func newGhTemplateSource(
 	ctx context.Context, name string, urlArg string, ghCli *github.Cli, console input.Console) (Source, error) {
+	// Ensure GitHub CLI is installed before using it
+	if err := ghCli.EnsureInstalled(ctx); err != nil {
+		return nil, fmt.Errorf("failed to ensure GitHub CLI is installed: %w", err)
+	}
+
 	// Parse the GitHub URL to extract repository information
 	urlInfo, err := ParseGitHubUrl(ctx, urlArg, ghCli)
 	if err != nil {

@@ -1,6 +1,6 @@
 # Release History
 
-## 1.23.0-beta.1 (Unreleased)
+## 1.24.0-beta.1 (Unreleased)
 
 ### Features Added
 
@@ -9,6 +9,36 @@
 ### Bugs Fixed
 
 ### Other Changes
+
+## 1.23.0 (2026-01-14)
+
+### Features Added
+
+- [[#6390]](https://github.com/Azure/azure-dev/pull/6390) Add `azd config options` command to list all available configuration settings with descriptions.
+- [[#6348]](https://github.com/Azure/azure-dev/pull/6348) Add `azd env config` commands for environment-specific configuration management.
+- [[#6441]](https://github.com/Azure/azure-dev/pull/6441) Add support for cross-tenant authentication when using remote environment state in Azure Blob Storage.
+- [[#6436]](https://github.com/Azure/azure-dev/pull/6436) Add Podman support as fallback container runtime when Docker is unavailable.
+- [[#6418]](https://github.com/Azure/azure-dev/pull/6418) Add file-based caching to `azd show` for approximately 60x performance improvement.
+- [[#6461]](https://github.com/Azure/azure-dev/pull/6461) Add auto-detection of infrastructure provider (Bicep/Terraform) from infra directory files when not explicitly specified.
+- [[#6377]](https://github.com/Azure/azure-dev/pull/6377) Add `azd auth status` command to display current authentication status.
+- [[#6262]](https://github.com/Azure/azure-dev/pull/6262) Add property-level change details in `azd provision --preview` output for Bicep deployments.
+- [[#5536]](https://github.com/Azure/azure-dev/pull/5536) Add support for non-Aspire projects in Visual Studio connected services.
+
+### Breaking Changes
+
+- [[#6395]](https://github.com/Azure/azure-dev/pull/6395) Remove deprecated `azd login` and `azd logout` commands in favor of `azd auth login` and `azd auth logout`.
+- [[#6369]](https://github.com/Azure/azure-dev/pull/6369) Remove Azure Spring Apps support.
+
+### Bugs Fixed
+
+- [[#6481]](https://github.com/Azure/azure-dev/pull/6481) Fix extension configuration properties support by adding AdditionalProperties fields to project and service configurations.
+- [[#6478]](https://github.com/Azure/azure-dev/pull/6478) Fix GitHub URL parsing to check authentication before branch resolution.
+- [[#5954]](https://github.com/Azure/azure-dev/pull/5954) Improve authentication handling when not using built-in auth methods.
+- [[#6452]](https://github.com/Azure/azure-dev/pull/6452) Fix `azd down` to dynamically resolve resource display names.
+- [[#6446]](https://github.com/Azure/azure-dev/pull/6446) Fix context cancelled errors in workflow steps.
+- [[#6444]](https://github.com/Azure/azure-dev/pull/6444) Fix AKS deployment schema to allow Helm deployments without project field.
+- [[#6267]](https://github.com/Azure/azure-dev/pull/6267) Fix `azd down` to handle deployment state correctly when resources are manually deleted.
+- [[#6435]](https://github.com/Azure/azure-dev/pull/6435) Fix `azd ext install --force` to properly reinstall extensions when version matches.
 
 ## 1.22.5 (2025-12-18)
 

@@ -385,8 +385,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 	envManager.On("Save", mock.Anything, mock.Anything).Return(nil)
 	envManager.On("Reload", mock.Anything, mock.Anything).Return(nil)
 
-	bicepCli, err := bicep.NewCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
-	require.NoError(t, err)
+	bicepCli := bicep.NewCli(mockContext.Console, mockContext.CommandRunner)
 	azCli := mockazapi.NewAzureClientFromMockContext(mockContext)
 	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
 	deploymentService := mockazapi.NewStandardDeploymentsFromMockContext(mockContext)
@@ -412,6 +411,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 		azCli,
 		bicepCli,
 		resourceService,
+		&mockResourceManager{},
 		deploymentManager,
 		envManager,
 		env,
@@ -431,7 +431,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 		nil,
 	)
 
-	err = provider.Initialize(*mockContext.Context, projectDir, options)
+	err := provider.Initialize(*mockContext.Context, projectDir, options)
 	require.NoError(t, err)
 
 	return provider.(*BicepProvider)
@@ -864,6 +864,41 @@ type mockedScope struct {
 	baseDate string
 }
 
+type mockResourceManager struct{}
+
+func (m *mockResourceManager) GetDeploymentResourceOperations(
+	ctx context.Context,
+	deployment infra.Deployment,
+	queryStart *time.Time,
+) ([]*armresources.DeploymentOperation, error) {
+	return nil, nil
+}
+
+func (m *mockResourceManager) GetResourceTypeDisplayName(
+	ctx context.Context,
+	subscriptionId string,
+	resourceId string,
+	resourceType azapi.AzureResourceType,
+) (string, error) {
+	return azapi.GetResourceTypeDisplayName(resourceType), nil
+}
+
+func (m *mockResourceManager) GetResourceGroupsForEnvironment(
+	ctx context.Context,
+	subscriptionId string,
+	envName string,
+) ([]*azapi.Resource, error) {
+	return nil, nil
+}
+
+func (m *mockResourceManager) FindResourceGroupForEnvironment(
+	ctx context.Context,
+	subscriptionId string,
+	envName string,
+) (string, error) {
+	return "", nil
+}
+
 func (m *mockedScope) SubscriptionId() string {
 	return "sub-id"
 }
@@ -914,8 +949,8 @@ func TestUserDefinedTypes(t *testing.T) {
 	})
 
 	azCli := mockazapi.NewAzureClientFromMockContext(mockContext)
-	bicepCli, err := bicep.NewCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
-	require.NoError(t, err)
+	bicepCli := bicep.NewCli(mockContext.Console, mockContext.CommandRunner)
+	require.NoError(t, bicepCli.EnsureInstalled(*mockContext.Context))
 	env := environment.NewWithValues("test-env", map[string]string{})
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -930,6 +965,7 @@ func TestUserDefinedTypes(t *testing.T) {
 		azCli,
 		bicepCli,
 		nil,
+		&mockResourceManager{},
 		nil,
 		&mockenv.MockEnvManager{},
 		env,

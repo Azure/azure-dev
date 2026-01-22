@@ -11,8 +11,7 @@
     <modules>
         <module>library</module>
         <module>application</module>
-        <module>module1</module>
-        <module>module2</module>
+        <module>module</module>
     </modules>
 
 </project>

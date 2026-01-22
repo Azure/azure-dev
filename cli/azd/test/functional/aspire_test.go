@@ -23,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/recording"
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 	"github.com/bradleyjkemp/cupaloy/v2"
+	"github.com/sethvargo/go-retry"
 	"github.com/stretchr/testify/require"
 )
 
@@ -64,7 +65,14 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 		appHostProject := filepath.Join(dir, "AspireAzdTests.AppHost")
 		manifestPath := filepath.Join(appHostProject, "manifest.json")
 
-		err = dotnetCli.PublishAppHostManifest(ctx, appHostProject, manifestPath, "")
+		// Retry dotnet run --publisher manifest as it can be flaky on macOS/Linux runners
+		err = retry.Do(ctx, retry.WithMaxRetries(3, retry.NewConstant(2*time.Second)), func(ctx context.Context) error {
+			if err := dotnetCli.PublishAppHostManifest(ctx, appHostProject, manifestPath, ""); err != nil {
+				t.Logf("PublishAppHostManifest failed (will retry): %v", err)
+				return retry.RetryableError(err)
+			}
+			return nil
+		})
 		require.NoError(t, err)
 
 		manifestFolder := filepath.Dir(manifestPath)
@@ -170,7 +178,8 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 		_, err = cli.RunCommand(ctx, "infra", "synth")
 		require.NoError(t, err)
 
-		bicepCli, err := bicep.NewCli(ctx, mockinput.NewMockConsole(), exec.NewCommandRunner(nil))
+		bicepCli := bicep.NewCli(mockinput.NewMockConsole(), exec.NewCommandRunner(nil))
+		err = bicepCli.EnsureInstalled(ctx)
 		require.NoError(t, err)
 
 		// Validate bicep builds without errors
@@ -222,7 +231,8 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 		_, err = cli.RunCommand(ctx, "infra", "generate")
 		require.NoError(t, err)
 
-		bicepCli, err := bicep.NewCli(ctx, mockinput.NewMockConsole(), exec.NewCommandRunner(nil))
+		bicepCli := bicep.NewCli(mockinput.NewMockConsole(), exec.NewCommandRunner(nil))
+		err = bicepCli.EnsureInstalled(ctx)
 		require.NoError(t, err)
 
 		// Validate bicep builds without errors

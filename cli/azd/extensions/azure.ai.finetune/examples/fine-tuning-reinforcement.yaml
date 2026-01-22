@@ -1,0 +1,35 @@
+# Example: Reinforcement Learning Fine-Tuning Configuration
+# Use for reinforcement learning with reward model or grader-based evaluation
+
+model: gpt-4o-mini
+training_file: "local:./rl_training_data.jsonl"
+
+# Optional: Validation data
+validation_file: "local:./rl_validation_data.jsonl"
+
+suffix: "rl-trained"
+seed: 42
+
+# Reinforcement learning method configuration
+method:
+  type: reinforcement
+  reinforcement:
+    hyperparameters:
+      epochs: 3
+      batch_size: 8
+      learning_rate_multiplier: 1.0
+      beta: 0.5                    # Weighting for RL reward signal
+      compute_multiplier: 1.0      # Training computation budget multiplier
+      reasoning_effort: high        # Can be: low, medium, high
+    
+    # Grader configuration for reward evaluation
+    grader:
+      type: string_check          # Grader type for string-based criteria
+      grader_config:
+        criteria: "answer contains correct chemical formula"
+        expected_pattern: "formula_pattern"
+
+metadata:
+  project: "reinforcement-learning"
+  training-type: "reward-based"
+  grader-version: "v1"

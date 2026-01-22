@@ -7,10 +7,12 @@ import (
 	"context"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
 
@@ -156,4 +158,120 @@ type testLazyComponent[T comparable] struct {
 
 type testConcreteComponent[T comparable] struct {
 	concrete T
+}
+
+// Test_WorkflowCmdAdapter_ContextPropagation validates that the workflowCmdAdapter
+// properly marks contexts as child actions when executing subcommands.
+// The main.go entrypoint wraps the root context with context.WithoutCancel,
+// so workflow steps always receive a non-cancellable context.
+// See: https://github.com/Azure/azure-dev/issues/6530
+func Test_WorkflowCmdAdapter_ContextPropagation(t *testing.T) {
+	t.Run("SubcommandReceivesChildActionContext", func(t *testing.T) {
+		// Track which contexts were seen by the subcommand
+		var receivedContexts []context.Context
+
+		// Create a root command with a subcommand
+		rootCmd := &cobra.Command{
+			Use: "root",
+		}
+
+		subCmd := &cobra.Command{
+			Use: "sub",
+			RunE: func(cmd *cobra.Command, args []string) error {
+				// Capture the context that the subcommand receives
+				receivedContexts = append(receivedContexts, cmd.Context())
+				return nil
+			},
+		}
+
+		rootCmd.AddCommand(subCmd)
+
+		// Create the adapter
+		adapter := &workflowCmdAdapter{cmd: rootCmd}
+
+		// In production, main.go wraps with context.WithoutCancel.
+		// Simulate this by using a non-cancellable context.
+		ctx := context.WithoutCancel(context.Background())
+		adapter.SetArgs([]string{"sub"})
+		err := adapter.ExecuteContext(ctx)
+		require.NoError(t, err)
+		require.Len(t, receivedContexts, 1, "Execution should have received context")
+
+		// Verify context is marked as child action
+		require.True(t, middleware.IsChildAction(receivedContexts[0]),
+			"Context should be marked as child action")
+
+		// Verify context is not cancelled (since we used WithoutCancel)
+		select {
+		case <-receivedContexts[0].Done():
+			t.Fatal("Context should not be cancelled")
+		default:
+			// Expected: context is still valid
+		}
+
+		// Execute again - should still work
+		adapter.SetArgs([]string{"sub"})
+		err = adapter.ExecuteContext(ctx)
+		require.NoError(t, err)
+		require.Len(t, receivedContexts, 2, "Second execution should have received context")
+
+		// Both contexts should be marked as child actions
+		require.True(t, middleware.IsChildAction(receivedContexts[1]),
+			"Second context should also be marked as child action")
+	})
+
+	t.Run("NestedSubcommandReceivesChildActionContext", func(t *testing.T) {
+		// Track which contexts were seen
+		var receivedContexts []context.Context
+
+		// Create a root command with nested subcommands
+		rootCmd := &cobra.Command{
+			Use: "root",
+		}
+
+		parentCmd := &cobra.Command{
+			Use: "parent",
+		}
+
+		childCmd := &cobra.Command{
+			Use: "child",
+			RunE: func(cmd *cobra.Command, args []string) error {
+				receivedContexts = append(receivedContexts, cmd.Context())
+				return nil
+			},
+		}
+
+		parentCmd.AddCommand(childCmd)
+		rootCmd.AddCommand(parentCmd)
+
+		adapter := &workflowCmdAdapter{cmd: rootCmd}
+
+		// In production, main.go wraps with context.WithoutCancel.
+		ctx := context.WithoutCancel(context.Background())
+		adapter.SetArgs([]string{"parent", "child"})
+		err := adapter.ExecuteContext(ctx)
+		require.NoError(t, err)
+		require.Len(t, receivedContexts, 1)
+
+		// Verify context is marked as child action
+		require.True(t, middleware.IsChildAction(receivedContexts[0]),
+			"Nested context should be marked as child action")
+
+		// Second execution should also work
+		adapter.SetArgs([]string{"parent", "child"})
+		err = adapter.ExecuteContext(ctx)
+		require.NoError(t, err)
+		require.Len(t, receivedContexts, 2)
+
+		// Verify second execution got a valid context marked as child
+		select {
+		case <-receivedContexts[1].Done():
+			t.Fatal("Nested subcommand should have received a valid context")
+		default:
+			// Expected: context is valid
+		}
+
+		require.True(t, middleware.IsChildAction(receivedContexts[1]),
+			"Second nested context should also be marked as child action")
+	})
 }

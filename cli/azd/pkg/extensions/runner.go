@@ -84,3 +84,7 @@ type ExtensionRunError struct {
 func (e *ExtensionRunError) Error() string {
 	return fmt.Sprintf("extension '%s' run failed: %v", e.ExtensionId, e.Err)
 }
+
+func (e *ExtensionRunError) Unwrap() error {
+	return e.Err
+}

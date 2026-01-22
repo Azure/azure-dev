@@ -203,7 +203,12 @@ func (at *containerAppTarget) Deploy(
 		return nil, fmt.Errorf("getting infra options: %w", err)
 	}
 
-	modulePath := filepath.Join(infraOptions.Path, moduleName)
+	infraRoot := infraOptions.Path
+	if !filepath.IsAbs(infraRoot) {
+		infraRoot = filepath.Join(serviceConfig.Project.Path, infraRoot)
+	}
+
+	modulePath := filepath.Join(infraRoot, moduleName)
 	bicepPath := modulePath + ".bicep"
 	bicepParametersPath := modulePath + ".parameters.json"
 	bicepParamPath := modulePath + ".bicepparam"
@@ -224,7 +229,11 @@ func (at *containerAppTarget) Deploy(
 		fetchBicepCli := at.bicepCli
 		if fetchBicepCli == nil {
 			fetchBicepCli = func() (*bicep.Cli, error) {
-				return bicep.NewCli(ctx, at.console, at.commandRunner)
+				cli := bicep.NewCli(at.console, at.commandRunner)
+				if err := cli.EnsureInstalled(ctx); err != nil {
+					return nil, err
+				}
+				return cli, nil
 			}
 		}
 

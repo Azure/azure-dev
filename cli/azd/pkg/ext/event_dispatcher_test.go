@@ -374,6 +374,150 @@ func Test_Duplicate_Handler_Detection_Multiple_Duplicates(t *testing.T) {
 	require.Equal(t, 1, callCount, "Handler should be called only once despite multiple registration attempts")
 }
 
+// Test_Workflow_Context_Handler_Cleanup validates that event handlers are properly cleaned up
+// when using a context hierarchy similar to azd workflows:
+// - Root context uses context.WithoutCancel (for singletons - never cancelled)
+// - Step contexts are cancellable children (cancelled after each workflow step)
+// - Handlers registered with step contexts should be cleaned up when step is cancelled
+// This test validates the fix for https://github.com/Azure/azure-dev/issues/6530
+func Test_Workflow_Context_Handler_Cleanup(t *testing.T) {
+	t.Run("HandlersCleanedUpWhenStepContextCancelled", func(t *testing.T) {
+		ed := NewEventDispatcher[testEventArgs](testEvent)
+
+		// Simulate root context that uses WithoutCancel (like singletons)
+		rootCtx := context.Background()
+		nonCancellableRoot := context.WithoutCancel(rootCtx)
+
+		// Simulate workflow step 1 - create cancellable child context
+		step1Ctx, cancelStep1 := context.WithCancel(nonCancellableRoot)
+
+		// Register handler with step 1 context (like actions do)
+		step1CallCount := 0
+		step1Handler := func(ctx context.Context, args testEventArgs) error {
+			step1CallCount++
+			return nil
+		}
+		err := ed.AddHandler(step1Ctx, testEvent, step1Handler)
+		require.NoError(t, err)
+
+		// Verify handler is registered
+		ed.mu.RLock()
+		require.Equal(t, 1, len(ed.handlers[testEvent]), "Step 1 handler should be registered")
+		ed.mu.RUnlock()
+
+		// Raise event with step context - handler should be called
+		err = ed.RaiseEvent(step1Ctx, testEvent, testEventArgs{})
+		require.NoError(t, err)
+		require.Equal(t, 1, step1CallCount, "Step 1 handler should be called")
+
+		// Cancel step 1 context (simulating workflow step completion)
+		cancelStep1()
+
+		// Give cleanup goroutine time to process
+		time.Sleep(50 * time.Millisecond)
+
+		// Verify handler was removed
+		ed.mu.RLock()
+		require.Equal(t, 0, len(ed.handlers[testEvent]), "Step 1 handler should be cleaned up after cancel")
+		ed.mu.RUnlock()
+
+		// Raise event again - handler should NOT be called
+		step1CallCount = 0
+		err = ed.RaiseEvent(context.Background(), testEvent, testEventArgs{})
+		require.NoError(t, err)
+		require.Equal(t, 0, step1CallCount, "Step 1 handler should not be called after cleanup")
+	})
+
+	t.Run("MultipleStepsWithHandlerCleanup", func(t *testing.T) {
+		ed := NewEventDispatcher[testEventArgs](testEvent)
+
+		// Simulate root context with WithoutCancel
+		rootCtx := context.Background()
+		nonCancellableRoot := context.WithoutCancel(rootCtx)
+
+		// Step 1: provision
+		step1Ctx, cancelStep1 := context.WithCancel(nonCancellableRoot)
+		step1CallCount := 0
+		step1Handler := func(ctx context.Context, args testEventArgs) error {
+			step1CallCount++
+			return nil
+		}
+		err := ed.AddHandler(step1Ctx, testEvent, step1Handler)
+		require.NoError(t, err)
+
+		// Verify step 1 handler works
+		err = ed.RaiseEvent(step1Ctx, testEvent, testEventArgs{})
+		require.NoError(t, err)
+		require.Equal(t, 1, step1CallCount)
+
+		// Complete step 1
+		cancelStep1()
+		time.Sleep(50 * time.Millisecond)
+
+		// Verify step 1 handler cleaned up
+		ed.mu.RLock()
+		require.Equal(t, 0, len(ed.handlers[testEvent]), "Step 1 handler should be cleaned up")
+		ed.mu.RUnlock()
+
+		// Step 2: deploy (fresh context, same root)
+		step2Ctx, cancelStep2 := context.WithCancel(nonCancellableRoot)
+		step2CallCount := 0
+		step2Handler := func(ctx context.Context, args testEventArgs) error {
+			step2CallCount++
+			return nil
+		}
+		err = ed.AddHandler(step2Ctx, testEvent, step2Handler)
+		require.NoError(t, err)
+
+		// Verify step 2 handler works
+		err = ed.RaiseEvent(step2Ctx, testEvent, testEventArgs{})
+		require.NoError(t, err)
+		require.Equal(t, 1, step2CallCount)
+		require.Equal(t, 1, step1CallCount, "Step 1 handler should not be called again")
+
+		// Complete step 2
+		cancelStep2()
+		time.Sleep(50 * time.Millisecond)
+
+		// Verify step 2 handler cleaned up
+		ed.mu.RLock()
+		require.Equal(t, 0, len(ed.handlers[testEvent]), "Step 2 handler should be cleaned up")
+		ed.mu.RUnlock()
+	})
+
+	t.Run("NonCancellableContextHandlerNotCleanedUp", func(t *testing.T) {
+		ed := NewEventDispatcher[testEventArgs](testEvent)
+
+		// Register handler with non-cancellable context (simulating incorrect usage)
+		nonCancellableCtx := context.WithoutCancel(context.Background())
+		callCount := 0
+		handler := func(ctx context.Context, args testEventArgs) error {
+			callCount++
+			return nil
+		}
+		err := ed.AddHandler(nonCancellableCtx, testEvent, handler)
+		require.NoError(t, err)
+
+		// Handler should be registered
+		ed.mu.RLock()
+		require.Equal(t, 1, len(ed.handlers[testEvent]))
+		ed.mu.RUnlock()
+
+		// Wait a bit - handler should NOT be cleaned up since context is non-cancellable
+		time.Sleep(50 * time.Millisecond)
+
+		// Handler should still be registered
+		ed.mu.RLock()
+		require.Equal(t, 1, len(ed.handlers[testEvent]), "Handler with non-cancellable context should persist")
+		ed.mu.RUnlock()
+
+		// Handler should still be called
+		err = ed.RaiseEvent(context.Background(), testEvent, testEventArgs{})
+		require.NoError(t, err)
+		require.Equal(t, 1, callCount)
+	})
+}
+
 type testEventArgs struct{}
 
 const testEvent Event = "test"

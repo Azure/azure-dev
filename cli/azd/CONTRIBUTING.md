@@ -1,6 +1,13 @@
 # Contributing to `azd`
 
-Hi there 👋! Thank you for showing interest in contributing to `azd`.
+Hello there 👋! Thank you for showing interest in contributing to `azd`.
+
+## Guidelines
+
+- [Code Style Guide](./docs/style-guidelines/azd-style-guide.md)
+- [Extensions Style Guide](./docs/extensions/extensions-style-guide.md)
+- [Adding New Commands](./docs/style-guidelines/new-azd-command.md)
+- [Guiding Principles](./docs/style-guidelines/guiding-principles.md)
 
 In general, to make contributions a smooth and easy experience, we encourage the following:
 

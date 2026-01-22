@@ -43,8 +43,7 @@ func Test_GhSourceRawFile(t *testing.T) {
 		Stdout: string(expectedResult),
 	})
 
-	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
-	require.NoError(t, err)
+	ghCli := github.NewGitHubCli(mockContext.Console, mockContext.CommandRunner)
 	source, err := newGhTemplateSource(
 		*mockContext.Context, name, "https://raw.github.com/owner/repo/branch/path/to/the/folder/file.json", ghCli,
 		mockContext.Console)
@@ -78,8 +77,7 @@ func Test_GhSourceApiFile(t *testing.T) {
 		Stdout: string(expectedResult),
 	})
 
-	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
-	require.NoError(t, err)
+	ghCli := github.NewGitHubCli(mockContext.Console, mockContext.CommandRunner)
 	source, err := newGhTemplateSource(
 		*mockContext.Context, name, "https://api.github.com/repos/owner/repo/contents/path/to/the/folder/file.json", ghCli,
 		mockContext.Console)
@@ -113,8 +111,7 @@ func Test_GhSourceUrl(t *testing.T) {
 		Stdout: string(expectedResult),
 	})
 
-	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
-	require.NoError(t, err)
+	ghCli := github.NewGitHubCli(mockContext.Console, mockContext.CommandRunner)
 	source, err := newGhTemplateSource(
 		*mockContext.Context, name, "https://github.com/owner/repo/branch/path/to/the/folder/file.json", ghCli,
 		mockContext.Console)
@@ -171,8 +168,7 @@ func Test_GhSourceUrlWithBlobAndBranchSlashes(t *testing.T) {
 		return exec.RunResult{Stdout: "", Stderr: "Unexpected call", ExitCode: 1}, fmt.Errorf("unexpected call")
 	})
 
-	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
-	require.NoError(t, err)
+	ghCli := github.NewGitHubCli(mockContext.Console, mockContext.CommandRunner)
 
 	// URL with branch name containing slash: agentserver/first-release
 	source, err := newGhTemplateSource(
@@ -234,8 +230,7 @@ func Test_GhSourceUrlWithTreeAndBranchSlashes(t *testing.T) {
 		return exec.RunResult{Stdout: "", Stderr: "Unexpected call", ExitCode: 1}, fmt.Errorf("unexpected call")
 	})
 
-	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
-	require.NoError(t, err)
+	ghCli := github.NewGitHubCli(mockContext.Console, mockContext.CommandRunner)
 
 	// URL with tree and branch name containing slash
 	source, err := newGhTemplateSource(
@@ -296,8 +291,7 @@ func Test_GhSourceRawFileWithBranchSlashes(t *testing.T) {
 		return exec.RunResult{Stdout: "", Stderr: "Unexpected call", ExitCode: 1}, fmt.Errorf("unexpected call")
 	})
 
-	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
-	require.NoError(t, err)
+	ghCli := github.NewGitHubCli(mockContext.Console, mockContext.CommandRunner)
 
 	// URL with branch containing multiple slashes
 	source, err := newGhTemplateSource(
@@ -341,8 +335,7 @@ func Test_GhSourceApiFileWithRefParameter(t *testing.T) {
 		return exec.RunResult{Stdout: string(expectedResult)}, nil
 	})
 
-	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
-	require.NoError(t, err)
+	ghCli := github.NewGitHubCli(mockContext.Console, mockContext.CommandRunner)
 
 	// API URL with ref parameter containing branch with slash
 	source, err := newGhTemplateSource(
@@ -367,6 +360,13 @@ func Test_ParseGitHubUrl_RawUrl(t *testing.T) {
 	})
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(
+			command, string(filepath.Separator)+"gh") && args.Args[0] == "auth" && args.Args[1] == "status"
+	}).Respond(exec.RunResult{
+		Stdout: "Logged in to",
+	})
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "api"
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		apiURL := args.Args[1]
@@ -380,8 +380,7 @@ func Test_ParseGitHubUrl_RawUrl(t *testing.T) {
 		return exec.RunResult{Stdout: ""}, fmt.Errorf("unexpected API call")
 	})
 
-	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
-	require.NoError(t, err)
+	ghCli := github.NewGitHubCli(mockContext.Console, mockContext.CommandRunner)
 
 	urlInfo, err := ParseGitHubUrl(
 		*mockContext.Context,
@@ -406,6 +405,13 @@ func Test_ParseGitHubUrl_BlobUrl(t *testing.T) {
 	})
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(
+			command, string(filepath.Separator)+"gh") && args.Args[0] == "auth" && args.Args[1] == "status"
+	}).Respond(exec.RunResult{
+		Stdout: "Logged in to",
+	})
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "api"
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		apiURL := args.Args[1]
@@ -418,8 +424,7 @@ func Test_ParseGitHubUrl_BlobUrl(t *testing.T) {
 		return exec.RunResult{Stdout: ""}, fmt.Errorf("unexpected API call")
 	})
 
-	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
-	require.NoError(t, err)
+	ghCli := github.NewGitHubCli(mockContext.Console, mockContext.CommandRunner)
 
 	urlInfo, err := ParseGitHubUrl(*mockContext.Context, "https://github.com/owner/repo/blob/develop/src/main.go", ghCli)
 	require.NoError(t, err)
@@ -440,6 +445,13 @@ func Test_ParseGitHubUrl_TreeUrl(t *testing.T) {
 	})
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(
+			command, string(filepath.Separator)+"gh") && args.Args[0] == "auth" && args.Args[1] == "status"
+	}).Respond(exec.RunResult{
+		Stdout: "Logged in to",
+	})
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "api"
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		apiURL := args.Args[1]
@@ -452,8 +464,7 @@ func Test_ParseGitHubUrl_TreeUrl(t *testing.T) {
 		return exec.RunResult{Stdout: ""}, fmt.Errorf("unexpected API call")
 	})
 
-	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
-	require.NoError(t, err)
+	ghCli := github.NewGitHubCli(mockContext.Console, mockContext.CommandRunner)
 
 	urlInfo, err := ParseGitHubUrl(
 		*mockContext.Context,
@@ -477,8 +488,7 @@ func Test_ParseGitHubUrl_ApiUrl(t *testing.T) {
 		Stdout: github.Version.String(),
 	})
 
-	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
-	require.NoError(t, err)
+	ghCli := github.NewGitHubCli(mockContext.Console, mockContext.CommandRunner)
 
 	// API URLs don't need branch resolution, branch comes from query parameter
 	urlInfo, err := ParseGitHubUrl(
@@ -504,6 +514,13 @@ func Test_ParseGitHubUrl_BranchWithSlashes(t *testing.T) {
 	})
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(
+			command, string(filepath.Separator)+"gh") && args.Args[0] == "auth" && args.Args[1] == "status"
+	}).Respond(exec.RunResult{
+		Stdout: "Logged in to",
+	})
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "api"
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		apiURL := args.Args[1]
@@ -521,8 +538,7 @@ func Test_ParseGitHubUrl_BranchWithSlashes(t *testing.T) {
 		return exec.RunResult{Stdout: ""}, fmt.Errorf("unexpected API call")
 	})
 
-	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
-	require.NoError(t, err)
+	ghCli := github.NewGitHubCli(mockContext.Console, mockContext.CommandRunner)
 
 	// Now ParseGitHubUrl resolves the full branch name by checking GitHub API
 	urlInfo, err := ParseGitHubUrl(
@@ -548,6 +564,13 @@ func Test_ParseGitHubUrl_EnterpriseUrl(t *testing.T) {
 	})
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(
+			command, string(filepath.Separator)+"gh") && args.Args[0] == "auth" && args.Args[1] == "status"
+	}).Respond(exec.RunResult{
+		Stdout: "Logged in to",
+	})
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "api"
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		apiURL := args.Args[1]
@@ -560,8 +583,7 @@ func Test_ParseGitHubUrl_EnterpriseUrl(t *testing.T) {
 		return exec.RunResult{Stdout: ""}, fmt.Errorf("unexpected API call")
 	})
 
-	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
-	require.NoError(t, err)
+	ghCli := github.NewGitHubCli(mockContext.Console, mockContext.CommandRunner)
 
 	urlInfo, err := ParseGitHubUrl(
 		*mockContext.Context,
@@ -596,8 +618,7 @@ func Test_ParseGitHubUrl_InvalidUrl(t *testing.T) {
 		Stdout: github.Version.String(),
 	})
 
-	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
-	require.NoError(t, err)
+	ghCli := github.NewGitHubCli(mockContext.Console, mockContext.CommandRunner)
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -605,4 +626,61 @@ func Test_ParseGitHubUrl_InvalidUrl(t *testing.T) {
 			require.Error(t, err)
 		})
 	}
+}
+
+// Test_ParseGitHubUrl_NotAuthenticated tests that ParseGitHubUrl properly handles unauthenticated scenarios
+func Test_ParseGitHubUrl_NotAuthenticated(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "--version"
+	}).Respond(exec.RunResult{
+		Stdout: github.Version.String(),
+	})
+
+	// Simulate not authenticated scenario
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(
+			command, string(filepath.Separator)+"gh") && args.Args[0] == "auth" && args.Args[1] == "status"
+	}).Respond(exec.RunResult{
+		Stdout:   "",
+		Stderr:   "To get started with GitHub CLI, please run:  gh auth login",
+		ExitCode: 1,
+	})
+
+	// Mock the login call
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(
+			command, string(filepath.Separator)+"gh") && args.Args[0] == "auth" && args.Args[1] == "login"
+	}).Respond(exec.RunResult{
+		Stdout: "✓ Logged in as user",
+	})
+
+	// After login, branch API calls should succeed
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "api"
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		apiURL := args.Args[1]
+		if strings.Contains(apiURL, "/branches/") {
+			if strings.HasSuffix(apiURL, "/branches/main") {
+				return exec.RunResult{Stdout: `{"name":"main"}`}, nil
+			}
+			return exec.RunResult{Stdout: "", Stderr: "Not Found", ExitCode: 404}, fmt.Errorf("not found")
+		}
+		return exec.RunResult{Stdout: ""}, fmt.Errorf("unexpected API call")
+	})
+
+	ghCli := github.NewGitHubCli(mockContext.Console, mockContext.CommandRunner)
+
+	// This should trigger authentication before attempting to resolve the branch
+	urlInfo, err := ParseGitHubUrl(
+		*mockContext.Context,
+		"https://github.com/owner/repo/blob/main/path/to/file.yaml",
+		ghCli,
+	)
+	require.NoError(t, err)
+	require.Equal(t, "github.com", urlInfo.Hostname)
+	require.Equal(t, "owner/repo", urlInfo.RepoSlug)
+	require.Equal(t, "main", urlInfo.Branch)
+	require.Equal(t, "path/to/file.yaml", urlInfo.FilePath)
 }

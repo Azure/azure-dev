@@ -926,10 +926,12 @@ func (ch *ContainerHelper) packBuild(
 	svc *ServiceConfig,
 	dockerOptions DockerProjectOptions,
 	imageName string) (*ServiceBuildResult, error) {
-	packCli, err := pack.NewCli(ctx, ch.console, ch.commandRunner)
-	if err != nil {
+	packCli := pack.NewCli(ch.console, ch.commandRunner)
+	if err := packCli.EnsureInstalled(ctx); err != nil {
 		return nil, err
 	}
+
+	var err error
 	builder := DefaultBuilderImage
 	environ := []string{}
 	userDefinedImage := false

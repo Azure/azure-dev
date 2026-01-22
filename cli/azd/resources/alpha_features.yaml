@@ -11,6 +11,6 @@
 - id: deployment.stacks
   description: "Enables Azure deployment stacks for ARM/Bicep based deployments."
 - id: llm
-  description: "Enables the use of LLMs in the CLI."
+  description: "Enables the use of LLMs in the CLI with support for intelligent azd init assistance and error handling workflows."
 - id: language.custom
   description: "Enables support for services to use custom language."

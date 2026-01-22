@@ -22,6 +22,8 @@ func TestJobStatus_Constants_AreDistinctAndValid(t *testing.T) {
 		StatusFailed,
 		StatusCancelled,
 		StatusPaused,
+		StatusPausing,
+		StatusResuming,
 	}
 
 	seen := make(map[JobStatus]bool)

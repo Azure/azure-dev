@@ -48,6 +48,16 @@ func TestMapOpenAIStatusToJobStatus(t *testing.T) {
 			expectedModel: models.StatusCancelled,
 		},
 		{
+			name:          "Pausing_MapsToPausing",
+			openaiStatus:  OpenAIStatusPausing,
+			expectedModel: models.StatusPausing,
+		},
+		{
+			name:          "Resuming_MapsToResuming",
+			openaiStatus:  OpenAIStatusResuming,
+			expectedModel: models.StatusResuming,
+		},
+		{
 			name:          "UnknownStatus_MapsToPending",
 			openaiStatus:  openai.FineTuningJobStatus("unknown_status"),
 			expectedModel: models.StatusPending,
@@ -76,6 +86,8 @@ func TestOpenAIStatusConstants_AreDistinct(t *testing.T) {
 		OpenAIStatusSucceeded,
 		OpenAIStatusFailed,
 		OpenAIStatusCancelled,
+		OpenAIStatusPausing,
+		OpenAIStatusResuming,
 	}
 
 	seen := make(map[string]bool)

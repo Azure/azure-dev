@@ -37,3 +37,54 @@ func TestAzureOpenAIConstants(t *testing.T) {
 			"Azure scope must end with .default for OAuth2 token flow")
 	})
 }
+
+func TestNewModelDeploymentProvider_WithNilCredential(t *testing.T) {
+	// Test that NewModelDeploymentProvider can be created with nil credential
+	// Note: The Azure SDK allows nil credential during factory creation
+	// (validation happens later when making actual API calls)
+	provider, err := NewModelDeploymentProvider("test-subscription-id", nil)
+
+	// Azure SDK defers credential validation until API call time
+	require.NoError(t, err)
+	require.NotNil(t, provider)
+}
+
+func TestNewModelDeploymentProvider_EmptySubscriptionID(t *testing.T) {
+	// Empty subscription ID is accepted at construction time
+	// (validation happens when making actual API calls)
+	provider, err := NewModelDeploymentProvider("", nil)
+
+	require.NoError(t, err)
+	require.NotNil(t, provider)
+}
+
+func TestNewModelDeploymentProvider_ValidSubscriptionID(t *testing.T) {
+	// Test with a valid-looking subscription ID
+	subscriptionID := "12345678-1234-1234-1234-123456789012"
+	provider, err := NewModelDeploymentProvider(subscriptionID, nil)
+
+	require.NoError(t, err)
+	require.NotNil(t, provider)
+}
+
+func TestDefaultConstants_AreConsistent(t *testing.T) {
+	// Verify that default constants are consistent with each other
+	t.Run("EndpointHasTwoPlaceholders", func(t *testing.T) {
+		// Endpoint should have exactly 2 %s placeholders (account name and project name)
+		placeholderCount := strings.Count(DefaultCognitiveServicesEndpoint, "%s")
+		require.Equal(t, 2, placeholderCount,
+			"Endpoint should have 2 placeholders for account name and project name")
+	})
+
+	t.Run("APIVersionIsRecent", func(t *testing.T) {
+		// API version should be from 2024 or later (sanity check)
+		require.True(t, strings.HasPrefix(DefaultApiVersion, "202"),
+			"API version should be recent (2020s)")
+	})
+
+	t.Run("ScopeIsAzureAI", func(t *testing.T) {
+		// Scope should be for Azure AI services
+		require.Contains(t, DefaultAzureFinetuningScope, "ai.azure.com",
+			"Scope should be for Azure AI services")
+	})
+}

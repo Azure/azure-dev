@@ -321,3 +321,101 @@ func TestNewDeploymentService(t *testing.T) {
 
 	require.NotNil(t, service)
 }
+
+func TestDeploymentService_DeployModel_WaitForCompletionFalse(t *testing.T) {
+	var capturedRequest *models.DeploymentRequest
+
+	mockFTProvider := &MockFineTuningProvider{
+		GetFineTuningJobDetailsFunc: func(ctx context.Context, jobID string) (*models.FineTuningJobDetail, error) {
+			return &models.FineTuningJobDetail{
+				ID:             jobID,
+				FineTunedModel: "ft:gpt-4o-mini:my-org::abc123",
+			}, nil
+		},
+	}
+	mockDeployProvider := &MockModelDeploymentProvider{
+		DeployModelFunc: func(ctx context.Context, req *models.DeploymentRequest) (*models.DeployModelResult, error) {
+			capturedRequest = req
+			return &models.DeployModelResult{
+				Status:  "pending",
+				Message: "Deployment started",
+			}, nil
+		},
+	}
+	service := newTestDeploymentService(mockDeployProvider, mockFTProvider, nil)
+
+	req := &models.DeploymentConfig{
+		JobID:             "job-123",
+		DeploymentName:    "my-deployment",
+		WaitForCompletion: false, // Explicitly set to false
+	}
+
+	result, err := service.DeployModel(context.Background(), req)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, capturedRequest)
+	require.False(t, capturedRequest.WaitForCompletion)
+	require.Equal(t, "pending", result.Status)
+}
+
+func TestDeploymentService_DeployModel_DefaultConfigValues(t *testing.T) {
+	var capturedRequest *models.DeploymentRequest
+
+	mockFTProvider := &MockFineTuningProvider{
+		GetFineTuningJobDetailsFunc: func(ctx context.Context, jobID string) (*models.FineTuningJobDetail, error) {
+			return &models.FineTuningJobDetail{
+				ID:             jobID,
+				FineTunedModel: "ft:gpt-4",
+			}, nil
+		},
+	}
+	mockDeployProvider := &MockModelDeploymentProvider{
+		DeployModelFunc: func(ctx context.Context, req *models.DeploymentRequest) (*models.DeployModelResult, error) {
+			capturedRequest = req
+			return &models.DeployModelResult{Status: "succeeded"}, nil
+		},
+	}
+	service := newTestDeploymentService(mockDeployProvider, mockFTProvider, nil)
+
+	// Minimal config with only required fields
+	req := &models.DeploymentConfig{
+		JobID:          "job-456",
+		DeploymentName: "minimal-deployment",
+	}
+
+	_, err := service.DeployModel(context.Background(), req)
+
+	require.NoError(t, err)
+	require.NotNil(t, capturedRequest)
+	// Verify model name was extracted from job details
+	require.Equal(t, "ft:gpt-4", capturedRequest.ModelName)
+	// Optional fields should be empty/zero
+	require.Empty(t, capturedRequest.SKU)
+	require.Equal(t, int32(0), capturedRequest.Capacity)
+}
+
+func TestDeploymentService_DeployModel_JobNotSucceeded(t *testing.T) {
+	// Test when job exists but doesn't have a fine-tuned model yet (still running)
+	mockFTProvider := &MockFineTuningProvider{
+		GetFineTuningJobDetailsFunc: func(ctx context.Context, jobID string) (*models.FineTuningJobDetail, error) {
+			return &models.FineTuningJobDetail{
+				ID:             jobID,
+				Status:         models.StatusRunning,
+				FineTunedModel: "", // Empty because job hasn't finished
+			}, nil
+		},
+	}
+	service := newTestDeploymentService(nil, mockFTProvider, nil)
+
+	req := &models.DeploymentConfig{
+		JobID:          "running-job",
+		DeploymentName: "my-deployment",
+	}
+
+	result, err := service.DeployModel(context.Background(), req)
+
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Contains(t, err.Error(), "fine-tuned model not found")
+}

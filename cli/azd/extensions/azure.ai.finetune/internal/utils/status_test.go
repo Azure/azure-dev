@@ -52,6 +52,16 @@ func TestIsTerminalStatus(t *testing.T) {
 			expected: false,
 		},
 		{
+			name:     "StatusPausing_NotTerminal",
+			status:   models.StatusPausing,
+			expected: false,
+		},
+		{
+			name:     "StatusResuming_NotTerminal",
+			status:   models.StatusResuming,
+			expected: false,
+		},
+		{
 			name:     "UnknownStatus_NotTerminal",
 			status:   models.JobStatus("unknown"),
 			expected: false,

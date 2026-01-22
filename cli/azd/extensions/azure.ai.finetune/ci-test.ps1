@@ -1,5 +1,20 @@
+$gopath = go env GOPATH
+$gotestsumBinary = "gotestsum"
+if ($IsWindows) {
+    $gotestsumBinary += ".exe"
+}
+$gotestsum = Join-Path $gopath "bin" $gotestsumBinary
+
 Write-Host "Running unit tests..."
-go test ./... -v -count=1 2>&1 | Tee-Object -Variable testOutput
+
+if (Test-Path $gotestsum) {
+    # Use gotestsum for better output formatting and summary
+    & $gotestsum --format testname -- ./... -count=1
+} else {
+    # Fallback to go test if gotestsum is not installed
+    Write-Host "gotestsum not found, using go test..." -ForegroundColor Yellow
+    go test ./... -v -count=1
+}
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host ""

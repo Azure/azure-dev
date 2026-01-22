@@ -118,6 +118,13 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 
 	defer azdClient.Close()
 
+	if err := azdext.WaitForDebugger(ctx, azdClient); err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, azdext.ErrDebuggerAborted) {
+			return nil
+		}
+		return fmt.Errorf("failed waiting for debugger: %w", err)
+	}
+
 	absExtensionPath, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get absolute path for extension directory: %w", err)

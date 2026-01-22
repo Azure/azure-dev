@@ -187,21 +187,24 @@ func runInitAction(ctx context.Context, flags *initFlags) error {
 			return fmt.Errorf("a file named '%s' already exists", extensionMetadata.Id)
 		}
 
-		confirmResponse, err := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
-			Options: &azdext.ConfirmOptions{
-				Message: fmt.Sprintf(
-					"The extension directory '%s' already exists. Do you want to continue?",
-					extensionMetadata.Id,
-				),
-				DefaultValue: internal.ToPtr(false),
-			},
-		})
-		if err != nil {
-			return fmt.Errorf("failed to confirm existing extension directory: %w", err)
-		}
+		// Skip confirmation prompt in headless mode
+		if !flags.noPrompt {
+			confirmResponse, err := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+				Options: &azdext.ConfirmOptions{
+					Message: fmt.Sprintf(
+						"The extension directory '%s' already exists. Do you want to continue?",
+						extensionMetadata.Id,
+					),
+					DefaultValue: internal.ToPtr(false),
+				},
+			})
+			if err != nil {
+				return fmt.Errorf("failed to confirm existing extension directory: %w", err)
+			}
 
-		if !*confirmResponse.Value {
-			return errors.New("extension creation cancelled by user")
+			if !*confirmResponse.Value {
+				return errors.New("extension creation cancelled by user")
+			}
 		}
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("failed to check extension directory: %w", err)
@@ -627,9 +630,8 @@ func createExtensionDirectory(
 		}
 	} else if err != nil {
 		return fmt.Errorf("failed to check extension directory: %w", err)
-	} else {
-		return nil
 	}
+	// If directory already exists (err == nil), continue to create/update files
 
 	// Create project from template.
 	templateMetadata := &ExtensionTemplate{

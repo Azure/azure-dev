@@ -1679,24 +1679,6 @@ func (p *BicepProvider) forceDeleteLogAnalyticsWorkspaces(
 	return nil
 }
 
-func (p *BicepProvider) purgeLogAnalyticsWorkspaces(
-	ctx context.Context,
-	workspaces []*azapi.AzCliLogAnalyticsWorkspace,
-	skip bool,
-) error {
-	for _, workspace := range workspaces {
-		err := p.runPurgeAsStep(ctx, "log analytics workspace", workspace.Name, func() error {
-			return p.azapi.PurgeLogAnalyticsWorkspace(
-				ctx, azure.SubscriptionFromRID(workspace.Id), *azure.GetResourceGroupName(workspace.Id), workspace.Name)
-		}, skip)
-		if err != nil {
-			return fmt.Errorf("purging log analytics workspace %s: %w", workspace.Name, err)
-		}
-	}
-
-	return nil
-}
-
 type loadParametersResult struct {
 	parameters     map[string]azure.ArmParameter
 	locationParams []string

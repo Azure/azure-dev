@@ -4,6 +4,8 @@
 package cmd
 
 import (
+	"context"
+	"errors"
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -30,6 +32,14 @@ func newPromptCommand() *cobra.Command {
 			}
 
 			defer azdClient.Close()
+
+			// Wait for debugger if AZD_EXT_DEBUG is set
+			if err := azdext.WaitForDebugger(ctx, azdClient); err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, azdext.ErrDebuggerAborted) {
+					return nil
+				}
+				return fmt.Errorf("failed waiting for debugger: %w", err)
+			}
 
 			_, err = azdClient.Prompt().MultiSelect(ctx, &azdext.MultiSelectRequest{
 				Options: &azdext.MultiSelectOptions{
@@ -204,6 +214,11 @@ func newPromptCommand() *cobra.Command {
 					Prompt().
 					PromptResourceGroup(ctx, &azdext.PromptResourceGroupRequest{
 						AzureContext: &azureContext,
+						Options: &azdext.PromptResourceGroupOptions{
+							SelectOptions: &azdext.PromptResourceSelectOptions{
+								AllowNewResource: to.Ptr(false),
+							},
+						},
 					})
 				if err != nil {
 					return err

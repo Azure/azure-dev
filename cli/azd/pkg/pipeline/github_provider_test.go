@@ -86,12 +86,10 @@ func Test_gitHub_provider_preConfigure_check(t *testing.T) {
 
 func createGitHubCiProvider(t *testing.T, mockContext *mocks.MockContext) CiProvider {
 	env := environment.New("test")
-	ghCli, err := github.NewGitHubCli(
-		*mockContext.Context,
+	ghCli := github.NewGitHubCli(
 		mockContext.Console,
 		mockContext.CommandRunner,
 	)
-	require.NoError(t, err)
 
 	return NewGitHubCiProvider(
 		env,

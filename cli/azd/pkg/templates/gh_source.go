@@ -186,6 +186,11 @@ func branchExists(ctx context.Context, ghCli *github.Cli, hostname string, repoS
 // ensureGitHubAuthenticated checks if the user is authenticated to GitHub and initiates login if not.
 // This ensures that subsequent GitHub API calls will not fail due to authentication issues.
 func ensureGitHubAuthenticated(ctx context.Context, ghCli *github.Cli, hostname string) error {
+	// Ensure GitHub CLI is installed before using it
+	if err := ghCli.EnsureInstalled(ctx); err != nil {
+		return fmt.Errorf("failed to ensure GitHub CLI is installed: %w", err)
+	}
+
 	authResult, err := ghCli.GetAuthStatus(ctx, hostname)
 	if err != nil {
 		return fmt.Errorf("failed to get auth status: %w", err)
@@ -202,6 +207,11 @@ func ensureGitHubAuthenticated(ctx context.Context, ghCli *github.Cli, hostname 
 // newGhTemplateSource creates a new template source from a Github repository.
 func newGhTemplateSource(
 	ctx context.Context, name string, urlArg string, ghCli *github.Cli, console input.Console) (Source, error) {
+	// Ensure GitHub CLI is installed before using it
+	if err := ghCli.EnsureInstalled(ctx); err != nil {
+		return nil, fmt.Errorf("failed to ensure GitHub CLI is installed: %w", err)
+	}
+
 	// Parse the GitHub URL to extract repository information
 	urlInfo, err := ParseGitHubUrl(ctx, urlArg, ghCli)
 	if err != nil {

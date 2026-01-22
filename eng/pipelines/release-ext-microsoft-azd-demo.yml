@@ -17,6 +17,7 @@ pr:
     include:
       - go.mod
       - cli/azd/extensions/microsoft.azd.demo
+      - eng/pipelines/release-ext-microsoft-azd-demo.yml
       - eng/pipelines/release-azd-extension.yml
       - eng/pipelines/templates/steps/publish-cli.yml
     exclude:

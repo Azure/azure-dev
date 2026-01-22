@@ -4,6 +4,8 @@
 package cmd
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -50,17 +52,25 @@ func newOperationSubmitCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "submit",
 		Short: "submit fine tuning job",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			return validateSubmitFlags(filename, model, trainingFile)
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
-			if filename == "" && (model == "" || trainingFile == "") {
-				return fmt.Errorf("either config file or model and training-file parameters are required")
-			}
 
 			azdClient, err := azdext.NewAzdClient()
 			if err != nil {
 				return fmt.Errorf("failed to create azd client: %w", err)
 			}
 			defer azdClient.Close()
+
+			// Wait for debugger if AZD_EXT_DEBUG is set
+			if err := azdext.WaitForDebugger(ctx, azdClient); err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, azdext.ErrDebuggerAborted) {
+					return nil
+				}
+				return fmt.Errorf("failed waiting for debugger: %w", err)
+			}
 
 			// Show spinner while creating job
 			spinner := ux.NewSpinner(&ux.SpinnerOptions{
@@ -152,10 +162,14 @@ func newOperationShowCommand() *cobra.Command {
 	var jobID string
 	var logs bool
 	var output string
+	requiredFlag := "id"
 
 	cmd := &cobra.Command{
 		Use:   "show",
 		Short: "Shows detailed information about a specific job.",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			return validateRequiredFlags(map[string]string{"id": jobID})
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			azdClient, err := azdext.NewAzdClient()
@@ -163,6 +177,14 @@ func newOperationShowCommand() *cobra.Command {
 				return fmt.Errorf("failed to create azd client: %w", err)
 			}
 			defer azdClient.Close()
+
+			// Wait for debugger if AZD_EXT_DEBUG is set
+			if err := azdext.WaitForDebugger(ctx, azdClient); err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, azdext.ErrDebuggerAborted) {
+					return nil
+				}
+				return fmt.Errorf("failed waiting for debugger: %w", err)
+			}
 
 			// Show spinner while fetching job
 			spinner := ux.NewSpinner(&ux.SpinnerOptions{
@@ -238,10 +260,10 @@ func newOperationShowCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&jobID, "id", "i", "", "Job ID")
+	cmd.Flags().StringVarP(&jobID, "id", "i", "", "Job ID (required)")
 	cmd.Flags().BoolVar(&logs, "logs", false, "Include recent training logs")
 	cmd.Flags().StringVarP(&output, "output", "o", "table", "Output format: table, json, yaml")
-	cmd.MarkFlagRequired("id")
+	cmd.MarkFlagRequired(requiredFlag)
 
 	return cmd
 }
@@ -261,6 +283,14 @@ func newOperationListCommand() *cobra.Command {
 				return fmt.Errorf("failed to create azd client: %w", err)
 			}
 			defer azdClient.Close()
+
+			// Wait for debugger if AZD_EXT_DEBUG is set
+			if err := azdext.WaitForDebugger(ctx, azdClient); err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, azdext.ErrDebuggerAborted) {
+					return nil
+				}
+				return fmt.Errorf("failed waiting for debugger: %w", err)
+			}
 
 			// Show spinner while fetching jobs
 			spinner := ux.NewSpinner(&ux.SpinnerOptions{
@@ -306,10 +336,14 @@ func newOperationListCommand() *cobra.Command {
 // newOperationPauseCommand creates a command to pause a running fine-tuning job
 func newOperationPauseCommand() *cobra.Command {
 	var jobID string
+	requiredFlag := "id"
 
 	cmd := &cobra.Command{
 		Use:   "pause",
 		Short: "Pauses a running fine-tuning job.",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			return validateRequiredFlags(map[string]string{"id": jobID})
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			azdClient, err := azdext.NewAzdClient()
@@ -352,8 +386,8 @@ func newOperationPauseCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&jobID, "id", "i", "", "Job ID")
-	cmd.MarkFlagRequired("id")
+	cmd.Flags().StringVarP(&jobID, "id", "i", "", "Job ID (required)")
+	cmd.MarkFlagRequired(requiredFlag)
 
 	return cmd
 }
@@ -361,10 +395,14 @@ func newOperationPauseCommand() *cobra.Command {
 // newOperationResumeCommand creates a command to resume a paused fine-tuning job
 func newOperationResumeCommand() *cobra.Command {
 	var jobID string
+	requiredFlag := "id"
 
 	cmd := &cobra.Command{
 		Use:   "resume",
 		Short: "Resumes a paused fine-tuning job.",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			return validateRequiredFlags(map[string]string{"id": jobID})
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			azdClient, err := azdext.NewAzdClient()
@@ -407,8 +445,8 @@ func newOperationResumeCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&jobID, "id", "i", "", "Job ID")
-	cmd.MarkFlagRequired("id")
+	cmd.Flags().StringVarP(&jobID, "id", "i", "", "Job ID (required)")
+	cmd.MarkFlagRequired(requiredFlag)
 
 	return cmd
 }
@@ -417,10 +455,14 @@ func newOperationResumeCommand() *cobra.Command {
 func newOperationCancelCommand() *cobra.Command {
 	var jobID string
 	var force bool
+	requiredFlag := "id"
 
 	cmd := &cobra.Command{
 		Use:   "cancel",
 		Short: "Cancels a running or queued fine-tuning job.",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			return validateRequiredFlags(map[string]string{"id": jobID})
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			azdClient, err := azdext.NewAzdClient()
@@ -473,9 +515,9 @@ func newOperationCancelCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&jobID, "id", "i", "", "Job ID")
+	cmd.Flags().StringVarP(&jobID, "id", "i", "", "Job ID (required)")
 	cmd.Flags().BoolVar(&force, "force", false, "Skip confirmation prompt")
-	cmd.MarkFlagRequired("id")
+	cmd.MarkFlagRequired(requiredFlag)
 
 	return cmd
 }
@@ -488,10 +530,18 @@ func newOperationDeployModelCommand() *cobra.Command {
 	var version string
 	var capacity int32
 	var noWait bool
+	requiredFlagJobID := "job-id"
+	requiredFlagDeploymentName := "deployment-name"
 
 	cmd := &cobra.Command{
 		Use:   "deploy",
 		Short: "Deploy a fine-tuned model to Azure Cognitive Services",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			return validateRequiredFlags(map[string]string{
+				"job-id":          jobID,
+				"deployment-name": deploymentName,
+			})
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 
@@ -619,8 +669,8 @@ func newOperationDeployModelCommand() *cobra.Command {
 	cmd.Flags().StringVarP(&version, "version", "v", "1", "Model version")
 	cmd.Flags().Int32VarP(&capacity, "capacity", "c", 1, "Capacity units")
 	cmd.Flags().BoolVar(&noWait, "no-wait", false, "Do not wait for deployment to complete")
-	cmd.MarkFlagRequired("job-id")
-	cmd.MarkFlagRequired("deployment-name")
+	cmd.MarkFlagRequired(requiredFlagJobID)
+	cmd.MarkFlagRequired(requiredFlagDeploymentName)
 
 	return cmd
 }

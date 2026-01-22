@@ -50,6 +50,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newVersionCommand())
 	rootCmd.AddCommand(newInitCommand(rootFlags))
 	rootCmd.AddCommand(newMcpCommand())
+	rootCmd.AddCommand(newMetadataCommand())
 
 	return rootCmd
 }

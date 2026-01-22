@@ -289,7 +289,9 @@ func (s *promptService) PromptResourceGroup(
 		return nil, err
 	}
 
-	selectedResourceGroup, err := s.prompter.PromptResourceGroup(ctx, azureContext, nil)
+	options := createResourceGroupOptions(req.Options)
+
+	selectedResourceGroup, err := s.prompter.PromptResourceGroup(ctx, azureContext, options)
 	if err != nil {
 		return nil, err
 	}
@@ -418,6 +420,8 @@ func createResourceOptions(options *azdext.PromptResourceOptions) prompt.Resourc
 			DisplayCount:       int(options.SelectOptions.DisplayCount),
 			DisplayNumbers:     options.SelectOptions.DisplayNumbers,
 			AllowNewResource:   options.SelectOptions.AllowNewResource,
+			Hint:               options.SelectOptions.Hint,
+			EnableFiltering:    options.SelectOptions.EnableFiltering,
 		}
 	}
 
@@ -429,6 +433,27 @@ func createResourceOptions(options *azdext.PromptResourceOptions) prompt.Resourc
 	}
 
 	return resourceOptions
+}
+
+func createResourceGroupOptions(options *azdext.PromptResourceGroupOptions) *prompt.ResourceGroupOptions {
+	if options == nil || options.SelectOptions == nil {
+		return nil
+	}
+
+	return &prompt.ResourceGroupOptions{
+		SelectorOptions: &prompt.SelectOptions{
+			ForceNewResource:   options.SelectOptions.ForceNewResource,
+			AllowNewResource:   options.SelectOptions.AllowNewResource,
+			NewResourceMessage: options.SelectOptions.NewResourceMessage,
+			Message:            options.SelectOptions.Message,
+			HelpMessage:        options.SelectOptions.HelpMessage,
+			LoadingMessage:     options.SelectOptions.LoadingMessage,
+			DisplayCount:       int(options.SelectOptions.DisplayCount),
+			DisplayNumbers:     options.SelectOptions.DisplayNumbers,
+			Hint:               options.SelectOptions.Hint,
+			EnableFiltering:    options.SelectOptions.EnableFiltering,
+		},
+	}
 }
 
 func convertToInt32(input *int) *int32 {

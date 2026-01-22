@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal"
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal/github"
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal/models"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/common"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -82,6 +83,24 @@ func newPublishCommand() *cobra.Command {
 }
 
 func runPublishAction(ctx context.Context, flags *publishFlags, defaultRegistryUsed bool) error {
+	// Create a new context that includes the AZD access token
+	ctx = azdext.WithAccessToken(ctx)
+
+	// Create a new AZD client
+	azdClient, err := azdext.NewAzdClient()
+	if err != nil {
+		return fmt.Errorf("failed to create azd client: %w", err)
+	}
+
+	defer azdClient.Close()
+
+	if err := azdext.WaitForDebugger(ctx, azdClient); err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, azdext.ErrDebuggerAborted) {
+			return nil
+		}
+		return fmt.Errorf("failed waiting for debugger: %w", err)
+	}
+
 	absExtensionPath, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get absolute path for extension directory: %w", err)

@@ -15,6 +15,7 @@ pr:
   paths:
     include:
       - cli/azd/extensions/microsoft.azd.extensions
+      - eng/pipelines/release-ext-microsoft-azd-extensions.yml
       - eng/pipelines/release-azd-extension.yml
       - eng/pipelines/templates/steps/publish-cli.yml
     exclude:
@@ -29,3 +30,4 @@ extends:
           AzdExtensionId: microsoft.azd.extensions
           SanitizedExtensionId: microsoft-azd-extensions
           AzdExtensionDirectory: cli/azd/extensions/microsoft.azd.extensions
+          SkipTests: true

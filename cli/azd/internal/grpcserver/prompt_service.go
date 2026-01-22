@@ -512,7 +512,7 @@ func wrapErrorWithSuggestion(err error) error {
 
 	var suggestionErr *internal.ErrorWithSuggestion
 	if errors.As(err, &suggestionErr) {
-		return fmt.Errorf("%w. %s", err, suggestionErr.Suggestion)
+		return fmt.Errorf("%w\n%s", err, suggestionErr.Suggestion)
 	}
 
 	return err

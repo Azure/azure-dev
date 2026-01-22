@@ -25,14 +25,16 @@ export class RevealStep extends AzureWizardExecuteStep<RevealResourceWizardConte
 
         // If reveal failed, show a helpful message with actions
         if (result === undefined) {
+            const copyResourceIdOption = vscode.l10n.t('Copy Resource ID');
+            const openInPortalOption = vscode.l10n.t('Open in Portal');
             const selection = await vscode.window.showInformationMessage(
                 vscode.l10n.t('Unable to reveal resource in tree. Resource ID: {0}', azureResourceId),
-                vscode.l10n.t('Copy Resource ID'),
-                vscode.l10n.t('Open in Portal')
+                copyResourceIdOption,
+                openInPortalOption
             );
-            if (selection === vscode.l10n.t('Copy Resource ID')) {
+            if (selection === copyResourceIdOption) {
                 await vscode.env.clipboard.writeText(azureResourceId);
-            } else if (selection === vscode.l10n.t('Open in Portal')) {
+            } else if (selection === openInPortalOption) {
                 await vscode.commands.executeCommand('azureResourceGroups.openInPortal', azureResourceId);
             }
         }

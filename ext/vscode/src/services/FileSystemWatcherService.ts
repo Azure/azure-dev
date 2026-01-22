@@ -20,6 +20,7 @@ export class FileSystemWatcherService implements vscode.Disposable {
         let watcherEntry = this.watchers.get(pattern);
 
         if (!watcherEntry) {
+            // Create new watcher and entry for this pattern
             const watcher = vscode.workspace.createFileSystemWatcher(pattern);
             watcherEntry = {
                 watcher,
@@ -28,6 +29,7 @@ export class FileSystemWatcherService implements vscode.Disposable {
             this.watchers.set(pattern, watcherEntry);
 
             // Set up forwarding events to all listeners
+            // Note: watcherEntry is captured in closure and will include all future listeners
             watcher.onDidChange(uri => {
                 watcherEntry!.listeners.forEach(listener => listener(uri));
             });
@@ -39,6 +41,7 @@ export class FileSystemWatcherService implements vscode.Disposable {
             });
         }
 
+        // Add callback to listeners (whether entry is new or existing)
         watcherEntry.listeners.add(callback);
 
         return {

@@ -4,6 +4,7 @@
 import { IActionContext } from '@microsoft/vscode-azext-utils';
 import * as vscode from 'vscode';
 import * as yaml from 'yaml';
+import { SUPPORTED_LANGUAGES } from '../constants/languages';
 import { AzureDevCliModel } from '../views/workspace/AzureDevCliModel';
 
 /**
@@ -50,7 +51,7 @@ export async function addService(context: IActionContext, node?: AzureDevCliMode
 
     // Prompt for programming language
     const language = await context.ui.showQuickPick(
-        ['python', 'js', 'ts', 'csharp', 'java', 'go'].map(lang => ({ label: lang })),
+        SUPPORTED_LANGUAGES.map(lang => ({ label: lang })),
         { placeHolder: vscode.l10n.t('Select programming language') }
     );
 

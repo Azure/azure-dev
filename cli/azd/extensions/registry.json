@@ -7,11 +7,11 @@
       "description": "This extension provides examples of the AZD extension framework.",
       "versions": [
         {
+          "version": "0.1.0-beta.1",
           "capabilities": [
             "custom-commands",
             "lifecycle-events"
           ],
-          "version": "0.1.0-beta.1",
           "usage": "azd demo \u003ccommand\u003e [options]",
           "examples": [
             {
@@ -77,12 +77,12 @@
           }
         },
         {
+          "version": "0.3.0",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
             "mcp-server"
           ],
-          "version": "0.3.0",
           "usage": "azd demo \u003ccommand\u003e [options]",
           "examples": [
             {
@@ -153,6 +153,7 @@
           }
         },
         {
+          "version": "0.4.0",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
@@ -160,7 +161,13 @@
             "service-target-provider",
             "framework-service-provider"
           ],
-          "version": "0.4.0",
+          "providers": [
+            {
+              "name": "demo",
+              "type": "service-target",
+              "description": "Deploys application components to demo"
+            }
+          ],
           "usage": "azd demo \u003ccommand\u003e [options]",
           "examples": [
             {
@@ -239,10 +246,10 @@
       "description": "This extension provides a set of tools for AZD extension developers to test and debug their extensions.",
       "versions": [
         {
+          "version": "0.4.2",
           "capabilities": [
             "custom-commands"
           ],
-          "version": "0.4.2",
           "usage": "azd x \u003ccommand\u003e [options]",
           "examples": [
             {
@@ -323,10 +330,10 @@
           }
         },
         {
+          "version": "0.5.0",
           "capabilities": [
             "custom-commands"
           ],
-          "version": "0.5.0",
           "usage": "azd x \u003ccommand\u003e [options]",
           "examples": [
             {
@@ -412,10 +419,10 @@
           }
         },
         {
+          "version": "0.5.1",
           "capabilities": [
             "custom-commands"
           ],
-          "version": "0.5.1",
           "usage": "azd x \u003ccommand\u003e [options]",
           "examples": [
             {
@@ -501,10 +508,10 @@
           }
         },
         {
+          "version": "0.6.0",
           "capabilities": [
             "custom-commands"
           ],
-          "version": "0.6.0",
           "usage": "azd x \u003ccommand\u003e [options]",
           "examples": [
             {
@@ -590,10 +597,10 @@
           }
         },
         {
+          "version": "0.7.0",
           "capabilities": [
             "custom-commands"
           ],
-          "version": "0.7.0",
           "usage": "azd x \u003ccommand\u003e [options]",
           "examples": [
             {
@@ -679,10 +686,10 @@
           }
         },
         {
+          "version": "0.7.1",
           "capabilities": [
             "custom-commands"
           ],
-          "version": "0.7.1",
           "usage": "azd x \u003ccommand\u003e [options]",
           "examples": [
             {
@@ -776,10 +783,10 @@
       "description": "This extension configures GitHub Copilot Coding Agent access to Azure",
       "versions": [
         {
+          "version": "0.5.0",
           "capabilities": [
             "custom-commands"
           ],
-          "version": "0.5.0",
           "usage": "azd coding-agent \u003ccommand\u003e [options]",
           "examples": null,
           "artifacts": {
@@ -834,10 +841,10 @@
           }
         },
         {
+          "version": "0.5.1",
           "capabilities": [
             "custom-commands"
           ],
-          "version": "0.5.1",
           "usage": "azd coding-agent \u003ccommand\u003e [options]",
           "examples": null,
           "artifacts": {
@@ -892,10 +899,10 @@
           }
         },
         {
+          "version": "0.5.2",
           "capabilities": [
             "custom-commands"
           ],
-          "version": "0.5.2",
           "usage": "azd coding-agent \u003ccommand\u003e [options]",
           "examples": null,
           "artifacts": {
@@ -958,13 +965,20 @@
       "description": "Extension for the Foundry Agent Service. (Preview)",
       "versions": [
         {
+          "version": "0.0.6",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
             "mcp-server",
             "service-target-provider"
           ],
-          "version": "0.0.6",
+          "providers": [
+            {
+              "name": "azure.ai.agent",
+              "type": "service-target",
+              "description": "Deploys agents to the Foundry Agent Service"
+            }
+          ],
           "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
@@ -1025,13 +1039,20 @@
           }
         },
         {
+          "version": "0.0.7",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
             "mcp-server",
             "service-target-provider"
           ],
-          "version": "0.0.7",
+          "providers": [
+            {
+              "name": "azure.ai.agent",
+              "type": "service-target",
+              "description": "Deploys agents to the Foundry Agent Service."
+            }
+          ],
           "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
@@ -1092,13 +1113,20 @@
           }
         },
         {
+          "version": "0.1.0-preview",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
             "mcp-server",
             "service-target-provider"
           ],
-          "version": "0.1.0-preview",
+          "providers": [
+            {
+              "name": "azure.ai.agent",
+              "type": "service-target",
+              "description": "Deploys agents to the Foundry Agent Service."
+            }
+          ],
           "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
@@ -1159,13 +1187,20 @@
           }
         },
         {
+          "version": "0.1.1-preview",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
             "mcp-server",
             "service-target-provider"
           ],
-          "version": "0.1.1-preview",
+          "providers": [
+            {
+              "name": "azure.ai.agent",
+              "type": "service-target",
+              "description": "Deploys agents to the Foundry Agent Service."
+            }
+          ],
           "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
@@ -1226,13 +1261,20 @@
           }
         },
         {
+          "version": "0.1.2-preview",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
             "mcp-server",
             "service-target-provider"
           ],
-          "version": "0.1.2-preview",
+          "providers": [
+            {
+              "name": "azure.ai.agent",
+              "type": "service-target",
+              "description": "Deploys agents to the Foundry Agent Service"
+            }
+          ],
           "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
@@ -1293,13 +1335,20 @@
           }
         },
         {
+          "version": "0.1.3-preview",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
             "mcp-server",
             "service-target-provider"
           ],
-          "version": "0.1.3-preview",
+          "providers": [
+            {
+              "name": "azure.ai.agent",
+              "type": "service-target",
+              "description": "Deploys agents to the Foundry Agent Service"
+            }
+          ],
           "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
@@ -1360,13 +1409,20 @@
           }
         },
         {
+          "version": "0.1.4-preview",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
             "mcp-server",
             "service-target-provider"
           ],
-          "version": "0.1.4-preview",
+          "providers": [
+            {
+              "name": "azure.ai.agent",
+              "type": "service-target",
+              "description": "Deploys agents to the Foundry Agent Service"
+            }
+          ],
           "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
@@ -1427,13 +1483,20 @@
           }
         },
         {
+          "version": "0.1.5-preview",
           "capabilities": [
             "custom-commands",
             "lifecycle-events",
             "mcp-server",
             "service-target-provider"
           ],
-          "version": "0.1.5-preview",
+          "providers": [
+            {
+              "name": "azure.ai.agent",
+              "type": "service-target",
+              "description": "Deploys agents to the Foundry Agent Service"
+            }
+          ],
           "usage": "azd ai agent \u003ccommand\u003e [options]",
           "examples": [
             {
@@ -1502,10 +1565,10 @@
       "description": "Concurrent execution for azd deployment",
       "versions": [
         {
+          "version": "0.0.1",
           "capabilities": [
             "custom-commands"
           ],
-          "version": "0.0.1",
           "usage": "azd concurx \u003ccommand\u003e [options]",
           "examples": null,
           "artifacts": {
@@ -1568,10 +1631,10 @@
       "description": "Extension for Foundry Fine Tuning. (Preview)",
       "versions": [
         {
+          "version": "0.0.8-preview",
           "capabilities": [
             "custom-commands"
           ],
-          "version": "0.0.8-preview",
           "usage": "azd ai finetuning \u003ccommand\u003e [options]",
           "examples": [
             {
@@ -1637,10 +1700,10 @@
           }
         },
         {
+          "version": "0.0.9-preview",
           "capabilities": [
             "custom-commands"
           ],
-          "version": "0.0.9-preview",
           "usage": "azd ai finetuning \u003ccommand\u003e [options]",
           "examples": [
             {

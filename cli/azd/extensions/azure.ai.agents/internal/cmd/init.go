@@ -949,10 +949,7 @@ func (a *InitAction) downloadAgentYaml(
 			nil, // externalPromptCfg
 		)
 
-		ghCli, err = github.NewGitHubCli(ctx, console, commandRunner)
-		if err != nil {
-			return nil, "", fmt.Errorf("creating GitHub CLI: %w", err)
-		}
+		ghCli := github.NewGitHubCli(console, commandRunner)
 
 		urlInfo, err = a.parseGitHubUrl(ctx, manifestPointer)
 		if err != nil {

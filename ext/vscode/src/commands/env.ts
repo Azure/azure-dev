@@ -9,34 +9,98 @@ import { TelemetryId } from '../telemetry/telemetryId';
 import { createAzureDevCli } from '../utils/azureDevCli';
 import { execAsync } from '../utils/execAsync';
 import { executeAsTask } from '../utils/executeAsTask';
-import { isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
+import { isAzureDevCliModel, isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
 import { quickPickWorkspaceFolder } from '../utils/quickPickWorkspaceFolder';
 import { AzureDevCliEnvironments } from '../views/workspace/AzureDevCliEnvironments';
 import { AzureDevCliEnvironment } from '../views/workspace/AzureDevCliEnvironment';
+import { EnvironmentItem, EnvironmentTreeItem } from '../views/environments/EnvironmentsTreeDataProvider';
 import { EnvironmentInfo, getAzDevTerminalTitle, getEnvironments } from './cmdUtil';
 
-export async function editEnvironment(context: IActionContext, selectedEnvironment?: TreeViewModel): Promise<void> {
+/**
+ * Result of extracting environment context from various tree item types
+ */
+interface EnvironmentContext {
+    selectedEnvironment?: AzureDevCliEnvironment;
+    environmentsNode?: AzureDevCliEnvironments;
+    selectedFile?: vscode.Uri;
+    environmentName?: string;
+}
+
+/**
+ * Extracts environment context from various tree item types.
+ * Consolidates the repeated pattern of checking item types across env commands.
+ */
+function extractEnvironmentContext(selectedItem?: vscode.Uri | TreeViewModel | EnvironmentTreeItem): EnvironmentContext {
+    let selectedEnvironment: AzureDevCliEnvironment | undefined;
+    let environmentsNode: AzureDevCliEnvironments | undefined;
+    let selectedFile: vscode.Uri | undefined;
+    let environmentName: string | undefined;
+
+    if (isTreeViewModel(selectedItem)) {
+        selectedEnvironment = selectedItem.unwrap<AzureDevCliEnvironment>();
+        environmentsNode = selectedItem.unwrap<AzureDevCliEnvironments>();
+        selectedFile = environmentsNode?.context.configurationFile;
+    } else if (selectedItem instanceof AzureDevCliEnvironment) {
+        selectedEnvironment = selectedItem;
+        selectedFile = selectedItem.context.configurationFile;
+    } else if (selectedItem instanceof AzureDevCliEnvironments) {
+        environmentsNode = selectedItem;
+        selectedFile = selectedItem.context.configurationFile;
+    } else if (selectedItem instanceof EnvironmentTreeItem) {
+        const data = selectedItem.data as EnvironmentItem;
+        selectedFile = data.configurationFile;
+        environmentName = data.name;
+    } else if (isAzureDevCliModel(selectedItem)) {
+        selectedFile = selectedItem.context.configurationFile;
+    } else if (selectedItem instanceof vscode.Uri) {
+        selectedFile = selectedItem;
+    }
+
+    return { selectedEnvironment, environmentsNode, selectedFile, environmentName };
+}
+
+/**
+ * Refreshes all environment views (standalone and workspace)
+ */
+function refreshAllEnvironmentViews(selectedEnvironment?: AzureDevCliEnvironment): void {
     if (selectedEnvironment) {
-        const environment = selectedEnvironment.unwrap<AzureDevCliEnvironment>();
+        selectedEnvironment.context.refreshEnvironments();
+    }
+    // Refresh standalone environments view
+    void vscode.commands.executeCommand('azure-dev.views.environments.refresh');
+    // Refresh workspace resource view
+    void vscode.commands.executeCommand('azureWorkspace.refresh');
+}
 
-        if (environment.environmentFile) {
-            const document = await vscode.workspace.openTextDocument(environment.environmentFile);
+export async function editEnvironment(context: IActionContext, selectedEnvironment?: TreeViewModel | EnvironmentTreeItem): Promise<void> {
+    if (selectedEnvironment) {
+        let environmentFile: vscode.Uri | undefined;
 
+        if (selectedEnvironment instanceof EnvironmentTreeItem) {
+            const data = selectedEnvironment.data as EnvironmentItem;
+            environmentFile = data.dotEnvPath ? vscode.Uri.file(data.dotEnvPath) : undefined;
+        } else {
+            const environment = selectedEnvironment.unwrap<AzureDevCliEnvironment>();
+            environmentFile = environment.environmentFile;
+        }
+
+        if (environmentFile) {
+            const document = await vscode.workspace.openTextDocument(environmentFile);
             await vscode.window.showTextDocument(document);
         }
     }
 }
 
-export async function deleteEnvironment(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {
-    const selectedEnvironment = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliEnvironment>() : undefined;
-    const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliEnvironments>().context.configurationFile : selectedItem;
+export async function deleteEnvironment(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel | EnvironmentTreeItem): Promise<void> {
+    const { selectedEnvironment, selectedFile, environmentName } = extractEnvironmentContext(selectedItem);
+
     let folder: vscode.WorkspaceFolder | undefined = (selectedFile ? vscode.workspace.getWorkspaceFolder(selectedFile) : undefined);
     if (!folder) {
         folder = await quickPickWorkspaceFolder(context, vscode.l10n.t("To run '{0}' command you must first open a folder or workspace in VS Code", 'env select'));
     }
     const cwd = folder.uri.fsPath;
 
-    let name = selectedEnvironment?.name;
+    let name = selectedEnvironment?.name ?? environmentName;
 
     if (!name) {
         let envData: EnvironmentInfo[] = [];
@@ -85,22 +149,20 @@ export async function deleteEnvironment(context: IActionContext, selectedItem?: 
         void vscode.window.showInformationMessage(
             vscode.l10n.t("'{0}' has been deleted.", name));
 
-        if (selectedEnvironment) {
-            selectedEnvironment?.context.refreshEnvironments();
-        }
+        refreshAllEnvironmentViews(selectedEnvironment);
     }
 }
 
-export async function selectEnvironment(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {
-    const selectedEnvironment = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliEnvironment>() : undefined;
-    const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliEnvironments>().context.configurationFile : selectedItem;
+export async function selectEnvironment(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel | EnvironmentTreeItem): Promise<void> {
+    const { selectedEnvironment, selectedFile, environmentName } = extractEnvironmentContext(selectedItem);
+
     let folder: vscode.WorkspaceFolder | undefined = (selectedFile ? vscode.workspace.getWorkspaceFolder(selectedFile) : undefined);
     if (!folder) {
         folder = await quickPickWorkspaceFolder(context, vscode.l10n.t("To run '{0}' command you must first open a folder or workspace in VS Code", 'env select'));
     }
     const cwd = folder.uri.fsPath;
 
-    let name = selectedEnvironment?.name;
+    let name = selectedEnvironment?.name ?? environmentName;
 
     if (!name) {
         let envData: EnvironmentInfo[] = [];
@@ -154,38 +216,91 @@ export async function selectEnvironment(context: IActionContext, selectedItem?: 
     void vscode.window.showInformationMessage(
         vscode.l10n.t("'{0}' is now the default environment.", name));
 
-    if (selectedEnvironment) {
-        selectedEnvironment?.context.refreshEnvironments();
-    }
+    refreshAllEnvironmentViews(selectedEnvironment);
 }
 
-export async function newEnvironment(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {
-    const environmentsNode = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliEnvironments>() : undefined;
-    const selectedFile = environmentsNode?.context.configurationFile ?? selectedItem as vscode.Uri;
+export async function newEnvironment(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel | EnvironmentTreeItem): Promise<void> {
+    const { environmentsNode, selectedFile } = extractEnvironmentContext(selectedItem);
+
     let folder: vscode.WorkspaceFolder | undefined = (selectedFile ? vscode.workspace.getWorkspaceFolder(selectedFile) : undefined);
     if (!folder) {
         folder = await quickPickWorkspaceFolder(context, vscode.l10n.t("To run '{0}' command you must first open a folder or workspace in VS Code", 'env new'));
     }
 
+    // Get current environment
+    let currentEnv: string | undefined;
+    try {
+        const envs = await getEnvironments(context, folder.uri.fsPath);
+        currentEnv = envs.find(e => e.IsDefault)?.Name;
+    } catch {
+        // Ignore error, maybe no environments yet
+    }
+
+    const name = await vscode.window.showInputBox({
+        prompt: vscode.l10n.t('Enter the name of the new environment'),
+        placeHolder: vscode.l10n.t('Environment name'),
+        validateInput: (value) => {
+            if (!value || value.trim().length === 0) {
+                return vscode.l10n.t('Name cannot be empty');
+            }
+            return undefined;
+        }
+    });
+
+    if (!name) {
+        return;
+    }
+
+    let setAsCurrent = true;
+    if (currentEnv) {
+        const yesItem: IAzureQuickPickItem<boolean> = { label: vscode.l10n.t('Yes'), data: true };
+        const noItem: IAzureQuickPickItem<boolean> = { label: vscode.l10n.t('No'), data: false };
+        const result = await context.ui.showQuickPick([yesItem, noItem], {
+            placeHolder: vscode.l10n.t('Set the new environment as the current environment?'),
+            suppressPersistence: true
+        });
+        setAsCurrent = result.data;
+    }
+
     const azureCli = await createAzureDevCli(context);
     const args = composeArgs(
         withArg('env', 'new'),
+        withQuotedArg(name),
+        withArg('--no-prompt')
     )();
 
-    void executeAsTask(azureCli.invocation, args, getAzDevTerminalTitle(), azureCli.spawnOptions(folder.uri.fsPath), {
+    await executeAsTask(azureCli.invocation, args, getAzDevTerminalTitle(), azureCli.spawnOptions(folder.uri.fsPath), {
         focus: true,
         alwaysRunNew: true,
         workspaceFolder: folder,
-    }, TelemetryId.EnvNewCli).then(() => {
-        if (environmentsNode) {
-            environmentsNode.context.refreshEnvironments();
+    }, TelemetryId.EnvNewCli);
+
+    if (!setAsCurrent && currentEnv) {
+        const selectArgs = composeArgs(
+            withArg('env', 'select'),
+            withQuotedArg(currentEnv),
+        )();
+        try {
+            await execAsync(azureCli.invocation, selectArgs, azureCli.spawnOptions(folder.uri.fsPath));
+        } catch (err) {
+            void vscode.window.showErrorMessage(vscode.l10n.t('Failed to switch back to environment "{0}": {1}', currentEnv, parseError(err).message));
         }
-    });
+    }
+
+    if (environmentsNode) {
+        environmentsNode.context.refreshEnvironments();
+    }
+
+    // Refresh standalone environments view
+    void vscode.commands.executeCommand('azure-dev.views.environments.refresh');
+
+    // Refresh workspace resource view
+    void vscode.commands.executeCommand('azureWorkspace.refresh');
 }
 
-export async function refreshEnvironment(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {
-    const selectedEnvironment = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliEnvironment>() : undefined;
-    const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliEnvironments>().context.configurationFile : selectedItem;
+export async function refreshEnvironment(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel | EnvironmentTreeItem): Promise<void> {
+    const { selectedEnvironment, selectedFile, environmentName } = extractEnvironmentContext(selectedItem);
+
     let folder: vscode.WorkspaceFolder | undefined = (selectedFile ? vscode.workspace.getWorkspaceFolder(selectedFile) : undefined);
     if (!folder) {
         folder = await quickPickWorkspaceFolder(context, vscode.l10n.t("To run '{0}' command you must first open a folder or workspace in VS Code", 'env refresh'));
@@ -194,7 +309,7 @@ export async function refreshEnvironment(context: IActionContext, selectedItem?:
     const azureCli = await createAzureDevCli(context);
     const args = composeArgs(
         withArg('env', 'refresh'),
-        withNamedArg('--environment', selectedEnvironment?.name, { shouldQuote: true }),
+        withNamedArg('--environment', selectedEnvironment?.name ?? environmentName, { shouldQuote: true }),
     )();
 
     void executeAsTask(azureCli.invocation, args, getAzDevTerminalTitle(), azureCli.spawnOptions(folder.uri.fsPath), {
@@ -202,9 +317,7 @@ export async function refreshEnvironment(context: IActionContext, selectedItem?:
         alwaysRunNew: true,
         workspaceFolder: folder,
     }, TelemetryId.EnvRefreshCli).then(() => {
-        if (selectedEnvironment) {
-            selectedEnvironment.context.refreshEnvironments();
-        }
+        refreshAllEnvironmentViews(selectedEnvironment);
     });
 }
 

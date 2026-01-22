@@ -1,4 +1,8 @@
 {
   "cSpell.import": ["cspell.yaml"],
-  "go.testFlags": ["-timeout", "30m"]
+  "go.testFlags": [
+    "-timeout",
+    "30m"
+  ],
+  "aspire.enableSettingsFileCreationPromptOnStartup": false
 }

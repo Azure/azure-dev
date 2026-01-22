@@ -7,6 +7,7 @@ import { TelemetryId } from '../../telemetry/telemetryId';
 import { AzureDevCliEnvironment } from './AzureDevCliEnvironment';
 import { AzureDevCliModel, AzureDevCliModelContext, RefreshHandler } from "./AzureDevCliModel";
 import { AzDevEnvListResults, AzureDevEnvListProvider } from '../../services/AzureDevEnvListProvider';
+import { AzureDevEnvValuesProvider } from '../../services/AzureDevEnvValuesProvider';
 
 export interface AzureDevCliEnvironmentsModelContext extends AzureDevCliModelContext {
     refreshEnvironments(): void;
@@ -16,7 +17,10 @@ export class AzureDevCliEnvironments implements AzureDevCliModel {
     constructor(
         context: AzureDevCliModelContext,
         refresh: RefreshHandler,
-        private readonly envListProvider: AzureDevEnvListProvider) {
+        private readonly envListProvider: AzureDevEnvListProvider,
+        private readonly envValuesProvider: AzureDevEnvValuesProvider,
+        private readonly visibleEnvVars: Set<string>,
+        private readonly onToggleVisibility: (key: string) => void) {
         this.context = {
             ...context,
             refreshEnvironments: () => refresh(this)
@@ -29,14 +33,17 @@ export class AzureDevCliEnvironments implements AzureDevCliModel {
         const envListResults = await this.getResults() ?? [];
 
         const environments: AzureDevCliModel[] = [];
-        
+
         for (const environment of envListResults) {
             environments.push(
                 new AzureDevCliEnvironment(
                     this.context,
                     environment.Name ?? '<unknown>',
                     environment.IsDefault ?? false,
-                    environment.DotEnvPath ? vscode.Uri.file(environment.DotEnvPath) : undefined));
+                    environment.DotEnvPath ? vscode.Uri.file(environment.DotEnvPath) : undefined,
+                    this.envValuesProvider,
+                    this.visibleEnvVars,
+                    this.onToggleVisibility));
         }
 
         return environments;

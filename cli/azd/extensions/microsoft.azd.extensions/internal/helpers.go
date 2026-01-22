@@ -372,6 +372,7 @@ func CreateLocalRegistry() error {
 		"--location", localRegistryPath,
 	}
 
+	/* #nosec G204 - args are hardcoded above, not user-controlled */
 	createExtSourceCmd := exec.Command("azd", args...)
 	if _, err := createExtSourceCmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to create local extension source: %w", err)

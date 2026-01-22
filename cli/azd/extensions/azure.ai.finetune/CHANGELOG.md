@@ -4,6 +4,7 @@
 
 - Add metadata capability
 - Support `AZD_EXT_DEBUG=true` for debugging
+- Disable option to create new resource group during `init`
 
 ## 0.0.10-preview (2026-01-21)
 

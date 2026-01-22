@@ -5,6 +5,7 @@
 - [[#6541]](https://github.com/Azure/azure-dev/pull/6541) Add metadata capability
 - [[#6541]](https://github.com/Azure/azure-dev/pull/6541) Support `AZD_EXT_DEBUG=true` for debugging
 - [[#6541]](https://github.com/Azure/azure-dev/pull/6541) Add missing capabilities to `init` command and update Go scaffolding
+- [[#6578]](https://github.com/Azure/azure-dev/pull/6578) Fix prompts during `init` flow
 
 ## 0.8.0 (2026-01-08)
 

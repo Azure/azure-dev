@@ -369,7 +369,7 @@ func CreateLocalRegistry() error {
 		"ext", "source", "add",
 		"--name", "local",
 		"--type", "file",
-		"--location", "registry.json",
+		"--location", localRegistryPath,
 	}
 
 	createExtSourceCmd := exec.Command("azd", args...)

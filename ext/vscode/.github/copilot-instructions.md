@@ -21,17 +21,19 @@ Before submitting any changes or pushing code, **always run the following checks
    - Ensures code follows TypeScript and ESLint standards
    - Fix any linting errors before committing
 
-2. **Spell Check**: `npx cspell "src/**/*.ts"`
+2. **Spell Check**: `npx cspell "src/**/*.ts" --config .vscode/cspell.yaml`
    - Checks for spelling errors in source code
-   - Add technical terms to `.cspell.json` if needed
+   - Add technical terms to `.vscode/cspell-dictionary.txt` if needed
 
 3. **Unit Tests**: `npm run unit-test`
    - Runs fast unit tests without full VS Code integration
    - All tests must pass before committing
+   - **IMPORTANT**: If you modify existing code, ensure related tests still pass
+   - **IMPORTANT**: If you add new functionality, add corresponding unit tests
 
 ### Pre-Commit Checklist
 ✅ Run `npm run lint` and fix all issues
-✅ Run `npx cspell "src/**/*.ts"` and fix spelling errors
+✅ Run `npx cspell "src/**/*.ts" --config .vscode/cspell.yaml` and fix spelling errors
 ✅ Run `npm run unit-test` and ensure all tests pass
 ✅ Update [README.md](../README.md) if functionality changed
 ✅ Verify merge conflicts are resolved (no `<<<<<<<`, `=======`, `>>>>>>>` markers)

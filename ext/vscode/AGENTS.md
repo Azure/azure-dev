@@ -7,7 +7,7 @@ A file for [guiding coding agents](https://agents.md/).
 - **Install dependencies:** `npm install`
 - **Build:** `npm run build`
 - **Lint:** `npm run lint`
-- **Spell Check:** `npx cspell "src/**/*.ts"`
+- **Spell Check:** `npx cspell "src/**/*.ts" --config .vscode/cspell.yaml`
 - **Unit Tests:** `npm run unit-test`
 - **Watch mode:** `npm run watch`
 - **Package extension:** `npm run package`
@@ -25,11 +25,18 @@ A file for [guiding coding agents](https://agents.md/).
 
 ## Pre-Commit Checklist
 
+**IMPORTANT**: Always run these checks before committing to avoid pipeline failures:
+
 1. Run `npm run lint` and fix all issues
-2. Run `npx cspell "src/**/*.ts"` and fix spelling errors
+2. Run `npx cspell "src/**/*.ts" --config .vscode/cspell.yaml` and fix spelling errors
 3. Run `npm run unit-test` and ensure all tests pass
 4. Update README.md if functionality changed
 5. Verify no merge conflict markers in code
+
+**Testing Requirements**:
+- If you modify existing code, ensure related tests still pass
+- If you add new functionality, add corresponding unit tests
+- Add new words to `.vscode/cspell-dictionary.txt` if cspell flags valid technical terms
 
 ## Code Conventions
 
@@ -59,3 +66,4 @@ All TypeScript source files MUST include the Microsoft copyright header:
 - Use Chai for assertions
 - Mock VS Code APIs using Sinon
 - Keep tests focused and isolated
+- Use `UserCancelledError` from `@microsoft/vscode-azext-utils` for testing user cancellation scenarios

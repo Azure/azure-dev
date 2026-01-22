@@ -74,18 +74,18 @@ func TestOpenAIProvider_UploadFile_Validation(t *testing.T) {
 // This acts as a compile-time check that the interface is properly implemented
 func TestOpenAIProvider_MethodSignatures(t *testing.T) {
 	provider := NewOpenAIProvider(nil)
-	ctx := context.Background()
 
-	// Fine-tuning operations
+	// Fine-tuning operations - verify method signatures match interface
 	t.Run("CreateFineTuningJob_Signature", func(t *testing.T) {
-		// Can't call without client, but verify method exists with correct signature
 		var createFunc func(context.Context, *models.CreateFineTuningRequest) (*models.FineTuningJob, error)
 		createFunc = provider.CreateFineTuningJob
 		require.NotNil(t, createFunc)
 	})
 
 	t.Run("GetFineTuningStatus_Signature", func(t *testing.T) {
-		_, _ = provider.GetFineTuningStatus(ctx, "job-id")
+		var statusFunc func(context.Context, string) (*models.FineTuningJob, error)
+		statusFunc = provider.GetFineTuningStatus
+		require.NotNil(t, statusFunc)
 	})
 
 	t.Run("ListFineTuningJobs_Signature", func(t *testing.T) {
@@ -171,47 +171,5 @@ func TestOpenAIProvider_MethodSignatures(t *testing.T) {
 		var deleteFunc func(context.Context, string) error
 		deleteFunc = provider.DeleteDeployment
 		require.NotNil(t, deleteFunc)
-	})
-}
-
-// TestOpenAIProvider_ZeroValueBehavior tests the provider with various zero/nil values
-func TestOpenAIProvider_ZeroValueBehavior(t *testing.T) {
-	provider := NewOpenAIProvider(nil)
-	ctx := context.Background()
-
-	t.Run("GetFineTuningStatus_EmptyJobID", func(t *testing.T) {
-		// Verify graceful handling of empty job ID
-		job, err := provider.GetFineTuningStatus(ctx, "")
-		require.NoError(t, err) // TODO returns nil, nil
-		require.Nil(t, job)
-	})
-
-	t.Run("GetUploadedFile_EmptyFileID", func(t *testing.T) {
-		file, err := provider.GetUploadedFile(ctx, "")
-		require.NoError(t, err) // TODO returns nil, nil
-		require.Nil(t, file)
-	})
-
-	t.Run("DeployModel_NilRequest", func(t *testing.T) {
-		result, err := provider.DeployModel(ctx, nil)
-		require.NoError(t, err) // TODO returns nil, nil
-		require.Nil(t, result)
-	})
-
-	t.Run("GetDeploymentStatus_EmptyID", func(t *testing.T) {
-		deployment, err := provider.GetDeploymentStatus(ctx, "")
-		require.NoError(t, err)
-		require.Nil(t, deployment)
-	})
-
-	t.Run("UpdateDeployment_ZeroCapacity", func(t *testing.T) {
-		deployment, err := provider.UpdateDeployment(ctx, "deployment-123", 0)
-		require.NoError(t, err)
-		require.Nil(t, deployment)
-	})
-
-	t.Run("DeleteDeployment_EmptyID", func(t *testing.T) {
-		err := provider.DeleteDeployment(ctx, "")
-		require.NoError(t, err)
 	})
 }

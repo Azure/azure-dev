@@ -121,4 +121,3 @@ func TestNewAzureProvider(t *testing.T) {
 	require.NotNil(t, provider)
 	require.Nil(t, provider.clientFactory)
 }
-

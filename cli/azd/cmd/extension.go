@@ -260,7 +260,7 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 				ValueTemplate: "{{.Name}}",
 			},
 			{
-				Heading:       "Version",
+				Heading:       "Latest Version",
 				ValueTemplate: `{{.Version}}`,
 			},
 			{

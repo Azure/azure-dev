@@ -60,6 +60,12 @@ go test ./...
 
 ```
 
+Notes:
+- Tests in `cli/azd/cmd` that exercise the azd CLI (like `TestFigSpec`/`TestUsage`) expect a built `azd` binary at
+  `cli/azd/azd`. Run `go build` in `cli/azd` before running them locally.
+- When manually checking `azd extension list` output, add a local source first:
+  `go run . extension source add -n local -t file -l ./extensions/registry.json`.
+
 Test file patterns:
 - Unit tests: `*_test.go` alongside source files
 - Functional tests: `test/functional/`

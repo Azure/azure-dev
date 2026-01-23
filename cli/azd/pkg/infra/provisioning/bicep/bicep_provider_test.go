@@ -1460,7 +1460,7 @@ func Test_armParameterFileValue(t *testing.T) {
 	})
 
 	t.Run("ArrayFromInvalidJsonString", func(t *testing.T) {
-		// Invalid JSON should return nil (fall through to default case)
+		// Invalid JSON should return nil, which triggers prompting for a value.
 		input := `not a valid json array`
 		actual := armParameterFileValue(provisioning.ParameterTypeArray, input, nil)
 		require.Nil(t, actual)
@@ -1491,7 +1491,7 @@ func Test_armParameterFileValue(t *testing.T) {
 	})
 
 	t.Run("ObjectFromInvalidJsonString", func(t *testing.T) {
-		// Invalid JSON should return nil (fall through to default case)
+		// Invalid JSON should return nil, which triggers prompting for a value.
 		input := `not a valid json object`
 		actual := armParameterFileValue(provisioning.ParameterTypeObject, input, nil)
 		require.Nil(t, actual)

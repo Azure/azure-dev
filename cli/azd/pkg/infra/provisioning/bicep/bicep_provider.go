@@ -2335,10 +2335,27 @@ func mustSetParamAsConfig(key string, value any, config config.Config, isSecured
 	}
 }
 
-// extractValueFromMalformedJSON attempts to extract the value from malformed JSON
-// like {"value":"["item1","item2"]","reference":null} where inner quotes aren't escaped.
-// This handles the case where environment variables containing JSON are substituted
-// into parameter templates, resulting in invalid JSON.
+// extractValueFromMalformedJSON attempts to extract the value field from malformed JSON
+// that results from environment variable substitution in Bicep parameter templates.
+//
+// When an environment variable contains JSON (e.g., ["item1","item2"]) and gets substituted
+// into a parameter template like {"value":"${MY_VAR}"}, the result is invalid JSON:
+// {"value":"["item1","item2"]","reference":null} because the inner quotes aren't escaped.
+//
+// This function extracts the value content by:
+// - Finding the "value":" prefix
+// - For JSON arrays/objects (starting with [ or {): tracking bracket/brace depth to find the end
+// - For simple strings: finding the closing quote followed by , or }
+//
+// Parameters:
+//   jsonStr: The malformed JSON string to parse
+//
+// Returns:
+//   The extracted value as a string, or an error if extraction fails
+//
+// Example:
+//   Input:  {"value":"["item1","item2"]","reference":null}
+//   Output: ["item1","item2"]
 func extractValueFromMalformedJSON(jsonStr string) (string, error) {
 	// Look for the pattern: "value":"...
 	// The value might be a JSON array or object, so we need to parse it carefully

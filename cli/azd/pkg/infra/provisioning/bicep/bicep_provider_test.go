@@ -215,18 +215,17 @@ output arrayOutput array = testArray
 	result, err := provider.(*BicepProvider).loadParameters(*mockContext.Context)
 	require.NoError(t, err, "loadParameters should succeed")
 
-	// Verify the array parameter was correctly parsed
+	// Verify the array parameter was correctly loaded
 	arrayParam, exists := result.parameters["testArray"]
 	require.True(t, exists, "testArray parameter should exist")
 	require.NotNil(t, arrayParam.Value, "testArray value should not be nil")
 	
-	// At this point, the value is a STRING (from loadParameters)
-	// It should be the JSON array as a string: `["item1", "item2", "item3"]`
+	// The value should be a string representation of the JSON array
 	arrayValueStr, ok := arrayParam.Value.(string)
-	require.True(t, ok, "testArray value should be a string at loadParameters stage, got %T", arrayParam.Value)
+	require.True(t, ok, "testArray value should be a string, got %T", arrayParam.Value)
 	require.Equal(t, `["item1", "item2", "item3"]`, arrayValueStr)
 	
-	// Verify that armParameterFileValue can convert it to an array
+	// Verify that armParameterFileValue can convert it to an actual array
 	convertedValue := armParameterFileValue(provisioning.ParameterTypeArray, arrayValueStr, nil)
 	arrayValue, ok := convertedValue.([]interface{})
 	require.True(t, ok, "converted value should be an array, got %T", convertedValue)

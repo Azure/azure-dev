@@ -22,6 +22,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
+	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
@@ -32,6 +33,8 @@ type initFlags struct {
 	rootFlagsDefinition
 	template          string
 	projectResourceId string
+	subscriptionId    string
+	projectEndpoint   string
 	jobId             string
 	src               string
 	env               string
@@ -137,16 +140,22 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 	cmd.Flags().StringVarP(&flags.template, "template", "t", "",
 		"URL or path to a fine-tune job template")
 
-	cmd.Flags().StringVarP(&flags.projectResourceId, "project", "p", "",
-		"Existing Microsoft Foundry Project Id to initialize your azd environment with")
+	cmd.Flags().StringVarP(&flags.projectResourceId, "project-resource-id", "p", "",
+		"ARM resource ID of the Microsoft Foundry Project (e.g., /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.CognitiveServices/accounts/{account}/projects/{project})")
 
-	cmd.Flags().StringVarP(&flags.src, "source", "s", "",
+	cmd.Flags().StringVarP(&flags.subscriptionId, "subscription", "s", "",
+		"Azure subscription ID")
+
+	cmd.Flags().StringVarP(&flags.projectEndpoint, "project-endpoint", "e", "",
+		"Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)")
+
+	cmd.Flags().StringVarP(&flags.src, "working-directory", "w", "",
 		"Local path for project output")
 
 	cmd.Flags().StringVarP(&flags.jobId, "from-job", "j", "",
 		"Clone configuration from an existing job ID")
 
-	cmd.Flags().StringVarP(&flags.env, "environment", "e", "", "The name of the azd environment to use.")
+	cmd.Flags().StringVarP(&flags.env, "environment", "n", "", "The name of the azd environment to use.")
 
 	return cmd
 }
@@ -181,6 +190,98 @@ func extractProjectDetails(projectResourceId string) (*FoundryProject, error) {
 	}, nil
 }
 
+// parseProjectEndpoint extracts account name and project name from an endpoint URL
+// Example: https://account-name.services.ai.azure.com/api/projects/project-name
+func parseProjectEndpoint(endpoint string) (accountName string, projectName string, err error) {
+	parsedURL, err := url.Parse(endpoint)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to parse endpoint URL: %w", err)
+	}
+
+	// Extract account name from hostname (e.g., "account-name.services.ai.azure.com")
+	hostname := parsedURL.Hostname()
+	hostParts := strings.Split(hostname, ".")
+	if len(hostParts) < 1 || hostParts[0] == "" {
+		return "", "", fmt.Errorf("invalid endpoint URL: cannot extract account name from hostname")
+	}
+	accountName = hostParts[0]
+
+	// Extract project name from path (e.g., "/api/projects/project-name")
+	pathParts := strings.Split(strings.Trim(parsedURL.Path, "/"), "/")
+	// Expected path: api/projects/{project-name}
+	if len(pathParts) >= 3 && pathParts[0] == "api" && pathParts[1] == "projects" {
+		projectName = pathParts[2]
+	} else {
+		return "", "", fmt.Errorf("invalid endpoint URL: cannot extract project name from path. Expected format: /api/projects/{project-name}")
+	}
+
+	return accountName, projectName, nil
+}
+
+// findProjectByEndpoint searches for a Foundry project matching the endpoint URL
+func findProjectByEndpoint(
+	ctx context.Context,
+	subscriptionId string,
+	accountName string,
+	projectName string,
+	credential azcore.TokenCredential,
+) (*FoundryProject, error) {
+	// Create Cognitive Services Accounts client to search for the account
+	accountsClient, err := armcognitiveservices.NewAccountsClient(subscriptionId, credential, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Cognitive Services Accounts client: %w", err)
+	}
+
+	// List all accounts in the subscription and find the matching one
+	pager := accountsClient.NewListPager(nil)
+	var foundAccount *armcognitiveservices.Account
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list Cognitive Services accounts: %w", err)
+		}
+		for _, account := range page.Value {
+			if account.Name != nil && strings.EqualFold(*account.Name, accountName) {
+				foundAccount = account
+				break
+			}
+		}
+		if foundAccount != nil {
+			break
+		}
+	}
+
+	if foundAccount == nil {
+		return nil, fmt.Errorf("could not find Cognitive Services account '%s' in subscription '%s'", accountName, subscriptionId)
+	}
+
+	// Parse the account's resource ID to get resource group
+	accountResourceId, err := arm.ParseResourceID(*foundAccount.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse account resource ID: %w", err)
+	}
+
+	// Create Projects client to verify the project exists
+	projectsClient, err := armcognitiveservices.NewProjectsClient(subscriptionId, credential, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Cognitive Services Projects client: %w", err)
+	}
+
+	// Get the project to verify it exists and get its details
+	projectResp, err := projectsClient.Get(ctx, accountResourceId.ResourceGroupName, accountName, projectName, nil)
+	if err != nil {
+		return nil, fmt.Errorf("could not find project '%s' under account '%s': %w", projectName, accountName, err)
+	}
+
+	return &FoundryProject{
+		SubscriptionId:    subscriptionId,
+		ResourceGroupName: accountResourceId.ResourceGroupName,
+		AiAccountName:     accountName,
+		AiProjectName:     projectName,
+		Location:          *projectResp.Location,
+	}, nil
+}
+
 func getExistingEnvironment(ctx context.Context, name *string, azdClient *azdext.AzdClient) (*azdext.Environment, error) {
 	var env *azdext.Environment
 	if name == nil || *name == "" {
@@ -205,8 +306,67 @@ func getExistingEnvironment(ctx context.Context, name *string, azdClient *azdext
 func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.AzdClient) (*azdext.Environment, error) {
 	var foundryProject *FoundryProject
 
-	// Parse the Microsoft Foundry project resource ID if provided & Fetch Tenant Id and Location using parsed information
-	if flags.projectResourceId != "" {
+	// Handle project endpoint URL - extract account/project names and find the ARM resource
+	if flags.projectEndpoint != "" {
+		accountName, projectName, err := parseProjectEndpoint(flags.projectEndpoint)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse project endpoint: %w", err)
+		}
+
+		fmt.Printf("Parsed endpoint - Account: %s, Project: %s\n", accountName, projectName)
+
+		// Get subscription ID - either from flag or prompt
+		subscriptionId := flags.subscriptionId
+		var tenantId string
+
+		if subscriptionId == "" {
+			fmt.Println("Subscription ID is required to find the project. Let's select one.")
+			subscriptionResponse, err := azdClient.Prompt().PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{})
+			if err != nil {
+				return nil, fmt.Errorf("failed to prompt for subscription: %w", err)
+			}
+			subscriptionId = subscriptionResponse.Subscription.Id
+			tenantId = subscriptionResponse.Subscription.TenantId
+		} else {
+			// Get tenant ID from subscription
+			tenantResponse, err := azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
+				SubscriptionId: subscriptionId,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("failed to get tenant ID: %w", err)
+			}
+			tenantId = tenantResponse.TenantId
+		}
+
+		// Create credential
+		credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
+			TenantID:                   tenantId,
+			AdditionallyAllowedTenants: []string{"*"},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to create Azure credential: %w", err)
+		}
+
+		// Find the project by searching the subscription
+		spinner := ux.NewSpinner(&ux.SpinnerOptions{
+			Text: fmt.Sprintf("Searching for project in subscription %s...", subscriptionId),
+		})
+		if err := spinner.Start(ctx); err != nil {
+			fmt.Printf("failed to start spinner: %v\n", err)
+		}
+
+		foundryProject, err = findProjectByEndpoint(ctx, subscriptionId, accountName, projectName, credential)
+		_ = spinner.Stop(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find project from endpoint: %w", err)
+		}
+		foundryProject.TenantId = tenantId
+
+		fmt.Printf("Found project - Resource Group: %s, Account: %s, Project: %s\n",
+			foundryProject.ResourceGroupName, foundryProject.AiAccountName, foundryProject.AiProjectName)
+
+	} else if flags.projectResourceId != "" {
+		// Parse the Microsoft Foundry project resource ID if provided & Fetch Tenant Id and Location using parsed information
 		var err error
 		foundryProject, err = extractProjectDetails(flags.projectResourceId)
 		if err != nil {
@@ -258,7 +418,7 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 			envArgs = append(envArgs, flags.env)
 		}
 
-		if flags.projectResourceId != "" {
+		if foundryProject != nil {
 			envArgs = append(envArgs, "--subscription", foundryProject.SubscriptionId)
 			envArgs = append(envArgs, "--location", foundryProject.Location)
 		}
@@ -287,7 +447,7 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 	}
 
 	// Set TenantId, SubscriptionId, ResourceGroupName, AiAccountName, and Location in the environment
-	if flags.projectResourceId != "" {
+	if foundryProject != nil {
 
 		_, err := azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 			EnvName: existingEnv.Name,

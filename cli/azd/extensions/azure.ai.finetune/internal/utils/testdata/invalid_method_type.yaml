@@ -1,0 +1,6 @@
+name: ft-invalid-method
+description: Invalid - unknown method type
+model: gpt-4o-mini
+training_file: file-abc123
+method:
+  type: unknown_method

@@ -1,0 +1,7 @@
+name: ft-integration-missing-type
+description: Invalid - integration missing type
+model: gpt-4o-mini
+training_file: file-abc123
+integrations:
+  - config:
+      project: test

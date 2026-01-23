@@ -1,0 +1,9 @@
+name: ft-with-integrations
+description: Fine-tuning with W&B integration
+model: gpt-4o-mini
+training_file: file-abc123
+integrations:
+  - type: wandb
+    config:
+      project: my-finetune-project
+      entity: my-org

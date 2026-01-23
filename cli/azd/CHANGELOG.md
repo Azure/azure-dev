@@ -10,6 +10,25 @@
 
 ### Other Changes
 
+## 1.23.1 (2026-01-23)
+
+### Features Added
+
+- [[#6511]](https://github.com/Azure/azure-dev/pull/6511) Add `azd env remove` command for deleting local environment configuration files.
+- [[#6499]](https://github.com/Azure/azure-dev/pull/6499) Improve discoverability of alpha `azd init` feature by adding hints in error messages and command output.
+
+### Bugs Fixed
+
+- [[#6527]](https://github.com/Azure/azure-dev/pull/6527) Fix Azure DocumentDB (mongoClusters) resources not being displayed in provisioning output.
+- [[#6517]](https://github.com/Azure/azure-dev/pull/6517) Fix panic on middleware construction failure when loading invalid configuration files.
+- [[#6536]](https://github.com/Azure/azure-dev/pull/6536) Fix context cancellation issue causing subsequent operations to fail after command steps complete.
+- [[#6593]](https://github.com/Azure/azure-dev/pull/6593) Fix AI extensions not ensuring GitHub CLI is installed before proceeding.
+- [[#6588]](https://github.com/Azure/azure-dev/pull/6588) Improve error messages for authentication errors by including suggestions to run `azd auth login`.
+
+### Other Changes
+
+- [[#6579]](https://github.com/Azure/azure-dev/pull/6579) Update GitHub CLI tool version to 2.86.0.
+
 ## 1.23.0 (2026-01-14)
 
 ### Features Added

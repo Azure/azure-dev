@@ -8,4 +8,4 @@ language: go
 namespace: coding-agent
 usage: azd coding-agent <command> [options]
 # NOTE: Make sure version.txt is in sync with this version.
-version: 0.5.2
+version: 0.6.0

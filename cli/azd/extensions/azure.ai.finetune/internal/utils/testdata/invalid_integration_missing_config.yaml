@@ -1,0 +1,6 @@
+name: ft-integration-missing-config
+description: Invalid - integration missing config block
+model: gpt-4o-mini
+training_file: file-abc123
+integrations:
+  - type: wandb

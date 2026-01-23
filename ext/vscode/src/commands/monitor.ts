@@ -8,7 +8,7 @@ import { createAzureDevCli } from '../utils/azureDevCli';
 import { execAsync } from '../utils/execAsync';
 import { isAzureDevCliModel, isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
 import { AzureDevCliApplication } from '../views/workspace/AzureDevCliApplication';
-import { getWorkingFolder } from './cmdUtil';
+import { getWorkingFolder, validateFileSystemUri } from './cmdUtil';
 
 const MonitorChoices: IAzureQuickPickItem<string>[] = [
     {
@@ -37,19 +37,7 @@ export async function monitor(context: IActionContext, selectedItem?: vscode.Uri
     }
 
     // Validate that selectedFile is valid for file system operations
-    // Virtual file systems or certain VS Code contexts may not provide a valid fsPath
-    if (selectedFile && !selectedFile.fsPath) {
-        context.errorHandling.suppressReportIssue = true;
-        const itemType = isTreeViewModel(selectedItem) ? 'TreeViewModel' : 
-                        isAzureDevCliModel(selectedItem) ? 'AzureDevCliModel' : 
-                        selectedItem ? 'vscode.Uri' : 'undefined';
-        throw new Error(vscode.l10n.t(
-            "Unable to determine working folder for monitor command. The selected file has an unsupported URI scheme '{0}' (selectedItem type: {1}). " +
-            "Azure Developer CLI commands are not supported in virtual file systems. Please open a local folder or clone the repository locally.",
-            selectedFile.scheme,
-            itemType
-        ));
-    }
+    validateFileSystemUri(context, selectedFile, selectedItem, 'monitor');
 
     const workingFolder = await getWorkingFolder(context, selectedFile);
 

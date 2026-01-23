@@ -10,7 +10,7 @@ import { executeAsTask } from '../utils/executeAsTask';
 import { isAzureDevCliModel, isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
 import { AzureDevCliModel } from '../views/workspace/AzureDevCliModel';
 import { AzureDevCliService } from '../views/workspace/AzureDevCliService';
-import { getAzDevTerminalTitle, getWorkingFolder } from './cmdUtil';
+import { getAzDevTerminalTitle, getWorkingFolder, validateFileSystemUri } from './cmdUtil';
 
 // `package` is a reserved identifier so `packageCli` had to be used instead
 export async function packageCli(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {
@@ -28,19 +28,7 @@ export async function packageCli(context: IActionContext, selectedItem?: vscode.
     }
 
     // Validate that selectedFile is valid for file system operations
-    // Virtual file systems or certain VS Code contexts may not provide a valid fsPath
-    if (selectedFile && !selectedFile.fsPath) {
-        context.errorHandling.suppressReportIssue = true;
-        const itemType = isTreeViewModel(selectedItem) ? 'TreeViewModel' : 
-                        isAzureDevCliModel(selectedItem) ? 'AzureDevCliModel' : 
-                        selectedItem ? 'vscode.Uri' : 'undefined';
-        throw new Error(vscode.l10n.t(
-            "Unable to determine working folder for package command. The selected file has an unsupported URI scheme '{0}' (selectedItem type: {1}). " +
-            "Azure Developer CLI commands are not supported in virtual file systems. Please open a local folder or clone the repository locally.",
-            selectedFile.scheme,
-            itemType
-        ));
-    }
+    validateFileSystemUri(context, selectedFile, selectedItem, 'package');
 
     const workingFolder = await getWorkingFolder(context, selectedFile);
 

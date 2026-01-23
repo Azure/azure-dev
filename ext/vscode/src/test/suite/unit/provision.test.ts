@@ -32,8 +32,14 @@ suite('provision command', () => {
         // Mock the URI to ensure fsPath is undefined - simulates virtual file system
         const mockUri = {
             scheme: 'virtual',
-            fsPath: undefined as unknown as string
-        } as vscode.Uri;
+            fsPath: undefined,
+            authority: '',
+            path: '',
+            query: '',
+            fragment: '',
+            with: () => mockUri,
+            toString: () => 'virtual:/test'
+        } as unknown as vscode.Uri;
 
         try {
             await provision(mockContext, mockUri);

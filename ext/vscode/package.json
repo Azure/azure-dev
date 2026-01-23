@@ -676,10 +676,9 @@
         "package": "vsce package",
         "lint": "eslint --max-warnings 0",
         "test": "vscode-test",
-        "unit-test": "vscode-test",
 
-        "ci-build": "npm run lint && npm run build",
-        "ci-package": "npm run ci-build && npm run package"
+        "ci-test": "npm run lint && npm run build && npm run test",
+        "ci-package": "npm run build && npm run package"
     },
     "devDependencies": {
         "@azure/core-auth": "~1",

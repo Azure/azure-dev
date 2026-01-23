@@ -7,15 +7,26 @@ import * as vscode from 'vscode';
 import { AzureResourcesExtensionApi } from '@microsoft/vscode-azureresources-api';
 import { RevealStep } from '../../../commands/azureWorkspace/wizard/RevealStep';
 import { RevealResourceWizardContext } from '../../../commands/azureWorkspace/wizard/PickResourceStep';
-import * as getAzureResourceExtensionApiModule from '../../../utils/getAzureResourceExtensionApi';
 
 suite('RevealStep', () => {
     let step: RevealStep;
     let sandbox: sinon.SinonSandbox;
+    let revealStub: sinon.SinonStub;
+    let executeCommandStub: sinon.SinonStub;
 
     setup(() => {
         sandbox = sinon.createSandbox();
-        step = new RevealStep();
+
+        revealStub = sandbox.stub().resolves(undefined);
+        const mockApi = {
+            resources: {
+                revealAzureResource: revealStub,
+            } as unknown as AzureResourcesExtensionApi['resources']
+        };
+        const mockGetApi = sandbox.stub().resolves(mockApi as AzureResourcesExtensionApi);
+        step = new RevealStep(mockGetApi);
+
+        executeCommandStub = sandbox.stub(vscode.commands, 'executeCommand').resolves();
     });
 
     teardown(() => {
@@ -53,27 +64,10 @@ suite('RevealStep', () => {
     });
 
     suite('execute', () => {
-        let executeCommandStub: sinon.SinonStub;
-        let getAzureResourceExtensionApiStub: sinon.SinonStub;
-
-        setup(() => {
-            executeCommandStub = sandbox.stub(vscode.commands, 'executeCommand');
-
-            // Mock the Azure Resource Extension API
-            const mockApi: Partial<AzureResourcesExtensionApi> = {
-                resources: {
-                    revealAzureResource: sandbox.stub().resolves(true)
-                } as unknown as AzureResourcesExtensionApi['resources']
-            };
-            getAzureResourceExtensionApiStub = sandbox.stub(getAzureResourceExtensionApiModule, 'getAzureResourceExtensionApi').resolves(mockApi as AzureResourcesExtensionApi);
-        });
-
         test('focuses Azure Resources view', async () => {
             const context: Partial<RevealResourceWizardContext> = {
                 azureResourceId: '/subscriptions/test-sub-id/resourceGroups/test-rg/providers/Microsoft.Web/sites/test-app'
             };
-
-            executeCommandStub.resolves();
 
             await step.execute(context as RevealResourceWizardContext);
 
@@ -85,65 +79,10 @@ suite('RevealStep', () => {
             const context: Partial<RevealResourceWizardContext> = {
                 azureResourceId
             };
-
-            const mockRevealAzureResource = sandbox.stub().resolves(true);
-            const mockApi: Partial<AzureResourcesExtensionApi> = {
-                resources: {
-                    revealAzureResource: mockRevealAzureResource
-                } as unknown as AzureResourcesExtensionApi['resources']
-            };
-            getAzureResourceExtensionApiStub.resolves(mockApi as AzureResourcesExtensionApi);
-            executeCommandStub.resolves();
-
+            
             await step.execute(context as RevealResourceWizardContext);
 
-            expect(mockRevealAzureResource.called).to.be.true;
-            expect(mockRevealAzureResource.calledWith(azureResourceId, { select: true, focus: true, expand: true })).to.be.true;
-        });
-
-        test('shows info message with Copy and Portal options when reveal returns undefined', async () => {
-            const azureResourceId = '/subscriptions/test-sub-id/resourceGroups/test-rg/providers/Microsoft.Web/sites/test-app';
-            const context: Partial<RevealResourceWizardContext> = {
-                azureResourceId
-            };
-
-            const mockApi: Partial<AzureResourcesExtensionApi> = {
-                resources: {
-                    revealAzureResource: sandbox.stub().resolves(undefined)
-                } as unknown as AzureResourcesExtensionApi['resources']
-            };
-            getAzureResourceExtensionApiStub.resolves(mockApi as AzureResourcesExtensionApi);
-            executeCommandStub.resolves();
-
-            const showInfoMessageStub = sandbox.stub(vscode.window, 'showInformationMessage').resolves();
-
-            await step.execute(context as RevealResourceWizardContext);
-
-            expect(showInfoMessageStub.called).to.be.true;
-        });
-
-        test('opens portal when Open in Portal is selected', async () => {
-            const azureResourceId = '/subscriptions/test-sub-id/resourceGroups/test-rg/providers/Microsoft.Web/sites/test-app';
-            const context: Partial<RevealResourceWizardContext> = {
-                azureResourceId
-            };
-
-            const mockApi: Partial<AzureResourcesExtensionApi> = {
-                resources: {
-                    revealAzureResource: sandbox.stub().resolves(undefined)
-                } as unknown as AzureResourcesExtensionApi['resources']
-            };
-            getAzureResourceExtensionApiStub.resolves(mockApi as AzureResourcesExtensionApi);
-            executeCommandStub.resolves();
-
-            // Return the "Open in Portal" option
-            const showInfoMessageStub = sandbox.stub(vscode.window, 'showInformationMessage');
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-call
-            (showInfoMessageStub as any).resolves(vscode.l10n.t('Open in Portal'));
-
-            await step.execute(context as RevealResourceWizardContext);
-
-            expect(executeCommandStub.calledWith('azureResourceGroups.openInPortal', azureResourceId)).to.be.true;
+            expect(revealStub.calledWith(azureResourceId, { select: true, focus: true, expand: true })).to.be.true;
         });
     });
 

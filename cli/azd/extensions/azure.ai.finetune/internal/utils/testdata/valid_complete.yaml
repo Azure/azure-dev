@@ -1,0 +1,17 @@
+name: ft-valid-complete
+description: Complete fine-tuning job template with all options
+model: gpt-4o-mini
+training_file: local:./data/training.jsonl
+validation_file: local:./data/validation.jsonl
+suffix: my-custom-model
+seed: 42
+metadata:
+  project: test-project
+  team: ai-team
+method:
+  type: supervised
+  supervised:
+    hyperparameters:
+      epochs: 3
+      batch_size: 16
+      learning_rate_multiplier: 0.1

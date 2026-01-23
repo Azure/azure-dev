@@ -69,6 +69,7 @@ jobs:
             pwsh: true
             targetType: filePath
             filePath: ${{ parameters.AzdExtensionDirectory }}/ci-test.ps1
+            workingDirectory: ${{ parameters.AzdExtensionDirectory }}
 
         - task: PublishTestResults@2
           inputs:

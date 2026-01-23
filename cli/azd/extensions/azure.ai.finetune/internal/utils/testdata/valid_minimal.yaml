@@ -1,0 +1,4 @@
+name: ft-valid-minimal
+description: Minimal valid fine-tuning job template
+model: gpt-4o-mini
+training_file: local:./data/training.jsonl

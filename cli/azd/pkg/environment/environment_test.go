@@ -266,6 +266,44 @@ func Test_fixupUnquotedDotenv(t *testing.T) {
 	require.Equal(t, "TEST_SHOULD_NOT_QUOTE=1\nTEST_SHOULD_QUOTE=\"01\"", fixed)
 }
 
+func Test_JsonArrayAndObjectHandling(t *testing.T) {
+	// Test that JSON arrays and objects are correctly marshalled and unmarshalled
+	test := map[string]string{
+		"JSON_ARRAY":  `["val1", "val2", "val3"]`,
+		"JSON_OBJECT": `{"key": "value", "count": 42}`,
+		"SIMPLE":      "hello",
+	}
+
+	// Marshal to .env format
+	marshalled, err := godotenv.Marshal(test)
+	require.NoError(t, err)
+
+	// Verify the marshalled format has escaped quotes
+	require.Contains(t, marshalled, `JSON_ARRAY="[\"val1\", \"val2\", \"val3\"]"`)
+	require.Contains(t, marshalled, `JSON_OBJECT="{\"key\": \"value\", \"count\": 42}"`)
+
+	// Parse back
+	parsed, err := godotenv.Unmarshal(marshalled)
+	require.NoError(t, err)
+
+	// Verify values are correctly unescaped
+	require.Equal(t, `["val1", "val2", "val3"]`, parsed["JSON_ARRAY"])
+	require.Equal(t, `{"key": "value", "count": 42}`, parsed["JSON_OBJECT"])
+	require.Equal(t, "hello", parsed["SIMPLE"])
+
+	// Verify the values are valid JSON
+	var arr []interface{}
+	err = json.Unmarshal([]byte(parsed["JSON_ARRAY"]), &arr)
+	require.NoError(t, err)
+	require.Equal(t, []interface{}{"val1", "val2", "val3"}, arr)
+
+	var obj map[string]interface{}
+	err = json.Unmarshal([]byte(parsed["JSON_OBJECT"]), &obj)
+	require.NoError(t, err)
+	require.Equal(t, "value", obj["key"])
+	require.Equal(t, float64(42), obj["count"])
+}
+
 func createEnvManager(mockContext *mocks.MockContext, root string) (Manager, *azdcontext.AzdContext) {
 	azdCtx := azdcontext.NewAzdContextWithDirectory(root)
 	configManager := config.NewFileConfigManager(config.NewManager())

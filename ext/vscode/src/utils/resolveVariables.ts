@@ -16,7 +16,7 @@ type Resolvable = ResolvableSingle | ResolvableSingle[];
 // Ultimately, VS Code extension API should add an API to resolve configuration variables,
 // but until https://github.com/microsoft/vscode/issues/140056, or similar proposal, is implemented, we are stuck with our implementation.
 export function resolveVariables<T extends Resolvable>(target: T, folder?: WorkspaceFolder, additionalVariables?: { [key: string]: string }): typeof target {
-    if (!folder && workspace.workspaceFolders && workspace.workspaceFolders.length === 1) {
+    if (!folder && workspace.workspaceFolders?.length === 1) {
         folder = workspace.workspaceFolders[0];
     }
 

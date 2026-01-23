@@ -128,6 +128,7 @@ export class AzureYamlCodeActionProvider implements vscode.CodeActionProvider {
     private extractProjectPath(document: vscode.TextDocument, range: vscode.Range): string | undefined {
         try {
             const line = document.lineAt(range.start.line);
+            // eslint-disable-next-line @typescript-eslint/prefer-regexp-exec
             const match = line.text.match(/project:\s*(.+)/);
             return match ? match[1].trim().replace(/['"]/g, '') : undefined;
         } catch {
@@ -163,12 +164,13 @@ export async function registerCodeActionCommands(context: vscode.ExtensionContex
                 openLabel: vscode.l10n.t('Select Project Folder')
             });
 
-            if (selected && selected[0]) {
+            if (selected?.[0]) {
                 const relativePath = vscode.workspace.asRelativePath(selected[0], false);
                 const document = await vscode.workspace.openTextDocument(documentUri);
                 const edit = new vscode.WorkspaceEdit();
 
                 const line = document.lineAt(range.start.line);
+                // eslint-disable-next-line @typescript-eslint/prefer-regexp-exec
                 const match = line.text.match(/project:\s*.+/);
                 if (match) {
                     const replaceRange = new vscode.Range(
@@ -238,7 +240,7 @@ export async function registerCodeActionCommands(context: vscode.ExtensionContex
             // Find the end of the services section
             if (doc.contents && yaml.isMap(doc.contents)) {
                 const servicesNode = doc.contents.items.find((item) => yaml.isScalar(item.key) && item.key.value === 'services');
-                if (servicesNode && servicesNode.value && 'range' in servicesNode.value && servicesNode.value.range) {
+                if (servicesNode?.value && 'range' in servicesNode.value && servicesNode.value.range) {
                     const insertPosition = document.positionAt(servicesNode.value.range[1]);
                     const edit = new vscode.WorkspaceEdit();
                     edit.insert(documentUri, insertPosition, serviceSnippet);

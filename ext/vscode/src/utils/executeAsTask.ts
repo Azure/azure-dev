@@ -38,8 +38,8 @@ export function executeAsTask(command: string, args: CommandLineArgs, name: stri
         if (useIntegratedAuth) {
             const { server, endpoint, key } = await startAuthServer(new VsCodeAuthenticationCredential());
 
-            env['AZD_AUTH_ENDPOINT'] = endpoint;
-            env['AZD_AUTH_KEY'] = key;
+            env.AZD_AUTH_ENDPOINT = endpoint;
+            env.AZD_AUTH_KEY = key;
             authServer = server;
         }
 

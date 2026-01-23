@@ -24,7 +24,7 @@ export async function packageCli(context: IActionContext, selectedItem?: vscode.
         selectedModel = selectedItem;
         selectedFile = selectedModel.context.configurationFile;
     } else {
-        selectedFile = selectedItem as vscode.Uri;
+        selectedFile = selectedItem!;
     }
     const workingFolder = await getWorkingFolder(context, selectedFile);
 

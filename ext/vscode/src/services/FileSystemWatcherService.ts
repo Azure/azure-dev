@@ -8,7 +8,7 @@ import * as vscode from 'vscode';
  * FileSystemWatchers are a limited resource on some systems (only a few hundred available).
  */
 export class FileSystemWatcherService implements vscode.Disposable {
-    private watchers: Map<string, { watcher: vscode.FileSystemWatcher; listeners: Set<(uri: vscode.Uri) => void> }> = new Map();
+    private watchers = new Map<string, { watcher: vscode.FileSystemWatcher; listeners: Set<(uri: vscode.Uri) => void> }>();
 
     /**
      * Watch a glob pattern for changes

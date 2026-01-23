@@ -25,7 +25,7 @@ export async function up(context: IActionContext, selectedItem?: vscode.Uri | Tr
     } else if (isAzureDevCliModel(selectedItem)) {
         selectedFile = selectedItem.context.configurationFile;
     } else {
-        selectedFile = selectedItem as vscode.Uri;
+        selectedFile = selectedItem!;
     }
     const workingFolder = await getWorkingFolder(context, selectedFile);
 

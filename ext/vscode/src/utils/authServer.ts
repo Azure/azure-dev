@@ -20,7 +20,7 @@ export function startAuthServer(credential: TokenCredential): Promise<{ server: 
             return;
         }
 
-        if (req.headers['authorization'] !== `Bearer ${key}`) {
+        if (req.headers.authorization !== `Bearer ${key}`) {
             res.writeHead(401).end();
             return;
         }

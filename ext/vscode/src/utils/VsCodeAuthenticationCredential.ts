@@ -43,7 +43,7 @@ export function isNotSignedInError(error: unknown): error is NotSignedInError {
  *
  */
 export class VsCodeAuthenticationCredential implements TokenCredential {
-    async getToken(scopes: string | string[], options?: GetTokenOptions | undefined): Promise<AccessToken | null> {
+    async getToken(scopes: string | string[], options?: GetTokenOptions): Promise<AccessToken | null> {
         const scopeSet = new Set<string>(scopes);
 
         if (typeof scopes === 'string') {

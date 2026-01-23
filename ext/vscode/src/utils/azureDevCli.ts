@@ -131,7 +131,7 @@ function createCli(): AzureDevCli {
     };
 
     if (!vscode.env.isTelemetryEnabled) {
-        azDevCliEnv['AZURE_DEV_COLLECT_TELEMETRY'] = "no";
+        azDevCliEnv.AZURE_DEV_COLLECT_TELEMETRY = "no";
     }
 
     let modifiedPath: string = process.env.PATH!;

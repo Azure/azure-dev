@@ -138,7 +138,7 @@ suite('RevealStep', () => {
 
             // Return the "Open in Portal" option
             const showInfoMessageStub = sandbox.stub(vscode.window, 'showInformationMessage');
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-call
             (showInfoMessageStub as any).resolves(vscode.l10n.t('Open in Portal'));
 
             await step.execute(context as RevealResourceWizardContext);

@@ -35,11 +35,11 @@ export interface AzureDevShowProvider {
 }
 
 export class WorkspaceAzureDevShowProvider implements AzureDevShowProvider {
-    public constructor(private readonly execAsyncFunction = execAsync) {
+    public constructor(private readonly createAzureDevCliFunction = createAzureDevCli, private readonly execAsyncFunction = execAsync) {
     }
 
     public async getShowResults(context: IActionContext, configurationFile: vscode.Uri, environmentName?: string): Promise<AzDevShowResults> {
-        const azureCli = await createAzureDevCli(context);
+        const azureCli = await this.createAzureDevCliFunction(context);
 
         const configurationFileDirectory = path.dirname(configurationFile.fsPath);
 

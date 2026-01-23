@@ -1168,6 +1168,60 @@ func Test_armParameterFileValue(t *testing.T) {
 		actual := armParameterFileValue(provisioning.ParameterTypeArray, expected, nil)
 		require.Equal(t, expected, actual)
 	})
+
+	t.Run("ArrayFromJsonString", func(t *testing.T) {
+		// This tests the case where an array is passed as a JSON string from an environment variable
+		// e.g., MY_ARRAY=["val1","val2"] in .env file, used as "value": "${MY_ARRAY}" in parameters.json
+		input := `["val1","val2","val3"]`
+		actual := armParameterFileValue(provisioning.ParameterTypeArray, input, nil)
+		expected := []any{"val1", "val2", "val3"}
+		require.Equal(t, expected, actual)
+	})
+
+	t.Run("ArrayFromJsonStringWithNumbers", func(t *testing.T) {
+		input := `[1, 2, 3]`
+		actual := armParameterFileValue(provisioning.ParameterTypeArray, input, nil)
+		expected := []any{float64(1), float64(2), float64(3)}
+		require.Equal(t, expected, actual)
+	})
+
+	t.Run("ArrayFromInvalidJsonString", func(t *testing.T) {
+		// Invalid JSON should return nil (fall through to default case)
+		input := `not a valid json array`
+		actual := armParameterFileValue(provisioning.ParameterTypeArray, input, nil)
+		require.Nil(t, actual)
+	})
+
+	t.Run("Object", func(t *testing.T) {
+		expected := map[string]any{"key": "value"}
+		actual := armParameterFileValue(provisioning.ParameterTypeObject, expected, nil)
+		require.Equal(t, expected, actual)
+	})
+
+	t.Run("ObjectFromJsonString", func(t *testing.T) {
+		// This tests the case where an object is passed as a JSON string from an environment variable
+		input := `{"key1":"value1","key2":"value2"}`
+		actual := armParameterFileValue(provisioning.ParameterTypeObject, input, nil)
+		expected := map[string]any{"key1": "value1", "key2": "value2"}
+		require.Equal(t, expected, actual)
+	})
+
+	t.Run("ObjectFromJsonStringWithNestedValues", func(t *testing.T) {
+		input := `{"outer":{"inner":"value"},"number":42}`
+		actual := armParameterFileValue(provisioning.ParameterTypeObject, input, nil)
+		expected := map[string]any{
+			"outer":  map[string]any{"inner": "value"},
+			"number": float64(42),
+		}
+		require.Equal(t, expected, actual)
+	})
+
+	t.Run("ObjectFromInvalidJsonString", func(t *testing.T) {
+		// Invalid JSON should return nil (fall through to default case)
+		input := `not a valid json object`
+		actual := armParameterFileValue(provisioning.ParameterTypeObject, input, nil)
+		require.Nil(t, actual)
+	})
 }
 
 const userDefinedParamsSample = `{

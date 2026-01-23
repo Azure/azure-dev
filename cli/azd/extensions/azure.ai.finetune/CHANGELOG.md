@@ -1,5 +1,9 @@
 # Release History
 
+## 0.0.12-preview (2026-01-23)
+
+- Add Project-endpoint parameter to init command
+
 ## 0.0.11-preview (2026-01-22)
 
 - Add metadata capability

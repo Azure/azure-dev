@@ -29,6 +29,7 @@ armcosmos
 armdeploymentstacks
 armmachinelearning
 armmsi
+armoperationalinsights
 armresourcegraph
 armsql
 aspnet
@@ -191,6 +192,7 @@ oneauth
 oneline
 onmicrosoft
 opentelemetry
+operationalinsights
 ostest
 osutil
 osversion

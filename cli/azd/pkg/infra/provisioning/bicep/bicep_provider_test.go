@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -102,6 +104,163 @@ func TestBicepPlanParameterTypes(t *testing.T) {
 	require.Equal(t, configuredParameters["regularArray"].Value, []any{"test"})
 	require.NotEmpty(t, configuredParameters["emptyArray"])
 	require.Equal(t, configuredParameters["emptyArray"].Value, []any{})
+}
+
+// TestBicepPlanParameterTypesFromEnvVars tests that JSON array and object values
+// from environment variables are correctly parsed and converted to the appropriate types
+func TestBicepPlanParameterTypesFromEnvVars(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	prepareBicepMocks(mockContext)
+	
+	// Create a test environment with JSON values
+	env := environment.NewWithValues("test-env", map[string]string{
+		environment.LocationEnvVarName:       "westus2",
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+		environment.EnvNameEnvVarName:        "test-env",
+		// JSON array value - as it would be stored in .env after godotenv roundtrip
+		"TEST_ARRAY":  `["item1", "item2", "item3"]`,
+		// JSON object value - as it would be stored in .env after godotenv roundtrip
+		"TEST_OBJECT": `{"name": "test", "count": 42, "nested": {"key": "value"}}`,
+		// Regular string for comparison
+		"TEST_STRING": "simple-string",
+	})
+
+	// Create temporary directory for test
+	testDir := t.TempDir()
+	projectDir := filepath.Join(testDir, "project")
+	err := os.MkdirAll(filepath.Join(projectDir, "infra"), 0755)
+	require.NoError(t, err)
+
+	// Create parameters.json that uses environment variables
+	paramsContent := `{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": {
+      "value": "${AZURE_ENV_NAME}"
+    },
+    "testArray": {
+      "value": "${TEST_ARRAY}"
+    },
+    "testObject": {
+      "value": "${TEST_OBJECT}"
+    },
+    "testString": {
+      "value": "${TEST_STRING}"
+    }
+  }
+}`
+	err = os.WriteFile(filepath.Join(projectDir, "infra", "main.parameters.json"), []byte(paramsContent), 0644)
+	require.NoError(t, err)
+
+	// Create a minimal bicep file
+	bicepContent := `param environmentName string
+param testArray array
+param testObject object
+param testString string
+
+output arrayOutput array = testArray
+output objectOutput object = testObject
+output stringOutput string = testString
+`
+	err = os.WriteFile(filepath.Join(projectDir, "infra", "main.bicep"), []byte(bicepContent), 0644)
+	require.NoError(t, err)
+
+	options := provisioning.Options{
+		Path:   filepath.Join(projectDir, "infra"),
+		Module: "main",
+	}
+
+	envManager := &mockenv.MockEnvManager{}
+	envManager.On("Save", mock.Anything, mock.Anything).Return(nil)
+	envManager.On("Reload", mock.Anything, mock.Anything).Return(nil)
+
+	bicepCli := bicep.NewCli(mockContext.Console, mockContext.CommandRunner)
+	azCli := mockazapi.NewAzureClientFromMockContext(mockContext)
+	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
+	deploymentService := mockazapi.NewStandardDeploymentsFromMockContext(mockContext)
+	resourceManager := infra.NewAzureResourceManager(resourceService, deploymentService)
+	deploymentManager := infra.NewDeploymentManager(deploymentService, resourceManager, mockContext.Console)
+	accountManager := &mockaccount.MockAccountManager{
+		Subscriptions: []account.Subscription{
+			{
+				Id:   "00000000-0000-0000-0000-000000000000",
+				Name: "test",
+			},
+		},
+		Locations: []account.Location{
+			{
+				Name:                "location",
+				DisplayName:         "Test Location",
+				RegionalDisplayName: "(US) Test Location",
+			},
+		},
+	}
+
+	provider := NewBicepProvider(
+		azCli,
+		bicepCli,
+		resourceService,
+		&mockResourceManager{},
+		deploymentManager,
+		envManager,
+		env,
+		mockContext.Console,
+		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, resourceService, cloud.AzurePublic()),
+		&mockCurrentPrincipal{},
+		keyvault.NewKeyVaultService(
+			mockaccount.SubscriptionCredentialProviderFunc(
+				func(_ context.Context, _ string) (azcore.TokenCredential, error) {
+					return mockContext.Credentials, nil
+				}),
+			mockContext.ArmClientOptions,
+			mockContext.CoreClientOptions,
+			cloud.AzurePublic(),
+		),
+		cloud.AzurePublic(),
+		nil,
+	)
+
+	// Set the path and options
+	provider.(*BicepProvider).path = filepath.Join(projectDir, "infra", "main.bicep")
+	provider.(*BicepProvider).options = options
+
+	// Load parameters
+	result, err := provider.(*BicepProvider).loadParameters(*mockContext.Context)
+	require.NoError(t, err, "loadParameters should succeed")
+
+	// Verify the array parameter was correctly parsed
+	arrayParam, exists := result.parameters["testArray"]
+	require.True(t, exists, "testArray parameter should exist")
+	require.NotNil(t, arrayParam.Value, "testArray value should not be nil")
+	
+	// The value should be an array
+	arrayValue, ok := arrayParam.Value.([]interface{})
+	require.True(t, ok, "testArray value should be an array, got %T", arrayParam.Value)
+	require.Equal(t, 3, len(arrayValue), "testArray should have 3 elements")
+	require.Equal(t, "item1", arrayValue[0])
+	require.Equal(t, "item2", arrayValue[1])
+	require.Equal(t, "item3", arrayValue[2])
+
+	// Verify the object parameter was correctly parsed
+	objectParam, exists := result.parameters["testObject"]
+	require.True(t, exists, "testObject parameter should exist")
+	require.NotNil(t, objectParam.Value, "testObject value should not be nil")
+	
+	// The value should be an object (map)
+	objectValue, ok := objectParam.Value.(map[string]interface{})
+	require.True(t, ok, "testObject value should be a map, got %T", objectParam.Value)
+	require.Equal(t, "test", objectValue["name"])
+	require.Equal(t, float64(42), objectValue["count"])
+	
+	nestedObj, ok := objectValue["nested"].(map[string]interface{})
+	require.True(t, ok, "nested should be a map")
+	require.Equal(t, "value", nestedObj["key"])
+
+	// Verify the string parameter is still a string
+	stringParam, exists := result.parameters["testString"]
+	require.True(t, exists, "testString parameter should exist")
+	require.Equal(t, "simple-string", stringParam.Value)
 }
 
 const paramsArmJson = `{

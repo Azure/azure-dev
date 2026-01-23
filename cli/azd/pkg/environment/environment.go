@@ -278,6 +278,9 @@ func (e *Environment) Environ() []string {
 // is of significance to the value and wrapping it quotes means it is more likely to be treated as a string instead of a
 // number by any downstream systems. We do not need to worry about escaping quotes in the value, because we know that
 // godotenv.Marshal only did this translation for numeric values and so we know the original value did not contain quotes.
+//
+// Additionally, this function detects JSON arrays and objects (values starting with [ or {) and unquotes them.
+// This allows environment variables containing JSON to work properly with Bicep parameter substitution.
 func fixupUnquotedDotenv(values map[string]string, dotenv string) string {
 	entries := strings.Split(dotenv, "\n")
 	for idx, line := range entries {
@@ -289,13 +292,38 @@ func fixupUnquotedDotenv(values map[string]string, dotenv string) string {
 		envValue := parts[1]
 
 		if len(envValue) > 0 && envValue[0] != '"' {
+			// Handle numeric values that were unquoted but should be quoted
 			if values[envKey] != envValue {
 				entries[idx] = fmt.Sprintf("%s=\"%s\"", envKey, values[envKey])
+			}
+		} else if len(envValue) > 0 && envValue[0] == '"' {
+			// Check if the value is a JSON array or object that should be unquoted
+			originalValue := values[envKey]
+			if isJSON(originalValue) {
+				// Unquote JSON values so they work properly with envsubst in Bicep parameters
+				entries[idx] = fmt.Sprintf("%s=%s", envKey, originalValue)
 			}
 		}
 	}
 
 	return strings.Join(entries, "\n")
+}
+
+// isJSON checks if a string looks like a JSON array or object
+func isJSON(s string) bool {
+	s = strings.TrimSpace(s)
+	if len(s) == 0 {
+		return false
+	}
+	
+	// Check if it starts with [ or {
+	if s[0] != '[' && s[0] != '{' {
+		return false
+	}
+	
+	// Try to parse it as JSON to confirm
+	var v interface{}
+	return json.Unmarshal([]byte(s), &v) == nil
 }
 
 // Prepare dotenv for saving and returns a marshalled string that can be save to the underlying data store

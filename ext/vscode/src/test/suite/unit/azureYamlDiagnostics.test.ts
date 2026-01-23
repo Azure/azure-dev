@@ -41,7 +41,7 @@ suite('AzureYamlDiagnosticProvider - Project Path Validation', () => {
             sandbox.stub(AzExtFsExtra, 'pathExists').resolves(true);
 
             const content = 'name: myapp\nservices:\n  api:\n    project: ./api\n    language: python\n    host: containerapp';
-            const document = await createTestDocument(content, 'azure.yaml');
+            const document = createTestDocument(content, 'azure.yaml');
 
             const diagnostics = await provider.provideDiagnostics(document);
 
@@ -54,7 +54,7 @@ suite('AzureYamlDiagnosticProvider - Project Path Validation', () => {
             sandbox.stub(AzExtFsExtra, 'pathExists').resolves(false);
 
             const content = 'name: myapp\nservices:\n  api:\n    project: ./nonexistent\n    language: python\n    host: containerapp';
-            const document = await createTestDocument(content, 'azure.yaml');
+            const document = createTestDocument(content, 'azure.yaml');
 
             const diagnostics = await provider.provideDiagnostics(document);
 
@@ -66,7 +66,7 @@ suite('AzureYamlDiagnosticProvider - Project Path Validation', () => {
 
         test('handles YAML parsing errors gracefully', async () => {
             const content = 'name: myapp\nservices\n  api:'; // Invalid YAML
-            const document = await createTestDocument(content, 'azure.yaml');
+            const document = createTestDocument(content, 'azure.yaml');
 
             // Should not throw
             const diagnostics = await provider.provideDiagnostics(document);
@@ -77,7 +77,7 @@ suite('AzureYamlDiagnosticProvider - Project Path Validation', () => {
 
         test('handles empty file gracefully', async () => {
             const content = '';
-            const document = await createTestDocument(content, 'azure.yaml');
+            const document = createTestDocument(content, 'azure.yaml');
 
             // Should not throw
             const diagnostics = await provider.provideDiagnostics(document);
@@ -101,7 +101,7 @@ services:
 
             const diagnostics = await provider.provideDiagnostics(document);
 
-            const errors = diagnostics?.filter(d => d.severity === vscode.DiagnosticSeverity.Error) || [];
+            const errors = diagnostics?.filter(d => d.severity === vscode.DiagnosticSeverity.Error) ?? [];
             expect(errors).to.have.lengthOf(0, 'Valid YAML should have no errors');
 
             stub.restore();
@@ -128,7 +128,7 @@ services:
 
             const diagnostics = await provider.provideDiagnostics(document);
 
-            const errors = diagnostics?.filter(d => d.severity === vscode.DiagnosticSeverity.Error) || [];
+            const errors = diagnostics?.filter(d => d.severity === vscode.DiagnosticSeverity.Error) ?? [];
             expect(errors).to.have.lengthOf(0, 'Valid complex YAML should have no errors');
 
             stub.restore();
@@ -182,7 +182,7 @@ services:
         });
     });
 
-    async function createTestDocument(content: string, filename: string): Promise<vscode.TextDocument> {
+    function createTestDocument(content: string, filename: string): vscode.TextDocument {
         return createMockDocument(content, `/test/${filename}`);
     }
 

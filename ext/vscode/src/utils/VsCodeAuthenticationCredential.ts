@@ -79,12 +79,12 @@ export class VsCodeAuthenticationCredential implements TokenCredential {
         // elide the refresh if it is not needed.
         let expiresOnTimestamp = 0;
         try {
-             const expClaim = JSON.parse(Buffer.from(session.accessToken.split('.')[1], 'base64').toString()).exp;
-             if (typeof expClaim === 'number') {
+            const expClaim = (JSON.parse(Buffer.from(session.accessToken.split('.')[1], 'base64').toString()) as { exp?: number }).exp;
+            if (typeof expClaim === 'number') {
                 // The exp claim in the JWT is the number of seconds since the Unix Epoch, but the `expiresOnTimestamp` property
                 // is the number of milliseconds since the Unix Epoch, so we need to multiply by 1000.
                 expiresOnTimestamp = expClaim * 1000;
-             }
+            }
         } catch {
             // Some issue parsing the token, so not much we can do here, just leave the expiration time as 0 (the Unix Epoch).
         }

@@ -110,7 +110,7 @@ export class AzureYamlCodeActionProvider implements vscode.CodeActionProvider {
         });
     }
 
-    private async provideGeneralActions(document: vscode.TextDocument, range: vscode.Range): Promise<vscode.CodeAction[]> {
+    private provideGeneralActions(document: vscode.TextDocument, range: vscode.Range): Promise<vscode.CodeAction[]> {
         const actions: vscode.CodeAction[] = [];
 
         // Add "Add new service" refactoring action
@@ -122,7 +122,7 @@ export class AzureYamlCodeActionProvider implements vscode.CodeActionProvider {
         };
         actions.push(addServiceAction);
 
-        return actions;
+        return Promise.resolve(actions);
     }
 
     private extractProjectPath(document: vscode.TextDocument, range: vscode.Range): string | undefined {
@@ -140,7 +140,7 @@ export class AzureYamlCodeActionProvider implements vscode.CodeActionProvider {
 /**
  * Code action command handlers
  */
-export async function registerCodeActionCommands(context: vscode.ExtensionContext): Promise<void> {
+export function registerCodeActionCommands(context: vscode.ExtensionContext): void {
     context.subscriptions.push(
         vscode.commands.registerCommand('azure-dev.codeAction.createProjectFolder', async (documentUri: vscode.Uri, projectPath: string) => {
             try {

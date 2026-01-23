@@ -159,7 +159,7 @@ export class EnvironmentsTreeDataProvider implements vscode.TreeDataProvider<Env
         });
     }
 
-    private async getEnvironmentDetails(context: IActionContext, env: EnvironmentItem): Promise<EnvironmentTreeItem[]> {
+    private getEnvironmentDetails(context: IActionContext, env: EnvironmentItem): EnvironmentTreeItem[] {
         const items: EnvironmentTreeItem[] = [];
 
         // Properties Group

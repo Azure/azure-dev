@@ -18,13 +18,15 @@ export async function quickPickWorkspaceFolder(context: IActionContext, noWorksp
         context.errorHandling.suppressReportIssue = true;
         context.errorHandling.buttons = [
             {
-                callback: async () => {
+                callback: () => {
                     if (isMac()) {
                         // On Mac there's no separate "Open Folder" command, so need to just use the "Open" command
                         void vscode.commands.executeCommand('workbench.action.files.openFileFolder');
                     } else {
                         void vscode.commands.executeCommand('workbench.action.files.openFolder');
                     }
+
+                    return Promise.resolve();
                 },
                 title: vscode.l10n.t('Open Folder'),
             }

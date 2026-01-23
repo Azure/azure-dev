@@ -25,6 +25,7 @@ export async function up(context: IActionContext, selectedItem?: vscode.Uri | Tr
     } else if (isAzureDevCliModel(selectedItem)) {
         selectedFile = selectedItem.context.configurationFile;
     } else {
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         selectedFile = selectedItem!;
     }
     const workingFolder = await getWorkingFolder(context, selectedFile);

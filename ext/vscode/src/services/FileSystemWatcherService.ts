@@ -31,12 +31,15 @@ export class FileSystemWatcherService implements vscode.Disposable {
             // Set up forwarding events to all listeners
             // Note: watcherEntry is captured in closure and will include all future listeners
             watcher.onDidChange(uri => {
+                // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
                 watcherEntry!.listeners.forEach(listener => listener(uri));
             });
             watcher.onDidCreate(uri => {
+                // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
                 watcherEntry!.listeners.forEach(listener => listener(uri));
             });
             watcher.onDidDelete(uri => {
+                // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
                 watcherEntry!.listeners.forEach(listener => listener(uri));
             });
         }
@@ -59,7 +62,7 @@ export class FileSystemWatcherService implements vscode.Disposable {
     }
 
     public dispose(): void {
-        this.watchers.forEach(entry => entry.watcher.dispose());
+        this.watchers.forEach(entry => void entry.watcher.dispose());
         this.watchers.clear();
     }
 }

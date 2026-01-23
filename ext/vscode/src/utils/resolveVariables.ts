@@ -43,6 +43,7 @@ export function resolveVariables<T extends Resolvable>(target: T, folder?: Works
 function resolveSingleVariable(variable: string, folder?: WorkspaceFolder, additionalVariables?: { [key: string]: string }): string {
     if (folder) {
         switch (variable) {
+            /* eslint-disable no-template-curly-in-string */
             case '${workspaceFolder}':
             case '${workspaceRoot}':
                 return path.normalize(folder.uri.fsPath);
@@ -55,6 +56,7 @@ function resolveSingleVariable(variable: string, folder?: WorkspaceFolder, addit
                     return '';
                 }
             }
+            /* eslint-enable no-template-curly-in-string */
         }
     }
 
@@ -82,9 +84,11 @@ function resolveSingleVariable(variable: string, folder?: WorkspaceFolder, addit
 
     // Replace other variables
     switch (variable) {
+        /* eslint-disable no-template-curly-in-string */
         case '${file}':
             return getActiveFilePath();
         default:
+        /* eslint-enable no-template-curly-in-string */
     }
 
     return variable; // Return as-is, we don't know what to do with it

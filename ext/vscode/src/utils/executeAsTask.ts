@@ -88,7 +88,7 @@ export function executeAsTask(command: string, args: CommandLineArgs, name: stri
                     disposable.dispose();
 
                     if (e.exitCode && !(execOptions?.suppressErrors)) {
-                        reject(e.exitCode);
+                        reject(new Error(`Process exited with code ${e.exitCode}`));
                     }
 
                     resolve();

@@ -238,25 +238,9 @@ func TestBicepDestroyLogAnalyticsWorkspace(t *testing.T) {
 		require.NotNil(t, destroyResult)
 
 		consoleOutput := mockContext.Console.Output()
-		require.GreaterOrEqual(t, len(consoleOutput), 1)
-	})
-
-	t.Run("WithoutPurge", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
-		prepareBicepMocks(mockContext)
-		prepareStateMocks(mockContext)
-		prepareLogAnalyticsDestroyMocks(mockContext)
-
-		infraProvider := createBicepProvider(t, mockContext)
-
-		destroyOptions := provisioning.NewDestroyOptions(false, false)
-		destroyResult, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
-
-		require.NoError(t, err)
-		require.NotNil(t, destroyResult)
-
-		consoleOutput := mockContext.Console.Output()
-		require.GreaterOrEqual(t, len(consoleOutput), 1)
+		require.Len(t, consoleOutput, 2)
+		require.Contains(t, consoleOutput[0], "Deleting your resources can take some time")
+		require.Contains(t, consoleOutput[1], "")
 	})
 }
 
@@ -835,18 +819,14 @@ func getAPIMMock(mockContext *mocks.MockContext, apimString string, name string,
 	})
 }
 
-func getLogAnalyticsMock(mockContext *mocks.MockContext, logAnalyticsString string, name string, location string) {
+func getLogAnalyticsMock(mockContext *mocks.MockContext, logAnalyticsString string, name string) {
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && strings.HasSuffix(request.URL.Path, logAnalyticsString)
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		logAnalyticsResponse := map[string]interface{}{
 			"id": fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
 				string(azapi.AzureResourceTypeLogAnalyticsWorkspace), name),
-			"name":     name,
-			"location": location,
-			"properties": map[string]interface{}{
-				"provisioningState": "Succeeded",
-			},
+			"name": name,
 		}
 
 		responseBytes, _ := json.Marshal(logAnalyticsResponse)
@@ -888,17 +868,6 @@ func prepareLogAnalyticsDestroyMocks(mockContext *mocks.MockContext) {
 		},
 	}
 
-	mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
-		return strings.Contains(options.Message, "are you sure you want to continue")
-	}).Respond(true)
-
-	mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
-		return strings.Contains(
-			options.Message,
-			"Would you like to permanently delete these resources instead",
-		)
-	}).Respond(true)
-
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return strings.HasSuffix(request.URL.Path, "/resourcegroups") && strings.Contains(request.URL.RawQuery, "filter=")
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
@@ -917,8 +886,8 @@ func prepareLogAnalyticsDestroyMocks(mockContext *mocks.MockContext) {
 		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, resourceList)
 	})
 
-	getLogAnalyticsMock(mockContext, "/workspaces/la-workspace-123", "la-workspace-123", "eastus2")
-	getLogAnalyticsMock(mockContext, "/workspaces/la-workspace2-123", "la-workspace2-123", "eastus2")
+	getLogAnalyticsMock(mockContext, "/workspaces/la-workspace-123", "la-workspace-123")
+	getLogAnalyticsMock(mockContext, "/workspaces/la-workspace2-123", "la-workspace2-123")
 
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodDelete &&
@@ -944,9 +913,7 @@ func prepareLogAnalyticsDestroyMocks(mockContext *mocks.MockContext) {
 			strings.HasSuffix(
 				request.URL.Path, "/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/test-env")
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		response, err := mocks.CreateEmptyHttpResponse(request, 202)
-		response.Header.Add("location", mockPollingUrl)
-		return response, err
+		return mocks.CreateEmptyHttpResponse(request, 204)
 	})
 
 	mockContext.HttpClient.When(func(request *http.Request) bool {

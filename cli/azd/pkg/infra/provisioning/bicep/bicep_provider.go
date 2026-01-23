@@ -2330,7 +2330,9 @@ func armParameterFileValue(paramType provisioning.ParameterType, value any, defa
 		return value
 	}
 
-	// Relax the handling of bool and number types to accept convertible strings
+	// Relax the handling of bool, number, array, and object types to accept convertible strings.
+	// This allows environment variables containing JSON-encoded arrays/objects to be used
+	// in parameters.json with the standard "${ENV_VAR}" syntax.
 	switch paramType {
 	case provisioning.ParameterTypeBoolean:
 		if val, ok := value.(string); ok {
@@ -2342,6 +2344,20 @@ func armParameterFileValue(paramType provisioning.ParameterType, value any, defa
 		if val, ok := value.(string); ok {
 			if intVal, err := strconv.ParseInt(val, 10, 64); err == nil {
 				return intVal
+			}
+		}
+	case provisioning.ParameterTypeArray:
+		if val, ok := value.(string); ok {
+			var arr []any
+			if err := json.Unmarshal([]byte(val), &arr); err == nil {
+				return arr
+			}
+		}
+	case provisioning.ParameterTypeObject:
+		if val, ok := value.(string); ok {
+			var obj map[string]any
+			if err := json.Unmarshal([]byte(val), &obj); err == nil {
+				return obj
 			}
 		}
 	case provisioning.ParameterTypeString:

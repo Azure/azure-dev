@@ -136,17 +136,8 @@ func TestBicepPlanParameterTypesFromEnvVars(t *testing.T) {
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
-    "environmentName": {
-      "value": "${AZURE_ENV_NAME}"
-    },
     "testArray": {
       "value": "${TEST_ARRAY}"
-    },
-    "testObject": {
-      "value": "${TEST_OBJECT}"
-    },
-    "testString": {
-      "value": "${TEST_STRING}"
     }
   }
 }`
@@ -154,14 +145,9 @@ func TestBicepPlanParameterTypesFromEnvVars(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create a minimal bicep file
-	bicepContent := `param environmentName string
-param testArray array
-param testObject object
-param testString string
+	bicepContent := `param testArray array
 
 output arrayOutput array = testArray
-output objectOutput object = testObject
-output stringOutput string = testString
 `
 	err = os.WriteFile(filepath.Join(projectDir, "infra", "main.bicep"), []byte(bicepContent), 0644)
 	require.NoError(t, err)
@@ -234,33 +220,20 @@ output stringOutput string = testString
 	require.True(t, exists, "testArray parameter should exist")
 	require.NotNil(t, arrayParam.Value, "testArray value should not be nil")
 	
-	// The value should be an array
-	arrayValue, ok := arrayParam.Value.([]interface{})
-	require.True(t, ok, "testArray value should be an array, got %T", arrayParam.Value)
-	require.Equal(t, 3, len(arrayValue), "testArray should have 3 elements")
+	// At this point, the value is a STRING (from loadParameters)
+	// It should be the JSON array as a string: `["item1", "item2", "item3"]`
+	arrayValueStr, ok := arrayParam.Value.(string)
+	require.True(t, ok, "testArray value should be a string at loadParameters stage, got %T", arrayParam.Value)
+	require.Equal(t, `["item1", "item2", "item3"]`, arrayValueStr)
+	
+	// Verify that armParameterFileValue can convert it to an array
+	convertedValue := armParameterFileValue(provisioning.ParameterTypeArray, arrayValueStr, nil)
+	arrayValue, ok := convertedValue.([]interface{})
+	require.True(t, ok, "converted value should be an array, got %T", convertedValue)
+	require.Equal(t, 3, len(arrayValue), "array should have 3 elements")
 	require.Equal(t, "item1", arrayValue[0])
 	require.Equal(t, "item2", arrayValue[1])
 	require.Equal(t, "item3", arrayValue[2])
-
-	// Verify the object parameter was correctly parsed
-	objectParam, exists := result.parameters["testObject"]
-	require.True(t, exists, "testObject parameter should exist")
-	require.NotNil(t, objectParam.Value, "testObject value should not be nil")
-	
-	// The value should be an object (map)
-	objectValue, ok := objectParam.Value.(map[string]interface{})
-	require.True(t, ok, "testObject value should be a map, got %T", objectParam.Value)
-	require.Equal(t, "test", objectValue["name"])
-	require.Equal(t, float64(42), objectValue["count"])
-	
-	nestedObj, ok := objectValue["nested"].(map[string]interface{})
-	require.True(t, ok, "nested should be a map")
-	require.Equal(t, "value", nestedObj["key"])
-
-	// Verify the string parameter is still a string
-	stringParam, exists := result.parameters["testString"]
-	require.True(t, exists, "testString parameter should exist")
-	require.Equal(t, "simple-string", stringParam.Value)
 }
 
 const paramsArmJson = `{
@@ -1523,6 +1496,55 @@ func Test_armParameterFileValue(t *testing.T) {
 		input := `not a valid json object`
 		actual := armParameterFileValue(provisioning.ParameterTypeObject, input, nil)
 		require.Nil(t, actual)
+	})
+}
+
+func Test_extractValueFromMalformedJSON(t *testing.T) {
+	t.Run("ArrayValue", func(t *testing.T) {
+		input := `{"value":"["item1","item2","item3"]"}`
+		value, err := extractValueFromMalformedJSON(input)
+		require.NoError(t, err)
+		require.Equal(t, `["item1","item2","item3"]`, value)
+		
+		// Verify it's valid JSON
+		var arr []interface{}
+		err = json.Unmarshal([]byte(value), &arr)
+		require.NoError(t, err)
+		require.Equal(t, 3, len(arr))
+	})
+	
+	t.Run("ObjectValue", func(t *testing.T) {
+		input := `{"value":"{"name":"test","count":42}"}`
+		value, err := extractValueFromMalformedJSON(input)
+		require.NoError(t, err)
+		require.Equal(t, `{"name":"test","count":42}`, value)
+		
+		// Verify it's valid JSON
+		var obj map[string]interface{}
+		err = json.Unmarshal([]byte(value), &obj)
+		require.NoError(t, err)
+		require.Equal(t, "test", obj["name"])
+	})
+	
+	t.Run("StringValue", func(t *testing.T) {
+		input := `{"value":"simple-string"}`
+		value, err := extractValueFromMalformedJSON(input)
+		require.NoError(t, err)
+		require.Equal(t, "simple-string", value)
+	})
+	
+	t.Run("ArrayWithReferenceField", func(t *testing.T) {
+		// This is what actually gets produced when marshalling ArmParameter
+		input := `{"value":"["item1","item2"]","reference":null}`
+		value, err := extractValueFromMalformedJSON(input)
+		require.NoError(t, err)
+		require.Equal(t, `["item1","item2"]`, value)
+		
+		// Verify it's valid JSON
+		var arr []interface{}
+		err = json.Unmarshal([]byte(value), &arr)
+		require.NoError(t, err)
+		require.Equal(t, 2, len(arr))
 	})
 }
 

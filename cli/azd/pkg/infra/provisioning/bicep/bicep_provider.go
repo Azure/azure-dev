@@ -1778,8 +1778,20 @@ func (p *BicepProvider) loadParameters(ctx context.Context) (loadParametersResul
 		}
 
 		var resolvedParam azure.ArmParameter
-		if err := json.Unmarshal([]byte(replaced), &resolvedParam); err != nil {
-			return loadParametersResult{}, fmt.Errorf("error unmarshalling Bicep template parameters: %w", err)
+		err = json.Unmarshal([]byte(replaced), &resolvedParam)
+		
+		// If JSON unmarshal fails, it might be due to unescaped quotes in the value
+		// (e.g., {"value":"["item1","item2"]"} when env var contains JSON).
+		// Try to extract the value as a raw string to handle this case.
+		if err != nil {
+			extractedValue, extractErr := extractValueFromMalformedJSON(replaced)
+			if extractErr == nil {
+				// Successfully extracted the value, use it
+				resolvedParam.Value = extractedValue
+			} else {
+				// Can't extract, return the original unmarshal error
+				return loadParametersResult{}, fmt.Errorf("error unmarshalling Bicep template parameters: %w", err)
+			}
 		}
 		if resolvedParam.Value == nil && resolvedParam.KeyVaultReference == nil {
 			// ignore parameters that are not set
@@ -2321,6 +2333,87 @@ func mustSetParamAsConfig(key string, value any, config config.Config, isSecured
 	if err := config.SetSecret(configKey, secretString); err != nil {
 		log.Panicf("failed setting a secret in config: %v", err)
 	}
+}
+
+// extractValueFromMalformedJSON attempts to extract the value from malformed JSON
+// like {"value":"["item1","item2"]","reference":null} where inner quotes aren't escaped.
+// This handles the case where environment variables containing JSON are substituted
+// into parameter templates, resulting in invalid JSON.
+func extractValueFromMalformedJSON(jsonStr string) (string, error) {
+	// Look for the pattern: "value":"...
+	// The value might be a JSON array or object, so we need to parse it carefully
+	
+	const valuePrefix = `"value":"`
+	startIdx := strings.Index(jsonStr, valuePrefix)
+	if startIdx == -1 {
+		return "", fmt.Errorf("no value field found")
+	}
+	
+	// Position after "value":"
+	contentStart := startIdx + len(valuePrefix)
+	content := jsonStr[contentStart:]
+	
+	// Check if the value starts with [ or { (JSON array/object)
+	if len(content) == 0 {
+		return "", fmt.Errorf("empty value")
+	}
+	
+	firstChar := content[0]
+	if firstChar == '[' || firstChar == '{' {
+		// It's a JSON structure, find the matching closing bracket/brace
+		depth := 0
+		inString := false
+		escaped := false
+		closingChar := byte(']')
+		if firstChar == '{' {
+			closingChar = '}'
+		}
+		
+		for i := 0; i < len(content); i++ {
+			ch := content[i]
+			if escaped {
+				escaped = false
+				continue
+			}
+			
+			if ch == '\\' {
+				escaped = true
+				continue
+			}
+			
+			if ch == '"' {
+				inString = !inString
+				continue
+			}
+			
+			if !inString {
+				if ch == firstChar {
+					depth++
+				} else if ch == closingChar {
+					depth--
+					if depth == 0 {
+						// Found the closing bracket/brace
+						return content[:i+1], nil
+					}
+				}
+			}
+		}
+		
+		return "", fmt.Errorf("unmatched opening bracket/brace")
+	}
+	
+	// It's a simple string value, find the closing quote
+	// Look for " followed by , or }
+	for i := 0; i < len(content); i++ {
+		if content[i] == '"' && i+1 < len(content) {
+			nextChar := content[i+1]
+			if nextChar == ',' || nextChar == '}' {
+				return content[:i], nil
+			}
+		}
+	}
+	
+	return "", fmt.Errorf("couldn't find end of value")
 }
 
 // Convert the ARM parameters file value into a value suitable for deployment

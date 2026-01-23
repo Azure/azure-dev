@@ -28,7 +28,7 @@ export function validateFileSystemUri(
     selectedItem: vscode.Uri | TreeViewModel | undefined,
     commandName: string
 ): void {
-    if (selectedFile && !selectedFile.fsPath) {
+    if (selectedFile && selectedFile.fsPath === undefined) {
         context.errorHandling.suppressReportIssue = true;
         const itemType = isTreeViewModel(selectedItem) ? 'TreeViewModel' :
                         isAzureDevCliModel(selectedItem) ? 'AzureDevCliModel' :

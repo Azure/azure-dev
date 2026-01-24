@@ -298,11 +298,9 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 		if formatErr == nil && slices.ContainsFunc(extensionRows, func(row extensionListItem) bool {
 			return row.UpdateAvailable
 		}) {
-			fmt.Fprintln(a.writer, "* Update available")
-			fmt.Fprintf(a.writer, "To upgrade: %s\n",
-				output.WithHighLightFormat("azd extension upgrade <extension-id>"))
-			fmt.Fprintf(a.writer, "To upgrade all: %s\n",
-				output.WithHighLightFormat("azd extension upgrade --all"))
+			a.console.Message(ctx, "\n(*) Update available")
+			a.console.Message(ctx, fmt.Sprintf("To upgrade: %s", output.WithHighLightFormat("azd extension upgrade <extension-id>")))
+			a.console.Message(ctx, fmt.Sprintf("To upgrade all: %s", output.WithHighLightFormat("azd extension upgrade --all")))
 		}
 	} else {
 		formatErr = a.formatter.Format(extensionRows, a.writer, nil)

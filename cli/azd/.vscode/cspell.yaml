@@ -303,6 +303,9 @@ overrides:
   - filename: extensions/microsoft.azd.demo/internal/cmd/metadata.go
     words:
       - invopop
+  - filename: extensions/microsoft.azd.concurx/internal/cmd/prompt_model.go
+    words:
+      - textinput
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

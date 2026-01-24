@@ -299,6 +299,10 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 			return row.UpdateAvailable
 		}) {
 			fmt.Fprintln(a.writer, "* Update available")
+			fmt.Fprintf(a.writer, "To upgrade: %s\n",
+				output.WithHighLightFormat("azd extension upgrade <extension-id>"))
+			fmt.Fprintf(a.writer, "To upgrade all: %s\n",
+				output.WithHighLightFormat("azd extension upgrade --all"))
 		}
 	} else {
 		formatErr = a.formatter.Format(extensionRows, a.writer, nil)

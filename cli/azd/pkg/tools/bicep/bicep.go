@@ -28,14 +28,7 @@ import (
 // user).
 var Version semver.Version = semver.MustParse("0.39.26")
 
-// Cli is a wrapper around the bicep CLI.
-// The CLI automatically ensures bicep is installed before executing commands.
-//
-// Concurrency notes: The sync.Once is per-instance, not global. In normal operation, the IoC
-// container registers Cli as a singleton, so one shared instance is used. However, some code paths
-// (e.g., service_target_containerapp.go) create new instances inline. If multiple instances race to
-// install bicep concurrently, this is safe because downloadBicep uses atomic file operations
-// (temp file + rename). The only downside is potentially redundant downloads, which is rare and harmless.
+// Cli is a wrapper around the bicep CLI. Call EnsureInstalled before using Build or BuildBicepParam.
 type Cli struct {
 	path        string
 	runner      exec.CommandRunner
@@ -46,8 +39,8 @@ type Cli struct {
 	installErr  error
 }
 
-// NewCli creates a new Bicep CLI wrapper.
-// The CLI automatically ensures bicep is installed when Build or BuildBicepParam is called.
+// NewCli creates a new Bicep CLI wrapper. The CLI is not yet installed; call EnsureInstalled
+// before using Build or BuildBicepParam methods.
 func NewCli(console input.Console, commandRunner exec.CommandRunner) *Cli {
 	return newCliWithTransporter(console, commandRunner, http.DefaultClient)
 }
@@ -65,9 +58,10 @@ func newCliWithTransporter(
 	}
 }
 
-// ensureInstalledOnce checks if bicep is available and downloads/upgrades if needed.
+// EnsureInstalled checks if bicep is available and downloads/upgrades if needed.
 // This is safe to call multiple times; installation only happens once.
-func (cli *Cli) ensureInstalledOnce(ctx context.Context) error {
+// Should be called with a request-scoped context before first use.
+func (cli *Cli) EnsureInstalled(ctx context.Context) error {
 	cli.installOnce.Do(func() {
 		cli.installErr = cli.ensureInstalled(ctx)
 	})
@@ -276,10 +270,6 @@ type BuildResult struct {
 }
 
 func (cli *Cli) Build(ctx context.Context, file string) (BuildResult, error) {
-	if err := cli.ensureInstalledOnce(ctx); err != nil {
-		return BuildResult{}, fmt.Errorf("ensuring bicep is installed: %w", err)
-	}
-
 	args := []string{"build", file, "--stdout"}
 	buildRes, err := cli.runCommand(ctx, nil, args...)
 
@@ -297,10 +287,6 @@ func (cli *Cli) Build(ctx context.Context, file string) (BuildResult, error) {
 }
 
 func (cli *Cli) BuildBicepParam(ctx context.Context, file string, env []string) (BuildResult, error) {
-	if err := cli.ensureInstalledOnce(ctx); err != nil {
-		return BuildResult{}, fmt.Errorf("ensuring bicep is installed: %w", err)
-	}
-
 	args := []string{"build-params", file, "--stdout"}
 	buildRes, err := cli.runCommand(ctx, env, args...)
 

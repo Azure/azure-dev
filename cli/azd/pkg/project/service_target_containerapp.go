@@ -229,7 +229,11 @@ func (at *containerAppTarget) Deploy(
 		fetchBicepCli := at.bicepCli
 		if fetchBicepCli == nil {
 			fetchBicepCli = func() (*bicep.Cli, error) {
-				return bicep.NewCli(at.console, at.commandRunner), nil
+				cli := bicep.NewCli(at.console, at.commandRunner)
+				if err := cli.EnsureInstalled(ctx); err != nil {
+					return nil, err
+				}
+				return cli, nil
 			}
 		}
 

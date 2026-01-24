@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"text/tabwriter"
 
@@ -290,13 +291,15 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 			},
 		}
 
-			formatErr = a.formatter.Format(extensionRows, a.writer, output.TableFormatterOptions{
-				Columns: columns,
-			})
+		formatErr = a.formatter.Format(extensionRows, a.writer, output.TableFormatterOptions{
+			Columns: columns,
+		})
 
-			if formatErr == nil {
-				fmt.Fprintln(a.writer, "* Update available")
-			}
+		if formatErr == nil && slices.ContainsFunc(extensionRows, func(row extensionListItem) bool {
+			return row.UpdateAvailable
+		}) {
+			fmt.Fprintln(a.writer, "* Update available")
+		}
 		} else {
 			formatErr = a.formatter.Format(extensionRows, a.writer, nil)
 		}

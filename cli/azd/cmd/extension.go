@@ -267,8 +267,8 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 
 	var formatErr error
 
-		if a.formatter.Kind() == output.TableFormat {
-			columns := []output.Column{
+	if a.formatter.Kind() == output.TableFormat {
+		columns := []output.Column{
 			{
 				Heading:       "Id",
 				ValueTemplate: "{{.Id}}",
@@ -300,9 +300,9 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 		}) {
 			fmt.Fprintln(a.writer, "* Update available")
 		}
-		} else {
-			formatErr = a.formatter.Format(extensionRows, a.writer, nil)
-		}
+	} else {
+		formatErr = a.formatter.Format(extensionRows, a.writer, nil)
+	}
 
 	return nil, formatErr
 }

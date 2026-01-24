@@ -208,6 +208,10 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 	extensionRows := []extensionListItem{}
 
 	for _, extension := range registryExtensions {
+		if len(extension.Versions) == 0 {
+			continue
+		}
+
 		installedExtension, has := installedExtensions[extension.Id]
 		installed := has && installedExtension.Source == extension.Source
 
@@ -262,8 +266,8 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 
 	var formatErr error
 
-	if a.formatter.Kind() == output.TableFormat {
-		columns := []output.Column{
+		if a.formatter.Kind() == output.TableFormat {
+			columns := []output.Column{
 			{
 				Heading:       "Id",
 				ValueTemplate: "{{.Id}}",
@@ -286,12 +290,16 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 			},
 		}
 
-		formatErr = a.formatter.Format(extensionRows, a.writer, output.TableFormatterOptions{
-			Columns: columns,
-		})
-	} else {
-		formatErr = a.formatter.Format(extensionRows, a.writer, nil)
-	}
+			formatErr = a.formatter.Format(extensionRows, a.writer, output.TableFormatterOptions{
+				Columns: columns,
+			})
+
+			if formatErr == nil {
+				fmt.Fprintln(a.writer, "* Update available")
+			}
+		} else {
+			formatErr = a.formatter.Format(extensionRows, a.writer, nil)
+		}
 
 	return nil, formatErr
 }

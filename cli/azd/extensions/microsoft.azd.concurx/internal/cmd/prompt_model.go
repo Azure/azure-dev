@@ -62,7 +62,7 @@ var (
 
 	promptBoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("27")).
+			BorderForeground(lipgloss.Color("87")).
 			Padding(1, 2).
 			MarginTop(1)
 

@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
@@ -160,14 +161,12 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	showUpdateWarning := !isJsonOutputFromArgs(os.Args)
 	if showUpdateWarning {
 		updateResultChan := make(chan *updateCheckOutcome, 1)
-		// Create a shallow copy of extension data for the goroutine to avoid race condition.
-		// The goroutine mutates LastUpdateWarning, so we copy only the needed fields.
+		// Create a minimal copy with only the fields needed for update checking.
 		// Cannot copy the full Extension due to sync.Once (contains sync.noCopy).
+		// The goroutine will re-fetch the full extension from config when saving.
 		extForCheck := &extensions.Extension{
 			Id:                extension.Id,
-			Namespace:         extension.Namespace,
 			DisplayName:       extension.DisplayName,
-			Description:       extension.Description,
 			Version:           extension.Version,
 			Source:            extension.Source,
 			LastUpdateWarning: extension.LastUpdateWarning,
@@ -183,9 +182,12 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 				if result != nil && result.shouldShow && result.warning != nil {
 					a.console.MessageUxItem(ctx, result.warning)
 					a.console.Message(ctx, "")
+
+					// Record cooldown only after warning is actually displayed
+					a.recordUpdateWarningShown(result.extensionId)
 				}
 			default:
-				// Check didn't complete in time, skip warning
+				// Check didn't complete in time, skip warning (and don't record cooldown)
 			}
 		}()
 	}
@@ -256,8 +258,9 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 // updateCheckOutcome holds the result of an async update check
 type updateCheckOutcome struct {
-	shouldShow bool
-	warning    *ux.WarningMessage
+	shouldShow  bool
+	warning     *ux.WarningMessage
+	extensionId string // Used to record cooldown only when warning is actually displayed
 }
 
 // checkForUpdateAsync performs the update check in a goroutine and sends the result to the channel.
@@ -306,17 +309,29 @@ func (a *extensionAction) checkForUpdateAsync(
 	if result.HasUpdate {
 		outcome.shouldShow = true
 		outcome.warning = extensions.FormatUpdateWarning(result)
-
-		// Record that we showed the warning (updates extension's LastUpdateWarning field)
-		updateChecker.RecordWarningShown(extension)
-
-		// Save the updated extension to config
-		if err := a.extensionManager.UpdateInstalled(extension); err != nil {
-			log.Printf("failed to save warning timestamp: %v", err)
-		}
+		outcome.extensionId = extension.Id
+		// Note: Cooldown is recorded by caller only when warning is actually displayed
 	}
 
 	resultChan <- outcome
+}
+
+// recordUpdateWarningShown saves the cooldown timestamp after a warning is displayed
+func (a *extensionAction) recordUpdateWarningShown(extensionId string) {
+	// Re-fetch the full extension from config to avoid overwriting fields
+	fullExtension, err := a.extensionManager.GetInstalled(extensions.FilterOptions{Id: extensionId})
+	if err != nil {
+		log.Printf("failed to get extension for saving warning timestamp: %v", err)
+		return
+	}
+
+	// Record the warning timestamp
+	fullExtension.LastUpdateWarning = time.Now().UTC().Format(time.RFC3339)
+
+	// Save the updated extension to config
+	if err := a.extensionManager.UpdateInstalled(fullExtension); err != nil {
+		log.Printf("failed to save warning timestamp: %v", err)
+	}
 }
 
 // refreshCacheForSource attempts to refresh the cache for a specific source

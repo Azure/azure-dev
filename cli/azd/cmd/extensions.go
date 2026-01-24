@@ -184,7 +184,7 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 					a.console.Message(ctx, "")
 
 					// Record cooldown only after warning is actually displayed
-					a.recordUpdateWarningShown(result.extensionId)
+					a.recordUpdateWarningShown(result.extensionId, result.extensionSource)
 				}
 			default:
 				// Check didn't complete in time, skip warning (and don't record cooldown)
@@ -258,9 +258,10 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 // updateCheckOutcome holds the result of an async update check
 type updateCheckOutcome struct {
-	shouldShow  bool
-	warning     *ux.WarningMessage
-	extensionId string // Used to record cooldown only when warning is actually displayed
+	shouldShow      bool
+	warning         *ux.WarningMessage
+	extensionId     string // Used to record cooldown only when warning is actually displayed
+	extensionSource string // Source of the extension for precise lookup
 }
 
 // checkForUpdateAsync performs the update check in a goroutine and sends the result to the channel.
@@ -310,6 +311,7 @@ func (a *extensionAction) checkForUpdateAsync(
 		outcome.shouldShow = true
 		outcome.warning = extensions.FormatUpdateWarning(result)
 		outcome.extensionId = extension.Id
+		outcome.extensionSource = extension.Source
 		// Note: Cooldown is recorded by caller only when warning is actually displayed
 	}
 
@@ -317,9 +319,12 @@ func (a *extensionAction) checkForUpdateAsync(
 }
 
 // recordUpdateWarningShown saves the cooldown timestamp after a warning is displayed
-func (a *extensionAction) recordUpdateWarningShown(extensionId string) {
+func (a *extensionAction) recordUpdateWarningShown(extensionId, extensionSource string) {
 	// Re-fetch the full extension from config to avoid overwriting fields
-	fullExtension, err := a.extensionManager.GetInstalled(extensions.FilterOptions{Id: extensionId})
+	fullExtension, err := a.extensionManager.GetInstalled(extensions.FilterOptions{
+		Id:     extensionId,
+		Source: extensionSource,
+	})
 	if err != nil {
 		log.Printf("failed to get extension for saving warning timestamp: %v", err)
 		return

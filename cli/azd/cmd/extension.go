@@ -179,6 +179,7 @@ type extensionListItem struct {
 	Namespace        string `json:"namespace"`
 	Version          string `json:"version"`
 	InstalledVersion string `json:"installedVersion"`
+	UpdateAvailable  bool   `json:"updateAvailable"`
 	Source           string `json:"source"`
 }
 
@@ -214,17 +215,29 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 			continue
 		}
 
+		latestVersion := extension.Versions[len(extension.Versions)-1].Version
+
 		var installedVersion string
+		var updateAvailable bool
+
 		if installed {
 			installedVersion = installedExtension.Version
+
+			// Compare versions to determine if an update is available
+			installedSemver, installedErr := semver.NewVersion(installedExtension.Version)
+			latestSemver, latestErr := semver.NewVersion(latestVersion)
+			if installedErr == nil && latestErr == nil {
+				updateAvailable = latestSemver.GreaterThan(installedSemver)
+			}
 		}
 
 		extensionRows = append(extensionRows, extensionListItem{
 			Id:               extension.Id,
 			Name:             extension.DisplayName,
 			Namespace:        extension.Namespace,
-			Version:          extension.Versions[len(extension.Versions)-1].Version,
+			Version:          latestVersion,
 			InstalledVersion: installedVersion,
+			UpdateAvailable:  updateAvailable,
 			Source:           extension.Source,
 		})
 	}
@@ -265,7 +278,7 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 			},
 			{
 				Heading:       "Installed Version",
-				ValueTemplate: `{{.InstalledVersion}}`,
+				ValueTemplate: `{{.InstalledVersion}}{{if .UpdateAvailable}}*{{end}}`,
 			},
 			{
 				Heading:       "Source",

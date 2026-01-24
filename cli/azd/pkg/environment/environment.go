@@ -315,12 +315,12 @@ func isJSON(s string) bool {
 	if len(s) == 0 {
 		return false
 	}
-	
+
 	// Check if it starts with [ or {
 	if s[0] != '[' && s[0] != '{' {
 		return false
 	}
-	
+
 	// Try to parse it as JSON to confirm
 	var v interface{}
 	return json.Unmarshal([]byte(s), &v) == nil

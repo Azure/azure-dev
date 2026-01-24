@@ -111,14 +111,14 @@ func TestBicepPlanParameterTypes(t *testing.T) {
 func TestBicepPlanParameterTypesFromEnvVars(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	prepareBicepMocks(mockContext)
-	
+
 	// Create a test environment with JSON values
 	env := environment.NewWithValues("test-env", map[string]string{
 		environment.LocationEnvVarName:       "westus2",
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 		environment.EnvNameEnvVarName:        "test-env",
 		// JSON array value - as it would be stored in .env after godotenv roundtrip
-		"TEST_ARRAY":  `["item1", "item2", "item3"]`,
+		"TEST_ARRAY": `["item1", "item2", "item3"]`,
 		// JSON object value - as it would be stored in .env after godotenv roundtrip
 		"TEST_OBJECT": `{"name": "test", "count": 42, "nested": {"key": "value"}}`,
 		// Regular string for comparison
@@ -219,12 +219,12 @@ output arrayOutput array = testArray
 	arrayParam, exists := result.parameters["testArray"]
 	require.True(t, exists, "testArray parameter should exist")
 	require.NotNil(t, arrayParam.Value, "testArray value should not be nil")
-	
+
 	// The value should be a string representation of the JSON array
 	arrayValueStr, ok := arrayParam.Value.(string)
 	require.True(t, ok, "testArray value should be a string, got %T", arrayParam.Value)
 	require.Equal(t, `["item1", "item2", "item3"]`, arrayValueStr)
-	
+
 	// Verify that armParameterFileValue can convert it to an actual array
 	convertedValue := armParameterFileValue(provisioning.ParameterTypeArray, arrayValueStr, nil)
 	arrayValue, ok := convertedValue.([]interface{})
@@ -1504,41 +1504,41 @@ func Test_extractValueFromMalformedJSON(t *testing.T) {
 		value, err := extractValueFromMalformedJSON(input)
 		require.NoError(t, err)
 		require.Equal(t, `["item1","item2","item3"]`, value)
-		
+
 		// Verify it's valid JSON
 		var arr []interface{}
 		err = json.Unmarshal([]byte(value), &arr)
 		require.NoError(t, err)
 		require.Equal(t, 3, len(arr))
 	})
-	
+
 	t.Run("ObjectValue", func(t *testing.T) {
 		input := `{"value":"{"name":"test","count":42}"}`
 		value, err := extractValueFromMalformedJSON(input)
 		require.NoError(t, err)
 		require.Equal(t, `{"name":"test","count":42}`, value)
-		
+
 		// Verify it's valid JSON
 		var obj map[string]interface{}
 		err = json.Unmarshal([]byte(value), &obj)
 		require.NoError(t, err)
 		require.Equal(t, "test", obj["name"])
 	})
-	
+
 	t.Run("StringValue", func(t *testing.T) {
 		input := `{"value":"simple-string"}`
 		value, err := extractValueFromMalformedJSON(input)
 		require.NoError(t, err)
 		require.Equal(t, "simple-string", value)
 	})
-	
+
 	t.Run("ArrayWithReferenceField", func(t *testing.T) {
 		// This is what actually gets produced when marshalling ArmParameter
 		input := `{"value":"["item1","item2"]","reference":null}`
 		value, err := extractValueFromMalformedJSON(input)
 		require.NoError(t, err)
 		require.Equal(t, `["item1","item2"]`, value)
-		
+
 		// Verify it's valid JSON
 		var arr []interface{}
 		err = json.Unmarshal([]byte(value), &arr)

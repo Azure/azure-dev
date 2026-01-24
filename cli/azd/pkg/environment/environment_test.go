@@ -295,7 +295,7 @@ func Test_fixupUnquotedDotenv_JSON(t *testing.T) {
 	// JSON values should be unquoted
 	require.Equal(t, `["val1", "val2", "val3"]`, resultMap["JSON_ARRAY"], "JSON array should be unquoted")
 	require.Equal(t, `{"key": "value", "count": 42}`, resultMap["JSON_OBJECT"], "JSON object should be unquoted")
-	
+
 	// Regular strings should still be quoted
 	require.Equal(t, `"hello"`, resultMap["SIMPLE"], "Simple string should be quoted")
 

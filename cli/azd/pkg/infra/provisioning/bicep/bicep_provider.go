@@ -1779,7 +1779,7 @@ func (p *BicepProvider) loadParameters(ctx context.Context) (loadParametersResul
 
 		var resolvedParam azure.ArmParameter
 		err = json.Unmarshal([]byte(replaced), &resolvedParam)
-		
+
 		// If JSON unmarshal fails, it might be due to unescaped quotes in the value
 		// (e.g., {"value":"["item1","item2"]"} when env var contains JSON).
 		// Try to extract the value as a raw string to handle this case.
@@ -2348,33 +2348,36 @@ func mustSetParamAsConfig(key string, value any, config config.Config, isSecured
 // - For simple strings: finding the closing quote followed by , or }
 //
 // Parameters:
-//   jsonStr: The malformed JSON string to parse
+//
+//	jsonStr: The malformed JSON string to parse
 //
 // Returns:
-//   The extracted value as a string, or an error if extraction fails
+//
+//	The extracted value as a string, or an error if extraction fails
 //
 // Example:
-//   Input:  {"value":"["item1","item2"]","reference":null}
-//   Output: ["item1","item2"]
+//
+//	Input:  {"value":"["item1","item2"]","reference":null}
+//	Output: ["item1","item2"]
 func extractValueFromMalformedJSON(jsonStr string) (string, error) {
 	// Look for the pattern: "value":"...
 	// The value might be a JSON array or object, so we need to parse it carefully
-	
+
 	const valuePrefix = `"value":"`
 	startIdx := strings.Index(jsonStr, valuePrefix)
 	if startIdx == -1 {
 		return "", fmt.Errorf("no value field found")
 	}
-	
+
 	// Position after "value":"
 	contentStart := startIdx + len(valuePrefix)
 	content := jsonStr[contentStart:]
-	
+
 	// Check if the value starts with [ or { (JSON array/object)
 	if len(content) == 0 {
 		return "", fmt.Errorf("empty value")
 	}
-	
+
 	firstChar := content[0]
 	if firstChar == '[' || firstChar == '{' {
 		// It's a JSON structure, find the matching closing bracket/brace
@@ -2385,24 +2388,24 @@ func extractValueFromMalformedJSON(jsonStr string) (string, error) {
 		if firstChar == '{' {
 			closingChar = '}'
 		}
-		
+
 		for i := 0; i < len(content); i++ {
 			ch := content[i]
 			if escaped {
 				escaped = false
 				continue
 			}
-			
+
 			if ch == '\\' {
 				escaped = true
 				continue
 			}
-			
+
 			if ch == '"' {
 				inString = !inString
 				continue
 			}
-			
+
 			if !inString {
 				if ch == firstChar {
 					depth++
@@ -2415,10 +2418,10 @@ func extractValueFromMalformedJSON(jsonStr string) (string, error) {
 				}
 			}
 		}
-		
+
 		return "", fmt.Errorf("unmatched opening bracket/brace")
 	}
-	
+
 	// It's a simple string value, find the closing quote
 	// Look for " followed by , or }
 	for i := 0; i < len(content); i++ {
@@ -2429,7 +2432,7 @@ func extractValueFromMalformedJSON(jsonStr string) (string, error) {
 			}
 		}
 	}
-	
+
 	return "", fmt.Errorf("couldn't find end of value")
 }
 

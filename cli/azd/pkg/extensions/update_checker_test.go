@@ -108,7 +108,7 @@ func Test_UpdateChecker_WarningCooldown(t *testing.T) {
 	require.True(t, updateChecker.ShouldShowWarning(extension))
 
 	// Record warning shown (updates extension's LastUpdateWarning)
-	updateChecker.RecordWarningShown(extension)
+	RecordUpdateWarningShown(extension)
 	require.NotEmpty(t, extension.LastUpdateWarning)
 
 	// Should not show warning again (within cooldown)

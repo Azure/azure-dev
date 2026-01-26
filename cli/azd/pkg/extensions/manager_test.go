@@ -1127,3 +1127,60 @@ func Test_FetchAndCacheMetadata(t *testing.T) {
 		// The actual Install() function logs this as a warning but doesn't fail
 	})
 }
+
+func Test_GetInstalled_WithSourceFilter(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", tempDir)
+
+	mockContext := mocks.NewMockContext(context.Background())
+	fileConfigManager := config.NewFileConfigManager(config.NewManager())
+	userConfigManager := config.NewUserConfigManager(fileConfigManager)
+
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
+		return NewRunner(mockContext.CommandRunner), nil
+	})
+
+	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	// Install same extension ID from two different sources
+	extensions := map[string]*Extension{
+		"test.ext": {
+			Id:          "test.ext",
+			Namespace:   "test",
+			DisplayName: "Test Extension",
+			Version:     "1.0.0",
+			Source:      "azd",
+			Path:        "extensions/test.ext/test-ext",
+		},
+	}
+
+	err = manager.userConfig.Set(installedConfigKey, extensions)
+	require.NoError(t, err)
+
+	t.Run("filter by ID only", func(t *testing.T) {
+		ext, err := manager.GetInstalled(FilterOptions{Id: "test.ext"})
+		require.NoError(t, err)
+		require.NotNil(t, ext)
+		require.Equal(t, "test.ext", ext.Id)
+	})
+
+	t.Run("filter by ID and Source", func(t *testing.T) {
+		ext, err := manager.GetInstalled(FilterOptions{Id: "test.ext", Source: "azd"})
+		require.NoError(t, err)
+		require.NotNil(t, ext)
+		require.Equal(t, "test.ext", ext.Id)
+		require.Equal(t, "azd", ext.Source)
+	})
+
+	t.Run("filter by ID and wrong Source returns not found", func(t *testing.T) {
+		_, err := manager.GetInstalled(FilterOptions{Id: "test.ext", Source: "local"})
+		require.ErrorIs(t, err, ErrInstalledExtensionNotFound)
+	})
+
+	t.Run("filter by non-existent ID returns not found", func(t *testing.T) {
+		_, err := manager.GetInstalled(FilterOptions{Id: "non.existent"})
+		require.ErrorIs(t, err, ErrInstalledExtensionNotFound)
+	})
+}

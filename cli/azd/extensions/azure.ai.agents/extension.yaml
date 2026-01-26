@@ -5,7 +5,7 @@ displayName: Foundry agents (Preview)
 description: Extension for the Foundry Agent Service. (Preview)
 usage: azd ai agent <command> [options]
 # NOTE: Make sure version.txt is in sync with this version.
-version: 0.1.6-preview
+version: 0.1.8-preview
 language: go
 capabilities:
   - custom-commands

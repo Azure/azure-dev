@@ -34,8 +34,7 @@ export function validateFileSystemUri(
                         isAzureDevCliModel(selectedItem) ? 'AzureDevCliModel' :
                         selectedItem ? 'vscode.Uri' : 'undefined';
         throw new Error(vscode.l10n.t(
-            "Unable to determine working folder for {0} command. The selected file has an unsupported URI scheme '{1}' (selectedItem type: {2}). " +
-            "Azure Developer CLI commands are not supported in virtual file systems. Please open a local folder or clone the repository locally.",
+            "Unable to determine working folder for {0} command. The selected file has an unsupported URI scheme '{1}' (selectedItem type: {2}). Azure Developer CLI commands are not supported in virtual file systems. Please open a local folder or clone the repository locally.",
             commandName,
             selectedFile.scheme,
             itemType

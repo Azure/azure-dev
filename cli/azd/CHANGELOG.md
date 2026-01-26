@@ -10,6 +10,18 @@
 
 ### Other Changes
 
+## 1.23.2 (2026-01-26)
+
+### Bugs Fixed
+
+- [[#6610]](https://github.com/Azure/azure-dev/pull/6610) Fix Bicep CLI uninitialized path causing container app deployments to fail.
+- [[#6604]](https://github.com/Azure/azure-dev/pull/6604) Fix extension commands failing after update notification is displayed.
+- [[#6604]](https://github.com/Azure/azure-dev/pull/6604) Fix extension update notification cooldown being recorded even when warning is not shown.
+
+### Other Changes
+
+- [[#6604]](https://github.com/Azure/azure-dev/pull/6604) Improve `azd ext list` output to better indicate when extension updates are available.
+
 ## 1.23.1 (2026-01-23)
 
 ### Features Added

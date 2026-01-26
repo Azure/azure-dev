@@ -45,6 +45,8 @@ go build
 
 ### Test
 
+**Note**: In CI environments like inside a GitHub coding agent session, run `go build` first as the automatic build is skipped and the azd binary must exist for tests that spawn the CLI process. This applies to snapshot tests and functional tests in `test/functional/`.
+
 ```bash
 # Specific test
 go test ./pkg/project/... -run TestProjectConfig
@@ -171,7 +173,7 @@ go build
 
 Feature-specific docs are in `docs/` — refer to them as needed. Some key docs include:
 
-- `docs/new-azd-command.md` - Adding new commands
-- `docs/extension-framework.md` - Extension development using gRPC extension framework
-- `docs/guiding-principles.md` - Design principles
+- `docs/style-guidelines/new-azd-command.md` - Adding new commands
+- `docs/extensions/extension-framework.md` - Extension development using gRPC extension framework
+- `docs/style-guidelines/guiding-principles.md` - Design principles
 - `docs/tracing-in-azd.md` - Tracing/telemetry guidelines

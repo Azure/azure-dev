@@ -131,7 +131,7 @@ func Test_Integration_UpdateCheck_FullFlow(t *testing.T) {
 		require.True(t, updateChecker.ShouldShowWarning(extension))
 
 		// Record warning (updates extension's LastUpdateWarning field)
-		updateChecker.RecordWarningShown(extension)
+		RecordUpdateWarningShown(extension)
 		require.NotEmpty(t, extension.LastUpdateWarning)
 
 		// Immediately after - should not show warning (cooldown)

@@ -104,9 +104,9 @@ func (c *UpdateChecker) ShouldShowWarning(extension *Extension) bool {
 	return time.Now().UTC().After(lastTime.Add(warningCoolDownPeriod))
 }
 
-// RecordWarningShown updates the extension's LastUpdateWarning timestamp
+// RecordUpdateWarningShown updates the extension's LastUpdateWarning timestamp.
 // Mutates the provided extension in place (caller should save it via Manager.UpdateInstalled)
-func (c *UpdateChecker) RecordWarningShown(extension *Extension) {
+func RecordUpdateWarningShown(extension *Extension) {
 	extension.LastUpdateWarning = time.Now().UTC().Format(time.RFC3339)
 }
 

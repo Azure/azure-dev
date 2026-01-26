@@ -9,7 +9,6 @@ import (
 	"log"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
@@ -331,7 +330,7 @@ func (a *extensionAction) recordUpdateWarningShown(extensionId, extensionSource 
 	}
 
 	// Record the warning timestamp
-	fullExtension.LastUpdateWarning = time.Now().UTC().Format(time.RFC3339)
+	extensions.RecordUpdateWarningShown(fullExtension)
 
 	// Save the updated extension to config
 	if err := a.extensionManager.UpdateInstalled(fullExtension); err != nil {

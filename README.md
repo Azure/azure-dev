@@ -1,6 +1,6 @@
 # Azure Developer CLI (`azd`)
 
-> **From code to cloud in minutes.** A developer-centric CLI for building, deploying, and managing Azure applications.
+> **From code to cloud in minutes.** A developer-centric CLI for building, deploying, and managing Azure applications with Infrastructure as Code (IaC).
 
 [![azd version](https://img.shields.io/endpoint?url=https%3A%2F%2Fazuresdkartifacts.z5.web.core.windows.net%2Fazd%2Fstandalone%2Flatest%2Fshield.json)](https://github.com/Azure/azure-dev/releases)
 [![VS Code Extension](https://img.shields.io/endpoint?url=https%3A%2F%2Fazuresdkartifacts.z5.web.core.windows.net%2Fazd%2Fvscode%2Flatest%2Fshield.json)](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.azure-dev)
@@ -10,8 +10,8 @@
 
 ## Why `azd`?
 
-- ⚡ **Get productive fast** — Go from a blank slate to a deployed app with a single command
-- 🏗️ **Best practices built-in** — Opinionated templates that follow Azure development standards
+- ⚡ **Get productive fast** — Streamlined workflows to go from code to cloud in minutes
+- 🏗️ **Azure recommended practices built-in** — Opinionated templates that follow Azure development standards
 - 🧠 **Learn as you build** — Understand core Azure constructs through hands-on experience
 
 📖 **[Get Started](https://aka.ms/azd)** · 💬 **[Join the Discussion](https://github.com/Azure/azure-dev/discussions)** · 📦 **[Browse Templates](https://azure.github.io/awesome-azd/)**

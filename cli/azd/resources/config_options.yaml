@@ -60,14 +60,6 @@
   type: string
   allowedValues: ["true", "false"]
   example: "true"
-- key: extension.sources
-  description: "Extension sources for azd extension list and search commands."
-  type: object
-  example: "extension.sources.<name>.type"
-- key: extension.installed
-  description: "Installed extension metadata managed by azd."
-  type: object
-  example: "extension.installed.<id>.version"
 - key: platform.type
   description: "Platform type override for azd."
   type: string
@@ -76,14 +68,6 @@
   description: "Platform-specific configuration settings."
   type: object
   example: "platform.config.name"
-- key: provision.parameters.<name>
-  description: "Saved provisioning parameter value for Dev Center environments."
-  type: string
-  example: "provision.parameters.repoUrl"
-- key: infra.parameters.<name>
-  description: "Saved infrastructure parameter value from azd provision."
-  type: string
-  example: "infra.parameters.sqlAdminUser"
 - key: cloud.name
   description: "Azure cloud name to use for authentication and resource management."
   type: string
@@ -92,16 +76,7 @@
 - key: ai.agent.model.type
   description: "Default AI agent model provider."
   type: string
-  allowedValues: ["github-copilot", "azure", "ollama"]
   example: "github-copilot"
-- key: ai.agent.model.azure
-  description: "Azure OpenAI model configuration for the AI agent."
-  type: object
-  example: "ai.agent.model.azure.model"
-- key: ai.agent.model.ollama
-  description: "Ollama model configuration for the AI agent."
-  type: object
-  example: "ai.agent.model.ollama.model"
 - key: pipeline.config.applicationServiceManagementReference
   description: "Application Service Management Reference for Azure pipeline configuration."
   type: string

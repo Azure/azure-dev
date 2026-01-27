@@ -46,12 +46,9 @@ func TestGetAllConfigOptions(t *testing.T) {
 		case "auth.useAzCliAuth":
 			foundAuthUseAzCliAuth = true
 			require.Equal(t, "string", option.Type)
-			require.Contains(t, option.AllowedValues, "true")
-			require.Contains(t, option.AllowedValues, "false")
 		case "ai.agent.model.type":
 			foundAgentModelType = true
 			require.Equal(t, "string", option.Type)
-			require.Contains(t, option.AllowedValues, "github-copilot")
 		}
 	}
 

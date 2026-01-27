@@ -51,6 +51,9 @@ func TestConfigOptionsAction_JSON(t *testing.T) {
 	foundDefaults := false
 	foundAlpha := false
 	foundAuthUseAzCliAuth := false
+	foundPlatformType := false
+	foundPlatformConfig := false
+	foundCloudName := false
 	foundAgentModelType := false
 	for _, opt := range options {
 		if opt.Key == "defaults.subscription" {
@@ -65,6 +68,15 @@ func TestConfigOptionsAction_JSON(t *testing.T) {
 		if opt.Key == "auth.useAzCliAuth" {
 			foundAuthUseAzCliAuth = true
 		}
+		if opt.Key == "platform.type" {
+			foundPlatformType = true
+		}
+		if opt.Key == "platform.config" {
+			foundPlatformConfig = true
+		}
+		if opt.Key == "cloud.name" {
+			foundCloudName = true
+		}
 		if opt.Key == "ai.agent.model.type" {
 			foundAgentModelType = true
 		}
@@ -72,6 +84,9 @@ func TestConfigOptionsAction_JSON(t *testing.T) {
 	require.True(t, foundDefaults, "defaults.subscription should be present")
 	require.True(t, foundAlpha, "alpha.all should be present")
 	require.True(t, foundAuthUseAzCliAuth, "auth.useAzCliAuth should be present")
+	require.True(t, foundPlatformType, "platform.type should be present")
+	require.True(t, foundPlatformConfig, "platform.config should be present")
+	require.True(t, foundCloudName, "cloud.name should be present")
 	require.True(t, foundAgentModelType, "ai.agent.model.type should be present")
 }
 
@@ -106,6 +121,9 @@ func TestConfigOptionsAction_Table(t *testing.T) {
 	require.Contains(t, outputStr, "defaults.subscription")
 	require.Contains(t, outputStr, "alpha.all")
 	require.Contains(t, outputStr, "auth.useAzCliAuth")
+	require.Contains(t, outputStr, "platform.type")
+	require.Contains(t, outputStr, "platform.config")
+	require.Contains(t, outputStr, "cloud.name")
 	require.Contains(t, outputStr, "ai.agent.model.type")
 }
 
@@ -143,6 +161,9 @@ func TestConfigOptionsAction_DefaultFormat(t *testing.T) {
 	require.Contains(t, outputStr, "Key: alpha.all")
 	require.Contains(t, outputStr, "Allowed Values:")
 	require.Contains(t, outputStr, "Key: auth.useAzCliAuth")
+	require.Contains(t, outputStr, "Key: platform.type")
+	require.Contains(t, outputStr, "Key: platform.config")
+	require.Contains(t, outputStr, "Key: cloud.name")
 	require.Contains(t, outputStr, "Key: ai.agent.model.type")
 }
 

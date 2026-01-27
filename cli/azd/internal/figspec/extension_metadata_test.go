@@ -130,6 +130,12 @@ func TestConvertExtensionCommand(t *testing.T) {
 			wantOptions:   0,
 			wantArgs:      0,
 		},
+		{
+			name:          "empty name returns nil",
+			cmd:           extensions.Command{Name: []string{}, Short: "Empty"},
+			includeHidden: false,
+			wantNil:       true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -317,6 +323,114 @@ func TestConvertExtensionArg(t *testing.T) {
 			require.Equal(t, tt.wantDesc, result.Description)
 			require.Equal(t, tt.wantOptional, result.IsOptional)
 			require.Equal(t, tt.wantSuggestions, result.Suggestions)
+		})
+	}
+}
+
+func TestConvertExtensionCommandForHelp(t *testing.T) {
+	tests := []struct {
+		name          string
+		cmd           extensions.Command
+		includeHidden bool
+		wantNil       bool
+		wantName      []string
+		wantDesc      string
+		wantSubcmds   int
+	}{
+		{
+			name: "basic command",
+			cmd: extensions.Command{
+				Name:  []string{"context"},
+				Short: "Display context info",
+			},
+			includeHidden: false,
+			wantNil:       false,
+			wantName:      []string{"context"},
+			wantDesc:      "Display context info",
+			wantSubcmds:   0,
+		},
+		{
+			name: "command with aliases",
+			cmd: extensions.Command{
+				Name:    []string{"list"},
+				Short:   "List items",
+				Aliases: []string{"ls", "l"},
+			},
+			includeHidden: false,
+			wantNil:       false,
+			wantName:      []string{"list", "ls", "l"},
+			wantDesc:      "List items",
+			wantSubcmds:   0,
+		},
+		{
+			name: "hidden command not included",
+			cmd: extensions.Command{
+				Name:   []string{"hidden"},
+				Short:  "Hidden command",
+				Hidden: true,
+			},
+			includeHidden: false,
+			wantNil:       true,
+		},
+		{
+			name: "hidden command included when flag set",
+			cmd: extensions.Command{
+				Name:   []string{"hidden"},
+				Short:  "Hidden command",
+				Hidden: true,
+			},
+			includeHidden: true,
+			wantNil:       false,
+			wantName:      []string{"hidden"},
+			wantDesc:      "Hidden command",
+			wantSubcmds:   0,
+		},
+		{
+			name: "command with subcommands (flags/args excluded in help)",
+			cmd: extensions.Command{
+				Name:  []string{"service"},
+				Short: "Service commands",
+				Flags: []extensions.Flag{
+					{Name: "verbose", Type: "bool"},
+				},
+				Args: []extensions.Argument{
+					{Name: "name", Required: true},
+				},
+				Subcommands: []extensions.Command{
+					{Name: []string{"service", "start"}, Short: "Start service"},
+					{Name: []string{"service", "stop"}, Short: "Stop service"},
+				},
+			},
+			includeHidden: false,
+			wantNil:       false,
+			wantName:      []string{"service"},
+			wantDesc:      "Service commands",
+			wantSubcmds:   2,
+		},
+		{
+			name:          "empty name returns nil",
+			cmd:           extensions.Command{Name: []string{}, Short: "Empty"},
+			includeHidden: false,
+			wantNil:       true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := convertExtensionCommandForHelp(tt.cmd, tt.includeHidden)
+
+			if tt.wantNil {
+				require.Nil(t, result)
+				return
+			}
+
+			require.NotNil(t, result)
+			require.Equal(t, tt.wantName, result.Name)
+			require.Equal(t, tt.wantDesc, result.Description)
+			require.Len(t, result.Subcommands, tt.wantSubcmds)
+			// Help subcommands should not include options or args
+			require.Empty(t, result.Options)
+			require.Empty(t, result.Args)
 		})
 	}
 }

@@ -9,6 +9,8 @@ import (
 
 // ExtensionMetadataProvider provides extension metadata for generating figspec completions
 type ExtensionMetadataProvider interface {
+	// HasMetadataCapability checks if the extension has the metadata capability
+	HasMetadataCapability(extensionId string) bool
 	// LoadMetadata loads the cached metadata for an extension by its ID
 	LoadMetadata(extensionId string) (*extensions.ExtensionCommandMetadata, error)
 }
@@ -19,8 +21,11 @@ func convertExtensionCommand(cmd extensions.Command, includeHidden bool) *Subcom
 		return nil
 	}
 
-	names := []string{cmd.Name[len(cmd.Name)-1]}
-	names = append(names, cmd.Aliases...)
+	if len(cmd.Name) == 0 {
+		return nil
+	}
+
+	names := append([]string{cmd.Name[len(cmd.Name)-1]}, cmd.Aliases...)
 
 	subcommand := &Subcommand{
 		Name:        names,
@@ -119,8 +124,11 @@ func convertExtensionCommandForHelp(cmd extensions.Command, includeHidden bool) 
 		return nil
 	}
 
-	names := []string{cmd.Name[len(cmd.Name)-1]}
-	names = append(names, cmd.Aliases...)
+	if len(cmd.Name) == 0 {
+		return nil
+	}
+
+	names := append([]string{cmd.Name[len(cmd.Name)-1]}, cmd.Aliases...)
 
 	subcommand := &Subcommand{
 		Name:        names,

@@ -906,23 +906,7 @@ func (m *Manager) LoadMetadata(extensionId string) (*ExtensionCommandMetadata, e
 		return nil, fmt.Errorf("failed to get user config directory: %w", err)
 	}
 
-	extensionDir := filepath.Join(userConfigDir, "extensions", extensionId)
-	metadataPath := filepath.Join(extensionDir, metadataFileName)
-
-	data, err := os.ReadFile(metadataPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("metadata not found for extension '%s'", extensionId)
-		}
-		return nil, fmt.Errorf("failed to read metadata file: %w", err)
-	}
-
-	var metadata ExtensionCommandMetadata
-	if err := json.Unmarshal(data, &metadata); err != nil {
-		return nil, fmt.Errorf("failed to parse metadata JSON: %w", err)
-	}
-
-	return &metadata, nil
+	return LoadMetadataFromDir(userConfigDir, extensionId)
 }
 
 // DeleteMetadata removes cached metadata for an extension
@@ -957,6 +941,15 @@ func (m *Manager) MetadataExists(extensionId string) bool {
 
 	_, err = os.Stat(metadataPath)
 	return err == nil
+}
+
+// HasMetadataCapability checks if the extension with the given ID has the metadata capability.
+func (m *Manager) HasMetadataCapability(extensionId string) bool {
+	extension, err := m.GetInstalled(FilterOptions{Id: extensionId})
+	if err != nil || extension == nil {
+		return false
+	}
+	return extension.HasCapability(MetadataCapability)
 }
 
 // LoadMetadataFromDir loads extension metadata from a specific config directory.

@@ -4,6 +4,7 @@
 package figspec
 
 import (
+	"log"
 	"slices"
 	"strings"
 
@@ -137,9 +138,18 @@ func (sb *SpecBuilder) tryGenerateExtensionSubcommand(cmd *cobra.Command, names 
 		return nil
 	}
 
+	// Check if extension has metadata capability before attempting to load
+	if !sb.extensionMetadataProvider.HasMetadataCapability(extensionId) {
+		return nil
+	}
+
 	// Try to load extension metadata
 	metadata, err := sb.extensionMetadataProvider.LoadMetadata(extensionId)
-	if err != nil || metadata == nil {
+	if err != nil {
+		log.Printf("Failed to load metadata for extension '%s': %v", extensionId, err)
+		return nil
+	}
+	if metadata == nil {
 		return nil
 	}
 
@@ -343,8 +353,17 @@ func (sb *SpecBuilder) tryGenerateExtensionHelpSubcommand(cmd *cobra.Command, na
 		return nil
 	}
 
+	// Check if extension has metadata capability before attempting to load
+	if !sb.extensionMetadataProvider.HasMetadataCapability(extensionId) {
+		return nil
+	}
+
 	metadata, err := sb.extensionMetadataProvider.LoadMetadata(extensionId)
-	if err != nil || metadata == nil {
+	if err != nil {
+		log.Printf("Failed to load metadata for extension '%s': %v", extensionId, err)
+		return nil
+	}
+	if metadata == nil {
 		return nil
 	}
 

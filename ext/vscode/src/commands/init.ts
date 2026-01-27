@@ -27,9 +27,7 @@ export async function init(context: IActionContext, selectedFile?: vscode.Uri, a
     context.telemetry.properties.fromAgent = fromAgent.toString();
 
     let folder: vscode.WorkspaceFolder | undefined = (selectedFile ? vscode.workspace.getWorkspaceFolder(selectedFile) : undefined);
-    if (!folder) {
-        folder = await quickPickWorkspaceFolder(context, vscode.l10n.t("To run '{0}' command you must first open a folder or workspace in VS Code", 'init'));
-    }
+    folder ??= await quickPickWorkspaceFolder(context, vscode.l10n.t("To run '{0}' command you must first open a folder or workspace in VS Code", 'init'));
 
     let templateUrl: string | undefined = options?.templateUrl;
     let useExistingSource: boolean = !!options?.useExistingSource;

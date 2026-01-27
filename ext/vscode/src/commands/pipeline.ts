@@ -25,7 +25,8 @@ export async function pipelineConfig(context: IActionContext, selectedItem?: vsc
     } else if (isAzureDevCliModel(selectedItem)) {
         selectedFile = selectedItem.context.configurationFile;
     } else {
-        selectedFile = selectedItem as vscode.Uri;
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        selectedFile = selectedItem!;
     }
     const workingFolder = await getWorkingFolder(context, selectedFile);
 

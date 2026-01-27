@@ -6,17 +6,14 @@ import * as sinon from 'sinon';
 import * as vscode from 'vscode';
 import { WorkspaceAzureDevShowProvider } from '../../../services/AzureDevShowProvider';
 import { IActionContext } from '@microsoft/vscode-azext-utils';
-import * as azureDevCli from '../../../utils/azureDevCli';
-import * as execAsync from '../../../utils/execAsync';
 
 suite('AzureDevShowProvider Error Handling Tests', () => {
     let sandbox: sinon.SinonSandbox;
-    let provider: WorkspaceAzureDevShowProvider;
     let mockContext: IActionContext;
+    let mockCreateAzureDevCli: sinon.SinonStub;
 
     setup(() => {
         sandbox = sinon.createSandbox();
-        provider = new WorkspaceAzureDevShowProvider();
         mockContext = {
             telemetry: {
                 properties: {},
@@ -29,6 +26,12 @@ suite('AzureDevShowProvider Error Handling Tests', () => {
             },
             valuesToMask: [],
         } as unknown as IActionContext;
+
+        const mockAzureCli = {
+            invocation: 'azd',
+            spawnOptions: () => ({ cwd: '/test' })
+        };
+        mockCreateAzureDevCli = sandbox.stub().resolves(mockAzureCli);
     });
 
     teardown(() => {
@@ -36,15 +39,10 @@ suite('AzureDevShowProvider Error Handling Tests', () => {
     });
 
     test('Empty azure.yaml error provides user-friendly message', async () => {
-        const mockAzureCli = {
-            invocation: 'azd',
-            spawnOptions: () => ({ cwd: '/test' })
-        };
-
-        sandbox.stub(azureDevCli, 'createAzureDevCli').resolves(mockAzureCli);
-        sandbox.stub(execAsync, 'execAsync').rejects(
+        const mockExecAsync = sandbox.stub().rejects(
             new Error('ERROR: parsing project file: unable to parse azure.yaml file. File is empty.')
         );
+        const provider = new WorkspaceAzureDevShowProvider(mockCreateAzureDevCli, mockExecAsync);
 
         const configUri = vscode.Uri.file('/test/azure.yaml');
 
@@ -59,15 +57,10 @@ suite('AzureDevShowProvider Error Handling Tests', () => {
     });
 
     test('Parse error provides user-friendly message', async () => {
-        const mockAzureCli = {
-            invocation: 'azd',
-            spawnOptions: () => ({ cwd: '/test' })
-        };
-
-        sandbox.stub(azureDevCli, 'createAzureDevCli').resolves(mockAzureCli);
-        sandbox.stub(execAsync, 'execAsync').rejects(
+        const mockExecAsync = sandbox.stub().rejects(
             new Error('ERROR: parsing project file: invalid YAML syntax')
         );
+        const provider = new WorkspaceAzureDevShowProvider(mockCreateAzureDevCli, mockExecAsync);
 
         const configUri = vscode.Uri.file('/test/azure.yaml');
 
@@ -82,14 +75,9 @@ suite('AzureDevShowProvider Error Handling Tests', () => {
     });
 
     test('Other errors are re-thrown unchanged', async () => {
-        const mockAzureCli = {
-            invocation: 'azd',
-            spawnOptions: () => ({ cwd: '/test' })
-        };
-
         const originalError = new Error('Some other error');
-        sandbox.stub(azureDevCli, 'createAzureDevCli').resolves(mockAzureCli);
-        sandbox.stub(execAsync, 'execAsync').rejects(originalError);
+        const mockExecAsync = sandbox.stub().rejects(originalError);
+        const provider = new WorkspaceAzureDevShowProvider(mockCreateAzureDevCli, mockExecAsync);
 
         const configUri = vscode.Uri.file('/test/azure.yaml');
 
@@ -102,11 +90,6 @@ suite('AzureDevShowProvider Error Handling Tests', () => {
     });
 
     test('Successful parse returns results', async () => {
-        const mockAzureCli = {
-            invocation: 'azd',
-            spawnOptions: () => ({ cwd: '/test' })
-        };
-
         const mockResults = {
             name: 'my-app',
             services: {
@@ -117,8 +100,8 @@ suite('AzureDevShowProvider Error Handling Tests', () => {
             }
         };
 
-        sandbox.stub(azureDevCli, 'createAzureDevCli').resolves(mockAzureCli);
-        sandbox.stub(execAsync, 'execAsync').resolves({ stdout: JSON.stringify(mockResults), stderr: '' });
+        const mockExecAsync = sandbox.stub().resolves({ stdout: JSON.stringify(mockResults), stderr: '' });
+        const provider = new WorkspaceAzureDevShowProvider(mockCreateAzureDevCli, mockExecAsync);
 
         const configUri = vscode.Uri.file('/test/azure.yaml');
         const results = await provider.getShowResults(mockContext, configUri);

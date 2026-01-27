@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-import * as dayjs from 'dayjs';
+import dayjs from 'dayjs';
 import { assert } from 'chai';
 
 import { ActivityStatisticsService, ActivityStats, TelemetryEnablement } from '../../../telemetry/activityStatisticsService';

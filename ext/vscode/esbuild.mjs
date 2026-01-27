@@ -3,4 +3,5 @@
  *  Licensed under the MIT License. See LICENSE.md in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-export { azExtEslintRecommendedTypeChecked as default } from '@microsoft/vscode-azext-eng/eslint'; // Other configurations exist
+import { autoEsbuildOrWatch, autoSelectEsbuildConfig } from '@microsoft/vscode-azext-eng/esbuild';
+await autoEsbuildOrWatch(autoSelectEsbuildConfig());

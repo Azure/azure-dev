@@ -7,6 +7,7 @@ import { AzureDevCliModel } from '../views/workspace/AzureDevCliModel';
 
 export type TreeViewModel = Wrapper;
 
+// eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
 export function isTreeViewModel(selectedItem: vscode.Uri | TreeViewModel | undefined | unknown): selectedItem is TreeViewModel {
     return isWrapper(selectedItem);
 }

@@ -44,6 +44,7 @@ export class PickResourceStep extends SkipIfOneStep<RevealResourceWizardContext,
             return resourceIds.map(resourceId => {
                 const { resourceName, provider } = parseAzureResourceId(resourceId);
                 return {
+                    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
                     label: resourceName!,
                     detail: provider, // TODO: do we want to show provider?
                     data: resourceId

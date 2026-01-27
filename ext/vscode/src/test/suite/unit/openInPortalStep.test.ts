@@ -62,7 +62,7 @@ suite('OpenInPortalStep', () => {
             await step.execute(context as RevealResourceWizardContext);
 
             expect(openExternalStub.calledOnce).to.exist;
-            const calledUri = openExternalStub.firstCall.args[0] as vscode.Uri;
+            const calledUri = openExternalStub.firstCall.args[0];
             const expectedUri = vscode.Uri.parse(`https://portal.azure.com/#@/resource${azureResourceId}`);
             expect(calledUri.toString()).to.equal(expectedUri.toString());
         });
@@ -78,7 +78,7 @@ suite('OpenInPortalStep', () => {
             await step.execute(context as RevealResourceWizardContext);
 
             expect(openExternalStub.calledOnce).to.exist;
-            const calledUri = openExternalStub.firstCall.args[0] as vscode.Uri;
+            const calledUri = openExternalStub.firstCall.args[0];
             const expectedUri = vscode.Uri.parse(`https://portal.azure.com/#@/resource${azureResourceId}`);
             expect(calledUri.toString()).to.equal(expectedUri.toString());
         });
@@ -94,7 +94,7 @@ suite('OpenInPortalStep', () => {
             await step.execute(context as RevealResourceWizardContext);
 
             expect(openExternalStub.calledOnce).to.exist;
-            const calledUri = openExternalStub.firstCall.args[0] as vscode.Uri;
+            const calledUri = openExternalStub.firstCall.args[0];
             const expectedUri = vscode.Uri.parse(`https://portal.azure.com/#@/resource${azureResourceId}`);
             expect(calledUri.toString()).to.equal(expectedUri.toString());
         });
@@ -110,7 +110,7 @@ suite('OpenInPortalStep', () => {
             await step.execute(context as RevealResourceWizardContext);
 
             expect(openExternalStub.calledOnce).to.exist;
-            const calledUri = openExternalStub.firstCall.args[0] as vscode.Uri;
+            const calledUri = openExternalStub.firstCall.args[0];
             const expectedUri = vscode.Uri.parse(`https://portal.azure.com/#@/resource${azureResourceId}`);
             expect(calledUri.toString()).to.equal(expectedUri.toString());
         });
@@ -126,7 +126,7 @@ suite('OpenInPortalStep', () => {
             await step.execute(context as RevealResourceWizardContext);
 
             expect(openExternalStub.calledOnce).to.exist;
-            const calledUri = openExternalStub.firstCall.args[0] as vscode.Uri;
+            const calledUri = openExternalStub.firstCall.args[0];
             const expectedUri = vscode.Uri.parse(`https://portal.azure.com/#@/resource${azureResourceId}`);
             expect(calledUri.toString()).to.equal(expectedUri.toString());
         });

@@ -1,5 +1,9 @@
 # Release History
 
+## 0.1.8-preview (2026-01-26)
+
+- [[#6611]](https://github.com/Azure/azure-dev/pull/6611) Statically link the Linux amd64 binary for compatibility with older Linux versions
+
 ## 0.1.6-preview (2026-01-22)
 
 - [[#6541]](https://github.com/Azure/azure-dev/pull/6541) Add metadata capability

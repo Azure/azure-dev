@@ -24,7 +24,7 @@ jobs:
       os: ${{ parameters.OS }}
 
     variables:
-      NodeVersion: 20.x
+      NodeVersion: 22.x
       ${{ insert }}: ${{ parameters.Variables }}
 
     steps:
@@ -34,7 +34,7 @@ jobs:
           versionSpec: $(NodeVersion)
 
       - pwsh: |
-          npm i -g npm vsce
+          npm i -g npm @vscode/vsce
           npm ci --no-optional
         workingDirectory: ext/vscode
         displayName: Install dependencies

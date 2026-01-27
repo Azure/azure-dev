@@ -74,8 +74,9 @@ function registerActivityCommand(commandId: string, callback: CommandCallback, d
     registerCommandAzUI(
         commandId,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        async(context: IActionContext, ...args: any[]) => {
+        (context: IActionContext, ...args: any[]): any => {
             void ext.activitySvc.recordActivity();
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             return callback(context, ...args);
         },
         debounce,

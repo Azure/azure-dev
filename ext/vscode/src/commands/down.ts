@@ -25,7 +25,8 @@ export async function down(context: IActionContext, selectedItem?: vscode.Uri | 
     } else if (isAzureDevCliModel(selectedItem)) {
         selectedFile = selectedItem.context.configurationFile;
     } else {
-        selectedFile = selectedItem as vscode.Uri;
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        selectedFile = selectedItem!;
     }
 
     // Validate that selectedFile is valid for file system operations

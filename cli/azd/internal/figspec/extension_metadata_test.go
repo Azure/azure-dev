@@ -153,15 +153,15 @@ func TestConvertExtensionCommand(t *testing.T) {
 
 func TestConvertExtensionFlag(t *testing.T) {
 	tests := []struct {
-		name             string
-		flag             extensions.Flag
-		wantName         []string
-		wantDesc         string
-		wantRequired     bool
-		wantRepeatable   bool
-		wantDangerous    bool
-		wantArgsCount    int
-		wantSuggestions  []string
+		name            string
+		flag            extensions.Flag
+		wantName        []string
+		wantDesc        string
+		wantRequired    bool
+		wantRepeatable  bool
+		wantDangerous   bool
+		wantArgsCount   int
+		wantSuggestions []string
 	}{
 		{
 			name: "simple bool flag",
@@ -171,13 +171,13 @@ func TestConvertExtensionFlag(t *testing.T) {
 				Description: "Verbose output",
 				Type:        "bool",
 			},
-			wantName:         []string{"--verbose", "-v"},
-			wantDesc:         "Verbose output",
-			wantRequired:     false,
-			wantRepeatable:   false,
-			wantDangerous:    false,
-			wantArgsCount:    0,
-			wantSuggestions:  nil,
+			wantName:        []string{"--verbose", "-v"},
+			wantDesc:        "Verbose output",
+			wantRequired:    false,
+			wantRepeatable:  false,
+			wantDangerous:   false,
+			wantArgsCount:   0,
+			wantSuggestions: nil,
 		},
 		{
 			name: "string flag with valid values",
@@ -187,13 +187,13 @@ func TestConvertExtensionFlag(t *testing.T) {
 				Type:        "string",
 				ValidValues: []string{"json", "table", "yaml"},
 			},
-			wantName:         []string{"--format"},
-			wantDesc:         "Output format",
-			wantRequired:     false,
-			wantRepeatable:   false,
-			wantDangerous:    false,
-			wantArgsCount:    1,
-			wantSuggestions:  []string{"json", "table", "yaml"},
+			wantName:        []string{"--format"},
+			wantDesc:        "Output format",
+			wantRequired:    false,
+			wantRepeatable:  false,
+			wantDangerous:   false,
+			wantArgsCount:   1,
+			wantSuggestions: []string{"json", "table", "yaml"},
 		},
 		{
 			name: "required flag",
@@ -203,13 +203,13 @@ func TestConvertExtensionFlag(t *testing.T) {
 				Type:        "string",
 				Required:    true,
 			},
-			wantName:         []string{"--name"},
-			wantDesc:         "Item name",
-			wantRequired:     true,
-			wantRepeatable:   false,
-			wantDangerous:    false,
-			wantArgsCount:    1,
-			wantSuggestions:  nil,
+			wantName:        []string{"--name"},
+			wantDesc:        "Item name",
+			wantRequired:    true,
+			wantRepeatable:  false,
+			wantDangerous:   false,
+			wantArgsCount:   1,
+			wantSuggestions: nil,
 		},
 		{
 			name: "array flag is repeatable",
@@ -218,13 +218,13 @@ func TestConvertExtensionFlag(t *testing.T) {
 				Description: "Tags to apply",
 				Type:        "stringArray",
 			},
-			wantName:         []string{"--tag"},
-			wantDesc:         "Tags to apply",
-			wantRequired:     false,
-			wantRepeatable:   true,
-			wantDangerous:    false,
-			wantArgsCount:    1,
-			wantSuggestions:  nil,
+			wantName:        []string{"--tag"},
+			wantDesc:        "Tags to apply",
+			wantRequired:    false,
+			wantRepeatable:  true,
+			wantDangerous:   false,
+			wantArgsCount:   1,
+			wantSuggestions: nil,
 		},
 		{
 			name: "force flag is dangerous",
@@ -233,13 +233,13 @@ func TestConvertExtensionFlag(t *testing.T) {
 				Description: "Force operation",
 				Type:        "bool",
 			},
-			wantName:         []string{"--force"},
-			wantDesc:         "Force operation",
-			wantRequired:     false,
-			wantRepeatable:   false,
-			wantDangerous:    true,
-			wantArgsCount:    0,
-			wantSuggestions:  nil,
+			wantName:        []string{"--force"},
+			wantDesc:        "Force operation",
+			wantRequired:    false,
+			wantRepeatable:  false,
+			wantDangerous:   true,
+			wantArgsCount:   0,
+			wantSuggestions: nil,
 		},
 	}
 

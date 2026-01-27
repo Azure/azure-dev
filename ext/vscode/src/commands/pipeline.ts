@@ -4,7 +4,7 @@
 import { IActionContext } from '@microsoft/vscode-azext-utils';
 import { composeArgs, withArg } from '@microsoft/vscode-processutils';
 import * as vscode from 'vscode';
-import { getAzDevTerminalTitle, getWorkingFolder } from './cmdUtil';
+import { getAzDevTerminalTitle, getWorkingFolder, validateFileSystemUri } from './cmdUtil';
 import { TelemetryId } from '../telemetry/telemetryId';
 import { createAzureDevCli } from '../utils/azureDevCli';
 import { executeAsTask } from '../utils/executeAsTask';
@@ -28,6 +28,10 @@ export async function pipelineConfig(context: IActionContext, selectedItem?: vsc
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         selectedFile = selectedItem!;
     }
+
+    // Validate that selectedFile is valid for file system operations
+    validateFileSystemUri(context, selectedFile, selectedItem, 'pipeline config');
+
     const workingFolder = await getWorkingFolder(context, selectedFile);
 
     const azureCli = await createAzureDevCli(context);

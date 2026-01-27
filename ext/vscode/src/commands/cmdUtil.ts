@@ -9,8 +9,38 @@ import * as vscode from 'vscode';
 import { createAzureDevCli } from '../utils/azureDevCli';
 import { execAsync } from '../utils/execAsync';
 import { fileExists } from '../utils/fileUtils';
+import { isAzureDevCliModel, isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
 
 const AzureYamlGlobPattern: vscode.GlobPattern = '**/[aA][zZ][uU][rR][eE].{[yY][aA][mM][lL],[yY][mM][lL]}';
+
+/**
+ * Validates that a URI has a valid fsPath for file system operations.
+ * Virtual file systems or certain VS Code contexts may not provide a valid fsPath.
+ * @param context The action context
+ * @param selectedFile The URI to validate
+ * @param selectedItem The original selected item (for error message context)
+ * @param commandName The name of the command being executed (for error message)
+ * @throws Error if the URI doesn't have a valid fsPath
+ */
+export function validateFileSystemUri(
+    context: IActionContext,
+    selectedFile: vscode.Uri | undefined,
+    selectedItem: vscode.Uri | TreeViewModel | undefined,
+    commandName: string
+): void {
+    if (selectedFile && selectedFile.fsPath === undefined) {
+        context.errorHandling.suppressReportIssue = true;
+        const itemType = isTreeViewModel(selectedItem) ? 'TreeViewModel' :
+                        isAzureDevCliModel(selectedItem) ? 'AzureDevCliModel' :
+                        selectedItem ? 'vscode.Uri' : 'undefined';
+        throw new Error(vscode.l10n.t(
+            "Unable to determine working folder for {0} command. The selected file has an unsupported URI scheme '{1}' (selectedItem type: {2}). Azure Developer CLI commands are not supported in virtual file systems. Please open a local folder or clone the repository locally.",
+            commandName,
+            selectedFile.scheme,
+            itemType
+        ));
+    }
+}
 
 // If the command was invoked with a specific file context, use the file context as the working directory for running Azure developer CLI commands.
 // Otherwise search the workspace for "azure.yaml" or "azure.yml" files. If only one is found, use it (i.e. its folder). If more than one is found, ask the user which one to use.

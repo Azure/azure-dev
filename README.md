@@ -8,7 +8,7 @@
 
 ---
 
-## Why `azd`?
+## Built for you
 
 - ⚡ **Get productive fast** — Streamlined workflows to go from code to cloud in minutes
 - 🏗️ **Azure recommended practices built-in** — Opinionated templates that follow Azure development standards
@@ -27,7 +27,9 @@
 
 ## 🤖 AI Agents
 
-AI agents should refer to [AGENTS.md](AGENTS.md) for contribution guidelines and coding standards.
+**Contributing to this repo?** See [AGENTS.md](AGENTS.md) for coding standards and guidelines.
+
+**Using `azd` with an AI coding assistant?** Check out the [docs](https://aka.ms/azd) and [templates](https://azure.github.io/awesome-azd/).
 
 ---
 

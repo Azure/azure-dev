@@ -189,7 +189,7 @@ func renderOption(opt *Option, indentLevel int) string {
 
 	if len(opt.Args) > 0 {
 		lines = append(lines, fmt.Sprintf("%s\t%s: [", indent, fieldArgs))
-		argsContent := renderArgs(opt.Args, indentLevel+1)
+		argsContent := renderArgs(opt.Args, indentLevel+2)
 		lines = append(lines, argsContent)
 		lines = append(lines, fmt.Sprintf("%s\t],", indent))
 	}

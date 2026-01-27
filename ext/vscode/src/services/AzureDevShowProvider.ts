@@ -35,8 +35,11 @@ export interface AzureDevShowProvider {
 }
 
 export class WorkspaceAzureDevShowProvider implements AzureDevShowProvider {
+    public constructor(private readonly createAzureDevCliFunction = createAzureDevCli, private readonly execAsyncFunction = execAsync) {
+    }
+
     public async getShowResults(context: IActionContext, configurationFile: vscode.Uri, environmentName?: string): Promise<AzDevShowResults> {
-        const azureCli = await createAzureDevCli(context);
+        const azureCli = await this.createAzureDevCliFunction(context);
 
         const configurationFileDirectory = path.dirname(configurationFile.fsPath);
 
@@ -48,7 +51,7 @@ export class WorkspaceAzureDevShowProvider implements AzureDevShowProvider {
         )();
 
         try {
-            const { stdout } = await execAsync(azureCli.invocation, args, azureCli.spawnOptions(configurationFileDirectory));
+            const { stdout } = await this.execAsyncFunction(azureCli.invocation, args, azureCli.spawnOptions(configurationFileDirectory));
             return JSON.parse(stdout) as AzDevShowResults;
         } catch (error) {
             // Provide user-friendly error messages for common issues

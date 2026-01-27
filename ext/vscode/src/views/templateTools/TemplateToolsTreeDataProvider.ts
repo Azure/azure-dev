@@ -83,7 +83,7 @@ export class TemplateToolsTreeDataProvider implements vscode.TreeDataProvider<Tr
         ];
     }
 
-    private async getCategoryItems(): Promise<TreeItemModel[]> {
+    private getCategoryItems(): TreeItemModel[] {
         const categories = this.templateProvider.getCategories();
         return categories.map(c => new CategoryItem(c, this.templateProvider));
     }

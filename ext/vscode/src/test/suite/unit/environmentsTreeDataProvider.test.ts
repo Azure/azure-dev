@@ -142,7 +142,7 @@ suite('EnvironmentsTreeDataProvider', () => {
     });
 
     suite('toggleVisibility', () => {
-        test('toggles environment variable visibility from hidden to visible', async () => {
+        test('toggles environment variable visibility from hidden to visible', () => {
             const mockEnvVarItem: EnvironmentVariableItem = {
                 name: 'dev',
                 isDefault: true,
@@ -166,7 +166,7 @@ suite('EnvironmentsTreeDataProvider', () => {
             expect(typeof updatedTreeItem.tooltip === 'string' && updatedTreeItem.tooltip.includes('test-sub-id')).to.be.true;
         });
 
-        test('toggles environment variable visibility from visible to hidden', async () => {
+        test('toggles environment variable visibility from visible to hidden', () => {
             const mockEnvVarItem: EnvironmentVariableItem = {
                 name: 'dev',
                 isDefault: true,
@@ -193,7 +193,7 @@ suite('EnvironmentsTreeDataProvider', () => {
             expect(typeof updatedTreeItem.tooltip === 'string' && updatedTreeItem.tooltip.includes('Click to view value')).to.be.true;
         });
 
-        test('does not toggle visibility for non-variable items', async () => {
+        test('does not toggle visibility for non-variable items', () => {
             const mockEnvItem: EnvironmentItem = {
                 name: 'dev',
                 isDefault: true,

@@ -22,7 +22,8 @@ export class AzureYamlDiagnosticProvider extends vscode.Disposable {
     private readonly diagnosticCollection: vscode.DiagnosticCollection;
 
     public constructor(
-        private readonly selector: vscode.DocumentSelector
+        private readonly selector: vscode.DocumentSelector,
+        private readonly getProjectInformationFunction = getAzureYamlProjectInformation
     ) {
         const disposables: vscode.Disposable[] = [];
 
@@ -49,7 +50,7 @@ export class AzureYamlDiagnosticProvider extends vscode.Disposable {
             try {
                 // Validate that project paths exist on disk
                 // Note: Schema validation is handled by the YAML extension
-                const projectInformation = await getAzureYamlProjectInformation(document);
+                const projectInformation = await this.getProjectInformationFunction(document);
 
                 for (const project of projectInformation) {
                     if (await AzExtFsExtra.pathExists(project.projectUri)) {

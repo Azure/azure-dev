@@ -81,7 +81,7 @@ export async function addService(context: IActionContext, node?: AzureDevCliMode
         // Find the end of the services section
         if (doc.contents && yaml.isMap(doc.contents)) {
             const servicesNode = doc.contents.items.find((item) => yaml.isScalar(item.key) && item.key.value === 'services');
-            if (servicesNode && servicesNode.value && 'range' in servicesNode.value && servicesNode.value.range) {
+            if (servicesNode?.value && 'range' in servicesNode.value && servicesNode.value.range) {
                 const insertPosition = document.positionAt(servicesNode.value.range[1]);
                 const edit = new vscode.WorkspaceEdit();
                 edit.insert(documentUri, insertPosition, serviceSnippet);

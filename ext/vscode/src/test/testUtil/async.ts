@@ -16,7 +16,7 @@ export async function delay(ms: number, token?: vscode.CancellationToken): Promi
             cancellationListener = token.onCancellationRequested(() => {
                 cancellationListener.dispose();
                 clearTimeout(timeout);
-                reject();
+                reject(new Error('Operation cancelled'));
             });
         }
     });

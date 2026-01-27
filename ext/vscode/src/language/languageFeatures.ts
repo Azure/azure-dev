@@ -35,5 +35,5 @@ export function registerLanguageFeatures(): void {
     );
 
     // Register code action commands
-    void registerCodeActionCommands(ext.context);
+    registerCodeActionCommands(ext.context);
 }

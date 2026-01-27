@@ -12,7 +12,7 @@ export class TestMemento implements vscode.Memento {
     }
 
     get<T>(key: string, defaultValue?: T): T | undefined {
-        return this.values.get(key) ?? defaultValue;
+        return this.values.get(key) as T ?? defaultValue;
     }
 
     update(key: string, value: unknown): Thenable<void> {

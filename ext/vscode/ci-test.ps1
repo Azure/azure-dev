@@ -1,5 +1,5 @@
 if ($IsLinux) {
-    xvfb-run -a npm run unit-test
+    xvfb-run -a npm run ci-test
 } else {
-    npm run unit-test
+    npm run ci-test
 }

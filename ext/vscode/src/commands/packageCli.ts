@@ -24,7 +24,8 @@ export async function packageCli(context: IActionContext, selectedItem?: vscode.
         selectedModel = selectedItem;
         selectedFile = selectedModel.context.configurationFile;
     } else {
-        selectedFile = selectedItem as vscode.Uri;
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        selectedFile = selectedItem!;
     }
     const workingFolder = await getWorkingFolder(context, selectedFile);
 

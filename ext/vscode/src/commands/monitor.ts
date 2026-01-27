@@ -33,7 +33,8 @@ export async function monitor(context: IActionContext, selectedItem?: vscode.Uri
     } else if (isAzureDevCliModel(selectedItem)) {
         selectedFile = selectedItem.context.configurationFile;
     } else {
-        selectedFile = selectedItem as vscode.Uri;
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        selectedFile = selectedItem!;
     }
     const workingFolder = await getWorkingFolder(context, selectedFile);
 

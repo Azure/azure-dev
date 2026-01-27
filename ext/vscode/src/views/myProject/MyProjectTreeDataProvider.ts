@@ -71,7 +71,7 @@ export class MyProjectTreeDataProvider implements vscode.TreeDataProvider<AzureD
                     this.envListProvider,
                     this.envValuesProvider,
                     new Set<string>(),
-                    () => {},
+                    () => { /* no-op */},
                     false // Do not include environments
                 );
 

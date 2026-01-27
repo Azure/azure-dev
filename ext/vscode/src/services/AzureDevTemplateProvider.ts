@@ -86,7 +86,7 @@ export class AzureDevTemplateProvider {
                 this.lastFetchTime = now;
             } catch (error) {
                 vscode.window.showErrorMessage(vscode.l10n.t('Failed to load templates: {0}', error instanceof Error ? error.message : String(error)));
-                return this.templatesCache || [];
+                return this.templatesCache ?? [];
             }
         }
 

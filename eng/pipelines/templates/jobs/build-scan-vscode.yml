@@ -26,7 +26,7 @@ jobs:
           demands: ImageOverride -equals ${{ build.value.OSVmImage }}
 
       variables:
-        NodeVersion: 20.x
+        NodeVersion: 22.x
 
       steps:
         - task: NodeTool@0
@@ -34,7 +34,7 @@ jobs:
             versionSpec: $(NodeVersion)
 
         - bash: |
-            npm install -g npm vsce
+            npm install -g npm @vscode/vsce
             npm ci --no-optional
           workingDirectory: ext/vscode
 

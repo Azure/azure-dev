@@ -10,7 +10,7 @@ import { executeAsTask } from '../utils/executeAsTask';
 import { isAzureDevCliModel, isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
 import { AzureDevCliModel } from '../views/workspace/AzureDevCliModel';
 import { AzureDevCliService } from '../views/workspace/AzureDevCliService';
-import { getAzDevTerminalTitle, getWorkingFolder } from './cmdUtil';
+import { getAzDevTerminalTitle, getWorkingFolder, validateFileSystemUri } from './cmdUtil';
 
 // `package` is a reserved identifier so `packageCli` had to be used instead
 export async function packageCli(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {
@@ -27,6 +27,10 @@ export async function packageCli(context: IActionContext, selectedItem?: vscode.
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         selectedFile = selectedItem!;
     }
+
+    // Validate that selectedFile is valid for file system operations
+    validateFileSystemUri(context, selectedFile, selectedItem, 'package');
+
     const workingFolder = await getWorkingFolder(context, selectedFile);
 
     const azureCli = await createAzureDevCli(context);

@@ -50,6 +50,8 @@ func TestConfigOptionsAction_JSON(t *testing.T) {
 	// Verify expected options are present
 	foundDefaults := false
 	foundAlpha := false
+	foundAuthUseAzCliAuth := false
+	foundAgentModelType := false
 	for _, opt := range options {
 		if opt.Key == "defaults.subscription" {
 			foundDefaults = true
@@ -60,9 +62,17 @@ func TestConfigOptionsAction_JSON(t *testing.T) {
 			require.Contains(t, opt.AllowedValues, "on")
 			require.Contains(t, opt.AllowedValues, "off")
 		}
+		if opt.Key == "auth.useAzCliAuth" {
+			foundAuthUseAzCliAuth = true
+		}
+		if opt.Key == "ai.agent.model.type" {
+			foundAgentModelType = true
+		}
 	}
 	require.True(t, foundDefaults, "defaults.subscription should be present")
 	require.True(t, foundAlpha, "alpha.all should be present")
+	require.True(t, foundAuthUseAzCliAuth, "auth.useAzCliAuth should be present")
+	require.True(t, foundAgentModelType, "ai.agent.model.type should be present")
 }
 
 func TestConfigOptionsAction_Table(t *testing.T) {
@@ -95,6 +105,8 @@ func TestConfigOptionsAction_Table(t *testing.T) {
 	require.Contains(t, outputStr, "Description")
 	require.Contains(t, outputStr, "defaults.subscription")
 	require.Contains(t, outputStr, "alpha.all")
+	require.Contains(t, outputStr, "auth.useAzCliAuth")
+	require.Contains(t, outputStr, "ai.agent.model.type")
 }
 
 func TestConfigOptionsAction_DefaultFormat(t *testing.T) {
@@ -130,6 +142,8 @@ func TestConfigOptionsAction_DefaultFormat(t *testing.T) {
 	require.Contains(t, outputStr, "Description:")
 	require.Contains(t, outputStr, "Key: alpha.all")
 	require.Contains(t, outputStr, "Allowed Values:")
+	require.Contains(t, outputStr, "Key: auth.useAzCliAuth")
+	require.Contains(t, outputStr, "Key: ai.agent.model.type")
 }
 
 func TestConfigOptionsAction_WithCurrentValues(t *testing.T) {

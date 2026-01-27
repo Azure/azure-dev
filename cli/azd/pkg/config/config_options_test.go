@@ -20,6 +20,8 @@ func TestGetAllConfigOptions(t *testing.T) {
 	foundDefaultsSubscription := false
 	foundDefaultsLocation := false
 	foundAlphaAll := false
+	foundAuthUseAzCliAuth := false
+	foundAgentModelType := false
 
 	for _, option := range options {
 		require.NotEmpty(t, option.Key, "Config option key should not be empty")
@@ -41,6 +43,15 @@ func TestGetAllConfigOptions(t *testing.T) {
 			require.Contains(t, option.AllowedValues, "on")
 			require.Contains(t, option.AllowedValues, "off")
 			require.Equal(t, "AZD_ALPHA_ENABLE_ALL", option.EnvVar)
+		case "auth.useAzCliAuth":
+			foundAuthUseAzCliAuth = true
+			require.Equal(t, "string", option.Type)
+			require.Contains(t, option.AllowedValues, "true")
+			require.Contains(t, option.AllowedValues, "false")
+		case "ai.agent.model.type":
+			foundAgentModelType = true
+			require.Equal(t, "string", option.Type)
+			require.Contains(t, option.AllowedValues, "github-copilot")
 		}
 	}
 
@@ -48,6 +59,8 @@ func TestGetAllConfigOptions(t *testing.T) {
 	require.True(t, foundDefaultsSubscription, "defaults.subscription option should be present")
 	require.True(t, foundDefaultsLocation, "defaults.location option should be present")
 	require.True(t, foundAlphaAll, "alpha.all option should be present")
+	require.True(t, foundAuthUseAzCliAuth, "auth.useAzCliAuth option should be present")
+	require.True(t, foundAgentModelType, "ai.agent.model.type option should be present")
 }
 
 func TestConfigOptionStructure(t *testing.T) {

@@ -88,7 +88,7 @@ Open `extension.yaml`. This file tells `azd` how to load and interact with your 
 ```yaml
 capabilities:
     - custom-commands
-description: My sample extension
+description: This is a sample extension
 displayName: Sample extension
 id: sample.extension
 language: go
@@ -130,7 +130,7 @@ Custom commands allow you to add new keywords to `azd` for custom operations. In
     }
     ```
 
-1. Update the import statment to include `github.com/spf13/cobra` and `fmt`.
+1. Update the import statement to include `github.com/spf13/cobra` and `fmt`.
 
 1. Register this command in the `main` function.
 

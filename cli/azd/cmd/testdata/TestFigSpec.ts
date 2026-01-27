@@ -1013,13 +1013,13 @@ const completionSpec: Fig.Spec = {
 					name: ['set'],
 					description: 'Sets a configuration.',
 					args: [
-					{
-						name: 'path',
-						generators: azdGenerators.listConfigKeys,
-					},
-					{
-						name: 'value',
-					},
+						{
+							name: 'path',
+							generators: azdGenerators.listConfigKeys,
+						},
+						{
+							name: 'value',
+						},
 					],
 				},
 				{
@@ -1272,12 +1272,12 @@ const completionSpec: Fig.Spec = {
 								},
 							],
 							args: [
-							{
-								name: 'path',
-							},
-							{
-								name: 'value',
-							},
+								{
+									name: 'path',
+								},
+								{
+									name: 'value',
+								},
 							],
 						},
 						{
@@ -1457,14 +1457,14 @@ const completionSpec: Fig.Spec = {
 						},
 					],
 					args: [
-					{
-						name: 'key',
-						isOptional: true,
-					},
-					{
-						name: 'value',
-						isOptional: true,
-					},
+						{
+							name: 'key',
+							isOptional: true,
+						},
+						{
+							name: 'value',
+							isOptional: true,
+						},
 					],
 				},
 				{

@@ -126,11 +126,12 @@ func renderSubcommand(sub *Subcommand, indentLevel int) string {
 	}
 
 	if len(sub.Args) > 0 {
-		argsContent := renderArgs(sub.Args, indentLevel+1)
 		if len(sub.Args) == 1 {
+			argsContent := renderArgs(sub.Args, indentLevel+1)
 			trimmed := strings.TrimSuffix(strings.TrimSpace(argsContent), ",")
 			lines = append(lines, fmt.Sprintf("%s\t%s: %s,", indent, fieldArgs, trimmed))
 		} else {
+			argsContent := renderArgs(sub.Args, indentLevel+2)
 			lines = append(lines, fmt.Sprintf("%s\t%s: [", indent, fieldArgs))
 			lines = append(lines, argsContent)
 			lines = append(lines, fmt.Sprintf("%s\t],", indent))

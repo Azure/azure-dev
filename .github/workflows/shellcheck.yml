@@ -4,11 +4,18 @@ on:
   pull_request:
     paths:
       - "**.sh"
+      - ".github/workflows/shellcheck.yml"
     branches: [main]
+
+# If two events are triggered within a short time in the same PR, cancel the run of the oldest event
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
   pull-requests: read
+  checks: write
 
 jobs:
   shellcheck:
@@ -16,7 +23,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run ShellCheck
-        uses: ludeeus/action-shellcheck@master
+        uses: reviewdog/action-shellcheck@v1
         with:
-          severity: style
-          scandir: '.'
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          reporter: github-check
+          path: "."
+          pattern: "*.sh"
+          level: info

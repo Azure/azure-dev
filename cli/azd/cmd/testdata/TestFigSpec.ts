@@ -193,10 +193,533 @@ const completionSpec: Fig.Spec = {
 				{
 					name: ['agent'],
 					description: 'Extension for the Foundry Agent Service. (Preview)',
+					subcommands: [
+						{
+							name: ['init'],
+							description: 'Initialize a new AI agent project. (Preview)',
+							options: [
+								{
+									name: ['--debug'],
+									description: 'Enable debug mode',
+								},
+								{
+									name: ['--environment', '-e'],
+									description: 'The name of the azd environment to use.',
+									args: [
+									{
+										name: 'environment',
+									},
+									],
+								},
+								{
+									name: ['--help', '-h'],
+									description: 'help for init',
+								},
+								{
+									name: ['--host'],
+									description: '[Optional] For container based agents, can override the default host to target a container app instead. Accepted values: \'containerapp\'',
+									args: [
+									{
+										name: 'host',
+									},
+									],
+								},
+								{
+									name: ['--manifest', '-m'],
+									description: 'Path or URI to an agent manifest to add to your azd project',
+									args: [
+									{
+										name: 'manifest',
+									},
+									],
+								},
+								{
+									name: ['--no-prompt'],
+									description: 'Accepts the default value instead of prompting, or it fails if there is no default.',
+								},
+								{
+									name: ['--project-id', '-p'],
+									description: 'Existing Microsoft Foundry Project Id to initialize your azd environment with',
+									args: [
+									{
+										name: 'project-id',
+									},
+									],
+								},
+								{
+									name: ['--src', '-s'],
+									description: '[Optional] Directory to download the agent definition to (defaults to \'src/<agent-id>\')',
+									args: [
+									{
+										name: 'src',
+									},
+									],
+								},
+							],
+						},
+						{
+							name: ['version'],
+							description: 'Prints the version of the application',
+							options: [
+								{
+									name: ['--debug'],
+									description: 'Enable debug mode',
+								},
+								{
+									name: ['--help', '-h'],
+									description: 'help for version',
+								},
+								{
+									name: ['--no-prompt'],
+									description: 'Accepts the default value instead of prompting, or it fails if there is no default.',
+								},
+							],
+						},
+					],
 				},
 				{
 					name: ['finetuning'],
 					description: 'Extension for Foundry Fine Tuning. (Preview)',
+					subcommands: [
+						{
+							name: ['init'],
+							description: 'Initialize a new AI Fine-tuning project. (Preview)',
+							options: [
+								{
+									name: ['--debug'],
+									description: 'Enable debug mode',
+								},
+								{
+									name: ['--environment', '-n'],
+									description: 'The name of the azd environment to use.',
+									args: [
+									{
+										name: 'environment',
+									},
+									],
+								},
+								{
+									name: ['--from-job', '-j'],
+									description: 'Clone configuration from an existing job ID',
+									args: [
+									{
+										name: 'from-job',
+									},
+									],
+								},
+								{
+									name: ['--help', '-h'],
+									description: 'help for init',
+								},
+								{
+									name: ['--no-prompt'],
+									description: 'accepts the default value instead of prompting, or fails if there is no default',
+								},
+								{
+									name: ['--project-endpoint', '-e'],
+									description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
+									args: [
+									{
+										name: 'project-endpoint',
+									},
+									],
+								},
+								{
+									name: ['--project-resource-id', '-p'],
+									description: 'ARM resource ID of the Microsoft Foundry Project (e.g., /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.CognitiveServices/accounts/{account}/projects/{project})',
+									args: [
+									{
+										name: 'project-resource-id',
+									},
+									],
+								},
+								{
+									name: ['--subscription', '-s'],
+									description: 'Azure subscription ID',
+									args: [
+									{
+										name: 'subscription',
+									},
+									],
+								},
+								{
+									name: ['--template', '-t'],
+									description: 'URL or path to a fine-tune job template',
+									args: [
+									{
+										name: 'template',
+									},
+									],
+								},
+								{
+									name: ['--working-directory', '-w'],
+									description: 'Local path for project output',
+									args: [
+									{
+										name: 'working-directory',
+									},
+									],
+								},
+							],
+						},
+						{
+							name: ['jobs'],
+							description: 'Manage fine-tuning jobs',
+							subcommands: [
+								{
+									name: ['cancel'],
+									description: 'Cancels a running or queued fine-tuning job.',
+									options: [
+										{
+											name: ['--debug'],
+											description: 'Enable debug mode',
+										},
+										{
+											name: ['--force'],
+											description: 'Skip confirmation prompt',
+											isDangerous: true,
+										},
+										{
+											name: ['--help', '-h'],
+											description: 'help for cancel',
+										},
+										{
+											name: ['--id', '-i'],
+											description: 'Job ID (required)',
+											args: [
+											{
+												name: 'id',
+											},
+											],
+										},
+										{
+											name: ['--no-prompt'],
+											description: 'accepts the default value instead of prompting, or fails if there is no default',
+										},
+									],
+								},
+								{
+									name: ['deploy'],
+									description: 'Deploy a fine-tuned model to Azure Cognitive Services',
+									options: [
+										{
+											name: ['--capacity', '-c'],
+											description: 'Capacity units',
+											args: [
+											{
+												name: 'capacity',
+											},
+											],
+										},
+										{
+											name: ['--debug'],
+											description: 'Enable debug mode',
+										},
+										{
+											name: ['--deployment-name', '-d'],
+											description: 'Deployment name (required)',
+											args: [
+											{
+												name: 'deployment-name',
+											},
+											],
+										},
+										{
+											name: ['--help', '-h'],
+											description: 'help for deploy',
+										},
+										{
+											name: ['--job-id', '-i'],
+											description: 'Fine-tuning job ID (required)',
+											args: [
+											{
+												name: 'job-id',
+											},
+											],
+										},
+										{
+											name: ['--model-format', '-m'],
+											description: 'Model format',
+											args: [
+											{
+												name: 'model-format',
+											},
+											],
+										},
+										{
+											name: ['--no-prompt'],
+											description: 'accepts the default value instead of prompting, or fails if there is no default',
+										},
+										{
+											name: ['--no-wait'],
+											description: 'Do not wait for deployment to complete',
+										},
+										{
+											name: ['--sku', '-s'],
+											description: 'SKU for deployment',
+											args: [
+											{
+												name: 'sku',
+											},
+											],
+										},
+										{
+											name: ['--version', '-v'],
+											description: 'Model version',
+											args: [
+											{
+												name: 'version',
+											},
+											],
+										},
+									],
+								},
+								{
+									name: ['list'],
+									description: 'List fine-tuning jobs.',
+									options: [
+										{
+											name: ['--after'],
+											description: 'Pagination cursor',
+											args: [
+											{
+												name: 'after',
+											},
+											],
+										},
+										{
+											name: ['--debug'],
+											description: 'Enable debug mode',
+										},
+										{
+											name: ['--help', '-h'],
+											description: 'help for list',
+										},
+										{
+											name: ['--no-prompt'],
+											description: 'accepts the default value instead of prompting, or fails if there is no default',
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'Output format: table, json',
+											args: [
+											{
+												name: 'output',
+											},
+											],
+										},
+										{
+											name: ['--top', '-t'],
+											description: 'Number of jobs to return',
+											args: [
+											{
+												name: 'top',
+											},
+											],
+										},
+									],
+								},
+								{
+									name: ['pause'],
+									description: 'Pauses a running fine-tuning job.',
+									options: [
+										{
+											name: ['--debug'],
+											description: 'Enable debug mode',
+										},
+										{
+											name: ['--help', '-h'],
+											description: 'help for pause',
+										},
+										{
+											name: ['--id', '-i'],
+											description: 'Job ID (required)',
+											args: [
+											{
+												name: 'id',
+											},
+											],
+										},
+										{
+											name: ['--no-prompt'],
+											description: 'accepts the default value instead of prompting, or fails if there is no default',
+										},
+									],
+								},
+								{
+									name: ['resume'],
+									description: 'Resumes a paused fine-tuning job.',
+									options: [
+										{
+											name: ['--debug'],
+											description: 'Enable debug mode',
+										},
+										{
+											name: ['--help', '-h'],
+											description: 'help for resume',
+										},
+										{
+											name: ['--id', '-i'],
+											description: 'Job ID (required)',
+											args: [
+											{
+												name: 'id',
+											},
+											],
+										},
+										{
+											name: ['--no-prompt'],
+											description: 'accepts the default value instead of prompting, or fails if there is no default',
+										},
+									],
+								},
+								{
+									name: ['show'],
+									description: 'Shows detailed information about a specific job.',
+									options: [
+										{
+											name: ['--debug'],
+											description: 'Enable debug mode',
+										},
+										{
+											name: ['--help', '-h'],
+											description: 'help for show',
+										},
+										{
+											name: ['--id', '-i'],
+											description: 'Job ID (required)',
+											args: [
+											{
+												name: 'id',
+											},
+											],
+										},
+										{
+											name: ['--logs'],
+											description: 'Include recent training logs',
+										},
+										{
+											name: ['--no-prompt'],
+											description: 'accepts the default value instead of prompting, or fails if there is no default',
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'Output format: table, json, yaml',
+											args: [
+											{
+												name: 'output',
+											},
+											],
+										},
+									],
+								},
+								{
+									name: ['submit'],
+									description: 'submit fine tuning job',
+									options: [
+										{
+											name: ['--debug'],
+											description: 'Enable debug mode',
+										},
+										{
+											name: ['--file', '-f'],
+											description: 'Path to the config file.',
+											args: [
+											{
+												name: 'file',
+											},
+											],
+										},
+										{
+											name: ['--help', '-h'],
+											description: 'help for submit',
+										},
+										{
+											name: ['--model', '-m'],
+											description: 'Base model to fine-tune. Overrides config file. Required if --file is not provided',
+											args: [
+											{
+												name: 'model',
+											},
+											],
+										},
+										{
+											name: ['--no-prompt'],
+											description: 'accepts the default value instead of prompting, or fails if there is no default',
+										},
+										{
+											name: ['--seed', '-r'],
+											description: 'Random seed for reproducibility of the job. If a seed is not specified, one will be generated for you. Overrides config file.',
+											args: [
+											{
+												name: 'seed',
+											},
+											],
+										},
+										{
+											name: ['--suffix', '-s'],
+											description: 'An optional string of up to 64 characters that will be added to your fine-tuned model name. Overrides config file.',
+											args: [
+											{
+												name: 'suffix',
+											},
+											],
+										},
+										{
+											name: ['--training-file', '-t'],
+											description: 'Training file ID or local path. Use \'local:\' prefix for local paths. Required if --file is not provided',
+											args: [
+											{
+												name: 'training-file',
+											},
+											],
+										},
+										{
+											name: ['--validation-file', '-v'],
+											description: 'Validation file ID or local path. Use \'local:\' prefix for local paths.',
+											args: [
+											{
+												name: 'validation-file',
+											},
+											],
+										},
+									],
+								},
+							],
+							options: [
+								{
+									name: ['--debug'],
+									description: 'Enable debug mode',
+								},
+								{
+									name: ['--help', '-h'],
+									description: 'help for jobs',
+								},
+								{
+									name: ['--no-prompt'],
+									description: 'accepts the default value instead of prompting, or fails if there is no default',
+								},
+							],
+						},
+						{
+							name: ['version'],
+							description: 'Prints the version of the application',
+							options: [
+								{
+									name: ['--debug'],
+									description: 'Enable debug mode',
+								},
+								{
+									name: ['--help', '-h'],
+									description: 'help for version',
+								},
+								{
+									name: ['--no-prompt'],
+									description: 'accepts the default value instead of prompting, or fails if there is no default',
+								},
+							],
+						},
+					],
 				},
 			],
 		},
@@ -290,6 +813,82 @@ const completionSpec: Fig.Spec = {
 		{
 			name: ['coding-agent'],
 			description: 'This extension configures GitHub Copilot Coding Agent access to Azure',
+			subcommands: [
+				{
+					name: ['config'],
+					description: 'Configure the GitHub Copilot coding agent to access Azure resources via the Azure MCP',
+					options: [
+						{
+							name: ['--branch-name'],
+							description: 'The branch name to use when pushing changes to the copilot-setup-steps.yml',
+							args: [
+							{
+								name: 'branch-name',
+							},
+							],
+						},
+						{
+							name: ['--debug'],
+							description: 'Enables debugging and diagnostics logging.',
+						},
+						{
+							name: ['--github-host-name'],
+							description: 'The hostname to use with GitHub commands',
+							args: [
+							{
+								name: 'github-host-name',
+							},
+							],
+						},
+						{
+							name: ['--help', '-h'],
+							description: 'help for config',
+						},
+						{
+							name: ['--managed-identity-name'],
+							description: 'The name to use for the managed identity, if created.',
+							args: [
+							{
+								name: 'managed-identity-name',
+							},
+							],
+						},
+						{
+							name: ['--remote-name'],
+							description: 'The name of the git remote where the Copilot Coding Agent will run (ex: <owner>/<repo>)',
+							args: [
+							{
+								name: 'remote-name',
+							},
+							],
+						},
+						{
+							name: ['--roles'],
+							description: 'The roles to assign to the service principal or managed identity. By default, the service principal or managed identity will be granted the Reader role.',
+							isRepeatable: true,
+							args: [
+							{
+								name: 'roles',
+							},
+							],
+						},
+					],
+				},
+				{
+					name: ['version'],
+					description: 'Prints the version of the application',
+					options: [
+						{
+							name: ['--debug'],
+							description: 'Enable debug mode',
+						},
+						{
+							name: ['--help', '-h'],
+							description: 'help for version',
+						},
+					],
+				},
+			],
 		},
 		{
 			name: ['completion'],
@@ -320,6 +919,36 @@ const completionSpec: Fig.Spec = {
 		{
 			name: ['concurx'],
 			description: 'Concurrent execution for azd deployment',
+			subcommands: [
+				{
+					name: ['up'],
+					description: 'Runs azd up in concurrent mode',
+					options: [
+						{
+							name: ['--debug'],
+							description: 'Enable debug logging for azd commands',
+						},
+						{
+							name: ['--help', '-h'],
+							description: 'help for up',
+						},
+					],
+				},
+				{
+					name: ['version'],
+					description: 'Prints the version of the application',
+					options: [
+						{
+							name: ['--debug'],
+							description: 'Enable debug mode',
+						},
+						{
+							name: ['--help', '-h'],
+							description: 'help for version',
+						},
+					],
+				},
+			],
 		},
 		{
 			name: ['config'],
@@ -379,6 +1008,136 @@ const completionSpec: Fig.Spec = {
 		{
 			name: ['demo'],
 			description: 'This extension provides examples of the AZD extension framework.',
+			subcommands: [
+				{
+					name: ['colors', 'colours'],
+					description: 'Displays all ASCII colors with their standard and high-intensity variants.',
+					options: [
+						{
+							name: ['--debug'],
+							description: 'Enable debug mode',
+						},
+						{
+							name: ['--help', '-h'],
+							description: 'help for colors',
+						},
+					],
+				},
+				{
+					name: ['config'],
+					description: 'Setup monitoring configuration for the project and services',
+					options: [
+						{
+							name: ['--debug'],
+							description: 'Enable debug mode',
+						},
+						{
+							name: ['--help', '-h'],
+							description: 'help for config',
+						},
+					],
+				},
+				{
+					name: ['context'],
+					description: 'Get the context of the AZD project & environment.',
+					options: [
+						{
+							name: ['--debug'],
+							description: 'Enable debug mode',
+						},
+						{
+							name: ['--help', '-h'],
+							description: 'help for context',
+						},
+					],
+				},
+				{
+					name: ['gh-url-parse'],
+					description: 'Parse a GitHub URL and extract repository information.',
+					options: [
+						{
+							name: ['--debug'],
+							description: 'Enable debug mode',
+						},
+						{
+							name: ['--help', '-h'],
+							description: 'help for gh-url-parse',
+						},
+					],
+				},
+				{
+					name: ['listen'],
+					description: 'Starts the extension and listens for events.',
+					options: [
+						{
+							name: ['--debug'],
+							description: 'Enable debug mode',
+						},
+						{
+							name: ['--help', '-h'],
+							description: 'help for listen',
+						},
+					],
+				},
+				{
+					name: ['mcp'],
+					description: 'MCP server commands for demo extension',
+					subcommands: [
+						{
+							name: ['start'],
+							description: 'Start MCP server with demo tools',
+							options: [
+								{
+									name: ['--debug'],
+									description: 'Enable debug mode',
+								},
+								{
+									name: ['--help', '-h'],
+									description: 'help for start',
+								},
+							],
+						},
+					],
+					options: [
+						{
+							name: ['--debug'],
+							description: 'Enable debug mode',
+						},
+						{
+							name: ['--help', '-h'],
+							description: 'help for mcp',
+						},
+					],
+				},
+				{
+					name: ['prompt'],
+					description: 'Examples of prompting the user for input.',
+					options: [
+						{
+							name: ['--debug'],
+							description: 'Enable debug mode',
+						},
+						{
+							name: ['--help', '-h'],
+							description: 'help for prompt',
+						},
+					],
+				},
+				{
+					name: ['version'],
+					description: 'Prints the version of the application',
+					options: [
+						{
+							name: ['--debug'],
+							description: 'Enable debug mode',
+						},
+						{
+							name: ['--help', '-h'],
+							description: 'help for version',
+						},
+					],
+				},
+			],
 		},
 		{
 			name: ['deploy'],
@@ -1613,6 +2372,366 @@ const completionSpec: Fig.Spec = {
 		{
 			name: ['x'],
 			description: 'This extension provides a set of tools for AZD extension developers to test and debug their extensions.',
+			subcommands: [
+				{
+					name: ['build'],
+					description: 'Build the azd extension project',
+					options: [
+						{
+							name: ['--all'],
+							description: 'When set builds for all os/platforms. Defaults to the current os/platform only.',
+						},
+						{
+							name: ['--cwd'],
+							description: 'Path to the azd extension project',
+							args: [
+							{
+								name: 'cwd',
+							},
+							],
+						},
+						{
+							name: ['--debug'],
+							description: 'Enable debug mode',
+						},
+						{
+							name: ['--help', '-h'],
+							description: 'help for build',
+						},
+						{
+							name: ['--output', '-o'],
+							description: 'Path to the output directory. Defaults to ./bin folder.',
+							args: [
+							{
+								name: 'output',
+							},
+							],
+						},
+						{
+							name: ['--skip-install'],
+							description: 'When set skips reinstalling extension after successful build.',
+						},
+					],
+				},
+				{
+					name: ['init'],
+					description: 'Initialize a new AZD extension project',
+					options: [
+						{
+							name: ['--capabilities'],
+							description: 'The list of capabilities for the extension (e.g., custom-commands,lifecycle-events,mcp-server,service-target-provider).',
+							isRepeatable: true,
+							args: [
+							{
+								name: 'capabilities',
+							},
+							],
+						},
+						{
+							name: ['--cwd'],
+							description: 'Path to the azd extension project',
+							args: [
+							{
+								name: 'cwd',
+							},
+							],
+						},
+						{
+							name: ['--debug'],
+							description: 'Enable debug mode',
+						},
+						{
+							name: ['--help', '-h'],
+							description: 'help for init',
+						},
+						{
+							name: ['--id'],
+							description: 'The extension identifier (e.g., company.extension).',
+							args: [
+							{
+								name: 'id',
+							},
+							],
+						},
+						{
+							name: ['--language'],
+							description: 'The programming language for the extension (go, dotnet, javascript, python).',
+							args: [
+							{
+								name: 'language',
+							},
+							],
+						},
+						{
+							name: ['--name'],
+							description: 'The display name for the extension.',
+							args: [
+							{
+								name: 'name',
+							},
+							],
+						},
+						{
+							name: ['--namespace'],
+							description: 'The namespace for the extension commands.',
+							args: [
+							{
+								name: 'namespace',
+							},
+							],
+						},
+						{
+							name: ['--no-prompt'],
+							description: 'Skip all prompts by providing all required parameters via command-line flags.',
+						},
+						{
+							name: ['--registry', '-r'],
+							description: 'When set will create a local extension source registry.',
+						},
+					],
+				},
+				{
+					name: ['pack'],
+					description: 'Build and pack extension artifacts',
+					options: [
+						{
+							name: ['--cwd'],
+							description: 'Path to the azd extension project',
+							args: [
+							{
+								name: 'cwd',
+							},
+							],
+						},
+						{
+							name: ['--debug'],
+							description: 'Enable debug mode',
+						},
+						{
+							name: ['--help', '-h'],
+							description: 'help for pack',
+						},
+						{
+							name: ['--input', '-i'],
+							description: 'Path to the input directory.',
+							args: [
+							{
+								name: 'input',
+							},
+							],
+						},
+						{
+							name: ['--output', '-o'],
+							description: 'Path to the artifacts output directory. If not provided, will use local registry artifacts path.',
+							args: [
+							{
+								name: 'output',
+							},
+							],
+						},
+						{
+							name: ['--rebuild'],
+							description: 'Rebuild the extension before packaging.',
+						},
+					],
+				},
+				{
+					name: ['publish'],
+					description: 'Publish the extension to the extension source',
+					options: [
+						{
+							name: ['--artifacts'],
+							description: 'Path to artifacts to process (comma-separated glob patterns, e.g. ./artifacts/*.zip,./artifacts/*.tar.gz)',
+							isRepeatable: true,
+							args: [
+							{
+								name: 'artifacts',
+							},
+							],
+						},
+						{
+							name: ['--cwd'],
+							description: 'Path to the azd extension project',
+							args: [
+							{
+								name: 'cwd',
+							},
+							],
+						},
+						{
+							name: ['--debug'],
+							description: 'Enable debug mode',
+						},
+						{
+							name: ['--help', '-h'],
+							description: 'help for publish',
+						},
+						{
+							name: ['--registry', '-r'],
+							description: 'Path to the extension source registry',
+							args: [
+							{
+								name: 'registry',
+							},
+							],
+						},
+						{
+							name: ['--repo'],
+							description: 'Github repository to create the release in (e.g. owner/repo)',
+							args: [
+							{
+								name: 'repo',
+							},
+							],
+						},
+						{
+							name: ['--version', '-v'],
+							description: 'Version of the release',
+							args: [
+							{
+								name: 'version',
+							},
+							],
+						},
+					],
+				},
+				{
+					name: ['release'],
+					description: 'Create a new extension release from the packaged artifacts',
+					options: [
+						{
+							name: ['--artifacts'],
+							description: 'Path to artifacts to upload to the release (comma-separated glob patterns, e.g. ./artifacts/*.zip,./artifacts/*.tar.gz)',
+							isRepeatable: true,
+							args: [
+							{
+								name: 'artifacts',
+							},
+							],
+						},
+						{
+							name: ['--confirm'],
+							description: 'Skip confirmation prompt',
+						},
+						{
+							name: ['--cwd'],
+							description: 'Path to the azd extension project',
+							args: [
+							{
+								name: 'cwd',
+							},
+							],
+						},
+						{
+							name: ['--debug'],
+							description: 'Enable debug mode',
+						},
+						{
+							name: ['--draft', '-d'],
+							description: 'Create a draft release',
+						},
+						{
+							name: ['--help', '-h'],
+							description: 'help for release',
+						},
+						{
+							name: ['--notes', '-n'],
+							description: 'Release notes',
+							args: [
+							{
+								name: 'notes',
+							},
+							],
+						},
+						{
+							name: ['--notes-file', '-F'],
+							description: 'Read release notes from file (use "-" to read from standard input)',
+							args: [
+							{
+								name: 'notes-file',
+							},
+							],
+						},
+						{
+							name: ['--prerelease'],
+							description: 'Create a pre-release version',
+						},
+						{
+							name: ['--repo', '-r'],
+							description: 'Github repository to create the release in (e.g. owner/repo)',
+							args: [
+							{
+								name: 'repo',
+							},
+							],
+						},
+						{
+							name: ['--title', '-t'],
+							description: 'Title of the release',
+							args: [
+							{
+								name: 'title',
+							},
+							],
+						},
+						{
+							name: ['--version', '-v'],
+							description: 'Version of the release',
+							args: [
+							{
+								name: 'version',
+							},
+							],
+						},
+					],
+				},
+				{
+					name: ['version'],
+					description: 'Prints the version of the application',
+					options: [
+						{
+							name: ['--cwd'],
+							description: 'Path to the azd extension project',
+							args: [
+							{
+								name: 'cwd',
+							},
+							],
+						},
+						{
+							name: ['--debug'],
+							description: 'Enable debug mode',
+						},
+						{
+							name: ['--help', '-h'],
+							description: 'help for version',
+						},
+					],
+				},
+				{
+					name: ['watch'],
+					description: 'Watches the AZD extension project for file changes and rebuilds it.',
+					options: [
+						{
+							name: ['--cwd'],
+							description: 'Path to the azd extension project',
+							args: [
+							{
+								name: 'cwd',
+							},
+							],
+						},
+						{
+							name: ['--debug'],
+							description: 'Enable debug mode',
+						},
+						{
+							name: ['--help', '-h'],
+							description: 'help for watch',
+						},
+					],
+				},
+			],
 		},
 		{
 			name: ['help'],
@@ -1629,10 +2748,64 @@ const completionSpec: Fig.Spec = {
 						{
 							name: ['agent'],
 							description: 'Extension for the Foundry Agent Service. (Preview)',
+							subcommands: [
+								{
+									name: ['init'],
+									description: 'Initialize a new AI agent project. (Preview)',
+								},
+								{
+									name: ['version'],
+									description: 'Prints the version of the application',
+								},
+							],
 						},
 						{
 							name: ['finetuning'],
 							description: 'Extension for Foundry Fine Tuning. (Preview)',
+							subcommands: [
+								{
+									name: ['init'],
+									description: 'Initialize a new AI Fine-tuning project. (Preview)',
+								},
+								{
+									name: ['jobs'],
+									description: 'Manage fine-tuning jobs',
+									subcommands: [
+										{
+											name: ['cancel'],
+											description: 'Cancels a running or queued fine-tuning job.',
+										},
+										{
+											name: ['deploy'],
+											description: 'Deploy a fine-tuned model to Azure Cognitive Services',
+										},
+										{
+											name: ['list'],
+											description: 'List fine-tuning jobs.',
+										},
+										{
+											name: ['pause'],
+											description: 'Pauses a running fine-tuning job.',
+										},
+										{
+											name: ['resume'],
+											description: 'Resumes a paused fine-tuning job.',
+										},
+										{
+											name: ['show'],
+											description: 'Shows detailed information about a specific job.',
+										},
+										{
+											name: ['submit'],
+											description: 'submit fine tuning job',
+										},
+									],
+								},
+								{
+									name: ['version'],
+									description: 'Prints the version of the application',
+								},
+							],
 						},
 					],
 				},
@@ -1657,6 +2830,16 @@ const completionSpec: Fig.Spec = {
 				{
 					name: ['coding-agent'],
 					description: 'This extension configures GitHub Copilot Coding Agent access to Azure',
+					subcommands: [
+						{
+							name: ['config'],
+							description: 'Configure the GitHub Copilot coding agent to access Azure resources via the Azure MCP',
+						},
+						{
+							name: ['version'],
+							description: 'Prints the version of the application',
+						},
+					],
 				},
 				{
 					name: ['completion'],
@@ -1687,6 +2870,16 @@ const completionSpec: Fig.Spec = {
 				{
 					name: ['concurx'],
 					description: 'Concurrent execution for azd deployment',
+					subcommands: [
+						{
+							name: ['up'],
+							description: 'Runs azd up in concurrent mode',
+						},
+						{
+							name: ['version'],
+							description: 'Prints the version of the application',
+						},
+					],
 				},
 				{
 					name: ['config'],
@@ -1725,6 +2918,46 @@ const completionSpec: Fig.Spec = {
 				{
 					name: ['demo'],
 					description: 'This extension provides examples of the AZD extension framework.',
+					subcommands: [
+						{
+							name: ['colors', 'colours'],
+							description: 'Displays all ASCII colors with their standard and high-intensity variants.',
+						},
+						{
+							name: ['config'],
+							description: 'Setup monitoring configuration for the project and services',
+						},
+						{
+							name: ['context'],
+							description: 'Get the context of the AZD project & environment.',
+						},
+						{
+							name: ['gh-url-parse'],
+							description: 'Parse a GitHub URL and extract repository information.',
+						},
+						{
+							name: ['listen'],
+							description: 'Starts the extension and listens for events.',
+						},
+						{
+							name: ['mcp'],
+							description: 'MCP server commands for demo extension',
+							subcommands: [
+								{
+									name: ['start'],
+									description: 'Start MCP server with demo tools',
+								},
+							],
+						},
+						{
+							name: ['prompt'],
+							description: 'Examples of prompting the user for input.',
+						},
+						{
+							name: ['version'],
+							description: 'Prints the version of the application',
+						},
+					],
 				},
 				{
 					name: ['deploy'],
@@ -1967,6 +3200,36 @@ const completionSpec: Fig.Spec = {
 				{
 					name: ['x'],
 					description: 'This extension provides a set of tools for AZD extension developers to test and debug their extensions.',
+					subcommands: [
+						{
+							name: ['build'],
+							description: 'Build the azd extension project',
+						},
+						{
+							name: ['init'],
+							description: 'Initialize a new AZD extension project',
+						},
+						{
+							name: ['pack'],
+							description: 'Build and pack extension artifacts',
+						},
+						{
+							name: ['publish'],
+							description: 'Publish the extension to the extension source',
+						},
+						{
+							name: ['release'],
+							description: 'Create a new extension release from the packaged artifacts',
+						},
+						{
+							name: ['version'],
+							description: 'Prints the version of the application',
+						},
+						{
+							name: ['watch'],
+							description: 'Watches the AZD extension project for file changes and rebuilds it.',
+						},
+					],
 				},
 			],
 		},

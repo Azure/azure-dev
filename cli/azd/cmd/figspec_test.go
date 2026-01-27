@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/figspec"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 	"github.com/stretchr/testify/require"
@@ -47,7 +49,11 @@ func TestFigSpec(t *testing.T) {
 
 	root := NewRootCmd(false, nil, nil)
 
-	builder := figspec.NewSpecBuilder(false)
+	// Create a simple metadata loader using the config directory
+	metadataLoader := &testExtensionMetadataLoader{}
+
+	builder := figspec.NewSpecBuilder(false).
+		WithExtensionMetadata(metadataLoader)
 	spec := builder.BuildSpec(root)
 
 	typescript, err := spec.ToTypeScript()
@@ -55,4 +61,17 @@ func TestFigSpec(t *testing.T) {
 
 	snapshotter := snapshot.NewConfig(".ts")
 	snapshotter.SnapshotT(t, typescript)
+}
+
+// testExtensionMetadataLoader implements figspec.ExtensionMetadataProvider for testing
+// by directly reading metadata from the test's config directory.
+type testExtensionMetadataLoader struct{}
+
+func (l *testExtensionMetadataLoader) LoadMetadata(extensionId string) (*extensions.ExtensionCommandMetadata, error) {
+	userConfigDir, err := config.GetUserConfigDir()
+	if err != nil {
+		return nil, err
+	}
+
+	return extensions.LoadMetadataFromDir(userConfigDir, extensionId)
 }

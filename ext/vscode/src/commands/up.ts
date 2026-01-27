@@ -9,7 +9,7 @@ import { createAzureDevCli } from '../utils/azureDevCli';
 import { executeAsTask } from '../utils/executeAsTask';
 import { isAzureDevCliModel, isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
 import { AzureDevCliApplication } from '../views/workspace/AzureDevCliApplication';
-import { getAzDevTerminalTitle, getWorkingFolder } from './cmdUtil';
+import { getAzDevTerminalTitle, getWorkingFolder, validateFileSystemUri } from './cmdUtil';
 
 /**
  * A tuple representing the arguments that must be passed to the `up` command when executed via {@link vscode.commands.executeCommand}
@@ -28,6 +28,10 @@ export async function up(context: IActionContext, selectedItem?: vscode.Uri | Tr
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         selectedFile = selectedItem!;
     }
+
+    // Validate that selectedFile is valid for file system operations
+    validateFileSystemUri(context, selectedFile, selectedItem, 'up');
+
     const workingFolder = await getWorkingFolder(context, selectedFile);
 
     const azureCli = await createAzureDevCli(context);

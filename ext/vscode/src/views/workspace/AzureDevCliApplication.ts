@@ -28,9 +28,11 @@ export class AzureDevCliApplication implements AzureDevCliModel {
         this.results = new AsyncLazy(() => this.getResults());
     }
 
-    readonly context: AzureDevCliModelContext = {
-        configurationFile: vscode.Uri.file(this.resource.id)
-    };
+    get context(): AzureDevCliModelContext {
+        return {
+            configurationFile: vscode.Uri.file(this.resource.id),
+        };
+    }
 
     async getChildren(): Promise<AzureDevCliModel[]> {
         const results = await this.results.getValue();

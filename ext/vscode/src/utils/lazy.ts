@@ -55,6 +55,7 @@ export class AsyncLazy<T> {
             this.valuePromise = this.valueFactory();
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         const result = await this.valuePromise!;
 
         if (meStartedFactory) {

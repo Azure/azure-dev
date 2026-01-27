@@ -95,9 +95,7 @@ export async function deleteEnvironment(context: IActionContext, selectedItem?: 
     const { selectedEnvironment, selectedFile, environmentName } = extractEnvironmentContext(selectedItem);
 
     let folder: vscode.WorkspaceFolder | undefined = (selectedFile ? vscode.workspace.getWorkspaceFolder(selectedFile) : undefined);
-    if (!folder) {
-        folder = await quickPickWorkspaceFolder(context, vscode.l10n.t("To run '{0}' command you must first open a folder or workspace in VS Code", 'env select'));
-    }
+    folder ??= await quickPickWorkspaceFolder(context, vscode.l10n.t("To run '{0}' command you must first open a folder or workspace in VS Code", 'env select'));
     const cwd = folder.uri.fsPath;
 
     let name = selectedEnvironment?.name ?? environmentName;
@@ -157,9 +155,7 @@ export async function selectEnvironment(context: IActionContext, selectedItem?: 
     const { selectedEnvironment, selectedFile, environmentName } = extractEnvironmentContext(selectedItem);
 
     let folder: vscode.WorkspaceFolder | undefined = (selectedFile ? vscode.workspace.getWorkspaceFolder(selectedFile) : undefined);
-    if (!folder) {
-        folder = await quickPickWorkspaceFolder(context, vscode.l10n.t("To run '{0}' command you must first open a folder or workspace in VS Code", 'env select'));
-    }
+    folder ??= await quickPickWorkspaceFolder(context, vscode.l10n.t("To run '{0}' command you must first open a folder or workspace in VS Code", 'env select'));
     const cwd = folder.uri.fsPath;
 
     let name = selectedEnvironment?.name ?? environmentName;
@@ -223,9 +219,7 @@ export async function newEnvironment(context: IActionContext, selectedItem?: vsc
     const { environmentsNode, selectedFile } = extractEnvironmentContext(selectedItem);
 
     let folder: vscode.WorkspaceFolder | undefined = (selectedFile ? vscode.workspace.getWorkspaceFolder(selectedFile) : undefined);
-    if (!folder) {
-        folder = await quickPickWorkspaceFolder(context, vscode.l10n.t("To run '{0}' command you must first open a folder or workspace in VS Code", 'env new'));
-    }
+    folder ??= await quickPickWorkspaceFolder(context, vscode.l10n.t("To run '{0}' command you must first open a folder or workspace in VS Code", 'env new'));
 
     // Get current environment
     let currentEnv: string | undefined;
@@ -302,9 +296,7 @@ export async function refreshEnvironment(context: IActionContext, selectedItem?:
     const { selectedEnvironment, selectedFile, environmentName } = extractEnvironmentContext(selectedItem);
 
     let folder: vscode.WorkspaceFolder | undefined = (selectedFile ? vscode.workspace.getWorkspaceFolder(selectedFile) : undefined);
-    if (!folder) {
-        folder = await quickPickWorkspaceFolder(context, vscode.l10n.t("To run '{0}' command you must first open a folder or workspace in VS Code", 'env refresh'));
-    }
+    folder ??= await quickPickWorkspaceFolder(context, vscode.l10n.t("To run '{0}' command you must first open a folder or workspace in VS Code", 'env refresh'));
 
     const azureCli = await createAzureDevCli(context);
     const args = composeArgs(
@@ -323,9 +315,7 @@ export async function refreshEnvironment(context: IActionContext, selectedItem?:
 
 export async function listEnvironments(context: IActionContext, selectedFile?: vscode.Uri): Promise<void> {
     let folder: vscode.WorkspaceFolder | undefined = (selectedFile ? vscode.workspace.getWorkspaceFolder(selectedFile) : undefined);
-    if (!folder) {
-        folder = await quickPickWorkspaceFolder(context, vscode.l10n.t("To run '{0}' command you must first open a folder or workspace in VS Code", 'env list'));
-    }
+    folder ??= await quickPickWorkspaceFolder(context, vscode.l10n.t("To run '{0}' command you must first open a folder or workspace in VS Code", 'env list'));
 
     const azureCli = await createAzureDevCli(context);
     const args = composeArgs(

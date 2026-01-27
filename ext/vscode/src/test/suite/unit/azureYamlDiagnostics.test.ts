@@ -6,7 +6,6 @@ import * as vscode from 'vscode';
 import * as sinon from 'sinon';
 import { AzExtFsExtra } from '@microsoft/vscode-azext-utils';
 import { AzureYamlDiagnosticProvider } from '../../../language/AzureYamlDiagnosticProvider';
-import * as azureYamlUtils from '../../../language/azureYamlUtils';
 
 /**
  * Tests for AzureYamlDiagnosticProvider
@@ -41,7 +40,7 @@ suite('AzureYamlDiagnosticProvider - Project Path Validation', () => {
             sandbox.stub(AzExtFsExtra, 'pathExists').resolves(true);
 
             const content = 'name: myapp\nservices:\n  api:\n    project: ./api\n    language: python\n    host: containerapp';
-            const document = await createTestDocument(content, 'azure.yaml');
+            const document = createTestDocument(content, 'azure.yaml');
 
             const diagnostics = await provider.provideDiagnostics(document);
 
@@ -54,7 +53,7 @@ suite('AzureYamlDiagnosticProvider - Project Path Validation', () => {
             sandbox.stub(AzExtFsExtra, 'pathExists').resolves(false);
 
             const content = 'name: myapp\nservices:\n  api:\n    project: ./nonexistent\n    language: python\n    host: containerapp';
-            const document = await createTestDocument(content, 'azure.yaml');
+            const document = createTestDocument(content, 'azure.yaml');
 
             const diagnostics = await provider.provideDiagnostics(document);
 
@@ -66,7 +65,7 @@ suite('AzureYamlDiagnosticProvider - Project Path Validation', () => {
 
         test('handles YAML parsing errors gracefully', async () => {
             const content = 'name: myapp\nservices\n  api:'; // Invalid YAML
-            const document = await createTestDocument(content, 'azure.yaml');
+            const document = createTestDocument(content, 'azure.yaml');
 
             // Should not throw
             const diagnostics = await provider.provideDiagnostics(document);
@@ -77,7 +76,7 @@ suite('AzureYamlDiagnosticProvider - Project Path Validation', () => {
 
         test('handles empty file gracefully', async () => {
             const content = '';
-            const document = await createTestDocument(content, 'azure.yaml');
+            const document = createTestDocument(content, 'azure.yaml');
 
             // Should not throw
             const diagnostics = await provider.provideDiagnostics(document);
@@ -89,6 +88,9 @@ suite('AzureYamlDiagnosticProvider - Project Path Validation', () => {
 
     suite('additional validation scenarios', () => {
         test('valid minimal azure.yaml shows no errors', async () => {
+            // Mock file system to make project path appear to exist
+            sandbox.stub(AzExtFsExtra, 'pathExists').resolves(true);
+
             const content = `name: my-app
 services:
   web:
@@ -97,17 +99,16 @@ services:
     language: python`;
 
             const document = createMockDocument(content);
-            const stub = sandbox.stub(azureYamlUtils, 'getAzureYamlProjectInformation').resolves([]);
-
             const diagnostics = await provider.provideDiagnostics(document);
 
-            const errors = diagnostics?.filter(d => d.severity === vscode.DiagnosticSeverity.Error) || [];
+            const errors = diagnostics?.filter(d => d.severity === vscode.DiagnosticSeverity.Error) ?? [];
             expect(errors).to.have.lengthOf(0, 'Valid YAML should have no errors');
-
-            stub.restore();
         });
 
         test('valid complex azure.yaml with multiple services shows no errors', async () => {
+            // Mock file system to make project path appear to exist
+            sandbox.stub(AzExtFsExtra, 'pathExists').resolves(true);
+
             const content = `name: my-complex-app
 services:
   web:
@@ -124,14 +125,10 @@ services:
     language: csharp`;
 
             const document = createMockDocument(content);
-            const stub = sandbox.stub(azureYamlUtils, 'getAzureYamlProjectInformation').resolves([]);
-
             const diagnostics = await provider.provideDiagnostics(document);
 
-            const errors = diagnostics?.filter(d => d.severity === vscode.DiagnosticSeverity.Error) || [];
+            const errors = diagnostics?.filter(d => d.severity === vscode.DiagnosticSeverity.Error) ?? [];
             expect(errors).to.have.lengthOf(0, 'Valid complex YAML should have no errors');
-
-            stub.restore();
         });
 
         test('non-existent project path shows error diagnostic', async () => {
@@ -144,7 +141,7 @@ services:
 
             const document = createMockDocument(content);
             // Mock to return the project info with a non-existent path
-            const stub = sandbox.stub(azureYamlUtils, 'getAzureYamlProjectInformation').resolves([
+            const mockGetProjectInfoWithResults = sandbox.stub().resolves([
                 {
                     azureYamlUri: vscode.Uri.file('/test/azure.yaml'),
                     serviceName: 'web',
@@ -153,14 +150,15 @@ services:
                     projectValueNodeRange: new vscode.Range(4, 13, 4, 27)
                 }
             ]);
+            const providerWithResults = new AzureYamlDiagnosticProvider(selector, mockGetProjectInfoWithResults);
 
-            const diagnostics = await provider.provideDiagnostics(document);
+            const diagnostics = await providerWithResults.provideDiagnostics(document);
 
             const pathDiagnostic = diagnostics?.find(d => d.message.includes('project path'));
             expect(pathDiagnostic, 'Should have diagnostic about missing project path').to.exist;
             expect(pathDiagnostic!.severity).to.equal(vscode.DiagnosticSeverity.Error);
 
-            stub.restore();
+            providerWithResults.dispose();
         });
 
         test('handles malformed YAML gracefully', async () => {
@@ -182,7 +180,7 @@ services:
         });
     });
 
-    async function createTestDocument(content: string, filename: string): Promise<vscode.TextDocument> {
+    function createTestDocument(content: string, filename: string): vscode.TextDocument {
         return createMockDocument(content, `/test/${filename}`);
     }
 

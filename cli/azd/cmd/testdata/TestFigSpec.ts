@@ -22,6 +22,15 @@ interface AzdExtensionListItem {
 	source: string;
 }
 
+interface AzdConfigOption {
+	key: string;
+	description: string;
+	type: string;
+	allowedValues?: string[];
+	example?: string;
+	envVar?: string;
+}
+
 const azdGenerators: Record<string, Fig.Generator> = {
 	listEnvironments: {
 		script: ['azd', 'env', 'list', '--output', 'json'],
@@ -175,6 +184,25 @@ const azdGenerators: Record<string, Fig.Generator> = {
 				return [];
 			}
 		},
+	},
+	listConfigKeys: {
+		script: ['azd', 'config', 'options', '--output', 'json'],
+		postProcess: (out) => {
+			try {
+				const options: AzdConfigOption[] = JSON.parse(out);
+				return options
+					.filter((opt) => opt.type !== 'envvar') // Exclude environment-only options
+					.map((opt) => ({
+						name: opt.key,
+						description: opt.description,
+					}));
+			} catch {
+				return [];
+			}
+		},
+		cache: {
+			strategy: 'stale-while-revalidate',
+		}
 	},
 };
 
@@ -959,6 +987,7 @@ const completionSpec: Fig.Spec = {
 					description: 'Gets a configuration.',
 					args: {
 						name: 'path',
+						generators: azdGenerators.listConfigKeys,
 					},
 				},
 				{
@@ -986,6 +1015,7 @@ const completionSpec: Fig.Spec = {
 					args: [
 					{
 						name: 'path',
+						generators: azdGenerators.listConfigKeys,
 					},
 					{
 						name: 'value',
@@ -1001,6 +1031,7 @@ const completionSpec: Fig.Spec = {
 					description: 'Unsets a configuration.',
 					args: {
 						name: 'path',
+						generators: azdGenerators.listConfigKeys,
 					},
 				},
 			],

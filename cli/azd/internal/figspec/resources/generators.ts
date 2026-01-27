@@ -22,6 +22,15 @@ interface AzdExtensionListItem {
 	source: string;
 }
 
+interface AzdConfigOption {
+	key: string;
+	description: string;
+	type: string;
+	allowedValues?: string[];
+	example?: string;
+	envVar?: string;
+}
+
 const azdGenerators: Record<string, Fig.Generator> = {
 	listEnvironments: {
 		script: ['azd', 'env', 'list', '--output', 'json'],
@@ -175,5 +184,24 @@ const azdGenerators: Record<string, Fig.Generator> = {
 				return [];
 			}
 		},
+	},
+	listConfigKeys: {
+		script: ['azd', 'config', 'options', '--output', 'json'],
+		postProcess: (out) => {
+			try {
+				const options: AzdConfigOption[] = JSON.parse(out);
+				return options
+					.filter((opt) => opt.type !== 'envvar') // Exclude environment-only options
+					.map((opt) => ({
+						name: opt.key,
+						description: opt.description,
+					}));
+			} catch {
+				return [];
+			}
+		},
+		cache: {
+			strategy: 'stale-while-revalidate',
+		}
 	},
 };

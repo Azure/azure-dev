@@ -58,7 +58,7 @@ func newPromptCommand() *cobra.Command {
 				},
 			})
 			if err != nil {
-				return nil
+				return err
 			}
 
 			confirmResponse, err := azdClient.

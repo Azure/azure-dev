@@ -28,6 +28,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
 	tm "github.com/buger/goterm"
 	"github.com/nathan-fiscaletti/consolesize-go"
 	"github.com/theckman/yacspin"
@@ -614,6 +615,13 @@ func (c *AskerConsole) Prompt(ctx context.Context, options ConsoleOptions) (stri
 		return c.asker(promptFromOptions(options), &response)
 	})
 	if err != nil {
+		// Handle prompt timeout - return default value if available
+		var timeoutErr *uxlib.ErrPromptTimeout
+		if errors.As(err, &timeoutErr) {
+			if defaultValue, ok := options.DefaultValue.(string); ok && defaultValue != "" {
+				return defaultValue, nil
+			}
+		}
 		return response, err
 	}
 	c.updateLastBytes(afterIoSentinel)
@@ -707,6 +715,18 @@ func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int,
 		return c.asker(survey, &response)
 	})
 	if err != nil {
+		// Handle prompt timeout - return default value index if available
+		var timeoutErr *uxlib.ErrPromptTimeout
+		if errors.As(err, &timeoutErr) {
+			if surveyDefaultIsString {
+				// Find the index of the default value in the original options
+				for i, option := range options.Options {
+					if option == surveyDefaultAsString {
+						return i, nil
+					}
+				}
+			}
+		}
 		return -1, err
 	}
 
@@ -777,6 +797,13 @@ func (c *AskerConsole) MultiSelect(ctx context.Context, options ConsoleOptions) 
 		return c.asker(survey, &response)
 	})
 	if err != nil {
+		// Handle prompt timeout - return default values if available
+		var timeoutErr *uxlib.ErrPromptTimeout
+		if errors.As(err, &timeoutErr) {
+			if defaultValues, ok := options.DefaultValue.([]string); ok && len(defaultValues) > 0 {
+				return defaultValues, nil
+			}
+		}
 		return nil, err
 	}
 
@@ -839,6 +866,13 @@ func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (boo
 		return c.asker(survey, &response)
 	})
 	if err != nil {
+		// Handle prompt timeout - return default value if available
+		var timeoutErr *uxlib.ErrPromptTimeout
+		if errors.As(err, &timeoutErr) {
+			if _, hasDefault := options.DefaultValue.(bool); hasDefault {
+				return defaultValue, nil
+			}
+		}
 		return false, err
 	}
 
@@ -1030,6 +1064,8 @@ func GetStepResultFormat(result error) SpinnerUxType {
 }
 
 // Handle doing interactive calls. It checks if there's a spinner running to pause it before doing interactive actions.
+// If AZD_PROMPT_TIMEOUT is configured, the prompt will timeout after the specified duration.
+// On timeout, ErrPromptTimeout is returned (the caller should handle default value fallback).
 func (c *AskerConsole) doInteraction(promptFn func(c *AskerConsole) error) error {
 	if c.spinner.Status() == yacspin.SpinnerRunning {
 		_ = c.spinner.Pause()
@@ -1048,8 +1084,28 @@ func (c *AskerConsole) doInteraction(promptFn func(c *AskerConsole) error) error
 		tracing.InteractTimeMs.Add(time.Since(start).Milliseconds())
 	}()
 
-	// Execute the interactive prompt
-	return promptFn(c)
+	// Check for prompt timeout configuration
+	timeout := GetPromptTimeout()
+	if timeout <= 0 {
+		// No timeout configured, execute normally
+		return promptFn(c)
+	}
+
+	// Execute prompt with timeout using goroutine + channel pattern
+	// Note: survey library doesn't support context cancellation, so we use a timeout wrapper
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- promptFn(c)
+	}()
+
+	select {
+	case err := <-errChan:
+		return err
+	case <-time.After(timeout):
+		// Timeout occurred - return ErrPromptTimeout
+		// The caller is responsible for handling default value fallback
+		return &uxlib.ErrPromptTimeout{Duration: timeout}
+	}
 }
 
 func (c *AskerConsole) DoInteraction(action func() error) error {

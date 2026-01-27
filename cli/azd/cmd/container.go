@@ -76,6 +76,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/npm"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
+	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 	"github.com/mattn/go-colorable"
 	"github.com/spf13/cobra"
@@ -111,6 +112,11 @@ func resolveAction[T actions.Action](serviceLocator ioc.ServiceLocator, actionNa
 
 // Registers common Azd dependencies
 func registerCommonDependencies(container *ioc.NestedContainer) {
+	// Configure global UX prompt timeout from environment variable
+	if timeout := input.GetPromptTimeout(); timeout > 0 {
+		ux.SetPromptTimeout(timeout)
+	}
+
 	// Core bootstrapping registrations
 	ioc.RegisterInstance(container, container)
 	container.MustRegisterSingleton(NewCobraBuilder)

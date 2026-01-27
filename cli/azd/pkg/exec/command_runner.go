@@ -117,8 +117,9 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 
 	if args.Interactive {
 		cmd.Stdin = r.stdin
-		cmd.Stdout = r.stdout
-		cmd.Stderr = r.stderr
+		// Use MultiWriter to both display to terminal AND capture output
+		cmd.Stdout = io.MultiWriter(r.stdout, &stdout)
+		cmd.Stderr = io.MultiWriter(r.stderr, &stderr)
 	} else {
 		cmd.Stdin = stdin
 		cmd.Stdout = &stdout
@@ -161,33 +162,24 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 
 	err = cmd.Wait()
 
-	var result RunResult
-
-	if args.Interactive {
-		result = RunResult{
-			ExitCode: cmd.ProcessState.ExitCode(),
-			Stdout:   "",
-			Stderr:   "",
-		}
-	} else {
-		result = RunResult{
-			ExitCode: cmd.ProcessState.ExitCode(),
-			Stdout:   stdout.String(),
-			Stderr:   stderr.String(),
-		}
+	// Always capture stdout/stderr in result, even for interactive commands
+	result := RunResult{
+		ExitCode: cmd.ProcessState.ExitCode(),
+		Stdout:   stdout.String(),
+		Stderr:   stderr.String(),
 	}
 
 	logMsg.result = &result
 
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
-		outputAvailable := !args.Interactive
+		// Output is now always available since we capture even for interactive commands
 		err = NewExitError(
 			*exitErr,
 			args.Cmd,
 			result.Stdout,
 			result.Stderr,
-			outputAvailable)
+			true)
 	}
 
 	return result, err

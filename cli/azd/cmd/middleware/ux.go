@@ -6,6 +6,7 @@ package middleware
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -16,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
 )
 
 type UxMiddleware struct {
@@ -54,7 +56,16 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 			errorMessage.WriteString(output.WithErrorFormat("\nTraceID: %s", errorWithTraceId.TraceId))
 		}
 
-		if errors.As(err, &suggestionErr) {
+		// Handle prompt timeout by adding a suggestion to use --no-prompt
+		var promptTimeoutErr *uxlib.ErrPromptTimeout
+		if errors.As(err, &promptTimeoutErr) {
+			suggestion := fmt.Sprintf(
+				"\nSuggestion: Prompt timed out after %d seconds. To run without prompts, use: %s --no-prompt",
+				int(promptTimeoutErr.Duration.Seconds()),
+				m.options.CommandPath,
+			)
+			errorMessage.WriteString(suggestion)
+		} else if errors.As(err, &suggestionErr) {
 			errorMessage.WriteString("\n" + suggestionErr.Suggestion)
 		}
 

@@ -12,6 +12,7 @@ Environment variables that can be used to configure `azd` behavior, usually set 
 - `AZD_DEMO_MODE`: If true, enables demo mode. This hides personal output, such as subscription IDs, from being displayed in output.
 - `AZD_FORCE_TTY`: If true, forces `azd` to write terminal-style output.
 - `AZD_IN_CLOUDSHELL`: If true, `azd` runs with Azure Cloud Shell specific behavior.
+- `AZD_PROMPT_TIMEOUT`: Timeout in seconds for interactive prompts. When set, prompts will timeout after the specified duration. If a default value is available, it will be auto-selected; otherwise, the command fails with a suggestion to use `--no-prompt`. Useful for automated agents (e.g., GitHub Copilot, Claude Code) that cannot respond to interactive prompts. Set to `0` or leave empty to disable (default behavior for human users).
 - `AZD_SKIP_UPDATE_CHECK`: If true, skips the out-of-date update check output that is typically printed at the end of the command.
 
 For tools that are auto-acquired by `azd`, you are able to configure the following environment variables to use a different version of the tool installed on the machine:

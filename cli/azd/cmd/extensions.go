@@ -20,7 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
-	pkgux "github.com/azure/azure-dev/cli/azd/pkg/ux"
+	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
@@ -205,7 +205,7 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 	// Pass the console width down to the child process
 	// COLUMNS is a semi-standard environment variable used by many Unix programs to determine the width of the terminal.
-	width := pkgux.ConsoleWidth()
+	width := uxlib.ConsoleWidth()
 	if width > 0 {
 		allEnv = append(allEnv, fmt.Sprintf("COLUMNS=%d", width))
 	}
@@ -249,6 +249,12 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	// Update warning is shown via defer above (runs after invoke completes)
 
 	if invokeErr != nil {
+		// Check if error contains prompt timeout message (type info lost over gRPC)
+		if strings.Contains(invokeErr.Error(), "prompt timed out") {
+			return nil, &uxlib.ErrPromptTimeout{
+				Duration: input.GetPromptTimeout(),
+			}
+		}
 		return nil, invokeErr
 	}
 

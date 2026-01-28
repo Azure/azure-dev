@@ -7,9 +7,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestFindFirstNonFlagArg(t *testing.T) {
@@ -324,6 +327,80 @@ func TestCheckForMatchingExtension_Unit(t *testing.T) {
 			} else {
 				assert.Nil(t, foundExtension, "Expected no matching extension")
 			}
+		})
+	}
+}
+
+func TestParseGlobalFlags_AgentDetection(t *testing.T) {
+	tests := []struct {
+		name             string
+		args             []string
+		envVars          map[string]string
+		expectedNoPrompt bool
+	}{
+		{
+			name:             "no agent detected, no flag",
+			args:             []string{"up"},
+			envVars:          map[string]string{},
+			expectedNoPrompt: false,
+		},
+		{
+			name:             "agent detected via env var, no flag",
+			args:             []string{"up"},
+			envVars:          map[string]string{"CLAUDE_CODE": "1"},
+			expectedNoPrompt: true,
+		},
+		{
+			name:             "agent detected but --no-prompt=false explicitly set",
+			args:             []string{"--no-prompt=false", "up"},
+			envVars:          map[string]string{"CLAUDE_CODE": "1"},
+			expectedNoPrompt: false,
+		},
+		{
+			name:             "agent detected but --no-prompt explicitly set true",
+			args:             []string{"--no-prompt", "up"},
+			envVars:          map[string]string{"CURSOR_EDITOR": "1"},
+			expectedNoPrompt: true,
+		},
+		{
+			name:             "no agent, --no-prompt explicitly set",
+			args:             []string{"--no-prompt", "deploy"},
+			envVars:          map[string]string{},
+			expectedNoPrompt: true,
+		},
+		{
+			name:             "Cursor agent detected",
+			args:             []string{"init"},
+			envVars:          map[string]string{"CURSOR_EDITOR": "1"},
+			expectedNoPrompt: true,
+		},
+		{
+			name:             "GitHub Copilot CLI agent detected",
+			args:             []string{"deploy"},
+			envVars:          map[string]string{"GITHUB_COPILOT_CLI": "true"},
+			expectedNoPrompt: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Reset agent detection cache
+			agentdetect.ResetDetection()
+
+			// Set up env vars for this test
+			for k, v := range tt.envVars {
+				t.Setenv(k, v)
+			}
+
+			opts := &internal.GlobalCommandOptions{}
+			err := ParseGlobalFlags(tt.args, opts)
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.expectedNoPrompt, opts.NoPrompt,
+				"NoPrompt should be %v for test case: %s", tt.expectedNoPrompt, tt.name)
+
+			// Clean up for next test
+			agentdetect.ResetDetection()
 		})
 	}
 }

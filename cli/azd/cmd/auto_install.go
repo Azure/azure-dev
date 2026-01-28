@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -491,7 +492,8 @@ func CreateGlobalFlagSet() *pflag.FlagSet {
 	globalFlags.Bool(
 		"no-prompt",
 		false,
-		"Accepts the default value instead of prompting, or it fails if there is no default.")
+		"Accepts the default value instead of prompting, or it fails if there is no default. "+
+			"Automatically enabled when running inside AI coding agents (Claude Code, Cursor, GitHub Copilot CLI, etc.).")
 
 	// The telemetry system is responsible for reading these flags value and using it to configure the telemetry
 	// system, but we still need to add it to our flag set so that when we parse the command line with Cobra we
@@ -509,6 +511,9 @@ func CreateGlobalFlagSet() *pflag.FlagSet {
 // Uses ParseErrorsAllowlist to gracefully ignore unknown flags (like extension-specific flags).
 // This function is designed to be called BEFORE Cobra command tree construction to enable
 // early access to global flag values for auto-install and other pre-execution logic.
+//
+// Agent Detection: If --no-prompt is not explicitly set and an AI coding agent (like Claude Code,
+// GitHub Copilot CLI, Cursor, etc.) is detected as the caller, NoPrompt is automatically enabled.
 func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error {
 	globalFlagSet := CreateGlobalFlagSet()
 
@@ -540,6 +545,14 @@ func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error 
 
 	if boolVal, err := globalFlagSet.GetBool("no-prompt"); err == nil {
 		opts.NoPrompt = boolVal
+	}
+
+	// Agent Detection: If --no-prompt was not explicitly set and we detect an AI coding agent
+	// as the caller, automatically enable no-prompt mode for non-interactive execution.
+	noPromptFlag := globalFlagSet.Lookup("no-prompt")
+	noPromptExplicitlySet := noPromptFlag != nil && noPromptFlag.Changed
+	if !noPromptExplicitlySet && agentdetect.IsRunningInAgent() {
+		opts.NoPrompt = true
 	}
 
 	return nil

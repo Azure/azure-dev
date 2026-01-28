@@ -9,6 +9,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/runcontext"
+	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 )
 
@@ -16,6 +17,11 @@ func getExecutionEnvironment() string {
 	// calling programs receive the highest priority, since they end up wrapping the CLI and are the most
 	// inner layers.
 	env := execEnvFromCaller()
+
+	// Check for AI coding agents if no caller was detected via user agent
+	if env == "" {
+		env = execEnvFromAgent()
+	}
 
 	if env == "" {
 		// machine-level execution environments
@@ -54,6 +60,50 @@ func execEnvFromCaller() string {
 	}
 
 	return ""
+}
+
+// execEnvFromAgent detects AI coding agents via the agentdetect package.
+func execEnvFromAgent() string {
+	agent := agentdetect.GetCallingAgent()
+	if !agent.Detected {
+		return ""
+	}
+
+	// Map agent types to telemetry environment values
+	switch agent.Type {
+	case agentdetect.AgentTypeClaudeCode:
+		return fields.EnvClaudeCode
+	case agentdetect.AgentTypeGitHubCopilotCLI:
+		return fields.EnvGitHubCopilotCLI
+	case agentdetect.AgentTypeOpenAICodex:
+		return fields.EnvOpenAICodex
+	case agentdetect.AgentTypeCursor:
+		return fields.EnvCursor
+	case agentdetect.AgentTypeWindsurf:
+		return fields.EnvWindsurf
+	case agentdetect.AgentTypeAider:
+		return fields.EnvAider
+	case agentdetect.AgentTypeContinue:
+		return fields.EnvContinue
+	case agentdetect.AgentTypeAmazonQ:
+		return fields.EnvAmazonQ
+	case agentdetect.AgentTypeVSCodeCopilot:
+		return fields.EnvVSCodeAzureCopilot
+	case agentdetect.AgentTypeCline:
+		return fields.EnvCline
+	case agentdetect.AgentTypeZed:
+		return fields.EnvZed
+	case agentdetect.AgentTypeTabnine:
+		return fields.EnvTabnine
+	case agentdetect.AgentTypeCody:
+		return fields.EnvCody
+	case agentdetect.AgentTypeGemini:
+		return fields.EnvGemini
+	case agentdetect.AgentTypeGeneric:
+		return fields.EnvGenericAgent
+	default:
+		return fields.EnvGenericAgent
+	}
 }
 
 func execEnvForHosts() string {

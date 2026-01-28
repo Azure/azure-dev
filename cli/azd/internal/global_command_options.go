@@ -14,8 +14,10 @@ type GlobalCommandOptions struct {
 	// launched tools. It's enabled with `--debug`, for any command.
 	EnableDebugLogging bool
 
-	// when true, interactive prompts should behave as if the user selected the default value.
+	// NoPrompt when true, interactive prompts should behave as if the user selected the default value.
 	// if there is no default value the prompt returns an error.
+	// This is automatically set to true when an AI coding agent (Claude Code, Cursor, GitHub Copilot CLI,
+	// Windsurf, Aider, etc.) is detected as the caller, unless explicitly set to false with --no-prompt=false.
 	NoPrompt bool
 
 	// EnableTelemetry indicates if telemetry should be sent.

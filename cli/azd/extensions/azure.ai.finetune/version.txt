@@ -1,5 +1,1 @@
-<<<<<<< HEAD
 0.0.14-preview
-=======
-0.0.13-preview
->>>>>>> 4a87862ee90fbda92faca7848c3c6d73f3580cc0

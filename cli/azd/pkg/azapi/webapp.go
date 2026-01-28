@@ -226,3 +226,112 @@ func (cli *AzureClient) createZipDeployClient(
 
 	return client, nil
 }
+
+// HasAppServiceDeployments checks if the web app has at least one previous deployment.
+func (cli *AzureClient) HasAppServiceDeployments(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroup string,
+	appName string,
+) (bool, error) {
+	client, err := cli.createWebAppsClient(ctx, subscriptionId)
+	if err != nil {
+		return false, err
+	}
+
+	pager := client.NewListDeploymentsPager(resourceGroup, appName, nil)
+	if pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return false, fmt.Errorf("listing webapp deployments: %w", err)
+		}
+		return len(page.Value) > 0, nil
+	}
+
+	return false, nil
+}
+
+// AppServiceSlot represents an App Service deployment slot.
+type AppServiceSlot struct {
+	Name string
+}
+
+// GetAppServiceSlots returns a list of deployment slots for the specified web app.
+func (cli *AzureClient) GetAppServiceSlots(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroup string,
+	appName string,
+) ([]AppServiceSlot, error) {
+	client, err := cli.createWebAppsClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	var slots []AppServiceSlot
+	pager := client.NewListSlotsPager(resourceGroup, appName, nil)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("listing webapp slots: %w", err)
+		}
+		for _, slot := range page.Value {
+			if slot.Name != nil {
+				// Slot names are returned as "appName/slotName", extract just the slot name
+				slotName := *slot.Name
+				if idx := strings.LastIndex(slotName, "/"); idx != -1 {
+					slotName = slotName[idx+1:]
+				}
+				slots = append(slots, AppServiceSlot{Name: slotName})
+			}
+		}
+	}
+
+	return slots, nil
+}
+
+// DeployAppServiceSlotZip deploys a zip file to a specific deployment slot.
+func (cli *AzureClient) DeployAppServiceSlotZip(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroup string,
+	appName string,
+	slotName string,
+	deployZipFile io.ReadSeeker,
+	progressLog func(string),
+) (*string, error) {
+	client, err := cli.createWebAppsClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	slot, err := client.GetSlot(ctx, resourceGroup, appName, slotName, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed retrieving webapp slot: %w", err)
+	}
+
+	// Find the repository hostname for the slot
+	hostName := ""
+	for _, item := range slot.Properties.HostNameSSLStates {
+		if *item.HostType == armappservice.HostTypeRepository {
+			hostName = *item.Name
+			break
+		}
+	}
+
+	if hostName == "" {
+		return nil, fmt.Errorf("failed to find repository host name for slot %s", slotName)
+	}
+
+	zipDeployClient, err := cli.createZipDeployClient(ctx, subscriptionId, hostName)
+	if err != nil {
+		return nil, err
+	}
+
+	response, err := zipDeployClient.Deploy(ctx, deployZipFile)
+	if err != nil {
+		return nil, err
+	}
+
+	return to.Ptr(response.StatusText), nil
+}

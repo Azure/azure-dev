@@ -123,7 +123,7 @@ func (st *appServiceTarget) Deploy(
 	}
 
 	// Determine deployment targets based on deployment history and slots
-	deployTargets, err := st.determineDeploymentTargets(ctx, targetResource, progress)
+	deployTargets, err := st.determineDeploymentTargets(ctx, serviceConfig, targetResource, progress)
 	if err != nil {
 		return nil, fmt.Errorf("determining deployment targets: %w", err)
 	}
@@ -219,10 +219,12 @@ type deploymentTarget struct {
 //   - Subsequent deployments with exactly one slot:
 //     Deploy to that slot only (typical staging workflow before swap to production).
 //   - Subsequent deployments with multiple slots:
-//     Prompt user to select a target (including main app), allowing explicit control
+//     Check for AZD_DEPLOY_{SERVICE_NAME}_SLOT_NAME environment variable to auto-select a slot.
+//     If not set, prompt user to select a target, allowing explicit control
 //     over which environment receives the deployment.
 func (st *appServiceTarget) determineDeploymentTargets(
 	ctx context.Context,
+	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) ([]deploymentTarget, error) {
@@ -272,28 +274,52 @@ func (st *appServiceTarget) determineDeploymentTargets(
 		return []deploymentTarget{{SlotName: slots[0].Name}}, nil
 	}
 
-	// Multiple slots, prompt user to select (including main app as an option)
-	slotOptions := make([]string, len(slots)+1)
-	slotOptions[0] = "production (main app)"
+	// Multiple slots, prompt user to select
+	slotEnvVarName := slotEnvVarNameForService(serviceConfig.Name)
+
+	// Check if slot name is set via environment variable (checks azd env first, then system env)
+	if slotName := st.env.Getenv(slotEnvVarName); slotName != "" {
+		// Validate that the slot exists
+		for _, slot := range slots {
+			if slot.Name == slotName {
+				return []deploymentTarget{{SlotName: slotName}}, nil
+			}
+		}
+		// Slot not found, return error with available slots
+		availableSlots := make([]string, len(slots))
+		for i, slot := range slots {
+			availableSlots[i] = slot.Name
+		}
+		return nil, fmt.Errorf(
+			"slot '%s' specified in %s not found. Available slots: [%s]. "+
+				"Please update the environment variable with a valid slot name",
+			slotName, slotEnvVarName, strings.Join(availableSlots, ", "))
+	}
+
+	slotOptions := make([]string, len(slots))
 	for i, slot := range slots {
-		slotOptions[i+1] = slot.Name
+		slotOptions[i] = slot.Name
 	}
 
 	selectedIndex, err := st.console.Select(ctx, input.ConsoleOptions{
-		Message: "Select a deployment slot",
+		Message: fmt.Sprintf(
+			"Select a deployment slot\nNote:skip this prompt with '%s=<slotName>'\n",
+			slotEnvVarName),
 		Options: slotOptions,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("selecting deployment slot: %w", err)
 	}
 
-	// If user selected "production (main app)", return empty SlotName
-	if selectedIndex == 0 {
-		return []deploymentTarget{{SlotName: ""}}, nil
-	}
+	return []deploymentTarget{{SlotName: slots[selectedIndex].Name}}, nil
+}
 
-	// Otherwise, return the selected slot
-	return []deploymentTarget{{SlotName: slots[selectedIndex-1].Name}}, nil
+// slotEnvVarNameForService returns the environment variable name for setting the deployment slot
+// for a given service. The format is AZD_DEPLOY_{SERVICE_NAME}_SLOT_NAME where the service name
+// is uppercased and any hyphens are replaced with underscores.
+func slotEnvVarNameForService(serviceName string) string {
+	normalizedName := strings.ToUpper(strings.ReplaceAll(serviceName, "-", "_"))
+	return fmt.Sprintf("AZD_DEPLOY_%s_SLOT_NAME", normalizedName)
 }
 
 // Gets the exposed endpoints for the App Service

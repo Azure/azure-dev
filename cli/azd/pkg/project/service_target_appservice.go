@@ -316,7 +316,7 @@ func (st *appServiceTarget) determineDeploymentTargets(
 
 // slotEnvVarNameForService returns the environment variable name for setting the deployment slot
 // for a given service. The format is AZD_DEPLOY_{SERVICE_NAME}_SLOT_NAME where the service name
-// is uppercased and any hyphens are replaced with underscores.
+// is uppercase and any hyphens are replaced with underscores.
 func slotEnvVarNameForService(serviceName string) string {
 	normalizedName := strings.ToUpper(strings.ReplaceAll(serviceName, "-", "_"))
 	return fmt.Sprintf("AZD_DEPLOY_%s_SLOT_NAME", normalizedName)

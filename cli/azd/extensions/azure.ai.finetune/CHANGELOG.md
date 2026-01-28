@@ -1,7 +1,7 @@
 # Release History
 
 
-## 0.0.12-preview (2026-01-28)
+## 0.0.13-preview (2026-01-28)
 
 - Defaulting to supervise when fine tuning method is not return by API
 - Adding training Type when cloning a job

@@ -1,10 +1,12 @@
 # Release History
 
 
-## 0.0.13-preview (2026-01-28)
+## 0.0.14-preview (2026-01-28)
 
 - Defaulting to supervise when fine tuning method is not return by API
 - Adding training Type when cloning a job
+- Adding details of grader to cloning process.
+- Allow to submit a job with different graders in RFT.
 
 ## 0.0.12-preview (2026-01-23)
 

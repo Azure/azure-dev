@@ -60,8 +60,7 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 		var promptTimeoutErr *uxlib.ErrPromptTimeout
 		if errors.As(err, &promptTimeoutErr) {
 			suggestion := fmt.Sprintf(
-				"\nSuggestion: Prompt timed out after %d seconds. To run without prompts, use: %s --no-prompt",
-				int(promptTimeoutErr.Duration.Seconds()),
+				"\nSuggestion: To run without prompts, use: %s --no-prompt",
 				m.options.CommandPath,
 			)
 			errorMessage.WriteString(suggestion)

@@ -146,7 +146,8 @@ func (st *appServiceTarget) Deploy(
 				func(logProgress string) { progress.SetProgress(NewServiceProgress(logProgress)) },
 			)
 		} else {
-			progress.SetProgress(NewServiceProgress(fmt.Sprintf("Uploading deployment package to slot '%s'", target.SlotName)))
+			progressMsg := fmt.Sprintf("Uploading deployment package to slot '%s'", target.SlotName)
+			progress.SetProgress(NewServiceProgress(progressMsg))
 			_, err = st.cli.DeployAppServiceSlotZip(
 				ctx,
 				targetResource.SubscriptionId(),

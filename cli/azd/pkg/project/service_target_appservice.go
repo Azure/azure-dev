@@ -303,7 +303,7 @@ func (st *appServiceTarget) determineDeploymentTargets(
 
 	selectedIndex, err := st.console.Select(ctx, input.ConsoleOptions{
 		Message: fmt.Sprintf(
-			"Select a deployment slot\nNote:skip this prompt with '%s=<slotName>'\n",
+			"Select a deployment slot\nNote: skip this prompt with '%s=<slotName>'\n",
 			slotEnvVarName),
 		Options: slotOptions,
 	})

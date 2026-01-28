@@ -23,12 +23,12 @@ interface AzdExtensionListItem {
 }
 
 interface AzdConfigOption {
-	key: string;
-	description: string;
-	type: string;
-	allowedValues?: string[];
-	example?: string;
-	envVar?: string;
+	Key: string;
+	Description: string;
+	Type: string;
+	AllowedValues?: string[] | null;
+	Example?: string;
+	EnvVar?: string;
 }
 
 const azdGenerators: Record<string, Fig.Generator> = {
@@ -191,10 +191,10 @@ const azdGenerators: Record<string, Fig.Generator> = {
 			try {
 				const options: AzdConfigOption[] = JSON.parse(out);
 				return options
-					.filter((opt) => opt.type !== 'envvar') // Exclude environment-only options
+					.filter((opt) => opt.Type !== 'envvar') // Exclude environment-only options
 					.map((opt) => ({
-						name: opt.key,
-						description: opt.description,
+						name: opt.Key,
+						description: opt.Description,
 					}));
 			} catch {
 				return [];

@@ -4,6 +4,7 @@
 package models
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -127,6 +128,7 @@ type FineTuningJobDetail struct {
 	TrainingFile    string                 `json:"training_file" yaml:"training_file"`
 	ValidationFile  string                 `json:"validation_file,omitempty" yaml:"validation_file,omitempty"`
 	Hyperparameters *Hyperparameters       `json:"hyperparameters" yaml:"hyperparameters"`
+	Grader          json.RawMessage        `json:"grader,omitempty" yaml:"grader,omitempty"`
 	VendorMetadata  map[string]interface{} `json:"-" yaml:"-"`
 	Seed            int64                  `json:"-" yaml:"-"`
 	ExtraFields     map[string]interface{} `json:"extra_fields,omitempty" yaml:"extra_fields,omitempty"`

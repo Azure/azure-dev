@@ -23,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
+	"github.com/braydonk/yaml"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
@@ -898,6 +899,24 @@ method:
 				yamlContent += fmt.Sprintf("      eval_interval: %d\n", job.Hyperparameters.EvalInterval)
 				yamlContent += fmt.Sprintf("      eval_samples: %d\n", job.Hyperparameters.EvalSamples)
 				yamlContent += fmt.Sprintf("      reasoning_effort: %s\n", job.Hyperparameters.ReasoningEffort)
+			}
+		}
+
+		// Add grader for reinforcement method if present
+		if len(job.Grader) > 0 && strings.ToLower(job.Method) == "reinforcement" {
+			var graderMap map[string]interface{}
+			if err := json.Unmarshal(job.Grader, &graderMap); err == nil {
+				graderYaml, err := yaml.Marshal(graderMap)
+				if err == nil {
+					// Indent the grader YAML to be nested under method.reinforcement.grader
+					indentedGrader := ""
+					for _, line := range strings.Split(string(graderYaml), "\n") {
+						if line != "" {
+							indentedGrader += "      " + line + "\n"
+						}
+					}
+					yamlContent += "    grader:\n" + indentedGrader
+				}
 			}
 		}
 

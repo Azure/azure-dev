@@ -1391,23 +1391,24 @@ func downloadGithubManifest(
 //   - https://github.com/{owner}/{repo}/blob/{branch}/{path}
 //   - https://raw.githubusercontent.com/{owner}/{repo}/refs/heads/{branch}/{path}
 func (a *InitAction) parseGitHubUrlNaive(manifestPointer string) *GitHubUrlInfo {
+	// Parse URL to properly handle query parameters and fragments
+	parsedURL, err := url.Parse(manifestPointer)
+	if err != nil {
+		return nil
+	}
+
 	// Try parsing github.com/blob format: https://github.com/{owner}/{repo}/blob/{branch}/{path}
-	if strings.Contains(manifestPointer, "github.com") && strings.Contains(manifestPointer, "/blob/") {
-		// Extract hostname
+	if parsedURL.Host == "github.com" && strings.Contains(parsedURL.Path, "/blob/") {
 		hostname := "github.com"
 
-		// Remove protocol prefix
-		urlWithoutProtocol := strings.TrimPrefix(manifestPointer, "https://")
-		urlWithoutProtocol = strings.TrimPrefix(urlWithoutProtocol, "http://")
-
 		// Split by /blob/
-		parts := strings.SplitN(urlWithoutProtocol, "/blob/", 2)
+		parts := strings.SplitN(parsedURL.Path, "/blob/", 2)
 		if len(parts) != 2 {
 			return nil
 		}
 
 		// Extract repo slug (owner/repo) from the first part
-		repoPath := strings.TrimPrefix(parts[0], hostname+"/")
+		repoPath := strings.TrimPrefix(parts[0], "/")
 		repoSlug := repoPath
 
 		// The second part is {branch}/{file-path}
@@ -1434,15 +1435,11 @@ func (a *InitAction) parseGitHubUrlNaive(manifestPointer string) *GitHubUrlInfo 
 	}
 
 	// Try parsing raw.githubusercontent.com format: https://raw.githubusercontent.com/{owner}/{repo}/refs/heads/{branch}/{path}
-	if strings.Contains(manifestPointer, "raw.githubusercontent.com") {
+	if parsedURL.Host == "raw.githubusercontent.com" {
 		hostname := "github.com" // API calls still use github.com
 
-		// Remove protocol prefix
-		urlWithoutProtocol := strings.TrimPrefix(manifestPointer, "https://")
-		urlWithoutProtocol = strings.TrimPrefix(urlWithoutProtocol, "http://")
-
-		// Remove raw.githubusercontent.com/
-		pathPart := strings.TrimPrefix(urlWithoutProtocol, "raw.githubusercontent.com/")
+		// Remove leading slash from path
+		pathPart := strings.TrimPrefix(parsedURL.Path, "/")
 
 		// Split path: {owner}/{repo}/refs/heads/{branch}/{file-path}
 		parts := strings.SplitN(pathPart, "/", 3) // owner, repo, rest

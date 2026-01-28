@@ -96,9 +96,10 @@ func convertOpenAIJobToDetailModel(openaiJob *openai.FineTuningJob) *models.Fine
 		if openaiJob.Method.Reinforcement.Hyperparameters.ReasoningEffort != "" {
 			hyperparameters.ReasoningEffort = string(openaiJob.Method.Reinforcement.Hyperparameters.ReasoningEffort)
 		}
-		// Marshal the entire Grader object to JSON
-		if openaiJob.Method.Reinforcement.Grader.Type != "" {
-			graderBytes, err := json.Marshal(openaiJob.Method.Reinforcement.Grader)
+		// Extract grader using the common function
+		graderData := ExtractGraderFromOpenAI(openaiJob.Method.Reinforcement.Grader)
+		if graderData != nil {
+			graderBytes, err := json.Marshal(graderData)
 			if err == nil {
 				graderJSON = graderBytes
 			}
@@ -361,19 +362,9 @@ func convertInternalJobParamToOpenAiJobParams(config *models.CreateFineTuningReq
 		}
 
 		grader := config.Method.Reinforcement.Grader
-		if grader != nil {
-			// Convert grader to JSON and unmarshal to ReinforcementMethodGraderUnionParam
-			graderJSON, err := json.Marshal(grader)
-			if err != nil {
-				return nil, nil, err
-			}
-
-			var graderUnion openai.ReinforcementMethodGraderUnionParam
-			err = json.Unmarshal(graderJSON, &graderUnion)
-			if err != nil {
-				return nil, nil, err
-			}
-			reinforcementMethod.Grader = graderUnion
+		if grader != nil && len(grader) > 0 {
+			// Convert grader map to SDK param type using the common function
+			reinforcementMethod.Grader = ConvertGraderMapToSDKParam(grader)
 		}
 
 		jobParams.Method = openai.FineTuningJobNewParamsMethod{
@@ -471,4 +462,214 @@ func getReasoningEffortValue(effort string) openai.ReinforcementHyperparametersR
 	default:
 		return openai.ReinforcementHyperparametersReasoningEffortDefault
 	}
+}
+
+// ExtractGraderFromOpenAI extracts grader data from OpenAI SDK response to a clean map
+// This is used when cloning a job to YAML - only extracts relevant fields per grader type
+func ExtractGraderFromOpenAI(grader openai.ReinforcementMethodGraderUnion) map[string]interface{} {
+	if grader.Type == "" {
+		return nil
+	}
+
+	graderType := grader.Type
+	var graderData map[string]interface{}
+
+	switch graderType {
+	case "python":
+		g := grader.AsPythonGrader()
+		graderData = map[string]interface{}{
+			"type":   graderType,
+			"name":   g.Name,
+			"source": g.Source,
+		}
+		if g.ImageTag != "" {
+			graderData["image_tag"] = g.ImageTag
+		}
+	case "string_check":
+		g := grader.AsStringCheckGrader()
+		graderData = map[string]interface{}{
+			"type":      graderType,
+			"input":     g.Input,
+			"name":      g.Name,
+			"operation": string(g.Operation),
+			"reference": g.Reference,
+		}
+	case "text_similarity":
+		g := grader.AsTextSimilarityGrader()
+		graderData = map[string]interface{}{
+			"type":              graderType,
+			"input":             g.Input,
+			"name":              g.Name,
+			"reference":         g.Reference,
+			"evaluation_metric": string(g.EvaluationMetric),
+		}
+	case "score_model":
+		g := grader.AsScoreModelGrader()
+		graderData = map[string]interface{}{
+			"type":  graderType,
+			"input": g.Input,
+			"name":  g.Name,
+			"model": g.Model,
+		}
+		// Extract sampling params if present
+		samplingData := map[string]interface{}{}
+		if g.SamplingParams.Temperature != 0 {
+			samplingData["temperature"] = g.SamplingParams.Temperature
+		}
+		if g.SamplingParams.TopP != 0 {
+			samplingData["top_p"] = g.SamplingParams.TopP
+		}
+		if g.SamplingParams.MaxCompletionsTokens != 0 {
+			samplingData["max_completion_tokens"] = g.SamplingParams.MaxCompletionsTokens
+		}
+		if g.SamplingParams.Seed != 0 {
+			samplingData["seed"] = g.SamplingParams.Seed
+		}
+		if len(samplingData) > 0 {
+			graderData["sampling_params"] = samplingData
+		}
+	case "multi":
+		g := grader.AsMultiGrader()
+		graderData = map[string]interface{}{
+			"type":             graderType,
+			"name":             g.Name,
+			"calculate_output": g.CalculateOutput,
+		}
+		// Note: Multi-grader sub-graders extraction is complex due to SDK union flattening
+		// For now, we store just the top-level multi-grader fields
+		// Users may need to manually add sub-graders in the YAML
+	}
+
+	return graderData
+}
+
+// ConvertGraderMapToSDKParam converts a grader map (from YAML or extracted) to OpenAI SDK param type
+// This is the reverse operation - used when creating a job from config
+func ConvertGraderMapToSDKParam(graderMap map[string]interface{}) openai.ReinforcementMethodGraderUnionParam {
+	if graderMap == nil {
+		return openai.ReinforcementMethodGraderUnionParam{}
+	}
+
+	graderType, _ := graderMap["type"].(string)
+
+	switch graderType {
+	case "python":
+		grader := openai.PythonGraderParam{
+			Name:   getString(graderMap, "name"),
+			Source: getString(graderMap, "source"),
+		}
+		if imageTag := getString(graderMap, "image_tag"); imageTag != "" {
+			grader.ImageTag = openai.Opt(imageTag)
+		}
+		return openai.ReinforcementMethodGraderUnionParam{OfPythonGrader: &grader}
+
+	case "string_check":
+		grader := openai.StringCheckGraderParam{
+			Input:     getString(graderMap, "input"),
+			Name:      getString(graderMap, "name"),
+			Operation: openai.StringCheckGraderOperation(getString(graderMap, "operation")),
+			Reference: getString(graderMap, "reference"),
+		}
+		return openai.ReinforcementMethodGraderUnionParam{OfStringCheckGrader: &grader}
+
+	case "text_similarity":
+		grader := openai.TextSimilarityGraderParam{
+			Input:            getString(graderMap, "input"),
+			Name:             getString(graderMap, "name"),
+			Reference:        getString(graderMap, "reference"),
+			EvaluationMetric: openai.TextSimilarityGraderEvaluationMetric(getString(graderMap, "evaluation_metric")),
+		}
+		return openai.ReinforcementMethodGraderUnionParam{OfTextSimilarityGrader: &grader}
+
+	case "score_model":
+		grader := openai.ScoreModelGraderParam{
+			Input: getScoreModelInput(graderMap, "input"),
+			Name:  getString(graderMap, "name"),
+			Model: getString(graderMap, "model"),
+		}
+		// Handle sampling parameters
+		if samplingMap, ok := graderMap["sampling_params"].(map[string]interface{}); ok {
+			if temp := getFloat(samplingMap, "temperature"); temp != nil {
+				grader.SamplingParams.Temperature = openai.Opt(*temp)
+			}
+			if topP := getFloat(samplingMap, "top_p"); topP != nil {
+				grader.SamplingParams.TopP = openai.Opt(*topP)
+			}
+			if maxTokens := getInt(samplingMap, "max_completion_tokens"); maxTokens != nil {
+				grader.SamplingParams.MaxCompletionsTokens = openai.Opt(*maxTokens)
+			}
+			if seed := getInt(samplingMap, "seed"); seed != nil {
+				grader.SamplingParams.Seed = openai.Opt(*seed)
+			}
+		}
+		return openai.ReinforcementMethodGraderUnionParam{OfScoreModelGrader: &grader}
+
+	case "multi":
+		// Multi-grader requires complex nested grader structure
+		// For now, return empty - users should define multi-graders directly in config
+		// with the full structure if needed
+		return openai.ReinforcementMethodGraderUnionParam{}
+	}
+
+	return openai.ReinforcementMethodGraderUnionParam{}
+}
+
+// Helper functions for safe type conversions
+func getString(m map[string]interface{}, key string) string {
+	if v, ok := m[key].(string); ok {
+		return v
+	}
+	return ""
+}
+
+// getScoreModelInput converts input data to ScoreModelGraderInputParam slice
+func getScoreModelInput(m map[string]interface{}, key string) []openai.ScoreModelGraderInputParam {
+	result := []openai.ScoreModelGraderInputParam{}
+	if v, ok := m[key].([]interface{}); ok {
+		for _, item := range v {
+			if itemMap, ok := item.(map[string]interface{}); ok {
+				inputParam := openai.ScoreModelGraderInputParam{
+					Role: getString(itemMap, "role"),
+				}
+				if content := getString(itemMap, "content"); content != "" {
+					inputParam.Content = openai.ScoreModelGraderInputContentUnionParam{
+						OfString: openai.String(content),
+					}
+				}
+				if itemType := getString(itemMap, "type"); itemType != "" {
+					inputParam.Type = itemType
+				}
+				result = append(result, inputParam)
+			}
+		}
+	}
+	return result
+}
+
+func getFloat(m map[string]interface{}, key string) *float64 {
+	switch v := m[key].(type) {
+	case float64:
+		return &v
+	case int:
+		f := float64(v)
+		return &f
+	case int64:
+		f := float64(v)
+		return &f
+	}
+	return nil
+}
+
+func getInt(m map[string]interface{}, key string) *int64 {
+	switch v := m[key].(type) {
+	case int:
+		i := int64(v)
+		return &i
+	case int64:
+		return &v
+	case float64:
+		i := int64(v)
+		return &i
+	}
+	return nil
 }

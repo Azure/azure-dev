@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -964,19 +966,25 @@ func (a *InitAction) downloadAgentYaml(
 		}
 
 		var contentStr string
-		// First try naive parsing assuming branch is a single word. The allows users to not have to authenticate
+		// First try naive parsing assuming branch is a single word. This allows users to not have to authenticate
 		// with gh CLI for public repositories.
 		urlInfo = a.parseGitHubUrlNaive(manifestPointer)
 		if urlInfo != nil {
-			apiPath := fmt.Sprintf("/repos/%s/contents/%s", urlInfo.RepoSlug, urlInfo.FilePath)
-			if urlInfo.Branch != "" {
-				fmt.Printf("Downloaded manifest from branch: %s\n", urlInfo.Branch)
-				apiPath += fmt.Sprintf("?ref=%s", urlInfo.Branch)
-			}
+			// Construct raw GitHub URL to fetch file directly
+			rawUrl := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s", urlInfo.RepoSlug, urlInfo.Branch, urlInfo.FilePath)
+			fmt.Printf("Attempting to download manifest from: %s\n", rawUrl)
 
-			contentStr, err = downloadGithubManifest(ctx, urlInfo, apiPath, ghCli, console)
-			if err != nil {
-				fmt.Printf("Warning: naive GitHub URL parsing failed to download manifest: %v\n", err)
+			resp, err := http.Get(rawUrl)
+			if err == nil && resp.StatusCode == http.StatusOK {
+				defer resp.Body.Close()
+				bodyBytes, readErr := io.ReadAll(resp.Body)
+				if readErr == nil {
+					contentStr = string(bodyBytes)
+					fmt.Printf("Downloaded manifest from branch: %s\n", urlInfo.Branch)
+				}
+			}
+			if contentStr == "" {
+				fmt.Printf("Warning: naive GitHub URL parsing failed to download manifest\n")
 				fmt.Println("Proceeding with full parsing and download logic...")
 			}
 		}
@@ -994,7 +1002,7 @@ func (a *InitAction) downloadAgentYaml(
 				apiPath += fmt.Sprintf("?ref=%s", urlInfo.Branch)
 			}
 
-			contentStr, err = downloadGithubManifest(ctx, urlInfo, apiPath, ghCli, console)
+			contentStr, err = downloadGithubManifest(ctx, urlInfo, apiPath, ghCli)
 			if err != nil {
 				return nil, "", fmt.Errorf("downloading from GitHub: %w", err)
 			}
@@ -1371,7 +1379,7 @@ func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.Co
 }
 
 func downloadGithubManifest(
-	ctx context.Context, urlInfo *GitHubUrlInfo, apiPath string, ghCli *github.Cli, console input.Console) (string, error) {
+	ctx context.Context, urlInfo *GitHubUrlInfo, apiPath string, ghCli *github.Cli) (string, error) {
 	// This method assumes that either the repo is public, or the user has already been prompted to log in to the github cli
 	// through our use of the underlying azd logic.
 

@@ -1,5 +1,11 @@
 # Release History
 
+
+## 0.0.12-preview (2026-01-28)
+
+- Defaulting to supervise when fine tuning method is not return by API
+- Adding training Type when cloning a job
+
 ## 0.0.12-preview (2026-01-23)
 
 - Add Project-endpoint parameter to init command

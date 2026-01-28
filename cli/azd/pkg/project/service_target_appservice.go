@@ -134,10 +134,12 @@ func (st *appServiceTarget) Deploy(
 		if err != nil {
 			return nil, fmt.Errorf("failed reading deployment zip file: %w", err)
 		}
+		defer zipFile.Close()
 
+		var deployErr error
 		if target.SlotName == "" {
 			progress.SetProgress(NewServiceProgress("Uploading deployment package to main app"))
-			_, err = st.cli.DeployAppServiceZip(
+			_, deployErr = st.cli.DeployAppServiceZip(
 				ctx,
 				targetResource.SubscriptionId(),
 				targetResource.ResourceGroupName(),
@@ -148,7 +150,7 @@ func (st *appServiceTarget) Deploy(
 		} else {
 			progressMsg := fmt.Sprintf("Uploading deployment package to slot '%s'", target.SlotName)
 			progress.SetProgress(NewServiceProgress(progressMsg))
-			_, err = st.cli.DeployAppServiceSlotZip(
+			_, deployErr = st.cli.DeployAppServiceSlotZip(
 				ctx,
 				targetResource.SubscriptionId(),
 				targetResource.ResourceGroupName(),
@@ -159,10 +161,12 @@ func (st *appServiceTarget) Deploy(
 			)
 		}
 
-		zipFile.Close()
-
-		if err != nil {
-			return nil, fmt.Errorf("deploying service %s: %w", serviceConfig.Name, err)
+		if deployErr != nil {
+			targetName := "main app"
+			if target.SlotName != "" {
+				targetName = fmt.Sprintf("slot '%s'", target.SlotName)
+			}
+			return nil, fmt.Errorf("deploying service %s to %s: %w", serviceConfig.Name, targetName, deployErr)
 		}
 	}
 
@@ -205,6 +209,18 @@ type deploymentTarget struct {
 
 // determineDeploymentTargets determines which targets (main app and/or slots) to deploy to
 // based on deployment history and available slots.
+//
+// Deployment Strategy:
+//   - First deployment (no history):
+//     Deploy to main app AND all slots to ensure consistency across all environments.
+//     This prevents configuration drift and ensures all slots start with the same baseline.
+//   - Subsequent deployments with no slots:
+//     Deploy to main app only (standard production deployment).
+//   - Subsequent deployments with exactly one slot:
+//     Deploy to that slot only (typical staging workflow before swap to production).
+//   - Subsequent deployments with multiple slots:
+//     Prompt user to select a target (including main app), allowing explicit control
+//     over which environment receives the deployment.
 func (st *appServiceTarget) determineDeploymentTargets(
 	ctx context.Context,
 	targetResource *environment.TargetResource,
@@ -256,10 +272,11 @@ func (st *appServiceTarget) determineDeploymentTargets(
 		return []deploymentTarget{{SlotName: slots[0].Name}}, nil
 	}
 
-	// Multiple slots, prompt user to select
-	slotOptions := make([]string, len(slots))
+	// Multiple slots, prompt user to select (including main app as an option)
+	slotOptions := make([]string, len(slots)+1)
+	slotOptions[0] = "production (main app)"
 	for i, slot := range slots {
-		slotOptions[i] = slot.Name
+		slotOptions[i+1] = slot.Name
 	}
 
 	selectedIndex, err := st.console.Select(ctx, input.ConsoleOptions{
@@ -270,7 +287,13 @@ func (st *appServiceTarget) determineDeploymentTargets(
 		return nil, fmt.Errorf("selecting deployment slot: %w", err)
 	}
 
-	return []deploymentTarget{{SlotName: slots[selectedIndex].Name}}, nil
+	// If user selected "production (main app)", return empty SlotName
+	if selectedIndex == 0 {
+		return []deploymentTarget{{SlotName: ""}}, nil
+	}
+
+	// Otherwise, return the selected slot
+	return []deploymentTarget{{SlotName: slots[selectedIndex-1].Name}}, nil
 }
 
 // Gets the exposed endpoints for the App Service

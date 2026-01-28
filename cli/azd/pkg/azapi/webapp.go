@@ -312,10 +312,13 @@ func (cli *AzureClient) DeployAppServiceSlotZip(
 
 	// Find the repository hostname for the slot
 	hostName := ""
-	for _, item := range slot.Properties.HostNameSSLStates {
-		if *item.HostType == armappservice.HostTypeRepository {
-			hostName = *item.Name
-			break
+	if slot.Properties != nil {
+		for _, item := range slot.Properties.HostNameSSLStates {
+			if item != nil && item.HostType != nil && item.Name != nil &&
+				*item.HostType == armappservice.HostTypeRepository {
+				hostName = *item.Name
+				break
+			}
 		}
 	}
 

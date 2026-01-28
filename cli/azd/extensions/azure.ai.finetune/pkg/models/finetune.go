@@ -123,12 +123,13 @@ type FineTuningJobDetail struct {
 	CreatedAt       time.Time              `json:"created_at" yaml:"created_at"`
 	FinishedAt      *time.Time             `json:"finished_at,omitempty" yaml:"finished_at,omitempty"`
 	EstimatedFinish *time.Time             `json:"estimated_finish,omitempty" yaml:"estimated_finish,omitempty"`
-	Method          string                 `json:"training_type" yaml:"training_type"`
+	Method          string                 `json:"method.type" yaml:"method.type"`
 	TrainingFile    string                 `json:"training_file" yaml:"training_file"`
 	ValidationFile  string                 `json:"validation_file,omitempty" yaml:"validation_file,omitempty"`
 	Hyperparameters *Hyperparameters       `json:"hyperparameters" yaml:"hyperparameters"`
 	VendorMetadata  map[string]interface{} `json:"-" yaml:"-"`
 	Seed            int64                  `json:"-" yaml:"-"`
+	ExtraFields     map[string]interface{} `json:"extra_fields,omitempty" yaml:"extra_fields,omitempty"`
 }
 
 // JobEvent represents an event associated with a fine-tuning job

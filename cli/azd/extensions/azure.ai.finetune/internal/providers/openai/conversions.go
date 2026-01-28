@@ -63,7 +63,18 @@ func convertOpenAIJobToModel(openaiJob openai.FineTuningJob) *models.FineTuningJ
 
 // convertOpenAIJobToDetailModel converts OpenAI SDK job to detailed domain model
 func convertOpenAIJobToDetailModel(openaiJob *openai.FineTuningJob) *models.FineTuningJobDetail {
-	// Extract hyperparameters from OpenAI job
+	// Extract extra fields from the API response
+	extraFields := make(map[string]interface{})
+	for key, field := range openaiJob.JSON.ExtraFields {
+		// Parse the raw JSON value
+		var value interface{}
+		if err := json.Unmarshal([]byte(field.Raw()), &value); err == nil {
+			extraFields[key] = value
+		} else {
+			extraFields[key] = string(field.Raw())
+		}
+	}
+
 	hyperparameters := &models.Hyperparameters{}
 	if openaiJob.Method.Type == "supervised" {
 		hyperparameters.BatchSize = openaiJob.Method.Supervised.Hyperparameters.BatchSize.OfInt
@@ -86,6 +97,7 @@ func convertOpenAIJobToDetailModel(openaiJob *openai.FineTuningJob) *models.Fine
 		}
 	} else {
 		// Fallback to top-level hyperparameters (for backward compatibility)
+		openaiJob.Method.Type = "supervised"
 		hyperparameters.BatchSize = openaiJob.Hyperparameters.BatchSize.OfInt
 		hyperparameters.LearningRateMultiplier = openaiJob.Hyperparameters.LearningRateMultiplier.OfFloat
 		hyperparameters.NEpochs = openaiJob.Hyperparameters.NEpochs.OfInt
@@ -120,6 +132,7 @@ func convertOpenAIJobToDetailModel(openaiJob *openai.FineTuningJob) *models.Fine
 		ValidationFile:  openaiJob.ValidationFile,
 		Hyperparameters: hyperparameters,
 		Seed:            openaiJob.Seed,
+		ExtraFields:     extraFields,
 	}
 
 	return jobDetail

@@ -927,6 +927,15 @@ func (a *InitAction) downloadAgentYaml(
 		}
 	} else if a.isGitHubUrl(manifestPointer) {
 		// Handle GitHub URLs using downloadGithubManifest
+		// manifestPointer validation:
+		// - accepts only URLs with the following format:
+		//  - https://raw.<hostname>/<owner>/<repo>/refs/heads/<branch>/<path>/<file>.json
+		//    - This url comes from a user clicking the `raw` button on a file in a GitHub repository (web view).
+		//  - https://<hostname>/<owner>/<repo>/blob/<branch>/<path>/<file>.json
+		//    - This url comes from a user browsing GitHub repository and copy-pasting the url from the browser.
+		//  - https://api.<hostname>/repos/<owner>/<repo>/contents/<path>/<file>.json
+		//    - This url comes from users familiar with the GitHub API. Usually for programmatic registration of templates.
+
 		fmt.Printf("Downloading agent.yaml from GitHub: %s\n", manifestPointer)
 		isGitHubUrl = true
 
@@ -954,20 +963,41 @@ func (a *InitAction) downloadAgentYaml(
 			return nil, "", fmt.Errorf("ensuring gh is installed: %w", err)
 		}
 
-		urlInfo, err = a.parseGitHubUrl(ctx, manifestPointer)
-		if err != nil {
-			return nil, "", err
+		var contentStr string
+		// First try naive parsing assuming branch is a single word. The allows users to not have to authenticate
+		// with gh CLI for public repositories.
+		urlInfo = a.parseGitHubUrlNaive(manifestPointer)
+		if urlInfo != nil {
+			apiPath := fmt.Sprintf("/repos/%s/contents/%s", urlInfo.RepoSlug, urlInfo.FilePath)
+			if urlInfo.Branch != "" {
+				fmt.Printf("Downloaded manifest from branch: %s\n", urlInfo.Branch)
+				apiPath += fmt.Sprintf("?ref=%s", urlInfo.Branch)
+			}
+
+			contentStr, err = downloadGithubManifest(ctx, urlInfo, apiPath, ghCli, console)
+			if err != nil {
+				fmt.Printf("Warning: naive GitHub URL parsing failed to download manifest: %v\n", err)
+				fmt.Println("Proceeding with full parsing and download logic...")
+			}
 		}
 
-		apiPath := fmt.Sprintf("/repos/%s/contents/%s", urlInfo.RepoSlug, urlInfo.FilePath)
-		if urlInfo.Branch != "" {
-			fmt.Printf("Downloaded manifest from branch: %s\n", urlInfo.Branch)
-			apiPath += fmt.Sprintf("?ref=%s", urlInfo.Branch)
-		}
+		if contentStr == "" {
+			// Fall back to complex parsing via azd SDK
+			urlInfo, err = a.parseGitHubUrl(ctx, manifestPointer)
+			if err != nil {
+				return nil, "", err
+			}
 
-		contentStr, err := downloadGithubManifest(ctx, urlInfo, apiPath, ghCli, console)
-		if err != nil {
-			return nil, "", fmt.Errorf("downloading from GitHub: %w", err)
+			apiPath := fmt.Sprintf("/repos/%s/contents/%s", urlInfo.RepoSlug, urlInfo.FilePath)
+			if urlInfo.Branch != "" {
+				fmt.Printf("Downloaded manifest from branch: %s\n", urlInfo.Branch)
+				apiPath += fmt.Sprintf("?ref=%s", urlInfo.Branch)
+			}
+
+			contentStr, err = downloadGithubManifest(ctx, urlInfo, apiPath, ghCli, console)
+			if err != nil {
+				return nil, "", fmt.Errorf("downloading from GitHub: %w", err)
+			}
 		}
 
 		content = []byte(contentStr)
@@ -1342,28 +1372,8 @@ func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.Co
 
 func downloadGithubManifest(
 	ctx context.Context, urlInfo *GitHubUrlInfo, apiPath string, ghCli *github.Cli, console input.Console) (string, error) {
-	// manifestPointer validation:
-	// - accepts only URLs with the following format:
-	//  - https://raw.<hostname>/<owner>/<repo>/refs/heads/<branch>/<path>/<file>.json
-	//    - This url comes from a user clicking the `raw` button on a file in a GitHub repository (web view).
-	//  - https://<hostname>/<owner>/<repo>/blob/<branch>/<path>/<file>.json
-	//    - This url comes from a user browsing GitHub repository and copy-pasting the url from the browser.
-	//  - https://api.<hostname>/repos/<owner>/<repo>/contents/<path>/<file>.json
-	//    - This url comes from users familiar with the GitHub API. Usually for programmatic registration of templates.
-
-	authResult, err := ghCli.GetAuthStatus(ctx, urlInfo.Hostname)
-	if err != nil {
-		return "", fmt.Errorf("failed to get auth status: %w", err)
-	}
-	if !authResult.LoggedIn {
-		// ensure no spinner is shown when logging in, as this is interactive operation
-		console.StopSpinner(ctx, "", input.Step)
-		err := ghCli.Login(ctx, urlInfo.Hostname)
-		if err != nil {
-			return "", fmt.Errorf("failed to login: %w", err)
-		}
-		console.ShowSpinner(ctx, "Validating template source", input.Step)
-	}
+	// This method assumes that either the repo is public, or the user has already been prompted to log in to the github cli
+	// through our use of the underlying azd logic.
 
 	content, err := ghCli.ApiCall(ctx, urlInfo.Hostname, apiPath, github.ApiCallOptions{
 		Headers: []string{"Accept: application/vnd.github.v3.raw"},
@@ -1373,6 +1383,102 @@ func downloadGithubManifest(
 	}
 
 	return content, nil
+}
+
+// parseGitHubUrlNaive attempts to parse a GitHub URL assuming a simple single-word branch name.
+// Returns nil if the URL doesn't match the expected pattern.
+// Expected formats:
+//   - https://github.com/{owner}/{repo}/blob/{branch}/{path}
+//   - https://raw.githubusercontent.com/{owner}/{repo}/refs/heads/{branch}/{path}
+func (a *InitAction) parseGitHubUrlNaive(manifestPointer string) *GitHubUrlInfo {
+	// Try parsing github.com/blob format: https://github.com/{owner}/{repo}/blob/{branch}/{path}
+	if strings.Contains(manifestPointer, "github.com") && strings.Contains(manifestPointer, "/blob/") {
+		// Extract hostname
+		hostname := "github.com"
+
+		// Remove protocol prefix
+		urlWithoutProtocol := strings.TrimPrefix(manifestPointer, "https://")
+		urlWithoutProtocol = strings.TrimPrefix(urlWithoutProtocol, "http://")
+
+		// Split by /blob/
+		parts := strings.SplitN(urlWithoutProtocol, "/blob/", 2)
+		if len(parts) != 2 {
+			return nil
+		}
+
+		// Extract repo slug (owner/repo) from the first part
+		repoPath := strings.TrimPrefix(parts[0], hostname+"/")
+		repoSlug := repoPath
+
+		// The second part is {branch}/{file-path}
+		branchAndPath := parts[1]
+		slashIndex := strings.Index(branchAndPath, "/")
+		if slashIndex == -1 {
+			return nil
+		}
+
+		branch := branchAndPath[:slashIndex]
+		filePath := branchAndPath[slashIndex+1:]
+
+		// Only use naive parsing if branch looks like a simple single word (no slashes)
+		if strings.Contains(branch, "/") {
+			return nil
+		}
+
+		return &GitHubUrlInfo{
+			RepoSlug: repoSlug,
+			Branch:   branch,
+			FilePath: filePath,
+			Hostname: hostname,
+		}
+	}
+
+	// Try parsing raw.githubusercontent.com format: https://raw.githubusercontent.com/{owner}/{repo}/refs/heads/{branch}/{path}
+	if strings.Contains(manifestPointer, "raw.githubusercontent.com") {
+		hostname := "github.com" // API calls still use github.com
+
+		// Remove protocol prefix
+		urlWithoutProtocol := strings.TrimPrefix(manifestPointer, "https://")
+		urlWithoutProtocol = strings.TrimPrefix(urlWithoutProtocol, "http://")
+
+		// Remove raw.githubusercontent.com/
+		pathPart := strings.TrimPrefix(urlWithoutProtocol, "raw.githubusercontent.com/")
+
+		// Split path: {owner}/{repo}/refs/heads/{branch}/{file-path}
+		parts := strings.SplitN(pathPart, "/", 3) // owner, repo, rest
+		if len(parts) < 3 {
+			return nil
+		}
+
+		repoSlug := parts[0] + "/" + parts[1]
+		rest := parts[2]
+
+		// Check for refs/heads/ prefix
+		if strings.HasPrefix(rest, "refs/heads/") {
+			rest = strings.TrimPrefix(rest, "refs/heads/")
+			slashIndex := strings.Index(rest, "/")
+			if slashIndex == -1 {
+				return nil
+			}
+
+			branch := rest[:slashIndex]
+			filePath := rest[slashIndex+1:]
+
+			// Only use naive parsing if branch looks like a simple single word
+			if strings.Contains(branch, "/") {
+				return nil
+			}
+
+			return &GitHubUrlInfo{
+				RepoSlug: repoSlug,
+				Branch:   branch,
+				FilePath: filePath,
+				Hostname: hostname,
+			}
+		}
+	}
+
+	return nil
 }
 
 // parseGitHubUrl extracts repository information from various GitHub URL formats using extension framework

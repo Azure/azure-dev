@@ -173,13 +173,14 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
-		// Output is now always available since we capture even for interactive commands
+		// For interactive commands, output is captured but not included in error message
+		// (it was already displayed to the user). For non-interactive, include in error.
 		err = NewExitError(
 			*exitErr,
 			args.Cmd,
 			result.Stdout,
 			result.Stderr,
-			true)
+			!args.Interactive)
 	}
 
 	return result, err

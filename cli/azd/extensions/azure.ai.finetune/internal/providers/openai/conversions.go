@@ -75,6 +75,7 @@ func convertOpenAIJobToDetailModel(openaiJob *openai.FineTuningJob) *models.Fine
 		}
 	}
 
+	var graderJSON json.RawMessage
 	hyperparameters := &models.Hyperparameters{}
 	if openaiJob.Method.Type == "supervised" {
 		hyperparameters.BatchSize = openaiJob.Method.Supervised.Hyperparameters.BatchSize.OfInt
@@ -94,6 +95,13 @@ func convertOpenAIJobToDetailModel(openaiJob *openai.FineTuningJob) *models.Fine
 		hyperparameters.EvalSamples = openaiJob.Method.Reinforcement.Hyperparameters.EvalSamples.OfInt
 		if openaiJob.Method.Reinforcement.Hyperparameters.ReasoningEffort != "" {
 			hyperparameters.ReasoningEffort = string(openaiJob.Method.Reinforcement.Hyperparameters.ReasoningEffort)
+		}
+		// Marshal the entire Grader object to JSON
+		if openaiJob.Method.Reinforcement.Grader.Type != "" {
+			graderBytes, err := json.Marshal(openaiJob.Method.Reinforcement.Grader)
+			if err == nil {
+				graderJSON = graderBytes
+			}
 		}
 	} else {
 		// Fallback to top-level hyperparameters (for backward compatibility)
@@ -131,6 +139,7 @@ func convertOpenAIJobToDetailModel(openaiJob *openai.FineTuningJob) *models.Fine
 		TrainingFile:    openaiJob.TrainingFile,
 		ValidationFile:  openaiJob.ValidationFile,
 		Hyperparameters: hyperparameters,
+		Grader:          graderJSON,
 		Seed:            openaiJob.Seed,
 		ExtraFields:     extraFields,
 	}

@@ -37,7 +37,7 @@ func getParentProcessInfoWithPPID(pid int) (parentProcessInfo, int, error) {
 		info.Name = getBaseName(exePath)
 	}
 
-	// Get parent PID using NtQueryInformationProcess
+	// Get parent PID using Toolhelp32 process snapshot enumeration
 	parentPid, err = getParentPid(pid)
 	if err != nil {
 		// Non-fatal - we still have the process info

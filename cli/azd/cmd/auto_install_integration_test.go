@@ -147,6 +147,9 @@ func TestAgentDetectionIntegration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Clear any ambient agent env vars to ensure test isolation
+			clearAgentEnvVarsForTest(t)
+
 			// Reset agent detection cache for each test
 			agentdetect.ResetDetection()
 
@@ -184,4 +187,46 @@ func containsNoPromptFalse(args []string) bool {
 		}
 	}
 	return false
+}
+
+// clearAgentEnvVarsForTest clears all environment variables that could trigger agent detection.
+// This ensures tests are isolated from the ambient environment.
+func clearAgentEnvVarsForTest(t *testing.T) {
+	envVarsToUnset := []string{
+		// Claude Code
+		"CLAUDE_CODE", "CLAUDE_CODE_ENTRYPOINT",
+		// GitHub Copilot CLI
+		"GITHUB_COPILOT_CLI", "GH_COPILOT",
+		// OpenAI Codex
+		"OPENAI_CODEX", "CODEX_CLI",
+		// Cursor
+		"CURSOR_EDITOR", "CURSOR_SESSION_ID", "CURSOR_TRACE_ID",
+		// Windsurf
+		"WINDSURF_EDITOR", "WINDSURF_SESSION",
+		// Zed
+		"ZED_TERM",
+		// Aider
+		"AIDER_MODEL", "AIDER_CHAT_LANGUAGE",
+		// Continue
+		"CONTINUE_GLOBAL_DIR", "CONTINUE_DEVELOPMENT",
+		// Amazon Q
+		"AMAZON_Q_DEVELOPER", "AWS_Q_DEVELOPER", "KIRO_CLI",
+		// Cline
+		"CLINE_MCP",
+		// Tabnine
+		"TABNINE_CONFIG",
+		// Cody
+		"CODY_CONFIG",
+		// Gemini CLI
+		"GEMINI_CLI", "GEMINI_CLI_NO_RELAUNCH", "GEMINI_CODE_ASSIST",
+		// User agent
+		internal.AzdUserAgentEnvVar,
+	}
+
+	for _, envVar := range envVarsToUnset {
+		if _, exists := os.LookupEnv(envVar); exists {
+			t.Setenv(envVar, "")
+			os.Unsetenv(envVar)
+		}
+	}
 }

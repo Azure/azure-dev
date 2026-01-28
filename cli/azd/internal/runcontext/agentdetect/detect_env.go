@@ -49,7 +49,6 @@ var knownEnvVarPatterns = []envVarPattern{
 	// Aider - AI pair programming tool
 	{envVar: "AIDER_MODEL", agentType: AgentTypeAider},
 	{envVar: "AIDER_CHAT_LANGUAGE", agentType: AgentTypeAider},
-	{envVar: "AIDER_OPENAI_API_KEY", agentType: AgentTypeAider},
 
 	// Continue coding assistant
 	{envVar: "CONTINUE_GLOBAL_DIR", agentType: AgentTypeContinue},
@@ -58,26 +57,25 @@ var knownEnvVarPatterns = []envVarPattern{
 	// Amazon Q Developer (formerly CodeWhisperer)
 	{envVar: "AMAZON_Q_DEVELOPER", agentType: AgentTypeAmazonQ},
 	{envVar: "AWS_Q_DEVELOPER", agentType: AgentTypeAmazonQ},
-	{envVar: "CODEWHISPERER_TOKEN", agentType: AgentTypeAmazonQ},
 	{envVar: "KIRO_CLI", agentType: AgentTypeAmazonQ},
 
 	// Cline (formerly Claude Dev) - VS Code extension
-	{envVar: "CLINE_API_KEY", agentType: AgentTypeCline},
+	// Note: CLINE_API_KEY is too generic, only detect when MCP integration is active
 	{envVar: "CLINE_MCP", agentType: AgentTypeCline},
 
 	// Tabnine - AI code completion
-	{envVar: "TABNINE_TOKEN", agentType: AgentTypeTabnine},
+	// Note: TABNINE_TOKEN is too generic, only detect config which indicates active session
 	{envVar: "TABNINE_CONFIG", agentType: AgentTypeTabnine},
 
 	// Cody (Sourcegraph) - AI coding assistant
-	{envVar: "SRC_ACCESS_TOKEN", agentType: AgentTypeCody},
+	// Note: SRC_ACCESS_TOKEN is too generic (used by Sourcegraph CLI), only detect Cody-specific vars
 	{envVar: "CODY_CONFIG", agentType: AgentTypeCody},
 
 	// Google Gemini CLI
+	// Note: GEMINI_API_KEY and GOOGLE_GEMINI_API_KEY are too generic (used by SDK/CLI),
+	// only detect Gemini CLI-specific vars that indicate the CLI is running
 	{envVar: "GEMINI_CLI", agentType: AgentTypeGemini},
 	{envVar: "GEMINI_CLI_NO_RELAUNCH", agentType: AgentTypeGemini},
-	{envVar: "GEMINI_API_KEY", agentType: AgentTypeGemini},
-	{envVar: "GOOGLE_GEMINI_API_KEY", agentType: AgentTypeGemini},
 	{envVar: "GEMINI_CODE_ASSIST", agentType: AgentTypeGemini},
 }
 

@@ -1,5 +1,6 @@
 import: ../../../.vscode/cspell.global.yaml
 words:
+  - agentdetect
   - azcloud
   - azdext
   - azurefd
@@ -9,6 +10,8 @@ words:
   - Chans
   - chinacloudapi
   - cmds
+  - Codeium
+  - CODEWHISPERER
   - Codespace
   - Codespaces
   - cooldown
@@ -21,22 +24,34 @@ words:
   - gfgac2cmf7b8cuay
   - goversioninfo
   - grpcbroker
+  - KIRO
+  - kiro
   - nosec
   - oneof
   - idxs
   # Looks like the protogen has a spelling error for panics
   - pancis
+  - Paren
   - pkgux
+  - ppid
+  - PPID
   - proto
   - protobuf
   - protoc
   - protoimpl
   - protojson
   - protoreflect
+  - SNAPPROCESS
+  - Sourcegraph
+  - sourcegraph
   - structpb
   - Retryable
   - runcontext
   - surveyterm
+  - Tabnine
+  - tabnine
+  - TABNINE
+  - Toolhelp
   - unmarshals
   - unmarshaling
   - unsetting

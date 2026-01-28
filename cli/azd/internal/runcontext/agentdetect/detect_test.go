@@ -326,16 +326,36 @@ func TestIsRunningInAgent(t *testing.T) {
 }
 
 // clearAgentEnvVars clears all environment variables that could trigger agent detection.
+// This list must be kept in sync with knownEnvVarPatterns in detect_env.go.
 func clearAgentEnvVars(t *testing.T) {
 	envVarsToUnset := []string{
+		// Claude Code
 		"CLAUDE_CODE", "CLAUDE_CODE_ENTRYPOINT",
+		// GitHub Copilot CLI
 		"GITHUB_COPILOT_CLI", "GH_COPILOT",
+		// OpenAI Codex
 		"OPENAI_CODEX", "CODEX_CLI",
-		"CURSOR_EDITOR", "CURSOR_SESSION_ID",
+		// Cursor
+		"CURSOR_EDITOR", "CURSOR_SESSION_ID", "CURSOR_TRACE_ID",
+		// Windsurf
 		"WINDSURF_EDITOR", "WINDSURF_SESSION",
+		// Zed
+		"ZED_TERM",
+		// Aider
 		"AIDER_MODEL", "AIDER_CHAT_LANGUAGE",
-		"CONTINUE_GLOBAL_DIR",
-		"AMAZON_Q_DEVELOPER", "AWS_Q_DEVELOPER", "CODEWHISPERER_TOKEN",
+		// Continue
+		"CONTINUE_GLOBAL_DIR", "CONTINUE_DEVELOPMENT",
+		// Amazon Q
+		"AMAZON_Q_DEVELOPER", "AWS_Q_DEVELOPER", "KIRO_CLI",
+		// Cline
+		"CLINE_MCP",
+		// Tabnine
+		"TABNINE_CONFIG",
+		// Cody
+		"CODY_CONFIG",
+		// Gemini CLI
+		"GEMINI_CLI", "GEMINI_CLI_NO_RELAUNCH", "GEMINI_CODE_ASSIST",
+		// User agent
 		internal.AzdUserAgentEnvVar,
 	}
 

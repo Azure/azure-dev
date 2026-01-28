@@ -384,6 +384,9 @@ func TestParseGlobalFlags_AgentDetection(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Clear any ambient agent env vars to ensure test isolation
+			clearAgentEnvVarsForTest(t)
+
 			// Reset agent detection cache
 			agentdetect.ResetDetection()
 

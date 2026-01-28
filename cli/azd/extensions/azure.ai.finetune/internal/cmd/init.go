@@ -907,6 +907,11 @@ method:
 			yamlContent += fmt.Sprintf("validation_file: %s\n", job.ValidationFile)
 		}
 
+		// Add extra_body with trainingType if present
+		if trainingType, ok := job.ExtraFields["trainingType"]; ok {
+			yamlContent += fmt.Sprintf("extra_body:\n  trainingType: %v\n", trainingType)
+		}
+
 		// Determine the output directory (use src flag or current directory)
 		outputDir := a.flags.src
 		if outputDir == "" {

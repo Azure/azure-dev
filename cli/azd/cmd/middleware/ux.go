@@ -60,7 +60,8 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 		var promptTimeoutErr *uxlib.ErrPromptTimeout
 		if errors.As(err, &promptTimeoutErr) {
 			suggestion := fmt.Sprintf(
-				"\nSuggestion: To run without prompts, use: %s --no-prompt",
+				"\nSuggestion: To run non-interactively without input prompts, use: %s --no-prompt\n"+
+					"To disable prompt timeouts, set the AZD_PROMPT_TIMEOUT environment variable to 0.",
 				m.options.CommandPath,
 			)
 			errorMessage.WriteString(suggestion)

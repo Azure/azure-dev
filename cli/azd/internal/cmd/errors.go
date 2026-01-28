@@ -23,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 )
@@ -46,8 +47,12 @@ func MapError(err error, span tracing.Span) {
 	// internal errors
 	var errWithSuggestion *internal.ErrorWithSuggestion
 	var loginErr *auth.ReLoginRequiredError
+	var promptTimeoutErr *ux.ErrPromptTimeout
 
-	if errors.As(err, &loginErr) {
+	if errors.As(err, &promptTimeoutErr) {
+		errCode = "user.prompt_timeout"
+		errDetails = append(errDetails, fields.PromptTimeoutSeconds.Int(int(promptTimeoutErr.Duration.Seconds())))
+	} else if errors.As(err, &loginErr) {
 		errCode = "auth.login_required"
 	} else if errors.As(err, &errWithSuggestion) {
 		errCode = "error.suggestion"

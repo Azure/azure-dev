@@ -21,7 +21,7 @@ const ext = {
     azureDevExtensionNamespace: 'vscode:/extensions/ms-azuretools.azure-dev',
     extensionVersion: new Lazy<string>(() => {
         const extension = vscode.extensions.getExtension('ms-azuretools.azure-dev');
-        return extension?.packageJSON?.version ?? '';
+        return (extension?.packageJSON as { version?: string })?.version ?? '';
     }),
 } as AzDevExtensionVariables;
 export default ext;

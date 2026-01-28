@@ -16,7 +16,7 @@ interface AzureYamlProjectInformation {
     projectValueNodeRange: vscode.Range;
 }
 
-export async function getAzureYamlProjectInformation(document: vscode.TextDocument): Promise<AzureYamlProjectInformation[]> {
+export function getAzureYamlProjectInformation(document: vscode.TextDocument): Promise<AzureYamlProjectInformation[]> {
     if (!vscode.languages.match(AzureYamlSelector, document)) {
         throw new Error('Document is not an Azure YAML file');
     }
@@ -52,7 +52,7 @@ export async function getAzureYamlProjectInformation(document: vscode.TextDocume
         });
     }
 
-    return results;
+    return Promise.resolve(results);
 }
 
 export function getContainingFolderUri(targetUri: vscode.Uri): vscode.Uri {

@@ -19,7 +19,7 @@ suite('survey tests', () => {
             const results = conformingFlightNameMatcher.exec(flightName);
             assert.isNotNull(results, 'flight ID contains invalid characters (no match)');
 
-            const match = (results as RegExpExecArray)[0];
+            const match = (results)[0];
             assert.lengthOf(match, flightName.length, 'flight ID contains invalid characters (partial match)');
         }
     });

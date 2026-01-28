@@ -8,7 +8,7 @@ import { createAzureDevCli } from '../utils/azureDevCli';
 import { execAsync } from '../utils/execAsync';
 import { isAzureDevCliModel, isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
 import { AzureDevCliApplication } from '../views/workspace/AzureDevCliApplication';
-import { getWorkingFolder } from './cmdUtil';
+import { getWorkingFolder, validateFileSystemUri } from './cmdUtil';
 
 const MonitorChoices: IAzureQuickPickItem<string>[] = [
     {
@@ -33,8 +33,13 @@ export async function monitor(context: IActionContext, selectedItem?: vscode.Uri
     } else if (isAzureDevCliModel(selectedItem)) {
         selectedFile = selectedItem.context.configurationFile;
     } else {
-        selectedFile = selectedItem as vscode.Uri;
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        selectedFile = selectedItem!;
     }
+
+    // Validate that selectedFile is valid for file system operations
+    validateFileSystemUri(context, selectedFile, selectedItem, 'monitor');
+
     const workingFolder = await getWorkingFolder(context, selectedFile);
 
     const monitorChoices = await context.ui.showQuickPick(MonitorChoices, {

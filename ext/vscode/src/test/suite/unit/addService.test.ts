@@ -89,16 +89,18 @@ suite('addService', () => {
 
         expect(validator, 'Validator should be provided').to.exist;
 
-        if (validator) {
+        if (validator && typeof validator === 'function') {
+            const validateFn = validator as (input: string) => string | undefined;
+            
             // Valid names
-            expect(validator('my-service')).to.equal(undefined);
-            expect(validator('my_service')).to.equal(undefined);
-            expect(validator('myService123')).to.equal(undefined);
+            expect(validateFn('my-service')).to.equal(undefined);
+            expect(validateFn('my_service')).to.equal(undefined);
+            expect(validateFn('myService123')).to.equal(undefined);
 
             // Invalid names
-            expect(validator(''), 'Empty string should be invalid').to.exist;
-            expect(validator('my service'), 'Space should be invalid').to.exist;
-            expect(validator('my@service'), 'Special character should be invalid').to.exist;
+            expect(validateFn(''), 'Empty string should be invalid').to.exist;
+            expect(validateFn('my service'), 'Space should be invalid').to.exist;
+            expect(validateFn('my@service'), 'Special character should be invalid').to.exist;
         }
     });
 

@@ -17,7 +17,7 @@ export class AzureDevCliWorkspaceResourceProvider extends vscode.Disposable impl
             () => {
                 this.workspaceFolderSubscription.dispose();
                 this.configFileWatcher.dispose();
-                this.configFolderWatchers.forEach(watcher => watcher.dispose());
+                this.configFolderWatchers.forEach(watcher => void watcher.dispose());
                 this.configFolderWatchers.clear();
                 this.onDidChangeResourceEmitter.dispose();
             });

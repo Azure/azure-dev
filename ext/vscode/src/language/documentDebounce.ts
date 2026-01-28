@@ -13,7 +13,7 @@ export interface DebounceId {
 const activeDebounces: { [key: string]: vscode.Disposable } = {};
 
 export function documentDebounce(delay: number, id: DebounceId, callback: () => Promise<void> | void, thisArg?: unknown): void {
-    const idString = `${id.uri}/${id.callId}`;
+    const idString = `${id.uri.toString()}/${id.callId}`;
 
     // If there's an existing call queued up, wipe it out (can't simply refresh as the inputs to the callback may be different)
     if (activeDebounces[idString]) {

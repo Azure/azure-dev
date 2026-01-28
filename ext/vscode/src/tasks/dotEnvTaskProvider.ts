@@ -3,8 +3,8 @@
 
 import * as vscode from 'vscode';
 import * as dotenv from 'dotenv';
-import * as dayjs from 'dayjs';
-import * as duration from 'dayjs/plugin/duration';
+import dayjs from 'dayjs';
+import duration from 'dayjs/plugin/duration';
 dayjs.extend(duration);
 import { callWithTelemetryAndErrorHandling, IActionContext } from '@microsoft/vscode-azext-utils';
 import { TaskPseudoterminal } from './taskPseudoterminal';
@@ -135,18 +135,15 @@ async function executeChildTask(
     }
 
     const execution = target.execution as (vscode.ProcessExecution | vscode.ShellExecution);
-    if (!execution.options) {
-        execution.options = {
-            env: {}
-        };
-    } else if (!execution.options.env) {
-        execution.options.env = {};
-    }
+    execution.options ??= {
+        env: {}
+    };
+    execution.options.env ??= {};
 
     for (const varName in envVars) {
         // Do not override what is already in the task environment variable configuration
-        if (! execution.options.env![varName]) {
-            execution.options.env![varName] = envVars[varName];
+        if (!execution.options.env[varName]) {
+            execution.options.env[varName] = envVars[varName];
         }
     }
 

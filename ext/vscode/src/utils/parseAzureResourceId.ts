@@ -7,7 +7,7 @@ export function parseAzureResourceId(azureResourceId: string): { subscription: s
     const azureResourceIdRegex = /^\/subscriptions\/(?<subscription>[^/]+)\/resourceGroups\/(?<resourceGroup>[^/]+)(\/providers\/(?<provider>[^/]+\/[^/]+)\/(?<resourceName>[^/]+))?$/i;
     const match = azureResourceIdRegex.exec(azureResourceId);
 
-    if (!match || !match.groups) {
+    if (!match?.groups) {
         throw new Error(vscode.l10n.t('Invalid Azure resource ID: "{0}"', azureResourceId));
     }
 

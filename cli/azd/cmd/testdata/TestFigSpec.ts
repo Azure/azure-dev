@@ -23,12 +23,12 @@ interface AzdExtensionListItem {
 }
 
 interface AzdConfigOption {
-	key: string;
-	description: string;
-	type: string;
-	allowedValues?: string[];
-	example?: string;
-	envVar?: string;
+	Key: string;
+	Description: string;
+	Type: string;
+	AllowedValues?: string[] | null;
+	Example?: string;
+	EnvVar?: string;
 }
 
 const azdGenerators: Record<string, Fig.Generator> = {
@@ -191,10 +191,10 @@ const azdGenerators: Record<string, Fig.Generator> = {
 			try {
 				const options: AzdConfigOption[] = JSON.parse(out);
 				return options
-					.filter((opt) => opt.type !== 'envvar') // Exclude environment-only options
+					.filter((opt) => opt.Type !== 'envvar') // Exclude environment-only options
 					.map((opt) => ({
-						name: opt.key,
-						description: opt.description,
+						name: opt.Key,
+						description: opt.Description,
 					}));
 			} catch {
 				return [];
@@ -227,10 +227,6 @@ const completionSpec: Fig.Spec = {
 							description: 'Initialize a new AI agent project. (Preview)',
 							options: [
 								{
-									name: ['--debug'],
-									description: 'Enable debug mode',
-								},
-								{
 									name: ['--environment', '-e'],
 									description: 'The name of the azd environment to use.',
 									args: [
@@ -238,10 +234,6 @@ const completionSpec: Fig.Spec = {
 											name: 'environment',
 										},
 									],
-								},
-								{
-									name: ['--help', '-h'],
-									description: 'help for init',
 								},
 								{
 									name: ['--host'],
@@ -260,10 +252,6 @@ const completionSpec: Fig.Spec = {
 											name: 'manifest',
 										},
 									],
-								},
-								{
-									name: ['--no-prompt'],
-									description: 'Accepts the default value instead of prompting, or it fails if there is no default.',
 								},
 								{
 									name: ['--project-id', '-p'],
@@ -288,20 +276,6 @@ const completionSpec: Fig.Spec = {
 						{
 							name: ['version'],
 							description: 'Prints the version of the application',
-							options: [
-								{
-									name: ['--debug'],
-									description: 'Enable debug mode',
-								},
-								{
-									name: ['--help', '-h'],
-									description: 'help for version',
-								},
-								{
-									name: ['--no-prompt'],
-									description: 'Accepts the default value instead of prompting, or it fails if there is no default.',
-								},
-							],
 						},
 					],
 				},
@@ -313,10 +287,6 @@ const completionSpec: Fig.Spec = {
 							name: ['init'],
 							description: 'Initialize a new AI Fine-tuning project. (Preview)',
 							options: [
-								{
-									name: ['--debug'],
-									description: 'Enable debug mode',
-								},
 								{
 									name: ['--environment', '-n'],
 									description: 'The name of the azd environment to use.',
@@ -334,14 +304,6 @@ const completionSpec: Fig.Spec = {
 											name: 'from-job',
 										},
 									],
-								},
-								{
-									name: ['--help', '-h'],
-									description: 'help for init',
-								},
-								{
-									name: ['--no-prompt'],
-									description: 'accepts the default value instead of prompting, or fails if there is no default',
 								},
 								{
 									name: ['--project-endpoint', '-e'],
@@ -399,17 +361,9 @@ const completionSpec: Fig.Spec = {
 									description: 'Cancels a running or queued fine-tuning job.',
 									options: [
 										{
-											name: ['--debug'],
-											description: 'Enable debug mode',
-										},
-										{
 											name: ['--force'],
 											description: 'Skip confirmation prompt',
 											isDangerous: true,
-										},
-										{
-											name: ['--help', '-h'],
-											description: 'help for cancel',
 										},
 										{
 											name: ['--id', '-i'],
@@ -419,10 +373,6 @@ const completionSpec: Fig.Spec = {
 													name: 'id',
 												},
 											],
-										},
-										{
-											name: ['--no-prompt'],
-											description: 'accepts the default value instead of prompting, or fails if there is no default',
 										},
 									],
 								},
@@ -440,10 +390,6 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--debug'],
-											description: 'Enable debug mode',
-										},
-										{
 											name: ['--deployment-name', '-d'],
 											description: 'Deployment name (required)',
 											args: [
@@ -451,10 +397,6 @@ const completionSpec: Fig.Spec = {
 													name: 'deployment-name',
 												},
 											],
-										},
-										{
-											name: ['--help', '-h'],
-											description: 'help for deploy',
 										},
 										{
 											name: ['--job-id', '-i'],
@@ -473,10 +415,6 @@ const completionSpec: Fig.Spec = {
 													name: 'model-format',
 												},
 											],
-										},
-										{
-											name: ['--no-prompt'],
-											description: 'accepts the default value instead of prompting, or fails if there is no default',
 										},
 										{
 											name: ['--no-wait'],
@@ -516,18 +454,6 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--debug'],
-											description: 'Enable debug mode',
-										},
-										{
-											name: ['--help', '-h'],
-											description: 'help for list',
-										},
-										{
-											name: ['--no-prompt'],
-											description: 'accepts the default value instead of prompting, or fails if there is no default',
-										},
-										{
 											name: ['--output', '-o'],
 											description: 'Output format: table, json',
 											args: [
@@ -552,14 +478,6 @@ const completionSpec: Fig.Spec = {
 									description: 'Pauses a running fine-tuning job.',
 									options: [
 										{
-											name: ['--debug'],
-											description: 'Enable debug mode',
-										},
-										{
-											name: ['--help', '-h'],
-											description: 'help for pause',
-										},
-										{
 											name: ['--id', '-i'],
 											description: 'Job ID (required)',
 											args: [
@@ -567,10 +485,6 @@ const completionSpec: Fig.Spec = {
 													name: 'id',
 												},
 											],
-										},
-										{
-											name: ['--no-prompt'],
-											description: 'accepts the default value instead of prompting, or fails if there is no default',
 										},
 									],
 								},
@@ -579,14 +493,6 @@ const completionSpec: Fig.Spec = {
 									description: 'Resumes a paused fine-tuning job.',
 									options: [
 										{
-											name: ['--debug'],
-											description: 'Enable debug mode',
-										},
-										{
-											name: ['--help', '-h'],
-											description: 'help for resume',
-										},
-										{
 											name: ['--id', '-i'],
 											description: 'Job ID (required)',
 											args: [
@@ -595,24 +501,12 @@ const completionSpec: Fig.Spec = {
 												},
 											],
 										},
-										{
-											name: ['--no-prompt'],
-											description: 'accepts the default value instead of prompting, or fails if there is no default',
-										},
 									],
 								},
 								{
 									name: ['show'],
 									description: 'Shows detailed information about a specific job.',
 									options: [
-										{
-											name: ['--debug'],
-											description: 'Enable debug mode',
-										},
-										{
-											name: ['--help', '-h'],
-											description: 'help for show',
-										},
 										{
 											name: ['--id', '-i'],
 											description: 'Job ID (required)',
@@ -625,10 +519,6 @@ const completionSpec: Fig.Spec = {
 										{
 											name: ['--logs'],
 											description: 'Include recent training logs',
-										},
-										{
-											name: ['--no-prompt'],
-											description: 'accepts the default value instead of prompting, or fails if there is no default',
 										},
 										{
 											name: ['--output', '-o'],
@@ -646,10 +536,6 @@ const completionSpec: Fig.Spec = {
 									description: 'submit fine tuning job',
 									options: [
 										{
-											name: ['--debug'],
-											description: 'Enable debug mode',
-										},
-										{
 											name: ['--file', '-f'],
 											description: 'Path to the config file.',
 											args: [
@@ -659,10 +545,6 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--help', '-h'],
-											description: 'help for submit',
-										},
-										{
 											name: ['--model', '-m'],
 											description: 'Base model to fine-tune. Overrides config file. Required if --file is not provided',
 											args: [
@@ -670,10 +552,6 @@ const completionSpec: Fig.Spec = {
 													name: 'model',
 												},
 											],
-										},
-										{
-											name: ['--no-prompt'],
-											description: 'accepts the default value instead of prompting, or fails if there is no default',
 										},
 										{
 											name: ['--seed', '-r'],
@@ -714,38 +592,10 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 							],
-							options: [
-								{
-									name: ['--debug'],
-									description: 'Enable debug mode',
-								},
-								{
-									name: ['--help', '-h'],
-									description: 'help for jobs',
-								},
-								{
-									name: ['--no-prompt'],
-									description: 'accepts the default value instead of prompting, or fails if there is no default',
-								},
-							],
 						},
 						{
 							name: ['version'],
 							description: 'Prints the version of the application',
-							options: [
-								{
-									name: ['--debug'],
-									description: 'Enable debug mode',
-								},
-								{
-									name: ['--help', '-h'],
-									description: 'help for version',
-								},
-								{
-									name: ['--no-prompt'],
-									description: 'accepts the default value instead of prompting, or fails if there is no default',
-								},
-							],
 						},
 					],
 				},
@@ -856,10 +706,6 @@ const completionSpec: Fig.Spec = {
 							],
 						},
 						{
-							name: ['--debug'],
-							description: 'Enables debugging and diagnostics logging.',
-						},
-						{
 							name: ['--github-host-name'],
 							description: 'The hostname to use with GitHub commands',
 							args: [
@@ -867,10 +713,6 @@ const completionSpec: Fig.Spec = {
 									name: 'github-host-name',
 								},
 							],
-						},
-						{
-							name: ['--help', '-h'],
-							description: 'help for config',
 						},
 						{
 							name: ['--managed-identity-name'],
@@ -905,16 +747,6 @@ const completionSpec: Fig.Spec = {
 				{
 					name: ['version'],
 					description: 'Prints the version of the application',
-					options: [
-						{
-							name: ['--debug'],
-							description: 'Enable debug mode',
-						},
-						{
-							name: ['--help', '-h'],
-							description: 'help for version',
-						},
-					],
 				},
 			],
 		},
@@ -951,30 +783,10 @@ const completionSpec: Fig.Spec = {
 				{
 					name: ['up'],
 					description: 'Runs azd up in concurrent mode',
-					options: [
-						{
-							name: ['--debug'],
-							description: 'Enable debug logging for azd commands',
-						},
-						{
-							name: ['--help', '-h'],
-							description: 'help for up',
-						},
-					],
 				},
 				{
 					name: ['version'],
 					description: 'Prints the version of the application',
-					options: [
-						{
-							name: ['--debug'],
-							description: 'Enable debug mode',
-						},
-						{
-							name: ['--help', '-h'],
-							description: 'help for version',
-						},
-					],
 				},
 			],
 		},
@@ -1043,72 +855,22 @@ const completionSpec: Fig.Spec = {
 				{
 					name: ['colors', 'colours'],
 					description: 'Displays all ASCII colors with their standard and high-intensity variants.',
-					options: [
-						{
-							name: ['--debug'],
-							description: 'Enable debug mode',
-						},
-						{
-							name: ['--help', '-h'],
-							description: 'help for colors',
-						},
-					],
 				},
 				{
 					name: ['config'],
 					description: 'Setup monitoring configuration for the project and services',
-					options: [
-						{
-							name: ['--debug'],
-							description: 'Enable debug mode',
-						},
-						{
-							name: ['--help', '-h'],
-							description: 'help for config',
-						},
-					],
 				},
 				{
 					name: ['context'],
 					description: 'Get the context of the AZD project & environment.',
-					options: [
-						{
-							name: ['--debug'],
-							description: 'Enable debug mode',
-						},
-						{
-							name: ['--help', '-h'],
-							description: 'help for context',
-						},
-					],
 				},
 				{
 					name: ['gh-url-parse'],
 					description: 'Parse a GitHub URL and extract repository information.',
-					options: [
-						{
-							name: ['--debug'],
-							description: 'Enable debug mode',
-						},
-						{
-							name: ['--help', '-h'],
-							description: 'help for gh-url-parse',
-						},
-					],
 				},
 				{
 					name: ['listen'],
 					description: 'Starts the extension and listens for events.',
-					options: [
-						{
-							name: ['--debug'],
-							description: 'Enable debug mode',
-						},
-						{
-							name: ['--help', '-h'],
-							description: 'help for listen',
-						},
-					],
 				},
 				{
 					name: ['mcp'],
@@ -1117,56 +879,16 @@ const completionSpec: Fig.Spec = {
 						{
 							name: ['start'],
 							description: 'Start MCP server with demo tools',
-							options: [
-								{
-									name: ['--debug'],
-									description: 'Enable debug mode',
-								},
-								{
-									name: ['--help', '-h'],
-									description: 'help for start',
-								},
-							],
-						},
-					],
-					options: [
-						{
-							name: ['--debug'],
-							description: 'Enable debug mode',
-						},
-						{
-							name: ['--help', '-h'],
-							description: 'help for mcp',
 						},
 					],
 				},
 				{
 					name: ['prompt'],
 					description: 'Examples of prompting the user for input.',
-					options: [
-						{
-							name: ['--debug'],
-							description: 'Enable debug mode',
-						},
-						{
-							name: ['--help', '-h'],
-							description: 'help for prompt',
-						},
-					],
 				},
 				{
 					name: ['version'],
 					description: 'Prints the version of the application',
-					options: [
-						{
-							name: ['--debug'],
-							description: 'Enable debug mode',
-						},
-						{
-							name: ['--help', '-h'],
-							description: 'help for version',
-						},
-					],
 				},
 			],
 		},
@@ -2413,23 +2135,6 @@ const completionSpec: Fig.Spec = {
 							description: 'When set builds for all os/platforms. Defaults to the current os/platform only.',
 						},
 						{
-							name: ['--cwd'],
-							description: 'Path to the azd extension project',
-							args: [
-								{
-									name: 'cwd',
-								},
-							],
-						},
-						{
-							name: ['--debug'],
-							description: 'Enable debug mode',
-						},
-						{
-							name: ['--help', '-h'],
-							description: 'help for build',
-						},
-						{
 							name: ['--output', '-o'],
 							description: 'Path to the output directory. Defaults to ./bin folder.',
 							args: [
@@ -2457,23 +2162,6 @@ const completionSpec: Fig.Spec = {
 									name: 'capabilities',
 								},
 							],
-						},
-						{
-							name: ['--cwd'],
-							description: 'Path to the azd extension project',
-							args: [
-								{
-									name: 'cwd',
-								},
-							],
-						},
-						{
-							name: ['--debug'],
-							description: 'Enable debug mode',
-						},
-						{
-							name: ['--help', '-h'],
-							description: 'help for init',
 						},
 						{
 							name: ['--id'],
@@ -2512,10 +2200,6 @@ const completionSpec: Fig.Spec = {
 							],
 						},
 						{
-							name: ['--no-prompt'],
-							description: 'Skip all prompts by providing all required parameters via command-line flags.',
-						},
-						{
 							name: ['--registry', '-r'],
 							description: 'When set will create a local extension source registry.',
 						},
@@ -2525,23 +2209,6 @@ const completionSpec: Fig.Spec = {
 					name: ['pack'],
 					description: 'Build and pack extension artifacts',
 					options: [
-						{
-							name: ['--cwd'],
-							description: 'Path to the azd extension project',
-							args: [
-								{
-									name: 'cwd',
-								},
-							],
-						},
-						{
-							name: ['--debug'],
-							description: 'Enable debug mode',
-						},
-						{
-							name: ['--help', '-h'],
-							description: 'help for pack',
-						},
 						{
 							name: ['--input', '-i'],
 							description: 'Path to the input directory.',
@@ -2579,23 +2246,6 @@ const completionSpec: Fig.Spec = {
 									name: 'artifacts',
 								},
 							],
-						},
-						{
-							name: ['--cwd'],
-							description: 'Path to the azd extension project',
-							args: [
-								{
-									name: 'cwd',
-								},
-							],
-						},
-						{
-							name: ['--debug'],
-							description: 'Enable debug mode',
-						},
-						{
-							name: ['--help', '-h'],
-							description: 'help for publish',
 						},
 						{
 							name: ['--registry', '-r'],
@@ -2645,25 +2295,8 @@ const completionSpec: Fig.Spec = {
 							description: 'Skip confirmation prompt',
 						},
 						{
-							name: ['--cwd'],
-							description: 'Path to the azd extension project',
-							args: [
-								{
-									name: 'cwd',
-								},
-							],
-						},
-						{
-							name: ['--debug'],
-							description: 'Enable debug mode',
-						},
-						{
 							name: ['--draft', '-d'],
 							description: 'Create a draft release',
-						},
-						{
-							name: ['--help', '-h'],
-							description: 'help for release',
 						},
 						{
 							name: ['--notes', '-n'],
@@ -2719,48 +2352,10 @@ const completionSpec: Fig.Spec = {
 				{
 					name: ['version'],
 					description: 'Prints the version of the application',
-					options: [
-						{
-							name: ['--cwd'],
-							description: 'Path to the azd extension project',
-							args: [
-								{
-									name: 'cwd',
-								},
-							],
-						},
-						{
-							name: ['--debug'],
-							description: 'Enable debug mode',
-						},
-						{
-							name: ['--help', '-h'],
-							description: 'help for version',
-						},
-					],
 				},
 				{
 					name: ['watch'],
 					description: 'Watches the AZD extension project for file changes and rebuilds it.',
-					options: [
-						{
-							name: ['--cwd'],
-							description: 'Path to the azd extension project',
-							args: [
-								{
-									name: 'cwd',
-								},
-							],
-						},
-						{
-							name: ['--debug'],
-							description: 'Enable debug mode',
-						},
-						{
-							name: ['--help', '-h'],
-							description: 'help for watch',
-						},
-					],
 				},
 			],
 		},

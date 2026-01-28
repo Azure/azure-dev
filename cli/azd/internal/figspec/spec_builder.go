@@ -22,6 +22,7 @@ type SpecBuilder struct {
 	flagArgsProvider          CustomFlagArgsProvider
 	extensionMetadataProvider ExtensionMetadataProvider
 	includeHidden             bool
+	globalFlagNames           map[string]bool // Flag names that are global (persistent + non-persistent)
 }
 
 // NewSpecBuilder creates a new Fig spec builder
@@ -58,6 +59,17 @@ func (sb *SpecBuilder) generateNonPersistentGlobalOptions(root *cobra.Command) [
 
 // BuildSpec generates a Fig spec from a Cobra root command
 func (sb *SpecBuilder) BuildSpec(root *cobra.Command) *Spec {
+	// Collect global flag names from the root command's persistent flags
+	// These flags are defined via CreateGlobalFlagSet() and inherited by all subcommands
+	sb.globalFlagNames = make(map[string]bool)
+	root.PersistentFlags().VisitAll(func(f *pflag.Flag) {
+		sb.globalFlagNames[f.Name] = true
+	})
+	// Also include non-persistent global flags (help, docs) which appear on every command
+	for _, name := range cmd.NonPersistentGlobalFlags {
+		sb.globalFlagNames[name] = true
+	}
+
 	persistentOpts := sb.generateOptions(root.PersistentFlags(), "", true)
 
 	// Include non-persistent global flags (--help, --docs) as persistent since they appear on all commands
@@ -160,9 +172,9 @@ func (sb *SpecBuilder) tryGenerateExtensionSubcommand(cmd *cobra.Command, names 
 		Hidden:      cmd.Hidden,
 	}
 
-	// Add subcommands from metadata
+	// Add subcommands from metadata, filtering out global flags
 	for _, extCmd := range metadata.Commands {
-		figSubcmd := convertExtensionCommand(extCmd, sb.includeHidden)
+		figSubcmd := convertExtensionCommand(extCmd, sb.includeHidden, sb.globalFlagNames)
 		if figSubcmd != nil {
 			subcommand.Subcommands = append(subcommand.Subcommands, *figSubcmd)
 		}

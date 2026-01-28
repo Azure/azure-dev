@@ -11,6 +11,17 @@ import (
 )
 
 func TestConvertExtensionCommand(t *testing.T) {
+	// Simulate global flags as they would be collected from root.PersistentFlags()
+	globalFlagNames := map[string]bool{
+		"help":           true,
+		"docs":           true,
+		"cwd":            true,
+		"debug":          true,
+		"no-prompt":      true,
+		"trace-log-file": true,
+		"trace-log-url":  true,
+	}
+
 	tests := []struct {
 		name          string
 		cmd           extensions.Command
@@ -95,6 +106,27 @@ func TestConvertExtensionCommand(t *testing.T) {
 			wantArgs:      0,
 		},
 		{
+			name: "global flags are filtered out",
+			cmd: extensions.Command{
+				Name:  []string{"test"},
+				Short: "Test command",
+				Flags: []extensions.Flag{
+					{Name: "custom", Description: "Custom flag", Type: "bool"},
+					{Name: "help", Shorthand: "h", Description: "Help", Type: "bool"},
+					{Name: "no-prompt", Description: "No prompt", Type: "bool"},
+					{Name: "debug", Description: "Debug", Type: "bool"},
+					{Name: "cwd", Shorthand: "C", Description: "Working dir", Type: "string"},
+				},
+			},
+			includeHidden: false,
+			wantNil:       false,
+			wantName:      []string{"test"},
+			wantDesc:      "Test command",
+			wantSubcmds:   0,
+			wantOptions:   1, // Only "custom" flag should be included
+			wantArgs:      0,
+		},
+		{
 			name: "command with args",
 			cmd: extensions.Command{
 				Name:  []string{"get"},
@@ -140,7 +172,7 @@ func TestConvertExtensionCommand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := convertExtensionCommand(tt.cmd, tt.includeHidden)
+			result := convertExtensionCommand(tt.cmd, tt.includeHidden, globalFlagNames)
 
 			if tt.wantNil {
 				require.Nil(t, result)

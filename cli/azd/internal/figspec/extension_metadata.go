@@ -15,27 +15,31 @@ type ExtensionMetadataProvider interface {
 	LoadMetadata(extensionId string) (*extensions.ExtensionCommandMetadata, error)
 }
 
-// convertExtensionCommand converts an extension command to a Fig subcommand recursively
-func convertExtensionCommand(cmd extensions.Command, includeHidden bool) *Subcommand {
-	if !includeHidden && cmd.Hidden {
+// convertExtensionCommand converts an extension command to a Fig subcommand recursively.
+// globalFlagNames contains flag names that should be excluded (already defined at root level).
+func convertExtensionCommand(extCmd extensions.Command, includeHidden bool, globalFlagNames map[string]bool) *Subcommand {
+	if !includeHidden && extCmd.Hidden {
 		return nil
 	}
 
-	if len(cmd.Name) == 0 {
+	if len(extCmd.Name) == 0 {
 		return nil
 	}
 
-	names := append([]string{cmd.Name[len(cmd.Name)-1]}, cmd.Aliases...)
+	names := append([]string{extCmd.Name[len(extCmd.Name)-1]}, extCmd.Aliases...)
 
 	subcommand := &Subcommand{
 		Name:        names,
-		Description: cmd.Short,
-		Hidden:      cmd.Hidden,
+		Description: extCmd.Short,
+		Hidden:      extCmd.Hidden,
 	}
 
-	// Convert flags to options
-	for _, flag := range cmd.Flags {
+	// Convert flags to options, excluding global flags which are already defined at root level
+	for _, flag := range extCmd.Flags {
 		if !includeHidden && flag.Hidden {
+			continue
+		}
+		if globalFlagNames[flag.Name] {
 			continue
 		}
 
@@ -44,16 +48,16 @@ func convertExtensionCommand(cmd extensions.Command, includeHidden bool) *Subcom
 	}
 
 	// Convert args
-	for _, arg := range cmd.Args {
+	for _, arg := range extCmd.Args {
 		figArg := convertExtensionArg(arg)
 		subcommand.Args = append(subcommand.Args, figArg)
 	}
 
 	// Convert subcommands recursively
-	for _, subcmd := range cmd.Subcommands {
-		figSubcmd := convertExtensionCommand(subcmd, includeHidden)
-		if figSubcmd != nil {
-			subcommand.Subcommands = append(subcommand.Subcommands, *figSubcmd)
+	for _, childCmd := range extCmd.Subcommands {
+		figChild := convertExtensionCommand(childCmd, includeHidden, globalFlagNames)
+		if figChild != nil {
+			subcommand.Subcommands = append(subcommand.Subcommands, *figChild)
 		}
 	}
 

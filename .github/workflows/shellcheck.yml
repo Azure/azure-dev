@@ -14,19 +14,17 @@ concurrency:
 
 permissions:
   contents: read
-  pull-requests: read
-  checks: write
 
 jobs:
   shellcheck:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Register ShellCheck problem matcher
+        run: echo "::add-matcher::.github/shellcheck-matcher.json"
       - name: Run ShellCheck
-        uses: reviewdog/action-shellcheck@v1
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          reporter: github-check
-          path: "."
-          pattern: "*.sh"
-          level: info
+        run: |
+          find . -name "*.sh" -type f -exec shellcheck -f gcc {} \;
+      - name: Unregister ShellCheck problem matcher
+        if: always()
+        run: echo "::remove-matcher owner=shellcheck-gcc::"

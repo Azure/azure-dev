@@ -199,7 +199,7 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		)
 	}
 
-	targetServiceName, err := getTargetServiceName(
+	targetServiceName, err = getTargetServiceName(
 		ctx,
 		da.projectManager,
 		da.importManager,

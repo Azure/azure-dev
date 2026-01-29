@@ -54,9 +54,6 @@ func TestExternalPromptFromEnvironmentVariables(t *testing.T) {
 
 	// This simulates what happens in container.go when registering the console
 	writer := cmd.OutOrStdout()
-	if os.Getenv("NO_COLOR") != "" {
-		// skip colorable for test
-	}
 
 	isTerminal := false // Force non-terminal for test
 

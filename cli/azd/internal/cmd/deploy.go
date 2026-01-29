@@ -112,7 +112,6 @@ type DeployAction struct {
 	args                []string
 	projectConfig       *project.ProjectConfig
 	azdCtx              *azdcontext.AzdContext
-	env                 *environment.Environment
 	envManager          environment.Manager
 	projectManager      project.ProjectManager
 	serviceManager      project.ServiceManager
@@ -136,7 +135,6 @@ func NewDeployAction(
 	serviceManager project.ServiceManager,
 	resourceManager project.ResourceManager,
 	azdCtx *azdcontext.AzdContext,
-	environment *environment.Environment,
 	envManager environment.Manager,
 	accountManager account.Manager,
 	cloud *cloud.Cloud,
@@ -153,7 +151,6 @@ func NewDeployAction(
 		args:                args,
 		projectConfig:       projectConfig,
 		azdCtx:              azdCtx,
-		env:                 environment,
 		envManager:          envManager,
 		projectManager:      projectManager,
 		serviceManager:      serviceManager,
@@ -181,7 +178,22 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		targetServiceName = da.args[0]
 	}
 
-	if da.env.GetSubscriptionId() == "" {
+	// Resolve the environment here (after flags have been parsed) to ensure we respect -e
+	envName := da.flags.EnvironmentName
+	if envName == "" {
+		var err error
+		envName, err = da.azdCtx.GetDefaultEnvironmentName()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	env, err := da.envManager.Get(ctx, envName)
+	if err != nil {
+		return nil, fmt.Errorf("loading environment: %w", err)
+	}
+
+	if env.GetSubscriptionId() == "" {
 		return nil, errors.New(
 			"infrastructure has not been provisioned. Run `azd provision`",
 		)
@@ -349,7 +361,7 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, err
 	}
 
-	aspireDashboardUrl := apphost.AspireDashboardUrl(ctx, da.env, da.alphaFeatureManager)
+	aspireDashboardUrl := apphost.AspireDashboardUrl(ctx, env, da.alphaFeatureManager)
 	if aspireDashboardUrl != nil {
 		da.console.MessageUxItem(ctx, aspireDashboardUrl)
 	}
@@ -366,9 +378,9 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	}
 
 	// Invalidate cache after successful deploy so azd show will refresh
-	if err := da.envManager.InvalidateEnvCache(ctx, da.env.Name()); err != nil {
+	if err := da.envManager.InvalidateEnvCache(ctx, env.Name()); err != nil {
 		log.Printf("warning: failed to invalidate state cache: %v", err)
-	}
+	} 
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
@@ -378,7 +390,7 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 				da.portalUrlBase,
 				da.projectConfig,
 				da.resourceManager,
-				da.env,
+				env,
 				false,
 			),
 		},

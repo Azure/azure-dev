@@ -32,7 +32,7 @@ To surface errors and warnings as GitHub Actions annotations without third-party
          "owner": "tool-name",
          "pattern": [
            {
-             "regexp": "^([^:]+):(\\d+):(\\d+):\\s+(warning|error|note):\\s+(.*)$",
+             "regexp": "^([^:]+):(\\d+):(\\d+):\\s+(warning|error|note|style):\\s+(.*)$",
              "file": 1,
              "line": 2,
              "column": 3,
@@ -44,6 +44,8 @@ To surface errors and warnings as GitHub Actions annotations without third-party
      ]
    }
    ```
+   
+   Note: Adjust the severity levels in the regex to match your tool's output format.
 
 2. **Register the matcher** before running the tool:
    ```yaml
@@ -78,11 +80,13 @@ steps:
   - name: Register ShellCheck problem matcher
     run: echo "::add-matcher::.github/shellcheck-matcher.json"
   - name: Run ShellCheck
-    run: find . -name "*.sh" -type f -exec shellcheck -f gcc {} \;
+    run: find . -name "*.sh" -type f -exec shellcheck -f gcc {} +
   - name: Unregister ShellCheck problem matcher
     if: always()
     run: echo "::remove-matcher owner=shellcheck-gcc::"
 ```
+
+Note: Using `{} +` instead of `{} \;` batches all files into a single shellcheck invocation, improving performance and allowing shellcheck to follow sourced dependencies.
 
 ## Workflow Structure
 

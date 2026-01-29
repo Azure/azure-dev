@@ -24,7 +24,7 @@ jobs:
         run: echo "::add-matcher::.github/shellcheck-matcher.json"
       - name: Run ShellCheck
         run: |
-          find . -name "*.sh" -type f -exec shellcheck -f gcc {} \;
+          find . -name "*.sh" -type f -exec shellcheck -f gcc {} +
       - name: Unregister ShellCheck problem matcher
         if: always()
         run: echo "::remove-matcher owner=shellcheck-gcc::"

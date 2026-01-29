@@ -12,6 +12,11 @@
         ],
         "default": "stable",
         "description": "Select or enter an Azure Developer CLI version. (Available versions may vary by Linux distribution.)"
+      },
+      "extensions": {
+        "type": "string",
+        "default": "",
+        "description": "Optional comma separated list of Azure Developer CLI extensions to install."
       }
     },
     "customizations": {

@@ -877,6 +877,7 @@ func (a *InitAction) downloadAgentYaml(
 	var urlInfo *GitHubUrlInfo
 	var ghCli *github.Cli
 	var console input.Console
+	var useGhCli bool = false
 
 	// Check if manifestPointer is a local file path or a URI
 	if a.isLocalFilePath(manifestPointer) {
@@ -990,7 +991,8 @@ func (a *InitAction) downloadAgentYaml(
 		}
 
 		if contentStr == "" {
-			// Fall back to complex parsing via azd SDK
+			// Fall back to complex parsing via azd GitHub CLI handling
+			useGhCli = true
 			urlInfo, err = a.parseGitHubUrl(ctx, manifestPointer)
 			if err != nil {
 				return nil, "", err
@@ -1154,7 +1156,7 @@ func (a *InitAction) downloadAgentYaml(
 		if isHostedContainer {
 			// For container agents, download the entire parent directory
 			fmt.Println("Downloading full directory for container agent")
-			err := downloadParentDirectory(ctx, urlInfo, targetDir, ghCli, console)
+			err := downloadParentDirectory(ctx, urlInfo, targetDir, ghCli, console, useGhCli)
 			if err != nil {
 				return nil, "", fmt.Errorf("downloading parent directory: %w", err)
 			}
@@ -1504,7 +1506,7 @@ func (a *InitAction) parseGitHubUrl(ctx context.Context, manifestPointer string)
 }
 
 func downloadParentDirectory(
-	ctx context.Context, urlInfo *GitHubUrlInfo, targetDir string, ghCli *github.Cli, console input.Console) error {
+	ctx context.Context, urlInfo *GitHubUrlInfo, targetDir string, ghCli *github.Cli, console input.Console, useGhCli bool) error {
 
 	// Get parent directory by removing the filename from the file path
 	pathParts := strings.Split(urlInfo.FilePath, "/")
@@ -1517,8 +1519,14 @@ func downloadParentDirectory(
 	fmt.Printf("Downloading parent directory '%s' from repository '%s', branch '%s'\n", parentDirPath, urlInfo.RepoSlug, urlInfo.Branch)
 
 	// Download directory contents
-	if err := downloadDirectoryContents(ctx, urlInfo.Hostname, urlInfo.RepoSlug, parentDirPath, urlInfo.Branch, targetDir, ghCli, console); err != nil {
-		return fmt.Errorf("failed to download directory contents: %w", err)
+	if useGhCli {
+		if err := downloadDirectoryContents(ctx, urlInfo.Hostname, urlInfo.RepoSlug, parentDirPath, urlInfo.Branch, targetDir, ghCli, console); err != nil {
+			return fmt.Errorf("failed to download directory contents: %w", err)
+		}
+	} else {
+		if err := downloadDirectoryContentsWithoutGhCli(ctx, urlInfo.RepoSlug, parentDirPath, urlInfo.Branch, targetDir); err != nil {
+			return fmt.Errorf("failed to download directory contents: %w", err)
+		}
 	}
 
 	fmt.Printf("Successfully downloaded parent directory to: %s\n", targetDir)
@@ -1587,6 +1595,97 @@ func downloadDirectoryContents(
 
 			// Recursively download directory contents
 			if err := downloadDirectoryContents(ctx, hostname, repoSlug, itemPath, branch, itemLocalPath, ghCli, console); err != nil {
+				return fmt.Errorf("failed to download subdirectory %s: %w", itemPath, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+func downloadDirectoryContentsWithoutGhCli(
+	ctx context.Context, repoSlug string, dirPath string, branch string, localPath string) error {
+
+	// Get directory contents using GitHub API directly
+	apiUrl := fmt.Sprintf("https://api.github.com/repos/%s/contents/%s", repoSlug, dirPath)
+	if branch != "" {
+		apiUrl += fmt.Sprintf("?ref=%s", branch)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiUrl, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to get directory contents: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to get directory contents: status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read directory contents response: %w", err)
+	}
+
+	// Parse the directory contents JSON
+	var dirContents []map[string]interface{}
+	if err := json.Unmarshal(body, &dirContents); err != nil {
+		return fmt.Errorf("failed to parse directory contents JSON: %w", err)
+	}
+
+	// Download each file and subdirectory
+	for _, item := range dirContents {
+		name, ok := item["name"].(string)
+		if !ok {
+			continue
+		}
+
+		itemType, ok := item["type"].(string)
+		if !ok {
+			continue
+		}
+
+		itemPath := fmt.Sprintf("%s/%s", dirPath, name)
+		itemLocalPath := filepath.Join(localPath, name)
+
+		if itemType == "file" {
+			// Download file using raw.githubusercontent.com
+			fmt.Printf("Downloading file: %s\n", itemPath)
+			rawUrl := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s", repoSlug, branch, itemPath)
+
+			fileResp, err := http.Get(rawUrl)
+			if err != nil {
+				return fmt.Errorf("failed to download file %s: %w", itemPath, err)
+			}
+			defer fileResp.Body.Close()
+
+			if fileResp.StatusCode != http.StatusOK {
+				return fmt.Errorf("failed to download file %s: status %d", itemPath, fileResp.StatusCode)
+			}
+
+			fileContent, err := io.ReadAll(fileResp.Body)
+			if err != nil {
+				return fmt.Errorf("failed to read file content %s: %w", itemPath, err)
+			}
+
+			if err := os.WriteFile(itemLocalPath, fileContent, 0644); err != nil {
+				return fmt.Errorf("failed to write file %s: %w", itemLocalPath, err)
+			}
+		} else if itemType == "dir" {
+			// Recursively download subdirectory
+			fmt.Printf("Downloading directory: %s\n", itemPath)
+			if err := os.MkdirAll(itemLocalPath, 0755); err != nil {
+				return fmt.Errorf("failed to create directory %s: %w", itemLocalPath, err)
+			}
+
+			// Recursively download directory contents
+			if err := downloadDirectoryContentsWithoutGhCli(ctx, repoSlug, itemPath, branch, itemLocalPath); err != nil {
 				return fmt.Errorf("failed to download subdirectory %s: %w", itemPath, err)
 			}
 		}

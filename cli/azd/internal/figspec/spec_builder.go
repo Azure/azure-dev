@@ -4,6 +4,7 @@
 package figspec
 
 import (
+	"log"
 	"slices"
 	"strings"
 
@@ -15,11 +16,13 @@ import (
 // SpecBuilder builds Fig autocomplete specifications from Cobra commands.
 // Note: This is different from Fig's concept of "generators" which are dynamic completion functions.
 type SpecBuilder struct {
-	suggestionProvider CustomSuggestionProvider
-	generatorProvider  CustomGeneratorProvider
-	argsProvider       CustomArgsProvider
-	flagArgsProvider   CustomFlagArgsProvider
-	includeHidden      bool
+	suggestionProvider        CustomSuggestionProvider
+	generatorProvider         CustomGeneratorProvider
+	argsProvider              CustomArgsProvider
+	flagArgsProvider          CustomFlagArgsProvider
+	extensionMetadataProvider ExtensionMetadataProvider
+	includeHidden             bool
+	globalFlagNames           map[string]bool // Flag names that are global (persistent + non-persistent)
 }
 
 // NewSpecBuilder creates a new Fig spec builder
@@ -32,6 +35,14 @@ func NewSpecBuilder(includeHidden bool) *SpecBuilder {
 		flagArgsProvider:   azd,
 		includeHidden:      includeHidden,
 	}
+}
+
+// WithExtensionMetadata sets the extension metadata provider for the builder.
+// When set, the builder will use extension metadata to generate full command trees
+// for extensions that have the metadata capability.
+func (sb *SpecBuilder) WithExtensionMetadata(provider ExtensionMetadataProvider) *SpecBuilder {
+	sb.extensionMetadataProvider = provider
+	return sb
 }
 
 // generateNonPersistentGlobalOptions generates options for non-persistent global flags (--help, --docs)
@@ -48,6 +59,17 @@ func (sb *SpecBuilder) generateNonPersistentGlobalOptions(root *cobra.Command) [
 
 // BuildSpec generates a Fig spec from a Cobra root command
 func (sb *SpecBuilder) BuildSpec(root *cobra.Command) *Spec {
+	// Collect global flag names from the root command's persistent flags
+	// These flags are defined via CreateGlobalFlagSet() and inherited by all subcommands
+	sb.globalFlagNames = make(map[string]bool)
+	root.PersistentFlags().VisitAll(func(f *pflag.Flag) {
+		sb.globalFlagNames[f.Name] = true
+	})
+	// Also include non-persistent global flags (help, docs) which appear on every command
+	for _, name := range cmd.NonPersistentGlobalFlags {
+		sb.globalFlagNames[name] = true
+	}
+
 	persistentOpts := sb.generateOptions(root.PersistentFlags(), "", true)
 
 	// Include non-persistent global flags (--help, --docs) as persistent since they appear on all commands
@@ -88,6 +110,12 @@ func (sb *SpecBuilder) generateSubcommands(cmd *cobra.Command, ctx *CommandConte
 		names := []string{sub.Name()}
 		names = append(names, sub.Aliases...)
 
+		// Check if this is an extension command with metadata capability
+		if extensionSubcmd := sb.tryGenerateExtensionSubcommand(sub, names); extensionSubcmd != nil {
+			subcommands = append(subcommands, *extensionSubcmd)
+			continue
+		}
+
 		localOpts := sb.generateOptions(sub.LocalNonPersistentFlags(), subCtx.CommandPath, false)
 		args := sb.generateCommandArgs(sub, subCtx)
 		nestedSubcommands := sb.generateSubcommands(sub, subCtx)
@@ -107,6 +135,52 @@ func (sb *SpecBuilder) generateSubcommands(cmd *cobra.Command, ctx *CommandConte
 	}
 
 	return subcommands
+}
+
+// tryGenerateExtensionSubcommand attempts to generate a subcommand from extension metadata.
+// Returns nil if the command is not an extension command or has no metadata available.
+func (sb *SpecBuilder) tryGenerateExtensionSubcommand(cmd *cobra.Command, names []string) *Subcommand {
+	if sb.extensionMetadataProvider == nil {
+		return nil
+	}
+
+	// Check if this command has extension annotations
+	extensionId, hasId := cmd.Annotations["extension.id"]
+	if !hasId {
+		return nil
+	}
+
+	// Check if extension has metadata capability before attempting to load
+	if !sb.extensionMetadataProvider.HasMetadataCapability(extensionId) {
+		return nil
+	}
+
+	// Try to load extension metadata
+	metadata, err := sb.extensionMetadataProvider.LoadMetadata(extensionId)
+	if err != nil {
+		log.Printf("Failed to load metadata for extension '%s': %v", extensionId, err)
+		return nil
+	}
+	if metadata == nil {
+		return nil
+	}
+
+	// Build the subcommand from metadata
+	subcommand := &Subcommand{
+		Name:        names,
+		Description: cmd.Short,
+		Hidden:      cmd.Hidden,
+	}
+
+	// Add subcommands from metadata, filtering out global flags
+	for _, extCmd := range metadata.Commands {
+		figSubcmd := convertExtensionCommand(extCmd, sb.includeHidden, sb.globalFlagNames)
+		if figSubcmd != nil {
+			subcommand.Subcommands = append(subcommand.Subcommands, *figSubcmd)
+		}
+	}
+
+	return subcommand
 }
 
 func (sb *SpecBuilder) generateOptions(flagSet *pflag.FlagSet, commandPath string, persistent bool) []Option {
@@ -262,6 +336,12 @@ func (sb *SpecBuilder) generateHelpSubcommands(cmd *cobra.Command) []Subcommand 
 		names := []string{sub.Name()}
 		names = append(names, sub.Aliases...)
 
+		// Check if this is an extension command with metadata
+		if helpSubcmd := sb.tryGenerateExtensionHelpSubcommand(sub, names); helpSubcmd != nil {
+			subcommands = append(subcommands, *helpSubcmd)
+			continue
+		}
+
 		helpSub := Subcommand{
 			Name:        names,
 			Description: sub.Short,
@@ -272,4 +352,45 @@ func (sb *SpecBuilder) generateHelpSubcommands(cmd *cobra.Command) []Subcommand 
 	}
 
 	return subcommands
+}
+
+// tryGenerateExtensionHelpSubcommand attempts to generate a help subcommand from extension metadata.
+func (sb *SpecBuilder) tryGenerateExtensionHelpSubcommand(cmd *cobra.Command, names []string) *Subcommand {
+	if sb.extensionMetadataProvider == nil {
+		return nil
+	}
+
+	extensionId, hasId := cmd.Annotations["extension.id"]
+	if !hasId {
+		return nil
+	}
+
+	// Check if extension has metadata capability before attempting to load
+	if !sb.extensionMetadataProvider.HasMetadataCapability(extensionId) {
+		return nil
+	}
+
+	metadata, err := sb.extensionMetadataProvider.LoadMetadata(extensionId)
+	if err != nil {
+		log.Printf("Failed to load metadata for extension '%s': %v", extensionId, err)
+		return nil
+	}
+	if metadata == nil {
+		return nil
+	}
+
+	subcommand := &Subcommand{
+		Name:        names,
+		Description: cmd.Short,
+	}
+
+	// Add help subcommands from metadata
+	for _, extCmd := range metadata.Commands {
+		helpSubcmd := convertExtensionCommandForHelp(extCmd, sb.includeHidden)
+		if helpSubcmd != nil {
+			subcommand.Subcommands = append(subcommand.Subcommands, *helpSubcmd)
+		}
+	}
+
+	return subcommand
 }

@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/internal/figspec"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 	"github.com/stretchr/testify/require"
@@ -45,14 +44,10 @@ func TestFigSpec(t *testing.T) {
 		uninstallAllExtensions(ctx, t, cli)
 	})
 
-	root := NewRootCmd(false, nil, nil)
-
-	builder := figspec.NewSpecBuilder(false)
-	spec := builder.BuildSpec(root)
-
-	typescript, err := spec.ToTypeScript()
+	// Generate the Fig spec using CLI command
+	result, err := cli.RunCommand(t.Context(), "completion", "fig")
 	require.NoError(t, err)
 
 	snapshotter := snapshot.NewConfig(".ts")
-	snapshotter.SnapshotT(t, typescript)
+	snapshotter.SnapshotT(t, result.Stdout)
 }

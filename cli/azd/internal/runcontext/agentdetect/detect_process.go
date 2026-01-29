@@ -75,8 +75,9 @@ func detectFromParentProcess() AgentInfo {
 
 // parentProcessInfo contains information about a parent process.
 type parentProcessInfo struct {
-	Name       string
-	Executable string
+	Name        string
+	Executable  string
+	CommandLine string // Full command line (Linux/macOS only)
 }
 
 // matchProcessToAgent checks if a process matches any known AI agent patterns.

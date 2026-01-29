@@ -23,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
+	"github.com/braydonk/yaml"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
@@ -901,10 +902,33 @@ method:
 			}
 		}
 
+		// Add grader for reinforcement method if present
+		if len(job.Grader) > 0 && strings.ToLower(job.Method) == "reinforcement" {
+			var graderMap map[string]interface{}
+			if err := json.Unmarshal(job.Grader, &graderMap); err == nil {
+				graderYaml, err := yaml.Marshal(graderMap)
+				if err == nil {
+					// Indent the grader YAML to be nested under method.reinforcement.grader
+					indentedGrader := ""
+					for _, line := range strings.Split(string(graderYaml), "\n") {
+						if line != "" {
+							indentedGrader += "      " + line + "\n"
+						}
+					}
+					yamlContent += "    grader:\n" + indentedGrader
+				}
+			}
+		}
+
 		// Add training and validation files
 		yamlContent += fmt.Sprintf("training_file: %s\n", job.TrainingFile)
 		if job.ValidationFile != "" {
 			yamlContent += fmt.Sprintf("validation_file: %s\n", job.ValidationFile)
+		}
+
+		// Add extra_body with trainingType if present
+		if trainingType, ok := job.ExtraFields["trainingType"]; ok {
+			yamlContent += fmt.Sprintf("extra_body:\n  trainingType: %v\n", trainingType)
 		}
 
 		// Determine the output directory (use src flag or current directory)

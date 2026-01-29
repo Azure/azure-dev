@@ -3,7 +3,7 @@
 		"image": "mcr.microsoft.com/devcontainers/base:ubuntu",
 		"features": {
 			"azd": {
-				"extensions": "azure.coding-agent"
+				"extensions": "azure.coding-agent,microsoft.azd.demo"
 			}
 		}
 	}

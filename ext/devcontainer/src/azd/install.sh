@@ -30,7 +30,7 @@ curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version $AZD_VERSION -a 
 # If Azure Developer CLI extensions are requested, loop through and install 
 if [ -n "${AZD_EXTENSIONS}" ]; then
     echo "Installing Azure Developer CLI extensions: ${AZD_EXTENSIONS}"
-    extensions=(`echo "${AZD_EXTENSIONS}" | tr ',' ' '`)
+    IFS=',' read -ra extensions <<< "${AZD_EXTENSIONS}"
     for i in "${extensions[@]}"
     do
         echo "Installing ${i}"

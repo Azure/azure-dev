@@ -380,7 +380,7 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	// Invalidate cache after successful deploy so azd show will refresh
 	if err := da.envManager.InvalidateEnvCache(ctx, env.Name()); err != nil {
 		log.Printf("warning: failed to invalidate state cache: %v", err)
-	} 
+	}
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{

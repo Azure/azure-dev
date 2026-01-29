@@ -322,12 +322,13 @@ func slotEnvVarNameForService(serviceName string) string {
 	return fmt.Sprintf("AZD_DEPLOY_%s_SLOT_NAME", normalizedName)
 }
 
-// Gets the exposed endpoints for the App Service
+// Gets the exposed endpoints for the App Service, including any deployment slots
 func (st *appServiceTarget) Endpoints(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) ([]string, error) {
+	// Get main app properties
 	appServiceProperties, err := st.cli.GetAppServiceProperties(
 		ctx,
 		targetResource.SubscriptionId(),
@@ -338,9 +339,42 @@ func (st *appServiceTarget) Endpoints(
 		return nil, fmt.Errorf("fetching service properties: %w", err)
 	}
 
-	endpoints := make([]string, len(appServiceProperties.HostNames))
-	for idx, hostName := range appServiceProperties.HostNames {
-		endpoints[idx] = fmt.Sprintf("https://%s/", hostName)
+	var endpoints []string
+
+	// Add main app endpoints
+	for _, hostName := range appServiceProperties.HostNames {
+		endpoints = append(endpoints, fmt.Sprintf("https://%s/", hostName))
+	}
+
+	// Get all deployment slots
+	slots, err := st.cli.GetAppServiceSlots(
+		ctx,
+		targetResource.SubscriptionId(),
+		targetResource.ResourceGroupName(),
+		targetResource.ResourceName(),
+	)
+	if err != nil {
+		// Log but don't fail if we can't get slots - main app endpoints are still valid
+		return endpoints, nil
+	}
+
+	// Add slot endpoints with prefix
+	for _, slot := range slots {
+		slotProperties, err := st.cli.GetAppServiceSlotProperties(
+			ctx,
+			targetResource.SubscriptionId(),
+			targetResource.ResourceGroupName(),
+			targetResource.ResourceName(),
+			slot.Name,
+		)
+		if err != nil {
+			// Skip this slot if we can't get its properties
+			continue
+		}
+
+		for _, hostName := range slotProperties.HostNames {
+			endpoints = append(endpoints, fmt.Sprintf("https://%s/", hostName))
+		}
 	}
 
 	return endpoints, nil

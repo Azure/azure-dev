@@ -141,7 +141,7 @@ func TestBicepPlanParameterTypesFromEnvVars(t *testing.T) {
     }
   }
 }`
-	err = os.WriteFile(filepath.Join(projectDir, "infra", "main.parameters.json"), []byte(paramsContent), 0644)
+	err = os.WriteFile(filepath.Join(projectDir, "infra", "main.parameters.json"), []byte(paramsContent), 0600)
 	require.NoError(t, err)
 
 	// Create a minimal bicep file
@@ -149,7 +149,7 @@ func TestBicepPlanParameterTypesFromEnvVars(t *testing.T) {
 
 output arrayOutput array = testArray
 `
-	err = os.WriteFile(filepath.Join(projectDir, "infra", "main.bicep"), []byte(bicepContent), 0644)
+	err = os.WriteFile(filepath.Join(projectDir, "infra", "main.bicep"), []byte(bicepContent), 0600)
 	require.NoError(t, err)
 
 	options := provisioning.Options{

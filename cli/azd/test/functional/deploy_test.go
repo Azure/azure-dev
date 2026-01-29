@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/azure/azure-dev/cli/azd/test/recording"
@@ -126,7 +125,7 @@ func Test_CLI_Deploy_SlotDeployment(t *testing.T) {
 	// Defer cleanup to delete resource group regardless of test outcome
 	// The resource group name follows the pattern: rg-{envName}
 	t.Cleanup(func() {
-		cleanupResourceGroup(context.Background(), t, cli, session, "rg-"+envName)
+		cleanupRg(context.Background(), t, cli, session, "rg-"+envName)
 	})
 
 	err := copySample(dir, "webapp-slots")
@@ -267,32 +266,4 @@ func (p *serviceHealthProber) probe(t *testing.T, ctx context.Context, url strin
 
 		return nil
 	})
-}
-
-// cleanupResourceGroup deletes an Azure resource group without waiting for completion.
-// This is used for test cleanup to speed up test execution.
-func cleanupResourceGroup(ctx context.Context, t *testing.T, cli *azdcli.CLI, session *recording.Session, rgName string) {
-	if session != nil && session.Playback {
-		return
-	}
-
-	client, err := armresources.NewResourceGroupsClient(cfg.SubscriptionID, azdcli.NewTestCredential(cli), nil)
-	if err != nil {
-		t.Logf("cleanupResourceGroup: failed to create client: %v", err)
-		return
-	}
-
-	_, err = client.Get(ctx, rgName, nil)
-	if err != nil {
-		t.Logf("cleanupResourceGroup: resource group %s not found, skipping cleanup: %v", rgName, err)
-		return
-	}
-
-	t.Logf("cleanupResourceGroup: deleting resource group %s", rgName)
-	// Begin delete without waiting for completion - this makes cleanup faster
-	_, err = client.BeginDelete(ctx, rgName, nil)
-	if err != nil {
-		t.Logf("cleanupResourceGroup: failed to delete resource group %s: %v", rgName, err)
-		return
-	}
 }

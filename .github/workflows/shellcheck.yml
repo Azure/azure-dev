@@ -5,6 +5,7 @@ on:
     paths:
       - "**.sh"
       - ".github/workflows/shellcheck.yml"
+      - ".github/shellcheck-matcher.json"
     branches: [main]
 
 # If two events are triggered within a short time in the same PR, cancel the run of the oldest event
@@ -24,7 +25,11 @@ jobs:
         run: echo "::add-matcher::.github/shellcheck-matcher.json"
       - name: Run ShellCheck
         run: |
-          find . -name "*.sh" -type f -exec shellcheck -f gcc {} +
+          find . -name "*.sh" -type f \
+            -not -path "*/.*" \
+            -not -path "*/node_modules/*" \
+            -not -path "*/vendor/*" \
+            -exec shellcheck -f gcc {} +
       - name: Unregister ShellCheck problem matcher
         if: always()
         run: echo "::remove-matcher owner=shellcheck-gcc::"

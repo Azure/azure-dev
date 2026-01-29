@@ -80,13 +80,20 @@ steps:
   - name: Register ShellCheck problem matcher
     run: echo "::add-matcher::.github/shellcheck-matcher.json"
   - name: Run ShellCheck
-    run: find . -name "*.sh" -type f -exec shellcheck -f gcc {} +
+    run: |
+      find . -name "*.sh" -type f \
+        -not -path "*/.*" \
+        -not -path "*/node_modules/*" \
+        -not -path "*/vendor/*" \
+        -exec shellcheck -f gcc {} +
   - name: Unregister ShellCheck problem matcher
     if: always()
     run: echo "::remove-matcher owner=shellcheck-gcc::"
 ```
 
-Note: Using `{} +` instead of `{} \;` batches all files into a single shellcheck invocation, improving performance and allowing shellcheck to follow sourced dependencies.
+Note: 
+- Using `{} +` instead of `{} \;` batches all files into a single shellcheck invocation, improving performance and allowing shellcheck to follow sourced dependencies.
+- Excludes hidden directories (e.g., `.git/`), `node_modules/`, and `vendor/` to avoid checking unintended scripts.
 
 ## Workflow Structure
 

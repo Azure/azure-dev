@@ -77,6 +77,9 @@ var knownEnvVarPatterns = []envVarPattern{
 	{envVar: "GEMINI_CLI", agentType: AgentTypeGemini},
 	{envVar: "GEMINI_CLI_NO_RELAUNCH", agentType: AgentTypeGemini},
 	{envVar: "GEMINI_CODE_ASSIST", agentType: AgentTypeGemini},
+
+	// OpenCode - AI coding CLI
+	{envVar: "OPENCODE", agentType: AgentTypeOpenCode},
 }
 
 // detectFromEnvVars checks for known AI agent environment variables.
@@ -124,6 +127,7 @@ var userAgentPatterns = []struct {
 	{substring: "cody", agentType: AgentTypeCody},
 	{substring: "sourcegraph", agentType: AgentTypeCody},
 	{substring: "gemini", agentType: AgentTypeGemini},
+	{substring: "opencode", agentType: AgentTypeOpenCode},
 	{substring: "codex", agentType: AgentTypeOpenAICodex},
 	{substring: "continue", agentType: AgentTypeContinue},
 }

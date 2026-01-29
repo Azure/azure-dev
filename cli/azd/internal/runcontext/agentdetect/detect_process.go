@@ -80,6 +80,11 @@ var processNamePatterns = []struct {
 		patterns:  []string{"gemini", "gemini-code", "google-gemini"},
 		agentType: AgentTypeGemini,
 	},
+	// OpenCode - AI coding CLI
+	{
+		patterns:  []string{"opencode"},
+		agentType: AgentTypeOpenCode,
+	},
 }
 
 // maxProcessTreeDepth limits how far up the process tree we walk to prevent infinite loops.

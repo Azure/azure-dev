@@ -40,6 +40,8 @@ const (
 	AgentTypeCody AgentType = "cody"
 	// AgentTypeGemini is Google's Gemini CLI.
 	AgentTypeGemini AgentType = "gemini"
+	// AgentTypeOpenCode is the OpenCode AI coding CLI.
+	AgentTypeOpenCode AgentType = "opencode"
 	// AgentTypeGeneric indicates an agent was detected but not specifically identified.
 	AgentTypeGeneric AgentType = "generic"
 )
@@ -80,6 +82,8 @@ func (a AgentType) DisplayName() string {
 		return "Cody"
 	case AgentTypeGemini:
 		return "Gemini"
+	case AgentTypeOpenCode:
+		return "OpenCode"
 	case AgentTypeGeneric:
 		return "Generic Agent"
 	default:

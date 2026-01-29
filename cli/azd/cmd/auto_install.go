@@ -492,8 +492,7 @@ func CreateGlobalFlagSet() *pflag.FlagSet {
 	globalFlags.Bool(
 		"no-prompt",
 		false,
-		"Accepts the default value instead of prompting, or it fails if there is no default. "+
-			"Automatically enabled when running inside AI coding agents (Claude Code, Cursor, GitHub Copilot CLI, etc.).")
+		"Accepts the default value instead of prompting, or it fails if there is no default.")
 
 	// The telemetry system is responsible for reading these flags value and using it to configure the telemetry
 	// system, but we still need to add it to our flag set so that when we parse the command line with Cobra we

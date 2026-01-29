@@ -99,6 +99,8 @@ func execEnvFromAgent() string {
 		return fields.EnvCody
 	case agentdetect.AgentTypeGemini:
 		return fields.EnvGemini
+	case agentdetect.AgentTypeOpenCode:
+		return fields.EnvOpenCode
 	case agentdetect.AgentTypeGeneric:
 		return fields.EnvGenericAgent
 	default:

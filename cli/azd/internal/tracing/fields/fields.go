@@ -290,6 +290,7 @@ const (
 	EnvTabnine          = "Tabnine"
 	EnvCody             = "Cody"
 	EnvGemini           = "Gemini CLI"
+	EnvOpenCode         = "OpenCode"
 	EnvGenericAgent     = "Generic Agent"
 
 	// Continuous Integration environments

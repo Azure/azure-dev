@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -15,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mocktracing"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
@@ -196,6 +198,14 @@ func Test_MapError(t *testing.T) {
 				fields.ErrorKey(fields.ServiceHost.Key).String("openai.azure.com"),
 				fields.ErrorKey(fields.ServiceStatusCode.Key).Int(429),
 				fields.ErrorKey(fields.ServiceErrorCode.Key).String("RateLimitExceeded"),
+			},
+		},
+		{
+			name:          "WithPromptTimeoutError",
+			err:           &ux.ErrPromptTimeout{Duration: 30 * time.Second},
+			wantErrReason: "user.prompt_timeout",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrorKey(fields.PromptTimeoutSeconds.Key).Int(30),
 			},
 		},
 	}

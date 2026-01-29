@@ -421,6 +421,17 @@ var (
 	}
 )
 
+// Prompt related fields
+var (
+	// The timeout duration in seconds when a prompt times out.
+	PromptTimeoutSeconds = AttributeKey{
+		Key:            attribute.Key("prompt.timeout_seconds"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+)
+
 // Pack related fields
 var (
 	// The builder image used. Hashed when a user-defined image is used.

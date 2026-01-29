@@ -5,9 +5,11 @@ package ux
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log"
 	"os"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux/internal"
@@ -125,6 +127,14 @@ func (p *Prompt) WithCanvas(canvas Canvas) Visual {
 
 // Ask prompts the user for input.
 func (p *Prompt) Ask(ctx context.Context) (string, error) {
+	// Auto-apply prompt timeout if configured globally
+	var timeout time.Duration
+	if timeout = GetPromptTimeout(); timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+
 	if p.canvas == nil {
 		p.canvas = NewCanvas(p).WithWriter(p.options.Writer)
 	}
@@ -178,6 +188,10 @@ func (p *Prompt) Ask(ctx context.Context) (string, error) {
 	})
 
 	if err != nil {
+		// Convert context deadline to prompt timeout error
+		if timeout > 0 && errors.Is(err, context.DeadlineExceeded) {
+			return "", &ErrPromptTimeout{Duration: timeout}
+		}
 		return "", err
 	}
 

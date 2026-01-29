@@ -70,7 +70,11 @@ func (r *Runner) Invoke(ctx context.Context, extension *Extension, options *Invo
 
 	runResult, err := r.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return &runResult, &ExtensionRunError{Err: err, ExtensionId: extension.Id}
+		return &runResult, &ExtensionRunError{
+			Err:         err,
+			ExtensionId: extension.Id,
+			Stderr:      runResult.Stderr,
+		}
 	}
 	return &runResult, nil
 }
@@ -79,9 +83,14 @@ func (r *Runner) Invoke(ctx context.Context, extension *Extension, options *Invo
 type ExtensionRunError struct {
 	ExtensionId string
 	Err         error
+	Stderr      string // Captured stderr from the extension process
 }
 
 func (e *ExtensionRunError) Error() string {
+	// If we have stderr output, use it as it contains the actual error from the extension
+	if e.Stderr != "" {
+		return fmt.Sprintf("extension '%s' run failed: %s", e.ExtensionId, e.Stderr)
+	}
 	return fmt.Sprintf("extension '%s' run failed: %v", e.ExtensionId, e.Err)
 }
 

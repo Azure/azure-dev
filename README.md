@@ -132,4 +132,4 @@ This project may contain Microsoft trademarks or logos. Use of these must follow
 
 ## License
 
-Learn more about running third-party templates on [Microsoft Learn](https://learn.microsoft.com/azure/developer/azure-developer-cli/azd-templates#guidelines-for-using-azd-templates).
+Licensed under the [MIT](LICENSE) license.

@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -169,13 +170,16 @@ func Test_CLI_Deploy_SlotDeployment(t *testing.T) {
 		httpClient = session.ProxyClient
 	}
 
+	// Create service health prober with session-aware retry delay
+	prober := newServiceHealthProber(t, ctx, httpClient, session)
+
 	// Verify both main app and slot return the original response after first deployment
 	t.Logf("Verifying main app returns original response\n")
-	err = verifyEndpointResponse(t, ctx, httpClient, websiteURL, originalResponse)
+	err = prober.probe(websiteURL, originalResponse)
 	require.NoError(t, err, "main app should return original response after azd up")
 
 	t.Logf("Verifying slot returns original response\n")
-	err = verifyEndpointResponse(t, ctx, httpClient, slotURL, originalResponse)
+	err = prober.probe(slotURL, originalResponse)
 	require.NoError(t, err, "slot should return original response after azd up")
 
 	// Update the data.json file with new content
@@ -193,35 +197,56 @@ func Test_CLI_Deploy_SlotDeployment(t *testing.T) {
 
 	// Verify main app still returns original response (unchanged)
 	t.Logf("Verifying main app still returns original response after slot deploy\n")
-	err = verifyEndpointResponse(t, ctx, httpClient, websiteURL, originalResponse)
+	err = prober.probe(websiteURL, originalResponse)
 	require.NoError(t, err, "main app should still return original response after slot deploy")
 
 	// Verify slot returns updated response
 	t.Logf("Verifying slot returns updated response after slot deploy\n")
-	err = verifyEndpointResponse(t, ctx, httpClient, slotURL, updatedResponse)
+	err = prober.probe(slotURL, updatedResponse)
 	require.NoError(t, err, "slot should return updated response after slot deploy")
 
 	t.Logf("Done\n")
 }
 
-// verifyEndpointResponse verifies that an endpoint returns the expected JSON response.
-// Uses recording.MinimumDelayUnit() internally to determine retry intervals -
-// 0 in playback mode, 5 seconds in live/record mode.
-func verifyEndpointResponse(
+// serviceHealthProber probes service endpoints for expected responses with configurable retry delays.
+type serviceHealthProber struct {
+	t          *testing.T
+	ctx        context.Context
+	client     *http.Client
+	retryDelay time.Duration
+}
+
+// newServiceHealthProber creates a new service health prober.
+// The retry delay is set based on the session's playback mode:
+// - 1ms in playback mode for fast test execution
+// - 5 seconds in live/record modes for actual service health checks
+func newServiceHealthProber(
 	t *testing.T,
 	ctx context.Context,
 	client *http.Client,
-	url string,
-	expectedBody string,
-) error {
-	// Get retry unit from recording package (0 in playback, 1s in live/record)
-	// Multiply by 5 to get the retry interval
-	retryInterval := 5 * recording.MinimumDelayUnit()
-	return retry.Do(ctx, retry.WithMaxRetries(12*5, retry.NewConstant(retryInterval)), func(ctx context.Context) error {
-		t.Logf("Attempting to GET URL: %s", url)
+	session *recording.Session,
+) *serviceHealthProber {
+	retryDelay := 5 * time.Second
+	if session != nil && session.Playback {
+		retryDelay = 1 * time.Millisecond
+	}
+
+	return &serviceHealthProber{
+		t:          t,
+		ctx:        ctx,
+		client:     client,
+		retryDelay: retryDelay,
+	}
+}
+
+// probe verifies that an endpoint returns the expected JSON response.
+// It retries up to 60 times with the configured retry delay.
+func (p *serviceHealthProber) probe(url string, expectedBody string) error {
+	return retry.Do(p.ctx, retry.WithMaxRetries(60, retry.NewConstant(p.retryDelay)), func(ctx context.Context) error {
+		p.t.Logf("Attempting to GET URL: %s", url)
 
 		/* #nosec G107 - Potential HTTP request made with variable url false positive */
-		res, err := client.Get(url)
+		res, err := p.client.Get(url)
 		if err != nil {
 			return retry.RetryableError(err)
 		}

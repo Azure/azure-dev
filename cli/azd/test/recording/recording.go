@@ -97,36 +97,6 @@ type Session struct {
 	ProxyClient *http.Client
 }
 
-// MinimumDelayUnit returns the minimum delay unit for operations that require waiting.
-// In playback mode, it returns 1 millisecond to speed up test execution.
-// In record or live modes, it returns 1 second as the base unit.
-// Tests should multiply this value by the desired number of seconds for their delays.
-// This function determines the mode from environment variables, independent of any Session.
-func MinimumDelayUnit() time.Duration {
-	if isPlaybackMode() {
-		return time.Millisecond
-	}
-	return time.Second
-}
-
-// isPlaybackMode determines if the test is running in playback mode based on environment variables.
-// This is used by MinimumDelayUnit and Start to determine the recording mode independently.
-func isPlaybackMode() bool {
-	// Check explicit AZURE_RECORD_MODE first
-	if mode := os.Getenv("AZURE_RECORD_MODE"); mode != "" {
-		return strings.ToLower(mode) == "playback"
-	}
-
-	// For local dev (non-CI), ModeRecordOnce is used which plays back if recording exists.
-	// We can't determine if cassette exists here without test context, so assume playback
-	// when not in CI and no explicit mode is set.
-	if os.Getenv("CI") == "" {
-		return true
-	}
-
-	return false
-}
-
 const roleAssignmentsPath = "providers/Microsoft.Authorization/roleAssignments/"
 
 var roleAssignmentsRegex = regexp.MustCompile(roleAssignmentsPath + `[^/]+\?api`)

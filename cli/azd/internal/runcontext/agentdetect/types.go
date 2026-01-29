@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 // Package agentdetect provides functionality to detect when azd is invoked
-// by known AI coding agents (Claude Code, GitHub Copilot CLI, Cursor, etc.)
+// by known AI coding agents (Claude Code, GitHub Copilot, Gemini, OpenCode)
 // and enables automatic adjustment of behavior (e.g., no-prompt mode).
 package agentdetect
 
@@ -16,34 +16,12 @@ const (
 	AgentTypeClaudeCode AgentType = "claude-code"
 	// AgentTypeGitHubCopilotCLI is GitHub's Copilot CLI agent.
 	AgentTypeGitHubCopilotCLI AgentType = "github-copilot-cli"
-	// AgentTypeOpenAICodex is OpenAI's Codex CLI agent.
-	AgentTypeOpenAICodex AgentType = "openai-codex"
-	// AgentTypeCursor is the Cursor editor agent.
-	AgentTypeCursor AgentType = "cursor"
-	// AgentTypeWindsurf is the Windsurf editor agent (by Codeium).
-	AgentTypeWindsurf AgentType = "windsurf"
-	// AgentTypeAider is the Aider AI pair programming tool.
-	AgentTypeAider AgentType = "aider"
-	// AgentTypeContinue is the Continue coding assistant.
-	AgentTypeContinue AgentType = "continue"
-	// AgentTypeAmazonQ is Amazon Q Developer agent (formerly CodeWhisperer).
-	AgentTypeAmazonQ AgentType = "amazon-q"
 	// AgentTypeVSCodeCopilot is VS Code GitHub Copilot extension.
 	AgentTypeVSCodeCopilot AgentType = "vscode-copilot"
-	// AgentTypeCline is the Cline VS Code extension (formerly Claude Dev).
-	AgentTypeCline AgentType = "cline"
-	// AgentTypeZed is the Zed editor with AI features.
-	AgentTypeZed AgentType = "zed"
-	// AgentTypeTabnine is the Tabnine AI coding assistant.
-	AgentTypeTabnine AgentType = "tabnine"
-	// AgentTypeCody is Sourcegraph's Cody AI assistant.
-	AgentTypeCody AgentType = "cody"
 	// AgentTypeGemini is Google's Gemini CLI.
 	AgentTypeGemini AgentType = "gemini"
 	// AgentTypeOpenCode is the OpenCode AI coding CLI.
 	AgentTypeOpenCode AgentType = "opencode"
-	// AgentTypeGeneric indicates an agent was detected but not specifically identified.
-	AgentTypeGeneric AgentType = "generic"
 )
 
 // String returns the string representation of the agent type.
@@ -58,34 +36,12 @@ func (a AgentType) DisplayName() string {
 		return "Claude Code"
 	case AgentTypeGitHubCopilotCLI:
 		return "GitHub Copilot CLI"
-	case AgentTypeOpenAICodex:
-		return "OpenAI Codex"
-	case AgentTypeCursor:
-		return "Cursor"
-	case AgentTypeWindsurf:
-		return "Windsurf"
-	case AgentTypeAider:
-		return "Aider"
-	case AgentTypeContinue:
-		return "Continue"
-	case AgentTypeAmazonQ:
-		return "Amazon Q Developer"
 	case AgentTypeVSCodeCopilot:
 		return "VS Code GitHub Copilot"
-	case AgentTypeCline:
-		return "Cline"
-	case AgentTypeZed:
-		return "Zed"
-	case AgentTypeTabnine:
-		return "Tabnine"
-	case AgentTypeCody:
-		return "Cody"
 	case AgentTypeGemini:
 		return "Gemini"
 	case AgentTypeOpenCode:
 		return "OpenCode"
-	case AgentTypeGeneric:
-		return "Generic Agent"
 	default:
 		return "Unknown"
 	}

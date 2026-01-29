@@ -93,13 +93,6 @@ func TestAgentDetectionIntegration(t *testing.T) {
 			description:      "When running under Claude Code, --no-prompt should be auto-enabled",
 		},
 		{
-			name:             "Cursor agent enables no-prompt automatically",
-			args:             []string{"up"},
-			envVars:          map[string]string{"CURSOR_EDITOR": "1"},
-			expectedNoPrompt: true,
-			description:      "When running under Cursor, --no-prompt should be auto-enabled",
-		},
-		{
 			name:             "GitHub Copilot CLI enables no-prompt automatically",
 			args:             []string{"deploy"},
 			envVars:          map[string]string{"GITHUB_COPILOT_CLI": "true"},
@@ -107,18 +100,18 @@ func TestAgentDetectionIntegration(t *testing.T) {
 			description:      "When running under GitHub Copilot CLI, --no-prompt should be auto-enabled",
 		},
 		{
-			name:             "Windsurf agent enables no-prompt automatically",
+			name:             "Gemini agent enables no-prompt automatically",
 			args:             []string{"init"},
-			envVars:          map[string]string{"WINDSURF_EDITOR": "1"},
+			envVars:          map[string]string{"GEMINI_CLI": "1"},
 			expectedNoPrompt: true,
-			description:      "When running under Windsurf, --no-prompt should be auto-enabled",
+			description:      "When running under Gemini, --no-prompt should be auto-enabled",
 		},
 		{
-			name:             "Aider agent enables no-prompt automatically",
+			name:             "OpenCode agent enables no-prompt automatically",
 			args:             []string{"provision"},
-			envVars:          map[string]string{"AIDER_MODEL": "gpt-4"},
+			envVars:          map[string]string{"OPENCODE": "1"},
 			expectedNoPrompt: true,
-			description:      "When running under Aider, --no-prompt should be auto-enabled",
+			description:      "When running under OpenCode, --no-prompt should be auto-enabled",
 		},
 		{
 			name:             "User can override agent detection with --no-prompt=false",
@@ -197,28 +190,8 @@ func clearAgentEnvVarsForTest(t *testing.T) {
 		"CLAUDE_CODE", "CLAUDE_CODE_ENTRYPOINT",
 		// GitHub Copilot CLI
 		"GITHUB_COPILOT_CLI", "GH_COPILOT",
-		// OpenAI Codex
-		"OPENAI_CODEX", "CODEX_CLI",
-		// Cursor
-		"CURSOR_EDITOR", "CURSOR_SESSION_ID", "CURSOR_TRACE_ID",
-		// Windsurf
-		"WINDSURF_EDITOR", "WINDSURF_SESSION",
-		// Zed
-		"ZED_TERM",
-		// Aider
-		"AIDER_MODEL", "AIDER_CHAT_LANGUAGE",
-		// Continue
-		"CONTINUE_GLOBAL_DIR", "CONTINUE_DEVELOPMENT",
-		// Amazon Q
-		"AMAZON_Q_DEVELOPER", "AWS_Q_DEVELOPER", "KIRO_CLI",
-		// Cline
-		"CLINE_MCP",
-		// Tabnine
-		"TABNINE_CONFIG",
-		// Cody
-		"CODY_CONFIG",
 		// Gemini CLI
-		"GEMINI_CLI", "GEMINI_CLI_NO_RELAUNCH", "GEMINI_CODE_ASSIST",
+		"GEMINI_CLI", "GEMINI_CLI_NO_RELAUNCH",
 		// OpenCode
 		"OPENCODE",
 		// User agent

@@ -75,36 +75,14 @@ func execEnvFromAgent() string {
 		return fields.EnvClaudeCode
 	case agentdetect.AgentTypeGitHubCopilotCLI:
 		return fields.EnvGitHubCopilotCLI
-	case agentdetect.AgentTypeOpenAICodex:
-		return fields.EnvOpenAICodex
-	case agentdetect.AgentTypeCursor:
-		return fields.EnvCursor
-	case agentdetect.AgentTypeWindsurf:
-		return fields.EnvWindsurf
-	case agentdetect.AgentTypeAider:
-		return fields.EnvAider
-	case agentdetect.AgentTypeContinue:
-		return fields.EnvContinue
-	case agentdetect.AgentTypeAmazonQ:
-		return fields.EnvAmazonQ
 	case agentdetect.AgentTypeVSCodeCopilot:
 		return fields.EnvVSCodeAzureCopilot
-	case agentdetect.AgentTypeCline:
-		return fields.EnvCline
-	case agentdetect.AgentTypeZed:
-		return fields.EnvZed
-	case agentdetect.AgentTypeTabnine:
-		return fields.EnvTabnine
-	case agentdetect.AgentTypeCody:
-		return fields.EnvCody
 	case agentdetect.AgentTypeGemini:
 		return fields.EnvGemini
 	case agentdetect.AgentTypeOpenCode:
 		return fields.EnvOpenCode
-	case agentdetect.AgentTypeGeneric:
-		return fields.EnvGenericAgent
 	default:
-		return fields.EnvGenericAgent
+		return ""
 	}
 }
 

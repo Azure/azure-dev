@@ -359,7 +359,7 @@ func TestParseGlobalFlags_AgentDetection(t *testing.T) {
 		{
 			name:             "agent detected but --no-prompt explicitly set true",
 			args:             []string{"--no-prompt", "up"},
-			envVars:          map[string]string{"CURSOR_EDITOR": "1"},
+			envVars:          map[string]string{"GEMINI_CLI": "1"},
 			expectedNoPrompt: true,
 		},
 		{
@@ -369,15 +369,21 @@ func TestParseGlobalFlags_AgentDetection(t *testing.T) {
 			expectedNoPrompt: true,
 		},
 		{
-			name:             "Cursor agent detected",
+			name:             "Gemini agent detected",
 			args:             []string{"init"},
-			envVars:          map[string]string{"CURSOR_EDITOR": "1"},
+			envVars:          map[string]string{"GEMINI_CLI": "1"},
 			expectedNoPrompt: true,
 		},
 		{
 			name:             "GitHub Copilot CLI agent detected",
 			args:             []string{"deploy"},
 			envVars:          map[string]string{"GITHUB_COPILOT_CLI": "true"},
+			expectedNoPrompt: true,
+		},
+		{
+			name:             "OpenCode agent detected",
+			args:             []string{"provision"},
+			envVars:          map[string]string{"OPENCODE": "1"},
 			expectedNoPrompt: true,
 		},
 	}

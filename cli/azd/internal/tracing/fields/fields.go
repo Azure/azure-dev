@@ -279,19 +279,8 @@ const (
 	// AI Coding Agent environments
 	EnvClaudeCode       = "Claude Code"
 	EnvGitHubCopilotCLI = "GitHub Copilot CLI"
-	EnvOpenAICodex      = "OpenAI Codex"
-	EnvCursor           = "Cursor"
-	EnvWindsurf         = "Windsurf"
-	EnvAider            = "Aider"
-	EnvContinue         = "Continue"
-	EnvAmazonQ          = "Amazon Q Developer"
-	EnvCline            = "Cline"
-	EnvZed              = "Zed"
-	EnvTabnine          = "Tabnine"
-	EnvCody             = "Cody"
-	EnvGemini           = "Gemini CLI"
+	EnvGemini           = "Gemini"
 	EnvOpenCode         = "OpenCode"
-	EnvGenericAgent     = "Generic Agent"
 
 	// Continuous Integration environments
 

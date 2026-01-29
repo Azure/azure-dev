@@ -19,18 +19,9 @@ func TestAgentType_DisplayName(t *testing.T) {
 	}{
 		{AgentTypeClaudeCode, "Claude Code"},
 		{AgentTypeGitHubCopilotCLI, "GitHub Copilot CLI"},
-		{AgentTypeOpenAICodex, "OpenAI Codex"},
-		{AgentTypeCursor, "Cursor"},
-		{AgentTypeWindsurf, "Windsurf"},
-		{AgentTypeAider, "Aider"},
-		{AgentTypeContinue, "Continue"},
-		{AgentTypeAmazonQ, "Amazon Q Developer"},
 		{AgentTypeVSCodeCopilot, "VS Code GitHub Copilot"},
-		{AgentTypeCline, "Cline"},
-		{AgentTypeZed, "Zed"},
-		{AgentTypeTabnine, "Tabnine"},
-		{AgentTypeCody, "Cody"},
-		{AgentTypeGeneric, "Generic Agent"},
+		{AgentTypeGemini, "Gemini"},
+		{AgentTypeOpenCode, "OpenCode"},
 		{AgentTypeUnknown, "Unknown"},
 	}
 
@@ -75,43 +66,41 @@ func TestDetectFromEnvVars(t *testing.T) {
 			detected:      true,
 		},
 		{
-			name:          "GitHub Copilot CLI",
+			name:          "GitHub Copilot CLI via GITHUB_COPILOT_CLI",
 			envVars:       map[string]string{"GITHUB_COPILOT_CLI": "true"},
 			expectedAgent: AgentTypeGitHubCopilotCLI,
 			detected:      true,
 		},
 		{
-			name:          "Cursor",
-			envVars:       map[string]string{"CURSOR_EDITOR": "1"},
-			expectedAgent: AgentTypeCursor,
+			name:          "GitHub Copilot CLI via GH_COPILOT",
+			envVars:       map[string]string{"GH_COPILOT": "1"},
+			expectedAgent: AgentTypeGitHubCopilotCLI,
 			detected:      true,
 		},
 		{
-			name:          "Windsurf",
-			envVars:       map[string]string{"WINDSURF_EDITOR": "true"},
-			expectedAgent: AgentTypeWindsurf,
+			name:          "Gemini CLI via GEMINI_CLI",
+			envVars:       map[string]string{"GEMINI_CLI": "1"},
+			expectedAgent: AgentTypeGemini,
 			detected:      true,
 		},
 		{
-			name:          "Aider",
-			envVars:       map[string]string{"AIDER_MODEL": "gpt-4"},
-			expectedAgent: AgentTypeAider,
+			name:          "Gemini CLI via GEMINI_CLI_NO_RELAUNCH",
+			envVars:       map[string]string{"GEMINI_CLI_NO_RELAUNCH": "1"},
+			expectedAgent: AgentTypeGemini,
 			detected:      true,
 		},
 		{
-			name:          "Amazon Q",
-			envVars:       map[string]string{"AMAZON_Q_DEVELOPER": "1"},
-			expectedAgent: AgentTypeAmazonQ,
+			name:          "OpenCode via OPENCODE",
+			envVars:       map[string]string{"OPENCODE": "1"},
+			expectedAgent: AgentTypeOpenCode,
 			detected:      true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Clear any existing env vars that might interfere
 			clearAgentEnvVars(t)
 
-			// Set test env vars
 			for k, v := range tt.envVars {
 				t.Setenv(k, v)
 			}
@@ -161,15 +150,21 @@ func TestDetectFromUserAgent(t *testing.T) {
 			detected:      true,
 		},
 		{
-			name:          "Cursor in user agent",
-			userAgent:     "cursor/0.5.0",
-			expectedAgent: AgentTypeCursor,
-			detected:      true,
-		},
-		{
 			name:          "VS Code Azure Copilot extension",
 			userAgent:     internal.VsCodeAzureCopilotAgentPrefix + "/1.0.0",
 			expectedAgent: AgentTypeVSCodeCopilot,
+			detected:      true,
+		},
+		{
+			name:          "Gemini in user agent",
+			userAgent:     "gemini-cli/1.0.0",
+			expectedAgent: AgentTypeGemini,
+			detected:      true,
+		},
+		{
+			name:          "OpenCode in user agent",
+			userAgent:     "opencode/0.1.0",
+			expectedAgent: AgentTypeOpenCode,
 			detected:      true,
 		},
 		{
@@ -227,24 +222,6 @@ func TestMatchProcessToAgent(t *testing.T) {
 			detected:      true,
 		},
 		{
-			name: "Cursor executable on Windows",
-			processInfo: parentProcessInfo{
-				Name:       "Cursor.exe",
-				Executable: "C:\\Users\\test\\AppData\\Local\\Programs\\Cursor\\Cursor.exe",
-			},
-			expectedAgent: AgentTypeCursor,
-			detected:      true,
-		},
-		{
-			name: "Cursor executable on macOS",
-			processInfo: parentProcessInfo{
-				Name:       "Cursor",
-				Executable: "/Applications/Cursor.app/Contents/MacOS/Cursor",
-			},
-			expectedAgent: AgentTypeCursor,
-			detected:      true,
-		},
-		{
 			name: "GitHub Copilot CLI",
 			processInfo: parentProcessInfo{
 				Name: "gh-copilot",
@@ -253,19 +230,19 @@ func TestMatchProcessToAgent(t *testing.T) {
 			detected:      true,
 		},
 		{
-			name: "Windsurf",
+			name: "Gemini process",
 			processInfo: parentProcessInfo{
-				Name: "windsurf",
+				Name: "gemini",
 			},
-			expectedAgent: AgentTypeWindsurf,
+			expectedAgent: AgentTypeGemini,
 			detected:      true,
 		},
 		{
-			name: "Aider",
+			name: "OpenCode process",
 			processInfo: parentProcessInfo{
-				Name: "aider",
+				Name: "opencode",
 			},
-			expectedAgent: AgentTypeAider,
+			expectedAgent: AgentTypeOpenCode,
 			detected:      true,
 		},
 		{
@@ -319,7 +296,7 @@ func TestIsRunningInAgent(t *testing.T) {
 
 	assert.False(t, IsRunningInAgent())
 
-	t.Setenv("CURSOR_EDITOR", "1")
+	t.Setenv("GEMINI_CLI", "1")
 	ResetDetection()
 
 	assert.True(t, IsRunningInAgent())
@@ -333,28 +310,8 @@ func clearAgentEnvVars(t *testing.T) {
 		"CLAUDE_CODE", "CLAUDE_CODE_ENTRYPOINT",
 		// GitHub Copilot CLI
 		"GITHUB_COPILOT_CLI", "GH_COPILOT",
-		// OpenAI Codex
-		"OPENAI_CODEX", "CODEX_CLI",
-		// Cursor
-		"CURSOR_EDITOR", "CURSOR_SESSION_ID", "CURSOR_TRACE_ID",
-		// Windsurf
-		"WINDSURF_EDITOR", "WINDSURF_SESSION",
-		// Zed
-		"ZED_TERM",
-		// Aider
-		"AIDER_MODEL", "AIDER_CHAT_LANGUAGE",
-		// Continue
-		"CONTINUE_GLOBAL_DIR", "CONTINUE_DEVELOPMENT",
-		// Amazon Q
-		"AMAZON_Q_DEVELOPER", "AWS_Q_DEVELOPER", "KIRO_CLI",
-		// Cline
-		"CLINE_MCP",
-		// Tabnine
-		"TABNINE_CONFIG",
-		// Cody
-		"CODY_CONFIG",
 		// Gemini CLI
-		"GEMINI_CLI", "GEMINI_CLI_NO_RELAUNCH", "GEMINI_CODE_ASSIST",
+		"GEMINI_CLI", "GEMINI_CLI_NO_RELAUNCH",
 		// OpenCode
 		"OPENCODE",
 		// User agent

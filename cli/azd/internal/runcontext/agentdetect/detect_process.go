@@ -4,6 +4,7 @@
 package agentdetect
 
 import (
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,56 +25,6 @@ var processNamePatterns = []struct {
 	{
 		patterns:  []string{"copilot", "copilot-cli", "gh-copilot", "github-copilot", "github-copilot-cli"},
 		agentType: AgentTypeGitHubCopilotCLI,
-	},
-	// OpenAI Codex CLI - Rust-based CLI
-	{
-		patterns:  []string{"codex", "openai-codex"},
-		agentType: AgentTypeOpenAICodex,
-	},
-	// Cursor Editor - VS Code fork with AI
-	{
-		patterns:  []string{"cursor"},
-		agentType: AgentTypeCursor,
-	},
-	// Windsurf Editor (by Codeium) - VS Code fork
-	{
-		patterns:  []string{"windsurf"},
-		agentType: AgentTypeWindsurf,
-	},
-	// Aider - AI pair programming tool (Python-based, may appear as python with aider in args)
-	{
-		patterns:  []string{"aider", "aider-chat"},
-		agentType: AgentTypeAider,
-	},
-	// Continue - AI coding assistant (CLI is 'cn' command)
-	{
-		patterns:  []string{"continue", "cn"},
-		agentType: AgentTypeContinue,
-	},
-	// Amazon Q Developer (formerly CodeWhisperer) - CLI is 'q', also 'kiro' for new version
-	{
-		patterns:  []string{"amazon-q", "q-developer", "chat_cli", "kiro"},
-		agentType: AgentTypeAmazonQ,
-	},
-	// Cline (formerly Claude Dev) - VS Code extension, may have CLI
-	{
-		patterns:  []string{"cline", "claude-dev"},
-		agentType: AgentTypeCline,
-	},
-	// Zed Editor - Rust-based editor with AI features
-	{
-		patterns:  []string{"zed"},
-		agentType: AgentTypeZed,
-	},
-	// Tabnine - AI code completion
-	{
-		patterns:  []string{"tabnine", "tabnine-companion"},
-		agentType: AgentTypeTabnine,
-	},
-	// Cody (Sourcegraph) - AI coding assistant
-	{
-		patterns:  []string{"cody", "sourcegraph"},
-		agentType: AgentTypeCody,
 	},
 	// Google Gemini CLI
 	{
@@ -98,60 +49,82 @@ func detectFromParentProcess() AgentInfo {
 	for depth := 0; depth < maxProcessTreeDepth && currentPid > 1; depth++ {
 		info, parentPid, err := getParentProcessInfoWithPPID(currentPid)
 		if err != nil {
+			log.Printf("detect_process.go: Failed to get process info for pid %d: %v", currentPid, err)
 			break
 		}
 
-		// Check if this process matches a known agent
-		agent := matchProcessToAgent(info)
-		if agent.Detected {
-			return agent
+		log.Printf("detect_process.go: Parent process detection: depth=%d, pid=%d, ppid=%d, name=%q, executable=%q",
+			depth, currentPid, parentPid, info.Name, info.Executable)
+
+		// Try to match this process against known agents
+		result := matchProcessToAgent(info)
+		if result.Detected {
+			return result
 		}
 
-		// Move up the tree
+		// Move up to the parent
 		if parentPid <= 1 || parentPid == currentPid {
-			// Reached root or stuck in a loop
 			break
 		}
 		currentPid = parentPid
 	}
 
+	log.Printf("detect_process.go: Parent process detection: no agent found in process tree")
 	return NoAgent()
 }
 
-// parentProcessInfo contains information about the parent process.
+// parentProcessInfo contains information about a parent process.
 type parentProcessInfo struct {
-	// Name is the process name (e.g., "claude" or "cursor.exe")
-	Name string
-	// Executable is the full path to the executable (if available)
+	Name       string
 	Executable string
-	// CommandLine is the full command line (if available)
-	CommandLine string
 }
 
-// matchProcessToAgent matches process info against known agent patterns.
+// matchProcessToAgent checks if a process matches any known AI agent patterns.
 func matchProcessToAgent(info parentProcessInfo) AgentInfo {
-	// Normalize for matching
+	if info.Name == "" && info.Executable == "" {
+		return NoAgent()
+	}
+
 	nameLower := strings.ToLower(info.Name)
-	exeLower := strings.ToLower(filepath.Base(info.Executable))
+	execLower := strings.ToLower(info.Executable)
+	execBaseLower := strings.ToLower(filepath.Base(info.Executable))
 
-	// Remove common extensions for matching
+	// Remove common executable extensions for matching
 	nameLower = strings.TrimSuffix(nameLower, ".exe")
-	exeLower = strings.TrimSuffix(exeLower, ".exe")
+	execBaseLower = strings.TrimSuffix(execBaseLower, ".exe")
 
-	for _, pattern := range processNamePatterns {
-		for _, p := range pattern.patterns {
-			if strings.Contains(nameLower, p) || strings.Contains(exeLower, p) {
-				matchedOn := info.Name
-				if info.Executable != "" {
-					matchedOn = info.Executable
-				}
-
+	for _, entry := range processNamePatterns {
+		for _, pattern := range entry.patterns {
+			// Check against process name
+			if nameLower == pattern || strings.Contains(nameLower, pattern) {
 				return AgentInfo{
-					Type:     pattern.agentType,
-					Name:     pattern.agentType.DisplayName(),
+					Type:     entry.agentType,
+					Name:     entry.agentType.DisplayName(),
 					Source:   DetectionSourceParentProcess,
 					Detected: true,
-					Details:  matchedOn,
+					Details:  info.Name,
+				}
+			}
+
+			// Check against executable base name
+			if execBaseLower == pattern || strings.Contains(execBaseLower, pattern) {
+				return AgentInfo{
+					Type:     entry.agentType,
+					Name:     entry.agentType.DisplayName(),
+					Source:   DetectionSourceParentProcess,
+					Detected: true,
+					Details:  info.Executable,
+				}
+			}
+
+			// Check if pattern appears in full executable path (for detection via install paths)
+			if strings.Contains(execLower, pattern) {
+				return AgentInfo{
+					Type:     entry.agentType,
+					Name:     entry.agentType.DisplayName(),
+					Source:   DetectionSourceParentProcess,
+					Detected: true,
+					Details:  info.Executable,
 				}
 			}
 		}

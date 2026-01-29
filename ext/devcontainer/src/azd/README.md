@@ -22,6 +22,18 @@ Select a specific `azd` version [here](https://github.com/Azure/azure-dev/releas
 },
 ```
 
+## Example Usage - Install with extensions
+
+Install `azd` with specific extensions by providing a comma-separated list.
+
+```json
+"features": {
+    "ghcr.io/azure/azure-dev/azd:latest": {
+        "extensions": "my-extension,another-extension"
+    }
+},
+```
+
 ## Options
 
 | Options Id | Description | Type | Default Value |

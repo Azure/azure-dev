@@ -29,7 +29,7 @@ Install `azd` with specific extensions by providing a comma-separated list.
 ```json
 "features": {
     "ghcr.io/azure/azure-dev/azd:latest": {
-        "extensions": "my-extension,another-extension"
+        "extensions": "azure.coding-agent,microsoft.azd.concurx"
     }
 },
 ```

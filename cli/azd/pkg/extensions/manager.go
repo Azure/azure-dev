@@ -958,3 +958,12 @@ func (m *Manager) MetadataExists(extensionId string) bool {
 	_, err = os.Stat(metadataPath)
 	return err == nil
 }
+
+// HasMetadataCapability checks if the extension with the given ID has the metadata capability.
+func (m *Manager) HasMetadataCapability(extensionId string) bool {
+	extension, err := m.GetInstalled(FilterOptions{Id: extensionId})
+	if err != nil || extension == nil {
+		return false
+	}
+	return extension.HasCapability(MetadataCapability)
+}

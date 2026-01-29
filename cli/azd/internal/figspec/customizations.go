@@ -96,6 +96,10 @@ func (c *Customizations) GetCommandArgGenerator(ctx *CommandContext, argName str
 		if argName == "extension-id" {
 			return FigGenListInstalledExtensions
 		}
+	case "azd config get", "azd config set", "azd config unset":
+		if argName == "path" {
+			return FigGenListConfigKeys
+		}
 	}
 
 	return ""

@@ -52,6 +52,7 @@ words:
   - bubbletea
   - lipgloss
   - gopxl
+  - subcmd
 languageSettings:
   - languageId: go
     ignoreRegExpList:

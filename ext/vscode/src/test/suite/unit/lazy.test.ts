@@ -9,7 +9,7 @@ suite('lazy creation utilities', () => {
     suite('AsyncLazy tests', () => {
         test('factory called once', async () => {
             let factoryCallCount = 0;
-            const lazy: AsyncLazy<boolean> = new AsyncLazy(async () => {
+            const lazy = new AsyncLazy<boolean>(async () => {
                 factoryCallCount++;
                 await delay(5);
                 return true;
@@ -23,7 +23,7 @@ suite('lazy creation utilities', () => {
 
         test('simultaneous callers', async () => {
             let factoryCallCount = 0;
-            const lazy: AsyncLazy<boolean> = new AsyncLazy(async () => {
+            const lazy = new AsyncLazy<boolean>(async () => {
                 factoryCallCount++;
                 await delay(5);
                 return true;
@@ -38,7 +38,7 @@ suite('lazy creation utilities', () => {
 
         test('with lifetime', async () => {
             let factoryCallCount = 0;
-            const lazy: AsyncLazy<boolean> = new AsyncLazy(async () => {
+            const lazy = new AsyncLazy<boolean>(async () => {
                 factoryCallCount++;
                 await delay(5);
                 return true;
@@ -58,7 +58,7 @@ suite('lazy creation utilities', () => {
 
         test('simultaneous callers with lifetime', async () => {
             let factoryCallCount = 0;
-            const lazy: AsyncLazy<boolean> = new AsyncLazy(async () => {
+            const lazy = new AsyncLazy<boolean>(async () => {
                 factoryCallCount++;
                 await delay(5);
                 return true;

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"text/tabwriter"
 
@@ -179,6 +180,7 @@ type extensionListItem struct {
 	Namespace        string `json:"namespace"`
 	Version          string `json:"version"`
 	InstalledVersion string `json:"installedVersion"`
+	UpdateAvailable  bool   `json:"updateAvailable"`
 	Source           string `json:"source"`
 }
 
@@ -207,6 +209,10 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 	extensionRows := []extensionListItem{}
 
 	for _, extension := range registryExtensions {
+		if len(extension.Versions) == 0 {
+			continue
+		}
+
 		installedExtension, has := installedExtensions[extension.Id]
 		installed := has && installedExtension.Source == extension.Source
 
@@ -214,17 +220,29 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 			continue
 		}
 
+		latestVersion := extension.Versions[len(extension.Versions)-1].Version
+
 		var installedVersion string
+		var updateAvailable bool
+
 		if installed {
 			installedVersion = installedExtension.Version
+
+			// Compare versions to determine if an update is available
+			installedSemver, installedErr := semver.NewVersion(installedExtension.Version)
+			latestSemver, latestErr := semver.NewVersion(latestVersion)
+			if installedErr == nil && latestErr == nil {
+				updateAvailable = latestSemver.GreaterThan(installedSemver)
+			}
 		}
 
 		extensionRows = append(extensionRows, extensionListItem{
 			Id:               extension.Id,
 			Name:             extension.DisplayName,
 			Namespace:        extension.Namespace,
-			Version:          extension.Versions[len(extension.Versions)-1].Version,
+			Version:          latestVersion,
 			InstalledVersion: installedVersion,
+			UpdateAvailable:  updateAvailable,
 			Source:           extension.Source,
 		})
 	}
@@ -260,12 +278,12 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 				ValueTemplate: "{{.Name}}",
 			},
 			{
-				Heading:       "Version",
+				Heading:       "Latest Version",
 				ValueTemplate: `{{.Version}}`,
 			},
 			{
 				Heading:       "Installed Version",
-				ValueTemplate: `{{.InstalledVersion}}`,
+				ValueTemplate: `{{.InstalledVersion}}{{if .UpdateAvailable}}*{{end}}`,
 			},
 			{
 				Heading:       "Source",
@@ -276,6 +294,16 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 		formatErr = a.formatter.Format(extensionRows, a.writer, output.TableFormatterOptions{
 			Columns: columns,
 		})
+
+		if formatErr == nil && slices.ContainsFunc(extensionRows, func(row extensionListItem) bool {
+			return row.UpdateAvailable
+		}) {
+			a.console.Message(ctx, "\n(*) Update available")
+			a.console.Message(ctx, fmt.Sprintf(
+				"    To upgrade: %s", output.WithHighLightFormat("azd extension upgrade <extension-id>")))
+			a.console.Message(ctx, fmt.Sprintf(
+				"    To upgrade all: %s", output.WithHighLightFormat("azd extension upgrade --all")))
+		}
 	} else {
 		formatErr = a.formatter.Format(extensionRows, a.writer, nil)
 	}

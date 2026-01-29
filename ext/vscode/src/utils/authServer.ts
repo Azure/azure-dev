@@ -14,22 +14,23 @@ import { AddressInfo } from 'net';
 export function startAuthServer(credential: TokenCredential): Promise<{ server: http.Server, endpoint: string, key: string }> {
     const key = randomBytes(32).toString('hex');
 
-    const server = http.createServer(async (req, res) => {
+    const server = http.createServer((req, res) => {
         if (req.headers['content-type'] !== 'application/json' || req.method !== 'POST' || req.url !== '/token?api-version=2023-07-12-preview') {
             res.writeHead(400).end();
             return;
         }
 
-        if (req.headers['authorization'] !== `Bearer ${key}`) {
+        if (req.headers.authorization !== `Bearer ${key}`) {
             res.writeHead(401).end();
             return;
         }
 
         const body: Buffer[] = [];
-        req.on('data', (chunk) => { body.push(chunk); });
+        req.on('data', (chunk: Buffer) => { body.push(chunk); });
+        // eslint-disable-next-line @typescript-eslint/no-misused-promises -- This body will not throw so it is safe
         req.on('end', async () => {
             try {
-                const reqBody = JSON.parse(Buffer.concat(body).toString());
+                const reqBody = JSON.parse(Buffer.concat(body).toString()) as { scopes?: string[], tenantId?: string };
                 if (typeof reqBody !== 'object') {
                     res.writeHead(400).end();
                     return;

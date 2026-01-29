@@ -7,9 +7,9 @@ import * as vscode from 'vscode';
 import { TelemetryId } from '../telemetry/telemetryId';
 import { createAzureDevCli } from '../utils/azureDevCli';
 import { executeAsTask } from '../utils/executeAsTask';
-import { isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
+import { isAzureDevCliModel, isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
 import { AzureDevCliApplication } from '../views/workspace/AzureDevCliApplication';
-import { getAzDevTerminalTitle, getWorkingFolder, } from './cmdUtil';
+import { getAzDevTerminalTitle, getWorkingFolder, validateFileSystemUri, } from './cmdUtil';
 
 /**
  * A tuple representing the arguments that must be passed to the `down` command when executed via {@link vscode.commands.executeCommand}
@@ -19,7 +19,19 @@ export type DownCommandArguments = [ vscode.Uri | TreeViewModel | undefined, boo
 export async function down(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel, fromAgent: boolean = false): Promise<void> {
     context.telemetry.properties.fromAgent = fromAgent.toString();
 
-    const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliApplication>().context.configurationFile : selectedItem;
+    let selectedFile: vscode.Uri | undefined;
+    if (isTreeViewModel(selectedItem)) {
+        selectedFile = selectedItem.unwrap<AzureDevCliApplication>().context.configurationFile;
+    } else if (isAzureDevCliModel(selectedItem)) {
+        selectedFile = selectedItem.context.configurationFile;
+    } else {
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        selectedFile = selectedItem!;
+    }
+
+    // Validate that selectedFile is valid for file system operations
+    validateFileSystemUri(context, selectedFile, selectedItem, 'down');
+
     const workingFolder = await getWorkingFolder(context, selectedFile);
 
     const confirmPrompt = vscode.l10n.t("Are you sure you want to delete all this application's Azure resources? You can soft-delete certain resources like Azure KeyVaults to preserve their data, or permanently delete and purge them.");

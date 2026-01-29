@@ -1,0 +1,3 @@
+name: ft-missing-training-file
+description: Invalid - missing required training_file field
+model: gpt-4o-mini

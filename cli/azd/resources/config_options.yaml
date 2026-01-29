@@ -55,6 +55,28 @@
   description: "Custom template sources for azd template list and azd init."
   type: object
   example: "template.sources.<name>.type"
+- key: auth.useAzCliAuth
+  description: "Use Azure CLI authentication instead of azd-managed credentials."
+  type: string
+  allowedValues: ["true", "false"]
+  example: "true"
+- key: platform.type
+  description: "Platform type override for azd."
+  type: string
+  example: "devcenter"
+- key: platform.config
+  description: "Platform-specific configuration settings."
+  type: object
+  example: "platform.config.name"
+- key: cloud.name
+  description: "Azure cloud name to use for authentication and resource management."
+  type: string
+  allowedValues: ["AzureCloud", "AzureChinaCloud", "AzureUSGovernment"]
+  example: "AzureCloud"
+- key: ai.agent.model.type
+  description: "Default AI agent model provider."
+  type: string
+  example: "github-copilot"
 - key: pipeline.config.applicationServiceManagementReference
   description: "Application Service Management Reference for Azure pipeline configuration."
   type: string

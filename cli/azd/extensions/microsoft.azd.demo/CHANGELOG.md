@@ -1,5 +1,12 @@
 # Release History
 
+## 0.5.0 (2026-01-23)
+
+### Features Added
+
+- Added metadata capability
+- Added `AZD_EXT_DEBUG=true` support for debugging
+
 ## 0.4.0 (2025-12-03)
 
 ### Features Added

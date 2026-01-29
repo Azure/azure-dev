@@ -95,11 +95,6 @@ func (p *BicepProvider) Name() string {
 // Initialize initializes provider state from the options.
 // It also calls EnsureEnv, which ensures the client-side state is ready for provisioning.
 func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, opt provisioning.Options) error {
-	// Ensure bicep CLI is installed before any operations
-	if err := p.bicepCli.EnsureInstalled(ctx); err != nil {
-		return fmt.Errorf("ensuring bicep is installed: %w", err)
-	}
-
 	infraOptions, err := opt.GetWithDefaults()
 	if err != nil {
 		return err
@@ -1005,6 +1000,11 @@ func (p *BicepProvider) Destroy(
 			return nil, fmt.Errorf("getting cognitive accounts to purge: %w", err)
 		}
 
+		logAnalyticsWorkspaces, err := p.getLogAnalyticsWorkspacesToPurge(ctx, groupedResources)
+		if err != nil {
+			return nil, fmt.Errorf("getting log analytics workspaces to purge: %w", err)
+		}
+
 		p.console.StopSpinner(ctx, "", input.StepDone)
 
 		// Prompt for confirmation before deleting resources
@@ -1013,6 +1013,14 @@ func (p *BicepProvider) Destroy(
 		}
 
 		p.console.Message(ctx, output.WithGrayFormat("Deleting your resources can take some time.\n"))
+
+		// Force delete Log Analytics Workspaces first if purge is enabled
+		// This must happen before deleting resource groups since force delete requires the workspace to exist
+		if options.Purge() && len(logAnalyticsWorkspaces) > 0 {
+			if err := p.forceDeleteLogAnalyticsWorkspaces(ctx, logAnalyticsWorkspaces); err != nil {
+				return nil, fmt.Errorf("force deleting log analytics workspaces: %w", err)
+			}
+		}
 
 		if err := p.destroyDeployment(ctx, deploymentToDelete); err != nil {
 			return nil, fmt.Errorf("deleting resource groups: %w", err)
@@ -1571,6 +1579,33 @@ func (p *BicepProvider) getApiManagementsToPurge(
 	return apims, nil
 }
 
+func (p *BicepProvider) getLogAnalyticsWorkspacesToPurge(
+	ctx context.Context,
+	groupedResources map[string][]*azapi.Resource,
+) ([]*azapi.AzCliLogAnalyticsWorkspace, error) {
+	workspaces := []*azapi.AzCliLogAnalyticsWorkspace{}
+
+	for resourceGroup, groupResources := range groupedResources {
+		for _, resource := range groupResources {
+			if resource.Type == string(azapi.AzureResourceTypeLogAnalyticsWorkspace) {
+				workspace, err := p.azapi.GetLogAnalyticsWorkspace(
+					ctx,
+					azure.SubscriptionFromRID(resource.Id),
+					resourceGroup,
+					resource.Name,
+				)
+				if err != nil {
+					return nil, fmt.Errorf("listing log analytics workspace %s properties: %w", resource.Name, err)
+				}
+
+				workspaces = append(workspaces, workspace)
+			}
+		}
+	}
+
+	return workspaces, nil
+}
+
 // Azure AppConfigurations have a "soft delete" functionality (now enabled by default) where a configuration store
 // may be marked such that when it is deleted it can be recovered for a period of time. During that time,
 // the name may not be reused.
@@ -1614,6 +1649,33 @@ func (p *BicepProvider) purgeAPIManagement(
 		}
 	}
 
+	return nil
+}
+
+// Handle Log Analytics Workspaces separately with Force option when purge is enabled.
+// Unlike many other resources, Log Analytics Workspaces are not able to be purged after soft-delete
+// because purge function only support for purge tables not a whole workspace and force delete must happen
+// when their resource group is not deleted, so we must purge them explicitly before deleting the resource
+func (p *BicepProvider) forceDeleteLogAnalyticsWorkspaces(
+	ctx context.Context,
+	workspaces []*azapi.AzCliLogAnalyticsWorkspace,
+) error {
+	for _, workspace := range workspaces {
+		message := fmt.Sprintf("Purging Log Analytics Workspace: %s", output.WithHighLightFormat(workspace.Name))
+		p.console.ShowSpinner(ctx, message, input.Step)
+
+		err := p.azapi.PurgeLogAnalyticsWorkspace(
+			ctx,
+			azure.SubscriptionFromRID(workspace.Id),
+			*azure.GetResourceGroupName(workspace.Id),
+			workspace.Name,
+		)
+
+		p.console.StopSpinner(ctx, message, input.GetStepResultFormat(err))
+		if err != nil {
+			return fmt.Errorf("purging log analytics workspace %s: %w", workspace.Name, err)
+		}
+	}
 	return nil
 }
 

@@ -11,6 +11,7 @@ import { AzureDevCliServices } from './AzureDevCliServices';
 import { AzDevShowResults, AzureDevShowProvider } from '../../services/AzureDevShowProvider';
 import { AsyncLazy } from '../../utils/lazy';
 import { AzureDevEnvListProvider } from '../../services/AzureDevEnvListProvider';
+import { AzureDevEnvValuesProvider } from '../../services/AzureDevEnvValuesProvider';
 
 export class AzureDevCliApplication implements AzureDevCliModel {
     private results: AsyncLazy<AzDevShowResults>;
@@ -19,21 +20,39 @@ export class AzureDevCliApplication implements AzureDevCliModel {
         private readonly resource: WorkspaceResource,
         private readonly refresh: RefreshHandler,
         private readonly showProvider: AzureDevShowProvider,
-        private readonly envListProvider: AzureDevEnvListProvider) {
+        private readonly envListProvider: AzureDevEnvListProvider,
+        private readonly envValuesProvider: AzureDevEnvValuesProvider,
+        private readonly visibleEnvVars: Set<string>,
+        private readonly onToggleVisibility: (key: string) => void,
+        private readonly includeEnvironments: boolean = true) {
         this.results = new AsyncLazy(() => this.getResults());
     }
 
-    readonly context: AzureDevCliModelContext = {
-        configurationFile: vscode.Uri.file(this.resource.id)
-    };
+    get context(): AzureDevCliModelContext {
+        return {
+            configurationFile: vscode.Uri.file(this.resource.id),
+        };
+    }
 
     async getChildren(): Promise<AzureDevCliModel[]> {
         const results = await this.results.getValue();
 
-        return [
-            new AzureDevCliServices(this.context, Object.keys(results?.services ?? {})),
-            new AzureDevCliEnvironments(this.context, this.refresh, this.envListProvider)
+        const children: AzureDevCliModel[] = [
+            new AzureDevCliServices(this.context, Object.keys(results?.services ?? {}))
         ];
+
+        if (this.includeEnvironments) {
+            children.push(new AzureDevCliEnvironments(
+                this.context,
+                this.refresh,
+                this.envListProvider,
+                this.envValuesProvider,
+                this.visibleEnvVars,
+                this.onToggleVisibility
+            ));
+        }
+
+        return children;
     }
 
     async getTreeItem(): Promise<vscode.TreeItem> {

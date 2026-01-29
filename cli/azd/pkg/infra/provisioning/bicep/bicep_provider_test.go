@@ -222,6 +222,28 @@ func TestBicepDestroy(t *testing.T) {
 	})
 }
 
+func TestBicepDestroyLogAnalyticsWorkspace(t *testing.T) {
+	t.Run("WithPurge", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		prepareBicepMocks(mockContext)
+		prepareStateMocks(mockContext)
+		prepareLogAnalyticsDestroyMocks(mockContext)
+
+		infraProvider := createBicepProvider(t, mockContext)
+
+		destroyOptions := provisioning.NewDestroyOptions(true, true)
+		destroyResult, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
+
+		require.NoError(t, err)
+		require.NotNil(t, destroyResult)
+
+		consoleOutput := mockContext.Console.Output()
+		require.Len(t, consoleOutput, 2)
+		require.Contains(t, consoleOutput[0], "Deleting your resources can take some time")
+		require.Contains(t, consoleOutput[1], "")
+	})
+}
+
 func TestDeploymentForResourceGroup(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 
@@ -796,6 +818,127 @@ func getAPIMMock(mockContext *mocks.MockContext, apimString string, name string,
 	})
 }
 
+func getLogAnalyticsMock(mockContext *mocks.MockContext, logAnalyticsString string, name string) {
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.HasSuffix(request.URL.Path, logAnalyticsString)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		logAnalyticsResponse := map[string]interface{}{
+			"id": fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
+				string(azapi.AzureResourceTypeLogAnalyticsWorkspace), name),
+			"name": name,
+		}
+
+		responseBytes, _ := json.Marshal(logAnalyticsResponse)
+
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(responseBytes)),
+		}, nil
+	})
+}
+
+func prepareLogAnalyticsDestroyMocks(mockContext *mocks.MockContext) {
+	makeItem := func(resourceType azapi.AzureResourceType, resourceName string) *armresources.GenericResourceExpanded {
+		id := fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
+			string(resourceType), resourceName)
+
+		return &armresources.GenericResourceExpanded{
+			ID:       to.Ptr(id),
+			Name:     to.Ptr(resourceName),
+			Type:     to.Ptr(string(resourceType)),
+			Location: to.Ptr("eastus2"),
+		}
+	}
+
+	resourceList := armresources.ResourceListResult{
+		Value: []*armresources.GenericResourceExpanded{
+			makeItem(azapi.AzureResourceTypeLogAnalyticsWorkspace, "la-workspace-123"),
+			makeItem(azapi.AzureResourceTypeLogAnalyticsWorkspace, "la-workspace2-123"),
+		},
+	}
+
+	resourceGroup := &armresources.ResourceGroup{
+		ID:       to.Ptr(azure.ResourceGroupRID("SUBSCRIPTION_ID", "RESOURCE_GROUP")),
+		Location: to.Ptr("eastus2"),
+		Name:     to.Ptr("RESOURCE_GROUP"),
+		Type:     to.Ptr(string(azapi.AzureResourceTypeResourceGroup)),
+		Tags: map[string]*string{
+			"azd-env-name": to.Ptr("test-env"),
+		},
+	}
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return strings.HasSuffix(request.URL.Path, "/resourcegroups") && strings.Contains(request.URL.RawQuery, "filter=")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		result := armresources.ResourceGroupListResult{
+			Value: []*armresources.ResourceGroup{
+				resourceGroup,
+			},
+		}
+
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, result)
+	})
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/resources")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, resourceList)
+	})
+
+	getLogAnalyticsMock(mockContext, "/workspaces/la-workspace-123", "la-workspace-123")
+	getLogAnalyticsMock(mockContext, "/workspaces/la-workspace2-123", "la-workspace2-123")
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodDelete &&
+			(strings.HasSuffix(request.URL.Path, "workspaces/la-workspace-123") ||
+				strings.HasSuffix(request.URL.Path, "workspaces/la-workspace2-123"))
+	}).RespondFn(httpRespondFn)
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodDelete &&
+			strings.HasSuffix(request.URL.Path, "subscriptions/SUBSCRIPTION_ID/resourcegroups/RESOURCE_GROUP")
+	}).RespondFn(httpRespondFn)
+
+	mockPollingUrl := "https://url-to-poll.net"
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet &&
+			strings.Contains(request.URL.String(), mockPollingUrl)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateEmptyHttpResponse(request, 204)
+	})
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodDelete &&
+			strings.HasSuffix(
+				request.URL.Path, "/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/test-env")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateEmptyHttpResponse(request, 204)
+	})
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodPut &&
+			strings.Contains(request.URL.Path, "/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		result := &armresources.DeploymentsClientCreateOrUpdateAtSubscriptionScopeResponse{
+			DeploymentExtended: armresources.DeploymentExtended{
+				ID:       to.Ptr("DEPLOYMENT_ID"),
+				Name:     to.Ptr("test-env"),
+				Location: to.Ptr("eastus2"),
+				Tags: map[string]*string{
+					"azd-env-name": to.Ptr("test-env"),
+				},
+				Type: to.Ptr("Microsoft.Resources/deployments"),
+				Properties: &armresources.DeploymentPropertiesExtended{
+					ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+					Timestamp:         to.Ptr(time.Now()),
+				},
+			},
+		}
+
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, result)
+	})
+}
+
 func httpRespondFn(request *http.Request) (*http.Response, error) {
 	return &http.Response{
 		Request:    request,
@@ -950,7 +1093,6 @@ func TestUserDefinedTypes(t *testing.T) {
 
 	azCli := mockazapi.NewAzureClientFromMockContext(mockContext)
 	bicepCli := bicep.NewCli(mockContext.Console, mockContext.CommandRunner)
-	require.NoError(t, bicepCli.EnsureInstalled(*mockContext.Context))
 	env := environment.NewWithValues("test-env", map[string]string{})
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {

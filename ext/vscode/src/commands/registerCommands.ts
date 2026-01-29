@@ -17,8 +17,11 @@ import { pipelineConfig } from './pipeline';
 import { installCli } from './installCli';
 import { loginCli } from './loginCli';
 import { getDotEnvFilePath } from './getDotEnvFilePath';
-import { revealAzureResource, revealAzureResourceGroup } from './azureWorkspace/reveal';
+import { revealAzureResource, revealAzureResourceGroup, showInAzurePortal } from './azureWorkspace/reveal';
 import { disableDevCenterMode, enableDevCenterMode } from './devCenterMode';
+import { installExtension, uninstallExtension, upgradeExtension } from './extensions';
+import { addService } from './addService';
+import { initFromCode, initMinimal, initFromTemplate, searchTemplates, openGallery, openReadme, openGitHubRepo } from './templateTools';
 
 export function registerCommands(): void {
     registerActivityCommand('azure-dev.commands.cli.init', init);
@@ -39,23 +42,41 @@ export function registerCommands(): void {
     registerActivityCommand('azure-dev.commands.cli.pipeline-config', pipelineConfig);
     registerActivityCommand('azure-dev.commands.cli.install', installCli);
     registerActivityCommand('azure-dev.commands.cli.login', loginCli);
+    registerActivityCommand('azure-dev.commands.cli.extension-install', installExtension);
+    registerActivityCommand('azure-dev.commands.cli.extension-uninstall', uninstallExtension);
+    registerActivityCommand('azure-dev.commands.cli.extension-upgrade', upgradeExtension);
+    registerActivityCommand('azure-dev.commands.addService', addService);
 
     registerActivityCommand('azure-dev.commands.azureWorkspace.revealAzureResource', revealAzureResource);
     registerActivityCommand('azure-dev.commands.azureWorkspace.revealAzureResourceGroup', revealAzureResourceGroup);
+    registerActivityCommand('azure-dev.commands.azureWorkspace.showInAzurePortal', showInAzurePortal);
 
     registerActivityCommand('azure-dev.commands.enableDevCenterMode', enableDevCenterMode);
     registerActivityCommand('azure-dev.commands.disableDevCenterMode', disableDevCenterMode);
+
+    registerActivityCommand('azure-dev.views.templateTools.initFromCode', initFromCode);
+    registerActivityCommand('azure-dev.views.templateTools.initMinimal', initMinimal);
+    registerActivityCommand('azure-dev.views.templateTools.initFromTemplate', initFromTemplate);
+    registerActivityCommand('azure-dev.views.templateTools.initFromTemplateInline', initFromTemplate);
+    registerActivityCommand('azure-dev.views.templateTools.search', searchTemplates);
+    registerActivityCommand('azure-dev.views.templateTools.openGallery', openGallery);
+    registerActivityCommand('azure-dev.views.templateTools.openReadme', openReadme);
+    registerActivityCommand('azure-dev.views.templateTools.openGitHub', openGitHubRepo);
 
     // getDotEnvFilePath() is a utility command that does not deserve "user activity" designation.
     registerCommandAzUI('azure-dev.commands.getDotEnvFilePath', getDotEnvFilePath);
 }
 
-function registerActivityCommand(commandId: string, callback: CommandCallback, debounce?: number, telemetryId?:string): void {
+// registerActivityCommand wraps a command callback with activity recording.
+// The command ID is automatically used as the telemetry event name by registerCommandAzUI.
+// For CLI task executions, telemetry is separately tracked via executeAsTask() with TelemetryId enum values.
+function registerActivityCommand(commandId: string, callback: CommandCallback, debounce?: number, telemetryId?: string): void {
     registerCommandAzUI(
         commandId,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        async(context: IActionContext, ...args: any[]) => {
+        (context: IActionContext, ...args: any[]): any => {
             void ext.activitySvc.recordActivity();
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             return callback(context, ...args);
         },
         debounce,

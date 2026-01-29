@@ -6,7 +6,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.20.0
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.1
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices v1.8.0
-	github.com/azure/azure-dev/cli/azd v0.0.0-20260116183934-428498d0f124
+	github.com/azure/azure-dev/cli/azd v0.0.0-20260122173819-89795b295491
 	github.com/braydonk/yaml v0.9.0
 	github.com/fatih/color v1.18.0
 	github.com/openai/openai-go/v3 v3.2.0

@@ -12,7 +12,7 @@ export async function getDotEnvFilePath(context: IActionContext, args: string[] 
     if (workingDir) {
         cwd = workingDir;
     } else {
-        if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length === 1) {
+        if (vscode.workspace.workspaceFolders?.length === 1) {
             cwd = vscode.workspace.workspaceFolders[0].uri.fsPath;
         } else {
             throw new Error(vscode.l10n.t("Working directory could not be determined"));

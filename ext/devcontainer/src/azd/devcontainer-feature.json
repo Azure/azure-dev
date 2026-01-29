@@ -1,6 +1,6 @@
 {
     "id": "azd",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "name": "Azure Developer CLI",
     "documentationURL": "https://github.com/azure/azure-dev/tree/main/ext/devcontainer/src/azd",
     "description": "Installs the Azure Developer CLI along with needed dependencies.",
@@ -12,6 +12,11 @@
         ],
         "default": "stable",
         "description": "Select or enter an Azure Developer CLI version. (Available versions may vary by Linux distribution.)"
+      },
+      "extensions": {
+        "type": "string",
+        "default": "",
+        "description": "Optional comma separated list of Azure Developer CLI extensions to install."
       }
     },
     "customizations": {

@@ -5,6 +5,7 @@
 #-------------------------------------------------------------------------------------------------------------
 
 AZD_VERSION=${VERSION:-"stable"}
+AZD_EXTENSIONS=${EXTENSIONS}
 
 check_packages() {
     if ! dpkg -s "$@" > /dev/null 2>&1; then
@@ -24,3 +25,15 @@ check_packages $(apt-cache search '^libicu[0-9]+$' | cut -d' ' -f1)
 echo "(*) Installing Azure Developer CLI"
 
 curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version $AZD_VERSION -a $(dpkg --print-architecture)
+
+
+# If Azure Developer CLI extensions are requested, loop through and install 
+if [ -n "${AZD_EXTENSIONS}" ]; then
+    echo "Installing Azure Developer CLI extensions: ${AZD_EXTENSIONS}"
+    IFS=',' read -ra extensions <<< "${AZD_EXTENSIONS}"
+    for i in "${extensions[@]}"
+    do
+        echo "Installing ${i}"
+        su "${_REMOTE_USER}" -c "azd extension install ${i}" || continue
+    done
+fi

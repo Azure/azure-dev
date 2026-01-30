@@ -198,15 +198,29 @@ func fetchLatestVersion(version chan<- semver.Version) {
 		}
 	}
 
+	// Determine which update channel to check (latest/stable or daily)
+	// "latest" and "stable" both refer to official releases
+	updateChannel := "latest"
+	if channel, has := os.LookupEnv("AZD_UPDATE_CHANNEL"); has {
+		if channel == "daily" {
+			updateChannel = "daily"
+			log.Print("using daily update channel")
+		} else if channel != "stable" && channel != "latest" {
+			log.Printf("unknown update channel '%s', using latest channel", channel)
+		}
+	}
+
 	// To avoid fetching the latest version of the CLI on every invocation, we cache the result for a period
-	// of time, in the user's home directory.
+	// of time, in the user's home directory. Use channel-specific cache file to avoid conflicts when
+	// switching between update channels.
 	configDir, err := config.GetUserConfigDir()
 	if err != nil {
 		log.Printf("could not determine config directory: %v, skipping update check", err)
 		return
 	}
 
-	cacheFilePath := filepath.Join(configDir, updateCheckCacheFileName)
+	cacheFileName := fmt.Sprintf("update-check-%s.json", updateChannel)
+	cacheFilePath := filepath.Join(configDir, cacheFileName)
 	cacheFile, err := os.ReadFile(cacheFilePath)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		log.Printf("error reading update cache file: %v, skipping update check", err)
@@ -252,19 +266,8 @@ func fetchLatestVersion(version chan<- semver.Version) {
 	if cachedLatestVersion == nil {
 		log.Print("fetching latest version information for update check")
 
-		// Determine which update channel to check (stable or daily)
-		updateChannel := "latest" // Default to stable channel
-		if channel, has := os.LookupEnv("AZD_UPDATE_CHANNEL"); has {
-			if channel == "daily" {
-				updateChannel = "daily"
-				log.Print("using daily update channel")
-			} else if channel != "stable" && channel != "latest" {
-				log.Printf("unknown update channel '%s', using stable channel", channel)
-			}
-		}
-
-		versionUrl := fmt.Sprintf("https://aka.ms/azure-dev/versions/cli/%s", updateChannel)
-		req, err := http.NewRequest(http.MethodGet, versionUrl, nil)
+		versionURL := fmt.Sprintf("https://aka.ms/azure-dev/versions/cli/%s", updateChannel)
+		req, err := http.NewRequest(http.MethodGet, versionURL, nil)
 		if err != nil {
 			log.Printf("failed to create request object: %v, skipping update check", err)
 		}

@@ -89,15 +89,7 @@ When running tools like CodeQL or `go mod tidy`, `go.mod` and `go.sum` files may
 - **azd core changes** (`cli/azd/` excluding `extensions/`): Only commit `cli/azd/go.mod` and `cli/azd/go.sum`. Do NOT commit any `go.mod`/`go.sum` files in `cli/azd/extensions/`.
 - **Extension changes** (`cli/azd/extensions/<extension-name>/`): Only commit `go.mod`/`go.sum` for the specific extension being modified.
 
-If unrelated `go.mod`/`go.sum` files are staged, unstage them before committing:
-
-```bash
-# Unstage all extension go.mod/go.sum files (when working on azd core)
-git restore --staged cli/azd/extensions/*/go.mod cli/azd/extensions/*/go.sum
-
-# Or selectively unstage specific extension files
-git restore --staged cli/azd/extensions/<extension-name>/go.mod cli/azd/extensions/<extension-name>/go.sum
-```
+If unrelated `go.mod`/`go.sum` files are staged, unstage them before committing.
 
 ## Key Patterns
 

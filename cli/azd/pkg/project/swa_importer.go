@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -187,7 +188,14 @@ func (si *SwaImporter) buildInfraSpec(projectConfig *ProjectConfig) (*scaffold.I
 		Services: []scaffold.ServiceSpec{},
 	}
 
+	// Sort service names for deterministic ordering
+	serviceNames := make([]string, 0, len(projectConfig.Services))
 	for name := range projectConfig.Services {
+		serviceNames = append(serviceNames, name)
+	}
+	slices.Sort(serviceNames)
+
+	for _, name := range serviceNames {
 		svcSpec := scaffold.ServiceSpec{
 			Name: name,
 			Port: -1, // SWA doesn't use ports in the same way

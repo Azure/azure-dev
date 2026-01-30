@@ -74,20 +74,22 @@ func ExtractAgentDefinition(manifestYamlContent []byte) (any, error) {
 
 	switch agentDef.Kind {
 	case AgentKindPrompt:
-		var agent PromptAgent
-		if err := yaml.Unmarshal(templateBytes, &agent); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal to PromptAgent: %w", err)
-		}
+		return nil, fmt.Errorf("prompt agents not currently supported")
 
-		agent.AgentDefinition = agentDef
+		// var agent PromptAgent
+		// if err := yaml.Unmarshal(templateBytes, &agent); err != nil {
+		// 	return nil, fmt.Errorf("failed to unmarshal to PromptAgent: %w", err)
+		// }
 
-		tools, err := ExtractToolsDefinitions(template)
-		if err != nil {
-			return nil, fmt.Errorf("failed to extract tools definitions: %w", err)
-		}
+		// agent.AgentDefinition = agentDef
 
-		agent.Tools = &tools
-		return agent, nil
+		// tools, err := ExtractToolsDefinitions(template)
+		// if err != nil {
+		// 	return nil, fmt.Errorf("failed to extract tools definitions: %w", err)
+		// }
+
+		// agent.Tools = &tools
+		// return agent, nil
 	case AgentKindHosted:
 		var agent ContainerAgent
 		if err := yaml.Unmarshal(templateBytes, &agent); err != nil {

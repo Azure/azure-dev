@@ -974,7 +974,8 @@ func (a *InitAction) downloadAgentYaml(
 			// Construct GitHub Contents API URL with ref query parameter
 			fileApiUrl := fmt.Sprintf("https://api.github.com/repos/%s/contents/%s", urlInfo.RepoSlug, urlInfo.FilePath)
 			if urlInfo.Branch != "" {
-				fileApiUrl += fmt.Sprintf("?ref=%s", urlInfo.Branch)
+				escapedBranch := url.QueryEscape(urlInfo.Branch)
+				fileApiUrl += fmt.Sprintf("?ref=%s", escapedBranch)
 			}
 			fmt.Printf("Attempting to download manifest from '%s' in repository '%s', branch '%s'\n", urlInfo.FilePath, urlInfo.RepoSlug, urlInfo.Branch)
 
@@ -1666,7 +1667,7 @@ func downloadDirectoryContentsWithoutGhCli(
 			fmt.Printf("Downloading file: %s\n", itemPath)
 			fileApiUrl := fmt.Sprintf("https://api.github.com/repos/%s/contents/%s", repoSlug, itemPath)
 			if branch != "" {
-				fileApiUrl += fmt.Sprintf("?ref=%s", branch)
+				fileApiUrl += fmt.Sprintf("?ref=%s", url.QueryEscape(branch))
 			}
 
 			fileReq, err := http.NewRequestWithContext(ctx, http.MethodGet, fileApiUrl, nil)

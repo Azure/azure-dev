@@ -982,12 +982,14 @@ func (a *InitAction) downloadAgentYaml(
 			if err == nil {
 				req.Header.Set("Accept", "application/vnd.github.v3.raw")
 				resp, err := http.DefaultClient.Do(req)
-				if err == nil && resp.StatusCode == http.StatusOK {
+				if err == nil {
 					defer resp.Body.Close()
-					bodyBytes, readErr := io.ReadAll(resp.Body)
-					if readErr == nil {
-						contentStr = string(bodyBytes)
-						fmt.Printf("Downloaded manifest from branch: %s\n", urlInfo.Branch)
+					if resp.StatusCode == http.StatusOK {
+						bodyBytes, readErr := io.ReadAll(resp.Body)
+						if readErr == nil {
+							contentStr = string(bodyBytes)
+							fmt.Printf("Downloaded manifest from branch: %s\n", urlInfo.Branch)
+						}
 					}
 				}
 			}

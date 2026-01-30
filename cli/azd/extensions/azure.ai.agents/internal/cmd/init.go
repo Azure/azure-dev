@@ -1665,12 +1665,18 @@ func downloadDirectoryContentsWithoutGhCli(
 		if itemType == "file" {
 			// Download file using GitHub Contents API with raw accept header
 			fmt.Printf("Downloading file: %s\n", itemPath)
-			fileApiUrl := fmt.Sprintf("https://api.github.com/repos/%s/contents/%s", repoSlug, itemPath)
+			fileURL := &url.URL{
+				Scheme: "https",
+				Host:   "api.github.com",
+				Path:   fmt.Sprintf("/repos/%s/contents/%s", repoSlug, itemPath),
+			}
 			if branch != "" {
-				fileApiUrl += fmt.Sprintf("?ref=%s", url.QueryEscape(branch))
+				query := url.Values{}
+				query.Set("ref", branch)
+				fileURL.RawQuery = query.Encode()
 			}
 
-			fileReq, err := http.NewRequestWithContext(ctx, http.MethodGet, fileApiUrl, nil)
+			fileReq, err := http.NewRequestWithContext(ctx, http.MethodGet, fileURL.String(), nil)
 			if err != nil {
 				return fmt.Errorf("failed to create file request %s: %w", itemPath, err)
 			}

@@ -507,7 +507,7 @@ func (at *dotnetContainerAppTarget) buildPackagePublishContainer(
 	progress *async.Progress[ServiceProgress],
 ) (string, error) {
 	// Build the container
-	buildResult, err := at.containerHelper.Build(ctx, serviceConfig, serviceContext, progress)
+	buildResult, err := at.containerHelper.Build(ctx, serviceConfig, serviceContext, at.env, progress)
 	if err != nil {
 		return "", fmt.Errorf("building container: %w", err)
 	}
@@ -516,7 +516,7 @@ func (at *dotnetContainerAppTarget) buildPackagePublishContainer(
 	}
 
 	// Package the container
-	packageResult, err := at.containerHelper.Package(ctx, serviceConfig, serviceContext, progress)
+	packageResult, err := at.containerHelper.Package(ctx, serviceConfig, serviceContext, at.env, progress)
 	if err != nil {
 		return "", fmt.Errorf("packaging container: %w", err)
 	}
@@ -525,7 +525,8 @@ func (at *dotnetContainerAppTarget) buildPackagePublishContainer(
 	}
 
 	// Publish the container to ACR
-	publishResult, err := at.containerHelper.Publish(ctx, serviceConfig, serviceContext, targetResource, progress, nil)
+	publishResult, err := at.containerHelper.Publish(
+		ctx, serviceConfig, serviceContext, targetResource, at.env, progress, nil)
 	if err != nil {
 		return "", fmt.Errorf("publishing container: %w", err)
 	}
@@ -547,7 +548,7 @@ func (at *dotnetContainerAppTarget) prepareDockerfileBasedImage(
 ) (*containerImageResult, error) {
 	if len(serviceConfig.DotNetContainerApp.ContainerFiles) == 0 {
 		// Flow A1: Simple Dockerfile - ONLY call Publish (not Build+Package+Publish)
-		res, err := at.containerHelper.Publish(ctx, serviceConfig, serviceContext, targetResource, progress, nil)
+		res, err := at.containerHelper.Publish(ctx, serviceConfig, serviceContext, targetResource, at.env, progress, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -564,7 +565,7 @@ func (at *dotnetContainerAppTarget) prepareDockerfileBasedImage(
 	// Build dependency containers and add as build args
 	for sName, containerFile := range serviceConfig.DotNetContainerApp.ContainerFiles {
 		sContext := &ServiceContext{}
-		result, err := at.containerHelper.Build(ctx, containerFile.ServiceConfig, sContext, progress)
+		result, err := at.containerHelper.Build(ctx, containerFile.ServiceConfig, sContext, at.env, progress)
 		if err != nil {
 			return nil, fmt.Errorf("building container for %s: %w", sName, err)
 		}
@@ -598,7 +599,7 @@ func (at *dotnetContainerAppTarget) prepareDotNetProjectImage(
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*containerImageResult, error) {
-	defaultImageName, err := at.containerHelper.DefaultImageName(ctx, serviceConfig)
+	defaultImageName, err := at.containerHelper.DefaultImageName(ctx, serviceConfig, at.env)
 	if err != nil {
 		return nil, fmt.Errorf("getting default image name: %w", err)
 	}
@@ -607,7 +608,7 @@ func (at *dotnetContainerAppTarget) prepareDotNetProjectImage(
 		// Flow C1: Simple .NET project - publish directly to ACR
 		progress.SetProgress(NewServiceProgress("Logging in to registry"))
 
-		dockerCreds, err := at.containerHelper.Credentials(ctx, serviceConfig, targetResource)
+		dockerCreds, err := at.containerHelper.Credentials(ctx, serviceConfig, targetResource, at.env)
 		if err != nil {
 			return nil, fmt.Errorf("logging in to registry: %w", err)
 		}
@@ -679,7 +680,7 @@ func (at *dotnetContainerAppTarget) prepareDotNetMultiStageImage(
 			containerFile.ServiceConfig.Project = serviceConfig.Project
 		}
 
-		result, err := at.containerHelper.Build(ctx, containerFile.ServiceConfig, serviceContext, progress)
+		result, err := at.containerHelper.Build(ctx, containerFile.ServiceConfig, serviceContext, at.env, progress)
 		if err != nil {
 			return nil, fmt.Errorf("building container for %s: %w", containerFile.ServiceConfig.Name, err)
 		}

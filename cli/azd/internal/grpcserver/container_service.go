@@ -10,6 +10,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -21,6 +22,7 @@ type containerService struct {
 	lazyContainerHelper *lazy.Lazy[*project.ContainerHelper]
 	lazyServiceManager  *lazy.Lazy[project.ServiceManager]
 	lazyProject         *lazy.Lazy[*project.ProjectConfig]
+	lazyEnvironment     *lazy.Lazy[*environment.Environment]
 }
 
 func NewContainerService(
@@ -28,12 +30,14 @@ func NewContainerService(
 	lazyContainerHelper *lazy.Lazy[*project.ContainerHelper],
 	lazyServiceManager *lazy.Lazy[project.ServiceManager],
 	lazyProjectConf *lazy.Lazy[*project.ProjectConfig],
+	lazyEnvironment *lazy.Lazy[*environment.Environment],
 ) azdext.ContainerServiceServer {
 	return &containerService{
 		console:             console,
 		lazyContainerHelper: lazyContainerHelper,
 		lazyServiceManager:  lazyServiceManager,
 		lazyProject:         lazyProjectConf,
+		lazyEnvironment:     lazyEnvironment,
 	}
 }
 
@@ -61,11 +65,16 @@ func (c *containerService) Build(
 		return nil, err
 	}
 
+	env, err := c.lazyEnvironment.GetValue()
+	if err != nil {
+		return nil, err
+	}
+
 	// Call containerHelper.Build with noop progress reporting to avoid conflicts with outer progress layer
 	progress := async.NewNoopProgress[project.ServiceProgress]()
 	defer progress.Done()
 
-	buildResult, err := containerHelper.Build(ctx, serviceConfig, serviceContext, progress)
+	buildResult, err := containerHelper.Build(ctx, serviceConfig, serviceContext, env, progress)
 	if err != nil {
 		return nil, err
 	}
@@ -106,11 +115,16 @@ func (c *containerService) Package(
 		return nil, err
 	}
 
+	env, err := c.lazyEnvironment.GetValue()
+	if err != nil {
+		return nil, err
+	}
+
 	// Call containerHelper.Package with noop progress reporting to avoid conflicts with outer progress layer
 	progress := async.NewNoopProgress[project.ServiceProgress]()
 	defer progress.Done()
 
-	packageResult, err := containerHelper.Package(ctx, serviceConfig, serviceContext, progress)
+	packageResult, err := containerHelper.Package(ctx, serviceConfig, serviceContext, env, progress)
 	if err != nil {
 		return nil, err
 	}
@@ -166,11 +180,16 @@ func (c *containerService) Publish(
 		return nil, err
 	}
 
+	env, err := c.lazyEnvironment.GetValue()
+	if err != nil {
+		return nil, err
+	}
+
 	// Call containerHelper.Publish with noop progress reporting to avoid conflicts with outer progress layer
 	progress := async.NewNoopProgress[project.ServiceProgress]()
 	defer progress.Done()
 
-	publishResult, err := containerHelper.Publish(ctx, serviceConfig, serviceContext, targetResource, progress, nil)
+	publishResult, err := containerHelper.Publish(ctx, serviceConfig, serviceContext, targetResource, env, progress, nil)
 	if err != nil {
 		return nil, err
 	}

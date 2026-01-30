@@ -72,28 +72,45 @@ For shellcheck specifically:
 - ShellCheck is pre-installed on `ubuntu-latest` runners
 - Use `shellcheck -f gcc` format for gcc-style output
 - Problem matcher regex should match: `file:line:column: severity: message [CODE]`
+- **Check only changed files** in PRs to avoid blocking unrelated changes
 
-Example workflow:
+Example workflow (checking only changed files in PR):
 ```yaml
 steps:
   - uses: actions/checkout@v4
+    with:
+      fetch-depth: 0  # Required for git diff
+  - name: Get changed shell scripts
+    id: changed-files
+    run: |
+      git fetch origin ${{ github.base_ref }}
+      CHANGED_SH_FILES=$(git diff --name-only --diff-filter=ACMRT origin/${{ github.base_ref }}...HEAD | grep '\.sh$' || true)
+      if [ -z "$CHANGED_SH_FILES" ]; then
+        echo "No shell scripts changed"
+        echo "files=" >> $GITHUB_OUTPUT
+      else
+        echo "Changed shell scripts:"
+        echo "$CHANGED_SH_FILES"
+        echo "files<<EOF" >> $GITHUB_OUTPUT
+        echo "$CHANGED_SH_FILES" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+      fi
   - name: Register ShellCheck problem matcher
+    if: steps.changed-files.outputs.files != ''
     run: echo "::add-matcher::.github/shellcheck-matcher.json"
   - name: Run ShellCheck
+    if: steps.changed-files.outputs.files != ''
     run: |
-      find . -name "*.sh" -type f \
-        -not -path "*/.*" \
-        -not -path "*/node_modules/*" \
-        -not -path "*/vendor/*" \
-        -exec shellcheck -f gcc {} +
+      echo "${{ steps.changed-files.outputs.files }}" | xargs shellcheck -f gcc
   - name: Unregister ShellCheck problem matcher
-    if: always()
+    if: always() && steps.changed-files.outputs.files != ''
     run: echo "::remove-matcher owner=shellcheck-gcc::"
 ```
 
 Note: 
-- Using `{} +` instead of `{} \;` batches all files into a single shellcheck invocation, improving performance and allowing shellcheck to follow sourced dependencies.
-- Excludes hidden directories (e.g., `.git/`), `node_modules/`, and `vendor/` to avoid checking unintended scripts.
+- Using `fetch-depth: 0` ensures full git history is available for diff comparison
+- `--diff-filter=ACMRT` includes only added, copied, modified, renamed, or type-changed files
+- Checking only changed files prevents blocking PRs due to pre-existing issues in unrelated scripts
 
 ## Workflow Structure
 

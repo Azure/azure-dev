@@ -21,15 +21,30 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Get changed shell scripts
+        id: changed-files
+        run: |
+          git fetch origin ${{ github.base_ref }}
+          CHANGED_SH_FILES=$(git diff --name-only --diff-filter=ACMRT origin/${{ github.base_ref }}...HEAD | grep '\.sh$' || true)
+          if [ -z "$CHANGED_SH_FILES" ]; then
+            echo "No shell scripts changed"
+            echo "files=" >> $GITHUB_OUTPUT
+          else
+            echo "Changed shell scripts:"
+            echo "$CHANGED_SH_FILES"
+            echo "files<<EOF" >> $GITHUB_OUTPUT
+            echo "$CHANGED_SH_FILES" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          fi
       - name: Register ShellCheck problem matcher
+        if: steps.changed-files.outputs.files != ''
         run: echo "::add-matcher::.github/shellcheck-matcher.json"
       - name: Run ShellCheck
+        if: steps.changed-files.outputs.files != ''
         run: |
-          find . -name "*.sh" -type f \
-            -not -path "*/.*" \
-            -not -path "*/node_modules/*" \
-            -not -path "*/vendor/*" \
-            -exec shellcheck -f gcc {} +
+          echo "${{ steps.changed-files.outputs.files }}" | xargs shellcheck -f gcc
       - name: Unregister ShellCheck problem matcher
-        if: always()
+        if: always() && steps.changed-files.outputs.files != ''
         run: echo "::remove-matcher owner=shellcheck-gcc::"

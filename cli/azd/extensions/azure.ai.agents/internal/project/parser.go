@@ -5,6 +5,7 @@ package project
 
 import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/azure"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -129,12 +130,12 @@ func (p *FoundryParser) SetIdentity(ctx context.Context, args *azdext.ProjectEve
 		return fmt.Errorf("failed to get tenant ID: %w", err)
 	}
 
-	cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
-		TenantID:                   tenantResponse.TenantId,
-		AdditionallyAllowedTenants: []string{"*"},
+	cred, err := azure.NewCredential(ctx, azure.CredentialOptions{
+		TenantID:       tenantResponse.TenantId,
+		SubscriptionID: subscriptionID,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create Azure credential: %w", err)
+		return err
 	}
 
 	// Get Microsoft Foundry Project's managed identity
@@ -375,12 +376,12 @@ func (p *FoundryParser) CoboPostDeploy(ctx context.Context, args *azdext.Project
 		return fmt.Errorf("failed to get tenant ID: %w", err)
 	}
 
-	cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
-		TenantID:                   tenantResponse.TenantId,
-		AdditionallyAllowedTenants: []string{"*"},
+	cred, err := azure.NewCredential(ctx, azure.CredentialOptions{
+		TenantID:       tenantResponse.TenantId,
+		SubscriptionID: projectSubscriptionID,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create Azure credential: %w", err)
+		return err
 	}
 
 	// Get Microsoft Foundry region using SDK

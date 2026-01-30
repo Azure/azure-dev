@@ -264,6 +264,15 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 			}
 
 			infraSpec.Services = append(infraSpec.Services, svcSpec)
+		case ResourceTypeHostStaticWebApp:
+			svcSpec := scaffold.ServiceSpec{
+				Name: res.Name,
+				Port: -1,
+				Env:  map[string]string{},
+				Host: scaffold.StaticWebAppKind,
+			}
+
+			infraSpec.Services = append(infraSpec.Services, svcSpec)
 		case ResourceTypeOpenAiModel:
 			props := res.Props.(AIModelProps)
 			if len(props.Model.Name) == 0 {

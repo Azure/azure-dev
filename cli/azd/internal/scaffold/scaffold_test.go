@@ -232,6 +232,35 @@ func TestExecInfra(t *testing.T) {
 				},
 			},
 		},
+		{
+			"Static Web App only",
+			InfraSpec{
+				Services: []ServiceSpec{
+					{
+						Name: "frontend",
+						Port: -1,
+						Host: "staticwebapp",
+					},
+				},
+			},
+		},
+		{
+			"Multiple Static Web Apps",
+			InfraSpec{
+				Services: []ServiceSpec{
+					{
+						Name: "marketing",
+						Port: -1,
+						Host: "staticwebapp",
+					},
+					{
+						Name: "admin",
+						Port: -1,
+						Host: "staticwebapp",
+					},
+				},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

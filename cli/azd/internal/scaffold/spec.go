@@ -176,6 +176,7 @@ type HostKind string
 const (
 	AppServiceKind   HostKind = "appservice"
 	ContainerAppKind HostKind = "containerapp"
+	StaticWebAppKind HostKind = "staticwebapp"
 )
 
 type RuntimeInfo struct {

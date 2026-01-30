@@ -18,11 +18,13 @@ import (
 
 type ImportManager struct {
 	dotNetImporter *DotNetImporter
+	swaImporter    *SwaImporter
 }
 
 func NewImportManager(dotNetImporter *DotNetImporter) *ImportManager {
 	return &ImportManager{
 		dotNetImporter: dotNetImporter,
+		swaImporter:    NewSwaImporter(),
 	}
 }
 
@@ -297,6 +299,11 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 		return tempInfra(ctx, projectConfig)
 	}
 
+	// Temp infra from SWA-only services (infraless approach)
+	if im.swaImporter.CanImport(ctx, projectConfig) {
+		return im.swaImporter.ProjectInfrastructure(ctx, projectConfig)
+	}
+
 	// Return default project infra
 	return &Infra{
 		Options: infraOptions,
@@ -391,6 +398,11 @@ func (im *ImportManager) GenerateAllInfrastructure(ctx context.Context, projectC
 
 	if len(projectConfig.Resources) > 0 {
 		return infraFsForProject(ctx, projectConfig)
+	}
+
+	// Generate infrastructure for SWA-only projects
+	if im.swaImporter.CanImport(ctx, projectConfig) {
+		return im.swaImporter.GenerateAllInfrastructure(ctx, projectConfig)
 	}
 
 	return nil, fmt.Errorf("this project does not contain any infrastructure to generate")

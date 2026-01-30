@@ -971,17 +971,27 @@ func (a *InitAction) downloadAgentYaml(
 		// with gh CLI for public repositories.
 		urlInfo = a.parseGitHubUrlNaive(manifestPointer)
 		if urlInfo != nil {
-			// Construct raw GitHub URL to fetch file directly
-			rawUrl := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s", urlInfo.RepoSlug, urlInfo.Branch, urlInfo.FilePath)
-			fmt.Printf("Attempting to download manifest from: %s\n", rawUrl)
+			// Construct GitHub Contents API URL with ref query parameter
+			fileApiUrl := fmt.Sprintf("https://api.github.com/repos/%s/contents/%s", urlInfo.RepoSlug, urlInfo.FilePath)
+			if urlInfo.Branch != "" {
+				escapedBranch := url.QueryEscape(urlInfo.Branch)
+				fileApiUrl += fmt.Sprintf("?ref=%s", escapedBranch)
+			}
+			fmt.Printf("Attempting to download manifest from '%s' in repository '%s', branch '%s'\n", urlInfo.FilePath, urlInfo.RepoSlug, urlInfo.Branch)
 
-			resp, err := http.Get(rawUrl)
-			if err == nil && resp.StatusCode == http.StatusOK {
-				defer resp.Body.Close()
-				bodyBytes, readErr := io.ReadAll(resp.Body)
-				if readErr == nil {
-					contentStr = string(bodyBytes)
-					fmt.Printf("Downloaded manifest from branch: %s\n", urlInfo.Branch)
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, fileApiUrl, nil)
+			if err == nil {
+				req.Header.Set("Accept", "application/vnd.github.v3.raw")
+				resp, err := http.DefaultClient.Do(req)
+				if err == nil {
+					defer resp.Body.Close()
+					if resp.StatusCode == http.StatusOK {
+						bodyBytes, readErr := io.ReadAll(resp.Body)
+						if readErr == nil {
+							contentStr = string(bodyBytes)
+							fmt.Printf("Downloaded manifest from branch: %s\n", urlInfo.Branch)
+						}
+					}
 				}
 			}
 			if contentStr == "" {
@@ -1521,11 +1531,11 @@ func downloadParentDirectory(
 	// Download directory contents
 	if useGhCli {
 		if err := downloadDirectoryContents(ctx, urlInfo.Hostname, urlInfo.RepoSlug, parentDirPath, urlInfo.Branch, targetDir, ghCli, console); err != nil {
-			return fmt.Errorf("failed to download directory contents: %w", err)
+			return fmt.Errorf("failed to download directory contents with GH CLI: %w", err)
 		}
 	} else {
 		if err := downloadDirectoryContentsWithoutGhCli(ctx, urlInfo.RepoSlug, parentDirPath, urlInfo.Branch, targetDir); err != nil {
-			return fmt.Errorf("failed to download directory contents: %w", err)
+			return fmt.Errorf("failed to download directory contents without GH CLI: %w", err)
 		}
 	}
 
@@ -1655,11 +1665,26 @@ func downloadDirectoryContentsWithoutGhCli(
 		itemLocalPath := filepath.Join(localPath, name)
 
 		if itemType == "file" {
-			// Download file using raw.githubusercontent.com
+			// Download file using GitHub Contents API with raw accept header
 			fmt.Printf("Downloading file: %s\n", itemPath)
-			rawUrl := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s", repoSlug, branch, itemPath)
+			fileURL := &url.URL{
+				Scheme: "https",
+				Host:   "api.github.com",
+				Path:   fmt.Sprintf("/repos/%s/contents/%s", repoSlug, itemPath),
+			}
+			if branch != "" {
+				query := url.Values{}
+				query.Set("ref", branch)
+				fileURL.RawQuery = query.Encode()
+			}
 
-			fileResp, err := http.Get(rawUrl)
+			fileReq, err := http.NewRequestWithContext(ctx, http.MethodGet, fileURL.String(), nil)
+			if err != nil {
+				return fmt.Errorf("failed to create file request %s: %w", itemPath, err)
+			}
+			fileReq.Header.Set("Accept", "application/vnd.github.v3.raw")
+
+			fileResp, err := http.DefaultClient.Do(fileReq)
 			if err != nil {
 				return fmt.Errorf("failed to download file %s: %w", itemPath, err)
 			}

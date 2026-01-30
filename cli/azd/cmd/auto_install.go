@@ -412,11 +412,7 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 	// This allows us to determine if a subcommand was provided or not or if the command is unknown.
 	foundCmd, originalArgs, err := rootCmd.Find(os.Args[1:])
 	if err == nil {
-		// Command was found, but check for partial namespace match scenario.
-		// This happens when an extension with a shared namespace prefix is installed
-		// (e.g., "ai.finetuning" creates "ai" command group) but user runs a command
-		// for an uninstalled extension with a longer namespace (e.g., "azd ai agent init"
-		// where "ai.agent" extension is not installed).
+		// Check for partial namespace match (e.g., "ai" found but "ai.agent" not installed)
 		if installed := tryAutoInstallForPartialNamespace(
 			ctx, rootContainer, foundCmd, originalArgs,
 		); installed {

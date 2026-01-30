@@ -129,6 +129,8 @@ func (st *appServiceTarget) Deploy(
 	}
 
 	// Deploy to each target
+	hasSlots := len(deployTargets) > 1 || (len(deployTargets) == 1 && deployTargets[0].SlotName != "")
+
 	for _, target := range deployTargets {
 		zipFile, err := os.Open(zipFilePath)
 		if err != nil {
@@ -138,7 +140,16 @@ func (st *appServiceTarget) Deploy(
 
 		var deployErr error
 		if target.SlotName == "" {
-			progress.SetProgress(NewServiceProgress("Uploading deployment package to main app"))
+			// When deploying to the main app
+			var progressMsg string
+			if hasSlots {
+				// Mirror Azure Portal terminology: main app is the "production" slot
+				progressMsg = "Uploading deployment package to production slot"
+			} else {
+				// No slots configured, use simple message
+				progressMsg = "Uploading deployment package"
+			}
+			progress.SetProgress(NewServiceProgress(progressMsg))
 			_, deployErr = st.cli.DeployAppServiceZip(
 				ctx,
 				targetResource.SubscriptionId(),
@@ -162,8 +173,14 @@ func (st *appServiceTarget) Deploy(
 		}
 
 		if deployErr != nil {
-			targetName := "main app"
-			if target.SlotName != "" {
+			var targetName string
+			if target.SlotName == "" {
+				if hasSlots {
+					targetName = "production slot"
+				} else {
+					targetName = "app service"
+				}
+			} else {
 				targetName = fmt.Sprintf("slot '%s'", target.SlotName)
 			}
 			return nil, fmt.Errorf("deploying service %s to %s: %w", serviceConfig.Name, targetName, deployErr)

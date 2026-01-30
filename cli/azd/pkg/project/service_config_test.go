@@ -7,9 +7,11 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -325,4 +327,129 @@ func createTestServiceConfig(path string, host ServiceTargetKind, language Servi
 		},
 		EventDispatcher: ext.NewEventDispatcher[ServiceLifecycleEventArgs](),
 	}
+}
+
+func TestExpandEnv_EmptyEnvironment(t *testing.T) {
+	service := &ServiceConfig{
+		Name:        "api",
+		Environment: nil,
+	}
+
+	env, err := service.ExpandEnv(func(key string) string {
+		return ""
+	})
+
+	require.NoError(t, err)
+	require.Nil(t, env)
+}
+
+func TestExpandEnv_ExpandsVariables(t *testing.T) {
+	service := &ServiceConfig{
+		Name: "api",
+		Environment: osutil.ExpandableMap{
+			"API_URL":  osutil.NewExpandableString("${TEST_URL}"),
+			"APP_NAME": osutil.NewExpandableString("${TEST_NAME}"),
+			"STATIC":   osutil.NewExpandableString("static-value"),
+		},
+	}
+
+	lookup := func(key string) string {
+		switch key {
+		case "TEST_URL":
+			return "https://example.com"
+		case "TEST_NAME":
+			return "my-app"
+		default:
+			return ""
+		}
+	}
+
+	env, err := service.ExpandEnv(lookup)
+
+	require.NoError(t, err)
+	require.NotNil(t, env)
+
+	// Check that service variables are present in the result
+	found := make(map[string]string)
+	for _, e := range env {
+		parts := strings.SplitN(e, "=", 2)
+		if len(parts) == 2 {
+			found[parts[0]] = parts[1]
+		}
+	}
+
+	require.Equal(t, "https://example.com", found["API_URL"])
+	require.Equal(t, "my-app", found["APP_NAME"])
+	require.Equal(t, "static-value", found["STATIC"])
+}
+
+func TestExpandEnv_ServiceVarsTakePrecedence(t *testing.T) {
+	service := &ServiceConfig{
+		Name: "api",
+		Environment: osutil.ExpandableMap{
+			"PATH": osutil.NewExpandableString("custom-path"),
+		},
+	}
+
+	env, err := service.ExpandEnv(func(key string) string {
+		return ""
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, env)
+
+	// Find the last occurrence of PATH - service vars are appended so they take precedence
+	var lastPathValue string
+	for _, e := range env {
+		if strings.HasPrefix(e, "PATH=") {
+			lastPathValue = strings.TrimPrefix(e, "PATH=")
+		}
+	}
+
+	require.Equal(t, "custom-path", lastPathValue)
+}
+
+func TestExpandEnv_MergesWithOSEnvironment(t *testing.T) {
+	service := &ServiceConfig{
+		Name: "api",
+		Environment: osutil.ExpandableMap{
+			"CUSTOM_VAR": osutil.NewExpandableString("custom-value"),
+		},
+	}
+
+	env, err := service.ExpandEnv(func(key string) string {
+		return ""
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, env)
+
+	// Should have at least the OS environment variables plus the custom one
+	require.Greater(t, len(env), 1)
+
+	// Check custom var is present
+	found := false
+	for _, e := range env {
+		if e == "CUSTOM_VAR=custom-value" {
+			found = true
+			break
+		}
+	}
+	require.True(t, found, "CUSTOM_VAR should be present in environment")
+}
+
+func TestExpandEnv_PropagatesErrors(t *testing.T) {
+	service := &ServiceConfig{
+		Name: "api",
+		Environment: osutil.ExpandableMap{
+			// Invalid syntax that should cause an error
+			"BAD_VAR": osutil.NewExpandableString("${UNCLOSED"),
+		},
+	}
+
+	_, err := service.ExpandEnv(func(key string) string {
+		return "value"
+	})
+
+	require.Error(t, err)
 }

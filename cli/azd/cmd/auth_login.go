@@ -258,11 +258,14 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 	if loginMode != auth.AzdBuiltIn && !la.flags.onlyCheckStatus {
+		la.console.Message(ctx, "")
 		la.console.MessageUxItem(ctx, &ux.WarningAltMessage{
 			Message: fmt.Sprintf(
 				"azd is not using the built-in authentication mode, but rather '%s'", loginMode),
 		})
-		la.console.Message(ctx, "If you want to use 'azd auth login', you need to disable the current auth mode.")
+		la.console.Message(ctx, "Run az login directly instead of azd auth login when using this mode.")
+		la.console.Message(ctx, "If you are trying to switch back to use azd to authenticate, say Yes to the next question.")
+		la.console.Message(ctx, "")
 		response, err := la.console.Confirm(ctx, input.ConsoleOptions{
 			Message:      "Do you want to switch back to azd built-in authentication?",
 			DefaultValue: false,
@@ -274,7 +277,9 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			return nil, err
 		}
 		if !response {
-			return nil, fmt.Errorf("log in is not supported on current mode: %s", loginMode)
+			return nil, fmt.Errorf(
+				"azd auth login is disabled when the auth mode is delegated. "+
+					"Use the delegated identity to authenticate instead. Current mode: %s", loginMode)
 		}
 		if err := la.authManager.SetBuiltInAuthMode(); err != nil {
 			return nil, fmt.Errorf("setting auth mode: %w", err)

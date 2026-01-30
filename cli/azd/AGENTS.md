@@ -137,6 +137,34 @@ func (a *myAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 - Comments should start with the function/type name
 - Document non-obvious dependencies or assumptions
 
+#### Environment Variables Documentation
+
+When adding or modifying environment variable usage in azd:
+
+1. **Update the documentation**: Add or update the variable in `docs/environment-variables.md`
+2. **Choose the appropriate section**: Place the variable in the correct category:
+   - **Core Azure Variables** - `AZURE_*` variables for Azure resources
+   - **Dev Center Variables** - `AZURE_DEVCENTER_*` variables
+   - **General Configuration** - User-facing configuration like `AZD_CONFIG_DIR`, `AZD_DEMO_MODE`
+   - **Alpha Features** - `AZD_ALPHA_ENABLE_*` feature flags
+   - **External Authentication** - `AZD_AUTH_*` variables
+   - **Tool Configuration** - Tool path overrides and `AZD_BUILDER_IMAGE`
+   - **Extension Variables** - `AZD_EXT_*` and extension-related variables
+   - **Telemetry & Tracing** - `AZURE_DEV_COLLECT_TELEMETRY`, `TRACEPARENT`, etc.
+   - **CI/CD Variables** - Pipeline-specific variables
+   - **Terraform Provider Variables** - `ARM_*` variables
+   - **Console & Terminal** - `NO_COLOR`, `TERM`, `BROWSER`, etc.
+   - **Debug Variables** - `AZD_DEBUG_*` variables (mark as internal use)
+   - **Test Variables** - `AZD_TEST_*` variables (mark as test-only)
+3. **Include a description**: Clearly explain what the variable does and when to use it
+4. **Note the variable type**: Mention if it's boolean, path, URL, duration, etc.
+5. **Mark internal variables**: Clearly indicate variables intended for debug/test purposes with a warning
+
+**Example**:
+```markdown
+- `AZD_CONFIG_DIR`: The file path of the user-level configuration directory. Overrides the default configuration location.
+```
+
 ### Modern Go
 
 This project uses Go 1.25. Use modern standard library features:

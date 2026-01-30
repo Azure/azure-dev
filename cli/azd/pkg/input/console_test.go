@@ -97,9 +97,7 @@ func TestAskerConsole_Spinner_NonTty(t *testing.T) {
 }
 
 func TestAskerConsoleExternalPrompt(t *testing.T) {
-	t.Skip("Need to be updated to use the new external prompt mechanism.")
-
-	newConsole := func() Console {
+	newConsole := func(externalPromptCfg *ExternalPromptConfiguration) Console {
 		return NewConsole(
 			false,
 			false,
@@ -112,7 +110,7 @@ func TestAskerConsoleExternalPrompt(t *testing.T) {
 				Stdout: os.Stdout,
 			},
 			nil,
-			nil,
+			externalPromptCfg,
 		)
 	}
 
@@ -127,10 +125,13 @@ func TestAskerConsoleExternalPrompt(t *testing.T) {
 		})
 		t.Cleanup(server.Close)
 
-		t.Setenv("AZD_UI_PROMPT_ENDPOINT", server.URL)
-		t.Setenv("AZD_UI_PROMPT_KEY", "fake-key-for-testing")
+		externalPromptCfg := &ExternalPromptConfiguration{
+			Endpoint:    server.URL,
+			Key:         "fake-key-for-testing",
+			Transporter: http.DefaultClient,
+		}
 
-		c := newConsole()
+		c := newConsole(externalPromptCfg)
 
 		res, err := c.Confirm(context.Background(), ConsoleOptions{Message: "Are you sure?", DefaultValue: true})
 		require.NoError(t, err)
@@ -147,10 +148,13 @@ func TestAskerConsoleExternalPrompt(t *testing.T) {
 		})
 		t.Cleanup(server.Close)
 
-		t.Setenv("AZD_UI_PROMPT_ENDPOINT", server.URL)
-		t.Setenv("AZD_UI_PROMPT_KEY", "fake-key-for-testing")
+		externalPromptCfg := &ExternalPromptConfiguration{
+			Endpoint:    server.URL,
+			Key:         "fake-key-for-testing",
+			Transporter: http.DefaultClient,
+		}
 
-		c := newConsole()
+		c := newConsole(externalPromptCfg)
 
 		res, err := c.Prompt(context.Background(), ConsoleOptions{Message: "What is your name?"})
 		require.NoError(t, err)
@@ -178,10 +182,13 @@ func TestAskerConsoleExternalPrompt(t *testing.T) {
 		})
 		t.Cleanup(server.Close)
 
-		t.Setenv("AZD_UI_PROMPT_ENDPOINT", server.URL)
-		t.Setenv("AZD_UI_PROMPT_KEY", "fake-key-for-testing")
+		externalPromptCfg := &ExternalPromptConfiguration{
+			Endpoint:    server.URL,
+			Key:         "fake-key-for-testing",
+			Transporter: http.DefaultClient,
+		}
 
-		c := newConsole()
+		c := newConsole(externalPromptCfg)
 
 		res, err := c.Select(
 			context.Background(),
@@ -216,10 +223,13 @@ func TestAskerConsoleExternalPrompt(t *testing.T) {
 		})
 		t.Cleanup(server.Close)
 
-		t.Setenv("AZD_UI_PROMPT_ENDPOINT", server.URL)
-		t.Setenv("AZD_UI_PROMPT_KEY", "fake-key-for-testing")
+		externalPromptCfg := &ExternalPromptConfiguration{
+			Endpoint:    server.URL,
+			Key:         "fake-key-for-testing",
+			Transporter: http.DefaultClient,
+		}
 
-		c := newConsole()
+		c := newConsole(externalPromptCfg)
 
 		res, err := c.MultiSelect(
 			context.Background(),

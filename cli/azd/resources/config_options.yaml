@@ -84,3 +84,8 @@
   description: "Override the default configuration directory location."
   type: envvar
   example: "/path/to/config"
+- key: (env) AZD_UPDATE_CHANNEL
+  description: "Choose which update channel to check for new versions. Set to 'daily' to receive notifications for daily/continuous builds, or 'stable' (default) for official releases only."
+  type: envvar
+  allowedValues: ["stable", "latest", "daily"]
+  example: "daily"

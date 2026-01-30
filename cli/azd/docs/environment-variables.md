@@ -13,6 +13,7 @@ Environment variables that can be used to configure `azd` behavior, usually set 
 - `AZD_FORCE_TTY`: If true, forces `azd` to write terminal-style output.
 - `AZD_IN_CLOUDSHELL`: If true, `azd` runs with Azure Cloud Shell specific behavior.
 - `AZD_SKIP_UPDATE_CHECK`: If true, skips the out-of-date update check output that is typically printed at the end of the command.
+- `AZD_UPDATE_CHANNEL`: Choose which update channel to check for new versions. Set to `daily` to receive notifications for daily/continuous builds, or `stable`/`latest` (default) for official releases only.
 
 For tools that are auto-acquired by `azd`, you are able to configure the following environment variables to use a different version of the tool installed on the machine:
 

@@ -10,6 +10,16 @@
 
 ### Other Changes
 
+## 1.23.3 (2026-01-30)
+
+### Features Added
+
+- [[#6633]](https://github.com/Azure/azure-dev/pull/6633) Add automatic detection of AI coding agents to enable no-prompt mode for seamless automation.
+
+### Bugs Fixed
+
+- [[#6619]](https://github.com/Azure/azure-dev/pull/6619) Fix missing configuration keys in `azd config options` output.
+
 ## 1.23.2 (2026-01-26)
 
 ### Bugs Fixed

@@ -10,6 +10,18 @@
 
 ### Other Changes
 
+## 1.23.3 (2026-01-30)
+
+### Features Added
+
+- [[#6633]](https://github.com/Azure/azure-dev/pull/6633) Add automatic detection of AI coding agents to enable no-prompt mode for seamless automation.
+- [[#6620]](https://github.com/Azure/azure-dev/pull/6620) Improve VS Code terminal IntelliSense by enabling full command tree autocomplete for azd extensions with metadata capability.
+
+### Bugs Fixed
+
+- [[#6619]](https://github.com/Azure/azure-dev/pull/6619) Fix missing configuration keys in `azd config options` output.
+- [[#6601]](https://github.com/Azure/azure-dev/pull/6601) Fix VS Code extension commands failing with undefined fsPath when using virtual file systems.
+
 ## 1.23.2 (2026-01-26)
 
 ### Bugs Fixed

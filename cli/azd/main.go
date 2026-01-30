@@ -251,7 +251,7 @@ func fetchLatestVersion(version chan<- semver.Version) {
 	// If we don't have a cached version we can use, fetch one (and cache it)
 	if cachedLatestVersion == nil {
 		log.Print("fetching latest version information for update check")
-		
+
 		// Determine which update channel to check (stable or daily)
 		updateChannel := "latest" // Default to stable channel
 		if channel, has := os.LookupEnv("AZD_UPDATE_CHANNEL"); has {
@@ -262,7 +262,7 @@ func fetchLatestVersion(version chan<- semver.Version) {
 				log.Printf("unknown update channel '%s', using stable channel", channel)
 			}
 		}
-		
+
 		versionUrl := fmt.Sprintf("https://aka.ms/azure-dev/versions/cli/%s", updateChannel)
 		req, err := http.NewRequest(http.MethodGet, versionUrl, nil)
 		if err != nil {

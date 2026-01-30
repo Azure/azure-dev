@@ -148,7 +148,7 @@ func TestCheckNamespaceConflict(t *testing.T) {
 		require.ErrorAs(t, err, &errWithSuggestion)
 		require.Contains(t, errWithSuggestion.Err.Error(), "conflicts with installed extension")
 		require.Contains(t, errWithSuggestion.Err.Error(), "existing.ext")
-		require.Contains(t, errWithSuggestion.Suggestion, "Uninstall")
+		require.Contains(t, errWithSuggestion.Suggestion, "uninstall")
 	})
 
 	t.Run("conflict with installed extension - overlapping namespace", func(t *testing.T) {

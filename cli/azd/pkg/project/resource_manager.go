@@ -135,6 +135,18 @@ func (rm *resourceManager) GetServiceResources(
 	)
 }
 
+// isHostResource checks if a resource type represents a host (deployment target).
+// Host resources are those that can receive application deployments, identified by the "host." prefix.
+func isHostResource(resourceType string) bool {
+	// Host resource types are defined as constants like "host.containerapp", "host.appservice"
+	// Check if the Azure resource type corresponds to a known host type
+	return strings.Contains(resourceType, "/sites") || // App Service, Function App
+		strings.Contains(resourceType, "/containerApps") || // Container Apps
+		strings.Contains(resourceType, "/managedClusters") || // AKS
+		strings.Contains(resourceType, "/staticSites") || // Static Web Apps
+		strings.Contains(resourceType, "/spring/") // Spring Apps
+}
+
 // GetServiceResources gets the specific azure service resource targeted by the service.
 //
 // rerunCommand specifies the command that users should rerun in case of misconfiguration.
@@ -157,7 +169,15 @@ func (rm *resourceManager) GetServiceResource(
 	}
 
 	if expandedResourceName == "" { // A tag search was performed
-		if len(resources) == 0 {
+		// Filter to only host-type resources to avoid false positives from supporting resources like managed identities
+		hostResources := make([]*azapi.ResourceExtended, 0)
+		for _, resource := range resources {
+			if isHostResource(resource.Type) {
+				hostResources = append(hostResources, resource)
+			}
+		}
+
+		if len(hostResources) == 0 {
 			err := fmt.Errorf(
 				//nolint:lll
 				"unable to find a resource tagged with '%s: %s'. Ensure the service resource is correctly tagged in your infrastructure configuration, and rerun %s",
@@ -168,16 +188,29 @@ func (rm *resourceManager) GetServiceResource(
 			return nil, azureutil.ResourceNotFound(err)
 		}
 
-		if len(resources) != 1 {
+		if len(hostResources) != 1 {
+			// Build a detailed error message listing all the duplicate host resources found
+			var resourceList strings.Builder
+			for i, resource := range hostResources {
+				if i > 0 {
+					resourceList.WriteString(", ")
+				}
+				resourceList.WriteString(fmt.Sprintf("'%s' (type: %s)", resource.Name, resource.Type))
+			}
+
 			return nil, fmt.Errorf(
 				//nolint:lll
-				"expecting only '1' resource tagged with '%s: %s', but found '%d'. Ensure a unique service resource is correctly tagged in your infrastructure configuration, and rerun %s",
+				"expecting only '1' resource tagged with '%s: %s', but found '%d' host resources: %s. Ensure a unique service resource is correctly tagged in your infrastructure configuration, and rerun %s",
 				azure.TagKeyAzdServiceName,
 				serviceConfig.Name,
-				len(resources),
+				len(hostResources),
+				resourceList.String(),
 				rerunCommand,
 			)
 		}
+
+		// Return the single host resource, even if there are non-host resources with the same tag
+		return hostResources[0], nil
 	} else { // Name based search
 		if len(resources) == 0 {
 			err := fmt.Errorf(

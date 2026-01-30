@@ -278,7 +278,7 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 		if !response {
 			return nil, fmt.Errorf(
-				"azd auth login is disabled when the auth mode is delegated. "+
+				"'azd auth login' is disabled when the auth mode is delegated. "+
 					"Use the delegated identity to authenticate instead. Current mode: %s", loginMode)
 		}
 		if err := la.authManager.SetBuiltInAuthMode(); err != nil {

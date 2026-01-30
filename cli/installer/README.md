@@ -172,38 +172,28 @@ The `daily` feed is periodically updated with builds from the latest source code
 
 #### Enabling update notifications for daily builds
 
-By default, `azd` checks for updates from the stable release channel. If you're using daily builds and want to receive update notifications for new daily builds, set the `AZD_UPDATE_CHANNEL` environment variable to `daily`:
+By default, `azd` checks for updates from the stable release channel. If you're using daily builds and want to receive update notifications for new daily builds, you can configure this using either a config setting or an environment variable.
 
-**Windows (PowerShell):**
-```powershell
-[System.Environment]::SetEnvironmentVariable('AZD_UPDATE_CHANNEL', 'daily', 'User')
-```
-
-**Linux/MacOS (bash):**
+**Using config (recommended for persistent setting):**
 ```bash
-echo 'export AZD_UPDATE_CHANNEL=daily' >> ~/.bashrc
-source ~/.bashrc
+azd config set defaults.updateChannel daily
 ```
 
-**Linux/MacOS (zsh):**
+**Using environment variable (overrides config):**
 ```bash
-echo 'export AZD_UPDATE_CHANNEL=daily' >> ~/.zshrc
-source ~/.zshrc
+export AZD_UPDATE_CHANNEL=daily
 ```
 
-To switch back to stable releases, unset the variable or set it to `stable`:
-
-**Windows (PowerShell):**
-```powershell
-[System.Environment]::SetEnvironmentVariable('AZD_UPDATE_CHANNEL', 'stable', 'User')
-```
-
-**Linux/MacOS:**
+To switch back to stable releases:
 ```bash
-export AZD_UPDATE_CHANNEL=stable
+azd config set defaults.updateChannel stable
 ```
+
+**Note:** When using daily builds, ensure you've installed azd using the install script with the `--version daily` parameter (shown below) to get the latest daily build. Update notifications will alert you when newer daily builds become available.
 
 #### Windows
+
+##### Install
 
 ##### Install
 

@@ -200,20 +200,52 @@ func fetchLatestVersion(version chan<- semver.Version) {
 
 	// Determine which update channel to check (latest/stable or daily)
 	// "latest" and "stable" both refer to official releases
+	// Priority: 1) Environment variable, 2) User config file, 3) Default to "latest"
 	updateChannel := "latest"
+
+	// First, try to read from user config file
+	configDir, err := config.GetUserConfigDir()
+	if err != nil {
+		log.Printf("could not determine config directory: %v, will use default channel", err)
+	} else {
+		configFilePath := filepath.Join(configDir, "config.json")
+		if configFile, err := os.ReadFile(configFilePath); err == nil {
+			if userConfig, err := config.Parse(configFile); err == nil {
+				if channel, ok := userConfig.GetString("defaults.updateChannel"); ok {
+					if channel == "daily" || channel == "stable" || channel == "latest" {
+						updateChannel = channel
+						log.Printf("using update channel '%s' from config file", channel)
+					} else {
+						log.Printf("unknown update channel '%s' in config file, using latest channel", channel)
+					}
+				}
+			}
+		}
+	}
+
+	// Environment variable overrides config file setting
 	if channel, has := os.LookupEnv("AZD_UPDATE_CHANNEL"); has {
 		if channel == "daily" {
 			updateChannel = "daily"
-			log.Print("using daily update channel")
-		} else if channel != "stable" && channel != "latest" {
-			log.Printf("unknown update channel '%s', using latest channel", channel)
+			log.Print("using daily update channel from environment variable")
+		} else if channel == "stable" || channel == "latest" {
+			updateChannel = channel
+			log.Printf("using %s update channel from environment variable", channel)
+		} else {
+			log.Printf("unknown update channel '%s' in environment variable, using latest channel", channel)
 		}
 	}
 
 	// To avoid fetching the latest version of the CLI on every invocation, we cache the result for a period
 	// of time, in the user's home directory. Use channel-specific cache file to avoid conflicts when
 	// switching between update channels.
-	configDir, err := config.GetUserConfigDir()
+	if err != nil {
+		log.Printf("could not determine config directory: %v, skipping update check", err)
+		return
+	}
+
+	// Re-get config dir in case we couldn't get it earlier
+	configDir, err = config.GetUserConfigDir()
 	if err != nil {
 		log.Printf("could not determine config directory: %v, skipping update check", err)
 		return

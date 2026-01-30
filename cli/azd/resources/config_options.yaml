@@ -80,12 +80,13 @@
 - key: pipeline.config.applicationServiceManagementReference
   description: "Application Service Management Reference for Azure pipeline configuration."
   type: string
+- key: defaults.updateChannel
+  description: "Choose which update channel to check for new versions. Set to 'daily' to receive notifications for daily/continuous builds, or 'stable'/'latest' (default) for official releases only. Environment variable AZD_UPDATE_CHANNEL takes precedence over this config setting."
+  type: string
+  allowedValues: ["stable", "latest", "daily"]
+  envVar: "AZD_UPDATE_CHANNEL"
+  example: "daily"
 - key: (env) AZD_CONFIG_DIR
   description: "Override the default configuration directory location."
   type: envvar
   example: "/path/to/config"
-- key: (env) AZD_UPDATE_CHANNEL
-  description: "Choose which update channel to check for new versions. Set to 'daily' to receive notifications for daily/continuous builds, or 'stable' (default) for official releases only."
-  type: envvar
-  allowedValues: ["stable", "latest", "daily"]
-  example: "daily"

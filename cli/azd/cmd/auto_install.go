@@ -255,10 +255,10 @@ func buildNamespaceArgs(foundCmd *cobra.Command, remainingArgs []string) []strin
 // and prompts for extension installation if an uninstalled extension matches.
 // Returns true if an extension was installed, false otherwise.
 //
-// This handles the scenario where an extension like "ai.finetuning" is installed (creating the "ai"
-// command group), but the user runs "azd ai agent init" where the "ai.agent" extension is not installed.
+// This handles the scenario where an extension like "ai.foo" is installed (creating the "ai"
+// command group), but the user runs "azd ai bar init" where the "ai.bar" extension is not installed.
 // Without this check, Cobra would find the "ai" command and show its help instead of prompting to install
-// the "ai.agent" extension.
+// the "ai.bar" extension.
 func tryAutoInstallForPartialNamespace(
 	ctx context.Context,
 	rootContainer *ioc.NestedContainer,

@@ -34,6 +34,7 @@ type ConcurrentDeployer struct {
 	finalSummaryMu    sync.Mutex
 	finalSummary      string
 	debug             bool
+	promptServer      *PromptServer
 }
 
 // NewConcurrentDeployer creates a new concurrent deployer
@@ -43,6 +44,7 @@ func NewConcurrentDeployer(
 	services map[string]*azdext.ServiceConfig,
 	ui *tea.Program,
 	debug bool,
+	promptServer *PromptServer,
 ) (*ConcurrentDeployer, error) {
 	// Create logs directory with unique timestamp
 	timestamp := time.Now().Format("20060102-150405")
@@ -65,6 +67,7 @@ func NewConcurrentDeployer(
 		buildGate:        newBuildGate(),
 		provision:        newProvisionState(),
 		debug:            debug,
+		promptServer:     promptServer,
 	}, nil
 }
 
@@ -122,6 +125,7 @@ func (cd *ConcurrentDeployer) runProvision() {
 	cmd.Stderr = logFile
 	cmd.Dir, _ = os.Getwd()
 	cmd.Env = append(os.Environ(), "NO_COLOR=1", "AZD_FORCE_TTY=false")
+	cmd.Env = append(cmd.Env, cd.promptServer.EnvVars()...)
 
 	err = cmd.Run()
 	if err != nil {
@@ -145,6 +149,8 @@ func (cd *ConcurrentDeployer) runProvision() {
 
 // startServiceDeployments starts all service deployment goroutines
 func (cd *ConcurrentDeployer) startServiceDeployments() {
+	promptEnvVars := cd.promptServer.EnvVars()
+
 	for serviceName, service := range cd.services {
 		cd.wg.Add(1)
 		cd.activeDeployments.Add(1)
@@ -159,6 +165,7 @@ func (cd *ConcurrentDeployer) startServiceDeployments() {
 			cd.provision,
 			cd.errChan,
 			cd.debug,
+			promptEnvVars,
 		)
 
 		go func() {
@@ -287,17 +294,18 @@ func (bg *buildGate) Wait(ctx context.Context) error {
 
 // serviceDeployer handles deployment of a single service
 type serviceDeployer struct {
-	ctx         context.Context
-	serviceName string
-	service     *azdext.ServiceConfig
-	logsDir     string
-	ui          *tea.Program
-	buildGate   *buildGate
-	provision   *provisionState
-	errChan     chan error
-	logFile     *os.File
-	logPath     string
-	debug       bool
+	ctx           context.Context
+	serviceName   string
+	service       *azdext.ServiceConfig
+	logsDir       string
+	ui            *tea.Program
+	buildGate     *buildGate
+	provision     *provisionState
+	errChan       chan error
+	logFile       *os.File
+	logPath       string
+	debug         bool
+	promptEnvVars []string
 }
 
 func newServiceDeployer(
@@ -310,17 +318,19 @@ func newServiceDeployer(
 	provision *provisionState,
 	errChan chan error,
 	debug bool,
+	promptEnvVars []string,
 ) *serviceDeployer {
 	return &serviceDeployer{
-		ctx:         ctx,
-		serviceName: serviceName,
-		service:     service,
-		logsDir:     logsDir,
-		ui:          ui,
-		buildGate:   buildGate,
-		provision:   provision,
-		errChan:     errChan,
-		debug:       debug,
+		ctx:           ctx,
+		serviceName:   serviceName,
+		service:       service,
+		logsDir:       logsDir,
+		ui:            ui,
+		buildGate:     buildGate,
+		provision:     provision,
+		errChan:       errChan,
+		debug:         debug,
+		promptEnvVars: promptEnvVars,
 	}
 }
 
@@ -425,6 +435,7 @@ func (sd *serviceDeployer) runDeployment(isFirstAspire bool) error {
 	cmd.Stderr = outputWriter
 	cmd.Dir, _ = os.Getwd()
 	cmd.Env = append(os.Environ(), "NO_COLOR=1", "AZD_FORCE_TTY=false")
+	cmd.Env = append(cmd.Env, sd.promptEnvVars...)
 
 	err := cmd.Run()
 	if isFirstAspire {

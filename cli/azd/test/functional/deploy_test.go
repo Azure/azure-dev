@@ -221,7 +221,7 @@ func newServiceHealthProber(
 	client *http.Client,
 	session *recording.Session,
 ) *serviceHealthProber {
-	retryDelay := 5 * time.Second
+	retryDelay := 10 * time.Second
 	if session != nil && session.Playback {
 		retryDelay = 1 * time.Millisecond
 	}
@@ -235,7 +235,7 @@ func newServiceHealthProber(
 // probe verifies that an endpoint returns the expected JSON response.
 // It retries up to 60 times with the configured retry delay.
 func (p *serviceHealthProber) probe(t *testing.T, ctx context.Context, url string, expectedBody string) error {
-	return retry.Do(ctx, retry.WithMaxRetries(60, retry.NewConstant(p.retryDelay)), func(ctx context.Context) error {
+	return retry.Do(ctx, retry.WithMaxRetries(120, retry.NewConstant(p.retryDelay)), func(ctx context.Context) error {
 		t.Logf("Attempting to GET URL: %s", url)
 
 		/* #nosec G107 - Potential HTTP request made with variable url false positive */

@@ -82,6 +82,23 @@ cspell lint "**/*.go" --relative --config ./.vscode/cspell.yaml --no-progress
 - **Spelling**: Add technical terms to `cli/azd/.vscode/cspell.yaml` overrides
 - **Copyright**: All Go files need the Microsoft header (handled by copyright-check.sh)
 
+### Avoiding Unrelated go.mod/go.sum Changes
+
+When running tools like CodeQL or `go mod tidy`, `go.mod` and `go.sum` files may be modified across multiple Go modules. **Only commit `go.mod`/`go.sum` changes that are relevant to the task.**
+
+- **azd core changes** (`cli/azd/` excluding `extensions/`): Only commit `cli/azd/go.mod` and `cli/azd/go.sum`. Do NOT commit any `go.mod`/`go.sum` files in `cli/azd/extensions/`.
+- **Extension changes** (`cli/azd/extensions/<extension-name>/`): Only commit `go.mod`/`go.sum` for the specific extension being modified.
+
+If unrelated `go.mod`/`go.sum` files are staged, unstage them before committing:
+
+```bash
+# Unstage all extension go.mod/go.sum files (when working on azd core)
+git restore --staged cli/azd/extensions/*/go.mod cli/azd/extensions/*/go.sum
+
+# Or selectively unstage specific extension files
+git restore --staged cli/azd/extensions/<extension-name>/go.mod cli/azd/extensions/<extension-name>/go.sum
+```
+
 ## Key Patterns
 
 ### IoC Container (Dependency Injection)

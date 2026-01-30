@@ -264,7 +264,7 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				"azd is not using the built-in authentication mode, but rather '%s'", loginMode),
 		})
 		la.console.Message(ctx, "Run az login directly instead of azd auth login when using this mode.")
-		la.console.Message(ctx, "If you are trying to switch back to use azd to authenticate, select Yes in the following prompt.")
+		la.console.Message(ctx, "To use azd to authenticate instead, select 'y' in the following prompt.")
 		la.console.Message(ctx, "")
 		response, err := la.console.Confirm(ctx, input.ConsoleOptions{
 			Message:      "Do you want to switch back to azd built-in authentication?",

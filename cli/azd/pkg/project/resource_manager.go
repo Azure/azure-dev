@@ -139,13 +139,12 @@ func (rm *resourceManager) GetServiceResources(
 // Host resources are those that can receive application deployments.
 func isHostResource(resourceType string) bool {
 	// Check if the Azure resource type corresponds to a known host type
-	// Use exact matches or specific prefixes to avoid false positives
+	// Use exact matches to avoid false positives
 	return resourceType == "Microsoft.Web/sites" || // App Service, Function App
 		resourceType == "Microsoft.App/containerApps" || // Container Apps
 		resourceType == "Microsoft.ContainerService/managedClusters" || // AKS
 		resourceType == "Microsoft.Web/staticSites" || // Static Web Apps
-		// Spring Apps (e.g., Microsoft.AppPlatform/spring/apps)
-		strings.HasPrefix(resourceType, "Microsoft.AppPlatform/spring/")
+		resourceType == "Microsoft.AppPlatform/spring/apps" // Spring Apps
 }
 
 // GetServiceResources gets the specific azure service resource targeted by the service.

@@ -987,3 +987,49 @@ func TestImportManagerGenerateAllInfrastructureSwaOnly(t *testing.T) {
 	require.NoError(t, err)
 	resourcesBicep.Close()
 }
+
+func TestImportManagerProjectInfrastructureMixedServiceTargets(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	mockEnv := &mockenv.MockEnvManager{}
+	mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
+
+	manager := NewImportManager(&DotNetImporter{
+		dotnetCli: dotnet.NewCli(mockContext.CommandRunner),
+		console:   mockContext.Console,
+		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
+			return environment.NewWithValues("env", map[string]string{}), nil
+		}),
+		lazyEnvManager: lazy.NewLazy(func() (environment.Manager, error) {
+			return mockEnv, nil
+		}),
+		hostCheck:           make(map[string]hostCheckResult),
+		alphaFeatureManager: mockContext.AlphaFeaturesManager,
+	})
+
+	// Create temp directory without infra folder
+	tempDir := t.TempDir()
+
+	// Test mixed service targets - should not use SWA importer and should use default infra
+	projectConfig := &ProjectConfig{
+		Path: tempDir,
+		Services: map[string]*ServiceConfig{
+			"frontend": {
+				Host: StaticWebAppTarget,
+			},
+			"api": {
+				Host: ContainerAppTarget,
+			},
+		},
+	}
+
+	// Should return default infra, not use SWA importer
+	infra, err := manager.ProjectInfrastructure(*mockContext.Context, projectConfig)
+	require.NoError(t, err)
+	require.NotNil(t, infra)
+
+	// Should return the default infra path (relative), not a temp directory
+	require.Equal(t, "infra", infra.Options.Path)
+
+	// Should not have a cleanup directory (no temp files created)
+	require.Empty(t, infra.cleanupDir)
+}

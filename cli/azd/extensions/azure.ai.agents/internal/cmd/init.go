@@ -243,7 +243,6 @@ func ensureProject(ctx context.Context, flags *initFlags, azdClient *azdext.AzdC
 	if err != nil {
 		fmt.Println("Lets get your project initialized.")
 
-		// Use --minimal to avoid presenting confusing init options to users
 		// Environment creation is handled separately in ensureEnvironment
 		initArgs := []string{"init", "--minimal"}
 

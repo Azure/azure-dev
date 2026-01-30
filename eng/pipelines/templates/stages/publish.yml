@@ -375,6 +375,30 @@ stages:
                       CreateGitHubRelease: false
                       PublishUploadLocations: release/daily;daily/archive/$(Build.BuildId)-$(Build.SourceVersion)
 
+                  # Upload version.txt for daily builds to enable update notifications
+                  - pwsh: |
+                      New-Item -ItemType Directory -Path daily-version -Force
+                      Write-Output $(CLI_VERSION) | Out-File -Encoding utf8 -FilePath ./daily-version/version.txt
+                    displayName: Write version.txt file for daily builds
+
+                  - task: AzurePowerShell@5
+                    displayName: Upload version.txt to daily channel
+                    inputs:
+                      azureSubscription: 'Azure SDK Artifacts'
+                      azurePowerShellVersion: LatestVersion
+                      pwsh: true
+                      ScriptType: InlineScript
+                      Inline: |
+                        Get-ChildItem daily-version/
+                        Write-Host "Upload to azd/standalone/release/daily"
+                        azcopy copy "daily-version/*" "$(publish-storage-location)/`$web/azd/standalone/release/daily" --overwrite=true
+                        if ($LASTEXITCODE) {
+                          Write-Error "Upload failed"
+                          exit 1
+                        }
+                    env:
+                      AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'
+
       - deployment: Publish_For_PR
         environment: none
         condition: >-

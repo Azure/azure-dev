@@ -243,10 +243,8 @@ func ensureProject(ctx context.Context, flags *initFlags, azdClient *azdext.AzdC
 	if err != nil {
 		fmt.Println("Lets get your project initialized.")
 
-		initArgs := []string{"init"}
-		if flags.env != "" {
-			initArgs = append(initArgs, "-e", flags.env)
-		}
+		// Environment creation is handled separately in ensureEnvironment
+		initArgs := []string{"init", "--minimal"}
 
 		// We don't have a project yet
 		// Dispatch a workflow to init the project

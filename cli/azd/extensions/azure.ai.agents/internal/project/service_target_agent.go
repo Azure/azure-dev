@@ -97,13 +97,14 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 	}
 	p.tenantId = tenantResponse.TenantId
 
-	// Create Azure credential
-	cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
-		TenantID:                   p.tenantId,
-		AdditionallyAllowedTenants: []string{"*"},
+	// Create and validate Azure credential
+	cred, err := azure.NewCredential(ctx, azure.CredentialOptions{
+		TenantID:       p.tenantId,
+		SubscriptionID: subscriptionId,
+		Scope:          azure.ScopeAIFoundry,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create Azure credential: %w", err)
+		return err
 	}
 	p.credential = cred
 

@@ -115,12 +115,12 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 				return fmt.Errorf("failed to ground into a project context: %w", err)
 			}
 
-			credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
-				TenantID:                   azureContext.Scope.TenantId,
-				AdditionallyAllowedTenants: []string{"*"},
+			credential, err := azure.NewCredential(ctx, azure.CredentialOptions{
+				TenantID:       azureContext.Scope.TenantId,
+				SubscriptionID: azureContext.Scope.SubscriptionId,
 			})
 			if err != nil {
-				return fmt.Errorf("failed to create azure credential: %w", err)
+				return err
 			}
 
 			console := input.NewConsole(
@@ -316,12 +316,12 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 			return nil, fmt.Errorf("failed to get tenant ID: %w", err)
 		}
 
-		credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
-			TenantID:                   tenantResponse.TenantId,
-			AdditionallyAllowedTenants: []string{"*"},
+		credential, err := azure.NewCredential(ctx, azure.CredentialOptions{
+			TenantID:       tenantResponse.TenantId,
+			SubscriptionID: foundryProject.SubscriptionId,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to create Azure credential: %w", err)
+			return nil, err
 		}
 
 		// Create Cognitive Services Projects client

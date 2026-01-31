@@ -16,6 +16,7 @@ import (
 )
 
 type JsonFormatter struct {
+	Query string
 }
 
 func (f *JsonFormatter) Kind() Format {
@@ -23,7 +24,17 @@ func (f *JsonFormatter) Kind() Format {
 }
 
 func (f *JsonFormatter) Format(obj interface{}, writer io.Writer, _ interface{}) error {
-	b, err := json.MarshalIndent(obj, "", "  ")
+	// Apply JMESPath query if specified
+	data := obj
+	if f.Query != "" {
+		var err error
+		data, err = ApplyQuery(obj, f.Query)
+		if err != nil {
+			return err
+		}
+	}
+
+	b, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
 		return err
 	}

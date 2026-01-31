@@ -35,8 +35,10 @@ func Load() (*template.Template, error) {
 		"formatParam":      FormatParameter,
 		"hasACA":           HasACA,
 		"hasAppService":    HasAppService,
+		"hasStaticWebApp":  HasStaticWebApp,
 		"isACA":            IsACA,
 		"isAppService":     IsAppService,
+		"isStaticWebApp":   IsStaticWebApp,
 	}
 
 	t, err := template.New("templates").

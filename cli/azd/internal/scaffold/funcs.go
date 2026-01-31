@@ -226,12 +226,20 @@ func HasAppService(services []ServiceSpec) bool {
 	return hasHostType(services, AppServiceKind)
 }
 
+func HasStaticWebApp(services []ServiceSpec) bool {
+	return hasHostType(services, StaticWebAppKind)
+}
+
 func IsACA(host HostKind) bool {
 	return host == ContainerAppKind
 }
 
 func IsAppService(host HostKind) bool {
 	return host == AppServiceKind
+}
+
+func IsStaticWebApp(host HostKind) bool {
+	return host == StaticWebAppKind
 }
 
 func hasHostType(services []ServiceSpec, host HostKind) bool {

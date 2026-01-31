@@ -897,6 +897,20 @@ module {{bicepName .Name}} 'br/public:avm/res/web/site:0.15.1' = {
 }
 {{- end}}
 
+{{- if isStaticWebApp .Host}}
+module {{bicepName .Name}} 'br/public:avm/res/web/static-site:0.6.0' = {
+  name: 'staticWebAppDeployment-{{bicepName .Name}}'
+  params: {
+    name: '${abbrs.webStaticSites}{{.Name}}-${resourceToken}'
+    location: location
+    tags: union(tags, { 'azd-service-name': '{{.Name}}' })
+    sku: 'Standard'
+    stagingEnvironmentPolicy: 'Enabled'
+    allowConfigFileUpdates: true
+  }
+}
+{{- end}}
+
 {{- if .AiFoundryProject}}
 
 resource {{bicepName .Name}}backendRoleAzureAIDeveloperRG 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {

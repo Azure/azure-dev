@@ -139,12 +139,12 @@ func (rm *resourceManager) GetServiceResources(
 // Host resources are those that can receive application deployments.
 func isHostResource(resourceType string) bool {
 	// Check if the Azure resource type corresponds to a known host type
-	// Use exact matches to avoid false positives
-	return resourceType == "Microsoft.Web/sites" || // App Service, Function App
-		resourceType == "Microsoft.App/containerApps" || // Container Apps
-		resourceType == "Microsoft.ContainerService/managedClusters" || // AKS
-		resourceType == "Microsoft.Web/staticSites" || // Static Web Apps
-		resourceType == "Microsoft.AppPlatform/spring/apps" // Spring Apps
+	// Use case-insensitive comparison to handle variations in Azure API responses
+	return strings.EqualFold(resourceType, string(azapi.AzureResourceTypeWebSite)) || // App Service, Function App
+		strings.EqualFold(resourceType, string(azapi.AzureResourceTypeContainerApp)) || // Container Apps
+		strings.EqualFold(resourceType, string(azapi.AzureResourceTypeManagedCluster)) || // AKS
+		strings.EqualFold(resourceType, string(azapi.AzureResourceTypeStaticWebSite)) || // Static Web Apps
+		strings.EqualFold(resourceType, string(azapi.AzureResourceTypeMachineLearningEndpoint)) // AI Endpoint
 }
 
 // GetServiceResources gets the specific azure service resource targeted by the service.

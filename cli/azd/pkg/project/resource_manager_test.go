@@ -304,7 +304,10 @@ func Test_isHostResource(t *testing.T) {
 		{"Microsoft.Web/sites", true},
 		{"Microsoft.ContainerService/managedClusters", true},
 		{"Microsoft.Web/staticSites", true},
-		{"Microsoft.AppPlatform/spring/apps", true},
+		{"Microsoft.MachineLearningServices/workspaces/onlineEndpoints", true},
+		// Test case-insensitive matching
+		{"microsoft.web/sites", true},
+		{"MICROSOFT.APP/CONTAINERAPPS", true},
 		{"Microsoft.ManagedIdentity/userAssignedIdentities", false},
 		{"Microsoft.Storage/storageAccounts", false},
 		{"Microsoft.KeyVault/vaults", false},

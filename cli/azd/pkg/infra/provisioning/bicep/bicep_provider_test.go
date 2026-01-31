@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -102,6 +104,135 @@ func TestBicepPlanParameterTypes(t *testing.T) {
 	require.Equal(t, configuredParameters["regularArray"].Value, []any{"test"})
 	require.NotEmpty(t, configuredParameters["emptyArray"])
 	require.Equal(t, configuredParameters["emptyArray"].Value, []any{})
+}
+
+// TestBicepPlanParameterTypesFromEnvVars tests that JSON array and object values
+// from environment variables are correctly parsed and converted to the appropriate types
+func TestBicepPlanParameterTypesFromEnvVars(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	prepareBicepMocks(mockContext)
+
+	// Create a test environment with JSON values
+	env := environment.NewWithValues("test-env", map[string]string{
+		environment.LocationEnvVarName:       "westus2",
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+		environment.EnvNameEnvVarName:        "test-env",
+		// JSON array value - as it would be stored in .env after godotenv roundtrip
+		"TEST_ARRAY": `["item1", "item2", "item3"]`,
+		// JSON object value - as it would be stored in .env after godotenv roundtrip
+		"TEST_OBJECT": `{"name": "test", "count": 42, "nested": {"key": "value"}}`,
+		// Regular string for comparison
+		"TEST_STRING": "simple-string",
+	})
+
+	// Create temporary directory for test
+	testDir := t.TempDir()
+	projectDir := filepath.Join(testDir, "project")
+	err := os.MkdirAll(filepath.Join(projectDir, "infra"), 0755)
+	require.NoError(t, err)
+
+	// Create parameters.json that uses environment variables
+	paramsContent := `{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "testArray": {
+      "value": "${TEST_ARRAY}"
+    }
+  }
+}`
+	err = os.WriteFile(filepath.Join(projectDir, "infra", "main.parameters.json"), []byte(paramsContent), 0600)
+	require.NoError(t, err)
+
+	// Create a minimal bicep file
+	bicepContent := `param testArray array
+
+output arrayOutput array = testArray
+`
+	err = os.WriteFile(filepath.Join(projectDir, "infra", "main.bicep"), []byte(bicepContent), 0600)
+	require.NoError(t, err)
+
+	options := provisioning.Options{
+		Path:   filepath.Join(projectDir, "infra"),
+		Module: "main",
+	}
+
+	envManager := &mockenv.MockEnvManager{}
+	envManager.On("Save", mock.Anything, mock.Anything).Return(nil)
+	envManager.On("Reload", mock.Anything, mock.Anything).Return(nil)
+
+	bicepCli := bicep.NewCli(mockContext.Console, mockContext.CommandRunner)
+	azCli := mockazapi.NewAzureClientFromMockContext(mockContext)
+	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
+	deploymentService := mockazapi.NewStandardDeploymentsFromMockContext(mockContext)
+	resourceManager := infra.NewAzureResourceManager(resourceService, deploymentService)
+	deploymentManager := infra.NewDeploymentManager(deploymentService, resourceManager, mockContext.Console)
+	accountManager := &mockaccount.MockAccountManager{
+		Subscriptions: []account.Subscription{
+			{
+				Id:   "00000000-0000-0000-0000-000000000000",
+				Name: "test",
+			},
+		},
+		Locations: []account.Location{
+			{
+				Name:                "location",
+				DisplayName:         "Test Location",
+				RegionalDisplayName: "(US) Test Location",
+			},
+		},
+	}
+
+	provider := NewBicepProvider(
+		azCli,
+		bicepCli,
+		resourceService,
+		&mockResourceManager{},
+		deploymentManager,
+		envManager,
+		env,
+		mockContext.Console,
+		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, resourceService, cloud.AzurePublic()),
+		&mockCurrentPrincipal{},
+		keyvault.NewKeyVaultService(
+			mockaccount.SubscriptionCredentialProviderFunc(
+				func(_ context.Context, _ string) (azcore.TokenCredential, error) {
+					return mockContext.Credentials, nil
+				}),
+			mockContext.ArmClientOptions,
+			mockContext.CoreClientOptions,
+			cloud.AzurePublic(),
+		),
+		cloud.AzurePublic(),
+		nil,
+	)
+
+	// Set the path and options
+	provider.(*BicepProvider).path = filepath.Join(projectDir, "infra", "main.bicep")
+	provider.(*BicepProvider).options = options
+
+	// Load parameters
+	result, err := provider.(*BicepProvider).loadParameters(*mockContext.Context)
+	require.NoError(t, err, "loadParameters should succeed")
+
+	// Verify the array parameter was correctly loaded
+	arrayParam, exists := result.parameters["testArray"]
+	require.True(t, exists, "testArray parameter should exist")
+	require.NotNil(t, arrayParam.Value, "testArray value should not be nil")
+
+	// The value should be a string representation of the JSON array
+	arrayValueStr, ok := arrayParam.Value.(string)
+	require.True(t, ok, "testArray value should be a string, got %T", arrayParam.Value)
+	require.Equal(t, `["item1", "item2", "item3"]`, arrayValueStr)
+
+	// Verify that armParameterFileValue can convert it to an actual array
+	convertedValue := armParameterFileValue(provisioning.ParameterTypeArray, arrayValueStr, nil)
+	arrayValue, ok := convertedValue.([]interface{})
+	require.True(t, ok, "converted value should be an array, got %T", convertedValue)
+	require.Equal(t, 3, len(arrayValue), "array should have 3 elements")
+	require.Equal(t, "item1", arrayValue[0])
+	require.Equal(t, "item2", arrayValue[1])
+	require.Equal(t, "item3", arrayValue[2])
 }
 
 const paramsArmJson = `{
@@ -1309,6 +1440,109 @@ func Test_armParameterFileValue(t *testing.T) {
 		expected := []string{"a", "b", "c"}
 		actual := armParameterFileValue(provisioning.ParameterTypeArray, expected, nil)
 		require.Equal(t, expected, actual)
+	})
+
+	t.Run("ArrayFromJsonString", func(t *testing.T) {
+		// This tests the case where an array is passed as a JSON string from an environment variable
+		// e.g., MY_ARRAY=["val1","val2"] in .env file, used as "value": "${MY_ARRAY}" in parameters.json
+		input := `["val1","val2","val3"]`
+		actual := armParameterFileValue(provisioning.ParameterTypeArray, input, nil)
+		expected := []any{"val1", "val2", "val3"}
+		require.Equal(t, expected, actual)
+	})
+
+	t.Run("ArrayFromJsonStringWithNumbers", func(t *testing.T) {
+		input := `[1, 2, 3]`
+		actual := armParameterFileValue(provisioning.ParameterTypeArray, input, nil)
+		expected := []any{float64(1), float64(2), float64(3)}
+		require.Equal(t, expected, actual)
+	})
+
+	t.Run("ArrayFromInvalidJsonString", func(t *testing.T) {
+		// Invalid JSON should return nil, which triggers prompting for a value.
+		input := `not a valid json array`
+		actual := armParameterFileValue(provisioning.ParameterTypeArray, input, nil)
+		require.Nil(t, actual)
+	})
+
+	t.Run("Object", func(t *testing.T) {
+		expected := map[string]any{"key": "value"}
+		actual := armParameterFileValue(provisioning.ParameterTypeObject, expected, nil)
+		require.Equal(t, expected, actual)
+	})
+
+	t.Run("ObjectFromJsonString", func(t *testing.T) {
+		// This tests the case where an object is passed as a JSON string from an environment variable
+		input := `{"key1":"value1","key2":"value2"}`
+		actual := armParameterFileValue(provisioning.ParameterTypeObject, input, nil)
+		expected := map[string]any{"key1": "value1", "key2": "value2"}
+		require.Equal(t, expected, actual)
+	})
+
+	t.Run("ObjectFromJsonStringWithNestedValues", func(t *testing.T) {
+		input := `{"outer":{"inner":"value"},"number":42}`
+		actual := armParameterFileValue(provisioning.ParameterTypeObject, input, nil)
+		expected := map[string]any{
+			"outer":  map[string]any{"inner": "value"},
+			"number": float64(42),
+		}
+		require.Equal(t, expected, actual)
+	})
+
+	t.Run("ObjectFromInvalidJsonString", func(t *testing.T) {
+		// Invalid JSON should return nil, which triggers prompting for a value.
+		input := `not a valid json object`
+		actual := armParameterFileValue(provisioning.ParameterTypeObject, input, nil)
+		require.Nil(t, actual)
+	})
+}
+
+func Test_extractValueFromMalformedJSON(t *testing.T) {
+	t.Run("ArrayValue", func(t *testing.T) {
+		input := `{"value":"["item1","item2","item3"]"}`
+		value, err := extractValueFromMalformedJSON(input)
+		require.NoError(t, err)
+		require.Equal(t, `["item1","item2","item3"]`, value)
+
+		// Verify it's valid JSON
+		var arr []interface{}
+		err = json.Unmarshal([]byte(value), &arr)
+		require.NoError(t, err)
+		require.Equal(t, 3, len(arr))
+	})
+
+	t.Run("ObjectValue", func(t *testing.T) {
+		input := `{"value":"{"name":"test","count":42}"}`
+		value, err := extractValueFromMalformedJSON(input)
+		require.NoError(t, err)
+		require.Equal(t, `{"name":"test","count":42}`, value)
+
+		// Verify it's valid JSON
+		var obj map[string]interface{}
+		err = json.Unmarshal([]byte(value), &obj)
+		require.NoError(t, err)
+		require.Equal(t, "test", obj["name"])
+	})
+
+	t.Run("StringValue", func(t *testing.T) {
+		input := `{"value":"simple-string"}`
+		value, err := extractValueFromMalformedJSON(input)
+		require.NoError(t, err)
+		require.Equal(t, "simple-string", value)
+	})
+
+	t.Run("ArrayWithReferenceField", func(t *testing.T) {
+		// This is what actually gets produced when marshalling ArmParameter
+		input := `{"value":"["item1","item2"]","reference":null}`
+		value, err := extractValueFromMalformedJSON(input)
+		require.NoError(t, err)
+		require.Equal(t, `["item1","item2"]`, value)
+
+		// Verify it's valid JSON
+		var arr []interface{}
+		err = json.Unmarshal([]byte(value), &arr)
+		require.NoError(t, err)
+		require.Equal(t, 2, len(arr))
 	})
 }
 

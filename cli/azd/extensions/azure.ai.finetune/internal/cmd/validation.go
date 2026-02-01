@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -14,6 +15,36 @@ import (
 
 	"azure.ai.finetune/internal/utils"
 )
+
+// sanitizeEnvironmentName converts a project name to a valid azd environment name.
+// azd environment names must contain only lowercase letters, numbers, and hyphens,
+// and must start and end with a letter or number.
+func sanitizeEnvironmentName(name string) string {
+	// Convert to lowercase
+	result := strings.ToLower(name)
+
+	// Replace spaces, underscores, and other common separators with hyphens
+	result = strings.ReplaceAll(result, " ", "-")
+	result = strings.ReplaceAll(result, "_", "-")
+
+	// Remove any characters that aren't lowercase letters, numbers, or hyphens
+	re := regexp.MustCompile(`[^a-z0-9-]`)
+	result = re.ReplaceAllString(result, "")
+
+	// Replace multiple consecutive hyphens with a single hyphen
+	re = regexp.MustCompile(`-+`)
+	result = re.ReplaceAllString(result, "-")
+
+	// Trim leading and trailing hyphens (must start/end with letter or number)
+	result = strings.Trim(result, "-")
+
+	// If empty after sanitization, use a default name
+	if result == "" {
+		result = "finetuning-env"
+	}
+
+	return result
+}
 
 // Common hints for required flags
 const (
@@ -138,8 +169,8 @@ func validateOrInitEnvironment(ctx context.Context, subscriptionId, projectEndpo
 	}
 
 	// Environment not configured - check if we have flags for implicit init
-	if projectEndpoint == "" {
-		return fmt.Errorf("required environment variables not set. Either run 'azd ai finetuning init' or provide --subscription (-s) and --project-endpoint (-e) flags")
+	if projectEndpoint == "" || subscriptionId == "" {
+		return fmt.Errorf("required environment variables not set. Either run 'azd ai finetuning init' or provide both --subscription (-s) and --project-endpoint (-e) flags")
 	}
 
 	// Perform implicit initialization
@@ -151,10 +182,14 @@ func validateOrInitEnvironment(ctx context.Context, subscriptionId, projectEndpo
 		return fmt.Errorf("failed to parse project endpoint: %w", err)
 	}
 
+	// Sanitize project name for use as azd environment name
+	// (must be lowercase letters, numbers, hyphens, and start/end with letter or number)
+	envName := sanitizeEnvironmentName(projectName)
+
 	initFlags := &initFlags{
 		subscriptionId:  subscriptionId,
 		projectEndpoint: projectEndpoint,
-		env:             projectName, // Use project name as default environment name
+		env:             envName,
 	}
 	initFlags.NoPrompt = true // Run in non-interactive mode
 

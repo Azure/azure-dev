@@ -417,6 +417,11 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 			envArgs = append(envArgs, "--location", foundryProject.Location)
 		}
 
+		// Add --no-prompt flag if non-interactive mode is requested
+		if flags.NoPrompt {
+			envArgs = append(envArgs, "--no-prompt")
+		}
+
 		// Dispatch a workflow to create a new environment
 		// Handles both interactive and no-prompt flows
 		workflow := &azdext.Workflow{
@@ -509,7 +514,10 @@ func ensureProject(ctx context.Context, flags *initFlags, azdClient *azdext.AzdC
 		// Environment creation is handled separately in ensureEnvironment
 		initArgs := []string{"init", "--minimal"}
 
-		// We don't have a project yet
+		// Add --no-prompt flag if non-interactive mode is requested
+		if flags.NoPrompt {
+			initArgs = append(initArgs, "--no-prompt")
+		}
 		// Dispatch a workflow to init the project
 		workflow := &azdext.Workflow{
 			Name: "init",

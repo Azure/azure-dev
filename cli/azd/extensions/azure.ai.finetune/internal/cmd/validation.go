@@ -105,7 +105,9 @@ func validateSubmitFlags(file, model, trainingFile string) error {
 	return nil
 }
 
-func validateEnvironment(ctx context.Context) error {
+// validateOrInitEnvironment checks if environment is configured, and if not, attempts implicit initialization
+// using the provided subscription ID and project endpoint flags.
+func validateOrInitEnvironment(ctx context.Context, subscriptionId, projectEndpoint string) error {
 	ctx = azdext.WithAccessToken(ctx)
 
 	azdClient, err := azdext.NewAzdClient()
@@ -117,10 +119,56 @@ func validateEnvironment(ctx context.Context) error {
 	envValues, _ := utils.GetEnvironmentValues(ctx, azdClient)
 	required := []string{utils.EnvAzureTenantID, utils.EnvAzureSubscriptionID, utils.EnvAzureLocation, utils.EnvAzureAccountName}
 
+	// Check if environment is already configured
+	allConfigured := true
 	for _, varName := range required {
 		if envValues[varName] == "" {
-			return fmt.Errorf("required environment variables not set. Please run 'azd ai finetuning init' command to configure your environment")
+			allConfigured = false
+			break
 		}
 	}
+
+	if allConfigured {
+		// Warn user if they provided flags that will be ignored
+		if subscriptionId != "" || projectEndpoint != "" {
+			color.Yellow("Warning: Environment is already configured. The --subscription and --project-endpoint flags are being ignored.")
+			color.Yellow("To reconfigure, run 'azd ai finetuning init' with the new values.\n")
+		}
+		return nil
+	}
+
+	// Environment not configured - check if we have flags for implicit init
+	if projectEndpoint == "" {
+		return fmt.Errorf("required environment variables not set. Either run 'azd ai finetuning init' or provide --subscription (-s) and --project-endpoint (-e) flags")
+	}
+
+	// Perform implicit initialization
+	fmt.Println("Environment not configured. Running implicit initialization...")
+
+	// Extract project name from endpoint to use as default environment name
+	_, projectName, err := parseProjectEndpoint(projectEndpoint)
+	if err != nil {
+		return fmt.Errorf("failed to parse project endpoint: %w", err)
+	}
+
+	initFlags := &initFlags{
+		subscriptionId:  subscriptionId,
+		projectEndpoint: projectEndpoint,
+		env:             projectName, // Use project name as default environment name
+	}
+	initFlags.NoPrompt = true // Run in non-interactive mode
+
+	// Ensure project exists first (required before creating environment)
+	_, err = ensureProject(ctx, initFlags, azdClient)
+	if err != nil {
+		return fmt.Errorf("implicit initialization failed: %w", err)
+	}
+
+	_, err = ensureEnvironment(ctx, initFlags, azdClient)
+	if err != nil {
+		return fmt.Errorf("implicit initialization failed: %w", err)
+	}
+
+	fmt.Println("Environment configured successfully.")
 	return nil
 }

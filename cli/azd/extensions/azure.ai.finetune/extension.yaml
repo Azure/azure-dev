@@ -3,7 +3,7 @@ namespace: ai.finetuning
 displayName: Foundry Fine Tuning (Preview)
 description: Extension for Foundry Fine Tuning. (Preview)
 usage: azd ai finetuning <command> [options]
-version: 0.0.14-preview
+version: 0.0.15-preview
 language: go
 capabilities:
     - custom-commands

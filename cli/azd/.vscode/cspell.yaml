@@ -1,5 +1,6 @@
 import: ../../../.vscode/cspell.global.yaml
 words:
+  - agentdetect
   - azcloud
   - azdext
   - azurefd
@@ -20,23 +21,30 @@ words:
   # CDN host name
   - gfgac2cmf7b8cuay
   - goversioninfo
+  - OPENCODE
+  - opencode
   - grpcbroker
   - nosec
   - oneof
   - idxs
   # Looks like the protogen has a spelling error for panics
   - pancis
+  - Paren
   - pkgux
+  - ppid
+  - PPID
   - proto
   - protobuf
   - protoc
   - protoimpl
   - protojson
   - protoreflect
+  - SNAPPROCESS
   - structpb
   - Retryable
   - runcontext
   - surveyterm
+  - Toolhelp
   - unmarshals
   - unmarshaling
   - unsetting
@@ -52,6 +60,7 @@ words:
   - bubbletea
   - lipgloss
   - gopxl
+  - subcmd
 languageSettings:
   - languageId: go
     ignoreRegExpList:
@@ -303,6 +312,9 @@ overrides:
   - filename: extensions/microsoft.azd.demo/internal/cmd/metadata.go
     words:
       - invopop
+  - filename: extensions/microsoft.azd.concurx/internal/cmd/prompt_model.go
+    words:
+      - textinput
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

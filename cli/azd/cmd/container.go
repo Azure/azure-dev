@@ -135,11 +135,24 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		isTerminal := cmd.OutOrStdout() == os.Stdout &&
 			cmd.InOrStdin() == os.Stdin && terminal.IsTerminal(os.Stdout.Fd(), os.Stdin.Fd())
 
+		// Check for external prompt configuration from environment variables
+		var externalPromptCfg *input.ExternalPromptConfiguration
+		if endpoint := os.Getenv("AZD_UI_PROMPT_ENDPOINT"); endpoint != "" {
+			if key := os.Getenv("AZD_UI_PROMPT_KEY"); key != "" {
+				externalPromptCfg = &input.ExternalPromptConfiguration{
+					Endpoint:       endpoint,
+					Key:            key,
+					Transporter:    http.DefaultClient,
+					NoPromptDialog: os.Getenv("AZD_UI_NO_PROMPT_DIALOG") != "",
+				}
+			}
+		}
+
 		return input.NewConsole(rootOptions.NoPrompt, isTerminal, input.Writers{Output: writer}, input.ConsoleHandles{
 			Stdin:  cmd.InOrStdin(),
 			Stdout: cmd.OutOrStdout(),
 			Stderr: cmd.ErrOrStderr(),
-		}, formatter, nil)
+		}, formatter, externalPromptCfg)
 	})
 
 	container.MustRegisterSingleton(

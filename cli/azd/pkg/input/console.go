@@ -153,6 +153,8 @@ type AskerConsole struct {
 	noPrompt   bool
 	// when non nil, use this client instead of prompting ourselves on the console.
 	promptClient *externalPromptClient
+	// noPromptDialog when true, disables SupportsPromptDialog() even when promptClient is set.
+	noPromptDialog bool
 
 	showProgressMu sync.Mutex // ensures atomicity when swapping the current progress renderer (spinner or previewer)
 
@@ -533,7 +535,7 @@ func promptFromOptions(options ConsoleOptions) survey.Prompt {
 const afterIoSentinel = "0\n"
 
 func (c *AskerConsole) SupportsPromptDialog() bool {
-	return c.promptClient != nil
+	return c.promptClient != nil && !c.noPromptDialog
 }
 
 // PromptDialog prompts for multiple values using a single dialog. When successful, it returns a map of prompt IDs to their
@@ -965,6 +967,11 @@ type ExternalPromptConfiguration struct {
 	Endpoint    string
 	Key         string
 	Transporter policy.Transporter
+	// NoPromptDialog when true, disables the prompt dialog feature even when external prompting is enabled.
+	// This causes each prompt to be sent individually through the external prompt API, which is useful
+	// for clients that don't support the dialog API but still want location prompts to include the full
+	// list of available locations.
+	NoPromptDialog bool
 }
 
 // Creates a new console with the specified writers, handles and formatter. When externalPromptCfg is non nil, it is used
@@ -996,6 +1003,7 @@ func NewConsole(
 	if externalPromptCfg != nil {
 		c.promptClient = newExternalPromptClient(
 			externalPromptCfg.Endpoint, externalPromptCfg.Key, externalPromptCfg.Transporter)
+		c.noPromptDialog = externalPromptCfg.NoPromptDialog
 	}
 
 	spinnerConfig := yacspin.Config{

@@ -29,6 +29,9 @@ const (
 
 	// FigGenListInstalledExtensions generates suggestions from installed extensions only
 	FigGenListInstalledExtensions = "azdGenerators.listInstalledExtensions"
+
+	// FigGenListConfigKeys generates suggestions from available azd config keys
+	FigGenListConfigKeys = "azdGenerators.listConfigKeys"
 )
 
 //go:embed resources/generators.ts

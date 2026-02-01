@@ -1,0 +1,8 @@
+name: webapp-slots
+metadata:
+  template: azd-test/webapp-slots@v1
+services:
+  api:
+    project: src
+    host: appservice
+    language: python

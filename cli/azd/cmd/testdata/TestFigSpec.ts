@@ -1987,6 +1987,39 @@ const completionSpec: Fig.Spec = {
 			},
 		},
 		{
+			name: ['service-tasks'],
+			description: 'Manage service tasks.',
+			options: [
+				{
+					name: ['--environment', '-e'],
+					description: 'The name of the environment to use.',
+					args: [
+						{
+							name: 'environment',
+						},
+					],
+				},
+				{
+					name: ['--service'],
+					description: 'The name of the service to run the task on.',
+					args: [
+						{
+							name: 'service',
+						},
+					],
+				},
+				{
+					name: ['--task'],
+					description: 'The task to run on the service. Supports task arguments separated by semicolon (e.g., \'swap;src=staging;dst=production\').',
+					args: [
+						{
+							name: 'task',
+						},
+					],
+				},
+			],
+		},
+		{
 			name: ['show'],
 			description: 'Display information about your project and its resources.',
 			options: [
@@ -2778,6 +2811,10 @@ const completionSpec: Fig.Spec = {
 				{
 					name: ['restore'],
 					description: 'Restores the project\'s dependencies.',
+				},
+				{
+					name: ['service-tasks'],
+					description: 'Manage service tasks.',
 				},
 				{
 					name: ['show'],

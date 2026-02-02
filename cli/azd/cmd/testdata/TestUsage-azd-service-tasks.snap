@@ -1,0 +1,21 @@
+
+Manage service tasks.
+
+Usage
+  azd service-tasks [flags]
+
+Flags
+    -e, --environment string 	: The name of the environment to use.
+        --service string     	: The name of the service to run the task on.
+        --task string        	: The task to run on the service. Supports task arguments separated by semicolon (e.g., 'swap;src=staging;dst=production').
+
+Global Flags
+    -C, --cwd string 	: Sets the current working directory.
+        --debug      	: Enables debugging and diagnostics logging.
+        --docs       	: Opens the documentation for azd service-tasks in your web browser.
+    -h, --help       	: Gets help for service-tasks.
+        --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
+
+Find a bug? Want to let us know how we're doing? Fill out this brief survey: https://aka.ms/azure-dev/hats.
+
+

@@ -22,14 +22,27 @@ import (
 	"azure.ai.finetune/pkg/models"
 )
 
+// jobsFlags holds the common flags for all jobs subcommands
+type jobsFlags struct {
+	subscriptionId  string
+	projectEndpoint string
+}
+
 func newOperationCommand() *cobra.Command {
+	flags := &jobsFlags{}
+
 	cmd := &cobra.Command{
 		Use: "jobs",
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
-			return validateEnvironment(cmd.Context())
+			return validateOrInitEnvironment(cmd.Context(), flags.subscriptionId, flags.projectEndpoint)
 		},
 		Short: "Manage fine-tuning jobs",
 	}
+
+	cmd.PersistentFlags().StringVarP(&flags.subscriptionId, "subscription", "s", "",
+		"Azure subscription ID (enables implicit init if environment not configured)")
+	cmd.PersistentFlags().StringVarP(&flags.projectEndpoint, "project-endpoint", "e", "",
+		"Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)")
 
 	cmd.AddCommand(newOperationSubmitCommand())
 	cmd.AddCommand(newOperationShowCommand())
@@ -147,7 +160,7 @@ func newOperationSubmitCommand() *cobra.Command {
 	cmd.Flags().StringVarP(&model, "model", "m", "", "Base model to fine-tune. Overrides config file. Required if --file is not provided")
 	cmd.Flags().StringVarP(&trainingFile, "training-file", "t", "", "Training file ID or local path. Use 'local:' prefix for local paths. Required if --file is not provided")
 	cmd.Flags().StringVarP(&validationFile, "validation-file", "v", "", "Validation file ID or local path. Use 'local:' prefix for local paths.")
-	cmd.Flags().StringVarP(&suffix, "suffix", "s", "", "An optional string of up to 64 characters that will be added to your fine-tuned model name. Overrides config file.")
+	cmd.Flags().StringVarP(&suffix, "suffix", "x", "", "An optional string of up to 64 characters that will be added to your fine-tuned model name. Overrides config file.")
 	cmd.Flags().Int64VarP(&seed, "seed", "r", 0, "Random seed for reproducibility of the job. If a seed is not specified, one will be generated for you. Overrides config file.")
 
 	//Either config file should be provided or at least `model` & `training-file` parameters

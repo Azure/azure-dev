@@ -69,7 +69,7 @@ func TestNewOperationSubmitCommand_Flags(t *testing.T) {
 		{"model", "m"},
 		{"training-file", "t"},
 		{"validation-file", "v"},
-		{"suffix", "s"},
+		{"suffix", "x"},
 		{"seed", "r"},
 	}
 

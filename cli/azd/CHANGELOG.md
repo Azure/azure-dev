@@ -1,14 +1,19 @@
 # Release History
 
-## 1.24.0-beta.1 (Unreleased)
+## 1.24.0 (2026-02-02)
 
 ### Features Added
 
-### Breaking Changes
+- [[#6627]](https://github.com/Azure/azure-dev/pull/6627) Add App Service deployment slot support with intelligent deployment routing based on deployment history.
+- [[#6605]](https://github.com/Azure/azure-dev/pull/6605) Add external prompting support to enable external tools to intercept and handle user prompts from azd.
 
 ### Bugs Fixed
 
+- [[#6674]](https://github.com/Azure/azure-dev/pull/6674) Fix duplicate azd-service-name tag error message to identify conflicting resources and eliminate false positives from supporting resources like managed identities.
+
 ### Other Changes
+
+- [[#6654]](https://github.com/Azure/azure-dev/pull/6654) Improve error messages and warnings when using Azure CLI auth delegation mode.
 
 ## 1.23.3 (2026-01-30)
 

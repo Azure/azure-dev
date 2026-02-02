@@ -284,7 +284,8 @@ func TestIsRemoteBackendConfig(t *testing.T) {
 			testContent, err := os.ReadFile(testDataPath)
 			require.NoError(t, err)
 
-			err = os.WriteFile(filepath.Join(infraDir, "main.tf"), testContent, 0600)
+			// #nosec G306 -- test file permissions are intentionally readable
+			err = os.WriteFile(filepath.Join(infraDir, "main.tf"), testContent, 0644)
 			require.NoError(t, err)
 
 			// Create a TerraformProvider instance

@@ -1,14 +1,19 @@
 # Release History
 
-## 1.24.0-beta.1 (Unreleased)
+## 1.24.0 (2026-02-02)
 
 ### Features Added
 
-### Breaking Changes
+- [[#6627]](https://github.com/Azure/azure-dev/pull/6627) Add automatic deployment slot routing for Azure App Service based on deployment history.
+- [[#6605]](https://github.com/Azure/azure-dev/pull/6605) Add external prompting support to enable integration with external tools like VS Code extensions.
 
 ### Bugs Fixed
 
+- [[#6674]](https://github.com/Azure/azure-dev/pull/6674) Fix duplicate azd-service-name tag error incorrectly including non-host resources like managed identities.
+
 ### Other Changes
+
+- [[#6654]](https://github.com/Azure/azure-dev/pull/6654) Improve clarity of Azure CLI authentication delegation mode error messages.
 
 ## 1.23.3 (2026-01-30)
 

@@ -528,15 +528,10 @@ func (st *appServiceTarget) handleSwapTask(
 					return fmt.Errorf("selecting destination slot: %w", err)
 				}
 
-				if srcSlot != "" && dstIndex == 0 {
-					dstSlot = "" // Production
-				} else {
-					// Adjust index for filtered list
-					if srcSlot != "" {
-						dstSlot = slots[dstIndex].Name
-					} else {
-						dstSlot = slots[dstIndex-1].Name
-					}
+				// Map selected index back to slot name
+				dstSlot = dstOptions[dstIndex]
+				if dstSlot == "production" {
+					dstSlot = ""
 				}
 			}
 		}
@@ -598,13 +593,13 @@ func (st *appServiceTarget) handleSwapTask(
 }
 
 // parseTaskArgs parses task arguments in the format "key=value;key2=value2"
-// Returns src and dst slot names
+// Returns sourceSlot and destinationSlot slot names
 func parseTaskArgs(taskArgs string) (string, string) {
 	if taskArgs == "" {
 		return "", ""
 	}
 
-	var src, dst string
+	var sourceSlot, destinationSlot string
 	parts := strings.Split(taskArgs, ";")
 	for _, part := range parts {
 		kv := strings.SplitN(part, "=", 2)
@@ -616,13 +611,13 @@ func parseTaskArgs(taskArgs string) (string, string) {
 
 		switch key {
 		case "src":
-			src = value
+			sourceSlot = value
 		case "dst":
-			dst = value
+			destinationSlot = value
 		}
 	}
 
-	return src, dst
+	return sourceSlot, destinationSlot
 }
 
 // isValidSlotName checks if a slot name is valid (exists in the list of available slots)

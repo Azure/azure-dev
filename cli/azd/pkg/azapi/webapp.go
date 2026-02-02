@@ -343,6 +343,7 @@ func (cli *AzureClient) DeployAppServiceSlotZip(
 // SwapSlot swaps two deployment slots or a slot with production.
 // sourceSlot: the source slot name (empty string means production)
 // targetSlot: the target slot name (empty string means production)
+// The swap operation swaps the content of sourceSlot into targetSlot.
 func (cli *AzureClient) SwapSlot(
 	ctx context.Context,
 	subscriptionId string,
@@ -356,22 +357,31 @@ func (cli *AzureClient) SwapSlot(
 		return err
 	}
 
-	// Build the swap request with the target slot
-	swapRequest := armappservice.CsmSlotEntity{
-		TargetSlot: to.Ptr(targetSlot),
-	}
-
 	// Handle the swap based on which slots are involved
 	var poller interface{}
 	var swapErr error
 
-	if sourceSlot == "" || targetSlot == "" {
-		// One of the slots is production - use BeginSwapSlotWithProduction
-		// This API always operates on the context of the production app
+	if sourceSlot == "" && targetSlot == "" {
+		return fmt.Errorf("cannot swap production with itself")
+	} else if sourceSlot == "" {
+		// Swapping production with a named slot (e.g., production -> staging)
+		// Use BeginSwapSlotWithProduction with targetSlot as the slot to swap with
+		swapRequest := armappservice.CsmSlotEntity{
+			TargetSlot: to.Ptr(targetSlot),
+		}
 		poller, swapErr = client.BeginSwapSlotWithProduction(ctx, resourceGroup, appName, swapRequest, nil)
+	} else if targetSlot == "" {
+		// Swapping a named slot with production (e.g., staging -> production)
+		// Use BeginSwapSlot with sourceSlot and production as target
+		swapRequest := armappservice.CsmSlotEntity{
+			TargetSlot: to.Ptr("production"),
+		}
+		poller, swapErr = client.BeginSwapSlot(ctx, resourceGroup, appName, sourceSlot, swapRequest, nil)
 	} else {
-		// Both are named slots - use BeginSwapSlot
-		swapRequest.TargetSlot = to.Ptr(targetSlot)
+		// Swapping between two named slots
+		swapRequest := armappservice.CsmSlotEntity{
+			TargetSlot: to.Ptr(targetSlot),
+		}
 		poller, swapErr = client.BeginSwapSlot(ctx, resourceGroup, appName, sourceSlot, swapRequest, nil)
 	}
 

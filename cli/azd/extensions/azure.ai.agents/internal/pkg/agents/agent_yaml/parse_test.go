@@ -4,6 +4,7 @@
 package agent_yaml
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -141,7 +142,7 @@ template: "this is not a map"
 	}
 
 	expectedMsg := "template field must be a map"
-	if !contains(err.Error(), expectedMsg) {
+	if !strings.Contains(err.Error(), expectedMsg) {
 		t.Errorf("Expected error message to contain '%s', got '%s'", expectedMsg, err.Error())
 	}
 }
@@ -159,7 +160,7 @@ description: Test agent without kind field
 	}
 
 	expectedMsg := "unrecognized agent kind"
-	if !contains(err.Error(), expectedMsg) {
+	if !strings.Contains(err.Error(), expectedMsg) {
 		t.Errorf("Expected error message to contain '%s', got '%s'", expectedMsg, err.Error())
 	}
 }
@@ -249,19 +250,4 @@ environment_variables:
 	if manifest.Name != "lego-social-media-agent" {
 		t.Errorf("Expected manifest name 'lego-social-media-agent', got '%s'", manifest.Name)
 	}
-}
-
-// Helper function to check if a string contains a substring
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
-		(len(s) > 0 && len(substr) > 0 && stringContains(s, substr)))
-}
-
-func stringContains(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }

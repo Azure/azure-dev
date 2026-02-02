@@ -57,14 +57,22 @@ func ExtractAgentDefinition(manifestYamlContent []byte) (any, error) {
 		if !ok {
 			return nil, fmt.Errorf("template field must be a map, got %T", templateValue)
 		}
-		templateBytes, _ = yaml.Marshal(template)
+		var err error
+		templateBytes, err = yaml.Marshal(template)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal template: %w", err)
+		}
 	} else if agentValue, exists := genericManifest["agent"]; exists && agentValue != nil {
 		// Manifest format with "agent" field (alias for "template")
 		template, ok := agentValue.(map[string]interface{})
 		if !ok {
 			return nil, fmt.Errorf("agent field must be a map, got %T", agentValue)
 		}
-		templateBytes, _ = yaml.Marshal(template)
+		var err error
+		templateBytes, err = yaml.Marshal(template)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal agent: %w", err)
+		}
 	} else {
 		// Standalone agent format - the entire document is the agent definition
 		templateBytes = manifestYamlContent

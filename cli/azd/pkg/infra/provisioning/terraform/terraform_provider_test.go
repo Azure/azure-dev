@@ -7,6 +7,8 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -221,4 +223,127 @@ func (m *mockCurrentPrincipal) CurrentPrincipalId(_ context.Context) (string, er
 
 func (m *mockCurrentPrincipal) CurrentPrincipalType(_ context.Context) (provisioning.PrincipalType, error) {
 	return provisioning.UserType, nil
+}
+
+func TestIsRemoteBackendConfig(t *testing.T) {
+	tests := []struct {
+		name           string
+		backendFile    string
+		expectedRemote bool
+	}{
+		{
+			name:           "azurerm backend",
+			backendFile:    "azurerm.tf",
+			expectedRemote: true,
+		},
+		{
+			name:           "remote backend (Terraform Cloud legacy)",
+			backendFile:    "remote.tf",
+			expectedRemote: true,
+		},
+		{
+			name:           "cloud block (Terraform Cloud new syntax)",
+			backendFile:    "cloud.tf",
+			expectedRemote: true,
+		},
+		{
+			name:           "s3 backend",
+			backendFile:    "s3.tf",
+			expectedRemote: true,
+		},
+		{
+			name:           "gcs backend",
+			backendFile:    "gcs.tf",
+			expectedRemote: true,
+		},
+		{
+			name:           "local backend",
+			backendFile:    "local.tf",
+			expectedRemote: false,
+		},
+		{
+			name:           "no backend specified",
+			backendFile:    "no_backend.tf",
+			expectedRemote: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(context.Background())
+			prepareGenericMocks(mockContext.CommandRunner)
+
+			// Create a temporary directory for the test
+			tmpDir := t.TempDir()
+			infraDir := filepath.Join(tmpDir, "infra")
+			err := os.MkdirAll(infraDir, 0755)
+			require.NoError(t, err)
+
+			// Copy the test backend file to the temporary infra directory
+			testDataPath := filepath.Join("testdata", "backend_tests", tt.backendFile)
+			testContent, err := os.ReadFile(testDataPath)
+			require.NoError(t, err)
+
+			err = os.WriteFile(filepath.Join(infraDir, "main.tf"), testContent, 0600)
+			require.NoError(t, err)
+
+			// Create a TerraformProvider instance
+			options := provisioning.Options{
+				Module: "main",
+			}
+
+			env := environment.NewWithValues("test-env", map[string]string{
+				"AZURE_LOCATION":        "westus2",
+				"AZURE_SUBSCRIPTION_ID": "00000000-0000-0000-0000-000000000000",
+			})
+
+			resourceService := azapi.NewResourceService(
+				mockContext.SubscriptionCredentialProvider,
+				mockContext.ArmClientOptions,
+			)
+			accountManager := &mockaccount.MockAccountManager{
+				Subscriptions: []account.Subscription{
+					{
+						Id:   "00000000-0000-0000-0000-000000000000",
+						Name: "test",
+					},
+				},
+				Locations: []account.Location{
+					{
+						Name:                "location",
+						DisplayName:         "Test Location",
+						RegionalDisplayName: "(US) Test Location",
+					},
+				},
+			}
+
+			envManager := &mockenv.MockEnvManager{}
+			envManager.On("Save", mock.Anything, mock.Anything).Return(nil)
+
+			provider := NewTerraformProvider(
+				terraformTools.NewCli(mockContext.CommandRunner),
+				envManager,
+				env,
+				mockContext.Console,
+				&mockCurrentPrincipal{},
+				prompt.NewDefaultPrompter(
+					env,
+					mockContext.Console,
+					accountManager,
+					resourceService,
+					cloud.AzurePublic(),
+				),
+			)
+
+			err = provider.Initialize(*mockContext.Context, tmpDir, options)
+			require.NoError(t, err)
+
+			tfProvider := provider.(*TerraformProvider)
+
+			// Test the isRemoteBackendConfig function
+			isRemote, err := tfProvider.isRemoteBackendConfig()
+			require.NoError(t, err)
+			require.Equal(t, tt.expectedRemote, isRemote, "Expected isRemote=%v for %s", tt.expectedRemote, tt.name)
+		})
+	}
 }

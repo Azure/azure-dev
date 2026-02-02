@@ -655,6 +655,22 @@ func (t *TerraformProvider) isRemoteBackendConfig() (bool, error) {
 		return false, fmt.Errorf("reading .tf files contents: %w", err)
 	}
 
+	// List of remote backend types that should not use the -state flag
+	// https://developer.hashicorp.com/terraform/language/backend
+	remoteBackends := []string{
+		`backend "azurerm"`,    // Azure Resource Manager
+		`backend "remote"`,     // Terraform Cloud (legacy)
+		`backend "s3"`,         // AWS S3
+		`backend "gcs"`,        // Google Cloud Storage
+		`backend "consul"`,     // HashiCorp Consul
+		`backend "cos"`,        // Tencent Cloud Object Storage
+		`backend "http"`,       // HTTP/REST
+		`backend "kubernetes"`, // Kubernetes
+		`backend "oss"`,        // Alibaba Cloud OSS
+		`backend "pg"`,         // PostgreSQL
+		`cloud {`,              // Terraform Cloud (new syntax)
+	}
+
 	for index := range files {
 		if !files[index].IsDir() && filepath.Ext(files[index].Name()) == ".tf" {
 			fileContent, err := os.ReadFile(filepath.Join(modulePath, files[index].Name()))
@@ -663,8 +679,10 @@ func (t *TerraformProvider) isRemoteBackendConfig() (bool, error) {
 				return false, fmt.Errorf("error reading .tf files: %w", err)
 			}
 
-			if found := strings.Contains(string(fileContent), `backend "azurerm"`); found {
-				return true, nil
+			for _, backend := range remoteBackends {
+				if strings.Contains(string(fileContent), backend) {
+					return true, nil
+				}
 			}
 		}
 	}

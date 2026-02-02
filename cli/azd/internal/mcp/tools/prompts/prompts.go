@@ -33,3 +33,6 @@ var AzdProjectValidationPrompt string
 
 //go:embed azd_error_troubleshooting.md
 var AzdErrorTroubleShootingPrompt string
+
+//go:embed azd_provision_common_error.md
+var AzdProvisionCommonErrorPrompt string

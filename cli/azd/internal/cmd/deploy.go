@@ -253,6 +253,24 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 				continue
 			}
 
+			// Check if the service condition is enabled
+			if !svc.IsEnabled(da.env.Getenv) {
+				// If a specific service was targeted but its condition is false, return an error
+				if targetServiceName != "" && targetServiceName == svc.Name {
+					da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+					conditionValue, _ := svc.Condition.Envsubst(da.env.Getenv)
+					return fmt.Errorf(
+						"service '%s' has a deployment condition that evaluated to '%s'. "+
+							"The service requires a truthy value (1, true, TRUE, True, yes, YES, Yes) to be deployed",
+						svc.Name,
+						conditionValue,
+					)
+				}
+				// If deploying all services, skip this one silently
+				da.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
+				continue
+			}
+
 			if alphaFeatureId, isAlphaFeature := alpha.IsFeatureKey(string(svc.Host)); isAlphaFeature {
 				// alpha feature on/off detection for host is done during initialization.
 				// This is just for displaying the warning during deployment.

@@ -55,6 +55,9 @@ type ServiceConfig struct {
 	useDotNetPublishForDockerBuild *bool
 	// Environment variables to set for the service
 	Environment osutil.ExpandableMap `yaml:"env,omitempty"`
+	// Condition for deploying the service. When evaluated, the service is only deployed if the value
+	// is a truthy boolean (1, true, TRUE, True, yes). If not defined, the service is enabled by default.
+	Condition osutil.ExpandableString `yaml:"condition,omitempty"`
 
 	// AdditionalProperties captures any unknown YAML fields for extension support
 	AdditionalProperties map[string]interface{} `yaml:",inline"`
@@ -88,4 +91,34 @@ func (sc *ServiceConfig) Path() string {
 		return sc.RelativePath
 	}
 	return filepath.Join(sc.Project.Path, sc.RelativePath)
+}
+
+// IsEnabled evaluates the service condition and returns whether the service should be deployed.
+// If no condition is specified, the service is enabled by default.
+// The condition is evaluated as a boolean where truthy values are: 1, true, TRUE, True, yes, YES, Yes
+// All other values are considered false.
+func (sc *ServiceConfig) IsEnabled(getenv func(string) string) bool {
+	if sc.Condition.Empty() {
+		return true
+	}
+
+	value, err := sc.Condition.Envsubst(getenv)
+	if err != nil {
+		// If condition can't be evaluated, consider it disabled
+		return false
+	}
+
+	return isConditionTrue(value)
+}
+
+// isConditionTrue parses a string value as a boolean condition.
+// Returns true for: "1", "true", "TRUE", "True", "yes", "YES", "Yes"
+// Returns false for all other values.
+func isConditionTrue(value string) bool {
+	switch value {
+	case "1", "true", "TRUE", "True", "yes", "YES", "Yes":
+		return true
+	default:
+		return false
+	}
 }

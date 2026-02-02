@@ -377,3 +377,19 @@ func createProgressFunc(progress *async.Progress[ServiceProgress]) func(string) 
 		}
 	}
 }
+
+// Tasks returns the list of available tasks for this service target.
+func (t *ExternalServiceTarget) Tasks(ctx context.Context, serviceConfig *ServiceConfig) []ServiceTask {
+	return []ServiceTask{}
+}
+
+// Task executes a specific task for this service target.
+func (t *ExternalServiceTarget) Task(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	targetResource *environment.TargetResource,
+	task ServiceTask,
+	taskArgs string,
+) error {
+	return nil
+}

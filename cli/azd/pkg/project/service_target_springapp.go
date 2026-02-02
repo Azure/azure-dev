@@ -81,3 +81,19 @@ func (st *springAppTarget) Endpoints(
 ) ([]string, error) {
 	return nil, errSpringAppDeprecated
 }
+
+// Tasks returns the list of available tasks for this service target.
+func (st *springAppTarget) Tasks(ctx context.Context, serviceConfig *ServiceConfig) []ServiceTask {
+	return []ServiceTask{}
+}
+
+// Task executes a specific task for this service target.
+func (st *springAppTarget) Task(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	targetResource *environment.TargetResource,
+	task ServiceTask,
+	taskArgs string,
+) error {
+	return nil
+}

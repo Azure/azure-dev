@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -410,3 +411,227 @@ func (st *appServiceTarget) validateTargetResource(
 
 	return nil
 }
+
+// Tasks returns the list of available tasks for this service target.
+func (st *appServiceTarget) Tasks(ctx context.Context, serviceConfig *ServiceConfig) []ServiceTask {
+	return []ServiceTask{
+		{Name: "swap"},
+	}
+}
+
+// Task executes a specific task for this service target.
+func (st *appServiceTarget) Task(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	targetResource *environment.TargetResource,
+	task ServiceTask,
+	taskArgs string,
+) error {
+	if task.Name == "swap" {
+		return st.handleSwapTask(ctx, serviceConfig, targetResource, taskArgs)
+	}
+
+	return fmt.Errorf("task '%s' is not supported", task.Name)
+}
+
+// handleSwapTask handles the swap task for app service deployment slots
+func (st *appServiceTarget) handleSwapTask(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	targetResource *environment.TargetResource,
+	taskArgs string,
+) error {
+	// Parse task arguments to get src and dst
+	srcSlot, dstSlot := parseTaskArgs(taskArgs)
+
+	// Get the list of deployment slots
+	slots, err := st.cli.GetAppServiceSlots(
+		ctx,
+		targetResource.SubscriptionId(),
+		targetResource.ResourceGroupName(),
+		targetResource.ResourceName(),
+	)
+	if err != nil {
+		return fmt.Errorf("getting deployment slots: %w", err)
+	}
+
+	// Check if there are any slots
+	if len(slots) == 0 {
+		return fmt.Errorf("swap operation requires a service with at least one slot")
+	}
+
+	// Build the list of all slot names (including production as empty string)
+	slotNames := []string{""} // Production is represented as empty string
+	for _, slot := range slots {
+		slotNames = append(slotNames, slot.Name)
+	}
+
+	// If there's only one slot, auto-select based on the scenario
+	if len(slots) == 1 {
+		onlySlot := slots[0].Name
+		if srcSlot == "" && dstSlot == "" {
+			// No task arguments provided - default behavior: swap slot to production
+			srcSlot = onlySlot
+			dstSlot = ""
+		} else {
+			// Task arguments provided - validate they match the only slot and production
+			if !isValidSlotName(srcSlot, slotNames) || !isValidSlotName(dstSlot, slotNames) {
+				return fmt.Errorf("invalid slot name in task arguments")
+			}
+			// Ensure at least one is the only slot
+			if srcSlot != onlySlot && dstSlot != onlySlot {
+				return fmt.Errorf("at least one slot must be '%s' when there is only one slot", onlySlot)
+			}
+		}
+	} else {
+		// Multiple slots - prompt if arguments not provided
+		if srcSlot == "" || dstSlot == "" {
+			// Prompt for source slot
+			if srcSlot == "" {
+				srcOptions := []string{"production"}
+				for _, slot := range slots {
+					srcOptions = append(srcOptions, slot.Name)
+				}
+
+				srcIndex, err := st.console.Select(ctx, input.ConsoleOptions{
+					Message: "Select the source slot:",
+					Options: srcOptions,
+				})
+				if err != nil {
+					return fmt.Errorf("selecting source slot: %w", err)
+				}
+
+				if srcIndex == 0 {
+					srcSlot = "" // Production
+				} else {
+					srcSlot = slots[srcIndex-1].Name
+				}
+			}
+
+			// Prompt for destination slot (excluding the selected source)
+			if dstSlot == "" {
+				dstOptions := []string{}
+				if srcSlot != "" {
+					dstOptions = append(dstOptions, "production")
+				}
+				for _, slot := range slots {
+					if slot.Name != srcSlot {
+						dstOptions = append(dstOptions, slot.Name)
+					}
+				}
+
+				dstIndex, err := st.console.Select(ctx, input.ConsoleOptions{
+					Message: "Select the destination slot:",
+					Options: dstOptions,
+				})
+				if err != nil {
+					return fmt.Errorf("selecting destination slot: %w", err)
+				}
+
+				if srcSlot != "" && dstIndex == 0 {
+					dstSlot = "" // Production
+				} else {
+					// Adjust index for filtered list
+					if srcSlot != "" {
+						dstSlot = slots[dstIndex].Name
+					} else {
+						dstSlot = slots[dstIndex-1].Name
+					}
+				}
+			}
+		}
+
+		// Validate slot names
+		if !isValidSlotName(srcSlot, slotNames) {
+			return fmt.Errorf("invalid source slot: %s", srcSlot)
+		}
+		if !isValidSlotName(dstSlot, slotNames) {
+			return fmt.Errorf("invalid destination slot: %s", dstSlot)
+		}
+	}
+
+	// Validate that source and destination are different
+	if srcSlot == dstSlot {
+		return fmt.Errorf("source and destination slots cannot be the same")
+	}
+
+	// Get display names for confirmation
+	srcDisplay := srcSlot
+	if srcDisplay == "" {
+		srcDisplay = "production"
+	}
+	dstDisplay := dstSlot
+	if dstDisplay == "" {
+		dstDisplay = "production"
+	}
+
+	// Confirm the swap
+	confirmed, err := st.console.Confirm(ctx, input.ConsoleOptions{
+		Message:      fmt.Sprintf("Swap '%s' with '%s'?", srcDisplay, dstDisplay),
+		DefaultValue: to.Ptr(true),
+	})
+	if err != nil {
+		return fmt.Errorf("confirming swap: %w", err)
+	}
+
+	if !confirmed {
+		return fmt.Errorf("swap cancelled by user")
+	}
+
+	// Perform the swap
+	st.console.Message(ctx, fmt.Sprintf("Swapping '%s' with '%s'...", srcDisplay, dstDisplay))
+
+	err = st.cli.SwapSlot(
+		ctx,
+		targetResource.SubscriptionId(),
+		targetResource.ResourceGroupName(),
+		targetResource.ResourceName(),
+		srcSlot,
+		dstSlot,
+	)
+	if err != nil {
+		return fmt.Errorf("swapping slots: %w", err)
+	}
+
+	st.console.Message(ctx, "Swap completed successfully.")
+	return nil
+}
+
+// parseTaskArgs parses task arguments in the format "key=value;key2=value2"
+// Returns src and dst slot names
+func parseTaskArgs(taskArgs string) (string, string) {
+	if taskArgs == "" {
+		return "", ""
+	}
+
+	var src, dst string
+	parts := strings.Split(taskArgs, ";")
+	for _, part := range parts {
+		kv := strings.SplitN(part, "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(kv[0])
+		value := strings.TrimSpace(kv[1])
+
+		switch key {
+		case "src":
+			src = value
+		case "dst":
+			dst = value
+		}
+	}
+
+	return src, dst
+}
+
+// isValidSlotName checks if a slot name is valid (exists in the list of available slots)
+func isValidSlotName(name string, availableSlots []string) bool {
+	for _, slot := range availableSlots {
+		if slot == name {
+			return true
+		}
+	}
+	return false
+}
+

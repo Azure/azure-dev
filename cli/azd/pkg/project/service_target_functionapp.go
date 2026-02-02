@@ -211,3 +211,19 @@ func (f *functionAppTarget) validateTargetResource(
 
 	return nil
 }
+
+// Tasks returns the list of available tasks for this service target.
+func (f *functionAppTarget) Tasks(ctx context.Context, serviceConfig *ServiceConfig) []ServiceTask {
+	return []ServiceTask{}
+}
+
+// Task executes a specific task for this service target.
+func (f *functionAppTarget) Task(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	targetResource *environment.TargetResource,
+	task ServiceTask,
+	taskArgs string,
+) error {
+	return nil
+}

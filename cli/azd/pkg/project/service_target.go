@@ -119,6 +119,23 @@ type ServiceTarget interface {
 		serviceConfig *ServiceConfig,
 		targetResource *environment.TargetResource,
 	) ([]string, error)
+
+	// Tasks returns the list of available tasks for this service target.
+	Tasks(ctx context.Context, serviceConfig *ServiceConfig) []ServiceTask
+
+	// Task executes a specific task for this service target.
+	Task(
+		ctx context.Context,
+		serviceConfig *ServiceConfig,
+		targetResource *environment.TargetResource,
+		task ServiceTask,
+		taskArgs string,
+	) error
+}
+
+// ServiceTask represents a task that can be executed on a service target
+type ServiceTask struct {
+	Name string
 }
 
 func resourceTypeMismatchError(

@@ -294,3 +294,19 @@ func (at *staticWebAppTarget) verifyDeployment(ctx context.Context, targetResour
 
 	return nil
 }
+
+// Tasks returns the list of available tasks for this service target.
+func (st *staticWebAppTarget) Tasks(ctx context.Context, serviceConfig *ServiceConfig) []ServiceTask {
+	return []ServiceTask{}
+}
+
+// Task executes a specific task for this service target.
+func (st *staticWebAppTarget) Task(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	targetResource *environment.TargetResource,
+	task ServiceTask,
+	taskArgs string,
+) error {
+	return nil
+}

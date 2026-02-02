@@ -299,7 +299,7 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 		return tempInfra(ctx, projectConfig)
 	}
 
-	// Temp infra from SWA-only services (infraless approach)
+	// Temp infra from SWA-only services (no infra folder approach)
 	if im.swaImporter.CanImport(ctx, projectConfig) {
 		return im.swaImporter.ProjectInfrastructure(ctx, projectConfig)
 	}

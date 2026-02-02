@@ -47,8 +47,20 @@ func ExtractAgentDefinition(manifestYamlContent []byte) (any, error) {
 		return nil, fmt.Errorf("YAML content is not valid: %w", err)
 	}
 
-	template := genericManifest["template"].(map[string]interface{})
-	templateBytes, _ := yaml.Marshal(template)
+	// Handle both manifest format (with "template" field) and standalone agent format (without "template" field)
+	var templateBytes []byte
+
+	if templateValue, exists := genericManifest["template"]; exists && templateValue != nil {
+		// Manifest format with "template" field
+		template, ok := templateValue.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("template field must be a map, got %T", templateValue)
+		}
+		templateBytes, _ = yaml.Marshal(template)
+	} else {
+		// Standalone agent format - the entire document is the agent definition
+		templateBytes = manifestYamlContent
+	}
 
 	var agentDef AgentDefinition
 	if err := yaml.Unmarshal(templateBytes, &agentDef); err != nil {

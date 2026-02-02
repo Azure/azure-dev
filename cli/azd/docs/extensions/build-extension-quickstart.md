@@ -1,14 +1,3 @@
----
-title: Build an Azure Developer CLI (azd) extension
-description: Learn how to create, build, test, and publish a custom extension for the Azure Developer CLI using the azd extension framework.
-author: alexwolfmsft
-ms.author: alexwolf
-ms.date: 01/06/2026
-ms.service: azure-dev-cli
-ms.topic: tutorial
-ms.custom: devx-track-azdevcli, devx-track-go
----
-
 # Build an Azure Developer CLI extension
 
 The Azure Developer CLI (`azd`) extension framework allows you to extend `azd`'s functionality with custom commands, lifecycle event hooks, and integration with external services. In this tutorial, you'll learn how to scaffold, build, and test a custom `azd` extension.

@@ -9,7 +9,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -488,7 +487,7 @@ func (st *appServiceTarget) handleSwapTask(
 		if srcSlot == "" || dstSlot == "" {
 			// Prompt for source slot
 			if srcSlot == "" {
-				srcOptions := []string{"production"}
+				srcOptions := []string{"@main (production)"}
 				for _, slot := range slots {
 					srcOptions = append(srcOptions, slot.Name)
 				}
@@ -502,7 +501,7 @@ func (st *appServiceTarget) handleSwapTask(
 				}
 
 				if srcIndex == 0 {
-					srcSlot = "" // Production
+					srcSlot = "" // @main (production)
 				} else {
 					srcSlot = slots[srcIndex-1].Name
 				}
@@ -512,7 +511,7 @@ func (st *appServiceTarget) handleSwapTask(
 			if dstSlot == "" {
 				dstOptions := []string{}
 				if srcSlot != "" {
-					dstOptions = append(dstOptions, "production")
+					dstOptions = append(dstOptions, "@main (production)")
 				}
 				for _, slot := range slots {
 					if slot.Name != srcSlot {
@@ -530,7 +529,7 @@ func (st *appServiceTarget) handleSwapTask(
 
 				// Map selected index back to slot name
 				dstSlot = dstOptions[dstIndex]
-				if dstSlot == "production" {
+				if dstSlot == "@main (production)" {
 					dstSlot = ""
 				}
 			}
@@ -553,17 +552,17 @@ func (st *appServiceTarget) handleSwapTask(
 	// Get display names for confirmation
 	srcDisplay := srcSlot
 	if srcDisplay == "" {
-		srcDisplay = "production"
+		srcDisplay = "@main (production)"
 	}
 	dstDisplay := dstSlot
 	if dstDisplay == "" {
-		dstDisplay = "production"
+		dstDisplay = "@main (production)"
 	}
 
 	// Confirm the swap
 	confirmed, err := st.console.Confirm(ctx, input.ConsoleOptions{
 		Message:      fmt.Sprintf("Swap '%s' with '%s'?", srcDisplay, dstDisplay),
-		DefaultValue: to.Ptr(true),
+		DefaultValue: true,
 	})
 	if err != nil {
 		return fmt.Errorf("confirming swap: %w", err)
@@ -594,6 +593,7 @@ func (st *appServiceTarget) handleSwapTask(
 
 // parseTaskArgs parses task arguments in the format "key=value;key2=value2"
 // Returns (sourceSlot, destinationSlot) as strings
+// The value "@main" is normalized to an empty string to represent the main app (production slot).
 func parseTaskArgs(taskArgs string) (string, string) {
 	if taskArgs == "" {
 		return "", ""
@@ -608,6 +608,11 @@ func parseTaskArgs(taskArgs string) (string, string) {
 		}
 		key := strings.TrimSpace(kv[0])
 		value := strings.TrimSpace(kv[1])
+
+		// Normalize "@main" to empty string (internal representation for main app/production slot)
+		if strings.EqualFold(value, "@main") {
+			value = ""
+		}
 
 		switch key {
 		case "src":

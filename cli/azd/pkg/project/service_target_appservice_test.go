@@ -17,6 +17,92 @@ type serviceTargetValidationTest struct {
 	expectError    bool
 }
 
+func TestParseTaskArgs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		taskArgs    string
+		expectedSrc string
+		expectedDst string
+	}{
+		{
+			name:        "empty args",
+			taskArgs:    "",
+			expectedSrc: "",
+			expectedDst: "",
+		},
+		{
+			name:        "src only",
+			taskArgs:    "src=staging",
+			expectedSrc: "staging",
+			expectedDst: "",
+		},
+		{
+			name:        "dst only",
+			taskArgs:    "dst=staging",
+			expectedSrc: "",
+			expectedDst: "staging",
+		},
+		{
+			name:        "both src and dst",
+			taskArgs:    "src=staging;dst=test",
+			expectedSrc: "staging",
+			expectedDst: "test",
+		},
+		{
+			name:        "@main as dst normalizes to empty string",
+			taskArgs:    "dst=@main;src=test",
+			expectedSrc: "test",
+			expectedDst: "",
+		},
+		{
+			name:        "@main as src normalizes to empty string",
+			taskArgs:    "src=@main;dst=staging",
+			expectedSrc: "",
+			expectedDst: "staging",
+		},
+		{
+			name:        "@Main (capitalized) normalizes to empty string",
+			taskArgs:    "src=@Main;dst=Staging",
+			expectedSrc: "",
+			expectedDst: "Staging",
+		},
+		{
+			name:        "@MAIN (uppercase) normalizes to empty string",
+			taskArgs:    "src=@MAIN;dst=test",
+			expectedSrc: "",
+			expectedDst: "test",
+		},
+		{
+			name:        "with whitespace",
+			taskArgs:    "src = staging ; dst = @main",
+			expectedSrc: "staging",
+			expectedDst: "",
+		},
+		{
+			name:        "invalid key ignored",
+			taskArgs:    "foo=bar;src=staging",
+			expectedSrc: "staging",
+			expectedDst: "",
+		},
+		{
+			name:        "production is NOT normalized (not a reserved keyword)",
+			taskArgs:    "src=production;dst=test",
+			expectedSrc: "production",
+			expectedDst: "test",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			src, dst := parseTaskArgs(tt.taskArgs)
+			require.Equal(t, tt.expectedSrc, src, "source slot mismatch")
+			require.Equal(t, tt.expectedDst, dst, "destination slot mismatch")
+		})
+	}
+}
+
 func TestNewAppServiceTargetTypeValidation(t *testing.T) {
 	t.Parallel()
 

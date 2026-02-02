@@ -593,7 +593,7 @@ func (st *appServiceTarget) handleSwapTask(
 }
 
 // parseTaskArgs parses task arguments in the format "key=value;key2=value2"
-// Returns sourceSlot and destinationSlot slot names
+// Returns (sourceSlot, destinationSlot) as strings
 func parseTaskArgs(taskArgs string) (string, string) {
 	if taskArgs == "" {
 		return "", ""

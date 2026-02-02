@@ -61,6 +61,8 @@ cli/azd/extensions/azure.coding-agent/azurecodingagent
 cli/azd/extensions/azure.coding-agent/azurecodingagent.exe
 cli/azd/extensions/azure.ai.agents/azureaiagent
 cli/azd/extensions/azure.ai.agents/azureaiagent.exe
+cli/azd/extensions/azure.ai.finetune/azure.ai.finetune
+cli/azd/extensions/azure.ai.finetune/azure.ai.finetune.exe
 cli/azd/extensions/microsoft.azd.extensions/microsoft.azd.extensions
 cli/azd/extensions/microsoft.azd.extensions/microsoft.azd.extensions.exe
 cli/azd/extensions/microsoft.azd.ai.builder/microsoft.azd.ai.builder
@@ -71,3 +73,6 @@ cli/azd/extensions/microsoft.azd.concurx/microsoft.azd.concurx
 cli/azd/extensions/microsoft.azd.concurx/microsoft.azd.concurx.exe
 cli/azd/azd-test
 cli/azd/azd
+cli/azd/extensions/microsoft.azd.concurx/concurx
+cli/azd/extensions/microsoft.azd.concurx/concurx
+cli/azd/extensions/microsoft.azd.concurx/concurx.exe

@@ -46,6 +46,7 @@ type viewMode int
 const (
 	viewDeployment viewMode = iota
 	viewLogs
+	viewPrompt
 )
 
 // deploymentModel is the Bubble Tea model for deployment visualization
@@ -71,6 +72,10 @@ type deploymentModel struct {
 	height      int
 	ready       bool
 	autoRefresh bool // Auto-refresh logs when enabled
+	// Prompt state
+	promptServer *PromptServer
+	activePrompt *promptModel
+	previousView viewMode // View to return to after prompt is handled
 }
 
 // Messages that can be sent to the Bubble Tea program
@@ -121,7 +126,7 @@ var (
 			Italic(true)
 )
 
-func newDeploymentModel(serviceNames []string, cancel context.CancelFunc) deploymentModel {
+func newDeploymentModel(serviceNames []string, cancel context.CancelFunc, promptServer *PromptServer) deploymentModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
@@ -152,6 +157,7 @@ func newDeploymentModel(serviceNames []string, cancel context.CancelFunc) deploy
 		tabNames:     tabNames,
 		logContents:  make(map[string]string),
 		viewport:     vp,
+		promptServer: promptServer,
 	}
 }
 
@@ -175,7 +181,52 @@ func logRefreshCmd() tea.Cmd {
 }
 
 func (m deploymentModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Handle prompt view first - it takes priority
+	if m.viewMode == viewPrompt && m.activePrompt != nil {
+		switch msg := msg.(type) {
+		case tea.WindowSizeMsg:
+			m.width = msg.Width
+			m.height = msg.Height
+			m.activePrompt.width = msg.Width
+			m.activePrompt.height = msg.Height
+			return m, nil
+
+		case tea.KeyMsg:
+			updatedPrompt, cmd := m.activePrompt.Update(msg)
+			m.activePrompt = &updatedPrompt
+
+			if m.activePrompt.submitted {
+				// Get response and send it back to the prompt server
+				response := m.activePrompt.GetResponse()
+				if m.promptServer != nil {
+					m.promptServer.RespondToPrompt(response)
+				}
+
+				// Return to previous view
+				m.viewMode = m.previousView
+				m.activePrompt = nil
+				return m, nil
+			}
+			return m, cmd
+
+		default:
+			updatedPrompt, cmd := m.activePrompt.Update(msg)
+			m.activePrompt = &updatedPrompt
+			return m, cmd
+		}
+	}
+
 	switch msg := msg.(type) {
+	case promptRequestMsg:
+		// Handle incoming prompt request
+		m.previousView = m.viewMode
+		m.viewMode = viewPrompt
+		pm := newPromptModel(msg.request)
+		pm.width = m.width
+		pm.height = m.height
+		m.activePrompt = &pm
+		return m, m.activePrompt.Init()
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -344,6 +395,11 @@ func (m deploymentModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m deploymentModel) View() string {
 	if m.err != nil {
 		return statusFailedStyle.Render(fmt.Sprintf("Error: %v\n", m.err))
+	}
+
+	// Show prompt view if active
+	if m.viewMode == viewPrompt && m.activePrompt != nil {
+		return m.activePrompt.View()
 	}
 
 	if m.quitting {

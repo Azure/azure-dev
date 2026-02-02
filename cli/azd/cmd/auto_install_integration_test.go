@@ -7,8 +7,11 @@ import (
 	"os"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestExecuteWithAutoInstallIntegration tests the integration between
@@ -71,4 +74,134 @@ func TestExecuteWithAutoInstallIntegration(t *testing.T) {
 
 	// Restore original args
 	os.Args = originalArgs
+}
+
+// TestAgentDetectionIntegration tests the full agent detection integration flow.
+func TestAgentDetectionIntegration(t *testing.T) {
+	tests := []struct {
+		name             string
+		args             []string
+		envVars          map[string]string
+		expectedNoPrompt bool
+		description      string
+	}{
+		{
+			name:             "Claude Code agent enables no-prompt automatically",
+			args:             []string{"version"},
+			envVars:          map[string]string{"CLAUDE_CODE": "1"},
+			expectedNoPrompt: true,
+			description:      "When running under Claude Code, --no-prompt should be auto-enabled",
+		},
+		{
+			name:             "GitHub Copilot CLI enables no-prompt automatically",
+			args:             []string{"deploy"},
+			envVars:          map[string]string{"GITHUB_COPILOT_CLI": "true"},
+			expectedNoPrompt: true,
+			description:      "When running under GitHub Copilot CLI, --no-prompt should be auto-enabled",
+		},
+		{
+			name:             "Gemini agent enables no-prompt automatically",
+			args:             []string{"init"},
+			envVars:          map[string]string{"GEMINI_CLI": "1"},
+			expectedNoPrompt: true,
+			description:      "When running under Gemini, --no-prompt should be auto-enabled",
+		},
+		{
+			name:             "OpenCode agent enables no-prompt automatically",
+			args:             []string{"provision"},
+			envVars:          map[string]string{"OPENCODE": "1"},
+			expectedNoPrompt: true,
+			description:      "When running under OpenCode, --no-prompt should be auto-enabled",
+		},
+		{
+			name:             "User can override agent detection with --no-prompt=false",
+			args:             []string{"--no-prompt=false", "up"},
+			envVars:          map[string]string{"CLAUDE_CODE": "1"},
+			expectedNoPrompt: false,
+			description:      "Explicit --no-prompt=false should override agent detection",
+		},
+		{
+			name:             "Normal execution without agent detection",
+			args:             []string{"version"},
+			envVars:          map[string]string{},
+			expectedNoPrompt: false,
+			description:      "Without agent detection, prompting should remain enabled by default",
+		},
+		{
+			name: "User agent string triggers detection",
+			args: []string{"up"},
+			envVars: map[string]string{
+				internal.AzdUserAgentEnvVar: "claude-code/1.0.0",
+			},
+			expectedNoPrompt: true,
+			description:      "AZURE_DEV_USER_AGENT containing agent identifier should trigger detection",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Clear any ambient agent env vars to ensure test isolation
+			clearAgentEnvVarsForTest(t)
+
+			// Reset agent detection cache for each test
+			agentdetect.ResetDetection()
+
+			// Set environment variables
+			for k, v := range tt.envVars {
+				t.Setenv(k, v)
+			}
+
+			// Parse global flags as would happen in real execution
+			opts := &internal.GlobalCommandOptions{}
+			err := ParseGlobalFlags(tt.args, opts)
+			require.NoError(t, err, "ParseGlobalFlags should not error: %s", tt.description)
+
+			assert.Equal(t, tt.expectedNoPrompt, opts.NoPrompt,
+				"NoPrompt mismatch: %s", tt.description)
+
+			// Verify agent detection status matches expectation
+			agent := agentdetect.GetCallingAgent()
+			if tt.expectedNoPrompt && len(tt.envVars) > 0 && !containsNoPromptFalse(tt.args) {
+				assert.True(t, agent.Detected,
+					"Agent should be detected when agent env vars are set: %s", tt.description)
+			}
+
+			// Clean up
+			agentdetect.ResetDetection()
+		})
+	}
+}
+
+// containsNoPromptFalse checks if args contain --no-prompt=false
+func containsNoPromptFalse(args []string) bool {
+	for _, arg := range args {
+		if arg == "--no-prompt=false" {
+			return true
+		}
+	}
+	return false
+}
+
+// clearAgentEnvVarsForTest clears all environment variables that could trigger agent detection.
+// This ensures tests are isolated from the ambient environment.
+func clearAgentEnvVarsForTest(t *testing.T) {
+	envVarsToUnset := []string{
+		// Claude Code
+		"CLAUDE_CODE", "CLAUDE_CODE_ENTRYPOINT",
+		// GitHub Copilot CLI
+		"GITHUB_COPILOT_CLI", "GH_COPILOT",
+		// Gemini CLI
+		"GEMINI_CLI", "GEMINI_CLI_NO_RELAUNCH",
+		// OpenCode
+		"OPENCODE",
+		// User agent
+		internal.AzdUserAgentEnvVar,
+	}
+
+	for _, envVar := range envVarsToUnset {
+		if _, exists := os.LookupEnv(envVar); exists {
+			t.Setenv(envVar, "")
+			os.Unsetenv(envVar)
+		}
+	}
 }

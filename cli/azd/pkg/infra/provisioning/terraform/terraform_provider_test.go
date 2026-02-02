@@ -257,6 +257,21 @@ func TestIsRemoteBackendConfig(t *testing.T) {
 			expectedRemote: true,
 		},
 		{
+			name:           "consul backend",
+			backendFile:    "consul.tf",
+			expectedRemote: true,
+		},
+		{
+			name:           "http backend",
+			backendFile:    "http.tf",
+			expectedRemote: true,
+		},
+		{
+			name:           "kubernetes backend",
+			backendFile:    "kubernetes.tf",
+			expectedRemote: true,
+		},
+		{
 			name:           "local backend",
 			backendFile:    "local.tf",
 			expectedRemote: false,

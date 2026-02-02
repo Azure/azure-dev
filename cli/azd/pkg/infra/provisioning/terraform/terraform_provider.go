@@ -646,6 +646,9 @@ func (t *TerraformProvider) dataDirPath() string {
 }
 
 // Check terraform file for remote backend provider
+// Note: This uses simple string matching rather than full HCL parsing for performance and
+// to avoid additional dependencies. While this may have edge cases (e.g., backends mentioned
+// in comments), it's sufficient for the common case of detecting actual backend configurations.
 func (t *TerraformProvider) isRemoteBackendConfig() (bool, error) {
 	modulePath := t.modulePath()
 	infraDir, _ := os.Open(modulePath)
@@ -655,8 +658,10 @@ func (t *TerraformProvider) isRemoteBackendConfig() (bool, error) {
 		return false, fmt.Errorf("reading .tf files contents: %w", err)
 	}
 
-	// List of remote backend types that should not use the -state flag
-	// https://developer.hashicorp.com/terraform/language/backend
+	// List of currently supported remote backend types that should not use the -state flag.
+	// This list includes all standard Terraform backends as of Terraform 1.3+
+	// (deprecated backends like etcd, swift, artifactory, and manta were removed in 1.3)
+	// Reference: https://developer.hashicorp.com/terraform/language/backend
 	remoteBackends := []string{
 		`backend "azurerm"`,    // Azure Resource Manager
 		`backend "remote"`,     // Terraform Cloud (legacy)
@@ -668,7 +673,6 @@ func (t *TerraformProvider) isRemoteBackendConfig() (bool, error) {
 		`backend "kubernetes"`, // Kubernetes
 		`backend "oss"`,        // Alibaba Cloud OSS
 		`backend "pg"`,         // PostgreSQL
-		`cloud {`,              // Terraform Cloud (new syntax)
 	}
 
 	for index := range files {
@@ -679,10 +683,19 @@ func (t *TerraformProvider) isRemoteBackendConfig() (bool, error) {
 				return false, fmt.Errorf("error reading .tf files: %w", err)
 			}
 
+			content := string(fileContent)
+
+			// Check for standard backend blocks
 			for _, backend := range remoteBackends {
-				if strings.Contains(string(fileContent), backend) {
+				if strings.Contains(content, backend) {
 					return true, nil
 				}
+			}
+
+			// Check for Terraform Cloud configuration block (new syntax)
+			// Use a more specific pattern to reduce false positives
+			if strings.Contains(content, "terraform {") && strings.Contains(content, "cloud {") {
+				return true, nil
 			}
 		}
 	}

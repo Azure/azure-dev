@@ -106,6 +106,7 @@ Key fields:
   - `mcp-server`: Provide Model Context Protocol (MCP) tools for AI agents.
   - `service-target-provider`: Provide custom service deployment targets.
   - `framework-service-provider`: Provide custom language frameworks and build systems.
+  - `metadata`: Exposes command structures, configuration schemas, and documentation in a machine-readable JSON format
 - **usage**: Describes the syntax used to invoke the extension commands.
 - **language**: Describes the programming language used to build the extension.
 

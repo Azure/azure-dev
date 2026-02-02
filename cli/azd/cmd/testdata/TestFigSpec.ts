@@ -651,6 +651,10 @@ const completionSpec: Fig.Spec = {
 							],
 						},
 						{
+							name: ['--fresh'],
+							description: 'Force re-authentication by ignoring any cached credentials. Use this to ensure 2FA/MFA is re-validated.',
+						},
+						{
 							name: ['--managed-identity'],
 							description: 'Use a managed identity to authenticate.',
 						},

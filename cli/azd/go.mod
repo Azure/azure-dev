@@ -166,3 +166,5 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20251007200510-49b9836ed3ff // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/AzureAD/microsoft-authentication-library-for-go => github.com/vhvb1989/microsoft-authentication-library-for-go v0.0.0-20260202200120-876f224a6905

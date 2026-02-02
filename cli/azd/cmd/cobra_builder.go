@@ -227,6 +227,11 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 	// Consistently registers output formats for the descriptor
 	if len(descriptor.Options.OutputFormats) > 0 {
 		output.AddOutputParam(cmd, descriptor.Options.OutputFormats, descriptor.Options.DefaultFormat)
+
+		// Add query flag only for commands that support JSON format
+		if slices.Contains(descriptor.Options.OutputFormats, output.JsonFormat) {
+			output.AddQueryParam(cmd)
+		}
 	}
 
 	// Create, register and bind flags when required

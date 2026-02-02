@@ -396,4 +396,3 @@ func (cli *AzureClient) SwapSlot(
 
 	return nil
 }
-

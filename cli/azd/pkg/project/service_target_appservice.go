@@ -634,4 +634,3 @@ func isValidSlotName(name string, availableSlots []string) bool {
 	}
 	return false
 }
-

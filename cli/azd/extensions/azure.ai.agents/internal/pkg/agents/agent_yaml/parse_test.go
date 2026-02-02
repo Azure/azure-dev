@@ -39,6 +39,38 @@ template:
 	}
 }
 
+// TestExtractAgentDefinition_WithAgentField tests parsing YAML with an agent field (alias for template)
+func TestExtractAgentDefinition_WithAgentField(t *testing.T) {
+	yamlContent := []byte(`
+name: test-manifest
+agent:
+  kind: hosted
+  name: test-agent-with-agent-field
+  description: Test agent with agent field
+  protocols:
+    - protocol: responses
+      version: v1
+`)
+
+	agent, err := ExtractAgentDefinition(yamlContent)
+	if err != nil {
+		t.Fatalf("ExtractAgentDefinition failed: %v", err)
+	}
+
+	containerAgent, ok := agent.(ContainerAgent)
+	if !ok {
+		t.Fatalf("Expected ContainerAgent, got %T", agent)
+	}
+
+	if containerAgent.Name != "test-agent-with-agent-field" {
+		t.Errorf("Expected name 'test-agent-with-agent-field', got '%s'", containerAgent.Name)
+	}
+
+	if containerAgent.Kind != AgentKindHosted {
+		t.Errorf("Expected kind 'hosted', got '%s'", containerAgent.Kind)
+	}
+}
+
 // TestExtractAgentDefinition_WithoutTemplateField tests parsing YAML without a template field (standalone format)
 func TestExtractAgentDefinition_WithoutTemplateField(t *testing.T) {
 	yamlContent := []byte(`

@@ -22,13 +22,13 @@ func LoadAndValidateAgentManifest(manifestYamlContent []byte) (*AgentManifest, e
 
 	agentDef, err := ExtractAgentDefinition(manifestYamlContent)
 	if err != nil {
-		return nil, fmt.Errorf("YAML content does not conform to AgentManifest format: %w", err)
+		return nil, err
 	}
 	manifest.Template = agentDef
 
 	resourceDefs, err := ExtractResourceDefinitions(manifestYamlContent)
 	if err != nil {
-		return nil, fmt.Errorf("YAML content does not conform to AgentManifest format: %w", err)
+		return nil, err
 	}
 	manifest.Resources = resourceDefs
 

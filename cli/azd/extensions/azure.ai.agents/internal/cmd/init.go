@@ -1087,7 +1087,7 @@ func (a *InitAction) downloadAgentYaml(
 	// Parse and validate the YAML content against AgentManifest structure
 	agentManifest, err := agent_yaml.LoadAndValidateAgentManifest(content)
 	if err != nil {
-		return nil, "", fmt.Errorf("AgentManifest %w", err)
+		return nil, "", err
 	}
 
 	fmt.Println("✓ YAML content successfully validated against AgentManifest format")

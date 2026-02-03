@@ -21,7 +21,6 @@ When you encounter this error:
 2. **Immediate Solutions:**
    - Run `azd env set AZURE_LOCATION <alternative-region>` 
    - Recommended alternative regions based on user location
-   - Run `azd provision` again
 
 **Example Commands:**
 ```bash
@@ -30,9 +29,6 @@ azd env set AZURE_LOCATION westus
 
 # Check current environment settings
 azd env get-values
-
-# Rerun provision command
-azd provision
 ```
 
 ## Role Assignment Authorization Error
@@ -119,9 +115,6 @@ az role assignment list \
 az role assignment list \
   --assignee <user-email> \
   --output table
-
-# Example 6: After getting permissions, provision the project
-azd provision
 ```
 
 ## Role Assignment Already Exists Error
@@ -171,5 +164,168 @@ When you encounter this error:
      // ...
    }
    ```
-  
 
+## Location Offer Restricted Error for Postgres
+
+**Error Pattern:**
+- Contains: `"code":"ResourceOperationFailure"`
+- Contains: `"Subscriptions are restricted from provisioning in location"`
+- May contain: `"Try again in a different location"`
+- May contain: `"https://aka.ms/postgres-request-quota-increase"` or similar quota increase links
+- May contain: `postgres`
+
+**LLM Instructions:**
+
+When you encounter this error:
+
+1. **Identify the Problem:**
+   - Extract the restricted Azure region from the error message (e.g., "eastus")
+   - Extract the resource type that is restricted (e.g., PostgreSQL Flexible Server)
+   - Confirm it's a subscription-level regional restriction
+
+2. **Immediate Solutions:**
+
+   **Option 1: Use a Different Region if Available Region is Known**
+   
+   Change to an unrestricted region:
+   ```bash
+   # Set a different region
+   azd env set AZURE_LOCATION westus3
+   
+   # Verify the change
+   azd env get-values
+   ```
+
+   **Option 2: Check Available Regions for the Resource Type**
+   
+   Verify if regions support the resource in your subscription:
+   ```bash
+   # For PostgreSQL Flexible Server
+   az postgres flexible-server list-skus --location westus3
+   
+   # Check on offer restriction. Disabled means location can be used
+   az postgres flexible-server list-skus --location westus3 --query "[0].supportedFeatures[?name=='OfferRestricted'].status" -o tsv
+
+   # Check other locations
+   az account list-locations --output table
+   ```
+
+3. **Long-term Solution (If you need the specific region):**
+
+   **Request Quota Increase:**
+   - Open the link provided in the error message (e.g., https://aka.ms/postgres-request-quota-increase)
+   - Let user submit a support request to enable the region for your subscription
+
+4. **Verify Region Access Before Deployment:**
+   ```bash
+   # Check whether resource provider is registered
+   az provider show --namespace Microsoft.DBforPostgreSQL --query "registrationState"
+   
+   # List available regions of the provider
+   az provider show --namespace Microsoft.DBforPostgreSQL --query "resourceTypes[?resourceType=='flexibleServers'].locations"
+
+   # Check whether location is available or not
+   az postgres flexible-server list-skus --location <location> --query "[0].supportedFeatures[?name=='OfferRestricted'].status" -o tsv
+   ```
+
+**Example Commands:**
+```bash
+# Example 1: Change region
+azd env set AZURE_LOCATION westus3
+
+# Example 2: Check available skus in PostgreSQL regions
+az postgres flexible-server list-skus --location westus3 --output table
+
+# Example 3: Check multiple regions for availability
+az postgres flexible-server list-skus --location westus3
+az postgres flexible-server list-skus --location centralus
+az postgres flexible-server list-skus --location westus
+
+# Example 4: View current environment configuration
+azd env get-values
+
+# Example 5: Check resource provider registration
+az provider show --namespace Microsoft.DBforPostgreSQL --query "registrationState"
+az provider show --namespace Microsoft.DBforPostgreSQL --query "resourceTypes[?resourceType=='flexibleServers'].locations"
+az postgres flexible-server list-skus --location westus3 --query "[0].supportedFeatures[?name=='OfferRestricted'].status" -o tsv
+```
+
+## VM Quota Exceeded Error
+
+**Error Pattern:**
+- Contains: `"code":"Unauthorized"`
+- Contains: `"Operation cannot be completed without additional quota"`
+- Contains: `"Current Limit"` and quota details for VM families (e.g., "Basic VMs", "Standard DSv3 Family vCPUs")
+- May contain: `"Current Usage:"` and `"Amount required for this deployment"`
+- May contain: `"New Limit that you should request to enable this deployment"`
+
+**LLM Instructions:**
+
+When you encounter this error:
+
+1. **Identify the Problem:**
+   - Extract the VM family/tier from the error message (e.g., "Basic VMs", "Standard DSv3 Family")
+   - Extract the region if available
+   - Note the current limit and required quota
+   - Confirm it's a VM quota limitation
+
+2. **Immediate Solutions:**
+
+   **Option 1: Check Current Quota Usage and Use New Location**
+   
+   View your current quota limits and usage:
+   ```bash
+   # Check VM quota of a specific region
+   az vm list-usage --location <region> --output table
+   
+   # Look about the specific VM family mentioned in the error
+   az vm list-usage --location <region> --output table | grep -i <VM-family-mention-in-error>
+
+   # Set location to available regions
+   azd env set AZURE_LOCATION westus
+
+   # Check current environment settings
+   azd env get-values
+   ```
+
+   **Option 2: Use a Different VM SKU (Quick Fix)**
+   
+   If the error is for Basic VMs or a restricted tier, modify your infrastructure to use available VM families:
+   
+   - Locate the VM/resource definition in your `infra/` files
+   - Change the SKU to an available tier (e.g., Standard_B2s, Standard_D2s_v3)
+
+   ```bash
+   # Search for VM size/SKU definitions in your infrastructure
+   grep -r "sku\|vmSize" infra/*.bicep
+   ```
+
+   **Option 3: Request Quota Increase**
+   
+   If you need the specific VM family:
+   
+   - Open [Azure Portal](https://ms.portal.azure.com/) in browser 
+   - Go to Azure Portal → Subscriptions → Usage + quotas
+   - Search for the VM family from the error message
+   - Click "Request increase" for the specific region
+
+3. **Verify Quota Before Deployment:**
+   ```bash
+   # Check specific VM family quota - standardDSv3Family is VM family and can be replaced
+   az vm list-usage --location <region> --query "[?contains(name.value, 'standardDSv3Family')]" --output table
+   ```
+
+**Example Commands:**
+```bash
+# Example 1: Check VM quota in a region (e.g eastus)
+az vm list-usage --location eastus --output table
+
+# Example 2: Check available VM sizes in a region (e.g eastus)
+az vm list-sizes --location eastus --output table
+
+# Example 3: Search for VM SKU in infrastructure files
+grep -r "vmSize\|sku" infra/*.bicep infra/**/*.bicep
+
+# Example 4: Check quota for specific VM family (e.g standardDSv3Family)
+az vm list-usage --location eastus --query "[?contains(name.value, 'standardDSv3Family')]"
+```

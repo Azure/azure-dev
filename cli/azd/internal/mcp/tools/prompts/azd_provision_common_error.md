@@ -42,34 +42,36 @@ azd env get-values
 
 **LLM Instructions:**
 
-When you encounter this error:
+When you encounter this error, YOU MUST USE YOUR TERMINAL TOOL TO EXECUTE the following az commands - do not just display them to the user.
 
-1. **Check Current Permissions:**
-   ```bash
-   # Check your current role assignments
-   az role assignment list --assignee <your-email-or-service-principal-or-object-id> --output table
+1. **Check Current Permissions (USE TERMINAL TOOL TO EXECUTE):**
    
-   # Check role assignments at subscription level
-   az role assignment list --scope /subscriptions/<subscription-id> --assignee <your-email> --output table
-   ```
+   First, extract the user email/object-id and subscription-id from the error message.
+   Then USE YOUR TERMINAL TOOL to execute this command:
+   
+   `az role assignment list --assignee <extracted-email-or-object-id> --output table`
 
-2. **Immediate Solutions:**
+2. **Attempt to Grant Permissions (USE TERMINAL TOOL TO EXECUTE):**
 
-   **Request Owner or User Access Administrator Role:**
-   - Contact your Azure subscription administrator
-   - Request either:
-     - **Owner** role at the resource group or subscription level (full access including role assignments)
-     - **User Access Administrator** role (specifically for managing role assignments)
-   - Administrator can grant this using:
-     ```bash
-     # Grant Owner role at subscription level
-     az role assignment create --assignee <your-email> --role Owner --scope /subscriptions/<subscription-id>
-     
-     # Or grant User Access Administrator role at subscription level
-     az role assignment create --assignee <your-email> --role "User Access Administrator" --scope /subscriptions/<subscription-id>
-     ```
+   USE YOUR TERMINAL TOOL to execute this command to grant Owner role:
+   
+   `az role assignment create --assignee <extracted-email-or-object-id> --role Owner --scope /subscriptions/<extracted-subscription-id>`
+   
+   If the above command fails with permission error, USE YOUR TERMINAL TOOL to try User Access Administrator:
+   
+   `az role assignment create --assignee <extracted-email-or-object-id> --role "User Access Administrator" --scope /subscriptions/<extracted-subscription-id>`
+   
+   If both commands fail with permission denied, inform the user they need to contact their Azure subscription administrator.
 
-3. **Long-term Recommendations:**
+3. **Verify Permissions (USE TERMINAL TOOL TO EXECUTE):**
+   
+   After granting, USE YOUR TERMINAL TOOL to verify:
+   
+   `az role assignment list --role Owner --assignee <extracted-email-or-object-id> --scope /subscriptions/<extracted-subscription-id>`
+   
+   If result is not empty [], permissions were granted successfully.
+
+4. **Long-term Recommendations:**
    - Document required permissions in your project README
    - Consider using Azure Managed Identities where possible to reduce manual role assignments
 

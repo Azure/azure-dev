@@ -1,0 +1,279 @@
+# Error Suggestions Configuration
+# ================================
+# This file maps well-known error patterns to user-friendly messages and actionable suggestions.
+# Rules are evaluated in order; the first matching rule wins.
+#
+# Fields:
+#   - patterns: List of strings/regex to match against error messages
+#   - message: User-friendly explanation of what went wrong
+#   - suggestion: Actionable next steps to resolve the issue
+#   - docUrl: Optional link to documentation
+#
+# Pattern Types:
+#   - Simple string: Case-insensitive substring match (e.g., "quota exceeded")
+#   - Regex pattern: Prefix with "regex:" for regular expression (e.g., "regex:(?i)error.*code")
+#
+# Example:
+#   - patterns:
+#       - "some error text"
+#       - "regex:pattern\\d+"
+#     message: "A brief, user-friendly explanation of the error."
+#     suggestion: "Clear instruction on how to fix the issue."
+#     docUrl: "https://learn.microsoft.com/..."
+
+rules:
+  - patterns:
+      - "parsing project file"
+    message: "Your azure.yaml file in invalid"
+    suggestion: "Check the syntax of your azure.yaml file and fix any errors."
+    docUrl: "https://aka.ms/azure-dev/azure-yaml"
+  # ============================================================================
+  # Quota and Capacity Errors
+  # ============================================================================
+  - patterns:
+      - "QuotaExceeded"
+      - "quota exceeded"
+      - "exceeds quota"
+      - "OperationNotAllowed"
+      - "regex:(?i)quota.*limit"
+    message: "Your Azure subscription has reached a resource quota limit."
+    suggestion: "Request a quota increase through the Azure portal, or try deploying to a different region."
+    docUrl: "https://learn.microsoft.com/azure/quotas/quickstart-increase-quota-portal"
+
+  - patterns:
+      - "SkuNotAvailable"
+      - "regex:(?i)sku.*not available"
+      - "regex:(?i)requested.*size.*not available"
+    message: "The requested resource size is not available in the selected region."
+    suggestion: "Try a different region or select a different VM/resource size."
+    docUrl: "https://learn.microsoft.com/azure/azure-resource-manager/troubleshooting/error-sku-not-available"
+
+  - patterns:
+      - "ZonalAllocationFailed"
+      - "AllocationFailed"
+      - "OverconstrainedAllocationRequest"
+    message: "Azure could not allocate the requested resources in this region."
+    suggestion: "Try a different VM size, availability zone, or region."
+    docUrl: "https://learn.microsoft.com/azure/azure-resource-manager/troubleshooting/error-resource-quota"
+
+  # ============================================================================
+  # Authentication and Authorization Errors
+  # ============================================================================
+  - patterns:
+      - "AADSTS"
+      - "regex:(?i)authentication.*failed"
+      - "regex:(?i)invalid.*credentials"
+    message: "Authentication with Azure failed."
+    suggestion: "Run 'azd auth login' to sign in again."
+    docUrl: "https://learn.microsoft.com/azure/developer/azure-developer-cli/reference#azd-auth-login"
+
+  - patterns:
+      - "AuthorizationFailed"
+      - "regex:(?i)authorization.*failed"
+      - "does not have authorization"
+      - "PrincipalNotFound"
+    message: "You don't have permission to perform this operation."
+    suggestion: "Ensure your account has the appropriate Azure RBAC role assigned."
+    docUrl: "https://learn.microsoft.com/azure/role-based-access-control/troubleshooting"
+
+  - patterns:
+      - "LinkedAuthorizationFailed"
+      - "regex:(?i)client.*does not have authorization"
+    message: "You don't have permission to link these resources."
+    suggestion: "Ensure you have 'Owner' or 'User Access Administrator' role on the target resources."
+    docUrl: "https://learn.microsoft.com/azure/role-based-access-control/built-in-roles"
+
+  - patterns:
+      - "InvalidAuthenticationToken"
+      - "ExpiredAuthenticationToken"
+      - "TokenExpired"
+    message: "Your authentication token has expired."
+    suggestion: "Run 'azd auth login' to sign in again."
+    docUrl: "https://learn.microsoft.com/azure/developer/azure-developer-cli/reference#azd-auth-login"
+
+  # ============================================================================
+  # Subscription and Tenant Errors
+  # ============================================================================
+  - patterns:
+      - "SubscriptionNotFound"
+      - "InvalidSubscriptionId"
+      - "regex:(?i)subscription.*not found"
+    message: "The specified Azure subscription was not found."
+    suggestion: "Verify the subscription ID is correct and that you have access to it."
+    docUrl: "https://learn.microsoft.com/azure/azure-resource-manager/troubleshooting/error-not-found"
+
+  - patterns:
+      - "InvalidTenant"
+      - "TenantNotFound"
+      - "regex:(?i)tenant.*not found"
+    message: "The specified Azure AD tenant was not found."
+    suggestion: "Check that you're signed into the correct Azure AD tenant with 'azd auth login'."
+
+  # ============================================================================
+  # Bicep and ARM Template Errors
+  # ============================================================================
+  - patterns:
+      - "BCP"
+      - "regex:BCP\\d{3}"
+    message: "Your Bicep template has an error."
+    suggestion: "Review the error message for the specific issue and line number in your .bicep file."
+    docUrl: "https://learn.microsoft.com/azure/azure-resource-manager/bicep/bicep-error-codes"
+
+  - patterns:
+      - "InvalidTemplate"
+      - "regex:(?i)template.*invalid"
+      - "regex:(?i)invalid.*template"
+    message: "Your deployment template is invalid."
+    suggestion: "Validate the template syntax and parameter values."
+    docUrl: "https://learn.microsoft.com/azure/azure-resource-manager/troubleshooting/common-deployment-errors"
+
+  - patterns:
+      - "InvalidTemplateDeployment"
+      - "DeploymentFailed"
+    message: "The Azure deployment failed."
+    suggestion: "Check the deployment logs in the Azure portal for detailed error information."
+    docUrl: "https://learn.microsoft.com/azure/azure-resource-manager/troubleshooting/common-deployment-errors"
+
+  - patterns:
+      - "MissingRequiredParameter"
+      - "regex:(?i)parameter.*required"
+      - "regex:(?i)missing.*parameter"
+    message: "A required deployment parameter is missing."
+    suggestion: "Ensure all required parameters are specified in your azure.yaml or environment configuration."
+
+  # ============================================================================
+  # Resource Errors
+  # ============================================================================
+  - patterns:
+      - "ResourceNotFound"
+      - "regex:(?i)resource.*not found"
+      - "regex:(?i)could not find.*resource"
+    message: "The specified Azure resource was not found."
+    suggestion: "Verify the resource name, type, and resource group are correct."
+    docUrl: "https://learn.microsoft.com/azure/azure-resource-manager/troubleshooting/error-not-found"
+
+  - patterns:
+      - "ResourceGroupNotFound"
+      - "regex:(?i)resource group.*not found"
+    message: "The resource group does not exist."
+    suggestion: "Create it with 'az group create' or check the name for typos."
+    docUrl: "https://learn.microsoft.com/cli/azure/group#az-group-create"
+
+  - patterns:
+      - "Conflict"
+      - "ResourceAlreadyExists"
+      - "regex:(?i)already exists"
+    message: "A resource with the same name already exists."
+    suggestion: "Use a different name or delete the existing resource first."
+
+  - patterns:
+      - "ResourceGroupBeingDeleted"
+      - "regex:(?i)resource group.*being deleted"
+    message: "The resource group is currently being deleted."
+    suggestion: "Wait for deletion to complete or use a different resource group."
+
+  # ============================================================================
+  # Network Errors
+  # ============================================================================
+  - patterns:
+      - "regex:(?i)connection.*refused"
+      - "regex:(?i)connection.*timed out"
+      - "ETIMEDOUT"
+      - "ECONNREFUSED"
+    message: "A network connection failed."
+    suggestion: "Check your network connectivity and any firewall or proxy settings."
+
+  - patterns:
+      - "regex:(?i)dns.*resolution"
+      - "ENOTFOUND"
+      - "getaddrinfo"
+    message: "DNS resolution failed."
+    suggestion: "Verify the hostname is correct and your DNS settings are configured properly."
+
+  # ============================================================================
+  # Container and Docker Errors
+  # ============================================================================
+  - patterns:
+      - "regex:(?i)docker.*not found"
+      - "regex:(?i)docker.*is not running"
+      - "regex:(?i)cannot connect to.*docker"
+    message: "Docker is not running or not installed."
+    suggestion: "Start Docker Desktop or install Docker."
+    docUrl: "https://docs.docker.com/get-docker/"
+
+  - patterns:
+      - "ImagePullBackOff"
+      - "ErrImagePull"
+      - "regex:(?i)failed to pull.*image"
+    message: "Failed to pull the container image."
+    suggestion: "Verify the image name, tag, and registry credentials."
+
+  # ============================================================================
+  # Azure Container Apps Errors
+  # ============================================================================
+  - patterns:
+      - "ContainerAppOperationError"
+      - "regex:(?i)container app.*failed"
+    message: "Azure Container Apps deployment failed."
+    suggestion: "Check the container configuration and application logs in the Azure portal."
+    docUrl: "https://learn.microsoft.com/azure/container-apps/troubleshooting"
+
+  # ============================================================================
+  # Azure Kubernetes Service Errors
+  # ============================================================================
+  - patterns:
+      - "regex:(?i)kubectl.*not found"
+    message: "kubectl is not installed."
+    suggestion: "Install kubectl to manage your Kubernetes cluster."
+    docUrl: "https://kubernetes.io/docs/tasks/tools/"
+
+  - patterns:
+      - "regex:(?i)kubeconfig.*not found"
+      - "regex:(?i)no.*cluster.*credentials"
+    message: "Kubernetes credentials are not configured."
+    suggestion: "Run 'az aks get-credentials' to configure kubectl for your cluster."
+    docUrl: "https://learn.microsoft.com/cli/azure/aks#az-aks-get-credentials"
+
+  # ============================================================================
+  # Tool and Dependency Errors
+  # ============================================================================
+  - patterns:
+      - "regex:(?i)az.*not found"
+      - "regex:(?i)azure cli.*not installed"
+    message: "Azure CLI is not installed."
+    suggestion: "Install Azure CLI to continue."
+    docUrl: "https://learn.microsoft.com/cli/azure/install-azure-cli"
+
+  - patterns:
+      - "regex:(?i)terraform.*not found"
+    message: "Terraform is not installed."
+    suggestion: "Install Terraform to use Terraform-based infrastructure."
+    docUrl: "https://developer.hashicorp.com/terraform/install"
+
+  - patterns:
+      - "regex:(?i)node.*not found"
+      - "regex:(?i)npm.*not found"
+    message: "Node.js is not installed."
+    suggestion: "Install Node.js to build and run JavaScript/TypeScript applications."
+    docUrl: "https://nodejs.org/en/download/"
+
+  - patterns:
+      - "regex:(?i)python.*not found"
+      - "regex:(?i)pip.*not found"
+    message: "Python is not installed."
+    suggestion: "Install Python to build and run Python applications."
+    docUrl: "https://www.python.org/downloads/"
+
+  - patterns:
+      - "regex:(?i)dotnet.*not found"
+    message: ".NET SDK is not installed."
+    suggestion: "Install .NET SDK to build and run .NET applications."
+    docUrl: "https://dotnet.microsoft.com/download"
+
+  - patterns:
+      - "regex:(?i)java.*not found"
+      - "regex:(?i)maven.*not found"
+      - "regex:(?i)gradle.*not found"
+    message: "Java or build tools are not installed."
+    suggestion: "Install JDK and Maven/Gradle for Java development."
+    docUrl: "https://learn.microsoft.com/java/openjdk/download"

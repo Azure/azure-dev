@@ -72,7 +72,81 @@ agent:
 	}
 }
 
-// TestExtractAgentDefinition_WithoutTemplateField tests parsing YAML without a template field (standalone format)
+// TestExtractAgentDefinition_BothTemplateAndAgent tests that template takes precedence when both fields are present
+func TestExtractAgentDefinition_BothTemplateAndAgent(t *testing.T) {
+	yamlContent := []byte(`
+name: test-manifest
+template:
+  kind: hosted
+  name: test-agent-from-template
+  description: Agent from template field
+  protocols:
+    - protocol: responses
+      version: v1
+agent:
+  kind: hosted
+  name: test-agent-from-agent
+  description: Agent from agent field
+  protocols:
+    - protocol: responses
+      version: v1
+`)
+
+	agent, err := ExtractAgentDefinition(yamlContent)
+	if err != nil {
+		t.Fatalf("ExtractAgentDefinition failed: %v", err)
+	}
+
+	containerAgent, ok := agent.(ContainerAgent)
+	if !ok {
+		t.Fatalf("Expected ContainerAgent, got %T", agent)
+	}
+
+	// Should use template field, not agent field
+	if containerAgent.Name != "test-agent-from-template" {
+		t.Errorf("Expected name 'test-agent-from-template' (from template field), got '%s'", containerAgent.Name)
+	}
+}
+
+// TestExtractAgentDefinition_EmptyAgentField tests that an empty or null agent field returns an error
+func TestExtractAgentDefinition_EmptyAgentField(t *testing.T) {
+	testCases := []struct {
+		name string
+		yaml string
+	}{
+		{
+			name: "null agent field",
+			yaml: `
+name: test-manifest
+agent: null
+`,
+		},
+		{
+			name: "empty agent field",
+			yaml: `
+name: test-manifest
+agent: {}
+`,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := ExtractAgentDefinition([]byte(tc.yaml))
+			if err == nil {
+				t.Fatal("Expected error for empty/null agent field, got nil")
+			}
+
+			// The error should indicate missing template/agent field
+			expectedMsg := "YAML must contain either a 'template' or 'agent' field"
+			if !strings.Contains(err.Error(), expectedMsg) {
+				t.Errorf("Expected error message to contain '%s', got '%s'", expectedMsg, err.Error())
+			}
+		})
+	}
+}
+
+// TestExtractAgentDefinition_WithoutTemplateField tests that YAML without template or agent field returns an error
 func TestExtractAgentDefinition_WithoutTemplateField(t *testing.T) {
 	yamlContent := []byte(`
 kind: hosted
@@ -94,38 +168,14 @@ environment_variables:
     value: ${POSTGRES_DATABASE}
 `)
 
-	agent, err := ExtractAgentDefinition(yamlContent)
-	if err != nil {
-		t.Fatalf("ExtractAgentDefinition failed: %v", err)
+	_, err := ExtractAgentDefinition(yamlContent)
+	if err == nil {
+		t.Fatal("Expected error for YAML without template or agent field, got nil")
 	}
 
-	containerAgent, ok := agent.(ContainerAgent)
-	if !ok {
-		t.Fatalf("Expected ContainerAgent, got %T", agent)
-	}
-
-	if containerAgent.Name != "lego-social-media-agent" {
-		t.Errorf("Expected name 'lego-social-media-agent', got '%s'", containerAgent.Name)
-	}
-
-	if containerAgent.Kind != AgentKindHosted {
-		t.Errorf("Expected kind 'hosted', got '%s'", containerAgent.Kind)
-	}
-
-	if containerAgent.Description == nil || *containerAgent.Description == "" {
-		t.Error("Expected description to be set")
-	}
-
-	if containerAgent.Metadata == nil {
-		t.Error("Expected metadata to be set")
-	}
-
-	if len(containerAgent.Protocols) == 0 {
-		t.Error("Expected protocols to be set")
-	}
-
-	if containerAgent.EnvironmentVariables == nil || len(*containerAgent.EnvironmentVariables) == 0 {
-		t.Error("Expected environment_variables to be set")
+	expectedMsg := "YAML must contain either a 'template' or 'agent' field"
+	if !strings.Contains(err.Error(), expectedMsg) {
+		t.Errorf("Expected error message to contain '%s', got '%s'", expectedMsg, err.Error())
 	}
 }
 
@@ -147,26 +197,26 @@ template: "this is not a map"
 	}
 }
 
-// TestExtractAgentDefinition_MissingKind tests that missing kind field returns an error
-func TestExtractAgentDefinition_MissingKind(t *testing.T) {
+// TestExtractAgentDefinition_MissingTemplateOrAgentField tests that YAML without template or agent field returns an error
+func TestExtractAgentDefinition_MissingTemplateOrAgentField(t *testing.T) {
 	yamlContent := []byte(`
 name: test-agent
-description: Test agent without kind field
+description: Test agent without template or agent field
 `)
 
 	_, err := ExtractAgentDefinition(yamlContent)
 	if err == nil {
-		t.Fatal("Expected error for missing kind field, got nil")
+		t.Fatal("Expected error for YAML without template or agent field, got nil")
 	}
 
-	expectedMsg := "unrecognized agent kind"
+	expectedMsg := "YAML must contain either a 'template' or 'agent' field"
 	if !strings.Contains(err.Error(), expectedMsg) {
 		t.Errorf("Expected error message to contain '%s', got '%s'", expectedMsg, err.Error())
 	}
 }
 
-// TestLoadAndValidateAgentManifest_StandaloneFormat tests the full validation flow with standalone format
-func TestLoadAndValidateAgentManifest_StandaloneFormat(t *testing.T) {
+// TestLoadAndValidateAgentManifest_WithoutTemplateField tests that YAML without template or agent field returns an error
+func TestLoadAndValidateAgentManifest_WithoutTemplateField(t *testing.T) {
 	yamlContent := []byte(`
 kind: hosted
 name: test-standalone-agent
@@ -176,28 +226,21 @@ protocols:
     version: v1
 `)
 
-	manifest, err := LoadAndValidateAgentManifest(yamlContent)
-	if err != nil {
-		t.Fatalf("LoadAndValidateAgentManifest failed: %v", err)
+	_, err := LoadAndValidateAgentManifest(yamlContent)
+	if err == nil {
+		t.Fatal("Expected error for YAML without template or agent field, got nil")
 	}
 
-	if manifest == nil {
-		t.Fatal("Expected manifest to be non-nil")
-	}
-
-	containerAgent, ok := manifest.Template.(ContainerAgent)
-	if !ok {
-		t.Fatalf("Expected Template to be ContainerAgent, got %T", manifest.Template)
-	}
-
-	if containerAgent.Name != "test-standalone-agent" {
-		t.Errorf("Expected name 'test-standalone-agent', got '%s'", containerAgent.Name)
+	expectedMsg := "YAML must contain either a 'template' or 'agent' field"
+	if !strings.Contains(err.Error(), expectedMsg) {
+		t.Errorf("Expected error message to contain '%s', got '%s'", expectedMsg, err.Error())
 	}
 }
 
 // TestExtractAgentDefinition_IssueExample tests the exact YAML from the GitHub issue
 func TestExtractAgentDefinition_IssueExample(t *testing.T) {
 	// This is the exact YAML from the GitHub issue that was causing the panic
+	// It should now return a proper error message instead of panicking
 	yamlContent := []byte(`# yaml-language-server: $schema=https://raw.githubusercontent.com/microsoft/AgentSchema/refs/heads/main/schemas/v1.0/ContainerAgent.yaml
 
 kind: hosted
@@ -223,31 +266,23 @@ environment_variables:
       value: ${POSTGRES_DATABASE}
 `)
 
-	agent, err := ExtractAgentDefinition(yamlContent)
-	if err != nil {
-		t.Fatalf("ExtractAgentDefinition failed with issue example: %v", err)
+	_, err := ExtractAgentDefinition(yamlContent)
+	if err == nil {
+		t.Fatal("Expected error for YAML without template or agent field, got nil")
 	}
 
-	containerAgent, ok := agent.(ContainerAgent)
-	if !ok {
-		t.Fatalf("Expected ContainerAgent, got %T", agent)
+	expectedMsg := "YAML must contain either a 'template' or 'agent' field"
+	if !strings.Contains(err.Error(), expectedMsg) {
+		t.Errorf("Expected error message to contain '%s', got '%s'", expectedMsg, err.Error())
 	}
 
-	if containerAgent.Name != "lego-social-media-agent" {
-		t.Errorf("Expected name 'lego-social-media-agent', got '%s'", containerAgent.Name)
+	// Test full validation flow - should also return error
+	_, err = LoadAndValidateAgentManifest(yamlContent)
+	if err == nil {
+		t.Fatal("Expected error from LoadAndValidateAgentManifest for YAML without template or agent field, got nil")
 	}
 
-	if containerAgent.Kind != AgentKindHosted {
-		t.Errorf("Expected kind 'hosted', got '%s'", containerAgent.Kind)
-	}
-
-	// Test full validation flow
-	manifest, err := LoadAndValidateAgentManifest(yamlContent)
-	if err != nil {
-		t.Fatalf("LoadAndValidateAgentManifest failed with issue example: %v", err)
-	}
-
-	if manifest.Name != "lego-social-media-agent" {
-		t.Errorf("Expected manifest name 'lego-social-media-agent', got '%s'", manifest.Name)
+	if !strings.Contains(err.Error(), expectedMsg) {
+		t.Errorf("Expected error message to contain '%s', got '%s'", expectedMsg, err.Error())
 	}
 }

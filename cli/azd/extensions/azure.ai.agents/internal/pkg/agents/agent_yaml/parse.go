@@ -47,15 +47,18 @@ func ExtractAgentDefinition(manifestYamlContent []byte) (any, error) {
 		return nil, fmt.Errorf("YAML content is not valid: %w", err)
 	}
 
-	// Handle both manifest format (with "template" or "agent" field) and standalone agent format (without wrapper field)
+	// Handle both manifest format with "template" or "agent" field
+	// If both "template" and "agent" are present, "template" takes precedence and "agent" is ignored
 	var templateBytes []byte
 
-	// Check for "template" field first, then "agent" field as an alias
 	if templateValue, exists := genericManifest["template"]; exists && templateValue != nil {
 		// Manifest format with "template" field
 		template, ok := templateValue.(map[string]interface{})
 		if !ok {
 			return nil, fmt.Errorf("template field must be a map, got %T", templateValue)
+		}
+		if len(template) == 0 {
+			return nil, fmt.Errorf("YAML must contain either a 'template' or 'agent' field with the agent definition. See https://github.com/microsoft/AgentSchema for the expected format")
 		}
 		var err error
 		templateBytes, err = yaml.Marshal(template)
@@ -68,14 +71,17 @@ func ExtractAgentDefinition(manifestYamlContent []byte) (any, error) {
 		if !ok {
 			return nil, fmt.Errorf("agent field must be a map, got %T", agentValue)
 		}
+		if len(template) == 0 {
+			return nil, fmt.Errorf("YAML must contain either a 'template' or 'agent' field with the agent definition. See https://github.com/microsoft/AgentSchema for the expected format")
+		}
 		var err error
 		templateBytes, err = yaml.Marshal(template)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal agent: %w", err)
 		}
 	} else {
-		// Standalone agent format - the entire document is the agent definition
-		templateBytes = manifestYamlContent
+		// Neither "template" nor "agent" field found - return error
+		return nil, fmt.Errorf("YAML must contain either a 'template' or 'agent' field with the agent definition. See https://github.com/microsoft/AgentSchema for the expected format")
 	}
 
 	var agentDef AgentDefinition

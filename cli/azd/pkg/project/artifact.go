@@ -95,13 +95,26 @@ func (a *Artifact) ToString(currentIndentation string) string {
 			discriminator = customDiscriminator
 		}
 
-		return fmt.Sprintf(
+		// Only make the endpoint clickable if it's a remote location
+		displayLocation := location
+		if a.LocationKind == LocationKindRemote {
+			displayLocation = output.WithHyperlink(location, location)
+		}
+
+		result := fmt.Sprintf(
 			"%s- %s: %s %s",
 			currentIndentation,
 			label,
-			output.WithHyperlink(location, location),
+			displayLocation,
 			discriminator,
 		)
+
+		// Append note if present
+		if note, has := a.Metadata["note"]; has && note != "" {
+			result += fmt.Sprintf("\n%s  • %s", currentIndentation, note)
+		}
+
+		return result
 
 	case ArtifactKindContainer:
 		if a.LocationKind == LocationKindRemote {

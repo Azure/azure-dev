@@ -627,12 +627,13 @@ func (p *AgentServiceTargetProvider) deployArtifacts(
 		artifacts = append(artifacts, &azdext.Artifact{
 			Kind:         azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
 			Location:     agentEndpoint,
-			LocationKind: azdext.LocationKind_LOCATION_KIND_UNSPECIFIED,
+			LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
 			Metadata: map[string]string{
 				"agentName":    agentName,
 				"agentVersion": agentVersion,
 				"label":        "Agent endpoint",
-				"note":         "For consuming agent endpoint, refer to https://aka.ms/azd-agents-invoke",
+				"clickable":    "false",
+				"note":         "For information on invoking the agent, see https://aka.ms/azd-agents-invoke",
 			},
 		})
 	}

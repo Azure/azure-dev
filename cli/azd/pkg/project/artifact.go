@@ -14,6 +14,16 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
+// Metadata key constants for artifact configuration
+const (
+	// MetadataKeyClickable controls whether an endpoint should be rendered as a clickable hyperlink.
+	// Set to "false" to display the URL as plain text (users can still Ctrl+Click in supported terminals).
+	MetadataKeyClickable = "clickable"
+
+	// MetadataKeyNote adds a note line below the artifact output.
+	MetadataKeyNote = "note"
+)
+
 // ArtifactKind represents well-known artifact types in the Azure Developer CLI
 type ArtifactKind string
 
@@ -95,9 +105,14 @@ func (a *Artifact) ToString(currentIndentation string) string {
 			discriminator = customDiscriminator
 		}
 
-		// Only make the endpoint clickable if it's a remote location
+		// Endpoints are clickable (hyperlinked) by default, but can be disabled via metadata
+		clickable := true
+		if val, has := a.Metadata[MetadataKeyClickable]; has && strings.EqualFold(val, "false") {
+			clickable = false
+		}
+
 		displayLocation := location
-		if a.LocationKind == LocationKindRemote {
+		if clickable {
 			displayLocation = output.WithHyperlink(location, location)
 		}
 
@@ -110,8 +125,8 @@ func (a *Artifact) ToString(currentIndentation string) string {
 		)
 
 		// Append note if present
-		if note, has := a.Metadata["note"]; has && note != "" {
-			result += fmt.Sprintf("\n%s  • %s", currentIndentation, note)
+		if note, has := a.Metadata[MetadataKeyNote]; has && note != "" {
+			result += fmt.Sprintf("\n%s  %s", currentIndentation, note)
 		}
 
 		return result

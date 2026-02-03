@@ -3,10 +3,16 @@
 
 package internal
 
-// ErrorWithSuggestion is a custom error type that includes a suggestion for the user
+// ErrorWithSuggestion is a custom error type that includes user-friendly messaging
 type ErrorWithSuggestion struct {
+	// Err is the original underlying error
+	Err error
+	// Message is a user-friendly explanation of what went wrong
+	Message string
+	// Suggestion is actionable next steps to resolve the issue
 	Suggestion string
-	Err        error
+	// DocUrl is an optional link to documentation
+	DocUrl string
 }
 
 // Error returns the error message

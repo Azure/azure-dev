@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/llm"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -28,12 +29,13 @@ import (
 )
 
 type ErrorMiddleware struct {
-	options           *Options
-	console           input.Console
-	agentFactory      *agent.AgentFactory
-	global            *internal.GlobalCommandOptions
-	featuresManager   *alpha.FeatureManager
-	userConfigManager config.UserConfigManager
+	options                *Options
+	console                input.Console
+	agentFactory           *agent.AgentFactory
+	global                 *internal.GlobalCommandOptions
+	featuresManager        *alpha.FeatureManager
+	userConfigManager      config.UserConfigManager
+	errorSuggestionService *errorhandler.ErrorSuggestionService
 }
 
 func NewErrorMiddleware(
@@ -42,14 +44,16 @@ func NewErrorMiddleware(
 	global *internal.GlobalCommandOptions,
 	featuresManager *alpha.FeatureManager,
 	userConfigManager config.UserConfigManager,
+	errorSuggestionService *errorhandler.ErrorSuggestionService,
 ) Middleware {
 	return &ErrorMiddleware{
-		options:           options,
-		console:           console,
-		agentFactory:      agentFactory,
-		global:            global,
-		featuresManager:   featuresManager,
-		userConfigManager: userConfigManager,
+		options:                options,
+		console:                console,
+		agentFactory:           agentFactory,
+		global:                 global,
+		featuresManager:        featuresManager,
+		userConfigManager:      userConfigManager,
+		errorSuggestionService: errorSuggestionService,
 	}
 }
 
@@ -64,14 +68,6 @@ func (e *ErrorMiddleware) displayAgentResponse(ctx context.Context, response str
 }
 
 func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
-	// Short-circuit agentic error handling in non-interactive scenarios:
-	// - LLM feature is disabled
-	// - User specified --no-prompt (non-interactive mode)
-	// - Running in CI/CD environment where user interaction is not possible
-	if !e.featuresManager.IsEnabled(llm.FeatureLlm) || e.global.NoPrompt || resource.IsRunningOnCI() {
-		return next(ctx)
-	}
-
 	actionResult, err := next(ctx)
 
 	// Stop the spinner always to un-hide cursor
@@ -81,10 +77,29 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		return actionResult, err
 	}
 
-	// Error already has a suggestion, no need for AI
+	// Check if error already has a suggestion
 	var suggestionErr *internal.ErrorWithSuggestion
 	if errors.As(err, &suggestionErr) {
-		e.console.Message(ctx, suggestionErr.Suggestion)
+		// Already has a suggestion, return as-is
+		return actionResult, err
+	}
+
+	// Try to match error against known patterns and wrap with suggestion
+	if suggestion := e.errorSuggestionService.FindSuggestion(err.Error()); suggestion != nil {
+		wrappedErr := &internal.ErrorWithSuggestion{
+			Err:        err,
+			Message:    suggestion.Message,
+			Suggestion: suggestion.Suggestion,
+			DocUrl:     suggestion.DocUrl,
+		}
+		return actionResult, wrappedErr
+	}
+
+	// Short-circuit agentic error handling in non-interactive scenarios:
+	// - LLM feature is disabled
+	// - User specified --no-prompt (non-interactive mode)
+	// - Running in CI/CD environment where user interaction is not possible
+	if !e.featuresManager.IsEnabled(llm.FeatureLlm) || e.global.NoPrompt || resource.IsRunningOnCI() {
 		return actionResult, err
 	}
 

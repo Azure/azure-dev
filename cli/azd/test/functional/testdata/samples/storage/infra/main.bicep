@@ -25,6 +25,12 @@ param secureValue string
 @secure()
 param secureObject object = {}
 
+@description('Test parameter for array-typed values from environment variable.')
+param arrayValue array = []
+
+@description('Test parameter for object-typed values from environment variable.')
+param objectValue object = {}
+
 // tests should not prompt for this parameter
 param nullableParam string?
 output nullableParamOutput string? = nullableParam
@@ -36,6 +42,8 @@ var tags = {
   BoolTag: string(boolTagValue)
   SecureTag: secureValue
   SecureObjectTag: string(secureObject)
+  ArrayTag: string(arrayValue)
+  ObjectTag: string(objectValue)
 }
 
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
@@ -70,3 +78,6 @@ output OBJECT object = {
   }
   array: [true, 'abc', 1234]
 }
+// test output of array and object parameters from environment variables
+output ARRAY_PARAM array = arrayValue
+output OBJECT_PARAM object = objectValue

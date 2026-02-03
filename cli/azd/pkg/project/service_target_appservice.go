@@ -441,7 +441,9 @@ func (st *appServiceTarget) handleSwapTask(
 	taskArgs string,
 ) error {
 	// Parse task arguments to get src and dst
-	srcSlot, dstSlot := parseTaskArgs(taskArgs)
+	srcArg, dstArg := parseTaskArgs(taskArgs)
+	srcSlot := srcArg.value
+	dstSlot := dstArg.value
 
 	// Get the list of deployment slots
 	slots, err := st.cli.GetAppServiceSlots(
@@ -468,7 +470,7 @@ func (st *appServiceTarget) handleSwapTask(
 	// If there's only one slot, auto-select based on the scenario
 	if len(slots) == 1 {
 		onlySlot := slots[0].Name
-		if srcSlot == "" && dstSlot == "" {
+		if !srcArg.provided && !dstArg.provided {
 			// No task arguments provided - default behavior: swap slot to production
 			srcSlot = onlySlot
 			dstSlot = ""
@@ -484,9 +486,9 @@ func (st *appServiceTarget) handleSwapTask(
 		}
 	} else {
 		// Multiple slots - prompt if arguments not provided
-		if srcSlot == "" || dstSlot == "" {
+		if !srcArg.provided || !dstArg.provided {
 			// Prompt for source slot
-			if srcSlot == "" {
+			if !srcArg.provided {
 				srcOptions := []string{"@main (production)"}
 				for _, slot := range slots {
 					srcOptions = append(srcOptions, slot.Name)
@@ -508,7 +510,7 @@ func (st *appServiceTarget) handleSwapTask(
 			}
 
 			// Prompt for destination slot (excluding the selected source)
-			if dstSlot == "" {
+			if !dstArg.provided {
 				dstOptions := []string{}
 				if srcSlot != "" {
 					dstOptions = append(dstOptions, "@main (production)")
@@ -591,15 +593,21 @@ func (st *appServiceTarget) handleSwapTask(
 	return nil
 }
 
+// slotArg represents a slot argument that may or may not be explicitly provided.
+type slotArg struct {
+	value    string // The slot name ("" means @main/production)
+	provided bool   // Whether the argument was explicitly provided
+}
+
 // parseTaskArgs parses task arguments in the format "key=value;key2=value2"
-// Returns (sourceSlot, destinationSlot) as strings
+// Returns (sourceSlot, destinationSlot) as slotArg structs
 // The value "@main" is normalized to an empty string to represent the main app (production slot).
-func parseTaskArgs(taskArgs string) (string, string) {
+func parseTaskArgs(taskArgs string) (slotArg, slotArg) {
 	if taskArgs == "" {
-		return "", ""
+		return slotArg{}, slotArg{}
 	}
 
-	var sourceSlot, destinationSlot string
+	var sourceSlot, destinationSlot slotArg
 	parts := strings.Split(taskArgs, ";")
 	for _, part := range parts {
 		kv := strings.SplitN(part, "=", 2)
@@ -616,9 +624,9 @@ func parseTaskArgs(taskArgs string) (string, string) {
 
 		switch key {
 		case "src":
-			sourceSlot = value
+			sourceSlot = slotArg{value: value, provided: true}
 		case "dst":
-			destinationSlot = value
+			destinationSlot = slotArg{value: value, provided: true}
 		}
 	}
 

@@ -282,6 +282,322 @@ const completionSpec: Fig.Spec = {
 				{
 					name: ['finetuning'],
 					description: 'Extension for Foundry Fine Tuning. (Preview)',
+					subcommands: [
+						{
+							name: ['init'],
+							description: 'Initialize a new AI Fine-tuning project. (Preview)',
+							options: [
+								{
+									name: ['--environment', '-n'],
+									description: 'The name of the azd environment to use.',
+									args: [
+										{
+											name: 'environment',
+										},
+									],
+								},
+								{
+									name: ['--from-job', '-j'],
+									description: 'Clone configuration from an existing job ID',
+									args: [
+										{
+											name: 'from-job',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-e'],
+									description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--project-resource-id', '-p'],
+									description: 'ARM resource ID of the Microsoft Foundry Project (e.g., /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.CognitiveServices/accounts/{account}/projects/{project})',
+									args: [
+										{
+											name: 'project-resource-id',
+										},
+									],
+								},
+								{
+									name: ['--subscription', '-s'],
+									description: 'Azure subscription ID',
+									args: [
+										{
+											name: 'subscription',
+										},
+									],
+								},
+								{
+									name: ['--template', '-t'],
+									description: 'URL or path to a fine-tune job template',
+									args: [
+										{
+											name: 'template',
+										},
+									],
+								},
+								{
+									name: ['--working-directory', '-w'],
+									description: 'Local path for project output',
+									args: [
+										{
+											name: 'working-directory',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['jobs'],
+							description: 'Manage fine-tuning jobs',
+							subcommands: [
+								{
+									name: ['cancel'],
+									description: 'Cancels a running or queued fine-tuning job.',
+									options: [
+										{
+											name: ['--force'],
+											description: 'Skip confirmation prompt',
+											isDangerous: true,
+										},
+										{
+											name: ['--id', '-i'],
+											description: 'Job ID (required)',
+											args: [
+												{
+													name: 'id',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['deploy'],
+									description: 'Deploy a fine-tuned model to Azure Cognitive Services',
+									options: [
+										{
+											name: ['--capacity', '-c'],
+											description: 'Capacity units',
+											args: [
+												{
+													name: 'capacity',
+												},
+											],
+										},
+										{
+											name: ['--deployment-name', '-d'],
+											description: 'Deployment name (required)',
+											args: [
+												{
+													name: 'deployment-name',
+												},
+											],
+										},
+										{
+											name: ['--job-id', '-i'],
+											description: 'Fine-tuning job ID (required)',
+											args: [
+												{
+													name: 'job-id',
+												},
+											],
+										},
+										{
+											name: ['--model-format', '-m'],
+											description: 'Model format',
+											args: [
+												{
+													name: 'model-format',
+												},
+											],
+										},
+										{
+											name: ['--no-wait'],
+											description: 'Do not wait for deployment to complete',
+										},
+										{
+											name: ['--sku', '-s'],
+											description: 'SKU for deployment',
+											args: [
+												{
+													name: 'sku',
+												},
+											],
+										},
+										{
+											name: ['--version', '-v'],
+											description: 'Model version',
+											args: [
+												{
+													name: 'version',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['list'],
+									description: 'List fine-tuning jobs.',
+									options: [
+										{
+											name: ['--after'],
+											description: 'Pagination cursor',
+											args: [
+												{
+													name: 'after',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'Output format: table, json',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+										{
+											name: ['--top', '-t'],
+											description: 'Number of jobs to return',
+											args: [
+												{
+													name: 'top',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['pause'],
+									description: 'Pauses a running fine-tuning job.',
+									options: [
+										{
+											name: ['--id', '-i'],
+											description: 'Job ID (required)',
+											args: [
+												{
+													name: 'id',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['resume'],
+									description: 'Resumes a paused fine-tuning job.',
+									options: [
+										{
+											name: ['--id', '-i'],
+											description: 'Job ID (required)',
+											args: [
+												{
+													name: 'id',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['show'],
+									description: 'Shows detailed information about a specific job.',
+									options: [
+										{
+											name: ['--id', '-i'],
+											description: 'Job ID (required)',
+											args: [
+												{
+													name: 'id',
+												},
+											],
+										},
+										{
+											name: ['--logs'],
+											description: 'Include recent training logs',
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'Output format: table, json, yaml',
+											args: [
+												{
+													name: 'output',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['submit'],
+									description: 'submit fine tuning job',
+									options: [
+										{
+											name: ['--file', '-f'],
+											description: 'Path to the config file.',
+											args: [
+												{
+													name: 'file',
+												},
+											],
+										},
+										{
+											name: ['--model', '-m'],
+											description: 'Base model to fine-tune. Overrides config file. Required if --file is not provided',
+											args: [
+												{
+													name: 'model',
+												},
+											],
+										},
+										{
+											name: ['--seed', '-r'],
+											description: 'Random seed for reproducibility of the job. If a seed is not specified, one will be generated for you. Overrides config file.',
+											args: [
+												{
+													name: 'seed',
+												},
+											],
+										},
+										{
+											name: ['--suffix', '-s'],
+											description: 'An optional string of up to 64 characters that will be added to your fine-tuned model name. Overrides config file.',
+											args: [
+												{
+													name: 'suffix',
+												},
+											],
+										},
+										{
+											name: ['--training-file', '-t'],
+											description: 'Training file ID or local path. Use \'local:\' prefix for local paths. Required if --file is not provided',
+											args: [
+												{
+													name: 'training-file',
+												},
+											],
+										},
+										{
+											name: ['--validation-file', '-v'],
+											description: 'Validation file ID or local path. Use \'local:\' prefix for local paths.',
+											args: [
+												{
+													name: 'validation-file',
+												},
+											],
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['version'],
+							description: 'Prints the version of the application',
+						},
+					],
 				},
 			],
 		},
@@ -2072,6 +2388,50 @@ const completionSpec: Fig.Spec = {
 						{
 							name: ['finetuning'],
 							description: 'Extension for Foundry Fine Tuning. (Preview)',
+							subcommands: [
+								{
+									name: ['init'],
+									description: 'Initialize a new AI Fine-tuning project. (Preview)',
+								},
+								{
+									name: ['jobs'],
+									description: 'Manage fine-tuning jobs',
+									subcommands: [
+										{
+											name: ['cancel'],
+											description: 'Cancels a running or queued fine-tuning job.',
+										},
+										{
+											name: ['deploy'],
+											description: 'Deploy a fine-tuned model to Azure Cognitive Services',
+										},
+										{
+											name: ['list'],
+											description: 'List fine-tuning jobs.',
+										},
+										{
+											name: ['pause'],
+											description: 'Pauses a running fine-tuning job.',
+										},
+										{
+											name: ['resume'],
+											description: 'Resumes a paused fine-tuning job.',
+										},
+										{
+											name: ['show'],
+											description: 'Shows detailed information about a specific job.',
+										},
+										{
+											name: ['submit'],
+											description: 'submit fine tuning job',
+										},
+									],
+								},
+								{
+									name: ['version'],
+									description: 'Prints the version of the application',
+								},
+							],
 						},
 					],
 				},

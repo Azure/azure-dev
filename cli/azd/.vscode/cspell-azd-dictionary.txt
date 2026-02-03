@@ -75,6 +75,7 @@ BUILDNUMBER
 buildpacks
 byoi
 callstack
+centralus
 cflags
 charmbracelet
 circleci

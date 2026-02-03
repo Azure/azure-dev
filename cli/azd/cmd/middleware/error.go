@@ -394,7 +394,7 @@ func promptForErrorHandlingConsent(
 
 // extractSuggestedSolutions extracts solutions from the LLM response.
 // It expects a JSON response with the structure: {"analysis": "...", "solutions": ["...", "...", "..."]}
-// The response may be wrapped in a "text" field by the agent framework: 
+// The response may be wrapped in a "text" field by the agent framework:
 // {"text": "{\"analysis\": ..., \"solutions\": [...]}"}
 // If JSON parsing fails, it returns an empty slice.
 func extractSuggestedSolutions(llmResponse string) []string {

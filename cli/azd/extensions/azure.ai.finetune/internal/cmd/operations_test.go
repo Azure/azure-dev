@@ -228,7 +228,7 @@ func TestNewOperationDeployModelCommand_Flags(t *testing.T) {
 		{"job-id", "i", ""},
 		{"deployment-name", "d", ""},
 		{"model-format", "m", "OpenAI"},
-		{"sku", "s", "GlobalStandard"},
+		{"sku", "k", "GlobalStandard"},
 		{"version", "v", "1"},
 	}
 

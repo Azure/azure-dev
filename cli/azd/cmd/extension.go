@@ -611,7 +611,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 		stepMessage := fmt.Sprintf("Installing %s extension", output.WithHighLightFormat(extensionId))
 		a.console.ShowSpinner(ctx, stepMessage, input.Step)
 
-		// Check if extension is already installed (any source)
+		// Check if extension is already installed
 		allInstalled, err := a.extensionManager.ListInstalled()
 		if err != nil {
 			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
@@ -640,6 +640,16 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 		}
 
 		a.console.ShowSpinner(ctx, stepMessage, input.Step)
+
+		// Check for namespace conflicts with installed extensions
+		if err := checkNamespaceConflict(
+			selectedExtension.Id,
+			selectedExtension.Namespace,
+			allInstalled,
+		); err != nil {
+			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			return nil, err
+		}
 
 		// Determine target version
 		targetVersion := a.flags.version
@@ -1213,4 +1223,63 @@ func selectDistinctExtension(
 	console.Message(ctx, "")
 
 	return matches[*sourceResponseIndex], nil
+}
+
+// checkNamespaceConflict checks if the given namespace conflicts with any installed extension.
+// Two namespaces conflict if one is a prefix of the other (e.g., "ai" and "ai.agent").
+func checkNamespaceConflict(
+	newExtId string,
+	newNamespace string,
+	installedExtensions map[string]*extensions.Extension,
+) error {
+	if newNamespace == "" {
+		return nil
+	}
+
+	for extId, ext := range installedExtensions {
+		if extId == newExtId {
+			continue // Skip self (for upgrades)
+		}
+		if ext.Namespace == "" {
+			continue
+		}
+
+		if conflict, _ := namespacesConflict(newNamespace, ext.Namespace); conflict {
+			return &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"namespace '%s' conflicts with installed extension '%s' (namespace '%s')",
+					newNamespace, extId, ext.Namespace,
+				),
+				Suggestion: fmt.Sprintf(
+					"Suggestion: uninstall %s first or choose a different extension.",
+					output.WithHighLightFormat(extId),
+				),
+			}
+		}
+	}
+
+	return nil
+}
+
+// namespacesConflict checks if two namespaces conflict.
+// Returns true and a description if they conflict.
+// Comparison is case-insensitive.
+func namespacesConflict(ns1, ns2 string) (bool, string) {
+	// Normalize to lowercase for case-insensitive comparison
+	ns1Lower := strings.ToLower(ns1)
+	ns2Lower := strings.ToLower(ns2)
+
+	if ns1Lower == ns2Lower {
+		return true, "the same namespace"
+	}
+
+	// Check if one is a prefix of the other (with dot separator)
+	if strings.HasPrefix(ns1Lower, ns2Lower+".") {
+		return true, "overlapping namespaces"
+	}
+	if strings.HasPrefix(ns2Lower, ns1Lower+".") {
+		return true, "overlapping namespaces"
+	}
+
+	return false, ""
 }

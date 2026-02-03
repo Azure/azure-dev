@@ -217,7 +217,8 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			If not, jump to step 2.
 			If so, jump to step 3 and only use the solution azd_provision_common_error provided.
             2. Use available tools to identify, explain and diagnose this error when running azd command and its root cause.
-            3. Return ONLY the following JSON object as your final response. Do not add any text before or after. Do not use markdown code blocks. Return raw JSON only:
+            3. Return ONLY the following JSON object as your final response. Do not add any text before or after. 
+			Do not use markdown code blocks. Return raw JSON only:
             {
               "analysis": "Brief explanation of the error and its root cause",
               "solutions": [
@@ -393,7 +394,8 @@ func promptForErrorHandlingConsent(
 
 // extractSuggestedSolutions extracts solutions from the LLM response.
 // It expects a JSON response with the structure: {"analysis": "...", "solutions": ["...", "...", "..."]}
-// The response may be wrapped in a "text" field by the agent framework: {"text": "{\"analysis\": ..., \"solutions\": [...]}"}
+// The response may be wrapped in a "text" field by the agent framework: 
+// {"text": "{\"analysis\": ..., \"solutions\": [...]}"}
 // If JSON parsing fails, it returns an empty slice.
 func extractSuggestedSolutions(llmResponse string) []string {
 	// First, check if response is wrapped in a "text" field (agent framework wrapper)

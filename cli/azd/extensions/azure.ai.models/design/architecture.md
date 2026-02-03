@@ -603,9 +603,60 @@ Environment variables:
 
 ### Phase 3 - Management Commands
 
-- [ ] `azd ai models list`
-- [ ] `azd ai models show`
-- [ ] `azd ai models delete`
+- [ ] `azd ai models list-uploads`
+- [ ] `azd ai models show-upload`
+- [ ] `azd ai models delete-upload`
+
+## Technical Challenges
+
+### 1. No Go SDK for FDP/Project API
+
+There is no official Go SDK for the FDP (Foundational Data Platform) API. We need to build a custom REST API wrapper.
+
+**Impact:**
+- Additional development effort to build and maintain HTTP client
+- Need to handle authentication, error handling, retries manually
+- API changes require manual updates to our wrapper
+
+**Mitigation:**
+```go
+// Build custom FDP client with REST calls
+type FDPClient struct {
+    baseURL    string
+    httpClient *http.Client
+    credential azcore.TokenCredential
+}
+
+func (c *FDPClient) InitializeUpload(ctx context.Context, req UploadRequest) (*UploadInitResponse, error) {
+    token, _ := c.credential.GetToken(ctx, policy.TokenRequestOptions{
+        Scopes: []string{"https://cognitiveservices.azure.com/.default"},
+    })
+    
+    httpReq, _ := http.NewRequestWithContext(ctx, "POST", 
+        c.baseURL+"/datastore/upload/initialize", body)
+    httpReq.Header.Set("Authorization", "Bearer "+token.Token)
+    
+    // Execute and parse response...
+}
+```
+
+### 2. Cognitive Services SDK Available
+
+For model registration and deployment, the existing Azure Cognitive Services Go SDK can be used (same as finetune extension):
+
+```go
+import "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
+```
+
+**Note:** Consider sharing common code with `azure.ai.finetune` extension.
+
+### 3. AzCopy Execution
+
+AzCopy execution is straightforward using `os/exec`. No specific SDK needed.
+
+```go
+cmd := exec.CommandContext(ctx, azcopyPath, "copy", source, sasURI, "--output-type", "json")
+```
 
 ## Open Questions
 
@@ -614,4 +665,6 @@ Environment variables:
 3. **Validation**: Should we validate model file integrity before upload? (checksum)
 4. **Remote URL Support**: For remote URLs, should AzCopy pull directly or do we download first?
 5. **FDP API Contract**: Need final API spec for upload initialization and completion endpoints.
+6. **FDP API Authentication**: What Azure AD scope is required for FDP API calls?
+7. **Shared Code**: Should we share Cognitive Services wrapper code between `azure.ai.models` and `azure.ai.finetune` extensions?
 

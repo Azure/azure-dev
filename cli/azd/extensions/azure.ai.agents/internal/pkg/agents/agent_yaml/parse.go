@@ -58,7 +58,7 @@ func ExtractAgentDefinition(manifestYamlContent []byte) (any, error) {
 			return nil, fmt.Errorf("template field must be a map, got %T", templateValue)
 		}
 		if len(template) == 0 {
-			return nil, fmt.Errorf("YAML must contain either a 'template' or 'agent' field with the agent definition. See https://github.com/microsoft/AgentSchema for the expected format")
+			return nil, fmt.Errorf("YAML content does not conform to AgentManifest format: template field is empty. See https://github.com/microsoft/AgentSchema for the expected format")
 		}
 		var err error
 		templateBytes, err = yaml.Marshal(template)
@@ -72,7 +72,7 @@ func ExtractAgentDefinition(manifestYamlContent []byte) (any, error) {
 			return nil, fmt.Errorf("agent field must be a map, got %T", agentValue)
 		}
 		if len(template) == 0 {
-			return nil, fmt.Errorf("YAML must contain either a 'template' or 'agent' field with the agent definition. See https://github.com/microsoft/AgentSchema for the expected format")
+			return nil, fmt.Errorf("YAML content does not conform to AgentManifest format: agent field is empty. See https://github.com/microsoft/AgentSchema for the expected format")
 		}
 		var err error
 		templateBytes, err = yaml.Marshal(template)
@@ -81,7 +81,7 @@ func ExtractAgentDefinition(manifestYamlContent []byte) (any, error) {
 		}
 	} else {
 		// Neither "template" nor "agent" field found - return error
-		return nil, fmt.Errorf("YAML must contain either a 'template' or 'agent' field with the agent definition. See https://github.com/microsoft/AgentSchema for the expected format")
+		return nil, fmt.Errorf("YAML content does not conform to AgentManifest format: must contain either 'template' or 'agent' field. See https://github.com/microsoft/AgentSchema for the expected format")
 	}
 
 	var agentDef AgentDefinition

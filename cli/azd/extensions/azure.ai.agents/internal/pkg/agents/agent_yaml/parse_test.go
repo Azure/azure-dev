@@ -138,7 +138,7 @@ agent: {}
 			}
 
 			// The error should indicate missing template/agent field
-			expectedMsg := "YAML must contain either a 'template' or 'agent' field"
+			expectedMsg := "YAML content does not conform to AgentManifest format"
 			if !strings.Contains(err.Error(), expectedMsg) {
 				t.Errorf("Expected error message to contain '%s', got '%s'", expectedMsg, err.Error())
 			}
@@ -173,7 +173,7 @@ environment_variables:
 		t.Fatal("Expected error for YAML without template or agent field, got nil")
 	}
 
-	expectedMsg := "YAML must contain either a 'template' or 'agent' field"
+	expectedMsg := "YAML content does not conform to AgentManifest format"
 	if !strings.Contains(err.Error(), expectedMsg) {
 		t.Errorf("Expected error message to contain '%s', got '%s'", expectedMsg, err.Error())
 	}
@@ -209,7 +209,7 @@ description: Test agent without template or agent field
 		t.Fatal("Expected error for YAML without template or agent field, got nil")
 	}
 
-	expectedMsg := "YAML must contain either a 'template' or 'agent' field"
+	expectedMsg := "YAML content does not conform to AgentManifest format"
 	if !strings.Contains(err.Error(), expectedMsg) {
 		t.Errorf("Expected error message to contain '%s', got '%s'", expectedMsg, err.Error())
 	}
@@ -231,7 +231,7 @@ protocols:
 		t.Fatal("Expected error for YAML without template or agent field, got nil")
 	}
 
-	expectedMsg := "YAML must contain either a 'template' or 'agent' field"
+	expectedMsg := "YAML content does not conform to AgentManifest format"
 	if !strings.Contains(err.Error(), expectedMsg) {
 		t.Errorf("Expected error message to contain '%s', got '%s'", expectedMsg, err.Error())
 	}
@@ -271,7 +271,7 @@ environment_variables:
 		t.Fatal("Expected error for YAML without template or agent field, got nil")
 	}
 
-	expectedMsg := "YAML must contain either a 'template' or 'agent' field"
+	expectedMsg := "YAML content does not conform to AgentManifest format"
 	if !strings.Contains(err.Error(), expectedMsg) {
 		t.Errorf("Expected error message to contain '%s', got '%s'", expectedMsg, err.Error())
 	}

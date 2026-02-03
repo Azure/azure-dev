@@ -40,92 +40,24 @@ template:
 	}
 }
 
-// TestExtractAgentDefinition_WithAgentField tests parsing YAML with an agent field (alias for template)
-func TestExtractAgentDefinition_WithAgentField(t *testing.T) {
-	yamlContent := []byte(`
-name: test-manifest
-agent:
-  kind: hosted
-  name: test-agent-with-agent-field
-  description: Test agent with agent field
-  protocols:
-    - protocol: responses
-      version: v1
-`)
-
-	agent, err := ExtractAgentDefinition(yamlContent)
-	if err != nil {
-		t.Fatalf("ExtractAgentDefinition failed: %v", err)
-	}
-
-	containerAgent, ok := agent.(ContainerAgent)
-	if !ok {
-		t.Fatalf("Expected ContainerAgent, got %T", agent)
-	}
-
-	if containerAgent.Name != "test-agent-with-agent-field" {
-		t.Errorf("Expected name 'test-agent-with-agent-field', got '%s'", containerAgent.Name)
-	}
-
-	if containerAgent.Kind != AgentKindHosted {
-		t.Errorf("Expected kind 'hosted', got '%s'", containerAgent.Kind)
-	}
-}
-
-// TestExtractAgentDefinition_BothTemplateAndAgent tests that template takes precedence when both fields are present
-func TestExtractAgentDefinition_BothTemplateAndAgent(t *testing.T) {
-	yamlContent := []byte(`
-name: test-manifest
-template:
-  kind: hosted
-  name: test-agent-from-template
-  description: Agent from template field
-  protocols:
-    - protocol: responses
-      version: v1
-agent:
-  kind: hosted
-  name: test-agent-from-agent
-  description: Agent from agent field
-  protocols:
-    - protocol: responses
-      version: v1
-`)
-
-	agent, err := ExtractAgentDefinition(yamlContent)
-	if err != nil {
-		t.Fatalf("ExtractAgentDefinition failed: %v", err)
-	}
-
-	containerAgent, ok := agent.(ContainerAgent)
-	if !ok {
-		t.Fatalf("Expected ContainerAgent, got %T", agent)
-	}
-
-	// Should use template field, not agent field
-	if containerAgent.Name != "test-agent-from-template" {
-		t.Errorf("Expected name 'test-agent-from-template' (from template field), got '%s'", containerAgent.Name)
-	}
-}
-
-// TestExtractAgentDefinition_EmptyAgentField tests that an empty or null agent field returns an error
-func TestExtractAgentDefinition_EmptyAgentField(t *testing.T) {
+// TestExtractAgentDefinition_EmptyTemplateField tests that an empty or null template field returns an error
+func TestExtractAgentDefinition_EmptyTemplateField(t *testing.T) {
 	testCases := []struct {
 		name string
 		yaml string
 	}{
 		{
-			name: "null agent field",
+			name: "null template field",
 			yaml: `
 name: test-manifest
-agent: null
+template: null
 `,
 		},
 		{
-			name: "empty agent field",
+			name: "empty template field",
 			yaml: `
 name: test-manifest
-agent: {}
+template: {}
 `,
 		},
 	}
@@ -134,10 +66,10 @@ agent: {}
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := ExtractAgentDefinition([]byte(tc.yaml))
 			if err == nil {
-				t.Fatal("Expected error for empty/null agent field, got nil")
+				t.Fatal("Expected error for empty/null template field, got nil")
 			}
 
-			// The error should indicate missing template/agent field
+			// The error should indicate the template field issue
 			expectedMsg := "YAML content does not conform to AgentManifest format"
 			if !strings.Contains(err.Error(), expectedMsg) {
 				t.Errorf("Expected error message to contain '%s', got '%s'", expectedMsg, err.Error())
@@ -146,7 +78,7 @@ agent: {}
 	}
 }
 
-// TestExtractAgentDefinition_WithoutTemplateField tests that YAML without template or agent field returns an error
+// TestExtractAgentDefinition_WithoutTemplateField tests that YAML without template field returns an error
 func TestExtractAgentDefinition_WithoutTemplateField(t *testing.T) {
 	yamlContent := []byte(`
 kind: hosted
@@ -170,10 +102,10 @@ environment_variables:
 
 	_, err := ExtractAgentDefinition(yamlContent)
 	if err == nil {
-		t.Fatal("Expected error for YAML without template or agent field, got nil")
+		t.Fatal("Expected error for YAML without template field, got nil")
 	}
 
-	expectedMsg := "YAML content does not conform to AgentManifest format"
+	expectedMsg := "must contain 'template' field"
 	if !strings.Contains(err.Error(), expectedMsg) {
 		t.Errorf("Expected error message to contain '%s', got '%s'", expectedMsg, err.Error())
 	}
@@ -197,25 +129,25 @@ template: "this is not a map"
 	}
 }
 
-// TestExtractAgentDefinition_MissingTemplateOrAgentField tests that YAML without template or agent field returns an error
-func TestExtractAgentDefinition_MissingTemplateOrAgentField(t *testing.T) {
+// TestExtractAgentDefinition_MissingTemplateField tests that YAML without template field returns an error
+func TestExtractAgentDefinition_MissingTemplateField(t *testing.T) {
 	yamlContent := []byte(`
 name: test-agent
-description: Test agent without template or agent field
+description: Test agent without template field
 `)
 
 	_, err := ExtractAgentDefinition(yamlContent)
 	if err == nil {
-		t.Fatal("Expected error for YAML without template or agent field, got nil")
+		t.Fatal("Expected error for YAML without template field, got nil")
 	}
 
-	expectedMsg := "YAML content does not conform to AgentManifest format"
+	expectedMsg := "must contain 'template' field"
 	if !strings.Contains(err.Error(), expectedMsg) {
 		t.Errorf("Expected error message to contain '%s', got '%s'", expectedMsg, err.Error())
 	}
 }
 
-// TestLoadAndValidateAgentManifest_WithoutTemplateField tests that YAML without template or agent field returns an error
+// TestLoadAndValidateAgentManifest_WithoutTemplateField tests that YAML without template field returns an error
 func TestLoadAndValidateAgentManifest_WithoutTemplateField(t *testing.T) {
 	yamlContent := []byte(`
 kind: hosted
@@ -228,10 +160,10 @@ protocols:
 
 	_, err := LoadAndValidateAgentManifest(yamlContent)
 	if err == nil {
-		t.Fatal("Expected error for YAML without template or agent field, got nil")
+		t.Fatal("Expected error for YAML without template field, got nil")
 	}
 
-	expectedMsg := "YAML content does not conform to AgentManifest format"
+	expectedMsg := "must contain 'template' field"
 	if !strings.Contains(err.Error(), expectedMsg) {
 		t.Errorf("Expected error message to contain '%s', got '%s'", expectedMsg, err.Error())
 	}
@@ -268,10 +200,10 @@ environment_variables:
 
 	_, err := ExtractAgentDefinition(yamlContent)
 	if err == nil {
-		t.Fatal("Expected error for YAML without template or agent field, got nil")
+		t.Fatal("Expected error for YAML without template field, got nil")
 	}
 
-	expectedMsg := "YAML content does not conform to AgentManifest format"
+	expectedMsg := "must contain 'template' field"
 	if !strings.Contains(err.Error(), expectedMsg) {
 		t.Errorf("Expected error message to contain '%s', got '%s'", expectedMsg, err.Error())
 	}
@@ -279,7 +211,7 @@ environment_variables:
 	// Test full validation flow - should also return error
 	_, err = LoadAndValidateAgentManifest(yamlContent)
 	if err == nil {
-		t.Fatal("Expected error from LoadAndValidateAgentManifest for YAML without template or agent field, got nil")
+		t.Fatal("Expected error from LoadAndValidateAgentManifest for YAML without template field, got nil")
 	}
 
 	if !strings.Contains(err.Error(), expectedMsg) {

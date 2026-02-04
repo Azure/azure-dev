@@ -685,17 +685,20 @@ func (t *TerraformProvider) isRemoteBackendConfig() (bool, error) {
 
 			content := string(fileContent)
 
+			// Quick check: if the file doesn't contain "backend" keyword, skip detailed checks
+			if !strings.Contains(content, "backend") {
+				// Still need to check for Terraform Cloud "cloud {}" syntax
+				if strings.Contains(content, "terraform {") && strings.Contains(content, "cloud {") {
+					return true, nil
+				}
+				continue
+			}
+
 			// Check for standard backend blocks
 			for _, backend := range remoteBackends {
 				if strings.Contains(content, backend) {
 					return true, nil
 				}
-			}
-
-			// Check for Terraform Cloud configuration block (new syntax)
-			// Use a more specific pattern to reduce false positives
-			if strings.Contains(content, "terraform {") && strings.Contains(content, "cloud {") {
-				return true, nil
 			}
 		}
 	}

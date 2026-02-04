@@ -13,6 +13,7 @@ import (
 
 const (
 	outputFlagName               = "output"
+	queryFlagName                = "query"
 	supportedFormatterAnnotation = "github.com/azure/azure-dev/cli/azd/pkg/output/supportedOutputFormatters"
 )
 
@@ -35,6 +36,18 @@ func AddOutputParam(cmd *cobra.Command, supportedFormats []Format, defaultFormat
 	discard := new(string)
 	AddOutputFlag(cmd.Flags(), discard, supportedFormats, defaultFormat)
 	return cmd
+}
+
+// AddQueryParam adds a hidden --query flag to the command for JMESPath filtering.
+// This should only be called for commands that support JSON output format.
+func AddQueryParam(cmd *cobra.Command) {
+	cmd.Flags().String(
+		queryFlagName,
+		"",
+		"The JMESPath query string used to filter JSON output.",
+	)
+	//preview:flag hide --query
+	_ = cmd.Flags().MarkHidden(queryFlagName)
 }
 
 func GetCommandFormatter(cmd *cobra.Command) (Formatter, error) {
@@ -60,6 +73,15 @@ func GetCommandFormatter(cmd *cobra.Command) (Formatter, error) {
 	}
 	if !supported {
 		return nil, fmt.Errorf("unsupported format '%s'", desiredFormatter)
+	}
+
+	// Check for --query flag and validate it requires JSON output
+	queryVal, queryErr := cmd.Flags().GetString(queryFlagName)
+	if queryErr == nil && queryVal != "" {
+		if desiredFormatter != string(JsonFormat) {
+			return nil, fmt.Errorf("--query requires --output json or -o json")
+		}
+		return &JsonFormatter{Query: queryVal}, nil
 	}
 
 	return NewFormatter(desiredFormatter)

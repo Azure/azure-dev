@@ -1021,14 +1021,7 @@ func (a *InitAction) downloadAgentYaml(
 		content = []byte(contentStr)
 	} else if isRegistry, registryManifest := a.isRegistryUrl(manifestPointer); isRegistry {
 		// Handle registry URLs
-
-		// Create Azure credential
-		cred, err := azidentity.NewDefaultAzureCredential(nil)
-		if err != nil {
-			return nil, "", fmt.Errorf("failed to create Azure credential: %w", err)
-		}
-
-		manifestClient := registry_api.NewRegistryAgentManifestClient(registryManifest.registryName, cred)
+		manifestClient := registry_api.NewRegistryAgentManifestClient(registryManifest.registryName, a.credential)
 
 		var versionResult *registry_api.Manifest
 		if registryManifest.manifestVersion == "" {

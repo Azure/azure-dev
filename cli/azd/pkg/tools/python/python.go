@@ -67,9 +67,17 @@ func (cli *Cli) Name() string {
 	return "Python CLI"
 }
 
-func (cli *Cli) InstallRequirements(ctx context.Context, workingDir, environment, requirementFile string) error {
+// InstallRequirements installs packages from a requirements file in a virtual environment.
+// Optional env parameter allows passing additional environment variables to the python process.
+func (cli *Cli) InstallRequirements(
+	ctx context.Context,
+	workingDir,
+	environment,
+	requirementFile string,
+	env []string,
+) error {
 	args := []string{"-m", "pip", "install", "-r", requirementFile}
-	_, err := cli.Run(ctx, workingDir, environment, args...)
+	_, err := cli.Run(ctx, workingDir, environment, env, args...)
 	if err != nil {
 		return fmt.Errorf("failed to install requirements for project '%s': %w", workingDir, err)
 	}
@@ -98,10 +106,13 @@ func (cli *Cli) CreateVirtualEnv(ctx context.Context, workingDir, name string) e
 	return nil
 }
 
+// Run executes a Python command within a virtual environment.
+// Optional env parameter allows passing additional environment variables to the python process.
 func (cli *Cli) Run(
 	ctx context.Context,
 	workingDir string,
 	environment string,
+	env []string,
 	args ...string,
 ) (*exec.RunResult, error) {
 	pyString, err := cli.checkPath()
@@ -122,6 +133,9 @@ func (cli *Cli) Run(
 	// We need to ensure the virtual environment is activated before running the script
 	commands := []string{envActivationCmd, runCmd}
 	runArgs := exec.NewRunArgs("").WithCwd(workingDir)
+	if len(env) > 0 {
+		runArgs = runArgs.WithEnv(env)
+	}
 	runResult, err := cli.commandRunner.RunList(ctx, commands, runArgs)
 
 	if err != nil {

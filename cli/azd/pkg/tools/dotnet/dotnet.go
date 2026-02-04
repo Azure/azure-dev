@@ -90,8 +90,13 @@ func (cli *Cli) CheckInstalled(ctx context.Context) error {
 	return nil
 }
 
-func (cli *Cli) Restore(ctx context.Context, project string) error {
+// Restore runs dotnet restore on the specified project.
+// Optional env parameter allows passing additional environment variables to the dotnet process.
+func (cli *Cli) Restore(ctx context.Context, project string, env []string) error {
 	runArgs := newDotNetRunArgs("restore", project)
+	if len(env) > 0 {
+		runArgs = runArgs.WithEnv(env)
+	}
 	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("dotnet restore on project '%s' failed: %w", project, err)
@@ -99,7 +104,9 @@ func (cli *Cli) Restore(ctx context.Context, project string) error {
 	return nil
 }
 
-func (cli *Cli) Build(ctx context.Context, project string, configuration string, output string) error {
+// Build runs dotnet build on the specified project.
+// Optional env parameter allows passing additional environment variables to the dotnet process.
+func (cli *Cli) Build(ctx context.Context, project string, configuration string, output string, env []string) error {
 	runArgs := newDotNetRunArgs("build", project)
 	if configuration != "" {
 		runArgs = runArgs.AppendParams("-c", configuration)
@@ -109,6 +116,10 @@ func (cli *Cli) Build(ctx context.Context, project string, configuration string,
 		runArgs = runArgs.AppendParams("--output", output)
 	}
 
+	if len(env) > 0 {
+		runArgs = runArgs.WithEnv(env)
+	}
+
 	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("dotnet build on project '%s' failed: %w", project, err)
@@ -116,7 +127,9 @@ func (cli *Cli) Build(ctx context.Context, project string, configuration string,
 	return nil
 }
 
-func (cli *Cli) Publish(ctx context.Context, project string, configuration string, output string) error {
+// Publish runs dotnet publish on the specified project.
+// Optional env parameter allows passing additional environment variables to the dotnet process.
+func (cli *Cli) Publish(ctx context.Context, project string, configuration string, output string, env []string) error {
 	runArgs := newDotNetRunArgs("publish", project)
 	if configuration != "" {
 		runArgs = runArgs.AppendParams("-c", configuration)
@@ -124,6 +137,10 @@ func (cli *Cli) Publish(ctx context.Context, project string, configuration strin
 
 	if output != "" {
 		runArgs = runArgs.AppendParams("--output", output)
+	}
+
+	if len(env) > 0 {
+		runArgs = runArgs.WithEnv(env)
 	}
 
 	_, err := cli.commandRunner.Run(ctx, runArgs)

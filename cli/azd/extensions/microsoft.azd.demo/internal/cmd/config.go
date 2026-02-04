@@ -40,7 +40,7 @@ type ServiceMonitoringConfig struct {
 func newConfigCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "config",
-		Short: "Setup monitoring configuration for the project and services",
+		Short: "Set up monitoring configuration for the project and services",
 		Long: `This command demonstrates the new configuration management capabilities by setting up
 a realistic monitoring configuration scenario. It will:
 

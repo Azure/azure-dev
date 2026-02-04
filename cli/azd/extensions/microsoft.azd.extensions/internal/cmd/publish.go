@@ -61,7 +61,7 @@ func newPublishCommand() *cobra.Command {
 	publishCmd.Flags().StringVar(
 		&flags.repository,
 		"repo", flags.repository,
-		"Github repository to create the release in (e.g. owner/repo)",
+		"GitHub repository to create the release in (e.g. owner/repo)",
 	)
 	publishCmd.Flags().StringVarP(
 		&flags.version,

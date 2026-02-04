@@ -2,19 +2,137 @@
 
 ## Overview
 
-This document outlines a **focused** extension (`azure.ai.custom-models`) that handles **custom models only**. This approach keeps the scope narrow, avoids complexity of handling two model registries, and delivers value faster.
+This document outlines a **focused** extension (`azure.ai.models`) that handles **custom models only** in Phase 1. This approach keeps the scope narrow, avoids complexity of handling two model registries, and delivers value faster.
+
+## Command Structure
+
+The command structure uses clear **entity keywords** to indicate which entity the user is working with:
+
+```
+azd ai models <entity> <action> [options]
+```
+
+| Entity Keyword | Entity | Example |
+|----------------|--------|--------|
+| `custom` | Custom Model | `azd ai models custom create` |
+| `custom deployments` | Custom Model Deployment | `azd ai models custom deployments create` |
+| `base` | Base Model | `azd ai models base list` |
+| `base deployments` | Base Model Deployment | `azd ai models base deployments create` |
 
 ## Scope
 
-**This extension focuses exclusively on custom model management (upload + list).**
+**This extension focuses exclusively on custom model management in Phase 1.**
 
-| In Scope | Out of Scope |
+| In Scope (Phase 1) | Out of Scope (Future Phases) |
 |----------|--------------|
-| Upload custom model weights | Base models |
-| Register custom models | Deployments (use Azure CLI) |
-| List custom models | Inference/endpoint management |
-| Show custom model details | |
-| Delete custom models | |
+| `azd ai models custom create` | Custom Model Deployments (Phase 2) |
+| `azd ai models custom list` | Base Models (Phase 3) |
+| `azd ai models custom show` | Base Model Deployments (Phase 4) |
+| `azd ai models custom delete` | |
+
+## Entities & Operations
+
+There are **4 distinct entities** in the Azure AI model ecosystem. This extension focuses on **Custom Model** only.
+
+### Entity Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                                                                                 │
+│   ┌───────────────────────────────────┐   ┌───────────────────────────────────┐ │
+│   │          BASE MODEL               │   │         CUSTOM MODEL              │ │
+│   │     (Model Catalog)               │   │     (FDP Custom Registry)         │ │
+│   ├───────────────────────────────────┤   ├───────────────────────────────────┤ │
+│   │ • Pre-trained models (GPT-4, etc.)│   │ • User-uploaded model weights     │ │
+│   │ • Managed by Azure                │   │ • Stored in FDP data store        │ │
+│   │ • Read-only for users             │   │ • User manages lifecycle          │ │
+│   │                                   │   │                                   │ │
+│   │ Operations:                       │   │ Operations:                       │ │
+│   │   • List ✓                        │   │   • Create (Upload + Register) ✓  │ │
+│   │   • Show ✓                        │   │   • List ✓                        │ │
+│   │                                   │   │   • Show ✓                        │ │
+│   │                                   │   │   • Delete ✓                      │ │
+│   └───────────────────────────────────┘   └───────────────────────────────────┘ │
+│                    │                                       │                    │
+│                    │              Deploy                   │                    │
+│                    ▼                                       ▼                    │
+│   ┌───────────────────────────────────┐   ┌───────────────────────────────────┐ │
+│   │     BASE MODEL DEPLOYMENT         │   │    CUSTOM MODEL DEPLOYMENT        │ │
+│   │     (Inference Endpoint)          │   │    (Inference Endpoint)           │ │
+│   ├───────────────────────────────────┤   ├───────────────────────────────────┤ │
+│   │ • Deployed instance of base model │   │ • Deployed instance of custom     │ │
+│   │ • Inference endpoint              │   │ • Inference endpoint              │ │
+│   │                                   │   │                                   │ │
+│   │ Operations:                       │   │ Operations:                       │ │
+│   │   • Deploy ✓                      │   │   • Deploy ✓                      │ │
+│   │   • List ✓                        │   │   • List ✓                        │ │
+│   │   • Show ✓                        │   │   • Show ✓                        │ │
+│   │   • Delete ✓                      │   │   • Delete ✓                      │ │
+│   └───────────────────────────────────┘   └───────────────────────────────────┘ │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Entity Details
+
+#### 1. Custom Model
+
+User-uploaded model weights registered in FDP custom registry.
+
+| Operation | Supported | Command | Description |
+|-----------|:---------:|---------|-------------|
+| **Create** | ✅ | `azd ai models custom create` | Upload weights + register model |
+| **List** | ✅ | `azd ai models custom list` | List all custom models |
+| **Show** | ✅ | `azd ai models custom show` | View model details |
+| **Delete** | ✅ | `azd ai models custom delete` | Remove model and weights |
+
+#### 2. Custom Model Deployment
+
+Deployed instance of a custom model for inference.
+
+| Operation | Supported | Command | Description |
+|-----------|:---------:|---------|-------------|
+| **Deploy** | ✅ | `azd ai models custom deployments create` | Deploy custom model |
+| **List** | ✅ | `azd ai models custom deployments list` | List deployments |
+| **Show** | ✅ | `azd ai models custom deployments show` | View deployment details |
+| **Delete** | ✅ | `azd ai models custom deployments delete` | Remove deployment |
+
+#### 3. Base Model
+
+Pre-trained models available in Azure AI model catalog (GPT-4, Llama, Mistral, etc.).
+
+| Operation | Supported | Command | Description |
+|-----------|:---------:|---------|-------------|
+| **Create** | ❌ | - | Not allowed (Azure-managed) |
+| **List** | ✅ | `azd ai models base list` | View available models |
+| **Show** | ✅ | `azd ai models base show` | View model details |
+| **Delete** | ❌ | - | Not allowed (Azure-managed) |
+
+#### 4. Base Model Deployment
+
+Deployed instance of a base model for inference.
+
+| Operation | Supported | Command | Description |
+|-----------|:---------:|---------|-------------|
+| **Deploy** | ✅ | `azd ai models base deployments create` | Deploy base model |
+| **List** | ✅ | `azd ai models base deployments list` | List deployments |
+| **Show** | ✅ | `azd ai models base deployments show` | View deployment details |
+| **Delete** | ✅ | `azd ai models base deployments delete` | Remove deployment |
+
+### This Extension's Focus (Phase 1)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                                                                                 │
+│   Entity                    │ Phase 1           │ Future Phases                 │
+│   ──────────────────────────┼───────────────────┼─────────────────────────────  │
+│   Custom Model              │ ✅ Full support   │                               │
+│   Custom Model Deployment   │ ❌ (use Azure CLI)│ ✅ Phase 2                    │
+│   Base Model                │ ❌ (use Portal)   │ ✅ Phase 3                    │
+│   Base Model Deployment     │ ❌ (use Azure CLI)│ ✅ Phase 4                    │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
 
 ## Key Concepts
 
@@ -25,7 +143,7 @@ This document outlines a **focused** extension (`azure.ai.custom-models`) that h
 │                         Custom Model Lifecycle                              │
 │                                                                             │
 │   ┌──────────────────────────────────────────┐      ┌──────────────────┐   │
-│   │        This Extension (azd)              │      │   Azure CLI      │   │
+│   │        Phase 1 (This Extension)         │      │  Phase 2 (Future) │   │
 │   │                                          │      │                  │   │
 │   │   ┌──────────────┐    ┌──────────────┐   │      │ ┌──────────────┐ │   │
 │   │   │   Upload     │    │   Register   │   │      │ │   Deploy     │ │   │
@@ -33,17 +151,20 @@ This document outlines a **focused** extension (`azure.ai.custom-models`) that h
 │   │   │              │    │              │   │      │ │              │ │   │
 │   │   └──────────────┘    └──────────────┘   │      │ └──────────────┘ │   │
 │   │                                          │      │                  │   │
-│   │   azd ai custom-models upload            │      │ az cognitiveservices │
-│   │   azd ai custom-models list              │      │ account deployment   │
-│   │                                          │      │ create               │
+│   │   azd ai models custom create            │      │ azd ai models    │   │
+│   │   azd ai models custom list              │      │ custom deployments│   │
+│   │                                          │      │ create           │   │
 │   └──────────────────────────────────────────┘      └──────────────────┘   │
+│                                                                             │
+│   Until Phase 2: Use Azure CLI for deployment                               │
+│   az cognitiveservices account deployment create ...                        │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Upload + Register: 3-Step Process
+### Create Command: 3-Step Process
 
-The `upload` command performs three sequential steps internally:
+The `create` command performs three sequential steps internally:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -109,30 +230,30 @@ The `upload` command performs three sequential steps internally:
 
 ```bash
 # Upload weights AND register model in one step
-azd ai custom-models upload --source <local-path> --name <model-name> [options]
+azd ai models custom create --source <local-path> --name <model-name> [options]
 
 # Delete a custom model (and optionally its weights)
-azd ai custom-models delete --name <model-name> [--keep-weights]
+azd ai models custom delete --name <model-name> [--keep-weights]
 ```
 
 ### Read Operations
 
 ```bash
 # List all custom models in the registry
-azd ai custom-models list [--format table|json]
+azd ai models custom list [--format table|json]
 
 # Show details of a specific custom model
-azd ai custom-models show --name <model-name>
+azd ai models custom show --name <model-name>
 ```
 
 ## Command Details
 
-### `upload` - Upload and Register Custom Model
+### `create` - Upload and Register Custom Model
 
 Combines the upload and register steps into a single user-friendly command.
 
 ```bash
-azd ai custom-models upload --source ./llama-7b.safetensors --name llama-7b
+azd ai models custom create --source ./llama-7b.safetensors --name llama-7b
 ```
 
 **Workflow:**
@@ -159,7 +280,7 @@ azd ai custom-models upload --source ./llama-7b.safetensors --name llama-7b
 
 **Output:**
 ```
-$ azd ai custom-models upload --source ./llama-7b.safetensors --name llama-7b
+$ azd ai models custom create --source ./llama-7b.safetensors --name llama-7b
 
 Initializing upload...
   Model: llama-7b
@@ -185,7 +306,7 @@ Model Details:
 ### `list` - List Custom Models
 
 ```bash
-azd ai custom-models list
+azd ai models custom list
 ```
 
 **Output:**
@@ -205,7 +326,7 @@ Custom Models
 ### `show` - Show Custom Model Details
 
 ```bash
-azd ai custom-models show --name llama-7b
+azd ai models custom show --name llama-7b
 ```
 
 **Output:**
@@ -239,12 +360,12 @@ To deploy this model, use Azure CLI:
 ### `delete` - Delete Custom Model
 
 ```bash
-azd ai custom-models delete --name llama-7b
+azd ai models custom delete --name llama-7b
 ```
 
 **Output:**
 ```
-$ azd ai custom-models delete --name llama-7b
+$ azd ai models custom delete --name llama-7b
 
 Are you sure you want to delete 'llama-7b'? This will:
   • Remove model from registry
@@ -362,7 +483,7 @@ Speed: 142 MB/s | Elapsed: 2m 45s | ETA: 5m 20s
 #### Interruption Handling
 
 ```
-$ azd ai custom-models upload --source ./large-model.bin --name my-model
+$ azd ai models custom create --source ./large-model.bin --name my-model
 
 Uploading model: large-model.bin (120 GB)
 ━━━━━━━━━━━━━━━━━ 28% (33.6 GB / 120 GB)
@@ -373,7 +494,7 @@ Speed: 98 MB/s | Elapsed: 5m 42s | ETA: 14m 38s
 Upload interrupted at 28% (33.6 GB uploaded).
 
 To resume, run the same command again:
-  azd ai custom-models upload --source ./large-model.bin --name my-model
+  azd ai models custom create --source ./large-model.bin --name my-model
 
 Note: A new SAS token will be obtained, but AzCopy will attempt to resume 
 from where it left off using its journal files.
@@ -438,7 +559,7 @@ Keep the upload in foreground but **keep user engaged** with:
 
 **Initial Warning:**
 ```
-$ azd ai custom-models upload --source ./llama-70b.safetensors --name my-llama
+$ azd ai models custom create --source ./llama-70b.safetensors --name my-llama
 
 ⚠️  Large file detected: 68.5 GB
     Estimated upload time: 8-15 minutes (depending on network speed)
@@ -492,7 +613,7 @@ Model Details:
 - Previous partial/orphaned uploads are cleaned up by FDP service (TTL-based)
 
 ```
-$ azd ai custom-models upload --source ./llama-70b.safetensors --name my-llama
+$ azd ai models custom create --source ./llama-70b.safetensors --name my-llama
 
 ⚠️  Previous upload may exist but was not registered.
     Starting fresh upload...
@@ -580,23 +701,119 @@ Response:
 
 ## Implementation Plan
 
-### Phase 1 - Core Upload & Register (MVP)
-- [ ] AzCopy detection and auto-download
-- [ ] FDP client (upload init, register)
-- [ ] `azd ai custom-models upload` command
-- [ ] Progress reporting
+Implementation follows a **phased approach** across 4 phases, with each phase focusing on a specific entity.
 
-### Phase 2 - Read Operations
-- [ ] FDP client (list, show)
-- [ ] `azd ai custom-models list` command
-- [ ] `azd ai custom-models show` command
-- [ ] `azd ai custom-models list-uploads` command
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                         Implementation Phases                                   │
+│                                                                                 │
+│   Phase 1              Phase 2                Phase 3            Phase 4        │
+│   ─────────────────    ─────────────────      ─────────────────  ───────────    │
+│   Custom Model         Custom Model           Base Model         Base Model     │
+│   (This doc)           Deployment                                Deployment     │
+│                                                                                 │
+│   • Upload + Register  • Deploy               • List             • Deploy       │
+│   • List               • List                 • Show             • List         │
+│   • Show               • Show                                    • Show         │
+│   • Delete             • Delete                                  • Delete       │
+│                                                                                 │
+│   ┌─────────────┐      ┌─────────────┐       ┌─────────────┐    ┌───────────┐  │
+│   │ azd ext     │      │ azd ext     │       │ azd ext     │    │ azd ext   │  │
+│   │ custom-     │ ───► │ custom-     │ ───►  │ models      │───►│ models    │  │
+│   │ models      │      │ models +    │       │ (base)      │    │ (deploy)  │  │
+│   │             │      │ deployments │       │             │    │           │  │
+│   └─────────────┘      └─────────────┘       └─────────────┘    └───────────┘  │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
 
-### Phase 3 - Delete & Polish
-- [ ] `azd ai custom-models delete` command
-- [ ] Error handling improvements
-- [ ] Resume upload support
-- [ ] JSON output format
+### Phase 1: Custom Model (This Document) ← Current Focus
+
+**Entity:** Custom Model
+
+**Objective:** Enable users to upload and manage custom models in FDP registry.
+
+| Milestone | Tasks | Status |
+|-----------|-------|--------|
+| **1.1 Core Upload** | AzCopy detection, auto-download, FDP client (upload init) | 🔲 |
+| **1.2 Registration** | FDP client (register), `upload` command with progress | 🔲 |
+| **1.3 Read Operations** | `list` and `show` commands | 🔲 |
+| **1.4 Delete** | `delete` command, error handling, JSON output | 🔲 |
+
+**Commands Delivered:**
+- `azd ai models custom create`
+- `azd ai models custom list`
+- `azd ai models custom show`
+- `azd ai models custom delete`
+
+---
+
+### Phase 2: Custom Model Deployment (Future)
+
+**Entity:** Custom Model Deployment
+
+**Objective:** Enable users to deploy custom models to inference endpoints.
+
+| Milestone | Tasks | Status |
+|-----------|-------|--------|
+| **2.1 Deploy** | Deploy custom model to endpoint | 🔲 |
+| **2.2 Read Operations** | List and show deployments | 🔲 |
+| **2.3 Delete** | Delete deployment | 🔲 |
+
+**Commands Delivered:**
+- `azd ai models custom deployments create`
+- `azd ai models custom deployments list`
+- `azd ai models custom deployments show`
+- `azd ai models custom deployments delete`
+
+> **Note:** Until Phase 2, users can deploy custom models using Azure CLI: `az cognitiveservices account deployment create`
+
+---
+
+### Phase 3: Base Model (Future)
+
+**Entity:** Base Model
+
+**Objective:** Enable users to browse and view base models from catalog.
+
+| Milestone | Tasks | Status |
+|-----------|-------|--------|
+| **3.1 Read Operations** | List and show base models from catalog | 🔲 |
+
+**Commands Delivered:**
+- `azd ai models list` (base models from catalog)
+- `azd ai models show`
+
+---
+
+### Phase 4: Base Model Deployment (Future)
+
+**Entity:** Base Model Deployment
+
+**Objective:** Enable users to deploy base models to inference endpoints.
+
+| Milestone | Tasks | Status |
+|-----------|-------|--------|
+| **4.1 Deploy** | Deploy base model to endpoint | 🔲 |
+| **4.2 Read Operations** | List and show deployments | 🔲 |
+| **4.3 Delete** | Delete deployment | 🔲 |
+
+**Commands Delivered:**
+- `azd ai models deployments create`
+- `azd ai models deployments list`
+- `azd ai models deployments show`
+- `azd ai models deployments delete`
+
+---
+
+### Phase Summary
+
+| Phase | Entity | Operations | Status |
+|-------|--------|------------|--------|
+| **Phase 1** | Custom Model | Create, List, Show, Delete | 📍 Current |
+| **Phase 2** | Custom Model Deployment | Deploy, List, Show, Delete | 🔲 Future |
+| **Phase 3** | Base Model | List, Show | 🔲 Future |
+| **Phase 4** | Base Model Deployment | Deploy, List, Show, Delete | 🔲 Future |
 
 ## Advantages of This Approach
 
@@ -660,7 +877,7 @@ az cognitiveservices account deployment delete \
 
 ```bash
 # Step 1: Upload and register custom model (this extension)
-azd ai custom-models upload --source ./my-model.safetensors --name my-custom-llama
+azd ai models custom create --source ./my-model.safetensors --name my-custom-llama
 
 # Step 2: Deploy the model (Azure CLI)
 az cognitiveservices account deployment create \

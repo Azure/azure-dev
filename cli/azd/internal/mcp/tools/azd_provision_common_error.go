@@ -29,6 +29,7 @@ Use this tool when azd commands fail with:
 - Role assignment conflicts (already exists)
 - Location offer restricted errors for Azure Database for PostgreSQL
 - VM quota exceeded errors when provisioning compute resources
+- Cognitive Services account provisioning state invalid errors
 
 Provides step-by-step diagnostic instructions for the LLM agent to execute.`,
 			),

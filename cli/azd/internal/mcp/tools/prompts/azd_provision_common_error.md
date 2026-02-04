@@ -81,7 +81,7 @@ When you encounter this error, YOU MUST USE YOUR TERMINAL TOOL TO EXECUTE the fo
    - Document required permissions in your project README
    - Consider using Azure Managed Identities where possible to reduce manual role assignments
 
-4. **Verify Permissions Before Deployment:**
+5. **Verify Permissions Before Deployment:**
    ```bash
    # Check Owner role at subscription level
    az role assignment list --role Owner --assignee <your-email> --scope /subscriptions/<subscription-id>

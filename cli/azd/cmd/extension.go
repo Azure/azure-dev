@@ -937,7 +937,18 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 			return nil, fmt.Errorf("extension %s not found in source %s", extensionId, sourceToUse)
 		}
 
-		// When filtering by exact source, there should only be one match per extension ID
+		// When filtering by exact source and extension ID, there should only be one match
+		// However, if there are multiple matches (unexpected), we'll use the first one
+		if len(matches) > 1 {
+			a.console.MessageUxItem(ctx, &ux.WarningMessage{
+				Description: fmt.Sprintf(
+					"Found %d matches for %s in source %s, using the first match",
+					len(matches),
+					extensionId,
+					sourceToUse,
+				),
+			})
+		}
 		selectedExtension := matches[0]
 
 		a.console.ShowSpinner(ctx, stepMessage, input.Step)
@@ -1064,18 +1075,21 @@ func (a *extensionUpgradeAction) checkForNewerVersionInOtherSources(
 	if newestSemver != nil {
 		a.console.MessageUxItem(ctx, &ux.WarningMessage{
 			Description: fmt.Sprintf(
-				"A newer version (%s) of %s is available in source '%s', but the extension was installed from source '%s'.",
+				"A newer version (%s) of %s is available in source '%s', "+
+					"but the extension was installed from source '%s'. "+
+					"The extension will be upgraded to version %s from the original source.",
 				output.WithHighLightFormat(newestSemver.String()),
 				output.WithHighLightFormat(extensionId),
 				output.WithHighLightFormat(newerVersionSource),
 				output.WithHighLightFormat(currentSource),
+				output.WithHighLightFormat(currentLatestVersion),
 			),
 			HidePrefix: false,
 		})
 		a.console.Message(ctx, "")
 		a.console.Message(ctx,
 			fmt.Sprintf(
-				"To upgrade to the newer version from '%s', first uninstall the extension and then "+
+				"To switch to the newer version from '%s', first uninstall the extension and then "+
 					"install it from the desired source:",
 				newerVersionSource,
 			),

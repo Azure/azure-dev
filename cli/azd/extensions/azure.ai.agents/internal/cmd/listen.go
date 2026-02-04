@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/braydonk/yaml"
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -315,7 +316,9 @@ func populateContainerSettings(ctx context.Context, azdClient *azdext.AzdClient,
 
 	if _, err := azdClient.Project().AddService(ctx, req); err != nil {
 		// Extract clean error message from gRPC status
-		if st, ok := status.FromError(err); ok {
+		// For user-friendly gRPC errors (like "no project"), return directly
+		// For other errors, preserve context
+		if st, ok := status.FromError(err); ok && st.Code() == codes.FailedPrecondition {
 			return errors.New(st.Message())
 		}
 		return fmt.Errorf("adding agent service to project: %w", err)

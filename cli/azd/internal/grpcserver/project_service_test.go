@@ -57,7 +57,7 @@ func Test_ProjectService_NoProject(t *testing.T) {
 	service := NewProjectService(lazyAzdContext, lazyEnvManager, lazyProjectConfig, importManager, ghCli)
 	_, err := service.Get(*mockContext.Context, &azdext.EmptyRequest{})
 	require.Error(t, err)
-	
+
 	// Verify that the error is a gRPC status error with FailedPrecondition code
 	st, ok := status.FromError(err)
 	require.True(t, ok, "expected gRPC status error")
@@ -95,7 +95,7 @@ func Test_ProjectService_AddService_NoProject(t *testing.T) {
 	// Create the service with ImportManager.
 	importManager := project.NewImportManager(&project.DotNetImporter{})
 	service := NewProjectService(lazyAzdContext, lazyEnvManager, lazyProjectConfig, importManager, ghCli)
-	
+
 	// Try to add a service when no project exists
 	_, err := service.AddService(*mockContext.Context, &azdext.AddServiceRequest{
 		Service: &azdext.ServiceConfig{
@@ -103,7 +103,7 @@ func Test_ProjectService_AddService_NoProject(t *testing.T) {
 		},
 	})
 	require.Error(t, err)
-	
+
 	// Verify that the error is a gRPC status error with FailedPrecondition code
 	st, ok := status.FromError(err)
 	require.True(t, ok, "expected gRPC status error")

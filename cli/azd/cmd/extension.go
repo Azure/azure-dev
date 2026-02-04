@@ -1073,40 +1073,31 @@ func (a *extensionUpgradeAction) checkForNewerVersionInOtherSources(
 
 	// Display warning if a newer version was found
 	if newestSemver != nil {
-		a.console.MessageUxItem(ctx, &ux.WarningMessage{
-			Description: fmt.Sprintf(
-				"A newer version (%s) of %s is available in source '%s', "+
-					"but the extension was installed from source '%s'. "+
-					"The extension will be upgraded to version %s from the original source.",
-				output.WithHighLightFormat(newestSemver.String()),
-				output.WithHighLightFormat(extensionId),
-				output.WithHighLightFormat(newerVersionSource),
-				output.WithHighLightFormat(currentSource),
-				output.WithHighLightFormat(currentLatestVersion),
-			),
-		})
+		warningDesc := fmt.Sprintf(
+			"A newer version (%s) of %s is available in source '%s', but the extension was installed "+
+				"from source '%s'. The extension will be upgraded to version %s from the original source.",
+			output.WithHighLightFormat(newestSemver.String()),
+			output.WithHighLightFormat(extensionId),
+			output.WithHighLightFormat(newerVersionSource),
+			output.WithHighLightFormat(currentSource),
+			output.WithHighLightFormat(currentLatestVersion),
+		)
+		a.console.MessageUxItem(ctx, &ux.WarningMessage{Description: warningDesc})
+
 		a.console.Message(ctx, "")
-		a.console.Message(ctx,
-			fmt.Sprintf(
-				"To switch to the newer version from '%s', first uninstall the extension and then "+
-					"install it from the desired source:",
-				newerVersionSource,
-			),
+		instructionMsg := fmt.Sprintf(
+			"To switch to the newer version from '%s', first uninstall the extension and then "+
+				"install it from the desired source:",
+			newerVersionSource,
 		)
-		a.console.Message(ctx,
-			fmt.Sprintf(
-				"  %s",
-				output.WithHighLightFormat(fmt.Sprintf("azd extension uninstall %s", extensionId)),
-			),
-		)
-		a.console.Message(ctx,
-			fmt.Sprintf(
-				"  %s",
-				output.WithHighLightFormat(
-					fmt.Sprintf("azd extension install %s --source %s", extensionId, newerVersionSource),
-				),
-			),
-		)
+		a.console.Message(ctx, instructionMsg)
+
+		uninstallCmd := fmt.Sprintf("azd extension uninstall %s", extensionId)
+		a.console.Message(ctx, fmt.Sprintf("  %s", output.WithHighLightFormat(uninstallCmd)))
+
+		installCmd := fmt.Sprintf("azd extension install %s --source %s", extensionId, newerVersionSource)
+		a.console.Message(ctx, fmt.Sprintf("  %s", output.WithHighLightFormat(installCmd)))
+
 		a.console.Message(ctx, "")
 	}
 

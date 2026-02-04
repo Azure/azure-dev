@@ -221,7 +221,12 @@ func (a *InitAction) Run(ctx context.Context) error {
 
 		// Add the agent to the azd project (azure.yaml) services
 		if err := a.addToProject(ctx, targetDir, agentManifest, a.flags.host); err != nil {
-			return err
+			// For FailedPrecondition errors (like "no project"), the message is already user-friendly
+			// so return it directly. For other errors, add context.
+			if st, ok := status.FromError(err); ok && st.Code() == codes.FailedPrecondition {
+				return errors.New(st.Message())
+			}
+			return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
 		}
 
 		color.Green("\nAI agent definition added to your azd project successfully!")

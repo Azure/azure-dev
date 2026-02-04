@@ -1,5 +1,10 @@
 # Release History
 
+## 0.1.9-preview (2026-02-04)
+
+- [[#6683]](https://github.com/Azure/azure-dev/pull/6683) Fix panic when parsing `agent.yaml` files without a `template` field
+- [[#6695]](https://github.com/Azure/azure-dev/pull/6695) Display agent endpoint as plain text with documentation link instead of clickable hyperlink
+
 ## 0.1.8-preview (2026-01-26)
 
 - [[#6611]](https://github.com/Azure/azure-dev/pull/6611) Statically link the Linux amd64 binary for compatibility with older Linux versions

@@ -27,6 +27,8 @@ Use this tool when azd commands fail with:
 - Service unavailability errors (quota/capacity issues)
 - Authorization failures for role assignments
 - Role assignment conflicts (already exists)
+- Location offer restricted errors for Azure Database for PostgreSQL
+- VM quota exceeded errors when provisioning compute resources
 
 Provides step-by-step diagnostic instructions for the LLM agent to execute.`,
 			),

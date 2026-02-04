@@ -38,7 +38,7 @@ azd env get-values
 - Contains: `"of type 'Microsoft.Authorization/roleAssignments'"`
 - Contains: `"does not have permission to perform action 'Microsoft.Authorization/roleAssignments/write' at scope"`
 - May contain: `"The client"` followed by email or `"with object id"` followed by GUID
-- Scope path may contains: `/subscriptions/[id]/resourceGroups/[name]/providers/[resource-provider]`
+- Scope path may contain: `/subscriptions/[id]/resourceGroups/[name]/providers/[resource-provider]`
 
 **LLM Instructions:**
 
@@ -83,7 +83,7 @@ When you encounter this error, YOU MUST USE YOUR TERMINAL TOOL TO EXECUTE the fo
    # Or check User Access Administrator at subscription level
    az role assignment list --role "User Access Administrator" --assignee <your-email> --scope /subscriptions/<subscription-id>
    ```
-   If returned results is not empty array, then permissions are added successfully. 
+   If the returned result is not an empty array, then permissions are added successfully. 
 
 **Example Commands:**
 ```bash
@@ -280,7 +280,7 @@ When you encounter this error:
    # Check VM quota of a specific region
    az vm list-usage --location <region> --output table
    
-   # Look about the specific VM family mentioned in the error
+   # Look for the specific VM family mentioned in the error
    az vm list-usage --location <region> --output table | grep -i <VM-family-mention-in-error>
 
    # Set location to available regions

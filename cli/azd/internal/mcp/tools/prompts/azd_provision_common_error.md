@@ -81,7 +81,7 @@ When you encounter this error:
    # Or check User Access Administrator at subscription level
    az role assignment list --role "User Access Administrator" --assignee <your-email> --scope /subscriptions/<subscription-id>
    ```
-   If returned results is not empty array, then permissions are added successfully. 
+   If the returned result is not an empty array, then permissions are added successfully. 
 
 **Example Commands:**
 ```bash

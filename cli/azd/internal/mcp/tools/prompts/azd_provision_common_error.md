@@ -38,7 +38,7 @@ azd env get-values
 - Contains: `"of type 'Microsoft.Authorization/roleAssignments'"`
 - Contains: `"does not have permission to perform action 'Microsoft.Authorization/roleAssignments/write' at scope"`
 - May contain: `"The client"` followed by email or `"with object id"` followed by GUID
-- Scope path may contains: `/subscriptions/[id]/resourceGroups/[name]/providers/[resource-provider]`
+- Scope path may contain: `/subscriptions/[id]/resourceGroups/[name]/providers/[resource-provider]`
 
 **LLM Instructions:**
 

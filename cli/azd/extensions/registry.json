@@ -2065,6 +2065,65 @@
               "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-concurx_0.0.2/microsoft-azd-concurx-windows-arm64.zip"
             }
           }
+        },
+        {
+          "version": "0.1.0",
+          "capabilities": [
+            "custom-commands",
+            "metadata"
+          ],
+          "usage": "azd concurx \u003ccommand\u003e [options]",
+          "examples": null,
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "9e07a877dbc98e918a85e0da30d2dd6edf53203dccae613c44fa9ee5dd071720"
+              },
+              "entryPoint": "microsoft-azd-concurx-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-concurx_0.1.0/microsoft-azd-concurx-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "75635e244a56a8822ce523fbfb8d448b1ff6c18cbd00f7679535e7bc08c43435"
+              },
+              "entryPoint": "microsoft-azd-concurx-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-concurx_0.1.0/microsoft-azd-concurx-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "35180086ea5b5c0b6fda8490a84dac3f4ab1d81afbf7ee326ee81dc46d28212c"
+              },
+              "entryPoint": "microsoft-azd-concurx-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-concurx_0.1.0/microsoft-azd-concurx-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "9d12aafa43c6dc5cfd2343a11b0a5cdfa4cc35ae3cf2fc65103b09a3711592f2"
+              },
+              "entryPoint": "microsoft-azd-concurx-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-concurx_0.1.0/microsoft-azd-concurx-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "1d1d49b72a50c15628e3960730be00b4aa70b0a33ce29ecbf586bf7236b617a6"
+              },
+              "entryPoint": "microsoft-azd-concurx-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-concurx_0.1.0/microsoft-azd-concurx-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "3ca2b2ec04eac82bcad707030b0763cdd4c8a7b19701bf359b87861e47055f0c"
+              },
+              "entryPoint": "microsoft-azd-concurx-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-concurx_0.1.0/microsoft-azd-concurx-windows-arm64.zip"
+            }
+          }
         }
       ]
     },
@@ -2353,11 +2412,11 @@
           }
         },
         {
+          "version": "0.0.12-preview",
           "capabilities": [
             "custom-commands",
             "metadata"
           ],
-          "version": "0.0.12-preview",
           "usage": "azd ai finetuning \u003ccommand\u003e [options]",
           "examples": [
             {
@@ -2423,11 +2482,11 @@
           }
         },
         {
+          "version": "0.0.14-preview",
           "capabilities": [
             "custom-commands",
             "metadata"
           ],
-          "version": "0.0.14-preview",
           "usage": "azd ai finetuning \u003ccommand\u003e [options]",
           "examples": [
             {
@@ -2493,11 +2552,11 @@
           }
         },
         {
+          "version": "0.0.16-preview",
           "capabilities": [
             "custom-commands",
             "metadata"
           ],
-          "version": "0.0.16-preview",
           "usage": "azd ai finetuning \u003ccommand\u003e [options]",
           "examples": [
             {

@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"slices"
 	"strings"
 	"text/tabwriter"
@@ -958,7 +957,13 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 				latestVersion.Version,
 			); err != nil {
 				// Log the error but don't fail the upgrade
-				log.Printf("Warning: failed to check for newer versions in other sources: %v", err)
+				// Using console warning instead of log.Printf for consistency
+				a.console.MessageUxItem(ctx, &ux.WarningMessage{
+					Description: fmt.Sprintf(
+						"Failed to check for newer versions in other sources: %v",
+						err,
+					),
+				})
 			}
 		}
 

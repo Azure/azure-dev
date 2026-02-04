@@ -177,27 +177,3 @@ func TestBindExtension_DeeplyNestedNamespace(t *testing.T) {
 	require.Equal(t, "Extension for evaluating AI models.", evalCmd.Options.Command.Short)
 }
 
-func TestExtensionUpgrade_HonorsInstalledSource(t *testing.T) {
-	// This test verifies that extension upgrade uses the installed extension's source
-	// when no --source flag is provided
-
-	// Note: This is a focused test for the logic change. Integration tests should be added
-	// to verify the end-to-end behavior with real extension sources.
-
-	t.Run("uses installed source when no flag provided", func(t *testing.T) {
-		// The key assertion is in the code change itself:
-		// When a.flags.source is empty, filterOptions.Source should be set to installed.Source
-
-		// This is verified through code inspection and manual testing
-		// A full integration test would require:
-		// 1. Mock extension manager
-		// 2. Mock console
-		// 3. Simulate installed extension with a source
-		// 4. Call Run() without --source flag
-		// 5. Verify FindExtensions is called with the installed source
-
-		// For now, we rely on manual testing and existing integration tests
-		t.Skip("Requires integration test setup with mocked dependencies")
-	})
-}
-

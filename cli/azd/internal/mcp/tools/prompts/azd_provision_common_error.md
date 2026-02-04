@@ -5,7 +5,7 @@ This document provides solutions for common errors encountered during `azd provi
 ## Azure Service Unavailable Error
 
 **Error Pattern:** 
-- Contains: `"code":"ServiceUnavailable"`
+- May contain: `ServiceUnavailable`
 - Contains: `"Sorry, we are currently experiencing high demand in [region name] region for the zonal redundant (Availability Zones)"`
 - May contain: `"cannot fulfill your request at this time"`
 - May contain: `"To request region access for your subscription, please follow this link"`
@@ -174,7 +174,7 @@ When you encounter this error, YOU MUST USE YOUR TERMINAL TOOL TO EXECUTE the fo
 ## Location Offer Restricted Error for Postgres
 
 **Error Pattern:**
-- Contains: `"code":"ResourceOperationFailure"`
+- May contain: `ResourceOperationFailure`
 - Contains: `"Subscriptions are restricted from provisioning in location"`
 - May contain: `"Try again in a different location"`
 - May contain: `"https://aka.ms/postgres-request-quota-increase"` or similar quota increase links
@@ -260,7 +260,7 @@ az postgres flexible-server list-skus --location westus3 --query "[0].supportedF
 ## VM Quota Exceeded Error
 
 **Error Pattern:**
-- Contains: `"code":"Unauthorized"`
+- May contain: `Unauthorized`
 - Contains: `"Operation cannot be completed without additional quota"`
 - Contains: `"Current Limit"` and quota details for VM families (e.g., "Basic VMs", "Standard DSv3 Family vCPUs")
 - May contain: `"Current Usage:"` and `"Amount required for this deployment"`
@@ -335,4 +335,79 @@ grep -r "vmSize\|sku" infra/*.bicep infra/**/*.bicep
 
 # Example 4: Check quota for specific VM family (e.g standardDSv3Family)
 az vm list-usage --location eastus --query "[?contains(name.value, 'standardDSv3Family')]"
+```
+## Cognitive Services Account Provisioning State Invalid Error
+
+**Error Pattern:**
+- May contain: `AccountProvisioningStateInvalid`
+- Contains: `"Call to Microsoft.CognitiveServices/accounts failed"`
+- May contain: `"Account"` followed by resource path `"/subscriptions/.../resourceGroups/.../providers/Microsoft.CognitiveServices/accounts/..."`
+- May contain: `"in state Accepted"`
+
+**LLM Instructions:**
+
+When you encounter this error, YOU MUST USE YOUR TERMINAL TOOL TO EXECUTE the following commands - do not just display them to the user.
+
+1. **Identify the Problem:**
+   - Extract the Cognitive Services account name from the error message
+   - Extract the resource group name from the error message
+   - Note the current provisioning state (e.g., "Accepted")
+   - This error occurs when a dependent operation is attempted before the Cognitive Services account finishes provisioning
+
+2. **Immediate Solutions (USE TERMINAL TOOL TO EXECUTE):**
+
+   **Step 1: Check Current Provisioning State**
+   
+   USE YOUR TERMINAL TOOL to check the current provisioning state of the account:
+   
+   `az cognitiveservices account show --name <account-name> --resource-group <resource-group> --query "properties.provisioningState" -o tsv`
+   
+   **Step 2: Wait for Provisioning to Complete**
+   
+   If the state is "Accepted", "Creating", or "Updating", the account is still being provisioned. 
+   
+   USE YOUR TERMINAL TOOL to wait and poll for the provisioning state to become "Succeeded":
+   
+   `az cognitiveservices account show --name <account-name> --resource-group <resource-group> --query "properties.provisioningState" -o tsv`
+   
+   Repeat this command every 60 seconds until the state changes to "Succeeded". Max retry is 3 times. 
+   After 3 times, if the state is the same, tell users to retry after a couple minutes. 
+
+3. **Infrastructure Fix for Future Deployments:**
+
+   If this error occurs repeatedly, consider adding explicit dependencies in your Bicep/ARM templates to ensure dependent resources wait for the Cognitive Services account to be fully provisioned:
+   
+   ```bicep
+   // ✅ RECOMMENDED: Add explicit dependsOn to ensure proper ordering
+   resource cognitiveServicesAccount 'Microsoft.CognitiveServices/accounts@2023-10-01-preview' = {
+     name: accountName
+     location: location
+     kind: 'OpenAI'
+     sku: {
+       name: 'S0'
+     }
+     properties: {
+       // ...
+     }
+   }
+   
+   resource dependentResource 'Microsoft.SomeProvider/someResource@2023-01-01' = {
+     name: dependentResourceName
+     // ...
+     dependsOn: [
+       cognitiveServicesAccount  // Explicit dependency
+     ]
+   }
+   ```
+
+**Example Commands:**
+```bash
+# Example 1: Check provisioning state of Cognitive Services account
+az cognitiveservices account show --name <account-name> --resource-group <resource-group> --query "properties.provisioningState" -o tsv
+
+# Example 2: Get full account details
+az cognitiveservices account show --name <account-name> --resource-group <resource-group>
+
+# Example 3: List all Cognitive Services accounts in a resource group
+az cognitiveservices account list --resource-group <resource-group> --output table
 ```

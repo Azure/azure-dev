@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"slices"
 	"strings"
 	"text/tabwriter"
@@ -913,9 +914,16 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 			return nil, fmt.Errorf("failed to get installed extension: %w", err)
 		}
 
+		// Honor the source from which the extension was originally installed
+		// Only use the --source flag if explicitly provided by the user
+		sourceToUse := installed.Source
+		if a.flags.source != "" {
+			sourceToUse = a.flags.source
+		}
+
 		filterOptions := &extensions.FilterOptions{
 			Id:      extensionId,
-			Source:  a.flags.source,
+			Source:  sourceToUse,
 			Version: a.flags.version,
 		}
 
@@ -927,9 +935,11 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 
 		if len(matches) == 0 {
 			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-			return nil, fmt.Errorf("extension %s not found", extensionId)
+			return nil, fmt.Errorf("extension %s not found in source %s", extensionId, sourceToUse)
 		}
 
+		// Since we're filtering by the exact source, there should only be one match
+		// But we'll use selectDistinctExtension for consistency
 		selectedExtension, err := selectDistinctExtension(ctx, a.console, extensionId, matches, a.flags.global)
 		if err != nil {
 			return nil, err
@@ -937,6 +947,20 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 
 		a.console.ShowSpinner(ctx, stepMessage, input.Step)
 		latestVersion := selectedExtension.Versions[len(selectedExtension.Versions)-1]
+
+		// Check if there's a newer version available in other sources
+		// Only do this if the user didn't explicitly specify a source
+		if a.flags.source == "" {
+			if err := a.checkForNewerVersionInOtherSources(
+				ctx,
+				extensionId,
+				installed.Source,
+				latestVersion.Version,
+			); err != nil {
+				// Log the error but don't fail the upgrade
+				log.Printf("Warning: failed to check for newer versions in other sources: %v", err)
+			}
+		}
 
 		// Parse semantic versions for proper comparison
 		installedSemver, err := semver.NewVersion(installed.Version)
@@ -980,6 +1004,106 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 			Header: "Extensions upgraded successfully",
 		},
 	}, nil
+}
+
+// checkForNewerVersionInOtherSources checks if there's a newer version of the extension
+// available in sources other than the current one, and displays a warning if found.
+func (a *extensionUpgradeAction) checkForNewerVersionInOtherSources(
+	ctx context.Context,
+	extensionId string,
+	currentSource string,
+	currentLatestVersion string,
+) error {
+	// Find all versions of this extension across all sources (excluding current source)
+	allMatches, err := a.extensionManager.FindExtensions(ctx, &extensions.FilterOptions{
+		Id: extensionId,
+	})
+	if err != nil {
+		return err
+	}
+
+	// Parse the current latest version
+	currentSemver, err := semver.NewVersion(currentLatestVersion)
+	if err != nil {
+		return fmt.Errorf("failed to parse current latest version '%s': %w", currentLatestVersion, err)
+	}
+
+	// Check each source for newer versions
+	var newerVersionSource string
+	var newerVersion string
+
+	for _, match := range allMatches {
+		// Skip the current source
+		if strings.EqualFold(match.Source, currentSource) {
+			continue
+		}
+
+		// Get the latest version from this source
+		if len(match.Versions) == 0 {
+			continue
+		}
+
+		latestInSource := match.Versions[len(match.Versions)-1]
+		latestSemver, err := semver.NewVersion(latestInSource.Version)
+		if err != nil {
+			// Skip versions that can't be parsed
+			continue
+		}
+
+		// Check if this version is newer
+		if latestSemver.GreaterThan(currentSemver) {
+			// Update if this is the newest we've found so far
+			if newerVersion == "" {
+				newerVersion = latestInSource.Version
+				newerVersionSource = match.Source
+			} else {
+				newerSemver, err := semver.NewVersion(newerVersion)
+				if err == nil && latestSemver.GreaterThan(newerSemver) {
+					newerVersion = latestInSource.Version
+					newerVersionSource = match.Source
+				}
+			}
+		}
+	}
+
+	// Display warning if a newer version was found
+	if newerVersion != "" {
+		a.console.MessageUxItem(ctx, &ux.WarningMessage{
+			Description: fmt.Sprintf(
+				"A newer version (%s) of %s is available in source '%s', but the extension was installed from source '%s'.",
+				output.WithHighLightFormat(newerVersion),
+				output.WithHighLightFormat(extensionId),
+				output.WithHighLightFormat(newerVersionSource),
+				output.WithHighLightFormat(currentSource),
+			),
+			HidePrefix: false,
+		})
+		a.console.Message(ctx, "")
+		a.console.Message(ctx,
+			fmt.Sprintf(
+				"To upgrade to the newer version from '%s', first uninstall the extension and then "+
+					"install it from the desired source:",
+				newerVersionSource,
+			),
+		)
+		a.console.Message(ctx,
+			fmt.Sprintf(
+				"  %s",
+				output.WithHighLightFormat(fmt.Sprintf("azd extension uninstall %s", extensionId)),
+			),
+		)
+		a.console.Message(ctx,
+			fmt.Sprintf(
+				"  %s",
+				output.WithHighLightFormat(
+					fmt.Sprintf("azd extension install %s --source %s", extensionId, newerVersionSource),
+				),
+			),
+		)
+		a.console.Message(ctx, "")
+	}
+
+	return nil
 }
 
 type extensionSourceListAction struct {

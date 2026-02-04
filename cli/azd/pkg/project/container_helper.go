@@ -28,7 +28,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -49,8 +48,6 @@ type PublishOptions struct {
 }
 
 type ContainerHelper struct {
-	azdContext               *azdcontext.AzdContext
-	envManager               environment.Manager
 	remoteBuildManager       *containerregistry.RemoteBuildManager
 	containerRegistryService azapi.ContainerRegistryService
 	commandRunner            exec.CommandRunner
@@ -62,8 +59,6 @@ type ContainerHelper struct {
 }
 
 func NewContainerHelper(
-	azdContext *azdcontext.AzdContext,
-	envManager environment.Manager,
 	clock clock.Clock,
 	containerRegistryService azapi.ContainerRegistryService,
 	remoteBuildManager *containerregistry.RemoteBuildManager,
@@ -74,8 +69,6 @@ func NewContainerHelper(
 	cloud *cloud.Cloud,
 ) *ContainerHelper {
 	return &ContainerHelper{
-		azdContext:               azdContext,
-		envManager:               envManager,
 		remoteBuildManager:       remoteBuildManager,
 		containerRegistryService: containerRegistryService,
 		commandRunner:            commandRunner,
@@ -92,32 +85,12 @@ func (ch *ContainerHelper) DockerfileBuilder() *DockerfileBuilder {
 	return NewDockerfileBuilder()
 }
 
-// getCurrentEnvironment gets the current environment using the standard pattern
-func (ch *ContainerHelper) getCurrentEnvironment(ctx context.Context) (*environment.Environment, error) {
-	defaultEnvironment, err := ch.azdContext.GetDefaultEnvironmentName()
-	if err != nil {
-		return nil, err
-	}
-
-	if defaultEnvironment == "" {
-		return nil, environment.ErrDefaultEnvironmentNotFound
-	}
-
-	env, err := ch.envManager.Get(ctx, defaultEnvironment)
-	if err != nil {
-		return nil, err
-	}
-
-	return env, nil
-}
-
 // DefaultImageName returns a default image name generated from the service name and environment name.
-func (ch *ContainerHelper) DefaultImageName(ctx context.Context, serviceConfig *ServiceConfig) (string, error) {
-	env, err := ch.getCurrentEnvironment(ctx)
-	if err != nil {
-		return "", err
-	}
-
+func (ch *ContainerHelper) DefaultImageName(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	env *environment.Environment,
+) (string, error) {
 	return fmt.Sprintf("%s/%s-%s",
 		strings.ToLower(serviceConfig.Project.Name),
 		strings.ToLower(serviceConfig.Name),
@@ -132,12 +105,11 @@ func (ch *ContainerHelper) DefaultImageTag() string {
 // RegistryName returns the name of the destination container registry to use for the current environment from the following:
 // 1. AZURE_CONTAINER_REGISTRY_ENDPOINT environment variable
 // 2. docker.registry from the service configuration
-func (ch *ContainerHelper) RegistryName(ctx context.Context, serviceConfig *ServiceConfig) (string, error) {
-	env, err := ch.getCurrentEnvironment(ctx)
-	if err != nil {
-		return "", err
-	}
-
+func (ch *ContainerHelper) RegistryName(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	env *environment.Environment,
+) (string, error) {
 	registryName, found := env.LookupEnv(environment.ContainerRegistryEndpointEnvVarName)
 	if !found {
 		log.Printf(
@@ -175,13 +147,9 @@ func (ch *ContainerHelper) RegistryName(ctx context.Context, serviceConfig *Serv
 func (ch *ContainerHelper) GeneratedImage(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
+	env *environment.Environment,
 ) (*docker.ContainerImage, error) {
 	// Parse the image from azure.yaml configuration when available
-	env, err := ch.getCurrentEnvironment(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	configuredImage, err := serviceConfig.Docker.Image.Envsubst(env.Getenv)
 	if err != nil {
 		return nil, fmt.Errorf("failed parsing 'image' from docker configuration, %w", err)
@@ -189,7 +157,7 @@ func (ch *ContainerHelper) GeneratedImage(
 
 	// Set default image name if not configured
 	if configuredImage == "" {
-		configuredImage, err = ch.DefaultImageName(ctx, serviceConfig)
+		configuredImage, err = ch.DefaultImageName(ctx, serviceConfig, env)
 		if err != nil {
 			return nil, err
 		}
@@ -217,7 +185,7 @@ func (ch *ContainerHelper) GeneratedImage(
 	// Set default registry if not configured
 	if parsedImage.Registry == "" {
 		// This can fail if called before provisioning the registry
-		configuredRegistry, err := ch.RegistryName(ctx, serviceConfig)
+		configuredRegistry, err := ch.RegistryName(ctx, serviceConfig, env)
 		if err == nil {
 			parsedImage.Registry = configuredRegistry
 		}
@@ -232,8 +200,9 @@ func (ch *ContainerHelper) RemoteImageTag(
 	serviceConfig *ServiceConfig,
 	localImageTag string,
 	imageOverride *imageOverride,
+	env *environment.Environment,
 ) (string, error) {
-	registryName, err := ch.RegistryName(ctx, serviceConfig)
+	registryName, err := ch.RegistryName(ctx, serviceConfig, env)
 	if err != nil {
 		return "", err
 	}
@@ -267,8 +236,9 @@ func (ch *ContainerHelper) RemoteImageTag(
 func (ch *ContainerHelper) LocalImageTag(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
+	env *environment.Environment,
 ) (string, error) {
-	configuredImage, err := ch.GeneratedImage(ctx, serviceConfig)
+	configuredImage, err := ch.GeneratedImage(ctx, serviceConfig, env)
 	if err != nil {
 		return "", err
 	}
@@ -293,8 +263,9 @@ func (ch *ContainerHelper) RequiredExternalTools(ctx context.Context, serviceCon
 func (ch *ContainerHelper) Login(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
+	env *environment.Environment,
 ) (string, error) {
-	registryName, err := ch.RegistryName(ctx, serviceConfig)
+	registryName, err := ch.RegistryName(ctx, serviceConfig, env)
 	if err != nil {
 		return "", err
 	}
@@ -303,10 +274,6 @@ func (ch *ContainerHelper) Login(
 	// Other registries require manual login via external 'docker login' command
 	hostParts := strings.Split(registryName, ".")
 	if len(hostParts) == 1 || strings.HasSuffix(registryName, ch.cloud.ContainerRegistryEndpointSuffix) {
-		env, err := ch.getCurrentEnvironment(ctx)
-		if err != nil {
-			return "", err
-		}
 		return registryName, ch.containerRegistryService.Login(ctx, env.GetSubscriptionId(), registryName)
 	}
 
@@ -319,8 +286,9 @@ func (ch *ContainerHelper) Credentials(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
+	env *environment.Environment,
 ) (*azapi.DockerCredentials, error) {
-	loginServer, err := ch.RegistryName(ctx, serviceConfig)
+	loginServer, err := ch.RegistryName(ctx, serviceConfig, env)
 	if err != nil {
 		return nil, err
 	}
@@ -354,15 +322,11 @@ func (ch *ContainerHelper) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	serviceContext *ServiceContext,
+	env *environment.Environment,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceBuildResult, error) {
 	if serviceConfig.Docker.RemoteBuild || useDotnetPublishForDockerBuild(serviceConfig) {
 		return &ServiceBuildResult{}, nil
-	}
-
-	env, err := ch.getCurrentEnvironment(ctx)
-	if err != nil {
-		return nil, err
 	}
 
 	dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
@@ -541,15 +505,11 @@ func (ch *ContainerHelper) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	serviceContext *ServiceContext,
+	env *environment.Environment,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
 	if serviceConfig.Docker.RemoteBuild || useDotnetPublishForDockerBuild(serviceConfig) {
 		return &ServicePackageResult{}, nil
-	}
-
-	env, err := ch.getCurrentEnvironment(ctx)
-	if err != nil {
-		return nil, err
 	}
 
 	var imageId string
@@ -587,7 +547,7 @@ func (ch *ContainerHelper) Package(
 	}
 
 	// Generate a local tag from the 'docker' configuration section of the service
-	imageWithTag, err := ch.LocalImageTag(ctx, serviceConfig)
+	imageWithTag, err := ch.LocalImageTag(ctx, serviceConfig, env)
 	if err != nil {
 		return nil, fmt.Errorf("generating local image tag: %w", err)
 	}
@@ -624,6 +584,7 @@ func (ch *ContainerHelper) Publish(
 	serviceConfig *ServiceConfig,
 	serviceContext *ServiceContext,
 	targetResource *environment.TargetResource,
+	env *environment.Environment,
 	progress *async.Progress[ServiceProgress],
 	options *PublishOptions,
 ) (*ServicePublishResult, error) {
@@ -637,11 +598,11 @@ func (ch *ContainerHelper) Publish(
 	}
 
 	if serviceConfig.Docker.RemoteBuild {
-		remoteImage, err = ch.runRemoteBuild(ctx, serviceConfig, targetResource, progress, imageOverride)
+		remoteImage, err = ch.runRemoteBuild(ctx, serviceConfig, targetResource, env, progress, imageOverride)
 	} else if useDotnetPublishForDockerBuild(serviceConfig) {
-		remoteImage, err = ch.runDotnetPublish(ctx, serviceConfig, targetResource, progress)
+		remoteImage, err = ch.runDotnetPublish(ctx, serviceConfig, targetResource, env, progress)
 	} else {
-		remoteImage, err = ch.publishLocalImage(ctx, serviceConfig, serviceContext, progress, imageOverride)
+		remoteImage, err = ch.publishLocalImage(ctx, serviceConfig, serviceContext, env, progress, imageOverride)
 	}
 	if err != nil {
 		return nil, err
@@ -667,11 +628,12 @@ func (ch *ContainerHelper) publishLocalImage(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	serviceContext *ServiceContext,
+	env *environment.Environment,
 	progress *async.Progress[ServiceProgress],
 	imageOverride *imageOverride,
 ) (string, error) {
 	// Get ACR Login Server
-	registryName, err := ch.RegistryName(ctx, serviceConfig)
+	registryName, err := ch.RegistryName(ctx, serviceConfig, env)
 	if err != nil {
 		return "", err
 	}
@@ -720,7 +682,7 @@ func (ch *ContainerHelper) publishLocalImage(
 
 			// Tag image
 			// Get remote remoteImageWithTag from the container helper then call docker cli remoteImageWithTag command
-			remoteImageWithTag, err := ch.RemoteImageTag(ctx, serviceConfig, targetImage, imageOverride)
+			remoteImageWithTag, err := ch.RemoteImageTag(ctx, serviceConfig, targetImage, imageOverride, env)
 			if err != nil {
 				return "", fmt.Errorf("getting remote image tag: %w", err)
 			}
@@ -735,7 +697,7 @@ func (ch *ContainerHelper) publishLocalImage(
 			log.Printf("logging into container registry '%s'\n", registryName)
 			progress.SetProgress(NewServiceProgress("Logging into container registry"))
 
-			_, err = ch.Login(ctx, serviceConfig)
+			_, err = ch.Login(ctx, serviceConfig, env)
 			if err != nil {
 				return "", err
 			}
@@ -791,6 +753,7 @@ func (ch *ContainerHelper) runRemoteBuild(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	target *environment.TargetResource,
+	env *environment.Environment,
 	progress *async.Progress[ServiceProgress],
 	imageOverride *imageOverride,
 ) (string, error) {
@@ -820,7 +783,7 @@ func (ch *ContainerHelper) runRemoteBuild(
 
 	progress.SetProgress(NewServiceProgress("Uploading remote build context"))
 
-	registryName, err := ch.RegistryName(ctx, serviceConfig)
+	registryName, err := ch.RegistryName(ctx, serviceConfig, env)
 	if err != nil {
 		return "", err
 	}
@@ -839,12 +802,12 @@ func (ch *ContainerHelper) runRemoteBuild(
 		return "", err
 	}
 
-	localImageTag, err := ch.LocalImageTag(ctx, serviceConfig)
+	localImageTag, err := ch.LocalImageTag(ctx, serviceConfig, env)
 	if err != nil {
 		return "", err
 	}
 
-	imageName, err := ch.RemoteImageTag(ctx, serviceConfig, localImageTag, imageOverride)
+	imageName, err := ch.RemoteImageTag(ctx, serviceConfig, localImageTag, imageOverride, env)
 	if err != nil {
 		return "", err
 	}
@@ -883,18 +846,19 @@ func (ch *ContainerHelper) runDotnetPublish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	target *environment.TargetResource,
+	env *environment.Environment,
 	progress *async.Progress[ServiceProgress],
 ) (string, error) {
 	progress.SetProgress(NewServiceProgress("Logging into registry"))
 
-	dockerCreds, err := ch.Credentials(ctx, serviceConfig, target)
+	dockerCreds, err := ch.Credentials(ctx, serviceConfig, target, env)
 	if err != nil {
 		return "", fmt.Errorf("logging in to registry: %w", err)
 	}
 
 	progress.SetProgress(NewServiceProgress("Publishing container image"))
 
-	defaultImageName, err := ch.DefaultImageName(ctx, serviceConfig)
+	defaultImageName, err := ch.DefaultImageName(ctx, serviceConfig, env)
 	if err != nil {
 		return "", fmt.Errorf("getting default image name: %w", err)
 	}

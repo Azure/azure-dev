@@ -7,18 +7,6 @@
     },
     "location": {
       "value": "${AZURE_LOCATION}"
-    },
-    "intTagValue": {
-      "value": "${INT_TAG_VALUE=678}" 
-    },
-    "boolTagValue": {
-      "value": "${BOOL_TAG_VALUE=false}"
-    },
-    "arrayValue": {
-      "value": "${MY_ARRAY}"
-    },
-    "objectValue": {
-      "value": "${MY_OBJECT}"
     }
   }
 }

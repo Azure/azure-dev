@@ -13,22 +13,26 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
 type appServiceTarget struct {
-	env *environment.Environment
-	cli *azapi.AzureClient
+	env     *environment.Environment
+	cli     *azapi.AzureClient
+	console input.Console
 }
 
 // NewAppServiceTarget creates a new instance of the AppServiceTarget
 func NewAppServiceTarget(
 	env *environment.Environment,
 	azCli *azapi.AzureClient,
+	console input.Console,
 ) ServiceTarget {
 	return &appServiceTarget{
-		env: env,
-		cli: azCli,
+		env:     env,
+		cli:     azCli,
+		console: console,
 	}
 }
 
@@ -118,24 +122,69 @@ func (st *appServiceTarget) Deploy(
 		return nil, fmt.Errorf("no zip artifacts found in service context")
 	}
 
-	zipFile, err := os.Open(zipFilePath)
+	// Determine deployment targets based on deployment history and slots
+	deployTargets, err := st.determineDeploymentTargets(ctx, serviceConfig, targetResource, progress)
 	if err != nil {
-		return nil, fmt.Errorf("failed reading deployment zip file: %w", err)
+		return nil, fmt.Errorf("determining deployment targets: %w", err)
 	}
 
-	defer zipFile.Close()
+	// Deploy to each target
+	hasSlots := len(deployTargets) > 1 || (len(deployTargets) == 1 && deployTargets[0].SlotName != "")
 
-	progress.SetProgress(NewServiceProgress("Uploading deployment package"))
-	_, err = st.cli.DeployAppServiceZip(
-		ctx,
-		targetResource.SubscriptionId(),
-		targetResource.ResourceGroupName(),
-		targetResource.ResourceName(),
-		zipFile,
-		func(logProgress string) { progress.SetProgress(NewServiceProgress(logProgress)) },
-	)
-	if err != nil {
-		return nil, fmt.Errorf("deploying service %s: %w", serviceConfig.Name, err)
+	for _, target := range deployTargets {
+		zipFile, err := os.Open(zipFilePath)
+		if err != nil {
+			return nil, fmt.Errorf("failed reading deployment zip file: %w", err)
+		}
+		defer zipFile.Close()
+
+		var deployErr error
+		if target.SlotName == "" {
+			// When deploying to the main app
+			var progressMsg string
+			if hasSlots {
+				// Mirror Azure Portal terminology: main app is the "production" slot
+				progressMsg = "Uploading deployment package to production slot"
+			} else {
+				// No slots configured, use simple message
+				progressMsg = "Uploading deployment package"
+			}
+			progress.SetProgress(NewServiceProgress(progressMsg))
+			_, deployErr = st.cli.DeployAppServiceZip(
+				ctx,
+				targetResource.SubscriptionId(),
+				targetResource.ResourceGroupName(),
+				targetResource.ResourceName(),
+				zipFile,
+				func(logProgress string) { progress.SetProgress(NewServiceProgress(logProgress)) },
+			)
+		} else {
+			progressMsg := fmt.Sprintf("Uploading deployment package to slot '%s'", target.SlotName)
+			progress.SetProgress(NewServiceProgress(progressMsg))
+			_, deployErr = st.cli.DeployAppServiceSlotZip(
+				ctx,
+				targetResource.SubscriptionId(),
+				targetResource.ResourceGroupName(),
+				targetResource.ResourceName(),
+				target.SlotName,
+				zipFile,
+				func(logProgress string) { progress.SetProgress(NewServiceProgress(logProgress)) },
+			)
+		}
+
+		if deployErr != nil {
+			var targetName string
+			if target.SlotName == "" {
+				if hasSlots {
+					targetName = "production slot"
+				} else {
+					targetName = "app service"
+				}
+			} else {
+				targetName = fmt.Sprintf("slot '%s'", target.SlotName)
+			}
+			return nil, fmt.Errorf("deploying service %s to %s: %w", serviceConfig.Name, targetName, deployErr)
+		}
 	}
 
 	progress.SetProgress(NewServiceProgress("Fetching endpoints for app service"))
@@ -170,12 +219,133 @@ func (st *appServiceTarget) Deploy(
 	}, nil
 }
 
-// Gets the exposed endpoints for the App Service
+// deploymentTarget represents a target for deployment (main app or a slot)
+type deploymentTarget struct {
+	SlotName string // Empty string means main app
+}
+
+// determineDeploymentTargets determines which targets (main app and/or slots) to deploy to
+// based on deployment history and available slots.
+//
+// Deployment Strategy:
+//   - First deployment (no history):
+//     Deploy to main app AND all slots to ensure consistency across all environments.
+//     This prevents configuration drift and ensures all slots start with the same baseline.
+//   - Subsequent deployments with no slots:
+//     Deploy to main app only (standard production deployment).
+//   - Subsequent deployments with exactly one slot:
+//     Deploy to that slot only (typical staging workflow before swap to production).
+//   - Subsequent deployments with multiple slots:
+//     Check for AZD_DEPLOY_{SERVICE_NAME}_SLOT_NAME environment variable to auto-select a slot.
+//     If not set, prompt user to select a target, allowing explicit control
+//     over which environment receives the deployment.
+func (st *appServiceTarget) determineDeploymentTargets(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	targetResource *environment.TargetResource,
+	progress *async.Progress[ServiceProgress],
+) ([]deploymentTarget, error) {
+	progress.SetProgress(NewServiceProgress("Checking deployment history"))
+
+	// Check if there are previous deployments
+	hasDeployments, err := st.cli.HasAppServiceDeployments(
+		ctx,
+		targetResource.SubscriptionId(),
+		targetResource.ResourceGroupName(),
+		targetResource.ResourceName(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("checking deployment history: %w", err)
+	}
+
+	progress.SetProgress(NewServiceProgress("Checking deployment slots"))
+
+	// Get available slots
+	slots, err := st.cli.GetAppServiceSlots(
+		ctx,
+		targetResource.SubscriptionId(),
+		targetResource.ResourceGroupName(),
+		targetResource.ResourceName(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("getting deployment slots: %w", err)
+	}
+
+	// If no previous deployments, always deploy to main app and all slots
+	if !hasDeployments {
+		targets := []deploymentTarget{{SlotName: ""}} // Main app
+		for _, slot := range slots {
+			targets = append(targets, deploymentTarget{SlotName: slot.Name})
+		}
+		return targets, nil
+	}
+
+	// Has previous deployments
+	if len(slots) == 0 {
+		// No slots, deploy to main app only
+		return []deploymentTarget{{SlotName: ""}}, nil
+	}
+
+	if len(slots) == 1 {
+		// Exactly one slot, deploy to that slot only
+		return []deploymentTarget{{SlotName: slots[0].Name}}, nil
+	}
+
+	// Multiple slots, prompt user to select
+	slotEnvVarName := slotEnvVarNameForService(serviceConfig.Name)
+
+	// Check if slot name is set via environment variable (checks azd env first, then system env)
+	if slotName := st.env.Getenv(slotEnvVarName); slotName != "" {
+		// Validate that the slot exists
+		for _, slot := range slots {
+			if slot.Name == slotName {
+				return []deploymentTarget{{SlotName: slotName}}, nil
+			}
+		}
+		// Slot not found, return error with available slots
+		availableSlots := make([]string, len(slots))
+		for i, slot := range slots {
+			availableSlots[i] = slot.Name
+		}
+		return nil, fmt.Errorf(
+			"slot '%s' specified in %s not found. Available slots: [%s]. "+
+				"Please update the environment variable with a valid slot name",
+			slotName, slotEnvVarName, strings.Join(availableSlots, ", "))
+	}
+
+	slotOptions := make([]string, len(slots))
+	for i, slot := range slots {
+		slotOptions[i] = slot.Name
+	}
+
+	selectedIndex, err := st.console.Select(ctx, input.ConsoleOptions{
+		Message: fmt.Sprintf(
+			"Select a deployment slot\nNote: skip this prompt with '%s=<slotName>'\n",
+			slotEnvVarName),
+		Options: slotOptions,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("selecting deployment slot: %w", err)
+	}
+
+	return []deploymentTarget{{SlotName: slots[selectedIndex].Name}}, nil
+}
+
+// slotEnvVarNameForService returns the environment variable name for setting the deployment slot
+// for a given service. The format is AZD_DEPLOY_{SERVICE_NAME}_SLOT_NAME where the service name
+// is uppercase and any hyphens are replaced with underscores.
+func slotEnvVarNameForService(serviceName string) string {
+	normalizedName := strings.ToUpper(strings.ReplaceAll(serviceName, "-", "_"))
+	return fmt.Sprintf("AZD_DEPLOY_%s_SLOT_NAME", normalizedName)
+}
+
+// Gets the exposed endpoints for the App Service, including any deployment slots
 func (st *appServiceTarget) Endpoints(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) ([]string, error) {
+	// Get main app properties
 	appServiceProperties, err := st.cli.GetAppServiceProperties(
 		ctx,
 		targetResource.SubscriptionId(),
@@ -186,9 +356,42 @@ func (st *appServiceTarget) Endpoints(
 		return nil, fmt.Errorf("fetching service properties: %w", err)
 	}
 
-	endpoints := make([]string, len(appServiceProperties.HostNames))
-	for idx, hostName := range appServiceProperties.HostNames {
-		endpoints[idx] = fmt.Sprintf("https://%s/", hostName)
+	var endpoints []string
+
+	// Add main app endpoints
+	for _, hostName := range appServiceProperties.HostNames {
+		endpoints = append(endpoints, fmt.Sprintf("https://%s/", hostName))
+	}
+
+	// Get all deployment slots
+	slots, err := st.cli.GetAppServiceSlots(
+		ctx,
+		targetResource.SubscriptionId(),
+		targetResource.ResourceGroupName(),
+		targetResource.ResourceName(),
+	)
+	if err != nil {
+		// Log but don't fail if we can't get slots - main app endpoints are still valid
+		return endpoints, nil
+	}
+
+	// Add slot endpoints with prefix
+	for _, slot := range slots {
+		slotProperties, err := st.cli.GetAppServiceSlotProperties(
+			ctx,
+			targetResource.SubscriptionId(),
+			targetResource.ResourceGroupName(),
+			targetResource.ResourceName(),
+			slot.Name,
+		)
+		if err != nil {
+			// Skip this slot if we can't get its properties
+			continue
+		}
+
+		for _, hostName := range slotProperties.HostNames {
+			endpoints = append(endpoints, fmt.Sprintf("https://%s/", hostName))
+		}
 	}
 
 	return endpoints, nil

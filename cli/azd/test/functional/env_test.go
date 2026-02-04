@@ -400,6 +400,62 @@ func envList(ctx context.Context, t *testing.T, cli *azdcli.CLI) []contracts.Env
 	return env
 }
 
+// Test_CLI_Env_List_Query tests the --query flag for JMESPath filtering on env list.
+func Test_CLI_Env_List_Query(t *testing.T) {
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+
+	err := copySample(dir, "storage")
+	require.NoError(t, err, "failed expanding sample")
+
+	// Create two environments
+	envName1 := randomEnvName()
+	envNew(ctx, t, cli, envName1, false)
+
+	envName2 := randomEnvName()
+	envNew(ctx, t, cli, envName2, false)
+
+	// Test --query with --output json to extract just the names
+	result, err := cli.RunCommand(ctx, "env", "list", "--output", "json", "--query", "[].Name")
+	require.NoError(t, err)
+
+	var names []string
+	err = json.Unmarshal([]byte(result.Stdout), &names)
+	require.NoError(t, err)
+	require.Len(t, names, 2)
+	require.Contains(t, names, envName1)
+	require.Contains(t, names, envName2)
+
+	// Test --query with -o json (short form)
+	result, err = cli.RunCommand(ctx, "env", "list", "-o", "json", "--query", "[].Name")
+	require.NoError(t, err)
+
+	err = json.Unmarshal([]byte(result.Stdout), &names)
+	require.NoError(t, err)
+	require.Len(t, names, 2)
+
+	// Test --query filtering for default environment
+	result, err = cli.RunCommand(ctx, "env", "list", "--output", "json", "--query", "[?IsDefault].Name")
+	require.NoError(t, err)
+
+	var defaultNames []string
+	err = json.Unmarshal([]byte(result.Stdout), &defaultNames)
+	require.NoError(t, err)
+	require.Len(t, defaultNames, 1)
+	// envName2 should be default since it was created last
+	require.Equal(t, envName2, defaultNames[0])
+
+	// Test --query requires --output json
+	_, err = cli.RunCommand(ctx, "env", "list", "--output", "table", "--query", "[].Name")
+	require.Error(t, err)
+}
+
 func envSelect(ctx context.Context, t *testing.T, cli *azdcli.CLI, envName string) {
 	_, err := cli.RunCommand(ctx, "env", "select", envName)
 	require.NoError(t, err)

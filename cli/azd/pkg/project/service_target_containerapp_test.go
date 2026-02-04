@@ -260,8 +260,6 @@ func createContainerAppServiceTarget(
 		mockContext.ArmClientOptions,
 	)
 	containerHelper := NewContainerHelper(
-		azdCtx,
-		envManager,
 		clock.NewMock(),
 		containerRegistryService,
 		remoteBuildManager,

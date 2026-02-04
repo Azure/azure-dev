@@ -200,7 +200,7 @@ func (t *aksTarget) Publish(
 	if serviceConfig.Docker.RemoteBuild || hasPackage {
 		// Login, tag & push container image to ACR
 		publishResult, err := t.containerHelper.Publish(
-			ctx, serviceConfig, serviceContext, targetResource, progress, publishOptions)
+			ctx, serviceConfig, serviceContext, targetResource, t.env, progress, publishOptions)
 		if err != nil {
 			return nil, err
 		}

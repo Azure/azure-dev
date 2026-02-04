@@ -69,7 +69,7 @@ func TestNewOperationSubmitCommand_Flags(t *testing.T) {
 		{"model", "m"},
 		{"training-file", "t"},
 		{"validation-file", "v"},
-		{"suffix", "s"},
+		{"suffix", "x"},
 		{"seed", "r"},
 	}
 
@@ -228,7 +228,7 @@ func TestNewOperationDeployModelCommand_Flags(t *testing.T) {
 		{"job-id", "i", ""},
 		{"deployment-name", "d", ""},
 		{"model-format", "m", "OpenAI"},
-		{"sku", "s", "GlobalStandard"},
+		{"sku", "k", "GlobalStandard"},
 		{"version", "v", "1"},
 	}
 

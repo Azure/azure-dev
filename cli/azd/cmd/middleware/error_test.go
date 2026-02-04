@@ -416,11 +416,9 @@ func Test_ExtractSuggestedSolutions(t *testing.T) {
 		},
 		{
 			name: "Agent Framework Wrapped Response - Text Field with Escaped JSON",
-			llmResponse: `{
-				"text": "{\"analysis\": \"The deployment failed due to insufficient permissions\", 
-				\"solutions\": [\"Grant Owner role to the user\", \"Use User Access Administrator role\", 
-				\"Contact subscription admin\"]}"
-			}`,
+			llmResponse: `{"text": "{\"analysis\": \"The deployment failed due to insufficient permissions\", ` +
+				`\"solutions\": [\"Grant Owner role to the user\", \"Use User Access Administrator role\", ` +
+				`\"Contact subscription admin\"]}"}`,
 			expectedCount: 3,
 			expectedFirst: "Grant Owner role to the user",
 		},

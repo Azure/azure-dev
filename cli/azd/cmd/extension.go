@@ -1084,7 +1084,6 @@ func (a *extensionUpgradeAction) checkForNewerVersionInOtherSources(
 				output.WithHighLightFormat(currentSource),
 				output.WithHighLightFormat(currentLatestVersion),
 			),
-			HidePrefix: false,
 		})
 		a.console.Message(ctx, "")
 		a.console.Message(ctx,

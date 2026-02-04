@@ -676,23 +676,22 @@
         "package": "vsce package",
         "lint": "eslint --max-warnings 0",
         "test": "vscode-test",
-
         "ci-test": "npm run lint && npm run build && npm run test",
         "ci-package": "npm run build && npm run package"
     },
     "devDependencies": {
         "@azure/core-auth": "~1",
-        "@microsoft/vscode-azext-eng": "^1.0.0-alpha.9",
+        "@microsoft/vscode-azext-eng": "1.0.0-alpha.11",
         "@types/node": "~22",
         "@types/semver": "~7",
-        "@types/sinon": "~17",
+        "@types/sinon": "~21",
         "@types/vscode": "~1.90",
         "@vscode/test-cli": "*",
         "@vscode/test-electron": "*",
         "@vscode/vsce": "*",
         "esbuild": "*",
         "esbuild-plugin-copy": "*",
-        "sinon": "~19"
+        "sinon": "~21"
     },
     "dependencies": {
         "@microsoft/vscode-azext-utils": "~4",

@@ -7,4 +7,4 @@ id: microsoft.azd.concurx
 language: go
 namespace: concurx
 usage: azd concurx <command> [options]
-version: 0.0.2
+version: 0.1.0

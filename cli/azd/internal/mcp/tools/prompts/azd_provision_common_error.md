@@ -10,17 +10,23 @@ This document provides solutions for common errors encountered during `azd provi
 - May contain: `"cannot fulfill your request at this time"`
 - May contain: `"To request region access for your subscription, please follow this link"`
 
-**LLM instructions:**
+**LLM Instructions:**
 
-When you encounter this error:
+When you encounter this error, YOU MUST USE YOUR TERMINAL TOOL TO EXECUTE the following commands - do not just display them to the user.
 
 1. **Identify the Problem:**
    - Extract the Azure region from the error message (e.g., "East US")
    - Confirm it's a provisioning failure due to regional capacity
 
-2. **Immediate Solutions:**
-   - Run `azd env set AZURE_LOCATION <alternative-region>` 
-   - Recommended alternative regions based on user location
+2. **Immediate Solutions (USE TERMINAL TOOL TO EXECUTE):**
+
+   USE YOUR TERMINAL TOOL to change to a different region:
+   
+   `azd env set AZURE_LOCATION <location>`
+   
+   USE YOUR TERMINAL TOOL to verify the change:
+   
+   `azd env get-values`
 
 **Example Commands:**
 ```bash
@@ -127,25 +133,23 @@ az role assignment list \
 
 **LLM Instructions:**
 
-When you encounter this error:
+When you encounter this error, YOU MUST USE YOUR TERMINAL TOOL TO EXECUTE the following commands - do not just display them to the user.
 
 1. **Common Causes:**
    - Manual role assignments created before running the template
    - Infrastructure template generates duplicate role assignment GUIDs
 
-2. **Immediate Solutions:**
+2. **Immediate Solutions (USE TERMINAL TOOL TO EXECUTE):**
 
    **Step 1: Check Infrastructure Files for Duplicate Role Assignments**
    
-   Search your `infra/` folder for duplicate role assignment definitions:
+   USE YOUR TERMINAL TOOL to search your `infra/` folder for duplicate role assignment definitions:
    
-   ```bash
-   # Check Bicep files for role assignments
-   grep -r "Microsoft.Authorization/roleAssignments" infra/*.bicep infra/**/*.bicep
+   `grep -r "Microsoft.Authorization/roleAssignments" infra/*.bicep infra/**/*.bicep`
    
-   # Look for duplicate guid() calls with same parameters
-   grep -r "guid(" infra/*.bicep infra/**/*.bicep | grep roleAssignment
-   ```
+   USE YOUR TERMINAL TOOL to look for duplicate guid() calls with same parameters:
+   
+   `grep -r "guid(" infra/*.bicep infra/**/*.bicep | grep roleAssignment`
    
    **Step 2: Fix Infrastructure Code (if duplicates found)**
    
@@ -178,39 +182,38 @@ When you encounter this error:
 
 **LLM Instructions:**
 
-When you encounter this error:
+When you encounter this error, YOU MUST USE YOUR TERMINAL TOOL TO EXECUTE the following commands - do not just display them to the user.
 
 1. **Identify the Problem:**
    - Extract the restricted Azure region from the error message (e.g., "eastus")
    - Extract the resource type that is restricted (e.g., PostgreSQL Flexible Server)
    - Confirm it's a subscription-level regional restriction
 
-2. **Immediate Solutions:**
+2. **Immediate Solutions (USE TERMINAL TOOL TO EXECUTE):**
 
    **Option 1: Use a Different Region if Available Region is Known**
    
-   Change to an unrestricted region:
-   ```bash
-   # Set a different region
-   azd env set AZURE_LOCATION westus3
+   USE YOUR TERMINAL TOOL to change to an unrestricted region:
    
-   # Verify the change
-   azd env get-values
-   ```
+   `azd env set AZURE_LOCATION westus3`
+   
+   USE YOUR TERMINAL TOOL to verify the change:
+   
+   `azd env get-values`
 
-   **Option 2: Check Available Regions for the Resource Type**
+   **Option 2: Check Available Regions for the Resource Type (USE TERMINAL TOOL TO EXECUTE)**
    
-   Verify if regions support the resource in your subscription:
-   ```bash
-   # For PostgreSQL Flexible Server
-   az postgres flexible-server list-skus --location westus3
+   USE YOUR TERMINAL TOOL to verify if regions support the resource in your subscription:
    
-   # Check on offer restriction. Disabled means location can be used
-   az postgres flexible-server list-skus --location westus3 --query "[0].supportedFeatures[?name=='OfferRestricted'].status" -o tsv
+   `az postgres flexible-server list-skus --location westus3`
+   
+   USE YOUR TERMINAL TOOL to check on offer restriction (Disabled means location can be used):
+   
+   `az postgres flexible-server list-skus --location westus3 --query "[0].supportedFeatures[?name=='OfferRestricted'].status" -o tsv`
 
-   # Check other locations
-   az account list-locations --output table
-   ```
+   USE YOUR TERMINAL TOOL to check other available locations:
+   
+   `az account list-locations --output table`
 
 3. **Long-term Solution (If you need the specific region):**
 
@@ -218,17 +221,19 @@ When you encounter this error:
    - Open the link provided in the error message (e.g., https://aka.ms/postgres-request-quota-increase)
    - Let user submit a support request to enable the region for your subscription
 
-4. **Verify Region Access Before Deployment:**
-   ```bash
-   # Check whether resource provider is registered
-   az provider show --namespace Microsoft.DBforPostgreSQL --query "registrationState"
-   
-   # List available regions of the provider
-   az provider show --namespace Microsoft.DBforPostgreSQL --query "resourceTypes[?resourceType=='flexibleServers'].locations"
+4. **Verify Region Access Before Deployment (USE TERMINAL TOOL TO EXECUTE):**
 
-   # Check whether location is available or not
-   az postgres flexible-server list-skus --location <location> --query "[0].supportedFeatures[?name=='OfferRestricted'].status" -o tsv
-   ```
+   USE YOUR TERMINAL TOOL to check whether resource provider is registered:
+   
+   `az provider show --namespace Microsoft.DBforPostgreSQL --query "registrationState"`
+   
+   USE YOUR TERMINAL TOOL to list available regions of the provider:
+   
+   `az provider show --namespace Microsoft.DBforPostgreSQL --query "resourceTypes[?resourceType=='flexibleServers'].locations"`
+
+   USE YOUR TERMINAL TOOL to check whether location is available or not:
+   
+   `az postgres flexible-server list-skus --location <location> --query "[0].supportedFeatures[?name=='OfferRestricted'].status" -o tsv`
 
 **Example Commands:**
 ```bash
@@ -263,7 +268,7 @@ az postgres flexible-server list-skus --location westus3 --query "[0].supportedF
 
 **LLM Instructions:**
 
-When you encounter this error:
+When you encounter this error, YOU MUST USE YOUR TERMINAL TOOL TO EXECUTE the following commands - do not just display them to the user.
 
 1. **Identify the Problem:**
    - Extract the VM family/tier from the error message (e.g., "Basic VMs", "Standard DSv3 Family")
@@ -271,24 +276,25 @@ When you encounter this error:
    - Note the current limit and required quota
    - Confirm it's a VM quota limitation
 
-2. **Immediate Solutions:**
+2. **Immediate Solutions (USE TERMINAL TOOL TO EXECUTE):**
 
    **Option 1: Check Current Quota Usage and Use New Location**
    
-   View your current quota limits and usage:
-   ```bash
-   # Check VM quota of a specific region
-   az vm list-usage --location <region> --output table
+   USE YOUR TERMINAL TOOL to check VM quota of a specific region:
    
-   # Look for the specific VM family mentioned in the error
-   az vm list-usage --location <region> --output table | grep -i <VM-family-mention-in-error>
+   `az vm list-usage --location <region> --output table`
+   
+   USE YOUR TERMINAL TOOL to look for the specific VM family mentioned in the error:
+   
+   `az vm list-usage --location <region> --output table | grep -i <VM-family-mention-in-error>`
 
-   # Set location to available regions
-   azd env set AZURE_LOCATION westus
+   USE YOUR TERMINAL TOOL to set location to available regions:
+   
+   `azd env set AZURE_LOCATION westus`
 
-   # Check current environment settings
-   azd env get-values
-   ```
+   USE YOUR TERMINAL TOOL to check current environment settings:
+   
+   `azd env get-values`
 
    **Option 2: Use a Different VM SKU (Quick Fix)**
    
@@ -297,10 +303,9 @@ When you encounter this error:
    - Locate the VM/resource definition in your `infra/` files
    - Change the SKU to an available tier (e.g., Standard_B2s, Standard_D2s_v3)
 
-   ```bash
-   # Search for VM size/SKU definitions in your infrastructure
-   grep -r "sku\|vmSize" infra/*.bicep
-   ```
+   USE YOUR TERMINAL TOOL to search for VM size/SKU definitions in your infrastructure:
+   
+   `grep -r "sku\|vmSize" infra/*.bicep`
 
    **Option 3: Request Quota Increase**
    
@@ -311,11 +316,11 @@ When you encounter this error:
    - Search for the VM family from the error message
    - Click "Request increase" for the specific region
 
-3. **Verify Quota Before Deployment:**
-   ```bash
-   # Check specific VM family quota - standardDSv3Family is VM family and can be replaced
-   az vm list-usage --location <region> --query "[?contains(name.value, 'standardDSv3Family')]" --output table
-   ```
+3. **Verify Quota Before Deployment (USE TERMINAL TOOL TO EXECUTE):**
+
+   USE YOUR TERMINAL TOOL to check specific VM family quota (standardDSv3Family is VM family and can be replaced):
+   
+   `az vm list-usage --location <region> --query "[?contains(name.value, 'standardDSv3Family')]" --output table`
 
 **Example Commands:**
 ```bash

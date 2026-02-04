@@ -113,7 +113,7 @@ For more complex matching, prefix the pattern with `regex:`. This enables full r
 | `.*` | Match any characters |
 | `\\d+` | Match one or more digits |
 | `\\d{3}` | Match exactly 3 digits |
-| `(foo\|bar)` | Match "foo" or "bar" |
+| `(foo|bar)` | Match "foo" or "bar" |
 | `\\s+` | Match whitespace |
 
 **Note:** In YAML, backslashes must be escaped as `\\`.

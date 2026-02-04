@@ -278,7 +278,7 @@ When you encounter this error:
    # Check VM quota of a specific region
    az vm list-usage --location <region> --output table
    
-   # Look about the specific VM family mentioned in the error
+   # Look for the specific VM family mentioned in the error
    az vm list-usage --location <region> --output table | grep -i <VM-family-mention-in-error>
 
    # Set location to available regions

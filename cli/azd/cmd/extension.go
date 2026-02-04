@@ -937,12 +937,8 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 			return nil, fmt.Errorf("extension %s not found in source %s", extensionId, sourceToUse)
 		}
 
-		// Since we're filtering by the exact source, there should only be one match
-		// But we'll use selectDistinctExtension for consistency
-		selectedExtension, err := selectDistinctExtension(ctx, a.console, extensionId, matches, a.flags.global)
-		if err != nil {
-			return nil, err
-		}
+		// When filtering by exact source, there should only be one match per extension ID
+		selectedExtension := matches[0]
 
 		a.console.ShowSpinner(ctx, stepMessage, input.Step)
 		latestVersion := selectedExtension.Versions[len(selectedExtension.Versions)-1]
@@ -1035,7 +1031,7 @@ func (a *extensionUpgradeAction) checkForNewerVersionInOtherSources(
 
 	// Check each source for newer versions
 	var newerVersionSource string
-	var newerVersion string
+	var newestSemver *semver.Version
 
 	for _, match := range allMatches {
 		// Skip the current source
@@ -1055,28 +1051,21 @@ func (a *extensionUpgradeAction) checkForNewerVersionInOtherSources(
 			continue
 		}
 
-		// Check if this version is newer
+		// Check if this version is newer than current AND newer than what we've found so far
 		if latestSemver.GreaterThan(currentSemver) {
-			// Update if this is the newest we've found so far
-			if newerVersion == "" {
-				newerVersion = latestInSource.Version
+			if newestSemver == nil || latestSemver.GreaterThan(newestSemver) {
+				newestSemver = latestSemver
 				newerVersionSource = match.Source
-			} else {
-				newerSemver, err := semver.NewVersion(newerVersion)
-				if err == nil && latestSemver.GreaterThan(newerSemver) {
-					newerVersion = latestInSource.Version
-					newerVersionSource = match.Source
-				}
 			}
 		}
 	}
 
 	// Display warning if a newer version was found
-	if newerVersion != "" {
+	if newestSemver != nil {
 		a.console.MessageUxItem(ctx, &ux.WarningMessage{
 			Description: fmt.Sprintf(
 				"A newer version (%s) of %s is available in source '%s', but the extension was installed from source '%s'.",
-				output.WithHighLightFormat(newerVersion),
+				output.WithHighLightFormat(newestSemver.String()),
 				output.WithHighLightFormat(extensionId),
 				output.WithHighLightFormat(newerVersionSource),
 				output.WithHighLightFormat(currentSource),

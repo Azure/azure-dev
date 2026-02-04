@@ -801,20 +801,6 @@ func (st *fakeServiceTarget) Endpoints(
 	return []string{"https://test.azurewebsites.net"}, nil
 }
 
-func (st *fakeServiceTarget) Tasks(ctx context.Context, serviceConfig *ServiceConfig) []ServiceTask {
-	return []ServiceTask{}
-}
-
-func (st *fakeServiceTarget) Task(
-	ctx context.Context,
-	serviceConfig *ServiceConfig,
-	targetResource *environment.TargetResource,
-	task ServiceTask,
-	taskArgs string,
-) error {
-	return nil
-}
-
 type fakeTool struct {
 }
 

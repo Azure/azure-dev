@@ -1064,19 +1064,3 @@ func (fns *containerAppTemplateManifestFuncs) kvSecret(kvHost, secretName string
 	}
 	return secret.Value, nil
 }
-
-// Tasks returns the list of available tasks for this service target.
-func (dt *dotnetContainerAppTarget) Tasks(ctx context.Context, serviceConfig *ServiceConfig) []ServiceTask {
-	return []ServiceTask{}
-}
-
-// Task executes a specific task for this service target.
-func (dt *dotnetContainerAppTarget) Task(
-	ctx context.Context,
-	serviceConfig *ServiceConfig,
-	targetResource *environment.TargetResource,
-	task ServiceTask,
-	taskArgs string,
-) error {
-	return nil
-}

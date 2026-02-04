@@ -968,19 +968,3 @@ func (t *aksTarget) resolveClusterName(
 
 	return clusterName, nil
 }
-
-// Tasks returns the list of available tasks for this service target.
-func (at *aksTarget) Tasks(ctx context.Context, serviceConfig *ServiceConfig) []ServiceTask {
-	return []ServiceTask{}
-}
-
-// Task executes a specific task for this service target.
-func (at *aksTarget) Task(
-	ctx context.Context,
-	serviceConfig *ServiceConfig,
-	targetResource *environment.TargetResource,
-	task ServiceTask,
-	taskArgs string,
-) error {
-	return nil
-}

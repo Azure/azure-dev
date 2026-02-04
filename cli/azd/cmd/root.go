@@ -368,18 +368,6 @@ func NewRootCmd(
 		},
 	})
 
-	root.Add("service-tasks", &actions.ActionDescriptorOptions{
-		Command:        newServiceTasksCmd(),
-		FlagsResolver:  newServiceTasksFlags,
-		ActionResolver: newServiceTasksAction,
-		OutputFormats:  []output.Format{output.NoneFormat},
-		DefaultFormat:  output.NoneFormat,
-		GroupingOptions: actions.CommandGroupOptions{
-			RootLevelHelp: actions.CmdGroupManage,
-		},
-		RequireLogin: true,
-	})
-
 	root.
 		Add("down", &actions.ActionDescriptorOptions{
 			Command:        newDownCmd(),

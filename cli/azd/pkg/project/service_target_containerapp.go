@@ -459,19 +459,3 @@ func (at *containerAppTarget) addPreProvisionChecks(ctx context.Context, service
 		},
 	)
 }
-
-// Tasks returns the list of available tasks for this service target.
-func (at *containerAppTarget) Tasks(ctx context.Context, serviceConfig *ServiceConfig) []ServiceTask {
-	return []ServiceTask{}
-}
-
-// Task executes a specific task for this service target.
-func (at *containerAppTarget) Task(
-	ctx context.Context,
-	serviceConfig *ServiceConfig,
-	targetResource *environment.TargetResource,
-	task ServiceTask,
-	taskArgs string,
-) error {
-	return nil
-}

@@ -24,7 +24,7 @@
 rules:
   - patterns:
       - "parsing project file"
-    message: "Your azure.yaml file in invalid"
+    message: "Your azure.yaml file is invalid"
     suggestion: "Check the syntax of your azure.yaml file and fix any errors."
     docUrl: "https://aka.ms/azure-dev/azure-yaml"
   # ============================================================================

@@ -38,6 +38,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 	"gopkg.in/yaml.v3"
 )
@@ -219,7 +220,7 @@ func (a *InitAction) Run(ctx context.Context) error {
 
 		// Add the agent to the azd project (azure.yaml) services
 		if err := a.addToProject(ctx, targetDir, agentManifest, a.flags.host); err != nil {
-			return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
+			return err
 		}
 
 		color.Green("\nAI agent definition added to your azd project successfully!")
@@ -1290,6 +1291,10 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	req := &azdext.AddServiceRequest{Service: serviceConfig}
 
 	if _, err := a.azdClient.Project().AddService(ctx, req); err != nil {
+		// Extract clean error message from gRPC status
+		if st, ok := status.FromError(err); ok {
+			return errors.New(st.Message())
+		}
 		return fmt.Errorf("adding agent service to project: %w", err)
 	}
 

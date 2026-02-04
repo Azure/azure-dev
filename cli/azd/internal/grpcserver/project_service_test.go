@@ -20,6 +20,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -55,6 +57,58 @@ func Test_ProjectService_NoProject(t *testing.T) {
 	service := NewProjectService(lazyAzdContext, lazyEnvManager, lazyProjectConfig, importManager, ghCli)
 	_, err := service.Get(*mockContext.Context, &azdext.EmptyRequest{})
 	require.Error(t, err)
+	
+	// Verify that the error is a gRPC status error with FailedPrecondition code
+	st, ok := status.FromError(err)
+	require.True(t, ok, "expected gRPC status error")
+	require.Equal(t, codes.FailedPrecondition, st.Code())
+	require.Equal(t, "No azd project found. Run 'azd init' to initialize your project.", st.Message())
+}
+
+// Test_ProjectService_AddService_NoProject ensures that when no project exists,
+// the AddService method returns a user-friendly error.
+func Test_ProjectService_AddService_NoProject(t *testing.T) {
+	// Setup a mock context.
+	mockContext := mocks.NewMockContext(context.Background())
+
+	// Mock GitHub CLI version check.
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, string(filepath.Separator)+"gh") && args.Args[0] == "--version"
+	}).Respond(exec.RunResult{
+		Stdout: github.Version.String(),
+	})
+
+	// Lazy loaders return a "no project" error.
+	lazyAzdContext := lazy.NewLazy(func() (*azdcontext.AzdContext, error) {
+		return nil, azdcontext.ErrNoProject
+	})
+	lazyEnvManager := lazy.NewLazy(func() (environment.Manager, error) {
+		return nil, azdcontext.ErrNoProject
+	})
+	lazyProjectConfig := lazy.NewLazy(func() (*project.ProjectConfig, error) {
+		return nil, azdcontext.ErrNoProject
+	})
+
+	// Create mock GitHub CLI.
+	ghCli := github.NewGitHubCli(mockContext.Console, mockContext.CommandRunner)
+
+	// Create the service with ImportManager.
+	importManager := project.NewImportManager(&project.DotNetImporter{})
+	service := NewProjectService(lazyAzdContext, lazyEnvManager, lazyProjectConfig, importManager, ghCli)
+	
+	// Try to add a service when no project exists
+	_, err := service.AddService(*mockContext.Context, &azdext.AddServiceRequest{
+		Service: &azdext.ServiceConfig{
+			Name: "test-service",
+		},
+	})
+	require.Error(t, err)
+	
+	// Verify that the error is a gRPC status error with FailedPrecondition code
+	st, ok := status.FromError(err)
+	require.True(t, ok, "expected gRPC status error")
+	require.Equal(t, codes.FailedPrecondition, st.Code())
+	require.Equal(t, "No azd project found. Run 'azd init' to initialize your project.", st.Message())
 }
 
 // Test_ProjectService_Flow validates the complete project service flow:

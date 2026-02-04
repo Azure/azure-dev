@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/braydonk/yaml"
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -312,6 +314,10 @@ func populateContainerSettings(ctx context.Context, azdClient *azdext.AzdClient,
 	req := &azdext.AddServiceRequest{Service: svc}
 
 	if _, err := azdClient.Project().AddService(ctx, req); err != nil {
+		// Extract clean error message from gRPC status
+		if st, ok := status.FromError(err); ok {
+			return errors.New(st.Message())
+		}
 		return fmt.Errorf("adding agent service to project: %w", err)
 	}
 

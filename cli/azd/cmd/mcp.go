@@ -237,6 +237,7 @@ func (a *mcpStartAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		tools.NewAzdProjectValidationTool(),
 		tools.NewAzdYamlSchemaTool(),
 		tools.NewAzdErrorTroubleShootingTool(),
+		tools.NewAzdProvisionCommonErrorTool(),
 	}
 
 	allTools := []server.ServerTool{}

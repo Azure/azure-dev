@@ -2403,10 +2403,11 @@ func (a *InitAction) promptForModelLocationMismatch(ctx context.Context, model *
 			return nil, "", fmt.Errorf("failed to get current azd environment: %w", err)
 		}
 
+		a.azureContext.Scope.Location = selectedLocation
 		_, err = a.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 			EnvName: envResponse.Environment.Name,
 			Key:     "AZURE_LOCATION",
-			Value:   selectedLocation,
+			Value:   a.azureContext.Scope.Location,
 		})
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to update AZURE_LOCATION in azd environment: %w", err)

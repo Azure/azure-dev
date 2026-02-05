@@ -31,4 +31,3 @@ extends:
           AzdExtensionId: azure.ai.agents
           SanitizedExtensionId: azure-ai-agents
           AzdExtensionDirectory: cli/azd/extensions/azure.ai.agents
-          SkipTests: true

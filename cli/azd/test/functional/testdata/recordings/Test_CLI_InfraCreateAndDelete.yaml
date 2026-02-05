@@ -1099,7 +1099,7 @@ interactions:
                         },
                         {
                           "name": "release",
-                          "description": "Create an new release of the AZD extension project to a Github repository.",
+                          "description": "Create a new release of the AZD extension project to a GitHub repository.",
                           "usage": "azd x release"
                         },
                         {
@@ -1183,7 +1183,7 @@ interactions:
                         },
                         {
                           "name": "release",
-                          "description": "Create an new release of the AZD extension project to a Github repository.",
+                          "description": "Create a new release of the AZD extension project to a GitHub repository.",
                           "usage": "azd x release"
                         },
                         {
@@ -1267,7 +1267,7 @@ interactions:
                         },
                         {
                           "name": "release",
-                          "description": "Create an new release of the AZD extension project to a Github repository.",
+                          "description": "Create a new release of the AZD extension project to a GitHub repository.",
                           "usage": "azd x release"
                         },
                         {
@@ -1351,7 +1351,7 @@ interactions:
                         },
                         {
                           "name": "release",
-                          "description": "Create an new release of the AZD extension project to a Github repository.",
+                          "description": "Create a new release of the AZD extension project to a GitHub repository.",
                           "usage": "azd x release"
                         },
                         {
@@ -1435,7 +1435,7 @@ interactions:
                         },
                         {
                           "name": "release",
-                          "description": "Create an new release of the AZD extension project to a Github repository.",
+                          "description": "Create a new release of the AZD extension project to a GitHub repository.",
                           "usage": "azd x release"
                         },
                         {
@@ -1524,7 +1524,7 @@ interactions:
                         },
                         {
                           "name": "release",
-                          "description": "Create an new release of the AZD extension project to a Github repository.",
+                          "description": "Create a new release of the AZD extension project to a GitHub repository.",
                           "usage": "azd x release"
                         },
                         {
@@ -1613,7 +1613,7 @@ interactions:
                         },
                         {
                           "name": "release",
-                          "description": "Create an new release of the AZD extension project to a Github repository.",
+                          "description": "Create a new release of the AZD extension project to a GitHub repository.",
                           "usage": "azd x release"
                         },
                         {
@@ -3162,7 +3162,7 @@ interactions:
                         },
                         {
                           "name": "release",
-                          "description": "Create an new release of the AZD extension project to a Github repository.",
+                          "description": "Create a new release of the AZD extension project to a GitHub repository.",
                           "usage": "azd x release"
                         },
                         {
@@ -3246,7 +3246,7 @@ interactions:
                         },
                         {
                           "name": "release",
-                          "description": "Create an new release of the AZD extension project to a Github repository.",
+                          "description": "Create a new release of the AZD extension project to a GitHub repository.",
                           "usage": "azd x release"
                         },
                         {
@@ -3330,7 +3330,7 @@ interactions:
                         },
                         {
                           "name": "release",
-                          "description": "Create an new release of the AZD extension project to a Github repository.",
+                          "description": "Create a new release of the AZD extension project to a GitHub repository.",
                           "usage": "azd x release"
                         },
                         {
@@ -3414,7 +3414,7 @@ interactions:
                         },
                         {
                           "name": "release",
-                          "description": "Create an new release of the AZD extension project to a Github repository.",
+                          "description": "Create a new release of the AZD extension project to a GitHub repository.",
                           "usage": "azd x release"
                         },
                         {
@@ -3498,7 +3498,7 @@ interactions:
                         },
                         {
                           "name": "release",
-                          "description": "Create an new release of the AZD extension project to a Github repository.",
+                          "description": "Create a new release of the AZD extension project to a GitHub repository.",
                           "usage": "azd x release"
                         },
                         {
@@ -3587,7 +3587,7 @@ interactions:
                         },
                         {
                           "name": "release",
-                          "description": "Create an new release of the AZD extension project to a Github repository.",
+                          "description": "Create a new release of the AZD extension project to a GitHub repository.",
                           "usage": "azd x release"
                         },
                         {
@@ -3676,7 +3676,7 @@ interactions:
                         },
                         {
                           "name": "release",
-                          "description": "Create an new release of the AZD extension project to a Github repository.",
+                          "description": "Create a new release of the AZD extension project to a GitHub repository.",
                           "usage": "azd x release"
                         },
                         {

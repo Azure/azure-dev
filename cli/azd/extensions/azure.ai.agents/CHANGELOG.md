@@ -9,6 +9,7 @@
 - [[#6683]](https://github.com/Azure/azure-dev/pull/6683) Fix panic when parsing `agent.yaml` files without a `template` field
 - [[#6693]](https://github.com/Azure/azure-dev/pull/6693) Fix unsafe DefaultAzureCredential usage
 - [[#6695]](https://github.com/Azure/azure-dev/pull/6695) Display agent endpoint as plain text with documentation link instead of clickable hyperlink
+- [[#6730]](https://github.com/Azure/azure-dev/pull/6730) Improve model selection handling when model is unavailable in current region
 
 ## 0.1.8-preview (2026-01-26)
 

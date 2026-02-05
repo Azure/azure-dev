@@ -1917,8 +1917,8 @@ func (a *InitAction) loadAiCatalog(ctx context.Context) error {
 		return fmt.Errorf("failed to start spinner: %w", err)
 	}
 
-	// aiModelCatalog, err := a.modelCatalogService.ListAllModels(ctx, a.azureContext.Scope.SubscriptionId, a.azureContext.Scope.Location)
 	aiModelCatalog, err := a.modelCatalogService.ListAllModels(ctx, a.azureContext.Scope.SubscriptionId, "")
+
 	if err != nil {
 		return fmt.Errorf("failed to load the model catalog: %w", err)
 	}

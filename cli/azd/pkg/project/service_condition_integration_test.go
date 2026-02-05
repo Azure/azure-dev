@@ -104,7 +104,14 @@ services:
 			service := projectConfig.Services["test-service"]
 			enabled, err := service.IsEnabled(env.Getenv)
 			require.NoError(t, err)
-			require.Equal(t, tt.shouldEnable, enabled, "Condition value %s should result in enabled=%v", tt.envValue, tt.shouldEnable)
+			require.Equal(
+				t,
+				tt.shouldEnable,
+				enabled,
+				"Condition value %s should result in enabled=%v",
+				tt.envValue,
+				tt.shouldEnable,
+			)
 		})
 	}
 }

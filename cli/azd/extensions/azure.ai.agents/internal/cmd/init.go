@@ -2329,7 +2329,7 @@ func (a *InitAction) promptForAlternativeModel(ctx context.Context, originalMode
 
 func (a *InitAction) promptForModelLocationMismatch(ctx context.Context, model *ai.AiModel, currentLocation string) (*ai.AiModel, string, error) {
 	fmt.Println(output.WithErrorFormat("The model '%s' is not available in your current location '%s'.", model.Name, currentLocation))
-	fmt.Println("Would you like you use a different model, or select a different location?")
+	fmt.Println("Would you like to use a different model, or select a different location?")
 	fmt.Println(output.WithWarningFormat(
 		"WARNING: If you choose to select a different location, this will change your currently configured " +
 			"region in your AZD environment. If you have already created a Foundry Project in your currently " +

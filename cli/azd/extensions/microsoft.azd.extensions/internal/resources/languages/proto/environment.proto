@@ -57,13 +57,13 @@ message SelectEnvironmentRequest {
 
 // Request to retrieve a specific key-value pair.
 message GetEnvRequest {
-  string env_name = 1; // Name of the environment.
+  string env_name = 1; // Optional: Name of the environment. If empty, uses default.
   string key = 2;      // Key to retrieve.
 }
 
 // Request to set a key-value pair.
 message SetEnvRequest {
-  string env_name = 1; // Name of the environment.
+  string env_name = 1; // Optional: Name of the environment. If empty, uses default.
   string key = 2;      // Key to set.
   string value = 3;    // Value to set for the key.
 }

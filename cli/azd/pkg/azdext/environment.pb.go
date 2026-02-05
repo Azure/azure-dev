@@ -116,7 +116,7 @@ func (x *SelectEnvironmentRequest) GetName() string {
 // Request to retrieve a specific key-value pair.
 type GetEnvRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	EnvName       string                 `protobuf:"bytes,1,opt,name=env_name,json=envName,proto3" json:"env_name,omitempty"` // Name of the environment.
+	EnvName       string                 `protobuf:"bytes,1,opt,name=env_name,json=envName,proto3" json:"env_name,omitempty"` // Optional: Name of the environment. If empty, uses default.
 	Key           string                 `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`                        // Key to retrieve.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -169,7 +169,7 @@ func (x *GetEnvRequest) GetKey() string {
 // Request to set a key-value pair.
 type SetEnvRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	EnvName       string                 `protobuf:"bytes,1,opt,name=env_name,json=envName,proto3" json:"env_name,omitempty"` // Name of the environment.
+	EnvName       string                 `protobuf:"bytes,1,opt,name=env_name,json=envName,proto3" json:"env_name,omitempty"` // Optional: Name of the environment. If empty, uses default.
 	Key           string                 `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`                        // Key to set.
 	Value         string                 `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`                    // Value to set for the key.
 	unknownFields protoimpl.UnknownFields

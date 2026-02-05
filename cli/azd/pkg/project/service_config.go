@@ -4,6 +4,7 @@
 package project
 
 import (
+	"fmt"
 	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
@@ -97,18 +98,18 @@ func (sc *ServiceConfig) Path() string {
 // If no condition is specified, the service is enabled by default.
 // The condition is evaluated as a boolean where truthy values are: 1, true, TRUE, True, yes, YES, Yes
 // All other values are considered false.
-func (sc *ServiceConfig) IsEnabled(getenv func(string) string) bool {
+// Returns an error if the condition template is malformed.
+func (sc *ServiceConfig) IsEnabled(getenv func(string) string) (bool, error) {
 	if sc.Condition.Empty() {
-		return true
+		return true, nil
 	}
 
 	value, err := sc.Condition.Envsubst(getenv)
 	if err != nil {
-		// If condition can't be evaluated, consider it disabled
-		return false
+		return false, fmt.Errorf("malformed deployment condition template: %w", err)
 	}
 
-	return isConditionTrue(value)
+	return isConditionTrue(value), nil
 }
 
 // isConditionTrue parses a string value as a boolean condition.

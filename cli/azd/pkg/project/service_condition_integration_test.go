@@ -46,13 +46,19 @@ services:
 
 	// Test that conditions are evaluated correctly
 	alwaysEnabled := projectConfig.Services["always-enabled"]
-	require.True(t, alwaysEnabled.IsEnabled(env.Getenv), "Service without condition should be enabled")
+	enabled, err := alwaysEnabled.IsEnabled(env.Getenv)
+	require.NoError(t, err, "Service without condition should not error")
+	require.True(t, enabled, "Service without condition should be enabled")
 
 	conditionalEnabled := projectConfig.Services["conditional-enabled"]
-	require.True(t, conditionalEnabled.IsEnabled(env.Getenv), "Service with condition=true should be enabled")
+	enabled, err = conditionalEnabled.IsEnabled(env.Getenv)
+	require.NoError(t, err, "Service with valid condition should not error")
+	require.True(t, enabled, "Service with condition=true should be enabled")
 
 	conditionalDisabled := projectConfig.Services["conditional-disabled"]
-	require.False(t, conditionalDisabled.IsEnabled(env.Getenv), "Service with condition=false should be disabled")
+	enabled, err = conditionalDisabled.IsEnabled(env.Getenv)
+	require.NoError(t, err, "Service with valid condition should not error")
+	require.False(t, enabled, "Service with condition=false should be disabled")
 }
 
 func TestServiceCondition_WithDifferentValues(t *testing.T) {
@@ -96,7 +102,8 @@ services:
 			})
 
 			service := projectConfig.Services["test-service"]
-			enabled := service.IsEnabled(env.Getenv)
+			enabled, err := service.IsEnabled(env.Getenv)
+			require.NoError(t, err)
 			require.Equal(t, tt.shouldEnable, enabled, "Condition value %s should result in enabled=%v", tt.envValue, tt.shouldEnable)
 		})
 	}

@@ -451,10 +451,26 @@ func TestServiceConfigConditionEvaluation(t *testing.T) {
 				return tt.envVars[key]
 			}
 
-			enabled := service.IsEnabled(getenv)
+			enabled, err := service.IsEnabled(getenv)
+			require.NoError(t, err)
 			require.Equal(t, tt.expectEnabled, enabled)
 		})
 	}
+}
+
+func TestServiceConfigConditionMalformed(t *testing.T) {
+	service := &ServiceConfig{
+		Name:      "test-service",
+		Condition: osutil.NewExpandableString("${UNCLOSED"),
+	}
+
+	getenv := func(key string) string {
+		return ""
+	}
+
+	_, err := service.IsEnabled(getenv)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "malformed deployment condition template")
 }
 
 func TestServiceConfigConditionYamlParsing(t *testing.T) {
@@ -492,8 +508,12 @@ services:
 		}
 		return ""
 	}
-	require.True(t, conditionalService.IsEnabled(getenvTrue))
-	require.True(t, unconditionalService.IsEnabled(getenvTrue))
+	enabled, err := conditionalService.IsEnabled(getenvTrue)
+	require.NoError(t, err)
+	require.True(t, enabled)
+	enabled, err = unconditionalService.IsEnabled(getenvTrue)
+	require.NoError(t, err)
+	require.True(t, enabled)
 
 	// Test with environment variable set to false
 	getenvFalse := func(key string) string {
@@ -502,8 +522,12 @@ services:
 		}
 		return ""
 	}
-	require.False(t, conditionalService.IsEnabled(getenvFalse))
-	require.True(t, unconditionalService.IsEnabled(getenvFalse))
+	enabled, err = conditionalService.IsEnabled(getenvFalse)
+	require.NoError(t, err)
+	require.False(t, enabled)
+	enabled, err = unconditionalService.IsEnabled(getenvFalse)
+	require.NoError(t, err)
+	require.True(t, enabled)
 }
 
 func createTestServiceConfig(path string, host ServiceTargetKind, language ServiceLanguageKind) *ServiceConfig {

@@ -7,7 +7,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -319,15 +322,13 @@ func runSwap(ctx context.Context, flags *swapFlags, rootFlags rootFlagsDefinitio
 		}
 	}
 
-	// Perform the swap
-	color.Cyan("Swapping '%s' with '%s'...", srcDisplay, dstDisplay)
-
+	// Perform the swap (spinner will show progress)
 	err = swapSlot(ctx, client, resourceGroup, appName, srcSlot, dstSlot)
 	if err != nil {
 		return fmt.Errorf("swapping slots: %w", err)
 	}
 
-	color.Green("Swap completed successfully.")
+	color.Green("✓ Swap completed successfully: %s ↔ %s", srcDisplay, dstDisplay)
 	return nil
 }
 
@@ -346,6 +347,65 @@ func isValidSlotName(name string, availableSlots []string) bool {
 		}
 	}
 	return false
+}
+
+// spinner represents a simple terminal spinner with status updates
+type spinner struct {
+	frames   []string
+	interval time.Duration
+	message  string
+	mu       sync.Mutex
+	stop     chan struct{}
+	done     chan struct{}
+}
+
+// newSpinner creates a new spinner instance
+func newSpinner(message string) *spinner {
+	return &spinner{
+		frames:   []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"},
+		interval: 100 * time.Millisecond,
+		message:  message,
+		stop:     make(chan struct{}),
+		done:     make(chan struct{}),
+	}
+}
+
+// start begins the spinner animation
+func (s *spinner) start() {
+	go func() {
+		defer close(s.done)
+		frameIdx := 0
+		for {
+			select {
+			case <-s.stop:
+				// Clear the line before exiting
+				fmt.Print("\r\033[K")
+				return
+			default:
+				s.mu.Lock()
+				msg := s.message
+				s.mu.Unlock()
+
+				frame := s.frames[frameIdx%len(s.frames)]
+				fmt.Printf("\r%s %s", color.CyanString(frame), msg)
+				frameIdx++
+				time.Sleep(s.interval)
+			}
+		}
+	}()
+}
+
+// updateMessage updates the spinner message
+func (s *spinner) updateMessage(message string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.message = message
+}
+
+// stopSpinner stops the spinner and waits for it to finish
+func (s *spinner) stopSpinner() {
+	close(s.stop)
+	<-s.done
 }
 
 func getAppServiceSlots(
@@ -384,47 +444,58 @@ func swapSlot(
 	sourceSlot string,
 	targetSlot string,
 ) error {
-	// Handle the swap based on which slots are involved
-	var poller interface{}
-	var swapErr error
+	// Get display names for progress messages
+	srcDisplay := sourceSlot
+	if srcDisplay == "" {
+		srcDisplay = "production"
+	}
+	dstDisplay := targetSlot
+	if dstDisplay == "" {
+		dstDisplay = "production"
+	}
 
+	// Start the spinner
+	spin := newSpinner(fmt.Sprintf("Initiating swap: %s ↔ %s", srcDisplay, dstDisplay))
+	spin.start()
+	defer spin.stopSpinner()
+
+	// Handle the swap based on which slots are involved
 	if sourceSlot == "" && targetSlot == "" {
 		return fmt.Errorf("cannot swap production with itself")
-	} else if sourceSlot == "" {
+	}
+
+	var swapErr error
+
+	if sourceSlot == "" {
 		// Swapping production with a named slot (e.g., production -> staging)
-		// Use BeginSwapSlotWithProduction with targetSlot as the slot to swap with
 		swapRequest := armappservice.CsmSlotEntity{
 			TargetSlot: to.Ptr(targetSlot),
 		}
-		poller, swapErr = client.BeginSwapSlotWithProduction(ctx, resourceGroup, appName, swapRequest, nil)
+		poller, err := client.BeginSwapSlotWithProduction(ctx, resourceGroup, appName, swapRequest, nil)
+		if err != nil {
+			return fmt.Errorf("starting slot swap: %w", err)
+		}
+		swapErr = pollWithProgress(ctx, poller, spin, srcDisplay, dstDisplay)
 	} else if targetSlot == "" {
 		// Swapping a named slot with production (e.g., staging -> production)
-		// Use BeginSwapSlot with sourceSlot and production as target
 		swapRequest := armappservice.CsmSlotEntity{
 			TargetSlot: to.Ptr("production"),
 		}
-		poller, swapErr = client.BeginSwapSlot(ctx, resourceGroup, appName, sourceSlot, swapRequest, nil)
+		poller, err := client.BeginSwapSlot(ctx, resourceGroup, appName, sourceSlot, swapRequest, nil)
+		if err != nil {
+			return fmt.Errorf("starting slot swap: %w", err)
+		}
+		swapErr = pollWithProgress(ctx, poller, spin, srcDisplay, dstDisplay)
 	} else {
 		// Swapping between two named slots
 		swapRequest := armappservice.CsmSlotEntity{
 			TargetSlot: to.Ptr(targetSlot),
 		}
-		poller, swapErr = client.BeginSwapSlot(ctx, resourceGroup, appName, sourceSlot, swapRequest, nil)
-	}
-
-	if swapErr != nil {
-		return fmt.Errorf("starting slot swap: %w", swapErr)
-	}
-
-	// Wait for completion
-	// Type assert to get the PollUntilDone method
-	switch p := poller.(type) {
-	case *runtime.Poller[armappservice.WebAppsClientSwapSlotWithProductionResponse]:
-		_, swapErr = p.PollUntilDone(ctx, nil)
-	case *runtime.Poller[armappservice.WebAppsClientSwapSlotResponse]:
-		_, swapErr = p.PollUntilDone(ctx, nil)
-	default:
-		return fmt.Errorf("unexpected poller type")
+		poller, err := client.BeginSwapSlot(ctx, resourceGroup, appName, sourceSlot, swapRequest, nil)
+		if err != nil {
+			return fmt.Errorf("starting slot swap: %w", err)
+		}
+		swapErr = pollWithProgress(ctx, poller, spin, srcDisplay, dstDisplay)
 	}
 
 	if swapErr != nil {
@@ -432,4 +503,95 @@ func swapSlot(
 	}
 
 	return nil
+}
+
+// pollWithProgress polls the operation and updates the spinner with status information
+func pollWithProgress[T any](
+	ctx context.Context,
+	poller *runtime.Poller[T],
+	spin *spinner,
+	srcSlot string,
+	dstSlot string,
+) error {
+	pollCount := 0
+	startTime := time.Now()
+
+	for !poller.Done() {
+		pollCount++
+		elapsed := time.Since(startTime).Round(time.Second)
+
+		// Update spinner with progress information
+		statusMsg := getProgressMessage(pollCount, elapsed, srcSlot, dstSlot)
+		spin.updateMessage(statusMsg)
+
+		// Poll the operation
+		resp, err := poller.Poll(ctx)
+		if err != nil {
+			return err
+		}
+
+		// Try to extract status from response headers or body
+		if resp != nil {
+			status := extractStatus(resp)
+			if status != "" {
+				spin.updateMessage(fmt.Sprintf("%s [%s]", statusMsg, status))
+			}
+		}
+
+		// Wait before next poll (Azure typically recommends waiting between polls)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(2 * time.Second):
+			// Continue polling
+		}
+	}
+
+	return nil
+}
+
+// getProgressMessage returns a progress message based on the poll count and elapsed time
+func getProgressMessage(pollCount int, elapsed time.Duration, srcSlot, dstSlot string) string {
+	phases := []string{
+		"Preparing swap",
+		"Warming up target slot",
+		"Applying configuration",
+		"Swapping virtual IPs",
+		"Verifying swap",
+		"Finalizing",
+	}
+
+	// Estimate phase based on poll count (rough approximation)
+	phaseIdx := pollCount / 3
+	if phaseIdx >= len(phases) {
+		phaseIdx = len(phases) - 1
+	}
+
+	return fmt.Sprintf("%s: %s ↔ %s (%v)", phases[phaseIdx], srcSlot, dstSlot, elapsed)
+}
+
+// extractStatus tries to extract status information from the HTTP response
+func extractStatus(resp *http.Response) string {
+	if resp == nil {
+		return ""
+	}
+
+	// Check for Azure-AsyncOperation or Location header status
+	if status := resp.Header.Get("x-ms-request-status"); status != "" {
+		return status
+	}
+
+	// Check provisioning state from response body if available
+	// Note: We don't want to consume the body here as it may be needed later
+	// Just return the HTTP status for now
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return "Completed"
+	case http.StatusAccepted:
+		return "In Progress"
+	case http.StatusCreated:
+		return "Created"
+	default:
+		return ""
+	}
 }

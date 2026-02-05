@@ -584,6 +584,7 @@ func (x *KeyValue) GetValue() string {
 type GetConfigRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	EnvName       string                 `protobuf:"bytes,2,opt,name=env_name,json=envName,proto3" json:"env_name,omitempty"` // Optional: Name of the environment. If empty, uses default.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -621,6 +622,13 @@ func (*GetConfigRequest) Descriptor() ([]byte, []int) {
 func (x *GetConfigRequest) GetPath() string {
 	if x != nil {
 		return x.Path
+	}
+	return ""
+}
+
+func (x *GetConfigRequest) GetEnvName() string {
+	if x != nil {
+		return x.EnvName
 	}
 	return ""
 }
@@ -682,6 +690,7 @@ func (x *GetConfigResponse) GetFound() bool {
 type GetConfigStringRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	EnvName       string                 `protobuf:"bytes,2,opt,name=env_name,json=envName,proto3" json:"env_name,omitempty"` // Optional: Name of the environment. If empty, uses default.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -719,6 +728,13 @@ func (*GetConfigStringRequest) Descriptor() ([]byte, []int) {
 func (x *GetConfigStringRequest) GetPath() string {
 	if x != nil {
 		return x.Path
+	}
+	return ""
+}
+
+func (x *GetConfigStringRequest) GetEnvName() string {
+	if x != nil {
+		return x.EnvName
 	}
 	return ""
 }
@@ -780,6 +796,7 @@ func (x *GetConfigStringResponse) GetFound() bool {
 type GetConfigSectionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	EnvName       string                 `protobuf:"bytes,2,opt,name=env_name,json=envName,proto3" json:"env_name,omitempty"` // Optional: Name of the environment. If empty, uses default.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -817,6 +834,13 @@ func (*GetConfigSectionRequest) Descriptor() ([]byte, []int) {
 func (x *GetConfigSectionRequest) GetPath() string {
 	if x != nil {
 		return x.Path
+	}
+	return ""
+}
+
+func (x *GetConfigSectionRequest) GetEnvName() string {
+	if x != nil {
+		return x.EnvName
 	}
 	return ""
 }
@@ -879,6 +903,7 @@ type SetConfigRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
 	Value         []byte                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	EnvName       string                 `protobuf:"bytes,3,opt,name=env_name,json=envName,proto3" json:"env_name,omitempty"` // Optional: Name of the environment. If empty, uses default.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -927,10 +952,18 @@ func (x *SetConfigRequest) GetValue() []byte {
 	return nil
 }
 
+func (x *SetConfigRequest) GetEnvName() string {
+	if x != nil {
+		return x.EnvName
+	}
+	return ""
+}
+
 // Request message for Unset
 type UnsetConfigRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	EnvName       string                 `protobuf:"bytes,2,opt,name=env_name,json=envName,proto3" json:"env_name,omitempty"` // Optional: Name of the environment. If empty, uses default.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -972,6 +1005,13 @@ func (x *UnsetConfigRequest) GetPath() string {
 	return ""
 }
 
+func (x *UnsetConfigRequest) GetEnvName() string {
+	if x != nil {
+		return x.EnvName
+	}
+	return ""
+}
+
 var File_environment_proto protoreflect.FileDescriptor
 
 const file_environment_proto_rawDesc = "" +
@@ -1007,27 +1047,32 @@ const file_environment_proto_rawDesc = "" +
 	"\adefault\x18\x04 \x01(\bR\adefault\"2\n" +
 	"\bKeyValue\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value\"&\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value\"A\n" +
 	"\x10GetConfigRequest\x12\x12\n" +
-	"\x04path\x18\x01 \x01(\tR\x04path\"?\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x19\n" +
+	"\benv_name\x18\x02 \x01(\tR\aenvName\"?\n" +
 	"\x11GetConfigResponse\x12\x14\n" +
 	"\x05value\x18\x01 \x01(\fR\x05value\x12\x14\n" +
-	"\x05found\x18\x02 \x01(\bR\x05found\",\n" +
+	"\x05found\x18\x02 \x01(\bR\x05found\"G\n" +
 	"\x16GetConfigStringRequest\x12\x12\n" +
-	"\x04path\x18\x01 \x01(\tR\x04path\"E\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x19\n" +
+	"\benv_name\x18\x02 \x01(\tR\aenvName\"E\n" +
 	"\x17GetConfigStringResponse\x12\x14\n" +
 	"\x05value\x18\x01 \x01(\tR\x05value\x12\x14\n" +
-	"\x05found\x18\x02 \x01(\bR\x05found\"-\n" +
+	"\x05found\x18\x02 \x01(\bR\x05found\"H\n" +
 	"\x17GetConfigSectionRequest\x12\x12\n" +
-	"\x04path\x18\x01 \x01(\tR\x04path\"J\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x19\n" +
+	"\benv_name\x18\x02 \x01(\tR\aenvName\"J\n" +
 	"\x18GetConfigSectionResponse\x12\x18\n" +
 	"\asection\x18\x01 \x01(\fR\asection\x12\x14\n" +
-	"\x05found\x18\x02 \x01(\bR\x05found\"<\n" +
+	"\x05found\x18\x02 \x01(\bR\x05found\"W\n" +
 	"\x10SetConfigRequest\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\fR\x05value\"(\n" +
+	"\x05value\x18\x02 \x01(\fR\x05value\x12\x19\n" +
+	"\benv_name\x18\x03 \x01(\tR\aenvName\"C\n" +
 	"\x12UnsetConfigRequest\x12\x12\n" +
-	"\x04path\x18\x01 \x01(\tR\x04path2\xc8\x06\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x19\n" +
+	"\benv_name\x18\x02 \x01(\tR\aenvName2\xc8\x06\n" +
 	"\x12EnvironmentService\x12?\n" +
 	"\n" +
 	"GetCurrent\x12\x14.azdext.EmptyRequest\x1a\x1b.azdext.EnvironmentResponse\x12=\n" +

@@ -110,6 +110,7 @@ message KeyValue {
 // Request message for Get
 message GetConfigRequest {
   string path = 1;
+  string env_name = 2; // Optional: Name of the environment. If empty, uses default.
 }
 
 // Response message for Get
@@ -121,6 +122,7 @@ message GetConfigResponse {
 // Request message for GetString
 message GetConfigStringRequest {
   string path = 1;
+  string env_name = 2; // Optional: Name of the environment. If empty, uses default.
 }
 
 // Response message for GetString
@@ -132,6 +134,7 @@ message GetConfigStringResponse {
 // Request message for GetSection
 message GetConfigSectionRequest {
   string path = 1;
+  string env_name = 2; // Optional: Name of the environment. If empty, uses default.
 }
 
 // Response message for GetSection
@@ -144,10 +147,12 @@ message GetConfigSectionResponse {
 message SetConfigRequest {
   string path = 1;
   bytes value = 2;
+  string env_name = 3; // Optional: Name of the environment. If empty, uses default.
 }
 
 // Request message for Unset
 message UnsetConfigRequest {
   string path = 1;
+  string env_name = 2; // Optional: Name of the environment. If empty, uses default.
 }
 

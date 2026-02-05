@@ -329,11 +329,6 @@ func (c *ModelCatalogService) GetModelDeployment(
 				break
 			}
 
-			// Check for version match if specified
-			if len(options.Versions) > 0 && !slices.Contains(options.Versions, *m.Model.Version) {
-				continue
-			}
-
 			// Check for default version if no version is specified
 			if len(options.Versions) > 0 {
 				if !slices.Contains(options.Versions, *m.Model.Version) {

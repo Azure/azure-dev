@@ -94,12 +94,15 @@ func (c *ModelCatalogService) ListModelSkus(ctx context.Context, model *AiModel,
 	for _, location := range model.Locations {
 		if *location.Model.Model.Version == modelVersion {
 			for _, sku := range location.Model.Model.SKUs {
-				skus[*sku.Name] = struct{}{}
+				// Only include SKUs that have deployable capacity (Default > 0)
+				if sku.Capacity != nil && sku.Capacity.Default != nil && *sku.Capacity.Default > 0 {
+					skus[*sku.Name] = struct{}{}
+				}
 			}
 		}
 	}
 
-	skuList := make([]string, 0, len(skus)) // Create with capacity, not length
+	skuList := make([]string, 0, len(skus))
 	for sku := range skus {
 		skuList = append(skuList, sku)
 	}
@@ -401,6 +404,50 @@ func filterDistinctModelData(
 
 	slices.Sort(list)
 	return list
+}
+
+// ListModelRegions returns a sorted list of regions where the given model is available.
+func (c *ModelCatalogService) ListModelRegions(model *AiModel) []string {
+	regions := make(map[string]struct{})
+	for _, location := range model.Locations {
+		if location.Location != nil && location.Location.Name != nil {
+			regions[*location.Location.Name] = struct{}{}
+		}
+	}
+
+	regionList := make([]string, 0, len(regions))
+	for region := range regions {
+		regionList = append(regionList, region)
+	}
+	slices.Sort(regionList)
+	return regionList
+}
+
+// ListRegionsWithDeployableSkus returns regions where the model has SKUs with non-zero default capacity.
+func (c *ModelCatalogService) ListRegionsWithDeployableSkus(model *AiModel, modelVersion string) []string {
+	regions := make(map[string]struct{})
+	for _, location := range model.Locations {
+		if location.Location == nil || location.Location.Name == nil {
+			continue
+		}
+		if *location.Model.Model.Version != modelVersion {
+			continue
+		}
+		// Check if any SKU has deployable capacity
+		for _, sku := range location.Model.Model.SKUs {
+			if sku.Capacity != nil && sku.Capacity.Default != nil && *sku.Capacity.Default > 0 {
+				regions[*location.Location.Name] = struct{}{}
+				break
+			}
+		}
+	}
+
+	regionList := make([]string, 0, len(regions))
+	for region := range regions {
+		regionList = append(regionList, region)
+	}
+	slices.Sort(regionList)
+	return regionList
 }
 
 func createModelsClient(

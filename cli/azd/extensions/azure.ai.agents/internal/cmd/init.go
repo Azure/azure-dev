@@ -65,6 +65,7 @@ type InitAction struct {
 	credential          azcore.TokenCredential
 	modelCatalog        map[string]*ai.AiModel
 	modelCatalogService *ai.ModelCatalogService
+	quotaService        *ai.QuotaService
 	projectConfig       *azdext.ProjectConfig
 	environment         *azdext.Environment
 	flags               *initFlags
@@ -144,6 +145,7 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 				console:             console,
 				credential:          credential,
 				modelCatalogService: ai.NewModelCatalogService(credential),
+				quotaService:        ai.NewQuotaService(credential),
 				projectConfig:       projectConfig,
 				environment:         environment,
 				flags:               flags,
@@ -2142,7 +2144,13 @@ func (a *InitAction) getModelDetails(ctx context.Context, modelName string) (*ai
 	var model *ai.AiModel
 	model, exists := a.modelCatalog[modelName]
 	if !exists {
-		return nil, fmt.Errorf("The model '%s' could not be found in the model catalog", modelName)
+		// Model not found in current region - find regions where it's available
+		availableRegions := a.findRegionsForModel(ctx, modelName)
+		return nil, &ai.ModelNotFoundError{
+			ModelName:        modelName,
+			Location:         a.azureContext.Scope.Location,
+			AvailableRegions: availableRegions,
+		}
 	}
 
 	availableVersions, defaultVersion, err := a.modelCatalogService.ListModelVersions(ctx, model)
@@ -2158,6 +2166,17 @@ func (a *InitAction) getModelDetails(ctx context.Context, modelName string) (*ai
 	availableSkus, err := a.modelCatalogService.ListModelSkus(ctx, model, modelVersion)
 	if err != nil {
 		return nil, fmt.Errorf("listing SKUs for model '%s': %w", modelName, err)
+	}
+
+	if len(availableSkus) == 0 {
+		// No deployable SKUs in current region - load full catalog to find alternate regions
+		regionsWithSkus := a.findRegionsWithDeployableSkus(ctx, modelName, modelVersion)
+		return nil, &ai.NoDeployableSkusError{
+			ModelName:        modelName,
+			ModelVersion:     modelVersion,
+			Location:         a.azureContext.Scope.Location,
+			AvailableRegions: regionsWithSkus,
+		}
 	}
 
 	// Determine default SKU based on priority list
@@ -2204,7 +2223,62 @@ func (a *InitAction) getModelDetails(ctx context.Context, modelName string) (*ai
 		modelDeployment.Sku.Capacity = int32(capacity)
 	}
 
+	// Check quota availability before returning
+	quotaResult, err := a.quotaService.CheckQuota(
+		ctx,
+		a.azureContext.Scope.SubscriptionId,
+		a.azureContext.Scope.Location,
+		modelDeployment.Sku.UsageName,
+		modelDeployment.Sku.Capacity,
+	)
+	if err != nil {
+		// Log warning but don't fail - quota API may not be available for all resource types
+		fmt.Printf("Warning: Unable to verify quota availability: %v\n", err)
+	} else if quotaResult.QuotaExceeded {
+		// Get alternate regions where the model is available
+		alternateRegions := a.modelCatalogService.ListModelRegions(model)
+		return nil, &ai.QuotaExceededError{
+			ModelName:        modelName,
+			SkuName:          skuSelection,
+			Location:         a.azureContext.Scope.Location,
+			CurrentUsage:     quotaResult.CurrentUsage,
+			Limit:            quotaResult.Limit,
+			Requested:        quotaResult.Requested,
+			AlternateRegions: alternateRegions,
+		}
+	}
+
 	return modelDeployment, nil
+}
+
+// findRegionsForModel loads the full catalog to find regions where the model is available.
+func (a *InitAction) findRegionsForModel(ctx context.Context, modelName string) []string {
+	// Load full catalog (all regions) - pass empty string for location
+	fullCatalog, err := a.modelCatalogService.ListAllModels(ctx, a.azureContext.Scope.SubscriptionId, "")
+	if err != nil {
+		// If we can't load the full catalog, return empty - error message will still be helpful
+		return nil
+	}
+
+	if model, exists := fullCatalog[modelName]; exists {
+		return a.modelCatalogService.ListModelRegions(model)
+	}
+	return nil
+}
+
+// findRegionsWithDeployableSkus loads the full catalog to find regions with deployable SKUs.
+func (a *InitAction) findRegionsWithDeployableSkus(ctx context.Context, modelName string, modelVersion string) []string {
+	// Load full catalog (all regions) - pass empty string for location
+	fullCatalog, err := a.modelCatalogService.ListAllModels(ctx, a.azureContext.Scope.SubscriptionId, "")
+	if err != nil {
+		// If we can't load the full catalog, return empty - error message will still be helpful
+		return nil
+	}
+
+	if model, exists := fullCatalog[modelName]; exists {
+		return a.modelCatalogService.ListRegionsWithDeployableSkus(model, modelVersion)
+	}
+	return nil
 }
 
 func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.AgentManifest) (*agent_yaml.AgentManifest, []project.Deployment, error) {

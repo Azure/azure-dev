@@ -226,7 +226,6 @@ func (c *ModelCatalogService) ListAllModels(ctx context.Context, subscriptionId 
 
 			for pager.More() {
 				page, err := pager.NextPage(ctx)
-				page.MarshalJSON()
 				if err != nil {
 					return
 				}

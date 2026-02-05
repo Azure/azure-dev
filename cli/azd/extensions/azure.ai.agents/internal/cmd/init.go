@@ -2398,15 +2398,15 @@ func (a *InitAction) promptForModelLocationMismatch(ctx context.Context, model *
 		selectedLocation := locationNames[*locationResp.Value]
 
 		// Update the azd environment with the new location
-		workflow := &azdext.Workflow{
-			Name: "env set",
-			Steps: []*azdext.WorkflowStep{
-				{Command: &azdext.WorkflowCommand{Args: []string{"env", "set", "AZURE_LOCATION", selectedLocation}}},
-			},
+		envResponse, err := a.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to get current azd environment: %w", err)
 		}
 
-		_, err = a.azdClient.Workflow().Run(ctx, &azdext.RunWorkflowRequest{
-			Workflow: workflow,
+		_, err = a.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: envResponse.Environment.Name,
+			Key:     "AZURE_LOCATION",
+			Value:   selectedLocation,
 		})
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to update AZURE_LOCATION in azd environment: %w", err)

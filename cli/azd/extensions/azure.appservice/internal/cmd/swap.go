@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -68,15 +67,25 @@ func runSwap(ctx context.Context, flags *swapFlags, rootFlags rootFlagsDefinitio
 		return fmt.Errorf("failed waiting for debugger: %w", err)
 	}
 
-	// Get the deployment context from azd
-	deploymentContext, err := azdClient.Deployment().GetDeploymentContext(ctx, &azdext.EmptyRequest{})
+	// Get current environment
+	envClient := azdClient.Environment()
+	currentEnv, err := envClient.GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil {
-		return fmt.Errorf("failed to get deployment context: %w", err)
+		return fmt.Errorf("failed to get current environment: %w", err)
 	}
 
-	subscriptionId := deploymentContext.AzureContext.Scope.SubscriptionId
+	// Get subscription ID from environment
+	subscriptionResp, err := envClient.GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: currentEnv.Environment.Name,
+		Key:     "AZURE_SUBSCRIPTION_ID",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get AZURE_SUBSCRIPTION_ID: %w", err)
+	}
+
+	subscriptionId := subscriptionResp.Value
 	if subscriptionId == "" {
-		return fmt.Errorf("no subscription ID found in deployment context")
+		return fmt.Errorf("AZURE_SUBSCRIPTION_ID environment variable is required")
 	}
 
 	// Get the resolved services from azd
@@ -136,41 +145,37 @@ func runSwap(ctx context.Context, flags *swapFlags, rootFlags rootFlagsDefinitio
 
 	color.Cyan("Using service: %s", selectedService.Name)
 
-	// Find the App Service resource for this service
-	var appServiceResourceId string
-	for _, resourceId := range deploymentContext.AzureContext.Resources {
-		resource, err := arm.ParseResourceID(resourceId)
-		if err != nil {
-			continue
-		}
-		// Check if this is a web app resource
-		if strings.EqualFold(resource.ResourceType.Type, "sites") &&
-			strings.EqualFold(resource.ResourceType.Namespace, "Microsoft.Web") {
-			// Check if the resource name matches the service name or resource name from config
-			if strings.EqualFold(resource.Name, selectedService.Name) ||
-				(selectedService.ResourceName != "" && strings.EqualFold(resource.Name, selectedService.ResourceName)) {
-				appServiceResourceId = resourceId
-				break
-			}
-		}
-	}
-
-	if appServiceResourceId == "" {
-		return fmt.Errorf("could not find App Service resource for service '%s'", selectedService.Name)
-	}
-
-	// Parse the resource ID
-	resource, err := arm.ParseResourceID(appServiceResourceId)
+	// Get the target resource (resource group and app name) using azd's discovery logic
+	// This handles both explicit configuration and tag-based discovery
+	targetResourceResp, err := azdClient.Project().GetServiceTargetResource(ctx, &azdext.GetServiceTargetResourceRequest{
+		ServiceName: selectedService.Name,
+	})
 	if err != nil {
-		return fmt.Errorf("failed to parse resource ID: %w", err)
+		return fmt.Errorf("failed to resolve target resource for service '%s': %w", selectedService.Name, err)
 	}
 
-	resourceGroup := resource.ResourceGroupName
-	appName := resource.Name
+	resourceGroup := targetResourceResp.TargetResource.ResourceGroupName
+	if resourceGroup == "" {
+		return fmt.Errorf("resource group not found for service '%s'", selectedService.Name)
+	}
+
+	appName := targetResourceResp.TargetResource.ResourceName
+	if appName == "" {
+		return fmt.Errorf("resource name not found for service '%s'. "+
+			"Ensure the service has been provisioned or configure 'resourceName' in azure.yaml", selectedService.Name)
+	}
+
+	// Get tenant ID for the subscription
+	tenantResponse, err := azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
+		SubscriptionId: subscriptionId,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get tenant ID: %w", err)
+	}
 
 	// Create Azure credential using AzureDeveloperCLICredential
 	credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
-		TenantID: deploymentContext.AzureContext.Scope.TenantId,
+		TenantID: tenantResponse.TenantId,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create credential: %w", err)

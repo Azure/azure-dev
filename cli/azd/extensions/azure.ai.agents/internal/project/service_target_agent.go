@@ -21,6 +21,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/braydonk/yaml"
 	"github.com/drone/envsubst"
 	"github.com/fatih/color"
@@ -632,6 +633,8 @@ func (p *AgentServiceTargetProvider) deployArtifacts(
 				"agentName":    agentName,
 				"agentVersion": agentVersion,
 				"label":        "Agent endpoint",
+				"clickable":    "false",
+				"note":         "For information on invoking the agent, see " + output.WithLinkFormat("https://aka.ms/azd-agents-invoke"),
 			},
 		})
 	}

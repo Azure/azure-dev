@@ -2331,10 +2331,12 @@ func (a *InitAction) promptForModelLocationMismatch(ctx context.Context, model *
 	fmt.Println(output.WithErrorFormat("The model '%s' is not available in your current location '%s'.", model.Name, currentLocation))
 	fmt.Println("Would you like to use a different model, or select a different location?")
 	fmt.Println(output.WithWarningFormat(
-		"WARNING: If you choose to select a different location, this will change your currently configured " +
-			"region in your AZD environment. If you have already created a Foundry Project in your currently " +
-			"configured region, this will cause failures, and you should either choose a different model or " +
-			"create a new project in a different region where your desired model is available."))
+		"WARNING: If you switch locations:\n" +
+			"• Your AZD environment will use a new default region.\n" +
+			"• Any existing Azure AI Foundry project created in your current region may fail.\n\n" +
+			"Recommended options:\n" +
+			"1) Select a different model in this region (safe), or\n" +
+			"2) Create a new Foundry project after changing regions."))
 
 	// Ask what they want to do
 	choices := []*azdext.SelectChoice{

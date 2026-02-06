@@ -64,7 +64,7 @@ func main() {
 		ctx = tracing.ContextFromEnv(ctx)
 	}
 
-	latest := make(chan semver.Version)
+	latest := make(chan versionCheckResult)
 	go fetchLatestVersion(latest)
 
 	rootContainer := ioc.NewNestedContainer(nil)
@@ -86,7 +86,7 @@ func main() {
 		}
 	}
 
-	latestVersion, ok := <-latest
+	checkResult, ok := <-latest
 
 	// If we were able to fetch a latest version, check to see if we are up to date and
 	// print a warning if we are not. Note that we don't print this warning when the CLI version
@@ -100,55 +100,88 @@ func main() {
 			// This is a dev build (i.e. built using `go install without setting a version`) - don't print a warning in this
 			// case
 			log.Printf("eliding update message for dev build")
-		} else if latestVersion.GT(internal.VersionInfo().Version) {
+		} else if checkResult.version.GT(internal.VersionInfo().Version) {
 			var upgradeText string
 
 			installedBy := installer.InstalledBy()
-			if runtime.GOOS == "windows" {
-				switch installedBy {
-				case installer.InstallTypePs:
-					//nolint:lll
-					upgradeText = "run:\npowershell -ex AllSigned -c \"Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression\"\n\nIf the install script was run with custom parameters, ensure that the same parameters are used for the upgrade. For advanced install instructions, see: https://aka.ms/azd/upgrade/windows"
-				case installer.InstallTypeWinget:
-					upgradeText = "run:\nwinget upgrade Microsoft.Azd"
-				case installer.InstallTypeChoco:
-					upgradeText = "run:\nchoco upgrade azd"
-				default:
-					// Also covers "msi" case where the user installed directly
-					// via MSI
-					upgradeText = "visit https://aka.ms/azd/upgrade/windows"
-				}
-			} else if runtime.GOOS == "linux" {
-				switch installedBy {
-				case installer.InstallTypeSh:
-					//nolint:lll
-					upgradeText = "run:\ncurl -fsSL https://aka.ms/install-azd.sh | bash\n\nIf the install script was run with custom parameters, ensure that the same parameters are used for the upgrade. For advanced install instructions, see: https://aka.ms/azd/upgrade/linux"
-				default:
-					// Also covers "deb" and "rpm" cases which are currently
-					// documented. When package manager distribution support is
-					// added, this will need to be updated.
-					upgradeText = "visit https://aka.ms/azd/upgrade/linux"
-				}
-			} else if runtime.GOOS == "darwin" {
-				switch installedBy {
-				case installer.InstallTypeBrew:
-					upgradeText = "run:\nbrew update && brew upgrade azd"
-				case installer.InstallTypeSh:
-					//nolint:lll
-					upgradeText = "run:\ncurl -fsSL https://aka.ms/install-azd.sh | bash\n\nIf the install script was run with custom parameters, ensure that the same parameters are used for the upgrade. For advanced install instructions, see: https://aka.ms/azd/upgrade/mac"
-				default:
-					upgradeText = "visit https://aka.ms/azd/upgrade/mac"
+
+			// For daily channel, only show upgrade instructions for script-based installations
+			if checkResult.channel == "daily" {
+				if runtime.GOOS == "windows" {
+					if installedBy == installer.InstallTypePs {
+						//nolint:lll
+						upgradeText = "run:\npowershell -ex AllSigned -c \"Invoke-RestMethod 'https://aka.ms/install-azd.ps1' -OutFile 'install-azd.ps1'; ./install-azd.ps1 -Version 'daily'\"\n\nFor more information on daily builds, see: https://aka.ms/azd/install"
+					} else {
+						//nolint:lll
+						upgradeText = "visit https://aka.ms/azd/install and use the PowerShell install script with '-Version daily' to upgrade to the latest daily build"
+					}
+				} else if runtime.GOOS == "linux" {
+					if installedBy == installer.InstallTypeSh {
+						//nolint:lll
+						upgradeText = "run:\ncurl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version daily\n\nFor more information on daily builds, see: https://aka.ms/azd/install"
+					} else {
+						//nolint:lll
+						upgradeText = "visit https://aka.ms/azd/install and use the install script with '--version daily' to upgrade to the latest daily build"
+					}
+				} else if runtime.GOOS == "darwin" {
+					if installedBy == installer.InstallTypeSh {
+						//nolint:lll
+						upgradeText = "run:\ncurl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version daily\n\nFor more information on daily builds, see: https://aka.ms/azd/install"
+					} else {
+						//nolint:lll
+						upgradeText = "visit https://aka.ms/azd/install and use the install script with '--version daily' to upgrade to the latest daily build"
+					}
+				} else {
+					upgradeText = "visit https://aka.ms/azd/install and use the install script with '--version daily' to upgrade to the latest daily build"
 				}
 			} else {
-				// Platform is not recognized, use the generic install link
-				upgradeText = "visit https://aka.ms/azd/upgrade"
+				// Standard upgrade instructions for stable/latest channel
+				if runtime.GOOS == "windows" {
+					switch installedBy {
+					case installer.InstallTypePs:
+						//nolint:lll
+						upgradeText = "run:\npowershell -ex AllSigned -c \"Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression\"\n\nIf the install script was run with custom parameters, ensure that the same parameters are used for the upgrade. For advanced install instructions, see: https://aka.ms/azd/upgrade/windows"
+					case installer.InstallTypeWinget:
+						upgradeText = "run:\nwinget upgrade Microsoft.Azd"
+					case installer.InstallTypeChoco:
+						upgradeText = "run:\nchoco upgrade azd"
+					default:
+						// Also covers "msi" case where the user installed directly
+						// via MSI
+						upgradeText = "visit https://aka.ms/azd/upgrade/windows"
+					}
+				} else if runtime.GOOS == "linux" {
+					switch installedBy {
+					case installer.InstallTypeSh:
+						//nolint:lll
+						upgradeText = "run:\ncurl -fsSL https://aka.ms/install-azd.sh | bash\n\nIf the install script was run with custom parameters, ensure that the same parameters are used for the upgrade. For advanced install instructions, see: https://aka.ms/azd/upgrade/linux"
+					default:
+						// Also covers "deb" and "rpm" cases which are currently
+						// documented. When package manager distribution support is
+						// added, this will need to be updated.
+						upgradeText = "visit https://aka.ms/azd/upgrade/linux"
+					}
+				} else if runtime.GOOS == "darwin" {
+					switch installedBy {
+					case installer.InstallTypeBrew:
+						upgradeText = "run:\nbrew update && brew upgrade azd"
+					case installer.InstallTypeSh:
+						//nolint:lll
+						upgradeText = "run:\ncurl -fsSL https://aka.ms/install-azd.sh | bash\n\nIf the install script was run with custom parameters, ensure that the same parameters are used for the upgrade. For advanced install instructions, see: https://aka.ms/azd/upgrade/mac"
+					default:
+						upgradeText = "visit https://aka.ms/azd/upgrade/mac"
+					}
+				} else {
+					// Platform is not recognized, use the generic install link
+					upgradeText = "visit https://aka.ms/azd/upgrade"
+				}
 			}
 
 			fmt.Fprintln(
 				os.Stderr,
 				output.WithWarningFormat(
 					"WARNING: your version of azd is out of date, you have %s and the latest version is %s",
-					internal.VersionInfo().Version.String(), latestVersion.String()))
+					internal.VersionInfo().Version.String(), checkResult.version.String()))
 			fmt.Fprintln(os.Stderr)
 			fmt.Fprintln(
 				os.Stderr,
@@ -180,10 +213,16 @@ func main() {
 // which is used to cache version information for our up to date check.
 const updateCheckCacheFileName = "update-check.json"
 
+// versionCheckResult contains the result of checking for the latest version
+type versionCheckResult struct {
+	version semver.Version
+	channel string
+}
+
 // fetchLatestVersion fetches the latest version of the CLI and sends the result
 // across the version channel, which it then closes. If the latest version can not
 // be determined, the channel is closed without writing a value.
-func fetchLatestVersion(version chan<- semver.Version) {
+func fetchLatestVersion(version chan<- versionCheckResult) {
 	defer close(version)
 
 	// Allow the user to skip the update check if they wish, by setting AZD_SKIP_UPDATE_CHECK to
@@ -198,15 +237,61 @@ func fetchLatestVersion(version chan<- semver.Version) {
 		}
 	}
 
-	// To avoid fetching the latest version of the CLI on every invocation, we cache the result for a period
-	// of time, in the user's home directory.
+	// Determine which update channel to check (latest/stable or daily)
+	// "latest" and "stable" both refer to official releases
+	// Priority: 1) Environment variable, 2) User config file, 3) Default to "latest"
+	updateChannel := "latest"
+
+	// First, try to read from user config file
 	configDir, err := config.GetUserConfigDir()
+	if err != nil {
+		log.Printf("could not determine config directory: %v, will use default channel", err)
+	} else {
+		configFilePath := filepath.Join(configDir, "config.json")
+		if configFile, err := os.ReadFile(configFilePath); err == nil {
+			if userConfig, err := config.Parse(configFile); err == nil {
+				if channel, ok := userConfig.GetString("defaults.updateChannel"); ok {
+					if channel == "daily" || channel == "stable" || channel == "latest" {
+						updateChannel = channel
+						log.Printf("using update channel '%s' from config file", channel)
+					} else {
+						log.Printf("unknown update channel '%s' in config file, using latest channel", channel)
+					}
+				}
+			}
+		}
+	}
+
+	// Environment variable overrides config file setting
+	if channel, has := os.LookupEnv("AZD_UPDATE_CHANNEL"); has {
+		if channel == "daily" {
+			updateChannel = "daily"
+			log.Print("using daily update channel from environment variable")
+		} else if channel == "stable" || channel == "latest" {
+			updateChannel = channel
+			log.Printf("using %s update channel from environment variable", channel)
+		} else {
+			log.Printf("unknown update channel '%s' in environment variable, using latest channel", channel)
+		}
+	}
+
+	// To avoid fetching the latest version of the CLI on every invocation, we cache the result for a period
+	// of time, in the user's home directory. Use channel-specific cache file to avoid conflicts when
+	// switching between update channels.
 	if err != nil {
 		log.Printf("could not determine config directory: %v, skipping update check", err)
 		return
 	}
 
-	cacheFilePath := filepath.Join(configDir, updateCheckCacheFileName)
+	// Re-get config dir in case we couldn't get it earlier
+	configDir, err = config.GetUserConfigDir()
+	if err != nil {
+		log.Printf("could not determine config directory: %v, skipping update check", err)
+		return
+	}
+
+	cacheFileName := fmt.Sprintf("update-check-%s.json", updateChannel)
+	cacheFilePath := filepath.Join(configDir, cacheFileName)
 	cacheFile, err := os.ReadFile(cacheFilePath)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		log.Printf("error reading update cache file: %v, skipping update check", err)
@@ -251,7 +336,9 @@ func fetchLatestVersion(version chan<- semver.Version) {
 	// If we don't have a cached version we can use, fetch one (and cache it)
 	if cachedLatestVersion == nil {
 		log.Print("fetching latest version information for update check")
-		req, err := http.NewRequest(http.MethodGet, "https://aka.ms/azure-dev/versions/cli/latest", nil)
+
+		versionURL := fmt.Sprintf("https://aka.ms/azure-dev/versions/cli/%s", updateChannel)
+		req, err := http.NewRequest(http.MethodGet, versionURL, nil)
 		if err != nil {
 			log.Printf("failed to create request object: %v, skipping update check", err)
 		}
@@ -313,7 +400,10 @@ func fetchLatestVersion(version chan<- semver.Version) {
 	}
 
 	// Publish our value, the defer above will close the channel.
-	version <- *cachedLatestVersion
+	version <- versionCheckResult{
+		version: *cachedLatestVersion,
+		channel: updateChannel,
+	}
 }
 
 type updateCacheFile struct {

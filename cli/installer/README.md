@@ -170,6 +170,27 @@ The `--install-folder` parameter places the `azd` binary in the specified locati
 
 The `daily` feed is periodically updated with builds from the latest source code in the `main` branch. Use the `version` parameter to download the latest daily release.
 
+#### Enabling update notifications for daily builds
+
+By default, `azd` checks for updates from the stable release channel. If you're using daily builds and want to receive update notifications for new daily builds, you can configure this using either a config setting or an environment variable.
+
+**Using config (recommended for persistent setting):**
+```bash
+azd config set defaults.updateChannel daily
+```
+
+**Using environment variable (overrides config):**
+```bash
+export AZD_UPDATE_CHANNEL=daily
+```
+
+To switch back to stable releases:
+```bash
+azd config set defaults.updateChannel stable
+```
+
+**Note:** When using daily builds, ensure you've installed azd using the install script with the `--version daily` parameter (shown below) to get the latest daily build. Update notifications will alert you when newer daily builds become available.
+
 #### Windows
 
 ##### Install

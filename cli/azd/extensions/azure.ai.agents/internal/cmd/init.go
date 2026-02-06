@@ -1078,6 +1078,9 @@ func (a *InitAction) downloadAgentYaml(
 	}
 
 	// Parse and validate the YAML content against AgentManifest structure
+	if len(content) == 0 {
+		return nil, "", fmt.Errorf("manifest content is empty or could not be retrieved")
+	}
 	agentManifest, err := agent_yaml.LoadAndValidateAgentManifest(content)
 	if err != nil {
 		return nil, "", err
@@ -1085,11 +1088,19 @@ func (a *InitAction) downloadAgentYaml(
 
 	fmt.Println("✓ YAML content successfully validated against AgentManifest format")
 
-	agentId := agentManifest.Name
+	var agentName string
 
-	// Use targetDir if provided, otherwise default to "src/{agentId}"
+	if containerTemplate, ok := agentManifest.Template.(agent_yaml.ContainerAgent); ok {
+		agentName = containerTemplate.Name
+	} else if promptTemplate, ok := agentManifest.Template.(agent_yaml.PromptAgent); ok {
+		agentName = promptTemplate.Name
+	} else {
+		return nil, "", fmt.Errorf("unsupported agent template type")
+	}
+
+	// Use targetDir if provided, otherwise default to "src/{agentName}"
 	if targetDir == "" {
-		targetDir = filepath.Join("src", agentId)
+		targetDir = filepath.Join("src", agentName)
 	}
 
 	// Safety checks for local container-based agents should happen before prompting for model SKU, etc.

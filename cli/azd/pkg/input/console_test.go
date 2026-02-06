@@ -266,3 +266,83 @@ func newTestExternalPromptServer(handler func(promptOptions) json.RawMessage) *h
 		_, _ = w.Write(respBody)
 	}))
 }
+
+func TestAskerConsole_Message_JsonQueryFilter(t *testing.T) {
+	tests := []struct {
+		name     string
+		query    string
+		contains string // expected substring in output
+	}{
+		{
+			name:     "NoQuery",
+			query:    "",
+			contains: `"type":"consoleMessage"`,
+		},
+		{
+			name:     "QueryDataMessage",
+			query:    "data.message",
+			contains: `"hello world`,
+		},
+		{
+			name:     "QueryType",
+			query:    "type",
+			contains: `"consoleMessage"`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			buf := &strings.Builder{}
+			formatter := &output.JsonFormatter{Query: tc.query}
+
+			c := NewConsole(
+				true,
+				false,
+				Writers{Output: writerAdapter{buf}},
+				ConsoleHandles{
+					Stderr: os.Stderr,
+					Stdin:  os.Stdin,
+					Stdout: writerAdapter{buf},
+				},
+				formatter,
+				nil,
+			)
+
+			c.Message(context.Background(), "hello world")
+
+			got := buf.String()
+			require.Contains(t, got, tc.contains,
+				"output %q should contain %q", got, tc.contains)
+		})
+	}
+}
+
+func TestAskerConsole_Message_InvalidQuery_FallsBack(t *testing.T) {
+	buf := &strings.Builder{}
+	formatter := &output.JsonFormatter{Query: "[invalid"}
+
+	c := NewConsole(
+		true,
+		false,
+		Writers{Output: writerAdapter{buf}},
+		ConsoleHandles{
+			Stderr: os.Stderr,
+			Stdin:  os.Stdin,
+			Stdout: writerAdapter{buf},
+		},
+		formatter,
+		nil,
+	)
+
+	// Should not panic; falls back to unfiltered output
+	c.Message(context.Background(), "hello world")
+
+	got := buf.String()
+	require.Contains(t, got, `"consoleMessage"`,
+		"invalid query should fall back to full envelope")
+}
+
+// writerAdapter wraps *strings.Builder to satisfy io.Writer for test purposes.
+type writerAdapter struct {
+	*strings.Builder
+}

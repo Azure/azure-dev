@@ -217,7 +217,13 @@ func (c *AskerConsole) Message(ctx context.Context, message string) {
 	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
 		// we call json.Marshal directly, because the formatter marshalls using indentation, and we would prefer
 		// these objects be written on a single line.
-		jsonMessage, err := json.Marshal(output.EventForMessage(message))
+		var obj interface{} = output.EventForMessage(message)
+		if q, ok := c.formatter.(output.Queryable); ok {
+			if filtered, err := q.QueryFilter(obj); err == nil {
+				obj = filtered
+			}
+		}
+		jsonMessage, err := json.Marshal(obj)
 		if err != nil {
 			panic(fmt.Sprintf("Message: unexpected error during marshaling for a valid object: %v", err))
 		}
@@ -270,8 +276,21 @@ func (c *AskerConsole) MessageUxItem(ctx context.Context, item ux.UxItem) {
 	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
 		// no need to check the spinner for json format, as the spinner won't start when using json format
 		// instead, there would be a message about starting spinner
-		json, _ := json.Marshal(item)
-		fmt.Fprintln(c.writer, string(json))
+		var obj interface{} = item
+		if q, ok := c.formatter.(output.Queryable); ok {
+			// UxItem.MarshalJSON() produces an EventEnvelope. To apply JMESPath we
+			// need the unmarshaled structure, so round-trip through JSON first.
+			if raw, err := json.Marshal(item); err == nil {
+				var envelope interface{}
+				if err := json.Unmarshal(raw, &envelope); err == nil {
+					if filtered, err := q.QueryFilter(envelope); err == nil {
+						obj = filtered
+					}
+				}
+			}
+		}
+		jsonBytes, _ := json.Marshal(obj)
+		fmt.Fprintln(c.writer, string(jsonBytes))
 		return
 	}
 

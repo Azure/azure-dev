@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/stretchr/testify/require"
 )
@@ -269,24 +270,48 @@ func newTestExternalPromptServer(handler func(promptOptions) json.RawMessage) *h
 
 func TestAskerConsole_Message_JsonQueryFilter(t *testing.T) {
 	tests := []struct {
-		name     string
-		query    string
-		contains string // expected substring in output
+		name   string
+		query  string
+		assert func(t *testing.T, got string)
 	}{
 		{
-			name:     "NoQuery",
-			query:    "",
-			contains: `"type":"consoleMessage"`,
+			name:  "NoQuery",
+			query: "",
+			assert: func(t *testing.T, got string) {
+				// Unmarshal into the full envelope and verify structure
+				var env contracts.EventEnvelope
+				err := json.Unmarshal([]byte(strings.TrimSpace(got)), &env)
+				require.NoError(t, err, "output should be valid JSON envelope")
+				require.Equal(t, contracts.ConsoleMessageEventDataType, env.Type)
+
+				data, ok := env.Data.(map[string]any)
+				require.True(t, ok, "Data should be a map, got %T", env.Data)
+				// EventForMessage appends a trailing newline to the message
+				require.Equal(t, "hello world\n", data["message"])
+			},
 		},
 		{
-			name:     "QueryDataMessage",
-			query:    "data.message",
-			contains: `"hello world`,
+			name:  "QueryDataMessage",
+			query: "data.message",
+			assert: func(t *testing.T, got string) {
+				// Query should extract a bare JSON string, not an object
+				var s string
+				err := json.Unmarshal([]byte(strings.TrimSpace(got)), &s)
+				require.NoError(t, err, "output should unmarshal as a JSON string")
+				// EventForMessage appends a trailing newline to the message
+				require.Equal(t, "hello world\n", s)
+			},
 		},
 		{
-			name:     "QueryType",
-			query:    "type",
-			contains: `"consoleMessage"`,
+			name:  "QueryType",
+			query: "type",
+			assert: func(t *testing.T, got string) {
+				// Query should extract a bare JSON string, not an object
+				var s string
+				err := json.Unmarshal([]byte(strings.TrimSpace(got)), &s)
+				require.NoError(t, err, "output should unmarshal as a JSON string")
+				require.Equal(t, "consoleMessage", s)
+			},
 		},
 	}
 
@@ -310,9 +335,7 @@ func TestAskerConsole_Message_JsonQueryFilter(t *testing.T) {
 
 			c.Message(context.Background(), "hello world")
 
-			got := buf.String()
-			require.Contains(t, got, tc.contains,
-				"output %q should contain %q", got, tc.contains)
+			tc.assert(t, buf.String())
 		})
 	}
 }

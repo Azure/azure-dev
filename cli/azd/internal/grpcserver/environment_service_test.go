@@ -165,10 +165,7 @@ func Test_EnvironmentService_ResolveEnvironment(t *testing.T) {
 	envManager, err := environment.NewManager(mockContext.Container, azdContext, mockContext.Console, localDataStore, nil)
 	require.NoError(t, err)
 
-	lazyAzdContext := lazy.From(azdContext)
-	lazyEnvManager := lazy.From(envManager)
-
-	// Create two environments with different values.
+	// Create two environments with different dotenv and config values.
 	env1, err := envManager.Create(*mockContext.Context, environment.Spec{Name: "env1"})
 	require.NoError(t, err)
 	env1.DotenvSet("key1", "value1")
@@ -182,103 +179,156 @@ func Test_EnvironmentService_ResolveEnvironment(t *testing.T) {
 	// Set env1 as default.
 	require.NoError(t, azdContext.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: "env1"}))
 
-	service := NewEnvironmentService(lazyAzdContext, lazyEnvManager)
+	service := NewEnvironmentService(lazy.From(azdContext), lazy.From(envManager))
+	ctx := *mockContext.Context
 
-	// Test: GetValue with empty env_name falls back to default (env1).
-	resp, err := service.GetValue(*mockContext.Context, &azdext.GetEnvRequest{Key: "key1"})
-	require.NoError(t, err)
-	require.Equal(t, "value1", resp.Value)
-
-	// Test: GetValue with explicit env_name targets the specified environment.
-	resp, err = service.GetValue(*mockContext.Context, &azdext.GetEnvRequest{EnvName: "env2", Key: "key1"})
-	require.NoError(t, err)
-	require.Equal(t, "value2", resp.Value)
-
-	// Test: GetValues with empty name falls back to default (env1).
-	valuesResp, err := service.GetValues(*mockContext.Context, &azdext.GetEnvironmentRequest{})
-	require.NoError(t, err)
-	envValues := map[string]string{}
-	for _, kv := range valuesResp.KeyValues {
-		envValues[kv.Key] = kv.Value
-	}
-	require.Equal(t, "value1", envValues["key1"])
-
-	// Test: GetValues with explicit name targets the specified environment.
-	valuesResp, err = service.GetValues(*mockContext.Context, &azdext.GetEnvironmentRequest{Name: "env2"})
-	require.NoError(t, err)
-	envValues = map[string]string{}
-	for _, kv := range valuesResp.KeyValues {
-		envValues[kv.Key] = kv.Value
-	}
-	require.Equal(t, "value2", envValues["key1"])
-
-	// Test: SetValue with empty env_name writes to default (env1).
-	_, err = service.SetValue(*mockContext.Context, &azdext.SetEnvRequest{Key: "newkey", Value: "newval"})
-	require.NoError(t, err)
-	resp, err = service.GetValue(*mockContext.Context, &azdext.GetEnvRequest{EnvName: "env1", Key: "newkey"})
-	require.NoError(t, err)
-	require.Equal(t, "newval", resp.Value)
-
-	// Test: SetConfig with empty env_name writes to default (env1).
-	_, err = service.SetConfig(*mockContext.Context, &azdext.SetConfigRequest{
-		Path:  "test.key",
-		Value: []byte(`"configval1"`),
+	t.Run("GetValue", func(t *testing.T) {
+		tests := []struct {
+			name     string
+			envName  string
+			expected string
+		}{
+			{"empty_env_name_uses_default", "", "value1"},
+			{"explicit_env_name_targets_specified", "env2", "value2"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				resp, err := service.GetValue(ctx, &azdext.GetEnvRequest{EnvName: tt.envName, Key: "key1"})
+				require.NoError(t, err)
+				require.Equal(t, tt.expected, resp.Value)
+			})
+		}
 	})
-	require.NoError(t, err)
 
-	// Test: GetConfigString with empty env_name reads from default (env1).
-	configResp, err := service.GetConfigString(*mockContext.Context, &azdext.GetConfigStringRequest{Path: "test.key"})
-	require.NoError(t, err)
-	require.True(t, configResp.Found)
-	require.Equal(t, "configval1", configResp.Value)
-
-	// Test: SetConfig with explicit env_name writes to specified environment (env2).
-	_, err = service.SetConfig(*mockContext.Context, &azdext.SetConfigRequest{
-		Path:    "test.key",
-		Value:   []byte(`"configval2"`),
-		EnvName: "env2",
+	t.Run("GetValues", func(t *testing.T) {
+		tests := []struct {
+			name     string
+			envName  string
+			expected string
+		}{
+			{"empty_name_uses_default", "", "value1"},
+			{"explicit_name_targets_specified", "env2", "value2"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				resp, err := service.GetValues(ctx, &azdext.GetEnvironmentRequest{Name: tt.envName})
+				require.NoError(t, err)
+				envValues := map[string]string{}
+				for _, kv := range resp.KeyValues {
+					envValues[kv.Key] = kv.Value
+				}
+				require.Equal(t, tt.expected, envValues["key1"])
+			})
+		}
 	})
-	require.NoError(t, err)
 
-	// Test: GetConfigString with explicit env_name reads from specified environment (env2).
-	configResp, err = service.GetConfigString(*mockContext.Context, &azdext.GetConfigStringRequest{
-		Path:    "test.key",
-		EnvName: "env2",
+	t.Run("SetValue", func(t *testing.T) {
+		_, err := service.SetValue(ctx, &azdext.SetEnvRequest{Key: "newkey", Value: "newval"})
+		require.NoError(t, err)
+
+		resp, err := service.GetValue(ctx, &azdext.GetEnvRequest{EnvName: "env1", Key: "newkey"})
+		require.NoError(t, err)
+		require.Equal(t, "newval", resp.Value)
 	})
-	require.NoError(t, err)
-	require.True(t, configResp.Found)
-	require.Equal(t, "configval2", configResp.Value)
 
-	// Test: GetConfig with empty env_name reads from default (env1).
-	getConfigResp, err := service.GetConfig(*mockContext.Context, &azdext.GetConfigRequest{Path: "test.key"})
-	require.NoError(t, err)
-	require.True(t, getConfigResp.Found)
+	// Config subtests share state: SetConfig writes values that subsequent reads and unset verify.
+	t.Run("Config", func(t *testing.T) {
+		// Setup: write config to both environments.
+		_, err := service.SetConfig(ctx, &azdext.SetConfigRequest{
+			Path:  "test.key",
+			Value: []byte(`"configval1"`),
+		})
+		require.NoError(t, err)
 
-	// Test: GetConfig with explicit env_name reads from specified environment (env2).
-	getConfigResp, err = service.GetConfig(*mockContext.Context, &azdext.GetConfigRequest{
-		Path:    "test.key",
-		EnvName: "env2",
+		_, err = service.SetConfig(ctx, &azdext.SetConfigRequest{
+			Path:    "test.key",
+			Value:   []byte(`"configval2"`),
+			EnvName: "env2",
+		})
+		require.NoError(t, err)
+
+		t.Run("GetConfigString", func(t *testing.T) {
+			tests := []struct {
+				name     string
+				envName  string
+				expected string
+			}{
+				{"empty_env_name_reads_default", "", "configval1"},
+				{"explicit_env_name_reads_specified", "env2", "configval2"},
+			}
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					resp, err := service.GetConfigString(ctx, &azdext.GetConfigStringRequest{
+						Path:    "test.key",
+						EnvName: tt.envName,
+					})
+					require.NoError(t, err)
+					require.True(t, resp.Found)
+					require.Equal(t, tt.expected, resp.Value)
+				})
+			}
+		})
+
+		t.Run("GetConfig", func(t *testing.T) {
+			tests := []struct {
+				name    string
+				envName string
+			}{
+				{"empty_env_name_reads_default", ""},
+				{"explicit_env_name_reads_specified", "env2"},
+			}
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					resp, err := service.GetConfig(ctx, &azdext.GetConfigRequest{
+						Path:    "test.key",
+						EnvName: tt.envName,
+					})
+					require.NoError(t, err)
+					require.True(t, resp.Found)
+				})
+			}
+		})
+
+		t.Run("GetConfigSection", func(t *testing.T) {
+			tests := []struct {
+				name    string
+				envName string
+			}{
+				{"empty_env_name_reads_default", ""},
+				{"explicit_env_name_reads_specified", "env2"},
+			}
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					resp, err := service.GetConfigSection(ctx, &azdext.GetConfigSectionRequest{
+						Path:    "test",
+						EnvName: tt.envName,
+					})
+					require.NoError(t, err)
+					require.True(t, resp.Found)
+				})
+			}
+		})
+
+		t.Run("UnsetConfig", func(t *testing.T) {
+			_, err := service.UnsetConfig(ctx, &azdext.UnsetConfigRequest{
+				Path:    "test.key",
+				EnvName: "env2",
+			})
+			require.NoError(t, err)
+
+			// Verify config was removed from env2.
+			resp, err := service.GetConfigString(ctx, &azdext.GetConfigStringRequest{
+				Path:    "test.key",
+				EnvName: "env2",
+			})
+			require.NoError(t, err)
+			require.False(t, resp.Found)
+
+			// Verify config still exists in env1 (default).
+			resp, err = service.GetConfigString(ctx, &azdext.GetConfigStringRequest{Path: "test.key"})
+			require.NoError(t, err)
+			require.True(t, resp.Found)
+			require.Equal(t, "configval1", resp.Value)
+		})
 	})
-	require.NoError(t, err)
-	require.True(t, getConfigResp.Found)
-
-	// Test: UnsetConfig with explicit env_name targets specified environment (env2).
-	_, err = service.UnsetConfig(*mockContext.Context, &azdext.UnsetConfigRequest{
-		Path:    "test.key",
-		EnvName: "env2",
-	})
-	require.NoError(t, err)
-
-	// Verify config was removed from env2 but still exists in env1.
-	configResp, err = service.GetConfigString(*mockContext.Context, &azdext.GetConfigStringRequest{
-		Path:    "test.key",
-		EnvName: "env2",
-	})
-	require.NoError(t, err)
-	require.False(t, configResp.Found)
-
-	configResp, err = service.GetConfigString(*mockContext.Context, &azdext.GetConfigStringRequest{Path: "test.key"})
-	require.NoError(t, err)
-	require.True(t, configResp.Found)
-	require.Equal(t, "configval1", configResp.Value)
 }

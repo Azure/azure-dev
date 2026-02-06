@@ -5,6 +5,7 @@ package grpcserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
@@ -55,6 +56,15 @@ func NewProjectService(
 		importManager:     importManager,
 		ghCli:             ghCli,
 	}
+}
+
+// mapProjectError converts project-related errors to appropriate gRPC status errors.
+// It specifically handles the ErrNoProject case with a user-friendly message.
+func mapProjectError(err error) error {
+	if errors.Is(err, azdcontext.ErrNoProject) {
+		return status.Error(codes.FailedPrecondition, "No azd project found. Run 'azd init' to initialize your project.")
+	}
+	return err
 }
 
 // reloadAndCacheProjectConfig reloads the project configuration from disk and updates the lazy cache.
@@ -134,12 +144,12 @@ func (s *projectService) validateServiceExists(ctx context.Context, serviceName 
 func (s *projectService) Get(ctx context.Context, req *azdext.EmptyRequest) (*azdext.GetProjectResponse, error) {
 	azdContext, err := s.lazyAzdContext.GetValue()
 	if err != nil {
-		return nil, err
+		return nil, mapProjectError(err)
 	}
 
 	projectConfig, err := s.lazyProjectConfig.GetValue()
 	if err != nil {
-		return nil, err
+		return nil, mapProjectError(err)
 	}
 
 	envKeyMapper := func(env string) string {
@@ -189,12 +199,12 @@ func (s *projectService) AddService(ctx context.Context, req *azdext.AddServiceR
 
 	azdContext, err := s.lazyAzdContext.GetValue()
 	if err != nil {
-		return nil, err
+		return nil, mapProjectError(err)
 	}
 
 	projectConfig, err := s.lazyProjectConfig.GetValue()
 	if err != nil {
-		return nil, err
+		return nil, mapProjectError(err)
 	}
 
 	serviceConfig := &project.ServiceConfig{}

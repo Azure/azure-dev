@@ -221,6 +221,8 @@ func (c *AskerConsole) Message(ctx context.Context, message string) {
 		if q, ok := c.formatter.(output.Queryable); ok {
 			if filtered, err := q.QueryFilter(obj); err == nil {
 				obj = filtered
+			} else {
+				log.Printf("failed to apply query filter in Message: %v", err)
 			}
 		}
 		jsonMessage, err := json.Marshal(obj)

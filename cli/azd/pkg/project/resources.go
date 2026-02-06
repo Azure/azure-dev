@@ -20,6 +20,7 @@ func AllResourceTypes() []ResourceType {
 		ResourceTypeDbCosmos,
 		ResourceTypeHostAppService,
 		ResourceTypeHostContainerApp,
+		ResourceTypeHostStaticWebApp,
 		ResourceTypeOpenAiModel,
 		ResourceTypeMessagingEventHubs,
 		ResourceTypeMessagingServiceBus,
@@ -38,6 +39,7 @@ const (
 	ResourceTypeDbCosmos            ResourceType = "db.cosmos"
 	ResourceTypeHostContainerApp    ResourceType = "host.containerapp"
 	ResourceTypeHostAppService      ResourceType = "host.appservice"
+	ResourceTypeHostStaticWebApp    ResourceType = "host.staticwebapp"
 	ResourceTypeOpenAiModel         ResourceType = "ai.openai.model"
 	ResourceTypeMessagingEventHubs  ResourceType = "messaging.eventhubs"
 	ResourceTypeMessagingServiceBus ResourceType = "messaging.servicebus"
@@ -63,6 +65,8 @@ func (r ResourceType) String() string {
 		return "App Service"
 	case ResourceTypeHostContainerApp:
 		return "Container App"
+	case ResourceTypeHostStaticWebApp:
+		return "Static Web App"
 	case ResourceTypeOpenAiModel:
 		return "Open AI Model"
 	case ResourceTypeMessagingEventHubs:
@@ -94,6 +98,8 @@ func (r ResourceType) AzureResourceType() string {
 		return "Microsoft.Web/sites"
 	case ResourceTypeHostContainerApp:
 		return "Microsoft.App/containerApps"
+	case ResourceTypeHostStaticWebApp:
+		return "Microsoft.Web/staticSites"
 	case ResourceTypeDbRedis:
 		return "Microsoft.Cache/redis"
 	case ResourceTypeDbPostgres:

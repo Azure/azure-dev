@@ -672,6 +672,9 @@ type LoginInteractiveOptions struct {
 	TenantID     string
 	RedirectPort int
 	WithOpenUrl  WithOpenUrl
+	// Prompt specifies the type of user interaction during login.
+	// Use public.PromptLogin to force re-authentication and 2FA/MFA validation.
+	Prompt public.Prompt
 }
 
 // LoginInteractive opens a browser for authenticate the user.
@@ -715,6 +718,10 @@ func (m *Manager) LoginInteractive(
 
 	if claims != "" {
 		acquireTokenOptions = append(acquireTokenOptions, public.WithClaims(claims))
+	}
+
+	if options.Prompt != "" {
+		acquireTokenOptions = append(acquireTokenOptions, public.WithPrompt(options.Prompt))
 	}
 
 	res, err := m.publicClient.AcquireTokenInteractive(ctx, scopes, acquireTokenOptions...)

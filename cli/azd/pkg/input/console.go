@@ -289,7 +289,10 @@ func (c *AskerConsole) MessageUxItem(ctx context.Context, item ux.UxItem) {
 				}
 			}
 		}
-		jsonBytes, _ := json.Marshal(obj)
+		jsonBytes, err := json.Marshal(obj)
+		if err != nil {
+			panic(err)
+		}
 		fmt.Fprintln(c.writer, string(jsonBytes))
 		return
 	}

@@ -6,6 +6,7 @@ package ai
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"sync"
@@ -18,13 +19,8 @@ import (
 )
 
 type AiModel struct {
-	Name      string
-	Locations []*AiModelLocation
-}
-
-type AiModelLocation struct {
-	Model    *armcognitiveservices.Model
-	Location *armsubscriptions.Location
+	Name                   string
+	ModelDetailsByLocation map[string][]*armcognitiveservices.Model
 }
 
 type ModelCatalogService struct {
@@ -68,13 +64,19 @@ func (c *ModelCatalogService) ListAllKinds(ctx context.Context, allModels map[st
 	})
 }
 
-func (c *ModelCatalogService) ListModelVersions(ctx context.Context, model *AiModel) ([]string, string, error) {
+func (c *ModelCatalogService) ListModelVersions(ctx context.Context, model *AiModel, location string) ([]string, string, error) {
 	versions := make(map[string]struct{})
 	defaultVersion := ""
-	for _, location := range model.Locations {
-		versions[*location.Model.Model.Version] = struct{}{}
-		if location.Model.Model.IsDefaultVersion != nil && *location.Model.Model.IsDefaultVersion {
-			defaultVersion = *location.Model.Model.Version
+
+	models, exists := model.ModelDetailsByLocation[location]
+	if !exists {
+		return nil, "", fmt.Errorf("no model details found for location '%s'", location)
+	}
+
+	for _, m := range models {
+		versions[*m.Model.Version] = struct{}{}
+		if m.Model.IsDefaultVersion != nil && *m.Model.IsDefaultVersion {
+			defaultVersion = *m.Model.Version
 		}
 	}
 
@@ -88,12 +90,17 @@ func (c *ModelCatalogService) ListModelVersions(ctx context.Context, model *AiMo
 	return versionList, defaultVersion, nil
 }
 
-func (c *ModelCatalogService) ListModelSkus(ctx context.Context, model *AiModel, modelVersion string) ([]string, error) {
+func (c *ModelCatalogService) ListModelSkus(ctx context.Context, model *AiModel, location string, modelVersion string) ([]string, error) {
 	skus := make(map[string]struct{})
 
-	for _, location := range model.Locations {
-		if *location.Model.Model.Version == modelVersion {
-			for _, sku := range location.Model.Model.SKUs {
+	models, exists := model.ModelDetailsByLocation[location]
+	if !exists {
+		return nil, fmt.Errorf("no model details found for location '%s'", location)
+	}
+
+	for _, m := range models {
+		if *m.Model.Version == modelVersion {
+			for _, sku := range m.Model.SKUs {
 				skus[*sku.Name] = struct{}{}
 			}
 		}
@@ -136,34 +143,36 @@ func (c *ModelCatalogService) ListFilteredModels(
 		isFormatMatch := len(options.Formats) == 0
 		isKindMatch := len(options.Kinds) == 0
 
-		for _, location := range model.Locations {
-			if !isCapabilityMatch && len(options.Capabilities) > 0 {
-				for modelCapability := range location.Model.Model.Capabilities {
-					if slices.Contains(options.Capabilities, modelCapability) {
-						isCapabilityMatch = true
-						break
+		for locationName, models := range model.ModelDetailsByLocation {
+			for _, m := range models {
+				if !isCapabilityMatch && len(options.Capabilities) > 0 {
+					for modelCapability := range m.Model.Capabilities {
+						if slices.Contains(options.Capabilities, modelCapability) {
+							isCapabilityMatch = true
+							break
+						}
 					}
 				}
-			}
 
-			if !isLocationMatch && len(options.Locations) > 0 &&
-				slices.Contains(options.Locations, *location.Location.Name) {
-				isLocationMatch = true
-			}
+				if !isLocationMatch && len(options.Locations) > 0 &&
+					slices.Contains(options.Locations, locationName) {
+					isLocationMatch = true
+				}
 
-			if !isStatusMatch && len(options.Statuses) > 0 &&
-				slices.Contains(options.Statuses, string(*location.Model.Model.LifecycleStatus)) {
-				isStatusMatch = true
-			}
+				if !isStatusMatch && len(options.Statuses) > 0 &&
+					slices.Contains(options.Statuses, string(*m.Model.LifecycleStatus)) {
+					isStatusMatch = true
+				}
 
-			if !isFormatMatch && len(options.Formats) > 0 &&
-				slices.Contains(options.Formats, *location.Model.Model.Format) {
-				isFormatMatch = true
-			}
+				if !isFormatMatch && len(options.Formats) > 0 &&
+					slices.Contains(options.Formats, *m.Model.Format) {
+					isFormatMatch = true
+				}
 
-			if !isKindMatch && len(options.Kinds) > 0 &&
-				slices.Contains(options.Kinds, *location.Model.Kind) {
-				isKindMatch = true
+				if !isKindMatch && len(options.Kinds) > 0 &&
+					slices.Contains(options.Kinds, *m.Kind) {
+					isKindMatch = true
+				}
 			}
 		}
 
@@ -237,19 +246,18 @@ func (c *ModelCatalogService) ListAllModels(ctx context.Context, subscriptionId 
 		modelsList := value.([]*armcognitiveservices.Model)
 
 		for _, model := range modelsList {
+
 			modelName := *model.Model.Name
 			existingModel, exists := modelMap[modelName]
 			if !exists {
 				existingModel = &AiModel{
-					Name:      modelName,
-					Locations: []*AiModelLocation{},
+					Name:                   modelName,
+					ModelDetailsByLocation: make(map[string][]*armcognitiveservices.Model),
 				}
 			}
 
-			existingModel.Locations = append(existingModel.Locations, &AiModelLocation{
-				Model:    model,
-				Location: location,
-			})
+			locationName := *location.Name
+			existingModel.ModelDetailsByLocation[locationName] = append(existingModel.ModelDetailsByLocation[locationName], model)
 
 			modelMap[modelName] = existingModel
 		}
@@ -306,57 +314,58 @@ func (c *ModelCatalogService) GetModelDeployment(
 	var modelDeployment *AiModelDeployment
 	hasDefaultVersion := c.hasDefaultVersion(model)
 
-	for _, location := range model.Locations {
+	for locationName, models := range model.ModelDetailsByLocation {
 		if modelDeployment != nil {
 			break
 		}
 
 		// Check for location match if specified
-		if len(options.Locations) > 0 && !slices.Contains(options.Locations, *location.Location.Name) {
+		if len(options.Locations) > 0 && !slices.Contains(options.Locations, locationName) {
 			continue
 		}
 
-		// Check for version match if specified
-		if len(options.Versions) > 0 && !slices.Contains(options.Versions, *location.Model.Model.Version) {
-			continue
-		}
-
-		// Check for default version if no version is specified
-		if len(options.Versions) > 0 {
-			if !slices.Contains(options.Versions, *location.Model.Model.Version) {
-				continue
-			}
-		} else if hasDefaultVersion {
-			// Not all models have a default version
-			if location.Model.Model.IsDefaultVersion != nil && !*location.Model.Model.IsDefaultVersion {
-				continue
-			}
-		}
-
-		// Check for SKU match if specified
-		for _, sku := range location.Model.Model.SKUs {
-
-			if !slices.Contains(options.Skus, *sku.Name) {
-				continue
+		for _, m := range models {
+			if modelDeployment != nil {
+				break
 			}
 
-			modelDeployment = &AiModelDeployment{
-				Name:    *location.Model.Model.Name,
-				Format:  *location.Model.Model.Format,
-				Version: *location.Model.Model.Version,
-				Sku: AiModelDeploymentSku{
-					Name:      *sku.Name,
-					UsageName: *sku.UsageName,
-				},
+			// Check for default version if no version is specified
+			if len(options.Versions) > 0 {
+				if !slices.Contains(options.Versions, *m.Model.Version) {
+					continue
+				}
+			} else if hasDefaultVersion {
+				// Not all models have a default version
+				if m.Model.IsDefaultVersion != nil && !*m.Model.IsDefaultVersion {
+					continue
+				}
 			}
 
-			if sku.Capacity.Default != nil {
-				modelDeployment.Sku.Capacity = *sku.Capacity.Default
-			} else {
-				modelDeployment.Sku.Capacity = -1
-			}
+			// Check for SKU match if specified
+			for _, sku := range m.Model.SKUs {
 
-			break
+				if !slices.Contains(options.Skus, *sku.Name) {
+					continue
+				}
+
+				modelDeployment = &AiModelDeployment{
+					Name:    *m.Model.Name,
+					Format:  *m.Model.Format,
+					Version: *m.Model.Version,
+					Sku: AiModelDeploymentSku{
+						Name:      *sku.Name,
+						UsageName: *sku.UsageName,
+					},
+				}
+
+				if sku.Capacity.Default != nil {
+					modelDeployment.Sku.Capacity = *sku.Capacity.Default
+				} else {
+					modelDeployment.Sku.Capacity = -1
+				}
+
+				break
+			}
 		}
 	}
 
@@ -368,9 +377,11 @@ func (c *ModelCatalogService) GetModelDeployment(
 }
 
 func (c *ModelCatalogService) hasDefaultVersion(model *AiModel) bool {
-	for _, location := range model.Locations {
-		if location.Model.Model.IsDefaultVersion != nil && *location.Model.Model.IsDefaultVersion {
-			return true
+	for _, models := range model.ModelDetailsByLocation {
+		for _, m := range models {
+			if m.Model.IsDefaultVersion != nil && *m.Model.IsDefaultVersion {
+				return true
+			}
 		}
 	}
 	return false
@@ -382,11 +393,13 @@ func filterDistinctModelData(
 ) []string {
 	filtered := make(map[string]struct{})
 	for _, model := range models {
-		for _, location := range model.Locations {
-			value := filterFunc(location.Model)
-			for _, v := range value {
-				if v != "" {
-					filtered[v] = struct{}{}
+		for _, locationModels := range model.ModelDetailsByLocation {
+			for _, m := range locationModels {
+				value := filterFunc(m)
+				for _, v := range value {
+					if v != "" {
+						filtered[v] = struct{}{}
+					}
 				}
 			}
 		}

@@ -1910,7 +1910,8 @@ func (a *InitAction) loadAiCatalog(ctx context.Context) error {
 		return fmt.Errorf("failed to start spinner: %w", err)
 	}
 
-	aiModelCatalog, err := a.modelCatalogService.ListAllModels(ctx, a.azureContext.Scope.SubscriptionId, a.azureContext.Scope.Location)
+	aiModelCatalog, err := a.modelCatalogService.ListAllModels(ctx, a.azureContext.Scope.SubscriptionId, "")
+
 	if err != nil {
 		return fmt.Errorf("failed to load the model catalog: %w", err)
 	}
@@ -2101,13 +2102,13 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 		return nil, fmt.Errorf("failed to get model details: %w", err)
 	}
 
-	message := fmt.Sprintf("Enter model deployment name for model '%s' (defaults to model name)", model.Id)
+	message := fmt.Sprintf("Enter model deployment name for model '%s' (defaults to model name)", modelDetails.Name)
 
 	modelDeploymentInput, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 		Options: &azdext.PromptOptions{
 			Message:        message,
 			IgnoreHintKeys: true,
-			DefaultValue:   model.Id,
+			DefaultValue:   modelDetails.Name,
 		},
 	})
 	if err != nil {
@@ -2119,7 +2120,7 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 	return &project.Deployment{
 		Name: modelDeployment,
 		Model: project.DeploymentModel{
-			Name:    model.Id,
+			Name:    modelDetails.Name,
 			Format:  modelDetails.Format,
 			Version: modelDetails.Version,
 		},
@@ -2142,10 +2143,35 @@ func (a *InitAction) getModelDetails(ctx context.Context, modelName string) (*ai
 	var model *ai.AiModel
 	model, exists := a.modelCatalog[modelName]
 	if !exists {
-		return nil, fmt.Errorf("The model '%s' could not be found in the model catalog", modelName)
+		// Model not found - prompt user for alternative
+		selectedModel, err := a.promptForAlternativeModel(ctx, modelName)
+		if err != nil {
+			return nil, err
+		}
+		if selectedModel == nil {
+			return nil, fmt.Errorf("no model selected, exiting")
+		}
+		model = selectedModel
+		modelName = model.Name
 	}
 
-	availableVersions, defaultVersion, err := a.modelCatalogService.ListModelVersions(ctx, model)
+	// Check if the model is available in the current location
+	currentLocation := a.azureContext.Scope.Location
+	if _, hasLocation := model.ModelDetailsByLocation[currentLocation]; !hasLocation {
+		// Model not available in current location - prompt user for action
+		resolvedModel, resolvedLocation, err := a.promptForModelLocationMismatch(ctx, model, currentLocation)
+		if err != nil {
+			return nil, err
+		}
+		if resolvedModel == nil {
+			return nil, fmt.Errorf("model unavailable in current location and no alternative selected, exiting")
+		}
+		model = resolvedModel
+		modelName = model.Name
+		currentLocation = resolvedLocation
+	}
+
+	availableVersions, defaultVersion, err := a.modelCatalogService.ListModelVersions(ctx, model, currentLocation)
 	if err != nil {
 		return nil, fmt.Errorf("listing versions for model '%s': %w", modelName, err)
 	}
@@ -2155,7 +2181,7 @@ func (a *InitAction) getModelDetails(ctx context.Context, modelName string) (*ai
 		return nil, err
 	}
 
-	availableSkus, err := a.modelCatalogService.ListModelSkus(ctx, model, modelVersion)
+	availableSkus, err := a.modelCatalogService.ListModelSkus(ctx, model, currentLocation, modelVersion)
 	if err != nil {
 		return nil, fmt.Errorf("listing SKUs for model '%s': %w", modelName, err)
 	}
@@ -2205,6 +2231,222 @@ func (a *InitAction) getModelDetails(ctx context.Context, modelName string) (*ai
 	}
 
 	return modelDeployment, nil
+}
+
+func (a *InitAction) promptForAlternativeModel(ctx context.Context, originalModelName string) (*ai.AiModel, error) {
+	fmt.Println(output.WithErrorFormat("The model '%s' could not be found in the model catalog for your subscription in any region.\n", originalModelName))
+
+	// Ask if they want to select a different model or exit
+	choices := []*azdext.SelectChoice{
+		{Label: "Select a different model", Value: "select"},
+		{Label: "Exit", Value: "exit"},
+	}
+
+	defaultIndex := int32(1)
+	selectResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message:       "Would you like to select a different model or exit?",
+			Choices:       choices,
+			SelectedIndex: &defaultIndex,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to prompt for model selection choice: %w", err)
+	}
+
+	if choices[*selectResp.Value].Value == "exit" {
+		return nil, nil
+	}
+
+	// Ask if they want all models or region-specific models
+	regionChoices := []*azdext.SelectChoice{
+		{Label: fmt.Sprintf("Models available in my current region (%s)", a.azureContext.Scope.Location), Value: "region"},
+		{Label: "All available models", Value: "all"},
+	}
+
+	regionResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message: "Which models would you like to explore?",
+			Choices: regionChoices,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to prompt for region choice: %w", err)
+	}
+
+	// Get the list of model names based on the choice
+	var modelNames []string
+	if regionChoices[*regionResp.Value].Value == "region" {
+		// Filter models that have the current region
+		for name, model := range a.modelCatalog {
+			if _, hasLocation := model.ModelDetailsByLocation[a.azureContext.Scope.Location]; hasLocation {
+				modelNames = append(modelNames, name)
+			}
+		}
+	} else {
+		// All models
+		for name := range a.modelCatalog {
+			modelNames = append(modelNames, name)
+		}
+	}
+
+	if len(modelNames) == 0 {
+		return nil, fmt.Errorf("no models available for selection")
+	}
+
+	// Sort the model names
+	slices.Sort(modelNames)
+
+	// Create choices for the model selection
+	modelChoices := make([]*azdext.SelectChoice, len(modelNames))
+	for i, name := range modelNames {
+		modelChoices[i] = &azdext.SelectChoice{
+			Label: name,
+			Value: name,
+		}
+	}
+
+	modelResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message: "Select a model",
+			Choices: modelChoices,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to prompt for model selection: %w", err)
+	}
+
+	selectedModelName := modelNames[*modelResp.Value]
+	return a.modelCatalog[selectedModelName], nil
+}
+
+func (a *InitAction) promptForModelLocationMismatch(ctx context.Context, model *ai.AiModel, currentLocation string) (*ai.AiModel, string, error) {
+	fmt.Println(output.WithErrorFormat("The model '%s' is not available in your current location '%s'.", model.Name, currentLocation))
+	fmt.Println("Would you like to use a different model, or select a different location?")
+	fmt.Println(output.WithWarningFormat(
+		"WARNING: If you switch locations:\n" +
+			"• Your AZD environment will use a new default region.\n" +
+			"• Any existing Azure AI Foundry project created in your current region may fail.\n\n" +
+			"Recommended options:\n" +
+			"1) Select a different model in this region (safe), or\n" +
+			"2) Create a new Foundry project after changing regions."))
+
+	// Ask what they want to do
+	choices := []*azdext.SelectChoice{
+		{Label: "Select a different model available in this location", Value: "model"},
+		{Label: "Select a different location for this model", Value: "location"},
+		{Label: "Exit", Value: "exit"},
+	}
+
+	defaultIndex := int32(2)
+	selectResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message:       "What would you like to do?",
+			Choices:       choices,
+			SelectedIndex: &defaultIndex,
+		},
+	})
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to prompt for action choice: %w", err)
+	}
+
+	selectedChoice := choices[*selectResp.Value].Value
+
+	if selectedChoice == "exit" {
+		return nil, "", nil
+	}
+
+	if selectedChoice == "location" {
+		// Get available locations for this model
+		var locationNames []string
+		for locationName := range model.ModelDetailsByLocation {
+			locationNames = append(locationNames, locationName)
+		}
+
+		if len(locationNames) == 0 {
+			return nil, "", fmt.Errorf("no locations available for model '%s'", model.Name)
+		}
+
+		slices.Sort(locationNames)
+
+		// Create choices for location selection
+		locationChoices := make([]*azdext.SelectChoice, len(locationNames))
+		for i, name := range locationNames {
+			locationChoices[i] = &azdext.SelectChoice{
+				Label: name,
+				Value: name,
+			}
+		}
+
+		locationResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+			Options: &azdext.SelectOptions{
+				Message: fmt.Sprintf("Select a location for model '%s'", model.Name),
+				Choices: locationChoices,
+			},
+		})
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to prompt for location selection: %w", err)
+		}
+
+		selectedLocation := locationNames[*locationResp.Value]
+
+		// Update the azd environment with the new location
+		envResponse, err := a.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to get current azd environment: %w", err)
+		}
+
+		a.azureContext.Scope.Location = selectedLocation
+		_, err = a.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: envResponse.Environment.Name,
+			Key:     "AZURE_LOCATION",
+			Value:   a.azureContext.Scope.Location,
+		})
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to update AZURE_LOCATION in azd environment: %w", err)
+		}
+
+		fmt.Printf("Updated AZURE_LOCATION to '%s' in your azd environment.\n", selectedLocation)
+
+		return model, selectedLocation, nil
+	}
+
+	// selectedChoice == "model"
+	// Get models available in the current location
+	var modelNames []string
+	for name, m := range a.modelCatalog {
+		if _, hasLocation := m.ModelDetailsByLocation[currentLocation]; hasLocation {
+			modelNames = append(modelNames, name)
+		}
+	}
+
+	if len(modelNames) == 0 {
+		return nil, "", fmt.Errorf("no models available in location '%s'", currentLocation)
+	}
+
+	slices.Sort(modelNames)
+
+	// Create choices for model selection
+	modelChoices := make([]*azdext.SelectChoice, len(modelNames))
+	for i, name := range modelNames {
+		modelChoices[i] = &azdext.SelectChoice{
+			Label: name,
+			Value: name,
+		}
+	}
+
+	modelResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message: fmt.Sprintf("Select a model available in '%s'", currentLocation),
+			Choices: modelChoices,
+		},
+	})
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to prompt for model selection: %w", err)
+	}
+
+	selectedModelName := modelNames[*modelResp.Value]
+	return a.modelCatalog[selectedModelName], currentLocation, nil
 }
 
 func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.AgentManifest) (*agent_yaml.AgentManifest, []project.Deployment, error) {

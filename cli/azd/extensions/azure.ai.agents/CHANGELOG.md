@@ -1,6 +1,6 @@
 # Release History
 
-## 0.1.9-preview (2026-02-04)
+## 0.1.9-preview (2026-02-05)
 
 - [[#6631]](https://github.com/Azure/azure-dev/pull/6631) Add support for downloading manifests from public repositories without authentication
 - [[#6665]](https://github.com/Azure/azure-dev/pull/6665) Fix manifest download path handling when path contains slashes

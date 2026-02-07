@@ -24,11 +24,13 @@ import (
 type projectService struct {
 	azdext.UnimplementedProjectServiceServer
 
-	lazyAzdContext    *lazy.Lazy[*azdcontext.AzdContext]
-	lazyEnvManager    *lazy.Lazy[environment.Manager]
-	importManager     *project.ImportManager
-	lazyProjectConfig *lazy.Lazy[*project.ProjectConfig]
-	ghCli             *github.Cli
+	lazyAzdContext      *lazy.Lazy[*azdcontext.AzdContext]
+	lazyEnvManager      *lazy.Lazy[environment.Manager]
+	lazyResourceManager *lazy.Lazy[project.ResourceManager]
+	lazyEnv             *lazy.Lazy[*environment.Environment]
+	importManager       *project.ImportManager
+	lazyProjectConfig   *lazy.Lazy[*project.ProjectConfig]
+	ghCli               *github.Cli
 }
 
 // NewProjectService creates a new project service instance with lazy-loaded dependencies.
@@ -38,22 +40,28 @@ type projectService struct {
 // Parameters:
 //   - lazyAzdContext: Lazy-loaded Azure Developer CLI context for project directory operations
 //   - lazyEnvManager: Lazy-loaded environment manager for handling Azure environments
+//   - lazyResourceManager: Lazy-loaded resource manager for resolving target resources
+//   - lazyEnv: Lazy-loaded environment for accessing environment variables and subscription info
 //   - lazyProjectConfig: Lazy-loaded project configuration for accessing project settings
 //
 // Returns an implementation of azdext.ProjectServiceServer.
 func NewProjectService(
 	lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext],
 	lazyEnvManager *lazy.Lazy[environment.Manager],
+	lazyResourceManager *lazy.Lazy[project.ResourceManager],
+	lazyEnv *lazy.Lazy[*environment.Environment],
 	lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
 	importManager *project.ImportManager,
 	ghCli *github.Cli,
 ) azdext.ProjectServiceServer {
 	return &projectService{
-		lazyAzdContext:    lazyAzdContext,
-		lazyEnvManager:    lazyEnvManager,
-		lazyProjectConfig: lazyProjectConfig,
-		importManager:     importManager,
-		ghCli:             ghCli,
+		lazyAzdContext:      lazyAzdContext,
+		lazyEnvManager:      lazyEnvManager,
+		lazyResourceManager: lazyResourceManager,
+		lazyEnv:             lazyEnv,
+		lazyProjectConfig:   lazyProjectConfig,
+		importManager:       importManager,
+		ghCli:               ghCli,
 	}
 }
 
@@ -858,5 +866,66 @@ func (
 		RepoSlug: urlInfo.RepoSlug,
 		Branch:   urlInfo.Branch,
 		FilePath: urlInfo.FilePath,
+	}, nil
+}
+
+// GetServiceTargetResource resolves the target Azure resource for a service.
+// This uses azd's standard resource discovery logic which:
+// - Looks up resources by azd-service-name tag
+// - Falls back to explicit resourceName from configuration
+// - Resolves the resource group name from configuration or environment
+//
+// The returned TargetResource includes subscription, resource group, resource name, and resource type.
+func (s *projectService) GetServiceTargetResource(
+	ctx context.Context,
+	req *azdext.GetServiceTargetResourceRequest,
+) (*azdext.GetServiceTargetResourceResponse, error) {
+	if req.ServiceName == "" {
+		return nil, status.Error(codes.InvalidArgument, "service_name is required")
+	}
+
+	// Get the project configuration
+	projectConfig, err := s.lazyProjectConfig.GetValue()
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get project config: %v", err)
+	}
+
+	// Validate the service exists
+	serviceConfig, exists := projectConfig.Services[req.ServiceName]
+	if !exists {
+		return nil, status.Errorf(codes.NotFound, "service '%s' not found in project", req.ServiceName)
+	}
+
+	// Get the environment to read subscription ID
+	env, err := s.lazyEnv.GetValue()
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get environment: %v", err)
+	}
+
+	subscriptionId := env.GetSubscriptionId()
+	if subscriptionId == "" {
+		return nil, status.Error(codes.FailedPrecondition, "AZURE_SUBSCRIPTION_ID not set in environment")
+	}
+
+	// Get the resource manager
+	resourceManager, err := s.lazyResourceManager.GetValue()
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get resource manager: %v", err)
+	}
+
+	// Resolve the target resource using azd's standard logic
+	targetResource, err := resourceManager.GetTargetResource(ctx, subscriptionId, serviceConfig)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to resolve target resource: %v", err)
+	}
+
+	return &azdext.GetServiceTargetResourceResponse{
+		TargetResource: &azdext.TargetResource{
+			SubscriptionId:    targetResource.SubscriptionId(),
+			ResourceGroupName: targetResource.ResourceGroupName(),
+			ResourceName:      targetResource.ResourceName(),
+			ResourceType:      targetResource.ResourceType(),
+			Metadata:          targetResource.Metadata(),
+		},
 	}, nil
 }

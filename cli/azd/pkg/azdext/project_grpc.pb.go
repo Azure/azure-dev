@@ -22,20 +22,21 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ProjectService_Get_FullMethodName                     = "/azdext.ProjectService/Get"
-	ProjectService_AddService_FullMethodName              = "/azdext.ProjectService/AddService"
-	ProjectService_GetResolvedServices_FullMethodName     = "/azdext.ProjectService/GetResolvedServices"
-	ProjectService_ParseGitHubUrl_FullMethodName          = "/azdext.ProjectService/ParseGitHubUrl"
-	ProjectService_GetConfigSection_FullMethodName        = "/azdext.ProjectService/GetConfigSection"
-	ProjectService_GetConfigValue_FullMethodName          = "/azdext.ProjectService/GetConfigValue"
-	ProjectService_SetConfigSection_FullMethodName        = "/azdext.ProjectService/SetConfigSection"
-	ProjectService_SetConfigValue_FullMethodName          = "/azdext.ProjectService/SetConfigValue"
-	ProjectService_UnsetConfig_FullMethodName             = "/azdext.ProjectService/UnsetConfig"
-	ProjectService_GetServiceConfigSection_FullMethodName = "/azdext.ProjectService/GetServiceConfigSection"
-	ProjectService_GetServiceConfigValue_FullMethodName   = "/azdext.ProjectService/GetServiceConfigValue"
-	ProjectService_SetServiceConfigSection_FullMethodName = "/azdext.ProjectService/SetServiceConfigSection"
-	ProjectService_SetServiceConfigValue_FullMethodName   = "/azdext.ProjectService/SetServiceConfigValue"
-	ProjectService_UnsetServiceConfig_FullMethodName      = "/azdext.ProjectService/UnsetServiceConfig"
+	ProjectService_Get_FullMethodName                      = "/azdext.ProjectService/Get"
+	ProjectService_GetServiceTargetResource_FullMethodName = "/azdext.ProjectService/GetServiceTargetResource"
+	ProjectService_AddService_FullMethodName               = "/azdext.ProjectService/AddService"
+	ProjectService_GetResolvedServices_FullMethodName      = "/azdext.ProjectService/GetResolvedServices"
+	ProjectService_ParseGitHubUrl_FullMethodName           = "/azdext.ProjectService/ParseGitHubUrl"
+	ProjectService_GetConfigSection_FullMethodName         = "/azdext.ProjectService/GetConfigSection"
+	ProjectService_GetConfigValue_FullMethodName           = "/azdext.ProjectService/GetConfigValue"
+	ProjectService_SetConfigSection_FullMethodName         = "/azdext.ProjectService/SetConfigSection"
+	ProjectService_SetConfigValue_FullMethodName           = "/azdext.ProjectService/SetConfigValue"
+	ProjectService_UnsetConfig_FullMethodName              = "/azdext.ProjectService/UnsetConfig"
+	ProjectService_GetServiceConfigSection_FullMethodName  = "/azdext.ProjectService/GetServiceConfigSection"
+	ProjectService_GetServiceConfigValue_FullMethodName    = "/azdext.ProjectService/GetServiceConfigValue"
+	ProjectService_SetServiceConfigSection_FullMethodName  = "/azdext.ProjectService/SetServiceConfigSection"
+	ProjectService_SetServiceConfigValue_FullMethodName    = "/azdext.ProjectService/SetServiceConfigValue"
+	ProjectService_UnsetServiceConfig_FullMethodName       = "/azdext.ProjectService/UnsetServiceConfig"
 )
 
 // ProjectServiceClient is the client API for ProjectService service.
@@ -46,6 +47,13 @@ const (
 type ProjectServiceClient interface {
 	// Gets the current project.
 	Get(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*GetProjectResponse, error)
+	// GetServiceTargetResource resolves the target Azure resource for a service.
+	// This uses azd's standard resource discovery logic which:
+	// - Looks up resources by azd-service-name tag
+	// - Falls back to explicit resourceName from configuration
+	// - Resolves the resource group name from configuration or environment
+	// The returned TargetResource includes subscription, resource group, resource name, and resource type.
+	GetServiceTargetResource(ctx context.Context, in *GetServiceTargetResourceRequest, opts ...grpc.CallOption) (*GetServiceTargetResourceResponse, error)
 	// AddService adds a new service to the project.
 	AddService(ctx context.Context, in *AddServiceRequest, opts ...grpc.CallOption) (*EmptyResponse, error)
 	// GetResolvedServices gets the resolved list of services after processing any importers (e.g., Aspire projects).
@@ -87,6 +95,16 @@ func (c *projectServiceClient) Get(ctx context.Context, in *EmptyRequest, opts .
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetProjectResponse)
 	err := c.cc.Invoke(ctx, ProjectService_Get_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *projectServiceClient) GetServiceTargetResource(ctx context.Context, in *GetServiceTargetResourceRequest, opts ...grpc.CallOption) (*GetServiceTargetResourceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetServiceTargetResourceResponse)
+	err := c.cc.Invoke(ctx, ProjectService_GetServiceTargetResource_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -231,6 +249,13 @@ func (c *projectServiceClient) UnsetServiceConfig(ctx context.Context, in *Unset
 type ProjectServiceServer interface {
 	// Gets the current project.
 	Get(context.Context, *EmptyRequest) (*GetProjectResponse, error)
+	// GetServiceTargetResource resolves the target Azure resource for a service.
+	// This uses azd's standard resource discovery logic which:
+	// - Looks up resources by azd-service-name tag
+	// - Falls back to explicit resourceName from configuration
+	// - Resolves the resource group name from configuration or environment
+	// The returned TargetResource includes subscription, resource group, resource name, and resource type.
+	GetServiceTargetResource(context.Context, *GetServiceTargetResourceRequest) (*GetServiceTargetResourceResponse, error)
 	// AddService adds a new service to the project.
 	AddService(context.Context, *AddServiceRequest) (*EmptyResponse, error)
 	// GetResolvedServices gets the resolved list of services after processing any importers (e.g., Aspire projects).
@@ -270,6 +295,9 @@ type UnimplementedProjectServiceServer struct{}
 
 func (UnimplementedProjectServiceServer) Get(context.Context, *EmptyRequest) (*GetProjectResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Get not implemented")
+}
+func (UnimplementedProjectServiceServer) GetServiceTargetResource(context.Context, *GetServiceTargetResourceRequest) (*GetServiceTargetResourceResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetServiceTargetResource not implemented")
 }
 func (UnimplementedProjectServiceServer) AddService(context.Context, *AddServiceRequest) (*EmptyResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AddService not implemented")
@@ -345,6 +373,24 @@ func _ProjectService_Get_Handler(srv interface{}, ctx context.Context, dec func(
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ProjectServiceServer).Get(ctx, req.(*EmptyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ProjectService_GetServiceTargetResource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetServiceTargetResourceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProjectServiceServer).GetServiceTargetResource(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ProjectService_GetServiceTargetResource_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProjectServiceServer).GetServiceTargetResource(ctx, req.(*GetServiceTargetResourceRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -593,6 +639,10 @@ var ProjectService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Get",
 			Handler:    _ProjectService_Get_Handler,
+		},
+		{
+			MethodName: "GetServiceTargetResource",
+			Handler:    _ProjectService_GetServiceTargetResource_Handler,
 		},
 		{
 			MethodName: "AddService",

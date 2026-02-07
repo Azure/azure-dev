@@ -200,3 +200,39 @@ func TestApplyQuery_DocumentationHintInError(t *testing.T) {
 		})
 	}
 }
+
+func TestJsonFormatter_QueryFilter(t *testing.T) {
+	t.Run("NoQuery", func(t *testing.T) {
+		f := &JsonFormatter{}
+		data := map[string]interface{}{"name": "test"}
+		result, err := f.QueryFilter(data)
+		require.NoError(t, err)
+		require.Equal(t, data, result)
+	})
+
+	t.Run("WithQuery", func(t *testing.T) {
+		f := &JsonFormatter{Query: "data.message"}
+		data := map[string]interface{}{
+			"type": "consoleMessage",
+			"data": map[string]interface{}{
+				"message": "hello world",
+			},
+		}
+		result, err := f.QueryFilter(data)
+		require.NoError(t, err)
+		require.Equal(t, "hello world", result)
+	})
+
+	t.Run("InvalidQuery", func(t *testing.T) {
+		f := &JsonFormatter{Query: "[invalid"}
+		data := map[string]interface{}{"name": "test"}
+		_, err := f.QueryFilter(data)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "jmespath.org")
+	})
+}
+
+func TestQueryable_Interface(t *testing.T) {
+	// Verify JsonFormatter implements Queryable
+	var _ Queryable = (*JsonFormatter)(nil)
+}

@@ -7,15 +7,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -82,99 +80,33 @@ func autoGenerate(parameter string, azdMetadata azure.AzdMetadata) (string, erro
 	return genValue, nil
 }
 
-// locationsWithQuotaFor checks which locations have available quota for a specified list of SKU.
-// It concurrently queries the Azure API for usage data in each location and filters the results
-// based on the quota and capacity requirements.
+// locationsWithQuotaFor finds locations that have sufficient quota for the given usage requirements.
 //
-// Parameters:
-//   - ctx: The context for controlling cancellation and deadlines.
-//   - subId: The subscription ID to query against.
-//   - locations: A list of Azure locations to check for quota availability.
-//   - quotaFor: list of SKU name and optional capacity (comma-separated) to check for. Example: "OpenAI.S0.AccountCount, 2"
-//     or ["OpenAI.S1.SkuDescription, 1", "OpenAI.S0.AccountCount, 2"]
-//
-// Returns:
-//   - A slice of location strings that have the required quota and capacity available.
-//   - An error if any issues occur during the process or if no locations meet the criteria.
-//
-// The function first queries the Azure API for usage data in each location concurrently.
-// It then filters the results based on the specified list of SKU name and capacity requirements.
-// If no locations meet the criteria, it returns an error with details about the maximum available capacity found.
+// The quotaFor parameter uses the Bicep metadata format: "UsageName" or "UsageName, Capacity".
+// An implicit requirement for "OpenAI.S0.AccountCount" with capacity 2 is always included.
 func (a *BicepProvider) locationsWithQuotaFor(
 	ctx context.Context, subId string, locations []string, quotaFor []string) ([]string, error) {
-	var sharedResults sync.Map
-	var wg sync.WaitGroup
-
-	azureAiServicesLocations, err := a.azapi.GetResourceSkuLocations(
-		ctx, subId, "AIServices", "S0", "Standard", "accounts")
-	if err != nil {
-		return nil, fmt.Errorf("getting Azure AI Services locations: %w", err)
+	// Always require minimum S0 account quota
+	requirements := []ai.QuotaRequirement{
+		{UsageName: "OpenAI.S0.AccountCount", MinCapacity: 2},
 	}
 
-	if locations == nil {
-		// If no locations are provided, use the Azure AI Services locations
-		locations = azureAiServicesLocations
-	}
-
-	for _, location := range locations {
-		if !slices.Contains(azureAiServicesLocations, location) {
-			// Skip locations that are not in the list of Azure AI Services locations
-			continue
+	for _, definedUsageName := range quotaFor {
+		usageDetails, err := usageNameDetailsFromString(definedUsageName)
+		if err != nil {
+			return nil, fmt.Errorf("parsing quota '%s': %w", definedUsageName, err)
 		}
-		wg.Add(1)
-		go func(location string) {
-			defer wg.Done()
-			results, err := a.azapi.GetAiUsages(ctx, subId, location)
-			if err != nil {
-				// log the error but don't return it
-				log.Println("error getting usage for location", location, ":", err)
-				return
-			}
-			sharedResults.Store(location, results)
-		}(location)
-	}
-	wg.Wait()
-
-	var results []string
-	var iterationError error
-	sharedResults.Range(func(location, quotaDetails any) bool {
-		usages := quotaDetails.([]*armcognitiveservices.Usage)
-		hasS0SkuQuota := slices.ContainsFunc(usages, func(q *armcognitiveservices.Usage) bool {
-			// The minimum quota for the S0 SKU in Microsoft.CognitiveServices/accounts is 2 capacity units
-			return *q.Name.Value == "OpenAI.S0.AccountCount" && (*q.Limit-*q.CurrentValue) >= 2
+		requirements = append(requirements, ai.QuotaRequirement{
+			UsageName:   usageDetails.UsageName,
+			MinCapacity: usageDetails.Capacity,
 		})
-		if !hasS0SkuQuota {
-			// If the S0 SKU quota is not available, skip this location
-			return true
-		}
-
-		// Check if all requested quotas can be satisfied in this location
-		for _, definedUsageName := range quotaFor {
-			usageDetails, err := usageNameDetailsFromString(definedUsageName)
-			if err != nil {
-				iterationError = fmt.Errorf("parsing quota '%s': %w", definedUsageName, err)
-				return false
-			}
-			hasQuotaForModels := slices.ContainsFunc(usages, func(usage *armcognitiveservices.Usage) bool {
-				hasQuota := *usage.Name.Value == usageDetails.UsageName
-				if !hasQuota {
-					return false
-				}
-				remaining := *usage.Limit - *usage.CurrentValue
-				return *usage.Name.Value == usageDetails.UsageName && remaining >= usageDetails.Capacity
-			})
-			if !hasQuotaForModels {
-				// If the quota for this model is not available, skip this location
-				return true
-			}
-		}
-		// If the quota for this model is available, add the location to the results
-		results = append(results, location.(string))
-		return true
-	})
-	if iterationError != nil {
-		return nil, fmt.Errorf("looking for location with quota: %w", iterationError)
 	}
+
+	results, err := a.aiModelService.ListLocationsWithQuota(ctx, subId, locations, requirements)
+	if err != nil {
+		return nil, fmt.Errorf("getting locations with quota: %w", err)
+	}
+
 	if len(results) == 0 {
 		formattedQuota := make([]string, len(quotaFor))
 		for i, quota := range quotaFor {

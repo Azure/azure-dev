@@ -130,7 +130,7 @@ type ResourceService interface {
 // SubscriptionManager defines the methods that the SubscriptionManager must implement.
 type SubscriptionManager interface {
 	GetSubscriptions(ctx context.Context) ([]account.Subscription, error)
-	ListLocations(ctx context.Context, subscriptionId string) ([]account.Location, error)
+	GetLocations(ctx context.Context, subscriptionId string) ([]account.Location, error)
 }
 
 // PromptServiceInterface defines the methods that the PromptService must implement.
@@ -318,7 +318,7 @@ func (ps *promptService) PromptLocation(
 	if ps.globalOptions.NoPrompt {
 		// Default location always exists (fallback to eastus2), so we can use it
 		// Load locations and find the default
-		locationList, err := ps.subscriptionManager.ListLocations(
+		locationList, err := ps.subscriptionManager.GetLocations(
 			ctx,
 			azureContext.Scope.SubscriptionId,
 		)
@@ -345,7 +345,7 @@ func (ps *promptService) PromptLocation(
 	return PromptCustomResource(ctx, CustomResourceOptions[account.Location]{
 		SelectorOptions: mergedOptions,
 		LoadData: func(ctx context.Context) ([]*account.Location, error) {
-			locationList, err := ps.subscriptionManager.ListLocations(
+			locationList, err := ps.subscriptionManager.GetLocations(
 				ctx,
 				azureContext.Scope.SubscriptionId,
 			)

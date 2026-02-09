@@ -7,6 +7,7 @@ package azdext;
 option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext";
 
 import "models.proto";
+import "ai_model.proto";
 
 service PromptService {
   // PromptSubscription prompts the user to select a subscription.
@@ -35,6 +36,27 @@ service PromptService {
 
   // PromptResourceGroupResource prompts the user to select a resource from a resource group.
   rpc PromptResourceGroupResource(PromptResourceGroupResourceRequest) returns (PromptResourceGroupResourceResponse);
+
+  // PromptAiModel prompts the user to select an AI model scoped by effective location.
+  // Effective location only affects which models are eligible for selection;
+  // the returned model keeps canonical metadata (including full locations).
+  // Effective location is defined by filter.locations.
+  // If filter.locations is empty, models are considered across subscription locations.
+  // Quota requires exactly one effective location (via filter.locations).
+  rpc PromptAiModel(PromptAiModelRequest) returns (PromptAiModelResponse);
+
+  // PromptAiDeployment prompts for version, SKU, and capacity sequentially.
+  // This is the primary interactive primitive for model deployment selection.
+  // Effective location is defined by options.locations.
+  // If options.locations is empty, model catalog is considered across subscription locations.
+  // Quota requires exactly one effective location (via options.locations).
+  rpc PromptAiDeployment(PromptAiDeploymentRequest) returns (PromptAiDeploymentResponse);
+
+  // PromptAiLocationWithQuota prompts for a location filtered by quota requirements.
+  rpc PromptAiLocationWithQuota(PromptAiLocationWithQuotaRequest) returns (PromptAiLocationWithQuotaResponse);
+
+  // PromptAiModelLocationWithQuota prompts for a model location and displays remaining quota.
+  rpc PromptAiModelLocationWithQuota(PromptAiModelLocationWithQuotaRequest) returns (PromptAiModelLocationWithQuotaResponse);
 }
 
 message PromptSubscriptionRequest {
@@ -189,4 +211,81 @@ message PromptResourceSelectOptions {
 
 message PromptResourceGroupOptions {
   PromptResourceSelectOptions select_options = 1;
+}
+
+// --- AI Model Prompt messages ---
+// These messages reference types from ai_model.proto.
+
+message PromptAiModelRequest {
+  // Azure context with scope.subscription_id required.
+  AzureContext azure_context = 1;
+  // Optional model filter criteria.
+  AiModelFilterOptions filter = 2;
+  // Optional select prompt customization (for example, message override).
+  SelectOptions select_options = 3;
+  // Optional quota filter. Requires exactly one effective location.
+  QuotaCheckOptions quota = 4;
+}
+
+message PromptAiModelResponse {
+  // Selected model from the filtered catalog.
+  AiModel model = 1;
+}
+
+message PromptAiDeploymentRequest {
+  // Azure context with scope.subscription_id required.
+  AzureContext azure_context = 1;
+  // Required model name to resolve deployment options for.
+  string model_name = 2;
+  // Optional deployment filters (locations/versions/SKUs/capacity).
+  AiModelDeploymentOptions options = 3;
+  // Optional quota filter. Requires options.locations with exactly one location.
+  QuotaCheckOptions quota = 4;
+  // Skip version prompt and use the default version when available.
+  bool use_default_version = 5;
+  // Skip capacity prompt and use resolved/default capacity.
+  bool use_default_capacity = 6;
+  // Include fine-tune SKUs (usage names ending with "-finetune").
+  bool include_finetune_skus = 7;
+}
+
+message PromptAiDeploymentResponse {
+  // Selected deployment configuration.
+  AiModelDeployment deployment = 1;
+}
+
+message PromptAiLocationWithQuotaRequest {
+  // Azure context with scope.subscription_id required.
+  AzureContext azure_context = 1;
+  // Required quota requirements that each returned location must satisfy.
+  repeated QuotaRequirement requirements = 2;
+  // Optional allow-list for candidate locations.
+  repeated string allowed_locations = 3;
+  // Optional select prompt customization (for example, message override).
+  SelectOptions select_options = 4;
+}
+
+message PromptAiLocationWithQuotaResponse {
+  // Selected location.
+  Location location = 1;
+}
+
+message PromptAiModelLocationWithQuotaRequest {
+  // Azure context with scope.subscription_id required.
+  AzureContext azure_context = 1;
+  // Required model name to evaluate across locations.
+  string model_name = 2;
+  // Optional allow-list for candidate locations.
+  repeated string allowed_locations = 3;
+  // Optional min remaining quota threshold.
+  QuotaCheckOptions quota = 4;
+  // Optional select prompt customization (for example, message override).
+  SelectOptions select_options = 5;
+}
+
+message PromptAiModelLocationWithQuotaResponse {
+  // Selected location.
+  Location location = 1;
+  // Maximum remaining quota at the selected location across model SKUs.
+  double max_remaining_quota = 2;
 }

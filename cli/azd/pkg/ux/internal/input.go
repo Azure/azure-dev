@@ -10,13 +10,41 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 	"unicode"
 
+	surveyterm "github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/eiannone/keyboard"
 )
 
 var ErrCancelled = errors.New("cancelled by user")
+
+// mapSurveyRuneToKey maps rune values from survey's terminal package to keyboard.Key values.
+func mapSurveyRuneToKey(r rune) keyboard.Key {
+	switch r {
+	case surveyterm.KeyArrowUp:
+		return keyboard.KeyArrowUp
+	case surveyterm.KeyArrowDown:
+		return keyboard.KeyArrowDown
+	case surveyterm.KeyArrowLeft:
+		return keyboard.KeyArrowLeft
+	case surveyterm.KeyArrowRight:
+		return keyboard.KeyArrowRight
+	case surveyterm.KeyEnter:
+		return keyboard.KeyEnter
+	case surveyterm.KeyBackspace:
+		return keyboard.KeyBackspace
+	case surveyterm.KeyDelete:
+		return keyboard.KeyBackspace2
+	case surveyterm.KeySpace:
+		return keyboard.KeySpace
+	case surveyterm.KeyInterrupt:
+		return keyboard.KeyCtrlC
+	case surveyterm.KeyEscape:
+		return keyboard.KeyEsc
+	default:
+		return 0
+	}
+}
 
 // Input is a base component for UX components that require user input.
 type Input struct {
@@ -84,28 +112,23 @@ func (i *Input) ReadInput(ctx context.Context, config *InputConfig, handler KeyP
 		signal.Stop(signalChan)
 	}()
 
-	// Open the keyboard - sometimes it fails when a keyboard instance in in the process of closing.
-	tries := 0
-
-	for {
-		if !keyboard.IsStarted(100 * time.Millisecond) {
-			if err := keyboard.Open(); err != nil {
-				tries++
-				continue
-			}
-		}
-
-		log.Printf("Keyboard opened successfully after %d tries\n", tries)
-		break
-	}
+	// Create a RuneReader from survey's terminal package.
+	// This uses hardcoded ANSI parsing instead of terminfo, which is more reliable across different terminals.
+	stdio := surveyterm.Stdio{In: os.Stdin, Out: os.Stdout, Err: os.Stderr}
+	rr := surveyterm.NewRuneReader(stdio)
 
 	// Start listening for key presses
 	// We need to do this on a separate goroutine to avoid blocking the main thread.
 	// To ensure we can still handle Ctrl+C or context cancellations.
 	go func() {
+		// Set terminal to raw mode for reading
+		if err := rr.SetTermMode(); err != nil {
+			errChan <- err
+			return
+		}
 		defer func() {
-			if err := keyboard.Close(); err != nil {
-				log.Printf("Error closing keyboard: %v\n", err)
+			if err := rr.RestoreTermMode(); err != nil {
+				log.Printf("Error restoring terminal mode: %v\n", err)
 			}
 		}()
 
@@ -114,11 +137,15 @@ func (i *Input) ReadInput(ctx context.Context, config *InputConfig, handler KeyP
 			case <-ctx.Done():
 				return
 			case <-receiveChan:
-				char, key, err := keyboard.GetKey()
+				// Read the next rune from the terminal
+				char, _, err := rr.ReadRune()
 				if err != nil {
 					errChan <- err
 					return
 				}
+
+				// Map the rune to a keyboard.Key
+				key := mapSurveyRuneToKey(char)
 
 				eventArgs := KeyPressEventArgs{
 					Char: char,

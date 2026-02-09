@@ -13,38 +13,9 @@ import (
 	"unicode"
 
 	surveyterm "github.com/AlecAivazis/survey/v2/terminal"
-	"github.com/eiannone/keyboard"
 )
 
 var ErrCancelled = errors.New("cancelled by user")
-
-// mapSurveyRuneToKey maps rune values from survey's terminal package to keyboard.Key values.
-func mapSurveyRuneToKey(r rune) keyboard.Key {
-	switch r {
-	case surveyterm.KeyArrowUp:
-		return keyboard.KeyArrowUp
-	case surveyterm.KeyArrowDown:
-		return keyboard.KeyArrowDown
-	case surveyterm.KeyArrowLeft:
-		return keyboard.KeyArrowLeft
-	case surveyterm.KeyArrowRight:
-		return keyboard.KeyArrowRight
-	case surveyterm.KeyEnter:
-		return keyboard.KeyEnter
-	case surveyterm.KeyBackspace:
-		return keyboard.KeyBackspace
-	case surveyterm.KeyDelete:
-		return keyboard.KeyBackspace2
-	case surveyterm.KeySpace:
-		return keyboard.KeySpace
-	case surveyterm.KeyInterrupt:
-		return keyboard.KeyCtrlC
-	case surveyterm.KeyEscape:
-		return keyboard.KeyEsc
-	default:
-		return 0
-	}
-}
 
 // Input is a base component for UX components that require user input.
 type Input struct {
@@ -55,7 +26,7 @@ type Input struct {
 type KeyPressEventArgs struct {
 	Value     string
 	Char      rune
-	Key       keyboard.Key
+	Key       rune
 	Hint      bool
 	Cancelled bool
 }
@@ -144,25 +115,22 @@ func (i *Input) ReadInput(ctx context.Context, config *InputConfig, handler KeyP
 					return
 				}
 
-				// Map the rune to a keyboard.Key
-				key := mapSurveyRuneToKey(char)
-
 				eventArgs := KeyPressEventArgs{
 					Char: char,
-					Key:  key,
+					Key:  char,
 				}
 
-				if len(i.value) > 0 && (key == keyboard.KeyBackspace || key == keyboard.KeyBackspace2) {
+				if len(i.value) > 0 && (char == surveyterm.KeyBackspace || char == surveyterm.KeyDelete) {
 					i.value = i.value[:len(i.value)-1]
 				} else if !config.IgnoreHintKeys && char == '?' {
 					eventArgs.Hint = true
-				} else if !config.IgnoreHintKeys && key == keyboard.KeyEsc {
+				} else if !config.IgnoreHintKeys && char == surveyterm.KeyEscape {
 					eventArgs.Hint = false
-				} else if key == keyboard.KeySpace {
+				} else if char == surveyterm.KeySpace {
 					i.value = append(i.value, ' ')
 				} else if unicode.IsPrint(char) {
 					i.value = append(i.value, char)
-				} else if key == keyboard.KeyCtrlC || key == keyboard.KeyCtrlX || key == keyboard.KeyEsc {
+				} else if char == surveyterm.KeyInterrupt || char == surveyterm.KeyEscape {
 					eventArgs.Cancelled = true
 					cancel()
 					break

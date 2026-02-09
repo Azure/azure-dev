@@ -83,8 +83,6 @@ func (i *Input) ReadInput(ctx context.Context, config *InputConfig, handler KeyP
 		signal.Stop(signalChan)
 	}()
 
-	// Create a RuneReader from survey's terminal package.
-	// This uses hardcoded ANSI parsing instead of terminfo, which is more reliable across different terminals.
 	stdio := surveyterm.Stdio{In: os.Stdin, Out: os.Stdout, Err: os.Stderr}
 	rr := surveyterm.NewRuneReader(stdio)
 
@@ -93,6 +91,8 @@ func (i *Input) ReadInput(ctx context.Context, config *InputConfig, handler KeyP
 	// To ensure we can still handle Ctrl+C or context cancellations.
 	go func() {
 		// Set terminal to raw mode for reading
+		// This allows us to read all user inputs without the terminal processing them
+		// (e.g., handling backspace, Ctrl+C, etc.).
 		if err := rr.SetTermMode(); err != nil {
 			errChan <- err
 			return
@@ -134,6 +134,8 @@ func (i *Input) ReadInput(ctx context.Context, config *InputConfig, handler KeyP
 					eventArgs.Cancelled = true
 					cancel()
 					break
+				} else if char == '\n' { // Handle both '\r' and '\n' as Enter key
+					eventArgs.Key = surveyterm.KeyEnter
 				}
 
 				eventArgs.Value = string(i.value)

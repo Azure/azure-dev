@@ -1224,7 +1224,7 @@ func isFinetuneUsageName(usageName string) bool {
 }
 
 func validateDeploymentCapacity(value string, sku ai.AiModelSku) (int32, error) {
-	parsed, err := strconv.Atoi(strings.TrimSpace(value))
+	parsed, err := strconv.ParseInt(strings.TrimSpace(value), 10, 32)
 	if err != nil {
 		return 0, fmt.Errorf("capacity must be a whole number")
 	}

@@ -651,7 +651,12 @@ func (t *TerraformProvider) dataDirPath() string {
 // in comments), it's sufficient for the common case of detecting actual backend configurations.
 func (t *TerraformProvider) isRemoteBackendConfig() (bool, error) {
 	modulePath := t.modulePath()
-	infraDir, _ := os.Open(modulePath)
+	infraDir, err := os.Open(modulePath)
+	if err != nil {
+		return false, fmt.Errorf("opening module directory: %w", err)
+	}
+	defer infraDir.Close()
+
 	files, err := infraDir.ReadDir(0)
 
 	if err != nil {

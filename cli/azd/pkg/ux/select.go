@@ -12,11 +12,10 @@ import (
 	"strconv"
 	"strings"
 
+	"dario.cat/mergo"
+	surveyterm "github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux/internal"
-
-	"dario.cat/mergo"
-	"github.com/eiannone/keyboard"
 	"github.com/fatih/color"
 )
 
@@ -173,16 +172,16 @@ func (p *Select) Ask(ctx context.Context) (*int, error) {
 
 		optionCount := len(p.filteredChoices)
 		if optionCount > 0 {
-			if args.Key == keyboard.KeyArrowUp {
+			if args.Key == surveyterm.KeyArrowUp {
 				p.currentIndex = Ptr(((*p.currentIndex - 1 + optionCount) % optionCount))
-			} else if args.Key == keyboard.KeyArrowDown {
+			} else if args.Key == surveyterm.KeyArrowDown {
 				p.currentIndex = Ptr(((*p.currentIndex + 1) % optionCount))
 			}
 
 			p.selectedChoice = p.filteredChoices[*p.currentIndex]
 		}
 
-		if args.Key == keyboard.KeyEnter && p.currentIndex != nil {
+		if args.Key == surveyterm.KeyEnter && p.currentIndex != nil {
 			p.complete = true
 		}
 

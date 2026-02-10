@@ -1588,7 +1588,9 @@ type PromptAiModelRequest struct {
 	Filter *AiModelFilterOptions `protobuf:"bytes,2,opt,name=filter,proto3" json:"filter,omitempty"`
 	// Optional select prompt customization (for example, message override).
 	SelectOptions *SelectOptions `protobuf:"bytes,3,opt,name=select_options,json=selectOptions,proto3" json:"select_options,omitempty"`
-	// Optional quota filter. Requires exactly one effective location.
+	// Optional quota filter.
+	// Quota is evaluated using effective locations from filter.locations.
+	// With multiple locations, a model is kept if any location has sufficient quota.
 	Quota         *QuotaCheckOptions `protobuf:"bytes,4,opt,name=quota,proto3" json:"quota,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

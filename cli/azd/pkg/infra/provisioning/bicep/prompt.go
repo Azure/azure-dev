@@ -86,6 +86,10 @@ func autoGenerate(parameter string, azdMetadata azure.AzdMetadata) (string, erro
 // An implicit requirement for "OpenAI.S0.AccountCount" with capacity 2 is always included.
 func (a *BicepProvider) locationsWithQuotaFor(
 	ctx context.Context, subId string, locations []string, quotaFor []string) ([]string, error) {
+	if a.aiModelService == nil {
+		return nil, fmt.Errorf("AI model service is not configured")
+	}
+
 	// Always require minimum S0 account quota
 	requirements := []ai.QuotaRequirement{
 		{UsageName: "OpenAI.S0.AccountCount", MinCapacity: 2},

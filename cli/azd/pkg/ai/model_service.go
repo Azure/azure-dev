@@ -5,6 +5,7 @@ package ai
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -518,7 +519,9 @@ func (s *AiModelService) fetchModelsForLocations(
 ) (map[string][]*armcognitiveservices.Model, error) {
 	result := make(map[string][]*armcognitiveservices.Model)
 	var mu sync.Mutex
+	var errMu sync.Mutex
 	var wg sync.WaitGroup
+	errs := []error{}
 
 	for _, loc := range locations {
 		// Check cache first
@@ -538,6 +541,9 @@ func (s *AiModelService) fetchModelsForLocations(
 			defer wg.Done()
 			models, err := s.azureClient.GetAiModels(ctx, subscriptionId, loc)
 			if err != nil {
+				errMu.Lock()
+				errs = append(errs, fmt.Errorf("%s: %w", loc, err))
+				errMu.Unlock()
 				return
 			}
 
@@ -553,6 +559,10 @@ func (s *AiModelService) fetchModelsForLocations(
 		}(loc)
 	}
 	wg.Wait()
+
+	if len(result) == 0 && len(errs) > 0 {
+		return nil, fmt.Errorf("fetching model catalogs: %w", errors.Join(errs...))
+	}
 
 	return result, nil
 }
@@ -723,10 +733,10 @@ func convertSku(sku *armcognitiveservices.ModelSKU) AiModelSku {
 func ResolveCapacity(sku AiModelSku, preferred *int32) int32 {
 	if preferred != nil {
 		cap := *preferred
-		if cap >= sku.MinCapacity && cap <= sku.MaxCapacity {
-			if sku.CapacityStep > 0 && cap%sku.CapacityStep != 0 {
-				return sku.DefaultCapacity
-			}
+		if cap > 0 &&
+			(sku.MinCapacity <= 0 || cap >= sku.MinCapacity) &&
+			(sku.MaxCapacity <= 0 || cap <= sku.MaxCapacity) &&
+			(sku.CapacityStep <= 0 || cap%sku.CapacityStep == 0) {
 			return cap
 		}
 	}

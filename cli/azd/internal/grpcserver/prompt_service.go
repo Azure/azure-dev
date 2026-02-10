@@ -597,7 +597,12 @@ func (s *promptService) PromptAiModel(
 	}
 
 	if s.globalOptions.NoPrompt {
-		return nil, fmt.Errorf("cannot prompt for model selection in non-interactive mode")
+		return nil, aiStatusError(
+			codes.FailedPrecondition,
+			azdext.AiErrorReasonInteractiveRequired,
+			"cannot prompt for model selection in non-interactive mode",
+			nil,
+		)
 	}
 
 	release, err := s.acquirePromptLock(ctx)
@@ -1230,6 +1235,9 @@ func validateDeploymentCapacity(value string, sku ai.AiModelSku) (int32, error) 
 	}
 
 	capacity := int32(parsed)
+	if capacity <= 0 {
+		return 0, fmt.Errorf("capacity must be greater than 0")
+	}
 
 	if sku.MinCapacity > 0 && capacity < sku.MinCapacity {
 		return 0, fmt.Errorf("capacity must be at least %d", sku.MinCapacity)

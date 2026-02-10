@@ -374,6 +374,24 @@ const completionSpec: Fig.Spec = {
 												},
 											],
 										},
+										{
+											name: ['--project-endpoint', '-e'],
+											description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+										{
+											name: ['--subscription', '-s'],
+											description: 'Azure subscription ID (enables implicit init if environment not configured)',
+											args: [
+												{
+													name: 'subscription',
+												},
+											],
+										},
 									],
 								},
 								{
@@ -421,11 +439,29 @@ const completionSpec: Fig.Spec = {
 											description: 'Do not wait for deployment to complete',
 										},
 										{
-											name: ['--sku', '-s'],
+											name: ['--project-endpoint', '-e'],
+											description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+										{
+											name: ['--sku', '-k'],
 											description: 'SKU for deployment',
 											args: [
 												{
 													name: 'sku',
+												},
+											],
+										},
+										{
+											name: ['--subscription', '-s'],
+											description: 'Azure subscription ID (enables implicit init if environment not configured)',
+											args: [
+												{
+													name: 'subscription',
 												},
 											],
 										},
@@ -463,6 +499,24 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
+											name: ['--project-endpoint', '-e'],
+											description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+										{
+											name: ['--subscription', '-s'],
+											description: 'Azure subscription ID (enables implicit init if environment not configured)',
+											args: [
+												{
+													name: 'subscription',
+												},
+											],
+										},
+										{
 											name: ['--top', '-t'],
 											description: 'Number of jobs to return',
 											args: [
@@ -486,6 +540,24 @@ const completionSpec: Fig.Spec = {
 												},
 											],
 										},
+										{
+											name: ['--project-endpoint', '-e'],
+											description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+										{
+											name: ['--subscription', '-s'],
+											description: 'Azure subscription ID (enables implicit init if environment not configured)',
+											args: [
+												{
+													name: 'subscription',
+												},
+											],
+										},
 									],
 								},
 								{
@@ -498,6 +570,24 @@ const completionSpec: Fig.Spec = {
 											args: [
 												{
 													name: 'id',
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint', '-e'],
+											description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+										{
+											name: ['--subscription', '-s'],
+											description: 'Azure subscription ID (enables implicit init if environment not configured)',
+											args: [
+												{
+													name: 'subscription',
 												},
 											],
 										},
@@ -529,6 +619,24 @@ const completionSpec: Fig.Spec = {
 												},
 											],
 										},
+										{
+											name: ['--project-endpoint', '-e'],
+											description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+										{
+											name: ['--subscription', '-s'],
+											description: 'Azure subscription ID (enables implicit init if environment not configured)',
+											args: [
+												{
+													name: 'subscription',
+												},
+											],
+										},
 									],
 								},
 								{
@@ -554,6 +662,15 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
+											name: ['--project-endpoint', '-e'],
+											description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+										{
 											name: ['--seed', '-r'],
 											description: 'Random seed for reproducibility of the job. If a seed is not specified, one will be generated for you. Overrides config file.',
 											args: [
@@ -563,7 +680,16 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--suffix', '-s'],
+											name: ['--subscription', '-s'],
+											description: 'Azure subscription ID (enables implicit init if environment not configured)',
+											args: [
+												{
+													name: 'subscription',
+												},
+											],
+										},
+										{
+											name: ['--suffix', '-x'],
 											description: 'An optional string of up to 64 characters that will be added to your fine-tuned model name. Overrides config file.',
 											args: [
 												{
@@ -588,6 +714,26 @@ const completionSpec: Fig.Spec = {
 													name: 'validation-file',
 												},
 											],
+										},
+									],
+								},
+							],
+							options: [
+								{
+									name: ['--project-endpoint', '-e'],
+									description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--subscription', '-s'],
+									description: 'Azure subscription ID (enables implicit init if environment not configured)',
+									args: [
+										{
+											name: 'subscription',
 										},
 									],
 								},

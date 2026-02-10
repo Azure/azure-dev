@@ -64,7 +64,7 @@ func newOperationSubmitCommand() *cobra.Command {
 	var seed int64
 	cmd := &cobra.Command{
 		Use:   "submit",
-		Short: "submit fine tuning job",
+		Short: "Submit fine-tuning job.",
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			return validateSubmitFlags(filename, model, trainingFile)
 		},
@@ -678,7 +678,7 @@ func newOperationDeployModelCommand() *cobra.Command {
 	cmd.Flags().StringVarP(&jobID, "job-id", "i", "", "Fine-tuning job ID (required)")
 	cmd.Flags().StringVarP(&deploymentName, "deployment-name", "d", "", "Deployment name (required)")
 	cmd.Flags().StringVarP(&modelFormat, "model-format", "m", "OpenAI", "Model format")
-	cmd.Flags().StringVarP(&sku, "sku", "s", "GlobalStandard", "SKU for deployment")
+	cmd.Flags().StringVarP(&sku, "sku", "k", "GlobalStandard", "SKU for deployment")
 	cmd.Flags().StringVarP(&version, "version", "v", "1", "Model version")
 	cmd.Flags().Int32VarP(&capacity, "capacity", "c", 1, "Capacity units")
 	cmd.Flags().BoolVar(&noWait, "no-wait", false, "Do not wait for deployment to complete")

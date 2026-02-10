@@ -57,7 +57,7 @@ func newReleaseCommand() *cobra.Command {
 	releaseCmd.Flags().StringVarP(
 		&flags.repository,
 		"repo", "r", flags.repository,
-		"Github repository to create the release in (e.g. owner/repo)",
+		"GitHub repository to create the release in (e.g. owner/repo)",
 	)
 	releaseCmd.Flags().StringSliceVar(
 		&flags.artifacts,

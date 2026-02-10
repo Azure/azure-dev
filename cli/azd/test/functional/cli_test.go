@@ -214,6 +214,9 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	cli.WorkingDirectory = dir
 	cli.Env = append(cli.Env, os.Environ()...)
 	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+	// Set test env vars for array and object parameters
+	cli.Env = append(cli.Env, "MY_ARRAY=[\"item1\",\"item2\"]")
+	cli.Env = append(cli.Env, "MY_OBJECT={\"key\":\"value\"}")
 
 	defer cleanupDeployments(ctx, t, cli, session, envName)
 
@@ -236,6 +239,8 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	require.Regexp(t, `st\S*`, accountName)
 
 	assertEnvValuesStored(t, env)
+	require.Equal(t, "[\"item1\",\"item2\"]", env.Getenv("ARRAY_PARAM"))
+	require.Equal(t, "{\"key\":\"value\"}", env.Getenv("OBJECT_PARAM"))
 
 	if session != nil {
 		session.Variables[recording.SubscriptionIdKey] = env.GetSubscriptionId()

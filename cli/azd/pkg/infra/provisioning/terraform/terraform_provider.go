@@ -646,13 +646,38 @@ func (t *TerraformProvider) dataDirPath() string {
 }
 
 // Check terraform file for remote backend provider
+// Note: This uses simple string matching rather than full HCL parsing for performance and
+// to avoid additional dependencies. While this may have edge cases (e.g., backends mentioned
+// in comments), it's sufficient for the common case of detecting actual backend configurations.
 func (t *TerraformProvider) isRemoteBackendConfig() (bool, error) {
 	modulePath := t.modulePath()
-	infraDir, _ := os.Open(modulePath)
+	infraDir, err := os.Open(modulePath)
+	if err != nil {
+		return false, fmt.Errorf("opening module directory: %w", err)
+	}
+	defer infraDir.Close()
+
 	files, err := infraDir.ReadDir(0)
 
 	if err != nil {
 		return false, fmt.Errorf("reading .tf files contents: %w", err)
+	}
+
+	// List of currently supported remote backend types that should not use the -state flag.
+	// This list includes all standard Terraform backends as of Terraform 1.3+
+	// (deprecated backends like etcd, swift, artifactory, and manta were removed in 1.3)
+	// Reference: https://developer.hashicorp.com/terraform/language/backend
+	remoteBackends := []string{
+		`backend "azurerm"`,    // Azure Resource Manager
+		`backend "remote"`,     // Terraform Cloud (legacy)
+		`backend "s3"`,         // AWS S3
+		`backend "gcs"`,        // Google Cloud Storage
+		`backend "consul"`,     // HashiCorp Consul
+		`backend "cos"`,        // Tencent Cloud Object Storage
+		`backend "http"`,       // HTTP/REST
+		`backend "kubernetes"`, // Kubernetes
+		`backend "oss"`,        // Alibaba Cloud OSS
+		`backend "pg"`,         // PostgreSQL
 	}
 
 	for index := range files {
@@ -663,8 +688,22 @@ func (t *TerraformProvider) isRemoteBackendConfig() (bool, error) {
 				return false, fmt.Errorf("error reading .tf files: %w", err)
 			}
 
-			if found := strings.Contains(string(fileContent), `backend "azurerm"`); found {
-				return true, nil
+			content := string(fileContent)
+
+			// Quick check: if the file doesn't contain "backend" keyword, skip detailed checks
+			if !strings.Contains(content, "backend") {
+				// Still need to check for Terraform Cloud "cloud {}" syntax
+				if strings.Contains(content, "terraform {") && strings.Contains(content, "cloud {") {
+					return true, nil
+				}
+				continue
+			}
+
+			// Check for standard backend blocks
+			for _, backend := range remoteBackends {
+				if strings.Contains(content, backend) {
+					return true, nil
+				}
 			}
 		}
 	}

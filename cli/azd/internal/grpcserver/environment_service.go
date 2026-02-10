@@ -128,12 +128,7 @@ func (s *environmentService) GetValues(
 	ctx context.Context,
 	req *azdext.GetEnvironmentRequest,
 ) (*azdext.KeyValueListResponse, error) {
-	envManager, err := s.lazyEnvManager.GetValue()
-	if err != nil {
-		return nil, err
-	}
-
-	env, err := envManager.Get(ctx, req.Name)
+	env, err := s.resolveEnvironment(ctx, req.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -157,12 +152,7 @@ func (s *environmentService) GetValues(
 
 // GetValue retrieves the value of a specific key in the specified environment.
 func (s *environmentService) GetValue(ctx context.Context, req *azdext.GetEnvRequest) (*azdext.KeyValueResponse, error) {
-	envManager, err := s.lazyEnvManager.GetValue()
-	if err != nil {
-		return nil, err
-	}
-
-	env, err := envManager.Get(ctx, req.EnvName)
+	env, err := s.resolveEnvironment(ctx, req.EnvName)
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +172,7 @@ func (s *environmentService) SetValue(ctx context.Context, req *azdext.SetEnvReq
 		return nil, err
 	}
 
-	env, err := envManager.Get(ctx, req.EnvName)
+	env, err := s.resolveEnvironment(ctx, req.EnvName)
 	if err != nil {
 		return nil, err
 	}
@@ -223,12 +213,26 @@ func (s *environmentService) currentEnvironment(ctx context.Context) (*environme
 	return env, nil
 }
 
+// resolveEnvironment resolves the environment by name if provided, otherwise falls back to the default environment.
+func (s *environmentService) resolveEnvironment(ctx context.Context, envName string) (*environment.Environment, error) {
+	if envName == "" {
+		return s.currentEnvironment(ctx)
+	}
+
+	envManager, err := s.lazyEnvManager.GetValue()
+	if err != nil {
+		return nil, err
+	}
+
+	return envManager.Get(ctx, envName)
+}
+
 // GetConfig retrieves a config value by path.
 func (s *environmentService) GetConfig(
 	ctx context.Context,
 	req *azdext.GetConfigRequest,
 ) (*azdext.GetConfigResponse, error) {
-	env, err := s.currentEnvironment(ctx)
+	env, err := s.resolveEnvironment(ctx, req.EnvName)
 	if err != nil {
 		return nil, err
 	}
@@ -256,7 +260,7 @@ func (s *environmentService) GetConfigString(
 	ctx context.Context,
 	req *azdext.GetConfigStringRequest,
 ) (*azdext.GetConfigStringResponse, error) {
-	env, err := s.currentEnvironment(ctx)
+	env, err := s.resolveEnvironment(ctx, req.EnvName)
 	if err != nil {
 		return nil, err
 	}
@@ -274,7 +278,7 @@ func (s *environmentService) GetConfigSection(
 	ctx context.Context,
 	req *azdext.GetConfigSectionRequest,
 ) (*azdext.GetConfigSectionResponse, error) {
-	env, err := s.currentEnvironment(ctx)
+	env, err := s.resolveEnvironment(ctx, req.EnvName)
 	if err != nil {
 		return nil, err
 	}
@@ -309,7 +313,7 @@ func (s *environmentService) SetConfig(ctx context.Context, req *azdext.SetConfi
 		return nil, err
 	}
 
-	env, err := s.currentEnvironment(ctx)
+	env, err := s.resolveEnvironment(ctx, req.EnvName)
 	if err != nil {
 		return nil, err
 	}
@@ -340,7 +344,7 @@ func (s *environmentService) UnsetConfig(
 		return nil, err
 	}
 
-	env, err := s.currentEnvironment(ctx)
+	env, err := s.resolveEnvironment(ctx, req.EnvName)
 	if err != nil {
 		return nil, err
 	}

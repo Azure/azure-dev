@@ -154,7 +154,7 @@ func (ra *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		return nil, err
 	}
 
-	stableServices, err := ra.importManager.ServiceStable(ctx, ra.projectConfig)
+	stableServices, err := ra.importManager.ServiceStableFiltered(ctx, ra.projectConfig, targetServiceName, ra.env.Getenv)
 	if err != nil {
 		return nil, err
 	}
@@ -169,14 +169,6 @@ func (ra *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		for _, svc := range stableServices {
 			stepMessage := fmt.Sprintf("Restoring service %s", svc.Name)
 			ra.console.ShowSpinner(ctx, stepMessage, input.Step)
-
-			// Skip this service if both cases are true:
-			// 1. The user specified a service name
-			// 2. This service is not the one the user specified
-			if targetServiceName != "" && targetServiceName != svc.Name {
-				ra.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
-				continue
-			}
 
 			// Initialize service context for restore operation
 			serviceContext := &project.ServiceContext{}

@@ -246,6 +246,9 @@ func (a *InitAction) Run(ctx context.Context) error {
 		}
 
 		if localManifest != nil {
+			// Enable no-prompt mode since we've already collected all the input we need
+			a.flags.NoPrompt = true
+
 			// Write the manifest to a file in the src directory
 			manifestPath, err := a.writeManifestToSrcDir(localManifest, a.flags.src)
 			if err != nil {
@@ -504,7 +507,8 @@ func ensureAzureContext(
 
 	if azureContext.Scope.SubscriptionId == "" {
 		fmt.Print()
-		fmt.Println("It looks like we first need to connect to your Azure subscription.")
+		fmt.Println("We need to connect to your Azure subscription. This will be the subscription which contains your ")
+		fmt.Println("Foundry project and where your resources will be provisioned.")
 
 		subscriptionResponse, err := azdClient.Prompt().PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{})
 		if err != nil {
@@ -538,7 +542,7 @@ func ensureAzureContext(
 	if azureContext.Scope.Location == "" {
 		fmt.Println()
 		fmt.Println(
-			"Next, we need to select a default Azure location that will be used as the target for your infrastructure.",
+			"Next, we need to select a default Azure location that will be used as the target for your resources.",
 		)
 
 		locationResponse, err := azdClient.Prompt().PromptLocation(ctx, &azdext.PromptLocationRequest{
@@ -908,51 +912,73 @@ func (a *InitAction) isRegistryUrl(manifestPointer string) (bool, *RegistryManif
 // createManifestFromLocalAgent creates an AgentManifest for local agent code
 // This is used when no manifest pointer is provided and we need to scaffold a new agent
 func (a *InitAction) createManifestFromLocalAgent(ctx context.Context) (*agent_yaml.AgentManifest, error) {
-	// Prompt user for agent name
-	promptResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-		Options: &azdext.PromptOptions{
-			Message:      "Enter a name for your agent:",
-			DefaultValue: "my-agent",
-		},
-	})
+	// Use the current working directory name as the agent name, with punctuation removed and lowercased
+	cwd, err := os.Getwd()
 	if err != nil {
-		return nil, fmt.Errorf("failed to prompt for agent name: %w", err)
+		return nil, fmt.Errorf("failed to get current working directory: %w", err)
 	}
-	agentName := promptResp.Value
+	dirName := filepath.Base(cwd)
+	agentName := toCleanName(dirName)
 
 	// TODO: Prompt user for agent kind
 	agentKind := agent_yaml.AgentKindHosted
 
-	// Prompt user to select a model from the catalog
-	modelCatalog, err := a.modelCatalogService.ListAllModels(ctx, a.azureContext.Scope.SubscriptionId, a.azureContext.Scope.Location)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list models from catalog: %w", err)
-	}
-
-	// Build model choices from the catalog
-	var modelChoices []*azdext.SelectChoice
-	var modelNames []string
-	for modelName := range modelCatalog {
-		modelNames = append(modelNames, modelName)
-	}
-	slices.Sort(modelNames)
-	for _, modelName := range modelNames {
-		modelChoices = append(modelChoices, &azdext.SelectChoice{
-			Label: modelName,
-			Value: modelName,
-		})
-	}
-
-	modelResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-		Options: &azdext.SelectOptions{
-			Message: "Select a model for your agent:",
-			Choices: modelChoices,
+	// Ask if user wants to select a model
+	var selectedModel string
+	wantsModel, err := a.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+		Options: &azdext.ConfirmOptions{
+			Message:      "Would you like to select a model for your agent?",
+			DefaultValue: to.Ptr(true),
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to prompt for model selection: %w", err)
+		return nil, fmt.Errorf("failed to prompt for model selection choice: %w", err)
 	}
-	selectedModel := modelNames[*modelResp.Value]
+
+	if wantsModel.Value != nil && *wantsModel.Value {
+		// Prompt user to select a model from the catalog
+		modelCatalog, err := a.modelCatalogService.ListAllModels(ctx, a.azureContext.Scope.SubscriptionId, a.azureContext.Scope.Location)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list models from catalog: %w", err)
+		}
+
+		// Build model choices from the catalog
+		var modelChoices []*azdext.SelectChoice
+		var modelNames []string
+		for modelName := range modelCatalog {
+			modelNames = append(modelNames, modelName)
+		}
+		slices.Sort(modelNames)
+		for _, modelName := range modelNames {
+			modelChoices = append(modelChoices, &azdext.SelectChoice{
+				Label: modelName,
+				Value: modelName,
+			})
+		}
+
+		modelResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+			Options: &azdext.SelectOptions{
+				Message: "Select a model for your agent:",
+				Choices: modelChoices,
+			},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to prompt for model selection: %w", err)
+		}
+		selectedModel = modelNames[*modelResp.Value]
+	}
+
+	// Build resources list
+	var resources []any
+	if selectedModel != "" {
+		resources = append(resources, agent_yaml.ModelResource{
+			Resource: agent_yaml.Resource{
+				Name: selectedModel,
+				Kind: agent_yaml.ResourceKindModel,
+			},
+			Id: selectedModel,
+		})
+	}
 
 	// Create a minimal AgentManifest with the Template as a ContainerAgent
 	manifest := &agent_yaml.AgentManifest{
@@ -969,18 +995,24 @@ func (a *InitAction) createManifestFromLocalAgent(ctx context.Context) (*agent_y
 				},
 			},
 		},
-		Resources: []any{
-			agent_yaml.ModelResource{
-				Resource: agent_yaml.Resource{
-					Name: selectedModel,
-					Kind: agent_yaml.ResourceKindModel,
-				},
-				Id: selectedModel,
-			},
-		},
+		Resources: resources,
 	}
 
 	return manifest, nil
+}
+
+// toCleanName cleans a name by keeping alphanumeric and dashes, replacing underscores/spaces with dashes, and lowercasing
+func toCleanName(s string) string {
+	// Keep alphanumeric characters and dashes; replace underscores and spaces with dashes
+	var result strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' {
+			result.WriteRune(r)
+		} else if r == '_' || r == ' ' {
+			result.WriteRune('-')
+		}
+	}
+	return strings.ToLower(result.String())
 }
 
 // writeManifestToSrcDir writes an AgentManifest to a YAML file in the src directory and returns the path

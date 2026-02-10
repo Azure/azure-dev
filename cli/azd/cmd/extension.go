@@ -1003,7 +1003,7 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 				a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 				return nil, fmt.Errorf(
 					"no compatible version of %s found for azd %s. "+
-						"Upgrade azd to upgrade this extension",
+						"Upgrade azd to continue",
 					extensionId, azdVersion.String(),
 				)
 			}

@@ -25,57 +25,69 @@ func Test_VersionIsCompatible(t *testing.T) {
 		},
 		{
 			name:             "azd version meets minimum",
-			minAzdVersion:    "1.24.0",
+			minAzdVersion:    ">= 1.24.0",
 			azdVersion:       "1.24.0",
 			expectCompatible: true,
 		},
 		{
 			name:             "azd version exceeds minimum",
-			minAzdVersion:    "1.24.0",
+			minAzdVersion:    ">= 1.24.0",
 			azdVersion:       "1.25.0",
 			expectCompatible: true,
 		},
 		{
 			name:             "azd version below minimum",
-			minAzdVersion:    "1.24.0",
+			minAzdVersion:    ">= 1.24.0",
 			azdVersion:       "1.23.0",
 			expectCompatible: false,
 		},
 		{
-			name:             "invalid min version is compatible",
+			name:             "invalid constraint is compatible",
 			minAzdVersion:    "invalid",
 			azdVersion:       "1.0.0",
 			expectCompatible: true,
 		},
 		{
-			name:             "azd prerelease below minimum",
-			minAzdVersion:    "1.24.0",
-			azdVersion:       "1.24.0-pr.123",
-			expectCompatible: false,
-		},
-		{
 			name:             "major version mismatch",
-			minAzdVersion:    "2.0.0",
+			minAzdVersion:    ">= 2.0.0",
 			azdVersion:       "1.99.99",
 			expectCompatible: false,
 		},
 		{
-			name:             "PR build with stripped prerelease meets minimum",
-			minAzdVersion:    "1.24.0",
-			azdVersion:       "1.24.0",
+			name:             "caret constraint compatible",
+			minAzdVersion:    "^1.24.0",
+			azdVersion:       "1.25.0",
 			expectCompatible: true,
 		},
 		{
-			name:             "daily build base version below minimum",
-			minAzdVersion:    "1.24.0",
-			azdVersion:       "1.23.4",
+			name:             "caret constraint incompatible major",
+			minAzdVersion:    "^1.24.0",
+			azdVersion:       "2.0.0",
 			expectCompatible: false,
 		},
 		{
-			name:             "daily build base version meets minimum",
-			minAzdVersion:    "1.23.0",
-			azdVersion:       "1.23.4",
+			name:             "tilde constraint compatible",
+			minAzdVersion:    "~1.24.0",
+			azdVersion:       "1.24.5",
 			expectCompatible: true,
+		},
+		{
+			name:             "tilde constraint incompatible minor",
+			minAzdVersion:    "~1.24.0",
+			azdVersion:       "1.25.0",
+			expectCompatible: false,
+		},
+		{
+			name:             "range constraint compatible",
+			minAzdVersion:    ">= 1.20.0, < 2.0.0",
+			azdVersion:       "1.25.0",
+			expectCompatible: true,
+		},
+		{
+			name:             "range constraint incompatible",
+			minAzdVersion:    ">= 1.20.0, < 2.0.0",
+			azdVersion:       "2.0.0",
+			expectCompatible: false,
 		},
 	}
 
@@ -92,47 +104,57 @@ func Test_VersionIsCompatible(t *testing.T) {
 }
 
 func Test_VersionIsCompatible_PrereleaseFormats(t *testing.T) {
-	// These tests verify the raw semver comparison behavior with prerelease versions.
+	// These tests verify that semver constraint checking works correctly with
+	// prerelease version formats used by PR and daily builds.
 	// In practice, currentAzdSemver() strips prerelease tags before passing to these functions,
-	// so PR/daily builds are compared using their base version.
+	// because semver constraints exclude prerelease versions by default.
 	tests := []struct {
 		name            string
 		minAzdVersion   string
 		rawVersion      string
 		strippedVersion string
-		rawCompatible   bool
 		strippedCompat  bool
 	}{
 		{
-			name:            "PR build raw version is below minimum",
-			minAzdVersion:   "1.24.0",
+			name:            "PR build stripped version satisfies constraint",
+			minAzdVersion:   ">= 1.23.0",
 			rawVersion:      "1.24.0-beta.1-pr.5861630",
 			strippedVersion: "1.24.0",
-			rawCompatible:   false,
 			strippedCompat:  true,
 		},
 		{
-			name:            "daily build raw version is below minimum",
-			minAzdVersion:   "1.24.0",
-			rawVersion:      "1.23.4-daily.5857181",
-			strippedVersion: "1.23.4",
-			rawCompatible:   false,
+			name:            "PR build stripped version does not satisfy constraint",
+			minAzdVersion:   ">= 1.25.0",
+			rawVersion:      "1.24.0-beta.1-pr.5861630",
+			strippedVersion: "1.24.0",
 			strippedCompat:  false,
 		},
 		{
-			name:            "daily build of same major.minor meets minimum",
-			minAzdVersion:   "1.23.0",
+			name:            "daily build stripped version satisfies constraint",
+			minAzdVersion:   ">= 1.23.0",
 			rawVersion:      "1.23.4-daily.5857181",
 			strippedVersion: "1.23.4",
-			rawCompatible:   true,
 			strippedCompat:  true,
 		},
 		{
-			name:            "PR build exceeds minimum",
-			minAzdVersion:   "1.23.0",
+			name:            "daily build stripped version does not satisfy constraint",
+			minAzdVersion:   ">= 1.24.0",
+			rawVersion:      "1.23.4-daily.5857181",
+			strippedVersion: "1.23.4",
+			strippedCompat:  false,
+		},
+		{
+			name:            "PR build stripped version satisfies exact minimum",
+			minAzdVersion:   ">= 1.24.0",
 			rawVersion:      "1.24.0-beta.1-pr.5861630",
 			strippedVersion: "1.24.0",
-			rawCompatible:   true,
+			strippedCompat:  true,
+		},
+		{
+			name:            "daily build stripped version with caret constraint",
+			minAzdVersion:   "^1.23.0",
+			rawVersion:      "1.23.4-daily.5857181",
+			strippedVersion: "1.23.4",
 			strippedCompat:  true,
 		},
 	}
@@ -143,15 +165,10 @@ func Test_VersionIsCompatible_PrereleaseFormats(t *testing.T) {
 				MinAzdVersion: tt.minAzdVersion,
 			}
 
-			// Raw prerelease version comparison
-			rawAzdVersion := semver.MustParse(tt.rawVersion)
-			rawResult := VersionIsCompatible(extVersion, rawAzdVersion)
-			require.Equal(t, tt.rawCompatible, rawResult, "raw version check")
-
 			// Stripped version comparison (simulates what currentAzdSemver does)
 			strippedAzdVersion := semver.MustParse(tt.strippedVersion)
 			strippedResult := VersionIsCompatible(extVersion, strippedAzdVersion)
-			require.Equal(t, tt.strippedCompat, strippedResult, "stripped version check")
+			require.Equal(t, tt.strippedCompat, strippedResult, "stripped version check for raw %s", tt.rawVersion)
 		})
 	}
 }
@@ -175,8 +192,8 @@ func Test_FilterCompatibleVersions(t *testing.T) {
 	t.Run("some versions incompatible", func(t *testing.T) {
 		versions := []ExtensionVersion{
 			{Version: "1.0.0"},
-			{Version: "1.1.0", MinAzdVersion: "1.20.0"},
-			{Version: "2.0.0", MinAzdVersion: "1.25.0"},
+			{Version: "1.1.0", MinAzdVersion: ">= 1.20.0"},
+			{Version: "2.0.0", MinAzdVersion: ">= 1.25.0"},
 		}
 		azdVersion := semver.MustParse("1.22.0")
 		result := FilterCompatibleVersions(versions, azdVersion)
@@ -191,8 +208,8 @@ func Test_FilterCompatibleVersions(t *testing.T) {
 
 	t.Run("no compatible versions", func(t *testing.T) {
 		versions := []ExtensionVersion{
-			{Version: "1.0.0", MinAzdVersion: "1.25.0"},
-			{Version: "2.0.0", MinAzdVersion: "1.26.0"},
+			{Version: "1.0.0", MinAzdVersion: ">= 1.25.0"},
+			{Version: "2.0.0", MinAzdVersion: ">= 1.26.0"},
 		}
 		azdVersion := semver.MustParse("1.20.0")
 		result := FilterCompatibleVersions(versions, azdVersion)
@@ -218,7 +235,7 @@ func Test_FilterCompatibleVersions(t *testing.T) {
 		versions := []ExtensionVersion{
 			{Version: "1.0.0"},
 			{Version: "1.1.0"},
-			{Version: "2.0.0", MinAzdVersion: "2.0.0"},
+			{Version: "2.0.0", MinAzdVersion: ">= 2.0.0"},
 		}
 		azdVersion := semver.MustParse("1.25.0")
 		result := FilterCompatibleVersions(versions, azdVersion)
@@ -229,11 +246,11 @@ func Test_FilterCompatibleVersions(t *testing.T) {
 		require.True(t, result.HasNewerIncompatible)
 	})
 
-	t.Run("PR build stripped version filters correctly", func(t *testing.T) {
+	t.Run("PR build version filters correctly", func(t *testing.T) {
 		versions := []ExtensionVersion{
 			{Version: "1.0.0"},
-			{Version: "1.1.0", MinAzdVersion: "1.23.0"},
-			{Version: "2.0.0", MinAzdVersion: "1.25.0"},
+			{Version: "1.1.0", MinAzdVersion: ">= 1.23.0"},
+			{Version: "2.0.0", MinAzdVersion: ">= 1.25.0"},
 		}
 		// Simulate a PR build "1.24.0-beta.1-pr.5861630" with prerelease stripped to "1.24.0"
 		azdVersion := semver.MustParse("1.24.0")
@@ -246,11 +263,11 @@ func Test_FilterCompatibleVersions(t *testing.T) {
 		require.True(t, result.HasNewerIncompatible)
 	})
 
-	t.Run("daily build stripped version filters correctly", func(t *testing.T) {
+	t.Run("daily build version filters correctly", func(t *testing.T) {
 		versions := []ExtensionVersion{
 			{Version: "1.0.0"},
-			{Version: "1.1.0", MinAzdVersion: "1.23.0"},
-			{Version: "2.0.0", MinAzdVersion: "1.25.0"},
+			{Version: "1.1.0", MinAzdVersion: ">= 1.23.0"},
+			{Version: "2.0.0", MinAzdVersion: ">= 1.25.0"},
 		}
 		// Simulate a daily build "1.23.4-daily.5857181" with prerelease stripped to "1.23.4"
 		azdVersion := semver.MustParse("1.23.4")

@@ -1387,8 +1387,8 @@ func namespacesConflict(ns1, ns2 string) (bool, string) {
 
 // currentAzdSemver returns the current azd version as a Masterminds semver.
 // Returns nil for dev builds (0.0.0-dev.0) to skip compatibility checks entirely.
-// For PR and daily builds, the prerelease tag is stripped so that
-// e.g. "1.24.0-beta.1-pr.5861630" is treated as "1.24.0" for compatibility.
+// For PR and daily builds, the prerelease tag is stripped so that constraint
+// matching works correctly (semver constraints exclude prerelease versions by default).
 // Returns nil if the version cannot be parsed (should not happen in practice).
 func currentAzdSemver() *semver.Version {
 	if internal.IsDevVersion() {
@@ -1401,7 +1401,8 @@ func currentAzdSemver() *semver.Version {
 	}
 
 	// Strip prerelease tags so that PR/daily builds are compared by their base version.
-	// e.g. "1.24.0-beta.1-pr.5861630" -> "1.24.0", "1.23.4-daily.5857181" -> "1.23.4"
+	// This is required because semver constraints like ">= 1.24.0" exclude prerelease versions
+	// by design, so "1.24.0-beta.1-pr.5861630" would not satisfy ">= 1.24.0" without stripping.
 	if v.Prerelease() != "" {
 		stripped, err := semver.NewVersion(fmt.Sprintf("%d.%d.%d", v.Major(), v.Minor(), v.Patch()))
 		if err != nil {
@@ -1424,7 +1425,7 @@ func displayVersionCompatibilityWarning(
 ) {
 	if latestCompatible != nil {
 		console.Message(ctx, output.WithWarningFormat(
-			"WARNING: Latest version %s of %s requires azd >= %s (you have %s). "+
+			"WARNING: Latest version %s of %s requires azd %s (you have %s). "+
 				"Installing latest compatible version %s instead.",
 			latestOverall.Version,
 			extensionId,
@@ -1438,7 +1439,7 @@ func displayVersionCompatibilityWarning(
 		))
 	} else {
 		console.Message(ctx, output.WithWarningFormat(
-			"WARNING: All versions of %s require a newer azd version (latest requires >= %s, you have %s).",
+			"WARNING: All versions of %s require a newer azd version (latest requires %s, you have %s).",
 			extensionId,
 			latestOverall.MinAzdVersion,
 			azdVersion.String(),
@@ -1462,7 +1463,7 @@ func validateVersionCompatibility(
 		if versions[i].Version == requestedVersion {
 			if !extensions.VersionIsCompatible(&versions[i], azdVersion) {
 				return fmt.Errorf(
-					"version %s of %s requires azd >= %s (you have %s). "+
+					"version %s of %s requires azd %s (you have %s). "+
 						"Upgrade azd or choose a compatible version",
 					versions[i].Version,
 					extensionId,

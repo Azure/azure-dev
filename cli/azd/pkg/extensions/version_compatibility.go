@@ -12,22 +12,24 @@ import (
 // VersionIsCompatible checks if an extension version is compatible with the given azd version.
 // Returns true if:
 // - No MinAzdVersion is set on the extension version
-// - The azdVersion meets the minimum requirement
+// - The azdVersion satisfies the MinAzdVersion constraint expression
 //
-// Note: Non-production builds (dev, PR, daily) should be handled by the caller
-// by not calling this function or passing nil to FilterCompatibleVersions.
+// MinAzdVersion supports semantic versioning constraint expressions (e.g. ">= 1.24.0").
 func VersionIsCompatible(extVersion *ExtensionVersion, azdVersion *semver.Version) bool {
 	if extVersion.MinAzdVersion == "" {
 		return true
 	}
 
-	minVersion, err := semver.NewVersion(extVersion.MinAzdVersion)
+	constraint, err := semver.NewConstraint(extVersion.MinAzdVersion)
 	if err != nil {
-		log.Printf("Warning: Failed to parse minAzdVersion '%s', skipping compatibility check", extVersion.MinAzdVersion)
+		log.Printf(
+			"Warning: Failed to parse minAzdVersion constraint '%s', skipping compatibility check",
+			extVersion.MinAzdVersion,
+		)
 		return true
 	}
 
-	return !azdVersion.LessThan(minVersion)
+	return constraint.Check(azdVersion)
 }
 
 // VersionCompatibilityResult holds the result of filtering extension versions for compatibility

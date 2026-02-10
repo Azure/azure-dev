@@ -97,9 +97,9 @@ type McpServerConfig struct {
 type ExtensionVersion struct {
 	// Version is the version of the extension
 	Version string `json:"version"`
-	// MinAzdVersion is the minimum version of azd core required to use this extension version.
-	// When set, azd will only install this version if the running azd version meets the requirement.
-	// Uses semantic versioning (e.g. "1.24.0").
+	// MinAzdVersion is the minimum azd core version required to use this extension version.
+	// When set, azd will only install this version if the running azd version satisfies the constraint.
+	// Supports semantic versioning constraint expressions (e.g. ">= 1.24.0").
 	MinAzdVersion string `json:"minAzdVersion,omitempty"`
 	// Capabilities is a list of capabilities that the extension provides
 	Capabilities []CapabilityType `json:"capabilities,omitempty"`

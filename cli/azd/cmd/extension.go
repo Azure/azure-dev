@@ -1425,7 +1425,7 @@ func displayVersionCompatibilityWarning(
 ) {
 	if latestCompatible != nil {
 		console.Message(ctx, output.WithWarningFormat(
-			"WARNING: Latest version %s of %s requires azd %s (you have %s). "+
+			"WARNING: Latest version %s of %s requires azd version matching \"%s\" (you have %s). "+
 				"Installing latest compatible version %s instead.",
 			latestOverall.Version,
 			extensionId,
@@ -1439,7 +1439,7 @@ func displayVersionCompatibilityWarning(
 		))
 	} else {
 		console.Message(ctx, output.WithWarningFormat(
-			"WARNING: All versions of %s require a newer azd version (latest requires %s, you have %s).",
+			"WARNING: All versions of %s require a newer azd version (latest requires \"%s\", you have %s).",
 			extensionId,
 			latestOverall.MinAzdVersion,
 			azdVersion.String(),
@@ -1463,7 +1463,7 @@ func validateVersionCompatibility(
 		if versions[i].Version == requestedVersion {
 			if !extensions.VersionIsCompatible(&versions[i], azdVersion) {
 				return fmt.Errorf(
-					"version %s of %s requires azd %s (you have %s). "+
+					"version %s of %s requires azd version matching \"%s\" (you have %s). "+
 						"Upgrade azd or choose a compatible version",
 					versions[i].Version,
 					extensionId,

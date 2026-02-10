@@ -13,10 +13,10 @@ import (
 
 // Default container settings constants
 const (
-	DefaultMemory      = "2Gi"
-	DefaultCpu         = "1"
-	DefaultMinReplicas = 1
-	DefaultMaxReplicas = 3
+	DefaultMemory      = "0.5Gi"
+	DefaultCpu         = "0.25"
+	DefaultMinReplicas = 0
+	DefaultMaxReplicas = 1
 )
 
 // ServiceTargetAgentConfig provides custom configuration for the Azure AI Service target

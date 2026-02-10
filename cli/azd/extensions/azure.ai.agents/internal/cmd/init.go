@@ -994,6 +994,16 @@ func (a *InitAction) createManifestFromLocalAgent(ctx context.Context) (*agent_y
 					Version:  "v1",
 				},
 			},
+			EnvironmentVariables: &[]agent_yaml.EnvironmentVariable{
+				{
+					Name:  "AZURE_OPENAI_ENDPOINT",
+					Value: "${AZURE_OPENAI_ENDPOINT}",
+				},
+				{
+					Name:  "AZURE_AI_MODEL_DEPLOYMENT_NAME",
+					Value: "{{" + selectedModel + "}}",
+				},
+			},
 		},
 		Resources: resources,
 	}

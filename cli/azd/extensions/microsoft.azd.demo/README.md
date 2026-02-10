@@ -58,6 +58,24 @@ Displays a list of Azure resources based on the current logged in user, and subs
 
 Displays a list of Azure resources based on the current logged in user, subscription and resource group filtered by resource type and kind.
 
+### `ai`
+
+The `ai` command demonstrates AI model catalog, deployment selection, and quota capabilities through interactive flows.
+
+#### Usage: `azd demo ai <command>`
+
+#### `azd demo ai models`
+
+Browse available AI models interactively and view model details, including locations, versions, SKUs, and capacity constraints.
+
+#### `azd demo ai deployment`
+
+Select model/version/SKU/capacity and resolve a valid deployment configuration.
+
+#### `azd demo ai quota`
+
+View usage meters and limits for a selected location.
+
 ### `metadata`
 
 The `metadata` command demonstrates the metadata capability, which provides command structure and configuration schemas.

@@ -239,7 +239,7 @@ func (a *InitAction) Run(ctx context.Context) error {
 		color.Green("\nAI agent definition added to your azd project successfully!")
 	} else {
 		// No manifest pointer provided - process local agent code
-		// Create a manifest from the local agent.yaml file
+		// Create a manifest based on user prompts
 		localManifest, err := a.createManifestFromLocalAgent(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to create manifest from local agent: %w", err)

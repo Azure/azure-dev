@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -15,10 +14,14 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 )
 
+// AzCliFunctionAppProperties contains properties for a Function App.
 type AzCliFunctionAppProperties struct {
-	HostNames []string
+	HostNames         []string
+	ServerFarmID      string
+	HostNameSslStates []*armappservice.HostNameSSLState
 }
 
+// GetFunctionAppProperties retrieves properties for a function app.
 func (cli *AzureClient) GetFunctionAppProperties(
 	ctx context.Context,
 	subscriptionId string,
@@ -31,29 +34,18 @@ func (cli *AzureClient) GetFunctionAppProperties(
 	}
 
 	return &AzCliFunctionAppProperties{
-		HostNames: []string{*webApp.Properties.DefaultHostName},
+		HostNames:         []string{*webApp.Properties.DefaultHostName},
+		ServerFarmID:      *webApp.Properties.ServerFarmID,
+		HostNameSslStates: webApp.Properties.HostNameSSLStates,
 	}, nil
 }
 
-func (cli *AzureClient) DeployFunctionAppUsingZipFile(
+// GetFunctionAppPlan retrieves the app service plan for a function app using pre-fetched properties.
+func (cli *AzureClient) GetFunctionAppPlan(
 	ctx context.Context,
-	subscriptionId string,
-	resourceGroup string,
-	appName string,
-	deployZipFile io.ReadSeeker,
-	remoteBuild bool,
-) (*string, error) {
-	app, err := cli.appService(ctx, subscriptionId, resourceGroup, appName)
-	if err != nil {
-		return nil, err
-	}
-
-	hostName, err := appServiceRepositoryHost(app, appName)
-	if err != nil {
-		return nil, err
-	}
-
-	planId, err := arm.ParseResourceID(*app.Properties.ServerFarmID)
+	props *AzCliFunctionAppProperties,
+) (*armappservice.Plan, error) {
+	planId, err := arm.ParseResourceID(props.ServerFarmID)
 	if err != nil {
 		return nil, err
 	}
@@ -68,27 +60,58 @@ func (cli *AzureClient) DeployFunctionAppUsingZipFile(
 		return nil, err
 	}
 
-	plan, err := plansClient.Get(ctx, planId.ResourceGroupName, planId.Name, nil)
+	planResp, err := plansClient.Get(ctx, planId.ResourceGroupName, planId.Name, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	if strings.ToLower(*plan.SKU.Tier) == "flexconsumption" {
-		cred, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
-		if err != nil {
-			return nil, err
-		}
+	return &planResp.Plan, nil
+}
 
-		client, err := azsdk.NewFuncAppHostClient(hostName, cred, cli.armClientOptions)
-		if err != nil {
-			return nil, fmt.Errorf("creating func app host client: %w", err)
-		}
+// DeployFunctionAppUsingZipFileFlexConsumption deploys to a Flex Consumption function app
+// using pre-fetched properties.
+func (cli *AzureClient) DeployFunctionAppUsingZipFileFlexConsumption(
+	ctx context.Context,
+	subscriptionId string,
+	props *AzCliFunctionAppProperties,
+	appName string,
+	deployZipFile io.ReadSeeker,
+	remoteBuild bool,
+) (*string, error) {
+	hostName, err := functionAppRepositoryHost(props, appName)
+	if err != nil {
+		return nil, err
+	}
 
-		response, err := client.Publish(ctx, deployZipFile, &azsdk.PublishOptions{RemoteBuild: remoteBuild})
-		if err != nil {
-			return nil, fmt.Errorf("publishing zip file: %w", err)
-		}
-		return to.Ptr(response.StatusText), nil
+	cred, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := azsdk.NewFuncAppHostClient(hostName, cred, cli.armClientOptions)
+	if err != nil {
+		return nil, fmt.Errorf("creating func app host client: %w", err)
+	}
+
+	response, err := client.Publish(ctx, deployZipFile, &azsdk.PublishOptions{RemoteBuild: remoteBuild})
+	if err != nil {
+		return nil, fmt.Errorf("publishing zip file: %w", err)
+	}
+	return to.Ptr(response.StatusText), nil
+}
+
+// DeployFunctionAppUsingZipFileRegular deploys to a regular (non-Flex Consumption) function app
+// using pre-fetched properties.
+func (cli *AzureClient) DeployFunctionAppUsingZipFileRegular(
+	ctx context.Context,
+	subscriptionId string,
+	props *AzCliFunctionAppProperties,
+	appName string,
+	deployZipFile io.ReadSeeker,
+) (*string, error) {
+	hostName, err := functionAppRepositoryHost(props, appName)
+	if err != nil {
+		return nil, err
 	}
 
 	client, err := cli.createZipDeployClient(ctx, subscriptionId, hostName)
@@ -102,4 +125,14 @@ func (cli *AzureClient) DeployFunctionAppUsingZipFile(
 	}
 
 	return to.Ptr(response.StatusText), nil
+}
+
+// functionAppRepositoryHost finds the SCM host name from function app properties.
+func functionAppRepositoryHost(props *AzCliFunctionAppProperties, appName string) (string, error) {
+	for _, item := range props.HostNameSslStates {
+		if *item.HostType == armappservice.HostTypeRepository {
+			return *item.Name, nil
+		}
+	}
+	return "", fmt.Errorf("failed to find host name for function app %s", appName)
 }

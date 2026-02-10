@@ -228,6 +228,11 @@
                         "type": "string",
                         "title": "Relative path to service deployment artifacts"
                     },
+                    "remoteBuild": {
+                        "type": "boolean",
+                        "title": "Optional. Whether to use remote build for function app deployment",
+                        "description": "When set to true, the deployment package will be built remotely using Oryx. When set to false, the package is deployed as-is. If omitted, defaults to true for JavaScript, TypeScript, and Python function apps."
+                    },
                     "docker": {
                         "$ref": "#/definitions/docker"
                     },
@@ -411,6 +416,19 @@
                                 "k8s": false,
                                 "apiVersion": false,
                                 "env": false
+                            }
+                        }
+                    },
+                    {
+                        "comment": "remoteBuild is only valid for function host",
+                        "if": {
+                            "properties": {
+                                "host": { "not": { "const": "function" } }
+                            }
+                        },
+                        "then": {
+                            "properties": {
+                                "remoteBuild": false
                             }
                         }
                     }

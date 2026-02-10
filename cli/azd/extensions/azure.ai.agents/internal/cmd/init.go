@@ -178,6 +178,20 @@ func (a *InitAction) Run(ctx context.Context) error {
 	color.Green("Initializing AI agent project...")
 	fmt.Println()
 
+	// If src path is absolute, convert it to relative path compared to the azd project path
+	if a.flags.src != "" && filepath.IsAbs(a.flags.src) {
+		projectResponse, err := a.azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+		if err != nil {
+			return fmt.Errorf("failed to get project path: %w", err)
+		}
+
+		relPath, err := filepath.Rel(projectResponse.Project.Path, a.flags.src)
+		if err != nil {
+			return fmt.Errorf("failed to convert src path to relative path: %w", err)
+		}
+		a.flags.src = relPath
+	}
+
 	// If --project-id is given
 	if a.flags.projectResourceId != "" {
 		// projectResourceId is a string of the format
@@ -223,6 +237,34 @@ func (a *InitAction) Run(ctx context.Context) error {
 		}
 
 		color.Green("\nAI agent definition added to your azd project successfully!")
+	} else {
+		// No manifest pointer provided - process local agent code
+		// Create a manifest from the local agent.yaml file
+		localManifest, err := a.createManifestFromLocalAgent(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to create manifest from local agent: %w", err)
+		}
+
+		if localManifest != nil {
+			// Write the manifest to a file in the src directory
+			manifestPath, err := a.writeManifestToSrcDir(localManifest, a.flags.src)
+			if err != nil {
+				return fmt.Errorf("failed to write manifest to src directory: %w", err)
+			}
+
+			// Use the manifest file path to download/process the agent
+			agentManifest, targetDir, err := a.downloadAgentYaml(ctx, manifestPath, a.flags.src)
+			if err != nil {
+				return fmt.Errorf("downloading agent.yaml from local manifest: %w", err)
+			}
+
+			// Add the agent to the azd project (azure.yaml) services
+			if err := a.addToProject(ctx, targetDir, agentManifest, a.flags.host); err != nil {
+				return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
+			}
+
+			color.Green("\nLocal AI agent definition added to your azd project successfully!")
+		}
 	}
 
 	// // Validate command flags
@@ -244,7 +286,7 @@ func ensureProject(ctx context.Context, flags *initFlags, azdClient *azdext.AzdC
 		fmt.Println("Lets get your project initialized.")
 
 		// Environment creation is handled separately in ensureEnvironment
-		initArgs := []string{"init", "--minimal"}
+		initArgs := []string{"init", "-t", "Azure-Samples/azd-ai-starter-basic"}
 
 		// We don't have a project yet
 		// Dispatch a workflow to init the project
@@ -861,6 +903,108 @@ func (a *InitAction) isRegistryUrl(manifestPointer string) (bool, *RegistryManif
 		manifestName:    manifestName,
 		manifestVersion: manifestVersion,
 	}
+}
+
+// createManifestFromLocalAgent creates an AgentManifest for local agent code
+// This is used when no manifest pointer is provided and we need to scaffold a new agent
+func (a *InitAction) createManifestFromLocalAgent(ctx context.Context) (*agent_yaml.AgentManifest, error) {
+	// Prompt user for agent name
+	promptResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message:      "Enter a name for your agent:",
+			DefaultValue: "my-agent",
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to prompt for agent name: %w", err)
+	}
+	agentName := promptResp.Value
+
+	// TODO: Prompt user for agent kind
+	agentKind := agent_yaml.AgentKindHosted
+
+	// Prompt user to select a model from the catalog
+	modelCatalog, err := a.modelCatalogService.ListAllModels(ctx, a.azureContext.Scope.SubscriptionId, a.azureContext.Scope.Location)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list models from catalog: %w", err)
+	}
+
+	// Build model choices from the catalog
+	var modelChoices []*azdext.SelectChoice
+	var modelNames []string
+	for modelName := range modelCatalog {
+		modelNames = append(modelNames, modelName)
+	}
+	slices.Sort(modelNames)
+	for _, modelName := range modelNames {
+		modelChoices = append(modelChoices, &azdext.SelectChoice{
+			Label: modelName,
+			Value: modelName,
+		})
+	}
+
+	modelResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message: "Select a model for your agent:",
+			Choices: modelChoices,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to prompt for model selection: %w", err)
+	}
+	selectedModel := modelNames[*modelResp.Value]
+
+	// Create a minimal AgentManifest with the Template as a ContainerAgent
+	manifest := &agent_yaml.AgentManifest{
+		Name: agentName,
+		Template: agent_yaml.ContainerAgent{
+			AgentDefinition: agent_yaml.AgentDefinition{
+				Name: agentName,
+				Kind: agentKind,
+			},
+			Protocols: []agent_yaml.ProtocolVersionRecord{
+				{
+					Protocol: "responses",
+					Version:  "v1",
+				},
+			},
+		},
+		Resources: []any{
+			agent_yaml.ModelResource{
+				Resource: agent_yaml.Resource{
+					Name: selectedModel,
+					Kind: agent_yaml.ResourceKindModel,
+				},
+				Id: selectedModel,
+			},
+		},
+	}
+
+	return manifest, nil
+}
+
+// writeManifestToSrcDir writes an AgentManifest to a YAML file in the src directory and returns the path
+func (a *InitAction) writeManifestToSrcDir(manifest *agent_yaml.AgentManifest, srcDir string) (string, error) {
+	// Ensure the src directory exists
+	if err := os.MkdirAll(srcDir, 0755); err != nil {
+		return "", fmt.Errorf("creating src directory: %w", err)
+	}
+
+	// Create the manifest file path
+	manifestPath := filepath.Join(srcDir, "agent.yaml")
+
+	// Marshal the manifest to YAML
+	content, err := yaml.Marshal(manifest)
+	if err != nil {
+		return "", fmt.Errorf("marshaling manifest to YAML: %w", err)
+	}
+
+	// Write to the file
+	if err := os.WriteFile(manifestPath, content, 0644); err != nil {
+		return "", fmt.Errorf("writing manifest to file: %w", err)
+	}
+
+	return manifestPath, nil
 }
 
 func (a *InitAction) downloadAgentYaml(

@@ -11,20 +11,20 @@ import (
 
 // VersionIsCompatible checks if an extension version is compatible with the given azd version.
 // Returns true if:
-// - No MinAzdVersion is set on the extension version
-// - The azdVersion satisfies the MinAzdVersion constraint expression
+// - No RequiredAzdVersion is set on the extension version
+// - The azdVersion satisfies the RequiredAzdVersion constraint expression
 //
-// MinAzdVersion supports semantic versioning constraint expressions (e.g. ">= 1.24.0").
+// RequiredAzdVersion supports semantic versioning constraint expressions (e.g. ">= 1.24.0").
 func VersionIsCompatible(extVersion *ExtensionVersion, azdVersion *semver.Version) bool {
-	if extVersion.MinAzdVersion == "" {
+	if extVersion.RequiredAzdVersion == "" {
 		return true
 	}
 
-	constraint, err := semver.NewConstraint(extVersion.MinAzdVersion)
+	constraint, err := semver.NewConstraint(extVersion.RequiredAzdVersion)
 	if err != nil {
 		log.Printf(
-			"Warning: Failed to parse minAzdVersion constraint '%s', skipping compatibility check",
-			extVersion.MinAzdVersion,
+			"Warning: Failed to parse requiredAzdVersion constraint '%s', skipping compatibility check",
+			extVersion.RequiredAzdVersion,
 		)
 		return true
 	}
@@ -56,13 +56,15 @@ func FilterCompatibleVersions(
 		return result
 	}
 
-	// The latest overall is always the last element (versions are ordered)
-	result.LatestOverall = &versions[len(versions)-1]
+	// The latest overall is always the last element (versions are ordered).
+	// Store a copy so the result doesn't alias the caller's slice.
+	latestOverall := versions[len(versions)-1]
+	result.LatestOverall = &latestOverall
 
 	for i := range versions {
 		if VersionIsCompatible(&versions[i], azdVersion) {
 			result.Compatible = append(result.Compatible, versions[i])
-			result.LatestCompatible = &versions[i]
+			result.LatestCompatible = &result.Compatible[len(result.Compatible)-1]
 		}
 	}
 

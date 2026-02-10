@@ -653,47 +653,19 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 		a.console.ShowSpinner(ctx, stepMessage, input.Step)
 
 		// Check azd version compatibility
-		compatibleExtension := selectedExtension
-		if azdVersion != nil {
-			if a.flags.version == "" || a.flags.version == "latest" {
-				// Filter versions for azd compatibility when no specific version is requested
-				compatResult := extensions.FilterCompatibleVersions(selectedExtension.Versions, azdVersion)
-
-				if compatResult.HasNewerIncompatible && compatResult.LatestOverall != nil {
-					a.console.StopSpinner(ctx, stepMessage, input.Step)
-					displayVersionCompatibilityWarning(ctx, a.console,
-						extensionId,
-						compatResult.LatestOverall,
-						compatResult.LatestCompatible,
-						azdVersion,
-					)
-					a.console.ShowSpinner(ctx, stepMessage, input.Step)
-				}
-
-				if len(compatResult.Compatible) == 0 {
-					a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-					return nil, fmt.Errorf(
-						"no compatible version of %s found for azd %s. "+
-							"Upgrade azd to install this extension",
-						extensionId, azdVersion.String(),
-					)
-				}
-
-				if len(compatResult.Compatible) < len(selectedExtension.Versions) {
-					// Create a copy of the metadata with only compatible versions
-					compatCopy := *selectedExtension
-					compatCopy.Versions = compatResult.Compatible
-					compatibleExtension = &compatCopy
-				}
-			} else {
-				// Validate compatibility for the specific requested version
-				if err := validateVersionCompatibility(
-					selectedExtension.Versions, a.flags.version, extensionId, azdVersion,
-				); err != nil {
-					a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-					return nil, err
-				}
-			}
+		compatibleExtension, compatResult, err := resolveCompatibleExtension(
+			selectedExtension, extensionId, a.flags.version, azdVersion,
+		)
+		if err != nil {
+			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			return nil, err
+		}
+		if compatResult != nil && compatResult.HasNewerIncompatible && compatResult.LatestOverall != nil {
+			a.console.StopSpinner(ctx, stepMessage, input.Step)
+			displayVersionCompatibilityWarning(ctx, a.console,
+				extensionId, compatResult.LatestOverall, compatResult.LatestCompatible, azdVersion,
+			)
+			a.console.ShowSpinner(ctx, stepMessage, input.Step)
 		}
 
 		// Check for namespace conflicts with installed extensions
@@ -995,46 +967,19 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 		a.console.ShowSpinner(ctx, stepMessage, input.Step)
 
 		// Check azd version compatibility
-		compatibleExtension := selectedExtension
-		if azdVersion != nil {
-			if a.flags.version == "" || a.flags.version == "latest" {
-				// Filter versions for azd compatibility when no specific version is requested
-				compatResult := extensions.FilterCompatibleVersions(selectedExtension.Versions, azdVersion)
-
-				if compatResult.HasNewerIncompatible && compatResult.LatestOverall != nil {
-					a.console.StopSpinner(ctx, stepMessage, input.Step)
-					displayVersionCompatibilityWarning(ctx, a.console,
-						extensionId,
-						compatResult.LatestOverall,
-						compatResult.LatestCompatible,
-						azdVersion,
-					)
-					a.console.ShowSpinner(ctx, stepMessage, input.Step)
-				}
-
-				if len(compatResult.Compatible) == 0 {
-					a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-					return nil, fmt.Errorf(
-						"no compatible version of %s found for azd %s. "+
-							"Upgrade azd to continue",
-						extensionId, azdVersion.String(),
-					)
-				}
-
-				if len(compatResult.Compatible) < len(selectedExtension.Versions) {
-					compatCopy := *selectedExtension
-					compatCopy.Versions = compatResult.Compatible
-					compatibleExtension = &compatCopy
-				}
-			} else {
-				// Validate compatibility for the specific requested version
-				if err := validateVersionCompatibility(
-					selectedExtension.Versions, a.flags.version, extensionId, azdVersion,
-				); err != nil {
-					a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-					return nil, err
-				}
-			}
+		compatibleExtension, compatResult, err := resolveCompatibleExtension(
+			selectedExtension, extensionId, a.flags.version, azdVersion,
+		)
+		if err != nil {
+			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			return nil, err
+		}
+		if compatResult != nil && compatResult.HasNewerIncompatible && compatResult.LatestOverall != nil {
+			a.console.StopSpinner(ctx, stepMessage, input.Step)
+			displayVersionCompatibilityWarning(ctx, a.console,
+				extensionId, compatResult.LatestOverall, compatResult.LatestCompatible, azdVersion,
+			)
+			a.console.ShowSpinner(ctx, stepMessage, input.Step)
 		}
 
 		latestVersion := compatibleExtension.Versions[len(compatibleExtension.Versions)-1]
@@ -1395,6 +1340,8 @@ func currentAzdSemver() *semver.Version {
 		return nil
 	}
 	versionInfo := internal.VersionInfo()
+	// Re-parse is required: internal.VersionInfo uses blang/semver while extension
+	// compatibility checking uses Masterminds/semver for constraint evaluation.
 	v, err := semver.NewVersion(versionInfo.Version.String())
 	if err != nil {
 		return nil
@@ -1414,6 +1361,48 @@ func currentAzdSemver() *semver.Version {
 	return v
 }
 
+// resolveCompatibleExtension filters extension versions for azd version compatibility.
+// Returns the (possibly filtered) extension metadata and the compatibility result for displaying warnings.
+// Returns an error if no compatible versions are found or the specific requested version is incompatible.
+func resolveCompatibleExtension(
+	selectedExtension *extensions.ExtensionMetadata,
+	extensionId string,
+	requestedVersion string,
+	azdVersion *semver.Version,
+) (*extensions.ExtensionMetadata, *extensions.VersionCompatibilityResult, error) {
+	if azdVersion == nil {
+		return selectedExtension, nil, nil
+	}
+
+	if requestedVersion != "" && requestedVersion != "latest" {
+		// Validate compatibility for the specific requested version
+		if err := validateVersionCompatibility(
+			selectedExtension.Versions, requestedVersion, extensionId, azdVersion,
+		); err != nil {
+			return nil, nil, err
+		}
+		return selectedExtension, nil, nil
+	}
+
+	// Filter versions for azd compatibility when no specific version is requested
+	compatResult := extensions.FilterCompatibleVersions(selectedExtension.Versions, azdVersion)
+
+	if len(compatResult.Compatible) == 0 {
+		return nil, compatResult, fmt.Errorf(
+			"no compatible version of %s found for azd %s. Upgrade azd to continue",
+			extensionId, azdVersion.String(),
+		)
+	}
+
+	if len(compatResult.Compatible) < len(selectedExtension.Versions) {
+		compatCopy := *selectedExtension
+		compatCopy.Versions = compatResult.Compatible
+		return &compatCopy, compatResult, nil
+	}
+
+	return selectedExtension, compatResult, nil
+}
+
 // displayVersionCompatibilityWarning prints a warning about newer incompatible versions
 func displayVersionCompatibilityWarning(
 	ctx context.Context,
@@ -1426,10 +1415,10 @@ func displayVersionCompatibilityWarning(
 	if latestCompatible != nil {
 		console.Message(ctx, output.WithWarningFormat(
 			"WARNING: Latest version %s of %s requires azd version matching \"%s\" (you have %s). "+
-				"Installing latest compatible version %s instead.",
+				"Using latest compatible version %s instead.",
 			latestOverall.Version,
 			extensionId,
-			latestOverall.MinAzdVersion,
+			latestOverall.RequiredAzdVersion,
 			azdVersion.String(),
 			latestCompatible.Version,
 		))
@@ -1441,11 +1430,11 @@ func displayVersionCompatibilityWarning(
 		console.Message(ctx, output.WithWarningFormat(
 			"WARNING: All versions of %s require a newer azd version (latest requires \"%s\", you have %s).",
 			extensionId,
-			latestOverall.MinAzdVersion,
+			latestOverall.RequiredAzdVersion,
 			azdVersion.String(),
 		))
 		console.Message(ctx, fmt.Sprintf(
-			"  Upgrade azd to install this extension: %s",
+			"  Upgrade azd to continue: %s",
 			output.WithHighLightFormat("azd version update"),
 		))
 	}
@@ -1467,7 +1456,7 @@ func validateVersionCompatibility(
 						"Upgrade azd or choose a compatible version",
 					versions[i].Version,
 					extensionId,
-					versions[i].MinAzdVersion,
+					versions[i].RequiredAzdVersion,
 					azdVersion.String(),
 				)
 			}

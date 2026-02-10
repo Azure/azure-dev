@@ -237,7 +237,7 @@ func (a *InitAction) Run(ctx context.Context) error {
 		}
 
 		color.Green("\nAI agent definition added to your azd project successfully!")
-	} else {
+	} else if a.flags.src != "" {
 		// No manifest pointer provided - process local agent code
 		// Create a manifest based on user prompts
 		localManifest, err := a.createManifestFromLocalAgent(ctx)
@@ -1017,11 +1017,6 @@ func toCleanName(s string) string {
 
 // writeManifestToSrcDir writes an AgentManifest to a YAML file in the src directory and returns the path
 func (a *InitAction) writeManifestToSrcDir(manifest *agent_yaml.AgentManifest, srcDir string) (string, error) {
-	// Ensure the src directory exists
-	if err := os.MkdirAll(srcDir, 0755); err != nil {
-		return "", fmt.Errorf("creating src directory: %w", err)
-	}
-
 	// Create the manifest file path
 	manifestPath := filepath.Join(srcDir, "agent.yaml")
 

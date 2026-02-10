@@ -1364,8 +1364,13 @@ func namespacesConflict(ns1, ns2 string) (bool, string) {
 }
 
 // currentAzdSemver returns the current azd version as a Masterminds semver.
+// Returns nil for non-production builds (dev, PR, daily) to skip compatibility checks,
+// since these builds may contain unreleased features.
 // Returns nil if the version cannot be parsed (should not happen in practice).
 func currentAzdSemver() *semver.Version {
+	if internal.IsNonProdVersion() {
+		return nil
+	}
 	versionInfo := internal.VersionInfo()
 	v, err := semver.NewVersion(versionInfo.Version.String())
 	if err != nil {

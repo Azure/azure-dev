@@ -12,15 +12,12 @@ import (
 // VersionIsCompatible checks if an extension version is compatible with the given azd version.
 // Returns true if:
 // - No MinAzdVersion is set on the extension version
-// - The azdVersion is a dev/daily build (0.0.0-*)
 // - The azdVersion meets the minimum requirement
+//
+// Note: Non-production builds (dev, PR, daily) should be handled by the caller
+// by not calling this function or passing nil to FilterCompatibleVersions.
 func VersionIsCompatible(extVersion *ExtensionVersion, azdVersion *semver.Version) bool {
 	if extVersion.MinAzdVersion == "" {
-		return true
-	}
-
-	// Dev/daily builds (0.0.0-*) skip compatibility checks
-	if azdVersion.Major() == 0 && azdVersion.Minor() == 0 && azdVersion.Patch() == 0 {
 		return true
 	}
 
@@ -30,7 +27,6 @@ func VersionIsCompatible(extVersion *ExtensionVersion, azdVersion *semver.Versio
 		return true
 	}
 
-	// Compare without prerelease tags for minimum version check
 	return !azdVersion.LessThan(minVersion)
 }
 

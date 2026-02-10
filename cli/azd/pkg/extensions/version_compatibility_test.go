@@ -89,6 +89,60 @@ func Test_VersionIsCompatible(t *testing.T) {
 			azdVersion:         "2.0.0",
 			expectCompatible:   false,
 		},
+		{
+			name:               "strict greater than compatible",
+			requiredAzdVersion: "> 1.24.0",
+			azdVersion:         "1.24.1",
+			expectCompatible:   true,
+		},
+		{
+			name:               "strict greater than excludes exact version",
+			requiredAzdVersion: "> 1.24.0",
+			azdVersion:         "1.24.0",
+			expectCompatible:   false,
+		},
+		{
+			name:               "strict greater than below",
+			requiredAzdVersion: "> 1.24.0",
+			azdVersion:         "1.23.0",
+			expectCompatible:   false,
+		},
+		{
+			name:               "less than compatible",
+			requiredAzdVersion: "< 2.0.0",
+			azdVersion:         "1.99.0",
+			expectCompatible:   true,
+		},
+		{
+			name:               "less than excludes exact version",
+			requiredAzdVersion: "< 2.0.0",
+			azdVersion:         "2.0.0",
+			expectCompatible:   false,
+		},
+		{
+			name:               "less than incompatible above",
+			requiredAzdVersion: "< 2.0.0",
+			azdVersion:         "2.1.0",
+			expectCompatible:   false,
+		},
+		{
+			name:               "strict greater than and less than range compatible",
+			requiredAzdVersion: "> 1.20.0, < 2.0.0",
+			azdVersion:         "1.25.0",
+			expectCompatible:   true,
+		},
+		{
+			name:               "strict greater than and less than range at lower bound",
+			requiredAzdVersion: "> 1.20.0, < 2.0.0",
+			azdVersion:         "1.20.0",
+			expectCompatible:   false,
+		},
+		{
+			name:               "strict greater than and less than range at upper bound",
+			requiredAzdVersion: "> 1.20.0, < 2.0.0",
+			azdVersion:         "2.0.0",
+			expectCompatible:   false,
+		},
 	}
 
 	for _, tt := range tests {

@@ -9,6 +9,7 @@ version: 0.1.0
 language: go
 capabilities:
   - custom-commands
+  - metadata
 examples:
   - name: swap
     description: Swap deployment slots for an App Service.

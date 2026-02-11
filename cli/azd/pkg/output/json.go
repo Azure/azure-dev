@@ -53,6 +53,16 @@ func (f *JsonFormatter) Format(obj interface{}, writer io.Writer, _ interface{})
 }
 
 var _ Formatter = (*JsonFormatter)(nil)
+var _ Queryable = (*JsonFormatter)(nil)
+
+// QueryFilter applies the JMESPath query (if any) to the given object.
+// When no query is configured, the object is returned unchanged.
+func (f *JsonFormatter) QueryFilter(obj interface{}) (interface{}, error) {
+	if f.Query == "" {
+		return obj, nil
+	}
+	return ApplyQuery(obj, f.Query)
+}
 
 // jsonObjectForMessage creates a json object representing a message. Any ANSI control sequences from the message are
 // removed. A trailing newline is added to the message.

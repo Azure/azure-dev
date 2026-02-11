@@ -1,4 +1,4 @@
-agent:
+template:
   kind: prompt
   name: github-agent
   description: An agent leveraging github-mcp to assist with GitHub-related tasks.

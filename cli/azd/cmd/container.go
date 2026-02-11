@@ -650,6 +650,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(containerregistry.NewRemoteBuildManager)
 	container.MustRegisterSingleton(keyvault.NewKeyVaultService)
 	container.MustRegisterSingleton(storage.NewFileShareService)
+	container.MustRegisterSingleton(ai.NewAiModelService)
 
 	container.MustRegisterScoped(project.NewContainerHelper)
 	container.MustRegisterScoped(func(serviceLocator ioc.ServiceLocator) *lazy.Lazy[*project.ContainerHelper] {
@@ -912,6 +913,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(grpcserver.NewExtensionService)
 	container.MustRegisterSingleton(grpcserver.NewServiceTargetService)
 	container.MustRegisterSingleton(grpcserver.NewFrameworkService)
+	container.MustRegisterSingleton(grpcserver.NewAiModelService)
 
 	// Required for nested actions called from composite actions like 'up'
 	registerAction[*cmd.ProvisionAction](container, "azd-provision-action")

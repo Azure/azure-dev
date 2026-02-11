@@ -408,6 +408,55 @@ func Test_ExtractSuggestedSolutions(t *testing.T) {
 			expectedCount: 2,
 			expectedFirst: "Fix the multi-line\nconfiguration issue",
 		},
+		{
+			name:          "Agent Framework Wrapped Response - Text Field with JSON String",
+			llmResponse:   `{"text": "{\"analysis\": \"Error analysis\", \"solutions\": [\"S1\", \"S2\", \"S3\"]}"}`,
+			expectedCount: 3,
+			expectedFirst: "S1",
+		},
+		{
+			name: "Agent Framework Wrapped Response - Text Field with Escaped JSON",
+			llmResponse: `{"text": "{\"analysis\": \"The deployment failed due to insufficient permissions\", ` +
+				`\"solutions\": [\"Grant Owner role to the user\", \"Use User Access Administrator role\", ` +
+				`\"Contact subscription admin\"]}"}`,
+			expectedCount: 3,
+			expectedFirst: "Grant Owner role to the user",
+		},
+		{
+			name:          "Agent Framework Wrapped Response - Text Field with Single Solution",
+			llmResponse:   `{"text": "{\"analysis\": \"Simple error\", \"solutions\": [\"Single fix\"]}"}`,
+			expectedCount: 1,
+			expectedFirst: "Single fix",
+		},
+		{
+			name:          "Agent Framework Wrapped Response - Text Field with Empty Solutions",
+			llmResponse:   `{"text": "{\"analysis\": \"Error with no solutions\", \"solutions\": []}"}`,
+			expectedCount: 0,
+		},
+		{
+			name:          "Agent Framework Wrapped Response - Text Field Not a String",
+			llmResponse:   `{"text": 12345}`,
+			expectedCount: 0,
+		},
+		{
+			name:          "Agent Framework Wrapped Response - Text Field is Object Not String",
+			llmResponse:   `{"text": {"analysis": "nested", "solutions": ["should not extract"]}}`,
+			expectedCount: 0,
+		},
+		{
+			name:          "Agent Framework Wrapped Response - Text Field with Invalid Inner JSON",
+			llmResponse:   `{"text": "this is not valid json inside"}`,
+			expectedCount: 0,
+		},
+		{
+			name: "Direct JSON Takes Precedence When Text Field Missing",
+			llmResponse: `{
+				"analysis": "Direct analysis",
+				"solutions": ["Direct solution 1", "Direct solution 2"]
+			}`,
+			expectedCount: 2,
+			expectedFirst: "Direct solution 1",
+		},
 	}
 
 	for _, tt := range tests {

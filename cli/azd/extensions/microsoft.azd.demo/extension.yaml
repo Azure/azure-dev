@@ -24,6 +24,15 @@ examples:
   - name: prompt
     description: Display prompt capabilities.
     usage: azd demo prompt
+  - name: ai models
+    description: Browse available AI models interactively.
+    usage: azd demo ai models
+  - name: ai deployment
+    description: Select model/version/SKU/capacity and resolve a deployment configuration.
+    usage: azd demo ai deployment
+  - name: ai quota
+    description: View usage meters and limits for a selected location.
+    usage: azd demo ai quota
   - name: mcp
     description: Start MCP server with demo tools.
     usage: azd demo mcp start

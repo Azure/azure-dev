@@ -23,3 +23,8 @@ func (m *MockSubscriptionManager) ListLocations(ctx context.Context, subscriptio
 	args := m.Called(ctx, subscriptionId)
 	return args.Get(0).([]account.Location), args.Error(1)
 }
+
+func (m *MockSubscriptionManager) GetLocations(ctx context.Context, subscriptionId string) ([]account.Location, error) {
+	args := m.Called(ctx, subscriptionId)
+	return args.Get(0).([]account.Location), args.Error(1)
+}

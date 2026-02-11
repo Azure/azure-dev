@@ -635,7 +635,6 @@ func CreateGlobalFlagSet() *pflag.FlagSet {
 // Uses ParseErrorsAllowlist to gracefully ignore unknown flags (like extension-specific flags).
 // This function is designed to be called BEFORE Cobra command tree construction to enable
 // early access to global flag values for auto-install and other pre-execution logic.
-//
 func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error {
 	globalFlagSet := CreateGlobalFlagSet()
 

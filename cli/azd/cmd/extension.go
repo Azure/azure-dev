@@ -982,7 +982,15 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 			a.console.ShowSpinner(ctx, stepMessage, input.Step)
 		}
 
-		latestVersion := compatibleExtension.Versions[len(compatibleExtension.Versions)-1]
+		// Determine the target version for comparison:
+		// - If --version is specified, compare against the requested version
+		// - Otherwise, compare against the latest compatible version
+		var targetVersionStr string
+		if a.flags.version != "" && a.flags.version != "latest" {
+			targetVersionStr = a.flags.version
+		} else {
+			targetVersionStr = compatibleExtension.Versions[len(compatibleExtension.Versions)-1].Version
+		}
 
 		// Parse semantic versions for proper comparison
 		installedSemver, err := semver.NewVersion(installed.Version)
@@ -991,21 +999,21 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 			return nil, fmt.Errorf("failed to parse installed version '%s': %w", installed.Version, err)
 		}
 
-		latestSemver, err := semver.NewVersion(latestVersion.Version)
+		targetSemver, err := semver.NewVersion(targetVersionStr)
 		if err != nil {
 			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-			return nil, fmt.Errorf("failed to parse latest version '%s': %w", latestVersion.Version, err)
+			return nil, fmt.Errorf("failed to parse target version '%s': %w", targetVersionStr, err)
 		}
 
-		// Compare versions: skip if installed version >= latest version
-		if installedSemver.GreaterThan(latestSemver) {
+		// Compare versions: skip if installed version >= target version
+		if installedSemver.GreaterThan(targetSemver) {
 			stepMessage += output.WithGrayFormat(
-				" (Installed version %s is newer than available %s)",
+				" (Installed version %s is newer than %s)",
 				installed.Version,
-				latestVersion.Version,
+				targetVersionStr,
 			)
 			a.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
-		} else if installedSemver.Equal(latestSemver) {
+		} else if installedSemver.Equal(targetSemver) {
 			stepMessage += output.WithGrayFormat(" (No upgrade available)")
 			a.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
 		} else {

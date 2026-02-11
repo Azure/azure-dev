@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -637,8 +636,6 @@ func CreateGlobalFlagSet() *pflag.FlagSet {
 // This function is designed to be called BEFORE Cobra command tree construction to enable
 // early access to global flag values for auto-install and other pre-execution logic.
 //
-// Agent Detection: If --no-prompt is not explicitly set and an AI coding agent (like Claude Code,
-// GitHub Copilot CLI, Cursor, etc.) is detected as the caller, NoPrompt is automatically enabled.
 func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error {
 	globalFlagSet := CreateGlobalFlagSet()
 
@@ -670,14 +667,6 @@ func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error 
 
 	if boolVal, err := globalFlagSet.GetBool("no-prompt"); err == nil {
 		opts.NoPrompt = boolVal
-	}
-
-	// Agent Detection: If --no-prompt was not explicitly set and we detect an AI coding agent
-	// as the caller, automatically enable no-prompt mode for non-interactive execution.
-	noPromptFlag := globalFlagSet.Lookup("no-prompt")
-	noPromptExplicitlySet := noPromptFlag != nil && noPromptFlag.Changed
-	if !noPromptExplicitlySet && agentdetect.IsRunningInAgent() {
-		opts.NoPrompt = true
 	}
 
 	return nil

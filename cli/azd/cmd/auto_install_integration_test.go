@@ -76,7 +76,7 @@ func TestExecuteWithAutoInstallIntegration(t *testing.T) {
 	os.Args = originalArgs
 }
 
-// TestAgentDetectionIntegration tests the full agent detection integration flow.
+// TestAgentDetectionIntegration tests that agent detection works but no longer auto-enables no-prompt.
 func TestAgentDetectionIntegration(t *testing.T) {
 	tests := []struct {
 		name             string
@@ -86,39 +86,39 @@ func TestAgentDetectionIntegration(t *testing.T) {
 		description      string
 	}{
 		{
-			name:             "Claude Code agent enables no-prompt automatically",
+			name:             "Claude Code agent detected - no-prompt not auto-enabled",
 			args:             []string{"version"},
 			envVars:          map[string]string{"CLAUDE_CODE": "1"},
-			expectedNoPrompt: true,
-			description:      "When running under Claude Code, --no-prompt should be auto-enabled",
+			expectedNoPrompt: false,
+			description:      "Agent detection no longer auto-enables --no-prompt",
 		},
 		{
-			name:             "GitHub Copilot CLI enables no-prompt automatically",
+			name:             "GitHub Copilot CLI detected - no-prompt not auto-enabled",
 			args:             []string{"deploy"},
 			envVars:          map[string]string{"GITHUB_COPILOT_CLI": "true"},
-			expectedNoPrompt: true,
-			description:      "When running under GitHub Copilot CLI, --no-prompt should be auto-enabled",
+			expectedNoPrompt: false,
+			description:      "Agent detection no longer auto-enables --no-prompt",
 		},
 		{
-			name:             "Gemini agent enables no-prompt automatically",
+			name:             "Gemini agent detected - no-prompt not auto-enabled",
 			args:             []string{"init"},
 			envVars:          map[string]string{"GEMINI_CLI": "1"},
-			expectedNoPrompt: true,
-			description:      "When running under Gemini, --no-prompt should be auto-enabled",
+			expectedNoPrompt: false,
+			description:      "Agent detection no longer auto-enables --no-prompt",
 		},
 		{
-			name:             "OpenCode agent enables no-prompt automatically",
+			name:             "OpenCode agent detected - no-prompt not auto-enabled",
 			args:             []string{"provision"},
 			envVars:          map[string]string{"OPENCODE": "1"},
-			expectedNoPrompt: true,
-			description:      "When running under OpenCode, --no-prompt should be auto-enabled",
+			expectedNoPrompt: false,
+			description:      "Agent detection no longer auto-enables --no-prompt",
 		},
 		{
-			name:             "User can override agent detection with --no-prompt=false",
-			args:             []string{"--no-prompt=false", "up"},
+			name:             "User can still explicitly set --no-prompt",
+			args:             []string{"--no-prompt", "up"},
 			envVars:          map[string]string{"CLAUDE_CODE": "1"},
-			expectedNoPrompt: false,
-			description:      "Explicit --no-prompt=false should override agent detection",
+			expectedNoPrompt: true,
+			description:      "Explicit --no-prompt should still work when agent is detected",
 		},
 		{
 			name:             "Normal execution without agent detection",
@@ -128,13 +128,13 @@ func TestAgentDetectionIntegration(t *testing.T) {
 			description:      "Without agent detection, prompting should remain enabled by default",
 		},
 		{
-			name: "User agent string triggers detection",
+			name: "User agent string triggers detection but not no-prompt",
 			args: []string{"up"},
 			envVars: map[string]string{
 				internal.AzdUserAgentEnvVar: "claude-code/1.0.0",
 			},
-			expectedNoPrompt: true,
-			description:      "AZURE_DEV_USER_AGENT containing agent identifier should trigger detection",
+			expectedNoPrompt: false,
+			description:      "Agent detected via user agent but no-prompt not auto-enabled",
 		},
 	}
 
@@ -159,27 +159,21 @@ func TestAgentDetectionIntegration(t *testing.T) {
 			assert.Equal(t, tt.expectedNoPrompt, opts.NoPrompt,
 				"NoPrompt mismatch: %s", tt.description)
 
-			// Verify agent detection status matches expectation
+			// Verify agent detection still works for telemetry even though no-prompt is not auto-set
 			agent := agentdetect.GetCallingAgent()
-			if tt.expectedNoPrompt && len(tt.envVars) > 0 && !containsNoPromptFalse(tt.args) {
+			if len(tt.envVars) > 0 && tt.envVars["CLAUDE_CODE"] != "" ||
+				tt.envVars["GITHUB_COPILOT_CLI"] != "" ||
+				tt.envVars["GEMINI_CLI"] != "" ||
+				tt.envVars["OPENCODE"] != "" ||
+				tt.envVars[internal.AzdUserAgentEnvVar] != "" {
 				assert.True(t, agent.Detected,
-					"Agent should be detected when agent env vars are set: %s", tt.description)
+					"Agent should still be detected for telemetry: %s", tt.description)
 			}
 
 			// Clean up
 			agentdetect.ResetDetection()
 		})
 	}
-}
-
-// containsNoPromptFalse checks if args contain --no-prompt=false
-func containsNoPromptFalse(args []string) bool {
-	for _, arg := range args {
-		if arg == "--no-prompt=false" {
-			return true
-		}
-	}
-	return false
 }
 
 // clearAgentEnvVarsForTest clears all environment variables that could trigger agent detection.

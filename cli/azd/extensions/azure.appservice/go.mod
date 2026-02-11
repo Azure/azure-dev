@@ -1,4 +1,4 @@
-module azure.appservice
+module azureappservice
 
 go 1.25
 

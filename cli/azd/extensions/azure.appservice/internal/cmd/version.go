@@ -4,7 +4,7 @@
 package cmd
 
 import (
-	"azure.appservice/internal/version"
+	"azureappservice/internal/version"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"

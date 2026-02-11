@@ -6,7 +6,7 @@ package main
 import (
 	"os"
 
-	"azure.appservice/internal/cmd"
+	"azureappservice/internal/cmd"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"

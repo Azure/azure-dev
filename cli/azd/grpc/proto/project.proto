@@ -7,12 +7,21 @@ package azdext;
 option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext";
 
 import "models.proto";
+import "service_target.proto";
 import "include/google/protobuf/struct.proto";
 
 // ProjectService defines methods for managing projects and their configurations.
 service ProjectService {
   // Gets the current project.
   rpc Get(EmptyRequest) returns (GetProjectResponse);
+
+  // GetServiceTargetResource resolves the target Azure resource for a service.
+  // This uses azd's standard resource discovery logic which:
+  // - Looks up resources by azd-service-name tag
+  // - Falls back to explicit resourceName from configuration
+  // - Resolves the resource group name from configuration or environment
+  // The returned TargetResource includes subscription, resource group, resource name, and resource type.
+  rpc GetServiceTargetResource(GetServiceTargetResourceRequest) returns (GetServiceTargetResourceResponse);
 
   // AddService adds a new service to the project.
   rpc AddService(AddServiceRequest) returns (EmptyResponse);
@@ -165,4 +174,16 @@ message SetServiceConfigValueRequest {
 message UnsetServiceConfigRequest {
   string service_name = 1;
   string path = 2;
+}
+
+// Request message for GetServiceTargetResource
+message GetServiceTargetResourceRequest {
+  // The name of the service to resolve the target resource for
+  string service_name = 1;
+}
+
+// Response message for GetServiceTargetResource
+message GetServiceTargetResourceResponse {
+  // The resolved target resource including subscription, resource group, resource name, and resource type
+  TargetResource target_resource = 1;
 }

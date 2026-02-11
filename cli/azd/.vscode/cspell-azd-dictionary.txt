@@ -55,6 +55,7 @@ azruntime
 azsdk
 azureai
 azureaiagent
+azureappservice
 AZURECLI
 azurecodingagent
 azureedge

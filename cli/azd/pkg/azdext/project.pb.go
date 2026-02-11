@@ -1009,11 +1009,103 @@ func (x *UnsetServiceConfigRequest) GetPath() string {
 	return ""
 }
 
+// Request message for GetServiceTargetResource
+type GetServiceTargetResourceRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The name of the service to resolve the target resource for
+	ServiceName   string `protobuf:"bytes,1,opt,name=service_name,json=serviceName,proto3" json:"service_name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetServiceTargetResourceRequest) Reset() {
+	*x = GetServiceTargetResourceRequest{}
+	mi := &file_project_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetServiceTargetResourceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetServiceTargetResourceRequest) ProtoMessage() {}
+
+func (x *GetServiceTargetResourceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_project_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetServiceTargetResourceRequest.ProtoReflect.Descriptor instead.
+func (*GetServiceTargetResourceRequest) Descriptor() ([]byte, []int) {
+	return file_project_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *GetServiceTargetResourceRequest) GetServiceName() string {
+	if x != nil {
+		return x.ServiceName
+	}
+	return ""
+}
+
+// Response message for GetServiceTargetResource
+type GetServiceTargetResourceResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The resolved target resource including subscription, resource group, resource name, and resource type
+	TargetResource *TargetResource `protobuf:"bytes,1,opt,name=target_resource,json=targetResource,proto3" json:"target_resource,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *GetServiceTargetResourceResponse) Reset() {
+	*x = GetServiceTargetResourceResponse{}
+	mi := &file_project_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetServiceTargetResourceResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetServiceTargetResourceResponse) ProtoMessage() {}
+
+func (x *GetServiceTargetResourceResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_project_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetServiceTargetResourceResponse.ProtoReflect.Descriptor instead.
+func (*GetServiceTargetResourceResponse) Descriptor() ([]byte, []int) {
+	return file_project_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *GetServiceTargetResourceResponse) GetTargetResource() *TargetResource {
+	if x != nil {
+		return x.TargetResource
+	}
+	return nil
+}
+
 var File_project_proto protoreflect.FileDescriptor
 
 const file_project_proto_rawDesc = "" +
 	"\n" +
-	"\rproject.proto\x12\x06azdext\x1a\fmodels.proto\x1a$include/google/protobuf/struct.proto\"E\n" +
+	"\rproject.proto\x12\x06azdext\x1a\fmodels.proto\x1a\x14service_target.proto\x1a$include/google/protobuf/struct.proto\"E\n" +
 	"\x12GetProjectResponse\x12/\n" +
 	"\aproject\x18\x01 \x01(\v2\x15.azdext.ProjectConfigR\aproject\"D\n" +
 	"\x11AddServiceRequest\x12/\n" +
@@ -1070,9 +1162,15 @@ const file_project_proto_rawDesc = "" +
 	"\x05value\x18\x03 \x01(\v2\x16.google.protobuf.ValueR\x05value\"R\n" +
 	"\x19UnsetServiceConfigRequest\x12!\n" +
 	"\fservice_name\x18\x01 \x01(\tR\vserviceName\x12\x12\n" +
-	"\x04path\x18\x02 \x01(\tR\x04path2\xad\t\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\"D\n" +
+	"\x1fGetServiceTargetResourceRequest\x12!\n" +
+	"\fservice_name\x18\x01 \x01(\tR\vserviceName\"c\n" +
+	" GetServiceTargetResourceResponse\x12?\n" +
+	"\x0ftarget_resource\x18\x01 \x01(\v2\x16.azdext.TargetResourceR\x0etargetResource2\x9c\n" +
+	"\n" +
 	"\x0eProjectService\x127\n" +
-	"\x03Get\x12\x14.azdext.EmptyRequest\x1a\x1a.azdext.GetProjectResponse\x12>\n" +
+	"\x03Get\x12\x14.azdext.EmptyRequest\x1a\x1a.azdext.GetProjectResponse\x12m\n" +
+	"\x18GetServiceTargetResource\x12'.azdext.GetServiceTargetResourceRequest\x1a(.azdext.GetServiceTargetResourceResponse\x12>\n" +
 	"\n" +
 	"AddService\x12\x19.azdext.AddServiceRequest\x1a\x15.azdext.EmptyResponse\x12P\n" +
 	"\x13GetResolvedServices\x12\x14.azdext.EmptyRequest\x1a#.azdext.GetResolvedServicesResponse\x12O\n" +
@@ -1100,81 +1198,87 @@ func file_project_proto_rawDescGZIP() []byte {
 	return file_project_proto_rawDescData
 }
 
-var file_project_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_project_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_project_proto_goTypes = []any{
-	(*GetProjectResponse)(nil),              // 0: azdext.GetProjectResponse
-	(*AddServiceRequest)(nil),               // 1: azdext.AddServiceRequest
-	(*GetResolvedServicesResponse)(nil),     // 2: azdext.GetResolvedServicesResponse
-	(*ParseGitHubUrlRequest)(nil),           // 3: azdext.ParseGitHubUrlRequest
-	(*GetProjectConfigSectionRequest)(nil),  // 4: azdext.GetProjectConfigSectionRequest
-	(*GetProjectConfigSectionResponse)(nil), // 5: azdext.GetProjectConfigSectionResponse
-	(*ParseGitHubUrlResponse)(nil),          // 6: azdext.ParseGitHubUrlResponse
-	(*GetProjectConfigValueRequest)(nil),    // 7: azdext.GetProjectConfigValueRequest
-	(*GetProjectConfigValueResponse)(nil),   // 8: azdext.GetProjectConfigValueResponse
-	(*SetProjectConfigSectionRequest)(nil),  // 9: azdext.SetProjectConfigSectionRequest
-	(*SetProjectConfigValueRequest)(nil),    // 10: azdext.SetProjectConfigValueRequest
-	(*UnsetProjectConfigRequest)(nil),       // 11: azdext.UnsetProjectConfigRequest
-	(*GetServiceConfigSectionRequest)(nil),  // 12: azdext.GetServiceConfigSectionRequest
-	(*GetServiceConfigSectionResponse)(nil), // 13: azdext.GetServiceConfigSectionResponse
-	(*GetServiceConfigValueRequest)(nil),    // 14: azdext.GetServiceConfigValueRequest
-	(*GetServiceConfigValueResponse)(nil),   // 15: azdext.GetServiceConfigValueResponse
-	(*SetServiceConfigSectionRequest)(nil),  // 16: azdext.SetServiceConfigSectionRequest
-	(*SetServiceConfigValueRequest)(nil),    // 17: azdext.SetServiceConfigValueRequest
-	(*UnsetServiceConfigRequest)(nil),       // 18: azdext.UnsetServiceConfigRequest
-	nil,                                     // 19: azdext.GetResolvedServicesResponse.ServicesEntry
-	(*ProjectConfig)(nil),                   // 20: azdext.ProjectConfig
-	(*ServiceConfig)(nil),                   // 21: azdext.ServiceConfig
-	(*structpb.Struct)(nil),                 // 22: google.protobuf.Struct
-	(*structpb.Value)(nil),                  // 23: google.protobuf.Value
-	(*EmptyRequest)(nil),                    // 24: azdext.EmptyRequest
-	(*EmptyResponse)(nil),                   // 25: azdext.EmptyResponse
+	(*GetProjectResponse)(nil),               // 0: azdext.GetProjectResponse
+	(*AddServiceRequest)(nil),                // 1: azdext.AddServiceRequest
+	(*GetResolvedServicesResponse)(nil),      // 2: azdext.GetResolvedServicesResponse
+	(*ParseGitHubUrlRequest)(nil),            // 3: azdext.ParseGitHubUrlRequest
+	(*GetProjectConfigSectionRequest)(nil),   // 4: azdext.GetProjectConfigSectionRequest
+	(*GetProjectConfigSectionResponse)(nil),  // 5: azdext.GetProjectConfigSectionResponse
+	(*ParseGitHubUrlResponse)(nil),           // 6: azdext.ParseGitHubUrlResponse
+	(*GetProjectConfigValueRequest)(nil),     // 7: azdext.GetProjectConfigValueRequest
+	(*GetProjectConfigValueResponse)(nil),    // 8: azdext.GetProjectConfigValueResponse
+	(*SetProjectConfigSectionRequest)(nil),   // 9: azdext.SetProjectConfigSectionRequest
+	(*SetProjectConfigValueRequest)(nil),     // 10: azdext.SetProjectConfigValueRequest
+	(*UnsetProjectConfigRequest)(nil),        // 11: azdext.UnsetProjectConfigRequest
+	(*GetServiceConfigSectionRequest)(nil),   // 12: azdext.GetServiceConfigSectionRequest
+	(*GetServiceConfigSectionResponse)(nil),  // 13: azdext.GetServiceConfigSectionResponse
+	(*GetServiceConfigValueRequest)(nil),     // 14: azdext.GetServiceConfigValueRequest
+	(*GetServiceConfigValueResponse)(nil),    // 15: azdext.GetServiceConfigValueResponse
+	(*SetServiceConfigSectionRequest)(nil),   // 16: azdext.SetServiceConfigSectionRequest
+	(*SetServiceConfigValueRequest)(nil),     // 17: azdext.SetServiceConfigValueRequest
+	(*UnsetServiceConfigRequest)(nil),        // 18: azdext.UnsetServiceConfigRequest
+	(*GetServiceTargetResourceRequest)(nil),  // 19: azdext.GetServiceTargetResourceRequest
+	(*GetServiceTargetResourceResponse)(nil), // 20: azdext.GetServiceTargetResourceResponse
+	nil,                                      // 21: azdext.GetResolvedServicesResponse.ServicesEntry
+	(*ProjectConfig)(nil),                    // 22: azdext.ProjectConfig
+	(*ServiceConfig)(nil),                    // 23: azdext.ServiceConfig
+	(*structpb.Struct)(nil),                  // 24: google.protobuf.Struct
+	(*structpb.Value)(nil),                   // 25: google.protobuf.Value
+	(*TargetResource)(nil),                   // 26: azdext.TargetResource
+	(*EmptyRequest)(nil),                     // 27: azdext.EmptyRequest
+	(*EmptyResponse)(nil),                    // 28: azdext.EmptyResponse
 }
 var file_project_proto_depIdxs = []int32{
-	20, // 0: azdext.GetProjectResponse.project:type_name -> azdext.ProjectConfig
-	21, // 1: azdext.AddServiceRequest.service:type_name -> azdext.ServiceConfig
-	19, // 2: azdext.GetResolvedServicesResponse.services:type_name -> azdext.GetResolvedServicesResponse.ServicesEntry
-	22, // 3: azdext.GetProjectConfigSectionResponse.section:type_name -> google.protobuf.Struct
-	23, // 4: azdext.GetProjectConfigValueResponse.value:type_name -> google.protobuf.Value
-	22, // 5: azdext.SetProjectConfigSectionRequest.section:type_name -> google.protobuf.Struct
-	23, // 6: azdext.SetProjectConfigValueRequest.value:type_name -> google.protobuf.Value
-	22, // 7: azdext.GetServiceConfigSectionResponse.section:type_name -> google.protobuf.Struct
-	23, // 8: azdext.GetServiceConfigValueResponse.value:type_name -> google.protobuf.Value
-	22, // 9: azdext.SetServiceConfigSectionRequest.section:type_name -> google.protobuf.Struct
-	23, // 10: azdext.SetServiceConfigValueRequest.value:type_name -> google.protobuf.Value
-	21, // 11: azdext.GetResolvedServicesResponse.ServicesEntry.value:type_name -> azdext.ServiceConfig
-	24, // 12: azdext.ProjectService.Get:input_type -> azdext.EmptyRequest
-	1,  // 13: azdext.ProjectService.AddService:input_type -> azdext.AddServiceRequest
-	24, // 14: azdext.ProjectService.GetResolvedServices:input_type -> azdext.EmptyRequest
-	3,  // 15: azdext.ProjectService.ParseGitHubUrl:input_type -> azdext.ParseGitHubUrlRequest
-	4,  // 16: azdext.ProjectService.GetConfigSection:input_type -> azdext.GetProjectConfigSectionRequest
-	7,  // 17: azdext.ProjectService.GetConfigValue:input_type -> azdext.GetProjectConfigValueRequest
-	9,  // 18: azdext.ProjectService.SetConfigSection:input_type -> azdext.SetProjectConfigSectionRequest
-	10, // 19: azdext.ProjectService.SetConfigValue:input_type -> azdext.SetProjectConfigValueRequest
-	11, // 20: azdext.ProjectService.UnsetConfig:input_type -> azdext.UnsetProjectConfigRequest
-	12, // 21: azdext.ProjectService.GetServiceConfigSection:input_type -> azdext.GetServiceConfigSectionRequest
-	14, // 22: azdext.ProjectService.GetServiceConfigValue:input_type -> azdext.GetServiceConfigValueRequest
-	16, // 23: azdext.ProjectService.SetServiceConfigSection:input_type -> azdext.SetServiceConfigSectionRequest
-	17, // 24: azdext.ProjectService.SetServiceConfigValue:input_type -> azdext.SetServiceConfigValueRequest
-	18, // 25: azdext.ProjectService.UnsetServiceConfig:input_type -> azdext.UnsetServiceConfigRequest
-	0,  // 26: azdext.ProjectService.Get:output_type -> azdext.GetProjectResponse
-	25, // 27: azdext.ProjectService.AddService:output_type -> azdext.EmptyResponse
-	2,  // 28: azdext.ProjectService.GetResolvedServices:output_type -> azdext.GetResolvedServicesResponse
-	6,  // 29: azdext.ProjectService.ParseGitHubUrl:output_type -> azdext.ParseGitHubUrlResponse
-	5,  // 30: azdext.ProjectService.GetConfigSection:output_type -> azdext.GetProjectConfigSectionResponse
-	8,  // 31: azdext.ProjectService.GetConfigValue:output_type -> azdext.GetProjectConfigValueResponse
-	25, // 32: azdext.ProjectService.SetConfigSection:output_type -> azdext.EmptyResponse
-	25, // 33: azdext.ProjectService.SetConfigValue:output_type -> azdext.EmptyResponse
-	25, // 34: azdext.ProjectService.UnsetConfig:output_type -> azdext.EmptyResponse
-	13, // 35: azdext.ProjectService.GetServiceConfigSection:output_type -> azdext.GetServiceConfigSectionResponse
-	15, // 36: azdext.ProjectService.GetServiceConfigValue:output_type -> azdext.GetServiceConfigValueResponse
-	25, // 37: azdext.ProjectService.SetServiceConfigSection:output_type -> azdext.EmptyResponse
-	25, // 38: azdext.ProjectService.SetServiceConfigValue:output_type -> azdext.EmptyResponse
-	25, // 39: azdext.ProjectService.UnsetServiceConfig:output_type -> azdext.EmptyResponse
-	26, // [26:40] is the sub-list for method output_type
-	12, // [12:26] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	22, // 0: azdext.GetProjectResponse.project:type_name -> azdext.ProjectConfig
+	23, // 1: azdext.AddServiceRequest.service:type_name -> azdext.ServiceConfig
+	21, // 2: azdext.GetResolvedServicesResponse.services:type_name -> azdext.GetResolvedServicesResponse.ServicesEntry
+	24, // 3: azdext.GetProjectConfigSectionResponse.section:type_name -> google.protobuf.Struct
+	25, // 4: azdext.GetProjectConfigValueResponse.value:type_name -> google.protobuf.Value
+	24, // 5: azdext.SetProjectConfigSectionRequest.section:type_name -> google.protobuf.Struct
+	25, // 6: azdext.SetProjectConfigValueRequest.value:type_name -> google.protobuf.Value
+	24, // 7: azdext.GetServiceConfigSectionResponse.section:type_name -> google.protobuf.Struct
+	25, // 8: azdext.GetServiceConfigValueResponse.value:type_name -> google.protobuf.Value
+	24, // 9: azdext.SetServiceConfigSectionRequest.section:type_name -> google.protobuf.Struct
+	25, // 10: azdext.SetServiceConfigValueRequest.value:type_name -> google.protobuf.Value
+	26, // 11: azdext.GetServiceTargetResourceResponse.target_resource:type_name -> azdext.TargetResource
+	23, // 12: azdext.GetResolvedServicesResponse.ServicesEntry.value:type_name -> azdext.ServiceConfig
+	27, // 13: azdext.ProjectService.Get:input_type -> azdext.EmptyRequest
+	19, // 14: azdext.ProjectService.GetServiceTargetResource:input_type -> azdext.GetServiceTargetResourceRequest
+	1,  // 15: azdext.ProjectService.AddService:input_type -> azdext.AddServiceRequest
+	27, // 16: azdext.ProjectService.GetResolvedServices:input_type -> azdext.EmptyRequest
+	3,  // 17: azdext.ProjectService.ParseGitHubUrl:input_type -> azdext.ParseGitHubUrlRequest
+	4,  // 18: azdext.ProjectService.GetConfigSection:input_type -> azdext.GetProjectConfigSectionRequest
+	7,  // 19: azdext.ProjectService.GetConfigValue:input_type -> azdext.GetProjectConfigValueRequest
+	9,  // 20: azdext.ProjectService.SetConfigSection:input_type -> azdext.SetProjectConfigSectionRequest
+	10, // 21: azdext.ProjectService.SetConfigValue:input_type -> azdext.SetProjectConfigValueRequest
+	11, // 22: azdext.ProjectService.UnsetConfig:input_type -> azdext.UnsetProjectConfigRequest
+	12, // 23: azdext.ProjectService.GetServiceConfigSection:input_type -> azdext.GetServiceConfigSectionRequest
+	14, // 24: azdext.ProjectService.GetServiceConfigValue:input_type -> azdext.GetServiceConfigValueRequest
+	16, // 25: azdext.ProjectService.SetServiceConfigSection:input_type -> azdext.SetServiceConfigSectionRequest
+	17, // 26: azdext.ProjectService.SetServiceConfigValue:input_type -> azdext.SetServiceConfigValueRequest
+	18, // 27: azdext.ProjectService.UnsetServiceConfig:input_type -> azdext.UnsetServiceConfigRequest
+	0,  // 28: azdext.ProjectService.Get:output_type -> azdext.GetProjectResponse
+	20, // 29: azdext.ProjectService.GetServiceTargetResource:output_type -> azdext.GetServiceTargetResourceResponse
+	28, // 30: azdext.ProjectService.AddService:output_type -> azdext.EmptyResponse
+	2,  // 31: azdext.ProjectService.GetResolvedServices:output_type -> azdext.GetResolvedServicesResponse
+	6,  // 32: azdext.ProjectService.ParseGitHubUrl:output_type -> azdext.ParseGitHubUrlResponse
+	5,  // 33: azdext.ProjectService.GetConfigSection:output_type -> azdext.GetProjectConfigSectionResponse
+	8,  // 34: azdext.ProjectService.GetConfigValue:output_type -> azdext.GetProjectConfigValueResponse
+	28, // 35: azdext.ProjectService.SetConfigSection:output_type -> azdext.EmptyResponse
+	28, // 36: azdext.ProjectService.SetConfigValue:output_type -> azdext.EmptyResponse
+	28, // 37: azdext.ProjectService.UnsetConfig:output_type -> azdext.EmptyResponse
+	13, // 38: azdext.ProjectService.GetServiceConfigSection:output_type -> azdext.GetServiceConfigSectionResponse
+	15, // 39: azdext.ProjectService.GetServiceConfigValue:output_type -> azdext.GetServiceConfigValueResponse
+	28, // 40: azdext.ProjectService.SetServiceConfigSection:output_type -> azdext.EmptyResponse
+	28, // 41: azdext.ProjectService.SetServiceConfigValue:output_type -> azdext.EmptyResponse
+	28, // 42: azdext.ProjectService.UnsetServiceConfig:output_type -> azdext.EmptyResponse
+	28, // [28:43] is the sub-list for method output_type
+	13, // [13:28] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_project_proto_init() }
@@ -1183,13 +1287,14 @@ func file_project_proto_init() {
 		return
 	}
 	file_models_proto_init()
+	file_service_target_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_project_proto_rawDesc), len(file_project_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   20,
+			NumMessages:   22,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

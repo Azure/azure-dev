@@ -1484,6 +1484,20 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 }
 
 func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.ContainerSettings, error) {
+	if a.flags.NoPrompt {
+		fmt.Printf("No prompt mode enabled, using default container settings\n")
+		return &project.ContainerSettings{
+			Resources: &project.ResourceSettings{
+				Memory: project.DefaultMemory,
+				Cpu:    project.DefaultCpu,
+			},
+			Scale: &project.ScaleSettings{
+				MinReplicas: project.DefaultMinReplicas,
+				MaxReplicas: project.DefaultMaxReplicas,
+			},
+		}, nil
+	}
+
 	// Default values
 	defaultMemory := project.DefaultMemory
 	defaultCpu := project.DefaultCpu
@@ -2283,20 +2297,26 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 		return nil, fmt.Errorf("failed to get model details: %w", err)
 	}
 
-	message := fmt.Sprintf("Enter model deployment name for model '%s' (defaults to model name)", modelDetails.Name)
+	modelDeployment := modelDetails.Name
 
-	modelDeploymentInput, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-		Options: &azdext.PromptOptions{
-			Message:        message,
-			IgnoreHintKeys: true,
-			DefaultValue:   modelDetails.Name,
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to prompt for text value: %w", err)
+	if !a.flags.NoPrompt {
+		message := fmt.Sprintf("Enter model deployment name for model '%s' (defaults to model name)", modelDetails.Name)
+
+		modelDeploymentInput, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+			Options: &azdext.PromptOptions{
+				Message:        message,
+				IgnoreHintKeys: true,
+				DefaultValue:   modelDetails.Name,
+			},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to prompt for text value: %w", err)
+		}
+
+		modelDeployment = modelDeploymentInput.Value
+	} else {
+		fmt.Printf("No prompt mode enabled, using model name as deployment name: %s\n", modelDeployment)
 	}
-
-	modelDeployment := modelDeploymentInput.Value
 
 	return &project.Deployment{
 		Name: modelDeployment,

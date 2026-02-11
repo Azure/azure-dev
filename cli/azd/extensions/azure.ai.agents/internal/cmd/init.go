@@ -35,6 +35,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 	"gopkg.in/yaml.v3"
 )
@@ -79,6 +81,23 @@ type GitHubUrlInfo struct {
 const AiAgentHost = "azure.ai.agent"
 const ContainerAppHost = "containerapp"
 
+// checkAiModelServiceAvailable is a temporary check to ensure the azd host supports
+// required gRPC services. Remove once azd core enforces requiredAzdVersion.
+func checkAiModelServiceAvailable(ctx context.Context, azdClient *azdext.AzdClient) error {
+	_, err := azdClient.Ai().ListModels(ctx, &azdext.ListModelsRequest{})
+	if err == nil {
+		return nil
+	}
+
+	if st, ok := status.FromError(err); ok && st.Code() == codes.Unimplemented {
+		return fmt.Errorf(
+			"this version of the azure.ai.agents extension is incompatible with your installed version of azd. " +
+				"Please upgrade azd to the latest version")
+	}
+
+	return nil
+}
+
 func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 	flags := &initFlags{
 		rootFlagsDefinition: rootFlags,
@@ -98,6 +117,10 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 				return fmt.Errorf("failed to create azd client: %w", err)
 			}
 			defer azdClient.Close()
+
+			if err := checkAiModelServiceAvailable(ctx, azdClient); err != nil {
+				return err
+			}
 
 			// Wait for debugger if AZD_EXT_DEBUG is set
 			if err := azdext.WaitForDebugger(ctx, azdClient); err != nil {

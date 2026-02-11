@@ -663,7 +663,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 		if compatResult != nil && compatResult.HasNewerIncompatible && compatResult.LatestOverall != nil {
 			a.console.StopSpinner(ctx, stepMessage, input.Step)
 			displayVersionCompatibilityWarning(ctx, a.console,
-				extensionId, compatResult.LatestOverall, compatResult.LatestCompatible, azdVersion,
+				compatResult.LatestOverall, compatResult.LatestCompatible, azdVersion,
 			)
 			a.console.ShowSpinner(ctx, stepMessage, input.Step)
 		}
@@ -977,7 +977,7 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 		if compatResult != nil && compatResult.HasNewerIncompatible && compatResult.LatestOverall != nil {
 			a.console.StopSpinner(ctx, stepMessage, input.Step)
 			displayVersionCompatibilityWarning(ctx, a.console,
-				extensionId, compatResult.LatestOverall, compatResult.LatestCompatible, azdVersion,
+				compatResult.LatestOverall, compatResult.LatestCompatible, azdVersion,
 			)
 			a.console.ShowSpinner(ctx, stepMessage, input.Step)
 		}
@@ -1389,7 +1389,7 @@ func resolveCompatibleExtension(
 
 	if len(compatResult.Compatible) == 0 {
 		return nil, compatResult, fmt.Errorf(
-			"no compatible version of %s found for azd %s. Upgrade azd to continue",
+			"no compatible version of %s found for azd %s",
 			extensionId, azdVersion.String(),
 		)
 	}
@@ -1403,41 +1403,22 @@ func resolveCompatibleExtension(
 	return selectedExtension, compatResult, nil
 }
 
-// displayVersionCompatibilityWarning prints a warning about newer incompatible versions
+// displayVersionCompatibilityWarning prints a warning when the latest version is incompatible
+// but an older compatible version is available.
 func displayVersionCompatibilityWarning(
 	ctx context.Context,
 	console input.Console,
-	extensionId string,
 	latestOverall *extensions.ExtensionVersion,
 	latestCompatible *extensions.ExtensionVersion,
 	azdVersion *semver.Version,
 ) {
-	if latestCompatible != nil {
-		console.Message(ctx, output.WithWarningFormat(
-			"WARNING: Latest version %s of %s requires azd version matching \"%s\" (you have %s). "+
-				"Using latest compatible version %s instead.",
-			latestOverall.Version,
-			extensionId,
-			latestOverall.RequiredAzdVersion,
-			azdVersion.String(),
-			latestCompatible.Version,
-		))
-		console.Message(ctx, fmt.Sprintf(
-			"  To get the latest version, upgrade azd: %s",
-			output.WithHighLightFormat("azd version update"),
-		))
-	} else {
-		console.Message(ctx, output.WithWarningFormat(
-			"WARNING: All versions of %s require a newer azd version (latest requires \"%s\", you have %s).",
-			extensionId,
-			latestOverall.RequiredAzdVersion,
-			azdVersion.String(),
-		))
-		console.Message(ctx, fmt.Sprintf(
-			"  Upgrade azd to continue: %s",
-			output.WithHighLightFormat("azd version update"),
-		))
-	}
+	console.Message(ctx, output.WithWarningFormat(
+		"   WARNING: %s is incompatible with azd %s (requires %q), installing %s instead.",
+		latestOverall.Version,
+		azdVersion.String(),
+		latestOverall.RequiredAzdVersion,
+		latestCompatible.Version,
+	))
 }
 
 // validateVersionCompatibility checks if a specific requested version is compatible with the current azd version.
@@ -1452,12 +1433,11 @@ func validateVersionCompatibility(
 		if versions[i].Version == requestedVersion {
 			if !extensions.VersionIsCompatible(&versions[i], azdVersion) {
 				return fmt.Errorf(
-					"version %s of %s requires azd version matching \"%s\" (you have %s). "+
-						"Upgrade azd or choose a compatible version",
-					versions[i].Version,
+					"%s %s is incompatible with azd %s (requires %q)",
 					extensionId,
-					versions[i].RequiredAzdVersion,
+					versions[i].Version,
 					azdVersion.String(),
+					versions[i].RequiredAzdVersion,
 				)
 			}
 			break

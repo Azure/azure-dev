@@ -915,6 +915,7 @@ A [JSON schema](../extensions/extension.schema.json) is available to support aut
 - `providers`: List of providers this extension registers
 - `platforms`: Platform-specific metadata
 - `mcp`: Model Context Protocol server configuration
+- `requiredAzdVersion`: Semver constraint on the azd CLI version required to use this extension (e.g. `>= 1.24.0`, `^1.23.4`, `< 2.0.0`). When set, azd filters out incompatible versions during install/upgrade and warns when the latest version cannot be used.
 
 #### Extension Capabilities
 

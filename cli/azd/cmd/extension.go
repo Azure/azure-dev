@@ -181,6 +181,7 @@ type extensionListItem struct {
 	Version          string `json:"version"`
 	InstalledVersion string `json:"installedVersion"`
 	UpdateAvailable  bool   `json:"updateAvailable"`
+	Incompatible     bool   `json:"-"`
 	Source           string `json:"source"`
 }
 
@@ -206,9 +207,8 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 		return nil, fmt.Errorf("failed listing installed extensions: %w", err)
 	}
 
-	azdVersion := currentAzdSemver()
-
 	extensionRows := []extensionListItem{}
+	azdVersion := currentAzdSemver()
 
 	for _, extension := range registryExtensions {
 		if len(extension.Versions) == 0 {
@@ -222,17 +222,12 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 			continue
 		}
 
-		// Determine the latest compatible version
+		// Always show the true latest version
 		latestVersion := extension.Versions[len(extension.Versions)-1].Version
-		if azdVersion != nil {
-			compatResult := extensions.FilterCompatibleVersions(extension.Versions, azdVersion)
-			if compatResult.LatestCompatible != nil {
-				latestVersion = compatResult.LatestCompatible.Version
-			}
-		}
 
 		var installedVersion string
 		var updateAvailable bool
+		var updateIncompatible bool
 
 		if installed {
 			installedVersion = installedExtension.Version
@@ -243,6 +238,12 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 			if installedErr == nil && latestErr == nil {
 				updateAvailable = latestSemver.GreaterThan(installedSemver)
 			}
+
+			// Check if the update is incompatible with the current azd version
+			if updateAvailable && azdVersion != nil {
+				compatResult := extensions.FilterCompatibleVersions(extension.Versions, azdVersion)
+				updateIncompatible = compatResult.HasNewerIncompatible
+			}
 		}
 
 		extensionRows = append(extensionRows, extensionListItem{
@@ -251,7 +252,8 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 			Namespace:        extension.Namespace,
 			Version:          latestVersion,
 			InstalledVersion: installedVersion,
-			UpdateAvailable:  updateAvailable,
+			UpdateAvailable:  updateAvailable && !updateIncompatible,
+			Incompatible:     updateIncompatible,
 			Source:           extension.Source,
 		})
 	}
@@ -292,7 +294,7 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 			},
 			{
 				Heading:       "Installed Version",
-				ValueTemplate: `{{.InstalledVersion}}{{if .UpdateAvailable}}*{{end}}`,
+				ValueTemplate: `{{.InstalledVersion}}{{if .UpdateAvailable}}*{{else if .Incompatible}}!{{end}}`,
 			},
 			{
 				Heading:       "Source",
@@ -304,14 +306,32 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 			Columns: columns,
 		})
 
-		if formatErr == nil && slices.ContainsFunc(extensionRows, func(row extensionListItem) bool {
-			return row.UpdateAvailable
-		}) {
-			a.console.Message(ctx, "\n(*) Update available")
-			a.console.Message(ctx, fmt.Sprintf(
-				"    To upgrade: %s", output.WithHighLightFormat("azd extension upgrade <extension-id>")))
-			a.console.Message(ctx, fmt.Sprintf(
-				"    To upgrade all: %s", output.WithHighLightFormat("azd extension upgrade --all")))
+		if formatErr == nil {
+			hasCompatibleUpdates := slices.ContainsFunc(extensionRows, func(row extensionListItem) bool {
+				return row.UpdateAvailable
+			})
+			hasIncompatibleUpdates := slices.ContainsFunc(extensionRows, func(row extensionListItem) bool {
+				return row.Incompatible
+			})
+
+			if hasCompatibleUpdates || hasIncompatibleUpdates {
+				a.console.Message(ctx, "")
+			}
+
+			if hasCompatibleUpdates {
+				a.console.Message(ctx, "(*) Update available")
+				a.console.Message(ctx, fmt.Sprintf(
+					"    To upgrade: %s", output.WithHighLightFormat("azd extension upgrade <extension-id>")))
+				a.console.Message(ctx, fmt.Sprintf(
+					"    To upgrade all: %s", output.WithHighLightFormat("azd extension upgrade --all")))
+			}
+
+			if hasIncompatibleUpdates {
+				if hasCompatibleUpdates {
+					a.console.Message(ctx, "")
+				}
+				a.console.Message(ctx, "(!) Update available but incompatible with current azd version")
+			}
 		}
 	} else {
 		formatErr = a.formatter.Format(extensionRows, a.writer, nil)

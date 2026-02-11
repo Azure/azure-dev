@@ -167,13 +167,14 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 	foundryProjectId := resp.Value
 	if foundryProjectId != "" {
 		parts := strings.Split(foundryProjectId, "/")
-		var subscription, resourceGroup, accountName string
-
-		if len(parts) >= 9 {
-			subscription = parts[2]
-			resourceGroup = parts[4]
-			accountName = parts[8]
+		if len(parts) < 9 {
+			return nil, fmt.Errorf(
+				"invalid AZURE_AI_PROJECT_ID format: expected at least 9 path segments, got %d", len(parts))
 		}
+
+		subscription := parts[2]
+		resourceGroup := parts[4]
+		accountName := parts[8]
 
 		deploymentsClient, err := armcognitiveservices.NewDeploymentsClient(subscription, a.credential, azure.NewArmClientOptions())
 		if err != nil {
@@ -192,13 +193,16 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 
 		matchingDeployments := make(map[string]*armcognitiveservices.Deployment)
 		for _, deployment := range deployments {
-			if deployment.Properties != nil && deployment.Properties.Model != nil {
-				deployedModel := deployment.Properties.Model
-				if deployedModel.Name != nil {
-					if *deployedModel.Name == model.Id {
-						matchingDeployments[*deployment.Name] = deployment
-					}
-				}
+			if deployment.Name == nil ||
+				deployment.Properties == nil || deployment.Properties.Model == nil ||
+				deployment.Properties.Model.Name == nil || deployment.Properties.Model.Format == nil ||
+				deployment.Properties.Model.Version == nil ||
+				deployment.SKU == nil || deployment.SKU.Name == nil || deployment.SKU.Capacity == nil {
+				continue
+			}
+
+			if *deployment.Properties.Model.Name == model.Id {
+				matchingDeployments[*deployment.Name] = deployment
 			}
 		}
 

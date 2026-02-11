@@ -3,7 +3,7 @@
 
 // Package agentdetect provides functionality to detect when azd is invoked
 // by known AI coding agents (Claude Code, GitHub Copilot, Gemini, OpenCode)
-// and enables automatic adjustment of behavior (e.g., no-prompt mode).
+// for telemetry and tracing purposes.
 package agentdetect
 
 // AgentType represents a known AI coding agent.

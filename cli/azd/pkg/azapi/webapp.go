@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
@@ -338,71 +337,4 @@ func (cli *AzureClient) DeployAppServiceSlotZip(
 	}
 
 	return to.Ptr(response.StatusText), nil
-}
-
-// SwapSlot swaps two deployment slots or a slot with production.
-// sourceSlot: the source slot name (empty string means production)
-// targetSlot: the target slot name (empty string means production)
-// The swap operation swaps the content of sourceSlot into targetSlot.
-func (cli *AzureClient) SwapSlot(
-	ctx context.Context,
-	subscriptionId string,
-	resourceGroup string,
-	appName string,
-	sourceSlot string,
-	targetSlot string,
-) error {
-	client, err := cli.createWebAppsClient(ctx, subscriptionId)
-	if err != nil {
-		return err
-	}
-
-	// Handle the swap based on which slots are involved
-	var poller interface{}
-	var swapErr error
-
-	if sourceSlot == "" && targetSlot == "" {
-		return fmt.Errorf("cannot swap production with itself")
-	} else if sourceSlot == "" {
-		// Swapping production with a named slot (e.g., production -> staging)
-		// Use BeginSwapSlotWithProduction with targetSlot as the slot to swap with
-		swapRequest := armappservice.CsmSlotEntity{
-			TargetSlot: to.Ptr(targetSlot),
-		}
-		poller, swapErr = client.BeginSwapSlotWithProduction(ctx, resourceGroup, appName, swapRequest, nil)
-	} else if targetSlot == "" {
-		// Swapping a named slot with production (e.g., staging -> production)
-		// Use BeginSwapSlot with sourceSlot and production as target
-		swapRequest := armappservice.CsmSlotEntity{
-			TargetSlot: to.Ptr("production"),
-		}
-		poller, swapErr = client.BeginSwapSlot(ctx, resourceGroup, appName, sourceSlot, swapRequest, nil)
-	} else {
-		// Swapping between two named slots
-		swapRequest := armappservice.CsmSlotEntity{
-			TargetSlot: to.Ptr(targetSlot),
-		}
-		poller, swapErr = client.BeginSwapSlot(ctx, resourceGroup, appName, sourceSlot, swapRequest, nil)
-	}
-
-	if swapErr != nil {
-		return fmt.Errorf("starting slot swap: %w", swapErr)
-	}
-
-	// Wait for completion
-	// Type assert to get the PollUntilDone method
-	switch p := poller.(type) {
-	case *runtime.Poller[armappservice.WebAppsClientSwapSlotWithProductionResponse]:
-		_, swapErr = p.PollUntilDone(ctx, nil)
-	case *runtime.Poller[armappservice.WebAppsClientSwapSlotResponse]:
-		_, swapErr = p.PollUntilDone(ctx, nil)
-	default:
-		return fmt.Errorf("unexpected poller type")
-	}
-
-	if swapErr != nil {
-		return fmt.Errorf("waiting for slot swap to complete: %w", swapErr)
-	}
-
-	return nil
 }

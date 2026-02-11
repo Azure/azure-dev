@@ -16,6 +16,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -79,6 +80,7 @@ type loginFlags struct {
 	scopes                 []string
 	claims                 string
 	redirectPort           int
+	forceLoginPrompt       bool
 	global                 *internal.GlobalCommandOptions
 }
 
@@ -189,6 +191,12 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		"redirect-port",
 		0,
 		"Choose the port to be used as part of the redirect URI during interactive login.")
+	local.BoolVar(
+		&lf.forceLoginPrompt,
+		"fresh",
+		false,
+		"Force re-authentication by ignoring any cached credentials. "+
+			"Use this to ensure 2FA/MFA is re-validated.")
 	if oneauth.Supported {
 		local.BoolVar(&lf.browser, "browser", false, "Authenticate in a web browser instead of an integrated dialog.")
 	}
@@ -597,15 +605,18 @@ func (la *loginAction) login(ctx context.Context) error {
 	if oneauth.Supported && !la.flags.browser {
 		err = la.authManager.LoginWithOneAuth(ctx, la.flags.tenantID, la.flags.scopes)
 	} else {
-		_, err = la.authManager.LoginInteractive(ctx, la.flags.scopes, claims,
-			&auth.LoginInteractiveOptions{
-				TenantID:     la.flags.tenantID,
-				RedirectPort: la.flags.redirectPort,
-				WithOpenUrl: func(url string) error {
-					openWithDefaultBrowser(ctx, la.console, url)
-					return nil
-				},
-			})
+		loginOptions := &auth.LoginInteractiveOptions{
+			TenantID:     la.flags.tenantID,
+			RedirectPort: la.flags.redirectPort,
+			WithOpenUrl: func(url string) error {
+				openWithDefaultBrowser(ctx, la.console, url)
+				return nil
+			},
+		}
+		if la.flags.forceLoginPrompt {
+			loginOptions.Prompt = public.PromptLogin
+		}
+		_, err = la.authManager.LoginInteractive(ctx, la.flags.scopes, claims, loginOptions)
 	}
 	if err != nil {
 		err = fmt.Errorf("logging in: %w", err)

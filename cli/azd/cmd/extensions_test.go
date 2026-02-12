@@ -176,3 +176,4 @@ func TestBindExtension_DeeplyNestedNamespace(t *testing.T) {
 	require.Equal(t, "Extension for fine tuning AI models.", finetuneCmd.Options.Command.Short)
 	require.Equal(t, "Extension for evaluating AI models.", evalCmd.Options.Command.Short)
 }
+

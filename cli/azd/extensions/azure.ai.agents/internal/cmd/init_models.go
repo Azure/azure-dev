@@ -75,6 +75,15 @@ func (a *InitAction) updateEnvLocation(ctx context.Context, selectedLocation str
 		return fmt.Errorf("failed to get current azd environment: %w", err)
 	}
 
+	_, err = a.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+		EnvName: envResponse.Environment.Name,
+		Key:     "AZURE_LOCATION",
+		Value:   selectedLocation,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to update AZURE_LOCATION in azd environment: %w", err)
+	}
+
 	if a.azureContext == nil {
 		a.azureContext = &azdext.AzureContext{}
 	}
@@ -82,15 +91,6 @@ func (a *InitAction) updateEnvLocation(ctx context.Context, selectedLocation str
 		a.azureContext.Scope = &azdext.AzureScope{}
 	}
 	a.azureContext.Scope.Location = selectedLocation
-
-	_, err = a.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-		EnvName: envResponse.Environment.Name,
-		Key:     "AZURE_LOCATION",
-		Value:   a.azureContext.Scope.Location,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to update AZURE_LOCATION in azd environment: %w", err)
-	}
 
 	fmt.Println(output.WithSuccessFormat("Updated AZURE_LOCATION to '%s' in your azd environment.", selectedLocation))
 	return nil

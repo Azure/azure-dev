@@ -345,19 +345,19 @@ func TestParseGlobalFlags_AgentDetection(t *testing.T) {
 			expectedNoPrompt: false,
 		},
 		{
-			name:             "agent detected via env var, no flag - no longer auto-enables no-prompt",
+			name:             "agent detected via env var, no flag",
 			args:             []string{"up"},
 			envVars:          map[string]string{"CLAUDE_CODE": "1"},
-			expectedNoPrompt: false,
+			expectedNoPrompt: true,
 		},
 		{
-			name:             "agent detected with --no-prompt=false explicitly set",
+			name:             "agent detected but --no-prompt=false explicitly set",
 			args:             []string{"--no-prompt=false", "up"},
 			envVars:          map[string]string{"CLAUDE_CODE": "1"},
 			expectedNoPrompt: false,
 		},
 		{
-			name:             "agent detected with --no-prompt explicitly set true",
+			name:             "agent detected but --no-prompt explicitly set true",
 			args:             []string{"--no-prompt", "up"},
 			envVars:          map[string]string{"GEMINI_CLI": "1"},
 			expectedNoPrompt: true,
@@ -369,22 +369,22 @@ func TestParseGlobalFlags_AgentDetection(t *testing.T) {
 			expectedNoPrompt: true,
 		},
 		{
-			name:             "Gemini agent detected - no longer auto-enables no-prompt",
+			name:             "Gemini agent detected",
 			args:             []string{"init"},
 			envVars:          map[string]string{"GEMINI_CLI": "1"},
-			expectedNoPrompt: false,
+			expectedNoPrompt: true,
 		},
 		{
-			name:             "GitHub Copilot CLI agent detected - no longer auto-enables no-prompt",
+			name:             "GitHub Copilot CLI agent detected",
 			args:             []string{"deploy"},
 			envVars:          map[string]string{"GITHUB_COPILOT_CLI": "true"},
-			expectedNoPrompt: false,
+			expectedNoPrompt: true,
 		},
 		{
-			name:             "OpenCode agent detected - no longer auto-enables no-prompt",
+			name:             "OpenCode agent detected",
 			args:             []string{"provision"},
 			envVars:          map[string]string{"OPENCODE": "1"},
-			expectedNoPrompt: false,
+			expectedNoPrompt: true,
 		},
 	}
 

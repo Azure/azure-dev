@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/mattn/go-isatty"
 )
@@ -23,6 +24,11 @@ func IsTerminal(stdoutFd uintptr, stdinFd uintptr) bool {
 	// If this is affecting you locally while debugging on a CI machine,
 	// use the override AZD_FORCE_TTY=true.
 	if resource.IsRunningOnCI() {
+		return false
+	}
+
+	// If running under an AI coding agent, disable TTY mode to prevent interactive prompts.
+	if agentdetect.IsRunningInAgent() {
 		return false
 	}
 

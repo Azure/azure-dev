@@ -138,6 +138,10 @@ func (c *MockConsole) WaitForEnter() {
 func (c *MockConsole) EnsureBlankLine(context context.Context) {
 }
 
+func (c *MockConsole) IsNoPromptMode() bool {
+	return false
+}
+
 func (c *MockConsole) SupportsPromptDialog() bool {
 	return false
 }

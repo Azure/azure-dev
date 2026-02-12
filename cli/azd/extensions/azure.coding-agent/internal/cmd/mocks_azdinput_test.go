@@ -335,6 +335,20 @@ func (mr *MockConsoleMockRecorder) StopSpinner(ctx, lastMessage, format any) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StopSpinner", reflect.TypeOf((*MockConsole)(nil).StopSpinner), ctx, lastMessage, format)
 }
 
+// IsNoPromptMode mocks base method.
+func (m *MockConsole) IsNoPromptMode() bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsNoPromptMode")
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsNoPromptMode indicates an expected call of IsNoPromptMode.
+func (mr *MockConsoleMockRecorder) IsNoPromptMode() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsNoPromptMode", reflect.TypeOf((*MockConsole)(nil).IsNoPromptMode))
+}
+
 // SupportsPromptDialog mocks base method.
 func (m *MockConsole) SupportsPromptDialog() bool {
 	m.ctrl.T.Helper()

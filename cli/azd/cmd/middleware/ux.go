@@ -108,6 +108,14 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 		}
 
 		m.console.Message(ctx, errMessage)
+
+		// Print out additional text for errors that have it.
+		var uxItemErr ux.UxItem
+		if errors.As(err, &uxItemErr) {
+			m.console.Message(ctx, "")
+			m.console.MessageUxItem(ctx, uxItemErr)
+			return actionResult, err
+		}
 	}
 
 	if actionResult != nil && actionResult.Message != nil {

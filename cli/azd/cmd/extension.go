@@ -871,6 +871,10 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 		return nil, fmt.Errorf("cannot specify --version flag when using multiple extensions")
 	}
 
+	if a.flags.all && a.flags.source != "" {
+		return nil, fmt.Errorf("cannot specify --source flag with --all flag (extensions will be upgraded from their original sources)")
+	}
+
 	if len(a.args) == 0 && !a.flags.all {
 		return nil, fmt.Errorf("must specify an extension id or use --all flag")
 	}
@@ -937,42 +941,22 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 			return nil, fmt.Errorf("extension %s not found in source %s", extensionId, sourceToUse)
 		}
 
-		// When filtering by exact source and extension ID, there should only be one match
-		// However, if there are multiple matches (unexpected), we'll use the first one
+		// When filtering by exact source and extension ID, there should only be one match.
+		// If there are multiple matches, this indicates an invalid or inconsistent state in the
+		// extension registry; fail explicitly so this can be investigated.
 		if len(matches) > 1 {
-			a.console.MessageUxItem(ctx, &ux.WarningMessage{
-				Description: fmt.Sprintf(
-					"Found %d matches for %s in source %s, using the first match",
-					len(matches),
-					extensionId,
-					sourceToUse,
-				),
-			})
+			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			return nil, fmt.Errorf(
+				"found %d matches for extension %s in source %s; expected exactly one match",
+				len(matches),
+				extensionId,
+				sourceToUse,
+			)
 		}
 		selectedExtension := matches[0]
 
 		a.console.ShowSpinner(ctx, stepMessage, input.Step)
 		latestVersion := selectedExtension.Versions[len(selectedExtension.Versions)-1]
-
-		// Check if there's a newer version available in other sources
-		// Only do this if the user didn't explicitly specify a source
-		if a.flags.source == "" {
-			if err := a.checkForNewerVersionInOtherSources(
-				ctx,
-				extensionId,
-				installed.Source,
-				latestVersion.Version,
-			); err != nil {
-				// Log the error but don't fail the upgrade
-				// Using console warning instead of log.Printf for consistency
-				a.console.MessageUxItem(ctx, &ux.WarningMessage{
-					Description: fmt.Sprintf(
-						"Failed to check for newer versions in other sources: %v",
-						err,
-					),
-				})
-			}
-		}
 
 		// Parse semantic versions for proper comparison
 		installedSemver, err := semver.NewVersion(installed.Version)
@@ -1008,6 +992,26 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 			a.console.StopSpinner(ctx, stepMessage, input.StepDone)
 
 			displayExtensionUsageAndExamples(ctx, a.console, extensionVersion)
+		}
+
+		// Check if there's a newer version available in other sources
+		// Only do this after the spinner is stopped and if the user didn't explicitly specify a source
+		if a.flags.source == "" {
+			if err := a.checkForNewerVersionInOtherSources(
+				ctx,
+				extensionId,
+				installed.Source,
+				latestVersion.Version,
+			); err != nil {
+				// Log the error but don't fail the upgrade
+				// Using console warning instead of log.Printf for consistency
+				a.console.MessageUxItem(ctx, &ux.WarningMessage{
+					Description: fmt.Sprintf(
+						"Failed to check for newer versions in other sources: %v",
+						err,
+					),
+				})
+			}
 		}
 	}
 
@@ -1074,30 +1078,19 @@ func (a *extensionUpgradeAction) checkForNewerVersionInOtherSources(
 	// Display warning if a newer version was found
 	if newestSemver != nil {
 		warningDesc := fmt.Sprintf(
-			"A newer version (%s) of %s is available in source '%s', but the extension was installed "+
-				"from source '%s'. The extension will be upgraded to version %s from the original source.",
+			"A newer version %s is available in source '%s' (installed: %s from '%s').",
 			output.WithHighLightFormat(newestSemver.String()),
-			output.WithHighLightFormat(extensionId),
 			output.WithHighLightFormat(newerVersionSource),
-			output.WithHighLightFormat(currentSource),
 			output.WithHighLightFormat(currentLatestVersion),
+			output.WithHighLightFormat(currentSource),
 		)
 		a.console.MessageUxItem(ctx, &ux.WarningMessage{Description: warningDesc})
 
-		a.console.Message(ctx, "")
-		instructionMsg := fmt.Sprintf(
-			"To switch to the newer version from '%s', first uninstall the extension and then "+
-				"install it from the desired source:",
-			newerVersionSource,
-		)
-		a.console.Message(ctx, instructionMsg)
-
-		uninstallCmd := fmt.Sprintf("azd extension uninstall %s", extensionId)
-		a.console.Message(ctx, fmt.Sprintf("  %s", output.WithHighLightFormat(uninstallCmd)))
-
-		installCmd := fmt.Sprintf("azd extension install %s --source %s", extensionId, newerVersionSource)
-		a.console.Message(ctx, fmt.Sprintf("  %s", output.WithHighLightFormat(installCmd)))
-
+		uninstallCmd := fmt.Sprintf("azd ext uninstall %s", extensionId)
+		installCmd := fmt.Sprintf("azd ext install %s --source %s", extensionId, newerVersionSource)
+		switchCmd := fmt.Sprintf("%s && %s", uninstallCmd, installCmd)
+		
+		a.console.Message(ctx, fmt.Sprintf("  To switch: %s", output.WithHighLightFormat(switchCmd)))
 		a.console.Message(ctx, "")
 	}
 

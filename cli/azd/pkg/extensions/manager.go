@@ -713,23 +713,47 @@ func (m *Manager) copyFromLocalPath(artifactPath string) (string, error) {
 }
 
 func (tm *Manager) getSources(ctx context.Context, filter sourceFilterPredicate) ([]Source, error) {
-	if tm.sources != nil {
+	// If sources are not cached, create and cache all sources
+	if tm.sources == nil {
+		configs, err := tm.sourceManager.List(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed parsing extension sources: %w", err)
+		}
+
+		// Always create all sources and cache them (no filter during creation)
+		sources, err := tm.createSourcesFromConfig(ctx, configs, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed initializing extension sources: %w", err)
+		}
+
+		tm.sources = sources
+	}
+
+	// If no filter is provided, return all cached sources
+	if filter == nil {
 		return tm.sources, nil
 	}
 
+	// Apply filter to cached sources
 	configs, err := tm.sourceManager.List(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed parsing extension sources: %w", err)
 	}
 
-	sources, err := tm.createSourcesFromConfig(ctx, configs, filter)
-	if err != nil {
-		return nil, fmt.Errorf("failed initializing extension sources: %w", err)
+	filteredSources := []Source{}
+	for _, source := range tm.sources {
+		// Find the matching config for this source
+		for _, config := range configs {
+			if source.Name() == config.Name {
+				if filter(config) {
+					filteredSources = append(filteredSources, source)
+				}
+				break
+			}
+		}
 	}
 
-	tm.sources = sources
-
-	return tm.sources, nil
+	return filteredSources, nil
 }
 
 func (tm *Manager) createSourcesFromConfig(

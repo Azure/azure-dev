@@ -110,47 +110,58 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 				return fmt.Errorf("failed waiting for debugger: %w", err)
 			}
 
-			azureContext, projectConfig, environment, err := ensureAzureContext(ctx, flags, azdClient)
-			if err != nil {
-				return fmt.Errorf("failed to ground into a project context: %w", err)
-			}
+			if flags.manifestPointer != "" {
+				azureContext, projectConfig, environment, err := ensureAzureContext(ctx, flags, azdClient)
+				if err != nil {
+					return fmt.Errorf("failed to ground into a project context: %w", err)
+				}
 
-			credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
-				TenantID:                   azureContext.Scope.TenantId,
-				AdditionallyAllowedTenants: []string{"*"},
-			})
-			if err != nil {
-				return fmt.Errorf("failed to create azure credential: %w", err)
-			}
+				credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
+					TenantID:                   azureContext.Scope.TenantId,
+					AdditionallyAllowedTenants: []string{"*"},
+				})
+				if err != nil {
+					return fmt.Errorf("failed to create azure credential: %w", err)
+				}
 
-			console := input.NewConsole(
-				false, // noPrompt
-				true,  // isTerminal
-				input.Writers{Output: os.Stdout},
-				input.ConsoleHandles{
-					Stderr: os.Stderr,
-					Stdin:  os.Stdin,
-					Stdout: os.Stdout,
-				},
-				nil, // formatter
-				nil, // externalPromptCfg
-			)
+				console := input.NewConsole(
+					false, // noPrompt
+					true,  // isTerminal
+					input.Writers{Output: os.Stdout},
+					input.ConsoleHandles{
+						Stderr: os.Stderr,
+						Stdin:  os.Stdin,
+						Stdout: os.Stdout,
+					},
+					nil, // formatter
+					nil, // externalPromptCfg
+				)
 
-			action := &InitAction{
-				azdClient: azdClient,
-				// azureClient:         azure.NewAzureClient(credential),
-				azureContext: azureContext,
-				// composedResources:   getComposedResourcesResponse.Resources,
-				console:             console,
-				credential:          credential,
-				modelCatalogService: ai.NewModelCatalogService(credential),
-				projectConfig:       projectConfig,
-				environment:         environment,
-				flags:               flags,
-			}
+				action := &InitAction{
+					azdClient: azdClient,
+					// azureClient:         azure.NewAzureClient(credential),
+					azureContext: azureContext,
+					// composedResources:   getComposedResourcesResponse.Resources,
+					console:             console,
+					credential:          credential,
+					modelCatalogService: ai.NewModelCatalogService(credential),
+					projectConfig:       projectConfig,
+					environment:         environment,
+					flags:               flags,
+				}
 
-			if err := action.Run(ctx); err != nil {
-				return fmt.Errorf("failed to run start action: %w", err)
+				if err := action.Run(ctx); err != nil {
+					return fmt.Errorf("failed to run start action: %w", err)
+				}
+			} else {
+				action := &InitFromCodeAction{
+					azdClient: azdClient,
+					flags:     flags,
+				}
+
+				if err := action.Run(ctx); err != nil {
+					return fmt.Errorf("failed to run init from code action: %w", err)
+				}
 			}
 
 			return nil
@@ -192,21 +203,21 @@ func (a *InitAction) Run(ctx context.Context) error {
 		a.flags.src = relPath
 	}
 
-	// If --project-id is given
-	if a.flags.projectResourceId != "" {
-		// projectResourceId is a string of the format
-		// /subscriptions/[AZURE_SUBSCRIPTION]/resourceGroups/[AZURE_RESOURCE_GROUP]/providers/Microsoft.CognitiveServices/accounts/[AI_ACCOUNT_NAME]/projects/[AI_PROJECT_NAME]
-		// extract each of those fields from the string, issue an error if it doesn't match the format
-		fmt.Println("Setting up your azd environment to use the provided Microsoft Foundry project resource ID...")
-		if err := a.parseAndSetProjectResourceId(ctx); err != nil {
-			return fmt.Errorf("failed to parse project resource ID: %w", err)
-		}
-
-		color.Green("\nYour azd environment has been initialized to use your existing Microsoft Foundry project.")
-	}
-
 	// If --manifest is given
 	if a.flags.manifestPointer != "" {
+		// If --project-id is given
+		if a.flags.projectResourceId != "" {
+			// projectResourceId is a string of the format
+			// /subscriptions/[AZURE_SUBSCRIPTION]/resourceGroups/[AZURE_RESOURCE_GROUP]/providers/Microsoft.CognitiveServices/accounts/[AI_ACCOUNT_NAME]/projects/[AI_PROJECT_NAME]
+			// extract each of those fields from the string, issue an error if it doesn't match the format
+			fmt.Println("Setting up your azd environment to use the provided Microsoft Foundry project resource ID...")
+			if err := a.parseAndSetProjectResourceId(ctx); err != nil {
+				return fmt.Errorf("failed to parse project resource ID: %w", err)
+			}
+
+			color.Green("\nYour azd environment has been initialized to use your existing Microsoft Foundry project.")
+		}
+
 		// Validate that the manifest pointer is either a valid URL or existing file path
 		isValidURL := false
 		isValidFile := false
@@ -237,48 +248,7 @@ func (a *InitAction) Run(ctx context.Context) error {
 		}
 
 		color.Green("\nAI agent definition added to your azd project successfully!")
-	} else if a.flags.src != "" {
-		// No manifest pointer provided - process local agent code
-		// Create a manifest based on user prompts
-		localManifest, err := a.createManifestFromLocalAgent(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to create manifest from local agent: %w", err)
-		}
-
-		if localManifest != nil {
-			// Enable no-prompt mode since we've already collected all the input we need
-			a.flags.NoPrompt = true
-
-			// Write the manifest to a file in the src directory
-			manifestPath, err := a.writeManifestToSrcDir(localManifest, a.flags.src)
-			if err != nil {
-				return fmt.Errorf("failed to write manifest to src directory: %w", err)
-			}
-
-			// Use the manifest file path to download/process the agent
-			agentManifest, targetDir, err := a.downloadAgentYaml(ctx, manifestPath, a.flags.src)
-			if err != nil {
-				return fmt.Errorf("downloading agent.yaml from local manifest: %w", err)
-			}
-
-			// Add the agent to the azd project (azure.yaml) services
-			if err := a.addToProject(ctx, targetDir, agentManifest, a.flags.host); err != nil {
-				return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
-			}
-
-			color.Green("\nLocal AI agent definition added to your azd project successfully!")
-		}
 	}
-
-	// // Validate command flags
-	// if err := a.validateFlags(flags); err != nil {
-	// 	return err
-	// }
-
-	// // Prompt for any missing input values
-	// if err := a.promptForMissingValues(ctx, a.azdClient, flags); err != nil {
-	// 	return fmt.Errorf("collecting required information: %w", err)
-	// }
 
 	return nil
 }
@@ -907,141 +877,6 @@ func (a *InitAction) isRegistryUrl(manifestPointer string) (bool, *RegistryManif
 		manifestName:    manifestName,
 		manifestVersion: manifestVersion,
 	}
-}
-
-// createManifestFromLocalAgent creates an AgentManifest for local agent code
-// This is used when no manifest pointer is provided and we need to scaffold a new agent
-func (a *InitAction) createManifestFromLocalAgent(ctx context.Context) (*agent_yaml.AgentManifest, error) {
-	// Use the current working directory name as the agent name, with punctuation removed and lowercased
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current working directory: %w", err)
-	}
-	dirName := filepath.Base(cwd)
-	agentName := toCleanName(dirName)
-
-	// TODO: Prompt user for agent kind
-	agentKind := agent_yaml.AgentKindHosted
-
-	// Ask if user wants to select a model
-	var selectedModel string
-	wantsModel, err := a.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
-		Options: &azdext.ConfirmOptions{
-			Message:      "Would you like to select a model for your agent?",
-			DefaultValue: to.Ptr(true),
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to prompt for model selection choice: %w", err)
-	}
-
-	if wantsModel.Value != nil && *wantsModel.Value {
-		// Prompt user to select a model from the catalog
-		modelCatalog, err := a.modelCatalogService.ListAllModels(ctx, a.azureContext.Scope.SubscriptionId, a.azureContext.Scope.Location)
-		if err != nil {
-			return nil, fmt.Errorf("failed to list models from catalog: %w", err)
-		}
-
-		// Build model choices from the catalog
-		var modelChoices []*azdext.SelectChoice
-		var modelNames []string
-		for modelName := range modelCatalog {
-			modelNames = append(modelNames, modelName)
-		}
-		slices.Sort(modelNames)
-		for _, modelName := range modelNames {
-			modelChoices = append(modelChoices, &azdext.SelectChoice{
-				Label: modelName,
-				Value: modelName,
-			})
-		}
-
-		modelResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-			Options: &azdext.SelectOptions{
-				Message: "Select a model for your agent:",
-				Choices: modelChoices,
-			},
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to prompt for model selection: %w", err)
-		}
-		selectedModel = modelNames[*modelResp.Value]
-	}
-
-	// Build resources list
-	var resources []any
-	if selectedModel != "" {
-		resources = append(resources, agent_yaml.ModelResource{
-			Resource: agent_yaml.Resource{
-				Name: selectedModel,
-				Kind: agent_yaml.ResourceKindModel,
-			},
-			Id: selectedModel,
-		})
-	}
-
-	// Create a minimal AgentManifest with the Template as a ContainerAgent
-	manifest := &agent_yaml.AgentManifest{
-		Name: agentName,
-		Template: agent_yaml.ContainerAgent{
-			AgentDefinition: agent_yaml.AgentDefinition{
-				Name: agentName,
-				Kind: agentKind,
-			},
-			Protocols: []agent_yaml.ProtocolVersionRecord{
-				{
-					Protocol: "responses",
-					Version:  "v1",
-				},
-			},
-			EnvironmentVariables: &[]agent_yaml.EnvironmentVariable{
-				{
-					Name:  "AZURE_OPENAI_ENDPOINT",
-					Value: "${AZURE_OPENAI_ENDPOINT}",
-				},
-				{
-					Name:  "AZURE_AI_MODEL_DEPLOYMENT_NAME",
-					Value: "{{" + selectedModel + "}}",
-				},
-			},
-		},
-		Resources: resources,
-	}
-
-	return manifest, nil
-}
-
-// toCleanName cleans a name by keeping alphanumeric and dashes, replacing underscores/spaces with dashes, and lowercasing
-func toCleanName(s string) string {
-	// Keep alphanumeric characters and dashes; replace underscores and spaces with dashes
-	var result strings.Builder
-	for _, r := range s {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' {
-			result.WriteRune(r)
-		} else if r == '_' || r == ' ' {
-			result.WriteRune('-')
-		}
-	}
-	return strings.ToLower(result.String())
-}
-
-// writeManifestToSrcDir writes an AgentManifest to a YAML file in the src directory and returns the path
-func (a *InitAction) writeManifestToSrcDir(manifest *agent_yaml.AgentManifest, srcDir string) (string, error) {
-	// Create the manifest file path
-	manifestPath := filepath.Join(srcDir, "agent.yaml")
-
-	// Marshal the manifest to YAML
-	content, err := yaml.Marshal(manifest)
-	if err != nil {
-		return "", fmt.Errorf("marshaling manifest to YAML: %w", err)
-	}
-
-	// Write to the file
-	if err := os.WriteFile(manifestPath, content, 0644); err != nil {
-		return "", fmt.Errorf("writing manifest to file: %w", err)
-	}
-
-	return manifestPath, nil
 }
 
 func (a *InitAction) downloadAgentYaml(

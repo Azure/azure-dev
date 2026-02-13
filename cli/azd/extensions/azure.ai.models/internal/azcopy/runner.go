@@ -65,8 +65,16 @@ func NewRunner(explicitPath string) (*Runner, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("azcopy not found. Install it from https://learn.microsoft.com/azure/storage/common/storage-use-azcopy-v10\n" +
-		"Or specify the path with --azcopy-path")
+	// Auto-download as last resort
+	fmt.Println("  azcopy not found. Downloading latest version...")
+	path, err := downloadAzCopy()
+	if err != nil {
+		return nil, fmt.Errorf("failed to auto-install azcopy: %w\n"+
+			"Install manually from https://learn.microsoft.com/azure/storage/common/storage-use-azcopy-v10\n"+
+			"Or specify the path with --azcopy-path", err)
+	}
+	fmt.Printf("  azcopy installed to %s\n\n", path)
+	return &Runner{azcopyPath: path}, nil
 }
 
 // Path returns the resolved azcopy binary path.

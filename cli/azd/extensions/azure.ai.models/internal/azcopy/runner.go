@@ -139,9 +139,18 @@ func (r *Runner) Copy(ctx context.Context, source string, sasURI string) error {
 					}
 				}
 
+				// Cap at 100% — BytesOverWire includes protocol overhead
+				if percent > 100 {
+					percent = 100
+				}
+				displayBytes := bytesOverWire
+				if totalExpected > 0 && displayBytes > totalExpected {
+					displayBytes = totalExpected
+				}
+
 				if bytesOverWire > lastBytesOverWire {
 					lastBytesOverWire = bytesOverWire
-					printProgress(bytesOverWire, totalExpected, percent, startTime)
+					printProgress(displayBytes, totalExpected, percent, startTime)
 				}
 			}
 		case "Error":

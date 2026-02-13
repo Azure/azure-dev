@@ -7,8 +7,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
+	"azure.ai.models/internal/azcopy"
 	"azure.ai.models/internal/client"
+	"azure.ai.models/pkg/models"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -18,8 +21,12 @@ import (
 )
 
 type customCreateFlags struct {
-	Name    string
-	Version string
+	Name        string
+	Version     string
+	Source      string
+	Description string
+	BaseModel   string
+	AzcopyPath  string
 }
 
 func newCustomCreateCommand(parentFlags *customFlags) *cobra.Command {
@@ -27,11 +34,13 @@ func newCustomCreateCommand(parentFlags *customFlags) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "create",
-		Short: "Create a custom model (start pending upload)",
-		Long: `Initiate a custom model upload by requesting a writable blob storage location.
+		Short: "Upload and register a custom model",
+		Long: `Upload model weights to Azure AI Foundry and register the model.
 
-This command registers a pending model version and returns a SAS URI.
-Use AzCopy to upload your model weights to the returned URI, then register the model.`,
+This command performs three steps:
+  1. Requests a writable upload location (SAS URI)
+  2. Uploads model files using AzCopy
+  3. Registers the model in the custom model registry`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			return runCustomCreate(ctx, parentFlags, flags)
@@ -39,9 +48,14 @@ Use AzCopy to upload your model weights to the returned URI, then register the m
 	}
 
 	cmd.Flags().StringVarP(&flags.Name, "name", "n", "", "Model name (required)")
+	cmd.Flags().StringVar(&flags.Source, "source", "", "Local path to model file or directory (required)")
 	cmd.Flags().StringVar(&flags.Version, "version", "1", "Model version")
+	cmd.Flags().StringVar(&flags.Description, "description", "", "Model description")
+	cmd.Flags().StringVar(&flags.BaseModel, "base-model", "", "Base model architecture (e.g., FW-DeepSeek-v3.1)")
+	cmd.Flags().StringVar(&flags.AzcopyPath, "azcopy-path", "", "Path to azcopy binary (auto-detected if not provided)")
 
 	_ = cmd.MarkFlagRequired("name")
+	_ = cmd.MarkFlagRequired("source")
 
 	return cmd
 }
@@ -60,60 +74,124 @@ func runCustomCreate(ctx context.Context, parentFlags *customFlags, flags *custo
 		return fmt.Errorf("failed waiting for debugger: %w", err)
 	}
 
-	spinner := ux.NewSpinner(&ux.SpinnerOptions{
-		Text: "Preparing upload location...",
-	})
-	if err := spinner.Start(ctx); err != nil {
-		fmt.Printf("failed to start spinner: %v\n", err)
+	// Step 0: Verify azcopy is available before making any API calls
+	azRunner, err := azcopy.NewRunner(flags.AzcopyPath)
+	if err != nil {
+		return err
 	}
+	fmt.Printf("  Using azcopy: %s\n\n", azRunner.Path())
 
+	// Create Azure credential
 	credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
 		AdditionallyAllowedTenants: []string{"*"},
 	})
 	if err != nil {
-		_ = spinner.Stop(ctx)
-		fmt.Println()
 		return fmt.Errorf("failed to create Azure credential: %w", err)
 	}
 
 	foundryClient, err := client.NewFoundryClient(parentFlags.projectEndpoint, credential)
 	if err != nil {
-		_ = spinner.Stop(ctx)
-		fmt.Println()
 		return err
 	}
 
-	result, err := foundryClient.StartPendingUpload(ctx, flags.Name, flags.Version)
+	// ── Step 1: Start pending upload ──
+	fmt.Printf("Creating custom model: %s (version %s)\n\n", flags.Name, flags.Version)
+
+	spinner := ux.NewSpinner(&ux.SpinnerOptions{
+		Text: "Step 1/3: Requesting upload location...",
+	})
+	if err := spinner.Start(ctx); err != nil {
+		fmt.Printf("failed to start spinner: %v\n", err)
+	}
+
+	uploadResp, err := foundryClient.StartPendingUpload(ctx, flags.Name, flags.Version)
 	_ = spinner.Stop(ctx)
 	fmt.Println()
 
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get upload location: %w", err)
 	}
 
-	if result.BlobReferenceForConsumption == nil {
+	if uploadResp.BlobReferenceForConsumption == nil {
 		return fmt.Errorf("unexpected response: no blob reference returned")
 	}
 
-	blob := result.BlobReferenceForConsumption
+	blob := uploadResp.BlobReferenceForConsumption
+	color.Green("✓ Upload location ready")
+	fmt.Printf("  Blob URI: %s\n\n", blob.BlobURI)
 
-	color.Green("✓ Upload location ready\n")
-	fmt.Println()
-	fmt.Printf("  Model Name:  %s\n", flags.Name)
-	fmt.Printf("  Version:     %s\n", flags.Version)
-	fmt.Printf("  Blob URI:    %s\n", blob.BlobURI)
-	fmt.Println()
-
-	color.Cyan("Upload your model files using AzCopy:\n")
-	fmt.Println()
-	fmt.Printf("  azcopy copy \"<source-local-folder-path>/*\" \"%s\" --recursive=true\n", blob.Credential.SasURI)
+	// ── Step 2: Upload via AzCopy ──
+	fmt.Println("Step 2/3: Uploading model files...")
+	fmt.Printf("  Source: %s\n", flags.Source)
 	fmt.Println()
 
-	color.Yellow("After upload completes, register the model with:\n")
+	if err := azRunner.Copy(ctx, flags.Source, blob.Credential.SasURI); err != nil {
+		// Upload failed — print manual recovery instructions
+		fmt.Println()
+		color.Red("✗ Upload failed: %v", err)
+		fmt.Println()
+		color.Yellow("You can retry the upload manually:")
+		fmt.Println()
+		fmt.Printf("  azcopy copy \"%s/*\" \"%s\" --recursive=true\n", flags.Source, blob.Credential.SasURI)
+		fmt.Println()
+		color.Yellow("After upload completes, register the model with:")
+		fmt.Println()
+		fmt.Printf("  azd ai models custom register --name %s --version %s --blob-uri \"%s\" -e \"%s\"\n",
+			flags.Name, flags.Version, blob.BlobURI, parentFlags.projectEndpoint)
+		return fmt.Errorf("upload failed")
+	}
+
 	fmt.Println()
-	fmt.Printf("  azd ai models custom register --name %s --version %s --blob-uri \"%s\"\n",
-		flags.Name, flags.Version, blob.BlobURI)
+	color.Green("✓ Upload complete")
 	fmt.Println()
+
+	// ── Step 3: Register model ──
+	regSpinner := ux.NewSpinner(&ux.SpinnerOptions{
+		Text: "Step 3/3: Registering model...",
+	})
+	if err := regSpinner.Start(ctx); err != nil {
+		fmt.Printf("failed to start spinner: %v\n", err)
+	}
+
+	regReq := &models.RegisterModelRequest{
+		BlobURI:     blob.BlobURI,
+		Description: flags.Description,
+	}
+
+	if flags.BaseModel != "" {
+		regReq.Tags = map[string]string{
+			"baseArchitecture": flags.BaseModel,
+		}
+	}
+
+	model, err := foundryClient.RegisterModel(ctx, flags.Name, flags.Version, regReq)
+	_ = regSpinner.Stop(ctx)
+	fmt.Println()
+
+	if err != nil {
+		// Upload succeeded but register failed — print recovery instructions
+		color.Red("✗ Registration failed: %v", err)
+		fmt.Println()
+		color.Yellow("Upload completed successfully. You can register the model manually:")
+		fmt.Println()
+		fmt.Printf("  azd ai models custom register --name %s --version %s --blob-uri \"%s\" -e \"%s\"\n",
+			flags.Name, flags.Version, blob.BlobURI, parentFlags.projectEndpoint)
+		return fmt.Errorf("registration failed")
+	}
+
+	// ── Success ──
+	color.Green("✓ Model registered successfully!")
+	fmt.Println()
+	fmt.Println(strings.Repeat("─", 50))
+	fmt.Printf("  Name:        %s\n", model.Name)
+	fmt.Printf("  Version:     %s\n", model.Version)
+	if model.Description != "" {
+		fmt.Printf("  Description: %s\n", model.Description)
+	}
+	if model.SystemData != nil && model.SystemData.CreatedAt != "" {
+		fmt.Printf("  Created:     %s\n", model.SystemData.CreatedAt)
+	}
+	fmt.Println(strings.Repeat("─", 50))
 
 	return nil
 }

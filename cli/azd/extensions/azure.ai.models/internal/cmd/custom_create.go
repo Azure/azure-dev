@@ -4,61 +4,116 @@
 package cmd
 
 import (
+	"context"
+	"errors"
 	"fmt"
 
+	"azure.ai.models/internal/client"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/ux"
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
 type customCreateFlags struct {
-	Source      string
-	Name        string
-	Format      string
-	Description string
-	Tags        []string
-	Version     string
-	Overwrite   bool
-	NoProgress  bool
-	DryRun      bool
+	Name    string
+	Version string
 }
 
-func newCustomCreateCommand() *cobra.Command {
+func newCustomCreateCommand(parentFlags *customFlags) *cobra.Command {
 	flags := &customCreateFlags{}
 
 	cmd := &cobra.Command{
 		Use:   "create",
-		Short: "Upload and register a custom model",
-		Long:  "Upload model weights to Azure AI Foundry data store and register the model in the custom model registry.",
+		Short: "Create a custom model (start pending upload)",
+		Long: `Initiate a custom model upload by requesting a writable blob storage location.
+
+This command registers a pending model version and returns a SAS URI.
+Use AzCopy to upload your model weights to the returned URI, then register the model.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Println("Creating custom model...")
-			fmt.Printf("  Source:      %s\n", flags.Source)
-			fmt.Printf("  Name:        %s\n", flags.Name)
-			fmt.Printf("  Format:      %s\n", flags.Format)
-			fmt.Printf("  Description: %s\n", flags.Description)
-			fmt.Printf("  Version:     %s\n", flags.Version)
-			fmt.Printf("  Overwrite:   %v\n", flags.Overwrite)
-			fmt.Printf("  Dry Run:     %v\n", flags.DryRun)
-			fmt.Println()
-			fmt.Println("[TODO] Step 1: Get writable SAS URL from FDP API")
-			fmt.Println("[TODO] Step 2: Upload model weights via AzCopy")
-			fmt.Println("[TODO] Step 3: Register model in FDP custom registry")
-			fmt.Println()
-			fmt.Println("Custom model creation is not yet implemented.")
-			return nil
+			ctx := azdext.WithAccessToken(cmd.Context())
+			return runCustomCreate(ctx, parentFlags, flags)
 		},
 	}
 
-	cmd.Flags().StringVarP(&flags.Source, "source", "s", "", "Local file path or remote URL to upload")
-	cmd.Flags().StringVarP(&flags.Name, "name", "n", "", "Model name in registry")
-	cmd.Flags().StringVarP(&flags.Format, "format", "f", "", "Model format (auto-detected: safetensors, gguf, onnx)")
-	cmd.Flags().StringVar(&flags.Description, "description", "", "Human-readable description")
-	cmd.Flags().StringSliceVar(&flags.Tags, "tags", nil, "Key=value tags (can specify multiple)")
-	cmd.Flags().StringVar(&flags.Version, "version", "1.0", "Version string")
-	cmd.Flags().BoolVar(&flags.Overwrite, "overwrite", false, "Overwrite if model exists")
-	cmd.Flags().BoolVar(&flags.NoProgress, "no-progress", false, "Disable progress bar")
-	cmd.Flags().BoolVar(&flags.DryRun, "dry-run", false, "Preview without executing")
+	cmd.Flags().StringVarP(&flags.Name, "name", "n", "", "Model name (required)")
+	cmd.Flags().StringVar(&flags.Version, "version", "1", "Model version")
 
-	_ = cmd.MarkFlagRequired("source")
 	_ = cmd.MarkFlagRequired("name")
 
 	return cmd
+}
+
+func runCustomCreate(ctx context.Context, parentFlags *customFlags, flags *customCreateFlags) error {
+	azdClient, err := azdext.NewAzdClient()
+	if err != nil {
+		return fmt.Errorf("failed to create azd client: %w", err)
+	}
+	defer azdClient.Close()
+
+	if err := azdext.WaitForDebugger(ctx, azdClient); err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, azdext.ErrDebuggerAborted) {
+			return nil
+		}
+		return fmt.Errorf("failed waiting for debugger: %w", err)
+	}
+
+	spinner := ux.NewSpinner(&ux.SpinnerOptions{
+		Text: "Preparing upload location...",
+	})
+	if err := spinner.Start(ctx); err != nil {
+		fmt.Printf("failed to start spinner: %v\n", err)
+	}
+
+	credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
+		AdditionallyAllowedTenants: []string{"*"},
+	})
+	if err != nil {
+		_ = spinner.Stop(ctx)
+		fmt.Println()
+		return fmt.Errorf("failed to create Azure credential: %w", err)
+	}
+
+	foundryClient, err := client.NewFoundryClient(parentFlags.projectEndpoint, credential)
+	if err != nil {
+		_ = spinner.Stop(ctx)
+		fmt.Println()
+		return err
+	}
+
+	result, err := foundryClient.StartPendingUpload(ctx, flags.Name, flags.Version)
+	_ = spinner.Stop(ctx)
+	fmt.Println()
+
+	if err != nil {
+		return err
+	}
+
+	if result.BlobReferenceForConsumption == nil {
+		return fmt.Errorf("unexpected response: no blob reference returned")
+	}
+
+	blob := result.BlobReferenceForConsumption
+
+	color.Green("✓ Upload location ready\n")
+	fmt.Println()
+	fmt.Printf("  Model Name:  %s\n", flags.Name)
+	fmt.Printf("  Version:     %s\n", flags.Version)
+	fmt.Printf("  Blob URI:    %s\n", blob.BlobURI)
+	fmt.Println()
+
+	color.Cyan("Upload your model files using AzCopy:\n")
+	fmt.Println()
+	fmt.Printf("  azcopy copy \"<source-local-folder-path>/*\" \"%s\" --recursive=true\n", blob.Credential.SasURI)
+	fmt.Println()
+
+	color.Yellow("After upload completes, register the model with:\n")
+	fmt.Println()
+	fmt.Printf("  azd ai models custom register --name %s --version %s --blob-uri \"%s\"\n",
+		flags.Name, flags.Version, blob.BlobURI)
+	fmt.Println()
+
+	return nil
 }

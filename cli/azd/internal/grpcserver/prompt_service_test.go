@@ -544,22 +544,11 @@ func Test_CreateResourceOptions(t *testing.T) {
 	}
 }
 
-func Test_PromptService_PromptSubscription_ErrorWithSuggestion(t *testing.T) {
-	mockPrompter := &mockprompt.MockPromptService{}
-	globalOptions := &internal.GlobalCommandOptions{NoPrompt: false}
-
-	authErr := &internal.ErrorWithSuggestion{
-		Err:        errors.New("AADSTS70043: The refresh token has expired"),
-		Suggestion: "Suggestion: login expired, run `azd auth login` to acquire a new token.",
-	}
-
-	mockPrompter.
-		On("PromptSubscription", mock.Anything, mock.Anything).
-		Return(nil, authErr)
-
-	promptSvc := NewPromptService(mockPrompter, nil, nil, globalOptions)
-	
-	// Create a full gRPC server to test the interceptor
+// setupTestServer creates and starts a test gRPC server with the given prompt service,
+// returning the server, authenticated context, client, and cleanup function
+func setupTestServer(t *testing.T, promptSvc azdext.PromptServiceServer) (
+	*Server, context.Context, *azdext.AzdClient, func(),
+) {
 	server := NewServer(
 		azdext.UnimplementedProjectServiceServer{},
 		azdext.UnimplementedEnvironmentServiceServer{},
@@ -579,10 +568,6 @@ func Test_PromptService_PromptSubscription_ErrorWithSuggestion(t *testing.T) {
 
 	serverInfo, err := server.Start()
 	require.NoError(t, err)
-	defer func() {
-		err := server.Stop()
-		require.NoError(t, err)
-	}()
 
 	extension := &extensions.Extension{
 		Id: "azd.internal.test",
@@ -599,7 +584,32 @@ func Test_PromptService_PromptSubscription_ErrorWithSuggestion(t *testing.T) {
 	client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
 	require.NoError(t, err)
 
-	_, err = client.Prompt().PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{
+	cleanup := func() {
+		err := server.Stop()
+		require.NoError(t, err)
+	}
+
+	return server, ctx, client, cleanup
+}
+
+func Test_PromptService_PromptSubscription_ErrorWithSuggestion(t *testing.T) {
+	mockPrompter := &mockprompt.MockPromptService{}
+	globalOptions := &internal.GlobalCommandOptions{NoPrompt: false}
+
+	authErr := &internal.ErrorWithSuggestion{
+		Err:        errors.New("AADSTS70043: The refresh token has expired"),
+		Suggestion: "Suggestion: login expired, run `azd auth login` to acquire a new token.",
+	}
+
+	mockPrompter.
+		On("PromptSubscription", mock.Anything, mock.Anything).
+		Return(nil, authErr)
+
+	promptSvc := NewPromptService(mockPrompter, nil, nil, globalOptions)
+	_, ctx, client, cleanup := setupTestServer(t, promptSvc)
+	defer cleanup()
+
+	_, err := client.Prompt().PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{
 		Message: "Select subscription:",
 	})
 
@@ -624,48 +634,10 @@ func Test_PromptService_PromptResourceGroup_ErrorWithSuggestion(t *testing.T) {
 		Return(nil, authErr)
 
 	promptSvc := NewPromptService(mockPrompter, nil, nil, globalOptions)
-	
-	// Create a full gRPC server to test the interceptor
-	server := NewServer(
-		azdext.UnimplementedProjectServiceServer{},
-		azdext.UnimplementedEnvironmentServiceServer{},
-		promptSvc,
-		azdext.UnimplementedUserConfigServiceServer{},
-		azdext.UnimplementedDeploymentServiceServer{},
-		azdext.UnimplementedEventServiceServer{},
-		azdext.UnimplementedComposeServiceServer{},
-		azdext.UnimplementedWorkflowServiceServer{},
-		azdext.UnimplementedExtensionServiceServer{},
-		azdext.UnimplementedServiceTargetServiceServer{},
-		azdext.UnimplementedFrameworkServiceServer{},
-		azdext.UnimplementedContainerServiceServer{},
-		azdext.UnimplementedAccountServiceServer{},
-		azdext.UnimplementedAiModelServiceServer{},
-	)
+	_, ctx, client, cleanup := setupTestServer(t, promptSvc)
+	defer cleanup()
 
-	serverInfo, err := server.Start()
-	require.NoError(t, err)
-	defer func() {
-		err := server.Stop()
-		require.NoError(t, err)
-	}()
-
-	extension := &extensions.Extension{
-		Id: "azd.internal.test",
-		Capabilities: []extensions.CapabilityType{
-			extensions.CustomCommandCapability,
-		},
-		Namespace: "test",
-	}
-
-	accessToken, err := GenerateExtensionToken(extension, serverInfo)
-	require.NoError(t, err)
-
-	ctx := azdext.WithAccessToken(context.Background(), accessToken)
-	client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
-	require.NoError(t, err)
-
-	_, err = client.Prompt().PromptResourceGroup(ctx, &azdext.PromptResourceGroupRequest{
+	_, err := client.Prompt().PromptResourceGroup(ctx, &azdext.PromptResourceGroupRequest{
 		AzureContext: &azdext.AzureContext{
 			Scope: &azdext.AzureScope{
 				SubscriptionId: "sub-123",

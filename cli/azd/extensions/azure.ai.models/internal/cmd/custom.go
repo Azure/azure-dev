@@ -39,7 +39,7 @@ func newCustomCommand() *cobra.Command {
 	customCmd.AddCommand(newCustomCreateCommand(flags))
 	customCmd.AddCommand(newCustomListCommand(flags))
 	customCmd.AddCommand(newCustomShowCommand())
-	customCmd.AddCommand(newCustomDeleteCommand())
+	customCmd.AddCommand(newCustomDeleteCommand(flags))
 
 	return customCmd
 }

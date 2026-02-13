@@ -173,7 +173,36 @@ func (c *FoundryClient) RegisterModel(ctx context.Context, modelName, version st
 	return &result, nil
 }
 
-// addAuth adds the Bearer token to the request.
+// DeleteModel deletes a custom model version.
+// DELETE {subPath}/models/{modelName}/versions/{version}
+func (c *FoundryClient) DeleteModel(ctx context.Context, modelName, version string) error {
+	reqURL := fmt.Sprintf("%s%s/models/%s/versions/%s?api-version=%s",
+		c.baseURL, c.subPath,
+		url.PathEscape(modelName), url.PathEscape(version),
+		c.apiVersion,
+	)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, reqURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	if err := c.addAuth(ctx, req); err != nil {
+		return err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		return c.handleError(resp)
+	}
+
+	return nil
+}
 func (c *FoundryClient) addAuth(ctx context.Context, req *http.Request) error {
 	token, err := c.credential.GetToken(ctx, policy.TokenRequestOptions{
 		Scopes: []string{TokenScope},

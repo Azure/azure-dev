@@ -203,6 +203,44 @@ func (c *FoundryClient) DeleteModel(ctx context.Context, modelName, version stri
 
 	return nil
 }
+
+// GetModel retrieves details of a specific custom model version.
+// GET {subPath}/models/{modelName}/versions/{version}
+func (c *FoundryClient) GetModel(ctx context.Context, modelName, version string) (*models.CustomModel, error) {
+	reqURL := fmt.Sprintf("%s%s/models/%s/versions/%s?api-version=%s",
+		c.baseURL, c.subPath,
+		url.PathEscape(modelName), url.PathEscape(version),
+		c.apiVersion,
+	)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	if err := c.addAuth(ctx, req); err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, c.handleError(resp)
+	}
+
+	var result models.CustomModel
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
 func (c *FoundryClient) addAuth(ctx context.Context, req *http.Request) error {
 	token, err := c.credential.GetToken(ctx, policy.TokenRequestOptions{
 		Scopes: []string{TokenScope},

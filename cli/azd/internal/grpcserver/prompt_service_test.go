@@ -6,7 +6,6 @@ package grpcserver
 import (
 	"context"
 	"errors"
-	"fmt"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -15,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockprompt"
 	"github.com/stretchr/testify/mock"
@@ -544,54 +544,6 @@ func Test_CreateResourceOptions(t *testing.T) {
 	}
 }
 
-func Test_WrapErrorWithSuggestion(t *testing.T) {
-	tests := []struct {
-		name        string
-		err         error
-		wantNil     bool
-		wantContain string
-	}{
-		{
-			name:    "nil error returns nil",
-			err:     nil,
-			wantNil: true,
-		},
-		{
-			name:        "error without suggestion is returned as-is",
-			err:         errors.New("some error"),
-			wantContain: "some error",
-		},
-		{
-			name: "error with suggestion includes suggestion text",
-			err: &internal.ErrorWithSuggestion{
-				Err:        errors.New("authentication failed"),
-				Suggestion: "Suggestion: run `azd auth login` to acquire a new token.",
-			},
-			wantContain: "azd auth login",
-		},
-		{
-			name: "wrapped error with suggestion includes suggestion text",
-			err: fmt.Errorf("failed to prompt: %w", &internal.ErrorWithSuggestion{
-				Err:        errors.New("token expired"),
-				Suggestion: "Suggestion: login expired, run `azd auth login` to acquire a new token.",
-			}),
-			wantContain: "azd auth login",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := wrapErrorWithSuggestion(tt.err)
-			if tt.wantNil {
-				require.Nil(t, result)
-				return
-			}
-			require.NotNil(t, result)
-			require.Contains(t, result.Error(), tt.wantContain)
-		})
-	}
-}
-
 func Test_PromptService_PromptSubscription_ErrorWithSuggestion(t *testing.T) {
 	mockPrompter := &mockprompt.MockPromptService{}
 	globalOptions := &internal.GlobalCommandOptions{NoPrompt: false}
@@ -605,14 +557,54 @@ func Test_PromptService_PromptSubscription_ErrorWithSuggestion(t *testing.T) {
 		On("PromptSubscription", mock.Anything, mock.Anything).
 		Return(nil, authErr)
 
-	service := NewPromptService(mockPrompter, nil, nil, globalOptions)
+	promptSvc := NewPromptService(mockPrompter, nil, nil, globalOptions)
+	
+	// Create a full gRPC server to test the interceptor
+	server := NewServer(
+		azdext.UnimplementedProjectServiceServer{},
+		azdext.UnimplementedEnvironmentServiceServer{},
+		promptSvc,
+		azdext.UnimplementedUserConfigServiceServer{},
+		azdext.UnimplementedDeploymentServiceServer{},
+		azdext.UnimplementedEventServiceServer{},
+		azdext.UnimplementedComposeServiceServer{},
+		azdext.UnimplementedWorkflowServiceServer{},
+		azdext.UnimplementedExtensionServiceServer{},
+		azdext.UnimplementedServiceTargetServiceServer{},
+		azdext.UnimplementedFrameworkServiceServer{},
+		azdext.UnimplementedContainerServiceServer{},
+		azdext.UnimplementedAccountServiceServer{},
+		azdext.UnimplementedAiModelServiceServer{},
+	)
 
-	_, err := service.PromptSubscription(context.Background(), &azdext.PromptSubscriptionRequest{
+	serverInfo, err := server.Start()
+	require.NoError(t, err)
+	defer func() {
+		err := server.Stop()
+		require.NoError(t, err)
+	}()
+
+	extension := &extensions.Extension{
+		Id: "azd.internal.test",
+		Capabilities: []extensions.CapabilityType{
+			extensions.CustomCommandCapability,
+		},
+		Namespace: "test",
+	}
+
+	accessToken, err := GenerateExtensionToken(extension, serverInfo)
+	require.NoError(t, err)
+
+	ctx := azdext.WithAccessToken(context.Background(), accessToken)
+	client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
+	require.NoError(t, err)
+
+	_, err = client.Prompt().PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{
 		Message: "Select subscription:",
 	})
 
 	require.Error(t, err)
-	// Verify that the suggestion text is included in the error message
+	// Verify that the suggestion text is included in the error message (wrapped by interceptor)
 	require.Contains(t, err.Error(), "azd auth login")
 	require.Contains(t, err.Error(), "AADSTS70043")
 	mockPrompter.AssertExpectations(t)
@@ -631,9 +623,49 @@ func Test_PromptService_PromptResourceGroup_ErrorWithSuggestion(t *testing.T) {
 		On("PromptResourceGroup", mock.Anything, mock.Anything, mock.Anything).
 		Return(nil, authErr)
 
-	service := NewPromptService(mockPrompter, nil, nil, globalOptions)
+	promptSvc := NewPromptService(mockPrompter, nil, nil, globalOptions)
+	
+	// Create a full gRPC server to test the interceptor
+	server := NewServer(
+		azdext.UnimplementedProjectServiceServer{},
+		azdext.UnimplementedEnvironmentServiceServer{},
+		promptSvc,
+		azdext.UnimplementedUserConfigServiceServer{},
+		azdext.UnimplementedDeploymentServiceServer{},
+		azdext.UnimplementedEventServiceServer{},
+		azdext.UnimplementedComposeServiceServer{},
+		azdext.UnimplementedWorkflowServiceServer{},
+		azdext.UnimplementedExtensionServiceServer{},
+		azdext.UnimplementedServiceTargetServiceServer{},
+		azdext.UnimplementedFrameworkServiceServer{},
+		azdext.UnimplementedContainerServiceServer{},
+		azdext.UnimplementedAccountServiceServer{},
+		azdext.UnimplementedAiModelServiceServer{},
+	)
 
-	_, err := service.PromptResourceGroup(context.Background(), &azdext.PromptResourceGroupRequest{
+	serverInfo, err := server.Start()
+	require.NoError(t, err)
+	defer func() {
+		err := server.Stop()
+		require.NoError(t, err)
+	}()
+
+	extension := &extensions.Extension{
+		Id: "azd.internal.test",
+		Capabilities: []extensions.CapabilityType{
+			extensions.CustomCommandCapability,
+		},
+		Namespace: "test",
+	}
+
+	accessToken, err := GenerateExtensionToken(extension, serverInfo)
+	require.NoError(t, err)
+
+	ctx := azdext.WithAccessToken(context.Background(), accessToken)
+	client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
+	require.NoError(t, err)
+
+	_, err = client.Prompt().PromptResourceGroup(ctx, &azdext.PromptResourceGroupRequest{
 		AzureContext: &azdext.AzureContext{
 			Scope: &azdext.AzureScope{
 				SubscriptionId: "sub-123",
@@ -642,7 +674,7 @@ func Test_PromptService_PromptResourceGroup_ErrorWithSuggestion(t *testing.T) {
 	})
 
 	require.Error(t, err)
-	// Verify that the suggestion text is included in the error message
+	// Verify that the suggestion text is included in the error message (wrapped by interceptor)
 	require.Contains(t, err.Error(), "azd auth login")
 	require.Contains(t, err.Error(), "AADSTS70043")
 	mockPrompter.AssertExpectations(t)

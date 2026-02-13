@@ -9,8 +9,11 @@ package grpcserver
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/stretchr/testify/require"
@@ -102,4 +105,52 @@ func Test_Server_Start(t *testing.T) {
 		require.True(t, ok)
 		require.Equal(t, codes.Unauthenticated, st.Code())
 	})
+}
+
+func Test_wrapErrorWithSuggestion(t *testing.T) {
+	tests := []struct {
+		name        string
+		err         error
+		wantNil     bool
+		wantContain string
+	}{
+		{
+			name:    "nil error returns nil",
+			err:     nil,
+			wantNil: true,
+		},
+		{
+			name:        "error without suggestion is returned as-is",
+			err:         errors.New("some error"),
+			wantContain: "some error",
+		},
+		{
+			name: "error with suggestion includes suggestion text",
+			err: &internal.ErrorWithSuggestion{
+				Err:        errors.New("authentication failed"),
+				Suggestion: "Suggestion: run `azd auth login` to acquire a new token.",
+			},
+			wantContain: "azd auth login",
+		},
+		{
+			name: "wrapped error with suggestion includes suggestion text",
+			err: fmt.Errorf("failed to prompt: %w", &internal.ErrorWithSuggestion{
+				Err:        errors.New("token expired"),
+				Suggestion: "Suggestion: login expired, run `azd auth login` to acquire a new token.",
+			}),
+			wantContain: "azd auth login",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := wrapErrorWithSuggestion(tt.err)
+			if tt.wantNil {
+				require.Nil(t, result)
+				return
+			}
+			require.NotNil(t, result)
+			require.Contains(t, result.Error(), tt.wantContain)
+		})
+	}
 }

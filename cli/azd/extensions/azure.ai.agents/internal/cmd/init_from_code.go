@@ -1101,7 +1101,6 @@ func (a *InitFromCodeAction) setEnvVar(ctx context.Context, key, value string) e
 		return fmt.Errorf("failed to set environment variable %s=%s: %w", key, value, err)
 	}
 
-	fmt.Printf("Set environment variable: %s=%s\n", key, value)
 	return nil
 }
 

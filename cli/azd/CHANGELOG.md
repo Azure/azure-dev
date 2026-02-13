@@ -1,14 +1,16 @@
 # Release History
 
-## 1.24.0-beta.1 (Unreleased)
+## 1.23.5 (2026-02-13)
 
 ### Features Added
 
-### Breaking Changes
+- [[#6747]](https://github.com/Azure/azure-dev/pull/6747) Add `requiredAzdVersion` field for extensions to declare core version dependencies.
+- [[#6748]](https://github.com/Azure/azure-dev/pull/6748) Add `remoteBuild` option for Azure Functions flex consumption apps.
 
 ### Bugs Fixed
 
-### Other Changes
+- [[#6739]](https://github.com/Azure/azure-dev/pull/6739) Fix arrow keys displaying as escape sequences in Ghostty terminal.
+- [[#6735]](https://github.com/Azure/azure-dev/pull/6735) Extend JMESPath query support to Message methods. Thanks @scottaddie for the contribution!
 
 ## 1.23.4 (2026-02-09)
 

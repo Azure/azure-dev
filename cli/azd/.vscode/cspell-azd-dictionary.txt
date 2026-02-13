@@ -137,6 +137,7 @@ gjson
 go-imath
 GOARCH
 GOCOVERDIR
+Ghostty
 godotenv
 gofmt
 golangci
@@ -237,6 +238,7 @@ retriable
 RPCJSONRPC
 runtimes
 rzip
+scottaddie
 secureobject
 securestring
 semconv

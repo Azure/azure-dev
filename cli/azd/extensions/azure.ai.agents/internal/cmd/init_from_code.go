@@ -506,6 +506,9 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 
 				// List deployments in selected project
 				deployments, err := a.listProjectDeployments(ctx, selectedProject.SubscriptionId, selectedProject.ResourceGroupName, selectedProject.AccountName)
+				if stopErr := spinner.Stop(ctx); stopErr != nil {
+					return nil, stopErr
+				}
 				if err != nil {
 					return nil, fmt.Errorf("failed to list deployments: %w", err)
 				}
@@ -798,6 +801,9 @@ func (a *InitFromCodeAction) selectNewModel(ctx context.Context) (string, error)
 		}
 
 		a.modelCatalog, err = a.modelCatalogService.ListAllModels(ctx, a.azureContext.Scope.SubscriptionId, a.azureContext.Scope.Location)
+		if stopErr := spinner.Stop(ctx); stopErr != nil {
+			return "", stopErr
+		}
 		if err != nil {
 			return "", fmt.Errorf("failed to list models from catalog: %w", err)
 		}

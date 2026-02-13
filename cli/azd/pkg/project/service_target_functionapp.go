@@ -10,28 +10,33 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
 // functionAppTarget specifies an Azure Function to deploy to.
 // Implements `project.ServiceTarget`
 type functionAppTarget struct {
-	env *environment.Environment
-	cli *azapi.AzureClient
+	env     *environment.Environment
+	cli     *azapi.AzureClient
+	console input.Console
 }
 
 // NewFunctionAppTarget creates a new instance of the Function App target
 func NewFunctionAppTarget(
 	env *environment.Environment,
 	azCli *azapi.AzureClient,
+	console input.Console,
 ) ServiceTarget {
 	return &functionAppTarget{
-		env: env,
-		cli: azCli,
+		env:     env,
+		cli:     azCli,
+		console: console,
 	}
 }
 
@@ -124,19 +129,61 @@ func (f *functionAppTarget) Deploy(
 
 	defer zipFile.Close()
 
-	progress.SetProgress(NewServiceProgress("Uploading deployment package"))
-	remoteBuild := serviceConfig.Language == ServiceLanguageJavaScript ||
-		serviceConfig.Language == ServiceLanguageTypeScript ||
-		serviceConfig.Language == ServiceLanguagePython
-
-	_, err = f.cli.DeployFunctionAppUsingZipFile(
+	props, err := f.cli.GetFunctionAppProperties(
 		ctx,
 		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),
 		targetResource.ResourceName(),
-		zipFile,
-		remoteBuild,
 	)
+	if err != nil {
+		return nil, fmt.Errorf("fetching function app properties: %w", err)
+	}
+
+	plan, err := f.cli.GetFunctionAppPlan(ctx, props)
+	if err != nil {
+		return nil, fmt.Errorf("determining function app plan type: %w", err)
+	}
+
+	isFlexConsumption := strings.EqualFold(*plan.SKU.Tier, "flexconsumption")
+
+	if serviceConfig.RemoteBuild != nil && !isFlexConsumption {
+		return nil, &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf("'remoteBuild' is only supported for Flex Consumption plan function apps"),
+			Suggestion: "For other plan types, set these environment variables on the function app:\n" +
+				"  ENABLE_ORYX_BUILD=true\n" +
+				"  SCM_DO_BUILD_DURING_DEPLOYMENT=true",
+		}
+	}
+
+	progress.SetProgress(NewServiceProgress("Uploading deployment package"))
+	var remoteBuild bool
+	if serviceConfig.RemoteBuild != nil {
+		remoteBuild = *serviceConfig.RemoteBuild
+	} else {
+		remoteBuild = serviceConfig.Language == ServiceLanguageJavaScript ||
+			serviceConfig.Language == ServiceLanguageTypeScript ||
+			serviceConfig.Language == ServiceLanguagePython
+	}
+
+	// Deploy to appropriate plan type
+	if isFlexConsumption {
+		_, err = f.cli.DeployFunctionAppUsingZipFileFlexConsumption(
+			ctx,
+			targetResource.SubscriptionId(),
+			props,
+			targetResource.ResourceName(),
+			zipFile,
+			remoteBuild,
+		)
+	} else {
+		_, err = f.cli.DeployFunctionAppUsingZipFileRegular(
+			ctx,
+			targetResource.SubscriptionId(),
+			props,
+			targetResource.ResourceName(),
+			zipFile,
+		)
+	}
 	if err != nil {
 		return nil, err
 	}

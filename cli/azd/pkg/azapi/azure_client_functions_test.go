@@ -36,6 +36,16 @@ func Test_GetFunctionAppProperties(t *testing.T) {
 					Name:     to.Ptr("FUNC_APP_NAME"),
 					Properties: &armappservice.SiteProperties{
 						DefaultHostName: to.Ptr("FUNC_APP_NAME.azurewebsites.net"),
+						//nolint:lll
+						ServerFarmID: to.Ptr(
+							"/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP_ID/providers/Microsoft.Web/serverfarms/FUNC_APP_PLAN",
+						),
+						HostNameSSLStates: []*armappservice.HostNameSSLState{
+							{
+								HostType: to.Ptr(armappservice.HostTypeRepository),
+								Name:     to.Ptr("FUNC_APP_NAME.scm.azurewebsites.net"),
+							},
+						},
 					},
 				},
 			}
@@ -81,25 +91,37 @@ func Test_GetFunctionAppProperties(t *testing.T) {
 	})
 }
 
-func Test_DeployFunctionAppUsingZipFile(t *testing.T) {
+func Test_DeployFunctionAppUsingZipFileRegular(t *testing.T) {
+	props := &AzCliFunctionAppProperties{
+		HostNames: []string{"FUNC_APP_NAME.azurewebsites.net"},
+		HostNameSslStates: []*armappservice.HostNameSSLState{
+			{
+				HostType: to.Ptr(armappservice.HostTypeStandard),
+				Name:     to.Ptr("INVALID"),
+			},
+			{
+				HostType: to.Ptr(armappservice.HostTypeRepository),
+				Name:     to.Ptr("FUNC_APP_NAME_SCM_HOST"),
+			},
+		},
+	}
+
 	t.Run("Success", func(t *testing.T) {
 		ran := false
 		mockContext := mocks.NewMockContext(context.Background())
 		azCli := newAzureClientFromMockContext(mockContext)
 
-		registerInfoMocks(mockContext, &ran)
 		registerDeployMocks(mockContext, &ran)
 		registerPollingMocks(mockContext, &ran)
 
 		zipFile := bytes.NewReader([]byte{})
 
-		res, err := azCli.DeployFunctionAppUsingZipFile(
+		res, err := azCli.DeployFunctionAppUsingZipFileRegular(
 			*mockContext.Context,
 			"SUBSCRIPTION_ID",
-			"RESOURCE_GROUP_ID",
+			props,
 			"FUNC_APP_NAME",
 			zipFile,
-			false,
 		)
 
 		require.NoError(t, err)
@@ -112,85 +134,21 @@ func Test_DeployFunctionAppUsingZipFile(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		azCli := newAzureClientFromMockContext(mockContext)
 
-		registerInfoMocks(mockContext, &ran)
 		registerConflictMocks(mockContext, &ran)
 
 		zipFile := bytes.NewReader([]byte{})
 
-		res, err := azCli.DeployFunctionAppUsingZipFile(
+		res, err := azCli.DeployFunctionAppUsingZipFileRegular(
 			*mockContext.Context,
 			"SUBSCRIPTION_ID",
-			"RESOURCE_GROUP_ID",
+			props,
 			"FUNC_APP_NAME",
 			zipFile,
-			false,
 		)
 
 		require.Nil(t, res)
 		require.True(t, ran)
 		require.Error(t, err)
-	})
-}
-
-func registerInfoMocks(mockContext *mocks.MockContext, ran *bool) {
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		//nolint:lll
-		return request.Method == http.MethodGet &&
-			strings.Contains(
-				request.URL.Path,
-				"subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP_ID/providers/Microsoft.Web/sites/FUNC_APP_NAME",
-			)
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		*ran = true
-		response, _ := mocks.CreateHttpResponseWithBody(
-			request,
-			http.StatusOK,
-			armappservice.WebAppsClientGetResponse{
-				Site: armappservice.Site{
-					Properties: &armappservice.SiteProperties{
-						HostNameSSLStates: []*armappservice.HostNameSSLState{
-							{
-								HostType: to.Ptr(armappservice.HostTypeStandard),
-								Name:     to.Ptr("INVALID"),
-							},
-							{
-								HostType: to.Ptr(armappservice.HostTypeRepository),
-								Name:     to.Ptr("FUNC_APP_NAME_SCM_HOST"),
-							},
-						},
-						//nolint:lll
-						ServerFarmID: to.Ptr(
-							"/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP_ID/providers/Microsoft.Web/serverfarms/FUNC_APP_PLAN_NAME",
-						),
-					},
-				},
-			},
-		)
-
-		return response, nil
-	})
-
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		//nolint:lll
-		return request.Method == http.MethodGet &&
-			strings.Contains(
-				request.URL.Path,
-				"/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP_ID/providers/Microsoft.Web/serverfarms/FUNC_APP_PLAN_NAME",
-			)
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		response, _ := mocks.CreateHttpResponseWithBody(
-			request,
-			http.StatusOK,
-			armappservice.PlansClientGetResponse{
-				Plan: armappservice.Plan{
-					SKU: &armappservice.SKUDescription{
-						Name: to.Ptr("Y1"),
-						Tier: to.Ptr("Dynamic"),
-					},
-				},
-			})
-
-		return response, nil
 	})
 }
 

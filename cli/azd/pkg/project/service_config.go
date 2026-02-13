@@ -59,6 +59,9 @@ type ServiceConfig struct {
 	// Condition for deploying the service. When evaluated, the service is only deployed if the value
 	// is a truthy boolean (1, true, TRUE, True, yes). If not defined, the service is enabled by default.
 	Condition osutil.ExpandableString `yaml:"condition,omitempty"`
+	// Whether to build the service remotely. Only applicable to function app services.
+	// When set to nil (unset), the default behavior based on language is used.
+	RemoteBuild *bool `yaml:"remoteBuild,omitempty"`
 
 	// AdditionalProperties captures any unknown YAML fields for extension support
 	AdditionalProperties map[string]interface{} `yaml:",inline"`

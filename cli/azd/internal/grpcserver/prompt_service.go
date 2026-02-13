@@ -5,7 +5,6 @@ package grpcserver
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -236,7 +235,7 @@ func (s *promptService) PromptSubscription(
 		HelpMessage: req.HelpMessage,
 	})
 	if err != nil {
-		return nil, wrapErrorWithSuggestion(err)
+		return nil, err
 	}
 
 	subscription := &azdext.Subscription{
@@ -270,7 +269,7 @@ func (s *promptService) PromptLocation(
 
 	selectedLocation, err := s.prompter.PromptLocation(ctx, azureContext, nil)
 	if err != nil {
-		return nil, wrapErrorWithSuggestion(err)
+		return nil, err
 	}
 
 	location := &azdext.Location{
@@ -304,7 +303,7 @@ func (s *promptService) PromptResourceGroup(
 
 	selectedResourceGroup, err := s.prompter.PromptResourceGroup(ctx, azureContext, options)
 	if err != nil {
-		return nil, wrapErrorWithSuggestion(err)
+		return nil, err
 	}
 
 	resourceGroup := &azdext.ResourceGroup{
@@ -338,7 +337,7 @@ func (s *promptService) PromptSubscriptionResource(
 
 	resource, err := s.prompter.PromptSubscriptionResource(ctx, azureContext, options)
 	if err != nil {
-		return nil, wrapErrorWithSuggestion(err)
+		return nil, err
 	}
 
 	return &azdext.PromptSubscriptionResourceResponse{
@@ -372,7 +371,7 @@ func (s *promptService) PromptResourceGroupResource(
 
 	resource, err := s.prompter.PromptResourceGroupResource(ctx, azureContext, options)
 	if err != nil {
-		return nil, wrapErrorWithSuggestion(err)
+		return nil, err
 	}
 
 	return &azdext.PromptResourceGroupResourceResponse{
@@ -1290,21 +1289,4 @@ func (s *promptService) acquirePromptLock(ctx context.Context) (func(), error) {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
-}
-
-// wrapErrorWithSuggestion checks if the error contains an ErrorWithSuggestion and if so,
-// returns a new error that includes the suggestion text in the error message.
-// This ensures that helpful suggestions (like "run azd auth login") are preserved
-// when errors are transmitted over gRPC, where only the error message string is sent.
-func wrapErrorWithSuggestion(err error) error {
-	if err == nil {
-		return nil
-	}
-
-	var suggestionErr *internal.ErrorWithSuggestion
-	if errors.As(err, &suggestionErr) {
-		return fmt.Errorf("%w\n%s", err, suggestionErr.Suggestion)
-	}
-
-	return err
 }

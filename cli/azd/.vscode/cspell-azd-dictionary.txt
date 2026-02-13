@@ -238,7 +238,6 @@ retriable
 RPCJSONRPC
 runtimes
 rzip
-scottaddie
 secureobject
 securestring
 semconv

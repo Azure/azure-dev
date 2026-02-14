@@ -4,6 +4,16 @@
 
 This document outlines a **focused** extension (`azure.ai.models`) that handles **custom models only** in Phase 1. This approach keeps the scope narrow, avoids complexity of handling two model registries, and delivers value faster.
 
+## Current Implementation Status
+
+| Command | Status | Description |
+|---------|--------|-------------|
+| `azd ai models init` | ✅ Implemented | Initialize project, environment, and Azure context |
+| `azd ai models custom create` | ✅ Implemented | Upload (via AzCopy) + register model |
+| `azd ai models custom list` | ✅ Implemented | List all custom models |
+| `azd ai models custom show` | ✅ Implemented | Show model details |
+| `azd ai models custom delete` | ✅ Implemented | Delete model with confirmation |
+
 ## Command Structure
 
 The command structure uses clear **entity keywords** to indicate which entity the user is working with:
@@ -23,11 +33,12 @@ azd ai models <entity> <action> [options]
 
 **This extension focuses exclusively on custom model management in Phase 1.**
 
-| In Scope (Phase 1) | Out of Scope (Future Phases) |
+| In Scope (Phase 1) — ✅ Implemented | Out of Scope (Future Phases) |
 |----------|--------------|
-| `azd ai models custom create` | Custom Model Deployments (Phase 2) |
-| `azd ai models custom list` | Base Models (Phase 3) |
-| `azd ai models custom show` | Base Model Deployments (Phase 4) |
+| `azd ai models init` | Custom Model Deployments (Phase 2) |
+| `azd ai models custom create` | Base Models (Phase 3) |
+| `azd ai models custom list` | Base Model Deployments (Phase 4) |
+| `azd ai models custom show` | |
 | `azd ai models custom delete` | |
 
 ## Entities & Operations
@@ -226,24 +237,77 @@ The `create` command performs three sequential steps internally:
 
 ## Commands
 
+### `init` - Initialize AI Models Project
+
+Sets up an azd environment and configures the Azure AI Foundry project connection.
+
+```bash
+azd ai models init [-e <endpoint>] [-s <subscription>] [-p <resource-id>] [-n <env-name>]
+```
+
+**Flow:**
+1. Ensures azd project is initialized (runs `azd init --minimal` if needed)
+2. Creates or selects an azd environment
+3. Configures Azure context — prompts interactively for any missing values:
+   - Subscription → Resource Group → Foundry Project
+4. Stores all settings as environment variables
+
+**Environment Variables Set:**
+| Variable | Description |
+|----------|-------------|
+| `AZURE_TENANT_ID` | Azure AD tenant ID |
+| `AZURE_SUBSCRIPTION_ID` | Azure subscription ID |
+| `AZURE_RESOURCE_GROUP_NAME` | Resource group name |
+| `AZURE_ACCOUNT_NAME` | Cognitive Services account name |
+| `AZURE_PROJECT_NAME` | Foundry project name |
+| `AZURE_LOCATION` | Azure region |
+| `AZURE_PROJECT_ENDPOINT` | Constructed project endpoint URL |
+
+**Flags:**
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--subscription, -s` | No | Azure subscription ID |
+| `--project-endpoint, -e` | No | Foundry project endpoint URL |
+| `--project-resource-id, -p` | No | ARM resource ID of the Foundry project |
+| `--environment, -n` | No | Name of the azd environment to use |
+
+**Output:**
+```
+$ azd ai models init
+
+Let's get your project initialized.
+Let's create a new azd environment for your project.
+
+SUCCESS: AI models project initialized!
+
+  Environment:    dev
+  Subscription:   8861a79b-122e-4733-b9f0-bb521b0268ce
+  Resource Group: rg-myproject
+
+You can now use commands like:
+  azd ai models custom list
+  azd ai models custom create --name <model-name> --model <path>
+```
+
 ### Write Operations
 
 ```bash
 # Upload weights AND register model in one step
-azd ai models custom create --source <local-path> --name <model-name> [options]
+azd ai models custom create --name <model-name> --source <local-path-or-url> [options]
 
-# Delete a custom model (and optionally its weights)
-azd ai models custom delete --name <model-name> [--keep-weights]
+# Delete a custom model
+azd ai models custom delete --name <model-name> [--force]
 ```
 
 ### Read Operations
 
 ```bash
 # List all custom models in the registry
-azd ai models custom list [--format table|json]
+azd ai models custom list [--output table|json]
 
 # Show details of a specific custom model
-azd ai models custom show --name <model-name>
+azd ai models custom show --name <model-name> [--output table|json]
 ```
 
 ## Command Details
@@ -253,101 +317,128 @@ azd ai models custom show --name <model-name>
 Combines the upload and register steps into a single user-friendly command.
 
 ```bash
-azd ai models custom create --source ./llama-7b.safetensors --name llama-7b
+azd ai models custom create --name my-model --source ./model-weights/ --base-model FW-DeepSeek-v3.1
 ```
 
 **Workflow:**
-1. Validate source file exists and is readable
-2. Ensure AzCopy is available (auto-download if needed)
-3. Request upload SAS from FDP API
-4. Upload weights to FDP data store via AzCopy
-5. Register model in FDP custom registry
-6. Return success with model details
+1. Verify AzCopy is available (auto-download to `~/.azd/bin/azcopy` if not found)
+2. Request upload SAS from Foundry API (POST `startPendingUpload`)
+3. Upload weights via AzCopy with real-time progress bar
+4. Register model in custom model registry (PUT)
+5. Return success with model details
 
 **Flags:**
 
 | Flag | Required | Description |
 |------|----------|-------------|
-| `--source, -s` | Yes | Local file path to upload |
 | `--name, -n` | Yes | Model name in registry |
-| `--format, -f` | No | Model format (auto-detected: safetensors, gguf, onnx) |
+| `--source` | Yes* | Local file/directory path or remote blob URL |
+| `--source-file` | No | File containing the source URL (for URLs with `&` characters) |
+| `--version` | No | Model version (default: "1") |
 | `--description` | No | Human-readable description |
-| `--tags` | No | Key=value tags (can specify multiple) |
-| `--version` | No | Version string (default: "1.0") |
-| `--overwrite` | No | Overwrite if model exists |
-| `--no-progress` | No | Disable progress bar |
-| `--dry-run` | No | Preview without executing |
+| `--base-model` | No | Base model architecture tag (e.g., FW-DeepSeek-v3.1) |
+| `--azcopy-path` | No | Explicit path to azcopy binary |
+| `--project-endpoint, -e` | No | Override project endpoint (reads from env if not set) |
+| `--subscription, -s` | No | Override subscription ID |
+
+*Either `--source` or `--source-file` is required.
+
+**Note on remote URLs:** When using a blob URL with SAS token as source, the `&` characters
+are interpreted by the shell. Use `--source-file` to provide a file containing the URL:
+
+```bash
+echo "https://account.blob.core.windows.net/container/path?sv=...&sig=..." > source_url.txt
+azd ai models custom create --name my-model --source-file source_url.txt
+```
 
 **Output:**
 ```
-$ azd ai models custom create --source ./llama-7b.safetensors --name llama-7b
+$ azd ai models custom create --name my-model --source ./model-weights/ --base-model FW-DeepSeek-v3.1
 
-Initializing upload...
-  Model: llama-7b
-  Size: 13.5 GB
-  Format: safetensors (auto-detected)
+  Using azcopy: C:\Users\user\.azd\bin\azcopy.exe
 
-Uploading to FDP data store...
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% (13.5 GB / 13.5 GB)
-Speed: 142 MB/s
+Creating custom model: my-model (version 1)
 
-Registering model...
+✓ Upload location ready
+  Blob URI: https://storage.blob.core.windows.net/container
+
+Step 2/3: Uploading model files...
+  Source: ./model-weights/
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100.0% (12.8 GB / 12.8 GB) | 53.0 MB/s | Elapsed: 4m 28s | ETA: done
+  Completed in 4m 28s
+
 ✓ Upload complete
-✓ Model registered: llama-7b
 
-Model Details:
-  Name:     llama-7b
-  Format:   safetensors
-  Size:     13.5 GB
-  Version:  1.0
-  Status:   Ready for deployment
+✓ Model registered successfully!
+
+──────────────────────────────────────────────────
+  Name:        my-model
+  Version:     1
+  Created:     2026-02-14T10:30:00Z
+──────────────────────────────────────────────────
 ```
 
 ### `list` - List Custom Models
 
 ```bash
-azd ai models custom list
+azd ai models custom list [--output table|json]
 ```
 
-**Output:**
+**Output (table):**
 ```
-Custom Models
-┌──────────────┬─────────────┬─────────┬─────────┬─────────────────────┬────────────────────┐
-│ Name         │ Format      │ Size    │ Version │ Created             │ Status             │
-├──────────────┼─────────────┼─────────┼─────────┼─────────────────────┼────────────────────┤
-│ llama-7b     │ safetensors │ 13.5 GB │ 1.0     │ 2026-02-03 10:30    │ Ready              │
-│ mistral-7b   │ gguf        │ 4.1 GB  │ 1.0     │ 2026-02-01 14:22    │ Ready              │
-│ phi-3-mini   │ onnx        │ 2.3 GB  │ 2.0     │ 2026-01-28 09:15    │ Ready              │
-└──────────────┴─────────────┴─────────┴─────────┴─────────────────────┴────────────────────┘
+$ azd ai models custom list
 
-3 custom models found
+NAME             VERSION    CREATED                  CREATED BY
+my-model         1          2026-02-14T10:30:00Z     user@contoso.com
+test-model       1          2026-02-13T08:15:00Z     user@contoso.com
+
+2 custom model(s) found
+```
+
+**Output (json):**
+```bash
+azd ai models custom list --output json
 ```
 
 ### `show` - Show Custom Model Details
 
 ```bash
-azd ai models custom show --name llama-7b
+azd ai models custom show --name my-model [--version 1] [--output table|json]
 ```
+
+**Flags:**
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--name, -n` | Yes | Model name |
+| `--version` | No | Model version (default: "1") |
+| `--output, -o` | No | Output format: table, json (default: table) |
 
 **Output:**
 ```
-Custom Model: llama-7b
+$ azd ai models custom show --name my-model
+
+Custom Model: my-model
+──────────────────────────────────────────────────
 
 General:
-  Name:         llama-7b
-  Format:       safetensors
-  Version:      1.0
-  Description:  Fine-tuned Llama 7B for code generation
-  Status:       Ready for deployment
+  Name:         my-model
+  Version:      1
+  Description:  My fine-tuned model
+
+System Data:
+  Created:       2026-02-14T10:30:00Z
+  Created By:    user@contoso.com
+  Last Modified: 2026-02-14T10:35:00Z
 
 Storage:
-  Size:         13.5 GB
-  Path:         uploads/llama-7b/model.safetensors
-  Uploaded:     2026-02-03 10:30:00 UTC
+  Blob URI: https://storage.blob.core.windows.net/container
 
 Tags:
-  team:         ml-platform
-  project:      code-assist
+  baseArchitecture: FW-DeepSeek-v3.1
+──────────────────────────────────────────────────
+```
 
 To deploy this model, use Azure CLI:
   az cognitiveservices account deployment create \
@@ -360,33 +451,52 @@ To deploy this model, use Azure CLI:
 ### `delete` - Delete Custom Model
 
 ```bash
-azd ai models custom delete --name llama-7b
+azd ai models custom delete --name my-model [--version 1] [--force]
 ```
 
 **Output:**
 ```
-$ azd ai models custom delete --name llama-7b
+$ azd ai models custom delete --name my-model
 
-Are you sure you want to delete 'llama-7b'? This will:
-  • Remove model from registry
-  • Delete uploaded weights (13.5 GB)
+Delete custom model 'my-model' (version 1)? This action cannot be undone.
+Type the model name to confirm: my-model
 
-Type 'llama-7b' to confirm: llama-7b
-
-Deleting model...
-✓ Model 'llama-7b' deleted
+✓ Model 'my-model' (version 1) deleted
 ```
 
 **Flags:**
 
 | Flag | Description |
 |------|-------------|
-| `--keep-weights` | Remove from registry but keep weights in data store |
+| `--name, -n` | Model name (required) |
+| `--version` | Model version (default: "1") |
 | `--force, -f` | Skip confirmation prompt |
 
 ## Architecture
 
-### High-Level Flow (3 Steps)
+### Project Endpoint Resolution
+
+Custom commands resolve the project endpoint using a 3-tier priority:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     Project Endpoint Resolution                             │
+│                                                                             │
+│   Priority 1: Explicit --project-endpoint (-e) flag                         │
+│              └─► Use directly, highest priority                             │
+│                                                                             │
+│   Priority 2: azd environment variables                                     │
+│              └─► Read AZURE_PROJECT_ENDPOINT from current environment       │
+│              └─► Or construct from AZURE_ACCOUNT_NAME + AZURE_PROJECT_NAME  │
+│                                                                             │
+│   Priority 3: Lightweight interactive prompt                                │
+│              └─► Subscription → Resource Group → Foundry Project            │
+│              └─► No azd project/env creation (unlike full init)             │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### High-Level Flow (3 Steps for Create)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -635,59 +745,68 @@ AzCopy is **mandatory** for uploads. Auto-downloaded to `~/.azd/bin/azcopy` if n
 | macOS x64 | `https://aka.ms/downloadazcopy-v10-mac` |
 | macOS ARM64 | `https://aka.ms/downloadazcopy-v10-mac-arm64` |
 
-## FDP API Requirements
+## Actual API Endpoints (Discovered from UI Codebase)
 
-### Endpoints Needed
+The actual API endpoints differ from the original assumptions. All operations go through the
+Azure AI Foundry services endpoint, not separate FDP endpoints.
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/datastore/upload/initialize` | POST | Get SAS URI for upload |
-| `/custom-models` | POST | Register a custom model |
-| `/custom-models` | GET | List custom models |
-| `/custom-models/{name}` | GET | Get model details |
-| `/custom-models/{name}` | DELETE | Delete model |
-| `/datastore/list-sas` | GET | Get SAS for listing uploads |
+### Base URL
 
-### Example API Calls
+```
+https://{account}.services.ai.azure.com/api/projects/{projectName}
+```
 
-**Initialize Upload:**
-```http
-POST /datastore/upload/initialize
+### Authentication
+
+| Parameter | Value |
+|-----------|-------|
+| Token Scope | `https://ai.azure.com/.default` |
+| Token Type | `aml_default` (Bearer token) |
+| API Version | `2025-11-15-preview` |
+
+### Endpoints
+
+| Method | HTTP | Endpoint | Description |
+|--------|------|----------|-------------|
+| `ListModels` | GET | `/models?api-version={version}` | List all custom models |
+| `GetModel` | GET | `/models/{name}/versions/{version}?api-version={version}` | Get model details |
+| `StartPendingUpload` | POST | `/models/{name}/versions/{version}/startPendingUpload?api-version={version}` | Get SAS URI for upload |
+| `RegisterModel` | PUT | `/models/{name}/versions/{version}?api-version={version}` | Register model after upload |
+| `DeleteModel` | DELETE | `/models/{name}/versions/{version}?api-version={version}` | Delete a model |
+
+### StartPendingUpload Response
+
+```json
 {
-  "model_name": "llama-7b",
-  "file_size": 13500000000,
-  "format": "safetensors"
-}
-
-Response:
-{
-  "upload_id": "abc123",
-  "sas_uri": "https://fdpstore.blob.core.windows.net/uploads/llama-7b/model.safetensors?sv=...",
-  "expires_at": "2026-02-03T14:00:00Z"
+    "blobReferenceForConsumption": {
+        "blobUri": "https://storage.blob.core.windows.net:443/container",
+        "storageAccountArmId": "/subscriptions/.../providers/Microsoft.Storage/storageAccounts/...",
+        "credential": {
+            "credentialType": "SAS",
+            "sasUri": "https://storage.blob.core.windows.net/container?sv=...&sig=..."
+        }
+    },
+    "temporaryDataReferenceId": "uuid"
 }
 ```
 
-**Register Model:**
-```http
-POST /custom-models
-{
-  "name": "llama-7b",
-  "format": "safetensors",
-  "upload_id": "abc123",
-  "version": "1.0",
-  "description": "Fine-tuned Llama 7B",
-  "tags": {
-    "team": "ml-platform"
-  }
-}
+### RegisterModel Request Body
 
-Response:
+```json
 {
-  "name": "llama-7b",
-  "status": "Ready",
-  "created_at": "2026-02-03T10:30:00Z"
+    "blobUri": "https://storage.blob.core.windows.net/container",
+    "description": "optional description",
+    "tags": {
+        "baseArchitecture": "FW-DeepSeek-v3.1"
+    }
 }
 ```
+
+### Model Name Validation (from UI)
+
+- 2-30 characters
+- Must start with a letter
+- Only `[A-Za-z0-9-]` allowed
 
 ## Error Handling
 
@@ -727,20 +846,23 @@ Implementation follows a **phased approach** across 4 phases, with each phase fo
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Phase 1: Custom Model (This Document) ← Current Focus
+### Phase 1: Custom Model (This Document) ← ✅ Implemented
 
 **Entity:** Custom Model
 
-**Objective:** Enable users to upload and manage custom models in FDP registry.
+**Objective:** Enable users to upload and manage custom models in Foundry registry.
 
 | Milestone | Tasks | Status |
 |-----------|-------|--------|
-| **1.1 Core Upload** | AzCopy detection, auto-download, FDP client (upload init) | 🔲 |
-| **1.2 Registration** | FDP client (register), `upload` command with progress | 🔲 |
-| **1.3 Read Operations** | `list` and `show` commands | 🔲 |
-| **1.4 Delete** | `delete` command, error handling, JSON output | 🔲 |
+| **1.0 Init Command** | azd project/env setup, Azure context prompts, env var storage | ✅ Done |
+| **1.1 Core Upload** | AzCopy discovery, auto-download, Foundry client (startPendingUpload) | ✅ Done |
+| **1.2 Registration** | Foundry client (registerModel), `create` command with progress bar | ✅ Done |
+| **1.3 Read Operations** | `list` and `show` commands with table/json output | ✅ Done |
+| **1.4 Delete** | `delete` command with confirmation prompt, --force flag | ✅ Done |
+| **1.5 Endpoint Resolution** | Auto-resolve from env, lightweight prompt fallback | ✅ Done |
 
 **Commands Delivered:**
+- `azd ai models init`
 - `azd ai models custom create`
 - `azd ai models custom list`
 - `azd ai models custom show`
@@ -810,7 +932,7 @@ Implementation follows a **phased approach** across 4 phases, with each phase fo
 
 | Phase | Entity | Operations | Status |
 |-------|--------|------------|--------|
-| **Phase 1** | Custom Model | Create, List, Show, Delete | 📍 Current |
+| **Phase 1** | Custom Model | Init, Create, List, Show, Delete | ✅ Implemented |
 | **Phase 2** | Custom Model Deployment | Deploy, List, Show, Delete | 🔲 Future |
 | **Phase 3** | Base Model | List, Show | 🔲 Future |
 | **Phase 4** | Base Model Deployment | Deploy, List, Show, Delete | 🔲 Future |
@@ -825,7 +947,7 @@ Implementation follows a **phased approach** across 4 phases, with each phase fo
 | **Leverages existing tools** | Deployment via existing Azure CLI (`az cognitiveservices`) |
 | **Simple mental model** | Users understand "azd for upload, az for deploy" |
 
-## Limitations & Known Gaps (v1)
+## Limitations & Known Issues (v1)
 
 | Limitation | Description | Mitigation |
 |------------|-------------|------------|
@@ -833,8 +955,9 @@ Implementation follows a **phased approach** across 4 phases, with each phase fo
 | No base model support | Only custom models | Use Azure Portal or Model Catalog directly |
 | **Terminal must stay open** | Upload + registration requires terminal to remain open | Warn user at start about expected duration |
 | **No resume on failure** | If terminal closes, must restart from scratch | Keep it simple for v1; re-run command |
-| **No `list-uploads`** | Cannot see raw blobs in FDP data store | Users only see registered models via `list` |
-| **Orphaned blobs** | Failed uploads may leave orphaned blobs | Handled automatically by FDP service (TTL-based cleanup) |
+| **Shell URL escaping** | SAS URLs with `&` are truncated by cmd.exe/PowerShell | Use `--source-file` flag to provide URL from a file |
+| **No `list-uploads`** | Cannot see raw blobs in data store | Users only see registered models via `list` |
+| **Orphaned blobs** | Failed uploads may leave orphaned blobs | Handled automatically by service (TTL-based cleanup) |
 
 ## Deployment via Azure CLI
 
@@ -894,116 +1017,149 @@ az cognitiveservices account deployment create \
 curl https://myAIServicesAccount.openai.azure.com/... 
 ```
 
-## Technical Challenges
+## Technical Implementation Details
 
-### 1. No Go SDK for FDP API
+### 1. Foundry Client (No Go SDK)
 
-There is **no official Go SDK** for the FDP (Foundational Data Platform) API. We need to build a custom HTTP client wrapper.
-
-**Impact:**
-- Additional development effort to build and maintain HTTP client
-- Manual handling of authentication, error handling, and retries
-- API changes require manual updates to our wrapper
-
-**Solution: Custom FDP Client**
+There is **no official Go SDK** for the Foundry project API. A custom HTTP client wrapper
+was built at `internal/client/foundry_client.go`.
 
 ```go
-// FDP Client - HTTP wrapper for FDP API
-type FDPClient struct {
-    baseURL    string
-    httpClient *http.Client
+// FoundryClient is an HTTP client for Azure AI Foundry project APIs.
+type FoundryClient struct {
+    baseURL    string   // e.g., "https://account.services.ai.azure.com"
+    subPath    string   // e.g., "/api/projects/project-name"
+    apiVersion string   // "2025-11-15-preview"
     credential azcore.TokenCredential
-}
-
-// Get auth token and make REST calls manually
-func (c *FDPClient) InitializeUpload(ctx context.Context, req UploadRequest) (*UploadResponse, error) {
-    // 1. Get Azure AD token
-    token, err := c.credential.GetToken(ctx, policy.TokenRequestOptions{
-        Scopes: []string{"https://fdp.azure.com/.default"}, // TBD: actual scope
-    })
-    if err != nil {
-        return nil, fmt.Errorf("failed to get token: %w", err)
-    }
-    
-    // 2. Build HTTP request
-    body, _ := json.Marshal(req)
-    httpReq, _ := http.NewRequestWithContext(ctx, "POST", 
-        c.baseURL+"/datastore/upload/initialize", bytes.NewReader(body))
-    httpReq.Header.Set("Authorization", "Bearer "+token.Token)
-    httpReq.Header.Set("Content-Type", "application/json")
-    
-    // 3. Execute request
-    resp, err := c.httpClient.Do(httpReq)
-    if err != nil {
-        return nil, fmt.Errorf("HTTP request failed: %w", err)
-    }
-    defer resp.Body.Close()
-    
-    // 4. Handle response
-    if resp.StatusCode != http.StatusOK {
-        return nil, parseErrorResponse(resp)
-    }
-    
-    var result UploadResponse
-    json.NewDecoder(resp.Body).Decode(&result)
-    return &result, nil
-}
-
-func (c *FDPClient) RegisterModel(ctx context.Context, req RegisterRequest) (*Model, error) {
-    // Similar HTTP wrapper pattern...
-}
-
-func (c *FDPClient) ListModels(ctx context.Context) ([]Model, error) {
-    // Similar HTTP wrapper pattern...
+    httpClient *http.Client
 }
 ```
 
-**FDP Client Methods Required:**
+**Methods:**
+| Method | Description |
+|--------|-------------|
+| `ListModels` | GET all custom models |
+| `GetModel` | GET a specific model version |
+| `StartPendingUpload` | POST to get SAS URI for upload |
+| `RegisterModel` | PUT to register after upload |
+| `DeleteModel` | DELETE a model version |
 
-> ⚠️ **Note**: Endpoint paths below are **assumed/placeholder**. Actual paths will be confirmed with FDP team.
+### 2. AzCopy Integration
 
-| Method | HTTP | Endpoint (assumed) | Description |
-|--------|------|----------|-------------|
-| `InitializeUpload` | POST | `/datastore/upload/initialize` | Get SAS URI for upload |
-| `RegisterModel` | POST | `/custom-models` | Register model after upload |
-| `ListModels` | GET | `/custom-models` | List all custom models |
-| `GetModel` | GET | `/custom-models/{name}` | Get model details |
-| `DeleteModel` | DELETE | `/custom-models/{name}` | Delete a model |
+AzCopy is **mandatory** for uploads. Implemented at `internal/azcopy/runner.go` and `internal/azcopy/installer.go`.
 
-### 2. AzCopy Execution
+**Discovery Priority:**
+1. `--azcopy-path` explicit flag
+2. `PATH` lookup via `exec.LookPath`
+3. Well-known paths: `~/.azd/bin/azcopy`, `~/.azure/bin/azcopy`
+4. Windows `Downloads` folder (scans `azcopy_windows_*` directories)
+5. **Auto-download** to `~/.azd/bin/azcopy` (last resort)
 
-AzCopy execution is straightforward using `os/exec`. No SDK needed.
+**Auto-Download URLs:**
 
-```go
-cmd := exec.CommandContext(ctx, azcopyPath, "copy", source, sasURI, 
-    "--output-type", "json",
-    "--block-size-mb", "100")
-```
+| Platform | Download URL |
+|----------|--------------|
+| Windows x64 | `https://aka.ms/downloadazcopy-v10-windows` |
+| Linux x64 | `https://aka.ms/downloadazcopy-v10-linux` |
+| Linux ARM64 | `https://aka.ms/downloadazcopy-v10-linux-arm64` |
+| macOS x64 | `https://aka.ms/downloadazcopy-v10-mac` |
+| macOS ARM64 | `https://aka.ms/downloadazcopy-v10-mac-arm64` |
+
+The installer downloads the archive, extracts the `azcopy` binary, and installs to `~/.azd/bin/`.
+Subsequent runs find it via the well-known path check (no re-download).
 
 ### 3. Progress Parsing from AzCopy
 
-AzCopy with `--output-type json` streams progress that we parse:
+AzCopy with `--output-type json` streams NDJSON (one JSON object per line).
 
-| Field | Source | Notes |
-|-------|--------|-------|
-| Percent | AzCopy JSON | `PercentComplete` |
-| Bytes transferred | AzCopy JSON | `TotalBytesTransferred` |
-| Total bytes | AzCopy JSON | `TotalBytesEnumerated` |
-| Speed | AzCopy JSON | `ThroughputMbps` |
-| Elapsed | Calculated | `time.Since(startTime)` |
-| ETA | Calculated | `remaining / speed` |
+**Key Discovery:** All numeric fields in AzCopy JSON output are **strings, not numbers**.
 
-> **Note**: AzCopy progress update frequency varies - updates may come every few seconds rather than continuously.
+```json
+{
+  "TimeStamp": "2026-02-13T08:05:00Z",
+  "MessageType": "Progress",
+  "MessageContent": "{\"TotalBytesTransferred\":\"104857600\",\"PercentComplete\":\"0.76\",\"BytesOverWire\":\"110000000\"}"
+}
+```
+
+**Important implementation details:**
+- `MessageContent` for Progress type is **stringified JSON** (requires double-parse)
+- All numeric values are strings: `"PercentComplete":"0.76255155"` not `0.76255155`
+- Must use `strconv.ParseInt`/`strconv.ParseFloat` to parse
+- `BytesOverWire` updates smoothly every ~2s; `TotalBytesTransferred` only updates on block completion
+- `BytesOverWire` includes protocol overhead, can exceed `TotalBytesExpected` — capped at 100%
+- MessageTypes: `Info`, `Init`, `Progress`, `Error`, `EndOfJob`
+
+**Progress Display:**
+```
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 67.3% (8.6 GB / 12.8 GB) | 53.0 MB/s | Elapsed: 2m 42s | ETA: 1m 19s
+```
+
+### 4. Source Types
+
+The `--source` flag supports both local and remote sources:
+
+| Source Type | Example | Handling |
+|-------------|---------|----------|
+| **Local file** | `./model.safetensors` | Passed directly to azcopy |
+| **Local directory** | `./model-weights/` | Appends `/*` for recursive copy |
+| **Remote blob URL** | `https://account.blob.core.windows.net/...` | Passed directly (blob-to-blob copy) |
+
+**Known Issue:** Remote URLs containing `&` (SAS tokens) are truncated by the shell before
+reaching the extension process. Workaround: use `--source-file` to provide a file containing the URL.
+
+### 5. Extension File Structure
+
+```
+azure.ai.models/
+├── extension.yaml              # Extension manifest
+├── version.txt                 # "0.0.1-preview"
+├── main.go                     # Entry point
+├── go.mod / go.sum             # Go module
+├── build.ps1 / build.sh        # Build scripts
+├── ci-build.ps1 / ci-test.ps1  # CI scripts
+├── design/
+│   └── proposal-1-custom-models.md
+├── internal/
+│   ├── cmd/
+│   │   ├── root.go             # Root cobra command
+│   │   ├── version.go          # Version command
+│   │   ├── metadata.go         # Hidden metadata command for azd
+│   │   ├── init.go             # Init command (project + env setup)
+│   │   ├── custom.go           # Custom command group + endpoint resolution
+│   │   ├── custom_create.go    # 3-step create (SAS → upload → register)
+│   │   ├── custom_list.go      # List models
+│   │   ├── custom_show.go      # Show model details
+│   │   └── custom_delete.go    # Delete with confirmation
+│   ├── client/
+│   │   └── foundry_client.go   # HTTP client for Foundry API
+│   ├── azcopy/
+│   │   ├── runner.go           # AzCopy discovery + execution + progress
+│   │   └── installer.go        # Auto-download + extract + install
+│   └── utils/
+│       └── output.go           # Table/JSON output formatting
+└── pkg/
+    └── models/
+        ├── custom_model.go     # CustomModel, SystemData, ListModelsResponse types
+        ├── pending_upload.go   # PendingUploadResponse, BlobReference types
+        └── register_model.go   # RegisterModelRequest type
+```
+
+## Resolved Questions
+
+| Question | Answer |
+|----------|--------|
+| **Registration Metadata** | `blobUri` (required), `description` (optional), `tags` (optional) |
+| **Versioning** | Yes, models are versioned: `/models/{name}/versions/{version}` |
+| **API Auth** | Azure AD scope: `https://ai.azure.com/.default` |
+| **API Endpoints** | All through `https://{account}.services.ai.azure.com/api/projects/{project}` |
+| **Overwrite Behavior** | PUT to same name/version updates the model |
 
 ## Open Questions
 
-1. **Registration Metadata**: What fields does FDP custom registry require/support?
-2. **Versioning**: Does FDP support multiple versions of the same model name?
-3. **FDP API Auth**: What Azure AD scope is needed for FDP API?
-4. **Overwrite Behavior**: If user re-runs upload for same model name, should we:
-   - Fail if model already registered?
-   - Require `--overwrite` flag?
-   - Always overwrite?
+1. **Supported base model architectures**: Current known list from UI: FW-DeepSeek-v3.1, FW-DeepSeek-v3.2, FW-Kimi-K2-Instruct-0905, FW-Kimi-K2-Thinking, FW-Kimi-K2.5, FW-GLM-4.7, FW-GPT-OSS-120B — is this complete?
+2. **Model size limits**: Are there size limits for custom model uploads?
+3. **Orphan cleanup**: How does the service handle orphaned blobs from failed uploads?
 
 ## Future Enhancements (v2+)
 

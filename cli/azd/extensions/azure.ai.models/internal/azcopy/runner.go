@@ -83,15 +83,19 @@ func (r *Runner) Path() string {
 }
 
 // Copy runs azcopy copy from source to sasURI with real-time progress display.
+// Source can be a local file/directory path or a remote URL (e.g., blob URL with SAS token).
 func (r *Runner) Copy(ctx context.Context, source string, sasURI string) error {
-	// If directory, append /* for contents
 	sourceArg := source
-	info, err := os.Stat(source)
-	if err != nil {
-		return fmt.Errorf("source path not found: %s", source)
-	}
-	if info.IsDir() {
-		sourceArg = filepath.Join(source, "*")
+
+	// Only do local path handling for non-URL sources
+	if !isRemoteURL(source) {
+		info, err := os.Stat(source)
+		if err != nil {
+			return fmt.Errorf("source path not found: %s", source)
+		}
+		if info.IsDir() {
+			sourceArg = filepath.Join(source, "*")
+		}
 	}
 
 	args := []string{
@@ -280,4 +284,9 @@ func getWellKnownPaths() []string {
 	}
 
 	return paths
+}
+
+// isRemoteURL checks if the source string is a remote URL (http/https).
+func isRemoteURL(source string) bool {
+	return strings.HasPrefix(source, "https://") || strings.HasPrefix(source, "http://")
 }

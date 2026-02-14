@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"azure.ai.models/internal/azcopy"
@@ -24,6 +25,7 @@ type customCreateFlags struct {
 	Name        string
 	Version     string
 	Source      string
+	SourceFile  string
 	Description string
 	BaseModel   string
 	AzcopyPath  string
@@ -40,22 +42,43 @@ func newCustomCreateCommand(parentFlags *customFlags) *cobra.Command {
 This command performs three steps:
   1. Requests a writable upload location (SAS URI)
   2. Uploads model files using AzCopy
-  3. Registers the model in the custom model registry`,
+  3. Registers the model in the custom model registry
+
+The --source flag accepts a local file/directory path or a remote blob URL with SAS token.
+For remote URLs containing special characters (& in SAS tokens), use --source-file to
+provide a file containing the URL instead.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
+
+			// Resolve source from --source-file if --source is not set
+			if flags.Source == "" && flags.SourceFile != "" {
+				data, err := os.ReadFile(flags.SourceFile)
+				if err != nil {
+					return fmt.Errorf("failed to read source file '%s': %w", flags.SourceFile, err)
+				}
+				flags.Source = strings.TrimSpace(string(data))
+				if flags.Source == "" {
+					return fmt.Errorf("source file '%s' is empty", flags.SourceFile)
+				}
+			}
+
+			if flags.Source == "" {
+				return fmt.Errorf("either --source or --source-file is required")
+			}
+
 			return runCustomCreate(ctx, parentFlags, flags)
 		},
 	}
 
 	cmd.Flags().StringVarP(&flags.Name, "name", "n", "", "Model name (required)")
-	cmd.Flags().StringVar(&flags.Source, "source", "", "Local path to model file or directory (required)")
+	cmd.Flags().StringVar(&flags.Source, "source", "", "Local path or remote URL to model files")
+	cmd.Flags().StringVar(&flags.SourceFile, "source-file", "", "Path to a file containing the source URL (useful for URLs with special characters)")
 	cmd.Flags().StringVar(&flags.Version, "version", "1", "Model version")
 	cmd.Flags().StringVar(&flags.Description, "description", "", "Model description")
 	cmd.Flags().StringVar(&flags.BaseModel, "base-model", "", "Base model architecture (e.g., FW-DeepSeek-v3.1)")
 	cmd.Flags().StringVar(&flags.AzcopyPath, "azcopy-path", "", "Path to azcopy binary (auto-detected if not provided)")
 
 	_ = cmd.MarkFlagRequired("name")
-	_ = cmd.MarkFlagRequired("source")
 
 	return cmd
 }
@@ -132,7 +155,11 @@ func runCustomCreate(ctx context.Context, parentFlags *customFlags, flags *custo
 		fmt.Println()
 		color.Yellow("You can retry the upload manually:")
 		fmt.Println()
-		fmt.Printf("  azcopy copy \"%s/*\" \"%s\" --recursive=true\n", flags.Source, blob.Credential.SasURI)
+		sourceHint := fmt.Sprintf("%s/*", flags.Source)
+		if strings.HasPrefix(flags.Source, "https://") || strings.HasPrefix(flags.Source, "http://") {
+			sourceHint = flags.Source
+		}
+		fmt.Printf("  azcopy copy \"%s\" \"%s\" --recursive=true\n", sourceHint, blob.Credential.SasURI)
 		fmt.Println()
 		color.Yellow("After upload completes, register the model with:")
 		fmt.Println()

@@ -9,6 +9,9 @@ capabilities:
     - custom-commands
     - metadata
 examples:
+    - name: init
+      description: Initialize a new AI models project.
+      usage: azd ai models init
     - name: create
       description: Upload and register a custom model.
       usage: azd ai models custom create --source ./model.safetensors --name my-model

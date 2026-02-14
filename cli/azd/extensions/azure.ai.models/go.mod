@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.20.0
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.1
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices v1.8.0
 	github.com/azure/azure-dev/cli/azd v0.0.0-20260212235654-1bf647f9772d
 	github.com/fatih/color v1.18.0
 	github.com/spf13/cobra v1.10.2

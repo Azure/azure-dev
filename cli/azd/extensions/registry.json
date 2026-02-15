@@ -2425,6 +2425,11 @@
           "usage": "azd ai models \u003ccommand\u003e [options]",
           "examples": [
             {
+              "name": "init",
+              "description": "Initialize a new AI models project.",
+              "usage": "azd ai models init"
+            },
+            {
               "name": "create",
               "description": "Upload and register a custom model.",
               "usage": "azd ai models custom create --source ./model.safetensors --name my-model"
@@ -2446,13 +2451,53 @@
             }
           ],
           "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "2a5e47d6636a23bf10340b692924e77872f335b49144d21c9a2956fc96540117"
+              },
+              "entryPoint": "azure-ai-models-darwin-amd64",
+              "url": "https://github.com/achauhan-scc/azure-dev/releases/download/azd-ext-azure-ai-models_0.0.1-preview/azure-ai-models-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "44d289ca472963ad68ca07fdd2dd4e5e70459379dd343f754a5f0c33de97f1ff"
+              },
+              "entryPoint": "azure-ai-models-darwin-arm64",
+              "url": "https://github.com/achauhan-scc/azure-dev/releases/download/azd-ext-azure-ai-models_0.0.1-preview/azure-ai-models-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "e97079463ef1cdb10949a67609e2e95227bba6a3c90b1e8462a10be283ddeebe"
+              },
+              "entryPoint": "azure-ai-models-linux-amd64",
+              "url": "https://github.com/achauhan-scc/azure-dev/releases/download/azd-ext-azure-ai-models_0.0.1-preview/azure-ai-models-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "4cfe772296fc801ac7bd66d22266d9f0572654eaf20d63f8060675483a92b090"
+              },
+              "entryPoint": "azure-ai-models-linux-arm64",
+              "url": "https://github.com/achauhan-scc/azure-dev/releases/download/azd-ext-azure-ai-models_0.0.1-preview/azure-ai-models-linux-arm64.tar.gz"
+            },
             "windows/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "81f454e2f13de4d105964f8f783a63f21009647d2a45772b528b81c06041132d"
+                "value": "b266c12f94c36124b674e6cca8010195432d1b8a9513b7e0b2a69a27e83d9f6c"
               },
               "entryPoint": "azure-ai-models-windows-amd64.exe",
-              "url": "C:\\Users\\achauhan\\.azd\\registry\\azure.ai.models\\0.0.1-preview\\azure-ai-models-windows-amd64.zip"
+              "url": "https://github.com/achauhan-scc/azure-dev/releases/download/azd-ext-azure-ai-models_0.0.1-preview/azure-ai-models-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "bd2c681b331c0e58b36b5e36af1e99f5d69362fd10c1f8e796c53de58d3ae243"
+              },
+              "entryPoint": "azure-ai-models-windows-arm64.exe",
+              "url": "https://github.com/achauhan-scc/azure-dev/releases/download/azd-ext-azure-ai-models_0.0.1-preview/azure-ai-models-windows-arm64.zip"
             }
           }
         }

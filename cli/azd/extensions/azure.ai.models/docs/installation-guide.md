@@ -2,9 +2,24 @@
 
 ## Prerequisites
 
-- [Azure Developer CLI (azd)](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd) installed
 - An Azure AI Foundry project with a Cognitive Services account
 - Azure subscription with appropriate permissions
+
+### Install Azure Developer CLI (azd)
+
+If you don't have `azd` installed, install it via winget:
+
+```powershell
+winget install microsoft.azd
+```
+
+After installation, restart your terminal and verify:
+
+```bash
+azd version
+```
+
+For other installation methods, see the [official docs](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd).
 
 ---
 

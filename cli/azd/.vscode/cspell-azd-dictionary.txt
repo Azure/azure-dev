@@ -55,6 +55,7 @@ azruntime
 azsdk
 azureai
 azureaiagent
+azureappservice
 AZURECLI
 azurecodingagent
 azureedge
@@ -75,6 +76,7 @@ BUILDNUMBER
 buildpacks
 byoi
 callstack
+centralus
 cflags
 charmbracelet
 circleci
@@ -135,6 +137,7 @@ gjson
 go-imath
 GOARCH
 GOCOVERDIR
+Ghostty
 godotenv
 gofmt
 golangci

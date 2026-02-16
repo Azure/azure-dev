@@ -61,7 +61,7 @@ func newPublishCommand() *cobra.Command {
 	publishCmd.Flags().StringVar(
 		&flags.repository,
 		"repo", flags.repository,
-		"Github repository to create the release in (e.g. owner/repo)",
+		"GitHub repository to create the release in (e.g. owner/repo)",
 	)
 	publishCmd.Flags().StringVarP(
 		&flags.version,
@@ -413,14 +413,15 @@ func addOrUpdateExtension(
 	for i, v := range ext.Versions {
 		if v.Version == extensionMetadata.Version {
 			ext.Versions[i] = extensions.ExtensionVersion{
-				Version:      extensionMetadata.Version,
-				Capabilities: extensionMetadata.Capabilities,
-				EntryPoint:   extensionMetadata.EntryPoint,
-				Usage:        extensionMetadata.Usage,
-				Examples:     extensionMetadata.Examples,
-				Dependencies: extensionMetadata.Dependencies,
-				Providers:    extensionMetadata.Providers,
-				Artifacts:    artifacts,
+				Version:            extensionMetadata.Version,
+				RequiredAzdVersion: extensionMetadata.RequiredAzdVersion,
+				Capabilities:       extensionMetadata.Capabilities,
+				EntryPoint:         extensionMetadata.EntryPoint,
+				Usage:              extensionMetadata.Usage,
+				Examples:           extensionMetadata.Examples,
+				Dependencies:       extensionMetadata.Dependencies,
+				Providers:          extensionMetadata.Providers,
+				Artifacts:          artifacts,
 			}
 
 			return
@@ -429,14 +430,15 @@ func addOrUpdateExtension(
 
 	// If the version does not exist, add it as a new entry
 	ext.Versions = append(ext.Versions, extensions.ExtensionVersion{
-		Version:      extensionMetadata.Version,
-		Capabilities: extensionMetadata.Capabilities,
-		EntryPoint:   extensionMetadata.EntryPoint,
-		Usage:        extensionMetadata.Usage,
-		Examples:     extensionMetadata.Examples,
-		Dependencies: extensionMetadata.Dependencies,
-		Providers:    extensionMetadata.Providers,
-		Artifacts:    artifacts,
+		Version:            extensionMetadata.Version,
+		RequiredAzdVersion: extensionMetadata.RequiredAzdVersion,
+		Capabilities:       extensionMetadata.Capabilities,
+		EntryPoint:         extensionMetadata.EntryPoint,
+		Usage:              extensionMetadata.Usage,
+		Examples:           extensionMetadata.Examples,
+		Dependencies:       extensionMetadata.Dependencies,
+		Providers:          extensionMetadata.Providers,
+		Artifacts:          artifacts,
 	})
 }
 

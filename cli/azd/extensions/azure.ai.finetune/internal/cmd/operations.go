@@ -64,7 +64,7 @@ func newOperationSubmitCommand() *cobra.Command {
 	var seed int64
 	cmd := &cobra.Command{
 		Use:   "submit",
-		Short: "submit fine tuning job",
+		Short: "Submit fine-tuning job.",
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			return validateSubmitFlags(filename, model, trainingFile)
 		},

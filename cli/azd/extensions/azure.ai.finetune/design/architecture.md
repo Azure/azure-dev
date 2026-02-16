@@ -151,7 +151,7 @@ import (
 func newOperationSubmitCommand(svc services.FineTuningService) *cobra.Command {
     return &cobra.Command{
         Use:   "submit",
-        Short: "Submit fine tuning job",
+        Short: "Submit fine-tuning job.",
         RunE: func(cmd *cobra.Command, args []string) error {
             // 1. Parse input
             req := &models.CreateFineTuningRequest{

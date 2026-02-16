@@ -25,6 +25,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -81,6 +82,7 @@ type BicepProvider struct {
 	portalUrlBase       string
 	keyvaultService     keyvault.KeyVaultService
 	subscriptionManager *account.SubscriptionsManager
+	aiModelService      *ai.AiModelService
 
 	// Internal state
 	// compileBicepResult is cached to avoid recompiling the same bicep file multiple times in the same azd run.
@@ -1691,9 +1693,62 @@ type loadParametersResult struct {
 	envMapping map[string][]string
 }
 
+// envSubstResult contains the results of environment variable substitution
+type envSubstResult struct {
+	hasUnsetEnvVar                  bool
+	mappedEnvVars                   []string
+	parametersMappedToAzureLocation []string
+}
+
+// evalParamEnvSubst evaluates environment variable substitution on a single parameter string value.
+// It returns the substituted string, env var mapping information, and any error.
+func evalParamEnvSubst(
+	value string,
+	principalId string,
+	principalType string,
+	paramName string,
+	env *environment.Environment,
+) (string, envSubstResult, error) {
+	result := envSubstResult{}
+
+	replaced, err := envsubst.Eval(value, func(name string) string {
+		if name == environment.PrincipalIdEnvVarName {
+			return principalId
+		}
+		if name == environment.PrincipalTypeEnvVarName {
+			return principalType
+		}
+		if name == environment.LocationEnvVarName {
+			result.parametersMappedToAzureLocation = append(result.parametersMappedToAzureLocation, paramName)
+		}
+		// principalId and locations are intentionally excluded from the mapped env vars as
+		// they are global env vars
+		result.mappedEnvVars = append(result.mappedEnvVars, name)
+		if _, isDefined := env.LookupEnv(name); !isDefined {
+			result.hasUnsetEnvVar = true
+		}
+		return env.Getenv(name)
+	})
+	return replaced, result, err
+}
+
+// evalCommandSubstitution evaluates command substitutions (like secretOrRandomPassword) in the given string.
+func (p *BicepProvider) evalCommandSubstitution(ctx context.Context, value string) (string, error) {
+	if !cmdsubst.ContainsCommandInvocation(value, cmdsubst.SecretOrRandomPasswordCommandName) {
+		return value, nil
+	}
+
+	cmdExecutor := cmdsubst.NewSecretOrRandomPasswordExecutor(p.keyvaultService, p.env.GetSubscriptionId())
+	replaced, err := cmdsubst.Eval(ctx, value, cmdExecutor)
+	if err != nil {
+		return "", fmt.Errorf("substituting command output: %w", err)
+	}
+	return replaced, nil
+}
+
 // loadParameters reads the parameters file template for environment/module specified by Options,
 // doing environment and command substitutions, and returns the values.
-func (p *BicepProvider) loadParameters(ctx context.Context) (loadParametersResult, error) {
+func (p *BicepProvider) loadParameters(ctx context.Context, template *azure.ArmTemplate) (loadParametersResult, error) {
 	parametersFilename := fmt.Sprintf("%s.parameters.json", p.options.Module)
 	paramFilePath := filepath.Join(filepath.Dir(p.path), parametersFilename)
 	parametersBytes, err := os.ReadFile(paramFilePath)
@@ -1733,43 +1788,93 @@ func (p *BicepProvider) loadParameters(ctx context.Context) (loadParametersResul
 	// We also need to identify which parameters are mapped to AZURE_LOCATION (if any).
 	// We also want to exclude parameters mapped to env vars which env var is not set (instead of using empty string).
 	for paramName, param := range decodedParamsFile.Parameters {
-		mappedEnvVars := []string{}
+		paramDef, hasDef := template.Parameters[paramName]
+		var paramType provisioning.ParameterType
+		if hasDef {
+			paramType = provisioning.ParameterTypeFromArmType(paramDef.Type)
+		}
+
+		// Path A: Handle complex types (array, object) with string values (like "${MY_ARRAY}")
+		if hasDef &&
+			(paramType == provisioning.ParameterTypeObject || paramType == provisioning.ParameterTypeArray) &&
+			param.KeyVaultReference == nil {
+			if stringVal, ok := param.Value.(string); ok {
+				// Run envsubst on just the string value, not the full parameter JSON
+				// This allows us to validate the substituted value as JSON,
+				// and avoid issues with string quoting in the parameters file.
+				replaced, substResult, err := evalParamEnvSubst(
+					stringVal,
+					principalId,
+					string(principalType),
+					paramName,
+					p.env,
+				)
+				if err != nil {
+					return loadParametersResult{}, err
+				}
+
+				envMapping[paramName] = substResult.mappedEnvVars
+				parametersMappedToAzureLocation = append(
+					parametersMappedToAzureLocation, substResult.parametersMappedToAzureLocation...)
+
+				// Omit unset parameters
+				if replaced == "" && substResult.hasUnsetEnvVar {
+					continue
+				}
+
+				// Parse the substituted value as JSON (array/object)
+				var jsonValue any
+				if err := json.Unmarshal([]byte(replaced), &jsonValue); err != nil {
+					return loadParametersResult{}, fmt.Errorf(
+						"substituting parameter '%s' (%s): %w: value '%s' is not valid JSON",
+						paramName, paramDef.Type, err, replaced)
+				}
+
+				// Check for command substitution (like secretOrRandomPassword)
+				cmdSubstStr, err := p.evalCommandSubstitution(ctx, replaced)
+				if err != nil {
+					return loadParametersResult{}, err
+				}
+
+				// Re-parse after command substitution if it was applied
+				if cmdSubstStr != replaced {
+					if err := json.Unmarshal([]byte(cmdSubstStr), &jsonValue); err != nil {
+						return loadParametersResult{}, fmt.Errorf(
+							"command-substituting parameter '%s' (%s): %w: value '%s' is not valid JSON",
+							paramName, paramDef.Type, err, cmdSubstStr)
+					}
+				}
+
+				resolvedParams[paramName] = azure.ArmParameter{Value: jsonValue}
+				continue
+			}
+		}
+
+		// Path B: Handle all other cases: non-complex types, complex types with non-string values, keyvault refs
 		paramBytes, err := json.Marshal(param)
 		if err != nil {
 			return loadParametersResult{}, fmt.Errorf("error decoding deployment parameter %s: %w", paramName, err)
 		}
-		var hasUnsetEnvVar bool
-		// envsubst.Eval handles env var substitution and default values like ${VAR=default}
-		replaced, err := envsubst.Eval(string(paramBytes), func(name string) string {
-			if name == environment.PrincipalIdEnvVarName {
-				return principalId
-			}
-			if name == environment.PrincipalTypeEnvVarName {
-				return string(principalType)
-			}
-			if name == environment.LocationEnvVarName {
-				parametersMappedToAzureLocation = append(parametersMappedToAzureLocation, paramName)
-			}
-			// principalId and locations are intentionally excluded from the mapped env vars as
-			// they are global env vars
-			mappedEnvVars = append(mappedEnvVars, name)
-			if _, isDefined := p.env.LookupEnv(name); !isDefined {
-				hasUnsetEnvVar = true
-			}
-			return p.env.Getenv(name)
-		})
+
+		replaced, substResult, err := evalParamEnvSubst(
+			string(paramBytes),
+			principalId,
+			string(principalType),
+			paramName,
+			p.env,
+		)
 		if err != nil {
 			return loadParametersResult{}, fmt.Errorf("substituting environment variables for %s: %w", paramName, err)
 		}
-		envMapping[paramName] = mappedEnvVars
-		// resolve `secretOrRandomPassword` -> this is a way to ask AZD to generate a password for the user and
-		// store it in a Key Vault. But if the Key Vault and secret exists, AZD just takes the secret from there.
-		if cmdsubst.ContainsCommandInvocation(replaced, cmdsubst.SecretOrRandomPasswordCommandName) {
-			cmdExecutor := cmdsubst.NewSecretOrRandomPasswordExecutor(p.keyvaultService, p.env.GetSubscriptionId())
-			replaced, err = cmdsubst.Eval(ctx, replaced, cmdExecutor)
-			if err != nil {
-				return loadParametersResult{}, fmt.Errorf("substituting command output inside parameter file: %w", err)
-			}
+
+		envMapping[paramName] = substResult.mappedEnvVars
+		parametersMappedToAzureLocation = append(
+			parametersMappedToAzureLocation, substResult.parametersMappedToAzureLocation...)
+
+		// resolve command substitutions like `secretOrRandomPassword`
+		replaced, err = p.evalCommandSubstitution(ctx, replaced)
+		if err != nil {
+			return loadParametersResult{}, err
 		}
 
 		var resolvedParam azure.ArmParameter
@@ -1794,7 +1899,7 @@ func (p *BicepProvider) loadParameters(ctx context.Context) (loadParametersResul
 		// Ignore string parameters which are empty b/c they are mapped to an undefined env var
 		if stringValue, isString := resolvedParam.Value.(string); isString {
 			// After previous checks, we know resolvedParam.Value is not nil
-			if stringValue == "" && hasUnsetEnvVar {
+			if stringValue == "" && substResult.hasUnsetEnvVar {
 				// parameter is empty and has an unset env var
 				continue
 			}
@@ -2093,7 +2198,7 @@ func (p *BicepProvider) ensureParameters(
 	// using loadParameters to resolve the parameters file (usually main.parameters.json)
 	// parameters with a mapping to env vars are resolved.
 	// Parameters mapped to env vars that are not set in the environment are removed from the parameters file
-	parametersResult, err := p.loadParameters(ctx)
+	parametersResult, err := p.loadParameters(ctx, &template)
 	if err != nil {
 		return nil, fmt.Errorf("resolving bicep parameters file: %w", err)
 	}
@@ -2410,6 +2515,7 @@ func NewBicepProvider(
 	keyvaultService keyvault.KeyVaultService,
 	cloud *cloud.Cloud,
 	subscriptionManager *account.SubscriptionsManager,
+	aiModelService *ai.AiModelService,
 ) provisioning.Provider {
 	return &BicepProvider{
 		envManager:          envManager,
@@ -2425,6 +2531,7 @@ func NewBicepProvider(
 		keyvaultService:     keyvaultService,
 		portalUrlBase:       cloud.PortalUrlBase,
 		subscriptionManager: subscriptionManager,
+		aiModelService:      aiModelService,
 	}
 }
 
@@ -2438,7 +2545,7 @@ func (p *BicepProvider) Parameters(ctx context.Context) ([]provisioning.Paramete
 	templateParameters := compileResult.Template.Parameters
 
 	// parametersInfo contains the env vars mappings (from a parameters file). bicepparam is not supported yet.
-	parametersInfo, err := p.loadParameters(ctx)
+	parametersInfo, err := p.loadParameters(ctx, &compileResult.Template)
 	if err != nil {
 		return nil, fmt.Errorf("loading parameters: %w", err)
 	}

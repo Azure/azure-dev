@@ -35,3 +35,4 @@ overrides:
           - myimage
           - azureai
           - entra
+          - flexconsumption

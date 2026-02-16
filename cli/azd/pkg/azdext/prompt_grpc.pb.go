@@ -22,15 +22,19 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	PromptService_PromptSubscription_FullMethodName          = "/azdext.PromptService/PromptSubscription"
-	PromptService_PromptLocation_FullMethodName              = "/azdext.PromptService/PromptLocation"
-	PromptService_PromptResourceGroup_FullMethodName         = "/azdext.PromptService/PromptResourceGroup"
-	PromptService_Confirm_FullMethodName                     = "/azdext.PromptService/Confirm"
-	PromptService_Prompt_FullMethodName                      = "/azdext.PromptService/Prompt"
-	PromptService_Select_FullMethodName                      = "/azdext.PromptService/Select"
-	PromptService_MultiSelect_FullMethodName                 = "/azdext.PromptService/MultiSelect"
-	PromptService_PromptSubscriptionResource_FullMethodName  = "/azdext.PromptService/PromptSubscriptionResource"
-	PromptService_PromptResourceGroupResource_FullMethodName = "/azdext.PromptService/PromptResourceGroupResource"
+	PromptService_PromptSubscription_FullMethodName             = "/azdext.PromptService/PromptSubscription"
+	PromptService_PromptLocation_FullMethodName                 = "/azdext.PromptService/PromptLocation"
+	PromptService_PromptResourceGroup_FullMethodName            = "/azdext.PromptService/PromptResourceGroup"
+	PromptService_Confirm_FullMethodName                        = "/azdext.PromptService/Confirm"
+	PromptService_Prompt_FullMethodName                         = "/azdext.PromptService/Prompt"
+	PromptService_Select_FullMethodName                         = "/azdext.PromptService/Select"
+	PromptService_MultiSelect_FullMethodName                    = "/azdext.PromptService/MultiSelect"
+	PromptService_PromptSubscriptionResource_FullMethodName     = "/azdext.PromptService/PromptSubscriptionResource"
+	PromptService_PromptResourceGroupResource_FullMethodName    = "/azdext.PromptService/PromptResourceGroupResource"
+	PromptService_PromptAiModel_FullMethodName                  = "/azdext.PromptService/PromptAiModel"
+	PromptService_PromptAiDeployment_FullMethodName             = "/azdext.PromptService/PromptAiDeployment"
+	PromptService_PromptAiLocationWithQuota_FullMethodName      = "/azdext.PromptService/PromptAiLocationWithQuota"
+	PromptService_PromptAiModelLocationWithQuota_FullMethodName = "/azdext.PromptService/PromptAiModelLocationWithQuota"
 )
 
 // PromptServiceClient is the client API for PromptService service.
@@ -55,6 +59,27 @@ type PromptServiceClient interface {
 	PromptSubscriptionResource(ctx context.Context, in *PromptSubscriptionResourceRequest, opts ...grpc.CallOption) (*PromptSubscriptionResourceResponse, error)
 	// PromptResourceGroupResource prompts the user to select a resource from a resource group.
 	PromptResourceGroupResource(ctx context.Context, in *PromptResourceGroupResourceRequest, opts ...grpc.CallOption) (*PromptResourceGroupResourceResponse, error)
+	// PromptAiModel prompts the user to select an AI model scoped by effective location.
+	// Effective location only affects which models are eligible for selection;
+	// the returned model keeps canonical metadata (including full locations).
+	// Effective location is defined by filter.locations.
+	// If filter.locations is empty, models are considered across subscription locations.
+	// If quota is set:
+	//   - one location in filter.locations: quota is evaluated at that location.
+	//   - multiple locations in filter.locations: quota is evaluated for each location and
+	//     models are kept when quota is sufficient in at least one location.
+	//   - empty filter.locations: quota is evaluated across model-declared locations.
+	PromptAiModel(ctx context.Context, in *PromptAiModelRequest, opts ...grpc.CallOption) (*PromptAiModelResponse, error)
+	// PromptAiDeployment prompts for version, SKU, and capacity sequentially.
+	// This is the primary interactive primitive for model deployment selection.
+	// Effective location is defined by options.locations.
+	// If options.locations is empty, model catalog is considered across subscription locations.
+	// Quota requires exactly one effective location (via options.locations).
+	PromptAiDeployment(ctx context.Context, in *PromptAiDeploymentRequest, opts ...grpc.CallOption) (*PromptAiDeploymentResponse, error)
+	// PromptAiLocationWithQuota prompts for a location filtered by quota requirements.
+	PromptAiLocationWithQuota(ctx context.Context, in *PromptAiLocationWithQuotaRequest, opts ...grpc.CallOption) (*PromptAiLocationWithQuotaResponse, error)
+	// PromptAiModelLocationWithQuota prompts for a model location and displays remaining quota.
+	PromptAiModelLocationWithQuota(ctx context.Context, in *PromptAiModelLocationWithQuotaRequest, opts ...grpc.CallOption) (*PromptAiModelLocationWithQuotaResponse, error)
 }
 
 type promptServiceClient struct {
@@ -155,6 +180,46 @@ func (c *promptServiceClient) PromptResourceGroupResource(ctx context.Context, i
 	return out, nil
 }
 
+func (c *promptServiceClient) PromptAiModel(ctx context.Context, in *PromptAiModelRequest, opts ...grpc.CallOption) (*PromptAiModelResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PromptAiModelResponse)
+	err := c.cc.Invoke(ctx, PromptService_PromptAiModel_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *promptServiceClient) PromptAiDeployment(ctx context.Context, in *PromptAiDeploymentRequest, opts ...grpc.CallOption) (*PromptAiDeploymentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PromptAiDeploymentResponse)
+	err := c.cc.Invoke(ctx, PromptService_PromptAiDeployment_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *promptServiceClient) PromptAiLocationWithQuota(ctx context.Context, in *PromptAiLocationWithQuotaRequest, opts ...grpc.CallOption) (*PromptAiLocationWithQuotaResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PromptAiLocationWithQuotaResponse)
+	err := c.cc.Invoke(ctx, PromptService_PromptAiLocationWithQuota_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *promptServiceClient) PromptAiModelLocationWithQuota(ctx context.Context, in *PromptAiModelLocationWithQuotaRequest, opts ...grpc.CallOption) (*PromptAiModelLocationWithQuotaResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PromptAiModelLocationWithQuotaResponse)
+	err := c.cc.Invoke(ctx, PromptService_PromptAiModelLocationWithQuota_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PromptServiceServer is the server API for PromptService service.
 // All implementations must embed UnimplementedPromptServiceServer
 // for forward compatibility.
@@ -177,6 +242,27 @@ type PromptServiceServer interface {
 	PromptSubscriptionResource(context.Context, *PromptSubscriptionResourceRequest) (*PromptSubscriptionResourceResponse, error)
 	// PromptResourceGroupResource prompts the user to select a resource from a resource group.
 	PromptResourceGroupResource(context.Context, *PromptResourceGroupResourceRequest) (*PromptResourceGroupResourceResponse, error)
+	// PromptAiModel prompts the user to select an AI model scoped by effective location.
+	// Effective location only affects which models are eligible for selection;
+	// the returned model keeps canonical metadata (including full locations).
+	// Effective location is defined by filter.locations.
+	// If filter.locations is empty, models are considered across subscription locations.
+	// If quota is set:
+	//   - one location in filter.locations: quota is evaluated at that location.
+	//   - multiple locations in filter.locations: quota is evaluated for each location and
+	//     models are kept when quota is sufficient in at least one location.
+	//   - empty filter.locations: quota is evaluated across model-declared locations.
+	PromptAiModel(context.Context, *PromptAiModelRequest) (*PromptAiModelResponse, error)
+	// PromptAiDeployment prompts for version, SKU, and capacity sequentially.
+	// This is the primary interactive primitive for model deployment selection.
+	// Effective location is defined by options.locations.
+	// If options.locations is empty, model catalog is considered across subscription locations.
+	// Quota requires exactly one effective location (via options.locations).
+	PromptAiDeployment(context.Context, *PromptAiDeploymentRequest) (*PromptAiDeploymentResponse, error)
+	// PromptAiLocationWithQuota prompts for a location filtered by quota requirements.
+	PromptAiLocationWithQuota(context.Context, *PromptAiLocationWithQuotaRequest) (*PromptAiLocationWithQuotaResponse, error)
+	// PromptAiModelLocationWithQuota prompts for a model location and displays remaining quota.
+	PromptAiModelLocationWithQuota(context.Context, *PromptAiModelLocationWithQuotaRequest) (*PromptAiModelLocationWithQuotaResponse, error)
 	mustEmbedUnimplementedPromptServiceServer()
 }
 
@@ -213,6 +299,18 @@ func (UnimplementedPromptServiceServer) PromptSubscriptionResource(context.Conte
 }
 func (UnimplementedPromptServiceServer) PromptResourceGroupResource(context.Context, *PromptResourceGroupResourceRequest) (*PromptResourceGroupResourceResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PromptResourceGroupResource not implemented")
+}
+func (UnimplementedPromptServiceServer) PromptAiModel(context.Context, *PromptAiModelRequest) (*PromptAiModelResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PromptAiModel not implemented")
+}
+func (UnimplementedPromptServiceServer) PromptAiDeployment(context.Context, *PromptAiDeploymentRequest) (*PromptAiDeploymentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PromptAiDeployment not implemented")
+}
+func (UnimplementedPromptServiceServer) PromptAiLocationWithQuota(context.Context, *PromptAiLocationWithQuotaRequest) (*PromptAiLocationWithQuotaResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PromptAiLocationWithQuota not implemented")
+}
+func (UnimplementedPromptServiceServer) PromptAiModelLocationWithQuota(context.Context, *PromptAiModelLocationWithQuotaRequest) (*PromptAiModelLocationWithQuotaResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PromptAiModelLocationWithQuota not implemented")
 }
 func (UnimplementedPromptServiceServer) mustEmbedUnimplementedPromptServiceServer() {}
 func (UnimplementedPromptServiceServer) testEmbeddedByValue()                       {}
@@ -397,6 +495,78 @@ func _PromptService_PromptResourceGroupResource_Handler(srv interface{}, ctx con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PromptService_PromptAiModel_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PromptAiModelRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PromptServiceServer).PromptAiModel(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PromptService_PromptAiModel_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PromptServiceServer).PromptAiModel(ctx, req.(*PromptAiModelRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PromptService_PromptAiDeployment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PromptAiDeploymentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PromptServiceServer).PromptAiDeployment(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PromptService_PromptAiDeployment_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PromptServiceServer).PromptAiDeployment(ctx, req.(*PromptAiDeploymentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PromptService_PromptAiLocationWithQuota_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PromptAiLocationWithQuotaRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PromptServiceServer).PromptAiLocationWithQuota(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PromptService_PromptAiLocationWithQuota_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PromptServiceServer).PromptAiLocationWithQuota(ctx, req.(*PromptAiLocationWithQuotaRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PromptService_PromptAiModelLocationWithQuota_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PromptAiModelLocationWithQuotaRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PromptServiceServer).PromptAiModelLocationWithQuota(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PromptService_PromptAiModelLocationWithQuota_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PromptServiceServer).PromptAiModelLocationWithQuota(ctx, req.(*PromptAiModelLocationWithQuotaRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PromptService_ServiceDesc is the grpc.ServiceDesc for PromptService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -439,6 +609,22 @@ var PromptService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PromptResourceGroupResource",
 			Handler:    _PromptService_PromptResourceGroupResource_Handler,
+		},
+		{
+			MethodName: "PromptAiModel",
+			Handler:    _PromptService_PromptAiModel_Handler,
+		},
+		{
+			MethodName: "PromptAiDeployment",
+			Handler:    _PromptService_PromptAiDeployment_Handler,
+		},
+		{
+			MethodName: "PromptAiLocationWithQuota",
+			Handler:    _PromptService_PromptAiLocationWithQuota_Handler,
+		},
+		{
+			MethodName: "PromptAiModelLocationWithQuota",
+			Handler:    _PromptService_PromptAiModelLocationWithQuota_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

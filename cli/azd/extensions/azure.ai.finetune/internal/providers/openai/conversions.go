@@ -709,7 +709,9 @@ func buildMultiGraderData(graderMap map[string]interface{}) map[string]interface
 			if !ok {
 				continue
 			}
-			graders[key] = buildGraderData(graderData)
+			if built := buildGraderData(graderData); built != nil {
+				graders[key] = built
+			}
 		}
 		result["graders"] = graders
 	}

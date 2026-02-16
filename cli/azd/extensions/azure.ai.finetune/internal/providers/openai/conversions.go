@@ -363,8 +363,30 @@ func convertInternalJobParamToOpenAiJobParams(config *models.CreateFineTuningReq
 
 		grader := config.Method.Reinforcement.Grader
 		if grader != nil && len(grader) > 0 {
-			// Convert grader map to SDK param type using the common function
-			reinforcementMethod.Grader = ConvertGraderMapToSDKParam(grader)
+			graderType, _ := grader["type"].(string)
+			if graderType == "multi" {
+				// Handle multi-grader via extraBody due to SDK limitations
+				// SDK type definition doesn't match API spec (expects map not union)
+				multiGraderData := buildMultiGraderData(grader)
+				if multiGraderData != nil {
+					if config.ExtraBody == nil {
+						config.ExtraBody = make(map[string]interface{})
+					}
+					// Set grader in extraBody for proper API submission
+					if config.ExtraBody["method"] == nil {
+						config.ExtraBody["method"] = make(map[string]interface{})
+					}
+					methodMap := config.ExtraBody["method"].(map[string]interface{})
+					if methodMap["reinforcement"] == nil {
+						methodMap["reinforcement"] = make(map[string]interface{})
+					}
+					reinforcementMap := methodMap["reinforcement"].(map[string]interface{})
+					reinforcementMap["grader"] = multiGraderData
+				}
+			} else {
+				// Convert grader map to SDK param type using the common function
+				reinforcementMethod.Grader = ConvertGraderMapToSDKParam(grader)
+			}
 		}
 
 		jobParams.Method = openai.FineTuningJobNewParamsMethod{
@@ -605,9 +627,8 @@ func ConvertGraderMapToSDKParam(graderMap map[string]interface{}) openai.Reinfor
 		return openai.ReinforcementMethodGraderUnionParam{OfScoreModelGrader: &grader}
 
 	case "multi":
-		// Multi-grader requires complex nested grader structure
-		// For now, return empty - users should define multi-graders directly in config
-		// with the full structure if needed
+		// Multi-grader is not directly supported due to SDK type limitations
+		// Return empty and let caller handle via extraBody
 		return openai.ReinforcementMethodGraderUnionParam{}
 	}
 
@@ -671,5 +692,107 @@ func getInt(m map[string]interface{}, key string) *int64 {
 		i := int64(v)
 		return &i
 	}
+	return nil
+}
+
+// buildMultiGraderData constructs the multi-grader data structure for API submission
+// This is needed because the SDK type definition doesn't match the API spec
+func buildMultiGraderData(graderMap map[string]interface{}) map[string]interface{} {
+	if graderMap == nil {
+		return nil
+	}
+
+	result := map[string]interface{}{
+		"type":             "multi",
+		"name":             getString(graderMap, "name"),
+		"calculate_output": getString(graderMap, "calculate_output"),
+	}
+
+	// Build the graders map from the input
+	if gradersMap, ok := graderMap["graders"].(map[string]interface{}); ok {
+		graders := make(map[string]interface{})
+		for key, value := range gradersMap {
+			graderData, ok := value.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			graders[key] = buildGraderData(graderData)
+		}
+		result["graders"] = graders
+	}
+
+	return result
+}
+
+// buildGraderData constructs a grader data structure from a grader map
+// Supports all grader types that can be sub-graders of multi-grader
+func buildGraderData(graderMap map[string]interface{}) map[string]interface{} {
+	graderType, _ := graderMap["type"].(string)
+
+	switch graderType {
+	case "python":
+		grader := map[string]interface{}{
+			"type":   "python",
+			"name":   getString(graderMap, "name"),
+			"source": getString(graderMap, "source"),
+		}
+		if imageTag := getString(graderMap, "image_tag"); imageTag != "" {
+			grader["image_tag"] = imageTag
+		}
+		return grader
+
+	case "string_check":
+		return map[string]interface{}{
+			"type":      "string_check",
+			"name":      getString(graderMap, "name"),
+			"input":     getString(graderMap, "input"),
+			"reference": getString(graderMap, "reference"),
+			"operation": getString(graderMap, "operation"),
+		}
+
+	case "text_similarity":
+		return map[string]interface{}{
+			"type":              "text_similarity",
+			"name":              getString(graderMap, "name"),
+			"input":             getString(graderMap, "input"),
+			"reference":         getString(graderMap, "reference"),
+			"evaluation_metric": getString(graderMap, "evaluation_metric"),
+		}
+
+	case "score_model":
+		grader := map[string]interface{}{
+			"type":  "score_model",
+			"name":  getString(graderMap, "name"),
+			"model": getString(graderMap, "model"),
+		}
+		// Copy input array if present
+		if input, ok := graderMap["input"].([]interface{}); ok {
+			grader["input"] = input
+		}
+		// Copy sampling params if present
+		if samplingParams, ok := graderMap["sampling_params"].(map[string]interface{}); ok {
+			grader["sampling_params"] = samplingParams
+		}
+		return grader
+
+	case "label_model":
+		grader := map[string]interface{}{
+			"type":  "label_model",
+			"name":  getString(graderMap, "name"),
+			"model": getString(graderMap, "model"),
+		}
+		// Copy required fields for label_model
+		if input, ok := graderMap["input"].([]interface{}); ok {
+			grader["input"] = input
+		}
+		if labels, ok := graderMap["labels"].([]interface{}); ok {
+			grader["labels"] = labels
+		}
+		if passingLabels, ok := graderMap["passing_labels"].([]interface{}); ok {
+			grader["passing_labels"] = passingLabels
+		}
+		return grader
+	}
+
 	return nil
 }

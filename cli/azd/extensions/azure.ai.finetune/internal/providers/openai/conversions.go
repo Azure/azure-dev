@@ -372,16 +372,9 @@ func convertInternalJobParamToOpenAiJobParams(config *models.CreateFineTuningReq
 					if config.ExtraBody == nil {
 						config.ExtraBody = make(map[string]interface{})
 					}
-					// Set grader in extraBody for proper API submission
-					if config.ExtraBody["method"] == nil {
-						config.ExtraBody["method"] = make(map[string]interface{})
-					}
-					methodMap := config.ExtraBody["method"].(map[string]interface{})
-					if methodMap["reinforcement"] == nil {
-						methodMap["reinforcement"] = make(map[string]interface{})
-					}
-					reinforcementMap := methodMap["reinforcement"].(map[string]interface{})
-					reinforcementMap["grader"] = multiGraderData
+					// Use dot-path key so WithJSONSet merges ONLY the grader field
+					// This preserves method.type, hyperparameters, and any existing extra_body fields
+					config.ExtraBody["method.reinforcement.grader"] = multiGraderData
 				}
 			} else {
 				// Convert grader map to SDK param type using the common function

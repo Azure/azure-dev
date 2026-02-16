@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"azure.ai.models/pkg/models"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -58,7 +59,7 @@ func NewFoundryClient(projectEndpoint string, credential azcore.TokenCredential)
 		subPath:    subPath,
 		apiVersion: DefaultAPIVersion,
 		credential: credential,
-		httpClient: &http.Client{},
+		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}, nil
 }
 

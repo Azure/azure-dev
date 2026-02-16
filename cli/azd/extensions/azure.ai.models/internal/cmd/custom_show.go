@@ -93,7 +93,9 @@ func runCustomShow(ctx context.Context, parentFlags *customFlags, flags *customS
 
 	switch flags.Output {
 	case "json":
-		utils.PrintObject(model, utils.FormatJSON)
+		if err := utils.PrintObject(model, utils.FormatJSON); err != nil {
+			return err
+		}
 	case "table", "":
 		fmt.Printf("Custom Model: %s\n", model.Name)
 		fmt.Println(strings.Repeat("─", 50))

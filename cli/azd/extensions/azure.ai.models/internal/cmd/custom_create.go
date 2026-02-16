@@ -98,7 +98,7 @@ func runCustomCreate(ctx context.Context, parentFlags *customFlags, flags *custo
 	}
 
 	// Step 0: Verify azcopy is available before making any API calls
-	azRunner, err := azcopy.NewRunner(flags.AzcopyPath)
+	azRunner, err := azcopy.NewRunner(ctx, flags.AzcopyPath)
 	if err != nil {
 		return err
 	}
@@ -165,7 +165,7 @@ func runCustomCreate(ctx context.Context, parentFlags *customFlags, flags *custo
 		fmt.Println()
 		fmt.Printf("  azd ai models custom register --name %s --version %s --blob-uri \"%s\" -e \"%s\"\n",
 			flags.Name, flags.Version, blob.BlobURI, parentFlags.projectEndpoint)
-		return fmt.Errorf("upload failed")
+		return fmt.Errorf("upload failed: %w", err)
 	}
 
 	fmt.Println()
@@ -203,7 +203,7 @@ func runCustomCreate(ctx context.Context, parentFlags *customFlags, flags *custo
 		fmt.Println()
 		fmt.Printf("  azd ai models custom register --name %s --version %s --blob-uri \"%s\" -e \"%s\"\n",
 			flags.Name, flags.Version, blob.BlobURI, parentFlags.projectEndpoint)
-		return fmt.Errorf("registration failed")
+		return fmt.Errorf("registration failed: %w", err)
 	}
 
 	// ── Success ──

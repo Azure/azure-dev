@@ -7,6 +7,7 @@ import (
 	"archive/tar"
 	"archive/zip"
 	"compress/gzip"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 // downloadURLs maps GOOS/GOARCH to the stable aka.ms download URLs.
@@ -36,9 +38,9 @@ func installDir() (string, error) {
 
 // downloadAzCopy downloads and installs azcopy to ~/.azd/bin/.
 // Returns the path to the installed binary.
-func downloadAzCopy() (string, error) {
+func downloadAzCopy(ctx context.Context) (string, error) {
 	key := runtime.GOOS + "/" + runtime.GOARCH
-	url, ok := downloadURLs[key]
+	downloadURL, ok := downloadURLs[key]
 	if !ok {
 		return "", fmt.Errorf("no azcopy download available for %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
@@ -58,7 +60,13 @@ func downloadAzCopy() (string, error) {
 	destPath := filepath.Join(destDir, binaryName)
 
 	// Download archive to temp file
-	resp, err := http.Get(url)
+	httpClient := &http.Client{Timeout: 5 * time.Minute}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create download request: %w", err)
+	}
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to download azcopy: %w", err)
 	}

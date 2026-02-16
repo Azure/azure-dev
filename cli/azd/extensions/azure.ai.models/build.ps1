@@ -65,7 +65,7 @@ foreach ($PLATFORM in $PLATFORMS) {
     $env:GOARCH = $ARCH
 
     go build `
-        -ldflags="-X '$APP_PATH.Version=$env:EXTENSION_VERSION' -X '$APP_PATH.Commit=$COMMIT' -X '$APP_PATH.BuildDate=$BUILD_DATE'" `
+        -ldflags="-X ${APP_PATH}.Version=$env:EXTENSION_VERSION -X ${APP_PATH}.Commit=$COMMIT -X ${APP_PATH}.BuildDate=$BUILD_DATE" `
         -o $OUTPUT_NAME
 
     if ($LASTEXITCODE -ne 0) {

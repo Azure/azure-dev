@@ -53,7 +53,7 @@ for PLATFORM in "${PLATFORMS[@]}"; do
 
     # Set environment variables for Go build
     GOOS=$OS GOARCH=$ARCH go build \
-        -ldflags="-X '$APP_PATH.Version=$EXTENSION_VERSION' -X '$APP_PATH.Commit=$COMMIT' -X '$APP_PATH.BuildDate=$BUILD_DATE'" \
+        -ldflags="-X ${APP_PATH}.Version=${EXTENSION_VERSION} -X ${APP_PATH}.Commit=${COMMIT} -X ${APP_PATH}.BuildDate=${BUILD_DATE}" \
         -o "$OUTPUT_NAME"
 
     if [ $? -ne 0 ]; then

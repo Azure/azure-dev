@@ -88,13 +88,17 @@ func runCustomList(ctx context.Context, parentFlags *customFlags, flags *customL
 
 	switch flags.Output {
 	case "json":
-		utils.PrintObject(result.Value, utils.FormatJSON)
+		if err := utils.PrintObject(result.Value, utils.FormatJSON); err != nil {
+			return err
+		}
 	case "table", "":
 		views := make([]models.CustomModelListView, len(result.Value))
 		for i, m := range result.Value {
 			views[i] = m.ToListView()
 		}
-		utils.PrintObject(views, utils.FormatTable)
+		if err := utils.PrintObject(views, utils.FormatTable); err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf("unsupported output format: %s (supported: table, json)", flags.Output)
 	}

@@ -43,7 +43,7 @@ func NewRootCommand() *cobra.Command {
 
 	rootCmd.AddCommand(newVersionCommand())
 	rootCmd.AddCommand(newMetadataCommand())
-	rootCmd.AddCommand(newInitCommand(rootFlags))
+	rootCmd.AddCommand(newInitCommand())
 	rootCmd.AddCommand(newCustomCommand())
 
 	return rootCmd

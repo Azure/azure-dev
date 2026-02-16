@@ -43,8 +43,8 @@ type progressContent struct {
 }
 
 // NewRunner creates a new azcopy runner, discovering the azcopy binary.
-// Priority: explicit path > PATH > well-known locations.
-func NewRunner(explicitPath string) (*Runner, error) {
+// Priority: explicit path > PATH > well-known locations > auto-download.
+func NewRunner(ctx context.Context, explicitPath string) (*Runner, error) {
 	if explicitPath != "" {
 		if _, err := os.Stat(explicitPath); err != nil {
 			return nil, fmt.Errorf("azcopy not found at specified path: %s", explicitPath)
@@ -67,7 +67,7 @@ func NewRunner(explicitPath string) (*Runner, error) {
 
 	// Auto-download as last resort
 	fmt.Println("  azcopy not found. Downloading latest version...")
-	path, err := downloadAzCopy()
+	path, err := downloadAzCopy(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to auto-install azcopy: %w\n"+
 			"Install manually from https://learn.microsoft.com/azure/storage/common/storage-use-azcopy-v10\n"+

@@ -22,7 +22,6 @@ import (
 )
 
 type initFlags struct {
-	rootFlagsDefinition
 	subscriptionId    string
 	projectEndpoint   string
 	projectResourceId string
@@ -39,10 +38,8 @@ type FoundryProject struct {
 	AiProjectName     string
 }
 
-func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
-	flags := &initFlags{
-		rootFlagsDefinition: rootFlags,
-	}
+func newInitCommand() *cobra.Command {
+	flags := &initFlags{}
 
 	cmd := &cobra.Command{
 		Use:   "init",
@@ -141,7 +138,7 @@ func ensureProject(ctx context.Context, flags *initFlags, azdClient *azdext.AzdC
 		fmt.Println("Let's get your project initialized.")
 
 		initArgs := []string{"init", "--minimal"}
-		if flags.NoPrompt {
+		if rootFlags.NoPrompt {
 			initArgs = append(initArgs, "--no-prompt")
 		}
 
@@ -279,7 +276,7 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 			envArgs = append(envArgs, "--subscription", foundryProject.SubscriptionId)
 			envArgs = append(envArgs, "--location", foundryProject.Location)
 		}
-		if flags.NoPrompt {
+		if rootFlags.NoPrompt {
 			envArgs = append(envArgs, "--no-prompt")
 		}
 

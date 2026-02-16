@@ -504,7 +504,9 @@ func TestConvertGraderMapToSDKParam_TextSimilarity(t *testing.T) {
 	require.Equal(t, "fuzzy", result.OfTextSimilarityGrader.Name)
 	require.Equal(t, "{{sample.output_text}}", result.OfTextSimilarityGrader.Input)
 	require.Equal(t, "{{item.reference_answer}}", result.OfTextSimilarityGrader.Reference)
-	require.Equal(t, openai.TextSimilarityGraderEvaluationMetric("fuzzy_match"), result.OfTextSimilarityGrader.EvaluationMetric)
+	require.Equal(t,
+		openai.TextSimilarityGraderEvaluationMetric("fuzzy_match"),
+		result.OfTextSimilarityGrader.EvaluationMetric)
 }
 
 func TestConvertGraderMapToSDKParam_PythonGrader(t *testing.T) {

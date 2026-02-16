@@ -362,7 +362,7 @@ func convertInternalJobParamToOpenAiJobParams(config *models.CreateFineTuningReq
 		}
 
 		grader := config.Method.Reinforcement.Grader
-		if grader != nil && len(grader) > 0 {
+		if len(grader) > 0 {
 			graderType, _ := grader["type"].(string)
 			if graderType == "multi" {
 				// Handle multi-grader via extraBody due to SDK limitations

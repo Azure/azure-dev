@@ -618,11 +618,6 @@ func ConvertGraderMapToSDKParam(graderMap map[string]interface{}) openai.Reinfor
 			}
 		}
 		return openai.ReinforcementMethodGraderUnionParam{OfScoreModelGrader: &grader}
-
-	case "multi":
-		// Multi-grader is not directly supported due to SDK type limitations
-		// Return empty and let caller handle via extraBody
-		return openai.ReinforcementMethodGraderUnionParam{}
 	}
 
 	return openai.ReinforcementMethodGraderUnionParam{}

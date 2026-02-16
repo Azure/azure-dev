@@ -703,11 +703,7 @@ func TestConvertInternalJobParamToOpenAiJobParams_ReinforcementWithMultiGrader(t
 
 	// Verify extraBody contains the grader
 	require.NotNil(t, extraBody)
-	method, hasMethod := extraBody["method"].(map[string]interface{})
-	require.True(t, hasMethod)
-	reinforcement, hasReinforcement := method["reinforcement"].(map[string]interface{})
-	require.True(t, hasReinforcement)
-	grader, hasGrader := reinforcement["grader"].(map[string]interface{})
+	grader, hasGrader := extraBody["method.reinforcement.grader"].(map[string]interface{})
 	require.True(t, hasGrader)
 	require.Equal(t, "multi", grader["type"])
 	require.Equal(t, "strict_partial_credit", grader["name"])

@@ -155,16 +155,18 @@ func runCustomCreate(ctx context.Context, parentFlags *customFlags, flags *custo
 		fmt.Println()
 		color.Yellow("You can retry the upload manually:")
 		fmt.Println()
-		sourceHint := fmt.Sprintf("%s/*", flags.Source)
-		if strings.HasPrefix(flags.Source, "https://") || strings.HasPrefix(flags.Source, "http://") {
-			sourceHint = flags.Source
+		sourceHint := flags.Source
+		if !strings.HasPrefix(flags.Source, "https://") && !strings.HasPrefix(flags.Source, "http://") {
+			if info, statErr := os.Stat(flags.Source); statErr == nil && info.IsDir() {
+				sourceHint = fmt.Sprintf("%s/*", flags.Source)
+			}
 		}
 		fmt.Printf("  azcopy copy \"%s\" \"%s\" --recursive=true\n", sourceHint, blob.Credential.SasURI)
 		fmt.Println()
-		color.Yellow("After upload completes, register the model with:")
+		color.Yellow("After upload completes, re-run the create command to register the model:")
 		fmt.Println()
-		fmt.Printf("  azd ai models custom register --name %s --version %s --blob-uri \"%s\" -e \"%s\"\n",
-			flags.Name, flags.Version, blob.BlobURI, parentFlags.projectEndpoint)
+		fmt.Printf("  azd ai models custom create --name %s --version %s --source \"%s\" -e \"%s\"\n",
+			flags.Name, flags.Version, flags.Source, parentFlags.projectEndpoint)
 		return fmt.Errorf("upload failed: %w", err)
 	}
 
@@ -199,10 +201,10 @@ func runCustomCreate(ctx context.Context, parentFlags *customFlags, flags *custo
 		// Upload succeeded but register failed — print recovery instructions
 		color.Red("✗ Registration failed: %v", err)
 		fmt.Println()
-		color.Yellow("Upload completed successfully. You can register the model manually:")
+		color.Yellow("Upload completed successfully. You can retry registration by re-running the create command:")
 		fmt.Println()
-		fmt.Printf("  azd ai models custom register --name %s --version %s --blob-uri \"%s\" -e \"%s\"\n",
-			flags.Name, flags.Version, blob.BlobURI, parentFlags.projectEndpoint)
+		fmt.Printf("  azd ai models custom create --name %s --version %s --source \"%s\" -e \"%s\"\n",
+			flags.Name, flags.Version, flags.Source, parentFlags.projectEndpoint)
 		return fmt.Errorf("registration failed: %w", err)
 	}
 

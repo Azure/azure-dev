@@ -154,7 +154,7 @@ func Test_wrapErrorWithSuggestion(t *testing.T) {
 			require.NotNil(t, result)
 			require.Contains(t, result.Error(), tt.wantContain)
 			if tt.wantSameInstance {
-				require.True(t, result == tt.err, "expected error to be returned unchanged (same instance)")
+				require.Same(t, tt.err, result, "expected error to be returned unchanged (same instance)")
 			}
 		})
 	}

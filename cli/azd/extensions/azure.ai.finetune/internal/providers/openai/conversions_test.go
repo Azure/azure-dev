@@ -471,6 +471,283 @@ func TestConvertInternalJobParamToOpenAiJobParams_WithExtraBody(t *testing.T) {
 	require.Equal(t, "custom_value", extraBody["custom_field"])
 }
 
+func TestConvertGraderMapToSDKParam_StringCheck(t *testing.T) {
+	graderMap := map[string]interface{}{
+		"type":      "string_check",
+		"name":      "exact",
+		"input":     "{{sample.output_text}}",
+		"reference": "{{item.reference_answer}}",
+		"operation": "eq",
+	}
+
+	result := ConvertGraderMapToSDKParam(graderMap)
+
+	require.NotNil(t, result.OfStringCheckGrader)
+	require.Equal(t, "exact", result.OfStringCheckGrader.Name)
+	require.Equal(t, "{{sample.output_text}}", result.OfStringCheckGrader.Input)
+	require.Equal(t, "{{item.reference_answer}}", result.OfStringCheckGrader.Reference)
+	require.Equal(t, openai.StringCheckGraderOperation("eq"), result.OfStringCheckGrader.Operation)
+}
+
+func TestConvertGraderMapToSDKParam_TextSimilarity(t *testing.T) {
+	graderMap := map[string]interface{}{
+		"type":              "text_similarity",
+		"name":              "fuzzy",
+		"input":             "{{sample.output_text}}",
+		"reference":         "{{item.reference_answer}}",
+		"evaluation_metric": "fuzzy_match",
+	}
+
+	result := ConvertGraderMapToSDKParam(graderMap)
+
+	require.NotNil(t, result.OfTextSimilarityGrader)
+	require.Equal(t, "fuzzy", result.OfTextSimilarityGrader.Name)
+	require.Equal(t, "{{sample.output_text}}", result.OfTextSimilarityGrader.Input)
+	require.Equal(t, "{{item.reference_answer}}", result.OfTextSimilarityGrader.Reference)
+	require.Equal(t,
+		openai.TextSimilarityGraderEvaluationMetric("fuzzy_match"),
+		result.OfTextSimilarityGrader.EvaluationMetric)
+}
+
+func TestConvertGraderMapToSDKParam_PythonGrader(t *testing.T) {
+	graderMap := map[string]interface{}{
+		"type":      "python",
+		"name":      "custom_grader",
+		"source":    "def grade(output): return 1.0",
+		"image_tag": "v1.0",
+	}
+
+	result := ConvertGraderMapToSDKParam(graderMap)
+
+	require.NotNil(t, result.OfPythonGrader)
+	require.Equal(t, "custom_grader", result.OfPythonGrader.Name)
+	require.Equal(t, "def grade(output): return 1.0", result.OfPythonGrader.Source)
+	require.NotNil(t, result.OfPythonGrader.ImageTag.Value)
+	require.Equal(t, "v1.0", result.OfPythonGrader.ImageTag.Value)
+}
+
+func TestConvertGraderMapToSDKParam_ScoreModel(t *testing.T) {
+	graderMap := map[string]interface{}{
+		"type":  "score_model",
+		"name":  "llm_grader",
+		"model": "gpt-4",
+		"input": []interface{}{
+			map[string]interface{}{
+				"role":    "user",
+				"content": "Grade this",
+				"type":    "text",
+			},
+		},
+		"sampling_params": map[string]interface{}{
+			"temperature":           0.7,
+			"top_p":                 0.9,
+			"max_completion_tokens": 100,
+			"seed":                  42,
+		},
+	}
+
+	result := ConvertGraderMapToSDKParam(graderMap)
+
+	require.NotNil(t, result.OfScoreModelGrader)
+	require.Equal(t, "llm_grader", result.OfScoreModelGrader.Name)
+	require.Equal(t, "gpt-4", result.OfScoreModelGrader.Model)
+	require.Len(t, result.OfScoreModelGrader.Input, 1)
+	require.NotNil(t, result.OfScoreModelGrader.SamplingParams.Temperature.Value)
+	require.InDelta(t, 0.7, result.OfScoreModelGrader.SamplingParams.Temperature.Value, 0.001)
+}
+
+func TestConvertGraderMapToSDKParam_MultiGrader(t *testing.T) {
+	// Multi-grader returns empty because it's handled via extraBody
+	graderMap := map[string]interface{}{
+		"type":             "multi",
+		"name":             "strict_partial_credit",
+		"calculate_output": "0.9 * exact + 0.1 * fuzzy",
+		"graders": map[string]interface{}{
+			"exact": map[string]interface{}{
+				"type":      "string_check",
+				"name":      "exact",
+				"input":     "{{sample.output_text}}",
+				"reference": "{{item.reference_answer}}",
+				"operation": "eq",
+			},
+			"fuzzy": map[string]interface{}{
+				"type":              "text_similarity",
+				"name":              "fuzzy",
+				"input":             "{{sample.output_text}}",
+				"reference":         "{{item.reference_answer}}",
+				"evaluation_metric": "fuzzy_match",
+			},
+		},
+	}
+
+	result := ConvertGraderMapToSDKParam(graderMap)
+
+	// Multi-grader returns empty union - actual handling is via extraBody
+	require.Nil(t, result.OfMultiGrader)
+	require.Nil(t, result.OfStringCheckGrader)
+	require.Nil(t, result.OfTextSimilarityGrader)
+	require.Nil(t, result.OfPythonGrader)
+	require.Nil(t, result.OfScoreModelGrader)
+}
+
+func TestBuildMultiGraderData(t *testing.T) {
+	graderMap := map[string]interface{}{
+		"type":             "multi",
+		"name":             "strict_partial_credit",
+		"calculate_output": "0.9 * exact + 0.1 * fuzzy",
+		"graders": map[string]interface{}{
+			"exact": map[string]interface{}{
+				"type":      "string_check",
+				"name":      "exact",
+				"input":     "{{sample.output_text}}",
+				"reference": "{{item.reference_answer}}",
+				"operation": "eq",
+			},
+			"fuzzy": map[string]interface{}{
+				"type":              "text_similarity",
+				"name":              "fuzzy",
+				"input":             "{{sample.output_text}}",
+				"reference":         "{{item.reference_answer}}",
+				"evaluation_metric": "fuzzy_match",
+			},
+		},
+	}
+
+	result := buildMultiGraderData(graderMap)
+
+	require.NotNil(t, result)
+	require.Equal(t, "multi", result["type"])
+	require.Equal(t, "strict_partial_credit", result["name"])
+	require.Equal(t, "0.9 * exact + 0.1 * fuzzy", result["calculate_output"])
+
+	graders, ok := result["graders"].(map[string]interface{})
+	require.True(t, ok)
+	require.Len(t, graders, 2)
+
+	exactGrader, hasExact := graders["exact"].(map[string]interface{})
+	require.True(t, hasExact)
+	require.Equal(t, "string_check", exactGrader["type"])
+	require.Equal(t, "exact", exactGrader["name"])
+	require.Equal(t, "eq", exactGrader["operation"])
+
+	fuzzyGrader, hasFuzzy := graders["fuzzy"].(map[string]interface{})
+	require.True(t, hasFuzzy)
+	require.Equal(t, "text_similarity", fuzzyGrader["type"])
+	require.Equal(t, "fuzzy", fuzzyGrader["name"])
+	require.Equal(t, "fuzzy_match", fuzzyGrader["evaluation_metric"])
+}
+
+func TestConvertGraderMapToSDKParam_EmptyMap(t *testing.T) {
+	result := ConvertGraderMapToSDKParam(nil)
+	require.Nil(t, result.OfStringCheckGrader)
+	require.Nil(t, result.OfTextSimilarityGrader)
+	require.Nil(t, result.OfPythonGrader)
+	require.Nil(t, result.OfScoreModelGrader)
+}
+
+func TestConvertGraderMapToSDKParam_UnknownType(t *testing.T) {
+	graderMap := map[string]interface{}{
+		"type": "unknown_type",
+	}
+	result := ConvertGraderMapToSDKParam(graderMap)
+	require.Nil(t, result.OfStringCheckGrader)
+	require.Nil(t, result.OfTextSimilarityGrader)
+	require.Nil(t, result.OfPythonGrader)
+	require.Nil(t, result.OfScoreModelGrader)
+}
+
+func TestConvertInternalJobParamToOpenAiJobParams_ReinforcementWithMultiGrader(t *testing.T) {
+	epochs := 3
+	config := &models.CreateFineTuningRequest{
+		BaseModel:    "o4-mini-2025-04-16",
+		TrainingFile: "file-abc123",
+		Method: models.MethodConfig{
+			Type: "reinforcement",
+			Reinforcement: &models.ReinforcementConfig{
+				Hyperparameters: models.HyperparametersConfig{
+					Epochs:          &epochs,
+					ReasoningEffort: "high",
+				},
+				Grader: map[string]interface{}{
+					"type":             "multi",
+					"name":             "strict_partial_credit",
+					"calculate_output": "0.9 * exact + 0.1 * fuzzy",
+					"graders": map[string]interface{}{
+						"exact": map[string]interface{}{
+							"type":      "string_check",
+							"name":      "exact",
+							"input":     "{{sample.output_text}}",
+							"reference": "{{item.reference_answer}}",
+							"operation": "eq",
+						},
+						"fuzzy": map[string]interface{}{
+							"type":              "text_similarity",
+							"name":              "fuzzy",
+							"input":             "{{sample.output_text}}",
+							"reference":         "{{item.reference_answer}}",
+							"evaluation_metric": "fuzzy_match",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	params, extraBody, err := convertInternalJobParamToOpenAiJobParams(config)
+
+	require.NoError(t, err)
+	require.NotNil(t, params)
+	require.Equal(t, "reinforcement", params.Method.Type)
+	// Multi-grader is set via extraBody, not SDK params
+	require.Nil(t, params.Method.Reinforcement.Grader.OfMultiGrader)
+
+	// Verify extraBody contains the grader
+	require.NotNil(t, extraBody)
+	grader, hasGrader := extraBody["method.reinforcement.grader"].(map[string]interface{})
+	require.True(t, hasGrader)
+	require.Equal(t, "multi", grader["type"])
+	require.Equal(t, "strict_partial_credit", grader["name"])
+	require.Equal(t, "0.9 * exact + 0.1 * fuzzy", grader["calculate_output"])
+
+	graders, hasGraders := grader["graders"].(map[string]interface{})
+	require.True(t, hasGraders)
+	require.Len(t, graders, 2)
+}
+
+func TestConvertInternalJobParamToOpenAiJobParams_ReinforcementWithStringCheckGrader(t *testing.T) {
+	// Verify that non-multi graders still work via SDK params
+	epochs := 3
+	config := &models.CreateFineTuningRequest{
+		BaseModel:    "o4-mini-2025-04-16",
+		TrainingFile: "file-abc123",
+		Method: models.MethodConfig{
+			Type: "reinforcement",
+			Reinforcement: &models.ReinforcementConfig{
+				Hyperparameters: models.HyperparametersConfig{
+					Epochs:          &epochs,
+					ReasoningEffort: "high",
+				},
+				Grader: map[string]interface{}{
+					"type":      "string_check",
+					"name":      "exact",
+					"input":     "{{sample.output_text}}",
+					"reference": "{{item.reference_answer}}",
+					"operation": "eq",
+				},
+			},
+		},
+	}
+
+	params, _, err := convertInternalJobParamToOpenAiJobParams(config)
+
+	require.NoError(t, err)
+	require.NotNil(t, params)
+	require.Equal(t, "reinforcement", params.Method.Type)
+	// Non-multi graders should be set via SDK params
+	require.NotNil(t, params.Method.Reinforcement.Grader.OfStringCheckGrader)
+	require.Equal(t, "exact", params.Method.Reinforcement.Grader.OfStringCheckGrader.Name)
+}
+
 // Helper functions
 func int64Ptr(i int64) *int64 {
 	return &i

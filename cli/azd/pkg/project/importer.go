@@ -96,6 +96,61 @@ func (im *ImportManager) ServiceStable(ctx context.Context, projectConfig *Proje
 	return im.sortServicesByDependencies(allServicesSlice, projectConfig)
 }
 
+// ServiceStableFiltered retrieves the list of services filtered by their condition status.
+// It returns:
+// - all enabled services when targetServiceName is empty
+// - only the targeted service if enabled, or an error if disabled
+// - error if the service condition template is malformed
+func (im *ImportManager) ServiceStableFiltered(
+	ctx context.Context,
+	projectConfig *ProjectConfig,
+	targetServiceName string,
+	getenv func(string) string,
+) ([]*ServiceConfig, error) {
+	allServices, err := im.ServiceStable(ctx, projectConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	// If targeting a specific service, check if it exists and is enabled
+	if targetServiceName != "" {
+		for _, svc := range allServices {
+			if svc.Name == targetServiceName {
+				enabled, err := svc.IsEnabled(getenv)
+				if err != nil {
+					return nil, fmt.Errorf("service '%s': %w", svc.Name, err)
+				}
+				if !enabled {
+					conditionValue, _ := svc.Condition.Envsubst(getenv)
+					return nil, fmt.Errorf(
+						"service '%s' has a deployment condition that evaluated to '%s'. "+
+							"The service requires a truthy value (1, true, TRUE, True, yes, YES, Yes) to be enabled",
+						svc.Name,
+						conditionValue,
+					)
+				}
+				return []*ServiceConfig{svc}, nil
+			}
+		}
+		// This shouldn't happen as getTargetServiceName already validates existence
+		return nil, fmt.Errorf("service '%s' not found", targetServiceName)
+	}
+
+	// Filter services by condition
+	enabledServices := make([]*ServiceConfig, 0, len(allServices))
+	for _, svc := range allServices {
+		enabled, err := svc.IsEnabled(getenv)
+		if err != nil {
+			return nil, fmt.Errorf("service '%s': %w", svc.Name, err)
+		}
+		if enabled {
+			enabledServices = append(enabledServices, svc)
+		}
+	}
+
+	return enabledServices, nil
+}
+
 // sortServicesByDependencies performs a topological sort of services based on their dependencies.
 // Returns services in dependency order (dependencies first) with circular reference detection.
 // If no dependencies are defined, falls back to alphabetical ordering for backward compatibility.

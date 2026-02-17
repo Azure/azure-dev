@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -162,7 +163,7 @@ func (ba *buildAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
-	stableServices, err := ba.importManager.ServiceStable(ctx, ba.projectConfig)
+	stableServices, err := ba.importManager.ServiceStableFiltered(ctx, ba.projectConfig, targetServiceName, os.Getenv)
 	if err != nil {
 		return nil, err
 	}
@@ -177,14 +178,6 @@ func (ba *buildAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		for _, svc := range stableServices {
 			stepMessage := fmt.Sprintf("Building service %s", svc.Name)
 			ba.console.ShowSpinner(ctx, stepMessage, input.Step)
-
-			// Skip this service if both cases are true:
-			// 1. The user specified a service name
-			// 2. This service is not the one the user specified
-			if targetServiceName != "" && targetServiceName != svc.Name {
-				ba.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
-				continue
-			}
 
 			buildResult, err := async.RunWithProgress(
 				func(buildProgress project.ServiceProgress) {

@@ -8,7 +8,76 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
+
+func TestIsRecoverableDeploymentSelectionError_StructuredReason(t *testing.T) {
+	t.Parallel()
+
+	st := status.New(codes.FailedPrecondition, "no valid SKUs for selected model")
+	withDetails, err := st.WithDetails(&errdetails.ErrorInfo{
+		Reason: azdext.AiErrorReasonNoValidSkus,
+		Domain: azdext.AiErrorDomain,
+	})
+	if err != nil {
+		t.Fatalf("failed to attach grpc error details: %v", err)
+	}
+
+	if !isRecoverableDeploymentSelectionError(withDetails.Err()) {
+		t.Fatalf("expected structured AI reason to be recoverable")
+	}
+}
+
+func TestIsRecoverableDeploymentSelectionError_NonRecoverableStructuredReason(t *testing.T) {
+	t.Parallel()
+
+	st := status.New(codes.InvalidArgument, "quota location is required")
+	withDetails, err := st.WithDetails(&errdetails.ErrorInfo{
+		Reason: azdext.AiErrorReasonQuotaLocation,
+		Domain: azdext.AiErrorDomain,
+	})
+	if err != nil {
+		t.Fatalf("failed to attach grpc error details: %v", err)
+	}
+
+	if isRecoverableDeploymentSelectionError(withDetails.Err()) {
+		t.Fatalf("expected structured quota-location error to be non-recoverable")
+	}
+}
+
+func TestIsRecoverableDeploymentSelectionError_UnstructuredError(t *testing.T) {
+	t.Parallel()
+
+	if isRecoverableDeploymentSelectionError(
+		status.Error(codes.Internal, "no deployment found for model \"foo\" with the specified options"),
+	) {
+		t.Fatalf("expected unstructured error to be non-recoverable")
+	}
+}
+
+func TestHasAiErrorReason(t *testing.T) {
+	t.Parallel()
+
+	st := status.New(codes.NotFound, "no locations with sufficient quota")
+	withDetails, err := st.WithDetails(&errdetails.ErrorInfo{
+		Reason: azdext.AiErrorReasonNoLocationsWithQuota,
+		Domain: azdext.AiErrorDomain,
+	})
+	if err != nil {
+		t.Fatalf("failed to attach grpc error details: %v", err)
+	}
+
+	if !hasAiErrorReason(withDetails.Err(), azdext.AiErrorReasonNoLocationsWithQuota) {
+		t.Fatalf("expected reason to be detected")
+	}
+	if hasAiErrorReason(withDetails.Err(), azdext.AiErrorReasonNoValidSkus) {
+		t.Fatalf("expected non-matching reason to be false")
+	}
+}
 
 func TestCopyDirectory_RefusesToCopyIntoSubtree(t *testing.T) {
 	t.Parallel()

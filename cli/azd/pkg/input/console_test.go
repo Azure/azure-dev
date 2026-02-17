@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/stretchr/testify/require"
 )
@@ -265,4 +266,106 @@ func newTestExternalPromptServer(handler func(promptOptions) json.RawMessage) *h
 
 		_, _ = w.Write(respBody)
 	}))
+}
+
+func TestAskerConsole_Message_JsonQueryFilter(t *testing.T) {
+	tests := []struct {
+		name   string
+		query  string
+		assert func(t *testing.T, got string)
+	}{
+		{
+			name:  "NoQuery",
+			query: "",
+			assert: func(t *testing.T, got string) {
+				// Unmarshal into the full envelope and verify structure
+				var env contracts.EventEnvelope
+				err := json.Unmarshal([]byte(strings.TrimSpace(got)), &env)
+				require.NoError(t, err, "output should be valid JSON envelope")
+				require.Equal(t, contracts.ConsoleMessageEventDataType, env.Type)
+
+				data, ok := env.Data.(map[string]any)
+				require.True(t, ok, "Data should be a map, got %T", env.Data)
+				// EventForMessage appends a trailing newline to the message
+				require.Equal(t, "hello world\n", data["message"])
+			},
+		},
+		{
+			name:  "QueryDataMessage",
+			query: "data.message",
+			assert: func(t *testing.T, got string) {
+				// Query should extract a bare JSON string, not an object
+				var s string
+				err := json.Unmarshal([]byte(strings.TrimSpace(got)), &s)
+				require.NoError(t, err, "output should unmarshal as a JSON string")
+				// EventForMessage appends a trailing newline to the message
+				require.Equal(t, "hello world\n", s)
+			},
+		},
+		{
+			name:  "QueryType",
+			query: "type",
+			assert: func(t *testing.T, got string) {
+				// Query should extract a bare JSON string, not an object
+				var s string
+				err := json.Unmarshal([]byte(strings.TrimSpace(got)), &s)
+				require.NoError(t, err, "output should unmarshal as a JSON string")
+				require.Equal(t, "consoleMessage", s)
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			buf := &strings.Builder{}
+			formatter := &output.JsonFormatter{Query: tc.query}
+
+			c := NewConsole(
+				true,
+				false,
+				Writers{Output: writerAdapter{buf}},
+				ConsoleHandles{
+					Stderr: os.Stderr,
+					Stdin:  os.Stdin,
+					Stdout: writerAdapter{buf},
+				},
+				formatter,
+				nil,
+			)
+
+			c.Message(context.Background(), "hello world")
+
+			tc.assert(t, buf.String())
+		})
+	}
+}
+
+func TestAskerConsole_Message_InvalidQuery_FallsBack(t *testing.T) {
+	buf := &strings.Builder{}
+	formatter := &output.JsonFormatter{Query: "[invalid"}
+
+	c := NewConsole(
+		true,
+		false,
+		Writers{Output: writerAdapter{buf}},
+		ConsoleHandles{
+			Stderr: os.Stderr,
+			Stdin:  os.Stdin,
+			Stdout: writerAdapter{buf},
+		},
+		formatter,
+		nil,
+	)
+
+	// Should not panic; falls back to unfiltered output
+	c.Message(context.Background(), "hello world")
+
+	got := buf.String()
+	require.Contains(t, got, `"consoleMessage"`,
+		"invalid query should fall back to full envelope")
+}
+
+// writerAdapter wraps *strings.Builder to satisfy io.Writer for test purposes.
+type writerAdapter struct {
+	*strings.Builder
 }

@@ -61,6 +61,8 @@ words:
   - lipgloss
   - gopxl
   - subcmd
+  - genproto
+  - errdetails
 languageSettings:
   - languageId: go
     ignoreRegExpList:

@@ -74,5 +74,7 @@ cli/azd/extensions/microsoft.azd.concurx/microsoft.azd.concurx.exe
 cli/azd/azd-test
 cli/azd/azd
 cli/azd/extensions/microsoft.azd.concurx/concurx
-cli/azd/extensions/microsoft.azd.concurx/concurx
 cli/azd/extensions/microsoft.azd.concurx/concurx.exe
+cli/azd/extensions/azure.appservice/azureappservice
+cli/azd/extensions/azure.appservice/azureappservice.exe
+

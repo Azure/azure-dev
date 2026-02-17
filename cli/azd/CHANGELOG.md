@@ -10,6 +10,37 @@
 
 ### Other Changes
 
+## 1.23.5 (2026-02-13)
+
+### Features Added
+
+- [[#6747]](https://github.com/Azure/azure-dev/pull/6747) Add `requiredAzdVersion` field for extensions to declare core version dependencies.
+- [[#6748]](https://github.com/Azure/azure-dev/pull/6748) Add `remoteBuild` option for Azure Functions flex consumption apps.
+
+### Bugs Fixed
+
+- [[#6739]](https://github.com/Azure/azure-dev/pull/6739) Fix arrow keys displaying as escape sequences in Ghostty terminal.
+- [[#6735]](https://github.com/Azure/azure-dev/pull/6735) Extend JMESPath query support to Message methods. Thanks @scottaddie for the contribution!
+
+## 1.23.4 (2026-02-09)
+
+### Features Added
+
+- [[#6664]](https://github.com/Azure/azure-dev/pull/6664) Add JMESPath query support for JSON output in CLI commands using `--query` flag.
+- [[#6627]](https://github.com/Azure/azure-dev/pull/6627) Add App Service deployment slot routing based on deployment history.
+
+### Bugs Fixed
+
+- [[#6674]](https://github.com/Azure/azure-dev/pull/6674) Fix duplicate `azd-service-name` tag error message to identify which resources conflict and filter validation to host resources only.
+- [[#6671]](https://github.com/Azure/azure-dev/pull/6671) Fix extension namespace handling to prevent conflicts and enable auto-install for sibling namespaces.
+- [[#6694]](https://github.com/Azure/azure-dev/pull/6694) Fix environment variable substitution for array and object Bicep parameters.
+- [[#6698]](https://github.com/Azure/azure-dev/pull/6698) Fix telemetry bundling issues.
+
+### Other Changes
+
+- [[#6690]](https://github.com/Azure/azure-dev/pull/6690) Improve provisioning error messages with targeted troubleshooting steps for common issues.
+- [[#6649]](https://github.com/Azure/azure-dev/pull/6649) Refactor container helper to accept environment explicitly, preventing environment confusion bugs.
+
 ## 1.23.3 (2026-01-30)
 
 ### Features Added

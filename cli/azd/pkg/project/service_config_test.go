@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -310,6 +311,223 @@ func TestServiceConfigEventHandlerReceivesServiceContext(t *testing.T) {
 	})
 	require.Nil(t, err)
 	require.True(t, handlerCalled)
+}
+
+func TestServiceConfigConditionEvaluation(t *testing.T) {
+	tests := []struct {
+		name          string
+		condition     string
+		envVars       map[string]string
+		expectEnabled bool
+	}{
+		// No condition - should be enabled by default
+		{
+			name:          "NoCondition",
+			condition:     "",
+			envVars:       map[string]string{},
+			expectEnabled: true,
+		},
+		// Truthy values
+		{
+			name:          "ConditionTrue",
+			condition:     "true",
+			envVars:       map[string]string{},
+			expectEnabled: true,
+		},
+		{
+			name:          "ConditionTRUE",
+			condition:     "TRUE",
+			envVars:       map[string]string{},
+			expectEnabled: true,
+		},
+		{
+			name:          "ConditionTrue_MixedCase",
+			condition:     "True",
+			envVars:       map[string]string{},
+			expectEnabled: true,
+		},
+		{
+			name:          "ConditionYes",
+			condition:     "yes",
+			envVars:       map[string]string{},
+			expectEnabled: true,
+		},
+		{
+			name:          "ConditionYES",
+			condition:     "YES",
+			envVars:       map[string]string{},
+			expectEnabled: true,
+		},
+		{
+			name:          "ConditionYes_MixedCase",
+			condition:     "Yes",
+			envVars:       map[string]string{},
+			expectEnabled: true,
+		},
+		{
+			name:          "ConditionOne",
+			condition:     "1",
+			envVars:       map[string]string{},
+			expectEnabled: true,
+		},
+		// Falsy values
+		{
+			name:          "ConditionFalse",
+			condition:     "false",
+			envVars:       map[string]string{},
+			expectEnabled: false,
+		},
+		{
+			name:          "ConditionFALSE",
+			condition:     "FALSE",
+			envVars:       map[string]string{},
+			expectEnabled: false,
+		},
+		{
+			name:          "ConditionNo",
+			condition:     "no",
+			envVars:       map[string]string{},
+			expectEnabled: false,
+		},
+		{
+			name:          "ConditionZero",
+			condition:     "0",
+			envVars:       map[string]string{},
+			expectEnabled: false,
+		},
+		{
+			name:          "ConditionRandomString",
+			condition:     "random",
+			envVars:       map[string]string{},
+			expectEnabled: false,
+		},
+		{
+			name:          "ConditionEmptyString",
+			condition:     "",
+			envVars:       map[string]string{},
+			expectEnabled: true, // No condition means enabled
+		},
+		// Environment variable expansion
+		{
+			name:          "ConditionFromEnvVarTrue",
+			condition:     "${DEPLOY_SERVICE}",
+			envVars:       map[string]string{"DEPLOY_SERVICE": "true"},
+			expectEnabled: true,
+		},
+		{
+			name:          "ConditionFromEnvVarFalse",
+			condition:     "${DEPLOY_SERVICE}",
+			envVars:       map[string]string{"DEPLOY_SERVICE": "false"},
+			expectEnabled: false,
+		},
+		{
+			name:          "ConditionFromEnvVarOne",
+			condition:     "${DEPLOY_SERVICE}",
+			envVars:       map[string]string{"DEPLOY_SERVICE": "1"},
+			expectEnabled: true,
+		},
+		{
+			name:          "ConditionFromEnvVarZero",
+			condition:     "${DEPLOY_SERVICE}",
+			envVars:       map[string]string{"DEPLOY_SERVICE": "0"},
+			expectEnabled: false,
+		},
+		{
+			name:          "ConditionFromMissingEnvVar",
+			condition:     "${DEPLOY_SERVICE}",
+			envVars:       map[string]string{},
+			expectEnabled: false, // Empty string after expansion is falsy
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service := &ServiceConfig{
+				Name:      "test-service",
+				Condition: osutil.NewExpandableString(tt.condition),
+			}
+
+			getenv := func(key string) string {
+				return tt.envVars[key]
+			}
+
+			enabled, err := service.IsEnabled(getenv)
+			require.NoError(t, err)
+			require.Equal(t, tt.expectEnabled, enabled)
+		})
+	}
+}
+
+func TestServiceConfigConditionMalformed(t *testing.T) {
+	service := &ServiceConfig{
+		Name:      "test-service",
+		Condition: osutil.NewExpandableString("${UNCLOSED"),
+	}
+
+	getenv := func(key string) string {
+		return ""
+	}
+
+	_, err := service.IsEnabled(getenv)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "malformed deployment condition template")
+}
+
+func TestServiceConfigConditionYamlParsing(t *testing.T) {
+	const testProj = `
+name: test-proj
+services:
+  conditionalService:
+    project: src/api
+    language: js
+    host: containerapp
+    condition: ${DEPLOY_SERVICE}
+  unconditionalService:
+    project: src/web
+    language: js
+    host: appservice
+`
+
+	mockContext := mocks.NewMockContext(context.Background())
+	projectConfig, err := Parse(*mockContext.Context, testProj)
+	require.Nil(t, err)
+	require.NotNil(t, projectConfig)
+
+	conditionalService := projectConfig.Services["conditionalService"]
+	require.NotNil(t, conditionalService)
+	require.False(t, conditionalService.Condition.Empty())
+
+	unconditionalService := projectConfig.Services["unconditionalService"]
+	require.NotNil(t, unconditionalService)
+	require.True(t, unconditionalService.Condition.Empty())
+
+	// Test with environment variable set to true
+	getenvTrue := func(key string) string {
+		if key == "DEPLOY_SERVICE" {
+			return "true"
+		}
+		return ""
+	}
+	enabled, err := conditionalService.IsEnabled(getenvTrue)
+	require.NoError(t, err)
+	require.True(t, enabled)
+	enabled, err = unconditionalService.IsEnabled(getenvTrue)
+	require.NoError(t, err)
+	require.True(t, enabled)
+
+	// Test with environment variable set to false
+	getenvFalse := func(key string) string {
+		if key == "DEPLOY_SERVICE" {
+			return "false"
+		}
+		return ""
+	}
+	enabled, err = conditionalService.IsEnabled(getenvFalse)
+	require.NoError(t, err)
+	require.False(t, enabled)
+	enabled, err = unconditionalService.IsEnabled(getenvFalse)
+	require.NoError(t, err)
+	require.True(t, enabled)
 }
 
 func createTestServiceConfig(path string, host ServiceTargetKind, language ServiceLanguageKind) *ServiceConfig {

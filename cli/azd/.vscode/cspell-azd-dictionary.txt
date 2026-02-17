@@ -55,6 +55,7 @@ azruntime
 azsdk
 azureai
 azureaiagent
+azureappservice
 AZURECLI
 azurecodingagent
 azureedge
@@ -136,6 +137,7 @@ gjson
 go-imath
 GOARCH
 GOCOVERDIR
+Ghostty
 godotenv
 gofmt
 golangci

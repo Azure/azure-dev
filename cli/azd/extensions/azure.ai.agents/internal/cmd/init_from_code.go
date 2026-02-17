@@ -499,6 +499,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 
 				// Set the Foundry project context
 				a.azureContext.Scope.Location = selectedProject.Location
+				a.setEnvVar(ctx, "AZURE_LOCATION", selectedProject.Location)
 
 				err := a.processExistingFoundryProject(ctx, selectedProject)
 				if err != nil {

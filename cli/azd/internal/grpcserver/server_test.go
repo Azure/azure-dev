@@ -109,10 +109,11 @@ func Test_Server_Start(t *testing.T) {
 
 func Test_wrapErrorWithSuggestion(t *testing.T) {
 	tests := []struct {
-		name        string
-		err         error
-		wantNil     bool
-		wantContain string
+		name             string
+		err              error
+		wantNil          bool
+		wantContain      string
+		wantSameInstance bool
 	}{
 		{
 			name:    "nil error returns nil",
@@ -120,9 +121,10 @@ func Test_wrapErrorWithSuggestion(t *testing.T) {
 			wantNil: true,
 		},
 		{
-			name:        "error without suggestion is returned as-is",
-			err:         errors.New("some error"),
-			wantContain: "some error",
+			name:             "error without suggestion is returned as-is",
+			err:              errors.New("some error"),
+			wantContain:      "some error",
+			wantSameInstance: true,
 		},
 		{
 			name: "error with suggestion includes suggestion text",
@@ -151,6 +153,9 @@ func Test_wrapErrorWithSuggestion(t *testing.T) {
 			}
 			require.NotNil(t, result)
 			require.Contains(t, result.Error(), tt.wantContain)
+			if tt.wantSameInstance {
+				require.True(t, result == tt.err, "expected error to be returned unchanged (same instance)")
+			}
 		})
 	}
 }

@@ -585,6 +585,7 @@ func setupTestServer(t *testing.T, promptSvc azdext.PromptServiceServer) (
 	require.NoError(t, err)
 
 	cleanup := func() {
+		client.Close()
 		err := server.Stop()
 		require.NoError(t, err)
 	}

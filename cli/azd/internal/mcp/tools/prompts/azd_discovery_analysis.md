@@ -1,4 +1,4 @@
-# AZD Application Discovery and Analysis Instructions
+# azd application Discovery and Analysis Instructions
 
 ✅ **Agent Task List**  
 

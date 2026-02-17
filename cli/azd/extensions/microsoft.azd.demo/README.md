@@ -1,6 +1,6 @@
 # `azd` Demo Extension
 
-An AZD Demo extension with custom commands showcasing current capabilities of the `azd` extension framework.
+An azd Demo extension with custom commands showcasing current capabilities of the `azd` extension framework.
 
 ## Installation
 

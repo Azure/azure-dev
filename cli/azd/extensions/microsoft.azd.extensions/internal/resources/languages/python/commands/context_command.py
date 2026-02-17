@@ -29,7 +29,7 @@ class ContextCommand:
                 print(f"Name: {project_response.project.name}")
                 print(f"Path: {project_response.project.path}")
             else:
-                print("WARNING: No AZD project found in current directory.")
+                print("WARNING: No azd project found in current directory.")
                 print("Run 'azd init' to create a new project.")
                 return
 
@@ -37,7 +37,7 @@ class ContextCommand:
             print("\nEnvironment:",)
             current_env = self.azd_client.environment.GetCurrent(empty_pb2.Empty())
             if not current_env:
-                print("WARNING: No AZD environment(s) found.")
+                print("WARNING: No azd environment(s) found.")
                 print("Run 'azd env new' to create one.")
                 return
 

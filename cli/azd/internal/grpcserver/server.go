@@ -123,7 +123,7 @@ func (s *Server) Start() (*ServerInfo, error) {
 		}
 	}()
 
-	log.Printf("AZD gRPC Server listening on port %d", randomPort)
+	log.Printf("azd gRPC Server listening on port %d", randomPort)
 
 	return &ServerInfo{
 		Address:    fmt.Sprintf("localhost:%d", randomPort),
@@ -138,7 +138,7 @@ func (s *Server) Stop() error {
 	}
 
 	s.grpcServer.Stop()
-	log.Println("AZD gRPC Server stopped")
+	log.Println("azd gRPC Server stopped")
 
 	return nil
 }

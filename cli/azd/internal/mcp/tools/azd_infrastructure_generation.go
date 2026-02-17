@@ -22,7 +22,7 @@ func NewAzdInfrastructureGenerationTool() server.ServerTool {
 			mcp.WithOpenWorldHintAnnotation(false),
 			mcp.WithDescription(
 				`Returns instructions for generating modular Bicep infrastructure templates following Azure security and 
-operational best practices for AZD projects. 
+operational best practices for azd projects. 
 
 The LLM agent should execute these instructions using available tools.
 

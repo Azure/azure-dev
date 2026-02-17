@@ -4,7 +4,7 @@
       "id": "microsoft.azd.demo",
       "namespace": "demo",
       "displayName": "Demo Extension",
-      "description": "This extension provides examples of the AZD extension framework.",
+      "description": "This extension provides examples of the azd extension framework.",
       "versions": [
         {
           "version": "0.1.0-beta.1",
@@ -328,8 +328,8 @@
     {
       "id": "microsoft.azd.extensions",
       "namespace": "x",
-      "displayName": "AZD Extensions Developer Kit",
-      "description": "This extension provides a set of tools for AZD extension developers to test and debug their extensions.",
+      "displayName": "azd extensions Developer Kit",
+      "description": "This extension provides a set of tools for azd extension developers to test and debug their extensions.",
       "versions": [
         {
           "version": "0.4.2",
@@ -340,22 +340,22 @@
           "examples": [
             {
               "name": "init",
-              "description": "Initialize a new AZD extension project.",
+              "description": "Initialize a new azd extension project.",
               "usage": "azd x init"
             },
             {
               "name": "build",
-              "description": "Build the AZD extension project.",
+              "description": "Build the azd extension project.",
               "usage": "azd x build"
             },
             {
               "name": "pack",
-              "description": "Package the AZD extension project into a distributable format and add to local registry.",
+              "description": "Package the azd extension project into a distributable format and add to local registry.",
               "usage": "azd x pack"
             },
             {
               "name": "release",
-              "description": "Create a new release of the AZD extension project to a GitHub repository.",
+              "description": "Create a new release of the azd extension project to a GitHub repository.",
               "usage": "azd x release"
             },
             {
@@ -424,27 +424,27 @@
           "examples": [
             {
               "name": "init",
-              "description": "Initialize a new AZD extension project.",
+              "description": "Initialize a new azd extension project.",
               "usage": "azd x init"
             },
             {
               "name": "build",
-              "description": "Build the AZD extension project.",
+              "description": "Build the azd extension project.",
               "usage": "azd x build"
             },
             {
               "name": "pack",
-              "description": "Package the AZD extension project into a distributable format and add to local registry.",
+              "description": "Package the azd extension project into a distributable format and add to local registry.",
               "usage": "azd x pack"
             },
             {
               "name": "publish",
-              "description": "Publish the AZD extension project to an extension source.",
+              "description": "Publish the azd extension project to an extension source.",
               "usage": "azd x publish"
             },
             {
               "name": "release",
-              "description": "Create a new release of the AZD extension project to a GitHub repository.",
+              "description": "Create a new release of the azd extension project to a GitHub repository.",
               "usage": "azd x release"
             },
             {
@@ -513,27 +513,27 @@
           "examples": [
             {
               "name": "init",
-              "description": "Initialize a new AZD extension project.",
+              "description": "Initialize a new azd extension project.",
               "usage": "azd x init"
             },
             {
               "name": "build",
-              "description": "Build the AZD extension project.",
+              "description": "Build the azd extension project.",
               "usage": "azd x build"
             },
             {
               "name": "pack",
-              "description": "Package the AZD extension project into a distributable format and add to local registry.",
+              "description": "Package the azd extension project into a distributable format and add to local registry.",
               "usage": "azd x pack"
             },
             {
               "name": "publish",
-              "description": "Publish the AZD extension project to an extension source.",
+              "description": "Publish the azd extension project to an extension source.",
               "usage": "azd x publish"
             },
             {
               "name": "release",
-              "description": "Create a new release of the AZD extension project to a GitHub repository.",
+              "description": "Create a new release of the azd extension project to a GitHub repository.",
               "usage": "azd x release"
             },
             {
@@ -602,27 +602,27 @@
           "examples": [
             {
               "name": "init",
-              "description": "Initialize a new AZD extension project.",
+              "description": "Initialize a new azd extension project.",
               "usage": "azd x init"
             },
             {
               "name": "build",
-              "description": "Build the AZD extension project.",
+              "description": "Build the azd extension project.",
               "usage": "azd x build"
             },
             {
               "name": "pack",
-              "description": "Package the AZD extension project into a distributable format and add to local registry.",
+              "description": "Package the azd extension project into a distributable format and add to local registry.",
               "usage": "azd x pack"
             },
             {
               "name": "publish",
-              "description": "Publish the AZD extension project to an extension source.",
+              "description": "Publish the azd extension project to an extension source.",
               "usage": "azd x publish"
             },
             {
               "name": "release",
-              "description": "Create a new release of the AZD extension project to a GitHub repository.",
+              "description": "Create a new release of the azd extension project to a GitHub repository.",
               "usage": "azd x release"
             },
             {
@@ -691,27 +691,27 @@
           "examples": [
             {
               "name": "init",
-              "description": "Initialize a new AZD extension project.",
+              "description": "Initialize a new azd extension project.",
               "usage": "azd x init"
             },
             {
               "name": "build",
-              "description": "Build the AZD extension project.",
+              "description": "Build the azd extension project.",
               "usage": "azd x build"
             },
             {
               "name": "pack",
-              "description": "Package the AZD extension project into a distributable format and add to local registry.",
+              "description": "Package the azd extension project into a distributable format and add to local registry.",
               "usage": "azd x pack"
             },
             {
               "name": "publish",
-              "description": "Publish the AZD extension project to an extension source.",
+              "description": "Publish the azd extension project to an extension source.",
               "usage": "azd x publish"
             },
             {
               "name": "release",
-              "description": "Create a new release of the AZD extension project to a GitHub repository.",
+              "description": "Create a new release of the azd extension project to a GitHub repository.",
               "usage": "azd x release"
             },
             {
@@ -780,27 +780,27 @@
           "examples": [
             {
               "name": "init",
-              "description": "Initialize a new AZD extension project.",
+              "description": "Initialize a new azd extension project.",
               "usage": "azd x init"
             },
             {
               "name": "build",
-              "description": "Build the AZD extension project.",
+              "description": "Build the azd extension project.",
               "usage": "azd x build"
             },
             {
               "name": "pack",
-              "description": "Package the AZD extension project into a distributable format and add to local registry.",
+              "description": "Package the azd extension project into a distributable format and add to local registry.",
               "usage": "azd x pack"
             },
             {
               "name": "publish",
-              "description": "Publish the AZD extension project to an extension source.",
+              "description": "Publish the azd extension project to an extension source.",
               "usage": "azd x publish"
             },
             {
               "name": "release",
-              "description": "Create a new release of the AZD extension project to a GitHub repository.",
+              "description": "Create a new release of the azd extension project to a GitHub repository.",
               "usage": "azd x release"
             },
             {
@@ -870,27 +870,27 @@
           "examples": [
             {
               "name": "init",
-              "description": "Initialize a new AZD extension project.",
+              "description": "Initialize a new azd extension project.",
               "usage": "azd x init"
             },
             {
               "name": "build",
-              "description": "Build the AZD extension project.",
+              "description": "Build the azd extension project.",
               "usage": "azd x build"
             },
             {
               "name": "pack",
-              "description": "Package the AZD extension project into a distributable format and add to local registry.",
+              "description": "Package the azd extension project into a distributable format and add to local registry.",
               "usage": "azd x pack"
             },
             {
               "name": "publish",
-              "description": "Publish the AZD extension project to an extension source.",
+              "description": "Publish the azd extension project to an extension source.",
               "usage": "azd x publish"
             },
             {
               "name": "release",
-              "description": "Create a new release of the AZD extension project to a GitHub repository.",
+              "description": "Create a new release of the azd extension project to a GitHub repository.",
               "usage": "azd x release"
             },
             {

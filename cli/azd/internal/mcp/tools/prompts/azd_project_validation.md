@@ -1,11 +1,11 @@
-# AZD Project Validation Instructions
+# azd project Validation Instructions
 
 ✅ **Agent Task List**  
 
 1. Load existing `azd-arch-plan.md` to understand current project state and context
 2. Execute azure.yaml against azd schema using available tool
 3. Compile and validate all Bicep templates in ./infra directory
-4. Verify AZD environment exists and is properly configured
+4. Verify azd environment exists and is properly configured
 5. Run `azd package --no-prompt` to validate service packaging
 6. Execute `azd provision --preview --no-prompt` to test infrastructure deployment
 7. Resolve ALL issues found in each validation step before proceeding
@@ -37,12 +37,12 @@ No validation step should be considered successful until all errors, warnings, a
 **2. Azure.yaml Schema Validation:**
 
 - Check if `azure.yaml` exists in current directory
-- Validate `azure.yaml` against AZD schema using available tools
+- Validate `azure.yaml` against azd schema using available tools
 - Parse and report any schema violations or missing fields
 - Verify service definitions and configurations are correct
 - **MANDATORY:** Fix ALL schema violations before proceeding
 
-**3. AZD Environment Validation:**
+**3. azd Environment Validation:**
 
 - Execute `azd env list` to check available environments
 - If no environments exist, create one: `azd env new <directory-name>-dev`
@@ -54,7 +54,7 @@ No validation step should be considered successful until all errors, warnings, a
 **4. Bicep Template Validation:**
 
 - Scan `./infra` directory for `.bicep` files using file search
-- Review AZD IaC generation rules and guidelines and resolve any all issues
+- Review azd IaC generation rules and guidelines and resolve any all issues
 - Execute `azd provision --preview --no-prompt` to validate infrastructure templates
 - **MANDATORY:** Fix ALL compilation errors before proceeding
 - Clean up any generated `<module.json>` files generated during bicep validation
@@ -79,7 +79,7 @@ No validation step should be considered successful until all errors, warnings, a
 
 - [ ] `azd-arch-plan.md` loaded and reviewed for project context
 - [ ] `azure.yaml` passes schema validation with NO errors or warnings
-- [ ] AZD environment exists and is properly configured with NO issues
+- [ ] azd environment exists and is properly configured with NO issues
 - [ ] ALL Bicep templates compile without errors or warnings
 - [ ] `azd provision --preview` completes without errors or warnings with ALL resources validating correctly
 - [ ] `azd package` completes without errors or warnings with ALL services packaging successfully

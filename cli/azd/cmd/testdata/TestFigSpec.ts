@@ -996,7 +996,7 @@ const completionSpec: Fig.Spec = {
 		},
 		{
 			name: ['demo'],
-			description: 'This extension provides examples of the AZD extension framework.',
+			description: 'This extension provides examples of the azd extension framework.',
 			subcommands: [
 				{
 					name: ['colors', 'colours'],
@@ -2270,7 +2270,7 @@ const completionSpec: Fig.Spec = {
 		},
 		{
 			name: ['x'],
-			description: 'This extension provides a set of tools for AZD extension developers to test and debug their extensions.',
+			description: 'This extension provides a set of tools for azd extension developers to test and debug their extensions.',
 			subcommands: [
 				{
 					name: ['build'],
@@ -2689,7 +2689,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['demo'],
-					description: 'This extension provides examples of the AZD extension framework.',
+					description: 'This extension provides examples of the azd extension framework.',
 					subcommands: [
 						{
 							name: ['colors', 'colours'],
@@ -2971,7 +2971,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['x'],
-					description: 'This extension provides a set of tools for AZD extension developers to test and debug their extensions.',
+					description: 'This extension provides a set of tools for azd extension developers to test and debug their extensions.',
 					subcommands: [
 						{
 							name: ['build'],

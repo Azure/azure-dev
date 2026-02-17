@@ -519,7 +519,7 @@ const (
 	modelRecoveryReasonAvailability modelRecoveryReason = "availability"
 	modelRecoveryReasonQuota        modelRecoveryReason = "quota"
 	modelLocationSwitchWarning                          = "WARNING: If you switch locations:\n" +
-		"• Your AZD environment will use a new default region.\n" +
+		"• Your azd environment will use a new default region.\n" +
 		"• Any existing Azure AI Foundry project created in your current region may fail.\n" +
 		"• Quota availability varies by region and model.\n\n" +
 		"Recommended options:\n" +

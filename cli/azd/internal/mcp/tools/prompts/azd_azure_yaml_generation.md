@@ -1,4 +1,4 @@
-# AZD Azure.yaml Generation Instructions
+# azd Azure.yaml Generation Instructions
 
 ✅ **Agent Task List**  
 
@@ -7,7 +7,7 @@
 3. Determine hosting requirements for each service based on Azure service selections
 4. Analyze build requirements (language, package manager, build commands)
 5. Create complete `azure.yaml` file in root directory following required patterns
-6. Validate file against AZD schema using available tools
+6. Validate file against azd schema using available tools
 7. Update existing `azd-arch-plan.md` with generated configuration details while preserving existing content
 
 📄 **Required Outputs**  
@@ -15,7 +15,7 @@
 - Valid `azure.yaml` file created in root directory
 - Service configurations matching Azure service selections from architecture planning
 - Build and deployment instructions for all services
-- Configuration validated against AZD schema
+- Configuration validated against azd schema
 - Update existing `azd-arch-plan.md` with configuration details while preserving existing content
 
 🧠 **Execution Guidelines**  
@@ -97,5 +97,5 @@ services:
 - [ ] All discovered services properly configured with correct host types
 - [ ] Service hosting configurations match Azure service selections from architecture planning
 - [ ] Build and deployment instructions complete for all services
-- [ ] File validates against any available AZD schema tools
+- [ ] File validates against any available azd schema tools
 - [ ] `azd-arch-plan.md` updated with configuration details while preserving existing content

@@ -96,6 +96,11 @@ func (r *Runner) Copy(ctx context.Context, source string, sasURI string) error {
 		if info.IsDir() {
 			sourceArg = filepath.Join(source, "*")
 		}
+	} else {
+		// For remote URLs ending with "/" (directory-like), append "*" before the query
+		// string so azcopy copies the contents rather than the folder itself.
+		// Skip if user already included a wildcard.
+		sourceArg = normalizeRemoteSourceURL(source)
 	}
 
 	args := []string{
@@ -289,6 +294,28 @@ func getWellKnownPaths() []string {
 	}
 
 	return paths
+}
+
+// normalizeRemoteSourceURL ensures a remote source URL copies contents rather than the folder.
+// If the URL path ends with "/" and doesn't already have a wildcard, inserts "*" before the query string.
+func normalizeRemoteSourceURL(source string) string {
+	// If user already provided a wildcard, use as-is
+	if strings.Contains(source, "/*") {
+		return source
+	}
+
+	// Split on "?" to separate path from query string
+	parts := strings.SplitN(source, "?", 2)
+	path := parts[0]
+
+	if strings.HasSuffix(path, "/") {
+		path += "*"
+	}
+
+	if len(parts) == 2 {
+		return path + "?" + parts[1]
+	}
+	return path
 }
 
 // isRemoteURL checks if the source string is a remote URL (http/https).

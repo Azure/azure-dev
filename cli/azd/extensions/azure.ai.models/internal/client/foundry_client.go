@@ -22,6 +22,8 @@ import (
 const (
 	DefaultAPIVersion = "2025-11-15-preview"
 	TokenScope        = "https://ai.azure.com/.default"
+	ARMTokenScope     = "https://management.azure.com/.default"
+	MLTokenScope      = "https://ml.azure.com/.default"
 )
 
 // FoundryClient is an HTTP client for Azure AI Foundry project APIs.
@@ -183,6 +185,183 @@ func (c *FoundryClient) RegisterModel(ctx context.Context, modelName, version st
 	}
 
 	return &result, nil
+}
+
+// RegisterModelAsync starts an async model creation with server-side validation.
+// POST {subPath}/models/{modelName}/versions/{version}/createAsync
+// Returns the polling Location URL from the 202 Accepted response.
+func (c *FoundryClient) RegisterModelAsync(ctx context.Context, modelName, version string, req *models.RegisterModelRequest) (string, error) {
+	reqURL := fmt.Sprintf("%s%s/models/%s/versions/%s/createAsync?api-version=%s",
+		c.baseURL, c.subPath,
+		url.PathEscape(modelName), url.PathEscape(version),
+		c.apiVersion,
+	)
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	// Disable redirects so we can capture the 202 + Location header
+	noRedirectClient := &http.Client{
+		Timeout: c.httpClient.Timeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(body))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	if err := c.addAuth(ctx, httpReq); err != nil {
+		return "", err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := noRedirectClient.Do(httpReq)
+	if err != nil {
+		return "", fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusAccepted {
+		return "", c.handleError(resp)
+	}
+
+	location := resp.Header.Get("Location")
+	if location == "" {
+		// Fall back to parsing Location from JSON body
+		var asyncResp models.CreateAsyncResponse
+		if err := json.NewDecoder(resp.Body).Decode(&asyncResp); err == nil && asyncResp.Location != "" {
+			location = asyncResp.Location
+		}
+	}
+
+	if location == "" {
+		return "", fmt.Errorf("server returned 202 but no Location header or body for polling")
+	}
+
+	return location, nil
+}
+
+// PollOperation polls the given operation URL until it completes or the context is cancelled.
+// The operation URL uses ARM-style auth, so a separate credential with ARM scope is required.
+// Returns the completed CustomModel on success.
+func (c *FoundryClient) PollOperation(ctx context.Context, operationURL string, pollInterval time.Duration) (*models.CustomModel, error) {
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(pollInterval):
+		}
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, operationURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create poll request: %w", err)
+		}
+
+		// The operations endpoint on api.azureml.ms expects tokens with ml.azure.com audience
+		token, err := c.credential.GetToken(ctx, policy.TokenRequestOptions{
+			Scopes: []string{MLTokenScope},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get ARM access token: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token.Token)
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("poll request failed: %w", err)
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read poll response: %w", err)
+		}
+
+		if resp.StatusCode == http.StatusAccepted {
+			// Still in progress
+			if newLocation := resp.Header.Get("Location"); newLocation != "" {
+				operationURL = newLocation
+			}
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("poll error (%d): %s", resp.StatusCode, string(body))
+		}
+
+		// 200 OK — check if it's an async status response or the final model
+		var asyncStatus struct {
+			Status string `json:"status"`
+			Error  *struct {
+				Code    string `json:"code"`
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if json.Unmarshal(body, &asyncStatus) == nil && asyncStatus.Status != "" {
+			switch asyncStatus.Status {
+			case "InProgress", "NotStarted":
+				continue
+			case "Failed":
+				if asyncStatus.Error != nil {
+					return nil, fmt.Errorf("operation failed: %s - %s", asyncStatus.Error.Code, asyncStatus.Error.Message)
+				}
+				return nil, fmt.Errorf("operation failed without details")
+			case "Succeeded":
+				// For succeeded, the body is the FoundryModelDto directly — fall through to decode
+				// But the server may return the status wrapper; try to get the model via GET
+				var model models.CustomModel
+				if json.Unmarshal(body, &model) == nil && model.Name != "" {
+					return &model, nil
+				}
+				// Model not in the body — fetch it using the data-plane API
+				return c.GetModel(ctx, c.extractModelName(operationURL), c.extractModelVersion(operationURL))
+			}
+		}
+
+		// Direct model response (succeeded case from GetFoundryModelResponseObject)
+		var result models.CustomModel
+		if err := json.Unmarshal(body, &result); err != nil {
+			return nil, fmt.Errorf("failed to decode completed operation: %w", err)
+		}
+
+		return &result, nil
+	}
+}
+
+// extractModelName extracts the model name from an operation URL path.
+func (c *FoundryClient) extractModelName(operationURL string) string {
+	// URL format: .../models/{name}/versions/{version}/createAsync/operations/{id}
+	parsed, err := url.Parse(operationURL)
+	if err != nil {
+		return ""
+	}
+	parts := strings.Split(parsed.Path, "/")
+	for i, p := range parts {
+		if p == "models" && i+1 < len(parts) {
+			return parts[i+1]
+		}
+	}
+	return ""
+}
+
+// extractModelVersion extracts the model version from an operation URL path.
+func (c *FoundryClient) extractModelVersion(operationURL string) string {
+	parsed, err := url.Parse(operationURL)
+	if err != nil {
+		return ""
+	}
+	parts := strings.Split(parsed.Path, "/")
+	for i, p := range parts {
+		if p == "versions" && i+1 < len(parts) {
+			return parts[i+1]
+		}
+	}
+	return ""
 }
 
 // DeleteModel deletes a custom model version.

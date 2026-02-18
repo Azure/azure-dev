@@ -117,6 +117,70 @@ func (s *subscriptionsCache) Save(ctx context.Context, key string, subscriptions
 	return err
 }
 
+// Merge merges the given subscriptions with the existing cache for the specified key.
+// For each subscription in the new list:
+//   - If it already exists (by ID), it is updated with the new values
+//   - If it doesn't exist, it is added to the cache
+//
+// Subscriptions in the cache that are not present in the new list are preserved.
+// This prevents losing tenant-to-subscription mappings when a tenant is temporarily inaccessible.
+func (s *subscriptionsCache) Merge(ctx context.Context, key string, subscriptions []Subscription) error {
+	s.inMemoryLock.Lock()
+	defer s.inMemoryLock.Unlock()
+
+	// Read the file if it exists
+	cacheFile, err := os.ReadFile(filepath.Join(s.cacheDir, subscriptionsCacheFile))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+
+	// unmarshal cache, ignoring the error if the cache was upgraded or corrupted
+	cache := map[string][]Subscription{}
+	if cacheFile != nil {
+		err = json.Unmarshal(cacheFile, &cache)
+		if err != nil {
+			log.Printf("failed to unmarshal %s, ignoring: %v", subscriptionsCacheFile, err)
+		}
+	}
+
+	// Get existing subscriptions for this key
+	existing := cache[key]
+
+	// Build a map of existing subscriptions by ID for quick lookup
+	existingMap := make(map[string]Subscription, len(existing))
+	for _, sub := range existing {
+		existingMap[sub.Id] = sub
+	}
+
+	// Update or add new subscriptions
+	for _, sub := range subscriptions {
+		existingMap[sub.Id] = sub
+	}
+
+	// Convert map back to slice
+	merged := make([]Subscription, 0, len(existingMap))
+	for _, sub := range existingMap {
+		merged = append(merged, sub)
+	}
+
+	// Apply the merged result
+	cache[key] = merged
+
+	// save new cache
+	content, err := json.Marshal(cache)
+	if err != nil {
+		return fmt.Errorf("failed to marshal subscriptions: %w", err)
+	}
+
+	err = os.WriteFile(filepath.Join(s.cacheDir, subscriptionsCacheFile), content, osutil.PermissionFile)
+	if err != nil {
+		return fmt.Errorf("failed to write file: %w", err)
+	}
+
+	s.inMemoryCopy = cache
+	return err
+}
+
 // Clear removes all stored cache items. Returns an error if a filesystem error other than ErrNotExist occurred.
 func (s *subscriptionsCache) Clear(ctx context.Context) error {
 	s.inMemoryLock.Lock()

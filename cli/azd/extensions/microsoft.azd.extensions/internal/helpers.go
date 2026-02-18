@@ -17,7 +17,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"time"
 	"unicode"
 )
 
@@ -66,7 +68,9 @@ func ComputeChecksum(filePath string) (string, error) {
 	return hex.EncodeToString(hasher.Sum(nil)), nil
 }
 
-// CopyFile copies a file from source to destination
+// CopyFile copies a file from source to destination.
+// On Windows, if the target file is locked (e.g., by a running process),
+// it attempts to rename the locked file out of the way before copying.
 func CopyFile(source, target string) error {
 	srcFile, err := os.Open(source)
 	if err != nil {
@@ -75,6 +79,15 @@ func CopyFile(source, target string) error {
 	defer srcFile.Close()
 
 	targetFile, err := os.Create(target)
+	if err != nil && runtime.GOOS == "windows" {
+		// On Windows, the target may be locked by a running process.
+		// Try to rename it out of the way, then create the new file.
+		oldTarget := target + ".old"
+		_ = os.Remove(oldTarget)
+		if renameErr := os.Rename(target, oldTarget); renameErr == nil {
+			targetFile, err = os.Create(target)
+		}
+	}
 	if err != nil {
 		return fmt.Errorf("failed to create target file: %w", err)
 	}

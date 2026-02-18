@@ -118,7 +118,7 @@ func (a *InitFromCodeAction) ensureProject(ctx context.Context) (*azdext.Project
 	if err != nil {
 		fmt.Println("Lets get your project initialized.")
 
-		if err := a.scaffoldTemplate(ctx, a.azdClient, "therealjohn/azd-ai-starter-basic", "main"); err != nil {
+		if err := a.scaffoldTemplate(ctx, a.azdClient, "Azure-Samples/azd-ai-starter-basic", "main"); err != nil {
 			return nil, fmt.Errorf("failed to scaffold template: %w", err)
 		}
 
@@ -175,10 +175,14 @@ func (a *InitFromCodeAction) scaffoldTemplate(ctx context.Context, azdClient *az
 		return fmt.Errorf("parsing tree response: %w", err)
 	}
 
-	// Collect only files (blobs)
+	// Collect only files (blobs) from the infra folder and azure.yaml
 	var files []templateFileInfo
 	for _, entry := range treeResp.Tree {
 		if entry.Type != "blob" {
+			continue
+		}
+		// Only include files in the infra folder or the azure.yaml file
+		if !strings.HasPrefix(entry.Path, "infra/") && entry.Path != "azure.yaml" {
 			continue
 		}
 		downloadURL := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s", repoSlug, branch, entry.Path)
@@ -1311,17 +1315,13 @@ func (a *InitFromCodeAction) processExistingFoundryProject(ctx context.Context, 
 		}
 
 		if len(acrConnections) == 0 {
-			fmt.Println(`
-				An Azure Container Registry (ACR) is required
-
-				Foundry Hosted Agents need an Azure Container Registry to store container images before deployment.
-
-				You can:
-				* Use an existing ACR
-				* Or create a new one from the template during 'azd up'
-
-				Learn more: aka.ms/azdaiagent/docs
-			`)
+			fmt.Println("\n" +
+				"An Azure Container Registry (ACR) is required\n\n" +
+				"Foundry Hosted Agents need an Azure Container Registry to store container images before deployment.\n\n" +
+				"You can:\n" +
+				"  • Use an existing ACR\n" +
+				"  • Or create a new one from the template during 'azd up'\n\n" +
+				"Learn more: aka.ms/azdaiagent/docs")
 
 			resp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 				Options: &azdext.PromptOptions{
@@ -1379,17 +1379,13 @@ func (a *InitFromCodeAction) processExistingFoundryProject(ctx context.Context, 
 
 		// Handle App Insights connections
 		if len(appInsightsConnections) == 0 {
-			fmt.Println(`
-				Application Insights (optional)
-
-				Enable telemetry to collect logs, traces, and diagnostics for this agent.
-
-				You can:
-				• Use an existing Application Insights resource
-				• Or create a new one during 'azd up'
-
-				Docs: aka.ms/azdaiagent/docs
-			`)
+			fmt.Println("\n" +
+				"Application Insights (optional)\n\n" +
+				"Enable telemetry to collect logs, traces, and diagnostics for this agent.\n\n" +
+				"You can:\n" +
+				"  • Use an existing Application Insights resource\n" +
+				"  • Or create a new one during 'azd up'\n\n" +
+				"Docs: aka.ms/azdaiagent/docs")
 
 			resp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 				Options: &azdext.PromptOptions{

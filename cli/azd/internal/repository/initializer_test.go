@@ -896,3 +896,82 @@ func Test_Initializer_Initialize_LocalTemplateWithGitDir(t *testing.T) {
 	// Our marker file should NOT exist in the project's .git directory.
 	require.NoFileExists(t, filepath.Join(projectDir, ".git", "source-template-marker"))
 }
+
+func Test_Initializer_Initialize_LocalTemplateRespectsGitignore(t *testing.T) {
+	// Create a local template directory with a .gitignore that excludes certain files
+	localTemplateDir := createLocalTemplateDir(t, testDataPath("template"))
+
+	// Create a .gitignore in the template
+	gitignoreContent := "node_modules/\n*.log\nbuild/\n.env\n"
+	require.NoError(t, os.WriteFile(
+		filepath.Join(localTemplateDir, ".gitignore"),
+		[]byte(gitignoreContent),
+		0600,
+	))
+
+	// Create files that SHOULD be ignored by .gitignore
+	require.NoError(t, os.MkdirAll(filepath.Join(localTemplateDir, "node_modules", "some-pkg"), 0755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(localTemplateDir, "node_modules", "some-pkg", "index.js"),
+		[]byte("module.exports = {}"),
+		0600,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(localTemplateDir, "debug.log"),
+		[]byte("some log output"),
+		0600,
+	))
+	require.NoError(t, os.MkdirAll(filepath.Join(localTemplateDir, "build"), 0755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(localTemplateDir, "build", "output.js"),
+		[]byte("compiled code"),
+		0600,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(localTemplateDir, ".env"),
+		[]byte("SECRET=value"),
+		0600,
+	))
+
+	// Create a file that should NOT be ignored
+	require.NoError(t, os.WriteFile(
+		filepath.Join(localTemplateDir, "important.txt"),
+		[]byte("keep me"),
+		0600,
+	))
+
+	projectDir := t.TempDir()
+	azdCtx := azdcontext.NewAzdContextWithDirectory(projectDir)
+
+	realRunner := exec.NewCommandRunner(nil)
+
+	mockEnv := &mockenv.MockEnvManager{}
+	mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
+
+	i := NewInitializer(
+		mockinput.NewMockConsole(),
+		git.NewCli(realRunner),
+		dotnet.NewCli(realRunner),
+		alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
+		lazy.From[environment.Manager](mockEnv),
+	)
+
+	err := i.Initialize(context.Background(), azdCtx, &templates.Template{
+		RepositoryPath: localTemplateDir,
+	}, "")
+	require.NoError(t, err)
+
+	// Verify tracked template files were copied
+	require.FileExists(t, filepath.Join(projectDir, "azure.yaml"))
+	require.FileExists(t, filepath.Join(projectDir, "README.md"))
+	require.FileExists(t, filepath.Join(projectDir, "important.txt"))
+
+	// Verify .gitignore itself was copied (it's a tracked file)
+	require.FileExists(t, filepath.Join(projectDir, ".gitignore"))
+
+	// Verify .gitignored files were NOT copied (matching git clone behavior)
+	require.NoDirExists(t, filepath.Join(projectDir, "node_modules"))
+	require.NoFileExists(t, filepath.Join(projectDir, "debug.log"))
+	require.NoDirExists(t, filepath.Join(projectDir, "build"))
+	require.NoFileExists(t, filepath.Join(projectDir, ".env"))
+}

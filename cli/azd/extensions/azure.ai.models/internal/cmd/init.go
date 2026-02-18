@@ -504,7 +504,7 @@ func parseProjectEndpoint(endpoint string) (accountName string, projectName stri
 	accountName = hostParts[0]
 
 	pathParts := strings.Split(strings.Trim(parsedURL.Path, "/"), "/")
-	if len(pathParts) >= 3 && pathParts[0] == "api" && pathParts[1] == "projects" {
+	if len(pathParts) == 3 && pathParts[0] == "api" && pathParts[1] == "projects" && pathParts[2] != "" {
 		projectName = pathParts[2]
 	} else {
 		return "", "", fmt.Errorf("invalid endpoint URL: expected path format /api/projects/{project-name}")

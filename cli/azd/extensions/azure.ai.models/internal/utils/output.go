@@ -44,6 +44,9 @@ func printJSON(obj interface{}) error {
 func printTable(obj interface{}) error {
 	v := reflect.ValueOf(obj)
 	if v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			return fmt.Errorf("table format does not support nil pointer values")
+		}
 		v = v.Elem()
 	}
 
@@ -86,6 +89,9 @@ func printSliceAsTable(v reflect.Value) error {
 
 	firstElem := v.Index(0)
 	if firstElem.Kind() == reflect.Ptr {
+		if firstElem.IsNil() {
+			return fmt.Errorf("first slice element is nil")
+		}
 		firstElem = firstElem.Elem()
 	}
 
@@ -115,6 +121,9 @@ func printSliceAsTable(v reflect.Value) error {
 	for i := 0; i < v.Len(); i++ {
 		elem := v.Index(i)
 		if elem.Kind() == reflect.Ptr {
+			if elem.IsNil() {
+				continue // Skip nil elements
+			}
 			elem = elem.Elem()
 		}
 

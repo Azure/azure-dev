@@ -194,14 +194,6 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				"using branch argument (-b or --branch) requires a template argument (--template or -t) to be specified")
 	}
 
-	// Fail fast when running non-interactively with --template but without --environment
-	// to avoid downloading the template and then failing at the environment name prompt.
-	if i.flags.global.NoPrompt && i.flags.templatePath != "" && i.flags.EnvironmentName == "" {
-		return nil, errors.New(
-			"--environment is required when running in non-interactive mode (--no-prompt) with --template. " +
-				"Use: azd init --template <url> --environment <name> --no-prompt")
-	}
-
 	// ensure that git is available
 	if err := tools.EnsureInstalled(ctx, []tools.ExternalTool{i.gitCli}...); err != nil {
 		return nil, err
@@ -228,6 +220,15 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		// re-setting the value here after loading the .env file overrides any value coming from the system env but
 		// doest not override the value coming from the arg.
 		i.flags.EnvFlag.EnvironmentName = os.Getenv(environment.EnvNameEnvVarName)
+	}
+
+	// Fail fast when running non-interactively with --template but without --environment
+	// to avoid downloading the template and then failing at the environment name prompt.
+	// This check runs after .env loading so that AZURE_ENV_NAME from .env is considered.
+	if i.flags.global.NoPrompt && i.flags.templatePath != "" && i.flags.EnvironmentName == "" {
+		return nil, errors.New(
+			"--environment is required when running in non-interactive mode (--no-prompt) with --template. " +
+				"Use: azd init --template <url> --environment <name> --no-prompt")
 	}
 
 	var existingProject bool

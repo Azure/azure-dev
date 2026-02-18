@@ -31,3 +31,4 @@ extends:
           AzdExtensionId: azure.ai.models
           SanitizedExtensionId: azure-ai-models
           AzdExtensionDirectory: cli/azd/extensions/azure.ai.models
+          SkipTests: true

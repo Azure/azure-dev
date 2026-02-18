@@ -158,9 +158,9 @@ func getCmdUpHelpDescription(c *cobra.Command) string {
 			  %s
 			  %s
 
-			Unlike Azure CLI, azd stores configuration in a named environment rather than
-			passing them as flags. Use %s to configure these values, then commands
-			like %s read from that environment automatically.
+			Unlike Azure CLI, azd typically stores configuration such as subscription and location in a named environment.
+			You can still provide these values with flags on commands that support them, but %s persists them so you
+			don't need to pass them on every command. Commands like %s read from the active environment automatically.
 			Use %s for structured output suitable for automation.
 
 			The %s workflow can be customized by adding a %s section to your %s.

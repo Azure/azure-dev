@@ -6,9 +6,9 @@ Before running, configure your target subscription and location:
   azd env set AZURE_SUBSCRIPTION_ID <your-subscription-id>
   azd env set AZURE_LOCATION <location>
 
-Unlike Azure CLI, azd stores configuration in a named environment rather than
-passing them as flags. Use azd env set to configure these values, then commands
-like azd up read from that environment automatically.
+Unlike Azure CLI, azd typically stores configuration such as subscription and location in a named environment.
+You can still provide these values with flags on commands that support them, but azd env set persists them so you
+don't need to pass them on every command. Commands like azd up read from the active environment automatically.
 Use --output json for structured output suitable for automation.
 
 The up workflow can be customized by adding a workflows section to your azure.yaml.

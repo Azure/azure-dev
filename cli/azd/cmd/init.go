@@ -222,6 +222,15 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		i.flags.EnvFlag.EnvironmentName = os.Getenv(environment.EnvNameEnvVarName)
 	}
 
+	// Fail fast when running non-interactively with --template but without --environment
+	// to avoid downloading the template and then failing at the environment name prompt.
+	// This check runs after .env loading so that AZURE_ENV_NAME from .env is considered.
+	if i.flags.global.NoPrompt && i.flags.templatePath != "" && i.flags.EnvironmentName == "" {
+		return nil, errors.New(
+			"--environment is required when running in non-interactive mode (--no-prompt) with --template. " +
+				"Use: azd init --template <url> --environment <name> --no-prompt")
+	}
+
 	var existingProject bool
 	if _, err := os.Stat(azdCtx.ProjectPath()); err == nil {
 		existingProject = true

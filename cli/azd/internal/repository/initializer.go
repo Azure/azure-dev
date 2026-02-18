@@ -97,7 +97,9 @@ func (i *Initializer) Initialize(
 			"Downloading template code to: %s", output.WithLinkFormat("%s", azdCtx.ProjectDirectory()))
 	}
 	i.console.ShowSpinner(ctx, stepMessage, input.Step)
-	defer i.console.StopSpinner(ctx, stepMessage+"\n", input.GetStepResultFormat(err))
+	defer func() {
+		i.console.StopSpinner(ctx, stepMessage+"\n", input.GetStepResultFormat(err))
+	}()
 
 	var filesWithExecPerms []string
 	if templates.IsLocalPath(templateUrl) {
@@ -186,6 +188,20 @@ func (i *Initializer) fetchCode(
 // clone (and only includes committed content), this copies the full working tree including uncommitted
 // changes — useful for local template development.
 func (i *Initializer) copyLocalTemplate(source, destination string) error {
+	// Verify the source is still a real directory and not a symlink.
+	// This mitigates TOCTOU attacks where the source directory could be replaced
+	// with a symlink between the initial path resolution and the copy operation.
+	info, err := os.Lstat(source)
+	if err != nil {
+		return fmt.Errorf("accessing local template: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("local template path '%s' is a symlink, which is not supported", source)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("local template path '%s' is not a directory", source)
+	}
+
 	// Load .gitignore rules from the source template if present.
 	// Only the root .gitignore is loaded; nested .gitignore files are not supported.
 	var ignorer gitignore.GitIgnore
@@ -195,7 +211,7 @@ func (i *Initializer) copyLocalTemplate(source, destination string) error {
 		ignorer = gitignore.New(f, source, nil)
 	}
 
-	err := copy.Copy(source, destination, copy.Options{
+	err = copy.Copy(source, destination, copy.Options{
 		// Skip symlinks to prevent copying symlinks that could point outside the template directory.
 		OnSymlink: func(string) copy.SymlinkAction {
 			return copy.Skip

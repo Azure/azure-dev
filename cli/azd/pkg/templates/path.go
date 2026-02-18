@@ -20,6 +20,7 @@ import (
 func Absolute(path string) (string, error) {
 	// already a git URI, return as-is
 	if strings.HasPrefix(path, "git@") ||
+		strings.HasPrefix(path, "git://") ||
 		strings.HasPrefix(path, "http://") ||
 		strings.HasPrefix(path, "https://") {
 		return path, nil
@@ -72,7 +73,8 @@ func Hyperlink(path string) string {
 func IsLocalPath(resolvedPath string) bool {
 	return !strings.HasPrefix(resolvedPath, "http://") &&
 		!strings.HasPrefix(resolvedPath, "https://") &&
-		!strings.HasPrefix(resolvedPath, "git@")
+		!strings.HasPrefix(resolvedPath, "git@") &&
+		!strings.HasPrefix(resolvedPath, "git://")
 }
 
 // looksLikeLocalPath returns true if the path appears to be an explicit local filesystem reference

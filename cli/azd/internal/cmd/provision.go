@@ -61,7 +61,7 @@ func (i *ProvisionFlags) BindNonCommon(local *pflag.FlagSet, global *internal.Gl
 		&i.subscription,
 		"subscription",
 		"",
-		"Name or ID of an Azure subscription to use for the new environment",
+		"ID of an Azure subscription to use for the new environment",
 	)
 	local.StringVarP(&i.location, "location", "l", "", "Azure location for the new environment")
 	i.global = global
@@ -219,16 +219,18 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	}
 
 	// Apply --subscription and --location flags to the environment before provisioning
+	envChanged := false
 	if p.flags.subscription != "" {
 		p.env.SetSubscriptionId(p.flags.subscription)
-		if err := p.envManager.Save(ctx, p.env); err != nil {
-			return nil, fmt.Errorf("saving subscription id: %w", err)
-		}
+		envChanged = true
 	}
 	if p.flags.location != "" {
 		p.env.SetLocation(p.flags.location)
+		envChanged = true
+	}
+	if envChanged {
 		if err := p.envManager.Save(ctx, p.env); err != nil {
-			return nil, fmt.Errorf("saving location: %w", err)
+			return nil, fmt.Errorf("saving environment: %w", err)
 		}
 	}
 

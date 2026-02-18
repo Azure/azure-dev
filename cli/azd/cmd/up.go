@@ -104,16 +104,18 @@ func newUpAction(
 
 func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Apply --subscription and --location flags to the environment before provisioning
+	updatedEnv := false
 	if u.flags.ProvisionFlags.Subscription() != "" {
 		u.env.SetSubscriptionId(u.flags.ProvisionFlags.Subscription())
-		if err := u.envManager.Save(ctx, u.env); err != nil {
-			return nil, fmt.Errorf("saving subscription id: %w", err)
-		}
+		updatedEnv = true
 	}
 	if u.flags.ProvisionFlags.Location() != "" {
 		u.env.SetLocation(u.flags.ProvisionFlags.Location())
+		updatedEnv = true
+	}
+	if updatedEnv {
 		if err := u.envManager.Save(ctx, u.env); err != nil {
-			return nil, fmt.Errorf("saving location: %w", err)
+			return nil, fmt.Errorf("saving environment: %w", err)
 		}
 	}
 

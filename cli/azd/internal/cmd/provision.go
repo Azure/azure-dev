@@ -483,6 +483,15 @@ func GetCmdProvisionHelpDescription(c *cobra.Command) string {
 			output.WithHighLightFormat(c.CommandPath())), []string{
 			formatHelpNote("Azure location: The Azure location where your resources will be deployed."),
 			formatHelpNote("Azure subscription: The Azure subscription where your resources will be deployed."),
+			fmt.Sprintf("\nYou can also set these values in advance to skip the prompts:\n\n"+
+				"  %s\n  %s\n\n"+
+				"Use %s to configure values in the active environment."+
+				" Use %s for structured output suitable for automation.",
+				output.WithGrayFormat("azd env set AZURE_SUBSCRIPTION_ID <your-subscription-id>"),
+				output.WithGrayFormat("azd env set AZURE_LOCATION <location>"),
+				output.WithHighLightFormat("azd env set"),
+				output.WithHighLightFormat("--output json"),
+			),
 			fmt.Sprintf("\nWhen <layer> is specified, only provisions resources for the given layer." +
 				" When omitted, provisions resources for all layers defined in the project."),
 		})

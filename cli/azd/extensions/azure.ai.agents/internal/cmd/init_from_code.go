@@ -24,7 +24,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/fatih/color"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -253,7 +252,7 @@ func (a *InitFromCodeAction) scaffoldTemplate(ctx context.Context, azdClient *az
 		case "skip":
 			overwriteCollisions = false
 		case "cancel":
-			return fmt.Errorf("operation cancelled by user")
+			return fmt.Errorf("operation cancelled, no changes were made")
 		}
 	} else {
 		// No collisions - confirm to proceed
@@ -267,7 +266,7 @@ func (a *InitFromCodeAction) scaffoldTemplate(ctx context.Context, azdClient *az
 			return fmt.Errorf("prompting for confirmation: %w", err)
 		}
 		if !*confirmResp.Value {
-			return fmt.Errorf("operation cancelled by user")
+			return fmt.Errorf("operation cancelled, no changes were made")
 		}
 	}
 
@@ -1256,7 +1255,7 @@ func (a *InitFromCodeAction) getModelDeploymentDetails(ctx context.Context, mode
 
 func (a *InitFromCodeAction) processExistingFoundryProject(ctx context.Context, foundryProject FoundryProjectInfo) error {
 
-	if err := a.setEnvVar(ctx, "AZURE_AI_PROJECT_ID", a.flags.projectResourceId); err != nil {
+	if err := a.setEnvVar(ctx, "AZURE_AI_PROJECT_ID", foundryProject.ResourceId); err != nil {
 		return err
 	}
 
@@ -1312,16 +1311,21 @@ func (a *InitFromCodeAction) processExistingFoundryProject(ctx context.Context, 
 		}
 
 		if len(acrConnections) == 0 {
-			fmt.Println(output.WithWarningFormat(
-				"Agent deployment prerequisites not satisfied. To deploy this agent, you will need to " +
-					"provision an Azure Container Registry (ACR) and grant the required permissions. " +
-					"You can either do this manually before deployment, or use an infrastructure template. " +
-					"See aka.ms/azdaiagent/docs for details."))
+			fmt.Println(`
+				An Azure Container Registry (ACR) is required
+
+				Foundry Hosted Agents need an Azure Container Registry to store container images before deployment.
+
+				You can:
+				* Use an existing ACR
+				* Or create a new one from the template during 'azd up'
+
+				Learn more: aka.ms/azdaiagent/docs
+			`)
 
 			resp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 				Options: &azdext.PromptOptions{
-					Message: "If you have an ACR that you want to use with this agent, enter the azurecr.io endpoint for the ACR. " +
-						"If you plan to provision one through the `azd provision` or `azd up` flow, leave blank.",
+					Message:        "Enter your ACR login server (e.g., myregistry.azurecr.io), or leave blank to create a new one",
 					IgnoreHintKeys: true,
 				},
 			})
@@ -1375,16 +1379,21 @@ func (a *InitFromCodeAction) processExistingFoundryProject(ctx context.Context, 
 
 		// Handle App Insights connections
 		if len(appInsightsConnections) == 0 {
-			fmt.Println(output.WithWarningFormat(
-				"No Application Insights connection found. To enable telemetry for this agent, you will need to " +
-					"provision an Application Insights resource and grant the required permissions. " +
-					"You can either do this manually before deployment, or use an infrastructure template. " +
-					"See aka.ms/azdaiagent/docs for details."))
+			fmt.Println(`
+				Application Insights (optional)
+
+				Enable telemetry to collect logs, traces, and diagnostics for this agent.
+
+				You can:
+				• Use an existing Application Insights resource
+				• Or create a new one during 'azd up'
+
+				Docs: aka.ms/azdaiagent/docs
+			`)
 
 			resp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 				Options: &azdext.PromptOptions{
-					Message: "If you have an Application Insights resource that you want to use with this agent, enter the connection string. " +
-						"If you plan to provision one through the `azd provision` or `azd up` flow, leave blank.",
+					Message:        "Enter your Application Insights connection string, or leave blank to create a new one",
 					IgnoreHintKeys: true,
 				},
 			})
@@ -1439,6 +1448,5 @@ func (a *InitFromCodeAction) processExistingFoundryProject(ctx context.Context, 
 		}
 	}
 
-	fmt.Printf("Successfully parsed and set environment variables from Microsoft Foundry project ID\n")
 	return nil
 }

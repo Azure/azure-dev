@@ -105,12 +105,24 @@ func newUpAction(
 func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Apply --subscription and --location flags to the environment before provisioning
 	updatedEnv := false
-	if u.flags.ProvisionFlags.Subscription() != "" {
-		u.env.SetSubscriptionId(u.flags.ProvisionFlags.Subscription())
+	if flagSub := u.flags.ProvisionFlags.Subscription(); flagSub != "" {
+		if existing := u.env.GetSubscriptionId(); existing != "" && existing != flagSub {
+			return nil, fmt.Errorf(
+				"cannot change subscription for existing environment '%s' (current: %s, requested: %s). "+
+					"Create a new environment with 'azd env new' instead",
+				u.env.Name(), existing, flagSub)
+		}
+		u.env.SetSubscriptionId(flagSub)
 		updatedEnv = true
 	}
-	if u.flags.ProvisionFlags.Location() != "" {
-		u.env.SetLocation(u.flags.ProvisionFlags.Location())
+	if flagLoc := u.flags.ProvisionFlags.Location(); flagLoc != "" {
+		if existing := u.env.GetLocation(); existing != "" && existing != flagLoc {
+			return nil, fmt.Errorf(
+				"cannot change location for existing environment '%s' (current: %s, requested: %s). "+
+					"Create a new environment with 'azd env new' instead",
+				u.env.Name(), existing, flagLoc)
+		}
+		u.env.SetLocation(flagLoc)
 		updatedEnv = true
 	}
 	if updatedEnv {

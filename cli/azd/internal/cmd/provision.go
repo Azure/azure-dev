@@ -221,10 +221,22 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	// Apply --subscription and --location flags to the environment before provisioning
 	envChanged := false
 	if p.flags.subscription != "" {
+		if existing := p.env.GetSubscriptionId(); existing != "" && existing != p.flags.subscription {
+			return nil, fmt.Errorf(
+				"cannot change subscription for existing environment '%s' (current: %s, requested: %s). "+
+					"Create a new environment with 'azd env new' instead",
+				p.env.Name(), existing, p.flags.subscription)
+		}
 		p.env.SetSubscriptionId(p.flags.subscription)
 		envChanged = true
 	}
 	if p.flags.location != "" {
+		if existing := p.env.GetLocation(); existing != "" && existing != p.flags.location {
+			return nil, fmt.Errorf(
+				"cannot change location for existing environment '%s' (current: %s, requested: %s). "+
+					"Create a new environment with 'azd env new' instead",
+				p.env.Name(), existing, p.flags.location)
+		}
 		p.env.SetLocation(p.flags.location)
 		envChanged = true
 	}

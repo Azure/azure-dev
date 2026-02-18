@@ -19,6 +19,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -55,16 +56,15 @@ func (s *StatusCodeError) Unwrap() error {
 	return s.Err
 }
 
-// NewCli creates a new PackCli. azd manages its own copy of the pack CLI, stored in `$AZD_CONFIG_DIR/bin`. If
-// pack is not present at this location, or if it is present but is older than the minimum supported version, it is
-// downloaded.
+// NewCli creates a new PackCli. The CLI is not yet installed; call EnsureInstalled before using
+// methods that require the pack binary. azd manages its own copy of the pack CLI, stored in
+// `$AZD_CONFIG_DIR/bin`. If pack is not present at this location, or if it is present but is older
+// than the minimum supported version, it is downloaded.
 func NewCli(
-	ctx context.Context,
 	console input.Console,
 	commandRunner exec.CommandRunner,
-) (*Cli, error) {
+) *Cli {
 	return newPackCliImpl(
-		ctx,
 		console,
 		commandRunner,
 		http.DefaultClient,
@@ -96,49 +96,72 @@ func packCliPath() (string, error) {
 }
 
 func newPackCliImpl(
-	ctx context.Context,
 	console input.Console,
 	commandRunner exec.CommandRunner,
 	transporter policy.Transporter,
-	extract func(string, string) (string, error)) (*Cli, error) {
+	extract func(string, string) (string, error)) *Cli {
+	return &Cli{
+		runner:      commandRunner,
+		console:     console,
+		transporter: transporter,
+		extract:     extract,
+	}
+}
+
+type Cli struct {
+	path        string
+	runner      exec.CommandRunner
+	console     input.Console
+	transporter policy.Transporter
+	extract     func(string, string) (string, error)
+
+	installOnce sync.Once
+	installErr  error
+}
+
+// EnsureInstalled checks if pack CLI is available and downloads/upgrades if needed.
+// This is safe to call multiple times; installation only happens once.
+// Should be called with a request-scoped context before first use.
+func (cli *Cli) EnsureInstalled(ctx context.Context) error {
+	cli.installOnce.Do(func() {
+		cli.installErr = cli.ensureInstalled(ctx)
+	})
+	return cli.installErr
+}
+
+func (cli *Cli) ensureInstalled(ctx context.Context) error {
 	if override := os.Getenv("AZD_PACK_TOOL_PATH"); override != "" {
 		log.Printf("using external pack tool: %s", override)
-
-		return &Cli{
-			path:   override,
-			runner: commandRunner,
-		}, nil
+		cli.path = override
+		return nil
 	}
 
 	cliPath, err := packCliPath()
 	if err != nil {
-		return nil, fmt.Errorf("finding pack: %w", err)
+		return fmt.Errorf("finding pack: %w", err)
 	}
 	if _, err = os.Stat(cliPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("finding pack: %w", err)
+		return fmt.Errorf("finding pack: %w", err)
 	}
 	if errors.Is(err, os.ErrNotExist) {
 		if err := os.MkdirAll(filepath.Dir(cliPath), osutil.PermissionDirectory); err != nil {
-			return nil, fmt.Errorf("downloading pack: %w", err)
+			return fmt.Errorf("downloading pack: %w", err)
 		}
 
 		msg := "Acquiring pack cli"
-		console.ShowSpinner(ctx, msg, input.Step)
-		err := downloadPack(ctx, transporter, Version, extract, cliPath)
-		console.StopSpinner(ctx, "", input.Step)
+		cli.console.ShowSpinner(ctx, msg, input.Step)
+		err := downloadPack(ctx, cli.transporter, Version, cli.extract, cliPath)
+		cli.console.StopSpinner(ctx, "", input.Step)
 		if err != nil {
-			return nil, fmt.Errorf("downloading pack: %w", err)
+			return fmt.Errorf("downloading pack: %w", err)
 		}
 	}
 
-	cli := &Cli{
-		path:   cliPath,
-		runner: commandRunner,
-	}
+	cli.path = cliPath
 
 	ver, err := cli.version(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("checking pack version: %w", err)
+		return fmt.Errorf("checking pack version: %w", err)
 	}
 
 	log.Printf("pack version: %s", ver)
@@ -147,22 +170,16 @@ func newPackCliImpl(
 		log.Printf("installed pack version %s is older than %s; updating.", ver.String(), Version.String())
 
 		msg := "Upgrading pack"
-		console.ShowSpinner(ctx, msg, input.Step)
-		err := downloadPack(ctx, transporter, Version, extract, cliPath)
-		console.StopSpinner(ctx, "", input.Step)
+		cli.console.ShowSpinner(ctx, msg, input.Step)
+		err := downloadPack(ctx, cli.transporter, Version, cli.extract, cliPath)
+		cli.console.StopSpinner(ctx, "", input.Step)
 		if err != nil {
-			return nil, fmt.Errorf("upgrading pack: %w", err)
+			return fmt.Errorf("upgrading pack: %w", err)
 		}
 	}
 
 	log.Printf("using local pack: %s", cliPath)
-
-	return cli, nil
-}
-
-type Cli struct {
-	path   string
-	runner exec.CommandRunner
+	return nil
 }
 
 func (cli *Cli) version(ctx context.Context) (semver.Version, error) {

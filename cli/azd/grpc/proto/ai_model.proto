@@ -1,0 +1,209 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+syntax = "proto3";
+
+package azdext;
+
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext";
+
+import "models.proto";
+
+// AiModelService provides data-only operations for AI model catalog,
+// deployment resolution, and quota/usage from Azure Cognitive Services.
+// AzureContext is required for subscription_id.
+service AiModelService {
+  // ListModels returns available AI models, optionally filtered by filter.locations.
+  // If filter.locations is empty, models are queried across all subscription locations.
+  // Note: filter.locations controls which models are returned, but each returned model
+  // keeps canonical metadata (including the full locations list).
+  rpc ListModels(ListModelsRequest) returns (ListModelsResponse);
+
+  // ResolveModelDeployments returns all valid deployment configs for a model.
+  // options.locations controls location scoping (empty means all subscription locations).
+  // If quota is set, options.locations must contain exactly one location.
+  rpc ResolveModelDeployments(ResolveModelDeploymentsRequest) returns (ResolveModelDeploymentsResponse);
+
+  // ListUsages returns quota/usage data for request.location.
+  // request.location is required.
+  rpc ListUsages(ListUsagesRequest) returns (ListUsagesResponse);
+
+  // ListLocationsWithQuota returns locations with sufficient quota.
+  rpc ListLocationsWithQuota(ListLocationsWithQuotaRequest) returns (ListLocationsWithQuotaResponse);
+
+  // ListModelLocationsWithQuota returns locations where model has sufficient quota.
+  // Response includes max remaining quota per location for label rendering.
+  rpc ListModelLocationsWithQuota(ListModelLocationsWithQuotaRequest) returns (ListModelLocationsWithQuotaResponse);
+}
+
+// --- Core model types ---
+
+message AiModel {
+  string name = 1;                                // e.g. "gpt-4o"
+  string format = 2;                              // e.g. "OpenAI"
+  string lifecycle_status = 3;                    // e.g. "preview", "stable"
+  repeated string capabilities = 4;               // e.g. ["chat", "embeddings"]
+  repeated AiModelVersion versions = 5;
+  repeated string locations = 6;                  // canonical locations where available
+}
+
+message AiModelVersion {
+  string version = 1;
+  bool is_default = 2;
+  repeated AiModelSku skus = 3;
+}
+
+// AiModelSku represents a deployment SKU with capacity constraints.
+message AiModelSku {
+  string name = 1;                                // e.g. "GlobalStandard"
+  string usage_name = 2;                          // join key to usage API, e.g. "OpenAI.Standard.gpt-4o"
+  int32 default_capacity = 3;
+  int32 min_capacity = 4;
+  int32 max_capacity = 5;
+  int32 capacity_step = 6;
+}
+
+// AiModelDeployment is a fully resolved deployment configuration.
+// capacity = deployment-level units; remaining_quota = subscription-level remaining.
+message AiModelDeployment {
+  string model_name = 1;
+  string format = 2;
+  string version = 3;
+  string location = 4;
+  AiModelSku sku = 5;
+  int32 capacity = 6;
+  optional double remaining_quota = 7;            // populated when QuotaCheckOptions used
+}
+
+// --- Quota types ---
+
+// QuotaRequirement: check usage_name has at least min_capacity remaining.
+message QuotaRequirement {
+  string usage_name = 1;
+  double min_capacity = 2;                        // 0 defaults to 1
+}
+
+message AiModelUsage {
+  string name = 1;                                // quota usage name
+  double current_value = 2;
+  double limit = 3;
+}
+
+// QuotaCheckOptions enables quota-aware filtering.
+// Fetches usage data and excludes models/SKUs without sufficient remaining capacity.
+message QuotaCheckOptions {
+  double min_remaining_capacity = 1;              // 0 means any remaining > 0
+}
+
+// --- Filter/options types ---
+
+message AiModelFilterOptions {
+  // Restrict which models are returned to ones available in these locations
+  // (region names like "eastus", "swedencentral").
+  // This filter does not rewrite AiModel.locations in the response.
+  repeated string locations = 1;
+
+  // Include models that expose at least one of these capabilities.
+  // Matches values from AiModel.capabilities (for example: "chatCompletion").
+  repeated string capabilities = 2;
+
+  // Include models whose format matches one of these values.
+  // Matches AiModel.format exactly (for example: "OpenAI", "Microsoft").
+  repeated string formats = 3;
+
+  // Include models whose lifecycle status matches one of these values.
+  // Matches AiModel.lifecycle_status exactly (for example: "Stable", "Preview").
+  repeated string statuses = 4;
+
+  // Exclude models by exact model name (for example: "gpt-4o-mini").
+  repeated string exclude_model_names = 5;
+}
+
+// AiModelDeploymentOptions: all fields optional — empty means no filtering.
+message AiModelDeploymentOptions {
+  // Preferred deployment locations. Empty means all subscription locations.
+  repeated string locations = 1;
+  // Preferred model versions. Empty means all available versions.
+  repeated string versions = 2;
+  // Preferred SKU names. Empty means all available SKUs.
+  repeated string skus = 3;
+  // Preferred deployment capacity. If unset, SKU default is used.
+  optional int32 capacity = 4;
+}
+
+// --- Request/Response messages ---
+
+message ListModelsRequest {
+  // Azure context with scope.subscription_id required.
+  AzureContext azure_context = 1;
+  // Optional model filter criteria. Empty means no filtering.
+  AiModelFilterOptions filter = 2;
+}
+
+message ListModelsResponse {
+  // Catalog models after applying optional filters.
+  repeated AiModel models = 1;
+}
+
+message ResolveModelDeploymentsRequest {
+  // Azure context with scope.subscription_id required.
+  AzureContext azure_context = 1;
+  // Target model name to resolve deployment candidates for.
+  string model_name = 2;
+  // Optional deployment filters (locations/versions/SKUs/capacity).
+  AiModelDeploymentOptions options = 3;
+  // Optional quota filter. Requires options.locations with exactly one location.
+  QuotaCheckOptions quota = 4;
+}
+
+message ResolveModelDeploymentsResponse {
+  // All valid deployment candidates for the requested model and options.
+  repeated AiModelDeployment deployments = 1;
+}
+
+message ListUsagesRequest {
+  // Azure context with scope.subscription_id required.
+  AzureContext azure_context = 1;
+  // Required location for usage query (no fallback from azure_context.scope.location).
+  string location = 2;
+}
+
+message ListUsagesResponse {
+  // Quota usage entries for the requested location.
+  repeated AiModelUsage usages = 1;
+}
+
+message ListLocationsWithQuotaRequest {
+  // Azure context with scope.subscription_id required.
+  AzureContext azure_context = 1;
+  // Required quota requirements that each returned location must satisfy.
+  repeated QuotaRequirement requirements = 2;
+  // Optional allow-list. Empty means all AI Services-supported locations.
+  repeated string allowed_locations = 3;
+}
+
+message ListLocationsWithQuotaResponse {
+  // Locations that satisfy all quota requirements.
+  repeated Location locations = 1;
+}
+
+message ModelLocationQuota {
+  // Location where model quota was evaluated.
+  Location location = 1;
+  double max_remaining_quota = 2;                // max remaining quota across model SKUs
+}
+
+message ListModelLocationsWithQuotaRequest {
+  // Azure context with scope.subscription_id required.
+  AzureContext azure_context = 1;
+  // Required model name to evaluate across locations.
+  string model_name = 2;
+  // Optional allow-list. Empty means all locations where the model is available.
+  repeated string allowed_locations = 3;
+  // Optional min remaining quota threshold.
+  QuotaCheckOptions quota = 4;
+}
+
+message ListModelLocationsWithQuotaResponse {
+  // Locations where the model has sufficient remaining quota.
+  repeated ModelLocationQuota locations = 1;
+}

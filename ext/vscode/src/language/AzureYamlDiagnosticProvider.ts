@@ -10,11 +10,20 @@ import { TelemetryId } from '../telemetry/telemetryId';
 // Time between when the user stops typing and when we send diagnostics
 const DiagnosticDelay = 1000;
 
+/**
+ * Provides diagnostics for azure.yaml files.
+ *
+ * Note: Schema validation (required properties, valid values, etc.) is handled by
+ * the RedHat YAML extension using the azure.yaml JSON schema. This provider only
+ * handles validation that requires runtime checks, such as verifying that project
+ * paths exist on disk.
+ */
 export class AzureYamlDiagnosticProvider extends vscode.Disposable {
     private readonly diagnosticCollection: vscode.DiagnosticCollection;
 
     public constructor(
-        private readonly selector: vscode.DocumentSelector
+        private readonly selector: vscode.DocumentSelector,
+        private readonly getProjectInformationFunction = getAzureYamlProjectInformation
     ) {
         const disposables: vscode.Disposable[] = [];
 
@@ -39,7 +48,9 @@ export class AzureYamlDiagnosticProvider extends vscode.Disposable {
             const results: vscode.Diagnostic[] = [];
 
             try {
-                const projectInformation = await getAzureYamlProjectInformation(document);
+                // Validate that project paths exist on disk
+                // Note: Schema validation is handled by the YAML extension
+                const projectInformation = await this.getProjectInformationFunction(document);
 
                 for (const project of projectInformation) {
                     if (await AzExtFsExtra.pathExists(project.projectUri)) {
@@ -55,7 +66,7 @@ export class AzureYamlDiagnosticProvider extends vscode.Disposable {
                     results.push(diagnostic);
                 }
             } catch {
-                // Best effort--the YAML extension will show parsing errors for us if it is present
+                // If we can't parse, the YAML extension will show appropriate errors
             }
 
             context.telemetry.measurements.diagnosticCount = results.length;

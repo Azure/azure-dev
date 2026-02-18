@@ -77,7 +77,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 	// Stop the spinner always to un-hide cursor
 	e.console.StopSpinner(ctx, "", input.Step)
 
-	if err == nil || e.options.IsChildAction(ctx) {
+	if err == nil || IsChildAction(ctx) {
 		return actionResult, err
 	}
 
@@ -213,8 +213,12 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		previousError = originalError
 		agentOutput, err := azdAgent.SendMessage(ctx, fmt.Sprintf(
 			`Steps to follow:
-            1. Use available tools to identify, explain and diagnose this error when running azd command and its root cause.
-            2. Only return a JSON object in the following format:
+			1. Check if the error is included in azd_provision_common_error tool. 
+			If not, jump to step 2.
+			If so, jump to step 3 and only use the solution azd_provision_common_error provided.
+            2. Use available tools to identify, explain and diagnose this error when running azd command and its root cause.
+            3. Return ONLY the following JSON object as your final response. Do not add any text before or after. 
+			Do not use markdown code blocks. Return raw JSON only:
             {
               "analysis": "Brief explanation of the error and its root cause",
               "solutions": [
@@ -224,11 +228,18 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
               ]
             }
             Provide up to 3 solutions. Each solution must be concise (one sentence).
+            IMPORTANT: Your response must be ONLY the JSON object above, nothing else.
             Error details: %s`, errorInput))
 
 		// Extract solutions from agent output even if there's a parsing error
 		// The agent may return valid content
 		solutions := extractSuggestedSolutions(agentOutput)
+
+		// If no solutions found in output, try extracting from the error message
+		// LangChain may fail to parse but errors include the valid JSON
+		if len(solutions) == 0 && err != nil {
+			solutions = extractSuggestedSolutions(err.Error())
+		}
 
 		// Only fail if we got an error AND couldn't extract any solutions
 		if err != nil && len(solutions) == 0 {
@@ -246,11 +257,14 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		if continueWithFix {
 			agentOutput, err := azdAgent.SendMessage(ctx, fmt.Sprintf(
 				`Steps to follow:
-            1. Use available tools to identify, explain and diagnose this error when running azd command and its root cause.
-            2. Resolve the error by making the minimal, targeted change required to the code or configuration.
+			1. Check if the error is included in azd_provision_common_error tool. 
+			If so, jump to step 3 and only use the solution azd_provision_common_error provided.
+			If not, continue to step 2.
+            2. Use available tools to identify, explain and diagnose this error when running azd command and its root cause.
+            3. Resolve the error by making the minimal, targeted change required to the code or configuration.
             Avoid unnecessary modifications and focus only on what is essential to restore correct functionality.
-            3. Remove any changes that were created solely for validation and are not part of the actual error fix.
-			4. You are currently in the middle of executing '%s'. Never run this command.
+            4. Remove any changes that were created solely for validation and are not part of the actual error fix.
+			5. You are currently in the middle of executing '%s'. Never run this command.
             Error details: %s`, e.options.CommandPath, errorInput))
 
 			if err != nil {
@@ -380,8 +394,18 @@ func promptForErrorHandlingConsent(
 
 // extractSuggestedSolutions extracts solutions from the LLM response.
 // It expects a JSON response with the structure: {"analysis": "...", "solutions": ["...", "...", "..."]}
+// The response may be wrapped in a "text" field by the agent framework:
+// {"text": "{\"analysis\": ..., \"solutions\": [...]}"}
 // If JSON parsing fails, it returns an empty slice.
 func extractSuggestedSolutions(llmResponse string) []string {
+	// First, check if response is wrapped in a "text" field (agent framework wrapper)
+	textResult := gjson.Get(llmResponse, "text")
+	if textResult.Exists() && textResult.Type == gjson.String {
+		// Unwrap the text field - it contains the actual JSON as a string
+		llmResponse = textResult.String()
+	}
+
+	// Now extract solutions from the unwrapped response
 	result := gjson.Get(llmResponse, "solutions")
 	if !result.Exists() {
 		return []string{}

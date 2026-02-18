@@ -45,9 +45,10 @@ func TestNewBicepCli(t *testing.T) {
 		"",
 	))
 
-	cli, err := newCliWithTransporter(
-		*mockContext.Context, mockContext.Console, mockContext.CommandRunner, mockContext.HttpClient,
+	cli := newCliWithTransporter(
+		mockContext.Console, mockContext.CommandRunner, mockContext.HttpClient,
 	)
+	err := cli.ensureInstalledOnce(*mockContext.Context)
 	require.NoError(t, err)
 	require.NotNil(t, cli)
 
@@ -117,9 +118,10 @@ func TestNewBicepCliWillUpgrade(t *testing.T) {
 		return exec.NewRunResult(-1, "", "unexpected bicep file contents"), err
 	})
 
-	cli, err := newCliWithTransporter(
-		*mockContext.Context, mockContext.Console, mockContext.CommandRunner, mockContext.HttpClient,
+	cli := newCliWithTransporter(
+		mockContext.Console, mockContext.CommandRunner, mockContext.HttpClient,
 	)
+	err = cli.ensureInstalledOnce(*mockContext.Context)
 	require.NoError(t, err)
 	require.NotNil(t, cli)
 

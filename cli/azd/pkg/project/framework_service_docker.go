@@ -148,7 +148,7 @@ func (p *dockerProject) Build(
 	if ignoreAspireMultiStageDeployment(serviceConfig) {
 		return &ServiceBuildResult{}, nil
 	}
-	return p.containerHelper.Build(ctx, serviceConfig, serviceContext, progress)
+	return p.containerHelper.Build(ctx, serviceConfig, serviceContext, p.env, progress)
 }
 
 func (p *dockerProject) Package(
@@ -160,7 +160,7 @@ func (p *dockerProject) Package(
 	if ignoreAspireMultiStageDeployment(serviceConfig) {
 		return &ServicePackageResult{}, nil
 	}
-	return p.containerHelper.Package(ctx, serviceConfig, serviceContext, progress)
+	return p.containerHelper.Package(ctx, serviceConfig, serviceContext, p.env, progress)
 }
 
 func useDotnetPublishForDockerBuild(serviceConfig *ServiceConfig) bool {

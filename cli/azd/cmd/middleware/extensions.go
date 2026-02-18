@@ -57,7 +57,7 @@ func NewExtensionsMiddleware(
 
 func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
 	// Extensions were already started in the root parent command
-	if m.options.IsChildAction(ctx) {
+	if IsChildAction(ctx) {
 		return next(ctx)
 	}
 

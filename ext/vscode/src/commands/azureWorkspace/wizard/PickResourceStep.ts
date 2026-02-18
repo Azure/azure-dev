@@ -7,6 +7,7 @@ import { AzureDevShowProvider, WorkspaceAzureDevShowProvider } from '../../../se
 import { parseAzureResourceId } from '../../../utils/parseAzureResourceId';
 import { RevealWizardContext } from './PickEnvironmentStep';
 import { SkipIfOneStep } from './SkipIfOneStep';
+import ext from '../../../ext';
 
 export interface RevealResourceWizardContext extends RevealWizardContext {
     service: string;
@@ -19,7 +20,7 @@ export class PickResourceStep extends SkipIfOneStep<RevealResourceWizardContext,
     ) {
         super(
             vscode.l10n.t('Select a resource'),
-            vscode.l10n.t('No resources found')
+            vscode.l10n.t('No resources found for this service in the selected environment')
         );
     }
 
@@ -32,19 +33,26 @@ export class PickResourceStep extends SkipIfOneStep<RevealResourceWizardContext,
     }
 
     protected override async getPicks(context: RevealResourceWizardContext): Promise<IAzureQuickPickItem<string>[]> {
-        const showResults = await this.showProvider.getShowResults(context, context.configurationFile, context.environment);
+        try {
+            const showResults = await this.showProvider.getShowResults(context, context.configurationFile, context.environment);
 
-        if (!showResults?.services?.[context.service]?.target?.resourceIds) {
-            return [];
+            if (!showResults?.services?.[context.service]?.target?.resourceIds) {
+                return [];
+            }
+
+            const resourceIds = showResults.services[context.service].target.resourceIds;
+            return resourceIds.map(resourceId => {
+                const { resourceName, provider } = parseAzureResourceId(resourceId);
+                return {
+                    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+                    label: resourceName!,
+                    detail: provider, // TODO: do we want to show provider?
+                    data: resourceId
+                };
+            });
+        } catch (error) {
+            ext.outputChannel.appendLog(vscode.l10n.t('Failed to get resources: {0}', error instanceof Error ? error.message : String(error)));
+            throw error;
         }
-
-        return showResults.services[context.service].target.resourceIds.map(resourceId => {
-            const { resourceName, provider } = parseAzureResourceId(resourceId);
-            return {
-                label: resourceName!,
-                detail: provider, // TODO: do we want to show provider?
-                data: resourceId
-            };
-        });
     }
 }

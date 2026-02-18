@@ -1,0 +1,12 @@
+name: ft-dpo-method
+description: DPO fine-tuning job template
+model: gpt-4
+training_file: file-abc123
+method:
+  type: dpo
+  dpo:
+    hyperparameters:
+      epochs: 5
+      batch_size: 32
+      learning_rate_multiplier: 0.05
+      beta: 0.1

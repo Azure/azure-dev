@@ -7,19 +7,20 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/registry_api"
 	"azureaiagent/internal/pkg/azure"
-	"azureaiagent/internal/pkg/azure/ai"
 	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -32,15 +33,16 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
-	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 	"gopkg.in/yaml.v3"
 )
 
 type initFlags struct {
-	rootFlagsDefinition
+	*rootFlagsDefinition
 	projectResourceId string
 	manifestPointer   string
 	src               string
@@ -58,14 +60,14 @@ type InitAction struct {
 	//azureClient       *azure.AzureClient
 	azureContext *azdext.AzureContext
 	//composedResources []*azdext.ComposedResource
-	console             input.Console
-	credential          azcore.TokenCredential
-	modelCatalog        map[string]*ai.AiModel
-	modelCatalogService *ai.ModelCatalogService
-	projectConfig       *azdext.ProjectConfig
-	environment         *azdext.Environment
-	flags               *initFlags
-	deploymentDetails   []project.Deployment
+	console              input.Console
+	credential           azcore.TokenCredential
+	modelCatalog         map[string]*azdext.AiModel
+	locationWarningShown bool
+	projectConfig        *azdext.ProjectConfig
+	environment          *azdext.Environment
+	flags                *initFlags
+	deploymentDetails    []project.Deployment
 }
 
 // GitHubUrlInfo holds parsed information from a GitHub URL
@@ -79,7 +81,24 @@ type GitHubUrlInfo struct {
 const AiAgentHost = "azure.ai.agent"
 const ContainerAppHost = "containerapp"
 
-func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
+// checkAiModelServiceAvailable is a temporary check to ensure the azd host supports
+// required gRPC services. Remove once azd core enforces requiredAzdVersion.
+func checkAiModelServiceAvailable(ctx context.Context, azdClient *azdext.AzdClient) error {
+	_, err := azdClient.Ai().ListModels(ctx, &azdext.ListModelsRequest{})
+	if err == nil {
+		return nil
+	}
+
+	if st, ok := status.FromError(err); ok && st.Code() == codes.Unimplemented {
+		return fmt.Errorf(
+			"this version of the azure.ai.agents extension is incompatible with your installed version of azd. " +
+				"Please upgrade azd to the latest version")
+	}
+
+	return nil
+}
+
+func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 	flags := &initFlags{
 		rootFlagsDefinition: rootFlags,
 	}
@@ -98,6 +117,18 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 				return fmt.Errorf("failed to create azd client: %w", err)
 			}
 			defer azdClient.Close()
+
+			if err := checkAiModelServiceAvailable(ctx, azdClient); err != nil {
+				return err
+			}
+
+			// Wait for debugger if AZD_EXT_DEBUG is set
+			if err := azdext.WaitForDebugger(ctx, azdClient); err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, azdext.ErrDebuggerAborted) {
+					return nil
+				}
+				return fmt.Errorf("failed waiting for debugger: %w", err)
+			}
 
 			azureContext, projectConfig, environment, err := ensureAzureContext(ctx, flags, azdClient)
 			if err != nil {
@@ -130,12 +161,11 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 				// azureClient:         azure.NewAzureClient(credential),
 				azureContext: azureContext,
 				// composedResources:   getComposedResourcesResponse.Resources,
-				console:             console,
-				credential:          credential,
-				modelCatalogService: ai.NewModelCatalogService(credential),
-				projectConfig:       projectConfig,
-				environment:         environment,
-				flags:               flags,
+				console:       console,
+				credential:    credential,
+				projectConfig: projectConfig,
+				environment:   environment,
+				flags:         flags,
 			}
 
 			if err := action.Run(ctx); err != nil {
@@ -232,10 +262,8 @@ func ensureProject(ctx context.Context, flags *initFlags, azdClient *azdext.AzdC
 	if err != nil {
 		fmt.Println("Lets get your project initialized.")
 
-		initArgs := []string{"init"}
-		if flags.env != "" {
-			initArgs = append(initArgs, "-e", flags.env)
-		}
+		// Environment creation is handled separately in ensureEnvironment
+		initArgs := []string{"init", "--minimal"}
 
 		// We don't have a project yet
 		// Dispatch a workflow to init the project
@@ -866,6 +894,7 @@ func (a *InitAction) downloadAgentYaml(
 	var urlInfo *GitHubUrlInfo
 	var ghCli *github.Cli
 	var console input.Console
+	var useGhCli bool = false
 
 	// Check if manifestPointer is a local file path or a URI
 	if a.isLocalFilePath(manifestPointer) {
@@ -918,6 +947,15 @@ func (a *InitAction) downloadAgentYaml(
 		}
 	} else if a.isGitHubUrl(manifestPointer) {
 		// Handle GitHub URLs using downloadGithubManifest
+		// manifestPointer validation:
+		// - accepts only URLs with the following format:
+		//  - https://raw.<hostname>/<owner>/<repo>/refs/heads/<branch>/<path>/<file>.json
+		//    - This url comes from a user clicking the `raw` button on a file in a GitHub repository (web view).
+		//  - https://<hostname>/<owner>/<repo>/blob/<branch>/<path>/<file>.json
+		//    - This url comes from a user browsing GitHub repository and copy-pasting the url from the browser.
+		//  - https://api.<hostname>/repos/<owner>/<repo>/contents/<path>/<file>.json
+		//    - This url comes from users familiar with the GitHub API. Usually for programmatic registration of templates.
+
 		fmt.Printf("Downloading agent.yaml from GitHub: %s\n", manifestPointer)
 		isGitHubUrl = true
 
@@ -940,38 +978,69 @@ func (a *InitAction) downloadAgentYaml(
 			nil, // externalPromptCfg
 		)
 
-		ghCli, err = github.NewGitHubCli(ctx, console, commandRunner)
-		if err != nil {
-			return nil, "", fmt.Errorf("creating GitHub CLI: %w", err)
+		ghCli = github.NewGitHubCli(console, commandRunner)
+		if err := ghCli.EnsureInstalled(ctx); err != nil {
+			return nil, "", fmt.Errorf("ensuring gh is installed: %w", err)
 		}
 
-		urlInfo, err = a.parseGitHubUrl(ctx, manifestPointer)
-		if err != nil {
-			return nil, "", err
+		var contentStr string
+		// First try naive parsing assuming branch is a single word. This allows users to not have to authenticate
+		// with gh CLI for public repositories.
+		urlInfo = a.parseGitHubUrlNaive(manifestPointer)
+		if urlInfo != nil {
+			// Construct GitHub Contents API URL with ref query parameter
+			fileApiUrl := fmt.Sprintf("https://api.github.com/repos/%s/contents/%s", urlInfo.RepoSlug, urlInfo.FilePath)
+			if urlInfo.Branch != "" {
+				escapedBranch := url.QueryEscape(urlInfo.Branch)
+				fileApiUrl += fmt.Sprintf("?ref=%s", escapedBranch)
+			}
+			fmt.Printf("Attempting to download manifest from '%s' in repository '%s', branch '%s'\n", urlInfo.FilePath, urlInfo.RepoSlug, urlInfo.Branch)
+
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, fileApiUrl, nil)
+			if err == nil {
+				req.Header.Set("Accept", "application/vnd.github.v3.raw")
+				resp, err := http.DefaultClient.Do(req)
+				if err == nil {
+					defer resp.Body.Close()
+					if resp.StatusCode == http.StatusOK {
+						bodyBytes, readErr := io.ReadAll(resp.Body)
+						if readErr == nil {
+							contentStr = string(bodyBytes)
+							fmt.Printf("Downloaded manifest from branch: %s\n", urlInfo.Branch)
+						}
+					}
+				}
+			}
+			if contentStr == "" {
+				fmt.Printf("Warning: naive GitHub URL parsing failed to download manifest\n")
+				fmt.Println("Proceeding with full parsing and download logic...")
+			}
 		}
 
-		apiPath := fmt.Sprintf("/repos/%s/contents/%s", urlInfo.RepoSlug, urlInfo.FilePath)
-		if urlInfo.Branch != "" {
-			fmt.Printf("Downloaded manifest from branch: %s\n", urlInfo.Branch)
-			apiPath += fmt.Sprintf("?ref=%s", urlInfo.Branch)
-		}
+		if contentStr == "" {
+			// Fall back to complex parsing via azd GitHub CLI handling
+			useGhCli = true
+			urlInfo, err = a.parseGitHubUrl(ctx, manifestPointer)
+			if err != nil {
+				return nil, "", err
+			}
 
-		contentStr, err := downloadGithubManifest(ctx, urlInfo, apiPath, ghCli, console)
-		if err != nil {
-			return nil, "", fmt.Errorf("downloading from GitHub: %w", err)
+			apiPath := fmt.Sprintf("/repos/%s/contents/%s", urlInfo.RepoSlug, urlInfo.FilePath)
+			if urlInfo.Branch != "" {
+				fmt.Printf("Downloaded manifest from branch: %s\n", urlInfo.Branch)
+				apiPath += fmt.Sprintf("?ref=%s", urlInfo.Branch)
+			}
+
+			contentStr, err = downloadGithubManifest(ctx, urlInfo, apiPath, ghCli)
+			if err != nil {
+				return nil, "", fmt.Errorf("downloading from GitHub: %w", err)
+			}
 		}
 
 		content = []byte(contentStr)
 	} else if isRegistry, registryManifest := a.isRegistryUrl(manifestPointer); isRegistry {
 		// Handle registry URLs
-
-		// Create Azure credential
-		cred, err := azidentity.NewDefaultAzureCredential(nil)
-		if err != nil {
-			return nil, "", fmt.Errorf("failed to create Azure credential: %w", err)
-		}
-
-		manifestClient := registry_api.NewRegistryAgentManifestClient(registryManifest.registryName, cred)
+		manifestClient := registry_api.NewRegistryAgentManifestClient(registryManifest.registryName, a.credential)
 
 		var versionResult *registry_api.Manifest
 		if registryManifest.manifestVersion == "" {
@@ -1030,7 +1099,7 @@ func (a *InitAction) downloadAgentYaml(
 	// Parse and validate the YAML content against AgentManifest structure
 	agentManifest, err := agent_yaml.LoadAndValidateAgentManifest(content)
 	if err != nil {
-		return nil, "", fmt.Errorf("AgentManifest %w", err)
+		return nil, "", err
 	}
 
 	fmt.Println("✓ YAML content successfully validated against AgentManifest format")
@@ -1107,7 +1176,7 @@ func (a *InitAction) downloadAgentYaml(
 		if isHostedContainer {
 			// For container agents, download the entire parent directory
 			fmt.Println("Downloading full directory for container agent")
-			err := downloadParentDirectory(ctx, urlInfo, targetDir, ghCli, console)
+			err := downloadParentDirectory(ctx, urlInfo, targetDir, ghCli, console, useGhCli)
 			if err != nil {
 				return nil, "", fmt.Errorf("downloading parent directory: %w", err)
 			}
@@ -1332,29 +1401,9 @@ func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.Co
 }
 
 func downloadGithubManifest(
-	ctx context.Context, urlInfo *GitHubUrlInfo, apiPath string, ghCli *github.Cli, console input.Console) (string, error) {
-	// manifestPointer validation:
-	// - accepts only URLs with the following format:
-	//  - https://raw.<hostname>/<owner>/<repo>/refs/heads/<branch>/<path>/<file>.json
-	//    - This url comes from a user clicking the `raw` button on a file in a GitHub repository (web view).
-	//  - https://<hostname>/<owner>/<repo>/blob/<branch>/<path>/<file>.json
-	//    - This url comes from a user browsing GitHub repository and copy-pasting the url from the browser.
-	//  - https://api.<hostname>/repos/<owner>/<repo>/contents/<path>/<file>.json
-	//    - This url comes from users familiar with the GitHub API. Usually for programmatic registration of templates.
-
-	authResult, err := ghCli.GetAuthStatus(ctx, urlInfo.Hostname)
-	if err != nil {
-		return "", fmt.Errorf("failed to get auth status: %w", err)
-	}
-	if !authResult.LoggedIn {
-		// ensure no spinner is shown when logging in, as this is interactive operation
-		console.StopSpinner(ctx, "", input.Step)
-		err := ghCli.Login(ctx, urlInfo.Hostname)
-		if err != nil {
-			return "", fmt.Errorf("failed to login: %w", err)
-		}
-		console.ShowSpinner(ctx, "Validating template source", input.Step)
-	}
+	ctx context.Context, urlInfo *GitHubUrlInfo, apiPath string, ghCli *github.Cli) (string, error) {
+	// This method assumes that either the repo is public, or the user has already been prompted to log in to the github cli
+	// through our use of the underlying azd logic.
 
 	content, err := ghCli.ApiCall(ctx, urlInfo.Hostname, apiPath, github.ApiCallOptions{
 		Headers: []string{"Accept: application/vnd.github.v3.raw"},
@@ -1364,6 +1413,99 @@ func downloadGithubManifest(
 	}
 
 	return content, nil
+}
+
+// parseGitHubUrlNaive attempts to parse a GitHub URL assuming a simple single-word branch name.
+// Returns nil if the URL doesn't match the expected pattern.
+// Expected formats:
+//   - https://github.com/{owner}/{repo}/blob/{branch}/{path}
+//   - https://raw.githubusercontent.com/{owner}/{repo}/refs/heads/{branch}/{path}
+func (a *InitAction) parseGitHubUrlNaive(manifestPointer string) *GitHubUrlInfo {
+	// Parse URL to properly handle query parameters and fragments
+	parsedURL, err := url.Parse(manifestPointer)
+	if err != nil {
+		return nil
+	}
+
+	// Try parsing github.com/blob format: https://github.com/{owner}/{repo}/blob/{branch}/{path}
+	if parsedURL.Host == "github.com" && strings.Contains(parsedURL.Path, "/blob/") {
+		hostname := "github.com"
+
+		// Split by /blob/
+		parts := strings.SplitN(parsedURL.Path, "/blob/", 2)
+		if len(parts) != 2 {
+			return nil
+		}
+
+		// Extract repo slug (owner/repo) from the first part
+		repoPath := strings.TrimPrefix(parts[0], "/")
+		repoSlug := repoPath
+
+		// The second part is {branch}/{file-path}
+		branchAndPath := parts[1]
+		slashIndex := strings.Index(branchAndPath, "/")
+		if slashIndex == -1 {
+			return nil
+		}
+
+		branch := branchAndPath[:slashIndex]
+		filePath := branchAndPath[slashIndex+1:]
+
+		// Only use naive parsing if branch looks like a simple single word (no slashes)
+		if strings.Contains(branch, "/") {
+			return nil
+		}
+
+		return &GitHubUrlInfo{
+			RepoSlug: repoSlug,
+			Branch:   branch,
+			FilePath: filePath,
+			Hostname: hostname,
+		}
+	}
+
+	// Try parsing raw.githubusercontent.com format: https://raw.githubusercontent.com/{owner}/{repo}/refs/heads/{branch}/{path}
+	if parsedURL.Host == "raw.githubusercontent.com" {
+		hostname := "github.com" // API calls still use github.com
+
+		// Remove leading slash from path
+		pathPart := strings.TrimPrefix(parsedURL.Path, "/")
+
+		// Split path: {owner}/{repo}/refs/heads/{branch}/{file-path}
+		parts := strings.SplitN(pathPart, "/", 3) // owner, repo, rest
+		if len(parts) < 3 {
+			return nil
+		}
+
+		repoSlug := parts[0] + "/" + parts[1]
+		rest := parts[2]
+
+		// Check for refs/heads/ prefix
+		if strings.HasPrefix(rest, "refs/heads/") {
+			rest = strings.TrimPrefix(rest, "refs/heads/")
+			slashIndex := strings.Index(rest, "/")
+			if slashIndex == -1 {
+				return nil
+			}
+
+			branch := rest[:slashIndex]
+			filePath := rest[slashIndex+1:]
+
+			// Only use naive parsing if branch looks like a simple single word
+			if strings.Contains(branch, "/") {
+				return nil
+			}
+
+			return &GitHubUrlInfo{
+				RepoSlug: repoSlug,
+				Branch:   branch,
+				FilePath: filePath,
+				Hostname: hostname,
+			}
+		}
+	}
+
+	return nil
 }
 
 // parseGitHubUrl extracts repository information from various GitHub URL formats using extension framework
@@ -1384,7 +1526,7 @@ func (a *InitAction) parseGitHubUrl(ctx context.Context, manifestPointer string)
 }
 
 func downloadParentDirectory(
-	ctx context.Context, urlInfo *GitHubUrlInfo, targetDir string, ghCli *github.Cli, console input.Console) error {
+	ctx context.Context, urlInfo *GitHubUrlInfo, targetDir string, ghCli *github.Cli, console input.Console, useGhCli bool) error {
 
 	// Get parent directory by removing the filename from the file path
 	pathParts := strings.Split(urlInfo.FilePath, "/")
@@ -1397,8 +1539,14 @@ func downloadParentDirectory(
 	fmt.Printf("Downloading parent directory '%s' from repository '%s', branch '%s'\n", parentDirPath, urlInfo.RepoSlug, urlInfo.Branch)
 
 	// Download directory contents
-	if err := downloadDirectoryContents(ctx, urlInfo.Hostname, urlInfo.RepoSlug, parentDirPath, urlInfo.Branch, targetDir, ghCli, console); err != nil {
-		return fmt.Errorf("failed to download directory contents: %w", err)
+	if useGhCli {
+		if err := downloadDirectoryContents(ctx, urlInfo.Hostname, urlInfo.RepoSlug, parentDirPath, urlInfo.Branch, targetDir, ghCli, console); err != nil {
+			return fmt.Errorf("failed to download directory contents with GH CLI: %w", err)
+		}
+	} else {
+		if err := downloadDirectoryContentsWithoutGhCli(ctx, urlInfo.RepoSlug, parentDirPath, urlInfo.Branch, targetDir); err != nil {
+			return fmt.Errorf("failed to download directory contents without GH CLI: %w", err)
+		}
 	}
 
 	fmt.Printf("Successfully downloaded parent directory to: %s\n", targetDir)
@@ -1475,576 +1623,108 @@ func downloadDirectoryContents(
 	return nil
 }
 
-// func (a *InitAction) validateResources(ctx context.Context, agentYaml map[string]interface{}) error {
-// 	fmt.Println("Reading model name from agent.yaml...")
+func downloadDirectoryContentsWithoutGhCli(
+	ctx context.Context, repoSlug string, dirPath string, branch string, localPath string) error {
 
-// 	// Extract the model name from agentYaml
-// 	agentModelName, ok := agentYaml["model"].(string)
-// 	if !ok || agentModelName == "" {
-// 		return fmt.Errorf("extracting model name from agent YAML: model name missing or empty")
-// 	}
-
-// 	fmt.Println("Reading current azd project resources...")
-
-// 	// Check if the ai.project resource already exists and has the required model
-// 	existingResourceName, err := a.checkResourceExistsAndHasModel(agentModelName)
-// 	if err != nil {
-// 		return fmt.Errorf("checking if ai.project resource has model '%s': %w", agentModelName, err)
-// 	}
-
-// 	if existingResourceName == "" {
-// 		return a.addResource(ctx, agentModelName)
-// 	}
-
-// 	fmt.Printf("Validated: ai.project resource '%s' has required model '%s'\n", existingResourceName, agentModelName)
-// 	return nil
-// }
-
-// // checkResourceExistsAndHasModel checks if the given ai.project resource has the specified model
-// func (a *InitAction) checkResourceExistsAndHasModel(modelName string) (string, error) {
-// 	// Look for ai.project resource
-// 	var aiProjectResource *azdext.ComposedResource
-// 	for _, resource := range a.composedResources {
-// 		if resource.Type == "ai.project" {
-// 			aiProjectResource = resource
-// 			break
-// 		}
-// 	}
-
-// 	if aiProjectResource == nil {
-// 		fmt.Println("No 'ai.project' resource found in current azd project.")
-// 		return "", nil
-// 	}
-
-// 	fmt.Println("'ai.project' resource found in current azd project. Checking for required model...")
-
-// 	// Parse the resource config to check for models
-// 	if len(aiProjectResource.Config) > 0 {
-// 		var config map[string]interface{}
-// 		if err := yaml.Unmarshal(aiProjectResource.Config, &config); err != nil {
-// 			return "", fmt.Errorf("parsing resource config: %w", err)
-// 		}
-
-// 		// Check the models array - based on azure.yaml format: models[].name
-// 		if models, ok := config["Models"].([]interface{}); ok {
-// 			for _, model := range models {
-// 				if modelObj, ok := model.(map[string]interface{}); ok {
-// 					if name, ok := modelObj["Name"].(string); ok {
-// 						if name == modelName {
-// 							fmt.Printf("Found matching model: %s\n", name)
-// 							return aiProjectResource.Name, nil
-// 						}
-// 					}
-// 				}
-// 			}
-// 		}
-// 	}
-
-// 	fmt.Printf("Model '%s' not found in resource '%s'\n", modelName, aiProjectResource.Name)
-// 	return "", nil
-// }
-
-// func (a *InitAction) addResource(ctx context.Context, agentModelName string) error {
-// 	// Look for existing ai.project resource
-// 	var aiProject *azdext.ComposedResource
-// 	var aiProjectConfig *AiProjectResourceConfig
-
-// 	for _, resource := range a.composedResources {
-// 		if resource.Type == "ai.project" {
-// 			aiProject = resource
-
-// 			// Parse existing config if it exists
-// 			if len(resource.Config) > 0 {
-// 				if err := yaml.Unmarshal(resource.Config, &aiProjectConfig); err != nil {
-// 					return fmt.Errorf("failed to unmarshal AI project config: %w", err)
-// 				}
-// 			}
-// 			break
-// 		}
-// 	}
-
-// 	// Create new ai.project resource if it doesn't exist
-// 	if aiProject == nil {
-// 		fmt.Println("Adding new 'ai.project' resource to azd project.")
-// 		aiProject = &azdext.ComposedResource{
-// 			Name: generateResourceName("ai-project", a.composedResources),
-// 			Type: "ai.project",
-// 		}
-// 		aiProjectConfig = &AiProjectResourceConfig{}
-// 	}
-
-// 	// Prompt user for model details
-// 	modelDetails, err := a.promptForModelDetails(ctx, agentModelName)
-// 	if err != nil {
-// 		return fmt.Errorf("failed to get model details: %w", err)
-// 	}
-
-// 	fmt.Println("Got model details, adding to ai.project resource.")
-// 	// Convert the ai.AiModelDeployment to the map format expected by AiProjectResourceConfig
-// 	defaultModel := map[string]interface{}{
-// 		"name":    modelDetails.Name,
-// 		"format":  modelDetails.Format,
-// 		"version": modelDetails.Version,
-// 		"sku": map[string]interface{}{
-// 			"name":      modelDetails.Sku.Name,
-// 			"usageName": modelDetails.Sku.UsageName,
-// 			"capacity":  modelDetails.Sku.Capacity,
-// 		},
-// 	}
-// 	aiProjectConfig.Models = append(aiProjectConfig.Models, defaultModel)
-
-// 	// Marshal the config as JSON (since the struct has json tags)
-// 	configJson, err := json.Marshal(aiProjectConfig)
-// 	if err != nil {
-// 		return fmt.Errorf("failed to marshal AI project config: %w", err)
-// 	}
-
-// 	// Update the resource config
-// 	aiProject.Config = configJson
-
-// 	// Add the resource to the project
-// 	_, err = a.azdClient.Compose().AddResource(ctx, &azdext.AddResourceRequest{
-// 		Resource: aiProject,
-// 	})
-// 	if err != nil {
-// 		return fmt.Errorf("failed to add resource %s: %w", aiProject.Name, err)
-// 	}
-
-// 	fmt.Printf("Added AI project resource '%s' to azure.yaml\n", aiProject.Name)
-// 	return nil
-// }
-
-// func (a *InitAction) promptForModelDetails(ctx context.Context, modelName string) (*ai.AiModelDeployment, error) {
-// 	// Load the AI model catalog if not already loaded
-// 	if err := a.loadAiCatalog(ctx); err != nil {
-// 		return nil, err
-// 	}
-
-// 	// Check if the model exists in the catalog
-// 	var model *ai.AiModel
-// 	model, exists := a.modelCatalog[modelName]
-// 	if !exists {
-// 		return nil, fmt.Errorf("model '%s' not found in AI model catalog", modelName)
-// 	}
-
-// 	availableVersions, err := a.modelCatalogService.ListModelVersions(ctx, model)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("listing versions for model '%s': %w", modelName, err)
-// 	}
-
-// 	availableSkus, err := a.modelCatalogService.ListModelSkus(ctx, model)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("listing SKUs for model '%s': %w", modelName, err)
-// 	}
-
-// 	modelVersionSelection, err := selectFromList(
-// 		ctx, a.console, "Which model version do you want to use?", availableVersions, nil)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-// 	skuSelection, err := selectFromList(ctx, a.console, "Select model SKU", availableSkus, nil)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-// 	deploymentOptions := ai.AiModelDeploymentOptions{
-// 		Versions: []string{modelVersionSelection},
-// 		Skus:     []string{skuSelection},
-// 	}
-
-// 	modelDeployment, err := a.modelCatalogService.GetModelDeployment(ctx, model, &deploymentOptions)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("failed to get model deployment: %w", err)
-// 	}
-
-// 	return modelDeployment, nil
-// }
-
-func (a *InitAction) loadAiCatalog(ctx context.Context) error {
-	if a.modelCatalog != nil {
-		return nil
+	// Get directory contents using GitHub API directly
+	apiUrl := fmt.Sprintf("https://api.github.com/repos/%s/contents/%s", repoSlug, dirPath)
+	if branch != "" {
+		apiUrl += fmt.Sprintf("?ref=%s", branch)
 	}
 
-	spinner := ux.NewSpinner(&ux.SpinnerOptions{
-		Text:        "Loading the model catalog",
-		ClearOnStop: true,
-	})
-
-	if err := spinner.Start(ctx); err != nil {
-		return fmt.Errorf("failed to start spinner: %w", err)
-	}
-
-	aiModelCatalog, err := a.modelCatalogService.ListAllModels(ctx, a.azureContext.Scope.SubscriptionId, a.azureContext.Scope.Location)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiUrl, nil)
 	if err != nil {
-		return fmt.Errorf("failed to load the model catalog: %w", err)
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to get directory contents: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to get directory contents: status %d", resp.StatusCode)
 	}
 
-	if err := spinner.Stop(ctx); err != nil {
-		return err
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read directory contents response: %w", err)
 	}
 
-	a.modelCatalog = aiModelCatalog
+	// Parse the directory contents JSON
+	var dirContents []map[string]interface{}
+	if err := json.Unmarshal(body, &dirContents); err != nil {
+		return fmt.Errorf("failed to parse directory contents JSON: %w", err)
+	}
+
+	// Download each file and subdirectory
+	for _, item := range dirContents {
+		name, ok := item["name"].(string)
+		if !ok {
+			continue
+		}
+
+		itemType, ok := item["type"].(string)
+		if !ok {
+			continue
+		}
+
+		itemPath := fmt.Sprintf("%s/%s", dirPath, name)
+		itemLocalPath := filepath.Join(localPath, name)
+
+		if itemType == "file" {
+			// Download file using GitHub Contents API with raw accept header
+			fmt.Printf("Downloading file: %s\n", itemPath)
+			fileURL := &url.URL{
+				Scheme: "https",
+				Host:   "api.github.com",
+				Path:   fmt.Sprintf("/repos/%s/contents/%s", repoSlug, itemPath),
+			}
+			if branch != "" {
+				query := url.Values{}
+				query.Set("ref", branch)
+				fileURL.RawQuery = query.Encode()
+			}
+
+			fileReq, err := http.NewRequestWithContext(ctx, http.MethodGet, fileURL.String(), nil)
+			if err != nil {
+				return fmt.Errorf("failed to create file request %s: %w", itemPath, err)
+			}
+			fileReq.Header.Set("Accept", "application/vnd.github.v3.raw")
+
+			fileResp, err := http.DefaultClient.Do(fileReq)
+			if err != nil {
+				return fmt.Errorf("failed to download file %s: %w", itemPath, err)
+			}
+			defer fileResp.Body.Close()
+
+			if fileResp.StatusCode != http.StatusOK {
+				return fmt.Errorf("failed to download file %s: status %d", itemPath, fileResp.StatusCode)
+			}
+
+			fileContent, err := io.ReadAll(fileResp.Body)
+			if err != nil {
+				return fmt.Errorf("failed to read file content %s: %w", itemPath, err)
+			}
+
+			if err := os.WriteFile(itemLocalPath, fileContent, 0644); err != nil {
+				return fmt.Errorf("failed to write file %s: %w", itemLocalPath, err)
+			}
+		} else if itemType == "dir" {
+			// Recursively download subdirectory
+			fmt.Printf("Downloading directory: %s\n", itemPath)
+			if err := os.MkdirAll(itemLocalPath, 0755); err != nil {
+				return fmt.Errorf("failed to create directory %s: %w", itemLocalPath, err)
+			}
+
+			// Recursively download directory contents
+			if err := downloadDirectoryContentsWithoutGhCli(ctx, repoSlug, itemPath, branch, itemLocalPath); err != nil {
+				return fmt.Errorf("failed to download subdirectory %s: %w", itemPath, err)
+			}
+		}
+	}
+
 	return nil
-}
-
-// // generateResourceName generates a unique resource name, similar to the AI builder pattern
-// func generateResourceName(desiredName string, existingResources []*azdext.ComposedResource) string {
-// 	resourceMap := map[string]struct{}{}
-// 	for _, resource := range existingResources {
-// 		resourceMap[resource.Name] = struct{}{}
-// 	}
-
-// 	if _, exists := resourceMap[desiredName]; !exists {
-// 		return desiredName
-// 	}
-// 	// If the desired name already exists, append a number (always 2 digits) to the name
-// 	nextIndex := 1
-// 	for {
-// 		newName := fmt.Sprintf("%s-%02d", desiredName, nextIndex)
-// 		if _, exists := resourceMap[newName]; !exists {
-// 			return newName
-// 		}
-// 		nextIndex++
-// 	}
-// }
-
-func (a *InitAction) selectFromList(
-	ctx context.Context, property string, options []string, defaultOpt string) (string, error) {
-
-	if len(options) == 1 {
-		fmt.Printf("Only one %s available: %s\n", property, options[0])
-		return options[0], nil
-	}
-
-	slices.Sort(options)
-
-	// Convert default value to string for comparison
-	defaultStr := options[0]
-	if defaultOpt != "" {
-		defaultStr = defaultOpt
-	}
-
-	if a.flags.NoPrompt {
-		fmt.Printf("No prompt mode enabled, selecting default %s: %s\n", property, defaultStr)
-		return defaultStr, nil
-	}
-
-	// Create choices for the select prompt
-	choices := make([]*azdext.SelectChoice, len(options))
-	defaultIndex := int32(0)
-	for i, val := range options {
-		choices[i] = &azdext.SelectChoice{
-			Value: val,
-			Label: val,
-		}
-		if val == defaultStr {
-			defaultIndex = int32(i)
-		}
-	}
-	resp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-		Options: &azdext.SelectOptions{
-			Message:       fmt.Sprintf("Select %s", property),
-			Choices:       choices,
-			SelectedIndex: &defaultIndex,
-		},
-	})
-	if err != nil {
-		return "", fmt.Errorf("failed to prompt for enum value: %w", err)
-	}
-
-	return options[*resp.Value], nil
-}
-
-func (a *InitAction) setEnvVar(ctx context.Context, key, value string) error {
-	_, err := a.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-		EnvName: a.environment.Name,
-		Key:     key,
-		Value:   value,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to set environment variable %s=%s: %w", key, value, err)
-	}
-
-	fmt.Printf("Set environment variable: %s=%s\n", key, value)
-	return nil
-}
-
-func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_yaml.Model) (*project.Deployment, error) {
-	resp, err := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: a.environment.Name,
-		Key:     "AZURE_AI_PROJECT_ID",
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get the environment variable AZURE_AI_PROJECT_ID from your azd environment: %w", err)
-	}
-
-	foundryProjectId := resp.Value
-	if foundryProjectId != "" {
-		// Extract subscription and account name from foundry project ID
-		// Format: /subscriptions/{subscription}/resourceGroups/{rg}/providers/Microsoft.CognitiveServices/accounts/{account}/projects/{project}
-		parts := strings.Split(foundryProjectId, "/")
-		var subscription, resourceGroup, accountName string
-
-		if len(parts) >= 9 {
-			subscription = parts[2]  // subscriptions/{subscription}
-			resourceGroup = parts[4] // resourceGroups/{rg}
-			accountName = parts[8]   // accounts/{account}
-		}
-
-		deploymentsClient, err := armcognitiveservices.NewDeploymentsClient(subscription, a.credential, azure.NewArmClientOptions())
-		if err != nil {
-			return nil, fmt.Errorf("failed to create deployments client: %w", err)
-		}
-
-		pager := deploymentsClient.NewListPager(resourceGroup, accountName, nil)
-		var deployments []*armcognitiveservices.Deployment
-		for pager.More() {
-			page, err := pager.NextPage(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("failed to list deployments: %w", err)
-			}
-			deployments = append(deployments, page.Value...)
-		}
-
-		// Check for existing deployments that match the requested model
-		matchingDeployments := make(map[string]*armcognitiveservices.Deployment)
-		for _, deployment := range deployments {
-			if deployment.Properties != nil && deployment.Properties.Model != nil {
-				deployedModel := deployment.Properties.Model
-				if deployedModel.Name != nil {
-					if *deployedModel.Name == model.Id {
-						matchingDeployments[*deployment.Name] = deployment
-					}
-				}
-			}
-		}
-
-		// If we found matching deployments, prompt the user
-		if len(matchingDeployments) > 0 {
-			fmt.Printf("In your Microsoft Foundry project, found %d existing model deployment(s) matching your model %s.\n", len(matchingDeployments), model.Id)
-
-			// Build options list with existing deployments plus "Create new deployment" option
-			var options []string
-			for deploymentName := range matchingDeployments {
-				options = append(options, deploymentName)
-			}
-			options = append(options, "Create new model deployment")
-
-			// Use selectFromList to choose between existing deployments or creating new one
-			selection, err := a.selectFromList(ctx, "deployment", options, options[0])
-			if err != nil {
-				return nil, fmt.Errorf("failed to select deployment: %w", err)
-			}
-
-			// Check if user chose to create new deployment
-			if selection != "Create new model deployment" {
-				// User chose an existing deployment by name
-				fmt.Printf("Using existing model deployment: %s\n", selection)
-
-				// Get the selected deployment from the map and return its details
-				if deployment, exists := matchingDeployments[selection]; exists {
-					return &project.Deployment{
-						Name: selection,
-						Model: project.DeploymentModel{
-							Name:    model.Id,
-							Format:  *deployment.Properties.Model.Format,
-							Version: *deployment.Properties.Model.Version,
-						},
-						Sku: project.DeploymentSku{
-							Name:     *deployment.SKU.Name,
-							Capacity: int(*deployment.SKU.Capacity),
-						},
-					}, nil
-				}
-			}
-		}
-	}
-
-	modelDetails, err := a.getModelDetails(ctx, model.Id)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get model details: %w", err)
-	}
-
-	message := fmt.Sprintf("Enter model deployment name for model '%s' (defaults to model name)", model.Id)
-
-	modelDeploymentInput, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-		Options: &azdext.PromptOptions{
-			Message:        message,
-			IgnoreHintKeys: true,
-			DefaultValue:   model.Id,
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to prompt for text value: %w", err)
-	}
-
-	modelDeployment := modelDeploymentInput.Value
-
-	return &project.Deployment{
-		Name: modelDeployment,
-		Model: project.DeploymentModel{
-			Name:    model.Id,
-			Format:  modelDetails.Format,
-			Version: modelDetails.Version,
-		},
-		Sku: project.DeploymentSku{
-			Name:     modelDetails.Sku.Name,
-			Capacity: int(modelDetails.Sku.Capacity),
-		},
-	}, nil
-}
-
-var defaultSkuPriority = []string{"GlobalStandard", "DataZoneStandard", "Standard"}
-
-func (a *InitAction) getModelDetails(ctx context.Context, modelName string) (*ai.AiModelDeployment, error) {
-	// Load the AI model catalog if not already loaded
-	if err := a.loadAiCatalog(ctx); err != nil {
-		return nil, err
-	}
-
-	// Check if the model exists in the catalog
-	var model *ai.AiModel
-	model, exists := a.modelCatalog[modelName]
-	if !exists {
-		return nil, fmt.Errorf("The model '%s' could not be found in the model catalog", modelName)
-	}
-
-	availableVersions, defaultVersion, err := a.modelCatalogService.ListModelVersions(ctx, model)
-	if err != nil {
-		return nil, fmt.Errorf("listing versions for model '%s': %w", modelName, err)
-	}
-
-	modelVersion, err := a.selectFromList(ctx, "model version", availableVersions, defaultVersion)
-	if err != nil {
-		return nil, err
-	}
-
-	availableSkus, err := a.modelCatalogService.ListModelSkus(ctx, model, modelVersion)
-	if err != nil {
-		return nil, fmt.Errorf("listing SKUs for model '%s': %w", modelName, err)
-	}
-
-	// Determine default SKU based on priority list
-	defaultSku := ""
-	for _, sku := range defaultSkuPriority {
-		if slices.Contains(availableSkus, sku) {
-			defaultSku = sku
-			break
-		}
-	}
-
-	skuSelection, err := a.selectFromList(ctx, "model SKU", availableSkus, defaultSku)
-	if err != nil {
-		return nil, err
-	}
-
-	deploymentOptions := ai.AiModelDeploymentOptions{
-		Versions: []string{modelVersion},
-		Skus:     []string{skuSelection},
-	}
-
-	modelDeployment, err := a.modelCatalogService.GetModelDeployment(ctx, model, &deploymentOptions)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get model deployment: %w", err)
-	}
-
-	if modelDeployment.Sku.Capacity == -1 {
-		skuCapacity, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-			Options: &azdext.PromptOptions{
-				Message:        "Selected model SKU has no default capacity. Please enter desired capacity",
-				IgnoreHintKeys: true,
-				Required:       true,
-				DefaultValue:   "10",
-			},
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to prompt for text value: %w", err)
-		}
-
-		capacity, err := strconv.Atoi(skuCapacity.Value)
-		if err != nil {
-			return nil, fmt.Errorf("invalid capacity value: %w", err)
-		}
-		modelDeployment.Sku.Capacity = int32(capacity)
-	}
-
-	return modelDeployment, nil
-}
-
-func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.AgentManifest) (*agent_yaml.AgentManifest, []project.Deployment, error) {
-	// Convert the template to bytes
-	templateBytes, err := yaml.Marshal(manifest.Template)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to marshal agent template to YAML: %w", err)
-	}
-
-	// Convert the bytes to a dictionary
-	var templateDict map[string]interface{}
-	if err := yaml.Unmarshal(templateBytes, &templateDict); err != nil {
-		return nil, nil, fmt.Errorf("failed to unmarshal agent template from YAML: %w", err)
-	}
-
-	// Convert the dictionary to bytes
-	dictJsonBytes, err := yaml.Marshal(templateDict)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to marshal templateDict to YAML: %w", err)
-	}
-
-	// Convert the bytes to an Agent Definition
-	var agentDef agent_yaml.AgentDefinition
-	if err := yaml.Unmarshal(dictJsonBytes, &agentDef); err != nil {
-		return nil, nil, fmt.Errorf("failed to unmarshal YAML to AgentDefinition: %w", err)
-	}
-
-	deploymentDetails := []project.Deployment{}
-	paramValues := registry_api.ParameterValues{}
-	switch agentDef.Kind {
-	case agent_yaml.AgentKindPrompt:
-		agentDef := manifest.Template.(agent_yaml.PromptAgent)
-
-		modelDeployment, err := a.getModelDeploymentDetails(ctx, agentDef.Model)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get model deployment details: %w", err)
-		}
-		deploymentDetails = append(deploymentDetails, *modelDeployment)
-		paramValues["deploymentName"] = modelDeployment.Name
-	case agent_yaml.AgentKindHosted:
-		// Iterate over all models in the manifest for the container agent
-		for _, resource := range manifest.Resources {
-			// Convert the resource to bytes
-			resourceBytes, err := yaml.Marshal(resource)
-			if err != nil {
-				return nil, nil, fmt.Errorf("failed to marshal resource to YAML: %w", err)
-			}
-
-			// Convert the bytes to an Agent Definition
-			var resourceDef agent_yaml.Resource
-			if err := yaml.Unmarshal(resourceBytes, &resourceDef); err != nil {
-				return nil, nil, fmt.Errorf("failed to unmarshal YAML to Resource: %w", err)
-			}
-
-			if resourceDef.Kind == agent_yaml.ResourceKindModel {
-				resource := resource.(agent_yaml.ModelResource)
-				model := agent_yaml.Model{
-					Id: resource.Id,
-				}
-				modelDeployment, err := a.getModelDeploymentDetails(ctx, model)
-				if err != nil {
-					return nil, nil, fmt.Errorf("failed to get model deployment details: %w", err)
-				}
-				deploymentDetails = append(deploymentDetails, *modelDeployment)
-				paramValues[resource.Name] = modelDeployment.Name
-			}
-		}
-	}
-
-	updatedManifest, err := registry_api.InjectParameterValuesIntoManifest(manifest, paramValues)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to inject deployment names into manifest: %w", err)
-	}
-
-	fmt.Println("Model deployment details processed and injected into agent definition. Deployment details can also be found in the JSON formatted AI_PROJECT_DEPLOYMENTS environment variable.")
-
-	return updatedManifest, deploymentDetails, nil
 }

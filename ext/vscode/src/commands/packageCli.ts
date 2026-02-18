@@ -7,15 +7,30 @@ import * as vscode from 'vscode';
 import { TelemetryId } from '../telemetry/telemetryId';
 import { createAzureDevCli } from '../utils/azureDevCli';
 import { executeAsTask } from '../utils/executeAsTask';
-import { isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
+import { isAzureDevCliModel, isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
 import { AzureDevCliModel } from '../views/workspace/AzureDevCliModel';
 import { AzureDevCliService } from '../views/workspace/AzureDevCliService';
-import { getAzDevTerminalTitle, getWorkingFolder } from './cmdUtil';
+import { getAzDevTerminalTitle, getWorkingFolder, validateFileSystemUri } from './cmdUtil';
 
 // `package` is a reserved identifier so `packageCli` had to be used instead
 export async function packageCli(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {
-    const selectedModel = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliModel>() : undefined;
-    const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliModel>().context.configurationFile : selectedItem;
+    let selectedModel: AzureDevCliModel | undefined;
+    let selectedFile: vscode.Uri | undefined;
+
+    if (isTreeViewModel(selectedItem)) {
+        selectedModel = selectedItem.unwrap<AzureDevCliModel>();
+        selectedFile = selectedModel.context.configurationFile;
+    } else if (isAzureDevCliModel(selectedItem)) {
+        selectedModel = selectedItem;
+        selectedFile = selectedModel.context.configurationFile;
+    } else {
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        selectedFile = selectedItem!;
+    }
+
+    // Validate that selectedFile is valid for file system operations
+    validateFileSystemUri(context, selectedFile, selectedItem, 'package');
+
     const workingFolder = await getWorkingFolder(context, selectedFile);
 
     const azureCli = await createAzureDevCli(context);

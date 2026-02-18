@@ -143,7 +143,7 @@ func (at *containerAppTarget) Publish(
 	if publishResult == nil {
 		// Login, tag & push container image to ACR
 		publishResult, err = at.containerHelper.Publish(
-			ctx, serviceConfig, serviceContext, targetResource, progress, publishOptions)
+			ctx, serviceConfig, serviceContext, targetResource, at.env, progress, publishOptions)
 		if err != nil {
 			return nil, err
 		}
@@ -229,7 +229,7 @@ func (at *containerAppTarget) Deploy(
 		fetchBicepCli := at.bicepCli
 		if fetchBicepCli == nil {
 			fetchBicepCli = func() (*bicep.Cli, error) {
-				return bicep.NewCli(ctx, at.console, at.commandRunner)
+				return bicep.NewCli(at.console, at.commandRunner), nil
 			}
 		}
 

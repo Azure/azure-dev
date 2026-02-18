@@ -22,11 +22,24 @@ Select a specific `azd` version [here](https://github.com/Azure/azure-dev/releas
 },
 ```
 
+## Example Usage - Install with extensions
+
+Install `azd` with specific extensions by providing a comma-separated list.
+
+```json
+"features": {
+    "ghcr.io/azure/azure-dev/azd:latest": {
+        "extensions": "azure.coding-agent,microsoft.azd.concurx"
+    }
+},
+```
+
 ## Options
 
 | Options Id | Description | Type | Default Value |
 |-----|-----|-----|-----|
 | version | Select or enter an Azure Developer CLI version. (Available versions may vary by Linux distribution.) | string | stable |
+| extensions | Comma-separated list of Azure Developer CLI extensions to install. | string | (empty) |
 
 ## Customizations
 

@@ -135,11 +135,24 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		isTerminal := cmd.OutOrStdout() == os.Stdout &&
 			cmd.InOrStdin() == os.Stdin && terminal.IsTerminal(os.Stdout.Fd(), os.Stdin.Fd())
 
+		// Check for external prompt configuration from environment variables
+		var externalPromptCfg *input.ExternalPromptConfiguration
+		if endpoint := os.Getenv("AZD_UI_PROMPT_ENDPOINT"); endpoint != "" {
+			if key := os.Getenv("AZD_UI_PROMPT_KEY"); key != "" {
+				externalPromptCfg = &input.ExternalPromptConfiguration{
+					Endpoint:       endpoint,
+					Key:            key,
+					Transporter:    http.DefaultClient,
+					NoPromptDialog: os.Getenv("AZD_UI_NO_PROMPT_DIALOG") != "",
+				}
+			}
+		}
+
 		return input.NewConsole(rootOptions.NoPrompt, isTerminal, input.Writers{Output: writer}, input.ConsoleHandles{
 			Stdin:  cmd.InOrStdin(),
 			Stdout: cmd.OutOrStdout(),
 			Stderr: cmd.ErrOrStderr(),
-		}, formatter, nil)
+		}, formatter, externalPromptCfg)
 	})
 
 	container.MustRegisterSingleton(
@@ -174,7 +187,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return writer
 	})
 
-	container.MustRegisterScoped(func(cmd *cobra.Command) internal.EnvFlag {
+	container.MustRegisterScoped(func(ctx context.Context, cmd *cobra.Command) internal.EnvFlag {
 		// The env flag `-e, --environment` is available on most azd commands but not all
 		// This is typically used to override the default environment and is used for bootstrapping other components
 		// such as the azd environment.
@@ -190,7 +203,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			// If no explicit environment flag was set, but one was provided
 			// in the context, use that instead.
 			// This is used in workflow execution (in `up`) to influence the environment used.
-			if envFlag, ok := cmd.Context().Value(envFlagCtxKey).(internal.EnvFlag); ok {
+			if envFlag, ok := ctx.Value(envFlagCtxKey).(internal.EnvFlag); ok {
 				return envFlag
 			}
 		}
@@ -637,6 +650,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(containerregistry.NewRemoteBuildManager)
 	container.MustRegisterSingleton(keyvault.NewKeyVaultService)
 	container.MustRegisterSingleton(storage.NewFileShareService)
+	container.MustRegisterSingleton(ai.NewAiModelService)
 
 	container.MustRegisterScoped(project.NewContainerHelper)
 	container.MustRegisterScoped(func(serviceLocator ioc.ServiceLocator) *lazy.Lazy[*project.ContainerHelper] {
@@ -899,6 +913,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(grpcserver.NewExtensionService)
 	container.MustRegisterSingleton(grpcserver.NewServiceTargetService)
 	container.MustRegisterSingleton(grpcserver.NewFrameworkService)
+	container.MustRegisterSingleton(grpcserver.NewAiModelService)
 
 	// Required for nested actions called from composite actions like 'up'
 	registerAction[*cmd.ProvisionAction](container, "azd-provision-action")
@@ -918,27 +933,7 @@ func (w *workflowCmdAdapter) SetArgs(args []string) {
 // ExecuteContext implements workflow.AzdCommandRunner
 func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context) error {
 	childCtx := middleware.WithChildAction(ctx)
-
-	// CRITICAL FIX: Explicitly set the context on the command before calling ExecuteContext.
-	// When the same command instance is reused across workflow steps, cobra may retain
-	// a stale cancelled context from a previous execution. Setting the context on both
-	// the root command and all subcommands (recursively) ensures the fresh context is used.
-	setContextRecursively(w.cmd, childCtx)
-
 	return w.cmd.ExecuteContext(childCtx)
-}
-
-// setContextRecursively sets the context on a command and all its subcommands recursively
-func setContextRecursively(cmd *cobra.Command, ctx context.Context) {
-	// Always set the context, even if the command hasn't been initialized yet.
-	// cobra.Command.Context() returns context.Background() if no context is set,
-	// so SetContext is safe to call on any command. This ensures all commands
-	// in the tree start with the correct context, preventing stale contexts
-	// from previous executions when commands are reused.
-	cmd.SetContext(ctx)
-	for _, subCmd := range cmd.Commands() {
-		setContextRecursively(subCmd, ctx)
-	}
 }
 
 // ArmClientInitializer is a function definition for all Azure SDK ARM Client

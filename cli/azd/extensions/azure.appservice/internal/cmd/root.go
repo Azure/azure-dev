@@ -1,0 +1,51 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package cmd
+
+import (
+	"github.com/spf13/cobra"
+)
+
+type rootFlagsDefinition struct {
+	Debug    bool
+	NoPrompt bool
+}
+
+// Enable access to the global command flags
+var rootFlags rootFlagsDefinition
+
+func NewRootCommand() *cobra.Command {
+	rootCmd := &cobra.Command{
+		Use:           "appservice <command> [options]",
+		Short:         "Extension for managing Azure App Service resources.",
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		CompletionOptions: cobra.CompletionOptions{
+			DisableDefaultCmd: true,
+		},
+	}
+
+	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
+	rootCmd.PersistentFlags().BoolVar(
+		&rootFlags.Debug,
+		"debug",
+		false,
+		"Enable debug mode",
+	)
+
+	// Adds support for `--no-prompt` global flag in azd
+	// Without this the extension command will error when the flag is provided
+	rootCmd.PersistentFlags().BoolVar(
+		&rootFlags.NoPrompt,
+		"no-prompt",
+		false,
+		"Accepts the default value instead of prompting, or it fails if there is no default.",
+	)
+
+	rootCmd.AddCommand(newSwapCommand(rootFlags))
+	rootCmd.AddCommand(newVersionCommand())
+	rootCmd.AddCommand(newMetadataCommand())
+
+	return rootCmd
+}

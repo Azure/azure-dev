@@ -79,6 +79,15 @@ func envActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 		ActionResolver: newEnvNewAction,
 	})
 
+	group.Add("remove", &actions.ActionDescriptorOptions{
+		Command:        newEnvRemoveCmd(),
+		FlagsResolver:  newEnvRemoveFlags,
+		ActionResolver: newEnvRemoveAction,
+		HelpOptions: actions.ActionHelpOptions{
+			Description: getCmdEnvRemoveHelpDescription,
+		},
+	})
+
 	group.Add("list", &actions.ActionDescriptorOptions{
 		Command:        newEnvListCmd(),
 		ActionResolver: newEnvListAction,
@@ -1272,6 +1281,18 @@ func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, e
 	if eg.flags.EnvironmentName != "" {
 		name = eg.flags.EnvironmentName
 	}
+
+	if name == "" {
+		// No environment specified, and default environment is not selected.
+		// Prompt to choose an environment and set as default.
+		loaded, err := eg.envManager.LoadOrInitInteractive(ctx, name)
+		if err != nil {
+			return nil, err
+		}
+
+		name = loaded.Name()
+	}
+
 	env, err := eg.envManager.Get(ctx, name)
 	if errors.Is(err, environment.ErrNotFound) {
 		return nil, fmt.Errorf(

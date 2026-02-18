@@ -1,0 +1,14 @@
+2026/02/12 14:35:31 main.go:60: azd version: 0.0.0-dev.0 (commit 0000000000000000000000000000000000000000)
+2026/02/12 14:35:31 detect_process.go:56: detect_process.go: Parent process detection: depth=0, pid=73536, ppid=33753, name="/opt/homebrew/bi", executable="/opt/homebrew/bin/fish"
+2026/02/12 14:35:31 detect_process.go:56: detect_process.go: Parent process detection: depth=1, pid=33753, ppid=33551, name="/Applications/Vi", executable="/Applications/Visual"
+2026/02/12 14:35:31 detect_process.go:56: detect_process.go: Parent process detection: depth=2, pid=33551, ppid=1, name="/Applications/Vi", executable="/Applications/Visual"
+2026/02/12 14:35:31 detect_process.go:72: detect_process.go: Parent process detection: no agent found in process tree
+2026/02/12 14:35:31 detect.go:25: Agent detection result: detected=false, no AI coding agent detected
+2026/02/12 14:35:31 main.go:228: using cached latest version: 1.23.4 (expires on: 2026-02-13T22:18:45Z)
+2026/02/12 14:35:31 middleware.go:100: running middleware 'debug'
+2026/02/12 14:35:31 middleware.go:100: running middleware 'ux'
+2026/02/12 14:35:31 middleware.go:100: running middleware 'telemetry'
+2026/02/12 14:35:31 telemetry.go:66: TraceID: a8c353d7cf2be1bd0d78e51af0841dcc
+2026/02/12 14:35:31 middleware.go:100: running middleware 'error'
+2026/02/12 14:35:31 middleware.go:100: running middleware 'loginGuard'
+2026/02/12 14:35:31 main.go:102: eliding update message for dev build

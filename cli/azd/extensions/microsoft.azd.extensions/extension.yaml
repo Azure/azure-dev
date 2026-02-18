@@ -5,9 +5,10 @@ language: go
 displayName: AZD Extensions Developer Kit
 description: This extension provides a set of tools for AZD extension developers to test and debug their extensions.
 usage: azd x <command> [options]
-version: 0.8.0
+version: 0.9.0
 capabilities:
   - custom-commands
+  - metadata
 examples:
   - name: init
     description: Initialize a new AZD extension project.
@@ -22,7 +23,7 @@ examples:
     description: Publish the AZD extension project to an extension source.
     usage: azd x publish
   - name: release
-    description: Create an new release of the AZD extension project to a Github repository.
+    description: Create a new release of the AZD extension project to a GitHub repository.
     usage: azd x release
   - name: watch
     description: Watch for changes in the extension project and automatically rebuild and reload the extension.

@@ -8,7 +8,76 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
+
+func TestIsRecoverableDeploymentSelectionError_StructuredReason(t *testing.T) {
+	t.Parallel()
+
+	st := status.New(codes.FailedPrecondition, "no valid SKUs for selected model")
+	withDetails, err := st.WithDetails(&errdetails.ErrorInfo{
+		Reason: azdext.AiErrorReasonNoValidSkus,
+		Domain: azdext.AiErrorDomain,
+	})
+	if err != nil {
+		t.Fatalf("failed to attach grpc error details: %v", err)
+	}
+
+	if !isRecoverableDeploymentSelectionError(withDetails.Err()) {
+		t.Fatalf("expected structured AI reason to be recoverable")
+	}
+}
+
+func TestIsRecoverableDeploymentSelectionError_NonRecoverableStructuredReason(t *testing.T) {
+	t.Parallel()
+
+	st := status.New(codes.InvalidArgument, "quota location is required")
+	withDetails, err := st.WithDetails(&errdetails.ErrorInfo{
+		Reason: azdext.AiErrorReasonQuotaLocation,
+		Domain: azdext.AiErrorDomain,
+	})
+	if err != nil {
+		t.Fatalf("failed to attach grpc error details: %v", err)
+	}
+
+	if isRecoverableDeploymentSelectionError(withDetails.Err()) {
+		t.Fatalf("expected structured quota-location error to be non-recoverable")
+	}
+}
+
+func TestIsRecoverableDeploymentSelectionError_UnstructuredError(t *testing.T) {
+	t.Parallel()
+
+	if isRecoverableDeploymentSelectionError(
+		status.Error(codes.Internal, "no deployment found for model \"foo\" with the specified options"),
+	) {
+		t.Fatalf("expected unstructured error to be non-recoverable")
+	}
+}
+
+func TestHasAiErrorReason(t *testing.T) {
+	t.Parallel()
+
+	st := status.New(codes.NotFound, "no locations with sufficient quota")
+	withDetails, err := st.WithDetails(&errdetails.ErrorInfo{
+		Reason: azdext.AiErrorReasonNoLocationsWithQuota,
+		Domain: azdext.AiErrorDomain,
+	})
+	if err != nil {
+		t.Fatalf("failed to attach grpc error details: %v", err)
+	}
+
+	if !hasAiErrorReason(withDetails.Err(), azdext.AiErrorReasonNoLocationsWithQuota) {
+		t.Fatalf("expected reason to be detected")
+	}
+	if hasAiErrorReason(withDetails.Err(), azdext.AiErrorReasonNoValidSkus) {
+		t.Fatalf("expected non-matching reason to be false")
+	}
+}
 
 func TestCopyDirectory_RefusesToCopyIntoSubtree(t *testing.T) {
 	t.Parallel()
@@ -192,6 +261,131 @@ func TestFormatDirectoryPreview(t *testing.T) {
 			}
 			if result != tt.expected {
 				t.Errorf("formatDirectoryPreview() = %q, want %q", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestParseGitHubUrlNaive(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		url      string
+		expected *GitHubUrlInfo
+	}{
+		{
+			name: "github.com blob URL",
+			url:  "https://github.com/owner/repo/blob/main/path/to/file.yaml",
+			expected: &GitHubUrlInfo{
+				RepoSlug: "owner/repo",
+				Branch:   "main",
+				FilePath: "path/to/file.yaml",
+				Hostname: "github.com",
+			},
+		},
+		{
+			name: "github.com blob URL with fragment",
+			url:  "https://github.com/owner/repo/blob/main/path/to/file.yaml#L10",
+			expected: &GitHubUrlInfo{
+				RepoSlug: "owner/repo",
+				Branch:   "main",
+				FilePath: "path/to/file.yaml",
+				Hostname: "github.com",
+			},
+		},
+		{
+			name: "github.com blob URL with query parameter",
+			url:  "https://github.com/owner/repo/blob/main/path/to/file.yaml?plain=1",
+			expected: &GitHubUrlInfo{
+				RepoSlug: "owner/repo",
+				Branch:   "main",
+				FilePath: "path/to/file.yaml",
+				Hostname: "github.com",
+			},
+		},
+		{
+			name: "github.com blob URL with both fragment and query",
+			url:  "https://github.com/owner/repo/blob/develop/path/file.yaml?plain=1#L20-L30",
+			expected: &GitHubUrlInfo{
+				RepoSlug: "owner/repo",
+				Branch:   "develop",
+				FilePath: "path/file.yaml",
+				Hostname: "github.com",
+			},
+		},
+		{
+			name: "raw.githubusercontent.com URL",
+			url:  "https://raw.githubusercontent.com/owner/repo/refs/heads/main/path/to/file.yaml",
+			expected: &GitHubUrlInfo{
+				RepoSlug: "owner/repo",
+				Branch:   "main",
+				FilePath: "path/to/file.yaml",
+				Hostname: "github.com",
+			},
+		},
+		{
+			name: "raw.githubusercontent.com URL with query parameter",
+			url:  "https://raw.githubusercontent.com/owner/repo/refs/heads/main/path/to/file.yaml?token=abc123",
+			expected: &GitHubUrlInfo{
+				RepoSlug: "owner/repo",
+				Branch:   "main",
+				FilePath: "path/to/file.yaml",
+				Hostname: "github.com",
+			},
+		},
+		{
+			name: "URL with branch containing slash (naive parsing treats first part as branch)",
+			url:  "https://github.com/owner/repo/blob/feature/my-branch/file.yaml",
+			// This is a known limitation - the naive parser will incorrectly treat "feature" as the branch
+			// and "my-branch/file.yaml" as the file path. This is acceptable since the function is designed
+			// to handle simple cases and fall back to full parsing for complex branch names.
+			expected: &GitHubUrlInfo{
+				RepoSlug: "owner/repo",
+				Branch:   "feature",
+				FilePath: "my-branch/file.yaml",
+				Hostname: "github.com",
+			},
+		},
+		{
+			name:     "invalid URL",
+			url:      "not a url",
+			expected: nil,
+		},
+		{
+			name:     "non-github URL",
+			url:      "https://gitlab.com/owner/repo/blob/main/file.yaml",
+			expected: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a := &InitAction{}
+			result := a.parseGitHubUrlNaive(tt.url)
+
+			if tt.expected == nil {
+				if result != nil {
+					t.Errorf("expected nil, got %+v", result)
+				}
+				return
+			}
+
+			if result == nil {
+				t.Fatalf("expected non-nil result, got nil")
+			}
+
+			if result.RepoSlug != tt.expected.RepoSlug {
+				t.Errorf("RepoSlug = %q, want %q", result.RepoSlug, tt.expected.RepoSlug)
+			}
+			if result.Branch != tt.expected.Branch {
+				t.Errorf("Branch = %q, want %q", result.Branch, tt.expected.Branch)
+			}
+			if result.FilePath != tt.expected.FilePath {
+				t.Errorf("FilePath = %q, want %q", result.FilePath, tt.expected.FilePath)
+			}
+			if result.Hostname != tt.expected.Hostname {
+				t.Errorf("Hostname = %q, want %q", result.Hostname, tt.expected.Hostname)
 			}
 		})
 	}

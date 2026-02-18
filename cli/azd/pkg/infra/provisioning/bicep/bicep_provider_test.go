@@ -222,6 +222,28 @@ func TestBicepDestroy(t *testing.T) {
 	})
 }
 
+func TestBicepDestroyLogAnalyticsWorkspace(t *testing.T) {
+	t.Run("WithPurge", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		prepareBicepMocks(mockContext)
+		prepareStateMocks(mockContext)
+		prepareLogAnalyticsDestroyMocks(mockContext)
+
+		infraProvider := createBicepProvider(t, mockContext)
+
+		destroyOptions := provisioning.NewDestroyOptions(true, true)
+		destroyResult, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
+
+		require.NoError(t, err)
+		require.NotNil(t, destroyResult)
+
+		consoleOutput := mockContext.Console.Output()
+		require.Len(t, consoleOutput, 2)
+		require.Contains(t, consoleOutput[0], "Deleting your resources can take some time")
+		require.Contains(t, consoleOutput[1], "")
+	})
+}
+
 func TestDeploymentForResourceGroup(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 
@@ -385,8 +407,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 	envManager.On("Save", mock.Anything, mock.Anything).Return(nil)
 	envManager.On("Reload", mock.Anything, mock.Anything).Return(nil)
 
-	bicepCli, err := bicep.NewCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
-	require.NoError(t, err)
+	bicepCli := bicep.NewCli(mockContext.Console, mockContext.CommandRunner)
 	azCli := mockazapi.NewAzureClientFromMockContext(mockContext)
 	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
 	deploymentService := mockazapi.NewStandardDeploymentsFromMockContext(mockContext)
@@ -430,9 +451,10 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 		),
 		cloud.AzurePublic(),
 		nil,
+		nil,
 	)
 
-	err = provider.Initialize(*mockContext.Context, projectDir, options)
+	err := provider.Initialize(*mockContext.Context, projectDir, options)
 	require.NoError(t, err)
 
 	return provider.(*BicepProvider)
@@ -797,6 +819,127 @@ func getAPIMMock(mockContext *mocks.MockContext, apimString string, name string,
 	})
 }
 
+func getLogAnalyticsMock(mockContext *mocks.MockContext, logAnalyticsString string, name string) {
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.HasSuffix(request.URL.Path, logAnalyticsString)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		logAnalyticsResponse := map[string]interface{}{
+			"id": fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
+				string(azapi.AzureResourceTypeLogAnalyticsWorkspace), name),
+			"name": name,
+		}
+
+		responseBytes, _ := json.Marshal(logAnalyticsResponse)
+
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(responseBytes)),
+		}, nil
+	})
+}
+
+func prepareLogAnalyticsDestroyMocks(mockContext *mocks.MockContext) {
+	makeItem := func(resourceType azapi.AzureResourceType, resourceName string) *armresources.GenericResourceExpanded {
+		id := fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
+			string(resourceType), resourceName)
+
+		return &armresources.GenericResourceExpanded{
+			ID:       to.Ptr(id),
+			Name:     to.Ptr(resourceName),
+			Type:     to.Ptr(string(resourceType)),
+			Location: to.Ptr("eastus2"),
+		}
+	}
+
+	resourceList := armresources.ResourceListResult{
+		Value: []*armresources.GenericResourceExpanded{
+			makeItem(azapi.AzureResourceTypeLogAnalyticsWorkspace, "la-workspace-123"),
+			makeItem(azapi.AzureResourceTypeLogAnalyticsWorkspace, "la-workspace2-123"),
+		},
+	}
+
+	resourceGroup := &armresources.ResourceGroup{
+		ID:       to.Ptr(azure.ResourceGroupRID("SUBSCRIPTION_ID", "RESOURCE_GROUP")),
+		Location: to.Ptr("eastus2"),
+		Name:     to.Ptr("RESOURCE_GROUP"),
+		Type:     to.Ptr(string(azapi.AzureResourceTypeResourceGroup)),
+		Tags: map[string]*string{
+			"azd-env-name": to.Ptr("test-env"),
+		},
+	}
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return strings.HasSuffix(request.URL.Path, "/resourcegroups") && strings.Contains(request.URL.RawQuery, "filter=")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		result := armresources.ResourceGroupListResult{
+			Value: []*armresources.ResourceGroup{
+				resourceGroup,
+			},
+		}
+
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, result)
+	})
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/resources")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, resourceList)
+	})
+
+	getLogAnalyticsMock(mockContext, "/workspaces/la-workspace-123", "la-workspace-123")
+	getLogAnalyticsMock(mockContext, "/workspaces/la-workspace2-123", "la-workspace2-123")
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodDelete &&
+			(strings.HasSuffix(request.URL.Path, "workspaces/la-workspace-123") ||
+				strings.HasSuffix(request.URL.Path, "workspaces/la-workspace2-123"))
+	}).RespondFn(httpRespondFn)
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodDelete &&
+			strings.HasSuffix(request.URL.Path, "subscriptions/SUBSCRIPTION_ID/resourcegroups/RESOURCE_GROUP")
+	}).RespondFn(httpRespondFn)
+
+	mockPollingUrl := "https://url-to-poll.net"
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet &&
+			strings.Contains(request.URL.String(), mockPollingUrl)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateEmptyHttpResponse(request, 204)
+	})
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodDelete &&
+			strings.HasSuffix(
+				request.URL.Path, "/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/test-env")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateEmptyHttpResponse(request, 204)
+	})
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodPut &&
+			strings.Contains(request.URL.Path, "/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		result := &armresources.DeploymentsClientCreateOrUpdateAtSubscriptionScopeResponse{
+			DeploymentExtended: armresources.DeploymentExtended{
+				ID:       to.Ptr("DEPLOYMENT_ID"),
+				Name:     to.Ptr("test-env"),
+				Location: to.Ptr("eastus2"),
+				Tags: map[string]*string{
+					"azd-env-name": to.Ptr("test-env"),
+				},
+				Type: to.Ptr("Microsoft.Resources/deployments"),
+				Properties: &armresources.DeploymentPropertiesExtended{
+					ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+					Timestamp:         to.Ptr(time.Now()),
+				},
+			},
+		}
+
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, result)
+	})
+}
+
 func httpRespondFn(request *http.Request) (*http.Response, error) {
 	return &http.Response{
 		Request:    request,
@@ -950,8 +1093,7 @@ func TestUserDefinedTypes(t *testing.T) {
 	})
 
 	azCli := mockazapi.NewAzureClientFromMockContext(mockContext)
-	bicepCli, err := bicep.NewCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
-	require.NoError(t, err)
+	bicepCli := bicep.NewCli(mockContext.Console, mockContext.CommandRunner)
 	env := environment.NewWithValues("test-env", map[string]string{})
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -983,6 +1125,7 @@ func TestUserDefinedTypes(t *testing.T) {
 			cloud.AzurePublic(),
 		),
 		cloud.AzurePublic(),
+		nil,
 		nil,
 	)
 	bicepProvider, gooCast := provider.(*BicepProvider)
@@ -1518,4 +1661,250 @@ func TestPreviewWithNilResourceState(t *testing.T) {
 	assert.Equal(t, provisioning.ChangeTypeModify, changes[2].ChangeType)
 	assert.Equal(t, "Microsoft.Web/sites", changes[2].ResourceType)
 	assert.Equal(t, "app3", changes[2].Name)
+}
+
+func TestArrayParameterViaEnvVarSimple(t *testing.T) {
+	// Test that array/object parameters are correctly identified and handled using provisioning types
+	env := environment.NewWithValues("test-env", map[string]string{
+		"AZURE_ENV_NAME":        "test-env",
+		"AZURE_LOCATION":        "westus2",
+		"AZURE_SUBSCRIPTION_ID": "SUBSCRIPTION_ID",
+	})
+
+	// Test parameter type identification using provisioning.ParameterTypeFromArmType
+	require.Equal(t, provisioning.ParameterTypeArray, provisioning.ParameterTypeFromArmType("array"))
+	require.Equal(t, provisioning.ParameterTypeArray, provisioning.ParameterTypeFromArmType("Array"))
+	require.Equal(t, provisioning.ParameterTypeObject, provisioning.ParameterTypeFromArmType("object"))
+	require.Equal(t, provisioning.ParameterTypeObject, provisioning.ParameterTypeFromArmType("Object"))
+	require.Equal(t, provisioning.ParameterTypeObject, provisioning.ParameterTypeFromArmType("secureobject"))
+	require.Equal(t, provisioning.ParameterTypeString, provisioning.ParameterTypeFromArmType("string"))
+
+	// Test the helper function with array env var
+	arrayVar := `["val1","val2"]`
+
+	result, substResult, err := evalParamEnvSubst(
+		arrayVar,
+		"principal-id",
+		"ServicePrincipal",
+		"testParam",
+		env,
+	)
+
+	require.Nil(t, err)
+	require.Equal(t, arrayVar, result) // Result should be unchanged when no substitution needed
+	require.False(t, substResult.hasUnsetEnvVar)
+	require.Empty(t, substResult.mappedEnvVars)
+}
+
+func createBicepProviderWithEnv(
+	t *testing.T, mockContext *mocks.MockContext, armTemplate azure.ArmTemplate, envVars map[string]string) *BicepProvider {
+	bicepBytes, _ := json.Marshal(armTemplate)
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "--version"
+	}).Respond(exec.RunResult{
+		Stdout: fmt.Sprintf("Bicep CLI version %s (abcdef0123)", bicep.Version.String()),
+		Stderr: "",
+	})
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "build"
+	}).Respond(exec.RunResult{
+		Stdout: string(bicepBytes),
+		Stderr: "",
+	})
+
+	projectDir := "../../../../test/functional/testdata/mock-samples/webapp"
+	options := provisioning.Options{
+		Path:   "infra",
+		Module: "main",
+	}
+
+	baseEnvVars := map[string]string{
+		environment.LocationEnvVarName:       "westus2",
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+		environment.EnvNameEnvVarName:        "test-env",
+	}
+	for k, v := range envVars {
+		baseEnvVars[k] = v
+	}
+
+	env := environment.NewWithValues("test-env", baseEnvVars)
+
+	envManager := &mockenv.MockEnvManager{}
+	envManager.On("Save", mock.Anything, mock.Anything).Return(nil)
+	envManager.On("Reload", mock.Anything, mock.Anything).Return(nil)
+
+	bicepCli := bicep.NewCli(mockContext.Console, mockContext.CommandRunner)
+	azCli := mockazapi.NewAzureClientFromMockContext(mockContext)
+	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
+	deploymentService := mockazapi.NewStandardDeploymentsFromMockContext(mockContext)
+	resourceManager := infra.NewAzureResourceManager(resourceService, deploymentService)
+	deploymentManager := infra.NewDeploymentManager(deploymentService, resourceManager, mockContext.Console)
+	accountManager := &mockaccount.MockAccountManager{
+		Subscriptions: []account.Subscription{
+			{
+				Id:   "00000000-0000-0000-0000-000000000000",
+				Name: "test",
+			},
+		},
+		Locations: []account.Location{
+			{
+				Name:                "location",
+				DisplayName:         "Test Location",
+				RegionalDisplayName: "(US) Test Location",
+			},
+		},
+	}
+
+	provider := NewBicepProvider(
+		azCli,
+		bicepCli,
+		resourceService,
+		&mockResourceManager{},
+		deploymentManager,
+		envManager,
+		env,
+		mockContext.Console,
+		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, resourceService, cloud.AzurePublic()),
+		&mockCurrentPrincipal{},
+		keyvault.NewKeyVaultService(
+			mockaccount.SubscriptionCredentialProviderFunc(
+				func(_ context.Context, _ string) (azcore.TokenCredential, error) {
+					return mockContext.Credentials, nil
+				}),
+			mockContext.ArmClientOptions,
+			mockContext.CoreClientOptions,
+			cloud.AzurePublic(),
+		),
+		cloud.AzurePublic(),
+		nil,
+		nil,
+	)
+
+	err := provider.Initialize(*mockContext.Context, projectDir, options)
+	require.NoError(t, err)
+
+	return provider.(*BicepProvider)
+}
+
+func TestObjectParameterEnvSubst(t *testing.T) {
+	// Test env var substitution with object-like JSON content
+	env := environment.NewWithValues("test-env", map[string]string{
+		"MY_OBJECT": `{"key":"value"}`,
+	})
+
+	result, substResult, err := evalParamEnvSubst(
+		"${MY_OBJECT}",
+		"principal-id",
+		"ServicePrincipal",
+		"testParam",
+		env,
+	)
+
+	require.Nil(t, err)
+	require.Equal(t, `{"key":"value"}`, result)
+	require.Len(t, substResult.mappedEnvVars, 1)
+	require.Equal(t, "MY_OBJECT", substResult.mappedEnvVars[0])
+	require.False(t, substResult.hasUnsetEnvVar)
+}
+
+func TestParameterTypeFromArmTypeIdentification(t *testing.T) {
+	// Test that ParameterTypeFromArmType correctly identifies parameter types
+	require.Equal(t, provisioning.ParameterTypeArray, provisioning.ParameterTypeFromArmType("array"))
+	require.Equal(t, provisioning.ParameterTypeArray, provisioning.ParameterTypeFromArmType("Array"))
+	require.Equal(t, provisioning.ParameterTypeObject, provisioning.ParameterTypeFromArmType("object"))
+	require.Equal(t, provisioning.ParameterTypeObject, provisioning.ParameterTypeFromArmType("Object"))
+	require.Equal(t, provisioning.ParameterTypeObject, provisioning.ParameterTypeFromArmType("secureobject"))
+	require.Equal(t, provisioning.ParameterTypeObject, provisioning.ParameterTypeFromArmType("secureObject"))
+	require.Equal(t, provisioning.ParameterTypeString, provisioning.ParameterTypeFromArmType("string"))
+	require.Equal(t, provisioning.ParameterTypeString, provisioning.ParameterTypeFromArmType("String"))
+	require.Equal(t, provisioning.ParameterTypeNumber, provisioning.ParameterTypeFromArmType("int"))
+	require.Equal(t, provisioning.ParameterTypeNumber, provisioning.ParameterTypeFromArmType("Int"))
+	require.Equal(t, provisioning.ParameterTypeBoolean, provisioning.ParameterTypeFromArmType("bool"))
+	require.Equal(t, provisioning.ParameterTypeBoolean, provisioning.ParameterTypeFromArmType("Bool"))
+	require.Equal(t, provisioning.ParameterTypeString, provisioning.ParameterTypeFromArmType("securestring"))
+}
+
+func TestUnsetEnvVarForArrayParameter(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+
+	// Create a template with optional array parameter (has a default value)
+	armTemplate := azure.ArmTemplate{
+		Schema:         "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+		ContentVersion: "1.0.0.0",
+		Parameters: azure.ArmTemplateParameterDefinitions{
+			"environmentName": {Type: "string", DefaultValue: "test-env"},
+			"location":        {Type: "string", DefaultValue: "westus2"},
+			"arrayParam":      {Type: "array", DefaultValue: []any{}},
+		},
+		Outputs: azure.ArmTemplateOutputs{},
+	}
+
+	// Don't set MY_ARRAY in environment, so it should be unset
+	// The parameter should be omitted from resolved params because the value is empty and env var is unset
+	infraProvider := createBicepProviderWithEnv(t, mockContext, armTemplate, map[string]string{})
+
+	deploymentPlan, err := infraProvider.plan(*mockContext.Context)
+
+	require.Nil(t, err)
+	configuredParameters := deploymentPlan.Parameters
+
+	// arrayParam should be omitted since env var is unset
+	require.Empty(t, configuredParameters["arrayParam"])
+}
+
+func TestStructuredArrayWithNestedEnvVars(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+
+	armTemplate := azure.ArmTemplate{
+		Schema:         "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+		ContentVersion: "1.0.0.0",
+		Parameters: azure.ArmTemplateParameterDefinitions{
+			"environmentName": {Type: "string", DefaultValue: "test-env"},
+			"location":        {Type: "string", DefaultValue: "westus2"},
+			"arrayParam":      {Type: "array", DefaultValue: []any{}},
+		},
+		Outputs: azure.ArmTemplateOutputs{},
+	}
+
+	// Set up environment variables
+	infraProvider := createBicepProviderWithEnv(t, mockContext, armTemplate, map[string]string{
+		"VAL1": "value1",
+		"VAL2": "value2",
+	})
+
+	deploymentPlan, err := infraProvider.plan(*mockContext.Context)
+
+	require.Nil(t, err)
+	configuredParameters := deploymentPlan.Parameters
+
+	// When arrayParam has a structured value (not a simple env var reference),
+	// it should use Path B (existing logic)
+	// This test just ensures Path B still works for complex structured arrays
+	require.NotNil(t, configuredParameters)
+}
+
+func TestHelperEvalParamEnvSubst(t *testing.T) {
+	// Test the evalParamEnvSubst helper function
+	env := environment.NewWithValues("test-env", map[string]string{
+		"VAR1":      "value1",
+		"VAR2":      "value2",
+		"UNSET_VAR": "", // simulates an unset var
+	})
+
+	result, substResult, err := evalParamEnvSubst(
+		"${VAR1}-${VAR2}",
+		"principal-id",
+		"ServicePrincipal",
+		"testParam",
+		env,
+	)
+
+	require.Nil(t, err)
+	require.Equal(t, "value1-value2", result)
+	require.Len(t, substResult.mappedEnvVars, 2)
+	require.Contains(t, substResult.mappedEnvVars, "VAR1")
+	require.Contains(t, substResult.mappedEnvVars, "VAR2")
+	require.False(t, substResult.hasUnsetEnvVar)
 }

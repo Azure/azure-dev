@@ -55,6 +55,13 @@ if ($IsWindows) {
 }
 elseif ($IsLinux) {
     Write-Host "Building for linux"
+    
+    # Disable cgo in the x64 Linux build. This will also statically
+    # link the resulting binary which increases backwards 
+    # compatibility with older versions of Linux.
+    if ($env:GOARCH -ne "arm64") {
+        $env:CGO_ENABLED = "0"
+    }
 }
 elseif ($IsMacOS) {
     Write-Host "Building for macOS"

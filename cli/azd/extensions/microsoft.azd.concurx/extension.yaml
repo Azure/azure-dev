@@ -1,9 +1,10 @@
 capabilities:
     - custom-commands
+    - metadata
 description: Concurrent execution for azd deployment
 displayName: Concurx
 id: microsoft.azd.concurx
 language: go
 namespace: concurx
 usage: azd concurx <command> [options]
-version: 0.0.1
+version: 0.1.0

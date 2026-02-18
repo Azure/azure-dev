@@ -209,8 +209,9 @@ func (x *PromptLocationResponse) GetLocation() *Location {
 }
 
 type PromptResourceGroupRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AzureContext  *AzureContext          `protobuf:"bytes,1,opt,name=azure_context,json=azureContext,proto3" json:"azure_context,omitempty"`
+	state         protoimpl.MessageState      `protogen:"open.v1"`
+	AzureContext  *AzureContext               `protobuf:"bytes,1,opt,name=azure_context,json=azureContext,proto3" json:"azure_context,omitempty"`
+	Options       *PromptResourceGroupOptions `protobuf:"bytes,2,opt,name=options,proto3" json:"options,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -248,6 +249,13 @@ func (*PromptResourceGroupRequest) Descriptor() ([]byte, []int) {
 func (x *PromptResourceGroupRequest) GetAzureContext() *AzureContext {
 	if x != nil {
 		return x.AzureContext
+	}
+	return nil
+}
+
+func (x *PromptResourceGroupRequest) GetOptions() *PromptResourceGroupOptions {
+	if x != nil {
+		return x.Options
 	}
 	return nil
 }
@@ -1415,6 +1423,8 @@ type PromptResourceSelectOptions struct {
 	LoadingMessage     string                 `protobuf:"bytes,7,opt,name=loading_message,json=loadingMessage,proto3" json:"loading_message,omitempty"`
 	DisplayNumbers     *bool                  `protobuf:"varint,8,opt,name=display_numbers,json=displayNumbers,proto3,oneof" json:"display_numbers,omitempty"`
 	DisplayCount       int32                  `protobuf:"varint,9,opt,name=display_count,json=displayCount,proto3" json:"display_count,omitempty"`
+	Hint               string                 `protobuf:"bytes,10,opt,name=hint,proto3" json:"hint,omitempty"`
+	EnableFiltering    *bool                  `protobuf:"varint,11,opt,name=enable_filtering,json=enableFiltering,proto3,oneof" json:"enable_filtering,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -1512,11 +1522,584 @@ func (x *PromptResourceSelectOptions) GetDisplayCount() int32 {
 	return 0
 }
 
+func (x *PromptResourceSelectOptions) GetHint() string {
+	if x != nil {
+		return x.Hint
+	}
+	return ""
+}
+
+func (x *PromptResourceSelectOptions) GetEnableFiltering() bool {
+	if x != nil && x.EnableFiltering != nil {
+		return *x.EnableFiltering
+	}
+	return false
+}
+
+type PromptResourceGroupOptions struct {
+	state         protoimpl.MessageState       `protogen:"open.v1"`
+	SelectOptions *PromptResourceSelectOptions `protobuf:"bytes,1,opt,name=select_options,json=selectOptions,proto3" json:"select_options,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PromptResourceGroupOptions) Reset() {
+	*x = PromptResourceGroupOptions{}
+	mi := &file_prompt_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PromptResourceGroupOptions) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PromptResourceGroupOptions) ProtoMessage() {}
+
+func (x *PromptResourceGroupOptions) ProtoReflect() protoreflect.Message {
+	mi := &file_prompt_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PromptResourceGroupOptions.ProtoReflect.Descriptor instead.
+func (*PromptResourceGroupOptions) Descriptor() ([]byte, []int) {
+	return file_prompt_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *PromptResourceGroupOptions) GetSelectOptions() *PromptResourceSelectOptions {
+	if x != nil {
+		return x.SelectOptions
+	}
+	return nil
+}
+
+type PromptAiModelRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Azure context with scope.subscription_id required.
+	AzureContext *AzureContext `protobuf:"bytes,1,opt,name=azure_context,json=azureContext,proto3" json:"azure_context,omitempty"`
+	// Optional model filter criteria.
+	Filter *AiModelFilterOptions `protobuf:"bytes,2,opt,name=filter,proto3" json:"filter,omitempty"`
+	// Optional select prompt customization (for example, message override).
+	SelectOptions *SelectOptions `protobuf:"bytes,3,opt,name=select_options,json=selectOptions,proto3" json:"select_options,omitempty"`
+	// Optional quota filter.
+	// Quota is evaluated using effective locations from filter.locations.
+	// With multiple locations, a model is kept if any location has sufficient quota.
+	Quota         *QuotaCheckOptions `protobuf:"bytes,4,opt,name=quota,proto3" json:"quota,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PromptAiModelRequest) Reset() {
+	*x = PromptAiModelRequest{}
+	mi := &file_prompt_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PromptAiModelRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PromptAiModelRequest) ProtoMessage() {}
+
+func (x *PromptAiModelRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_prompt_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PromptAiModelRequest.ProtoReflect.Descriptor instead.
+func (*PromptAiModelRequest) Descriptor() ([]byte, []int) {
+	return file_prompt_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *PromptAiModelRequest) GetAzureContext() *AzureContext {
+	if x != nil {
+		return x.AzureContext
+	}
+	return nil
+}
+
+func (x *PromptAiModelRequest) GetFilter() *AiModelFilterOptions {
+	if x != nil {
+		return x.Filter
+	}
+	return nil
+}
+
+func (x *PromptAiModelRequest) GetSelectOptions() *SelectOptions {
+	if x != nil {
+		return x.SelectOptions
+	}
+	return nil
+}
+
+func (x *PromptAiModelRequest) GetQuota() *QuotaCheckOptions {
+	if x != nil {
+		return x.Quota
+	}
+	return nil
+}
+
+type PromptAiModelResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Selected model from the filtered catalog.
+	Model         *AiModel `protobuf:"bytes,1,opt,name=model,proto3" json:"model,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PromptAiModelResponse) Reset() {
+	*x = PromptAiModelResponse{}
+	mi := &file_prompt_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PromptAiModelResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PromptAiModelResponse) ProtoMessage() {}
+
+func (x *PromptAiModelResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_prompt_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PromptAiModelResponse.ProtoReflect.Descriptor instead.
+func (*PromptAiModelResponse) Descriptor() ([]byte, []int) {
+	return file_prompt_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *PromptAiModelResponse) GetModel() *AiModel {
+	if x != nil {
+		return x.Model
+	}
+	return nil
+}
+
+type PromptAiDeploymentRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Azure context with scope.subscription_id required.
+	AzureContext *AzureContext `protobuf:"bytes,1,opt,name=azure_context,json=azureContext,proto3" json:"azure_context,omitempty"`
+	// Required model name to resolve deployment options for.
+	ModelName string `protobuf:"bytes,2,opt,name=model_name,json=modelName,proto3" json:"model_name,omitempty"`
+	// Optional deployment filters (locations/versions/SKUs/capacity).
+	Options *AiModelDeploymentOptions `protobuf:"bytes,3,opt,name=options,proto3" json:"options,omitempty"`
+	// Optional quota filter. Requires options.locations with exactly one location.
+	Quota *QuotaCheckOptions `protobuf:"bytes,4,opt,name=quota,proto3" json:"quota,omitempty"`
+	// Skip version prompt and use the default version when available.
+	UseDefaultVersion bool `protobuf:"varint,5,opt,name=use_default_version,json=useDefaultVersion,proto3" json:"use_default_version,omitempty"`
+	// Skip capacity prompt and use resolved/default capacity.
+	UseDefaultCapacity bool `protobuf:"varint,6,opt,name=use_default_capacity,json=useDefaultCapacity,proto3" json:"use_default_capacity,omitempty"`
+	// Include fine-tune SKUs (usage names ending with "-finetune").
+	IncludeFinetuneSkus bool `protobuf:"varint,7,opt,name=include_finetune_skus,json=includeFinetuneSkus,proto3" json:"include_finetune_skus,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *PromptAiDeploymentRequest) Reset() {
+	*x = PromptAiDeploymentRequest{}
+	mi := &file_prompt_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PromptAiDeploymentRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PromptAiDeploymentRequest) ProtoMessage() {}
+
+func (x *PromptAiDeploymentRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_prompt_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PromptAiDeploymentRequest.ProtoReflect.Descriptor instead.
+func (*PromptAiDeploymentRequest) Descriptor() ([]byte, []int) {
+	return file_prompt_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *PromptAiDeploymentRequest) GetAzureContext() *AzureContext {
+	if x != nil {
+		return x.AzureContext
+	}
+	return nil
+}
+
+func (x *PromptAiDeploymentRequest) GetModelName() string {
+	if x != nil {
+		return x.ModelName
+	}
+	return ""
+}
+
+func (x *PromptAiDeploymentRequest) GetOptions() *AiModelDeploymentOptions {
+	if x != nil {
+		return x.Options
+	}
+	return nil
+}
+
+func (x *PromptAiDeploymentRequest) GetQuota() *QuotaCheckOptions {
+	if x != nil {
+		return x.Quota
+	}
+	return nil
+}
+
+func (x *PromptAiDeploymentRequest) GetUseDefaultVersion() bool {
+	if x != nil {
+		return x.UseDefaultVersion
+	}
+	return false
+}
+
+func (x *PromptAiDeploymentRequest) GetUseDefaultCapacity() bool {
+	if x != nil {
+		return x.UseDefaultCapacity
+	}
+	return false
+}
+
+func (x *PromptAiDeploymentRequest) GetIncludeFinetuneSkus() bool {
+	if x != nil {
+		return x.IncludeFinetuneSkus
+	}
+	return false
+}
+
+type PromptAiDeploymentResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Selected deployment configuration.
+	Deployment    *AiModelDeployment `protobuf:"bytes,1,opt,name=deployment,proto3" json:"deployment,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PromptAiDeploymentResponse) Reset() {
+	*x = PromptAiDeploymentResponse{}
+	mi := &file_prompt_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PromptAiDeploymentResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PromptAiDeploymentResponse) ProtoMessage() {}
+
+func (x *PromptAiDeploymentResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_prompt_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PromptAiDeploymentResponse.ProtoReflect.Descriptor instead.
+func (*PromptAiDeploymentResponse) Descriptor() ([]byte, []int) {
+	return file_prompt_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *PromptAiDeploymentResponse) GetDeployment() *AiModelDeployment {
+	if x != nil {
+		return x.Deployment
+	}
+	return nil
+}
+
+type PromptAiLocationWithQuotaRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Azure context with scope.subscription_id required.
+	AzureContext *AzureContext `protobuf:"bytes,1,opt,name=azure_context,json=azureContext,proto3" json:"azure_context,omitempty"`
+	// Required quota requirements that each returned location must satisfy.
+	Requirements []*QuotaRequirement `protobuf:"bytes,2,rep,name=requirements,proto3" json:"requirements,omitempty"`
+	// Optional allow-list for candidate locations.
+	AllowedLocations []string `protobuf:"bytes,3,rep,name=allowed_locations,json=allowedLocations,proto3" json:"allowed_locations,omitempty"`
+	// Optional select prompt customization (for example, message override).
+	SelectOptions *SelectOptions `protobuf:"bytes,4,opt,name=select_options,json=selectOptions,proto3" json:"select_options,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PromptAiLocationWithQuotaRequest) Reset() {
+	*x = PromptAiLocationWithQuotaRequest{}
+	mi := &file_prompt_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PromptAiLocationWithQuotaRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PromptAiLocationWithQuotaRequest) ProtoMessage() {}
+
+func (x *PromptAiLocationWithQuotaRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_prompt_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PromptAiLocationWithQuotaRequest.ProtoReflect.Descriptor instead.
+func (*PromptAiLocationWithQuotaRequest) Descriptor() ([]byte, []int) {
+	return file_prompt_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *PromptAiLocationWithQuotaRequest) GetAzureContext() *AzureContext {
+	if x != nil {
+		return x.AzureContext
+	}
+	return nil
+}
+
+func (x *PromptAiLocationWithQuotaRequest) GetRequirements() []*QuotaRequirement {
+	if x != nil {
+		return x.Requirements
+	}
+	return nil
+}
+
+func (x *PromptAiLocationWithQuotaRequest) GetAllowedLocations() []string {
+	if x != nil {
+		return x.AllowedLocations
+	}
+	return nil
+}
+
+func (x *PromptAiLocationWithQuotaRequest) GetSelectOptions() *SelectOptions {
+	if x != nil {
+		return x.SelectOptions
+	}
+	return nil
+}
+
+type PromptAiLocationWithQuotaResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Selected location.
+	Location      *Location `protobuf:"bytes,1,opt,name=location,proto3" json:"location,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PromptAiLocationWithQuotaResponse) Reset() {
+	*x = PromptAiLocationWithQuotaResponse{}
+	mi := &file_prompt_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PromptAiLocationWithQuotaResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PromptAiLocationWithQuotaResponse) ProtoMessage() {}
+
+func (x *PromptAiLocationWithQuotaResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_prompt_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PromptAiLocationWithQuotaResponse.ProtoReflect.Descriptor instead.
+func (*PromptAiLocationWithQuotaResponse) Descriptor() ([]byte, []int) {
+	return file_prompt_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *PromptAiLocationWithQuotaResponse) GetLocation() *Location {
+	if x != nil {
+		return x.Location
+	}
+	return nil
+}
+
+type PromptAiModelLocationWithQuotaRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Azure context with scope.subscription_id required.
+	AzureContext *AzureContext `protobuf:"bytes,1,opt,name=azure_context,json=azureContext,proto3" json:"azure_context,omitempty"`
+	// Required model name to evaluate across locations.
+	ModelName string `protobuf:"bytes,2,opt,name=model_name,json=modelName,proto3" json:"model_name,omitempty"`
+	// Optional allow-list for candidate locations.
+	AllowedLocations []string `protobuf:"bytes,3,rep,name=allowed_locations,json=allowedLocations,proto3" json:"allowed_locations,omitempty"`
+	// Optional min remaining quota threshold.
+	Quota *QuotaCheckOptions `protobuf:"bytes,4,opt,name=quota,proto3" json:"quota,omitempty"`
+	// Optional select prompt customization (for example, message override).
+	SelectOptions *SelectOptions `protobuf:"bytes,5,opt,name=select_options,json=selectOptions,proto3" json:"select_options,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PromptAiModelLocationWithQuotaRequest) Reset() {
+	*x = PromptAiModelLocationWithQuotaRequest{}
+	mi := &file_prompt_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PromptAiModelLocationWithQuotaRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PromptAiModelLocationWithQuotaRequest) ProtoMessage() {}
+
+func (x *PromptAiModelLocationWithQuotaRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_prompt_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PromptAiModelLocationWithQuotaRequest.ProtoReflect.Descriptor instead.
+func (*PromptAiModelLocationWithQuotaRequest) Descriptor() ([]byte, []int) {
+	return file_prompt_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *PromptAiModelLocationWithQuotaRequest) GetAzureContext() *AzureContext {
+	if x != nil {
+		return x.AzureContext
+	}
+	return nil
+}
+
+func (x *PromptAiModelLocationWithQuotaRequest) GetModelName() string {
+	if x != nil {
+		return x.ModelName
+	}
+	return ""
+}
+
+func (x *PromptAiModelLocationWithQuotaRequest) GetAllowedLocations() []string {
+	if x != nil {
+		return x.AllowedLocations
+	}
+	return nil
+}
+
+func (x *PromptAiModelLocationWithQuotaRequest) GetQuota() *QuotaCheckOptions {
+	if x != nil {
+		return x.Quota
+	}
+	return nil
+}
+
+func (x *PromptAiModelLocationWithQuotaRequest) GetSelectOptions() *SelectOptions {
+	if x != nil {
+		return x.SelectOptions
+	}
+	return nil
+}
+
+type PromptAiModelLocationWithQuotaResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Selected location.
+	Location *Location `protobuf:"bytes,1,opt,name=location,proto3" json:"location,omitempty"`
+	// Maximum remaining quota at the selected location across model SKUs.
+	MaxRemainingQuota float64 `protobuf:"fixed64,2,opt,name=max_remaining_quota,json=maxRemainingQuota,proto3" json:"max_remaining_quota,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *PromptAiModelLocationWithQuotaResponse) Reset() {
+	*x = PromptAiModelLocationWithQuotaResponse{}
+	mi := &file_prompt_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PromptAiModelLocationWithQuotaResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PromptAiModelLocationWithQuotaResponse) ProtoMessage() {}
+
+func (x *PromptAiModelLocationWithQuotaResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_prompt_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PromptAiModelLocationWithQuotaResponse.ProtoReflect.Descriptor instead.
+func (*PromptAiModelLocationWithQuotaResponse) Descriptor() ([]byte, []int) {
+	return file_prompt_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *PromptAiModelLocationWithQuotaResponse) GetLocation() *Location {
+	if x != nil {
+		return x.Location
+	}
+	return nil
+}
+
+func (x *PromptAiModelLocationWithQuotaResponse) GetMaxRemainingQuota() float64 {
+	if x != nil {
+		return x.MaxRemainingQuota
+	}
+	return 0
+}
+
 var File_prompt_proto protoreflect.FileDescriptor
 
 const file_prompt_proto_rawDesc = "" +
 	"\n" +
-	"\fprompt.proto\x12\x06azdext\x1a\fmodels.proto\"W\n" +
+	"\fprompt.proto\x12\x06azdext\x1a\fmodels.proto\x1a\x0eai_model.proto\"W\n" +
 	"\x19PromptSubscriptionRequest\x12\x18\n" +
 	"\aMessage\x18\x01 \x01(\tR\aMessage\x12 \n" +
 	"\vHelpMessage\x18\x02 \x01(\tR\vHelpMessage\"V\n" +
@@ -1525,9 +2108,10 @@ const file_prompt_proto_rawDesc = "" +
 	"\x15PromptLocationRequest\x129\n" +
 	"\razure_context\x18\x01 \x01(\v2\x14.azdext.AzureContextR\fazureContext\"F\n" +
 	"\x16PromptLocationResponse\x12,\n" +
-	"\blocation\x18\x01 \x01(\v2\x10.azdext.LocationR\blocation\"W\n" +
+	"\blocation\x18\x01 \x01(\v2\x10.azdext.LocationR\blocation\"\x95\x01\n" +
 	"\x1aPromptResourceGroupRequest\x129\n" +
-	"\razure_context\x18\x01 \x01(\v2\x14.azdext.AzureContextR\fazureContext\"[\n" +
+	"\razure_context\x18\x01 \x01(\v2\x14.azdext.AzureContextR\fazureContext\x12<\n" +
+	"\aoptions\x18\x02 \x01(\v2\".azdext.PromptResourceGroupOptionsR\aoptions\"[\n" +
 	"\x1bPromptResourceGroupResponse\x12<\n" +
 	"\x0eresource_group\x18\x01 \x01(\v2\x15.azdext.ResourceGroupR\rresourceGroup\"B\n" +
 	"\x0eConfirmRequest\x120\n" +
@@ -1610,7 +2194,7 @@ const file_prompt_proto_rawDesc = "" +
 	"\rresource_type\x18\x01 \x01(\tR\fresourceType\x12\x14\n" +
 	"\x05kinds\x18\x02 \x03(\tR\x05kinds\x12;\n" +
 	"\x1aresource_type_display_name\x18\x03 \x01(\tR\x17resourceTypeDisplayName\x12J\n" +
-	"\x0eselect_options\x18\x04 \x01(\v2#.azdext.PromptResourceSelectOptionsR\rselectOptions\"\xdb\x03\n" +
+	"\x0eselect_options\x18\x04 \x01(\v2#.azdext.PromptResourceSelectOptionsR\rselectOptions\"\xb4\x04\n" +
 	"\x1bPromptResourceSelectOptions\x121\n" +
 	"\x12force_new_resource\x18\x01 \x01(\bH\x00R\x10forceNewResource\x88\x01\x01\x121\n" +
 	"\x12allow_new_resource\x18\x02 \x01(\bH\x01R\x10allowNewResource\x88\x01\x01\x120\n" +
@@ -1620,10 +2204,53 @@ const file_prompt_proto_rawDesc = "" +
 	"\fhelp_message\x18\x06 \x01(\tR\vhelpMessage\x12'\n" +
 	"\x0floading_message\x18\a \x01(\tR\x0eloadingMessage\x12,\n" +
 	"\x0fdisplay_numbers\x18\b \x01(\bH\x02R\x0edisplayNumbers\x88\x01\x01\x12#\n" +
-	"\rdisplay_count\x18\t \x01(\x05R\fdisplayCountB\x15\n" +
+	"\rdisplay_count\x18\t \x01(\x05R\fdisplayCount\x12\x12\n" +
+	"\x04hint\x18\n" +
+	" \x01(\tR\x04hint\x12.\n" +
+	"\x10enable_filtering\x18\v \x01(\bH\x03R\x0fenableFiltering\x88\x01\x01B\x15\n" +
 	"\x13_force_new_resourceB\x15\n" +
 	"\x13_allow_new_resourceB\x12\n" +
-	"\x10_display_numbers2\x80\x06\n" +
+	"\x10_display_numbersB\x13\n" +
+	"\x11_enable_filtering\"h\n" +
+	"\x1aPromptResourceGroupOptions\x12J\n" +
+	"\x0eselect_options\x18\x01 \x01(\v2#.azdext.PromptResourceSelectOptionsR\rselectOptions\"\xf6\x01\n" +
+	"\x14PromptAiModelRequest\x129\n" +
+	"\razure_context\x18\x01 \x01(\v2\x14.azdext.AzureContextR\fazureContext\x124\n" +
+	"\x06filter\x18\x02 \x01(\v2\x1c.azdext.AiModelFilterOptionsR\x06filter\x12<\n" +
+	"\x0eselect_options\x18\x03 \x01(\v2\x15.azdext.SelectOptionsR\rselectOptions\x12/\n" +
+	"\x05quota\x18\x04 \x01(\v2\x19.azdext.QuotaCheckOptionsR\x05quota\">\n" +
+	"\x15PromptAiModelResponse\x12%\n" +
+	"\x05model\x18\x01 \x01(\v2\x0f.azdext.AiModelR\x05model\"\xf8\x02\n" +
+	"\x19PromptAiDeploymentRequest\x129\n" +
+	"\razure_context\x18\x01 \x01(\v2\x14.azdext.AzureContextR\fazureContext\x12\x1d\n" +
+	"\n" +
+	"model_name\x18\x02 \x01(\tR\tmodelName\x12:\n" +
+	"\aoptions\x18\x03 \x01(\v2 .azdext.AiModelDeploymentOptionsR\aoptions\x12/\n" +
+	"\x05quota\x18\x04 \x01(\v2\x19.azdext.QuotaCheckOptionsR\x05quota\x12.\n" +
+	"\x13use_default_version\x18\x05 \x01(\bR\x11useDefaultVersion\x120\n" +
+	"\x14use_default_capacity\x18\x06 \x01(\bR\x12useDefaultCapacity\x122\n" +
+	"\x15include_finetune_skus\x18\a \x01(\bR\x13includeFinetuneSkus\"W\n" +
+	"\x1aPromptAiDeploymentResponse\x129\n" +
+	"\n" +
+	"deployment\x18\x01 \x01(\v2\x19.azdext.AiModelDeploymentR\n" +
+	"deployment\"\x86\x02\n" +
+	" PromptAiLocationWithQuotaRequest\x129\n" +
+	"\razure_context\x18\x01 \x01(\v2\x14.azdext.AzureContextR\fazureContext\x12<\n" +
+	"\frequirements\x18\x02 \x03(\v2\x18.azdext.QuotaRequirementR\frequirements\x12+\n" +
+	"\x11allowed_locations\x18\x03 \x03(\tR\x10allowedLocations\x12<\n" +
+	"\x0eselect_options\x18\x04 \x01(\v2\x15.azdext.SelectOptionsR\rselectOptions\"Q\n" +
+	"!PromptAiLocationWithQuotaResponse\x12,\n" +
+	"\blocation\x18\x01 \x01(\v2\x10.azdext.LocationR\blocation\"\x9d\x02\n" +
+	"%PromptAiModelLocationWithQuotaRequest\x129\n" +
+	"\razure_context\x18\x01 \x01(\v2\x14.azdext.AzureContextR\fazureContext\x12\x1d\n" +
+	"\n" +
+	"model_name\x18\x02 \x01(\tR\tmodelName\x12+\n" +
+	"\x11allowed_locations\x18\x03 \x03(\tR\x10allowedLocations\x12/\n" +
+	"\x05quota\x18\x04 \x01(\v2\x19.azdext.QuotaCheckOptionsR\x05quota\x12<\n" +
+	"\x0eselect_options\x18\x05 \x01(\v2\x15.azdext.SelectOptionsR\rselectOptions\"\x86\x01\n" +
+	"&PromptAiModelLocationWithQuotaResponse\x12,\n" +
+	"\blocation\x18\x01 \x01(\v2\x10.azdext.LocationR\blocation\x12.\n" +
+	"\x13max_remaining_quota\x18\x02 \x01(\x01R\x11maxRemainingQuota2\x9e\t\n" +
 	"\rPromptService\x12[\n" +
 	"\x12PromptSubscription\x12!.azdext.PromptSubscriptionRequest\x1a\".azdext.PromptSubscriptionResponse\x12O\n" +
 	"\x0ePromptLocation\x12\x1d.azdext.PromptLocationRequest\x1a\x1e.azdext.PromptLocationResponse\x12^\n" +
@@ -1633,7 +2260,11 @@ const file_prompt_proto_rawDesc = "" +
 	"\x06Select\x12\x15.azdext.SelectRequest\x1a\x16.azdext.SelectResponse\x12F\n" +
 	"\vMultiSelect\x12\x1a.azdext.MultiSelectRequest\x1a\x1b.azdext.MultiSelectResponse\x12s\n" +
 	"\x1aPromptSubscriptionResource\x12).azdext.PromptSubscriptionResourceRequest\x1a*.azdext.PromptSubscriptionResourceResponse\x12v\n" +
-	"\x1bPromptResourceGroupResource\x12*.azdext.PromptResourceGroupResourceRequest\x1a+.azdext.PromptResourceGroupResourceResponseB/Z-github.com/azure/azure-dev/cli/azd/pkg/azdextb\x06proto3"
+	"\x1bPromptResourceGroupResource\x12*.azdext.PromptResourceGroupResourceRequest\x1a+.azdext.PromptResourceGroupResourceResponse\x12L\n" +
+	"\rPromptAiModel\x12\x1c.azdext.PromptAiModelRequest\x1a\x1d.azdext.PromptAiModelResponse\x12[\n" +
+	"\x12PromptAiDeployment\x12!.azdext.PromptAiDeploymentRequest\x1a\".azdext.PromptAiDeploymentResponse\x12p\n" +
+	"\x19PromptAiLocationWithQuota\x12(.azdext.PromptAiLocationWithQuotaRequest\x1a).azdext.PromptAiLocationWithQuotaResponse\x12\x7f\n" +
+	"\x1ePromptAiModelLocationWithQuota\x12-.azdext.PromptAiModelLocationWithQuotaRequest\x1a..azdext.PromptAiModelLocationWithQuotaResponseB/Z-github.com/azure/azure-dev/cli/azd/pkg/azdextb\x06proto3"
 
 var (
 	file_prompt_proto_rawDescOnce sync.Once
@@ -1647,83 +2278,125 @@ func file_prompt_proto_rawDescGZIP() []byte {
 	return file_prompt_proto_rawDescData
 }
 
-var file_prompt_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
+var file_prompt_proto_msgTypes = make([]protoimpl.MessageInfo, 35)
 var file_prompt_proto_goTypes = []any{
-	(*PromptSubscriptionRequest)(nil),           // 0: azdext.PromptSubscriptionRequest
-	(*PromptSubscriptionResponse)(nil),          // 1: azdext.PromptSubscriptionResponse
-	(*PromptLocationRequest)(nil),               // 2: azdext.PromptLocationRequest
-	(*PromptLocationResponse)(nil),              // 3: azdext.PromptLocationResponse
-	(*PromptResourceGroupRequest)(nil),          // 4: azdext.PromptResourceGroupRequest
-	(*PromptResourceGroupResponse)(nil),         // 5: azdext.PromptResourceGroupResponse
-	(*ConfirmRequest)(nil),                      // 6: azdext.ConfirmRequest
-	(*ConfirmResponse)(nil),                     // 7: azdext.ConfirmResponse
-	(*PromptRequest)(nil),                       // 8: azdext.PromptRequest
-	(*PromptResponse)(nil),                      // 9: azdext.PromptResponse
-	(*SelectRequest)(nil),                       // 10: azdext.SelectRequest
-	(*SelectResponse)(nil),                      // 11: azdext.SelectResponse
-	(*MultiSelectRequest)(nil),                  // 12: azdext.MultiSelectRequest
-	(*MultiSelectResponse)(nil),                 // 13: azdext.MultiSelectResponse
-	(*PromptSubscriptionResourceRequest)(nil),   // 14: azdext.PromptSubscriptionResourceRequest
-	(*PromptSubscriptionResourceResponse)(nil),  // 15: azdext.PromptSubscriptionResourceResponse
-	(*PromptResourceGroupResourceRequest)(nil),  // 16: azdext.PromptResourceGroupResourceRequest
-	(*PromptResourceGroupResourceResponse)(nil), // 17: azdext.PromptResourceGroupResourceResponse
-	(*ConfirmOptions)(nil),                      // 18: azdext.ConfirmOptions
-	(*PromptOptions)(nil),                       // 19: azdext.PromptOptions
-	(*SelectChoice)(nil),                        // 20: azdext.SelectChoice
-	(*MultiSelectChoice)(nil),                   // 21: azdext.MultiSelectChoice
-	(*SelectOptions)(nil),                       // 22: azdext.SelectOptions
-	(*MultiSelectOptions)(nil),                  // 23: azdext.MultiSelectOptions
-	(*PromptResourceOptions)(nil),               // 24: azdext.PromptResourceOptions
-	(*PromptResourceSelectOptions)(nil),         // 25: azdext.PromptResourceSelectOptions
-	(*Subscription)(nil),                        // 26: azdext.Subscription
-	(*AzureContext)(nil),                        // 27: azdext.AzureContext
-	(*Location)(nil),                            // 28: azdext.Location
-	(*ResourceGroup)(nil),                       // 29: azdext.ResourceGroup
-	(*ResourceExtended)(nil),                    // 30: azdext.ResourceExtended
+	(*PromptSubscriptionRequest)(nil),              // 0: azdext.PromptSubscriptionRequest
+	(*PromptSubscriptionResponse)(nil),             // 1: azdext.PromptSubscriptionResponse
+	(*PromptLocationRequest)(nil),                  // 2: azdext.PromptLocationRequest
+	(*PromptLocationResponse)(nil),                 // 3: azdext.PromptLocationResponse
+	(*PromptResourceGroupRequest)(nil),             // 4: azdext.PromptResourceGroupRequest
+	(*PromptResourceGroupResponse)(nil),            // 5: azdext.PromptResourceGroupResponse
+	(*ConfirmRequest)(nil),                         // 6: azdext.ConfirmRequest
+	(*ConfirmResponse)(nil),                        // 7: azdext.ConfirmResponse
+	(*PromptRequest)(nil),                          // 8: azdext.PromptRequest
+	(*PromptResponse)(nil),                         // 9: azdext.PromptResponse
+	(*SelectRequest)(nil),                          // 10: azdext.SelectRequest
+	(*SelectResponse)(nil),                         // 11: azdext.SelectResponse
+	(*MultiSelectRequest)(nil),                     // 12: azdext.MultiSelectRequest
+	(*MultiSelectResponse)(nil),                    // 13: azdext.MultiSelectResponse
+	(*PromptSubscriptionResourceRequest)(nil),      // 14: azdext.PromptSubscriptionResourceRequest
+	(*PromptSubscriptionResourceResponse)(nil),     // 15: azdext.PromptSubscriptionResourceResponse
+	(*PromptResourceGroupResourceRequest)(nil),     // 16: azdext.PromptResourceGroupResourceRequest
+	(*PromptResourceGroupResourceResponse)(nil),    // 17: azdext.PromptResourceGroupResourceResponse
+	(*ConfirmOptions)(nil),                         // 18: azdext.ConfirmOptions
+	(*PromptOptions)(nil),                          // 19: azdext.PromptOptions
+	(*SelectChoice)(nil),                           // 20: azdext.SelectChoice
+	(*MultiSelectChoice)(nil),                      // 21: azdext.MultiSelectChoice
+	(*SelectOptions)(nil),                          // 22: azdext.SelectOptions
+	(*MultiSelectOptions)(nil),                     // 23: azdext.MultiSelectOptions
+	(*PromptResourceOptions)(nil),                  // 24: azdext.PromptResourceOptions
+	(*PromptResourceSelectOptions)(nil),            // 25: azdext.PromptResourceSelectOptions
+	(*PromptResourceGroupOptions)(nil),             // 26: azdext.PromptResourceGroupOptions
+	(*PromptAiModelRequest)(nil),                   // 27: azdext.PromptAiModelRequest
+	(*PromptAiModelResponse)(nil),                  // 28: azdext.PromptAiModelResponse
+	(*PromptAiDeploymentRequest)(nil),              // 29: azdext.PromptAiDeploymentRequest
+	(*PromptAiDeploymentResponse)(nil),             // 30: azdext.PromptAiDeploymentResponse
+	(*PromptAiLocationWithQuotaRequest)(nil),       // 31: azdext.PromptAiLocationWithQuotaRequest
+	(*PromptAiLocationWithQuotaResponse)(nil),      // 32: azdext.PromptAiLocationWithQuotaResponse
+	(*PromptAiModelLocationWithQuotaRequest)(nil),  // 33: azdext.PromptAiModelLocationWithQuotaRequest
+	(*PromptAiModelLocationWithQuotaResponse)(nil), // 34: azdext.PromptAiModelLocationWithQuotaResponse
+	(*Subscription)(nil),                           // 35: azdext.Subscription
+	(*AzureContext)(nil),                           // 36: azdext.AzureContext
+	(*Location)(nil),                               // 37: azdext.Location
+	(*ResourceGroup)(nil),                          // 38: azdext.ResourceGroup
+	(*ResourceExtended)(nil),                       // 39: azdext.ResourceExtended
+	(*AiModelFilterOptions)(nil),                   // 40: azdext.AiModelFilterOptions
+	(*QuotaCheckOptions)(nil),                      // 41: azdext.QuotaCheckOptions
+	(*AiModel)(nil),                                // 42: azdext.AiModel
+	(*AiModelDeploymentOptions)(nil),               // 43: azdext.AiModelDeploymentOptions
+	(*AiModelDeployment)(nil),                      // 44: azdext.AiModelDeployment
+	(*QuotaRequirement)(nil),                       // 45: azdext.QuotaRequirement
 }
 var file_prompt_proto_depIdxs = []int32{
-	26, // 0: azdext.PromptSubscriptionResponse.subscription:type_name -> azdext.Subscription
-	27, // 1: azdext.PromptLocationRequest.azure_context:type_name -> azdext.AzureContext
-	28, // 2: azdext.PromptLocationResponse.location:type_name -> azdext.Location
-	27, // 3: azdext.PromptResourceGroupRequest.azure_context:type_name -> azdext.AzureContext
-	29, // 4: azdext.PromptResourceGroupResponse.resource_group:type_name -> azdext.ResourceGroup
-	18, // 5: azdext.ConfirmRequest.options:type_name -> azdext.ConfirmOptions
-	19, // 6: azdext.PromptRequest.options:type_name -> azdext.PromptOptions
-	22, // 7: azdext.SelectRequest.options:type_name -> azdext.SelectOptions
-	23, // 8: azdext.MultiSelectRequest.options:type_name -> azdext.MultiSelectOptions
-	21, // 9: azdext.MultiSelectResponse.values:type_name -> azdext.MultiSelectChoice
-	27, // 10: azdext.PromptSubscriptionResourceRequest.azure_context:type_name -> azdext.AzureContext
-	24, // 11: azdext.PromptSubscriptionResourceRequest.options:type_name -> azdext.PromptResourceOptions
-	30, // 12: azdext.PromptSubscriptionResourceResponse.resource:type_name -> azdext.ResourceExtended
-	27, // 13: azdext.PromptResourceGroupResourceRequest.azure_context:type_name -> azdext.AzureContext
-	24, // 14: azdext.PromptResourceGroupResourceRequest.options:type_name -> azdext.PromptResourceOptions
-	30, // 15: azdext.PromptResourceGroupResourceResponse.resource:type_name -> azdext.ResourceExtended
-	20, // 16: azdext.SelectOptions.choices:type_name -> azdext.SelectChoice
-	21, // 17: azdext.MultiSelectOptions.choices:type_name -> azdext.MultiSelectChoice
-	25, // 18: azdext.PromptResourceOptions.select_options:type_name -> azdext.PromptResourceSelectOptions
-	0,  // 19: azdext.PromptService.PromptSubscription:input_type -> azdext.PromptSubscriptionRequest
-	2,  // 20: azdext.PromptService.PromptLocation:input_type -> azdext.PromptLocationRequest
-	4,  // 21: azdext.PromptService.PromptResourceGroup:input_type -> azdext.PromptResourceGroupRequest
-	6,  // 22: azdext.PromptService.Confirm:input_type -> azdext.ConfirmRequest
-	8,  // 23: azdext.PromptService.Prompt:input_type -> azdext.PromptRequest
-	10, // 24: azdext.PromptService.Select:input_type -> azdext.SelectRequest
-	12, // 25: azdext.PromptService.MultiSelect:input_type -> azdext.MultiSelectRequest
-	14, // 26: azdext.PromptService.PromptSubscriptionResource:input_type -> azdext.PromptSubscriptionResourceRequest
-	16, // 27: azdext.PromptService.PromptResourceGroupResource:input_type -> azdext.PromptResourceGroupResourceRequest
-	1,  // 28: azdext.PromptService.PromptSubscription:output_type -> azdext.PromptSubscriptionResponse
-	3,  // 29: azdext.PromptService.PromptLocation:output_type -> azdext.PromptLocationResponse
-	5,  // 30: azdext.PromptService.PromptResourceGroup:output_type -> azdext.PromptResourceGroupResponse
-	7,  // 31: azdext.PromptService.Confirm:output_type -> azdext.ConfirmResponse
-	9,  // 32: azdext.PromptService.Prompt:output_type -> azdext.PromptResponse
-	11, // 33: azdext.PromptService.Select:output_type -> azdext.SelectResponse
-	13, // 34: azdext.PromptService.MultiSelect:output_type -> azdext.MultiSelectResponse
-	15, // 35: azdext.PromptService.PromptSubscriptionResource:output_type -> azdext.PromptSubscriptionResourceResponse
-	17, // 36: azdext.PromptService.PromptResourceGroupResource:output_type -> azdext.PromptResourceGroupResourceResponse
-	28, // [28:37] is the sub-list for method output_type
-	19, // [19:28] is the sub-list for method input_type
-	19, // [19:19] is the sub-list for extension type_name
-	19, // [19:19] is the sub-list for extension extendee
-	0,  // [0:19] is the sub-list for field type_name
+	35, // 0: azdext.PromptSubscriptionResponse.subscription:type_name -> azdext.Subscription
+	36, // 1: azdext.PromptLocationRequest.azure_context:type_name -> azdext.AzureContext
+	37, // 2: azdext.PromptLocationResponse.location:type_name -> azdext.Location
+	36, // 3: azdext.PromptResourceGroupRequest.azure_context:type_name -> azdext.AzureContext
+	26, // 4: azdext.PromptResourceGroupRequest.options:type_name -> azdext.PromptResourceGroupOptions
+	38, // 5: azdext.PromptResourceGroupResponse.resource_group:type_name -> azdext.ResourceGroup
+	18, // 6: azdext.ConfirmRequest.options:type_name -> azdext.ConfirmOptions
+	19, // 7: azdext.PromptRequest.options:type_name -> azdext.PromptOptions
+	22, // 8: azdext.SelectRequest.options:type_name -> azdext.SelectOptions
+	23, // 9: azdext.MultiSelectRequest.options:type_name -> azdext.MultiSelectOptions
+	21, // 10: azdext.MultiSelectResponse.values:type_name -> azdext.MultiSelectChoice
+	36, // 11: azdext.PromptSubscriptionResourceRequest.azure_context:type_name -> azdext.AzureContext
+	24, // 12: azdext.PromptSubscriptionResourceRequest.options:type_name -> azdext.PromptResourceOptions
+	39, // 13: azdext.PromptSubscriptionResourceResponse.resource:type_name -> azdext.ResourceExtended
+	36, // 14: azdext.PromptResourceGroupResourceRequest.azure_context:type_name -> azdext.AzureContext
+	24, // 15: azdext.PromptResourceGroupResourceRequest.options:type_name -> azdext.PromptResourceOptions
+	39, // 16: azdext.PromptResourceGroupResourceResponse.resource:type_name -> azdext.ResourceExtended
+	20, // 17: azdext.SelectOptions.choices:type_name -> azdext.SelectChoice
+	21, // 18: azdext.MultiSelectOptions.choices:type_name -> azdext.MultiSelectChoice
+	25, // 19: azdext.PromptResourceOptions.select_options:type_name -> azdext.PromptResourceSelectOptions
+	25, // 20: azdext.PromptResourceGroupOptions.select_options:type_name -> azdext.PromptResourceSelectOptions
+	36, // 21: azdext.PromptAiModelRequest.azure_context:type_name -> azdext.AzureContext
+	40, // 22: azdext.PromptAiModelRequest.filter:type_name -> azdext.AiModelFilterOptions
+	22, // 23: azdext.PromptAiModelRequest.select_options:type_name -> azdext.SelectOptions
+	41, // 24: azdext.PromptAiModelRequest.quota:type_name -> azdext.QuotaCheckOptions
+	42, // 25: azdext.PromptAiModelResponse.model:type_name -> azdext.AiModel
+	36, // 26: azdext.PromptAiDeploymentRequest.azure_context:type_name -> azdext.AzureContext
+	43, // 27: azdext.PromptAiDeploymentRequest.options:type_name -> azdext.AiModelDeploymentOptions
+	41, // 28: azdext.PromptAiDeploymentRequest.quota:type_name -> azdext.QuotaCheckOptions
+	44, // 29: azdext.PromptAiDeploymentResponse.deployment:type_name -> azdext.AiModelDeployment
+	36, // 30: azdext.PromptAiLocationWithQuotaRequest.azure_context:type_name -> azdext.AzureContext
+	45, // 31: azdext.PromptAiLocationWithQuotaRequest.requirements:type_name -> azdext.QuotaRequirement
+	22, // 32: azdext.PromptAiLocationWithQuotaRequest.select_options:type_name -> azdext.SelectOptions
+	37, // 33: azdext.PromptAiLocationWithQuotaResponse.location:type_name -> azdext.Location
+	36, // 34: azdext.PromptAiModelLocationWithQuotaRequest.azure_context:type_name -> azdext.AzureContext
+	41, // 35: azdext.PromptAiModelLocationWithQuotaRequest.quota:type_name -> azdext.QuotaCheckOptions
+	22, // 36: azdext.PromptAiModelLocationWithQuotaRequest.select_options:type_name -> azdext.SelectOptions
+	37, // 37: azdext.PromptAiModelLocationWithQuotaResponse.location:type_name -> azdext.Location
+	0,  // 38: azdext.PromptService.PromptSubscription:input_type -> azdext.PromptSubscriptionRequest
+	2,  // 39: azdext.PromptService.PromptLocation:input_type -> azdext.PromptLocationRequest
+	4,  // 40: azdext.PromptService.PromptResourceGroup:input_type -> azdext.PromptResourceGroupRequest
+	6,  // 41: azdext.PromptService.Confirm:input_type -> azdext.ConfirmRequest
+	8,  // 42: azdext.PromptService.Prompt:input_type -> azdext.PromptRequest
+	10, // 43: azdext.PromptService.Select:input_type -> azdext.SelectRequest
+	12, // 44: azdext.PromptService.MultiSelect:input_type -> azdext.MultiSelectRequest
+	14, // 45: azdext.PromptService.PromptSubscriptionResource:input_type -> azdext.PromptSubscriptionResourceRequest
+	16, // 46: azdext.PromptService.PromptResourceGroupResource:input_type -> azdext.PromptResourceGroupResourceRequest
+	27, // 47: azdext.PromptService.PromptAiModel:input_type -> azdext.PromptAiModelRequest
+	29, // 48: azdext.PromptService.PromptAiDeployment:input_type -> azdext.PromptAiDeploymentRequest
+	31, // 49: azdext.PromptService.PromptAiLocationWithQuota:input_type -> azdext.PromptAiLocationWithQuotaRequest
+	33, // 50: azdext.PromptService.PromptAiModelLocationWithQuota:input_type -> azdext.PromptAiModelLocationWithQuotaRequest
+	1,  // 51: azdext.PromptService.PromptSubscription:output_type -> azdext.PromptSubscriptionResponse
+	3,  // 52: azdext.PromptService.PromptLocation:output_type -> azdext.PromptLocationResponse
+	5,  // 53: azdext.PromptService.PromptResourceGroup:output_type -> azdext.PromptResourceGroupResponse
+	7,  // 54: azdext.PromptService.Confirm:output_type -> azdext.ConfirmResponse
+	9,  // 55: azdext.PromptService.Prompt:output_type -> azdext.PromptResponse
+	11, // 56: azdext.PromptService.Select:output_type -> azdext.SelectResponse
+	13, // 57: azdext.PromptService.MultiSelect:output_type -> azdext.MultiSelectResponse
+	15, // 58: azdext.PromptService.PromptSubscriptionResource:output_type -> azdext.PromptSubscriptionResourceResponse
+	17, // 59: azdext.PromptService.PromptResourceGroupResource:output_type -> azdext.PromptResourceGroupResourceResponse
+	28, // 60: azdext.PromptService.PromptAiModel:output_type -> azdext.PromptAiModelResponse
+	30, // 61: azdext.PromptService.PromptAiDeployment:output_type -> azdext.PromptAiDeploymentResponse
+	32, // 62: azdext.PromptService.PromptAiLocationWithQuota:output_type -> azdext.PromptAiLocationWithQuotaResponse
+	34, // 63: azdext.PromptService.PromptAiModelLocationWithQuota:output_type -> azdext.PromptAiModelLocationWithQuotaResponse
+	51, // [51:64] is the sub-list for method output_type
+	38, // [38:51] is the sub-list for method input_type
+	38, // [38:38] is the sub-list for extension type_name
+	38, // [38:38] is the sub-list for extension extendee
+	0,  // [0:38] is the sub-list for field type_name
 }
 
 func init() { file_prompt_proto_init() }
@@ -1732,6 +2405,7 @@ func file_prompt_proto_init() {
 		return
 	}
 	file_models_proto_init()
+	file_ai_model_proto_init()
 	file_prompt_proto_msgTypes[7].OneofWrappers = []any{}
 	file_prompt_proto_msgTypes[11].OneofWrappers = []any{}
 	file_prompt_proto_msgTypes[18].OneofWrappers = []any{}
@@ -1744,7 +2418,7 @@ func file_prompt_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_prompt_proto_rawDesc), len(file_prompt_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   26,
+			NumMessages:   35,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

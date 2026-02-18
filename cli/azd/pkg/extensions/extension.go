@@ -14,17 +14,18 @@ import (
 
 // Extension represents an installed extension.
 type Extension struct {
-	Id           string           `json:"id"`
-	Namespace    string           `json:"namespace"`
-	Capabilities []CapabilityType `json:"capabilities,omitempty"`
-	DisplayName  string           `json:"displayName"`
-	Description  string           `json:"description"`
-	Version      string           `json:"version"`
-	Usage        string           `json:"usage"`
-	Path         string           `json:"path"`
-	Source       string           `json:"source"`
-	Providers    []Provider       `json:"providers,omitempty"`
-	McpConfig    *McpConfig       `json:"mcp,omitempty"`
+	Id                string           `json:"id"`
+	Namespace         string           `json:"namespace"`
+	Capabilities      []CapabilityType `json:"capabilities,omitempty"`
+	DisplayName       string           `json:"displayName"`
+	Description       string           `json:"description"`
+	Version           string           `json:"version"`
+	Usage             string           `json:"usage"`
+	Path              string           `json:"path"`
+	Source            string           `json:"source"`
+	Providers         []Provider       `json:"providers,omitempty"`
+	McpConfig         *McpConfig       `json:"mcp,omitempty"`
+	LastUpdateWarning string           `json:"lastUpdateWarning,omitempty"`
 
 	stdin  *bytes.Buffer
 	stdout *output.DynamicMultiWriter

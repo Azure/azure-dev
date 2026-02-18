@@ -39,11 +39,6 @@ type Options struct {
 	Annotations map[string]string
 }
 
-func (o *Options) IsChildAction(ctx context.Context) bool {
-	value, ok := ctx.Value(childActionKey).(bool)
-	return ok && value
-}
-
 // Sets the container to be used for resolving middleware components
 func (o *Options) WithContainer(container *ioc.NestedContainer) {
 	o.container = container
@@ -99,14 +94,7 @@ func (r *MiddlewareRunner) RunAction(
 
 			var middleware Middleware
 			if err := actionContainer.ResolveNamed(middlewareName, &middleware); err != nil {
-				log.Printf("failed resolving middleware '%s' : %v\n", middlewareName, err)
-			}
-
-			// It is an expected scenario that the middleware cannot be resolved
-			// due to missing dependency or other project configuration.
-			// In this case simply continue the chain with `nextFn`
-			if middleware == nil {
-				return nextFn(ctx)
+				return nil, err
 			}
 
 			log.Printf("running middleware '%s'\n", middlewareName)
@@ -149,4 +137,11 @@ func (r *MiddlewareRunner) Use(name string, resolveFn any) error {
 
 func WithChildAction(ctx context.Context) context.Context {
 	return context.WithValue(ctx, childActionKey, true)
+}
+
+// IsChildAction checks if the given context was created by WithChildAction.
+// This is used to determine if a command is being executed as part of a workflow step.
+func IsChildAction(ctx context.Context) bool {
+	value, ok := ctx.Value(childActionKey).(bool)
+	return ok && value
 }

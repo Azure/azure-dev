@@ -29,6 +29,7 @@ armcosmos
 armdeploymentstacks
 armmachinelearning
 armmsi
+armoperationalinsights
 armresourcegraph
 armsql
 aspnet
@@ -54,6 +55,7 @@ azruntime
 azsdk
 azureai
 azureaiagent
+azureappservice
 AZURECLI
 azurecodingagent
 azureedge
@@ -74,6 +76,7 @@ BUILDNUMBER
 buildpacks
 byoi
 callstack
+centralus
 cflags
 charmbracelet
 circleci
@@ -134,7 +137,9 @@ gjson
 go-imath
 GOARCH
 GOCOVERDIR
+Ghostty
 godotenv
+gofmt
 golangci
 gosec
 goterm
@@ -149,6 +154,7 @@ ineffassign
 jaegertracing
 javac
 jmes
+jmespath
 jquery
 keychain
 kubelogin
@@ -190,6 +196,7 @@ oneauth
 oneline
 onmicrosoft
 opentelemetry
+operationalinsights
 ostest
 osutil
 osversion

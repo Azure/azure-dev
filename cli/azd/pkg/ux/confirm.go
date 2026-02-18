@@ -12,11 +12,10 @@ import (
 	"slices"
 	"strings"
 
+	"dario.cat/mergo"
+	surveyterm "github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux/internal"
-
-	"dario.cat/mergo"
-	"github.com/eiannone/keyboard"
 )
 
 // ConfirmOptions represents the options for the Confirm component.
@@ -144,7 +143,7 @@ func (p *Confirm) Ask(ctx context.Context) (*bool, error) {
 
 		p.showHelp = args.Hint
 
-		if args.Key == keyboard.KeyEnter {
+		if args.Key == surveyterm.KeyEnter {
 			p.submitted = true
 
 			if !p.hasValidationError {

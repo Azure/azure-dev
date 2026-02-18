@@ -1,5 +1,12 @@
 # Release History
 
+## 0.6.0
+
+### Features Added
+
+- Add metadata capability
+- Support `AZD_EXT_DEBUG=true` for debugging
+
 ## 0.5.2
 
 ### Bugs fixed

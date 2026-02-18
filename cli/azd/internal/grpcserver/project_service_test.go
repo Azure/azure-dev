@@ -48,13 +48,12 @@ func Test_ProjectService_NoProject(t *testing.T) {
 	})
 
 	// Create mock GitHub CLI.
-	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
-	require.NoError(t, err)
+	ghCli := github.NewGitHubCli(mockContext.Console, mockContext.CommandRunner)
 
 	// Create the service with ImportManager.
 	importManager := project.NewImportManager(&project.DotNetImporter{})
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, lazyProjectConfig, importManager, ghCli)
-	_, err = service.Get(*mockContext.Context, &azdext.EmptyRequest{})
+	service := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, ghCli)
+	_, err := service.Get(*mockContext.Context, &azdext.EmptyRequest{})
 	require.Error(t, err)
 }
 
@@ -105,12 +104,11 @@ func Test_ProjectService_Flow(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create mock GitHub CLI.
-	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
-	require.NoError(t, err)
+	ghCli := github.NewGitHubCli(mockContext.Console, mockContext.CommandRunner)
 
 	// Create the service with ImportManager.
 	importManager := project.NewImportManager(&project.DotNetImporter{})
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, lazyProjectConfig, importManager, ghCli)
+	service := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, ghCli)
 
 	// Test: Retrieve project details.
 	getResponse, err := service.Get(*mockContext.Context, &azdext.EmptyRequest{})
@@ -154,12 +152,11 @@ func Test_ProjectService_AddService(t *testing.T) {
 	lazyProjectConfig := lazy.From(&projectConfig)
 
 	// Create mock GitHub CLI.
-	ghCli, err := github.NewGitHubCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
-	require.NoError(t, err)
+	ghCli := github.NewGitHubCli(mockContext.Console, mockContext.CommandRunner)
 
 	// Create the project service with ImportManager.
 	importManager := project.NewImportManager(&project.DotNetImporter{})
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, lazyProjectConfig, importManager, ghCli)
+	service := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, ghCli)
 
 	// Prepare a new service addition request.
 	serviceRequest := &azdext.AddServiceRequest{
@@ -224,7 +221,7 @@ func Test_ProjectService_ConfigSection(t *testing.T) {
 	lazyProjectConfig := lazy.From(projectConfig)
 
 	importManager := project.NewImportManager(&project.DotNetImporter{})
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, lazyProjectConfig, importManager, nil)
+	service := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, nil)
 
 	t.Run("GetConfigSection_Success", func(t *testing.T) {
 		resp, err := service.GetConfigSection(*mockContext.Context, &azdext.GetProjectConfigSectionRequest{
@@ -293,7 +290,7 @@ func Test_ProjectService_ConfigValue(t *testing.T) {
 	lazyProjectConfig := lazy.From(projectConfig)
 
 	importManager := project.NewImportManager(&project.DotNetImporter{})
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, lazyProjectConfig, importManager, nil)
+	service := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, nil)
 
 	t.Run("GetConfigValue_String", func(t *testing.T) {
 		resp, err := service.GetConfigValue(*mockContext.Context, &azdext.GetProjectConfigValueRequest{
@@ -367,7 +364,7 @@ func Test_ProjectService_SetConfigSection(t *testing.T) {
 	lazyProjectConfig := lazy.From(projectConfig)
 
 	importManager := project.NewImportManager(&project.DotNetImporter{})
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, lazyProjectConfig, importManager, nil)
+	service := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, nil)
 
 	t.Run("SetConfigSection_NewSection", func(t *testing.T) {
 		// Create section data
@@ -450,7 +447,7 @@ func Test_ProjectService_SetConfigValue(t *testing.T) {
 	lazyProjectConfig := lazy.From(projectConfig)
 
 	importManager := project.NewImportManager(&project.DotNetImporter{})
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, lazyProjectConfig, importManager, nil)
+	service := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, nil)
 
 	t.Run("SetConfigValue_String", func(t *testing.T) {
 		value, err := structpb.NewValue("test-string")
@@ -547,7 +544,7 @@ func Test_ProjectService_UnsetConfig(t *testing.T) {
 	lazyProjectConfig := lazy.From(projectConfig)
 
 	importManager := project.NewImportManager(&project.DotNetImporter{})
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, lazyProjectConfig, importManager, nil)
+	service := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, nil)
 
 	t.Run("UnsetConfig_NestedValue", func(t *testing.T) {
 		_, err := service.UnsetConfig(*mockContext.Context, &azdext.UnsetProjectConfigRequest{
@@ -617,7 +614,7 @@ func Test_ProjectService_ConfigNilAdditionalProperties(t *testing.T) {
 	lazyProjectConfig := lazy.From(projectConfig)
 
 	importManager := project.NewImportManager(&project.DotNetImporter{})
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, lazyProjectConfig, importManager, nil)
+	service := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, nil)
 
 	t.Run("GetConfigValue_NilAdditionalProperties", func(t *testing.T) {
 		resp, err := service.GetConfigValue(*mockContext.Context, &azdext.GetProjectConfigValueRequest{
@@ -706,7 +703,7 @@ func Test_ProjectService_ServiceConfiguration(t *testing.T) {
 
 	// Create the service.
 	importManager := project.NewImportManager(&project.DotNetImporter{})
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, lazyProjectConfig, importManager, nil)
+	service := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, nil)
 
 	t.Run("GetServiceConfigSection_Found", func(t *testing.T) {
 		resp, err := service.GetServiceConfigSection(*mockContext.Context, &azdext.GetServiceConfigSectionRequest{
@@ -982,7 +979,7 @@ func Test_ProjectService_ServiceConfiguration_NilAdditionalProperties(t *testing
 
 	// Create the service.
 	importManager := project.NewImportManager(&project.DotNetImporter{})
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, lazyProjectConfig, importManager, nil)
+	service := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, nil)
 
 	t.Run("GetServiceConfigSection_NilAdditionalProperties", func(t *testing.T) {
 		resp, err := service.GetServiceConfigSection(*mockContext.Context, &azdext.GetServiceConfigSectionRequest{
@@ -1056,7 +1053,7 @@ func Test_ProjectService_ChangeServiceHost(t *testing.T) {
 	lazyProjectConfig := lazy.From(projectConfig)
 
 	importManager := project.NewImportManager(&project.DotNetImporter{})
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, lazyProjectConfig, importManager, nil)
+	service := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, nil)
 
 	// Test 1: Get the current host value
 	getResp, err := service.GetServiceConfigValue(*mockContext.Context, &azdext.GetServiceConfigValueRequest{
@@ -1139,7 +1136,7 @@ func Test_ProjectService_TypeValidation_InvalidChangesNotPersisted(t *testing.T)
 	lazyProjectConfig := lazy.From(loadedConfig)
 
 	importManager := project.NewImportManager(&project.DotNetImporter{})
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, lazyProjectConfig, importManager, nil)
+	service := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, nil)
 
 	t.Run("Project_SetInfraToInt_ShouldFailAndNotPersist", func(t *testing.T) {
 		// Try to set "infra" (which should be an object) to an integer
@@ -1333,7 +1330,7 @@ func Test_ProjectService_TypeValidation_CoercedValues(t *testing.T) {
 	lazyProjectConfig := lazy.From(loadedConfig)
 
 	importManager := project.NewImportManager(&project.DotNetImporter{})
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, lazyProjectConfig, importManager, nil)
+	service := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, nil)
 
 	t.Run("SetNameToInt_GetsCoercedToString", func(t *testing.T) {
 		// Try to set "name" (which should be a string) to an integer
@@ -1466,7 +1463,7 @@ func Test_ProjectService_EventDispatcherPreservation(t *testing.T) {
 
 	// Create project service
 	importManager := project.NewImportManager(&project.DotNetImporter{})
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, lazyProjectConfig, importManager, nil)
+	service := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, nil)
 
 	// Step 3: Modify project configuration
 	customValue, err := structpb.NewValue("project-custom-value")
@@ -1642,7 +1639,7 @@ func Test_ProjectService_EventDispatcherPreservation_MultipleUpdates(t *testing.
 	require.NoError(t, err)
 
 	importManager := project.NewImportManager(&project.DotNetImporter{})
-	service := NewProjectService(lazyAzdContext, lazyEnvManager, lazyProjectConfig, importManager, nil)
+	service := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, nil)
 
 	// Perform multiple configuration updates
 	for i := 1; i <= 3; i++ {
@@ -1712,7 +1709,7 @@ func Test_ProjectService_ServiceConfigValue_EmptyPath(t *testing.T) {
 
 	// Create the service
 	importManager := project.NewImportManager(&project.DotNetImporter{})
-	projectService := NewProjectService(lazyAzdContext, lazyEnvManager, lazyProjectConfig, importManager, nil)
+	projectService := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, nil)
 
 	t.Run("GetServiceConfigValue_EmptyPath", func(t *testing.T) {
 		_, err := projectService.GetServiceConfigValue(*mockContext.Context, &azdext.GetServiceConfigValueRequest{
@@ -1777,7 +1774,7 @@ func Test_ProjectService_EmptyStringValidation(t *testing.T) {
 
 	// Create the service
 	importManager := project.NewImportManager(&project.DotNetImporter{})
-	projectService := NewProjectService(lazyAzdContext, lazyEnvManager, lazyProjectConfig, importManager, nil)
+	projectService := NewProjectService(lazyAzdContext, lazyEnvManager, nil, nil, lazyProjectConfig, importManager, nil)
 
 	// Project-level config method validations
 	t.Run("GetConfigValue_EmptyPath", func(t *testing.T) {

@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -27,64 +28,86 @@ import (
 // user).
 var Version semver.Version = semver.MustParse("0.39.26")
 
-// NewCli creates a new Bicep CLI. Azd manages its own copy of the bicep CLI, stored in `$AZD_CONFIG_DIR/bin`. If
-// bicep is not present at this location, or if it is present but is older than the minimum supported version, it is
-// downloaded.
-func NewCli(
-	ctx context.Context,
-	console input.Console,
-	commandRunner exec.CommandRunner,
-) (*Cli, error) {
-	return newCliWithTransporter(ctx, console, commandRunner, http.DefaultClient)
+// Cli is a wrapper around the bicep CLI.
+// The CLI automatically ensures bicep is installed before executing commands.
+//
+// Concurrency notes: The sync.Once is per-instance, not global. In normal operation, the IoC
+// container registers Cli as a singleton, so one shared instance is used. However, some code paths
+// (e.g., service_target_containerapp.go) create new instances inline. If multiple instances race to
+// install bicep concurrently, this is safe because downloadBicep uses atomic file operations
+// (temp file + rename). The only downside is potentially redundant downloads, which is rare and harmless.
+type Cli struct {
+	path        string
+	runner      exec.CommandRunner
+	console     input.Console
+	transporter policy.Transporter
+
+	installOnce sync.Once
+	installErr  error
 }
 
-// newCliWithTransporter is like NewBicepCli but allows providing a custom transport to use when downloading the
-// Bicep CLI, for testing purposes.
+// NewCli creates a new Bicep CLI wrapper.
+// The CLI automatically ensures bicep is installed when Build or BuildBicepParam is called.
+func NewCli(console input.Console, commandRunner exec.CommandRunner) *Cli {
+	return newCliWithTransporter(console, commandRunner, http.DefaultClient)
+}
+
+// newCliWithTransporter is like NewCli but allows providing a custom transport for testing.
 func newCliWithTransporter(
-	ctx context.Context,
 	console input.Console,
 	commandRunner exec.CommandRunner,
 	transporter policy.Transporter,
-) (*Cli, error) {
+) *Cli {
+	return &Cli{
+		runner:      commandRunner,
+		console:     console,
+		transporter: transporter,
+	}
+}
+
+// ensureInstalledOnce checks if bicep is available and downloads/upgrades if needed.
+// This is safe to call multiple times; installation only happens once.
+func (cli *Cli) ensureInstalledOnce(ctx context.Context) error {
+	cli.installOnce.Do(func() {
+		cli.installErr = cli.ensureInstalled(ctx)
+	})
+	return cli.installErr
+}
+
+func (cli *Cli) ensureInstalled(ctx context.Context) error {
 	if override := os.Getenv("AZD_BICEP_TOOL_PATH"); override != "" {
 		log.Printf("using external bicep tool: %s", override)
-
-		return &Cli{
-			path:   override,
-			runner: commandRunner,
-		}, nil
+		cli.path = override
+		return nil
 	}
 
 	bicepPath, err := azdBicepPath()
 	if err != nil {
-		return nil, fmt.Errorf("finding bicep: %w", err)
+		return fmt.Errorf("finding bicep: %w", err)
 	}
 
 	if _, err = os.Stat(bicepPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("finding bicep: %w", err)
+		return fmt.Errorf("finding bicep: %w", err)
 	}
 	if errors.Is(err, os.ErrNotExist) {
 		if err := os.MkdirAll(filepath.Dir(bicepPath), osutil.PermissionDirectory); err != nil {
-			return nil, fmt.Errorf("downloading bicep: %w", err)
+			return fmt.Errorf("downloading bicep: %w", err)
 		}
 
 		if err := runStep(
-			ctx, console, "Downloading Bicep", func() error {
-				return downloadBicep(ctx, transporter, Version, bicepPath)
+			ctx, cli.console, "Downloading Bicep", func() error {
+				return downloadBicep(ctx, cli.transporter, Version, bicepPath)
 			},
 		); err != nil {
-			return nil, fmt.Errorf("downloading bicep: %w", err)
+			return fmt.Errorf("downloading bicep: %w", err)
 		}
 	}
 
-	cli := &Cli{
-		path:   bicepPath,
-		runner: commandRunner,
-	}
+	cli.path = bicepPath
 
 	ver, err := cli.version(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("checking bicep version: %w", err)
+		return fmt.Errorf("checking bicep version: %w", err)
 	}
 
 	log.Printf("bicep version: %s", ver)
@@ -93,17 +116,17 @@ func newCliWithTransporter(
 		log.Printf("installed bicep version %s is older than %s; updating.", ver.String(), Version.String())
 
 		if err := runStep(
-			ctx, console, "Upgrading Bicep", func() error {
-				return downloadBicep(ctx, transporter, Version, bicepPath)
+			ctx, cli.console, "Upgrading Bicep", func() error {
+				return downloadBicep(ctx, cli.transporter, Version, bicepPath)
 			},
 		); err != nil {
-			return nil, fmt.Errorf("upgrading bicep: %w", err)
+			return fmt.Errorf("upgrading bicep: %w", err)
 		}
 	}
 
 	log.Printf("using local bicep: %s", bicepPath)
 
-	return cli, nil
+	return nil
 }
 
 // runStep runs a long running operation, using the console to show a spinner for progress and status.
@@ -118,11 +141,6 @@ func runStep(ctx context.Context, console input.Console, title string, action fu
 
 	console.StopSpinner(ctx, title, input.StepDone)
 	return nil
-}
-
-type Cli struct {
-	path   string
-	runner exec.CommandRunner
 }
 
 // azdBicepPath returns the path where we store our local copy of bicep ($AZD_CONFIG_DIR/bin).
@@ -258,6 +276,10 @@ type BuildResult struct {
 }
 
 func (cli *Cli) Build(ctx context.Context, file string) (BuildResult, error) {
+	if err := cli.ensureInstalledOnce(ctx); err != nil {
+		return BuildResult{}, fmt.Errorf("ensuring bicep is installed: %w", err)
+	}
+
 	args := []string{"build", file, "--stdout"}
 	buildRes, err := cli.runCommand(ctx, nil, args...)
 
@@ -275,6 +297,10 @@ func (cli *Cli) Build(ctx context.Context, file string) (BuildResult, error) {
 }
 
 func (cli *Cli) BuildBicepParam(ctx context.Context, file string, env []string) (BuildResult, error) {
+	if err := cli.ensureInstalledOnce(ctx); err != nil {
+		return BuildResult{}, fmt.Errorf("ensuring bicep is installed: %w", err)
+	}
+
 	args := []string{"build-params", file, "--stdout"}
 	buildRes, err := cli.runCommand(ctx, env, args...)
 

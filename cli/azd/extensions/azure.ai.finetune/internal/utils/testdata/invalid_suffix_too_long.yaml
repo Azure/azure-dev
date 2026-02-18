@@ -1,0 +1,5 @@
+name: ft-suffix-too-long
+description: Invalid - suffix exceeds 64 characters
+model: gpt-4o-mini
+training_file: file-abc123
+suffix: this-is-a-very-long-suffix-that-exceeds-the-maximum-allowed-length-of-64-characters-and-should-fail-validation

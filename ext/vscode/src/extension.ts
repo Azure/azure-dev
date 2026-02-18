@@ -13,6 +13,7 @@ import { LoginStatus, getAzdLoginStatus, scheduleAzdSignInCheck, scheduleAzdVers
 import { activeSurveys } from './telemetry/activeSurveys';
 import { scheduleRegisterWorkspaceComponents } from './views/workspace/scheduleRegisterWorkspaceComponents';
 import { registerLanguageFeatures } from './language/languageFeatures';
+import { registerViews } from './views/registerViews';
 
 type LoadStats = {
     // Both are the values returned by Date.now()==milliseconds since Unix epoch.
@@ -45,15 +46,17 @@ export async function activateInternal(vscodeCtx: vscode.ExtensionContext, loadS
     await callWithTelemetryAndErrorHandling(TelemetryId.Activation, async (activationCtx: IActionContext) => {
         activationCtx.errorHandling.rethrow = true;
         activationCtx.telemetry.properties.isActivationEvent = 'true';
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- It is set just above
         activationCtx.telemetry.measurements.mainFileLoadTime = (loadStats.loadEndTime! - loadStats.loadStartTime) / 1000.0; // Convert to seconds (vscode-azext-utils convention).
 
         // Now do all actual activation tasks.
-        ext.userAgent = `${ext.azureDevExtensionNamespace}/v${vscodeCtx.extension.packageJSON.version}`;
+        ext.userAgent = `${ext.azureDevExtensionNamespace}/v${ext.extensionVersion.value}`;
         ext.experimentationSvc = await createExperimentationService(vscodeCtx, undefined);
         ext.activitySvc = new ActivityStatisticsService(vscodeCtx.globalState);
         registerCommands();
         registerDisposable(vscode.tasks.registerTaskProvider('dotenv', new DotEnvTaskProvider()));
         registerLanguageFeatures();
+        registerViews(vscodeCtx);
         scheduleRegisterWorkspaceComponents(vscodeCtx);
         scheduleSurveys(vscodeCtx.globalState, activeSurveys);
         scheduleAzdVersionCheck(); // Temporary

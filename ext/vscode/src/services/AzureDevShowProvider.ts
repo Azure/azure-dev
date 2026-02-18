@@ -35,8 +35,11 @@ export interface AzureDevShowProvider {
 }
 
 export class WorkspaceAzureDevShowProvider implements AzureDevShowProvider {
+    public constructor(private readonly createAzureDevCliFunction = createAzureDevCli, private readonly execAsyncFunction = execAsync) {
+    }
+
     public async getShowResults(context: IActionContext, configurationFile: vscode.Uri, environmentName?: string): Promise<AzDevShowResults> {
-        const azureCli = await createAzureDevCli(context);
+        const azureCli = await this.createAzureDevCliFunction(context);
 
         const configurationFileDirectory = path.dirname(configurationFile.fsPath);
 
@@ -47,8 +50,23 @@ export class WorkspaceAzureDevShowProvider implements AzureDevShowProvider {
             withNamedArg('--output', 'json'),
         )();
 
-        const { stdout } = await execAsync(azureCli.invocation, args, azureCli.spawnOptions(configurationFileDirectory));
+        try {
+            const { stdout } = await this.execAsyncFunction(azureCli.invocation, args, azureCli.spawnOptions(configurationFileDirectory));
+            return JSON.parse(stdout) as AzDevShowResults;
+        } catch (error) {
+            // Provide user-friendly error messages for common issues
+            const errorMessage = error instanceof Error ? error.message : String(error);
 
-        return JSON.parse(stdout) as AzDevShowResults;
+            if (errorMessage.includes('File is empty') || errorMessage.includes('unable to parse azure.yaml')) {
+                throw new Error(vscode.l10n.t('The azure.yaml file is invalid or empty. Please check the Problems panel for validation errors.'));
+            }
+
+            if (errorMessage.includes('parsing project file')) {
+                throw new Error(vscode.l10n.t('Failed to parse azure.yaml. Please check the Problems panel for validation errors.'));
+            }
+
+            // Re-throw the original error for other cases
+            throw error;
+        }
     }
 }

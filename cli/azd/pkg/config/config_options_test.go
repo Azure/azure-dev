@@ -20,6 +20,11 @@ func TestGetAllConfigOptions(t *testing.T) {
 	foundDefaultsSubscription := false
 	foundDefaultsLocation := false
 	foundAlphaAll := false
+	foundAuthUseAzCliAuth := false
+	foundPlatformType := false
+	foundPlatformConfig := false
+	foundCloudName := false
+	foundAgentModelType := false
 
 	for _, option := range options {
 		require.NotEmpty(t, option.Key, "Config option key should not be empty")
@@ -41,6 +46,21 @@ func TestGetAllConfigOptions(t *testing.T) {
 			require.Contains(t, option.AllowedValues, "on")
 			require.Contains(t, option.AllowedValues, "off")
 			require.Equal(t, "AZD_ALPHA_ENABLE_ALL", option.EnvVar)
+		case "auth.useAzCliAuth":
+			foundAuthUseAzCliAuth = true
+			require.Equal(t, "string", option.Type)
+		case "platform.type":
+			foundPlatformType = true
+			require.Equal(t, "string", option.Type)
+		case "platform.config":
+			foundPlatformConfig = true
+			require.Equal(t, "object", option.Type)
+		case "cloud.name":
+			foundCloudName = true
+			require.Equal(t, "string", option.Type)
+		case "ai.agent.model.type":
+			foundAgentModelType = true
+			require.Equal(t, "string", option.Type)
 		}
 	}
 
@@ -48,6 +68,11 @@ func TestGetAllConfigOptions(t *testing.T) {
 	require.True(t, foundDefaultsSubscription, "defaults.subscription option should be present")
 	require.True(t, foundDefaultsLocation, "defaults.location option should be present")
 	require.True(t, foundAlphaAll, "alpha.all option should be present")
+	require.True(t, foundAuthUseAzCliAuth, "auth.useAzCliAuth option should be present")
+	require.True(t, foundPlatformType, "platform.type option should be present")
+	require.True(t, foundPlatformConfig, "platform.config option should be present")
+	require.True(t, foundCloudName, "cloud.name option should be present")
+	require.True(t, foundAgentModelType, "ai.agent.model.type option should be present")
 }
 
 func TestConfigOptionStructure(t *testing.T) {

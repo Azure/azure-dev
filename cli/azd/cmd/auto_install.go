@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -211,6 +212,123 @@ func isBuiltInCommand(rootCmd *cobra.Command, commandName string) bool {
 	return false
 }
 
+// hasSubcommand checks if a command has a subcommand with the given name or alias.
+func hasSubcommand(cmd *cobra.Command, name string) bool {
+	for _, sub := range cmd.Commands() {
+		if sub.Name() == name {
+			return true
+		}
+		for _, alias := range sub.Aliases {
+			if alias == name {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// getCommandPath returns the command path from root to the given command (excluding root).
+// For example, if foundCmd is "agent" under "ai", returns ["ai", "agent"].
+func getCommandPath(cmd *cobra.Command) []string {
+	var path []string
+	for c := cmd; c != nil && c.Parent() != nil; c = c.Parent() {
+		path = append([]string{c.Name()}, path...)
+	}
+	return path
+}
+
+// buildNamespaceArgs builds the full namespace argument list by combining
+// the found command's path with remaining non-flag arguments.
+func buildNamespaceArgs(foundCmd *cobra.Command, remainingArgs []string) []string {
+	args := getCommandPath(foundCmd)
+
+	for _, arg := range remainingArgs {
+		if !strings.HasPrefix(arg, "-") {
+			args = append(args, arg)
+		}
+	}
+
+	return args
+}
+
+// tryAutoInstallForPartialNamespace checks if the found command is a partial namespace match
+// and prompts for extension installation if an uninstalled extension matches.
+// Returns true if an extension was installed, false otherwise.
+//
+// This handles the scenario where an extension like "ai.foo" is installed (creating the "ai"
+// command group), but the user runs "azd ai bar init" where the "ai.bar" extension is not installed.
+// Without this check, Cobra would find the "ai" command and show its help instead of prompting to install
+// the "ai.bar" extension.
+func tryAutoInstallForPartialNamespace(
+	ctx context.Context,
+	rootContainer *ioc.NestedContainer,
+	foundCmd *cobra.Command,
+	remainingArgs []string,
+) bool {
+	if _, isExtensionCmd := foundCmd.Annotations["extension.id"]; isExtensionCmd {
+		// Extension commands handle their own args via DisableFlagParsing
+		return false
+	}
+
+	var firstRemainingArg string
+	for _, arg := range remainingArgs {
+		if !strings.HasPrefix(arg, "-") {
+			firstRemainingArg = arg
+			break
+		}
+	}
+
+	if firstRemainingArg == "" || hasSubcommand(foundCmd, firstRemainingArg) {
+		return false
+	}
+
+	argsForMatching := buildNamespaceArgs(foundCmd, remainingArgs)
+	if len(argsForMatching) == 0 {
+		return false
+	}
+
+	var extensionManager *extensions.Manager
+	var console input.Console
+	if err := rootContainer.Resolve(&extensionManager); err != nil {
+		log.Printf("failed to resolve extension manager: %v", err)
+		return false
+	}
+	if err := rootContainer.Resolve(&console); err != nil {
+		log.Printf("failed to resolve console: %v", err)
+		return false
+	}
+
+	extensionMatches, err := checkForMatchingExtensions(ctx, extensionManager, argsForMatching)
+	if err != nil {
+		log.Printf("failed to check for matching extensions: %v", err)
+		return false
+	}
+	if len(extensionMatches) == 0 {
+		return false
+	}
+
+	console.Message(ctx,
+		fmt.Sprintf("Command '%s' was not found, but there's an available extension that provides it\n",
+			strings.Join(argsForMatching, " ")))
+
+	chosenExtension, err := promptForExtensionChoice(ctx, console, extensionMatches)
+	if err != nil {
+		console.Message(ctx, fmt.Sprintf("Error selecting extension: %v", err))
+		return false
+	}
+	if chosenExtension == nil {
+		return false
+	}
+
+	installed, installErr := tryAutoInstallExtension(ctx, console, extensionManager, *chosenExtension)
+	if installErr != nil {
+		console.Message(ctx, installErr.Error())
+		return false
+	}
+
+	return installed
+}
+
 // tryAutoInstallExtension attempts to auto-install an extension if the unknown command matches an available
 // extension namespace. Returns true if an extension was found and installed, false otherwise.
 func tryAutoInstallExtension(
@@ -292,9 +410,18 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 	// rootCmd.Find() returns error if the command is not identified. Cobra checks all the registered commands
 	// and returns error if the input command is not registered.
 	// This allows us to determine if a subcommand was provided or not or if the command is unknown.
-	_, originalArgs, err := rootCmd.Find(os.Args[1:])
+	foundCmd, originalArgs, err := rootCmd.Find(os.Args[1:])
 	if err == nil {
-		// Known command, no need to auto-install
+		// Check for partial namespace match (e.g., "ai" found but "ai.agent" not installed)
+		if installed := tryAutoInstallForPartialNamespace(
+			ctx, rootContainer, foundCmd, originalArgs,
+		); installed {
+			// Extension was installed, rebuild command tree and execute
+			rootCmd = NewRootCmd(false, nil, rootContainer)
+			return rootCmd.ExecuteContext(ctx)
+		}
+
+		// Known command, proceed with normal execution
 		err := rootCmd.ExecuteContext(ctx)
 
 		if err := rootContainer.Resolve(&extensionManager); err != nil {
@@ -509,6 +636,9 @@ func CreateGlobalFlagSet() *pflag.FlagSet {
 // Uses ParseErrorsAllowlist to gracefully ignore unknown flags (like extension-specific flags).
 // This function is designed to be called BEFORE Cobra command tree construction to enable
 // early access to global flag values for auto-install and other pre-execution logic.
+//
+// Agent Detection: If --no-prompt is not explicitly set and an AI coding agent (like Claude Code,
+// GitHub Copilot CLI, Cursor, etc.) is detected as the caller, NoPrompt is automatically enabled.
 func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error {
 	globalFlagSet := CreateGlobalFlagSet()
 
@@ -540,6 +670,14 @@ func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error 
 
 	if boolVal, err := globalFlagSet.GetBool("no-prompt"); err == nil {
 		opts.NoPrompt = boolVal
+	}
+
+	// Agent Detection: If --no-prompt was not explicitly set and we detect an AI coding agent
+	// as the caller, automatically enable no-prompt mode for non-interactive execution.
+	noPromptFlag := globalFlagSet.Lookup("no-prompt")
+	noPromptExplicitlySet := noPromptFlag != nil && noPromptFlag.Changed
+	if !noPromptExplicitlySet && agentdetect.IsRunningInAgent() {
+		opts.NoPrompt = true
 	}
 
 	return nil

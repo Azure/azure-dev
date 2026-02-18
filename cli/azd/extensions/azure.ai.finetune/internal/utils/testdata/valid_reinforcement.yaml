@@ -1,0 +1,18 @@
+name: ft-reinforcement-method
+description: Reinforcement learning fine-tuning job template
+model: gpt-4
+training_file: file-xyz789
+method:
+  type: reinforcement
+  reinforcement:
+    grader:
+      type: custom
+      scoring_function: accuracy
+    hyperparameters:
+      epochs: 10
+      batch_size: 8
+      learning_rate_multiplier: 0.01
+      compute_multiplier: 2.0
+      eval_interval: 100
+      eval_samples: 50
+      reasoning_effort: medium

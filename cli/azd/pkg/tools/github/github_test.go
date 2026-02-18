@@ -37,7 +37,8 @@ func TestGithubCLIDeploymentEnvironments(t *testing.T) {
 	envName := "copilot2"
 
 	mockContext := mocks.NewMockContext(context.Background())
-	cli, err := NewGitHubCli(context.Background(), mockContext.Console, commandRunner)
+	cli := NewGitHubCli(mockContext.Console, commandRunner)
+	err := cli.EnsureInstalled(context.Background())
 	require.NoError(t, err)
 
 	err = cli.CreateEnvironmentIfNotExist(context.Background(), repoSlug, envName)
@@ -147,14 +148,14 @@ func TestNewGitHubCli(t *testing.T) {
 		return src, nil
 	}
 
-	cli, err := newGitHubCliImplementation(
-		*mockContext.Context,
+	cli := newGitHubCliImplementation(
 		mockContext.Console,
 		mockContext.CommandRunner,
 		mockContext.HttpClient,
 		downloadGh,
 		mockExtract,
 	)
+	err := cli.EnsureInstalled(*mockContext.Context)
 	require.NoError(t, err)
 	require.NotNil(t, cli)
 
@@ -209,14 +210,14 @@ func TestGetAuthStatus(t *testing.T) {
 		return src, nil
 	}
 
-	cli, err := newGitHubCliImplementation(
-		*mockContext.Context,
+	cli := newGitHubCliImplementation(
 		mockContext.Console,
 		mockContext.CommandRunner,
 		mockContext.HttpClient,
 		downloadGh,
 		mockExtract,
 	)
+	err := cli.EnsureInstalled(*mockContext.Context)
 	require.NoError(t, err)
 	require.NotNil(t, cli)
 
@@ -252,14 +253,14 @@ func TestNewGitHubCliUpdate(t *testing.T) {
 		return src, nil
 	}
 
-	cli, err := newGitHubCliImplementation(
-		*mockContext.Context,
+	cli := newGitHubCliImplementation(
 		mockContext.Console,
 		mockContext.CommandRunner,
 		mockContext.HttpClient,
 		downloadGh,
 		mockExtract,
 	)
+	err := cli.EnsureInstalled(*mockContext.Context)
 	require.NoError(t, err)
 	require.NotNil(t, cli)
 

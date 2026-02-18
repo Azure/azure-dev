@@ -153,6 +153,8 @@ type AskerConsole struct {
 	noPrompt   bool
 	// when non nil, use this client instead of prompting ourselves on the console.
 	promptClient *externalPromptClient
+	// noPromptDialog when true, disables SupportsPromptDialog() even when promptClient is set.
+	noPromptDialog bool
 
 	showProgressMu sync.Mutex // ensures atomicity when swapping the current progress renderer (spinner or previewer)
 
@@ -215,7 +217,15 @@ func (c *AskerConsole) Message(ctx context.Context, message string) {
 	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
 		// we call json.Marshal directly, because the formatter marshalls using indentation, and we would prefer
 		// these objects be written on a single line.
-		jsonMessage, err := json.Marshal(output.EventForMessage(message))
+		var obj interface{} = output.EventForMessage(message)
+		if q, ok := c.formatter.(output.Queryable); ok {
+			if filtered, err := q.QueryFilter(obj); err == nil {
+				obj = filtered
+			} else {
+				log.Printf("failed to apply query filter in Message: %v", err)
+			}
+		}
+		jsonMessage, err := json.Marshal(obj)
 		if err != nil {
 			panic(fmt.Sprintf("Message: unexpected error during marshaling for a valid object: %v", err))
 		}
@@ -268,8 +278,24 @@ func (c *AskerConsole) MessageUxItem(ctx context.Context, item ux.UxItem) {
 	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
 		// no need to check the spinner for json format, as the spinner won't start when using json format
 		// instead, there would be a message about starting spinner
-		json, _ := json.Marshal(item)
-		fmt.Fprintln(c.writer, string(json))
+		var obj interface{} = item
+		if q, ok := c.formatter.(output.Queryable); ok {
+			// UxItem.MarshalJSON() produces an EventEnvelope. To apply JMESPath we
+			// need the unmarshaled structure, so round-trip through JSON first.
+			if raw, err := json.Marshal(item); err == nil {
+				var envelope interface{}
+				if err := json.Unmarshal(raw, &envelope); err == nil {
+					if filtered, err := q.QueryFilter(envelope); err == nil {
+						obj = filtered
+					}
+				}
+			}
+		}
+		jsonBytes, err := json.Marshal(obj)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Fprintln(c.writer, string(jsonBytes))
 		return
 	}
 
@@ -533,7 +559,7 @@ func promptFromOptions(options ConsoleOptions) survey.Prompt {
 const afterIoSentinel = "0\n"
 
 func (c *AskerConsole) SupportsPromptDialog() bool {
-	return c.promptClient != nil
+	return c.promptClient != nil && !c.noPromptDialog
 }
 
 // PromptDialog prompts for multiple values using a single dialog. When successful, it returns a map of prompt IDs to their
@@ -965,6 +991,11 @@ type ExternalPromptConfiguration struct {
 	Endpoint    string
 	Key         string
 	Transporter policy.Transporter
+	// NoPromptDialog when true, disables the prompt dialog feature even when external prompting is enabled.
+	// This causes each prompt to be sent individually through the external prompt API, which is useful
+	// for clients that don't support the dialog API but still want location prompts to include the full
+	// list of available locations.
+	NoPromptDialog bool
 }
 
 // Creates a new console with the specified writers, handles and formatter. When externalPromptCfg is non nil, it is used
@@ -996,6 +1027,7 @@ func NewConsole(
 	if externalPromptCfg != nil {
 		c.promptClient = newExternalPromptClient(
 			externalPromptCfg.Endpoint, externalPromptCfg.Key, externalPromptCfg.Transporter)
+		c.noPromptDialog = externalPromptCfg.NoPromptDialog
 	}
 
 	spinnerConfig := yacspin.Config{

@@ -1,0 +1,111 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+import { expect } from 'chai';
+import * as sinon from 'sinon';
+import * as vscode from 'vscode';
+import { WorkspaceAzureDevShowProvider } from '../../../services/AzureDevShowProvider';
+import { IActionContext } from '@microsoft/vscode-azext-utils';
+
+suite('AzureDevShowProvider Error Handling Tests', () => {
+    let sandbox: sinon.SinonSandbox;
+    let mockContext: IActionContext;
+    let mockCreateAzureDevCli: sinon.SinonStub;
+
+    setup(() => {
+        sandbox = sinon.createSandbox();
+        mockContext = {
+            telemetry: {
+                properties: {},
+                measurements: {},
+            },
+            errorHandling: {
+                suppressDisplay: false,
+                rethrow: false,
+                issueProperties: {},
+            },
+            valuesToMask: [],
+        } as unknown as IActionContext;
+
+        const mockAzureCli = {
+            invocation: 'azd',
+            spawnOptions: () => ({ cwd: '/test' })
+        };
+        mockCreateAzureDevCli = sandbox.stub().resolves(mockAzureCli);
+    });
+
+    teardown(() => {
+        sandbox.restore();
+    });
+
+    test('Empty azure.yaml error provides user-friendly message', async () => {
+        const mockExecAsync = sandbox.stub().rejects(
+            new Error('ERROR: parsing project file: unable to parse azure.yaml file. File is empty.')
+        );
+        const provider = new WorkspaceAzureDevShowProvider(mockCreateAzureDevCli, mockExecAsync);
+
+        const configUri = vscode.Uri.file('/test/azure.yaml');
+
+        try {
+            await provider.getShowResults(mockContext, configUri);
+            expect.fail('Should have thrown an error');
+        } catch (error) {
+            expect(error).to.be.instanceOf(Error);
+            expect((error as Error).message, 'Error message should be user-friendly').to.include('invalid or empty');
+            expect((error as Error).message, 'Error should direct user to Problems panel').to.include('Problems panel');
+        }
+    });
+
+    test('Parse error provides user-friendly message', async () => {
+        const mockExecAsync = sandbox.stub().rejects(
+            new Error('ERROR: parsing project file: invalid YAML syntax')
+        );
+        const provider = new WorkspaceAzureDevShowProvider(mockCreateAzureDevCli, mockExecAsync);
+
+        const configUri = vscode.Uri.file('/test/azure.yaml');
+
+        try {
+            await provider.getShowResults(mockContext, configUri);
+            expect.fail('Should have thrown an error');
+        } catch (error) {
+            expect(error).to.be.instanceOf(Error);
+            expect((error as Error).message, 'Error message should be user-friendly').to.include('Failed to parse');
+            expect((error as Error).message, 'Error should direct user to Problems panel').to.include('Problems panel');
+        }
+    });
+
+    test('Other errors are re-thrown unchanged', async () => {
+        const originalError = new Error('Some other error');
+        const mockExecAsync = sandbox.stub().rejects(originalError);
+        const provider = new WorkspaceAzureDevShowProvider(mockCreateAzureDevCli, mockExecAsync);
+
+        const configUri = vscode.Uri.file('/test/azure.yaml');
+
+        try {
+            await provider.getShowResults(mockContext, configUri);
+            expect.fail('Should have thrown an error');
+        } catch (error) {
+            expect(error).to.equal(originalError, 'Original error should be re-thrown');
+        }
+    });
+
+    test('Successful parse returns results', async () => {
+        const mockResults = {
+            name: 'my-app',
+            services: {
+                web: {
+                    project: { path: './src', language: 'python' },
+                    target: { resourceIds: [] }
+                }
+            }
+        };
+
+        const mockExecAsync = sandbox.stub().resolves({ stdout: JSON.stringify(mockResults), stderr: '' });
+        const provider = new WorkspaceAzureDevShowProvider(mockCreateAzureDevCli, mockExecAsync);
+
+        const configUri = vscode.Uri.file('/test/azure.yaml');
+        const results = await provider.getShowResults(mockContext, configUri);
+
+        expect(results).to.deep.equal(mockResults);
+    });
+});

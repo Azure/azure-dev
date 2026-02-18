@@ -366,6 +366,14 @@ func (m *SubscriptionsManager) ListLocations(
 	m.console.ShowSpinner(ctx, msg, input.Step)
 	defer m.console.StopSpinner(ctx, "", input.GetStepResultFormat(err))
 
+	return m.GetLocations(ctx, subscriptionId)
+}
+
+// GetLocations lists locations for a subscription without rendering progress UX.
+func (m *SubscriptionsManager) GetLocations(
+	ctx context.Context,
+	subscriptionId string,
+) ([]Location, error) {
 	return m.listLocations(ctx, subscriptionId)
 }
 

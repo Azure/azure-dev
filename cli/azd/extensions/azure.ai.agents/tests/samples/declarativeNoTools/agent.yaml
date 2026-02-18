@@ -1,4 +1,4 @@
-agent:
+template:
   kind: prompt
   name: Learn French Agent
   description: |-

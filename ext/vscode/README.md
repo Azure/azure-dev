@@ -2,10 +2,95 @@
 
 This extension makes it easier to run, create Azure Resources, and deploy Azure applications with the Azure Developer CLI.
 
+## Features
+
+### 🚀 Deployment Commands
+
+- **Initialize** (`azd init`) - Scaffold a new application from a template
+- **Provision** (`azd provision`) - Create Azure infrastructure resources
+- **Deploy** (`azd deploy`) - Deploy your application code to Azure
+- **Up** (`azd up`) - Provision and deploy in one command
+- **Monitor** (`azd monitor`) - View Application Insights for your deployed app
+- **Down** (`azd down`) - Delete Azure resources and deployments
+
+### 📝 Enhanced azure.yaml Editing
+
+Intelligent editing support for your `azure.yaml` configuration files:
+
+- **Schema Validation** - Full IntelliSense support via the [YAML extension](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml) including:
+  - Auto-completion for properties, host types, and lifecycle hooks
+  - Hover documentation with examples
+  - Validation for required properties, valid values, and YAML syntax
+- **Quick Fixes** - One-click solutions for common issues:
+  - Create missing project folders
+  - Browse for existing folders
+- **Project Path Validation** - Real-time diagnostics for missing or invalid project paths
+- **Drag & Drop** - Add services by dragging folders onto azure.yaml (hold Shift)
+- **Automatic Path Updates** - Project paths update when folders are renamed
+
+The extension works with the YAML extension to provide comprehensive editing support for `azure.yaml` files.
+
+### 🌲 View Panels
+
+- **My Project** - View your azure.yaml configuration and services
+- **Environments** - Manage development, staging, and production environments
+- **Template Tools** - Discover and initialize projects from templates
+  - **Quick Start** (shown when no azure.yaml exists) - Initialize from existing code or create minimal project
+  - **Browse by Category** - Explore templates organized by type (AI, Web Apps, APIs, Containers, Databases, Functions)
+  - **AI Templates** - Quick access to AI-focused templates from [aka.ms/aiapps](https://aka.ms/aiapps)
+  - **Search Templates** - Find templates by name, description, or tags
+  - **Template Gallery** - Open the full [awesome-azd](https://aka.ms/awesome-azd) gallery in browser
+- **Extensions** - Browse and manage Azure Developer CLI extensions
+- **Help and Feedback** - Quick access to documentation and support
+
+### 🔄 Environment Management
+
+- Create, select, and delete environments
+- View environment variables
+- Refresh environment configuration from deployments
+- Compare environments (coming soon)
+
+### 🔗 Azure Integration
+
+- Navigate directly to Azure resources from VS Code
+- Open resources in Azure Portal
+- View resource connection strings
+- Integration with Azure Resources extension
+
 ## What It Does
+
 For more information about Azure Developer CLI and this VS Code extension, please [see the documentation](https://aka.ms/azure-dev/vscode).
 
-## Tell Us What You Think!
+## Getting Started
+
+1. Install the Azure Developer CLI:
+   - **Option A**: Use the extension command `Azure Developer CLI: Install CLI` from the Command Palette
+   - **Option B**: Manually install from [aka.ms/azure-dev/install](https://aka.ms/azure-dev/install)
+2. Open a folder containing an `azure.yaml` file, or create a new project with `azd init`
+3. Right-click `azure.yaml` and select deployment commands from the context menu
+4. Use the Azure Developer CLI view panel for quick access to all features
+
+## Requirements
+
+- [Azure Developer CLI](https://aka.ms/azure-dev/install) version 1.8.0 or higher
+- [VS Code](https://code.visualstudio.com/) version 1.90.0 or higher
+
+## Extension Settings
+
+This extension contributes the following settings:
+
+- `azure-dev.maximumAppsToDisplay`: Maximum number of Azure Developer CLI apps to display in the Workspace Resource view (default: 5)
+- `azure-dev.auth.useIntegratedAuth`: Use VS Code integrated authentication with the Azure Developer CLI (alpha feature)
+
+## Keyboard Shortcuts
+
+Access Azure Developer CLI commands quickly:
+
+- Open Command Palette (`Cmd+Shift+P` or `Ctrl+Shift+P`)
+- Type "Azure Developer CLI" to see all available commands
+
+## Tell Us What You Think
+
 - [Give us a thumbs up or down](https://aka.ms/azure-dev/hats). We want to hear good news, but bad news are even more important!
 - Use [Discussions](https://aka.ms/azure-dev/discussions) to share new ideas or ask questions about Azure Developer CLI and the VS Code extension.
 - To report problems [file an issue](https://aka.ms/azure-dev/issues).

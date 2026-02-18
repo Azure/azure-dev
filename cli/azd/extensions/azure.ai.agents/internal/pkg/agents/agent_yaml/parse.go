@@ -22,13 +22,13 @@ func LoadAndValidateAgentManifest(manifestYamlContent []byte) (*AgentManifest, e
 
 	agentDef, err := ExtractAgentDefinition(manifestYamlContent)
 	if err != nil {
-		return nil, fmt.Errorf("YAML content does not conform to AgentManifest format: %w", err)
+		return nil, err
 	}
 	manifest.Template = agentDef
 
 	resourceDefs, err := ExtractResourceDefinitions(manifestYamlContent)
 	if err != nil {
-		return nil, fmt.Errorf("YAML content does not conform to AgentManifest format: %w", err)
+		return nil, err
 	}
 	manifest.Resources = resourceDefs
 
@@ -47,8 +47,27 @@ func ExtractAgentDefinition(manifestYamlContent []byte) (any, error) {
 		return nil, fmt.Errorf("YAML content is not valid: %w", err)
 	}
 
-	template := genericManifest["template"].(map[string]interface{})
-	templateBytes, _ := yaml.Marshal(template)
+	// Handle manifest format with "template" field
+	var templateBytes []byte
+
+	if templateValue, exists := genericManifest["template"]; exists && templateValue != nil {
+		// Manifest format with "template" field
+		template, ok := templateValue.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("template field must be a map, got %T", templateValue)
+		}
+		if len(template) == 0 {
+			return nil, fmt.Errorf("YAML content does not conform to AgentManifest format: template field is empty. See https://microsoft.github.io/AgentSchema/reference/agentmanifest for the expected format and https://github.com/microsoft-foundry/foundry-samples for examples")
+		}
+		var err error
+		templateBytes, err = yaml.Marshal(template)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal template: %w", err)
+		}
+	} else {
+		// "template" field not found - return error
+		return nil, fmt.Errorf("YAML content does not conform to AgentManifest format: must contain 'template' field. See https://microsoft.github.io/AgentSchema/reference/agentmanifest for the expected format and https://github.com/microsoft-foundry/foundry-samples for examples")
+	}
 
 	var agentDef AgentDefinition
 	if err := yaml.Unmarshal(templateBytes, &agentDef); err != nil {
@@ -74,20 +93,22 @@ func ExtractAgentDefinition(manifestYamlContent []byte) (any, error) {
 
 	switch agentDef.Kind {
 	case AgentKindPrompt:
-		var agent PromptAgent
-		if err := yaml.Unmarshal(templateBytes, &agent); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal to PromptAgent: %w", err)
-		}
+		return nil, fmt.Errorf("prompt agents not currently supported")
 
-		agent.AgentDefinition = agentDef
+		// var agent PromptAgent
+		// if err := yaml.Unmarshal(templateBytes, &agent); err != nil {
+		// 	return nil, fmt.Errorf("failed to unmarshal to PromptAgent: %w", err)
+		// }
 
-		tools, err := ExtractToolsDefinitions(template)
-		if err != nil {
-			return nil, fmt.Errorf("failed to extract tools definitions: %w", err)
-		}
+		// agent.AgentDefinition = agentDef
 
-		agent.Tools = &tools
-		return agent, nil
+		// tools, err := ExtractToolsDefinitions(template)
+		// if err != nil {
+		// 	return nil, fmt.Errorf("failed to extract tools definitions: %w", err)
+		// }
+
+		// agent.Tools = &tools
+		// return agent, nil
 	case AgentKindHosted:
 		var agent ContainerAgent
 		if err := yaml.Unmarshal(templateBytes, &agent); err != nil {

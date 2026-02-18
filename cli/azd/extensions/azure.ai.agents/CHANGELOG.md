@@ -1,5 +1,25 @@
 # Release History
 
+## 0.1.9-preview (2026-02-05)
+
+- [[#6631]](https://github.com/Azure/azure-dev/pull/6631) Add support for downloading manifests from public repositories without authentication
+- [[#6665]](https://github.com/Azure/azure-dev/pull/6665) Fix manifest download path handling when path contains slashes
+- [[#6670]](https://github.com/Azure/azure-dev/pull/6670) Simplify `azd ai agent init` to use `--minimal` flag, reducing prompts
+- [[#6672]](https://github.com/Azure/azure-dev/pull/6672) Block attempts to use extension with prompt agents (not yet supported)
+- [[#6683]](https://github.com/Azure/azure-dev/pull/6683) Fix panic when parsing `agent.yaml` files without a `template` field
+- [[#6693]](https://github.com/Azure/azure-dev/pull/6693) Fix unsafe DefaultAzureCredential usage
+- [[#6695]](https://github.com/Azure/azure-dev/pull/6695) Display agent endpoint as plain text with documentation link instead of clickable hyperlink
+- [[#6730]](https://github.com/Azure/azure-dev/pull/6730) Improve model selection handling when model is unavailable in current region
+
+## 0.1.8-preview (2026-01-26)
+
+- [[#6611]](https://github.com/Azure/azure-dev/pull/6611) Statically link the Linux amd64 binary for compatibility with older Linux versions
+
+## 0.1.6-preview (2026-01-22)
+
+- [[#6541]](https://github.com/Azure/azure-dev/pull/6541) Add metadata capability
+- [[#6541]](https://github.com/Azure/azure-dev/pull/6541) Support `AZD_EXT_DEBUG=true` for debugging
+
 ## 0.1.5-preview (2026-01-12)
 
 - [[#6468]](https://github.com/Azure/azure-dev/pull/6468) Add support for retrieving existing Application Insights connections when using `--project-id`

@@ -133,8 +133,17 @@ func NewRootCmd(
 			// we can just remove the entire project folder afterwards.
 			// In practical execution, this wouldn't affect much, since the CLI is exiting.
 			if prevDir != "" {
-				return os.Chdir(prevDir)
+				if err := os.Chdir(prevDir); err != nil {
+					return err
+				}
 			}
+
+			// Clear context from the executed command to prevent stale context issues.
+			// This is important because singletons (like credential providers) may cache
+			// contexts from earlier commands, leading to "context canceled" errors when
+			// those contexts are cancelled but the singleton is reused.
+			// See: https://github.com/Azure/azure-dev/issues/6530
+			clearCommandContext(cmd)
 
 			return nil
 		},
@@ -542,4 +551,15 @@ func getCmdRootHelpCommands(cmd *cobra.Command) (result string) {
 			strings.Join(commandGroups[string(title)], "\n    ")))
 	}
 	return strings.Join(paragraph, "\n")
+}
+
+// clearCommandContext recursively clears the context from the command and its children.
+// This prevents stale context issues where a cancelled context might be reused by singletons
+// or cached components. See: https://github.com/Azure/azure-dev/issues/6530
+func clearCommandContext(cmd *cobra.Command) {
+	//nolint:staticcheck // SA1012: Intentionally passing nil to clear the context and reset to cobra's default state
+	cmd.SetContext(nil)
+	for _, child := range cmd.Commands() {
+		clearCommandContext(child)
+	}
 }

@@ -231,7 +231,7 @@ func (pa *PublishAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 	startTime := time.Now()
 
-	stableServices, err := pa.importManager.ServiceStable(ctx, pa.projectConfig)
+	stableServices, err := pa.importManager.ServiceStableFiltered(ctx, pa.projectConfig, targetServiceName, pa.env.Getenv)
 	if err != nil {
 		return nil, err
 	}
@@ -246,14 +246,6 @@ func (pa *PublishAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		for _, svc := range stableServices {
 			stepMessage := fmt.Sprintf("Publishing service %s", svc.Name)
 			pa.console.ShowSpinner(ctx, stepMessage, input.Step)
-
-			// Skip this service if both cases are true:
-			// 1. The user specified a service name
-			// 2. This service is not the one the user specified
-			if targetServiceName != "" && targetServiceName != svc.Name {
-				pa.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
-				continue
-			}
 
 			if alphaFeatureId, isAlphaFeature := alpha.IsFeatureKey(string(svc.Host)); isAlphaFeature {
 				// alpha feature on/off detection for host is done during initialization.

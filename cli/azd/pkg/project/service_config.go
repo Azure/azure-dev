@@ -57,6 +57,12 @@ type ServiceConfig struct {
 	useDotNetPublishForDockerBuild *bool
 	// Environment variables to set for the service
 	Environment osutil.ExpandableMap `yaml:"env,omitempty"`
+	// Condition for deploying the service. When evaluated, the service is only deployed if the value
+	// is a truthy boolean (1, true, TRUE, True, yes). If not defined, the service is enabled by default.
+	Condition osutil.ExpandableString `yaml:"condition,omitempty"`
+	// Whether to build the service remotely. Only applicable to function app services.
+	// When set to nil (unset), the default behavior based on language is used.
+	RemoteBuild *bool `yaml:"remoteBuild,omitempty"`
 
 	// AdditionalProperties captures any unknown YAML fields for extension support
 	AdditionalProperties map[string]interface{} `yaml:",inline"`
@@ -112,4 +118,34 @@ func (sc *ServiceConfig) ExpandEnv(lookup func(string) string) ([]string, error)
 	}
 
 	return env, nil
+}
+
+// IsEnabled evaluates the service condition and returns whether the service should be deployed.
+// If no condition is specified, the service is enabled by default.
+// The condition is evaluated as a boolean where truthy values are: 1, true, TRUE, True, yes, YES, Yes
+// All other values are considered false.
+// Returns an error if the condition template is malformed.
+func (sc *ServiceConfig) IsEnabled(getenv func(string) string) (bool, error) {
+	if sc.Condition.Empty() {
+		return true, nil
+	}
+
+	value, err := sc.Condition.Envsubst(getenv)
+	if err != nil {
+		return false, fmt.Errorf("malformed deployment condition template: %w", err)
+	}
+
+	return isConditionTrue(value), nil
+}
+
+// isConditionTrue parses a string value as a boolean condition.
+// Returns true for: "1", "true", "TRUE", "True", "yes", "YES", "Yes"
+// Returns false for all other values.
+func isConditionTrue(value string) bool {
+	switch value {
+	case "1", "true", "TRUE", "True", "yes", "YES", "Yes":
+		return true
+	default:
+		return false
+	}
 }

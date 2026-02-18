@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -21,6 +22,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
+	"github.com/azure/azure-dev/cli/azd/pkg/ux"
+	"github.com/braydonk/yaml"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
@@ -31,6 +34,8 @@ type initFlags struct {
 	rootFlagsDefinition
 	template          string
 	projectResourceId string
+	subscriptionId    string
+	projectEndpoint   string
 	jobId             string
 	src               string
 	env               string
@@ -81,6 +86,14 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 			}
 			defer azdClient.Close()
 
+			// Wait for debugger if AZD_EXT_DEBUG is set
+			if err := azdext.WaitForDebugger(ctx, azdClient); err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, azdext.ErrDebuggerAborted) {
+					return nil
+				}
+				return fmt.Errorf("failed waiting for debugger: %w", err)
+			}
+
 			azureContext, projectConfig, environment, err := ensureAzureContext(ctx, flags, azdClient)
 			if err != nil {
 				return fmt.Errorf("failed to ground into a project context: %w", err)
@@ -128,16 +141,22 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 	cmd.Flags().StringVarP(&flags.template, "template", "t", "",
 		"URL or path to a fine-tune job template")
 
-	cmd.Flags().StringVarP(&flags.projectResourceId, "project", "p", "",
-		"Existing Microsoft Foundry Project Id to initialize your azd environment with")
+	cmd.Flags().StringVarP(&flags.projectResourceId, "project-resource-id", "p", "",
+		"ARM resource ID of the Microsoft Foundry Project (e.g., /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.CognitiveServices/accounts/{account}/projects/{project})")
 
-	cmd.Flags().StringVarP(&flags.src, "source", "s", "",
+	cmd.Flags().StringVarP(&flags.subscriptionId, "subscription", "s", "",
+		"Azure subscription ID")
+
+	cmd.Flags().StringVarP(&flags.projectEndpoint, "project-endpoint", "e", "",
+		"Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)")
+
+	cmd.Flags().StringVarP(&flags.src, "working-directory", "w", "",
 		"Local path for project output")
 
 	cmd.Flags().StringVarP(&flags.jobId, "from-job", "j", "",
 		"Clone configuration from an existing job ID")
 
-	cmd.Flags().StringVarP(&flags.env, "environment", "e", "", "The name of the azd environment to use.")
+	cmd.Flags().StringVarP(&flags.env, "environment", "n", "", "The name of the azd environment to use.")
 
 	return cmd
 }
@@ -172,32 +191,179 @@ func extractProjectDetails(projectResourceId string) (*FoundryProject, error) {
 	}, nil
 }
 
-func getExistingEnvironment(ctx context.Context, name *string, azdClient *azdext.AzdClient) (*azdext.Environment, error) {
-	var env *azdext.Environment
-	if name == nil || *name == "" {
-		envResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-		if err != nil {
-			return nil, fmt.Errorf("failed to get current environment: %w", err)
-		}
-		env = envResponse.Environment
-	} else {
-		envResponse, err := azdClient.Environment().Get(ctx, &azdext.GetEnvironmentRequest{
-			Name: *name,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to get environment '%s': %w", *name, err)
-		}
-		env = envResponse.Environment
+// parseProjectEndpoint extracts account name and project name from an endpoint URL
+// Example: https://account-name.services.ai.azure.com/api/projects/project-name
+func parseProjectEndpoint(endpoint string) (accountName string, projectName string, err error) {
+	parsedURL, err := url.Parse(endpoint)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to parse endpoint URL: %w", err)
 	}
 
-	return env, nil
+	// Extract account name from hostname (e.g., "account-name.services.ai.azure.com")
+	hostname := parsedURL.Hostname()
+	hostParts := strings.Split(hostname, ".")
+	if len(hostParts) < 1 || hostParts[0] == "" {
+		return "", "", fmt.Errorf("invalid endpoint URL: cannot extract account name from hostname")
+	}
+	accountName = hostParts[0]
+
+	// Extract project name from path (e.g., "/api/projects/project-name")
+	pathParts := strings.Split(strings.Trim(parsedURL.Path, "/"), "/")
+	// Expected path: api/projects/{project-name}
+	if len(pathParts) >= 3 && pathParts[0] == "api" && pathParts[1] == "projects" {
+		projectName = pathParts[2]
+	} else {
+		return "", "", fmt.Errorf("invalid endpoint URL: cannot extract project name from path. Expected format: /api/projects/{project-name}")
+	}
+
+	return accountName, projectName, nil
+}
+
+// findProjectByEndpoint searches for a Foundry project matching the endpoint URL
+func findProjectByEndpoint(
+	ctx context.Context,
+	subscriptionId string,
+	accountName string,
+	projectName string,
+	credential azcore.TokenCredential,
+) (*FoundryProject, error) {
+	// Create Cognitive Services Accounts client to search for the account
+	accountsClient, err := armcognitiveservices.NewAccountsClient(subscriptionId, credential, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Cognitive Services Accounts client: %w", err)
+	}
+
+	// List all accounts in the subscription and find the matching one
+	pager := accountsClient.NewListPager(nil)
+	var foundAccount *armcognitiveservices.Account
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list Cognitive Services accounts: %w", err)
+		}
+		for _, account := range page.Value {
+			if account.Name != nil && strings.EqualFold(*account.Name, accountName) {
+				foundAccount = account
+				break
+			}
+		}
+		if foundAccount != nil {
+			break
+		}
+	}
+
+	if foundAccount == nil {
+		return nil, fmt.Errorf("could not find Cognitive Services account '%s' in subscription '%s'", accountName, subscriptionId)
+	}
+
+	// Parse the account's resource ID to get resource group
+	accountResourceId, err := arm.ParseResourceID(*foundAccount.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse account resource ID: %w", err)
+	}
+
+	// Create Projects client to verify the project exists
+	projectsClient, err := armcognitiveservices.NewProjectsClient(subscriptionId, credential, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Cognitive Services Projects client: %w", err)
+	}
+
+	// Get the project to verify it exists and get its details
+	projectResp, err := projectsClient.Get(ctx, accountResourceId.ResourceGroupName, accountName, projectName, nil)
+	if err != nil {
+		return nil, fmt.Errorf("could not find project '%s' under account '%s': %w", projectName, accountName, err)
+	}
+
+	return &FoundryProject{
+		SubscriptionId:    subscriptionId,
+		ResourceGroupName: accountResourceId.ResourceGroupName,
+		AiAccountName:     accountName,
+		AiProjectName:     projectName,
+		Location:          *projectResp.Location,
+	}, nil
+}
+
+func getExistingEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.AzdClient) *azdext.Environment {
+	var env *azdext.Environment
+	if flags.env == "" {
+		if envResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{}); err == nil {
+			env = envResponse.Environment
+		}
+	} else {
+		if envResponse, err := azdClient.Environment().Get(ctx, &azdext.GetEnvironmentRequest{
+			Name: flags.env,
+		}); err == nil {
+			env = envResponse.Environment
+		}
+	}
+
+	return env
 }
 
 func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.AzdClient) (*azdext.Environment, error) {
 	var foundryProject *FoundryProject
 
-	// Parse the Microsoft Foundry project resource ID if provided & Fetch Tenant Id and Location using parsed information
-	if flags.projectResourceId != "" {
+	// Handle project endpoint URL - extract account/project names and find the ARM resource
+	if flags.projectEndpoint != "" {
+		accountName, projectName, err := parseProjectEndpoint(flags.projectEndpoint)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse project endpoint: %w", err)
+		}
+
+		fmt.Printf("Parsed endpoint - Account: %s, Project: %s\n", accountName, projectName)
+
+		// Get subscription ID - either from flag or prompt
+		subscriptionId := flags.subscriptionId
+		var tenantId string
+
+		if subscriptionId == "" {
+			fmt.Println("Subscription ID is required to find the project. Let's select one.")
+			subscriptionResponse, err := azdClient.Prompt().PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{})
+			if err != nil {
+				return nil, fmt.Errorf("failed to prompt for subscription: %w", err)
+			}
+			subscriptionId = subscriptionResponse.Subscription.Id
+			tenantId = subscriptionResponse.Subscription.TenantId
+		} else {
+			// Get tenant ID from subscription
+			tenantResponse, err := azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
+				SubscriptionId: subscriptionId,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("failed to get tenant ID: %w", err)
+			}
+			tenantId = tenantResponse.TenantId
+		}
+
+		// Create credential
+		credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
+			TenantID:                   tenantId,
+			AdditionallyAllowedTenants: []string{"*"},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to create Azure credential: %w", err)
+		}
+
+		// Find the project by searching the subscription
+		spinner := ux.NewSpinner(&ux.SpinnerOptions{
+			Text: fmt.Sprintf("Searching for project in subscription %s...", subscriptionId),
+		})
+		if err := spinner.Start(ctx); err != nil {
+			fmt.Printf("failed to start spinner: %v\n", err)
+		}
+
+		foundryProject, err = findProjectByEndpoint(ctx, subscriptionId, accountName, projectName, credential)
+		_ = spinner.Stop(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find project from endpoint: %w", err)
+		}
+		foundryProject.TenantId = tenantId
+
+		fmt.Printf("Found project - Resource Group: %s, Account: %s, Project: %s\n",
+			foundryProject.ResourceGroupName, foundryProject.AiAccountName, foundryProject.AiProjectName)
+
+	} else if flags.projectResourceId != "" {
+		// Parse the Microsoft Foundry project resource ID if provided & Fetch Tenant Id and Location using parsed information
 		var err error
 		foundryProject, err = extractProjectDetails(flags.projectResourceId)
 		if err != nil {
@@ -236,10 +402,7 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 	}
 
 	// Get specified or current environment if it exists
-	existingEnv, err := getExistingEnvironment(ctx, &flags.env, azdClient)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get existing environment: %w", err)
-	}
+	existingEnv := getExistingEnvironment(ctx, flags, azdClient)
 	if existingEnv == nil {
 		// Dispatch `azd env new` to create a new environment with interactive flow
 		fmt.Println("Lets create a new default azd environment for your project.")
@@ -249,9 +412,14 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 			envArgs = append(envArgs, flags.env)
 		}
 
-		if flags.projectResourceId != "" {
+		if foundryProject != nil {
 			envArgs = append(envArgs, "--subscription", foundryProject.SubscriptionId)
 			envArgs = append(envArgs, "--location", foundryProject.Location)
+		}
+
+		// Add --no-prompt flag if non-interactive mode is requested
+		if flags.NoPrompt {
+			envArgs = append(envArgs, "--no-prompt")
 		}
 
 		// Dispatch a workflow to create a new environment
@@ -271,14 +439,14 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 		}
 
 		// Re-fetch the environment after creation
-		existingEnv, err = getExistingEnvironment(ctx, &flags.env, azdClient)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get environment after creation: %w", err)
+		existingEnv = getExistingEnvironment(ctx, flags, azdClient)
+		if existingEnv == nil {
+			return nil, fmt.Errorf("azd environment not found, please create an environment (azd env new) and try again")
 		}
 	}
 
 	// Set TenantId, SubscriptionId, ResourceGroupName, AiAccountName, and Location in the environment
-	if flags.projectResourceId != "" {
+	if foundryProject != nil {
 
 		_, err := azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 			EnvName: existingEnv.Name,
@@ -343,12 +511,13 @@ func ensureProject(ctx context.Context, flags *initFlags, azdClient *azdext.AzdC
 	if err != nil {
 		fmt.Println("Lets get your project initialized.")
 
-		initArgs := []string{"init"}
-		if flags.env != "" {
-			initArgs = append(initArgs, "-e", flags.env)
-		}
+		// Environment creation is handled separately in ensureEnvironment
+		initArgs := []string{"init", "--minimal"}
 
-		// We don't have a project yet
+		// Add --no-prompt flag if non-interactive mode is requested
+		if flags.NoPrompt {
+			initArgs = append(initArgs, "--no-prompt")
+		}
 		// Dispatch a workflow to init the project
 		workflow := &azdext.Workflow{
 			Name: "init",
@@ -455,6 +624,11 @@ func ensureAzureContext(
 		resourceGroupResponse, err := azdClient.Prompt().
 			PromptResourceGroup(ctx, &azdext.PromptResourceGroupRequest{
 				AzureContext: azureContext,
+				Options: &azdext.PromptResourceGroupOptions{
+					SelectOptions: &azdext.PromptResourceSelectOptions{
+						AllowNewResource: to.Ptr(false),
+					},
+				},
 			})
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("failed to prompt for resource group: %w", err)
@@ -620,7 +794,6 @@ method:
 		if a.isGitHubUrl(a.flags.template) {
 			// For container agents, download the entire parent directory
 			fmt.Println("Downloading full directory for fine-tuning configuration from GitHub...")
-			var ghCli *github.Cli
 			var console input.Console
 			var urlInfo *GitHubUrlInfo
 			// Create a simple console and command runner for GitHub CLI
@@ -641,9 +814,10 @@ method:
 				nil, // formatter
 				nil, // externalPromptCfg
 			)
-			ghCli, err = github.NewGitHubCli(ctx, console, commandRunner)
-			if err != nil {
-				return fmt.Errorf("creating GitHub CLI: %w", err)
+
+			ghCli := github.NewGitHubCli(console, commandRunner)
+			if err := ghCli.EnsureInstalled(ctx); err != nil {
+				return fmt.Errorf("ensuring gh is installed: %w", err)
 			}
 
 			// Create a new AZD client
@@ -727,10 +901,33 @@ method:
 			}
 		}
 
+		// Add grader for reinforcement method if present
+		if len(job.Grader) > 0 && strings.ToLower(job.Method) == "reinforcement" {
+			var graderMap map[string]interface{}
+			if err := json.Unmarshal(job.Grader, &graderMap); err == nil {
+				graderYaml, err := yaml.Marshal(graderMap)
+				if err == nil {
+					// Indent the grader YAML to be nested under method.reinforcement.grader
+					indentedGrader := ""
+					for _, line := range strings.Split(string(graderYaml), "\n") {
+						if line != "" {
+							indentedGrader += "      " + line + "\n"
+						}
+					}
+					yamlContent += "    grader:\n" + indentedGrader
+				}
+			}
+		}
+
 		// Add training and validation files
 		yamlContent += fmt.Sprintf("training_file: %s\n", job.TrainingFile)
 		if job.ValidationFile != "" {
 			yamlContent += fmt.Sprintf("validation_file: %s\n", job.ValidationFile)
+		}
+
+		// Add extra_body with trainingType if present
+		if trainingType, ok := job.ExtraFields["trainingType"]; ok {
+			yamlContent += fmt.Sprintf("extra_body:\n  trainingType: %v\n", trainingType)
 		}
 
 		// Determine the output directory (use src flag or current directory)

@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -142,7 +143,7 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		return nil, err
 	}
 
-	serviceTable, err := pa.importManager.ServiceStable(ctx, pa.projectConfig)
+	serviceTable, err := pa.importManager.ServiceStableFiltered(ctx, pa.projectConfig, targetServiceName, os.Getenv)
 	if err != nil {
 		return nil, err
 	}
@@ -193,14 +194,6 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 			stepMessage := fmt.Sprintf("Packaging service %s", svc.Name)
 			pa.console.ShowSpinner(ctx, stepMessage, input.Step)
-
-			// Skip this service if both cases are true:
-			// 1. The user specified a service name
-			// 2. This service is not the one the user specified
-			if targetServiceName != "" && targetServiceName != svc.Name {
-				pa.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
-				continue
-			}
 
 			options := &project.PackageOptions{OutputPath: pa.flags.outputPath}
 			packageResult, err := async.RunWithProgress(

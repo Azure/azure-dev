@@ -4,6 +4,7 @@
 package models
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -20,6 +21,18 @@ const (
 	StatusFailed    JobStatus = "failed"
 	StatusCancelled JobStatus = "cancelled"
 	StatusPaused    JobStatus = "paused"
+	StatusPausing   JobStatus = "pausing"
+	StatusResuming  JobStatus = "resuming"
+)
+
+// JobAction represents an action that can be performed on a fine-tuning job
+type JobAction string
+
+// JobAction constants define the available actions for a fine-tuning job
+const (
+	JobActionPause  JobAction = "pause"
+	JobActionResume JobAction = "resume"
+	JobActionCancel JobAction = "cancel"
 )
 
 // Represents the type of method used for fine-tuning
@@ -111,12 +124,14 @@ type FineTuningJobDetail struct {
 	CreatedAt       time.Time              `json:"created_at" yaml:"created_at"`
 	FinishedAt      *time.Time             `json:"finished_at,omitempty" yaml:"finished_at,omitempty"`
 	EstimatedFinish *time.Time             `json:"estimated_finish,omitempty" yaml:"estimated_finish,omitempty"`
-	Method          string                 `json:"training_type" yaml:"training_type"`
+	Method          string                 `json:"method.type" yaml:"method.type"`
 	TrainingFile    string                 `json:"training_file" yaml:"training_file"`
 	ValidationFile  string                 `json:"validation_file,omitempty" yaml:"validation_file,omitempty"`
 	Hyperparameters *Hyperparameters       `json:"hyperparameters" yaml:"hyperparameters"`
+	Grader          json.RawMessage        `json:"grader,omitempty" yaml:"grader,omitempty"`
 	VendorMetadata  map[string]interface{} `json:"-" yaml:"-"`
 	Seed            int64                  `json:"-" yaml:"-"`
+	ExtraFields     map[string]interface{} `json:"extra_fields,omitempty" yaml:"extra_fields,omitempty"`
 }
 
 // JobEvent represents an event associated with a fine-tuning job

@@ -1,0 +1,3 @@
+this is not valid YAML content
+{{{invalid json/yaml mix}}}
+: missing key

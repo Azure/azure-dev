@@ -4,7 +4,9 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -28,6 +30,14 @@ func newContextCommand() *cobra.Command {
 			}
 
 			defer azdClient.Close()
+
+			// Wait for debugger if AZD_EXT_DEBUG is set
+			if err := azdext.WaitForDebugger(ctx, azdClient); err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, azdext.ErrDebuggerAborted) {
+					return nil
+				}
+				return fmt.Errorf("failed waiting for debugger: %w", err)
+			}
 
 			hasEnv := false
 

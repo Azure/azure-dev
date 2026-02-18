@@ -10,6 +10,77 @@
 
 ### Other Changes
 
+## 1.23.5 (2026-02-13)
+
+### Features Added
+
+- [[#6747]](https://github.com/Azure/azure-dev/pull/6747) Add `requiredAzdVersion` field for extensions to declare core version dependencies.
+- [[#6748]](https://github.com/Azure/azure-dev/pull/6748) Add `remoteBuild` option for Azure Functions flex consumption apps.
+
+### Bugs Fixed
+
+- [[#6739]](https://github.com/Azure/azure-dev/pull/6739) Fix arrow keys displaying as escape sequences in Ghostty terminal.
+- [[#6735]](https://github.com/Azure/azure-dev/pull/6735) Extend JMESPath query support to Message methods. Thanks @scottaddie for the contribution!
+
+## 1.23.4 (2026-02-09)
+
+### Features Added
+
+- [[#6664]](https://github.com/Azure/azure-dev/pull/6664) Add JMESPath query support for JSON output in CLI commands using `--query` flag.
+- [[#6627]](https://github.com/Azure/azure-dev/pull/6627) Add App Service deployment slot routing based on deployment history.
+
+### Bugs Fixed
+
+- [[#6674]](https://github.com/Azure/azure-dev/pull/6674) Fix duplicate `azd-service-name` tag error message to identify which resources conflict and filter validation to host resources only.
+- [[#6671]](https://github.com/Azure/azure-dev/pull/6671) Fix extension namespace handling to prevent conflicts and enable auto-install for sibling namespaces.
+- [[#6694]](https://github.com/Azure/azure-dev/pull/6694) Fix environment variable substitution for array and object Bicep parameters.
+- [[#6698]](https://github.com/Azure/azure-dev/pull/6698) Fix telemetry bundling issues.
+
+### Other Changes
+
+- [[#6690]](https://github.com/Azure/azure-dev/pull/6690) Improve provisioning error messages with targeted troubleshooting steps for common issues.
+- [[#6649]](https://github.com/Azure/azure-dev/pull/6649) Refactor container helper to accept environment explicitly, preventing environment confusion bugs.
+
+## 1.23.3 (2026-01-30)
+
+### Features Added
+
+- [[#6633]](https://github.com/Azure/azure-dev/pull/6633) Add automatic detection of AI coding agents to enable no-prompt mode for seamless automation.
+
+### Bugs Fixed
+
+- [[#6619]](https://github.com/Azure/azure-dev/pull/6619) Fix missing configuration keys in `azd config options` output.
+
+## 1.23.2 (2026-01-26)
+
+### Bugs Fixed
+
+- [[#6610]](https://github.com/Azure/azure-dev/pull/6610) Fix Bicep CLI uninitialized path causing container app deployments to fail.
+- [[#6604]](https://github.com/Azure/azure-dev/pull/6604) Fix extension commands failing after update notification is displayed.
+- [[#6604]](https://github.com/Azure/azure-dev/pull/6604) Fix extension update notification cooldown being recorded even when warning is not shown.
+
+### Other Changes
+
+- [[#6604]](https://github.com/Azure/azure-dev/pull/6604) Improve `azd ext list` output to better indicate when extension updates are available.
+
+## 1.23.1 (2026-01-23)
+
+### Features Added
+
+- [[#6511]](https://github.com/Azure/azure-dev/pull/6511) Add `azd env remove` command for deleting local environment configuration files.
+- [[#6499]](https://github.com/Azure/azure-dev/pull/6499) Improve discoverability of alpha `azd init` feature by adding hints in error messages and command output.
+
+### Bugs Fixed
+
+- [[#6527]](https://github.com/Azure/azure-dev/pull/6527) Fix Azure DocumentDB (mongoClusters) resources not being displayed in provisioning output.
+- [[#6517]](https://github.com/Azure/azure-dev/pull/6517) Fix panic on middleware construction failure when loading invalid configuration files.
+- [[#6536]](https://github.com/Azure/azure-dev/pull/6536) Fix context cancellation issue causing subsequent operations to fail after command steps complete.
+- [[#6588]](https://github.com/Azure/azure-dev/pull/6588) Improve extension error messages by including error suggestion text.
+
+### Other Changes
+
+- [[#6579]](https://github.com/Azure/azure-dev/pull/6579) Update GitHub CLI tool version to 2.86.0.
+
 ## 1.23.0 (2026-01-14)
 
 ### Features Added

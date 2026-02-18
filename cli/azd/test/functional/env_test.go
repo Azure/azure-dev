@@ -264,6 +264,52 @@ func Test_CLI_Env_Values_MultipleEnvironments(t *testing.T) {
 	require.Equal(t, values["envName2"], envName2)
 }
 
+func Test_CLI_Env_Remove(t *testing.T) {
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+
+	err := copySample(dir, "storage")
+	require.NoError(t, err, "failed expanding sample")
+
+	// Verify removing when no environment is present
+	res, err := cli.RunCommand(ctx, "env", "remove")
+	require.Error(t, err)
+	require.Contains(t, res.Stdout, "no environment specified")
+
+	// Create two environments
+	envName1 := randomEnvName()
+	envNew(ctx, t, cli, envName1, false)
+	envName2 := randomEnvName()
+	envNew(ctx, t, cli, envName2, false)
+
+	require.Len(t, envList(ctx, t, cli), 2)
+
+	// Remove via positional arg with --force
+	envRemove(ctx, t, cli, envName1)
+	require.Len(t, envList(ctx, t, cli), 1)
+
+	// Remove via -e flag with --force (also tests 'rm' alias)
+	_, err = cli.RunCommand(ctx, "env", "rm", "-e", envName2, "--force")
+	require.NoError(t, err)
+	require.Len(t, envList(ctx, t, cli), 0)
+
+	// Verify removing non-existent environment fails
+	res, err = cli.RunCommand(ctx, "env", "remove", "does-not-exist", "--force")
+	require.Error(t, err)
+	require.Contains(t, res.Stdout, "does not exist")
+
+	// Verify conflicting -e and positional arg fails
+	envNew(ctx, t, cli, "test-env", false)
+	_, err = cli.RunCommand(ctx, "env", "remove", "from-arg", "-e", "from-flag", "--force")
+	require.Error(t, err)
+}
+
 func Test_CLI_Env_GetValue(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
@@ -354,8 +400,69 @@ func envList(ctx context.Context, t *testing.T, cli *azdcli.CLI) []contracts.Env
 	return env
 }
 
+// Test_CLI_Env_List_Query tests the --query flag for JMESPath filtering on env list.
+func Test_CLI_Env_List_Query(t *testing.T) {
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+
+	err := copySample(dir, "storage")
+	require.NoError(t, err, "failed expanding sample")
+
+	// Create two environments
+	envName1 := randomEnvName()
+	envNew(ctx, t, cli, envName1, false)
+
+	envName2 := randomEnvName()
+	envNew(ctx, t, cli, envName2, false)
+
+	// Test --query with --output json to extract just the names
+	result, err := cli.RunCommand(ctx, "env", "list", "--output", "json", "--query", "[].Name")
+	require.NoError(t, err)
+
+	var names []string
+	err = json.Unmarshal([]byte(result.Stdout), &names)
+	require.NoError(t, err)
+	require.Len(t, names, 2)
+	require.Contains(t, names, envName1)
+	require.Contains(t, names, envName2)
+
+	// Test --query with -o json (short form)
+	result, err = cli.RunCommand(ctx, "env", "list", "-o", "json", "--query", "[].Name")
+	require.NoError(t, err)
+
+	err = json.Unmarshal([]byte(result.Stdout), &names)
+	require.NoError(t, err)
+	require.Len(t, names, 2)
+
+	// Test --query filtering for default environment
+	result, err = cli.RunCommand(ctx, "env", "list", "--output", "json", "--query", "[?IsDefault].Name")
+	require.NoError(t, err)
+
+	var defaultNames []string
+	err = json.Unmarshal([]byte(result.Stdout), &defaultNames)
+	require.NoError(t, err)
+	require.Len(t, defaultNames, 1)
+	// envName2 should be default since it was created last
+	require.Equal(t, envName2, defaultNames[0])
+
+	// Test --query requires --output json
+	_, err = cli.RunCommand(ctx, "env", "list", "--output", "table", "--query", "[].Name")
+	require.Error(t, err)
+}
+
 func envSelect(ctx context.Context, t *testing.T, cli *azdcli.CLI, envName string) {
 	_, err := cli.RunCommand(ctx, "env", "select", envName)
+	require.NoError(t, err)
+}
+
+func envRemove(ctx context.Context, t *testing.T, cli *azdcli.CLI, envName string) {
+	_, err := cli.RunCommand(ctx, "env", "remove", envName, "--force")
 	require.NoError(t, err)
 }
 

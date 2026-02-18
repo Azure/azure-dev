@@ -146,7 +146,8 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	er.init(extensionId)
 
 	// Wait for debugger if AZD_EXT_DEBUG is set
-	WaitForDebugger(ctx, er.client)
+	// When user declines or cancels, continue so extension doesn't exit while azd continues
+	_ = WaitForDebugger(ctx, er.client)
 
 	// Determine which managers will be active
 	hasServiceTargets := len(er.serviceTargets) > 0

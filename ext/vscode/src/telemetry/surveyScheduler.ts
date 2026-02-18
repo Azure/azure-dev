@@ -35,6 +35,7 @@ export function scheduleSurveys(persistentStore: vscode.Memento, surveys: Survey
         const jitter = Math.round(Math.random() * jitterTime * 2) - jitterTime;
 
         const timer = setTimeout(
+            // eslint-disable-next-line @typescript-eslint/no-misused-promises -- executeSurvey() will not throw so this is safe
             async () => {
                 clearTimeout(timer);
                 await executeSurvey(persistentStore, survey);

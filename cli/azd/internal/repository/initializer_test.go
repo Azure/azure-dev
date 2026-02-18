@@ -848,8 +848,9 @@ func Test_Initializer_Initialize_LocalTemplate(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uncommittedContent, string(content))
 
-	// Verify .git directory was NOT copied from source
-	require.NoDirExists(t, filepath.Join(projectDir, "uncommitted.txt", ".git"))
+	// Verify .git directory from source template was NOT copied
+	// (the project may have its own .git from azd init, but it should not contain the source marker)
+	require.NoFileExists(t, filepath.Join(projectDir, ".git", "source-template-marker"))
 
 	// Verify standard azd assets were created
 	require.FileExists(t, filepath.Join(projectDir, ".gitignore"))
@@ -974,4 +975,56 @@ func Test_Initializer_Initialize_LocalTemplateRespectsGitignore(t *testing.T) {
 	require.NoFileExists(t, filepath.Join(projectDir, "debug.log"))
 	require.NoDirExists(t, filepath.Join(projectDir, "build"))
 	require.NoFileExists(t, filepath.Join(projectDir, ".env"))
+}
+
+func Test_Initializer_Initialize_LocalTemplateGitignoreNegation(t *testing.T) {
+	// Verify that .gitignore negation patterns (e.g., !important.log) are respected
+	localTemplateDir := createLocalTemplateDir(t, testDataPath("template"))
+
+	// Create a .gitignore with a negation pattern
+	gitignoreContent := "*.log\n!important.log\n"
+	require.NoError(t, os.WriteFile(
+		filepath.Join(localTemplateDir, ".gitignore"),
+		[]byte(gitignoreContent),
+		0600,
+	))
+
+	// Create log files — one should be ignored, one should be kept via negation
+	require.NoError(t, os.WriteFile(
+		filepath.Join(localTemplateDir, "debug.log"),
+		[]byte("debug output"),
+		0600,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(localTemplateDir, "important.log"),
+		[]byte("keep this"),
+		0600,
+	))
+
+	projectDir := t.TempDir()
+	azdCtx := azdcontext.NewAzdContextWithDirectory(projectDir)
+
+	realRunner := exec.NewCommandRunner(nil)
+
+	mockEnv := &mockenv.MockEnvManager{}
+	mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
+
+	i := NewInitializer(
+		mockinput.NewMockConsole(),
+		git.NewCli(realRunner),
+		dotnet.NewCli(realRunner),
+		alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
+		lazy.From[environment.Manager](mockEnv),
+	)
+
+	err := i.Initialize(context.Background(), azdCtx, &templates.Template{
+		RepositoryPath: localTemplateDir,
+	}, "")
+	require.NoError(t, err)
+
+	// debug.log should be excluded by *.log pattern
+	require.NoFileExists(t, filepath.Join(projectDir, "debug.log"))
+
+	// important.log should be included via negation pattern !important.log
+	require.FileExists(t, filepath.Join(projectDir, "important.log"))
 }

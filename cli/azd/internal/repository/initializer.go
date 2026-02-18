@@ -180,22 +180,26 @@ func (i *Initializer) fetchCode(
 	return executableFilePaths, nil
 }
 
-// copyLocalTemplate copies a local template directory to the destination, respecting .gitignore rules
-// to match the behavior of git clone (which only includes tracked files). The .git directory is always
-// excluded. Unlike fetchCode which uses git clone (and only includes committed content), this copies
-// the full working tree including uncommitted changes — useful for local template development.
+// copyLocalTemplate copies a local template directory to the destination, respecting root-level .gitignore
+// rules. The .git directory is always excluded. Note: unlike git clone, only the root .gitignore is
+// read — nested .gitignore files in subdirectories are not supported. Unlike fetchCode which uses git
+// clone (and only includes committed content), this copies the full working tree including uncommitted
+// changes — useful for local template development.
 func (i *Initializer) copyLocalTemplate(source, destination string) error {
 	// Load .gitignore rules from the source template if present.
-	// This ensures local copy excludes the same files that git clone would
-	// (e.g., node_modules/, bin/, .env, build artifacts).
+	// Only the root .gitignore is loaded; nested .gitignore files are not supported.
 	var ignorer gitignore.GitIgnore
 	gitignorePath := filepath.Join(source, ".gitignore")
 	if f, err := os.Open(gitignorePath); err == nil {
+		defer f.Close()
 		ignorer = gitignore.New(f, source, nil)
-		f.Close()
 	}
 
 	err := copy.Copy(source, destination, copy.Options{
+		// Skip symlinks to prevent copying symlinks that could point outside the template directory.
+		OnSymlink: func(string) copy.SymlinkAction {
+			return copy.Skip
+		},
 		Skip: func(info os.FileInfo, src, dest string) (bool, error) {
 			// Always skip .git directory
 			if info.IsDir() && info.Name() == ".git" {

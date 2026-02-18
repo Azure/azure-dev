@@ -19,7 +19,9 @@ import (
 // See Template.Path for more details.
 func Absolute(path string) (string, error) {
 	// already a git URI, return as-is
-	if strings.HasPrefix(path, "git") || strings.HasPrefix(path, "http") {
+	if strings.HasPrefix(path, "git@") ||
+		strings.HasPrefix(path, "http://") ||
+		strings.HasPrefix(path, "https://") {
 		return path, nil
 	}
 
@@ -33,6 +35,13 @@ func Absolute(path string) (string, error) {
 		return absPath, nil
 	}
 
+	// If the path looks like an explicit local path reference (starts with ./, ../, .\, ..\,
+	// or is an absolute path) but the directory wasn't found above, return a clear error
+	// instead of falling through to GitHub resolution which would give a confusing error.
+	if looksLikeLocalPath(path) {
+		return "", fmt.Errorf("local template directory '%s' does not exist", path)
+	}
+
 	path = strings.TrimRight(path, "/")
 
 	switch strings.Count(path, "/") {
@@ -42,7 +51,7 @@ func Absolute(path string) (string, error) {
 		return fmt.Sprintf("https://github.com/%s", path), nil
 	default:
 		return "", fmt.Errorf(
-			"template '%s' should either be a local directory path, <owner>/<repo> for GitHub repositories, "+
+			"template '%s' should be <owner>/<repo> for GitHub repositories, "+
 				"or <repo> for Azure-Samples GitHub repositories", path)
 	}
 }
@@ -61,5 +70,17 @@ func Hyperlink(path string) string {
 // IsLocalPath returns true if the given resolved template path refers to a local filesystem directory
 // rather than a remote git URL.
 func IsLocalPath(resolvedPath string) bool {
-	return !strings.HasPrefix(resolvedPath, "http") && !strings.HasPrefix(resolvedPath, "git")
+	return !strings.HasPrefix(resolvedPath, "http://") &&
+		!strings.HasPrefix(resolvedPath, "https://") &&
+		!strings.HasPrefix(resolvedPath, "git@")
+}
+
+// looksLikeLocalPath returns true if the path appears to be an explicit local filesystem reference
+// (e.g., starts with ./, ../, or is an absolute path).
+func looksLikeLocalPath(path string) bool {
+	return strings.HasPrefix(path, "./") ||
+		strings.HasPrefix(path, "../") ||
+		strings.HasPrefix(path, `..\`) ||
+		strings.HasPrefix(path, `.\`) ||
+		filepath.IsAbs(path)
 }

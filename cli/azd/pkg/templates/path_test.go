@@ -65,6 +65,16 @@ func Test_Absolute(t *testing.T) {
 			expected:  "https://github.com/Azure-Samples/nonexistent-template",
 			expectErr: false,
 		},
+		{
+			name:      "ExplicitRelativePathNotFound",
+			input:     "./nonexistent-template",
+			expectErr: true,
+		},
+		{
+			name:      "ExplicitParentPathNotFound",
+			input:     "../nonexistent-template",
+			expectErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -137,6 +147,10 @@ func Test_IsLocalPath(t *testing.T) {
 		{"WindowsAbsPath", `C:\code\my-template`, true},
 		{"UnixAbsPath", "/home/user/my-template", true},
 		{"RelativePath", "my-template", true},
+		// Edge cases: names starting with "git" or "http" that are local paths
+		{"GitPrefixedLocalDir", "gitignore-templates", true},
+		{"HttpPrefixedLocalDir", "http-server", true},
+		{"GiftLocalDir", "gift/template", true},
 	}
 
 	for _, tt := range tests {

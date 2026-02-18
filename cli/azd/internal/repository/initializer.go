@@ -67,9 +67,6 @@ func (i *Initializer) Initialize(
 	template *templates.Template,
 	templateBranch string) error {
 	var err error
-	stepMessage := fmt.Sprintf("Downloading template code to: %s", output.WithLinkFormat("%s", azdCtx.ProjectDirectory()))
-	i.console.ShowSpinner(ctx, stepMessage, input.Step)
-	defer i.console.StopSpinner(ctx, stepMessage+"\n", input.GetStepResultFormat(err))
 
 	staging, err := os.MkdirTemp("", "az-dev-template")
 
@@ -90,7 +87,23 @@ func (i *Initializer) Initialize(
 		return err
 	}
 
-	filesWithExecPerms, err := i.fetchCode(ctx, templateUrl, templateBranch, staging)
+	var stepMessage string
+	if templates.IsLocalPath(templateUrl) {
+		stepMessage = fmt.Sprintf(
+			"Copying template code from local path to: %s", output.WithLinkFormat("%s", azdCtx.ProjectDirectory()))
+	} else {
+		stepMessage = fmt.Sprintf(
+			"Downloading template code to: %s", output.WithLinkFormat("%s", azdCtx.ProjectDirectory()))
+	}
+	i.console.ShowSpinner(ctx, stepMessage, input.Step)
+	defer i.console.StopSpinner(ctx, stepMessage+"\n", input.GetStepResultFormat(err))
+
+	var filesWithExecPerms []string
+	if templates.IsLocalPath(templateUrl) {
+		err = i.copyLocalTemplate(templateUrl, staging)
+	} else {
+		filesWithExecPerms, err = i.fetchCode(ctx, templateUrl, templateBranch, staging)
+	}
 	if err != nil {
 		return err
 	}
@@ -164,6 +177,24 @@ func (i *Initializer) fetchCode(
 	}
 
 	return executableFilePaths, nil
+}
+
+// copyLocalTemplate copies a local template directory to the destination, skipping the .git directory.
+// Unlike fetchCode which uses git clone (and only includes committed content), this copies the full
+// working tree including uncommitted changes — useful for local template development.
+func (i *Initializer) copyLocalTemplate(source, destination string) error {
+	err := copy.Copy(source, destination, copy.Options{
+		Skip: func(info os.FileInfo, src, dest string) (bool, error) {
+			if info.IsDir() && info.Name() == ".git" {
+				return true, nil
+			}
+			return false, nil
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("copying local template: %w", err)
+	}
+	return nil
 }
 
 // promptForDuplicates prompts the user for any duplicate files detected.

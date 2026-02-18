@@ -6,6 +6,8 @@ package templates
 import (
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -21,6 +23,16 @@ func Absolute(path string) (string, error) {
 		return path, nil
 	}
 
+	// Support local filesystem directories as template sources.
+	// This allows using a local directory with uncommitted changes for template development.
+	if info, err := os.Stat(path); err == nil && info.IsDir() {
+		absPath, err := filepath.Abs(path)
+		if err != nil {
+			return "", fmt.Errorf("resolving local template path: %w", err)
+		}
+		return absPath, nil
+	}
+
 	path = strings.TrimRight(path, "/")
 
 	switch strings.Count(path, "/") {
@@ -30,7 +42,7 @@ func Absolute(path string) (string, error) {
 		return fmt.Sprintf("https://github.com/%s", path), nil
 	default:
 		return "", fmt.Errorf(
-			"template '%s' should either be <owner>/<repo> for GitHub repositories, "+
+			"template '%s' should either be a local directory path, <owner>/<repo> for GitHub repositories, "+
 				"or <repo> for Azure-Samples GitHub repositories", path)
 	}
 }
@@ -44,4 +56,10 @@ func Hyperlink(path string) string {
 		return path
 	}
 	return output.WithHyperlink(url, path)
+}
+
+// IsLocalPath returns true if the given resolved template path refers to a local filesystem directory
+// rather than a remote git URL.
+func IsLocalPath(resolvedPath string) bool {
+	return !strings.HasPrefix(resolvedPath, "http") && !strings.HasPrefix(resolvedPath, "git")
 }

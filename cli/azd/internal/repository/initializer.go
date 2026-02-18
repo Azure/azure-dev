@@ -29,6 +29,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
+	gitignore "github.com/denormal/go-gitignore"
 	"github.com/joho/godotenv"
 	"github.com/otiai10/copy"
 )
@@ -179,15 +180,39 @@ func (i *Initializer) fetchCode(
 	return executableFilePaths, nil
 }
 
-// copyLocalTemplate copies a local template directory to the destination, skipping the .git directory.
-// Unlike fetchCode which uses git clone (and only includes committed content), this copies the full
-// working tree including uncommitted changes — useful for local template development.
+// copyLocalTemplate copies a local template directory to the destination, respecting .gitignore rules
+// to match the behavior of git clone (which only includes tracked files). The .git directory is always
+// excluded. Unlike fetchCode which uses git clone (and only includes committed content), this copies
+// the full working tree including uncommitted changes — useful for local template development.
 func (i *Initializer) copyLocalTemplate(source, destination string) error {
+	// Load .gitignore rules from the source template if present.
+	// This ensures local copy excludes the same files that git clone would
+	// (e.g., node_modules/, bin/, .env, build artifacts).
+	var ignorer gitignore.GitIgnore
+	gitignorePath := filepath.Join(source, ".gitignore")
+	if f, err := os.Open(gitignorePath); err == nil {
+		ignorer = gitignore.New(f, source, nil)
+		f.Close()
+	}
+
 	err := copy.Copy(source, destination, copy.Options{
 		Skip: func(info os.FileInfo, src, dest string) (bool, error) {
+			// Always skip .git directory
 			if info.IsDir() && info.Name() == ".git" {
 				return true, nil
 			}
+
+			// Apply .gitignore rules if available
+			if ignorer != nil {
+				rel, err := filepath.Rel(source, src)
+				if err == nil && rel != "." {
+					match := ignorer.Relative(rel, info.IsDir())
+					if match != nil && match.Ignore() {
+						return true, nil
+					}
+				}
+			}
+
 			return false, nil
 		},
 	})

@@ -11,12 +11,40 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
 )
+
+const (
+	// maxDownloadSize is the maximum allowed download size (500 MB).
+	maxDownloadSize int64 = 500 * 1024 * 1024
+)
+
+// allowedHosts lists hosts permitted during download and redirects.
+var allowedHosts = []string{
+	".blob.core.windows.net",
+	".microsoft.com",
+	".azure.com",
+	".azureedge.net",
+}
+
+// isAllowedHost checks if the URL host is in the allowed hosts list.
+func isAllowedHost(u *url.URL) bool {
+	if !strings.EqualFold(u.Scheme, "https") {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	for _, suffix := range allowedHosts {
+		if strings.HasSuffix(host, suffix) {
+			return true
+		}
+	}
+	return false
+}
 
 // downloadURLs maps GOOS/GOARCH to the stable aka.ms download URLs.
 var downloadURLs = map[string]string{
@@ -60,7 +88,18 @@ func downloadAzCopy(ctx context.Context) (string, error) {
 	destPath := filepath.Join(destDir, binaryName)
 
 	// Download archive to temp file
-	httpClient := &http.Client{Timeout: 5 * time.Minute}
+	httpClient := &http.Client{
+		Timeout: 5 * time.Minute,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return fmt.Errorf("too many redirects")
+			}
+			if !isAllowedHost(req.URL) {
+				return fmt.Errorf("redirect to disallowed host: %s", req.URL.Hostname())
+			}
+			return nil
+		},
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create download request: %w", err)
@@ -76,6 +115,16 @@ func downloadAzCopy(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("failed to download azcopy: HTTP %d", resp.StatusCode)
 	}
 
+	// Validate the final URL after all redirects
+	if !isAllowedHost(resp.Request.URL) {
+		return "", fmt.Errorf("download resolved to disallowed host: %s", resp.Request.URL.Hostname())
+	}
+
+	// Validate Content-Length if provided
+	if resp.ContentLength > maxDownloadSize {
+		return "", fmt.Errorf("download too large: %d bytes exceeds limit of %d bytes", resp.ContentLength, maxDownloadSize)
+	}
+
 	tmpFile, err := os.CreateTemp("", "azcopy-download-*")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp file: %w", err)
@@ -83,11 +132,18 @@ func downloadAzCopy(ctx context.Context) (string, error) {
 	tmpPath := tmpFile.Name()
 	defer os.Remove(tmpPath)
 
-	if _, err := io.Copy(tmpFile, resp.Body); err != nil {
+	// Enforce size limit during copy regardless of Content-Length header
+	limitedReader := io.LimitReader(resp.Body, maxDownloadSize+1)
+	written, err := io.Copy(tmpFile, limitedReader)
+	if err != nil {
 		tmpFile.Close()
 		return "", fmt.Errorf("failed to save download: %w", err)
 	}
 	tmpFile.Close()
+
+	if written > maxDownloadSize {
+		return "", fmt.Errorf("download too large: exceeded limit of %d bytes", maxDownloadSize)
+	}
 
 	// Extract the azcopy binary from the archive
 	if runtime.GOOS == "linux" {

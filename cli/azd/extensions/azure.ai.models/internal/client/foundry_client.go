@@ -40,6 +40,16 @@ func NewFoundryClient(projectEndpoint string, credential azcore.TokenCredential)
 		return nil, fmt.Errorf("invalid project endpoint URL: %w", err)
 	}
 
+	// Enforce HTTPS to prevent sending bearer tokens over plaintext
+	if !strings.EqualFold(parsedURL.Scheme, "https") {
+		return nil, fmt.Errorf("invalid project endpoint URL: scheme must be https")
+	}
+
+	// Reject URLs with embedded credentials
+	if parsedURL.User != nil {
+		return nil, fmt.Errorf("invalid project endpoint URL: userinfo is not allowed")
+	}
+
 	// Validate the URL structure
 	hostname := parsedURL.Hostname()
 	if hostname == "" {

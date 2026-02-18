@@ -368,8 +368,12 @@ func ensureAzureContext(
 		azureContext.Scope.SubscriptionId = resp.Subscription.Id
 		azureContext.Scope.TenantId = resp.Subscription.TenantId
 
-		setEnvValue(ctx, azdClient, env.Name, "AZURE_TENANT_ID", azureContext.Scope.TenantId)
-		setEnvValue(ctx, azdClient, env.Name, "AZURE_SUBSCRIPTION_ID", azureContext.Scope.SubscriptionId)
+		if err := setEnvValue(ctx, azdClient, env.Name, "AZURE_TENANT_ID", azureContext.Scope.TenantId); err != nil {
+			return nil, err
+		}
+		if err := setEnvValue(ctx, azdClient, env.Name, "AZURE_SUBSCRIPTION_ID", azureContext.Scope.SubscriptionId); err != nil {
+			return nil, err
+		}
 	}
 
 	// Prompt for resource group if missing
@@ -387,7 +391,9 @@ func ensureAzureContext(
 		}
 
 		azureContext.Scope.ResourceGroup = resp.ResourceGroup.Name
-		setEnvValue(ctx, azdClient, env.Name, "AZURE_RESOURCE_GROUP_NAME", azureContext.Scope.ResourceGroup)
+		if err := setEnvValue(ctx, azdClient, env.Name, "AZURE_RESOURCE_GROUP_NAME", azureContext.Scope.ResourceGroup); err != nil {
+			return nil, err
+		}
 	}
 
 	// Prompt for Foundry project if missing
@@ -431,22 +437,34 @@ func ensureAzureContext(
 			return nil, fmt.Errorf("failed to get Foundry project: %w", err)
 		}
 
-		setEnvValue(ctx, azdClient, env.Name, "AZURE_ACCOUNT_NAME", fp.AiAccountName)
-		setEnvValue(ctx, azdClient, env.Name, "AZURE_PROJECT_NAME", fp.AiProjectName)
-		setEnvValue(ctx, azdClient, env.Name, "AZURE_LOCATION", *projectResp.Location)
-		setEnvValue(ctx, azdClient, env.Name, "AZURE_PROJECT_ENDPOINT", buildProjectEndpoint(fp.AiAccountName, fp.AiProjectName))
+		if err := setEnvValue(ctx, azdClient, env.Name, "AZURE_ACCOUNT_NAME", fp.AiAccountName); err != nil {
+			return nil, err
+		}
+		if err := setEnvValue(ctx, azdClient, env.Name, "AZURE_PROJECT_NAME", fp.AiProjectName); err != nil {
+			return nil, err
+		}
+		if err := setEnvValue(ctx, azdClient, env.Name, "AZURE_LOCATION", *projectResp.Location); err != nil {
+			return nil, err
+		}
+		if err := setEnvValue(ctx, azdClient, env.Name, "AZURE_PROJECT_ENDPOINT", buildProjectEndpoint(fp.AiAccountName, fp.AiProjectName)); err != nil {
+			return nil, err
+		}
 	}
 
 	return azureContext, nil
 }
 
-// setEnvValue is a helper to set a single environment value, ignoring errors.
-func setEnvValue(ctx context.Context, azdClient *azdext.AzdClient, envName, key, value string) {
-	_, _ = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+// setEnvValue is a helper to set a single environment value.
+func setEnvValue(ctx context.Context, azdClient *azdext.AzdClient, envName, key, value string) error {
+	_, err := azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 		EnvName: envName,
 		Key:     key,
 		Value:   value,
 	})
+	if err != nil {
+		return fmt.Errorf("failed to set environment value %s: %w", key, err)
+	}
+	return nil
 }
 
 // buildProjectEndpoint constructs the Foundry project endpoint URL from account and project names.

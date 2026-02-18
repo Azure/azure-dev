@@ -269,6 +269,11 @@ func getWellKnownPaths() []string {
 		filepath.Join(home, ".azure", "bin", binary),
 	}
 
+	// Check default package manager location on Linux
+	if runtime.GOOS == "linux" {
+		paths = append(paths, "/usr/bin/azcopy")
+	}
+
 	// Check common download locations on Windows
 	if runtime.GOOS == "windows" {
 		downloads := filepath.Join(home, "Downloads")

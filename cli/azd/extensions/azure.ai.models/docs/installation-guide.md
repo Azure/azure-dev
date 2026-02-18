@@ -7,11 +7,7 @@
 
 ### Install Azure Developer CLI (azd)
 
-If you don't have `azd` installed, install it via winget:
-
-```powershell
-winget install microsoft.azd
-```
+If you don't have `azd` installed, follow the instructions at [https://aka.ms/azd-install](https://aka.ms/azd-install).
 
 After installation, restart your terminal and verify:
 
@@ -33,19 +29,7 @@ Sign in with your Azure credentials. This is required for both installing the ex
 
 ---
 
-## Step 1: Add the Extension Source
-
-Add the extension registry that contains the Azure AI Models extension:
-
-```bash
-azd ext source add -n model -l "https://raw.githubusercontent.com/achauhan-scc/azure-dev/ba96e634e88395aae066a0bc026284665fced4c4/cli/azd/extensions/registry.json" -t url
-```
-
-![Extension Source Addition](images/01-ext-Source-Addition.jpg)
-
----
-
-## Step 2: Verify Extension is Available
+## Step 1: Verify Extension is Available
 
 Confirm the extension appears in the list of available extensions:
 
@@ -59,7 +43,7 @@ You should see `azure.ai.models` in the output.
 
 ---
 
-## Step 3: Install the Extension
+## Step 2: Install the Extension
 
 ```bash
 azd ext install azure.ai.models
@@ -69,7 +53,7 @@ azd ext install azure.ai.models
 
 ---
 
-## Step 4: Verify Installation
+## Step 3: Verify Installation
 
 ```bash
 azd ai models -h
@@ -81,7 +65,7 @@ You should see the help output with available commands: `init`, `custom`, and `v
 
 ---
 
-## Step 5: Authenticate (if not already done)
+## Step 4: Authenticate (if not already done)
 
 Ensure you are logged in before running any model commands:
 
@@ -91,11 +75,11 @@ azd auth login
 
 ---
 
-## Step 6: Use Custom Model Commands
+## Step 5: Use Custom Model Commands
 
 You can use the custom model commands by providing `--project-endpoint (-e)` and `--subscription (-s)` flags directly.
 
-### 6.1 List Custom Models
+### 5.1 List Custom Models
 
 ```bash
 azd ai models custom list -e <project_endpoint> -s <subscription_id>
@@ -109,7 +93,7 @@ azd ai models custom list -e "https://my-account.services.ai.azure.com/api/proje
 
 ![List Custom Models](images/06.1.jpg)
 
-### 6.2 Create a Custom Model
+### 5.2 Create a Custom Model
 
 ```bash
 azd ai models custom create -e <project_endpoint> -s <subscription_id> --name <model-name> --source <local_path_or_remote_url>
@@ -139,13 +123,13 @@ azd ai models custom create -e "https://my-account.services.ai.azure.com/api/pro
 
 ![Create Custom Model](images/06.2.jpg)
 
-### 6.3 Show Custom Model Details
+### 5.3 Show Custom Model Details
 
 ```bash
 azd ai models custom show -e <project_endpoint> -s <subscription_id> --name <model-name>
 ```
 
-### 6.4 Delete a Custom Model
+### 5.4 Delete a Custom Model
 
 ```bash
 azd ai models custom delete -e <project_endpoint> -s <subscription_id> --name <model-name>
@@ -159,7 +143,7 @@ azd ai models custom delete -e <project_endpoint> -s <subscription_id> --name <m
 
 ---
 
-## Step 7: Initialize Project (Optional — Recommended)
+## Step 6: Initialize Project (Optional — Recommended)
 
 Instead of passing `-e` and `-s` on every command, you can run `azd ai models init` to
 configure your project once. This stores the project endpoint and subscription in the

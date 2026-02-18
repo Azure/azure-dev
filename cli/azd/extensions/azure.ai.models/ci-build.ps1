@@ -7,6 +7,8 @@ param(
     [string] $OutputFileName
 )
 
+$PSNativeCommandArgumentPassing = 'Legacy'
+
 # Remove any previously built binaries
 go clean
 

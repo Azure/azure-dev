@@ -3,7 +3,7 @@ namespace: ai.models
 displayName: Foundry Custom Models (Preview)
 description: Extension for managing custom models in Azure AI Foundry. (Preview)
 usage: azd ai models <command> [options]
-version: 0.0.2-preview
+version: 0.0.3-preview
 language: go
 capabilities:
     - custom-commands

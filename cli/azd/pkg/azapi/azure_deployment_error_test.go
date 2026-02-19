@@ -66,3 +66,111 @@ func assertOutputsMatch(t *testing.T, jsonPath string, expectedOutputPath string
 		require.Equal(t, expectedLines[index], value)
 	}
 }
+
+func Test_RootCause_DeepNested(t *testing.T) {
+	err := &AzureDeploymentError{
+		Details: &DeploymentErrorLine{
+			Code: "",
+			Inner: []*DeploymentErrorLine{
+				{
+					Code: "DeploymentFailed",
+					Inner: []*DeploymentErrorLine{
+						{
+							Code: "ResourceDeploymentFailure",
+							Inner: []*DeploymentErrorLine{
+								{Code: "InsufficientQuota", Message: "Not enough quota"},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	root := err.RootCause()
+	require.NotNil(t, root)
+	require.Equal(t, "InsufficientQuota", root.Code)
+}
+
+func Test_RootCause_FlatError(t *testing.T) {
+	err := &AzureDeploymentError{
+		Details: &DeploymentErrorLine{
+			Code:    "InvalidTemplate",
+			Message: "Template is invalid",
+		},
+	}
+
+	root := err.RootCause()
+	require.NotNil(t, root)
+	require.Equal(t, "InvalidTemplate", root.Code)
+}
+
+func Test_RootCause_NilDetails(t *testing.T) {
+	err := &AzureDeploymentError{Details: nil}
+	root := err.RootCause()
+	require.Nil(t, root)
+}
+
+func Test_RootCause_NoCode(t *testing.T) {
+	err := &AzureDeploymentError{
+		Details: &DeploymentErrorLine{
+			Code: "",
+			Inner: []*DeploymentErrorLine{
+				{Code: "", Message: "some message"},
+			},
+		},
+	}
+
+	root := err.RootCause()
+	require.Nil(t, root)
+}
+
+func Test_RootCauseHint_Known(t *testing.T) {
+	err := &AzureDeploymentError{
+		Details: &DeploymentErrorLine{
+			Code: "",
+			Inner: []*DeploymentErrorLine{
+				{Code: "InsufficientQuota", Message: "Quota exceeded"},
+			},
+		},
+	}
+
+	hint := err.RootCauseHint()
+	require.Contains(t, hint, "insufficient quota")
+}
+
+func Test_RootCauseHint_Unknown(t *testing.T) {
+	err := &AzureDeploymentError{
+		Details: &DeploymentErrorLine{
+			Code: "SomeRandomCode",
+		},
+	}
+
+	hint := err.RootCauseHint()
+	require.Empty(t, hint)
+}
+
+func Test_RootCause_MultipleBranches(t *testing.T) {
+	err := &AzureDeploymentError{
+		Details: &DeploymentErrorLine{
+			Code: "",
+			Inner: []*DeploymentErrorLine{
+				{
+					Code: "Conflict",
+					Inner: []*DeploymentErrorLine{
+						{Code: "AuthorizationFailed"},
+					},
+				},
+				{
+					Code: "ValidationError",
+				},
+			},
+		},
+	}
+
+	root := err.RootCause()
+	require.NotNil(t, root)
+	// AuthorizationFailed is at depth 2, ValidationError at depth 1
+	// The depth-tracking algorithm should pick the deeper one
+	require.Equal(t, "AuthorizationFailed", root.Code)
+}

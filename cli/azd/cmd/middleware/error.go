@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/llm"
@@ -79,6 +80,14 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 	if err == nil || IsChildAction(ctx) {
 		return actionResult, err
+	}
+
+	// Display ARM deployment root cause hint if available
+	var armErr *azapi.AzureDeploymentError
+	if errors.As(err, &armErr) {
+		if hint := armErr.RootCauseHint(); hint != "" {
+			e.console.Message(ctx, output.WithWarningFormat("Hint: %s", hint))
+		}
 	}
 
 	// Error already has a suggestion, no need for AI

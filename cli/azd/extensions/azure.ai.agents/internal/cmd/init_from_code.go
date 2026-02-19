@@ -1411,6 +1411,10 @@ func (a *InitFromCodeAction) processExistingFoundryProject(ctx context.Context, 
 				}
 			}
 
+			if err := a.setEnvVar(ctx, "AZURE_AI_PROJECT_ACR_CONNECTION_NAME", selectedConnection.Name); err != nil {
+				return err
+			}
+
 			if err := a.setEnvVar(ctx, "AZURE_CONTAINER_REGISTRY_ENDPOINT", selectedConnection.Target); err != nil {
 				return err
 			}

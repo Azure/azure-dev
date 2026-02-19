@@ -30,6 +30,8 @@ var allowedHosts = []string{
 	".microsoft.com",
 	".azure.com",
 	".azureedge.net",
+	".github.com",
+	"github.com",
 }
 
 // isAllowedHost checks if the URL host is in the allowed hosts list.

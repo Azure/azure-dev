@@ -2,11 +2,9 @@
 
 ## 0.1.10-preview (2026-02-19)
 
-- [[#6749]](https://github.com/Azure/azure-dev/pull/6749) Update model selection to use gRPC-based model catalog and quota services
 - [[#6749]](https://github.com/Azure/azure-dev/pull/6749) Add "Choose a different model (all regions)" option during model selection recovery
 - [[#6749]](https://github.com/Azure/azure-dev/pull/6749) Display quota availability info in model deployment prompts
 - [[#6749]](https://github.com/Azure/azure-dev/pull/6749) Improve deployment capacity validation
-- [[#6749]](https://github.com/Azure/azure-dev/pull/6749) Improve `AZURE_AI_PROJECT_ID` validation with early error for invalid resource IDs
 
 ## 0.1.9-preview (2026-02-05)
 

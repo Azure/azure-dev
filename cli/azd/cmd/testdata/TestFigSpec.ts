@@ -1221,7 +1221,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--subscription'],
-							description: 'Name or ID of an Azure subscription to use for the new environment',
+							description: 'ID of an Azure subscription to use for the new environment',
 							args: [
 								{
 									name: 'subscription',
@@ -1678,7 +1678,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['--subscription', '-s'],
-					description: 'Name or ID of an Azure subscription to use for the new environment',
+					description: 'ID of an Azure subscription to use for the new environment',
 					args: [
 						{
 							name: 'subscription',
@@ -2055,12 +2055,30 @@ const completionSpec: Fig.Spec = {
 					],
 				},
 				{
+					name: ['--location', '-l'],
+					description: 'Azure location for the new environment',
+					args: [
+						{
+							name: 'location',
+						},
+					],
+				},
+				{
 					name: ['--no-state'],
 					description: '(Bicep only) Forces a fresh deployment based on current Bicep template files, ignoring any stored deployment state.',
 				},
 				{
 					name: ['--preview'],
 					description: 'Preview changes to Azure resources.',
+				},
+				{
+					name: ['--subscription'],
+					description: 'ID of an Azure subscription to use for the new environment',
+					args: [
+						{
+							name: 'subscription',
+						},
+					],
 				},
 			],
 			args: {
@@ -2259,6 +2277,24 @@ const completionSpec: Fig.Spec = {
 					args: [
 						{
 							name: 'environment',
+						},
+					],
+				},
+				{
+					name: ['--location', '-l'],
+					description: 'Azure location for the new environment',
+					args: [
+						{
+							name: 'location',
+						},
+					],
+				},
+				{
+					name: ['--subscription'],
+					description: 'ID of an Azure subscription to use for the new environment',
+					args: [
+						{
+							name: 'subscription',
 						},
 					],
 				},

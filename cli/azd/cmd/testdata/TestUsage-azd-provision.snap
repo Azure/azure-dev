@@ -12,9 +12,11 @@ Usage
   azd provision [<layer>] [flags]
 
 Flags
-    -e, --environment string 	: The name of the environment to use.
-        --no-state           	: (Bicep only) Forces a fresh deployment based on current Bicep template files, ignoring any stored deployment state.
-        --preview            	: Preview changes to Azure resources.
+    -e, --environment string  	: The name of the environment to use.
+    -l, --location string     	: Azure location for the new environment
+        --no-state            	: (Bicep only) Forces a fresh deployment based on current Bicep template files, ignoring any stored deployment state.
+        --preview             	: Preview changes to Azure resources.
+        --subscription string 	: ID of an Azure subscription to use for the new environment
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

@@ -99,7 +99,7 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 		"subscription",
 		"s",
 		"",
-		"Name or ID of an Azure subscription to use for the new environment",
+		"ID of an Azure subscription to use for the new environment",
 	)
 	local.BoolVarP(
 		&i.fromCode,

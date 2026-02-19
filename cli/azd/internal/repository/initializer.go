@@ -59,7 +59,7 @@ func NewInitializer(
 	}
 }
 
-// Initializes a local repository in the project directory from a remote repository.
+// Initializes a local repository in the project directory from a remote repository or local template directory.
 //
 // A confirmation prompt is displayed for any existing files to be overwritten.
 func (i *Initializer) Initialize(
@@ -225,8 +225,12 @@ func (i *Initializer) copyLocalTemplate(source, destination string) error {
 			// Apply .gitignore rules if available
 			if ignorer != nil {
 				rel, err := filepath.Rel(source, src)
-				if err == nil && rel != "." {
-					match := ignorer.Relative(rel, info.IsDir())
+				if err != nil {
+					return false, fmt.Errorf("computing relative path for gitignore matching: %w", err)
+				}
+				if rel != "." {
+					// Gitignore patterns use forward slashes; convert for cross-platform correctness.
+					match := ignorer.Relative(filepath.ToSlash(rel), info.IsDir())
 					if match != nil && match.Ignore() {
 						return true, nil
 					}

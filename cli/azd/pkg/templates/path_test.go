@@ -80,6 +80,16 @@ func Test_Absolute(t *testing.T) {
 			input:     "../nonexistent-template",
 			expectErr: true,
 		},
+		{
+			name:     "SshURL",
+			input:    "ssh://git@github.com/Azure-Samples/my-template.git",
+			expected: "ssh://git@github.com/Azure-Samples/my-template.git",
+		},
+		{
+			name:     "FileURL",
+			input:    "file:///home/user/my-template",
+			expected: "file:///home/user/my-template",
+		},
 	}
 
 	for _, tt := range tests {
@@ -150,6 +160,8 @@ func Test_IsLocalPath(t *testing.T) {
 		{"HttpURL", "http://github.com/Azure-Samples/my-template", false},
 		{"GitURI", "git@github.com:Azure-Samples/my-template.git", false},
 		{"GitProtocolURI", "git://github.com/Azure-Samples/my-template.git", false},
+		{"SshURL", "ssh://git@github.com/Azure-Samples/my-template.git", false},
+		{"FileURL", "file:///home/user/my-template", false},
 		{"WindowsAbsPath", `C:\code\my-template`, true},
 		{"UnixAbsPath", "/home/user/my-template", true},
 		{"RelativePath", "my-template", true},

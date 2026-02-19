@@ -18,9 +18,11 @@ import (
 //
 // See Template.Path for more details.
 func Absolute(path string) (string, error) {
-	// already a git URI, return as-is
+	// already a remote URI, return as-is
 	if strings.HasPrefix(path, "git@") ||
 		strings.HasPrefix(path, "git://") ||
+		strings.HasPrefix(path, "ssh://") ||
+		strings.HasPrefix(path, "file://") ||
 		strings.HasPrefix(path, "http://") ||
 		strings.HasPrefix(path, "https://") {
 		return path, nil
@@ -36,7 +38,7 @@ func Absolute(path string) (string, error) {
 		return absPath, nil
 	}
 
-	// If the path looks like an explicit local path reference (starts with ./, ../, .\, ..\,
+	// If the path looks like an explicit local path reference (".", "..", starts with ./, ../, .\, ..\,
 	// or is an absolute path) but the directory wasn't found above, return a clear error
 	// instead of falling through to GitHub resolution which would give a confusing error.
 	if looksLikeLocalPath(path) {
@@ -74,13 +76,17 @@ func IsLocalPath(resolvedPath string) bool {
 	return !strings.HasPrefix(resolvedPath, "http://") &&
 		!strings.HasPrefix(resolvedPath, "https://") &&
 		!strings.HasPrefix(resolvedPath, "git@") &&
-		!strings.HasPrefix(resolvedPath, "git://")
+		!strings.HasPrefix(resolvedPath, "git://") &&
+		!strings.HasPrefix(resolvedPath, "ssh://") &&
+		!strings.HasPrefix(resolvedPath, "file://")
 }
 
 // looksLikeLocalPath returns true if the path appears to be an explicit local filesystem reference
-// (e.g., starts with ./, ../, or is an absolute path).
+// (e.g., ".", "..", starts with ./, ../, or is an absolute path).
 func looksLikeLocalPath(path string) bool {
-	return strings.HasPrefix(path, "./") ||
+	return path == "." ||
+		path == ".." ||
+		strings.HasPrefix(path, "./") ||
 		strings.HasPrefix(path, "../") ||
 		strings.HasPrefix(path, `..\`) ||
 		strings.HasPrefix(path, `.\`) ||

@@ -22,10 +22,11 @@ func (c *userAgentClient) Do(req *http.Request) (*http.Response, error) {
 	if req.Header == nil {
 		req.Header = make(http.Header)
 	}
-	if req.Header.Get("User-Agent") == "" {
+	existingUA := req.Header.Get("User-Agent")
+	if existingUA == "" {
 		req.Header.Set("User-Agent", c.userAgent)
 	} else {
-		req.Header.Set("User-Agent", req.Header.Get("User-Agent")+","+c.userAgent)
+		req.Header.Set("User-Agent", existingUA+","+c.userAgent)
 	}
 	return c.inner.Do(req)
 }

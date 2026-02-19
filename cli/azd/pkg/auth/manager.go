@@ -98,6 +98,7 @@ type Manager struct {
 	console             input.Console
 	externalAuthCfg     ExternalAuthConfiguration
 	azCli               az.AzCli
+	userAgent           string
 }
 
 type ExternalAuthConfiguration struct {
@@ -114,6 +115,7 @@ func NewManager(
 	console input.Console,
 	externalAuthCfg ExternalAuthConfiguration,
 	azCli az.AzCli,
+	userAgent string,
 ) (*Manager, error) {
 	cfgRoot, err := config.GetUserConfigDir()
 	if err != nil {
@@ -135,10 +137,12 @@ func NewManager(
 		return nil, fmt.Errorf("joining authority url: %w", err)
 	}
 
+	msalClient := newUserAgentClient(httpClient, userAgent)
+
 	options := []public.Option{
 		public.WithCache(newCache(cacheRoot)),
 		public.WithAuthority(authorityUrl),
-		public.WithHTTPClient(httpClient),
+		public.WithHTTPClient(msalClient),
 	}
 
 	publicClientApp, err := public.New(azdClientID, options...)
@@ -157,7 +161,23 @@ func NewManager(
 		console:             console,
 		externalAuthCfg:     externalAuthCfg,
 		azCli:               azCli,
+		userAgent:           userAgent,
 	}, nil
+}
+
+// authClientOptions returns azcore.ClientOptions configured with the custom user-agent policy
+// for use with Azure Identity SDK credentials.
+func (m *Manager) authClientOptions() azcore.ClientOptions {
+	opts := azcore.ClientOptions{
+		Transport: m.httpClient,
+		Cloud:     m.cloud.Configuration,
+	}
+	if m.userAgent != "" {
+		opts.Telemetry = policy.TelemetryOptions{
+			ApplicationID: m.userAgent,
+		}
+	}
+	return opts
 }
 
 // LoginScopes returns the default scopes requested when logging in.
@@ -464,7 +484,9 @@ func (m *Manager) GetLoggedInServicePrincipalTenantID(ctx context.Context) (*str
 }
 
 func (m *Manager) newCredentialFromManagedIdentity(clientID string) (azcore.TokenCredential, error) {
-	options := &azidentity.ManagedIdentityCredentialOptions{}
+	options := &azidentity.ManagedIdentityCredentialOptions{
+		ClientOptions: m.authClientOptions(),
+	}
 	if clientID != "" {
 		options.ID = azidentity.ClientID(clientID)
 	}
@@ -483,12 +505,7 @@ func (m *Manager) newCredentialFromClientSecret(
 	clientSecret string,
 ) (azcore.TokenCredential, error) {
 	options := &azidentity.ClientSecretCredentialOptions{
-		ClientOptions: azcore.ClientOptions{
-			Transport: m.httpClient,
-			// TODO: Inject client options instead? this can be done if we're OK
-			// using the default user agent string.
-			Cloud: m.cloud.Configuration,
-		},
+		ClientOptions: m.authClientOptions(),
 	}
 	cred, err := azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret, options)
 	if err != nil {
@@ -514,12 +531,7 @@ func (m *Manager) newCredentialFromClientCertificate(
 	}
 
 	options := &azidentity.ClientCertificateCredentialOptions{
-		ClientOptions: azcore.ClientOptions{
-			Transport: m.httpClient,
-			// TODO: Inject client options instead? this can be done if we're OK
-			// using the default user agent string.
-			Cloud: m.cloud.Configuration,
-		},
+		ClientOptions: m.authClientOptions(),
 	}
 	cred, err := azidentity.NewClientCertificateCredential(
 		tenantID, clientID, certs, key, options)
@@ -537,12 +549,7 @@ func (m *Manager) newCredentialFromFederatedTokenProvider(
 	provider federatedTokenProvider,
 	serviceConnectionID *string,
 ) (azcore.TokenCredential, error) {
-	clientOptions := azcore.ClientOptions{
-		Transport: m.httpClient,
-		// TODO: Inject client options instead? this can be done if we're OK
-		// using the default user agent string.
-		Cloud: m.cloud.Configuration,
-	}
+	clientOptions := m.authClientOptions()
 
 	switch provider {
 	case gitHubFederatedTokenProvider:

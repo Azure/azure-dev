@@ -1501,12 +1501,18 @@ func newEnvConfigSetCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "set <path> <value>",
 		Short: "Sets a configuration value in the environment.",
-		Long:  "Sets a configuration value in the environment's config.json file.",
-		Args:  cobra.ExactArgs(2),
+		Long: `Sets a configuration value in the environment's config.json file.
+
+Values are automatically parsed as JSON types when possible. Booleans (true/false),
+numbers (42, 3.14), arrays ([...]), and objects ({...}) are stored with their native
+JSON types. Plain text values are stored as strings. To force a JSON-typed value to be
+stored as a string, wrap it in JSON quotes (e.g. '"true"' or '"8080"').`,
+		Args: cobra.ExactArgs(2),
 		Example: `$ azd env config set myapp.endpoint https://example.com
 $ azd env config set myapp.debug true
 $ azd env config set myapp.count 42
-$ azd env config set infra.parameters.tags '{"env":"dev"}'`,
+$ azd env config set infra.parameters.tags '{"env":"dev"}'
+$ azd env config set myapp.port '"8080"'`,
 	}
 }
 

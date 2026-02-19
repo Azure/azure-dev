@@ -341,7 +341,7 @@ func TestEnvConfigSet(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name:          "SetQuotedStringAsBool",
+			name:          "SetQuotedJsonForcesStringType",
 			initialConfig: map[string]any{},
 			path:          "app.flag",
 			value:         `"true"`,

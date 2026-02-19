@@ -156,6 +156,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			ctx,
 			"mcp.errorHandling.troubleshooting",
 			fmt.Sprintf("Generate troubleshooting steps using %s?", agentName),
+			"Generate Troubleshooting Steps",
 			fmt.Sprintf("This action will run AI tools to generate troubleshooting steps."+
 				" Edit permissions for AI tools anytime by running %s.",
 				output.WithHighLightFormat("azd mcp consent")),
@@ -191,6 +192,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			ctx,
 			"mcp.errorHandling.fix",
 			fmt.Sprintf("Brainstorm solutions using %s?", agentName),
+			"Brainstorm Solutions",
 			fmt.Sprintf("This action will run AI tools to help fix the error."+
 				" Edit permissions for AI tools anytime by running %s.",
 				output.WithHighLightFormat("azd mcp consent")),
@@ -311,6 +313,7 @@ func (e *ErrorMiddleware) checkErrorHandlingConsent(
 	ctx context.Context,
 	promptName string,
 	message string,
+	consentMessage string,
 	helpMessage string,
 	skip bool,
 ) (bool, error) {
@@ -319,7 +322,15 @@ func (e *ErrorMiddleware) checkErrorHandlingConsent(
 		return false, fmt.Errorf("failed to load user config: %w", err)
 	}
 
-	if exists, ok := userConfig.GetString(promptName); !ok && exists == "" {
+	if exists, ok := userConfig.GetString(promptName); ok && exists == "allow" {
+		e.console.Message(ctx, output.WithWarningFormat(
+			"%s option is currently set to \"allow\" meaning this action will run automatically. "+
+				"To disable this, please run %s.\n",
+			consentMessage,
+			output.WithHighLightFormat(fmt.Sprintf("azd config unset %s", promptName)),
+		))
+
+	} else {
 		choice, err := promptForErrorHandlingConsent(ctx, message, helpMessage, skip)
 		if err != nil {
 			return false, fmt.Errorf("prompting for error handling consent: %w", err)

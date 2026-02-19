@@ -1,7 +1,7 @@
 
 Runs a workflow to package, provision and deploy your application in a single step.
 
-Before running, you can configure your target subscription and location:
+Before running, configure your target subscription and location:
 
   azd env set AZURE_SUBSCRIPTION_ID <your-subscription-id>
   azd env set AZURE_LOCATION <location>

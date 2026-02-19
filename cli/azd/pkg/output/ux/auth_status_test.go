@@ -53,8 +53,8 @@ func TestAuthStatusView_ToString(t *testing.T) {
 		{
 			name: "authenticated service principal",
 			result: &contracts.StatusResult{
-				Status: contracts.AuthStatusAuthenticated,
-				Type:   contracts.AccountTypeServicePrincipal,
+				Status:   contracts.AuthStatusAuthenticated,
+				Type:     contracts.AccountTypeServicePrincipal,
 				ClientID: "00000000-0000-0000-0000-000000000000",
 			},
 			authMode: "azd built in",

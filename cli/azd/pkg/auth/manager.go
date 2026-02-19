@@ -852,7 +852,9 @@ func (m *Manager) LoginWithDeviceCode(
 }
 
 func (m *Manager) LoginWithManagedIdentity(ctx context.Context, clientID string) (azcore.TokenCredential, error) {
-	options := &azidentity.ManagedIdentityCredentialOptions{}
+	options := &azidentity.ManagedIdentityCredentialOptions{
+		ClientOptions: m.authClientOptions(),
+	}
 	if clientID != "" {
 		options.ID = azidentity.ClientID(clientID)
 	}
@@ -872,7 +874,9 @@ func (m *Manager) LoginWithManagedIdentity(ctx context.Context, clientID string)
 func (m *Manager) LoginWithServicePrincipalSecret(
 	ctx context.Context, tenantId, clientId, clientSecret string,
 ) (azcore.TokenCredential, error) {
-	cred, err := azidentity.NewClientSecretCredential(tenantId, clientId, clientSecret, nil)
+	cred, err := azidentity.NewClientSecretCredential(tenantId, clientId, clientSecret, &azidentity.ClientSecretCredentialOptions{
+		ClientOptions: m.authClientOptions(),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("creating credential: %w", err)
 	}
@@ -898,7 +902,9 @@ func (m *Manager) LoginWithServicePrincipalCertificate(
 		return nil, fmt.Errorf("parsing certificate: %w", err)
 	}
 
-	cred, err := azidentity.NewClientCertificateCredential(tenantId, clientId, certs, key, nil)
+	cred, err := azidentity.NewClientCertificateCredential(tenantId, clientId, certs, key, &azidentity.ClientCertificateCredentialOptions{
+		ClientOptions: m.authClientOptions(),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("creating credential: %w", err)
 	}
@@ -951,12 +957,7 @@ func (m *Manager) LoginWithAzurePipelinesFederatedTokenProvider(
 	}
 
 	options := &azidentity.AzurePipelinesCredentialOptions{
-		ClientOptions: azcore.ClientOptions{
-			Transport: m.httpClient,
-			// TODO: Inject client options instead? this can be done if we're OK
-			// using the default user agent string.
-			Cloud: m.cloud.Configuration,
-		},
+		ClientOptions: m.authClientOptions(),
 	}
 
 	cred, err := azidentity.NewAzurePipelinesCredential(tenantID, clientID, serviceConnectionID, systemAccessToken, options)

@@ -19,6 +19,9 @@ func newUserAgentClient(inner HttpClient, userAgent string) HttpClient {
 }
 
 func (c *userAgentClient) Do(req *http.Request) (*http.Response, error) {
+	if req.Header == nil {
+		req.Header = make(http.Header)
+	}
 	if req.Header.Get("User-Agent") == "" {
 		req.Header.Set("User-Agent", c.userAgent)
 	} else {

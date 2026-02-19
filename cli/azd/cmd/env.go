@@ -896,7 +896,7 @@ func (f *envNewFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		&f.subscription,
 		"subscription",
 		"",
-		"Name or ID of an Azure subscription to use for the new environment",
+		"ID of an Azure subscription to use for the new environment",
 	)
 	local.StringVarP(&f.location, "location", "l", "", "Azure location for the new environment")
 

@@ -34,6 +34,8 @@ type ProvisionFlags struct {
 	noProgress            bool
 	preview               bool
 	ignoreDeploymentState bool
+	subscription          string
+	location              string
 	global                *internal.GlobalCommandOptions
 	*internal.EnvFlag
 }
@@ -55,7 +57,24 @@ func (i *ProvisionFlags) BindNonCommon(local *pflag.FlagSet, global *internal.Gl
 	local.BoolVar(&i.noProgress, "no-progress", false, "Suppresses progress information.")
 	//deprecate:Flag hide --no-progress
 	_ = local.MarkHidden("no-progress")
+	local.StringVar(
+		&i.subscription,
+		"subscription",
+		"",
+		"ID of an Azure subscription to use for the new environment",
+	)
+	local.StringVarP(&i.location, "location", "l", "", "Azure location for the new environment")
 	i.global = global
+}
+
+// Subscription returns the value of the --subscription flag.
+func (i *ProvisionFlags) Subscription() string {
+	return i.subscription
+}
+
+// Location returns the value of the --location flag.
+func (i *ProvisionFlags) Location() string {
+	return i.location
 }
 
 func (i *ProvisionFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
@@ -197,6 +216,34 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 	if err := p.projectManager.EnsureAllTools(ctx, p.projectConfig, nil); err != nil {
 		return nil, err
+	}
+
+	// Apply --subscription and --location flags to the environment before provisioning
+	envChanged := false
+	if p.flags.subscription != "" {
+		if existing := p.env.GetSubscriptionId(); existing != "" && existing != p.flags.subscription {
+			return nil, fmt.Errorf(
+				"cannot change subscription for existing environment '%s' (current: %s, requested: %s). "+
+					"Create a new environment with 'azd env new' instead",
+				p.env.Name(), existing, p.flags.subscription)
+		}
+		p.env.SetSubscriptionId(p.flags.subscription)
+		envChanged = true
+	}
+	if p.flags.location != "" {
+		if existing := p.env.GetLocation(); existing != "" && existing != p.flags.location {
+			return nil, fmt.Errorf(
+				"cannot change location for existing environment '%s' (current: %s, requested: %s). "+
+					"Create a new environment with 'azd env new' instead",
+				p.env.Name(), existing, p.flags.location)
+		}
+		p.env.SetLocation(p.flags.location)
+		envChanged = true
+	}
+	if envChanged {
+		if err := p.envManager.Save(ctx, p.env); err != nil {
+			return nil, fmt.Errorf("saving environment: %w", err)
+		}
 	}
 
 	infra, err := p.importManager.ProjectInfrastructure(ctx, p.projectConfig)

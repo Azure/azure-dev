@@ -884,6 +884,15 @@ func (m *mockContainerRegistryServiceForRetry) GetContainerRegistries(
 	return args.Get(0).([]*armcontainerregistry.Registry), args.Error(1)
 }
 
+func (m *mockContainerRegistryServiceForRetry) FindContainerRegistryResourceGroup(
+	ctx context.Context,
+	subscriptionId string,
+	registryName string,
+) (string, error) {
+	args := m.Called(ctx, subscriptionId, registryName)
+	return args.String(0), args.Error(1)
+}
+
 func Test_ContainerHelper_Credential_Retry(t *testing.T) {
 	t.Run("Retry on 404 on time", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
@@ -1005,6 +1014,15 @@ func (m *mockContainerRegistryService) GetContainerRegistries(
 ) ([]*armcontainerregistry.Registry, error) {
 	args := m.Called(ctx, subscriptionId)
 	return args.Get(0).([]*armcontainerregistry.Registry), args.Error(1)
+}
+
+func (m *mockContainerRegistryService) FindContainerRegistryResourceGroup(
+	ctx context.Context,
+	subscriptionId string,
+	registryName string,
+) (string, error) {
+	args := m.Called(ctx, subscriptionId, registryName)
+	return args.String(0), args.Error(1)
 }
 func Test_ContainerHelper_Publish(t *testing.T) {
 	tests := []struct {

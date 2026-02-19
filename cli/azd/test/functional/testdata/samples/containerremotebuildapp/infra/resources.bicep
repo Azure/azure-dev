@@ -58,7 +58,7 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' 
   tags: tags
 }
 
-resource app 'Microsoft.App/containerApps@2025-10-02-preview' = {
+resource app 'Microsoft.App/containerApps@2024-03-01' = {
   name: 'app-${resourceToken}'
   location: location
   identity: {
@@ -70,21 +70,8 @@ resource app 'Microsoft.App/containerApps@2025-10-02-preview' = {
   properties: {
     environmentId: containerAppEnvironment.id
     configuration: {
-      activeRevisionsMode: 'Labels'
-      targetLabel: 'staging' // or production
+      activeRevisionsMode: 'Single'
       ingress: {
-        traffic: [
-          {
-            label: 'staging'
-            latestRevisionInLabel: true
-            weight: 0
-          }
-          {
-            label: 'production'
-            weight: 100
-            latestRevisionInLabel: true // Like latestRevision, except tied to a label. If no revisions have the label (on initial creation), the latest revision is used
-          }
-        ]
         external: true
         targetPort: 8080
         transport: 'http'

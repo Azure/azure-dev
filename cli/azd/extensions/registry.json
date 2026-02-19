@@ -2697,6 +2697,99 @@
           }
         }
       ]
+    },
+    {
+      "id": "azure.ai.models",
+      "namespace": "ai.models",
+      "displayName": "Foundry Custom Models (Preview)",
+      "description": "Extension for managing custom models in Azure AI Foundry. (Preview)",
+      "versions": [
+        {
+          "capabilities": [
+            "custom-commands",
+            "metadata"
+          ],
+          "version": "0.0.1-preview",
+          "usage": "azd ai models \u003ccommand\u003e [options]",
+          "examples": [
+            {
+              "name": "init",
+              "description": "Initialize a new AI models project.",
+              "usage": "azd ai models init"
+            },
+            {
+              "name": "create",
+              "description": "Upload and register a custom model.",
+              "usage": "azd ai models custom create --source ./model.safetensors --name my-model"
+            },
+            {
+              "name": "list",
+              "description": "List all custom models.",
+              "usage": "azd ai models custom list"
+            },
+            {
+              "name": "show",
+              "description": "Show details of a custom model.",
+              "usage": "azd ai models custom show --name my-model"
+            },
+            {
+              "name": "delete",
+              "description": "Delete a custom model.",
+              "usage": "azd ai models custom delete --name my-model"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "8880a66bfa3a1f4e2bacecb0250c5e1f9123efbe1ee3dff9d0fbdd5b936b789b"
+              },
+              "entryPoint": "azure-ai-models-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-models_0.0.1-preview/azure-ai-models-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "6727395151f92024a04fcc6014670825c2acd1f71770206f85538d5d3f2dfc8c"
+              },
+              "entryPoint": "azure-ai-models-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-models_0.0.1-preview/azure-ai-models-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "584a0182197f8da11500f554b6ff2cd6b7c1fc06871832cdcf6465e7d8a3cf9c"
+              },
+              "entryPoint": "azure-ai-models-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-models_0.0.1-preview/azure-ai-models-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "346bd40ed1a12273adece0533ba7ccd847e3849ce24130124b644e85b5835c42"
+              },
+              "entryPoint": "azure-ai-models-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-models_0.0.1-preview/azure-ai-models-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "7f2425f5ebe080df17b28d01b77d14805ab72ef1250365086ce464c6d5749bce"
+              },
+              "entryPoint": "azure-ai-models-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-models_0.0.1-preview/azure-ai-models-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "6356178c246cc7db2d9b26ffacb60614581bb2657f61c57d56406bf4999a15e8"
+              },
+              "entryPoint": "azure-ai-models-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-models_0.0.1-preview/azure-ai-models-windows-arm64.zip"
+            }
+          }
+        }
+      ]
     }
   ]
 }

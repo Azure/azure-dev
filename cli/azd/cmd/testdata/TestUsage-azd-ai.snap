@@ -7,6 +7,7 @@ Usage
 Available Commands
   agent     	: Extension for the Foundry Agent Service. (Preview)
   finetuning	: Extension for Foundry Fine Tuning. (Preview)
+  models    	: Extension for managing custom models in Azure AI Foundry. (Preview)
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

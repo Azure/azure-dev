@@ -19,7 +19,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"time"
 	"unicode"
 )
 
@@ -86,6 +85,10 @@ func CopyFile(source, target string) error {
 		_ = os.Remove(oldTarget)
 		if renameErr := os.Rename(target, oldTarget); renameErr == nil {
 			targetFile, err = os.Create(target)
+			if err != nil {
+				// Rollback: restore original file if create fails
+				_ = os.Rename(oldTarget, target)
+			}
 		}
 	}
 	if err != nil {

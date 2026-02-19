@@ -181,6 +181,16 @@ func getCmdUpHelpDescription(c *cobra.Command) string {
 		heredoc.Docf(
 			`Runs a workflow to %s, %s and %s your application in a single step.
 
+			Before running, configure your target subscription and location:
+
+			  %s
+			  %s
+
+			Unlike Azure CLI, azd typically stores configuration such as subscription and location in a named environment.
+			You can still provide these values with flags on commands that support them, but %s persists them so you
+			don't need to pass them on every command. Commands like %s read from the active environment automatically.
+			Use %s for structured output suitable for automation.
+
 			The %s workflow can be customized by adding a %s section to your %s.
 
 			For example, modify the workflow to provision before packaging and deploying:
@@ -198,6 +208,11 @@ func getCmdUpHelpDescription(c *cobra.Command) string {
 			output.WithHighLightFormat("package"),
 			output.WithHighLightFormat("provision"),
 			output.WithHighLightFormat("deploy"),
+			output.WithGrayFormat("azd env set AZURE_SUBSCRIPTION_ID <your-subscription-id>"),
+			output.WithGrayFormat("azd env set AZURE_LOCATION <location>"),
+			output.WithHighLightFormat("azd env set"),
+			output.WithHighLightFormat("azd up"),
+			output.WithHighLightFormat("--output json"),
 			output.WithHighLightFormat("up"),
 			output.WithHighLightFormat("workflows"),
 			output.WithHighLightFormat("azure.yaml"),

@@ -6,6 +6,13 @@ This command prompts you to input the following:
   • Azure location: The Azure location where your resources will be deployed.
   • Azure subscription: The Azure subscription where your resources will be deployed.
 
+You can also set these values in advance to skip the prompts:
+
+  azd env set AZURE_SUBSCRIPTION_ID <your-subscription-id>
+  azd env set AZURE_LOCATION <location>
+
+Use azd env set to configure values in the active environment. Use --output json for structured output suitable for automation.
+
 When <layer> is specified, only provisions resources for the given layer. When omitted, provisions resources for all layers defined in the project.
 
 Usage

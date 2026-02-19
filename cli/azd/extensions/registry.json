@@ -2873,6 +2873,91 @@
               "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-models_0.0.2-preview/azure-ai-models-windows-arm64.zip"
             }
           }
+        },
+        {
+          "capabilities": [
+            "custom-commands",
+            "metadata"
+          ],
+          "version": "0.0.3-preview",
+          "usage": "azd ai models \u003ccommand\u003e [options]",
+          "examples": [
+            {
+              "name": "init",
+              "description": "Initialize a new AI models project.",
+              "usage": "azd ai models init"
+            },
+            {
+              "name": "create",
+              "description": "Upload and register a custom model.",
+              "usage": "azd ai models custom create --source ./model.safetensors --name my-model"
+            },
+            {
+              "name": "list",
+              "description": "List all custom models.",
+              "usage": "azd ai models custom list"
+            },
+            {
+              "name": "show",
+              "description": "Show details of a custom model.",
+              "usage": "azd ai models custom show --name my-model"
+            },
+            {
+              "name": "delete",
+              "description": "Delete a custom model.",
+              "usage": "azd ai models custom delete --name my-model"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "f2f41da14b974822f8d75aab595ee99577923817b679be587b5b82de238173bb"
+              },
+              "entryPoint": "azure-ai-models-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-models_0.0.3-preview/azure-ai-models-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "3a155a25bd071319312ab21aec60ee4bd74e265131355f50aede525212a95876"
+              },
+              "entryPoint": "azure-ai-models-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-models_0.0.3-preview/azure-ai-models-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "daeab7a467679f96a2d1cee756ad80d4f311a331318919e7b6e7058924347db7"
+              },
+              "entryPoint": "azure-ai-models-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-models_0.0.3-preview/azure-ai-models-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "8517e796c4bdaa0ea264dda2a47369fca2155a45e7cc38745e723e5a4bd5cbcf"
+              },
+              "entryPoint": "azure-ai-models-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-models_0.0.3-preview/azure-ai-models-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "597a43f4a1dcb0fc8ea4136736d872f0eb9da33a1abec8eb2c9928941c0c0a50"
+              },
+              "entryPoint": "azure-ai-models-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-models_0.0.3-preview/azure-ai-models-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "2f3af40fd4d877b835252cea9004ecbea6df37ded619ac88179ac731e4301763"
+              },
+              "entryPoint": "azure-ai-models-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-models_0.0.3-preview/azure-ai-models-windows-arm64.zip"
+            }
+          }
         }
       ]
     }

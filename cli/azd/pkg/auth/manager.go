@@ -1366,7 +1366,7 @@ func (m *Manager) LogInDetails(ctx context.Context) (*LogInDetails, error) {
 		logInType := EmailLoginType
 		azAccount, err := m.azCli.Account(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("fetching az cli account: %w", err)
+			return nil, fmt.Errorf("fetching az cli account: %w: %w", err, ErrNoCurrentUser)
 		}
 		if azAccount.User.Type != "user" {
 			logInType = ClientIdLoginType

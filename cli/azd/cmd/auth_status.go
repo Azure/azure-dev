@@ -70,6 +70,11 @@ func newAuthStatusAction(
 }
 
 func (a *authStatusAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	loginMode, err := a.authManager.Mode()
+	if err != nil {
+		return nil, err
+	}
+
 	scopes := a.authManager.LoginScopes()
 
 	// get user account information
@@ -110,7 +115,42 @@ func (a *authStatusAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		return nil, nil
 	}
 
-	a.console.MessageUxItem(ctx, &ux.AuthStatusView{Result: &res})
+	// Show warning and guidance when not using built-in auth
+	if loginMode != auth.AzdBuiltIn {
+		a.console.Message(ctx, "")
+		a.console.MessageUxItem(ctx, &ux.WarningAltMessage{
+			Message: fmt.Sprintf(
+				"azd is not using the built-in authentication mode, but rather '%s'", loginMode),
+		})
+		a.console.Message(ctx, "")
+	}
+
+	a.console.MessageUxItem(ctx, &ux.AuthStatusView{Result: &res, AuthMode: string(loginMode)})
+
+	// Offer to switch back to built-in auth
+	if loginMode != auth.AzdBuiltIn {
+		a.console.Message(ctx, "")
+		a.console.Message(ctx, "To use azd to authenticate instead, select 'y' in the following prompt.")
+		a.console.Message(ctx, "")
+		response, err := a.console.Confirm(ctx, input.ConsoleOptions{
+			Message:      "Do you want to switch back to azd built-in authentication?",
+			DefaultValue: false,
+			Help: "azd supports multiple authentication modes, including " + string(auth.AzDelegated) + " and " +
+				string(auth.ExternalRequest) + " for auth." +
+				" Switching back to azd built-in authentication will try to disable the current mode.",
+		})
+		if err != nil {
+			return nil, err
+		}
+		if response {
+			if err := a.authManager.SetBuiltInAuthMode(); err != nil {
+				return nil, fmt.Errorf("setting auth mode: %w", err)
+			}
+			a.console.Message(ctx, "Authentication mode set to azd built-in.")
+			a.console.Message(ctx, "Run `azd auth login` to login with azd built-in authentication.")
+		}
+	}
+
 	return nil, nil
 }
 

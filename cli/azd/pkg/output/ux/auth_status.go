@@ -14,11 +14,18 @@ import (
 // AuthStatusView renders a contracts.StatusResult for console output.
 type AuthStatusView struct {
 	Result *contracts.StatusResult
+	// AuthMode indicates the current authentication mode (e.g. "az cli").
+	// When set to a non-built-in mode, the unauthenticated message adjusts guidance accordingly.
+	AuthMode string
 }
 
 func (v *AuthStatusView) ToString(currentIndentation string) string {
 	if v.Result.Status == contracts.AuthStatusUnauthenticated {
-		return fmt.Sprintf("%sNot logged in, run `azd auth login` to login to Azure", currentIndentation)
+		loginCmd := "azd auth login"
+		if v.AuthMode == "az cli" {
+			loginCmd = "az login"
+		}
+		return fmt.Sprintf("%sNot logged in, run `%s` to login to Azure", currentIndentation, loginCmd)
 	}
 
 	switch v.Result.Type {

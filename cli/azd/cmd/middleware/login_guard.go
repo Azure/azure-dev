@@ -18,6 +18,7 @@ import (
 
 type CurrentUserAuthManager interface {
 	Cloud() *cloud.Cloud
+	Mode() (auth.AuthSource, error)
 	CredentialForCurrentUser(
 		ctx context.Context,
 		options *auth.CredentialForCurrentUserOptions,
@@ -70,6 +71,10 @@ func (l *LoginGuardMiddleware) ensureLogin(ctx context.Context) (azcore.TokenCre
 
 		loginWarning := output.WithWarningFormat("WARNING: You must be logged into Azure perform this action")
 		l.console.Message(ctx, loginWarning)
+
+		if mode, err := l.authManager.Mode(); err == nil && mode == auth.AzDelegated {
+			l.console.Message(ctx, "Run 'az login' to login to Azure when using this mode.")
+		}
 
 		// Prompt the user to log in
 		continueWithLogin, err := l.console.Confirm(ctx, input.ConsoleOptions{

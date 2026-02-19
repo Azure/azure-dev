@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -1503,7 +1504,9 @@ func newEnvConfigSetCmd() *cobra.Command {
 		Long:  "Sets a configuration value in the environment's config.json file.",
 		Args:  cobra.ExactArgs(2),
 		Example: `$ azd env config set myapp.endpoint https://example.com
-$ azd env config set myapp.debug true`,
+$ azd env config set myapp.debug true
+$ azd env config set myapp.count 42
+$ azd env config set infra.parameters.tags '{"env":"dev"}'`,
 	}
 }
 
@@ -1567,7 +1570,7 @@ func (a *envConfigSetAction) Run(ctx context.Context) (*actions.ActionResult, er
 	path := a.args[0]
 	value := a.args[1]
 
-	err = env.Config.Set(path, value)
+	err = env.Config.Set(path, parseConfigValue(value))
 	if err != nil {
 		return nil, fmt.Errorf("failed setting configuration value '%s' to '%s'. %w", path, value, err)
 	}
@@ -1577,6 +1580,22 @@ func (a *envConfigSetAction) Run(ctx context.Context) (*actions.ActionResult, er
 	}
 
 	return nil, nil
+}
+
+// parseConfigValue attempts to parse a string value as a JSON type (bool, number, array, object).
+// If parsing fails or the result is null, the original string is returned.
+// JSON-quoted strings (e.g. `"true"`) are returned as their unquoted value,
+// allowing users to force string type for values that would otherwise parse as bool/number.
+func parseConfigValue(s string) any {
+	var parsed any
+	if err := json.Unmarshal([]byte(s), &parsed); err != nil {
+		return s
+	}
+	// null should remain as the string "null", not a nil value
+	if parsed == nil {
+		return s
+	}
+	return parsed
 }
 
 // azd env config unset <path>

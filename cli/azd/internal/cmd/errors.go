@@ -4,10 +4,14 @@
 package cmd
 
 import (
+	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"net"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -163,6 +167,14 @@ func MapError(err error, span tracing.Span) {
 		errCode = "service.aad.failed"
 	} else if errors.Is(err, terminal.InterruptErr) {
 		errCode = "user.canceled"
+	} else if errors.Is(err, context.Canceled) {
+		errCode = "user.canceled"
+	} else if errors.Is(err, context.DeadlineExceeded) {
+		errCode = "internal.timeout"
+	} else if isNetworkError(err) {
+		errCode = "internal.network"
+		errType := errorType(err)
+		span.SetAttributes(fields.ErrType.String(errType))
 	} else {
 		errType := errorType(err)
 		span.SetAttributes(fields.ErrType.String(errType))
@@ -257,6 +269,39 @@ func mapService(host string) (service string, hostDomain string) {
 	}
 
 	return "other", "other"
+}
+
+// isNetworkError returns true if the error is a network-related error such as
+// DNS resolution failure, connection refused, TLS handshake failure, or connection reset.
+func isNetworkError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Check for DNS errors
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return true
+	}
+
+	// Check for network operation errors (connection refused, timeout, etc.)
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		return true
+	}
+
+	// Check for TLS errors
+	var tlsRecordErr *tls.RecordHeaderError
+	if errors.As(err, &tlsRecordErr) {
+		return true
+	}
+
+	// Check for EOF (connection closed unexpectedly)
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+
+	return false
 }
 
 func cmdAsName(cmd string) string {

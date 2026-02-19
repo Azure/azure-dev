@@ -69,7 +69,14 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 	// - User specified --no-prompt (non-interactive mode)
 	// - Running in CI/CD environment where user interaction is not possible
 	if !e.featuresManager.IsEnabled(llm.FeatureLlm) || e.global.NoPrompt || resource.IsRunningOnCI() {
-		return next(ctx)
+		actionResult, err := next(ctx)
+		// Display actionable guidance even in non-interactive mode
+		if err != nil {
+			if guidance := deploymentAuthHint(err); guidance != "" {
+				e.console.Message(ctx, output.WithWarningFormat("Hint: %s", guidance))
+			}
+		}
+		return actionResult, err
 	}
 
 	actionResult, err := next(ctx)
@@ -79,6 +86,11 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 	if err == nil || IsChildAction(ctx) {
 		return actionResult, err
+	}
+
+	// Display actionable guidance for authorization/permission failures
+	if guidance := deploymentAuthHint(err); guidance != "" {
+		e.console.Message(ctx, output.WithWarningFormat("Hint: %s", guidance))
 	}
 
 	// Error already has a suggestion, no need for AI

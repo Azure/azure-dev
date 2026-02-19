@@ -76,3 +76,19 @@ func (e *ExitError) Error() string {
 
 	return fmt.Sprintf("%s, stdout: %s, stderr: %s", errorPrefix, e.stdOut, e.stdErr)
 }
+
+// StderrOutput returns the stderr output captured from the command.
+func (e *ExitError) StderrOutput() string {
+	return e.stdErr
+}
+
+// NewTestExitError creates an ExitError suitable for unit tests
+// where constructing an os/exec.ExitError is impractical.
+func NewTestExitError(cmd string, exitCode int, stderr string) *ExitError {
+	return &ExitError{
+		Cmd:             cmd,
+		ExitCode:        exitCode,
+		stdErr:          stderr,
+		outputAvailable: true,
+	}
+}

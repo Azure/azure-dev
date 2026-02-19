@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -18,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/llm"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -69,7 +71,14 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 	// - User specified --no-prompt (non-interactive mode)
 	// - Running in CI/CD environment where user interaction is not possible
 	if !e.featuresManager.IsEnabled(llm.FeatureLlm) || e.global.NoPrompt || resource.IsRunningOnCI() {
-		return next(ctx)
+		actionResult, err := next(ctx)
+		// Display actionable guidance even in non-interactive mode
+		if err != nil {
+			if guidance := pwshFailureGuidance(err); guidance != "" {
+				e.console.Message(ctx, output.WithWarningFormat("Hint: %s", guidance))
+			}
+		}
+		return actionResult, err
 	}
 
 	actionResult, err := next(ctx)
@@ -79,6 +88,11 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 	if err == nil || IsChildAction(ctx) {
 		return actionResult, err
+	}
+
+	// Display actionable guidance for PowerShell hook failures
+	if guidance := pwshFailureGuidance(err); guidance != "" {
+		e.console.Message(ctx, output.WithWarningFormat("Hint: %s", guidance))
 	}
 
 	// Error already has a suggestion, no need for AI
@@ -481,5 +495,46 @@ func promptUserForSolution(ctx context.Context, solutions []string, agentName st
 		return "", false, nil // Cancel and return error
 	default:
 		return selectedValue, false, nil // User selected a solution
+	}
+}
+
+// pwshFailureGuidance returns an actionable suggestion for common PowerShell hook failures.
+// It inspects the stderr output of the failed command to detect known failure patterns.
+func pwshFailureGuidance(err error) string {
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		return ""
+	}
+
+	cmdName := filepath.Base(exitErr.Cmd)
+	if !strings.Contains(strings.ToLower(cmdName), "pwsh") &&
+		!strings.Contains(strings.ToLower(cmdName), "powershell") {
+		return ""
+	}
+
+	stderr := exitErr.StderrOutput()
+	switch {
+	case strings.Contains(stderr, "Import-Module") && strings.Contains(stderr, "not loaded"):
+		return "A required PowerShell module could not be loaded. " +
+			"Install the missing module with 'Install-Module <ModuleName> -Scope CurrentUser'."
+	case strings.Contains(stderr, "'Az.") &&
+		(strings.Contains(stderr, "is not recognized") || strings.Contains(stderr, "not found")):
+		return "The Azure PowerShell module (Az) is required but not installed. " +
+			"Install it with 'Install-Module Az -Scope CurrentUser -Repository PSGallery -Force'."
+	case strings.Contains(stderr, "UnauthorizedAccess"):
+		return "PowerShell execution policy is blocking the script. " +
+			"Check your policy with 'Get-ExecutionPolicy' and consider setting it with " +
+			"'Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser'."
+	case strings.Contains(stderr, "Connect-AzAccount") &&
+		(strings.Contains(stderr, "expired") || strings.Contains(stderr, "credentials")) &&
+		!strings.Contains(stderr, "is not recognized") && !strings.Contains(stderr, "not found"):
+		return "The Azure authentication session may have expired. Try running 'azd auth login' again."
+	case strings.Contains(stderr, "login") && strings.Contains(stderr, "expired"):
+		return "The Azure authentication session may have expired. Try running 'azd auth login' again."
+	case strings.Contains(stderr, "ErrorActionPreference"):
+		return "The hook script has an issue with error handling configuration. " +
+			"Ensure '$ErrorActionPreference = \"Stop\"' is set at the top of the script."
+	default:
+		return ""
 	}
 }

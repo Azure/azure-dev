@@ -473,3 +473,17 @@ func TestParseEndpoint(t *testing.T) {
 - [ ] Persistent flags referenced from global, not passed by value
 - [ ] Recovery instructions reference commands that actually exist
 - [ ] Unit tests cover all validation/parsing functions
+- [ ] Snapshots are up to date (see below)
+
+---
+
+## Updating Snapshots
+
+When adding or modifying commands/flags, the CLI usage snapshots must be regenerated. If CI fails with a "Snapshots may be out of date" error, run:
+
+```bash
+cd cli/azd
+UPDATE_SNAPSHOTS=true go test ./cmd -run 'TestFigSpec|TestUsage'
+```
+
+This updates snapshot files under `cli/azd/cmd/testdata/`. Commit the updated (or newly created) snapshot files along with your changes.

@@ -23,6 +23,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/fatih/color"
@@ -1143,6 +1144,35 @@ func (a *InitFromCodeAction) setEnvVar(ctx context.Context, key, value string) e
 	return nil
 }
 
+// lookupAcrResourceId finds the resource ID for an ACR given its login server endpoint
+func (a *InitFromCodeAction) lookupAcrResourceId(ctx context.Context, subscriptionId string, loginServer string) (string, error) {
+	// Extract registry name from login server (e.g., "myregistry" from "myregistry.azurecr.io")
+	registryName := strings.Split(loginServer, ".")[0]
+
+	client, err := armcontainerregistry.NewRegistriesClient(subscriptionId, a.credential, azure.NewArmClientOptions())
+	if err != nil {
+		return "", fmt.Errorf("failed to create container registry client: %w", err)
+	}
+
+	// List all registries and find the matching one
+	pager := client.NewListPager(nil)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return "", fmt.Errorf("failed to list registries: %w", err)
+		}
+		for _, registry := range page.Value {
+			if registry.Name != nil && strings.EqualFold(*registry.Name, registryName) {
+				if registry.ID != nil {
+					return *registry.ID, nil
+				}
+			}
+		}
+	}
+
+	return "", fmt.Errorf("container registry '%s' not found in subscription", registryName)
+}
+
 // writeDefinitionToSrcDir writes a ContainerAgent to a YAML file in the src directory and returns the path
 func (a *InitFromCodeAction) writeDefinitionToSrcDir(definition *agent_yaml.ContainerAgent, srcDir string) (string, error) {
 	// Ensure the src directory exists
@@ -1334,7 +1364,16 @@ func (a *InitFromCodeAction) processExistingFoundryProject(ctx context.Context, 
 			}
 
 			if resp.Value != "" {
+				// Look up the ACR resource ID from the login server
+				resourceId, err := a.lookupAcrResourceId(ctx, a.azureContext.Scope.SubscriptionId, resp.Value)
+				if err != nil {
+					return fmt.Errorf("failed to lookup ACR resource ID: %w", err)
+				}
+
 				if err := a.setEnvVar(ctx, "AZURE_CONTAINER_REGISTRY_ENDPOINT", resp.Value); err != nil {
+					return err
+				}
+				if err := a.setEnvVar(ctx, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID", resourceId); err != nil {
 					return err
 				}
 			}

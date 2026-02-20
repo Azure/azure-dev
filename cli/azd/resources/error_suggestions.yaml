@@ -35,269 +35,11 @@
 #     suggestion: "Request a quota increase."
 
 rules:
-  - patterns:
-      - "parsing project file"
-    message: "Your azure.yaml file in invalid"
-    suggestion: "Check the syntax of your azure.yaml file and fix any errors."
-    docUrl: "https://aka.ms/azure-dev/azure-yaml"
   # ============================================================================
-  # Quota and Capacity Errors
-  # ============================================================================
-  - patterns:
-      - "QuotaExceeded"
-      - "quota exceeded"
-      - "exceeds quota"
-      - "OperationNotAllowed"
-      - "regex:(?i)quota.*limit"
-    message: "Your Azure subscription has reached a resource quota limit."
-    suggestion: "Request a quota increase through the Azure portal, or try deploying to a different region."
-    docUrl: "https://learn.microsoft.com/azure/quotas/quickstart-increase-quota-portal"
-
-  - patterns:
-      - "SkuNotAvailable"
-      - "regex:(?i)sku.*not available"
-      - "regex:(?i)requested.*size.*not available"
-    message: "The requested resource size is not available in the selected region."
-    suggestion: "Try a different region or select a different VM/resource size."
-    docUrl: "https://learn.microsoft.com/azure/azure-resource-manager/troubleshooting/error-sku-not-available"
-
-  - patterns:
-      - "ZonalAllocationFailed"
-      - "AllocationFailed"
-      - "OverconstrainedAllocationRequest"
-    message: "Azure could not allocate the requested resources in this region."
-    suggestion: "Try a different VM size, availability zone, or region."
-    docUrl: "https://learn.microsoft.com/azure/azure-resource-manager/troubleshooting/error-resource-quota"
-
-  # ============================================================================
-  # Authentication and Authorization Errors
-  # ============================================================================
-  - patterns:
-      - "AADSTS"
-      - "regex:(?i)authentication.*failed"
-      - "regex:(?i)invalid.*credentials"
-    message: "Authentication with Azure failed."
-    suggestion: "Run 'azd auth login' to sign in again."
-    docUrl: "https://learn.microsoft.com/azure/developer/azure-developer-cli/reference#azd-auth-login"
-
-  - patterns:
-      - "AuthorizationFailed"
-      - "regex:(?i)authorization.*failed"
-      - "does not have authorization"
-      - "PrincipalNotFound"
-    message: "You don't have permission to perform this operation."
-    suggestion: "Ensure your account has the appropriate Azure RBAC role assigned."
-    docUrl: "https://learn.microsoft.com/azure/role-based-access-control/troubleshooting"
-
-  - patterns:
-      - "LinkedAuthorizationFailed"
-      - "regex:(?i)client.*does not have authorization"
-    message: "You don't have permission to link these resources."
-    suggestion: "Ensure you have 'Owner' or 'User Access Administrator' role on the target resources."
-    docUrl: "https://learn.microsoft.com/azure/role-based-access-control/built-in-roles"
-
-  - patterns:
-      - "InvalidAuthenticationToken"
-      - "ExpiredAuthenticationToken"
-      - "TokenExpired"
-    message: "Your authentication token has expired."
-    suggestion: "Run 'azd auth login' to sign in again."
-    docUrl: "https://learn.microsoft.com/azure/developer/azure-developer-cli/reference#azd-auth-login"
-
-  # ============================================================================
-  # Subscription and Tenant Errors
-  # ============================================================================
-  - patterns:
-      - "SubscriptionNotFound"
-      - "InvalidSubscriptionId"
-      - "regex:(?i)subscription.*not found"
-    message: "The specified Azure subscription was not found."
-    suggestion: "Verify the subscription ID is correct and that you have access to it."
-    docUrl: "https://learn.microsoft.com/azure/azure-resource-manager/troubleshooting/error-not-found"
-
-  - patterns:
-      - "InvalidTenant"
-      - "TenantNotFound"
-      - "regex:(?i)tenant.*not found"
-    message: "The specified Azure AD tenant was not found."
-    suggestion: "Check that you're signed into the correct Azure AD tenant with 'azd auth login'."
-
-  # ============================================================================
-  # Bicep and ARM Template Errors
-  # ============================================================================
-  - patterns:
-      - "BCP"
-      - "regex:BCP\\d{3}"
-    message: "Your Bicep template has an error."
-    suggestion: "Review the error message for the specific issue and line number in your .bicep file."
-    docUrl: "https://learn.microsoft.com/azure/azure-resource-manager/bicep/bicep-error-codes"
-
-  - patterns:
-      - "InvalidTemplate"
-      - "regex:(?i)template.*invalid"
-      - "regex:(?i)invalid.*template"
-    message: "Your deployment template is invalid."
-    suggestion: "Validate the template syntax and parameter values."
-    docUrl: "https://learn.microsoft.com/azure/azure-resource-manager/troubleshooting/common-deployment-errors"
-
-  - patterns:
-      - "InvalidTemplateDeployment"
-      - "DeploymentFailed"
-    message: "The Azure deployment failed."
-    suggestion: "Check the deployment logs in the Azure portal for detailed error information."
-    docUrl: "https://learn.microsoft.com/azure/azure-resource-manager/troubleshooting/common-deployment-errors"
-
-  - patterns:
-      - "MissingRequiredParameter"
-      - "regex:(?i)parameter.*required"
-      - "regex:(?i)missing.*parameter"
-    message: "A required deployment parameter is missing."
-    suggestion: "Ensure all required parameters are specified in your azure.yaml or environment configuration."
-
-  # ============================================================================
-  # Resource Errors
-  # ============================================================================
-  - patterns:
-      - "ResourceNotFound"
-      - "regex:(?i)resource.*not found"
-      - "regex:(?i)could not find.*resource"
-    message: "The specified Azure resource was not found."
-    suggestion: "Verify the resource name, type, and resource group are correct."
-    docUrl: "https://learn.microsoft.com/azure/azure-resource-manager/troubleshooting/error-not-found"
-
-  - patterns:
-      - "ResourceGroupNotFound"
-      - "regex:(?i)resource group.*not found"
-    message: "The resource group does not exist."
-    suggestion: "Create it with 'az group create' or check the name for typos."
-    docUrl: "https://learn.microsoft.com/cli/azure/group#az-group-create"
-
-  - patterns:
-      - "Conflict"
-      - "ResourceAlreadyExists"
-      - "regex:(?i)already exists"
-    message: "A resource with the same name already exists."
-    suggestion: "Use a different name or delete the existing resource first."
-
-  - patterns:
-      - "ResourceGroupBeingDeleted"
-      - "regex:(?i)resource group.*being deleted"
-    message: "The resource group is currently being deleted."
-    suggestion: "Wait for deletion to complete or use a different resource group."
-
-  # ============================================================================
-  # Network Errors
-  # ============================================================================
-  - patterns:
-      - "regex:(?i)connection.*refused"
-      - "regex:(?i)connection.*timed out"
-      - "ETIMEDOUT"
-      - "ECONNREFUSED"
-    message: "A network connection failed."
-    suggestion: "Check your network connectivity and any firewall or proxy settings."
-
-  - patterns:
-      - "regex:(?i)dns.*resolution"
-      - "ENOTFOUND"
-      - "getaddrinfo"
-    message: "DNS resolution failed."
-    suggestion: "Verify the hostname is correct and your DNS settings are configured properly."
-
-  # ============================================================================
-  # Container and Docker Errors
-  # ============================================================================
-  - patterns:
-      - "regex:(?i)docker.*not found"
-      - "regex:(?i)docker.*is not running"
-      - "regex:(?i)cannot connect to.*docker"
-    message: "Docker is not running or not installed."
-    suggestion: "Start Docker Desktop or install Docker."
-    docUrl: "https://docs.docker.com/get-docker/"
-
-  - patterns:
-      - "ImagePullBackOff"
-      - "ErrImagePull"
-      - "regex:(?i)failed to pull.*image"
-    message: "Failed to pull the container image."
-    suggestion: "Verify the image name, tag, and registry credentials."
-
-  # ============================================================================
-  # Azure Container Apps Errors
-  # ============================================================================
-  - patterns:
-      - "ContainerAppOperationError"
-      - "regex:(?i)container app.*failed"
-    message: "Azure Container Apps deployment failed."
-    suggestion: "Check the container configuration and application logs in the Azure portal."
-    docUrl: "https://learn.microsoft.com/azure/container-apps/troubleshooting"
-
-  # ============================================================================
-  # Azure Kubernetes Service Errors
-  # ============================================================================
-  - patterns:
-      - "regex:(?i)kubectl.*not found"
-    message: "kubectl is not installed."
-    suggestion: "Install kubectl to manage your Kubernetes cluster."
-    docUrl: "https://kubernetes.io/docs/tasks/tools/"
-
-  - patterns:
-      - "regex:(?i)kubeconfig.*not found"
-      - "regex:(?i)no.*cluster.*credentials"
-    message: "Kubernetes credentials are not configured."
-    suggestion: "Run 'az aks get-credentials' to configure kubectl for your cluster."
-    docUrl: "https://learn.microsoft.com/cli/azure/aks#az-aks-get-credentials"
-
-  # ============================================================================
-  # Tool and Dependency Errors
-  # ============================================================================
-  - patterns:
-      - "regex:(?i)az.*not found"
-      - "regex:(?i)azure cli.*not installed"
-    message: "Azure CLI is not installed."
-    suggestion: "Install Azure CLI to continue."
-    docUrl: "https://learn.microsoft.com/cli/azure/install-azure-cli"
-
-  - patterns:
-      - "regex:(?i)terraform.*not found"
-    message: "Terraform is not installed."
-    suggestion: "Install Terraform to use Terraform-based infrastructure."
-    docUrl: "https://developer.hashicorp.com/terraform/install"
-
-  - patterns:
-      - "regex:(?i)node.*not found"
-      - "regex:(?i)npm.*not found"
-    message: "Node.js is not installed."
-    suggestion: "Install Node.js to build and run JavaScript/TypeScript applications."
-    docUrl: "https://nodejs.org/en/download/"
-
-  - patterns:
-      - "regex:(?i)python.*not found"
-      - "regex:(?i)pip.*not found"
-    message: "Python is not installed."
-    suggestion: "Install Python to build and run Python applications."
-    docUrl: "https://www.python.org/downloads/"
-
-  - patterns:
-      - "regex:(?i)dotnet.*not found"
-    message: ".NET SDK is not installed."
-    suggestion: "Install .NET SDK to build and run .NET applications."
-    docUrl: "https://dotnet.microsoft.com/download"
-
-  - patterns:
-      - "regex:(?i)java.*not found"
-      - "regex:(?i)maven.*not found"
-      - "regex:(?i)gradle.*not found"
-    message: "Java or build tools are not installed."
-    suggestion: "Install JDK and Maven/Gradle for Java development."
-    docUrl: "https://learn.microsoft.com/java/openjdk/download"
-
-  # ============================================================================
-  # ARM Deployment Error Code Rules (typed error matching)
-  # These match against AzureDeploymentError types using error codes
-  # from the ARM deployment error tree.
+  # ARM Deployment Errors — Soft-delete conflicts
+  # 4th most common error category (~128,054 errors in 90-day analysis)
   # ============================================================================
 
-  # Soft-delete conflicts
   - errorType: "AzureDeploymentError"
     properties:
       Details.Code: "FlagMustBeSetForRestore"
@@ -317,7 +59,6 @@ rules:
       then retry with 'azd up'. If the resources are still provisioned,
       running 'azd down --purge' will delete and purge them.
 
-  # Soft-delete with generic Conflict codes (require keyword in message)
   - errorType: "AzureDeploymentError"
     properties:
       Details.Code: "Conflict"
@@ -330,6 +71,27 @@ rules:
 
   - errorType: "AzureDeploymentError"
     properties:
+      Details.Code: "Conflict"
+    patterns:
+      - "purge"
+    message: "A soft-deleted resource is causing a deployment conflict."
+    suggestion: >
+      Purge the soft-deleted resource in the Azure portal or via the
+      Azure CLI, then retry with 'azd up'.
+
+  - errorType: "AzureDeploymentError"
+    properties:
+      Details.Code: "Conflict"
+    patterns:
+      - "deleted vault"
+    message: "A soft-deleted Key Vault is causing a deployment conflict."
+    suggestion: >
+      Purge the deleted Key Vault in the Azure portal under
+      'Key Vaults > Manage deleted vaults', then retry with 'azd up'.
+    docUrl: "https://learn.microsoft.com/azure/key-vault/general/key-vault-recovery"
+
+  - errorType: "AzureDeploymentError"
+    properties:
       Details.Code: "RequestConflict"
     patterns:
       - "soft delete"
@@ -338,7 +100,21 @@ rules:
       Purge the soft-deleted resource in the Azure portal or via the
       Azure CLI, then retry with 'azd up'.
 
-  # Quota errors
+  - errorType: "AzureDeploymentError"
+    properties:
+      Details.Code: "RequestConflict"
+    patterns:
+      - "purge"
+    message: "A soft-deleted resource is causing a deployment conflict."
+    suggestion: >
+      Purge the soft-deleted resource in the Azure portal or via the
+      Azure CLI, then retry with 'azd up'.
+
+  # ============================================================================
+  # ARM Deployment Errors — Quota and capacity
+  # ARM errors account for ~45% of all azd errors (~57,956)
+  # ============================================================================
+
   - errorType: "AzureDeploymentError"
     properties:
       Details.Code: "InsufficientQuota"
@@ -355,7 +131,10 @@ rules:
     suggestion: "Request a quota increase or use a different SKU."
     docUrl: "https://learn.microsoft.com/azure/quotas/quickstart-increase-quota-portal"
 
-  # Region and SKU availability
+  # ============================================================================
+  # ARM Deployment Errors — Region and SKU availability
+  # ============================================================================
+
   - errorType: "AzureDeploymentError"
     properties:
       Details.Code: "SkuNotAvailable"
@@ -369,7 +148,10 @@ rules:
     message: "This resource type is restricted in the selected region."
     suggestion: "Try a different region with 'azd env set AZURE_LOCATION <region>'."
 
-  # Authorization
+  # ============================================================================
+  # ARM Deployment Errors — Authorization
+  # ============================================================================
+
   - errorType: "AzureDeploymentError"
     properties:
       Details.Code: "AuthorizationFailed"
@@ -379,7 +161,10 @@ rules:
       on the target subscription.
     docUrl: "https://learn.microsoft.com/azure/role-based-access-control/role-assignments-portal"
 
-  # Template errors
+  # ============================================================================
+  # ARM Deployment Errors — Template and validation
+  # ============================================================================
+
   - errorType: "AzureDeploymentError"
     properties:
       Details.Code: "InvalidTemplate"
@@ -394,7 +179,16 @@ rules:
       Check resource property values and API versions
       in your Bicep/Terraform files.
 
-  # Resource not found
+  # ============================================================================
+  # ARM Deployment Errors — Resource conflicts
+  # ============================================================================
+
+  - errorType: "AzureDeploymentError"
+    properties:
+      Details.Code: "Conflict"
+    message: "A resource with this name already exists or is in a conflicting state."
+    suggestion: "Check for existing or soft-deleted resources in the Azure portal."
+
   - errorType: "AzureDeploymentError"
     properties:
       Details.Code: "ResourceNotFound"
@@ -402,3 +196,88 @@ rules:
     suggestion: >
       Check resource dependencies and deployment ordering
       in your template.
+
+  # ============================================================================
+  # PowerShell Hook Failures
+  # ~5% of all azd errors (~6,347); AI templates hit 6.59%
+  # ============================================================================
+
+  - errorType: "ExitError"
+    patterns:
+      - "Import-Module"
+      - "not loaded"
+    message: "A required PowerShell module could not be loaded."
+    suggestion: "Install the missing module with 'Install-Module <ModuleName> -Scope CurrentUser'."
+
+  - errorType: "ExitError"
+    patterns:
+      - "'Az."
+      - "is not recognized"
+    message: "The Azure PowerShell module (Az) is required but not installed."
+    suggestion: "Install it with 'Install-Module Az -Scope CurrentUser -Repository PSGallery -Force'."
+    docUrl: "https://learn.microsoft.com/powershell/azure/install-azure-powershell"
+
+  - errorType: "ExitError"
+    patterns:
+      - "UnauthorizedAccess"
+    message: "PowerShell execution policy is blocking the script."
+    suggestion: >
+      Check your policy with 'Get-ExecutionPolicy' and consider setting it with
+      'Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser'.
+
+  - errorType: "ExitError"
+    patterns:
+      - "ErrorActionPreference"
+    message: "The hook script has an issue with error handling configuration."
+    suggestion: "Ensure '$ErrorActionPreference = \"Stop\"' is set at the top of the script."
+
+  # ============================================================================
+  # Project Configuration Errors
+  # ============================================================================
+
+  - patterns:
+      - "parsing project file"
+    message: "Your azure.yaml file is invalid."
+    suggestion: "Check the syntax of your azure.yaml file and fix any errors."
+    docUrl: "https://aka.ms/azure-dev/azure-yaml"
+
+  # ============================================================================
+  # Authentication Errors
+  # ============================================================================
+
+  - patterns:
+      - "AADSTS"
+    message: "Authentication with Azure failed."
+    suggestion: "Run 'azd auth login' to sign in again."
+    docUrl: "https://learn.microsoft.com/azure/developer/azure-developer-cli/reference#azd-auth-login"
+
+  - patterns:
+      - "InvalidAuthenticationToken"
+      - "ExpiredAuthenticationToken"
+      - "TokenExpired"
+    message: "Your authentication token has expired."
+    suggestion: "Run 'azd auth login' to sign in again."
+    docUrl: "https://learn.microsoft.com/azure/developer/azure-developer-cli/reference#azd-auth-login"
+
+  # ============================================================================
+  # Bicep Template Errors
+  # ============================================================================
+
+  - patterns:
+      - "regex:BCP\\d{3}"
+    message: "Your Bicep template has an error."
+    suggestion: "Review the error message for the specific issue and line number in your .bicep file."
+    docUrl: "https://learn.microsoft.com/azure/azure-resource-manager/bicep/bicep-error-codes"
+
+  # ============================================================================
+  # Quota Errors (text pattern fallback for non-ARM errors)
+  # ============================================================================
+
+  - patterns:
+      - "QuotaExceeded"
+      - "quota exceeded"
+      - "exceeds quota"
+      - "OperationNotAllowed"
+    message: "Your Azure subscription has reached a resource quota limit."
+    suggestion: "Request a quota increase through the Azure portal, or try deploying to a different region."
+    docUrl: "https://learn.microsoft.com/azure/quotas/quickstart-increase-quota-portal"

@@ -106,6 +106,13 @@ func DevUninstall() error {
 //
 // Usage: mage preflight
 func Preflight() error {
+	// Disable Go workspace mode so preflight mirrors CI, which has no go.work file.
+	// Without this, a local go.work can silently resolve different module versions
+	// than go.mod alone, masking build failures that only appear in CI.
+	origGowork := os.Getenv("GOWORK")
+	os.Setenv("GOWORK", "off")
+	defer os.Setenv("GOWORK", origGowork)
+
 	repoRoot, err := findRepoRoot()
 	if err != nil {
 		return err

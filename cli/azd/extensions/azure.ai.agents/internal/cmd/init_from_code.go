@@ -186,16 +186,17 @@ func (a *InitFromCodeAction) scaffoldTemplate(ctx context.Context, azdClient *az
 			continue
 		}
 		// Guard against path traversal or unexpected absolute paths
-		if strings.Contains(entry.Path, "..") || filepath.IsAbs(entry.Path) {
+		cleanPath := filepath.Clean(entry.Path)
+		if filepath.IsAbs(cleanPath) || strings.HasPrefix(cleanPath, "..") {
 			return fmt.Errorf("invalid path in repository tree: %s", entry.Path)
 		}
-		downloadURL := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s", repoSlug, branch, entry.Path)
+		downloadURL := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s", repoSlug, branch, cleanPath)
 		collides := false
-		if _, statErr := os.Stat(entry.Path); statErr == nil {
+		if _, statErr := os.Stat(cleanPath); statErr == nil {
 			collides = true
 		}
 		files = append(files, templateFileInfo{
-			Path:     entry.Path,
+			Path:     cleanPath,
 			URL:      downloadURL,
 			Collides: collides,
 		})

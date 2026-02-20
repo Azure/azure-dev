@@ -119,7 +119,7 @@ func (a *InitFromCodeAction) ensureProject(ctx context.Context) (*azdext.Project
 	if err != nil {
 		fmt.Println("Lets get your project initialized.")
 
-		if err := a.scaffoldTemplate(ctx, a.azdClient, "Azure-Samples/azd-ai-starter-basic", "main"); err != nil {
+		if err := a.scaffoldTemplate(ctx, a.azdClient, "Azure-Samples/azd-ai-starter-basic", "trangevi/existing-acr"); err != nil {
 			return nil, fmt.Errorf("failed to scaffold template: %w", err)
 		}
 

@@ -7,7 +7,7 @@ package fields
 import (
 	"github.com/microsoft/ApplicationInsights-Go/appinsights/contracts"
 	"go.opentelemetry.io/otel/attribute"
-	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.39.0"
 )
 
 // AttributeKey represents an attribute key with additional metadata.
@@ -535,14 +535,14 @@ var (
 
 	// `id` property of JSON-RPC request or response.
 	JsonRpcId = AttributeKey{
-		Key:            semconv.RPCJSONRPCRequestIDKey,
+		Key:            attribute.Key("rpc.jsonrpc.request_id"),
 		Classification: SystemMetadata,
 		Purpose:        PerformanceAndHealth,
 	}
 
 	// `error_code` property of JSON-RPC request or response. Type: int.
 	JsonRpcErrorCode = AttributeKey{
-		Key:            semconv.RPCJSONRPCErrorCodeKey,
+		Key:            attribute.Key("rpc.jsonrpc.error_code"),
 		Classification: SystemMetadata,
 		Purpose:        PerformanceAndHealth,
 		IsMeasurement:  true,

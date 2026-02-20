@@ -337,7 +337,8 @@ func killExtensionProcesses(extensionBinaryPrefix, installDir string) {
 		//nolint:gosec // G204: installDir is derived from config; single quotes are escaped
 		_ = exec.Command("powershell", "-NoProfile", "-Command",
 			fmt.Sprintf(
-				"Get-Process | Where-Object { $_.Path -and $_.Path.StartsWith('%s') } | Stop-Process -Force -ErrorAction SilentlyContinue",
+				"Get-Process | Where-Object { $_.Path -and $_.Path.StartsWith('%s') }"+
+					" | Stop-Process -Force -ErrorAction SilentlyContinue",
 				escapePowerShellSingleQuotes(installDir),
 			)).Run()
 	}

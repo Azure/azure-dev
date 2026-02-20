@@ -104,6 +104,8 @@ devcenters
 devcentersdk
 devdeviceid
 devel
+devinstall
+devuninstall
 deviceid
 diffmatchpatch
 discarder
@@ -155,6 +157,7 @@ jaegertracing
 javac
 jmes
 jmespath
+jongio
 jquery
 keychain
 kubelogin
@@ -185,6 +188,7 @@ myservice
 mysqladmin
 mysqlclient
 mysqldb
+nazd
 nobanner
 nodeapp
 nolint
@@ -265,6 +269,7 @@ Syncer
 teamcity
 testdata
 tmpl
+TOCTOU
 toplevel
 traceparent
 tracesdk
@@ -284,6 +289,7 @@ unsets
 upgrader
 utsname
 uxlib
+Veyor
 vite
 vsrpc
 vuejs

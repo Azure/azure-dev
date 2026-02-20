@@ -11,7 +11,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -116,7 +115,7 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 			require.NoError(t, err)
 
 			var response *http.Response
-			ctx := runtime.WithCaptureResponse(tt.ctx, &response)
+			ctx := policy.WithCaptureResponse(tt.ctx, &response)
 
 			_, _ = client.GetByID(ctx, "RESOURCE_ID", "", nil)
 

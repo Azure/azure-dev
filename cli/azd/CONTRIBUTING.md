@@ -47,6 +47,15 @@ This builds `azd-dev` (to avoid conflicting with a production `azd` install) wit
 info from `cli/version.txt` and the current git commit, installs it to `~/.azd/bin/`, and
 automatically adds that directory to your PATH if it isn't already there.
 
+### Preflight (all quality checks)
+
+Run all pre-commit checks (formatting, copyright headers, linting, spell check, build, unit tests) in one command:
+
+```bash
+cd cli/azd
+mage preflight
+```
+
 Run tests:
 
 ```bash

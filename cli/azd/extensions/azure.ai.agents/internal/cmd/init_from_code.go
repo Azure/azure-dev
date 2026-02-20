@@ -1430,21 +1430,40 @@ func (a *InitFromCodeAction) processExistingFoundryProject(ctx context.Context, 
 				"  • Or create a new one during 'azd up'\n\n" +
 				"Docs: aka.ms/azdaiagent/docs")
 
-			resp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+			// First prompt for resource ID
+			resourceIdResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 				Options: &azdext.PromptOptions{
-					Message:        "Enter your Application Insights connection string, or leave blank to create a new one",
+					Message:        "Enter your Application Insights resource ID, or leave blank to create a new one",
 					IgnoreHintKeys: true,
 				},
 			})
 			if err != nil {
-				return fmt.Errorf("prompting for Application Insights connection string: %w", err)
+				return fmt.Errorf("prompting for Application Insights resource ID: %w", err)
 			}
 
-			if resp.Value != "" {
-				if err := a.setEnvVar(ctx, "APPLICATIONINSIGHTS_CONNECTION_STRING", resp.Value); err != nil {
+			if resourceIdResp.Value != "" {
+				if err := a.setEnvVar(ctx, "APPLICATIONINSIGHTS_RESOURCE_ID", resourceIdResp.Value); err != nil {
 					return err
 				}
+
+				// If user provided resource ID, also prompt for connection string
+				connStrResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+					Options: &azdext.PromptOptions{
+						Message:        "Enter your Application Insights connection string",
+						IgnoreHintKeys: true,
+					},
+				})
+				if err != nil {
+					return fmt.Errorf("prompting for Application Insights connection string: %w", err)
+				}
+
+				if connStrResp.Value != "" {
+					if err := a.setEnvVar(ctx, "APPLICATIONINSIGHTS_CONNECTION_STRING", connStrResp.Value); err != nil {
+						return err
+					}
+				}
 			}
+
 		} else {
 			var selectedConnection *azure.Connection
 
@@ -1480,6 +1499,10 @@ func (a *InitFromCodeAction) processExistingFoundryProject(ctx context.Context, 
 			}
 
 			if selectedConnection != nil && selectedConnection.Credentials.Key != "" {
+				if err := a.setEnvVar(ctx, "APPLICATIONINSIGHTS_CONNECTION_NAME", selectedConnection.Name); err != nil {
+					return err
+				}
+
 				if err := a.setEnvVar(ctx, "APPLICATIONINSIGHTS_CONNECTION_STRING", selectedConnection.Credentials.Key); err != nil {
 					return err
 				}

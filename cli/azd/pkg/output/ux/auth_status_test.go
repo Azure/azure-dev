@@ -39,7 +39,7 @@ func TestAuthStatusView_ToString(t *testing.T) {
 				Status: contracts.AuthStatusUnauthenticated,
 			},
 			authMode: "az cli",
-			want:     "Not logged in, run `az login` to login to Azure",
+			want:     "Not logged in to Azure. Run `az login` to log in or authenticate using `azd`.",
 		},
 		{
 			name: "authenticated user",

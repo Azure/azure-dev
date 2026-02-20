@@ -25,11 +25,11 @@ type AuthStatusView struct {
 
 func (v *AuthStatusView) ToString(currentIndentation string) string {
 	if v.Result.Status == contracts.AuthStatusUnauthenticated {
-		loginCmd := "azd auth login"
 		if v.AuthMode == authModeAzCli {
-			loginCmd = "az login"
+			return fmt.Sprintf(
+				"%sNot logged in to Azure. Run `az login` to log in or authenticate using `azd`.", currentIndentation)
 		}
-		return fmt.Sprintf("%sNot logged in, run `%s` to login to Azure", currentIndentation, loginCmd)
+		return fmt.Sprintf("%sNot logged in, run `azd auth login` to login to Azure", currentIndentation)
 	}
 
 	switch v.Result.Type {

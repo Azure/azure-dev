@@ -829,6 +829,7 @@ func (a *InitFromCodeAction) selectNewModel(ctx context.Context) (*azdext.AiMode
 			return nil, stopErr
 		}
 		if err != nil {
+			fmt.Printf("Failed to load AI model catalog: %v\n", err)
 			return nil, fmt.Errorf("failed to list models from catalog: %w", err)
 		}
 	}

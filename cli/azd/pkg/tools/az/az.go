@@ -64,6 +64,9 @@ func (az AzCli) Account(ctx context.Context) (AzAccountResponse, error) {
 
 	output, err := az.runner.Run(ctx, cmd)
 	if err != nil {
+		if strings.Contains(err.Error(), "az login") {
+			return AzAccountResponse{}, fmt.Errorf("az is not authenticated.")
+		}
 		return AzAccountResponse{}, err
 	}
 

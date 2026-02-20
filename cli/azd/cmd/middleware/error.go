@@ -72,10 +72,13 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 	// - Running in CI/CD environment where user interaction is not possible
 	if !e.featuresManager.IsEnabled(llm.FeatureLlm) || e.global.NoPrompt || resource.IsRunningOnCI() {
 		actionResult, err := next(ctx)
-		// Display actionable guidance even in non-interactive mode
 		if err != nil {
 			if guidance := pwshFailureGuidance(err); guidance != "" {
 				e.console.Message(ctx, output.WithWarningFormat("Hint: %s", guidance))
+			}
+			if guidance := softDeleteHint(err); guidance != "" {
+				e.console.Message(ctx,
+					output.WithWarningFormat("Hint: %s", guidance))
 			}
 		}
 		return actionResult, err
@@ -113,6 +116,12 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		if strings.Contains(err.Error(), s) {
 			return actionResult, err
 		}
+	}
+
+	// Show soft-delete guidance when detected
+	if guidance := softDeleteHint(err); guidance != "" {
+		e.console.Message(ctx,
+			output.WithWarningFormat("Hint: %s", guidance))
 	}
 
 	// Warn user that this is an alpha feature

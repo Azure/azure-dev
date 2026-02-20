@@ -227,7 +227,7 @@ func TestEnvConfigSet(t *testing.T) {
 			expectedConfig: map[string]any{
 				"app": map[string]any{
 					"endpoint": "https://example.com",
-					"port":     "8080",
+					"port":     float64(8080),
 				},
 			},
 			expectError: false,
@@ -242,6 +242,112 @@ func TestEnvConfigSet(t *testing.T) {
 					"level2": map[string]any{
 						"level3": "deep-value",
 					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name:          "SetBoolValueTrue",
+			initialConfig: map[string]any{},
+			path:          "infra.parameters.testBool",
+			value:         "true",
+			expectedConfig: map[string]any{
+				"infra": map[string]any{
+					"parameters": map[string]any{
+						"testBool": true,
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name:          "SetBoolValueFalse",
+			initialConfig: map[string]any{},
+			path:          "infra.parameters.testBool",
+			value:         "false",
+			expectedConfig: map[string]any{
+				"infra": map[string]any{
+					"parameters": map[string]any{
+						"testBool": false,
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name:          "SetNumberValue",
+			initialConfig: map[string]any{},
+			path:          "infra.parameters.count",
+			value:         "42",
+			expectedConfig: map[string]any{
+				"infra": map[string]any{
+					"parameters": map[string]any{
+						"count": float64(42),
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name:          "SetArrayValue",
+			initialConfig: map[string]any{},
+			path:          "infra.parameters.testStrings",
+			value:         `["one", "two", "three"]`,
+			expectedConfig: map[string]any{
+				"infra": map[string]any{
+					"parameters": map[string]any{
+						"testStrings": []any{"one", "two", "three"},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name:          "SetObjectValue",
+			initialConfig: map[string]any{},
+			path:          "infra.parameters.tags",
+			value:         `{"env":"dev","team":"platform"}`,
+			expectedConfig: map[string]any{
+				"infra": map[string]any{
+					"parameters": map[string]any{
+						"tags": map[string]any{"env": "dev", "team": "platform"},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name:          "SetPlainStringValue",
+			initialConfig: map[string]any{},
+			path:          "app.name",
+			value:         "my-app",
+			expectedConfig: map[string]any{
+				"app": map[string]any{
+					"name": "my-app",
+				},
+			},
+			expectError: false,
+		},
+		{
+			name:          "SetNullAsString",
+			initialConfig: map[string]any{},
+			path:          "app.value",
+			value:         "null",
+			expectedConfig: map[string]any{
+				"app": map[string]any{
+					"value": "null",
+				},
+			},
+			expectError: false,
+		},
+		{
+			name:          "SetQuotedJsonForcesStringType",
+			initialConfig: map[string]any{},
+			path:          "app.flag",
+			value:         `"true"`,
+			expectedConfig: map[string]any{
+				"app": map[string]any{
+					"flag": "true",
 				},
 			},
 			expectError: false,
@@ -552,7 +658,7 @@ func TestEnvConfigMultipleOperations(t *testing.T) {
 	err = json.Unmarshal(buf.Bytes(), &result)
 	require.NoError(t, err)
 	require.Equal(t, "https://example.com", result["endpoint"])
-	require.Equal(t, "8080", result["port"])
+	require.Equal(t, float64(8080), result["port"])
 
 	// Unset one value
 	unsetFlags := &envConfigUnsetFlags{}
@@ -584,5 +690,5 @@ func TestEnvConfigMultipleOperations(t *testing.T) {
 	var result2 map[string]any
 	err = json.Unmarshal(buf.Bytes(), &result2)
 	require.NoError(t, err)
-	require.Equal(t, map[string]any{"port": "8080"}, result2)
+	require.Equal(t, map[string]any{"port": float64(8080)}, result2)
 }

@@ -735,6 +735,10 @@ func (b *BypassSubscriptionsCache) Save(ctx context.Context, key string, save []
 	return nil
 }
 
+func (b *BypassSubscriptionsCache) Merge(ctx context.Context, key string, save []Subscription) error {
+	return nil
+}
+
 func (b *BypassSubscriptionsCache) Clear(ctx context.Context) error {
 	return nil
 }

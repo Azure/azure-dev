@@ -4,8 +4,13 @@
 package cmd
 
 import (
+	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"testing"
 
@@ -198,6 +203,51 @@ func Test_MapError(t *testing.T) {
 				fields.ErrorKey(fields.ServiceErrorCode.Key).String("RateLimitExceeded"),
 			},
 		},
+		{
+			name:           "WithContextCanceled",
+			err:            context.Canceled,
+			wantErrReason:  "user.canceled",
+			wantErrDetails: nil,
+		},
+		{
+			name:           "WithContextDeadlineExceeded",
+			err:            context.DeadlineExceeded,
+			wantErrReason:  "internal.timeout",
+			wantErrDetails: nil,
+		},
+		{
+			name: "WithDNSError",
+			err: &net.DNSError{
+				Err:  "no such host",
+				Name: "management.azure.com",
+			},
+			wantErrReason: "internal.network",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String("*net.DNSError"),
+			},
+		},
+		{
+			name:           "WithWrappedContextCanceled",
+			err:            fmt.Errorf("operation failed: %w", context.Canceled),
+			wantErrReason:  "user.canceled",
+			wantErrDetails: nil,
+		},
+		{
+			name:          "WithEOFError",
+			err:           io.EOF,
+			wantErrReason: "internal.network",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String("*errors.errorString"),
+			},
+		},
+		{
+			name:          "WithUnexpectedEOFError",
+			err:           io.ErrUnexpectedEOF,
+			wantErrReason: "internal.network",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String("*errors.errorString"),
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -335,4 +385,68 @@ func mustMarshalJson(v interface{}) string {
 		panic(err)
 	}
 	return string(b)
+}
+
+func Test_isNetworkError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "NilError",
+			err:  nil,
+			want: false,
+		},
+		{
+			name: "PlainError",
+			err:  errors.New("something broke"),
+			want: false,
+		},
+		{
+			name: "DNSError",
+			err:  &net.DNSError{Err: "no such host", Name: "example.com"},
+			want: true,
+		},
+		{
+			name: "WrappedDNSError",
+			err:  fmt.Errorf("request failed: %w", &net.DNSError{Err: "no such host", Name: "example.com"}),
+			want: true,
+		},
+		{
+			name: "EOF",
+			err:  io.EOF,
+			want: true,
+		},
+		{
+			name: "UnexpectedEOF",
+			err:  io.ErrUnexpectedEOF,
+			want: true,
+		},
+		{
+			name: "WrappedEOF",
+			err:  fmt.Errorf("reading response: %w", io.EOF),
+			want: true,
+		},
+		{
+			name: "ContextCanceled",
+			err:  context.Canceled,
+			want: false,
+		},
+		{
+			name: "NetOpError",
+			err:  &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connection refused")},
+			want: true,
+		},
+		{
+			name: "TLSRecordHeaderError",
+			err:  &tls.RecordHeaderError{Msg: "bad record"},
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, isNetworkError(tt.err))
+		})
+	}
 }

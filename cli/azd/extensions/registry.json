@@ -2015,6 +2015,82 @@
               "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.9-preview/azure-ai-agents-windows-arm64.zip"
             }
           }
+        },
+        {
+          "version": "0.1.10-preview",
+          "requiredAzdVersion": "\u003e1.23.4",
+          "capabilities": [
+            "custom-commands",
+            "lifecycle-events",
+            "mcp-server",
+            "service-target-provider",
+            "metadata"
+          ],
+          "providers": [
+            {
+              "name": "azure.ai.agent",
+              "type": "service-target",
+              "description": "Deploys agents to the Foundry Agent Service"
+            }
+          ],
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
+          "examples": [
+            {
+              "name": "init",
+              "description": "Initialize a new AI agent project.",
+              "usage": "azd ai agent init"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "c64121ba9dc31fbfb34d32d9244a21aa409dabf9e06ace243fd53a3baef7afea"
+              },
+              "entryPoint": "azure-ai-agents-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.10-preview/azure-ai-agents-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "90f2a83c05f6821dad45f5245e34c80bc0b07b7a2d3a6d203d68bd768bd12edf"
+              },
+              "entryPoint": "azure-ai-agents-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.10-preview/azure-ai-agents-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "d386525c926eca66543f3b01446b41b0eaa291ba88c390140f6dcc0d1dbf3954"
+              },
+              "entryPoint": "azure-ai-agents-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.10-preview/azure-ai-agents-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "20c97b2b8a8cbc7b3815ebd6b7e6e1cc6b5aaa280187a486c55d651360e3f505"
+              },
+              "entryPoint": "azure-ai-agents-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.10-preview/azure-ai-agents-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "abe6ef169a9c302b4e3095840f5bf7f26070c10c81fdeaaa498e2cd82d69766d"
+              },
+              "entryPoint": "azure-ai-agents-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.10-preview/azure-ai-agents-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "41adb6c666d0f88fcd49a45999658c3e6e6e2cd39fe256955362ca86dce5cd78"
+              },
+              "entryPoint": "azure-ai-agents-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.10-preview/azure-ai-agents-windows-arm64.zip"
+            }
+          }
         }
       ]
     },
@@ -2695,6 +2771,76 @@
               "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-finetune_0.0.16-preview/azure-ai-finetune-windows-arm64.zip"
             }
           }
+        },
+        {
+          "capabilities": [
+            "custom-commands",
+            "metadata"
+          ],
+          "version": "0.0.17-preview",
+          "usage": "azd ai finetuning \u003ccommand\u003e [options]",
+          "examples": [
+            {
+              "name": "init",
+              "description": "Initialize a new AI fine-tuning project.",
+              "usage": "azd ai finetuning init"
+            },
+            {
+              "name": "deploy",
+              "description": "Deploy AI fine-tuning job to Azure.",
+              "usage": "azd ai finetuning deploy"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "9337e7097479e80d563df018fc8099003d5500d7304c0d7eae238266870a9996"
+              },
+              "entryPoint": "azure-ai-finetune-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-finetune_0.0.17-preview/azure-ai-finetune-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "79be23975c148b1cf7918316fd02da63ec87b925485c25189b434be7df36c4bc"
+              },
+              "entryPoint": "azure-ai-finetune-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-finetune_0.0.17-preview/azure-ai-finetune-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "330cfd1aa5af8c73d3fdaa86d36d4f0f2c7d072cab8136916a8360f0bcf8d197"
+              },
+              "entryPoint": "azure-ai-finetune-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-finetune_0.0.17-preview/azure-ai-finetune-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "f40fe397120d965de80cbf3278fb7cce74b816f174e2fc77ea50de97f986d229"
+              },
+              "entryPoint": "azure-ai-finetune-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-finetune_0.0.17-preview/azure-ai-finetune-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "12434209e2009ef68d8974eaf1a57926204c084057a0dd418d213cc3c32c73a0"
+              },
+              "entryPoint": "azure-ai-finetune-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-finetune_0.0.17-preview/azure-ai-finetune-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "fa51bc324fda2672bf863b8d0adb427d734fe266d842b4ba8365c1fa0daf5143"
+              },
+              "entryPoint": "azure-ai-finetune-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-finetune_0.0.17-preview/azure-ai-finetune-windows-arm64.zip"
+            }
+          }
         }
       ]
     },
@@ -2705,11 +2851,11 @@
       "description": "Extension for managing custom models in Azure AI Foundry. (Preview)",
       "versions": [
         {
+          "version": "0.0.1-preview",
           "capabilities": [
             "custom-commands",
             "metadata"
           ],
-          "version": "0.0.1-preview",
           "usage": "azd ai models \u003ccommand\u003e [options]",
           "examples": [
             {
@@ -2790,11 +2936,11 @@
           }
         },
         {
+          "version": "0.0.2-preview",
           "capabilities": [
             "custom-commands",
             "metadata"
           ],
-          "version": "0.0.2-preview",
           "usage": "azd ai models \u003ccommand\u003e [options]",
           "examples": [
             {
@@ -2875,11 +3021,11 @@
           }
         },
         {
+          "version": "0.0.3-preview",
           "capabilities": [
             "custom-commands",
             "metadata"
           ],
-          "version": "0.0.3-preview",
           "usage": "azd ai models \u003ccommand\u003e [options]",
           "examples": [
             {

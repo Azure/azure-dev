@@ -14,6 +14,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -70,6 +71,12 @@ func newAuthStatusAction(
 }
 
 func (a *authStatusAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	loginMode, err := a.authManager.Mode()
+	if err != nil {
+		log.Printf("error: fetching auth mode: %v", err)
+		loginMode = auth.AzdBuiltIn
+	}
+
 	scopes := a.authManager.LoginScopes()
 
 	// get user account information
@@ -110,7 +117,37 @@ func (a *authStatusAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		return nil, nil
 	}
 
-	a.console.MessageUxItem(ctx, &ux.AuthStatusView{Result: &res})
+	a.console.MessageUxItem(ctx, &ux.AuthStatusView{Result: &res, AuthMode: string(loginMode)})
+
+	// Offer to switch back to built-in auth (only for AzDelegated mode)
+	if loginMode == auth.AzDelegated {
+		if !a.flags.global.NoPrompt && !resource.IsRunningOnCI() {
+			a.console.Message(ctx, "")
+			response, err := a.console.Confirm(ctx, input.ConsoleOptions{
+				Message:      "Authenticate using azd (recommended)?",
+				DefaultValue: false,
+			})
+			if err != nil {
+				return nil, err
+			}
+			if response {
+				if err := a.authManager.SetBuiltInAuthMode(); err != nil {
+					return nil, fmt.Errorf("setting auth mode: %w", err)
+				}
+				a.console.Message(ctx, "Authentication mode set to azd built-in.")
+				a.console.Message(ctx, "Run `azd auth login` to login with azd built-in authentication.")
+			}
+		} else {
+			a.console.Message(ctx, "")
+			a.console.Message(ctx,
+				"To switch back to azd built-in authentication, run `azd config set auth.useAzCliAuth false`.")
+		}
+	} else if loginMode == auth.ExternalRequest {
+		a.console.Message(ctx, "")
+		a.console.Message(ctx,
+			"The authentication mode is controlled externally and cannot be changed from within azd.")
+	}
+
 	return nil, nil
 }
 

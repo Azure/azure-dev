@@ -113,6 +113,8 @@ func runPublishAction(ctx context.Context, flags *publishFlags, defaultRegistryU
 
 	if flags.version == "" {
 		flags.version = extensionMetadata.Version
+	} else {
+		extensionMetadata.Version = flags.version
 	}
 
 	// Use artifacts patterns from flag

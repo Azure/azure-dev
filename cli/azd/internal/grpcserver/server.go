@@ -6,10 +6,12 @@ package grpcserver
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"log"
 	"net"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -84,7 +86,10 @@ func (s *Server) Start() (*ServerInfo, error) {
 	var serverInfo ServerInfo
 
 	s.grpcServer = grpc.NewServer(
-		grpc.UnaryInterceptor(s.tokenAuthInterceptor(&serverInfo)),
+		grpc.ChainUnaryInterceptor(
+			s.errorWrappingInterceptor(),
+			s.tokenAuthInterceptor(&serverInfo),
+		),
 	)
 
 	// Use ":0" to let the system assign an available random port
@@ -143,6 +148,24 @@ func (s *Server) Stop() error {
 	return nil
 }
 
+// errorWrappingInterceptor wraps ErrorWithSuggestion errors to include their suggestion text
+// in the error message. This ensures that helpful suggestions (like "run azd auth login")
+// are preserved when errors are transmitted over gRPC, where only the error message string is sent.
+func (s *Server) errorWrappingInterceptor() grpc.UnaryServerInterceptor {
+	return func(
+		ctx context.Context,
+		req interface{},
+		info *grpc.UnaryServerInfo,
+		handler grpc.UnaryHandler,
+	) (interface{}, error) {
+		resp, err := handler(ctx, req)
+		if err != nil {
+			err = wrapErrorWithSuggestion(err)
+		}
+		return resp, err
+	}
+}
+
 func (s *Server) tokenAuthInterceptor(serverInfo *ServerInfo) grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
@@ -169,6 +192,23 @@ func (s *Server) tokenAuthInterceptor(serverInfo *ServerInfo) grpc.UnaryServerIn
 		// Proceed to the handler
 		return handler(ctx, req)
 	}
+}
+
+// wrapErrorWithSuggestion checks if the error contains an ErrorWithSuggestion and if so,
+// returns a new error that includes the suggestion text in the error message.
+// This ensures that helpful suggestions (like "run azd auth login") are preserved
+// when errors are transmitted over gRPC, where only the error message string is sent.
+func wrapErrorWithSuggestion(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	var suggestionErr *internal.ErrorWithSuggestion
+	if errors.As(err, &suggestionErr) {
+		return fmt.Errorf("%w\n%s", err, suggestionErr.Suggestion)
+	}
+
+	return err
 }
 
 func generateSigningKey() ([]byte, error) {

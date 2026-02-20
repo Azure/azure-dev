@@ -6,15 +6,24 @@ This command prompts you to input the following:
   • Azure location: The Azure location where your resources will be deployed.
   • Azure subscription: The Azure subscription where your resources will be deployed.
 
+You can also set these values in advance to skip the prompts:
+
+  azd env set AZURE_SUBSCRIPTION_ID <your-subscription-id>
+  azd env set AZURE_LOCATION <location>
+
+Use azd env set to configure values in the active environment. Use --output json for structured output suitable for automation.
+
 When <layer> is specified, only provisions resources for the given layer. When omitted, provisions resources for all layers defined in the project.
 
 Usage
   azd provision [<layer>] [flags]
 
 Flags
-    -e, --environment string 	: The name of the environment to use.
-        --no-state           	: (Bicep only) Forces a fresh deployment based on current Bicep template files, ignoring any stored deployment state.
-        --preview            	: Preview changes to Azure resources.
+    -e, --environment string  	: The name of the environment to use.
+    -l, --location string     	: Azure location for the new environment
+        --no-state            	: (Bicep only) Forces a fresh deployment based on current Bicep template files, ignoring any stored deployment state.
+        --preview             	: Preview changes to Azure resources.
+        --subscription string 	: ID of an Azure subscription to use for the new environment
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

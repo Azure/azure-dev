@@ -1,5 +1,11 @@
 # Release History
 
+## 0.1.10-preview (2026-02-19)
+
+- [[#6749]](https://github.com/Azure/azure-dev/pull/6749) Add "Choose a different model (all regions)" option during model selection recovery
+- [[#6749]](https://github.com/Azure/azure-dev/pull/6749) Display quota availability info in model deployment prompts
+- [[#6749]](https://github.com/Azure/azure-dev/pull/6749) Improve `AZURE_AI_PROJECT_ID` and deployment capacity validation
+
 ## 0.1.9-preview (2026-02-05)
 
 - [[#6631]](https://github.com/Azure/azure-dev/pull/6631) Add support for downloading manifests from public repositories without authentication

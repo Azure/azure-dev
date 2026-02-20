@@ -101,6 +101,10 @@ type Manager struct {
 	userAgent           string
 }
 
+// UserAgent is a typed string for the application user-agent,
+// used for dependency injection.
+type UserAgent string
+
 type ExternalAuthConfiguration struct {
 	Endpoint    string
 	Key         string
@@ -115,7 +119,7 @@ func NewManager(
 	console input.Console,
 	externalAuthCfg ExternalAuthConfiguration,
 	azCli az.AzCli,
-	userAgent string,
+	userAgent UserAgent,
 ) (*Manager, error) {
 	cfgRoot, err := config.GetUserConfigDir()
 	if err != nil {
@@ -137,7 +141,7 @@ func NewManager(
 		return nil, fmt.Errorf("joining authority url: %w", err)
 	}
 
-	msalClient := newUserAgentClient(httpClient, userAgent)
+	msalClient := newUserAgentClient(httpClient, string(userAgent))
 
 	options := []public.Option{
 		public.WithCache(newCache(cacheRoot)),
@@ -161,7 +165,7 @@ func NewManager(
 		console:             console,
 		externalAuthCfg:     externalAuthCfg,
 		azCli:               azCli,
-		userAgent:           userAgent,
+		userAgent:           string(userAgent),
 	}, nil
 }
 

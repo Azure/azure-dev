@@ -634,18 +634,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			Key:         key,
 		}, nil
 	})
-	container.MustRegisterScoped(func(
-		configManager config.FileConfigManager,
-		userConfigManager config.UserConfigManager,
-		cloud *cloud.Cloud,
-		httpClient auth.HttpClient,
-		console input.Console,
-		externalAuthCfg auth.ExternalAuthConfiguration,
-		azCli az.AzCli,
-	) (*auth.Manager, error) {
-		return auth.NewManager(
-			configManager, userConfigManager, cloud, httpClient, console, externalAuthCfg, azCli, internal.UserAgent())
+	container.MustRegisterSingleton(func() auth.UserAgent {
+		return auth.UserAgent(internal.UserAgent())
 	})
+	container.MustRegisterScoped(auth.NewManager)
 	container.MustRegisterSingleton(azapi.NewUserProfileService)
 	container.MustRegisterScoped(func(authManager *auth.Manager) middleware.CurrentUserAuthManager {
 		return authManager

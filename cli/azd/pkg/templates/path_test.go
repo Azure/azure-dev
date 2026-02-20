@@ -155,6 +155,23 @@ func Test_Absolute_LocalRelativePath(t *testing.T) {
 	require.Equal(t, subDir, result)
 }
 
+func Test_Absolute_RejectsSymlink(t *testing.T) {
+	if os.Getenv("OS") == "Windows_NT" {
+		t.Skip("symlink creation requires elevated privileges on Windows")
+	}
+
+	dir := t.TempDir()
+	realDir := filepath.Join(dir, "real-template")
+	require.NoError(t, os.MkdirAll(realDir, 0755))
+
+	linkDir := filepath.Join(dir, "link-template")
+	require.NoError(t, os.Symlink(realDir, linkDir))
+
+	_, err := Absolute(linkDir)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "symlink")
+}
+
 func Test_IsLocalPath(t *testing.T) {
 	tests := []struct {
 		name     string

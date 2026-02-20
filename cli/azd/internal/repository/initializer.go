@@ -104,6 +104,9 @@ func (i *Initializer) Initialize(
 	var filesWithExecPerms []string
 	if templates.IsLocalPath(templateUrl) {
 		err = i.copyLocalTemplate(templateUrl, staging)
+		if err == nil {
+			filesWithExecPerms, err = findExecutableFiles(staging)
+		}
 	} else {
 		filesWithExecPerms, err = i.fetchCode(ctx, templateUrl, templateBranch, staging)
 	}
@@ -244,6 +247,33 @@ func (i *Initializer) copyLocalTemplate(source, destination string) error {
 		return fmt.Errorf("copying local template: %w", err)
 	}
 	return nil
+}
+
+// findExecutableFiles walks root and returns paths (relative to root) of files
+// that have any executable permission bit set.
+func findExecutableFiles(root string) ([]string, error) {
+	var execFiles []string
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		if info.Mode().Perm()&0o111 != 0 {
+			rel, err := filepath.Rel(root, path)
+			if err != nil {
+				return err
+			}
+			execFiles = append(execFiles, rel)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return execFiles, nil
 }
 
 // promptForDuplicates prompts the user for any duplicate files detected.

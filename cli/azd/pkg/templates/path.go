@@ -30,12 +30,18 @@ func Absolute(path string) (string, error) {
 
 	// Support local filesystem directories as template sources.
 	// This allows using a local directory with uncommitted changes for template development.
-	if info, err := os.Stat(path); err == nil && info.IsDir() {
-		absPath, err := filepath.Abs(path)
-		if err != nil {
-			return "", fmt.Errorf("resolving local template path: %w", err)
+	// Use Lstat to reject symlinks consistently with copyLocalTemplate.
+	if info, err := os.Lstat(path); err == nil {
+		if info.Mode()&os.ModeSymlink != 0 {
+			return "", fmt.Errorf("local template directory '%s' is a symlink, which is not supported", path)
 		}
-		return absPath, nil
+		if info.IsDir() {
+			absPath, err := filepath.Abs(path)
+			if err != nil {
+				return "", fmt.Errorf("resolving local template path: %w", err)
+			}
+			return absPath, nil
+		}
 	}
 
 	// If the path looks like an explicit local path reference (".", "..", starts with ./, ../, .\, ..\,

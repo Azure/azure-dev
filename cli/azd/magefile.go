@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 )
 
 // DevInstall builds azd from source as 'azd-dev' and installs it to ~/.azd/bin.
@@ -274,6 +275,13 @@ func runShellScript(dir string, shell string, script string, args ...string) err
 	return cmd.Run()
 }
 
+// shellKind caches the result of detecting whether the shell is WSL or Git-for-Windows bash.
+var shellKind struct {
+	once   sync.Once
+	isWSL  bool
+	tested string // the shell binary used for detection
+}
+
 // toShellPath converts a Windows path to a unix-style path for the given shell.
 // WSL bash expects /mnt/c/..., Git-for-Windows bash expects /c/...
 func toShellPath(shell, winPath string) string {
@@ -282,9 +290,13 @@ func toShellPath(shell, winPath string) string {
 		drive := strings.ToLower(string(p[0]))
 		rest := p[2:]
 
-		// Detect WSL vs Git-for-Windows bash by checking if /mnt exists in the shell.
-		out, err := exec.Command(shell, "-c", "test -d /mnt/c && echo wsl").Output()
-		if err == nil && strings.TrimSpace(string(out)) == "wsl" {
+		// Cache WSL detection so we only shell out once.
+		shellKind.once.Do(func() {
+			shellKind.tested = shell
+			out, err := exec.Command(shell, "-c", "test -d /mnt/c && echo wsl").Output()
+			shellKind.isWSL = err == nil && strings.TrimSpace(string(out)) == "wsl"
+		})
+		if shellKind.isWSL {
 			return "/mnt/" + drive + rest
 		}
 		return "/" + drive + rest
@@ -298,6 +310,11 @@ func requireTool(name, installCmd string) error {
 		return fmt.Errorf("%s is required but not installed.\n  Install: %s", name, installCmd)
 	}
 	return nil
+}
+
+// shellQuote wraps s in single quotes and escapes embedded single quotes for POSIX shells.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 func installDir() (string, error) {
@@ -388,12 +405,14 @@ func addToPathWindows(dir string) error {
 	}
 
 	// Persistently prepend to user-level PATH via PowerShell.
-	script := fmt.Sprintf(
-		`$current = [Environment]::GetEnvironmentVariable('PATH', 'User'); `+
-			`[Environment]::SetEnvironmentVariable('PATH', '%s;' + $current, 'User')`,
+	// Pass dir as a parameter to avoid shell-injection from special characters in the path.
+	cmd := exec.Command(
+		"powershell", "-NoProfile", "-Command",
+		"param([string]$dir) "+
+			"$current = [Environment]::GetEnvironmentVariable('PATH', 'User'); "+
+			`[Environment]::SetEnvironmentVariable('PATH', "$dir;" + $current, 'User')`,
 		dir,
 	)
-	cmd := exec.Command("powershell", "-NoProfile", "-Command", script)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -420,13 +439,13 @@ func addToPathUnix(dir string) error {
 	switch shell {
 	case "zsh":
 		rcFile = filepath.Join(home, ".zshrc")
-		exportLine = fmt.Sprintf(`export PATH="%s:$PATH"`, dir)
+		exportLine = fmt.Sprintf(`export PATH=%s:$PATH`, shellQuote(dir))
 	case "fish":
 		rcFile = filepath.Join(home, ".config", "fish", "config.fish")
-		exportLine = fmt.Sprintf("fish_add_path %s", dir)
+		exportLine = fmt.Sprintf("fish_add_path %s", shellQuote(dir))
 	default: // bash and others
 		rcFile = filepath.Join(home, ".bashrc")
-		exportLine = fmt.Sprintf(`export PATH="%s:$PATH"`, dir)
+		exportLine = fmt.Sprintf(`export PATH=%s:$PATH`, shellQuote(dir))
 	}
 
 	// Check if already present in rc file to avoid duplicates on re-runs.

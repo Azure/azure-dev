@@ -45,6 +45,15 @@ type testWrappedError struct {
 func (e *testWrappedError) Error() string { return e.msg }
 func (e *testWrappedError) Unwrap() error { return e.inner }
 
+// testMultiError supports multi-unwrap (Go 1.20+ Unwrap() []error)
+type testMultiError struct {
+	msg    string
+	errors []error
+}
+
+func (e *testMultiError) Error() string   { return e.msg }
+func (e *testMultiError) Unwrap() []error { return e.errors }
+
 func TestFindErrorByTypeName(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -90,6 +99,40 @@ func TestFindErrorByTypeName(t *testing.T) {
 			err:      &testDeploymentError{Title: "test"},
 			typeName: "SomeOtherError",
 			found:    false,
+		},
+		{
+			name: "multi-unwrap finds type in branch",
+			err: &testMultiError{
+				msg: "multi",
+				errors: []error{
+					errors.New("plain"),
+					&testAuthError{ErrorCode: "AUTH001"},
+				},
+			},
+			typeName: "testAuthError",
+			found:    true,
+		},
+		{
+			name: "multi-unwrap deeply nested",
+			err: &testMultiError{
+				msg: "top",
+				errors: []error{
+					&testMultiError{
+						msg: "branch1",
+						errors: []error{
+							errors.New("leaf1"),
+						},
+					},
+					&testMultiError{
+						msg: "branch2",
+						errors: []error{
+							&testDeploymentError{Title: "found me"},
+						},
+					},
+				},
+			},
+			typeName: "testDeploymentError",
+			found:    true,
 		},
 	}
 

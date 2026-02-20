@@ -13,23 +13,37 @@ import (
 // whose struct type name matches the given name. Uses errors.As-like
 // unwrapping semantics to traverse the error chain.
 func findErrorByTypeName(err error, typeName string) (any, bool) {
-	for err != nil {
-		t := reflect.TypeOf(err)
-		// Dereference pointer to get the struct type name
+	// Use a stack for depth-first traversal to support multi-unwrap error trees
+	stack := []error{err}
+
+	for len(stack) > 0 {
+		current := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+
+		if current == nil {
+			continue
+		}
+
+		t := reflect.TypeOf(current)
 		if t.Kind() == reflect.Ptr {
 			t = t.Elem()
 		}
 		if t.Name() == typeName {
-			return err, true
+			return current, true
 		}
 
-		// Unwrap the error chain
-		unwrapper, ok := err.(interface{ Unwrap() error })
-		if !ok {
-			return nil, false
+		// Multi-unwrap (Go 1.20+): Unwrap() []error
+		if mu, ok := current.(interface{ Unwrap() []error }); ok {
+			stack = append(stack, mu.Unwrap()...)
+			continue
 		}
-		err = unwrapper.Unwrap()
+
+		// Single unwrap: Unwrap() error
+		if su, ok := current.(interface{ Unwrap() error }); ok {
+			stack = append(stack, su.Unwrap())
+		}
 	}
+
 	return nil, false
 }
 

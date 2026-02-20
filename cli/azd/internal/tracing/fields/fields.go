@@ -348,18 +348,18 @@ var (
 	}
 )
 
-// Local extension error related fields.
+// Extension error related fields.
 var (
-	// Local extension error category.
-	LocalErrorCategory = AttributeKey{
-		Key:            attribute.Key("local.category"),
+	// Extension error category.
+	ExtErrorCategory = AttributeKey{
+		Key:            attribute.Key("ext.category"),
 		Classification: SystemMetadata,
 		Purpose:        PerformanceAndHealth,
 	}
 
-	// Local extension error code.
-	LocalErrorCode = AttributeKey{
-		Key:            attribute.Key("local.code"),
+	// Extension error code.
+	ExtErrorCode = AttributeKey{
+		Key:            attribute.Key("ext.code"),
 		Classification: SystemMetadata,
 		Purpose:        PerformanceAndHealth,
 	}

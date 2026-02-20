@@ -135,8 +135,8 @@ func MapError(err error, span tracing.Span) {
 		code := normalizeCodeSegment(extLocalErr.Code, "failed")
 
 		errDetails = append(errDetails,
-			fields.LocalErrorCategory.String(domain),
-			fields.LocalErrorCode.String(code),
+			fields.ExtErrorCategory.String(domain),
+			fields.ExtErrorCode.String(code),
 		)
 
 		errCode = fmt.Sprintf("ext.%s.%s", domain, code)

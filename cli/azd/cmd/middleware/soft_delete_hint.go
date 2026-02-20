@@ -15,13 +15,16 @@ import (
 var softDeleteHints = map[string]string{
 	"FlagMustBeSetForRestore": "A soft-deleted resource with " +
 		"this name exists and is blocking deployment. " +
-		"Run 'azd down --purge' to permanently remove " +
-		"soft-deleted resources, or purge them manually " +
-		"in the Azure portal, then retry with 'azd up'.",
+		"Purge the resource in the Azure portal or via " +
+		"the Azure CLI, then retry with 'azd up'. " +
+		"If the resources are still provisioned, running " +
+		"'azd down --purge' will delete and purge them.",
 	"ConflictError": "A resource conflict occurred that may " +
 		"be caused by a soft-deleted resource. " +
-		"Run 'azd down --purge' to purge soft-deleted " +
-		"resources, then retry with 'azd up'.",
+		"Purge the resource in the Azure portal or via " +
+		"the Azure CLI, then retry with 'azd up'. " +
+		"If the resources are still provisioned, running " +
+		"'azd down --purge' will delete and purge them.",
 }
 
 // softDeleteKeywords are patterns checked in Conflict error messages
@@ -68,10 +71,12 @@ func findSoftDeleteHint(line *azapi.DeploymentErrorLine) string {
 				if strings.Contains(messageLower, kw) {
 					return "A soft-deleted resource is causing " +
 						"this deployment conflict. " +
-						"Run 'azd down --purge' to permanently " +
-						"remove soft-deleted resources, or " +
-						"purge them in the Azure portal, " +
-						"then retry with 'azd up'."
+						"Purge the resource in the Azure " +
+						"portal or via the Azure CLI, then " +
+						"retry with 'azd up'. If the resources " +
+						"are still provisioned, running " +
+						"'azd down --purge' will delete and " +
+						"purge them."
 				}
 			}
 		}

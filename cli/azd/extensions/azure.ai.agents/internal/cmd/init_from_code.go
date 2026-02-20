@@ -39,6 +39,7 @@ type InitFromCodeAction struct {
 	credential        azcore.TokenCredential
 	modelCatalog      map[string]*azdext.AiModel
 	deploymentDetails []project.Deployment
+	httpClient        *http.Client
 }
 
 // templateFileInfo represents a file from the GitHub template repository.
@@ -149,7 +150,7 @@ func (a *InitFromCodeAction) scaffoldTemplate(ctx context.Context, azdClient *az
 	}
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := a.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("fetching repo tree: %w", err)
 	}
@@ -304,7 +305,7 @@ func (a *InitFromCodeAction) scaffoldTemplate(ctx context.Context, azdClient *az
 			return fmt.Errorf("creating request for %s: %w", f.Path, err)
 		}
 
-		fileResp, err := http.DefaultClient.Do(fileReq)
+		fileResp, err := a.httpClient.Do(fileReq)
 		if err != nil {
 			_ = spinner.Stop(ctx)
 			return fmt.Errorf("downloading %s: %w", f.Path, err)

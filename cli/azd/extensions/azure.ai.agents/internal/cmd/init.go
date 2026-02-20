@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/registry_api"
@@ -68,6 +69,7 @@ type InitAction struct {
 	environment          *azdext.Environment
 	flags                *initFlags
 	deploymentDetails    []project.Deployment
+	httpClient           *http.Client
 }
 
 // GitHubUrlInfo holds parsed information from a GitHub URL
@@ -130,6 +132,10 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 				return fmt.Errorf("failed waiting for debugger: %w", err)
 			}
 
+			var httpClient = &http.Client{
+				Timeout: 30 * time.Second,
+			}
+
 			if flags.manifestPointer != "" {
 				azureContext, projectConfig, environment, err := ensureAzureContext(ctx, flags, azdClient)
 				if err != nil {
@@ -167,6 +173,7 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 					projectConfig: projectConfig,
 					environment:   environment,
 					flags:         flags,
+					httpClient:    httpClient,
 				}
 
 				if err := action.Run(ctx); err != nil {
@@ -174,8 +181,9 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 				}
 			} else {
 				action := &InitFromCodeAction{
-					azdClient: azdClient,
-					flags:     flags,
+					azdClient:  azdClient,
+					flags:      flags,
+					httpClient: httpClient,
 				}
 
 				if err := action.Run(ctx); err != nil {
@@ -1015,7 +1023,7 @@ func (a *InitAction) downloadAgentYaml(
 			req, err := http.NewRequestWithContext(ctx, http.MethodGet, fileApiUrl, nil)
 			if err == nil {
 				req.Header.Set("Accept", "application/vnd.github.v3.raw")
-				resp, err := http.DefaultClient.Do(req)
+				resp, err := a.httpClient.Do(req)
 				if err == nil {
 					defer resp.Body.Close()
 					if resp.StatusCode == http.StatusOK {
@@ -1192,7 +1200,7 @@ func (a *InitAction) downloadAgentYaml(
 		if isHostedContainer {
 			// For container agents, download the entire parent directory
 			fmt.Println("Downloading full directory for container agent")
-			err := downloadParentDirectory(ctx, urlInfo, targetDir, ghCli, console, useGhCli)
+			err := downloadParentDirectory(ctx, urlInfo, targetDir, ghCli, console, useGhCli, a.httpClient)
 			if err != nil {
 				return nil, "", fmt.Errorf("downloading parent directory: %w", err)
 			}
@@ -1556,7 +1564,7 @@ func (a *InitAction) parseGitHubUrl(ctx context.Context, manifestPointer string)
 }
 
 func downloadParentDirectory(
-	ctx context.Context, urlInfo *GitHubUrlInfo, targetDir string, ghCli *github.Cli, console input.Console, useGhCli bool) error {
+	ctx context.Context, urlInfo *GitHubUrlInfo, targetDir string, ghCli *github.Cli, console input.Console, useGhCli bool, httpClient *http.Client) error {
 
 	// Get parent directory by removing the filename from the file path
 	pathParts := strings.Split(urlInfo.FilePath, "/")
@@ -1574,7 +1582,7 @@ func downloadParentDirectory(
 			return fmt.Errorf("failed to download directory contents with GH CLI: %w", err)
 		}
 	} else {
-		if err := downloadDirectoryContentsWithoutGhCli(ctx, urlInfo.RepoSlug, parentDirPath, urlInfo.Branch, targetDir); err != nil {
+		if err := downloadDirectoryContentsWithoutGhCli(ctx, urlInfo.RepoSlug, parentDirPath, urlInfo.Branch, targetDir, httpClient); err != nil {
 			return fmt.Errorf("failed to download directory contents without GH CLI: %w", err)
 		}
 	}
@@ -1654,7 +1662,7 @@ func downloadDirectoryContents(
 }
 
 func downloadDirectoryContentsWithoutGhCli(
-	ctx context.Context, repoSlug string, dirPath string, branch string, localPath string) error {
+	ctx context.Context, repoSlug string, dirPath string, branch string, localPath string, httpClient *http.Client) error {
 
 	// Get directory contents using GitHub API directly
 	apiUrl := fmt.Sprintf("https://api.github.com/repos/%s/contents/%s", repoSlug, dirPath)
@@ -1668,7 +1676,7 @@ func downloadDirectoryContentsWithoutGhCli(
 	}
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to get directory contents: %w", err)
 	}
@@ -1724,7 +1732,7 @@ func downloadDirectoryContentsWithoutGhCli(
 			}
 			fileReq.Header.Set("Accept", "application/vnd.github.v3.raw")
 
-			fileResp, err := http.DefaultClient.Do(fileReq)
+			fileResp, err := httpClient.Do(fileReq)
 			if err != nil {
 				return fmt.Errorf("failed to download file %s: %w", itemPath, err)
 			}
@@ -1750,7 +1758,7 @@ func downloadDirectoryContentsWithoutGhCli(
 			}
 
 			// Recursively download directory contents
-			if err := downloadDirectoryContentsWithoutGhCli(ctx, repoSlug, itemPath, branch, itemLocalPath); err != nil {
+			if err := downloadDirectoryContentsWithoutGhCli(ctx, repoSlug, itemPath, branch, itemLocalPath, httpClient); err != nil {
 				return fmt.Errorf("failed to download subdirectory %s: %w", itemPath, err)
 			}
 		}

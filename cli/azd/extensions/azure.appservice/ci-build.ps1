@@ -1,5 +1,5 @@
 param(
-    [string] $Version = (Get-Content "$PSScriptRoot/../version.txt"),
+    [string] $Version = (Get-Content "$PSScriptRoot/version.txt"),
     [string] $SourceVersion = (git rev-parse HEAD),
     [switch] $CodeCoverageEnabled,
     [switch] $BuildRecordMode,
@@ -47,7 +47,7 @@ $tagsFlag = "-tags=cfi,cfg,osusergo"
 # -w: Omit DWARF symbol table
 # -X: Set variable at link time. Used to set the version in source.
 
-$ldFlag = "-ldflags=-s -w -X 'azureaiagent/internal/version.Version=$Version' -X 'azureaiagent/internal/version.Commit=$SourceVersion' -X 'azureaiagent/internal/version.BuildDate=$(Get-Date -Format o)' "
+$ldFlag = "-ldflags=-s -w -X 'azureappservice/internal/version.Version=$Version'"
 
 if ($IsWindows) {
     $msg = "Building for Windows"
@@ -104,7 +104,7 @@ function PrintFlags() {
 }
 
 $oldGOEXPERIMENT = $env:GOEXPERIMENT
-# Enable the loopvar experiment, which makes the loop variaible for go loops like `range` behave as most folks would expect.
+# Enable the loopvar experiment, which makes the loop variable for go loops like `range` behave as most folks would expect.
 # the go team is exploring making this default in the future, and we'd like to opt into the behavior now.
 $env:GOEXPERIMENT = "loopvar"
 

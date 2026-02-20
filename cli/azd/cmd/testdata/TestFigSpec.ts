@@ -641,7 +641,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['submit'],
-									description: 'submit fine tuning job',
+									description: 'Submit fine-tuning job.',
 									options: [
 										{
 											name: ['--file', '-f'],
@@ -2919,7 +2919,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['submit'],
-											description: 'submit fine tuning job',
+											description: 'Submit fine-tuning job.',
 										},
 									],
 								},

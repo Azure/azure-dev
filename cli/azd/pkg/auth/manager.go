@@ -874,9 +874,11 @@ func (m *Manager) LoginWithManagedIdentity(ctx context.Context, clientID string)
 func (m *Manager) LoginWithServicePrincipalSecret(
 	ctx context.Context, tenantId, clientId, clientSecret string,
 ) (azcore.TokenCredential, error) {
-	cred, err := azidentity.NewClientSecretCredential(tenantId, clientId, clientSecret, &azidentity.ClientSecretCredentialOptions{
+	opts := &azidentity.ClientSecretCredentialOptions{
 		ClientOptions: m.authClientOptions(),
-	})
+	}
+	cred, err := azidentity.NewClientSecretCredential(
+		tenantId, clientId, clientSecret, opts)
 	if err != nil {
 		return nil, fmt.Errorf("creating credential: %w", err)
 	}
@@ -902,9 +904,11 @@ func (m *Manager) LoginWithServicePrincipalCertificate(
 		return nil, fmt.Errorf("parsing certificate: %w", err)
 	}
 
-	cred, err := azidentity.NewClientCertificateCredential(tenantId, clientId, certs, key, &azidentity.ClientCertificateCredentialOptions{
+	certOpts := &azidentity.ClientCertificateCredentialOptions{
 		ClientOptions: m.authClientOptions(),
-	})
+	}
+	cred, err := azidentity.NewClientCertificateCredential(
+		tenantId, clientId, certs, key, certOpts)
 	if err != nil {
 		return nil, fmt.Errorf("creating credential: %w", err)
 	}

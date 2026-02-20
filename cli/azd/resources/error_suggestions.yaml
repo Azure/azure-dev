@@ -17,8 +17,9 @@
 #   - handler:    Optional name of a registered ErrorHandler for dynamic suggestions
 #
 # Pattern Types:
-#   - Simple string: Case-insensitive substring match (e.g., "quota exceeded")
-#   - Regex pattern: Prefix with "regex:" for regular expression (e.g., "regex:(?i)error.*code")
+#   - Default: Case-insensitive substring match (e.g., "quota exceeded")
+#   - Regex: Set "regex: true" on the rule to treat all patterns and property
+#     values as regular expressions (e.g., "BCP\\d{3}")
 #
 # Examples:
 #   # Text pattern matching:
@@ -60,55 +61,37 @@ rules:
       running 'azd down --purge' will delete and purge them.
 
   - errorType: "AzureDeploymentError"
+    regex: true
     properties:
       Details.Code: "Conflict"
     patterns:
-      - "soft delete"
+      - "(?i)soft.?delete"
+      - "(?i)purge"
+      - "(?i)deleted vault"
+      - "(?i)deleted resource"
+      - "(?i)recover or purge"
     message: "A soft-deleted resource is causing a deployment conflict."
     suggestion: >
       Purge the soft-deleted resource in the Azure portal or via the
-      Azure CLI, then retry with 'azd up'.
-
-  - errorType: "AzureDeploymentError"
-    properties:
-      Details.Code: "Conflict"
-    patterns:
-      - "purge"
-    message: "A soft-deleted resource is causing a deployment conflict."
-    suggestion: >
-      Purge the soft-deleted resource in the Azure portal or via the
-      Azure CLI, then retry with 'azd up'.
-
-  - errorType: "AzureDeploymentError"
-    properties:
-      Details.Code: "Conflict"
-    patterns:
-      - "deleted vault"
-    message: "A soft-deleted Key Vault is causing a deployment conflict."
-    suggestion: >
-      Purge the deleted Key Vault in the Azure portal under
-      'Key Vaults > Manage deleted vaults', then retry with 'azd up'.
+      Azure CLI, then retry with 'azd up'. If the resources are still
+      provisioned, running 'azd down --purge' will delete and purge them.
     docUrl: "https://learn.microsoft.com/azure/key-vault/general/key-vault-recovery"
 
   - errorType: "AzureDeploymentError"
+    regex: true
     properties:
       Details.Code: "RequestConflict"
     patterns:
-      - "soft delete"
+      - "(?i)soft.?delete"
+      - "(?i)purge"
+      - "(?i)deleted vault"
+      - "(?i)deleted resource"
+      - "(?i)recover or purge"
     message: "A soft-deleted resource is causing a deployment conflict."
     suggestion: >
       Purge the soft-deleted resource in the Azure portal or via the
-      Azure CLI, then retry with 'azd up'.
-
-  - errorType: "AzureDeploymentError"
-    properties:
-      Details.Code: "RequestConflict"
-    patterns:
-      - "purge"
-    message: "A soft-deleted resource is causing a deployment conflict."
-    suggestion: >
-      Purge the soft-deleted resource in the Azure portal or via the
-      Azure CLI, then retry with 'azd up'.
+      Azure CLI, then retry with 'azd up'. If the resources are still
+      provisioned, running 'azd down --purge' will delete and purge them.
 
   # ============================================================================
   # ARM Deployment Errors — Quota and capacity
@@ -203,8 +186,9 @@ rules:
   # ============================================================================
 
   - errorType: "ExitError"
+    regex: true
     properties:
-      Cmd: "regex:(?i)pwsh|powershell"
+      Cmd: "(?i)pwsh|powershell"
     patterns:
       - "Import-Module"
       - "not loaded"
@@ -212,8 +196,9 @@ rules:
     suggestion: "Install the missing module with 'Install-Module <ModuleName> -Scope CurrentUser'."
 
   - errorType: "ExitError"
+    regex: true
     properties:
-      Cmd: "regex:(?i)pwsh|powershell"
+      Cmd: "(?i)pwsh|powershell"
     patterns:
       - "'Az."
       - "is not recognized"
@@ -222,8 +207,9 @@ rules:
     docUrl: "https://learn.microsoft.com/powershell/azure/install-azure-powershell"
 
   - errorType: "ExitError"
+    regex: true
     properties:
-      Cmd: "regex:(?i)pwsh|powershell"
+      Cmd: "(?i)pwsh|powershell"
     patterns:
       - "UnauthorizedAccess"
     message: "PowerShell execution policy is blocking the script."
@@ -232,12 +218,31 @@ rules:
       'Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser'.
 
   - errorType: "ExitError"
+    regex: true
     properties:
-      Cmd: "regex:(?i)pwsh|powershell"
+      Cmd: "(?i)pwsh|powershell"
     patterns:
       - "ErrorActionPreference"
     message: "The hook script has an issue with error handling configuration."
     suggestion: "Ensure '$ErrorActionPreference = \"Stop\"' is set at the top of the script."
+
+  - errorType: "ExitError"
+    regex: true
+    properties:
+      Cmd: "(?i)pwsh|powershell"
+    patterns:
+      - "Connect-AzAccount"
+    message: "The Azure authentication session may have expired."
+    suggestion: "Run 'azd auth login' to refresh your credentials, then retry."
+
+  - errorType: "ExitError"
+    regex: true
+    properties:
+      Cmd: "(?i)pwsh|powershell"
+    patterns:
+      - "(?i)login.*expired|expired.*login"
+    message: "The Azure authentication session may have expired."
+    suggestion: "Run 'azd auth login' to refresh your credentials, then retry."
 
   # ============================================================================
   # Project Configuration Errors
@@ -271,8 +276,9 @@ rules:
   # Bicep Template Errors
   # ============================================================================
 
-  - patterns:
-      - "regex:BCP\\d{3}"
+  - regex: true
+    patterns:
+      - "BCP\\d{3}"
     message: "Your Bicep template has an error."
     suggestion: "Review the error message for the specific issue and line number in your .bicep file."
     docUrl: "https://learn.microsoft.com/azure/azure-resource-manager/bicep/bicep-error-codes"

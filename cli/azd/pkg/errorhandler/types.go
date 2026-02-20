@@ -6,8 +6,8 @@ package errorhandler
 // ErrorSuggestionRule defines a single rule that maps error patterns to an actionable suggestion.
 type ErrorSuggestionRule struct {
 	// Patterns is a list of strings to match against error messages.
-	// Simple strings are matched as case-insensitive substrings.
-	// Prefix a pattern with "regex:" to use regular expression matching.
+	// By default, strings are matched as case-insensitive substrings.
+	// Set Regex to true to treat all patterns and property values as regular expressions.
 	Patterns []string `yaml:"patterns,omitempty"`
 
 	// ErrorType is the Go struct type name to match via reflection.
@@ -17,8 +17,15 @@ type ErrorSuggestionRule struct {
 
 	// Properties is a map of dot-path property names to expected values.
 	// Properties are resolved via reflection on the matched error type.
+	// By default, values are matched as case-insensitive substrings.
+	// Set Regex to true to treat values as regular expressions.
 	// Example: {"Details.Code": "FlagMustBeSetForRestore"}
 	Properties map[string]string `yaml:"properties,omitempty"`
+
+	// Regex enables regular expression matching for all patterns and property values
+	// in this rule. When false (default), patterns and property values use
+	// case-insensitive substring matching.
+	Regex bool `yaml:"regex,omitempty"`
 
 	// Handler is the name of a registered ErrorHandler to invoke when this rule matches.
 	// The handler is resolved from the IoC container by name.

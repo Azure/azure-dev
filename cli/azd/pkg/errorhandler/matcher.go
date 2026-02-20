@@ -8,8 +8,6 @@ import (
 	"strings"
 )
 
-const regexPrefix = "regex:"
-
 // PatternMatcher handles matching error messages against patterns.
 type PatternMatcher struct {
 	// compiledPatterns caches compiled regex patterns for performance
@@ -23,17 +21,19 @@ func NewPatternMatcher() *PatternMatcher {
 	}
 }
 
-// Match checks if the given error message matches any of the patterns.
-// Returns true if any pattern matches.
+// Match checks if the given error message matches any of the patterns (OR logic).
 //
-// Pattern types:
-//   - Simple string: case-insensitive substring match
-//   - "regex:pattern": regular expression match
-func (m *PatternMatcher) Match(errorMessage string, patterns []string) bool {
+// When useRegex is false, patterns are matched as case-insensitive substrings.
+// When useRegex is true, patterns are treated as regular expressions.
+func (m *PatternMatcher) Match(errorMessage string, patterns []string, useRegex bool) bool {
 	lowerErrorMessage := strings.ToLower(errorMessage)
 
 	for _, pattern := range patterns {
-		if m.matchPattern(errorMessage, lowerErrorMessage, pattern) {
+		if useRegex {
+			if m.matchRegex(errorMessage, pattern) {
+				return true
+			}
+		} else if strings.Contains(lowerErrorMessage, strings.ToLower(pattern)) {
 			return true
 		}
 	}
@@ -41,28 +41,29 @@ func (m *PatternMatcher) Match(errorMessage string, patterns []string) bool {
 	return false
 }
 
-// matchPattern checks if a single pattern matches the error message.
-func (m *PatternMatcher) matchPattern(errorMessage, lowerErrorMessage, pattern string) bool {
-	if strings.HasPrefix(pattern, regexPrefix) {
-		return m.matchRegex(errorMessage, pattern[len(regexPrefix):])
+// MatchSingle checks if a single value matches a pattern.
+//
+// When useRegex is false, the match is a case-insensitive substring check.
+// When useRegex is true, the pattern is treated as a regular expression.
+func (m *PatternMatcher) MatchSingle(value string, pattern string, useRegex bool) bool {
+	if useRegex {
+		return m.matchRegex(value, pattern)
 	}
-
-	// Simple case-insensitive substring match
-	return strings.Contains(lowerErrorMessage, strings.ToLower(pattern))
+	return strings.Contains(strings.ToLower(value), strings.ToLower(pattern))
 }
 
-// matchRegex compiles (with caching) and matches a regex pattern against the error message.
-func (m *PatternMatcher) matchRegex(errorMessage, pattern string) bool {
+// matchRegex compiles (with caching) and matches a regex pattern against the text.
+func (m *PatternMatcher) matchRegex(text, pattern string) bool {
 	re, ok := m.compiledPatterns[pattern]
 	if !ok {
 		var err error
 		re, err = regexp.Compile(pattern)
 		if err != nil {
-			// Invalid regex pattern - skip this pattern
+			// Invalid regex pattern - skip
 			return false
 		}
 		m.compiledPatterns[pattern] = re
 	}
 
-	return re.MatchString(errorMessage)
+	return re.MatchString(text)
 }

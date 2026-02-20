@@ -74,7 +74,6 @@ Match against the error message text. Good for tool errors, CLI messages, and an
 - patterns:
     - "quota exceeded"         # Case-insensitive substring
     - "QuotaExceeded"
-    - "regex:(?i)quota.*limit" # Regular expression
   message: "Your Azure subscription has reached a resource quota limit."
   suggestion: "Request a quota increase through the Azure portal."
   docUrl: "https://learn.microsoft.com/azure/quotas/..."
@@ -103,7 +102,8 @@ Match against specific Go error types using reflection. This lets you target str
 - `errorType` is the Go struct type name (e.g., `AzureDeploymentError`)
 - The error chain is walked (like `errors.As`) to find the matching type
 - `properties` uses dot notation to access struct fields via reflection (e.g., `Details.Code`)
-- Property values support the same matching as patterns: case-insensitive substring by default, or `regex:` prefix for regular expressions (e.g., `Cmd: "regex:(?i)pwsh|powershell"`)
+- By default, patterns and property values use case-insensitive substring matching
+- Set `regex: true` on the rule to treat all patterns and property values as regular expressions
 
 #### 3. Combined: Error Type + Text Patterns
 
@@ -155,7 +155,8 @@ container.MustRegisterNamedSingleton("skuAvailabilityHandler",
 |-------|----------|-------------|
 | `patterns` | At least one of `patterns` or `errorType` | List of strings/regex to match against error text |
 | `errorType` | At least one of `patterns` or `errorType` | Go error struct type name (matched via reflection) |
-| `properties` | No (requires `errorType`) | Map of dot-path field names to expected values. Supports substring and `regex:` matching. |
+| `properties` | No (requires `errorType`) | Map of dot-path field names to expected values |
+| `regex` | No | When true, all patterns and property values use regex matching |
 | `message` | Yes (unless `handler` is set) | User-friendly explanation of what went wrong |
 | `suggestion` | Yes (unless `handler` is set) | Actionable next steps for the user |
 | `docUrl` | No | Link to relevant documentation |
@@ -174,12 +175,13 @@ patterns:
 
 #### Regular Expression
 
-Prefix with `regex:` for full regex support:
+Set `regex: true` on the rule to treat all patterns and property values as regular expressions:
 
 ```yaml
+regex: true
 patterns:
-  - "regex:(?i)authorization.*failed"
-  - "regex:BCP\\d{3}"
+  - "(?i)authorization.*failed"
+  - "BCP\\d{3}"
 ```
 
 | Pattern | Meaning |

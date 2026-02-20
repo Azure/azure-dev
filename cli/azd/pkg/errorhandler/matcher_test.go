@@ -64,7 +64,7 @@ func TestPatternMatcher_SimpleSubstring(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := matcher.Match(tt.errorMessage, tt.patterns)
+			result := matcher.Match(tt.errorMessage, tt.patterns, false)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -82,50 +82,44 @@ func TestPatternMatcher_Regex(t *testing.T) {
 		{
 			name:         "regex match",
 			errorMessage: "Authorization failed for user",
-			patterns:     []string{"regex:(?i)authorization.*failed"},
+			patterns:     []string{"(?i)authorization.*failed"},
 			expected:     true,
 		},
 		{
 			name:         "regex case insensitive flag",
 			errorMessage: "AUTHORIZATION FAILED",
-			patterns:     []string{"regex:(?i)authorization.*failed"},
+			patterns:     []string{"(?i)authorization.*failed"},
 			expected:     true,
 		},
 		{
 			name:         "regex no match",
 			errorMessage: "some other error",
-			patterns:     []string{"regex:(?i)authorization.*failed"},
+			patterns:     []string{"(?i)authorization.*failed"},
 			expected:     false,
 		},
 		{
 			name:         "regex with numbers",
 			errorMessage: "Error BCP123: invalid syntax",
-			patterns:     []string{"regex:BCP\\d{3}"},
+			patterns:     []string{"BCP\\d{3}"},
 			expected:     true,
 		},
 		{
 			name:         "invalid regex is skipped",
 			errorMessage: "some error",
-			patterns:     []string{"regex:[invalid"},
+			patterns:     []string{"[invalid"},
 			expected:     false,
 		},
 		{
-			name:         "mixed patterns regex first",
+			name:         "multiple regex patterns OR logic",
 			errorMessage: "quota limit reached",
-			patterns:     []string{"regex:(?i)quota.*limit", "QuotaExceeded"},
-			expected:     true,
-		},
-		{
-			name:         "mixed patterns simple first",
-			errorMessage: "QuotaExceeded",
-			patterns:     []string{"QuotaExceeded", "regex:(?i)quota.*limit"},
+			patterns:     []string{"(?i)quota.*limit", "QuotaExceeded"},
 			expected:     true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := matcher.Match(tt.errorMessage, tt.patterns)
+			result := matcher.Match(tt.errorMessage, tt.patterns, true)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -133,17 +127,14 @@ func TestPatternMatcher_Regex(t *testing.T) {
 
 func TestPatternMatcher_RegexCaching(t *testing.T) {
 	matcher := NewPatternMatcher()
-	pattern := "regex:test\\d+"
+	pattern := "test\\d+"
 
-	// First call compiles the regex
-	result1 := matcher.Match("test123", []string{pattern})
+	result1 := matcher.Match("test123", []string{pattern}, true)
 	assert.True(t, result1)
 
-	// Second call should use cached regex
-	result2 := matcher.Match("test456", []string{pattern})
+	result2 := matcher.Match("test456", []string{pattern}, true)
 	assert.True(t, result2)
 
-	// Verify cache has the entry
 	assert.Len(t, matcher.compiledPatterns, 1)
 }
 
@@ -211,8 +202,6 @@ func TestErrorSuggestionService_FindSuggestion(t *testing.T) {
 func TestErrorSuggestionService_FirstMatchWins(t *testing.T) {
 	service := NewErrorSuggestionService()
 
-	// An error that could match multiple patterns should return the first match
-	// "quota exceeded" and "OperationNotAllowed" are in the same rule
 	result := service.FindSuggestion("OperationNotAllowed: quota exceeded")
 
 	assert.NotNil(t, result)

@@ -92,7 +92,7 @@ func (p *ErrorHandlerPipeline) evaluateRule(
 
 		// 2. Check properties on the matched error
 		if len(rule.Properties) > 0 {
-			if !matchProperties(matched, rule.Properties) {
+			if !matchProperties(matched, rule.Properties, p.matcher, rule.Regex) {
 				return nil
 			}
 		}
@@ -104,7 +104,7 @@ func (p *ErrorHandlerPipeline) evaluateRule(
 	// 3. Check text patterns
 	if len(rule.Patterns) > 0 {
 		hasCondition = true
-		if !p.matcher.Match(errMessage, rule.Patterns) {
+		if !p.matcher.Match(errMessage, rule.Patterns, rule.Regex) {
 			return nil
 		}
 	}

@@ -34,18 +34,17 @@ func findErrorByTypeName(err error, typeName string) (any, bool) {
 }
 
 // matchProperties checks if all property paths resolve to the expected values
-// on the given target object using reflection.
+// on the given target object using reflection (AND logic).
 //
-// Property values support the same matching conventions as patterns:
-//   - Simple string: case-insensitive substring match
-//   - "regex:pattern": regular expression match
-func matchProperties(target any, properties map[string]string, matcher *PatternMatcher) bool {
+// When useRegex is false, property values are matched as case-insensitive substrings.
+// When useRegex is true, property values are treated as regular expressions.
+func matchProperties(target any, properties map[string]string, matcher *PatternMatcher, useRegex bool) bool {
 	for path, expected := range properties {
 		actual, ok := resolvePropertyPath(target, path)
 		if !ok {
 			return false
 		}
-		if !matcher.Match(actual, []string{expected}) {
+		if !matcher.MatchSingle(actual, expected, useRegex) {
 			return false
 		}
 	}

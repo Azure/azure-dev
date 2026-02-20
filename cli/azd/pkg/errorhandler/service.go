@@ -46,7 +46,7 @@ func NewErrorSuggestionService() *ErrorSuggestionService {
 // Rules are evaluated in order; the first match wins.
 func (s *ErrorSuggestionService) FindSuggestion(errorMessage string) *MatchedSuggestion {
 	for _, rule := range s.config.Rules {
-		if s.matcher.Match(errorMessage, rule.Patterns) {
+		if len(rule.Patterns) > 0 && s.matcher.Match(errorMessage, rule.Patterns, rule.Regex) {
 			return &MatchedSuggestion{
 				Message:    rule.Message,
 				Suggestion: rule.Suggestion,

@@ -227,7 +227,7 @@ func TestMatchProperties(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := matchProperties(tt.target, tt.properties, NewPatternMatcher())
+			result := matchProperties(tt.target, tt.properties, NewPatternMatcher(), false)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -250,29 +250,24 @@ func TestMatchProperties_Regex(t *testing.T) {
 	}{
 		{
 			name:       "regex match on field",
-			properties: map[string]string{"Title": "regex:(?i)pwsh|powershell"},
+			properties: map[string]string{"Title": "(?i)pwsh|powershell"},
 			expected:   true,
 		},
 		{
 			name:       "regex no match",
-			properties: map[string]string{"Title": "regex:(?i)node|python"},
+			properties: map[string]string{"Title": "(?i)node|python"},
 			expected:   false,
 		},
 		{
-			name:       "substring match (case insensitive)",
-			properties: map[string]string{"Details.Code": "insufficientquota"},
-			expected:   true,
-		},
-		{
 			name:       "regex on nested field",
-			properties: map[string]string{"Details.Message": "regex:(?i)quota.*region"},
+			properties: map[string]string{"Details.Message": "(?i)quota.*region"},
 			expected:   true,
 		},
 		{
-			name: "mixed regex and substring",
+			name: "regex on multiple properties",
 			properties: map[string]string{
-				"Title":        "regex:(?i)pwsh",
-				"Details.Code": "InsufficientQuota",
+				"Title":        "(?i)pwsh",
+				"Details.Code": "Insufficient",
 			},
 			expected: true,
 		},
@@ -280,7 +275,7 @@ func TestMatchProperties_Regex(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := matchProperties(err, tt.properties, matcher)
+			result := matchProperties(err, tt.properties, matcher, true)
 			assert.Equal(t, tt.expected, result)
 		})
 	}

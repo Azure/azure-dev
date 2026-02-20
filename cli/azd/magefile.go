@@ -110,9 +110,15 @@ func Preflight() error {
 	// Disable Go workspace mode so preflight mirrors CI, which has no go.work file.
 	// Without this, a local go.work can silently resolve different module versions
 	// than go.mod alone, masking build failures that only appear in CI.
-	origGowork := os.Getenv("GOWORK")
+	origGowork, hadGowork := os.LookupEnv("GOWORK")
 	os.Setenv("GOWORK", "off")
-	defer os.Setenv("GOWORK", origGowork)
+	defer func() {
+		if hadGowork {
+			os.Setenv("GOWORK", origGowork)
+		} else {
+			os.Unsetenv("GOWORK")
+		}
+	}()
 
 	repoRoot, err := findRepoRoot()
 	if err != nil {
@@ -256,11 +262,15 @@ func runShellScript(dir string, shell string, script string, args ...string) err
 	if runtime.GOOS == "windows" {
 		shellScript := toShellPath(shell, script)
 
-		// Build: cd <dir> && tr -d '\r' < script.sh | bash -s -- args...
+		// Build: cd '<dir>' && tr -d '\r' < '<script>' | bash -s -- '<arg1>' ...
 		// This strips CRLF line endings that WSL bash chokes on.
 		shellDir := toShellPath(shell, dir)
+		quotedArgs := make([]string, len(args))
+		for i, a := range args {
+			quotedArgs[i] = shellQuote(a)
+		}
 		inner := fmt.Sprintf(`cd %s && tr -d '\r' < %s | bash -s -- %s`,
-			shellDir, shellScript, strings.Join(args, " "))
+			shellQuote(shellDir), shellQuote(shellScript), strings.Join(quotedArgs, " "))
 		cmd := exec.Command(shell, "-c", inner)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -277,9 +287,8 @@ func runShellScript(dir string, shell string, script string, args ...string) err
 
 // shellKind caches the result of detecting whether the shell is WSL or Git-for-Windows bash.
 var shellKind struct {
-	once   sync.Once
-	isWSL  bool
-	tested string // the shell binary used for detection
+	once  sync.Once
+	isWSL bool
 }
 
 // toShellPath converts a Windows path to a unix-style path for the given shell.
@@ -292,7 +301,6 @@ func toShellPath(shell, winPath string) string {
 
 		// Cache WSL detection so we only shell out once.
 		shellKind.once.Do(func() {
-			shellKind.tested = shell
 			out, err := exec.Command(shell, "-c", "test -d /mnt/c && echo wsl").Output()
 			shellKind.isWSL = err == nil && strings.TrimSpace(string(out)) == "wsl"
 		})
@@ -450,7 +458,7 @@ func addToPathUnix(dir string) error {
 
 	// Check if already present in rc file to avoid duplicates on re-runs.
 	if data, err := os.ReadFile(rcFile); err == nil {
-		if strings.Contains(string(data), dir) {
+		if strings.Contains(string(data), exportLine) {
 			fmt.Printf("✓ %s already references %s.\n", rcFile, dir)
 			os.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 			return nil

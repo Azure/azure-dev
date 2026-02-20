@@ -13,18 +13,33 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
+// remoteURIPrefixes lists URI scheme prefixes that identify remote git repositories.
+var remoteURIPrefixes = []string{
+	"git@",
+	"git://",
+	"ssh://",
+	"file://",
+	"http://",
+	"https://",
+}
+
+// isRemoteURI returns true if path starts with a known remote URI prefix.
+func isRemoteURI(path string) bool {
+	for _, prefix := range remoteURIPrefixes {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // Absolute returns an absolute template path, given a possibly relative template path. An absolute path also corresponds to
 // a fully-qualified URI to a git repository.
 //
 // See Template.Path for more details.
 func Absolute(path string) (string, error) {
 	// already a remote URI, return as-is
-	if strings.HasPrefix(path, "git@") ||
-		strings.HasPrefix(path, "git://") ||
-		strings.HasPrefix(path, "ssh://") ||
-		strings.HasPrefix(path, "file://") ||
-		strings.HasPrefix(path, "http://") ||
-		strings.HasPrefix(path, "https://") {
+	if isRemoteURI(path) {
 		return path, nil
 	}
 
@@ -79,12 +94,7 @@ func Hyperlink(path string) string {
 // IsLocalPath returns true if the given resolved template path refers to a local filesystem directory
 // rather than a remote git URL.
 func IsLocalPath(resolvedPath string) bool {
-	return !strings.HasPrefix(resolvedPath, "http://") &&
-		!strings.HasPrefix(resolvedPath, "https://") &&
-		!strings.HasPrefix(resolvedPath, "git@") &&
-		!strings.HasPrefix(resolvedPath, "git://") &&
-		!strings.HasPrefix(resolvedPath, "ssh://") &&
-		!strings.HasPrefix(resolvedPath, "file://")
+	return !isRemoteURI(resolvedPath)
 }
 
 // looksLikeLocalPath returns true if the path appears to be an explicit local filesystem reference

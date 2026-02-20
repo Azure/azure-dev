@@ -81,27 +81,29 @@ Match against the error message text. Good for tool errors, CLI messages, and an
 
 #### 2. Error Type + Properties (typed errors)
 
-Match against specific Go error types using reflection. This lets you target structured errors like `AzureDeploymentError` and inspect their fields.
+Match against specific Go error types using reflection. This lets you target structured errors and inspect their fields. For ARM deployment errors, use `DeploymentErrorLine` to match error codes at any depth in the error tree.
 
 ```yaml
 # Match ARM deployment errors with a specific error code
-- errorType: "AzureDeploymentError"
+# DeploymentErrorLine nodes are found at any depth via multi-unwrap
+- errorType: "DeploymentErrorLine"
   properties:
-    Details.Code: "FlagMustBeSetForRestore"
+    Code: "FlagMustBeSetForRestore"
   message: "A soft-deleted resource is blocking deployment."
   suggestion: "Run 'azd down --purge' to permanently remove it, then retry."
   docUrl: "https://learn.microsoft.com/azure/key-vault/general/key-vault-recovery"
 
-# Match auth errors
+# Match auth errors (direct type match)
 - errorType: "AuthFailedError"
   message: "Authentication with Azure failed."
   suggestion: "Run 'azd auth login' to sign in again."
 ```
 
 **How it works:**
-- `errorType` is the Go struct type name (e.g., `AzureDeploymentError`)
-- The error chain is walked (like `errors.As`) to find the matching type
-- `properties` uses dot notation to access struct fields via reflection (e.g., `Details.Code`)
+- `errorType` is the Go struct type name (e.g., `DeploymentErrorLine`, `ExitError`)
+- The error chain is walked (including multi-unwrap trees) to find the matching type
+- `properties` uses dot notation to access struct fields via reflection (e.g., `Code`)
+- Both type AND properties must match on the same error node
 - By default, patterns and property values use case-insensitive substring matching
 - Set `regex: true` on the rule to treat all patterns and property values as regular expressions
 
@@ -110,27 +112,30 @@ Match against specific Go error types using reflection. This lets you target str
 When error codes are too broad (like generic "Conflict"), combine type matching with text patterns to narrow the match:
 
 ```yaml
-- errorType: "AzureDeploymentError"
+- errorType: "DeploymentErrorLine"
+  regex: true
   properties:
-    Details.Code: "Conflict"
+    Code: "Conflict"
   patterns:
-    - "soft delete"    # Also require this text in the error message
+    - "(?i)soft.?delete"  # Also require this text in the error message
   message: "A soft-deleted resource is causing a deployment conflict."
   suggestion: "Purge the resource in the Azure portal, then retry."
 ```
 
 ### Named Handlers (dynamic suggestions)
 
-For cases that need code to compute a suggestion (e.g., checking which regions have quota), you can reference a named `ErrorHandler` registered in the IoC container:
+For cases that need code to compute a suggestion (e.g., including the current region or checking live state), you can reference a named `ErrorHandler` registered in the IoC container:
 
 ```yaml
-- errorType: "AzureDeploymentError"
+- errorType: "DeploymentErrorLine"
   properties:
-    Details.Code: "SkuNotAvailable"
-  handler: "skuAvailabilityHandler"
+    Code: "SkuNotAvailable"
+  handler: "skuNotAvailableHandler"
 ```
 
-The handler is a Go implementation of the `ErrorHandler` interface:
+When a handler is set, the static `message`/`suggestion`/`docUrl` fields are ignored — the handler computes the full response dynamically.
+
+The handler implements the `ErrorHandler` interface:
 
 ```go
 // pkg/errorhandler/handler.go
@@ -139,13 +144,36 @@ type ErrorHandler interface {
 }
 ```
 
+Example — the built-in `SkuNotAvailableHandler` includes the current `AZURE_LOCATION` in its suggestion:
+
+```go
+func (h *SkuNotAvailableHandler) Handle(_ context.Context, err error) *ErrorWithSuggestion {
+    location := os.Getenv("AZURE_LOCATION")
+
+    suggestion := "Try a different region with 'azd env set AZURE_LOCATION <region>'."
+    if location != "" {
+        suggestion = fmt.Sprintf(
+            "The current region is '%s'. Try a different region with "+
+                "'azd env set AZURE_LOCATION <region>'. "+
+                "To see available SKUs, run 'az vm list-skus --location %s --output table'.",
+            location, location,
+        )
+    }
+
+    return &ErrorWithSuggestion{
+        Err:        err,
+        Message:    "The requested VM size or SKU is not available in this region.",
+        Suggestion: suggestion,
+        DocUrl:     "https://learn.microsoft.com/...",
+    }
+}
+```
+
 Register handlers by name in `cmd/container.go`:
 
 ```go
-container.MustRegisterNamedSingleton("skuAvailabilityHandler",
-    func() errorhandler.ErrorHandler {
-        return NewSkuAvailabilityHandler(...)
-    },
+container.MustRegisterNamedSingleton("skuNotAvailableHandler",
+    errorhandler.NewSkuNotAvailableHandler,
 )
 ```
 
@@ -215,7 +243,9 @@ patterns:
 
 3. **Use `errorType` for structured errors**: When the error has a known Go type, prefer type matching over text patterns — it's more reliable and less fragile
 
-4. **Test your rules**: Run `go test ./pkg/errorhandler/...` after making changes
+4. **Order by specificity**: Place more specific rules before general ones. For example, `Conflict + soft-delete keyword` rules must come before the bare `Conflict` rule. Text-only patterns should come last since they're the broadest.
+
+5. **Test your rules**: Run `go test ./pkg/errorhandler/...` after making changes
 
 ## File Layout
 
@@ -224,9 +254,10 @@ patterns:
 | `resources/error_suggestions.yaml` | Error rules (edit this!) |
 | `pkg/errorhandler/types.go` | YAML schema types |
 | `pkg/errorhandler/pipeline.go` | Rule evaluation pipeline |
-| `pkg/errorhandler/reflect.go` | Reflection-based error type/property matching |
+| `pkg/errorhandler/reflect.go` | Reflection-based error type/property matching (supports multi-unwrap) |
 | `pkg/errorhandler/matcher.go` | Text pattern matching engine |
 | `pkg/errorhandler/handler.go` | `ErrorHandler` interface for custom handlers |
+| `pkg/errorhandler/sku_handler.go` | Example handler: `SkuNotAvailableHandler` |
 | `pkg/errorhandler/errors.go` | `ErrorWithSuggestion` type |
 | `pkg/output/ux/error_with_suggestion.go` | UX display component |
 
@@ -235,6 +266,8 @@ patterns:
 ### ErrorHandlerPipeline
 
 The pipeline is the single entry point. It evaluates YAML rules in order, checking each rule's conditions (errorType, properties, patterns). When all conditions pass, it either returns a static suggestion from the rule's fields or invokes a named handler.
+
+The error type matcher uses depth-first traversal with multi-unwrap support (`Unwrap() []error`), so it can find typed errors at any depth in an error tree — including nested ARM deployment errors.
 
 ### ErrorWithSuggestion
 

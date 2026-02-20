@@ -825,7 +825,7 @@ func (a *InitFromCodeAction) selectNewModel(ctx context.Context) (*azdext.AiMode
 			return nil, fmt.Errorf("failed to start spinner: %w", err)
 		}
 
-		a.loadAiCatalog(ctx)
+		err = a.loadAiCatalog(ctx)
 		if stopErr := spinner.Stop(ctx); stopErr != nil {
 			return nil, stopErr
 		}

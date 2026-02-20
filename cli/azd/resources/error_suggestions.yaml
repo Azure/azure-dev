@@ -37,7 +37,14 @@
 
 rules:
   # ============================================================================
-  # ARM Deployment Errors — Soft-delete conflicts
+  # ORDERING: Most specific rules first, least specific last.
+  # Typed error rules (errorType + properties) are naturally more specific
+  # than text-only pattern rules. Within each group, rules with additional
+  # constraints (patterns, keywords) come before bare code matches.
+  # ============================================================================
+
+  # ============================================================================
+  # ARM Deployment Errors — Soft-delete conflicts (most specific first)
   # 4th most common error category (~128,054 errors in 90-day analysis)
   # ============================================================================
 
@@ -60,6 +67,7 @@ rules:
       then retry with 'azd up'. If the resources are still provisioned,
       running 'azd down --purge' will delete and purge them.
 
+  # Conflict + soft-delete keywords (more specific than bare Conflict)
   - errorType: "DeploymentErrorLine"
     regex: true
     properties:
@@ -94,8 +102,7 @@ rules:
       provisioned, running 'azd down --purge' will delete and purge them.
 
   # ============================================================================
-  # ARM Deployment Errors — Quota and capacity
-  # ARM errors account for ~45% of all azd errors (~57,956)
+  # ARM Deployment Errors — Specific error codes
   # ============================================================================
 
   - errorType: "DeploymentErrorLine"
@@ -114,10 +121,6 @@ rules:
     suggestion: "Request a quota increase or use a different SKU."
     docUrl: "https://learn.microsoft.com/azure/quotas/quickstart-increase-quota-portal"
 
-  # ============================================================================
-  # ARM Deployment Errors — Region and SKU availability
-  # ============================================================================
-
   - errorType: "DeploymentErrorLine"
     properties:
       Code: "SkuNotAvailable"
@@ -131,10 +134,6 @@ rules:
     message: "This resource type is restricted in the selected region."
     suggestion: "Try a different region with 'azd env set AZURE_LOCATION <region>'."
 
-  # ============================================================================
-  # ARM Deployment Errors — Authorization
-  # ============================================================================
-
   - errorType: "DeploymentErrorLine"
     properties:
       Code: "AuthorizationFailed"
@@ -143,10 +142,6 @@ rules:
       Ensure you have the required RBAC role (e.g., Owner or Contributor)
       on the target subscription.
     docUrl: "https://learn.microsoft.com/azure/role-based-access-control/role-assignments-portal"
-
-  # ============================================================================
-  # ARM Deployment Errors — Template and validation
-  # ============================================================================
 
   - errorType: "DeploymentErrorLine"
     properties:
@@ -162,16 +157,6 @@ rules:
       Check resource property values and API versions
       in your Bicep/Terraform files.
 
-  # ============================================================================
-  # ARM Deployment Errors — Resource conflicts
-  # ============================================================================
-
-  - errorType: "DeploymentErrorLine"
-    properties:
-      Code: "Conflict"
-    message: "A resource with this name already exists or is in a conflicting state."
-    suggestion: "Check for existing or soft-deleted resources in the Azure portal."
-
   - errorType: "DeploymentErrorLine"
     properties:
       Code: "ResourceNotFound"
@@ -180,8 +165,16 @@ rules:
       Check resource dependencies and deployment ordering
       in your template.
 
+  # Bare Conflict — least specific ARM code rule, must be AFTER
+  # Conflict + keyword rules above
+  - errorType: "DeploymentErrorLine"
+    properties:
+      Code: "Conflict"
+    message: "A resource with this name already exists or is in a conflicting state."
+    suggestion: "Check for existing or soft-deleted resources in the Azure portal."
+
   # ============================================================================
-  # PowerShell Hook Failures
+  # PowerShell Hook Failures (errorType + properties + patterns)
   # ~5% of all azd errors (~6,347); AI templates hit 6.59%
   # ============================================================================
 
@@ -245,7 +238,8 @@ rules:
     suggestion: "Run 'azd auth login' to refresh your credentials, then retry."
 
   # ============================================================================
-  # Project Configuration Errors
+  # Text Pattern Rules — Specific patterns first
+  # These are fallbacks for errors without typed Go structs.
   # ============================================================================
 
   - patterns:
@@ -253,16 +247,6 @@ rules:
     message: "Your azure.yaml file is invalid."
     suggestion: "Check the syntax of your azure.yaml file and fix any errors."
     docUrl: "https://aka.ms/azure-dev/azure-yaml"
-
-  # ============================================================================
-  # Authentication Errors
-  # ============================================================================
-
-  - patterns:
-      - "AADSTS"
-    message: "Authentication with Azure failed."
-    suggestion: "Run 'azd auth login' to sign in again."
-    docUrl: "https://learn.microsoft.com/azure/developer/azure-developer-cli/reference#azd-auth-login"
 
   - patterns:
       - "InvalidAuthenticationToken"
@@ -272,10 +256,6 @@ rules:
     suggestion: "Run 'azd auth login' to sign in again."
     docUrl: "https://learn.microsoft.com/azure/developer/azure-developer-cli/reference#azd-auth-login"
 
-  # ============================================================================
-  # Bicep Template Errors
-  # ============================================================================
-
   - regex: true
     patterns:
       - "BCP\\d{3}"
@@ -284,14 +264,19 @@ rules:
     docUrl: "https://learn.microsoft.com/azure/azure-resource-manager/bicep/bicep-error-codes"
 
   # ============================================================================
-  # Quota Errors (text pattern fallback for non-ARM errors)
+  # Text Pattern Rules — Broad/generic patterns (least specific, must be last)
   # ============================================================================
+
+  - patterns:
+      - "AADSTS"
+    message: "Authentication with Azure failed."
+    suggestion: "Run 'azd auth login' to sign in again."
+    docUrl: "https://learn.microsoft.com/azure/developer/azure-developer-cli/reference#azd-auth-login"
 
   - patterns:
       - "QuotaExceeded"
       - "quota exceeded"
       - "exceeds quota"
-      - "OperationNotAllowed"
     message: "Your Azure subscription has reached a resource quota limit."
     suggestion: "Request a quota increase through the Azure portal, or try deploying to a different region."
     docUrl: "https://learn.microsoft.com/azure/quotas/quickstart-increase-quota-portal"

@@ -14,6 +14,7 @@ import (
 	"net"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2/terminal"
@@ -41,6 +42,7 @@ func MapError(err error, span tracing.Span) {
 	var armDeployErr *azapi.AzureDeploymentError
 	var authFailedErr *auth.AuthFailedError
 	var extServiceErr *azdext.ServiceError
+	var extLocalErr *azdext.LocalError
 
 	// external tool errors
 	var toolExecErr *exec.ExitError
@@ -112,8 +114,6 @@ func MapError(err error, span tracing.Span) {
 			operation = "deployment"
 		}
 		errCode = fmt.Sprintf("service.arm.%s.failed", operation)
-	} else if errors.As(err, &extensionRunErr) {
-		errCode = "ext.run.failed"
 	} else if errors.As(err, &extServiceErr) {
 		// Handle structured service errors from extensions
 		if extServiceErr.StatusCode > 0 && extServiceErr.ServiceName != "" {
@@ -130,6 +130,18 @@ func MapError(err error, span tracing.Span) {
 		} else {
 			errCode = "ext.service.failed"
 		}
+	} else if errors.As(err, &extLocalErr) {
+		domain := string(azdext.NormalizeLocalErrorCategory(extLocalErr.Category))
+		code := normalizeCodeSegment(extLocalErr.Code, "failed")
+
+		errDetails = append(errDetails,
+			fields.LocalErrorCategory.String(domain),
+			fields.LocalErrorCode.String(code),
+		)
+
+		errCode = fmt.Sprintf("ext.%s.%s", domain, code)
+	} else if errors.As(err, &extensionRunErr) {
+		errCode = "ext.run.failed"
 	} else if errors.As(err, &toolExecErr) {
 		toolName := "other"
 		cmdName := cmdAsName(toolExecErr.Cmd)
@@ -322,4 +334,23 @@ func cmdAsName(cmd string) string {
 	}
 
 	return strings.ToLower(cmd)
+}
+
+var codeSegmentRegex = regexp.MustCompile(`[^a-z0-9_]+`)
+
+func normalizeCodeSegment(value string, fallback string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return fallback
+	}
+
+	value = strings.ReplaceAll(value, "-", "_")
+	value = strings.ReplaceAll(value, ".", "_")
+	value = codeSegmentRegex.ReplaceAllString(value, "_")
+	value = strings.Trim(value, "_")
+	if value == "" {
+		return fallback
+	}
+
+	return value
 }

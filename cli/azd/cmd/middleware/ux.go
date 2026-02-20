@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -55,7 +56,13 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 		}
 
 		if errors.As(err, &suggestionErr) {
-			errorMessage.WriteString("\n" + suggestionErr.Suggestion)
+			suggestion := suggestionErr.Suggestion
+			if !strings.HasPrefix(suggestion, "Suggestion: ") {
+				suggestion = "Suggestion: " + suggestion
+			}
+			errorMessage.WriteString("\n" + suggestion)
+		} else if suggestion := azdext.ErrorSuggestion(err); suggestion != "" {
+			errorMessage.WriteString("\nSuggestion: " + suggestion)
 		}
 
 		errMessage := errorMessage.String()

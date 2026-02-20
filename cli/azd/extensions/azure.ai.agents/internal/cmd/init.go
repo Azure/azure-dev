@@ -162,11 +162,11 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 					// azureClient:         azure.NewAzureClient(credential),
 					azureContext: azureContext,
 					// composedResources:   getComposedResourcesResponse.Resources,
-				console:             console,
-				credential:          credential,
-				projectConfig:       projectConfig,
-				environment:         environment,
-				flags:               flags,
+					console:       console,
+					credential:    credential,
+					projectConfig: projectConfig,
+					environment:   environment,
+					flags:         flags,
 				}
 
 				if err := action.Run(ctx); err != nil {
@@ -1756,5 +1756,19 @@ func downloadDirectoryContentsWithoutGhCli(
 		}
 	}
 
+	return nil
+}
+
+func (a *InitAction) setEnvVar(ctx context.Context, key, value string) error {
+	_, err := a.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+		EnvName: a.environment.Name,
+		Key:     key,
+		Value:   value,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to set environment variable %s=%s: %w", key, value, err)
+	}
+
+	fmt.Printf("Set environment variable: %s=%s\n", key, value)
 	return nil
 }

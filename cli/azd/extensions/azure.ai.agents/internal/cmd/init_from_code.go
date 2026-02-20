@@ -6,7 +6,6 @@ package cmd
 import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/azure"
-	"azureaiagent/internal/pkg/azure/ai"
 	"azureaiagent/internal/project"
 	"context"
 	"encoding/json"
@@ -32,15 +31,14 @@ import (
 )
 
 type InitFromCodeAction struct {
-	azdClient           *azdext.AzdClient
-	flags               *initFlags
-	projectConfig       *azdext.ProjectConfig
-	azureContext        *azdext.AzureContext
-	environment         *azdext.Environment
-	credential          azcore.TokenCredential
-	modelCatalog        map[string]*ai.AiModel
-	modelCatalogService *ai.ModelCatalogService
-	deploymentDetails   []project.Deployment
+	azdClient         *azdext.AzdClient
+	flags             *initFlags
+	projectConfig     *azdext.ProjectConfig
+	azureContext      *azdext.AzureContext
+	environment       *azdext.Environment
+	credential        azcore.TokenCredential
+	modelCatalog      map[string]*azdext.AiModel
+	deploymentDetails []project.Deployment
 }
 
 // templateFileInfo represents a file from the GitHub template repository.
@@ -401,7 +399,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		a.azureContext.Scope.SubscriptionId = extractSubscriptionId(a.flags.projectResourceId)
 	}
 
-	var selectedModel string
+	var selectedModel *azdext.AiModel
 	var existingDeployment *FoundryDeploymentInfo
 
 	switch modelConfigChoice {
@@ -560,7 +558,6 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 					// User selected an existing deployment
 					d := deployments[selectedIdx]
 					existingDeployment = &d
-					selectedModel = d.ModelName
 					fmt.Printf("Model deployment name: %s\n", d.Name)
 				} else {
 					// User wants to create a new deployment — region locked to the project's location
@@ -608,29 +605,29 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 	}
 
 	// Add model resource if a model was selected
-	if selectedModel != "" {
+	if selectedModel != nil {
 		if existingDeployment == nil {
-			modelDetails, err := a.getModelDeploymentDetails(ctx, selectedModel)
+			modelDetails, err := a.resolveModelDeploymentNoPrompt(ctx, selectedModel, a.azureContext.Scope.Location)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get model deployment details: %w", err)
 			}
 
 			a.deploymentDetails = append(a.deploymentDetails, project.Deployment{
-				Name: modelDetails.Name,
+				Name: modelDetails.ModelName,
 				Model: project.DeploymentModel{
-					Name:    modelDetails.Name,
+					Name:    modelDetails.ModelName,
 					Format:  modelDetails.Format,
 					Version: modelDetails.Version,
 				},
 				Sku: project.DeploymentSku{
 					Name:     modelDetails.Sku.Name,
-					Capacity: int(modelDetails.Sku.Capacity),
+					Capacity: int(modelDetails.Capacity),
 				},
 			})
 
 			*definition.EnvironmentVariables = append(*definition.EnvironmentVariables, agent_yaml.EnvironmentVariable{
 				Name:  "AZURE_AI_MODEL_DEPLOYMENT_NAME",
-				Value: modelDetails.Name,
+				Value: modelDetails.ModelName,
 			})
 		} else {
 			// For existing deployments, store the deployment details directly
@@ -782,7 +779,6 @@ func (a *InitFromCodeAction) ensureSubscription(ctx context.Context) error {
 		return fmt.Errorf("failed to create azure credential: %w", err)
 	}
 	a.credential = credential
-	a.modelCatalogService = ai.NewModelCatalogService(credential)
 
 	return nil
 }
@@ -811,7 +807,7 @@ func (a *InitFromCodeAction) ensureLocation(ctx context.Context) error {
 	return nil
 }
 
-func (a *InitFromCodeAction) selectNewModel(ctx context.Context) (string, error) {
+func (a *InitFromCodeAction) selectNewModel(ctx context.Context) (*azdext.AiModel, error) {
 	var err error
 	if a.modelCatalog == nil {
 		spinner := ux.NewSpinner(&ux.SpinnerOptions{
@@ -819,15 +815,15 @@ func (a *InitFromCodeAction) selectNewModel(ctx context.Context) (string, error)
 			ClearOnStop: true,
 		})
 		if err := spinner.Start(ctx); err != nil {
-			return "", fmt.Errorf("failed to start spinner: %w", err)
+			return nil, fmt.Errorf("failed to start spinner: %w", err)
 		}
 
-		a.modelCatalog, err = a.modelCatalogService.ListAllModels(ctx, a.azureContext.Scope.SubscriptionId, a.azureContext.Scope.Location)
+		a.loadAiCatalog(ctx)
 		if stopErr := spinner.Stop(ctx); stopErr != nil {
-			return "", stopErr
+			return nil, stopErr
 		}
 		if err != nil {
-			return "", fmt.Errorf("failed to list models from catalog: %w", err)
+			return nil, fmt.Errorf("failed to list models from catalog: %w", err)
 		}
 	}
 
@@ -836,10 +832,30 @@ func (a *InitFromCodeAction) selectNewModel(ctx context.Context) (string, error)
 		modelNames = append(modelNames, modelName)
 	}
 
-	selectedModel, err := a.promptForModelWithSearch(ctx, modelNames)
-	if err != nil {
-		return "", err
+	// selectedModel, err := a.promptForModelWithSearch(ctx, modelNames)
+	// if err != nil {
+	// 	return "", err
+	// }
+
+	promptReq := &azdext.PromptAiModelRequest{
+		AzureContext: a.azureContext,
+		SelectOptions: &azdext.SelectOptions{
+			Message: "Select a model",
+		},
+		Quota: &azdext.QuotaCheckOptions{
+			MinRemainingCapacity: 1,
+		},
+		Filter: &azdext.AiModelFilterOptions{
+			Locations: []string{a.azureContext.Scope.Location},
+		},
 	}
+
+	modelResp, err := a.azdClient.Prompt().PromptAiModel(ctx, promptReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prompt for model selection: %w", err)
+	}
+
+	selectedModel := modelResp.Model
 
 	return selectedModel, nil
 }
@@ -1247,45 +1263,45 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 	return nil
 }
 
-func (a *InitFromCodeAction) getModelDeploymentDetails(ctx context.Context, modelName string) (*ai.AiModelDeployment, error) {
-	var model *ai.AiModel
-	model, _ = a.modelCatalog[modelName]
+// func (a *InitFromCodeAction) getModelDeploymentDetails(ctx context.Context, modelName string) (*ai.AiModelDeployment, error) {
+// 	var model *ai.AiModel
+// 	model, _ = a.modelCatalog[modelName]
 
-	_, defaultVersion, err := a.modelCatalogService.ListModelVersions(ctx, model, a.azureContext.Scope.Location)
-	if err != nil {
-		return nil, fmt.Errorf("listing versions for model '%s': %w", model.Name, err)
-	}
+// 	_, defaultVersion, err := a.modelCatalogService.ListModelVersions(ctx, model, a.azureContext.Scope.Location)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("listing versions for model '%s': %w", model.Name, err)
+// 	}
 
-	availableSkus, err := a.modelCatalogService.ListModelSkus(ctx, model, a.azureContext.Scope.Location, defaultVersion)
-	if err != nil {
-		return nil, fmt.Errorf("listing SKUs for model '%s': %w", model.Name, err)
-	}
+// 	availableSkus, err := a.modelCatalogService.ListModelSkus(ctx, model, a.azureContext.Scope.Location, defaultVersion)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("listing SKUs for model '%s': %w", model.Name, err)
+// 	}
 
-	// Determine default SKU based on priority list
-	defaultSku := ""
-	for _, sku := range defaultSkuPriority {
-		if slices.Contains(availableSkus, sku) {
-			defaultSku = sku
-			break
-		}
-	}
+// 	// Determine default SKU based on priority list
+// 	defaultSku := ""
+// 	for _, sku := range defaultSkuPriority {
+// 		if slices.Contains(availableSkus, sku) {
+// 			defaultSku = sku
+// 			break
+// 		}
+// 	}
 
-	deploymentOptions := ai.AiModelDeploymentOptions{
-		Versions: []string{defaultVersion},
-		Skus:     []string{defaultSku},
-	}
+// 	deploymentOptions := ai.AiModelDeploymentOptions{
+// 		Versions: []string{defaultVersion},
+// 		Skus:     []string{defaultSku},
+// 	}
 
-	modelDeployment, err := a.modelCatalogService.GetModelDeployment(ctx, model, &deploymentOptions)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get model deployment: %w", err)
-	}
+// 	modelDeployment, err := a.modelCatalogService.GetModelDeployment(ctx, model, &deploymentOptions)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failed to get model deployment: %w", err)
+// 	}
 
-	if modelDeployment.Sku.Capacity == -1 {
-		modelDeployment.Sku.Capacity = 10
-	}
+// 	if modelDeployment.Sku.Capacity == -1 {
+// 		modelDeployment.Sku.Capacity = 10
+// 	}
 
-	return modelDeployment, nil
-}
+// 	return modelDeployment, nil
+// }
 
 func (a *InitFromCodeAction) processExistingFoundryProject(ctx context.Context, foundryProject FoundryProjectInfo) error {
 

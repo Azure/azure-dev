@@ -138,6 +138,11 @@ func Test_Absolute_LocalRelativePath(t *testing.T) {
 	subDir := filepath.Join(dir, "my-local-template")
 	require.NoError(t, os.MkdirAll(subDir, 0755))
 
+	// Resolve symlinks so the expected path matches what filepath.Abs returns.
+	// On macOS, /var is a symlink to /private/var, causing mismatches otherwise.
+	subDir, err := filepath.EvalSymlinks(subDir)
+	require.NoError(t, err)
+
 	// Change to parent directory so relative path works
 	original, err := os.Getwd()
 	require.NoError(t, err)

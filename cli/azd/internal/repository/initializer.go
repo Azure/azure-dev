@@ -154,8 +154,6 @@ func (i *Initializer) Initialize(
 		return err
 	}
 
-	i.console.StopSpinner(ctx, stepMessage+"\n", input.GetStepResultFormat(err))
-
 	return nil
 }
 
@@ -210,7 +208,12 @@ func (i *Initializer) copyLocalTemplate(source, destination string) error {
 	// Only the root .gitignore is loaded; nested .gitignore files are not supported.
 	var ignorer gitignore.GitIgnore
 	gitignorePath := filepath.Join(source, ".gitignore")
-	if f, err := os.Open(gitignorePath); err == nil {
+	f, err := os.Open(gitignorePath)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return fmt.Errorf("opening .gitignore: %w", err)
+		}
+	} else {
 		defer f.Close()
 		ignorer = gitignore.New(f, source, nil)
 	}

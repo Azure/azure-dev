@@ -116,20 +116,18 @@ func Test_Absolute(t *testing.T) {
 }
 
 func Test_Absolute_FileNotDirectory(t *testing.T) {
-	// A regular file (not a directory) should NOT be treated as a local template path.
-	// It should fall through to GitHub resolution logic.
-	// We use a simple filename to verify it falls through (gets treated as Azure Samples shorthand).
+	// Passing a path that exists and is a file should produce an error rather than
+	// being treated as a valid local template directory.
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "myfile")
 	require.NoError(t, os.WriteFile(filePath, []byte("content"), 0600))
 
-	// Even though a file exists at this path, since it's not a directory,
-	// Absolute() should fall through and NOT use it as a local template.
-	// Using just the filename "myfile" to test this cleanly.
-	result, err := Absolute("myfile")
-	require.NoError(t, err)
-	// Falls through to Azure Samples resolution
-	require.Equal(t, "https://github.com/Azure-Samples/myfile", result)
+	// Even though a path exists here, since it's not a directory, Absolute should
+	// reject it instead of using it as a local template.
+	result, err := Absolute(filePath)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "not a directory")
+	require.Empty(t, result)
 }
 
 func Test_Absolute_LocalRelativePath(t *testing.T) {

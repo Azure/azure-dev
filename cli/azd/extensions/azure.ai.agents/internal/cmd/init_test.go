@@ -390,3 +390,50 @@ func TestParseGitHubUrlNaive(t *testing.T) {
 		})
 	}
 }
+
+func TestSanitizeEnvName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"simple name", "my-project", "my-project"},
+		{"with spaces", "my project", "my-project"},
+		{"special chars", "my@project!v2", "my-project-v2"},
+		{"dots allowed", "my.project", "my.project"},
+		{
+			"underscores allowed",
+			"my_project", "my_project",
+		},
+		{"root slash", "/", ""},
+		{"single dot", ".", ""},
+		{"single dash", "-", ""},
+		{"empty string", "", ""},
+		{
+			"unicode chars",
+			"projeçt-naïve", "proje-t-na-ve",
+		},
+		{
+			"all invalid",
+			"@#$%", "----",
+		},
+		{
+			"mixed valid and invalid",
+			"Hello World (v2)", "Hello-World--v2-",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := sanitizeEnvName(tt.input)
+			if result != tt.expected {
+				t.Errorf(
+					"sanitizeEnvName(%q) = %q, want %q",
+					tt.input, result, tt.expected,
+				)
+			}
+		})
+	}
+}

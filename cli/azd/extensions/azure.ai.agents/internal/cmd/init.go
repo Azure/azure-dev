@@ -398,19 +398,9 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 						"for default environment name: %w. "+
 						"Pass '-e <name>' explicitly", cwdErr)
 			}
-			name := filepath.Base(cwd)
-			// Sanitize: keep only valid env name characters
-			sanitized := strings.Map(func(r rune) rune {
-				if (r >= 'a' && r <= 'z') ||
-					(r >= 'A' && r <= 'Z') ||
-					(r >= '0' && r <= '9') ||
-					r == '-' || r == '_' || r == '.' {
-					return r
-				}
-				return '-'
-			}, name)
-			if sanitized != "" && sanitized != "-" &&
-				sanitized != "." {
+			if sanitized := sanitizeEnvName(
+				filepath.Base(cwd),
+			); sanitized != "" {
 				envArgs = append(envArgs, sanitized)
 			}
 		}
@@ -529,44 +519,71 @@ func ensureAzureContext(
 
 	if azureContext.Scope.SubscriptionId == "" {
 		if flags.NoPrompt {
-			// In non-interactive mode, try auto-selecting subscription
-			subsResp, listErr := azdClient.Account().ListSubscriptions(
+			// First check for configured default subscription
+			cfgResp, cfgErr := azdClient.UserConfig().GetString(
 				ctx,
-				&azdext.ListSubscriptionsRequest{},
+				&azdext.GetUserConfigStringRequest{
+					Path: "defaults.subscription",
+				},
 			)
-			if listErr != nil {
-				return nil, nil, nil, fmt.Errorf(
-					"failed to list subscriptions: %w. "+
-						"Set a default with "+
-						"'azd config set defaults.subscription <id>'",
-					listErr,
-				)
+			if cfgErr == nil && cfgResp.GetFound() {
+				if v := strings.TrimSpace(
+					cfgResp.GetValue(),
+				); v != "" {
+					azureContext.Scope.SubscriptionId = v
+				}
 			}
 
-			subs := subsResp.GetSubscriptions()
-			switch len(subs) {
-			case 0:
-				return nil, nil, nil, fmt.Errorf(
-					"no subscriptions found. " +
-						"Run 'azd auth login' to authenticate",
+			// Fall back to auto-selecting when only one exists
+			if azureContext.Scope.SubscriptionId == "" {
+				subsResp, listErr := azdClient.Account().ListSubscriptions(
+					ctx,
+					&azdext.ListSubscriptionsRequest{},
 				)
-			case 1:
-				fmt.Printf(
-					"Auto-selected subscription: %s (%s)\n",
-					subs[0].Name, subs[0].Id,
-				)
-				azureContext.Scope.SubscriptionId = subs[0].Id
-				azureContext.Scope.TenantId = subs[0].TenantId
-			default:
-				return nil, nil, nil, fmt.Errorf(
-					"multiple subscriptions found but running " +
-						"in non-interactive mode. " +
-						"Set a default with " +
-						"'azd config set defaults.subscription" +
-						" <id>' or pass '-e <env>' to use an " +
-						"azd environment that already has " +
-						"AZURE_SUBSCRIPTION_ID set",
-				)
+				if listErr != nil {
+					return nil, nil, nil, fmt.Errorf(
+						"failed to list subscriptions: %w. "+
+							"Set a default with "+
+							"'azd config set "+
+							"defaults.subscription <id>'",
+						listErr,
+					)
+				}
+
+				subs := subsResp.GetSubscriptions()
+				switch len(subs) {
+				case 0:
+					return nil, nil, nil, fmt.Errorf(
+						"no subscriptions found. " +
+							"Run 'azd auth login' " +
+							"to authenticate",
+					)
+				case 1:
+					fmt.Printf(
+						"Auto-selected subscription:"+
+							" %s (%s)\n",
+						subs[0].Name, subs[0].Id,
+					)
+					azureContext.Scope.SubscriptionId =
+						subs[0].Id
+					azureContext.Scope.TenantId =
+						subs[0].TenantId
+				default:
+					return nil, nil, nil, fmt.Errorf(
+						"multiple subscriptions " +
+							"found but running in " +
+							"non-interactive mode. " +
+							"Set a default with " +
+							"'azd config set " +
+							"defaults.subscription " +
+							"<id>' or pass '-e " +
+							"<env>' to use an azd " +
+							"environment that " +
+							"already has " +
+							"AZURE_SUBSCRIPTION_ID" +
+							" set",
+					)
+				}
 			}
 		} else {
 			fmt.Print()
@@ -1857,4 +1874,24 @@ func (a *InitAction) setEnvVar(ctx context.Context, key, value string) error {
 
 	fmt.Printf("Set environment variable: %s=%s\n", key, value)
 	return nil
+}
+
+// sanitizeEnvName keeps only characters valid for azd environment
+// names ([a-zA-Z0-9\-_\.]) and replaces others with '-'.
+// Returns "" for degenerate inputs (e.g. "/", ".").
+func sanitizeEnvName(name string) string {
+	sanitized := strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') ||
+			(r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') ||
+			r == '-' || r == '_' || r == '.' {
+			return r
+		}
+		return '-'
+	}, name)
+	if sanitized == "" || sanitized == "-" ||
+		sanitized == "." || sanitized == "/" {
+		return ""
+	}
+	return sanitized
 }

@@ -332,15 +332,15 @@ func killExtensionProcesses(extensionBinaryPrefix, installDir string) {
 			"Stop-Process -Name '"+escapePowerShellSingleQuotes(procName)+"' -Force -ErrorAction SilentlyContinue").Run()
 	}
 
-	// Kill any processes running from the install directory
+	// Kill any processes running from the install directory.
+	// Pass installDir as a parameter to avoid injection from special characters.
 	if installDir != "" {
-		//nolint:gosec // G204: installDir is derived from config; single quotes are escaped
+		//nolint:gosec // G204: installDir is derived from config and passed as an argument, not interpolated
 		_ = exec.Command("powershell", "-NoProfile", "-Command",
-			fmt.Sprintf(
-				"Get-Process | Where-Object { $_.Path -and $_.Path.StartsWith('%s') }"+
-					" | Stop-Process -Force -ErrorAction SilentlyContinue",
-				escapePowerShellSingleQuotes(installDir),
-			)).Run()
+			"param([string]$p) Get-Process | Where-Object { $_.Path -and $_.Path.StartsWith($p) }"+
+				" | Stop-Process -Force -ErrorAction SilentlyContinue",
+			installDir,
+		).Run()
 	}
 }
 

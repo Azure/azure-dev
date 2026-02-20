@@ -388,6 +388,13 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 		envArgs := []string{"env", "new"}
 		if flags.env != "" {
 			envArgs = append(envArgs, flags.env)
+		} else if flags.NoPrompt {
+			// Default to directory name in non-interactive mode,
+			// consistent with azd init behavior.
+			cwd, err := os.Getwd()
+			if err == nil {
+				envArgs = append(envArgs, filepath.Base(cwd))
+			}
 		}
 
 		if flags.projectResourceId != "" {
@@ -503,17 +510,68 @@ func ensureAzureContext(
 	}
 
 	if azureContext.Scope.SubscriptionId == "" {
-		fmt.Print()
-		fmt.Println("We need to connect to your Azure subscription. This will be the subscription which contains your ")
-		fmt.Println("Foundry project and where your resources will be provisioned.")
+		if flags.NoPrompt {
+			// In non-interactive mode, try auto-selecting subscription
+			subsResp, listErr := azdClient.Account().ListSubscriptions(
+				ctx,
+				&azdext.ListSubscriptionsRequest{},
+			)
+			if listErr != nil {
+				return nil, nil, nil, fmt.Errorf(
+					"failed to list subscriptions: %w. "+
+						"Set a default with "+
+						"'azd config set defaults.subscription <id>'",
+					listErr,
+				)
+			}
 
-		subscriptionResponse, err := azdClient.Prompt().PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{})
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to prompt for subscription: %w", err)
+			subs := subsResp.GetSubscriptions()
+			switch len(subs) {
+			case 0:
+				return nil, nil, nil, fmt.Errorf(
+					"no subscriptions found. " +
+						"Run 'azd auth login' to authenticate",
+				)
+			case 1:
+				fmt.Printf(
+					"Auto-selected subscription: %s (%s)\n",
+					subs[0].Name, subs[0].Id,
+				)
+				azureContext.Scope.SubscriptionId = subs[0].Id
+				azureContext.Scope.TenantId = subs[0].TenantId
+			default:
+				return nil, nil, nil, fmt.Errorf(
+					"multiple subscriptions found but running " +
+						"in non-interactive mode. " +
+						"Set a default with " +
+						"'azd config set defaults.subscription <id>' " +
+						"or pass '-e' with a configured environment",
+				)
+			}
+		} else {
+			fmt.Print()
+			fmt.Println(
+				"We need to connect to your Azure subscription. " +
+					"This will be the subscription which contains your",
+			)
+			fmt.Println(
+				"Foundry project and where your resources " +
+					"will be provisioned.",
+			)
+
+			subscriptionResponse, err := azdClient.Prompt().PromptSubscription(
+				ctx,
+				&azdext.PromptSubscriptionRequest{},
+			)
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf(
+					"failed to prompt for subscription: %w", err,
+				)
+			}
+
+			azureContext.Scope.SubscriptionId = subscriptionResponse.Subscription.Id
+			azureContext.Scope.TenantId = subscriptionResponse.Subscription.TenantId
 		}
-
-		azureContext.Scope.SubscriptionId = subscriptionResponse.Subscription.Id
-		azureContext.Scope.TenantId = subscriptionResponse.Subscription.TenantId
 
 		// Set the subscription ID in the environment
 		_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{

@@ -144,11 +144,7 @@ func Test_Absolute_LocalRelativePath(t *testing.T) {
 	require.NoError(t, err)
 
 	// Change to parent directory so relative path works
-	original, err := os.Getwd()
-	require.NoError(t, err)
-	defer os.Chdir(original) //nolint:errcheck
-
-	require.NoError(t, os.Chdir(dir))
+	t.Chdir(dir)
 
 	result, err := Absolute("my-local-template")
 	require.NoError(t, err)

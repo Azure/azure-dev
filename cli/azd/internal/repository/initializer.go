@@ -14,6 +14,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/names"
@@ -250,8 +251,13 @@ func (i *Initializer) copyLocalTemplate(source, destination string) error {
 }
 
 // findExecutableFiles walks root and returns paths (relative to root) of files
-// that have any executable permission bit set.
+// that have any executable permission bit set. On Windows, exec bits are not
+// meaningful so an empty list is returned immediately.
 func findExecutableFiles(root string) ([]string, error) {
+	if runtime.GOOS == "windows" {
+		return nil, nil
+	}
+
 	var execFiles []string
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {

@@ -283,7 +283,7 @@ func (a *InitAction) Run(ctx context.Context) error {
 func ensureProject(ctx context.Context, flags *initFlags, azdClient *azdext.AzdClient) (*azdext.ProjectConfig, error) {
 	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
-		fmt.Println("Lets get your project initialized.")
+		fmt.Println("Let's get your project initialized.")
 
 		// Environment creation is handled separately in ensureEnvironment
 		initArgs := []string{"init", "-t", "Azure-Samples/azd-ai-starter-basic"}

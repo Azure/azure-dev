@@ -116,7 +116,7 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 func (a *InitFromCodeAction) ensureProject(ctx context.Context) (*azdext.ProjectConfig, error) {
 	projectResponse, err := a.azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
-		fmt.Println("Lets get your project initialized.")
+		fmt.Println("Let's get your project initialized.")
 
 		if err := a.scaffoldTemplate(ctx, a.azdClient, "Azure-Samples/azd-ai-starter-basic", "trangevi/existing-acr"); err != nil {
 			return nil, fmt.Errorf("failed to scaffold template: %w", err)
@@ -184,6 +184,10 @@ func (a *InitFromCodeAction) scaffoldTemplate(ctx context.Context, azdClient *az
 		// Only include files in the infra folder or the azure.yaml file
 		if !strings.HasPrefix(entry.Path, "infra/") && entry.Path != "azure.yaml" {
 			continue
+		}
+		// Guard against path traversal or unexpected absolute paths
+		if strings.Contains(entry.Path, "..") || filepath.IsAbs(entry.Path) {
+			return fmt.Errorf("invalid path in repository tree: %s", entry.Path)
 		}
 		downloadURL := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s", repoSlug, branch, entry.Path)
 		collides := false
@@ -310,19 +314,18 @@ func (a *InitFromCodeAction) scaffoldTemplate(ctx context.Context, azdClient *az
 			_ = spinner.Stop(ctx)
 			return fmt.Errorf("downloading %s: %w", f.Path, err)
 		}
-
-		content, err := io.ReadAll(fileResp.Body)
-		fileResp.Body.Close()
-		if err != nil {
-			_ = spinner.Stop(ctx)
-			return fmt.Errorf("reading %s: %w", f.Path, err)
-		}
+		defer fileResp.Body.Close()
 
 		if fileResp.StatusCode != http.StatusOK {
 			_ = spinner.Stop(ctx)
 			return fmt.Errorf("downloading %s: status %d", f.Path, fileResp.StatusCode)
 		}
 
+		content, err := io.ReadAll(fileResp.Body)
+		if err != nil {
+			_ = spinner.Stop(ctx)
+			return fmt.Errorf("reading %s: %w", f.Path, err)
+		}
 		if err := os.WriteFile(f.Path, content, 0644); err != nil {
 			_ = spinner.Stop(ctx)
 			return fmt.Errorf("writing %s: %w", f.Path, err)
@@ -502,7 +505,9 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 
 				// Set the Foundry project context
 				a.azureContext.Scope.Location = selectedProject.Location
-				a.setEnvVar(ctx, "AZURE_LOCATION", selectedProject.Location)
+				if err := a.setEnvVar(ctx, "AZURE_LOCATION", selectedProject.Location); err != nil {
+					return nil, fmt.Errorf("failed to set AZURE_LOCATION environment variable: %w", err)
+				}
 
 				err := a.processExistingFoundryProject(ctx, selectedProject)
 				if err != nil {
@@ -554,10 +559,10 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 					return nil, fmt.Errorf("failed to prompt for deployment selection: %w", err)
 				}
 
-				selectedIdx := *deployResp.Value
-				if selectedIdx < int32(len(deployments)) {
+				deploymentIdx := *deployResp.Value
+				if deploymentIdx < int32(len(deployments)) {
 					// User selected an existing deployment
-					d := deployments[selectedIdx]
+					d := deployments[deploymentIdx]
 					existingDeployment = &d
 					fmt.Printf("Model deployment name: %s\n", d.Name)
 				} else {
@@ -1164,7 +1169,11 @@ func (a *InitFromCodeAction) setEnvVar(ctx context.Context, key, value string) e
 // lookupAcrResourceId finds the resource ID for an ACR given its login server endpoint
 func (a *InitFromCodeAction) lookupAcrResourceId(ctx context.Context, subscriptionId string, loginServer string) (string, error) {
 	// Extract registry name from login server (e.g., "myregistry" from "myregistry.azurecr.io")
-	registryName := strings.Split(loginServer, ".")[0]
+	parts := strings.Split(loginServer, ".")
+	if len(parts) < 2 || parts[0] == "" {
+		return "", fmt.Errorf("invalid login server format: %q, expected e.g. %q", loginServer, "registry.azurecr.io")
+	}
+	registryName := parts[0]
 
 	client, err := armcontainerregistry.NewRegistriesClient(subscriptionId, a.credential, azure.NewArmClientOptions())
 	if err != nil {

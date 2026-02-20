@@ -391,9 +391,27 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 		} else if flags.NoPrompt {
 			// Default to directory name in non-interactive mode,
 			// consistent with azd init behavior.
-			cwd, err := os.Getwd()
-			if err == nil {
-				envArgs = append(envArgs, filepath.Base(cwd))
+			cwd, cwdErr := os.Getwd()
+			if cwdErr != nil {
+				return nil, fmt.Errorf(
+					"failed to determine working directory "+
+						"for default environment name: %w. "+
+						"Pass '-e <name>' explicitly", cwdErr)
+			}
+			name := filepath.Base(cwd)
+			// Sanitize: keep only valid env name characters
+			sanitized := strings.Map(func(r rune) rune {
+				if (r >= 'a' && r <= 'z') ||
+					(r >= 'A' && r <= 'Z') ||
+					(r >= '0' && r <= '9') ||
+					r == '-' || r == '_' || r == '.' {
+					return r
+				}
+				return '-'
+			}, name)
+			if sanitized != "" && sanitized != "-" &&
+				sanitized != "." {
+				envArgs = append(envArgs, sanitized)
 			}
 		}
 
@@ -544,8 +562,10 @@ func ensureAzureContext(
 					"multiple subscriptions found but running " +
 						"in non-interactive mode. " +
 						"Set a default with " +
-						"'azd config set defaults.subscription <id>' " +
-						"or pass '-e' with a configured environment",
+						"'azd config set defaults.subscription" +
+						" <id>' or pass '-e <env>' to use an " +
+						"azd environment that already has " +
+						"AZURE_SUBSCRIPTION_ID set",
 				)
 			}
 		} else {

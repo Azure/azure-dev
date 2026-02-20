@@ -13,13 +13,27 @@ import (
 // softDeleteHints maps ARM error codes for soft-deleted resource conflicts
 // to actionable user guidance.
 var softDeleteHints = map[string]string{
-	"FlagMustBeSetForRestore": "A soft-deleted resource with this name exists " +
-		"and is blocking deployment. Run 'azd down --purge' to " +
-		"permanently remove soft-deleted resources, or purge them " +
-		"manually in the Azure portal, then retry with 'azd up'.",
-	"ConflictError": "A resource conflict occurred that may be caused by " +
-		"a soft-deleted resource. Run 'azd down --purge' to purge " +
-		"soft-deleted resources, then retry with 'azd up'.",
+	"FlagMustBeSetForRestore": "A soft-deleted resource with " +
+		"this name exists and is blocking deployment. " +
+		"Run 'azd down --purge' to permanently remove " +
+		"soft-deleted resources, or purge them manually " +
+		"in the Azure portal, then retry with 'azd up'.",
+	"ConflictError": "A resource conflict occurred that may " +
+		"be caused by a soft-deleted resource. " +
+		"Run 'azd down --purge' to purge soft-deleted " +
+		"resources, then retry with 'azd up'.",
+}
+
+// softDeleteKeywords are patterns checked in Conflict error messages
+// to identify soft-delete related failures across Azure services.
+var softDeleteKeywords = []string{
+	"soft delete",
+	"soft-delete",
+	"soft deleted",
+	"purge",
+	"deleted vault",
+	"deleted resource",
+	"recover or purge",
 }
 
 // softDeleteHint inspects a deployment error for soft-delete related
@@ -50,16 +64,15 @@ func findSoftDeleteHint(line *azapi.DeploymentErrorLine) string {
 		// Conflict errors need message inspection for soft-delete context
 		if line.Code == "Conflict" || line.Code == "RequestConflict" {
 			messageLower := strings.ToLower(line.Message)
-			if strings.Contains(messageLower, "soft delete") ||
-				strings.Contains(messageLower, "soft-delete") ||
-				strings.Contains(messageLower, "purge") ||
-				strings.Contains(messageLower, "deleted vault") ||
-				strings.Contains(messageLower, "recover or purge") {
-				return "A soft-deleted resource is causing this " +
-					"deployment conflict. Run 'azd down --purge' " +
-					"to permanently remove soft-deleted resources, " +
-					"or purge them in the Azure portal, then retry " +
-					"with 'azd up'."
+			for _, kw := range softDeleteKeywords {
+				if strings.Contains(messageLower, kw) {
+					return "A soft-deleted resource is causing " +
+						"this deployment conflict. " +
+						"Run 'azd down --purge' to permanently " +
+						"remove soft-deleted resources, or " +
+						"purge them in the Azure portal, " +
+						"then retry with 'azd up'."
+				}
 			}
 		}
 	}

@@ -155,6 +155,28 @@ func TestSoftDeleteHint(t *testing.T) {
 			wantHint: true,
 			contains: "azd down --purge",
 		},
+		{
+			name: "ConflictWithDeletedResource",
+			err: &azapi.AzureDeploymentError{
+				Details: &azapi.DeploymentErrorLine{
+					Code:    "Conflict",
+					Message: "A deleted resource with the same name exists",
+				},
+			},
+			wantHint: true,
+			contains: "azd down --purge",
+		},
+		{
+			name: "ConflictWithSoftDeletedResource",
+			err: &azapi.AzureDeploymentError{
+				Details: &azapi.DeploymentErrorLine{
+					Code:    "Conflict",
+					Message: "a soft deleted resource blocks this operation",
+				},
+			},
+			wantHint: true,
+			contains: "azd down --purge",
+		},
 	}
 
 	for _, tt := range tests {

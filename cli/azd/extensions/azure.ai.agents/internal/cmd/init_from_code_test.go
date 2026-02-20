@@ -7,6 +7,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -568,23 +569,10 @@ func stringSlicesEqual(a, b []string) bool {
 // containsAll checks that s contains all the given substrings.
 func containsAll(s string, substrings ...string) bool {
 	for _, sub := range substrings {
-		if !containsString(s, sub) {
+		if !strings.Contains(s, sub) {
 			return false
 		}
 	}
 	return true
 }
 
-// containsString checks if s contains substr.
-func containsString(s, substr string) bool {
-	return len(s) >= len(substr) && searchString(s, substr)
-}
-
-func searchString(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
-}

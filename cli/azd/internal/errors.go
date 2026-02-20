@@ -3,27 +3,11 @@
 
 package internal
 
-// ErrorWithSuggestion is a custom error type that includes user-friendly messaging
-type ErrorWithSuggestion struct {
-	// Err is the original underlying error
-	Err error
-	// Message is a user-friendly explanation of what went wrong
-	Message string
-	// Suggestion is actionable next steps to resolve the issue
-	Suggestion string
-	// DocUrl is an optional link to documentation
-	DocUrl string
-}
+import "github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 
-// Error returns the error message
-func (es *ErrorWithSuggestion) Error() string {
-	return es.Err.Error()
-}
-
-// Unwrap returns the wrapped error
-func (es *ErrorWithSuggestion) Unwrap() error {
-	return es.Err
-}
+// ErrorWithSuggestion is a type alias for errorhandler.ErrorWithSuggestion.
+// The canonical type lives in pkg/errorhandler so it can be used by extensions.
+type ErrorWithSuggestion = errorhandler.ErrorWithSuggestion
 
 // ErrorWithTraceId is a custom error type that includes a trace ID for the current operation
 type ErrorWithTraceId struct {

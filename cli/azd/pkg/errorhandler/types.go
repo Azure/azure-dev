@@ -8,14 +8,30 @@ type ErrorSuggestionRule struct {
 	// Patterns is a list of strings to match against error messages.
 	// Simple strings are matched as case-insensitive substrings.
 	// Prefix a pattern with "regex:" to use regular expression matching.
-	Patterns []string `yaml:"patterns"`
+	Patterns []string `yaml:"patterns,omitempty"`
+
+	// ErrorType is the Go struct type name to match via reflection.
+	// The error chain is walked using errors.As semantics to find a matching type.
+	// Example: "AzureDeploymentError", "AuthFailedError"
+	ErrorType string `yaml:"errorType,omitempty"`
+
+	// Properties is a map of dot-path property names to expected values.
+	// Properties are resolved via reflection on the matched error type.
+	// Example: {"Details.Code": "FlagMustBeSetForRestore"}
+	Properties map[string]string `yaml:"properties,omitempty"`
+
+	// Handler is the name of a registered ErrorHandler to invoke when this rule matches.
+	// The handler is resolved from the IoC container by name.
+	// When set, the handler computes the suggestion dynamically instead of using
+	// the static message/suggestion/docUrl fields.
+	Handler string `yaml:"handler,omitempty"`
 
 	// Message is a user-friendly error message that explains what went wrong.
 	// This replaces the cryptic system error with something readable.
-	Message string `yaml:"message"`
+	Message string `yaml:"message,omitempty"`
 
 	// Suggestion is the actionable next steps for the user to resolve the issue.
-	Suggestion string `yaml:"suggestion"`
+	Suggestion string `yaml:"suggestion,omitempty"`
 
 	// DocUrl is an optional link to documentation for more information.
 	DocUrl string `yaml:"docUrl,omitempty"`

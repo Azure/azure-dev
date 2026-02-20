@@ -1,0 +1,145 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package errorhandler
+
+import (
+	"context"
+	"log"
+	"sync"
+
+	"github.com/azure/azure-dev/cli/azd/resources"
+	"github.com/braydonk/yaml"
+)
+
+// HandlerResolver resolves named ErrorHandler instances.
+// Typically backed by the IoC container.
+type HandlerResolver func(name string) (ErrorHandler, error)
+
+// ErrorHandlerPipeline evaluates error suggestion rules from YAML
+// and optionally invokes named ErrorHandlers for dynamic suggestions.
+type ErrorHandlerPipeline struct {
+	rules           []ErrorSuggestionRule
+	matcher         *PatternMatcher
+	handlerResolver HandlerResolver
+}
+
+var (
+	pipelineConfig     *ErrorSuggestionsConfig
+	pipelineConfigOnce sync.Once
+)
+
+func loadPipelineConfig() *ErrorSuggestionsConfig {
+	pipelineConfigOnce.Do(func() {
+		pipelineConfig = &ErrorSuggestionsConfig{}
+		if err := yaml.Unmarshal(resources.ErrorSuggestions, pipelineConfig); err != nil {
+			log.Panicf("failed to unmarshal error_suggestions.yaml: %v", err)
+		}
+	})
+	return pipelineConfig
+}
+
+// NewErrorHandlerPipeline creates a new pipeline with rules loaded from the embedded YAML.
+func NewErrorHandlerPipeline(handlerResolver HandlerResolver) *ErrorHandlerPipeline {
+	cfg := loadPipelineConfig()
+	return &ErrorHandlerPipeline{
+		rules:           cfg.Rules,
+		matcher:         NewPatternMatcher(),
+		handlerResolver: handlerResolver,
+	}
+}
+
+// Process evaluates all rules in order against the given error.
+// Returns the first matching suggestion, or nil if no rules match.
+//
+// Rule evaluation:
+//  1. If errorType is set → find matching typed error via reflection
+//  2. If properties is set → check property values on the matched error
+//  3. If patterns is set → check text patterns against error message
+//  4. All specified conditions must pass for a match
+//  5. If handler is set → invoke named handler for dynamic suggestion
+//  6. Otherwise → return static suggestion from rule fields
+func (p *ErrorHandlerPipeline) Process(ctx context.Context, err error) *ErrorWithSuggestion {
+	errMessage := err.Error()
+
+	for i := range p.rules {
+		rule := &p.rules[i]
+		suggestion := p.evaluateRule(ctx, err, errMessage, rule)
+		if suggestion != nil {
+			return suggestion
+		}
+	}
+
+	return nil
+}
+
+func (p *ErrorHandlerPipeline) evaluateRule(
+	ctx context.Context,
+	err error,
+	errMessage string,
+	rule *ErrorSuggestionRule,
+) *ErrorWithSuggestion {
+	// Track whether any condition is specified
+	hasCondition := false
+
+	// 1. Check errorType via reflection
+	if rule.ErrorType != "" {
+		hasCondition = true
+		matched, ok := findErrorByTypeName(err, rule.ErrorType)
+		if !ok {
+			return nil
+		}
+
+		// 2. Check properties on the matched error
+		if len(rule.Properties) > 0 {
+			if !matchProperties(matched, rule.Properties) {
+				return nil
+			}
+		}
+	} else if len(rule.Properties) > 0 {
+		// Properties without errorType is invalid — skip
+		return nil
+	}
+
+	// 3. Check text patterns
+	if len(rule.Patterns) > 0 {
+		hasCondition = true
+		if !p.matcher.Match(errMessage, rule.Patterns) {
+			return nil
+		}
+	}
+
+	// No conditions specified → skip rule
+	if !hasCondition {
+		return nil
+	}
+
+	// All conditions passed — produce suggestion
+	// 4. If handler is set, invoke it
+	if rule.Handler != "" {
+		return p.invokeHandler(ctx, err, rule.Handler)
+	}
+
+	// 5. Return static suggestion
+	return &ErrorWithSuggestion{
+		Err:        err,
+		Message:    rule.Message,
+		Suggestion: rule.Suggestion,
+		DocUrl:     rule.DocUrl,
+	}
+}
+
+func (p *ErrorHandlerPipeline) invokeHandler(
+	ctx context.Context, err error, handlerName string,
+) *ErrorWithSuggestion {
+	if p.handlerResolver == nil {
+		return nil
+	}
+
+	handler, resolveErr := p.handlerResolver(handlerName)
+	if resolveErr != nil || handler == nil {
+		return nil
+	}
+
+	return handler.Handle(ctx, err)
+}

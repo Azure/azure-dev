@@ -31,7 +31,7 @@ func Test_ErrorMiddleware_SuccessNoError(t *testing.T) {
 		NoPrompt: false,
 	}
 	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
-	errorSuggestionService := errorhandler.NewErrorSuggestionService()
+	errorPipeline := errorhandler.NewErrorHandlerPipeline(nil)
 	middleware := NewErrorMiddleware(
 		&Options{Name: "test"},
 		mockContext.Console,
@@ -39,7 +39,7 @@ func Test_ErrorMiddleware_SuccessNoError(t *testing.T) {
 		global,
 		featureManager,
 		userConfigManager,
-		errorSuggestionService,
+		errorPipeline,
 	)
 	nextFn := func(ctx context.Context) (*actions.ActionResult, error) {
 		return &actions.ActionResult{
@@ -64,7 +64,7 @@ func Test_ErrorMiddleware_LLMAlphaFeatureDisabled(t *testing.T) {
 		NoPrompt: false,
 	}
 	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
-	errorSuggestionService := errorhandler.NewErrorSuggestionService()
+	errorPipeline := errorhandler.NewErrorHandlerPipeline(nil)
 	middleware := NewErrorMiddleware(
 		&Options{Name: "test"},
 		mockContext.Console,
@@ -72,7 +72,7 @@ func Test_ErrorMiddleware_LLMAlphaFeatureDisabled(t *testing.T) {
 		global,
 		featureManager,
 		userConfigManager,
-		errorSuggestionService,
+		errorPipeline,
 	)
 
 	testError := errors.New("test error")
@@ -100,7 +100,7 @@ func Test_ErrorMiddleware_ChildAction(t *testing.T) {
 		NoPrompt: false,
 	}
 	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
-	errorSuggestionService := errorhandler.NewErrorSuggestionService()
+	errorPipeline := errorhandler.NewErrorHandlerPipeline(nil)
 	middleware := NewErrorMiddleware(
 		&Options{Name: "test"},
 		mockContext.Console,
@@ -108,7 +108,7 @@ func Test_ErrorMiddleware_ChildAction(t *testing.T) {
 		global,
 		featureManager,
 		userConfigManager,
-		errorSuggestionService,
+		errorPipeline,
 	)
 	testError := errors.New("test error")
 	nextFn := func(ctx context.Context) (*actions.ActionResult, error) {
@@ -140,7 +140,7 @@ func Test_ErrorMiddleware_ErrorWithSuggestion(t *testing.T) {
 		NoPrompt: false,
 	}
 	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
-	errorSuggestionService := errorhandler.NewErrorSuggestionService()
+	errorPipeline := errorhandler.NewErrorHandlerPipeline(nil)
 	middleware := NewErrorMiddleware(
 		&Options{Name: "test"},
 		mockContext.Console,
@@ -148,7 +148,7 @@ func Test_ErrorMiddleware_ErrorWithSuggestion(t *testing.T) {
 		global,
 		featureManager,
 		userConfigManager,
-		errorSuggestionService,
+		errorPipeline,
 	)
 
 	// Create error with suggestion
@@ -180,7 +180,7 @@ func Test_ErrorMiddleware_PatternMatchingSuggestion(t *testing.T) {
 		NoPrompt: false,
 	}
 	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
-	errorSuggestionService := errorhandler.NewErrorSuggestionService()
+	errorPipeline := errorhandler.NewErrorHandlerPipeline(nil)
 	middleware := NewErrorMiddleware(
 		&Options{Name: "test"},
 		mockContext.Console,
@@ -188,7 +188,7 @@ func Test_ErrorMiddleware_PatternMatchingSuggestion(t *testing.T) {
 		global,
 		featureManager,
 		userConfigManager,
-		errorSuggestionService,
+		errorPipeline,
 	)
 
 	// Create an error that matches a known pattern (quota error)
@@ -217,7 +217,7 @@ func Test_ErrorMiddleware_NoPatternMatch(t *testing.T) {
 		NoPrompt: true, // Use no-prompt mode to avoid AI processing
 	}
 	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
-	errorSuggestionService := errorhandler.NewErrorSuggestionService()
+	errorPipeline := errorhandler.NewErrorHandlerPipeline(nil)
 	middleware := NewErrorMiddleware(
 		&Options{Name: "test"},
 		mockContext.Console,
@@ -225,7 +225,7 @@ func Test_ErrorMiddleware_NoPatternMatch(t *testing.T) {
 		global,
 		featureManager,
 		userConfigManager,
-		errorSuggestionService,
+		errorPipeline,
 	)
 
 	// Create an error that doesn't match any pattern

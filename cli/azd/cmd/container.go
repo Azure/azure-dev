@@ -652,7 +652,16 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(keyvault.NewKeyVaultService)
 	container.MustRegisterSingleton(storage.NewFileShareService)
 	container.MustRegisterSingleton(ai.NewAiModelService)
-	container.MustRegisterSingleton(errorhandler.NewErrorSuggestionService)
+	container.MustRegisterSingleton(func(serviceLocator ioc.ServiceLocator) *errorhandler.ErrorHandlerPipeline {
+		resolver := func(name string) (errorhandler.ErrorHandler, error) {
+			var handler errorhandler.ErrorHandler
+			if err := serviceLocator.ResolveNamed(name, &handler); err != nil {
+				return nil, err
+			}
+			return handler, nil
+		}
+		return errorhandler.NewErrorHandlerPipeline(resolver)
+	})
 
 	container.MustRegisterScoped(project.NewContainerHelper)
 	container.MustRegisterScoped(func(serviceLocator ioc.ServiceLocator) *lazy.Lazy[*project.ContainerHelper] {

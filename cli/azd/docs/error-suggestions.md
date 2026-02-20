@@ -1,6 +1,6 @@
 # Error Suggestions
 
-Azure Developer CLI includes a pattern-based error suggestion system that provides user-friendly messaging for common errors. When users encounter well-known errors (quota limits, authentication failures, missing tools, etc.), azd displays:
+Azure Developer CLI includes an extensible error handling pipeline that transforms cryptic error messages into user-friendly guidance. When users encounter well-known errors (quota limits, authentication failures, deployment conflicts, missing tools, etc.), azd displays:
 
 1. A **user-friendly message** explaining what went wrong
 2. An **actionable suggestion** for next steps
@@ -16,15 +16,23 @@ Azure Developer CLI includes a pattern-based error suggestion system that provid
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  ErrorMiddleware checks error message against patterns in       │
+│  ErrorHandlerPipeline evaluates rules from                      │
 │  resources/error_suggestions.yaml                               │
+│                                                                 │
+│  For each rule:                                                 │
+│    1. errorType?  → Match Go error type via reflection          │
+│    2. properties? → Check struct fields via dot-path            │
+│    3. patterns?   → Match error text (substring/regex)          │
+│    4. handler?    → Invoke named handler for dynamic response   │
+│                                                                 │
+│  All specified conditions must pass. First matching rule wins.  │
 └─────────────────────────────────────────────────────────────────┘
                               │
               ┌───────────────┴───────────────┐
               │                               │
               ▼                               ▼
 ┌─────────────────────────┐     ┌─────────────────────────────────┐
-│   Pattern Matched       │     │   No Pattern Match              │
+│   Rule Matched          │     │   No Match                      │
 │   Wrap error with       │     │   Return original error         │
 │   ErrorWithSuggestion   │     │   (may go to AI if enabled)     │
 └─────────────────────────┘     └─────────────────────────────────┘
@@ -52,169 +60,197 @@ Learn more: https://learn.microsoft.com/azure/quotas/quickstart-increase-quota-p
 Deployment failed: QuotaExceeded for resource type Microsoft.Compute/virtualMachines in location eastus...
 ```
 
-The original error is shown in grey at the bottom for users who need the technical details.
+## Adding New Rules
 
-## Adding New Error Patterns
+The error rules are defined in [`resources/error_suggestions.yaml`](../resources/error_suggestions.yaml). This file is designed to be easily editable by anyone—no Go programming knowledge required for most cases.
 
-The error patterns are defined in [`resources/error_suggestions.yaml`](../resources/error_suggestions.yaml). This file is designed to be easily editable by anyone—no Go programming knowledge required.
+### Three Matching Strategies
 
-### Basic Structure
+#### 1. Text Patterns (simplest)
+
+Match against the error message text. Good for tool errors, CLI messages, and any error without a typed Go struct.
 
 ```yaml
-rules:
-  - patterns:
-      - "error text to match"
-      - "another error text"
-    message: "User-friendly explanation of what went wrong."
-    suggestion: "Actionable next steps to fix the issue."
-    docUrl: "https://learn.microsoft.com/..."  # optional
+- patterns:
+    - "quota exceeded"         # Case-insensitive substring
+    - "QuotaExceeded"
+    - "regex:(?i)quota.*limit" # Regular expression
+  message: "Your Azure subscription has reached a resource quota limit."
+  suggestion: "Request a quota increase through the Azure portal."
+  docUrl: "https://learn.microsoft.com/azure/quotas/..."
 ```
 
-### Fields
+#### 2. Error Type + Properties (typed errors)
+
+Match against specific Go error types using reflection. This lets you target structured errors like `AzureDeploymentError` and inspect their fields.
+
+```yaml
+# Match ARM deployment errors with a specific error code
+- errorType: "AzureDeploymentError"
+  properties:
+    Details.Code: "FlagMustBeSetForRestore"
+  message: "A soft-deleted resource is blocking deployment."
+  suggestion: "Run 'azd down --purge' to permanently remove it, then retry."
+  docUrl: "https://learn.microsoft.com/azure/key-vault/general/key-vault-recovery"
+
+# Match auth errors
+- errorType: "AuthFailedError"
+  message: "Authentication with Azure failed."
+  suggestion: "Run 'azd auth login' to sign in again."
+```
+
+**How it works:**
+- `errorType` is the Go struct type name (e.g., `AzureDeploymentError`)
+- The error chain is walked (like `errors.As`) to find the matching type
+- `properties` uses dot notation to access struct fields via reflection (e.g., `Details.Code`)
+
+#### 3. Combined: Error Type + Text Patterns
+
+When error codes are too broad (like generic "Conflict"), combine type matching with text patterns to narrow the match:
+
+```yaml
+- errorType: "AzureDeploymentError"
+  properties:
+    Details.Code: "Conflict"
+  patterns:
+    - "soft delete"    # Also require this text in the error message
+  message: "A soft-deleted resource is causing a deployment conflict."
+  suggestion: "Purge the resource in the Azure portal, then retry."
+```
+
+### Named Handlers (dynamic suggestions)
+
+For cases that need code to compute a suggestion (e.g., checking which regions have quota), you can reference a named `ErrorHandler` registered in the IoC container:
+
+```yaml
+- errorType: "AzureDeploymentError"
+  properties:
+    Details.Code: "SkuNotAvailable"
+  handler: "skuAvailabilityHandler"
+```
+
+The handler is a Go implementation of the `ErrorHandler` interface:
+
+```go
+// pkg/errorhandler/handler.go
+type ErrorHandler interface {
+    Handle(ctx context.Context, err error) *ErrorWithSuggestion
+}
+```
+
+Register handlers by name in `cmd/container.go`:
+
+```go
+container.MustRegisterNamedSingleton("skuAvailabilityHandler",
+    func() errorhandler.ErrorHandler {
+        return NewSkuAvailabilityHandler(...)
+    },
+)
+```
+
+### Fields Reference
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `patterns` | Yes | List of strings to match against error messages |
-| `message` | Yes | User-friendly explanation of what went wrong |
-| `suggestion` | Yes | Actionable next steps for the user |
+| `patterns` | At least one of `patterns` or `errorType` | List of strings/regex to match against error text |
+| `errorType` | At least one of `patterns` or `errorType` | Go error struct type name (matched via reflection) |
+| `properties` | No (requires `errorType`) | Map of dot-path field names to expected values |
+| `message` | Yes (unless `handler` is set) | User-friendly explanation of what went wrong |
+| `suggestion` | Yes (unless `handler` is set) | Actionable next steps for the user |
 | `docUrl` | No | Link to relevant documentation |
+| `handler` | No | Name of IoC-registered `ErrorHandler` for dynamic suggestions |
 
 ### Pattern Types
 
-#### 1. Simple Substring Matching (Default)
+#### Simple Substring (default)
 
-The simplest pattern type. Matches if the error message contains the pattern text anywhere. **Matching is case-insensitive**.
-
-```yaml
-- patterns:
-    - "quota exceeded"        # Matches "QuotaExceeded", "QUOTA EXCEEDED", etc.
-    - "QuotaExceeded"         # Also matches case-insensitively
-  message: "Your Azure subscription has reached a resource quota limit."
-  suggestion: "Request a quota increase through the Azure portal."
-```
-
-#### 2. Regular Expression Patterns
-
-For more complex matching, prefix the pattern with `regex:`. This enables full regular expression support.
+Case-insensitive substring matching:
 
 ```yaml
-- patterns:
-    - "regex:(?i)authorization.*failed"    # (?i) = case-insensitive flag
-    - "regex:BCP\\d{3}"                    # Matches BCP001, BCP123, etc.
-  message: "You don't have permission to perform this operation."
-  suggestion: "Check your Azure RBAC role assignments."
+patterns:
+  - "quota exceeded"  # Matches "QuotaExceeded", "QUOTA EXCEEDED", etc.
 ```
 
-**Common regex patterns:**
+#### Regular Expression
+
+Prefix with `regex:` for full regex support:
+
+```yaml
+patterns:
+  - "regex:(?i)authorization.*failed"
+  - "regex:BCP\\d{3}"
+```
 
 | Pattern | Meaning |
 |---------|---------|
-| `(?i)` | Case-insensitive matching |
+| `(?i)` | Case-insensitive |
 | `.*` | Match any characters |
-| `\\d+` | Match one or more digits |
-| `\\d{3}` | Match exactly 3 digits |
+| `\\d+` | One or more digits |
 | `(foo\|bar)` | Match "foo" or "bar" |
-| `\\s+` | Match whitespace |
 
 **Note:** In YAML, backslashes must be escaped as `\\`.
 
 ### Rule Evaluation
 
 - **First match wins**: Rules are evaluated in order from top to bottom
-- **Order matters**: Place more specific patterns before general ones
-- **Multiple patterns per rule**: If any pattern in a rule matches, that rule wins
+- **All conditions must pass**: If a rule has both `errorType` and `patterns`, both must match
+- **Order matters**: Place more specific rules before general ones
 
 ### Best Practices
 
-1. **Keep messages simple**: The message explains what went wrong in plain language
+1. **Keep messages simple**: Explain what went wrong in plain language
 
    ```yaml
-   # ❌ Too technical
-   message: "QuotaExceeded error for Microsoft.Compute/virtualMachines"
-   
-   # ✅ User-friendly
    message: "Your Azure subscription has reached a resource quota limit."
    ```
 
 2. **Make suggestions actionable**: Tell users exactly what to do
 
    ```yaml
-   # ❌ Vague
-   suggestion: "Fix the authentication issue."
-   
-   # ✅ Actionable
    suggestion: "Run 'azd auth login' to sign in again."
    ```
 
-3. **Include documentation links**: Help users learn more
+3. **Use `errorType` for structured errors**: When the error has a known Go type, prefer type matching over text patterns — it's more reliable and less fragile
 
-   ```yaml
-   docUrl: "https://learn.microsoft.com/azure/developer/azure-developer-cli/reference#azd-auth-login"
-   ```
+4. **Test your rules**: Run `go test ./pkg/errorhandler/...` after making changes
 
-4. **Group related patterns**: Combine patterns that should have the same response
-
-   ```yaml
-   - patterns:
-       - "AADSTS"                            # Azure AD error codes
-       - "regex:(?i)authentication.*failed"
-       - "regex:(?i)invalid.*credentials"
-     message: "Authentication with Azure failed."
-     suggestion: "Run 'azd auth login' to sign in again."
-   ```
-
-5. **Test your patterns**: Use the unit tests to verify patterns work correctly
-
-   ```go
-   // In pkg/errorhandler/matcher_test.go
-   func TestMyNewPattern(t *testing.T) {
-       service := NewErrorSuggestionService()
-       result := service.FindSuggestion("your error message here")
-       assert.NotNil(t, result)
-       assert.NotEmpty(t, result.Message)
-       assert.NotEmpty(t, result.Suggestion)
-   }
-   ```
-
-## File Location
+## File Layout
 
 | File | Purpose |
 |------|---------|
-| `resources/error_suggestions.yaml` | Error patterns and suggestions (edit this!) |
-| `pkg/errorhandler/types.go` | Go types for the YAML structure |
-| `pkg/errorhandler/matcher.go` | Pattern matching engine |
-| `pkg/errorhandler/service.go` | Service that loads and matches patterns |
-| `pkg/output/ux/error_with_suggestion.go` | UX component for displaying errors |
+| `resources/error_suggestions.yaml` | Error rules (edit this!) |
+| `pkg/errorhandler/types.go` | YAML schema types |
+| `pkg/errorhandler/pipeline.go` | Rule evaluation pipeline |
+| `pkg/errorhandler/reflect.go` | Reflection-based error type/property matching |
+| `pkg/errorhandler/matcher.go` | Text pattern matching engine |
+| `pkg/errorhandler/handler.go` | `ErrorHandler` interface for custom handlers |
+| `pkg/errorhandler/errors.go` | `ErrorWithSuggestion` type |
+| `pkg/output/ux/error_with_suggestion.go` | UX display component |
 
-## Complete Example
+## Architecture
 
-Here's an example of adding a new error pattern for a hypothetical "disk space" error:
+### ErrorHandlerPipeline
 
-```yaml
-# Add this to resources/error_suggestions.yaml
+The pipeline is the single entry point. It evaluates YAML rules in order, checking each rule's conditions (errorType, properties, patterns). When all conditions pass, it either returns a static suggestion from the rule's fields or invokes a named handler.
 
-  # ============================================================================
-  # Disk Space Errors
-  # ============================================================================
-  - patterns:
-      - "no space left on device"
-      - "disk quota exceeded"
-      - "regex:(?i)insufficient.*disk.*space"
-      - "ENOSPC"
-    message: "Your disk is full."
-    suggestion: "Free up space by removing unused Docker images ('docker system prune') or clearing temporary files."
-    docUrl: "https://docs.docker.com/config/pruning/"
+### ErrorWithSuggestion
+
+The canonical error type lives in `pkg/errorhandler` so extensions can also create and return user-friendly errors:
+
+```go
+type ErrorWithSuggestion struct {
+    Err        error   // Original error
+    Message    string  // User-friendly explanation
+    Suggestion string  // Actionable next steps
+    DocUrl     string  // Optional documentation link
+}
 ```
 
-After adding the pattern:
+A type alias in `internal/` provides backward compatibility for existing code.
 
-1. Run `go build` to ensure the YAML is valid
-2. Run `go test ./pkg/errorhandler/...` to verify patterns load correctly
-3. Test with a real error scenario if possible
+### Extension Participation
 
-## Architecture Notes
+Extensions can participate in error handling by:
 
-- **Embedded resource**: The YAML file is embedded into the azd binary at build time using Go's `//go:embed` directive
-- **Lazy loading**: Patterns are loaded once on first use and cached
-- **Regex caching**: Compiled regular expressions are cached for performance
-- **No external dependencies**: Pattern matching works offline with no network calls
+1. **Returning `ErrorWithSuggestion`**: Extensions can directly wrap errors with suggestions
+2. **Registering named handlers**: Extensions can register `ErrorHandler` implementations via IoC for dynamic suggestion computation

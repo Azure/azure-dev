@@ -29,13 +29,13 @@ import (
 )
 
 type ErrorMiddleware struct {
-	options                *Options
-	console                input.Console
-	agentFactory           *agent.AgentFactory
-	global                 *internal.GlobalCommandOptions
-	featuresManager        *alpha.FeatureManager
-	userConfigManager      config.UserConfigManager
-	errorSuggestionService *errorhandler.ErrorSuggestionService
+	options           *Options
+	console           input.Console
+	agentFactory      *agent.AgentFactory
+	global            *internal.GlobalCommandOptions
+	featuresManager   *alpha.FeatureManager
+	userConfigManager config.UserConfigManager
+	errorPipeline     *errorhandler.ErrorHandlerPipeline
 }
 
 func NewErrorMiddleware(
@@ -44,16 +44,16 @@ func NewErrorMiddleware(
 	global *internal.GlobalCommandOptions,
 	featuresManager *alpha.FeatureManager,
 	userConfigManager config.UserConfigManager,
-	errorSuggestionService *errorhandler.ErrorSuggestionService,
+	errorPipeline *errorhandler.ErrorHandlerPipeline,
 ) Middleware {
 	return &ErrorMiddleware{
-		options:                options,
-		console:                console,
-		agentFactory:           agentFactory,
-		global:                 global,
-		featuresManager:        featuresManager,
-		userConfigManager:      userConfigManager,
-		errorSuggestionService: errorSuggestionService,
+		options:           options,
+		console:           console,
+		agentFactory:      agentFactory,
+		global:            global,
+		featuresManager:   featuresManager,
+		userConfigManager: userConfigManager,
+		errorPipeline:     errorPipeline,
 	}
 }
 
@@ -85,14 +85,8 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 	}
 
 	// Try to match error against known patterns and wrap with suggestion
-	if suggestion := e.errorSuggestionService.FindSuggestion(err.Error()); suggestion != nil {
-		wrappedErr := &internal.ErrorWithSuggestion{
-			Err:        err,
-			Message:    suggestion.Message,
-			Suggestion: suggestion.Suggestion,
-			DocUrl:     suggestion.DocUrl,
-		}
-		return actionResult, wrappedErr
+	if suggestion := e.errorPipeline.Process(ctx, err); suggestion != nil {
+		return actionResult, suggestion
 	}
 
 	// Short-circuit agentic error handling in non-interactive scenarios:

@@ -85,15 +85,15 @@ func TestSubscriptionCredentialProvider_AADSTSErrors(t *testing.T) {
 
 		_, err := provider.CredentialForSubscription(context.Background(), subscriptionId)
 		assert.Error(t, err)
-		
+
 		// The error should be wrapped in an ErrorWithSuggestion
 		var errWithSuggestion *internal.ErrorWithSuggestion
 		assert.True(t, errors.As(err, &errWithSuggestion), "error should be wrapped in ErrorWithSuggestion")
-		
+
 		// Check that the suggestion includes tenant-specific guidance
 		assert.Contains(t, errWithSuggestion.Suggestion, tenantId)
 		assert.Contains(t, errWithSuggestion.Suggestion, "azd auth login --tenant-id")
-		
+
 		// The underlying error should contain AADSTS70043
 		assert.Contains(t, errWithSuggestion.Error(), "AADSTS70043")
 	})
@@ -110,15 +110,15 @@ func TestSubscriptionCredentialProvider_AADSTSErrors(t *testing.T) {
 
 		_, err := provider.CredentialForSubscription(context.Background(), subscriptionId)
 		assert.Error(t, err)
-		
+
 		// The error should be wrapped in an ErrorWithSuggestion
 		var errWithSuggestion *internal.ErrorWithSuggestion
 		assert.True(t, errors.As(err, &errWithSuggestion), "error should be wrapped in ErrorWithSuggestion")
-		
+
 		// Check that the suggestion includes tenant-specific guidance
 		assert.Contains(t, errWithSuggestion.Suggestion, tenantId)
 		assert.Contains(t, errWithSuggestion.Suggestion, "azd auth login --tenant-id")
-		
+
 		// The underlying error should contain AADSTS700082
 		assert.Contains(t, errWithSuggestion.Error(), "AADSTS700082")
 	})

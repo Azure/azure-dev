@@ -105,10 +105,15 @@
       "description": "Semantic version of the extension. Use the format MAJOR.MINOR.PATCH (optionally with a pre-release tag).",
       "pattern": "^\\d+\\.\\d+\\.\\d+(-[A-Za-z0-9-.]+)?$"
     },
+    "requiredAzdVersion": {
+      "type": "string",
+      "title": "Required azd Version",
+      "description": "azd core version constraint required to use this extension. Supports semantic versioning constraint expressions (e.g. \">= 1.24.0\")."
+    },
     "capabilities": {
       "type": "array",
       "title": "Capabilities",
-      "description": "List of capabilities provided by the extension. Supported values: custom-commands, lifecycle-events, mcp-server, service-target-provider, metadata. Select one or more from the allowed list. Each value must be unique.",
+      "description": "List of capabilities provided by the extension. Supported values: custom-commands, lifecycle-events, mcp-server, service-target-provider, framework-service-provider, metadata. Select one or more from the allowed list. Each value must be unique.",
       "minItems": 1,
       "uniqueItems": true,
       "items": {

@@ -25,6 +25,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -81,6 +82,7 @@ type BicepProvider struct {
 	portalUrlBase       string
 	keyvaultService     keyvault.KeyVaultService
 	subscriptionManager *account.SubscriptionsManager
+	aiModelService      *ai.AiModelService
 
 	// Internal state
 	// compileBicepResult is cached to avoid recompiling the same bicep file multiple times in the same azd run.
@@ -2513,6 +2515,7 @@ func NewBicepProvider(
 	keyvaultService keyvault.KeyVaultService,
 	cloud *cloud.Cloud,
 	subscriptionManager *account.SubscriptionsManager,
+	aiModelService *ai.AiModelService,
 ) provisioning.Provider {
 	return &BicepProvider{
 		envManager:          envManager,
@@ -2528,6 +2531,7 @@ func NewBicepProvider(
 		keyvaultService:     keyvaultService,
 		portalUrlBase:       cloud.PortalUrlBase,
 		subscriptionManager: subscriptionManager,
+		aiModelService:      aiModelService,
 	}
 }
 

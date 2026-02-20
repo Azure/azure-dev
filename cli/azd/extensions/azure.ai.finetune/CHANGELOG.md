@@ -1,6 +1,12 @@
 # Release History
 
 
+## 0.0.17-preview (2026-02-20)
+
+- Add multi-grader support for reinforcement fine-tuning
+- Update azd command descriptions
+- Bug fixes
+
 ## 0.0.16-preview (2026-02-03)
 
 - Simplified init flow: reduced prompts from 4 to 2 for faster setup

@@ -50,6 +50,10 @@ type ContainerRegistryService interface {
 	Credentials(ctx context.Context, subscriptionId string, loginServer string) (*DockerCredentials, error)
 	// Gets a list of container registries for the specified subscription
 	GetContainerRegistries(ctx context.Context, subscriptionId string) ([]*armcontainerregistry.Registry, error)
+	// FindContainerRegistryResourceGroup resolves the resource group for a container registry by name
+	FindContainerRegistryResourceGroup(
+		ctx context.Context, subscriptionId string, registryName string,
+	) (string, error)
 }
 
 type containerRegistryService struct {
@@ -97,6 +101,20 @@ func (crs *containerRegistryService) GetContainerRegistries(
 	}
 
 	return results, nil
+}
+
+// FindContainerRegistryResourceGroup resolves the resource group for a container registry by name
+func (crs *containerRegistryService) FindContainerRegistryResourceGroup(
+	ctx context.Context,
+	subscriptionId string,
+	registryName string,
+) (string, error) {
+	_, resourceGroup, err := crs.findContainerRegistryByName(ctx, subscriptionId, registryName)
+	if err != nil {
+		return "", err
+	}
+
+	return resourceGroup, nil
 }
 
 func (crs *containerRegistryService) Login(ctx context.Context, subscriptionId string, loginServer string) error {

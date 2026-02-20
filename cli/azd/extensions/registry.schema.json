@@ -60,6 +60,10 @@
                     "description": "Version number following semantic versioning.",
                     "pattern": "^\\d+\\.\\d+\\.\\d+$"
                 },
+                "requiredAzdVersion": {
+                    "type": "string",
+                    "description": "azd core version constraint required to use this extension version. Supports semantic versioning constraint expressions (e.g. \">= 1.24.0\")."
+                },
                 "capabilities": {
                     "type": "array",
                     "description": "List of capabilities provided by this extension version.",
@@ -67,9 +71,11 @@
                         "type": "string",
                         "enum": [
                             "custom-commands",
-                            "lifecycle-events", 
+                            "lifecycle-events",
                             "mcp-server",
-                            "service-target-provider"
+                            "service-target-provider",
+                            "framework-service-provider",
+                            "metadata"
                         ]
                     }
                 },

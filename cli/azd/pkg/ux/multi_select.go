@@ -13,11 +13,10 @@ import (
 	"strconv"
 	"strings"
 
+	"dario.cat/mergo"
+	surveyterm "github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux/internal"
-
-	"dario.cat/mergo"
-	"github.com/eiannone/keyboard"
 )
 
 // SelectOptions represents the options for the Select component.
@@ -178,11 +177,11 @@ func (p *MultiSelect) Ask(ctx context.Context) ([]*MultiSelectChoice, error) {
 
 		optionCount := len(p.filteredChoices)
 		if optionCount > 0 {
-			if args.Key == keyboard.KeyArrowUp {
+			if args.Key == surveyterm.KeyArrowUp {
 				p.currentIndex = Ptr(((*p.currentIndex - 1 + optionCount) % optionCount))
-			} else if args.Key == keyboard.KeyArrowDown {
+			} else if args.Key == surveyterm.KeyArrowDown {
 				p.currentIndex = Ptr(((*p.currentIndex + 1) % optionCount))
-			} else if args.Key == keyboard.KeySpace {
+			} else if args.Key == surveyterm.KeySpace {
 				choice := p.filteredChoices[*p.currentIndex]
 				choice.Selected = !choice.Selected
 
@@ -194,19 +193,19 @@ func (p *MultiSelect) Ask(ctx context.Context) ([]*MultiSelectChoice, error) {
 			}
 		}
 
-		if args.Key == keyboard.KeyArrowRight {
+		if args.Key == surveyterm.KeyArrowRight {
 			for _, choice := range p.choices {
 				choice.Selected = true
 				p.selectedChoices[choice.Value] = choice
 			}
-		} else if args.Key == keyboard.KeyArrowLeft {
+		} else if args.Key == surveyterm.KeyArrowLeft {
 			for _, choice := range p.choices {
 				choice.Selected = false
 				delete(p.selectedChoices, choice.Value)
 			}
 		}
 
-		if args.Key == keyboard.KeyEnter {
+		if args.Key == surveyterm.KeyEnter {
 			p.submitted = true
 			p.validate()
 

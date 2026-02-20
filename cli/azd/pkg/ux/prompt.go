@@ -9,11 +9,10 @@ import (
 	"log"
 	"os"
 
+	"dario.cat/mergo"
+	surveyterm "github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux/internal"
-
-	"dario.cat/mergo"
-	"github.com/eiannone/keyboard"
 )
 
 // PromptOptions represents the options for the Prompt component.
@@ -162,7 +161,7 @@ func (p *Prompt) Ask(ctx context.Context) (string, error) {
 		p.value = args.Value
 		p.validate()
 
-		if args.Key == keyboard.KeyEnter {
+		if args.Key == surveyterm.KeyEnter {
 			p.submitted = true
 
 			if !p.hasValidationError {

@@ -6,7 +6,7 @@ Usage
 
 Flags
     -l, --location string     	: Azure location for the new environment
-        --subscription string 	: Name or ID of an Azure subscription to use for the new environment
+        --subscription string 	: ID of an Azure subscription to use for the new environment
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

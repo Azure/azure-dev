@@ -15,14 +15,12 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/registry_api"
 	"azureaiagent/internal/pkg/azure"
-	"azureaiagent/internal/pkg/azure/ai"
 	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -35,15 +33,16 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
-	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 	"gopkg.in/yaml.v3"
 )
 
 type initFlags struct {
-	rootFlagsDefinition
+	*rootFlagsDefinition
 	projectResourceId string
 	manifestPointer   string
 	src               string
@@ -61,14 +60,14 @@ type InitAction struct {
 	//azureClient       *azure.AzureClient
 	azureContext *azdext.AzureContext
 	//composedResources []*azdext.ComposedResource
-	console             input.Console
-	credential          azcore.TokenCredential
-	modelCatalog        map[string]*ai.AiModel
-	modelCatalogService *ai.ModelCatalogService
-	projectConfig       *azdext.ProjectConfig
-	environment         *azdext.Environment
-	flags               *initFlags
-	deploymentDetails   []project.Deployment
+	console              input.Console
+	credential           azcore.TokenCredential
+	modelCatalog         map[string]*azdext.AiModel
+	locationWarningShown bool
+	projectConfig        *azdext.ProjectConfig
+	environment          *azdext.Environment
+	flags                *initFlags
+	deploymentDetails    []project.Deployment
 }
 
 // GitHubUrlInfo holds parsed information from a GitHub URL
@@ -82,7 +81,24 @@ type GitHubUrlInfo struct {
 const AiAgentHost = "azure.ai.agent"
 const ContainerAppHost = "containerapp"
 
-func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
+// checkAiModelServiceAvailable is a temporary check to ensure the azd host supports
+// required gRPC services. Remove once azd core enforces requiredAzdVersion.
+func checkAiModelServiceAvailable(ctx context.Context, azdClient *azdext.AzdClient) error {
+	_, err := azdClient.Ai().ListModels(ctx, &azdext.ListModelsRequest{})
+	if err == nil {
+		return nil
+	}
+
+	if st, ok := status.FromError(err); ok && st.Code() == codes.Unimplemented {
+		return fmt.Errorf(
+			"this version of the azure.ai.agents extension is incompatible with your installed version of azd. " +
+				"Please upgrade azd to the latest version")
+	}
+
+	return nil
+}
+
+func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 	flags := &initFlags{
 		rootFlagsDefinition: rootFlags,
 	}
@@ -101,6 +117,10 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 				return fmt.Errorf("failed to create azd client: %w", err)
 			}
 			defer azdClient.Close()
+
+			if err := checkAiModelServiceAvailable(ctx, azdClient); err != nil {
+				return err
+			}
 
 			// Wait for debugger if AZD_EXT_DEBUG is set
 			if err := azdext.WaitForDebugger(ctx, azdClient); err != nil {
@@ -142,12 +162,11 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 					// azureClient:         azure.NewAzureClient(credential),
 					azureContext: azureContext,
 					// composedResources:   getComposedResourcesResponse.Resources,
-					console:             console,
-					credential:          credential,
-					modelCatalogService: ai.NewModelCatalogService(credential),
-					projectConfig:       projectConfig,
-					environment:         environment,
-					flags:               flags,
+				console:             console,
+				credential:          credential,
+				projectConfig:       projectConfig,
+				environment:         environment,
+				flags:               flags,
 				}
 
 				if err := action.Run(ctx); err != nil {
@@ -1738,826 +1757,4 @@ func downloadDirectoryContentsWithoutGhCli(
 	}
 
 	return nil
-}
-
-// func (a *InitAction) validateResources(ctx context.Context, agentYaml map[string]interface{}) error {
-// 	fmt.Println("Reading model name from agent.yaml...")
-
-// 	// Extract the model name from agentYaml
-// 	agentModelName, ok := agentYaml["model"].(string)
-// 	if !ok || agentModelName == "" {
-// 		return fmt.Errorf("extracting model name from agent YAML: model name missing or empty")
-// 	}
-
-// 	fmt.Println("Reading current azd project resources...")
-
-// 	// Check if the ai.project resource already exists and has the required model
-// 	existingResourceName, err := a.checkResourceExistsAndHasModel(agentModelName)
-// 	if err != nil {
-// 		return fmt.Errorf("checking if ai.project resource has model '%s': %w", agentModelName, err)
-// 	}
-
-// 	if existingResourceName == "" {
-// 		return a.addResource(ctx, agentModelName)
-// 	}
-
-// 	fmt.Printf("Validated: ai.project resource '%s' has required model '%s'\n", existingResourceName, agentModelName)
-// 	return nil
-// }
-
-// // checkResourceExistsAndHasModel checks if the given ai.project resource has the specified model
-// func (a *InitAction) checkResourceExistsAndHasModel(modelName string) (string, error) {
-// 	// Look for ai.project resource
-// 	var aiProjectResource *azdext.ComposedResource
-// 	for _, resource := range a.composedResources {
-// 		if resource.Type == "ai.project" {
-// 			aiProjectResource = resource
-// 			break
-// 		}
-// 	}
-
-// 	if aiProjectResource == nil {
-// 		fmt.Println("No 'ai.project' resource found in current azd project.")
-// 		return "", nil
-// 	}
-
-// 	fmt.Println("'ai.project' resource found in current azd project. Checking for required model...")
-
-// 	// Parse the resource config to check for models
-// 	if len(aiProjectResource.Config) > 0 {
-// 		var config map[string]interface{}
-// 		if err := yaml.Unmarshal(aiProjectResource.Config, &config); err != nil {
-// 			return "", fmt.Errorf("parsing resource config: %w", err)
-// 		}
-
-// 		// Check the models array - based on azure.yaml format: models[].name
-// 		if models, ok := config["Models"].([]interface{}); ok {
-// 			for _, model := range models {
-// 				if modelObj, ok := model.(map[string]interface{}); ok {
-// 					if name, ok := modelObj["Name"].(string); ok {
-// 						if name == modelName {
-// 							fmt.Printf("Found matching model: %s\n", name)
-// 							return aiProjectResource.Name, nil
-// 						}
-// 					}
-// 				}
-// 			}
-// 		}
-// 	}
-
-// 	fmt.Printf("Model '%s' not found in resource '%s'\n", modelName, aiProjectResource.Name)
-// 	return "", nil
-// }
-
-// func (a *InitAction) addResource(ctx context.Context, agentModelName string) error {
-// 	// Look for existing ai.project resource
-// 	var aiProject *azdext.ComposedResource
-// 	var aiProjectConfig *AiProjectResourceConfig
-
-// 	for _, resource := range a.composedResources {
-// 		if resource.Type == "ai.project" {
-// 			aiProject = resource
-
-// 			// Parse existing config if it exists
-// 			if len(resource.Config) > 0 {
-// 				if err := yaml.Unmarshal(resource.Config, &aiProjectConfig); err != nil {
-// 					return fmt.Errorf("failed to unmarshal AI project config: %w", err)
-// 				}
-// 			}
-// 			break
-// 		}
-// 	}
-
-// 	// Create new ai.project resource if it doesn't exist
-// 	if aiProject == nil {
-// 		fmt.Println("Adding new 'ai.project' resource to azd project.")
-// 		aiProject = &azdext.ComposedResource{
-// 			Name: generateResourceName("ai-project", a.composedResources),
-// 			Type: "ai.project",
-// 		}
-// 		aiProjectConfig = &AiProjectResourceConfig{}
-// 	}
-
-// 	// Prompt user for model details
-// 	modelDetails, err := a.promptForModelDetails(ctx, agentModelName)
-// 	if err != nil {
-// 		return fmt.Errorf("failed to get model details: %w", err)
-// 	}
-
-// 	fmt.Println("Got model details, adding to ai.project resource.")
-// 	// Convert the ai.AiModelDeployment to the map format expected by AiProjectResourceConfig
-// 	defaultModel := map[string]interface{}{
-// 		"name":    modelDetails.Name,
-// 		"format":  modelDetails.Format,
-// 		"version": modelDetails.Version,
-// 		"sku": map[string]interface{}{
-// 			"name":      modelDetails.Sku.Name,
-// 			"usageName": modelDetails.Sku.UsageName,
-// 			"capacity":  modelDetails.Sku.Capacity,
-// 		},
-// 	}
-// 	aiProjectConfig.Models = append(aiProjectConfig.Models, defaultModel)
-
-// 	// Marshal the config as JSON (since the struct has json tags)
-// 	configJson, err := json.Marshal(aiProjectConfig)
-// 	if err != nil {
-// 		return fmt.Errorf("failed to marshal AI project config: %w", err)
-// 	}
-
-// 	// Update the resource config
-// 	aiProject.Config = configJson
-
-// 	// Add the resource to the project
-// 	_, err = a.azdClient.Compose().AddResource(ctx, &azdext.AddResourceRequest{
-// 		Resource: aiProject,
-// 	})
-// 	if err != nil {
-// 		return fmt.Errorf("failed to add resource %s: %w", aiProject.Name, err)
-// 	}
-
-// 	fmt.Printf("Added AI project resource '%s' to azure.yaml\n", aiProject.Name)
-// 	return nil
-// }
-
-// func (a *InitAction) promptForModelDetails(ctx context.Context, modelName string) (*ai.AiModelDeployment, error) {
-// 	// Load the AI model catalog if not already loaded
-// 	if err := a.loadAiCatalog(ctx); err != nil {
-// 		return nil, err
-// 	}
-
-// 	// Check if the model exists in the catalog
-// 	var model *ai.AiModel
-// 	model, exists := a.modelCatalog[modelName]
-// 	if !exists {
-// 		return nil, fmt.Errorf("model '%s' not found in AI model catalog", modelName)
-// 	}
-
-// 	availableVersions, err := a.modelCatalogService.ListModelVersions(ctx, model)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("listing versions for model '%s': %w", modelName, err)
-// 	}
-
-// 	availableSkus, err := a.modelCatalogService.ListModelSkus(ctx, model)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("listing SKUs for model '%s': %w", modelName, err)
-// 	}
-
-// 	modelVersionSelection, err := selectFromList(
-// 		ctx, a.console, "Which model version do you want to use?", availableVersions, nil)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-// 	skuSelection, err := selectFromList(ctx, a.console, "Select model SKU", availableSkus, nil)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-// 	deploymentOptions := ai.AiModelDeploymentOptions{
-// 		Versions: []string{modelVersionSelection},
-// 		Skus:     []string{skuSelection},
-// 	}
-
-// 	modelDeployment, err := a.modelCatalogService.GetModelDeployment(ctx, model, &deploymentOptions)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("failed to get model deployment: %w", err)
-// 	}
-
-// 	return modelDeployment, nil
-// }
-
-func (a *InitAction) loadAiCatalog(ctx context.Context) error {
-	if a.modelCatalog != nil {
-		return nil
-	}
-
-	spinner := ux.NewSpinner(&ux.SpinnerOptions{
-		Text:        "Loading the model catalog",
-		ClearOnStop: true,
-	})
-
-	if err := spinner.Start(ctx); err != nil {
-		return fmt.Errorf("failed to start spinner: %w", err)
-	}
-
-	aiModelCatalog, err := a.modelCatalogService.ListAllModels(ctx, a.azureContext.Scope.SubscriptionId, "")
-
-	if err != nil {
-		return fmt.Errorf("failed to load the model catalog: %w", err)
-	}
-
-	if err := spinner.Stop(ctx); err != nil {
-		return err
-	}
-
-	a.modelCatalog = aiModelCatalog
-	return nil
-}
-
-// // generateResourceName generates a unique resource name, similar to the AI builder pattern
-// func generateResourceName(desiredName string, existingResources []*azdext.ComposedResource) string {
-// 	resourceMap := map[string]struct{}{}
-// 	for _, resource := range existingResources {
-// 		resourceMap[resource.Name] = struct{}{}
-// 	}
-
-// 	if _, exists := resourceMap[desiredName]; !exists {
-// 		return desiredName
-// 	}
-// 	// If the desired name already exists, append a number (always 2 digits) to the name
-// 	nextIndex := 1
-// 	for {
-// 		newName := fmt.Sprintf("%s-%02d", desiredName, nextIndex)
-// 		if _, exists := resourceMap[newName]; !exists {
-// 			return newName
-// 		}
-// 		nextIndex++
-// 	}
-// }
-
-func (a *InitAction) selectFromList(
-	ctx context.Context, property string, options []string, defaultOpt string) (string, error) {
-
-	if len(options) == 1 {
-		fmt.Printf("Only one %s available: %s\n", property, options[0])
-		return options[0], nil
-	}
-
-	slices.Sort(options)
-
-	// Convert default value to string for comparison
-	defaultStr := options[0]
-	if defaultOpt != "" {
-		defaultStr = defaultOpt
-	}
-
-	if a.flags.NoPrompt {
-		fmt.Printf("No prompt mode enabled, selecting default %s: %s\n", property, defaultStr)
-		return defaultStr, nil
-	}
-
-	// Create choices for the select prompt
-	choices := make([]*azdext.SelectChoice, len(options))
-	defaultIndex := int32(0)
-	for i, val := range options {
-		choices[i] = &azdext.SelectChoice{
-			Value: val,
-			Label: val,
-		}
-		if val == defaultStr {
-			defaultIndex = int32(i)
-		}
-	}
-	resp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-		Options: &azdext.SelectOptions{
-			Message:       fmt.Sprintf("Select %s", property),
-			Choices:       choices,
-			SelectedIndex: &defaultIndex,
-		},
-	})
-	if err != nil {
-		return "", fmt.Errorf("failed to prompt for enum value: %w", err)
-	}
-
-	return options[*resp.Value], nil
-}
-
-func (a *InitAction) setEnvVar(ctx context.Context, key, value string) error {
-	_, err := a.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-		EnvName: a.environment.Name,
-		Key:     key,
-		Value:   value,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to set environment variable %s=%s: %w", key, value, err)
-	}
-
-	fmt.Printf("Set environment variable: %s=%s\n", key, value)
-	return nil
-}
-
-func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_yaml.Model) (*project.Deployment, error) {
-	resp, err := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: a.environment.Name,
-		Key:     "AZURE_AI_PROJECT_ID",
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get the environment variable AZURE_AI_PROJECT_ID from your azd environment: %w", err)
-	}
-
-	foundryProjectId := resp.Value
-	if foundryProjectId != "" {
-		// Extract subscription and account name from foundry project ID
-		// Format: /subscriptions/{subscription}/resourceGroups/{rg}/providers/Microsoft.CognitiveServices/accounts/{account}/projects/{project}
-		parts := strings.Split(foundryProjectId, "/")
-		var subscription, resourceGroup, accountName string
-
-		if len(parts) >= 9 {
-			subscription = parts[2]  // subscriptions/{subscription}
-			resourceGroup = parts[4] // resourceGroups/{rg}
-			accountName = parts[8]   // accounts/{account}
-		}
-
-		deploymentsClient, err := armcognitiveservices.NewDeploymentsClient(subscription, a.credential, azure.NewArmClientOptions())
-		if err != nil {
-			return nil, fmt.Errorf("failed to create deployments client: %w", err)
-		}
-
-		pager := deploymentsClient.NewListPager(resourceGroup, accountName, nil)
-		var deployments []*armcognitiveservices.Deployment
-		for pager.More() {
-			page, err := pager.NextPage(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("failed to list deployments: %w", err)
-			}
-			deployments = append(deployments, page.Value...)
-		}
-
-		// Check for existing deployments that match the requested model
-		matchingDeployments := make(map[string]*armcognitiveservices.Deployment)
-		for _, deployment := range deployments {
-			if deployment.Properties != nil && deployment.Properties.Model != nil {
-				deployedModel := deployment.Properties.Model
-				if deployedModel.Name != nil {
-					if *deployedModel.Name == model.Id {
-						matchingDeployments[*deployment.Name] = deployment
-					}
-				}
-			}
-		}
-
-		// If we found matching deployments, prompt the user
-		if len(matchingDeployments) > 0 {
-			fmt.Printf("In your Microsoft Foundry project, found %d existing model deployment(s) matching your model %s.\n", len(matchingDeployments), model.Id)
-
-			// Build options list with existing deployments plus "Create new deployment" option
-			var options []string
-			for deploymentName := range matchingDeployments {
-				options = append(options, deploymentName)
-			}
-			options = append(options, "Create new model deployment")
-
-			// Use selectFromList to choose between existing deployments or creating new one
-			selection, err := a.selectFromList(ctx, "deployment", options, options[0])
-			if err != nil {
-				return nil, fmt.Errorf("failed to select deployment: %w", err)
-			}
-
-			// Check if user chose to create new deployment
-			if selection != "Create new model deployment" {
-				// User chose an existing deployment by name
-				fmt.Printf("Using existing model deployment: %s\n", selection)
-
-				// Get the selected deployment from the map and return its details
-				if deployment, exists := matchingDeployments[selection]; exists {
-					return &project.Deployment{
-						Name: selection,
-						Model: project.DeploymentModel{
-							Name:    model.Id,
-							Format:  *deployment.Properties.Model.Format,
-							Version: *deployment.Properties.Model.Version,
-						},
-						Sku: project.DeploymentSku{
-							Name:     *deployment.SKU.Name,
-							Capacity: int(*deployment.SKU.Capacity),
-						},
-					}, nil
-				}
-			}
-		}
-	}
-
-	modelDetails, err := a.getModelDetails(ctx, model.Id)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get model details: %w", err)
-	}
-
-	modelDeployment := modelDetails.Name
-
-	if !a.flags.NoPrompt {
-		message := fmt.Sprintf("Enter model deployment name for model '%s' (defaults to model name)", modelDetails.Name)
-
-		modelDeploymentInput, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-			Options: &azdext.PromptOptions{
-				Message:        message,
-				IgnoreHintKeys: true,
-				DefaultValue:   modelDetails.Name,
-			},
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to prompt for text value: %w", err)
-		}
-
-		modelDeployment = modelDeploymentInput.Value
-	} else {
-		fmt.Printf("No prompt mode enabled, using model name as deployment name: %s\n", modelDeployment)
-	}
-
-	return &project.Deployment{
-		Name: modelDeployment,
-		Model: project.DeploymentModel{
-			Name:    modelDetails.Name,
-			Format:  modelDetails.Format,
-			Version: modelDetails.Version,
-		},
-		Sku: project.DeploymentSku{
-			Name:     modelDetails.Sku.Name,
-			Capacity: int(modelDetails.Sku.Capacity),
-		},
-	}, nil
-}
-
-var defaultSkuPriority = []string{"GlobalStandard", "DataZoneStandard", "Standard"}
-
-func (a *InitAction) getModelDetails(ctx context.Context, modelName string) (*ai.AiModelDeployment, error) {
-	// Load the AI model catalog if not already loaded
-	if err := a.loadAiCatalog(ctx); err != nil {
-		return nil, err
-	}
-
-	// Check if the model exists in the catalog
-	var model *ai.AiModel
-	model, exists := a.modelCatalog[modelName]
-	if !exists {
-		// Model not found - prompt user for alternative
-		selectedModel, err := a.promptForAlternativeModel(ctx, modelName)
-		if err != nil {
-			return nil, err
-		}
-		if selectedModel == nil {
-			return nil, fmt.Errorf("no model selected, exiting")
-		}
-		model = selectedModel
-		modelName = model.Name
-	}
-
-	// Check if the model is available in the current location
-	currentLocation := a.azureContext.Scope.Location
-	if _, hasLocation := model.ModelDetailsByLocation[currentLocation]; !hasLocation {
-		// Model not available in current location - prompt user for action
-		resolvedModel, resolvedLocation, err := a.promptForModelLocationMismatch(ctx, model, currentLocation)
-		if err != nil {
-			return nil, err
-		}
-		if resolvedModel == nil {
-			return nil, fmt.Errorf("model unavailable in current location and no alternative selected, exiting")
-		}
-		model = resolvedModel
-		modelName = model.Name
-		currentLocation = resolvedLocation
-	}
-
-	availableVersions, defaultVersion, err := a.modelCatalogService.ListModelVersions(ctx, model, currentLocation)
-	if err != nil {
-		return nil, fmt.Errorf("listing versions for model '%s': %w", modelName, err)
-	}
-
-	modelVersion, err := a.selectFromList(ctx, "model version", availableVersions, defaultVersion)
-	if err != nil {
-		return nil, err
-	}
-
-	availableSkus, err := a.modelCatalogService.ListModelSkus(ctx, model, currentLocation, modelVersion)
-	if err != nil {
-		return nil, fmt.Errorf("listing SKUs for model '%s': %w", modelName, err)
-	}
-
-	// Determine default SKU based on priority list
-	defaultSku := ""
-	for _, sku := range defaultSkuPriority {
-		if slices.Contains(availableSkus, sku) {
-			defaultSku = sku
-			break
-		}
-	}
-
-	skuSelection, err := a.selectFromList(ctx, "model SKU", availableSkus, defaultSku)
-	if err != nil {
-		return nil, err
-	}
-
-	deploymentOptions := ai.AiModelDeploymentOptions{
-		Versions: []string{modelVersion},
-		Skus:     []string{skuSelection},
-	}
-
-	modelDeployment, err := a.modelCatalogService.GetModelDeployment(ctx, model, &deploymentOptions)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get model deployment: %w", err)
-	}
-
-	if modelDeployment.Sku.Capacity == -1 {
-		skuCapacity, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-			Options: &azdext.PromptOptions{
-				Message:        "Selected model SKU has no default capacity. Please enter desired capacity",
-				IgnoreHintKeys: true,
-				Required:       true,
-				DefaultValue:   "10",
-			},
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to prompt for text value: %w", err)
-		}
-
-		capacity, err := strconv.Atoi(skuCapacity.Value)
-		if err != nil {
-			return nil, fmt.Errorf("invalid capacity value: %w", err)
-		}
-		modelDeployment.Sku.Capacity = int32(capacity)
-	}
-
-	return modelDeployment, nil
-}
-
-func (a *InitAction) promptForAlternativeModel(ctx context.Context, originalModelName string) (*ai.AiModel, error) {
-	fmt.Println(output.WithErrorFormat("The model '%s' could not be found in the model catalog for your subscription in any region.\n", originalModelName))
-
-	// Ask if they want to select a different model or exit
-	choices := []*azdext.SelectChoice{
-		{Label: "Select a different model", Value: "select"},
-		{Label: "Exit", Value: "exit"},
-	}
-
-	defaultIndex := int32(1)
-	selectResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-		Options: &azdext.SelectOptions{
-			Message:       "Would you like to select a different model or exit?",
-			Choices:       choices,
-			SelectedIndex: &defaultIndex,
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to prompt for model selection choice: %w", err)
-	}
-
-	if choices[*selectResp.Value].Value == "exit" {
-		return nil, nil
-	}
-
-	// Ask if they want all models or region-specific models
-	regionChoices := []*azdext.SelectChoice{
-		{Label: fmt.Sprintf("Models available in my current region (%s)", a.azureContext.Scope.Location), Value: "region"},
-		{Label: "All available models", Value: "all"},
-	}
-
-	regionResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-		Options: &azdext.SelectOptions{
-			Message: "Which models would you like to explore?",
-			Choices: regionChoices,
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to prompt for region choice: %w", err)
-	}
-
-	// Get the list of model names based on the choice
-	var modelNames []string
-	if regionChoices[*regionResp.Value].Value == "region" {
-		// Filter models that have the current region
-		for name, model := range a.modelCatalog {
-			if _, hasLocation := model.ModelDetailsByLocation[a.azureContext.Scope.Location]; hasLocation {
-				modelNames = append(modelNames, name)
-			}
-		}
-	} else {
-		// All models
-		for name := range a.modelCatalog {
-			modelNames = append(modelNames, name)
-		}
-	}
-
-	if len(modelNames) == 0 {
-		return nil, fmt.Errorf("no models available for selection")
-	}
-
-	// Sort the model names
-	slices.Sort(modelNames)
-
-	// Create choices for the model selection
-	modelChoices := make([]*azdext.SelectChoice, len(modelNames))
-	for i, name := range modelNames {
-		modelChoices[i] = &azdext.SelectChoice{
-			Label: name,
-			Value: name,
-		}
-	}
-
-	modelResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-		Options: &azdext.SelectOptions{
-			Message: "Select a model",
-			Choices: modelChoices,
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to prompt for model selection: %w", err)
-	}
-
-	selectedModelName := modelNames[*modelResp.Value]
-	return a.modelCatalog[selectedModelName], nil
-}
-
-func (a *InitAction) promptForModelLocationMismatch(ctx context.Context, model *ai.AiModel, currentLocation string) (*ai.AiModel, string, error) {
-	fmt.Println(output.WithErrorFormat("The model '%s' is not available in your current location '%s'.", model.Name, currentLocation))
-	fmt.Println("Would you like to use a different model, or select a different location?")
-	fmt.Println(output.WithWarningFormat(
-		"WARNING: If you switch locations:\n" +
-			"• Your AZD environment will use a new default region.\n" +
-			"• Any existing Azure AI Foundry project created in your current region may fail.\n\n" +
-			"Recommended options:\n" +
-			"1) Select a different model in this region (safe), or\n" +
-			"2) Create a new Foundry project after changing regions."))
-
-	// Ask what they want to do
-	choices := []*azdext.SelectChoice{
-		{Label: "Select a different model available in this location", Value: "model"},
-		{Label: "Select a different location for this model", Value: "location"},
-		{Label: "Exit", Value: "exit"},
-	}
-
-	defaultIndex := int32(2)
-	selectResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-		Options: &azdext.SelectOptions{
-			Message:       "What would you like to do?",
-			Choices:       choices,
-			SelectedIndex: &defaultIndex,
-		},
-	})
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to prompt for action choice: %w", err)
-	}
-
-	selectedChoice := choices[*selectResp.Value].Value
-
-	if selectedChoice == "exit" {
-		return nil, "", nil
-	}
-
-	if selectedChoice == "location" {
-		// Get available locations for this model
-		var locationNames []string
-		for locationName := range model.ModelDetailsByLocation {
-			locationNames = append(locationNames, locationName)
-		}
-
-		if len(locationNames) == 0 {
-			return nil, "", fmt.Errorf("no locations available for model '%s'", model.Name)
-		}
-
-		slices.Sort(locationNames)
-
-		// Create choices for location selection
-		locationChoices := make([]*azdext.SelectChoice, len(locationNames))
-		for i, name := range locationNames {
-			locationChoices[i] = &azdext.SelectChoice{
-				Label: name,
-				Value: name,
-			}
-		}
-
-		locationResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-			Options: &azdext.SelectOptions{
-				Message: fmt.Sprintf("Select a location for model '%s'", model.Name),
-				Choices: locationChoices,
-			},
-		})
-		if err != nil {
-			return nil, "", fmt.Errorf("failed to prompt for location selection: %w", err)
-		}
-
-		selectedLocation := locationNames[*locationResp.Value]
-
-		// Update the azd environment with the new location
-		envResponse, err := a.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-		if err != nil {
-			return nil, "", fmt.Errorf("failed to get current azd environment: %w", err)
-		}
-
-		a.azureContext.Scope.Location = selectedLocation
-		_, err = a.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-			EnvName: envResponse.Environment.Name,
-			Key:     "AZURE_LOCATION",
-			Value:   a.azureContext.Scope.Location,
-		})
-		if err != nil {
-			return nil, "", fmt.Errorf("failed to update AZURE_LOCATION in azd environment: %w", err)
-		}
-
-		fmt.Printf("Updated AZURE_LOCATION to '%s' in your azd environment.\n", selectedLocation)
-
-		return model, selectedLocation, nil
-	}
-
-	// selectedChoice == "model"
-	// Get models available in the current location
-	var modelNames []string
-	for name, m := range a.modelCatalog {
-		if _, hasLocation := m.ModelDetailsByLocation[currentLocation]; hasLocation {
-			modelNames = append(modelNames, name)
-		}
-	}
-
-	if len(modelNames) == 0 {
-		return nil, "", fmt.Errorf("no models available in location '%s'", currentLocation)
-	}
-
-	slices.Sort(modelNames)
-
-	// Create choices for model selection
-	modelChoices := make([]*azdext.SelectChoice, len(modelNames))
-	for i, name := range modelNames {
-		modelChoices[i] = &azdext.SelectChoice{
-			Label: name,
-			Value: name,
-		}
-	}
-
-	modelResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-		Options: &azdext.SelectOptions{
-			Message: fmt.Sprintf("Select a model available in '%s'", currentLocation),
-			Choices: modelChoices,
-		},
-	})
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to prompt for model selection: %w", err)
-	}
-
-	selectedModelName := modelNames[*modelResp.Value]
-	return a.modelCatalog[selectedModelName], currentLocation, nil
-}
-
-func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.AgentManifest) (*agent_yaml.AgentManifest, []project.Deployment, error) {
-	// Convert the template to bytes
-	templateBytes, err := yaml.Marshal(manifest.Template)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to marshal agent template to YAML: %w", err)
-	}
-
-	// Convert the bytes to a dictionary
-	var templateDict map[string]interface{}
-	if err := yaml.Unmarshal(templateBytes, &templateDict); err != nil {
-		return nil, nil, fmt.Errorf("failed to unmarshal agent template from YAML: %w", err)
-	}
-
-	// Convert the dictionary to bytes
-	dictJsonBytes, err := yaml.Marshal(templateDict)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to marshal templateDict to YAML: %w", err)
-	}
-
-	// Convert the bytes to an Agent Definition
-	var agentDef agent_yaml.AgentDefinition
-	if err := yaml.Unmarshal(dictJsonBytes, &agentDef); err != nil {
-		return nil, nil, fmt.Errorf("failed to unmarshal YAML to AgentDefinition: %w", err)
-	}
-
-	deploymentDetails := []project.Deployment{}
-	paramValues := registry_api.ParameterValues{}
-	switch agentDef.Kind {
-	case agent_yaml.AgentKindPrompt:
-		agentDef := manifest.Template.(agent_yaml.PromptAgent)
-
-		modelDeployment, err := a.getModelDeploymentDetails(ctx, agentDef.Model)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get model deployment details: %w", err)
-		}
-		deploymentDetails = append(deploymentDetails, *modelDeployment)
-		paramValues["deploymentName"] = modelDeployment.Name
-	case agent_yaml.AgentKindHosted:
-		// Iterate over all models in the manifest for the container agent
-		for _, resource := range manifest.Resources {
-			// Convert the resource to bytes
-			resourceBytes, err := yaml.Marshal(resource)
-			if err != nil {
-				return nil, nil, fmt.Errorf("failed to marshal resource to YAML: %w", err)
-			}
-
-			// Convert the bytes to an Agent Definition
-			var resourceDef agent_yaml.Resource
-			if err := yaml.Unmarshal(resourceBytes, &resourceDef); err != nil {
-				return nil, nil, fmt.Errorf("failed to unmarshal YAML to Resource: %w", err)
-			}
-
-			if resourceDef.Kind == agent_yaml.ResourceKindModel {
-				resource := resource.(agent_yaml.ModelResource)
-				model := agent_yaml.Model{
-					Id: resource.Id,
-				}
-				modelDeployment, err := a.getModelDeploymentDetails(ctx, model)
-				if err != nil {
-					return nil, nil, fmt.Errorf("failed to get model deployment details: %w", err)
-				}
-				deploymentDetails = append(deploymentDetails, *modelDeployment)
-				paramValues[resource.Name] = modelDeployment.Name
-			}
-		}
-	}
-
-	updatedManifest, err := registry_api.InjectParameterValuesIntoManifest(manifest, paramValues)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to inject deployment names into manifest: %w", err)
-	}
-
-	fmt.Println("Model deployment details processed and injected into agent definition. Deployment details can also be found in the JSON formatted AI_PROJECT_DEPLOYMENTS environment variable.")
-
-	return updatedManifest, deploymentDetails, nil
 }

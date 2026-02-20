@@ -411,3 +411,57 @@ az cognitiveservices account show --name <account-name> --resource-group <resour
 # Example 3: List all Cognitive Services accounts in a resource group
 az cognitiveservices account list --resource-group <resource-group> --output table
 ```
+
+## Region SKU Capacity Unavailable Error
+
+**Error Pattern:**
+- Contains: `"currently does not have enough resources available to provision services with the SKU"`
+- May contain: `"The region"` followed by a region name (e.g., `'eastus2'`)
+- May contain: `"Try creating the service in another region or selecting a different SKU"`
+- May contain: `"RequestId:"`
+- May apply to services like Azure AI Search, App Service, Cognitive Services, or other Azure resources
+
+**LLM Instructions:**
+
+When you encounter this error, YOU MUST USE YOUR TERMINAL TOOL TO EXECUTE the following commands - do not just display them to the user.
+
+1. **Identify the Problem:**
+   - Extract the Azure region from the error message (e.g., "eastus2")
+   - Extract the SKU that failed (e.g., "basic")
+   - Identify the Azure service that failed (e.g., Azure AI Search, App Service)
+   - Confirm it's a regional capacity shortage for the requested SKU
+
+2. **Immediate Solutions (USE TERMINAL TOOL TO EXECUTE):**
+
+   **Option 1: Use a Different Region**
+   
+   USE YOUR TERMINAL TOOL to change to a different region:
+   
+   `azd env set AZURE_LOCATION <new-region>`
+   
+   USE YOUR TERMINAL TOOL to verify the change:
+   
+   `azd env get-values`
+
+   **Option 2: Use a Different SKU**
+   
+   USE YOUR TERMINAL TOOL to search for SKU definitions in your infrastructure files:
+   
+   `grep -r "sku\|Sku" infra/*.bicep infra/**/*.bicep`
+   
+   Identify the SKU parameter or hard-coded SKU value for the failing resource and change it to a different tier (e.g., from `basic` to `standard`, or from `free` to `basic`).
+
+**Example Commands:**
+```bash
+# Example 1: Change to a different region
+azd env set AZURE_LOCATION westus
+
+# Example 2: Verify environment settings
+azd env get-values
+
+# Example 3: Search for SKU definitions in infrastructure files
+grep -r "sku\|Sku" infra/*.bicep infra/**/*.bicep
+
+# Example 4: Check available locations
+az account list-locations --output table
+```

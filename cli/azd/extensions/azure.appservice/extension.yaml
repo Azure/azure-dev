@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=../extension.schema.json
+id: azure.appservice
+namespace: appservice
+displayName: Azure App Service
+description: Extension for managing Azure App Service resources.
+usage: azd appservice <command> [options]
+# NOTE: Make sure version.txt is in sync with this version.
+version: 0.1.0
+language: go
+capabilities:
+  - custom-commands
+  - metadata
+examples:
+  - name: swap
+    description: Swap deployment slots for an App Service.
+    usage: azd appservice swap --service <service-name> --src <source-slot> --dst <destination-slot>

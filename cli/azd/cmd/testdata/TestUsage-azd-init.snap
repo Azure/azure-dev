@@ -14,7 +14,7 @@ Flags
         --from-code           	: Initializes a new application from your existing code.
     -l, --location string     	: Azure location for the new environment
     -m, --minimal             	: Initializes a minimal project.
-    -s, --subscription string 	: Name or ID of an Azure subscription to use for the new environment
+    -s, --subscription string 	: ID of an Azure subscription to use for the new environment
     -t, --template string     	: Initializes a new application from a template. You can use Full URI, <owner>/<repository>, or <repository> if it's part of the azure-samples organization.
         --up                  	: Provision and deploy to Azure after initializing the project from a template.
 

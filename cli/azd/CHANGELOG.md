@@ -1,14 +1,20 @@
 # Release History
 
-## 1.24.0-beta.1 (Unreleased)
+## 1.23.6 (2026-02-20)
 
 ### Features Added
 
-### Breaking Changes
+- [[#6777]](https://github.com/Azure/azure-dev/pull/6777) Add `--subscription` and `--location` flags to `azd provision` and `azd up` commands. Thanks @spboyer for the contribution!
 
 ### Bugs Fixed
 
+- [[#6766]](https://github.com/Azure/azure-dev/pull/6766) Fix remote build 404 error when Azure Container Registry is in a different resource group than the service.
+- [[#6779]](https://github.com/Azure/azure-dev/pull/6779) Fix `azd init` to fail fast when `--environment` is missing in non-interactive mode with `--template`. Thanks @spboyer for the contribution!
+- [[#6789]](https://github.com/Azure/azure-dev/pull/6789) Fix `azd env config set` to support non-string types (booleans, numbers, arrays, objects). Thanks @spboyer for the contribution!
+
 ### Other Changes
+
+- [[#6771]](https://github.com/Azure/azure-dev/pull/6771) Improve provisioning error messages with Region SKU Capacity Unavailable error guidance and consent message clarity.
 
 ## 1.23.5 (2026-02-13)
 

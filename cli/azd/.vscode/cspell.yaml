@@ -162,6 +162,7 @@ overrides:
       - creds
       - Moby
       - upsert
+      - spboyer
   - filename: docs/proxy-configuration.md
     words:
       - Telerik

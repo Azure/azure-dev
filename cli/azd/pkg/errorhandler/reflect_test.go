@@ -138,7 +138,9 @@ func TestFindErrorByTypeName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, ok := findErrorByTypeName(tt.err, tt.typeName)
+			result, ok := findErrorByTypeName(
+				tt.err, tt.typeName, nil, NewPatternMatcher(), false,
+			)
 			assert.Equal(t, tt.found, ok)
 			if tt.found {
 				assert.NotNil(t, result)

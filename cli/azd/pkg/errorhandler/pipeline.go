@@ -60,10 +60,28 @@ func NewErrorHandlerPipeline(handlerResolver HandlerResolver) *ErrorHandlerPipel
 //  5. If handler is set → invoke named handler for dynamic suggestion
 //  6. Otherwise → return static suggestion from rule fields
 func (p *ErrorHandlerPipeline) Process(ctx context.Context, err error) *ErrorWithSuggestion {
+	return p.processRules(ctx, err, p.rules)
+}
+
+// ProcessWithRules evaluates the given rules against the error.
+// This is useful for testing with custom rule sets.
+func (p *ErrorHandlerPipeline) ProcessWithRules(
+	ctx context.Context,
+	err error,
+	rules []ErrorSuggestionRule,
+) *ErrorWithSuggestion {
+	return p.processRules(ctx, err, rules)
+}
+
+func (p *ErrorHandlerPipeline) processRules(
+	ctx context.Context,
+	err error,
+	rules []ErrorSuggestionRule,
+) *ErrorWithSuggestion {
 	errMessage := err.Error()
 
-	for i := range p.rules {
-		rule := &p.rules[i]
+	for i := range rules {
+		rule := &rules[i]
 		suggestion := p.evaluateRule(ctx, err, errMessage, rule)
 		if suggestion != nil {
 			return suggestion
@@ -82,19 +100,14 @@ func (p *ErrorHandlerPipeline) evaluateRule(
 	// Track whether any condition is specified
 	hasCondition := false
 
-	// 1. Check errorType via reflection
+	// 1. Check errorType via reflection (and properties together)
 	if rule.ErrorType != "" {
 		hasCondition = true
-		matched, ok := findErrorByTypeName(err, rule.ErrorType)
+		_, ok := findErrorByTypeName(
+			err, rule.ErrorType, rule.Properties, p.matcher, rule.Regex,
+		)
 		if !ok {
 			return nil
-		}
-
-		// 2. Check properties on the matched error
-		if len(rule.Properties) > 0 {
-			if !matchProperties(matched, rule.Properties, p.matcher, rule.Regex) {
-				return nil
-			}
 		}
 	} else if len(rule.Properties) > 0 {
 		// Properties without errorType is invalid — skip

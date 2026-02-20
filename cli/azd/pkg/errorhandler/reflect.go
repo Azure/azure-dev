@@ -12,7 +12,16 @@ import (
 // findErrorByTypeName walks the error chain and returns the first error
 // whose struct type name matches the given name. Uses errors.As-like
 // unwrapping semantics to traverse the error chain.
-func findErrorByTypeName(err error, typeName string) (any, bool) {
+// findErrorByTypeName walks the error chain (including multi-unwrap trees)
+// and returns the first error whose struct type name matches the given name
+// AND whose properties match (if any are specified).
+func findErrorByTypeName(
+	err error,
+	typeName string,
+	properties map[string]string,
+	matcher *PatternMatcher,
+	useRegex bool,
+) (any, bool) {
 	// Use a stack for depth-first traversal to support multi-unwrap error trees
 	stack := []error{err}
 
@@ -29,7 +38,11 @@ func findErrorByTypeName(err error, typeName string) (any, bool) {
 			t = t.Elem()
 		}
 		if t.Name() == typeName {
-			return current, true
+			// Type matches — check properties if specified
+			if len(properties) == 0 || matchProperties(current, properties, matcher, useRegex) {
+				return current, true
+			}
+			// Type matched but properties didn't — keep searching
 		}
 
 		// Multi-unwrap (Go 1.20+): Unwrap() []error

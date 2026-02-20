@@ -662,6 +662,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		}
 		return errorhandler.NewErrorHandlerPipeline(resolver)
 	})
+	container.MustRegisterNamedSingleton("skuNotAvailableHandler",
+		errorhandler.NewSkuNotAvailableHandler,
+	)
 
 	container.MustRegisterScoped(project.NewContainerHelper)
 	container.MustRegisterScoped(func(serviceLocator ioc.ServiceLocator) *lazy.Lazy[*project.ContainerHelper] {

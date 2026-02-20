@@ -124,9 +124,7 @@ rules:
   - errorType: "DeploymentErrorLine"
     properties:
       Code: "SkuNotAvailable"
-    message: "The requested VM size or SKU is not available in this region."
-    suggestion: "Try a different region with 'azd env set AZURE_LOCATION <region>'."
-    docUrl: "https://learn.microsoft.com/azure/azure-resource-manager/troubleshooting/error-sku-not-available"
+    handler: "skuNotAvailableHandler"
 
   - errorType: "DeploymentErrorLine"
     properties:

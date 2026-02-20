@@ -189,7 +189,7 @@ patterns:
 | `(?i)` | Case-insensitive |
 | `.*` | Match any characters |
 | `\\d+` | One or more digits |
-| `(foo\|bar)` | Match "foo" or "bar" |
+| `(foo|bar)` | Match "foo" or "bar" |
 
 **Note:** In YAML, backslashes must be escaped as `\\`.
 

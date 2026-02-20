@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
@@ -232,6 +233,18 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		fmt.Sprintf("AZD_ACCESS_TOKEN=%s", jwtToken),
 	)
 
+	// Create a temp file for the extension to write structured error info into.
+	// The path is passed via AZD_ERROR_FILE; the extension calls azdext.ReportError
+	// (automatically via azdext.Run) which serializes a LocalError/ServiceError as
+	// protojson into this file on failure.
+	errorFileEnv, cleanupErrorFile, err := createExtensionErrorFileEnv()
+	if err != nil {
+		log.Printf("failed to create extension error file: %v", err)
+	} else {
+		defer cleanupErrorFile()
+		allEnv = append(allEnv, errorFileEnv)
+	}
+
 	// Propagate trace context to the extension process
 	if traceEnv := tracing.Environ(ctx); len(traceEnv) > 0 {
 		allEnv = append(allEnv, traceEnv...)
@@ -249,10 +262,63 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	// Update warning is shown via defer above (runs after invoke completes)
 
 	if invokeErr != nil {
+		// Read the structured error the extension wrote to the error file.
+		// This gives us a typed LocalError/ServiceError for telemetry classification
+		// instead of just a generic exit-code error.
+		reportedErr, readErr := readReportedExtensionErrorFromEnv(allEnv)
+		if readErr != nil {
+			log.Printf("failed to read reported extension error: %v", readErr)
+		} else if reportedErr != nil {
+			// Wrap both errors so the chain contains both:
+			// - reportedErr (LocalError/ServiceError) for telemetry classification
+			// - invokeErr (ExtensionRunError) for UxMiddleware suppression
+			return nil, fmt.Errorf("%w: %w", reportedErr, invokeErr)
+		}
+
 		return nil, invokeErr
 	}
 
 	return nil, nil
+}
+
+// createExtensionErrorFileEnv creates a temp file for extension error reporting and returns
+// the formatted env var (AZD_ERROR_FILE=<path>) to pass to the extension process.
+func createExtensionErrorFileEnv() (envVar string, cleanup func(), err error) {
+	errorFile, err := os.CreateTemp("", "azd-ext-error-*.json")
+	if err != nil {
+		return "", func() {}, err
+	}
+
+	errorFilePath := errorFile.Name()
+	if closeErr := errorFile.Close(); closeErr != nil {
+		return "", func() {}, closeErr
+	}
+
+	cleanup = func() {
+		if removeErr := os.Remove(errorFilePath); removeErr != nil && !os.IsNotExist(removeErr) {
+			log.Printf("failed to remove extension error file: %v", removeErr)
+		}
+	}
+
+	return fmt.Sprintf("%s=%s", azdext.ExtensionErrorFileEnv, errorFilePath), cleanup, nil
+}
+
+// readReportedExtensionErrorFromEnv extracts the error file path from the env slice
+// and reads the structured error written by the extension (if any).
+func readReportedExtensionErrorFromEnv(env []string) (error, error) {
+	errorFilePath := ""
+	for _, envVar := range env {
+		if after, ok := strings.CutPrefix(envVar, azdext.ExtensionErrorFileEnv+"="); ok {
+			errorFilePath = after
+			break
+		}
+	}
+
+	if errorFilePath == "" {
+		return nil, nil
+	}
+
+	return azdext.ReadErrorFile(errorFilePath)
 }
 
 // updateCheckOutcome holds the result of an async update check

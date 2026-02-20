@@ -1115,6 +1115,7 @@ When `azd` invokes an extension command, the following steps occur:
 2. `azd` invokes your command, passing all arguments and flags:
     - An environment variable named `AZD_SERVER` is set with the server address and random port (e.g., `localhost:12345`).
     - An `azd` access token environment variable `AZD_ACCESS_TOKEN` is set which is a JWT token signed with a randomly generated key good for the lifetime of the command. The token includes claims that identify each unique extensions and its supported capabilities.
+    - An environment variable named `AZD_ERROR_FILE` is set with a temporary file path that extensions can use to report a structured error on command failure.
     - Additional environment variables from the current `azd` environment are also set.
 3. The extension command can communicate with `azd` through [extension framework gRPC services](#grpc-services).
 4. `azd` waits for the extension command to complete:
@@ -1123,6 +1124,56 @@ When `azd` invokes an extension command, the following steps occur:
 To enable interaction with `azd` from within the extension, the extension must leverage a gRPC client and connect to the server using the address specified in the `AZD_SERVER` environment variable.
 
 The gRPC client must also include an `authorization` parameter with the value from `AZD_ACCESS_TOKEN`; otherwise, requests will fail due to invalid authorization. Extensions must declare their supported capabilities within the extension registry otherwise certain service operations may fail with a permission denied error.
+
+### Structured Error Reporting (Custom Commands)
+
+For custom command execution, extensions can provide richer telemetry by reporting a structured error payload to
+`AZD_ERROR_FILE` before exiting with a non-zero status code.
+
+For Go extensions, use `azdext.ReportError` from your command entry point:
+
+```go
+func main() {
+  ctx := azdext.NewContext()
+  rootCmd := cmd.NewRootCommand()
+
+  if err := rootCmd.ExecuteContext(ctx); err != nil {
+    _ = azdext.ReportError(err)
+    os.Exit(1)
+  }
+}
+```
+
+Use typed extension errors to control telemetry mapping:
+
+```go
+return &azdext.LocalError{
+  Message:  "invalid configuration: missing required field 'name'",
+  Code:     "invalid_config",
+  Category: "validation",
+}
+```
+
+```go
+return &azdext.ServiceError{
+  Message:     "request failed",
+  ErrorCode:   "TooManyRequests",
+  StatusCode:  429,
+  ServiceName: "openai.azure.com",
+}
+```
+
+Current telemetry result code conventions:
+
+- Service errors: `ext.service.<service>.<statusCode>`
+- Local domain categories:
+  - `validation` -> `ext.validation.<code>`
+  - `auth` -> `ext.auth.<code>`
+  - `dependency` -> `ext.dependency.<code>`
+  - `compatibility` -> `ext.compatibility.<code>`
+  - `user` -> `ext.user.<code>`
+  - `internal` -> `ext.internal.<code>`
+- Unknown local categories fall back to `ext.local.<code>`.
 
 #### Go
 

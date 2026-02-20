@@ -9,12 +9,16 @@
 ### Bugs Fixed
 
 - [[#6766]](https://github.com/Azure/azure-dev/pull/6766) Fix remote build 404 error when Azure Container Registry is in a different resource group than the service.
+- [[#6770]](https://github.com/Azure/azure-dev/pull/6770) Fix subscription cache overwrite issue to preserve tenant-to-subscription mappings when tenants are temporarily inaccessible.
 - [[#6779]](https://github.com/Azure/azure-dev/pull/6779) Fix `azd init` to fail fast when `--environment` is missing in non-interactive mode with `--template`. Thanks @spboyer for the contribution!
 - [[#6789]](https://github.com/Azure/azure-dev/pull/6789) Fix `azd env config set` to support non-string types (booleans, numbers, arrays, objects). Thanks @spboyer for the contribution!
 
 ### Other Changes
 
 - [[#6771]](https://github.com/Azure/azure-dev/pull/6771) Improve provisioning error messages with Region SKU Capacity Unavailable error guidance and consent message clarity.
+- [[#6803]](https://github.com/Azure/azure-dev/pull/6803) Improve error classification for context cancellation, timeouts, and network errors. Thanks @spboyer for the contribution!
+- [[#6808]](https://github.com/Azure/azure-dev/pull/6808) Improve delegated auth experience with mode-aware authentication messaging and guidance. Thanks @scottaddie for the contribution!
+- [[#6810]](https://github.com/Azure/azure-dev/pull/6810) Add soft-delete conflict detection hints for deployment errors with guidance to run `azd down --purge`. Thanks @spboyer for the contribution!
 
 ## 1.23.5 (2026-02-13)
 

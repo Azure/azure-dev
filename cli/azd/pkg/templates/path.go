@@ -57,6 +57,8 @@ func Absolute(path string) (string, error) {
 			}
 			return absPath, nil
 		}
+		// Path exists but is not a directory.
+		return "", fmt.Errorf("local template path '%s' exists but is not a directory", path)
 	}
 
 	// If the path looks like an explicit local path reference (".", "..", starts with ./, ../, .\, ..\,

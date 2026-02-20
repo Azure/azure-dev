@@ -11,10 +11,14 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
+// authModeAzCli is the display string for Azure CLI delegated auth mode.
+// This must match the value of auth.AzDelegated.
+const authModeAzCli = "az cli"
+
 // AuthStatusView renders a contracts.StatusResult for console output.
 type AuthStatusView struct {
 	Result *contracts.StatusResult
-	// AuthMode indicates the current authentication mode (e.g. "az cli").
+	// AuthMode indicates the current authentication mode.
 	// When set to a non-built-in mode, the unauthenticated message adjusts guidance accordingly.
 	AuthMode string
 }
@@ -22,7 +26,7 @@ type AuthStatusView struct {
 func (v *AuthStatusView) ToString(currentIndentation string) string {
 	if v.Result.Status == contracts.AuthStatusUnauthenticated {
 		loginCmd := "azd auth login"
-		if v.AuthMode == "az cli" {
+		if v.AuthMode == authModeAzCli {
 			loginCmd = "az login"
 		}
 		return fmt.Sprintf("%sNot logged in, run `%s` to login to Azure", currentIndentation, loginCmd)

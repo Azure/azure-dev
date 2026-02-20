@@ -1366,7 +1366,13 @@ func (m *Manager) LogInDetails(ctx context.Context) (*LogInDetails, error) {
 		logInType := EmailLoginType
 		azAccount, err := m.azCli.Account(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("fetching az cli account: %w: %w", err, ErrNoCurrentUser)
+			// Only treat as "not logged in" when the error specifically indicates
+			// an unauthenticated state. Other failures (CLI execution errors,
+			// JSON parse failures) should not be misclassified.
+			if strings.Contains(err.Error(), "not authenticated") {
+				return nil, fmt.Errorf("fetching az cli account: %w: %w", err, ErrNoCurrentUser)
+			}
+			return nil, fmt.Errorf("fetching az cli account: %w", err)
 		}
 		if azAccount.User.Type != "user" {
 			logInType = ClientIdLoginType

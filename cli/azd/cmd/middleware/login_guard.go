@@ -74,6 +74,7 @@ func (l *LoginGuardMiddleware) ensureLogin(ctx context.Context) (azcore.TokenCre
 
 		if mode, err := l.authManager.Mode(); err == nil && mode == auth.AzDelegated {
 			l.console.Message(ctx, "Run 'az login' to login to Azure when using this mode.")
+			return nil, credentialErr
 		}
 
 		// Prompt the user to log in

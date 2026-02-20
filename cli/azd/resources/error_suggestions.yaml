@@ -203,6 +203,8 @@ rules:
   # ============================================================================
 
   - errorType: "ExitError"
+    properties:
+      Cmd: "regex:(?i)pwsh|powershell"
     patterns:
       - "Import-Module"
       - "not loaded"
@@ -210,6 +212,8 @@ rules:
     suggestion: "Install the missing module with 'Install-Module <ModuleName> -Scope CurrentUser'."
 
   - errorType: "ExitError"
+    properties:
+      Cmd: "regex:(?i)pwsh|powershell"
     patterns:
       - "'Az."
       - "is not recognized"
@@ -218,6 +222,8 @@ rules:
     docUrl: "https://learn.microsoft.com/powershell/azure/install-azure-powershell"
 
   - errorType: "ExitError"
+    properties:
+      Cmd: "regex:(?i)pwsh|powershell"
     patterns:
       - "UnauthorizedAccess"
     message: "PowerShell execution policy is blocking the script."
@@ -226,6 +232,8 @@ rules:
       'Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser'.
 
   - errorType: "ExitError"
+    properties:
+      Cmd: "regex:(?i)pwsh|powershell"
     patterns:
       - "ErrorActionPreference"
     message: "The hook script has an issue with error handling configuration."

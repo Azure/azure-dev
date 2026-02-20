@@ -227,7 +227,60 @@ func TestMatchProperties(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := matchProperties(tt.target, tt.properties)
+			result := matchProperties(tt.target, tt.properties, NewPatternMatcher())
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestMatchProperties_Regex(t *testing.T) {
+	err := &testDeploymentError{
+		Title: "/usr/local/bin/pwsh",
+		Details: &testErrorDetails{
+			Code:    "InsufficientQuota",
+			Message: "Not enough quota in eastus region",
+		},
+	}
+	matcher := NewPatternMatcher()
+
+	tests := []struct {
+		name       string
+		properties map[string]string
+		expected   bool
+	}{
+		{
+			name:       "regex match on field",
+			properties: map[string]string{"Title": "regex:(?i)pwsh|powershell"},
+			expected:   true,
+		},
+		{
+			name:       "regex no match",
+			properties: map[string]string{"Title": "regex:(?i)node|python"},
+			expected:   false,
+		},
+		{
+			name:       "substring match (case insensitive)",
+			properties: map[string]string{"Details.Code": "insufficientquota"},
+			expected:   true,
+		},
+		{
+			name:       "regex on nested field",
+			properties: map[string]string{"Details.Message": "regex:(?i)quota.*region"},
+			expected:   true,
+		},
+		{
+			name: "mixed regex and substring",
+			properties: map[string]string{
+				"Title":        "regex:(?i)pwsh",
+				"Details.Code": "InsufficientQuota",
+			},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := matchProperties(err, tt.properties, matcher)
 			assert.Equal(t, tt.expected, result)
 		})
 	}

@@ -29,9 +29,9 @@
 #     suggestion: "Clear instruction on how to fix."
 #
 #   # Typed error matching with properties:
-#   - errorType: "AzureDeploymentError"
+#   - errorType: "DeploymentErrorLine"
 #     properties:
-#       Details.Code: "InsufficientQuota"
+#       Code: "InsufficientQuota"
 #     message: "Quota limit reached."
 #     suggestion: "Request a quota increase."
 
@@ -41,9 +41,9 @@ rules:
   # 4th most common error category (~128,054 errors in 90-day analysis)
   # ============================================================================
 
-  - errorType: "AzureDeploymentError"
+  - errorType: "DeploymentErrorLine"
     properties:
-      Details.Code: "FlagMustBeSetForRestore"
+      Code: "FlagMustBeSetForRestore"
     message: "A soft-deleted resource with this name exists and is blocking deployment."
     suggestion: >
       Purge the resource in the Azure portal or via the Azure CLI,
@@ -51,19 +51,19 @@ rules:
       running 'azd down --purge' will delete and purge them.
     docUrl: "https://learn.microsoft.com/azure/key-vault/general/key-vault-recovery"
 
-  - errorType: "AzureDeploymentError"
+  - errorType: "DeploymentErrorLine"
     properties:
-      Details.Code: "ConflictError"
+      Code: "ConflictError"
     message: "A resource conflict occurred, possibly caused by a soft-deleted resource."
     suggestion: >
       Purge the resource in the Azure portal or via the Azure CLI,
       then retry with 'azd up'. If the resources are still provisioned,
       running 'azd down --purge' will delete and purge them.
 
-  - errorType: "AzureDeploymentError"
+  - errorType: "DeploymentErrorLine"
     regex: true
     properties:
-      Details.Code: "Conflict"
+      Code: "Conflict"
     patterns:
       - "(?i)soft.?delete"
       - "(?i)purge"
@@ -77,10 +77,10 @@ rules:
       provisioned, running 'azd down --purge' will delete and purge them.
     docUrl: "https://learn.microsoft.com/azure/key-vault/general/key-vault-recovery"
 
-  - errorType: "AzureDeploymentError"
+  - errorType: "DeploymentErrorLine"
     regex: true
     properties:
-      Details.Code: "RequestConflict"
+      Code: "RequestConflict"
     patterns:
       - "(?i)soft.?delete"
       - "(?i)purge"
@@ -98,18 +98,18 @@ rules:
   # ARM errors account for ~45% of all azd errors (~57,956)
   # ============================================================================
 
-  - errorType: "AzureDeploymentError"
+  - errorType: "DeploymentErrorLine"
     properties:
-      Details.Code: "InsufficientQuota"
+      Code: "InsufficientQuota"
     message: "Your subscription has insufficient quota for this resource."
     suggestion: >
       Check current usage with 'az vm list-usage --location <region>'
       or request a quota increase in the Azure portal.
     docUrl: "https://learn.microsoft.com/azure/quotas/quickstart-increase-quota-portal"
 
-  - errorType: "AzureDeploymentError"
+  - errorType: "DeploymentErrorLine"
     properties:
-      Details.Code: "SubscriptionIsOverQuotaForSku"
+      Code: "SubscriptionIsOverQuotaForSku"
     message: "Your subscription quota for this SKU is exceeded."
     suggestion: "Request a quota increase or use a different SKU."
     docUrl: "https://learn.microsoft.com/azure/quotas/quickstart-increase-quota-portal"
@@ -118,16 +118,16 @@ rules:
   # ARM Deployment Errors — Region and SKU availability
   # ============================================================================
 
-  - errorType: "AzureDeploymentError"
+  - errorType: "DeploymentErrorLine"
     properties:
-      Details.Code: "SkuNotAvailable"
+      Code: "SkuNotAvailable"
     message: "The requested VM size or SKU is not available in this region."
     suggestion: "Try a different region with 'azd env set AZURE_LOCATION <region>'."
     docUrl: "https://learn.microsoft.com/azure/azure-resource-manager/troubleshooting/error-sku-not-available"
 
-  - errorType: "AzureDeploymentError"
+  - errorType: "DeploymentErrorLine"
     properties:
-      Details.Code: "LocationIsOfferRestricted"
+      Code: "LocationIsOfferRestricted"
     message: "This resource type is restricted in the selected region."
     suggestion: "Try a different region with 'azd env set AZURE_LOCATION <region>'."
 
@@ -135,9 +135,9 @@ rules:
   # ARM Deployment Errors — Authorization
   # ============================================================================
 
-  - errorType: "AzureDeploymentError"
+  - errorType: "DeploymentErrorLine"
     properties:
-      Details.Code: "AuthorizationFailed"
+      Code: "AuthorizationFailed"
     message: "You do not have sufficient permissions for this deployment."
     suggestion: >
       Ensure you have the required RBAC role (e.g., Owner or Contributor)
@@ -148,15 +148,15 @@ rules:
   # ARM Deployment Errors — Template and validation
   # ============================================================================
 
-  - errorType: "AzureDeploymentError"
+  - errorType: "DeploymentErrorLine"
     properties:
-      Details.Code: "InvalidTemplate"
+      Code: "InvalidTemplate"
     message: "The deployment template contains errors."
     suggestion: "Run 'azd provision --preview' to validate before deploying."
 
-  - errorType: "AzureDeploymentError"
+  - errorType: "DeploymentErrorLine"
     properties:
-      Details.Code: "ValidationError"
+      Code: "ValidationError"
     message: "The deployment failed validation."
     suggestion: >
       Check resource property values and API versions
@@ -166,15 +166,15 @@ rules:
   # ARM Deployment Errors — Resource conflicts
   # ============================================================================
 
-  - errorType: "AzureDeploymentError"
+  - errorType: "DeploymentErrorLine"
     properties:
-      Details.Code: "Conflict"
+      Code: "Conflict"
     message: "A resource with this name already exists or is in a conflicting state."
     suggestion: "Check for existing or soft-deleted resources in the Azure portal."
 
-  - errorType: "AzureDeploymentError"
+  - errorType: "DeploymentErrorLine"
     properties:
-      Details.Code: "ResourceNotFound"
+      Code: "ResourceNotFound"
     message: "A referenced resource was not found."
     suggestion: >
       Check resource dependencies and deployment ordering

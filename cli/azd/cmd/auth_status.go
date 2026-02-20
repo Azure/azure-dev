@@ -124,7 +124,7 @@ func (a *authStatusAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		if !a.flags.global.NoPrompt && !resource.IsRunningOnCI() {
 			a.console.Message(ctx, "")
 			response, err := a.console.Confirm(ctx, input.ConsoleOptions{
-				Message:      "Authenticate using azd (recommended)",
+				Message:      "Authenticate using azd (recommended)?",
 				DefaultValue: false,
 			})
 			if err != nil {

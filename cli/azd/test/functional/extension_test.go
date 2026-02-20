@@ -110,7 +110,7 @@ func Test_CLI_Extension_ForceInstall(t *testing.T) {
 
 	// Delete the extension files but keep the metadata
 	t.Log("Deleting extension files to simulate corruption")
-	err = os.RemoveAll(extPath)
+	err = removeAllWithDiagnostics(t, extPath)
 	require.NoError(t, err)
 
 	// Try to install without --force (should skip)

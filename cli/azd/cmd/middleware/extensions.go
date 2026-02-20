@@ -20,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/fatih/color"
 )
 
@@ -152,7 +153,7 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 				}
 
 				if _, err := m.extensionRunner.Invoke(ctx, ext, options); err != nil {
-					m.console.Message(ctx, err.Error())
+					log.Printf("extension '%s' invocation failed: %v", ext.Id, err)
 					ext.Fail(err)
 				}
 			}()
@@ -185,6 +186,12 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 	// Check for failed extensions and display warnings
 
 	if len(failedExtensions) > 0 {
+		// Check for available updates for failed extensions (best-effort, non-blocking)
+		updateWarnings := m.checkUpdatesForExtensions(ctx, failedExtensions)
+		for _, w := range updateWarnings {
+			m.console.MessageUxItem(ctx, w)
+		}
+
 		m.console.Message(ctx, output.WithWarningFormat("WARNING: Extension startup failures detected"))
 		m.console.Message(ctx, "The following extensions failed to initialize within the timeout period:")
 		for _, ext := range failedExtensions {
@@ -203,6 +210,60 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 	log.Printf("All %d extensions completed startup in %v\n", len(extensionList), totalElapsed)
 
 	return next(ctx)
+}
+
+// checkUpdatesForExtensions checks if newer versions are available for the given extensions.
+// It refreshes the registry cache if expired, then returns update warnings for any extensions
+// that have a newer version available.
+func (m *ExtensionsMiddleware) checkUpdatesForExtensions(
+	ctx context.Context,
+	failedExts []*extensions.Extension,
+) []*ux.WarningMessage {
+	cacheManager, err := extensions.NewRegistryCacheManager()
+	if err != nil {
+		log.Printf("failed to create cache manager for update check: %v", err)
+		return nil
+	}
+
+	// Refresh the cache for each unique source (sequentially to avoid concurrent file writes)
+	seenSources := map[string]struct{}{}
+	for _, ext := range failedExts {
+		if ext.Source == "" {
+			continue
+		}
+		if _, seen := seenSources[ext.Source]; seen {
+			continue
+		}
+		seenSources[ext.Source] = struct{}{}
+		if cacheManager.IsExpiredOrMissing(ctx, ext.Source) {
+			sourceExts, err := m.extensionManager.FindExtensions(ctx, &extensions.FilterOptions{
+				Source: ext.Source,
+			})
+			if err != nil {
+				log.Printf("failed to fetch extensions for source %s: %v", ext.Source, err)
+				continue
+			}
+			if err := cacheManager.Set(ctx, ext.Source, sourceExts); err != nil {
+				log.Printf("failed to cache extensions for source %s: %v", ext.Source, err)
+			}
+		}
+	}
+
+	checker := extensions.NewUpdateChecker(cacheManager)
+
+	var warnings []*ux.WarningMessage
+	for _, ext := range failedExts {
+		result, err := checker.CheckForUpdate(ctx, ext)
+		if err != nil {
+			log.Printf("failed to check for update for %s: %v", ext.Id, err)
+			continue
+		}
+		if result.HasUpdate {
+			warnings = append(warnings, extensions.FormatUpdateWarning(result))
+		}
+	}
+
+	return warnings
 }
 
 // isDebug checks if AZD_EXT_DEBUG environment variable is set to a truthy value

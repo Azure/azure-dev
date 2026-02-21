@@ -141,20 +141,6 @@ func (a *InitAction) selectFromList(
 	return options[*resp.Value], nil
 }
 
-func (a *InitAction) setEnvVar(ctx context.Context, key, value string) error {
-	_, err := a.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-		EnvName: a.environment.Name,
-		Key:     key,
-		Value:   value,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to set environment variable %s=%s: %w", key, value, err)
-	}
-
-	fmt.Printf("Set environment variable: %s=%s\n", key, value)
-	return nil
-}
-
 func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_yaml.Model) (*project.Deployment, error) {
 	resp, err := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: a.environment.Name,

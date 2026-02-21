@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -97,23 +96,12 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		return actionResult, err
 	}
 
-	// Skip certain errors, no need for AI
-	skipAnalyzingErrors := []string{
-		"environment already initialized",
-		"interrupt",
-		"no project exists",
-		"tool execution denied",
-	}
-	for _, s := range skipAnalyzingErrors {
-		if strings.Contains(err.Error(), s) {
-			return actionResult, err
-		}
-	}
-
-	// Show soft-delete guidance when detected
-	if guidance := softDeleteHint(err); guidance != "" {
-		e.console.Message(ctx,
-			output.WithWarningFormat("Hint: %s", guidance))
+	// Short-circuit agentic error handling in non-interactive scenarios:
+	// - LLM feature is disabled
+	// - User specified --no-prompt (non-interactive mode)
+	// - Running in CI/CD environment where user interaction is not possible
+	if !e.featuresManager.IsEnabled(llm.FeatureLlm) || e.global.NoPrompt || resource.IsRunningOnCI() {
+		return actionResult, err
 	}
 
 	// Warn user that this is an alpha feature

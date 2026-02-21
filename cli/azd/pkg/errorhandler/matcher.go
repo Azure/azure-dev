@@ -6,11 +6,13 @@ package errorhandler
 import (
 	"regexp"
 	"strings"
+	"sync"
 )
 
 // PatternMatcher handles matching error messages against patterns.
 type PatternMatcher struct {
 	// compiledPatterns caches compiled regex patterns for performance
+	mu               sync.RWMutex
 	compiledPatterns map[string]*regexp.Regexp
 }
 
@@ -54,7 +56,10 @@ func (m *PatternMatcher) MatchSingle(value string, pattern string, useRegex bool
 
 // matchRegex compiles (with caching) and matches a regex pattern against the text.
 func (m *PatternMatcher) matchRegex(text, pattern string) bool {
+	m.mu.RLock()
 	re, ok := m.compiledPatterns[pattern]
+	m.mu.RUnlock()
+
 	if !ok {
 		var err error
 		re, err = regexp.Compile(pattern)
@@ -62,7 +67,9 @@ func (m *PatternMatcher) matchRegex(text, pattern string) bool {
 			// Invalid regex pattern - skip
 			return false
 		}
+		m.mu.Lock()
 		m.compiledPatterns[pattern] = re
+		m.mu.Unlock()
 	}
 
 	return re.MatchString(text)

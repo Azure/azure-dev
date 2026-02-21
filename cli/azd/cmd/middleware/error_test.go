@@ -82,7 +82,7 @@ func Test_ErrorMiddleware_LLMAlphaFeatureDisabled(t *testing.T) {
 
 	result, err := middleware.Run(*mockContext.Context, nextFn)
 
-	// Should return error without AI intervention in no-prompt mode
+	// Should return error without AI intervention when LLM alpha feature is not enabled
 	require.Error(t, err)
 	require.Nil(t, result)
 	require.Equal(t, testError, err)

@@ -1062,6 +1062,49 @@ const completionSpec: Fig.Spec = {
 			],
 		},
 		{
+			name: ['appservice'],
+			description: 'Extension for managing Azure App Service resources.',
+			subcommands: [
+				{
+					name: ['swap'],
+					description: 'Swap deployment slots for an App Service.',
+					options: [
+						{
+							name: ['--dst'],
+							description: 'The destination slot name. Use @main for production.',
+							args: [
+								{
+									name: 'dst',
+								},
+							],
+						},
+						{
+							name: ['--service'],
+							description: 'The name of the service to swap slots for.',
+							args: [
+								{
+									name: 'service',
+								},
+							],
+						},
+						{
+							name: ['--src'],
+							description: 'The source slot name. Use @main for production.',
+							args: [
+								{
+									name: 'src',
+								},
+							],
+						},
+					],
+				},
+				{
+					name: ['version'],
+					description: 'Display the version of the extension.',
+				},
+			],
+		},
+		{
 			name: ['auth'],
 			description: 'Authenticate with Azure.',
 			subcommands: [
@@ -2964,6 +3007,20 @@ const completionSpec: Fig.Spec = {
 									description: 'Prints the version of the application',
 								},
 							],
+						},
+					],
+				},
+				{
+					name: ['appservice'],
+					description: 'Extension for managing Azure App Service resources.',
+					subcommands: [
+						{
+							name: ['swap'],
+							description: 'Swap deployment slots for an App Service.',
+						},
+						{
+							name: ['version'],
+							description: 'Display the version of the extension.',
 						},
 					],
 				},

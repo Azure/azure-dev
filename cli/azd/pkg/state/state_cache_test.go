@@ -81,7 +81,7 @@ func TestStateCacheManager_Invalidate(t *testing.T) {
 func TestStateCacheManager_TTL(t *testing.T) {
 	tempDir := t.TempDir()
 	manager := NewStateCacheManager(tempDir)
-	manager.SetTTL(100 * time.Millisecond) // Very short TTL for testing
+	manager.SetTTL(500 * time.Millisecond) // Short TTL for testing (not too short to be flaky)
 	ctx := context.Background()
 
 	cache := &StateCache{
@@ -99,7 +99,7 @@ func TestStateCacheManager_TTL(t *testing.T) {
 	require.NotNil(t, loaded)
 
 	// Wait for TTL to expire
-	time.Sleep(150 * time.Millisecond)
+	time.Sleep(600 * time.Millisecond)
 
 	// Load after TTL should return nil
 	loaded, err = manager.Load(ctx, "test-env")

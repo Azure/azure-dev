@@ -1,0 +1,90 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Error Suggestions Configuration",
+  "description": "Maps well-known error patterns to user-friendly messages, actionable suggestions, and reference links. Rules are evaluated in order; the first matching rule wins.",
+  "type": "object",
+  "required": ["rules"],
+  "additionalProperties": false,
+  "properties": {
+    "rules": {
+      "type": "array",
+      "description": "Ordered list of error suggestion rules. The first matching rule wins.",
+      "items": {
+        "$ref": "#/definitions/rule"
+      }
+    }
+  },
+  "definitions": {
+    "rule": {
+      "type": "object",
+      "description": "A single error suggestion rule. At least one matching field (patterns, errorType) is required.",
+      "additionalProperties": false,
+      "properties": {
+        "patterns": {
+          "type": "array",
+          "description": "List of strings to match against error message text (OR logic — any pattern can match). By default, patterns are matched as case-insensitive substrings. Set 'regex: true' to treat them as regular expressions.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "errorType": {
+          "type": "string",
+          "description": "Go error struct type name to match via reflection. The error chain is walked using Unwrap() semantics to find a matching type. Examples: 'DeploymentErrorLine', 'ResponseError', 'ExitError'."
+        },
+        "properties": {
+          "type": "object",
+          "description": "Map of dot-path property names to expected values (AND logic — all must match). Properties are resolved via reflection on the matched error type. Requires 'errorType' to be set. By default, values are matched as case-insensitive substrings. Set 'regex: true' to treat values as regular expressions.",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "regex": {
+          "type": "boolean",
+          "description": "When true, all patterns and property values in this rule are treated as regular expressions instead of case-insensitive substrings.",
+          "default": false
+        },
+        "handler": {
+          "type": "string",
+          "description": "Name of a registered ErrorHandler in the IoC container. When set, the handler computes the suggestion dynamically and receives the matching rule (including links). The static message/suggestion fields are ignored when a handler is specified."
+        },
+        "message": {
+          "type": "string",
+          "description": "User-friendly explanation of what went wrong. Displayed as the ERROR line in the output. Ignored when 'handler' is set."
+        },
+        "suggestion": {
+          "type": "string",
+          "description": "Actionable next steps for the user to resolve the issue. Displayed after the error message. Ignored when 'handler' is set."
+        },
+        "links": {
+          "type": "array",
+          "description": "List of reference links displayed as a bulleted list. When a handler is set, links are passed to the handler via the matching rule.",
+          "items": {
+            "$ref": "#/definitions/link"
+          }
+        }
+      },
+      "anyOf": [
+        { "required": ["patterns"] },
+        { "required": ["errorType"] }
+      ]
+    },
+    "link": {
+      "type": "object",
+      "description": "A reference link with a URL and optional display title.",
+      "required": ["url"],
+      "additionalProperties": false,
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "The link target URL (required).",
+          "format": "uri"
+        },
+        "title": {
+          "type": "string",
+          "description": "Display text for the link (optional). When provided, the link is rendered as a clickable hyperlink in the terminal. When omitted, the raw URL is shown."
+        }
+      }
+    }
+  }
+}

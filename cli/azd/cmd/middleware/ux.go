@@ -46,33 +46,43 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 	if err != nil {
 		var suggestionErr *internal.ErrorWithSuggestion
 		var errorWithTraceId *internal.ErrorWithTraceId
-		errorMessage := &strings.Builder{}
-		// WriteString never returns an error
-		errorMessage.WriteString(output.WithErrorFormat("\nERROR: %s", err.Error()))
-
-		if errors.As(err, &errorWithTraceId) {
-			errorMessage.WriteString(output.WithErrorFormat("\nTraceID: %s", errorWithTraceId.TraceId))
-		}
-
-		if errors.As(err, &suggestionErr) {
-			errorMessage.WriteString("\n" + suggestionErr.Suggestion)
-		}
-
-		errMessage := errorMessage.String()
 
 		// For specific errors, we silent the output display here and let the caller handle it
 		var unsupportedErr *project.UnsupportedServiceHostError
 		var extensionRunErr *extensions.ExtensionRunError
 		if errors.As(err, &extensionRunErr) {
 			return actionResult, err
-		} else if errors.As(err, &unsupportedErr) {
+		}
+
+		// Use ErrorWithSuggestion for errors with suggestions (better UX)
+		if errors.As(err, &suggestionErr) {
+			displayErr := &ux.ErrorWithSuggestion{
+				Err:        suggestionErr.Err,
+				Message:    suggestionErr.Message,
+				Suggestion: suggestionErr.Suggestion,
+				Links:      suggestionErr.Links,
+			}
+			m.console.MessageUxItem(ctx, displayErr)
+			return actionResult, err
+		}
+
+		// Build error message for errors without suggestions
+		errorMessage := &strings.Builder{}
+		errorMessage.WriteString(output.WithErrorFormat("\nERROR: %s", err.Error()))
+
+		if errors.As(err, &errorWithTraceId) {
+			errorMessage.WriteString(output.WithErrorFormat("\nTraceID: %s", errorWithTraceId.TraceId))
+		}
+
+		errMessage := errorMessage.String()
+
+		if errors.As(err, &unsupportedErr) {
 			// set the error message so the caller can use it if needed
 			unsupportedErr.ErrorMessage = errMessage
 			return actionResult, err
-		} else {
-			m.console.Message(ctx, errMessage)
 		}
 
+		m.console.Message(ctx, errMessage)
 	}
 
 	if actionResult != nil && actionResult.Message != nil {

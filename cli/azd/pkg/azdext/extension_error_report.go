@@ -67,7 +67,10 @@ func ReadErrorFile(path string) (error, error) {
 	}
 
 	msg := &ExtensionError{}
-	if unmarshalErr := protojson.Unmarshal(content, msg); unmarshalErr != nil {
+	unmarshalOpts := protojson.UnmarshalOptions{
+		DiscardUnknown: true,
+	}
+	if unmarshalErr := unmarshalOpts.Unmarshal(content, msg); unmarshalErr != nil {
 		return nil, fmt.Errorf("unmarshal extension error file: %w", unmarshalErr)
 	}
 

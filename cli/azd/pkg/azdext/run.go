@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -60,6 +61,9 @@ func Run(rootCmd *cobra.Command, opts ...RunOption) {
 
 	if cfg.preExecute != nil {
 		if err := cfg.preExecute(ctx, rootCmd); err != nil {
+			if reportErr := ReportError(err); reportErr != nil {
+				log.Printf("warning: failed to report structured error: %v", reportErr)
+			}
 			printError(err)
 			os.Exit(1)
 		}
@@ -76,10 +80,16 @@ func Run(rootCmd *cobra.Command, opts ...RunOption) {
 }
 
 func printError(err error) {
-	color.Red("Error: %v", err)
+	redStderr := color.New(color.FgRed)
+	redStderr.EnableColor()
+	redStderr.SetWriter(os.Stderr)
+	redStderr.Fprintf(os.Stderr, "Error: %v\n", err)
 
 	if s := ErrorSuggestion(err); s != "" {
-		fmt.Fprintln(os.Stderr, "Suggestion: "+s)
+		if !strings.HasPrefix(s, "Suggestion: ") {
+			s = "Suggestion: " + s
+		}
+		fmt.Fprintln(os.Stderr, s)
 	}
 }
 

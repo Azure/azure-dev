@@ -76,7 +76,10 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 		}
 
 		if suggestion := azdext.ErrorSuggestion(err); suggestion != "" {
-			errorMessage.WriteString("\nSuggestion: " + suggestion)
+			if !strings.HasPrefix(suggestion, "Suggestion: ") {
+				suggestion = "Suggestion: " + suggestion
+			}
+			errorMessage.WriteString("\n" + suggestion)
 		}
 
 		errMessage := errorMessage.String()

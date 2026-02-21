@@ -291,6 +291,9 @@ func createExtensionErrorFileEnv() (envVar string, cleanup func(), err error) {
 
 	errorFilePath := errorFile.Name()
 	if closeErr := errorFile.Close(); closeErr != nil {
+		if removeErr := os.Remove(errorFilePath); removeErr != nil && !os.IsNotExist(removeErr) {
+			log.Printf("failed to remove extension error file after close error: %v", removeErr)
+		}
 		return "", func() {}, closeErr
 	}
 

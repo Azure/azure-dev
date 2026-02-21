@@ -77,6 +77,19 @@ func (cli *Cli) InstallRequirements(ctx context.Context, workingDir, environment
 	return nil
 }
 
+// InstallProject installs dependencies from pyproject.toml using pip.
+func (cli *Cli) InstallProject(ctx context.Context, workingDir, environment string) error {
+	args := []string{"-m", "pip", "install", "."}
+	_, err := cli.Run(ctx, workingDir, environment, args...)
+	if err != nil {
+		return fmt.Errorf(
+			"failed to install project from pyproject.toml for '%s': %w",
+			workingDir, err)
+	}
+
+	return nil
+}
+
 func (cli *Cli) CreateVirtualEnv(ctx context.Context, workingDir, name string) error {
 	pyString, err := cli.checkPath()
 	if err != nil {

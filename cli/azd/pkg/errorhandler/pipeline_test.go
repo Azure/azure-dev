@@ -321,6 +321,8 @@ type mockErrorHandler struct {
 	handleFunc func(ctx context.Context, err error) *ErrorWithSuggestion
 }
 
-func (m *mockErrorHandler) Handle(ctx context.Context, err error) *ErrorWithSuggestion {
+func (m *mockErrorHandler) Handle(
+	ctx context.Context, err error, rule ErrorSuggestionRule,
+) *ErrorWithSuggestion {
 	return m.handleFunc(ctx, err)
 }

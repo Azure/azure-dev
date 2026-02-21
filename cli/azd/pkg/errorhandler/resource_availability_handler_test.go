@@ -79,12 +79,18 @@ func TestResourceNotAvailableHandler_WithLocationAndResourceType(t *testing.T) {
 	err := errors.New(
 		"LocationIsOfferRestricted: Microsoft.Web/staticSites is not available in eastus2",
 	)
-	result := handler.Handle(context.Background(), err)
+	rule := ErrorSuggestionRule{
+		Links: []RuleLink{
+			{URL: "https://example.com/docs", Title: "SKU availability"},
+		},
+	}
+	result := handler.Handle(context.Background(), err, rule)
 
 	require.NotNil(t, result)
 	assert.Contains(t, result.Message, "Microsoft.Web/staticSites")
 	assert.Contains(t, result.Suggestion, "eastus2")
-	assert.NotEmpty(t, result.Links)
+	require.Len(t, result.Links, 1)
+	assert.Equal(t, "https://example.com/docs", result.Links[0].URL)
 }
 
 func TestResourceNotAvailableHandler_WithoutLocation(t *testing.T) {
@@ -94,7 +100,7 @@ func TestResourceNotAvailableHandler_WithoutLocation(t *testing.T) {
 	err := errors.New(
 		"SkuNotAvailable: Microsoft.Compute/virtualMachines Standard_D2s_v3",
 	)
-	result := handler.Handle(context.Background(), err)
+	result := handler.Handle(context.Background(), err, ErrorSuggestionRule{})
 
 	require.NotNil(t, result)
 	assert.Contains(t, result.Message, "Microsoft.Compute/virtualMachines")
@@ -108,7 +114,7 @@ func TestResourceNotAvailableHandler_NoResourceType(t *testing.T) {
 		}},
 	}
 	err := errors.New("LocationIsOfferRestricted: offer restricted in this region")
-	result := handler.Handle(context.Background(), err)
+	result := handler.Handle(context.Background(), err, ErrorSuggestionRule{})
 
 	require.NotNil(t, result)
 	assert.Equal(t, "A resource type is not available in the current region.",
@@ -125,6 +131,7 @@ func TestResourceNotAvailableHandler_BuildSuggestion_WithLocations(t *testing.T)
 		"eastus2",
 		"Microsoft.Web/staticSites",
 		[]string{"centralus", "eastus", "westus2"},
+		ErrorSuggestionRule{},
 	)
 
 	require.NotNil(t, result)
@@ -143,6 +150,7 @@ func TestResourceNotAvailableHandler_BuildSuggestion_WithLocationsNoCurrentRegio
 		"",
 		"Microsoft.Web/staticSites",
 		[]string{"centralus", "eastus"},
+		ErrorSuggestionRule{},
 	)
 
 	require.NotNil(t, result)
@@ -173,7 +181,12 @@ func TestResourceNotAvailableHandler_LocationNotAvailableForResourceType(t *test
 		}},
 	}
 
-	result := handler.Handle(context.Background(), realError)
+	rule := ErrorSuggestionRule{
+		Links: []RuleLink{
+			{URL: "https://example.com/docs", Title: "Region availability"},
+		},
+	}
+	result := handler.Handle(context.Background(), realError, rule)
 
 	require.NotNil(t, result)
 	assert.Contains(t, result.Message, "Microsoft.Web/staticSites")
@@ -181,6 +194,11 @@ func TestResourceNotAvailableHandler_LocationNotAvailableForResourceType(t *test
 	assert.Contains(t, result.Suggestion, "centralus")
 	assert.Contains(t, result.Suggestion, "westus2")
 	assert.Contains(t, result.Suggestion, "azd env set AZURE_LOCATION")
+
+	// Verify rule links are merged into the result
+	require.Len(t, result.Links, 1)
+	assert.Equal(t, "https://example.com/docs", result.Links[0].URL)
+	assert.Equal(t, "Region availability", result.Links[0].Title)
 
 	// Verify the resolver was called with the correct resource type
 	assert.Equal(t, "Microsoft.Web/staticSites", mockResolver.lastResourceType)

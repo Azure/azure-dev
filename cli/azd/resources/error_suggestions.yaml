@@ -134,11 +134,17 @@ rules:
     properties:
       ErrorCode: "LocationNotAvailableForResourceType"
     handler: "resourceNotAvailableHandler"
+    links:
+      - url: "https://learn.microsoft.com/azure/azure-resource-manager/troubleshooting/error-sku-not-available"
+        title: "Resolve errors for resource type not available in region"
 
   - errorType: "DeploymentErrorLine"
     properties:
       Code: "LocationNotAvailableForResourceType"
     handler: "resourceNotAvailableHandler"
+    links:
+      - url: "https://learn.microsoft.com/azure/azure-resource-manager/troubleshooting/error-sku-not-available"
+        title: "Resolve errors for resource type not available in region"
 
   - errorType: "DeploymentErrorLine"
     properties:

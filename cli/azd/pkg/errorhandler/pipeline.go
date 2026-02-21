@@ -130,7 +130,7 @@ func (p *ErrorHandlerPipeline) evaluateRule(
 	// All conditions passed — produce suggestion
 	// 4. If handler is set, invoke it
 	if rule.Handler != "" {
-		return p.invokeHandler(ctx, err, rule.Handler)
+		return p.invokeHandler(ctx, err, *rule)
 	}
 
 	// 5. Return static suggestion
@@ -148,16 +148,16 @@ func (p *ErrorHandlerPipeline) evaluateRule(
 }
 
 func (p *ErrorHandlerPipeline) invokeHandler(
-	ctx context.Context, err error, handlerName string,
+	ctx context.Context, err error, rule ErrorSuggestionRule,
 ) *ErrorWithSuggestion {
 	if p.handlerResolver == nil {
 		return nil
 	}
 
-	handler, resolveErr := p.handlerResolver(handlerName)
+	handler, resolveErr := p.handlerResolver(rule.Handler)
 	if resolveErr != nil || handler == nil {
 		return nil
 	}
 
-	return handler.Handle(ctx, err)
+	return handler.Handle(ctx, err, rule)
 }

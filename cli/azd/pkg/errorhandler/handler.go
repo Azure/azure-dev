@@ -10,6 +10,8 @@ import "context"
 // from YAML rules via the "handler" field.
 type ErrorHandler interface {
 	// Handle inspects the error and returns a suggestion if applicable.
-	// Returns nil if this handler cannot produce a suggestion for the given error.
-	Handle(ctx context.Context, err error) *ErrorWithSuggestion
+	// The rule parameter provides access to the matching YAML rule,
+	// allowing the handler to merge in links or other static data.
+	// Returns nil if this handler cannot produce a suggestion.
+	Handle(ctx context.Context, err error, rule ErrorSuggestionRule) *ErrorWithSuggestion
 }

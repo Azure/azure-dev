@@ -54,7 +54,7 @@ func NewResourceNotAvailableHandler(
 }
 
 func (h *ResourceNotAvailableHandler) Handle(
-	ctx context.Context, err error,
+	ctx context.Context, err error, rule ErrorSuggestionRule,
 ) *ErrorWithSuggestion {
 	errMsg := err.Error()
 	location := h.env.Getenv("AZURE_LOCATION")
@@ -72,7 +72,7 @@ func (h *ResourceNotAvailableHandler) Handle(
 	}
 
 	return h.buildSuggestion(
-		err, location, resourceType, availableLocations,
+		err, location, resourceType, availableLocations, rule,
 	)
 }
 
@@ -81,6 +81,7 @@ func (h *ResourceNotAvailableHandler) buildSuggestion(
 	location string,
 	resourceType string,
 	availableLocations []string,
+	rule ErrorSuggestionRule,
 ) *ErrorWithSuggestion {
 	var msg, suggestion string
 
@@ -124,16 +125,17 @@ func (h *ResourceNotAvailableHandler) buildSuggestion(
 			"'azd env set AZURE_LOCATION <region>'."
 	}
 
+	// Merge links from the YAML rule
+	links := make([]ErrorLink, len(rule.Links))
+	for i, l := range rule.Links {
+		links[i] = ErrorLink(l)
+	}
+
 	return &ErrorWithSuggestion{
 		Err:        err,
 		Message:    msg,
 		Suggestion: suggestion,
-		Links: []ErrorLink{
-			{
-				URL:   "https://learn.microsoft.com/azure/azure-resource-manager/troubleshooting/error-sku-not-available",
-				Title: "Resolve errors for resource type not available in region",
-			},
-		},
+		Links:      links,
 	}
 }
 

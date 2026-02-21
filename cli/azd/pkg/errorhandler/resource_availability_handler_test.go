@@ -38,6 +38,28 @@ func TestExtractResourceType(t *testing.T) {
 			message:  "some generic error without a resource type",
 			expected: "",
 		},
+		{
+			name: "prefers quoted resource type over URL",
+			message: "POST https://management.azure.com/subscriptions/xxx/" +
+				"providers/Microsoft.Resources/deployments/my-deploy/validate\n" +
+				"The provided location 'eastus' is not available for " +
+				"resource type 'Microsoft.Web/staticSites'.",
+			expected: "Microsoft.Web/staticSites",
+		},
+		{
+			name: "real full error with URL",
+			message: "deployment failed: error deploying infrastructure: " +
+				"validating deployment to subscription:\n\n" +
+				"Validation Error Details:\n" +
+				"POST https://management.azure.com/subscriptions/4d042dc6/" +
+				"providers/Microsoft.Resources/deployments/test/validate\n" +
+				"RESPONSE 400: 400 Bad Request\n" +
+				"ERROR CODE: LocationNotAvailableForResourceType\n" +
+				`{"error":{"code":"LocationNotAvailableForResourceType",` +
+				`"message":"The provided location 'eastus' is not available ` +
+				`for resource type 'Microsoft.Web/staticSites'."}}`,
+			expected: "Microsoft.Web/staticSites",
+		},
 	}
 
 	for _, tt := range tests {

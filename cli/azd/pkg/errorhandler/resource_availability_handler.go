@@ -11,8 +11,14 @@ import (
 	"strings"
 )
 
-// resourceTypePattern matches ARM resource types like "Microsoft.Web/staticSites"
-var resourceTypePattern = regexp.MustCompile(`Microsoft\.\w+/\w+`)
+// quotedResourceTypePattern matches resource types in ARM error messages like:
+// "resource type 'Microsoft.Web/staticSites'"
+var quotedResourceTypePattern = regexp.MustCompile(
+	`(?i)resource type '(Microsoft\.\w+/\w+)'`,
+)
+
+// bareResourceTypePattern matches any ARM resource type reference
+var bareResourceTypePattern = regexp.MustCompile(`Microsoft\.\w+/\w+`)
 
 // ResourceTypeLocationResolver queries Azure for the locations
 // where a given resource type is available.
@@ -120,8 +126,15 @@ func (h *ResourceNotAvailableHandler) buildSuggestion(
 	}
 }
 
-// extractResourceType attempts to extract an ARM resource type
-// (e.g., "Microsoft.Web/staticSites") from an error message.
+// extractResourceType attempts to extract the target ARM resource type
+// (e.g., "Microsoft.Web/staticSites") from an error message. It first
+// looks for the quoted form "resource type 'X'" to avoid matching
+// resource types in URLs (e.g., Microsoft.Resources/deployments).
 func extractResourceType(errMessage string) string {
-	return resourceTypePattern.FindString(errMessage)
+	// Prefer the explicit "resource type '...'" form from ARM messages
+	if match := quotedResourceTypePattern.FindStringSubmatch(errMessage); len(match) >= 2 {
+		return match[1]
+	}
+	// Fall back to first bare match
+	return bareResourceTypePattern.FindString(errMessage)
 }

@@ -13,7 +13,7 @@
 # Response Fields:
 #   - message:    User-friendly explanation of what went wrong
 #   - suggestion: Actionable next steps to resolve the issue
-#   - docUrl:     Optional link to documentation
+#   - links:      Optional list of reference links (each with url and optional title)
 #   - handler:    Optional name of a registered ErrorHandler for dynamic suggestions
 #
 # Pattern Types:
@@ -56,7 +56,9 @@ rules:
       Purge the resource in the Azure portal or via the Azure CLI,
       then retry with 'azd up'. If the resources are still provisioned,
       running 'azd down --purge' will delete and purge them.
-    docUrl: "https://learn.microsoft.com/azure/key-vault/general/key-vault-recovery"
+    links:
+      - url: "https://learn.microsoft.com/azure/key-vault/general/key-vault-recovery"
+        title: "Azure Key Vault soft-delete recovery"
 
   - errorType: "DeploymentErrorLine"
     properties:
@@ -83,7 +85,9 @@ rules:
       Purge the soft-deleted resource in the Azure portal or via the
       Azure CLI, then retry with 'azd up'. If the resources are still
       provisioned, running 'azd down --purge' will delete and purge them.
-    docUrl: "https://learn.microsoft.com/azure/key-vault/general/key-vault-recovery"
+    links:
+      - url: "https://learn.microsoft.com/azure/key-vault/general/key-vault-recovery"
+        title: "Azure Key Vault soft-delete recovery"
 
   - errorType: "DeploymentErrorLine"
     regex: true
@@ -112,14 +116,18 @@ rules:
     suggestion: >
       Check current usage with 'az vm list-usage --location <region>'
       or request a quota increase in the Azure portal.
-    docUrl: "https://learn.microsoft.com/azure/quotas/quickstart-increase-quota-portal"
+    links:
+      - url: "https://learn.microsoft.com/azure/quotas/quickstart-increase-quota-portal"
+        title: "Increase Azure subscription quotas"
 
   - errorType: "DeploymentErrorLine"
     properties:
       Code: "SubscriptionIsOverQuotaForSku"
     message: "Your subscription quota for this SKU is exceeded."
     suggestion: "Request a quota increase or use a different SKU."
-    docUrl: "https://learn.microsoft.com/azure/quotas/quickstart-increase-quota-portal"
+    links:
+      - url: "https://learn.microsoft.com/azure/quotas/quickstart-increase-quota-portal"
+        title: "Increase Azure subscription quotas"
 
   # ResponseError from ARM SDK (e.g., validation fails before polling)
   - errorType: "ResponseError"
@@ -139,7 +147,9 @@ rules:
     suggestion: >
       Ensure you have the required RBAC role (e.g., Owner or Contributor)
       on the target subscription.
-    docUrl: "https://learn.microsoft.com/azure/role-based-access-control/role-assignments-portal"
+    links:
+      - url: "https://learn.microsoft.com/azure/role-based-access-control/role-assignments-portal"
+        title: "Assign Azure roles"
 
   - errorType: "DeploymentErrorLine"
     properties:
@@ -195,7 +205,9 @@ rules:
       - "is not recognized"
     message: "The Azure PowerShell module (Az) is required but not installed."
     suggestion: "Install it with 'Install-Module Az -Scope CurrentUser -Repository PSGallery -Force'."
-    docUrl: "https://learn.microsoft.com/powershell/azure/install-azure-powershell"
+    links:
+      - url: "https://learn.microsoft.com/powershell/azure/install-azure-powershell"
+        title: "Install Azure PowerShell"
 
   - errorType: "ExitError"
     regex: true
@@ -244,7 +256,9 @@ rules:
       - "parsing project file"
     message: "Your azure.yaml file is invalid."
     suggestion: "Check the syntax of your azure.yaml file and fix any errors."
-    docUrl: "https://aka.ms/azure-dev/azure-yaml"
+    links:
+      - url: "https://aka.ms/azure-dev/azure-yaml"
+        title: "azure.yaml schema reference"
 
   - patterns:
       - "InvalidAuthenticationToken"
@@ -252,14 +266,18 @@ rules:
       - "TokenExpired"
     message: "Your authentication token has expired."
     suggestion: "Run 'azd auth login' to sign in again."
-    docUrl: "https://learn.microsoft.com/azure/developer/azure-developer-cli/reference#azd-auth-login"
+    links:
+      - url: "https://learn.microsoft.com/azure/developer/azure-developer-cli/reference#azd-auth-login"
+        title: "azd auth login reference"
 
   - regex: true
     patterns:
       - "BCP\\d{3}"
     message: "Your Bicep template has an error."
     suggestion: "Review the error message for the specific issue and line number in your .bicep file."
-    docUrl: "https://learn.microsoft.com/azure/azure-resource-manager/bicep/bicep-error-codes"
+    links:
+      - url: "https://learn.microsoft.com/azure/azure-resource-manager/bicep/bicep-error-codes"
+        title: "Bicep error codes reference"
 
   # ============================================================================
   # Text Pattern Rules — Broad/generic patterns (least specific, must be last)
@@ -269,7 +287,9 @@ rules:
       - "AADSTS"
     message: "Authentication with Azure failed."
     suggestion: "Run 'azd auth login' to sign in again."
-    docUrl: "https://learn.microsoft.com/azure/developer/azure-developer-cli/reference#azd-auth-login"
+    links:
+      - url: "https://learn.microsoft.com/azure/developer/azure-developer-cli/reference#azd-auth-login"
+        title: "azd auth login reference"
 
   - patterns:
       - "QuotaExceeded"
@@ -277,4 +297,6 @@ rules:
       - "exceeds quota"
     message: "Your Azure subscription has reached a resource quota limit."
     suggestion: "Request a quota increase through the Azure portal, or try deploying to a different region."
-    docUrl: "https://learn.microsoft.com/azure/quotas/quickstart-increase-quota-portal"
+    links:
+      - url: "https://learn.microsoft.com/azure/quotas/quickstart-increase-quota-portal"
+        title: "Increase Azure subscription quotas"

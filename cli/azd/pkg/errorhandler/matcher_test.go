@@ -145,7 +145,7 @@ func TestErrorSuggestionService_FindSuggestion(t *testing.T) {
 		name           string
 		errorMessage   string
 		expectMatch    bool
-		expectDocUrl   bool
+		expectLinks    bool
 		expectMessage  bool
 		suggestionPart string
 	}{
@@ -153,7 +153,7 @@ func TestErrorSuggestionService_FindSuggestion(t *testing.T) {
 			name:           "quota error matches",
 			errorMessage:   "Deployment failed: QuotaExceeded for resource",
 			expectMatch:    true,
-			expectDocUrl:   true,
+			expectLinks:    true,
 			expectMessage:  true,
 			suggestionPart: "quota",
 		},
@@ -161,7 +161,7 @@ func TestErrorSuggestionService_FindSuggestion(t *testing.T) {
 			name:           "auth error matches",
 			errorMessage:   "AADSTS50076: authentication required",
 			expectMatch:    true,
-			expectDocUrl:   true,
+			expectLinks:    true,
 			expectMessage:  true,
 			suggestionPart: "azd auth login",
 		},
@@ -169,7 +169,7 @@ func TestErrorSuggestionService_FindSuggestion(t *testing.T) {
 			name:           "bicep error matches",
 			errorMessage:   "BCP035: The specified value is not valid",
 			expectMatch:    true,
-			expectDocUrl:   true,
+			expectLinks:    true,
 			expectMessage:  true,
 			suggestionPart: ".bicep",
 		},
@@ -186,8 +186,8 @@ func TestErrorSuggestionService_FindSuggestion(t *testing.T) {
 			if tt.expectMatch {
 				assert.NotNil(t, result)
 				assert.Contains(t, result.Suggestion, tt.suggestionPart)
-				if tt.expectDocUrl {
-					assert.NotEmpty(t, result.DocUrl)
+				if tt.expectLinks {
+					assert.NotEmpty(t, result.Links)
 				}
 				if tt.expectMessage {
 					assert.NotEmpty(t, result.Message)

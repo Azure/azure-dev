@@ -47,10 +47,14 @@ func NewErrorSuggestionService() *ErrorSuggestionService {
 func (s *ErrorSuggestionService) FindSuggestion(errorMessage string) *MatchedSuggestion {
 	for _, rule := range s.config.Rules {
 		if len(rule.Patterns) > 0 && s.matcher.Match(errorMessage, rule.Patterns, rule.Regex) {
+			links := make([]ErrorLink, len(rule.Links))
+			for i, l := range rule.Links {
+				links[i] = ErrorLink(l)
+			}
 			return &MatchedSuggestion{
 				Message:    rule.Message,
 				Suggestion: rule.Suggestion,
-				DocUrl:     rule.DocUrl,
+				Links:      links,
 			}
 		}
 	}

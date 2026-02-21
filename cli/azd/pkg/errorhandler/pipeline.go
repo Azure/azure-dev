@@ -134,11 +134,16 @@ func (p *ErrorHandlerPipeline) evaluateRule(
 	}
 
 	// 5. Return static suggestion
+	links := make([]ErrorLink, len(rule.Links))
+	for i, l := range rule.Links {
+		links[i] = ErrorLink(l)
+	}
+
 	return &ErrorWithSuggestion{
 		Err:        err,
 		Message:    rule.Message,
 		Suggestion: rule.Suggestion,
-		DocUrl:     rule.DocUrl,
+		Links:      links,
 	}
 }
 

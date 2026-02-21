@@ -206,7 +206,7 @@ func Test_ErrorMiddleware_PatternMatchingSuggestion(t *testing.T) {
 	var suggestionErr *internal.ErrorWithSuggestion
 	require.True(t, errors.As(err, &suggestionErr), "Expected error to be wrapped with suggestion")
 	require.Contains(t, suggestionErr.Suggestion, "quota")
-	require.NotEmpty(t, suggestionErr.DocUrl, "Expected a documentation URL")
+	require.NotEmpty(t, suggestionErr.Links, "Expected reference links")
 }
 
 func Test_ErrorMiddleware_NoPatternMatch(t *testing.T) {

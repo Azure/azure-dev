@@ -60,7 +60,7 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 				Err:        suggestionErr.Err,
 				Message:    suggestionErr.Message,
 				Suggestion: suggestionErr.Suggestion,
-				DocUrl:     suggestionErr.DocUrl,
+				Links:      suggestionErr.Links,
 			}
 			m.console.MessageUxItem(ctx, displayErr)
 			return actionResult, err

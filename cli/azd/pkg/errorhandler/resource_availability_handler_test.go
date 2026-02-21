@@ -84,7 +84,7 @@ func TestResourceNotAvailableHandler_WithLocationAndResourceType(t *testing.T) {
 	require.NotNil(t, result)
 	assert.Contains(t, result.Message, "Microsoft.Web/staticSites")
 	assert.Contains(t, result.Suggestion, "eastus2")
-	assert.NotEmpty(t, result.DocUrl)
+	assert.NotEmpty(t, result.Links)
 }
 
 func TestResourceNotAvailableHandler_WithoutLocation(t *testing.T) {

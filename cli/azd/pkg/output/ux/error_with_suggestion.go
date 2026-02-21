@@ -8,14 +8,15 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
 // ErrorWithSuggestion displays an error with user-friendly messaging.
 // Layout:
-//  1. User-friendly message (what went wrong)
+//  1. User-friendly message (red ERROR: line)
 //  2. Suggestion (actionable next steps)
-//  3. Doc link (optional, for more info)
+//  3. Reference links (optional, as a list)
 //  4. Original error (grey, de-emphasized technical details)
 type ErrorWithSuggestion struct {
 	// Err is the original underlying error
@@ -27,45 +28,53 @@ type ErrorWithSuggestion struct {
 	// Suggestion is actionable next steps to resolve the issue
 	Suggestion string
 
-	// DocUrl is an optional link to documentation for more information
-	DocUrl string
+	// Links is an optional list of reference links
+	Links []errorhandler.ErrorLink
 }
 
 func (e *ErrorWithSuggestion) ToString(currentIndentation string) string {
 	var sb strings.Builder
 
-	// 1. User-friendly message (or fall back to raw error if no message)
+	// 1. User-friendly message (or fall back to raw error)
 	errorMsg := e.Message
 	if errorMsg == "" && e.Err != nil {
 		errorMsg = e.Err.Error()
 	}
-	sb.WriteString(output.WithErrorFormat("%sERROR: %s", currentIndentation, errorMsg))
-	sb.WriteString("\n")
+	sb.WriteString(output.WithErrorFormat("ERROR: %s\n", errorMsg))
 
-	// 2. Suggestion (actionable next steps)
+	// 2. Suggestion
 	if e.Suggestion != "" {
-		sb.WriteString(fmt.Sprintf("\n%s%s %s\n",
-			currentIndentation,
+		sb.WriteString(fmt.Sprintf("\n%s %s\n",
 			output.WithHighLightFormat("Suggestion:"),
 			e.Suggestion))
 	}
 
-	// 3. Documentation link (if provided)
-	if e.DocUrl != "" {
-		sb.WriteString(fmt.Sprintf("%s%s %s\n",
-			currentIndentation,
-			output.WithGrayFormat("Learn more:"),
-			output.WithLinkFormat(e.DocUrl)))
+	// 3. Reference links
+	if len(e.Links) > 0 {
+		sb.WriteString("\n")
+		for _, link := range e.Links {
+			if link.Title != "" {
+				sb.WriteString(fmt.Sprintf("  • %s\n",
+					output.WithHyperlink(link.URL, link.Title)))
+			} else {
+				sb.WriteString(fmt.Sprintf("  • %s\n",
+					output.WithLinkFormat(link.URL)))
+			}
+		}
 	}
 
 	// 4. Original error in grey (technical details, de-emphasized)
 	if e.Message != "" && e.Err != nil {
-		sb.WriteString(fmt.Sprintf("\n%s%s\n",
-			currentIndentation,
+		sb.WriteString(fmt.Sprintf("\n%s\n",
 			output.WithGrayFormat(e.Err.Error())))
 	}
 
 	return sb.String()
+}
+
+type jsonLink struct {
+	URL   string `json:"url"`
+	Title string `json:"title,omitempty"`
 }
 
 func (e *ErrorWithSuggestion) MarshalJSON() ([]byte, error) {
@@ -74,16 +83,21 @@ func (e *ErrorWithSuggestion) MarshalJSON() ([]byte, error) {
 		errStr = e.Err.Error()
 	}
 
+	var links []jsonLink
+	for _, l := range e.Links {
+		links = append(links, jsonLink{URL: l.URL, Title: l.Title})
+	}
+
 	result := struct {
-		Error      string `json:"error"`
-		Message    string `json:"message,omitempty"`
-		Suggestion string `json:"suggestion,omitempty"`
-		DocUrl     string `json:"docUrl,omitempty"`
+		Error      string     `json:"error"`
+		Message    string     `json:"message,omitempty"`
+		Suggestion string     `json:"suggestion,omitempty"`
+		Links      []jsonLink `json:"links,omitempty"`
 	}{
 		Error:      errStr,
 		Message:    e.Message,
 		Suggestion: e.Suggestion,
-		DocUrl:     e.DocUrl,
+		Links:      links,
 	}
 
 	return json.Marshal(result)

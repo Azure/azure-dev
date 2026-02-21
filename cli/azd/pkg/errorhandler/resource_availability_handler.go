@@ -128,9 +128,12 @@ func (h *ResourceNotAvailableHandler) buildSuggestion(
 		Err:        err,
 		Message:    msg,
 		Suggestion: suggestion,
-		DocUrl: "https://learn.microsoft.com/azure/" +
-			"azure-resource-manager/troubleshooting/" +
-			"error-sku-not-available",
+		Links: []ErrorLink{
+			{
+				URL:   "https://learn.microsoft.com/azure/azure-resource-manager/troubleshooting/error-sku-not-available",
+				Title: "Resolve errors for resource type not available in region",
+			},
+		},
 	}
 }
 

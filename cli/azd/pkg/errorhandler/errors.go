@@ -3,9 +3,17 @@
 
 package errorhandler
 
+// ErrorLink represents a reference link with a URL and optional title.
+type ErrorLink struct {
+	// URL is the link target (required)
+	URL string
+	// Title is the display text (optional — if empty, the URL is shown)
+	Title string
+}
+
 // ErrorWithSuggestion is a custom error type that includes user-friendly messaging.
 // It wraps an original error with a human-readable message, actionable suggestion,
-// and optional documentation link.
+// and optional reference links.
 type ErrorWithSuggestion struct {
 	// Err is the original underlying error
 	Err error
@@ -13,8 +21,8 @@ type ErrorWithSuggestion struct {
 	Message string
 	// Suggestion is actionable next steps to resolve the issue
 	Suggestion string
-	// DocUrl is an optional link to documentation
-	DocUrl string
+	// Links is an optional list of reference links
+	Links []ErrorLink
 }
 
 // Error returns the error message

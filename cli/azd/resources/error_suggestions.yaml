@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=error_suggestions.schema.json
 # Error Suggestions Configuration
 # ================================
 # This file maps well-known error patterns to user-friendly messages and actionable suggestions.

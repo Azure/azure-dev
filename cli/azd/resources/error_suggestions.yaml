@@ -137,7 +137,7 @@ rules:
     links:
       - url: "https://learn.microsoft.com/azure/azure-resource-manager/troubleshooting/error-sku-not-available"
         title: "Resolve SKU not available errors"
-      - url: "https://azure.microsoft.com/explore/global-infrastructure/products-by-region/"
+      - url: "https://azure.microsoft.com/explore/global-infrastructure/products-by-region/table"
         title: "Azure products available by region"
 
   - errorType: "DeploymentErrorLine"
@@ -147,7 +147,7 @@ rules:
     links:
       - url: "https://learn.microsoft.com/azure/azure-resource-manager/troubleshooting/error-sku-not-available"
         title: "Resolve SKU not available errors"
-      - url: "https://azure.microsoft.com/explore/global-infrastructure/products-by-region/"
+      - url: "https://azure.microsoft.com/explore/global-infrastructure/products-by-region/table"
         title: "Azure products available by region"
 
   - errorType: "DeploymentErrorLine"

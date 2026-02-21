@@ -193,6 +193,62 @@ rules:
     suggestion: "Check for existing or soft-deleted resources in the Azure portal."
 
   # ============================================================================
+  # Container App Errors
+  # ~2.46% of all azd errors (~3,152 in 90-day analysis)
+  # ============================================================================
+
+  - errorType: "DeploymentErrorLine"
+    properties:
+      Code: "ContainerAppSecretInvalid"
+    message: "A secret referenced by the container app is missing or invalid."
+    suggestion: >
+      Check your secret definitions in the Bicep template. Ensure all
+      secrets referenced by environment variables or ingress exist and
+      have valid values.
+    links:
+      - url: "https://learn.microsoft.com/azure/container-apps/manage-secrets"
+        title: "Manage secrets in Azure Container Apps"
+
+  - errorType: "DeploymentErrorLine"
+    properties:
+      Code: "ContainerAppOperationError"
+    patterns:
+      - "image"
+    message: "The container image could not be pulled."
+    suggestion: >
+      Verify the image name and tag, ensure the container registry
+      is accessible, and check that registry credentials are configured
+      correctly (admin enabled or managed identity assigned).
+    links:
+      - url: "https://learn.microsoft.com/azure/container-apps/containers"
+        title: "Containers in Azure Container Apps"
+
+  - errorType: "DeploymentErrorLine"
+    properties:
+      Code: "ContainerAppOperationError"
+    message: "A Container App operation failed during deployment."
+    suggestion: >
+      Inspect the container app revision logs with
+      'az containerapp logs show --name <app> -g <resource-group> --follow'.
+      Common causes include invalid environment variables, port
+      mismatches, or insufficient resources.
+    links:
+      - url: "https://learn.microsoft.com/azure/container-apps/troubleshooting"
+        title: "Troubleshoot Azure Container Apps"
+
+  - errorType: "DeploymentErrorLine"
+    regex: true
+    properties:
+      Code: "InvalidParameterValueInContainerTemplate"
+    message: "The container app template has an invalid parameter."
+    suggestion: >
+      Check container resource limits (CPU/memory), port
+      configuration, and environment variable values in your template.
+    links:
+      - url: "https://learn.microsoft.com/azure/container-apps/containers"
+        title: "Containers in Azure Container Apps"
+
+  # ============================================================================
   # PowerShell Hook Failures (errorType + properties + patterns)
   # ~5% of all azd errors (~6,347); AI templates hit 6.59%
   # ============================================================================

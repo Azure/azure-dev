@@ -365,6 +365,21 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 		envArgs := []string{"env", "new"}
 		if flags.env != "" {
 			envArgs = append(envArgs, flags.env)
+		} else if flags.NoPrompt {
+			// Default to directory name in non-interactive mode,
+			// consistent with azd init behavior.
+			cwd, cwdErr := os.Getwd()
+			if cwdErr != nil {
+				return nil, fmt.Errorf(
+					"failed to determine working directory "+
+						"for default environment name: %w. "+
+						"Pass '-e <name>' explicitly", cwdErr)
+			}
+			if sanitized := sanitizeEnvName(
+				filepath.Base(cwd),
+			); sanitized != "" {
+				envArgs = append(envArgs, sanitized)
+			}
 		}
 
 		if flags.projectResourceId != "" {
@@ -480,16 +495,93 @@ func ensureAzureContext(
 	}
 
 	if azureContext.Scope.SubscriptionId == "" {
-		fmt.Print()
-		fmt.Println("It looks like we first need to connect to your Azure subscription.")
+		if flags.NoPrompt {
+			// First check for configured default subscription
+			cfgResp, cfgErr := azdClient.UserConfig().GetString(
+				ctx,
+				&azdext.GetUserConfigStringRequest{
+					Path: "defaults.subscription",
+				},
+			)
+			if cfgErr == nil && cfgResp.GetFound() {
+				if v := strings.TrimSpace(
+					cfgResp.GetValue(),
+				); v != "" {
+					azureContext.Scope.SubscriptionId = v
+				}
+			}
 
-		subscriptionResponse, err := azdClient.Prompt().PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{})
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to prompt for subscription: %w", err)
+			// Fall back to auto-selecting when only one exists
+			if azureContext.Scope.SubscriptionId == "" {
+				subsResp, listErr := azdClient.Account().ListSubscriptions(
+					ctx,
+					&azdext.ListSubscriptionsRequest{},
+				)
+				if listErr != nil {
+					return nil, nil, nil, fmt.Errorf(
+						"failed to list subscriptions: %w. "+
+							"Set a default with "+
+							"'azd config set "+
+							"defaults.subscription <id>'",
+						listErr,
+					)
+				}
+
+				subs := subsResp.GetSubscriptions()
+				switch len(subs) {
+				case 0:
+					return nil, nil, nil, fmt.Errorf(
+						"no subscriptions found. " +
+							"Run 'azd auth login' " +
+							"to authenticate",
+					)
+				case 1:
+					fmt.Printf(
+						"Auto-selected subscription:"+
+							" %s (%s)\n",
+						subs[0].Name, subs[0].Id,
+					)
+					azureContext.Scope.SubscriptionId =
+						subs[0].Id
+					azureContext.Scope.TenantId =
+						subs[0].TenantId
+				default:
+					return nil, nil, nil, fmt.Errorf(
+						"multiple subscriptions " +
+							"found but running in " +
+							"non-interactive mode. " +
+							"Set a default with " +
+							"'azd config set " +
+							"defaults.subscription " +
+							"<id>' or pass '-e " +
+							"<env>' to use an azd " +
+							"environment that " +
+							"already has " +
+							"AZURE_SUBSCRIPTION_ID" +
+							" set",
+					)
+				}
+			}
+		} else {
+			fmt.Print()
+			fmt.Println(
+				"It looks like we first need to connect " +
+					"to your Azure subscription.",
+			)
+
+			subscriptionResponse, err := azdClient.Prompt().PromptSubscription(
+				ctx,
+				&azdext.PromptSubscriptionRequest{},
+			)
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf(
+					"failed to prompt for subscription: %w", err,
+				)
+			}
+
+			azureContext.Scope.SubscriptionId = subscriptionResponse.Subscription.Id
+			azureContext.Scope.TenantId = subscriptionResponse.Subscription.TenantId
 		}
-
-		azureContext.Scope.SubscriptionId = subscriptionResponse.Subscription.Id
-		azureContext.Scope.TenantId = subscriptionResponse.Subscription.TenantId
 
 		// Set the subscription ID in the environment
 		_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
@@ -1727,4 +1819,24 @@ func downloadDirectoryContentsWithoutGhCli(
 	}
 
 	return nil
+}
+
+// sanitizeEnvName keeps only characters valid for azd environment
+// names ([a-zA-Z0-9\-_\.]) and replaces others with '-'.
+// Returns "" for degenerate inputs (e.g. "/", ".").
+func sanitizeEnvName(name string) string {
+	sanitized := strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') ||
+			(r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') ||
+			r == '-' || r == '_' || r == '.' {
+			return r
+		}
+		return '-'
+	}, name)
+	if sanitized == "" || sanitized == "-" ||
+		sanitized == "." || sanitized == "/" {
+		return ""
+	}
+	return sanitized
 }

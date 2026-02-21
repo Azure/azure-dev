@@ -121,19 +121,15 @@ rules:
     suggestion: "Request a quota increase or use a different SKU."
     docUrl: "https://learn.microsoft.com/azure/quotas/quickstart-increase-quota-portal"
 
-  - errorType: "DeploymentErrorLine"
+  # ResponseError from ARM SDK (e.g., validation fails before polling)
+  - errorType: "ResponseError"
     properties:
-      Code: "SkuNotAvailable"
+      ErrorCode: "LocationNotAvailableForResourceType"
     handler: "resourceNotAvailableHandler"
 
   - errorType: "DeploymentErrorLine"
     properties:
       Code: "LocationNotAvailableForResourceType"
-    handler: "resourceNotAvailableHandler"
-
-  - errorType: "DeploymentErrorLine"
-    properties:
-      Code: "LocationIsOfferRestricted"
     handler: "resourceNotAvailableHandler"
 
   - errorType: "DeploymentErrorLine"

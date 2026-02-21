@@ -37,7 +37,7 @@ function createPromptCommand() {
     logger.info('Prompting user for multi-select...');
     const multiSelectReq = new MultiSelectRequest();
     const multiOptions = new MultiSelectOptions();
-    multiOptions.setMessage('Which Azure services do you use most with AZD?');
+    multiOptions.setMessage('Which Azure services do you use most with azd?');
 
     const multiChoices = [
       ['Container Apps', 'container-apps'],

@@ -1,5 +1,5 @@
 
-This extension provides a set of tools for AZD extension developers to test and debug their extensions.
+This extension provides a set of tools for azd extension developers to test and debug their extensions.
 
 Usage
   azd x [flags]

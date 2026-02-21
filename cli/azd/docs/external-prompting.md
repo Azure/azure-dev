@@ -13,7 +13,7 @@ Today, this prompting happens via the terminal - we have a set of methods that c
 
 The implementation of this interface uses a go library to provide a terminal experience (using ANSI escape sequences to provide a nice terminal interaction model) with a fallback to raw text input when the user is not connected to a proper terminal.
 
-This is a reasonable experience for users interacting with `azd` via their terminal.  However, `azd` also supports being used within IDEs (today Visual Studio Code, tomorrow Visual Studio as well) and there our terminal based prompting strategy is not ideal. VS Code is forced to run us in an interactive terminal and the user has to interact with `azd` via its terminal interface or specifically craft their calls of `azd` to not prompt the user.  In Visual Studio, AZD is run in a background process, so no terminal interaction is possible.
+This is a reasonable experience for users interacting with `azd` via their terminal.  However, `azd` also supports being used within IDEs (today Visual Studio Code, tomorrow Visual Studio as well) and there our terminal based prompting strategy is not ideal. VS Code is forced to run us in an interactive terminal and the user has to interact with `azd` via its terminal interface or specifically craft their calls of `azd` to not prompt the user.  In Visual Studio, azd is run in a background process, so no terminal interaction is possible.
 
 In both cases it would be ideal if `azd` could delegate the prompting behavior back to the caller.  This document outlines a solution, which provides a way for an external tool to provide a remote service that `azd` interacts with when it needs to prompt the user for information.
 

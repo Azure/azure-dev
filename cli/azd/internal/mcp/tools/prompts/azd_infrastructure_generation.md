@@ -1,9 +1,9 @@
-# AZD Infrastructure Generation Instructions
+# azd infrastructure Generation Instructions
 
 ✅ **Agent Task List**  
 
 1. Strictly follow Azure and Bicep best practices in all code generation
-2. Strictly follow AZD IaC generation rules during all code generation
+2. Strictly follow azd IaC generation rules during all code generation
 3. **Inventory existing IaC files** - scan current working directory for all `.bicep` files
 4. Read `azd-arch-plan.md` to get the **IaC File Generation Checklist**
 5. Create directory structure in `./infra` following IaC rules
@@ -31,7 +31,7 @@
 
 **Use Tools:**
 
-- Use AZD IaC generation rules tool first to get complete file structure, naming conventions, and compliance requirements.
+- Use azd IaC generation rules tool first to get complete file structure, naming conventions, and compliance requirements.
 - Use Bicep Schema tool get get the latest API version and bicep schema for each resource type
 
 **Inventory Existing IaC Files:**
@@ -64,7 +64,7 @@
 **Conflict Resolution:**
 
 - **Document conflicts**: Log when existing configurations conflict with requirements
-- **Prioritize functionality**: Make changes needed for AZD compatibility
+- **Prioritize functionality**: Make changes needed for azd compatibility
 - **Preserve intent**: Keep user's architectural decisions when possible
 - **Flag major changes**: Clearly indicate significant modifications made
 
@@ -77,7 +77,7 @@
 
 **Main Parameters File Requirements:**
 
-The `./infra/main.parameters.json` file is critical for AZD integration and must follow this exact structure:
+The `./infra/main.parameters.json` file is critical for azd integration and must follow this exact structure:
 
 ```json
 {
@@ -101,7 +101,7 @@ The `./infra/main.parameters.json` file is critical for AZD integration and must
 
 - **Environment Variable Substitution**: Uses `${VARIABLE_NAME}` syntax for dynamic values
 - **Standard Parameters**: Always include `environmentName`, `location`, and `principalId`
-- **AZD Integration**: These variables are automatically populated by AZD during deployment
+- **azd integration**: These variables are automatically populated by azd during deployment
 - **Additional Parameters**: Add service-specific parameters as needed, using the same substitution pattern
 
 **Service Infrastructure Mapping:**

@@ -20,7 +20,7 @@ const (
 	defaultLocationKeyPath     = "defaults.location"
 )
 
-// The default location to use in AZD when not previously set to any value
+// The default location to use in azd when not previously set to any value
 var defaultLocation Location = Location{
 	Name:                "eastus2",
 	DisplayName:         "East US 2",
@@ -78,7 +78,7 @@ func NewManager(
 }
 
 // Gets the default subscription for the logged in account.
-// 1. Returns AZD config defaults if exists
+// 1. Returns azd config defaults if exists
 // 2. Returns Coded location default if needed
 func (m *manager) GetAccountDefaults(ctx context.Context) (*Account, error) {
 	subscription, err := m.getDefaultSubscription(ctx)
@@ -164,7 +164,7 @@ func (m *manager) SetDefaultSubscription(ctx context.Context, subscriptionId str
 
 	err = m.configManager.Save(m.config, m.filePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed saving AZD configuration: %w", err)
+		return nil, fmt.Errorf("failed saving azd configuration: %w", err)
 	}
 
 	return &Subscription{
@@ -198,7 +198,7 @@ func (m *manager) SetDefaultLocation(ctx context.Context, subscriptionId string,
 
 	err = m.configManager.Save(m.config, m.filePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed saving AZD configuration: %w", err)
+		return nil, fmt.Errorf("failed saving azd configuration: %w", err)
 	}
 
 	return &matchingLocation, nil
@@ -218,7 +218,7 @@ func (m *manager) HasDefaultLocation() bool {
 	return hasDefaultLocation
 }
 
-// Clears any persisted defaults in the AZD config
+// Clears any persisted defaults in the azd config
 func (m *manager) Clear(ctx context.Context) error {
 	err := m.config.Unset("defaults")
 	if err != nil {
@@ -227,7 +227,7 @@ func (m *manager) Clear(ctx context.Context) error {
 
 	err = m.configManager.Save(m.config, m.filePath)
 	if err != nil {
-		return fmt.Errorf("failed saving AZD configuration: %w", err)
+		return fmt.Errorf("failed saving azd configuration: %w", err)
 	}
 
 	return nil

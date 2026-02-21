@@ -1,5 +1,5 @@
 
-This extension provides examples of the AZD extension framework.
+This extension provides examples of the azd extension framework.
 
 Usage
   azd demo [flags]

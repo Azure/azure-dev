@@ -31,7 +31,7 @@ Examples
   Add a new url template source.
     azd template source add <key> --type url --location <url>
 
-  Enable the Awesome Azd template source.
+  Enable the Awesome azd template source.
     azd template source add awesome-azd
 
   Remove a previously registered template source.

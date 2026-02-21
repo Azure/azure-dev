@@ -6,7 +6,7 @@
 - [Recording Capabilities](#recording-capabilities)
 - [Creating a New Functional Test with Recording](#creating-a-new-functional-test-with-recording)
 - [Re-recording an Existing Test](#re-recording-an-existing-test)
-- [Building AZD with Recording Support](#building-azd-with-recording-support)
+- [Building azd with Recording Support](#building-azd-with-recording-support)
 - [Using Recordings in CI](#using-recordings-in-ci)
 - [Recording for Extensions](#recording-for-extensions)
 - [Best Practices and Tips](#best-practices-and-tips)
@@ -113,7 +113,7 @@ Certain endpoints bypass recording to avoid storing personal information:
 - `login.microsoftonline.com`
 - `graph.microsoft.com`
 - `applicationinsights.azure.com`
-- AZD release/update endpoints
+- azd release/update endpoints
 
 #### Fast-Forward Polling
 Long-running operations are automatically fast-forwarded during recording to avoid storing hundreds of polling requests.
@@ -293,7 +293,7 @@ This helper (from `test/functional/aspire_test.go`) deletes subscription deploym
 
 ### What Happens During Recording
 
-1. **AZD Binary Built with Record Tag**: The test automatically builds `azd-record` with the `record` build tag
+1. **azd binary Built with Record Tag**: The test automatically builds `azd-record` with the `record` build tag
 2. **Recording Proxy Starts**: An HTTPS proxy starts at a random port
 3. **Command Proxies Start**: Proxy executables for `docker`, `dotnet` are placed in temporary directories
 4. **Environment Variables Set**:
@@ -340,11 +340,11 @@ time: "1744738873"
 
 ---
 
-## Building AZD with Recording Support
+## Building azd with Recording Support
 
 ### Build Tags
 
-AZD has two build configurations relevant to testing:
+azd has two build configurations relevant to testing:
 
 1. **Standard build** (no tags):
    ```bash
@@ -975,7 +975,7 @@ session := recording.Start(t,
 // Set environment variable
 os.Setenv("AZD_TEST_FIXED_CLOCK_UNIX_TIME", "1744738873")
 
-// Azd will use fixed time in recording mode
+// azd will use fixed time in recording mode
 // Useful for deployment name generation
 ```
 

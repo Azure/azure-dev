@@ -1,4 +1,4 @@
-# AZD Docker Generation Instructions
+# azd Docker Generation Instructions
 
 ✅ **Agent Task List**  
 

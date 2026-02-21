@@ -201,7 +201,7 @@ func (a *mcpStartAction) Run(ctx context.Context) (*actions.ActionResult, error)
 	}
 
 	mcpServer := server.NewMCPServer(
-		"AZD MCP Server 🚀", "1.0.0",
+		"azd MCP Server 🚀", "1.0.0",
 		server.WithToolCapabilities(true),
 		server.WithElicitation(),
 		server.WithHooks(mcpHost.Hooks()),
@@ -283,7 +283,7 @@ func (a *mcpStartAction) createMcpHost(ctx context.Context, serverInfo *grpcserv
 	return mcpHost, nil
 }
 
-// getExtensionServers gets the MCP server configuration for AZD extensions that declare MCP server capabilities
+// getExtensionServers gets the MCP server configuration for azd extensions that declare MCP server capabilities
 func (a *mcpStartAction) getExtensionServers(
 	ctx context.Context,
 	serverInfo *grpcserver.ServerInfo,
@@ -358,7 +358,7 @@ func (a *mcpStartAction) getExtensionServerConfig(
 
 // getExtensionEnvironment prepares environment variables for extensions
 // This includes both custom environment variables from extension configuration
-// and AZD environment variables needed for the extension framework.
+// and azd environment variables needed for the extension framework.
 func (a *mcpStartAction) getExtensionEnvironment(
 	ext *extensions.Extension,
 	serverInfo *grpcserver.ServerInfo,
@@ -379,7 +379,7 @@ func (a *mcpStartAction) getExtensionEnvironment(
 		}
 	}
 
-	// Generate AZD extension framework environment variables
+	// Generate azd extension framework environment variables
 	jwtToken, err := grpcserver.GenerateExtensionToken(ext, serverInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate extension token: %w", err)
@@ -395,7 +395,7 @@ func (a *mcpStartAction) getExtensionEnvironment(
 		azdEnv = append(azdEnv, "FORCE_COLOR=1")
 	}
 
-	// Combine custom environment variables with AZD environment variables
+	// Combine custom environment variables with azd environment variables
 	env = append(env, azdEnv...)
 
 	return env, nil

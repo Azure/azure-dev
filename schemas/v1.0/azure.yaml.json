@@ -1161,7 +1161,7 @@
                 "name": {
                     "type": "string",
                     "title": "Name of the AI component.",
-                    "description": "Optional. When omitted AZD will generate a name based on the component type and the service name. Supports environment variable substitution."
+                    "description": "Optional. When omitted azd will generate a name based on the component type and the service name. Supports environment variable substitution."
                 },
                 "path": {
                     "type": "string",
@@ -1192,7 +1192,7 @@
                         "environment": {
                             "type": "object",
                             "title": "A map of key/value pairs to set as environment variables for the deployment.",
-                            "description": "Optional. Values support OS & AZD environment variable substitution.",
+                            "description": "Optional. Values support OS & azd environment variable substitution.",
                             "additionalProperties": {
                                 "type": "string"
                             }
@@ -1208,7 +1208,7 @@
                 "workspace": {
                     "type": "string",
                     "title": "The name of the AI Studio project workspace.",
-                    "description": "Optional. When omitted AZD will use the value specified in the 'AZUREAI_PROJECT_NAME' environment variable. Supports environment variable substitution."
+                    "description": "Optional. When omitted azd will use the value specified in the 'AZUREAI_PROJECT_NAME' environment variable. Supports environment variable substitution."
                 },
                 "flow": {
                     "$ref": "#/definitions/aiComponentConfig",

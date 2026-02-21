@@ -344,10 +344,10 @@ func newListenCommand() *cobra.Command {
         Use:   "listen",
         Short: "Starts the extension and listens for events.",
         RunE: func(cmd *cobra.Command, args []string) error {
-            // Create a new context that includes the AZD access token.
+            // Create a new context that includes the azd access token.
             ctx := azdext.WithAccessToken(cmd.Context())
 
-            // Create a new AZD client.
+            // Create a new azd client.
             azdClient, err := azdext.NewAzdClient()
             if err != nil {
                 return fmt.Errorf("failed to create azd client: %w", err)
@@ -936,7 +936,7 @@ Extensions can declare the following capabilities in their manifest:
 id: microsoft.azd.demo
 namespace: demo
 displayName: Demo Extension
-description: This extension provides examples of the AZD extension framework.
+description: This extension provides examples of the azd extension framework.
 usage: azd demo <command> [options]
 version: 0.1.0
 entryPoint: demo
@@ -1069,7 +1069,7 @@ Here's a simple extension manifest for getting started:
 id: microsoft.azd.demo
 namespace: demo
 displayName: Demo Extension
-description: This extension provides examples of the AZD extension framework.
+description: This extension provides examples of the azd extension framework.
 usage: azd demo <command> [options]
 version: 0.1.0
 capabilities:
@@ -1092,7 +1092,7 @@ The following is an example of an [extension manifest](../extensions/microsoft.a
 id: microsoft.azd.demo
 namespace: demo
 displayName: Demo Extension
-description: This extension provides examples of the AZD extension framework.
+description: This extension provides examples of the azd extension framework.
 usage: azd demo <command> [options]
 version: 0.1.0
 capabilities:
@@ -1152,10 +1152,10 @@ func WithAccessToken(ctx context.Context, params ...string) context.Context {
 ### How to call `azd` gRPC service
 
 ```go
-// Create a new context that includes the AZD access token
+// Create a new context that includes the azd access token
 ctx := azdext.WithAccessToken(cmd.Context())
 
-// Create a new AZD client
+// Create a new azd client
 // The constructor function automatically constructs the address
 // from the `AZD_SERVER` environment variable but can be overridden if required.
 azdClient, err := azdext.NewAzdClient()
@@ -1184,10 +1184,10 @@ In this example the extension is leveraging the `azdext.NewExtensionHost` constr
 Other languages will need to manually handle the different message types invoked by the service.
 
 ```go
-// Create a new context that includes the AZD access token.
+// Create a new context that includes the azd access token.
 ctx := azdext.WithAccessToken(cmd.Context())
 
-// Create a new AZD client.
+// Create a new azd client.
 azdClient, err := azdext.NewAzdClient()
 if err != nil {
     return fmt.Errorf("failed to create azd client: %w", err)
@@ -2524,7 +2524,7 @@ func main() {
 
 ### Compose Service
 
-This service manages composability resources in an AZD project.
+This service manages composability resources in an azd project.
 
 > See [compose.proto](../grpc/proto/compose.proto) for more details.
 

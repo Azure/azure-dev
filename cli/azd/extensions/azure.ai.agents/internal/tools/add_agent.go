@@ -38,13 +38,13 @@ func NewAddAgentTool() server.ServerTool {
 				return mcp.NewToolResultError("manifest_location parameter is required and must be a string"), nil
 			}
 
-			// Create a new context that includes the AZD access token
+			// Create a new context that includes the azd access token
 			ctx = azdext.WithAccessToken(ctx)
 
-			// Create a new AZD client
+			// Create a new azd client
 			azdClient, err := azdext.NewAzdClient()
 			if err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Failed to create AZD client: %v", err)), nil
+				return mcp.NewToolResultError(fmt.Sprintf("Failed to create azd client: %v", err)), nil
 			}
 			defer azdClient.Close()
 

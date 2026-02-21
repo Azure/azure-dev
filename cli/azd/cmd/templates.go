@@ -545,7 +545,7 @@ func getCmdTemplateSourceHelpFooter(*cobra.Command) string {
 		"View a list of registered azd template sources.": output.WithHighLightFormat(
 			"azd template source list",
 		),
-		"Enable the Awesome Azd template source.": output.WithHighLightFormat(
+		"Enable the Awesome azd template source.": output.WithHighLightFormat(
 			"azd template source add awesome-azd",
 		),
 		"Add a new file template source.": output.WithHighLightFormat(

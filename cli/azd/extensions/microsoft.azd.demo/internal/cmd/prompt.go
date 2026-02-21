@@ -22,10 +22,10 @@ func newPromptCommand() *cobra.Command {
 		Use:   "prompt",
 		Short: "Examples of prompting the user for input.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Create a new context that includes the AZD access token
+			// Create a new context that includes the azd access token
 			ctx := azdext.WithAccessToken(cmd.Context())
 
-			// Create a new AZD client
+			// Create a new azd client
 			azdClient, err := azdext.NewAzdClient()
 			if err != nil {
 				return fmt.Errorf("failed to create azd client: %w", err)
@@ -43,7 +43,7 @@ func newPromptCommand() *cobra.Command {
 
 			_, err = azdClient.Prompt().MultiSelect(ctx, &azdext.MultiSelectRequest{
 				Options: &azdext.MultiSelectOptions{
-					Message: "Which Azure services do you use most with AZD?",
+					Message: "Which Azure services do you use most with azd?",
 					Choices: []*azdext.MultiSelectChoice{
 						{Label: "Container Apps", Value: "container-apps"},
 						{Label: "Functions", Value: "functions"},

@@ -1,4 +1,4 @@
-# AZD Application Initialization and Migration Instructions
+# azd application Initialization and Migration Instructions
 
 ✅ **Agent Task List**  
 
@@ -11,7 +11,7 @@
 
 📄 **Required Outputs**  
 
-- Complete AZD-compatible project structure
+- Complete azd-compatible project structure
 - Valid `azure.yaml` configuration file
 - Bicep infrastructure templates in `./infra` directory
 - Dockerfiles for containerizable services
@@ -54,12 +54,12 @@ Using available tools - Generate the following files:
 
 **Phase 5: Project Validation and Environment Setup**
 
-Using available tools - Perform and end-to-end AZD project validation
+Using available tools - Perform and end-to-end azd project validation
 
 - Validates azure.yaml against schema
-- Validate AZD environment exists
+- Validate azd environment exists
 - Validate infrastructure templates
-- Ensures AZD environment exists, tests packaging, validates deployment preview
+- Ensures azd environment exists, tests packaging, validates deployment preview
 - Provides readiness confirmation
 
 **Usage Patterns:**
@@ -72,7 +72,7 @@ Using available tools - Perform and end-to-end AZD project validation
 7. azd_project_validation
 ```
 
-**Update Existing AZD Project:**
+**Update Existing azd project:**
 
 ```text
 1. Review azd-arch-plan.md → 2. File generation tools → 3. azd_project_validation
@@ -93,6 +93,6 @@ Using available tools - Perform and end-to-end AZD project validation
 - [ ] Infrastructure files generated and compile without errors
 - [ ] Dockerfiles created for containerizable components
 - [ ] `azd-arch-plan.md` created or updated to provide comprehensive project documentation while preserving existing content
-- [ ] AZD environment initialized and configured
+- [ ] azd environment initialized and configured
 - [ ] All validation checks pass using `azd_project_validation` tool
 - [ ] Project confirmed ready for deployment with `azd up`

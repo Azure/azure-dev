@@ -13,7 +13,7 @@ public class ContextCommand
 
     public Command Build()
     {
-        var command = new Command("context", "Get the context of the AZD project & environment.");
+        var command = new Command("context", "Get the context of the azd project & environment.");
 
         command.SetHandler(async () =>
         {
@@ -47,7 +47,7 @@ public class ContextCommand
                 }
                 else
                 {
-                    AnsiConsole.MarkupLine("[yellow]WARNING:[/] No AZD project found in current directory.");
+                    AnsiConsole.MarkupLine("[yellow]WARNING:[/] No azd project found in current directory.");
                     AnsiConsole.MarkupLine($"Run [cyan]azd init[/] to create a new project.");
                     return;
                 }
@@ -56,7 +56,7 @@ public class ContextCommand
                 var currentEnv = await _azdClient.Environment.GetCurrentAsync(new());
                 if (currentEnv == null)
                 {
-                    AnsiConsole.MarkupLine("[yellow]WARNING:[/] No AZD environment(s) found.");
+                    AnsiConsole.MarkupLine("[yellow]WARNING:[/] No azd environment(s) found.");
                     AnsiConsole.MarkupLine($"Run [cyan]azd env new[/] to create one.");
                     return;
                 }

@@ -22,7 +22,7 @@ func NewAzdAzureYamlGenerationTool() server.ServerTool {
 			mcp.WithOpenWorldHintAnnotation(false),
 			mcp.WithDescription(
 				`Returns instructions for generating the azure.yaml configuration file with proper service hosting, 
-build, and deployment settings for AZD projects. 
+build, and deployment settings for azd projects. 
 
 The LLM agent should execute these instructions using available tools.
 

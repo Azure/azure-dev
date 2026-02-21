@@ -20,7 +20,7 @@ class PromptCommand:
         # Prompt user for service choices
         multi_select_request = prompt_pb2.MultiSelectRequest(
             options=prompt_pb2.MultiSelectOptions(
-                message="Which Azure services do you use most with AZD?",
+                message="Which Azure services do you use most with azd?",
                 choices=[
                     prompt_pb2.MultiSelectChoice(value="container-apps", label="Container Apps", selected=False),
                     prompt_pb2.MultiSelectChoice(value="functions", label="Functions", selected=False),

@@ -81,7 +81,6 @@ func (pp *pythonProject) Restore(
 
 	// Detect dependency file: prefer pyproject.toml over requirements.txt
 	pyprojectPath := filepath.Join(serviceConfig.Path(), "pyproject.toml")
-	requirementsPath := filepath.Join(serviceConfig.Path(), "requirements.txt")
 	depFile := "requirements.txt"
 
 	if _, statErr := os.Stat(pyprojectPath); statErr == nil {
@@ -100,12 +99,6 @@ func (pp *pythonProject) Restore(
 		return nil, fmt.Errorf("dependencies for project '%s' could not be installed: %w", serviceConfig.Path(), err)
 	}
 
-	// Determine which dep file is actually used for metadata
-	metaDepFile := depFile
-	if _, statErr := os.Stat(requirementsPath); statErr != nil && depFile == "requirements.txt" {
-		metaDepFile = ""
-	}
-
 	// Create restore artifact for the project directory with virtual environment
 	return &ServiceRestoreResult{
 		Artifacts: ArtifactCollection{
@@ -117,7 +110,7 @@ func (pp *pythonProject) Restore(
 					"projectPath":        serviceConfig.Path(),
 					"framework":          "python",
 					"virtualEnvironment": vEnvName,
-					"requirements":       metaDepFile,
+					"requirements":       depFile,
 				},
 			},
 		},

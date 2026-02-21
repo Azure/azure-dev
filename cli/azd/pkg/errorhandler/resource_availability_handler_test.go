@@ -71,11 +71,11 @@ func TestExtractResourceType(t *testing.T) {
 }
 
 func TestResourceNotAvailableHandler_WithLocationAndResourceType(t *testing.T) {
-	t.Setenv("AZURE_LOCATION", "eastus2")
-	t.Setenv("AZURE_SUBSCRIPTION_ID", "")
-
-	// Without credentials, the handler falls back to static suggestion
-	handler := &ResourceNotAvailableHandler{}
+	handler := &ResourceNotAvailableHandler{
+		env: &mockEnv{values: map[string]string{
+			"AZURE_LOCATION": "eastus2",
+		}},
+	}
 	err := errors.New(
 		"LocationIsOfferRestricted: Microsoft.Web/staticSites is not available in eastus2",
 	)
@@ -88,10 +88,9 @@ func TestResourceNotAvailableHandler_WithLocationAndResourceType(t *testing.T) {
 }
 
 func TestResourceNotAvailableHandler_WithoutLocation(t *testing.T) {
-	t.Setenv("AZURE_LOCATION", "")
-	t.Setenv("AZURE_SUBSCRIPTION_ID", "")
-
-	handler := &ResourceNotAvailableHandler{}
+	handler := &ResourceNotAvailableHandler{
+		env: &mockEnv{values: map[string]string{}},
+	}
 	err := errors.New(
 		"SkuNotAvailable: Microsoft.Compute/virtualMachines Standard_D2s_v3",
 	)
@@ -103,10 +102,11 @@ func TestResourceNotAvailableHandler_WithoutLocation(t *testing.T) {
 }
 
 func TestResourceNotAvailableHandler_NoResourceType(t *testing.T) {
-	t.Setenv("AZURE_LOCATION", "westus")
-	t.Setenv("AZURE_SUBSCRIPTION_ID", "")
-
-	handler := &ResourceNotAvailableHandler{}
+	handler := &ResourceNotAvailableHandler{
+		env: &mockEnv{values: map[string]string{
+			"AZURE_LOCATION": "westus",
+		}},
+	}
 	err := errors.New("LocationIsOfferRestricted: offer restricted in this region")
 	result := handler.Handle(context.Background(), err)
 
@@ -151,9 +151,6 @@ func TestResourceNotAvailableHandler_BuildSuggestion_WithLocationsNoCurrentRegio
 }
 
 func TestResourceNotAvailableHandler_LocationNotAvailableForResourceType(t *testing.T) {
-	t.Setenv("AZURE_LOCATION", "eastus")
-	t.Setenv("AZURE_SUBSCRIPTION_ID", "test-sub-id")
-
 	// Simulate the real ARM validation error for Static Web Apps
 	realError := errors.New(
 		`The provided location 'eastus' is not available for ` +
@@ -170,6 +167,10 @@ func TestResourceNotAvailableHandler_LocationNotAvailableForResourceType(t *test
 	}
 	handler := &ResourceNotAvailableHandler{
 		locationResolver: mockResolver,
+		env: &mockEnv{values: map[string]string{
+			"AZURE_LOCATION":        "eastus",
+			"AZURE_SUBSCRIPTION_ID": "test-sub-id",
+		}},
 	}
 
 	result := handler.Handle(context.Background(), realError)
@@ -197,4 +198,13 @@ func (m *mockLocationResolver) GetLocations(
 ) ([]string, error) {
 	m.lastResourceType = resourceType
 	return m.locations, m.err
+}
+
+// mockEnv implements EnvironmentResolver for testing.
+type mockEnv struct {
+	values map[string]string
+}
+
+func (m *mockEnv) Getenv(key string) string {
+	return m.values[key]
 }

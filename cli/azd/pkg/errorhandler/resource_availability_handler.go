@@ -6,7 +6,6 @@ package errorhandler
 import (
 	"context"
 	"fmt"
-	"os"
 	"regexp"
 	"strings"
 )
@@ -30,18 +29,27 @@ type ResourceTypeLocationResolver interface {
 	) ([]string, error)
 }
 
+// EnvironmentResolver provides access to azd environment values
+// like AZURE_LOCATION and AZURE_SUBSCRIPTION_ID.
+type EnvironmentResolver interface {
+	Getenv(key string) string
+}
+
 // ResourceNotAvailableHandler provides dynamic suggestions for resource
 // availability errors by querying the ARM Providers API for supported regions.
 type ResourceNotAvailableHandler struct {
 	locationResolver ResourceTypeLocationResolver
+	env              EnvironmentResolver
 }
 
 // NewResourceNotAvailableHandler creates a new ResourceNotAvailableHandler.
 func NewResourceNotAvailableHandler(
 	locationResolver ResourceTypeLocationResolver,
+	env EnvironmentResolver,
 ) ErrorHandler {
 	return &ResourceNotAvailableHandler{
 		locationResolver: locationResolver,
+		env:              env,
 	}
 }
 
@@ -49,8 +57,8 @@ func (h *ResourceNotAvailableHandler) Handle(
 	ctx context.Context, err error,
 ) *ErrorWithSuggestion {
 	errMsg := err.Error()
-	location := os.Getenv("AZURE_LOCATION")
-	subscriptionID := os.Getenv("AZURE_SUBSCRIPTION_ID")
+	location := h.env.Getenv("AZURE_LOCATION")
+	subscriptionID := h.env.Getenv("AZURE_SUBSCRIPTION_ID")
 	resourceType := extractResourceType(errMsg)
 
 	var availableLocations []string

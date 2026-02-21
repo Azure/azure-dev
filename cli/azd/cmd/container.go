@@ -666,8 +666,12 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterNamedSingleton("resourceNotAvailableHandler",
 		func(
 			locationService *azapi.ResourceTypeLocationService,
+			lazyEnv *lazy.Lazy[*environment.Environment],
 		) errorhandler.ErrorHandler {
-			return errorhandler.NewResourceNotAvailableHandler(locationService)
+			return errorhandler.NewResourceNotAvailableHandler(
+				locationService,
+				&lazyEnvironmentResolver{lazyEnv: lazyEnv},
+			)
 		},
 	)
 
@@ -961,3 +965,17 @@ type ArmClientInitializer[T comparable] func(
 	credentials azcore.TokenCredential,
 	armClientOptions *arm.ClientOptions,
 ) (T, error)
+
+// lazyEnvironmentResolver adapts *lazy.Lazy[*environment.Environment]
+// to the errorhandler.EnvironmentResolver interface.
+type lazyEnvironmentResolver struct {
+	lazyEnv *lazy.Lazy[*environment.Environment]
+}
+
+func (r *lazyEnvironmentResolver) Getenv(key string) string {
+	env, err := r.lazyEnv.GetValue()
+	if err != nil {
+		return ""
+	}
+	return env.Getenv(key)
+}

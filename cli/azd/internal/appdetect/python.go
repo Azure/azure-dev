@@ -46,18 +46,11 @@ func (pd *pythonDetector) DetectProject(ctx context.Context, path string, entrie
 		DetectionRule: "Inferred by presence of: " + depFile,
 	}
 
-	// Parse dependencies from the detected file
-	depsFile := depFile
-	if strings.ToLower(depFile) == "pyproject.toml" {
-		// For pyproject.toml, scan for known deps in
-		// the raw text (avoids TOML parser dependency)
-		depsFile = depFile
-	}
-
-	file, err := os.Open(filepath.Join(path, depsFile))
+	file, err := os.Open(filepath.Join(path, depFile))
 	if err != nil {
 		return nil, err
 	}
+	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
 	databaseDepMap := map[DatabaseDep]struct{}{}
@@ -67,7 +60,7 @@ func (pd *pythonDetector) DetectProject(ctx context.Context, path string, entrie
 		// For requirements.txt: "package==version"
 		// For pyproject.toml: '"package>=version"' in dependencies list
 		split := strings.Split(line, "==")
-		if len(split) < 1 {
+		if strings.TrimSpace(split[0]) == "" {
 			continue
 		}
 
@@ -110,10 +103,6 @@ func (pd *pythonDetector) DetectProject(ctx context.Context, path string, entrie
 		case "redis", "redis-om":
 			databaseDepMap[DbRedis] = struct{}{}
 		}
-	}
-
-	if err := file.Close(); err != nil {
-		return nil, err
 	}
 
 	if len(databaseDepMap) > 0 {

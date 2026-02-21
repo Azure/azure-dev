@@ -382,7 +382,7 @@ func TestPipeline_ContainerAppSecretInvalid(t *testing.T) {
 		err,
 		[]ErrorSuggestionRule{
 			{
-				ErrorType:  "testDeploymentError",
+				ErrorType: "testDeploymentError",
 				Properties: map[string]string{
 					"Details.Code": "ContainerAppSecretInvalid",
 				},
@@ -410,7 +410,7 @@ func TestPipeline_ContainerAppOperationError_ImagePull(t *testing.T) {
 		err,
 		[]ErrorSuggestionRule{
 			{
-				ErrorType:  "testDeploymentError",
+				ErrorType: "testDeploymentError",
 				Properties: map[string]string{
 					"Details.Code": "ContainerAppOperationError",
 				},
@@ -419,7 +419,7 @@ func TestPipeline_ContainerAppOperationError_ImagePull(t *testing.T) {
 				Suggestion: "Check image name and registry.",
 			},
 			{
-				ErrorType:  "testDeploymentError",
+				ErrorType: "testDeploymentError",
 				Properties: map[string]string{
 					"Details.Code": "ContainerAppOperationError",
 				},
@@ -447,7 +447,7 @@ func TestPipeline_ContainerAppOperationError_Generic(t *testing.T) {
 		err,
 		[]ErrorSuggestionRule{
 			{
-				ErrorType:  "testDeploymentError",
+				ErrorType: "testDeploymentError",
 				Properties: map[string]string{
 					"Details.Code": "ContainerAppOperationError",
 				},
@@ -456,7 +456,7 @@ func TestPipeline_ContainerAppOperationError_Generic(t *testing.T) {
 				Suggestion: "Check image name.",
 			},
 			{
-				ErrorType:  "testDeploymentError",
+				ErrorType: "testDeploymentError",
 				Properties: map[string]string{
 					"Details.Code": "ContainerAppOperationError",
 				},
@@ -485,7 +485,7 @@ func TestPipeline_ContainerAppInvalidParam(t *testing.T) {
 		err,
 		[]ErrorSuggestionRule{
 			{
-				ErrorType:  "testDeploymentError",
+				ErrorType: "testDeploymentError",
 				Properties: map[string]string{
 					"Details.Code": "InvalidParameterValueInContainerTemplate",
 				},

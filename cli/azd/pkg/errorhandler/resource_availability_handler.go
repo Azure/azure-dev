@@ -24,8 +24,8 @@ type ResourceTypeLocationResolver interface {
 	) ([]string, error)
 }
 
-// ResourceNotAvailableHandler provides dynamic suggestions for resource availability
-// errors by querying the ARM Providers API for supported regions.
+// ResourceNotAvailableHandler provides dynamic suggestions for resource
+// availability errors by querying the ARM Providers API for supported regions.
 type ResourceNotAvailableHandler struct {
 	locationResolver ResourceTypeLocationResolver
 }
@@ -39,23 +39,27 @@ func NewResourceNotAvailableHandler(
 	}
 }
 
-func (h *ResourceNotAvailableHandler) Handle(ctx context.Context, err error) *ErrorWithSuggestion {
+func (h *ResourceNotAvailableHandler) Handle(
+	ctx context.Context, err error,
+) *ErrorWithSuggestion {
+	errMsg := err.Error()
 	location := os.Getenv("AZURE_LOCATION")
 	subscriptionID := os.Getenv("AZURE_SUBSCRIPTION_ID")
+	resourceType := extractResourceType(errMsg)
 
-	// Try to extract the resource type from the error message
-	resourceType := extractResourceType(err.Error())
-
-	// Try to look up available locations for the resource type
 	var availableLocations []string
-	if resourceType != "" && subscriptionID != "" && h.locationResolver != nil {
-		locations, resolveErr := h.locationResolver.GetLocations(ctx, subscriptionID, resourceType)
-		if resolveErr == nil {
-			availableLocations = locations
+	if resourceType != "" && subscriptionID != "" &&
+		h.locationResolver != nil {
+		if locs, resolveErr := h.locationResolver.GetLocations(
+			ctx, subscriptionID, resourceType,
+		); resolveErr == nil {
+			availableLocations = locs
 		}
 	}
 
-	return h.buildSuggestion(err, location, resourceType, availableLocations)
+	return h.buildSuggestion(
+		err, location, resourceType, availableLocations,
+	)
 }
 
 func (h *ResourceNotAvailableHandler) buildSuggestion(
@@ -68,7 +72,8 @@ func (h *ResourceNotAvailableHandler) buildSuggestion(
 
 	if resourceType != "" {
 		msg = fmt.Sprintf(
-			"The resource type '%s' is not available in the current region.",
+			"The resource type '%s' is not available "+
+				"in the current region.",
 			resourceType,
 		)
 	} else {
@@ -79,7 +84,8 @@ func (h *ResourceNotAvailableHandler) buildSuggestion(
 	case len(availableLocations) > 0 && location != "":
 		suggestion = fmt.Sprintf(
 			"The current region is '%s'. '%s' is available in: %s. "+
-				"Change region with 'azd env set AZURE_LOCATION <region>'.",
+				"Change region with "+
+				"'azd env set AZURE_LOCATION <region>'.",
 			location,
 			resourceType,
 			strings.Join(availableLocations, ", "),
@@ -87,31 +93,35 @@ func (h *ResourceNotAvailableHandler) buildSuggestion(
 	case len(availableLocations) > 0:
 		suggestion = fmt.Sprintf(
 			"'%s' is available in: %s. "+
-				"Set a supported region with 'azd env set AZURE_LOCATION <region>'.",
+				"Set a supported region with "+
+				"'azd env set AZURE_LOCATION <region>'.",
 			resourceType,
 			strings.Join(availableLocations, ", "),
 		)
 	case location != "":
 		suggestion = fmt.Sprintf(
 			"The current region is '%s'. "+
-				"Try a different region with 'azd env set AZURE_LOCATION <region>'.",
+				"Try a different region with "+
+				"'azd env set AZURE_LOCATION <region>'.",
 			location,
 		)
 	default:
-		suggestion = "Try a different region with 'azd env set AZURE_LOCATION <region>'."
+		suggestion = "Try a different region with " +
+			"'azd env set AZURE_LOCATION <region>'."
 	}
 
 	return &ErrorWithSuggestion{
 		Err:        err,
 		Message:    msg,
 		Suggestion: suggestion,
-		DocUrl:     "https://learn.microsoft.com/azure/azure-resource-manager/troubleshooting/error-sku-not-available",
+		DocUrl: "https://learn.microsoft.com/azure/" +
+			"azure-resource-manager/troubleshooting/" +
+			"error-sku-not-available",
 	}
 }
 
 // extractResourceType attempts to extract an ARM resource type
 // (e.g., "Microsoft.Web/staticSites") from an error message.
 func extractResourceType(errMessage string) string {
-	match := resourceTypePattern.FindString(errMessage)
-	return match
+	return resourceTypePattern.FindString(errMessage)
 }

@@ -127,3 +127,52 @@ func TestResourceNotAvailableHandler_BuildSuggestion_WithLocationsNoCurrentRegio
 	assert.Contains(t, result.Suggestion, "centralus, eastus")
 	assert.NotContains(t, result.Suggestion, "current region")
 }
+
+func TestResourceNotAvailableHandler_LocationNotAvailableForResourceType(t *testing.T) {
+	t.Setenv("AZURE_LOCATION", "eastus")
+	t.Setenv("AZURE_SUBSCRIPTION_ID", "test-sub-id")
+
+	// Simulate the real ARM validation error for Static Web Apps
+	realError := errors.New(
+		`The provided location 'eastus' is not available for ` +
+			`resource type 'Microsoft.Web/staticSites'. ` +
+			`List of available regions for the resource type is ` +
+			`'westus2,centralus,eastus2,westeurope,eastasia'.`,
+	)
+
+	mockResolver := &mockLocationResolver{
+		locations: []string{
+			"centralus", "eastasia", "eastus2",
+			"westeurope", "westus2",
+		},
+	}
+	handler := &ResourceNotAvailableHandler{
+		locationResolver: mockResolver,
+	}
+
+	result := handler.Handle(context.Background(), realError)
+
+	require.NotNil(t, result)
+	assert.Contains(t, result.Message, "Microsoft.Web/staticSites")
+	assert.Contains(t, result.Suggestion, "eastus")
+	assert.Contains(t, result.Suggestion, "centralus")
+	assert.Contains(t, result.Suggestion, "westus2")
+	assert.Contains(t, result.Suggestion, "azd env set AZURE_LOCATION")
+
+	// Verify the resolver was called with the correct resource type
+	assert.Equal(t, "Microsoft.Web/staticSites", mockResolver.lastResourceType)
+}
+
+// mockLocationResolver implements ResourceTypeLocationResolver for testing.
+type mockLocationResolver struct {
+	locations        []string
+	err              error
+	lastResourceType string
+}
+
+func (m *mockLocationResolver) GetLocations(
+	_ context.Context, _ string, resourceType string,
+) ([]string, error) {
+	m.lastResourceType = resourceType
+	return m.locations, m.err
+}

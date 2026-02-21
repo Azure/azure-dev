@@ -128,6 +128,11 @@ rules:
 
   - errorType: "DeploymentErrorLine"
     properties:
+      Code: "LocationNotAvailableForResourceType"
+    handler: "resourceNotAvailableHandler"
+
+  - errorType: "DeploymentErrorLine"
+    properties:
       Code: "LocationIsOfferRestricted"
     handler: "resourceNotAvailableHandler"
 

@@ -240,3 +240,37 @@ func TestPipeline_DeploymentErrorLine_FourLevelsDeep(t *testing.T) {
 		"Should match ValidationError 4 levels deep")
 	assert.Equal(t, "Template validation failed.", result.Message)
 }
+
+func TestPipeline_DeploymentErrorLine_LocationNotAvailableForResourceType(t *testing.T) {
+	// Real validation error for Static Web Apps in unsupported region
+	deployErr := NewAzureDeploymentError(
+		"Validation Error Details",
+		`{"error":{`+
+			`"code":"LocationNotAvailableForResourceType",`+
+			`"message":"The provided location 'eastus' is not available `+
+			`for resource type 'Microsoft.Web/staticSites'. `+
+			`List of available regions for the resource type is `+
+			`'westus2,centralus,eastus2,westeurope,eastasia'."}}`,
+		DeploymentOperationValidate,
+	)
+
+	pipeline := errorhandler.NewErrorHandlerPipeline(nil)
+	result := pipeline.ProcessWithRules(
+		context.Background(),
+		deployErr,
+		[]errorhandler.ErrorSuggestionRule{
+			{
+				ErrorType: "DeploymentErrorLine",
+				Properties: map[string]string{
+					"Code": "LocationNotAvailableForResourceType",
+				},
+				Message:    "Resource not available in region.",
+				Suggestion: "Change region.",
+			},
+		},
+	)
+
+	require.NotNil(t, result,
+		"Should match LocationNotAvailableForResourceType")
+	assert.Equal(t, "Resource not available in region.", result.Message)
+}

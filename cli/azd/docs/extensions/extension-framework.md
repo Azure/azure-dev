@@ -1130,7 +1130,16 @@ The gRPC client must also include an `authorization` parameter with the value fr
 For custom command execution, extensions can provide richer telemetry by reporting a structured error payload to
 `AZD_ERROR_FILE` before exiting with a non-zero status code.
 
-For Go extensions, use `azdext.ReportError` from your command entry point:
+For Go extensions, the recommended approach is to use `azdext.Run`, which handles context creation, structured error
+reporting, suggestion rendering, and `os.Exit` automatically:
+
+```go
+func main() {
+  azdext.Run(cmd.NewRootCommand())
+}
+```
+
+Alternatively, you can use `azdext.ReportError` directly for lower-level control:
 
 ```go
 func main() {
@@ -1148,9 +1157,10 @@ Use typed extension errors to control telemetry mapping:
 
 ```go
 return &azdext.LocalError{
-  Message:  "invalid configuration: missing required field 'name'",
-  Code:     "invalid_config",
-  Category: "validation",
+  Message:    "invalid configuration: missing required field 'name'",
+  Code:       "invalid_config",
+  Category:   "validation",
+  Suggestion: "Ensure your azure.yaml has a 'name' field defined.",
 }
 ```
 
@@ -1160,6 +1170,7 @@ return &azdext.ServiceError{
   ErrorCode:   "TooManyRequests",
   StatusCode:  429,
   ServiceName: "openai.azure.com",
+  Suggestion:  "Wait a moment and retry the request, or increase your rate limit.",
 }
 ```
 

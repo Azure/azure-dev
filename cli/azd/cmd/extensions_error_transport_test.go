@@ -6,6 +6,7 @@ package cmd
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -21,7 +22,7 @@ func TestReadReportedExtensionErrorFromEnv(t *testing.T) {
 	})
 
 	t.Run("ValidErrorFile", func(t *testing.T) {
-		path := t.TempDir() + "/ext-error.json"
+		path := filepath.Join(t.TempDir(), "ext-error.json")
 		writeErr := azdext.WriteErrorFile(path, &azdext.LocalError{
 			Message:  "invalid config",
 			Code:     "invalid_config",
@@ -42,7 +43,7 @@ func TestReadReportedExtensionErrorFromEnv(t *testing.T) {
 	})
 
 	t.Run("InvalidErrorFileContent", func(t *testing.T) {
-		path := t.TempDir() + "/ext-error-invalid.json"
+		path := filepath.Join(t.TempDir(), "ext-error-invalid.json")
 		require.NoError(t, osWriteFile(path, []byte("{invalid-json")))
 
 		err, readErr := readReportedExtensionErrorFromEnv([]string{

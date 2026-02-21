@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -273,39 +272,5 @@ func TestPipeline_DeploymentErrorLine_LocationNotAvailableForResourceType(t *tes
 
 	require.NotNil(t, result,
 		"Should match LocationNotAvailableForResourceType")
-	assert.Equal(t, "Resource not available in region.", result.Message)
-}
-
-func TestPipeline_ResponseError_LocationNotAvailable(t *testing.T) {
-	// When BeginValidateAtSubscriptionScope fails immediately (before
-	// polling), the error is an azcore.ResponseError wrapped in fmt.Errorf.
-	// This simulates: "validating deployment to subscription: %w"
-	respErr := &azcore.ResponseError{
-		ErrorCode:  "LocationNotAvailableForResourceType",
-		StatusCode: 400,
-	}
-	wrappedErr := fmt.Errorf(
-		"validating deployment to subscription:\n\n"+
-			"Validation Error Details:\n%w", respErr,
-	)
-
-	pipeline := errorhandler.NewErrorHandlerPipeline(nil)
-	result := pipeline.ProcessWithRules(
-		context.Background(),
-		wrappedErr,
-		[]errorhandler.ErrorSuggestionRule{
-			{
-				ErrorType: "ResponseError",
-				Properties: map[string]string{
-					"ErrorCode": "LocationNotAvailableForResourceType",
-				},
-				Message:    "Resource not available in region.",
-				Suggestion: "Change region.",
-			},
-		},
-	)
-
-	require.NotNil(t, result,
-		"Should match ResponseError with ErrorCode")
 	assert.Equal(t, "Resource not available in region.", result.Message)
 }

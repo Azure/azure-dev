@@ -326,3 +326,41 @@ func (m *mockErrorHandler) Handle(
 ) *ErrorWithSuggestion {
 	return m.handleFunc(ctx, err)
 }
+
+// mockResponseError mimics azcore.ResponseError for testing typed error matching.
+type mockResponseError struct {
+	ErrorCode  string
+	StatusCode int
+}
+
+func (e *mockResponseError) Error() string {
+	return fmt.Sprintf("RESPONSE %d: %s", e.StatusCode, e.ErrorCode)
+}
+
+func TestPipeline_ResponseError_MatchesByErrorCode(t *testing.T) {
+	respErr := &mockResponseError{
+		ErrorCode:  "LocationNotAvailableForResourceType",
+		StatusCode: 400,
+	}
+	wrappedErr := fmt.Errorf("validating deployment: %w", respErr)
+
+	pipeline := NewErrorHandlerPipeline(nil)
+	result := pipeline.ProcessWithRules(
+		context.Background(),
+		wrappedErr,
+		[]ErrorSuggestionRule{
+			{
+				ErrorType: "mockResponseError",
+				Properties: map[string]string{
+					"ErrorCode": "LocationNotAvailableForResourceType",
+				},
+				Message:    "Resource not available in region.",
+				Suggestion: "Change region.",
+			},
+		},
+	)
+
+	require.NotNil(t, result,
+		"Should match mockResponseError by ErrorCode property")
+	assert.Equal(t, "Resource not available in region.", result.Message)
+}

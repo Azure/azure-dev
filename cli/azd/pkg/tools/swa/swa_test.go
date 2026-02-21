@@ -45,7 +45,7 @@ func Test_SwaBuild(t *testing.T) {
 			}, nil
 		})
 
-		err := swacli.Build(context.Background(), testPath, nil)
+		err := swacli.Build(context.Background(), testPath, nil, nil)
 		require.NoError(t, err)
 		require.True(t, ran)
 	})
@@ -72,7 +72,7 @@ func Test_SwaBuild(t *testing.T) {
 			}, errors.New("exit code: 1")
 		})
 
-		err := swacli.Build(context.Background(), testPath, nil)
+		err := swacli.Build(context.Background(), testPath, nil, nil)
 		require.True(t, ran)
 		require.EqualError(
 			t,

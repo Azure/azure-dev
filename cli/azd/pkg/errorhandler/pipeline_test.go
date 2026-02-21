@@ -364,3 +364,74 @@ func TestPipeline_ResponseError_MatchesByErrorCode(t *testing.T) {
 		"Should match mockResponseError by ErrorCode property")
 	assert.Equal(t, "Resource not available in region.", result.Message)
 }
+
+// --- RBAC and authorization error rule tests ---
+
+func TestPipeline_RBACErrors(t *testing.T) {
+	tests := []struct {
+		name        string
+		code        string
+		wantMessage string
+	}{
+		{
+			name:        "AuthorizationFailed",
+			code:        "AuthorizationFailed",
+			wantMessage: "You do not have sufficient permissions for this deployment.",
+		},
+		{
+			name:        "Unauthorized",
+			code:        "Unauthorized",
+			wantMessage: "The request was unauthorized.",
+		},
+		{
+			name:        "Forbidden",
+			code:        "Forbidden",
+			wantMessage: "Access to this resource is forbidden.",
+		},
+		{
+			name:        "RequestDisallowedByPolicy",
+			code:        "RequestDisallowedByPolicy",
+			wantMessage: "An Azure Policy is blocking this deployment.",
+		},
+		{
+			name:        "RoleAssignmentExists",
+			code:        "RoleAssignmentExists",
+			wantMessage: "A role assignment with this configuration already exists.",
+		},
+		{
+			name:        "PrincipalNotFound",
+			code:        "PrincipalNotFound",
+			wantMessage: "The security principal for a role assignment was not found.",
+		},
+		{
+			name:        "NoRegisteredProviderFound",
+			code:        "NoRegisteredProviderFound",
+			wantMessage: "A required Azure resource provider is not registered.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pipeline := NewErrorHandlerPipeline(nil)
+			err := &testDeploymentError{
+				Details: &testErrorDetails{Code: tt.code},
+				Title:   "deployment error: " + tt.code,
+			}
+
+			result := pipeline.ProcessWithRules(
+				context.Background(),
+				err,
+				[]ErrorSuggestionRule{
+					{
+						ErrorType:  "testDeploymentError",
+						Properties: map[string]string{"Details.Code": tt.code},
+						Message:    tt.wantMessage,
+						Suggestion: "test suggestion",
+					},
+				},
+			)
+			require.NotNil(t, result, "Should match %s", tt.code)
+			assert.Equal(t, tt.wantMessage, result.Message)
+		})
+	}
+}

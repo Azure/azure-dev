@@ -57,16 +57,3 @@ type ErrorSuggestionsConfig struct {
 	// Rules are evaluated in order; the first match wins.
 	Rules []ErrorSuggestionRule `yaml:"rules"`
 }
-
-// MatchedSuggestion represents a successful match of an error
-// to a suggestion rule.
-type MatchedSuggestion struct {
-	// Message is a user-friendly error message.
-	Message string
-
-	// Suggestion is the actionable next steps for the user.
-	Suggestion string
-
-	// Links is the list of reference links.
-	Links []ErrorLink
-}

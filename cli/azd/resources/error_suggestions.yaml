@@ -212,8 +212,7 @@ rules:
     properties:
       Cmd: "(?i)pwsh|powershell"
     patterns:
-      - "'Az."
-      - "is not recognized"
+      - "(?i)Az\\.\\S+.*is not recognized"
     message: "The Azure PowerShell module (Az) is required but not installed."
     suggestion: "Install it with 'Install-Module Az -Scope CurrentUser -Repository PSGallery -Force'."
     links:

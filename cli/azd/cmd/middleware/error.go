@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -94,6 +95,19 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 	// - Running in CI/CD environment where user interaction is not possible
 	if !e.featuresManager.IsEnabled(llm.FeatureLlm) || e.global.NoPrompt || resource.IsRunningOnCI() {
 		return actionResult, err
+	}
+
+	// Skip control-flow errors that don't benefit from AI analysis
+	skipAnalyzingErrors := []string{
+		"environment already initialized",
+		"interrupt",
+		"no project exists",
+		"tool execution denied",
+	}
+	for _, s := range skipAnalyzingErrors {
+		if strings.Contains(err.Error(), s) {
+			return actionResult, err
+		}
 	}
 
 	// Warn user that this is an alpha feature

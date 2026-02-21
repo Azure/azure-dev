@@ -124,13 +124,12 @@ rules:
   - errorType: "DeploymentErrorLine"
     properties:
       Code: "SkuNotAvailable"
-    handler: "skuNotAvailableHandler"
+    handler: "resourceNotAvailableHandler"
 
   - errorType: "DeploymentErrorLine"
     properties:
       Code: "LocationIsOfferRestricted"
-    message: "This resource type is restricted in the selected region."
-    suggestion: "Try a different region with 'azd env set AZURE_LOCATION <region>'."
+    handler: "resourceNotAvailableHandler"
 
   - errorType: "DeploymentErrorLine"
     properties:

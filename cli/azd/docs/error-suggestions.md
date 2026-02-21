@@ -124,13 +124,13 @@ When error codes are too broad (like generic "Conflict"), combine type matching 
 
 ### Named Handlers (dynamic suggestions)
 
-For cases that need code to compute a suggestion (e.g., including the current region or checking live state), you can reference a named `ErrorHandler` registered in the IoC container:
+For cases that need code to compute a suggestion (e.g., querying Azure for available regions), you can reference a named `ErrorHandler` registered in the IoC container:
 
 ```yaml
 - errorType: "DeploymentErrorLine"
   properties:
     Code: "SkuNotAvailable"
-  handler: "skuNotAvailableHandler"
+  handler: "resourceNotAvailableHandler"
 ```
 
 When a handler is set, the static `message`/`suggestion`/`docUrl` fields are ignored — the handler computes the full response dynamically.
@@ -144,36 +144,46 @@ type ErrorHandler interface {
 }
 ```
 
-Example — the built-in `SkuNotAvailableHandler` includes the current `AZURE_LOCATION` in its suggestion:
+Example — the built-in `ResourceNotAvailableHandler` extracts the ARM resource type from the error message, queries the Azure Providers API for available regions, and builds a targeted suggestion:
 
 ```go
-func (h *SkuNotAvailableHandler) Handle(_ context.Context, err error) *ErrorWithSuggestion {
+func (h *ResourceNotAvailableHandler) Handle(ctx context.Context, err error) *ErrorWithSuggestion {
     location := os.Getenv("AZURE_LOCATION")
+    subscriptionID := os.Getenv("AZURE_SUBSCRIPTION_ID")
+    resourceType := extractResourceType(err.Error()) // e.g. "Microsoft.Web/staticSites"
 
-    suggestion := "Try a different region with 'azd env set AZURE_LOCATION <region>'."
-    if location != "" {
-        suggestion = fmt.Sprintf(
-            "The current region is '%s'. Try a different region with "+
-                "'azd env set AZURE_LOCATION <region>'. "+
-                "To see available SKUs, run 'az vm list-skus --location %s --output table'.",
-            location, location,
-        )
+    var availableLocations []string
+    if resourceType != "" && subscriptionID != "" && h.locationResolver != nil {
+        availableLocations, _ = h.locationResolver.GetLocations(ctx, subscriptionID, resourceType)
     }
 
-    return &ErrorWithSuggestion{
-        Err:        err,
-        Message:    "The requested VM size or SKU is not available in this region.",
-        Suggestion: suggestion,
-        DocUrl:     "https://learn.microsoft.com/...",
-    }
+    return h.buildSuggestion(err, location, resourceType, availableLocations)
 }
 ```
 
-Register handlers by name in `cmd/container.go`:
+Handlers that need external dependencies use interfaces to avoid import cycles. The `ResourceNotAvailableHandler` accepts a `ResourceTypeLocationResolver` interface:
 
 ```go
-container.MustRegisterNamedSingleton("skuNotAvailableHandler",
-    errorhandler.NewSkuNotAvailableHandler,
+type ResourceTypeLocationResolver interface {
+    GetLocations(ctx context.Context, subscriptionID string, resourceType string) ([]string, error)
+}
+```
+
+The concrete implementation lives in `pkg/azapi/resource_type_locations.go` following the package's service conventions, and is wired in `cmd/container.go`:
+
+```go
+// pkg/azapi/resource_type_locations.go
+func NewResourceTypeLocationService(
+    credentialProvider account.SubscriptionCredentialProvider,
+    armClientOptions *arm.ClientOptions,
+) *ResourceTypeLocationService { ... }
+
+// cmd/container.go
+container.MustRegisterSingleton(azapi.NewResourceTypeLocationService)
+container.MustRegisterNamedSingleton("resourceNotAvailableHandler",
+    func(locationService *azapi.ResourceTypeLocationService) errorhandler.ErrorHandler {
+        return errorhandler.NewResourceNotAvailableHandler(locationService)
+    },
 )
 ```
 
@@ -257,7 +267,8 @@ patterns:
 | `pkg/errorhandler/reflect.go` | Reflection-based error type/property matching (supports multi-unwrap) |
 | `pkg/errorhandler/matcher.go` | Text pattern matching engine |
 | `pkg/errorhandler/handler.go` | `ErrorHandler` interface for custom handlers |
-| `pkg/errorhandler/sku_handler.go` | Example handler: `SkuNotAvailableHandler` |
+| `pkg/errorhandler/resource_availability_handler.go` | `ResourceNotAvailableHandler` — queries ARM for available regions |
+| `pkg/azapi/resource_type_locations.go` | ARM SDK implementation: queries available regions per resource type |
 | `pkg/errorhandler/errors.go` | `ErrorWithSuggestion` type |
 | `pkg/output/ux/error_with_suggestion.go` | UX display component |
 

@@ -647,6 +647,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(entraid.NewEntraIdService)
 	container.MustRegisterSingleton(armmsi.NewArmMsiService)
 	container.MustRegisterSingleton(azapi.NewContainerRegistryService)
+	container.MustRegisterSingleton(azapi.NewResourceTypeLocationService)
 	container.MustRegisterSingleton(containerapps.NewContainerAppService)
 	container.MustRegisterSingleton(containerregistry.NewRemoteBuildManager)
 	container.MustRegisterSingleton(keyvault.NewKeyVaultService)
@@ -662,8 +663,12 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		}
 		return errorhandler.NewErrorHandlerPipeline(resolver)
 	})
-	container.MustRegisterNamedSingleton("skuNotAvailableHandler",
-		errorhandler.NewSkuNotAvailableHandler,
+	container.MustRegisterNamedSingleton("resourceNotAvailableHandler",
+		func(
+			locationService *azapi.ResourceTypeLocationService,
+		) errorhandler.ErrorHandler {
+			return errorhandler.NewResourceNotAvailableHandler(locationService)
+		},
 	)
 
 	container.MustRegisterScoped(project.NewContainerHelper)

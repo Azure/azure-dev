@@ -348,6 +348,23 @@ var (
 	}
 )
 
+// Extension error related fields.
+var (
+	// Extension error category.
+	ExtErrorCategory = AttributeKey{
+		Key:            attribute.Key("ext.category"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
+
+	// Extension error code.
+	ExtErrorCode = AttributeKey{
+		Key:            attribute.Key("ext.code"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
+)
+
 // Service related fields.
 var (
 	// Hostname of the service.

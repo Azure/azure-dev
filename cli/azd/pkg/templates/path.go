@@ -43,28 +43,26 @@ func Absolute(path string) (string, error) {
 		return path, nil
 	}
 
-	// Support local filesystem directories as template sources.
-	// This allows using a local directory with uncommitted changes for template development.
-	// Use Lstat to reject symlinks consistently with copyLocalTemplate.
-	if info, err := os.Lstat(path); err == nil {
-		if info.Mode()&os.ModeSymlink != 0 {
-			return "", fmt.Errorf("local template directory '%s' is a symlink, which is not supported", path)
-		}
-		if info.IsDir() {
-			absPath, err := filepath.Abs(path)
-			if err != nil {
-				return "", fmt.Errorf("resolving local template path: %w", err)
-			}
-			return absPath, nil
-		}
-		// Path exists but is not a directory.
-		return "", fmt.Errorf("local template path '%s' exists but is not a directory", path)
-	}
-
-	// If the path looks like an explicit local path reference (".", "..", starts with ./, ../, .\, ..\,
-	// or is an absolute path) but the directory wasn't found above, return a clear error
-	// instead of falling through to GitHub resolution which would give a confusing error.
+	// Only resolve local filesystem directories when the user provides an explicit local path
+	// reference (./..., ../..., or an absolute path). Bare names like "my-template" or
+	// "owner/repo" always resolve to GitHub URLs, even if a same-named local directory exists,
+	// to avoid silently overriding remote template resolution.
 	if looksLikeLocalPath(path) {
+		// Use Lstat to reject symlinks consistently with copyLocalTemplate.
+		if info, err := os.Lstat(path); err == nil {
+			if info.Mode()&os.ModeSymlink != 0 {
+				return "", fmt.Errorf("local template directory '%s' is a symlink, which is not supported", path)
+			}
+			if info.IsDir() {
+				absPath, err := filepath.Abs(path)
+				if err != nil {
+					return "", fmt.Errorf("resolving local template path: %w", err)
+				}
+				return absPath, nil
+			}
+			// Path exists but is not a directory.
+			return "", fmt.Errorf("local template path '%s' exists but is not a directory", path)
+		}
 		return "", fmt.Errorf("local template directory '%s' does not exist", path)
 	}
 

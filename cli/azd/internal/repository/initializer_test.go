@@ -1028,3 +1028,102 @@ func Test_Initializer_Initialize_LocalTemplateGitignoreNegation(t *testing.T) {
 	// important.log should be included via negation pattern !important.log
 	require.FileExists(t, filepath.Join(projectDir, "important.log"))
 }
+
+func Test_Initializer_Initialize_LocalTemplateGitFile(t *testing.T) {
+	// In git worktrees and submodules, .git is a file (not a directory)
+	// pointing to an external gitdir. It must be excluded just like a .git directory.
+	localTemplateDir := createLocalTemplateDir(t, testDataPath("template-minimal"))
+
+	// Create a .git *file* like in a worktree/submodule
+	require.NoError(t, os.WriteFile(
+		filepath.Join(localTemplateDir, ".git"),
+		[]byte("gitdir: /some/external/gitdir"),
+		0600,
+	))
+
+	projectDir := t.TempDir()
+	azdCtx := azdcontext.NewAzdContextWithDirectory(projectDir)
+
+	realRunner := exec.NewCommandRunner(nil)
+
+	mockEnv := &mockenv.MockEnvManager{}
+	mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
+
+	i := NewInitializer(
+		mockinput.NewMockConsole(),
+		git.NewCli(realRunner),
+		dotnet.NewCli(realRunner),
+		alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
+		lazy.From[environment.Manager](mockEnv),
+	)
+
+	err := i.Initialize(context.Background(), azdCtx, &templates.Template{
+		RepositoryPath: localTemplateDir,
+	}, "")
+	require.NoError(t, err)
+
+	// Verify template files were copied
+	require.FileExists(t, filepath.Join(projectDir, "README.md"))
+
+	// Verify the .git *file* was NOT copied
+	require.NoFileExists(t, filepath.Join(projectDir, ".git"))
+}
+
+func Test_Initializer_Initialize_LocalTemplateNestedGitignore(t *testing.T) {
+	// Nested .gitignore files in subdirectories should be respected,
+	// not just the root .gitignore.
+	localTemplateDir := createLocalTemplateDir(t, testDataPath("template"))
+
+	// Create a subdirectory with its own .gitignore
+	subDir := filepath.Join(localTemplateDir, "subproject")
+	require.NoError(t, os.MkdirAll(subDir, 0755))
+
+	// Create a .gitignore in the subdirectory that ignores *.tmp files
+	require.NoError(t, os.WriteFile(
+		filepath.Join(subDir, ".gitignore"),
+		[]byte("*.tmp\n"),
+		0600,
+	))
+
+	// Create files: one should be ignored by nested .gitignore, one should be kept
+	require.NoError(t, os.WriteFile(
+		filepath.Join(subDir, "data.tmp"),
+		[]byte("temporary data"),
+		0600,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(subDir, "keep.txt"),
+		[]byte("keep this"),
+		0600,
+	))
+
+	projectDir := t.TempDir()
+	azdCtx := azdcontext.NewAzdContextWithDirectory(projectDir)
+
+	realRunner := exec.NewCommandRunner(nil)
+
+	mockEnv := &mockenv.MockEnvManager{}
+	mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
+
+	i := NewInitializer(
+		mockinput.NewMockConsole(),
+		git.NewCli(realRunner),
+		dotnet.NewCli(realRunner),
+		alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
+		lazy.From[environment.Manager](mockEnv),
+	)
+
+	err := i.Initialize(context.Background(), azdCtx, &templates.Template{
+		RepositoryPath: localTemplateDir,
+	}, "")
+	require.NoError(t, err)
+
+	// Verify the kept file was copied
+	require.FileExists(t, filepath.Join(projectDir, "subproject", "keep.txt"))
+
+	// Verify the nested .gitignore itself was copied
+	require.FileExists(t, filepath.Join(projectDir, "subproject", ".gitignore"))
+
+	// Verify the .tmp file was excluded by nested .gitignore
+	require.NoFileExists(t, filepath.Join(projectDir, "subproject", "data.tmp"))
+}

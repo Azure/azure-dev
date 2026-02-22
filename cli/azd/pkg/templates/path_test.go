@@ -131,7 +131,7 @@ func Test_Absolute_FileNotDirectory(t *testing.T) {
 }
 
 func Test_Absolute_LocalRelativePath(t *testing.T) {
-	// Create a temp dir and use a relative path to it
+	// Create a temp dir and use an explicit relative path (./...) to it
 	dir := t.TempDir()
 	subDir := filepath.Join(dir, "my-local-template")
 	require.NoError(t, os.MkdirAll(subDir, 0755))
@@ -139,7 +139,7 @@ func Test_Absolute_LocalRelativePath(t *testing.T) {
 	// Change to parent directory so relative path works
 	t.Chdir(dir)
 
-	result, err := Absolute("my-local-template")
+	result, err := Absolute("./my-local-template")
 	require.NoError(t, err)
 
 	// Normalize both paths through EvalSymlinks to handle OS-specific differences:
@@ -167,6 +167,35 @@ func Test_Absolute_RejectsSymlink(t *testing.T) {
 	_, err := Absolute(linkDir)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "symlink")
+}
+
+func Test_Absolute_BareNameResolvesToGitHub(t *testing.T) {
+	// A bare name like "my-template" should always resolve to GitHub,
+	// even if a same-named local directory exists, to prevent silent overriding
+	// of remote template resolution.
+	dir := t.TempDir()
+	subDir := filepath.Join(dir, "my-template")
+	require.NoError(t, os.MkdirAll(subDir, 0755))
+
+	t.Chdir(dir)
+
+	result, err := Absolute("my-template")
+	require.NoError(t, err)
+	require.Equal(t, "https://github.com/Azure-Samples/my-template", result)
+}
+
+func Test_Absolute_OwnerRepoResolvesToGitHub(t *testing.T) {
+	// "owner/repo" should always resolve to GitHub, even if a same-named
+	// local directory exists.
+	dir := t.TempDir()
+	subDir := filepath.Join(dir, "owner", "repo")
+	require.NoError(t, os.MkdirAll(subDir, 0755))
+
+	t.Chdir(dir)
+
+	result, err := Absolute("owner/repo")
+	require.NoError(t, err)
+	require.Equal(t, "https://github.com/owner/repo", result)
 }
 
 func Test_IsLocalPath(t *testing.T) {

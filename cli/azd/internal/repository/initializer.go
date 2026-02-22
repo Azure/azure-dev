@@ -184,11 +184,11 @@ func (i *Initializer) fetchCode(
 	return executableFilePaths, nil
 }
 
-// copyLocalTemplate copies a local template directory to the destination, respecting root-level .gitignore
-// rules. The .git directory is always excluded. Note: unlike git clone, only the root .gitignore is
-// read — nested .gitignore files in subdirectories are not supported. Unlike fetchCode which uses git
-// clone (and only includes committed content), this copies the full working tree including uncommitted
-// changes — useful for local template development.
+// copyLocalTemplate copies a local template directory to the destination, respecting .gitignore
+// rules (including nested .gitignore files in subdirectories). The .git entry is always excluded
+// whether it is a directory or a file (as in git worktrees/submodules). Unlike fetchCode which uses
+// git clone (and only includes committed content), this copies the full working tree including
+// uncommitted changes — useful for local template development.
 func (i *Initializer) copyLocalTemplate(source, destination string) error {
 	// Verify the source is still a real directory and not a symlink.
 	// This mitigates TOCTOU attacks where the source directory could be replaced
@@ -204,19 +204,27 @@ func (i *Initializer) copyLocalTemplate(source, destination string) error {
 		return fmt.Errorf("local template path '%s' is not a directory", source)
 	}
 
-	// Load .gitignore rules from the source template if present.
-	// Only the root .gitignore is loaded; nested .gitignore files are not supported.
-	var ignorer gitignore.GitIgnore
-	gitignorePath := filepath.Join(source, ".gitignore")
-	f, err := os.Open(gitignorePath)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			return fmt.Errorf("opening .gitignore: %w", err)
-		}
-	} else {
-		defer f.Close()
-		ignorer = gitignore.New(f, source, nil)
+	// Collect .gitignore matchers from the source template, including nested .gitignore files.
+	// Each matcher is paired with its base directory for relative path computation.
+	type gitignoreMatcher struct {
+		base    string
+		ignorer gitignore.GitIgnore
 	}
+	var matchers []gitignoreMatcher
+
+	_ = filepath.WalkDir(source, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || d.Name() != ".gitignore" {
+			return err
+		}
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return nil // skip unreadable gitignore files
+		}
+		base := filepath.Dir(path)
+		ig := gitignore.New(strings.NewReader(string(data)), base, nil)
+		matchers = append(matchers, gitignoreMatcher{base: base, ignorer: ig})
+		return nil
+	})
 
 	err = copy.Copy(source, destination, copy.Options{
 		// Skip symlinks to prevent copying symlinks that could point outside the template directory.
@@ -224,20 +232,21 @@ func (i *Initializer) copyLocalTemplate(source, destination string) error {
 			return copy.Skip
 		},
 		Skip: func(info os.FileInfo, src, dest string) (bool, error) {
-			// Always skip .git directory
-			if info.IsDir() && info.Name() == ".git" {
+			// Always skip .git whether it is a directory (normal repos) or a
+			// file (git worktrees / submodules that use a gitdir pointer file).
+			if info.Name() == ".git" {
 				return true, nil
 			}
 
-			// Apply .gitignore rules if available
-			if ignorer != nil {
-				rel, err := filepath.Rel(source, src)
-				if err != nil {
-					return false, fmt.Errorf("computing relative path for gitignore matching: %w", err)
+			// Check all applicable .gitignore matchers (a matcher applies when
+			// the file is inside the matcher's base directory).
+			for _, m := range matchers {
+				rel, relErr := filepath.Rel(m.base, src)
+				if relErr != nil || strings.HasPrefix(rel, "..") {
+					continue // file not under this matcher's base
 				}
 				if rel != "." {
-					// Gitignore patterns use forward slashes; convert for cross-platform correctness.
-					match := ignorer.Relative(filepath.ToSlash(rel), info.IsDir())
+					match := m.ignorer.Relative(filepath.ToSlash(rel), info.IsDir())
 					if match != nil && match.Ignore() {
 						return true, nil
 					}

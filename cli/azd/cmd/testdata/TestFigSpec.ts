@@ -641,7 +641,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['submit'],
-									description: 'submit fine tuning job',
+									description: 'Submit fine-tuning job.',
 									options: [
 										{
 											name: ['--file', '-f'],
@@ -1058,6 +1058,49 @@ const completionSpec: Fig.Spec = {
 							description: 'Prints the version of the application',
 						},
 					],
+				},
+			],
+		},
+		{
+			name: ['appservice'],
+			description: 'Extension for managing Azure App Service resources.',
+			subcommands: [
+				{
+					name: ['swap'],
+					description: 'Swap deployment slots for an App Service.',
+					options: [
+						{
+							name: ['--dst'],
+							description: 'The destination slot name. Use @main for production.',
+							args: [
+								{
+									name: 'dst',
+								},
+							],
+						},
+						{
+							name: ['--service'],
+							description: 'The name of the service to swap slots for.',
+							args: [
+								{
+									name: 'service',
+								},
+							],
+						},
+						{
+							name: ['--src'],
+							description: 'The source slot name. Use @main for production.',
+							args: [
+								{
+									name: 'src',
+								},
+							],
+						},
+					],
+				},
+				{
+					name: ['version'],
+					description: 'Display the version of the extension.',
 				},
 			],
 		},
@@ -2919,7 +2962,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['submit'],
-											description: 'submit fine tuning job',
+											description: 'Submit fine-tuning job.',
 										},
 									],
 								},
@@ -2964,6 +3007,20 @@ const completionSpec: Fig.Spec = {
 									description: 'Prints the version of the application',
 								},
 							],
+						},
+					],
+				},
+				{
+					name: ['appservice'],
+					description: 'Extension for managing Azure App Service resources.',
+					subcommands: [
+						{
+							name: ['swap'],
+							description: 'Swap deployment slots for an App Service.',
+						},
+						{
+							name: ['version'],
+							description: 'Display the version of the extension.',
 						},
 					],
 				},

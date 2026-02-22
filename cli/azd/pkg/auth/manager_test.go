@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -351,6 +352,35 @@ func TestLogInDetails(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, ClientIdLoginType, details.LoginType)
 		require.Equal(t, "12345678-1234-1234-1234-123456789012", details.Account)
+	})
+
+	t.Run("legacy az cli auth - not authenticated", func(t *testing.T) {
+		mgr := newMemoryUserConfigManager()
+		cfg, err := mgr.Load()
+		require.NoError(t, err)
+
+		require.NoError(t, cfg.Set(useAzCliAuthKey, "true"))
+		require.NoError(t, mgr.Save(cfg))
+
+		// mock command runner to return an exit error with "az login" message
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
+			return strings.Contains(cmd, "az account show")
+		}).SetError(fmt.Errorf(
+			"exit code: 1, stdout: , stderr: ERROR: Please run 'az login' to setup account.",
+		))
+
+		mockAzCli, err := az.NewCli(mockContext.CommandRunner)
+		require.NoError(t, err)
+
+		m := Manager{
+			userConfigManager: mgr,
+			azCli:             mockAzCli,
+		}
+
+		_, err = m.LogInDetails(context.Background())
+		require.Error(t, err)
+		require.ErrorIs(t, err, ErrNoCurrentUser)
 	})
 }
 

@@ -5,6 +5,7 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -31,6 +32,13 @@ var (
 		extensions.FrameworkServiceProviderCapability,
 	}
 )
+
+// extensionStartFailure captures a failed extension along with the nature of the failure.
+type extensionStartFailure struct {
+	extension *extensions.Extension
+	// timedOut is true when the failure was caused by the ready-wait context deadline being exceeded.
+	timedOut bool
+}
 
 type ExtensionsMiddleware struct {
 	extensionManager *extensions.Manager
@@ -104,7 +112,7 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 	forceColor := !color.NoColor
 	var wg sync.WaitGroup
 	var mu sync.Mutex
-	var failedExtensions []*extensions.Extension
+	var failures []extensionStartFailure
 
 	// Track total time for all extensions to become ready
 	allExtensionsStartTime := time.Now()
@@ -171,7 +179,10 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 
 				// Track failed extensions for warning display
 				mu.Lock()
-				failedExtensions = append(failedExtensions, ext)
+				failures = append(failures, extensionStartFailure{
+					extension: ext,
+					timedOut:  errors.Is(err, context.DeadlineExceeded),
+				})
 				mu.Unlock()
 			} else {
 				elapsed := time.Since(startTime)
@@ -185,23 +196,35 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 
 	// Check for failed extensions and display warnings
 
-	if len(failedExtensions) > 0 {
-		// Check for available updates for failed extensions (best-effort, non-blocking)
-		updateWarnings := m.checkUpdatesForExtensions(ctx, failedExtensions)
+	if len(failures) > 0 {
+		// Collect just the Extension pointers for the update check.
+		failedExts := make([]*extensions.Extension, len(failures))
+		for i, f := range failures {
+			failedExts[i] = f.extension
+		}
+
+		// Check for available updates using only cached data (no network requests in the failure path).
+		updateWarnings := m.checkUpdatesForExtensions(ctx, failedExts)
 		for _, w := range updateWarnings {
 			m.console.MessageUxItem(ctx, w)
 		}
 
 		m.console.Message(ctx, output.WithWarningFormat("WARNING: Extension startup failures detected"))
-		m.console.Message(ctx, "The following extensions failed to initialize within the timeout period:")
-		for _, ext := range failedExtensions {
-			m.console.Message(ctx, fmt.Sprintf("  - %s (%s)", ext.DisplayName, ext.Id))
+		m.console.Message(ctx, "The following extensions failed to initialize:")
+		for _, f := range failures {
+			m.console.Message(ctx, fmt.Sprintf("  - %s (%s)", f.extension.DisplayName, f.extension.Id))
 		}
 		m.console.Message(ctx, "")
-		m.console.Message(
-			ctx,
-			"Some features may be unavailable. Increase timeout with AZD_EXT_TIMEOUT=<seconds> if needed.",
-		)
+
+		hasTimeouts := slices.ContainsFunc(failures, func(f extensionStartFailure) bool { return f.timedOut })
+		if hasTimeouts {
+			m.console.Message(
+				ctx,
+				"Some features may be unavailable. Increase timeout with AZD_EXT_TIMEOUT=<seconds> if needed.",
+			)
+		} else {
+			m.console.Message(ctx, "Some features may be unavailable.")
+		}
 		m.console.Message(ctx, "")
 	}
 
@@ -212,9 +235,9 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 	return next(ctx)
 }
 
-// checkUpdatesForExtensions checks if newer versions are available for the given extensions.
-// It refreshes the registry cache if expired, then returns update warnings for any extensions
-// that have a newer version available.
+// checkUpdatesForExtensions checks if newer versions are available for the given extensions
+// using only already-cached registry data. No network requests are made; if the cache for a
+// source is expired or missing the extension is simply skipped.
 func (m *ExtensionsMiddleware) checkUpdatesForExtensions(
 	ctx context.Context,
 	failedExts []*extensions.Extension,
@@ -225,34 +248,15 @@ func (m *ExtensionsMiddleware) checkUpdatesForExtensions(
 		return nil
 	}
 
-	// Refresh the cache for each unique source (sequentially to avoid concurrent file writes)
-	seenSources := map[string]struct{}{}
-	for _, ext := range failedExts {
-		if ext.Source == "" {
-			continue
-		}
-		if _, seen := seenSources[ext.Source]; seen {
-			continue
-		}
-		seenSources[ext.Source] = struct{}{}
-		if cacheManager.IsExpiredOrMissing(ctx, ext.Source) {
-			sourceExts, err := m.extensionManager.FindExtensions(ctx, &extensions.FilterOptions{
-				Source: ext.Source,
-			})
-			if err != nil {
-				log.Printf("failed to fetch extensions for source %s: %v", ext.Source, err)
-				continue
-			}
-			if err := cacheManager.Set(ctx, ext.Source, sourceExts); err != nil {
-				log.Printf("failed to cache extensions for source %s: %v", ext.Source, err)
-			}
-		}
-	}
-
 	checker := extensions.NewUpdateChecker(cacheManager)
 
 	var warnings []*ux.WarningMessage
 	for _, ext := range failedExts {
+		// Only consult already-cached data to avoid blocking network I/O in the failure path.
+		if ext.Source == "" || cacheManager.IsExpiredOrMissing(ctx, ext.Source) {
+			continue
+		}
+
 		result, err := checker.CheckForUpdate(ctx, ext)
 		if err != nil {
 			log.Printf("failed to check for update for %s: %v", ext.Id, err)

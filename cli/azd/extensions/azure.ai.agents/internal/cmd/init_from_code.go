@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	posixpath "path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -185,14 +186,15 @@ func (a *InitFromCodeAction) scaffoldTemplate(ctx context.Context, azdClient *az
 		if !strings.HasPrefix(entry.Path, "infra/") && entry.Path != "azure.yaml" {
 			continue
 		}
-		// Guard against path traversal or unexpected absolute paths
-		cleanPath := filepath.Clean(entry.Path)
-		if filepath.IsAbs(cleanPath) || strings.HasPrefix(cleanPath, "..") {
+		// Guard against path traversal or unexpected absolute paths.
+		// Use posixpath (path) for URL-safe cleaning since GitHub returns forward-slash paths.
+		cleanPath := posixpath.Clean(entry.Path)
+		if posixpath.IsAbs(cleanPath) || strings.HasPrefix(cleanPath, "..") {
 			return fmt.Errorf("invalid path in repository tree: %s", entry.Path)
 		}
 		downloadURL := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s", repoSlug, branch, cleanPath)
 		collides := false
-		if _, statErr := os.Stat(cleanPath); statErr == nil {
+		if _, statErr := os.Stat(filepath.FromSlash(cleanPath)); statErr == nil {
 			collides = true
 		}
 		files = append(files, templateFileInfo{
@@ -294,8 +296,10 @@ func (a *InitFromCodeAction) scaffoldTemplate(ctx context.Context, azdClient *az
 	}
 
 	for _, f := range filesToWrite {
+		localPath := filepath.FromSlash(f.Path)
+
 		// Create parent directories
-		dir := filepath.Dir(f.Path)
+		dir := filepath.Dir(localPath)
 		if dir != "." {
 			if err := os.MkdirAll(dir, 0755); err != nil {
 				_ = spinner.Stop(ctx)
@@ -328,9 +332,9 @@ func (a *InitFromCodeAction) scaffoldTemplate(ctx context.Context, azdClient *az
 			return fmt.Errorf("reading %s: %w", f.Path, err)
 		}
 
-		if err := os.WriteFile(f.Path, content, 0644); err != nil {
+		if err := os.WriteFile(localPath, content, 0644); err != nil {
 			_ = spinner.Stop(ctx)
-			return fmt.Errorf("writing %s: %w", f.Path, err)
+			return fmt.Errorf("writing %s: %w", localPath, err)
 		}
 	}
 

@@ -237,7 +237,7 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	// The path is passed via AZD_ERROR_FILE; the extension calls azdext.ReportError
 	// (automatically via azdext.Run) which serializes a LocalError/ServiceError as
 	// protojson into this file on failure.
-	errorFileEnv, cleanupErrorFile, err := createExtensionErrorFileEnv()
+	errorFileEnv, errorFilePath, cleanupErrorFile, err := createExtensionErrorFileEnv()
 	if err != nil {
 		log.Printf("failed to create extension error file: %v", err)
 	} else {
@@ -265,7 +265,7 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		// Read the structured error the extension wrote to the error file.
 		// This gives us a typed LocalError/ServiceError for telemetry classification
 		// instead of just a generic exit-code error.
-		reportedErr, readErr := readReportedExtensionErrorFromEnv(allEnv)
+		reportedErr, readErr := readReportedExtensionError(errorFilePath)
 		if readErr != nil {
 			log.Printf("failed to read reported extension error: %v", readErr)
 		} else if reportedErr != nil {
@@ -282,19 +282,19 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 }
 
 // createExtensionErrorFileEnv creates a temp file for extension error reporting and returns
-// the formatted env var (AZD_ERROR_FILE=<path>) to pass to the extension process.
-func createExtensionErrorFileEnv() (envVar string, cleanup func(), err error) {
+// the formatted env var (AZD_ERROR_FILE=<path>), the file path, and a cleanup function.
+func createExtensionErrorFileEnv() (envVar string, errorFilePath string, cleanup func(), err error) {
 	errorFile, err := os.CreateTemp("", "azd-ext-error-*.json")
 	if err != nil {
-		return "", func() {}, err
+		return "", "", func() {}, err
 	}
 
-	errorFilePath := errorFile.Name()
+	errorFilePath = errorFile.Name()
 	if closeErr := errorFile.Close(); closeErr != nil {
 		if removeErr := os.Remove(errorFilePath); removeErr != nil && !os.IsNotExist(removeErr) {
 			log.Printf("failed to remove extension error file after close error: %v", removeErr)
 		}
-		return "", func() {}, closeErr
+		return "", "", func() {}, closeErr
 	}
 
 	cleanup = func() {
@@ -303,20 +303,12 @@ func createExtensionErrorFileEnv() (envVar string, cleanup func(), err error) {
 		}
 	}
 
-	return fmt.Sprintf("%s=%s", azdext.ExtensionErrorFileEnv, errorFilePath), cleanup, nil
+	return fmt.Sprintf("%s=%s", azdext.ExtensionErrorFileEnv, errorFilePath), errorFilePath, cleanup, nil
 }
 
-// readReportedExtensionErrorFromEnv extracts the error file path from the env slice
-// and reads the structured error written by the extension (if any).
-func readReportedExtensionErrorFromEnv(env []string) (error, error) {
-	errorFilePath := ""
-	for _, envVar := range env {
-		if after, ok := strings.CutPrefix(envVar, azdext.ExtensionErrorFileEnv+"="); ok {
-			errorFilePath = after
-			break
-		}
-	}
-
+// readReportedExtensionError reads the structured error written by the extension to the
+// given file path (if any).
+func readReportedExtensionError(errorFilePath string) (error, error) {
 	if errorFilePath == "" {
 		return nil, nil
 	}

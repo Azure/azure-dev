@@ -14,9 +14,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestReadReportedExtensionErrorFromEnv(t *testing.T) {
-	t.Run("NoEnvVar", func(t *testing.T) {
-		err, readErr := readReportedExtensionErrorFromEnv(nil)
+func TestReadReportedExtensionError(t *testing.T) {
+	t.Run("EmptyPath", func(t *testing.T) {
+		err, readErr := readReportedExtensionError("")
 		require.NoError(t, readErr)
 		require.Nil(t, err)
 	})
@@ -30,10 +30,7 @@ func TestReadReportedExtensionErrorFromEnv(t *testing.T) {
 		})
 		require.NoError(t, writeErr)
 
-		err, readErr := readReportedExtensionErrorFromEnv([]string{
-			"OTHER=1",
-			azdext.ExtensionErrorFileEnv + "=" + path,
-		})
+		err, readErr := readReportedExtensionError(path)
 		require.NoError(t, readErr)
 
 		var localErr *azdext.LocalError
@@ -46,9 +43,7 @@ func TestReadReportedExtensionErrorFromEnv(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "ext-error-invalid.json")
 		require.NoError(t, osWriteFile(path, []byte("{invalid-json")))
 
-		err, readErr := readReportedExtensionErrorFromEnv([]string{
-			azdext.ExtensionErrorFileEnv + "=" + path,
-		})
+		err, readErr := readReportedExtensionError(path)
 		require.Nil(t, err)
 		require.Error(t, readErr)
 		require.True(t, strings.Contains(readErr.Error(), "unmarshal extension error file"))
@@ -56,13 +51,16 @@ func TestReadReportedExtensionErrorFromEnv(t *testing.T) {
 }
 
 func TestCreateExtensionErrorFileEnv(t *testing.T) {
-	envVar, cleanup, err := createExtensionErrorFileEnv()
+	envVar, errorFilePath, cleanup, err := createExtensionErrorFileEnv()
 	require.NoError(t, err)
 	require.NotEmpty(t, envVar)
 	require.True(t, strings.HasPrefix(envVar, azdext.ExtensionErrorFileEnv+"="))
+	require.NotEmpty(t, errorFilePath)
+	require.FileExists(t, errorFilePath)
 
+	// Verify envVar and errorFilePath are consistent
 	path := strings.TrimPrefix(envVar, azdext.ExtensionErrorFileEnv+"=")
-	require.FileExists(t, path)
+	require.Equal(t, errorFilePath, path)
 
 	cleanup()
 	require.NoFileExists(t, path)

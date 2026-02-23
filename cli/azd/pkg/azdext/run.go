@@ -82,7 +82,6 @@ func Run(rootCmd *cobra.Command, opts ...RunOption) {
 func printError(err error) {
 	redStderr := color.New(color.FgRed)
 	redStderr.EnableColor()
-	redStderr.SetWriter(os.Stderr)
 	redStderr.Fprintf(os.Stderr, "Error: %v\n", err)
 
 	if s := ErrorSuggestion(err); s != "" {

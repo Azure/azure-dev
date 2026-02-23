@@ -336,7 +336,10 @@ func cmdAsName(cmd string) string {
 	return strings.ToLower(cmd)
 }
 
-var codeSegmentRegex = regexp.MustCompile(`[^a-z0-9_]+`)
+var (
+	codeSegmentRegex    = regexp.MustCompile(`[^a-z0-9_]+`)
+	codeSegmentReplacer = strings.NewReplacer("-", "_", ".", "_")
+)
 
 func normalizeCodeSegment(value string, fallback string) string {
 	value = strings.ToLower(strings.TrimSpace(value))
@@ -344,8 +347,7 @@ func normalizeCodeSegment(value string, fallback string) string {
 		return fallback
 	}
 
-	value = strings.ReplaceAll(value, "-", "_")
-	value = strings.ReplaceAll(value, ".", "_")
+	value = codeSegmentReplacer.Replace(value)
 	value = codeSegmentRegex.ReplaceAllString(value, "_")
 	value = strings.Trim(value, "_")
 	if value == "" {

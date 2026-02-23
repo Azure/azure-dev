@@ -3,7 +3,10 @@
 
 package azdext
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // LocalErrorCategory is the canonical category type for extension local errors.
 // Keep values aligned with telemetry ResultCode families in internal/cmd/errors.go.
@@ -19,25 +22,24 @@ const (
 	LocalErrorCategoryLocal         LocalErrorCategory = "local"
 )
 
+// knownCategories lists all recognized local error categories (excluding the fallback LocalErrorCategoryLocal).
+var knownCategories = []LocalErrorCategory{
+	LocalErrorCategoryValidation,
+	LocalErrorCategoryAuth,
+	LocalErrorCategoryDependency,
+	LocalErrorCategoryCompatibility,
+	LocalErrorCategoryUser,
+	LocalErrorCategoryInternal,
+}
+
 // NormalizeLocalErrorCategory validates a typed category value, returning the canonical constant.
 // Unknown values are collapsed to LocalErrorCategoryLocal.
 func NormalizeLocalErrorCategory(category LocalErrorCategory) LocalErrorCategory {
-	switch LocalErrorCategory(strings.ToLower(strings.TrimSpace(string(category)))) {
-	case LocalErrorCategoryValidation:
-		return LocalErrorCategoryValidation
-	case LocalErrorCategoryAuth:
-		return LocalErrorCategoryAuth
-	case LocalErrorCategoryDependency:
-		return LocalErrorCategoryDependency
-	case LocalErrorCategoryCompatibility:
-		return LocalErrorCategoryCompatibility
-	case LocalErrorCategoryUser:
-		return LocalErrorCategoryUser
-	case LocalErrorCategoryInternal:
-		return LocalErrorCategoryInternal
-	default:
-		return LocalErrorCategoryLocal
+	normalized := LocalErrorCategory(strings.ToLower(strings.TrimSpace(string(category))))
+	if slices.Contains(knownCategories, normalized) {
+		return normalized
 	}
+	return LocalErrorCategoryLocal
 }
 
 // ParseLocalErrorCategory parses a raw category string (e.g. from proto deserialization)

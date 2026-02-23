@@ -41,7 +41,7 @@ func TestReadReportedExtensionError(t *testing.T) {
 
 	t.Run("InvalidErrorFileContent", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "ext-error-invalid.json")
-		require.NoError(t, osWriteFile(path, []byte("{invalid-json")))
+		require.NoError(t, os.WriteFile(path, []byte("{invalid-json"), 0o600))
 
 		err, readErr := readReportedExtensionError(path)
 		require.Nil(t, err)
@@ -66,6 +66,4 @@ func TestCreateExtensionErrorFileEnv(t *testing.T) {
 	require.NoFileExists(t, path)
 }
 
-func osWriteFile(path string, content []byte) error {
-	return os.WriteFile(path, content, 0o600)
-}
+

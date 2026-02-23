@@ -89,6 +89,18 @@ func (i *Initializer) Initialize(
 		return err
 	}
 
+	// Reject overlapping source and destination for local templates.
+	// This catches "azd init -t ." (same dir) and "azd init -t .." (destination inside source).
+	if templates.IsLocalPath(templateUrl) {
+		rel, relErr := filepath.Rel(templateUrl, target)
+		if relErr == nil && !strings.HasPrefix(rel, "..") {
+			return fmt.Errorf(
+				"project directory (%s) overlaps with template source (%s); "+
+					"run 'azd init' from a directory outside the template",
+				target, templateUrl)
+		}
+	}
+
 	var stepMessage string
 	if templates.IsLocalPath(templateUrl) {
 		stepMessage = fmt.Sprintf(

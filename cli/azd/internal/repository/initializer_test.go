@@ -1127,3 +1127,42 @@ func Test_Initializer_Initialize_LocalTemplateNestedGitignore(t *testing.T) {
 	// Verify the .tmp file was excluded by nested .gitignore
 	require.NoFileExists(t, filepath.Join(projectDir, "subproject", "data.tmp"))
 }
+
+func Test_Initializer_Initialize_LocalTemplateOverlapRejected(t *testing.T) {
+	// "azd init -t ." (same directory) and "azd init -t .." (destination inside source)
+	// must be rejected with a clear error.
+	localTemplateDir := createLocalTemplateDir(t, testDataPath("template"))
+
+	realRunner := exec.NewCommandRunner(nil)
+	mockEnv := &mockenv.MockEnvManager{}
+
+	i := NewInitializer(
+		mockinput.NewMockConsole(),
+		git.NewCli(realRunner),
+		dotnet.NewCli(realRunner),
+		alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
+		lazy.From[environment.Manager](mockEnv),
+	)
+
+	t.Run("SameDirectory", func(t *testing.T) {
+		// Project dir == template dir
+		azdCtx := azdcontext.NewAzdContextWithDirectory(localTemplateDir)
+		err := i.Initialize(context.Background(), azdCtx, &templates.Template{
+			RepositoryPath: localTemplateDir,
+		}, "")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "overlaps with template source")
+	})
+
+	t.Run("DestinationInsideSource", func(t *testing.T) {
+		// Project dir is a subdirectory of the template dir
+		subDir := filepath.Join(localTemplateDir, "child")
+		require.NoError(t, os.MkdirAll(subDir, 0755))
+		azdCtx := azdcontext.NewAzdContextWithDirectory(subDir)
+		err := i.Initialize(context.Background(), azdCtx, &templates.Template{
+			RepositoryPath: localTemplateDir,
+		}, "")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "overlaps with template source")
+	})
+}

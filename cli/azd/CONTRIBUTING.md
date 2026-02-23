@@ -40,7 +40,7 @@ Install [mage](https://magefile.org/) (`go install github.com/magefile/mage@late
 
 ```bash
 cd cli/azd
-mage devinstall
+mage dev:install
 ```
 
 This builds `azd-dev` (to avoid conflicting with a production `azd` install) with version

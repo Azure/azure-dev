@@ -104,8 +104,6 @@ devcenters
 devcentersdk
 devdeviceid
 devel
-devinstall
-devuninstall
 deviceid
 diffmatchpatch
 discarder

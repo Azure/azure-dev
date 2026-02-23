@@ -16,12 +16,15 @@ import (
 	"sync"
 )
 
-// DevInstall builds azd from source as 'azd-dev' and installs it to ~/.azd/bin.
+// Dev contains developer tooling commands for building and installing azd from source.
+type Dev struct{}
+
+// Install builds azd from source as 'azd-dev' and installs it to ~/.azd/bin.
 // The binary is named azd-dev to avoid conflicting with a production azd install.
 // Automatically adds ~/.azd/bin to PATH if not already present.
 //
-// Usage: mage devinstall
-func DevInstall() error {
+// Usage: mage dev:install
+func (Dev) Install() error {
 	repoRoot, err := findRepoRoot()
 	if err != nil {
 		return err
@@ -74,11 +77,11 @@ func DevInstall() error {
 	return nil
 }
 
-// DevUninstall removes the azd-dev binary from ~/.azd/bin.
+// Uninstall removes the azd-dev binary from ~/.azd/bin.
 // The PATH entry is left intact.
 //
-// Usage: mage devuninstall
-func DevUninstall() error {
+// Usage: mage dev:uninstall
+func (Dev) Uninstall() error {
 	dir, err := installDir()
 	if err != nil {
 		return err
@@ -476,7 +479,7 @@ func addToPathUnix(dir string) error {
 	}
 	defer f.Close()
 
-	if _, err := fmt.Fprintf(f, "\n# Added by azd devinstall\n%s\n", exportLine); err != nil {
+	if _, err := fmt.Fprintf(f, "\n# Added by azd dev:install\n%s\n", exportLine); err != nil {
 		return fmt.Errorf("writing to %s: %w", rcFile, err)
 	}
 

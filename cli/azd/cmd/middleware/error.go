@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/llm"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -34,6 +35,7 @@ type ErrorMiddleware struct {
 	global            *internal.GlobalCommandOptions
 	featuresManager   *alpha.FeatureManager
 	userConfigManager config.UserConfigManager
+	errorPipeline     *errorhandler.ErrorHandlerPipeline
 }
 
 func NewErrorMiddleware(
@@ -42,6 +44,7 @@ func NewErrorMiddleware(
 	global *internal.GlobalCommandOptions,
 	featuresManager *alpha.FeatureManager,
 	userConfigManager config.UserConfigManager,
+	errorPipeline *errorhandler.ErrorHandlerPipeline,
 ) Middleware {
 	return &ErrorMiddleware{
 		options:           options,
@@ -50,6 +53,7 @@ func NewErrorMiddleware(
 		global:            global,
 		featuresManager:   featuresManager,
 		userConfigManager: userConfigManager,
+		errorPipeline:     errorPipeline,
 	}
 }
 
@@ -64,21 +68,6 @@ func (e *ErrorMiddleware) displayAgentResponse(ctx context.Context, response str
 }
 
 func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
-	// Short-circuit agentic error handling in non-interactive scenarios:
-	// - LLM feature is disabled
-	// - User specified --no-prompt (non-interactive mode)
-	// - Running in CI/CD environment where user interaction is not possible
-	if !e.featuresManager.IsEnabled(llm.FeatureLlm) || e.global.NoPrompt || resource.IsRunningOnCI() {
-		actionResult, err := next(ctx)
-		if err != nil {
-			if guidance := softDeleteHint(err); guidance != "" {
-				e.console.Message(ctx,
-					output.WithWarningFormat("Hint: %s", guidance))
-			}
-		}
-		return actionResult, err
-	}
-
 	actionResult, err := next(ctx)
 
 	// Stop the spinner always to un-hide cursor
@@ -88,14 +77,27 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		return actionResult, err
 	}
 
-	// Error already has a suggestion, no need for AI
+	// Check if error already has a suggestion
 	var suggestionErr *internal.ErrorWithSuggestion
 	if errors.As(err, &suggestionErr) {
-		e.console.Message(ctx, suggestionErr.Suggestion)
+		// Already has a suggestion, return as-is
 		return actionResult, err
 	}
 
-	// Skip certain errors, no need for AI
+	// Try to match error against known patterns and wrap with suggestion
+	if suggestion := e.errorPipeline.Process(ctx, err); suggestion != nil {
+		return actionResult, suggestion
+	}
+
+	// Short-circuit agentic error handling in non-interactive scenarios:
+	// - LLM feature is disabled
+	// - User specified --no-prompt (non-interactive mode)
+	// - Running in CI/CD environment where user interaction is not possible
+	if !e.featuresManager.IsEnabled(llm.FeatureLlm) || e.global.NoPrompt || resource.IsRunningOnCI() {
+		return actionResult, err
+	}
+
+	// Skip control-flow errors that don't benefit from AI analysis
 	skipAnalyzingErrors := []string{
 		"environment already initialized",
 		"interrupt",
@@ -106,12 +108,6 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		if strings.Contains(err.Error(), s) {
 			return actionResult, err
 		}
-	}
-
-	// Show soft-delete guidance when detected
-	if guidance := softDeleteHint(err); guidance != "" {
-		e.console.Message(ctx,
-			output.WithWarningFormat("Hint: %s", guidance))
 	}
 
 	// Warn user that this is an alpha feature

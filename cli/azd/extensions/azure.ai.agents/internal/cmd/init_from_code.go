@@ -315,16 +315,16 @@ func (a *InitFromCodeAction) scaffoldTemplate(ctx context.Context, azdClient *az
 			return fmt.Errorf("downloading %s: %w", f.Path, err)
 		}
 
+		if fileResp.StatusCode != http.StatusOK {
+			_ = spinner.Stop(ctx)
+			return fmt.Errorf("downloading %s: status %d", f.Path, fileResp.StatusCode)
+		}
+
 		content, err := io.ReadAll(fileResp.Body)
 		fileResp.Body.Close()
 		if err != nil {
 			_ = spinner.Stop(ctx)
 			return fmt.Errorf("reading %s: %w", f.Path, err)
-		}
-
-		if fileResp.StatusCode != http.StatusOK {
-			_ = spinner.Stop(ctx)
-			return fmt.Errorf("downloading %s: status %d", f.Path, fileResp.StatusCode)
 		}
 
 		if err := os.WriteFile(f.Path, content, 0644); err != nil {

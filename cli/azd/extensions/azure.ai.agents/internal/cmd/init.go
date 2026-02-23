@@ -1737,14 +1737,14 @@ func downloadDirectoryContentsWithoutGhCli(
 				return fmt.Errorf("failed to download file %s: %w", itemPath, err)
 			}
 
+			if fileResp.StatusCode != http.StatusOK {
+				return fmt.Errorf("failed to download file %s: status %d", itemPath, fileResp.StatusCode)
+			}
+
 			fileContent, err := io.ReadAll(fileResp.Body)
 			fileResp.Body.Close()
 			if err != nil {
 				return fmt.Errorf("failed to read file content %s: %w", itemPath, err)
-			}
-
-			if fileResp.StatusCode != http.StatusOK {
-				return fmt.Errorf("failed to download file %s: status %d", itemPath, fileResp.StatusCode)
 			}
 
 			if err := os.WriteFile(itemLocalPath, fileContent, 0644); err != nil {

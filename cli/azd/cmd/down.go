@@ -19,6 +19,7 @@ import (
 	inf "github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -64,22 +65,22 @@ func newDownCmd() *cobra.Command {
 }
 
 type downAction struct {
-	flags               *downFlags
-	args                []string
-	provisionManager    *provisioning.Manager
-	importManager       *project.ImportManager
-	env                 *environment.Environment
-	envManager          environment.Manager
-	console             input.Console
-	projectConfig       *project.ProjectConfig
-	alphaFeatureManager *alpha.FeatureManager
+	flags                *downFlags
+	args                 []string
+	lazyProvisionManager *lazy.Lazy[*provisioning.Manager]
+	importManager        *project.ImportManager
+	lazyEnv              *lazy.Lazy[*environment.Environment]
+	envManager           environment.Manager
+	console              input.Console
+	projectConfig        *project.ProjectConfig
+	alphaFeatureManager  *alpha.FeatureManager
 }
 
 func newDownAction(
 	args []string,
 	flags *downFlags,
-	provisionManager *provisioning.Manager,
-	env *environment.Environment,
+	lazyProvisionManager *lazy.Lazy[*provisioning.Manager],
+	lazyEnv *lazy.Lazy[*environment.Environment],
 	envManager environment.Manager,
 	projectConfig *project.ProjectConfig,
 	console input.Console,
@@ -87,15 +88,15 @@ func newDownAction(
 	importManager *project.ImportManager,
 ) actions.Action {
 	return &downAction{
-		flags:               flags,
-		provisionManager:    provisionManager,
-		env:                 env,
-		envManager:          envManager,
-		console:             console,
-		projectConfig:       projectConfig,
-		importManager:       importManager,
-		alphaFeatureManager: alphaFeatureManager,
-		args:                args,
+		flags:                flags,
+		lazyProvisionManager: lazyProvisionManager,
+		lazyEnv:              lazyEnv,
+		envManager:           envManager,
+		console:              console,
+		projectConfig:        projectConfig,
+		importManager:        importManager,
+		alphaFeatureManager:  alphaFeatureManager,
+		args:                 args,
 	}
 }
 
@@ -107,6 +108,27 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	})
 
 	startTime := time.Now()
+
+	// Check if there are any environments before proceeding
+	envList, err := a.envManager.List(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing environments: %w", err)
+	}
+	if len(envList) == 0 {
+		return nil, errors.New("no environments found. Run \"azd init\" or \"azd env new\" to create one")
+	}
+
+	// Get the environment non-interactively (respects -e flag or default environment)
+	env, err := a.lazyEnv.GetValue()
+	if err != nil {
+		return nil, err
+	}
+
+	// Get the provisioning manager (resolved lazily to avoid premature env prompts)
+	provisionManager, err := a.lazyProvisionManager.GetValue()
+	if err != nil {
+		return nil, fmt.Errorf("getting provisioning manager: %w", err)
+	}
 
 	infra, err := a.importManager.ProjectInfrastructure(ctx, a.projectConfig)
 	if err != nil {
@@ -141,12 +163,12 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 
 		layer.Mode = provisioning.ModeDestroy
-		if err := a.provisionManager.Initialize(ctx, a.projectConfig.Path, layer); err != nil {
+		if err := provisionManager.Initialize(ctx, a.projectConfig.Path, layer); err != nil {
 			return nil, fmt.Errorf("initializing provisioning manager: %w", err)
 		}
 
 		destroyOptions := provisioning.NewDestroyOptions(a.flags.forceDelete, a.flags.purgeDelete)
-		_, err := a.provisionManager.Destroy(ctx, destroyOptions)
+		_, err := provisionManager.Destroy(ctx, destroyOptions)
 		if errors.Is(err, inf.ErrDeploymentsNotFound) || errors.Is(err, inf.ErrDeploymentResourcesNotFound) {
 			a.console.MessageUxItem(ctx, &ux.DoneMessage{Message: "No Azure resources were found."})
 		} else if err != nil {
@@ -155,7 +177,7 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	// Invalidate cache after successful down so azd show will refresh
-	if err := a.envManager.InvalidateEnvCache(ctx, a.env.Name()); err != nil {
+	if err := a.envManager.InvalidateEnvCache(ctx, env.Name()); err != nil {
 		log.Printf("warning: failed to invalidate state cache: %v", err)
 	}
 

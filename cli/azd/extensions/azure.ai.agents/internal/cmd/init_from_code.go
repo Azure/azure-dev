@@ -314,18 +314,19 @@ func (a *InitFromCodeAction) scaffoldTemplate(ctx context.Context, azdClient *az
 			_ = spinner.Stop(ctx)
 			return fmt.Errorf("downloading %s: %w", f.Path, err)
 		}
-		defer fileResp.Body.Close()
+
+		content, err := io.ReadAll(fileResp.Body)
+		fileResp.Body.Close()
+		if err != nil {
+			_ = spinner.Stop(ctx)
+			return fmt.Errorf("reading %s: %w", f.Path, err)
+		}
 
 		if fileResp.StatusCode != http.StatusOK {
 			_ = spinner.Stop(ctx)
 			return fmt.Errorf("downloading %s: status %d", f.Path, fileResp.StatusCode)
 		}
 
-		content, err := io.ReadAll(fileResp.Body)
-		if err != nil {
-			_ = spinner.Stop(ctx)
-			return fmt.Errorf("reading %s: %w", f.Path, err)
-		}
 		if err := os.WriteFile(f.Path, content, 0644); err != nil {
 			_ = spinner.Stop(ctx)
 			return fmt.Errorf("writing %s: %w", f.Path, err)
@@ -1431,7 +1432,7 @@ func (a *InitFromCodeAction) processExistingFoundryProject(ctx context.Context, 
 					},
 				})
 				if err != nil {
-					fmt.Printf("failed to prompt for connection selection: %v\n", err)
+					return fmt.Errorf("failed to prompt for connection selection: %w", err)
 				} else {
 					selectedConnection = &acrConnections[int(*selectResp.Value)]
 				}
@@ -1544,24 +1545,12 @@ func (a *InitFromCodeAction) loadAiCatalog(ctx context.Context) error {
 		return nil
 	}
 
-	spinner := ux.NewSpinner(&ux.SpinnerOptions{
-		Text:        "Loading the model catalog",
-		ClearOnStop: true,
-	})
-
-	if err := spinner.Start(ctx); err != nil {
-		return fmt.Errorf("failed to start spinner: %w", err)
-	}
-
 	modelResp, err := a.azdClient.Ai().ListModels(ctx, &azdext.ListModelsRequest{
 		AzureContext: a.azureContext,
 	})
-	stopErr := spinner.Stop(ctx)
+
 	if err != nil {
 		return fmt.Errorf("failed to load the model catalog: %w", err)
-	}
-	if stopErr != nil {
-		return stopErr
 	}
 
 	a.modelCatalog = mapModelsByName(modelResp.Models)

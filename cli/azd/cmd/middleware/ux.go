@@ -80,9 +80,7 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 			return actionResult, err
 		}
 
-		// TODO: verify
-		// ExtensionRunError without suggestion: render the error message.
-		// New extensions stay silent (AZD_ERROR_FILE was set), so the host must render.
+		// ExtensionRunError without suggestion
 		var extensionRunErr *extensions.ExtensionRunError
 		if errors.As(err, &extensionRunErr) {
 			if message := azdext.ErrorMessage(err); message != "" {

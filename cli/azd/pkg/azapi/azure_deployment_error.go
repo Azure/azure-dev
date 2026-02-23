@@ -20,6 +20,36 @@ type DeploymentErrorLine struct {
 	Inner []*DeploymentErrorLine
 }
 
+// Error implements the error interface for DeploymentErrorLine.
+func (e *DeploymentErrorLine) Error() string {
+	if e.Code != "" && e.Message != "" {
+		return fmt.Sprintf("%s: %s", e.Code, e.Message)
+	}
+	if e.Message != "" {
+		return e.Message
+	}
+	if e.Code != "" {
+		return e.Code
+	}
+	return "deployment error"
+}
+
+// Unwrap returns the inner errors for use with errors.As/errors.Is.
+// This enables Go's standard error unwrapping to traverse the full
+// ARM deployment error tree.
+func (e *DeploymentErrorLine) Unwrap() []error {
+	if len(e.Inner) == 0 {
+		return nil
+	}
+	errs := make([]error, 0, len(e.Inner))
+	for _, inner := range e.Inner {
+		if inner != nil {
+			errs = append(errs, inner)
+		}
+	}
+	return errs
+}
+
 func newErrorLine(code string, message string, inner []*DeploymentErrorLine) *DeploymentErrorLine {
 	return &DeploymentErrorLine{
 		Message: message,
@@ -66,6 +96,20 @@ func (e *AzureDeploymentError) Error() string {
 	}
 
 	return sb.String()
+}
+
+// Unwrap returns the inner errors for use with errors.As/errors.Is.
+// It returns both the wrapped Inner error and the Details error tree,
+// enabling Go's standard error traversal across the full error structure.
+func (e *AzureDeploymentError) Unwrap() []error {
+	var errs []error
+	if e.Inner != nil {
+		errs = append(errs, e.Inner)
+	}
+	if e.Details != nil {
+		errs = append(errs, e.Details)
+	}
+	return errs
 }
 
 func generateErrorOutput(err *DeploymentErrorLine) []string {

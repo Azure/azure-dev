@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/llm"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
@@ -30,6 +31,7 @@ func Test_ErrorMiddleware_SuccessNoError(t *testing.T) {
 		NoPrompt: false,
 	}
 	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	errorPipeline := errorhandler.NewErrorHandlerPipeline(nil)
 	middleware := NewErrorMiddleware(
 		&Options{Name: "test"},
 		mockContext.Console,
@@ -37,6 +39,7 @@ func Test_ErrorMiddleware_SuccessNoError(t *testing.T) {
 		global,
 		featureManager,
 		userConfigManager,
+		errorPipeline,
 	)
 	nextFn := func(ctx context.Context) (*actions.ActionResult, error) {
 		return &actions.ActionResult{
@@ -61,6 +64,7 @@ func Test_ErrorMiddleware_LLMAlphaFeatureDisabled(t *testing.T) {
 		NoPrompt: false,
 	}
 	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	errorPipeline := errorhandler.NewErrorHandlerPipeline(nil)
 	middleware := NewErrorMiddleware(
 		&Options{Name: "test"},
 		mockContext.Console,
@@ -68,6 +72,7 @@ func Test_ErrorMiddleware_LLMAlphaFeatureDisabled(t *testing.T) {
 		global,
 		featureManager,
 		userConfigManager,
+		errorPipeline,
 	)
 
 	testError := errors.New("test error")
@@ -77,40 +82,7 @@ func Test_ErrorMiddleware_LLMAlphaFeatureDisabled(t *testing.T) {
 
 	result, err := middleware.Run(*mockContext.Context, nextFn)
 
-	require.Error(t, err)
-	require.Nil(t, result)
-	require.Equal(t, testError, err)
-}
-
-func Test_ErrorMiddleware_NoPromptMode(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
-	cfg := config.NewConfig(map[string]any{
-		"alpha": map[string]any{
-			string(llm.FeatureLlm): "on",
-		},
-	})
-	featureManager := alpha.NewFeaturesManagerWithConfig(cfg)
-	global := &internal.GlobalCommandOptions{
-		NoPrompt: true, // Non-interactive mode
-	}
-	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
-	middleware := NewErrorMiddleware(
-		&Options{Name: "test"},
-		mockContext.Console,
-		nil,
-		global,
-		featureManager,
-		userConfigManager,
-	)
-
-	testError := errors.New("test error")
-	nextFn := func(ctx context.Context) (*actions.ActionResult, error) {
-		return nil, testError
-	}
-
-	result, err := middleware.Run(*mockContext.Context, nextFn)
-
-	// Should return error without AI intervention in no-prompt mode
+	// Should return error without AI intervention when LLM alpha feature is not enabled
 	require.Error(t, err)
 	require.Nil(t, result)
 	require.Equal(t, testError, err)
@@ -128,6 +100,7 @@ func Test_ErrorMiddleware_ChildAction(t *testing.T) {
 		NoPrompt: false,
 	}
 	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	errorPipeline := errorhandler.NewErrorHandlerPipeline(nil)
 	middleware := NewErrorMiddleware(
 		&Options{Name: "test"},
 		mockContext.Console,
@@ -135,6 +108,7 @@ func Test_ErrorMiddleware_ChildAction(t *testing.T) {
 		global,
 		featureManager,
 		userConfigManager,
+		errorPipeline,
 	)
 	testError := errors.New("test error")
 	nextFn := func(ctx context.Context) (*actions.ActionResult, error) {
@@ -166,6 +140,7 @@ func Test_ErrorMiddleware_ErrorWithSuggestion(t *testing.T) {
 		NoPrompt: false,
 	}
 	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	errorPipeline := errorhandler.NewErrorHandlerPipeline(nil)
 	middleware := NewErrorMiddleware(
 		&Options{Name: "test"},
 		mockContext.Console,
@@ -173,6 +148,7 @@ func Test_ErrorMiddleware_ErrorWithSuggestion(t *testing.T) {
 		global,
 		featureManager,
 		userConfigManager,
+		errorPipeline,
 	)
 
 	// Create error with suggestion
@@ -190,16 +166,83 @@ func Test_ErrorMiddleware_ErrorWithSuggestion(t *testing.T) {
 	require.Error(t, err)
 	require.Nil(t, result)
 
-	// Check that suggestion was displayed
-	consoleOutput := mockContext.Console.Output()
-	foundSuggestion := false
-	for _, message := range consoleOutput {
-		if message == "Suggested fix" {
-			foundSuggestion = true
-			break
-		}
+	// Verify the error with suggestion is returned as-is (not modified)
+	var returnedSuggestionErr *internal.ErrorWithSuggestion
+	require.True(t, errors.As(err, &returnedSuggestionErr), "Expected ErrorWithSuggestion to be returned")
+	require.Equal(t, "Suggested fix", returnedSuggestionErr.Suggestion)
+}
+
+func Test_ErrorMiddleware_PatternMatchingSuggestion(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	cfg := config.NewEmptyConfig()
+	featureManager := alpha.NewFeaturesManagerWithConfig(cfg)
+	global := &internal.GlobalCommandOptions{
+		NoPrompt: false,
 	}
-	require.True(t, foundSuggestion, "No suggestion displayed for ErrorWithSuggestion")
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	errorPipeline := errorhandler.NewErrorHandlerPipeline(nil)
+	middleware := NewErrorMiddleware(
+		&Options{Name: "test"},
+		mockContext.Console,
+		nil,
+		global,
+		featureManager,
+		userConfigManager,
+		errorPipeline,
+	)
+
+	// Create an error that matches a known pattern (quota error)
+	quotaError := errors.New("Deployment failed: QuotaExceeded for resource")
+	nextFn := func(ctx context.Context) (*actions.ActionResult, error) {
+		return nil, quotaError
+	}
+
+	result, err := middleware.Run(*mockContext.Context, nextFn)
+
+	require.Error(t, err)
+	require.Nil(t, result)
+
+	// Verify the error was wrapped with a suggestion
+	var suggestionErr *internal.ErrorWithSuggestion
+	require.True(t, errors.As(err, &suggestionErr), "Expected error to be wrapped with suggestion")
+	require.Contains(t, suggestionErr.Suggestion, "quota")
+	require.NotEmpty(t, suggestionErr.Links, "Expected reference links")
+}
+
+func Test_ErrorMiddleware_NoPatternMatch(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	cfg := config.NewEmptyConfig()
+	featureManager := alpha.NewFeaturesManagerWithConfig(cfg)
+	global := &internal.GlobalCommandOptions{
+		NoPrompt: true, // Use no-prompt mode to avoid AI processing
+	}
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	errorPipeline := errorhandler.NewErrorHandlerPipeline(nil)
+	middleware := NewErrorMiddleware(
+		&Options{Name: "test"},
+		mockContext.Console,
+		nil,
+		global,
+		featureManager,
+		userConfigManager,
+		errorPipeline,
+	)
+
+	// Create an error that doesn't match any pattern
+	unknownError := errors.New("some completely unique error xyz123abc")
+	nextFn := func(ctx context.Context) (*actions.ActionResult, error) {
+		return nil, unknownError
+	}
+
+	result, err := middleware.Run(*mockContext.Context, nextFn)
+
+	require.Error(t, err)
+	require.Nil(t, result)
+
+	// Verify the error was NOT wrapped with a suggestion
+	var suggestionErr *internal.ErrorWithSuggestion
+	require.False(t, errors.As(err, &suggestionErr), "Expected error NOT to be wrapped with suggestion")
+	require.Equal(t, unknownError, err)
 }
 
 func Test_ExtractSuggestedSolutions(t *testing.T) {

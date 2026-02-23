@@ -1,0 +1,334 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package errorhandler
+
+import (
+	"errors"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// Test error types for reflection matching
+type testDeploymentError struct {
+	Details *testErrorDetails
+	Title   string
+}
+
+func (e *testDeploymentError) Error() string {
+	if e.Title != "" {
+		return e.Title
+	}
+	return "deployment failed"
+}
+
+type testErrorDetails struct {
+	Code    string
+	Message string
+}
+
+type testAuthError struct {
+	ErrorCode string
+	inner     error
+}
+
+func (e *testAuthError) Error() string { return "auth failed" }
+func (e *testAuthError) Unwrap() error { return e.inner }
+
+type testWrappedError struct {
+	msg   string
+	inner error
+}
+
+func (e *testWrappedError) Error() string { return e.msg }
+func (e *testWrappedError) Unwrap() error { return e.inner }
+
+// testMultiError supports multi-unwrap (Go 1.20+ Unwrap() []error)
+type testMultiError struct {
+	msg    string
+	errors []error
+}
+
+func (e *testMultiError) Error() string   { return e.msg }
+func (e *testMultiError) Unwrap() []error { return e.errors }
+
+func TestFindErrorByTypeName(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		typeName string
+		found    bool
+	}{
+		{
+			name:     "direct match",
+			err:      &testDeploymentError{Title: "test"},
+			typeName: "testDeploymentError",
+			found:    true,
+		},
+		{
+			name:     "no match",
+			err:      errors.New("plain error"),
+			typeName: "testDeploymentError",
+			found:    false,
+		},
+		{
+			name: "wrapped match",
+			err: &testWrappedError{
+				msg:   "outer",
+				inner: &testDeploymentError{Title: "inner"},
+			},
+			typeName: "testDeploymentError",
+			found:    true,
+		},
+		{
+			name: "deeply wrapped match",
+			err: &testWrappedError{
+				msg: "outer",
+				inner: &testWrappedError{
+					msg:   "middle",
+					inner: &testAuthError{ErrorCode: "AUTH001"},
+				},
+			},
+			typeName: "testAuthError",
+			found:    true,
+		},
+		{
+			name:     "wrong type name",
+			err:      &testDeploymentError{Title: "test"},
+			typeName: "SomeOtherError",
+			found:    false,
+		},
+		{
+			name: "multi-unwrap finds type in branch",
+			err: &testMultiError{
+				msg: "multi",
+				errors: []error{
+					errors.New("plain"),
+					&testAuthError{ErrorCode: "AUTH001"},
+				},
+			},
+			typeName: "testAuthError",
+			found:    true,
+		},
+		{
+			name: "multi-unwrap deeply nested",
+			err: &testMultiError{
+				msg: "top",
+				errors: []error{
+					&testMultiError{
+						msg: "branch1",
+						errors: []error{
+							errors.New("leaf1"),
+						},
+					},
+					&testMultiError{
+						msg: "branch2",
+						errors: []error{
+							&testDeploymentError{Title: "found me"},
+						},
+					},
+				},
+			},
+			typeName: "testDeploymentError",
+			found:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, ok := findErrorByTypeName(
+				tt.err, tt.typeName, nil, NewPatternMatcher(), false,
+			)
+			assert.Equal(t, tt.found, ok)
+			if tt.found {
+				assert.NotNil(t, result)
+			}
+		})
+	}
+}
+
+func TestResolvePropertyPath(t *testing.T) {
+	err := &testDeploymentError{
+		Title: "Deployment Failed",
+		Details: &testErrorDetails{
+			Code:    "InsufficientQuota",
+			Message: "Not enough quota",
+		},
+	}
+
+	tests := []struct {
+		name     string
+		target   any
+		path     string
+		expected string
+		found    bool
+	}{
+		{
+			name:     "simple field",
+			target:   err,
+			path:     "Title",
+			expected: "Deployment Failed",
+			found:    true,
+		},
+		{
+			name:     "nested field",
+			target:   err,
+			path:     "Details.Code",
+			expected: "InsufficientQuota",
+			found:    true,
+		},
+		{
+			name:     "nested message field",
+			target:   err,
+			path:     "Details.Message",
+			expected: "Not enough quota",
+			found:    true,
+		},
+		{
+			name:   "nonexistent field",
+			target: err,
+			path:   "NonExistent",
+			found:  false,
+		},
+		{
+			name:   "nonexistent nested field",
+			target: err,
+			path:   "Details.NonExistent",
+			found:  false,
+		},
+		{
+			name: "nil pointer in path",
+			target: &testDeploymentError{
+				Title:   "test",
+				Details: nil,
+			},
+			path:  "Details.Code",
+			found: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, ok := resolvePropertyPath(tt.target, tt.path)
+			assert.Equal(t, tt.found, ok)
+			if tt.found {
+				assert.Equal(t, tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestMatchProperties(t *testing.T) {
+	err := &testDeploymentError{
+		Title: "test",
+		Details: &testErrorDetails{
+			Code:    "InsufficientQuota",
+			Message: "Not enough",
+		},
+	}
+
+	tests := []struct {
+		name       string
+		target     any
+		properties map[string]string
+		expected   bool
+	}{
+		{
+			name:       "single property match",
+			target:     err,
+			properties: map[string]string{"Details.Code": "InsufficientQuota"},
+			expected:   true,
+		},
+		{
+			name:   "multiple properties all match",
+			target: err,
+			properties: map[string]string{
+				"Details.Code":    "InsufficientQuota",
+				"Details.Message": "Not enough",
+			},
+			expected: true,
+		},
+		{
+			name:       "property value mismatch",
+			target:     err,
+			properties: map[string]string{"Details.Code": "WrongCode"},
+			expected:   false,
+		},
+		{
+			name:       "nonexistent property",
+			target:     err,
+			properties: map[string]string{"Bogus.Path": "value"},
+			expected:   false,
+		},
+		{
+			name:       "empty properties matches",
+			target:     err,
+			properties: map[string]string{},
+			expected:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := matchProperties(tt.target, tt.properties, NewPatternMatcher(), false)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestMatchProperties_Regex(t *testing.T) {
+	err := &testDeploymentError{
+		Title: "/usr/local/bin/pwsh",
+		Details: &testErrorDetails{
+			Code:    "InsufficientQuota",
+			Message: "Not enough quota in eastus region",
+		},
+	}
+	matcher := NewPatternMatcher()
+
+	tests := []struct {
+		name       string
+		properties map[string]string
+		expected   bool
+	}{
+		{
+			name:       "regex match on field",
+			properties: map[string]string{"Title": "(?i)pwsh|powershell"},
+			expected:   true,
+		},
+		{
+			name:       "regex no match",
+			properties: map[string]string{"Title": "(?i)node|python"},
+			expected:   false,
+		},
+		{
+			name:       "regex on nested field",
+			properties: map[string]string{"Details.Message": "(?i)quota.*region"},
+			expected:   true,
+		},
+		{
+			name: "regex on multiple properties",
+			properties: map[string]string{
+				"Title":        "(?i)pwsh",
+				"Details.Code": "Insufficient",
+			},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := matchProperties(err, tt.properties, matcher, true)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestResolvePropertyPath_UnexportedField(t *testing.T) {
+	err := &testAuthError{ErrorCode: "AUTH001"}
+	// 'inner' is unexported — should not be accessible
+	_, ok := resolvePropertyPath(err, "inner")
+	require.False(t, ok)
+}

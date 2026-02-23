@@ -211,6 +211,7 @@ overrides:
       - aiservices
       - azdaiagent
       - myregistry
+      - posixpath
   - filename: extensions/azure.ai.agents/internal/cmd/listen.go
     words:
       - hostedagent

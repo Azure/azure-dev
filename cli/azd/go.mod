@@ -81,6 +81,7 @@ require (
 	go.uber.org/multierr v1.11.0
 	go.yaml.in/yaml/v3 v3.0.4
 	golang.org/x/sys v0.39.0
+	golang.org/x/time v0.14.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20251007200510-49b9836ed3ff
 	google.golang.org/grpc v1.76.0
 	google.golang.org/protobuf v1.36.10

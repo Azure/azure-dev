@@ -133,6 +133,22 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 					allEnv = append(allEnv, "FORCE_COLOR=1")
 				}
 
+				if debugEnabled, _ := m.options.Flags.GetBool("debug"); debugEnabled {
+					allEnv = append(allEnv, "AZD_DEBUG=true")
+				}
+
+				if noPrompt, _ := m.options.Flags.GetBool("no-prompt"); noPrompt {
+					allEnv = append(allEnv, "AZD_NO_PROMPT=true")
+				}
+
+				if cwd, _ := m.options.Flags.GetString("cwd"); cwd != "" {
+					allEnv = append(allEnv, fmt.Sprintf("AZD_CWD=%s", cwd))
+				}
+
+				if env, _ := m.options.Flags.GetString("environment"); env != "" {
+					allEnv = append(allEnv, fmt.Sprintf("AZD_ENVIRONMENT=%s", env))
+				}
+
 				// Propagate trace context to the extension process
 				if traceEnv := tracing.Environ(ctx); len(traceEnv) > 0 {
 					allEnv = append(allEnv, traceEnv...)

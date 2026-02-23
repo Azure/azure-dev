@@ -83,6 +83,7 @@ type BicepProvider struct {
 	keyvaultService     keyvault.KeyVaultService
 	subscriptionManager *account.SubscriptionsManager
 	aiModelService      *ai.AiModelService
+	userConfigManager   config.UserConfigManager
 
 	// Internal state
 	// compileBicepResult is cached to avoid recompiling the same bicep file multiple times in the same azd run.
@@ -679,16 +680,31 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		return nil, err
 	}
 
-	err = p.validatePreflight(
-		ctx,
-		deployment,
-		planned.RawArmTemplate,
-		planned.Parameters,
-		deploymentTags,
-		optionsMap,
-	)
-	if err != nil {
-		return nil, err
+	// Check if preflight validation is disabled via config
+	skipPreflight := false
+	if p.userConfigManager != nil {
+		if userConfig, err := p.userConfigManager.Load(); err == nil {
+			if val, exists := userConfig.GetString("provision.preflight"); exists && val == "off" {
+				skipPreflight = true
+			}
+		}
+	}
+
+	if !skipPreflight {
+		p.console.ShowSpinner(ctx, "Validating deployment", input.Step)
+		preflightErr := p.validatePreflight(
+			ctx,
+			deployment,
+			planned.RawArmTemplate,
+			planned.Parameters,
+			deploymentTags,
+			optionsMap,
+		)
+		if preflightErr != nil {
+			p.console.StopSpinner(ctx, "Validating deployment", input.StepFailed)
+			return nil, preflightErr
+		}
+		p.console.StopSpinner(ctx, "", input.StepDone)
 	}
 
 	cancelProgress := make(chan bool)
@@ -2516,6 +2532,7 @@ func NewBicepProvider(
 	cloud *cloud.Cloud,
 	subscriptionManager *account.SubscriptionsManager,
 	aiModelService *ai.AiModelService,
+	userConfigManager config.UserConfigManager,
 ) provisioning.Provider {
 	return &BicepProvider{
 		envManager:          envManager,
@@ -2532,6 +2549,7 @@ func NewBicepProvider(
 		portalUrlBase:       cloud.PortalUrlBase,
 		subscriptionManager: subscriptionManager,
 		aiModelService:      aiModelService,
+		userConfigManager:   userConfigManager,
 	}
 }
 

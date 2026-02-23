@@ -38,7 +38,6 @@ type InitFromCodeAction struct {
 	azureContext      *azdext.AzureContext
 	environment       *azdext.Environment
 	credential        azcore.TokenCredential
-	modelCatalog      map[string]*azdext.AiModel
 	deploymentDetails []project.Deployment
 	httpClient        *http.Client
 }
@@ -97,7 +96,7 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		}
 
 		// Add the agent to the azd project (azure.yaml) services
-		if err := a.addToProject(ctx, srcDir, localDefinition.Name, a.flags.host); err != nil {
+		if err := a.addToProject(ctx, srcDir, localDefinition.Name); err != nil {
 			return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
 		}
 
@@ -119,7 +118,7 @@ func (a *InitFromCodeAction) ensureProject(ctx context.Context) (*azdext.Project
 	if err != nil {
 		fmt.Println("Let's get your project initialized.")
 
-		if err := a.scaffoldTemplate(ctx, a.azdClient, "Azure-Samples/azd-ai-starter-basic", "trangevi/existing-acr"); err != nil {
+		if err := a.scaffoldTemplate(ctx, a.azdClient, "Azure-Samples/azd-ai-starter-basic", "main"); err != nil {
 			return nil, fmt.Errorf("failed to scaffold template: %w", err)
 		}
 
@@ -820,35 +819,6 @@ func (a *InitFromCodeAction) ensureLocation(ctx context.Context) error {
 }
 
 func (a *InitFromCodeAction) selectNewModel(ctx context.Context) (*azdext.AiModel, error) {
-	var err error
-	if a.modelCatalog == nil {
-		spinner := ux.NewSpinner(&ux.SpinnerOptions{
-			Text:        "Loading model catalog...",
-			ClearOnStop: true,
-		})
-		if err := spinner.Start(ctx); err != nil {
-			return nil, fmt.Errorf("failed to start spinner: %w", err)
-		}
-
-		err = a.loadAiCatalog(ctx)
-		if stopErr := spinner.Stop(ctx); stopErr != nil {
-			return nil, stopErr
-		}
-		if err != nil {
-			return nil, fmt.Errorf("failed to list models from catalog: %w", err)
-		}
-	}
-
-	var modelNames []string
-	for modelName := range a.modelCatalog {
-		modelNames = append(modelNames, modelName)
-	}
-
-	// selectedModel, err := a.promptForModelWithSearch(ctx, modelNames)
-	// if err != nil {
-	// 	return "", err
-	// }
-
 	promptReq := &azdext.PromptAiModelRequest{
 		AzureContext: a.azureContext,
 		SelectOptions: &azdext.SelectOptions{
@@ -870,53 +840,6 @@ func (a *InitFromCodeAction) selectNewModel(ctx context.Context) (*azdext.AiMode
 	selectedModel := modelResp.Model
 
 	return selectedModel, nil
-}
-
-// promptForModelWithSearch prompts the user with a text search field, then shows a filtered Select list.
-// Returns the selected model name.
-func (a *InitFromCodeAction) promptForModelWithSearch(ctx context.Context, modelNames []string) (string, error) {
-	for {
-		// Prompt user for a search term
-		searchResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-			Options: &azdext.PromptOptions{
-				Message: "Search for a model (e.g., gpt-4o) or press Enter to see all models:",
-			},
-		})
-		if err != nil {
-			return "", fmt.Errorf("failed to prompt for model search: %w", err)
-		}
-
-		filtered := fuzzyFilterModels(modelNames, searchResp.Value)
-		if len(filtered) == 0 {
-			fmt.Printf("No models matching '%s'. Please try again.\n", searchResp.Value)
-			continue
-		}
-
-		slices.Sort(filtered)
-
-		defaultIndex := findDefaultModelIndex(filtered)
-
-		choices := make([]*azdext.SelectChoice, len(filtered))
-		for i, name := range filtered {
-			choices[i] = &azdext.SelectChoice{
-				Label: name,
-				Value: name,
-			}
-		}
-
-		modelResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-			Options: &azdext.SelectOptions{
-				Message:       "Select a model:",
-				Choices:       choices,
-				SelectedIndex: &defaultIndex,
-			},
-		})
-		if err != nil {
-			return "", fmt.Errorf("failed to prompt for model selection: %w", err)
-		}
-
-		return filtered[*modelResp.Value], nil
-	}
 }
 
 // normalizeForFuzzyMatch strips common separator characters (hyphens, dots, spaces, underscores)
@@ -1229,7 +1152,7 @@ func (a *InitFromCodeAction) writeDefinitionToSrcDir(definition *agent_yaml.Cont
 	return definitionPath, nil
 }
 
-func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string, agentName string, host string) error {
+func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string, agentName string) error {
 	var agentConfig = project.ServiceTargetAgentConfig{}
 
 	agentConfig.Container = &project.ContainerSettings{
@@ -1278,46 +1201,6 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 		color.HiBlueString("azd deploy %s", agentName))
 	return nil
 }
-
-// func (a *InitFromCodeAction) getModelDeploymentDetails(ctx context.Context, modelName string) (*ai.AiModelDeployment, error) {
-// 	var model *ai.AiModel
-// 	model, _ = a.modelCatalog[modelName]
-
-// 	_, defaultVersion, err := a.modelCatalogService.ListModelVersions(ctx, model, a.azureContext.Scope.Location)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("listing versions for model '%s': %w", model.Name, err)
-// 	}
-
-// 	availableSkus, err := a.modelCatalogService.ListModelSkus(ctx, model, a.azureContext.Scope.Location, defaultVersion)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("listing SKUs for model '%s': %w", model.Name, err)
-// 	}
-
-// 	// Determine default SKU based on priority list
-// 	defaultSku := ""
-// 	for _, sku := range defaultSkuPriority {
-// 		if slices.Contains(availableSkus, sku) {
-// 			defaultSku = sku
-// 			break
-// 		}
-// 	}
-
-// 	deploymentOptions := ai.AiModelDeploymentOptions{
-// 		Versions: []string{defaultVersion},
-// 		Skus:     []string{defaultSku},
-// 	}
-
-// 	modelDeployment, err := a.modelCatalogService.GetModelDeployment(ctx, model, &deploymentOptions)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("failed to get model deployment: %w", err)
-// 	}
-
-// 	if modelDeployment.Sku.Capacity == -1 {
-// 		modelDeployment.Sku.Capacity = 10
-// 	}
-
-// 	return modelDeployment, nil
-// }
 
 func (a *InitFromCodeAction) processExistingFoundryProject(ctx context.Context, foundryProject FoundryProjectInfo) error {
 
@@ -1541,24 +1424,6 @@ func (a *InitFromCodeAction) processExistingFoundryProject(ctx context.Context, 
 			}
 		}
 	}
-
-	return nil
-}
-
-func (a *InitFromCodeAction) loadAiCatalog(ctx context.Context) error {
-	if a.modelCatalog != nil {
-		return nil
-	}
-
-	modelResp, err := a.azdClient.Ai().ListModels(ctx, &azdext.ListModelsRequest{
-		AzureContext: a.azureContext,
-	})
-
-	if err != nil {
-		return fmt.Errorf("failed to load the model catalog: %w", err)
-	}
-
-	a.modelCatalog = mapModelsByName(modelResp.Models)
 
 	return nil
 }

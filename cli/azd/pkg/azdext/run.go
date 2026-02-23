@@ -64,7 +64,13 @@ func Run(rootCmd *cobra.Command, opts ...RunOption) {
 			if reportErr := ReportError(err); reportErr != nil {
 				log.Printf("warning: failed to report structured error: %v", reportErr)
 			}
-			printError(err)
+
+			// When AZD_ERROR_FILE is set, the host owns all error rendering.
+			// When not set (older azd), print error + suggestion here.
+			if os.Getenv(ExtensionErrorFileEnv) == "" {
+				printError(err)
+			}
+
 			os.Exit(1)
 		}
 	}
@@ -74,7 +80,12 @@ func Run(rootCmd *cobra.Command, opts ...RunOption) {
 			log.Printf("warning: failed to report structured error: %v", reportErr)
 		}
 
-		printError(err)
+		// When AZD_ERROR_FILE is set, the host owns all error rendering.
+		// When not set (older azd), print error + suggestion here.
+		if os.Getenv(ExtensionErrorFileEnv) == "" {
+			printError(err)
+		}
+
 		os.Exit(1)
 	}
 }
@@ -103,6 +114,22 @@ func ErrorSuggestion(err error) string {
 	var svcErr *ServiceError
 	if errors.As(err, &svcErr) && svcErr.Suggestion != "" {
 		return svcErr.Suggestion
+	}
+
+	return ""
+}
+
+// ErrorMessage extracts the user-friendly Message field from a [LocalError] or [ServiceError].
+// Returns an empty string if the error is not an extension error type.
+func ErrorMessage(err error) string {
+	var localErr *LocalError
+	if errors.As(err, &localErr) && localErr.Message != "" {
+		return localErr.Message
+	}
+
+	var svcErr *ServiceError
+	if errors.As(err, &svcErr) && svcErr.Message != "" {
+		return svcErr.Message
 	}
 
 	return ""

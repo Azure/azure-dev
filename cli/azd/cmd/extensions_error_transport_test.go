@@ -65,5 +65,3 @@ func TestCreateExtensionErrorFileEnv(t *testing.T) {
 	cleanup()
 	require.NoFileExists(t, path)
 }
-
-

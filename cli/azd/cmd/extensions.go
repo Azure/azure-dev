@@ -271,7 +271,7 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		} else if reportedErr != nil {
 			// Wrap both errors so the chain contains both:
 			// - reportedErr (LocalError/ServiceError) for telemetry classification
-			// - invokeErr (ExtensionRunError) for UxMiddleware suppression
+			// - invokeErr (ExtensionRunError) for UX middleware handling
 			return nil, fmt.Errorf("%w: %w", reportedErr, invokeErr)
 		}
 

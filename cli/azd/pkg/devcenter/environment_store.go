@@ -137,7 +137,7 @@ func (s *EnvironmentStore) Reload(ctx context.Context, env *environment.Environm
 	}
 
 	if err := s.syncEnvironment(env, environment); err != nil {
-		return fmt.Errorf("failed to sync devcenter environment to AZD environment: %w", err)
+		return fmt.Errorf("failed to sync devcenter environment to azd environment: %w", err)
 	}
 
 	outputs, err := s.manager.Outputs(ctx, s.config, environment)
@@ -238,7 +238,7 @@ func (s *EnvironmentStore) ensureDevCenterConfig(ctx context.Context) error {
 	return nil
 }
 
-// Syncs the devcenter environment to the AZD environment
+// Syncs the devcenter environment to the azd environment
 func (s *EnvironmentStore) syncEnvironment(env *environment.Environment, environment *devcentersdk.Environment) error {
 	var currentConfig Config
 	if s.cachedConfig == nil {

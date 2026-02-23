@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=../extension.schema.json
 id: microsoft.azd.ai.builder
 namespace: ai.builder
-displayName: AZD AI Builder
+displayName: azd AI Builder
 description: This extension provides custom commands for building AI applications using Azure Developer CLI.
 usage: azd ai builder <command> [options]
 version: 0.2.0

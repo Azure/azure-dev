@@ -27,7 +27,7 @@ func newWatchCommand() *cobra.Command {
 
 	watchCmd := &cobra.Command{
 		Use:   "watch",
-		Short: "Watches the AZD extension project for file changes and rebuilds it.",
+		Short: "Watches the azd extension project for file changes and rebuilds it.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			internal.WriteCommandHeader(
 				"Watch and azd extension (azd x watch)",
@@ -47,10 +47,10 @@ func newWatchCommand() *cobra.Command {
 }
 
 func runWatchAction(ctx context.Context, flags *watchFlags) error {
-	// Create a new context that includes the AZD access token
+	// Create a new context that includes the azd access token
 	ctx = azdext.WithAccessToken(ctx)
 
-	// Create a new AZD client
+	// Create a new azd client
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
 		return fmt.Errorf("failed to create azd client: %w", err)

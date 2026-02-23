@@ -43,7 +43,7 @@ func newInitCommand() *cobra.Command {
 
 	initCmd := &cobra.Command{
 		Use:   "init",
-		Short: "Initialize a new AZD extension project",
+		Short: "Initialize a new azd extension project",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			internal.WriteCommandHeader(
 				"Initialize a new azd extension project (azd x init)",
@@ -131,10 +131,10 @@ func newInitCommand() *cobra.Command {
 }
 
 func runInitAction(ctx context.Context, flags *initFlags) error {
-	// Create a new context that includes the AZD access token
+	// Create a new context that includes the azd access token
 	ctx = azdext.WithAccessToken(ctx)
 
-	// Create a new AZD client
+	// Create a new azd client
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
 		return fmt.Errorf("failed to create azd client: %w", err)
@@ -419,7 +419,7 @@ func collectExtensionMetadataFromFlags(flags *initFlags) (*models.ExtensionSchem
 	tags := []string{}
 
 	// Set a default description
-	description := "An AZD extension"
+	description := "An azd extension"
 
 	// Default namespace to ID if not provided
 	namespace := flags.id
@@ -458,7 +458,7 @@ func collectExtensionMetadata(ctx context.Context, azdClient *azdext.AzdClient) 
 			Placeholder:     "company.extension",
 			RequiredMessage: "Extension ID is required",
 			Required:        true,
-			Hint: "Extension ID is used to identify your extension in the AZD ecosystem. " +
+			Hint: "Extension ID is used to identify your extension in the azd ecosystem. " +
 				"It should be unique and follow the format 'company.extension'.",
 		},
 	})
@@ -472,7 +472,7 @@ func collectExtensionMetadata(ctx context.Context, azdClient *azdext.AzdClient) 
 			Placeholder:     "My Extension",
 			RequiredMessage: "Display name is required",
 			Required:        true,
-			HelpMessage: "Display name is used to show the extension name in the AZD CLI. " +
+			HelpMessage: "Display name is used to show the extension name in the azd CLI. " +
 				"It should be user-friendly and descriptive.",
 		},
 	})

@@ -368,6 +368,139 @@ func TestPipeline_ResponseError_MatchesByErrorCode(t *testing.T) {
 	assert.Equal(t, "Resource not available in region.", result.Message)
 }
 
+// --- Container App error rule tests ---
+
+func TestPipeline_ContainerAppSecretInvalid(t *testing.T) {
+	pipeline := NewErrorHandlerPipeline(nil)
+
+	err := &testDeploymentError{
+		Details: &testErrorDetails{
+			Code: "ContainerAppSecretInvalid",
+		},
+		Title: "secret ref not found",
+	}
+
+	result := pipeline.ProcessWithRules(
+		context.Background(),
+		err,
+		[]ErrorSuggestionRule{
+			{
+				ErrorType: "testDeploymentError",
+				Properties: map[string]string{
+					"Details.Code": "ContainerAppSecretInvalid",
+				},
+				Message:    "Secret missing or invalid.",
+				Suggestion: "Check secret definitions.",
+			},
+		},
+	)
+	require.NotNil(t, result)
+	assert.Equal(t, "Secret missing or invalid.", result.Message)
+}
+
+func TestPipeline_ContainerAppOperationError_ImagePull(t *testing.T) {
+	pipeline := NewErrorHandlerPipeline(nil)
+
+	err := &testDeploymentError{
+		Details: &testErrorDetails{
+			Code: "ContainerAppOperationError",
+		},
+		Title: "failed to pull image myregistry.azurecr.io/app:latest",
+	}
+
+	result := pipeline.ProcessWithRules(
+		context.Background(),
+		err,
+		[]ErrorSuggestionRule{
+			{
+				ErrorType: "testDeploymentError",
+				Properties: map[string]string{
+					"Details.Code": "ContainerAppOperationError",
+				},
+				Patterns:   []string{"image"},
+				Message:    "Image pull failed.",
+				Suggestion: "Check image name and registry.",
+			},
+			{
+				ErrorType: "testDeploymentError",
+				Properties: map[string]string{
+					"Details.Code": "ContainerAppOperationError",
+				},
+				Message:    "Generic operation error.",
+				Suggestion: "Check logs.",
+			},
+		},
+	)
+	require.NotNil(t, result)
+	assert.Equal(t, "Image pull failed.", result.Message)
+}
+
+func TestPipeline_ContainerAppOperationError_Generic(t *testing.T) {
+	pipeline := NewErrorHandlerPipeline(nil)
+
+	err := &testDeploymentError{
+		Details: &testErrorDetails{
+			Code: "ContainerAppOperationError",
+		},
+		Title: "container app failed to start",
+	}
+
+	result := pipeline.ProcessWithRules(
+		context.Background(),
+		err,
+		[]ErrorSuggestionRule{
+			{
+				ErrorType: "testDeploymentError",
+				Properties: map[string]string{
+					"Details.Code": "ContainerAppOperationError",
+				},
+				Patterns:   []string{"image"},
+				Message:    "Image pull failed.",
+				Suggestion: "Check image name.",
+			},
+			{
+				ErrorType: "testDeploymentError",
+				Properties: map[string]string{
+					"Details.Code": "ContainerAppOperationError",
+				},
+				Message:    "Container App operation failed.",
+				Suggestion: "Check logs.",
+			},
+		},
+	)
+	require.NotNil(t, result)
+	// Should fall through to generic rule since "image" not in message
+	assert.Equal(t, "Container App operation failed.", result.Message)
+}
+
+func TestPipeline_ContainerAppInvalidParam(t *testing.T) {
+	pipeline := NewErrorHandlerPipeline(nil)
+
+	err := &testDeploymentError{
+		Details: &testErrorDetails{
+			Code: "InvalidParameterValueInContainerTemplate",
+		},
+		Title: "invalid cpu value",
+	}
+
+	result := pipeline.ProcessWithRules(
+		context.Background(),
+		err,
+		[]ErrorSuggestionRule{
+			{
+				ErrorType: "testDeploymentError",
+				Properties: map[string]string{
+					"Details.Code": "InvalidParameterValueInContainerTemplate",
+				},
+				Message:    "Invalid container parameter.",
+				Suggestion: "Check resource limits.",
+			},
+		},
+	)
+	require.NotNil(t, result)
+	assert.Equal(t, "Invalid container parameter.", result.Message)
+}
+
 // --- RBAC and authorization error rule tests ---
 
 func TestPipeline_RBACErrors(t *testing.T) {

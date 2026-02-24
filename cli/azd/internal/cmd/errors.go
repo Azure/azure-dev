@@ -19,6 +19,7 @@ import (
 	"github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
@@ -26,7 +27,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 )
@@ -171,6 +175,18 @@ func MapError(err error, span tracing.Span) {
 		errCode = "user.canceled"
 	} else if errors.Is(err, context.DeadlineExceeded) {
 		errCode = "internal.timeout"
+	} else if errors.Is(err, auth.ErrNoCurrentUser) {
+		errCode = "auth.not_logged_in"
+	} else if errors.Is(err, consent.ErrToolExecutionDenied) {
+		errCode = "user.tool_denied"
+	} else if errors.Is(err, git.ErrNotRepository) {
+		errCode = "internal.not_git_repo"
+	} else if errors.Is(err, azapi.ErrPreviewNotSupported) {
+		errCode = "internal.preview_not_supported"
+	} else if errors.Is(err, provisioning.ErrBindMountOperationDisabled) {
+		errCode = "internal.bind_mount_disabled"
+	} else if errors.Is(err, pipeline.ErrRemoteHostIsNotAzDo) {
+		errCode = "internal.remote_not_azdo"
 	} else if isNetworkError(err) {
 		errCode = "internal.network"
 		errType := errorType(err)

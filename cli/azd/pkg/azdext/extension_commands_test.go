@@ -95,6 +95,7 @@ func TestExtensionCommands_NewVersionCommand(t *testing.T) {
 	t.Run("DefaultFormat", func(t *testing.T) {
 		format := ""
 		cmd := NewVersionCommand("my.ext", "1.2.3", &format)
+		cmd.SetArgs([]string{})
 
 		output := captureStdout(t, func() {
 			err := cmd.Execute()
@@ -107,6 +108,7 @@ func TestExtensionCommands_NewVersionCommand(t *testing.T) {
 	t.Run("JSONFormat", func(t *testing.T) {
 		format := "json"
 		cmd := NewVersionCommand("my.ext", "1.2.3", &format)
+		cmd.SetArgs([]string{})
 
 		output := captureStdout(t, func() {
 			err := cmd.Execute()

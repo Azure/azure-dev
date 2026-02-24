@@ -241,6 +241,7 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	if err != nil {
 		log.Printf("failed to create extension error file: %v", err)
 	} else {
+		log.Printf("%s=%s", azdext.ExtensionErrorFileEnv, errorFilePath)
 		defer cleanupErrorFile()
 		allEnv = append(allEnv, errorFileEnv)
 	}

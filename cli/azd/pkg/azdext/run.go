@@ -35,6 +35,7 @@ func WithPreExecute(fn func(ctx context.Context, cmd *cobra.Command) error) RunO
 //   - FORCE_COLOR environment variable → color.NoColor
 //   - cobra SilenceErrors (Run controls error output)
 //   - Context creation with tracing propagation
+//   - gRPC access token injection via [WithAccessToken]
 //   - Command execution
 //   - Structured error reporting via AZD_ERROR_FILE
 //   - Error + suggestion display
@@ -53,6 +54,7 @@ func Run(rootCmd *cobra.Command, opts ...RunOption) {
 	rootCmd.SilenceErrors = true
 
 	ctx := NewContext()
+	ctx = WithAccessToken(ctx)
 
 	var cfg runConfig
 	for _, o := range opts {

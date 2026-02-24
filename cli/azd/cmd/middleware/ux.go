@@ -61,6 +61,7 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 				Suggestion: suggestionErr.Suggestion,
 				Links:      suggestionErr.Links,
 			}
+			m.console.Message(ctx, "")
 			m.console.MessageUxItem(ctx, displayErr)
 			return actionResult, err
 		}
@@ -76,6 +77,7 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 				Message:    message,
 				Suggestion: suggestion,
 			}
+			m.console.Message(ctx, "")
 			m.console.MessageUxItem(ctx, displayErr)
 			return actionResult, err
 		}

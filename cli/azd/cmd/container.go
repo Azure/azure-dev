@@ -751,13 +751,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterScoped(infra.NewDeploymentManager)
 	container.MustRegisterSingleton(infra.NewAzureResourceManager)
 	container.MustRegisterScoped(provisioning.NewManager)
-	container.MustRegisterScoped(func(serviceLocator ioc.ServiceLocator) *lazy.Lazy[*provisioning.Manager] {
-		return lazy.NewLazy(func() (*provisioning.Manager, error) {
-			var provisionManager *provisioning.Manager
-			err := serviceLocator.Resolve(&provisionManager)
-			return provisionManager, err
-		})
-	})
 	container.MustRegisterScoped(provisioning.NewPrincipalIdProvider)
 	container.MustRegisterScoped(prompt.NewDefaultPrompter)
 

@@ -19,6 +19,7 @@ import (
 	inf "github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -65,21 +66,21 @@ func newDownCmd() *cobra.Command {
 }
 
 type downAction struct {
-	flags                *downFlags
-	args                 []string
-	lazyProvisionManager *lazy.Lazy[*provisioning.Manager]
-	importManager        *project.ImportManager
-	lazyEnv              *lazy.Lazy[*environment.Environment]
-	envManager           environment.Manager
-	console              input.Console
-	projectConfig        *project.ProjectConfig
-	alphaFeatureManager  *alpha.FeatureManager
+	flags               *downFlags
+	args                []string
+	serviceLocator      ioc.ServiceLocator
+	importManager       *project.ImportManager
+	lazyEnv             *lazy.Lazy[*environment.Environment]
+	envManager          environment.Manager
+	console             input.Console
+	projectConfig       *project.ProjectConfig
+	alphaFeatureManager *alpha.FeatureManager
 }
 
 func newDownAction(
 	args []string,
 	flags *downFlags,
-	lazyProvisionManager *lazy.Lazy[*provisioning.Manager],
+	serviceLocator ioc.ServiceLocator,
 	lazyEnv *lazy.Lazy[*environment.Environment],
 	envManager environment.Manager,
 	projectConfig *project.ProjectConfig,
@@ -88,15 +89,15 @@ func newDownAction(
 	importManager *project.ImportManager,
 ) actions.Action {
 	return &downAction{
-		flags:                flags,
-		lazyProvisionManager: lazyProvisionManager,
-		lazyEnv:              lazyEnv,
-		envManager:           envManager,
-		console:              console,
-		projectConfig:        projectConfig,
-		importManager:        importManager,
-		alphaFeatureManager:  alphaFeatureManager,
-		args:                 args,
+		flags:               flags,
+		serviceLocator:      serviceLocator,
+		lazyEnv:             lazyEnv,
+		envManager:          envManager,
+		console:             console,
+		projectConfig:       projectConfig,
+		importManager:       importManager,
+		alphaFeatureManager: alphaFeatureManager,
+		args:                args,
 	}
 }
 
@@ -121,12 +122,24 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Get the environment non-interactively (respects -e flag or default environment)
 	env, err := a.lazyEnv.GetValue()
 	if err != nil {
+		if errors.Is(err, environment.ErrNotFound) {
+			return nil, fmt.Errorf(
+				"environment not found. Run \"azd env list\" to see available environments, " +
+					"\"azd env new\" to create a new one, or specify a valid environment name with -e",
+			)
+		}
+		if errors.Is(err, environment.ErrNameNotSpecified) {
+			return nil, errors.New(
+				"no environment selected. Use \"azd env select\" to set a default environment, " +
+					"or run \"azd down -e <name>\" to target a specific environment",
+			)
+		}
 		return nil, err
 	}
 
-	// Get the provisioning manager (resolved lazily to avoid premature env prompts)
-	provisionManager, err := a.lazyProvisionManager.GetValue()
-	if err != nil {
+	// Resolve provisioning manager after env check to avoid premature interactive prompts
+	var provisionManager *provisioning.Manager
+	if err := a.serviceLocator.Resolve(&provisionManager); err != nil {
 		return nil, fmt.Errorf("getting provisioning manager: %w", err)
 	}
 

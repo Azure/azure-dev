@@ -5,6 +5,7 @@ package azdext
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -18,8 +19,10 @@ type MCPToolHandler func(ctx context.Context, args ToolArgs) (*mcp.CallToolResul
 // MCPToolOptions configures an MCP tool registration.
 type MCPToolOptions struct {
 	Description string
-	ReadOnly    bool // ReadOnlyHint annotation
-	Destructive bool // DestructiveHint annotation
+	Title       string // TitleAnnotation
+	ReadOnly    bool   // ReadOnlyHint annotation
+	Idempotent  bool   // IdempotentHint annotation
+	Destructive bool   // DestructiveHint annotation
 }
 
 // serverToolEntry stores a pending tool registration.
@@ -37,6 +40,8 @@ type MCPServerBuilder struct {
 	rateLimiter    *rate.Limiter
 	securityPolicy *MCPSecurityPolicy
 	tools          []serverToolEntry
+	serverOpts     []server.ServerOption
+	resources      []server.ServerResource
 }
 
 // NewMCPServerBuilder creates a new builder for an MCP server.
@@ -84,25 +89,64 @@ func (b *MCPServerBuilder) AddTool(
 	return b
 }
 
+// WithInstructions sets system instructions that guide AI clients on how to use the server's tools.
+func (b *MCPServerBuilder) WithInstructions(instructions string) *MCPServerBuilder {
+	b.serverOpts = append(b.serverOpts, server.WithInstructions(instructions))
+	return b
+}
+
+// WithResourceCapabilities enables resource support on the server.
+// subscribe controls whether clients can subscribe to resource changes.
+// listChanged controls whether the server notifies clients when the resource list changes.
+func (b *MCPServerBuilder) WithResourceCapabilities(subscribe, listChanged bool) *MCPServerBuilder {
+	b.serverOpts = append(b.serverOpts, server.WithResourceCapabilities(subscribe, listChanged))
+	return b
+}
+
+// WithPromptCapabilities enables prompt support on the server.
+// listChanged controls whether the server notifies clients when the prompt list changes.
+func (b *MCPServerBuilder) WithPromptCapabilities(listChanged bool) *MCPServerBuilder {
+	b.serverOpts = append(b.serverOpts, server.WithPromptCapabilities(listChanged))
+	return b
+}
+
+// WithServerOption adds a raw mcp-go server option for capabilities not directly exposed by the builder.
+func (b *MCPServerBuilder) WithServerOption(opt server.ServerOption) *MCPServerBuilder {
+	b.serverOpts = append(b.serverOpts, opt)
+	return b
+}
+
+// AddResources registers static resources with the server.
+func (b *MCPServerBuilder) AddResources(resources ...server.ServerResource) *MCPServerBuilder {
+	b.resources = append(b.resources, resources...)
+	return b
+}
+
 // Build creates the configured MCP server ready to serve.
 func (b *MCPServerBuilder) Build() *server.MCPServer {
-	mcpServer := server.NewMCPServer(b.name, b.version, server.WithToolCapabilities(true))
+	// Always enable tool capabilities, plus any user-configured server options
+	opts := append([]server.ServerOption{server.WithToolCapabilities(true)}, b.serverOpts...)
+	mcpServer := server.NewMCPServer(b.name, b.version, opts...)
 
 	serverTools := make([]server.ServerTool, 0, len(b.tools))
 	for _, entry := range b.tools {
 		// Build tool options: description + annotations + user-provided params
-		toolOpts := make([]mcp.ToolOption, 0, len(entry.params)+3)
+		toolOpts := make([]mcp.ToolOption, 0, len(entry.params)+5)
 		if entry.opts.Description != "" {
 			toolOpts = append(toolOpts, mcp.WithDescription(entry.opts.Description))
 		}
+		if entry.opts.Title != "" {
+			toolOpts = append(toolOpts, mcp.WithTitleAnnotation(entry.opts.Title))
+		}
 		toolOpts = append(toolOpts, mcp.WithReadOnlyHintAnnotation(entry.opts.ReadOnly))
+		toolOpts = append(toolOpts, mcp.WithIdempotentHintAnnotation(entry.opts.Idempotent))
 		toolOpts = append(toolOpts, mcp.WithDestructiveHintAnnotation(entry.opts.Destructive))
 		toolOpts = append(toolOpts, entry.params...)
 
 		tool := mcp.NewTool(entry.name, toolOpts...)
 
 		// Wrap the user handler with middleware
-		wrappedHandler := b.wrapHandler(entry.handler)
+		wrappedHandler := b.wrapHandler(entry.name, entry.handler)
 
 		serverTools = append(serverTools, server.ServerTool{
 			Tool:    tool,
@@ -111,6 +155,11 @@ func (b *MCPServerBuilder) Build() *server.MCPServer {
 	}
 
 	mcpServer.AddTools(serverTools...)
+
+	if len(b.resources) > 0 {
+		mcpServer.AddResources(b.resources...)
+	}
+
 	return mcpServer
 }
 
@@ -129,6 +178,7 @@ func (b *MCPServerBuilder) SecurityPolicy() *MCPSecurityPolicy {
 // wrapHandler creates the mcp-go compatible handler that applies rate limiting
 // and argument parsing before delegating to the user's MCPToolHandler.
 func (b *MCPServerBuilder) wrapHandler(
+	toolName string,
 	handler MCPToolHandler,
 ) func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	limiter := b.rateLimiter
@@ -136,6 +186,7 @@ func (b *MCPServerBuilder) wrapHandler(
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		// Rate limiting check
 		if limiter != nil && !limiter.Allow() {
+			slog.Warn("rate limit exceeded for MCP tool", "tool", toolName)
 			return MCPErrorResult("rate limit exceeded, please retry"), nil
 		}
 

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/mark3labs/mcp-go/server"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -69,7 +70,7 @@ func TestMCPServerBuilder_HandlerReceivesParsedToolArgs(t *testing.T) {
 	require.Len(t, builder.tools, 1)
 
 	// Test the wrapper directly
-	wrappedHandler := builder.wrapHandler(handler)
+	wrappedHandler := builder.wrapHandler("echo", handler)
 	request := mcp.CallToolRequest{}
 	request.Params.Name = "echo"
 	request.Params.Arguments = map[string]interface{}{
@@ -97,7 +98,7 @@ func TestMCPServerBuilder_RateLimiting(t *testing.T) {
 	builder := NewMCPServerBuilder("test-server", "1.0.0").
 		WithRateLimit(1, 0.001)
 
-	wrappedHandler := builder.wrapHandler(handler)
+	wrappedHandler := builder.wrapHandler("test", handler)
 	request := mcp.CallToolRequest{}
 	request.Params.Name = "test"
 	request.Params.Arguments = map[string]interface{}{}
@@ -132,7 +133,7 @@ func TestMCPServerBuilder_NoRateLimit(t *testing.T) {
 	// No rate limit configured
 	builder := NewMCPServerBuilder("test-server", "1.0.0")
 
-	wrappedHandler := builder.wrapHandler(handler)
+	wrappedHandler := builder.wrapHandler("test", handler)
 	request := mcp.CallToolRequest{}
 	request.Params.Name = "test"
 	request.Params.Arguments = map[string]interface{}{}
@@ -192,5 +193,101 @@ func TestMCPServerBuilder_ToolOptions_Annotations(t *testing.T) {
 
 	// Build should succeed
 	srv := builder.Build()
+	require.NotNil(t, srv)
+}
+
+func TestMCPServerBuilder_WithInstructions(t *testing.T) {
+	builder := NewMCPServerBuilder("test-server", "1.0.0").
+		WithInstructions("Use these tools to manage services.")
+
+	require.Len(t, builder.serverOpts, 1)
+	srv := builder.Build()
+	require.NotNil(t, srv)
+}
+
+func TestMCPServerBuilder_WithResourceCapabilities(t *testing.T) {
+	handler := func(ctx context.Context, args ToolArgs) (*mcp.CallToolResult, error) {
+		return MCPTextResult("ok"), nil
+	}
+
+	builder := NewMCPServerBuilder("test-server", "1.0.0").
+		WithResourceCapabilities(false, true).
+		AddTool("test", handler, MCPToolOptions{Description: "Test"})
+
+	require.Len(t, builder.serverOpts, 1)
+	srv := builder.Build()
+	require.NotNil(t, srv)
+}
+
+func TestMCPServerBuilder_WithPromptCapabilities(t *testing.T) {
+	builder := NewMCPServerBuilder("test-server", "1.0.0").
+		WithPromptCapabilities(false)
+
+	require.Len(t, builder.serverOpts, 1)
+	srv := builder.Build()
+	require.NotNil(t, srv)
+}
+
+func TestMCPServerBuilder_WithServerOption(t *testing.T) {
+	builder := NewMCPServerBuilder("test-server", "1.0.0").
+		WithServerOption(server.WithLogging())
+
+	require.Len(t, builder.serverOpts, 1)
+	srv := builder.Build()
+	require.NotNil(t, srv)
+}
+
+func TestMCPServerBuilder_AddResources(t *testing.T) {
+	resource := server.ServerResource{
+		Resource: mcp.Resource{
+			URI:  "test://resource",
+			Name: "test-resource",
+		},
+		Handler: func(ctx context.Context, request mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
+			return []mcp.ResourceContents{mcp.TextResourceContents{Text: "hello"}}, nil
+		},
+	}
+
+	builder := NewMCPServerBuilder("test-server", "1.0.0").
+		WithResourceCapabilities(false, true).
+		AddResources(resource)
+
+	require.Len(t, builder.resources, 1)
+	srv := builder.Build()
+	require.NotNil(t, srv)
+}
+
+func TestMCPServerBuilder_FullServerSetup(t *testing.T) {
+	handler := func(ctx context.Context, args ToolArgs) (*mcp.CallToolResult, error) {
+		return MCPTextResult("ok"), nil
+	}
+
+	resource := server.ServerResource{
+		Resource: mcp.Resource{
+			URI:  "azure://project/azure.yaml",
+			Name: "azure.yaml",
+		},
+		Handler: func(ctx context.Context, request mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
+			return []mcp.ResourceContents{mcp.TextResourceContents{Text: "name: test"}}, nil
+		},
+	}
+
+	policy := DefaultMCPSecurityPolicy()
+
+	srv := NewMCPServerBuilder("app-mcp-server", "1.0.0").
+		WithRateLimit(10, 1.0).
+		WithSecurityPolicy(policy).
+		WithInstructions("This MCP server provides runtime operations.").
+		WithResourceCapabilities(false, true).
+		WithPromptCapabilities(false).
+		AddTool("get_services", handler, MCPToolOptions{
+			Description: "Get running services",
+			Title:       "Get Running Services",
+			ReadOnly:    true,
+			Idempotent:  true,
+		}).
+		AddResources(resource).
+		Build()
+
 	require.NotNil(t, srv)
 }

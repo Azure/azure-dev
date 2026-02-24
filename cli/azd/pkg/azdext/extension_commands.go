@@ -16,8 +16,9 @@ import (
 // If configure is nil, the host runs with no custom registrations.
 func NewListenCommand(configure func(host *ExtensionHost)) *cobra.Command {
 	return &cobra.Command{
-		Use:    "listen",
-		Hidden: true,
+		Use:          "listen",
+		Hidden:       true,
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := WithAccessToken(cmd.Context())
 

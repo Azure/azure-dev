@@ -631,6 +631,10 @@ func (s *promptService) PromptAiModel(
 		}
 	}
 
+	if req.DefaultValue != "" {
+		selectOpts.SelectedIndex = findDefaultIndex(selectOpts.Choices, req.DefaultValue)
+	}
+
 	selected, err := ux.NewSelect(selectOpts).Ask(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("prompting for model selection: %w", err)
@@ -1000,6 +1004,10 @@ func (s *promptService) PromptAiLocationWithQuota(
 		}
 	}
 
+	if req.DefaultValue != "" {
+		selectOpts.SelectedIndex = findDefaultIndex(selectOpts.Choices, req.DefaultValue)
+	}
+
 	selected, err := ux.NewSelect(selectOpts).Ask(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("prompting for location selection: %w", err)
@@ -1098,6 +1106,10 @@ func (s *promptService) PromptAiModelLocationWithQuota(
 		}
 	}
 
+	if req.DefaultValue != "" {
+		selectOpts.SelectedIndex = findDefaultIndex(selectOpts.Choices, req.DefaultValue)
+	}
+
 	selected, err := ux.NewSelect(selectOpts).Ask(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("prompting for location selection: %w", err)
@@ -1120,6 +1132,20 @@ func requirePromptSubscriptionID(azureContext *azdext.AzureContext) (string, err
 	}
 
 	return azureContext.Scope.SubscriptionId, nil
+}
+
+// findDefaultIndex returns a pointer to the index of the first choice whose value
+// matches defaultValue (case-insensitive), or nil if no match is found.
+func findDefaultIndex(choices []*ux.SelectChoice, defaultValue string) *int {
+	if defaultValue == "" {
+		return nil
+	}
+	for i, c := range choices {
+		if strings.EqualFold(c.Value, defaultValue) {
+			return to.Ptr(i)
+		}
+	}
+	return nil
 }
 
 // modelQuotaSummary builds a gray-formatted quota summary for a model's SKUs.

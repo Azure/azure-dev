@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
+	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockprompt"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -842,4 +843,66 @@ func Test_maxSkuCandidateRemaining(t *testing.T) {
 
 	_, found = maxSkuCandidateRemaining([]skuCandidate{{remaining: nil}})
 	require.False(t, found)
+}
+
+func Test_findDefaultIndex(t *testing.T) {
+	choices := []*ux.SelectChoice{
+		{Value: "gpt-4o", Label: "gpt-4o"},
+		{Value: "gpt-4o-mini", Label: "gpt-4o-mini"},
+		{Value: "gpt-35-turbo", Label: "gpt-35-turbo"},
+	}
+
+	tests := []struct {
+		name         string
+		defaultValue string
+		wantIndex    *int
+	}{
+		{
+			name:         "exact match returns index",
+			defaultValue: "gpt-4o-mini",
+			wantIndex:    to.Ptr(1),
+		},
+		{
+			name:         "case insensitive match",
+			defaultValue: "GPT-4O-MINI",
+			wantIndex:    to.Ptr(1),
+		},
+		{
+			name:         "first item match",
+			defaultValue: "gpt-4o",
+			wantIndex:    to.Ptr(0),
+		},
+		{
+			name:         "last item match",
+			defaultValue: "gpt-35-turbo",
+			wantIndex:    to.Ptr(2),
+		},
+		{
+			name:         "no match returns nil",
+			defaultValue: "nonexistent-model",
+			wantIndex:    nil,
+		},
+		{
+			name:         "empty default returns nil",
+			defaultValue: "",
+			wantIndex:    nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := findDefaultIndex(choices, tt.defaultValue)
+			if tt.wantIndex == nil {
+				require.Nil(t, result)
+			} else {
+				require.NotNil(t, result)
+				require.Equal(t, *tt.wantIndex, *result)
+			}
+		})
+	}
+}
+
+func Test_findDefaultIndex_EmptyChoices(t *testing.T) {
+	result := findDefaultIndex([]*ux.SelectChoice{}, "some-value")
+	require.Nil(t, result)
 }

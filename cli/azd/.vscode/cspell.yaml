@@ -209,6 +209,13 @@ overrides:
     words:
       - aoai
       - azdaiagent
+  - filename: extensions/azure.ai.agents/internal/cmd/init_from_code.go
+    words:
+      - aoai
+      - aiservices
+      - azdaiagent
+      - myregistry
+      - posixpath
   - filename: extensions/azure.ai.agents/internal/cmd/listen.go
     words:
       - hostedagent

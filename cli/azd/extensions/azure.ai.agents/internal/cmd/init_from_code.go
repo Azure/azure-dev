@@ -858,6 +858,7 @@ func (a *InitFromCodeAction) selectNewModel(ctx context.Context) (*azdext.AiMode
 		Filter: &azdext.AiModelFilterOptions{
 			Locations: []string{a.azureContext.Scope.Location},
 		},
+		DefaultValue: "gpt-4.1-mini",
 	}
 
 	modelResp, err := a.azdClient.Prompt().PromptAiModel(ctx, promptReq)

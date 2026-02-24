@@ -189,6 +189,10 @@ func (p *MCPSecurityPolicy) CheckPath(path string) error {
 		if err != nil {
 			continue
 		}
+		// Resolve symlinks on the base path so it matches the resolved target path.
+		if resolved, err := filepath.EvalSymlinks(absBase); err == nil {
+			absBase = resolved
+		}
 		// Ensure the base path ends with a separator for proper prefix matching.
 		if !strings.HasSuffix(absBase, string(filepath.Separator)) {
 			absBase += string(filepath.Separator)

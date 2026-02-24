@@ -137,18 +137,38 @@ func (a *InitFromCodeAction) ensureProject(ctx context.Context) (*azdext.Project
 	return projectResponse.Project, nil
 }
 
+// gitHubToken returns a GitHub personal access token from the environment, if available.
+// It checks GITHUB_TOKEN first, then GH_TOKEN.
+func gitHubToken() string {
+	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+		return token
+	}
+	return os.Getenv("GH_TOKEN")
+}
+
+// setGitHubAuthHeader adds an Authorization header to the request if a GitHub token
+// is available in the environment. This raises the rate limit from 60 to 5,000 requests/hour.
+func setGitHubAuthHeader(req *http.Request, token string) {
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+}
+
 // scaffoldTemplate downloads a GitHub template repo into the current directory,
 // checking for file collisions before writing. Files that don't collide are shown
 // in green; colliding files are shown in yellow and the user is prompted for how
 // to handle them.
 func (a *InitFromCodeAction) scaffoldTemplate(ctx context.Context, azdClient *azdext.AzdClient, repoSlug string, branch string) error {
 	// 1. Fetch the recursive file tree from GitHub
+	ghToken := gitHubToken()
+
 	apiUrl := fmt.Sprintf("https://api.github.com/repos/%s/git/trees/%s?recursive=1", repoSlug, branch)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiUrl, nil)
 	if err != nil {
 		return fmt.Errorf("creating tree request: %w", err)
 	}
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	setGitHubAuthHeader(req, ghToken)
 
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
@@ -157,6 +177,13 @@ func (a *InitFromCodeAction) scaffoldTemplate(ctx context.Context, azdClient *az
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
+			return fmt.Errorf(
+				"fetching repo tree: status %d (GitHub API rate limit may have been exceeded; "+
+					"set GITHUB_TOKEN or GH_TOKEN environment variable to increase the limit)",
+				resp.StatusCode,
+			)
+		}
 		return fmt.Errorf("fetching repo tree: status %d", resp.StatusCode)
 	}
 
@@ -312,6 +339,7 @@ func (a *InitFromCodeAction) scaffoldTemplate(ctx context.Context, azdClient *az
 			_ = spinner.Stop(ctx)
 			return fmt.Errorf("creating request for %s: %w", f.Path, err)
 		}
+		setGitHubAuthHeader(fileReq, ghToken)
 
 		fileResp, err := a.httpClient.Do(fileReq)
 		if err != nil {

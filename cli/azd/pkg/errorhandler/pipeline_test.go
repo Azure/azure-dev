@@ -7,8 +7,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/resources"
+	"github.com/braydonk/yaml"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -434,4 +437,59 @@ func TestPipeline_RBACErrors(t *testing.T) {
 			assert.Equal(t, tt.wantMessage, result.Message)
 		})
 	}
+}
+
+func TestErrorSuggestionsYaml_IsValid(t *testing.T) {
+	// Verify the embedded YAML can be parsed
+	var config ErrorSuggestionsConfig
+	err := yaml.Unmarshal(resources.ErrorSuggestions, &config)
+	require.NoError(t, err, "error_suggestions.yaml must be valid YAML")
+	require.NotEmpty(t, config.Rules, "error_suggestions.yaml must contain at least one rule")
+
+	for i, rule := range config.Rules {
+		label := fmt.Sprintf("rule[%d]", i)
+
+		// Every rule must have at least one condition
+		hasCondition := len(rule.Patterns) > 0 || rule.ErrorType != ""
+		assert.True(t, hasCondition,
+			"%s: must have at least one of 'patterns' or 'errorType'", label)
+
+		// Properties require errorType
+		if len(rule.Properties) > 0 {
+			assert.NotEmpty(t, rule.ErrorType,
+				"%s: 'properties' requires 'errorType' to be set", label)
+		}
+
+		// Every rule must produce output: either a handler or a static suggestion
+		hasOutput := rule.Handler != "" || rule.Message != "" || rule.Suggestion != ""
+		assert.True(t, hasOutput,
+			"%s: must have at least one of 'handler', 'message', or 'suggestion'", label)
+
+		// Regex patterns must compile
+		if rule.Regex {
+			for _, p := range rule.Patterns {
+				_, compileErr := regexp.Compile(p)
+				assert.NoError(t, compileErr,
+					"%s: pattern %q must be a valid regex", label, p)
+			}
+			for prop, val := range rule.Properties {
+				_, compileErr := regexp.Compile(val)
+				assert.NoError(t, compileErr,
+					"%s: property %q value %q must be a valid regex", label, prop, val)
+			}
+		}
+
+		// Links must have URLs
+		for j, link := range rule.Links {
+			assert.NotEmpty(t, link.URL,
+				"%s: links[%d] must have a 'url'", label, j)
+		}
+	}
+}
+
+func TestErrorSuggestionsYaml_LoadPipelineConfig(t *testing.T) {
+	// Verify loadPipelineConfig succeeds and returns a usable pipeline
+	pipeline := NewErrorHandlerPipeline(nil)
+	require.NotNil(t, pipeline)
+	assert.NotEmpty(t, pipeline.rules, "pipeline must load rules from embedded YAML")
 }

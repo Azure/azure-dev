@@ -599,7 +599,7 @@ func Test_PromptService_PromptSubscription_ErrorWithSuggestion(t *testing.T) {
 
 	authErr := &internal.ErrorWithSuggestion{
 		Err:        errors.New("AADSTS70043: The refresh token has expired"),
-		Suggestion: "Suggestion: login expired, run `azd auth login` to acquire a new token.",
+		Suggestion: "login expired, run `azd auth login` to acquire a new token.",
 	}
 
 	mockPrompter.
@@ -627,7 +627,7 @@ func Test_PromptService_PromptResourceGroup_ErrorWithSuggestion(t *testing.T) {
 
 	authErr := &internal.ErrorWithSuggestion{
 		Err:        errors.New("AADSTS70043: The refresh token has expired"),
-		Suggestion: "Suggestion: login expired, run `azd auth login` to acquire a new token.",
+		Suggestion: "login expired, run `azd auth login` to acquire a new token.",
 	}
 
 	mockPrompter.

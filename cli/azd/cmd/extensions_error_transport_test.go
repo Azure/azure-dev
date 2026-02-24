@@ -5,63 +5,55 @@ package cmd
 
 import (
 	"errors"
-	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/stretchr/testify/require"
 )
 
-func TestReadReportedExtensionError(t *testing.T) {
-	t.Run("EmptyPath", func(t *testing.T) {
-		err, readErr := readReportedExtensionError("")
-		require.NoError(t, readErr)
-		require.Nil(t, err)
+func TestExtensionReportedError(t *testing.T) {
+	t.Run("NoErrorReported", func(t *testing.T) {
+		ext := &extensions.Extension{Id: "test.ext"}
+		require.Nil(t, ext.GetReportedError())
 	})
 
-	t.Run("ValidErrorFile", func(t *testing.T) {
-		path := filepath.Join(t.TempDir(), "ext-error.json")
-		writeErr := azdext.WriteErrorFile(path, &azdext.LocalError{
-			Message:  "invalid config",
-			Code:     "invalid_config",
-			Category: azdext.LocalErrorCategoryValidation,
-		})
-		require.NoError(t, writeErr)
+	t.Run("LocalErrorReported", func(t *testing.T) {
+		ext := &extensions.Extension{Id: "test.ext"}
+		localErr := &azdext.LocalError{
+			Message:    "invalid config",
+			Code:       "invalid_config",
+			Category:   azdext.LocalErrorCategoryValidation,
+			Suggestion: "Fix the config file",
+		}
+		ext.SetReportedError(localErr)
 
-		err, readErr := readReportedExtensionError(path)
-		require.NoError(t, readErr)
+		reported := ext.GetReportedError()
+		require.NotNil(t, reported)
 
-		var localErr *azdext.LocalError
-		require.True(t, errors.As(err, &localErr))
-		require.Equal(t, "invalid_config", localErr.Code)
-		require.Equal(t, azdext.LocalErrorCategoryValidation, localErr.Category)
+		var gotLocal *azdext.LocalError
+		require.True(t, errors.As(reported, &gotLocal))
+		require.Equal(t, "invalid_config", gotLocal.Code)
+		require.Equal(t, azdext.LocalErrorCategoryValidation, gotLocal.Category)
+		require.Equal(t, "Fix the config file", gotLocal.Suggestion)
 	})
 
-	t.Run("InvalidErrorFileContent", func(t *testing.T) {
-		path := filepath.Join(t.TempDir(), "ext-error-invalid.json")
-		require.NoError(t, os.WriteFile(path, []byte("{invalid-json"), 0o600))
+	t.Run("ServiceErrorReported", func(t *testing.T) {
+		ext := &extensions.Extension{Id: "test.ext"}
+		svcErr := &azdext.ServiceError{
+			Message:     "not found",
+			ErrorCode:   "NotFound",
+			StatusCode:  404,
+			ServiceName: "test.service.com",
+		}
+		ext.SetReportedError(svcErr)
 
-		err, readErr := readReportedExtensionError(path)
-		require.Nil(t, err)
-		require.Error(t, readErr)
-		require.True(t, strings.Contains(readErr.Error(), "unmarshal extension error file"))
+		reported := ext.GetReportedError()
+		require.NotNil(t, reported)
+
+		var gotSvc *azdext.ServiceError
+		require.True(t, errors.As(reported, &gotSvc))
+		require.Equal(t, "NotFound", gotSvc.ErrorCode)
+		require.Equal(t, 404, gotSvc.StatusCode)
 	})
-}
-
-func TestCreateExtensionErrorFileEnv(t *testing.T) {
-	envVar, errorFilePath, cleanup, err := createExtensionErrorFileEnv()
-	require.NoError(t, err)
-	require.NotEmpty(t, envVar)
-	require.True(t, strings.HasPrefix(envVar, azdext.ExtensionErrorFileEnv+"="))
-	require.NotEmpty(t, errorFilePath)
-	require.FileExists(t, errorFilePath)
-
-	// Verify envVar and errorFilePath are consistent
-	path := strings.TrimPrefix(envVar, azdext.ExtensionErrorFileEnv+"=")
-	require.Equal(t, errorFilePath, path)
-
-	cleanup()
-	require.NoFileExists(t, path)
 }

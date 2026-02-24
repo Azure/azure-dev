@@ -4,30 +4,22 @@
 package azdext
 
 import (
-	"errors"
+	"context"
 	"fmt"
 	"os"
-
-	"google.golang.org/protobuf/encoding/protojson"
 )
 
-const ExtensionErrorFileEnv = "AZD_ERROR_FILE"
-
-// ReportError writes a structured extension error to the path provided in AZD_ERROR_FILE.
-// It is a no-op when the environment variable is not set.
-func ReportError(err error) error {
-	path := os.Getenv(ExtensionErrorFileEnv)
-	if path == "" {
+// ReportError sends a structured extension error to the azd host via gRPC.
+// It creates a temporary gRPC client using the AZD_SERVER environment variable.
+// Returns nil if AZD_SERVER is not set (extension running outside azd).
+func ReportError(ctx context.Context, err error) error {
+	if err == nil {
 		return nil
 	}
 
-	return WriteErrorFile(path, err)
-}
-
-// WriteErrorFile writes a structured extension error to a file path.
-func WriteErrorFile(path string, err error) error {
-	if err == nil || path == "" {
-		return nil
+	server := os.Getenv("AZD_SERVER")
+	if server == "" {
+		return fmt.Errorf("AZD_SERVER not set")
 	}
 
 	extErr := WrapError(err)
@@ -35,44 +27,16 @@ func WriteErrorFile(path string, err error) error {
 		return nil
 	}
 
-	content, marshalErr := protojson.Marshal(extErr)
-	if marshalErr != nil {
-		return fmt.Errorf("marshal extension error: %w", marshalErr)
+	client, clientErr := NewAzdClient(WithAddress(server))
+	if clientErr != nil {
+		return fmt.Errorf("create gRPC client for error report: %w", clientErr)
 	}
+	defer client.Close()
 
-	if writeErr := os.WriteFile(path, content, 0o600); writeErr != nil {
-		return fmt.Errorf("write extension error file: %w", writeErr)
+	req := &ReportErrorRequest{Error: extErr}
+	if _, rpcErr := client.Extension().ReportError(ctx, req); rpcErr != nil {
+		return fmt.Errorf("report error via gRPC: %w", rpcErr)
 	}
 
 	return nil
-}
-
-// ReadErrorFile reads and parses a structured extension error from file.
-// Returns (nil, nil) when the file does not exist or is empty.
-func ReadErrorFile(path string) (error, error) {
-	if path == "" {
-		return nil, nil
-	}
-
-	content, readErr := os.ReadFile(path)
-	if errors.Is(readErr, os.ErrNotExist) {
-		return nil, nil
-	}
-	if readErr != nil {
-		return nil, fmt.Errorf("read extension error file: %w", readErr)
-	}
-
-	if len(content) == 0 {
-		return nil, nil
-	}
-
-	msg := &ExtensionError{}
-	unmarshalOpts := protojson.UnmarshalOptions{
-		DiscardUnknown: true,
-	}
-	if unmarshalErr := unmarshalOpts.Unmarshal(content, msg); unmarshalErr != nil {
-		return nil, fmt.Errorf("unmarshal extension error file: %w", unmarshalErr)
-	}
-
-	return UnwrapError(msg), nil
 }

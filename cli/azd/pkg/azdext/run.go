@@ -37,7 +37,7 @@ func WithPreExecute(fn func(ctx context.Context, cmd *cobra.Command) error) RunO
 //   - Context creation with tracing propagation
 //   - gRPC access token injection via [WithAccessToken]
 //   - Command execution
-//   - Structured error reporting via AZD_ERROR_FILE
+//   - Structured error reporting via gRPC ReportError
 //   - Error + suggestion display
 //   - os.Exit on failure
 //
@@ -63,13 +63,8 @@ func Run(rootCmd *cobra.Command, opts ...RunOption) {
 
 	if cfg.preExecute != nil {
 		if err := cfg.preExecute(ctx, rootCmd); err != nil {
-			if reportErr := ReportError(err); reportErr != nil {
+			if reportErr := ReportError(ctx, err); reportErr != nil {
 				log.Printf("warning: failed to report structured error: %v", reportErr)
-			}
-
-			// When AZD_ERROR_FILE is set, the host owns all error rendering.
-			// When not set (older azd), print error + suggestion here.
-			if os.Getenv(ExtensionErrorFileEnv) == "" {
 				printError(err)
 			}
 
@@ -78,13 +73,8 @@ func Run(rootCmd *cobra.Command, opts ...RunOption) {
 	}
 
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
-		if reportErr := ReportError(err); reportErr != nil {
+		if reportErr := ReportError(ctx, err); reportErr != nil {
 			log.Printf("warning: failed to report structured error: %v", reportErr)
-		}
-
-		// When AZD_ERROR_FILE is set, the host owns all error rendering.
-		// When not set (older azd), print error + suggestion here.
-		if os.Getenv(ExtensionErrorFileEnv) == "" {
 			printError(err)
 		}
 

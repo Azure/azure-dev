@@ -96,15 +96,99 @@ func (*ReadyResponse) Descriptor() ([]byte, []int) {
 	return file_extension_proto_rawDescGZIP(), []int{1}
 }
 
+type ReportErrorRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Error         *ExtensionError        `protobuf:"bytes,1,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReportErrorRequest) Reset() {
+	*x = ReportErrorRequest{}
+	mi := &file_extension_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportErrorRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportErrorRequest) ProtoMessage() {}
+
+func (x *ReportErrorRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_extension_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportErrorRequest.ProtoReflect.Descriptor instead.
+func (*ReportErrorRequest) Descriptor() ([]byte, []int) {
+	return file_extension_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *ReportErrorRequest) GetError() *ExtensionError {
+	if x != nil {
+		return x.Error
+	}
+	return nil
+}
+
+type ReportErrorResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReportErrorResponse) Reset() {
+	*x = ReportErrorResponse{}
+	mi := &file_extension_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportErrorResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportErrorResponse) ProtoMessage() {}
+
+func (x *ReportErrorResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_extension_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportErrorResponse.ProtoReflect.Descriptor instead.
+func (*ReportErrorResponse) Descriptor() ([]byte, []int) {
+	return file_extension_proto_rawDescGZIP(), []int{3}
+}
+
 var File_extension_proto protoreflect.FileDescriptor
 
 const file_extension_proto_rawDesc = "" +
 	"\n" +
-	"\x0fextension.proto\x12\x06azdext\"\x0e\n" +
+	"\x0fextension.proto\x12\x06azdext\x1a\ferrors.proto\"\x0e\n" +
 	"\fReadyRequest\"\x0f\n" +
-	"\rReadyResponse2H\n" +
+	"\rReadyResponse\"B\n" +
+	"\x12ReportErrorRequest\x12,\n" +
+	"\x05error\x18\x01 \x01(\v2\x16.azdext.ExtensionErrorR\x05error\"\x15\n" +
+	"\x13ReportErrorResponse2\x90\x01\n" +
 	"\x10ExtensionService\x124\n" +
-	"\x05Ready\x12\x14.azdext.ReadyRequest\x1a\x15.azdext.ReadyResponseB/Z-github.com/azure/azure-dev/cli/azd/pkg/azdextb\x06proto3"
+	"\x05Ready\x12\x14.azdext.ReadyRequest\x1a\x15.azdext.ReadyResponse\x12F\n" +
+	"\vReportError\x12\x1a.azdext.ReportErrorRequest\x1a\x1b.azdext.ReportErrorResponseB/Z-github.com/azure/azure-dev/cli/azd/pkg/azdextb\x06proto3"
 
 var (
 	file_extension_proto_rawDescOnce sync.Once
@@ -118,19 +202,25 @@ func file_extension_proto_rawDescGZIP() []byte {
 	return file_extension_proto_rawDescData
 }
 
-var file_extension_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_extension_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_extension_proto_goTypes = []any{
-	(*ReadyRequest)(nil),  // 0: azdext.ReadyRequest
-	(*ReadyResponse)(nil), // 1: azdext.ReadyResponse
+	(*ReadyRequest)(nil),        // 0: azdext.ReadyRequest
+	(*ReadyResponse)(nil),       // 1: azdext.ReadyResponse
+	(*ReportErrorRequest)(nil),  // 2: azdext.ReportErrorRequest
+	(*ReportErrorResponse)(nil), // 3: azdext.ReportErrorResponse
+	(*ExtensionError)(nil),      // 4: azdext.ExtensionError
 }
 var file_extension_proto_depIdxs = []int32{
-	0, // 0: azdext.ExtensionService.Ready:input_type -> azdext.ReadyRequest
-	1, // 1: azdext.ExtensionService.Ready:output_type -> azdext.ReadyResponse
-	1, // [1:2] is the sub-list for method output_type
-	0, // [0:1] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	4, // 0: azdext.ReportErrorRequest.error:type_name -> azdext.ExtensionError
+	0, // 1: azdext.ExtensionService.Ready:input_type -> azdext.ReadyRequest
+	2, // 2: azdext.ExtensionService.ReportError:input_type -> azdext.ReportErrorRequest
+	1, // 3: azdext.ExtensionService.Ready:output_type -> azdext.ReadyResponse
+	3, // 4: azdext.ExtensionService.ReportError:output_type -> azdext.ReportErrorResponse
+	3, // [3:5] is the sub-list for method output_type
+	1, // [1:3] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_extension_proto_init() }
@@ -138,13 +228,14 @@ func file_extension_proto_init() {
 	if File_extension_proto != nil {
 		return
 	}
+	file_errors_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_extension_proto_rawDesc), len(file_extension_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

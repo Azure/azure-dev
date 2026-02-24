@@ -1115,7 +1115,6 @@ When `azd` invokes an extension command, the following steps occur:
 2. `azd` invokes your command, passing all arguments and flags:
     - An environment variable named `AZD_SERVER` is set with the server address and random port (e.g., `localhost:12345`).
     - An `azd` access token environment variable `AZD_ACCESS_TOKEN` is set which is a JWT token signed with a randomly generated key good for the lifetime of the command. The token includes claims that identify each unique extensions and its supported capabilities.
-    - An environment variable named `AZD_ERROR_FILE` is set with a temporary file path that extensions can use to report a structured error on command failure.
     - Additional environment variables from the current `azd` environment are also set.
 3. The extension command can communicate with `azd` through [extension framework gRPC services](#grpc-services).
 4. `azd` waits for the extension command to complete:
@@ -1127,8 +1126,8 @@ The gRPC client must also include an `authorization` parameter with the value fr
 
 ### Structured Error Reporting (Custom Commands)
 
-For custom command execution, extensions can provide richer telemetry by reporting a structured error payload to
-`AZD_ERROR_FILE` before exiting with a non-zero status code.
+For custom command execution, extensions can provide richer telemetry by reporting a structured error to
+the azd host via the `ExtensionService.ReportError` gRPC call before exiting with a non-zero status code.
 
 For Go extensions, the recommended approach is to use `azdext.Run`, which handles context creation, structured error
 reporting, suggestion rendering, and `os.Exit` automatically:
@@ -1144,10 +1143,11 @@ Alternatively, you can use `azdext.ReportError` directly for lower-level control
 ```go
 func main() {
   ctx := azdext.NewContext()
+  ctx = azdext.WithAccessToken(ctx)
   rootCmd := cmd.NewRootCommand()
 
   if err := rootCmd.ExecuteContext(ctx); err != nil {
-    _ = azdext.ReportError(err)
+    _ = azdext.ReportError(ctx, err)
     os.Exit(1)
   }
 }

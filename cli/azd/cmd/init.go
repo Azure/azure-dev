@@ -79,7 +79,7 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 		"t",
 		"",
 		//nolint:lll
-		"Initializes a new application from a template. You can use Full URI, <owner>/<repository>, or <repository> if it's part of the azure-samples organization.",
+		"Initializes a new application from a template. You can use a Full URI, <owner>/<repository>, <repository> if it's part of the azure-samples organization, or a local directory path (./dir, ../dir, or absolute path).",
 	)
 	local.StringVarP(
 		&i.templateBranch,

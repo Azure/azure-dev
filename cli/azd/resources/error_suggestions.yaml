@@ -157,10 +157,79 @@ rules:
     message: "You do not have sufficient permissions for this deployment."
     suggestion: >
       Ensure you have the required RBAC role (e.g., Owner or Contributor)
-      on the target subscription.
+      on the target subscription. If the template creates role assignments,
+      the Owner or User Access Administrator role is required.
     links:
       - url: "https://learn.microsoft.com/azure/role-based-access-control/role-assignments-portal"
         title: "Assign Azure roles"
+
+  - errorType: "DeploymentErrorLine"
+    properties:
+      Code: "Unauthorized"
+    message: "The request was unauthorized."
+    suggestion: >
+      Run 'azd auth login' to re-authenticate, then verify you have
+      the required RBAC role on the target subscription or resource group.
+    links:
+      - url: "https://learn.microsoft.com/azure/role-based-access-control/role-assignments-portal"
+        title: "Assign Azure roles"
+
+  - errorType: "DeploymentErrorLine"
+    properties:
+      Code: "Forbidden"
+    message: "Access to this resource is forbidden."
+    suggestion: >
+      You may lack the required RBAC role, or an Azure Policy is
+      blocking the operation. Check your role assignments and any
+      deny assignments or policies on the target scope.
+    links:
+      - url: "https://learn.microsoft.com/azure/role-based-access-control/troubleshooting"
+        title: "Troubleshoot Azure RBAC"
+
+  - errorType: "DeploymentErrorLine"
+    properties:
+      Code: "RequestDisallowedByPolicy"
+    message: "An Azure Policy is blocking this deployment."
+    suggestion: >
+      Check which policies are assigned to your subscription or
+      resource group with 'az policy assignment list'. Contact your
+      administrator to add an exemption or adjust the policy.
+    links:
+      - url: "https://learn.microsoft.com/azure/governance/policy/troubleshoot/general"
+        title: "Troubleshoot Azure Policy"
+
+  - errorType: "DeploymentErrorLine"
+    properties:
+      Code: "RoleAssignmentExists"
+    message: "A role assignment with this configuration already exists."
+    suggestion: >
+      This is usually safe to ignore on re-deployment. The role
+      assignment was already created in a previous run.
+
+  - errorType: "DeploymentErrorLine"
+    properties:
+      Code: "PrincipalNotFound"
+    message: "The security principal for a role assignment was not found."
+    suggestion: >
+      The user, group, or service principal may have been deleted.
+      Check that the principal ID in your template is valid, or
+      remove the stale role assignment.
+    links:
+      - url: "https://learn.microsoft.com/azure/role-based-access-control/troubleshooting"
+        title: "Troubleshoot Azure RBAC"
+
+  - errorType: "DeploymentErrorLine"
+    properties:
+      Code: "NoRegisteredProviderFound"
+    message: "A required Azure resource provider is not registered."
+    suggestion: >
+      Register the missing provider with
+      'az provider register --namespace <provider>'.
+      Common providers: Microsoft.CognitiveServices,
+      Microsoft.Search, Microsoft.App, Microsoft.ContainerRegistry.
+    links:
+      - url: "https://learn.microsoft.com/azure/azure-resource-manager/troubleshooting/error-register-resource-provider"
+        title: "Resolve resource provider registration errors"
 
   - errorType: "DeploymentErrorLine"
     properties:

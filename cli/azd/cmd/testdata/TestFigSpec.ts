@@ -2044,7 +2044,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['--template', '-t'],
-					description: 'Initializes a new application from a template. You can use Full URI, <owner>/<repository>, or <repository> if it\'s part of the azure-samples organization.',
+					description: 'Initializes a new application from a template. You can use a Full URI, <owner>/<repository>, <repository> if it\'s part of the azure-samples organization, or a local directory path (./dir, ../dir, or absolute path).',
 					args: [
 						{
 							name: 'template',

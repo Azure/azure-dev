@@ -1230,6 +1230,7 @@ func newEnvGetValuesCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "get-values",
 		Short: "Get all environment values.",
+		Args:  cobra.NoArgs,
 	}
 }
 

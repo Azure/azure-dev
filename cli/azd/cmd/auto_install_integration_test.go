@@ -146,6 +146,14 @@ func TestAgentDetectionIntegration(t *testing.T) {
 			// Reset agent detection cache for each test
 			agentdetect.ResetDetection()
 
+			// If the test expects no agent but we're inside an agent process, skip it.
+			if !tt.expectedNoPrompt && len(tt.envVars) == 0 {
+				if agentdetect.GetCallingAgent().Detected {
+					t.Skip("skipping: parent process detection found an agent")
+				}
+				agentdetect.ResetDetection()
+			}
+
 			// Set environment variables
 			for k, v := range tt.envVars {
 				t.Setenv(k, v)

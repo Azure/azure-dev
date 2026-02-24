@@ -130,7 +130,7 @@ func Test_wrapErrorWithSuggestion(t *testing.T) {
 			name: "error with suggestion includes suggestion text",
 			err: &internal.ErrorWithSuggestion{
 				Err:        errors.New("authentication failed"),
-				Suggestion: "Suggestion: run `azd auth login` to acquire a new token.",
+				Suggestion: "run `azd auth login` to acquire a new token.",
 			},
 			wantContain: "azd auth login",
 		},
@@ -138,7 +138,7 @@ func Test_wrapErrorWithSuggestion(t *testing.T) {
 			name: "wrapped error with suggestion includes suggestion text",
 			err: fmt.Errorf("failed to prompt: %w", &internal.ErrorWithSuggestion{
 				Err:        errors.New("token expired"),
-				Suggestion: "Suggestion: login expired, run `azd auth login` to acquire a new token.",
+				Suggestion: "login expired, run `azd auth login` to acquire a new token.",
 			}),
 			wantContain: "azd auth login",
 		},

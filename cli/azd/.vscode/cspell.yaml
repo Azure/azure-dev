@@ -51,6 +51,7 @@ words:
   - unmarshaling
   - unsetting
   - usgovcloudapi
+  - worktrees
   - jdbc
   - springframework
   - santhosh
@@ -59,6 +60,7 @@ words:
   - rustc
   - figspec
   - finetune
+  - gitdir
   - bubbletea
   - lipgloss
   - gopxl

@@ -170,13 +170,13 @@ func (p *MCPSecurityPolicy) CheckPath(path string) error {
 
 	cleaned := filepath.Clean(path)
 
-	// Try to resolve symlinks; fall back to the cleaned path if the file doesn't exist yet.
+	// Try to resolve symlinks; fall back to resolving the closest existing ancestor.
 	resolved, err := filepath.EvalSymlinks(cleaned)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			return fmt.Errorf("failed to resolve path: %w", err)
 		}
-		resolved = cleaned
+		resolved = resolveExistingPrefix(cleaned)
 	}
 
 	absPath, err := filepath.Abs(resolved)
@@ -221,4 +221,32 @@ func DefaultMCPSecurityPolicy() *MCPSecurityPolicy {
 		BlockPrivateNetworks().
 		RequireHTTPS().
 		RedactHeaders("Authorization", "X-Api-Key", "Cookie", "Set-Cookie")
+}
+
+// resolveExistingPrefix resolves symlinks for the longest existing ancestor of
+// a path and appends the remaining (non-existent) suffix. This handles cases
+// like macOS where /var is a symlink to /private/var.
+func resolveExistingPrefix(p string) string {
+	dir := filepath.Dir(p)
+	resolved, err := filepath.EvalSymlinks(dir)
+	if err == nil {
+		return filepath.Join(resolved, filepath.Base(p))
+	}
+
+	// Walk up until we find an existing ancestor.
+	remaining := filepath.Base(p)
+	current := dir
+	for {
+		parent := filepath.Dir(current)
+		if parent == current {
+			// Reached root without finding an existing directory.
+			return p
+		}
+		remaining = filepath.Join(filepath.Base(current), remaining)
+		current = parent
+		resolved, err = filepath.EvalSymlinks(current)
+		if err == nil {
+			return filepath.Join(resolved, remaining)
+		}
+	}
 }

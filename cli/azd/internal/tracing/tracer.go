@@ -153,8 +153,40 @@ func (s *wrapperSpan) TracerProvider() trace.TracerProvider {
 }
 
 // errorDescription returns a description for the error suitable for use as a span status description.
-// It uses the error's type name, producing values like "errors_errorString" or "azcore_ResponseError".
+// It unwraps errors to find the root cause type, producing values like "errors_errorString" or
+// "azcore_ResponseError". For joined errors (Unwrap() []error), it returns comma-separated type names.
 func errorDescription(err error) string {
-	errType := reflect.TypeOf(err).String()
-	return strings.ReplaceAll(strings.ReplaceAll(errType, ".", "_"), "*", "")
+	if err == nil {
+		return "<nil>"
+	}
+
+	//nolint:errorlint // Type switch is intentionally used to check for Unwrap() methods
+	for {
+		switch x := err.(type) {
+		case interface{ Unwrap() error }:
+			inner := x.Unwrap()
+			if inner == nil {
+				return sanitizeTypeName(reflect.TypeOf(x).String())
+			}
+			err = inner
+		case interface{ Unwrap() []error }:
+			result := ""
+			for _, e := range x.Unwrap() {
+				if e == nil {
+					continue
+				}
+				if result != "" {
+					result += ","
+				}
+				result += sanitizeTypeName(reflect.TypeOf(e).String())
+			}
+			return result
+		default:
+			return sanitizeTypeName(reflect.TypeOf(x).String())
+		}
+	}
+}
+
+func sanitizeTypeName(name string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(name, ".", "_"), "*", "")
 }

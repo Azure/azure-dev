@@ -596,7 +596,8 @@ func Test_PackageLevelErrorsMapped(t *testing.T) {
 			}
 
 			// Check if referenced in errors.go (as part of an errors.Is check)
-			if !strings.Contains(errorsGoStr, errVarName) {
+			pattern := regexp.MustCompile(`\b` + regexp.QuoteMeta(errVarName) + `\b`)
+			if !pattern.MatchString(errorsGoStr) {
 				relPath, _ := filepath.Rel(azdRoot, path)
 				unmapped = append(unmapped, fmt.Sprintf("  %s (defined in %s)", errVarName, relPath))
 			}

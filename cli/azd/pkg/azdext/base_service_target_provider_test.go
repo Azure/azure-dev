@@ -42,7 +42,10 @@ func TestBaseServiceTargetProvider_Package(t *testing.T) {
 
 func TestBaseServiceTargetProvider_Publish(t *testing.T) {
 	b := &BaseServiceTargetProvider{}
-	res, err := b.Publish(context.Background(), &ServiceConfig{}, &ServiceContext{}, &TargetResource{}, &PublishOptions{}, nil)
+	res, err := b.Publish(
+		context.Background(), &ServiceConfig{}, &ServiceContext{},
+		&TargetResource{}, &PublishOptions{}, nil,
+	)
 	require.NoError(t, err)
 	require.Nil(t, res)
 }

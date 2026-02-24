@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package azdext
 
 import (
@@ -130,7 +133,7 @@ func TestMCPSecurityCheckPath_AllowsWithinBase(t *testing.T) {
 		t.Fatal(err)
 	}
 	testFile := filepath.Join(subdir, "file.txt")
-	if err := os.WriteFile(testFile, []byte("test"), 0o644); err != nil {
+	if err := os.WriteFile(testFile, []byte("test"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -149,7 +152,7 @@ func TestMCPSecurityCheckPath_BlocksOutsideBase(t *testing.T) {
 	base := t.TempDir()
 	outside := t.TempDir()
 	outsideFile := filepath.Join(outside, "secret.txt")
-	if err := os.WriteFile(outsideFile, []byte("secret"), 0o644); err != nil {
+	if err := os.WriteFile(outsideFile, []byte("secret"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 

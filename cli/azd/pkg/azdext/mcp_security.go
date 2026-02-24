@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package azdext
 
 import (
@@ -190,7 +193,9 @@ func (p *MCPSecurityPolicy) CheckPath(path string) error {
 		if !strings.HasSuffix(absBase, string(filepath.Separator)) {
 			absBase += string(filepath.Separator)
 		}
-		if strings.HasPrefix(absPath+string(filepath.Separator), absBase) || absPath == strings.TrimSuffix(absBase, string(filepath.Separator)) {
+		pathWithSep := absPath + string(filepath.Separator)
+		baseWithoutSep := strings.TrimSuffix(absBase, string(filepath.Separator))
+		if strings.HasPrefix(pathWithSep, absBase) || absPath == baseWithoutSep {
 			return nil
 		}
 	}

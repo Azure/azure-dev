@@ -11,10 +11,10 @@ import (
 )
 
 // NewListenCommand creates the standard "listen" command for lifecycle event extensions.
-// The configurator function receives an ExtensionHost to register service targets,
+// The configure function receives an ExtensionHost to register service targets,
 // framework services, and event handlers before the host starts.
-// If configurator is nil, the host runs with no custom registrations.
-func NewListenCommand(configurator func(host *ExtensionHost)) *cobra.Command {
+// If configure is nil, the host runs with no custom registrations.
+func NewListenCommand(configure func(host *ExtensionHost)) *cobra.Command {
 	return &cobra.Command{
 		Use:    "listen",
 		Hidden: true,
@@ -28,8 +28,8 @@ func NewListenCommand(configurator func(host *ExtensionHost)) *cobra.Command {
 			defer client.Close()
 
 			host := NewExtensionHost(client)
-			if configurator != nil {
-				configurator(host)
+			if configure != nil {
+				configure(host)
 			}
 
 			return host.Run(ctx)

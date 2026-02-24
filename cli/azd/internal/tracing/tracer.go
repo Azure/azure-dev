@@ -5,6 +5,8 @@ package tracing
 
 import (
 	"context"
+	"reflect"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/baggage"
 	"go.opentelemetry.io/otel/codes"
@@ -105,7 +107,7 @@ func (s *wrapperSpan) End(options ...trace.SpanEndOption) {
 
 func (s *wrapperSpan) EndWithStatus(err error, options ...trace.SpanEndOption) {
 	if err != nil {
-		s.span.SetStatus(codes.Error, "UnknownError")
+		s.span.SetStatus(codes.Error, errorDescription(err))
 	} else {
 		s.span.SetStatus(codes.Ok, "")
 	}
@@ -148,4 +150,11 @@ func (s *wrapperSpan) SetAttributes(kv ...attribute.KeyValue) {
 // additional Spans on the same telemetry pipeline as the current Span.
 func (s *wrapperSpan) TracerProvider() trace.TracerProvider {
 	return s.span.TracerProvider()
+}
+
+// errorDescription returns a description for the error suitable for use as a span status description.
+// It uses the error's type name, producing values like "errors_errorString" or "azcore_ResponseError".
+func errorDescription(err error) string {
+	errType := reflect.TypeOf(err).String()
+	return strings.ReplaceAll(strings.ReplaceAll(errType, ".", "_"), "*", "")
 }

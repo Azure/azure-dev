@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -12,14 +13,22 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mocktracing"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
@@ -213,6 +222,48 @@ func Test_MapError(t *testing.T) {
 			name:           "WithContextDeadlineExceeded",
 			err:            context.DeadlineExceeded,
 			wantErrReason:  "internal.timeout",
+			wantErrDetails: nil,
+		},
+		{
+			name:           "WithErrNoCurrentUser",
+			err:            auth.ErrNoCurrentUser,
+			wantErrReason:  "auth.not_logged_in",
+			wantErrDetails: nil,
+		},
+		{
+			name:           "WithWrappedErrNoCurrentUser",
+			err:            fmt.Errorf("failed to create credential: %w: %w", errors.New("inner"), auth.ErrNoCurrentUser),
+			wantErrReason:  "auth.not_logged_in",
+			wantErrDetails: nil,
+		},
+		{
+			name:           "WithErrToolExecutionDenied",
+			err:            consent.ErrToolExecutionDenied,
+			wantErrReason:  "user.tool_denied",
+			wantErrDetails: nil,
+		},
+		{
+			name:           "WithErrNotRepository",
+			err:            git.ErrNotRepository,
+			wantErrReason:  "internal.not_git_repo",
+			wantErrDetails: nil,
+		},
+		{
+			name:           "WithErrPreviewNotSupported",
+			err:            azapi.ErrPreviewNotSupported,
+			wantErrReason:  "internal.preview_not_supported",
+			wantErrDetails: nil,
+		},
+		{
+			name:           "WithErrBindMountOperationDisabled",
+			err:            provisioning.ErrBindMountOperationDisabled,
+			wantErrReason:  "internal.bind_mount_disabled",
+			wantErrDetails: nil,
+		},
+		{
+			name:           "WithErrRemoteHostIsNotAzDo",
+			err:            fmt.Errorf("%w: https://dev.azure.com/org", pipeline.ErrRemoteHostIsNotAzDo),
+			wantErrReason:  "internal.remote_not_azdo",
 			wantErrDetails: nil,
 		},
 		{
@@ -448,5 +499,121 @@ func Test_isNetworkError(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			require.Equal(t, tt.want, isNetworkError(tt.err))
 		})
+	}
+}
+
+// Test_PackageLevelErrorsMapped scans the azd codebase for package-level error variables
+// (var Err* = errors.New/fmt.Errorf) and verifies that each is either mapped in MapError (errors.go)
+// or explicitly excluded.
+//
+// This prevents new error variables from silently falling through to the unhelpful
+// "internal.errors_errorString" default in telemetry.
+//
+// If this test fails, you need to either:
+// 1. Add an errors.Is() check for your error variable in MapError (errors.go), OR
+// 2. Add it to the excludedErrors list below with a comment explaining why.
+func Test_PackageLevelErrorsMapped(t *testing.T) {
+	// Package-level error variables that are intentionally NOT mapped in MapError, with reasons:
+	excludedErrors := map[string]string{
+		// Internal-only errors that never propagate to command-level
+		"ErrDuplicateRegistration": "internal/mapper: programming error, not a runtime user error",
+		"ErrInvalidRegistration":   "internal/mapper: programming error, not a runtime user error",
+		"ErrNodeNotFound":          "pkg/yamlnode: internal YAML traversal error, always caught before command level",
+		"ErrNodeWrongKind":         "pkg/yamlnode: internal YAML traversal error, always caught before command level",
+		"ErrPropertyNotFound":      "pkg/tools/maven: internal property lookup, always caught before command level",
+
+		// Errors that are always caught/handled before reaching MapError
+		"ErrEnsureEnvPreReqBicepCompileFailed": "caught in cmd/env.go and cmd/up.go before reaching telemetry",
+		"ErrAzdOperationsNotEnabled":           "caught in pkg/project/dotnet_importer.go before reaching telemetry",
+		"ErrAzCliSecretNotFound":               "caught in pkg/cmdsubst before reaching telemetry",
+		"ErrNoSuchRemote":                      "caught in pkg/pipeline/pipeline_manager.go before reaching telemetry",
+		"ErrRemoteHostIsNotGitHub":             "caught in pkg/pipeline and pkg/github before reaching telemetry",
+		"ErrSSHNotSupported":                   "only defined, referenced via ErrRemoteHostIsNotAzDo flow",
+
+		// Duplicate definitions (same error variable defined in multiple packages)
+		"ErrDebuggerAborted": "defined in both cmd/middleware and pkg/azdext, handled at debug middleware level",
+
+		// Agent consent errors that map to user-initiated cancellation
+		"ErrSamplingDenied":    "agent consent: similar to user.canceled, low frequency",
+		"ErrElicitationDenied": "agent consent: similar to user.canceled, low frequency",
+
+		// UX cancellation that is always joined with context.Canceled (already mapped as user.canceled)
+		"ErrCancelled": "pkg/ux: always errors.Join'd with ctx.Err(), caught by context.Canceled check",
+	}
+
+	// Find the azd root directory (two levels up from internal/cmd)
+	azdRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	require.NoError(t, err)
+
+	// Read errors.go to get the list of error variable references
+	errorsGoPath := filepath.Join(azdRoot, "internal", "cmd", "errors.go")
+	errorsGoContent, err := os.ReadFile(errorsGoPath)
+	require.NoError(t, err)
+	errorsGoStr := string(errorsGoContent)
+
+	// Scan for package-level error variable definitions: var Err* = errors.New(...) or fmt.Errorf(...)
+	errVarPattern := regexp.MustCompile(`var\s+(Err\w+)\s*=\s*(?:errors\.New|fmt\.Errorf)\(`)
+
+	var unmapped []string
+
+	err = filepath.Walk(azdRoot, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Skip non-Go files, test files, vendor, and extension directories
+		if info.IsDir() {
+			base := filepath.Base(path)
+			if base == "vendor" || base == "extensions" || base == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+
+		file, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			line := scanner.Text()
+			matches := errVarPattern.FindStringSubmatch(line)
+			if len(matches) < 2 {
+				continue
+			}
+
+			errVarName := matches[1]
+
+			// Check if excluded
+			if _, ok := excludedErrors[errVarName]; ok {
+				continue
+			}
+
+			// Check if referenced in errors.go (as part of an errors.Is check)
+			if !strings.Contains(errorsGoStr, errVarName) {
+				relPath, _ := filepath.Rel(azdRoot, path)
+				unmapped = append(unmapped, fmt.Sprintf("  %s (defined in %s)", errVarName, relPath))
+			}
+		}
+
+		return scanner.Err()
+	})
+	require.NoError(t, err)
+
+	if len(unmapped) > 0 {
+		t.Errorf(
+			"Found %d package-level error variable(s) not mapped in MapError (internal/cmd/errors.go).\n"+
+				"Each error variable should have an errors.Is() check in MapError for meaningful telemetry,\n"+
+				"or be added to excludedErrors in this test with a reason.\n\n"+
+				"Unmapped errors:\n%s",
+			len(unmapped),
+			strings.Join(unmapped, "\n"),
+		)
 	}
 }

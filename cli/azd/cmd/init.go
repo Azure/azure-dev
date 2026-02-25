@@ -648,7 +648,7 @@ func promptInitType(
 			console.Message(ctx, "\nThe azd agent feature has been enabled to support this new experience."+
 				" To turn off in the future run `azd config unset alpha.llm`.")
 
-			err = azdConfig.Set("ai.agent.model.type", "github-copilot")
+			err = azdConfig.Set("ai.agent.model.type", "copilot")
 			if err != nil {
 				return initUnknown, fmt.Errorf("failed to set ai.agent.model.type config: %w", err)
 			}

@@ -42,7 +42,10 @@ extends:
     stages:
     - template: /eng/pipelines/templates/stages/build-and-test.yml
       parameters:
-        AzureRecordMode: ${{ parameters.AzureRecordMode }}
+        ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
+          AzureRecordMode: live
+        ${{ else }}: 
+          AzureRecordMode: ${{ parameters.AzureRecordMode }}
         BuildMatrix:
           Windows:
             Pool: $(WINDOWSPOOL)

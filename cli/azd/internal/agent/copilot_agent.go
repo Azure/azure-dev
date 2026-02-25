@@ -6,6 +6,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -104,18 +105,22 @@ func (a *CopilotAgent) SendMessage(ctx context.Context, args ...string) (string,
 	}()
 
 	prompt := strings.Join(args, "\n")
+	log.Printf("[copilot] SendMessage: sending prompt (%d chars)...", len(prompt))
 	result, err := a.session.SendAndWait(ctx, copilot.MessageOptions{
 		Prompt: prompt,
 	})
 	if err != nil {
+		log.Printf("[copilot] SendMessage: error: %v", err)
 		return "", fmt.Errorf("copilot agent error: %w", err)
 	}
 
 	// Extract the final assistant message content
 	if result != nil && result.Data.Content != nil {
+		log.Printf("[copilot] SendMessage: received response (%d chars)", len(*result.Data.Content))
 		return *result.Data.Content, nil
 	}
 
+	log.Println("[copilot] SendMessage: received empty response")
 	return "", nil
 }
 

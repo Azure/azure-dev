@@ -6,6 +6,7 @@ package llm
 import (
 	"context"
 	"fmt"
+	"log"
 
 	copilot "github.com/github/copilot-sdk/go"
 )
@@ -44,13 +45,16 @@ func NewCopilotClientManager(options *CopilotClientOptions) *CopilotClientManage
 // Start initializes the Copilot SDK client and establishes a connection
 // to the copilot-agent-runtime process.
 func (m *CopilotClientManager) Start(ctx context.Context) error {
+	log.Printf("[copilot-client] Starting client (logLevel=%q)...", m.options.LogLevel)
 	if err := m.client.Start(ctx); err != nil {
+		log.Printf("[copilot-client] Start failed: %v", err)
 		return fmt.Errorf(
 			"failed to start Copilot agent runtime: %w. "+
 				"Ensure you have a GitHub Copilot subscription and the Copilot CLI is available",
 			err,
 		)
 	}
+	log.Printf("[copilot-client] Started successfully (state=%s)", m.client.State())
 	return nil
 }
 

@@ -319,6 +319,13 @@ const ServiceNameAzd = "azd"
 
 // Error related fields
 var (
+	// Error category that classifies an error.
+	ErrCategory = AttributeKey{
+		Key:            attribute.Key("error.category"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
+
 	// Error code that describes an error.
 	ErrCode = AttributeKey{
 		Key:            attribute.Key("error.code"),

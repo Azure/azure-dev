@@ -1124,6 +1124,68 @@ To enable interaction with `azd` from within the extension, the extension must l
 
 The gRPC client must also include an `authorization` parameter with the value from `AZD_ACCESS_TOKEN`; otherwise, requests will fail due to invalid authorization. Extensions must declare their supported capabilities within the extension registry otherwise certain service operations may fail with a permission denied error.
 
+### Structured Error Reporting (Custom Commands)
+
+For custom command execution, extensions can provide richer telemetry by reporting a structured error to
+the azd host via the `ExtensionService.ReportError` gRPC call before exiting with a non-zero status code.
+
+For Go extensions, the recommended approach is to use `azdext.Run`, which handles context creation, structured error
+reporting, suggestion rendering, and `os.Exit` automatically:
+
+```go
+func main() {
+  azdext.Run(cmd.NewRootCommand())
+}
+```
+
+Alternatively, you can use `azdext.ReportError` directly for lower-level control:
+
+```go
+func main() {
+  ctx := azdext.NewContext()
+  ctx = azdext.WithAccessToken(ctx)
+  rootCmd := cmd.NewRootCommand()
+
+  if err := rootCmd.ExecuteContext(ctx); err != nil {
+    _ = azdext.ReportError(ctx, err)
+    os.Exit(1)
+  }
+}
+```
+
+Use typed extension errors to control telemetry mapping:
+
+```go
+return &azdext.LocalError{
+  Message:    "invalid configuration: missing required field 'name'",
+  Code:       "invalid_config",
+  Category:   "validation",
+  Suggestion: "Ensure your azure.yaml has a 'name' field defined.",
+}
+```
+
+```go
+return &azdext.ServiceError{
+  Message:     "request failed",
+  ErrorCode:   "TooManyRequests",
+  StatusCode:  429,
+  ServiceName: "openai.azure.com",
+  Suggestion:  "Wait a moment and retry the request, or increase your rate limit.",
+}
+```
+
+Current telemetry result code conventions:
+
+- Service errors: `ext.service.<service>.<statusCode>`
+- Local domain categories:
+  - `validation` -> `ext.validation.<code>`
+  - `auth` -> `ext.auth.<code>`
+  - `dependency` -> `ext.dependency.<code>`
+  - `compatibility` -> `ext.compatibility.<code>`
+  - `user` -> `ext.user.<code>`
+  - `internal` -> `ext.internal.<code>`
+- Unknown local categories fall back to `ext.local.<code>`.
+
 #### Go
 
 For extensions built using Go, the `azdext` package provides an `AzdClient` which acts as the gRPC client.

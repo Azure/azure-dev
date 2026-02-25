@@ -330,7 +330,7 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 }
 
 func callReady(ctx context.Context, client *AzdClient) error {
-	_, err := client.extensionService().Ready(ctx, &ReadyRequest{})
+	_, err := client.Extension().Ready(ctx, &ReadyRequest{})
 	if err == nil {
 		return nil
 	}

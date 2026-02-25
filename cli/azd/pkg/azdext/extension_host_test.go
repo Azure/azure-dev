@@ -32,6 +32,15 @@ func (m *MockExtensionServiceClient) Ready(
 	return args.Get(0).(*ReadyResponse), args.Error(1)
 }
 
+func (m *MockExtensionServiceClient) ReportError(
+	ctx context.Context,
+	in *ReportErrorRequest,
+	opts ...grpc.CallOption,
+) (*ReportErrorResponse, error) {
+	args := m.Called(ctx, in, opts)
+	return args.Get(0).(*ReportErrorResponse), args.Error(1)
+}
+
 // MockServiceTargetRegistrar implements serviceTargetRegistrar using testify/mock
 type MockServiceTargetRegistrar struct {
 	mock.Mock

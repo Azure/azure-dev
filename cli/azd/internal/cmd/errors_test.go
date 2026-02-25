@@ -200,7 +200,6 @@ func Test_MapError(t *testing.T) {
 			name: "WithExtServiceError",
 			err: &azdext.ServiceError{
 				Message:     "Rate limit exceeded",
-				Details:     "Too many requests",
 				ErrorCode:   "RateLimitExceeded",
 				StatusCode:  429,
 				ServiceName: "openai.azure.com",
@@ -298,6 +297,45 @@ func Test_MapError(t *testing.T) {
 			wantErrReason: "internal.network",
 			wantErrDetails: []attribute.KeyValue{
 				fields.ErrType.String("*errors.errorString"),
+			},
+		},
+		{
+			name: "WithExtLocalError",
+			err: &azdext.LocalError{
+				Message:  "invalid manifest",
+				Code:     "Invalid-Config",
+				Category: azdext.LocalErrorCategoryValidation,
+			},
+			wantErrReason: "ext.validation.invalid_config",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrorKey(fields.ErrCategory.Key).String("validation"),
+				fields.ErrorKey(fields.ErrCode.Key).String("invalid_config"),
+			},
+		},
+		{
+			name: "WithExtLocalErrorUnknownCategory",
+			err: &azdext.LocalError{
+				Message:  "some local failure",
+				Code:     "Something-Bad",
+				Category: azdext.LocalErrorCategory("custom"),
+			},
+			wantErrReason: "ext.local.something_bad",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrorKey(fields.ErrCategory.Key).String("local"),
+				fields.ErrorKey(fields.ErrCode.Key).String("something_bad"),
+			},
+		},
+		{
+			name: "WithExtLocalErrorAuthDomain",
+			err: &azdext.LocalError{
+				Message:  "token expired",
+				Code:     "token_expired",
+				Category: azdext.LocalErrorCategoryAuth,
+			},
+			wantErrReason: "ext.auth.token_expired",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrorKey(fields.ErrCategory.Key).String("auth"),
+				fields.ErrorKey(fields.ErrCode.Key).String("token_expired"),
 			},
 		},
 	}

@@ -50,3 +50,27 @@ func (s *ExtensionService) Ready(ctx context.Context, req *azdext.ReadyRequest) 
 
 	return &azdext.ReadyResponse{}, nil
 }
+
+// ReportError receives a structured error from the extension and stores it
+// so the host can retrieve it after the extension process exits.
+func (s *ExtensionService) ReportError(
+	ctx context.Context, req *azdext.ReportErrorRequest,
+) (*azdext.ReportErrorResponse, error) {
+	extensionClaims, err := extensions.GetClaimsFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get extension claims: %w", err)
+	}
+
+	extension, err := s.extensionManager.GetInstalled(extensions.FilterOptions{
+		Id: extensionClaims.Subject,
+	})
+	if err != nil {
+		return nil, status.Errorf(codes.FailedPrecondition, "failed to get extension: %s", err.Error())
+	}
+
+	if req.GetError() != nil {
+		extension.SetReportedError(azdext.UnwrapError(req.GetError()))
+	}
+
+	return &azdext.ReportErrorResponse{}, nil
+}

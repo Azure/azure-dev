@@ -5,6 +5,8 @@ package cmd
 
 import (
 	"fmt"
+	"net/url"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
@@ -33,6 +35,26 @@ including blob, tree, raw, and API URLs. Handles branch names containing slashes
 
 			// Get the GitHub URL from the first argument
 			githubUrl := args[0]
+
+			parsed, parseErr := url.ParseRequestURI(githubUrl)
+			if parseErr != nil || parsed == nil {
+				return &azdext.LocalError{
+					Message:    "invalid GitHub URL: expected an absolute URL",
+					Code:       "invalid_github_url",
+					Category:   azdext.LocalErrorCategoryValidation,
+					Suggestion: "Use a full URL like https://github.com/Azure/azure-dev",
+				}
+			}
+
+			scheme := strings.ToLower(parsed.Scheme)
+			if scheme != "http" && scheme != "https" {
+				return &azdext.LocalError{
+					Message:    "invalid GitHub URL scheme: supported schemes are http and https",
+					Code:       "unsupported_url_scheme",
+					Category:   azdext.LocalErrorCategoryValidation,
+					Suggestion: "Change the URL to start with https://",
+				}
+			}
 
 			// Call the ParseGitHubUrl RPC method
 			response, err := azdClient.Project().ParseGitHubUrl(ctx, &azdext.ParseGitHubUrlRequest{

@@ -23,17 +23,25 @@ message ServiceErrorDetail {
   string service_name = 3;  // Service host/name for telemetry (e.g., "ai.azure.com", "management.azure.com")
 }
 
+// LocalErrorDetail contains structured error information for local/validation failures.
+// Used when ErrorOrigin is ERROR_ORIGIN_LOCAL.
+message LocalErrorDetail {
+  string code = 1;      // Extension-defined error code (e.g., "invalid_config")
+  string category = 2;  // Error category (e.g., "user", "validation", "dependency", "internal")
+}
+
 // ExtensionError is a unified error message that can represent errors from different sources.
 // It provides structured error information for telemetry and error handling.
 message ExtensionError {
+  reserved 1, 3;            // Reserved for future use; do not reuse.
   string message = 2;       // Human-readable error message
-  string details = 3;       // Additional error details
   ErrorOrigin origin = 4;   // Where the error originated from
+  string suggestion = 5;    // Optional user-facing suggestion for resolving the error
 
   // Source-specific structured details. Only one should be set based on origin.
   oneof source {
     ServiceErrorDetail service_error = 10;
-    // ToolErrorDetail tool_error    = 11;  // Reserved for future use
-    // LocalErrorDetail local_error  = 12;  // Reserved for future use
+    LocalErrorDetail local_error = 11;
+    // ToolErrorDetail tool_error = 12;
   }
 }

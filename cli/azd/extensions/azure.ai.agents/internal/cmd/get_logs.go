@@ -28,11 +28,11 @@ type GetLogsAction struct {
 	flags *getLogsFlags
 }
 
-func newGetLogsCommand() *cobra.Command {
+func newLogsCommand() *cobra.Command {
 	flags := &getLogsFlags{}
 
 	cmd := &cobra.Command{
-		Use:   "get-logs",
+		Use:   "logs",
 		Short: "Show logs from a hosted agent container.",
 		Long: `Show logs from a hosted agent container.
 
@@ -40,16 +40,16 @@ Streams console output (stdout/stderr) or system events from an agent container.
 Use --follow to stream logs in real-time, or omit it to fetch recent logs and exit.
 This is useful for troubleshooting agent startup issues or monitoring agent behavior.`,
 		Example: `  # Fetch the last 50 lines of console logs
-  azd ai agent get-logs --name my-agent --version 1
+  azd ai agent logs --name my-agent --version 1
 
   # Stream console logs in real-time
-  azd ai agent get-logs --name my-agent --version 1 --follow
+  azd ai agent logs --name my-agent --version 1 --follow
 
   # Fetch system event logs
-  azd ai agent get-logs --name my-agent --version 1 --type system
+  azd ai agent logs --name my-agent --version 1 --type system
 
   # Fetch last 100 lines with explicit account
-  azd ai agent get-logs --name my-agent --version 1 --tail 100 --account-name myAccount --project-name myProject`,
+  azd ai agent logs --name my-agent --version 1 --tail 100 --account-name myAccount --project-name myProject`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := validateGetLogsFlags(flags); err != nil {
 				return err

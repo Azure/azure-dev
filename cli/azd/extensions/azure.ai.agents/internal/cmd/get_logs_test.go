@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestGetLogsCommand_RequiredFlags(t *testing.T) {
-	cmd := newGetLogsCommand()
+func TestLogsCommand_RequiredFlags(t *testing.T) {
+	cmd := newLogsCommand()
 
 	cmd.SetArgs([]string{})
 	err := cmd.Execute()
@@ -18,8 +18,8 @@ func TestGetLogsCommand_RequiredFlags(t *testing.T) {
 	assert.Contains(t, err.Error(), "name")
 }
 
-func TestGetLogsCommand_MissingVersionFlag(t *testing.T) {
-	cmd := newGetLogsCommand()
+func TestLogsCommand_MissingVersionFlag(t *testing.T) {
+	cmd := newLogsCommand()
 
 	cmd.SetArgs([]string{"--name", "test-agent"})
 	err := cmd.Execute()
@@ -84,8 +84,8 @@ func TestValidateGetLogsFlags_InvalidType(t *testing.T) {
 	assert.Contains(t, err.Error(), "--type must be 'console' or 'system'")
 }
 
-func TestGetLogsCommand_DefaultValues(t *testing.T) {
-	cmd := newGetLogsCommand()
+func TestLogsCommand_DefaultValues(t *testing.T) {
+	cmd := newLogsCommand()
 
 	// Verify default flag values
 	tail, _ := cmd.Flags().GetInt("tail")

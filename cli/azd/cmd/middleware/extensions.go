@@ -133,21 +133,11 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 					allEnv = append(allEnv, "FORCE_COLOR=1")
 				}
 
-				if debugEnabled, _ := m.options.Flags.GetBool("debug"); debugEnabled {
-					allEnv = append(allEnv, "AZD_DEBUG=true")
-				}
-
-				if noPrompt, _ := m.options.Flags.GetBool("no-prompt"); noPrompt {
-					allEnv = append(allEnv, "AZD_NO_PROMPT=true")
-				}
-
-				if cwd, _ := m.options.Flags.GetString("cwd"); cwd != "" {
-					allEnv = append(allEnv, fmt.Sprintf("AZD_CWD=%s", cwd))
-				}
-
-				if env, _ := m.options.Flags.GetString("environment"); env != "" {
-					allEnv = append(allEnv, fmt.Sprintf("AZD_ENVIRONMENT=%s", env))
-				}
+				// Read global flags for propagation via InvokeOptions
+				debugEnabled, _ := m.options.Flags.GetBool("debug")
+				noPrompt, _ := m.options.Flags.GetBool("no-prompt")
+				cwd, _ := m.options.Flags.GetString("cwd")
+				env, _ := m.options.Flags.GetString("environment")
 
 				// Propagate trace context to the extension process
 				if traceEnv := tracing.Environ(ctx); len(traceEnv) > 0 {
@@ -155,16 +145,20 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 				}
 
 				args := []string{"listen"}
-				if debugEnabled, _ := m.options.Flags.GetBool("debug"); debugEnabled {
+				if debugEnabled {
 					args = append(args, "--debug")
 				}
 
 				options := &extensions.InvokeOptions{
-					Args:   args,
-					Env:    allEnv,
-					StdIn:  ext.StdIn(),
-					StdOut: ext.StdOut(),
-					StdErr: ext.StdErr(),
+					Args:        args,
+					Env:         allEnv,
+					StdIn:       ext.StdIn(),
+					StdOut:      ext.StdOut(),
+					StdErr:      ext.StdErr(),
+					Debug:       debugEnabled,
+					NoPrompt:    noPrompt,
+					Cwd:         cwd,
+					Environment: env,
 				}
 
 				if _, err := m.extensionRunner.Invoke(ctx, ext, options); err != nil {

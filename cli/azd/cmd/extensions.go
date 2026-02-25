@@ -237,28 +237,21 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		allEnv = append(allEnv, traceEnv...)
 	}
 
-	// Propagate global flags as environment variables
-	if debugEnabled, _ := a.cmd.Flags().GetBool("debug"); debugEnabled {
-		allEnv = append(allEnv, "AZD_DEBUG=true")
-	}
-
-	if noPrompt, _ := a.cmd.Flags().GetBool("no-prompt"); noPrompt {
-		allEnv = append(allEnv, "AZD_NO_PROMPT=true")
-	}
-
-	if cwd, _ := a.cmd.Flags().GetString("cwd"); cwd != "" {
-		allEnv = append(allEnv, fmt.Sprintf("AZD_CWD=%s", cwd))
-	}
-
-	if envName, _ := a.cmd.Flags().GetString("environment"); envName != "" {
-		allEnv = append(allEnv, fmt.Sprintf("AZD_ENVIRONMENT=%s", envName))
-	}
+	// Read global flags for propagation via InvokeOptions
+	debugEnabled, _ := a.cmd.Flags().GetBool("debug")
+	noPrompt, _ := a.cmd.Flags().GetBool("no-prompt")
+	cwd, _ := a.cmd.Flags().GetString("cwd")
+	envName, _ := a.cmd.Flags().GetString("environment")
 
 	options := &extensions.InvokeOptions{
 		Args: a.args,
 		Env:  allEnv,
 		// cmd extensions are always interactive (connected to terminal)
 		Interactive: true,
+		Debug:       debugEnabled,
+		NoPrompt:    noPrompt,
+		Cwd:         cwd,
+		Environment: envName,
 	}
 
 	_, invokeErr := a.extensionRunner.Invoke(ctx, extension, options)

@@ -1,3 +1,12 @@
+parameters:
+  - name: AzureRecordMode
+    displayName: Azure Record Mode
+    type: string
+    default: playback
+    values:
+      - playback
+      - live
+
 # Continuous deployment trigger
 trigger:
   branches:
@@ -33,6 +42,7 @@ extends:
     stages:
     - template: /eng/pipelines/templates/stages/build-and-test.yml
       parameters:
+        AzureRecordMode: ${{ parameters.AzureRecordMode }}
         BuildMatrix:
           Windows:
             Pool: $(WINDOWSPOOL)

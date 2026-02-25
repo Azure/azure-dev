@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -88,10 +89,12 @@ func NewContainerAppService(
 }
 
 type containerAppService struct {
-	credentialProvider  account.SubscriptionCredentialProvider
-	clock               clock.Clock
-	armClientOptions    *arm.ClientOptions
-	alphaFeatureManager *alpha.FeatureManager
+	credentialProvider   account.SubscriptionCredentialProvider
+	clock                clock.Clock
+	armClientOptions     *arm.ClientOptions
+	alphaFeatureManager  *alpha.FeatureManager
+	appsClientCache      sync.Map
+	revisionsClientCache sync.Map
 }
 
 type ContainerAppOptions struct {
@@ -287,39 +290,13 @@ func (cas *containerAppService) AddRevision(
 		return fmt.Errorf("getting container app: %w", err)
 	}
 
-	// Get the latest revision name
-	currentRevisionName, has := containerApp.GetString(pathLatestRevisionName)
-	if !has {
-		return fmt.Errorf("getting latest revision name: %w", err)
-	}
-
-	apiVersionPolicy := createApiVersionPolicy(options)
-	revisionsClient, err := cas.createRevisionsClient(ctx, subscriptionId, apiVersionPolicy)
-	if err != nil {
-		return err
-	}
-
-	var revisionResponse *http.Response
-	ctx = policy.WithCaptureResponse(ctx, &revisionResponse)
-
-	if _, err := revisionsClient.GetRevision(ctx, resourceGroupName, appName, currentRevisionName, nil); err != nil {
-		return fmt.Errorf("getting revision '%s': %w", currentRevisionName, err)
-	}
-
-	var revisionMap map[string]any
-	if err := convert.FromHttpResponse(revisionResponse, &revisionMap); err != nil {
-		return err
-	}
-
-	revision := config.NewConfig(revisionMap)
-
-	// Update the revision with the new image name and suffix
-	if err := revision.Set(pathTemplateRevisionSuffix, fmt.Sprintf("azd-%d", cas.clock.Now().Unix())); err != nil {
+	// Update the template with the new image name and suffix
+	if err := containerApp.Set(pathTemplateRevisionSuffix, fmt.Sprintf("azd-%d", cas.clock.Now().Unix())); err != nil {
 		return fmt.Errorf("setting revision suffix: %w", err)
 	}
 
 	var containers []map[string]any
-	if ok, err := revision.GetSection(pathTemplateContainers, &containers); !ok || err != nil {
+	if ok, err := containerApp.GetSection(pathTemplateContainers, &containers); !ok || err != nil {
 		return fmt.Errorf("getting containers: %w", err)
 	}
 
@@ -357,18 +334,8 @@ func (cas *containerAppService) AddRevision(
 		containers[0]["env"] = mergedEnv
 	}
 
-	if err := revision.Set(pathTemplateContainers, containers); err != nil {
+	if err := containerApp.Set(pathTemplateContainers, containers); err != nil {
 		return fmt.Errorf("setting containers: %w", err)
-	}
-
-	// Update the container app with the new revision
-	revisionTemplate, ok := revision.GetMap(pathTemplate)
-	if !ok {
-		return fmt.Errorf("getting revision template: %w", err)
-	}
-
-	if err := containerApp.Set(pathTemplate, revisionTemplate); err != nil {
-		return fmt.Errorf("setting template: %w", err)
 	}
 
 	containerApp, err = cas.syncSecrets(ctx, subscriptionId, resourceGroupName, appName, containerApp)
@@ -376,29 +343,35 @@ func (cas *containerAppService) AddRevision(
 		return fmt.Errorf("syncing secrets: %w", err)
 	}
 
-	// Update the container app
-	err = cas.updateContainerApp(ctx, subscriptionId, resourceGroupName, appName, containerApp, options)
-	if err != nil {
-		return fmt.Errorf("updating container app revision: %w", err)
-	}
-
 	revisionMode, ok := containerApp.GetString(pathConfigurationActiveRevisionsMode)
 	if !ok {
 		return fmt.Errorf("getting active revisions mode: %w", err)
 	}
 
-	// If the container app is in multiple revision mode, update the traffic to point to the new revision
+	// If the container app is in multiple revision mode, update the traffic to point to the new revision.
 	if revisionMode == string(armappcontainers.ActiveRevisionsModeMultiple) {
-		revisionSuffix, ok := revision.GetString(pathTemplateRevisionSuffix)
-		if !ok {
-			return fmt.Errorf("getting revision suffix: %w", err)
-		}
+		revisionSuffix, _ := containerApp.GetString(pathTemplateRevisionSuffix)
 		newRevisionName := fmt.Sprintf("%s--%s", appName, revisionSuffix)
 
-		err = cas.setTrafficWeights(ctx, subscriptionId, resourceGroupName, appName, containerApp, newRevisionName, options)
+		trafficWeights := []*armappcontainers.TrafficWeight{
+			{
+				RevisionName: &newRevisionName,
+				Weight:       to.Ptr[int32](100),
+			},
+		}
+
+		trafficWeightsJson, err := convert.ToJsonArray(trafficWeights)
 		if err != nil {
+			return fmt.Errorf("converting traffic weights to JSON: %w", err)
+		}
+		if err := containerApp.Set(pathConfigurationIngressTraffic, trafficWeightsJson); err != nil {
 			return fmt.Errorf("setting traffic weights: %w", err)
 		}
+	}
+
+	err = cas.updateContainerApp(ctx, subscriptionId, resourceGroupName, appName, containerApp, options)
+	if err != nil {
+		return fmt.Errorf("updating container app revision: %w", err)
 	}
 
 	return nil
@@ -563,6 +536,12 @@ func (cas *containerAppService) createContainerAppsClient(
 	subscriptionId string,
 	customPolicy *containerAppCustomApiVersionAndBodyPolicy,
 ) (*armappcontainers.ContainerAppsClient, error) {
+	if customPolicy == nil {
+		if cachedClient, ok := cas.appsClientCache.Load(subscriptionId); ok {
+			return cachedClient.(*armappcontainers.ContainerAppsClient), nil
+		}
+	}
+
 	credential, err := cas.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -580,6 +559,12 @@ func (cas *containerAppService) createContainerAppsClient(
 		return nil, fmt.Errorf("creating ContainerApps client: %w", err)
 	}
 
+	if customPolicy == nil {
+		if cachedClient, loaded := cas.appsClientCache.LoadOrStore(subscriptionId, client); loaded {
+			return cachedClient.(*armappcontainers.ContainerAppsClient), nil
+		}
+	}
+
 	return client, nil
 }
 
@@ -588,6 +573,12 @@ func (cas *containerAppService) createRevisionsClient(
 	subscriptionId string,
 	customPolicy *containerAppCustomApiVersionAndBodyPolicy,
 ) (*armappcontainers.ContainerAppsRevisionsClient, error) {
+	if customPolicy == nil {
+		if cachedClient, ok := cas.revisionsClientCache.Load(subscriptionId); ok {
+			return cachedClient.(*armappcontainers.ContainerAppsRevisionsClient), nil
+		}
+	}
+
 	credential, err := cas.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -603,6 +594,12 @@ func (cas *containerAppService) createRevisionsClient(
 	client, err := armappcontainers.NewContainerAppsRevisionsClient(subscriptionId, credential, &options)
 	if err != nil {
 		return nil, fmt.Errorf("creating ContainerApps client: %w", err)
+	}
+
+	if customPolicy == nil {
+		if cachedClient, loaded := cas.revisionsClientCache.LoadOrStore(subscriptionId, client); loaded {
+			return cachedClient.(*armappcontainers.ContainerAppsRevisionsClient), nil
+		}
 	}
 
 	return client, nil

@@ -345,7 +345,7 @@ func (cas *containerAppService) AddRevision(
 
 	revisionMode, ok := containerApp.GetString(pathConfigurationActiveRevisionsMode)
 	if !ok {
-		return fmt.Errorf("getting active revisions mode: %w", err)
+		return fmt.Errorf("container app is missing active revisions mode configuration")
 	}
 
 	// If the container app is in multiple revision mode, update the traffic to point to the new revision.

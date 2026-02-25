@@ -116,7 +116,9 @@ func TestRunScript_YarnChecksScriptExists(t *testing.T) {
 
 	runner := mockexec.NewMockCommandRunner()
 	runner.When(func(args exec.RunArgs, command string) bool {
-		return args.Cmd == "yarn" && strings.Contains(command, "run build")
+		return args.Cmd == "yarn" &&
+			len(args.Args) == 2 &&
+			args.Args[0] == "run" && args.Args[1] == "build"
 	}).Respond(exec.RunResult{})
 
 	cli := NewCliWithPackageManager(runner, PackageManagerYarn)

@@ -64,14 +64,19 @@ func getPackageManagerFromPackageJSON(projectDir string) PackageManagerKind {
 		return ""
 	}
 
-	// Extract name from "name@version" format
-	name := strings.Split(pkg.PackageManager, "@")[0]
-	switch name {
-	case "pnpm":
+	// Extract name from "name@version" format.
+	// Handle scoped names like "@yarnpkg/cli-dist@4.0.0" by finding the last '@' separator.
+	pmValue := pkg.PackageManager
+	name := pmValue
+	if idx := strings.LastIndex(pmValue, "@"); idx > 0 {
+		name = pmValue[:idx]
+	}
+	switch {
+	case name == "pnpm":
 		return PackageManagerPnpm
-	case "yarn":
+	case name == "yarn" || strings.HasPrefix(name, "@yarnpkg/"):
 		return PackageManagerYarn
-	case "npm":
+	case name == "npm":
 		return PackageManagerNpm
 	default:
 		return ""

@@ -61,6 +61,8 @@ func (l LlmType) String() string {
 		return "OpenAI Azure"
 	case LlmTypeGhCp:
 		return "GitHub Copilot"
+	case LlmTypeCopilot:
+		return "Copilot"
 	default:
 		return string(l)
 	}
@@ -71,8 +73,10 @@ const (
 	LlmTypeOpenAIAzure LlmType = "azure"
 	// LlmTypeOllama represents the Ollama model type.
 	LlmTypeOllama LlmType = "ollama"
-	// LlmTypeGhCp represents the GitHub Copilot model type.
+	// LlmTypeGhCp represents the GitHub Copilot model type (build-gated, legacy).
 	LlmTypeGhCp LlmType = "github-copilot"
+	// LlmTypeCopilot represents the Copilot SDK model type.
+	LlmTypeCopilot LlmType = "copilot"
 )
 
 // ModelMetadata represents a language model with its name and version information.
@@ -135,8 +139,7 @@ func (m Manager) GetDefaultModel(ctx context.Context, opts ...ModelOption) (*Mod
 
 	defaultModelType, ok := userConfig.GetString("ai.agent.model.type")
 	if !ok {
-		return nil, fmt.Errorf("Default model type has not been set. Set the agent model type with" +
-			" `azd config set ai.agent.model.type github-copilot`.")
+		defaultModelType = string(LlmTypeCopilot)
 	}
 
 	return m.ModelFactory.CreateModelContainer(ctx, LlmType(defaultModelType), opts...)

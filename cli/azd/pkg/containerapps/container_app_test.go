@@ -214,7 +214,9 @@ func Test_ContainerApp_AddRevision_MultipleRevisionMode(t *testing.T) {
 	require.Equal(t, "azd-0", *updatedContainerApp.Properties.Template.RevisionSuffix)
 	require.NotNil(t, updatedContainerApp.Properties.Configuration.Ingress)
 	require.Len(t, updatedContainerApp.Properties.Configuration.Ingress.Traffic, 1)
-	require.Equal(t, fmt.Sprintf("%s--azd-0", appName), *updatedContainerApp.Properties.Configuration.Ingress.Traffic[0].RevisionName)
+	expectedRevName := fmt.Sprintf("%s--azd-0", appName)
+	require.Equal(t, expectedRevName,
+		*updatedContainerApp.Properties.Configuration.Ingress.Traffic[0].RevisionName)
 	require.Equal(t, int32(100), *updatedContainerApp.Properties.Configuration.Ingress.Traffic[0].Weight)
 }
 

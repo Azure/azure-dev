@@ -109,15 +109,16 @@ func mockContainerAppRevisionGetCounted(
 //
 // BEFORE optimization (main branch) the pattern was:
 //   - 1 GET  (container app)
-//   - 1 GET  (revision)              ← ELIMINATED
+//   - 1 GET  (revision)              -- ELIMINATED
 //   - 1 POST (list secrets)
 //   - 1 PATCH (update template) + 1 GET (LRO poll)
-//   - 1 PATCH (update traffic) + 1 GET (LRO poll)  ← MERGED into single PATCH for multi-rev
+//   - 1 PATCH (update traffic) + 1 GET (LRO poll)  -- MERGED into single PATCH for multi-rev
 //
 // Savings summary (including LRO polls):
-//   Single-rev no secrets:   4 → 3 calls (saved: revision GET)
-//   Single-rev with secrets: 5 → 4 calls (saved: revision GET)
-//   Multi-rev with secrets:  7 → 4 calls (saved: revision GET + traffic PATCH + LRO poll)
+//
+//	Single-rev no secrets:   4 -> 3 calls (saved: revision GET)
+//	Single-rev with secrets: 5 -> 4 calls (saved: revision GET)
+//	Multi-rev with secrets:  7 -> 4 calls (saved: revision GET + traffic PATCH + LRO poll)
 func Test_AddRevision_ARMCallCount(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -236,7 +237,7 @@ func Test_AddRevision_ARMCallCount(t *testing.T) {
 			t.Logf("  GET revision:        %d (eliminated)", revisionGetCalls.Load())
 			t.Logf("  POST list secrets:   %d", secretsCalls.Load())
 			t.Logf("  PATCH update:        %d", updateCalls.Load())
-			t.Logf("  TOTAL:               %d (was %d on main → saved %d calls)",
+			t.Logf("  TOTAL:               %d (was %d on main, saved %d calls)",
 				totalCalls, tt.beforeCalls, tt.beforeCalls-totalCalls)
 
 			require.Zero(t, revisionGetCalls.Load(),

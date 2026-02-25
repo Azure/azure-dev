@@ -89,12 +89,11 @@ func NewContainerAppService(
 }
 
 type containerAppService struct {
-	credentialProvider   account.SubscriptionCredentialProvider
-	clock                clock.Clock
-	armClientOptions     *arm.ClientOptions
-	alphaFeatureManager  *alpha.FeatureManager
-	appsClientCache      sync.Map
-	revisionsClientCache sync.Map
+	credentialProvider  account.SubscriptionCredentialProvider
+	clock               clock.Clock
+	armClientOptions    *arm.ClientOptions
+	alphaFeatureManager *alpha.FeatureManager
+	appsClientCache     sync.Map
 }
 
 type ContainerAppOptions struct {
@@ -417,39 +416,6 @@ func (cas *containerAppService) syncSecrets(
 	return containerApp, nil
 }
 
-func (cas *containerAppService) setTrafficWeights(
-	ctx context.Context,
-	subscriptionId string,
-	resourceGroupName string,
-	appName string,
-	containerApp config.Config,
-	revisionName string,
-	options *ContainerAppOptions,
-) error {
-	trafficWeights := []*armappcontainers.TrafficWeight{
-		{
-			RevisionName: &revisionName,
-			Weight:       to.Ptr[int32](100),
-		},
-	}
-
-	trafficWeightsJson, err := convert.ToJsonArray(trafficWeights)
-	if err != nil {
-		return fmt.Errorf("converting traffic weights to JSON: %w", err)
-	}
-
-	if err := containerApp.Set(pathConfigurationIngressTraffic, trafficWeightsJson); err != nil {
-		return fmt.Errorf("setting traffic weights: %w", err)
-	}
-
-	err = cas.updateContainerApp(ctx, subscriptionId, resourceGroupName, appName, containerApp, options)
-	if err != nil {
-		return fmt.Errorf("updating traffic weights: %w", err)
-	}
-
-	return nil
-}
-
 func (cas *containerAppService) getContainerApp(
 	ctx context.Context,
 	subscriptionId string,
@@ -562,43 +528,6 @@ func (cas *containerAppService) createContainerAppsClient(
 	if customPolicy == nil {
 		if cachedClient, loaded := cas.appsClientCache.LoadOrStore(subscriptionId, client); loaded {
 			return cachedClient.(*armappcontainers.ContainerAppsClient), nil
-		}
-	}
-
-	return client, nil
-}
-
-func (cas *containerAppService) createRevisionsClient(
-	ctx context.Context,
-	subscriptionId string,
-	customPolicy *containerAppCustomApiVersionAndBodyPolicy,
-) (*armappcontainers.ContainerAppsRevisionsClient, error) {
-	if customPolicy == nil {
-		if cachedClient, ok := cas.revisionsClientCache.Load(subscriptionId); ok {
-			return cachedClient.(*armappcontainers.ContainerAppsRevisionsClient), nil
-		}
-	}
-
-	credential, err := cas.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
-
-	options := *cas.armClientOptions
-
-	if customPolicy != nil {
-		// Clone the options so we don't modify the original - we don't want to inject this custom policy into every request.
-		options.PerCallPolicies = append(slices.Clone(options.PerCallPolicies), customPolicy)
-	}
-
-	client, err := armappcontainers.NewContainerAppsRevisionsClient(subscriptionId, credential, &options)
-	if err != nil {
-		return nil, fmt.Errorf("creating ContainerApps client: %w", err)
-	}
-
-	if customPolicy == nil {
-		if cachedClient, loaded := cas.revisionsClientCache.LoadOrStore(subscriptionId, client); loaded {
-			return cachedClient.(*armappcontainers.ContainerAppsRevisionsClient), nil
 		}
 	}
 

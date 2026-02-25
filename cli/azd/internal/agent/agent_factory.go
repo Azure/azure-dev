@@ -22,10 +22,11 @@ import (
 
 // AgentFactory is responsible for creating agent instances
 type AgentFactory struct {
-	consentManager  consent.ConsentManager
-	llmManager      *llm.Manager
-	console         input.Console
-	securityManager *security.Manager
+	consentManager       consent.ConsentManager
+	llmManager           *llm.Manager
+	console              input.Console
+	securityManager      *security.Manager
+	copilotAgentFactory  *CopilotAgentFactory
 }
 
 // NewAgentFactory creates a new instance of AgentFactory
@@ -34,17 +35,36 @@ func NewAgentFactory(
 	console input.Console,
 	llmManager *llm.Manager,
 	securityManager *security.Manager,
+	copilotAgentFactory *CopilotAgentFactory,
 ) *AgentFactory {
 	return &AgentFactory{
-		consentManager:  consentManager,
-		llmManager:      llmManager,
-		console:         console,
-		securityManager: securityManager,
+		consentManager:      consentManager,
+		llmManager:          llmManager,
+		console:             console,
+		securityManager:     securityManager,
+		copilotAgentFactory: copilotAgentFactory,
 	}
 }
 
 // CreateAgent creates a new agent instance
 func (f *AgentFactory) Create(ctx context.Context, opts ...AgentCreateOption) (Agent, error) {
+	// Check if the configured model type is 'copilot' — if so, delegate to CopilotAgentFactory
+	defaultModelContainer, err := f.llmManager.GetDefaultModel(ctx)
+	if err == nil && defaultModelContainer.Type == llm.LlmTypeCopilot {
+		log.Println("[agent-factory] Model type is 'copilot', delegating to CopilotAgentFactory")
+		copilotOpts := []CopilotAgentOption{}
+		for _, opt := range opts {
+			base := &agentBase{}
+			opt(base)
+			if base.debug {
+				copilotOpts = append(copilotOpts, WithCopilotDebug(true))
+			}
+		}
+		return f.copilotAgentFactory.Create(ctx, copilotOpts...)
+	}
+
+	log.Printf("[agent-factory] Using langchaingo agent (model type: %s)", defaultModelContainer.Type)
+
 	cleanupTasks := map[string]func() error{}
 
 	cleanup := func() error {
@@ -77,7 +97,7 @@ func (f *AgentFactory) Create(ctx context.Context, opts ...AgentCreateOption) (A
 	}
 
 	// Default model gets the chained handler to expose the UX experience for the agent
-	defaultModelContainer, err := f.llmManager.GetDefaultModel(ctx, llm.WithLogger(chainedHandler))
+	defaultModelContainer, err = f.llmManager.GetDefaultModel(ctx, llm.WithLogger(chainedHandler))
 	if err != nil {
 		defer cleanup()
 		return nil, err

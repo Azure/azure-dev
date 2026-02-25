@@ -37,7 +37,7 @@ func Test_NpmProject_Restore(t *testing.T) {
 	npmCli := npm.NewCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageTypeScript)
 
-	npmProject := NewNpmProject(npmCli, env)
+	npmProject := NewNpmProject(npmCli, env, mockContext.CommandRunner)
 	result, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
 		serviceContext := NewServiceContext()
 		return npmProject.Restore(*mockContext.Context, serviceConfig, serviceContext, progess)
@@ -48,7 +48,7 @@ func Test_NpmProject_Restore(t *testing.T) {
 	require.Equal(t, "npm", runArgs.Cmd)
 	require.Equal(t, serviceConfig.Path(), runArgs.Cwd)
 	require.Equal(t,
-		[]string{"install"},
+		[]string{"install", "--no-audit", "--no-fund", "--prefer-offline"},
 		runArgs.Args,
 	)
 }
@@ -70,7 +70,7 @@ func Test_NpmProject_Build(t *testing.T) {
 	npmCli := npm.NewCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageTypeScript)
 
-	npmProject := NewNpmProject(npmCli, env)
+	npmProject := NewNpmProject(npmCli, env, mockContext.CommandRunner)
 	result, err := logProgress(
 		t, func(progress *async.Progress[ServiceProgress]) (*ServiceBuildResult, error) {
 			return npmProject.Build(*mockContext.Context, serviceConfig, nil, progress)
@@ -110,7 +110,7 @@ func Test_NpmProject_Package(t *testing.T) {
 	err = os.WriteFile(filepath.Join(serviceConfig.Path(), "package.json"), nil, osutil.PermissionFile)
 	require.NoError(t, err)
 
-	npmProject := NewNpmProject(npmCli, env)
+	npmProject := NewNpmProject(npmCli, env, mockContext.CommandRunner)
 	result, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
 		serviceContext := NewServiceContext()
 		serviceContext.Build = ArtifactCollection{

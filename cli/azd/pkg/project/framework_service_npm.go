@@ -8,30 +8,62 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/npm"
 )
 
 type npmProject struct {
-	env *environment.Environment
-	cli *npm.Cli
+	env           *environment.Environment
+	cli           *npm.Cli
+	commandRunner exec.CommandRunner
+
+	mu       sync.Mutex
+	cliCache map[string]*npm.Cli
 }
 
-// NewNpmProject creates a new instance of a NPM project
-func NewNpmProject(cli *npm.Cli, env *environment.Environment) FrameworkService {
+// NewNpmProject creates a new instance of a Node.js project framework service.
+// It auto-detects whether the project uses npm, pnpm, or yarn.
+func NewNpmProject(cli *npm.Cli, env *environment.Environment, commandRunner exec.CommandRunner) FrameworkService {
 	return &npmProject{
-		env: env,
-		cli: cli,
+		env:           env,
+		cli:           cli,
+		commandRunner: commandRunner,
+		cliCache:      make(map[string]*npm.Cli),
 	}
+}
+
+// cliForService returns a Cli configured for the package manager detected in the service directory.
+// The result is cached per service path to ensure consistent detection across operations and avoid
+// redundant filesystem I/O.
+func (np *npmProject) cliForService(serviceConfig *ServiceConfig) *npm.Cli {
+	np.mu.Lock()
+	defer np.mu.Unlock()
+
+	path := serviceConfig.Path()
+	if cached, ok := np.cliCache[path]; ok {
+		return cached
+	}
+
+	pm := npm.DetectPackageManager(path)
+	var cli *npm.Cli
+	if pm != np.cli.PackageManager() {
+		cli = npm.NewCliWithPackageManager(np.commandRunner, pm)
+	} else {
+		cli = np.cli
+	}
+	np.cliCache[path] = cli
+	return cli
 }
 
 func (np *npmProject) Requirements() FrameworkRequirements {
 	return FrameworkRequirements{
 		Package: FrameworkPackageRequirements{
-			// NPM requires a restore before running any NPM scripts
+			// Node.js package managers require a restore before running scripts
 			RequireRestore: true,
 			RequireBuild:   false,
 		},
@@ -39,25 +71,33 @@ func (np *npmProject) Requirements() FrameworkRequirements {
 }
 
 // Gets the required external tools for the project
-func (np *npmProject) RequiredExternalTools(_ context.Context, _ *ServiceConfig) []tools.ExternalTool {
-	return []tools.ExternalTool{np.cli}
+func (np *npmProject) RequiredExternalTools(_ context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool {
+	return []tools.ExternalTool{np.cliForService(serviceConfig)}
 }
 
-// Initializes the NPM project
+// Initializes the Node.js project
 func (np *npmProject) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
 	return nil
 }
 
-// Restores dependencies for the NPM project using npm install command
+// Restores dependencies for the project using the detected package manager's install command
 func (np *npmProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceRestoreResult, error) {
-	progress.SetProgress(NewServiceProgress("Installing NPM dependencies"))
-	if err := np.cli.Install(ctx, serviceConfig.Path()); err != nil {
-		return nil, err
+	cli := np.cliForService(serviceConfig)
+	pm := string(cli.PackageManager())
+
+	// Skip install if dependencies are already up-to-date (lockfile hasn't changed)
+	if npm.IsDependenciesUpToDate(serviceConfig.Path(), cli.PackageManager()) {
+		progress.SetProgress(NewServiceProgress(fmt.Sprintf("%s dependencies already up-to-date", pm)))
+	} else {
+		progress.SetProgress(NewServiceProgress(fmt.Sprintf("Installing %s dependencies", pm)))
+		if err := cli.Install(ctx, serviceConfig.Path()); err != nil {
+			return nil, err
+		}
 	}
 
 	// Create restore artifact for the project directory with node_modules
@@ -69,7 +109,7 @@ func (np *npmProject) Restore(
 				LocationKind: LocationKindLocal,
 				Metadata: map[string]string{
 					"projectPath":  serviceConfig.Path(),
-					"framework":    "npm",
+					"framework":    pm,
 					"dependencies": "node_modules",
 				},
 			},
@@ -77,17 +117,19 @@ func (np *npmProject) Restore(
 	}, nil
 }
 
-// Builds the project executing the npm `build` script defined within the project package.json
+// Builds the project executing the `build` script defined within the project package.json
 func (np *npmProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceBuildResult, error) {
+	cli := np.cliForService(serviceConfig)
+	pm := string(cli.PackageManager())
 	// Exec custom `build` script if available
-	// If `build`` script is not defined in the package.json the NPM script will NOT fail
-	progress.SetProgress(NewServiceProgress("Running NPM build script"))
-	if err := np.cli.RunScript(ctx, serviceConfig.Path(), "build"); err != nil {
+	// If `build` script is not defined in the package.json the script will NOT fail
+	progress.SetProgress(NewServiceProgress(fmt.Sprintf("Running %s build script", pm)))
+	if err := cli.RunScript(ctx, serviceConfig.Path(), "build"); err != nil {
 		return nil, err
 	}
 
@@ -97,7 +139,7 @@ func (np *npmProject) Build(
 		buildSource = filepath.Join(buildSource, serviceConfig.OutputPath)
 	}
 
-	// Create build artifact for npm build output
+	// Create build artifact for build output
 	return &ServiceBuildResult{
 		Artifacts: ArtifactCollection{
 			{
@@ -106,7 +148,7 @@ func (np *npmProject) Build(
 				LocationKind: LocationKindLocal,
 				Metadata: map[string]string{
 					"buildSource": buildSource,
-					"framework":   "npm",
+					"framework":   pm,
 					"outputPath":  serviceConfig.OutputPath,
 				},
 			},
@@ -120,12 +162,14 @@ func (np *npmProject) Package(
 	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
-	progress.SetProgress(NewServiceProgress("Running NPM package script"))
+	cli := np.cliForService(serviceConfig)
+	pm := string(cli.PackageManager())
+	progress.SetProgress(NewServiceProgress(fmt.Sprintf("Running %s package script", pm)))
 
 	// Long term this script we call should better align with our inner-loop scenarios
 	// Keeping this defaulted to `build` will create confusion for users when we start to support
 	// both local dev / debug builds and production bundled builds
-	if err := np.cli.RunScript(ctx, serviceConfig.Path(), "build"); err != nil {
+	if err := cli.RunScript(ctx, serviceConfig.Path(), "build"); err != nil {
 		return nil, err
 	}
 
@@ -143,7 +187,7 @@ func (np *npmProject) Package(
 		return nil, fmt.Errorf(
 			//nolint:lll
 			"package source '%s' is empty or does not exist. If your service has custom packaging requirements create "+
-				"an NPM script named 'build' within your package.json and ensure your package artifacts are written to "+
+				"a script named 'build' within your package.json and ensure your package artifacts are written to "+
 				"the '%s' directory",
 			packagePath,
 			packagePath,

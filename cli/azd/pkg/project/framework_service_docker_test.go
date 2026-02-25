@@ -112,7 +112,7 @@ services:
 	docker := docker.NewCli(mockContext.CommandRunner)
 	dotnetCli := dotnet.NewCli(mockContext.CommandRunner)
 
-	internalFramework := NewNpmProject(npmCli, env)
+	internalFramework := NewNpmProject(npmCli, env, mockContext.CommandRunner)
 	progressMessages := []string{}
 
 	framework := NewDockerProject(
@@ -227,7 +227,7 @@ services:
 	err = os.WriteFile(filepath.Join(temp, "Dockerfile.dev"), []byte("FROM node:14"), 0600)
 	require.NoError(t, err)
 
-	internalFramework := NewNpmProject(npmCli, env)
+	internalFramework := NewNpmProject(npmCli, env, mockContext.CommandRunner)
 	status := ""
 
 	framework := NewDockerProject(
@@ -542,7 +542,7 @@ func Test_DockerProject_Build(t *testing.T) {
 				mockContext.CommandRunner)
 
 			if tt.language == ServiceLanguageTypeScript || tt.language == ServiceLanguageJavaScript {
-				npmProject := NewNpmProject(npm.NewCli(mockContext.CommandRunner), env)
+				npmProject := NewNpmProject(npm.NewCli(mockContext.CommandRunner), env, mockContext.CommandRunner)
 				dockerProject.SetSource(npmProject)
 			}
 
@@ -696,7 +696,7 @@ func Test_DockerProject_Package(t *testing.T) {
 			serviceConfig.Image = osutil.NewExpandableString(tt.image)
 
 			if serviceConfig.RelativePath != "" {
-				npmProject := NewNpmProject(npm.NewCli(mockContext.CommandRunner), env)
+				npmProject := NewNpmProject(npm.NewCli(mockContext.CommandRunner), env, mockContext.CommandRunner)
 				dockerProject.SetSource(npmProject)
 			}
 

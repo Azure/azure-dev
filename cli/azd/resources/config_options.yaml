@@ -82,6 +82,36 @@
   description: "Default AI agent model provider."
   type: string
   example: "github-copilot"
+- key: ai.agent.model
+  description: "Default model to use for Copilot SDK agent sessions."
+  type: string
+  example: "gpt-4.1"
+- key: ai.agent.mode
+  description: "Default agent mode for Copilot SDK sessions."
+  type: string
+  allowedValues: ["autopilot", "interactive", "plan"]
+  example: "interactive"
+- key: ai.agent.mcp.servers
+  description: "Additional MCP servers to load in agent sessions. Merged with built-in servers."
+  type: object
+  example: "ai.agent.mcp.servers.<name>.type"
+- key: ai.agent.tools.available
+  description: "Allowlist of tools available to the agent. When set, only these tools are active."
+  type: object
+  example: '["read_file", "write_file"]'
+- key: ai.agent.tools.excluded
+  description: "Denylist of tools blocked from the agent."
+  type: object
+  example: '["execute_command"]'
+- key: ai.agent.systemMessage
+  description: "Custom system message appended to the agent's default system prompt."
+  type: string
+  example: "Always use TypeScript for code generation."
+- key: ai.agent.copilot.logLevel
+  description: "Log level for the Copilot SDK client."
+  type: string
+  allowedValues: ["error", "warn", "info", "debug"]
+  example: "info"
 - key: pipeline.config.applicationServiceManagementReference
   description: "Application Service Management Reference for Azure pipeline configuration."
   type: string

@@ -117,17 +117,15 @@ func IsDependenciesUpToDate(projectDir string, pm PackageManagerKind) bool {
 		return false
 	}
 
-	// For npm and pnpm, compare internal marker timestamp against lock file
-	if internalMarker != "" {
-		markerPath := filepath.Join(projectDir, internalMarker)
-		markerInfo, err := os.Stat(markerPath)
-		if err != nil {
-			return false
-		}
-		// If the internal marker is older than the lock file, dependencies are stale
-		if markerInfo.ModTime().Before(lockFileInfo.ModTime()) {
-			return false
-		}
+	// Compare internal marker timestamp against lock file
+	markerPath := filepath.Join(projectDir, internalMarker)
+	markerInfo, err := os.Stat(markerPath)
+	if err != nil {
+		return false
+	}
+	// If the internal marker is older than the lock file, dependencies are stale
+	if markerInfo.ModTime().Before(lockFileInfo.ModTime()) {
+		return false
 	}
 
 	return true

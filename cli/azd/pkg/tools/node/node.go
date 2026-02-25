@@ -102,7 +102,7 @@ func (c *npmCli) RunScript(ctx context.Context, projectPath string, scriptName s
 	// npm supports --if-present after the script name
 	runArgs := exec.NewRunArgs("npm", "run", scriptName, "--if-present").WithCwd(projectPath)
 	if _, err := c.commandRunner.Run(ctx, runArgs); err != nil {
-		return fmt.Errorf("failed to run npm script %s, %w", scriptName, err)
+		return fmt.Errorf("failed to run npm script %s: %w", scriptName, err)
 	}
 	return nil
 }
@@ -113,7 +113,7 @@ func (c *npmCli) Prune(ctx context.Context, projectPath string, production bool)
 		runArgs = runArgs.AppendParams("--production")
 	}
 	if _, err := c.commandRunner.Run(ctx, runArgs); err != nil {
-		return fmt.Errorf("failed pruning npm packages, %w", err)
+		return fmt.Errorf("failed to prune npm packages: %w", err)
 	}
 	return nil
 }
@@ -144,7 +144,7 @@ func (c *pnpmCli) RunScript(ctx context.Context, projectPath string, scriptName 
 	// pnpm requires --if-present before the script name per its CLI spec
 	runArgs := exec.NewRunArgs("pnpm", "run", "--if-present", scriptName).WithCwd(projectPath)
 	if _, err := c.commandRunner.Run(ctx, runArgs); err != nil {
-		return fmt.Errorf("failed to run pnpm script %s, %w", scriptName, err)
+		return fmt.Errorf("failed to run pnpm script %s: %w", scriptName, err)
 	}
 	return nil
 }
@@ -156,7 +156,7 @@ func (c *pnpmCli) Prune(ctx context.Context, projectPath string, production bool
 		runArgs = runArgs.AppendParams("--prod")
 	}
 	if _, err := c.commandRunner.Run(ctx, runArgs); err != nil {
-		return fmt.Errorf("failed pruning pnpm packages, %w", err)
+		return fmt.Errorf("failed to prune pnpm packages: %w", err)
 	}
 	return nil
 }
@@ -197,7 +197,7 @@ func (c *yarnCli) RunScript(ctx context.Context, projectPath string, scriptName 
 	}
 	runArgs := exec.NewRunArgs("yarn", "run", scriptName).WithCwd(projectPath)
 	if _, err := c.commandRunner.Run(ctx, runArgs); err != nil {
-		return fmt.Errorf("failed to run yarn script %s, %w", scriptName, err)
+		return fmt.Errorf("failed to run yarn script %s: %w", scriptName, err)
 	}
 	return nil
 }
@@ -214,7 +214,7 @@ func (c *yarnCli) Prune(ctx context.Context, projectPath string, production bool
 		runArgs = runArgs.AppendParams("--production")
 	}
 	if _, err := c.commandRunner.Run(ctx, runArgs); err != nil {
-		return fmt.Errorf("failed pruning yarn packages, %w", err)
+		return fmt.Errorf("failed to prune yarn packages: %w", err)
 	}
 	return nil
 }

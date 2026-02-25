@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -161,7 +162,20 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 				}
 
 				if _, err := m.extensionRunner.Invoke(ctx, ext, options); err != nil {
+					// Log full error (including stdout/stderr) for --debug.
 					log.Printf("extension '%s' invocation failed: %v", ext.Id, err)
+
+					// Show a concise reason to the user (exit code without raw stdout/stderr).
+					var exitErr *exec.ExitError
+					if errors.As(err, &exitErr) {
+						m.console.Message(ctx, fmt.Sprintf(
+							"Extension '%s' failed to start (exit code: %d). Run with --debug for details.",
+							ext.Id, exitErr.ExitCode))
+					} else {
+						m.console.Message(ctx, fmt.Sprintf(
+							"Extension '%s' failed to start: %v",
+							ext.Id, err))
+					}
 					ext.Fail(err)
 				}
 			}()

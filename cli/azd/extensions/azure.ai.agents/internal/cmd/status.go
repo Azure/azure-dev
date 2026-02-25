@@ -10,6 +10,8 @@ import (
 	"os"
 	"text/tabwriter"
 
+	"azureaiagent/internal/pkg/agents/agent_api"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
@@ -96,7 +98,7 @@ func (a *StatusAction) Run(ctx context.Context) error {
 	}
 }
 
-func printStatusJSON(container interface{}) error {
+func printStatusJSON(container *agent_api.AgentContainerObject) error {
 	jsonBytes, err := json.MarshalIndent(container, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal status to JSON: %w", err)
@@ -105,34 +107,39 @@ func printStatusJSON(container interface{}) error {
 	return nil
 }
 
-func printStatusTable(container interface{}) error {
-	// Marshal to generic map for flexible field access
-	jsonBytes, err := json.Marshal(container)
-	if err != nil {
-		return fmt.Errorf("failed to marshal status: %w", err)
-	}
-
-	var data map[string]interface{}
-	if err := json.Unmarshal(jsonBytes, &data); err != nil {
-		return fmt.Errorf("failed to parse status: %w", err)
-	}
-
+func printStatusTable(container *agent_api.AgentContainerObject) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "FIELD\tVALUE")
 	fmt.Fprintln(w, "-----\t-----")
 
-	printField(w, data, "status", "Status")
-	printField(w, data, "min_replicas", "Min Replicas")
-	printField(w, data, "max_replicas", "Max Replicas")
-	printField(w, data, "created_at", "Created At")
-	printField(w, data, "updated_at", "Updated At")
-	printField(w, data, "error_message", "Error Message")
+	fmt.Fprintf(w, "ID\t%s\n", container.ID)
+	fmt.Fprintf(w, "Status\t%s\n", container.Status)
+	if container.MinReplicas != nil {
+		fmt.Fprintf(w, "Min Replicas\t%d\n", *container.MinReplicas)
+	}
+	if container.MaxReplicas != nil {
+		fmt.Fprintf(w, "Max Replicas\t%d\n", *container.MaxReplicas)
+	}
+	fmt.Fprintf(w, "Created At\t%s\n", container.CreatedAt)
+	fmt.Fprintf(w, "Updated At\t%s\n", container.UpdatedAt)
+	if container.ErrorMessage != nil {
+		fmt.Fprintf(w, "Error Message\t%s\n", *container.ErrorMessage)
+	}
+
+	if container.Container != nil {
+		c := container.Container
+		fmt.Fprintf(w, "Health State\t%s\n", c.HealthState)
+		fmt.Fprintf(w, "Provisioning State\t%s\n", c.ProvisioningState)
+		fmt.Fprintf(w, "Container State\t%s\n", c.State)
+		fmt.Fprintf(w, "Container Updated On\t%s\n", c.UpdatedOn)
+		for i, r := range c.Replicas {
+			fmt.Fprintf(w, "Replica %d Name\t%s\n", i+1, r.Name)
+			fmt.Fprintf(w, "Replica %d State\t%s\n", i+1, r.State)
+			if r.ContainerState != "" {
+				fmt.Fprintf(w, "Replica %d Container State\t%s\n", i+1, r.ContainerState)
+			}
+		}
+	}
 
 	return w.Flush()
-}
-
-func printField(w *tabwriter.Writer, data map[string]interface{}, key, label string) {
-	if val, ok := data[key]; ok && val != nil {
-		fmt.Fprintf(w, "%s\t%v\n", label, val)
-	}
 }

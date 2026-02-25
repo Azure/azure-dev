@@ -4,10 +4,8 @@
 package cmd
 
 import (
-	"bytes"
 	"encoding/json"
 	"testing"
-	"text/tabwriter"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
 
@@ -36,7 +34,8 @@ func TestStatusCommand_MissingVersionFlag(t *testing.T) {
 
 func TestPrintStatusJSON(t *testing.T) {
 	container := &agent_api.AgentContainerObject{
-		Object: "container",
+		Object: "agent.container",
+		ID:     "test-agent-1",
 		Status: agent_api.AgentContainerStatusRunning,
 	}
 
@@ -46,11 +45,25 @@ func TestPrintStatusJSON(t *testing.T) {
 }
 
 func TestPrintStatusTable(t *testing.T) {
+	minReplicas := int32(1)
+	maxReplicas := int32(3)
 	container := &agent_api.AgentContainerObject{
-		Object:    "container",
-		Status:    agent_api.AgentContainerStatusRunning,
-		CreatedAt: "2025-01-01T00:00:00Z",
-		UpdatedAt: "2025-01-01T01:00:00Z",
+		Object:      "agent.container",
+		ID:          "test-agent-1",
+		Status:      agent_api.AgentContainerStatusRunning,
+		MinReplicas: &minReplicas,
+		MaxReplicas: &maxReplicas,
+		CreatedAt:   "2025-01-01T00:00:00Z",
+		UpdatedAt:   "2025-01-01T01:00:00Z",
+		Container: &agent_api.AgentContainerDetails{
+			HealthState:       "Healthy",
+			ProvisioningState: "Succeeded",
+			State:             "Running",
+			UpdatedOn:         "2025-01-01T01:00:00Z",
+			Replicas: []agent_api.AgentContainerReplicaState{
+				{Name: "replica-1", State: "Running", ContainerState: "Running"},
+			},
+		},
 	}
 
 	// Should not error
@@ -58,9 +71,24 @@ func TestPrintStatusTable(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestPrintStatusTable_NoContainer(t *testing.T) {
+	container := &agent_api.AgentContainerObject{
+		Object:    "agent.container",
+		ID:        "test-agent-1",
+		Status:    agent_api.AgentContainerStatusRunning,
+		CreatedAt: "2025-01-01T00:00:00Z",
+		UpdatedAt: "2025-01-01T01:00:00Z",
+	}
+
+	// Should not error even without nested container details
+	err := printStatusTable(container)
+	require.NoError(t, err)
+}
+
 func TestPrintStatusJSON_Format(t *testing.T) {
 	container := &agent_api.AgentContainerObject{
-		Object: "container",
+		Object: "agent.container",
+		ID:     "test-agent-1",
 		Status: agent_api.AgentContainerStatusRunning,
 	}
 
@@ -72,49 +100,38 @@ func TestPrintStatusJSON_Format(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "Running", result["status"])
-	assert.Equal(t, "container", result["object"])
+	assert.Equal(t, "agent.container", result["object"])
+	assert.Equal(t, "test-agent-1", result["id"])
 }
 
-func TestPrintField(t *testing.T) {
-	tests := []struct {
-		name     string
-		data     map[string]interface{}
-		key      string
-		label    string
-		expected string
-	}{
-		{
-			name:     "existing field",
-			data:     map[string]interface{}{"status": "Running"},
-			key:      "status",
-			label:    "Status",
-			expected: "Status Running\n",
-		},
-		{
-			name:     "missing field",
-			data:     map[string]interface{}{},
-			key:      "status",
-			label:    "Status",
-			expected: "",
-		},
-		{
-			name:     "nil field",
-			data:     map[string]interface{}{"status": nil},
-			key:      "status",
-			label:    "Status",
-			expected: "",
+func TestPrintStatusJSON_WithContainerDetails(t *testing.T) {
+	container := &agent_api.AgentContainerObject{
+		Object: "agent.container",
+		ID:     "basic-sample-1",
+		Status: agent_api.AgentContainerStatusFailed,
+		Container: &agent_api.AgentContainerDetails{
+			HealthState:       "Unhealthy",
+			ProvisioningState: "Succeeded",
+			State:             "ActivationFailed",
+			Replicas: []agent_api.AgentContainerReplicaState{
+				{Name: "replica-abc", State: "NotRunning", ContainerState: "Waiting"},
+			},
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var buf bytes.Buffer
-			w := tabwriter.NewWriter(&buf, 0, 0, 1, ' ', 0)
-			printField(w, tt.data, tt.key, tt.label)
-			w.Flush()
-			assert.Equal(t, tt.expected, buf.String())
-		})
-	}
+	jsonBytes, err := json.MarshalIndent(container, "", "  ")
+	require.NoError(t, err)
+
+	var result map[string]interface{}
+	err = json.Unmarshal(jsonBytes, &result)
+	require.NoError(t, err)
+
+	assert.Equal(t, "Failed", result["status"])
+	containerMap := result["container"].(map[string]interface{})
+	assert.Equal(t, "Unhealthy", containerMap["health_state"])
+	assert.Equal(t, "ActivationFailed", containerMap["state"])
+	replicas := containerMap["replicas"].([]interface{})
+	assert.Len(t, replicas, 1)
 }
 
 func TestBuildAgentEndpoint(t *testing.T) {

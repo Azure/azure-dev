@@ -274,15 +274,33 @@ type AgentContainerOperationError struct {
 	Message string `json:"message"`
 }
 
+// AgentContainerReplicaState represents the state of a single container replica
+type AgentContainerReplicaState struct {
+	Name           string `json:"name"`
+	State          string `json:"state"`
+	ContainerState string `json:"container_state,omitempty"`
+}
+
+// AgentContainerDetails represents the nested container runtime details
+type AgentContainerDetails struct {
+	HealthState       string                       `json:"health_state,omitempty"`
+	ProvisioningState string                       `json:"provisioning_state,omitempty"`
+	State             string                       `json:"state,omitempty"`
+	UpdatedOn         string                       `json:"updated_on,omitempty"`
+	Replicas          []AgentContainerReplicaState  `json:"replicas,omitempty"`
+}
+
 // AgentContainerObject represents the details of an agent container
 type AgentContainerObject struct {
-	Object       string               `json:"object"`
-	Status       AgentContainerStatus `json:"status"`
-	MaxReplicas  *int32               `json:"max_replicas,omitempty"`
-	MinReplicas  *int32               `json:"min_replicas,omitempty"`
-	ErrorMessage *string              `json:"error_message,omitempty"`
-	CreatedAt    string               `json:"created_at"`
-	UpdatedAt    string               `json:"updated_at"`
+	Object       string                 `json:"object"`
+	ID           string                 `json:"id,omitempty"`
+	Status       AgentContainerStatus   `json:"status"`
+	MaxReplicas  *int32                 `json:"max_replicas,omitempty"`
+	MinReplicas  *int32                 `json:"min_replicas,omitempty"`
+	ErrorMessage *string                `json:"error_message,omitempty"`
+	CreatedAt    string                 `json:"created_at"`
+	UpdatedAt    string                 `json:"updated_at"`
+	Container    *AgentContainerDetails `json:"container,omitempty"`
 }
 
 // AgentContainerOperationObject represents a container operation

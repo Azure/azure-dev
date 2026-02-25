@@ -72,15 +72,20 @@ func (cli *AzureClient) createLogAnalyticsWorkspacesClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armoperationalinsights.WorkspacesClient, error) {
-	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
+	return cli.logAnalyticsWorkspacesCache.GetOrCreate(
+		subscriptionId,
+		func() (*armoperationalinsights.WorkspacesClient, error) {
+			credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+			if err != nil {
+				return nil, err
+			}
 
-	client, err := armoperationalinsights.NewWorkspacesClient(subscriptionId, credential, cli.armClientOptions)
-	if err != nil {
-		return nil, fmt.Errorf("creating log analytics workspaces client: %w", err)
-	}
+			client, err := armoperationalinsights.NewWorkspacesClient(subscriptionId, credential, cli.armClientOptions)
+			if err != nil {
+				return nil, fmt.Errorf("creating log analytics workspaces client: %w", err)
+			}
 
-	return client, nil
+			return client, nil
+		},
+	)
 }

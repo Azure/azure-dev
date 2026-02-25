@@ -61,6 +61,7 @@ type containerRegistryService struct {
 	docker             *docker.Cli
 	armClientOptions   *arm.ClientOptions
 	coreClientOptions  *azcore.ClientOptions
+	registriesCache    clientCache[*armcontainerregistry.RegistriesClient]
 }
 
 // Creates a new instance of the ContainerRegistryService
@@ -260,17 +261,19 @@ func (crs *containerRegistryService) createRegistriesClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armcontainerregistry.RegistriesClient, error) {
-	credential, err := crs.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
+	return crs.registriesCache.GetOrCreate(subscriptionId, func() (*armcontainerregistry.RegistriesClient, error) {
+		credential, err := crs.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+		if err != nil {
+			return nil, err
+		}
 
-	client, err := armcontainerregistry.NewRegistriesClient(subscriptionId, credential, crs.armClientOptions)
-	if err != nil {
-		return nil, fmt.Errorf("creating registries client: %w", err)
-	}
+		client, err := armcontainerregistry.NewRegistriesClient(subscriptionId, credential, crs.armClientOptions)
+		if err != nil {
+			return nil, fmt.Errorf("creating registries client: %w", err)
+		}
 
-	return client, nil
+		return client, nil
+	})
 }
 
 // Exchanges an AAD token for an ACR refresh token

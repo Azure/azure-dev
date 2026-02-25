@@ -57,6 +57,7 @@ type StackDeployments struct {
 	armClientOptions    *arm.ClientOptions
 	standardDeployments *StandardDeployments
 	cloud               *cloud.Cloud
+	stackClientCache    clientCache[*armdeploymentstacks.Client]
 }
 
 type deploymentStackOptions struct {
@@ -655,12 +656,14 @@ func (d *StackDeployments) CalculateTemplateHash(
 }
 
 func (d *StackDeployments) createClient(ctx context.Context, subscriptionId string) (*armdeploymentstacks.Client, error) {
-	credential, err := d.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
+	return d.stackClientCache.GetOrCreate(subscriptionId, func() (*armdeploymentstacks.Client, error) {
+		credential, err := d.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+		if err != nil {
+			return nil, err
+		}
 
-	return armdeploymentstacks.NewClient(subscriptionId, credential, d.armClientOptions)
+		return armdeploymentstacks.NewClient(subscriptionId, credential, d.armClientOptions)
+	})
 }
 
 // Converts from an ARM Extended Deployment to Azd Generic deployment

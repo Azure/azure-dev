@@ -31,8 +31,9 @@ type ManagedClustersService interface {
 }
 
 type managedClustersService struct {
-	credentialProvider account.SubscriptionCredentialProvider
-	armClientOptions   *arm.ClientOptions
+	credentialProvider  account.SubscriptionCredentialProvider
+	armClientOptions    *arm.ClientOptions
+	managedClusterCache clientCache[*armcontainerservice.ManagedClustersClient]
 }
 
 // Creates a new instance of the ManagedClustersService
@@ -90,15 +91,17 @@ func (cs *managedClustersService) createManagedClusterClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armcontainerservice.ManagedClustersClient, error) {
-	credential, err := cs.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
+	return cs.managedClusterCache.GetOrCreate(subscriptionId, func() (*armcontainerservice.ManagedClustersClient, error) {
+		credential, err := cs.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+		if err != nil {
+			return nil, err
+		}
 
-	client, err := armcontainerservice.NewManagedClustersClient(subscriptionId, credential, cs.armClientOptions)
-	if err != nil {
-		return nil, fmt.Errorf("creating managed clusters client, %w", err)
-	}
+		client, err := armcontainerservice.NewManagedClustersClient(subscriptionId, credential, cs.armClientOptions)
+		if err != nil {
+			return nil, fmt.Errorf("creating managed clusters client, %w", err)
+		}
 
-	return client, nil
+		return client, nil
+	})
 }

@@ -61,6 +61,8 @@ type ListResourceGroupResourcesOptions struct {
 type ResourceService struct {
 	credentialProvider account.SubscriptionCredentialProvider
 	armClientOptions   *arm.ClientOptions
+	resourcesCache     clientCache[*armresources.Client]
+	resourceGroupCache clientCache[*armresources.ResourceGroupsClient]
 }
 
 func NewResourceService(
@@ -319,34 +321,38 @@ func (rs *ResourceService) DeleteResourceGroup(ctx context.Context, subscription
 }
 
 func (rs *ResourceService) createResourcesClient(ctx context.Context, subscriptionId string) (*armresources.Client, error) {
-	credential, err := rs.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
+	return rs.resourcesCache.GetOrCreate(subscriptionId, func() (*armresources.Client, error) {
+		credential, err := rs.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+		if err != nil {
+			return nil, err
+		}
 
-	client, err := armresources.NewClient(subscriptionId, credential, rs.armClientOptions)
-	if err != nil {
-		return nil, fmt.Errorf("creating Resource client: %w", err)
-	}
+		client, err := armresources.NewClient(subscriptionId, credential, rs.armClientOptions)
+		if err != nil {
+			return nil, fmt.Errorf("creating Resource client: %w", err)
+		}
 
-	return client, nil
+		return client, nil
+	})
 }
 
 func (rs *ResourceService) createResourceGroupClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armresources.ResourceGroupsClient, error) {
-	credential, err := rs.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
+	return rs.resourceGroupCache.GetOrCreate(subscriptionId, func() (*armresources.ResourceGroupsClient, error) {
+		credential, err := rs.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+		if err != nil {
+			return nil, err
+		}
 
-	client, err := armresources.NewResourceGroupsClient(subscriptionId, credential, rs.armClientOptions)
-	if err != nil {
-		return nil, fmt.Errorf("creating ResourceGroup client: %w", err)
-	}
+		client, err := armresources.NewResourceGroupsClient(subscriptionId, credential, rs.armClientOptions)
+		if err != nil {
+			return nil, fmt.Errorf("creating ResourceGroup client: %w", err)
+		}
 
-	return client, nil
+		return client, nil
+	})
 }
 
 // GroupByResourceGroup creates a map of resources group by their resource group name.

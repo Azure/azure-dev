@@ -38,6 +38,8 @@ type StandardDeployments struct {
 	resourceService    *ResourceService
 	cloud              *cloud.Cloud
 	clock              clock.Clock
+	deploymentsCache   clientCache[*armresources.DeploymentsClient]
+	deploymentOpsCache clientCache[*armresources.DeploymentOperationsClient]
 }
 
 func NewStandardDeployments(
@@ -188,17 +190,19 @@ func (ds *StandardDeployments) createDeploymentsClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armresources.DeploymentsClient, error) {
-	credential, err := ds.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
+	return ds.deploymentsCache.GetOrCreate(subscriptionId, func() (*armresources.DeploymentsClient, error) {
+		credential, err := ds.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+		if err != nil {
+			return nil, err
+		}
 
-	client, err := armresources.NewDeploymentsClient(subscriptionId, credential, ds.armClientOptions)
-	if err != nil {
-		return nil, fmt.Errorf("creating deployments client: %w", err)
-	}
+		client, err := armresources.NewDeploymentsClient(subscriptionId, credential, ds.armClientOptions)
+		if err != nil {
+			return nil, fmt.Errorf("creating deployments client: %w", err)
+		}
 
-	return client, nil
+		return client, nil
+	})
 }
 
 func (ds *StandardDeployments) DeployToSubscription(
@@ -629,17 +633,19 @@ func (ds *StandardDeployments) createDeploymentsOperationsClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armresources.DeploymentOperationsClient, error) {
-	credential, err := ds.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
+	return ds.deploymentOpsCache.GetOrCreate(subscriptionId, func() (*armresources.DeploymentOperationsClient, error) {
+		credential, err := ds.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+		if err != nil {
+			return nil, err
+		}
 
-	client, err := armresources.NewDeploymentOperationsClient(subscriptionId, credential, ds.armClientOptions)
-	if err != nil {
-		return nil, fmt.Errorf("creating deployments client: %w", err)
-	}
+		client, err := armresources.NewDeploymentOperationsClient(subscriptionId, credential, ds.armClientOptions)
+		if err != nil {
+			return nil, fmt.Errorf("creating deployments client: %w", err)
+		}
 
-	return client, nil
+		return client, nil
+	})
 }
 
 // Converts from an ARM Extended Deployment to Azd Generic deployment

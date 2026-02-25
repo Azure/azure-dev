@@ -196,17 +196,19 @@ func (cli *AzureClient) createWebAppsClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armappservice.WebAppsClient, error) {
-	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
+	return cli.webAppsCache.GetOrCreate(subscriptionId, func() (*armappservice.WebAppsClient, error) {
+		credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+		if err != nil {
+			return nil, err
+		}
 
-	client, err := armappservice.NewWebAppsClient(subscriptionId, credential, cli.armClientOptions)
-	if err != nil {
-		return nil, fmt.Errorf("creating WebApps client: %w", err)
-	}
+		client, err := armappservice.NewWebAppsClient(subscriptionId, credential, cli.armClientOptions)
+		if err != nil {
+			return nil, fmt.Errorf("creating WebApps client: %w", err)
+		}
 
-	return client, nil
+		return client, nil
+	})
 }
 
 func (cli *AzureClient) createZipDeployClient(
@@ -214,17 +216,20 @@ func (cli *AzureClient) createZipDeployClient(
 	subscriptionId string,
 	hostName string,
 ) (*azsdk.ZipDeployClient, error) {
-	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
+	cacheKey := fmt.Sprintf("%s|%s", subscriptionId, hostName)
+	return cli.zipDeployCache.GetOrCreate(cacheKey, func() (*azsdk.ZipDeployClient, error) {
+		credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+		if err != nil {
+			return nil, err
+		}
 
-	client, err := azsdk.NewZipDeployClient(hostName, credential, cli.armClientOptions)
-	if err != nil {
-		return nil, fmt.Errorf("creating WebApps client: %w", err)
-	}
+		client, err := azsdk.NewZipDeployClient(hostName, credential, cli.armClientOptions)
+		if err != nil {
+			return nil, fmt.Errorf("creating WebApps client: %w", err)
+		}
 
-	return client, nil
+		return client, nil
+	})
 }
 
 // HasAppServiceDeployments checks if the web app has at least one previous deployment.

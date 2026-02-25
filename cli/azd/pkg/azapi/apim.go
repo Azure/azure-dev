@@ -64,17 +64,19 @@ func (cli *AzureClient) createApimDeletedClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armapimanagement.DeletedServicesClient, error) {
-	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
+	return cli.apimDeletedCache.GetOrCreate(subscriptionId, func() (*armapimanagement.DeletedServicesClient, error) {
+		credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+		if err != nil {
+			return nil, err
+		}
 
-	apimClient, err := armapimanagement.NewDeletedServicesClient(subscriptionId, credential, cli.armClientOptions)
-	if err != nil {
-		return nil, fmt.Errorf("creating Resource client: %w", err)
-	}
+		apimClient, err := armapimanagement.NewDeletedServicesClient(subscriptionId, credential, cli.armClientOptions)
+		if err != nil {
+			return nil, fmt.Errorf("creating Resource client: %w", err)
+		}
 
-	return apimClient, nil
+		return apimClient, nil
+	})
 }
 
 // Creates a APIM service client for ARM control plane operations
@@ -82,15 +84,17 @@ func (cli *AzureClient) createApimClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armapimanagement.ServiceClient, error) {
-	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
+	return cli.apimCache.GetOrCreate(subscriptionId, func() (*armapimanagement.ServiceClient, error) {
+		credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+		if err != nil {
+			return nil, err
+		}
 
-	apimClient, err := armapimanagement.NewServiceClient(subscriptionId, credential, cli.armClientOptions)
-	if err != nil {
-		return nil, fmt.Errorf("creating Resource client: %w", err)
-	}
+		apimClient, err := armapimanagement.NewServiceClient(subscriptionId, credential, cli.armClientOptions)
+		if err != nil {
+			return nil, fmt.Errorf("creating Resource client: %w", err)
+		}
 
-	return apimClient, nil
+		return apimClient, nil
+	})
 }

@@ -20,6 +20,7 @@ type UserProfileService struct {
 	credentialProvider auth.MultiTenantCredentialProvider
 	coreClientOptions  *azcore.ClientOptions
 	cloud              *cloud.Cloud
+	graphClientCache   clientCache[*graphsdk.GraphClient]
 }
 
 func NewUserProfileService(
@@ -35,17 +36,19 @@ func NewUserProfileService(
 }
 
 func (u *UserProfileService) createGraphClient(ctx context.Context, tenantId string) (*graphsdk.GraphClient, error) {
-	cred, err := u.credentialProvider.GetTokenCredential(ctx, tenantId)
-	if err != nil {
-		return nil, err
-	}
+	return u.graphClientCache.GetOrCreate(tenantId, func() (*graphsdk.GraphClient, error) {
+		cred, err := u.credentialProvider.GetTokenCredential(ctx, tenantId)
+		if err != nil {
+			return nil, err
+		}
 
-	client, err := graphsdk.NewGraphClient(cred, u.coreClientOptions)
-	if err != nil {
-		return nil, fmt.Errorf("creating Graph Users client: %w", err)
-	}
+		client, err := graphsdk.NewGraphClient(cred, u.coreClientOptions)
+		if err != nil {
+			return nil, fmt.Errorf("creating Graph Users client: %w", err)
+		}
 
-	return client, nil
+		return client, nil
+	})
 }
 
 func (user *UserProfileService) GetSignedInUserId(ctx context.Context, tenantId string) (string, error) {

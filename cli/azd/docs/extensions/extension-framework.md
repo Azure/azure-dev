@@ -6,6 +6,10 @@ Table of Contents
 - [Managing Extensions](#managing-extensions)
 - [Developing Extensions](#developing-extensions)
   - [Capabilities](#capabilities)
+  - [Distributed Tracing](#distributed-tracing)
+  - [Debugging Extensions](#debugging-extensions)
+  - [Invoking Extension Commands](#invoking-extension-commands)
+  - [Structured Error Handling](#structured-error-handling)
   - [Developer Artifacts](#developer-artifacts)
   - [gRPC Services](#grpc-services)
     - [Project Service](#project-service)
@@ -497,6 +501,64 @@ clientOptions := &policy.ClientOptions{
     },
 }
 ```
+
+### Debugging Extensions
+
+#### Debugging Lifecycle Extensions (`AZD_EXT_DEBUG`)
+
+For **lifecycle/listen extensions** (those that subscribe to lifecycle events), `azd` uses the `AZD_EXT_DEBUG` environment variable to pause startup so you can attach a debugger.
+
+When `AZD_EXT_DEBUG=true` is set, `azd` waits indefinitely instead of applying the default 5-second ready timeout. The extension binary must also call `azdext.WaitForDebugger()` in order for the prompt to appear.
+
+#### Debugging Custom Extension Commands (`WaitForDebugger`)
+
+For **custom extension commands** (e.g., `azd myext mycommand`), use `azdext.WaitForDebugger()` in your command implementation to pause and wait for a debugger to be attached:
+
+```go
+import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+
+func runMyCommand(cmd *cobra.Command, args []string) error {
+    ctx := azdext.WithAccessToken(cmd.Context())
+    azdClient, err := azdext.NewAzdClient()
+    if err != nil {
+        return fmt.Errorf("failed to create azd client: %w", err)
+    }
+    defer azdClient.Close()
+
+    // Pause here when AZD_EXT_DEBUG=true to allow debugger attachment.
+    // Returns nil if AZD_EXT_DEBUG is not set or if user confirms debugger is attached.
+    // Returns azdext.ErrDebuggerAborted if user cancels the debug prompt.
+    if err := azdext.WaitForDebugger(ctx, azdClient); err != nil {
+        return err
+    }
+
+    // ... rest of your command implementation
+    return nil
+}
+```
+
+**Usage:**
+
+```bash
+# Set AZD_EXT_DEBUG=true before running your extension command
+AZD_EXT_DEBUG=true azd myext mycommand
+```
+
+When `AZD_EXT_DEBUG=true` is set and your command calls `WaitForDebugger()`, azd displays:
+
+```
+? Extension 'my.extension' ready to debug (pid: 12345). [Y/n]
+```
+
+Attach your debugger to the displayed PID and then press `Y` to continue. The extension process will resume execution with the debugger attached.
+
+**Error Handling:**
+
+- `nil` — debugging not enabled or user confirmed, proceed normally.
+- `azdext.ErrDebuggerAborted` — user pressed `N`, the command should exit.
+- `context.Canceled` — user pressed Ctrl+C, the command should exit.
+
+---
 
 ### Developer Extension
 
@@ -1115,7 +1177,11 @@ When `azd` invokes an extension command, the following steps occur:
 2. `azd` invokes your command, passing all arguments and flags:
     - An environment variable named `AZD_SERVER` is set with the server address and random port (e.g., `localhost:12345`).
     - An `azd` access token environment variable `AZD_ACCESS_TOKEN` is set which is a JWT token signed with a randomly generated key good for the lifetime of the command. The token includes claims that identify each unique extensions and its supported capabilities.
-    - Additional environment variables from the current `azd` environment are also set.
+    - `TRACEPARENT` and `TRACESTATE` are set when a distributed trace context is active, allowing extensions to participate in the same trace as the parent `azd` process.
+    - `FORCE_COLOR=1` is set when the parent terminal supports color output.
+    - `COLUMNS` is set to the current terminal width.
+    - For **custom extension commands** (e.g., `azd myext mycommand`): the full parent process environment (`os.Environ()`) is inherited, plus the variables above.
+    - For **lifecycle/listen commands** (e.g., `listen`): only the explicitly set variables above are provided — global flags such as `--debug`, `--no-prompt`, `--cwd`, and `-e/--environment` are **not** automatically forwarded as environment variables. The `--debug` flag is forwarded as a command-line argument to the `listen` command.
 3. The extension command can communicate with `azd` through [extension framework gRPC services](#grpc-services).
 4. `azd` waits for the extension command to complete:
     - If a non-zero exit code is returned, `azd` reports the operation as an error.
@@ -1123,6 +1189,21 @@ When `azd` invokes an extension command, the following steps occur:
 To enable interaction with `azd` from within the extension, the extension must leverage a gRPC client and connect to the server using the address specified in the `AZD_SERVER` environment variable.
 
 The gRPC client must also include an `authorization` parameter with the value from `AZD_ACCESS_TOKEN`; otherwise, requests will fail due to invalid authorization. Extensions must declare their supported capabilities within the extension registry otherwise certain service operations may fail with a permission denied error.
+
+#### Extension Startup Environment Variables
+
+The following environment variables control the extension startup behavior (for lifecycle/listen extensions):
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `AZD_EXT_DEBUG` | When set to a truthy value (`true`, `1`), `azd` waits indefinitely for a debugger to be attached instead of timing out. | unset |
+| `AZD_EXT_TIMEOUT` | Number of seconds to wait for an extension to become ready before considering it failed. | `5` |
+
+**Example:** To increase the startup timeout for slow-starting extensions:
+
+```bash
+AZD_EXT_TIMEOUT=30 azd provision
+```
 
 #### Go
 
@@ -1259,6 +1340,77 @@ if err := host.Run(ctx); err != nil {
     return fmt.Errorf("failed to run extension: %w", err)
 }
 
+```
+
+### Structured Error Handling
+
+The `azdext` package provides utilities for transmitting structured error information over gRPC between `azd` and extensions. This enables rich error telemetry and allows callers to handle specific error conditions programmatically.
+
+#### ServiceError
+
+`ServiceError` represents an HTTP/gRPC error from a remote service (e.g., an Azure API). It preserves structured error information for telemetry and conditional error handling:
+
+```go
+type ServiceError struct {
+    Message     string // Human-readable error message
+    Details     string // Additional error details
+    ErrorCode   string // Service-specific error code (e.g., "Conflict", "NotFound")
+    StatusCode  int    // HTTP status code (e.g., 409, 404, 500)
+    ServiceName string // Service host for telemetry (e.g., "management.azure.com")
+}
+```
+
+#### WrapError / UnwrapError
+
+`WrapError` and `UnwrapError` are used internally by the `azdext` framework when communicating errors across the gRPC boundary. Extension authors do not need to call them directly.
+
+When your provider method returns an error, the framework automatically calls `WrapError` to serialize the error for transmission. If the error is an Azure SDK `azcore.ResponseError`, its HTTP status code, error code, and service name are captured automatically.
+
+To transmit structured error information, return a `*azdext.ServiceError` from your provider methods:
+
+```go
+import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+
+// Return a structured ServiceError from a provider method.
+// The framework serializes this automatically using WrapError before sending over gRPC.
+func (target *MyServiceTargetProvider) GetTargetResource(
+    ctx context.Context,
+    subscriptionId string,
+    serviceConfig *azdext.ServiceConfig,
+) (*azdext.TargetResource, error) {
+    resource, err := findResource(subscriptionId, serviceConfig.ResourceName)
+    if err != nil {
+        // Return a ServiceError to give azd structured information for telemetry and error display.
+        return nil, &azdext.ServiceError{
+            Message:     fmt.Sprintf("resource '%s' not found", serviceConfig.ResourceName),
+            ErrorCode:   "ResourceNotFound",
+            StatusCode:  404,
+            ServiceName: "management.azure.com",
+        }
+    }
+    return resource, nil
+}
+```
+
+Azure SDK errors (`azcore.ResponseError`) are detected automatically — you do not need to wrap them in `ServiceError` manually:
+
+```go
+func (target *MyServiceTargetProvider) Deploy(
+    ctx context.Context,
+    serviceConfig *azdext.ServiceConfig,
+    servicePackage *azdext.ServicePackageResult,
+    servicePublish *azdext.ServicePublishResult,
+    targetResource *azdext.TargetResource,
+    progress azdext.ProgressReporter,
+) (*azdext.ServiceDeployResult, error) {
+    result, err := azureClient.Deploy(ctx, ...)
+    if err != nil {
+        // Azure SDK errors are automatically detected and their HTTP status/error code
+        // captured in the gRPC error transmission. No manual wrapping needed.
+        return nil, fmt.Errorf("deploy failed: %w", err)
+    }
+    return result, nil
+}
 ```
 
 ## Developer Artifacts
@@ -1473,7 +1625,7 @@ Sets the selected environment as default.
 Retrieves all key-value pairs in the specified environment.
 
 - **Request:** _GetEnvironmentRequest_
-  - `name` (string)
+  - `name` (string, optional) — if omitted or empty, the current/default environment is used
 - **Response:** _KeyValueListResponse_
   - Contains a list of **KeyValue**:
     - `key` (string)
@@ -1484,7 +1636,7 @@ Retrieves all key-value pairs in the specified environment.
 Retrieves the value of a specific key.
 
 - **Request:** _GetEnvRequest_
-  - `env_name` (string)  
+  - `env_name` (string, optional) — if omitted or empty, the current/default environment is used
   - `key` (string)
 - **Response:** _KeyValueResponse_
   - Contains:
@@ -1496,7 +1648,7 @@ Retrieves the value of a specific key.
 Sets the value of a key in an environment.
 
 - **Request:** _SetEnvRequest_
-  - `env_name` (string)  
+  - `env_name` (string, optional) — if omitted or empty, the current/default environment is used
   - `key` (string)  
   - `value` (string)
 - **Response:** _EmptyResponse_

@@ -51,6 +51,8 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newInitCommand(&rootFlags))
 	rootCmd.AddCommand(newMcpCommand())
 	rootCmd.AddCommand(newMetadataCommand())
+	rootCmd.AddCommand(newStatusCommand())
+	rootCmd.AddCommand(newGetLogsCommand())
 
 	return rootCmd
 }

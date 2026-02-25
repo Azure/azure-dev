@@ -771,6 +771,38 @@ func (c *AgentClient) GetAgentContainer(ctx context.Context, agentName, agentVer
 	return &container, nil
 }
 
+// GetAgentContainerLogStream streams logs from an agent container.
+// kind should be "console" (stdout/stderr) or "system" (container events).
+// tail is the number of trailing lines to fetch (1-300).
+func (c *AgentClient) GetAgentContainerLogStream(
+	ctx context.Context,
+	agentName, agentVersion, apiVersion string,
+	kind string,
+	tail int,
+) (io.ReadCloser, error) {
+	requestURL := fmt.Sprintf(
+		"%s/agents/%s/versions/%s/containers/default:logstream?api-version=%s&kind=%s&tail=%d",
+		c.endpoint, agentName, agentVersion, apiVersion, kind, tail,
+	)
+
+	req, err := runtime.NewRequest(ctx, http.MethodGet, requestURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
+	}
+
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		resp.Body.Close()
+		return nil, runtime.NewResponseError(resp)
+	}
+
+	return resp.Body, nil
+}
+
 // GetAgentContainerOperation retrieves the status of a container operation
 func (c *AgentClient) GetAgentContainerOperation(ctx context.Context, agentName, operationID, apiVersion string) (*AgentContainerOperationObject, error) {
 	url := fmt.Sprintf("%s/agents/%s/operations/%s?api-version=%s", c.endpoint, agentName, operationID, apiVersion)

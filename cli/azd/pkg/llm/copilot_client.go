@@ -34,6 +34,8 @@ func NewCopilotClientManager(options *CopilotClientOptions) *CopilotClientManage
 	clientOpts := &copilot.ClientOptions{}
 	if options.LogLevel != "" {
 		clientOpts.LogLevel = options.LogLevel
+	} else {
+		clientOpts.LogLevel = "debug"
 	}
 
 	return &CopilotClientManager{
@@ -46,11 +48,12 @@ func NewCopilotClientManager(options *CopilotClientOptions) *CopilotClientManage
 // to the copilot-agent-runtime process.
 func (m *CopilotClientManager) Start(ctx context.Context) error {
 	log.Printf("[copilot-client] Starting client (logLevel=%q)...", m.options.LogLevel)
+	log.Printf("[copilot-client] SDK will spawn copilot CLI process via stdio transport")
 	if err := m.client.Start(ctx); err != nil {
 		log.Printf("[copilot-client] Start failed: %v", err)
+		log.Printf("[copilot-client] Ensure 'copilot' CLI is in PATH and supports SDK protocol")
 		return fmt.Errorf(
-			"failed to start Copilot agent runtime: %w. "+
-				"Ensure you have a GitHub Copilot subscription and the Copilot CLI is available",
+			"failed to start Copilot agent runtime: %w",
 			err,
 		)
 	}

@@ -256,8 +256,8 @@ func Test_MapError(t *testing.T) {
 			},
 			wantErrReason: "ext.validation.invalid_config",
 			wantErrDetails: []attribute.KeyValue{
-				attribute.String("error.ext.category", "validation"),
-				attribute.String("error.ext.code", "invalid_config"),
+				fields.ErrorKey(fields.ErrCategory.Key).String("validation"),
+				fields.ErrorKey(fields.ErrCode.Key).String("invalid_config"),
 			},
 		},
 		{
@@ -269,8 +269,8 @@ func Test_MapError(t *testing.T) {
 			},
 			wantErrReason: "ext.local.something_bad",
 			wantErrDetails: []attribute.KeyValue{
-				attribute.String("error.ext.category", "local"),
-				attribute.String("error.ext.code", "something_bad"),
+				fields.ErrorKey(fields.ErrCategory.Key).String("local"),
+				fields.ErrorKey(fields.ErrCode.Key).String("something_bad"),
 			},
 		},
 		{
@@ -282,8 +282,8 @@ func Test_MapError(t *testing.T) {
 			},
 			wantErrReason: "ext.auth.token_expired",
 			wantErrDetails: []attribute.KeyValue{
-				attribute.String("error.ext.category", "auth"),
-				attribute.String("error.ext.code", "token_expired"),
+				fields.ErrorKey(fields.ErrCategory.Key).String("auth"),
+				fields.ErrorKey(fields.ErrCode.Key).String("token_expired"),
 			},
 		},
 	}

@@ -319,6 +319,13 @@ const ServiceNameAzd = "azd"
 
 // Error related fields
 var (
+	// Error category that classifies an error.
+	ErrCategory = AttributeKey{
+		Key:            attribute.Key("error.category"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
+
 	// Error code that describes an error.
 	ErrCode = AttributeKey{
 		Key:            attribute.Key("error.code"),
@@ -343,23 +350,6 @@ var (
 	// The frame of the error.
 	ErrFrame = AttributeKey{
 		Key:            attribute.Key("error.frame"),
-		Classification: SystemMetadata,
-		Purpose:        PerformanceAndHealth,
-	}
-)
-
-// Extension error related fields.
-var (
-	// Extension error category.
-	ExtErrorCategory = AttributeKey{
-		Key:            attribute.Key("ext.category"),
-		Classification: SystemMetadata,
-		Purpose:        PerformanceAndHealth,
-	}
-
-	// Extension error code.
-	ExtErrorCode = AttributeKey{
-		Key:            attribute.Key("ext.code"),
 		Classification: SystemMetadata,
 		Purpose:        PerformanceAndHealth,
 	}

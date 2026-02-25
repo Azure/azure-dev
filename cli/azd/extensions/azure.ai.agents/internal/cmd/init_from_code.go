@@ -644,50 +644,48 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 	}
 
 	// Add model resource if a model was selected
-	if selectedModel != nil {
-		if existingDeployment == nil {
-			modelDetails, err := a.resolveModelDeploymentNoPrompt(ctx, selectedModel, a.azureContext.Scope.Location)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get model deployment details: %w", err)
-			}
+	if existingDeployment != nil {
+		// For existing deployments, store the deployment details directly
+		a.deploymentDetails = append(a.deploymentDetails, project.Deployment{
+			Name: existingDeployment.Name,
+			Model: project.DeploymentModel{
+				Name:    existingDeployment.ModelName,
+				Format:  existingDeployment.ModelFormat,
+				Version: existingDeployment.Version,
+			},
+			Sku: project.DeploymentSku{
+				Name:     existingDeployment.SkuName,
+				Capacity: existingDeployment.SkuCapacity,
+			},
+		})
 
-			a.deploymentDetails = append(a.deploymentDetails, project.Deployment{
-				Name: modelDetails.ModelName,
-				Model: project.DeploymentModel{
-					Name:    modelDetails.ModelName,
-					Format:  modelDetails.Format,
-					Version: modelDetails.Version,
-				},
-				Sku: project.DeploymentSku{
-					Name:     modelDetails.Sku.Name,
-					Capacity: int(modelDetails.Capacity),
-				},
-			})
-
-			*definition.EnvironmentVariables = append(*definition.EnvironmentVariables, agent_yaml.EnvironmentVariable{
-				Name:  "AZURE_AI_MODEL_DEPLOYMENT_NAME",
-				Value: modelDetails.ModelName,
-			})
-		} else {
-			// For existing deployments, store the deployment details directly
-			a.deploymentDetails = append(a.deploymentDetails, project.Deployment{
-				Name: existingDeployment.Name,
-				Model: project.DeploymentModel{
-					Name:    existingDeployment.ModelName,
-					Format:  existingDeployment.ModelFormat,
-					Version: existingDeployment.Version,
-				},
-				Sku: project.DeploymentSku{
-					Name:     existingDeployment.SkuName,
-					Capacity: existingDeployment.SkuCapacity,
-				},
-			})
-
-			*definition.EnvironmentVariables = append(*definition.EnvironmentVariables, agent_yaml.EnvironmentVariable{
-				Name:  "AZURE_AI_MODEL_DEPLOYMENT_NAME",
-				Value: existingDeployment.Name,
-			})
+		*definition.EnvironmentVariables = append(*definition.EnvironmentVariables, agent_yaml.EnvironmentVariable{
+			Name:  "AZURE_AI_MODEL_DEPLOYMENT_NAME",
+			Value: existingDeployment.Name,
+		})
+	} else if selectedModel != nil {
+		modelDetails, err := a.resolveModelDeploymentNoPrompt(ctx, selectedModel, a.azureContext.Scope.Location)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get model deployment details: %w", err)
 		}
+
+		a.deploymentDetails = append(a.deploymentDetails, project.Deployment{
+			Name: modelDetails.ModelName,
+			Model: project.DeploymentModel{
+				Name:    modelDetails.ModelName,
+				Format:  modelDetails.Format,
+				Version: modelDetails.Version,
+			},
+			Sku: project.DeploymentSku{
+				Name:     modelDetails.Sku.Name,
+				Capacity: int(modelDetails.Capacity),
+			},
+		})
+
+		*definition.EnvironmentVariables = append(*definition.EnvironmentVariables, agent_yaml.EnvironmentVariable{
+			Name:  "AZURE_AI_MODEL_DEPLOYMENT_NAME",
+			Value: modelDetails.ModelName,
+		})
 	}
 
 	return definition, nil

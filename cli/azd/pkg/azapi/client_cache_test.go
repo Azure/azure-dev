@@ -158,12 +158,12 @@ func TestClientCache_NetworkOverheadComparison(t *testing.T) {
 
 	// Realistic call pattern from a 2-service deploy + provision polling (from codebase analysis)
 	patterns := []callPattern{
-		{"DeploymentsClient", 11},       // provision polling + deploy operations
-		{"DeploymentOpsClient", 3},      // deployment operation listing
-		{"ResourcesClient", 6},          // resource lookups
-		{"ResourceGroupClient", 4},      // RG operations
-		{"ContainerAppsClient", 4},      // per-service ACA operations (2 services x 2 calls)
-		{"ContainerRegistryClient", 2},  // ACR login per service
+		{"DeploymentsClient", 11},      // provision polling + deploy operations
+		{"DeploymentOpsClient", 3},     // deployment operation listing
+		{"ResourcesClient", 6},         // resource lookups
+		{"ResourceGroupClient", 4},     // RG operations
+		{"ContainerAppsClient", 4},     // per-service ACA operations (2 services x 2 calls)
+		{"ContainerRegistryClient", 2}, // ACR login per service
 	}
 
 	// --- WITHOUT caching (baseline) ---

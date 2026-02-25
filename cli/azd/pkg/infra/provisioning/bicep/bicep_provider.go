@@ -37,6 +37,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -83,7 +84,7 @@ type BicepProvider struct {
 	keyvaultService     keyvault.KeyVaultService
 	subscriptionManager *account.SubscriptionsManager
 	aiModelService      *ai.AiModelService
-	userConfigManager   config.UserConfigManager
+	serviceLocator      ioc.ServiceLocator
 
 	// Internal state
 	// compileBicepResult is cached to avoid recompiling the same bicep file multiple times in the same azd run.
@@ -2126,7 +2127,84 @@ func (p *BicepProvider) validatePreflight(
 	tags map[string]*string,
 	options map[string]any,
 ) error {
+	// Run local preflight validation before sending to Azure.
+	// Local validation catches common issues without requiring a network round-trip.
+	localPreflight := newLocalArmPreflight()
+	resourceProps, err := localPreflight.validate(armTemplate, armParameters)
+	if err != nil {
+		return fmt.Errorf("local preflight validation failed: %w", err)
+	}
+
+	// If the ARM template contains role assignments, verify the current user has the
+	// required Microsoft.Authorization/roleAssignments/write permission before attempting
+	// the deployment. The PermissionsService is resolved lazily via the service locator
+	// so it is only instantiated when actually needed.
+	if resourceProps.HasRoleAssignments {
+		if err := p.checkRoleAssignmentPermissions(ctx); err != nil {
+			return err
+		}
+	}
+
 	return target.ValidatePreflight(ctx, armTemplate, armParameters, tags, options)
+}
+
+// checkRoleAssignmentPermissions resolves the PermissionsService from the IoC container
+// and checks whether the current principal has the required permissions to create role
+// assignments. This is only called when the ARM template contains
+// Microsoft.Authorization/roleAssignments resources.
+func (p *BicepProvider) checkRoleAssignmentPermissions(ctx context.Context) error {
+	var permissionsService *azapi.PermissionsService
+	if err := p.serviceLocator.Resolve(&permissionsService); err != nil {
+		log.Printf("could not resolve PermissionsService, skipping role assignment permission check: %v", err)
+		return nil
+	}
+
+	principalId, err := p.curPrincipal.CurrentPrincipalId(ctx)
+	if err != nil {
+		log.Printf("could not determine current principal, skipping role assignment permission check: %v", err)
+		return nil
+	}
+
+	subscriptionId := p.env.GetSubscriptionId()
+	requiredActions := []string{
+		"Microsoft.Authorization/roleAssignments/write",
+	}
+
+	hasPermission, err := permissionsService.HasRequiredPermissions(
+		ctx, subscriptionId, principalId, requiredActions,
+	)
+	if err != nil {
+		log.Printf("error checking role assignment permissions, skipping check: %v", err)
+		return nil
+	}
+
+	if !hasPermission {
+		return &RoleAssignmentPermissionError{
+			SubscriptionId: subscriptionId,
+			PrincipalId:    principalId,
+		}
+	}
+
+	return nil
+}
+
+// RoleAssignmentPermissionError is returned when the deployment contains role assignments
+// but the current user lacks the Microsoft.Authorization/roleAssignments/write permission.
+type RoleAssignmentPermissionError struct {
+	SubscriptionId string
+	PrincipalId    string
+}
+
+func (e *RoleAssignmentPermissionError) Error() string {
+	return fmt.Sprintf(
+		"the current principal (%s) does not have permission to create role assignments "+
+			"(Microsoft.Authorization/roleAssignments/write) on subscription %s. "+
+			"The deployment includes role assignments and will fail without this permission. "+
+			"Ensure you have the 'User Access Administrator', 'Owner', or a custom role with "+
+			"'Microsoft.Authorization/roleAssignments/write' assigned to your account.",
+		e.PrincipalId,
+		e.SubscriptionId,
+	)
 }
 
 // Deploys the specified Bicep module and parameters with the selected provisioning scope (subscription vs resource group)
@@ -2532,7 +2610,7 @@ func NewBicepProvider(
 	cloud *cloud.Cloud,
 	subscriptionManager *account.SubscriptionsManager,
 	aiModelService *ai.AiModelService,
-	userConfigManager config.UserConfigManager,
+	serviceLocator ioc.ServiceLocator,
 ) provisioning.Provider {
 	return &BicepProvider{
 		envManager:          envManager,
@@ -2549,7 +2627,7 @@ func NewBicepProvider(
 		portalUrlBase:       cloud.PortalUrlBase,
 		subscriptionManager: subscriptionManager,
 		aiModelService:      aiModelService,
-		userConfigManager:   userConfigManager,
+		serviceLocator:      serviceLocator,
 	}
 }
 

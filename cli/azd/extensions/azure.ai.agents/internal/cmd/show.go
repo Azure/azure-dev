@@ -16,7 +16,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type statusFlags struct {
+type showFlags struct {
 	accountName string
 	projectName string
 	name        string
@@ -24,30 +24,30 @@ type statusFlags struct {
 	output      string
 }
 
-// StatusAction handles the execution of the status command.
-type StatusAction struct {
+// ShowAction handles the execution of the show command.
+type ShowAction struct {
 	*AgentContext
-	flags *statusFlags
+	flags *showFlags
 }
 
-func newStatusCommand() *cobra.Command {
-	flags := &statusFlags{}
+func newShowCommand() *cobra.Command {
+	flags := &showFlags{}
 
 	cmd := &cobra.Command{
-		Use:   "status",
-		Short: "Get the status of a hosted agent deployment.",
-		Long: `Get the status of a hosted agent deployment.
+		Use:   "show",
+		Short: "Show the status of a hosted agent deployment.",
+		Long: `Show the status of a hosted agent deployment.
 
 Retrieves the runtime status of a hosted agent container, including its current state,
 replica configuration, and any error messages.`,
-		Example: `  # Get status using azd environment configuration
-  azd ai agent status --name my-agent --version 1
+		Example: `  # Show status using azd environment configuration
+  azd ai agent show --name my-agent --version 1
 
-  # Get status with explicit account and project
-  azd ai agent status --name my-agent --version 1 --account-name myAccount --project-name myProject
+  # Show status with explicit account and project
+  azd ai agent show --name my-agent --version 1 --account-name myAccount --project-name myProject
 
-  # Get status in table format
-  azd ai agent status --name my-agent --version 1 --output table`,
+  # Show status in table format
+  azd ai agent show --name my-agent --version 1 --output table`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			setupDebugLogging(cmd.Flags())
@@ -57,7 +57,7 @@ replica configuration, and any error messages.`,
 				return err
 			}
 
-			action := &StatusAction{
+			action := &ShowAction{
 				AgentContext: agentContext,
 				flags:       flags,
 			}
@@ -78,8 +78,8 @@ replica configuration, and any error messages.`,
 	return cmd
 }
 
-// Run executes the status command logic.
-func (a *StatusAction) Run(ctx context.Context) error {
+// Run executes the show command logic.
+func (a *ShowAction) Run(ctx context.Context) error {
 	agentClient, err := a.NewClient()
 	if err != nil {
 		return err

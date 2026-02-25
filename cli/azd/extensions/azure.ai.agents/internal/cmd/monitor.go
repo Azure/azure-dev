@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type getLogsFlags struct {
+type monitorFlags struct {
 	accountName string
 	projectName string
 	name        string
@@ -22,36 +22,36 @@ type getLogsFlags struct {
 	logType     string
 }
 
-// GetLogsAction handles the execution of the get-logs command.
-type GetLogsAction struct {
+// MonitorAction handles the execution of the monitor command.
+type MonitorAction struct {
 	*AgentContext
-	flags *getLogsFlags
+	flags *monitorFlags
 }
 
-func newLogsCommand() *cobra.Command {
-	flags := &getLogsFlags{}
+func newMonitorCommand() *cobra.Command {
+	flags := &monitorFlags{}
 
 	cmd := &cobra.Command{
-		Use:   "logs",
-		Short: "Show logs from a hosted agent container.",
-		Long: `Show logs from a hosted agent container.
+		Use:   "monitor",
+		Short: "Monitor logs from a hosted agent container.",
+		Long: `Monitor logs from a hosted agent container.
 
 Streams console output (stdout/stderr) or system events from an agent container.
 Use --follow to stream logs in real-time, or omit it to fetch recent logs and exit.
 This is useful for troubleshooting agent startup issues or monitoring agent behavior.`,
 		Example: `  # Fetch the last 50 lines of console logs
-  azd ai agent logs --name my-agent --version 1
+  azd ai agent monitor --name my-agent --version 1
 
   # Stream console logs in real-time
-  azd ai agent logs --name my-agent --version 1 --follow
+  azd ai agent monitor --name my-agent --version 1 --follow
 
   # Fetch system event logs
-  azd ai agent logs --name my-agent --version 1 --type system
+  azd ai agent monitor --name my-agent --version 1 --type system
 
   # Fetch last 100 lines with explicit account
-  azd ai agent logs --name my-agent --version 1 --tail 100 --account-name myAccount --project-name myProject`,
+  azd ai agent monitor --name my-agent --version 1 --tail 100 --account-name myAccount --project-name myProject`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := validateGetLogsFlags(flags); err != nil {
+			if err := validateMonitorFlags(flags); err != nil {
 				return err
 			}
 
@@ -63,7 +63,7 @@ This is useful for troubleshooting agent startup issues or monitoring agent beha
 				return err
 			}
 
-			action := &GetLogsAction{
+			action := &MonitorAction{
 				AgentContext: agentContext,
 				flags:       flags,
 			}
@@ -86,8 +86,8 @@ This is useful for troubleshooting agent startup issues or monitoring agent beha
 	return cmd
 }
 
-// Run executes the get-logs command logic.
-func (a *GetLogsAction) Run(ctx context.Context) error {
+// Run executes the monitor command logic.
+func (a *MonitorAction) Run(ctx context.Context) error {
 	agentClient, err := a.NewClient()
 	if err != nil {
 		return err
@@ -118,7 +118,7 @@ func (a *GetLogsAction) Run(ctx context.Context) error {
 	return nil
 }
 
-func validateGetLogsFlags(flags *getLogsFlags) error {
+func validateMonitorFlags(flags *monitorFlags) error {
 	if flags.tail < 1 || flags.tail > 300 {
 		return fmt.Errorf("--tail must be between 1 and 300, got %d", flags.tail)
 	}

@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestLogsCommand_RequiredFlags(t *testing.T) {
-	cmd := newLogsCommand()
+func TestMonitorCommand_RequiredFlags(t *testing.T) {
+	cmd := newMonitorCommand()
 
 	cmd.SetArgs([]string{})
 	err := cmd.Execute()
@@ -18,8 +18,8 @@ func TestLogsCommand_RequiredFlags(t *testing.T) {
 	assert.Contains(t, err.Error(), "name")
 }
 
-func TestLogsCommand_MissingVersionFlag(t *testing.T) {
-	cmd := newLogsCommand()
+func TestMonitorCommand_MissingVersionFlag(t *testing.T) {
+	cmd := newMonitorCommand()
 
 	cmd.SetArgs([]string{"--name", "test-agent"})
 	err := cmd.Execute()
@@ -27,65 +27,64 @@ func TestLogsCommand_MissingVersionFlag(t *testing.T) {
 	assert.Contains(t, err.Error(), "version")
 }
 
-func TestValidateGetLogsFlags_Valid(t *testing.T) {
-	flags := &getLogsFlags{
+func TestValidateMonitorFlags_Valid(t *testing.T) {
+	flags := &monitorFlags{
 		tail:    50,
 		logType: "console",
 	}
-	err := validateGetLogsFlags(flags)
+	err := validateMonitorFlags(flags)
 	assert.NoError(t, err)
 }
 
-func TestValidateGetLogsFlags_ValidSystem(t *testing.T) {
-	flags := &getLogsFlags{
+func TestValidateMonitorFlags_ValidSystem(t *testing.T) {
+	flags := &monitorFlags{
 		tail:    100,
 		logType: "system",
 	}
-	err := validateGetLogsFlags(flags)
+	err := validateMonitorFlags(flags)
 	assert.NoError(t, err)
 }
 
-func TestValidateGetLogsFlags_TailTooLow(t *testing.T) {
-	flags := &getLogsFlags{
+func TestValidateMonitorFlags_TailTooLow(t *testing.T) {
+	flags := &monitorFlags{
 		tail:    0,
 		logType: "console",
 	}
-	err := validateGetLogsFlags(flags)
+	err := validateMonitorFlags(flags)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "--tail must be between 1 and 300")
 }
 
-func TestValidateGetLogsFlags_TailTooHigh(t *testing.T) {
-	flags := &getLogsFlags{
+func TestValidateMonitorFlags_TailTooHigh(t *testing.T) {
+	flags := &monitorFlags{
 		tail:    301,
 		logType: "console",
 	}
-	err := validateGetLogsFlags(flags)
+	err := validateMonitorFlags(flags)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "--tail must be between 1 and 300")
 }
 
-func TestValidateGetLogsFlags_TailBoundary(t *testing.T) {
-	// Test boundary values
-	flags := &getLogsFlags{tail: 1, logType: "console"}
-	assert.NoError(t, validateGetLogsFlags(flags))
+func TestValidateMonitorFlags_TailBoundary(t *testing.T) {
+	flags := &monitorFlags{tail: 1, logType: "console"}
+	assert.NoError(t, validateMonitorFlags(flags))
 
-	flags = &getLogsFlags{tail: 300, logType: "console"}
-	assert.NoError(t, validateGetLogsFlags(flags))
+	flags = &monitorFlags{tail: 300, logType: "console"}
+	assert.NoError(t, validateMonitorFlags(flags))
 }
 
-func TestValidateGetLogsFlags_InvalidType(t *testing.T) {
-	flags := &getLogsFlags{
+func TestValidateMonitorFlags_InvalidType(t *testing.T) {
+	flags := &monitorFlags{
 		tail:    50,
 		logType: "invalid",
 	}
-	err := validateGetLogsFlags(flags)
+	err := validateMonitorFlags(flags)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "--type must be 'console' or 'system'")
 }
 
-func TestLogsCommand_DefaultValues(t *testing.T) {
-	cmd := newLogsCommand()
+func TestMonitorCommand_DefaultValues(t *testing.T) {
+	cmd := newMonitorCommand()
 
 	// Verify default flag values
 	tail, _ := cmd.Flags().GetInt("tail")

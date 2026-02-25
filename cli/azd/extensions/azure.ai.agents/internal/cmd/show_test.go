@@ -13,8 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestStatusCommand_RequiredFlags(t *testing.T) {
-	cmd := newStatusCommand()
+func TestShowCommand_RequiredFlags(t *testing.T) {
+	cmd := newShowCommand()
 
 	// Execute with no flags should fail (missing required flags)
 	cmd.SetArgs([]string{})
@@ -23,8 +23,8 @@ func TestStatusCommand_RequiredFlags(t *testing.T) {
 	assert.Contains(t, err.Error(), "name")
 }
 
-func TestStatusCommand_MissingVersionFlag(t *testing.T) {
-	cmd := newStatusCommand()
+func TestShowCommand_MissingVersionFlag(t *testing.T) {
+	cmd := newShowCommand()
 
 	cmd.SetArgs([]string{"--name", "test-agent"})
 	err := cmd.Execute()
@@ -170,8 +170,8 @@ func TestNewAgentContext_PartialFlags(t *testing.T) {
 	assert.Contains(t, err.Error(), "both --account-name and --project-name must be provided together")
 }
 
-func TestStatusCommand_DefaultOutputFlag(t *testing.T) {
-	cmd := newStatusCommand()
+func TestShowCommand_DefaultOutputFlag(t *testing.T) {
+	cmd := newShowCommand()
 
 	output, _ := cmd.Flags().GetString("output")
 	assert.Equal(t, "json", output)

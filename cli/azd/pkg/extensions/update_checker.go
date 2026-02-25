@@ -119,17 +119,16 @@ func FormatUpdateWarning(result *UpdateCheckResult) *ux.WarningMessage {
 
 	return &ux.WarningMessage{
 		Description: fmt.Sprintf(
-			"A new version of extension '%s' is available: %s -> %s",
-			name,
-			result.InstalledVersion,
-			result.LatestVersion,
+			"The following extensions are outdated:\n  - %s (installed: %s, latest: %s)",
+			name, result.InstalledVersion, result.LatestVersion,
 		),
 		HidePrefix: false,
 		Hints: []string{
-			fmt.Sprintf("To upgrade: %s",
-				output.WithHighLightFormat("azd extension upgrade %s", result.ExtensionId)),
-			fmt.Sprintf("To upgrade all: %s",
-				output.WithHighLightFormat("azd extension upgrade --all")),
+			fmt.Sprintf("Fix by running:\n\t%s\n\t%s",
+				output.WithHighLightFormat("azd extension update --all"),
+				output.WithHighLightFormat("azd extension update %s", result.ExtensionId)),
+			fmt.Sprintf("If you don't use these extensions, you can uninstall them:\n\t%s",
+				output.WithHighLightFormat("azd extension uninstall %s", result.ExtensionId)),
 		},
 	}
 }

@@ -117,10 +117,29 @@ func TestScriptExistsInPackageJSON(t *testing.T) {
 			err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(tt.content), 0600)
 			require.NoError(t, err)
 
-			result := scriptExistsInPackageJSON(dir, tt.scriptName)
+			result, err := scriptExistsInPackageJSON(dir, tt.scriptName)
+			require.NoError(t, err)
 			require.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+func TestScriptExistsInPackageJSON_NoFile(t *testing.T) {
+	dir := t.TempDir()
+	// No package.json → false with no error (script definitively absent)
+	result, err := scriptExistsInPackageJSON(dir, "build")
+	require.NoError(t, err)
+	require.False(t, result)
+}
+
+func TestScriptExistsInPackageJSON_InvalidJSON(t *testing.T) {
+	dir := t.TempDir()
+	err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{invalid`), 0600)
+	require.NoError(t, err)
+
+	_, err = scriptExistsInPackageJSON(dir, "build")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "parsing package.json")
 }
 
 func TestDetectPackageManager_PnpmWorkspaceYaml(t *testing.T) {

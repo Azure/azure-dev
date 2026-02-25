@@ -129,11 +129,15 @@ func (cli *Cli) RunScript(ctx context.Context, projectPath string, scriptName st
 	// Yarn does not support the --if-present flag. To replicate npm's --if-present behavior
 	// (silently succeed when the script doesn't exist), we check package.json first.
 	if cli.packageManager == PackageManagerYarn {
-		if !scriptExistsInPackageJSON(projectPath, scriptName) {
+		exists, err := scriptExistsInPackageJSON(projectPath, scriptName)
+		if err != nil {
+			return fmt.Errorf("failed to check %s script %s: %w", pm, scriptName, err)
+		}
+		if !exists {
 			return nil
 		}
 		runArgs := exec.NewRunArgs(pm, "run", scriptName).WithCwd(projectPath)
-		_, err := cli.commandRunner.Run(ctx, runArgs)
+		_, err = cli.commandRunner.Run(ctx, runArgs)
 		if err != nil {
 			return fmt.Errorf("failed to run %s script %s, %w", pm, scriptName, err)
 		}
@@ -194,19 +198,24 @@ func (cli *Cli) Prune(ctx context.Context, projectPath string, production bool) 
 }
 
 // scriptExistsInPackageJSON checks if a named script is defined in the project's package.json.
-func scriptExistsInPackageJSON(projectPath string, scriptName string) bool {
+// Returns (false, nil) if package.json doesn't exist (script definitively absent).
+// Returns an error for I/O problems or invalid JSON so broken projects fail loudly.
+func scriptExistsInPackageJSON(projectPath string, scriptName string) (bool, error) {
 	data, err := os.ReadFile(filepath.Join(projectPath, "package.json"))
 	if err != nil {
-		return false
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("reading package.json: %w", err)
 	}
 
 	var pkg struct {
 		Scripts map[string]string `json:"scripts"`
 	}
 	if err := json.Unmarshal(data, &pkg); err != nil {
-		return false
+		return false, fmt.Errorf("parsing package.json: %w", err)
 	}
 
 	_, exists := pkg.Scripts[scriptName]
-	return exists
+	return exists, nil
 }

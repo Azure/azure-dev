@@ -140,3 +140,91 @@ func Test_NpmProject_Package(t *testing.T) {
 		runArgs.Args,
 	)
 }
+
+func Test_NpmProject_ConfigOverride_Pnpm(t *testing.T) {
+	var runArgs exec.RunArgs
+
+	mockContext := mocks.NewMockContext(context.Background())
+	mockContext.CommandRunner.
+		When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "pnpm install")
+		}).
+		RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			runArgs = args
+			return exec.NewRunResult(0, "", ""), nil
+		})
+
+	env := environment.New("test")
+	npmCli := npm.NewCli(mockContext.CommandRunner)
+	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageTypeScript)
+	serviceConfig.Config = map[string]any{"packageManager": "pnpm"}
+
+	npmProject := NewNpmProject(npmCli, env, mockContext.CommandRunner)
+	result, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
+		serviceContext := NewServiceContext()
+		return npmProject.Restore(*mockContext.Context, serviceConfig, serviceContext, progress)
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "pnpm", runArgs.Cmd)
+	require.Equal(t, []string{"install", "--prefer-offline"}, runArgs.Args)
+}
+
+func Test_NpmProject_ConfigOverride_InvalidValue(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	env := environment.New("test")
+	npmCli := npm.NewCli(mockContext.CommandRunner)
+	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageTypeScript)
+	serviceConfig.Config = map[string]any{"packageManager": "bun"}
+
+	npmProject := NewNpmProject(npmCli, env, mockContext.CommandRunner)
+	_, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
+		serviceContext := NewServiceContext()
+		return npmProject.Restore(*mockContext.Context, serviceConfig, serviceContext, progress)
+	})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid packageManager config value")
+}
+
+func Test_NpmProject_ConfigOverride_BeatsDetection(t *testing.T) {
+	tempDir := t.TempDir()
+	ostest.Chdir(t, tempDir)
+
+	var runArgs exec.RunArgs
+
+	mockContext := mocks.NewMockContext(context.Background())
+	mockContext.CommandRunner.
+		When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "yarn")
+		}).
+		RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			runArgs = args
+			return exec.NewRunResult(0, "", ""), nil
+		})
+
+	env := environment.New("test")
+	npmCli := npm.NewCli(mockContext.CommandRunner)
+	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageTypeScript)
+
+	// Create npm lock file (detection would pick npm)
+	err := os.MkdirAll(serviceConfig.Path(), osutil.PermissionDirectory)
+	require.NoError(t, err)
+	err = os.WriteFile(filepath.Join(serviceConfig.Path(), "package-lock.json"), []byte("{}"), osutil.PermissionFile)
+	require.NoError(t, err)
+
+	// Override to yarn via config
+	serviceConfig.Config = map[string]any{"packageManager": "yarn"}
+
+	npmProject := NewNpmProject(npmCli, env, mockContext.CommandRunner)
+	result, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
+		serviceContext := NewServiceContext()
+		return npmProject.Restore(*mockContext.Context, serviceConfig, serviceContext, progress)
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "yarn", runArgs.Cmd)
+	require.Equal(t, []string{"install"}, runArgs.Args)
+}

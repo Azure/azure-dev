@@ -38,18 +38,27 @@ func NewNpmProject(cli *npm.Cli, env *environment.Environment, commandRunner exe
 }
 
 // cliForService returns a Cli configured for the package manager detected in the service directory.
-// The result is cached per service path to ensure consistent detection across operations and avoid
-// redundant filesystem I/O.
-func (np *npmProject) cliForService(serviceConfig *ServiceConfig) *npm.Cli {
+// If the service's azure.yaml config specifies a "packageManager" override, that value is used instead
+// of auto-detection. The result is cached per service path to ensure consistent detection across
+// operations and avoid redundant filesystem I/O.
+func (np *npmProject) cliForService(serviceConfig *ServiceConfig) (*npm.Cli, error) {
 	np.mu.Lock()
 	defer np.mu.Unlock()
 
 	path := serviceConfig.Path()
 	if cached, ok := np.cliCache[path]; ok {
-		return cached
+		return cached, nil
 	}
 
-	pm := npm.DetectPackageManager(path)
+	// Check for explicit packageManager override in azure.yaml service config
+	pm, err := packageManagerFromConfig(serviceConfig)
+	if err != nil {
+		return nil, err
+	}
+	if pm == "" {
+		pm = npm.DetectPackageManager(path)
+	}
+
 	var cli *npm.Cli
 	if pm != np.cli.PackageManager() {
 		cli = npm.NewCliWithPackageManager(np.commandRunner, pm)
@@ -57,7 +66,33 @@ func (np *npmProject) cliForService(serviceConfig *ServiceConfig) *npm.Cli {
 		cli = np.cli
 	}
 	np.cliCache[path] = cli
-	return cli
+	return cli, nil
+}
+
+// packageManagerFromConfig reads an optional "packageManager" override from the service's config
+// section in azure.yaml. Returns empty string if not set. Returns error if set to an invalid value.
+func packageManagerFromConfig(serviceConfig *ServiceConfig) (npm.PackageManagerKind, error) {
+	if serviceConfig.Config == nil {
+		return "", nil
+	}
+	raw, ok := serviceConfig.Config["packageManager"]
+	if !ok {
+		return "", nil
+	}
+	val, ok := raw.(string)
+	if !ok {
+		return "", fmt.Errorf("invalid packageManager config: expected a string, got %T", raw)
+	}
+	switch val {
+	case "npm":
+		return npm.PackageManagerNpm, nil
+	case "pnpm":
+		return npm.PackageManagerPnpm, nil
+	case "yarn":
+		return npm.PackageManagerYarn, nil
+	default:
+		return "", fmt.Errorf("invalid packageManager config value %q: must be npm, pnpm, or yarn", val)
+	}
 }
 
 func (np *npmProject) Requirements() FrameworkRequirements {
@@ -72,7 +107,12 @@ func (np *npmProject) Requirements() FrameworkRequirements {
 
 // Gets the required external tools for the project
 func (np *npmProject) RequiredExternalTools(_ context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool {
-	return []tools.ExternalTool{np.cliForService(serviceConfig)}
+	cli, err := np.cliForService(serviceConfig)
+	if err != nil {
+		// Fall back to default CLI if config is invalid — error will surface during Restore/Build
+		return []tools.ExternalTool{np.cli}
+	}
+	return []tools.ExternalTool{cli}
 }
 
 // Initializes the Node.js project
@@ -87,7 +127,10 @@ func (np *npmProject) Restore(
 	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceRestoreResult, error) {
-	cli := np.cliForService(serviceConfig)
+	cli, err := np.cliForService(serviceConfig)
+	if err != nil {
+		return nil, err
+	}
 	pm := string(cli.PackageManager())
 
 	// Skip install if dependencies are already up-to-date (lockfile hasn't changed)
@@ -124,7 +167,10 @@ func (np *npmProject) Build(
 	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceBuildResult, error) {
-	cli := np.cliForService(serviceConfig)
+	cli, err := np.cliForService(serviceConfig)
+	if err != nil {
+		return nil, err
+	}
 	pm := string(cli.PackageManager())
 	// Exec custom `build` script if available
 	// If `build` script is not defined in the package.json the script will NOT fail
@@ -162,7 +208,10 @@ func (np *npmProject) Package(
 	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
-	cli := np.cliForService(serviceConfig)
+	cli, err := np.cliForService(serviceConfig)
+	if err != nil {
+		return nil, err
+	}
 	pm := string(cli.PackageManager())
 	progress.SetProgress(NewServiceProgress(fmt.Sprintf("Running %s package script", pm)))
 

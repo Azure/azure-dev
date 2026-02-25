@@ -5,6 +5,7 @@ package logging
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,6 +29,8 @@ func NewSessionEventLogger(thoughtChan chan<- Thought) *SessionEventLogger {
 
 // HandleEvent processes a Copilot SDK SessionEvent and emits corresponding Thought structs.
 func (l *SessionEventLogger) HandleEvent(event copilot.SessionEvent) {
+	log.Printf("[copilot-event] type=%s", event.Type)
+
 	if l.thoughtChan == nil {
 		return
 	}
@@ -36,6 +39,7 @@ func (l *SessionEventLogger) HandleEvent(event copilot.SessionEvent) {
 	case copilot.AssistantMessage:
 		if event.Data.Content != nil && *event.Data.Content != "" {
 			content := strings.TrimSpace(*event.Data.Content)
+			log.Printf("[copilot-event] assistant.message: %s", truncateString(content, 200))
 			if content != "" && !strings.Contains(strings.ToLower(content), "do i need to use a tool?") {
 				l.thoughtChan <- Thought{
 					Thought: content,
@@ -50,6 +54,7 @@ func (l *SessionEventLogger) HandleEvent(event copilot.SessionEvent) {
 		} else if event.Data.MCPToolName != nil {
 			toolName = *event.Data.MCPToolName
 		}
+		log.Printf("[copilot-event] tool.execution_start: tool=%s", toolName)
 		if toolName == "" {
 			return
 		}

@@ -54,9 +54,11 @@ func (f *CopilotAgentFactory) Create(ctx context.Context, opts ...CopilotAgentOp
 	}
 
 	// Start the Copilot client (spawns copilot-agent-runtime)
+	log.Println("[copilot] Starting Copilot SDK client...")
 	if err := f.clientManager.Start(ctx); err != nil {
 		return nil, err
 	}
+	log.Printf("[copilot] Client started (state: %s)", f.clientManager.State())
 	cleanupTasks["copilot-client"] = f.clientManager.Stop
 
 	// Create thought channel for UX streaming
@@ -89,6 +91,7 @@ func (f *CopilotAgentFactory) Create(ctx context.Context, opts ...CopilotAgentOp
 		defer cleanup()
 		return nil, err
 	}
+	log.Printf("[copilot] Loaded %d built-in MCP servers", len(builtInServers))
 
 	// Build session config from azd user config
 	sessionConfig, err := f.sessionConfigBuilder.Build(ctx, builtInServers)
@@ -96,29 +99,39 @@ func (f *CopilotAgentFactory) Create(ctx context.Context, opts ...CopilotAgentOp
 		defer cleanup()
 		return nil, fmt.Errorf("failed to build session config: %w", err)
 	}
+	log.Printf("[copilot] Session config built (model=%q, mcpServers=%d, availableTools=%d, excludedTools=%d)",
+		sessionConfig.Model, len(sessionConfig.MCPServers), len(sessionConfig.AvailableTools), len(sessionConfig.ExcludedTools))
 
 	// Wire permission hooks
 	sessionConfig.Hooks = &copilot.SessionHooks{
 		OnPreToolUse: func(input copilot.PreToolUseHookInput, inv copilot.HookInvocation) (
 			*copilot.PreToolUseHookOutput, error,
 		) {
-			// Allow all tools by default — SDK handles its own permission model.
-			// In Phase 2, azd-specific security policies (path validation) will be wired here.
+			log.Printf("[copilot] PreToolUse: tool=%s", input.ToolName)
 			return &copilot.PreToolUseHookOutput{}, nil
 		},
 		OnPostToolUse: func(input copilot.PostToolUseHookInput, inv copilot.HookInvocation) (
 			*copilot.PostToolUseHookOutput, error,
 		) {
+			log.Printf("[copilot] PostToolUse: tool=%s", input.ToolName)
+			return nil, nil
+		},
+		OnErrorOccurred: func(input copilot.ErrorOccurredHookInput, inv copilot.HookInvocation) (
+			*copilot.ErrorOccurredHookOutput, error,
+		) {
+			log.Printf("[copilot] ErrorOccurred: error=%s recoverable=%v", input.Error, input.Recoverable)
 			return nil, nil
 		},
 	}
 
 	// Create session
+	log.Println("[copilot] Creating session...")
 	session, err := f.clientManager.Client().CreateSession(ctx, sessionConfig)
 	if err != nil {
 		defer cleanup()
 		return nil, fmt.Errorf("failed to create Copilot session: %w", err)
 	}
+	log.Println("[copilot] Session created successfully")
 
 	// Subscribe to session events
 	unsubscribe := session.On(func(event copilot.SessionEvent) {

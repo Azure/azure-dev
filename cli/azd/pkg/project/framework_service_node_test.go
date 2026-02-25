@@ -14,7 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/npm"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/node"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/stretchr/testify/require"
@@ -34,10 +34,10 @@ func Test_NpmProject_Restore(t *testing.T) {
 		})
 
 	env := environment.New("test")
-	npmCli := npm.NewCli(mockContext.CommandRunner)
+	npmCli := node.NewCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageTypeScript)
 
-	npmProject := NewNpmProject(npmCli, env, mockContext.CommandRunner)
+	npmProject := NewNodeProject(npmCli, env, mockContext.CommandRunner)
 	result, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
 		serviceContext := NewServiceContext()
 		return npmProject.Restore(*mockContext.Context, serviceConfig, serviceContext, progess)
@@ -67,10 +67,10 @@ func Test_NpmProject_Build(t *testing.T) {
 		})
 
 	env := environment.New("test")
-	npmCli := npm.NewCli(mockContext.CommandRunner)
+	npmCli := node.NewCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageTypeScript)
 
-	npmProject := NewNpmProject(npmCli, env, mockContext.CommandRunner)
+	npmProject := NewNodeProject(npmCli, env, mockContext.CommandRunner)
 	result, err := logProgress(
 		t, func(progress *async.Progress[ServiceProgress]) (*ServiceBuildResult, error) {
 			return npmProject.Build(*mockContext.Context, serviceConfig, nil, progress)
@@ -103,14 +103,14 @@ func Test_NpmProject_Package(t *testing.T) {
 		})
 
 	env := environment.New("test")
-	npmCli := npm.NewCli(mockContext.CommandRunner)
+	npmCli := node.NewCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageTypeScript)
 	err := os.MkdirAll(serviceConfig.Path(), osutil.PermissionDirectory)
 	require.NoError(t, err)
 	err = os.WriteFile(filepath.Join(serviceConfig.Path(), "package.json"), nil, osutil.PermissionFile)
 	require.NoError(t, err)
 
-	npmProject := NewNpmProject(npmCli, env, mockContext.CommandRunner)
+	npmProject := NewNodeProject(npmCli, env, mockContext.CommandRunner)
 	result, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
 		serviceContext := NewServiceContext()
 		serviceContext.Build = ArtifactCollection{
@@ -155,11 +155,11 @@ func Test_NpmProject_ConfigOverride_Pnpm(t *testing.T) {
 		})
 
 	env := environment.New("test")
-	npmCli := npm.NewCli(mockContext.CommandRunner)
+	npmCli := node.NewCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageTypeScript)
 	serviceConfig.Config = map[string]any{"packageManager": "pnpm"}
 
-	npmProject := NewNpmProject(npmCli, env, mockContext.CommandRunner)
+	npmProject := NewNodeProject(npmCli, env, mockContext.CommandRunner)
 	result, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
 		serviceContext := NewServiceContext()
 		return npmProject.Restore(*mockContext.Context, serviceConfig, serviceContext, progress)
@@ -174,11 +174,11 @@ func Test_NpmProject_ConfigOverride_Pnpm(t *testing.T) {
 func Test_NpmProject_ConfigOverride_InvalidValue(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	env := environment.New("test")
-	npmCli := npm.NewCli(mockContext.CommandRunner)
+	npmCli := node.NewCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageTypeScript)
 	serviceConfig.Config = map[string]any{"packageManager": "bun"}
 
-	npmProject := NewNpmProject(npmCli, env, mockContext.CommandRunner)
+	npmProject := NewNodeProject(npmCli, env, mockContext.CommandRunner)
 	_, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
 		serviceContext := NewServiceContext()
 		return npmProject.Restore(*mockContext.Context, serviceConfig, serviceContext, progress)
@@ -205,7 +205,7 @@ func Test_NpmProject_ConfigOverride_BeatsDetection(t *testing.T) {
 		})
 
 	env := environment.New("test")
-	npmCli := npm.NewCli(mockContext.CommandRunner)
+	npmCli := node.NewCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageTypeScript)
 
 	// Create npm lock file (detection would pick npm)
@@ -217,7 +217,7 @@ func Test_NpmProject_ConfigOverride_BeatsDetection(t *testing.T) {
 	// Override to yarn via config
 	serviceConfig.Config = map[string]any{"packageManager": "yarn"}
 
-	npmProject := NewNpmProject(npmCli, env, mockContext.CommandRunner)
+	npmProject := NewNodeProject(npmCli, env, mockContext.CommandRunner)
 	result, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
 		serviceContext := NewServiceContext()
 		return npmProject.Restore(*mockContext.Context, serviceConfig, serviceContext, progress)

@@ -14,26 +14,26 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/npm"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/node"
 )
 
-type npmProject struct {
+type nodeProject struct {
 	env           *environment.Environment
-	cli           *npm.Cli
+	cli           node.Cli
 	commandRunner exec.CommandRunner
 
 	mu       sync.Mutex
-	cliCache map[string]*npm.Cli
+	cliCache map[string]node.Cli
 }
 
-// NewNpmProject creates a new instance of a Node.js project framework service.
+// NewNodeProject creates a new instance of a Node.js project framework service.
 // It auto-detects whether the project uses npm, pnpm, or yarn.
-func NewNpmProject(cli *npm.Cli, env *environment.Environment, commandRunner exec.CommandRunner) FrameworkService {
-	return &npmProject{
+func NewNodeProject(cli node.Cli, env *environment.Environment, commandRunner exec.CommandRunner) FrameworkService {
+	return &nodeProject{
 		env:           env,
 		cli:           cli,
 		commandRunner: commandRunner,
-		cliCache:      make(map[string]*npm.Cli),
+		cliCache:      make(map[string]node.Cli),
 	}
 }
 
@@ -41,7 +41,7 @@ func NewNpmProject(cli *npm.Cli, env *environment.Environment, commandRunner exe
 // If the service's azure.yaml config specifies a "packageManager" override, that value is used instead
 // of auto-detection. The result is cached per service path to ensure consistent detection across
 // operations and avoid redundant filesystem I/O.
-func (np *npmProject) cliForService(serviceConfig *ServiceConfig) (*npm.Cli, error) {
+func (np *nodeProject) cliForService(serviceConfig *ServiceConfig) (node.Cli, error) {
 	np.mu.Lock()
 	defer np.mu.Unlock()
 
@@ -56,12 +56,12 @@ func (np *npmProject) cliForService(serviceConfig *ServiceConfig) (*npm.Cli, err
 		return nil, err
 	}
 	if pm == "" {
-		pm = npm.DetectPackageManager(path)
+		pm = node.DetectPackageManager(path)
 	}
 
-	var cli *npm.Cli
+	var cli node.Cli
 	if pm != np.cli.PackageManager() {
-		cli = npm.NewCliWithPackageManager(np.commandRunner, pm)
+		cli = node.NewCliWithPackageManager(np.commandRunner, pm)
 	} else {
 		cli = np.cli
 	}
@@ -71,7 +71,7 @@ func (np *npmProject) cliForService(serviceConfig *ServiceConfig) (*npm.Cli, err
 
 // packageManagerFromConfig reads an optional "packageManager" override from the service's config
 // section in azure.yaml. Returns empty string if not set. Returns error if set to an invalid value.
-func packageManagerFromConfig(serviceConfig *ServiceConfig) (npm.PackageManagerKind, error) {
+func packageManagerFromConfig(serviceConfig *ServiceConfig) (node.PackageManagerKind, error) {
 	if serviceConfig.Config == nil {
 		return "", nil
 	}
@@ -85,17 +85,17 @@ func packageManagerFromConfig(serviceConfig *ServiceConfig) (npm.PackageManagerK
 	}
 	switch val {
 	case "npm":
-		return npm.PackageManagerNpm, nil
+		return node.PackageManagerNpm, nil
 	case "pnpm":
-		return npm.PackageManagerPnpm, nil
+		return node.PackageManagerPnpm, nil
 	case "yarn":
-		return npm.PackageManagerYarn, nil
+		return node.PackageManagerYarn, nil
 	default:
 		return "", fmt.Errorf("invalid packageManager config value %q: must be npm, pnpm, or yarn", val)
 	}
 }
 
-func (np *npmProject) Requirements() FrameworkRequirements {
+func (np *nodeProject) Requirements() FrameworkRequirements {
 	return FrameworkRequirements{
 		Package: FrameworkPackageRequirements{
 			// Node.js package managers require a restore before running scripts
@@ -106,7 +106,7 @@ func (np *npmProject) Requirements() FrameworkRequirements {
 }
 
 // Gets the required external tools for the project
-func (np *npmProject) RequiredExternalTools(_ context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool {
+func (np *nodeProject) RequiredExternalTools(_ context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool {
 	cli, err := np.cliForService(serviceConfig)
 	if err != nil {
 		// Fall back to default CLI if config is invalid — error will surface during Restore/Build
@@ -116,12 +116,12 @@ func (np *npmProject) RequiredExternalTools(_ context.Context, serviceConfig *Se
 }
 
 // Initializes the Node.js project
-func (np *npmProject) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
+func (np *nodeProject) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
 	return nil
 }
 
 // Restores dependencies for the project using the detected package manager's install command
-func (np *npmProject) Restore(
+func (np *nodeProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	serviceContext *ServiceContext,
@@ -134,7 +134,7 @@ func (np *npmProject) Restore(
 	pm := string(cli.PackageManager())
 
 	// Skip install if dependencies are already up-to-date (lockfile hasn't changed)
-	if npm.IsDependenciesUpToDate(serviceConfig.Path(), cli.PackageManager()) {
+	if node.IsDependenciesUpToDate(serviceConfig.Path(), cli.PackageManager()) {
 		progress.SetProgress(NewServiceProgress(fmt.Sprintf("%s dependencies already up-to-date", pm)))
 	} else {
 		progress.SetProgress(NewServiceProgress(fmt.Sprintf("Installing %s dependencies", pm)))
@@ -161,7 +161,7 @@ func (np *npmProject) Restore(
 }
 
 // Builds the project executing the `build` script defined within the project package.json
-func (np *npmProject) Build(
+func (np *nodeProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	serviceContext *ServiceContext,
@@ -202,7 +202,7 @@ func (np *npmProject) Build(
 	}, nil
 }
 
-func (np *npmProject) Package(
+func (np *nodeProject) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	serviceContext *ServiceContext,

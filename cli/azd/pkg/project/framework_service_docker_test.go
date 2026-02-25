@@ -21,7 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/npm"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/node"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
@@ -108,11 +108,11 @@ services:
 	err = os.WriteFile(filepath.Join(temp, "Dockerfile"), []byte("FROM node:14"), 0600)
 	require.NoError(t, err)
 
-	npmCli := npm.NewCli(mockContext.CommandRunner)
+	npmCli := node.NewCli(mockContext.CommandRunner)
 	docker := docker.NewCli(mockContext.CommandRunner)
 	dotnetCli := dotnet.NewCli(mockContext.CommandRunner)
 
-	internalFramework := NewNpmProject(npmCli, env, mockContext.CommandRunner)
+	internalFramework := NewNodeProject(npmCli, env, mockContext.CommandRunner)
 	progressMessages := []string{}
 
 	framework := NewDockerProject(
@@ -213,7 +213,7 @@ services:
 		}, nil
 	})
 
-	npmCli := npm.NewCli(mockContext.CommandRunner)
+	npmCli := node.NewCli(mockContext.CommandRunner)
 	docker := docker.NewCli(mockContext.CommandRunner)
 	dotnetCli := dotnet.NewCli(mockContext.CommandRunner)
 
@@ -227,7 +227,7 @@ services:
 	err = os.WriteFile(filepath.Join(temp, "Dockerfile.dev"), []byte("FROM node:14"), 0600)
 	require.NoError(t, err)
 
-	internalFramework := NewNpmProject(npmCli, env, mockContext.CommandRunner)
+	internalFramework := NewNodeProject(npmCli, env, mockContext.CommandRunner)
 	status := ""
 
 	framework := NewDockerProject(
@@ -542,7 +542,7 @@ func Test_DockerProject_Build(t *testing.T) {
 				mockContext.CommandRunner)
 
 			if tt.language == ServiceLanguageTypeScript || tt.language == ServiceLanguageJavaScript {
-				npmProject := NewNpmProject(npm.NewCli(mockContext.CommandRunner), env, mockContext.CommandRunner)
+				npmProject := NewNodeProject(node.NewCli(mockContext.CommandRunner), env, mockContext.CommandRunner)
 				dockerProject.SetSource(npmProject)
 			}
 
@@ -696,7 +696,7 @@ func Test_DockerProject_Package(t *testing.T) {
 			serviceConfig.Image = osutil.NewExpandableString(tt.image)
 
 			if serviceConfig.RelativePath != "" {
-				npmProject := NewNpmProject(npm.NewCli(mockContext.CommandRunner), env, mockContext.CommandRunner)
+				npmProject := NewNodeProject(node.NewCli(mockContext.CommandRunner), env, mockContext.CommandRunner)
 				dockerProject.SetSource(npmProject)
 			}
 

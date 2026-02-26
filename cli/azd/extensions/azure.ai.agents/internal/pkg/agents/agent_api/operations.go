@@ -791,11 +791,20 @@ func (c *AgentClient) GetAgentContainerLogStream(
 	tail int,
 	follow bool,
 ) (io.ReadCloser, error) {
-	requestURL := fmt.Sprintf(
-		"%s/agents/%s/versions/%s/containers/default:logstream?api-version=%s&kind=%s&tail=%d",
-		c.endpoint, agentName, agentVersion, apiVersion, kind, tail,
-	)
+	u, err := url.Parse(c.endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("invalid endpoint URL: %w", err)
+	}
 
+	u.Path += fmt.Sprintf("/agents/%s/versions/%s/containers/default:logstream", agentName, agentVersion)
+
+	query := u.Query()
+	query.Set("api-version", apiVersion)
+	query.Set("kind", kind)
+	query.Set("tail", strconv.Itoa(tail))
+	u.RawQuery = query.Encode()
+
+	requestURL := u.String()
 	// Get bearer token from credential.
 	token, err := c.credential.GetToken(ctx, policy.TokenRequestOptions{
 		Scopes: []string{"https://ai.azure.com/.default"},

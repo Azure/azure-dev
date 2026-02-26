@@ -200,16 +200,60 @@ func Test_MapError(t *testing.T) {
 			name: "WithExtServiceError",
 			err: &azdext.ServiceError{
 				Message:     "Rate limit exceeded",
-				ErrorCode:   "RateLimitExceeded",
+				ErrorCode:   "create_agent.RateLimitExceeded",
 				StatusCode:  429,
 				ServiceName: "openai.azure.com",
 			},
-			wantErrReason: "ext.service.openai.429",
+			wantErrReason: "ext.service.create_agent.ratelimitexceeded",
 			wantErrDetails: []attribute.KeyValue{
 				fields.ErrorKey(fields.ServiceName.Key).String("openai"),
 				fields.ErrorKey(fields.ServiceHost.Key).String("openai.azure.com"),
 				fields.ErrorKey(fields.ServiceStatusCode.Key).Int(429),
-				fields.ErrorKey(fields.ServiceErrorCode.Key).String("RateLimitExceeded"),
+				fields.ErrorKey(fields.ServiceErrorCode.Key).String("create_agent.RateLimitExceeded"),
+			},
+		},
+		{
+			name: "WithExtServiceErrorNoServiceName",
+			err: &azdext.ServiceError{
+				Message:   "something failed",
+				ErrorCode: "start_container.invalid_payload",
+			},
+			wantErrReason: "ext.service.start_container.invalid_payload",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrorKey(fields.ServiceErrorCode.Key).String("start_container.invalid_payload"),
+			},
+		},
+		{
+			name: "WithExtServiceErrorOnlyStatusCode",
+			err: &azdext.ServiceError{
+				Message:     "internal server error",
+				StatusCode:  500,
+				ServiceName: "myproject.services.ai.azure.com",
+			},
+			wantErrReason: "ext.service.ai.500",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrorKey(fields.ServiceName.Key).String("ai"),
+				fields.ErrorKey(fields.ServiceHost.Key).String("services.ai.azure.com"),
+				fields.ErrorKey(fields.ServiceStatusCode.Key).Int(500),
+			},
+		},
+		{
+			name: "WithExtServiceErrorMessageOnly",
+			err: &azdext.ServiceError{
+				Message: "unknown failure",
+			},
+			wantErrReason:  "ext.service.unknown.failed",
+			wantErrDetails: nil,
+		},
+		{
+			name: "WithExtServiceErrorStatusCodeOnly",
+			err: &azdext.ServiceError{
+				Message:    "forbidden",
+				StatusCode: 403,
+			},
+			wantErrReason: "ext.service.unknown.403",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrorKey(fields.ServiceStatusCode.Key).Int(403),
 			},
 		},
 		{

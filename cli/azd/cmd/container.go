@@ -74,7 +74,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/javac"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/npm"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/node"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
@@ -704,7 +704,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(kubelogin.NewCli)
 	container.MustRegisterSingleton(helm.NewCli)
 	container.MustRegisterSingleton(kustomize.NewCli)
-	container.MustRegisterSingleton(npm.NewCli)
+	container.MustRegisterSingleton(node.NewCli)
 	container.MustRegisterSingleton(python.NewCli)
 	container.MustRegisterSingleton(swa.NewCli)
 	container.MustRegisterScoped(ai.NewPythonBridge)
@@ -781,8 +781,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		project.ServiceLanguageCsharp:     project.NewDotNetProject,
 		project.ServiceLanguageFsharp:     project.NewDotNetProject,
 		project.ServiceLanguagePython:     project.NewPythonProject,
-		project.ServiceLanguageJavaScript: project.NewNpmProject,
-		project.ServiceLanguageTypeScript: project.NewNpmProject,
+		project.ServiceLanguageJavaScript: project.NewNodeProject,
+		project.ServiceLanguageTypeScript: project.NewNodeProject,
 		project.ServiceLanguageJava:       project.NewMavenProject,
 		project.ServiceLanguageDocker:     project.NewDockerProject,
 		project.ServiceLanguageSwa:        project.NewSwaProject,

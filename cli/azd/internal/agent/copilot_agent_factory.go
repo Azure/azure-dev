@@ -102,7 +102,10 @@ func (f *CopilotAgentFactory) Create(ctx context.Context, opts ...CopilotAgentOp
 	log.Printf("[copilot] Session config built (model=%q, mcpServers=%d, availableTools=%d, excludedTools=%d)",
 		sessionConfig.Model, len(sessionConfig.MCPServers), len(sessionConfig.AvailableTools), len(sessionConfig.ExcludedTools))
 
-	// Wire permission hooks
+	// Wire permission handler — approve all tool permission requests
+	sessionConfig.OnPermissionRequest = copilot.PermissionHandler.ApproveAll
+
+	// Wire lifecycle hooks
 	sessionConfig.Hooks = &copilot.SessionHooks{
 		OnPreToolUse: func(input copilot.PreToolUseHookInput, inv copilot.HookInvocation) (
 			*copilot.PreToolUseHookOutput, error,

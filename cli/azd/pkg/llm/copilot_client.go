@@ -7,6 +7,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
+	"runtime"
 
 	copilot "github.com/github/copilot-sdk/go"
 )
@@ -22,6 +25,9 @@ type CopilotClientManager struct {
 type CopilotClientOptions struct {
 	// LogLevel controls SDK logging verbosity (e.g., "info", "debug", "error").
 	LogLevel string
+	// CLIPath overrides the path to the Copilot CLI binary.
+	// If empty, auto-discovered from @github/copilot-sdk npm package or COPILOT_CLI_PATH env.
+	CLIPath string
 }
 
 // NewCopilotClientManager creates a new CopilotClientManager with the given options.
@@ -36,6 +42,16 @@ func NewCopilotClientManager(options *CopilotClientOptions) *CopilotClientManage
 		clientOpts.LogLevel = options.LogLevel
 	} else {
 		clientOpts.LogLevel = "debug"
+	}
+
+	// Resolve CLI path: explicit option > env var > auto-discover from npm
+	cliPath := options.CLIPath
+	if cliPath == "" {
+		cliPath = discoverCopilotCLIPath()
+	}
+	if cliPath != "" {
+		clientOpts.CLIPath = cliPath
+		log.Printf("[copilot-client] Using CLI binary: %s", cliPath)
 	}
 
 	return &CopilotClientManager{
@@ -95,4 +111,63 @@ func (m *CopilotClientManager) ListModels(ctx context.Context) ([]copilot.ModelI
 // State returns the current connection state of the client.
 func (m *CopilotClientManager) State() copilot.ConnectionState {
 	return m.client.State()
+}
+
+// discoverCopilotCLIPath finds the native Copilot CLI binary that supports
+// the --headless --stdio flags required by the SDK.
+//
+// Resolution order:
+//  1. COPILOT_CLI_PATH environment variable
+//  2. Native binary bundled in @github/copilot-sdk npm package
+//  3. Empty string (SDK will fall back to "copilot" in PATH)
+func discoverCopilotCLIPath() string {
+	if p := os.Getenv("COPILOT_CLI_PATH"); p != "" {
+		return p
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+
+	// Map Go arch to npm platform naming
+	arch := runtime.GOARCH
+	switch arch {
+	case "amd64":
+		arch = "x64"
+	case "386":
+		arch = "ia32"
+	}
+
+	var platformPkg, binaryName string
+	switch runtime.GOOS {
+	case "windows":
+		platformPkg = fmt.Sprintf("copilot-win32-%s", arch)
+		binaryName = "copilot.exe"
+	case "darwin":
+		platformPkg = fmt.Sprintf("copilot-darwin-%s", arch)
+		binaryName = "copilot"
+	case "linux":
+		platformPkg = fmt.Sprintf("copilot-linux-%s", arch)
+		binaryName = "copilot"
+	default:
+		return ""
+	}
+
+	// Search common npm global node_modules locations
+	candidates := []string{
+		filepath.Join(home, "AppData", "Roaming", "npm", "node_modules"),
+		filepath.Join(home, ".npm-global", "lib", "node_modules"),
+		"/usr/local/lib/node_modules",
+		"/usr/lib/node_modules",
+	}
+
+	for _, c := range candidates {
+		p := filepath.Join(c, "@github", "copilot-sdk", "node_modules", "@github", platformPkg, binaryName)
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+
+	return ""
 }

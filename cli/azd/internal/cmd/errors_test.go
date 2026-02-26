@@ -414,6 +414,30 @@ func Test_cmdAsName(t *testing.T) {
 	}
 }
 
+func Test_normalizeCodeSegment(t *testing.T) {
+	tests := []struct {
+		name     string
+		value    string
+		fallback string
+		want     string
+	}{
+		{"Empty", "", "fallback", "fallback"},
+		{"Whitespace", "   ", "fallback", "fallback"},
+		{"Simple", "invalid_config", "fallback", "invalid_config"},
+		{"MixedCase", "RateLimitExceeded", "fallback", "ratelimitexceeded"},
+		{"Hyphens", "Invalid-Config", "fallback", "invalid_config"},
+		{"DotSeparated", "create_agent.NotFound", "fallback", "create_agent.notfound"},
+		{"SpecialChars", "err@code!here", "fallback", "err_code_here"},
+		{"OnlySpecialChars", "@#$", "fallback", "fallback"},
+		{"HyphensAndDots", "my-service.rate-limit", "fallback", "my_service.rate_limit"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, normalizeCodeSegment(tt.value, tt.fallback))
+		})
+	}
+}
+
 func Test_errorType(t *testing.T) {
 	tests := []struct {
 		name string

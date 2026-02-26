@@ -30,6 +30,12 @@ type ProvisioningProgressDisplay struct {
 	resourceManager    ResourceManager
 	console            input.Console
 	deployment         Deployment
+	// Tracks root operation count from the last poll cycle to skip
+	// expensive recursive traversal when nothing has changed.
+	lastRootOpCount int
+	// Whether any operations were still running at last poll.
+	// When true, we always do the full traversal on next poll.
+	hasRunningOps bool
 }
 
 func NewProvisioningProgressDisplay(
@@ -93,6 +99,15 @@ func (display *ProvisioningProgressDisplay) ReportProgress(
 		return err
 	}
 
+	// Quick check: skip processing if nothing has changed since last poll.
+	// This avoids redundant recursive traversal when the deployment is idle
+	// (e.g., waiting for a long-running resource to finish).
+	currentOpCount := len(operations)
+	if currentOpCount == display.lastRootOpCount && !display.hasRunningOps {
+		return nil
+	}
+	display.lastRootOpCount = currentOpCount
+
 	newlyDeployedResources := []*armresources.DeploymentOperation{}
 	newlyFailedResources := []*armresources.DeploymentOperation{}
 	runningDeployments := []*armresources.DeploymentOperation{}
@@ -123,6 +138,11 @@ func (display *ProvisioningProgressDisplay) ReportProgress(
 
 	displayedResources := append(newlyDeployedResources, newlyFailedResources...)
 	display.logNewlyCreatedResources(ctx, displayedResources, runningDeployments)
+
+	// Track whether any operations are still running so the next poll
+	// cycle knows to do the full traversal or can skip it.
+	display.hasRunningOps = len(runningDeployments) > 0
+
 	return nil
 }
 

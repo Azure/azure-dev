@@ -155,5 +155,9 @@ func UnwrapError(msg *ExtensionError) error {
 		}
 	}
 
-	return errors.New(msg.GetMessage())
+	return &LocalError{
+		Message:    msg.GetMessage(),
+		Category:   LocalErrorCategoryLocal,
+		Suggestion: msg.GetSuggestion(),
+	}
 }

@@ -35,14 +35,14 @@ func TestMCPSecurityCheckURL_BlocksPrivateIPs(t *testing.T) {
 		"http://172.16.0.1/api",
 		"http://192.168.1.1/api",
 		"http://127.0.0.1/api",
-		"http://0.0.0.1/api",         // 0.0.0.0/8 "this" network (reaches loopback on Linux/macOS)
-		"http://[::1]:8080/api",       // IPv6 loopback
-		"http://[::]:80/api",          // IPv6 unspecified (reaches loopback)
-		"http://[fe80::1]/api",        // IPv6 link-local
-		"http://[fd00::1]/api",        // IPv6 unique local address (fc00::/7)
+		"http://0.0.0.1/api",             // 0.0.0.0/8 "this" network (reaches loopback on Linux/macOS)
+		"http://[::1]:8080/api",          // IPv6 loopback
+		"http://[::]:80/api",             // IPv6 unspecified (reaches loopback)
+		"http://[fe80::1]/api",           // IPv6 link-local
+		"http://[fd00::1]/api",           // IPv6 unique local address (fc00::/7)
 		"http://[fd12:3456:789a::1]/api", // IPv6 ULA in fd00::/8 range
-		"http://[::127.0.0.1]/api",    // IPv4-compatible IPv6 (deprecated, bypasses CIDR length match)
-		"http://[::10.0.0.1]/api",     // IPv4-compatible IPv6 targeting RFC 1918
+		"http://[::127.0.0.1]/api",       // IPv4-compatible IPv6 (deprecated, bypasses CIDR length match)
+		"http://[::10.0.0.1]/api",        // IPv4-compatible IPv6 targeting RFC 1918
 	}
 	for _, u := range blocked {
 		if err := policy.CheckURL(u); err == nil {

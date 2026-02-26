@@ -107,27 +107,42 @@ func (a *CopilotAgent) SendMessage(ctx context.Context, args ...string) (string,
 	prompt := strings.Join(args, "\n")
 	log.Printf("[copilot] SendMessage: sending prompt (%d chars)...", len(prompt))
 
-	// Use a generous timeout — agent tasks (discovery, IaC generation, etc.) can take several minutes.
-	// The SDK defaults to 60s if the context has no deadline, which is too short.
-	sendCtx, sendCancel := context.WithTimeout(ctx, 10*time.Minute)
-	defer sendCancel()
+	// Use Send (non-blocking) + wait for session.idle event ourselves.
+	// This avoids SendAndWait's 60s default timeout — agent tasks can run as long as needed.
+	idleCh := make(chan struct{}, 1)
+	var lastAssistantContent string
 
-	result, err := a.session.SendAndWait(sendCtx, copilot.MessageOptions{
+	unsubscribe := a.session.On(func(event copilot.SessionEvent) {
+		if event.Type == copilot.SessionIdle {
+			select {
+			case idleCh <- struct{}{}:
+			default:
+			}
+		}
+		if event.Type == copilot.AssistantMessage && event.Data.Content != nil {
+			lastAssistantContent = *event.Data.Content
+		}
+	})
+	defer unsubscribe()
+
+	_, err = a.session.Send(ctx, copilot.MessageOptions{
 		Prompt: prompt,
 	})
 	if err != nil {
-		log.Printf("[copilot] SendMessage: error: %v", err)
+		log.Printf("[copilot] SendMessage: send error: %v", err)
 		return "", fmt.Errorf("copilot agent error: %w", err)
 	}
 
-	// Extract the final assistant message content
-	if result != nil && result.Data.Content != nil {
-		log.Printf("[copilot] SendMessage: received response (%d chars)", len(*result.Data.Content))
-		return *result.Data.Content, nil
+	// Wait for idle (no timeout — runs until complete or context cancelled)
+	select {
+	case <-idleCh:
+		log.Printf("[copilot] SendMessage: session idle, response (%d chars)", len(lastAssistantContent))
+	case <-ctx.Done():
+		log.Printf("[copilot] SendMessage: context cancelled")
+		return "", ctx.Err()
 	}
 
-	log.Println("[copilot] SendMessage: received empty response")
-	return "", nil
+	return lastAssistantContent, nil
 }
 
 // SendMessageWithRetry sends a message and prompts the user to retry on error.

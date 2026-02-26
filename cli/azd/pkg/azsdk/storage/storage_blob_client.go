@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -56,8 +57,10 @@ func NewBlobClient(
 }
 
 type blobClient struct {
-	config *AccountConfig
-	client *azblob.Client
+	config            *AccountConfig
+	client            *azblob.Client
+	containerVerified bool
+	mu                sync.Mutex
 }
 
 // Blob represents a blob within a storage account container.
@@ -70,10 +73,25 @@ type Blob struct {
 
 // Items returns a list of blobs in the configured storage account container.
 func (bc *blobClient) Items(ctx context.Context) ([]*Blob, error) {
-	if err := bc.ensureContainerExists(ctx); err != nil {
+	if err := bc.ensureContainerReady(ctx); err != nil {
 		return nil, err
 	}
 
+	blobs, err := bc.listBlobs(ctx)
+	if err != nil {
+		if bc.isContainerNotFound(err) {
+			if createErr := bc.resetAndEnsureContainer(ctx); createErr != nil {
+				return nil, createErr
+			}
+			return bc.listBlobs(ctx)
+		}
+		return nil, err
+	}
+
+	return blobs, nil
+}
+
+func (bc *blobClient) listBlobs(ctx context.Context) ([]*Blob, error) {
 	blobs := []*Blob{}
 
 	pager := bc.client.NewListBlobsFlatPager(bc.config.ContainerName, nil)
@@ -98,12 +116,22 @@ func (bc *blobClient) Items(ctx context.Context) ([]*Blob, error) {
 
 // Download downloads a blob from the configured storage account container.
 func (bc *blobClient) Download(ctx context.Context, blobPath string) (io.ReadCloser, error) {
-	if err := bc.ensureContainerExists(ctx); err != nil {
+	if err := bc.ensureContainerReady(ctx); err != nil {
 		return nil, err
 	}
 
 	resp, err := bc.client.DownloadStream(ctx, bc.config.ContainerName, blobPath, nil)
 	if err != nil {
+		if bc.isContainerNotFound(err) {
+			if createErr := bc.resetAndEnsureContainer(ctx); createErr != nil {
+				return nil, createErr
+			}
+			resp, err = bc.client.DownloadStream(ctx, bc.config.ContainerName, blobPath, nil)
+			if err != nil {
+				return nil, fmt.Errorf("failed to download blob '%s', %w", blobPath, err)
+			}
+			return resp.Body, nil
+		}
 		return nil, fmt.Errorf("failed to download blob '%s', %w", blobPath, err)
 	}
 
@@ -112,12 +140,22 @@ func (bc *blobClient) Download(ctx context.Context, blobPath string) (io.ReadClo
 
 // Upload uploads a blob to the configured storage account container.
 func (bc *blobClient) Upload(ctx context.Context, blobPath string, reader io.Reader) error {
-	if err := bc.ensureContainerExists(ctx); err != nil {
+	if err := bc.ensureContainerReady(ctx); err != nil {
 		return err
 	}
 
 	_, err := bc.client.UploadStream(ctx, bc.config.ContainerName, blobPath, reader, nil)
 	if err != nil {
+		if bc.isContainerNotFound(err) {
+			if createErr := bc.resetAndEnsureContainer(ctx); createErr != nil {
+				return createErr
+			}
+			_, err = bc.client.UploadStream(ctx, bc.config.ContainerName, blobPath, reader, nil)
+			if err != nil {
+				return fmt.Errorf("failed to upload blob '%s', %w", blobPath, err)
+			}
+			return nil
+		}
 		return fmt.Errorf("failed to upload blob '%s', %w", blobPath, err)
 	}
 
@@ -126,20 +164,73 @@ func (bc *blobClient) Upload(ctx context.Context, blobPath string, reader io.Rea
 
 // Delete deletes a blob from the configured storage account container.
 func (bc *blobClient) Delete(ctx context.Context, blobPath string) error {
-	if err := bc.ensureContainerExists(ctx); err != nil {
+	if err := bc.ensureContainerReady(ctx); err != nil {
 		return err
 	}
 
 	_, err := bc.client.DeleteBlob(ctx, bc.config.ContainerName, blobPath, nil)
 	if err != nil {
+		if bc.isContainerNotFound(err) {
+			if createErr := bc.resetAndEnsureContainer(ctx); createErr != nil {
+				return createErr
+			}
+			_, err = bc.client.DeleteBlob(ctx, bc.config.ContainerName, blobPath, nil)
+			if err != nil {
+				return fmt.Errorf("failed to delete blob '%s', %w", blobPath, err)
+			}
+			return nil
+		}
 		return fmt.Errorf("failed to delete blob '%s', %w", blobPath, err)
 	}
 
 	return nil
 }
 
-// Check if the specified container exists
-// If it doesn't already exist then create it
+// ensureContainerReady checks that the container exists on the first call,
+// then skips the check on subsequent calls. If a container-not-found error
+// occurs during an operation, callers use resetAndEnsureContainer to recover.
+func (bc *blobClient) ensureContainerReady(ctx context.Context) error {
+	bc.mu.Lock()
+	defer bc.mu.Unlock()
+
+	if bc.containerVerified {
+		return nil
+	}
+
+	if err := bc.ensureContainerExists(ctx); err != nil {
+		return err
+	}
+
+	bc.containerVerified = true
+	return nil
+}
+
+// resetAndEnsureContainer resets the verified flag and re-checks/creates the container.
+// Used when an operation fails with container-not-found (e.g., container deleted externally).
+func (bc *blobClient) resetAndEnsureContainer(ctx context.Context) error {
+	bc.mu.Lock()
+	defer bc.mu.Unlock()
+
+	bc.containerVerified = false
+
+	if err := bc.ensureContainerExists(ctx); err != nil {
+		return err
+	}
+
+	bc.containerVerified = true
+	return nil
+}
+
+// isContainerNotFound checks if the error indicates the container was not found.
+func (bc *blobClient) isContainerNotFound(err error) bool {
+	var respErr *azcore.ResponseError
+	if errors.As(err, &respErr) {
+		return respErr.ErrorCode == "ContainerNotFound"
+	}
+	return false
+}
+
+// ensureContainerExists checks if the container exists and creates it if not.
 func (bc *blobClient) ensureContainerExists(ctx context.Context) error {
 	exists := false
 

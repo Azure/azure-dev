@@ -640,6 +640,10 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 				Name:  "AZURE_OPENAI_ENDPOINT",
 				Value: "${AZURE_OPENAI_ENDPOINT}",
 			},
+			{
+				Name:  "AZURE_AI_PROJECT_ENDPOINT",
+				Value: "${AZURE_AI_PROJECT_ENDPOINT}",
+			},
 		},
 	}
 
@@ -661,8 +665,12 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 
 		*definition.EnvironmentVariables = append(*definition.EnvironmentVariables, agent_yaml.EnvironmentVariable{
 			Name:  "AZURE_AI_MODEL_DEPLOYMENT_NAME",
-			Value: existingDeployment.Name,
+			Value: "${AZURE_AI_MODEL_DEPLOYMENT_NAME}",
 		})
+
+		if err := a.setEnvVar(ctx, "AZURE_AI_MODEL_DEPLOYMENT_NAME", existingDeployment.Name); err != nil {
+			return nil, fmt.Errorf("failed to set AZURE_AI_MODEL_DEPLOYMENT_NAME: %w", err)
+		}
 	} else if selectedModel != nil {
 		modelDetails, err := a.resolveModelDeploymentNoPrompt(ctx, selectedModel, a.azureContext.Scope.Location)
 		if err != nil {
@@ -684,8 +692,12 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 
 		*definition.EnvironmentVariables = append(*definition.EnvironmentVariables, agent_yaml.EnvironmentVariable{
 			Name:  "AZURE_AI_MODEL_DEPLOYMENT_NAME",
-			Value: modelDetails.ModelName,
+			Value: "${AZURE_AI_MODEL_DEPLOYMENT_NAME}",
 		})
+
+		if err := a.setEnvVar(ctx, "AZURE_AI_MODEL_DEPLOYMENT_NAME", modelDetails.ModelName); err != nil {
+			return nil, fmt.Errorf("failed to set AZURE_AI_MODEL_DEPLOYMENT_NAME: %w", err)
+		}
 	}
 
 	return definition, nil

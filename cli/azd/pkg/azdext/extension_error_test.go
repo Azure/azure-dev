@@ -33,6 +33,13 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 				assert.Nil(t, protoErr.GetSource())
 
 				assert.Equal(t, "simple error", goErr.Error())
+
+				// Untyped errors round-trip as LocalError so the message is preserved
+				// through the display and telemetry pipelines.
+				var localErr *LocalError
+				require.ErrorAs(t, goErr, &localErr)
+				assert.Equal(t, "simple error", localErr.Message)
+				assert.Equal(t, LocalErrorCategoryLocal, localErr.Category)
 			},
 		},
 		{

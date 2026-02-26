@@ -1519,11 +1519,15 @@ func (a *InitFromCodeAction) resolveModelDeploymentNoPrompt(
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve model deployment: %w", err)
+		return nil, exterrors.FromAzdHost(err, exterrors.CodeModelResolutionFailed)
 	}
 
 	if len(resolveResp.Deployments) == 0 {
-		return nil, fmt.Errorf("no deployment candidates found for model '%s' in location '%s'", model.Name, location)
+		return nil, exterrors.Dependency(
+			exterrors.CodeModelResolutionFailed,
+			fmt.Sprintf("no deployment candidates found for model '%s' in location '%s'", model.Name, location),
+			"",
+		)
 	}
 
 	orderedCandidates := slices.Clone(resolveResp.Deployments)

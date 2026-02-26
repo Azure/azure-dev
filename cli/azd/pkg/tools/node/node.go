@@ -91,7 +91,8 @@ func (c *npmCli) CheckInstalled(ctx context.Context) error {
 }
 
 func (c *npmCli) Install(ctx context.Context, projectPath string, env []string) error {
-	runArgs := exec.NewRunArgs("npm", "install", "--no-audit", "--no-fund", "--prefer-offline").WithCwd(projectPath).WithEnv(env)
+	runArgs := exec.NewRunArgs("npm", "install", "--no-audit", "--no-fund", "--prefer-offline").
+		WithCwd(projectPath).WithEnv(env)
 	if _, err := c.commandRunner.Run(ctx, runArgs); err != nil {
 		return fmt.Errorf("failed to install project %s using npm: %w", projectPath, err)
 	}

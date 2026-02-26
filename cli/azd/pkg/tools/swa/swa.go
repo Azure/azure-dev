@@ -116,10 +116,6 @@ func (cli *Cli) InstallUrl() string {
 	return "https://azure.github.io/static-web-apps-cli/docs/use/install"
 }
 
-func (cli *Cli) executeCommand(ctx context.Context, cwd string, args ...string) (exec.RunResult, error) {
-	return cli.run(ctx, cwd, nil, nil, args...)
-}
-
 func (cli *Cli) run(
 	ctx context.Context, cwd string, buildProgress io.Writer, env []string, args ...string,
 ) (exec.RunResult, error) {

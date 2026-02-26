@@ -189,7 +189,10 @@ func (dp *dotnetProject) Package(
 	if err != nil {
 		return nil, err
 	}
-	if err := dp.dotnetCli.Publish(ctx, projFile, defaultDotNetBuildConfiguration, packageDest, dp.env.Environ()); err != nil {
+	err = dp.dotnetCli.Publish(
+		ctx, projFile, defaultDotNetBuildConfiguration, packageDest, dp.env.Environ(),
+	)
+	if err != nil {
 		return nil, err
 	}
 

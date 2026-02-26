@@ -1540,6 +1540,9 @@ func (a *extensionSourceValidateAction) Run(ctx context.Context) (*actions.Actio
 
 	// Resolve the source: try as named source first, then as direct path/URL
 	sourceConfig, err := a.sourceManager.Get(ctx, arg)
+	if err != nil && !errors.Is(err, extensions.ErrSourceNotFound) {
+		return nil, fmt.Errorf("failed to get source %q: %w", arg, err)
+	}
 	if err != nil {
 		// Not a named source — auto-detect type from the argument
 		kind := extensions.SourceKindFile

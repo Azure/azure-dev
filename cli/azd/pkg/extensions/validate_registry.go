@@ -4,7 +4,6 @@
 package extensions
 
 import (
-	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -107,48 +106,6 @@ func ValidateExtensions(exts []*ExtensionMetadata, strict bool) *RegistryValidat
 	return result
 }
 
-// ValidateRegistryJSON validates the raw JSON bytes of a registry.json file.
-func ValidateRegistryJSON(data []byte, strict bool) (*RegistryValidationResult, error) {
-	var registry Registry
-
-	// Determine the JSON structure and parse accordingly
-	var raw json.RawMessage
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return nil, fmt.Errorf("invalid JSON: %w", err)
-	}
-
-	trimmed := strings.TrimSpace(string(raw))
-	if len(trimmed) > 0 && trimmed[0] == '[' {
-		// Array of extensions
-		var extensions []*ExtensionMetadata
-		if err := json.Unmarshal(data, &extensions); err != nil {
-			return nil, fmt.Errorf("invalid registry format: failed to parse as extension array: %w", err)
-		}
-		registry.Extensions = extensions
-	} else {
-		// Try as Registry object (with "extensions" wrapper)
-		if err := json.Unmarshal(data, &registry); err != nil {
-			return nil, fmt.Errorf("invalid JSON: %w", err)
-		}
-
-		// If no "extensions" field, try as a single extension
-		if registry.Extensions == nil {
-			var single ExtensionMetadata
-			if err := json.Unmarshal(data, &single); err != nil {
-				return nil, fmt.Errorf("invalid registry format: expected object with 'extensions' array, "+
-					"an array of extensions, or a single extension object: %w", err)
-			}
-			registry.Extensions = []*ExtensionMetadata{&single}
-		}
-	}
-
-	if len(registry.Extensions) == 0 {
-		return nil, fmt.Errorf("registry contains no extensions")
-	}
-
-	return ValidateExtensions(registry.Extensions, strict), nil
-}
-
 // validateExtension validates a single extension metadata entry.
 func validateExtension(ext *ExtensionMetadata, strict bool) ExtensionValidationResult {
 	result := ExtensionValidationResult{
@@ -198,13 +155,13 @@ func validateExtension(ext *ExtensionMetadata, strict bool) ExtensionValidationR
 	return result
 }
 
-// findLatestVersion finds the latest version using semver ordering, preferring stable over pre-release.
+// findLatestVersion finds the latest version using strict semver ordering.
 func findLatestVersion(versions []ExtensionVersion) *ExtensionVersion {
 	var latest *ExtensionVersion
 	var latestSemver *semver.Version
 
 	for i := range versions {
-		v, err := semver.NewVersion(versions[i].Version)
+		v, err := semver.StrictNewVersion(versions[i].Version)
 		if err != nil {
 			continue
 		}

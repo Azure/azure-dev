@@ -410,6 +410,8 @@ func TestWriteDefinitionToSrcDir(t *testing.T) {
 			},
 			EnvironmentVariables: &[]agent_yaml.EnvironmentVariable{
 				{Name: "AZURE_OPENAI_ENDPOINT", Value: "${AZURE_OPENAI_ENDPOINT}"},
+				{Name: "AZURE_AI_PROJECT_ENDPOINT", Value: "${AZURE_AI_PROJECT_ENDPOINT}"},
+				{Name: "AZURE_AI_MODEL_DEPLOYMENT_NAME", Value: "${AZURE_AI_MODEL_DEPLOYMENT_NAME}"},
 			},
 		}
 

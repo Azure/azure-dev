@@ -90,20 +90,6 @@ func extensionActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 		FlagsResolver:  newExtensionUpgradeFlags,
 	})
 
-	// azd extension validate-registry <path-or-url>
-	group.Add("validate-registry", &actions.ActionDescriptorOptions{
-		Command: &cobra.Command{
-			Use:        "validate-registry <path-or-url>",
-			Short:      "Validate an extension registry.json file.",
-			Deprecated: "Use 'azd extension source validate' instead.",
-			Hidden:     true,
-		},
-		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
-		DefaultFormat:  output.NoneFormat,
-		ActionResolver: newExtensionSourceValidateAction,
-		FlagsResolver:  newExtensionSourceValidateFlags,
-	})
-
 	sourceGroup := group.Add("source", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
 			Use:   "source",

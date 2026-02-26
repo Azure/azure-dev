@@ -1845,6 +1845,19 @@ const completionSpec: Fig.Spec = {
 								name: 'name',
 							},
 						},
+						{
+							name: ['validate'],
+							description: 'Validate an extension source\'s registry.json file.',
+							options: [
+								{
+									name: ['--strict'],
+									description: 'Enable strict validation (require checksums)',
+								},
+							],
+							args: {
+								name: 'name-or-path-or-url',
+							},
+						},
 					],
 				},
 				{
@@ -3273,6 +3286,10 @@ const completionSpec: Fig.Spec = {
 								{
 									name: ['remove'],
 									description: 'Remove an extension source with the specified name',
+								},
+								{
+									name: ['validate'],
+									description: 'Validate an extension source\'s registry.json file.',
 								},
 							],
 						},

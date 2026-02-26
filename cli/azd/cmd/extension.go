@@ -128,6 +128,22 @@ func extensionActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 		DefaultFormat:  output.NoneFormat,
 	})
 
+	// azd extension source validate <name-or-path-or-url>
+	sourceGroup.Add("validate", &actions.ActionDescriptorOptions{
+		Command: &cobra.Command{
+			Use:   "validate <name-or-path-or-url>",
+			Short: "Validate an extension source's registry.json file.",
+			Long: "Validate an extension source's registry.json file.\n\n" +
+				"Accepts a source name (from 'azd extension source list'), a local file path,\n" +
+				"or a URL. Checks required fields, valid capabilities, semver version format,\n" +
+				"platform artifact structure, and extension ID format.",
+		},
+		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+		DefaultFormat:  output.NoneFormat,
+		ActionResolver: newExtensionSourceValidateAction,
+		FlagsResolver:  newExtensionSourceValidateFlags,
+	})
+
 	return group
 }
 
@@ -1477,4 +1493,137 @@ func validateVersionCompatibility(
 		}
 	}
 	return nil
+}
+
+// azd extension source validate
+type extensionSourceValidateFlags struct {
+	strict bool
+}
+
+func newExtensionSourceValidateFlags(cmd *cobra.Command) *extensionSourceValidateFlags {
+	flags := &extensionSourceValidateFlags{}
+	cmd.Flags().BoolVar(&flags.strict, "strict", false, "Enable strict validation (require checksums)")
+	return flags
+}
+
+type extensionSourceValidateAction struct {
+	args          []string
+	flags         *extensionSourceValidateFlags
+	console       input.Console
+	formatter     output.Formatter
+	writer        io.Writer
+	sourceManager *extensions.SourceManager
+}
+
+func newExtensionSourceValidateAction(
+	args []string,
+	flags *extensionSourceValidateFlags,
+	console input.Console,
+	formatter output.Formatter,
+	writer io.Writer,
+	sourceManager *extensions.SourceManager,
+) actions.Action {
+	return &extensionSourceValidateAction{
+		args:          args,
+		flags:         flags,
+		console:       console,
+		formatter:     formatter,
+		writer:        writer,
+		sourceManager: sourceManager,
+	}
+}
+
+func (a *extensionSourceValidateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	if len(a.args) == 0 {
+		return nil, fmt.Errorf("must specify a source name, file path, or URL")
+	}
+	if len(a.args) > 1 {
+		return nil, fmt.Errorf("cannot specify multiple sources")
+	}
+
+	arg := a.args[0]
+
+	// Resolve the source: try as named source first, then as direct path/URL
+	sourceConfig, err := a.sourceManager.Get(ctx, arg)
+	if err != nil && !errors.Is(err, extensions.ErrSourceNotFound) {
+		return nil, fmt.Errorf("failed to get source %q: %w", arg, err)
+	}
+	if err != nil {
+		// Not a named source — auto-detect type from the argument
+		kind := extensions.SourceKindFile
+		if strings.HasPrefix(arg, "http://") || strings.HasPrefix(arg, "https://") {
+			kind = extensions.SourceKindUrl
+		}
+		sourceConfig = &extensions.SourceConfig{
+			Name:     "validate",
+			Type:     kind,
+			Location: arg,
+		}
+	}
+
+	source, err := a.sourceManager.CreateSource(ctx, sourceConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load source: %w", err)
+	}
+
+	extensionList, err := source.ListExtensions(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list extensions: %w", err)
+	}
+
+	if len(extensionList) == 0 {
+		return nil, fmt.Errorf("source contains no extensions")
+	}
+
+	result := extensions.ValidateExtensions(extensionList, a.flags.strict)
+
+	if a.formatter.Kind() == output.JsonFormat {
+		if err := a.formatter.Format(result, a.writer, nil); err != nil {
+			return nil, err
+		}
+	} else {
+		displayValidationResult(a.console, ctx, result)
+	}
+
+	if !result.Valid {
+		return nil, fmt.Errorf("validation failed: one or more extensions have errors")
+	}
+
+	return nil, nil
+}
+
+func displayValidationResult(console input.Console, ctx context.Context, result *extensions.RegistryValidationResult) {
+	for _, ext := range result.Extensions {
+		id := ext.Id
+		if id == "" {
+			id = "(unknown)"
+		}
+
+		if ext.Valid {
+			console.Message(ctx, fmt.Sprintf("  %s %s", output.WithSuccessFormat("✓"), id))
+		} else {
+			console.Message(ctx, fmt.Sprintf("  %s %s", output.WithErrorFormat("✗"), id))
+		}
+
+		if ext.LatestVersion != "" {
+			console.Message(ctx, fmt.Sprintf("    Version: %s", ext.LatestVersion))
+		}
+
+		for _, issue := range ext.Issues {
+			if issue.Severity == extensions.ValidationError {
+				console.Message(ctx, fmt.Sprintf("    %s %s",
+					output.WithErrorFormat("ERROR:"), issue.Message))
+			} else {
+				console.Message(ctx, fmt.Sprintf("    %s %s",
+					output.WithWarningFormat("WARNING:"), issue.Message))
+			}
+		}
+	}
+
+	console.Message(ctx, "")
+	if result.Valid {
+		console.Message(ctx, output.WithSuccessFormat("Registry validation passed."))
+	} else {
+		console.Message(ctx, output.WithErrorFormat("Registry validation failed."))
+	}
 }

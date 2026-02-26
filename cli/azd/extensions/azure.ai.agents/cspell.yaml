@@ -9,6 +9,7 @@ words:
   - helloworld
   - hostedagent
   - kval
+  - logstream
   - mcpservertoolalwaysrequireapprovalmode
   - mcpservertoolneverrequireapprovalmode
   - mcpservertoolspecifyapprovalmode

@@ -21,11 +21,11 @@ func TestDetectPackageManager_PackageJsonField(t *testing.T) {
 		{"pnpm with version", `{"packageManager": "pnpm@8.15.0"}`, PackageManagerPnpm},
 		{"yarn with version", `{"packageManager": "yarn@4.1.0"}`, PackageManagerYarn},
 		{"npm with version", `{"packageManager": "npm@10.5.0"}`, PackageManagerNpm},
-		{"unsupported pm", `{"packageManager": "bun@1.0.0"}`, PackageManagerNpm},                  // falls through to default
-		{"empty field", `{"packageManager": ""}`, PackageManagerNpm},                              // falls through to default
-		{"no field", `{}`, PackageManagerNpm},                                                     // falls through to default
-		{"scoped yarn name", `{"packageManager": "@yarnpkg/cli-dist@4.0.0"}`, PackageManagerYarn}, // scoped package name
-		{"name without version", `{"packageManager": "pnpm"}`, PackageManagerPnpm},                // no @version suffix
+		{"unsupported pm", `{"packageManager": "bun@1.0.0"}`, PackageManagerNpm},
+		{"empty field", `{"packageManager": ""}`, PackageManagerNpm},
+		{"no field", `{}`, PackageManagerNpm},
+		{"scoped yarn name", `{"packageManager": "@yarnpkg/cli-dist@4.0.0"}`, PackageManagerYarn},
+		{"name without version", `{"packageManager": "pnpm"}`, PackageManagerPnpm},
 	}
 
 	for _, tt := range tests {

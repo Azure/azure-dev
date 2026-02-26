@@ -40,7 +40,7 @@ func newMcpStartCommand() *cobra.Command {
 func runMcpServer(ctx context.Context) error {
 	// Create MCP server
 	s := server.NewMCPServer(
-		"AZD Microsoft Foundry Agents Extension MCP Server", "1.0.0",
+		"azd Microsoft Foundry Agents Extension MCP Server", "1.0.0",
 		server.WithToolCapabilities(true),
 		server.WithElicitation(),
 	)

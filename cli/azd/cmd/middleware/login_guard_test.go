@@ -50,6 +50,7 @@ func Test_LoginGuard_Run(t *testing.T) {
 
 		mockAuthManager := &mockCurrentUserAuthManager{}
 		mockAuthManager.On("Cloud").Return(cloud.AzurePublic())
+		mockAuthManager.On("Mode").Return(auth.AzdBuiltIn, nil)
 		mockAuthManager.
 			On("CredentialForCurrentUser", *mockContext.Context, mock.Anything).
 			Return(nil, auth.ErrNoCurrentUser)
@@ -130,6 +131,11 @@ type mockCurrentUserAuthManager struct {
 func (m *mockCurrentUserAuthManager) Cloud() *cloud.Cloud {
 	args := m.Called()
 	return args.Get(0).(*cloud.Cloud)
+}
+
+func (m *mockCurrentUserAuthManager) Mode() (auth.AuthSource, error) {
+	args := m.Called()
+	return args.Get(0).(auth.AuthSource), args.Error(1)
 }
 
 func (m *mockCurrentUserAuthManager) CredentialForCurrentUser(

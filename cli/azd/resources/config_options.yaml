@@ -6,6 +6,11 @@
   description: "Default Azure location/region to use for deployments."
   type: string
   example: "eastus"
+- key: provision.preflight
+  description: "Controls whether ARM preflight validation runs before deployment. Set to 'off' to skip validation and reduce deployment time."
+  type: string
+  allowedValues: ["on", "off"]
+  example: "on"
 - key: alpha.all
   description: "Enable or disable all alpha features at once."
   type: string

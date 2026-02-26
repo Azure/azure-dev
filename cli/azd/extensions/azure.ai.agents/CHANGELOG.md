@@ -1,5 +1,10 @@
 # Release History
 
+## 0.1.11-preview (2026-02-24)
+
+- [[#6828]](https://github.com/Azure/azure-dev/pull/6828) Add new "init from code" flow allowing users to run `azd ai agent init` without an existing project, template, or manifest
+- [[#6867]](https://github.com/Azure/azure-dev/pull/6867) Add default model selection for the basic init flow
+
 ## 0.1.10-preview (2026-02-19)
 
 - [[#6749]](https://github.com/Azure/azure-dev/pull/6749) Add "Choose a different model (all regions)" option during model selection recovery

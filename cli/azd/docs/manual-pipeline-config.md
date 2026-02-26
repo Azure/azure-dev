@@ -95,7 +95,7 @@ For reusing an existing connection, you would only need to set the name of the e
 
 The service connection from Azure DevOps is equivalent to the Service Principal used on GitHub, but the service connection must be first created within Azure DevOps. Learn more about creating service connections for Azure DevOps [here](https://learn.microsoft.com/azure/devops/pipelines/library/service-endpoints?view=azure-devops&tabs=yaml).
 
-### Azd environment configuration
+### azd environment configuration
 
 After setting up the authentication strategy for the pipeline, the next step is to tell `azd` about the environment. This is also set by using secrets for both GitHub and Azure DevOps. You need to set:
 

@@ -21,6 +21,12 @@ type InvokeOptions struct {
 	StdOut      io.Writer
 	StdErr      io.Writer
 	Interactive bool
+
+	// Global AZD flags to propagate as environment variables to extension processes.
+	Debug       bool
+	NoPrompt    bool
+	Cwd         string
+	Environment string
 }
 
 type Runner struct {
@@ -45,6 +51,20 @@ func (r *Runner) Invoke(ctx context.Context, extension *Extension, options *Invo
 	extensionPath := filepath.Join(userConfigDir, extension.Path)
 	if _, err := os.Stat(extensionPath); err != nil {
 		return nil, fmt.Errorf("extension path '%s' not found: %w", extensionPath, err)
+	}
+
+	// Propagate global AZD flags as environment variables
+	if options.Debug {
+		options.Env = append(options.Env, "AZD_DEBUG=true")
+	}
+	if options.NoPrompt {
+		options.Env = append(options.Env, "AZD_NO_PROMPT=true")
+	}
+	if options.Cwd != "" {
+		options.Env = append(options.Env, fmt.Sprintf("AZD_CWD=%s", options.Cwd))
+	}
+	if options.Environment != "" {
+		options.Env = append(options.Env, fmt.Sprintf("AZD_ENVIRONMENT=%s", options.Environment))
 	}
 
 	runArgs := exec.NewRunArgs(extensionPath, options.Args...)

@@ -1062,6 +1062,49 @@ const completionSpec: Fig.Spec = {
 			],
 		},
 		{
+			name: ['appservice'],
+			description: 'Extension for managing Azure App Service resources.',
+			subcommands: [
+				{
+					name: ['swap'],
+					description: 'Swap deployment slots for an App Service.',
+					options: [
+						{
+							name: ['--dst'],
+							description: 'The destination slot name. Use @main for production.',
+							args: [
+								{
+									name: 'dst',
+								},
+							],
+						},
+						{
+							name: ['--service'],
+							description: 'The name of the service to swap slots for.',
+							args: [
+								{
+									name: 'service',
+								},
+							],
+						},
+						{
+							name: ['--src'],
+							description: 'The source slot name. Use @main for production.',
+							args: [
+								{
+									name: 'src',
+								},
+							],
+						},
+					],
+				},
+				{
+					name: ['version'],
+					description: 'Display the version of the extension.',
+				},
+			],
+		},
+		{
 			name: ['auth'],
 			description: 'Authenticate with Azure.',
 			subcommands: [
@@ -1310,7 +1353,7 @@ const completionSpec: Fig.Spec = {
 		},
 		{
 			name: ['demo'],
-			description: 'This extension provides examples of the AZD extension framework.',
+			description: 'This extension provides examples of the azd extension framework.',
 			subcommands: [
 				{
 					name: ['colors', 'colours'],
@@ -2001,7 +2044,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['--template', '-t'],
-					description: 'Initializes a new application from a template. You can use Full URI, <owner>/<repository>, or <repository> if it\'s part of the azure-samples organization.',
+					description: 'Initializes a new application from a template. You can use a Full URI, <owner>/<repository>, <repository> if it\'s part of the azure-samples organization, or a local directory path (./dir, ../dir, or absolute path).',
 					args: [
 						{
 							name: 'template',
@@ -2620,7 +2663,7 @@ const completionSpec: Fig.Spec = {
 		},
 		{
 			name: ['x'],
-			description: 'This extension provides a set of tools for AZD extension developers to test and debug their extensions.',
+			description: 'This extension provides a set of tools for azd extension developers to test and debug their extensions.',
 			subcommands: [
 				{
 					name: ['build'],
@@ -2968,6 +3011,20 @@ const completionSpec: Fig.Spec = {
 					],
 				},
 				{
+					name: ['appservice'],
+					description: 'Extension for managing Azure App Service resources.',
+					subcommands: [
+						{
+							name: ['swap'],
+							description: 'Swap deployment slots for an App Service.',
+						},
+						{
+							name: ['version'],
+							description: 'Display the version of the extension.',
+						},
+					],
+				},
+				{
 					name: ['auth'],
 					description: 'Authenticate with Azure.',
 					subcommands: [
@@ -3075,7 +3132,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['demo'],
-					description: 'This extension provides examples of the AZD extension framework.',
+					description: 'This extension provides examples of the azd extension framework.',
 					subcommands: [
 						{
 							name: ['colors', 'colours'],
@@ -3357,7 +3414,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['x'],
-					description: 'This extension provides a set of tools for AZD extension developers to test and debug their extensions.',
+					description: 'This extension provides a set of tools for azd extension developers to test and debug their extensions.',
 					subcommands: [
 						{
 							name: ['build'],

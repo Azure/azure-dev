@@ -1,10 +1,10 @@
-# AZD Error Troubleshooting and Resolution Instructions
+# azd error Troubleshooting and Resolution Instructions
 
 ✅ **Agent Task List**  
 
 1. **Error Classification:** Identify the specific error type (Azure REST API, ARM Deployment, Authentication, Local Tool Installation or General)
 2. **Error Analysis:** Explain and diagnose what the error means and its root causes. Note that this error occurs when running Azure Developer CLI
-3. **Troubleshooting Steps:** Based on error type (Azure REST API Response Errors, Azure ARM Deployment Errors, Azure Authentication Errors, Local Tool Installation Errors, and General AZD Errors), find the Troubleshooting Approach below and provide troubleshooting approach
+3. **Troubleshooting Steps:** Based on error type (Azure REST API Response Errors, Azure ARM Deployment Errors, Azure Authentication Errors, Local Tool Installation Errors, and General azd errors), find the Troubleshooting Approach below and provide troubleshooting approach
 4. **Resolution Confirmation:** Ensure the issue is fully resolved. If issue still exists, retry the task list to fix the error
 
 📄 **Required Outputs**  
@@ -221,7 +221,7 @@
    - Verify subscription access and role assignments
    - Review tenant and subscription IDs
 
-3. **AZD Authentication Commands**
+3. **azd authentication Commands**
    - Consider using following commands if fits:
    ```bash
    # Clear current authentication
@@ -326,7 +326,7 @@
    # Test azd provision with preview
    azd provision --preview
    ```
-## General AZD Errors
+## General azd errors
 
 **Error Pattern:** Miscellaneous errors not falling into above categories
 

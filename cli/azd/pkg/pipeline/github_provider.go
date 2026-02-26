@@ -450,7 +450,7 @@ func (p *GitHubCiProvider) configureConnection(
 }
 
 // setPipelineVariables sets all the pipeline variables required for the pipeline to run.  This includes the environment
-// variables that the core of AZD uses (AZURE_ENV_NAME) as well as the variables that the provisioning system needs to run
+// variables that the core of azd uses (AZURE_ENV_NAME) as well as the variables that the provisioning system needs to run
 // (AZURE_SUBSCRIPTION_ID, AZURE_LOCATION) as well as scenario specific variables (AZURE_RESOURCE_GROUP for resource group
 // scoped deployments, a series of RS_ variables for terraform remote state)
 func (p *GitHubCiProvider) setPipelineVariables(
@@ -680,7 +680,7 @@ func (p *GitHubCiProvider) configurePipeline(
 			}
 			selectionIndex, err := p.console.Select(ctx, input.ConsoleOptions{
 				Message: fmt.Sprintf(
-					"The secret %s already exists in the pipeline. What would you like AZD to do?", existingSecret),
+					"The secret %s already exists in the pipeline. What would you like azd to do?", existingSecret),
 				Options:      options,
 				DefaultValue: selectionIgnore,
 			})
@@ -752,7 +752,7 @@ func (p *GitHubCiProvider) configurePipeline(
 			}
 			selectionIndex, err := p.console.Select(ctx, input.ConsoleOptions{
 				Message: fmt.Sprintf(
-					"The secret %s exists in the pipeline but is no longer required. What would you like AZD to do?",
+					"The secret %s exists in the pipeline but is no longer required. What would you like azd to do?",
 					existingSecret),
 				Options:      options,
 				DefaultValue: selectionIgnoreUnused,
@@ -857,7 +857,7 @@ func (p *GitHubCiProvider) configurePipeline(
 			}
 			selectionIndex, err := p.console.Select(ctx, input.ConsoleOptions{
 				Message: fmt.Sprintf(
-					"The variable %s already exists in the pipeline. What would you like AZD to do?", existingVariable),
+					"The variable %s already exists in the pipeline. What would you like azd to do?", existingVariable),
 				Options:      options,
 				DefaultValue: selectionIgnoreVars,
 			})
@@ -929,7 +929,7 @@ func (p *GitHubCiProvider) configurePipeline(
 			}
 			selectionIndex, err := p.console.Select(ctx, input.ConsoleOptions{
 				Message: fmt.Sprintf(
-					"The variable %s exists in the pipeline but is no longer required. What would you like AZD to do?",
+					"The variable %s exists in the pipeline but is no longer required. What would you like azd to do?",
 					existingVariable),
 				Options:      options,
 				DefaultValue: selectionIgnoreUnusedVars,

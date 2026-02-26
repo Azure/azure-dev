@@ -174,7 +174,7 @@ func (c *AzdClient) Container() ContainerServiceClient {
 }
 
 // Extension returns the extension service client.
-func (c *AzdClient) extensionService() ExtensionServiceClient {
+func (c *AzdClient) Extension() ExtensionServiceClient {
 	if c.extensionClient == nil {
 		c.extensionClient = NewExtensionServiceClient(c.connection)
 	}

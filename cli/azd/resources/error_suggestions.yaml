@@ -1,0 +1,437 @@
+# yaml-language-server: $schema=error_suggestions.schema.json
+# Error Suggestions Configuration
+# ================================
+# This file maps well-known error patterns to user-friendly messages and actionable suggestions.
+# Rules are evaluated in order; the first matching rule wins.
+#
+# Matching Fields (at least one required):
+#   - patterns:   List of strings/regex to match against error message text
+#   - errorType:  Go error struct type name to match via reflection (e.g., "AzureDeploymentError")
+#   - properties: Map of dot-path property names to expected values on the matched error type
+#
+# When multiple matching fields are specified, ALL must match for the rule to trigger.
+#
+# Response Fields:
+#   - message:    User-friendly explanation of what went wrong
+#   - suggestion: Actionable next steps to resolve the issue
+#   - links:      Optional list of reference links (each with url and optional title)
+#   - handler:    Optional name of a registered ErrorHandler for dynamic suggestions
+#
+# Pattern Types:
+#   - Default: Case-insensitive substring match (e.g., "quota exceeded")
+#   - Regex: Set "regex: true" on the rule to treat all patterns and property
+#     values as regular expressions (e.g., "BCP\\d{3}")
+#
+# Examples:
+#   # Text pattern matching:
+#   - patterns:
+#       - "some error text"
+#     message: "A brief, user-friendly explanation."
+#     suggestion: "Clear instruction on how to fix."
+#
+#   # Typed error matching with properties:
+#   - errorType: "DeploymentErrorLine"
+#     properties:
+#       Code: "InsufficientQuota"
+#     message: "Quota limit reached."
+#     suggestion: "Request a quota increase."
+
+rules:
+  # ============================================================================
+  # ORDERING: Most specific rules first, least specific last.
+  # Typed error rules (errorType + properties) are naturally more specific
+  # than text-only pattern rules. Within each group, rules with additional
+  # constraints (patterns, keywords) come before bare code matches.
+  # ============================================================================
+
+  # ============================================================================
+  # ARM Deployment Errors — Soft-delete conflicts (most specific first)
+  # 4th most common error category (~128,054 errors in 90-day analysis)
+  # ============================================================================
+
+  - errorType: "DeploymentErrorLine"
+    properties:
+      Code: "FlagMustBeSetForRestore"
+    message: "A soft-deleted resource with this name exists and is blocking deployment."
+    suggestion: >
+      Purge the resource in the Azure portal or via the Azure CLI,
+      then retry with 'azd up'. If the resources are still provisioned,
+      running 'azd down --purge' will delete and purge them.
+    links:
+      - url: "https://learn.microsoft.com/azure/key-vault/general/key-vault-recovery"
+        title: "Azure Key Vault soft-delete recovery"
+
+  - errorType: "DeploymentErrorLine"
+    properties:
+      Code: "ConflictError"
+    message: "A resource conflict occurred, possibly caused by a soft-deleted resource."
+    suggestion: >
+      Purge the resource in the Azure portal or via the Azure CLI,
+      then retry with 'azd up'. If the resources are still provisioned,
+      running 'azd down --purge' will delete and purge them.
+
+  # Conflict + soft-delete keywords (more specific than bare Conflict)
+  - errorType: "DeploymentErrorLine"
+    regex: true
+    properties:
+      Code: "Conflict"
+    patterns:
+      - "(?i)soft.?delete"
+      - "(?i)purge"
+      - "(?i)deleted vault"
+      - "(?i)deleted resource"
+      - "(?i)recover or purge"
+    message: "A soft-deleted resource is causing a deployment conflict."
+    suggestion: >
+      Purge the soft-deleted resource in the Azure portal or via the
+      Azure CLI, then retry with 'azd up'. If the resources are still
+      provisioned, running 'azd down --purge' will delete and purge them.
+    links:
+      - url: "https://learn.microsoft.com/azure/key-vault/general/key-vault-recovery"
+        title: "Azure Key Vault soft-delete recovery"
+
+  - errorType: "DeploymentErrorLine"
+    regex: true
+    properties:
+      Code: "RequestConflict"
+    patterns:
+      - "(?i)soft.?delete"
+      - "(?i)purge"
+      - "(?i)deleted vault"
+      - "(?i)deleted resource"
+      - "(?i)recover or purge"
+    message: "A soft-deleted resource is causing a deployment conflict."
+    suggestion: >
+      Purge the soft-deleted resource in the Azure portal or via the
+      Azure CLI, then retry with 'azd up'. If the resources are still
+      provisioned, running 'azd down --purge' will delete and purge them.
+
+  # ============================================================================
+  # ARM Deployment Errors — Specific error codes
+  # ============================================================================
+
+  - errorType: "DeploymentErrorLine"
+    properties:
+      Code: "InsufficientQuota"
+    message: "Your subscription has insufficient quota for this resource."
+    suggestion: >
+      Check current usage with 'az vm list-usage --location <region>'
+      or request a quota increase in the Azure portal.
+    links:
+      - url: "https://learn.microsoft.com/azure/quotas/quickstart-increase-quota-portal"
+        title: "Increase Azure subscription quotas"
+
+  - errorType: "DeploymentErrorLine"
+    properties:
+      Code: "SubscriptionIsOverQuotaForSku"
+    message: "Your subscription quota for this SKU is exceeded."
+    suggestion: "Request a quota increase or use a different SKU."
+    links:
+      - url: "https://learn.microsoft.com/azure/quotas/quickstart-increase-quota-portal"
+        title: "Increase Azure subscription quotas"
+
+  # ResponseError from ARM SDK (e.g., validation fails before polling)
+  - errorType: "ResponseError"
+    properties:
+      ErrorCode: "LocationNotAvailableForResourceType"
+    handler: "resourceNotAvailableHandler"
+    links:
+      - url: "https://learn.microsoft.com/azure/azure-resource-manager/troubleshooting/error-sku-not-available"
+        title: "Resolve SKU not available errors"
+      - url: "https://azure.microsoft.com/explore/global-infrastructure/products-by-region/table"
+        title: "Azure products available by region"
+
+  - errorType: "DeploymentErrorLine"
+    properties:
+      Code: "LocationNotAvailableForResourceType"
+    handler: "resourceNotAvailableHandler"
+    links:
+      - url: "https://learn.microsoft.com/azure/azure-resource-manager/troubleshooting/error-sku-not-available"
+        title: "Resolve SKU not available errors"
+      - url: "https://azure.microsoft.com/explore/global-infrastructure/products-by-region/table"
+        title: "Azure products available by region"
+
+  - errorType: "DeploymentErrorLine"
+    properties:
+      Code: "AuthorizationFailed"
+    message: "You do not have sufficient permissions for this deployment."
+    suggestion: >
+      Ensure you have the required RBAC role (e.g., Owner or Contributor)
+      on the target subscription. If the template creates role assignments,
+      the Owner or User Access Administrator role is required.
+    links:
+      - url: "https://learn.microsoft.com/azure/role-based-access-control/role-assignments-portal"
+        title: "Assign Azure roles"
+
+  - errorType: "DeploymentErrorLine"
+    properties:
+      Code: "Unauthorized"
+    message: "The request was unauthorized."
+    suggestion: >
+      Run 'azd auth login' to re-authenticate, then verify you have
+      the required RBAC role on the target subscription or resource group.
+    links:
+      - url: "https://learn.microsoft.com/azure/role-based-access-control/role-assignments-portal"
+        title: "Assign Azure roles"
+
+  - errorType: "DeploymentErrorLine"
+    properties:
+      Code: "Forbidden"
+    message: "Access to this resource is forbidden."
+    suggestion: >
+      You may lack the required RBAC role, or an Azure Policy is
+      blocking the operation. Check your role assignments and any
+      deny assignments or policies on the target scope.
+    links:
+      - url: "https://learn.microsoft.com/azure/role-based-access-control/troubleshooting"
+        title: "Troubleshoot Azure RBAC"
+
+  - errorType: "DeploymentErrorLine"
+    properties:
+      Code: "RequestDisallowedByPolicy"
+    message: "An Azure Policy is blocking this deployment."
+    suggestion: >
+      Check which policies are assigned to your subscription or
+      resource group with 'az policy assignment list'. Contact your
+      administrator to add an exemption or adjust the policy.
+    links:
+      - url: "https://learn.microsoft.com/azure/governance/policy/troubleshoot/general"
+        title: "Troubleshoot Azure Policy"
+
+  - errorType: "DeploymentErrorLine"
+    properties:
+      Code: "RoleAssignmentExists"
+    message: "A role assignment with this configuration already exists."
+    suggestion: >
+      This is usually safe to ignore on re-deployment. The role
+      assignment was already created in a previous run.
+
+  - errorType: "DeploymentErrorLine"
+    properties:
+      Code: "PrincipalNotFound"
+    message: "The security principal for a role assignment was not found."
+    suggestion: >
+      The user, group, or service principal may have been deleted.
+      Check that the principal ID in your template is valid, or
+      remove the stale role assignment.
+    links:
+      - url: "https://learn.microsoft.com/azure/role-based-access-control/troubleshooting"
+        title: "Troubleshoot Azure RBAC"
+
+  - errorType: "DeploymentErrorLine"
+    properties:
+      Code: "NoRegisteredProviderFound"
+    message: "A required Azure resource provider is not registered."
+    suggestion: >
+      Register the missing provider with
+      'az provider register --namespace <provider>'.
+      Common providers: Microsoft.CognitiveServices,
+      Microsoft.Search, Microsoft.App, Microsoft.ContainerRegistry.
+    links:
+      - url: "https://learn.microsoft.com/azure/azure-resource-manager/troubleshooting/error-register-resource-provider"
+        title: "Resolve resource provider registration errors"
+
+  - errorType: "DeploymentErrorLine"
+    properties:
+      Code: "InvalidTemplate"
+    message: "The deployment template contains errors."
+    suggestion: "Run 'azd provision --preview' to validate before deploying."
+
+  - errorType: "DeploymentErrorLine"
+    properties:
+      Code: "ValidationError"
+    message: "The deployment failed validation."
+    suggestion: >
+      Check resource property values and API versions
+      in your Bicep/Terraform files.
+
+  - errorType: "DeploymentErrorLine"
+    properties:
+      Code: "ResourceNotFound"
+    message: "A referenced resource was not found."
+    suggestion: >
+      Check resource dependencies and deployment ordering
+      in your template.
+
+  # Bare Conflict — least specific ARM code rule, must be AFTER
+  # Conflict + keyword rules above
+  - errorType: "DeploymentErrorLine"
+    properties:
+      Code: "Conflict"
+    message: "A resource with this name already exists or is in a conflicting state."
+    suggestion: "Check for existing or soft-deleted resources in the Azure portal."
+
+  # ============================================================================
+  # Container App Errors
+  # ~2.46% of all azd errors (~3,152 in 90-day analysis)
+  # ============================================================================
+
+  - errorType: "DeploymentErrorLine"
+    properties:
+      Code: "ContainerAppSecretInvalid"
+    message: "A secret referenced by the container app is missing or invalid."
+    suggestion: >
+      Check your secret definitions in the Bicep template. Ensure all
+      secrets referenced by environment variables or ingress exist and
+      have valid values.
+    links:
+      - url: "https://learn.microsoft.com/azure/container-apps/manage-secrets"
+        title: "Manage secrets in Azure Container Apps"
+
+  - errorType: "DeploymentErrorLine"
+    properties:
+      Code: "ContainerAppOperationError"
+    patterns:
+      - "image"
+    message: "The container image could not be pulled."
+    suggestion: >
+      Verify the image name and tag, ensure the container registry
+      is accessible, and check that registry credentials are configured
+      correctly (admin enabled or managed identity assigned).
+    links:
+      - url: "https://learn.microsoft.com/azure/container-apps/containers"
+        title: "Containers in Azure Container Apps"
+
+  - errorType: "DeploymentErrorLine"
+    properties:
+      Code: "ContainerAppOperationError"
+    message: "A Container App operation failed during deployment."
+    suggestion: >
+      Inspect the container app revision logs with
+      'az containerapp logs show --name <app> -g <resource-group> --follow'.
+      Common causes include invalid environment variables, port
+      mismatches, or insufficient resources.
+    links:
+      - url: "https://learn.microsoft.com/azure/container-apps/troubleshooting"
+        title: "Troubleshoot Azure Container Apps"
+
+  - errorType: "DeploymentErrorLine"
+    regex: true
+    properties:
+      Code: "InvalidParameterValueInContainerTemplate"
+    message: "The container app template has an invalid parameter."
+    suggestion: >
+      Check container resource limits (CPU/memory), port
+      configuration, and environment variable values in your template.
+    links:
+      - url: "https://learn.microsoft.com/azure/container-apps/containers"
+        title: "Containers in Azure Container Apps"
+
+  # ============================================================================
+  # PowerShell Hook Failures (errorType + properties + patterns)
+  # ~5% of all azd errors (~6,347); AI templates hit 6.59%
+  # ============================================================================
+
+  - errorType: "ExitError"
+    regex: true
+    properties:
+      Cmd: "(?i)pwsh|powershell"
+    patterns:
+      - "Import-Module"
+      - "not loaded"
+    message: "A required PowerShell module could not be loaded."
+    suggestion: "Install the missing module with 'Install-Module <ModuleName> -Scope CurrentUser'."
+
+  - errorType: "ExitError"
+    regex: true
+    properties:
+      Cmd: "(?i)pwsh|powershell"
+    patterns:
+      - "(?i)Az\\.\\S+.*is not recognized"
+    message: "The Azure PowerShell module (Az) is required but not installed."
+    suggestion: "Install it with 'Install-Module Az -Scope CurrentUser -Repository PSGallery -Force'."
+    links:
+      - url: "https://learn.microsoft.com/powershell/azure/install-azure-powershell"
+        title: "Install Azure PowerShell"
+
+  - errorType: "ExitError"
+    regex: true
+    properties:
+      Cmd: "(?i)pwsh|powershell"
+    patterns:
+      - "UnauthorizedAccess"
+    message: "PowerShell execution policy is blocking the script."
+    suggestion: >
+      Check your policy with 'Get-ExecutionPolicy' and consider setting it with
+      'Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser'.
+
+  - errorType: "ExitError"
+    regex: true
+    properties:
+      Cmd: "(?i)pwsh|powershell"
+    patterns:
+      - "ErrorActionPreference"
+    message: "The hook script has an issue with error handling configuration."
+    suggestion: "Ensure '$ErrorActionPreference = \"Stop\"' is set at the top of the script."
+
+  - errorType: "ExitError"
+    regex: true
+    properties:
+      Cmd: "(?i)pwsh|powershell"
+    patterns:
+      - "Connect-AzAccount"
+    message: "The Azure authentication session may have expired."
+    suggestion: "Run 'azd auth login' to refresh your credentials, then retry."
+
+  - errorType: "ExitError"
+    regex: true
+    properties:
+      Cmd: "(?i)pwsh|powershell"
+    patterns:
+      - "(?i)login.*expired|expired.*login"
+    message: "The Azure authentication session may have expired."
+    suggestion: "Run 'azd auth login' to refresh your credentials, then retry."
+
+  # ============================================================================
+  # Text Pattern Rules — Specific patterns first
+  # These are fallbacks for errors without typed Go structs.
+  # ============================================================================
+
+  - patterns:
+      - "parsing project file"
+    message: "Your azure.yaml file is invalid."
+    suggestion: "Check the syntax of your azure.yaml file and fix any errors."
+    links:
+      - url: "https://learn.microsoft.com/azure/developer/azure-developer-cli/azd-schema"
+        title: "azure.yaml schema reference"
+
+  - patterns:
+      - "InvalidAuthenticationToken"
+      - "ExpiredAuthenticationToken"
+      - "TokenExpired"
+    message: "Your authentication token has expired."
+    suggestion: "Run 'azd auth login' to sign in again."
+    links:
+      - url: "https://learn.microsoft.com/azure/developer/azure-developer-cli/reference#azd-auth-login"
+        title: "azd auth login reference"
+
+  - regex: true
+    patterns:
+      - "BCP\\d{3}"
+    message: "Your Bicep template has an error."
+    suggestion: "Review the error message for the specific issue and line number in your .bicep file."
+    links:
+      - url: "https://learn.microsoft.com/azure/azure-resource-manager/bicep/bicep-error-codes"
+        title: "Bicep error codes reference"
+
+  # ============================================================================
+  # Text Pattern Rules — Broad/generic patterns (least specific, must be last)
+  # ============================================================================
+
+  - patterns:
+      - "AADSTS"
+    message: "Authentication with Azure failed."
+    suggestion: "Run 'azd auth login' to sign in again."
+    links:
+      - url: "https://learn.microsoft.com/azure/developer/azure-developer-cli/reference#azd-auth-login"
+        title: "azd auth login reference"
+
+  - patterns:
+      - "QuotaExceeded"
+      - "quota exceeded"
+      - "exceeds quota"
+    message: "Your Azure subscription has reached a resource quota limit."
+    suggestion: "Request a quota increase through the Azure portal, or try deploying to a different region."
+    links:
+      - url: "https://learn.microsoft.com/azure/quotas/quickstart-increase-quota-portal"
+        title: "Increase Azure subscription quotas"

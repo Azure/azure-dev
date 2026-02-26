@@ -1,3 +1,3 @@
 # `azd` Demo Extension
 
-An AZD Demo extension
+An azd Demo extension

@@ -4,7 +4,7 @@
       "id": "microsoft.azd.demo",
       "namespace": "demo",
       "displayName": "Demo Extension",
-      "description": "This extension provides examples of the AZD extension framework.",
+      "description": "This extension provides examples of the azd extension framework.",
       "versions": [
         {
           "version": "0.1.0-beta.1",
@@ -328,8 +328,8 @@
     {
       "id": "microsoft.azd.extensions",
       "namespace": "x",
-      "displayName": "AZD Extensions Developer Kit",
-      "description": "This extension provides a set of tools for AZD extension developers to test and debug their extensions.",
+      "displayName": "azd extensions Developer Kit",
+      "description": "This extension provides a set of tools for azd extension developers to test and debug their extensions.",
       "versions": [
         {
           "version": "0.4.2",
@@ -340,22 +340,22 @@
           "examples": [
             {
               "name": "init",
-              "description": "Initialize a new AZD extension project.",
+              "description": "Initialize a new azd extension project.",
               "usage": "azd x init"
             },
             {
               "name": "build",
-              "description": "Build the AZD extension project.",
+              "description": "Build the azd extension project.",
               "usage": "azd x build"
             },
             {
               "name": "pack",
-              "description": "Package the AZD extension project into a distributable format and add to local registry.",
+              "description": "Package the azd extension project into a distributable format and add to local registry.",
               "usage": "azd x pack"
             },
             {
               "name": "release",
-              "description": "Create a new release of the AZD extension project to a GitHub repository.",
+              "description": "Create a new release of the azd extension project to a GitHub repository.",
               "usage": "azd x release"
             },
             {
@@ -424,27 +424,27 @@
           "examples": [
             {
               "name": "init",
-              "description": "Initialize a new AZD extension project.",
+              "description": "Initialize a new azd extension project.",
               "usage": "azd x init"
             },
             {
               "name": "build",
-              "description": "Build the AZD extension project.",
+              "description": "Build the azd extension project.",
               "usage": "azd x build"
             },
             {
               "name": "pack",
-              "description": "Package the AZD extension project into a distributable format and add to local registry.",
+              "description": "Package the azd extension project into a distributable format and add to local registry.",
               "usage": "azd x pack"
             },
             {
               "name": "publish",
-              "description": "Publish the AZD extension project to an extension source.",
+              "description": "Publish the azd extension project to an extension source.",
               "usage": "azd x publish"
             },
             {
               "name": "release",
-              "description": "Create a new release of the AZD extension project to a GitHub repository.",
+              "description": "Create a new release of the azd extension project to a GitHub repository.",
               "usage": "azd x release"
             },
             {
@@ -513,27 +513,27 @@
           "examples": [
             {
               "name": "init",
-              "description": "Initialize a new AZD extension project.",
+              "description": "Initialize a new azd extension project.",
               "usage": "azd x init"
             },
             {
               "name": "build",
-              "description": "Build the AZD extension project.",
+              "description": "Build the azd extension project.",
               "usage": "azd x build"
             },
             {
               "name": "pack",
-              "description": "Package the AZD extension project into a distributable format and add to local registry.",
+              "description": "Package the azd extension project into a distributable format and add to local registry.",
               "usage": "azd x pack"
             },
             {
               "name": "publish",
-              "description": "Publish the AZD extension project to an extension source.",
+              "description": "Publish the azd extension project to an extension source.",
               "usage": "azd x publish"
             },
             {
               "name": "release",
-              "description": "Create a new release of the AZD extension project to a GitHub repository.",
+              "description": "Create a new release of the azd extension project to a GitHub repository.",
               "usage": "azd x release"
             },
             {
@@ -602,27 +602,27 @@
           "examples": [
             {
               "name": "init",
-              "description": "Initialize a new AZD extension project.",
+              "description": "Initialize a new azd extension project.",
               "usage": "azd x init"
             },
             {
               "name": "build",
-              "description": "Build the AZD extension project.",
+              "description": "Build the azd extension project.",
               "usage": "azd x build"
             },
             {
               "name": "pack",
-              "description": "Package the AZD extension project into a distributable format and add to local registry.",
+              "description": "Package the azd extension project into a distributable format and add to local registry.",
               "usage": "azd x pack"
             },
             {
               "name": "publish",
-              "description": "Publish the AZD extension project to an extension source.",
+              "description": "Publish the azd extension project to an extension source.",
               "usage": "azd x publish"
             },
             {
               "name": "release",
-              "description": "Create a new release of the AZD extension project to a GitHub repository.",
+              "description": "Create a new release of the azd extension project to a GitHub repository.",
               "usage": "azd x release"
             },
             {
@@ -691,27 +691,27 @@
           "examples": [
             {
               "name": "init",
-              "description": "Initialize a new AZD extension project.",
+              "description": "Initialize a new azd extension project.",
               "usage": "azd x init"
             },
             {
               "name": "build",
-              "description": "Build the AZD extension project.",
+              "description": "Build the azd extension project.",
               "usage": "azd x build"
             },
             {
               "name": "pack",
-              "description": "Package the AZD extension project into a distributable format and add to local registry.",
+              "description": "Package the azd extension project into a distributable format and add to local registry.",
               "usage": "azd x pack"
             },
             {
               "name": "publish",
-              "description": "Publish the AZD extension project to an extension source.",
+              "description": "Publish the azd extension project to an extension source.",
               "usage": "azd x publish"
             },
             {
               "name": "release",
-              "description": "Create a new release of the AZD extension project to a GitHub repository.",
+              "description": "Create a new release of the azd extension project to a GitHub repository.",
               "usage": "azd x release"
             },
             {
@@ -780,27 +780,27 @@
           "examples": [
             {
               "name": "init",
-              "description": "Initialize a new AZD extension project.",
+              "description": "Initialize a new azd extension project.",
               "usage": "azd x init"
             },
             {
               "name": "build",
-              "description": "Build the AZD extension project.",
+              "description": "Build the azd extension project.",
               "usage": "azd x build"
             },
             {
               "name": "pack",
-              "description": "Package the AZD extension project into a distributable format and add to local registry.",
+              "description": "Package the azd extension project into a distributable format and add to local registry.",
               "usage": "azd x pack"
             },
             {
               "name": "publish",
-              "description": "Publish the AZD extension project to an extension source.",
+              "description": "Publish the azd extension project to an extension source.",
               "usage": "azd x publish"
             },
             {
               "name": "release",
-              "description": "Create a new release of the AZD extension project to a GitHub repository.",
+              "description": "Create a new release of the azd extension project to a GitHub repository.",
               "usage": "azd x release"
             },
             {
@@ -870,27 +870,27 @@
           "examples": [
             {
               "name": "init",
-              "description": "Initialize a new AZD extension project.",
+              "description": "Initialize a new azd extension project.",
               "usage": "azd x init"
             },
             {
               "name": "build",
-              "description": "Build the AZD extension project.",
+              "description": "Build the azd extension project.",
               "usage": "azd x build"
             },
             {
               "name": "pack",
-              "description": "Package the AZD extension project into a distributable format and add to local registry.",
+              "description": "Package the azd extension project into a distributable format and add to local registry.",
               "usage": "azd x pack"
             },
             {
               "name": "publish",
-              "description": "Publish the AZD extension project to an extension source.",
+              "description": "Publish the azd extension project to an extension source.",
               "usage": "azd x publish"
             },
             {
               "name": "release",
-              "description": "Create a new release of the AZD extension project to a GitHub repository.",
+              "description": "Create a new release of the azd extension project to a GitHub repository.",
               "usage": "azd x release"
             },
             {
@@ -2091,6 +2091,82 @@
               "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.10-preview/azure-ai-agents-windows-arm64.zip"
             }
           }
+        },
+        {
+          "version": "0.1.11-preview",
+          "requiredAzdVersion": "\u003e1.23.4",
+          "capabilities": [
+            "custom-commands",
+            "lifecycle-events",
+            "mcp-server",
+            "service-target-provider",
+            "metadata"
+          ],
+          "providers": [
+            {
+              "name": "azure.ai.agent",
+              "type": "service-target",
+              "description": "Deploys agents to the Foundry Agent Service"
+            }
+          ],
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
+          "examples": [
+            {
+              "name": "init",
+              "description": "Initialize a new AI agent project.",
+              "usage": "azd ai agent init"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "3f36b1754b2b810b9bcbf3f7a1b960bd91f97b66156ff686b0d4c2a7ba3ffbfb"
+              },
+              "entryPoint": "azure-ai-agents-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.11-preview/azure-ai-agents-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "cae9de7cbde3ada737f893f357d8b4c0199fc7ac4c6132b426326cfff74eda31"
+              },
+              "entryPoint": "azure-ai-agents-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.11-preview/azure-ai-agents-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "2e5da23e45728034744d1b8b7f06b84e56cb9df0ddc865df9d6b6d249b3e8d0d"
+              },
+              "entryPoint": "azure-ai-agents-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.11-preview/azure-ai-agents-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "5e19b59b6f76cb970de5c3bcd42c158d739d691e87cbd46a5e4f545501173abd"
+              },
+              "entryPoint": "azure-ai-agents-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.11-preview/azure-ai-agents-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "a572a9e3d430898482f80054938aa6709ebb65a8a6df88e727aacaf45e92a872"
+              },
+              "entryPoint": "azure-ai-agents-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.11-preview/azure-ai-agents-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "046e9679b9dfa58f5d1c5d4344c7dcb1ecbc72ec2f3df74282709628e501429f"
+              },
+              "entryPoint": "azure-ai-agents-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-agents_0.1.11-preview/azure-ai-agents-windows-arm64.zip"
+            }
+          }
         }
       ]
     },
@@ -2773,11 +2849,11 @@
           }
         },
         {
+          "version": "0.0.17-preview",
           "capabilities": [
             "custom-commands",
             "metadata"
           ],
-          "version": "0.0.17-preview",
           "usage": "azd ai finetuning \u003ccommand\u003e [options]",
           "examples": [
             {
@@ -3102,6 +3178,79 @@
               },
               "entryPoint": "azure-ai-models-windows-arm64.exe",
               "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-models_0.0.3-preview/azure-ai-models-windows-arm64.zip"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "azure.appservice",
+      "namespace": "appservice",
+      "displayName": "Azure App Service",
+      "description": "Extension for managing Azure App Service resources.",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "capabilities": [
+            "custom-commands",
+            "metadata"
+          ],
+          "usage": "azd appservice \u003ccommand\u003e [options]",
+          "examples": [
+            {
+              "name": "swap",
+              "description": "Swap deployment slots for an App Service.",
+              "usage": "azd appservice swap --service \u003cservice-name\u003e --src \u003csource-slot\u003e --dst \u003cdestination-slot\u003e"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "556e61f1cccb7fe30018c0a8e4bea6a5c2dfeacae280cace3884df14ae5b9757"
+              },
+              "entryPoint": "azure-appservice-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-appservice_0.1.0/azure-appservice-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "702c687a99fb5465a0ccce2ca5f0827e0da2d8e7a39ff86f1a0361296bb80a47"
+              },
+              "entryPoint": "azure-appservice-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-appservice_0.1.0/azure-appservice-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "2fb4efb9e2dfdbfa9ad1d54483213d38dec19361343eeb75615353a7d93a3448"
+              },
+              "entryPoint": "azure-appservice-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-appservice_0.1.0/azure-appservice-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "69204c40496bff0d6677ab8eb811d20173806a588b8f89572ab38157328c812a"
+              },
+              "entryPoint": "azure-appservice-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-appservice_0.1.0/azure-appservice-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "2306b741af14700cd65cb6efe16adac4050c7c84413c7dd74376c40e952dc1ee"
+              },
+              "entryPoint": "azure-appservice-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-appservice_0.1.0/azure-appservice-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "fc08097662690218d2ab4a42d2bb634b4ec05722fdfaf9f97b30b5b570f5a790"
+              },
+              "entryPoint": "azure-appservice-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-appservice_0.1.0/azure-appservice-windows-arm64.zip"
             }
           }
         }

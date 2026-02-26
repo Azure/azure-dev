@@ -143,22 +143,32 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 					allEnv = append(allEnv, "FORCE_COLOR=1")
 				}
 
+				// Read global flags for propagation via InvokeOptions
+				debugEnabled, _ := m.options.Flags.GetBool("debug")
+				noPrompt, _ := m.options.Flags.GetBool("no-prompt")
+				cwd, _ := m.options.Flags.GetString("cwd")
+				env, _ := m.options.Flags.GetString("environment")
+
 				// Propagate trace context to the extension process
 				if traceEnv := tracing.Environ(ctx); len(traceEnv) > 0 {
 					allEnv = append(allEnv, traceEnv...)
 				}
 
 				args := []string{"listen"}
-				if debugEnabled, _ := m.options.Flags.GetBool("debug"); debugEnabled {
+				if debugEnabled {
 					args = append(args, "--debug")
 				}
 
 				options := &extensions.InvokeOptions{
-					Args:   args,
-					Env:    allEnv,
-					StdIn:  ext.StdIn(),
-					StdOut: ext.StdOut(),
-					StdErr: ext.StdErr(),
+					Args:        args,
+					Env:         allEnv,
+					StdIn:       ext.StdIn(),
+					StdOut:      ext.StdOut(),
+					StdErr:      ext.StdErr(),
+					Debug:       debugEnabled,
+					NoPrompt:    noPrompt,
+					Cwd:         cwd,
+					Environment: env,
 				}
 
 				if _, err := m.extensionRunner.Invoke(ctx, ext, options); err != nil {

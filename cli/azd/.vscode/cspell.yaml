@@ -16,10 +16,12 @@ words:
   - customtype
   - devcontainers
   - errgroup
+  - errorhandler
   - extendee
   - eiannone
   # CDN host name
   - gfgac2cmf7b8cuay
+  - Getenv
   - goversioninfo
   - OPENCODE
   - opencode
@@ -49,6 +51,7 @@ words:
   - unmarshaling
   - unsetting
   - usgovcloudapi
+  - worktrees
   - jdbc
   - springframework
   - santhosh
@@ -57,6 +60,7 @@ words:
   - rustc
   - figspec
   - finetune
+  - gitdir
   - bubbletea
   - lipgloss
   - gopxl
@@ -205,6 +209,13 @@ overrides:
     words:
       - aoai
       - azdaiagent
+  - filename: extensions/azure.ai.agents/internal/cmd/init_from_code.go
+    words:
+      - aoai
+      - aiservices
+      - azdaiagent
+      - myregistry
+      - posixpath
   - filename: extensions/azure.ai.agents/internal/cmd/listen.go
     words:
       - hostedagent

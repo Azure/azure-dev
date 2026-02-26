@@ -2,7 +2,7 @@
 id: microsoft.azd.demo
 namespace: demo
 displayName: Demo Extension
-description: This extension provides examples of the AZD extension framework.
+description: This extension provides examples of the azd extension framework.
 usage: azd demo <command> [options]
 version: 0.5.0
 language: go

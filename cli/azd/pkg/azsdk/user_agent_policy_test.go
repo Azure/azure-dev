@@ -11,7 +11,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
@@ -36,7 +35,7 @@ func TestOverrideUserAgent(t *testing.T) {
 	require.NoError(t, err)
 
 	var response *http.Response
-	ctx := runtime.WithCaptureResponse(*mockContext.Context, &response)
+	ctx := policy.WithCaptureResponse(*mockContext.Context, &response)
 
 	_, _ = client.GetByID(ctx, "RESOURCE_ID", "", nil)
 

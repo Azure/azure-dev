@@ -22,7 +22,7 @@ func NewAzdDockerGenerationTool() server.ServerTool {
 			mcp.WithOpenWorldHintAnnotation(false),
 			mcp.WithDescription(
 				`Returns instructions for generating optimized Dockerfiles and container configurations for containerizable 
-services in AZD projects. 
+services in azd projects. 
 
 The LLM agent should execute these instructions using available tools.
 

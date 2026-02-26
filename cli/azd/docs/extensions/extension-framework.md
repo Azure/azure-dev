@@ -344,10 +344,10 @@ func newListenCommand() *cobra.Command {
         Use:   "listen",
         Short: "Starts the extension and listens for events.",
         RunE: func(cmd *cobra.Command, args []string) error {
-            // Create a new context that includes the AZD access token.
+            // Create a new context that includes the azd access token.
             ctx := azdext.WithAccessToken(cmd.Context())
 
-            // Create a new AZD client.
+            // Create a new azd client.
             azdClient, err := azdext.NewAzdClient()
             if err != nil {
                 return fmt.Errorf("failed to create azd client: %w", err)
@@ -936,7 +936,7 @@ Extensions can declare the following capabilities in their manifest:
 id: microsoft.azd.demo
 namespace: demo
 displayName: Demo Extension
-description: This extension provides examples of the AZD extension framework.
+description: This extension provides examples of the azd extension framework.
 usage: azd demo <command> [options]
 version: 0.1.0
 entryPoint: demo
@@ -1069,7 +1069,7 @@ Here's a simple extension manifest for getting started:
 id: microsoft.azd.demo
 namespace: demo
 displayName: Demo Extension
-description: This extension provides examples of the AZD extension framework.
+description: This extension provides examples of the azd extension framework.
 usage: azd demo <command> [options]
 version: 0.1.0
 capabilities:
@@ -1092,7 +1092,7 @@ The following is an example of an [extension manifest](../extensions/microsoft.a
 id: microsoft.azd.demo
 namespace: demo
 displayName: Demo Extension
-description: This extension provides examples of the AZD extension framework.
+description: This extension provides examples of the azd extension framework.
 usage: azd demo <command> [options]
 version: 0.1.0
 capabilities:
@@ -1124,6 +1124,68 @@ To enable interaction with `azd` from within the extension, the extension must l
 
 The gRPC client must also include an `authorization` parameter with the value from `AZD_ACCESS_TOKEN`; otherwise, requests will fail due to invalid authorization. Extensions must declare their supported capabilities within the extension registry otherwise certain service operations may fail with a permission denied error.
 
+### Structured Error Reporting (Custom Commands)
+
+For custom command execution, extensions can provide richer telemetry by reporting a structured error to
+the azd host via the `ExtensionService.ReportError` gRPC call before exiting with a non-zero status code.
+
+For Go extensions, the recommended approach is to use `azdext.Run`, which handles context creation, structured error
+reporting, suggestion rendering, and `os.Exit` automatically:
+
+```go
+func main() {
+  azdext.Run(cmd.NewRootCommand())
+}
+```
+
+Alternatively, you can use `azdext.ReportError` directly for lower-level control:
+
+```go
+func main() {
+  ctx := azdext.NewContext()
+  ctx = azdext.WithAccessToken(ctx)
+  rootCmd := cmd.NewRootCommand()
+
+  if err := rootCmd.ExecuteContext(ctx); err != nil {
+    _ = azdext.ReportError(ctx, err)
+    os.Exit(1)
+  }
+}
+```
+
+Use typed extension errors to control telemetry mapping:
+
+```go
+return &azdext.LocalError{
+  Message:    "invalid configuration: missing required field 'name'",
+  Code:       "invalid_config",
+  Category:   "validation",
+  Suggestion: "Ensure your azure.yaml has a 'name' field defined.",
+}
+```
+
+```go
+return &azdext.ServiceError{
+  Message:     "request failed",
+  ErrorCode:   "TooManyRequests",
+  StatusCode:  429,
+  ServiceName: "openai.azure.com",
+  Suggestion:  "Wait a moment and retry the request, or increase your rate limit.",
+}
+```
+
+Current telemetry result code conventions:
+
+- Service errors: `ext.service.<service>.<statusCode>`
+- Local domain categories:
+  - `validation` -> `ext.validation.<code>`
+  - `auth` -> `ext.auth.<code>`
+  - `dependency` -> `ext.dependency.<code>`
+  - `compatibility` -> `ext.compatibility.<code>`
+  - `user` -> `ext.user.<code>`
+  - `internal` -> `ext.internal.<code>`
+- Unknown local categories fall back to `ext.local.<code>`.
+
 #### Go
 
 For extensions built using Go, the `azdext` package provides an `AzdClient` which acts as the gRPC client.
@@ -1152,10 +1214,10 @@ func WithAccessToken(ctx context.Context, params ...string) context.Context {
 ### How to call `azd` gRPC service
 
 ```go
-// Create a new context that includes the AZD access token
+// Create a new context that includes the azd access token
 ctx := azdext.WithAccessToken(cmd.Context())
 
-// Create a new AZD client
+// Create a new azd client
 // The constructor function automatically constructs the address
 // from the `AZD_SERVER` environment variable but can be overridden if required.
 azdClient, err := azdext.NewAzdClient()
@@ -1184,10 +1246,10 @@ In this example the extension is leveraging the `azdext.NewExtensionHost` constr
 Other languages will need to manually handle the different message types invoked by the service.
 
 ```go
-// Create a new context that includes the AZD access token.
+// Create a new context that includes the azd access token.
 ctx := azdext.WithAccessToken(cmd.Context())
 
-// Create a new AZD client.
+// Create a new azd client.
 azdClient, err := azdext.NewAzdClient()
 if err != nil {
     return fmt.Errorf("failed to create azd client: %w", err)
@@ -2524,7 +2586,7 @@ func main() {
 
 ### Compose Service
 
-This service manages composability resources in an AZD project.
+This service manages composability resources in an azd project.
 
 > See [compose.proto](../grpc/proto/compose.proto) for more details.
 

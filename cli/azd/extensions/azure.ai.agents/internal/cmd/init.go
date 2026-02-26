@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/registry_api"
@@ -68,6 +69,7 @@ type InitAction struct {
 	environment          *azdext.Environment
 	flags                *initFlags
 	deploymentDetails    []project.Deployment
+	httpClient           *http.Client
 }
 
 // GitHubUrlInfo holds parsed information from a GitHub URL
@@ -130,46 +132,63 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 				return fmt.Errorf("failed waiting for debugger: %w", err)
 			}
 
-			azureContext, projectConfig, environment, err := ensureAzureContext(ctx, flags, azdClient)
-			if err != nil {
-				return fmt.Errorf("failed to ground into a project context: %w", err)
+			var httpClient = &http.Client{
+				Timeout: 30 * time.Second,
 			}
 
-			credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
-				TenantID:                   azureContext.Scope.TenantId,
-				AdditionallyAllowedTenants: []string{"*"},
-			})
-			if err != nil {
-				return fmt.Errorf("failed to create azure credential: %w", err)
-			}
+			if flags.manifestPointer != "" {
+				azureContext, projectConfig, environment, err := ensureAzureContext(ctx, flags, azdClient)
+				if err != nil {
+					return fmt.Errorf("failed to ground into a project context: %w", err)
+				}
 
-			console := input.NewConsole(
-				false, // noPrompt
-				true,  // isTerminal
-				input.Writers{Output: os.Stdout},
-				input.ConsoleHandles{
-					Stderr: os.Stderr,
-					Stdin:  os.Stdin,
-					Stdout: os.Stdout,
-				},
-				nil, // formatter
-				nil, // externalPromptCfg
-			)
+				credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
+					TenantID:                   azureContext.Scope.TenantId,
+					AdditionallyAllowedTenants: []string{"*"},
+				})
+				if err != nil {
+					return fmt.Errorf("failed to create azure credential: %w", err)
+				}
 
-			action := &InitAction{
-				azdClient: azdClient,
-				// azureClient:         azure.NewAzureClient(credential),
-				azureContext: azureContext,
-				// composedResources:   getComposedResourcesResponse.Resources,
-				console:       console,
-				credential:    credential,
-				projectConfig: projectConfig,
-				environment:   environment,
-				flags:         flags,
-			}
+				console := input.NewConsole(
+					false, // noPrompt
+					true,  // isTerminal
+					input.Writers{Output: os.Stdout},
+					input.ConsoleHandles{
+						Stderr: os.Stderr,
+						Stdin:  os.Stdin,
+						Stdout: os.Stdout,
+					},
+					nil, // formatter
+					nil, // externalPromptCfg
+				)
 
-			if err := action.Run(ctx); err != nil {
-				return fmt.Errorf("failed to run start action: %w", err)
+				action := &InitAction{
+					azdClient: azdClient,
+					// azureClient:         azure.NewAzureClient(credential),
+					azureContext: azureContext,
+					// composedResources:   getComposedResourcesResponse.Resources,
+					console:       console,
+					credential:    credential,
+					projectConfig: projectConfig,
+					environment:   environment,
+					flags:         flags,
+					httpClient:    httpClient,
+				}
+
+				if err := action.Run(ctx); err != nil {
+					return fmt.Errorf("failed to run start action: %w", err)
+				}
+			} else {
+				action := &InitFromCodeAction{
+					azdClient:  azdClient,
+					flags:      flags,
+					httpClient: httpClient,
+				}
+
+				if err := action.Run(ctx); err != nil {
+					return fmt.Errorf("failed to run init from code action: %w", err)
+				}
 			}
 
 			return nil
@@ -197,21 +216,35 @@ func (a *InitAction) Run(ctx context.Context) error {
 	color.Green("Initializing AI agent project...")
 	fmt.Println()
 
-	// If --project-id is given
-	if a.flags.projectResourceId != "" {
-		// projectResourceId is a string of the format
-		// /subscriptions/[AZURE_SUBSCRIPTION]/resourceGroups/[AZURE_RESOURCE_GROUP]/providers/Microsoft.CognitiveServices/accounts/[AI_ACCOUNT_NAME]/projects/[AI_PROJECT_NAME]
-		// extract each of those fields from the string, issue an error if it doesn't match the format
-		fmt.Println("Setting up your azd environment to use the provided Microsoft Foundry project resource ID...")
-		if err := a.parseAndSetProjectResourceId(ctx); err != nil {
-			return fmt.Errorf("failed to parse project resource ID: %w", err)
+	// If src path is absolute, convert it to relative path compared to the azd project path
+	if a.flags.src != "" && filepath.IsAbs(a.flags.src) {
+		projectResponse, err := a.azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+		if err != nil {
+			return fmt.Errorf("failed to get project path: %w", err)
 		}
 
-		color.Green("\nYour azd environment has been initialized to use your existing Microsoft Foundry project.")
+		relPath, err := filepath.Rel(projectResponse.Project.Path, a.flags.src)
+		if err != nil {
+			return fmt.Errorf("failed to convert src path to relative path: %w", err)
+		}
+		a.flags.src = relPath
 	}
 
 	// If --manifest is given
 	if a.flags.manifestPointer != "" {
+		// If --project-id is given
+		if a.flags.projectResourceId != "" {
+			// projectResourceId is a string of the format
+			// /subscriptions/[AZURE_SUBSCRIPTION]/resourceGroups/[AZURE_RESOURCE_GROUP]/providers/Microsoft.CognitiveServices/accounts/[AI_ACCOUNT_NAME]/projects/[AI_PROJECT_NAME]
+			// extract each of those fields from the string, issue an error if it doesn't match the format
+			fmt.Println("Setting up your azd environment to use the provided Microsoft Foundry project resource ID...")
+			if err := a.parseAndSetProjectResourceId(ctx); err != nil {
+				return fmt.Errorf("failed to parse project resource ID: %w", err)
+			}
+
+			color.Green("\nYour azd environment has been initialized to use your existing Microsoft Foundry project.")
+		}
+
 		// Validate that the manifest pointer is either a valid URL or existing file path
 		isValidURL := false
 		isValidFile := false
@@ -244,26 +277,16 @@ func (a *InitAction) Run(ctx context.Context) error {
 		color.Green("\nAI agent definition added to your azd project successfully!")
 	}
 
-	// // Validate command flags
-	// if err := a.validateFlags(flags); err != nil {
-	// 	return err
-	// }
-
-	// // Prompt for any missing input values
-	// if err := a.promptForMissingValues(ctx, a.azdClient, flags); err != nil {
-	// 	return fmt.Errorf("collecting required information: %w", err)
-	// }
-
 	return nil
 }
 
 func ensureProject(ctx context.Context, flags *initFlags, azdClient *azdext.AzdClient) (*azdext.ProjectConfig, error) {
 	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
-		fmt.Println("Lets get your project initialized.")
+		fmt.Println("Let's get your project initialized.")
 
 		// Environment creation is handled separately in ensureEnvironment
-		initArgs := []string{"init", "--minimal"}
+		initArgs := []string{"init", "-t", "Azure-Samples/azd-ai-starter-basic"}
 
 		// We don't have a project yet
 		// Dispatch a workflow to init the project
@@ -481,7 +504,8 @@ func ensureAzureContext(
 
 	if azureContext.Scope.SubscriptionId == "" {
 		fmt.Print()
-		fmt.Println("It looks like we first need to connect to your Azure subscription.")
+		fmt.Println("We need to connect to your Azure subscription. This will be the subscription which contains your ")
+		fmt.Println("Foundry project and where your resources will be provisioned.")
 
 		subscriptionResponse, err := azdClient.Prompt().PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{})
 		if err != nil {
@@ -515,7 +539,7 @@ func ensureAzureContext(
 	if azureContext.Scope.Location == "" {
 		fmt.Println()
 		fmt.Println(
-			"Next, we need to select a default Azure location that will be used as the target for your infrastructure.",
+			"Next, we need to select a default Azure location that will be used as the target for your resources.",
 		)
 
 		locationResponse, err := azdClient.Prompt().PromptLocation(ctx, &azdext.PromptLocationRequest{
@@ -999,7 +1023,7 @@ func (a *InitAction) downloadAgentYaml(
 			req, err := http.NewRequestWithContext(ctx, http.MethodGet, fileApiUrl, nil)
 			if err == nil {
 				req.Header.Set("Accept", "application/vnd.github.v3.raw")
-				resp, err := http.DefaultClient.Do(req)
+				resp, err := a.httpClient.Do(req)
 				if err == nil {
 					defer resp.Body.Close()
 					if resp.StatusCode == http.StatusOK {
@@ -1176,7 +1200,7 @@ func (a *InitAction) downloadAgentYaml(
 		if isHostedContainer {
 			// For container agents, download the entire parent directory
 			fmt.Println("Downloading full directory for container agent")
-			err := downloadParentDirectory(ctx, urlInfo, targetDir, ghCli, console, useGhCli)
+			err := downloadParentDirectory(ctx, urlInfo, targetDir, ghCli, console, useGhCli, a.httpClient)
 			if err != nil {
 				return nil, "", fmt.Errorf("downloading parent directory: %w", err)
 			}
@@ -1322,6 +1346,20 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 }
 
 func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.ContainerSettings, error) {
+	if a.flags.NoPrompt {
+		fmt.Printf("No prompt mode enabled, using default container settings\n")
+		return &project.ContainerSettings{
+			Resources: &project.ResourceSettings{
+				Memory: project.DefaultMemory,
+				Cpu:    project.DefaultCpu,
+			},
+			Scale: &project.ScaleSettings{
+				MinReplicas: project.DefaultMinReplicas,
+				MaxReplicas: project.DefaultMaxReplicas,
+			},
+		}, nil
+	}
+
 	// Default values
 	defaultMemory := project.DefaultMemory
 	defaultCpu := project.DefaultCpu
@@ -1526,7 +1564,7 @@ func (a *InitAction) parseGitHubUrl(ctx context.Context, manifestPointer string)
 }
 
 func downloadParentDirectory(
-	ctx context.Context, urlInfo *GitHubUrlInfo, targetDir string, ghCli *github.Cli, console input.Console, useGhCli bool) error {
+	ctx context.Context, urlInfo *GitHubUrlInfo, targetDir string, ghCli *github.Cli, console input.Console, useGhCli bool, httpClient *http.Client) error {
 
 	// Get parent directory by removing the filename from the file path
 	pathParts := strings.Split(urlInfo.FilePath, "/")
@@ -1544,7 +1582,7 @@ func downloadParentDirectory(
 			return fmt.Errorf("failed to download directory contents with GH CLI: %w", err)
 		}
 	} else {
-		if err := downloadDirectoryContentsWithoutGhCli(ctx, urlInfo.RepoSlug, parentDirPath, urlInfo.Branch, targetDir); err != nil {
+		if err := downloadDirectoryContentsWithoutGhCli(ctx, urlInfo.RepoSlug, parentDirPath, urlInfo.Branch, targetDir, httpClient); err != nil {
 			return fmt.Errorf("failed to download directory contents without GH CLI: %w", err)
 		}
 	}
@@ -1624,7 +1662,7 @@ func downloadDirectoryContents(
 }
 
 func downloadDirectoryContentsWithoutGhCli(
-	ctx context.Context, repoSlug string, dirPath string, branch string, localPath string) error {
+	ctx context.Context, repoSlug string, dirPath string, branch string, localPath string, httpClient *http.Client) error {
 
 	// Get directory contents using GitHub API directly
 	apiUrl := fmt.Sprintf("https://api.github.com/repos/%s/contents/%s", repoSlug, dirPath)
@@ -1638,7 +1676,7 @@ func downloadDirectoryContentsWithoutGhCli(
 	}
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to get directory contents: %w", err)
 	}
@@ -1694,17 +1732,17 @@ func downloadDirectoryContentsWithoutGhCli(
 			}
 			fileReq.Header.Set("Accept", "application/vnd.github.v3.raw")
 
-			fileResp, err := http.DefaultClient.Do(fileReq)
+			fileResp, err := httpClient.Do(fileReq)
 			if err != nil {
 				return fmt.Errorf("failed to download file %s: %w", itemPath, err)
 			}
-			defer fileResp.Body.Close()
 
 			if fileResp.StatusCode != http.StatusOK {
 				return fmt.Errorf("failed to download file %s: status %d", itemPath, fileResp.StatusCode)
 			}
 
 			fileContent, err := io.ReadAll(fileResp.Body)
+			fileResp.Body.Close()
 			if err != nil {
 				return fmt.Errorf("failed to read file content %s: %w", itemPath, err)
 			}
@@ -1720,11 +1758,25 @@ func downloadDirectoryContentsWithoutGhCli(
 			}
 
 			// Recursively download directory contents
-			if err := downloadDirectoryContentsWithoutGhCli(ctx, repoSlug, itemPath, branch, itemLocalPath); err != nil {
+			if err := downloadDirectoryContentsWithoutGhCli(ctx, repoSlug, itemPath, branch, itemLocalPath, httpClient); err != nil {
 				return fmt.Errorf("failed to download subdirectory %s: %w", itemPath, err)
 			}
 		}
 	}
 
+	return nil
+}
+
+func (a *InitAction) setEnvVar(ctx context.Context, key, value string) error {
+	_, err := a.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+		EnvName: a.environment.Name,
+		Key:     key,
+		Value:   value,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to set environment variable %s=%s: %w", key, value, err)
+	}
+
+	fmt.Printf("Set environment variable: %s=%s\n", key, value)
 	return nil
 }

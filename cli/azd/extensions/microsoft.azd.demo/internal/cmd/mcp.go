@@ -39,7 +39,7 @@ func newMcpStartCommand() *cobra.Command {
 func runMcpServer(ctx context.Context) error {
 	// Create MCP server
 	s := server.NewMCPServer(
-		"AZD Demo Extension MCP Server", "1.0.0",
+		"azd Demo Extension MCP Server", "1.0.0",
 		server.WithToolCapabilities(true),
 	)
 
@@ -88,33 +88,33 @@ func newGreetingTool() server.ServerTool {
 				return mcp.NewToolResultError("name parameter is required and must be a string"), nil
 			}
 
-			greeting := fmt.Sprintf("Hello, %s! Welcome to the AZD Demo Extension MCP server!", name)
+			greeting := fmt.Sprintf("Hello, %s! Welcome to the azd Demo Extension MCP server!", name)
 			return mcp.NewToolResultText(greeting), nil
 		},
 	}
 }
 
-// newAzdInfoTool creates a tool that demonstrates access to AZD context using the azd client
+// newAzdInfoTool creates a tool that demonstrates access to azd context using the azd client
 func newAzdInfoTool() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.NewTool(
 			"info",
-			mcp.WithDescription("Gets AZD project and environment information using the azd client"),
+			mcp.WithDescription("Gets azd project and environment information using the azd client"),
 			mcp.WithReadOnlyHintAnnotation(true),
 			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDestructiveHintAnnotation(false),
 		),
 		Handler: func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			var info []string
-			info = append(info, "=== AZD Demo Extension - Context Information ===")
+			info = append(info, "=== azd Demo Extension - Context Information ===")
 
-			// Create a new context that includes the AZD access token
+			// Create a new context that includes the azd access token
 			ctx = azdext.WithAccessToken(ctx)
 
-			// Create a new AZD client
+			// Create a new azd client
 			azdClient, err := azdext.NewAzdClient()
 			if err != nil {
-				info = append(info, fmt.Sprintf("❌ Failed to create AZD client: %v", err))
+				info = append(info, fmt.Sprintf("❌ Failed to create azd client: %v", err))
 				return mcp.NewToolResultText(strings.Join(info, "\n")), nil
 			}
 			defer azdClient.Close()
@@ -261,7 +261,7 @@ func newElicitationTool() server.ServerTool {
 				return mcp.NewToolResultError("Invalid arguments format"), nil
 			}
 
-			promptMessage := "Can we learn some more information about you for this AZD demo?"
+			promptMessage := "Can we learn some more information about you for this azd demo?"
 			if msg, exists := args["prompt_message"]; exists {
 				if msgStr, ok := msg.(string); ok && msgStr != "" {
 					promptMessage = msgStr

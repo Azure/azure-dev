@@ -32,6 +32,15 @@ func (m *MockExtensionServiceClient) Ready(
 	return args.Get(0).(*ReadyResponse), args.Error(1)
 }
 
+func (m *MockExtensionServiceClient) ReportError(
+	ctx context.Context,
+	in *ReportErrorRequest,
+	opts ...grpc.CallOption,
+) (*ReportErrorResponse, error) {
+	args := m.Called(ctx, in, opts)
+	return args.Get(0).(*ReportErrorResponse), args.Error(1)
+}
+
 // MockServiceTargetRegistrar implements serviceTargetRegistrar using testify/mock
 type MockServiceTargetRegistrar struct {
 	mock.Mock
@@ -123,6 +132,19 @@ func (m *MockExtensionEventManager) Ready(ctx context.Context) error {
 func (m *MockExtensionEventManager) Close() error {
 	args := m.Called()
 	return args.Error(0)
+}
+
+func TestExtensionHost_Client(t *testing.T) {
+	t.Parallel()
+
+	// Client() should return nil when host is created with nil client
+	host := NewExtensionHost(nil)
+	assert.Nil(t, host.Client())
+
+	// Client() should return the client passed to NewExtensionHost
+	client := &AzdClient{}
+	host2 := NewExtensionHost(client)
+	assert.Same(t, client, host2.Client())
 }
 
 func TestCallReady(t *testing.T) {

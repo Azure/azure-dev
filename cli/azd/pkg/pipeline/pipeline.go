@@ -175,7 +175,7 @@ func mergeProjectVariablesAndSecrets(
 					fmt.Errorf(
 						"parameter %s got its value from a local prompt and it has more than one mapped environment "+
 							"variable. "+
-							"The value can't be configured in CI mapped to multiple ENV VARS if AZD prompt for its value. "+
+							"The value can't be configured in CI mapped to multiple ENV VARS if azd prompt for its value. "+
 							"Define a single mapping for %s to one ENV VAR as part of the infra parameters definition",
 						parameter.Name, parameter.Name)
 			}

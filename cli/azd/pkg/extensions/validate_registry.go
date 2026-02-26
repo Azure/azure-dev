@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/Masterminds/semver/v3"
 )
 
 // ValidPlatforms defines the valid os/arch combinations for extension artifacts.
@@ -30,11 +32,11 @@ var ValidCapabilities = []CapabilityType{
 	MetadataCapability,
 }
 
-// semverRegex validates strict semver format: MAJOR.MINOR.PATCH with optional pre-release suffix.
-var semverRegex = regexp.MustCompile(`^\d+\.\d+\.\d+(-[a-zA-Z0-9]+(\.[a-zA-Z0-9]+)*)?$`)
+// validChecksumAlgorithms defines the supported checksum algorithms.
+var validChecksumAlgorithms = []string{"sha256", "sha512"}
 
-// extensionIdRegex validates extension ID format: dot-separated segments, each alphanumeric with hyphens.
-var extensionIdRegex = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)+$`)
+// extensionIdRegex validates extension ID format: dot-separated lowercase segments with hyphens.
+var extensionIdRegex = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$`)
 
 // ValidationSeverity represents the severity of a validation error.
 type ValidationSeverity string
@@ -80,6 +82,31 @@ type RegistryValidationResult struct {
 	Valid bool `json:"valid"`
 }
 
+// ValidateExtensions validates a slice of parsed extension metadata.
+func ValidateExtensions(exts []*ExtensionMetadata, strict bool) *RegistryValidationResult {
+	result := &RegistryValidationResult{
+		Valid: true,
+	}
+
+	for _, ext := range exts {
+		var extResult ExtensionValidationResult
+		if ext == nil {
+			extResult = ExtensionValidationResult{
+				Issues: []ValidationIssue{{Severity: ValidationError, Message: "null extension entry"}},
+				Valid:  false,
+			}
+		} else {
+			extResult = validateExtension(ext, strict)
+		}
+		result.Extensions = append(result.Extensions, extResult)
+		if !extResult.Valid {
+			result.Valid = false
+		}
+	}
+
+	return result
+}
+
 // ValidateRegistryJSON validates the raw JSON bytes of a registry.json file.
 func ValidateRegistryJSON(data []byte, strict bool) (*RegistryValidationResult, error) {
 	var registry Registry
@@ -119,19 +146,7 @@ func ValidateRegistryJSON(data []byte, strict bool) (*RegistryValidationResult, 
 		return nil, fmt.Errorf("registry contains no extensions")
 	}
 
-	result := &RegistryValidationResult{
-		Valid: true,
-	}
-
-	for _, ext := range registry.Extensions {
-		extResult := validateExtension(ext, strict)
-		result.Extensions = append(result.Extensions, extResult)
-		if !extResult.Valid {
-			result.Valid = false
-		}
-	}
-
-	return result, nil
+	return ValidateExtensions(registry.Extensions, strict), nil
 }
 
 // validateExtension validates a single extension metadata entry.
@@ -146,7 +161,7 @@ func validateExtension(ext *ExtensionMetadata, strict bool) ExtensionValidationR
 	if ext.Id == "" {
 		result.addError("missing or empty required field 'id'")
 	} else if !extensionIdRegex.MatchString(ext.Id) {
-		result.addError(fmt.Sprintf("invalid extension ID format '%s': must be dot-separated segments "+
+		result.addError(fmt.Sprintf("invalid extension ID format '%s': must be dot-separated lowercase segments "+
 			"(e.g. 'publisher.extension' or 'publisher.category.extension')", ext.Id))
 	}
 
@@ -168,28 +183,54 @@ func validateExtension(ext *ExtensionMetadata, strict bool) ExtensionValidationR
 		validateVersion(&result, i, &ver, strict)
 	}
 
-	// Set latest version info from the last version entry
-	latestIdx := len(ext.Versions) - 1
-	latestVer := ext.Versions[latestIdx]
-	result.LatestVersion = latestVer.Version
-	result.Capabilities = latestVer.Capabilities
-	if latestVer.Artifacts != nil {
-		for platform := range latestVer.Artifacts {
-			result.Platforms = append(result.Platforms, platform)
+	// Find latest version using semver ordering
+	latestVer := findLatestVersion(ext.Versions)
+	if latestVer != nil {
+		result.LatestVersion = latestVer.Version
+		result.Capabilities = latestVer.Capabilities
+		if latestVer.Artifacts != nil {
+			for platform := range latestVer.Artifacts {
+				result.Platforms = append(result.Platforms, platform)
+			}
 		}
 	}
 
 	return result
 }
 
+// findLatestVersion finds the latest version using semver ordering, preferring stable over pre-release.
+func findLatestVersion(versions []ExtensionVersion) *ExtensionVersion {
+	var latest *ExtensionVersion
+	var latestSemver *semver.Version
+
+	for i := range versions {
+		v, err := semver.NewVersion(versions[i].Version)
+		if err != nil {
+			continue
+		}
+
+		if latestSemver == nil || v.GreaterThan(latestSemver) {
+			latest = &versions[i]
+			latestSemver = v
+		}
+	}
+
+	// If no valid semver found, fall back to last element
+	if latest == nil && len(versions) > 0 {
+		latest = &versions[len(versions)-1]
+	}
+
+	return latest
+}
+
 // validateVersion validates a single version entry within an extension.
 func validateVersion(result *ExtensionValidationResult, index int, ver *ExtensionVersion, strict bool) {
 	prefix := fmt.Sprintf("versions[%d]", index)
 
-	// Validate semver format
+	// Validate semver format using the semver package
 	if ver.Version == "" {
 		result.addError(fmt.Sprintf("%s: missing required field 'version'", prefix))
-	} else if !semverRegex.MatchString(ver.Version) {
+	} else if _, err := semver.StrictNewVersion(ver.Version); err != nil {
 		result.addError(fmt.Sprintf("%s: invalid semver format '%s' "+
 			"(expected MAJOR.MINOR.PATCH with optional pre-release suffix)", prefix, ver.Version))
 	}
@@ -202,8 +243,15 @@ func validateVersion(result *ExtensionValidationResult, index int, ver *Extensio
 		}
 	}
 
+	// Enforce that each version has at least one artifact or dependency
+	hasArtifacts := len(ver.Artifacts) > 0
+	hasDependencies := len(ver.Dependencies) > 0
+	if !hasArtifacts && !hasDependencies {
+		result.addError(fmt.Sprintf("%s: version must define at least one artifact or dependency", prefix))
+	}
+
 	// Validate artifacts
-	if ver.Artifacts != nil {
+	if hasArtifacts {
 		for platform, artifact := range ver.Artifacts {
 			artifactPrefix := fmt.Sprintf("%s.artifacts[%s]", prefix, platform)
 
@@ -223,6 +271,13 @@ func validateVersion(result *ExtensionValidationResult, index int, ver *Extensio
 					result.addWarning(fmt.Sprintf("%s: missing checksum (recommended for integrity verification)",
 						artifactPrefix))
 				}
+			} else if artifact.Checksum.Algorithm == "" {
+				result.addError(fmt.Sprintf("%s: checksum value present but missing algorithm "+
+					"(supported: %s)", artifactPrefix, strings.Join(validChecksumAlgorithms, ", ")))
+			} else if !isValidChecksumAlgorithm(artifact.Checksum.Algorithm) {
+				result.addError(fmt.Sprintf("%s: unsupported checksum algorithm '%s' "+
+					"(supported: %s)", artifactPrefix, artifact.Checksum.Algorithm,
+					strings.Join(validChecksumAlgorithms, ", ")))
 			}
 		}
 	}
@@ -255,6 +310,15 @@ func isValidCapability(cap CapabilityType) bool {
 func isValidPlatform(platform string) bool {
 	for _, valid := range ValidPlatforms {
 		if platform == valid {
+			return true
+		}
+	}
+	return false
+}
+
+func isValidChecksumAlgorithm(alg string) bool {
+	for _, valid := range validChecksumAlgorithms {
+		if alg == valid {
 			return true
 		}
 	}

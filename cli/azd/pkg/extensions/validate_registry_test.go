@@ -10,6 +10,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// validArtifacts creates a minimal valid artifact set for tests.
+func validArtifacts() map[string]ExtensionArtifact {
+	return map[string]ExtensionArtifact{
+		"linux/amd64": {
+			URL:      "https://example.com/ext-linux-amd64",
+			Checksum: ExtensionChecksum{Algorithm: "sha256", Value: "abc123"},
+		},
+	}
+}
+
 func TestValidateRegistryJSON_ValidRegistry(t *testing.T) {
 	registry := Registry{
 		Extensions: []*ExtensionMetadata{
@@ -55,18 +65,27 @@ func TestValidateRegistryJSON_MissingRequiredFields(t *testing.T) {
 		expected []string
 	}{
 		{
-			name:     "missing id",
-			ext:      ExtensionMetadata{DisplayName: "Test", Description: "Test", Versions: []ExtensionVersion{{Version: "1.0.0"}}},
+			name: "missing id",
+			ext: ExtensionMetadata{
+				DisplayName: "Test", Description: "Test",
+				Versions: []ExtensionVersion{{Version: "1.0.0", Artifacts: validArtifacts()}},
+			},
 			expected: []string{"missing or empty required field 'id'"},
 		},
 		{
-			name:     "missing displayName",
-			ext:      ExtensionMetadata{Id: "pub.ext", Description: "Test", Versions: []ExtensionVersion{{Version: "1.0.0"}}},
+			name: "missing displayName",
+			ext: ExtensionMetadata{
+				Id: "pub.ext", Description: "Test",
+				Versions: []ExtensionVersion{{Version: "1.0.0", Artifacts: validArtifacts()}},
+			},
 			expected: []string{"missing or empty required field 'displayName'"},
 		},
 		{
-			name:     "missing description",
-			ext:      ExtensionMetadata{Id: "pub.ext", DisplayName: "Test", Versions: []ExtensionVersion{{Version: "1.0.0"}}},
+			name: "missing description",
+			ext: ExtensionMetadata{
+				Id: "pub.ext", DisplayName: "Test",
+				Versions: []ExtensionVersion{{Version: "1.0.0", Artifacts: validArtifacts()}},
+			},
 			expected: []string{"missing or empty required field 'description'"},
 		},
 		{
@@ -121,6 +140,7 @@ func TestValidateRegistryJSON_InvalidExtensionId(t *testing.T) {
 		{"invalid double dots", "publisher..extension", false},
 		{"invalid special chars", "publisher.ext@nsion", false},
 		{"invalid spaces", "publisher.ext ension", false},
+		{"invalid uppercase", "Publisher.Extension", false},
 	}
 
 	for _, tt := range tests {
@@ -129,7 +149,7 @@ func TestValidateRegistryJSON_InvalidExtensionId(t *testing.T) {
 				Id:          tt.id,
 				DisplayName: "Test",
 				Description: "Test",
-				Versions:    []ExtensionVersion{{Version: "1.0.0"}},
+				Versions:    []ExtensionVersion{{Version: "1.0.0", Artifacts: validArtifacts()}},
 			}
 
 			result := validateExtension(ext, false)
@@ -159,9 +179,9 @@ func TestValidateRegistryJSON_InvalidSemver(t *testing.T) {
 		{"valid basic", "1.0.0", true},
 		{"valid with prerelease", "1.0.0-beta.1", true},
 		{"valid with alpha", "2.3.4-alpha", true},
+		{"valid with build metadata", "1.0.0+build", true},
 		{"invalid missing patch", "1.0", false},
 		{"invalid with v prefix", "v1.0.0", false},
-		{"invalid with build metadata", "1.0.0+build", false},
 		{"invalid text", "latest", false},
 		{"empty version", "", false},
 	}
@@ -172,14 +192,14 @@ func TestValidateRegistryJSON_InvalidSemver(t *testing.T) {
 				Id:          "pub.ext",
 				DisplayName: "Test",
 				Description: "Test",
-				Versions:    []ExtensionVersion{{Version: tt.version}},
+				Versions:    []ExtensionVersion{{Version: tt.version, Artifacts: validArtifacts()}},
 			}
 
 			result := validateExtension(ext, false)
 			hasVersionError := false
 			for _, issue := range result.Issues {
 				if issue.Severity == ValidationError &&
-					(contains(issue.Message, "semver") || contains(issue.Message, "'version'")) {
+					(containsStr(issue.Message, "semver") || containsStr(issue.Message, "'version'")) {
 					hasVersionError = true
 				}
 			}
@@ -202,6 +222,7 @@ func TestValidateRegistryJSON_InvalidCapabilities(t *testing.T) {
 			{
 				Version:      "1.0.0",
 				Capabilities: []CapabilityType{"custom-commands", "invalid-capability"},
+				Artifacts:    validArtifacts(),
 			},
 		},
 	}
@@ -211,7 +232,7 @@ func TestValidateRegistryJSON_InvalidCapabilities(t *testing.T) {
 
 	found := false
 	for _, issue := range result.Issues {
-		if issue.Severity == ValidationError && contains(issue.Message, "unknown capability 'invalid-capability'") {
+		if issue.Severity == ValidationError && containsStr(issue.Message, "unknown capability 'invalid-capability'") {
 			found = true
 		}
 	}
@@ -245,7 +266,7 @@ func TestValidateRegistryJSON_InvalidPlatforms(t *testing.T) {
 
 	found := false
 	for _, issue := range result.Issues {
-		if issue.Severity == ValidationError && contains(issue.Message, "unknown platform 'freebsd/amd64'") {
+		if issue.Severity == ValidationError && containsStr(issue.Message, "unknown platform 'freebsd/amd64'") {
 			found = true
 		}
 	}
@@ -274,7 +295,7 @@ func TestValidateRegistryJSON_MissingArtifactURL(t *testing.T) {
 
 	found := false
 	for _, issue := range result.Issues {
-		if issue.Severity == ValidationError && contains(issue.Message, "missing required field 'url'") {
+		if issue.Severity == ValidationError && containsStr(issue.Message, "missing required field 'url'") {
 			found = true
 		}
 	}
@@ -303,7 +324,7 @@ func TestValidateRegistryJSON_MissingChecksum_NonStrict(t *testing.T) {
 
 	found := false
 	for _, issue := range result.Issues {
-		if issue.Severity == ValidationWarning && contains(issue.Message, "missing checksum") {
+		if issue.Severity == ValidationWarning && containsStr(issue.Message, "missing checksum") {
 			found = true
 		}
 	}
@@ -332,20 +353,128 @@ func TestValidateRegistryJSON_MissingChecksum_Strict(t *testing.T) {
 
 	found := false
 	for _, issue := range result.Issues {
-		if issue.Severity == ValidationError && contains(issue.Message, "missing required checksum") {
+		if issue.Severity == ValidationError && containsStr(issue.Message, "missing required checksum") {
 			found = true
 		}
 	}
 	require.True(t, found, "expected missing checksum error in strict mode")
 }
 
+func TestValidateRegistryJSON_ChecksumAlgorithmValidation(t *testing.T) {
+	t.Run("missing algorithm with value", func(t *testing.T) {
+		ext := &ExtensionMetadata{
+			Id:          "pub.ext",
+			DisplayName: "Test",
+			Description: "Test",
+			Versions: []ExtensionVersion{
+				{
+					Version: "1.0.0",
+					Artifacts: map[string]ExtensionArtifact{
+						"linux/amd64": {
+							URL:      "https://example.com/ext",
+							Checksum: ExtensionChecksum{Value: "abc123"},
+						},
+					},
+				},
+			},
+		}
+
+		result := validateExtension(ext, false)
+		require.False(t, result.Valid)
+		found := false
+		for _, issue := range result.Issues {
+			if containsStr(issue.Message, "missing algorithm") {
+				found = true
+			}
+		}
+		require.True(t, found, "expected missing algorithm error")
+	})
+
+	t.Run("unsupported algorithm", func(t *testing.T) {
+		ext := &ExtensionMetadata{
+			Id:          "pub.ext",
+			DisplayName: "Test",
+			Description: "Test",
+			Versions: []ExtensionVersion{
+				{
+					Version: "1.0.0",
+					Artifacts: map[string]ExtensionArtifact{
+						"linux/amd64": {
+							URL:      "https://example.com/ext",
+							Checksum: ExtensionChecksum{Algorithm: "md5", Value: "abc123"},
+						},
+					},
+				},
+			},
+		}
+
+		result := validateExtension(ext, false)
+		require.False(t, result.Valid)
+		found := false
+		for _, issue := range result.Issues {
+			if containsStr(issue.Message, "unsupported checksum algorithm") {
+				found = true
+			}
+		}
+		require.True(t, found, "expected unsupported algorithm error")
+	})
+}
+
+func TestValidateRegistryJSON_RequireArtifactsOrDependencies(t *testing.T) {
+	ext := &ExtensionMetadata{
+		Id:          "pub.ext",
+		DisplayName: "Test",
+		Description: "Test",
+		Versions: []ExtensionVersion{
+			{Version: "1.0.0"},
+		},
+	}
+
+	result := validateExtension(ext, false)
+	require.False(t, result.Valid)
+
+	found := false
+	for _, issue := range result.Issues {
+		if containsStr(issue.Message, "must define at least one artifact or dependency") {
+			found = true
+		}
+	}
+	require.True(t, found, "expected artifacts/dependencies requirement error")
+}
+
+func TestValidateRegistryJSON_DependenciesOnly(t *testing.T) {
+	ext := &ExtensionMetadata{
+		Id:          "pub.ext",
+		DisplayName: "Test",
+		Description: "Test",
+		Versions: []ExtensionVersion{
+			{
+				Version:      "1.0.0",
+				Dependencies: []ExtensionDependency{{Id: "other.ext", Version: ">=1.0.0"}},
+			},
+		},
+	}
+
+	result := validateExtension(ext, false)
+	for _, issue := range result.Issues {
+		require.False(t, containsStr(issue.Message, "must define at least one artifact or dependency"),
+			"extension with dependencies should not require artifacts")
+	}
+}
+
+func TestValidateRegistryJSON_NilExtensionEntry(t *testing.T) {
+	result := ValidateExtensions([]*ExtensionMetadata{nil}, false)
+	require.False(t, result.Valid)
+	require.Len(t, result.Extensions, 1)
+	require.False(t, result.Extensions[0].Valid)
+}
+
 func TestValidateRegistryJSON_SingleExtensionFormat(t *testing.T) {
-	// Test that a single extension (not wrapped in registry) can be validated
 	ext := ExtensionMetadata{
 		Id:          "pub.ext",
 		DisplayName: "Test",
 		Description: "Test",
-		Versions:    []ExtensionVersion{{Version: "1.0.0"}},
+		Versions:    []ExtensionVersion{{Version: "1.0.0", Artifacts: validArtifacts()}},
 	}
 
 	data, err := json.Marshal(ext)
@@ -358,19 +487,14 @@ func TestValidateRegistryJSON_SingleExtensionFormat(t *testing.T) {
 }
 
 func TestValidateRegistryJSON_ArrayFormat(t *testing.T) {
-	// Test that an array of extensions (not wrapped in registry) can be validated
 	exts := []*ExtensionMetadata{
 		{
-			Id:          "pub.ext1",
-			DisplayName: "Test 1",
-			Description: "Test 1",
-			Versions:    []ExtensionVersion{{Version: "1.0.0"}},
+			Id: "pub.ext1", DisplayName: "Test 1", Description: "Test 1",
+			Versions: []ExtensionVersion{{Version: "1.0.0", Artifacts: validArtifacts()}},
 		},
 		{
-			Id:          "pub.ext2",
-			DisplayName: "Test 2",
-			Description: "Test 2",
-			Versions:    []ExtensionVersion{{Version: "2.0.0"}},
+			Id: "pub.ext2", DisplayName: "Test 2", Description: "Test 2",
+			Versions: []ExtensionVersion{{Version: "2.0.0", Artifacts: validArtifacts()}},
 		},
 	}
 
@@ -389,21 +513,20 @@ func TestValidateRegistryJSON_InvalidJSON(t *testing.T) {
 	require.Contains(t, err.Error(), "invalid JSON")
 }
 
-func TestValidateRegistryJSON_MultipleVersions(t *testing.T) {
+func TestValidateRegistryJSON_LatestVersionUseSemver(t *testing.T) {
 	ext := &ExtensionMetadata{
 		Id:          "pub.ext",
 		DisplayName: "Test",
 		Description: "Test",
 		Versions: []ExtensionVersion{
-			{Version: "1.0.0", Capabilities: []CapabilityType{CustomCommandCapability}},
-			{Version: "1.1.0", Capabilities: []CapabilityType{CustomCommandCapability, McpServerCapability}},
-			{Version: "2.0.0-beta.1", Capabilities: []CapabilityType{CustomCommandCapability}},
+			{Version: "2.0.0", Artifacts: validArtifacts()},
+			{Version: "1.0.0", Artifacts: validArtifacts()},
+			{Version: "1.5.0", Artifacts: validArtifacts()},
 		},
 	}
 
 	result := validateExtension(ext, false)
-	require.True(t, result.Valid)
-	require.Equal(t, "2.0.0-beta.1", result.LatestVersion)
+	require.Equal(t, "2.0.0", result.LatestVersion, "should pick highest semver, not last element")
 }
 
 func TestValidateRegistryJSON_AllValidCapabilities(t *testing.T) {
@@ -422,6 +545,7 @@ func TestValidateRegistryJSON_AllValidCapabilities(t *testing.T) {
 					FrameworkServiceProviderCapability,
 					MetadataCapability,
 				},
+				Artifacts: validArtifacts(),
 			},
 		},
 	}
@@ -455,10 +579,6 @@ func TestValidateRegistryJSON_AllValidPlatforms(t *testing.T) {
 }
 
 // Helper functions
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsStr(s, substr))
-}
 
 func containsStr(s, substr string) bool {
 	for i := 0; i <= len(s)-len(substr); i++ {

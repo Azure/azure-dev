@@ -8,12 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
-	"os"
 	"slices"
 	"strings"
 	"text/tabwriter"
-	"time"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -96,16 +93,15 @@ func extensionActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 	// azd extension validate-registry <path-or-url>
 	group.Add("validate-registry", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Use:   "validate-registry <path-or-url>",
-			Short: "Validate an extension registry.json file.",
-			Long: "Validate an extension registry.json file from a local path or URL.\n\n" +
-				"Checks required fields, valid capabilities, semver version format,\n" +
-				"platform artifact structure, and extension ID format.",
+			Use:        "validate-registry <path-or-url>",
+			Short:      "Validate an extension registry.json file.",
+			Deprecated: "Use 'azd extension source validate' instead.",
+			Hidden:     true,
 		},
 		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 		DefaultFormat:  output.NoneFormat,
-		ActionResolver: newExtensionValidateRegistryAction,
-		FlagsResolver:  newExtensionValidateRegistryFlags,
+		ActionResolver: newExtensionSourceValidateAction,
+		FlagsResolver:  newExtensionSourceValidateFlags,
 	})
 
 	sourceGroup := group.Add("source", &actions.ActionDescriptorOptions{
@@ -144,6 +140,22 @@ func extensionActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 		ActionResolver: newExtensionSourceRemoveAction,
 		OutputFormats:  []output.Format{output.NoneFormat},
 		DefaultFormat:  output.NoneFormat,
+	})
+
+	// azd extension source validate <name-or-path-or-url>
+	sourceGroup.Add("validate", &actions.ActionDescriptorOptions{
+		Command: &cobra.Command{
+			Use:   "validate <name-or-path-or-url>",
+			Short: "Validate an extension source's registry.json file.",
+			Long: "Validate an extension source's registry.json file.\n\n" +
+				"Accepts a source name (from 'azd extension source list'), a local file path,\n" +
+				"or a URL. Checks required fields, valid capabilities, semver version format,\n" +
+				"platform artifact structure, and extension ID format.",
+		},
+		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+		DefaultFormat:  output.NoneFormat,
+		ActionResolver: newExtensionSourceValidateAction,
+		FlagsResolver:  newExtensionSourceValidateFlags,
 	})
 
 	return group
@@ -1492,59 +1504,84 @@ func validateVersionCompatibility(
 	return nil
 }
 
-// azd extension validate-registry
-type extensionValidateRegistryFlags struct {
+// azd extension source validate
+type extensionSourceValidateFlags struct {
 	strict bool
 }
 
-func newExtensionValidateRegistryFlags(cmd *cobra.Command) *extensionValidateRegistryFlags {
-	flags := &extensionValidateRegistryFlags{}
-	cmd.Flags().BoolVar(&flags.strict, "strict", false, "Enable strict validation (treat warnings as errors)")
+func newExtensionSourceValidateFlags(cmd *cobra.Command) *extensionSourceValidateFlags {
+	flags := &extensionSourceValidateFlags{}
+	cmd.Flags().BoolVar(&flags.strict, "strict", false, "Enable strict validation (require checksums)")
 	return flags
 }
 
-type extensionValidateRegistryAction struct {
-	args      []string
-	flags     *extensionValidateRegistryFlags
-	console   input.Console
-	formatter output.Formatter
-	writer    io.Writer
+type extensionSourceValidateAction struct {
+	args          []string
+	flags         *extensionSourceValidateFlags
+	console       input.Console
+	formatter     output.Formatter
+	writer        io.Writer
+	sourceManager *extensions.SourceManager
 }
 
-func newExtensionValidateRegistryAction(
+func newExtensionSourceValidateAction(
 	args []string,
-	flags *extensionValidateRegistryFlags,
+	flags *extensionSourceValidateFlags,
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
+	sourceManager *extensions.SourceManager,
 ) actions.Action {
-	return &extensionValidateRegistryAction{
-		args:      args,
-		flags:     flags,
-		console:   console,
-		formatter: formatter,
-		writer:    writer,
+	return &extensionSourceValidateAction{
+		args:          args,
+		flags:         flags,
+		console:       console,
+		formatter:     formatter,
+		writer:        writer,
+		sourceManager: sourceManager,
 	}
 }
 
-func (a *extensionValidateRegistryAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+func (a *extensionSourceValidateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if len(a.args) == 0 {
-		return nil, fmt.Errorf("must specify a path or URL to a registry.json file")
+		return nil, fmt.Errorf("must specify a source name, file path, or URL")
 	}
 	if len(a.args) > 1 {
-		return nil, fmt.Errorf("cannot specify multiple registry files")
+		return nil, fmt.Errorf("cannot specify multiple sources")
 	}
 
-	source := a.args[0]
-	data, err := readRegistrySource(ctx, source)
+	arg := a.args[0]
+
+	// Resolve the source: try as named source first, then as direct path/URL
+	sourceConfig, err := a.sourceManager.Get(ctx, arg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read registry: %w", err)
+		// Not a named source — auto-detect type from the argument
+		kind := extensions.SourceKindFile
+		if strings.HasPrefix(arg, "http://") || strings.HasPrefix(arg, "https://") {
+			kind = extensions.SourceKindUrl
+		}
+		sourceConfig = &extensions.SourceConfig{
+			Name:     "validate",
+			Type:     kind,
+			Location: arg,
+		}
 	}
 
-	result, err := extensions.ValidateRegistryJSON(data, a.flags.strict)
+	source, err := a.sourceManager.CreateSource(ctx, sourceConfig)
 	if err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
+		return nil, fmt.Errorf("failed to load source: %w", err)
 	}
+
+	extensionList, err := source.ListExtensions(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list extensions: %w", err)
+	}
+
+	if len(extensionList) == 0 {
+		return nil, fmt.Errorf("source contains no extensions")
+	}
+
+	result := extensions.ValidateExtensions(extensionList, a.flags.strict)
 
 	if a.formatter.Kind() == output.JsonFormat {
 		if err := a.formatter.Format(result, a.writer, nil); err != nil {
@@ -1559,35 +1596,6 @@ func (a *extensionValidateRegistryAction) Run(ctx context.Context) (*actions.Act
 	}
 
 	return nil, nil
-}
-
-// readRegistrySource reads registry.json content from a local file path or URL.
-func readRegistrySource(ctx context.Context, source string) ([]byte, error) {
-	if strings.HasPrefix(source, "http://") || strings.HasPrefix(source, "https://") {
-		return fetchRegistryURL(ctx, source)
-	}
-	return os.ReadFile(source)
-}
-
-// fetchRegistryURL fetches registry.json content from a URL.
-func fetchRegistryURL(ctx context.Context, url string) ([]byte, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch URL: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, resp.Status)
-	}
-
-	return io.ReadAll(resp.Body)
 }
 
 func displayValidationResult(console input.Console, ctx context.Context, result *extensions.RegistryValidationResult) {

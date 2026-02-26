@@ -126,7 +126,7 @@ func (a *InitFromCodeAction) ensureProject(ctx context.Context) (*azdext.Project
 			return nil, exterrors.Dependency(
 				exterrors.CodeScaffoldTemplateFailed,
 				fmt.Sprintf("failed to scaffold template: %s", err),
-				"run 'azd init' manually to initialize your project",
+				"",
 			)
 		}
 
@@ -135,7 +135,7 @@ func (a *InitFromCodeAction) ensureProject(ctx context.Context) (*azdext.Project
 			return nil, exterrors.Dependency(
 				exterrors.CodeProjectNotFound,
 				fmt.Sprintf("failed to get project after initialization: %s", err),
-				"run 'azd init' to initialize your project",
+				"",
 			)
 		}
 
@@ -146,7 +146,7 @@ func (a *InitFromCodeAction) ensureProject(ctx context.Context) (*azdext.Project
 		return nil, exterrors.Dependency(
 			exterrors.CodeProjectNotFound,
 			"project not found",
-			"run 'azd init' to initialize your project",
+			"",
 		)
 	}
 

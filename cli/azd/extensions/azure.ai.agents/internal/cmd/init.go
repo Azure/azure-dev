@@ -332,7 +332,7 @@ func ensureProject(ctx context.Context, flags *initFlags, azdClient *azdext.AzdC
 			return nil, exterrors.Dependency(
 				exterrors.CodeProjectInitFailed,
 				fmt.Sprintf("failed to initialize project: %s", err),
-				"run 'azd init' manually to initialize your project",
+				"",
 			)
 		}
 
@@ -341,7 +341,7 @@ func ensureProject(ctx context.Context, flags *initFlags, azdClient *azdext.AzdC
 			return nil, exterrors.Dependency(
 				exterrors.CodeProjectNotFound,
 				fmt.Sprintf("failed to get project after initialization: %s", err),
-				"run 'azd init' to initialize your project",
+				"",
 			)
 		}
 
@@ -352,7 +352,7 @@ func ensureProject(ctx context.Context, flags *initFlags, azdClient *azdext.AzdC
 		return nil, exterrors.Dependency(
 			exterrors.CodeProjectNotFound,
 			"project not found",
-			"run 'azd init' to initialize your project",
+			"",
 		)
 	}
 

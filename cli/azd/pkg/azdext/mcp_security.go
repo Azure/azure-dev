@@ -60,6 +60,7 @@ func (p *MCPSecurityPolicy) BlockPrivateNetworks() *MCPSecurityPolicy {
 		"127.0.0.0/8",    // loopback
 		"::1/128",        // IPv6 loopback
 		"::/128",         // IPv6 unspecified (reaches loopback)
+		"fc00::/7",       // IPv6 unique local addresses (RFC 4193, equiv of RFC 1918)
 		"fe80::/10",      // IPv6 link-local
 		"169.254.0.0/16", // IPv4 link-local
 	} {
@@ -155,6 +156,41 @@ func (p *MCPSecurityPolicy) checkIP(ip net.IP, originalHost string) error {
 			return fmt.Errorf("blocked IP %s (CIDR %s) for host %s", ip, cidr, originalHost)
 		}
 	}
+
+	if p.blockPrivate {
+		// Catch encoding variants (e.g., IPv4-compatible IPv6 like ::127.0.0.1)
+		// that may not match CIDR entries due to byte-length mismatch.
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
+			return fmt.Errorf("blocked IP %s (private/loopback/link-local) for host %s", ip, originalHost)
+		}
+
+		// Handle deprecated IPv4-compatible IPv6 addresses (::x.x.x.x, RFC 4291 §2.5.5.1).
+		// Go's net.IP methods don't classify these, so extract the embedded IPv4 and re-check.
+		if len(ip) == net.IPv6len && ip.To4() == nil {
+			// IPv4-compatible: first 12 bytes are zero, last 4 are the IPv4 address.
+			isV4Compatible := true
+			for i := 0; i < 12; i++ {
+				if ip[i] != 0 {
+					isV4Compatible = false
+					break
+				}
+			}
+			if isV4Compatible && (ip[12] != 0 || ip[13] != 0 || ip[14] != 0 || ip[15] != 0) {
+				v4 := net.IPv4(ip[12], ip[13], ip[14], ip[15])
+				for _, cidr := range p.blockedCIDRs {
+					if cidr.Contains(v4) {
+						return fmt.Errorf("blocked IP %s (IPv4-compatible %s, CIDR %s) for host %s",
+							ip, v4, cidr, originalHost)
+					}
+				}
+				if v4.IsLoopback() || v4.IsPrivate() || v4.IsLinkLocalUnicast() || v4.IsUnspecified() {
+					return fmt.Errorf("blocked IP %s (IPv4-compatible %s, private/loopback) for host %s",
+						ip, v4, originalHost)
+				}
+			}
+		}
+	}
+
 	return nil
 }
 

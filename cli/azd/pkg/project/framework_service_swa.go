@@ -106,6 +106,7 @@ func (p *swaProject) Build(
 		ctx,
 		serviceConfig.Path(),
 		previewerWriter,
+		p.env.Environ(),
 	)
 	p.console.StopPreviewer(ctx, false)
 

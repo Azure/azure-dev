@@ -19,9 +19,9 @@ import (
 // Separate implementations for npm, pnpm, and yarn handle PM-specific behaviors.
 type Cli interface {
 	tools.ExternalTool
-	Install(ctx context.Context, projectPath string) error
-	RunScript(ctx context.Context, projectPath string, scriptName string) error
-	Prune(ctx context.Context, projectPath string, production bool) error
+	Install(ctx context.Context, projectPath string, env []string) error
+	RunScript(ctx context.Context, projectPath string, scriptName string, env []string) error
+	Prune(ctx context.Context, projectPath string, production bool, env []string) error
 	PackageManager() PackageManagerKind
 }
 
@@ -90,25 +90,26 @@ func (c *npmCli) CheckInstalled(ctx context.Context) error {
 	return c.checkInstalled(ctx, "npm", c.Name())
 }
 
-func (c *npmCli) Install(ctx context.Context, projectPath string) error {
-	runArgs := exec.NewRunArgs("npm", "install", "--no-audit", "--no-fund", "--prefer-offline").WithCwd(projectPath)
+func (c *npmCli) Install(ctx context.Context, projectPath string, env []string) error {
+	runArgs := exec.NewRunArgs("npm", "install", "--no-audit", "--no-fund", "--prefer-offline").
+		WithCwd(projectPath).WithEnv(env)
 	if _, err := c.commandRunner.Run(ctx, runArgs); err != nil {
 		return fmt.Errorf("failed to install project %s using npm: %w", projectPath, err)
 	}
 	return nil
 }
 
-func (c *npmCli) RunScript(ctx context.Context, projectPath string, scriptName string) error {
+func (c *npmCli) RunScript(ctx context.Context, projectPath string, scriptName string, env []string) error {
 	// npm supports --if-present after the script name
-	runArgs := exec.NewRunArgs("npm", "run", scriptName, "--if-present").WithCwd(projectPath)
+	runArgs := exec.NewRunArgs("npm", "run", scriptName, "--if-present").WithCwd(projectPath).WithEnv(env)
 	if _, err := c.commandRunner.Run(ctx, runArgs); err != nil {
 		return fmt.Errorf("failed to run npm script %s: %w", scriptName, err)
 	}
 	return nil
 }
 
-func (c *npmCli) Prune(ctx context.Context, projectPath string, production bool) error {
-	runArgs := exec.NewRunArgs("npm", "prune").WithCwd(projectPath)
+func (c *npmCli) Prune(ctx context.Context, projectPath string, production bool, env []string) error {
+	runArgs := exec.NewRunArgs("npm", "prune").WithCwd(projectPath).WithEnv(env)
 	if production {
 		runArgs = runArgs.AppendParams("--production")
 	}
@@ -132,26 +133,26 @@ func (c *pnpmCli) CheckInstalled(ctx context.Context) error {
 	return c.checkInstalled(ctx, "pnpm", c.Name())
 }
 
-func (c *pnpmCli) Install(ctx context.Context, projectPath string) error {
-	runArgs := exec.NewRunArgs("pnpm", "install", "--prefer-offline").WithCwd(projectPath)
+func (c *pnpmCli) Install(ctx context.Context, projectPath string, env []string) error {
+	runArgs := exec.NewRunArgs("pnpm", "install", "--prefer-offline").WithCwd(projectPath).WithEnv(env)
 	if _, err := c.commandRunner.Run(ctx, runArgs); err != nil {
 		return fmt.Errorf("failed to install project %s using pnpm: %w", projectPath, err)
 	}
 	return nil
 }
 
-func (c *pnpmCli) RunScript(ctx context.Context, projectPath string, scriptName string) error {
+func (c *pnpmCli) RunScript(ctx context.Context, projectPath string, scriptName string, env []string) error {
 	// pnpm requires --if-present before the script name per its CLI spec
-	runArgs := exec.NewRunArgs("pnpm", "run", "--if-present", scriptName).WithCwd(projectPath)
+	runArgs := exec.NewRunArgs("pnpm", "run", "--if-present", scriptName).WithCwd(projectPath).WithEnv(env)
 	if _, err := c.commandRunner.Run(ctx, runArgs); err != nil {
 		return fmt.Errorf("failed to run pnpm script %s: %w", scriptName, err)
 	}
 	return nil
 }
 
-func (c *pnpmCli) Prune(ctx context.Context, projectPath string, production bool) error {
+func (c *pnpmCli) Prune(ctx context.Context, projectPath string, production bool, env []string) error {
 	// pnpm uses --prod instead of --production
-	runArgs := exec.NewRunArgs("pnpm", "prune").WithCwd(projectPath)
+	runArgs := exec.NewRunArgs("pnpm", "prune").WithCwd(projectPath).WithEnv(env)
 	if production {
 		runArgs = runArgs.AppendParams("--prod")
 	}
@@ -175,17 +176,17 @@ func (c *yarnCli) CheckInstalled(ctx context.Context) error {
 	return c.checkInstalled(ctx, "yarn", c.Name())
 }
 
-func (c *yarnCli) Install(ctx context.Context, projectPath string) error {
+func (c *yarnCli) Install(ctx context.Context, projectPath string, env []string) error {
 	// Yarn Berry (v2+) does not support --prefer-offline and deprecated --non-interactive.
 	// Plain install works for both Classic (v1) and Berry (v2+).
-	runArgs := exec.NewRunArgs("yarn", "install").WithCwd(projectPath)
+	runArgs := exec.NewRunArgs("yarn", "install").WithCwd(projectPath).WithEnv(env)
 	if _, err := c.commandRunner.Run(ctx, runArgs); err != nil {
 		return fmt.Errorf("failed to install project %s using yarn: %w", projectPath, err)
 	}
 	return nil
 }
 
-func (c *yarnCli) RunScript(ctx context.Context, projectPath string, scriptName string) error {
+func (c *yarnCli) RunScript(ctx context.Context, projectPath string, scriptName string, env []string) error {
 	// Yarn has no --if-present flag. To replicate npm's --if-present behavior
 	// (silently succeed when the script doesn't exist), we check package.json first.
 	exists, err := scriptExistsInPackageJSON(projectPath, scriptName)
@@ -195,21 +196,21 @@ func (c *yarnCli) RunScript(ctx context.Context, projectPath string, scriptName 
 	if !exists {
 		return nil
 	}
-	runArgs := exec.NewRunArgs("yarn", "run", scriptName).WithCwd(projectPath)
+	runArgs := exec.NewRunArgs("yarn", "run", scriptName).WithCwd(projectPath).WithEnv(env)
 	if _, err := c.commandRunner.Run(ctx, runArgs); err != nil {
 		return fmt.Errorf("failed to run yarn script %s: %w", scriptName, err)
 	}
 	return nil
 }
 
-func (c *yarnCli) Prune(ctx context.Context, projectPath string, production bool) error {
+func (c *yarnCli) Prune(ctx context.Context, projectPath string, production bool, env []string) error {
 	// Yarn v2+ (Berry) removed the prune command. Running `yarn install --production`
 	// works for Classic (v1). On Berry, --production is deprecated and may not be supported
 	// in newer versions (v4+). The Berry alternative `yarn workspaces focus --all --production`
 	// requires the yarn workspace-tools plugin.
 	// This is a known limitation for Yarn Berry users; most Berry+azd projects use
 	// nodeLinker: node-modules where this remains functional.
-	runArgs := exec.NewRunArgs("yarn", "install").WithCwd(projectPath)
+	runArgs := exec.NewRunArgs("yarn", "install").WithCwd(projectPath).WithEnv(env)
 	if production {
 		runArgs = runArgs.AppendParams("--production")
 	}

@@ -138,7 +138,7 @@ func (np *nodeProject) Restore(
 		progress.SetProgress(NewServiceProgress(fmt.Sprintf("%s dependencies already up-to-date", pm)))
 	} else {
 		progress.SetProgress(NewServiceProgress(fmt.Sprintf("Installing %s dependencies", pm)))
-		if err := cli.Install(ctx, serviceConfig.Path()); err != nil {
+		if err := cli.Install(ctx, serviceConfig.Path(), np.env.Environ()); err != nil {
 			return nil, err
 		}
 	}
@@ -175,7 +175,7 @@ func (np *nodeProject) Build(
 	// Exec custom `build` script if available
 	// If `build` script is not defined in the package.json the script will NOT fail
 	progress.SetProgress(NewServiceProgress(fmt.Sprintf("Running %s build script", pm)))
-	if err := cli.RunScript(ctx, serviceConfig.Path(), "build"); err != nil {
+	if err := cli.RunScript(ctx, serviceConfig.Path(), "build", np.env.Environ()); err != nil {
 		return nil, err
 	}
 
@@ -218,7 +218,7 @@ func (np *nodeProject) Package(
 	// Long term this script we call should better align with our inner-loop scenarios
 	// Keeping this defaulted to `build` will create confusion for users when we start to support
 	// both local dev / debug builds and production bundled builds
-	if err := cli.RunScript(ctx, serviceConfig.Path(), "build"); err != nil {
+	if err := cli.RunScript(ctx, serviceConfig.Path(), "build", np.env.Environ()); err != nil {
 		return nil, err
 	}
 

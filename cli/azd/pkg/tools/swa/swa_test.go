@@ -45,7 +45,7 @@ func Test_SwaBuild(t *testing.T) {
 			}, nil
 		})
 
-		err := swacli.Build(context.Background(), testPath, nil)
+		err := swacli.Build(context.Background(), testPath, nil, nil)
 		require.NoError(t, err)
 		require.True(t, ran)
 	})
@@ -72,7 +72,7 @@ func Test_SwaBuild(t *testing.T) {
 			}, errors.New("exit code: 1")
 		})
 
-		err := swacli.Build(context.Background(), testPath, nil)
+		err := swacli.Build(context.Background(), testPath, nil, nil)
 		require.True(t, ran)
 		require.EqualError(
 			t,
@@ -80,6 +80,24 @@ func Test_SwaBuild(t *testing.T) {
 			"swa build: exit code: 1",
 		)
 	})
+}
+
+func Test_SwaBuild_PassesEnvVars(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	swacli := NewCli(mockContext.CommandRunner)
+
+	var capturedArgs exec.RunArgs
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "npx")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		capturedArgs = args
+		return exec.RunResult{}, nil
+	})
+
+	env := []string{"VITE_API_URL=https://api.example.com", "NODE_ENV=production"}
+	err := swacli.Build(context.Background(), testPath, nil, env)
+	require.NoError(t, err)
+	require.Equal(t, env, capturedArgs.Env)
 }
 
 func Test_SwaDeploy(t *testing.T) {
@@ -127,6 +145,7 @@ func Test_SwaDeploy(t *testing.T) {
 			"default",
 			"deploymentToken",
 			DeployOptions{},
+			nil,
 		)
 		require.NoError(t, err)
 		require.True(t, ran)
@@ -179,6 +198,7 @@ func Test_SwaDeploy(t *testing.T) {
 				AppFolderPath:            "appFolderPath",
 				OutputRelativeFolderPath: "outputRelativeFolderPath",
 			},
+			nil,
 		)
 		require.NoError(t, err)
 		require.True(t, ran)
@@ -223,6 +243,7 @@ func Test_SwaDeploy(t *testing.T) {
 			"default",
 			"deploymentToken",
 			DeployOptions{},
+			nil,
 		)
 		require.True(t, ran)
 		require.EqualError(

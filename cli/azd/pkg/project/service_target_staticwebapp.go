@@ -185,7 +185,8 @@ func (at *staticWebAppTarget) Deploy(
 		targetResource.ResourceName(),
 		DefaultStaticWebAppEnvironmentName,
 		*deploymentToken,
-		dOptions)
+		dOptions,
+		at.env.Environ())
 
 	if err != nil {
 		return nil, fmt.Errorf("failed deploying static web app: %w", err)

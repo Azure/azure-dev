@@ -106,7 +106,13 @@ func (a *CopilotAgent) SendMessage(ctx context.Context, args ...string) (string,
 
 	prompt := strings.Join(args, "\n")
 	log.Printf("[copilot] SendMessage: sending prompt (%d chars)...", len(prompt))
-	result, err := a.session.SendAndWait(ctx, copilot.MessageOptions{
+
+	// Use a generous timeout — agent tasks (discovery, IaC generation, etc.) can take several minutes.
+	// The SDK defaults to 60s if the context has no deadline, which is too short.
+	sendCtx, sendCancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer sendCancel()
+
+	result, err := a.session.SendAndWait(sendCtx, copilot.MessageOptions{
 		Prompt: prompt,
 	})
 	if err != nil {

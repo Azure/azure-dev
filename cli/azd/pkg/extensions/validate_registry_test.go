@@ -94,8 +94,11 @@ func TestValidateRegistryJSON_MissingRequiredFields(t *testing.T) {
 			expected: []string{"missing or empty required field 'versions'"},
 		},
 		{
-			name:     "empty versions",
-			ext:      ExtensionMetadata{Id: "pub.ext", DisplayName: "Test", Description: "Test", Versions: []ExtensionVersion{}},
+			name: "empty versions",
+			ext: ExtensionMetadata{
+				Id: "pub.ext", DisplayName: "Test", Description: "Test",
+				Versions: []ExtensionVersion{},
+			},
 			expected: []string{"missing or empty required field 'versions'"},
 		},
 	}

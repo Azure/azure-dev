@@ -154,8 +154,9 @@ func Test_FormatUpdateWarning(t *testing.T) {
 	require.Contains(t, warning.Description, "2.0.0")
 	require.False(t, warning.HidePrefix)
 	require.Len(t, warning.Hints, 2)
+	require.Contains(t, warning.Hints[0], "azd extension upgrade --all")
 	require.Contains(t, warning.Hints[0], "azd extension upgrade test.extension")
-	require.Contains(t, warning.Hints[1], "azd extension upgrade --all")
+	require.Contains(t, warning.Hints[1], "azd extension uninstall test.extension")
 }
 
 func Test_FormatUpdateWarning_NoDisplayName(t *testing.T) {

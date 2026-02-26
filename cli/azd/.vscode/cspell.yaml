@@ -5,6 +5,7 @@ words:
   - azdext
   - azurefd
   - azcontainerregistry
+  - CGNAT
   - backoff
   - Canonicalize
   - Chans

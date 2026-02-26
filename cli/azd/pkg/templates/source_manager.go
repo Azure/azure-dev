@@ -29,7 +29,7 @@ var (
 
 	SourceAwesomeAzd = &SourceConfig{
 		Key:      "awesome-azd",
-		Name:     "Awesome AZD",
+		Name:     "Awesome azd",
 		Type:     SourceKindAwesomeAzd,
 		Location: "https://aka.ms/awesome-azd/templates.json",
 	}

@@ -10,6 +10,57 @@
 
 ### Other Changes
 
+## 1.23.6 (2026-02-20)
+
+### Features Added
+
+- [[#6777]](https://github.com/Azure/azure-dev/pull/6777) Add `--subscription` and `--location` flags to `azd provision` and `azd up` commands. Thanks @spboyer for the contribution!
+
+### Bugs Fixed
+
+- [[#6766]](https://github.com/Azure/azure-dev/pull/6766) Fix remote build 404 error when Azure Container Registry is in a different resource group than the service.
+- [[#6770]](https://github.com/Azure/azure-dev/pull/6770) Fix subscription cache overwrite issue to preserve tenant-to-subscription mappings when tenants are temporarily inaccessible.
+- [[#6779]](https://github.com/Azure/azure-dev/pull/6779) Fix `azd init` to fail fast when `--environment` is missing in non-interactive mode with `--template`. Thanks @spboyer for the contribution!
+- [[#6789]](https://github.com/Azure/azure-dev/pull/6789) Fix `azd env config set` to support non-string types (booleans, numbers, arrays, objects). Thanks @spboyer for the contribution!
+
+### Other Changes
+
+- [[#6771]](https://github.com/Azure/azure-dev/pull/6771) Improve provisioning error messages with Region SKU Capacity Unavailable error guidance and consent message clarity.
+- [[#6803]](https://github.com/Azure/azure-dev/pull/6803) Improve error classification for context cancellation, timeouts, and network errors. Thanks @spboyer for the contribution!
+- [[#6808]](https://github.com/Azure/azure-dev/pull/6808) Improve delegated auth experience with mode-aware authentication messaging and guidance. Thanks @scottaddie for the contribution!
+- [[#6810]](https://github.com/Azure/azure-dev/pull/6810) Add soft-delete conflict detection hints for deployment errors with guidance to run `azd down --purge`. Thanks @spboyer for the contribution!
+
+## 1.23.5 (2026-02-13)
+
+### Features Added
+
+- [[#6747]](https://github.com/Azure/azure-dev/pull/6747) Add `requiredAzdVersion` field for extensions to declare core version dependencies.
+- [[#6748]](https://github.com/Azure/azure-dev/pull/6748) Add `remoteBuild` option for Azure Functions flex consumption apps.
+
+### Bugs Fixed
+
+- [[#6739]](https://github.com/Azure/azure-dev/pull/6739) Fix arrow keys displaying as escape sequences in Ghostty terminal.
+- [[#6735]](https://github.com/Azure/azure-dev/pull/6735) Extend JMESPath query support to Message methods. Thanks @scottaddie for the contribution!
+
+## 1.23.4 (2026-02-09)
+
+### Features Added
+
+- [[#6664]](https://github.com/Azure/azure-dev/pull/6664) Add JMESPath query support for JSON output in CLI commands using `--query` flag.
+- [[#6627]](https://github.com/Azure/azure-dev/pull/6627) Add App Service deployment slot routing based on deployment history.
+
+### Bugs Fixed
+
+- [[#6674]](https://github.com/Azure/azure-dev/pull/6674) Fix duplicate `azd-service-name` tag error message to identify which resources conflict and filter validation to host resources only.
+- [[#6671]](https://github.com/Azure/azure-dev/pull/6671) Fix extension namespace handling to prevent conflicts and enable auto-install for sibling namespaces.
+- [[#6694]](https://github.com/Azure/azure-dev/pull/6694) Fix environment variable substitution for array and object Bicep parameters.
+- [[#6698]](https://github.com/Azure/azure-dev/pull/6698) Fix telemetry bundling issues.
+
+### Other Changes
+
+- [[#6690]](https://github.com/Azure/azure-dev/pull/6690) Improve provisioning error messages with targeted troubleshooting steps for common issues.
+- [[#6649]](https://github.com/Azure/azure-dev/pull/6649) Refactor container helper to accept environment explicitly, preventing environment confusion bugs.
+
 ## 1.23.3 (2026-01-30)
 
 ### Features Added

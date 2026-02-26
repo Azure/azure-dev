@@ -10,7 +10,7 @@ import (
 func NewRootCommand() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:           "azd demo <command> [options]",
-		Short:         "Demonstrates AZD extension framework capabilities.",
+		Short:         "Demonstrates azd extension framework capabilities.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		CompletionOptions: cobra.CompletionOptions{
@@ -30,6 +30,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newConfigCommand())
 	rootCmd.AddCommand(newGhUrlParseCommand())
 	rootCmd.AddCommand(newMetadataCommand())
+	rootCmd.AddCommand(newAiCommand())
 
 	return rootCmd
 }

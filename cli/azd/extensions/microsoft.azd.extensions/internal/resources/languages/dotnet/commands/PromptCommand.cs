@@ -27,7 +27,7 @@ public class PromptCommand
             {
                 Options = new MultiSelectOptions
                 {
-                    Message = "Which Azure services do you use most with AZD?"
+                    Message = "Which Azure services do you use most with azd?"
                 }
             };
             multiSelectRequest.Options.Choices.AddRange(

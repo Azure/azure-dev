@@ -1,6 +1,16 @@
 
 Runs a workflow to package, provision and deploy your application in a single step.
 
+Before running, configure your target subscription and location:
+
+  azd env set AZURE_SUBSCRIPTION_ID <your-subscription-id>
+  azd env set AZURE_LOCATION <location>
+
+Unlike Azure CLI, azd typically stores configuration such as subscription and location in a named environment.
+You can still provide these values with flags on commands that support them, but azd env set persists them so you
+don't need to pass them on every command. Commands like azd up read from the active environment automatically.
+Use --output json for structured output suitable for automation.
+
 The up workflow can be customized by adding a workflows section to your azure.yaml.
 
 For example, modify the workflow to provision before packaging and deploying:
@@ -20,7 +30,9 @@ Usage
   azd up [flags]
 
 Flags
-    -e, --environment string 	: The name of the environment to use.
+    -e, --environment string  	: The name of the environment to use.
+    -l, --location string     	: Azure location for the new environment
+        --subscription string 	: ID of an Azure subscription to use for the new environment
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

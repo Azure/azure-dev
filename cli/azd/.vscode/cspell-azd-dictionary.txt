@@ -48,13 +48,13 @@ azdev
 azdexec
 azdinternal
 azdtempl
-azdtempl
 azdtest
 azfile
 azruntime
 azsdk
 azureai
 azureaiagent
+azureappservice
 AZURECLI
 azurecodingagent
 azureedge
@@ -132,6 +132,7 @@ fsnotify
 funcapp
 funcignore
 functionapp
+Ghostty
 gjson
 go-imath
 GOARCH
@@ -153,6 +154,7 @@ jaegertracing
 javac
 jmes
 jmespath
+jongio
 jquery
 keychain
 kubelogin
@@ -165,6 +167,7 @@ libc
 llms
 localtools
 maml
+MCPJSON
 mcptools
 memfs
 mergo
@@ -183,6 +186,7 @@ myservice
 mysqladmin
 mysqlclient
 mysqldb
+nazd
 nobanner
 nodeapp
 nolint
@@ -263,6 +267,7 @@ Syncer
 teamcity
 testdata
 tmpl
+TOCTOU
 toplevel
 traceparent
 tracesdk
@@ -282,6 +287,7 @@ unsets
 upgrader
 utsname
 uxlib
+Veyor
 vite
 vsrpc
 vuejs

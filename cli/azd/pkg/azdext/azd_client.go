@@ -30,6 +30,7 @@ type AzdClient struct {
 	serviceTargetClient ServiceTargetServiceClient
 	containerClient     ContainerServiceClient
 	accountClient       AccountServiceClient
+	aiClient            AiModelServiceClient
 }
 
 // WithAddress sets the address of the `azd` gRPC server.
@@ -173,7 +174,7 @@ func (c *AzdClient) Container() ContainerServiceClient {
 }
 
 // Extension returns the extension service client.
-func (c *AzdClient) extensionService() ExtensionServiceClient {
+func (c *AzdClient) Extension() ExtensionServiceClient {
 	if c.extensionClient == nil {
 		c.extensionClient = NewExtensionServiceClient(c.connection)
 	}
@@ -188,4 +189,13 @@ func (c *AzdClient) Account() AccountServiceClient {
 	}
 
 	return c.accountClient
+}
+
+// Ai returns the AI model service client.
+func (c *AzdClient) Ai() AiModelServiceClient {
+	if c.aiClient == nil {
+		c.aiClient = NewAiModelServiceClient(c.connection)
+	}
+
+	return c.aiClient
 }

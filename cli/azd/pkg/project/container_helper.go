@@ -796,8 +796,15 @@ func (ch *ContainerHelper) runRemoteBuild(
 
 	registryResourceName := strings.TrimSuffix(registryName, acrRegistryDomain)
 
+	// Resolve the ACR's actual resource group, which may differ from the service target's resource group
+	registryResourceGroup, err := ch.containerRegistryService.FindContainerRegistryResourceGroup(
+		ctx, target.SubscriptionId(), registryResourceName)
+	if err != nil {
+		return "", fmt.Errorf("resolving container registry resource group: %w", err)
+	}
+
 	source, err := ch.remoteBuildManager.UploadBuildSource(
-		ctx, target.SubscriptionId(), target.ResourceGroupName(), registryResourceName, contextPath)
+		ctx, target.SubscriptionId(), registryResourceGroup, registryResourceName, contextPath)
 	if err != nil {
 		return "", err
 	}
@@ -832,7 +839,7 @@ func (ch *ContainerHelper) runRemoteBuild(
 			Title:        "Docker Output",
 		})
 	err = ch.remoteBuildManager.RunDockerBuildRequestWithLogs(
-		ctx, target.SubscriptionId(), target.ResourceGroupName(), registryResourceName, buildRequest, previewerWriter)
+		ctx, target.SubscriptionId(), registryResourceGroup, registryResourceName, buildRequest, previewerWriter)
 	ch.console.StopPreviewer(ctx, false)
 	if err != nil {
 		return "", err
@@ -1017,7 +1024,7 @@ func (ch *ContainerHelper) packBuild(
 			} else if isContainerdEnabled {
 				return nil, &internal.ErrorWithSuggestion{
 					Err: err,
-					Suggestion: "Suggestion: disable containerd image store in Docker settings: " +
+					Suggestion: "disable containerd image store in Docker settings: " +
 						output.WithLinkFormat("https://docs.docker.com/desktop/features/containerd"),
 				}
 			}

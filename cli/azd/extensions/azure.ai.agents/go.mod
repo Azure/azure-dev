@@ -8,9 +8,10 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers v1.1.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3 v3.0.0-beta.2
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices v1.8.0
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry v1.2.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.2.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions v1.3.0
-	github.com/azure/azure-dev/cli/azd v0.0.0-20260122173819-89795b295491
+	github.com/azure/azure-dev/cli/azd v0.0.0-20260224205151-b93bd2358391
 	github.com/braydonk/yaml v0.9.0
 	github.com/drone/envsubst v1.0.3
 	github.com/fatih/color v1.18.0
@@ -18,7 +19,10 @@ require (
 	github.com/mark3labs/mcp-go v0.41.1
 	github.com/spf13/cobra v1.10.1
 	github.com/spf13/pflag v1.0.10
+	github.com/stretchr/testify v1.11.1
 	go.yaml.in/yaml/v3 v3.0.4
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20251007200510-49b9836ed3ff
+	google.golang.org/grpc v1.76.0
 	google.golang.org/protobuf v1.36.10
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -48,7 +52,6 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.2.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dlclark/regexp2 v1.11.5 // indirect
-	github.com/eiannone/keyboard v0.0.0-20220611211555-0d226195f203 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.0 // indirect
@@ -56,6 +59,7 @@ require (
 	github.com/gorilla/css v1.0.1 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/invopop/jsonschema v0.13.0 // indirect
+	github.com/jmespath-community/go-jmespath v1.1.1 // indirect
 	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
@@ -77,7 +81,6 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
 	github.com/sethvargo/go-retry v0.3.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
-	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/theckman/yacspin v0.13.12 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
@@ -90,11 +93,10 @@ require (
 	go.opentelemetry.io/otel/sdk v1.38.0 // indirect
 	go.opentelemetry.io/otel/trace v1.38.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
-	golang.org/x/crypto v0.45.0 // indirect
-	golang.org/x/net v0.47.0 // indirect
-	golang.org/x/sys v0.38.0 // indirect
-	golang.org/x/term v0.37.0 // indirect
-	golang.org/x/text v0.31.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20251007200510-49b9836ed3ff // indirect
-	google.golang.org/grpc v1.76.0 // indirect
+	golang.org/x/crypto v0.46.0 // indirect
+	golang.org/x/exp v0.0.0-20250911091902-df9299821621 // indirect
+	golang.org/x/net v0.48.0 // indirect
+	golang.org/x/sys v0.39.0 // indirect
+	golang.org/x/term v0.38.0 // indirect
+	golang.org/x/text v0.32.0 // indirect
 )

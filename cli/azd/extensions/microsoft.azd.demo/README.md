@@ -1,6 +1,6 @@
 # `azd` Demo Extension
 
-An AZD Demo extension with custom commands showcasing current capabilities of the `azd` extension framework.
+An azd Demo extension with custom commands showcasing current capabilities of the `azd` extension framework.
 
 ## Installation
 
@@ -57,6 +57,24 @@ Displays a list of Azure resources based on the current logged in user, and subs
 #### PromptResourceGroupResource
 
 Displays a list of Azure resources based on the current logged in user, subscription and resource group filtered by resource type and kind.
+
+### `ai`
+
+The `ai` command demonstrates AI model catalog, deployment selection, and quota capabilities through interactive flows.
+
+#### Usage: `azd demo ai <command>`
+
+#### `azd demo ai models`
+
+Browse available AI models interactively and view model details, including locations, versions, SKUs, and capacity constraints.
+
+#### `azd demo ai deployment`
+
+Select model/version/SKU/capacity and resolve a valid deployment configuration.
+
+#### `azd demo ai quota`
+
+View usage meters and limits for a selected location.
 
 ### `metadata`
 

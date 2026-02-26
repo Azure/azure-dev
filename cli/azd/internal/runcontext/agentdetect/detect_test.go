@@ -273,6 +273,7 @@ func TestMatchProcessToAgent(t *testing.T) {
 func TestGetCallingAgent_Caching(t *testing.T) {
 	clearAgentEnvVars(t)
 	ResetDetection()
+	skipIfProcessDetectsAgent(t)
 
 	// First call - no agent
 	agent1 := GetCallingAgent()
@@ -293,6 +294,7 @@ func TestGetCallingAgent_Caching(t *testing.T) {
 func TestIsRunningInAgent(t *testing.T) {
 	clearAgentEnvVars(t)
 	ResetDetection()
+	skipIfProcessDetectsAgent(t)
 
 	assert.False(t, IsRunningInAgent())
 
@@ -324,4 +326,15 @@ func clearAgentEnvVars(t *testing.T) {
 			os.Unsetenv(envVar)
 		}
 	}
+}
+
+// skipIfProcessDetectsAgent skips the test when parent-process detection finds an agent
+// (e.g. running inside Copilot CLI, Claude Code, etc.). Tests that assert "no agent
+// detected" cannot pass when the process tree itself contains an agent.
+func skipIfProcessDetectsAgent(t *testing.T) {
+	t.Helper()
+	if GetCallingAgent().Detected {
+		t.Skip("skipping: parent process detection found an agent (test is running inside an agent)")
+	}
+	ResetDetection()
 }

@@ -45,6 +45,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/helm"
@@ -646,10 +647,33 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(entraid.NewEntraIdService)
 	container.MustRegisterSingleton(armmsi.NewArmMsiService)
 	container.MustRegisterSingleton(azapi.NewContainerRegistryService)
+	container.MustRegisterSingleton(azapi.NewResourceTypeLocationService)
 	container.MustRegisterSingleton(containerapps.NewContainerAppService)
 	container.MustRegisterSingleton(containerregistry.NewRemoteBuildManager)
 	container.MustRegisterSingleton(keyvault.NewKeyVaultService)
 	container.MustRegisterSingleton(storage.NewFileShareService)
+	container.MustRegisterSingleton(ai.NewAiModelService)
+	container.MustRegisterSingleton(func(serviceLocator ioc.ServiceLocator) *errorhandler.ErrorHandlerPipeline {
+		resolver := func(name string) (errorhandler.ErrorHandler, error) {
+			var handler errorhandler.ErrorHandler
+			if err := serviceLocator.ResolveNamed(name, &handler); err != nil {
+				return nil, err
+			}
+			return handler, nil
+		}
+		return errorhandler.NewErrorHandlerPipeline(resolver)
+	})
+	container.MustRegisterNamedSingleton("resourceNotAvailableHandler",
+		func(
+			locationService *azapi.ResourceTypeLocationService,
+			lazyEnv *lazy.Lazy[*environment.Environment],
+		) errorhandler.ErrorHandler {
+			return errorhandler.NewResourceNotAvailableHandler(
+				locationService,
+				&lazyEnvironmentResolver{lazyEnv: lazyEnv},
+			)
+		},
+	)
 
 	container.MustRegisterScoped(project.NewContainerHelper)
 	container.MustRegisterScoped(func(serviceLocator ioc.ServiceLocator) *lazy.Lazy[*project.ContainerHelper] {
@@ -912,6 +936,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(grpcserver.NewExtensionService)
 	container.MustRegisterSingleton(grpcserver.NewServiceTargetService)
 	container.MustRegisterSingleton(grpcserver.NewFrameworkService)
+	container.MustRegisterSingleton(grpcserver.NewAiModelService)
 
 	// Required for nested actions called from composite actions like 'up'
 	registerAction[*cmd.ProvisionAction](container, "azd-provision-action")
@@ -940,3 +965,17 @@ type ArmClientInitializer[T comparable] func(
 	credentials azcore.TokenCredential,
 	armClientOptions *arm.ClientOptions,
 ) (T, error)
+
+// lazyEnvironmentResolver adapts *lazy.Lazy[*environment.Environment]
+// to the errorhandler.EnvironmentResolver interface.
+type lazyEnvironmentResolver struct {
+	lazyEnv *lazy.Lazy[*environment.Environment]
+}
+
+func (r *lazyEnvironmentResolver) Getenv(key string) string {
+	env, err := r.lazyEnv.GetValue()
+	if err != nil {
+		return ""
+	}
+	return env.Getenv(key)
+}

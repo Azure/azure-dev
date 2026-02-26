@@ -14,6 +14,7 @@ Table of Contents
     - [Deployment Service](#deployment-service)
     - [Account Service](#account-service)
     - [Prompt Service](#prompt-service)
+    - [AI Model Service](#ai-model-service)
     - [Event Service](#event-service)
     - [Container Service](#container-service)
     - [Framework Service](#framework-service)
@@ -343,10 +344,10 @@ func newListenCommand() *cobra.Command {
         Use:   "listen",
         Short: "Starts the extension and listens for events.",
         RunE: func(cmd *cobra.Command, args []string) error {
-            // Create a new context that includes the AZD access token.
+            // Create a new context that includes the azd access token.
             ctx := azdext.WithAccessToken(cmd.Context())
 
-            // Create a new AZD client.
+            // Create a new azd client.
             azdClient, err := azdext.NewAzdClient()
             if err != nil {
                 return fmt.Errorf("failed to create azd client: %w", err)
@@ -914,6 +915,7 @@ A [JSON schema](../extensions/extension.schema.json) is available to support aut
 - `providers`: List of providers this extension registers
 - `platforms`: Platform-specific metadata
 - `mcp`: Model Context Protocol server configuration
+- `requiredAzdVersion`: Semver constraint on the azd CLI version required to use this extension (e.g. `>= 1.24.0`, `^1.23.4`, `< 2.0.0`). When set, azd filters out incompatible versions during install/upgrade and warns when the latest version cannot be used.
 
 #### Extension Capabilities
 
@@ -934,7 +936,7 @@ Extensions can declare the following capabilities in their manifest:
 id: microsoft.azd.demo
 namespace: demo
 displayName: Demo Extension
-description: This extension provides examples of the AZD extension framework.
+description: This extension provides examples of the azd extension framework.
 usage: azd demo <command> [options]
 version: 0.1.0
 entryPoint: demo
@@ -1067,7 +1069,7 @@ Here's a simple extension manifest for getting started:
 id: microsoft.azd.demo
 namespace: demo
 displayName: Demo Extension
-description: This extension provides examples of the AZD extension framework.
+description: This extension provides examples of the azd extension framework.
 usage: azd demo <command> [options]
 version: 0.1.0
 capabilities:
@@ -1090,7 +1092,7 @@ The following is an example of an [extension manifest](../extensions/microsoft.a
 id: microsoft.azd.demo
 namespace: demo
 displayName: Demo Extension
-description: This extension provides examples of the AZD extension framework.
+description: This extension provides examples of the azd extension framework.
 usage: azd demo <command> [options]
 version: 0.1.0
 capabilities:
@@ -1122,6 +1124,68 @@ To enable interaction with `azd` from within the extension, the extension must l
 
 The gRPC client must also include an `authorization` parameter with the value from `AZD_ACCESS_TOKEN`; otherwise, requests will fail due to invalid authorization. Extensions must declare their supported capabilities within the extension registry otherwise certain service operations may fail with a permission denied error.
 
+### Structured Error Reporting (Custom Commands)
+
+For custom command execution, extensions can provide richer telemetry by reporting a structured error to
+the azd host via the `ExtensionService.ReportError` gRPC call before exiting with a non-zero status code.
+
+For Go extensions, the recommended approach is to use `azdext.Run`, which handles context creation, structured error
+reporting, suggestion rendering, and `os.Exit` automatically:
+
+```go
+func main() {
+  azdext.Run(cmd.NewRootCommand())
+}
+```
+
+Alternatively, you can use `azdext.ReportError` directly for lower-level control:
+
+```go
+func main() {
+  ctx := azdext.NewContext()
+  ctx = azdext.WithAccessToken(ctx)
+  rootCmd := cmd.NewRootCommand()
+
+  if err := rootCmd.ExecuteContext(ctx); err != nil {
+    _ = azdext.ReportError(ctx, err)
+    os.Exit(1)
+  }
+}
+```
+
+Use typed extension errors to control telemetry mapping:
+
+```go
+return &azdext.LocalError{
+  Message:    "invalid configuration: missing required field 'name'",
+  Code:       "invalid_config",
+  Category:   "validation",
+  Suggestion: "Ensure your azure.yaml has a 'name' field defined.",
+}
+```
+
+```go
+return &azdext.ServiceError{
+  Message:     "request failed",
+  ErrorCode:   "TooManyRequests",
+  StatusCode:  429,
+  ServiceName: "openai.azure.com",
+  Suggestion:  "Wait a moment and retry the request, or increase your rate limit.",
+}
+```
+
+Current telemetry result code conventions:
+
+- Service errors: `ext.service.<service>.<statusCode>`
+- Local domain categories:
+  - `validation` -> `ext.validation.<code>`
+  - `auth` -> `ext.auth.<code>`
+  - `dependency` -> `ext.dependency.<code>`
+  - `compatibility` -> `ext.compatibility.<code>`
+  - `user` -> `ext.user.<code>`
+  - `internal` -> `ext.internal.<code>`
+- Unknown local categories fall back to `ext.local.<code>`.
+
 #### Go
 
 For extensions built using Go, the `azdext` package provides an `AzdClient` which acts as the gRPC client.
@@ -1150,10 +1214,10 @@ func WithAccessToken(ctx context.Context, params ...string) context.Context {
 ### How to call `azd` gRPC service
 
 ```go
-// Create a new context that includes the AZD access token
+// Create a new context that includes the azd access token
 ctx := azdext.WithAccessToken(cmd.Context())
 
-// Create a new AZD client
+// Create a new azd client
 // The constructor function automatically constructs the address
 // from the `AZD_SERVER` environment variable but can be overridden if required.
 azdClient, err := azdext.NewAzdClient()
@@ -1182,10 +1246,10 @@ In this example the extension is leveraging the `azdext.NewExtensionHost` constr
 Other languages will need to manually handle the different message types invoked by the service.
 
 ```go
-// Create a new context that includes the AZD access token.
+// Create a new context that includes the azd access token.
 ctx := azdext.WithAccessToken(cmd.Context())
 
-// Create a new AZD client.
+// Create a new azd client.
 azdClient, err := azdext.NewAzdClient()
 if err != nil {
     return fmt.Errorf("failed to create azd client: %w", err)
@@ -1287,6 +1351,7 @@ The following are a list of available gRPC services for extension developer to i
 - [Deployment Service](#deployment-service)
 - [Account Service](#account-service)
 - [Prompt Service](#prompt-service)
+- [AI Model Service](#ai-model-service)
 - [Event Service](#event-service)
 - [Container Service](#container-service)
 - [Framework Service](#framework-service)
@@ -1807,6 +1872,225 @@ Prompts the user to select a resource from a resource group.
 - **Response:** _PromptResourceGroupResourceResponse_
   - Contains **ResourceExtended**
 
+#### PromptAiModel
+
+Prompts the user to select an AI model from the AI catalog.
+
+- **Request:** _PromptAiModelRequest_
+  - `azure_context` (AzureContext) with `scope.subscription_id` required
+  - `filter` (AiModelFilterOptions): optional model filters
+  - `select_options` (SelectOptions): optional prompt customization (currently `message` override)
+  - `quota` (QuotaCheckOptions): optional quota-aware filtering
+- **Response:** _PromptAiModelResponse_
+  - Contains `model` (_AiModel_)
+
+Effective location is defined by `filter.locations`.
+When `filter.locations` is empty, models are considered across subscription locations.
+When `quota` is set:
+- if `filter.locations` is empty, quota is evaluated across available locations
+- if `filter.locations` contains exactly one location, quota is evaluated at that location
+- if `filter.locations` contains multiple locations, quota is evaluated across that provided location set
+Models are kept when quota is sufficient in at least one effective location.
+Effective location only controls model eligibility for selection; returned `model.locations` remains canonical.
+
+#### PromptAiDeployment
+
+Prompts the user to select deployment configuration (version, SKU, and capacity).
+
+- **Request:** _PromptAiDeploymentRequest_
+  - `azure_context` (AzureContext) with `scope.subscription_id` required
+  - `model_name` (string): target model
+  - `quota` (QuotaCheckOptions): optional quota-aware filtering
+  - `options` (AiModelDeploymentOptions): optional filters for locations/versions/skus/capacity
+  - `use_default_version` (bool): use default version when available; otherwise prompt for version
+  - `use_default_capacity` (bool): skip capacity prompt when true
+  - `include_finetune_skus` (bool): include fine-tune SKUs
+- **Response:** _PromptAiDeploymentResponse_
+  - Contains `deployment` (_AiModelDeployment_)
+
+Effective location is defined by `options.locations`.
+When `options.locations` is empty, model catalog is considered across subscription locations.
+When `quota` is set, exactly one effective location is required via `options.locations`.
+SKU selection is always prompted when one or more valid SKU candidates are available.
+
+#### PromptAiLocationWithQuota
+
+Prompts the user to select a location that satisfies quota requirements.
+
+- **Request:** _PromptAiLocationWithQuotaRequest_
+  - `azure_context` (AzureContext) with `scope.subscription_id` required
+  - `requirements` (repeated QuotaRequirement): usage meter requirements
+  - `allowed_locations` (repeated string): optional allowed location filter
+  - `select_options` (SelectOptions): optional prompt customization (currently `message` override)
+- **Response:** _PromptAiLocationWithQuotaResponse_
+  - Contains `location` (_Location_)
+
+#### PromptAiModelLocationWithQuota
+
+Prompts the user to select a location for a specific model and shows quota available in list labels.
+
+- **Request:** _PromptAiModelLocationWithQuotaRequest_
+  - `azure_context` (AzureContext) with `scope.subscription_id` required
+  - `model_name` (string): required model name
+  - `allowed_locations` (repeated string): optional location filter
+  - `quota` (QuotaCheckOptions): optional minimum available requirement (defaults to 1)
+  - `select_options` (SelectOptions): optional prompt customization (currently `message` override)
+- **Response:** _PromptAiModelLocationWithQuotaResponse_
+  - Contains `location` (_Location_) and `max_remaining_quota` (double, maximum quota available across model SKUs)
+
+---
+
+### AI Model Service
+
+This service provides non-interactive AI catalog, deployment resolution, and quota usage primitives.
+
+> See [ai_model.proto](../grpc/proto/ai_model.proto) for more details.
+
+#### ListModels
+
+Returns available AI models for a subscription.
+
+- **Request:** _ListModelsRequest_
+  - `azure_context` (AzureContext) with `scope.subscription_id` required
+  - `filter` (AiModelFilterOptions), optional:
+    - `locations` (repeated string)
+    - `capabilities` (repeated string)
+    - `formats` (repeated string)
+    - `statuses` (repeated string)
+    - `exclude_model_names` (repeated string)
+- **Response:** _ListModelsResponse_
+  - `models` (repeated _AiModel_)
+
+If `filter.locations` is empty, models are listed across all subscription locations.
+When `filter.locations` is provided, it limits which models are returned, but each returned model still contains canonical
+`locations`.
+
+#### ResolveModelDeployments
+
+Resolves valid deployment configurations for a model.
+
+- **Request:** _ResolveModelDeploymentsRequest_
+  - `azure_context` (AzureContext) with `scope.subscription_id` required
+  - `model_name` (string)
+  - `options` (AiModelDeploymentOptions), optional:
+    - `locations` (repeated string)
+    - `versions` (repeated string)
+    - `skus` (repeated string)
+    - `capacity` (optional int32)
+  - `quota` (QuotaCheckOptions), optional:
+    - `min_remaining_capacity` (double)
+- **Response:** _ResolveModelDeploymentsResponse_
+  - `deployments` (repeated _AiModelDeployment_)
+    - each deployment includes model/version/location/SKU/capacity and optional `remaining_quota`
+
+If `options.locations` is empty, all subscription locations are considered.
+When `quota` is set, `options.locations` must contain exactly one location.
+
+#### ListUsages
+
+Returns usage meter data for a specific location.
+
+- **Request:** _ListUsagesRequest_
+  - `azure_context` (AzureContext) with `scope.subscription_id` required
+  - `location` (string), required (no fallback from `azure_context.scope.location`)
+- **Response:** _ListUsagesResponse_
+  - `usages` (repeated _AiModelUsage_) with:
+    - `name` (string)
+    - `current_value` (double)
+    - `limit` (double)
+
+#### ListLocationsWithQuota
+
+Returns locations that satisfy all provided quota requirements.
+
+- **Request:** _ListLocationsWithQuotaRequest_
+  - `azure_context` (AzureContext) with `scope.subscription_id` required
+  - `requirements` (repeated QuotaRequirement)
+  - `allowed_locations` (repeated string), optional
+- **Response:** _ListLocationsWithQuotaResponse_
+  - `locations` (repeated _Location_)
+
+#### ListModelLocationsWithQuota
+
+Returns locations where a model has sufficient quota, with per-location available quota.
+
+- **Request:** _ListModelLocationsWithQuotaRequest_
+  - `azure_context` (AzureContext) with `scope.subscription_id` required
+  - `model_name` (string), required
+  - `allowed_locations` (repeated string), optional
+  - `quota` (QuotaCheckOptions), optional (`min_remaining_capacity` defaults to `1`)
+- **Response:** _ListModelLocationsWithQuotaResponse_
+  - `locations` (repeated _ModelLocationQuota_)
+    - each entry includes `location` (_Location_) and `max_remaining_quota` (double, maximum quota available)
+
+#### AI Error Reasons
+
+AI model and AI prompt APIs return structured gRPC errors with `ErrorInfo`:
+
+- `domain`: `azd.ai`
+- `reason`: one of:
+  - `AI_MISSING_SUBSCRIPTION`
+  - `AI_LOCATION_REQUIRED`
+  - `AI_QUOTA_LOCATION_REQUIRED`
+  - `AI_MODEL_NOT_FOUND`
+  - `AI_NO_MODELS_MATCH`
+  - `AI_NO_DEPLOYMENT_MATCH`
+  - `AI_NO_VALID_SKUS`
+  - `AI_NO_LOCATIONS_WITH_QUOTA`
+  - `AI_INVALID_CAPACITY`
+  - `AI_INTERACTIVE_REQUIRED`
+
+Some reasons include `ErrorInfo.metadata` for additional context (for example `model_name`, `version`, `sku`).
+
+Extensions should prefer `ErrorInfo.reason` over parsing error text when handling recoverable branches.
+
+**Example Usage (Go):**
+
+```go
+ctx := azdext.WithAccessToken(cmd.Context())
+azdClient, err := azdext.NewAzdClient()
+if err != nil {
+	return fmt.Errorf("failed to create azd client: %w", err)
+}
+defer azdClient.Close()
+
+azureContext := &azdext.AzureContext{
+	Scope: &azdext.AzureScope{
+		SubscriptionId: "<subscription-id>",
+		Location:       "eastus2",
+	},
+}
+
+modelResp, err := azdClient.Prompt().PromptAiModel(ctx, &azdext.PromptAiModelRequest{
+	AzureContext: azureContext,
+	Filter: &azdext.AiModelFilterOptions{
+		Locations:    []string{"eastus2"},
+		Capabilities: []string{"chatCompletion"},
+	},
+	Quota: &azdext.QuotaCheckOptions{MinRemainingCapacity: 1},
+})
+if err != nil {
+	return fmt.Errorf("selecting model: %w", err)
+}
+
+deploymentResp, err := azdClient.Prompt().PromptAiDeployment(ctx, &azdext.PromptAiDeploymentRequest{
+	AzureContext: azureContext,
+	ModelName:    modelResp.Model.Name,
+	Options: &azdext.AiModelDeploymentOptions{
+		Locations: []string{"eastus2"},
+	},
+	Quota: &azdext.QuotaCheckOptions{MinRemainingCapacity: 1},
+})
+if err != nil {
+	return fmt.Errorf("selecting deployment: %w", err)
+}
+
+fmt.Printf("Selected deployment: %s %s %s\n",
+	deploymentResp.Deployment.ModelName,
+	deploymentResp.Deployment.Version,
+	deploymentResp.Deployment.Sku.Name)
+```
+
 ---
 
 ### Event Service
@@ -2302,7 +2586,7 @@ func main() {
 
 ### Compose Service
 
-This service manages composability resources in an AZD project.
+This service manages composability resources in an azd project.
 
 > See [compose.proto](../grpc/proto/compose.proto) for more details.
 

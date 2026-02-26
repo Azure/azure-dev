@@ -82,7 +82,7 @@ def get_azd_client() -> AzdClient:
 
 @app.command()
 def context(debug: bool = typer.Option(False, "--debug", help="Enable debug logging")):
-    """Get the context of the AZD project & environment"""
+    """Get the context of the azd project & environment"""
     configure_logging(debug)
     try:
         azd_client = get_azd_client()

@@ -8,6 +8,7 @@ import (
 	_ "embed"
 	"fmt"
 	"os"
+	osexec "os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -31,6 +32,7 @@ import (
 )
 
 func TestTerraformPlan(t *testing.T) {
+	skipIfTerraformNotInstalled(t)
 	mockContext := mocks.NewMockContext(context.Background())
 	prepareGenericMocks(mockContext.CommandRunner)
 	preparePlanningMocks(mockContext.CommandRunner)
@@ -62,6 +64,7 @@ func TestTerraformPlan(t *testing.T) {
 }
 
 func TestTerraformDestroy(t *testing.T) {
+	skipIfTerraformNotInstalled(t)
 	mockContext := mocks.NewMockContext(context.Background())
 	prepareGenericMocks(mockContext.CommandRunner)
 	preparePlanningMocks(mockContext.CommandRunner)
@@ -79,6 +82,7 @@ func TestTerraformDestroy(t *testing.T) {
 }
 
 func TestTerraformState(t *testing.T) {
+	skipIfTerraformNotInstalled(t)
 	mockContext := mocks.NewMockContext(context.Background())
 	prepareGenericMocks(mockContext.CommandRunner)
 	prepareShowMocks(mockContext.CommandRunner)
@@ -226,6 +230,7 @@ func (m *mockCurrentPrincipal) CurrentPrincipalType(_ context.Context) (provisio
 }
 
 func TestIsRemoteBackendConfig(t *testing.T) {
+	skipIfTerraformNotInstalled(t)
 	tests := []struct {
 		name           string
 		backendFile    string
@@ -361,5 +366,12 @@ func TestIsRemoteBackendConfig(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, tt.expectedRemote, isRemote, "Expected isRemote=%v for %s", tt.expectedRemote, tt.name)
 		})
+	}
+}
+
+func skipIfTerraformNotInstalled(t *testing.T) {
+	t.Helper()
+	if _, err := osexec.LookPath("terraform"); err != nil {
+		t.Skip("skipping: Terraform CLI is not installed")
 	}
 }

@@ -1,6 +1,6 @@
 id: azd.internal.pack
-displayName: The AZD internal extension pack
-description: Includes AZD internal extensions
+displayName: The azd internal extension pack
+description: Includes azd internal extensions
 version: 0.0.1
 dependencies:
   - id: azd.internal.registry

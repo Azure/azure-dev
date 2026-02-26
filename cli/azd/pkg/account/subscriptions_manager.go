@@ -37,6 +37,7 @@ type principalInfoProvider interface {
 type subCache interface {
 	Load(ctx context.Context, key string) ([]Subscription, error)
 	Save(ctx context.Context, key string, save []Subscription) error
+	Merge(ctx context.Context, key string, save []Subscription) error
 	Clear(ctx context.Context) error
 }
 
@@ -80,6 +81,7 @@ func (m *SubscriptionsManager) ClearSubscriptions(ctx context.Context) error {
 }
 
 // Updates stored cached subscriptions.
+// Uses merge semantics to preserve tenant-to-subscription mappings for tenants that are temporarily inaccessible.
 func (m *SubscriptionsManager) RefreshSubscriptions(ctx context.Context) error {
 	claims, err := m.principalInfo.ClaimsForCurrentUser(ctx, nil)
 	if err != nil {
@@ -91,7 +93,7 @@ func (m *SubscriptionsManager) RefreshSubscriptions(ctx context.Context) error {
 		return fmt.Errorf("fetching subscriptions: %w", err)
 	}
 
-	err = m.cache.Save(ctx, uid, subs)
+	err = m.cache.Merge(ctx, uid, subs)
 	if err != nil {
 		return fmt.Errorf("storing subscriptions: %w", err)
 	}
@@ -131,8 +133,9 @@ func (m *SubscriptionsManager) LookupTenant(ctx context.Context, subscriptionId 
 	return "", fmt.Errorf(
 		"failed to resolve user '%s' access to subscription with ID '%s'. "+
 			"If you recently gained access to this subscription, run `azd auth login` again to reload subscriptions.\n"+
-			"Otherwise, visit this subscription in Azure Portal using the browser, "+
-			"then run `azd auth login` ",
+			"If you have lost access to a tenant containing this subscription, "+
+			"you may need to run `azd auth login --tenant-id <tenant-id>` to re-authenticate to that specific tenant. "+
+			"Otherwise, visit this subscription in Azure Portal using the browser, then run `azd auth login`.",
 		res.userClaims.DisplayUsername(),
 		subscriptionId)
 }
@@ -366,6 +369,14 @@ func (m *SubscriptionsManager) ListLocations(
 	m.console.ShowSpinner(ctx, msg, input.Step)
 	defer m.console.StopSpinner(ctx, "", input.GetStepResultFormat(err))
 
+	return m.GetLocations(ctx, subscriptionId)
+}
+
+// GetLocations lists locations for a subscription without rendering progress UX.
+func (m *SubscriptionsManager) GetLocations(
+	ctx context.Context,
+	subscriptionId string,
+) ([]Location, error) {
 	return m.listLocations(ctx, subscriptionId)
 }
 

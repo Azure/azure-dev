@@ -6,15 +6,17 @@ package grpcserver
 import (
 	"context"
 	"errors"
-	"fmt"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
+	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockprompt"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -22,7 +24,7 @@ import (
 
 func Test_PromptService_Confirm_NoPromptWithDefault(t *testing.T) {
 	globalOptions := &internal.GlobalCommandOptions{NoPrompt: true}
-	service := NewPromptService(nil, nil, globalOptions)
+	service := NewPromptService(nil, nil, nil, globalOptions)
 
 	resp, err := service.Confirm(context.Background(), &azdext.ConfirmRequest{
 		Options: &azdext.ConfirmOptions{
@@ -38,7 +40,7 @@ func Test_PromptService_Confirm_NoPromptWithDefault(t *testing.T) {
 
 func Test_PromptService_Confirm_NoPromptWithoutDefault(t *testing.T) {
 	globalOptions := &internal.GlobalCommandOptions{NoPrompt: true}
-	service := NewPromptService(nil, nil, globalOptions)
+	service := NewPromptService(nil, nil, nil, globalOptions)
 
 	_, err := service.Confirm(context.Background(), &azdext.ConfirmRequest{
 		Options: &azdext.ConfirmOptions{
@@ -52,7 +54,7 @@ func Test_PromptService_Confirm_NoPromptWithoutDefault(t *testing.T) {
 
 func Test_PromptService_Select_NoPromptWithDefault(t *testing.T) {
 	globalOptions := &internal.GlobalCommandOptions{NoPrompt: true}
-	service := NewPromptService(nil, nil, globalOptions)
+	service := NewPromptService(nil, nil, nil, globalOptions)
 
 	resp, err := service.Select(context.Background(), &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
@@ -72,7 +74,7 @@ func Test_PromptService_Select_NoPromptWithDefault(t *testing.T) {
 
 func Test_PromptService_Select_NoPromptWithoutDefault(t *testing.T) {
 	globalOptions := &internal.GlobalCommandOptions{NoPrompt: true}
-	service := NewPromptService(nil, nil, globalOptions)
+	service := NewPromptService(nil, nil, nil, globalOptions)
 
 	_, err := service.Select(context.Background(), &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
@@ -89,7 +91,7 @@ func Test_PromptService_Select_NoPromptWithoutDefault(t *testing.T) {
 
 func Test_PromptService_MultiSelect_NoPrompt(t *testing.T) {
 	globalOptions := &internal.GlobalCommandOptions{NoPrompt: true}
-	service := NewPromptService(nil, nil, globalOptions)
+	service := NewPromptService(nil, nil, nil, globalOptions)
 
 	resp, err := service.MultiSelect(context.Background(), &azdext.MultiSelectRequest{
 		Options: &azdext.MultiSelectOptions{
@@ -110,7 +112,7 @@ func Test_PromptService_MultiSelect_NoPrompt(t *testing.T) {
 
 func Test_PromptService_Prompt_NoPromptWithDefault(t *testing.T) {
 	globalOptions := &internal.GlobalCommandOptions{NoPrompt: true}
-	service := NewPromptService(nil, nil, globalOptions)
+	service := NewPromptService(nil, nil, nil, globalOptions)
 
 	resp, err := service.Prompt(context.Background(), &azdext.PromptRequest{
 		Options: &azdext.PromptOptions{
@@ -126,7 +128,7 @@ func Test_PromptService_Prompt_NoPromptWithDefault(t *testing.T) {
 
 func Test_PromptService_Prompt_NoPromptRequiredWithoutDefault(t *testing.T) {
 	globalOptions := &internal.GlobalCommandOptions{NoPrompt: true}
-	service := NewPromptService(nil, nil, globalOptions)
+	service := NewPromptService(nil, nil, nil, globalOptions)
 
 	_, err := service.Prompt(context.Background(), &azdext.PromptRequest{
 		Options: &azdext.PromptOptions{
@@ -141,7 +143,7 @@ func Test_PromptService_Prompt_NoPromptRequiredWithoutDefault(t *testing.T) {
 
 func Test_PromptService_Prompt_NoPromptNotRequiredWithoutDefault(t *testing.T) {
 	globalOptions := &internal.GlobalCommandOptions{NoPrompt: true}
-	service := NewPromptService(nil, nil, globalOptions)
+	service := NewPromptService(nil, nil, nil, globalOptions)
 
 	resp, err := service.Prompt(context.Background(), &azdext.PromptRequest{
 		Options: &azdext.PromptOptions{
@@ -168,7 +170,7 @@ func Test_PromptService_PromptSubscription(t *testing.T) {
 		On("PromptSubscription", mock.Anything, mock.Anything).
 		Return(expectedSub, nil)
 
-	service := NewPromptService(mockPrompter, nil, globalOptions)
+	service := NewPromptService(mockPrompter, nil, nil, globalOptions)
 
 	resp, err := service.PromptSubscription(context.Background(), &azdext.PromptSubscriptionRequest{
 		Message:     "Select subscription:",
@@ -197,7 +199,7 @@ func Test_PromptService_PromptLocation(t *testing.T) {
 		On("PromptLocation", mock.Anything, mock.Anything, mock.Anything).
 		Return(expectedLocation, nil)
 
-	service := NewPromptService(mockPrompter, nil, globalOptions)
+	service := NewPromptService(mockPrompter, nil, nil, globalOptions)
 
 	resp, err := service.PromptLocation(context.Background(), &azdext.PromptLocationRequest{
 		AzureContext: &azdext.AzureContext{
@@ -237,7 +239,7 @@ func Test_PromptService_PromptResourceGroup(t *testing.T) {
 		})).
 		Return(expectedRg, nil)
 
-	service := NewPromptService(mockPrompter, nil, globalOptions)
+	service := NewPromptService(mockPrompter, nil, nil, globalOptions)
 
 	resp, err := service.PromptResourceGroup(context.Background(), &azdext.PromptResourceGroupRequest{
 		AzureContext: &azdext.AzureContext{
@@ -276,7 +278,7 @@ func Test_PromptService_PromptResourceGroup_NilOptions(t *testing.T) {
 		On("PromptResourceGroup", mock.Anything, mock.Anything, (*prompt.ResourceGroupOptions)(nil)).
 		Return(expectedRg, nil)
 
-	service := NewPromptService(mockPrompter, nil, globalOptions)
+	service := NewPromptService(mockPrompter, nil, nil, globalOptions)
 
 	resp, err := service.PromptResourceGroup(context.Background(), &azdext.PromptResourceGroupRequest{
 		AzureContext: &azdext.AzureContext{
@@ -323,7 +325,7 @@ func Test_PromptService_PromptSubscriptionResource(t *testing.T) {
 		).
 		Return(expectedResource, nil)
 
-	service := NewPromptService(mockPrompter, nil, globalOptions)
+	service := NewPromptService(mockPrompter, nil, nil, globalOptions)
 
 	resp, err := service.PromptSubscriptionResource(context.Background(), &azdext.PromptSubscriptionResourceRequest{
 		AzureContext: &azdext.AzureContext{
@@ -381,7 +383,7 @@ func Test_PromptService_PromptResourceGroupResource(t *testing.T) {
 		).
 		Return(expectedResource, nil)
 
-	service := NewPromptService(mockPrompter, nil, globalOptions)
+	service := NewPromptService(mockPrompter, nil, nil, globalOptions)
 
 	resp, err := service.PromptResourceGroupResource(context.Background(), &azdext.PromptResourceGroupResourceRequest{
 		AzureContext: &azdext.AzureContext{
@@ -543,52 +545,53 @@ func Test_CreateResourceOptions(t *testing.T) {
 	}
 }
 
-func Test_WrapErrorWithSuggestion(t *testing.T) {
-	tests := []struct {
-		name        string
-		err         error
-		wantNil     bool
-		wantContain string
-	}{
-		{
-			name:    "nil error returns nil",
-			err:     nil,
-			wantNil: true,
+// setupTestServer creates and starts a test gRPC server with the given prompt service,
+// returning the server, authenticated context, client, and cleanup function
+func setupTestServer(t *testing.T, promptSvc azdext.PromptServiceServer) (
+	*Server, context.Context, *azdext.AzdClient, func(),
+) {
+	server := NewServer(
+		azdext.UnimplementedProjectServiceServer{},
+		azdext.UnimplementedEnvironmentServiceServer{},
+		promptSvc,
+		azdext.UnimplementedUserConfigServiceServer{},
+		azdext.UnimplementedDeploymentServiceServer{},
+		azdext.UnimplementedEventServiceServer{},
+		azdext.UnimplementedComposeServiceServer{},
+		azdext.UnimplementedWorkflowServiceServer{},
+		azdext.UnimplementedExtensionServiceServer{},
+		azdext.UnimplementedServiceTargetServiceServer{},
+		azdext.UnimplementedFrameworkServiceServer{},
+		azdext.UnimplementedContainerServiceServer{},
+		azdext.UnimplementedAccountServiceServer{},
+		azdext.UnimplementedAiModelServiceServer{},
+	)
+
+	serverInfo, err := server.Start()
+	require.NoError(t, err)
+
+	extension := &extensions.Extension{
+		Id: "azd.internal.test",
+		Capabilities: []extensions.CapabilityType{
+			extensions.CustomCommandCapability,
 		},
-		{
-			name:        "error without suggestion is returned as-is",
-			err:         errors.New("some error"),
-			wantContain: "some error",
-		},
-		{
-			name: "error with suggestion includes suggestion text",
-			err: &internal.ErrorWithSuggestion{
-				Err:        errors.New("authentication failed"),
-				Suggestion: "Suggestion: run `azd auth login` to acquire a new token.",
-			},
-			wantContain: "azd auth login",
-		},
-		{
-			name: "wrapped error with suggestion includes suggestion text",
-			err: fmt.Errorf("failed to prompt: %w", &internal.ErrorWithSuggestion{
-				Err:        errors.New("token expired"),
-				Suggestion: "Suggestion: login expired, run `azd auth login` to acquire a new token.",
-			}),
-			wantContain: "azd auth login",
-		},
+		Namespace: "test",
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := wrapErrorWithSuggestion(tt.err)
-			if tt.wantNil {
-				require.Nil(t, result)
-				return
-			}
-			require.NotNil(t, result)
-			require.Contains(t, result.Error(), tt.wantContain)
-		})
+	accessToken, err := GenerateExtensionToken(extension, serverInfo)
+	require.NoError(t, err)
+
+	ctx := azdext.WithAccessToken(context.Background(), accessToken)
+	client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
+	require.NoError(t, err)
+
+	cleanup := func() {
+		client.Close()
+		err := server.Stop()
+		require.NoError(t, err)
 	}
+
+	return server, ctx, client, cleanup
 }
 
 func Test_PromptService_PromptSubscription_ErrorWithSuggestion(t *testing.T) {
@@ -597,21 +600,23 @@ func Test_PromptService_PromptSubscription_ErrorWithSuggestion(t *testing.T) {
 
 	authErr := &internal.ErrorWithSuggestion{
 		Err:        errors.New("AADSTS70043: The refresh token has expired"),
-		Suggestion: "Suggestion: login expired, run `azd auth login` to acquire a new token.",
+		Suggestion: "login expired, run `azd auth login` to acquire a new token.",
 	}
 
 	mockPrompter.
 		On("PromptSubscription", mock.Anything, mock.Anything).
 		Return(nil, authErr)
 
-	service := NewPromptService(mockPrompter, nil, globalOptions)
+	promptSvc := NewPromptService(mockPrompter, nil, nil, globalOptions)
+	_, ctx, client, cleanup := setupTestServer(t, promptSvc)
+	defer cleanup()
 
-	_, err := service.PromptSubscription(context.Background(), &azdext.PromptSubscriptionRequest{
+	_, err := client.Prompt().PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{
 		Message: "Select subscription:",
 	})
 
 	require.Error(t, err)
-	// Verify that the suggestion text is included in the error message
+	// Verify that the suggestion text is included in the error message (wrapped by interceptor)
 	require.Contains(t, err.Error(), "azd auth login")
 	require.Contains(t, err.Error(), "AADSTS70043")
 	mockPrompter.AssertExpectations(t)
@@ -623,16 +628,18 @@ func Test_PromptService_PromptResourceGroup_ErrorWithSuggestion(t *testing.T) {
 
 	authErr := &internal.ErrorWithSuggestion{
 		Err:        errors.New("AADSTS70043: The refresh token has expired"),
-		Suggestion: "Suggestion: login expired, run `azd auth login` to acquire a new token.",
+		Suggestion: "login expired, run `azd auth login` to acquire a new token.",
 	}
 
 	mockPrompter.
 		On("PromptResourceGroup", mock.Anything, mock.Anything, mock.Anything).
 		Return(nil, authErr)
 
-	service := NewPromptService(mockPrompter, nil, globalOptions)
+	promptSvc := NewPromptService(mockPrompter, nil, nil, globalOptions)
+	_, ctx, client, cleanup := setupTestServer(t, promptSvc)
+	defer cleanup()
 
-	_, err := service.PromptResourceGroup(context.Background(), &azdext.PromptResourceGroupRequest{
+	_, err := client.Prompt().PromptResourceGroup(ctx, &azdext.PromptResourceGroupRequest{
 		AzureContext: &azdext.AzureContext{
 			Scope: &azdext.AzureScope{
 				SubscriptionId: "sub-123",
@@ -641,8 +648,261 @@ func Test_PromptService_PromptResourceGroup_ErrorWithSuggestion(t *testing.T) {
 	})
 
 	require.Error(t, err)
-	// Verify that the suggestion text is included in the error message
+	// Verify that the suggestion text is included in the error message (wrapped by interceptor)
 	require.Contains(t, err.Error(), "azd auth login")
 	require.Contains(t, err.Error(), "AADSTS70043")
 	mockPrompter.AssertExpectations(t)
+}
+
+func Test_validateDeploymentCapacity(t *testing.T) {
+	tests := []struct {
+		name        string
+		value       string
+		sku         ai.AiModelSku
+		want        int32
+		errContains string
+	}{
+		{
+			name:  "valid capacity with constraints",
+			value: "20",
+			sku: ai.AiModelSku{
+				MinCapacity:  10,
+				MaxCapacity:  100,
+				CapacityStep: 10,
+			},
+			want: 20,
+		},
+		{
+			name:        "non-numeric value",
+			value:       "abc",
+			sku:         ai.AiModelSku{},
+			errContains: "whole number",
+		},
+		{
+			name:  "below minimum",
+			value: "5",
+			sku: ai.AiModelSku{
+				MinCapacity: 10,
+			},
+			errContains: "at least 10",
+		},
+		{
+			name:  "above maximum",
+			value: "120",
+			sku: ai.AiModelSku{
+				MaxCapacity: 100,
+			},
+			errContains: "at most 100",
+		},
+		{
+			name:  "step mismatch",
+			value: "25",
+			sku: ai.AiModelSku{
+				CapacityStep: 10,
+			},
+			errContains: "multiple of 10",
+		},
+		{
+			name:  "trimmed input is accepted",
+			value: " 30 ",
+			sku: ai.AiModelSku{
+				MinCapacity: 10,
+			},
+			want: 30,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := validateDeploymentCapacity(tt.value, tt.sku)
+			if tt.errContains != "" {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tt.errContains)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func Test_validateCapacityAgainstRemainingQuota(t *testing.T) {
+	tests := []struct {
+		name        string
+		capacity    int32
+		remaining   *float64
+		errContains string
+	}{
+		{
+			name:      "no remaining quota info",
+			capacity:  100,
+			remaining: nil,
+		},
+		{
+			name:      "capacity within remaining quota",
+			capacity:  10,
+			remaining: to.Ptr(float64(25)),
+		},
+		{
+			name:        "capacity exceeds remaining quota",
+			capacity:    30,
+			remaining:   to.Ptr(float64(20)),
+			errContains: "at most 20",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateCapacityAgainstRemainingQuota(tt.capacity, tt.remaining)
+			if tt.errContains != "" {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tt.errContains)
+				return
+			}
+
+			require.NoError(t, err)
+		})
+	}
+}
+
+func Test_buildSkuCandidatesForVersion(t *testing.T) {
+	version := ai.AiModelVersion{
+		Version: "2024-06-01",
+		Skus: []ai.AiModelSku{
+			{
+				Name:            "Standard",
+				UsageName:       "OpenAI.Standard.gpt-4o",
+				DefaultCapacity: 5,
+				MinCapacity:     1,
+				MaxCapacity:     100,
+				CapacityStep:    1,
+			},
+			{
+				Name:            "Standard",
+				UsageName:       "OpenAI.Standard.gpt-4o-finetune",
+				DefaultCapacity: 5,
+				MinCapacity:     1,
+				MaxCapacity:     100,
+				CapacityStep:    1,
+			},
+		},
+	}
+
+	t.Run("excludes finetune skus when include flag is false", func(t *testing.T) {
+		candidates := buildSkuCandidatesForVersion(version, nil, nil, nil, false)
+		require.Len(t, candidates, 1)
+		require.Equal(t, "OpenAI.Standard.gpt-4o", candidates[0].sku.UsageName)
+	})
+
+	t.Run("includes finetune skus when include flag is true", func(t *testing.T) {
+		candidates := buildSkuCandidatesForVersion(version, nil, nil, nil, true)
+		require.Len(t, candidates, 2)
+	})
+
+	t.Run("applies quota and capacity filters", func(t *testing.T) {
+		options := &ai.DeploymentOptions{
+			Capacity: to.Ptr(int32(5)),
+		}
+		quota := &azdext.QuotaCheckOptions{
+			MinRemainingCapacity: 1,
+		}
+		usageMap := map[string]ai.AiModelUsage{
+			"OpenAI.Standard.gpt-4o": {
+				Name:         "OpenAI.Standard.gpt-4o",
+				CurrentValue: 6,
+				Limit:        10, // remaining 4 < capacity 5 => excluded
+			},
+			"OpenAI.Standard.gpt-4o-finetune": {
+				Name:         "OpenAI.Standard.gpt-4o-finetune",
+				CurrentValue: 0,
+				Limit:        10, // remaining 10 => included
+			},
+		}
+
+		candidates := buildSkuCandidatesForVersion(version, options, quota, usageMap, true)
+		require.Len(t, candidates, 1)
+		require.Equal(t, "OpenAI.Standard.gpt-4o-finetune", candidates[0].sku.UsageName)
+		require.NotNil(t, candidates[0].remaining)
+		require.Equal(t, float64(10), *candidates[0].remaining)
+	})
+}
+
+func Test_maxSkuCandidateRemaining(t *testing.T) {
+	remainingA := float64(4)
+	remainingB := float64(10)
+	skuCandidates := []skuCandidate{
+		{remaining: &remainingA},
+		{remaining: nil},
+		{remaining: &remainingB},
+	}
+
+	maxRemaining, found := maxSkuCandidateRemaining(skuCandidates)
+	require.True(t, found)
+	require.Equal(t, float64(10), maxRemaining)
+
+	_, found = maxSkuCandidateRemaining([]skuCandidate{{remaining: nil}})
+	require.False(t, found)
+}
+
+func Test_findDefaultIndex(t *testing.T) {
+	choices := []*ux.SelectChoice{
+		{Value: "gpt-4o", Label: "gpt-4o"},
+		{Value: "gpt-4o-mini", Label: "gpt-4o-mini"},
+		{Value: "gpt-35-turbo", Label: "gpt-35-turbo"},
+	}
+
+	tests := []struct {
+		name         string
+		defaultValue string
+		wantIndex    *int
+	}{
+		{
+			name:         "exact match returns index",
+			defaultValue: "gpt-4o-mini",
+			wantIndex:    to.Ptr(1),
+		},
+		{
+			name:         "case insensitive match",
+			defaultValue: "GPT-4O-MINI",
+			wantIndex:    to.Ptr(1),
+		},
+		{
+			name:         "first item match",
+			defaultValue: "gpt-4o",
+			wantIndex:    to.Ptr(0),
+		},
+		{
+			name:         "last item match",
+			defaultValue: "gpt-35-turbo",
+			wantIndex:    to.Ptr(2),
+		},
+		{
+			name:         "no match returns nil",
+			defaultValue: "nonexistent-model",
+			wantIndex:    nil,
+		},
+		{
+			name:         "empty default returns nil",
+			defaultValue: "",
+			wantIndex:    nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := findDefaultIndex(choices, tt.defaultValue)
+			if tt.wantIndex == nil {
+				require.Nil(t, result)
+			} else {
+				require.NotNil(t, result)
+				require.Equal(t, *tt.wantIndex, *result)
+			}
+		})
+	}
+}
+
+func Test_findDefaultIndex_EmptyChoices(t *testing.T) {
+	result := findDefaultIndex([]*ux.SelectChoice{}, "some-value")
+	require.Nil(t, result)
 }

@@ -301,12 +301,12 @@ func Test_CLI_Init_WithCwdAutoCreate(t *testing.T) {
 		{
 			name:   "single level directory",
 			subDir: "new-project",
-			args:   []string{"init", "-t", "azure-samples/todo-nodejs-mongo", "--no-prompt"},
+			args:   []string{"init", "-t", "azure-samples/todo-nodejs-mongo", "--no-prompt", "-e", "test-env"},
 		},
 		{
 			name:   "nested directory",
 			subDir: "parent/child/project",
-			args:   []string{"init", "-t", "azure-samples/todo-nodejs-mongo", "--no-prompt"},
+			args:   []string{"init", "-t", "azure-samples/todo-nodejs-mongo", "--no-prompt", "-e", "test-env"},
 		},
 	}
 
@@ -328,8 +328,7 @@ func Test_CLI_Init_WithCwdAutoCreate(t *testing.T) {
 			require.NoDirExists(t, targetDir)
 
 			// Run the command
-			// Note: We expect an error because --no-prompt will fail on environment name prompt
-			// but the directory creation should succeed before that
+			// The -e flag provides an environment name to avoid fail-fast when using --no-prompt with --template
 			cli.RunCommand(ctx, args...)
 
 			// Verify the directory was created

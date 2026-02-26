@@ -9,7 +9,7 @@ const {
 
 function createContextCommand() {
   const cmd = new Command('context');
-  cmd.description('Get context of the AZD project and environment.');
+  cmd.description('Get context of the azd project and environment.');
 
   cmd.action(async () => {
     try {

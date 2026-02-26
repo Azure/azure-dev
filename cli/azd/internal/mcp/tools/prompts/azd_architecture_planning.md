@@ -1,4 +1,4 @@
-# AZD Architecture Planning Instructions
+# azd architecture Planning Instructions
 
 ✅ **Agent Task List**  
 

@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -36,7 +36,7 @@ func TestAZCLIWithUserAgent(t *testing.T) {
 	})
 
 	var rawResponse *http.Response
-	ctx := runtime.WithCaptureResponse(*mockContext.Context, &rawResponse)
+	ctx := policy.WithCaptureResponse(*mockContext.Context, &rawResponse)
 
 	resourceService := NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
 	// We don't care about the actual response or if an error occurred
@@ -71,7 +71,7 @@ func Test_AzSdk_User_Agent_Policy(t *testing.T) {
 	})
 
 	var rawResponse *http.Response
-	ctx := runtime.WithCaptureResponse(*mockContext.Context, &rawResponse)
+	ctx := policy.WithCaptureResponse(*mockContext.Context, &rawResponse)
 
 	resourceService := NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
 	// We don't care about the actual response or if an error occurred

@@ -95,6 +95,19 @@ func NewExtensionHost(client *AzdClient) *ExtensionHost {
 	}
 }
 
+// Client returns the underlying AzdClient.
+// This is useful when service target or framework service factories need the client,
+// for example when called from a [NewListenCommand] configure callback:
+//
+//	azdext.NewListenCommand(func(host *azdext.ExtensionHost) {
+//	    host.WithServiceTarget("appservice", func() azdext.ServiceTargetProvider {
+//	        return NewAppServiceProvider(host.Client())
+//	    })
+//	})
+func (er *ExtensionHost) Client() *AzdClient {
+	return er.client
+}
+
 func (er *ExtensionHost) init(extensionId string) {
 	// Only create managers if they haven't been set (allows tests to inject mocks)
 	if er.serviceTargetManager == nil {
@@ -330,7 +343,7 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 }
 
 func callReady(ctx context.Context, client *AzdClient) error {
-	_, err := client.extensionService().Ready(ctx, &ReadyRequest{})
+	_, err := client.Extension().Ready(ctx, &ReadyRequest{})
 	if err == nil {
 		return nil
 	}

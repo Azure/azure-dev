@@ -6,13 +6,13 @@ package project
 import (
 	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/azure"
@@ -62,7 +62,11 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 
 	proj, err := p.azdClient.Project().Get(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("failed to get project: %w", err)
+		return exterrors.Dependency(
+			exterrors.CodeProjectNotFound,
+			fmt.Sprintf("failed to get project: %s", err),
+			"run 'azd init' to initialize your project",
+		)
 	}
 	servicePath := serviceConfig.RelativePath
 	fullPath := filepath.Join(proj.Project.Path, servicePath)
@@ -71,7 +75,11 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 	azdEnvClient := p.azdClient.Environment()
 	currEnv, err := azdEnvClient.GetCurrent(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("failed to get current environment: %w", err)
+		return exterrors.Dependency(
+			exterrors.CodeEnvironmentNotFound,
+			fmt.Sprintf("failed to get current environment: %s", err),
+			"run 'azd env new' to create an environment",
+		)
 	}
 	p.env = currEnv.Environment
 
@@ -86,7 +94,11 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 
 	subscriptionId := resp.Value
 	if subscriptionId == "" {
-		return fmt.Errorf("AZURE_SUBSCRIPTION_ID environment variable is required")
+		return exterrors.Dependency(
+			exterrors.CodeMissingAzureSubscription,
+			"AZURE_SUBSCRIPTION_ID is required: environment variable was not found in the current azd environment",
+			"run 'azd env get-values' to verify environment values, or initialize/project-bind with 'azd ai agent init --project-id ...'",
+		)
 	}
 
 	// Get the tenant ID
@@ -94,7 +106,11 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 		SubscriptionId: subscriptionId,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to get tenant ID: %w", err)
+		return exterrors.Auth(
+			exterrors.CodeTenantLookupFailed,
+			fmt.Sprintf("failed to get tenant ID for subscription %s: %s", subscriptionId, err),
+			"verify your Azure login with 'azd auth login' and that you have access to this subscription",
+		)
 	}
 	p.tenantId = tenantResponse.TenantId
 
@@ -104,7 +120,11 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 		AdditionallyAllowedTenants: []string{"*"},
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create Azure credential: %w", err)
+		return exterrors.Auth(
+			exterrors.CodeCredentialCreationFailed,
+			fmt.Sprintf("failed to create Azure credential: %s", err),
+			"run 'azd auth login' to authenticate",
+		)
 	}
 	p.credential = cred
 
@@ -114,12 +134,20 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 	if envPath := os.Getenv("AGENT_DEFINITION_PATH"); envPath != "" {
 		// Verify the file exists and has correct extension
 		if _, err := os.Stat(envPath); os.IsNotExist(err) {
-			return fmt.Errorf("agent definition file specified in AGENT_DEFINITION_PATH does not exist: %s", envPath)
+			return exterrors.Validation(
+				exterrors.CodeAgentDefinitionNotFound,
+				fmt.Sprintf("agent definition file specified in AGENT_DEFINITION_PATH does not exist: %s", envPath),
+				"verify the path set in AGENT_DEFINITION_PATH points to a valid agent.yaml file",
+			)
 		}
 
 		ext := strings.ToLower(filepath.Ext(envPath))
 		if ext != ".yaml" && ext != ".yml" {
-			return fmt.Errorf("agent definition file must be a YAML file (.yaml or .yml), got: %s", envPath)
+			return exterrors.Validation(
+				exterrors.CodeAgentDefinitionNotFound,
+				fmt.Sprintf("agent definition file must be a YAML file (.yaml or .yml), got: %s", envPath),
+				"provide a file with .yaml or .yml extension",
+			)
 		}
 
 		p.agentDefinitionPath = envPath
@@ -143,8 +171,11 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 		return nil
 	}
 
-	return fmt.Errorf("agent definition file (agent.yaml or agent.yml) not found in %s. "+
-		"Please ensure the file exists or set AGENT_DEFINITION_PATH environment variable", fullPath)
+	return exterrors.Dependency(
+		exterrors.CodeAgentDefinitionNotFound,
+		fmt.Sprintf("agent definition file not found: no agent.yaml or agent.yml found in %s", fullPath),
+		"add an agent.yaml/agent.yml file to the service directory or set AGENT_DEFINITION_PATH",
+	)
 }
 
 // getServiceKey converts a service name into a standardized environment variable key format
@@ -165,7 +196,11 @@ func (p *AgentServiceTargetProvider) Endpoints(
 		Name: p.env.Name,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get environment values: %w", err)
+		return nil, exterrors.Dependency(
+			exterrors.CodeEnvironmentValuesFailed,
+			fmt.Sprintf("failed to get environment values: %s", err),
+			"run 'azd env get-values' to verify environment state",
+		)
 	}
 
 	azdEnv := make(map[string]string, len(resp.KeyValues))
@@ -175,7 +210,11 @@ func (p *AgentServiceTargetProvider) Endpoints(
 
 	// Check if required environment variables are set
 	if azdEnv["AZURE_AI_PROJECT_ENDPOINT"] == "" {
-		return nil, fmt.Errorf("AZURE_AI_PROJECT_ENDPOINT environment variable is required and could not be found in your current azd environment. Either you haven't provisioned a Microsoft Foundry project yet (azd provision), or you haven't connected to an existing project (azd ai agent init --project-id [id])")
+		return nil, exterrors.Dependency(
+			exterrors.CodeMissingAiProjectEndpoint,
+			"AZURE_AI_PROJECT_ENDPOINT is required: environment variable was not found in the current azd environment",
+			"run 'azd provision' or connect to an existing project via 'azd ai agent init --project-id <resource-id>'",
+		)
 	}
 
 	serviceKey := p.getServiceKey(serviceConfig.Name)
@@ -183,7 +222,11 @@ func (p *AgentServiceTargetProvider) Endpoints(
 	agentVersionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
 
 	if azdEnv[agentNameKey] == "" || azdEnv[agentVersionKey] == "" {
-		return nil, fmt.Errorf("%s and %s environment variables are required", agentNameKey, agentVersionKey)
+		return nil, exterrors.Dependency(
+			exterrors.CodeMissingAgentEnvVars,
+			fmt.Sprintf("%s and %s environment variables are required", agentNameKey, agentVersionKey),
+			"run 'azd deploy' to deploy the agent and set these variables",
+		)
 	}
 
 	endpoint := p.agentEndpoint(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], azdEnv[agentNameKey], azdEnv[agentVersionKey])
@@ -205,7 +248,11 @@ func (p *AgentServiceTargetProvider) GetTargetResource(
 
 	// Extract account name from parent resource ID
 	if p.foundryProject.Parent == nil {
-		return nil, fmt.Errorf("invalid resource ID: missing parent account")
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidFoundryResourceId,
+			"invalid resource ID: missing parent account",
+			"verify the AZURE_AI_PROJECT_ID is a valid Microsoft Foundry project resource ID",
+		)
 	}
 
 	accountName := p.foundryProject.Parent.Name
@@ -214,13 +261,13 @@ func (p *AgentServiceTargetProvider) GetTargetResource(
 	// Create Cognitive Services Projects client
 	projectsClient, err := armcognitiveservices.NewProjectsClient(p.foundryProject.SubscriptionID, p.credential, azure.NewArmClientOptions())
 	if err != nil {
-		return nil, fmt.Errorf("failed to create Cognitive Services Projects client: %w", err)
+		return nil, exterrors.Internal(exterrors.CodeCognitiveServicesClientFailed, fmt.Sprintf("failed to create Cognitive Services Projects client: %s", err))
 	}
 
 	// Get the Microsoft Foundry project
 	projectResp, err := projectsClient.Get(ctx, p.foundryProject.ResourceGroupName, accountName, projectName, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get Microsoft Foundry project: %w", err)
+		return nil, exterrors.ServiceFromAzure(err, exterrors.OpGetFoundryProject)
 	}
 
 	// Construct the target resource
@@ -282,7 +329,7 @@ func (p *AgentServiceTargetProvider) Package(
 					ServiceContext: serviceContext,
 				})
 			if err != nil {
-				return nil, fmt.Errorf("failed building container: %w", err)
+				return nil, exterrors.Internal(exterrors.OpContainerBuild, fmt.Sprintf("container build failed: %s", err))
 			}
 
 			serviceContext.Build = append(serviceContext.Build, buildResponse.Result.Artifacts...)
@@ -295,7 +342,7 @@ func (p *AgentServiceTargetProvider) Package(
 				ServiceContext: serviceContext,
 			})
 		if err != nil {
-			return nil, fmt.Errorf("failed packaging container: %w", err)
+			return nil, exterrors.Internal(exterrors.OpContainerPackage, fmt.Sprintf("container package failed: %s", err))
 		}
 
 		newArtifacts = append(newArtifacts, packageResponse.Result.Artifacts...)
@@ -328,7 +375,7 @@ func (p *AgentServiceTargetProvider) Publish(
 		})
 
 	if err != nil {
-		return nil, fmt.Errorf("failed publishing container: %w", err)
+		return nil, exterrors.Internal(exterrors.OpContainerPublish, fmt.Sprintf("container publish failed: %s", err))
 	}
 
 	return &azdext.ServicePublishResult{
@@ -354,7 +401,11 @@ func (p *AgentServiceTargetProvider) Deploy(
 		Name: p.env.Name,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get environment values: %w", err)
+		return nil, exterrors.Dependency(
+			exterrors.CodeEnvironmentValuesFailed,
+			fmt.Sprintf("failed to get environment values: %s", err),
+			"run 'azd env get-values' to verify environment state",
+		)
 	}
 
 	azdEnv := make(map[string]string, len(resp.KeyValues))
@@ -364,7 +415,11 @@ func (p *AgentServiceTargetProvider) Deploy(
 
 	var serviceTargetConfig *ServiceTargetAgentConfig
 	if err := UnmarshalStruct(serviceConfig.Config, &serviceTargetConfig); err != nil {
-		return nil, fmt.Errorf("failed to parse service target config: %w", err)
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("failed to parse service target config: %s", err),
+			"check the service configuration in azure.yaml",
+		)
 	}
 
 	if serviceTargetConfig != nil {
@@ -374,39 +429,67 @@ func (p *AgentServiceTargetProvider) Deploy(
 	// Load and validate the agent manifest
 	data, err := os.ReadFile(p.agentDefinitionPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read YAML file: %w", err)
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("failed to read agent manifest file: %s", err),
+			"verify the agent.yaml file exists and is readable",
+		)
 	}
 
 	err = agent_yaml.ValidateAgentDefinition(data)
 	if err != nil {
-		return nil, fmt.Errorf("agent.yaml is not valid: %w", err)
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("agent.yaml is not valid: %s", err),
+			"fix the agent.yaml file according to the schema",
+		)
 	}
 
 	var genericTemplate map[string]interface{}
 	if err := yaml.Unmarshal(data, &genericTemplate); err != nil {
-		return nil, fmt.Errorf("YAML content is not valid for deploy: %w", err)
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("YAML content is not valid for deploy: %s", err),
+			"verify the agent.yaml has valid YAML syntax",
+		)
 	}
 
 	kind, ok := genericTemplate["kind"].(string)
 	if !ok {
-		return nil, fmt.Errorf("kind field is not a valid string to check for deploy: %w", err)
+		return nil, exterrors.Validation(
+			exterrors.CodeMissingAgentKind,
+			"kind field is missing or not a valid string in agent.yaml",
+			"add a valid 'kind' field (e.g., 'prompt' or 'hosted') to agent.yaml",
+		)
 	}
 
 	switch kind {
 	case string(agent_yaml.AgentKindPrompt):
 		var agentDef agent_yaml.PromptAgent
 		if err := yaml.Unmarshal(data, &agentDef); err != nil {
-			return nil, fmt.Errorf("YAML content is not valid for prompt agent deploy: %w", err)
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf("YAML content is not valid for prompt agent deploy: %s", err),
+				"fix the agent.yaml to match the prompt agent schema",
+			)
 		}
 		return p.deployPromptAgent(ctx, serviceConfig, agentDef, azdEnv)
 	case string(agent_yaml.AgentKindHosted):
 		var agentDef agent_yaml.ContainerAgent
 		if err := yaml.Unmarshal(data, &agentDef); err != nil {
-			return nil, fmt.Errorf("YAML content is not valid for hosted agent deploy: %w", err)
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf("YAML content is not valid for hosted agent deploy: %s", err),
+				"fix the agent.yaml to match the hosted agent schema",
+			)
 		}
 		return p.deployHostedAgent(ctx, serviceConfig, serviceContext, progress, agentDef, azdEnv)
 	default:
-		return nil, fmt.Errorf("unsupported agent kind: %s", kind)
+		return nil, exterrors.Validation(
+			exterrors.CodeUnsupportedAgentKind,
+			fmt.Sprintf("unsupported agent kind: %s", kind),
+			"use a supported kind: 'prompt' or 'hosted'",
+		)
 	}
 }
 
@@ -444,7 +527,11 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 ) (*azdext.ServiceDeployResult, error) {
 	// Check if environment variable is set
 	if azdEnv["AZURE_AI_PROJECT_ENDPOINT"] == "" {
-		return nil, fmt.Errorf("AZURE_AI_PROJECT_ENDPOINT environment variable is required and could not be found in your current azd environment. Either you haven't provisioned a Microsoft Foundry project yet (azd provision), or you haven't connected to an existing project (azd ai agent init --project-id [id])")
+		return nil, exterrors.Dependency(
+			exterrors.CodeMissingAiProjectEndpoint,
+			"AZURE_AI_PROJECT_ENDPOINT is required: environment variable was not found in the current azd environment",
+			"run 'azd provision' or connect to an existing project via 'azd ai agent init --project-id <resource-id>'",
+		)
 	}
 
 	fmt.Fprintf(os.Stderr, "Deploying Prompt Agent\n")
@@ -456,7 +543,11 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 	// Create agent request (no image URL needed for prompt agents)
 	request, err := agent_yaml.CreateAgentAPIRequestFromDefinition(agentDef)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create agent request: %w", err)
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidAgentRequest,
+			fmt.Sprintf("failed to create agent request from definition: %s", err),
+			"verify the agent.yaml definition is correct",
+		)
 	}
 
 	// Display agent information
@@ -499,7 +590,11 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 ) (*azdext.ServiceDeployResult, error) {
 	// Check if environment variable is set
 	if azdEnv["AZURE_AI_PROJECT_ENDPOINT"] == "" {
-		return nil, fmt.Errorf("AZURE_AI_PROJECT_ENDPOINT environment variable is required and could not be found in your current azd environment. Either you haven't provisioned a Microsoft Foundry project yet (azd provision), or you haven't connected to an existing project (azd ai agent init --project-id [id])")
+		return nil, exterrors.Dependency(
+			exterrors.CodeMissingAiProjectEndpoint,
+			"AZURE_AI_PROJECT_ENDPOINT is required: environment variable was not found in the current azd environment",
+			"run 'azd provision' or connect to an existing project via 'azd ai agent init --project-id <resource-id>'",
+		)
 	}
 
 	progress("Deploying hosted agent")
@@ -514,7 +609,11 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		}
 	}
 	if fullImageURL == "" {
-		return nil, errors.New("published container artifact not found")
+		return nil, exterrors.Dependency(
+			exterrors.CodeMissingPublishedContainer,
+			"published container artifact not found: no remote container artifact was found in service publish artifacts",
+			"run 'azd package' and 'azd publish' (or 'azd deploy') to produce container artifacts",
+		)
 	}
 
 	fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", p.agentDefinitionPath)
@@ -532,7 +631,11 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	// Step 3: Create agent request with image URL and resolved environment variables
 	var foundryAgentConfig *ServiceTargetAgentConfig
 	if err := UnmarshalStruct(serviceConfig.Config, &foundryAgentConfig); err != nil {
-		return nil, fmt.Errorf("failed to parse foundry agent config: %w", err)
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("failed to parse foundry agent config: %s", err),
+			"check the service configuration in azure.yaml",
+		)
 	}
 
 	var cpu, memory string
@@ -557,7 +660,11 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 
 	request, err := agent_yaml.CreateAgentAPIRequestFromDefinition(agentDef, options...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create agent request: %w", err)
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidAgentRequest,
+			fmt.Sprintf("failed to create agent request from definition: %s", err),
+			"verify the agent.yaml definition is correct",
+		)
 	}
 
 	// Display agent information
@@ -700,7 +807,7 @@ func (p *AgentServiceTargetProvider) createAgent(
 	// Create agent version
 	agentVersionResponse, err := agentClient.CreateAgentVersion(ctx, request.Name, versionRequest, apiVersion)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create agent version: %w", err)
+		return nil, exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
 	}
 
 	fmt.Fprintf(os.Stderr, "Agent version '%s' created successfully!\n", agentVersionResponse.Name)
@@ -759,7 +866,7 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 	operation, err := agentClient.StartAgentContainer(
 		ctx, agentVersionResponse.Name, agentVersionResponse.Version, options, apiVersion)
 	if err != nil {
-		return fmt.Errorf("failed to start agent container: %w", err)
+		return exterrors.ServiceFromAzure(err, exterrors.OpStartContainer)
 	}
 
 	fmt.Fprintf(os.Stderr, "Agent container start operation initiated successfully!\n")
@@ -777,16 +884,19 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 		for {
 			select {
 			case <-timeout:
-				return fmt.Errorf(
-					"timeout waiting for operation (id: %s) to complete after %v",
-					operation.Body.ID,
-					maxWaitTime,
+				return exterrors.Internal(
+					exterrors.CodeContainerStartTimeout,
+					fmt.Sprintf(
+						"timeout waiting for operation (id: %s) to complete after %v",
+						operation.Body.ID,
+						maxWaitTime,
+					),
 				)
 			case <-ticker.C:
 				completedOperation, err := agentClient.GetAgentContainerOperation(
 					ctx, agentVersionResponse.Name, operation.Body.ID, apiVersion)
 				if err != nil {
-					return fmt.Errorf("failed to get operation status: %w", err)
+					return exterrors.ServiceFromAzure(err, exterrors.OpGetContainerOperation)
 				}
 
 				// Check if operation is complete
@@ -795,10 +905,13 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 					containerInfo, containerErr := agentClient.GetAgentContainer(
 						ctx, agentVersionResponse.Name, agentVersionResponse.Version, apiVersion)
 					if containerErr != nil {
-						return fmt.Errorf(
-							"operation failed (id: %s): failed to retrieve container details: %w",
-							operation.Body.ID,
-							containerErr,
+						return exterrors.Internal(
+							exterrors.CodeContainerStartFailed,
+							fmt.Sprintf(
+								"operation failed (id: %s): failed to retrieve container details: %s",
+								operation.Body.ID,
+								containerErr,
+							),
 						)
 					}
 
@@ -814,7 +927,7 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 						errorMsg = fmt.Sprintf("operation failed (id: %s): container status is %q with no error details", operation.Body.ID, containerInfo.Status)
 					}
 
-					return errors.New(errorMsg)
+					return exterrors.Internal(exterrors.CodeContainerStartFailed, errorMsg)
 				}
 
 				if completedOperation.Status == "Succeeded" {
@@ -945,22 +1058,31 @@ func (p *AgentServiceTargetProvider) ensureFoundryProject(ctx context.Context) e
 		Key:     "AZURE_AI_PROJECT_ID",
 	})
 	if err != nil {
-		return fmt.Errorf("failed to get environment values: %w", err)
+		return exterrors.Dependency(
+			exterrors.CodeEnvironmentValuesFailed,
+			fmt.Sprintf("failed to get AZURE_AI_PROJECT_ID: %s", err),
+			"run 'azd env get-values' to verify environment state",
+		)
 	}
 
 	// Check for Microsoft Foundry project resource ID (try both env var names)
 	foundryResourceID := resp.Value
 	if foundryResourceID == "" {
-		return fmt.Errorf(
-			"Microsoft Foundry project ID is required. " +
-				"Please set AZURE_AI_PROJECT_ID environment variable",
+		return exterrors.Dependency(
+			exterrors.CodeMissingAiProjectId,
+			"Microsoft Foundry project ID is required: AZURE_AI_PROJECT_ID is not set",
+			"run 'azd provision' or connect to an existing project via 'azd ai agent init --project-id <resource-id>'",
 		)
 	}
 
 	// Parse the resource ID
 	parsedResource, err := arm.ParseResourceID(foundryResourceID)
 	if err != nil {
-		return fmt.Errorf("failed to parse Microsoft Foundry project ID: %w", err)
+		return exterrors.Validation(
+			exterrors.CodeInvalidAiProjectId,
+			fmt.Sprintf("failed to parse Microsoft Foundry project ID: %s", err),
+			"verify the AZURE_AI_PROJECT_ID is a valid ARM resource ID",
+		)
 	}
 
 	p.foundryProject = parsedResource

@@ -100,3 +100,5 @@ require (
 	golang.org/x/term v0.38.0 // indirect
 	golang.org/x/text v0.32.0 // indirect
 )
+
+replace github.com/azure/azure-dev/cli/azd => ../../

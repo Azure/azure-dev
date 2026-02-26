@@ -82,6 +82,24 @@ func Test_SwaBuild(t *testing.T) {
 	})
 }
 
+func Test_SwaBuild_PassesEnvVars(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	swacli := NewCli(mockContext.CommandRunner)
+
+	var capturedArgs exec.RunArgs
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "npx")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		capturedArgs = args
+		return exec.RunResult{}, nil
+	})
+
+	env := []string{"VITE_API_URL=https://api.example.com", "NODE_ENV=production"}
+	err := swacli.Build(context.Background(), testPath, nil, env)
+	require.NoError(t, err)
+	require.Equal(t, env, capturedArgs.Env)
+}
+
 func Test_SwaDeploy(t *testing.T) {
 	ran := false
 

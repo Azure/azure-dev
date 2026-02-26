@@ -205,6 +205,36 @@ func TestRunScript_ReturnsError(t *testing.T) {
 	require.Contains(t, err.Error(), "npm")
 }
 
+func TestInstall_PassesEnvVars(t *testing.T) {
+	var capturedArgs exec.RunArgs
+	runner := mockexec.NewMockCommandRunner()
+	runner.When(func(args exec.RunArgs, command string) bool {
+		capturedArgs = args
+		return args.Cmd == "npm"
+	}).Respond(exec.RunResult{})
+
+	cli := NewCliWithPackageManager(runner, PackageManagerNpm)
+	env := []string{"VITE_API_URL=https://api.example.com", "NODE_ENV=production"}
+	err := cli.Install(context.Background(), "/project", env)
+	require.NoError(t, err)
+	require.Equal(t, env, capturedArgs.Env)
+}
+
+func TestRunScript_PassesEnvVars(t *testing.T) {
+	var capturedArgs exec.RunArgs
+	runner := mockexec.NewMockCommandRunner()
+	runner.When(func(args exec.RunArgs, command string) bool {
+		capturedArgs = args
+		return args.Cmd == "npm"
+	}).Respond(exec.RunResult{})
+
+	cli := NewCliWithPackageManager(runner, PackageManagerNpm)
+	env := []string{"VITE_API_URL=https://api.example.com"}
+	err := cli.RunScript(context.Background(), "/project", "build", env)
+	require.NoError(t, err)
+	require.Equal(t, env, capturedArgs.Env)
+}
+
 func TestPrune_WithoutProduction(t *testing.T) {
 	runner := mockexec.NewMockCommandRunner()
 	runner.When(func(args exec.RunArgs, command string) bool {

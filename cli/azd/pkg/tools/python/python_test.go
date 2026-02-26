@@ -66,6 +66,28 @@ func Test_Python_InstallRequirements(t *testing.T) {
 	require.Equal(t, fmt.Sprintf("%s -m pip install -r requirements.txt", pyString), runArgs.Args[1])
 }
 
+func Test_Python_InstallRequirements_PassesEnvVars(t *testing.T) {
+	tempDir := t.TempDir()
+	mockContext := mocks.NewMockContext(context.Background())
+
+	cli := NewCli(mockContext.CommandRunner)
+	pyString, err := cli.checkPath()
+	require.NoError(t, err)
+	require.NotEmpty(t, pyString)
+
+	var runArgs exec.RunArgs
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		runArgs = args
+		return strings.Contains(command, "requirements.txt")
+	}).Respond(exec.NewRunResult(0, "", ""))
+
+	env := []string{"PIP_INDEX_URL=https://pypi.example.com/simple"}
+	err = cli.InstallRequirements(*mockContext.Context, tempDir, ".venv", "requirements.txt", env)
+	require.NoError(t, err)
+	require.Equal(t, env, runArgs.Env)
+}
+
 func Test_Python_CreateVirtualEnv(t *testing.T) {
 	tempDir := t.TempDir()
 	mockContext := mocks.NewMockContext(context.Background())

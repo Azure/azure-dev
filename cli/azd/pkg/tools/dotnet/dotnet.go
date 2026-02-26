@@ -92,6 +92,7 @@ func (cli *Cli) CheckInstalled(ctx context.Context) error {
 
 func (cli *Cli) Restore(ctx context.Context, project string, env []string) error {
 	runArgs := newDotNetRunArgs("restore", project)
+	// Append user env vars to preserve base env set by newDotNetRunArgs (DOTNET_NOLOGO, etc.)
 	if len(env) > 0 {
 		runArgs = runArgs.WithEnv(append(runArgs.Env, env...))
 	}
@@ -112,6 +113,7 @@ func (cli *Cli) Build(ctx context.Context, project string, configuration string,
 		runArgs = runArgs.AppendParams("--output", output)
 	}
 
+	// Append user env vars to preserve base env set by newDotNetRunArgs (DOTNET_NOLOGO, etc.)
 	if len(env) > 0 {
 		runArgs = runArgs.WithEnv(append(runArgs.Env, env...))
 	}
@@ -133,6 +135,7 @@ func (cli *Cli) Publish(ctx context.Context, project string, configuration strin
 		runArgs = runArgs.AppendParams("--output", output)
 	}
 
+	// Append user env vars to preserve base env set by newDotNetRunArgs (DOTNET_NOLOGO, etc.)
 	if len(env) > 0 {
 		runArgs = runArgs.WithEnv(append(runArgs.Env, env...))
 	}

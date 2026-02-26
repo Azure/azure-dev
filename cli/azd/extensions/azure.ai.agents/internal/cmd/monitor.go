@@ -6,6 +6,7 @@ package cmd
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -100,8 +101,13 @@ func (a *MonitorAction) Run(ctx context.Context) error {
 		DefaultAgentAPIVersion,
 		a.flags.logType,
 		a.flags.tail,
+		a.flags.follow,
 	)
 	if err != nil {
+		// Suppress context deadline/cancellation errors (expected in non-follow timeout and Ctrl+C)
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			return nil
+		}
 		return fmt.Errorf("failed to get agent logs: %w", err)
 	}
 	defer body.Close()
@@ -112,6 +118,12 @@ func (a *MonitorAction) Run(ctx context.Context) error {
 	}
 
 	if err := scanner.Err(); err != nil {
+		// Suppress context deadline/cancellation errors:
+		// - DeadlineExceeded: expected in non-follow mode (internal timeout fires after available data is read)
+		// - Canceled: expected when user presses Ctrl+C in follow mode
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			return nil
+		}
 		return fmt.Errorf("error reading log stream: %w", err)
 	}
 

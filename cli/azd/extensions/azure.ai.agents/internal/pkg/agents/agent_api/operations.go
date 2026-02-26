@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"time"
 
 	"azureaiagent/internal/version"
 
@@ -24,8 +25,9 @@ import (
 
 // AgentClient provides methods for interacting with the Azure AI Agents API
 type AgentClient struct {
-	endpoint string
-	pipeline runtime.Pipeline
+	endpoint   string
+	pipeline   runtime.Pipeline
+	credential azcore.TokenCredential
 }
 
 // NewAgentClient creates a new AgentClient
@@ -54,8 +56,9 @@ func NewAgentClient(endpoint string, cred azcore.TokenCredential) *AgentClient {
 	)
 
 	return &AgentClient{
-		endpoint: endpoint,
-		pipeline: pipeline,
+		endpoint:   endpoint,
+		pipeline:   pipeline,
+		credential: cred,
 	}
 }
 
@@ -769,6 +772,102 @@ func (c *AgentClient) GetAgentContainer(ctx context.Context, agentName, agentVer
 	}
 
 	return &container, nil
+}
+
+// GetAgentContainerLogStream streams logs from an agent container.
+// kind should be "console" (stdout/stderr) or "system" (container events).
+// tail is the number of trailing lines to fetch (1-300).
+// follow controls whether to stream indefinitely (true) or fetch and exit (false).
+//
+// This method uses a raw net/http client (not the Azure SDK pipeline) because the
+// logstream endpoint keeps the HTTP connection open for streaming. The Azure SDK
+// pipeline blocks in Do() until the body is fully received, which doesn't work
+// for streaming endpoints. This matches the Python az CLI implementation which
+// uses raw requests.get(stream=True) for the same endpoint.
+func (c *AgentClient) GetAgentContainerLogStream(
+	ctx context.Context,
+	agentName, agentVersion, apiVersion string,
+	kind string,
+	tail int,
+	follow bool,
+) (io.ReadCloser, error) {
+	u, err := url.Parse(c.endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("invalid endpoint URL: %w", err)
+	}
+
+	u.Path += fmt.Sprintf("/agents/%s/versions/%s/containers/default:logstream", agentName, agentVersion)
+
+	query := u.Query()
+	query.Set("api-version", apiVersion)
+	query.Set("kind", kind)
+	query.Set("tail", strconv.Itoa(tail))
+	u.RawQuery = query.Encode()
+
+	requestURL := u.String()
+	// Get bearer token from credential.
+	token, err := c.credential.GetToken(ctx, policy.TokenRequestOptions{
+		Scopes: []string{"https://ai.azure.com/.default"},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get auth token: %w", err)
+	}
+
+	// When not following, use a timeout so the connection closes after fetching available logs.
+	// This matches the Python implementation which uses a 5-second read timeout for non-follow mode.
+	requestCtx := ctx
+	var cancel context.CancelFunc
+	if !follow {
+		requestCtx, cancel = context.WithTimeout(ctx, 5*time.Second)
+	}
+
+	req, err := http.NewRequestWithContext(requestCtx, http.MethodGet, requestURL, nil)
+	if err != nil {
+		if cancel != nil {
+			cancel()
+		}
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token.Token)
+	req.Header.Set("User-Agent", fmt.Sprintf("azd-ext-azure-ai-agents/%s", version.Version))
+
+	// Use raw http.Client — its Do() returns after response headers arrive,
+	// allowing the body to be read incrementally as a stream.
+	httpClient := &http.Client{}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		if cancel != nil {
+			cancel()
+		}
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		if cancel != nil {
+			cancel()
+		}
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	// Wrap the body to cancel the context timeout when closed.
+	if cancel != nil {
+		return &cancelOnCloseReader{ReadCloser: resp.Body, cancel: cancel}, nil
+	}
+
+	return resp.Body, nil
+}
+
+// cancelOnCloseReader wraps an io.ReadCloser and calls a cancel function when closed.
+type cancelOnCloseReader struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (r *cancelOnCloseReader) Close() error {
+	r.cancel()
+	return r.ReadCloser.Close()
 }
 
 // GetAgentContainerOperation retrieves the status of a container operation

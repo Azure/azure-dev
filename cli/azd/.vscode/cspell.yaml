@@ -233,6 +233,9 @@ overrides:
       - Dataagent
       - dataagent
       - webp
+  - filename: extensions/azure.ai.agents/internal/pkg/agents/agent_api/operations.go
+    words:
+      - logstream
   - filename: extensions/azure.ai.agents/internal/pkg/agents/registry_api/operations.go
     words:
       - Dataagent

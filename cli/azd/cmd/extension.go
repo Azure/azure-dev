@@ -8,9 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"os"
 	"slices"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -88,6 +91,21 @@ func extensionActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 		},
 		ActionResolver: newExtensionUpgradeAction,
 		FlagsResolver:  newExtensionUpgradeFlags,
+	})
+
+	// azd extension validate-registry <path-or-url>
+	group.Add("validate-registry", &actions.ActionDescriptorOptions{
+		Command: &cobra.Command{
+			Use:   "validate-registry <path-or-url>",
+			Short: "Validate an extension registry.json file.",
+			Long: "Validate an extension registry.json file from a local path or URL.\n\n" +
+				"Checks required fields, valid capabilities, semver version format,\n" +
+				"platform artifact structure, and extension ID format.",
+		},
+		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+		DefaultFormat:  output.NoneFormat,
+		ActionResolver: newExtensionValidateRegistryAction,
+		FlagsResolver:  newExtensionValidateRegistryFlags,
 	})
 
 	sourceGroup := group.Add("source", &actions.ActionDescriptorOptions{
@@ -1472,4 +1490,138 @@ func validateVersionCompatibility(
 		}
 	}
 	return nil
+}
+
+// azd extension validate-registry
+type extensionValidateRegistryFlags struct {
+	strict bool
+}
+
+func newExtensionValidateRegistryFlags(cmd *cobra.Command) *extensionValidateRegistryFlags {
+	flags := &extensionValidateRegistryFlags{}
+	cmd.Flags().BoolVar(&flags.strict, "strict", false, "Enable strict validation (treat warnings as errors)")
+	return flags
+}
+
+type extensionValidateRegistryAction struct {
+	args      []string
+	flags     *extensionValidateRegistryFlags
+	console   input.Console
+	formatter output.Formatter
+	writer    io.Writer
+}
+
+func newExtensionValidateRegistryAction(
+	args []string,
+	flags *extensionValidateRegistryFlags,
+	console input.Console,
+	formatter output.Formatter,
+	writer io.Writer,
+) actions.Action {
+	return &extensionValidateRegistryAction{
+		args:      args,
+		flags:     flags,
+		console:   console,
+		formatter: formatter,
+		writer:    writer,
+	}
+}
+
+func (a *extensionValidateRegistryAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	if len(a.args) == 0 {
+		return nil, fmt.Errorf("must specify a path or URL to a registry.json file")
+	}
+	if len(a.args) > 1 {
+		return nil, fmt.Errorf("cannot specify multiple registry files")
+	}
+
+	source := a.args[0]
+	data, err := readRegistrySource(ctx, source)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read registry: %w", err)
+	}
+
+	result, err := extensions.ValidateRegistryJSON(data, a.flags.strict)
+	if err != nil {
+		return nil, fmt.Errorf("validation failed: %w", err)
+	}
+
+	if a.formatter.Kind() == output.JsonFormat {
+		if err := a.formatter.Format(result, a.writer, nil); err != nil {
+			return nil, err
+		}
+	} else {
+		displayValidationResult(a.console, ctx, result)
+	}
+
+	if !result.Valid {
+		return nil, fmt.Errorf("validation failed: one or more extensions have errors")
+	}
+
+	return nil, nil
+}
+
+// readRegistrySource reads registry.json content from a local file path or URL.
+func readRegistrySource(ctx context.Context, source string) ([]byte, error) {
+	if strings.HasPrefix(source, "http://") || strings.HasPrefix(source, "https://") {
+		return fetchRegistryURL(ctx, source)
+	}
+	return os.ReadFile(source)
+}
+
+// fetchRegistryURL fetches registry.json content from a URL.
+func fetchRegistryURL(ctx context.Context, url string) ([]byte, error) {
+	client := &http.Client{Timeout: 30 * time.Second}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch URL: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, resp.Status)
+	}
+
+	return io.ReadAll(resp.Body)
+}
+
+func displayValidationResult(console input.Console, ctx context.Context, result *extensions.RegistryValidationResult) {
+	for _, ext := range result.Extensions {
+		id := ext.Id
+		if id == "" {
+			id = "(unknown)"
+		}
+
+		if ext.Valid {
+			console.Message(ctx, fmt.Sprintf("  %s %s", output.WithSuccessFormat("✓"), id))
+		} else {
+			console.Message(ctx, fmt.Sprintf("  %s %s", output.WithErrorFormat("✗"), id))
+		}
+
+		if ext.LatestVersion != "" {
+			console.Message(ctx, fmt.Sprintf("    Version: %s", ext.LatestVersion))
+		}
+
+		for _, issue := range ext.Issues {
+			if issue.Severity == extensions.ValidationError {
+				console.Message(ctx, fmt.Sprintf("    %s %s",
+					output.WithErrorFormat("ERROR:"), issue.Message))
+			} else {
+				console.Message(ctx, fmt.Sprintf("    %s %s",
+					output.WithWarningFormat("WARNING:"), issue.Message))
+			}
+		}
+	}
+
+	console.Message(ctx, "")
+	if result.Valid {
+		console.Message(ctx, output.WithSuccessFormat("Registry validation passed."))
+	} else {
+		console.Message(ctx, output.WithErrorFormat("Registry validation failed."))
+	}
 }

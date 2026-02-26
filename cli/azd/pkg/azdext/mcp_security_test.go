@@ -36,13 +36,22 @@ func TestMCPSecurityCheckURL_BlocksPrivateIPs(t *testing.T) {
 		"http://192.168.1.1/api",
 		"http://127.0.0.1/api",
 		"http://0.0.0.1/api",             // 0.0.0.0/8 "this" network (reaches loopback on Linux/macOS)
+		"http://100.64.0.1/api",          // RFC 6598 CGNAT (internal in cloud environments)
 		"http://[::1]:8080/api",          // IPv6 loopback
 		"http://[::]:80/api",             // IPv6 unspecified (reaches loopback)
 		"http://[fe80::1]/api",           // IPv6 link-local
 		"http://[fd00::1]/api",           // IPv6 unique local address (fc00::/7)
 		"http://[fd12:3456:789a::1]/api", // IPv6 ULA in fd00::/8 range
+		"http://[::ffff:127.0.0.1]/api",  // IPv4-mapped IPv6 loopback
+		"http://[::ffff:10.0.0.1]/api",   // IPv4-mapped IPv6 RFC 1918
 		"http://[::127.0.0.1]/api",       // IPv4-compatible IPv6 (deprecated, bypasses CIDR length match)
 		"http://[::10.0.0.1]/api",        // IPv4-compatible IPv6 targeting RFC 1918
+		"http://[2002:a00:1::]/api",      // 6to4 embedding 10.0.0.1 (deprecated RFC 7526)
+		"http://[2001:0000::1]/api",      // Teredo range (deprecated; can embed private IPv4)
+		"http://[64:ff9b::a00:1]/api",    // NAT64 well-known prefix (RFC 6052) embedding 10.0.0.1
+		"http://[64:ff9b:1::a00:1]/api",  // NAT64 local-use prefix (RFC 8215) embedding 10.0.0.1
+		"http://[::ffff:0:7f00:1]/api",   // IPv4-translated (RFC 2765) embedding 127.0.0.1
+		"http://[::ffff:0:a00:1]/api",    // IPv4-translated (RFC 2765) embedding 10.0.0.1
 	}
 	for _, u := range blocked {
 		if err := policy.CheckURL(u); err == nil {
@@ -58,6 +67,7 @@ func TestMCPSecurityCheckURL_AllowsPublicURLs(t *testing.T) {
 		"https://api.github.com/repos",
 		"https://example.com/data",
 		"https://8.8.8.8/dns",
+		"https://[2607:f8b0:4004:800::200e]/data", // public IPv6 (not in any blocked range)
 	}
 	for _, u := range allowed {
 		if err := policy.CheckURL(u); err != nil {
@@ -221,6 +231,47 @@ func TestMCPSecurityIsHeaderBlocked(t *testing.T) {
 		if got != tc.blocked {
 			t.Errorf("IsHeaderBlocked(%q) = %v, want %v", tc.header, got, tc.blocked)
 		}
+	}
+}
+
+func TestMCPSecurityCheckURL_BlocksExoticSchemes(t *testing.T) {
+	policy := NewMCPSecurityPolicy().RequireHTTPS()
+
+	blocked := []struct {
+		url  string
+		desc string
+	}{
+		{"ftp://example.com/file", "ftp scheme"},
+		{"gopher://example.com/path", "gopher scheme"},
+		{"file:///etc/passwd", "file scheme"},
+		{"//evil.com/path", "protocol-relative (empty scheme)"},
+		{"ws://example.com/socket", "ws scheme"},
+		{"wss://example.com/socket", "wss scheme"},
+		{"ssh://example.com", "ssh scheme"},
+		{"telnet://example.com", "telnet scheme"},
+		{"ldap://example.com", "ldap scheme"},
+		{"dict://example.com", "dict scheme"},
+	}
+	for _, tc := range blocked {
+		if err := policy.CheckURL(tc.url); err == nil {
+			t.Errorf("expected CheckURL to block %s (%s)", tc.url, tc.desc)
+		}
+	}
+
+	// Even without requireHTTPS, exotic schemes must be blocked.
+	permissive := NewMCPSecurityPolicy()
+	for _, tc := range blocked[:3] { // ftp, gopher, file
+		if err := permissive.CheckURL(tc.url); err == nil {
+			t.Errorf("expected CheckURL (no requireHTTPS) to block %s (%s)", tc.url, tc.desc)
+		}
+	}
+
+	// http and https must still be allowed when requireHTTPS is off.
+	if err := permissive.CheckURL("http://example.com/api"); err != nil {
+		t.Errorf("expected permissive policy to allow http, got: %v", err)
+	}
+	if err := permissive.CheckURL("https://example.com/api"); err != nil {
+		t.Errorf("expected permissive policy to allow https, got: %v", err)
 	}
 }
 

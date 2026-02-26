@@ -1006,13 +1006,21 @@ func (a *InitAction) downloadAgentYaml(
 		fmt.Printf("Reading agent.yaml from local file: %s\n", manifestPointer)
 		content, err = os.ReadFile(manifestPointer)
 		if err != nil {
-			return nil, "", fmt.Errorf("reading local file %s: %w", manifestPointer, err)
+			return nil, "", exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf("reading local file %s: %s", manifestPointer, err),
+				"verify the file path exists and is readable",
+			)
 		}
 
 		// Parse the YAML content into genericManifest
 		var genericManifest map[string]interface{}
 		if err := yaml.Unmarshal(content, &genericManifest); err != nil {
-			return nil, "", fmt.Errorf("parsing YAML from manifest file: %w", err)
+			return nil, "", exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf("parsing YAML from manifest file: %s", err),
+				"verify the manifest file contains valid YAML",
+			)
 		}
 
 		var name string
@@ -1045,7 +1053,7 @@ func (a *InitAction) downloadAgentYaml(
 					return nil, "", fmt.Errorf("prompting for confirmation: %w", err)
 				}
 				if !*confirmResponse.Value {
-					return nil, "", fmt.Errorf("operation cancelled by user")
+					return nil, "", exterrors.Cancelled("operation cancelled by user")
 				}
 			}
 		}
@@ -1084,7 +1092,11 @@ func (a *InitAction) downloadAgentYaml(
 
 		ghCli = github.NewGitHubCli(console, commandRunner)
 		if err := ghCli.EnsureInstalled(ctx); err != nil {
-			return nil, "", fmt.Errorf("ensuring gh is installed: %w", err)
+			return nil, "", exterrors.Dependency(
+				exterrors.CodeGitHubDownloadFailed,
+				fmt.Sprintf("ensuring gh is installed: %s", err),
+				"install the GitHub CLI (gh) from https://cli.github.com",
+			)
 		}
 
 		var contentStr string
@@ -1137,7 +1149,11 @@ func (a *InitAction) downloadAgentYaml(
 
 			contentStr, err = downloadGithubManifest(ctx, urlInfo, apiPath, ghCli)
 			if err != nil {
-				return nil, "", fmt.Errorf("downloading from GitHub: %w", err)
+				return nil, "", exterrors.Dependency(
+					exterrors.CodeGitHubDownloadFailed,
+					fmt.Sprintf("downloading from GitHub: %s", err),
+					"verify the URL points to a valid agent.yaml file in the repository",
+				)
 			}
 		}
 
@@ -1194,9 +1210,10 @@ func (a *InitAction) downloadAgentYaml(
 		content = manifestBytes
 	} else {
 		// If we reach here, the manifest pointer didn't match any known type
-		return nil, "", fmt.Errorf(
-			"manifest pointer '%s' is not a valid local file path, GitHub URL, or registry URL",
-			manifestPointer,
+		return nil, "", exterrors.Validation(
+			exterrors.CodeInvalidManifestPointer,
+			fmt.Sprintf("manifest pointer '%s' is not a valid local file path, GitHub URL, or registry URL", manifestPointer),
+			"provide a valid URL or an existing local agent.yaml/agent.yml path",
 		)
 	}
 
@@ -1282,7 +1299,11 @@ func (a *InitAction) downloadAgentYaml(
 			fmt.Println("Downloading full directory for container agent")
 			err := downloadParentDirectory(ctx, urlInfo, targetDir, ghCli, console, useGhCli, a.httpClient)
 			if err != nil {
-				return nil, "", fmt.Errorf("downloading parent directory: %w", err)
+				return nil, "", exterrors.Dependency(
+					exterrors.CodeGitHubDownloadFailed,
+					fmt.Sprintf("downloading parent directory: %s", err),
+					"verify the URL points to a valid repository and you have access",
+				)
 			}
 		}
 	}

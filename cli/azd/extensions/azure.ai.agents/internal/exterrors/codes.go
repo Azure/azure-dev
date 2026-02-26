@@ -11,6 +11,7 @@ const (
 // Error codes for validation errors.
 const (
 	CodeInvalidAgentManifest      = "invalid_agent_manifest"
+	CodeInvalidManifestPointer    = "invalid_manifest_pointer"
 	CodeInvalidProjectResourceId  = "invalid_project_resource_id"
 	CodeInvalidFoundryResourceId  = "invalid_foundry_resource_id"
 	CodeInvalidAiProjectId        = "invalid_ai_project_id"
@@ -37,6 +38,7 @@ const (
 	CodeMissingAiProjectId        = "missing_ai_project_id"
 	CodeMissingAzureSubscription  = "missing_azure_subscription_id"
 	CodeMissingAgentEnvVars       = "missing_agent_env_vars"
+	CodeGitHubDownloadFailed      = "github_download_failed"
 )
 
 // Error codes for auth errors.

@@ -125,8 +125,8 @@ func FormatUpdateWarning(result *UpdateCheckResult) *ux.WarningMessage {
 		HidePrefix: false,
 		Hints: []string{
 			fmt.Sprintf("Fix by running:\n\t%s\n\t%s",
-				output.WithHighLightFormat("azd extension upgrade --all"),
-				output.WithHighLightFormat("azd extension upgrade %s", result.ExtensionId)),
+				output.WithHighLightFormat("azd extension upgrade %s", result.ExtensionId),
+				output.WithHighLightFormat("azd extension upgrade --all")),
 			fmt.Sprintf("If you don't use these extensions, you can uninstall them:\n\t%s",
 				output.WithHighLightFormat("azd extension uninstall %s", result.ExtensionId)),
 		},

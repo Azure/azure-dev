@@ -65,7 +65,7 @@ func (pp *pythonProject) Restore(
 	if err != nil {
 		if os.IsNotExist(err) {
 			progress.SetProgress(NewServiceProgress("Creating Python virtual environment"))
-			err = pp.cli.CreateVirtualEnv(ctx, serviceConfig.Path(), vEnvName)
+			err = pp.cli.CreateVirtualEnv(ctx, serviceConfig.Path(), vEnvName, pp.env.Environ())
 			if err != nil {
 				return nil, fmt.Errorf(
 					"python virtual environment for project '%s' could not be created: %w",
@@ -89,10 +89,10 @@ func (pp *pythonProject) Restore(
 
 	if depFile == "pyproject.toml" {
 		progress.SetProgress(NewServiceProgress("Installing Python dependencies from pyproject.toml"))
-		err = pp.cli.InstallProject(ctx, serviceConfig.Path(), vEnvName)
+		err = pp.cli.InstallProject(ctx, serviceConfig.Path(), vEnvName, pp.env.Environ())
 	} else {
 		progress.SetProgress(NewServiceProgress("Installing Python PIP dependencies"))
-		err = pp.cli.InstallRequirements(ctx, serviceConfig.Path(), vEnvName, "requirements.txt")
+		err = pp.cli.InstallRequirements(ctx, serviceConfig.Path(), vEnvName, "requirements.txt", pp.env.Environ())
 	}
 
 	if err != nil {

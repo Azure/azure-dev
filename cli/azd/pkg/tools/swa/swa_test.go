@@ -45,7 +45,7 @@ func Test_SwaBuild(t *testing.T) {
 			}, nil
 		})
 
-		err := swacli.Build(context.Background(), testPath, nil)
+		err := swacli.Build(context.Background(), testPath, nil, nil)
 		require.NoError(t, err)
 		require.True(t, ran)
 	})
@@ -72,7 +72,7 @@ func Test_SwaBuild(t *testing.T) {
 			}, errors.New("exit code: 1")
 		})
 
-		err := swacli.Build(context.Background(), testPath, nil)
+		err := swacli.Build(context.Background(), testPath, nil, nil)
 		require.True(t, ran)
 		require.EqualError(
 			t,
@@ -127,6 +127,7 @@ func Test_SwaDeploy(t *testing.T) {
 			"default",
 			"deploymentToken",
 			DeployOptions{},
+			nil,
 		)
 		require.NoError(t, err)
 		require.True(t, ran)
@@ -179,6 +180,7 @@ func Test_SwaDeploy(t *testing.T) {
 				AppFolderPath:            "appFolderPath",
 				OutputRelativeFolderPath: "outputRelativeFolderPath",
 			},
+			nil,
 		)
 		require.NoError(t, err)
 		require.True(t, ran)
@@ -223,6 +225,7 @@ func Test_SwaDeploy(t *testing.T) {
 			"default",
 			"deploymentToken",
 			DeployOptions{},
+			nil,
 		)
 		require.True(t, ran)
 		require.EqualError(

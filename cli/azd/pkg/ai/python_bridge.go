@@ -79,7 +79,7 @@ func (b *pythonBridge) RequiredExternalTools(ctx context.Context) []tools.Extern
 // Run executes the specified python script with the given arguments
 func (b *pythonBridge) Run(ctx context.Context, scriptName ScriptPath, args ...string) (*exec.RunResult, error) {
 	allArgs := append([]string{string(scriptName)}, args...)
-	return b.pythonCli.Run(ctx, b.workingDir, ".venv", allArgs...)
+	return b.pythonCli.Run(ctx, b.workingDir, ".venv", nil, allArgs...)
 }
 
 // initPython initializes the Python environment
@@ -100,11 +100,11 @@ func (b *pythonBridge) initPython(ctx context.Context) error {
 		return err
 	}
 
-	if err := b.pythonCli.CreateVirtualEnv(ctx, targetDir, ".venv"); err != nil {
+	if err := b.pythonCli.CreateVirtualEnv(ctx, targetDir, ".venv", nil); err != nil {
 		return err
 	}
 
-	if err := b.pythonCli.InstallRequirements(ctx, targetDir, ".venv", "requirements.txt"); err != nil {
+	if err := b.pythonCli.InstallRequirements(ctx, targetDir, ".venv", "requirements.txt", nil); err != nil {
 		return err
 	}
 

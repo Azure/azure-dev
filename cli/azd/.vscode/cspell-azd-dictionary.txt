@@ -48,7 +48,6 @@ azdev
 azdexec
 azdinternal
 azdtempl
-azdtempl
 azdtest
 azfile
 azruntime
@@ -133,11 +132,11 @@ fsnotify
 funcapp
 funcignore
 functionapp
+Ghostty
 gjson
 go-imath
 GOARCH
 GOCOVERDIR
-Ghostty
 godotenv
 gofmt
 golangci
@@ -168,6 +167,7 @@ libc
 llms
 localtools
 maml
+MCPJSON
 mcptools
 memfs
 mergo

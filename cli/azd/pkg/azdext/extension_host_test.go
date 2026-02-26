@@ -134,6 +134,19 @@ func (m *MockExtensionEventManager) Close() error {
 	return args.Error(0)
 }
 
+func TestExtensionHost_Client(t *testing.T) {
+	t.Parallel()
+
+	// Client() should return nil when host is created with nil client
+	host := NewExtensionHost(nil)
+	assert.Nil(t, host.Client())
+
+	// Client() should return the client passed to NewExtensionHost
+	client := &AzdClient{}
+	host2 := NewExtensionHost(client)
+	assert.Same(t, client, host2.Client())
+}
+
 func TestCallReady(t *testing.T) {
 	t.Parallel()
 

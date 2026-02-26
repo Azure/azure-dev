@@ -210,9 +210,9 @@ func Preflight() error {
 		record("build", "pass", "")
 	}
 
-	// 6. Unit tests
-	fmt.Println("══ Unit tests (go test -short) ══")
-	if err := runStreaming(azdDir, "go", "test", "./...", "-short", "-count=1"); err != nil {
+	// 6. Unit tests (with -cover to match CI and catch os.Args leaks)
+	fmt.Println("══ Unit tests (go test -short -cover) ══")
+	if err := runStreaming(azdDir, "go", "test", "./...", "-short", "-cover", "-count=1"); err != nil {
 		record("test", "fail", err.Error())
 	} else {
 		record("test", "pass", "")

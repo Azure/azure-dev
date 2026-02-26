@@ -150,11 +150,22 @@ func (bc *blobClient) Upload(ctx context.Context, blobPath string, reader io.Rea
 			if createErr := bc.resetAndEnsureContainer(ctx); createErr != nil {
 				return createErr
 			}
-			_, err = bc.client.UploadStream(ctx, bc.config.ContainerName, blobPath, reader, nil)
-			if err != nil {
-				return fmt.Errorf("failed to upload blob '%s', %w", blobPath, err)
+			// Only retry if the reader supports seeking back to the start.
+			// io.Reader is non-rewindable, so retrying with an exhausted
+			// reader would upload empty/partial content.
+			if seeker, ok := reader.(io.Seeker); ok {
+				if _, seekErr := seeker.Seek(0, io.SeekStart); seekErr == nil {
+					_, err = bc.client.UploadStream(
+						ctx, bc.config.ContainerName, blobPath, reader, nil)
+					if err != nil {
+						return fmt.Errorf(
+							"failed to upload blob '%s', %w", blobPath, err)
+					}
+					return nil
+				}
 			}
-			return nil
+			// Container re-created but can't retry upload; caller must retry
+			return fmt.Errorf("failed to upload blob '%s', %w", blobPath, err)
 		}
 		return fmt.Errorf("failed to upload blob '%s', %w", blobPath, err)
 	}
@@ -235,7 +246,7 @@ func (bc *blobClient) ensureContainerExists(ctx context.Context) error {
 	exists := false
 
 	pager := bc.client.NewListContainersPager(nil)
-	for pager.More() {
+	for pager.More() && !exists {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			return fmt.Errorf("failed getting next page of containers: %w", err)

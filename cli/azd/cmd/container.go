@@ -581,10 +581,16 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	// AI & LLM components
 	container.MustRegisterSingleton(llm.NewManager)
 	container.MustRegisterSingleton(llm.NewModelFactory)
+	container.MustRegisterSingleton(llm.NewSessionConfigBuilder)
+	container.MustRegisterSingleton(func() *llm.CopilotClientManager {
+		return llm.NewCopilotClientManager(nil)
+	})
+	container.MustRegisterScoped(agent.NewCopilotAgentFactory)
 	container.MustRegisterScoped(agent.NewAgentFactory)
 	container.MustRegisterScoped(consent.NewConsentManager)
 	container.MustRegisterNamedSingleton("ollama", llm.NewOllamaModelProvider)
 	container.MustRegisterNamedSingleton("azure", llm.NewAzureOpenAiModelProvider)
+	container.MustRegisterNamedSingleton("copilot", llm.NewCopilotProvider)
 	registerGitHubCopilotProvider(container)
 
 	// Agent security manager

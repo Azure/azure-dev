@@ -31,7 +31,10 @@ func (f *ModelFactory) CreateModelContainer(
 	var modelProvider ModelProvider
 	if err := f.serviceLocator.ResolveNamed(string(modelType), &modelProvider); err != nil {
 		return nil, &internal.ErrorWithSuggestion{
-			Err: fmt.Errorf("The model type '%s' is not supported. Support types include: azure, ollama", modelType),
+			Err: fmt.Errorf(
+				"the model type '%s' is not supported. Supported types include: copilot, azure, ollama",
+				modelType,
+			),
 			//nolint:lll
 			Suggestion: "Use `azd config set` to set the model type and any model specific options, such as the model name or version.",
 		}

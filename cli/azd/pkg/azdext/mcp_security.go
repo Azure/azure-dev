@@ -53,13 +53,15 @@ func (p *MCPSecurityPolicy) BlockMetadataEndpoints() *MCPSecurityPolicy {
 func (p *MCPSecurityPolicy) BlockPrivateNetworks() *MCPSecurityPolicy {
 	p.blockPrivate = true
 	for _, cidr := range []string{
-		"10.0.0.0/8",
-		"172.16.0.0/12",
-		"192.168.0.0/16",
-		"127.0.0.0/8",
-		"::1/128",
-		"fe80::/10",
-		"169.254.0.0/16",
+		"0.0.0.0/8",      // "this" network (reaches loopback on Linux/macOS)
+		"10.0.0.0/8",     // RFC 1918 private
+		"172.16.0.0/12",  // RFC 1918 private
+		"192.168.0.0/16", // RFC 1918 private
+		"127.0.0.0/8",    // loopback
+		"::1/128",        // IPv6 loopback
+		"::/128",         // IPv6 unspecified (reaches loopback)
+		"fe80::/10",      // IPv6 link-local
+		"169.254.0.0/16", // IPv4 link-local
 	} {
 		_, ipNet, err := net.ParseCIDR(cidr)
 		if err == nil {

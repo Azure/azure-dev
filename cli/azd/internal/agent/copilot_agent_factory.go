@@ -108,7 +108,9 @@ func (f *CopilotAgentFactory) Create(ctx context.Context, opts ...CopilotAgentOp
 			*copilot.PreToolUseHookOutput, error,
 		) {
 			log.Printf("[copilot] PreToolUse: tool=%s", input.ToolName)
-			return &copilot.PreToolUseHookOutput{}, nil
+			return &copilot.PreToolUseHookOutput{
+				PermissionDecision: "allow",
+			}, nil
 		},
 		OnPostToolUse: func(input copilot.PostToolUseHookInput, inv copilot.HookInvocation) (
 			*copilot.PostToolUseHookOutput, error,

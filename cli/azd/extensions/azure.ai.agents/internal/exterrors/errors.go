@@ -10,6 +10,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -101,6 +102,32 @@ func ServiceFromAzure(err error, operation string) error {
 	return Internal(operation, fmt.Sprintf("%s: %s", operation, err.Error()))
 }
 
+// FromAzdHost wraps a gRPC error returned by an azd host service call
+// into a structured Internal LocalError. It preserves the server's
+// ErrorInfo reason code (from the azd.ai domain) when available,
+// falling back to the provided code.
+func FromAzdHost(err error, fallbackCode string) error {
+	if err == nil {
+		return nil
+	}
+
+	if IsCancellation(err) {
+		return Cancelled(err.Error())
+	}
+
+	st, ok := status.FromError(err)
+	if !ok {
+		return Internal(fallbackCode, err.Error())
+	}
+
+	code := fallbackCode
+	if reason := aiErrorReason(st); reason != "" {
+		code = reason
+	}
+
+	return Internal(code, st.Message())
+}
+
 // IsCancellation checks if an error represents user cancellation (context.Canceled or gRPC Canceled).
 func IsCancellation(err error) bool {
 	if errors.Is(err, context.Canceled) {
@@ -115,4 +142,16 @@ func IsCancellation(err error) bool {
 // Cancelled returns a user cancellation error.
 func Cancelled(message string) error {
 	return User(CodeCancelled, message)
+}
+
+// aiErrorReason extracts the ErrorInfo.Reason from a gRPC status
+// when the domain matches azdext.AiErrorDomain.
+func aiErrorReason(st *status.Status) string {
+	for _, detail := range st.Details() {
+		info, ok := detail.(*errdetails.ErrorInfo)
+		if ok && info.Domain == azdext.AiErrorDomain {
+			return info.Reason
+		}
+	}
+	return ""
 }

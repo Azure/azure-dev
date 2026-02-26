@@ -182,8 +182,9 @@ func (m *RegistryCacheManager) GetExtensionLatestVersion(
 			if len(ext.Versions) == 0 {
 				return "", fmt.Errorf("extension %s has no versions", extensionId)
 			}
-			// The registry may return versions in ascending or descending order.
-			// Compare the first and last elements to pick the highest version.
+
+			// Compare first and last elements to find the highest version.
+			// If the highest is a prerelease (e.g. "preview"), fall back to the second version.
 			first := ext.Versions[0].Version
 			last := ext.Versions[len(ext.Versions)-1].Version
 
@@ -193,10 +194,35 @@ func (m *RegistryCacheManager) GetExtensionLatestVersion(
 				return "", fmt.Errorf("extension %s has no valid semver versions", extensionId)
 			}
 
-			if firstSv.GreaterThan(lastSv) {
-				return first, nil
+			latest := first
+			latestSv := firstSv
+			if lastSv.GreaterThan(firstSv) {
+				latest = last
+				latestSv = lastSv
 			}
-			return last, nil
+
+			// If the highest version is a prerelease, walk through subsequent versions
+			// until we find a stable (non-prerelease) version.
+			// If all versions are prereleases, return the highest prerelease.
+			if latestSv.Prerelease() != "" && len(ext.Versions) > 1 {
+				start := 1
+				end := len(ext.Versions)
+				step := 1
+				if lastSv.GreaterThan(firstSv) {
+					// ascending order: walk backwards from second-to-last
+					start = len(ext.Versions) - 2
+					end = -1
+					step = -1
+				}
+				for i := start; i != end; i += step {
+					sv, err := semver.NewVersion(ext.Versions[i].Version)
+					if err == nil && sv.Prerelease() == "" {
+						return ext.Versions[i].Version, nil
+					}
+				}
+			}
+
+			return latest, nil
 		}
 	}
 

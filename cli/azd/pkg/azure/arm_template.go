@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/url"
 	"path"
+	"regexp"
 	"strings"
 )
 
@@ -194,6 +195,73 @@ func (p ArmTemplateParameterDefinition) AzdMetadata() (AzdMetadata, bool) {
 	}
 
 	return AzdMetadata{}, false
+}
+
+// paramRefPattern matches parameter reference expressions like $(p:paramName).
+var paramRefPattern = regexp.MustCompile(`\$\(p:([^)]+)\)`)
+
+// HasParamReferences returns true if the string contains any $(p:...) parameter reference expressions.
+func HasParamReferences(s string) bool {
+	return paramRefPattern.MatchString(s)
+}
+
+// ExtractParamReferences returns the names of all parameters referenced via $(p:paramName)
+// expressions in the given string. Returns nil if no references are found.
+func ExtractParamReferences(s string) []string {
+	matches := paramRefPattern.FindAllStringSubmatch(s, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(matches))
+	var result []string
+	for _, m := range matches {
+		name := strings.TrimSpace(m[1])
+		if _, ok := seen[name]; !ok {
+			seen[name] = struct{}{}
+			result = append(result, name)
+		}
+	}
+	return result
+}
+
+// ResolveParamReferences substitutes all $(p:paramName) expressions in the string
+// with the corresponding values from the provided map. Values are converted to strings
+// using fmt.Sprintf("%v", ...). Returns an error if a referenced parameter has no value.
+func ResolveParamReferences(s string, values map[string]any) (string, error) {
+	var resolveErr error
+	result := paramRefPattern.ReplaceAllStringFunc(s, func(match string) string {
+		sub := paramRefPattern.FindStringSubmatch(match)
+		if len(sub) < 2 {
+			return match
+		}
+		name := strings.TrimSpace(sub[1])
+		v, ok := values[name]
+		if !ok {
+			resolveErr = fmt.Errorf("cannot resolve reference '$(p:%s)': parameter '%s' has no value", name, name)
+			return match
+		}
+		return fmt.Sprintf("%v", v)
+	})
+	if resolveErr != nil {
+		return "", resolveErr
+	}
+	return result, nil
+}
+
+// ParamDependencies returns the names of all parameters referenced via $(p:paramName)
+// expressions across all UsageName entries in this metadata. Returns nil if no references exist.
+func (m AzdMetadata) ParamDependencies() []string {
+	seen := make(map[string]struct{})
+	var result []string
+	for _, un := range m.UsageName {
+		for _, name := range ExtractParamReferences(un) {
+			if _, ok := seen[name]; !ok {
+				seen[name] = struct{}{}
+				result = append(result, name)
+			}
+		}
+	}
+	return result
 }
 
 type ArmTemplateOutput struct {

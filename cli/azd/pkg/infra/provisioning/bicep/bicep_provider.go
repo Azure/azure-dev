@@ -126,7 +126,7 @@ func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, opt 
 
 	if opt.Mode == provisioning.ModeDeploy {
 		// For regular deployments, ensure the environment is in a provision-ready state
-		p.console.ShowSpinner(ctx, "Initialize bicep provider", input.Step)
+		p.console.ShowSpinner(ctx, "Preparing infrastructure configuration", input.Step)
 		err = p.EnsureEnv(ctx)
 		p.console.StopSpinner(ctx, "", input.Step)
 	}
@@ -2191,6 +2191,117 @@ func inputsParameter(
 // ensureParameters validates that all parameters from the template are defined.
 // Parameters values can be defined in the parameters file (main.parameters.json). This file supports mapping values to
 // environment variables.
+// parameterPromptEntry pairs a parameter key with its definition for prompting.
+type parameterPromptEntry struct {
+	key   string
+	param azure.ArmTemplateParameterDefinition
+}
+
+// topoSortParameterPrompts reorders parameter prompts so that parameters referenced by other
+// parameters' metadata (via $(p:paramName)) are prompted first. It performs a topological sort
+// based on the dependency graph derived from AzdMetadata.ParamDependencies().
+//
+// Parameters whose dependencies are already satisfied (present in alreadyResolved or have defaults
+// in the template) do not create ordering edges. Returns an error if a referenced parameter
+// doesn't exist in the template or if a circular dependency is detected.
+func topoSortParameterPrompts(
+	prompts []parameterPromptEntry,
+	template azure.ArmTemplate,
+	alreadyResolved map[string]any,
+) ([]parameterPromptEntry, error) {
+	// Build index of prompts by key
+	promptIndex := make(map[string]int, len(prompts))
+	for i, p := range prompts {
+		promptIndex[p.key] = i
+	}
+
+	// Build adjacency list: edges[i] = list of prompt indices that must come after prompts[i]
+	// (i.e., prompts[i] is a dependency of each entry in edges[i])
+	inDegree := make([]int, len(prompts))
+	// dependsOn[i] = indices of prompts that prompts[i] depends on
+	dependsOn := make([][]int, len(prompts))
+
+	for i, p := range prompts {
+		azdMeta, hasMeta := p.param.AzdMetadata()
+		if !hasMeta {
+			continue
+		}
+		deps := azdMeta.ParamDependencies()
+		for _, depName := range deps {
+			// Check if the dependency is already resolved (from params file, config, defaults, etc.)
+			if _, ok := alreadyResolved[depName]; ok {
+				continue
+			}
+			// Check if the dependency has a default value in the template
+			if depParam, exists := template.Parameters[depName]; exists && depParam.DefaultValue != nil {
+				continue
+			}
+			// The dependency must be in the prompts list
+			depIdx, inPrompts := promptIndex[depName]
+			if !inPrompts {
+				// Check if it exists in the template at all
+				if _, exists := template.Parameters[depName]; !exists {
+					return nil, fmt.Errorf(
+						"parameter '%s' metadata references unknown parameter '%s'", p.key, depName)
+				}
+				// It exists in the template but is not in prompts and not resolved — should not happen
+				// in normal flow, but treat as already satisfied
+				continue
+			}
+			if depIdx == i {
+				return nil, fmt.Errorf(
+					"parameter '%s' metadata references itself", p.key)
+			}
+			dependsOn[i] = append(dependsOn[i], depIdx)
+			inDegree[i]++
+			_ = depIdx // dependency must come before i
+		}
+	}
+
+	// Kahn's algorithm for topological sort
+	queue := make([]int, 0, len(prompts))
+	for i, deg := range inDegree {
+		if deg == 0 {
+			queue = append(queue, i)
+		}
+	}
+
+	// Build reverse adjacency: who depends on each node
+	reverseDeps := make([][]int, len(prompts))
+	for i, deps := range dependsOn {
+		for _, depIdx := range deps {
+			reverseDeps[depIdx] = append(reverseDeps[depIdx], i)
+		}
+	}
+
+	sorted := make([]parameterPromptEntry, 0, len(prompts))
+	for len(queue) > 0 {
+		idx := queue[0]
+		queue = queue[1:]
+		sorted = append(sorted, prompts[idx])
+		for _, dependentIdx := range reverseDeps[idx] {
+			inDegree[dependentIdx]--
+			if inDegree[dependentIdx] == 0 {
+				queue = append(queue, dependentIdx)
+			}
+		}
+	}
+
+	if len(sorted) != len(prompts) {
+		// Find the cycle for a helpful error message
+		var cycleNodes []string
+		for i, deg := range inDegree {
+			if deg > 0 {
+				cycleNodes = append(cycleNodes, prompts[i].key)
+			}
+		}
+		return nil, fmt.Errorf(
+			"circular parameter dependency detected among: %s", strings.Join(cycleNodes, " → "))
+	}
+
+	return sorted, nil
+}
+
 // If a parameter is not defined in the parameters file AND there is not a default value defined in the template for it,
 // AZD will prompt the user for a value.
 // Parameters mapped to env var ${AZURE_LOCATION} are identified as location parameters for AZD during prompting. AZD will
@@ -2230,10 +2341,7 @@ func (p *BicepProvider) ensureParameters(
 
 	configModified := false
 
-	var parameterPrompts []struct {
-		key   string
-		param azure.ArmTemplateParameterDefinition
-	}
+	var parameterPrompts []parameterPromptEntry
 
 	// make all parameters mapped to AZURE_LOCATION env var to be location parameters
 	for _, key := range sortedKeys {
@@ -2350,13 +2458,36 @@ func (p *BicepProvider) ensureParameters(
 		}
 
 		// No saved value for this required parameter, we'll need to prompt for it.
-		parameterPrompts = append(parameterPrompts, struct {
-			key   string
-			param azure.ArmTemplateParameterDefinition
-		}{key: key, param: param})
+		parameterPrompts = append(parameterPrompts, parameterPromptEntry{key: key, param: param})
 	}
 
 	if len(parameterPrompts) > 0 {
+		// Build resolvedValues from all sources already determined.
+		// This map accumulates values as each parameter is prompted, enabling
+		// $(p:paramName) reference resolution for parameters that depend on others.
+		resolvedValues := make(map[string]any)
+		for k, v := range configuredParameters {
+			if v.Value != nil {
+				resolvedValues[k] = v.Value
+			}
+		}
+		// Include parameters with defaults (they won't be in configuredParameters
+		// but are available to the template and can be referenced)
+		for k, param := range template.Parameters {
+			if param.DefaultValue != nil {
+				if _, alreadySet := resolvedValues[k]; !alreadySet {
+					resolvedValues[k] = param.DefaultValue
+				}
+			}
+		}
+
+		// Topologically sort prompts so parameters referenced by other parameters'
+		// metadata (via $(p:paramName)) are prompted first.
+		sortedPrompts, err := topoSortParameterPrompts(parameterPrompts, template, resolvedValues)
+		if err != nil {
+			return nil, fmt.Errorf("ordering parameter prompts: %w", err)
+		}
+
 		if p.console.SupportsPromptDialog() {
 
 			dialog := input.PromptDialog{
@@ -2365,7 +2496,7 @@ func (p *BicepProvider) ensureParameters(
 					"Provide values for each parameter. They will be saved for future deployments.",
 			}
 
-			for _, prompt := range parameterPrompts {
+			for _, prompt := range sortedPrompts {
 				dialog.Prompts = append(dialog.Prompts, p.promptDialogItemForParameter(prompt.key, prompt.param))
 			}
 
@@ -2374,7 +2505,7 @@ func (p *BicepProvider) ensureParameters(
 				return nil, fmt.Errorf("prompting for values: %w", err)
 			}
 
-			for _, prompt := range parameterPrompts {
+			for _, prompt := range sortedPrompts {
 				key := prompt.key
 				value := values[prompt.key]
 				mustSetParamAsConfig(key, value, p.env.Config, prompt.param.Secure())
@@ -2384,14 +2515,18 @@ func (p *BicepProvider) ensureParameters(
 				}
 			}
 		} else {
-			for _, prompt := range parameterPrompts {
+			for _, prompt := range sortedPrompts {
 				key := prompt.key
 
-				// Otherwise, prompt for the value.
-				value, err := p.promptForParameter(ctx, key, prompt.param, locationParameters)
+				// Prompt for the value, passing resolvedValues so that $(p:...)
+				// references in metadata can be resolved.
+				value, err := p.promptForParameter(ctx, key, prompt.param, locationParameters, resolvedValues)
 				if err != nil {
 					return nil, fmt.Errorf("prompting for value: %w", err)
 				}
+
+				// Track this value so subsequent parameters can reference it
+				resolvedValues[key] = value
 
 				if key != "location" {
 					// location param is special.

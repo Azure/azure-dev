@@ -68,7 +68,7 @@ func TestPromptForParameter(t *testing.T) {
 
 			value, err := p.promptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameterDefinition{
 				Type: tc.paramType,
-			}, nil)
+			}, nil, nil)
 
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, value)
@@ -192,7 +192,7 @@ func TestPromptForParameterValidation(t *testing.T) {
 				return ret, nil
 			})
 
-			value, err := p.promptForParameter(*mockContext.Context, "testParam", tc.param, nil)
+			value, err := p.promptForParameter(*mockContext.Context, "testParam", tc.param, nil, nil)
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, value)
 
@@ -228,7 +228,7 @@ func TestPromptForParameterAllowedValues(t *testing.T) {
 	value, err := p.promptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameterDefinition{
 		Type:          "string",
 		AllowedValues: to.Ptr([]any{"three", "good", "choices"}),
-	}, nil)
+	}, nil, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, "good", value)
@@ -236,7 +236,7 @@ func TestPromptForParameterAllowedValues(t *testing.T) {
 	value, err = p.promptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameterDefinition{
 		Type:          "int",
 		AllowedValues: to.Ptr([]any{10, 20, 30}),
-	}, nil)
+	}, nil, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, 20, value)
@@ -296,7 +296,7 @@ func TestPromptForParametersLocation(t *testing.T) {
 		Metadata: map[string]json.RawMessage{
 			"azd": json.RawMessage(`{"type": "location"}`),
 		},
-	}, nil)
+	}, nil, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, "eastus2", value)
@@ -314,7 +314,7 @@ func TestPromptForParametersLocation(t *testing.T) {
 			"azd": json.RawMessage(`{"type": "location"}`),
 		},
 		AllowedValues: &[]any{"westus"},
-	}, nil)
+	}, nil, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, "westus", value)
@@ -353,7 +353,7 @@ func TestPromptForParameterOverrideDefault(t *testing.T) {
 		Metadata: map[string]json.RawMessage{
 			"azd": json.RawMessage(`{"default": "good"}`),
 		},
-	}, nil)
+	}, nil, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, "good", value)
@@ -374,7 +374,7 @@ func TestPromptForParameterOverrideDefaultError(t *testing.T) {
 		Metadata: map[string]json.RawMessage{
 			"azd": json.RawMessage(`{"default": "other"}`),
 		},
-	}, nil)
+	}, nil, nil)
 
 	require.Error(t, err)
 }
@@ -391,7 +391,7 @@ func TestPromptForParameterEmptyAllowedValuesError(t *testing.T) {
 	_, err := p.promptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameterDefinition{
 		Type:          "string",
 		AllowedValues: to.Ptr([]any{}),
-	}, nil)
+	}, nil, nil)
 
 	require.Error(t, err)
 }
@@ -417,7 +417,7 @@ func TestPromptForParameterBoolDefaultType(t *testing.T) {
 		Type: "bool",
 		Metadata: map[string]json.RawMessage{
 			"azd": json.RawMessage(`{"default": true}`)},
-	}, nil)
+	}, nil, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, true, value)
@@ -444,7 +444,7 @@ func TestPromptForParameterBoolDefaultStringType(t *testing.T) {
 		Type: "bool",
 		Metadata: map[string]json.RawMessage{
 			"azd": json.RawMessage(`{"default": "false"}`)},
-	}, nil)
+	}, nil, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, false, value)
@@ -467,7 +467,7 @@ func TestPromptForParameterNumberDefaultType(t *testing.T) {
 		Type: "int",
 		Metadata: map[string]json.RawMessage{
 			"azd": json.RawMessage(`{"default": 33}`)},
-	}, nil)
+	}, nil, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, 33, value)
@@ -490,7 +490,177 @@ func TestPromptForParameterNumberDefaultStringTypeError(t *testing.T) {
 		Type: "int",
 		Metadata: map[string]json.RawMessage{
 			"azd": json.RawMessage(`{"default": "33"}`)},
-	}, nil)
+	}, nil, nil)
 
 	require.Error(t, err)
+}
+
+func TestTopoSortParameterPromptsNoDependencies(t *testing.T) {
+	t.Parallel()
+
+	prompts := []parameterPromptEntry{
+		{key: "c", param: azure.ArmTemplateParameterDefinition{Type: "string"}},
+		{key: "a", param: azure.ArmTemplateParameterDefinition{Type: "string"}},
+		{key: "b", param: azure.ArmTemplateParameterDefinition{Type: "string"}},
+	}
+
+	template := azure.ArmTemplate{
+		Parameters: azure.ArmTemplateParameterDefinitions{
+			"a": {Type: "string"},
+			"b": {Type: "string"},
+			"c": {Type: "string"},
+		},
+	}
+
+	sorted, err := topoSortParameterPrompts(prompts, template, nil)
+	require.NoError(t, err)
+	// With no dependencies, order is preserved (stable)
+	require.Len(t, sorted, 3)
+	require.Equal(t, "c", sorted[0].key)
+	require.Equal(t, "a", sorted[1].key)
+	require.Equal(t, "b", sorted[2].key)
+}
+
+func TestTopoSortParameterPromptsDependencyOrdering(t *testing.T) {
+	t.Parallel()
+
+	// location depends on modelName and modelCapacity via $(p:...) references
+	prompts := []parameterPromptEntry{
+		{key: "aiLocation", param: azure.ArmTemplateParameterDefinition{
+			Type: "string",
+			Metadata: map[string]json.RawMessage{
+				"azd": json.RawMessage(`{"type": "location", "usageName": ["$(p:modelName), $(p:modelCapacity)"]}`),
+			},
+		}},
+		{key: "modelName", param: azure.ArmTemplateParameterDefinition{Type: "string"}},
+		{key: "modelCapacity", param: azure.ArmTemplateParameterDefinition{Type: "int"}},
+	}
+
+	template := azure.ArmTemplate{
+		Parameters: azure.ArmTemplateParameterDefinitions{
+			"aiLocation":    {Type: "string"},
+			"modelName":     {Type: "string"},
+			"modelCapacity": {Type: "int"},
+		},
+	}
+
+	sorted, err := topoSortParameterPrompts(prompts, template, nil)
+	require.NoError(t, err)
+	require.Len(t, sorted, 3)
+
+	// modelName and modelCapacity must come before aiLocation
+	keyOrder := make(map[string]int)
+	for i, s := range sorted {
+		keyOrder[s.key] = i
+	}
+	require.Less(t, keyOrder["modelName"], keyOrder["aiLocation"])
+	require.Less(t, keyOrder["modelCapacity"], keyOrder["aiLocation"])
+}
+
+func TestTopoSortParameterPromptsDependencyAlreadyResolved(t *testing.T) {
+	t.Parallel()
+
+	// location depends on modelName, but modelName is already resolved
+	prompts := []parameterPromptEntry{
+		{key: "aiLocation", param: azure.ArmTemplateParameterDefinition{
+			Type: "string",
+			Metadata: map[string]json.RawMessage{
+				"azd": json.RawMessage(`{"type": "location", "usageName": ["$(p:modelName), 10"]}`),
+			},
+		}},
+	}
+
+	template := azure.ArmTemplate{
+		Parameters: azure.ArmTemplateParameterDefinitions{
+			"aiLocation": {Type: "string"},
+			"modelName":  {Type: "string"},
+		},
+	}
+
+	alreadyResolved := map[string]any{"modelName": "gpt-4o"}
+
+	sorted, err := topoSortParameterPrompts(prompts, template, alreadyResolved)
+	require.NoError(t, err)
+	require.Len(t, sorted, 1)
+	require.Equal(t, "aiLocation", sorted[0].key)
+}
+
+func TestTopoSortParameterPromptsCircularDependency(t *testing.T) {
+	t.Parallel()
+
+	// A depends on B and B depends on A
+	prompts := []parameterPromptEntry{
+		{key: "paramA", param: azure.ArmTemplateParameterDefinition{
+			Type: "string",
+			Metadata: map[string]json.RawMessage{
+				"azd": json.RawMessage(`{"type": "location", "usageName": ["$(p:paramB)"]}`),
+			},
+		}},
+		{key: "paramB", param: azure.ArmTemplateParameterDefinition{
+			Type: "string",
+			Metadata: map[string]json.RawMessage{
+				"azd": json.RawMessage(`{"type": "location", "usageName": ["$(p:paramA)"]}`),
+			},
+		}},
+	}
+
+	template := azure.ArmTemplate{
+		Parameters: azure.ArmTemplateParameterDefinitions{
+			"paramA": {Type: "string"},
+			"paramB": {Type: "string"},
+		},
+	}
+
+	_, err := topoSortParameterPrompts(prompts, template, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "circular parameter dependency")
+}
+
+func TestTopoSortParameterPromptsUnknownReference(t *testing.T) {
+	t.Parallel()
+
+	prompts := []parameterPromptEntry{
+		{key: "aiLocation", param: azure.ArmTemplateParameterDefinition{
+			Type: "string",
+			Metadata: map[string]json.RawMessage{
+				"azd": json.RawMessage(`{"type": "location", "usageName": ["$(p:nonExistent)"]}`),
+			},
+		}},
+	}
+
+	template := azure.ArmTemplate{
+		Parameters: azure.ArmTemplateParameterDefinitions{
+			"aiLocation": {Type: "string"},
+		},
+	}
+
+	_, err := topoSortParameterPrompts(prompts, template, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unknown parameter 'nonExistent'")
+}
+
+func TestTopoSortParameterPromptsDependencyHasDefault(t *testing.T) {
+	t.Parallel()
+
+	// location depends on modelName, but modelName has a default value in the template
+	prompts := []parameterPromptEntry{
+		{key: "aiLocation", param: azure.ArmTemplateParameterDefinition{
+			Type: "string",
+			Metadata: map[string]json.RawMessage{
+				"azd": json.RawMessage(`{"type": "location", "usageName": ["$(p:modelName), 10"]}`),
+			},
+		}},
+	}
+
+	template := azure.ArmTemplate{
+		Parameters: azure.ArmTemplateParameterDefinitions{
+			"aiLocation": {Type: "string"},
+			"modelName":  {Type: "string", DefaultValue: "gpt-4o"},
+		},
+	}
+
+	sorted, err := topoSortParameterPrompts(prompts, template, nil)
+	require.NoError(t, err)
+	require.Len(t, sorted, 1)
+	require.Equal(t, "aiLocation", sorted[0].key)
 }

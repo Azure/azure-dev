@@ -127,6 +127,155 @@ func (a *BicepProvider) locationsWithQuotaFor(
 	return results, nil
 }
 
+// resolveModelSkuUsageName resolves a model name to its full SKU usage name by querying the
+// AI model catalog. It filters SKUs to only standard-tier types (GlobalStandard, DataZoneStandard,
+// Standard), excluding provisioned, batch, and developer SKUs which have fundamentally different
+// billing and usage models. If GlobalStandard is available, it is selected automatically as it
+// offers the highest quota and broadest availability. Otherwise, the user is prompted to choose
+// among the remaining standard-tier SKUs.
+func (p *BicepProvider) resolveModelSkuUsageName(
+	ctx context.Context,
+	subId string,
+	modelName string,
+) (string, error) {
+	if p.aiModelService == nil {
+		return "", fmt.Errorf("AI model service is not configured")
+	}
+
+	models, err := p.aiModelService.ListModels(ctx, subId, nil)
+	if err != nil {
+		return "", fmt.Errorf("listing AI models: %w", err)
+	}
+
+	// Find the target model and collect unique SKUs across all versions
+	type skuInfo struct {
+		Name      string
+		UsageName string
+	}
+	var allSkus []skuInfo
+	seen := map[string]struct{}{}
+	modelFound := false
+
+	for _, model := range models {
+		if model.Name != modelName {
+			continue
+		}
+		modelFound = true
+		for _, version := range model.Versions {
+			for _, sku := range version.Skus {
+				if _, ok := seen[sku.UsageName]; !ok {
+					seen[sku.UsageName] = struct{}{}
+					allSkus = append(allSkus, skuInfo{
+						Name:      sku.Name,
+						UsageName: sku.UsageName,
+					})
+				}
+			}
+		}
+		break
+	}
+
+	if !modelFound {
+		return "", fmt.Errorf("model '%s' not found in the AI model catalog", modelName)
+	}
+	if len(allSkus) == 0 {
+		return "", fmt.Errorf("no SKUs found for model '%s'", modelName)
+	}
+
+	// Filter to standard-tier SKUs only.
+	// Provisioned (PTU-based), Batch (async 24-hr), and Developer SKUs have fundamentally
+	// different billing and usage models that are not suitable for typical deployments.
+	standardTierSkus := make([]skuInfo, 0, len(allSkus))
+	for _, s := range allSkus {
+		switch s.Name {
+		case "GlobalStandard", "DataZoneStandard", "Standard":
+			standardTierSkus = append(standardTierSkus, s)
+		}
+	}
+
+	// If no standard-tier SKUs are available, fall back to all SKUs so the user
+	// can still proceed (they may have a provisioned deployment in mind).
+	candidates := standardTierSkus
+	if len(candidates) == 0 {
+		candidates = allSkus
+	}
+
+	if len(candidates) == 1 {
+		return candidates[0].UsageName, nil
+	}
+
+	// Auto-select GlobalStandard if available — it has the highest default quota
+	// and broadest availability, recommended as the starting point for most workloads.
+	for _, s := range candidates {
+		if s.Name == "GlobalStandard" {
+			return s.UsageName, nil
+		}
+	}
+
+	// Multiple candidates without GlobalStandard — prompt the user to select one
+	options := make([]string, len(candidates))
+	for i, s := range candidates {
+		options[i] = fmt.Sprintf("%s (%s)", s.Name, s.UsageName)
+	}
+
+	choice, err := p.console.Select(ctx, input.ConsoleOptions{
+		Message: fmt.Sprintf("Select a deployment SKU for model '%s':", modelName),
+		Options: options,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	return candidates[choice].UsageName, nil
+}
+
+// resolveUsageNamesWithReferences resolves usageName entries that contain $(p:...) parameter
+// references. For referenced entries, the resolved value is treated as "modelName, capacity"
+// and the model name is resolved to its full SKU usage name via the AI model catalog.
+// Constant (non-referenced) entries are passed through unchanged.
+func (p *BicepProvider) resolveUsageNamesWithReferences(
+	ctx context.Context,
+	usageNames []string,
+	resolvedValues map[string]any,
+) ([]string, error) {
+	result := make([]string, 0, len(usageNames))
+	for _, un := range usageNames {
+		if !azure.HasParamReferences(un) {
+			// Constant entry — use as-is (existing behavior)
+			result = append(result, un)
+			continue
+		}
+
+		// Resolve $(p:...) references
+		resolved, err := azure.ResolveParamReferences(un, resolvedValues)
+		if err != nil {
+			return nil, fmt.Errorf("resolving usageName references: %w", err)
+		}
+
+		// Parse the resolved string as "modelName, capacity" or "modelName"
+		parts := strings.SplitN(resolved, ",", 2)
+		modelName := strings.TrimSpace(parts[0])
+		capacityStr := ""
+		if len(parts) == 2 {
+			capacityStr = strings.TrimSpace(parts[1])
+		}
+
+		// Resolve the model name to its full SKU usage name
+		skuUsageName, err := p.resolveModelSkuUsageName(ctx, p.env.GetSubscriptionId(), modelName)
+		if err != nil {
+			return nil, fmt.Errorf("resolving SKU for model '%s': %w", modelName, err)
+		}
+
+		// Build the final "UsageName, capacity" string
+		if capacityStr != "" {
+			result = append(result, fmt.Sprintf("%s, %s", skuUsageName, capacityStr))
+		} else {
+			result = append(result, skuUsageName)
+		}
+	}
+	return result, nil
+}
+
 type usageNameDetails struct {
 	UsageName string
 	Capacity  float64
@@ -166,6 +315,7 @@ func (p *BicepProvider) promptForParameter(
 	key string,
 	param azure.ArmTemplateParameterDefinition,
 	mappedToAzureLocationParams []string,
+	resolvedValues map[string]any,
 ) (any, error) {
 	securedParam := "parameter"
 	isSecuredParam := param.Secure()
@@ -204,12 +354,26 @@ func (p *BicepProvider) promptForParameter(
 			}
 		}
 		if len(azdMetadata.UsageName) > 0 {
-			withQuotaLocations, err := p.locationsWithQuotaFor(
-				ctx, p.env.GetSubscriptionId(), allowedLocations, azdMetadata.UsageName)
+			// Show a user-friendly spinner while resolving quota availability
+			p.console.ShowSpinner(ctx, "Checking available quota for location selection", input.Step)
+
+			// Resolve any $(p:...) parameter references in usageName entries.
+			// Referenced entries are resolved to full SKU usage names via the AI model catalog.
+			resolvedUsageNames, err := p.resolveUsageNamesWithReferences(
+				ctx, azdMetadata.UsageName, resolvedValues)
 			if err != nil {
+				p.console.StopSpinner(ctx, "", input.Step)
+				return nil, fmt.Errorf("resolving usageName for parameter '%s': %w", key, err)
+			}
+			withQuotaLocations, err := p.locationsWithQuotaFor(
+				ctx, p.env.GetSubscriptionId(), allowedLocations, resolvedUsageNames)
+			if err != nil {
+				p.console.StopSpinner(ctx, "", input.Step)
 				return nil, fmt.Errorf("getting locations with quota: %w", err)
 			}
 			allowedLocations = withQuotaLocations
+
+			p.console.StopSpinner(ctx, "", input.Step)
 		}
 
 		location, err := p.prompters.PromptLocation(

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"slices"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -97,6 +98,9 @@ func (m *TelemetryMiddleware) Run(ctx context.Context, next NextFn) (*actions.Ac
 		span.SetAttributes(fields.PlatformTypeKey.String(string(platformConfig.Type)))
 	}
 
+	// Emit installed extension IDs and versions for all commands
+	m.setInstalledExtensionsAttributes(span)
+
 	defer func() {
 		// Include any usage attributes set
 		span.SetAttributes(tracing.GetUsageAttributes()...)
@@ -157,4 +161,32 @@ func (m *TelemetryMiddleware) extensionCmdInfo(extensionId string) (string, []st
 	namespacePath := strings.ReplaceAll(extension.Namespace, ".", " ")
 	fullPath := strings.Join(append([]string{"azd", namespacePath}, commandPath...), " ")
 	return events.GetCommandEventName(fullPath), commandFlags
+}
+
+// setInstalledExtensionsAttributes emits the list of installed extension IDs and versions as span attributes.
+func (m *TelemetryMiddleware) setInstalledExtensionsAttributes(span tracing.Span) {
+	if m.extensionManager == nil {
+		return
+	}
+
+	installed, err := m.extensionManager.ListInstalled()
+	if err != nil || len(installed) == 0 {
+		return
+	}
+
+	ids := make([]string, 0, len(installed))
+	for id := range installed {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+
+	versions := make([]string, 0, len(installed))
+	for _, id := range ids {
+		versions = append(versions, installed[id].Version)
+	}
+
+	span.SetAttributes(
+		fields.ExtensionsInstalledIds.StringSlice(ids),
+		fields.ExtensionsInstalledVersions.StringSlice(versions),
+	)
 }

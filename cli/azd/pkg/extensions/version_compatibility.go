@@ -45,32 +45,34 @@ type VersionCompatibilityResult struct {
 }
 
 // LatestVersion returns the ExtensionVersion with the highest semantic version from the provided slice.
-// It compares only the first and last elements, which covers both ascending and descending sort orders.
+// It compares all elements using semver so the result is correct regardless of slice ordering.
 // Returns nil if the slice is empty.
 func LatestVersion(versions []ExtensionVersion) *ExtensionVersion {
 	if len(versions) == 0 {
 		return nil
 	}
 
-	if len(versions) == 1 {
+	var latest *ExtensionVersion
+	var latestSemver *semver.Version
+
+	for i := range versions {
+		v, err := semver.NewVersion(versions[i].Version)
+		if err != nil {
+			log.Printf("Warning: failed to parse extension version '%s': %v", versions[i].Version, err)
+			continue
+		}
+		if latestSemver == nil || v.GreaterThan(latestSemver) {
+			latest = &versions[i]
+			latestSemver = v
+		}
+	}
+
+	if latest == nil {
+		// All version strings failed to parse; fall back to the first element.
 		return &versions[0]
 	}
 
-	first, err := semver.NewVersion(versions[0].Version)
-	if err != nil {
-		return &versions[len(versions)-1]
-	}
-
-	last, err := semver.NewVersion(versions[len(versions)-1].Version)
-	if err != nil {
-		return &versions[0]
-	}
-
-	if last.GreaterThan(first) {
-		return &versions[len(versions)-1]
-	}
-
-	return &versions[0]
+	return latest
 }
 
 // FilterCompatibleVersions filters extension versions based on compatibility with the current azd version.

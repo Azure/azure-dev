@@ -307,7 +307,7 @@ func (m *Manager) FindExtensions(ctx context.Context, options *FilterOptions) ([
 
 // Install an extension from metadata with optional version preference
 // If no version is provided, the latest version is installed
-// Latest version is determined by the last element in the Versions slice
+// Latest version is determined by semver comparison across all available versions
 func (m *Manager) Install(
 	ctx context.Context,
 	extension *ExtensionMetadata,
@@ -330,28 +330,25 @@ func (m *Manager) Install(
 	// Step 1: Determine the version to install
 	var selectedVersion *ExtensionVersion
 
-	availableVersions := []*semver.Version{}
-	availableVersionMap := map[*semver.Version]*ExtensionVersion{}
-
-	// Create a map of available versions and sort them
-	// This sorts the version from lowest to highest
-	for _, extensionVersion := range extension.Versions {
-		version, err := semver.NewVersion(extensionVersion.Version)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse version: %w", err)
-		}
-
-		availableVersionMap[version] = &extensionVersion
-		availableVersions = append(availableVersions, version)
-	}
-
-	sort.Sort(semver.Collection(availableVersions))
-
 	if versionPreference == "" || versionPreference == "latest" {
-		latestVersion := availableVersions[len(availableVersions)-1]
-		selectedVersion = availableVersionMap[latestVersion]
+		selectedVersion = LatestVersion(extension.Versions)
 	} else {
 		// Find the best match for the version constraint
+		availableVersions := []*semver.Version{}
+		availableVersionMap := map[*semver.Version]*ExtensionVersion{}
+
+		for i, extensionVersion := range extension.Versions {
+			version, err := semver.NewVersion(extensionVersion.Version)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse version: %w", err)
+			}
+
+			availableVersionMap[version] = &extension.Versions[i]
+			availableVersions = append(availableVersions, version)
+		}
+
+		sort.Sort(semver.Collection(availableVersions))
+
 		constraint, err := semver.NewConstraint(versionPreference)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse version constraint: %w", err)

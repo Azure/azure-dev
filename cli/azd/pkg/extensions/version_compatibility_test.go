@@ -333,7 +333,6 @@ func Test_FilterCompatibleVersions(t *testing.T) {
 	})
 
 	t.Run("descending order returns correct latest overall", func(t *testing.T) {
-		// Registry returns versions newest-first (descending), e.g. [0.1.1, 0.1.0, 0.0.5, 0.0.2]
 		versions := []ExtensionVersion{
 			{Version: "0.1.1"},
 			{Version: "0.1.0"},
@@ -349,7 +348,6 @@ func Test_FilterCompatibleVersions(t *testing.T) {
 	})
 
 	t.Run("descending order with incompatible newest version", func(t *testing.T) {
-		// Registry returns versions newest-first; the newest is incompatible
 		versions := []ExtensionVersion{
 			{Version: "2.0.0", RequiredAzdVersion: ">= 2.0.0"},
 			{Version: "1.1.0"},
@@ -391,6 +389,16 @@ func Test_LatestVersion(t *testing.T) {
 			{Version: "0.1.0"},
 			{Version: "0.0.5"},
 			{Version: "0.0.2"},
+		}
+		require.Equal(t, "0.1.1", LatestVersion(versions).Version)
+	})
+
+	t.Run("unsorted order", func(t *testing.T) {
+		versions := []ExtensionVersion{
+			{Version: "0.0.5"},
+			{Version: "0.1.1"},
+			{Version: "0.0.2"},
+			{Version: "0.1.0"},
 		}
 		require.Equal(t, "0.1.1", LatestVersion(versions).Version)
 	})

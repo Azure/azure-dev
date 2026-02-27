@@ -121,7 +121,8 @@ extends:
           - ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
             - cover-mac-arm64
 
-    - template: /eng/pipelines/templates/stages/verify-installers.yml
+    - ${{ if ne(variables['Build.Reason'], 'PullRequest') }}:
+      - template: /eng/pipelines/templates/stages/verify-installers.yml
 
     - ${{ if ne(variables['Build.Reason'], 'Schedule') }}:
 

@@ -181,7 +181,7 @@ func (m *RegistryCacheManager) GetExtensionLatestVersion(
 			if len(ext.Versions) == 0 {
 				return "", fmt.Errorf("extension %s has no versions", extensionId)
 			}
-			latest := LatestVersion(ext.Versions)
+			latest, _ := LatestVersion(ext.Versions) // error is nil when no constraint is given
 			return latest.Version, nil
 		}
 	}

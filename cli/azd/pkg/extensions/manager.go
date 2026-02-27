@@ -329,10 +329,10 @@ func (m *Manager) Install(
 	var selectedVersion *ExtensionVersion
 
 	if versionPreference == "" || versionPreference == "latest" {
-		selectedVersion = LatestVersion(extension.Versions)
+		selectedVersion, _ = LatestVersion(extension.Versions) // error is nil when no constraint is given
 	} else {
 		// Find the best match for the version constraint
-		selectedVersion, err = LatestVersionForConstraint(extension.Versions, versionPreference)
+		selectedVersion, err = LatestVersion(extension.Versions, versionPreference)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"no matching version found for extension: %s and constraint: %s",

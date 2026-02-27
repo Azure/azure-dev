@@ -364,12 +364,15 @@ func Test_FilterCompatibleVersions(t *testing.T) {
 
 func Test_LatestVersion(t *testing.T) {
 	t.Run("nil on empty slice", func(t *testing.T) {
-		require.Nil(t, LatestVersion([]ExtensionVersion{}))
+		result, err := LatestVersion([]ExtensionVersion{})
+		require.NoError(t, err)
+		require.Nil(t, result)
 	})
 
 	t.Run("single element", func(t *testing.T) {
 		versions := []ExtensionVersion{{Version: "1.0.0"}}
-		result := LatestVersion(versions)
+		result, err := LatestVersion(versions)
+		require.NoError(t, err)
 		require.Equal(t, "1.0.0", result.Version)
 	})
 
@@ -380,7 +383,9 @@ func Test_LatestVersion(t *testing.T) {
 			{Version: "0.1.0"},
 			{Version: "0.1.1"},
 		}
-		require.Equal(t, "0.1.1", LatestVersion(versions).Version)
+		result, err := LatestVersion(versions)
+		require.NoError(t, err)
+		require.Equal(t, "0.1.1", result.Version)
 	})
 
 	t.Run("descending order", func(t *testing.T) {
@@ -390,7 +395,9 @@ func Test_LatestVersion(t *testing.T) {
 			{Version: "0.0.5"},
 			{Version: "0.0.2"},
 		}
-		require.Equal(t, "0.1.1", LatestVersion(versions).Version)
+		result, err := LatestVersion(versions)
+		require.NoError(t, err)
+		require.Equal(t, "0.1.1", result.Version)
 	})
 
 	t.Run("unsorted order", func(t *testing.T) {
@@ -400,6 +407,35 @@ func Test_LatestVersion(t *testing.T) {
 			{Version: "0.0.2"},
 			{Version: "0.1.0"},
 		}
-		require.Equal(t, "0.1.1", LatestVersion(versions).Version)
+		result, err := LatestVersion(versions)
+		require.NoError(t, err)
+		require.Equal(t, "0.1.1", result.Version)
+	})
+
+	t.Run("with constraint", func(t *testing.T) {
+		versions := []ExtensionVersion{
+			{Version: "0.0.2"},
+			{Version: "0.0.5"},
+			{Version: "0.1.0"},
+			{Version: "0.1.1"},
+		}
+		result, err := LatestVersion(versions, ">=0.0.3 <0.1.0")
+		require.NoError(t, err)
+		require.Equal(t, "0.0.5", result.Version)
+	})
+
+	t.Run("constraint with no match returns error", func(t *testing.T) {
+		versions := []ExtensionVersion{
+			{Version: "0.0.2"},
+			{Version: "0.0.5"},
+		}
+		_, err := LatestVersion(versions, ">=1.0.0")
+		require.Error(t, err)
+	})
+
+	t.Run("invalid constraint returns error", func(t *testing.T) {
+		versions := []ExtensionVersion{{Version: "1.0.0"}}
+		_, err := LatestVersion(versions, "not-a-constraint")
+		require.Error(t, err)
 	})
 }

@@ -17,7 +17,7 @@ export async function getPrInfo(
     baseBranch: data.base.ref,
     headBranch: data.head.ref,
     state: data.state,
-    merged: data.merged,
+    merged: data.merged_at != null,
     htmlUrl: data.html_url,
   };
 }

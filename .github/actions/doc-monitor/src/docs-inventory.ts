@@ -1,7 +1,7 @@
 import * as core from "@actions/core";
 import { Octokit } from "@octokit/rest";
 import type { DocEntry } from "./types";
-import { MAX_RECURSION_DEPTH, MAX_TOPICS, MAX_TOPIC_LENGTH } from "./constants";
+import { MAX_RECURSION_DEPTH, MAX_TOPICS, MAX_TOPIC_LENGTH, MAX_CONTENT_FETCHES } from "./constants";
 
 /** Glob patterns to exclude from doc inventory. */
 const EXCLUDE_PATTERNS = [
@@ -61,21 +61,78 @@ export async function buildDocInventory(
   repo: string,
   paths: string[] = [""],
 ): Promise<DocEntry[]> {
-  const entries: DocEntry[] = [];
   const repoFullName = `${owner}/${repo}`;
 
-  for (const searchPath of paths) {
-    try {
-      await collectDocs(octokit, owner, repo, searchPath, repoFullName, entries);
-    } catch (error) {
-      core.warning(`Could not scan ${repoFullName}/${searchPath}: ${error}`);
+  try {
+    return await collectDocsViaTree(octokit, owner, repo, repoFullName, paths);
+  } catch (error) {
+    core.warning(`Tree API failed for ${repoFullName}, falling back to recursive listing: ${error}`);
+    const entries: DocEntry[] = [];
+    for (const searchPath of paths) {
+      try {
+        await collectDocsRecursive(octokit, owner, repo, searchPath, repoFullName, entries);
+      } catch (err) {
+        core.warning(`Could not scan ${repoFullName}/${searchPath}: ${err}`);
+      }
     }
+    return entries;
+  }
+}
+
+/** Single-call tree-based inventory (eliminates N+1). */
+async function collectDocsViaTree(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  repoFullName: string,
+  filterPaths: string[],
+): Promise<DocEntry[]> {
+  const { data } = await octokit.git.getTree({ owner, repo, tree_sha: "HEAD", recursive: "1" });
+
+  const mdFiles = data.tree.filter((item) => {
+    if (item.type !== "blob" || !item.path?.endsWith(".md")) return false;
+    if (shouldExclude(item.path)) return false;
+    if (filterPaths.length === 1 && filterPaths[0] === "") return true;
+    return filterPaths.some((p) => item.path!.startsWith(p));
+  });
+
+  const entries: DocEntry[] = [];
+  let contentFetches = 0;
+
+  for (const file of mdFiles) {
+    const filePath = file.path!;
+    if (contentFetches < MAX_CONTENT_FETCHES) {
+      try {
+        const fileData = await octokit.repos.getContent({ owner, repo, path: filePath });
+        if (!Array.isArray(fileData.data) && "content" in fileData.data && fileData.data.content) {
+          const content = Buffer.from(fileData.data.content, "base64").toString("utf-8");
+          entries.push({
+            repo: repoFullName,
+            path: filePath,
+            title: extractTitle(content, filePath),
+            topics: extractTopics(content, filePath),
+          });
+          contentFetches++;
+          continue;
+        }
+      } catch {
+        // Fall through to path-based entry
+      }
+    }
+    // Path-based fallback (no content fetch)
+    const name = filePath.split("/").pop() ?? filePath;
+    entries.push({
+      repo: repoFullName,
+      path: filePath,
+      title: name.replace(/\.md$/, ""),
+      topics: filePath.split("/").slice(0, 3),
+    });
   }
 
   return entries;
 }
 
-async function collectDocs(
+async function collectDocsRecursive(
   octokit: Octokit,
   owner: string,
   repo: string,
@@ -93,7 +150,7 @@ async function collectDocs(
     if (Array.isArray(data)) {
       for (const item of data) {
         if (item.type === "dir" && !shouldExclude(item.path)) {
-          await collectDocs(octokit, owner, repo, item.path, repoFullName, entries, depth + 1);
+          await collectDocsRecursive(octokit, owner, repo, item.path, repoFullName, entries, depth + 1);
         } else if (item.type === "file" && item.name.endsWith(".md") && !shouldExclude(item.path)) {
           // Fetch file content for title/topic extraction
           try {

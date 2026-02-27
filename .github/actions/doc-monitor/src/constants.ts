@@ -17,6 +17,7 @@ export const MAX_MANIFEST_PROMPT_CHARS = 20_000;
 export const MAX_RECURSION_DEPTH = 5;
 export const MAX_TOPICS = 10;
 export const MAX_TOPIC_LENGTH = 40;
+export const MAX_CONTENT_FETCHES = 50;
 
 // ─── GitHub API ─────────────────────────────────────────────────────
 export const GITHUB_PAGE_SIZE = 100;

@@ -111,7 +111,20 @@ export async function processPr(
 }
 
 function isDocOnlyPr(files: FileDiff[]): boolean {
-  return files.length === 0 || files.every((f) => f.path.endsWith(".md"));
+  if (files.length === 0) return true;
+
+  const docExtensions = [".md", ".mdx"];
+  const docAssetExtensions = [
+    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp",
+    ".svg", ".yml", ".yaml",
+  ];
+  const docDirectories = ["docs/", "cli/azd/docs/"];
+
+  return files.every((f) => {
+    if (docExtensions.some((ext) => f.path.endsWith(ext))) return true;
+    const inDocDir = docDirectories.some((dir) => f.path.startsWith(dir));
+    return inDocDir && docAssetExtensions.some((ext) => f.path.endsWith(ext));
+  });
 }
 
 async function handleClosedPr(

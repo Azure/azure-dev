@@ -10,6 +10,37 @@
 
 ### Other Changes
 
+## 1.23.7 (2026-02-27)
+
+### Features Added
+
+- [[#6826]](https://github.com/Azure/azure-dev/pull/6826) Add local filesystem directory support for `azd init --template` to enable iterating on templates without pushing to a remote repository. Thanks @jongio for the contribution!
+- [[#6827]](https://github.com/Azure/azure-dev/pull/6827) Add YAML-driven error handling pipeline that matches Azure deployment errors against known patterns and surfaces actionable messages, suggestions, and reference links.
+- [[#6848]](https://github.com/Azure/azure-dev/pull/6848) Add `pyproject.toml` detection and `pip install .` support for Python projects using modern project packaging. Thanks @spboyer for the contribution!
+- [[#6852]](https://github.com/Azure/azure-dev/pull/6852) Add `provision.preflight` config option to skip ARM preflight validation (`azd config set provision.preflight off`) and show a spinner during preflight runs.
+- [[#6856]](https://github.com/Azure/azure-dev/pull/6856) Add Extension SDK helpers for command scaffolding, MCP server utilities, typed argument parsing, and SSRF security policy to simplify azd extension authoring. Thanks @jongio for the contribution!
+- [[#6894]](https://github.com/Azure/azure-dev/pull/6894) Add automatic detection of pnpm and yarn package managers for JavaScript/TypeScript services, with explicit override support via `config.packageManager` in `azure.yaml`. Thanks @jongio for the contribution!
+- [[#6904]](https://github.com/Azure/azure-dev/pull/6904) Add `website` field to extension registry schema and display it in `azd extension show` output. Thanks @jongio for the contribution!
+- [[#6905]](https://github.com/Azure/azure-dev/pull/6905) Add azd environment variables to all framework service build subprocesses (Node.js, .NET, Java, Python, SWA) to support build-time environment variable injection. Thanks @jongio for the contribution!
+- [[#6906]](https://github.com/Azure/azure-dev/pull/6906) Add `azd extension source validate` command to validate extension registry sources against required fields, version format, capabilities, and checksum rules. Thanks @jongio for the contribution!
+
+### Bugs Fixed
+
+- [[#6847]](https://github.com/Azure/azure-dev/pull/6847) Fix `azd env get-values` to reject unexpected positional arguments instead of silently succeeding. Thanks @spboyer for the contribution!
+- [[#6857]](https://github.com/Azure/azure-dev/pull/6857) Fix duplicated `Suggestion:` prefix appearing in error output when the suggestion text already included the prefix.
+- [[#6862]](https://github.com/Azure/azure-dev/pull/6862) Fix preflight validation errors for standard deployments being misclassified in telemetry and displayed with degraded formatting.
+- [[#6900]](https://github.com/Azure/azure-dev/pull/6900) Fix extension errors not being displayed when using `ReportError()` in extension commands.
+- [[#6907]](https://github.com/Azure/azure-dev/pull/6907) Fix missing IPv6 CIDR blocks (`fc00::/7`, `0.0.0.0/8`, `::/128`) in MCP extension security policy that could allow SSRF bypasses. Thanks @jongio for the contribution!
+
+### Other Changes
+
+- [[#6768]](https://github.com/Azure/azure-dev/pull/6768) Normalize user-facing CLI output to consistent lowercase `azd` branding.
+- [[#6835]](https://github.com/Azure/azure-dev/pull/6835) Add `azdext.Run` lifecycle entry point and structured error transport for extensions, enabling rich error rendering with suggestions in the host CLI.
+- [[#6845]](https://github.com/Azure/azure-dev/pull/6845) Add Container App-specific error guidance for secret, image pull, and template parameter failures. Thanks @spboyer for the contribution!
+- [[#6846]](https://github.com/Azure/azure-dev/pull/6846) Add RBAC and authorization error guidance for permission, policy, and role assignment failures. Thanks @spboyer for the contribution!
+- [[#6888]](https://github.com/Azure/azure-dev/pull/6888) Improve Container Apps deployment performance by reducing ARM API round-trips, saving up to 3 calls per deployment. Thanks @spboyer for the contribution!
+- [[#6902]](https://github.com/Azure/azure-dev/pull/6902) Improve AI-assisted troubleshooting with scope selection options (explain, guide, summarize) and persistent user preferences.
+
 ## 1.23.6 (2026-02-20)
 
 ### Features Added

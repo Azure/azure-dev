@@ -169,7 +169,7 @@ func Test_RegistryCacheManager_GetExtensionLatestVersion_DescendingOrder(t *test
 	ctx := context.Background()
 	sourceName := "version-desc-test-source"
 
-	// Registry returns versions in descending order (newest first)
+	// Simulate registry returning versions in descending order (newest first)
 	extensions := []*ExtensionMetadata{
 		{
 			Id:          "test.extension",

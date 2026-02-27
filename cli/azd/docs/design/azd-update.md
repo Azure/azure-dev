@@ -259,14 +259,19 @@ Phase 1 — Stage (background goroutine during any azd invocation):
 
 Phase 2 — Apply (on NEXT startup, before command execution):
 1. Detect staged binary at ~/.azd/staging/azd
-2. Try to copy over current binary
+2. Verify staged binary integrity (macOS: codesign check — unsigned is OK, corrupted/truncated is rejected)
+3. Try to copy over current binary (with fsync to flush data to disk)
    - If writable (user home, homebrew prefix) → swap, re-exec, show success banner
    - If permission denied (system dir like /opt/microsoft/azd/) → skip, show warning
-3. On success: write marker file, re-exec with same args, display banner
-4. On permission denied: show "WARNING: New update downloaded. Run 'azd update' to apply."
+   - If staged binary is invalid (e.g. truncated download) → clean up, skip silently
+4. On success: write marker file, re-exec with same args, display banner
+5. On permission denied: show "WARNING: azd version X.Y.Z has been downloaded. Run 'azd update' to apply it."
+   (The "out of date" banner is suppressed when this elevation warning is shown, to avoid duplicate warnings.)
 ```
 
 The re-exec approach (`syscall.Exec` on Unix, spawn-and-exit on Windows) means the user's command runs seamlessly on the new binary — they just see a one-line success banner before their normal output.
+
+**Staged binary verification**: Before applying, `verifyStagedBinary()` checks the staged binary's integrity. On macOS, it runs `codesign -v --strict`. Unsigned binaries (dev builds) are allowed ("code object is not signed at all" is OK), but corrupted/truncated binaries with invalid signatures are rejected and cleaned up. This prevents crashes from partially-downloaded files left behind when a background download goroutine is interrupted.
 
 **Elevation-aware behavior**: Auto-update doesn't prompt for passwords. If the install location requires elevation, it gracefully falls back to a warning and the staged binary stays around for `azd update` to apply (which has the sudo fallback with an interactive prompt).
 
@@ -287,12 +292,12 @@ azd update --channel daily
 # Persists channel config and updates from release/daily/ instead of release/stable/
 ```
 
-**Daily → Stable downgrade warning**:
+**Channel switch confirmation** (any direction — daily↔stable):
 ```
-⚠ You're currently on version 1.24.0-beta.1-daily.5935787.
-  Switching to stable will downgrade you to 1.23.6.
-  Continue? [y/N]
+? Switch from daily channel (1.24.0-beta.1-daily.5935787) to stable channel (1.23.6)? [Y/n]
 ```
+
+If the user declines, the command prints "Channel switch cancelled." (no SUCCESS banner) and exits without modifying config or downloading anything. The channel config is only persisted after confirmation.
 
 #### Cross Install Method
 
@@ -312,12 +317,14 @@ This avoids the silent symlink overwrite problem that exists today with conflict
 When the update feature is enabled, `azd version` shows the channel:
 
 ```
-azd version 1.23.6 (stable)
+azd version 1.23.6 (commit abc1234) (stable)
 ```
 
 ```
-azd version 1.24.0-beta.1-daily.5935787 (daily, build 5935787)
+azd version 1.24.0-beta.1-daily.5935787 (commit abc1234) (daily)
 ```
+
+The channel suffix is derived from the running binary's version string (presence of `daily.` pattern), not the configured channel. This means the output always reflects what the binary actually is.
 
 When the feature toggle is off, `azd version` output stays unchanged — no suffix, no channel info.
 
@@ -341,14 +348,14 @@ Uses the existing azd telemetry infrastructure (OpenTelemetry). New telemetry fi
 | `update.alreadyUpToDate` | No update available, already on latest |
 | `update.downloadFailed` | Failed to download binary from remote |
 | `update.checksumMismatch` | Downloaded binary failed integrity verification |
-| `update.codeSignatureInvalid` | Code signature verification failed |
+| `update.signatureInvalid` | Code signature verification failed |
 | `update.elevationRequired` | Update requires elevation and user declined |
 | `update.elevationFailed` | Elevation prompt (sudo/UAC) failed |
 | `update.replaceFailed` | Failed to replace binary at install location |
 | `update.packageManagerFailed` | Package manager command (brew/winget/choco) failed |
 | `update.versionCheckFailed` | Failed to fetch remote version info |
 | `update.unsupportedInstallMethod` | Unknown or unsupported install method |
-| `update.channelSwitchDowngrade` | User declined downgrade when switching channels |
+| `update.channelSwitchDowngrade` | User declined when switching channels |
 | `update.skippedCI` | Skipped due to CI/non-interactive environment |
 
 These codes are integrated into azd's `MapError` pipeline, so update failures show up properly in telemetry dashboards alongside other command errors.
@@ -361,6 +368,12 @@ The entire update feature ships behind `alpha.update` (default: off). This means
 - **Toggle on** (`azd config set alpha.update on`): All update features are active — `azd update` works, auto-update stages/applies, `azd version` shows the channel suffix, notifications say "run `azd update`."
 
 This lets us roll out to internal users first, gather feedback, and fix issues before broader availability. Once stable, the toggle can be removed and the feature enabled by default.
+
+### 9. Update Banner Suppression
+
+The startup "out of date" warning banner is suppressed during `azd update` (stale version is in-process and about to be replaced) and `azd config` (user is managing settings — showing a warning alongside config changes is noise). This is handled by `suppressUpdateBanner()` in `main.go`.
+
+When the auto-update elevation warning is shown ("azd version X.Y.Z has been downloaded. Run 'azd update' to apply it."), the "out of date" warning is also suppressed to avoid showing two redundant warnings about the same condition.
 
 ---
 

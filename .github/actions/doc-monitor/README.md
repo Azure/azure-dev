@@ -4,7 +4,7 @@ A GitHub Action that analyzes pull request changes and identifies which document
 
 ## How It Works
 
-1. **Triggers** on PR events (opened, updated, merged, closed) or manual dispatch
+1. **Triggers** on `pull_request_target` events (`opened`, `synchronize`, `reopened`, `closed` -- merges surface as `closed` when the PR is merged) or manual `workflow_dispatch`
 2. **Extracts** the PR diff and classifies changes (API, behavior, config, feature, etc.)
 3. **Inventories** documentation in both `Azure/azure-dev` and `MicrosoftDocs/azure-dev-docs`
 4. **Analyzes** the changes using GitHub Models AI (GPT-4o) to determine doc impact

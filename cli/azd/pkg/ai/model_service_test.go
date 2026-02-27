@@ -407,6 +407,27 @@ func TestFilterModelsByAnyLocationQuota(t *testing.T) {
 	require.Equal(t, []string{"model-a", "model-b"}, filteredNames)
 }
 
+func TestIsFinetuneUsageName(t *testing.T) {
+	tests := []struct {
+		usageName string
+		expected  bool
+	}{
+		{"OpenAI.Standard.gpt-4o", false},
+		{"OpenAI.GlobalStandard.gpt-4o", false},
+		{"OpenAI.Standard.gpt-4o-finetune", true},
+		{"OpenAI.GlobalStandard.gpt-4o-FINEtune", true},
+		{"OpenAI.ProvisionedManaged", false},
+		{"OpenAI.ProvisionedManaged-finetune", true},
+		{"", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.usageName, func(t *testing.T) {
+			require.Equal(t, tt.expected, IsFinetuneUsageName(tt.usageName))
+		})
+	}
+}
+
 func intPtr(v int32) *int32 {
 	return &v
 }

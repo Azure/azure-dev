@@ -153,6 +153,9 @@ message ResolveModelDeploymentsRequest {
   AiModelDeploymentOptions options = 3;
   // Optional quota filter. Requires options.locations with exactly one location.
   QuotaCheckOptions quota = 4;
+  // Include fine-tune SKUs (usage names ending with "-finetune").
+  // Defaults to false (fine-tune SKUs are excluded).
+  bool include_finetune_skus = 5;
 }
 
 message ResolveModelDeploymentsResponse {

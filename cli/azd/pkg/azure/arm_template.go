@@ -237,7 +237,7 @@ func ResolveParamReferences(s string, values map[string]any) (string, error) {
 		name := strings.TrimSpace(sub[1])
 		v, ok := values[name]
 		if !ok {
-			resolveErr = fmt.Errorf("cannot resolve reference '$(p:%s)': parameter '%s' has no value", name, name)
+			resolveErr = fmt.Errorf("cannot resolve reference '$(p:%s)': no value provided", name)
 			return match
 		}
 		return fmt.Sprintf("%v", v)

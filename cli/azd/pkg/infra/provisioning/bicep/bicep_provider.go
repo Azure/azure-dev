@@ -2254,7 +2254,6 @@ func topoSortParameterPrompts(
 			}
 			dependsOn[i] = append(dependsOn[i], depIdx)
 			inDegree[i]++
-			_ = depIdx // dependency must come before i
 		}
 	}
 

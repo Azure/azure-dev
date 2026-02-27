@@ -139,7 +139,11 @@ func (c *FuncAppHostClient) waitForDeployment(ctx context.Context, location stri
 
 		if deploymentNotFoundAttempts <= 3 && response.StatusCode == http.StatusNotFound {
 			deploymentNotFoundAttempts++
-			time.Sleep(pollDelay)
+			select {
+			case <-ctx.Done():
+				return PublishResponse{}, ctx.Err()
+			case <-time.After(pollDelay):
+			}
 			continue
 		}
 
@@ -181,7 +185,7 @@ func (c *FuncAppHostClient) waitForDeployment(ctx context.Context, location stri
 
 		delay := pollDelay
 		if retryAfter := httputil.RetryAfter(response); retryAfter > 0 {
-			delay = pollDelay
+			delay = retryAfter
 		}
 
 		select {

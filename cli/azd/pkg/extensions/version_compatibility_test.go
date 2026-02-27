@@ -385,7 +385,7 @@ func Test_LatestVersion(t *testing.T) {
 		require.Equal(t, "0.1.1", LatestVersion(versions).Version)
 	})
 
-	t.Run("descending order (registry sort order)", func(t *testing.T) {
+	t.Run("descending order", func(t *testing.T) {
 		versions := []ExtensionVersion{
 			{Version: "0.1.1"},
 			{Version: "0.1.0"},

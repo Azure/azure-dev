@@ -12,6 +12,7 @@ import (
 	azureprovider "azure.ai.finetune/internal/providers/azure"
 	openaiprovider "azure.ai.finetune/internal/providers/openai"
 	"azure.ai.finetune/internal/utils"
+	"azure.ai.finetune/internal/version"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -95,7 +96,7 @@ func WithTokenCredential(tokenCredential azcore.TokenCredential, scope string) o
 	bearerTokenPolicy := runtime.NewBearerTokenPolicy(tokenCredential, []string{scope}, nil)
 	// add in a middleware that uses the bearer token generated from the token credential
 	return option.WithMiddleware(func(req *http.Request, next option.MiddlewareNext) (*http.Response, error) {
-		pipeline := runtime.NewPipeline("finetune-extensions", version, runtime.PipelineOptions{}, &policy.ClientOptions{
+		pipeline := runtime.NewPipeline("finetune-extensions", pipelineVersion, runtime.PipelineOptions{}, &policy.ClientOptions{
 			InsecureAllowCredentialWithHTTP: true, // allow for plain HTTP proxies, etc..
 			PerCallPolicies: []policy.Policy{
 				azsdk.NewUserAgentPolicy(UserAgent),
@@ -148,4 +149,4 @@ func (mp policyAdapter) Do(req *policy.Request) (*http.Response, error) {
 	return (option.MiddlewareNext)(mp)(req.Raw())
 }
 
-const version = "v.0.1.0"
+const pipelineVersion = "v.0.1.0"

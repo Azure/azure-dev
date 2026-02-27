@@ -32,6 +32,7 @@ type ProvisioningProgressDisplay struct {
 	deployment         Deployment
 	// Tracks root operation count from the last poll cycle to skip
 	// expensive recursive traversal when nothing has changed.
+	// Initialized to -1 so the first poll always processes.
 	lastRootOpCount int
 	// Whether any operations were still running at last poll.
 	// When true, we always do the full traversal on next poll.
@@ -48,6 +49,7 @@ func NewProvisioningProgressDisplay(
 		deployment:         deployment,
 		resourceManager:    rm,
 		console:            console,
+		lastRootOpCount:    -1,
 	}
 }
 

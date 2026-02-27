@@ -1,5 +1,12 @@
 # Release History
 
+## 0.1.12-preview (2026-02-27)
+
+- [[#6892]](https://github.com/Azure/azure-dev/pull/6892) Fix selected model check during `azd ai agent init` from code to correctly handle existing versus new model deployments
+- [[#6909]](https://github.com/Azure/azure-dev/pull/6909) Add `AZURE_AI_PROJECT_ENDPOINT` to default agent environment variables and improve `AZURE_AI_MODEL_DEPLOYMENT_NAME` env var handling
+- [[#6895]](https://github.com/Azure/azure-dev/pull/6895) Add `azd ai agent logs` and `azd ai agent status` commands for viewing agent run logs and deployment status
+- [[#6901]](https://github.com/Azure/azure-dev/pull/6901) Add structured error handling with improved service error mapping for more informative error messages
+
 ## 0.1.11-preview (2026-02-24)
 
 - [[#6828]](https://github.com/Azure/azure-dev/pull/6828) Add new "init from code" flow allowing users to run `azd ai agent init` without an existing project, template, or manifest

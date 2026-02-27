@@ -7,19 +7,16 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"log"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
-	"strings"
+	"syscall"
 	"time"
 
 	azcorelog "github.com/Azure/azure-sdk-for-go/sdk/azcore/log"
@@ -27,14 +24,15 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/installer"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/oneauth"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/blang/semver/v4"
+	"github.com/azure/azure-dev/cli/azd/pkg/update"
 	"github.com/mattn/go-colorable"
 	"github.com/spf13/pflag"
 )
@@ -64,7 +62,59 @@ func main() {
 		ctx = tracing.ContextFromEnv(ctx)
 	}
 
-	latest := make(chan semver.Version)
+	// Auto-update: check for applied update marker and display banner
+	if !internal.IsDevVersion() {
+		if fromVersion, err := update.ReadAppliedMarker(); err == nil && fromVersion != "" {
+			update.RemoveAppliedMarker()
+			fmt.Fprintln(
+				os.Stderr,
+				output.WithSuccessFormat(
+					"azd has been auto-updated from %s to %s", fromVersion, internal.Version))
+		}
+	}
+
+	// Auto-update: apply staged binary if one exists (before anything else)
+	showedElevationWarning := false
+	if !internal.IsDevVersion() && update.HasStagedUpdate() {
+		applyConfigMgr := config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager()))
+		applyCfg, cfgErr := applyConfigMgr.Load()
+		if cfgErr != nil {
+			applyCfg = config.NewEmptyConfig()
+		}
+
+		applyFeatures := alpha.NewFeaturesManagerWithConfig(applyCfg)
+		updateCfg := update.LoadUpdateConfig(applyCfg)
+
+		if applyFeatures.IsEnabled(update.FeatureUpdate) && updateCfg.AutoUpdate {
+			appliedPath, err := update.ApplyStagedUpdate()
+			if errors.Is(err, update.ErrNeedsElevation) {
+				versionStr := "a new version"
+				if cache, cacheErr := update.LoadCache(); cacheErr == nil && cache != nil && cache.Version != "" {
+					versionStr = "version " + cache.Version
+				}
+				fmt.Fprintln(
+					os.Stderr,
+					output.WithWarningFormat(
+						"WARNING: azd %s has been downloaded. "+
+							"Run 'azd update' to apply it.", versionStr))
+				showedElevationWarning = true
+			} else if err != nil {
+				log.Printf("failed to apply staged update: %v", err)
+			} else if appliedPath != "" {
+				log.Printf("applied staged update, re-executing: %s", appliedPath)
+				update.WriteAppliedMarker(internal.Version)
+				if err := reExec(appliedPath); err != nil {
+					log.Printf("re-exec failed: %v, continuing with current binary", err)
+				}
+				// reExec replaces the process; if we get here it failed
+			}
+		} else {
+			// Feature or auto-update was disabled after staging — clean up
+			update.CleanStagedUpdate()
+		}
+	}
+
+	latest := make(chan *update.VersionInfo)
 	go fetchLatestVersion(latest)
 
 	rootContainer := ioc.NewNestedContainer(nil)
@@ -86,7 +136,7 @@ func main() {
 		}
 	}
 
-	latestVersion, ok := <-latest
+	versionInfo, ok := <-latest
 
 	// If we were able to fetch a latest version, check to see if we are up to date and
 	// print a warning if we are not. Note that we don't print this warning when the CLI version
@@ -95,65 +145,41 @@ func main() {
 	//
 	// Don't write this message when JSON output is enabled, since in that case we use stderr to return structured
 	// information about command progress.
-	if !isJsonOutput() && ok {
+	if !isJsonOutput() && ok && !suppressUpdateBanner() && !showedElevationWarning {
 		if internal.IsDevVersion() {
-			// This is a dev build (i.e. built using `go install without setting a version`) - don't print a warning in this
-			// case
 			log.Printf("eliding update message for dev build")
-		} else if latestVersion.GT(internal.VersionInfo().Version) {
-			var upgradeText string
-
-			installedBy := installer.InstalledBy()
-			if runtime.GOOS == "windows" {
-				switch installedBy {
-				case installer.InstallTypePs:
-					//nolint:lll
-					upgradeText = "run:\npowershell -ex AllSigned -c \"Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression\"\n\nIf the install script was run with custom parameters, ensure that the same parameters are used for the upgrade. For advanced install instructions, see: https://aka.ms/azd/upgrade/windows"
-				case installer.InstallTypeWinget:
-					upgradeText = "run:\nwinget upgrade Microsoft.Azd"
-				case installer.InstallTypeChoco:
-					upgradeText = "run:\nchoco upgrade azd"
-				default:
-					// Also covers "msi" case where the user installed directly
-					// via MSI
-					upgradeText = "visit https://aka.ms/azd/upgrade/windows"
-				}
-			} else if runtime.GOOS == "linux" {
-				switch installedBy {
-				case installer.InstallTypeSh:
-					//nolint:lll
-					upgradeText = "run:\ncurl -fsSL https://aka.ms/install-azd.sh | bash\n\nIf the install script was run with custom parameters, ensure that the same parameters are used for the upgrade. For advanced install instructions, see: https://aka.ms/azd/upgrade/linux"
-				default:
-					// Also covers "deb" and "rpm" cases which are currently
-					// documented. When package manager distribution support is
-					// added, this will need to be updated.
-					upgradeText = "visit https://aka.ms/azd/upgrade/linux"
-				}
-			} else if runtime.GOOS == "darwin" {
-				switch installedBy {
-				case installer.InstallTypeBrew:
-					upgradeText = "run:\nbrew update && brew upgrade azd"
-				case installer.InstallTypeSh:
-					//nolint:lll
-					upgradeText = "run:\ncurl -fsSL https://aka.ms/install-azd.sh | bash\n\nIf the install script was run with custom parameters, ensure that the same parameters are used for the upgrade. For advanced install instructions, see: https://aka.ms/azd/upgrade/mac"
-				default:
-					upgradeText = "visit https://aka.ms/azd/upgrade/mac"
-				}
-			} else {
-				// Platform is not recognized, use the generic install link
-				upgradeText = "visit https://aka.ms/azd/upgrade"
+		} else if versionInfo.HasUpdate {
+			currentVersionStr := internal.VersionInfo().Version.String()
+			latestVersionStr := versionInfo.Version
+			if versionInfo.BuildNumber > 0 {
+				latestVersionStr = fmt.Sprintf("%s (build %d)", versionInfo.Version, versionInfo.BuildNumber)
 			}
 
 			fmt.Fprintln(
 				os.Stderr,
 				output.WithWarningFormat(
-					"WARNING: your version of azd is out of date, you have %s and the latest version is %s",
-					internal.VersionInfo().Version.String(), latestVersion.String()))
+					"WARNING: your version of azd is out of date, you have %s and the latest %s version is %s",
+					currentVersionStr, versionInfo.Channel, latestVersionStr))
 			fmt.Fprintln(os.Stderr)
-			fmt.Fprintln(
-				os.Stderr,
-				output.WithWarningFormat(`To update to the latest version, %s`,
-					upgradeText))
+
+			// Show "azd update" hint only if the update feature is enabled,
+			// otherwise show the original platform-specific upgrade instructions.
+			configMgr := config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager()))
+			userCfg, cfgErr := configMgr.Load()
+			if cfgErr != nil {
+				userCfg = config.NewEmptyConfig()
+			}
+			featureManager := alpha.NewFeaturesManagerWithConfig(userCfg)
+			if featureManager.IsEnabled(update.FeatureUpdate) {
+				fmt.Fprintln(
+					os.Stderr,
+					output.WithWarningFormat("To update to the latest version, run: azd update"))
+			} else {
+				upgradeText := platformUpgradeText()
+				fmt.Fprintln(
+					os.Stderr,
+					output.WithWarningFormat("To update to the latest version, %s", upgradeText))
+			}
 		}
 	}
 
@@ -176,15 +202,11 @@ func main() {
 	}
 }
 
-// updateCheckCacheFileName is the name of the file created in the azd configuration directory
-// which is used to cache version information for our up to date check.
-const updateCheckCacheFileName = "update-check.json"
-
-// fetchLatestVersion fetches the latest version of the CLI and sends the result
-// across the version channel, which it then closes. If the latest version can not
-// be determined, the channel is closed without writing a value.
-func fetchLatestVersion(version chan<- semver.Version) {
-	defer close(version)
+// fetchLatestVersion checks for a newer version of the CLI using the user's
+// configured channel and sends the result across the channel, which it then closes.
+// If the latest version can not be determined, the channel is closed without writing a value.
+func fetchLatestVersion(result chan<- *update.VersionInfo) {
+	defer close(result)
 
 	// Allow the user to skip the update check if they wish, by setting AZD_SKIP_UPDATE_CHECK to
 	// a truthy value.
@@ -198,129 +220,36 @@ func fetchLatestVersion(version chan<- semver.Version) {
 		}
 	}
 
-	// To avoid fetching the latest version of the CLI on every invocation, we cache the result for a period
-	// of time, in the user's home directory.
-	configDir, err := config.GetUserConfigDir()
+	// Load user config to determine channel
+	configMgr := config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager()))
+	userConfig, err := configMgr.Load()
 	if err != nil {
-		log.Printf("could not determine config directory: %v, skipping update check", err)
+		userConfig = config.NewEmptyConfig()
+	}
+
+	cfg := update.LoadUpdateConfig(userConfig)
+
+	mgr := update.NewManager(nil)
+	versionInfo, err := mgr.CheckForUpdate(context.Background(), cfg, false)
+	if err != nil {
+		log.Printf("failed to check for updates: %v, skipping update check", err)
 		return
 	}
 
-	cacheFilePath := filepath.Join(configDir, updateCheckCacheFileName)
-	cacheFile, err := os.ReadFile(cacheFilePath)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		log.Printf("error reading update cache file: %v, skipping update check", err)
-		return
-	}
-
-	// If we were able to read the update file, try to interpret it and use the cached
-	// value if it is still valid. Note the `err == nil` guard here ensures we don't run
-	// this logic when the cache file did not exist (since err will be a form of fs.ErrNotExist)
-	var cachedLatestVersion *semver.Version
-	if err == nil {
-		var cache updateCacheFile
-		if err := json.Unmarshal(cacheFile, &cache); err == nil {
-			parsedVersion, parseVersionErr := semver.Parse(cache.Version)
-			parsedExpiresOn, parseExpiresOnErr := time.Parse(time.RFC3339, cache.ExpiresOn)
-
-			if parseVersionErr == nil && parseExpiresOnErr == nil {
-				if time.Now().UTC().Before(parsedExpiresOn) {
-					log.Printf("using cached latest version: %s (expires on: %s)", cache.Version, cache.ExpiresOn)
-					cachedLatestVersion = &parsedVersion
-				} else {
-					log.Printf("ignoring cached latest version, it is out of date")
-				}
-			} else {
-				if parseVersionErr != nil {
-					log.Printf("failed to parse cached version '%s' as a semver: %v,"+
-						" ignoring cached value", cache.Version, parseVersionErr)
-				}
-				if parseExpiresOnErr != nil {
-					log.Printf(
-						"failed to parse cached version expiration time '%s' as a RFC3339"+
-							" timestamp: %v, ignoring cached value",
-						cache.ExpiresOn,
-						parseExpiresOnErr)
-				}
-			}
-		} else {
-			log.Printf("could not unmarshal cache file: %v, ignoring cache", err)
-		}
-	}
-
-	// If we don't have a cached version we can use, fetch one (and cache it)
-	if cachedLatestVersion == nil {
-		log.Print("fetching latest version information for update check")
-		req, err := http.NewRequest(http.MethodGet, "https://aka.ms/azure-dev/versions/cli/latest", nil)
-		if err != nil {
-			log.Printf("failed to create request object: %v, skipping update check", err)
-		}
-
-		req.Header.Set("User-Agent", internal.UserAgent())
-
-		res, err := http.DefaultClient.Do(req)
-		if err != nil {
-			log.Printf("failed to fetch latest version: %v, skipping update check", err)
-			return
-		}
-		body, err := readToEndAndClose(res.Body)
-		if err != nil {
-			log.Printf("failed to read response body: %v, skipping update check", err)
-			return
-		}
-
-		if res.StatusCode != http.StatusOK {
-			log.Printf(
-				"failed to refresh latest version, http status: %v, body: %v, skipping update check",
-				res.StatusCode,
-				body,
-			)
-			return
-		}
-
-		// Parse the body of the response as a semver, and if it's valid, cache it.
-		fetchedVersionText := strings.TrimSpace(body)
-		fetchedVersion, err := semver.Parse(fetchedVersionText)
-		if err != nil {
-			log.Printf("failed to parse latest version '%s' as a semver: %v, skipping update check", fetchedVersionText, err)
-			return
-		}
-
-		cachedLatestVersion = &fetchedVersion
-
-		// Write the value back to the cache. Note that on these logging paths for errors we do not return
-		// eagerly, since we have not yet sent the latest versions across the channel (and we don't want to do that until
-		// we've updated the cache since reader on the other end of the channel will exit the process after it receives this
-		// value and finishes
-		// the up to date check, possibly while this go-routine is still running)
-		if err := os.MkdirAll(filepath.Dir(cacheFilePath), osutil.PermissionFile); err != nil {
-			log.Printf("failed to create cache folder '%s': %v", filepath.Dir(cacheFilePath), err)
-		} else {
-			cacheObject := updateCacheFile{
-				Version:   fetchedVersionText,
-				ExpiresOn: time.Now().UTC().Add(24 * time.Hour).Format(time.RFC3339),
-			}
-
-			// The marshal call can not fail, so we ignore the error.
-			cacheContents, _ := json.Marshal(cacheObject)
-
-			if err := os.WriteFile(cacheFilePath, cacheContents, osutil.PermissionDirectory); err != nil {
-				log.Printf("failed to write update cache file: %v", err)
-			} else {
-				log.Printf("updated cache file to version %s (expires on: %s)", cacheObject.Version, cacheObject.ExpiresOn)
+	// Auto-update: if enabled and an update is available, stage the new binary in the background.
+	// Skip in CI environments and package manager installs.
+	if cfg.AutoUpdate && versionInfo.HasUpdate && !update.IsPackageManagerInstall() &&
+		!resource.IsRunningOnCI() {
+		featureManager := alpha.NewFeaturesManagerWithConfig(userConfig)
+		if featureManager.IsEnabled(update.FeatureUpdate) {
+			log.Printf("auto-update: staging update to %s", versionInfo.Version)
+			if stageErr := mgr.StageUpdate(context.Background(), cfg); stageErr != nil {
+				log.Printf("auto-update: staging failed: %v", stageErr)
 			}
 		}
 	}
 
-	// Publish our value, the defer above will close the channel.
-	version <- *cachedLatestVersion
-}
-
-type updateCacheFile struct {
-	// The semver of the  latest version the CLI
-	Version string `json:"version"`
-	// A time at which this cached value expires, stored as an RFC3339 timestamp
-	ExpiresOn string `json:"expiresOn"`
+	result <- versionInfo
 }
 
 // isDebugEnabled checks to see if `--debug` was passed with a truthy
@@ -346,6 +275,15 @@ func isDebugEnabled() bool {
 }
 
 // isJsonOutput checks to see if `--output` was passed with the value `json`
+// suppressUpdateBanner returns true for commands where the "out of date" banner
+// adds no value: azd update (stale version in-process), azd config (managing settings).
+func suppressUpdateBanner() bool {
+	if len(os.Args) < 2 {
+		return false
+	}
+	return os.Args[1] == "update" || os.Args[1] == "config"
+}
+
 func isJsonOutput() bool {
 	output := ""
 	flags := pflag.NewFlagSet("", pflag.ContinueOnError)
@@ -365,13 +303,6 @@ func isJsonOutput() bool {
 	_ = flags.Parse(os.Args[1:])
 
 	return output == "json"
-}
-
-func readToEndAndClose(r io.ReadCloser) (string, error) {
-	defer r.Close()
-	var buf strings.Builder
-	_, err := io.Copy(&buf, r)
-	return buf.String(), err
 }
 
 // setupLogging configures log output based on AZD_DEBUG_LOG environment variable
@@ -435,6 +366,73 @@ func createDailyLogFile() (*os.File, error) {
 	}
 
 	return logFile, nil
+}
+
+// platformUpgradeText returns the original platform-specific upgrade instructions.
+func platformUpgradeText() string {
+	installedBy := installer.InstalledBy()
+
+	if runtime.GOOS == "windows" {
+		switch installedBy {
+		case installer.InstallTypePs:
+			//nolint:lll
+			return "run:\npowershell -ex AllSigned -c \"Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression\"\n\nIf the install script was run with custom parameters, ensure that the same parameters are used for the upgrade. For advanced install instructions, see: https://aka.ms/azd/upgrade/windows"
+		case installer.InstallTypeWinget:
+			return "run:\nwinget upgrade Microsoft.Azd"
+		case installer.InstallTypeChoco:
+			return "run:\nchoco upgrade azd"
+		default:
+			return "visit https://aka.ms/azd/upgrade/windows"
+		}
+	} else if runtime.GOOS == "linux" {
+		switch installedBy {
+		case installer.InstallTypeSh:
+			//nolint:lll
+			return "run:\ncurl -fsSL https://aka.ms/install-azd.sh | bash\n\nIf the install script was run with custom parameters, ensure that the same parameters are used for the upgrade. For advanced install instructions, see: https://aka.ms/azd/upgrade/linux"
+		default:
+			return "visit https://aka.ms/azd/upgrade/linux"
+		}
+	} else if runtime.GOOS == "darwin" {
+		switch installedBy {
+		case installer.InstallTypeBrew:
+			return "run:\nbrew update && brew upgrade azd"
+		case installer.InstallTypeSh:
+			//nolint:lll
+			return "run:\ncurl -fsSL https://aka.ms/install-azd.sh | bash\n\nIf the install script was run with custom parameters, ensure that the same parameters are used for the upgrade. For advanced install instructions, see: https://aka.ms/azd/upgrade/mac"
+		default:
+			return "visit https://aka.ms/azd/upgrade/mac"
+		}
+	}
+
+	return "visit https://aka.ms/azd/upgrade"
+}
+
+// reExec replaces the current process with the binary at the given path,
+// passing the same arguments. On Unix, this uses syscall.Exec to replace
+// the process in-place. On Windows, it spawns a new process and exits.
+func reExec(binaryPath string) error {
+	args := os.Args
+	args[0] = binaryPath
+
+	if runtime.GOOS == "windows" {
+		// Windows doesn't support exec-style process replacement.
+		// Spawn the new binary and exit.
+		// #nosec G204 -- binaryPath is the staged azd binary we just verified
+		cmd := exec.Command(binaryPath, args[1:]...) //nolint:gosec
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			var exitErr *exec.ExitError
+			if errors.As(err, &exitErr) {
+				os.Exit(exitErr.ExitCode())
+			}
+			return err
+		}
+		os.Exit(0)
+	}
+
+	return syscall.Exec(binaryPath, args, os.Environ()) //nolint:gosec
 }
 
 func startBackgroundUploadProcess() error {

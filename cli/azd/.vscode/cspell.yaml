@@ -1,6 +1,7 @@
 import: ../../../.vscode/cspell.global.yaml
 words:
   - agentdetect
+  - Authenticode
   - azcloud
   - azdext
   - azurefd
@@ -13,6 +14,7 @@ words:
   - cmds
   - Codespace
   - Codespaces
+  - codesign
   - cooldown
   - customtype
   - devcontainers
@@ -27,6 +29,7 @@ words:
   - OPENCODE
   - opencode
   - grpcbroker
+  - msiexec
   - nosec
   - oneof
   - idxs

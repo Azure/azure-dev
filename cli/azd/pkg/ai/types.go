@@ -3,6 +3,14 @@
 
 package ai
 
+import "strings"
+
+// IsFinetuneUsageName reports whether the given usage name represents a fine-tune SKU.
+// Fine-tune usage names end with "-finetune" (case-insensitive).
+func IsFinetuneUsageName(usageName string) bool {
+	return strings.HasSuffix(strings.ToLower(usageName), "-finetune")
+}
+
 // AiModel represents an AI model available in the Azure Cognitive Services catalog.
 // It is SDK-agnostic and decoupled from armcognitiveservices types.
 type AiModel struct {
@@ -138,4 +146,7 @@ type DeploymentOptions struct {
 	// Capacity is the preferred deployment capacity. If set and valid
 	// (within min/max, aligned to step), used directly. If nil, uses SKU default.
 	Capacity *int32
+	// IncludeFinetuneSkus controls whether fine-tune SKUs (usage names ending with
+	// "-finetune") are included. Defaults to false (excluded).
+	IncludeFinetuneSkus bool
 }

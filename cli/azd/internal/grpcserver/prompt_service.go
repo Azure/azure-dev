@@ -1198,7 +1198,7 @@ func buildSkuCandidatesForVersion(
 			continue
 		}
 
-		if !includeFinetuneSkus && isFinetuneUsageName(sku.UsageName) {
+		if !includeFinetuneSkus && ai.IsFinetuneUsageName(sku.UsageName) {
 			continue
 		}
 
@@ -1247,10 +1247,6 @@ func maxSkuCandidateRemaining(skuCandidates []skuCandidate) (float64, bool) {
 	}
 
 	return maxRemaining, found
-}
-
-func isFinetuneUsageName(usageName string) bool {
-	return strings.HasSuffix(strings.ToLower(usageName), "-finetune")
 }
 
 func validateDeploymentCapacity(value string, sku ai.AiModelSku) (int32, error) {

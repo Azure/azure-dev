@@ -457,6 +457,10 @@ func (s *AiModelService) resolveDeployments(
 				continue
 			}
 
+			if !options.IncludeFinetuneSkus && IsFinetuneUsageName(sku.UsageName) {
+				continue
+			}
+
 			capacity := ResolveCapacity(sku, options.Capacity)
 
 			// Quota check

@@ -35,7 +35,7 @@
 ### Other Changes
 
 - [[#6768]](https://github.com/Azure/azure-dev/pull/6768) Normalize user-facing CLI output to consistent lowercase `azd` branding.
-- [[#6835]](https://github.com/Azure/azure-dev/pull/6835) Add `azdext.Run` lifecycle entry point and structured error transport for extensions, enabling rich error rendering with suggestions in the host CLI.
+- [[#6835]](https://github.com/Azure/azure-dev/pull/6835) Improve extension error telemetry and support rich error rendering with suggestions.
 - [[#6845]](https://github.com/Azure/azure-dev/pull/6845) Add Container App-specific error guidance for secret, image pull, and template parameter failures. Thanks @spboyer for the contribution!
 - [[#6846]](https://github.com/Azure/azure-dev/pull/6846) Add RBAC and authorization error guidance for permission, policy, and role assignment failures. Thanks @spboyer for the contribution!
 - [[#6888]](https://github.com/Azure/azure-dev/pull/6888) Improve Container Apps deployment performance by reducing ARM API round-trips, saving up to 3 calls per deployment. Thanks @spboyer for the contribution!

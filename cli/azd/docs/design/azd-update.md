@@ -13,7 +13,7 @@ Today, when a new version of `azd` is available, users see a warning message wit
 2. **Auto-update** — opt-in background updates applied at next startup
 3. **Channel management** — ability to switch between `stable` and `daily` builds
 
-The feature will ship as a hidden command initially for internal testing before being advertised publicly.
+The feature ships as a hidden command behind an alpha feature toggle (`alpha.update`) for safe rollout. When the toggle is off, there are zero changes to existing behavior — `azd version`, update notifications, everything stays exactly as it is today.
 
 ---
 
@@ -24,6 +24,7 @@ The feature will ship as a hidden command initially for internal testing before 
 - Preserve user control (opt-out, channel selection, check interval)
 - Avoid disruption to CI/CD pipelines
 - Respect platform install methods (Homebrew, winget, choco, scripts)
+- Ship safely behind a feature flag with zero impact when off
 
 ---
 
@@ -64,14 +65,14 @@ azd already tracks how it was installed via `.installed-by.txt` placed alongside
 ```json
 {
   "channel": "daily",
-  "version": "1.24.0-beta.1",
-  "buildNumber": 98770,
-  "expiresOn": "2026-02-26T08:00:00Z"
+  "version": "1.24.0-beta.1-daily.5935787",
+  "buildNumber": 5935787,
+  "expiresOn": "2026-02-27T08:00:00Z"
 }
 ```
 
 - `channel`: `"stable"` or `"daily"`. Missing field defaults to `"stable"` (backward compatible with existing cache files).
-- `buildNumber`: Only used for daily builds (semver alone can't distinguish dailies). Missing field triggers a fresh check for daily users.
+- `buildNumber`: Extracted from the daily version string's `daily.N` suffix. Used to compare daily builds since they share a base semver.
 - `expiresOn`: Channel-dependent TTL — defaults to 24h for stable, 4h for daily. Configurable via `azd config set updates.checkIntervalHours <hours>`.
 
 ### Build Artifacts
@@ -85,9 +86,9 @@ azd already tracks how it was installed via `.installed-by.txt` placed alongside
 | State | Version Format | Example |
 |-------|---------------|---------|
 | Stable release | `X.Y.Z` | `1.23.6` |
-| Development (daily) | `X.Y.Z-beta.1` | `1.24.0-beta.1` |
+| Daily build | `X.Y.Z-beta.1-daily.{BuildId}` | `1.24.0-beta.1-daily.5935787` |
 
-After each stable release, `cli/version.txt` is immediately bumped to the next beta. Daily builds all carry this beta version until the next release.
+After each stable release, `cli/version.txt` is immediately bumped to the next beta (e.g. `1.24.0-beta.1`). The CI pipeline appends `-daily.{BuildId}` for daily builds, where `BuildId` is the Azure DevOps `$(Build.BuildId)` — a monotonically increasing integer that lets us tell daily builds apart even though they share the same base semver.
 
 ### Reusable Existing Patterns
 
@@ -125,18 +126,29 @@ These follow the existing convention of `"on"/"off"` for boolean-like config val
 
 ### 2. Daily Build Version Tracking
 
-**Problem**: Daily builds all share the same semver (e.g., `1.24.0-beta.1`), so version comparison alone can't determine if a newer daily exists.
+**Problem**: Daily builds share a base semver (e.g., `1.24.0-beta.1`), so version comparison alone can't tell if a newer daily exists.
 
-**Solution**: Upload a `version.txt` to `release/daily/` containing the Azure DevOps `$(Build.BuildId)` (monotonically increasing integer):
+**Solution**: The CI pipeline publishes a `version.txt` to `release/daily/` containing the full daily version string:
 
 ```
-1.24.0-beta.1
-98770
+1.24.0-beta.1-daily.5935787
 ```
 
-**Pipeline change**: Add a step in the daily publish pipeline to write and upload this file alongside the binaries. Same overwrite behavior — zero storage impact.
+This is the same version string baked into the binary at build time. The build number (`5935787`) is the Azure DevOps `$(Build.BuildId)` — monotonically increasing, so a higher number always means a newer build.
 
-**Client comparison**: Cache the build number locally (extend existing `~/.azd/update-check.json`). Compare local build number against remote — higher number means update available.
+**Pipeline change**: Add a step in the daily publish pipeline (`Publish_Continuous_Deployment`) to write `$(CLI_VERSION)` to `version.txt` and upload alongside the binaries.
+
+**Client comparison**: Parse the build number from the `daily.N` suffix. Compare local build number (from the running binary's version string) against remote — higher number means update available.
+
+**Cache format** (`~/.azd/update-check.json`):
+```json
+{
+  "channel": "daily",
+  "version": "1.24.0-beta.1-daily.5935787",
+  "buildNumber": 5935787,
+  "expiresOn": "2026-02-27T08:00:00Z"
+}
+```
 
 ### 3. `azd update` Command
 
@@ -177,24 +189,32 @@ All flags persist their values to config, which can also be set directly via `az
 
 #### Direct Binary Update Flow (Script/MSI Users)
 
-Follows the same download-verify-install pattern as the extension manager (`pkg/extensions/manager.go`):
-
 ```
 1. Check current channel config (stable or daily)
 2. Fetch remote version info (always fresh — ignores cache for manual update)
    - Stable: GET https://aka.ms/azure-dev/versions/cli/latest
-   - Daily: GET release/daily/version.txt (semver + build number)
-3. Compare with local version (using existing blang/semver library)
-   - Stable: semver comparison
-   - Daily: build number comparison
+   - Daily: GET release/daily/version.txt (full version string, e.g. 1.24.0-beta.1-daily.5935787)
+3. Compare with local version
+   - Stable: semver comparison (blang/semver)
+   - Daily: build number comparison (extracted from the daily.N suffix)
 4. If no update available → "You're up to date"
-5. Download new binary to ~/.azd/staging/azd-new (with progress bar via pkg/input/progress_log.go)
-6. Verify integrity (reuse pkg/extensions/manager.go validateChecksum())
-7. Replace binary at install location
-   - If install location is user-writable → direct move
-   - If install location needs elevation → `sudo mv` (user sees OS password prompt)
-8. Done — new version takes effect on next invocation
+5. Download new binary to temp dir (with progress bar)
+6. Verify SHA256 checksum (downloaded from {binaryURL}.sha256)
+7. Verify code signature (macOS: codesign, Windows: Get-AuthenticodeSignature)
+8. Replace binary at install location
+   - If install location is user-writable → direct copy
+   - If install location needs elevation → sudo cp (user sees OS password prompt)
+9. Done — new version takes effect on next invocation
 ```
+
+#### Code Signing Verification
+
+Before installing, the downloaded binary's code signature is verified:
+- **macOS**: `codesign -v --strict <binary>` — checks Apple notarization
+- **Windows**: `Get-AuthenticodeSignature` via PowerShell — checks Authenticode signature
+- **Linux**: Skipped (no standard code signing mechanism)
+
+The check is fail-safe: if `codesign` or PowerShell isn't available (unlikely), the update proceeds. But if the tool runs and the signature is explicitly invalid, the update is blocked.
 
 #### Elevation Handling
 
@@ -228,25 +248,32 @@ When `updates.autoUpdate` is set to `on`:
 
 The check is a cheap HTTP GET; downloads only happen when a newer version exists.
 
-**Flow (download + swap on next startup)**:
+**Flow (two-phase: stage in background, apply on next startup)**:
 
 ```
-Startup (every azd invocation):
+Phase 1 — Stage (background goroutine during any azd invocation):
 1. Check AZD_SKIP_UPDATE_CHECK / CI env vars → skip if set
-2. Check non-interactive terminal → skip if detected
-3. Background goroutine: check version (respecting channel-dependent cache TTL)
-4. If newer version available → download to ~/.azd/staging/
-5. On NEXT startup: detect staged binary → swap → continue execution
-6. Display banner: "azd has been updated to version X.Y.Z"
+2. Check version (respecting channel-dependent cache TTL)
+3. If newer version available → download to ~/.azd/staging/azd
+4. Verify checksum + code signature on the staged binary
+
+Phase 2 — Apply (on NEXT startup, before command execution):
+1. Detect staged binary at ~/.azd/staging/azd
+2. Try to copy over current binary
+   - If writable (user home, homebrew prefix) → swap, re-exec, show success banner
+   - If permission denied (system dir like /opt/microsoft/azd/) → skip, show warning
+3. On success: write marker file, re-exec with same args, display banner
+4. On permission denied: show "WARNING: New update downloaded. Run 'azd update' to apply."
 ```
 
-This approach is used universally across platforms for consistency (avoids the Windows binary-locking issue).
+The re-exec approach (`syscall.Exec` on Unix, spawn-and-exit on Windows) means the user's command runs seamlessly on the new binary — they just see a one-line success banner before their normal output.
 
-**CI/Non-Interactive Detection**: Auto-update is disabled when running in CI/CD or non-interactive environments. Use the existing `resource.IsRunningOnCI()` detection (supports GitHub Actions, Azure Pipelines, Jenkins, GitLab CI, CircleCI, and others) and `--no-prompt` flag. This is consistent with how azd already disables interactive prompts in these environments.
+**Elevation-aware behavior**: Auto-update doesn't prompt for passwords. If the install location requires elevation, it gracefully falls back to a warning and the staged binary stays around for `azd update` to apply (which has the sudo fallback with an interactive prompt).
+
+**CI/Non-Interactive Detection**: Auto-update staging is skipped when running in CI/CD. Uses `resource.IsRunningOnCI()` (supports GitHub Actions, Azure Pipelines, Jenkins, GitLab CI, CircleCI, etc.) and `AZD_SKIP_UPDATE_CHECK`.
 
 Skip auto-update when:
 - `resource.IsRunningOnCI()` returns true
-- `--no-prompt` flag is set
 - `AZD_SKIP_UPDATE_CHECK=true`
 
 ### 5. Channel Switching
@@ -260,9 +287,9 @@ azd update --channel daily
 # Persists channel config and updates from release/daily/ instead of release/stable/
 ```
 
-**Daily → Stable downgrade warning** (using existing `pkg/ux/confirm.go` → `NewConfirm()`):
+**Daily → Stable downgrade warning**:
 ```
-⚠ You're currently on daily build 1.24.0-beta.1 (build 98770).
+⚠ You're currently on version 1.24.0-beta.1-daily.5935787.
   Switching to stable will downgrade you to 1.23.6.
   Continue? [y/N]
 ```
@@ -282,23 +309,29 @@ This avoids the silent symlink overwrite problem that exists today with conflict
 
 ### 6. `azd version` Output
 
-Extend `azd version` to show channel and update info:
+When the update feature is enabled, `azd version` shows the channel:
 
 ```
 azd version 1.23.6 (stable)
 ```
 
 ```
-azd version 1.24.0-beta.1 (daily, build 98770)
+azd version 1.24.0-beta.1-daily.5935787 (daily, build 5935787)
 ```
+
+When the feature toggle is off, `azd version` output stays unchanged — no suffix, no channel info.
 
 ### 7. Telemetry
 
-Leverage existing azd telemetry infrastructure (OpenTelemetry) — new commands and flags are automatically tracked. Additionally track:
-- Update success/failure outcomes
-- Update method used (package manager vs direct binary download)
-- Channel distribution (stable vs daily)
-- Auto-update opt-in rate
+Uses the existing azd telemetry infrastructure (OpenTelemetry). New telemetry fields tracked on every update operation:
+
+| Field | Description |
+|-------|-------------|
+| `update.from_version` | Version before update |
+| `update.to_version` | Target version |
+| `update.channel` | `stable` or `daily` |
+| `update.method` | How the update was performed (e.g. `brew`, `direct`, `winget`) |
+| `update.result` | Result code (see below) |
 
 **Result/Error Codes**:
 
@@ -308,6 +341,7 @@ Leverage existing azd telemetry infrastructure (OpenTelemetry) — new commands 
 | `update.alreadyUpToDate` | No update available, already on latest |
 | `update.downloadFailed` | Failed to download binary from remote |
 | `update.checksumMismatch` | Downloaded binary failed integrity verification |
+| `update.codeSignatureInvalid` | Code signature verification failed |
 | `update.elevationRequired` | Update requires elevation and user declined |
 | `update.elevationFailed` | Elevation prompt (sudo/UAC) failed |
 | `update.replaceFailed` | Failed to replace binary at install location |
@@ -316,6 +350,17 @@ Leverage existing azd telemetry infrastructure (OpenTelemetry) — new commands 
 | `update.unsupportedInstallMethod` | Unknown or unsupported install method |
 | `update.channelSwitchDowngrade` | User declined downgrade when switching channels |
 | `update.skippedCI` | Skipped due to CI/non-interactive environment |
+
+These codes are integrated into azd's `MapError` pipeline, so update failures show up properly in telemetry dashboards alongside other command errors.
+
+### 8. Feature Toggle (Alpha Gate)
+
+The entire update feature ships behind `alpha.update` (default: off). This means:
+
+- **Toggle off** (default): Zero behavior changes. `azd version` output is the same. Update notification shows the existing platform-specific install instructions. `azd update` returns an error telling the user to enable the feature.
+- **Toggle on** (`azd config set alpha.update on`): All update features are active — `azd update` works, auto-update stages/applies, `azd version` shows the channel suffix, notifications say "run `azd update`."
+
+This lets us roll out to internal users first, gather feedback, and fix issues before broader availability. Once stable, the toggle can be removed and the feature enabled by default.
 
 ---
 

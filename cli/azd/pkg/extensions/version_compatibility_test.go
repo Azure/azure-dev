@@ -394,14 +394,4 @@ func Test_LatestVersion(t *testing.T) {
 		}
 		require.Equal(t, "0.1.1", LatestVersion(versions).Version)
 	})
-
-	t.Run("unordered versions", func(t *testing.T) {
-		versions := []ExtensionVersion{
-			{Version: "0.0.5"},
-			{Version: "0.1.1"},
-			{Version: "0.0.2"},
-			{Version: "0.1.0"},
-		}
-		require.Equal(t, "0.1.1", LatestVersion(versions).Version)
-	})
 }

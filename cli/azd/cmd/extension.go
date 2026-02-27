@@ -223,8 +223,7 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 		}
 
 		// Always show the true latest version
-		latestVersionExt, _ := extensions.LatestVersion(extension.Versions) // error is nil when no constraint is given
-		latestVersion := latestVersionExt.Version
+		latestVersion := extensions.LatestVersion(extension.Versions).Version
 
 		var installedVersion string
 		var updateAvailable bool
@@ -537,7 +536,7 @@ func (a *extensionShowAction) Run(ctx context.Context) (*actions.ActionResult, e
 		return nil, err
 	}
 
-	latestVersion, _ := extensions.LatestVersion(registryExtension.Versions) // error is nil when no constraint is given
+	latestVersion := extensions.LatestVersion(registryExtension.Versions)
 
 	var otherVersions []string
 	for _, version := range registryExtension.Versions {
@@ -707,8 +706,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 		// Determine target version
 		targetVersion := a.flags.version
 		if targetVersion == "" || targetVersion == "latest" {
-			latestExt, _ := extensions.LatestVersion(compatibleExtension.Versions) // error is nil when no constraint is given
-			targetVersion = latestExt.Version
+			targetVersion = extensions.LatestVersion(compatibleExtension.Versions).Version
 		}
 
 		var extensionVersion *extensions.ExtensionVersion
@@ -1016,8 +1014,7 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 		if a.flags.version != "" && a.flags.version != "latest" {
 			targetVersionStr = a.flags.version
 		} else {
-			latestExt, _ := extensions.LatestVersion(compatibleExtension.Versions) // error is nil when no constraint is given
-			targetVersionStr = latestExt.Version
+			targetVersionStr = extensions.LatestVersion(compatibleExtension.Versions).Version
 		}
 
 		// Parse semantic versions for proper comparison

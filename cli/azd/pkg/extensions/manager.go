@@ -19,11 +19,13 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	azruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/Masterminds/semver/v3"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -329,16 +331,44 @@ func (m *Manager) Install(
 	var selectedVersion *ExtensionVersion
 
 	if versionPreference == "" || versionPreference == "latest" {
-		selectedVersion, _ = LatestVersion(extension.Versions) // error is nil when no constraint is given
+		selectedVersion = LatestVersion(extension.Versions)
 	} else {
 		// Find the best match for the version constraint
-		selectedVersion, err = LatestVersion(extension.Versions, versionPreference)
+		availableVersions := []*semver.Version{}
+		availableVersionMap := map[*semver.Version]*ExtensionVersion{}
+
+		for i, extensionVersion := range extension.Versions {
+			version, err := semver.NewVersion(extensionVersion.Version)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse version: %w", err)
+			}
+
+			availableVersionMap[version] = &extension.Versions[i]
+			availableVersions = append(availableVersions, version)
+		}
+
+		sort.Sort(semver.Collection(availableVersions))
+
+		constraint, err := semver.NewConstraint(versionPreference)
 		if err != nil {
+			return nil, fmt.Errorf("failed to parse version constraint: %w", err)
+		}
+
+		var bestMatch *semver.Version
+		for _, v := range availableVersions {
+			if constraint.Check(v) {
+				bestMatch = v
+			}
+		}
+
+		if bestMatch == nil {
 			return nil, fmt.Errorf(
 				"no matching version found for extension: %s and constraint: %s",
 				extension.Id, versionPreference,
 			)
 		}
+
+		selectedVersion = availableVersionMap[bestMatch]
 	}
 
 	if selectedVersion == nil {

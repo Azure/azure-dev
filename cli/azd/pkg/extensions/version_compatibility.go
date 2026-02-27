@@ -4,7 +4,6 @@
 package extensions
 
 import (
-	"fmt"
 	"log"
 
 	"github.com/Masterminds/semver/v3"
@@ -46,21 +45,11 @@ type VersionCompatibilityResult struct {
 }
 
 // LatestVersion returns the ExtensionVersion with the highest semantic version from the provided slice.
-// An optional constraintStr may be provided; when given, only versions satisfying the constraint are
-// considered. Returns (nil, nil) when the slice is empty.
-// Returns (nil, error) when the constraint string cannot be parsed or no version satisfies it.
-func LatestVersion(versions []ExtensionVersion, constraintStr ...string) (*ExtensionVersion, error) {
+// It compares all elements using semver so the result is correct regardless of slice ordering.
+// Returns nil if the slice is empty.
+func LatestVersion(versions []ExtensionVersion) *ExtensionVersion {
 	if len(versions) == 0 {
-		return nil, nil
-	}
-
-	var constraint *semver.Constraints
-	if len(constraintStr) > 0 && constraintStr[0] != "" {
-		var err error
-		constraint, err = semver.NewConstraint(constraintStr[0])
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse version constraint: %w", err)
-		}
+		return nil
 	}
 
 	var latest *ExtensionVersion
@@ -72,9 +61,6 @@ func LatestVersion(versions []ExtensionVersion, constraintStr ...string) (*Exten
 			log.Printf("Warning: failed to parse extension version '%s': %v", versions[i].Version, err)
 			continue
 		}
-		if constraint != nil && !constraint.Check(v) {
-			continue
-		}
 		if latestSemver == nil || v.GreaterThan(latestSemver) {
 			latest = &versions[i]
 			latestSemver = v
@@ -82,14 +68,11 @@ func LatestVersion(versions []ExtensionVersion, constraintStr ...string) (*Exten
 	}
 
 	if latest == nil {
-		if constraint != nil {
-			return nil, fmt.Errorf("no version satisfies constraint %q", constraintStr[0])
-		}
 		// All version strings failed to parse; fall back to the first element.
-		return &versions[0], nil
+		return &versions[0]
 	}
 
-	return latest, nil
+	return latest
 }
 
 // FilterCompatibleVersions filters extension versions based on compatibility with the current azd version.
@@ -106,8 +89,7 @@ func FilterCompatibleVersions(
 
 	// Find the latest overall version using semver comparison (order-independent).
 	// Store a copy so the result doesn't alias the caller's slice.
-	latestOverallPtr, _ := LatestVersion(versions) // error is nil when no constraint is given
-	latestOverall := *latestOverallPtr              // safe: len(versions) > 0 checked above
+	latestOverall := *LatestVersion(versions) // safe: len(versions) > 0 checked above
 	result.LatestOverall = &latestOverall
 
 	for i := range versions {
@@ -117,7 +99,7 @@ func FilterCompatibleVersions(
 	}
 
 	if len(result.Compatible) > 0 {
-		result.LatestCompatible, _ = LatestVersion(result.Compatible) // error is nil when no constraint is given
+		result.LatestCompatible = LatestVersion(result.Compatible)
 	}
 
 	// Check if there's a newer incompatible version

@@ -41,7 +41,7 @@ else {
     )
 }
 
-$APP_PATH = "$env:EXTENSION_ID/internal/cmd"
+$APP_PATH = "$env:EXTENSION_ID/internal/version"
 
 # Loop through platforms and build
 foreach ($PLATFORM in $PLATFORMS) {

@@ -30,9 +30,10 @@ const (
 	// Azure cognitive services endpoint URL pattern
 	DefaultCognitiveServicesEndpoint = "https://%s.services.ai.azure.com/api/projects/%s"
 	DefaultAzureFinetuningScope      = "https://ai.azure.com/.default"
-	// User agent string for all HTTP calls
-	UserAgent = "saanika-testing"
 )
+
+// UserAgent is the user agent string included in all HTTP calls
+var UserAgent = fmt.Sprintf("azd-ext-azure-ai-finetune/%s", version.Version)
 
 func GetOpenAIClientFromAzdClient(ctx context.Context, azdClient *azdext.AzdClient) (*openai.Client, error) {
 	envValueMap, err := utils.GetEnvironmentValues(ctx, azdClient)

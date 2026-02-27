@@ -60,7 +60,9 @@ async function run(): Promise<void> {
     const inputs = getInputs();
 
     const sourceOctokit = new Octokit({ auth: inputs.githubToken });
-    const docsOctokit = new Octokit({ auth: inputs.docsRepoToken });
+    const docsOctokit = inputs.docsRepoToken
+      ? new Octokit({ auth: inputs.docsRepoToken })
+      : null;
 
     const prNumbers = await resolvePrNumbers(
       inputs.mode, inputs.prNumber, inputs.prList, inputs.sourceRepo, sourceOctokit,

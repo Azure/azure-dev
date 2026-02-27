@@ -5,8 +5,9 @@ inputs:
     description: "GitHub token for in-repo operations"
     required: true
   docs-repo-token:
-    description: "PAT for cross-repo operations in MicrosoftDocs/azure-dev-docs-pr"
-    required: true
+    description: "PAT for cross-repo operations in MicrosoftDocs/azure-dev-docs-pr. When not provided, cross-repo operations are skipped."
+    required: false
+    default: ""
   mode:
     description: "Run mode: auto (from PR event), single, all_open, or list"
     required: false

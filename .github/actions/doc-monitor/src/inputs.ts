@@ -30,9 +30,17 @@ export function getInputs(): ActionInputs {
   parseRepoFullName(sourceRepo);
   parseRepoFullName(docsRepo);
 
+  const docsRepoToken = core.getInput("docs-repo-token");
+  if (!docsRepoToken) {
+    core.warning(
+      "docs-repo-token not provided — cross-repo operations (MicrosoftDocs/azure-dev-docs-pr) will be skipped. " +
+      "Set the DOCS_REPO_PAT secret to enable external doc PR creation.",
+    );
+  }
+
   return {
     githubToken: core.getInput("github-token", { required: true }),
-    docsRepoToken: core.getInput("docs-repo-token", { required: true }),
+    docsRepoToken,
     mode,
     prNumber,
     prList,

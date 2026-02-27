@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/azure"
 	"azureaiagent/internal/project"
@@ -53,7 +54,7 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 	var err error
 	a.projectConfig, err = a.ensureProject(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to ensure project: %w", err)
+		return err
 	}
 
 	a.azureContext = &azdext.AzureContext{
@@ -119,19 +120,34 @@ func (a *InitFromCodeAction) ensureProject(ctx context.Context) (*azdext.Project
 		fmt.Println("Let's get your project initialized.")
 
 		if err := a.scaffoldTemplate(ctx, a.azdClient, "Azure-Samples/azd-ai-starter-basic", "main"); err != nil {
-			return nil, fmt.Errorf("failed to scaffold template: %w", err)
+			if exterrors.IsCancellation(err) {
+				return nil, exterrors.Cancelled("project initialization was cancelled")
+			}
+			return nil, exterrors.Dependency(
+				exterrors.CodeScaffoldTemplateFailed,
+				fmt.Sprintf("failed to scaffold template: %s", err),
+				"",
+			)
 		}
 
 		projectResponse, err = a.azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 		if err != nil {
-			return nil, fmt.Errorf("failed to get project: %w", err)
+			return nil, exterrors.Dependency(
+				exterrors.CodeProjectNotFound,
+				fmt.Sprintf("failed to get project after initialization: %s", err),
+				"",
+			)
 		}
 
 		fmt.Println()
 	}
 
 	if projectResponse.Project == nil {
-		return nil, fmt.Errorf("project not found")
+		return nil, exterrors.Dependency(
+			exterrors.CodeProjectNotFound,
+			"project not found",
+			"",
+		)
 	}
 
 	return projectResponse.Project, nil
@@ -396,6 +412,9 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		},
 	})
 	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return nil, exterrors.Cancelled("agent name prompt was cancelled")
+		}
 		return nil, fmt.Errorf("failed to prompt for agent name: %w", err)
 	}
 	agentName := promptResp.Value
@@ -426,6 +445,9 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 			},
 		})
 		if err != nil {
+			if exterrors.IsCancellation(err) {
+				return nil, exterrors.Cancelled("model configuration choice was cancelled")
+			}
 			return nil, fmt.Errorf("failed to prompt for model configuration choice: %w", err)
 		}
 		modelConfigChoice = modelConfigChoices[*modelConfigResp.Value].Value
@@ -785,6 +807,9 @@ func (a *InitFromCodeAction) ensureSubscription(ctx context.Context) error {
 
 		subscriptionResponse, err := a.azdClient.Prompt().PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{})
 		if err != nil {
+			if exterrors.IsCancellation(err) {
+				return exterrors.Cancelled("subscription selection was cancelled")
+			}
 			return fmt.Errorf("failed to prompt for subscription: %w", err)
 		}
 
@@ -795,7 +820,11 @@ func (a *InitFromCodeAction) ensureSubscription(ctx context.Context) error {
 			SubscriptionId: a.azureContext.Scope.SubscriptionId,
 		})
 		if err != nil {
-			return fmt.Errorf("failed to lookup tenant: %w", err)
+			return exterrors.Auth(
+				exterrors.CodeTenantLookupFailed,
+				fmt.Sprintf("failed to lookup tenant for subscription %s: %s", a.azureContext.Scope.SubscriptionId, err),
+				"verify your Azure login with 'azd auth login'",
+			)
 		}
 		a.azureContext.Scope.TenantId = tenantResponse.TenantId
 	}
@@ -825,7 +854,11 @@ func (a *InitFromCodeAction) ensureSubscription(ctx context.Context) error {
 		AdditionallyAllowedTenants: []string{"*"},
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create azure credential: %w", err)
+		return exterrors.Auth(
+			exterrors.CodeCredentialCreationFailed,
+			fmt.Sprintf("failed to create Azure credential: %s", err),
+			"run 'azd auth login' to authenticate",
+		)
 	}
 	a.credential = credential
 
@@ -839,6 +872,9 @@ func (a *InitFromCodeAction) ensureLocation(ctx context.Context) error {
 		AzureContext: a.azureContext,
 	})
 	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return exterrors.Cancelled("location selection was cancelled")
+		}
 		return fmt.Errorf("failed to prompt for location: %w", err)
 	}
 
@@ -1483,11 +1519,15 @@ func (a *InitFromCodeAction) resolveModelDeploymentNoPrompt(
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve model deployment: %w", err)
+		return nil, exterrors.FromAzdHost(err, exterrors.CodeModelResolutionFailed)
 	}
 
 	if len(resolveResp.Deployments) == 0 {
-		return nil, fmt.Errorf("no deployment candidates found for model '%s' in location '%s'", model.Name, location)
+		return nil, exterrors.Dependency(
+			exterrors.CodeModelResolutionFailed,
+			fmt.Sprintf("no deployment candidates found for model '%s' in location '%s'", model.Name, location),
+			"",
+		)
 	}
 
 	orderedCandidates := slices.Clone(resolveResp.Deployments)

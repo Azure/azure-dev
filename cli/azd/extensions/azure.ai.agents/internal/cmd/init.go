@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/registry_api"
 	"azureaiagent/internal/pkg/azure"
@@ -92,9 +93,11 @@ func checkAiModelServiceAvailable(ctx context.Context, azdClient *azdext.AzdClie
 	}
 
 	if st, ok := status.FromError(err); ok && st.Code() == codes.Unimplemented {
-		return fmt.Errorf(
-			"this version of the azure.ai.agents extension is incompatible with your installed version of azd. " +
-				"Please upgrade azd to the latest version")
+		return exterrors.Compatibility(
+			exterrors.CodeIncompatibleAzdVersion,
+			"this version of the azure.ai.agents extension is incompatible with your installed version of azd.",
+			"upgrade azd to the latest version (https://aka.ms/azd/upgrade) and retry",
+		)
 	}
 
 	return nil
@@ -116,7 +119,7 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 
 			azdClient, err := azdext.NewAzdClient()
 			if err != nil {
-				return fmt.Errorf("failed to create azd client: %w", err)
+				return exterrors.Internal(exterrors.CodeAzdClientFailed, fmt.Sprintf("failed to create azd client: %s", err))
 			}
 			defer azdClient.Close()
 
@@ -139,7 +142,10 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 			if flags.manifestPointer != "" {
 				azureContext, projectConfig, environment, err := ensureAzureContext(ctx, flags, azdClient)
 				if err != nil {
-					return fmt.Errorf("failed to ground into a project context: %w", err)
+					if exterrors.IsCancellation(err) {
+						return exterrors.Cancelled("initialization was cancelled")
+					}
+					return err
 				}
 
 				credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
@@ -147,7 +153,11 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 					AdditionallyAllowedTenants: []string{"*"},
 				})
 				if err != nil {
-					return fmt.Errorf("failed to create azure credential: %w", err)
+					return exterrors.Auth(
+						exterrors.CodeCredentialCreationFailed,
+						fmt.Sprintf("failed to create Azure credential: %s", err),
+						"run 'azd auth login' to authenticate",
+					)
 				}
 
 				console := input.NewConsole(
@@ -177,7 +187,10 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 				}
 
 				if err := action.Run(ctx); err != nil {
-					return fmt.Errorf("failed to run start action: %w", err)
+					if exterrors.IsCancellation(err) {
+						return exterrors.Cancelled("initialization was cancelled")
+					}
+					return err
 				}
 			} else {
 				action := &InitFromCodeAction{
@@ -187,7 +200,10 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 				}
 
 				if err := action.Run(ctx); err != nil {
-					return fmt.Errorf("failed to run init from code action: %w", err)
+					if exterrors.IsCancellation(err) {
+						return exterrors.Cancelled("initialization was cancelled")
+					}
+					return err
 				}
 			}
 
@@ -250,7 +266,11 @@ func (a *InitAction) Run(ctx context.Context) error {
 		isValidFile := false
 
 		if a.flags.host != "" && a.flags.host != "containerapp" {
-			return fmt.Errorf("unsupported host value: '%s'. Accepted values are: 'containerapp'", a.flags.host)
+			return exterrors.Validation(
+				exterrors.CodeUnsupportedHost,
+				fmt.Sprintf("unsupported host value: '%s' is not supported", a.flags.host),
+				"use '--host containerapp' or omit '--host'",
+			)
 		}
 
 		if _, err := url.ParseRequestURI(a.flags.manifestPointer); err == nil {
@@ -260,7 +280,11 @@ func (a *InitAction) Run(ctx context.Context) error {
 		}
 
 		if !isValidURL && !isValidFile {
-			return fmt.Errorf("agent manifest pointer '%s' is neither a valid URI nor an existing file path", a.flags.manifestPointer)
+			return exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf("agent manifest pointer is invalid: '%s' is neither a valid URI nor an existing file path", a.flags.manifestPointer),
+				"provide a valid URL or an existing local agent.yaml/agent.yml path",
+			)
 		}
 
 		// Download/read agent.yaml file from the provided URI or file path and save it to project's "agents" directory
@@ -302,19 +326,34 @@ func ensureProject(ctx context.Context, flags *initFlags, azdClient *azdext.AzdC
 		})
 
 		if err != nil {
-			return nil, fmt.Errorf("failed to initialize project: %w", err)
+			if exterrors.IsCancellation(err) {
+				return nil, exterrors.Cancelled("project initialization was cancelled")
+			}
+			return nil, exterrors.Dependency(
+				exterrors.CodeProjectInitFailed,
+				fmt.Sprintf("failed to initialize project: %s", err),
+				"",
+			)
 		}
 
 		projectResponse, err = azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 		if err != nil {
-			return nil, fmt.Errorf("failed to get project: %w", err)
+			return nil, exterrors.Dependency(
+				exterrors.CodeProjectNotFound,
+				fmt.Sprintf("failed to get project after initialization: %s", err),
+				"",
+			)
 		}
 
 		fmt.Println()
 	}
 
 	if projectResponse.Project == nil {
-		return nil, fmt.Errorf("project not found")
+		return nil, exterrors.Dependency(
+			exterrors.CodeProjectNotFound,
+			"project not found",
+			"",
+		)
 	}
 
 	return projectResponse.Project, nil
@@ -345,7 +384,11 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 		var err error
 		foundryProject, err = extractProjectDetails(flags.projectResourceId)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse Microsoft Foundry project ID: %w", err)
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidProjectResourceId,
+				fmt.Sprintf("failed to parse Microsoft Foundry project ID: %s", err),
+				"provide a valid project resource ID in the format /subscriptions/.../providers/Microsoft.CognitiveServices/accounts/.../projects/...",
+			)
 		}
 
 		// Get the tenant ID
@@ -353,7 +396,11 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 			SubscriptionId: foundryProject.SubscriptionId,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to get tenant ID: %w", err)
+			return nil, exterrors.Auth(
+				exterrors.CodeTenantLookupFailed,
+				fmt.Sprintf("failed to get tenant ID for subscription %s: %s", foundryProject.SubscriptionId, err),
+				"verify your Azure login with 'azd auth login'",
+			)
 		}
 
 		credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
@@ -361,19 +408,23 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 			AdditionallyAllowedTenants: []string{"*"},
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to create Azure credential: %w", err)
+			return nil, exterrors.Auth(
+				exterrors.CodeCredentialCreationFailed,
+				fmt.Sprintf("failed to create Azure credential: %s", err),
+				"run 'azd auth login' to authenticate",
+			)
 		}
 
 		// Create Cognitive Services Projects client
 		projectsClient, err := armcognitiveservices.NewProjectsClient(foundryProject.SubscriptionId, credential, azure.NewArmClientOptions())
 		if err != nil {
-			return nil, fmt.Errorf("failed to create Cognitive Services Projects client: %w", err)
+			return nil, exterrors.Internal(exterrors.CodeCognitiveServicesClientFailed, fmt.Sprintf("failed to create Cognitive Services Projects client: %s", err))
 		}
 
 		// Get the Microsoft Foundry project
 		projectResp, err := projectsClient.Get(ctx, foundryProject.ResourceGroupName, foundryProject.AiAccountName, foundryProject.AiProjectName, nil)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get Microsoft Foundry project: %w", err)
+			return nil, exterrors.ServiceFromAzure(err, exterrors.OpGetFoundryProject)
 		}
 
 		foundryProjectLocation = *projectResp.Location
@@ -408,13 +459,24 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 			Workflow: workflow,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to create new azd environment: %w", err)
+			if exterrors.IsCancellation(err) {
+				return nil, exterrors.Cancelled("environment creation was cancelled")
+			}
+			return nil, exterrors.Dependency(
+				exterrors.CodeEnvironmentCreationFailed,
+				fmt.Sprintf("failed to create new azd environment: %s", err),
+				"run 'azd env new' manually to create an environment",
+			)
 		}
 
 		// Re-fetch the environment after creation
 		existingEnv = getExistingEnvironment(ctx, flags, azdClient)
 		if existingEnv == nil {
-			return nil, fmt.Errorf("azd environment not found, please create an environment (azd env new) and try again")
+			return nil, exterrors.Dependency(
+				exterrors.CodeEnvironmentNotFound,
+				"azd environment not found after creation",
+				"run 'azd env new' to create an environment and try again",
+			)
 		}
 	} else if flags.projectResourceId != "" {
 		currentSubscription, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
@@ -436,7 +498,11 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 				return nil, fmt.Errorf("failed to set AZURE_SUBSCRIPTION_ID in azd environment: %w", err)
 			}
 		} else if currentSubscription.Value != foundryProject.SubscriptionId {
-			return nil, fmt.Errorf("the value for subscription ID (%s) stored in your azd environment does not match the provided Microsoft Foundry project subscription ID (%s), please update or recreate your environment (azd env new)", currentSubscription.Value, foundryProject.SubscriptionId)
+			return nil, exterrors.Validation(
+				exterrors.CodeSubscriptionMismatch,
+				fmt.Sprintf("subscription ID mismatch: environment has %s but project uses %s", currentSubscription.Value, foundryProject.SubscriptionId),
+				"update or recreate your environment with 'azd env new'",
+			)
 		}
 
 		// Get current location from environment
@@ -459,7 +525,11 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 				return nil, fmt.Errorf("failed to set AZURE_LOCATION in environment: %w", err)
 			}
 		} else if currentLocation.Value != foundryProjectLocation {
-			return nil, fmt.Errorf("the value for location (%s) stored in your azd environment does not match the provided Microsoft Foundry project location (%s), please update or recreate your environment (azd env new)", currentLocation.Value, foundryProjectLocation)
+			return nil, exterrors.Validation(
+				exterrors.CodeLocationMismatch,
+				fmt.Sprintf("location mismatch: environment has %s but project uses %s", currentLocation.Value, foundryProjectLocation),
+				"update or recreate your environment with 'azd env new'",
+			)
 		}
 	}
 
@@ -473,19 +543,23 @@ func ensureAzureContext(
 ) (*azdext.AzureContext, *azdext.ProjectConfig, *azdext.Environment, error) {
 	project, err := ensureProject(ctx, flags, azdClient)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to ensure project: %w", err)
+		return nil, nil, nil, err
 	}
 
 	env, err := ensureEnvironment(ctx, flags, azdClient)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to ensure environment: %w", err)
+		return nil, nil, nil, err
 	}
 
 	envValues, err := azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
 		Name: env.Name,
 	})
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to get environment values: %w", err)
+		return nil, nil, nil, exterrors.Dependency(
+			exterrors.CodeEnvironmentValuesFailed,
+			fmt.Sprintf("failed to get environment values: %s", err),
+			"run 'azd env get-values' to verify environment state",
+		)
 	}
 
 	envValueMap := make(map[string]string)
@@ -509,6 +583,9 @@ func ensureAzureContext(
 
 		subscriptionResponse, err := azdClient.Prompt().PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{})
 		if err != nil {
+			if exterrors.IsCancellation(err) {
+				return nil, nil, nil, exterrors.Cancelled("subscription selection was cancelled")
+			}
 			return nil, nil, nil, fmt.Errorf("failed to prompt for subscription: %w", err)
 		}
 
@@ -546,6 +623,9 @@ func ensureAzureContext(
 			AzureContext: azureContext,
 		})
 		if err != nil {
+			if exterrors.IsCancellation(err) {
+				return nil, nil, nil, exterrors.Cancelled("location selection was cancelled")
+			}
 			return nil, nil, nil, fmt.Errorf("failed to prompt for location: %w", err)
 		}
 
@@ -926,13 +1006,21 @@ func (a *InitAction) downloadAgentYaml(
 		fmt.Printf("Reading agent.yaml from local file: %s\n", manifestPointer)
 		content, err = os.ReadFile(manifestPointer)
 		if err != nil {
-			return nil, "", fmt.Errorf("reading local file %s: %w", manifestPointer, err)
+			return nil, "", exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf("reading local file %s: %s", manifestPointer, err),
+				"verify the file path exists and is readable",
+			)
 		}
 
 		// Parse the YAML content into genericManifest
 		var genericManifest map[string]interface{}
 		if err := yaml.Unmarshal(content, &genericManifest); err != nil {
-			return nil, "", fmt.Errorf("parsing YAML from manifest file: %w", err)
+			return nil, "", exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf("parsing YAML from manifest file: %s", err),
+				"verify the manifest file contains valid YAML",
+			)
 		}
 
 		var name string
@@ -965,7 +1053,7 @@ func (a *InitAction) downloadAgentYaml(
 					return nil, "", fmt.Errorf("prompting for confirmation: %w", err)
 				}
 				if !*confirmResponse.Value {
-					return nil, "", fmt.Errorf("operation cancelled by user")
+					return nil, "", exterrors.Cancelled("operation cancelled by user")
 				}
 			}
 		}
@@ -1004,7 +1092,11 @@ func (a *InitAction) downloadAgentYaml(
 
 		ghCli = github.NewGitHubCli(console, commandRunner)
 		if err := ghCli.EnsureInstalled(ctx); err != nil {
-			return nil, "", fmt.Errorf("ensuring gh is installed: %w", err)
+			return nil, "", exterrors.Dependency(
+				exterrors.CodeGitHubDownloadFailed,
+				fmt.Sprintf("ensuring gh is installed: %s", err),
+				"install the GitHub CLI (gh) from https://cli.github.com",
+			)
 		}
 
 		var contentStr string
@@ -1057,7 +1149,11 @@ func (a *InitAction) downloadAgentYaml(
 
 			contentStr, err = downloadGithubManifest(ctx, urlInfo, apiPath, ghCli)
 			if err != nil {
-				return nil, "", fmt.Errorf("downloading from GitHub: %w", err)
+				return nil, "", exterrors.Dependency(
+					exterrors.CodeGitHubDownloadFailed,
+					fmt.Sprintf("downloading from GitHub: %s", err),
+					"verify the URL points to a valid agent.yaml file in the repository",
+				)
 			}
 		}
 
@@ -1114,9 +1210,10 @@ func (a *InitAction) downloadAgentYaml(
 		content = manifestBytes
 	} else {
 		// If we reach here, the manifest pointer didn't match any known type
-		return nil, "", fmt.Errorf(
-			"manifest pointer '%s' is not a valid local file path, GitHub URL, or registry URL",
-			manifestPointer,
+		return nil, "", exterrors.Validation(
+			exterrors.CodeInvalidManifestPointer,
+			fmt.Sprintf("manifest pointer '%s' is not a valid local file path, GitHub URL, or registry URL", manifestPointer),
+			"provide a valid URL or an existing local agent.yaml/agent.yml path",
 		)
 	}
 
@@ -1202,7 +1299,11 @@ func (a *InitAction) downloadAgentYaml(
 			fmt.Println("Downloading full directory for container agent")
 			err := downloadParentDirectory(ctx, urlInfo, targetDir, ghCli, console, useGhCli, a.httpClient)
 			if err != nil {
-				return nil, "", fmt.Errorf("downloading parent directory: %w", err)
+				return nil, "", exterrors.Dependency(
+					exterrors.CodeGitHubDownloadFailed,
+					fmt.Sprintf("downloading parent directory: %s", err),
+					"verify the URL points to a valid repository and you have access",
+				)
 			}
 		}
 	}

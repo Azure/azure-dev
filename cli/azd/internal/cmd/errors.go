@@ -119,20 +119,35 @@ func MapError(err error, span tracing.Span) {
 		}
 		errCode = fmt.Sprintf("service.arm.%s.failed", operation)
 	} else if errors.As(err, &extServiceErr) {
-		// Handle structured service errors from extensions
-		if extServiceErr.StatusCode > 0 && extServiceErr.ServiceName != "" {
-			serviceName, hostDomain := mapService(extServiceErr.ServiceName)
+		// Handle structured service errors from extensions.
+		// Emit whatever details are available rather than requiring all fields.
+		serviceName := ""
+		if extServiceErr.ServiceName != "" {
+			var hostDomain string
+			serviceName, hostDomain = mapService(extServiceErr.ServiceName)
 			errDetails = append(errDetails,
 				fields.ServiceName.String(serviceName),
 				fields.ServiceHost.String(hostDomain),
-				fields.ServiceStatusCode.Int(extServiceErr.StatusCode),
 			)
-			if extServiceErr.ErrorCode != "" {
-				errDetails = append(errDetails, fields.ServiceErrorCode.String(extServiceErr.ErrorCode))
-			}
+		}
+		if extServiceErr.StatusCode > 0 {
+			errDetails = append(errDetails, fields.ServiceStatusCode.Int(extServiceErr.StatusCode))
+		}
+		if extServiceErr.ErrorCode != "" {
+			errDetails = append(errDetails, fields.ServiceErrorCode.String(extServiceErr.ErrorCode))
+		}
+
+		// Use operation.errorCode (e.g. "ext.service.start_container.invalid_payload") for actionable
+		// classification instead of host.statusCode which groups unrelated failures together.
+		switch {
+		case extServiceErr.ErrorCode != "":
+			errCode = fmt.Sprintf("ext.service.%s", normalizeCodeSegment(extServiceErr.ErrorCode, "failed"))
+		case extServiceErr.StatusCode > 0 && serviceName != "":
 			errCode = fmt.Sprintf("ext.service.%s.%d", serviceName, extServiceErr.StatusCode)
-		} else {
-			errCode = "ext.service.failed"
+		case extServiceErr.StatusCode > 0:
+			errCode = fmt.Sprintf("ext.service.unknown.%d", extServiceErr.StatusCode)
+		default:
+			errCode = "ext.service.unknown.failed"
 		}
 	} else if errors.As(err, &extLocalErr) {
 		domain := string(azdext.NormalizeLocalErrorCategory(extLocalErr.Category))
@@ -354,21 +369,30 @@ func cmdAsName(cmd string) string {
 
 var (
 	codeSegmentRegex    = regexp.MustCompile(`[^a-z0-9_]+`)
-	codeSegmentReplacer = strings.NewReplacer("-", "_", ".", "_")
+	codeSegmentReplacer = strings.NewReplacer("-", "_")
 )
 
+// normalizeCodeSegment normalizes a dot-separated error code for telemetry.
+// Each segment between dots is lowercased, sanitized to [a-z0-9_], and preserved.
+// Empty input returns the fallback value.
 func normalizeCodeSegment(value string, fallback string) string {
 	value = strings.ToLower(strings.TrimSpace(value))
 	if value == "" {
 		return fallback
 	}
 
-	value = codeSegmentReplacer.Replace(value)
-	value = codeSegmentRegex.ReplaceAllString(value, "_")
-	value = strings.Trim(value, "_")
-	if value == "" {
+	parts := strings.Split(value, ".")
+	for i, part := range parts {
+		part = codeSegmentReplacer.Replace(part)
+		part = codeSegmentRegex.ReplaceAllString(part, "_")
+		parts[i] = strings.Trim(part, "_")
+	}
+
+	result := strings.Join(parts, ".")
+	result = strings.Trim(result, ".")
+	if result == "" {
 		return fallback
 	}
 
-	return value
+	return result
 }

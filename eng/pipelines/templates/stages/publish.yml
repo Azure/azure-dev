@@ -375,6 +375,29 @@ stages:
                       CreateGitHubRelease: false
                       PublishUploadLocations: release/daily;daily/archive/$(Build.BuildId)-$(Build.SourceVersion)
 
+                  - pwsh: |
+                      New-Item -ItemType Directory -Path daily-version -Force
+                      Set-Content -Path ./daily-version/version.txt -Value "$(CLI_VERSION)" -NoNewline
+                      Write-Host "Daily version.txt:"
+                      Get-Content ./daily-version/version.txt
+                    displayName: Write daily version.txt
+
+                  - task: AzurePowerShell@5
+                    displayName: Upload daily version.txt to storage
+                    inputs:
+                      azureSubscription: 'Azure SDK Artifacts'
+                      azurePowerShellVersion: LatestVersion
+                      pwsh: true
+                      ScriptType: InlineScript
+                      Inline: |
+                        azcopy copy "daily-version/version.txt" "$(publish-storage-location)/`$web/azd/standalone/release/daily/" --overwrite=true
+                        if ($LASTEXITCODE) {
+                          Write-Error "Upload failed"
+                          exit 1
+                        }
+                    env:
+                      AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'
+
       - deployment: Publish_For_PR
         environment: none
         condition: >-

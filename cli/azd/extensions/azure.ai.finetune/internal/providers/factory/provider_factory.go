@@ -33,8 +33,8 @@ const (
 	DefaultAzureFinetuningScope      = "https://ai.azure.com/.default"
 )
 
-// UserAgent is the user agent string included in all HTTP calls
-var UserAgent = fmt.Sprintf("azd-ext-azure-ai-finetune/%s", version.Version)
+// userAgent is the user agent string included in all HTTP calls
+var userAgent = fmt.Sprintf("azd-ext-azure-ai-finetune/%s", version.Version)
 
 func GetOpenAIClientFromAzdClient(ctx context.Context, azdClient *azdext.AzdClient) (*openai.Client, error) {
 	envValueMap, err := utils.GetEnvironmentValues(ctx, azdClient)
@@ -98,7 +98,7 @@ func WithTokenCredential(tokenCredential azcore.TokenCredential, scope string) o
 		pipeline := runtime.NewPipeline("finetune-extensions", pipelineVersion, runtime.PipelineOptions{}, &policy.ClientOptions{
 			InsecureAllowCredentialWithHTTP: true, // allow for plain HTTP proxies, etc..
 			PerCallPolicies: []policy.Policy{
-				azsdk.NewUserAgentPolicy(UserAgent),
+				azsdk.NewUserAgentPolicy(userAgent),
 			},
 			PerRetryPolicies: []policy.Policy{
 				bearerTokenPolicy,
@@ -130,7 +130,7 @@ func NewModelDeploymentProvider(subscriptionId string, credential azcore.TokenCr
 		&arm.ClientOptions{
 			ClientOptions: policy.ClientOptions{
 				PerCallPolicies: []policy.Policy{
-					azsdk.NewUserAgentPolicy(UserAgent),
+					azsdk.NewUserAgentPolicy(userAgent),
 				},
 			},
 		},

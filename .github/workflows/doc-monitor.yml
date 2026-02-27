@@ -1,7 +1,7 @@
 name: doc-monitor
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened, closed]
     branches: [main]
 
@@ -41,18 +41,29 @@ jobs:
     # Skip bot PRs and PRs from doc-monitor itself
     if: >-
       (github.event_name == 'workflow_dispatch') ||
-      (github.event_name == 'pull_request' &&
-       !startsWith(github.head_ref, 'docs/pr-') &&
+      (github.event_name == 'pull_request_target' &&
+       !startsWith(github.event.pull_request.head.ref, 'docs/pr-') &&
        github.actor != 'github-actions[bot]')
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.DOC_MONITOR_APP_ID }}
+          private-key: ${{ secrets.DOC_MONITOR_APP_PRIVATE_KEY }}
+          repositories: "azure-dev-docs"
+          owner: "MicrosoftDocs"
 
       - name: Run doc-monitor
         uses: ./.github/actions/doc-monitor
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          docs-repo-token: ${{ secrets.DOCS_REPO_PAT }}
+          docs-repo-token: ${{ steps.app-token.outputs.token }}
           mode: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'auto' }}
           pr-number: ${{ inputs.pr_number || '' }}
           pr-list: ${{ inputs.pr_list || '' }}

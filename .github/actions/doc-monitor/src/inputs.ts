@@ -35,7 +35,7 @@ export function getInputs(): ActionInputs {
     core.warning(
       "docs-repo-token not provided — companion PR creation in the external docs repo will be skipped. " +
       "Doc inventory scanning of the public repo (MicrosoftDocs/azure-dev-docs) will still work. " +
-      "Set the DOCS_REPO_PAT secret to enable external doc PR creation.",
+      "Set docs-repo-token to enable external doc PR creation.",
     );
   }
 

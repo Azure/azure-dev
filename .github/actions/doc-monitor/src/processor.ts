@@ -48,7 +48,7 @@ export async function processPr(
   const diffSummary = buildDiffSummary(files);
 
   // Build doc inventories — docsOctokit always has a valid token
-  // (DOCS_REPO_PAT for write access, or GITHUB_TOKEN fallback for public repo reads)
+  // (docs-repo-token for write access, or GITHUB_TOKEN fallback for public repo reads)
   core.info("Building documentation inventory...");
   const inRepoDocs = await buildDocInventory(sourceOctokit, sourceOwner, sourceRepo, [
     "cli/azd/docs", "cli/azd/extensions", "ext", "README.md", "CONTRIBUTING.md",
@@ -92,7 +92,7 @@ export async function processPr(
         core.info(`External PR: ${state.externalPr.status} — ${state.externalPr.htmlUrl}`);
       } else {
         core.warning(
-          `Found ${externalImpacts.length} external doc impact(s) but DOCS_REPO_PAT not set — ` +
+          `Found ${externalImpacts.length} external doc impact(s) but docs-repo-token not set — ` +
           "skipping companion PR creation. Doc inventory scanning still works with GITHUB_TOKEN.",
         );
       }
@@ -126,7 +126,7 @@ async function handleClosedPr(
   if (canWriteDocsRepo) {
     await closeCompanionPrs(docsOctokit, docsOwner, docsRepo, prNumber);
   } else {
-    core.info("Skipping external companion PR cleanup — DOCS_REPO_PAT not provided");
+    core.info("Skipping external companion PR cleanup — docs-repo-token not provided");
   }
   await postNoImpact(
     sourceOctokit, sourceOwner, sourceRepo, prNumber,

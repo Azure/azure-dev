@@ -61,12 +61,12 @@ async function run(): Promise<void> {
 
     const sourceOctokit = new Octokit({ auth: inputs.githubToken });
 
-    // Always create docsOctokit: prefer DOCS_REPO_PAT for write access,
+    // Always create docsOctokit: prefer docs-repo-token for write access,
     // fall back to GITHUB_TOKEN which can read public repos.
     if (!inputs.docsRepoToken) {
       core.warning(
         "docs-repo-token not provided — falling back to GITHUB_TOKEN for docs repo reads. " +
-        "Companion PR creation in the external docs repo requires DOCS_REPO_PAT.",
+        "Companion PR creation in the external docs repo requires docs-repo-token.",
       );
     }
     const docsOctokit = new Octokit({ auth: inputs.docsRepoToken || inputs.githubToken });

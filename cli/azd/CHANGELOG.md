@@ -29,7 +29,6 @@
 - [[#6847]](https://github.com/Azure/azure-dev/pull/6847) Fix `azd env get-values` to reject unexpected positional arguments instead of silently succeeding. Thanks @spboyer for the contribution!
 - [[#6857]](https://github.com/Azure/azure-dev/pull/6857) Fix duplicated `Suggestion:` prefix appearing in error output when the suggestion text already included the prefix.
 - [[#6862]](https://github.com/Azure/azure-dev/pull/6862) Fix preflight validation errors for standard deployments being misclassified in telemetry and displayed with degraded formatting.
-- [[#6900]](https://github.com/Azure/azure-dev/pull/6900) Fix extension errors not being displayed when using `ReportError()` in extension commands.
 - [[#6907]](https://github.com/Azure/azure-dev/pull/6907) Fix missing IPv6 CIDR blocks (`fc00::/7`, `0.0.0.0/8`, `::/128`) in MCP extension security policy that could allow SSRF bypasses. Thanks @jongio for the contribution!
 
 ### Other Changes

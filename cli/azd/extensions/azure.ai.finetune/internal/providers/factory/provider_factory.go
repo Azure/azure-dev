@@ -78,7 +78,6 @@ func GetOpenAIClientFromAzdClient(ctx context.Context, azdClient *azdext.AzdClie
 		scope = DefaultAzureFinetuningScope
 	}
 	// Create OpenAI client
-	fmt.Printf("User-Agent set to: %s\n", UserAgent)
 	client := openai.NewClient(
 		//azure.WithEndpoint(endpoint, apiVersion),
 		option.WithBaseURL(endpoint),
@@ -125,7 +124,6 @@ func NewFineTuningProvider(ctx context.Context, azdClient *azdext.AzdClient) (pr
 
 // NewModelDeploymentProvider creates a ModelDeploymentProvider based on provider type
 func NewModelDeploymentProvider(subscriptionId string, credential azcore.TokenCredential) (providers.ModelDeploymentProvider, error) {
-	fmt.Printf("User-Agent set to: %s for ARM client\n", UserAgent)
 	clientFactory, err := armcognitiveservices.NewClientFactory(
 		subscriptionId,
 		credential,

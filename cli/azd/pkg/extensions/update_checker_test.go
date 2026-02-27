@@ -12,30 +12,25 @@ import (
 )
 
 func Test_UpdateChecker_CheckForUpdate(t *testing.T) {
-	tempDir := t.TempDir()
-	t.Setenv("AZD_CONFIG_DIR", tempDir)
-
-	cacheManager, err := NewRegistryCacheManager()
-	require.NoError(t, err)
-
 	ctx := context.Background()
 	sourceName := "test-source"
 
-	// Set cache with extension version 2.0.0
-	extensions := []*ExtensionMetadata{
-		{
-			Id:          "test.extension",
-			DisplayName: "Test Extension",
-			Versions: []ExtensionVersion{
-				{Version: "1.0.0"},
-				{Version: "2.0.0"},
+	manager := newManagerWithSources(&mockSource{
+		name: sourceName,
+		extensions: []*ExtensionMetadata{
+			{
+				Id:          "test.extension",
+				DisplayName: "Test Extension",
+				Source:      sourceName,
+				Versions: []ExtensionVersion{
+					{Version: "1.0.0"},
+					{Version: "2.0.0"},
+				},
 			},
 		},
-	}
-	err = cacheManager.Set(ctx, sourceName, extensions)
-	require.NoError(t, err)
+	})
 
-	updateChecker := NewUpdateChecker(cacheManager)
+	updateChecker := NewUpdateChecker(manager)
 
 	// Test with older installed version
 	extension := &Extension{
@@ -64,18 +59,13 @@ func Test_UpdateChecker_CheckForUpdate(t *testing.T) {
 	require.False(t, result.HasUpdate)
 }
 
-func Test_UpdateChecker_CheckForUpdate_CacheMiss(t *testing.T) {
-	tempDir := t.TempDir()
-	t.Setenv("AZD_CONFIG_DIR", tempDir)
-
-	cacheManager, err := NewRegistryCacheManager()
-	require.NoError(t, err)
-
-	updateChecker := NewUpdateChecker(cacheManager)
-
+func Test_UpdateChecker_CheckForUpdate_ExtensionNotFound(t *testing.T) {
 	ctx := context.Background()
 
-	// Extension from source with no cache
+	manager := newManagerWithSources(&mockSource{name: "nonexistent-source"})
+	updateChecker := NewUpdateChecker(manager)
+
+	// Extension from source with no matching extension
 	extension := &Extension{
 		Id:          "test.extension",
 		DisplayName: "Test Extension",
@@ -89,13 +79,8 @@ func Test_UpdateChecker_CheckForUpdate_CacheMiss(t *testing.T) {
 }
 
 func Test_UpdateChecker_WarningCooldown(t *testing.T) {
-	tempDir := t.TempDir()
-	t.Setenv("AZD_CONFIG_DIR", tempDir)
-
-	cacheManager, err := NewRegistryCacheManager()
-	require.NoError(t, err)
-
-	updateChecker := NewUpdateChecker(cacheManager)
+	manager := newManagerWithSources()
+	updateChecker := NewUpdateChecker(manager)
 
 	extension := &Extension{
 		Id:          "test.extension",
@@ -116,13 +101,8 @@ func Test_UpdateChecker_WarningCooldown(t *testing.T) {
 }
 
 func Test_UpdateChecker_WarningCooldown_Expired(t *testing.T) {
-	tempDir := t.TempDir()
-	t.Setenv("AZD_CONFIG_DIR", tempDir)
-
-	cacheManager, err := NewRegistryCacheManager()
-	require.NoError(t, err)
-
-	updateChecker := NewUpdateChecker(cacheManager)
+	manager := newManagerWithSources()
+	updateChecker := NewUpdateChecker(manager)
 
 	// Extension with old warning timestamp (25 hours ago)
 	extension := &Extension{
@@ -174,30 +154,25 @@ func Test_FormatUpdateWarning_NoDisplayName(t *testing.T) {
 }
 
 func Test_UpdateChecker_PrereleaseVersions(t *testing.T) {
-	tempDir := t.TempDir()
-	t.Setenv("AZD_CONFIG_DIR", tempDir)
-
-	cacheManager, err := NewRegistryCacheManager()
-	require.NoError(t, err)
-
 	ctx := context.Background()
 	sourceName := "test-source"
 
-	// Set cache with prerelease version
-	extensions := []*ExtensionMetadata{
-		{
-			Id:          "test.extension",
-			DisplayName: "Test Extension",
-			Versions: []ExtensionVersion{
-				{Version: "1.0.0"},
-				{Version: "2.0.0-beta.1"},
+	manager := newManagerWithSources(&mockSource{
+		name: sourceName,
+		extensions: []*ExtensionMetadata{
+			{
+				Id:          "test.extension",
+				DisplayName: "Test Extension",
+				Source:      sourceName,
+				Versions: []ExtensionVersion{
+					{Version: "1.0.0"},
+					{Version: "2.0.0-beta.1"},
+				},
 			},
 		},
-	}
-	err = cacheManager.Set(ctx, sourceName, extensions)
-	require.NoError(t, err)
+	})
 
-	updateChecker := NewUpdateChecker(cacheManager)
+	updateChecker := NewUpdateChecker(manager)
 
 	// Installed stable version should see prerelease as update
 	extension := &Extension{
@@ -214,29 +189,24 @@ func Test_UpdateChecker_PrereleaseVersions(t *testing.T) {
 }
 
 func Test_UpdateChecker_InvalidVersions(t *testing.T) {
-	tempDir := t.TempDir()
-	t.Setenv("AZD_CONFIG_DIR", tempDir)
-
-	cacheManager, err := NewRegistryCacheManager()
-	require.NoError(t, err)
-
 	ctx := context.Background()
 	sourceName := "test-source"
 
-	// Set cache with valid version
-	extensions := []*ExtensionMetadata{
-		{
-			Id:          "test.extension",
-			DisplayName: "Test Extension",
-			Versions: []ExtensionVersion{
-				{Version: "1.0.0"},
+	manager := newManagerWithSources(&mockSource{
+		name: sourceName,
+		extensions: []*ExtensionMetadata{
+			{
+				Id:          "test.extension",
+				DisplayName: "Test Extension",
+				Source:      sourceName,
+				Versions: []ExtensionVersion{
+					{Version: "1.0.0"},
+				},
 			},
 		},
-	}
-	err = cacheManager.Set(ctx, sourceName, extensions)
-	require.NoError(t, err)
+	})
 
-	updateChecker := NewUpdateChecker(cacheManager)
+	updateChecker := NewUpdateChecker(manager)
 
 	// Extension with invalid version string
 	extension := &Extension{
@@ -250,3 +220,4 @@ func Test_UpdateChecker_InvalidVersions(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, result.HasUpdate) // Should gracefully handle invalid version
 }
+

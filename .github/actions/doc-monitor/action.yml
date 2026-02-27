@@ -1,0 +1,34 @@
+name: "PR Documentation Monitor"
+description: "Analyzes PR diffs to identify documentation impact and creates companion doc PRs"
+inputs:
+  github-token:
+    description: "GitHub token for in-repo operations"
+    required: true
+  docs-repo-token:
+    description: "PAT for cross-repo operations in MicrosoftDocs/azure-dev-docs-pr"
+    required: true
+  mode:
+    description: "Run mode: auto (from PR event), single, all_open, or list"
+    required: false
+    default: "auto"
+  pr-number:
+    description: "PR number for single mode"
+    required: false
+  pr-list:
+    description: "Comma-separated PR numbers for list mode"
+    required: false
+  docs-assignees:
+    description: "Comma-separated GitHub usernames to assign to doc PRs"
+    required: false
+    default: "alexwolfmsft,diberry"
+  source-repo:
+    description: "Source repository (owner/name)"
+    required: false
+    default: "Azure/azure-dev"
+  docs-repo:
+    description: "External documentation repository (owner/name)"
+    required: false
+    default: "MicrosoftDocs/azure-dev-docs-pr"
+runs:
+  using: "node20"
+  main: "dist/index.js"

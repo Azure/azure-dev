@@ -1,0 +1,61 @@
+name: doc-monitor
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+    branches: [main]
+
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Run mode"
+        required: true
+        type: choice
+        options:
+          - single
+          - all_open
+          - list
+        default: single
+      pr_number:
+        description: "PR number (for single mode)"
+        required: false
+        type: string
+      pr_list:
+        description: "Comma-separated PR numbers (for list mode)"
+        required: false
+        type: string
+
+# Only one run per source PR at a time
+concurrency:
+  group: doc-monitor-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+  models: read
+
+jobs:
+  analyze-docs:
+    runs-on: ubuntu-latest
+    # Skip bot PRs and PRs from doc-monitor itself
+    if: >-
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event_name == 'pull_request' &&
+       !startsWith(github.head_ref, 'docs/pr-') &&
+       github.actor != 'github-actions[bot]')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run doc-monitor
+        uses: ./.github/actions/doc-monitor
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          docs-repo-token: ${{ secrets.DOCS_REPO_PAT }}
+          mode: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'auto' }}
+          pr-number: ${{ inputs.pr_number || '' }}
+          pr-list: ${{ inputs.pr_list || '' }}
+          docs-assignees: "alexwolfmsft,diberry"
+          source-repo: "Azure/azure-dev"
+          docs-repo: "MicrosoftDocs/azure-dev-docs-pr"

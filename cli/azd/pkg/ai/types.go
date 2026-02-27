@@ -8,7 +8,11 @@ import "strings"
 // IsFinetuneUsageName reports whether the given usage name represents a fine-tune SKU.
 // Fine-tune usage names end with "-finetune" (case-insensitive).
 func IsFinetuneUsageName(usageName string) bool {
-	return strings.HasSuffix(strings.ToLower(usageName), "-finetune")
+	const suffix = "-finetune"
+	if len(usageName) < len(suffix) {
+		return false
+	}
+	return strings.EqualFold(usageName[len(usageName)-len(suffix):], suffix)
 }
 
 // AiModel represents an AI model available in the Azure Cognitive Services catalog.

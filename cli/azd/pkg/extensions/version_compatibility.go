@@ -4,7 +4,9 @@
 package extensions
 
 import (
+	"fmt"
 	"log"
+	"sort"
 
 	"github.com/Masterminds/semver/v3"
 )
@@ -73,6 +75,43 @@ func LatestVersion(versions []ExtensionVersion) *ExtensionVersion {
 	}
 
 	return latest
+}
+
+// LatestVersionForConstraint returns the highest version from the slice that satisfies the given
+// semver constraint string (e.g. ">=1.0.0", "~1.2"). It returns an error if the constraint
+// cannot be parsed or if no version in the slice satisfies it.
+func LatestVersionForConstraint(versions []ExtensionVersion, constraintStr string) (*ExtensionVersion, error) {
+	constraint, err := semver.NewConstraint(constraintStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse version constraint: %w", err)
+	}
+
+	availableVersions := []*semver.Version{}
+	availableVersionMap := map[*semver.Version]*ExtensionVersion{}
+
+	for i, extensionVersion := range versions {
+		v, err := semver.NewVersion(extensionVersion.Version)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse version: %w", err)
+		}
+		availableVersionMap[v] = &versions[i]
+		availableVersions = append(availableVersions, v)
+	}
+
+	sort.Sort(semver.Collection(availableVersions))
+
+	var bestMatch *semver.Version
+	for _, v := range availableVersions {
+		if constraint.Check(v) {
+			bestMatch = v
+		}
+	}
+
+	if bestMatch == nil {
+		return nil, fmt.Errorf("no version satisfies constraint %q", constraintStr)
+	}
+
+	return availableVersionMap[bestMatch], nil
 }
 
 // FilterCompatibleVersions filters extension versions based on compatibility with the current azd version.

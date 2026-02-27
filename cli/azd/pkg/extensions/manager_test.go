@@ -736,63 +736,6 @@ func (m *mockSource) GetExtension(ctx context.Context, extensionId string) (*Ext
 	return nil, nil
 }
 
-func Test_Manager_GetLatestVersion(t *testing.T) {
-	ctx := context.Background()
-	sourceName := "test-source"
-
-	t.Run("returns_latest_semver_version", func(t *testing.T) {
-		manager := &Manager{
-			sources: []Source{
-				&mockSource{
-					name: sourceName,
-					extensions: []*ExtensionMetadata{
-						{
-							Id:     "test.extension",
-							Source: sourceName,
-							Versions: []ExtensionVersion{
-								{Version: "0.1.0"},
-								{Version: "0.0.2"},
-								{Version: "0.1.1"},
-								{Version: "0.0.5"},
-							},
-						},
-					},
-				},
-			},
-		}
-		version, err := manager.GetLatestVersion(ctx, sourceName, "test.extension")
-		require.NoError(t, err)
-		require.Equal(t, "0.1.1", version)
-	})
-
-	t.Run("extension_not_found_returns_error", func(t *testing.T) {
-		manager := &Manager{
-			sources: []Source{
-				&mockSource{name: sourceName},
-			},
-		}
-		_, err := manager.GetLatestVersion(ctx, sourceName, "nonexistent.extension")
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "not found")
-	})
-
-	t.Run("extension_with_no_versions_returns_error", func(t *testing.T) {
-		manager := &Manager{
-			sources: []Source{
-				&mockSource{
-					name: sourceName,
-					extensions: []*ExtensionMetadata{
-						{Id: "test.extension", Source: sourceName, Versions: []ExtensionVersion{}},
-					},
-				},
-			},
-		}
-		_, err := manager.GetLatestVersion(ctx, sourceName, "test.extension")
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "no versions")
-	})
-}
-
 func Test_Install_WithMcpConfig(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 

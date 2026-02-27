@@ -295,8 +295,21 @@ func (a *extensionAction) checkForUpdateAsync(
 
 	outcome := &updateCheckOutcome{shouldShow: false}
 
-	// Use the extension manager directly for version lookup
-	updateChecker := extensions.NewUpdateChecker(a.extensionManager)
+	// Create cache manager
+	cacheManager, err := extensions.NewRegistryCacheManager()
+	if err != nil {
+		log.Printf("failed to create cache manager: %v", err)
+		resultChan <- outcome
+		return
+	}
+
+	// Check if cache needs refresh - if so, refresh it now (we have time while extension runs)
+	if cacheManager.IsExpiredOrMissing(ctx, extension.Source) {
+		a.refreshCacheForSource(ctx, cacheManager, extension.Source)
+	}
+
+	// Create update checker
+	updateChecker := extensions.NewUpdateChecker(cacheManager)
 
 	// Check if we should show a warning (respecting cooldown)
 	// Uses extension's LastUpdateWarning field
@@ -342,5 +355,26 @@ func (a *extensionAction) recordUpdateWarningShown(extensionId, extensionSource 
 	// Save the updated extension to config
 	if err := a.extensionManager.UpdateInstalled(fullExtension); err != nil {
 		log.Printf("failed to save warning timestamp: %v", err)
+	}
+}
+
+// refreshCacheForSource attempts to refresh the cache for a specific source
+func (a *extensionAction) refreshCacheForSource(
+	ctx context.Context,
+	cacheManager *extensions.RegistryCacheManager,
+	sourceName string,
+) {
+	// Find extensions from this source to get registry data
+	sourceExtensions, err := a.extensionManager.FindExtensions(ctx, &extensions.FilterOptions{
+		Source: sourceName,
+	})
+	if err != nil {
+		log.Printf("failed to fetch extensions from source %s: %v", sourceName, err)
+		return
+	}
+
+	// Cache the extensions
+	if err := cacheManager.Set(ctx, sourceName, sourceExtensions); err != nil {
+		log.Printf("failed to cache extensions for source %s: %v", sourceName, err)
 	}
 }

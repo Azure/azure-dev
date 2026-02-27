@@ -36,13 +36,13 @@ type UpdateCheckResult struct {
 
 // UpdateChecker checks for extension updates and manages warning cool downs
 type UpdateChecker struct {
-	manager *Manager
+	cacheManager *RegistryCacheManager
 }
 
 // NewUpdateChecker creates a new update checker
-func NewUpdateChecker(manager *Manager) *UpdateChecker {
+func NewUpdateChecker(cacheManager *RegistryCacheManager) *UpdateChecker {
 	return &UpdateChecker{
-		manager: manager,
+		cacheManager: cacheManager,
 	}
 }
 
@@ -62,10 +62,10 @@ func (c *UpdateChecker) CheckForUpdate(
 		HasUpdate:        false,
 	}
 
-	// Get latest version from manager
-	latestVersion, err := c.manager.GetLatestVersion(ctx, extension.Source, extension.Id)
+	// Get latest version from cache
+	latestVersion, err := c.cacheManager.GetExtensionLatestVersion(ctx, extension.Source, extension.Id)
 	if err != nil {
-		// Extension not found or unavailable - not an error, just no update info
+		// Cache miss or extension not found - not an error, just no update info
 		log.Printf("could not get latest version for %s: %v", extension.Id, err)
 		return result, nil
 	}

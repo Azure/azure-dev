@@ -255,29 +255,6 @@ func (m *Manager) UpdateInstalled(extension *Extension) error {
 	return nil
 }
 
-// GetLatestVersion finds an extension by source and ID and returns its latest version string.
-// Latest is determined by semver comparison across all available versions.
-func (m *Manager) GetLatestVersion(ctx context.Context, source, extensionId string) (string, error) {
-	found, err := m.FindExtensions(ctx, &FilterOptions{
-		Id:     extensionId,
-		Source: source,
-	})
-	if err != nil {
-		return "", fmt.Errorf("failed to find extension %s: %w", extensionId, err)
-	}
-
-	if len(found) == 0 {
-		return "", fmt.Errorf("extension %s not found in registry", extensionId)
-	}
-
-	ext := found[0]
-	if len(ext.Versions) == 0 {
-		return "", fmt.Errorf("extension %s has no versions", extensionId)
-	}
-
-	return LatestVersion(ext.Versions).Version, nil
-}
-
 func (m *Manager) FindExtensions(ctx context.Context, options *FilterOptions) ([]*ExtensionMetadata, error) {
 	allExtensions := []*ExtensionMetadata{}
 

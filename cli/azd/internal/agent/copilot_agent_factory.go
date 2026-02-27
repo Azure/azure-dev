@@ -8,21 +8,30 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os/exec"
 
 	copilot "github.com/github/copilot-sdk/go"
+	"github.com/mark3labs/mcp-go/mcp"
 
+	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/logging"
 	mcptools "github.com/azure/azure-dev/cli/azd/internal/agent/tools/mcp"
-	"github.com/azure/azure-dev/cli/azd/internal/mcp"
+	azdmcp "github.com/azure/azure-dev/cli/azd/internal/mcp"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/llm"
 )
+
+// requiredPlugins lists plugins that must be installed before starting a Copilot session.
+var requiredPlugins = []string{
+	"microsoft/GitHub-Copilot-for-Azure:plugin",
+}
 
 // CopilotAgentFactory creates CopilotAgent instances using the GitHub Copilot SDK.
 // It manages the Copilot client lifecycle, MCP server configuration, and session hooks.
 type CopilotAgentFactory struct {
 	clientManager        *llm.CopilotClientManager
 	sessionConfigBuilder *llm.SessionConfigBuilder
+	consentManager       consent.ConsentManager
 	console              input.Console
 }
 
@@ -30,11 +39,13 @@ type CopilotAgentFactory struct {
 func NewCopilotAgentFactory(
 	clientManager *llm.CopilotClientManager,
 	sessionConfigBuilder *llm.SessionConfigBuilder,
+	consentManager consent.ConsentManager,
 	console input.Console,
 ) *CopilotAgentFactory {
 	return &CopilotAgentFactory{
 		clientManager:        clientManager,
 		sessionConfigBuilder: sessionConfigBuilder,
+		consentManager:       consentManager,
 		console:              console,
 	}
 }
@@ -51,6 +62,11 @@ func (f *CopilotAgentFactory) Create(ctx context.Context, opts ...CopilotAgentOp
 			}
 		}
 		return nil
+	}
+
+	// Ensure required plugins are installed
+	if err := f.ensurePlugins(ctx); err != nil {
+		log.Printf("[copilot] Warning: plugin installation issue: %v", err)
 	}
 
 	// Start the Copilot client (spawns copilot-agent-runtime)
@@ -100,27 +116,16 @@ func (f *CopilotAgentFactory) Create(ctx context.Context, opts ...CopilotAgentOp
 		return nil, fmt.Errorf("failed to build session config: %w", err)
 	}
 	log.Printf("[copilot] Session config built (model=%q, mcpServers=%d, availableTools=%d, excludedTools=%d)",
-		sessionConfig.Model, len(sessionConfig.MCPServers), len(sessionConfig.AvailableTools), len(sessionConfig.ExcludedTools))
+		sessionConfig.Model, len(sessionConfig.MCPServers),
+		len(sessionConfig.AvailableTools), len(sessionConfig.ExcludedTools))
 
-	// Wire permission handler — approve all tool permission requests
-	sessionConfig.OnPermissionRequest = copilot.PermissionHandler.ApproveAll
+	// Wire permission handler — delegates to azd consent system
+	sessionConfig.OnPermissionRequest = f.createPermissionHandler(ctx)
 
-	// Wire lifecycle hooks
+	// Wire lifecycle hooks — PreToolUse delegates to azd consent system
 	sessionConfig.Hooks = &copilot.SessionHooks{
-		OnPreToolUse: func(input copilot.PreToolUseHookInput, inv copilot.HookInvocation) (
-			*copilot.PreToolUseHookOutput, error,
-		) {
-			log.Printf("[copilot] PreToolUse: tool=%s", input.ToolName)
-			return &copilot.PreToolUseHookOutput{
-				PermissionDecision: "allow",
-			}, nil
-		},
-		OnPostToolUse: func(input copilot.PostToolUseHookInput, inv copilot.HookInvocation) (
-			*copilot.PostToolUseHookOutput, error,
-		) {
-			log.Printf("[copilot] PostToolUse: tool=%s", input.ToolName)
-			return nil, nil
-		},
+		OnPreToolUse:  f.createPreToolUseHandler(ctx),
+		OnPostToolUse: f.createPostToolUseHandler(),
 		OnErrorOccurred: func(input copilot.ErrorOccurredHookInput, inv copilot.HookInvocation) (
 			*copilot.ErrorOccurredHookOutput, error,
 		) {
@@ -164,9 +169,144 @@ func (f *CopilotAgentFactory) Create(ctx context.Context, opts ...CopilotAgentOp
 	return agent, nil
 }
 
+// ensurePlugins installs required and user-configured plugins if not already present.
+func (f *CopilotAgentFactory) ensurePlugins(ctx context.Context) error {
+	cliPath := f.clientManager.CLIPath()
+	if cliPath == "" {
+		cliPath = "copilot"
+	}
+
+	for _, plugin := range requiredPlugins {
+		log.Printf("[copilot] Ensuring plugin installed: %s", plugin)
+		cmd := exec.CommandContext(ctx, cliPath, "plugin", "install", plugin)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			log.Printf("[copilot] Plugin install warning for %s: %v (output: %s)", plugin, err, string(output))
+		} else {
+			log.Printf("[copilot] Plugin ready: %s", plugin)
+		}
+	}
+
+	return nil
+}
+
+// createPermissionHandler builds an OnPermissionRequest handler that delegates
+// to the azd consent system for approval decisions.
+func (f *CopilotAgentFactory) createPermissionHandler(
+	ctx context.Context,
+) copilot.PermissionHandlerFunc {
+	return func(req copilot.PermissionRequest, inv copilot.PermissionInvocation) (
+		copilot.PermissionRequestResult, error,
+	) {
+		log.Printf("[copilot] PermissionRequest: kind=%s", req.Kind)
+
+		// Build a consent request from the SDK permission request
+		consentReq := consent.ConsentRequest{
+			ToolID:     req.Kind,
+			ServerName: "copilot",
+			Operation:  consent.OperationTypeTool,
+		}
+
+		decision, err := f.consentManager.CheckConsent(ctx, consentReq)
+		if err != nil {
+			log.Printf("[copilot] Consent check error: %v, approving by default", err)
+			return copilot.PermissionRequestResult{Kind: "approved"}, nil
+		}
+
+		if decision.Allowed {
+			return copilot.PermissionRequestResult{Kind: "approved"}, nil
+		}
+
+		if decision.RequiresPrompt {
+			// Use the azd consent checker to prompt the user
+			checker := consent.NewConsentChecker(f.consentManager, "copilot")
+			consentDecision, promptErr := checker.CheckToolConsent(
+				ctx, req.Kind, fmt.Sprintf("Copilot permission request: %s", req.Kind),
+				mcp.ToolAnnotation{},
+			)
+			if promptErr != nil {
+				return copilot.PermissionRequestResult{Kind: "denied"}, nil
+			}
+
+			if consentDecision.Allowed {
+				return copilot.PermissionRequestResult{Kind: "approved"}, nil
+			}
+		}
+
+		return copilot.PermissionRequestResult{Kind: "denied"}, nil
+	}
+}
+
+// createPreToolUseHandler builds an OnPreToolUse hook that checks the azd
+// consent system before each tool execution.
+func (f *CopilotAgentFactory) createPreToolUseHandler(
+	ctx context.Context,
+) copilot.PreToolUseHandler {
+	return func(input copilot.PreToolUseHookInput, inv copilot.HookInvocation) (
+		*copilot.PreToolUseHookOutput, error,
+	) {
+		log.Printf("[copilot] PreToolUse: tool=%s", input.ToolName)
+
+		consentReq := consent.ConsentRequest{
+			ToolID:     fmt.Sprintf("copilot/%s", input.ToolName),
+			ServerName: "copilot",
+			Operation:  consent.OperationTypeTool,
+		}
+
+		decision, err := f.consentManager.CheckConsent(ctx, consentReq)
+		if err != nil {
+			log.Printf("[copilot] Consent check error for tool %s: %v, allowing", input.ToolName, err)
+			return &copilot.PreToolUseHookOutput{PermissionDecision: "allow"}, nil
+		}
+
+		if decision.Allowed {
+			return &copilot.PreToolUseHookOutput{PermissionDecision: "allow"}, nil
+		}
+
+		if decision.RequiresPrompt {
+			// Prompt user via azd consent UX
+			checker := consent.NewConsentChecker(f.consentManager, "copilot")
+			promptErr := checker.PromptAndGrantConsent(
+				ctx, input.ToolName, input.ToolName,
+				mcp.ToolAnnotation{},
+			)
+			if promptErr != nil {
+				if promptErr == consent.ErrToolExecutionDenied {
+					return &copilot.PreToolUseHookOutput{
+						PermissionDecision:       "deny",
+						PermissionDecisionReason: "tool execution denied by user",
+					}, nil
+				}
+				log.Printf("[copilot] Consent prompt error for tool %s: %v", input.ToolName, promptErr)
+				return &copilot.PreToolUseHookOutput{
+					PermissionDecision:       "deny",
+					PermissionDecisionReason: "consent prompt failed",
+				}, nil
+			}
+
+			return &copilot.PreToolUseHookOutput{PermissionDecision: "allow"}, nil
+		}
+
+		return &copilot.PreToolUseHookOutput{
+			PermissionDecision:       "deny",
+			PermissionDecisionReason: decision.Reason,
+		}, nil
+	}
+}
+
+// createPostToolUseHandler builds an OnPostToolUse hook for logging.
+func (f *CopilotAgentFactory) createPostToolUseHandler() copilot.PostToolUseHandler {
+	return func(input copilot.PostToolUseHookInput, inv copilot.HookInvocation) (
+		*copilot.PostToolUseHookOutput, error,
+	) {
+		log.Printf("[copilot] PostToolUse: tool=%s", input.ToolName)
+		return nil, nil
+	}
+}
+
 // loadBuiltInMCPServers loads the embedded mcp.json configuration.
-func loadBuiltInMCPServers() (map[string]*mcp.ServerConfig, error) {
-	var mcpConfig *mcp.McpConfig
+func loadBuiltInMCPServers() (map[string]*azdmcp.ServerConfig, error) {
+	var mcpConfig *azdmcp.McpConfig
 	if err := json.Unmarshal([]byte(mcptools.McpJson), &mcpConfig); err != nil {
 		return nil, fmt.Errorf("failed parsing embedded mcp.json: %w", err)
 	}

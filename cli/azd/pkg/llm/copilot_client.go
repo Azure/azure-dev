@@ -19,6 +19,7 @@ import (
 type CopilotClientManager struct {
 	client  *copilot.Client
 	options *CopilotClientOptions
+	cliPath string
 }
 
 // CopilotClientOptions configures the CopilotClientManager.
@@ -57,6 +58,7 @@ func NewCopilotClientManager(options *CopilotClientOptions) *CopilotClientManage
 	return &CopilotClientManager{
 		client:  copilot.NewClient(clientOpts),
 		options: options,
+		cliPath: cliPath,
 	}
 }
 
@@ -111,6 +113,11 @@ func (m *CopilotClientManager) ListModels(ctx context.Context) ([]copilot.ModelI
 // State returns the current connection state of the client.
 func (m *CopilotClientManager) State() copilot.ConnectionState {
 	return m.client.State()
+}
+
+// CLIPath returns the resolved path to the Copilot CLI binary.
+func (m *CopilotClientManager) CLIPath() string {
+	return m.cliPath
 }
 
 // discoverCopilotCLIPath finds the native Copilot CLI binary that supports

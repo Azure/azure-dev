@@ -457,7 +457,8 @@ func (s *AiModelService) resolveDeployments(
 				continue
 			}
 
-			// TODO: Once armcognitiveservices SDK supports 2025-10-01-preview or above, we can instead filter based on Scope property of the model SKU.
+			// TODO: Once armcognitiveservices SDK supports 2025-10-01-preview or above, we can instead
+			// filter based on Scope property of the model SKU.
 			if !options.IncludeFinetuneSkus && IsFinetuneUsageName(sku.UsageName) {
 				continue
 			}

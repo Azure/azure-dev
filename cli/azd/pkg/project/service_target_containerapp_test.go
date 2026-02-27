@@ -299,7 +299,6 @@ func setupMocksForContainerApps(mockContext *mocks.MockContext) {
 	appName := "CONTAINER_APP"
 	originalImageName := "ORIGINAL_IMAGE_NAME"
 	originalRevisionName := "ORIGINAL_REVISION_NAME"
-	updatedRevisionName := "UPDATED_REVISION_NAME"
 	hostName := fmt.Sprintf("%s.%s.azurecontainerapps.io", appName, location)
 
 	containerApp := &armappcontainers.ContainerApp{
@@ -329,31 +328,11 @@ func setupMocksForContainerApps(mockContext *mocks.MockContext) {
 		},
 	}
 
-	revision := &armappcontainers.Revision{
-		Properties: &armappcontainers.RevisionProperties{
-			Template: &armappcontainers.Template{
-				Containers: []*armappcontainers.Container{
-					{
-						Image: &updatedRevisionName,
-					},
-				},
-			},
-		},
-	}
-
 	secrets := &armappcontainers.SecretsCollection{
 		Value: []*armappcontainers.ContainerAppSecret{},
 	}
 
 	mockazsdk.MockContainerAppGet(mockContext, subscriptionId, resourceGroup, appName, containerApp)
-	mockazsdk.MockContainerAppRevisionGet(
-		mockContext,
-		subscriptionId,
-		resourceGroup,
-		appName,
-		originalRevisionName,
-		revision,
-	)
 	mockazsdk.MockContainerAppSecretsList(mockContext, subscriptionId, resourceGroup, appName, secrets)
 	mockazsdk.MockContainerAppUpdate(mockContext, subscriptionId, resourceGroup, appName, containerApp)
 	mockazsdk.MockContainerRegistryTokenExchange(mockContext, subscriptionId, subscriptionId, "REFRESH_TOKEN")

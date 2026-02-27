@@ -13,11 +13,33 @@ A GitHub Action that analyzes pull request changes and identifies which document
 
 ## Configuration
 
-### Required Secrets
+### Prerequisites: GitHub App for Cross-Repo Access
+
+The doc-monitor creates companion PRs in `MicrosoftDocs/azure-dev-docs`. To authenticate cross-repo operations, a **GitHub App** is used instead of a long-lived PAT.
+
+The workflow uses [`actions/create-github-app-token@v1`](https://github.com/actions/create-github-app-token) to mint a short-lived token (valid ~1 hour) scoped to the `azure-dev-docs` repository.
+
+**Required secrets:**
 
 | Secret | Description |
 |--------|-------------|
-| `DOCS_REPO_PAT` | GitHub PAT with `repo` scope for `MicrosoftDocs/azure-dev-docs`. Required for creating companion PRs in the external docs repo. Without it, the action can still scan the public docs repo for inventory and report impacts, but cannot create PRs there. |
+| `DOC_MONITOR_APP_ID` | Application ID of the GitHub App |
+| `DOC_MONITOR_APP_PRIVATE_KEY` | Private key (PEM) for the GitHub App |
+
+**Required GitHub App permissions:**
+
+| Permission | Level | Purpose |
+|------------|-------|---------|
+| `contents` | `write` | Create branches and push commits in the docs repo |
+| `pull_requests` | `write` | Create and update companion PRs in the docs repo |
+
+The App must be installed on the `MicrosoftDocs` organization with access to the `azure-dev-docs` repository.
+
+> **Without the token**, the action can still scan the public docs repo for inventory and report impacts, but cannot create PRs there.
+
+### Trigger: `pull_request_target`
+
+The workflow uses `pull_request_target` instead of `pull_request` for security. This ensures the workflow code always runs from the **base branch** (main), not from the fork's PR branch. This prevents fork PRs from modifying the workflow to exfiltrate secrets. The action reads PR data via the GitHub API only — it never checks out or executes code from the PR branch.
 
 ### Workflow Permissions
 

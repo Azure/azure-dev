@@ -6,7 +6,7 @@ A GitHub Action that analyzes pull request changes and identifies which document
 
 1. **Triggers** on PR events (opened, updated, merged, closed) or manual dispatch
 2. **Extracts** the PR diff and classifies changes (API, behavior, config, feature, etc.)
-3. **Inventories** documentation in both `Azure/azure-dev` and `MicrosoftDocs/azure-dev-docs-pr`
+3. **Inventories** documentation in both `Azure/azure-dev` and `MicrosoftDocs/azure-dev-docs`
 4. **Analyzes** the changes using GitHub Models AI (GPT-4o) to determine doc impact
 5. **Creates companion PRs** in the appropriate repos with branch naming `docs/pr-{N}`
 6. **Posts a tracking comment** on the source PR linking to all companion doc PRs
@@ -17,7 +17,7 @@ A GitHub Action that analyzes pull request changes and identifies which document
 
 | Secret | Description |
 |--------|-------------|
-| `DOCS_REPO_PAT` | GitHub PAT with `repo` scope for `MicrosoftDocs/azure-dev-docs-pr` |
+| `DOCS_REPO_PAT` | GitHub PAT with `repo` scope for `MicrosoftDocs/azure-dev-docs`. Required for creating companion PRs in the external docs repo. Without it, the action can still scan the public docs repo for inventory and report impacts, but cannot create PRs there. |
 
 ### Workflow Permissions
 

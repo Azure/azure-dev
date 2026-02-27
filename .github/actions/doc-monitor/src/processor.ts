@@ -13,7 +13,7 @@ import { updateTrackingComment } from "./comment-tracker";
 /** Process a single PR: analyze diff, determine doc impact, create companion PRs. */
 export async function processPr(
   sourceOctokit: Octokit,
-  docsOctokit: Octokit | null,
+  docsOctokit: Octokit,
   inputs: ActionInputs,
   prNumber: number,
 ): Promise<void> {
@@ -27,7 +27,7 @@ export async function processPr(
 
   // Handle closed-without-merge: clean up companion PRs
   if (prInfo.state === "closed" && !prInfo.merged) {
-    await handleClosedPr(sourceOctokit, docsOctokit, sourceOwner, sourceRepo, docsOwner, docsRepo, prNumber);
+    await handleClosedPr(sourceOctokit, docsOctokit, sourceOwner, sourceRepo, docsOwner, docsRepo, prNumber, !!inputs.docsRepoToken);
     return;
   }
 
@@ -47,18 +47,13 @@ export async function processPr(
   const classifiedChanges = classifyChanges(files);
   const diffSummary = buildDiffSummary(files);
 
-  // Build doc inventories — external inventory only when docsOctokit is available
+  // Build doc inventories — docsOctokit always has a valid token
+  // (DOCS_REPO_PAT for write access, or GITHUB_TOKEN fallback for public repo reads)
   core.info("Building documentation inventory...");
   const inRepoDocs = await buildDocInventory(sourceOctokit, sourceOwner, sourceRepo, [
     "cli/azd/docs", "cli/azd/extensions", "ext", "README.md", "CONTRIBUTING.md",
   ]);
-
-  let externalDocs: Awaited<ReturnType<typeof buildDocInventory>> = [];
-  if (docsOctokit) {
-    externalDocs = await buildDocInventory(docsOctokit, docsOwner, docsRepo, ["articles/azure-developer-cli"]);
-  } else {
-    core.info("Skipping external doc inventory — no docs-repo-token provided");
-  }
+  const externalDocs = await buildDocInventory(docsOctokit, docsOwner, docsRepo, ["articles/azure-developer-cli"]);
   core.info(`Doc inventory: ${inRepoDocs.length} in-repo, ${externalDocs.length} external`);
 
   // AI analysis
@@ -88,7 +83,7 @@ export async function processPr(
     }
 
     if (externalImpacts.length > 0) {
-      if (docsOctokit) {
+      if (inputs.docsRepoToken) {
         core.info(`Creating/updating external doc PR (${externalImpacts.length} impacts)...`);
         state.externalPr = await createOrUpdateDocPr(
           docsOctokit, docsOwner, docsRepo, prNumber, prInfo.htmlUrl,
@@ -97,8 +92,8 @@ export async function processPr(
         core.info(`External PR: ${state.externalPr.status} — ${state.externalPr.htmlUrl}`);
       } else {
         core.warning(
-          `Found ${externalImpacts.length} external doc impact(s) but no docs-repo-token — ` +
-          "skipping external doc PR creation",
+          `Found ${externalImpacts.length} external doc impact(s) but DOCS_REPO_PAT not set — ` +
+          "skipping companion PR creation. Doc inventory scanning still works with GITHUB_TOKEN.",
         );
       }
     }
@@ -120,17 +115,18 @@ function isDocOnlyPr(files: FileDiff[]): boolean {
 }
 
 async function handleClosedPr(
-  sourceOctokit: Octokit, docsOctokit: Octokit | null,
+  sourceOctokit: Octokit, docsOctokit: Octokit,
   sourceOwner: string, sourceRepo: string,
   docsOwner: string, docsRepo: string,
   prNumber: number,
+  canWriteDocsRepo: boolean,
 ): Promise<void> {
   core.info("PR closed without merge — closing companion doc PRs");
   await closeCompanionPrs(sourceOctokit, sourceOwner, sourceRepo, prNumber);
-  if (docsOctokit) {
+  if (canWriteDocsRepo) {
     await closeCompanionPrs(docsOctokit, docsOwner, docsRepo, prNumber);
   } else {
-    core.info("Skipping external companion PR cleanup — no docs-repo-token provided");
+    core.info("Skipping external companion PR cleanup — DOCS_REPO_PAT not provided");
   }
   await postNoImpact(
     sourceOctokit, sourceOwner, sourceRepo, prNumber,

@@ -58,4 +58,4 @@ jobs:
           pr-list: ${{ inputs.pr_list || '' }}
           docs-assignees: "alexwolfmsft,diberry"
           source-repo: "Azure/azure-dev"
-          docs-repo: "MicrosoftDocs/azure-dev-docs-pr"
+          docs-repo: "MicrosoftDocs/azure-dev-docs"

@@ -33,7 +33,8 @@ export function getInputs(): ActionInputs {
   const docsRepoToken = core.getInput("docs-repo-token");
   if (!docsRepoToken) {
     core.warning(
-      "docs-repo-token not provided — cross-repo operations (MicrosoftDocs/azure-dev-docs-pr) will be skipped. " +
+      "docs-repo-token not provided — companion PR creation in the external docs repo will be skipped. " +
+      "Doc inventory scanning of the public repo (MicrosoftDocs/azure-dev-docs) will still work. " +
       "Set the DOCS_REPO_PAT secret to enable external doc PR creation.",
     );
   }

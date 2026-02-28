@@ -240,7 +240,6 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 		if !confirmFix {
 			if troubleshootScope != "" {
-			if troubleshootScope != "" {
 				span.SetStatus(codes.Ok, "agent.troubleshoot.only")
 			} else {
 				span.SetStatus(codes.Error, "agent.fix.declined")

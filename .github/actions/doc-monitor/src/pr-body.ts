@@ -2,6 +2,14 @@
 
 import type { DocImpact } from "./types";
 
+/** Strip HTML/markdown injection from AI-generated text before embedding in PR bodies. */
+function sanitizeForMarkdown(value: string): string {
+  return value
+    .replace(/<[^>]*>/g, "")           // strip HTML tags
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "")  // remove markdown images
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, ""); // strip control chars
+}
+
 /** Build a summary markdown file for the doc analysis commit. */
 export function buildDocPrSummary(
   sourcePrNumber: number,
@@ -21,9 +29,9 @@ export function buildDocPrSummary(
   for (const impact of impacts) {
     lines.push(`### ${impact.action.toUpperCase()}: ${impact.doc.path}`);
     lines.push(`- **Priority**: ${impact.priority}`);
-    lines.push(`- **Reason**: ${impact.reason}`);
+    lines.push(`- **Reason**: ${sanitizeForMarkdown(impact.reason)}`);
     if (impact.suggestedChanges) {
-      lines.push(`- **Suggested changes**: ${impact.suggestedChanges}`);
+      lines.push(`- **Suggested changes**: ${sanitizeForMarkdown(impact.suggestedChanges)}`);
     }
     lines.push(``);
   }
@@ -53,9 +61,9 @@ export function buildPrBody(
     if (items.length === 0) continue;
     lines.push(`#### ${priority.charAt(0).toUpperCase() + priority.slice(1)} Priority`);
     for (const item of items) {
-      lines.push(`- **${item.action}** \`${item.doc.path}\` - ${item.reason}`);
+      lines.push(`- **${item.action}** \`${item.doc.path}\` - ${sanitizeForMarkdown(item.reason)}`);
       if (item.suggestedChanges) {
-        lines.push(`  > ${item.suggestedChanges}`);
+        lines.push(`  > ${sanitizeForMarkdown(item.suggestedChanges)}`);
       }
     }
     lines.push(``);

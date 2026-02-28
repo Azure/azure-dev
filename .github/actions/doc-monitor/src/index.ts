@@ -3,7 +3,7 @@ import * as github from "@actions/github";
 import { Octokit } from "@octokit/rest";
 import { getInputs, parseRepoFullName } from "./inputs";
 import { processPr } from "./processor";
-import { GITHUB_PAGE_SIZE } from "./constants";
+import { GITHUB_PAGE_SIZE, MAX_PRS_PER_RUN } from "./constants";
 
 /** Resolve which PRs to process based on the configured mode. */
 async function resolvePrNumbers(
@@ -40,14 +40,20 @@ async function resolvePrNumbers(
         per_page: GITHUB_PAGE_SIZE,
       });
       core.info(`Found ${prs.length} open PRs`);
-      return prs.map((pr) => pr.number);
+      if (prs.length > MAX_PRS_PER_RUN) {
+        core.warning(`Capping all_open run to ${MAX_PRS_PER_RUN} PRs (found ${prs.length})`);
+      }
+      return prs.slice(0, MAX_PRS_PER_RUN).map((pr) => pr.number);
     }
     case "list": {
       if (!prList || prList.length === 0) {
         core.setFailed("mode=list requires pr-list input");
         return [];
       }
-      return prList;
+      if (prList.length > MAX_PRS_PER_RUN) {
+        core.warning(`Capping list mode to ${MAX_PRS_PER_RUN} PRs (requested ${prList.length})`);
+      }
+      return prList.slice(0, MAX_PRS_PER_RUN);
     }
     default:
       core.setFailed(`Unknown mode: ${mode}`);

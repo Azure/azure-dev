@@ -28,6 +28,8 @@ export async function analyzeDocImpact(
   diffSummary: string,
   classifiedChanges: ClassifiedChange[],
   docInventory: DocEntry[],
+  sourceRepo?: string,
+  docsRepo?: string,
 ): Promise<AnalysisResult> {
   const manifest = buildDocManifest(docInventory);
 
@@ -106,7 +108,7 @@ Analyze the changes and determine which documentation files are impacted. Respon
     }
 
     const parsed = JSON.parse(content) as RawAnalysisResult;
-    return validateResult(parsed);
+    return validateResult(parsed, sourceRepo, docsRepo);
   } catch (error) {
     core.error(`AI analysis failed: ${error}`);
     return {
@@ -134,10 +136,16 @@ interface RawAnalysisResult {
 }
 
 /** Validate and normalize the AI response from flat format to our DocImpact type. */
-function validateResult(raw: RawAnalysisResult): AnalysisResult {
+function validateResult(
+  raw: RawAnalysisResult,
+  sourceRepo?: string,
+  docsRepo?: string,
+): AnalysisResult {
   if (!Array.isArray(raw.impacts)) {
     raw.impacts = [];
   }
+
+  const knownRepos = [sourceRepo, docsRepo].filter(Boolean) as string[];
 
   const validImpacts: DocImpact[] = raw.impacts
     .filter((impact) => {
@@ -149,18 +157,26 @@ function validateResult(raw: RawAnalysisResult): AnalysisResult {
         typeof impact.reason === "string"
       );
     })
-    .map((impact) => ({
-      doc: {
-        repo: impact.repo,
-        path: impact.path,
-        title: impact.path.split("/").pop()?.replace(/\.md$/, "") || impact.path,
-        topics: [],
-      },
-      action: impact.action as DocImpact["action"],
-      reason: impact.reason,
-      suggestedChanges: impact.suggestedChanges,
-      priority: impact.priority as DocImpact["priority"],
-    }));
+    .map((impact) => {
+      if (knownRepos.length > 0 && !knownRepos.includes(impact.repo)) {
+        core.warning(
+          `AI returned unknown repo "${impact.repo}" for doc "${impact.path}". ` +
+          `Expected one of: ${knownRepos.join(", ")}`,
+        );
+      }
+      return {
+        doc: {
+          repo: impact.repo,
+          path: impact.path,
+          title: impact.path.split("/").pop()?.replace(/\.md$/, "") || impact.path,
+          topics: [],
+        },
+        action: impact.action as DocImpact["action"],
+        reason: impact.reason,
+        suggestedChanges: impact.suggestedChanges,
+        priority: impact.priority as DocImpact["priority"],
+      };
+    });
 
   const noImpact = validImpacts.length === 0;
   return {

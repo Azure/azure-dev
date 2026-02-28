@@ -5,7 +5,7 @@ inputs:
     description: "GitHub token for in-repo operations"
     required: true
   docs-repo-token:
-    description: "Token for cross-repo operations (from GitHub App or PAT). When not provided, cross-repo write operations are skipped."
+    description: "Token for cross-repo operations (minted via OIDC + Key Vault signing). When not provided, cross-repo write operations are skipped."
     required: false
     default: ""
   mode:

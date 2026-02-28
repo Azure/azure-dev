@@ -27,7 +27,13 @@ export async function processPr(
 
   // Handle closed-without-merge: clean up companion PRs
   if (prInfo.state === "closed" && !prInfo.merged) {
-    await handleClosedPr(sourceOctokit, docsOctokit, sourceOwner, sourceRepo, docsOwner, docsRepo, prNumber, !!inputs.docsRepoToken);
+    await handleClosedPr(sourceOctokit, docsOctokit, sourceOwner, sourceRepo, docsOwner, docsRepo, prNumber, !!inputs.docsRepoToken, inputs.sourceRepo, inputs.docsRepo);
+    return;
+  }
+
+  // Handle merged PRs: skip analysis (doc companion PRs should already exist if needed)
+  if (prInfo.state === "closed" && prInfo.merged) {
+    core.info("PR is already merged — skipping analysis (companion PRs should already exist)");
     return;
   }
 
@@ -40,6 +46,7 @@ export async function processPr(
     await postNoImpact(
       sourceOctokit, sourceOwner, sourceRepo, prNumber,
       "This PR contains only documentation changes — no additional doc updates needed.",
+      inputs.sourceRepo, inputs.docsRepo,
     );
     return;
   }
@@ -61,6 +68,7 @@ export async function processPr(
   const aiClient = createAIClient(inputs.githubToken);
   const analysisResult = await analyzeDocImpact(
     aiClient, prInfo.title, prInfo.body, diffSummary, classifiedChanges, [...inRepoDocs, ...externalDocs],
+    inputs.sourceRepo, inputs.docsRepo,
   );
   core.info(`Analysis: ${analysisResult.summary}`);
   core.info(`Impacts: ${analysisResult.impacts.length} doc(s) affected`);
@@ -101,7 +109,7 @@ export async function processPr(
 
   // Update tracking comment on source PR
   core.info("Updating tracking comment...");
-  await updateTrackingComment(sourceOctokit, sourceOwner, sourceRepo, prNumber, state);
+  await updateTrackingComment(sourceOctokit, sourceOwner, sourceRepo, prNumber, state, inputs.sourceRepo, inputs.docsRepo);
 
   core.setOutput("has-impact", !analysisResult.noImpact);
   core.setOutput("impact-count", analysisResult.impacts.length);
@@ -111,7 +119,10 @@ export async function processPr(
 }
 
 function isDocOnlyPr(files: FileDiff[]): boolean {
-  if (files.length === 0) return true;
+  if (files.length === 0) {
+    core.info("No files found in PR");
+    return false;
+  }
 
   const docExtensions = [".md", ".mdx"];
   const docAssetExtensions = [
@@ -133,6 +144,8 @@ async function handleClosedPr(
   docsOwner: string, docsRepo: string,
   prNumber: number,
   canWriteDocsRepo: boolean,
+  sourceRepoFull: string,
+  docsRepoFull: string,
 ): Promise<void> {
   core.info("PR closed without merge — closing companion doc PRs");
   await closeCompanionPrs(sourceOctokit, sourceOwner, sourceRepo, prNumber);
@@ -144,16 +157,18 @@ async function handleClosedPr(
   await postNoImpact(
     sourceOctokit, sourceOwner, sourceRepo, prNumber,
     "Source PR was closed without merge. Companion doc PRs have been closed.",
+    sourceRepoFull, docsRepoFull,
   );
 }
 
 async function postNoImpact(
   octokit: Octokit, owner: string, repo: string, prNumber: number, summary: string,
+  sourceRepoFull: string, docsRepoFull: string,
 ): Promise<void> {
   const state: TrackingState = {
     sourcePr: prNumber,
     lastUpdated: new Date().toISOString(),
     analysisResult: { impacts: [], summary, noImpact: true },
   };
-  await updateTrackingComment(octokit, owner, repo, prNumber, state);
+  await updateTrackingComment(octokit, owner, repo, prNumber, state, sourceRepoFull, docsRepoFull);
 }

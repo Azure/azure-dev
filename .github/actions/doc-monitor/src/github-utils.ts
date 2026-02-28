@@ -20,8 +20,11 @@ export async function checkBranchExists(
   try {
     await octokit.git.getRef({ owner, repo, ref: `heads/${branch}` });
     return true;
-  } catch {
-    return false;
+  } catch (error: unknown) {
+    if (typeof error === "object" && error !== null && "status" in error && (error as { status: number }).status === 404) {
+      return false;
+    }
+    throw error;
   }
 }
 
@@ -36,7 +39,7 @@ export async function findExistingPr(
     owner,
     repo,
     head: `${owner}:${headBranch}`,
-    state: "all",
+    state: "open",
     per_page: 1,
   });
 

@@ -68,8 +68,8 @@ func LatestVersion(versions []ExtensionVersion) *ExtensionVersion {
 	}
 
 	if latest == nil {
-		// All version strings failed to parse; fall back to the first element.
-		return &versions[0]
+		// All version strings failed to parse; fall back to the last element.
+		return &versions[len(versions)-1]
 	}
 
 	return latest

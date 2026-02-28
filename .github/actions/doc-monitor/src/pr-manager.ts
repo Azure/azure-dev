@@ -104,7 +104,7 @@ export async function closeCompanionPrs(
     pull_number: existingPr.number,
     state: "closed",
     body:
-      existingPr.body +
+      (existingPr.body ?? "").replace(/<[^>]*>/g, "") +
       `\n\n---\n_Closed automatically: source PR #${sourcePrNumber} was closed without merge._`,
   });
 

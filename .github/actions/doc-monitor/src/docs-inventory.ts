@@ -1,7 +1,7 @@
 import * as core from "@actions/core";
 import { Octokit } from "@octokit/rest";
 import type { DocEntry } from "./types";
-import { MAX_RECURSION_DEPTH, MAX_TOPICS, MAX_TOPIC_LENGTH, MAX_CONTENT_FETCHES } from "./constants";
+import { MAX_RECURSION_DEPTH, MAX_TOPICS, MAX_TOPIC_LENGTH, MAX_CONTENT_FETCHES, MAX_CONTENT_SIZE_BYTES } from "./constants";
 
 /** Glob patterns to exclude from doc inventory. */
 const EXCLUDE_PATTERNS = [
@@ -18,13 +18,22 @@ function shouldExclude(path: string): boolean {
   return EXCLUDE_PATTERNS.some((p) => p.test(path));
 }
 
+/** Strip HTML tags, markdown links/images, and control characters from text. */
+function sanitizeText(value: string): string {
+  return value
+    .replace(/<[^>]*>/g, "")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "")
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
+}
+
 /** Extract a title from markdown content (first H1 or filename). */
 function extractTitle(content: string, path: string): string {
   const h1Match = content.match(/^#\s+(.+)$/m);
-  if (h1Match) return h1Match[1].trim();
+  if (h1Match) return sanitizeText(h1Match[1].trim());
 
   const frontmatterTitle = content.match(/^title:\s*["']?(.+?)["']?\s*$/m);
-  if (frontmatterTitle) return frontmatterTitle[1].trim();
+  if (frontmatterTitle) return sanitizeText(frontmatterTitle[1].trim());
 
   // Fall back to filename
   const parts = path.split("/");
@@ -42,13 +51,13 @@ function extractTopics(content: string, path: string): string[] {
   // From frontmatter tags
   const tagsMatch = content.match(/^tags:\s*\[(.+)\]/m);
   if (tagsMatch) {
-    topics.push(...tagsMatch[1].split(",").map((t) => t.trim().replace(/["']/g, "")));
+    topics.push(...tagsMatch[1].split(",").map((t) => sanitizeText(t.trim().replace(/["']/g, ""))));
   }
 
   // From H2 headings
   const h2Matches = content.matchAll(/^##\s+(.+)$/gm);
   for (const match of h2Matches) {
-    topics.push(match[1].trim().toLowerCase().slice(0, MAX_TOPIC_LENGTH));
+    topics.push(sanitizeText(match[1].trim().toLowerCase()).slice(0, MAX_TOPIC_LENGTH));
   }
 
   return [...new Set(topics)].slice(0, MAX_TOPICS);
@@ -111,6 +120,14 @@ async function collectDocsViaTree(
         const filePath = file.path!;
         try {
           const { data: blob } = await octokit.git.getBlob({ owner, repo, file_sha: file.sha! });
+          if ((blob.size ?? 0) > MAX_CONTENT_SIZE_BYTES) {
+            // Skip oversized files — use path-based fallback
+            const name = filePath.split("/").pop() ?? filePath;
+            return {
+              repo: repoFullName, path: filePath,
+              title: name.replace(/\.md$/, ""), topics: filePath.split("/").slice(0, 3),
+            } as DocEntry;
+          }
           const content = Buffer.from(blob.content, "base64").toString("utf-8");
           return {
             repo: repoFullName,

@@ -23,7 +23,7 @@ export async function processPr(
   core.info(`Processing PR #${prNumber} in ${inputs.sourceRepo}`);
 
   const prInfo = await getPrInfo(sourceOctokit, sourceOwner, sourceRepo, prNumber);
-  core.info(`PR: "${prInfo.title}" (${prInfo.state})`);
+  core.info(`PR: "${prInfo.title.slice(0, 100).replace(/[\x00-\x1F]/g, "")}" (${prInfo.state})`);
 
   // Handle closed-without-merge: clean up companion PRs
   if (prInfo.state === "closed" && !prInfo.merged) {

@@ -111,9 +111,14 @@ function buildCommentBody(
   return lines.join("\n");
 }
 
-/** Escape pipe characters and control sequences in markdown table cell values. */
+/** Escape markdown/HTML injection vectors in table cell values. */
 function escapeTableCell(value: string): string {
-  return value.replace(/\|/g, "\\|").replace(/\n/g, " ");
+  return value
+    .replace(/<[^>]*>/g, "")           // strip HTML tags
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1") // convert markdown links to plain text
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "")  // remove markdown images
+    .replace(/\|/g, "\\|")            // escape pipe (table syntax)
+    .replace(/\n/g, " ");             // collapse newlines
 }
 
 function formatCompanionPrStatus(pr: CompanionPr): string {
@@ -125,9 +130,9 @@ function formatCompanionPrStatus(pr: CompanionPr): string {
     case "existing":
       return `- **Existing PR**: [#${pr.number}](${pr.htmlUrl}) on branch \`${pr.branch}\``;
     case "conflict":
-      return `- **Conflict detected**: Branch \`${pr.branch}\` has conflicts that need manual resolution. ${pr.message || ""}`;
+      return `- **Conflict detected**: Branch \`${pr.branch}\` has conflicts that need manual resolution.`;
     case "error":
-      return `- **Error**: Could not create/update PR. ${pr.message || ""}`;
+      return `- **Error**: Could not create/update PR.`;
     default:
       return `- PR: [#${pr.number}](${pr.htmlUrl})`;
   }

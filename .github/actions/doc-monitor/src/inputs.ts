@@ -13,8 +13,8 @@ export function getInputs(): ActionInputs {
 
   const prNumberRaw = core.getInput("pr-number");
   const prNumber = prNumberRaw ? parseInt(prNumberRaw, 10) : undefined;
-  if (prNumberRaw && (!prNumber || prNumber <= 0)) {
-    throw new Error(`Invalid pr-number "${prNumberRaw}". Must be a positive integer.`);
+  if (prNumberRaw && (!prNumber || prNumber <= 0 || prNumber > 999_999)) {
+    throw new Error(`Invalid pr-number "${prNumberRaw}". Must be a positive integer (max 999999).`);
   }
 
   const prListRaw = core.getInput("pr-list");

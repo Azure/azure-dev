@@ -18,6 +18,15 @@ export const MAX_RECURSION_DEPTH = 5;
 export const MAX_TOPICS = 10;
 export const MAX_TOPIC_LENGTH = 40;
 export const MAX_CONTENT_FETCHES = 50;
+export const MAX_CONTENT_SIZE_BYTES = 50_000;
+
+// ─── Batch processing ───────────────────────────────────────────────
+export const MAX_PRS_PER_RUN = 20;
+
+// ─── AI output limits ───────────────────────────────────────────────
+export const MAX_REASON_LENGTH = 200;
+export const MAX_SUMMARY_LENGTH = 500;
+export const MAX_IMPACTS = 15;
 
 // ─── GitHub API ─────────────────────────────────────────────────────
 export const GITHUB_PAGE_SIZE = 100;

@@ -239,7 +239,7 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 		}
 
 		// Always show the true latest version
-		latestVersion := extension.Versions[len(extension.Versions)-1].Version
+		latestVersion := extensions.LatestVersion(extension.Versions).Version
 
 		var installedVersion string
 		var updateAvailable bool
@@ -552,7 +552,7 @@ func (a *extensionShowAction) Run(ctx context.Context) (*actions.ActionResult, e
 		return nil, err
 	}
 
-	latestVersion := registryExtension.Versions[len(registryExtension.Versions)-1]
+	latestVersion := extensions.LatestVersion(registryExtension.Versions)
 
 	var otherVersions []string
 	for _, version := range registryExtension.Versions {
@@ -722,7 +722,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 		// Determine target version
 		targetVersion := a.flags.version
 		if targetVersion == "" || targetVersion == "latest" {
-			targetVersion = compatibleExtension.Versions[len(compatibleExtension.Versions)-1].Version
+			targetVersion = extensions.LatestVersion(compatibleExtension.Versions).Version
 		}
 
 		var extensionVersion *extensions.ExtensionVersion
@@ -1030,7 +1030,7 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 		if a.flags.version != "" && a.flags.version != "latest" {
 			targetVersionStr = a.flags.version
 		} else {
-			targetVersionStr = compatibleExtension.Versions[len(compatibleExtension.Versions)-1].Version
+			targetVersionStr = extensions.LatestVersion(compatibleExtension.Versions).Version
 		}
 
 		// Parse semantic versions for proper comparison

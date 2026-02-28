@@ -159,6 +159,39 @@ func Test_RegistryCacheManager_GetExtensionLatestVersion(t *testing.T) {
 	require.Error(t, err)
 }
 
+func Test_RegistryCacheManager_GetExtensionLatestVersion_DescendingOrder(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", tempDir)
+
+	cacheManager, err := NewRegistryCacheManager()
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	sourceName := "version-desc-test-source"
+
+	// Simulate registry returning versions in descending order (newest first)
+	extensions := []*ExtensionMetadata{
+		{
+			Id:          "test.extension",
+			DisplayName: "Test Extension",
+			Versions: []ExtensionVersion{
+				{Version: "0.1.1"},
+				{Version: "0.1.0"},
+				{Version: "0.0.5"},
+				{Version: "0.0.2"},
+			},
+		},
+	}
+
+	err = cacheManager.Set(ctx, sourceName, extensions)
+	require.NoError(t, err)
+
+	// Should return the highest semver version, not the last element
+	latestVersion, err := cacheManager.GetExtensionLatestVersion(ctx, sourceName, "test.extension")
+	require.NoError(t, err)
+	require.Equal(t, "0.1.1", latestVersion)
+}
+
 func Test_RegistryCacheManager_IsExpiredOrMissing(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("AZD_CONFIG_DIR", tempDir)

@@ -331,4 +331,74 @@ func Test_FilterCompatibleVersions(t *testing.T) {
 		require.Equal(t, "1.1.0", result.LatestCompatible.Version)
 		require.True(t, result.HasNewerIncompatible)
 	})
+
+	t.Run("descending order returns correct latest overall", func(t *testing.T) {
+		versions := []ExtensionVersion{
+			{Version: "0.1.1"},
+			{Version: "0.1.0"},
+			{Version: "0.0.5"},
+			{Version: "0.0.2"},
+		}
+		azdVersion := semver.MustParse("1.25.0")
+		result := FilterCompatibleVersions(versions, azdVersion)
+
+		require.Equal(t, "0.1.1", result.LatestOverall.Version)
+		require.Equal(t, "0.1.1", result.LatestCompatible.Version)
+		require.False(t, result.HasNewerIncompatible)
+	})
+
+	t.Run("descending order with incompatible newest version", func(t *testing.T) {
+		versions := []ExtensionVersion{
+			{Version: "2.0.0", RequiredAzdVersion: ">= 2.0.0"},
+			{Version: "1.1.0"},
+			{Version: "1.0.0"},
+		}
+		azdVersion := semver.MustParse("1.25.0")
+		result := FilterCompatibleVersions(versions, azdVersion)
+
+		require.Equal(t, "2.0.0", result.LatestOverall.Version)
+		require.Equal(t, "1.1.0", result.LatestCompatible.Version)
+		require.True(t, result.HasNewerIncompatible)
+	})
+}
+
+func Test_LatestVersion(t *testing.T) {
+	t.Run("nil on empty slice", func(t *testing.T) {
+		require.Nil(t, LatestVersion([]ExtensionVersion{}))
+	})
+
+	t.Run("single element", func(t *testing.T) {
+		versions := []ExtensionVersion{{Version: "1.0.0"}}
+		require.Equal(t, "1.0.0", LatestVersion(versions).Version)
+	})
+
+	t.Run("ascending order", func(t *testing.T) {
+		versions := []ExtensionVersion{
+			{Version: "0.0.2"},
+			{Version: "0.0.5"},
+			{Version: "0.1.0"},
+			{Version: "0.1.1"},
+		}
+		require.Equal(t, "0.1.1", LatestVersion(versions).Version)
+	})
+
+	t.Run("descending order", func(t *testing.T) {
+		versions := []ExtensionVersion{
+			{Version: "0.1.1"},
+			{Version: "0.1.0"},
+			{Version: "0.0.5"},
+			{Version: "0.0.2"},
+		}
+		require.Equal(t, "0.1.1", LatestVersion(versions).Version)
+	})
+
+	t.Run("unsorted order", func(t *testing.T) {
+		versions := []ExtensionVersion{
+			{Version: "0.0.5"},
+			{Version: "0.1.1"},
+			{Version: "0.0.2"},
+			{Version: "0.1.0"},
+		}
+		require.Equal(t, "0.1.1", LatestVersion(versions).Version)
+	})
 }

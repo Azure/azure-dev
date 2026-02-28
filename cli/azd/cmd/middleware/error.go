@@ -515,7 +515,7 @@ func (e *ErrorMiddleware) promptForFixGuidance(ctx context.Context) (bool, error
 	}
 
 	selector := uxlib.NewSelect(&uxlib.SelectOptions{
-		Message:         "Do you want to generate step by step fix guidance?",
+		Message:         "Do you want to generate step-by-step fix guidance?",
 		Choices:         choices,
 		EnableFiltering: uxlib.Ptr(false),
 		DisplayCount:    len(choices),

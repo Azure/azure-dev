@@ -89,6 +89,7 @@ func createBlobClient(
 		httpClient, mockContext.Console,
 		auth.ExternalAuthConfiguration{},
 		azCli,
+		"",
 	)
 	require.NoError(t, err)
 

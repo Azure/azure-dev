@@ -198,13 +198,14 @@ All flags persist their values to config, which can also be set directly via `az
    - Stable: semver comparison (blang/semver)
    - Daily: build number comparison (extracted from the daily.N suffix)
 4. If no update available → "You're up to date"
-5. Download new binary to temp dir (with progress bar)
-6. Verify SHA256 checksum (downloaded from {binaryURL}.sha256)
-7. Verify code signature (macOS: codesign, Windows: Get-AuthenticodeSignature)
-8. Replace binary at install location
-   - If install location is user-writable → direct copy
-   - If install location needs elevation → sudo cp (user sees OS password prompt)
-9. Done — new version takes effect on next invocation
+5. Download update (with progress bar)
+   - macOS/Linux: download archive to temp dir, extract binary
+   - Windows: download MSI to temp dir
+6. Verify code signature (macOS: codesign, Windows: Get-AuthenticodeSignature)
+7. Install update
+   - macOS/Linux: replace binary at install location (sudo if needed)
+   - Windows: run MSI silently via `msiexec /i <path> /qn`
+8. Done — new version takes effect on next invocation
 ```
 
 #### Code Signing Verification
@@ -220,23 +221,19 @@ The check is fail-safe: if `codesign` or PowerShell isn't available (unlikely), 
 
 Most install methods write to system directories requiring elevation:
 
-| Location | Needs Elevation |
-|----------|----------------|
-| `/opt/microsoft/azd/` (Linux script) | Yes — `sudo mv` |
-| `C:\Program Files\` (Windows MSI) | Yes — UAC |
-| Homebrew prefix | No — user-writable |
-| User home dirs | No |
+| Location | Needs Elevation | Update Method |
+|----------|----------------|---------------|
+| `/opt/microsoft/azd/` (Linux script) | Yes — `sudo cp` | Direct binary replacement |
+| `C:\Program Files\` (Windows MSI) | Yes — handled by MSI installer | MSI via `msiexec /i` |
+| `~/.azd/bin/` (Windows PowerShell script) | No — user-writable | MSI via `msiexec /i` |
+| Homebrew prefix | No — user-writable | Delegates to `brew upgrade azd` |
+| User home dirs | No | Direct binary replacement |
 
-For `sudo`, azd passes through stdin/stdout so the user sees the standard OS password prompt. Use existing `CommandRunner` (`pkg/exec/command_runner.go`) for exec:
+**Windows**: Updates always use the MSI installer (`msiexec /i <path> /qn`), which handles UAC elevation when installing to protected locations like `C:\Program Files\`. Downgrades between GA versions are not supported via MSI.
 
-```go
-cmd := exec.Command("sudo", "mv", stagedBinary, currentBinaryPath)
-cmd.Stdin = os.Stdin
-cmd.Stdout = os.Stdout
-cmd.Stderr = os.Stderr
-```
+**macOS/Linux (brew)**: Homebrew tracks installed assets, so azd never overwrites brew-managed binaries directly. Same-channel updates delegate to `brew upgrade azd`. Channel switching (stable ↔ daily) currently requires uninstalling brew and reinstalling via script. A future brew pre-release formula could enable `brew` to handle daily builds natively.
 
-One password prompt total (download to staging is in user space, only the final move needs elevation).
+**macOS/Linux (script)**: For `sudo`, azd passes through stdin/stdout so the user sees the standard OS password prompt. Uses `CommandRunner` (`pkg/exec/command_runner.go`) for exec.
 
 ### 4. Auto-Update
 

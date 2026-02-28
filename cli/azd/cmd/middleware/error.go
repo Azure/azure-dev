@@ -162,10 +162,8 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 		e.console.Message(ctx, "")
 		troubleshootScope, err := e.promptTroubleshootingWithConsent(ctx)
-		troubleshootScope, err := e.promptTroubleshootingWithConsent(ctx)
 		if err != nil {
 			span.SetStatus(codes.Error, "agent.consent.failed")
-			return nil, fmt.Errorf("prompting for troubleshooting scope: %w", err)
 			return nil, fmt.Errorf("prompting for troubleshooting scope: %w", err)
 		}
 
@@ -239,7 +237,6 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		}
 
 		if !confirmFix {
-			if troubleshootScope != "" {
 			if troubleshootScope != "" {
 				span.SetStatus(codes.Ok, "agent.troubleshoot.only")
 			} else {
@@ -441,7 +438,7 @@ func promptForErrorHandlingConsent(
 
 // promptTroubleshootingWithConsent combines consent and scope selection into a single prompt.
 // Checks if a saved preference exists (e.g. mcp.errorHandling.troubleshooting.explain).
-// Returns the scope ("explain", "fix", "summary") or "" if skipped.
+// Returns the scope ("explain") or "" if skipped.
 func (e *ErrorMiddleware) promptTroubleshootingWithConsent(ctx context.Context) (string, error) {
 	const configPrefix = "mcp.errorHandling.troubleshooting"
 

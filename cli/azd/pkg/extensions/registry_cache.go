@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
@@ -181,8 +182,47 @@ func (m *RegistryCacheManager) GetExtensionLatestVersion(
 			if len(ext.Versions) == 0 {
 				return "", fmt.Errorf("extension %s has no versions", extensionId)
 			}
-			// Latest version is the last element in the Versions slice
-			return ext.Versions[len(ext.Versions)-1].Version, nil
+
+			// Compare first and last elements to find the highest version.
+			// If the highest is a prerelease (e.g. "preview"), fall back to the second version.
+			first := ext.Versions[0].Version
+			last := ext.Versions[len(ext.Versions)-1].Version
+
+			firstSv, errFirst := semver.NewVersion(first)
+			lastSv, errLast := semver.NewVersion(last)
+			if errFirst != nil || errLast != nil {
+				return "", fmt.Errorf("extension %s has no valid semver versions", extensionId)
+			}
+
+			latest := first
+			latestSv := firstSv
+			if lastSv.GreaterThan(firstSv) {
+				latest = last
+				latestSv = lastSv
+			}
+
+			// If the highest version is a prerelease, walk through subsequent versions
+			// until we find a stable (non-prerelease) version.
+			// If all versions are prereleases, return the highest prerelease.
+			if latestSv.Prerelease() != "" && len(ext.Versions) > 1 {
+				start := 1
+				end := len(ext.Versions)
+				step := 1
+				if lastSv.GreaterThan(firstSv) {
+					// ascending order: walk backwards from second-to-last
+					start = len(ext.Versions) - 2
+					end = -1
+					step = -1
+				}
+				for i := start; i != end; i += step {
+					sv, err := semver.NewVersion(ext.Versions[i].Version)
+					if err == nil && sv.Prerelease() == "" {
+						return ext.Versions[i].Version, nil
+					}
+				}
+			}
+
+			return latest, nil
 		}
 	}
 

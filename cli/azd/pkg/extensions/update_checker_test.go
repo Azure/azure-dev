@@ -154,8 +154,9 @@ func Test_FormatUpdateWarning(t *testing.T) {
 	require.Contains(t, warning.Description, "2.0.0")
 	require.False(t, warning.HidePrefix)
 	require.Len(t, warning.Hints, 2)
+	require.Contains(t, warning.Hints[0], "azd extension upgrade --all")
 	require.Contains(t, warning.Hints[0], "azd extension upgrade test.extension")
-	require.Contains(t, warning.Hints[1], "azd extension upgrade --all")
+	require.Contains(t, warning.Hints[1], "azd extension uninstall test.extension")
 }
 
 func Test_FormatUpdateWarning_NoDisplayName(t *testing.T) {
@@ -199,7 +200,8 @@ func Test_UpdateChecker_PrereleaseVersions(t *testing.T) {
 
 	updateChecker := NewUpdateChecker(cacheManager)
 
-	// Installed stable version should see prerelease as update
+	// When the only newer version is a prerelease, the original code falls back to the latest
+	// stable version (1.0.0). Since the installed version is already 1.0.0, no update is available.
 	extension := &Extension{
 		Id:          "test.extension",
 		DisplayName: "Test Extension",
@@ -209,8 +211,7 @@ func Test_UpdateChecker_PrereleaseVersions(t *testing.T) {
 
 	result, err := updateChecker.CheckForUpdate(ctx, extension)
 	require.NoError(t, err)
-	// semver: 2.0.0-beta.1 is considered less than 2.0.0 but greater than 1.0.0
-	require.True(t, result.HasUpdate)
+	require.False(t, result.HasUpdate)
 }
 
 func Test_UpdateChecker_InvalidVersions(t *testing.T) {

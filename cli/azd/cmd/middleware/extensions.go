@@ -5,6 +5,7 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -16,10 +17,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/fatih/color"
 )
 
@@ -30,6 +33,13 @@ var (
 		extensions.FrameworkServiceProviderCapability,
 	}
 )
+
+// extensionStartFailure captures a failed extension along with the nature of the failure.
+type extensionStartFailure struct {
+	extension *extensions.Extension
+	// timedOut is true when the failure was caused by the ready-wait context deadline being exceeded.
+	timedOut bool
+}
 
 type ExtensionsMiddleware struct {
 	extensionManager *extensions.Manager
@@ -103,7 +113,7 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 	forceColor := !color.NoColor
 	var wg sync.WaitGroup
 	var mu sync.Mutex
-	var failedExtensions []*extensions.Extension
+	var failures []extensionStartFailure
 
 	// Track total time for all extensions to become ready
 	allExtensionsStartTime := time.Now()
@@ -162,7 +172,20 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 				}
 
 				if _, err := m.extensionRunner.Invoke(ctx, ext, options); err != nil {
-					m.console.Message(ctx, err.Error())
+					// Log full error (including stdout/stderr) for --debug.
+					log.Printf("extension '%s' invocation failed: %v", ext.Id, err)
+
+					// Show a concise reason to the user (exit code without raw stdout/stderr).
+					var exitErr *exec.ExitError
+					if errors.As(err, &exitErr) {
+						m.console.Message(ctx, fmt.Sprintf(
+							"Extension '%s' failed to start (exit code: %d). Run with --debug for details.",
+							ext.Id, exitErr.ExitCode))
+					} else {
+						m.console.Message(ctx, fmt.Sprintf(
+							"Extension '%s' failed to start: %v",
+							ext.Id, err))
+					}
 					ext.Fail(err)
 				}
 			}()
@@ -180,7 +203,10 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 
 				// Track failed extensions for warning display
 				mu.Lock()
-				failedExtensions = append(failedExtensions, ext)
+				failures = append(failures, extensionStartFailure{
+					extension: ext,
+					timedOut:  errors.Is(err, context.DeadlineExceeded),
+				})
 				mu.Unlock()
 			} else {
 				elapsed := time.Since(startTime)
@@ -194,17 +220,35 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 
 	// Check for failed extensions and display warnings
 
-	if len(failedExtensions) > 0 {
+	if len(failures) > 0 {
+		// Collect just the Extension pointers for the update check.
+		failedExts := make([]*extensions.Extension, len(failures))
+		for i, f := range failures {
+			failedExts[i] = f.extension
+		}
+
+		// Check for available updates using only cached data (no network requests in the failure path).
+		updateWarnings := m.checkUpdatesForExtensions(ctx, failedExts)
+		for _, w := range updateWarnings {
+			m.console.MessageUxItem(ctx, w)
+		}
+
 		m.console.Message(ctx, output.WithWarningFormat("WARNING: Extension startup failures detected"))
-		m.console.Message(ctx, "The following extensions failed to initialize within the timeout period:")
-		for _, ext := range failedExtensions {
-			m.console.Message(ctx, fmt.Sprintf("  - %s (%s)", ext.DisplayName, ext.Id))
+		m.console.Message(ctx, "The following extensions failed to initialize:")
+		for _, f := range failures {
+			m.console.Message(ctx, fmt.Sprintf("  - %s (%s)", f.extension.DisplayName, f.extension.Id))
 		}
 		m.console.Message(ctx, "")
-		m.console.Message(
-			ctx,
-			"Some features may be unavailable. Increase timeout with AZD_EXT_TIMEOUT=<seconds> if needed.",
-		)
+
+		hasTimeouts := slices.ContainsFunc(failures, func(f extensionStartFailure) bool { return f.timedOut })
+		if hasTimeouts {
+			m.console.Message(
+				ctx,
+				"Some features may be unavailable. Increase timeout with AZD_EXT_TIMEOUT=<seconds> if needed.",
+			)
+		} else {
+			m.console.Message(ctx, "Some features may be unavailable.")
+		}
 		m.console.Message(ctx, "")
 	}
 
@@ -213,6 +257,41 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 	log.Printf("All %d extensions completed startup in %v\n", len(extensionList), totalElapsed)
 
 	return next(ctx)
+}
+
+// checkUpdatesForExtensions checks if newer versions are available for the given extensions
+// using only already-cached registry data. No network requests are made; if the cache for a
+// source is expired or missing the extension is simply skipped.
+func (m *ExtensionsMiddleware) checkUpdatesForExtensions(
+	ctx context.Context,
+	failedExts []*extensions.Extension,
+) []*ux.WarningMessage {
+	cacheManager, err := extensions.NewRegistryCacheManager()
+	if err != nil {
+		log.Printf("failed to create cache manager for update check: %v", err)
+		return nil
+	}
+
+	checker := extensions.NewUpdateChecker(cacheManager)
+
+	var warnings []*ux.WarningMessage
+	for _, ext := range failedExts {
+		// Only consult already-cached data to avoid blocking network I/O in the failure path.
+		if ext.Source == "" || cacheManager.IsExpiredOrMissing(ctx, ext.Source) {
+			continue
+		}
+
+		result, err := checker.CheckForUpdate(ctx, ext)
+		if err != nil {
+			log.Printf("failed to check for update for %s: %v", ext.Id, err)
+			continue
+		}
+		if result.HasUpdate {
+			warnings = append(warnings, extensions.FormatUpdateWarning(result))
+		}
+	}
+
+	return warnings
 }
 
 // isDebug checks if AZD_EXT_DEBUG environment variable is set to a truthy value

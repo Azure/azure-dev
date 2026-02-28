@@ -162,41 +162,23 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 		e.console.Message(ctx, "")
 		troubleshootScope, err := e.promptTroubleshootingWithConsent(ctx)
+		troubleshootScope, err := e.promptTroubleshootingWithConsent(ctx)
 		if err != nil {
 			span.SetStatus(codes.Error, "agent.consent.failed")
+			return nil, fmt.Errorf("prompting for troubleshooting scope: %w", err)
 			return nil, fmt.Errorf("prompting for troubleshooting scope: %w", err)
 		}
 
 		if troubleshootScope != "" {
-			var troubleshootPrompt string
-			switch troubleshootScope {
-			case "explain":
-				troubleshootPrompt = fmt.Sprintf(
-					`Steps to follow:
+			troubleshootPrompt := fmt.Sprintf(
+				`Steps to follow:
 			1. Use available tools including azd_error_troubleshooting tool to identify this error.
-			2. Provide a concise explanation of the error and its root cause in 3-5 sentences.
-			DO NOT return JSON. Use plain text with minimal markdown formatting.
+			2. Provide a concise explanation using these two sections with bold markdown titles:
+			   **What's happening**: Explain what the error is in 1-2 sentences.
+			   **Why it's happening**: Explain the root cause in 1-3 sentences.
+			DO NOT return JSON. Use plain text with minimal markdown formatting beyond the section titles.
 			Do not provide fix steps. Do not perform any file changes.
 			Error details: %s`, errorInput)
-			case "guide":
-				troubleshootPrompt = fmt.Sprintf(
-					`Steps to follow:
-			1. Use available tools including azd_error_troubleshooting tool to identify this error.
-			2. Provide only the actionable fix steps as a short numbered list (max 5 steps).
-			Each step should be one sentence. Include exact commands if applicable.
-			DO NOT return JSON. Do not explain the error. Do not perform any file changes.
-			Error details: %s`, errorInput)
-			case "summarize":
-				troubleshootPrompt = fmt.Sprintf(
-					`Steps to follow:
-			1. Use available tools including azd_error_troubleshooting tool to identify this error.
-			2. Provide a brief summary with two sections:
-			   **Error**: 1-2 sentence explanation of the root cause.
-			   **Fix**: Numbered list of up to 3 actionable steps (one sentence each).
-			Keep the total response under 10 lines.
-			DO NOT return JSON. Do not perform any file changes.
-			Error details: %s`, errorInput)
-			}
 
 			agentOutput, err := azdAgent.SendMessage(ctx, troubleshootPrompt)
 
@@ -207,6 +189,37 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			}
 
 			e.displayAgentResponse(ctx, agentOutput, AIDisclaimer)
+
+			// Ask user if they want step-by-step fix guidance
+			wantGuide, err := e.promptForFixGuidance(ctx)
+			if err != nil {
+				span.SetStatus(codes.Error, "agent.guidance.prompt.failed")
+				return nil, fmt.Errorf("prompting for fix guidance: %w", err)
+			}
+
+			if !wantGuide {
+				span.SetStatus(codes.Ok, "agent.troubleshoot.explain_only")
+				return actionResult, originalError
+			}
+
+			// Generate step-by-step fix guidance
+			guidePrompt := fmt.Sprintf(
+				`Steps to follow:
+			1. Use available tools including azd_error_troubleshooting tool to identify this error.
+			2. Provide only the actionable fix steps as a short numbered list (max 5 steps).
+			Each step should be one sentence. Include exact commands if applicable.
+			DO NOT return JSON. Do not explain the error. Do not perform any file changes.
+			Error details: %s`, errorInput)
+
+			guideOutput, err := azdAgent.SendMessage(ctx, guidePrompt)
+
+			if err != nil {
+				e.displayAgentResponse(ctx, guideOutput, AIDisclaimer)
+				span.SetStatus(codes.Error, "agent.send_message.failed")
+				return nil, err
+			}
+
+			e.displayAgentResponse(ctx, guideOutput, AIDisclaimer)
 		}
 
 		// Ask user if they want to let AI fix the error
@@ -226,6 +239,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		}
 
 		if !confirmFix {
+			if troubleshootScope != "" {
 			if troubleshootScope != "" {
 				span.SetStatus(codes.Ok, "agent.troubleshoot.only")
 			} else {
@@ -436,30 +450,18 @@ func (e *ErrorMiddleware) promptTroubleshootingWithConsent(ctx context.Context) 
 		return "", fmt.Errorf("failed to load user config: %w", err)
 	}
 
-	// Check for saved "always" preferences
-	scopes := []string{"explain", "guide", "summarize", "skip"}
-	for _, scope := range scopes {
-		if val, ok := userConfig.GetString(configPrefix + "." + scope); ok && val == "allow" {
-			e.console.Message(ctx, output.WithWarningFormat(
-				"Troubleshooting scope is set to always %q. To change, run %s.\n",
-				scope,
-				output.WithHighLightFormat(fmt.Sprintf("azd config unset %s.%s", configPrefix, scope)),
-			))
-			if scope == "skip" {
-				return "", nil
-			}
-			return scope, nil
-		}
+	// Check for saved "always skip" preference
+	if val, ok := userConfig.GetString(configPrefix + ".skip"); ok && val == "allow" {
+		e.console.Message(ctx, output.WithWarningFormat(
+			"Troubleshooting is set to always skip. To change, run %s.\n",
+			output.WithHighLightFormat(fmt.Sprintf("azd config unset %s.skip", configPrefix)),
+		))
+		return "", nil
 	}
 
 	choices := []*uxlib.SelectChoice{
 		{Value: "explain", Label: "Explain the error"},
-		{Value: "guide", Label: "Provide step-by-step fix guidance"},
-		{Value: "summarize", Label: "Summary (explanation + guidance)"},
 		{Value: "skip", Label: "Skip"},
-		{Value: "always.explain", Label: "Always explain the error"},
-		{Value: "always.guide", Label: "Always provide fix guidance"},
-		{Value: "always.summarize", Label: "Always provide summary"},
 		{Value: "always.skip", Label: "Always skip"},
 	}
 
@@ -505,6 +507,33 @@ func (e *ErrorMiddleware) promptTroubleshootingWithConsent(ctx context.Context) 
 	}
 
 	return selected, nil
+}
+
+// promptForFixGuidance asks the user if they want step-by-step fix guidance after seeing the error explanation.
+// Returns true if the user wants guidance, false if they want to exit.
+func (e *ErrorMiddleware) promptForFixGuidance(ctx context.Context) (bool, error) {
+	choices := []*uxlib.SelectChoice{
+		{Value: "yes", Label: "Yes"},
+		{Value: "no", Label: "No, I know what to do (exit agent mode)"},
+	}
+
+	selector := uxlib.NewSelect(&uxlib.SelectOptions{
+		Message:         "Do you want to generate step by step fix guidance?",
+		Choices:         choices,
+		EnableFiltering: uxlib.Ptr(false),
+		DisplayCount:    len(choices),
+	})
+
+	choiceIndex, err := selector.Ask(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	if choiceIndex == nil || *choiceIndex < 0 || *choiceIndex >= len(choices) {
+		return false, fmt.Errorf("invalid choice selected")
+	}
+
+	return choices[*choiceIndex].Value == "yes", nil
 }
 
 // extractSuggestedSolutions extracts solutions from the LLM response.

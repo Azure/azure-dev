@@ -162,10 +162,8 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 		e.console.Message(ctx, "")
 		troubleshootScope, err := e.promptTroubleshootingWithConsent(ctx)
-		troubleshootScope, err := e.promptTroubleshootingWithConsent(ctx)
 		if err != nil {
 			span.SetStatus(codes.Error, "agent.consent.failed")
-			return nil, fmt.Errorf("prompting for troubleshooting scope: %w", err)
 			return nil, fmt.Errorf("prompting for troubleshooting scope: %w", err)
 		}
 

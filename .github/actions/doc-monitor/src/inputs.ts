@@ -18,12 +18,17 @@ export function getInputs(): ActionInputs {
   }
 
   const prListRaw = core.getInput("pr-list");
-  const prList = prListRaw
-    ? prListRaw
-        .split(",")
-        .map((n) => parseInt(n.trim(), 10))
-        .filter((n) => n > 0)
-    : undefined;
+  let prList: number[] | undefined;
+  if (prListRaw) {
+    const parts = prListRaw.split(",").map((n) => n.trim()).filter(Boolean);
+    const invalid = parts.filter((p) => isNaN(parseInt(p, 10)) || parseInt(p, 10) <= 0);
+    if (invalid.length > 0) {
+      core.warning(`Ignoring invalid PR numbers in pr-list: ${invalid.join(", ")}`);
+    }
+    prList = parts
+      .map((n) => parseInt(n, 10))
+      .filter((n) => n > 0);
+  }
 
   const sourceRepo = core.getInput("source-repo") || DEFAULT_SOURCE_REPO;
   const docsRepo = core.getInput("docs-repo") || DEFAULT_DOCS_REPO;
@@ -34,7 +39,7 @@ export function getInputs(): ActionInputs {
   if (!docsRepoToken) {
     core.warning(
       "docs-repo-token not provided — companion PR creation in the external docs repo will be skipped. " +
-      "Doc inventory scanning of the public repo (MicrosoftDocs/azure-dev-docs) will still work. " +
+      "Doc inventory scanning of the public repo (MicrosoftDocs/azure-dev-docs-pr) will still work. " +
       "Set docs-repo-token to enable external doc PR creation.",
     );
   }

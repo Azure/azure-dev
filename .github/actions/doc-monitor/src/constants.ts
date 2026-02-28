@@ -31,7 +31,7 @@ export const COMMENT_MARKER = "<!-- doc-monitor-tracking -->";
 
 // ─── Default configuration ──────────────────────────────────────────
 export const DEFAULT_SOURCE_REPO = "Azure/azure-dev";
-export const DEFAULT_DOCS_REPO = "MicrosoftDocs/azure-dev-docs";
+export const DEFAULT_DOCS_REPO = "MicrosoftDocs/azure-dev-docs-pr";
 export const DEFAULT_BRANCH = "main";
 
 // ─── Valid action modes ─────────────────────────────────────────────

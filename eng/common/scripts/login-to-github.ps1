@@ -104,7 +104,7 @@ function New-GitHubAppJwt {
       --digest $Base64Value | ConvertFrom-Json
 
   if ($LASTEXITCODE -ne 0) {
-    throw "Failed to sign JWT with Azure Key Vault. Error: $($SignResultJson | ConvertTo-Json -Compress)"
+    throw "Failed to sign JWT with Azure Key Vault. Error: $SignResult"
   }
 
   if (!$SignResultJson.signature) {
@@ -152,7 +152,7 @@ function New-GitHubInstallationToken {
 Write-Host "Generating GitHub App JWT by signing via Azure Key Vault (no key export)..."
 $jwt = New-GitHubAppJwt -VaultName $KeyVaultName -KeyName $KeyName -AppId $GitHubAppId
 
-foreach ($InstallationTokenOwner in $InstallationTokenOwners) 
+foreach ($InstallationTokenOwner in $InstallationTokenOwners)
 {
   Write-Host "Fetching installation ID for $InstallationTokenOwner ..."
   $installationId = Get-GitHubInstallationId -Jwt $jwt -ApiBase $GitHubApiBaseUrl -ApiVersion $GitHubApiVersion -InstallationTokenOwner $InstallationTokenOwner

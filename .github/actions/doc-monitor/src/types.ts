@@ -6,7 +6,7 @@ export interface PrInfo {
   body: string | null;
   baseBranch: string;
   headBranch: string;
-  state: string;
+  state: "open" | "closed";
   merged: boolean;
   htmlUrl: string;
 }

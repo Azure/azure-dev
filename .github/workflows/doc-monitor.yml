@@ -34,10 +34,13 @@ permissions:
   contents: write
   pull-requests: write
   models: read
+  id-token: write  # Required for OIDC federated credential login
 
 jobs:
   analyze-docs:
     runs-on: ubuntu-latest
+    # An environment is required for OIDC (federated credential) login.
+    environment: AzureSDKEngKeyVault
     # Skip bot PRs and PRs from doc-monitor itself
     if: >-
       (github.event_name == 'workflow_dispatch') ||
@@ -50,23 +53,28 @@ jobs:
         with:
           ref: ${{ github.event.repository.default_branch }}
 
-      - name: Generate GitHub App Token
-        id: app-token
-        uses: actions/create-github-app-token@v1
+      # Step 1: Authenticate to Azure via OIDC (no stored credentials)
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
         with:
-          app-id: ${{ secrets.DOC_MONITOR_APP_ID }}
-          private-key: ${{ secrets.DOC_MONITOR_APP_PRIVATE_KEY }}
-          repositories: "azure-dev-docs"
-          owner: "MicrosoftDocs"
+          client-id: 5786d1fb-187e-4ca9-9a81-ab89ea278986
+          tenant-id: 72f988bf-86f1-41af-91ab-2d7cd011db47
+          subscription-id: a18897a6-7e44-457d-9260-f2854c0aca42
+
+      # Step 2: Mint GitHub App token via Key Vault signing (private key never leaves vault)
+      - name: Generate GitHub App Token
+        uses: ./eng/common/actions/login-to-github
+        with:
+          token-owners: MicrosoftDocs
 
       - name: Run doc-monitor
         uses: ./.github/actions/doc-monitor
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          docs-repo-token: ${{ steps.app-token.outputs.token }}
+          docs-repo-token: ${{ env.GH_TOKEN }}
           mode: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'auto' }}
           pr-number: ${{ inputs.pr_number || '' }}
           pr-list: ${{ inputs.pr_list || '' }}
           docs-assignees: "alexwolfmsft,diberry"
           source-repo: "Azure/azure-dev"
-          docs-repo: "MicrosoftDocs/azure-dev-docs"
+          docs-repo: "MicrosoftDocs/azure-dev-docs-pr"

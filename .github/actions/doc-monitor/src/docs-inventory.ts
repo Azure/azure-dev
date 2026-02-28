@@ -99,27 +99,43 @@ async function collectDocsViaTree(
   const entries: DocEntry[] = [];
   let contentFetches = 0;
 
-  for (const file of mdFiles) {
-    const filePath = file.path!;
-    if (contentFetches < MAX_CONTENT_FETCHES) {
-      try {
-        const fileData = await octokit.repos.getContent({ owner, repo, path: filePath });
-        if (!Array.isArray(fileData.data) && "content" in fileData.data && fileData.data.content) {
-          const content = Buffer.from(fileData.data.content, "base64").toString("utf-8");
-          entries.push({
+  // Batch content fetches using blob SHAs from the tree response (avoids N+1 getContent calls)
+  const filesToFetch = mdFiles.filter(() => contentFetches++ < MAX_CONTENT_FETCHES);
+  const remaining = mdFiles.slice(filesToFetch.length);
+
+  const CONCURRENCY_LIMIT = 10;
+  for (let i = 0; i < filesToFetch.length; i += CONCURRENCY_LIMIT) {
+    const batch = filesToFetch.slice(i, i + CONCURRENCY_LIMIT);
+    const results = await Promise.all(
+      batch.map(async (file) => {
+        const filePath = file.path!;
+        try {
+          const { data: blob } = await octokit.git.getBlob({ owner, repo, file_sha: file.sha! });
+          const content = Buffer.from(blob.content, "base64").toString("utf-8");
+          return {
             repo: repoFullName,
             path: filePath,
             title: extractTitle(content, filePath),
             topics: extractTopics(content, filePath),
-          });
-          contentFetches++;
-          continue;
+          } as DocEntry;
+        } catch {
+          // Fall through to path-based entry
+          const name = filePath.split("/").pop() ?? filePath;
+          return {
+            repo: repoFullName,
+            path: filePath,
+            title: name.replace(/\.md$/, ""),
+            topics: filePath.split("/").slice(0, 3),
+          } as DocEntry;
         }
-      } catch {
-        // Fall through to path-based entry
-      }
-    }
-    // Path-based fallback (no content fetch)
+      }),
+    );
+    entries.push(...results);
+  }
+
+  // Path-based fallback for files beyond the content fetch limit
+  for (const file of remaining) {
+    const filePath = file.path!;
     const name = filePath.split("/").pop() ?? filePath;
     entries.push({
       repo: repoFullName,

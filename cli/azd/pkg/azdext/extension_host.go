@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strconv"
 	"sync"
 
 	"google.golang.org/grpc/codes"
@@ -154,9 +155,11 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	// Silence the global logger in extension processes to prevent internal
 	// gRPC broker trace logs from appearing in stderr. Extensions compiled
 	// against older SDK versions still use log.Printf directly, so this
-	// ensures backward compatibility. When AZD_EXT_DEBUG is true, keep
+	// ensures backward compatibility. When AZD_EXT_DEBUG is truthy, keep
 	// logging to stderr for diagnostics.
-	if os.Getenv("AZD_EXT_DEBUG") != "true" {
+	// Uses strconv.ParseBool to match WaitForDebugger semantics (accepts
+	// "1", "t", "TRUE", "true", etc.).
+	if isDebug, err := strconv.ParseBool(os.Getenv("AZD_EXT_DEBUG")); err != nil || !isDebug {
 		log.SetOutput(io.Discard)
 	}
 

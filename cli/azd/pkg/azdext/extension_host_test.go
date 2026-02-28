@@ -4,8 +4,12 @@
 package azdext
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
+	"log"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -665,4 +669,92 @@ func TestExtensionHost_MultipleRegistrationErrors(t *testing.T) {
 
 	mockServiceTargetManager.AssertExpectations(t)
 	mockFrameworkServiceManager.AssertExpectations(t)
+}
+
+// TestExtensionHost_RunSilencesLog tests that Run() silences the global logger
+// when AZD_EXT_DEBUG is not set, preventing internal gRPC broker trace logs
+// from appearing in extension stderr.
+// These tests mutate global state (log output, env vars) and must NOT run in parallel.
+func TestExtensionHost_RunSilencesLog(t *testing.T) {
+	// Save and restore global log output
+	originalOutput := log.Writer()
+	defer log.SetOutput(originalOutput)
+
+	// Save and restore AZD_EXT_DEBUG env var
+	originalDebug, hadDebug := os.LookupEnv("AZD_EXT_DEBUG")
+	defer func() {
+		if hadDebug {
+			os.Setenv("AZD_EXT_DEBUG", originalDebug)
+		} else {
+			os.Unsetenv("AZD_EXT_DEBUG")
+		}
+	}()
+
+	t.Run("silences log output by default", func(t *testing.T) {
+		// Reset log to a known non-discard writer
+		var buf bytes.Buffer
+		log.SetOutput(&buf)
+
+		// Ensure AZD_EXT_DEBUG is not set
+		os.Unsetenv("AZD_EXT_DEBUG")
+
+		// Setup minimal extension host with no registrations
+		client := newTestAzdClient()
+		runner := NewExtensionHost(client)
+
+		err := runner.Run(context.Background())
+		require.NoError(t, err)
+
+		// After Run(), global log should be silenced
+		assert.Equal(t, io.Discard, log.Writer(), "log output should be io.Discard when AZD_EXT_DEBUG is not set")
+
+		// Verify log.Printf output is actually discarded
+		log.Printf("this should be discarded")
+		assert.Empty(t, buf.String(), "log output should not appear in the buffer after silencing")
+	})
+
+	t.Run("silences log output when AZD_EXT_DEBUG is empty", func(t *testing.T) {
+		var buf bytes.Buffer
+		log.SetOutput(&buf)
+
+		os.Setenv("AZD_EXT_DEBUG", "")
+
+		client := newTestAzdClient()
+		runner := NewExtensionHost(client)
+
+		err := runner.Run(context.Background())
+		require.NoError(t, err)
+
+		assert.Equal(t, io.Discard, log.Writer(), "log output should be io.Discard when AZD_EXT_DEBUG is empty")
+	})
+
+	t.Run("silences log output when AZD_EXT_DEBUG is false", func(t *testing.T) {
+		var buf bytes.Buffer
+		log.SetOutput(&buf)
+
+		os.Setenv("AZD_EXT_DEBUG", "false")
+
+		client := newTestAzdClient()
+		runner := NewExtensionHost(client)
+
+		err := runner.Run(context.Background())
+		require.NoError(t, err)
+
+		assert.Equal(t, io.Discard, log.Writer(), "log output should be io.Discard when AZD_EXT_DEBUG is false")
+	})
+
+	t.Run("silences log output when AZD_EXT_DEBUG is invalid", func(t *testing.T) {
+		var buf bytes.Buffer
+		log.SetOutput(&buf)
+
+		os.Setenv("AZD_EXT_DEBUG", "notabool")
+
+		client := newTestAzdClient()
+		runner := NewExtensionHost(client)
+
+		err := runner.Run(context.Background())
+		require.NoError(t, err)
+
+		assert.Equal(t, io.Discard, log.Writer(), "log output should be io.Discard when AZD_EXT_DEBUG is invalid")
+	})
 }

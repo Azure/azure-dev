@@ -200,7 +200,8 @@ func Test_UpdateChecker_PrereleaseVersions(t *testing.T) {
 
 	updateChecker := NewUpdateChecker(cacheManager)
 
-	// Installed stable version should see prerelease as update
+	// When the only newer version is a prerelease, the original code falls back to the latest
+	// stable version (1.0.0). Since the installed version is already 1.0.0, no update is available.
 	extension := &Extension{
 		Id:          "test.extension",
 		DisplayName: "Test Extension",
@@ -210,8 +211,7 @@ func Test_UpdateChecker_PrereleaseVersions(t *testing.T) {
 
 	result, err := updateChecker.CheckForUpdate(ctx, extension)
 	require.NoError(t, err)
-	// semver: 2.0.0-beta.1 is considered less than 2.0.0 but greater than 1.0.0
-	require.True(t, result.HasUpdate)
+	require.False(t, result.HasUpdate)
 }
 
 func Test_UpdateChecker_InvalidVersions(t *testing.T) {

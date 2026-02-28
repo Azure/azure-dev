@@ -28,6 +28,7 @@ words:
   - OPENCODE
   - opencode
   - grpcbroker
+  - msiexec
   - nosec
   - oneof
   - idxs

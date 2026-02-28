@@ -117,7 +117,9 @@ function escapeTableCell(value: string): string {
     .replace(/<[^>]*>/g, "")           // strip HTML tags
     .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1") // convert markdown links to plain text
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, "")  // remove markdown images
+    .replace(/`/g, "")                // strip backticks (prevent code span injection)
     .replace(/\|/g, "\\|")            // escape pipe (table syntax)
+    .replace(/\r/g, "")               // strip carriage returns
     .replace(/\n/g, " ");             // collapse newlines
 }
 

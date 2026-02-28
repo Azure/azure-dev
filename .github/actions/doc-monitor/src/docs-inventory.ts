@@ -96,7 +96,12 @@ async function collectDocsViaTree(
   repoFullName: string,
   filterPaths: string[],
 ): Promise<DocEntry[]> {
-  const { data } = await octokit.git.getTree({ owner, repo, tree_sha: "HEAD", recursive: "1" });
+  // Resolve default branch tree SHA (git.getTree doesn't reliably accept "HEAD")
+  const { data: repoData } = await octokit.repos.get({ owner, repo });
+  const defaultBranch = repoData.default_branch;
+  const { data: refData } = await octokit.git.getRef({ owner, repo, ref: `heads/${defaultBranch}` });
+  const { data: commitData } = await octokit.git.getCommit({ owner, repo, commit_sha: refData.object.sha });
+  const { data } = await octokit.git.getTree({ owner, repo, tree_sha: commitData.tree.sha, recursive: "1" });
 
   const mdFiles = data.tree.filter((item) => {
     if (item.type !== "blob" || !item.path?.endsWith(".md")) return false;

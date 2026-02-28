@@ -123,8 +123,9 @@ export function buildDiffSummary(files: FileDiff[], maxChars: number = MAX_DIFF_
           ? file.patch.slice(0, MAX_PATCH_CHARS) + "\n... (patch truncated)"
           : file.patch;
       if (currentLen + patchTruncated.length > maxChars) {
-        lines.push("  (patch omitted for size)");
-        currentLen += 30;
+        const omitMsg = "  (patch omitted for size)";
+        lines.push(omitMsg);
+        currentLen += omitMsg.length;
       } else {
         lines.push(patchTruncated);
         currentLen += patchTruncated.length;

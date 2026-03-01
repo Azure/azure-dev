@@ -10,6 +10,19 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
+)
+
+const (
+	// maxPageResponseSize limits the maximum size of a single page response
+	// body to prevent excessive memory consumption from malicious or
+	// misconfigured servers.
+	maxPageResponseSize int64 = 10 << 20 // 10 MB
+
+	// maxErrorBodySize limits the size of error response bodies captured
+	// for diagnostic purposes.
+	maxErrorBodySize int64 = 64 << 10 // 64 KB
 )
 
 // Pager provides a generic, lazy iterator over paginated Azure REST API
@@ -26,10 +39,11 @@ import (
 //	    }
 //	}
 type Pager[T any] struct {
-	client  HTTPDoer
-	nextURL string
-	done    bool
-	opts    PagerOptions
+	client     HTTPDoer
+	nextURL    string
+	done       bool
+	opts       PagerOptions
+	originHost string // host of the initial URL for SSRF protection
 }
 
 // PageResponse is a single page returned by [Pager.NextPage].
@@ -80,10 +94,16 @@ func NewPager[T any](client HTTPDoer, firstURL string, opts *PagerOptions) *Page
 		opts.Method = http.MethodGet
 	}
 
+	var originHost string
+	if u, err := url.Parse(firstURL); err == nil {
+		originHost = strings.ToLower(u.Hostname())
+	}
+
 	return &Pager[T]{
-		client:  client,
-		nextURL: firstURL,
-		opts:    *opts,
+		client:     client,
+		nextURL:    firstURL,
+		opts:       *opts,
+		originHost: originHost,
 	}
 }
 
@@ -100,10 +120,18 @@ func (p *Pager[T]) More() bool {
 // NextPage fetches the next page of results. Returns an error if the request
 // fails, the response is not 2xx, or the body cannot be decoded.
 //
+// Response bodies are bounded to [maxPageResponseSize] to prevent
+// excessive memory consumption. nextLink URLs are validated to prevent
+// SSRF attacks (must stay on the same host with HTTPS).
+//
 // After the last page is consumed, [More] returns false.
 func (p *Pager[T]) NextPage(ctx context.Context) (*PageResponse[T], error) {
 	if !p.More() {
 		return nil, errors.New("azdext.Pager.NextPage: no more pages")
+	}
+
+	if p.client == nil {
+		return nil, errors.New("azdext.Pager.NextPage: client must not be nil")
 	}
 
 	resp, err := p.client.Do(ctx, p.opts.Method, p.nextURL, nil)
@@ -113,7 +141,7 @@ func (p *Pager[T]) NextPage(ctx context.Context) (*PageResponse[T], error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodySize))
 		return nil, &PaginationError{
 			StatusCode: resp.StatusCode,
 			URL:        p.nextURL,
@@ -121,7 +149,7 @@ func (p *Pager[T]) NextPage(ctx context.Context) (*PageResponse[T], error) {
 		}
 	}
 
-	data, err := io.ReadAll(resp.Body)
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxPageResponseSize))
 	if err != nil {
 		return nil, fmt.Errorf("azdext.Pager.NextPage: failed to read response: %w", err)
 	}
@@ -133,25 +161,59 @@ func (p *Pager[T]) NextPage(ctx context.Context) (*PageResponse[T], error) {
 
 	if page.NextLink == "" {
 		p.done = true
+		p.nextURL = ""
+	} else if err := p.validateNextLink(page.NextLink); err != nil {
+		p.done = true
+		p.nextURL = ""
+		return &page, fmt.Errorf("azdext.Pager.NextPage: %w", err)
+	} else {
+		p.nextURL = page.NextLink
 	}
-
-	p.nextURL = page.NextLink
 
 	return &page, nil
 }
 
+// validateNextLink checks that a nextLink URL is safe to follow.
+// It rejects non-HTTPS schemes, URLs with embedded credentials, and
+// URLs pointing to a different host than the original request (SSRF protection).
+func (p *Pager[T]) validateNextLink(nextLink string) error {
+	u, err := url.Parse(nextLink)
+	if err != nil {
+		return fmt.Errorf("invalid nextLink URL: %w", err)
+	}
+
+	if u.Scheme != "" && u.Scheme != "https" {
+		return fmt.Errorf("nextLink must use HTTPS (got %q)", u.Scheme)
+	}
+
+	if u.User != nil {
+		return errors.New("nextLink must not contain user credentials")
+	}
+
+	host := strings.ToLower(u.Hostname())
+	if host != "" && p.originHost != "" && host != p.originHost {
+		return fmt.Errorf("nextLink host %q does not match origin host %q (possible SSRF)", host, p.originHost)
+	}
+
+	return nil
+}
+
 // Collect is a convenience method that fetches all remaining pages and
 // returns all items in a single slice. Use with caution on large result sets.
+//
+// If NextPage returns both page data and an error (e.g. rejected nextLink),
+// the page data is included in the returned slice before returning the error.
 func (p *Pager[T]) Collect(ctx context.Context) ([]T, error) {
 	var all []T
 
 	for p.More() {
 		page, err := p.NextPage(ctx)
+		if page != nil {
+			all = append(all, page.Value...)
+		}
 		if err != nil {
 			return all, err
 		}
-
-		all = append(all, page.Value...)
 	}
 
 	return all, nil

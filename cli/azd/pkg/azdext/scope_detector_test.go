@@ -245,3 +245,68 @@ func TestScopeDetector_URLWithPort(t *testing.T) {
 		t.Errorf("scopes = %v, want [https://vault.azure.net/.default]", scopes)
 	}
 }
+
+func TestScopeDetector_CustomRuleWithoutDotPrefix(t *testing.T) {
+	t.Parallel()
+
+	sd := NewScopeDetector(&ScopeDetectorOptions{
+		CustomRules: map[string]string{
+			"api.example.com": "https://example.com/.default",
+		},
+	})
+
+	// Exact match should work.
+	scopes, err := sd.ScopesForURL("https://api.example.com/v1/data")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(scopes) != 1 || scopes[0] != "https://example.com/.default" {
+		t.Errorf("scopes = %v, want [https://example.com/.default]", scopes)
+	}
+
+	// Should NOT match a different host that merely ends with the same string.
+	_, err = sd.ScopesForURL("https://evil-api.example.com/v1/data")
+	if err == nil {
+		t.Fatal("expected error: exact match should not match different host")
+	}
+}
+
+func TestScopeDetector_EmptyCustomRuleIgnored(t *testing.T) {
+	t.Parallel()
+
+	sd := NewScopeDetector(&ScopeDetectorOptions{
+		CustomRules: map[string]string{
+			"": "https://catch-all.example.com/.default",
+		},
+	})
+
+	// Empty key should be ignored, so unknown host still errors.
+	_, err := sd.ScopesForURL("https://unknown.example.com/data")
+	if err == nil {
+		t.Fatal("expected error: empty custom rule should be ignored")
+	}
+}
+
+func TestScopeDetector_DeterministicCustomRules(t *testing.T) {
+	t.Parallel()
+
+	// Create a detector with multiple custom rules and verify
+	// that results are deterministic across multiple invocations.
+	rules := map[string]string{
+		".alpha.example.com": "https://alpha.example.com/.default",
+		".beta.example.com":  "https://beta.example.com/.default",
+		".gamma.example.com": "https://gamma.example.com/.default",
+	}
+
+	for i := 0; i < 10; i++ {
+		sd := NewScopeDetector(&ScopeDetectorOptions{CustomRules: rules})
+
+		scopes, err := sd.ScopesForURL("https://api.alpha.example.com/data")
+		if err != nil {
+			t.Fatalf("iteration %d: unexpected error: %v", i, err)
+		}
+		if scopes[0] != "https://alpha.example.com/.default" {
+			t.Fatalf("iteration %d: scope = %q, want %q", i, scopes[0], "https://alpha.example.com/.default")
+		}
+	}
+}

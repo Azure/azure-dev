@@ -6,6 +6,7 @@ package azdext
 import (
 	"errors"
 	"net/url"
+	"sort"
 	"strings"
 )
 
@@ -33,6 +34,10 @@ type ScopeDetectorOptions struct {
 	// CustomRules appends additional host → scope mappings.
 	// Each entry maps a host suffix (e.g. ".openai.azure.com") to a scope
 	// (e.g. "https://cognitiveservices.azure.com/.default").
+	// Suffixes should start with a dot for subdomain matching; entries
+	// without a leading dot are treated as exact host matches to prevent
+	// unintended partial-host matching (e.g. "azure.com" matching "fakeazure.com").
+	// Empty keys are ignored.
 	CustomRules map[string]string
 }
 
@@ -100,12 +105,35 @@ func NewScopeDetector(opts *ScopeDetectorOptions) *ScopeDetector {
 	rules := defaultRules()
 
 	if opts != nil {
-		for hostSuffix, scope := range opts.CustomRules {
-			hs := hostSuffix // capture
-			rules = append(rules, scopeRule{
-				match: func(host string) bool { return strings.HasSuffix(host, hs) },
-				scope: scope,
-			})
+		// Sort keys for deterministic rule evaluation order.
+		keys := make([]string, 0, len(opts.CustomRules))
+		for k := range opts.CustomRules {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+
+		for _, hostSuffix := range keys {
+			if hostSuffix == "" {
+				continue // ignore empty keys
+			}
+
+			scope := opts.CustomRules[hostSuffix]
+			hs := hostSuffix
+
+			if strings.HasPrefix(hs, ".") {
+				// Dot-prefixed: suffix match (subdomain matching).
+				rules = append(rules, scopeRule{
+					match: func(host string) bool { return strings.HasSuffix(host, hs) },
+					scope: scope,
+				})
+			} else {
+				// No dot prefix: exact host match to prevent partial-host
+				// matching (e.g. "azure.com" matching "fakeazure.com").
+				rules = append(rules, scopeRule{
+					match: func(host string) bool { return host == hs },
+					scope: scope,
+				})
+			}
 		}
 	}
 

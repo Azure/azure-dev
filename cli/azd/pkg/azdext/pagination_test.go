@@ -348,3 +348,136 @@ func TestNewPagerFromHTTPClient(t *testing.T) {
 		t.Fatal("NewPagerFromHTTPClient returned nil")
 	}
 }
+
+func TestPager_NilClient(t *testing.T) {
+	t.Parallel()
+
+	pager := NewPager[string](nil, "https://example.com/api", nil)
+	_, err := pager.NextPage(context.Background())
+	if err == nil {
+		t.Fatal("expected error for nil client")
+	}
+
+	if !strings.Contains(err.Error(), "client must not be nil") {
+		t.Errorf("error = %q, want mention of nil client", err.Error())
+	}
+}
+
+func TestPager_NextLinkSSRF_DifferentHost(t *testing.T) {
+	t.Parallel()
+
+	page1 := pageJSON([]string{"a"}, "https://evil.com/steal-data")
+
+	doer := &mockDoer{
+		responses: []*doerResponse{
+			{resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(page1)),
+				Header:     http.Header{},
+			}},
+		},
+	}
+
+	pager := NewPager[string](doer, "https://example.com/api", nil)
+
+	page, err := pager.NextPage(context.Background())
+	if err == nil {
+		t.Fatal("expected error for nextLink to different host")
+	}
+
+	// Page data should still be returned despite the nextLink error.
+	if page == nil || len(page.Value) != 1 || page.Value[0] != "a" {
+		t.Errorf("expected valid page data despite nextLink error, got %+v", page)
+	}
+
+	if !strings.Contains(err.Error(), "SSRF") {
+		t.Errorf("error = %q, want mention of SSRF", err.Error())
+	}
+
+	// Pager should be done (won't follow malicious link).
+	if pager.More() {
+		t.Error("expected More() = false after nextLink rejection")
+	}
+}
+
+func TestPager_NextLinkHTTP(t *testing.T) {
+	t.Parallel()
+
+	page1 := pageJSON([]string{"a"}, "http://example.com/page2")
+
+	doer := &mockDoer{
+		responses: []*doerResponse{
+			{resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(page1)),
+				Header:     http.Header{},
+			}},
+		},
+	}
+
+	pager := NewPager[string](doer, "https://example.com/api", nil)
+
+	_, err := pager.NextPage(context.Background())
+	if err == nil {
+		t.Fatal("expected error for HTTP nextLink")
+	}
+
+	if !strings.Contains(err.Error(), "HTTPS") {
+		t.Errorf("error = %q, want mention of HTTPS", err.Error())
+	}
+}
+
+func TestPager_NextLinkUserCredentials(t *testing.T) {
+	t.Parallel()
+
+	page1 := pageJSON([]string{"a"}, "https://user:pass@example.com/page2")
+
+	doer := &mockDoer{
+		responses: []*doerResponse{
+			{resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(page1)),
+				Header:     http.Header{},
+			}},
+		},
+	}
+
+	pager := NewPager[string](doer, "https://example.com/api", nil)
+
+	_, err := pager.NextPage(context.Background())
+	if err == nil {
+		t.Fatal("expected error for nextLink with user credentials")
+	}
+
+	if !strings.Contains(err.Error(), "credentials") {
+		t.Errorf("error = %q, want mention of credentials", err.Error())
+	}
+}
+
+func TestPager_CollectWithSSRFError(t *testing.T) {
+	t.Parallel()
+
+	page1 := pageJSON([]string{"a", "b"}, "https://evil.com/steal")
+
+	doer := &mockDoer{
+		responses: []*doerResponse{
+			{resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(page1)),
+				Header:     http.Header{},
+			}},
+		},
+	}
+
+	pager := NewPager[string](doer, "https://example.com/api", nil)
+
+	all, err := pager.Collect(context.Background())
+	if err == nil {
+		t.Fatal("expected error from SSRF nextLink")
+	}
+
+	// Collect should still return the items from the valid page.
+	if len(all) != 2 || all[0] != "a" || all[1] != "b" {
+		t.Errorf("all = %v, want [a b] (partial results before SSRF error)", all)
+	}
+}

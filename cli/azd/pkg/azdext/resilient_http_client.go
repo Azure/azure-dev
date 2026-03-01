@@ -17,6 +17,12 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 )
 
+const (
+	// maxRetryAfterDuration caps the Retry-After header value to prevent
+	// a malicious or misconfigured server from stalling the client indefinitely.
+	maxRetryAfterDuration = 120 * time.Second
+)
+
 // ResilientClient is an HTTP client with built-in retry, exponential backoff,
 // timeout, and optional bearer-token injection. It is designed for extension
 // authors who need to call Azure REST APIs directly.
@@ -46,8 +52,8 @@ type ResilientClientOptions struct {
 	// MaxDelay caps the computed backoff delay. Defaults to 30s.
 	MaxDelay time.Duration
 
-	// Timeout is the per-request timeout. Defaults to 30s.
-	// A zero value means no timeout (not recommended).
+	// Timeout is the per-request timeout.
+	// A value of zero or less uses the default of 30s.
 	Timeout time.Duration
 
 	// Transport overrides the default HTTP transport. Useful for testing.
@@ -113,27 +119,42 @@ func NewResilientClient(tokenProvider azcore.TokenCredential, opts *ResilientCli
 // Do executes an HTTP request with retry logic and optional bearer-token injection.
 //
 // body may be nil for requests without a body (GET, DELETE).
-// The body must support seeking (implement io.ReadSeeker) when retries are enabled,
-// so it can be re-read on each attempt. If body does not implement io.ReadSeeker
-// and a retry is needed, the retry will proceed with a nil body.
+// When body is non-nil and retries are enabled (MaxRetries > 0), the body must
+// implement [io.ReadSeeker] so it can be re-read on each attempt. If a retry is
+// needed and the body does not implement [io.ReadSeeker], Do returns an error.
 func (rc *ResilientClient) Do(ctx context.Context, method, url string, body io.Reader) (*http.Response, error) {
 	if ctx == nil {
 		return nil, errors.New("azdext.ResilientClient.Do: context must not be nil")
 	}
 
 	var lastErr error
+	var retryAfterOverride time.Duration
 
 	for attempt := range rc.opts.MaxRetries + 1 {
 		if attempt > 0 {
-			delay := rc.backoff(attempt)
+			// Use Retry-After from the previous response if available;
+			// otherwise compute exponential backoff. This avoids a
+			// double-wait (backoff + Retry-After) on each iteration.
+			delay := retryAfterOverride
+			if delay == 0 {
+				delay = rc.backoff(attempt)
+			}
+			retryAfterOverride = 0
+
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()
 			case <-time.After(delay):
 			}
 
-			// Reset body for retry if possible.
-			if seeker, ok := body.(io.ReadSeeker); ok {
+			// Reset body for retry — require io.ReadSeeker for non-nil bodies.
+			if body != nil {
+				seeker, ok := body.(io.ReadSeeker)
+				if !ok {
+					return nil, errors.New(
+						"azdext.ResilientClient.Do: request body does not implement io.ReadSeeker; " +
+							"retries require a seekable body (use bytes.NewReader or strings.NewReader)")
+				}
 				if _, err := seeker.Seek(0, io.SeekStart); err != nil {
 					return nil, fmt.Errorf("azdext.ResilientClient.Do: failed to reset request body: %w", err)
 				}
@@ -172,13 +193,13 @@ func (rc *ResilientClient) Do(ctx context.Context, method, url string, body io.R
 		_, _ = io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
 
-		// Honor Retry-After if present.
+		// Capture Retry-After for the next iteration's delay,
+		// capped to prevent indefinite stalling.
 		if ra := retryAfterFromResponse(resp); ra > 0 {
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(ra):
+			if ra > maxRetryAfterDuration {
+				ra = maxRetryAfterDuration
 			}
+			retryAfterOverride = ra
 		}
 
 		lastErr = &RetryableHTTPError{
@@ -191,7 +212,12 @@ func (rc *ResilientClient) Do(ctx context.Context, method, url string, body io.R
 }
 
 // applyAuth resolves scopes from the request URL and sets the Authorization header.
+// It refuses to send bearer tokens over non-HTTPS connections.
 func (rc *ResilientClient) applyAuth(ctx context.Context, req *http.Request) error {
+	if req.URL.Scheme != "https" {
+		return fmt.Errorf("bearer token requires HTTPS; refusing to authenticate to %s URL", req.URL.Scheme)
+	}
+
 	scopes, err := rc.scopeDetector.ScopesForURL(req.URL.String())
 	if err != nil {
 		return err

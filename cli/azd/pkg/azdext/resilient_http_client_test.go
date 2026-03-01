@@ -347,6 +347,7 @@ func TestResilientClient_NilContext(t *testing.T) {
 
 	rc := NewResilientClient(nil, nil)
 
+	//lint:ignore SA1012 intentional nil context for test
 	//nolint:staticcheck // intentional nil context for test
 	_, err := rc.Do(nil, http.MethodGet, "https://example.com/api", nil)
 	if err == nil {
@@ -467,7 +468,6 @@ func TestResilientClient_AllRetryableStatusCodes(t *testing.T) {
 	}
 
 	for _, code := range retryableCodes {
-		code := code
 		t.Run(strconv.Itoa(code), func(t *testing.T) {
 			t.Parallel()
 
@@ -497,5 +497,126 @@ func TestResilientClient_AllRetryableStatusCodes(t *testing.T) {
 				t.Errorf("attempts = %d, want 2 for status %d", attempts, code)
 			}
 		})
+	}
+}
+
+func TestResilientClient_NonSeekableBodyRetryError(t *testing.T) {
+	t.Parallel()
+
+	var attempts int
+	transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		attempts++
+		return &http.Response{
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Header:     http.Header{},
+		}, nil
+	})
+
+	rc := NewResilientClient(nil, &ResilientClientOptions{
+		Transport:    transport,
+		MaxRetries:   2,
+		InitialDelay: time.Millisecond,
+	})
+
+	// io.NopCloser wrapping strings.NewReader is NOT an io.ReadSeeker.
+	body := io.NopCloser(strings.NewReader("payload"))
+	_, err := rc.Do(context.Background(), http.MethodPost, "https://example.com/api", body)
+	if err == nil {
+		t.Fatal("expected error for non-seekable body on retry")
+	}
+
+	if !strings.Contains(err.Error(), "io.ReadSeeker") {
+		t.Errorf("error = %q, want mention of io.ReadSeeker", err.Error())
+	}
+
+	// Should have made exactly 1 attempt (first gets 503 → retry → fail on body check).
+	if attempts != 1 {
+		t.Errorf("attempts = %d, want 1 (fail before second attempt)", attempts)
+	}
+}
+
+func TestResilientClient_TokenOverHTTP(t *testing.T) {
+	t.Parallel()
+
+	transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		t.Fatal("should not reach transport for HTTP URL with token provider")
+		return nil, nil
+	})
+
+	cred := &fakeTokenCredential{token: "secret-token"}
+	rc := NewResilientClient(cred, &ResilientClientOptions{Transport: transport})
+
+	_, err := rc.Do(context.Background(), http.MethodGet, "http://example.com/api", nil)
+	if err == nil {
+		t.Fatal("expected error for HTTP URL with token provider")
+	}
+
+	if !strings.Contains(err.Error(), "HTTPS") {
+		t.Errorf("error = %q, want mention of HTTPS", err.Error())
+	}
+}
+
+func TestResilientClient_RetryAfterReplacesBackoff(t *testing.T) {
+	t.Parallel()
+
+	var attempts int
+	transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		attempts++
+		if attempts == 1 {
+			h := http.Header{}
+			h.Set("retry-after-ms", "1") // 1ms retry-after
+			return &http.Response{
+				StatusCode: http.StatusTooManyRequests,
+				Body:       io.NopCloser(strings.NewReader("throttled")),
+				Header:     h,
+			}, nil
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("ok")),
+			Header:     http.Header{},
+		}, nil
+	})
+
+	rc := NewResilientClient(nil, &ResilientClientOptions{
+		Transport:    transport,
+		MaxRetries:   2,
+		InitialDelay: 5 * time.Second, // large backoff — should NOT be used
+		MaxDelay:     10 * time.Second,
+	})
+
+	start := time.Now()
+	resp, err := rc.Do(context.Background(), http.MethodGet, "https://example.com/api", nil)
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// If Retry-After replaces backoff, total time should be ~1ms, not 5s.
+	if elapsed > 2*time.Second {
+		t.Errorf("elapsed = %v, want < 2s (Retry-After should replace backoff, not add to it)", elapsed)
+	}
+}
+
+func TestResilientClient_RetryAfterCapped(t *testing.T) {
+	t.Parallel()
+
+	// Verify the cap constant is reasonable.
+	if maxRetryAfterDuration > 5*time.Minute {
+		t.Errorf("maxRetryAfterDuration = %v, should be <= 5m", maxRetryAfterDuration)
+	}
+
+	// A large Retry-After value should be capped in Do().
+	h := http.Header{}
+	h.Set("retry-after", "999999")
+	resp := &http.Response{Header: h}
+
+	got := retryAfterFromResponse(resp)
+	// retryAfterFromResponse itself doesn't cap (pure parser), but Do() caps it.
+	if got != 999999*time.Second {
+		t.Errorf("retryAfterFromResponse() = %v, want %v (capping happens in Do)", got, 999999*time.Second)
 	}
 }

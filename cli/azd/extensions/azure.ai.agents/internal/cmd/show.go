@@ -59,7 +59,7 @@ replica configuration, and any error messages.`,
 
 			action := &ShowAction{
 				AgentContext: agentContext,
-				flags:       flags,
+				flags:        flags,
 			}
 
 			return action.Run(ctx)

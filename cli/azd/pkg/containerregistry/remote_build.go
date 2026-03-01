@@ -70,7 +70,7 @@ func (r *RemoteBuildManager) UploadBuildSource(
 	}
 	defer dockerContext.Close()
 
-	_, err = blobClient.UploadFile(context.Background(), dockerContext, nil)
+	_, err = blobClient.UploadFile(ctx, dockerContext, nil)
 	if err != nil {
 		return armcontainerregistry.SourceUploadDefinition{}, err
 	}
@@ -193,7 +193,11 @@ func streamLogs(ctx context.Context, blobClient *blockblob.Client, writer io.Wri
 						}
 					}
 
-					time.Sleep(1 * time.Second)
+					select {
+					case <-ctx.Done():
+						return ctx.Err()
+					case <-time.After(1 * time.Second):
+					}
 					continue
 				}
 

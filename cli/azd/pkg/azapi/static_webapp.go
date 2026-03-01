@@ -92,15 +92,17 @@ func (cli *AzureClient) createStaticSitesClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armappservice.StaticSitesClient, error) {
-	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
+	return cli.staticSitesCache.GetOrCreate(subscriptionId, func() (*armappservice.StaticSitesClient, error) {
+		credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+		if err != nil {
+			return nil, err
+		}
 
-	client, err := armappservice.NewStaticSitesClient(subscriptionId, credential, cli.armClientOptions)
-	if err != nil {
-		return nil, fmt.Errorf("creating Static Sites client: %w", err)
-	}
+		client, err := armappservice.NewStaticSitesClient(subscriptionId, credential, cli.armClientOptions)
+		if err != nil {
+			return nil, fmt.Errorf("creating Static Sites client: %w", err)
+		}
 
-	return client, nil
+		return client, nil
+	})
 }

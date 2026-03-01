@@ -75,15 +75,17 @@ func (cli *AzureClient) createManagedHSMClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armkeyvault.ManagedHsmsClient, error) {
-	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
+	return cli.managedHsmCache.GetOrCreate(subscriptionId, func() (*armkeyvault.ManagedHsmsClient, error) {
+		credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+		if err != nil {
+			return nil, err
+		}
 
-	client, err := armkeyvault.NewManagedHsmsClient(subscriptionId, credential, cli.armClientOptions)
-	if err != nil {
-		return nil, fmt.Errorf("creating Resource client: %w", err)
-	}
+		client, err := armkeyvault.NewManagedHsmsClient(subscriptionId, credential, cli.armClientOptions)
+		if err != nil {
+			return nil, fmt.Errorf("creating Resource client: %w", err)
+		}
 
-	return client, nil
+		return client, nil
+	})
 }

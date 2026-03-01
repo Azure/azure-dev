@@ -54,32 +54,39 @@ func (cli *AzureClient) PurgeCognitiveAccount(
 
 func (cli *AzureClient) createCognitiveAccountClient(
 	ctx context.Context, subscriptionId string) (*armcognitiveservices.AccountsClient, error) {
-	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
+	return cli.cognitiveAccountsCache.GetOrCreate(subscriptionId, func() (*armcognitiveservices.AccountsClient, error) {
+		credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+		if err != nil {
+			return nil, err
+		}
 
-	client, err := armcognitiveservices.NewAccountsClient(subscriptionId, credential, cli.armClientOptions)
-	if err != nil {
-		return nil, fmt.Errorf("creating Resource client: %w", err)
-	}
+		client, err := armcognitiveservices.NewAccountsClient(subscriptionId, credential, cli.armClientOptions)
+		if err != nil {
+			return nil, fmt.Errorf("creating Resource client: %w", err)
+		}
 
-	return client, nil
+		return client, nil
+	})
 }
 
 func (cli *AzureClient) createDeletedCognitiveAccountClient(
 	ctx context.Context, subscriptionId string) (*armcognitiveservices.DeletedAccountsClient, error) {
-	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
+	return cli.deletedCognitiveCache.GetOrCreate(
+		subscriptionId,
+		func() (*armcognitiveservices.DeletedAccountsClient, error) {
+			credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+			if err != nil {
+				return nil, err
+			}
 
-	client, err := armcognitiveservices.NewDeletedAccountsClient(subscriptionId, credential, cli.armClientOptions)
-	if err != nil {
-		return nil, fmt.Errorf("creating Resource client: %w", err)
-	}
+			client, err := armcognitiveservices.NewDeletedAccountsClient(subscriptionId, credential, cli.armClientOptions)
+			if err != nil {
+				return nil, fmt.Errorf("creating Resource client: %w", err)
+			}
 
-	return client, nil
+			return client, nil
+		},
+	)
 }
 
 func (cli *AzureClient) GetAiModels(
@@ -106,17 +113,19 @@ func (cli *AzureClient) GetAiModels(
 
 func (cli *AzureClient) createModelsClient(
 	ctx context.Context, subscriptionId string) (*armcognitiveservices.ModelsClient, error) {
-	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
+	return cli.cognitiveModelsCache.GetOrCreate(subscriptionId, func() (*armcognitiveservices.ModelsClient, error) {
+		credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+		if err != nil {
+			return nil, err
+		}
 
-	client, err := armcognitiveservices.NewModelsClient(subscriptionId, credential, cli.armClientOptions)
-	if err != nil {
-		return nil, fmt.Errorf("creating Resource client: %w", err)
-	}
+		client, err := armcognitiveservices.NewModelsClient(subscriptionId, credential, cli.armClientOptions)
+		if err != nil {
+			return nil, fmt.Errorf("creating Resource client: %w", err)
+		}
 
-	return client, nil
+		return client, nil
+	})
 }
 
 func (cli *AzureClient) GetAiUsages(
@@ -143,17 +152,19 @@ func (cli *AzureClient) GetAiUsages(
 
 func (cli *AzureClient) createUsagesClient(
 	ctx context.Context, subscriptionId string) (*armcognitiveservices.UsagesClient, error) {
-	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
+	return cli.cognitiveUsagesCache.GetOrCreate(subscriptionId, func() (*armcognitiveservices.UsagesClient, error) {
+		credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+		if err != nil {
+			return nil, err
+		}
 
-	client, err := armcognitiveservices.NewUsagesClient(subscriptionId, credential, cli.armClientOptions)
-	if err != nil {
-		return nil, fmt.Errorf("creating Resource client: %w", err)
-	}
+		client, err := armcognitiveservices.NewUsagesClient(subscriptionId, credential, cli.armClientOptions)
+		if err != nil {
+			return nil, fmt.Errorf("creating Resource client: %w", err)
+		}
 
-	return client, nil
+		return client, nil
+	})
 }
 
 // GetResourceSkuLocations retrieves a list of unique locations where a specific resource SKU is available.
@@ -219,15 +230,20 @@ func (cli *AzureClient) GetResourceSkuLocations(
 
 func (cli *AzureClient) createResourcesSkuClient(
 	ctx context.Context, subscriptionId string) (*armcognitiveservices.ResourceSKUsClient, error) {
-	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
+	return cli.cognitiveResourceSkusCache.GetOrCreate(
+		subscriptionId,
+		func() (*armcognitiveservices.ResourceSKUsClient, error) {
+			credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+			if err != nil {
+				return nil, err
+			}
 
-	client, err := armcognitiveservices.NewResourceSKUsClient(subscriptionId, credential, cli.armClientOptions)
-	if err != nil {
-		return nil, fmt.Errorf("creating Resource client: %w", err)
-	}
+			client, err := armcognitiveservices.NewResourceSKUsClient(subscriptionId, credential, cli.armClientOptions)
+			if err != nil {
+				return nil, fmt.Errorf("creating Resource client: %w", err)
+			}
 
-	return client, nil
+			return client, nil
+		},
+	)
 }

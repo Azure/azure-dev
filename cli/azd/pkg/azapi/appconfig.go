@@ -77,19 +77,24 @@ func (cli *AzureClient) createAppConfigClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armappconfiguration.ConfigurationStoresClient, error) {
-	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
-
-	appConfigStoresClient, err := armappconfiguration.NewConfigurationStoresClient(
+	return cli.appConfigCache.GetOrCreate(
 		subscriptionId,
-		credential,
-		cli.armClientOptions,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("creating Resource client: %w", err)
-	}
+		func() (*armappconfiguration.ConfigurationStoresClient, error) {
+			credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+			if err != nil {
+				return nil, err
+			}
 
-	return appConfigStoresClient, nil
+			appConfigStoresClient, err := armappconfiguration.NewConfigurationStoresClient(
+				subscriptionId,
+				credential,
+				cli.armClientOptions,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("creating Resource client: %w", err)
+			}
+
+			return appConfigStoresClient, nil
+		},
+	)
 }

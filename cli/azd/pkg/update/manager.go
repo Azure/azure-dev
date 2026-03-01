@@ -592,19 +592,40 @@ func copyFile(src, dst string) error {
 	}
 	defer in.Close()
 
+	srcInfo, err := in.Stat()
+	if err != nil {
+		return err
+	}
+
 	out, err := os.Create(dst)
+	if err != nil {
+		// On Linux, overwriting a running executable fails with ETXTBSY ("text file busy").
+		// Unlink the old file first — the running process retains its fd via the inode —
+		// then create a new file at the same path.
+		if removeErr := os.Remove(dst); removeErr == nil {
+			out, err = os.Create(dst)
+		} else if os.IsPermission(removeErr) {
+			// Can't remove the old file due to directory permissions.
+			// Return the permission error so callers can handle elevation.
+			err = removeErr
+		}
+	}
 	if err != nil {
 		return err
 	}
 	defer out.Close()
 
-	_, err = io.Copy(out, in)
-	if err != nil {
+	if _, err = io.Copy(out, in); err != nil {
 		return err
 	}
 
-	// Ensure all data is flushed to disk before returning
-	return out.Sync()
+	if err := out.Sync(); err != nil {
+		return err
+	}
+
+	// Preserve source file permissions. After remove-then-create, the new file gets
+	// default 0666 permissions instead of the original executable permissions.
+	return os.Chmod(dst, srcInfo.Mode().Perm())
 }
 
 // extractBinary extracts the azd binary from the archive to destPath.

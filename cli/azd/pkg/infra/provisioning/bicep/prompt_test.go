@@ -664,3 +664,58 @@ func TestTopoSortParameterPromptsDependencyHasDefault(t *testing.T) {
 	require.Len(t, sorted, 1)
 	require.Equal(t, "aiLocation", sorted[0].key)
 }
+
+// TestResolveUsageNamesWithReferencesFullUsageName verifies that when a $(p:...) reference
+// resolves to a string whose first token already looks like a full SKU usage name
+// (i.e. contains a dot, e.g. "OpenAI.GlobalStandard.gpt-4o"), the AI model catalog lookup
+// is skipped and the token is used as-is.  This allows templates to hard-code the provider
+// and SKU tier while only parameterizing the capacity.
+func TestResolveUsageNamesWithReferencesFullUsageName(t *testing.T) {
+	t.Parallel()
+
+	// A minimal BicepProvider is sufficient — the catalog path must not be triggered
+	// (aiModelService == nil would panic if it were).
+	p := &BicepProvider{}
+
+	mockContext := mocks.NewMockContext(context.Background())
+	resolvedValues := map[string]any{
+		"cap": "10",
+	}
+
+	result, err := p.resolveUsageNamesWithReferences(
+		*mockContext.Context,
+		[]string{
+			// Full SKU usage name — catalog lookup must be skipped
+			"OpenAI.GlobalStandard.gpt-4o, $(p:cap)",
+			// Constant entry (no references) — should pass through unchanged
+			"OpenAI.Standard.gpt-4, 5",
+		},
+		resolvedValues,
+	)
+	require.NoError(t, err)
+	require.Len(t, result, 2)
+	require.Equal(t, "OpenAI.GlobalStandard.gpt-4o, 10", result[0])
+	require.Equal(t, "OpenAI.Standard.gpt-4, 5", result[1])
+}
+
+// TestResolveUsageNamesWithReferencesFullUsageNameNoCapacity verifies pass-through
+// when only the usage name itself is parameterised (no capacity token).
+func TestResolveUsageNamesWithReferencesFullUsageNameNoCapacity(t *testing.T) {
+	t.Parallel()
+
+	p := &BicepProvider{}
+
+	mockContext := mocks.NewMockContext(context.Background())
+	resolvedValues := map[string]any{
+		"usageName": "OpenAI.DataZoneStandard.gpt-4o",
+	}
+
+	result, err := p.resolveUsageNamesWithReferences(
+		*mockContext.Context,
+		[]string{"$(p:usageName)"},
+		resolvedValues,
+	)
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+	require.Equal(t, "OpenAI.DataZoneStandard.gpt-4o", result[0])
+}

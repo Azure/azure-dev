@@ -254,16 +254,25 @@ func (p *BicepProvider) resolveUsageNamesWithReferences(
 
 		// Parse the resolved string as "modelName, capacity" or "modelName"
 		parts := strings.SplitN(resolved, ",", 2)
-		modelName := strings.TrimSpace(parts[0])
+		firstToken := strings.TrimSpace(parts[0])
 		capacityStr := ""
 		if len(parts) == 2 {
 			capacityStr = strings.TrimSpace(parts[1])
 		}
 
-		// Resolve the model name to its full SKU usage name
-		skuUsageName, err := p.resolveModelSkuUsageName(ctx, p.env.GetSubscriptionId(), modelName)
-		if err != nil {
-			return nil, fmt.Errorf("resolving SKU for model '%s': %w", modelName, err)
+		// If the first token already looks like a full SKU usage name (e.g.
+		// "OpenAI.GlobalStandard.gpt-4o"), skip the catalog lookup and use it
+		// as-is. Full usage names follow the "Provider.SKU.ModelName" pattern
+		// and therefore always contain at least one dot, whereas raw model names
+		// (e.g. "gpt-4o") do not.
+		skuUsageName := firstToken
+		if !strings.Contains(firstToken, ".") {
+			// firstToken is a raw model name — resolve to its full SKU usage name
+			var resolveErr error
+			skuUsageName, resolveErr = p.resolveModelSkuUsageName(ctx, p.env.GetSubscriptionId(), firstToken)
+			if resolveErr != nil {
+				return nil, fmt.Errorf("resolving SKU for model '%s': %w", firstToken, resolveErr)
+			}
 		}
 
 		// Build the final "UsageName, capacity" string

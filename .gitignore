@@ -78,3 +78,5 @@ cli/azd/extensions/microsoft.azd.concurx/concurx.exe
 cli/azd/extensions/azure.appservice/azureappservice
 cli/azd/extensions/azure.appservice/azureappservice.exe
 
+
+.fake

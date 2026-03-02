@@ -4,6 +4,8 @@
 
 ### Features Added
 
+- [[#5432]](https://github.com/Azure/azure-dev/issues/5432) Support dynamic parameter references (`$(p:paramName)`) in `usageName` metadata for location parameters. Template authors can now reference other input parameters (e.g. model name and capacity) to drive quota-based location filtering dynamically, instead of using hardcoded values.
+
 ### Breaking Changes
 
 ### Bugs Fixed

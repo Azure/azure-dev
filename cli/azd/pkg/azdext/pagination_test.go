@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -479,5 +480,180 @@ func TestPager_CollectWithSSRFError(t *testing.T) {
 	// Collect should still return the items from the valid page.
 	if len(all) != 2 || all[0] != "a" || all[1] != "b" {
 		t.Errorf("all = %v, want [a b] (partial results before SSRF error)", all)
+	}
+}
+
+func TestPager_CollectMaxPages(t *testing.T) {
+	t.Parallel()
+
+	// Build 5 pages; set MaxPages to 3.
+	var responses []*doerResponse
+	for i := 1; i <= 5; i++ {
+		nextLink := ""
+		if i < 5 {
+			nextLink = fmt.Sprintf("https://example.com/api?page=%d", i+1)
+		}
+		body := pageJSON([]int{i}, nextLink)
+		responses = append(responses, &doerResponse{
+			resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(body)),
+				Header:     http.Header{},
+			},
+		})
+	}
+
+	doer := &mockDoer{responses: responses}
+	pager := NewPager[int](doer, "https://example.com/api?page=1", &PagerOptions{MaxPages: 3})
+
+	all, err := pager.Collect(context.Background())
+	if err != nil {
+		t.Fatalf("Collect failed: %v", err)
+	}
+
+	if len(all) != 3 {
+		t.Errorf("len(all) = %d, want 3 (MaxPages=3)", len(all))
+	}
+	for i, want := range []int{1, 2, 3} {
+		if all[i] != want {
+			t.Errorf("all[%d] = %d, want %d", i, all[i], want)
+		}
+	}
+}
+
+func TestPager_CollectMaxItems(t *testing.T) {
+	t.Parallel()
+
+	// Build 3 pages of 4 items each; set MaxItems to 5.
+	var responses []*doerResponse
+	for i := 0; i < 3; i++ {
+		items := []int{i*4 + 1, i*4 + 2, i*4 + 3, i*4 + 4}
+		nextLink := ""
+		if i < 2 {
+			nextLink = fmt.Sprintf("https://example.com/api?page=%d", i+2)
+		}
+		body := pageJSON(items, nextLink)
+		responses = append(responses, &doerResponse{
+			resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(body)),
+				Header:     http.Header{},
+			},
+		})
+	}
+
+	doer := &mockDoer{responses: responses}
+	pager := NewPager[int](doer, "https://example.com/api?page=1", &PagerOptions{MaxItems: 5})
+
+	all, err := pager.Collect(context.Background())
+	if err != nil {
+		t.Fatalf("Collect failed: %v", err)
+	}
+
+	if len(all) != 5 {
+		t.Errorf("len(all) = %d, want 5 (MaxItems=5)", len(all))
+	}
+}
+
+func TestPager_TruncatedByMaxPages(t *testing.T) {
+	t.Parallel()
+
+	var responses []*doerResponse
+	for i := 1; i <= 5; i++ {
+		nextLink := ""
+		if i < 5 {
+			nextLink = fmt.Sprintf("https://example.com/api?page=%d", i+1)
+		}
+		body := pageJSON([]int{i}, nextLink)
+		responses = append(responses, &doerResponse{
+			resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(body)),
+				Header:     http.Header{},
+			},
+		})
+	}
+
+	doer := &mockDoer{responses: responses}
+	pager := NewPager[int](doer, "https://example.com/api?page=1", &PagerOptions{MaxPages: 3})
+
+	all, err := pager.Collect(context.Background())
+	if err != nil {
+		t.Fatalf("Collect failed: %v", err)
+	}
+
+	if len(all) != 3 {
+		t.Errorf("len(all) = %d, want 3", len(all))
+	}
+
+	if !pager.Truncated() {
+		t.Error("Truncated() = false, want true (stopped at MaxPages)")
+	}
+}
+
+func TestPager_TruncatedByMaxItems(t *testing.T) {
+	t.Parallel()
+
+	var responses []*doerResponse
+	for i := 0; i < 3; i++ {
+		items := []int{i*4 + 1, i*4 + 2, i*4 + 3, i*4 + 4}
+		nextLink := ""
+		if i < 2 {
+			nextLink = fmt.Sprintf("https://example.com/api?page=%d", i+2)
+		}
+		body := pageJSON(items, nextLink)
+		responses = append(responses, &doerResponse{
+			resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(body)),
+				Header:     http.Header{},
+			},
+		})
+	}
+
+	doer := &mockDoer{responses: responses}
+	pager := NewPager[int](doer, "https://example.com/api?page=1", &PagerOptions{MaxItems: 5})
+
+	all, err := pager.Collect(context.Background())
+	if err != nil {
+		t.Fatalf("Collect failed: %v", err)
+	}
+
+	if len(all) != 5 {
+		t.Errorf("len(all) = %d, want 5", len(all))
+	}
+
+	if !pager.Truncated() {
+		t.Error("Truncated() = false, want true (stopped at MaxItems)")
+	}
+}
+
+func TestPager_NotTruncatedOnNaturalEnd(t *testing.T) {
+	t.Parallel()
+
+	body := pageJSON([]string{"a", "b"}, "")
+	doer := &mockDoer{
+		responses: []*doerResponse{
+			{resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(body)),
+				Header:     http.Header{},
+			}},
+		},
+	}
+
+	pager := NewPager[string](doer, "https://example.com/api", nil)
+
+	all, err := pager.Collect(context.Background())
+	if err != nil {
+		t.Fatalf("Collect failed: %v", err)
+	}
+
+	if len(all) != 2 {
+		t.Errorf("len(all) = %d, want 2", len(all))
+	}
+
+	if pager.Truncated() {
+		t.Error("Truncated() = true, want false (natural end)")
 	}
 }

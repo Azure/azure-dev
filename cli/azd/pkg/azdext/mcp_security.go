@@ -130,14 +130,6 @@ func (p *MCPSecurityPolicy) OnBlocked(fn func(action, detail string)) *MCPSecuri
 	return p
 }
 
-// notifyBlocked invokes the onBlocked callback if set. Must be called with
-// p.mu held (at least RLock).
-func (p *MCPSecurityPolicy) notifyBlocked(action, detail string) {
-	if p.onBlocked != nil {
-		p.onBlocked(action, detail)
-	}
-}
-
 // isLocalhostHost returns true if the host is localhost or a loopback address.
 func isLocalhostHost(host string) bool {
 	h := strings.ToLower(host)
@@ -152,8 +144,20 @@ func isLocalhostHost(host string) bool {
 // Returns an error describing the violation, or nil if allowed.
 func (p *MCPSecurityPolicy) CheckURL(rawURL string) error {
 	p.mu.RLock()
-	defer p.mu.RUnlock()
+	fn := p.onBlocked
+	err := p.checkURLCore(rawURL)
+	p.mu.RUnlock()
 
+	if fn != nil && err != nil {
+		fn("url_blocked", err.Error())
+	}
+
+	return err
+}
+
+// checkURLCore performs URL validation without acquiring the lock or invoking
+// the onBlocked callback. Callers must hold p.mu (at least RLock).
+func (p *MCPSecurityPolicy) checkURLCore(rawURL string) error {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return fmt.Errorf("invalid URL: %w", err)
@@ -167,27 +171,20 @@ func (p *MCPSecurityPolicy) CheckURL(rawURL string) error {
 		// always allowed
 	case "http":
 		if p.requireHTTPS && !isLocalhostHost(host) {
-			err := fmt.Errorf("HTTPS required: %s", rawURL)
-			p.notifyBlocked("url_blocked", err.Error())
-			return err
+			return fmt.Errorf("HTTPS required: %s", rawURL)
 		}
 	default:
-		err := fmt.Errorf("scheme not allowed: %q (only http and https are permitted)", u.Scheme)
-		p.notifyBlocked("url_blocked", err.Error())
-		return err
+		return fmt.Errorf("scheme not allowed: %q (only http and https are permitted)", u.Scheme)
 	}
 
 	// Check if the host is directly blocked.
 	if p.blockedHosts[strings.ToLower(host)] {
-		err := fmt.Errorf("blocked host: %s", host)
-		p.notifyBlocked("url_blocked", err.Error())
-		return err
+		return fmt.Errorf("blocked host: %s", host)
 	}
 
 	// If the host is an IP literal, check it directly against blocked CIDRs.
 	if ip := net.ParseIP(host); ip != nil {
 		if err := p.checkIP(ip, host); err != nil {
-			p.notifyBlocked("url_blocked", err.Error())
 			return err
 		}
 	} else {
@@ -196,19 +193,14 @@ func (p *MCPSecurityPolicy) CheckURL(rawURL string) error {
 		if err != nil {
 			// Fail-closed: if DNS resolution fails, block the request.
 			// This prevents SSRF bypasses via DNS rebinding or transient failures.
-			blockErr := fmt.Errorf("DNS resolution failed for host %s: %w", host, err)
-			p.notifyBlocked("url_blocked", blockErr.Error())
-			return blockErr
+			return fmt.Errorf("DNS resolution failed for host %s: %w", host, err)
 		}
 		for _, addr := range addrs {
 			if p.blockedHosts[strings.ToLower(addr)] {
-				blockErr := fmt.Errorf("blocked host: %s (resolved from %s)", addr, host)
-				p.notifyBlocked("url_blocked", blockErr.Error())
-				return blockErr
+				return fmt.Errorf("blocked host: %s (resolved from %s)", addr, host)
 			}
 			if ip := net.ParseIP(addr); ip != nil {
 				if err := p.checkIP(ip, host); err != nil {
-					p.notifyBlocked("url_blocked", err.Error())
 					return err
 				}
 			}
@@ -232,55 +224,18 @@ func (p *MCPSecurityPolicy) checkIP(ip net.IP, originalHost string) error {
 			return fmt.Errorf("blocked IP %s (private/loopback/link-local) for host %s", ip, originalHost)
 		}
 
-		// Handle encoding variants that Go's net.IP methods don't classify, by extracting
-		// the embedded IPv4 address and re-checking it against all blocked ranges.
-		if len(ip) == net.IPv6len && ip.To4() == nil {
-			// IPv4-compatible (::x.x.x.x, RFC 4291 §2.5.5.1): first 12 bytes are zero.
-			isV4Compatible := true
-			for i := 0; i < 12; i++ {
-				if ip[i] != 0 {
-					isV4Compatible = false
-					break
+		// Handle encoding variants that Go's net.IP methods don't classify,
+		// by extracting the embedded IPv4 and re-checking it.
+		if v4 := extractEmbeddedIPv4(ip); v4 != nil {
+			for _, cidr := range p.blockedCIDRs {
+				if cidr.Contains(v4) {
+					return fmt.Errorf("blocked IP %s (embedded %s, CIDR %s) for host %s",
+						ip, v4, cidr, originalHost)
 				}
 			}
-			if isV4Compatible && (ip[12] != 0 || ip[13] != 0 || ip[14] != 0 || ip[15] != 0) {
-				v4 := net.IPv4(ip[12], ip[13], ip[14], ip[15])
-				for _, cidr := range p.blockedCIDRs {
-					if cidr.Contains(v4) {
-						return fmt.Errorf("blocked IP %s (IPv4-compatible %s, CIDR %s) for host %s",
-							ip, v4, cidr, originalHost)
-					}
-				}
-				if v4.IsLoopback() || v4.IsPrivate() || v4.IsLinkLocalUnicast() || v4.IsUnspecified() {
-					return fmt.Errorf("blocked IP %s (IPv4-compatible %s, private/loopback) for host %s",
-						ip, v4, originalHost)
-				}
-			}
-
-			// IPv4-translated (::ffff:0:x.x.x.x, RFC 2765 §4.2.1): bytes 0-7 zero,
-			// bytes 8-9 = 0xFF 0xFF, bytes 10-11 = 0x00 0x00, bytes 12-15 = IPv4.
-			// Distinct from IPv4-mapped (bytes 10-11 = 0xFF), so To4() returns nil.
-			isV4Translated := ip[8] == 0xFF && ip[9] == 0xFF && ip[10] == 0x00 && ip[11] == 0x00
-			if isV4Translated {
-				for i := 0; i < 8; i++ {
-					if ip[i] != 0 {
-						isV4Translated = false
-						break
-					}
-				}
-			}
-			if isV4Translated && (ip[12] != 0 || ip[13] != 0 || ip[14] != 0 || ip[15] != 0) {
-				v4 := net.IPv4(ip[12], ip[13], ip[14], ip[15])
-				for _, cidr := range p.blockedCIDRs {
-					if cidr.Contains(v4) {
-						return fmt.Errorf("blocked IP %s (IPv4-translated %s, CIDR %s) for host %s",
-							ip, v4, cidr, originalHost)
-					}
-				}
-				if v4.IsLoopback() || v4.IsPrivate() || v4.IsLinkLocalUnicast() || v4.IsUnspecified() {
-					return fmt.Errorf("blocked IP %s (IPv4-translated %s, private/loopback) for host %s",
-						ip, v4, originalHost)
-				}
+			if v4.IsLoopback() || v4.IsPrivate() || v4.IsLinkLocalUnicast() || v4.IsUnspecified() {
+				return fmt.Errorf("blocked IP %s (embedded %s, private/loopback) for host %s",
+					ip, v4, originalHost)
 			}
 		}
 	}
@@ -300,17 +255,27 @@ func (p *MCPSecurityPolicy) checkIP(ip net.IP, originalHost string) error {
 // use file-descriptor-based approaches where possible.
 func (p *MCPSecurityPolicy) CheckPath(path string) error {
 	p.mu.RLock()
-	defer p.mu.RUnlock()
+	fn := p.onBlocked
+	err := p.checkPathCore(path)
+	p.mu.RUnlock()
 
+	if fn != nil && err != nil {
+		fn("path_blocked", err.Error())
+	}
+
+	return err
+}
+
+// checkPathCore performs path validation without acquiring the lock or invoking
+// the onBlocked callback. Callers must hold p.mu (at least RLock).
+func (p *MCPSecurityPolicy) checkPathCore(path string) error {
 	if len(p.allowedBasePaths) == 0 {
 		return nil
 	}
 
 	// Reject paths containing ".." before any cleaning to catch obvious traversal attempts.
 	if strings.Contains(path, "..") {
-		err := fmt.Errorf("path traversal detected: %s", path)
-		p.notifyBlocked("path_blocked", err.Error())
-		return err
+		return fmt.Errorf("path traversal detected: %s", path)
 	}
 
 	cleaned := filepath.Clean(path)
@@ -349,9 +314,7 @@ func (p *MCPSecurityPolicy) CheckPath(path string) error {
 		}
 	}
 
-	err = fmt.Errorf("path %s is not within any allowed base directory", path)
-	p.notifyBlocked("path_blocked", err.Error())
-	return err
+	return fmt.Errorf("path %s is not within any allowed base directory", path)
 }
 
 // IsHeaderBlocked checks if a header name is in the redacted set.
@@ -427,6 +390,15 @@ func SSRFSafeRedirect(req *http.Request, via []*http.Request) error {
 		return fmt.Errorf("stopped after %d redirects", maxRedirects)
 	}
 
+	// Block HTTPS → HTTP scheme downgrades to prevent leaking
+	// Authorization headers (including Bearer tokens) in cleartext.
+	// Go's net/http preserves headers on same-host redirects regardless
+	// of scheme change.
+	if len(via) > 0 && via[len(via)-1].URL.Scheme == "https" && req.URL.Scheme != "https" {
+		return fmt.Errorf(
+			"redirect from HTTPS to %s blocked (credential protection)", req.URL.Scheme)
+	}
+
 	host := req.URL.Hostname()
 
 	// Block redirects to known metadata endpoints.
@@ -434,10 +406,94 @@ func SSRFSafeRedirect(req *http.Request, via []*http.Request) error {
 		return fmt.Errorf("redirect to metadata endpoint %s blocked (SSRF protection)", host)
 	}
 
-	// Block redirects to private/loopback IP addresses.
+	// Block redirects to localhost hostnames (e.g. "localhost",
+	// "127.0.0.1") regardless of how they are spelled, preventing
+	// hostname-based SSRF bypasses of the IP-literal checks below.
+	if isLocalhostHost(host) {
+		return fmt.Errorf("redirect to localhost %s blocked (SSRF protection)", host)
+	}
+
+	// Block redirects to private/loopback IP addresses, including
+	// IPv4-compatible and IPv4-translated IPv6 encoding variants
+	// that bypass Go's IsPrivate()/IsLoopback() classification.
 	if ip := net.ParseIP(host); ip != nil {
 		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
 			return fmt.Errorf("redirect to private/loopback IP %s blocked (SSRF protection)", ip)
+		}
+
+		// Check IPv6 encoding variants (IPv4-compatible, IPv4-translated)
+		// that embed private IPv4 addresses but aren't caught by Go's
+		// net.IP classifier methods.
+		if err := checkIPEncodingVariants(ip, host); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// checkIPEncodingVariants detects IPv4-compatible (::x.x.x.x) and
+// IPv4-translated (::ffff:0:x.x.x.x) IPv6 addresses that embed
+// private IPv4 addresses but bypass Go's IsPrivate()/IsLoopback().
+func checkIPEncodingVariants(ip net.IP, originalHost string) error {
+	v4 := extractEmbeddedIPv4(ip)
+	if v4 == nil {
+		return nil
+	}
+
+	if v4.IsLoopback() || v4.IsPrivate() || v4.IsLinkLocalUnicast() || v4.IsUnspecified() {
+		return fmt.Errorf(
+			"redirect to embedded IPv4 address %s (embedded %s) blocked (SSRF protection)",
+			ip, v4)
+	}
+
+	return nil
+}
+
+// extractEmbeddedIPv4 returns the embedded IPv4 address from IPv4-compatible
+// (::x.x.x.x, RFC 4291 §2.5.5.1) or IPv4-translated (::ffff:0:x.x.x.x,
+// RFC 2765 §4.2.1) IPv6 encodings. Returns nil if the address is not one of
+// these encoding variants.
+//
+// This handles addresses that Go's net.IP.To4() does not classify as IPv4
+// (To4 returns nil for these), which means Go's IsPrivate()/IsLoopback()
+// methods also return false for them.
+func extractEmbeddedIPv4(ip net.IP) net.IP {
+	if len(ip) != net.IPv6len || ip.To4() != nil {
+		return nil // Not a pure IPv6 address or already handled as IPv4-mapped
+	}
+
+	// Check if last 4 bytes are non-zero (otherwise it's just :: which is
+	// already handled by IsUnspecified).
+	if ip[12] == 0 && ip[13] == 0 && ip[14] == 0 && ip[15] == 0 {
+		return nil
+	}
+
+	// IPv4-compatible (::x.x.x.x): first 12 bytes are zero.
+	isV4Compatible := true
+	for i := 0; i < 12; i++ {
+		if ip[i] != 0 {
+			isV4Compatible = false
+			break
+		}
+	}
+	if isV4Compatible {
+		return net.IPv4(ip[12], ip[13], ip[14], ip[15])
+	}
+
+	// IPv4-translated (::ffff:0:x.x.x.x, RFC 2765): bytes 0-7 zero,
+	// bytes 8-9 = 0xFF 0xFF, bytes 10-11 = 0x00 0x00, bytes 12-15 = IPv4.
+	// Distinct from IPv4-mapped (bytes 10-11 = 0xFF), so To4() returns nil.
+	if ip[8] == 0xFF && ip[9] == 0xFF && ip[10] == 0x00 && ip[11] == 0x00 {
+		allZero := true
+		for i := 0; i < 8; i++ {
+			if ip[i] != 0 {
+				allZero = false
+				break
+			}
+		}
+		if allZero {
+			return net.IPv4(ip[12], ip[13], ip[14], ip[15])
 		}
 	}
 

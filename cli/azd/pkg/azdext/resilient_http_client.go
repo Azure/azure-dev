@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/rand/v2"
 	"net/http"
 	"time"
 
@@ -21,6 +22,12 @@ const (
 	// maxRetryAfterDuration caps the Retry-After header value to prevent
 	// a malicious or misconfigured server from stalling the client indefinitely.
 	maxRetryAfterDuration = 120 * time.Second
+
+	// maxRetryBodyDrain limits how many bytes are consumed when draining a
+	// retryable response body before the next attempt. This prevents a
+	// malicious or misconfigured server from stalling the client with an
+	// unbounded response body.
+	maxRetryBodyDrain int64 = 1 << 20 // 1 MB
 )
 
 // ResilientClient is an HTTP client with built-in retry, exponential backoff,
@@ -130,6 +137,17 @@ func (rc *ResilientClient) Do(ctx context.Context, method, url string, body io.R
 		return nil, errors.New("azdext.ResilientClient.Do: context must not be nil")
 	}
 
+	// Validate body seekability upfront when retries are enabled.
+	// Fail fast rather than discovering the body is not seekable after the
+	// first attempt has already consumed it.
+	if body != nil && rc.opts.MaxRetries > 0 {
+		if _, ok := body.(io.ReadSeeker); !ok {
+			return nil, errors.New(
+				"azdext.ResilientClient.Do: request body does not implement io.ReadSeeker; " +
+					"retries require a seekable body (use bytes.NewReader or strings.NewReader)")
+		}
+	}
+
 	var lastErr error
 	var retryAfterOverride time.Duration
 
@@ -193,7 +211,9 @@ func (rc *ResilientClient) Do(ctx context.Context, method, url string, body io.R
 		}
 
 		// Consume body before retry to release the connection.
-		_, _ = io.Copy(io.Discard, resp.Body)
+		// Bound the read to prevent a malicious server from stalling the
+		// client with an infinitely long response body.
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxRetryBodyDrain))
 		resp.Body.Close()
 
 		// Capture Retry-After for the next iteration's delay,
@@ -243,7 +263,10 @@ func (rc *ResilientClient) backoff(attempt int) time.Duration {
 		delay = rc.opts.MaxDelay
 	}
 
-	return delay
+	// Add jitter: randomize between [50%, 100%) of computed delay to prevent
+	// thundering herd when multiple clients retry simultaneously.
+	jitter := 0.5 + rand.Float64()*0.5
+	return time.Duration(float64(delay) * jitter)
 }
 
 // isRetryable returns true for status codes that indicate a transient failure.

@@ -93,7 +93,7 @@ runs:
         ACTION_PATH: ${{ github.action_path }}
       run: |
         $scriptPath = Join-Path $env:ACTION_PATH ".." ".." "scripts" "login-to-github.ps1"
-        $owners = $env:INPUT_TOKEN_OWNERS -split ',' | ForEach-Object { $_.Trim() }
+        $owners = $env:INPUT_TOKEN_OWNERS -split ',' | ForEach-Object { $_.Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
         & $scriptPath `
           -KeyVaultName $env:INPUT_KEY_VAULT_NAME `
           -KeyName $env:INPUT_KEY_NAME `

@@ -6,6 +6,15 @@ param environmentName string
 @description('Primary location for all resources')
 param location string
 
+param vnetEnabled bool
+
+@minLength(10)
+param resourceGroupOverride string
+
+@sys.secure()
+@maxLength(100)
+param secure string
+
 @description('A time to mark on created resource groups, so they can be cleaned up via an automated process.')
 param deleteAfterTime string = dateTimeAdd(utcNow('o'), 'PT1H')
 

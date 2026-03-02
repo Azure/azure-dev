@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -263,6 +264,8 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		if existingProject {
 			// only initialize environment when no mode is set explicitly
 			initTypeSelect = initEnvironment
+		} else if i.console.IsNoPromptMode() {
+			return nil, &initModeRequiredError{}
 		} else {
 			// Prompt for init type for new projects
 			initTypeSelect, err = promptInitType(i.console, ctx, i.featuresManager, i.configManager)
@@ -879,4 +882,67 @@ func getCmdInitHelpFooter(*cobra.Command) string {
 			output.WithWarningFormat("[Branch name]"),
 		),
 	})
+}
+
+// initModeRequiredError is returned when azd init requires interactive prompts for initialization mode
+// but --no-prompt is set.
+type initModeRequiredError struct{}
+
+func (e *initModeRequiredError) Error() string {
+	return "initialization mode required when --no-prompt is set"
+}
+
+func (e *initModeRequiredError) ToString(currentIndentation string) string {
+	var buf strings.Builder
+	separator := "──────────────────────────────────────────────────────────────"
+
+	buf.WriteString(separator + "\n")
+	buf.WriteString("Init cannot continue (interactive prompts disabled)\n")
+	buf.WriteString(separator + "\n\n")
+
+	buf.WriteString("azd init requires an initialization mode when --no-prompt is set.\n\n")
+
+	buf.WriteString("Choose one:\n\n")
+
+	buf.WriteString("  • Minimal (no template)\n")
+	buf.WriteString("      Creates required azd project files in the current directory.\n")
+	buf.WriteString("      azd init --minimal\n\n")
+
+	buf.WriteString("  • From template\n")
+	buf.WriteString("      Creates a new project from an azd template.\n")
+	buf.WriteString("      azd template list\n")
+	buf.WriteString("      azd init --template <template-id> --environment <environment>\n\n")
+
+	buf.WriteString("Environment name must be globally unique (for example: myapp-dev).\n")
+
+	return buf.String()
+}
+
+func (e *initModeRequiredError) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Error   string                         `json:"error"`
+		Message string                         `json:"message"`
+		Options []initModeRequiredErrorOptions `json:"options"`
+	}{
+		Error:   e.Error(),
+		Message: "Init cannot continue (interactive prompts disabled)",
+		Options: []initModeRequiredErrorOptions{
+			{
+				Name:        "minimal",
+				Description: "Creates required azd project files in the current directory.",
+				Command:     "azd init --minimal",
+			},
+			{
+				Name:        "template",
+				Description: "Creates a new project from an azd template.",
+				Command:     "azd init --template <template-id> --environment <environment>",
+			},
+		},
+	})
+}
+
+type initModeRequiredErrorOptions struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Command     string `json:"command"`
 }

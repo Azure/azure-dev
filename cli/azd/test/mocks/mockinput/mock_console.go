@@ -37,6 +37,7 @@ type MockConsole struct {
 	expressions []*MockConsoleExpression
 	log         []string
 	spinnerOps  []SpinnerOp
+	noPrompt    bool
 }
 
 func NewMockConsole() *MockConsole {
@@ -138,8 +139,12 @@ func (c *MockConsole) WaitForEnter() {
 func (c *MockConsole) EnsureBlankLine(context context.Context) {
 }
 
+func (c *MockConsole) SetNoPromptMode(noPrompt bool) {
+	c.noPrompt = noPrompt
+}
+
 func (c *MockConsole) IsNoPromptMode() bool {
-	return false
+	return c.noPrompt
 }
 
 func (c *MockConsole) SupportsPromptDialog() bool {

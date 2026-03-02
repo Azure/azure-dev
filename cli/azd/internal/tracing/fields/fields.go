@@ -580,4 +580,16 @@ var (
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
+	// The list of installed extension identifiers.
+	ExtensionsInstalledIds = AttributeKey{
+		Key:            attribute.Key("extensions.installed.ids"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// The list of installed extension versions.
+	ExtensionsInstalledVersions = AttributeKey{
+		Key:            attribute.Key("extensions.installed.versions"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 )

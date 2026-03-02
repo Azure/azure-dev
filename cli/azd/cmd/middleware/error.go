@@ -437,7 +437,7 @@ func promptForErrorHandlingConsent(
 }
 
 // promptTroubleshootingWithConsent combines consent and scope selection into a single prompt.
-// Checks if a saved preference exists (e.g. mcp.errorHandling.troubleshooting.explain).
+// Checks if a saved preference exists (e.g. mcp.errorHandling.troubleshooting.skip).
 // Returns the scope ("explain") or "" if skipped.
 func (e *ErrorMiddleware) promptTroubleshootingWithConsent(ctx context.Context) (string, error) {
 	const configPrefix = "mcp.errorHandling.troubleshooting"
@@ -450,7 +450,7 @@ func (e *ErrorMiddleware) promptTroubleshootingWithConsent(ctx context.Context) 
 	// Check for saved "always skip" preference
 	if val, ok := userConfig.GetString(configPrefix + ".skip"); ok && val == "allow" {
 		e.console.Message(ctx, output.WithWarningFormat(
-			"Troubleshooting is set to always skip. To change, run %s.\n",
+			"Error explanation is set to always skip. To change, run %s.\n",
 			output.WithHighLightFormat(fmt.Sprintf("azd config unset %s.skip", configPrefix)),
 		))
 		return "", nil
@@ -463,8 +463,8 @@ func (e *ErrorMiddleware) promptTroubleshootingWithConsent(ctx context.Context) 
 	}
 
 	selector := uxlib.NewSelect(&uxlib.SelectOptions{
-		Message: "Generate troubleshooting steps?",
-		HelpMessage: fmt.Sprintf("This action will run AI tools to generate troubleshooting steps."+
+		Message: "Would you like agent to explain this error?",
+		HelpMessage: fmt.Sprintf("Agent will first explain the error, then offer optional step-by-step fix guidance."+
 			" Edit permissions anytime by running %s.",
 			output.WithHighLightFormat("azd mcp consent")),
 		Choices:         choices,

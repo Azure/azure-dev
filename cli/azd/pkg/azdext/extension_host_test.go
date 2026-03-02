@@ -229,7 +229,7 @@ func newTestAzdClient() *AzdClient {
 }
 
 func TestExtensionHost_ServiceTargetOnly(t *testing.T) {
-	t.Parallel()
+	// Not parallel: Run() mutates global log output which races with other tests.
 
 	// Setup mocks
 	mockServiceTargetManager := &MockServiceTargetRegistrar{}
@@ -283,7 +283,7 @@ func TestExtensionHost_ServiceTargetOnly(t *testing.T) {
 }
 
 func TestExtensionHost_EventHandlersOnly(t *testing.T) {
-	t.Parallel()
+	// Not parallel: Run() mutates global log output which races with other tests.
 
 	// Setup mocks
 	mockEventManager := &MockExtensionEventManager{}
@@ -349,7 +349,7 @@ func TestExtensionHost_EventHandlersOnly(t *testing.T) {
 }
 
 func TestExtensionHost_ServiceTargetsAndEvents(t *testing.T) {
-	t.Parallel()
+	// Not parallel: Run() mutates global log output which races with other tests.
 
 	// Setup mocks
 	mockServiceTargetManager := &MockServiceTargetRegistrar{}
@@ -427,7 +427,7 @@ func TestExtensionHost_ServiceTargetsAndEvents(t *testing.T) {
 }
 
 func TestExtensionHost_ServiceTargetRegistrationError(t *testing.T) {
-	t.Parallel()
+	// Not parallel: Run() mutates global log output which races with other tests.
 
 	// Setup mock with error
 	expectedError := status.Error(codes.Internal, "boom")
@@ -474,7 +474,7 @@ func TestExtensionHost_ServiceTargetRegistrationError(t *testing.T) {
 }
 
 func TestExtensionHost_WithFrameworkService(t *testing.T) {
-	t.Parallel()
+	// Not parallel: Run() mutates global log output which races with other tests.
 
 	// Setup mocks
 	mockFrameworkServiceManager := &MockFrameworkServiceRegistrar{}
@@ -528,7 +528,7 @@ func TestExtensionHost_WithFrameworkService(t *testing.T) {
 }
 
 func TestExtensionHost_MultipleServiceTypes(t *testing.T) {
-	t.Parallel()
+	// Not parallel: Run() mutates global log output which races with other tests.
 
 	// Setup mocks for all service types
 	var wg sync.WaitGroup
@@ -623,7 +623,7 @@ func TestExtensionHost_MultipleServiceTypes(t *testing.T) {
 }
 
 func TestExtensionHost_MultipleRegistrationErrors(t *testing.T) {
-	t.Parallel()
+	// Not parallel: Run() mutates global log output which races with other tests.
 
 	// Setup mocks with errors
 	error1 := status.Error(codes.Internal, "service target error")
@@ -697,7 +697,10 @@ func TestExtensionHost_MultipleRegistrationErrors(t *testing.T) {
 // when AZD_EXT_DEBUG is not set, preventing internal gRPC broker trace logs
 // from appearing in extension stderr.
 // These tests mutate global state (log output, env vars) and must NOT run in parallel.
+// Do NOT add t.Parallel() — Run() mutates the global logger and this test mutates AZD_EXT_DEBUG,
+// both of which would race with any other test that calls ExtensionHost.Run() concurrently.
 func TestExtensionHost_RunSilencesLog(t *testing.T) {
+
 	// Save and restore global log output
 	originalOutput := log.Writer()
 	defer log.SetOutput(originalOutput)
@@ -720,19 +723,40 @@ func TestExtensionHost_RunSilencesLog(t *testing.T) {
 		// Ensure AZD_EXT_DEBUG is not set
 		os.Unsetenv("AZD_EXT_DEBUG")
 
-		// Setup minimal extension host with no registrations
+		// Setup extension host with a service target so we can observe logging during Run()
 		client := newTestAzdClient()
 		runner := NewExtensionHost(client)
 
-		err := runner.Run(context.Background())
+		mockSTM := &MockServiceTargetRegistrar{}
+		mockSTM.On("Ready", mock.Anything).Return(nil)
+		mockSTM.On("Receive", mock.Anything).Run(func(args mock.Arguments) {
+			// While Run() is active, the logger should be silenced
+			log.Printf("during-run message")
+			ctx := args.Get(0).(context.Context)
+			<-ctx.Done()
+		}).Return(nil)
+		mockSTM.On("Register", mock.Anything, mock.Anything, mock.AnythingOfType("string")).Return(nil)
+		mockSTM.On("Close").Return(nil)
+		runner.serviceTargetManager = mockSTM
+		runner.WithServiceTarget("test", func() ServiceTargetProvider { return &MockServiceTargetProvider{} })
+
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() { done <- runner.Run(ctx) }()
+
+		// Give Run() time to start and write the log message
+		time.Sleep(200 * time.Millisecond)
+		cancel()
+		err := <-done
 		require.NoError(t, err)
 
-		// After Run(), global log should be silenced
-		assert.Equal(t, io.Discard, log.Writer(), "log output should be io.Discard when AZD_EXT_DEBUG is not set")
+		// The message written during Run() should have been discarded
+		assert.NotContains(t, buf.String(), "during-run message",
+			"log output during Run() should be discarded when AZD_EXT_DEBUG is not set")
 
-		// Verify log.Printf output is actually discarded
-		log.Printf("this should be discarded")
-		assert.Empty(t, buf.String(), "log output should not appear in the buffer after silencing")
+		// After Run() returns, the logger should be restored (not left as io.Discard)
+		assert.NotEqual(t, io.Discard, log.Writer(),
+			"log output should be restored after Run() returns")
 	})
 
 	t.Run("silences log output when AZD_EXT_DEBUG is empty", func(t *testing.T) {
@@ -744,10 +768,18 @@ func TestExtensionHost_RunSilencesLog(t *testing.T) {
 		client := newTestAzdClient()
 		runner := NewExtensionHost(client)
 
+		// No registrations — Run() returns immediately after signaling ready
 		err := runner.Run(context.Background())
 		require.NoError(t, err)
 
-		assert.Equal(t, io.Discard, log.Writer(), "log output should be io.Discard when AZD_EXT_DEBUG is empty")
+		// After Run(), logger should be restored (defer fired)
+		assert.NotEqual(t, io.Discard, log.Writer(),
+			"log output should be restored after Run() returns")
+
+		// Verify restore works — writing after Run() should appear in buffer
+		log.Printf("after-run message")
+		assert.Contains(t, buf.String(), "after-run message",
+			"log output should work after Run() restores the writer")
 	})
 
 	t.Run("silences log output when AZD_EXT_DEBUG is false", func(t *testing.T) {
@@ -762,7 +794,9 @@ func TestExtensionHost_RunSilencesLog(t *testing.T) {
 		err := runner.Run(context.Background())
 		require.NoError(t, err)
 
-		assert.Equal(t, io.Discard, log.Writer(), "log output should be io.Discard when AZD_EXT_DEBUG is false")
+		// After Run(), logger should be restored
+		assert.NotEqual(t, io.Discard, log.Writer(),
+			"log output should be restored after Run() returns")
 	})
 
 	t.Run("silences log output when AZD_EXT_DEBUG is invalid", func(t *testing.T) {
@@ -777,6 +811,8 @@ func TestExtensionHost_RunSilencesLog(t *testing.T) {
 		err := runner.Run(context.Background())
 		require.NoError(t, err)
 
-		assert.Equal(t, io.Discard, log.Writer(), "log output should be io.Discard when AZD_EXT_DEBUG is invalid")
+		// After Run(), logger should be restored
+		assert.NotEqual(t, io.Discard, log.Writer(),
+			"log output should be restored after Run() returns")
 	})
 }

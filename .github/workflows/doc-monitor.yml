@@ -1,0 +1,80 @@
+name: doc-monitor
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, closed]
+    branches: [main]
+
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Run mode"
+        required: true
+        type: choice
+        options:
+          - single
+          - all_open
+          - list
+        default: single
+      pr_number:
+        description: "PR number (for single mode)"
+        required: false
+        type: string
+      pr_list:
+        description: "Comma-separated PR numbers (for list mode)"
+        required: false
+        type: string
+
+# Only one run per source PR at a time
+concurrency:
+  group: doc-monitor-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+  models: read
+  id-token: write  # Required for OIDC federated credential login
+
+jobs:
+  analyze-docs:
+    runs-on: ubuntu-latest
+    # An environment is required for OIDC (federated credential) login.
+    environment: AzureSDKEngKeyVault
+    # Skip bot PRs and PRs from doc-monitor itself
+    if: >-
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event_name == 'pull_request_target' &&
+       !startsWith(github.event.pull_request.head.ref, 'docs/pr-') &&
+       github.actor != 'github-actions[bot]')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      # Step 1: Authenticate to Azure via OIDC (no stored credentials)
+      - name: Azure Login (OIDC)
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2
+        with:
+          client-id: 5786d1fb-187e-4ca9-9a81-ab89ea278986
+          tenant-id: 72f988bf-86f1-41af-91ab-2d7cd011db47
+          subscription-id: a18897a6-7e44-457d-9260-f2854c0aca42
+
+      # Step 2: Mint GitHub App token via Key Vault signing (private key never leaves vault)
+      - name: Generate GitHub App Token
+        uses: ./eng/common/actions/login-to-github
+        with:
+          token-owners: MicrosoftDocs
+
+      - name: Run doc-monitor
+        uses: ./.github/actions/doc-monitor
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          docs-repo-token: ${{ env.GH_TOKEN }}
+          mode: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'auto' }}
+          pr-number: ${{ inputs.pr_number || '' }}
+          pr-list: ${{ inputs.pr_list || '' }}
+          docs-assignees: "alexwolfmsft,diberry"
+          source-repo: "Azure/azure-dev"
+          docs-repo: "MicrosoftDocs/azure-dev-docs-pr"

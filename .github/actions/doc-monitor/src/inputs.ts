@@ -1,0 +1,74 @@
+/** Input parsing and validation for the doc-monitor action. */
+
+import * as core from "@actions/core";
+import type { ActionInputs } from "./types";
+import { DEFAULT_SOURCE_REPO, DEFAULT_DOCS_REPO, VALID_MODES } from "./constants";
+
+/** Parse and validate action inputs. */
+export function getInputs(): ActionInputs {
+  const mode = core.getInput("mode") || "auto";
+  if (!isValidMode(mode)) {
+    throw new Error(`Invalid mode "${mode}". Must be one of: ${VALID_MODES.join(", ")}`);
+  }
+
+  const prNumberRaw = core.getInput("pr-number");
+  const prNumber = prNumberRaw ? parseInt(prNumberRaw, 10) : undefined;
+  if (prNumberRaw && (!prNumber || prNumber <= 0 || prNumber > 999_999)) {
+    throw new Error(`Invalid pr-number "${prNumberRaw}". Must be a positive integer (max 999999).`);
+  }
+
+  const prListRaw = core.getInput("pr-list");
+  let prList: number[] | undefined;
+  if (prListRaw) {
+    const parts = prListRaw.split(",").map((n) => n.trim()).filter(Boolean);
+    const invalid = parts.filter((p) => isNaN(parseInt(p, 10)) || parseInt(p, 10) <= 0);
+    if (invalid.length > 0) {
+      core.warning(`Ignoring invalid PR numbers in pr-list: ${invalid.join(", ")}`);
+    }
+    prList = parts
+      .map((n) => parseInt(n, 10))
+      .filter((n) => n > 0);
+  }
+
+  const sourceRepo = core.getInput("source-repo") || DEFAULT_SOURCE_REPO;
+  const docsRepo = core.getInput("docs-repo") || DEFAULT_DOCS_REPO;
+  parseRepoFullName(sourceRepo);
+  parseRepoFullName(docsRepo);
+
+  const docsRepoToken = core.getInput("docs-repo-token");
+  if (!docsRepoToken) {
+    core.warning(
+      "docs-repo-token not provided — companion PR creation in the external docs repo will be skipped. " +
+      "Doc inventory scanning of the public repo (MicrosoftDocs/azure-dev-docs-pr) will still work. " +
+      "Set docs-repo-token to enable external doc PR creation.",
+    );
+  }
+
+  return {
+    githubToken: core.getInput("github-token", { required: true }),
+    docsRepoToken,
+    mode,
+    prNumber,
+    prList,
+    docsAssignees: core
+      .getInput("docs-assignees")
+      .split(",")
+      .map((a) => a.trim())
+      .filter(Boolean),
+    sourceRepo,
+    docsRepo,
+  };
+}
+
+function isValidMode(mode: string): mode is ActionInputs["mode"] {
+  return (VALID_MODES as readonly string[]).includes(mode);
+}
+
+/** Parse "owner/repo" into [owner, repo], throwing on invalid format. */
+export function parseRepoFullName(fullName: string): [owner: string, repo: string] {
+  const parts = fullName.split("/");
+  if (parts.length !== 2 || !parts[0] || !parts[1]) {
+    throw new Error(`Invalid repository format "${fullName}". Expected "owner/repo".`);
+  }
+  return [parts[0], parts[1]];
+}

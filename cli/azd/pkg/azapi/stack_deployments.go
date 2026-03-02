@@ -125,7 +125,10 @@ func (d *StackDeployments) GetSubscriptionDeployment(
 
 	err = retry.Do(
 		ctx,
-		retry.WithMaxDuration(10*time.Minute, retry.NewConstant(5*time.Second)),
+		retry.WithMaxDuration(
+			10*time.Minute,
+			retry.WithCappedDuration(10*time.Second, retry.NewExponential(1*time.Second)),
+		),
 		func(ctx context.Context) error {
 			response, err := client.GetAtSubscription(ctx, deploymentName, nil)
 			if err != nil {
@@ -201,7 +204,10 @@ func (d *StackDeployments) GetResourceGroupDeployment(
 
 	err = retry.Do(
 		ctx,
-		retry.WithMaxDuration(10*time.Minute, retry.NewConstant(5*time.Second)),
+		retry.WithMaxDuration(
+			10*time.Minute,
+			retry.WithCappedDuration(10*time.Second, retry.NewExponential(1*time.Second)),
+		),
 		func(ctx context.Context) error {
 			response, err := client.GetAtResourceGroup(ctx, resourceGroupName, deploymentName, nil)
 			if err != nil {

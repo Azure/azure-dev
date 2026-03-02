@@ -10,11 +10,11 @@ import (
 	"io"
 	"math"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
 const (
@@ -37,6 +37,8 @@ type ResilientClient struct {
 	scopeDetector *ScopeDetector
 	opts          ResilientClientOptions
 }
+
+var _ HTTPDoer = (*ResilientClient)(nil)
 
 // ResilientClientOptions configures a [ResilientClient].
 type ResilientClientOptions struct {
@@ -107,8 +109,9 @@ func NewResilientClient(tokenProvider azcore.TokenCredential, opts *ResilientCli
 
 	return &ResilientClient{
 		httpClient: &http.Client{
-			Transport: transport,
-			Timeout:   opts.Timeout,
+			Transport:     transport,
+			Timeout:       opts.Timeout,
+			CheckRedirect: SSRFSafeRedirect,
 		},
 		tokenProvider: tokenProvider,
 		scopeDetector: sd,
@@ -195,7 +198,7 @@ func (rc *ResilientClient) Do(ctx context.Context, method, url string, body io.R
 
 		// Capture Retry-After for the next iteration's delay,
 		// capped to prevent indefinite stalling.
-		if ra := retryAfterFromResponse(resp); ra > 0 {
+		if ra := httputil.RetryAfter(resp); ra > 0 {
 			if ra > maxRetryAfterDuration {
 				ra = maxRetryAfterDuration
 			}
@@ -256,51 +259,6 @@ func isRetryable(statusCode int) bool {
 	default:
 		return false
 	}
-}
-
-// retryAfterFromResponse extracts the Retry-After duration from response headers.
-// Checks: retry-after-ms, x-ms-retry-after-ms, retry-after (seconds or HTTP-date).
-func retryAfterFromResponse(resp *http.Response) time.Duration {
-	if resp == nil {
-		return 0
-	}
-
-	type retryHeader struct {
-		header string
-		units  time.Duration
-		custom func(string) time.Duration
-	}
-
-	nop := func(string) time.Duration { return 0 }
-
-	headers := []retryHeader{
-		{header: "retry-after-ms", units: time.Millisecond, custom: nop},
-		{header: "x-ms-retry-after-ms", units: time.Millisecond, custom: nop},
-		{header: "retry-after", units: time.Second, custom: func(v string) time.Duration {
-			t, err := time.Parse(time.RFC1123, v)
-			if err != nil {
-				return 0
-			}
-			return time.Until(t)
-		}},
-	}
-
-	for _, rh := range headers {
-		v := resp.Header.Get(rh.header)
-		if v == "" {
-			continue
-		}
-
-		if n, _ := strconv.Atoi(v); n > 0 {
-			return time.Duration(n) * rh.units
-		}
-
-		if d := rh.custom(v); d > 0 {
-			return d
-		}
-	}
-
-	return 0
 }
 
 // RetryableHTTPError represents a retryable HTTP failure.

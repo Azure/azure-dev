@@ -16,6 +16,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
 // roundTripFunc is an adapter to allow ordinary functions as http.RoundTripper.
@@ -403,7 +404,7 @@ func TestRetryAfterFromResponse(t *testing.T) {
 			}
 
 			resp := &http.Response{Header: h}
-			got := retryAfterFromResponse(resp)
+			got := httputil.RetryAfter(resp)
 
 			if got != tt.want {
 				t.Errorf("retryAfterFromResponse() = %v, want %v", got, tt.want)
@@ -415,7 +416,7 @@ func TestRetryAfterFromResponse(t *testing.T) {
 func TestRetryAfterFromResponse_Nil(t *testing.T) {
 	t.Parallel()
 
-	got := retryAfterFromResponse(nil)
+	got := httputil.RetryAfter(nil)
 	if got != 0 {
 		t.Errorf("retryAfterFromResponse(nil) = %v, want 0", got)
 	}
@@ -614,9 +615,9 @@ func TestResilientClient_RetryAfterCapped(t *testing.T) {
 	h.Set("retry-after", "999999")
 	resp := &http.Response{Header: h}
 
-	got := retryAfterFromResponse(resp)
-	// retryAfterFromResponse itself doesn't cap (pure parser), but Do() caps it.
+	got := httputil.RetryAfter(resp)
+	// RetryAfter parser itself doesn't cap (pure parser), but Do() caps it.
 	if got != 999999*time.Second {
-		t.Errorf("retryAfterFromResponse() = %v, want %v (capping happens in Do)", got, 999999*time.Second)
+		t.Errorf("RetryAfter() = %v, want %v (capping happens in Do)", got, 999999*time.Second)
 	}
 }

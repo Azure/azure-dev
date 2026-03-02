@@ -6,6 +6,7 @@ package azdext
 import (
 	"fmt"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -25,6 +26,10 @@ type MCPSecurityPolicy struct {
 	blockedHosts     map[string]bool
 	// lookupHost is used for DNS resolution; override in tests.
 	lookupHost func(string) ([]string, error)
+	// onBlocked is an optional callback invoked when a URL or path is blocked.
+	// Parameters: action ("url_blocked", "path_blocked", "redirect_blocked"),
+	// detail (human-readable explanation). Safe for concurrent use.
+	onBlocked func(action, detail string)
 }
 
 // NewMCPSecurityPolicy creates an empty security policy.
@@ -111,6 +116,28 @@ func (p *MCPSecurityPolicy) ValidatePathsWithinBase(basePaths ...string) *MCPSec
 	return p
 }
 
+// OnBlocked registers a callback that is invoked whenever a URL, path, or
+// redirect is blocked by the security policy. This enables security audit
+// logging without coupling the policy to a specific logging framework.
+//
+// The callback receives an action tag ("url_blocked", "path_blocked",
+// "redirect_blocked") and a human-readable detail string. It must be safe
+// for concurrent invocation.
+func (p *MCPSecurityPolicy) OnBlocked(fn func(action, detail string)) *MCPSecurityPolicy {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.onBlocked = fn
+	return p
+}
+
+// notifyBlocked invokes the onBlocked callback if set. Must be called with
+// p.mu held (at least RLock).
+func (p *MCPSecurityPolicy) notifyBlocked(action, detail string) {
+	if p.onBlocked != nil {
+		p.onBlocked(action, detail)
+	}
+}
+
 // isLocalhostHost returns true if the host is localhost or a loopback address.
 func isLocalhostHost(host string) bool {
 	h := strings.ToLower(host)
@@ -140,20 +167,27 @@ func (p *MCPSecurityPolicy) CheckURL(rawURL string) error {
 		// always allowed
 	case "http":
 		if p.requireHTTPS && !isLocalhostHost(host) {
-			return fmt.Errorf("HTTPS required: %s", rawURL)
+			err := fmt.Errorf("HTTPS required: %s", rawURL)
+			p.notifyBlocked("url_blocked", err.Error())
+			return err
 		}
 	default:
-		return fmt.Errorf("scheme not allowed: %q (only http and https are permitted)", u.Scheme)
+		err := fmt.Errorf("scheme not allowed: %q (only http and https are permitted)", u.Scheme)
+		p.notifyBlocked("url_blocked", err.Error())
+		return err
 	}
 
 	// Check if the host is directly blocked.
 	if p.blockedHosts[strings.ToLower(host)] {
-		return fmt.Errorf("blocked host: %s", host)
+		err := fmt.Errorf("blocked host: %s", host)
+		p.notifyBlocked("url_blocked", err.Error())
+		return err
 	}
 
 	// If the host is an IP literal, check it directly against blocked CIDRs.
 	if ip := net.ParseIP(host); ip != nil {
 		if err := p.checkIP(ip, host); err != nil {
+			p.notifyBlocked("url_blocked", err.Error())
 			return err
 		}
 	} else {
@@ -162,14 +196,19 @@ func (p *MCPSecurityPolicy) CheckURL(rawURL string) error {
 		if err != nil {
 			// Fail-closed: if DNS resolution fails, block the request.
 			// This prevents SSRF bypasses via DNS rebinding or transient failures.
-			return fmt.Errorf("DNS resolution failed for host %s: %w", host, err)
+			blockErr := fmt.Errorf("DNS resolution failed for host %s: %w", host, err)
+			p.notifyBlocked("url_blocked", blockErr.Error())
+			return blockErr
 		}
 		for _, addr := range addrs {
 			if p.blockedHosts[strings.ToLower(addr)] {
-				return fmt.Errorf("blocked host: %s (resolved from %s)", addr, host)
+				blockErr := fmt.Errorf("blocked host: %s (resolved from %s)", addr, host)
+				p.notifyBlocked("url_blocked", blockErr.Error())
+				return blockErr
 			}
 			if ip := net.ParseIP(addr); ip != nil {
 				if err := p.checkIP(ip, host); err != nil {
+					p.notifyBlocked("url_blocked", err.Error())
 					return err
 				}
 			}
@@ -251,6 +290,14 @@ func (p *MCPSecurityPolicy) checkIP(ip net.IP, originalHost string) error {
 
 // CheckPath validates a file path against the security policy.
 // Resolves symlinks and checks for directory traversal.
+//
+// Security note (TOCTOU): There is an inherent time-of-check to time-of-use
+// gap between the symlink resolution performed here and the caller's
+// subsequent file operation. An adversary with write access to the filesystem
+// could create or modify a symlink between the check and the use. This is a
+// fundamental limitation of path-based validation on POSIX systems. Callers
+// performing security-sensitive file operations should prefer O_NOFOLLOW or
+// use file-descriptor-based approaches where possible.
 func (p *MCPSecurityPolicy) CheckPath(path string) error {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -261,7 +308,9 @@ func (p *MCPSecurityPolicy) CheckPath(path string) error {
 
 	// Reject paths containing ".." before any cleaning to catch obvious traversal attempts.
 	if strings.Contains(path, "..") {
-		return fmt.Errorf("path traversal detected: %s", path)
+		err := fmt.Errorf("path traversal detected: %s", path)
+		p.notifyBlocked("path_blocked", err.Error())
+		return err
 	}
 
 	cleaned := filepath.Clean(path)
@@ -300,7 +349,9 @@ func (p *MCPSecurityPolicy) CheckPath(path string) error {
 		}
 	}
 
-	return fmt.Errorf("path %s is not within any allowed base directory", path)
+	err = fmt.Errorf("path %s is not within any allowed base directory", path)
+	p.notifyBlocked("path_blocked", err.Error())
+	return err
 }
 
 // IsHeaderBlocked checks if a header name is in the redacted set.
@@ -347,4 +398,48 @@ func resolveExistingPrefix(p string) string {
 			return filepath.Join(resolved, remaining)
 		}
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Redirect SSRF protection
+// ---------------------------------------------------------------------------
+
+// redirectBlockedHosts lists cloud metadata service endpoints that must never
+// be the target of an HTTP redirect.
+var redirectBlockedHosts = map[string]bool{
+	"169.254.169.254":          true,
+	"fd00:ec2::254":            true,
+	"metadata.google.internal": true,
+	"100.100.100.200":          true,
+}
+
+// SSRFSafeRedirect is an [http.Client] CheckRedirect function that blocks
+// redirects to private networks and cloud metadata endpoints. It prevents
+// redirect-based SSRF attacks where an attacker-controlled URL redirects to
+// an internal service.
+//
+// Usage:
+//
+//	client := &http.Client{CheckRedirect: azdext.SSRFSafeRedirect}
+func SSRFSafeRedirect(req *http.Request, via []*http.Request) error {
+	const maxRedirects = 10
+	if len(via) >= maxRedirects {
+		return fmt.Errorf("stopped after %d redirects", maxRedirects)
+	}
+
+	host := req.URL.Hostname()
+
+	// Block redirects to known metadata endpoints.
+	if redirectBlockedHosts[strings.ToLower(host)] {
+		return fmt.Errorf("redirect to metadata endpoint %s blocked (SSRF protection)", host)
+	}
+
+	// Block redirects to private/loopback IP addresses.
+	if ip := net.ParseIP(host); ip != nil {
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
+			return fmt.Errorf("redirect to private/loopback IP %s blocked (SSRF protection)", ip)
+		}
+	}
+
+	return nil
 }

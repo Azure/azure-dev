@@ -1,0 +1,26 @@
+{
+  "name": "doc-monitor",
+  "version": "1.0.0",
+  "description": "GitHub Action to analyze PR diffs and identify documentation impact",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "ncc build src/index.ts --out dist --minify",
+    "typecheck": "tsc --noEmit",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@actions/core": "^2.0.3",
+    "@actions/github": "^8.0.1",
+    "@octokit/rest": "^22.0.1",
+    "openai": "^6.25.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^25.3.2",
+    "@vercel/ncc": "^0.38.4",
+    "jest": "^30.2.0",
+    "ts-jest": "^29.4.6",
+    "typescript": "^5.9.3"
+  },
+  "private": true
+}

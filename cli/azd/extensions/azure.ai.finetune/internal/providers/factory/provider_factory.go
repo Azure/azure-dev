@@ -12,12 +12,15 @@ import (
 	azureprovider "azure.ai.finetune/internal/providers/azure"
 	openaiprovider "azure.ai.finetune/internal/providers/openai"
 	"azure.ai.finetune/internal/utils"
+	"azure.ai.finetune/internal/version"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 )
@@ -29,6 +32,9 @@ const (
 	DefaultCognitiveServicesEndpoint = "https://%s.services.ai.azure.com/api/projects/%s"
 	DefaultAzureFinetuningScope      = "https://ai.azure.com/.default"
 )
+
+// userAgent is the user agent string included in all HTTP calls
+var userAgent = fmt.Sprintf("azd-ext-azure-ai-finetune/%s", version.Version)
 
 func GetOpenAIClientFromAzdClient(ctx context.Context, azdClient *azdext.AzdClient) (*openai.Client, error) {
 	envValueMap, err := utils.GetEnvironmentValues(ctx, azdClient)
@@ -89,8 +95,11 @@ func WithTokenCredential(tokenCredential azcore.TokenCredential, scope string) o
 	bearerTokenPolicy := runtime.NewBearerTokenPolicy(tokenCredential, []string{scope}, nil)
 	// add in a middleware that uses the bearer token generated from the token credential
 	return option.WithMiddleware(func(req *http.Request, next option.MiddlewareNext) (*http.Response, error) {
-		pipeline := runtime.NewPipeline("finetune-extensions", version, runtime.PipelineOptions{}, &policy.ClientOptions{
+		pipeline := runtime.NewPipeline("finetune-extensions", pipelineVersion, runtime.PipelineOptions{}, &policy.ClientOptions{
 			InsecureAllowCredentialWithHTTP: true, // allow for plain HTTP proxies, etc..
+			PerCallPolicies: []policy.Policy{
+				azsdk.NewUserAgentPolicy(userAgent),
+			},
 			PerRetryPolicies: []policy.Policy{
 				bearerTokenPolicy,
 				policyAdapter(next),
@@ -118,7 +127,13 @@ func NewModelDeploymentProvider(subscriptionId string, credential azcore.TokenCr
 	clientFactory, err := armcognitiveservices.NewClientFactory(
 		subscriptionId,
 		credential,
-		nil,
+		&arm.ClientOptions{
+			ClientOptions: policy.ClientOptions{
+				PerCallPolicies: []policy.Policy{
+					azsdk.NewUserAgentPolicy(userAgent),
+				},
+			},
+		},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create armcognitiveservices client factory: %w", err)
@@ -132,4 +147,4 @@ func (mp policyAdapter) Do(req *policy.Request) (*http.Response, error) {
 	return (option.MiddlewareNext)(mp)(req.Raw())
 }
 
-const version = "v.0.1.0"
+const pipelineVersion = "v.0.1.0"

@@ -26,6 +26,11 @@
                     "type": "string",
                     "description": "Detailed description of the extension."
                 },
+                "website": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "URL to the extension's documentation or homepage."
+                },
                 "versions": {
                     "type": "array",
                     "minItems": 1,

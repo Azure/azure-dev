@@ -22,7 +22,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ExtensionService_Ready_FullMethodName = "/azdext.ExtensionService/Ready"
+	ExtensionService_Ready_FullMethodName       = "/azdext.ExtensionService/Ready"
+	ExtensionService_ReportError_FullMethodName = "/azdext.ExtensionService/ReportError"
 )
 
 // ExtensionServiceClient is the client API for ExtensionService service.
@@ -33,6 +34,9 @@ const (
 type ExtensionServiceClient interface {
 	// Signal that the extension is done registering all capabilities
 	Ready(ctx context.Context, in *ReadyRequest, opts ...grpc.CallOption) (*ReadyResponse, error)
+	// Report a structured error from the extension back to the host.
+	// Called by the extension SDK before the process exits on failure.
+	ReportError(ctx context.Context, in *ReportErrorRequest, opts ...grpc.CallOption) (*ReportErrorResponse, error)
 }
 
 type extensionServiceClient struct {
@@ -53,6 +57,16 @@ func (c *extensionServiceClient) Ready(ctx context.Context, in *ReadyRequest, op
 	return out, nil
 }
 
+func (c *extensionServiceClient) ReportError(ctx context.Context, in *ReportErrorRequest, opts ...grpc.CallOption) (*ReportErrorResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReportErrorResponse)
+	err := c.cc.Invoke(ctx, ExtensionService_ReportError_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ExtensionServiceServer is the server API for ExtensionService service.
 // All implementations must embed UnimplementedExtensionServiceServer
 // for forward compatibility.
@@ -61,6 +75,9 @@ func (c *extensionServiceClient) Ready(ctx context.Context, in *ReadyRequest, op
 type ExtensionServiceServer interface {
 	// Signal that the extension is done registering all capabilities
 	Ready(context.Context, *ReadyRequest) (*ReadyResponse, error)
+	// Report a structured error from the extension back to the host.
+	// Called by the extension SDK before the process exits on failure.
+	ReportError(context.Context, *ReportErrorRequest) (*ReportErrorResponse, error)
 	mustEmbedUnimplementedExtensionServiceServer()
 }
 
@@ -73,6 +90,9 @@ type UnimplementedExtensionServiceServer struct{}
 
 func (UnimplementedExtensionServiceServer) Ready(context.Context, *ReadyRequest) (*ReadyResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Ready not implemented")
+}
+func (UnimplementedExtensionServiceServer) ReportError(context.Context, *ReportErrorRequest) (*ReportErrorResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReportError not implemented")
 }
 func (UnimplementedExtensionServiceServer) mustEmbedUnimplementedExtensionServiceServer() {}
 func (UnimplementedExtensionServiceServer) testEmbeddedByValue()                          {}
@@ -113,6 +133,24 @@ func _ExtensionService_Ready_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ExtensionService_ReportError_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReportErrorRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ExtensionServiceServer).ReportError(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ExtensionService_ReportError_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ExtensionServiceServer).ReportError(ctx, req.(*ReportErrorRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ExtensionService_ServiceDesc is the grpc.ServiceDesc for ExtensionService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -123,6 +161,10 @@ var ExtensionService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Ready",
 			Handler:    _ExtensionService_Ready_Handler,
+		},
+		{
+			MethodName: "ReportError",
+			Handler:    _ExtensionService_ReportError_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

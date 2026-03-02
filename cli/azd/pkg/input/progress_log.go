@@ -91,10 +91,18 @@ func newProgressLogWithWidthFn(lines int, prefix, title, header string, widthFn 
 // Calling Start() a second time is a no-op. The screen is only updated during the first call.
 // Call Stop() to remove the frame and logs from the screen.
 func (p *progressLog) Start() {
+	p.outputMutex.Lock()
+	defer p.outputMutex.Unlock()
+
 	if p.output != nil {
 		return
 	}
-	p.output = make([]string, p.lines)
+
+	lineCount := p.lines
+	if lineCount == 0 {
+		lineCount = 1
+	}
+	p.output = make([]string, lineCount)
 	// title is created on Start() because it depends on terminal width
 	// if terminal is resized between stop and start, the previewer will
 	// react to it and update the size.
@@ -120,12 +128,12 @@ func (p *progressLog) Start() {
 // If keepLogs is true, the current screen is not cleared.
 // Calling Stop() before Start() is a no-op.
 func (p *progressLog) Stop(keepLogs bool) {
+	p.outputMutex.Lock()
+	defer p.outputMutex.Unlock()
+
 	if p.output == nil {
 		return
 	}
-
-	p.outputMutex.Lock()
-	defer p.outputMutex.Unlock()
 
 	if !keepLogs {
 		p.clearContentAndFlush()
@@ -239,12 +247,12 @@ func (p *progressLog) Write(logBytes []byte) (int, error) {
 // Header updates the previewer's top header
 // Calling Header() before Start() or after Stop() is a no-op
 func (p *progressLog) Header(header string) {
+	p.outputMutex.Lock()
+	defer p.outputMutex.Unlock()
+
 	if p.output == nil {
 		return
 	}
-
-	p.outputMutex.Lock()
-	defer p.outputMutex.Unlock()
 	p.header = header
 
 	p.clearContentAndFlush()

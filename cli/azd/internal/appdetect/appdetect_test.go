@@ -8,6 +8,7 @@ import (
 	"embed"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -185,6 +186,16 @@ func TestDetect(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Skip subtests that include Java projects when Maven is not installed.
+			for _, p := range tt.want {
+				if p.Language == Java {
+					if _, err := exec.LookPath("mvn"); err != nil {
+						t.Skip("skipping: Maven is not installed")
+					}
+					break
+				}
+			}
+
 			projects, err := Detect(context.Background(), dir, tt.options...)
 			require.NoError(t, err)
 

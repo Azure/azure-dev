@@ -1591,7 +1591,9 @@ type PromptAiModelRequest struct {
 	// Optional quota filter.
 	// Quota is evaluated using effective locations from filter.locations.
 	// With multiple locations, a model is kept if any location has sufficient quota.
-	Quota         *QuotaCheckOptions `protobuf:"bytes,4,opt,name=quota,proto3" json:"quota,omitempty"`
+	Quota *QuotaCheckOptions `protobuf:"bytes,4,opt,name=quota,proto3" json:"quota,omitempty"`
+	// Optional default model name to pre-select in the list.
+	DefaultValue  string `protobuf:"bytes,5,opt,name=default_value,json=defaultValue,proto3" json:"default_value,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1652,6 +1654,13 @@ func (x *PromptAiModelRequest) GetQuota() *QuotaCheckOptions {
 		return x.Quota
 	}
 	return nil
+}
+
+func (x *PromptAiModelRequest) GetDefaultValue() string {
+	if x != nil {
+		return x.DefaultValue
+	}
+	return ""
 }
 
 type PromptAiModelResponse struct {
@@ -1853,6 +1862,8 @@ type PromptAiLocationWithQuotaRequest struct {
 	AllowedLocations []string `protobuf:"bytes,3,rep,name=allowed_locations,json=allowedLocations,proto3" json:"allowed_locations,omitempty"`
 	// Optional select prompt customization (for example, message override).
 	SelectOptions *SelectOptions `protobuf:"bytes,4,opt,name=select_options,json=selectOptions,proto3" json:"select_options,omitempty"`
+	// Optional default location name to pre-select in the list.
+	DefaultValue  string `protobuf:"bytes,5,opt,name=default_value,json=defaultValue,proto3" json:"default_value,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1915,6 +1926,13 @@ func (x *PromptAiLocationWithQuotaRequest) GetSelectOptions() *SelectOptions {
 	return nil
 }
 
+func (x *PromptAiLocationWithQuotaRequest) GetDefaultValue() string {
+	if x != nil {
+		return x.DefaultValue
+	}
+	return ""
+}
+
 type PromptAiLocationWithQuotaResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Selected location.
@@ -1972,6 +1990,8 @@ type PromptAiModelLocationWithQuotaRequest struct {
 	Quota *QuotaCheckOptions `protobuf:"bytes,4,opt,name=quota,proto3" json:"quota,omitempty"`
 	// Optional select prompt customization (for example, message override).
 	SelectOptions *SelectOptions `protobuf:"bytes,5,opt,name=select_options,json=selectOptions,proto3" json:"select_options,omitempty"`
+	// Optional default location name to pre-select in the list.
+	DefaultValue  string `protobuf:"bytes,6,opt,name=default_value,json=defaultValue,proto3" json:"default_value,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2039,6 +2059,13 @@ func (x *PromptAiModelLocationWithQuotaRequest) GetSelectOptions() *SelectOption
 		return x.SelectOptions
 	}
 	return nil
+}
+
+func (x *PromptAiModelLocationWithQuotaRequest) GetDefaultValue() string {
+	if x != nil {
+		return x.DefaultValue
+	}
+	return ""
 }
 
 type PromptAiModelLocationWithQuotaResponse struct {
@@ -2213,12 +2240,13 @@ const file_prompt_proto_rawDesc = "" +
 	"\x10_display_numbersB\x13\n" +
 	"\x11_enable_filtering\"h\n" +
 	"\x1aPromptResourceGroupOptions\x12J\n" +
-	"\x0eselect_options\x18\x01 \x01(\v2#.azdext.PromptResourceSelectOptionsR\rselectOptions\"\xf6\x01\n" +
+	"\x0eselect_options\x18\x01 \x01(\v2#.azdext.PromptResourceSelectOptionsR\rselectOptions\"\x9b\x02\n" +
 	"\x14PromptAiModelRequest\x129\n" +
 	"\razure_context\x18\x01 \x01(\v2\x14.azdext.AzureContextR\fazureContext\x124\n" +
 	"\x06filter\x18\x02 \x01(\v2\x1c.azdext.AiModelFilterOptionsR\x06filter\x12<\n" +
 	"\x0eselect_options\x18\x03 \x01(\v2\x15.azdext.SelectOptionsR\rselectOptions\x12/\n" +
-	"\x05quota\x18\x04 \x01(\v2\x19.azdext.QuotaCheckOptionsR\x05quota\">\n" +
+	"\x05quota\x18\x04 \x01(\v2\x19.azdext.QuotaCheckOptionsR\x05quota\x12#\n" +
+	"\rdefault_value\x18\x05 \x01(\tR\fdefaultValue\">\n" +
 	"\x15PromptAiModelResponse\x12%\n" +
 	"\x05model\x18\x01 \x01(\v2\x0f.azdext.AiModelR\x05model\"\xf8\x02\n" +
 	"\x19PromptAiDeploymentRequest\x129\n" +
@@ -2233,21 +2261,23 @@ const file_prompt_proto_rawDesc = "" +
 	"\x1aPromptAiDeploymentResponse\x129\n" +
 	"\n" +
 	"deployment\x18\x01 \x01(\v2\x19.azdext.AiModelDeploymentR\n" +
-	"deployment\"\x86\x02\n" +
+	"deployment\"\xab\x02\n" +
 	" PromptAiLocationWithQuotaRequest\x129\n" +
 	"\razure_context\x18\x01 \x01(\v2\x14.azdext.AzureContextR\fazureContext\x12<\n" +
 	"\frequirements\x18\x02 \x03(\v2\x18.azdext.QuotaRequirementR\frequirements\x12+\n" +
 	"\x11allowed_locations\x18\x03 \x03(\tR\x10allowedLocations\x12<\n" +
-	"\x0eselect_options\x18\x04 \x01(\v2\x15.azdext.SelectOptionsR\rselectOptions\"Q\n" +
+	"\x0eselect_options\x18\x04 \x01(\v2\x15.azdext.SelectOptionsR\rselectOptions\x12#\n" +
+	"\rdefault_value\x18\x05 \x01(\tR\fdefaultValue\"Q\n" +
 	"!PromptAiLocationWithQuotaResponse\x12,\n" +
-	"\blocation\x18\x01 \x01(\v2\x10.azdext.LocationR\blocation\"\x9d\x02\n" +
+	"\blocation\x18\x01 \x01(\v2\x10.azdext.LocationR\blocation\"\xc2\x02\n" +
 	"%PromptAiModelLocationWithQuotaRequest\x129\n" +
 	"\razure_context\x18\x01 \x01(\v2\x14.azdext.AzureContextR\fazureContext\x12\x1d\n" +
 	"\n" +
 	"model_name\x18\x02 \x01(\tR\tmodelName\x12+\n" +
 	"\x11allowed_locations\x18\x03 \x03(\tR\x10allowedLocations\x12/\n" +
 	"\x05quota\x18\x04 \x01(\v2\x19.azdext.QuotaCheckOptionsR\x05quota\x12<\n" +
-	"\x0eselect_options\x18\x05 \x01(\v2\x15.azdext.SelectOptionsR\rselectOptions\"\x86\x01\n" +
+	"\x0eselect_options\x18\x05 \x01(\v2\x15.azdext.SelectOptionsR\rselectOptions\x12#\n" +
+	"\rdefault_value\x18\x06 \x01(\tR\fdefaultValue\"\x86\x01\n" +
 	"&PromptAiModelLocationWithQuotaResponse\x12,\n" +
 	"\blocation\x18\x01 \x01(\v2\x10.azdext.LocationR\blocation\x12.\n" +
 	"\x13max_remaining_quota\x18\x02 \x01(\x01R\x11maxRemainingQuota2\x9e\t\n" +

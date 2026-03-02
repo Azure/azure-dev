@@ -30,7 +30,7 @@ func Test_Python_Run(t *testing.T) {
 		return strings.Contains(command, pyString)
 	}).Respond(exec.NewRunResult(0, "", ""))
 
-	runResult, err := cli.Run(*mockContext.Context, tempDir, ".venv", "pf_client.py", "arg1", "arg2", "arg3")
+	runResult, err := cli.Run(*mockContext.Context, tempDir, ".venv", nil, "pf_client.py", "arg1", "arg2", "arg3")
 	require.NoError(t, err)
 	require.NotNil(t, runResult)
 	require.NotNil(t, runArgs)
@@ -57,13 +57,35 @@ func Test_Python_InstallRequirements(t *testing.T) {
 		return strings.Contains(command, "requirements.txt")
 	}).Respond(exec.NewRunResult(0, "", ""))
 
-	err = cli.InstallRequirements(*mockContext.Context, tempDir, ".venv", "requirements.txt")
+	err = cli.InstallRequirements(*mockContext.Context, tempDir, ".venv", "requirements.txt", nil)
 	require.NoError(t, err)
 	require.NotNil(t, runArgs)
 	require.Equal(t, tempDir, runArgs.Cwd)
 	require.Len(t, runArgs.Args, 2)
 	require.Contains(t, runArgs.Args[0], "activate")
 	require.Equal(t, fmt.Sprintf("%s -m pip install -r requirements.txt", pyString), runArgs.Args[1])
+}
+
+func Test_Python_InstallRequirements_PassesEnvVars(t *testing.T) {
+	tempDir := t.TempDir()
+	mockContext := mocks.NewMockContext(context.Background())
+
+	cli := NewCli(mockContext.CommandRunner)
+	pyString, err := cli.checkPath()
+	require.NoError(t, err)
+	require.NotEmpty(t, pyString)
+
+	var runArgs exec.RunArgs
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		runArgs = args
+		return strings.Contains(command, "requirements.txt")
+	}).Respond(exec.NewRunResult(0, "", ""))
+
+	env := []string{"PIP_INDEX_URL=https://pypi.example.com/simple"}
+	err = cli.InstallRequirements(*mockContext.Context, tempDir, ".venv", "requirements.txt", env)
+	require.NoError(t, err)
+	require.Equal(t, env, runArgs.Env)
 }
 
 func Test_Python_CreateVirtualEnv(t *testing.T) {
@@ -82,7 +104,7 @@ func Test_Python_CreateVirtualEnv(t *testing.T) {
 		return strings.Contains(command, "-m venv .venv")
 	}).Respond(exec.NewRunResult(0, "", ""))
 
-	err = cli.CreateVirtualEnv(*mockContext.Context, tempDir, ".venv")
+	err = cli.CreateVirtualEnv(*mockContext.Context, tempDir, ".venv", nil)
 	require.NoError(t, err)
 	require.NotNil(t, runArgs)
 	require.Equal(t, pyString, runArgs.Cmd)

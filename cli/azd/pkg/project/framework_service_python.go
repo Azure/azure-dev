@@ -50,7 +50,7 @@ func (pp *pythonProject) Initialize(ctx context.Context, serviceConfig *ServiceC
 	return nil
 }
 
-// Restores the project dependencies using PIP requirements.txt
+// Restores the project dependencies using pip
 func (pp *pythonProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
@@ -65,7 +65,7 @@ func (pp *pythonProject) Restore(
 	if err != nil {
 		if os.IsNotExist(err) {
 			progress.SetProgress(NewServiceProgress("Creating Python virtual environment"))
-			err = pp.cli.CreateVirtualEnv(ctx, serviceConfig.Path(), vEnvName)
+			err = pp.cli.CreateVirtualEnv(ctx, serviceConfig.Path(), vEnvName, pp.env.Environ())
 			if err != nil {
 				return nil, fmt.Errorf(
 					"python virtual environment for project '%s' could not be created: %w",
@@ -79,10 +79,24 @@ func (pp *pythonProject) Restore(
 		}
 	}
 
-	progress.SetProgress(NewServiceProgress("Installing Python PIP dependencies"))
-	err = pp.cli.InstallRequirements(ctx, serviceConfig.Path(), vEnvName, "requirements.txt")
+	// Detect dependency file: prefer pyproject.toml over requirements.txt
+	pyprojectPath := filepath.Join(serviceConfig.Path(), "pyproject.toml")
+	depFile := "requirements.txt"
+
+	if _, statErr := os.Stat(pyprojectPath); statErr == nil {
+		depFile = "pyproject.toml"
+	}
+
+	if depFile == "pyproject.toml" {
+		progress.SetProgress(NewServiceProgress("Installing Python dependencies from pyproject.toml"))
+		err = pp.cli.InstallProject(ctx, serviceConfig.Path(), vEnvName, pp.env.Environ())
+	} else {
+		progress.SetProgress(NewServiceProgress("Installing Python PIP dependencies"))
+		err = pp.cli.InstallRequirements(ctx, serviceConfig.Path(), vEnvName, "requirements.txt", pp.env.Environ())
+	}
+
 	if err != nil {
-		return nil, fmt.Errorf("requirements for project '%s' could not be installed: %w", serviceConfig.Path(), err)
+		return nil, fmt.Errorf("dependencies for project '%s' could not be installed: %w", serviceConfig.Path(), err)
 	}
 
 	// Create restore artifact for the project directory with virtual environment
@@ -96,7 +110,7 @@ func (pp *pythonProject) Restore(
 					"projectPath":        serviceConfig.Path(),
 					"framework":          "python",
 					"virtualEnvironment": vEnvName,
-					"requirements":       "requirements.txt",
+					"requirements":       depFile,
 				},
 			},
 		},

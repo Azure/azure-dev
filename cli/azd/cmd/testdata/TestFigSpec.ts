@@ -274,6 +274,121 @@ const completionSpec: Fig.Spec = {
 							],
 						},
 						{
+							name: ['monitor'],
+							description: 'Monitor logs from a hosted agent container.',
+							options: [
+								{
+									name: ['--account-name', '-a'],
+									description: 'Cognitive Services account name',
+									args: [
+										{
+											name: 'account-name',
+										},
+									],
+								},
+								{
+									name: ['--follow', '-f'],
+									description: 'Stream logs in real-time',
+								},
+								{
+									name: ['--name', '-n'],
+									description: 'Name of the hosted agent (required)',
+									args: [
+										{
+											name: 'name',
+										},
+									],
+								},
+								{
+									name: ['--project-name', '-p'],
+									description: 'AI Foundry project name',
+									args: [
+										{
+											name: 'project-name',
+										},
+									],
+								},
+								{
+									name: ['--tail', '-l'],
+									description: 'Number of trailing log lines to fetch (1-300)',
+									args: [
+										{
+											name: 'tail',
+										},
+									],
+								},
+								{
+									name: ['--type', '-t'],
+									description: 'Type of logs: \'console\' (stdout/stderr) or \'system\' (container events)',
+									args: [
+										{
+											name: 'type',
+										},
+									],
+								},
+								{
+									name: ['--version', '-v'],
+									description: 'Version of the hosted agent (required)',
+									args: [
+										{
+											name: 'version',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['show'],
+							description: 'Show the status of a hosted agent deployment.',
+							options: [
+								{
+									name: ['--account-name', '-a'],
+									description: 'Cognitive Services account name',
+									args: [
+										{
+											name: 'account-name',
+										},
+									],
+								},
+								{
+									name: ['--name', '-n'],
+									description: 'Name of the hosted agent (required)',
+									args: [
+										{
+											name: 'name',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'Output format (json or table)',
+									args: [
+										{
+											name: 'output',
+										},
+									],
+								},
+								{
+									name: ['--project-name', '-p'],
+									description: 'AI Foundry project name',
+									args: [
+										{
+											name: 'project-name',
+										},
+									],
+								},
+								{
+									name: ['--version', '-v'],
+									description: 'Version of the hosted agent (required)',
+									args: [
+										{
+											name: 'version',
+										},
+									],
+								},
+							],
+						},
+						{
 							name: ['version'],
 							description: 'Prints the version of the application',
 						},
@@ -1845,6 +1960,19 @@ const completionSpec: Fig.Spec = {
 								name: 'name',
 							},
 						},
+						{
+							name: ['validate'],
+							description: 'Validate an extension source\'s registry.json file.',
+							options: [
+								{
+									name: ['--strict'],
+									description: 'Enable strict validation (require checksums)',
+								},
+							],
+							args: {
+								name: 'name-or-path-or-url',
+							},
+						},
 					],
 				},
 				{
@@ -2044,7 +2172,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['--template', '-t'],
-					description: 'Initializes a new application from a template. You can use Full URI, <owner>/<repository>, or <repository> if it\'s part of the azure-samples organization.',
+					description: 'Initializes a new application from a template. You can use a Full URI, <owner>/<repository>, <repository> if it\'s part of the azure-samples organization, or a local directory path (./dir, ../dir, or absolute path).',
 					args: [
 						{
 							name: 'template',
@@ -2919,6 +3047,14 @@ const completionSpec: Fig.Spec = {
 									description: 'Initialize a new AI agent project. (Preview)',
 								},
 								{
+									name: ['monitor'],
+									description: 'Monitor logs from a hosted agent container.',
+								},
+								{
+									name: ['show'],
+									description: 'Show the status of a hosted agent deployment.',
+								},
+								{
 									name: ['version'],
 									description: 'Prints the version of the application',
 								},
@@ -3273,6 +3409,10 @@ const completionSpec: Fig.Spec = {
 								{
 									name: ['remove'],
 									description: 'Remove an extension source with the specified name',
+								},
+								{
+									name: ['validate'],
+									description: 'Validate an extension source\'s registry.json file.',
 								},
 							],
 						},

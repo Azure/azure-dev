@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -69,7 +71,6 @@ func Test_ContainerApp_AddRevision(t *testing.T) {
 	originalImageName := "ORIGINAL_IMAGE_NAME"
 	updatedImageName := "UPDATED_IMAGE_NAME"
 	originalRevisionName := "ORIGINAL_REVISION_NAME"
-	updatedRevisionName := "UPDATED_REVISION_NAME"
 
 	containerApp := &armappcontainers.ContainerApp{
 		Location: &location,
@@ -95,18 +96,6 @@ func Test_ContainerApp_AddRevision(t *testing.T) {
 		},
 	}
 
-	revision := &armappcontainers.Revision{
-		Properties: &armappcontainers.RevisionProperties{
-			Template: &armappcontainers.Template{
-				Containers: []*armappcontainers.Container{
-					{
-						Image: &updatedRevisionName,
-					},
-				},
-			},
-		},
-	}
-
 	secrets := &armappcontainers.SecretsCollection{
 		Value: []*armappcontainers.ContainerAppSecret{
 			{
@@ -118,14 +107,6 @@ func Test_ContainerApp_AddRevision(t *testing.T) {
 
 	mockContext := mocks.NewMockContext(context.Background())
 	_ = mockazsdk.MockContainerAppGet(mockContext, subscriptionId, resourceGroup, appName, containerApp)
-	getRevisionRequest := mockazsdk.MockContainerAppRevisionGet(
-		mockContext,
-		subscriptionId,
-		resourceGroup,
-		appName,
-		originalRevisionName,
-		revision,
-	)
 	_ = mockazsdk.MockContainerAppSecretsList(mockContext, subscriptionId, resourceGroup, appName, secrets)
 	updateContainerAppRequest := mockazsdk.MockContainerAppUpdate(
 		mockContext,
@@ -144,17 +125,6 @@ func Test_ContainerApp_AddRevision(t *testing.T) {
 	err := cas.AddRevision(*mockContext.Context, subscriptionId, resourceGroup, appName, updatedImageName, nil, nil)
 	require.NoError(t, err)
 
-	// Verify lastest revision is read
-	expectedGetRevisionPath := fmt.Sprintf(
-		"/subscriptions/%s/resourceGroups/%s/providers/Microsoft.App/containerApps/%s/revisions/%s",
-		subscriptionId,
-		resourceGroup,
-		appName,
-		originalRevisionName,
-	)
-
-	require.Equal(t, expectedGetRevisionPath, getRevisionRequest.URL.Path)
-
 	// Verify container image is updated
 	var updatedContainerApp *armappcontainers.ContainerApp
 	jsonDecoder := json.NewDecoder(updateContainerAppRequest.Body)
@@ -162,6 +132,173 @@ func Test_ContainerApp_AddRevision(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, updatedImageName, *updatedContainerApp.Properties.Template.Containers[0].Image)
 	require.Equal(t, "azd-0", *updatedContainerApp.Properties.Template.RevisionSuffix)
+}
+
+func Test_ContainerApp_AddRevision_MultipleRevisionMode(t *testing.T) {
+	subscriptionId := "SUBSCRIPTION_ID"
+	location := "eastus2"
+	resourceGroup := "RESOURCE_GROUP"
+	appName := "APP_NAME"
+	originalImageName := "ORIGINAL_IMAGE_NAME"
+	updatedImageName := "UPDATED_IMAGE_NAME"
+
+	containerApp := &armappcontainers.ContainerApp{
+		Location: &location,
+		Name:     &appName,
+		Properties: &armappcontainers.ContainerAppProperties{
+			Configuration: &armappcontainers.Configuration{
+				ActiveRevisionsMode: to.Ptr(armappcontainers.ActiveRevisionsModeMultiple),
+				Secrets: []*armappcontainers.Secret{
+					{
+						Name:  to.Ptr("secret"),
+						Value: nil,
+					},
+				},
+				Ingress: &armappcontainers.Ingress{},
+			},
+			Template: &armappcontainers.Template{
+				Containers: []*armappcontainers.Container{
+					{
+						Image: &originalImageName,
+					},
+				},
+			},
+		},
+	}
+
+	secrets := &armappcontainers.SecretsCollection{
+		Value: []*armappcontainers.ContainerAppSecret{
+			{
+				Name:  to.Ptr("secret"),
+				Value: to.Ptr("value"),
+			},
+		},
+	}
+
+	mockContext := mocks.NewMockContext(context.Background())
+	_ = mockazsdk.MockContainerAppGet(mockContext, subscriptionId, resourceGroup, appName, containerApp)
+	_ = mockazsdk.MockContainerAppSecretsList(mockContext, subscriptionId, resourceGroup, appName, secrets)
+
+	updateCallCount := 0
+	updateContainerAppRequest := &http.Request{}
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodPatch &&
+			strings.Contains(request.URL.Path, fmt.Sprintf(
+				"/subscriptions/%s/resourceGroups/%s/providers/Microsoft.App/containerApps/%s",
+				subscriptionId,
+				resourceGroup,
+				appName,
+			))
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		updateCallCount++
+		*updateContainerAppRequest = *request
+
+		response := armappcontainers.ContainerAppsClientUpdateResponse{}
+		return mocks.CreateHttpResponseWithBody(request, http.StatusAccepted, response)
+	})
+
+	cas := NewContainerAppService(
+		mockContext.SubscriptionCredentialProvider,
+		clock.NewMock(),
+		mockContext.ArmClientOptions,
+		mockContext.AlphaFeaturesManager,
+	)
+	err := cas.AddRevision(*mockContext.Context, subscriptionId, resourceGroup, appName, updatedImageName, nil, nil)
+	require.NoError(t, err)
+	require.Equal(t, 1, updateCallCount)
+
+	var updatedContainerApp *armappcontainers.ContainerApp
+	err = mocks.ReadHttpBody(updateContainerAppRequest.Body, &updatedContainerApp)
+	require.NoError(t, err)
+	require.Equal(t, updatedImageName, *updatedContainerApp.Properties.Template.Containers[0].Image)
+	require.Equal(t, "azd-0", *updatedContainerApp.Properties.Template.RevisionSuffix)
+	require.NotNil(t, updatedContainerApp.Properties.Configuration.Ingress)
+	require.Len(t, updatedContainerApp.Properties.Configuration.Ingress.Traffic, 1)
+	expectedRevName := fmt.Sprintf("%s--azd-0", appName)
+	require.Equal(t, expectedRevName,
+		*updatedContainerApp.Properties.Configuration.Ingress.Traffic[0].RevisionName)
+	require.Equal(t, int32(100), *updatedContainerApp.Properties.Configuration.Ingress.Traffic[0].Weight)
+}
+
+func Test_ContainerApp_AddRevision_WithEnvVars(t *testing.T) {
+	subscriptionId := "SUBSCRIPTION_ID"
+	location := "eastus2"
+	resourceGroup := "RESOURCE_GROUP"
+	appName := "APP_NAME"
+	originalImageName := "ORIGINAL_IMAGE_NAME"
+	updatedImageName := "UPDATED_IMAGE_NAME"
+	existingValue := "existing-value"
+	overrideValue := "old-value"
+	newOverrideValue := "new-value"
+	newValue := "brand-new-value"
+
+	containerApp := &armappcontainers.ContainerApp{
+		Location: &location,
+		Name:     &appName,
+		Properties: &armappcontainers.ContainerAppProperties{
+			Configuration: &armappcontainers.Configuration{
+				ActiveRevisionsMode: to.Ptr(armappcontainers.ActiveRevisionsModeSingle),
+			},
+			Template: &armappcontainers.Template{
+				Containers: []*armappcontainers.Container{
+					{
+						Image: &originalImageName,
+						Env: []*armappcontainers.EnvironmentVar{
+							{
+								Name:  to.Ptr("EXISTING"),
+								Value: &existingValue,
+							},
+							{
+								Name:  to.Ptr("OVERRIDE"),
+								Value: &overrideValue,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	mockContext := mocks.NewMockContext(context.Background())
+	_ = mockazsdk.MockContainerAppGet(mockContext, subscriptionId, resourceGroup, appName, containerApp)
+	updateContainerAppRequest := mockazsdk.MockContainerAppUpdate(
+		mockContext,
+		subscriptionId,
+		resourceGroup,
+		appName,
+		containerApp,
+	)
+
+	cas := NewContainerAppService(
+		mockContext.SubscriptionCredentialProvider,
+		clock.NewMock(),
+		mockContext.ArmClientOptions,
+		mockContext.AlphaFeaturesManager,
+	)
+
+	err := cas.AddRevision(*mockContext.Context, subscriptionId, resourceGroup, appName, updatedImageName, map[string]string{
+		"OVERRIDE": newOverrideValue,
+		"NEW":      newValue,
+	}, nil)
+	require.NoError(t, err)
+
+	var updatedContainerApp *armappcontainers.ContainerApp
+	err = mocks.ReadHttpBody(updateContainerAppRequest.Body, &updatedContainerApp)
+	require.NoError(t, err)
+	require.Equal(t, updatedImageName, *updatedContainerApp.Properties.Template.Containers[0].Image)
+
+	actualEnv := map[string]string{}
+	for _, envVar := range updatedContainerApp.Properties.Template.Containers[0].Env {
+		require.NotNil(t, envVar.Name)
+		require.NotNil(t, envVar.Value)
+		actualEnv[*envVar.Name] = *envVar.Value
+	}
+
+	require.Equal(t, map[string]string{
+		"EXISTING": existingValue,
+		"OVERRIDE": newOverrideValue,
+		"NEW":      newValue,
+	}, actualEnv)
 }
 
 func Test_ContainerApp_DeployYaml(t *testing.T) {

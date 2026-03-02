@@ -5,9 +5,10 @@ Usage
   azd extension source [command]
 
 Available Commands
-  add   	: Add an extension source with the specified name
-  list  	: List extension sources
-  remove	: Remove an extension source with the specified name
+  add     	: Add an extension source with the specified name
+  list    	: List extension sources
+  remove  	: Remove an extension source with the specified name
+  validate	: Validate an extension source's registry.json file.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

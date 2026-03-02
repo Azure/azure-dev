@@ -138,8 +138,13 @@ func (c *FuncAppHostClient) waitForDeployment(ctx context.Context, location stri
 		}
 
 		if deploymentNotFoundAttempts <= 3 && response.StatusCode == http.StatusNotFound {
+			response.Body.Close()
 			deploymentNotFoundAttempts++
-			time.Sleep(pollDelay)
+			select {
+			case <-ctx.Done():
+				return PublishResponse{}, ctx.Err()
+			case <-time.After(pollDelay):
+			}
 			continue
 		}
 
@@ -149,19 +154,24 @@ func (c *FuncAppHostClient) waitForDeployment(ctx context.Context, location stri
 		// This 404 is due to the deployment worker being "recycled".
 		// This shortcoming would be fixed by work item https://msazure.visualstudio.com/Antares/_workitems/edit/24715654.
 		if response.StatusCode == http.StatusNotFound && lastResponse != nil {
+			response.Body.Close()
 			return *lastResponse, nil
 		}
 
 		if response.StatusCode != http.StatusAccepted && response.StatusCode != http.StatusOK {
-			return PublishResponse{}, runtime.NewResponseError(response)
+			err := runtime.NewResponseError(response)
+			response.Body.Close()
+			return PublishResponse{}, err
 		}
 
 		// Server always returns status code of OK-200 whether the deployment is in-progress or complete.
 		// Thus, we always read the response body to determine the actual status.
 		resp := PublishResponse{}
 		if err := runtime.UnmarshalAsJSON(response, &resp); err != nil {
+			response.Body.Close()
 			return PublishResponse{}, err
 		}
+		response.Body.Close()
 
 		switch resp.Status {
 		case PublishStatusCancelled:
@@ -181,7 +191,7 @@ func (c *FuncAppHostClient) waitForDeployment(ctx context.Context, location stri
 
 		delay := pollDelay
 		if retryAfter := httputil.RetryAfter(response); retryAfter > 0 {
-			delay = pollDelay
+			delay = retryAfter
 		}
 
 		select {

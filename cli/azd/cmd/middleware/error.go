@@ -161,31 +161,44 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		errorInput := originalError.Error()
 
 		e.console.Message(ctx, "")
-		confirmTroubleshoot, err := e.checkErrorHandlingConsent(
-			ctx,
-			"mcp.errorHandling.troubleshooting",
-			fmt.Sprintf("Generate troubleshooting steps using %s?", agentName),
-			"Generate Troubleshooting Steps",
-			fmt.Sprintf("This action will run AI tools to generate troubleshooting steps."+
-				" Edit permissions for AI tools anytime by running %s.",
-				output.WithHighLightFormat("azd mcp consent")),
-			true,
-		)
+		troubleshootScope, err := e.promptTroubleshootingWithConsent(ctx)
 		if err != nil {
 			span.SetStatus(codes.Error, "agent.consent.failed")
-			return nil, fmt.Errorf("prompting to provide troubleshooting steps: %w", err)
+			return nil, fmt.Errorf("prompting for troubleshooting scope: %w", err)
 		}
 
-		if confirmTroubleshoot {
-			// Provide manual steps for troubleshooting
-			agentOutput, err := azdAgent.SendMessage(ctx, fmt.Sprintf(
-				`Steps to follow:
-			1. Use available tool including azd_error_troubleshooting tool to identify and explain the error.
-			Diagnose its root cause when running azd command.
-			2. Provide actionable troubleshooting steps in natural language format with clear sections.
-			DO NOT return JSON. Use readable narrative text with markdown formatting.
-			Do not perform any file changes.
-			Error details: %s`, errorInput))
+		if troubleshootScope != "" {
+			var troubleshootPrompt string
+			switch troubleshootScope {
+			case "explain":
+				troubleshootPrompt = fmt.Sprintf(
+					`Steps to follow:
+			1. Use available tools including azd_error_troubleshooting tool to identify this error.
+			2. Provide a concise explanation of the error and its root cause in 3-5 sentences.
+			DO NOT return JSON. Use plain text with minimal markdown formatting.
+			Do not provide fix steps. Do not perform any file changes.
+			Error details: %s`, errorInput)
+			case "guide":
+				troubleshootPrompt = fmt.Sprintf(
+					`Steps to follow:
+			1. Use available tools including azd_error_troubleshooting tool to identify this error.
+			2. Provide only the actionable fix steps as a short numbered list (max 5 steps).
+			Each step should be one sentence. Include exact commands if applicable.
+			DO NOT return JSON. Do not explain the error. Do not perform any file changes.
+			Error details: %s`, errorInput)
+			case "summarize":
+				troubleshootPrompt = fmt.Sprintf(
+					`Steps to follow:
+			1. Use available tools including azd_error_troubleshooting tool to identify this error.
+			2. Provide a brief summary with two sections:
+			   **Error**: 1-2 sentence explanation of the root cause.
+			   **Fix**: Numbered list of up to 3 actionable steps (one sentence each).
+			Keep the total response under 10 lines.
+			DO NOT return JSON. Do not perform any file changes.
+			Error details: %s`, errorInput)
+			}
+
+			agentOutput, err := azdAgent.SendMessage(ctx, troubleshootPrompt)
 
 			if err != nil {
 				e.displayAgentResponse(ctx, agentOutput, AIDisclaimer)
@@ -213,7 +226,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		}
 
 		if !confirmFix {
-			if confirmTroubleshoot {
+			if troubleshootScope != "" {
 				span.SetStatus(codes.Ok, "agent.troubleshoot.only")
 			} else {
 				span.SetStatus(codes.Error, "agent.fix.declined")
@@ -410,6 +423,88 @@ func promptForErrorHandlingConsent(
 	}
 
 	return choices[*choiceIndex].Value, nil
+}
+
+// promptTroubleshootingWithConsent combines consent and scope selection into a single prompt.
+// Checks if a saved preference exists (e.g. mcp.errorHandling.troubleshooting.explain).
+// Returns the scope ("explain", "fix", "summary") or "" if skipped.
+func (e *ErrorMiddleware) promptTroubleshootingWithConsent(ctx context.Context) (string, error) {
+	const configPrefix = "mcp.errorHandling.troubleshooting"
+
+	userConfig, err := e.userConfigManager.Load()
+	if err != nil {
+		return "", fmt.Errorf("failed to load user config: %w", err)
+	}
+
+	// Check for saved "always" preferences
+	scopes := []string{"explain", "guide", "summarize", "skip"}
+	for _, scope := range scopes {
+		if val, ok := userConfig.GetString(configPrefix + "." + scope); ok && val == "allow" {
+			e.console.Message(ctx, output.WithWarningFormat(
+				"Troubleshooting scope is set to always %q. To change, run %s.\n",
+				scope,
+				output.WithHighLightFormat(fmt.Sprintf("azd config unset %s.%s", configPrefix, scope)),
+			))
+			if scope == "skip" {
+				return "", nil
+			}
+			return scope, nil
+		}
+	}
+
+	choices := []*uxlib.SelectChoice{
+		{Value: "explain", Label: "Explain the error"},
+		{Value: "guide", Label: "Provide step-by-step fix guidance"},
+		{Value: "summarize", Label: "Summary (explanation + guidance)"},
+		{Value: "skip", Label: "Skip"},
+		{Value: "always.explain", Label: "Always explain the error"},
+		{Value: "always.guide", Label: "Always provide fix guidance"},
+		{Value: "always.summarize", Label: "Always provide summary"},
+		{Value: "always.skip", Label: "Always skip"},
+	}
+
+	selector := uxlib.NewSelect(&uxlib.SelectOptions{
+		Message: "Generate troubleshooting steps?",
+		HelpMessage: fmt.Sprintf("This action will run AI tools to generate troubleshooting steps."+
+			" Edit permissions anytime by running %s.",
+			output.WithHighLightFormat("azd mcp consent")),
+		Choices:         choices,
+		EnableFiltering: uxlib.Ptr(false),
+		DisplayCount:    len(choices),
+	})
+
+	choiceIndex, err := selector.Ask(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	if choiceIndex == nil || *choiceIndex < 0 || *choiceIndex >= len(choices) {
+		return "", fmt.Errorf("invalid choice selected")
+	}
+
+	selected := choices[*choiceIndex].Value
+
+	// Handle "always" variants — save to config and return the scope
+	if strings.HasPrefix(selected, "always.") {
+		scope := strings.TrimPrefix(selected, "always.")
+		configKey := configPrefix + "." + scope
+		if err := userConfig.Set(configKey, "allow"); err != nil {
+			return "", fmt.Errorf("failed to set config %s: %w", configKey, err)
+		}
+		if err := e.userConfigManager.Save(userConfig); err != nil {
+			return "", fmt.Errorf("failed to save config: %w", err)
+		}
+		if scope == "skip" {
+			return "", nil
+		}
+		return scope, nil
+	}
+
+	if selected == "skip" {
+		return "", nil
+	}
+
+	return selected, nil
 }
 
 // extractSuggestedSolutions extracts solutions from the LLM response.

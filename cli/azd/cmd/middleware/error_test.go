@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -512,4 +513,155 @@ func Test_ExtractSuggestedSolutions(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_PromptTroubleshootingWithConsent_SavedExplain(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	cfg := config.NewEmptyConfig()
+	_ = cfg.Set("mcp.errorHandling.troubleshooting.explain", "allow")
+	mockContext.ConfigManager.WithConfig(cfg)
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+
+	middleware := &ErrorMiddleware{
+		console:           mockContext.Console,
+		userConfigManager: userConfigManager,
+	}
+
+	scope, err := middleware.promptTroubleshootingWithConsent(*mockContext.Context)
+	require.NoError(t, err)
+	require.Equal(t, "explain", scope)
+}
+
+func Test_PromptTroubleshootingWithConsent_SavedGuide(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	cfg := config.NewEmptyConfig()
+	_ = cfg.Set("mcp.errorHandling.troubleshooting.guide", "allow")
+	mockContext.ConfigManager.WithConfig(cfg)
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+
+	middleware := &ErrorMiddleware{
+		console:           mockContext.Console,
+		userConfigManager: userConfigManager,
+	}
+
+	scope, err := middleware.promptTroubleshootingWithConsent(*mockContext.Context)
+	require.NoError(t, err)
+	require.Equal(t, "guide", scope)
+}
+
+func Test_PromptTroubleshootingWithConsent_SavedSummarize(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	cfg := config.NewEmptyConfig()
+	_ = cfg.Set("mcp.errorHandling.troubleshooting.summarize", "allow")
+	mockContext.ConfigManager.WithConfig(cfg)
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+
+	middleware := &ErrorMiddleware{
+		console:           mockContext.Console,
+		userConfigManager: userConfigManager,
+	}
+
+	scope, err := middleware.promptTroubleshootingWithConsent(*mockContext.Context)
+	require.NoError(t, err)
+	require.Equal(t, "summarize", scope)
+}
+
+func Test_PromptTroubleshootingWithConsent_SavedSkip(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	cfg := config.NewEmptyConfig()
+	_ = cfg.Set("mcp.errorHandling.troubleshooting.skip", "allow")
+	mockContext.ConfigManager.WithConfig(cfg)
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+
+	middleware := &ErrorMiddleware{
+		console:           mockContext.Console,
+		userConfigManager: userConfigManager,
+	}
+
+	scope, err := middleware.promptTroubleshootingWithConsent(*mockContext.Context)
+	require.NoError(t, err)
+	require.Equal(t, "", scope, "skip should return empty scope")
+}
+
+func Test_PromptTroubleshootingWithConsent_SavedScopeDisplaysWarning(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	cfg := config.NewEmptyConfig()
+	_ = cfg.Set("mcp.errorHandling.troubleshooting.explain", "allow")
+	mockContext.ConfigManager.WithConfig(cfg)
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+
+	middleware := &ErrorMiddleware{
+		console:           mockContext.Console,
+		userConfigManager: userConfigManager,
+	}
+
+	_, err := middleware.promptTroubleshootingWithConsent(*mockContext.Context)
+	require.NoError(t, err)
+
+	consoleOutput := mockContext.Console.Output()
+	require.NotEmpty(t, consoleOutput, "should display a warning message")
+	found := false
+	for _, msg := range consoleOutput {
+		if strings.Contains(msg, "explain") && strings.Contains(msg, "azd config unset") {
+			found = true
+			break
+		}
+	}
+	require.True(t, found, "warning should mention the scope and how to unset it")
+}
+
+func Test_PromptTroubleshootingWithConsent_AlwaysSelectionSavesConfig(t *testing.T) {
+	// Simulate what happens after the selector returns an "always." choice
+	// by testing the config save logic directly
+	mockContext := mocks.NewMockContext(context.Background())
+	cfg := config.NewEmptyConfig()
+	mockContext.ConfigManager.WithConfig(cfg)
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+
+	// Verify config is empty initially
+	loadedCfg, err := userConfigManager.Load()
+	require.NoError(t, err)
+	_, ok := loadedCfg.GetString("mcp.errorHandling.troubleshooting.guide")
+	require.False(t, ok, "config should not have guide scope initially")
+
+	// Simulate what "always.guide" selection does: set and save the config key
+	err = loadedCfg.Set("mcp.errorHandling.troubleshooting.guide", "allow")
+	require.NoError(t, err)
+	err = userConfigManager.Save(loadedCfg)
+	require.NoError(t, err)
+
+	// Now verify that promptTroubleshootingWithConsent auto-returns the saved scope
+	middleware := &ErrorMiddleware{
+		console:           mockContext.Console,
+		userConfigManager: userConfigManager,
+	}
+
+	scope, err := middleware.promptTroubleshootingWithConsent(*mockContext.Context)
+	require.NoError(t, err)
+	require.Equal(t, "guide", scope)
+}
+
+func Test_PromptTroubleshootingWithConsent_AlwaysSkipSavesConfig(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	cfg := config.NewEmptyConfig()
+	mockContext.ConfigManager.WithConfig(cfg)
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+
+	loadedCfg, err := userConfigManager.Load()
+	require.NoError(t, err)
+
+	// Simulate "always.skip" selection
+	err = loadedCfg.Set("mcp.errorHandling.troubleshooting.skip", "allow")
+	require.NoError(t, err)
+	err = userConfigManager.Save(loadedCfg)
+	require.NoError(t, err)
+
+	middleware := &ErrorMiddleware{
+		console:           mockContext.Console,
+		userConfigManager: userConfigManager,
+	}
+
+	scope, err := middleware.promptTroubleshootingWithConsent(*mockContext.Context)
+	require.NoError(t, err)
+	require.Equal(t, "", scope, "always.skip should return empty scope")
 }

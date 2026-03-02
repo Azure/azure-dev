@@ -14,11 +14,13 @@ import (
 	"net"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
@@ -26,7 +28,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 )
@@ -41,6 +46,7 @@ func MapError(err error, span tracing.Span) {
 	var armDeployErr *azapi.AzureDeploymentError
 	var authFailedErr *auth.AuthFailedError
 	var extServiceErr *azdext.ServiceError
+	var extLocalErr *azdext.LocalError
 
 	// external tool errors
 	var toolExecErr *exec.ExitError
@@ -112,24 +118,49 @@ func MapError(err error, span tracing.Span) {
 			operation = "deployment"
 		}
 		errCode = fmt.Sprintf("service.arm.%s.failed", operation)
-	} else if errors.As(err, &extensionRunErr) {
-		errCode = "ext.run.failed"
 	} else if errors.As(err, &extServiceErr) {
-		// Handle structured service errors from extensions
-		if extServiceErr.StatusCode > 0 && extServiceErr.ServiceName != "" {
-			serviceName, hostDomain := mapService(extServiceErr.ServiceName)
+		// Handle structured service errors from extensions.
+		// Emit whatever details are available rather than requiring all fields.
+		serviceName := ""
+		if extServiceErr.ServiceName != "" {
+			var hostDomain string
+			serviceName, hostDomain = mapService(extServiceErr.ServiceName)
 			errDetails = append(errDetails,
 				fields.ServiceName.String(serviceName),
 				fields.ServiceHost.String(hostDomain),
-				fields.ServiceStatusCode.Int(extServiceErr.StatusCode),
 			)
-			if extServiceErr.ErrorCode != "" {
-				errDetails = append(errDetails, fields.ServiceErrorCode.String(extServiceErr.ErrorCode))
-			}
-			errCode = fmt.Sprintf("ext.service.%s.%d", serviceName, extServiceErr.StatusCode)
-		} else {
-			errCode = "ext.service.failed"
 		}
+		if extServiceErr.StatusCode > 0 {
+			errDetails = append(errDetails, fields.ServiceStatusCode.Int(extServiceErr.StatusCode))
+		}
+		if extServiceErr.ErrorCode != "" {
+			errDetails = append(errDetails, fields.ServiceErrorCode.String(extServiceErr.ErrorCode))
+		}
+
+		// Use operation.errorCode (e.g. "ext.service.start_container.invalid_payload") for actionable
+		// classification instead of host.statusCode which groups unrelated failures together.
+		switch {
+		case extServiceErr.ErrorCode != "":
+			errCode = fmt.Sprintf("ext.service.%s", normalizeCodeSegment(extServiceErr.ErrorCode, "failed"))
+		case extServiceErr.StatusCode > 0 && serviceName != "":
+			errCode = fmt.Sprintf("ext.service.%s.%d", serviceName, extServiceErr.StatusCode)
+		case extServiceErr.StatusCode > 0:
+			errCode = fmt.Sprintf("ext.service.unknown.%d", extServiceErr.StatusCode)
+		default:
+			errCode = "ext.service.unknown.failed"
+		}
+	} else if errors.As(err, &extLocalErr) {
+		domain := string(azdext.NormalizeLocalErrorCategory(extLocalErr.Category))
+		code := normalizeCodeSegment(extLocalErr.Code, "failed")
+
+		errDetails = append(errDetails,
+			fields.ErrCategory.String(domain),
+			fields.ErrCode.String(code),
+		)
+
+		errCode = fmt.Sprintf("ext.%s.%s", domain, code)
+	} else if errors.As(err, &extensionRunErr) {
+		errCode = "ext.run.failed"
 	} else if errors.As(err, &toolExecErr) {
 		toolName := "other"
 		cmdName := cmdAsName(toolExecErr.Cmd)
@@ -171,6 +202,18 @@ func MapError(err error, span tracing.Span) {
 		errCode = "user.canceled"
 	} else if errors.Is(err, context.DeadlineExceeded) {
 		errCode = "internal.timeout"
+	} else if errors.Is(err, auth.ErrNoCurrentUser) {
+		errCode = "auth.not_logged_in"
+	} else if errors.Is(err, consent.ErrToolExecutionDenied) {
+		errCode = "user.tool_denied"
+	} else if errors.Is(err, git.ErrNotRepository) {
+		errCode = "internal.not_git_repo"
+	} else if errors.Is(err, azapi.ErrPreviewNotSupported) {
+		errCode = "internal.preview_not_supported"
+	} else if errors.Is(err, provisioning.ErrBindMountOperationDisabled) {
+		errCode = "internal.bind_mount_disabled"
+	} else if errors.Is(err, pipeline.ErrRemoteHostIsNotAzDo) {
+		errCode = "internal.remote_not_azdo"
 	} else if isNetworkError(err) {
 		errCode = "internal.network"
 		errType := errorType(err)
@@ -322,4 +365,34 @@ func cmdAsName(cmd string) string {
 	}
 
 	return strings.ToLower(cmd)
+}
+
+var (
+	codeSegmentRegex    = regexp.MustCompile(`[^a-z0-9_]+`)
+	codeSegmentReplacer = strings.NewReplacer("-", "_")
+)
+
+// normalizeCodeSegment normalizes a dot-separated error code for telemetry.
+// Each segment between dots is lowercased, sanitized to [a-z0-9_], and preserved.
+// Empty input returns the fallback value.
+func normalizeCodeSegment(value string, fallback string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return fallback
+	}
+
+	parts := strings.Split(value, ".")
+	for i, part := range parts {
+		part = codeSegmentReplacer.Replace(part)
+		part = codeSegmentRegex.ReplaceAllString(part, "_")
+		parts[i] = strings.Trim(part, "_")
+	}
+
+	result := strings.Join(parts, ".")
+	result = strings.Trim(result, ".")
+	if result == "" {
+		return fallback
+	}
+
+	return result
 }

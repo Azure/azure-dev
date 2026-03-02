@@ -1024,7 +1024,7 @@ func (ch *ContainerHelper) packBuild(
 			} else if isContainerdEnabled {
 				return nil, &internal.ErrorWithSuggestion{
 					Err: err,
-					Suggestion: "Suggestion: disable containerd image store in Docker settings: " +
+					Suggestion: "disable containerd image store in Docker settings: " +
 						output.WithLinkFormat("https://docs.docker.com/desktop/features/containerd"),
 				}
 			}

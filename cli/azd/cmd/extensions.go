@@ -237,11 +237,21 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		allEnv = append(allEnv, traceEnv...)
 	}
 
+	// Read global flags for propagation via InvokeOptions
+	debugEnabled, _ := a.cmd.Flags().GetBool("debug")
+	noPrompt, _ := a.cmd.Flags().GetBool("no-prompt")
+	cwd, _ := a.cmd.Flags().GetString("cwd")
+	envName, _ := a.cmd.Flags().GetString("environment")
+
 	options := &extensions.InvokeOptions{
 		Args: a.args,
 		Env:  allEnv,
 		// cmd extensions are always interactive (connected to terminal)
 		Interactive: true,
+		Debug:       debugEnabled,
+		NoPrompt:    noPrompt,
+		Cwd:         cwd,
+		Environment: envName,
 	}
 
 	_, invokeErr := a.extensionRunner.Invoke(ctx, extension, options)
@@ -249,6 +259,16 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	// Update warning is shown via defer above (runs after invoke completes)
 
 	if invokeErr != nil {
+		// Check if the extension reported a structured error via gRPC.
+		// This gives us a typed LocalError/ServiceError for telemetry classification
+		// instead of just a generic exit-code error.
+		if reportedErr := extension.GetReportedError(); reportedErr != nil {
+			// Wrap both errors so the chain contains both:
+			// - reportedErr (LocalError/ServiceError) for telemetry classification
+			// - invokeErr (ExtensionRunError) for UX middleware handling
+			return nil, fmt.Errorf("%w: %w", reportedErr, invokeErr)
+		}
+
 		return nil, invokeErr
 	}
 

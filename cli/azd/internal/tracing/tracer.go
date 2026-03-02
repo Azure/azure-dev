@@ -5,6 +5,8 @@ package tracing
 
 import (
 	"context"
+	"reflect"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/baggage"
 	"go.opentelemetry.io/otel/codes"
@@ -105,7 +107,7 @@ func (s *wrapperSpan) End(options ...trace.SpanEndOption) {
 
 func (s *wrapperSpan) EndWithStatus(err error, options ...trace.SpanEndOption) {
 	if err != nil {
-		s.span.SetStatus(codes.Error, "UnknownError")
+		s.span.SetStatus(codes.Error, errorDescription(err))
 	} else {
 		s.span.SetStatus(codes.Ok, "")
 	}
@@ -148,4 +150,43 @@ func (s *wrapperSpan) SetAttributes(kv ...attribute.KeyValue) {
 // additional Spans on the same telemetry pipeline as the current Span.
 func (s *wrapperSpan) TracerProvider() trace.TracerProvider {
 	return s.span.TracerProvider()
+}
+
+// errorDescription returns a description for the error suitable for use as a span status description.
+// It unwraps errors to find the root cause type, producing values like "errors_errorString" or
+// "azcore_ResponseError". For joined errors (Unwrap() []error), it returns comma-separated type names.
+func errorDescription(err error) string {
+	if err == nil {
+		return "<nil>"
+	}
+
+	//nolint:errorlint // Type switch is intentionally used to check for Unwrap() methods
+	for {
+		switch x := err.(type) {
+		case interface{ Unwrap() error }:
+			inner := x.Unwrap()
+			if inner == nil {
+				return sanitizeTypeName(reflect.TypeOf(x).String())
+			}
+			err = inner
+		case interface{ Unwrap() []error }:
+			result := ""
+			for _, e := range x.Unwrap() {
+				if e == nil {
+					continue
+				}
+				if result != "" {
+					result += ","
+				}
+				result += sanitizeTypeName(reflect.TypeOf(e).String())
+			}
+			return result
+		default:
+			return sanitizeTypeName(reflect.TypeOf(x).String())
+		}
+	}
+}
+
+func sanitizeTypeName(name string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(name, ".", "_"), "*", "")
 }

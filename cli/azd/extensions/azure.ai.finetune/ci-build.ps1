@@ -46,7 +46,7 @@ $tagsFlag = "-tags=cfi,cfg,osusergo"
 # -w: Omit DWARF symbol table
 # -X: Set variable at link time. Used to set the version in source.
 
-$ldFlag = "-ldflags=-s -w -X 'azure.ai.finetune/internal/cmd.Version=$Version' -X 'azure.ai.finetune/internal/cmd.Commit=$SourceVersion' -X 'azure.ai.finetune/internal/cmd.BuildDate=$(Get-Date -Format o)' "
+$ldFlag = "-ldflags=-s -w -X 'azure.ai.finetune/internal/version.Version=$Version' -X 'azure.ai.finetune/internal/version.Commit=$SourceVersion' -X 'azure.ai.finetune/internal/version.BuildDate=$(Get-Date -Format o)' "
 
 if ($IsWindows) {
     $msg = "Building for Windows"

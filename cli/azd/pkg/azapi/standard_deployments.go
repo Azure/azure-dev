@@ -736,7 +736,10 @@ func (ds *StandardDeployments) ValidatePreflightToSubscription(
 			Tags:     tags,
 		}, nil)
 	if err != nil {
-		return fmt.Errorf("validating deployment to subscription:\n\nValidation Error Details:\n%w", err)
+		return fmt.Errorf(
+			"validating deployment to subscription: %w",
+			createDeploymentError(err, DeploymentOperationValidate),
+		)
 	}
 	_, err = validateResult.PollUntilDone(ctx, nil)
 	if err != nil {
@@ -774,7 +777,10 @@ func (ds *StandardDeployments) ValidatePreflightToResourceGroup(
 			Tags: tags,
 		}, nil)
 	if err != nil {
-		return fmt.Errorf("validating deployment to resource group:\n\nValidation Error Details:\n%w", err)
+		return fmt.Errorf(
+			"validating deployment to resource group: %w",
+			createDeploymentError(err, DeploymentOperationValidate),
+		)
 	}
 	_, err = validateResult.PollUntilDone(ctx, nil)
 	if err != nil {

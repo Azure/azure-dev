@@ -279,6 +279,11 @@ func copyBinaryFiles(extensionId, sourcePath, destPath string) error {
 		}
 	}
 
+	// On Windows, kill any running extension processes to release file locks
+	if runtime.GOOS == "windows" {
+		killExtensionProcesses(extensionId, destPath)
+	}
+
 	return filepath.Walk(sourcePath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -309,6 +314,34 @@ func copyBinaryFiles(extensionId, sourcePath, destPath string) error {
 
 		return nil
 	})
+}
+
+// escapePowerShellSingleQuotes escapes single quotes for use in PowerShell single-quoted strings.
+func escapePowerShellSingleQuotes(s string) string {
+	return strings.ReplaceAll(s, "'", "''")
+}
+
+// killExtensionProcesses terminates any running extension processes on Windows
+// to release file locks before copying new binaries.
+func killExtensionProcesses(extensionBinaryPrefix, installDir string) {
+	// Kill by process name pattern (e.g., jongio-azd-copilot-windows-amd64)
+	for _, arch := range []string{"windows-amd64", "windows-arm64"} {
+		procName := extensionBinaryPrefix + "-" + arch
+		//nolint:gosec // G204: procName is derived from extension metadata; single quotes are escaped
+		_ = exec.Command("powershell", "-NoProfile", "-Command",
+			"Stop-Process -Name '"+escapePowerShellSingleQuotes(procName)+"' -Force -ErrorAction SilentlyContinue").Run()
+	}
+
+	// Kill any processes running from the install directory.
+	// Pass installDir as a parameter to avoid injection from special characters.
+	if installDir != "" {
+		//nolint:gosec // G204: installDir is derived from config and passed as an argument, not interpolated
+		_ = exec.Command("powershell", "-NoProfile", "-Command",
+			"param([string]$p) Get-Process | Where-Object { $_.Path -and $_.Path.StartsWith($p) }"+
+				" | Stop-Process -Force -ErrorAction SilentlyContinue",
+			installDir,
+		).Run()
+	}
 }
 
 func defaultBuildFlags(flags *buildFlags) {

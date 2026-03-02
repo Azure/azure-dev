@@ -61,6 +61,8 @@ type ExtensionMetadata struct {
 	DisplayName string `json:"displayName"`
 	// Description is a brief description of the extension
 	Description string `json:"description"`
+	// Website is the URL to the extension's documentation or homepage
+	Website string `json:"website,omitempty"`
 	// Versions is a list of versions of the extension that are released over time.
 	Versions []ExtensionVersion `json:"versions"`
 	// Source is used to store the extension source from where the extension is fetched

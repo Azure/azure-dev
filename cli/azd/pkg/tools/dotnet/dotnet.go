@@ -90,8 +90,12 @@ func (cli *Cli) CheckInstalled(ctx context.Context) error {
 	return nil
 }
 
-func (cli *Cli) Restore(ctx context.Context, project string) error {
+func (cli *Cli) Restore(ctx context.Context, project string, env []string) error {
 	runArgs := newDotNetRunArgs("restore", project)
+	// Append user env vars to preserve base env set by newDotNetRunArgs (DOTNET_NOLOGO, etc.)
+	if len(env) > 0 {
+		runArgs = runArgs.WithEnv(append(runArgs.Env, env...))
+	}
 	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("dotnet restore on project '%s' failed: %w", project, err)
@@ -99,7 +103,7 @@ func (cli *Cli) Restore(ctx context.Context, project string) error {
 	return nil
 }
 
-func (cli *Cli) Build(ctx context.Context, project string, configuration string, output string) error {
+func (cli *Cli) Build(ctx context.Context, project string, configuration string, output string, env []string) error {
 	runArgs := newDotNetRunArgs("build", project)
 	if configuration != "" {
 		runArgs = runArgs.AppendParams("-c", configuration)
@@ -109,6 +113,11 @@ func (cli *Cli) Build(ctx context.Context, project string, configuration string,
 		runArgs = runArgs.AppendParams("--output", output)
 	}
 
+	// Append user env vars to preserve base env set by newDotNetRunArgs (DOTNET_NOLOGO, etc.)
+	if len(env) > 0 {
+		runArgs = runArgs.WithEnv(append(runArgs.Env, env...))
+	}
+
 	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("dotnet build on project '%s' failed: %w", project, err)
@@ -116,7 +125,7 @@ func (cli *Cli) Build(ctx context.Context, project string, configuration string,
 	return nil
 }
 
-func (cli *Cli) Publish(ctx context.Context, project string, configuration string, output string) error {
+func (cli *Cli) Publish(ctx context.Context, project string, configuration string, output string, env []string) error {
 	runArgs := newDotNetRunArgs("publish", project)
 	if configuration != "" {
 		runArgs = runArgs.AppendParams("-c", configuration)
@@ -124,6 +133,11 @@ func (cli *Cli) Publish(ctx context.Context, project string, configuration strin
 
 	if output != "" {
 		runArgs = runArgs.AppendParams("--output", output)
+	}
+
+	// Append user env vars to preserve base env set by newDotNetRunArgs (DOTNET_NOLOGO, etc.)
+	if len(env) > 0 {
+		runArgs = runArgs.WithEnv(append(runArgs.Env, env...))
 	}
 
 	_, err := cli.commandRunner.Run(ctx, runArgs)

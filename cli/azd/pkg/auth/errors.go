@@ -55,7 +55,9 @@ func newReLoginRequiredError(
 		"interaction_required":
 		err := ReLoginRequiredError{}
 		err.init(response, scopes, cloud)
-		suggestion := fmt.Sprintf("Suggestion: %s, run `%s` to acquire a new token.", err.scenario, err.loginCmd)
+		// Note: Do not prefix with "Suggestion:" here — the UX renderer
+		// (ErrorWithSuggestion.ToString) already adds that prefix when displaying.
+		suggestion := fmt.Sprintf("%s, run `%s` to acquire a new token.", err.scenario, err.loginCmd)
 		if err.helpLink != "" {
 			suggestion += fmt.Sprintf(" See %s for more info.", err.helpLink)
 		}

@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -49,12 +50,10 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 
 		// For specific errors, we silent the output display here and let the caller handle it
 		var unsupportedErr *project.UnsupportedServiceHostError
-		var extensionRunErr *extensions.ExtensionRunError
-		if errors.As(err, &extensionRunErr) {
-			return actionResult, err
-		}
 
-		// Use ErrorWithSuggestion for errors with suggestions (better UX)
+		// Use ErrorWithSuggestion for errors with suggestions (better UX).
+		// This catches errors wrapped by the error pipeline's YAML rules
+		// or other host code that already created an ErrorWithSuggestion.
 		if errors.As(err, &suggestionErr) {
 			displayErr := &ux.ErrorWithSuggestion{
 				Err:        suggestionErr.Err,
@@ -62,7 +61,33 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 				Suggestion: suggestionErr.Suggestion,
 				Links:      suggestionErr.Links,
 			}
+			m.console.Message(ctx, "")
 			m.console.MessageUxItem(ctx, displayErr)
+			return actionResult, err
+		}
+
+		// Bridge extension errors (LocalError/ServiceError) with suggestions to rich UX.
+		// Covers both CLI extension commands and gRPC service target errors.
+		if suggestion := azdext.ErrorSuggestion(err); suggestion != "" {
+			message := azdext.ErrorMessage(err)
+			if message == "" {
+				message = err.Error()
+			}
+			displayErr := &ux.ErrorWithSuggestion{
+				Message:    message,
+				Suggestion: suggestion,
+			}
+			m.console.Message(ctx, "")
+			m.console.MessageUxItem(ctx, displayErr)
+			return actionResult, err
+		}
+
+		// ExtensionRunError without suggestion
+		var extensionRunErr *extensions.ExtensionRunError
+		if errors.As(err, &extensionRunErr) {
+			if message := azdext.ErrorMessage(err); message != "" {
+				m.console.Message(ctx, output.WithErrorFormat("\nERROR: %s", message))
+			}
 			return actionResult, err
 		}
 

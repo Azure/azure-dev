@@ -159,8 +159,14 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	// logging to stderr for diagnostics.
 	// Uses strconv.ParseBool to match WaitForDebugger semantics (accepts
 	// "1", "t", "TRUE", "true", etc.).
+	originalLogWriter := log.Default().Writer()
+	restoreLogOutput := false
 	if isDebug, err := strconv.ParseBool(os.Getenv("AZD_EXT_DEBUG")); err != nil || !isDebug {
 		log.SetOutput(io.Discard)
+		restoreLogOutput = true
+	}
+	if restoreLogOutput {
+		defer log.SetOutput(originalLogWriter)
 	}
 
 	// Determine which managers will be active

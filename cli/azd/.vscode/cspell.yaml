@@ -70,7 +70,9 @@ words:
   - errdetails
   - yarnpkg
   - azconfig
+  - hostnames
   - seekable
+  - seekability
 languageSettings:
   - languageId: go
     ignoreRegExpList:

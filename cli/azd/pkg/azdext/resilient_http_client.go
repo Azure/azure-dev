@@ -5,11 +5,12 @@ package azdext
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"math"
-	"math/rand/v2"
 	"net/http"
 	"time"
 
@@ -265,7 +266,12 @@ func (rc *ResilientClient) backoff(attempt int) time.Duration {
 
 	// Add jitter: randomize between [50%, 100%) of computed delay to prevent
 	// thundering herd when multiple clients retry simultaneously.
-	jitter := 0.5 + rand.Float64()*0.5
+	var b [8]byte
+	jitter := 0.75
+	if _, err := rand.Read(b[:]); err == nil {
+		randFloat := float64(binary.BigEndian.Uint64(b[:])) / float64(^uint64(0))
+		jitter = 0.5 + randFloat*0.5
+	}
 	return time.Duration(float64(delay) * jitter)
 }
 

@@ -101,6 +101,12 @@ func newUpdateAction(
 }
 
 func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	// Dev builds (0.0.0-dev.0) should not self-update — developers build from source.
+	if internal.IsDevVersion() {
+		return nil, fmt.Errorf(
+			"azd update is not supported for dev builds. Build from source with `go build` instead")
+	}
+
 	// Auto-enable the alpha feature if not already enabled.
 	// The user's intent is clear by running `azd update` directly.
 	if !a.alphaFeatureManager.IsEnabled(update.FeatureUpdate) {

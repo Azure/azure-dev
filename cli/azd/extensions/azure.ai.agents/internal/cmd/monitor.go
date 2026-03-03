@@ -40,13 +40,13 @@ func newMonitorCommand() *cobra.Command {
 Streams console output (stdout/stderr) or system events from an agent container.
 Use --follow to stream logs in real-time, or omit it to fetch recent logs and exit.
 This is useful for troubleshooting agent startup issues or monitoring agent behavior.`,
-		Example: `  # Fetch the last 50 lines of console logs
-  azd ai agent monitor --name my-agent --version 1
+		Example: `  # Fetch the last 50 lines of console logs (auto-detects agent)
+  azd ai agent monitor
 
   # Stream console logs in real-time
-  azd ai agent monitor --name my-agent --version 1 --follow
+  azd ai agent monitor --follow
 
-  # Fetch system event logs
+  # Fetch system event logs for a specific agent
   azd ai agent monitor --name my-agent --version 1 --type system
 
   # Fetch last 100 lines with explicit account
@@ -58,6 +58,25 @@ This is useful for troubleshooting agent startup issues or monitoring agent beha
 
 			ctx := azdext.WithAccessToken(cmd.Context())
 			setupDebugLogging(cmd.Flags())
+
+			// Auto-resolve name and version from azure.yaml + azd environment if not provided
+			if flags.name == "" || flags.version == "" {
+				if info, err := resolveAgentServiceFromProject(ctx, flags.name); err == nil {
+					if flags.name == "" && info.AgentName != "" {
+						flags.name = info.AgentName
+					}
+					if flags.version == "" && info.Version != "" {
+						flags.version = info.Version
+					}
+				}
+			}
+
+			if flags.name == "" {
+				return fmt.Errorf("agent name is required; use --name or deploy the agent first with 'azd deploy'")
+			}
+			if flags.version == "" {
+				return fmt.Errorf("agent version is required; use --version or deploy the agent first with 'azd deploy'")
+			}
 
 			agentContext, err := newAgentContext(ctx, flags.accountName, flags.projectName, flags.name, flags.version)
 			if err != nil {
@@ -75,14 +94,11 @@ This is useful for troubleshooting agent startup issues or monitoring agent beha
 
 	cmd.Flags().StringVarP(&flags.accountName, "account-name", "a", "", "Cognitive Services account name")
 	cmd.Flags().StringVarP(&flags.projectName, "project-name", "p", "", "AI Foundry project name")
-	cmd.Flags().StringVarP(&flags.name, "name", "n", "", "Name of the hosted agent (required)")
-	cmd.Flags().StringVarP(&flags.version, "version", "v", "", "Version of the hosted agent (required)")
+	cmd.Flags().StringVarP(&flags.name, "name", "n", "", "Name of the hosted agent")
+	cmd.Flags().StringVarP(&flags.version, "version", "v", "", "Version of the hosted agent")
 	cmd.Flags().BoolVarP(&flags.follow, "follow", "f", false, "Stream logs in real-time")
 	cmd.Flags().IntVarP(&flags.tail, "tail", "l", 50, "Number of trailing log lines to fetch (1-300)")
 	cmd.Flags().StringVarP(&flags.logType, "type", "t", "console", "Type of logs: 'console' (stdout/stderr) or 'system' (container events)")
-
-	_ = cmd.MarkFlagRequired("name")
-	_ = cmd.MarkFlagRequired("version")
 
 	return cmd
 }

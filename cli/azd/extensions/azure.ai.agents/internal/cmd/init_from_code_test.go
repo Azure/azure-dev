@@ -498,6 +498,140 @@ func TestWriteDefinitionToSrcDir(t *testing.T) {
 	})
 }
 
+func TestFindExistingAgentDefinition(t *testing.T) {
+	t.Parallel()
+
+	t.Run("no agent.yaml returns empty", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+
+		name, path := findExistingAgentDefinition(dir)
+		if name != "" || path != "" {
+			t.Errorf("expected empty, got name=%q path=%q", name, path)
+		}
+	})
+
+	t.Run("AgentDefinition with kind and name returns both", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+
+		content := `kind: hosted
+name: my-existing-agent
+protocols:
+  - protocol: responses
+    version: v1
+`
+		if err := os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		name, path := findExistingAgentDefinition(dir)
+		if name != "my-existing-agent" {
+			t.Errorf("name = %q, want %q", name, "my-existing-agent")
+		}
+		if path == "" {
+			t.Error("expected non-empty path")
+		}
+	})
+
+	t.Run("AgentDefinition in agent.yml", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+
+		content := `kind: prompt
+name: yml-agent
+`
+		if err := os.WriteFile(filepath.Join(dir, "agent.yml"), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		name, path := findExistingAgentDefinition(dir)
+		if name != "yml-agent" {
+			t.Errorf("name = %q, want %q", name, "yml-agent")
+		}
+		if path == "" {
+			t.Error("expected non-empty path")
+		}
+	})
+
+	t.Run("AgentManifest with template returns empty", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+
+		content := `name: manifest-agent
+template:
+  kind: hosted
+  name: manifest-agent
+parameters: {}
+`
+		if err := os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		name, path := findExistingAgentDefinition(dir)
+		if name != "" || path != "" {
+			t.Errorf("expected empty for manifest, got name=%q path=%q", name, path)
+		}
+	})
+
+	t.Run("invalid YAML returns empty", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+
+		content := `not: valid: yaml: [[[`
+		if err := os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		name, path := findExistingAgentDefinition(dir)
+		if name != "" || path != "" {
+			t.Errorf("expected empty for invalid yaml, got name=%q path=%q", name, path)
+		}
+	})
+
+	t.Run("agent.yaml preferred over agent.yml", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+
+		yamlContent := `kind: hosted
+name: yaml-agent
+`
+		ymlContent := `kind: hosted
+name: yml-agent
+`
+		if err := os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(yamlContent), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "agent.yml"), []byte(ymlContent), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		name, _ := findExistingAgentDefinition(dir)
+		if name != "yaml-agent" {
+			t.Errorf("name = %q, want %q (agent.yaml should be preferred)", name, "yaml-agent")
+		}
+	})
+
+	t.Run("AgentDefinition with kind but no name returns empty name with path", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+
+		content := `kind: workflow
+`
+		if err := os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		name, path := findExistingAgentDefinition(dir)
+		if name != "" {
+			t.Errorf("name = %q, want empty", name)
+		}
+		if path == "" {
+			t.Error("expected non-empty path for AgentDefinition with kind")
+		}
+	})
+}
+
 func TestFoundryDeploymentInfo(t *testing.T) {
 	t.Parallel()
 

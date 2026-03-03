@@ -17,6 +17,7 @@ const (
 	CodeInvalidAiProjectId        = "invalid_ai_project_id"
 	CodeInvalidServiceConfig      = "invalid_service_config"
 	CodeInvalidAgentRequest       = "invalid_agent_request"
+	CodeInvalidArgs               = "invalid_args"
 	CodeUnsupportedHost           = "unsupported_host"
 	CodeUnsupportedAgentKind      = "unsupported_agent_kind"
 	CodeMissingAgentKind          = "missing_agent_kind"
@@ -39,6 +40,8 @@ const (
 	CodeMissingAzureSubscription  = "missing_azure_subscription_id"
 	CodeMissingAgentEnvVars       = "missing_agent_env_vars"
 	CodeGitHubDownloadFailed      = "github_download_failed"
+	CodeTemplateDownloadFailed    = "template_download_failed"
+	CodeAgentYamlNotFound         = "agent_yaml_not_found"
 )
 
 // Error codes for auth errors.

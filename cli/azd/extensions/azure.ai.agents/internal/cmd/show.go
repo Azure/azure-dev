@@ -40,17 +40,39 @@ func newShowCommand() *cobra.Command {
 
 Retrieves the runtime status of a hosted agent container, including its current state,
 replica configuration, and any error messages.`,
-		Example: `  # Show status using azd environment configuration
+		Example: `  # Show status (auto-detects agent from azure.yaml)
+  azd ai agent show
+
+  # Show status for a specific agent
   azd ai agent show --name my-agent --version 1
 
   # Show status with explicit account and project
   azd ai agent show --name my-agent --version 1 --account-name myAccount --project-name myProject
 
   # Show status in table format
-  azd ai agent show --name my-agent --version 1 --output table`,
+  azd ai agent show --output table`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			setupDebugLogging(cmd.Flags())
+
+			// Auto-resolve name and version from azure.yaml + azd environment if not provided
+			if flags.name == "" || flags.version == "" {
+				if info, err := resolveAgentServiceFromProject(ctx, flags.name); err == nil {
+					if flags.name == "" && info.AgentName != "" {
+						flags.name = info.AgentName
+					}
+					if flags.version == "" && info.Version != "" {
+						flags.version = info.Version
+					}
+				}
+			}
+
+			if flags.name == "" {
+				return fmt.Errorf("agent name is required; use --name or deploy the agent first with 'azd deploy'")
+			}
+			if flags.version == "" {
+				return fmt.Errorf("agent version is required; use --version or deploy the agent first with 'azd deploy'")
+			}
 
 			agentContext, err := newAgentContext(ctx, flags.accountName, flags.projectName, flags.name, flags.version)
 			if err != nil {
@@ -68,12 +90,9 @@ replica configuration, and any error messages.`,
 
 	cmd.Flags().StringVarP(&flags.accountName, "account-name", "a", "", "Cognitive Services account name")
 	cmd.Flags().StringVarP(&flags.projectName, "project-name", "p", "", "AI Foundry project name")
-	cmd.Flags().StringVarP(&flags.name, "name", "n", "", "Name of the hosted agent (required)")
-	cmd.Flags().StringVarP(&flags.version, "version", "v", "", "Version of the hosted agent (required)")
+	cmd.Flags().StringVarP(&flags.name, "name", "n", "", "Name of the hosted agent")
+	cmd.Flags().StringVarP(&flags.version, "version", "v", "", "Version of the hosted agent")
 	cmd.Flags().StringVarP(&flags.output, "output", "o", "json", "Output format (json or table)")
-
-	_ = cmd.MarkFlagRequired("name")
-	_ = cmd.MarkFlagRequired("version")
 
 	return cmd
 }

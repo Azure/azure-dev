@@ -75,6 +75,33 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 				trace.SpanContext{}.WithTraceID(traceId),
 			),
 			expect:                to.Ptr(traceId.String()),
+			headerName:            MsClientRequestIdHeader,
+			correlationPolicyFunc: NewMsClientRequestIdPolicy,
+		},
+		{
+			name: "WithInvalidTraceId",
+			ctx: trace.ContextWithSpanContext(
+				context.Background(),
+				trace.SpanContext{}.WithTraceID(invalidTraceId),
+			),
+			expect:                to.Ptr(""),
+			headerName:            MsClientRequestIdHeader,
+			correlationPolicyFunc: NewMsClientRequestIdPolicy,
+		},
+		{
+			name:                  "WithoutTraceId",
+			ctx:                   context.Background(),
+			expect:                nil,
+			headerName:            MsClientRequestIdHeader,
+			correlationPolicyFunc: NewMsClientRequestIdPolicy,
+		},
+		{
+			name: "WithTraceId",
+			ctx: trace.ContextWithSpanContext(
+				context.Background(),
+				trace.SpanContext{}.WithTraceID(traceId),
+			),
+			expect:                to.Ptr(traceId.String()),
 			headerName:            msGraphCorrelationIdHeader,
 			correlationPolicyFunc: NewMsGraphCorrelationPolicy,
 		},

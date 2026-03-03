@@ -99,7 +99,7 @@ func WithTokenCredential(tokenCredential azcore.TokenCredential, scope string) o
 			InsecureAllowCredentialWithHTTP: true, // allow for plain HTTP proxies, etc..
 			PerCallPolicies: []policy.Policy{
 				azsdk.NewUserAgentPolicy(userAgent),
-				azsdk.NewMsCorrelationPolicy(),
+				azsdk.NewMsClientRequestIdPolicy(),
 			},
 			PerRetryPolicies: []policy.Policy{
 				bearerTokenPolicy,
@@ -132,7 +132,7 @@ func NewModelDeploymentProvider(subscriptionId string, credential azcore.TokenCr
 			ClientOptions: policy.ClientOptions{
 				PerCallPolicies: []policy.Policy{
 					azsdk.NewUserAgentPolicy(userAgent),
-					azsdk.NewMsCorrelationPolicy(),
+					azsdk.NewMsClientRequestIdPolicy(),
 				},
 			},
 		},

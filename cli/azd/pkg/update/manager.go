@@ -321,22 +321,29 @@ func (m *Manager) updateViaMSI(ctx context.Context, cfg *UpdateConfig, writer io
 	if err := m.downloadFile(ctx, msiURL, msiPath, writer); err != nil {
 		return newUpdateError(CodeDownloadFailed, err)
 	}
-	defer os.Remove(msiPath)
+	// Don't defer os.Remove — the detached msiexec process needs this file after we exit.
 
+	// Build msiexec args. Always write a verbose log so failures are diagnosable.
+	msiLogPath, logErr := msiLogFilePath()
+	args := []string{"/i", msiPath, "/qn"}
+	if logErr == nil {
+		args = append(args, "/l*v", msiLogPath)
+		log.Printf("MSI install log: %s", msiLogPath)
+	}
+
+	log.Printf("Spawning detached msiexec: msiexec %s", strings.Join(args, " "))
 	fmt.Fprintf(writer, "Installing update via MSI...\n")
-	runArgs := exec.NewRunArgs("msiexec", "/i", msiPath, "/qn")
-	runArgs = runArgs.WithStdOut(writer).WithStdErr(writer)
 
-	result, err := m.commandRunner.Run(ctx, runArgs)
-	if err != nil {
-		return newUpdateError(CodeReplaceFailed, err)
+	// Spawn msiexec detached so it can replace the running azd binary.
+	// msiexec cannot overwrite a locked executable; by detaching, azd can exit
+	// and release the file lock before msiexec attempts the replacement.
+	cmd := osexec.Command("msiexec", args...)
+	cmd.SysProcAttr = newDetachedSysProcAttr()
+	if err := cmd.Start(); err != nil {
+		return newUpdateError(CodeReplaceFailed, fmt.Errorf("failed to start msiexec: %w", err))
 	}
 
-	if result.ExitCode != 0 {
-		return newUpdateErrorf(CodeReplaceFailed,
-			"MSI installation failed with exit code %d", result.ExitCode)
-	}
-
+	log.Printf("msiexec started with PID %d, azd will exit to release binary lock", cmd.Process.Pid)
 	return nil
 }
 

@@ -27,9 +27,11 @@ type ProvisioningProgressDisplay struct {
 	deploymentStarted bool
 	// Keeps track of created resources
 	displayedResources map[string]bool
-	resourceManager    ResourceManager
-	console            input.Console
-	deployment         Deployment
+	// Cache for display names, keyed by resource IDs
+	resourceDisplayNames map[string]string
+	resourceManager      ResourceManager
+	console              input.Console
+	deployment           Deployment
 }
 
 func NewProvisioningProgressDisplay(
@@ -38,11 +40,43 @@ func NewProvisioningProgressDisplay(
 	deployment Deployment,
 ) *ProvisioningProgressDisplay {
 	return &ProvisioningProgressDisplay{
-		displayedResources: map[string]bool{},
-		deployment:         deployment,
-		resourceManager:    rm,
-		console:            console,
+		displayedResources:   map[string]bool{},
+		resourceDisplayNames: map[string]string{},
+		deployment:           deployment,
+		resourceManager:      rm,
+		console:              console,
 	}
+}
+
+// getResourceTypeDisplayName returns the display name for a resource type, using a cache to avoid repeated lookups.
+func (display *ProvisioningProgressDisplay) getResourceTypeDisplayName(
+	ctx context.Context,
+	resourceTypeName string,
+	subscriptionId string,
+	resourceId string,
+) string {
+	resourceType := azapi.AzureResourceType(resourceTypeName)
+	// Check cache first
+	if displayName, exists := display.resourceDisplayNames[resourceId]; exists {
+		return displayName
+	}
+
+	// Try to get dynamic display name
+	displayName, err := display.resourceManager.GetResourceTypeDisplayName(
+		ctx,
+		subscriptionId,
+		resourceId,
+		resourceType,
+	)
+
+	if err != nil {
+		// Dynamic resource type translation failed -- fallback to static translation
+		displayName = azapi.GetResourceTypeDisplayName(resourceType)
+	}
+
+	// Cache the result (even if empty)
+	display.resourceDisplayNames[resourceId] = displayName
+	return displayName
 }
 
 // ReportProgress reports the current deployment progress, setting the currently executing operation title and logging
@@ -133,17 +167,12 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 ) {
 	for _, resource := range resources {
 		resourceTypeName := *resource.Properties.TargetResource.ResourceType
-		resourceTypeDisplayName, err := display.resourceManager.GetResourceTypeDisplayName(
+		resourceTypeDisplayName := display.getResourceTypeDisplayName(
 			ctx,
+			resourceTypeName,
 			display.deployment.SubscriptionId(),
 			*resource.Properties.TargetResource.ID,
-			azapi.AzureResourceType(resourceTypeName),
 		)
-
-		if err != nil {
-			// Dynamic resource type translation failed -- fallback to static translation
-			resourceTypeDisplayName = azapi.GetResourceTypeDisplayName(azapi.AzureResourceType(resourceTypeName))
-		}
 
 		// Don't log resource types for Azure resources that we do not have a translation of the resource type for.
 		// This will be improved on in a future iteration.
@@ -178,17 +207,12 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 	inProgress := []string{}
 	for _, inProgResource := range inProgressResources {
 		resourceTypeName := *inProgResource.Properties.TargetResource.ResourceType
-		resourceTypeDisplayName, err := display.resourceManager.GetResourceTypeDisplayName(
+		resourceTypeDisplayName := display.getResourceTypeDisplayName(
 			ctx,
+			resourceTypeName,
 			display.deployment.SubscriptionId(),
 			*inProgResource.Properties.TargetResource.ID,
-			azapi.AzureResourceType(resourceTypeName),
 		)
-
-		if err != nil {
-			// Dynamic resource type translation failed -- fallback to static translation
-			resourceTypeDisplayName = azapi.GetResourceTypeDisplayName(azapi.AzureResourceType(resourceTypeName))
-		}
 
 		// Don't log resource types for Azure resources that we do not have a translation of the resource type for.
 		// This will be improved on in a future iteration.

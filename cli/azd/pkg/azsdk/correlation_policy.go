@@ -4,6 +4,7 @@
 package azsdk
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -30,6 +31,7 @@ func (p *simpleCorrelationPolicy) Do(req *policy.Request) (*http.Response, error
 	}
 
 	rawRequest.Header.Set(p.headerName, spanCtx.TraceID().String())
+	fmt.Printf("[azsdk] Setting %s: %s\n", p.headerName, spanCtx.TraceID().String())
 	return req.Next()
 }
 

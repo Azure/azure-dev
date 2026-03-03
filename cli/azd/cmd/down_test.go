@@ -5,9 +5,11 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -84,7 +86,11 @@ func Test_DownAction_NoEnvironments_ReturnsError(t *testing.T) {
 
 	_, err := action.Run(*mockContext.Context)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "no environments found")
+
+	var suggestionErr *internal.ErrorWithSuggestion
+	require.True(t, errors.As(err, &suggestionErr))
+	require.Contains(t, suggestionErr.Error(), "no environments found")
+	require.Contains(t, suggestionErr.Suggestion, "azd env new")
 
 	envManager.AssertExpectations(t)
 }
@@ -105,8 +111,11 @@ func Test_DownAction_EnvironmentNotFound_ReturnsError(t *testing.T) {
 
 	_, err := action.Run(*mockContext.Context)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "environment not found")
-	require.Contains(t, err.Error(), "azd env list")
+
+	var suggestionErr *internal.ErrorWithSuggestion
+	require.True(t, errors.As(err, &suggestionErr))
+	require.Contains(t, suggestionErr.Error(), "environment not found")
+	require.Contains(t, suggestionErr.Suggestion, "azd env list")
 
 	envManager.AssertExpectations(t)
 }
@@ -127,8 +136,11 @@ func Test_DownAction_NoDefaultEnvironment_ReturnsError(t *testing.T) {
 
 	_, err := action.Run(*mockContext.Context)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "no environment selected")
-	require.Contains(t, err.Error(), "azd env select")
+
+	var suggestionErr *internal.ErrorWithSuggestion
+	require.True(t, errors.As(err, &suggestionErr))
+	require.Contains(t, suggestionErr.Error(), "no environment selected")
+	require.Contains(t, suggestionErr.Suggestion, "azd env select")
 
 	envManager.AssertExpectations(t)
 }

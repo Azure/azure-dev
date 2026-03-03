@@ -14,13 +14,14 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 )
 
 type HooksMiddleware struct {
 	envManager     environment.Manager
-	env            *environment.Environment
+	lazyEnv        *lazy.Lazy[*environment.Environment]
 	projectConfig  *project.ProjectConfig
 	importManager  *project.ImportManager
 	commandRunner  exec.CommandRunner
@@ -32,7 +33,7 @@ type HooksMiddleware struct {
 // Creates a new instance of the Hooks middleware
 func NewHooksMiddleware(
 	envManager environment.Manager,
-	env *environment.Environment,
+	lazyEnv *lazy.Lazy[*environment.Environment],
 	projectConfig *project.ProjectConfig,
 	importManager *project.ImportManager,
 	commandRunner exec.CommandRunner,
@@ -42,7 +43,7 @@ func NewHooksMiddleware(
 ) Middleware {
 	return &HooksMiddleware{
 		envManager:     envManager,
-		env:            env,
+		lazyEnv:        lazyEnv,
 		projectConfig:  projectConfig,
 		importManager:  importManager,
 		commandRunner:  commandRunner,
@@ -81,6 +82,11 @@ func (m *HooksMiddleware) registerCommandHooks(
 		return next(ctx)
 	}
 
+	env, err := m.lazyEnv.GetValue()
+	if err != nil {
+		return nil, err
+	}
+
 	hooksManager := ext.NewHooksManager(m.projectConfig.Path, m.commandRunner)
 	hooksRunner := ext.NewHooksRunner(
 		hooksManager,
@@ -89,7 +95,7 @@ func (m *HooksMiddleware) registerCommandHooks(
 		m.console,
 		m.projectConfig.Path,
 		m.projectConfig.Hooks,
-		m.env,
+		env,
 		m.serviceLocator,
 	)
 
@@ -98,7 +104,7 @@ func (m *HooksMiddleware) registerCommandHooks(
 	commandNames := []string{m.options.CommandPath}
 	commandNames = append(commandNames, m.options.Aliases...)
 
-	err := hooksRunner.Invoke(ctx, commandNames, func() error {
+	err = hooksRunner.Invoke(ctx, commandNames, func() error {
 		result, err := next(ctx)
 		if err != nil {
 			return err
@@ -131,6 +137,11 @@ func (m *HooksMiddleware) registerServiceHooks(ctx context.Context) error {
 			continue
 		}
 
+		env, err := m.lazyEnv.GetValue()
+		if err != nil {
+			return err
+		}
+
 		serviceHooksManager := ext.NewHooksManager(service.Path(), m.commandRunner)
 		serviceHooksRunner := ext.NewHooksRunner(
 			serviceHooksManager,
@@ -139,7 +150,7 @@ func (m *HooksMiddleware) registerServiceHooks(ctx context.Context) error {
 			m.console,
 			service.Path(),
 			service.Hooks,
-			m.env,
+			env,
 			m.serviceLocator,
 		)
 

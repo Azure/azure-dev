@@ -116,23 +116,27 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("listing environments: %w", err)
 	}
 	if len(envList) == 0 {
-		return nil, errors.New("no environments found. Run \"azd init\" or \"azd env new\" to create one")
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        errors.New("no environments found"),
+			Suggestion: "Run \"azd init\" or \"azd env new\" to create one",
+		}
 	}
 
 	// Get the environment non-interactively (respects -e flag or default environment)
 	env, err := a.lazyEnv.GetValue()
 	if err != nil {
 		if errors.Is(err, environment.ErrNotFound) {
-			return nil, fmt.Errorf(
-				"environment not found. Run \"azd env list\" to see available environments, " +
+			return nil, &internal.ErrorWithSuggestion{
+				Err: errors.New("environment not found"),
+				Suggestion: "Run \"azd env list\" to see available environments, " +
 					"\"azd env new\" to create a new one, or specify a valid environment name with -e",
-			)
+			}
 		}
 		if errors.Is(err, environment.ErrNameNotSpecified) {
-			return nil, errors.New(
-				"no environment selected. Use \"azd env select\" to set a default environment, " +
-					"or run \"azd down -e <name>\" to target a specific environment",
-			)
+			return nil, &internal.ErrorWithSuggestion{
+				Err:        errors.New("no environment selected"),
+				Suggestion: "Use \"azd env select\" to set a default environment, or run \"azd down -e <name>\" to target a specific environment",
+			}
 		}
 		return nil, err
 	}

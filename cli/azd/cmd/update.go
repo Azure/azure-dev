@@ -124,9 +124,7 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 
 		a.console.MessageUxItem(ctx, &ux.MessageTitle{
-			Title: fmt.Sprintf("azd update is in alpha. "+
-				"To turn off in the future, run `azd config unset alpha.%s`.\n",
-				update.FeatureUpdate),
+			Title: "azd update is in alpha.\n",
 		})
 	}
 

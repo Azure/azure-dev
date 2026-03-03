@@ -133,3 +133,29 @@ This project may contain Microsoft trademarks or logos. Use of these must follow
 ## License
 
 Licensed under the [MIT](LICENSE) license.
+
+
+## 使用示例
+
+### 基本用法
+```python
+import package_name
+
+# 初始化
+client = package_name.Client()
+
+# 调用功能
+result = client.process()
+print(f"结果: {result}")
+```
+
+### 高级用法
+```python
+# 配置参数
+config = {
+    'setting': 'value',
+    'timeout': 30
+}
+
+client = package_name.Client(**config)
+```

@@ -225,7 +225,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			ctx,
 			"mcp.errorHandling.fix",
 			fmt.Sprintf("Apply fixes using %s?", agentName),
-			"Suggest Fixes",
+			"Apply Fixes",
 			fmt.Sprintf("This action will run AI tools to help fix the error."+
 				" Edit permissions for AI tools anytime by running %s.",
 				output.WithHighLightFormat("azd mcp consent")),

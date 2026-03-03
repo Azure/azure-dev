@@ -171,7 +171,7 @@ func (p *MCPSecurityPolicy) checkURLCore(rawURL string) error {
 		// always allowed
 	case "http":
 		if p.requireHTTPS && !isLocalhostHost(host) {
-			return fmt.Errorf("HTTPS required: %s", rawURL)
+			return fmt.Errorf("HTTPS required: %s", redactSecurityURL(rawURL))
 		}
 	default:
 		return fmt.Errorf("scheme not allowed: %q (only http and https are permitted)", u.Scheme)
@@ -208,6 +208,16 @@ func (p *MCPSecurityPolicy) checkURLCore(rawURL string) error {
 	}
 
 	return nil
+}
+
+func redactSecurityURL(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "<invalid-url>"
+	}
+	u.RawQuery = ""
+	u.Fragment = ""
+	return u.String()
 }
 
 func (p *MCPSecurityPolicy) checkIP(ip net.IP, originalHost string) error {

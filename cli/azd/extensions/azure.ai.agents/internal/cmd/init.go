@@ -213,19 +213,19 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&flags.projectResourceId, "project-id", "p", "",
-		"[Optional] Existing Microsoft Foundry Project Id to initialize your azd environment with")
+		"Existing Microsoft Foundry Project Id to initialize your azd environment with")
 
 	cmd.Flags().StringVarP(&flags.modelDeployment, "model-deployment", "d", "",
-		"[Optional] Name of an existing model deployment to use from the Foundry project. Only used when paired with an existing Foundry project via --project-id")
+		"Name of an existing model deployment to use from the Foundry project. Only used when paired with an existing Foundry project via --project-id")
 
 	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "",
 		"Path or URI to an agent manifest to add to your azd project")
 
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "",
-		"[Optional] Directory to download the agent definition to (defaults to 'src/<agent-id>')")
+		"Directory to download the agent definition to (defaults to 'src/<agent-id>')")
 
 	cmd.Flags().StringVarP(&flags.host, "host", "", "",
-		"[Optional] For container based agents, can override the default host to target a container app instead. Accepted values: 'containerapp'")
+		"For container based agents, can override the default host to target a container app instead. Accepted values: 'containerapp'")
 
 	cmd.Flags().StringVarP(&flags.env, "environment", "e", "", "The name of the azd environment to use.")
 
@@ -315,6 +315,14 @@ func ensureProject(ctx context.Context, flags *initFlags, azdClient *azdext.AzdC
 
 		// Environment creation is handled separately in ensureEnvironment
 		initArgs := []string{"init", "-t", "Azure-Samples/azd-ai-starter-basic"}
+		if flags.env != "" {
+			initArgs = append(initArgs, "--environment", flags.env)
+		} else {
+			cwd, err := os.Getwd()
+			if err == nil {
+				initArgs = append(initArgs, "--environment", filepath.Base(cwd)+"-dev")
+			}
+		}
 
 		// We don't have a project yet
 		// Dispatch a workflow to init the project

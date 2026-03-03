@@ -46,6 +46,7 @@ import (
 type initFlags struct {
 	*rootFlagsDefinition
 	projectResourceId string
+	modelDeployment   string
 	manifestPointer   string
 	src               string
 	host              string
@@ -212,7 +213,10 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&flags.projectResourceId, "project-id", "p", "",
-		"Existing Microsoft Foundry Project Id to initialize your azd environment with")
+		"[Optional] Existing Microsoft Foundry Project Id to initialize your azd environment with")
+
+	cmd.Flags().StringVarP(&flags.modelDeployment, "model-deployment", "d", "",
+		"[Optional] Name of an existing model deployment to use from the Foundry project. Only used when paired with an existing Foundry project via --project-id")
 
 	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "",
 		"Path or URI to an agent manifest to add to your azd project")

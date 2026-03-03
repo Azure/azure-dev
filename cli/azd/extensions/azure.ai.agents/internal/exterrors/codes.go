@@ -25,6 +25,7 @@ const (
 	CodeLocationMismatch          = "location_mismatch"
 	CodeMissingPublishedContainer = "missing_published_container_artifact"
 	CodeScaffoldTemplateFailed    = "scaffold_template_failed"
+	CodeModelDeploymentNotFound   = "model_deployment_not_found"
 )
 
 // Error codes for dependency errors.
@@ -39,6 +40,7 @@ const (
 	CodeMissingAzureSubscription  = "missing_azure_subscription_id"
 	CodeMissingAgentEnvVars       = "missing_agent_env_vars"
 	CodeGitHubDownloadFailed      = "github_download_failed"
+	CodePromptFailed              = "prompt_failed"
 )
 
 // Error codes for auth errors.

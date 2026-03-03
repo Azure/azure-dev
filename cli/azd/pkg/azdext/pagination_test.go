@@ -441,6 +441,33 @@ func TestPager_NextLinkHTTP(t *testing.T) {
 	}
 }
 
+func TestPager_NextLinkRelativeURL(t *testing.T) {
+	t.Parallel()
+
+	page1 := pageJSON([]string{"a"}, "/page2")
+
+	doer := &mockDoer{
+		responses: []*doerResponse{
+			{resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(page1)),
+				Header:     http.Header{},
+			}},
+		},
+	}
+
+	pager := NewPager[string](doer, "https://example.com/api", nil)
+
+	_, err := pager.NextPage(context.Background())
+	if err == nil {
+		t.Fatal("expected error for relative nextLink")
+	}
+
+	if !strings.Contains(err.Error(), "HTTPS") {
+		t.Errorf("error = %q, want mention of HTTPS", err.Error())
+	}
+}
+
 func TestPager_NextLinkUserCredentials(t *testing.T) {
 	t.Parallel()
 
@@ -493,6 +520,32 @@ func TestPager_CollectWithSSRFError(t *testing.T) {
 	// Collect should still return the items from the valid page.
 	if len(all) != 2 || all[0] != "a" || all[1] != "b" {
 		t.Errorf("all = %v, want [a b] (partial results before SSRF error)", all)
+	}
+}
+
+func TestPager_ResponseTooLarge(t *testing.T) {
+	t.Parallel()
+
+	oversized := pageJSON([]string{strings.Repeat("a", int(maxPageResponseSize))}, "")
+
+	doer := &mockDoer{
+		responses: []*doerResponse{
+			{resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(oversized)),
+				Header:     http.Header{},
+			}},
+		},
+	}
+
+	pager := NewPager[string](doer, "https://example.com/api", nil)
+
+	_, err := pager.NextPage(context.Background())
+	if err == nil {
+		t.Fatal("expected error for oversized response")
+	}
+	if !strings.Contains(err.Error(), "response exceeds max page size") {
+		t.Errorf("error = %q, want explicit max page size error", err.Error())
 	}
 }
 

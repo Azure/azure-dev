@@ -272,7 +272,7 @@ func (rc *ResilientClient) backoff(attempt int) time.Duration {
 	var b [8]byte
 	jitter := 0.75
 	if _, err := rand.Read(b[:]); err == nil {
-		randFloat := float64(binary.BigEndian.Uint64(b[:])) / float64(^uint64(0))
+		randFloat := float64(binary.BigEndian.Uint64(b[:])) / (float64(math.MaxUint64) + 1)
 		jitter = 0.5 + randFloat*0.5
 	}
 	return time.Duration(float64(delay) * jitter)

@@ -184,9 +184,12 @@ func (p *Pager[T]) NextPage(ctx context.Context) (*PageResponse[T], error) {
 		}
 	}
 
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxPageResponseSize))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxPageResponseSize+1))
 	if err != nil {
 		return nil, fmt.Errorf("azdext.Pager.NextPage: failed to read response: %w", err)
+	}
+	if int64(len(data)) > maxPageResponseSize {
+		return nil, fmt.Errorf("azdext.Pager.NextPage: response exceeds max page size (%d bytes)", maxPageResponseSize)
 	}
 
 	var page PageResponse[T]
@@ -220,7 +223,7 @@ func (p *Pager[T]) validateNextLink(nextLink string) error {
 		return fmt.Errorf("invalid nextLink URL: %w", err)
 	}
 
-	if u.Scheme != "" && u.Scheme != "https" {
+	if u.Scheme != "https" {
 		return fmt.Errorf("nextLink must use HTTPS (got %q)", u.Scheme)
 	}
 

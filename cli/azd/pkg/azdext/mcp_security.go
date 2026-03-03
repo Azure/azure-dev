@@ -116,12 +116,12 @@ func (p *MCPSecurityPolicy) ValidatePathsWithinBase(basePaths ...string) *MCPSec
 	return p
 }
 
-// OnBlocked registers a callback that is invoked whenever a URL, path, or
-// redirect is blocked by the security policy. This enables security audit
+// OnBlocked registers a callback that is invoked whenever a URL or path is
+// blocked by the security policy. This enables security audit
 // logging without coupling the policy to a specific logging framework.
 //
-// The callback receives an action tag ("url_blocked", "path_blocked",
-// "redirect_blocked") and a human-readable detail string. It must be safe
+// The callback receives an action tag ("url_blocked", "path_blocked")
+// and a human-readable detail string. It must be safe
 // for concurrent invocation.
 func (p *MCPSecurityPolicy) OnBlocked(fn func(action, detail string)) *MCPSecurityPolicy {
 	p.mu.Lock()

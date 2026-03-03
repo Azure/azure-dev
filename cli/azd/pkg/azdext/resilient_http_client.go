@@ -17,6 +17,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
+	"github.com/google/uuid"
 )
 
 const (
@@ -29,6 +30,10 @@ const (
 	// malicious or misconfigured server from stalling the client with an
 	// unbounded response body.
 	maxRetryBodyDrain int64 = 1 << 20 // 1 MB
+
+	userAgentHeaderName       = "User-Agent"
+	msCorrelationIDHeaderName = "x-ms-correlation-request-id"
+	defaultUserAgent          = "azdext-resilient-client"
 )
 
 // ResilientClient is an HTTP client with built-in retry, exponential backoff,
@@ -190,6 +195,7 @@ func (rc *ResilientClient) Do(ctx context.Context, method, url string, body io.R
 		if err != nil {
 			return nil, fmt.Errorf("azdext.ResilientClient.Do: failed to create request: %w", err)
 		}
+		rc.setRequestHeaders(req)
 
 		// Inject bearer token when a token provider is available.
 		if rc.tokenProvider != nil {
@@ -258,6 +264,15 @@ func (rc *ResilientClient) applyAuth(ctx context.Context, req *http.Request) err
 	req.Header.Set("Authorization", "Bearer "+tok.Token)
 
 	return nil
+}
+
+func (rc *ResilientClient) setRequestHeaders(req *http.Request) {
+	if req.Header.Get(userAgentHeaderName) == "" {
+		req.Header.Set(userAgentHeaderName, defaultUserAgent)
+	}
+	if req.Header.Get(msCorrelationIDHeaderName) == "" {
+		req.Header.Set(msCorrelationIDHeaderName, uuid.NewString())
+	}
 }
 
 // backoff computes the delay for a given attempt using exponential backoff.

@@ -262,6 +262,24 @@ func TestPager_EmptyFirstURL(t *testing.T) {
 	}
 }
 
+func TestPager_InvalidFirstURL(t *testing.T) {
+	t.Parallel()
+
+	doer := &mockDoer{}
+	pager := NewPager[string](doer, "://bad", nil)
+	if !pager.More() {
+		t.Fatal("expected More() = true for non-empty initial URL")
+	}
+
+	_, err := pager.NextPage(context.Background())
+	if err == nil {
+		t.Fatal("expected error for invalid first URL")
+	}
+	if !strings.Contains(err.Error(), "invalid first URL") {
+		t.Errorf("error = %q, want mention of invalid first URL", err.Error())
+	}
+}
+
 type testStruct struct {
 	Name  string `json:"name"`
 	Count int    `json:"count"`

@@ -27,7 +27,7 @@ type MCPSecurityPolicy struct {
 	// lookupHost is used for DNS resolution; override in tests.
 	lookupHost func(string) ([]string, error)
 	// onBlocked is an optional callback invoked when a URL or path is blocked.
-	// Parameters: action ("url_blocked", "path_blocked", "redirect_blocked"),
+	// Parameters: action ("url_blocked", "path_blocked"),
 	// detail (human-readable explanation). Safe for concurrent use.
 	onBlocked func(action, detail string)
 }

@@ -51,6 +51,7 @@ type Pager[T any] struct {
 	client     HTTPDoer
 	nextURL    string
 	done       bool
+	initErr    error
 	opts       PagerOptions
 	originHost string // host of the initial URL for SSRF protection
 	pageCount  int    // number of pages fetched so far
@@ -121,14 +122,25 @@ func NewPager[T any](client HTTPDoer, firstURL string, opts *PagerOptions) *Page
 		opts.Method = http.MethodGet
 	}
 
-	var originHost string
-	if u, err := url.Parse(firstURL); err == nil {
-		originHost = strings.ToLower(u.Hostname())
+	var (
+		originHost string
+		initErr    error
+	)
+	if firstURL != "" {
+		u, err := url.Parse(firstURL)
+		if err != nil {
+			initErr = fmt.Errorf("azdext.NewPager: invalid first URL: %w", err)
+		} else if u.Hostname() == "" {
+			initErr = errors.New("azdext.NewPager: invalid first URL: missing host")
+		} else {
+			originHost = strings.ToLower(u.Hostname())
+		}
 	}
 
 	return &Pager[T]{
 		client:     client,
 		nextURL:    firstURL,
+		initErr:    initErr,
 		opts:       *opts,
 		originHost: originHost,
 	}
@@ -163,6 +175,11 @@ func (p *Pager[T]) Truncated() bool {
 func (p *Pager[T]) NextPage(ctx context.Context) (*PageResponse[T], error) {
 	if !p.More() {
 		return nil, errors.New("azdext.Pager.NextPage: no more pages")
+	}
+	if p.initErr != nil {
+		p.done = true
+		p.nextURL = ""
+		return nil, p.initErr
 	}
 
 	if p.client == nil {

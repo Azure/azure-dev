@@ -224,8 +224,8 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		confirmFix, err := e.checkErrorHandlingConsent(
 			ctx,
 			"mcp.errorHandling.fix",
-			fmt.Sprintf("Brainstorm solutions using %s?", agentName),
-			"Brainstorm Solutions",
+			fmt.Sprintf("Suggest fixes for this error using %s?", agentName),
+			"Suggest Fixes",
 			fmt.Sprintf("This action will run AI tools to help fix the error."+
 				" Edit permissions for AI tools anytime by running %s.",
 				output.WithHighLightFormat("azd mcp consent")),

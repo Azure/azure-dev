@@ -359,7 +359,7 @@ func TestResilientClient_NilContext(t *testing.T) {
 func TestResilientClient_DefaultOptions(t *testing.T) {
 	t.Parallel()
 
-	opts := &ResilientClientOptions{}
+	opts := &ResilientClientOptions{MaxRetries: -1}
 	opts.defaults()
 
 	if opts.MaxRetries != 3 {
@@ -376,6 +376,16 @@ func TestResilientClient_DefaultOptions(t *testing.T) {
 
 	if opts.Timeout != 30*time.Second {
 		t.Errorf("Timeout = %v, want 30s", opts.Timeout)
+	}
+}
+
+func TestResilientClient_DefaultOptions_ZeroRetriesPreserved(t *testing.T) {
+	t.Parallel()
+
+	opts := &ResilientClientOptions{MaxRetries: 0}
+	opts.defaults()
+	if opts.MaxRetries != 0 {
+		t.Errorf("MaxRetries = %d, want 0", opts.MaxRetries)
 	}
 }
 

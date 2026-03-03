@@ -96,6 +96,10 @@ type stdHTTPDoer struct {
 }
 
 func (s *stdHTTPDoer) Do(ctx context.Context, method, url string, body io.Reader) (*http.Response, error) {
+	if s.client == nil {
+		return nil, errors.New("azdext.Pager.NextPage: client must not be nil")
+	}
+
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
 		return nil, err

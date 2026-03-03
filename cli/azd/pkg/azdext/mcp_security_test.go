@@ -410,6 +410,50 @@ func TestSSRFSafeRedirect_IPv4CompatiblePrivate(t *testing.T) {
 	}
 }
 
+func TestSSRFSafeRedirect_HostnameResolvesPrivateBlocked(t *testing.T) {
+	prev := redirectLookupHost
+	redirectLookupHost = func(host string) ([]string, error) {
+		return []string{"10.0.0.10"}, nil
+	}
+	t.Cleanup(func() {
+		redirectLookupHost = prev
+	})
+
+	req := &http.Request{
+		URL: &url.URL{Scheme: "https", Host: "example.test", Path: "/next"},
+	}
+
+	err := SSRFSafeRedirect(req, nil)
+	if err == nil {
+		t.Fatal("expected error for redirect hostname resolving to private IP")
+	}
+	if !strings.Contains(err.Error(), "resolved to private/loopback") {
+		t.Errorf("error = %q, want mention of resolved private/loopback", err.Error())
+	}
+}
+
+func TestSSRFSafeRedirect_HostnameDNSFailureBlocked(t *testing.T) {
+	prev := redirectLookupHost
+	redirectLookupHost = func(host string) ([]string, error) {
+		return nil, fmt.Errorf("dns unavailable")
+	}
+	t.Cleanup(func() {
+		redirectLookupHost = prev
+	})
+
+	req := &http.Request{
+		URL: &url.URL{Scheme: "https", Host: "example.test", Path: "/next"},
+	}
+
+	err := SSRFSafeRedirect(req, nil)
+	if err == nil {
+		t.Fatal("expected error for redirect hostname DNS failure")
+	}
+	if !strings.Contains(err.Error(), "DNS resolution failed") {
+		t.Errorf("error = %q, want mention of DNS resolution failed", err.Error())
+	}
+}
+
 func TestMCPSecurityOnBlocked_URLCallback(t *testing.T) {
 	t.Parallel()
 

@@ -364,6 +364,19 @@ func TestPager_NilClient(t *testing.T) {
 	}
 }
 
+func TestPager_NilStdHTTPClient(t *testing.T) {
+	t.Parallel()
+
+	pager := NewPagerFromHTTPClient[string](nil, "https://example.com/api", nil)
+	_, err := pager.NextPage(context.Background())
+	if err == nil {
+		t.Fatal("expected error for nil std http client")
+	}
+	if !strings.Contains(err.Error(), "client must not be nil") {
+		t.Errorf("error = %q, want mention of nil client", err.Error())
+	}
+}
+
 func TestPager_NextLinkSSRF_DifferentHost(t *testing.T) {
 	t.Parallel()
 

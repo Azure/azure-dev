@@ -383,8 +383,13 @@ var redirectBlockedHosts = map[string]bool{
 	"100.100.100.200":          true,
 }
 
+// redirectLookupHost resolves redirect hostnames to IP addresses.
+// Overridable in tests.
+var redirectLookupHost = net.LookupHost
+
 // SSRFSafeRedirect is an [http.Client] CheckRedirect function that blocks
-// redirects to private networks and cloud metadata endpoints. It prevents
+// redirects to private/loopback IP literals, hostnames that resolve to private
+// networks, and cloud metadata endpoints. It prevents
 // redirect-based SSRF attacks where an attacker-controlled URL redirects to
 // an internal service.
 //
@@ -431,6 +436,24 @@ func SSRFSafeRedirect(req *http.Request, via []*http.Request) error {
 		// Check IPv6 encoding variants (IPv4-compatible, IPv4-translated)
 		// that embed private IPv4 addresses but aren't caught by Go's
 		// net.IP classifier methods.
+		if err := checkIPEncodingVariants(ip, host); err != nil {
+			return err
+		}
+	}
+
+	// Resolve hostnames and block redirects to private/loopback resolved IPs.
+	ips, err := redirectLookupHost(host)
+	if err != nil {
+		return fmt.Errorf("redirect host %s DNS resolution failed (SSRF protection): %w", host, err)
+	}
+	for _, rawIP := range ips {
+		ip := net.ParseIP(rawIP)
+		if ip == nil {
+			continue
+		}
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
+			return fmt.Errorf("redirect host %s resolved to private/loopback IP %s blocked (SSRF protection)", host, ip)
+		}
 		if err := checkIPEncodingVariants(ip, host); err != nil {
 			return err
 		}

@@ -22,7 +22,8 @@ import (
 //
 // Usage:
 //
-//	tp, err := azdext.NewTokenProvider(client, nil)
+//	ctx := context.Background()
+//	tp, err := azdext.NewTokenProvider(ctx, client, nil)
 //	// use tp as azcore.TokenCredential with any Azure SDK client
 type TokenProvider struct {
 	credential azcore.TokenCredential

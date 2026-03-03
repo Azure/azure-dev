@@ -51,7 +51,8 @@ var _ HTTPDoer = (*ResilientClient)(nil)
 // ResilientClientOptions configures a [ResilientClient].
 type ResilientClientOptions struct {
 	// MaxRetries is the maximum number of retry attempts for transient failures.
-	// Defaults to 3.
+	// A value of 0 disables retries.
+	// A negative value uses the default (3).
 	MaxRetries int
 
 	// InitialDelay is the base delay before the first retry. Subsequent retries
@@ -76,7 +77,7 @@ type ResilientClientOptions struct {
 
 // defaults fills zero-value fields with production defaults.
 func (o *ResilientClientOptions) defaults() {
-	if o.MaxRetries <= 0 {
+	if o.MaxRetries < 0 {
 		o.MaxRetries = 3
 	}
 
@@ -100,7 +101,9 @@ func (o *ResilientClientOptions) defaults() {
 // resolved from the request URL via the [ScopeDetector].
 func NewResilientClient(tokenProvider azcore.TokenCredential, opts *ResilientClientOptions) *ResilientClient {
 	if opts == nil {
-		opts = &ResilientClientOptions{}
+		opts = &ResilientClientOptions{
+			MaxRetries: 3,
+		}
 	}
 
 	opts.defaults()

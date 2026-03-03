@@ -337,7 +337,7 @@ func (m *Manager) updateViaMSI(ctx context.Context, cfg *UpdateConfig, writer io
 	// Spawn msiexec detached so it can replace the running azd binary.
 	// msiexec cannot overwrite a locked executable; by detaching, azd can exit
 	// and release the file lock before msiexec attempts the replacement.
-	cmd := osexec.Command("msiexec", args...)
+	cmd := osexec.Command("msiexec", args...) //nolint:gosec // args are constructed from controlled constants, not user input
 	cmd.SysProcAttr = newDetachedSysProcAttr()
 	if err := cmd.Start(); err != nil {
 		return newUpdateError(CodeReplaceFailed, fmt.Errorf("failed to start msiexec: %w", err))

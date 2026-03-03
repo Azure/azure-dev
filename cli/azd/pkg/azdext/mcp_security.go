@@ -250,9 +250,16 @@ func (p *MCPSecurityPolicy) checkIP(ip net.IP, originalHost string) error {
 // gap between the symlink resolution performed here and the caller's
 // subsequent file operation. An adversary with write access to the filesystem
 // could create or modify a symlink between the check and the use. This is a
-// fundamental limitation of path-based validation on POSIX systems. Callers
-// performing security-sensitive file operations should prefer O_NOFOLLOW or
-// use file-descriptor-based approaches where possible.
+// fundamental limitation of path-based validation on POSIX systems.
+//
+// Mitigations callers should consider:
+//   - Use O_NOFOLLOW when opening files after validation (prevents symlink
+//     following at the final component).
+//   - Use file-descriptor-based approaches (openat2 with RESOLVE_BENEATH on
+//     Linux 5.6+) where possible.
+//   - Avoid writing to directories that untrusted users can modify.
+//   - Consider validating the opened fd's path post-open via /proc/self/fd/N
+//     or fstat.
 func (p *MCPSecurityPolicy) CheckPath(path string) error {
 	p.mu.RLock()
 	fn := p.onBlocked

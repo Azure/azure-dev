@@ -176,7 +176,7 @@ func (p *Pager[T]) NextPage(ctx context.Context) (*PageResponse[T], error) {
 		return nil, &PaginationError{
 			StatusCode: resp.StatusCode,
 			URL:        p.nextURL,
-			Body:       string(body),
+			Body:       sanitizeErrorBody(string(body)),
 		}
 	}
 
@@ -279,11 +279,20 @@ func (p *Pager[T]) Collect(ctx context.Context) ([]T, error) {
 	return all, nil
 }
 
+// maxPaginationErrorBodyLen limits the response body length stored in
+// PaginationError to prevent sensitive data leakage through error messages.
+// Response bodies from non-2xx pages may contain credentials, tokens, or
+// other secrets embedded by the upstream service.
+const maxPaginationErrorBodyLen = 1024
+
 // PaginationError is returned when a page request receives a non-2xx response.
 type PaginationError struct {
 	StatusCode int
 	URL        string
-	Body       string
+	// Body is a truncated, sanitized excerpt of the error response body for
+	// diagnostics. It is capped at [maxPaginationErrorBodyLen] bytes and
+	// stripped of control characters to prevent log forging.
+	Body string
 }
 
 func (e *PaginationError) Error() string {
@@ -291,6 +300,33 @@ func (e *PaginationError) Error() string {
 		"azdext.Pager: page request returned HTTP %d (url=%s)",
 		e.StatusCode, redactURL(e.URL),
 	)
+}
+
+// sanitizeErrorBody truncates and strips control characters from an error
+// response body to prevent log forging and sensitive data leakage.
+func sanitizeErrorBody(body string) string {
+	if len(body) > maxPaginationErrorBodyLen {
+		body = body[:maxPaginationErrorBodyLen] + "...[truncated]"
+	}
+	return stripControlChars(body)
+}
+
+// stripControlChars replaces ASCII control characters (except tab) with a
+// space to prevent log forging via CR/LF injection or terminal escape
+// sequences. Tab (0x09) is preserved as it appears in legitimate JSON.
+func stripControlChars(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if r < 0x20 && r != '\t' {
+			b.WriteRune(' ')
+		} else if r == 0x7F {
+			b.WriteRune(' ')
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // redactURL strips query parameters and fragments from a URL to avoid leaking

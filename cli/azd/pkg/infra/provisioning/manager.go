@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -32,7 +33,7 @@ type Manager struct {
 	serviceLocator      ioc.ServiceLocator
 	defaultProvider     DefaultProviderResolver
 	envManager          environment.Manager
-	env                 *environment.Environment
+	lazyEnv             *lazy.Lazy[*environment.Environment]
 	console             input.Console
 	provider            Provider
 	alphaFeatureManager *alpha.FeatureManager
@@ -101,7 +102,12 @@ func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 		m.console.StopSpinner(ctx, "Didn't find new changes.", input.StepSkipped)
 	}
 
-	if err := UpdateEnvironment(ctx, deployResult.Deployment.Outputs, m.env, m.envManager); err != nil {
+	env, err := m.lazyEnv.GetValue()
+	if err != nil {
+		return nil, fmt.Errorf("getting environment: %w", err)
+	}
+
+	if err := UpdateEnvironment(ctx, deployResult.Deployment.Outputs, env, m.envManager); err != nil {
 		return nil, fmt.Errorf("updating environment with deployment outputs: %w", err)
 	}
 
@@ -109,7 +115,7 @@ func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 	if !filepath.IsAbs(infraRoot) {
 		infraRoot = filepath.Join(m.projectPath, m.options.Path)
 	}
-	bindMountOperations, err := azdFileShareUploadOperations(infraRoot, *m.env)
+	bindMountOperations, err := azdFileShareUploadOperations(infraRoot, *env)
 	azdOperationsEnabled := m.alphaFeatureManager.IsEnabled(AzdOperationsFeatureKey)
 	if !azdOperationsEnabled && len(bindMountOperations) > 0 {
 		m.console.Message(ctx, ErrBindMountOperationDisabled.Error())
@@ -119,7 +125,7 @@ func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 			return nil, fmt.Errorf("looking for azd fileShare upload operations: %w", err)
 		}
 		if err := doBindMountOperation(
-			ctx, bindMountOperations, *m.env, m.console, m.fileShareService, m.cloud.StorageEndpointSuffix); err != nil {
+			ctx, bindMountOperations, *env, m.console, m.fileShareService, m.cloud.StorageEndpointSuffix); err != nil {
 			return nil, fmt.Errorf("error running bind mount operation: %w", err)
 		}
 	}
@@ -298,14 +304,19 @@ func (m *Manager) Destroy(ctx context.Context, options DestroyOptions) (*Destroy
 		return nil, fmt.Errorf("error deleting Azure resources: %w", err)
 	}
 
+	env, err := m.lazyEnv.GetValue()
+	if err != nil {
+		return nil, fmt.Errorf("getting environment: %w", err)
+	}
+
 	// Remove any outputs from the template from the environment since destroying the infrastructure
 	// invalidated them all.
 	for _, key := range destroyResult.InvalidatedEnvKeys {
-		m.env.DotenvDelete(key)
+		env.DotenvDelete(key)
 	}
 
 	// Update environment files to remove invalid infrastructure parameters
-	if err := m.envManager.Save(ctx, m.env); err != nil {
+	if err := m.envManager.Save(ctx, env); err != nil {
 		return nil, fmt.Errorf("saving environment: %w", err)
 	}
 
@@ -426,7 +437,7 @@ func NewManager(
 	serviceLocator ioc.ServiceLocator,
 	defaultProvider DefaultProviderResolver,
 	envManager environment.Manager,
-	env *environment.Environment,
+	lazyEnv *lazy.Lazy[*environment.Environment],
 	console input.Console,
 	alphaFeatureManager *alpha.FeatureManager,
 	fileShareService storage.FileShareService,
@@ -436,7 +447,7 @@ func NewManager(
 		serviceLocator:      serviceLocator,
 		defaultProvider:     defaultProvider,
 		envManager:          envManager,
-		env:                 env,
+		lazyEnv:             lazyEnv,
 		console:             console,
 		alphaFeatureManager: alphaFeatureManager,
 		fileShareService:    fileShareService,

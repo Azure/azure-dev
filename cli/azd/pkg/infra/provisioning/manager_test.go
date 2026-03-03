@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/test"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
@@ -49,7 +50,7 @@ func TestProvisionInitializesEnvironment(t *testing.T) {
 		mockContext.Container,
 		defaultProvider,
 		envManager,
-		env,
+		lazy.From(env),
 		mockContext.Console,
 		mockContext.AlphaFeaturesManager,
 		nil,
@@ -76,7 +77,7 @@ func TestManagerPreview(t *testing.T) {
 		mockContext.Container,
 		defaultProvider,
 		envManager,
-		env,
+		lazy.From(env),
 		mockContext.Console,
 		mockContext.AlphaFeaturesManager,
 		nil,
@@ -105,7 +106,7 @@ func TestManagerGetState(t *testing.T) {
 		mockContext.Container,
 		defaultProvider,
 		envManager,
-		env,
+		lazy.From(env),
 		mockContext.Console,
 		mockContext.AlphaFeaturesManager,
 		nil,
@@ -134,7 +135,7 @@ func TestManagerDeploy(t *testing.T) {
 		mockContext.Container,
 		defaultProvider,
 		envManager,
-		env,
+		lazy.From(env),
 		mockContext.Console,
 		mockContext.AlphaFeaturesManager,
 		nil,
@@ -169,7 +170,7 @@ func TestManagerDestroyWithPositiveConfirmation(t *testing.T) {
 		mockContext.Container,
 		defaultProvider,
 		envManager,
-		env,
+		lazy.From(env),
 		mockContext.Console,
 		mockContext.AlphaFeaturesManager,
 		nil,
@@ -205,7 +206,7 @@ func TestManagerDestroyWithNegativeConfirmation(t *testing.T) {
 		mockContext.Container,
 		defaultProvider,
 		envManager,
-		env,
+		lazy.From(env),
 		mockContext.Console,
 		mockContext.AlphaFeaturesManager,
 		nil,

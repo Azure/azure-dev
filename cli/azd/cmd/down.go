@@ -19,7 +19,6 @@ import (
 	inf "github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -68,7 +67,7 @@ func newDownCmd() *cobra.Command {
 type downAction struct {
 	flags               *downFlags
 	args                []string
-	serviceLocator      ioc.ServiceLocator
+	provisionManager    *provisioning.Manager
 	importManager       *project.ImportManager
 	lazyEnv             *lazy.Lazy[*environment.Environment]
 	envManager          environment.Manager
@@ -80,7 +79,7 @@ type downAction struct {
 func newDownAction(
 	args []string,
 	flags *downFlags,
-	serviceLocator ioc.ServiceLocator,
+	provisionManager *provisioning.Manager,
 	lazyEnv *lazy.Lazy[*environment.Environment],
 	envManager environment.Manager,
 	projectConfig *project.ProjectConfig,
@@ -90,7 +89,7 @@ func newDownAction(
 ) actions.Action {
 	return &downAction{
 		flags:               flags,
-		serviceLocator:      serviceLocator,
+		provisionManager:    provisionManager,
 		lazyEnv:             lazyEnv,
 		envManager:          envManager,
 		console:             console,
@@ -110,18 +109,6 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	startTime := time.Now()
 
-	// Check if there are any environments before proceeding
-	envList, err := a.envManager.List(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("listing environments: %w", err)
-	}
-	if len(envList) == 0 {
-		return nil, &internal.ErrorWithSuggestion{
-			Err:        errors.New("no environments found"),
-			Suggestion: "Run \"azd init\" or \"azd env new\" to create one",
-		}
-	}
-
 	// Get the environment non-interactively (respects -e flag or default environment)
 	env, err := a.lazyEnv.GetValue()
 	if err != nil {
@@ -134,17 +121,12 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 		if errors.Is(err, environment.ErrNameNotSpecified) {
 			return nil, &internal.ErrorWithSuggestion{
-				Err:        errors.New("no environment selected"),
-				Suggestion: "Use \"azd env select\" to set a default environment, or run \"azd down -e <name>\" to target a specific environment",
+				Err: errors.New("no environment selected"),
+				Suggestion: "Run \"azd init\" or \"azd env new\" to create an environment, " +
+					"\"azd env select\" to set a default, or run \"azd down -e <name>\" to target a specific environment",
 			}
 		}
 		return nil, err
-	}
-
-	// Resolve provisioning manager after env check to avoid premature interactive prompts
-	var provisionManager *provisioning.Manager
-	if err := a.serviceLocator.Resolve(&provisionManager); err != nil {
-		return nil, fmt.Errorf("getting provisioning manager: %w", err)
 	}
 
 	infra, err := a.importManager.ProjectInfrastructure(ctx, a.projectConfig)
@@ -180,12 +162,12 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 
 		layer.Mode = provisioning.ModeDestroy
-		if err := provisionManager.Initialize(ctx, a.projectConfig.Path, layer); err != nil {
+		if err := a.provisionManager.Initialize(ctx, a.projectConfig.Path, layer); err != nil {
 			return nil, fmt.Errorf("initializing provisioning manager: %w", err)
 		}
 
 		destroyOptions := provisioning.NewDestroyOptions(a.flags.forceDelete, a.flags.purgeDelete)
-		_, err := provisionManager.Destroy(ctx, destroyOptions)
+		_, err := a.provisionManager.Destroy(ctx, destroyOptions)
 		if errors.Is(err, inf.ErrDeploymentsNotFound) || errors.Is(err, inf.ErrDeploymentResourcesNotFound) {
 			a.console.MessageUxItem(ctx, &ux.DoneMessage{Message: "No Azure resources were found."})
 		} else if err != nil {

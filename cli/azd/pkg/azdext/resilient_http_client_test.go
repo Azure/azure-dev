@@ -62,9 +62,11 @@ func TestResilientClient_AddsDefaultHeaders(t *testing.T) {
 	t.Parallel()
 
 	var gotUserAgent string
+	var gotClientRequestID string
 	var gotCorrelationID string
 	transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		gotUserAgent = r.Header.Get(userAgentHeaderName)
+		gotClientRequestID = r.Header.Get(clientRequestIDHeaderName)
 		gotCorrelationID = r.Header.Get(msCorrelationIDHeaderName)
 		return &http.Response{
 			StatusCode: http.StatusOK,
@@ -84,8 +86,14 @@ func TestResilientClient_AddsDefaultHeaders(t *testing.T) {
 	if gotUserAgent != defaultUserAgent {
 		t.Errorf("User-Agent = %q, want %q", gotUserAgent, defaultUserAgent)
 	}
+	if gotClientRequestID == "" {
+		t.Fatal("expected x-ms-client-request-id to be set")
+	}
 	if gotCorrelationID == "" {
 		t.Fatal("expected x-ms-correlation-request-id to be set")
+	}
+	if gotCorrelationID != gotClientRequestID {
+		t.Fatalf("expected correlation IDs to match, got client=%q correlation=%q", gotClientRequestID, gotCorrelationID)
 	}
 }
 

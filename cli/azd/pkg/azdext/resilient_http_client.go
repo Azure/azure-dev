@@ -32,6 +32,7 @@ const (
 	maxRetryBodyDrain int64 = 1 << 20 // 1 MB
 
 	userAgentHeaderName       = "User-Agent"
+	clientRequestIDHeaderName = "x-ms-client-request-id"
 	msCorrelationIDHeaderName = "x-ms-correlation-request-id"
 	defaultUserAgent          = "azdext-resilient-client"
 )
@@ -39,6 +40,8 @@ const (
 // ResilientClient is an HTTP client with built-in retry, exponential backoff,
 // timeout, and optional bearer-token injection. It is designed for extension
 // authors who need to call Azure REST APIs directly.
+// For full Azure SDK HTTP pipeline behavior (telemetry, logging, and
+// policy-chain extensibility), prefer runtime.NewPipeline with TokenProvider.
 //
 // Usage:
 //
@@ -270,8 +273,13 @@ func (rc *ResilientClient) setRequestHeaders(req *http.Request) {
 	if req.Header.Get(userAgentHeaderName) == "" {
 		req.Header.Set(userAgentHeaderName, defaultUserAgent)
 	}
+	correlationID := req.Header.Get(clientRequestIDHeaderName)
+	if correlationID == "" {
+		correlationID = uuid.NewString()
+		req.Header.Set(clientRequestIDHeaderName, correlationID)
+	}
 	if req.Header.Get(msCorrelationIDHeaderName) == "" {
-		req.Header.Set(msCorrelationIDHeaderName, uuid.NewString())
+		req.Header.Set(msCorrelationIDHeaderName, correlationID)
 	}
 }
 

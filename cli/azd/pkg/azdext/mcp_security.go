@@ -383,10 +383,6 @@ var redirectBlockedHosts = map[string]bool{
 	"100.100.100.200":          true,
 }
 
-// redirectLookupHost resolves redirect hostnames to IP addresses.
-// Overridable in tests.
-var redirectLookupHost = net.LookupHost
-
 // SSRFSafeRedirect is an [http.Client] CheckRedirect function that blocks
 // redirects to private/loopback IP literals, hostnames that resolve to private
 // networks, and cloud metadata endpoints. It prevents
@@ -397,6 +393,10 @@ var redirectLookupHost = net.LookupHost
 //
 //	client := &http.Client{CheckRedirect: azdext.SSRFSafeRedirect}
 func SSRFSafeRedirect(req *http.Request, via []*http.Request) error {
+	return ssrfSafeRedirect(req, via, net.LookupHost)
+}
+
+func ssrfSafeRedirect(req *http.Request, via []*http.Request, lookupHost func(string) ([]string, error)) error {
 	const maxRedirects = 10
 	if len(via) >= maxRedirects {
 		return fmt.Errorf("stopped after %d redirects", maxRedirects)
@@ -442,7 +442,7 @@ func SSRFSafeRedirect(req *http.Request, via []*http.Request) error {
 	}
 
 	// Resolve hostnames and block redirects to private/loopback resolved IPs.
-	ips, err := redirectLookupHost(host)
+	ips, err := lookupHost(host)
 	if err != nil {
 		return fmt.Errorf("redirect host %s DNS resolution failed (SSRF protection): %w", host, err)
 	}

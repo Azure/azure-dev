@@ -20,6 +20,11 @@ import (
 // gRPC and delegates to [azidentity.AzureDeveloperCLICredential] for the
 // actual token acquisition flow.
 //
+// Use TokenProvider when extensions need azd-aligned tenant selection and a
+// ready-to-use [azcore.TokenCredential] for Azure SDK clients. If tenant
+// resolution and credential selection are managed by the extension already,
+// constructing [azidentity.AzureDeveloperCLICredential] directly is sufficient.
+//
 // Usage:
 //
 //	ctx := context.Background()

@@ -6,7 +6,7 @@ package azdext
 import (
 	"errors"
 	"net/url"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -68,7 +68,9 @@ func defaultRules() []scopeRule {
 		{match: suffix(".file.core.windows.net"), scope: "https://storage.azure.com/.default"},
 		{match: suffix(".dfs.core.windows.net"), scope: "https://storage.azure.com/.default"},
 
-		// Azure Container Registry
+		// Azure Container Registry (control-plane operations).
+		// Data-plane operations may require a different scope, so extensions can
+		// override this mapping via CustomRules.
 		{match: suffix(".azurecr.io"), scope: "https://management.azure.com/.default"},
 
 		// Azure Cognitive Services / OpenAI
@@ -91,7 +93,10 @@ func defaultRules() []scopeRule {
 		// Azure Cosmos DB
 		{match: suffix(".documents.azure.com"), scope: "https://cosmos.azure.com/.default"},
 
-		// Azure Event Hubs
+		// Azure Event Hubs / Service Bus host suffix ambiguity:
+		// both services use .servicebus.windows.net. The default maps to Event Hubs;
+		// extensions targeting Service Bus should override with CustomRules:
+		// ".servicebus.windows.net" -> "https://servicebus.azure.net/.default".
 		{match: suffix(".servicebus.windows.net"), scope: "https://eventhubs.azure.net/.default"},
 
 		// Azure App Configuration
@@ -110,7 +115,7 @@ func NewScopeDetector(opts *ScopeDetectorOptions) *ScopeDetector {
 		for k := range opts.CustomRules {
 			keys = append(keys, k)
 		}
-		sort.Strings(keys)
+		slices.Sort(keys)
 
 		for _, hostSuffix := range keys {
 			if hostSuffix == "" {

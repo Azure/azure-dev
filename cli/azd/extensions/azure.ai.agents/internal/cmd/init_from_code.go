@@ -438,10 +438,12 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 
 	var modelConfigChoice string
 	if a.flags.projectResourceId == "" {
+		defaultIndex := int32(0)
 		modelConfigResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 			Options: &azdext.SelectOptions{
-				Message: "How would you like to configure a model for your agent?",
-				Choices: modelConfigChoices,
+				Message:       "How would you like to configure a model for your agent?",
+				Choices:       modelConfigChoices,
+				SelectedIndex: &defaultIndex,
 			},
 		})
 		if err != nil {

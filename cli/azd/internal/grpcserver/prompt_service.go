@@ -596,6 +596,30 @@ func (s *promptService) PromptAiModel(
 	}
 
 	if s.globalOptions.NoPrompt {
+		if req.DefaultValue != "" {
+			for i, m := range models {
+				if strings.EqualFold(m.Name, req.DefaultValue) {
+					var protoModel *azdext.AiModel
+					if err := mapper.Convert(&models[i], &protoModel); err != nil {
+						return nil, aiStatusError(
+							codes.Internal,
+							azdext.AiErrorReasonModelNotFound,
+							fmt.Sprintf("failed to convert default model %q: %v", req.DefaultValue, err),
+							map[string]string{"model_name": req.DefaultValue},
+						)
+					}
+					return &azdext.PromptAiModelResponse{Model: protoModel}, nil
+				}
+			}
+
+			return nil, aiStatusError(
+				codes.NotFound,
+				azdext.AiErrorReasonModelNotFound,
+				fmt.Sprintf("default model %q not found in available models", req.DefaultValue),
+				map[string]string{"model_name": req.DefaultValue},
+			)
+		}
+
 		return nil, aiStatusError(
 			codes.FailedPrecondition,
 			azdext.AiErrorReasonInteractiveRequired,

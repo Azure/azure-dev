@@ -52,11 +52,11 @@ azd already tracks how it was installed via `.installed-by.txt` placed alongside
 ### Version Check
 
 - **Endpoint**: `https://aka.ms/azure-dev/versions/cli/latest` — returns latest stable semver (plaintext)
-- **Logic**: `main.go` → `fetchLatestVersion()` — async check at startup, cached in `~/.azd/update-check.json`
+- **Logic**: `main.go` → `fetchLatestVersion()` — async check at startup, cached in `{AZD_CONFIG_DIR or ~/.azd}/update-check.json`
 - **Skip**: `AZD_SKIP_UPDATE_CHECK=true` disables the check
 - Already shows platform-specific upgrade instructions based on install method
 
-**Current cache format** (`~/.azd/update-check.json`):
+**Current cache format** (`{AZD_CONFIG_DIR or ~/.azd}/update-check.json`):
 ```json
 {"version":"1.23.6","expiresOn":"2026-02-26T01:24:50Z"}
 ```
@@ -114,7 +114,7 @@ The extension manager (`pkg/extensions/manager.go`) already implements a nearly 
 
 ### 1. Configuration
 
-Two new config keys via `azd config`:
+Three config keys via `azd config`:
 
 ```bash
 azd config set updates.autoUpdate on     # or "off" (default: off)
@@ -140,7 +140,7 @@ This is the same version string baked into the binary at build time. The build n
 
 **Client comparison**: Parse the build number from the `daily.N` suffix. Compare local build number (from the running binary's version string) against remote — higher number means update available.
 
-**Cache format** (`~/.azd/update-check.json`):
+**Cache format** (`{AZD_CONFIG_DIR or ~/.azd}/update-check.json`):
 ```json
 {
   "channel": "daily",

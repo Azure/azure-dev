@@ -551,7 +551,7 @@ func Test_PromptExplanationWithConsent_SavedSkipDisplaysWarning(t *testing.T) {
 	require.True(t, found, "warning should mention always skip and how to unset it")
 }
 
-func Test_PromptTroubleshootingWithConsent_AlwaysSkipSavesAndPersistsConfig(t *testing.T) {
+func Test_PromptExplanationWithConsent_AlwaysSkipSavesAndPersistsConfig(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	cfg := config.NewEmptyConfig()
 	mockContext.ConfigManager.WithConfig(cfg)

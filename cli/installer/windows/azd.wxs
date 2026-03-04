@@ -12,7 +12,7 @@
 <?define BaseProductName = "Azure Developer CLI"?>
 <?define ProductFolder = "Azure Dev CLI"?>
 
-<!-- Define a unique UpgradeCode per platform -->
+<!-- Define a unique UpgradeCode per platform and channel (release vs. dev) -->
 <?if $(var.Platform) = "x64"?>
     <?if $(var.ReleaseBuild) = "true"?>
         <?define UpgradeCode = "37533D38-361D-4CDB-939C-B05A9A17B2DA"?>

@@ -926,8 +926,8 @@ func Test_selectModelNoPrompt(t *testing.T) {
 			Locations: []string{"eastus", "westus"},
 		},
 		{
-			Name:   "gpt-35-turbo",
-			Format: "OpenAI",
+			Name:      "gpt-35-turbo",
+			Format:    "OpenAI",
 			Locations: []string{"eastus"},
 		},
 	}

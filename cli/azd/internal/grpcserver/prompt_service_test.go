@@ -20,6 +20,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockprompt"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func Test_PromptService_Confirm_NoPromptWithDefault(t *testing.T) {
@@ -905,4 +907,158 @@ func Test_findDefaultIndex(t *testing.T) {
 func Test_findDefaultIndex_EmptyChoices(t *testing.T) {
 	result := findDefaultIndex([]*ux.SelectChoice{}, "some-value")
 	require.Nil(t, result)
+}
+
+// mockAiModelProvider implements aiModelProvider for unit tests.
+type mockAiModelProvider struct {
+	mock.Mock
+}
+
+func (m *mockAiModelProvider) ListModels(
+	ctx context.Context, subscriptionId string, locations []string,
+) ([]ai.AiModel, error) {
+	args := m.Called(ctx, subscriptionId, locations)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]ai.AiModel), args.Error(1)
+}
+
+func (m *mockAiModelProvider) ListUsages(
+	ctx context.Context, subscriptionId string, location string,
+) ([]ai.AiModelUsage, error) {
+	args := m.Called(ctx, subscriptionId, location)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]ai.AiModelUsage), args.Error(1)
+}
+
+func (m *mockAiModelProvider) FilterModelsByQuotaAcrossLocations(
+	ctx context.Context,
+	subscriptionId string,
+	models []ai.AiModel,
+	locations []string,
+	minRemaining float64,
+) ([]ai.AiModel, error) {
+	args := m.Called(ctx, subscriptionId, models, locations, minRemaining)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]ai.AiModel), args.Error(1)
+}
+
+func (m *mockAiModelProvider) ListLocationsWithQuota(
+	ctx context.Context,
+	subscriptionId string,
+	allowedLocations []string,
+	requirements []ai.QuotaRequirement,
+) ([]string, error) {
+	args := m.Called(ctx, subscriptionId, allowedLocations, requirements)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]string), args.Error(1)
+}
+
+func (m *mockAiModelProvider) ListModelLocationsWithQuota(
+	ctx context.Context,
+	subscriptionId string,
+	modelName string,
+	allowedLocations []string,
+	minRemaining float64,
+) ([]ai.ModelLocationQuota, error) {
+	args := m.Called(ctx, subscriptionId, modelName, allowedLocations, minRemaining)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]ai.ModelLocationQuota), args.Error(1)
+}
+
+// newPromptServiceWithMockAi creates a promptService with a mock aiModelProvider,
+// used to test non-interactive (NoPrompt) AI model selection paths.
+func newPromptServiceWithMockAi(
+	globalOptions *internal.GlobalCommandOptions,
+	mockAi *mockAiModelProvider,
+) *promptService {
+	return &promptService{
+		aiModelService: mockAi,
+		globalOptions:  globalOptions,
+		lock:           newPromptLock(),
+	}
+}
+
+func Test_PromptService_PromptAiModel_NoPromptDefaultMatch(t *testing.T) {
+	mockAi := &mockAiModelProvider{}
+	globalOptions := &internal.GlobalCommandOptions{NoPrompt: true}
+	service := newPromptServiceWithMockAi(globalOptions, mockAi)
+
+	availableModels := []ai.AiModel{
+		{Name: "gpt-4o", Format: "OpenAI"},
+		{Name: "gpt-4o-mini", Format: "OpenAI"},
+	}
+	mockAi.On("ListModels", mock.Anything, "sub-123", []string(nil)).
+		Return(availableModels, nil)
+
+	resp, err := service.PromptAiModel(context.Background(), &azdext.PromptAiModelRequest{
+		AzureContext: &azdext.AzureContext{
+			Scope: &azdext.AzureScope{SubscriptionId: "sub-123"},
+		},
+		DefaultValue: "gpt-4o",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, resp.Model)
+	require.Equal(t, "gpt-4o", resp.Model.Name)
+	mockAi.AssertExpectations(t)
+}
+
+func Test_PromptService_PromptAiModel_NoPromptDefaultMissing(t *testing.T) {
+	mockAi := &mockAiModelProvider{}
+	globalOptions := &internal.GlobalCommandOptions{NoPrompt: true}
+	service := newPromptServiceWithMockAi(globalOptions, mockAi)
+
+	availableModels := []ai.AiModel{
+		{Name: "gpt-4o", Format: "OpenAI"},
+	}
+	mockAi.On("ListModels", mock.Anything, "sub-123", []string(nil)).
+		Return(availableModels, nil)
+
+	_, err := service.PromptAiModel(context.Background(), &azdext.PromptAiModelRequest{
+		AzureContext: &azdext.AzureContext{
+			Scope: &azdext.AzureScope{SubscriptionId: "sub-123"},
+		},
+		DefaultValue: "nonexistent-model",
+	})
+
+	require.Error(t, err)
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	require.Equal(t, codes.NotFound, st.Code())
+	require.Contains(t, st.Message(), "nonexistent-model")
+	mockAi.AssertExpectations(t)
+}
+
+func Test_PromptService_PromptAiModel_NoPromptNoDefault(t *testing.T) {
+	mockAi := &mockAiModelProvider{}
+	globalOptions := &internal.GlobalCommandOptions{NoPrompt: true}
+	service := newPromptServiceWithMockAi(globalOptions, mockAi)
+
+	availableModels := []ai.AiModel{
+		{Name: "gpt-4o", Format: "OpenAI"},
+	}
+	mockAi.On("ListModels", mock.Anything, "sub-123", []string(nil)).
+		Return(availableModels, nil)
+
+	_, err := service.PromptAiModel(context.Background(), &azdext.PromptAiModelRequest{
+		AzureContext: &azdext.AzureContext{
+			Scope: &azdext.AzureScope{SubscriptionId: "sub-123"},
+		},
+	})
+
+	require.Error(t, err)
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	require.Equal(t, codes.FailedPrecondition, st.Code())
+	mockAi.AssertExpectations(t)
 }

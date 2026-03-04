@@ -23,11 +23,38 @@ import (
 	"google.golang.org/grpc/codes"
 )
 
+// aiModelProvider is the subset of ai.AiModelService methods used by promptService.
+// Defined as an interface to allow mocking in tests.
+type aiModelProvider interface {
+	ListModels(ctx context.Context, subscriptionId string, locations []string) ([]ai.AiModel, error)
+	ListUsages(ctx context.Context, subscriptionId string, location string) ([]ai.AiModelUsage, error)
+	FilterModelsByQuotaAcrossLocations(
+		ctx context.Context,
+		subscriptionId string,
+		models []ai.AiModel,
+		locations []string,
+		minRemaining float64,
+	) ([]ai.AiModel, error)
+	ListLocationsWithQuota(
+		ctx context.Context,
+		subscriptionId string,
+		allowedLocations []string,
+		requirements []ai.QuotaRequirement,
+	) ([]string, error)
+	ListModelLocationsWithQuota(
+		ctx context.Context,
+		subscriptionId string,
+		modelName string,
+		allowedLocations []string,
+		minRemaining float64,
+	) ([]ai.ModelLocationQuota, error)
+}
+
 type promptService struct {
 	azdext.UnimplementedPromptServiceServer
 	prompter        prompt.PromptService
 	resourceService *azapi.ResourceService
-	aiModelService  *ai.AiModelService
+	aiModelService  aiModelProvider
 	globalOptions   *internal.GlobalCommandOptions
 	lock            *promptLock
 }

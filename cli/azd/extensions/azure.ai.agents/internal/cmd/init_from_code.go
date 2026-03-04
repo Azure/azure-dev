@@ -635,7 +635,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 						}
 						return nil, exterrors.Dependency(
 							exterrors.CodePromptFailed,
-							"failed to prompt for deployment selection",
+							fmt.Sprintf("failed to prompt for deployment selection: %v", err),
 							"use --model-deployment to specify a deployment name in non-interactive mode",
 						)
 					}

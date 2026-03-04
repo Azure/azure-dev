@@ -217,10 +217,10 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 		"Existing Microsoft Foundry Project Id to initialize your azd environment with")
 
 	cmd.Flags().StringVarP(&flags.modelDeployment, "model-deployment", "d", "",
-		"Name of an existing model deployment to use from the Foundry project. Only used when paired with an existing Foundry project via --project-id")
+		"Name of an existing model deployment to use from the Foundry project. Only used when paired with an existing Foundry project, either via --project-id or interactive prompts")
 
 	cmd.Flags().StringVar(&flags.model, "model", "",
-		"Name of the AI model to use (e.g., 'gpt-4o'). If not specified, defaults to 'gpt-4.1-mini'. Mutually exclusive with --model-deployment, with --model-deployment being used if both are provided.")
+		"Name of the AI model to use (e.g., 'gpt-4o'). If not specified, defaults to 'gpt-4.1-mini'. Mutually exclusive with --model-deployment, with --model-deployment being used if both are provided")
 
 	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "",
 		"Path or URI to an agent manifest to add to your azd project")
@@ -324,7 +324,8 @@ func ensureProject(ctx context.Context, flags *initFlags, azdClient *azdext.AzdC
 		} else {
 			cwd, err := os.Getwd()
 			if err == nil {
-				initArgs = append(initArgs, "--environment", filepath.Base(cwd)+"-dev")
+				sanitizedDirectoryName := sanitizeAgentName(filepath.Base(cwd))
+				initArgs = append(initArgs, "--environment", sanitizedDirectoryName+"-dev")
 			}
 		}
 

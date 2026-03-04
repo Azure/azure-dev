@@ -125,7 +125,7 @@ extends:
       - template: /eng/pipelines/templates/stages/verify-installers.yml
 
     - ${{ if ne(variables['Build.Reason'], 'Schedule') }}:
-
       - template: /eng/pipelines/templates/stages/sign.yml
 
+    - ${{ if and(ne(variables['Build.Reason'], 'Schedule'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
       - template: /eng/pipelines/templates/stages/publish.yml

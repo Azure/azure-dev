@@ -18,6 +18,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -707,36 +708,44 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		p.console.StopSpinner(ctx, "", input.StepDone)
 	}
 
-	cancelProgress := make(chan bool)
-	defer func() { cancelProgress <- true }()
+	progressCtx, cancelProgress := context.WithCancel(ctx)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	defer func() {
+		cancelProgress()
+		// Wait for the progress reporting goroutine to exit to guarantee stopping the spinner
+		wg.Wait()
+		// Clean up the spinner fully
+		p.console.StopSpinner(ctx, "", input.StepDone)
+	}()
+
 	go func() {
+		defer wg.Done()
 		// Disable reporting progress if needed
 		if use, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_PROVISION_PROGRESS_DISABLE")); err == nil && use {
 			log.Println("Disabling progress reporting since AZD_DEBUG_PROVISION_PROGRESS_DISABLE was set")
-			<-cancelProgress
+			<-progressCtx.Done()
 			return
 		}
 
 		// Report incremental progress
 		progressDisplay := p.deploymentManager.ProgressDisplay(deployment)
-		// Make initial delay shorter to be more responsive in displaying initial progress
-		initialDelay := 3 * time.Second
-		regularDelay := 3 * time.Second
-		timer := time.NewTimer(initialDelay)
+		delay := 3 * time.Second
+		timer := time.NewTimer(delay)
 		queryStartTime := time.Now()
 
 		for {
 			select {
-			case <-cancelProgress:
+			case <-progressCtx.Done():
 				timer.Stop()
 				return
 			case <-timer.C:
-				if err := progressDisplay.ReportProgress(ctx, &queryStartTime); err != nil {
+				if err := progressDisplay.ReportProgress(progressCtx, &queryStartTime); err != nil {
 					// We don't want to fail the whole deployment if a progress reporting error occurs
 					log.Printf("error while reporting progress: %v", err)
 				}
 
-				timer.Reset(regularDelay)
+				timer.Reset(delay)
 			}
 		}
 	}()

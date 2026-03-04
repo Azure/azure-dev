@@ -900,8 +900,6 @@ func (e *initModeRequiredError) ToString(currentIndentation string) string {
 	buf.WriteString("Init cannot continue (interactive prompts disabled)\n")
 	buf.WriteString(separator + "\n\n")
 
-	buf.WriteString("azd init requires an initialization mode when --no-prompt is set.\n\n")
-
 	buf.WriteString("Choose one:\n\n")
 
 	buf.WriteString("  • Minimal (no template)\n")
@@ -920,22 +918,31 @@ func (e *initModeRequiredError) ToString(currentIndentation string) string {
 
 func (e *initModeRequiredError) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
-		Error   string                         `json:"error"`
-		Message string                         `json:"message"`
-		Options []initModeRequiredErrorOptions `json:"options"`
+		Code    string `json:"code"`
+		Message string `json:"message"`
+		Details struct {
+			Type    string                         `json:"type"`
+			Options []initModeRequiredErrorOptions `json:"options"`
+		} `json:"details"`
 	}{
-		Error:   e.Error(),
+		Code:    "initModeRequired",
 		Message: "Init cannot continue (interactive prompts disabled)",
-		Options: []initModeRequiredErrorOptions{
-			{
-				Name:        "minimal",
-				Description: "Creates required azd project files in the current directory.",
-				Command:     "azd init --minimal",
-			},
-			{
-				Name:        "template",
-				Description: "Creates a new project from an azd template.",
-				Command:     "azd init --template <template-id> --environment <environment>",
+		Details: struct {
+			Type    string                         `json:"type"`
+			Options []initModeRequiredErrorOptions `json:"options"`
+		}{
+			Type: "initModeRequired",
+			Options: []initModeRequiredErrorOptions{
+				{
+					Name:        "minimal",
+					Description: "Creates required azd project files in the current directory.",
+					Command:     "azd init --minimal",
+				},
+				{
+					Name:        "template",
+					Description: "Creates a new project from an azd template.",
+					Command:     "azd init --template <template-id> --environment <environment>",
+				},
 			},
 		},
 	})

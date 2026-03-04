@@ -111,6 +111,26 @@ func TestInitNoPromptRequiresMode(t *testing.T) {
 				"should not return InitNoPromptError when --minimal is set")
 		}
 	})
+
+	t.Run("DoesNotErrorWhenTemplateAndEnvironmentProvided", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.Console.SetNoPromptMode(true)
+
+		flags := &initFlags{
+			templatePath: "owner/repo",
+			global:       &internal.GlobalCommandOptions{NoPrompt: true},
+		}
+		flags.EnvironmentName = "myenv"
+
+		action := setupInitAction(t, mockContext, flags)
+
+		err := runActionSafe(*mockContext.Context, action)
+		if err != nil {
+			var noPromptErr *initModeRequiredError
+			require.False(t, errors.As(err, &noPromptErr),
+				"should not return InitNoPromptError when --template and --environment are both set")
+		}
+	})
 }
 
 func TestInitFailFastMissingEnvNonInteractive(t *testing.T) {

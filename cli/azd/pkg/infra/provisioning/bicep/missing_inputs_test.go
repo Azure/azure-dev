@@ -87,7 +87,8 @@ func TestMissingInputsError_Error_NoEnvVars(t *testing.T) {
 	output := err.ToString("")
 
 	assert.NotContains(t, output, "1) Setting environment variables")
-	assert.Contains(t, output, "2) Setting environment configuration")
+	assert.Contains(t, output, "1) Setting environment configuration")
+	assert.NotContains(t, output, "2) Setting environment configuration")
 }
 
 func TestConstraintDetails(t *testing.T) {
@@ -106,28 +107,28 @@ func TestConstraintDetails(t *testing.T) {
 		{
 			name: "MinAndMaxLength",
 			input: MissingInput{
-				Constraints: InputConstraints{MinLength: intPtr(5), MaxLength: intPtr(20)},
+				Constraints: &InputConstraints{MinLength: intPtr(5), MaxLength: intPtr(20)},
 			},
 			expected: []string{"Length: 5–20"},
 		},
 		{
 			name: "MinLengthOnly",
 			input: MissingInput{
-				Constraints: InputConstraints{MinLength: intPtr(3)},
+				Constraints: &InputConstraints{MinLength: intPtr(3)},
 			},
 			expected: []string{"Min length: 3"},
 		},
 		{
 			name: "MaxLengthOnly",
 			input: MissingInput{
-				Constraints: InputConstraints{MaxLength: intPtr(100)},
+				Constraints: &InputConstraints{MaxLength: intPtr(100)},
 			},
 			expected: []string{"Max length: 100"},
 		},
 		{
 			name: "MinAndMaxValue",
 			input: MissingInput{
-				Constraints: InputConstraints{MinValue: intPtr(1), MaxValue: intPtr(100)},
+				Constraints: &InputConstraints{MinValue: intPtr(1), MaxValue: intPtr(100)},
 			},
 			expected: []string{"Value: 1–100"},
 		},
@@ -148,7 +149,7 @@ func TestConstraintDetails(t *testing.T) {
 			input: MissingInput{
 				AllowedValues: []string{"x"},
 				Secure:        true,
-				Constraints:   InputConstraints{MinLength: intPtr(1), MaxLength: intPtr(50)},
+				Constraints:   &InputConstraints{MinLength: intPtr(1), MaxLength: intPtr(50)},
 			},
 			expected: []string{"Allowed values: x", "Length: 1–50", "Secure: true"},
 		},
@@ -208,7 +209,7 @@ func TestMissingInputsError_Error_WithAllDetails(t *testing.T) {
 				ConfigKey:     "infra.parameters.resourceGroupLocation",
 				AllowedValues: []string{"eastus", "westus", "centralus"},
 				Description:   "Location for all resources",
-				Constraints:   InputConstraints{MinLength: intPtr(1), MaxLength: intPtr(50)},
+				Constraints:   &InputConstraints{MinLength: intPtr(1), MaxLength: intPtr(50)},
 			},
 			{
 				Name:        "storageAccountKey",
@@ -252,7 +253,7 @@ func TestMissingInputsError_MarshalJSON(t *testing.T) {
 				EnvVarNames: []string{"AZURE_LOCATION"},
 				ConfigKey:   "infra.parameters.location",
 				Description: "The Azure region",
-				Constraints: InputConstraints{MinLength: intPtr(1)},
+				Constraints: &InputConstraints{MinLength: intPtr(1)},
 			},
 		},
 	}
@@ -261,22 +262,27 @@ func TestMissingInputsError_MarshalJSON(t *testing.T) {
 	require.NoError(t, marshalErr)
 
 	var result struct {
-		Error   string         `json:"error"`
-		Message string         `json:"message"`
-		Inputs  []MissingInput `json:"inputs"`
+		Code    string `json:"code"`
+		Message string `json:"message"`
+		Details struct {
+			Type   string         `json:"type"`
+			Inputs []MissingInput `json:"inputs"`
+		} `json:"details"`
 	}
 	require.NoError(t, json.Unmarshal(jsonData, &result))
 
-	assert.Equal(t, "missing required inputs", result.Error)
+	assert.Equal(t, "missingInputs", result.Code)
 	assert.Equal(t, "Provision cannot continue (interactive prompts disabled)", result.Message)
-	require.Len(t, result.Inputs, 1)
+	assert.Equal(t, "missingInputs", result.Details.Type)
+	require.Len(t, result.Details.Inputs, 1)
 
-	input := result.Inputs[0]
+	input := result.Details.Inputs[0]
 	assert.Equal(t, "location", input.Name)
 	assert.Equal(t, "string", input.Type)
 	assert.Equal(t, "infra.parameters.location", input.ConfigKey)
 	assert.Equal(t, []string{"AZURE_LOCATION"}, input.EnvVarNames)
 	assert.Equal(t, "The Azure region", input.Description)
+	require.NotNil(t, input.Constraints)
 	require.NotNil(t, input.Constraints.MinLength)
 	assert.Equal(t, 1, *input.Constraints.MinLength)
 	assert.Nil(t, input.Constraints.MaxLength)
@@ -296,8 +302,9 @@ func TestMissingInputsError_MarshalJSON_OmitsEmptyConstraints(t *testing.T) {
 	jsonData, marshalErr := err.MarshalJSON()
 	require.NoError(t, marshalErr)
 
-	// Verify that constraint fields with zero values are omitted
+	// Verify that constraints key is omitted entirely when nil
 	raw := string(jsonData)
+	assert.NotContains(t, raw, "constraints")
 	assert.NotContains(t, raw, "minLength")
 	assert.NotContains(t, raw, "maxLength")
 	assert.NotContains(t, raw, "minValue")

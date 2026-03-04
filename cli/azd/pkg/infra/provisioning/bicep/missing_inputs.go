@@ -21,14 +21,14 @@ type InputConstraints struct {
 
 // MissingInput represents a missing required input for infrastructure provisioning.
 type MissingInput struct {
-	Name          string           `json:"name"`
-	Type          string           `json:"type"`
-	Secure        bool             `json:"secure"`
-	Description   string           `json:"description"`
-	EnvVarNames   []string         `json:"envVarNames"`
-	ConfigKey     string           `json:"configKey"`
-	AllowedValues []string         `json:"allowedValues"`
-	Constraints   InputConstraints `json:"constraints"`
+	Name          string            `json:"name"`
+	Type          string            `json:"type"`
+	Secure        bool              `json:"secure"`
+	Description   string            `json:"description,omitempty"`
+	EnvVarNames   []string          `json:"envVarNames,omitempty"`
+	ConfigKey     string            `json:"configKey,omitempty"`
+	AllowedValues []string          `json:"allowedValues,omitempty"`
+	Constraints   *InputConstraints `json:"constraints,omitempty"`
 }
 
 // MissingInputsError is an error that contains information about all missing required inputs.
@@ -90,12 +90,14 @@ func (e *MissingInputsError) ToString(currentIndentation string) string {
 	buf.WriteString(separator + "\n\n")
 	buf.WriteString("You can resolve these by:\n\n")
 
+	optionNum := 1
 	if e.hasEnvVars() {
-		buf.WriteString("1) Setting environment variables\n")
+		buf.WriteString(fmt.Sprintf("%d) Setting environment variables\n", optionNum))
 		buf.WriteString("     azd env set <ENV_VAR_NAME> <value>\n\n")
+		optionNum = 2
 	}
 
-	buf.WriteString("2) Setting environment configuration\n")
+	buf.WriteString(fmt.Sprintf("%d) Setting environment configuration\n", optionNum))
 	buf.WriteString("     azd env config set infra.parameters.<paramName> <value>\n\n")
 
 	buf.WriteString("Then re-run:\n")
@@ -113,6 +115,13 @@ func constraintDetails(input MissingInput) []string {
 	}
 
 	c := input.Constraints
+	if c == nil {
+		if input.Secure {
+			details = append(details, "Secure: true")
+		}
+		return details
+	}
+
 	if c.MinLength != nil && c.MaxLength != nil {
 		details = append(details, fmt.Sprintf("Length: %d–%d", *c.MinLength, *c.MaxLength))
 	} else if c.MinLength != nil {
@@ -149,13 +158,22 @@ func (e *MissingInputsError) hasEnvVars() bool {
 // MarshalJSON implements json.Marshaler for MissingInputsError.
 func (e *MissingInputsError) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
-		Error   string         `json:"error"`
-		Message string         `json:"message"`
-		Inputs  []MissingInput `json:"inputs"`
+		Code    string `json:"code"`
+		Message string `json:"message"`
+		Details struct {
+			Type   string         `json:"type"`
+			Inputs []MissingInput `json:"inputs"`
+		} `json:"details"`
 	}{
-		Error:   e.Error(),
+		Code:    "provisionMissingInputs",
 		Message: "Provision cannot continue (interactive prompts disabled)",
-		Inputs:  e.Inputs,
+		Details: struct {
+			Type   string         `json:"type"`
+			Inputs []MissingInput `json:"inputs"`
+		}{
+			Type:   "provisionMissingInputs",
+			Inputs: e.Inputs,
+		},
 	})
 }
 
@@ -202,7 +220,7 @@ func (p *BicepProvider) buildMissingInputsError(
 			EnvVarNames:   envMapping[prompt.key],
 			ConfigKey:     fmt.Sprintf("infra.parameters.%s", prompt.key),
 			AllowedValues: allowedValues,
-			Constraints: InputConstraints{
+			Constraints: &InputConstraints{
 				MinLength: param.MinLength,
 				MaxLength: param.MaxLength,
 				MinValue:  param.MinValue,

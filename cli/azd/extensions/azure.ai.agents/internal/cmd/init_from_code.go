@@ -920,6 +920,11 @@ func (a *InitFromCodeAction) ensureLocation(ctx context.Context) error {
 }
 
 func (a *InitFromCodeAction) selectNewModel(ctx context.Context) (*azdext.AiModel, error) {
+	defaultModel := "gpt-4.1-mini"
+	if a.flags.model != "" {
+		defaultModel = a.flags.model
+	}
+
 	promptReq := &azdext.PromptAiModelRequest{
 		AzureContext: a.azureContext,
 		SelectOptions: &azdext.SelectOptions{
@@ -931,7 +936,7 @@ func (a *InitFromCodeAction) selectNewModel(ctx context.Context) (*azdext.AiMode
 		Filter: &azdext.AiModelFilterOptions{
 			Locations: []string{a.azureContext.Scope.Location},
 		},
-		DefaultValue: "gpt-4.1-mini",
+		DefaultValue: defaultModel,
 	}
 
 	modelResp, err := a.azdClient.Prompt().PromptAiModel(ctx, promptReq)

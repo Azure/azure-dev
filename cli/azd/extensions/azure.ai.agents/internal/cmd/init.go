@@ -47,6 +47,7 @@ type initFlags struct {
 	*rootFlagsDefinition
 	projectResourceId string
 	modelDeployment   string
+	model             string
 	manifestPointer   string
 	src               string
 	host              string
@@ -217,6 +218,9 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 
 	cmd.Flags().StringVarP(&flags.modelDeployment, "model-deployment", "d", "",
 		"Name of an existing model deployment to use from the Foundry project. Only used when paired with an existing Foundry project via --project-id")
+
+	cmd.Flags().StringVar(&flags.model, "model", "",
+		"Name of the AI model to use (e.g., 'gpt-4o'). If not specified, defaults to 'gpt-4.1-mini'. Mutually exclusive with --model-deployment, with --model-deployment being used if both are provided.")
 
 	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "",
 		"Path or URI to an agent manifest to add to your azd project")

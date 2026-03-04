@@ -115,7 +115,8 @@ func main() {
 	}
 
 	latest := make(chan *update.VersionInfo)
-	go fetchLatestVersion(latest)
+	bgCtx, bgCancel := context.WithTimeout(context.Background(), 60*time.Second)
+	go fetchLatestVersion(bgCtx, latest)
 
 	rootContainer := ioc.NewNestedContainer(nil)
 
@@ -137,6 +138,7 @@ func main() {
 	}
 
 	versionInfo, ok := <-latest
+	bgCancel()
 
 	// If we were able to fetch a latest version, check to see if we are up to date and
 	// print a warning if we are not. Note that we don't print this warning when the CLI version
@@ -205,7 +207,7 @@ func main() {
 // fetchLatestVersion checks for a newer version of the CLI using the user's
 // configured channel and sends the result across the channel, which it then closes.
 // If the latest version can not be determined, the channel is closed without writing a value.
-func fetchLatestVersion(result chan<- *update.VersionInfo) {
+func fetchLatestVersion(ctx context.Context, result chan<- *update.VersionInfo) {
 	defer close(result)
 
 	// Allow the user to skip the update check if they wish, by setting AZD_SKIP_UPDATE_CHECK to
@@ -229,8 +231,8 @@ func fetchLatestVersion(result chan<- *update.VersionInfo) {
 
 	cfg := update.LoadUpdateConfig(userConfig)
 
-	mgr := update.NewManager(nil)
-	versionInfo, err := mgr.CheckForUpdate(context.Background(), cfg, false)
+	mgr := update.NewManager(nil, nil)
+	versionInfo, err := mgr.CheckForUpdate(ctx, cfg, false)
 	if err != nil {
 		log.Printf("failed to check for updates: %v, skipping update check", err)
 		return
@@ -243,7 +245,7 @@ func fetchLatestVersion(result chan<- *update.VersionInfo) {
 		featureManager := alpha.NewFeaturesManagerWithConfig(userConfig)
 		if featureManager.IsEnabled(update.FeatureUpdate) {
 			log.Printf("auto-update: staging update to %s", versionInfo.Version)
-			if stageErr := mgr.StageUpdate(context.Background(), cfg); stageErr != nil {
+			if stageErr := mgr.StageUpdate(ctx, cfg); stageErr != nil {
 				log.Printf("auto-update: staging failed: %v", stageErr)
 			}
 		}

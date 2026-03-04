@@ -59,7 +59,7 @@ func TestParseDailyBuildNumber(t *testing.T) {
 }
 
 func TestBuildDownloadURL(t *testing.T) {
-	m := NewManager(nil)
+	m := NewManager(nil, nil)
 
 	tests := []struct {
 		name    string
@@ -136,7 +136,7 @@ func TestPackageManagerUninstallCmd(t *testing.T) {
 }
 
 func TestBuildVersionInfoFromCache_Stable(t *testing.T) {
-	m := NewManager(nil)
+	m := NewManager(nil, nil)
 
 	tests := []struct {
 		name      string
@@ -168,7 +168,7 @@ func TestBuildVersionInfoFromCache_Stable(t *testing.T) {
 }
 
 func TestBuildVersionInfoFromCache_Daily(t *testing.T) {
-	m := NewManager(nil)
+	m := NewManager(nil, nil)
 
 	// Dev build (0.0.0-dev.0) can't parse a daily build number,
 	// so it always assumes update available
@@ -186,7 +186,7 @@ func TestBuildVersionInfoFromCache_Daily(t *testing.T) {
 }
 
 func TestBuildVersionInfoFromCache_InvalidVersion(t *testing.T) {
-	m := NewManager(nil)
+	m := NewManager(nil, nil)
 	cache := &CacheFile{
 		Channel: "stable",
 		Version: "not-a-version",
@@ -197,6 +197,16 @@ func TestBuildVersionInfoFromCache_InvalidVersion(t *testing.T) {
 	require.Contains(t, err.Error(), "parse")
 }
 
+// testClientWithRewrite creates an HTTP client that redirects all requests to the given test server URL.
+func testClientWithRewrite(targetURL string) *http.Client {
+	return &http.Client{
+		Transport: &urlRewriteTransport{
+			base:      http.DefaultTransport,
+			targetURL: targetURL,
+		},
+	}
+}
+
 func TestCheckForUpdate_StableHTTP(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -204,18 +214,10 @@ func TestCheckForUpdate_StableHTTP(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// Override the default client transport to redirect requests to test server
-	origTransport := http.DefaultTransport
-	http.DefaultTransport = &urlRewriteTransport{
-		base:      origTransport,
-		targetURL: server.URL,
-	}
-	defer func() { http.DefaultTransport = origTransport }()
-
 	tempDir := t.TempDir()
 	t.Setenv("AZD_CONFIG_DIR", tempDir)
 
-	m := NewManager(nil)
+	m := NewManager(nil, testClientWithRewrite(server.URL))
 	cfg := &UpdateConfig{Channel: ChannelStable}
 
 	info, err := m.CheckForUpdate(context.Background(), cfg, true)
@@ -232,17 +234,10 @@ func TestCheckForUpdate_DailyHTTP(t *testing.T) {
 	}))
 	defer server.Close()
 
-	origTransport := http.DefaultTransport
-	http.DefaultTransport = &urlRewriteTransport{
-		base:      origTransport,
-		targetURL: server.URL,
-	}
-	defer func() { http.DefaultTransport = origTransport }()
-
 	tempDir := t.TempDir()
 	t.Setenv("AZD_CONFIG_DIR", tempDir)
 
-	m := NewManager(nil)
+	m := NewManager(nil, testClientWithRewrite(server.URL))
 	cfg := &UpdateConfig{Channel: ChannelDaily}
 
 	info, err := m.CheckForUpdate(context.Background(), cfg, true)
@@ -259,17 +254,10 @@ func TestCheckForUpdate_HTTPError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	origTransport := http.DefaultTransport
-	http.DefaultTransport = &urlRewriteTransport{
-		base:      origTransport,
-		targetURL: server.URL,
-	}
-	defer func() { http.DefaultTransport = origTransport }()
-
 	tempDir := t.TempDir()
 	t.Setenv("AZD_CONFIG_DIR", tempDir)
 
-	m := NewManager(nil)
+	m := NewManager(nil, testClientWithRewrite(server.URL))
 	cfg := &UpdateConfig{Channel: ChannelStable}
 
 	_, err := m.CheckForUpdate(context.Background(), cfg, true)
@@ -289,7 +277,7 @@ func TestCheckForUpdate_UsesCache(t *testing.T) {
 	}
 	require.NoError(t, SaveCache(cache))
 
-	m := NewManager(nil)
+	m := NewManager(nil, nil)
 	cfg := &UpdateConfig{Channel: ChannelStable}
 
 	// ignoreCache=false should use the cache (no HTTP call needed)
@@ -303,7 +291,7 @@ func TestCheckForUpdate_InvalidChannel(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("AZD_CONFIG_DIR", tempDir)
 
-	m := NewManager(nil)
+	m := NewManager(nil, nil)
 	cfg := &UpdateConfig{Channel: Channel("nightly")}
 
 	_, err := m.CheckForUpdate(context.Background(), cfg, true)
@@ -317,7 +305,7 @@ func TestUpdateViaPackageManager_Success(t *testing.T) {
 		return strings.Contains(command, "brew upgrade azd")
 	}).Respond(exec.NewRunResult(0, "Updated azd", ""))
 
-	m := NewManager(mockRunner)
+	m := NewManager(mockRunner, nil)
 	var buf bytes.Buffer
 
 	err := m.updateViaPackageManager(context.Background(), "brew", []string{"upgrade", "azd"}, &buf)
@@ -331,7 +319,7 @@ func TestUpdateViaPackageManager_Failure(t *testing.T) {
 		return strings.Contains(command, "brew upgrade azd")
 	}).Respond(exec.NewRunResult(1, "", "Error: no such formula"))
 
-	m := NewManager(mockRunner)
+	m := NewManager(mockRunner, nil)
 	var buf bytes.Buffer
 
 	err := m.updateViaPackageManager(context.Background(), "brew", []string{"upgrade", "azd"}, &buf)
@@ -348,7 +336,7 @@ func TestUpdateViaPackageManager_CommandError(t *testing.T) {
 		return true
 	}).SetError(fmt.Errorf("command not found: brew"))
 
-	m := NewManager(mockRunner)
+	m := NewManager(mockRunner, nil)
 	var buf bytes.Buffer
 
 	err := m.updateViaPackageManager(context.Background(), "brew", []string{"upgrade", "azd"}, &buf)
@@ -360,7 +348,7 @@ func TestUpdateViaPackageManager_CommandError(t *testing.T) {
 }
 
 func TestVerifyCodeSignature_NilRunner(t *testing.T) {
-	m := NewManager(nil)
+	m := NewManager(nil, nil)
 	err := m.verifyCodeSignature(context.Background(), "/some/binary", io.Discard)
 	require.NoError(t, err, "should skip when no command runner")
 }
@@ -620,7 +608,7 @@ func TestDownloadFile(t *testing.T) {
 	tempDir := t.TempDir()
 	destPath := filepath.Join(tempDir, "downloaded")
 
-	m := NewManager(nil)
+	m := NewManager(nil, nil)
 	err := m.downloadFile(context.Background(), server.URL+"/azd.zip", destPath, io.Discard)
 	require.NoError(t, err)
 
@@ -638,7 +626,7 @@ func TestDownloadFile_HTTPError(t *testing.T) {
 	tempDir := t.TempDir()
 	destPath := filepath.Join(tempDir, "downloaded")
 
-	m := NewManager(nil)
+	m := NewManager(nil, nil)
 	err := m.downloadFile(context.Background(), server.URL+"/missing.zip", destPath, io.Discard)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "404")

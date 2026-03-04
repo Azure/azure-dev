@@ -124,7 +124,7 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 
 		a.console.MessageUxItem(ctx, &ux.MessageTitle{
-			Title: "azd update is in alpha.\n",
+			Title: "azd update is in alpha. Auto-update and channel-aware version checks are now enabled.\n",
 		})
 	}
 
@@ -174,7 +174,7 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		fields.UpdateFromVersion.String(internal.VersionInfo().Version.String()),
 	)
 
-	mgr := update.NewManager(a.commandRunner)
+	mgr := update.NewManager(a.commandRunner, nil)
 
 	// Block update in CI/CD environments
 	if resource.IsRunningOnCI() {

@@ -46,12 +46,17 @@ type VersionInfo struct {
 // Manager handles checking for and applying azd updates.
 type Manager struct {
 	commandRunner exec.CommandRunner
+	httpClient    *http.Client
 }
 
 // NewManager creates a new update Manager.
-func NewManager(commandRunner exec.CommandRunner) *Manager {
+func NewManager(commandRunner exec.CommandRunner, httpClient *http.Client) *Manager {
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 30 * time.Second}
+	}
 	return &Manager{
 		commandRunner: commandRunner,
+		httpClient:    httpClient,
 	}
 }
 
@@ -144,7 +149,8 @@ func (m *Manager) checkStableVersion(ctx context.Context) (*VersionInfo, error) 
 	}
 	req.Header.Set("User-Agent", internal.UserAgent())
 
-	resp, err := http.DefaultClient.Do(req)
+	//nolint:gosec // URL is constructed from controlled constants, not user input
+	resp, err := m.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch latest stable version: %w", err)
 	}
@@ -182,7 +188,8 @@ func (m *Manager) checkDailyVersion(ctx context.Context) (*VersionInfo, error) {
 	}
 	req.Header.Set("User-Agent", internal.UserAgent())
 
-	resp, err := http.DefaultClient.Do(req)
+	//nolint:gosec // URL is constructed from controlled constants, not user input
+	resp, err := m.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch daily version info: %w", err)
 	}
@@ -434,7 +441,7 @@ func (m *Manager) buildMSIDownloadURL(channel Channel) (string, error) {
 		return "", fmt.Errorf("unsupported channel: %s", channel)
 	}
 
-	return fmt.Sprintf("%s/%s/azd-windows-amd64.msi", blobBaseURL, folder), nil
+	return fmt.Sprintf("%s/%s/azd-windows-%s.msi", blobBaseURL, folder, runtime.GOARCH), nil
 }
 
 func archiveExtension() string {
@@ -451,7 +458,8 @@ func (m *Manager) downloadFile(ctx context.Context, url string, destPath string,
 	}
 	req.Header.Set("User-Agent", internal.UserAgent())
 
-	resp, err := http.DefaultClient.Do(req)
+	//nolint:gosec // URL is constructed from controlled constants, not user input
+	resp, err := m.httpClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -511,15 +519,14 @@ func (m *Manager) verifyCodesignMac(ctx context.Context, binaryPath string, writ
 	runArgs := exec.NewRunArgs("codesign", "-v", "--strict", binaryPath)
 	result, err := m.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		log.Printf("codesign verification failed: %v, skipping", err)
-		return nil
+		return newUpdateError(CodeSignatureInvalid, fmt.Errorf("codesign verification failed: %w", err))
 	}
 
 	if result.ExitCode != 0 {
-		return fmt.Errorf(
+		return newUpdateError(CodeSignatureInvalid, fmt.Errorf(
 			"code signature verification failed for %s (exit code %d): %s",
 			binaryPath, result.ExitCode, result.Stderr,
-		)
+		))
 	}
 
 	fmt.Fprintf(writer, "Code signature verified.\n")
@@ -537,15 +544,14 @@ func (m *Manager) verifyAuthenticode(ctx context.Context, binaryPath string, wri
 	runArgs := exec.NewRunArgs("powershell", "-NoProfile", "-Command", script)
 	result, err := m.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		log.Printf("Authenticode verification failed: %v, skipping", err)
-		return nil
+		return newUpdateError(CodeSignatureInvalid, fmt.Errorf("Authenticode verification failed: %w", err))
 	}
 
 	if result.ExitCode != 0 {
-		return fmt.Errorf(
+		return newUpdateError(CodeSignatureInvalid, fmt.Errorf(
 			"Authenticode signature verification failed for %s: %s",
 			binaryPath, result.Stderr,
-		)
+		))
 	}
 
 	fmt.Fprintf(writer, "Code signature verified.\n")
@@ -633,15 +639,29 @@ func copyFile(src, dst string) error {
 
 	// Preserve source file permissions. After remove-then-create, the new file gets
 	// default 0666 permissions instead of the original executable permissions.
+	//nolint:gosec // path is from the source file stat, not user input
 	return os.Chmod(dst, srcInfo.Mode().Perm())
 }
 
 // extractBinary extracts the azd binary from the archive to destPath.
+// platformBinaryName returns the expected platform-specific binary name in archives (e.g., "azd-darwin-amd64").
+func platformBinaryName() string {
+	name := fmt.Sprintf("azd-%s-%s", runtime.GOOS, runtime.GOARCH)
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	return name
+}
+
 func extractBinary(archivePath, binaryName, destPath string) error {
 	if strings.HasSuffix(archivePath, ".tar.gz") {
 		return extractFromTarGz(archivePath, binaryName, destPath)
 	}
 	return extractFromZip(archivePath, binaryName, destPath)
+}
+
+func isAzdBinary(name, binaryName string) bool {
+	return name == binaryName || name == platformBinaryName()
 }
 
 func extractFromTarGz(archivePath, binaryName, destPath string) error {
@@ -668,7 +688,7 @@ func extractFromTarGz(archivePath, binaryName, destPath string) error {
 		}
 
 		name := filepath.Base(header.Name)
-		if name == binaryName || strings.HasPrefix(name, "azd-") {
+		if isAzdBinary(name, binaryName) {
 			out, err := os.Create(destPath)
 			if err != nil {
 				return err
@@ -693,7 +713,7 @@ func extractFromZip(archivePath, binaryName, destPath string) error {
 
 	for _, f := range r.File {
 		name := filepath.Base(f.Name)
-		if name == binaryName || strings.HasPrefix(name, "azd-") {
+		if isAzdBinary(name, binaryName) {
 			rc, err := f.Open()
 			if err != nil {
 				return err

@@ -2,7 +2,7 @@
 
 ## 0.1.13-preview (2026-03-04)
 
-- [[#6957]](https://github.com/Azure/azure-dev/pull/6957) Update Azure Cognitive Services SDK dependency to v2
+- [[#6957]](https://github.com/Azure/azure-dev/pull/6957) Fix unmarshal error during `azd ai agent init`
 
 ## 0.1.12-preview (2026-02-27)
 

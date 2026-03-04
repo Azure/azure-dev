@@ -15,7 +15,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -47,9 +46,11 @@ type initFlags struct {
 	*rootFlagsDefinition
 	projectResourceId string
 	manifestPointer   string
+	templateUrl       string
 	src               string
 	host              string
 	env               string
+	infra             bool
 }
 
 // AiProjectResourceConfig represents the configuration for an AI project resource
@@ -109,13 +110,22 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 	}
 
 	cmd := &cobra.Command{
-		Use:   "init [-m <manifest pointer>] [--src <source directory>]",
+		Use:   "init [-m <manifest pointer>] [-t <template url>] [--src <source directory>]",
 		Short: fmt.Sprintf("Initialize a new AI agent project. %s", color.YellowString("(Preview)")),
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 
 			setupDebugLogging(cmd.Flags())
+
+			// Validate mutual exclusivity of -t and -m
+			if flags.templateUrl != "" && flags.manifestPointer != "" {
+				return exterrors.Validation(
+					exterrors.CodeInvalidArgs,
+					"--template and --manifest cannot be used together",
+					"use either --template (-t) to initialize from a template repo, or --manifest (-m) to initialize from a manifest file",
+				)
+			}
 
 			azdClient, err := azdext.NewAzdClient()
 			if err != nil {
@@ -139,8 +149,22 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 				Timeout: 30 * time.Second,
 			}
 
-			if flags.manifestPointer != "" {
-				azureContext, projectConfig, environment, err := ensureAzureContext(ctx, flags, azdClient)
+			if flags.templateUrl != "" {
+				action := &InitFromTemplateAction{
+					azdClient:  azdClient,
+					flags:      flags,
+					httpClient: httpClient,
+				}
+
+				if err := action.Run(ctx); err != nil {
+					if exterrors.IsCancellation(err) {
+						return exterrors.Cancelled("initialization was cancelled")
+					}
+					return err
+				}
+			} else if flags.manifestPointer != "" {
+				// Ensure project exists first (no subscription needed yet)
+				projectConfig, err := ensureProject(ctx, flags, azdClient)
 				if err != nil {
 					if exterrors.IsCancellation(err) {
 						return exterrors.Cancelled("initialization was cancelled")
@@ -148,16 +172,72 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 					return err
 				}
 
-				credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
-					TenantID:                   azureContext.Scope.TenantId,
-					AdditionallyAllowedTenants: []string{"*"},
-				})
+				// Get or create environment (without forcing subscription/location)
+				existingEnv := getExistingEnvironment(ctx, flags, azdClient)
+				if existingEnv == nil {
+					// Create environment without requiring subscription/location
+					fmt.Println("Lets create a new default azd environment for your project.")
+					envArgs := []string{"env", "new"}
+					if flags.env != "" {
+						envArgs = append(envArgs, flags.env)
+					}
+					workflow := &azdext.Workflow{
+						Name: "env new",
+						Steps: []*azdext.WorkflowStep{
+							{Command: &azdext.WorkflowCommand{Args: envArgs}},
+						},
+					}
+					_, err := azdClient.Workflow().Run(ctx, &azdext.RunWorkflowRequest{
+						Workflow: workflow,
+					})
+					if err != nil {
+						if exterrors.IsCancellation(err) {
+							return exterrors.Cancelled("initialization was cancelled")
+						}
+						return exterrors.Dependency(
+							exterrors.CodeEnvironmentCreationFailed,
+							fmt.Sprintf("failed to create new azd environment: %s", err),
+							"run 'azd env new' manually to create an environment",
+						)
+					}
+					existingEnv = getExistingEnvironment(ctx, flags, azdClient)
+					if existingEnv == nil {
+						return exterrors.Dependency(
+							exterrors.CodeEnvironmentNotFound,
+							"azd environment not found after creation",
+							"run 'azd env new' to create an environment and try again",
+						)
+					}
+				}
+
+				// Build initial azure context from existing env values (may be partially populated)
+				azureContext, err := buildAzureContextFromEnv(ctx, existingEnv.Name, azdClient)
 				if err != nil {
-					return exterrors.Auth(
-						exterrors.CodeCredentialCreationFailed,
-						fmt.Sprintf("failed to create Azure credential: %s", err),
-						"run 'azd auth login' to authenticate",
-					)
+					return err
+				}
+
+				// If --project-id is provided, extract subscription from it
+				if flags.projectResourceId != "" {
+					fp, fpErr := extractProjectDetails(flags.projectResourceId)
+					if fpErr == nil {
+						azureContext.Scope.SubscriptionId = fp.SubscriptionId
+					}
+				}
+
+				// Create credential if we have a tenant
+				var credential azcore.TokenCredential
+				if azureContext.Scope.TenantId != "" {
+					credential, err = azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
+						TenantID:                   azureContext.Scope.TenantId,
+						AdditionallyAllowedTenants: []string{"*"},
+					})
+					if err != nil {
+						return exterrors.Auth(
+							exterrors.CodeCredentialCreationFailed,
+							fmt.Sprintf("failed to create Azure credential: %s", err),
+							"run 'azd auth login' to authenticate",
+						)
+					}
 				}
 
 				console := input.NewConsole(
@@ -174,16 +254,14 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 				)
 
 				action := &InitAction{
-					azdClient: azdClient,
-					// azureClient:         azure.NewAzureClient(credential),
+					azdClient:    azdClient,
 					azureContext: azureContext,
-					// composedResources:   getComposedResourcesResponse.Resources,
-					console:       console,
-					credential:    credential,
+					console:      console,
+					credential:   credential,
 					projectConfig: projectConfig,
-					environment:   environment,
-					flags:         flags,
-					httpClient:    httpClient,
+					environment:  existingEnv,
+					flags:        flags,
+					httpClient:   httpClient,
 				}
 
 				if err := action.Run(ctx); err != nil {
@@ -217,6 +295,9 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "",
 		"Path or URI to an agent manifest to add to your azd project")
 
+	cmd.Flags().StringVarP(&flags.templateUrl, "template", "t", "",
+		"URL to a GitHub template repo containing an agent.yaml or agent.manifest.yaml manifest")
+
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "",
 		"[Optional] Directory to download the agent definition to (defaults to 'src/<agent-id>')")
 
@@ -225,7 +306,111 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 
 	cmd.Flags().StringVarP(&flags.env, "environment", "e", "", "The name of the azd environment to use.")
 
+	cmd.Flags().BoolVar(&flags.infra, "infra", false,
+		"Include infrastructure-as-code (infra/) from the template. "+
+			"If used in an existing azd project, adds only the infra directory.")
+
 	return cmd
+}
+
+// ensureSubscriptionAndCredential lazily prompts for subscription and creates a credential
+// if they haven't been set up yet. This allows the -m flow to defer Azure prompts until needed.
+func (a *InitAction) ensureSubscriptionAndCredential(ctx context.Context) error {
+	if a.azureContext.Scope.SubscriptionId == "" {
+		fmt.Println()
+		fmt.Println("We need to connect to your Azure subscription. This will be the subscription which contains your ")
+		fmt.Println("Foundry project and where your resources will be provisioned.")
+
+		subscriptionResponse, err := a.azdClient.Prompt().PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{})
+		if err != nil {
+			if exterrors.IsCancellation(err) {
+				return exterrors.Cancelled("subscription selection was cancelled")
+			}
+			return fmt.Errorf("failed to prompt for subscription: %w", err)
+		}
+
+		a.azureContext.Scope.SubscriptionId = subscriptionResponse.Subscription.Id
+		a.azureContext.Scope.TenantId = subscriptionResponse.Subscription.TenantId
+
+		if _, err := a.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: a.environment.Name,
+			Key:     "AZURE_TENANT_ID",
+			Value:   a.azureContext.Scope.TenantId,
+		}); err != nil {
+			return fmt.Errorf("failed to set AZURE_TENANT_ID in environment: %w", err)
+		}
+
+		if _, err := a.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: a.environment.Name,
+			Key:     "AZURE_SUBSCRIPTION_ID",
+			Value:   a.azureContext.Scope.SubscriptionId,
+		}); err != nil {
+			return fmt.Errorf("failed to set AZURE_SUBSCRIPTION_ID in environment: %w", err)
+		}
+	}
+
+	if a.credential == nil {
+		tenantId := a.azureContext.Scope.TenantId
+		if tenantId == "" {
+			// Look up tenant from subscription
+			tenantResponse, err := a.azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
+				SubscriptionId: a.azureContext.Scope.SubscriptionId,
+			})
+			if err != nil {
+				return exterrors.Auth(
+					exterrors.CodeTenantLookupFailed,
+					fmt.Sprintf("failed to lookup tenant for subscription %s: %s", a.azureContext.Scope.SubscriptionId, err),
+					"verify your Azure login with 'azd auth login'",
+				)
+			}
+			tenantId = tenantResponse.TenantId
+			a.azureContext.Scope.TenantId = tenantId
+		}
+
+		credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
+			TenantID:                   tenantId,
+			AdditionallyAllowedTenants: []string{"*"},
+		})
+		if err != nil {
+			return exterrors.Auth(
+				exterrors.CodeCredentialCreationFailed,
+				fmt.Sprintf("failed to create Azure credential: %s", err),
+				"run 'azd auth login' to authenticate",
+			)
+		}
+		a.credential = credential
+	}
+
+	return nil
+}
+
+// ensureLocation lazily prompts for Azure location if not already set.
+func (a *InitAction) ensureLocation(ctx context.Context) error {
+	if a.azureContext.Scope.Location == "" {
+		fmt.Println()
+		fmt.Println("Next, we need to select a default Azure location that will be used as the target for your resources.")
+
+		locationResponse, err := a.azdClient.Prompt().PromptLocation(ctx, &azdext.PromptLocationRequest{
+			AzureContext: a.azureContext,
+		})
+		if err != nil {
+			if exterrors.IsCancellation(err) {
+				return exterrors.Cancelled("location selection was cancelled")
+			}
+			return fmt.Errorf("failed to prompt for location: %w", err)
+		}
+
+		a.azureContext.Scope.Location = locationResponse.Location.Name
+
+		if _, err := a.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: a.environment.Name,
+			Key:     "AZURE_LOCATION",
+			Value:   a.azureContext.Scope.Location,
+		}); err != nil {
+			return fmt.Errorf("failed to set AZURE_LOCATION in environment: %w", err)
+		}
+	}
+	return nil
 }
 
 func (a *InitAction) Run(ctx context.Context) error {
@@ -248,8 +433,12 @@ func (a *InitAction) Run(ctx context.Context) error {
 
 	// If --manifest is given
 	if a.flags.manifestPointer != "" {
-		// If --project-id is given
+		// If --project-id is given, we need credentials to query the project
 		if a.flags.projectResourceId != "" {
+			if err := a.ensureSubscriptionAndCredential(ctx); err != nil {
+				return err
+			}
+
 			// projectResourceId is a string of the format
 			// /subscriptions/[AZURE_SUBSCRIPTION]/resourceGroups/[AZURE_RESOURCE_GROUP]/providers/Microsoft.CognitiveServices/accounts/[AI_ACCOUNT_NAME]/projects/[AI_PROJECT_NAME]
 			// extract each of those fields from the string, issue an error if it doesn't match the format
@@ -283,7 +472,7 @@ func (a *InitAction) Run(ctx context.Context) error {
 			return exterrors.Validation(
 				exterrors.CodeInvalidAgentManifest,
 				fmt.Sprintf("agent manifest pointer is invalid: '%s' is neither a valid URI nor an existing file path", a.flags.manifestPointer),
-				"provide a valid URL or an existing local agent.yaml/agent.yml path",
+				"provide a valid URL or an existing local agent.yaml/agent.manifest.yaml path",
 			)
 		}
 
@@ -536,6 +725,39 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 	return existingEnv, nil
 }
 
+// buildAzureContextFromEnv reads environment values and constructs an AzureContext.
+// The returned context may be partially populated if the environment hasn't been fully configured yet.
+func buildAzureContextFromEnv(
+	ctx context.Context,
+	envName string,
+	azdClient *azdext.AzdClient,
+) (*azdext.AzureContext, error) {
+	envValues, err := azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
+		Name: envName,
+	})
+	if err != nil {
+		return nil, exterrors.Dependency(
+			exterrors.CodeEnvironmentValuesFailed,
+			fmt.Sprintf("failed to get environment values: %s", err),
+			"run 'azd env get-values' to verify environment state",
+		)
+	}
+
+	envValueMap := make(map[string]string)
+	for _, value := range envValues.KeyValues {
+		envValueMap[value.Key] = value.Value
+	}
+
+	return &azdext.AzureContext{
+		Scope: &azdext.AzureScope{
+			TenantId:       envValueMap["AZURE_TENANT_ID"],
+			SubscriptionId: envValueMap["AZURE_SUBSCRIPTION_ID"],
+			Location:       envValueMap["AZURE_LOCATION"],
+		},
+		Resources: []string{},
+	}, nil
+}
+
 func ensureAzureContext(
 	ctx context.Context,
 	flags *initFlags,
@@ -551,29 +773,9 @@ func ensureAzureContext(
 		return nil, nil, nil, err
 	}
 
-	envValues, err := azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
-		Name: env.Name,
-	})
+	azureContext, err := buildAzureContextFromEnv(ctx, env.Name, azdClient)
 	if err != nil {
-		return nil, nil, nil, exterrors.Dependency(
-			exterrors.CodeEnvironmentValuesFailed,
-			fmt.Sprintf("failed to get environment values: %s", err),
-			"run 'azd env get-values' to verify environment state",
-		)
-	}
-
-	envValueMap := make(map[string]string)
-	for _, value := range envValues.KeyValues {
-		envValueMap[value.Key] = value.Value
-	}
-
-	azureContext := &azdext.AzureContext{
-		Scope: &azdext.AzureScope{
-			TenantId:       envValueMap["AZURE_TENANT_ID"],
-			SubscriptionId: envValueMap["AZURE_SUBSCRIPTION_ID"],
-			Location:       envValueMap["AZURE_LOCATION"],
-		},
-		Resources: []string{},
+		return nil, nil, nil, err
 	}
 
 	if azureContext.Scope.SubscriptionId == "" {
@@ -1159,6 +1361,11 @@ func (a *InitAction) downloadAgentYaml(
 
 		content = []byte(contentStr)
 	} else if isRegistry, registryManifest := a.isRegistryUrl(manifestPointer); isRegistry {
+		// Registry URLs require credentials
+		if err := a.ensureSubscriptionAndCredential(ctx); err != nil {
+			return nil, "", err
+		}
+
 		// Handle registry URLs
 		manifestClient := registry_api.NewRegistryAgentManifestClient(registryManifest.registryName, a.credential)
 
@@ -1213,7 +1420,7 @@ func (a *InitAction) downloadAgentYaml(
 		return nil, "", exterrors.Validation(
 			exterrors.CodeInvalidManifestPointer,
 			fmt.Sprintf("manifest pointer '%s' is not a valid local file path, GitHub URL, or registry URL", manifestPointer),
-			"provide a valid URL or an existing local agent.yaml/agent.yml path",
+			"provide a valid URL or an existing local agent.yaml/agent.manifest.yaml path",
 		)
 	}
 
@@ -1244,6 +1451,14 @@ func (a *InitAction) downloadAgentYaml(
 	agentManifest, err = registry_api.ProcessManifestParameters(ctx, agentManifest, a.azdClient, a.flags.NoPrompt)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to process manifest parameters: %w", err)
+	}
+
+	// Ensure subscription and credential are available before processing models
+	if err := a.ensureSubscriptionAndCredential(ctx); err != nil {
+		return nil, "", err
+	}
+	if err := a.ensureLocation(ctx); err != nil {
+		return nil, "", err
 	}
 
 	agentManifest, deploymentDetails, err := a.ProcessModels(ctx, agentManifest)
@@ -1446,95 +1661,18 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	return nil
 }
 
+// populateContainerSettings returns default container resource settings.
+// Interactive prompts for memory, CPU, and replica customization were intentionally
+// removed to simplify the onboarding flow — most users accept the defaults.
 func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.ContainerSettings, error) {
-	if a.flags.NoPrompt {
-		fmt.Printf("No prompt mode enabled, using default container settings\n")
-		return &project.ContainerSettings{
-			Resources: &project.ResourceSettings{
-				Memory: project.DefaultMemory,
-				Cpu:    project.DefaultCpu,
-			},
-			Scale: &project.ScaleSettings{
-				MinReplicas: project.DefaultMinReplicas,
-				MaxReplicas: project.DefaultMaxReplicas,
-			},
-		}, nil
-	}
-
-	// Default values
-	defaultMemory := project.DefaultMemory
-	defaultCpu := project.DefaultCpu
-	defaultMinReplicas := fmt.Sprintf("%d", project.DefaultMinReplicas)
-	defaultMaxReplicas := fmt.Sprintf("%d", project.DefaultMaxReplicas)
-
-	// Prompt for memory allocation
-	memoryResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-		Options: &azdext.PromptOptions{
-			Message:      "Enter desired container memory allocation (e.g., '1Gi', '512Mi')",
-			DefaultValue: defaultMemory,
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("prompting for memory allocation: %w", err)
-	}
-
-	// Prompt for CPU allocation
-	cpuResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-		Options: &azdext.PromptOptions{
-			Message:      "Enter desired container CPU allocation (e.g., '1', '500m')",
-			DefaultValue: defaultCpu,
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("prompting for CPU allocation: %w", err)
-	}
-
-	// Prompt for minimum replicas
-	minReplicasResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-		Options: &azdext.PromptOptions{
-			Message:      "Enter desired container minimum number of replicas",
-			DefaultValue: defaultMinReplicas,
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("prompting for minimum replicas: %w", err)
-	}
-
-	// Prompt for maximum replicas
-	maxReplicasResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-		Options: &azdext.PromptOptions{
-			Message:      "Enter desired container maximum number of replicas",
-			DefaultValue: defaultMaxReplicas,
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("prompting for maximum replicas: %w", err)
-	}
-
-	// Convert string values to appropriate types
-	minReplicas, err := strconv.Atoi(minReplicasResp.Value)
-	if err != nil {
-		return nil, fmt.Errorf("invalid minimum replicas value: %w", err)
-	}
-
-	maxReplicas, err := strconv.Atoi(maxReplicasResp.Value)
-	if err != nil {
-		return nil, fmt.Errorf("invalid maximum replicas value: %w", err)
-	}
-
-	// Validate that max replicas >= min replicas
-	if maxReplicas < minReplicas {
-		return nil, fmt.Errorf("maximum replicas (%d) must be greater than or equal to minimum replicas (%d)", maxReplicas, minReplicas)
-	}
-
 	return &project.ContainerSettings{
 		Resources: &project.ResourceSettings{
-			Memory: memoryResp.Value,
-			Cpu:    cpuResp.Value,
+			Memory: project.DefaultMemory,
+			Cpu:    project.DefaultCpu,
 		},
 		Scale: &project.ScaleSettings{
-			MinReplicas: minReplicas,
-			MaxReplicas: maxReplicas,
+			MinReplicas: project.DefaultMinReplicas,
+			MaxReplicas: project.DefaultMaxReplicas,
 		},
 	}, nil
 }
@@ -1670,7 +1808,7 @@ func downloadParentDirectory(
 	// Get parent directory by removing the filename from the file path
 	pathParts := strings.Split(urlInfo.FilePath, "/")
 	if len(pathParts) <= 1 {
-		fmt.Println("The file agent.yaml is at repository root, no parent directory to download")
+		fmt.Println("The agent manifest file is at repository root, no parent directory to download")
 		return nil
 	}
 

@@ -53,6 +53,11 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newMetadataCommand())
 	rootCmd.AddCommand(newShowCommand())
 	rootCmd.AddCommand(newMonitorCommand())
+	rootCmd.AddCommand(newListCommand())
+	rootCmd.AddCommand(newDeleteCommand())
+	rootCmd.AddCommand(newInvokeCommand())
+	rootCmd.AddCommand(newDeployCommand())
+	rootCmd.AddCommand(newDevCommand())
 
 	return rootCmd
 }

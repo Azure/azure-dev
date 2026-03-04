@@ -33,14 +33,15 @@ import (
 )
 
 type InitFromCodeAction struct {
-	azdClient         *azdext.AzdClient
-	flags             *initFlags
-	projectConfig     *azdext.ProjectConfig
-	azureContext      *azdext.AzureContext
-	environment       *azdext.Environment
-	credential        azcore.TokenCredential
-	deploymentDetails []project.Deployment
-	httpClient        *http.Client
+	azdClient            *azdext.AzdClient
+	flags                *initFlags
+	projectConfig        *azdext.ProjectConfig
+	azureContext         *azdext.AzureContext
+	environment          *azdext.Environment
+	credential           azcore.TokenCredential
+	deploymentDetails    []project.Deployment
+	httpClient           *http.Client
+	existingAgentDefName string // agent name from existing AgentDefinition, if found
 }
 
 // templateFileInfo represents a file from the GitHub template repository.
@@ -76,6 +77,20 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		a.flags.src = relPath
 	}
 
+	// Determine srcDir early (needed for existing definition check)
+	srcDir := a.flags.src
+	if srcDir == "" {
+		srcDir = "."
+	}
+
+	// Check if an existing agent.yaml is an AgentDefinition (not a manifest).
+	// If so, we preserve it rather than overwriting.
+	existingDefName, existingDefPath := findExistingAgentDefinition(srcDir)
+	preserveExistingDef := existingDefPath != ""
+	if preserveExistingDef && existingDefName != "" {
+		a.existingAgentDefName = existingDefName
+	}
+
 	// No manifest pointer provided - process local agent code
 	// Create a definition based on user prompts
 	localDefinition, err := a.createDefinitionFromLocalAgent(ctx)
@@ -84,16 +99,12 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 	}
 
 	if localDefinition != nil {
-		// Default src to current directory when not specified
-		srcDir := a.flags.src
-		if srcDir == "" {
-			srcDir = "."
-		}
-
-		// Write the definition to a file in the src directory
-		_, err := a.writeDefinitionToSrcDir(localDefinition, srcDir)
-		if err != nil {
-			return fmt.Errorf("failed to write definition to src directory: %w", err)
+		if !preserveExistingDef {
+			// Write the definition to a file in the src directory
+			_, err := a.writeDefinitionToSrcDir(localDefinition, srcDir)
+			if err != nil {
+				return fmt.Errorf("failed to write definition to src directory: %w", err)
+			}
 		}
 
 		// Add the agent to the azd project (azure.yaml) services
@@ -101,14 +112,29 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 			return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
 		}
 
-		if srcDir == "." {
-			fmt.Printf("  %s  %s\n", color.GreenString("+"), color.GreenString("agent.yaml"))
+		if preserveExistingDef {
+			fmt.Printf("\n  %s  Existing agent.yaml preserved (not overwritten)\n", color.GreenString("✓"))
+			fmt.Println("\n  Next steps:")
+			fmt.Println("  1. Update your agent.yaml environment variables to reference azd environment values:")
+			fmt.Println("     - AZURE_AI_PROJECT_ENDPOINT   → ${AZURE_AI_PROJECT_ENDPOINT}")
+			fmt.Println("     - AZURE_AI_MODEL_DEPLOYMENT   → ${AZURE_AI_MODEL_DEPLOYMENT_NAME}")
+			fmt.Println("  2. Update your code to use these environment variables if needed.")
+			fmt.Println("  3. Verify the Docker image and container settings in azure.yaml match your project.")
+			fmt.Printf("  4. Run %s to run your agent locally, or %s to deploy.\n",
+				color.HiBlueString("azd ai agent dev"),
+				color.HiBlueString("azd ai agent deploy"))
 		} else {
-			fmt.Printf("  %s  %s\n", color.GreenString("+"), color.GreenString("%s/agent.yaml", srcDir))
-		}
+			if srcDir == "." {
+				fmt.Printf("  %s  %s\n", color.GreenString("+"), color.GreenString("agent.yaml"))
+			} else {
+				fmt.Printf("  %s  %s\n", color.GreenString("+"), color.GreenString("%s/agent.yaml", srcDir))
+			}
 
-		fmt.Println("\nYou can customize environment variables, cpu, memory, and replica settings in the agent.yaml.")
-		fmt.Printf("Next steps: Run %s to deploy your agent to Microsoft Foundry.\n", color.HiBlueString("azd up"))
+			fmt.Println("\nYou can customize environment variables, cpu, memory, and replica settings in the agent.yaml.")
+			fmt.Printf("Next steps:\n")
+			fmt.Printf("  Run %s to run your agent locally.\n", color.HiBlueString("azd ai agent dev"))
+			fmt.Printf("  Run %s to deploy your agent to Microsoft Foundry.\n", color.HiBlueString("azd ai agent deploy"))
+		}
 	}
 
 	return nil
@@ -398,9 +424,11 @@ func (a *InitFromCodeAction) scaffoldTemplate(ctx context.Context, azdClient *az
 // createDefinitionFromLocalAgent creates a ContainerAgent for local agent code
 // This is used when no manifest pointer is provided and we need to scaffold a new agent
 func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context) (*agent_yaml.ContainerAgent, error) {
-	// Default agent name to sanitized cwd
+	// Default agent name to existing definition name if available, otherwise sanitized cwd
 	defaultName := "my-agent"
-	if cwd, err := os.Getwd(); err == nil {
+	if a.existingAgentDefName != "" {
+		defaultName = a.existingAgentDefName
+	} else if cwd, err := os.Getwd(); err == nil {
 		defaultName = sanitizeAgentName(filepath.Base(cwd))
 	}
 
@@ -1203,6 +1231,39 @@ func (a *InitFromCodeAction) lookupAcrResourceId(ctx context.Context, subscripti
 	return "", fmt.Errorf("container registry '%s' not found in subscription", registryName)
 }
 
+// findExistingAgentDefinition checks if an existing agent.yaml or agent.yml in srcDir
+// is an AgentDefinition (has "kind" field, no "template" field) rather than an AgentManifest.
+// Returns the agent name and file path if found, or empty strings if not.
+func findExistingAgentDefinition(srcDir string) (name string, filePath string) {
+	for _, fileName := range []string{"agent.yaml", "agent.yml"} {
+		path := filepath.Join(srcDir, fileName)
+		content, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+
+		var generic map[string]interface{}
+		if err := yaml.Unmarshal(content, &generic); err != nil {
+			continue
+		}
+
+		// An AgentDefinition has a "kind" field but no "template" field
+		_, hasKind := generic["kind"]
+		_, hasTemplate := generic["template"]
+
+		if hasKind && !hasTemplate {
+			if nameVal, ok := generic["name"]; ok {
+				if nameStr, ok := nameVal.(string); ok {
+					return nameStr, path
+				}
+			}
+			return "", path
+		}
+	}
+
+	return "", ""
+}
+
 // writeDefinitionToSrcDir writes a ContainerAgent to a YAML file in the src directory and returns the path
 func (a *InitFromCodeAction) writeDefinitionToSrcDir(definition *agent_yaml.ContainerAgent, srcDir string) (string, error) {
 	// Ensure the src directory exists
@@ -1269,11 +1330,9 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 	}
 
 	fmt.Printf("\nAdded your agent as a service entry named '%s' under the file azure.yaml.\n", agentName)
-	fmt.Printf("To provision and deploy the whole solution, use %s.\n", color.HiBlueString("azd up"))
-	fmt.Printf(
-		"If you already have your project provisioned with hosted agents requirements, "+
-			"you can directly use %s.\n",
-		color.HiBlueString("azd deploy %s", agentName))
+	fmt.Printf("Run %s to run your agent locally, or %s to deploy.\n",
+		color.HiBlueString("azd ai agent dev"),
+		color.HiBlueString("azd ai agent deploy"))
 	return nil
 }
 

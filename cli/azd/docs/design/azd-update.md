@@ -237,13 +237,17 @@ Most install methods write to system directories requiring elevation:
 
 ### 4. Auto-Update
 
+**Auto-update is off by default.** Background downloading and staged apply only happen when the user explicitly opts in via `azd config set updates.autoUpdate on` or `azd update --auto-update on`. Without opt-in, the only background activity is the existing version check (cheap HTTP GET) that shows a banner — no downloads occur.
+
+Additionally, auto-update is gated behind the `update` alpha feature flag during the rollout phase.
+
 When `updates.autoUpdate` is set to `on`:
 
 **Cache TTL** (channel-dependent):
 - Stable: 24h (releases are infrequent)
 - Daily: 4h (builds land frequently)
 
-The check is a cheap HTTP GET; downloads only happen when a newer version exists.
+Downloads only happen when a newer version exists.
 
 **Flow (two-phase: stage in background, apply on next startup)**:
 
@@ -268,7 +272,7 @@ Phase 2 — Apply (on NEXT startup, before command execution):
 
 The re-exec approach (`syscall.Exec` on Unix, spawn-and-exit on Windows) means the user's command runs seamlessly on the new binary — they just see a one-line success banner before their normal output.
 
-**Staged binary verification**: Before applying, `verifyStagedBinary()` checks the staged binary's integrity. On macOS, it runs `codesign -v --strict`. Unsigned binaries (dev builds) are allowed ("code object is not signed at all" is OK), but corrupted/truncated binaries with invalid signatures are rejected and cleaned up. This prevents crashes from partially-downloaded files left behind when a background download goroutine is interrupted.
+**Staged binary verification**: Before applying, `verifyStagedBinary()` checks the staged binary's integrity. On macOS, it runs `codesign -v --strict`. On Windows, it checks Authenticode signature via `Get-AuthenticodeSignature`. **Unsigned or invalid binaries are rejected** — verification hard-fails with `CodeSignatureInvalid` error and the staged binary is cleaned up. A minimum file size check (1MB) catches truncated downloads on all platforms.
 
 **Elevation-aware behavior**: Auto-update doesn't prompt for passwords. If the install location requires elevation, it gracefully falls back to a warning and the staged binary stays around for `azd update` to apply (which has the sudo fallback with an interactive prompt).
 

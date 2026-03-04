@@ -9,20 +9,33 @@ import (
 	"fmt"
 	"strings"
 
+	surveyterm "github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/agent"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/llm"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/pack"
 	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/tidwall/gjson"
 	"go.opentelemetry.io/otel/codes"
@@ -36,6 +49,90 @@ type ErrorMiddleware struct {
 	featuresManager   *alpha.FeatureManager
 	userConfigManager config.UserConfigManager
 	errorPipeline     *errorhandler.ErrorHandlerPipeline
+}
+
+// ErrorCategory represents the classification of an error for determining
+// the appropriate agent mode behavior.
+type ErrorCategory int
+
+const (
+	AzureContextAndOtherError ErrorCategory = iota
+
+	MachineContextError
+
+	UserContextError
+)
+
+// classifyError categorizes an error into one of three buckets:
+// AzureContextAndOtherError, MachineContextError, or UserContextError
+func classifyError(err error) ErrorCategory {
+	// --- Machine context: typed errors ---
+	var toolCheckErr *tools.MissingToolErrors
+	var semverErr *tools.ErrSemver
+	var exitErr *exec.ExitError
+	var extRunErr *extensions.ExtensionRunError
+	var packStatusErr *pack.StatusCodeError
+
+	if errors.As(err, &toolCheckErr) ||
+		errors.As(err, &semverErr) ||
+		errors.As(err, &exitErr) ||
+		errors.As(err, &extRunErr) ||
+		errors.As(err, &packStatusErr) {
+		return MachineContextError
+	}
+
+	if errors.Is(err, maven.ErrPropertyNotFound) {
+		return MachineContextError
+	}
+
+	// --- User context: typed errors ---
+	var loginErr *auth.ReLoginRequiredError
+	var authFailedErr *auth.AuthFailedError
+
+	if errors.As(err, &loginErr) || errors.As(err, &authFailedErr) {
+		return UserContextError
+	}
+
+	if errors.Is(err, auth.ErrNoCurrentUser) ||
+		errors.Is(err, azapi.ErrAzCliNotLoggedIn) ||
+		errors.Is(err, azapi.ErrAzCliRefreshTokenExpired) ||
+		errors.Is(err, github.ErrGitHubCliNotLoggedIn) ||
+		errors.Is(err, github.ErrUserNotAuthorized) ||
+		errors.Is(err, github.ErrRepositoryNameInUse) ||
+		errors.Is(err, environment.ErrNotFound) ||
+		errors.Is(err, environment.ErrNameNotSpecified) ||
+		errors.Is(err, environment.ErrDefaultEnvironmentNotFound) ||
+		errors.Is(err, environment.ErrAccessDenied) ||
+		errors.Is(err, pipeline.ErrAuthNotSupported) ||
+		errors.Is(err, pipeline.ErrRemoteHostIsNotAzDo) ||
+		errors.Is(err, pipeline.ErrSSHNotSupported) ||
+		errors.Is(err, pipeline.ErrRemoteHostIsNotGitHub) ||
+		errors.Is(err, project.ErrNoDefaultService) {
+		return UserContextError
+	}
+
+	return AzureContextAndOtherError
+}
+
+// shouldSkipErrorAnalysis returns true for control-flow errors that should not
+// be sent to AI analysis
+func shouldSkipErrorAnalysis(err error) bool {
+	if errors.Is(err, context.Canceled) ||
+		errors.Is(err, surveyterm.InterruptErr) ||
+		errors.Is(err, azdcontext.ErrNoProject) ||
+		errors.Is(err, consent.ErrToolExecutionDenied) ||
+		errors.Is(err, consent.ErrElicitationDenied) ||
+		errors.Is(err, consent.ErrSamplingDenied) {
+		return true
+	}
+
+	// Environment was already initialized
+	var envInitErr *environment.EnvironmentInitError
+	if errors.As(err, &envInitErr) {
+		return true
+	}
+
+	return false
 }
 
 func NewErrorMiddleware(
@@ -98,16 +195,8 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 	}
 
 	// Skip control-flow errors that don't benefit from AI analysis
-	skipAnalyzingErrors := []string{
-		"environment already initialized",
-		"interrupt",
-		"no project exists",
-		"tool execution denied",
-	}
-	for _, s := range skipAnalyzingErrors {
-		if strings.Contains(err.Error(), s) {
-			return actionResult, err
-		}
+	if shouldSkipErrorAnalysis(err) {
+		return actionResult, err
 	}
 
 	// Warn user that this is an alpha feature
@@ -161,7 +250,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		errorInput := originalError.Error()
 
 		e.console.Message(ctx, "")
-		troubleshootScope, err := e.promptTroubleshootingWithConsent(ctx)
+		troubleshootScope, err := e.promptExplanationWithConsent(ctx)
 		if err != nil {
 			span.SetStatus(codes.Error, "agent.consent.failed")
 			return nil, fmt.Errorf("prompting for troubleshooting scope: %w", err)
@@ -187,45 +276,50 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			}
 
 			e.displayAgentResponse(ctx, agentOutput, AIDisclaimer)
+		}
 
-			// Ask user if they want step-by-step fix guidance
-			wantGuide, err := e.promptForFixGuidance(ctx)
-			if err != nil {
-				span.SetStatus(codes.Error, "agent.guidance.prompt.failed")
-				return nil, fmt.Errorf("prompting for fix guidance: %w", err)
-			}
+		// Ask user if they want step-by-step fix guidance
+		wantGuide, err := e.promptForFixGuidance(ctx)
+		if err != nil {
+			span.SetStatus(codes.Error, "agent.guidance.prompt.failed")
+			return nil, fmt.Errorf("prompting for fix guidance: %w", err)
+		}
 
-			if !wantGuide {
-				span.SetStatus(codes.Ok, "agent.troubleshoot.explain_only")
-				return actionResult, originalError
-			}
+		if !wantGuide {
+			span.SetStatus(codes.Ok, "agent.troubleshoot.explain_only")
+			return actionResult, originalError
+		}
 
-			// Generate step-by-step fix guidance
-			guidePrompt := fmt.Sprintf(
-				`Steps to follow:
+		// Generate step-by-step fix guidance
+		guidePrompt := fmt.Sprintf(
+			`Steps to follow:
 			1. Use available tools including azd_error_troubleshooting tool to identify this error.
 			2. Provide only the actionable fix steps as a short numbered list (max 5 steps).
 			Each step should be one sentence. Include exact commands if applicable.
 			DO NOT return JSON. Do not explain the error. Do not perform any file changes.
 			Error details: %s`, errorInput)
 
-			guideOutput, err := azdAgent.SendMessage(ctx, guidePrompt)
+		guideOutput, err := azdAgent.SendMessage(ctx, guidePrompt)
 
-			if err != nil {
-				e.displayAgentResponse(ctx, guideOutput, AIDisclaimer)
-				span.SetStatus(codes.Error, "agent.send_message.failed")
-				return nil, err
-			}
-
+		if err != nil {
 			e.displayAgentResponse(ctx, guideOutput, AIDisclaimer)
+			span.SetStatus(codes.Error, "agent.send_message.failed")
+			return nil, err
+		}
+
+		e.displayAgentResponse(ctx, guideOutput, AIDisclaimer)
+
+		// no fix if the retry produced a machine or user context error
+		if classifyError(originalError) != AzureContextAndOtherError {
+			return actionResult, originalError
 		}
 
 		// Ask user if they want to let AI fix the error
 		confirmFix, err := e.checkErrorHandlingConsent(
 			ctx,
 			"mcp.errorHandling.fix",
-			fmt.Sprintf("Brainstorm solutions using %s?", agentName),
-			"Brainstorm Solutions",
+			fmt.Sprintf("Apply fixes using %s?", agentName),
+			"Apply Fixes",
 			fmt.Sprintf("This action will run AI tools to help fix the error."+
 				" Edit permissions for AI tools anytime by running %s.",
 				output.WithHighLightFormat("azd mcp consent")),
@@ -337,6 +431,11 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		ctx = tools.WithInstalledCheckCache(ctx)
 		actionResult, err = next(ctx)
 		originalError = err
+
+		// Skip control-flow errors that don't benefit from AI analysis
+		if shouldSkipErrorAnalysis(err) {
+			return actionResult, err
+		}
 	}
 
 	return actionResult, err
@@ -436,10 +535,10 @@ func promptForErrorHandlingConsent(
 	return choices[*choiceIndex].Value, nil
 }
 
-// promptTroubleshootingWithConsent combines consent and scope selection into a single prompt.
+// promptExplanationWithConsent combines consent and scope selection into a single prompt.
 // Checks if a saved preference exists (e.g. mcp.errorHandling.troubleshooting.skip).
 // Returns the scope ("explain") or "" if skipped.
-func (e *ErrorMiddleware) promptTroubleshootingWithConsent(ctx context.Context) (string, error) {
+func (e *ErrorMiddleware) promptExplanationWithConsent(ctx context.Context) (string, error) {
 	const configPrefix = "mcp.errorHandling.troubleshooting"
 
 	userConfig, err := e.userConfigManager.Load()

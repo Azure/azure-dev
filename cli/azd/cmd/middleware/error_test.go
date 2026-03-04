@@ -6,17 +6,25 @@ package middleware
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
 
+	surveyterm "github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/llm"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/pack"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/blang/semver/v4"
 	"github.com/stretchr/testify/require"
 )
 
@@ -527,7 +535,7 @@ func Test_PromptTroubleshootingWithConsent_SavedSkipDisplaysWarning(t *testing.T
 		userConfigManager: userConfigManager,
 	}
 
-	scope, err := middleware.promptTroubleshootingWithConsent(*mockContext.Context)
+	scope, err := middleware.promptExplanationWithConsent(*mockContext.Context)
 	require.NoError(t, err)
 	require.Equal(t, "", scope, "skip should return empty scope")
 
@@ -574,7 +582,92 @@ func Test_PromptTroubleshootingWithConsent_AlwaysSkipSavesAndPersistsConfig(t *t
 		userConfigManager: userConfigManager,
 	}
 
-	scope, err := middleware.promptTroubleshootingWithConsent(*mockContext.Context)
+	scope, err := middleware.promptExplanationWithConsent(*mockContext.Context)
 	require.NoError(t, err)
 	require.Equal(t, "", scope, "always.skip should auto-return empty scope")
+}
+
+func Test_ClassifyError(t *testing.T) {
+	// --- Machine context: typed errors ---
+	t.Run("MissingToolErrors classifies as MachineContext", func(t *testing.T) {
+		err := &tools.MissingToolErrors{
+			Errs:      []error{errors.New("docker not found")},
+			ToolNames: []string{"docker"},
+		}
+		require.Equal(t, MachineContextError, classifyError(err))
+	})
+
+	t.Run("Wrapped MissingToolErrors classifies as MachineContext", func(t *testing.T) {
+		inner := &tools.MissingToolErrors{
+			Errs:      []error{errors.New("node not found")},
+			ToolNames: []string{"node"},
+		}
+		wrapped := fmt.Errorf("setup failed: %w", inner)
+		require.Equal(t, MachineContextError, classifyError(wrapped))
+	})
+
+	t.Run("ErrSemver classifies as MachineContext", func(t *testing.T) {
+		err := &tools.ErrSemver{
+			ToolName: "node",
+			VersionInfo: tools.VersionInfo{
+				MinimumVersion: semver.MustParse("18.0.0"),
+				UpdateCommand:  "nvm install",
+			},
+		}
+		require.Equal(t, MachineContextError, classifyError(err))
+	})
+
+	t.Run("ExitError classifies as MachineContext", func(t *testing.T) {
+		err := &exec.ExitError{
+			Cmd:      "npm",
+			ExitCode: 1,
+		}
+		require.Equal(t, MachineContextError, classifyError(err))
+	})
+
+	t.Run("Wrapped ExitError classifies as MachineContext", func(t *testing.T) {
+		inner := &exec.ExitError{Cmd: "pip", ExitCode: 2}
+		wrapped := fmt.Errorf("build step failed: %w", inner)
+		require.Equal(t, MachineContextError, classifyError(wrapped))
+	})
+
+	t.Run("ExtensionRunError classifies as MachineContext", func(t *testing.T) {
+		err := &extensions.ExtensionRunError{
+			ExtensionId: "my-extension",
+			Err:         errors.New("extension crashed"),
+		}
+		require.Equal(t, MachineContextError, classifyError(err))
+	})
+
+	t.Run("StatusCodeError classifies as MachineContext", func(t *testing.T) {
+		err := &pack.StatusCodeError{
+			Code: 1,
+			Err:  errors.New("pack build failed"),
+		}
+		require.Equal(t, MachineContextError, classifyError(err))
+	})
+
+	// --- User context: typed errors ---
+	t.Run("Wrapped ErrNoCurrentUser classifies as UserContext", func(t *testing.T) {
+		wrapped := fmt.Errorf("operation failed: %w", auth.ErrNoCurrentUser)
+		require.Equal(t, UserContextError, classifyError(wrapped))
+	})
+
+	// --- Azure context: defaults ---
+	t.Run("Generic error defaults to AzureContext", func(t *testing.T) {
+		err := errors.New("deploying to Azure: InternalServerError")
+		require.Equal(t, AzureContextAndOtherError, classifyError(err))
+	})
+}
+
+func Test_ShouldSkipErrorAnalysis(t *testing.T) {
+	t.Run("Wrapped context.Canceled is skipped", func(t *testing.T) {
+		wrapped := fmt.Errorf("operation aborted: %w", context.Canceled)
+		require.True(t, shouldSkipErrorAnalysis(wrapped))
+	})
+
+	t.Run("Wrapped InterruptErr is skipped", func(t *testing.T) {
+		wrapped := fmt.Errorf("prompt failed: %w", surveyterm.InterruptErr)
+		require.True(t, shouldSkipErrorAnalysis(wrapped))
+	})
 }

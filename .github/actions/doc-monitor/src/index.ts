@@ -85,7 +85,7 @@ async function run(): Promise<void> {
       try {
         await processPr(sourceOctokit, docsOctokit, inputs, prNum);
       } catch (error) {
-        core.error(`Failed to process PR #${prNum}: ${error}`);
+        core.error(`Failed to process PR #${prNum}: ${error instanceof Error ? error.message : String(error)}`);
         if (prNumbers.length === 1) throw error;
       }
     }

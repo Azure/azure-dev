@@ -1,6 +1,7 @@
 import { Octokit } from "@octokit/rest";
 import type { TrackingState, CompanionPr } from "./types";
 import { COMMENT_MARKER, GITHUB_PAGE_SIZE } from "./constants";
+import { escapeTableCell, sanitizePlainText } from "./sanitize";
 
 /** Create or update the tracking comment on the source PR. */
 export async function updateTrackingComment(
@@ -73,10 +74,10 @@ function buildCommentBody(
   if (state.analysisResult.noImpact) {
     lines.push(`### No documentation impact detected`);
     lines.push(``);
-    lines.push(state.analysisResult.summary);
+    lines.push(sanitizePlainText(state.analysisResult.summary));
   } else {
     lines.push(`### Summary`);
-    lines.push(state.analysisResult.summary);
+    lines.push(sanitizePlainText(state.analysisResult.summary));
     lines.push(``);
 
     if (state.inRepoPr) {
@@ -111,28 +112,17 @@ function buildCommentBody(
   return lines.join("\n");
 }
 
-/** Escape markdown/HTML injection vectors in table cell values. */
-function escapeTableCell(value: string): string {
-  return value
-    .replace(/<[^>]*>/g, "")           // strip HTML tags
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1") // convert markdown links to plain text
-    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "")  // remove markdown images
-    .replace(/`/g, "")                // strip backticks (prevent code span injection)
-    .replace(/\|/g, "\\|")            // escape pipe (table syntax)
-    .replace(/\r/g, "")               // strip carriage returns
-    .replace(/\n/g, " ");             // collapse newlines
-}
-
 function formatCompanionPrStatus(pr: CompanionPr): string {
+  const safeBranch = sanitizePlainText(pr.branch);
   switch (pr.status) {
     case "created":
-      return `- **New PR created**: [#${pr.number}](${pr.htmlUrl}) on branch \`${pr.branch}\``;
+      return `- **New PR created**: [#${pr.number}](${pr.htmlUrl}) on branch \`${safeBranch}\``;
     case "updated":
-      return `- **PR updated**: [#${pr.number}](${pr.htmlUrl}) on branch \`${pr.branch}\``;
+      return `- **PR updated**: [#${pr.number}](${pr.htmlUrl}) on branch \`${safeBranch}\``;
     case "existing":
-      return `- **Existing PR**: [#${pr.number}](${pr.htmlUrl}) on branch \`${pr.branch}\``;
+      return `- **Existing PR**: [#${pr.number}](${pr.htmlUrl}) on branch \`${safeBranch}\``;
     case "conflict":
-      return `- **Conflict detected**: Branch \`${pr.branch}\` has conflicts that need manual resolution.`;
+      return `- **Conflict detected**: Branch \`${safeBranch}\` has conflicts that need manual resolution.`;
     case "error":
       return `- **Error**: Could not create/update PR.`;
     default:

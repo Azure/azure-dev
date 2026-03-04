@@ -21,11 +21,16 @@ export async function checkBranchExists(
     await octokit.git.getRef({ owner, repo, ref: `heads/${branch}` });
     return true;
   } catch (error: unknown) {
-    if (typeof error === "object" && error !== null && "status" in error && (error as { status: number }).status === 404) {
+    if (isOctokitError(error) && error.status === 404) {
       return false;
     }
     throw error;
   }
+}
+
+/** Type guard for Octokit HTTP errors. */
+function isOctokitError(error: unknown): error is { status: number } {
+  return typeof error === "object" && error !== null && "status" in error && typeof (error as Record<string, unknown>).status === "number";
 }
 
 /** Find an existing PR for a given head branch. Returns the newest match or null. */
@@ -69,8 +74,8 @@ export async function createOrUpdateFile(
     if (!Array.isArray(data) && "sha" in data) {
       existingSha = data.sha;
     }
-  } catch {
-    // File doesn't exist yet — will be created
+  } catch (_) {
+    // Expected: file doesn't exist yet — will be created below
   }
 
   await octokit.repos.createOrUpdateFileContents({

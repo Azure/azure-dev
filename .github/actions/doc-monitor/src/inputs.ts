@@ -70,5 +70,10 @@ export function parseRepoFullName(fullName: string): [owner: string, repo: strin
   if (parts.length !== 2 || !parts[0] || !parts[1]) {
     throw new Error(`Invalid repository format "${fullName}". Expected "owner/repo".`);
   }
+  // Validate that owner and repo contain only valid GitHub characters
+  const validName = /^[a-zA-Z0-9_.-]+$/;
+  if (!validName.test(parts[0]) || !validName.test(parts[1])) {
+    throw new Error(`Invalid repository format "${fullName}". Owner and repo must contain only alphanumeric, hyphen, dot, or underscore characters.`);
+  }
   return [parts[0], parts[1]];
 }

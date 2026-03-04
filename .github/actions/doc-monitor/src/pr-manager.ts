@@ -4,6 +4,7 @@ import type { CompanionPr, DocImpact } from "./types";
 import { DOC_BRANCH_PREFIX, BOT_COMMIT_PREFIX, DEFAULT_BRANCH } from "./constants";
 import { checkBranchExists, findExistingPr, createOrUpdateFile } from "./github-utils";
 import { buildDocPrSummary, buildPrBody } from "./pr-body";
+import { sanitizeForMarkdown } from "./sanitize";
 
 /** Get the branch name for a companion doc PR. */
 export function getDocBranchName(sourcePrNumber: number): string {
@@ -104,14 +105,14 @@ export async function closeCompanionPrs(
     pull_number: existingPr.number,
     state: "closed",
     body:
-      (existingPr.body ?? "").replace(/<[^>]*>/g, "") +
+      sanitizeForMarkdown(existingPr.body ?? "") +
       `\n\n---\n_Closed automatically: source PR #${sourcePrNumber} was closed without merge._`,
   });
 
   try {
     await octokit.git.deleteRef({ owner: targetOwner, repo: targetRepo, ref: `heads/${branch}` });
-  } catch {
-    core.warning(`Could not delete branch ${branch} in ${targetOwner}/${targetRepo}`);
+  } catch (err) {
+    core.warning(`Could not delete branch ${branch} in ${targetOwner}/${targetRepo}: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 

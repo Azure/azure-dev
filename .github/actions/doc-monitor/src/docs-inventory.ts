@@ -2,6 +2,7 @@ import * as core from "@actions/core";
 import { Octokit } from "@octokit/rest";
 import type { DocEntry } from "./types";
 import { MAX_RECURSION_DEPTH, MAX_TOPICS, MAX_TOPIC_LENGTH, MAX_CONTENT_FETCHES, MAX_CONTENT_SIZE_BYTES } from "./constants";
+import { sanitizePlainText } from "./sanitize";
 
 /** Glob patterns to exclude from doc inventory. */
 const EXCLUDE_PATTERNS = [
@@ -18,22 +19,14 @@ function shouldExclude(path: string): boolean {
   return EXCLUDE_PATTERNS.some((p) => p.test(path));
 }
 
-/** Strip HTML tags, markdown links/images, and control characters from text. */
-function sanitizeText(value: string): string {
-  return value
-    .replace(/<[^>]*>/g, "")
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "")
-    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
-}
 
 /** Extract a title from markdown content (first H1 or filename). */
 function extractTitle(content: string, path: string): string {
   const h1Match = content.match(/^#\s+(.+)$/m);
-  if (h1Match) return sanitizeText(h1Match[1].trim());
+  if (h1Match) return sanitizePlainText(h1Match[1].trim());
 
   const frontmatterTitle = content.match(/^title:\s*["']?(.+?)["']?\s*$/m);
-  if (frontmatterTitle) return sanitizeText(frontmatterTitle[1].trim());
+  if (frontmatterTitle) return sanitizePlainText(frontmatterTitle[1].trim());
 
   // Fall back to filename
   const parts = path.split("/");
@@ -51,13 +44,13 @@ function extractTopics(content: string, path: string): string[] {
   // From frontmatter tags
   const tagsMatch = content.match(/^tags:\s*\[(.+)\]/m);
   if (tagsMatch) {
-    topics.push(...tagsMatch[1].split(",").map((t) => sanitizeText(t.trim().replace(/["']/g, ""))));
+    topics.push(...tagsMatch[1].split(",").map((t) => sanitizePlainText(t.trim().replace(/["']/g, ""))));
   }
 
   // From H2 headings
   const h2Matches = content.matchAll(/^##\s+(.+)$/gm);
   for (const match of h2Matches) {
-    topics.push(sanitizeText(match[1].trim().toLowerCase()).slice(0, MAX_TOPIC_LENGTH));
+    topics.push(sanitizePlainText(match[1].trim().toLowerCase()).slice(0, MAX_TOPIC_LENGTH));
   }
 
   return [...new Set(topics)].slice(0, MAX_TOPICS);
@@ -111,11 +104,10 @@ async function collectDocsViaTree(
   });
 
   const entries: DocEntry[] = [];
-  let contentFetches = 0;
 
   // Batch content fetches using blob SHAs from the tree response (avoids N+1 getContent calls)
-  const filesToFetch = mdFiles.filter(() => contentFetches++ < MAX_CONTENT_FETCHES);
-  const remaining = mdFiles.slice(filesToFetch.length);
+  const filesToFetch = mdFiles.slice(0, MAX_CONTENT_FETCHES);
+  const remaining = mdFiles.slice(MAX_CONTENT_FETCHES);
 
   const CONCURRENCY_LIMIT = 10;
   for (let i = 0; i < filesToFetch.length; i += CONCURRENCY_LIMIT) {
@@ -140,8 +132,9 @@ async function collectDocsViaTree(
             title: extractTitle(content, filePath),
             topics: extractTopics(content, filePath),
           } as DocEntry;
-        } catch {
-          // Fall through to path-based entry
+        } catch (err) {
+          // Fall through to path-based entry on content-fetch failure
+          core.debug(`Could not fetch blob for ${filePath}: ${err instanceof Error ? err.message : String(err)}`);
           const name = filePath.split("/").pop() ?? filePath;
           return {
             repo: repoFullName,
@@ -202,8 +195,9 @@ async function collectDocsRecursive(
                 topics: extractTopics(content, item.path),
               });
             }
-          } catch {
+          } catch (err) {
             // If we can't read the file, still add it with minimal info
+            core.debug(`Could not read ${item.path}: ${err instanceof Error ? err.message : String(err)}`);
             entries.push({
               repo: repoFullName,
               path: item.path,

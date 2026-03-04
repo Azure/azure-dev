@@ -12,6 +12,7 @@ export const MAX_PATCH_CHARS = 2_000;
 export const MAX_PR_BODY_CHARS = 2_000;
 export const MAX_DIFF_PROMPT_CHARS = 40_000;
 export const MAX_MANIFEST_PROMPT_CHARS = 20_000;
+export const MAX_CHANGES_SUMMARY_CHARS = 10_000;
 
 // ─── Doc inventory ──────────────────────────────────────────────────
 export const MAX_RECURSION_DEPTH = 5;

@@ -10,10 +10,12 @@ import {
   MAX_PR_BODY_CHARS,
   MAX_DIFF_PROMPT_CHARS,
   MAX_MANIFEST_PROMPT_CHARS,
+  MAX_CHANGES_SUMMARY_CHARS,
   MAX_REASON_LENGTH,
   MAX_SUMMARY_LENGTH,
   MAX_IMPACTS,
 } from "./constants";
+import { sanitizePlainText } from "./sanitize";
 
 /** Create an OpenAI client configured for GitHub Models. */
 export function createAIClient(token: string): OpenAI {
@@ -39,7 +41,8 @@ export async function analyzeDocImpact(
   const changesSummary = classifiedChanges
     .filter((c) => c.category !== "test" && c.category !== "docs")
     .map((c) => `- ${c.category}: ${c.summary} (${c.files.map((f) => f.path).join(", ")})`)
-    .join("\n");
+    .join("\n")
+    .slice(0, MAX_CHANGES_SUMMARY_CHARS);
 
   const systemPrompt = `You are a documentation impact analyzer for the Azure Developer CLI (azd) project.
 Your job is to determine which documentation files need to be created, updated, or deleted based on code changes in a pull request.
@@ -134,7 +137,7 @@ ${manifest.slice(0, MAX_MANIFEST_PROMPT_CHARS)}
 }
 
 /** Raw AI response impact format (flat structure). */
-interface RawImpact {
+export interface RawImpact {
   repo: string;
   path: string;
   action: string;
@@ -143,14 +146,14 @@ interface RawImpact {
   priority: string;
 }
 
-interface RawAnalysisResult {
+export interface RawAnalysisResult {
   impacts: RawImpact[];
   summary: string;
   noImpact: boolean;
 }
 
 /** Validate and normalize the AI response from flat format to our DocImpact type. */
-function validateResult(
+export function validateResult(
   raw: RawAnalysisResult,
   sourceRepo?: string,
   docsRepo?: string,
@@ -220,11 +223,3 @@ function validateResult(
   };
 }
 
-/** Strip HTML tags, markdown links/images, and control characters from AI-generated text. */
-function sanitizePlainText(value: string): string {
-  return value
-    .replace(/<[^>]*>/g, "")           // strip HTML tags
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1") // convert markdown links to just text
-    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "")  // remove markdown images
-    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, ""); // strip control chars (keep \n \r \t)
-}

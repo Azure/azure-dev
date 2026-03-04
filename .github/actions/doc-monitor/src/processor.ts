@@ -120,8 +120,8 @@ export async function processPr(
 
 function isDocOnlyPr(files: FileDiff[]): boolean {
   if (files.length === 0) {
-    core.info("No files found in PR");
-    return false;
+    core.info("No files found in PR — skipping analysis");
+    return true;
   }
 
   const docExtensions = [".md", ".mdx"];
@@ -148,12 +148,25 @@ async function handleClosedPr(
   docsRepoFull: string,
 ): Promise<void> {
   core.info("PR closed without merge — closing companion doc PRs");
-  await closeCompanionPrs(sourceOctokit, sourceOwner, sourceRepo, prNumber);
+
+  // Fault-isolate each cleanup step so a transient API error in one
+  // doesn't prevent the others from executing.
+  try {
+    await closeCompanionPrs(sourceOctokit, sourceOwner, sourceRepo, prNumber);
+  } catch (err) {
+    core.warning(`Failed to close in-repo companion PR: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
   if (canWriteDocsRepo) {
-    await closeCompanionPrs(docsOctokit, docsOwner, docsRepo, prNumber);
+    try {
+      await closeCompanionPrs(docsOctokit, docsOwner, docsRepo, prNumber);
+    } catch (err) {
+      core.warning(`Failed to close external companion PR: ${err instanceof Error ? err.message : String(err)}`);
+    }
   } else {
     core.info("Skipping external companion PR cleanup — docs-repo-token not provided");
   }
+
   await postNoImpact(
     sourceOctokit, sourceOwner, sourceRepo, prNumber,
     "Source PR was closed without merge. Companion doc PRs have been closed.",

@@ -69,13 +69,11 @@ func classifyError(err error) ErrorCategory {
 	// --- Machine context: typed errors ---
 	var toolCheckErr *tools.MissingToolErrors
 	var semverErr *tools.ErrSemver
-	var exitErr *exec.ExitError
 	var extRunErr *extensions.ExtensionRunError
 	var packStatusErr *pack.StatusCodeError
 
 	if errors.As(err, &toolCheckErr) ||
 		errors.As(err, &semverErr) ||
-		errors.As(err, &exitErr) ||
 		errors.As(err, &extRunErr) ||
 		errors.As(err, &packStatusErr) {
 		return MachineContextError

@@ -307,7 +307,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 		e.displayAgentResponse(ctx, guideOutput, AIDisclaimer)
 
-		// no fix if the retry produced a machine or user context error
+		// Do not proceed to automated fix/apply flow for machine or user context errors
 		if classifyError(originalError) != AzureContextAndOtherError {
 			return actionResult, originalError
 		}

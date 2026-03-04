@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/stretchr/testify/require"
@@ -114,6 +115,7 @@ func Test_wrapErrorWithSuggestion(t *testing.T) {
 		wantNil          bool
 		wantContain      string
 		wantSameInstance bool
+		wantGrpcCode     codes.Code
 	}{
 		{
 			name:    "nil error returns nil",
@@ -142,6 +144,27 @@ func Test_wrapErrorWithSuggestion(t *testing.T) {
 			}),
 			wantContain: "azd auth login",
 		},
+		{
+			name:         "ErrNoCurrentUser returns Unauthenticated",
+			err:          auth.ErrNoCurrentUser,
+			wantContain:  "not logged in",
+			wantGrpcCode: codes.Unauthenticated,
+		},
+		{
+			name:         "wrapped ErrNoCurrentUser returns Unauthenticated",
+			err:          fmt.Errorf("failed to list subscriptions: %w", auth.ErrNoCurrentUser),
+			wantContain:  "not logged in",
+			wantGrpcCode: codes.Unauthenticated,
+		},
+		{
+			name: "ReLoginRequiredError with suggestion returns Unauthenticated",
+			err: &internal.ErrorWithSuggestion{
+				Err:        &auth.ReLoginRequiredError{},
+				Suggestion: "login expired, run `azd auth login` to acquire a new token.",
+			},
+			wantContain:  "azd auth login",
+			wantGrpcCode: codes.Unauthenticated,
+		},
 	}
 
 	for _, tt := range tests {
@@ -155,6 +178,11 @@ func Test_wrapErrorWithSuggestion(t *testing.T) {
 			require.Contains(t, result.Error(), tt.wantContain)
 			if tt.wantSameInstance {
 				require.Same(t, tt.err, result, "expected error to be returned unchanged (same instance)")
+			}
+			if tt.wantGrpcCode != 0 {
+				st, ok := status.FromError(result)
+				require.True(t, ok, "expected gRPC status error")
+				require.Equal(t, tt.wantGrpcCode, st.Code())
 			}
 		})
 	}

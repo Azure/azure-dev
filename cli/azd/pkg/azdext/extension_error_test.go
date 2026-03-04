@@ -5,11 +5,14 @@ package azdext
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestExtensionError_RoundTrip(t *testing.T) {
@@ -113,6 +116,37 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 				require.ErrorAs(t, goErr, &svcErr)
 				assert.Equal(t, "ResourceNotFound", svcErr.ErrorCode)
 				assert.Equal(t, 404, svcErr.StatusCode)
+			},
+		},
+		{
+			name:     "GrpcUnauthenticatedError",
+			inputErr: status.Error(codes.Unauthenticated, "not logged in, run `azd auth login` to login"),
+			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
+				assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_LOCAL, protoErr.GetOrigin())
+				assert.Contains(t, protoErr.GetMessage(), "not logged in")
+
+				localDetail := protoErr.GetLocalError()
+				require.NotNil(t, localDetail)
+				assert.Equal(t, "auth_failed", localDetail.GetCode())
+				assert.Equal(t, "auth", localDetail.GetCategory())
+
+				var localErr *LocalError
+				require.ErrorAs(t, goErr, &localErr)
+				assert.Equal(t, LocalErrorCategoryAuth, localErr.Category)
+				assert.Equal(t, "auth_failed", localErr.Code)
+			},
+		},
+		{
+			name:     "WrappedGrpcUnauthenticatedError",
+			inputErr: fmt.Errorf("failed to prompt: %w", status.Error(codes.Unauthenticated, "login expired")),
+			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
+				assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_LOCAL, protoErr.GetOrigin())
+				assert.Equal(t, "login expired", protoErr.GetMessage())
+
+				localDetail := protoErr.GetLocalError()
+				require.NotNil(t, localDetail)
+				assert.Equal(t, "auth_failed", localDetail.GetCode())
+				assert.Equal(t, "auth", localDetail.GetCategory())
 			},
 		},
 	}

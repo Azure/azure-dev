@@ -523,7 +523,7 @@ func Test_ExtractSuggestedSolutions(t *testing.T) {
 	}
 }
 
-func Test_PromptTroubleshootingWithConsent_SavedSkipDisplaysWarning(t *testing.T) {
+func Test_PromptExplanationWithConsent_SavedSkipDisplaysWarning(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	cfg := config.NewEmptyConfig()
 	_ = cfg.Set("mcp.errorHandling.troubleshooting.skip", "allow")

@@ -65,7 +65,7 @@
 
         <!-- Also detect and remove the other channel (release vs. dev) installation -->
         <Upgrade Id="$(var.OtherUpgradeCode)">
-            <UpgradeVersion Minimum="0" IncludeMinimum="yes" Property="OLDOTHERCHANNELFOUND"/>
+            <UpgradeVersion Minimum="0.0.0" IncludeMinimum="yes" Property="OLDOTHERCHANNELFOUND"/>
         </Upgrade>
 
         <Directory Id="TARGETDIR" Name="SourceDir">

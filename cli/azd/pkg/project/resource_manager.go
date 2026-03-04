@@ -142,6 +142,7 @@ func isHostResource(resourceType string) bool {
 	// Use case-insensitive comparison to handle variations in Azure API responses
 	return strings.EqualFold(resourceType, string(azapi.AzureResourceTypeWebSite)) || // App Service, Function App
 		strings.EqualFold(resourceType, string(azapi.AzureResourceTypeContainerApp)) || // Container Apps
+		strings.EqualFold(resourceType, string(azapi.AzureResourceTypeContainerAppJob)) || // Container App Jobs
 		strings.EqualFold(resourceType, string(azapi.AzureResourceTypeManagedCluster)) || // AKS
 		strings.EqualFold(resourceType, string(azapi.AzureResourceTypeStaticWebSite)) || // Static Web Apps
 		strings.EqualFold(resourceType, string(azapi.AzureResourceTypeMachineLearningEndpoint)) // AI Endpoint

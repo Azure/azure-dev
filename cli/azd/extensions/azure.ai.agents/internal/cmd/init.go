@@ -530,18 +530,18 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 			return nil, fmt.Errorf("failed to get current AZURE_TENANT_ID from azd environment: %w", err)
 		}
 
-		if currentTenant.Value == "" {
-			tenantResp, err := azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
-				SubscriptionId: foundryProject.SubscriptionId,
-			})
-			if err != nil {
-				return nil, exterrors.Auth(
-					exterrors.CodeTenantLookupFailed,
-					fmt.Sprintf("failed to lookup tenant for subscription %s: %s", foundryProject.SubscriptionId, err),
-					"verify your Azure login with 'azd auth login'",
-				)
-			}
+		tenantResp, err := azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
+			SubscriptionId: foundryProject.SubscriptionId,
+		})
+		if err != nil {
+			return nil, exterrors.Auth(
+				exterrors.CodeTenantLookupFailed,
+				fmt.Sprintf("failed to lookup tenant for subscription %s: %s", foundryProject.SubscriptionId, err),
+				"verify your Azure login with 'azd auth login'",
+			)
+		}
 
+		if currentTenant.Value == "" {
 			_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 				EnvName: existingEnv.Name,
 				Key:     "AZURE_TENANT_ID",
@@ -550,6 +550,12 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 			if err != nil {
 				return nil, fmt.Errorf("failed to set AZURE_TENANT_ID in azd environment: %w", err)
 			}
+		} else if currentTenant.Value != tenantResp.TenantId {
+			return nil, exterrors.Validation(
+				exterrors.CodeTenantMismatch,
+				fmt.Sprintf("tenant ID mismatch: environment has %s but project uses %s", currentTenant.Value, tenantResp.TenantId),
+				"update or recreate your environment with 'azd env new'",
+			)
 		}
 
 		// Get current location from environment

@@ -23,6 +23,7 @@ const (
 	CodeAgentDefinitionNotFound   = "agent_definition_not_found"
 	CodeSubscriptionMismatch      = "subscription_mismatch"
 	CodeLocationMismatch          = "location_mismatch"
+	CodeTenantMismatch            = "tenant_mismatch"
 	CodeMissingPublishedContainer = "missing_published_container_artifact"
 	CodeScaffoldTemplateFailed    = "scaffold_template_failed"
 	CodeModelDeploymentNotFound   = "model_deployment_not_found"

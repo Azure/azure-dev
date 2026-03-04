@@ -271,9 +271,9 @@ func TestMissingInputsError_MarshalJSON(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(jsonData, &result))
 
-	assert.Equal(t, "missingInputs", result.Code)
+	assert.Equal(t, "provisionMissingInputs", result.Code)
 	assert.Equal(t, "Provision cannot continue (interactive prompts disabled)", result.Message)
-	assert.Equal(t, "missingInputs", result.Details.Type)
+	assert.Equal(t, "provisionMissingInputs", result.Details.Type)
 	require.Len(t, result.Details.Inputs, 1)
 
 	input := result.Details.Inputs[0]

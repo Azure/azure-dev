@@ -25,6 +25,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/fatih/color"
@@ -1011,9 +1012,12 @@ func extractResourceGroup(resourceId string) string {
 // listFoundryProjects enumerates all Foundry projects in a subscription by listing
 // CognitiveServices accounts and their projects.
 func (a *InitFromCodeAction) listFoundryProjects(ctx context.Context, subscriptionId string) ([]FoundryProjectInfo, error) {
-	accountsClient, err := armcognitiveservices.NewAccountsClient(subscriptionId, a.credential, azure.NewArmClientOptions())
+	// Use the generic armresources client instead of armcognitiveservices.AccountsClient to
+	// avoid an SDK unmarshal bug where armcognitiveservices.NetworkInjections is defined as
+	// map[string]json.RawMessage but the API returns a JSON array for that field.
+	resourcesClient, err := armresources.NewClient(subscriptionId, a.credential, azure.NewArmClientOptions())
 	if err != nil {
-		return nil, fmt.Errorf("failed to create accounts client: %w", err)
+		return nil, fmt.Errorf("failed to create resources client: %w", err)
 	}
 
 	projectsClient, err := armcognitiveservices.NewProjectsClient(subscriptionId, a.credential, azure.NewArmClientOptions())
@@ -1023,8 +1027,11 @@ func (a *InitFromCodeAction) listFoundryProjects(ctx context.Context, subscripti
 
 	var results []FoundryProjectInfo
 
-	// List all CognitiveServices accounts
-	accountPager := accountsClient.NewListPager(nil)
+	// List all CognitiveServices accounts using the generic resources API.
+	// This avoids deserializing armcognitiveservices.AccountProperties which contains
+	// the NetworkInjections field that the SDK mismatches with the actual API response.
+	accountFilter := "resourceType eq 'Microsoft.CognitiveServices/accounts'"
+	accountPager := resourcesClient.NewListPager(&armresources.ClientListOptions{Filter: to.Ptr(accountFilter)})
 	for accountPager.More() {
 		page, err := accountPager.NextPage(ctx)
 		if err != nil {

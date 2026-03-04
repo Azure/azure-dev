@@ -1,5 +1,15 @@
 # Release History
 
+## 0.10.0 (2026-03-04)
+
+- [[#6826]](https://github.com/Azure/azure-dev/pull/6826) Handle locked files on Windows during `azd x build` by terminating stale extension processes.
+- [[#6747]](https://github.com/Azure/azure-dev/pull/6747) Add `requiredAzdVersion` support to `azd x publish` for declaring core version dependencies.
+- [[#6792]](https://github.com/Azure/azure-dev/pull/6792) Fix `azd x publish` to correctly sync `--version` flag to extension metadata.
+- [[#6733]](https://github.com/Azure/azure-dev/pull/6733) Update scaffolded `environment.proto` template to make `env_name` optional in EnvironmentService methods.
+- [[#6768]](https://github.com/Azure/azure-dev/pull/6768) Normalize user-facing text to use lowercase `azd` branding consistently.
+- [[#6711]](https://github.com/Azure/azure-dev/pull/6711) Improve command descriptions for `publish` and `release` commands.
+- [[#6677]](https://github.com/Azure/azure-dev/pull/6677) Bump protobuf dependency in Python scaffolding template from 5.29.5 to 6.33.5.
+
 ## 0.9.0 (2026-01-22)
 
 - [[#6541]](https://github.com/Azure/azure-dev/pull/6541) Add metadata capability

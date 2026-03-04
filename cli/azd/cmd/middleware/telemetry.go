@@ -163,7 +163,8 @@ func (m *TelemetryMiddleware) extensionCmdInfo(extensionId string) (string, []st
 	return events.GetCommandEventName(fullPath), commandFlags
 }
 
-// setInstalledExtensionsAttributes emits the list of installed extension IDs and versions as span attributes.
+// setInstalledExtensionsAttributes emits the list of installed extensions as span attributes.
+// Each entry is formatted as "id@version" (e.g. "microsoft.azd.ai@1.2.0").
 func (m *TelemetryMiddleware) setInstalledExtensionsAttributes(span tracing.Span) {
 	if m.extensionManager == nil {
 		return
@@ -174,19 +175,13 @@ func (m *TelemetryMiddleware) setInstalledExtensionsAttributes(span tracing.Span
 		return
 	}
 
-	ids := make([]string, 0, len(installed))
-	for id := range installed {
-		ids = append(ids, id)
+	entries := make([]string, 0, len(installed))
+	for id, ext := range installed {
+		if ext != nil {
+			entries = append(entries, id+"@"+ext.Version)
+		}
 	}
-	slices.Sort(ids)
+	slices.Sort(entries)
 
-	versions := make([]string, 0, len(installed))
-	for _, id := range ids {
-		versions = append(versions, installed[id].Version)
-	}
-
-	span.SetAttributes(
-		fields.ExtensionsInstalledIds.StringSlice(ids),
-		fields.ExtensionsInstalledVersions.StringSlice(versions),
-	)
+	span.SetAttributes(fields.ExtensionsInstalled.StringSlice(entries))
 }

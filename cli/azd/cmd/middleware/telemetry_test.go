@@ -13,7 +13,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mocktracing"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 func Test_Telemetry_Run(t *testing.T) {
@@ -90,6 +92,8 @@ func Test_Telemetry_Run(t *testing.T) {
 		userConfig, err := userConfigManager.Load()
 		require.NoError(t, err)
 
+		// Use extensions whose alphabetical order differs from insertion order
+		// to verify sorting behavior
 		installedExtensions := map[string]*extensions.Extension{
 			"microsoft.azd.demo": {
 				Id:      "microsoft.azd.demo",
@@ -115,38 +119,57 @@ func Test_Telemetry_Run(t *testing.T) {
 		}
 		middleware := NewTelemetryMiddleware(options, lazyPlatformConfig, manager)
 
-		ran := false
-		nextFn := func(ctx context.Context) (*actions.ActionResult, error) {
-			ran = true
-			return nil, nil
+		// Call the method directly with a mock span to verify attributes
+		span := &mocktracing.Span{}
+		middleware.(*TelemetryMiddleware).setInstalledExtensionsAttributes(span)
+		var installedAttr *attribute.KeyValue
+		for i := range span.Attributes {
+			if span.Attributes[i].Key == "extension.installed" {
+				installedAttr = &span.Attributes[i]
+				break
+			}
 		}
+		require.NotNil(t, installedAttr, "extension.installed attribute should be set")
+		require.Equal(t,
+			[]string{"microsoft.azd.ai@1.2.0", "microsoft.azd.demo@0.5.0"},
+			installedAttr.Value.AsStringSlice(),
+		)
+	})
 
-		_, _ = middleware.Run(*mockContext.Context, nextFn)
-		require.True(t, ran)
+	t.Run("WithNoInstalledExtensions", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
 
-		// Verify that installed extensions were listed without error
-		installed, err := manager.ListInstalled()
+		userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+
+		lazyRunner := lazy.NewLazy(func() (*extensions.Runner, error) {
+			return nil, nil
+		})
+		manager, err := extensions.NewManager(userConfigManager, nil, lazyRunner, mockContext.HttpClient)
 		require.NoError(t, err)
-		require.Equal(t, 2, len(installed))
+
+		options := &Options{
+			CommandPath: "azd provision",
+			Name:        "provision",
+		}
+		middleware := NewTelemetryMiddleware(options, lazyPlatformConfig, manager)
+
+		span := &mocktracing.Span{}
+		middleware.(*TelemetryMiddleware).setInstalledExtensionsAttributes(span)
+
+		require.Empty(t, span.Attributes, "no attributes should be set when no extensions are installed")
 	})
 
 	t.Run("WithNilExtensionManager", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
-
 		options := &Options{
 			CommandPath: "azd provision",
 			Name:        "provision",
 		}
 		middleware := NewTelemetryMiddleware(options, lazyPlatformConfig, nil)
 
-		ran := false
-		nextFn := func(ctx context.Context) (*actions.ActionResult, error) {
-			ran = true
-			return nil, nil
-		}
-
 		// Should not panic when extensionManager is nil
-		_, _ = middleware.Run(*mockContext.Context, nextFn)
-		require.True(t, ran)
+		span := &mocktracing.Span{}
+		middleware.(*TelemetryMiddleware).setInstalledExtensionsAttributes(span)
+
+		require.Empty(t, span.Attributes, "no attributes should be set when manager is nil")
 	})
 }

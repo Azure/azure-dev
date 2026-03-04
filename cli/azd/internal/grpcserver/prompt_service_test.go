@@ -906,3 +906,97 @@ func Test_findDefaultIndex_EmptyChoices(t *testing.T) {
 	result := findDefaultIndex([]*ux.SelectChoice{}, "some-value")
 	require.Nil(t, result)
 }
+
+func Test_selectModelNoPrompt(t *testing.T) {
+	models := []ai.AiModel{
+		{
+			Name:   "gpt-4o",
+			Format: "OpenAI",
+			Versions: []ai.AiModelVersion{
+				{Version: "2024-05-13", IsDefault: true},
+			},
+			Locations: []string{"eastus"},
+		},
+		{
+			Name:   "gpt-4o-mini",
+			Format: "OpenAI",
+			Versions: []ai.AiModelVersion{
+				{Version: "2024-07-18", IsDefault: true},
+			},
+			Locations: []string{"eastus", "westus"},
+		},
+		{
+			Name:   "gpt-35-turbo",
+			Format: "OpenAI",
+			Locations: []string{"eastus"},
+		},
+	}
+
+	tests := []struct {
+		name         string
+		models       []ai.AiModel
+		defaultValue string
+		wantModel    string
+		errContains  string
+	}{
+		{
+			name:         "exact match returns model",
+			models:       models,
+			defaultValue: "gpt-4o",
+			wantModel:    "gpt-4o",
+		},
+		{
+			name:         "case insensitive match",
+			models:       models,
+			defaultValue: "GPT-4O-MINI",
+			wantModel:    "gpt-4o-mini",
+		},
+		{
+			name:         "mixed case match",
+			models:       models,
+			defaultValue: "Gpt-35-Turbo",
+			wantModel:    "gpt-35-turbo",
+		},
+		{
+			name:         "no match returns not found error",
+			models:       models,
+			defaultValue: "nonexistent-model",
+			errContains:  "not found in available models",
+		},
+		{
+			name:         "empty default returns interactive required error",
+			models:       models,
+			defaultValue: "",
+			errContains:  "cannot prompt for model selection in non-interactive mode",
+		},
+		{
+			name:         "empty models with default returns not found",
+			models:       []ai.AiModel{},
+			defaultValue: "gpt-4o",
+			errContains:  "not found in available models",
+		},
+		{
+			name:         "empty models without default returns interactive required",
+			models:       []ai.AiModel{},
+			defaultValue: "",
+			errContains:  "cannot prompt for model selection in non-interactive mode",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp, err := selectModelNoPrompt(tt.models, tt.defaultValue)
+			if tt.errContains != "" {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tt.errContains)
+				require.Nil(t, resp)
+				return
+			}
+
+			require.NoError(t, err)
+			require.NotNil(t, resp)
+			require.NotNil(t, resp.Model)
+			require.Equal(t, tt.wantModel, resp.Model.Name)
+		})
+	}
+}

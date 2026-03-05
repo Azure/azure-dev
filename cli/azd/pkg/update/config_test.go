@@ -100,6 +100,25 @@ func TestLoadUpdateConfig(t *testing.T) {
 	}
 }
 
+func TestInferChannelFromVersion(t *testing.T) {
+	tests := []struct {
+		name    string
+		version string
+		want    Channel
+	}{
+		{"stable release", "1.23.6", ChannelStable},
+		{"daily build", "1.24.0-beta.1-daily.5963821", ChannelDaily},
+		{"daily with commit info", "1.24.0-beta.1-daily.5963821 (commit abc123)", ChannelDaily},
+		{"empty", "", ChannelStable},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, inferChannelFromVersionString(tt.version))
+		})
+	}
+}
+
 func TestUpdateConfigDefaultCheckInterval(t *testing.T) {
 	tests := []struct {
 		name     string

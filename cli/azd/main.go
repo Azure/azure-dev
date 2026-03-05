@@ -63,7 +63,7 @@ func main() {
 	}
 
 	// Auto-update: check for applied update marker and display banner
-	if !internal.IsDevVersion() {
+	if !internal.IsNonProdVersion() {
 		if fromVersion, err := update.ReadAppliedMarker(); err == nil && fromVersion != "" {
 			update.RemoveAppliedMarker()
 			fmt.Fprintln(
@@ -75,7 +75,7 @@ func main() {
 
 	// Auto-update: apply staged binary if one exists (before anything else)
 	showedElevationWarning := false
-	if !internal.IsDevVersion() && update.HasStagedUpdate() {
+	if !internal.IsNonProdVersion() && update.HasStagedUpdate() {
 		applyConfigMgr := config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager()))
 		applyCfg, cfgErr := applyConfigMgr.Load()
 		if cfgErr != nil {
@@ -141,15 +141,14 @@ func main() {
 	bgCancel()
 
 	// If we were able to fetch a latest version, check to see if we are up to date and
-	// print a warning if we are not. Note that we don't print this warning when the CLI version
-	// is exactly 0.0.0-dev.0, which is a sentinel value used for `internal.Version` when
-	// a version is not explicitly applied at build time (i.e. dev builds installed with `go install`)
+	// print a warning if we are not. Non-production builds (dev builds via `go install` and
+	// PR builds with "-pr." prerelease tags) are excluded since they should not suggest updates.
 	//
 	// Don't write this message when JSON output is enabled, since in that case we use stderr to return structured
 	// information about command progress.
 	if !isJsonOutput() && ok && !suppressUpdateBanner() && !showedElevationWarning {
-		if internal.IsDevVersion() {
-			log.Printf("eliding update message for dev build")
+		if internal.IsNonProdVersion() {
+			log.Printf("eliding update message for non-production build")
 		} else if versionInfo.HasUpdate {
 			currentVersionStr := internal.VersionInfo().Version.String()
 			latestVersionStr := versionInfo.Version

@@ -12,8 +12,10 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -80,10 +82,28 @@ func (c *UpdateConfig) DefaultCheckInterval() time.Duration {
 	return DefaultCheckIntervalStable
 }
 
+// inferChannelFromVersion returns ChannelDaily if the running binary's version
+// string contains a "daily." build number suffix, otherwise ChannelStable.
+func inferChannelFromVersion() Channel {
+	return inferChannelFromVersionString(internal.Version)
+}
+
+// inferChannelFromVersionString returns ChannelDaily if the given version
+// string contains a "daily." build number suffix, otherwise ChannelStable.
+func inferChannelFromVersionString(version string) Channel {
+	if strings.Contains(version, "daily.") {
+		return ChannelDaily
+	}
+	return ChannelStable
+}
+
 // LoadUpdateConfig reads update configuration from the user config.
+// When no channel is explicitly configured, the channel is inferred from
+// the running binary's version string so that daily builds automatically
+// check the daily update source.
 func LoadUpdateConfig(cfg config.Config) *UpdateConfig {
 	uc := &UpdateConfig{
-		Channel: ChannelStable,
+		Channel: inferChannelFromVersion(),
 	}
 
 	if ch, ok := cfg.GetString(configKeyChannel); ok {

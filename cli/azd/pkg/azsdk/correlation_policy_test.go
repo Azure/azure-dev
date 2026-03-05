@@ -41,7 +41,7 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 		correlationPolicyFunc func() policy.Policy
 	}{
 		{
-			name: "WithTraceId",
+			name: "CorrelationId_WithTraceId",
 			ctx: trace.ContextWithSpanContext(
 				context.Background(),
 				trace.SpanContext{}.WithTraceID(traceId),
@@ -51,7 +51,7 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 			correlationPolicyFunc: NewMsCorrelationPolicy,
 		},
 		{
-			name: "WithInvalidTraceId",
+			name: "CorrelationId_WithInvalidTraceId",
 			// nolint:lll
 			ctx: trace.ContextWithSpanContext(
 				context.Background(),
@@ -62,14 +62,41 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 			correlationPolicyFunc: NewMsCorrelationPolicy,
 		},
 		{
-			name:                  "WithoutTraceId",
+			name:                  "CorrelationId_WithoutTraceId",
 			ctx:                   context.Background(),
 			expect:                nil,
 			headerName:            MsCorrelationIdHeader,
 			correlationPolicyFunc: NewMsCorrelationPolicy,
 		},
 		{
-			name: "WithTraceId",
+			name: "ClientRequestId_WithTraceId",
+			ctx: trace.ContextWithSpanContext(
+				context.Background(),
+				trace.SpanContext{}.WithTraceID(traceId),
+			),
+			expect:                to.Ptr(traceId.String()),
+			headerName:            MsClientRequestIdHeader,
+			correlationPolicyFunc: NewMsClientRequestIdPolicy,
+		},
+		{
+			name: "ClientRequestId_WithInvalidTraceId",
+			ctx: trace.ContextWithSpanContext(
+				context.Background(),
+				trace.SpanContext{}.WithTraceID(invalidTraceId),
+			),
+			expect:                to.Ptr(""),
+			headerName:            MsClientRequestIdHeader,
+			correlationPolicyFunc: NewMsClientRequestIdPolicy,
+		},
+		{
+			name:                  "ClientRequestId_WithoutTraceId",
+			ctx:                   context.Background(),
+			expect:                nil,
+			headerName:            MsClientRequestIdHeader,
+			correlationPolicyFunc: NewMsClientRequestIdPolicy,
+		},
+		{
+			name: "GraphCorrelationId_WithTraceId",
 			ctx: trace.ContextWithSpanContext(
 				context.Background(),
 				trace.SpanContext{}.WithTraceID(traceId),
@@ -79,7 +106,7 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 			correlationPolicyFunc: NewMsGraphCorrelationPolicy,
 		},
 		{
-			name: "WithInvalidTraceId",
+			name: "GraphCorrelationId_WithInvalidTraceId",
 			// nolint:lll
 			ctx: trace.ContextWithSpanContext(
 				context.Background(),
@@ -90,7 +117,7 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 			correlationPolicyFunc: NewMsGraphCorrelationPolicy,
 		},
 		{
-			name:                  "WithoutTraceId",
+			name:                  "GraphCorrelationId_WithoutTraceId",
 			ctx:                   context.Background(),
 			expect:                nil,
 			headerName:            msGraphCorrelationIdHeader,

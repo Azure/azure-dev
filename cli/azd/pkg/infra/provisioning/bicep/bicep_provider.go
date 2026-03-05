@@ -2356,6 +2356,11 @@ func (p *BicepProvider) ensureParameters(
 		}{key: key, param: param})
 	}
 
+	// If in no-prompt mode and there are missing parameters, return an error with all missing inputs
+	if len(parameterPrompts) > 0 && p.console.IsNoPromptMode() {
+		return nil, p.buildMissingInputsError(parameterPrompts, parametersResult.envMapping)
+	}
+
 	if len(parameterPrompts) > 0 {
 		if p.console.SupportsPromptDialog() {
 

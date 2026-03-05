@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -66,6 +67,70 @@ func runActionSafe(ctx context.Context, action *initAction) (retErr error) {
 
 	_, err := action.Run(ctx)
 	return err
+}
+
+func TestInitNoPromptRequiresMode(t *testing.T) {
+	t.Run("ReturnsInitNoPromptErrorWhenNoMode", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.Console.SetNoPromptMode(true)
+
+		flags := &initFlags{
+			global: &internal.GlobalCommandOptions{NoPrompt: true},
+		}
+
+		action := setupInitAction(t, mockContext, flags)
+
+		result, err := action.Run(*mockContext.Context)
+		require.Error(t, err)
+		require.Nil(t, result)
+
+		var noPromptErr *initModeRequiredError
+		require.ErrorAs(t, err, &noPromptErr)
+
+		output := noPromptErr.ToString("")
+		require.Contains(t, output, "Init cannot continue (interactive prompts disabled)")
+		require.Contains(t, output, "azd init --minimal")
+		require.Contains(t, output, "azd init --template")
+	})
+
+	t.Run("DoesNotErrorWhenMinimalFlagSet", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.Console.SetNoPromptMode(true)
+
+		flags := &initFlags{
+			minimal: true,
+			global:  &internal.GlobalCommandOptions{NoPrompt: true},
+		}
+
+		action := setupInitAction(t, mockContext, flags)
+
+		err := runActionSafe(*mockContext.Context, action)
+		if err != nil {
+			var noPromptErr *initModeRequiredError
+			require.False(t, errors.As(err, &noPromptErr),
+				"should not return InitNoPromptError when --minimal is set")
+		}
+	})
+
+	t.Run("DoesNotErrorWhenTemplateAndEnvironmentProvided", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.Console.SetNoPromptMode(true)
+
+		flags := &initFlags{
+			templatePath: "owner/repo",
+			global:       &internal.GlobalCommandOptions{NoPrompt: true},
+		}
+		flags.EnvironmentName = "myenv"
+
+		action := setupInitAction(t, mockContext, flags)
+
+		err := runActionSafe(*mockContext.Context, action)
+		if err != nil {
+			var noPromptErr *initModeRequiredError
+			require.False(t, errors.As(err, &noPromptErr),
+				"should not return InitNoPromptError when --template and --environment are both set")
+		}
+	})
 }
 
 func TestInitFailFastMissingEnvNonInteractive(t *testing.T) {

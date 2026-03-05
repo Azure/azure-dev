@@ -367,6 +367,10 @@ stages:
                   parameters:
                     Use1ESArtifactTask: true
 
+                - pwsh: |
+                    Write-Output $(CLI_VERSION) | Out-File -Encoding utf8 -FilePath ./release/version.txt
+                  displayName: Write version.txt file for daily release
+
                 - template: /eng/pipelines/templates/steps/publish-cli.yml
                   parameters:
                     CreateGitHubRelease: false

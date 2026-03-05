@@ -55,10 +55,16 @@ type ErrorMiddleware struct {
 type ErrorCategory int
 
 const (
+	// AzureContextAndOtherError represents errors originating from Azure service interactions
+	// or any other unclassified errors. These are eligible for full agentic analysis and automated fix.
 	AzureContextAndOtherError ErrorCategory = iota
 
+	// MachineContextError represents errors caused by the local machine environment,
+	// such as missing tools, incompatible tool versions, extension failures, or build-tool issues.
 	MachineContextError
 
+	// UserContextError represents errors caused by user actions or configuration,
+	// such as authentication failures, missing credentials, or invalid project/environment settings.
 	UserContextError
 )
 
@@ -125,11 +131,7 @@ func shouldSkipErrorAnalysis(err error) bool {
 
 	// Environment was already initialized
 	var envInitErr *environment.EnvironmentInitError
-	if errors.As(err, &envInitErr) {
-		return true
-	}
-
-	return false
+	return errors.As(err, &envInitErr)
 }
 
 func NewErrorMiddleware(
@@ -247,14 +249,14 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		errorInput := originalError.Error()
 
 		e.console.Message(ctx, "")
-		troubleshootScope, err := e.promptExplanationWithConsent(ctx)
+		errorExplanationScope, err := e.promptExplanationWithConsent(ctx)
 		if err != nil {
 			span.SetStatus(codes.Error, "agent.consent.failed")
-			return nil, fmt.Errorf("prompting for troubleshooting scope: %w", err)
+			return nil, fmt.Errorf("prompting for error explanation scope: %w", err)
 		}
 
-		if troubleshootScope != "" {
-			troubleshootPrompt := fmt.Sprintf(
+		if errorExplanationScope != "" {
+			errorExplanationPrompt := fmt.Sprintf(
 				`Steps to follow:
 			1. Use available tools including azd_error_troubleshooting tool to identify this error.
 			2. Provide a concise explanation using these two sections with bold markdown titles:
@@ -264,7 +266,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			Do not provide fix steps. Do not perform any file changes.
 			Error details: %s`, errorInput)
 
-			agentOutput, err := azdAgent.SendMessage(ctx, troubleshootPrompt)
+			agentOutput, err := azdAgent.SendMessage(ctx, errorExplanationPrompt)
 
 			if err != nil {
 				e.displayAgentResponse(ctx, agentOutput, AIDisclaimer)
@@ -328,7 +330,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		}
 
 		if !confirmFix {
-			if troubleshootScope != "" {
+			if errorExplanationScope != "" {
 				span.SetStatus(codes.Ok, "agent.troubleshoot.only")
 			} else {
 				span.SetStatus(codes.Error, "agent.fix.declined")

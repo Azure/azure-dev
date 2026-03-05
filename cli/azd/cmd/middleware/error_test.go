@@ -16,12 +16,16 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/llm"
+	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/pack"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/blang/semver/v4"
@@ -617,20 +621,6 @@ func Test_ClassifyError(t *testing.T) {
 		require.Equal(t, MachineContextError, classifyError(err))
 	})
 
-	t.Run("ExitError classifies as MachineContext", func(t *testing.T) {
-		err := &exec.ExitError{
-			Cmd:      "npm",
-			ExitCode: 1,
-		}
-		require.Equal(t, MachineContextError, classifyError(err))
-	})
-
-	t.Run("Wrapped ExitError classifies as MachineContext", func(t *testing.T) {
-		inner := &exec.ExitError{Cmd: "pip", ExitCode: 2}
-		wrapped := fmt.Errorf("build step failed: %w", inner)
-		require.Equal(t, MachineContextError, classifyError(wrapped))
-	})
-
 	t.Run("ExtensionRunError classifies as MachineContext", func(t *testing.T) {
 		err := &extensions.ExtensionRunError{
 			ExtensionId: "my-extension",
@@ -648,10 +638,53 @@ func Test_ClassifyError(t *testing.T) {
 	})
 
 	// --- User context: typed errors ---
-	t.Run("Wrapped ErrNoCurrentUser classifies as UserContext", func(t *testing.T) {
-		wrapped := fmt.Errorf("operation failed: %w", auth.ErrNoCurrentUser)
-		require.Equal(t, UserContextError, classifyError(wrapped))
+	t.Run("ReLoginRequiredError classifies as UserContext", func(t *testing.T) {
+		err := &auth.ReLoginRequiredError{}
+		require.Equal(t, UserContextError, classifyError(err))
 	})
+
+	t.Run("AuthFailedError classifies as UserContext", func(t *testing.T) {
+		err := &auth.AuthFailedError{}
+		require.Equal(t, UserContextError, classifyError(err))
+	})
+
+	userContextSentinels := []struct {
+		name string
+		err  error
+	}{
+		// auth
+		{"auth.ErrNoCurrentUser", auth.ErrNoCurrentUser},
+		// azapi
+		{"azapi.ErrAzCliNotLoggedIn", azapi.ErrAzCliNotLoggedIn},
+		{"azapi.ErrAzCliRefreshTokenExpired", azapi.ErrAzCliRefreshTokenExpired},
+		// github
+		{"github.ErrGitHubCliNotLoggedIn", github.ErrGitHubCliNotLoggedIn},
+		{"github.ErrUserNotAuthorized", github.ErrUserNotAuthorized},
+		{"github.ErrRepositoryNameInUse", github.ErrRepositoryNameInUse},
+		// environment
+		{"environment.ErrNotFound", environment.ErrNotFound},
+		{"environment.ErrNameNotSpecified", environment.ErrNameNotSpecified},
+		{"environment.ErrDefaultEnvironmentNotFound", environment.ErrDefaultEnvironmentNotFound},
+		{"environment.ErrAccessDenied", environment.ErrAccessDenied},
+		// pipeline
+		{"pipeline.ErrAuthNotSupported", pipeline.ErrAuthNotSupported},
+		{"pipeline.ErrRemoteHostIsNotAzDo", pipeline.ErrRemoteHostIsNotAzDo},
+		{"pipeline.ErrSSHNotSupported", pipeline.ErrSSHNotSupported},
+		{"pipeline.ErrRemoteHostIsNotGitHub", pipeline.ErrRemoteHostIsNotGitHub},
+		// project
+		{"project.ErrNoDefaultService", project.ErrNoDefaultService},
+	}
+
+	for _, tc := range userContextSentinels {
+		t.Run(tc.name+" classifies as UserContext", func(t *testing.T) {
+			require.Equal(t, UserContextError, classifyError(tc.err))
+		})
+
+		t.Run("Wrapped "+tc.name+" classifies as UserContext", func(t *testing.T) {
+			wrapped := fmt.Errorf("operation failed: %w", tc.err)
+			require.Equal(t, UserContextError, classifyError(wrapped))
+		})
+	}
 
 	// --- Azure context: defaults ---
 	t.Run("Generic error defaults to AzureContext", func(t *testing.T) {

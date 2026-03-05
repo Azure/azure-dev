@@ -20,14 +20,12 @@ import (
 )
 
 type invokeFlags struct {
-	accountName string
-	projectName string
-	message     string
-	remote      bool
-	name        string
-	port        int
-	session     string
-	newSession  bool
+	message    string
+	remote     bool
+	name       string
+	port       int
+	session    string
+	newSession bool
 }
 
 type InvokeAction struct {
@@ -47,7 +45,7 @@ Use --remote or --name <agent> to invoke on Foundry.
 
 Sessions are persisted per-agent — consecutive invokes reuse the same
 session automatically. Pass --new-session to force a reset.`,
-		Example: `  # Invoke locally (agent must be running via 'azd ai agent dev')
+		Example: `  # Invoke locally (agent must be running via 'azd ai agent run')
   azd ai agent invoke "Hello!"
 
   # Invoke the remote agent on Foundry (auto-detects agent from azure.yaml)
@@ -82,8 +80,6 @@ session automatically. Pass --new-session to force a reset.`,
 		},
 	}
 
-	cmd.Flags().StringVarP(&flags.accountName, "account-name", "a", "", "Cognitive Services account name")
-	cmd.Flags().StringVarP(&flags.projectName, "project-name", "p", "", "AI Foundry project name")
 	cmd.Flags().StringVarP(&flags.message, "message", "m", "", "Message to send (alternative to positional argument)")
 	cmd.Flags().BoolVarP(&flags.remote, "remote", "r", false, "Invoke on Foundry instead of localhost")
 	cmd.Flags().StringVarP(&flags.name, "name", "n", "", "Agent name (implies --remote)")
@@ -126,7 +122,7 @@ func (a *InvokeAction) invokeLocal() error {
 	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("could not connect to localhost:%d — is the agent running? Start it with: azd ai agent start", port)
+		return fmt.Errorf("could not connect to localhost:%d — is the agent running? Start it with: azd ai agent run", port)
 	}
 	defer resp.Body.Close()
 
@@ -156,7 +152,7 @@ func (a *InvokeAction) invokeLocal() error {
 func (a *InvokeAction) invokeRemote(ctx context.Context) error {
 	name := a.flags.name
 
-	// Auto-resolve agent name from azure.yaml + azd environment
+	// Auto-resolve agent name from azure.yaml
 	if info, err := resolveAgentServiceFromProject(ctx, name); err == nil {
 		if name == "" && info.AgentName != "" {
 			name = info.AgentName
@@ -164,10 +160,10 @@ func (a *InvokeAction) invokeRemote(ctx context.Context) error {
 	}
 
 	if name == "" {
-		return fmt.Errorf("agent name is required; use --name or deploy the agent first with 'azd deploy'")
+		return fmt.Errorf("agent name is required; use --name or define an azure.ai.agent service in azure.yaml")
 	}
 
-	endpoint, err := resolveAgentEndpoint(ctx, a.flags.accountName, a.flags.projectName)
+	endpoint, err := resolveAgentEndpoint(ctx, "", "")
 	if err != nil {
 		return err
 	}
@@ -188,11 +184,11 @@ func (a *InvokeAction) invokeRemote(ctx context.Context) error {
 	}
 
 	// Session ID — routes to the same microVM container instance
-	sid := resolveSessionID(name, a.flags.session, a.flags.newSession)
+	sid := resolveSessionID(ctx, name, a.flags.session, a.flags.newSession)
 	body["session_id"] = sid
 
 	// Conversation ID — enables multi-turn memory via Foundry Conversations API
-	convID := resolveConversationID(name, a.flags.newSession)
+	convID := resolveConversationID(ctx, name, a.flags.newSession)
 	if convID == "" {
 		// Create a new conversation
 		newConvID, err := createConversation(ctx, endpoint)
@@ -200,7 +196,7 @@ func (a *InvokeAction) invokeRemote(ctx context.Context) error {
 			fmt.Printf("Warning: could not create conversation; multi-turn memory disabled (%v)\n", err)
 		} else {
 			convID = newConvID
-			saveConversationID(name, convID)
+			saveConversationID(ctx, name, convID)
 		}
 	}
 	if convID != "" {

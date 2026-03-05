@@ -6,110 +6,110 @@ package cmd
 import (
 	"context"
 	"crypto/rand"
-	"encoding/json"
 	"fmt"
 	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"azureaiagent/internal/pkg/agents/agent_api"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
 const (
-	// ConfigFile is the project-level state file for local agent context.
-	ConfigFile = ".foundry-agent.json"
-
 	// DefaultPort is the default port for local agent servers.
 	DefaultPort = 8088
+
+	// Environment variable keys for invoke state
+	EnvKeyAgentInvokeName           = "AZD_AI_AGENT_INVOKE_NAME"
+	EnvKeyAgentInvokeSessionID      = "AZD_AI_AGENT_INVOKE_SESSIONID"
+	EnvKeyAgentInvokeConversationID = "AZD_AI_AGENT_INVOKE_CONVERSATIONID"
 )
 
-// AgentLocalContext holds local state persisted in .foundry-agent.json.
-type AgentLocalContext struct {
-	AgentName    string                       `json:"agent_name,omitempty"`
-	Sessions     map[string]string            `json:"sessions,omitempty"`
-	Conversations map[string]string           `json:"conversations,omitempty"`
-}
-
-// loadLocalContext reads the .foundry-agent.json state file from the project root.
-func loadLocalContext() *AgentLocalContext {
-	data, err := os.ReadFile(ConfigFile)
+// getInvokeEnvValue reads an invoke state env var from the current azd environment.
+func getInvokeEnvValue(ctx context.Context, key string) string {
+	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
-		return &AgentLocalContext{}
+		return ""
 	}
-	var ctx AgentLocalContext
-	if err := json.Unmarshal(data, &ctx); err != nil {
-		return &AgentLocalContext{}
-	}
-	return &ctx
-}
+	defer azdClient.Close()
 
-// saveLocalContext writes the .foundry-agent.json state file.
-func saveLocalContext(ctx *AgentLocalContext) error {
-	data, err := json.MarshalIndent(ctx, "", "  ")
+	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil {
-		return fmt.Errorf("failed to marshal local context: %w", err)
+		return ""
 	}
-	return os.WriteFile(ConfigFile, append(data, '\n'), 0644)
+
+	val, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envResp.Environment.Name,
+		Key:     key,
+	})
+	if err != nil || val.Value == "" {
+		return ""
+	}
+	return val.Value
 }
 
-// resolveAgentNameLocal resolves the agent name from: explicit flag > .foundry-agent.json > error.
-func resolveAgentNameLocal(name string) (string, error) {
-	if name != "" {
-		return name, nil
+// setInvokeEnvValue writes an invoke state env var to the current azd environment.
+func setInvokeEnvValue(ctx context.Context, key, value string) error {
+	azdClient, err := azdext.NewAzdClient()
+	if err != nil {
+		return err
 	}
-	ctx := loadLocalContext()
-	if ctx.AgentName != "" {
-		return ctx.AgentName, nil
+	defer azdClient.Close()
+
+	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return err
 	}
-	return "", fmt.Errorf("no agent name specified; use --name or run 'azd ai agent init' first")
+
+	_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+		EnvName: envResp.Environment.Name,
+		Key:     key,
+		Value:   value,
+	})
+	return err
 }
 
 // resolveSessionID resolves or generates a session ID for invoke.
-// Returns the session ID (existing or newly generated).
-func resolveSessionID(agentName string, explicit string, forceNew bool) string {
+// State is stored in the azd environment via AZD_AI_AGENT_INVOKE_SESSIONID.
+func resolveSessionID(ctx context.Context, agentName string, explicit string, forceNew bool) string {
 	if explicit != "" {
 		return explicit
 	}
-	ctx := loadLocalContext()
-	if ctx.Sessions == nil {
-		ctx.Sessions = make(map[string]string)
-	}
-	if !forceNew {
-		if sid, ok := ctx.Sessions[agentName]; ok {
+
+	currentName := getInvokeEnvValue(ctx, EnvKeyAgentInvokeName)
+	if !forceNew && currentName == agentName {
+		if sid := getInvokeEnvValue(ctx, EnvKeyAgentInvokeSessionID); sid != "" {
 			return sid
 		}
 	}
+
 	sid := generateSessionID()
-	ctx.Sessions[agentName] = sid
-	_ = saveLocalContext(ctx)
+	_ = setInvokeEnvValue(ctx, EnvKeyAgentInvokeName, agentName)
+	_ = setInvokeEnvValue(ctx, EnvKeyAgentInvokeSessionID, sid)
 	return sid
 }
 
-// resolveConversationID resolves or creates a Foundry conversation ID.
-// Returns empty string if creation fails (multi-turn memory disabled).
-func resolveConversationID(agentName string, forceNew bool) string {
-	ctx := loadLocalContext()
-	if ctx.Conversations == nil {
-		ctx.Conversations = make(map[string]string)
+// resolveConversationID resolves the conversation ID from the azd environment.
+// Returns empty string if no conversation exists or the agent changed.
+func resolveConversationID(ctx context.Context, agentName string, forceNew bool) string {
+	if forceNew {
+		return ""
 	}
-	if !forceNew {
-		if convID, ok := ctx.Conversations[agentName]; ok {
-			return convID
-		}
+
+	currentName := getInvokeEnvValue(ctx, EnvKeyAgentInvokeName)
+	if currentName != agentName {
+		return ""
 	}
-	// Conversation creation requires an API call — handled by the invoke command.
-	return ""
+
+	return getInvokeEnvValue(ctx, EnvKeyAgentInvokeConversationID)
 }
 
-// saveConversationID persists a conversation ID for an agent.
-func saveConversationID(agentName, convID string) {
-	ctx := loadLocalContext()
-	if ctx.Conversations == nil {
-		ctx.Conversations = make(map[string]string)
-	}
-	ctx.Conversations[agentName] = convID
-	_ = saveLocalContext(ctx)
+// saveConversationID persists a conversation ID in the azd environment.
+func saveConversationID(ctx context.Context, agentName, convID string) {
+	_ = setInvokeEnvValue(ctx, EnvKeyAgentInvokeName, agentName)
+	_ = setInvokeEnvValue(ctx, EnvKeyAgentInvokeConversationID, convID)
 }
 
 // generateSessionID creates a random 25-character session ID (lowercase + digits).
@@ -133,18 +133,32 @@ type ProjectType struct {
 }
 
 func detectProjectType(projectDir string) ProjectType {
-	// Python: pyproject.toml or requirements.txt
+	// Detect Python entrypoint
+	pyEntry := detectPythonEntrypoint(projectDir)
+
+	// Python with pyproject.toml → uv-managed project
 	if fileExists(filepath.Join(projectDir, "pyproject.toml")) {
-		return ProjectType{Language: "python", StartCmd: "python main.py"}
-	}
-	if fileExists(filepath.Join(projectDir, "requirements.txt")) {
-		return ProjectType{Language: "python", StartCmd: "python main.py"}
+		cmd := "uv run python main.py"
+		if pyEntry != "" {
+			cmd = "uv run python " + pyEntry
+		}
+		return ProjectType{Language: "python", StartCmd: cmd}
 	}
 
-	// .NET: any .csproj file
+	// Python with requirements.txt
+	if fileExists(filepath.Join(projectDir, "requirements.txt")) {
+		cmd := "python main.py"
+		if pyEntry != "" {
+			cmd = "python " + pyEntry
+		}
+		return ProjectType{Language: "python", StartCmd: cmd}
+	}
+
+	// .NET: find .csproj file and use its name
 	matches, _ := filepath.Glob(filepath.Join(projectDir, "*.csproj"))
 	if len(matches) > 0 {
-		return ProjectType{Language: "dotnet", StartCmd: "dotnet run"}
+		csprojName := filepath.Base(matches[0])
+		return ProjectType{Language: "dotnet", StartCmd: "dotnet " + csprojName}
 	}
 
 	// Node.js: package.json
@@ -152,12 +166,76 @@ func detectProjectType(projectDir string) ProjectType {
 		return ProjectType{Language: "node", StartCmd: "npm start"}
 	}
 
-	// Check for main.py as fallback
-	if fileExists(filepath.Join(projectDir, "main.py")) {
-		return ProjectType{Language: "python", StartCmd: "python main.py"}
+	// Bare Python entrypoint as fallback
+	if pyEntry != "" {
+		return ProjectType{Language: "python", StartCmd: "python " + pyEntry}
 	}
 
 	return ProjectType{Language: "unknown", StartCmd: ""}
+}
+
+// detectPythonEntrypoint returns the name of the Python entrypoint file found in projectDir.
+func detectPythonEntrypoint(projectDir string) string {
+	for _, name := range []string{"main.py", "app.py"} {
+		if fileExists(filepath.Join(projectDir, name)) {
+			return name
+		}
+	}
+	return ""
+}
+
+// promptStartupCommand detects the project startup command and prompts the user to confirm or override.
+// If flagValue is set (from --startup-command), it is returned directly.
+// If noPrompt is true, the auto-detected value is returned without prompting.
+func promptStartupCommand(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	projectDir string,
+	flagValue string,
+	noPrompt bool,
+) (string, error) {
+	if flagValue != "" {
+		return flagValue, nil
+	}
+
+	detected := detectProjectType(projectDir)
+	defaultCmd := detected.StartCmd
+
+	if noPrompt {
+		return defaultCmd, nil
+	}
+
+	message := "Enter startup command for the agent"
+	if detected.Language != "unknown" && detected.Language != "" {
+		message = fmt.Sprintf("Enter startup command for the agent (detected %s project)", detected.Language)
+	}
+
+	resp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message:        message,
+			DefaultValue:   defaultCmd,
+			IgnoreHintKeys: true,
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("prompting for startup command: %w", err)
+	}
+
+	return resp.Value, nil
+}
+
+// resolveProjectDir resolves a relative targetDir to an absolute path using the azd project root.
+func resolveProjectDir(ctx context.Context, azdClient *azdext.AzdClient, targetDir string) (string, error) {
+	if filepath.IsAbs(targetDir) {
+		return targetDir, nil
+	}
+
+	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return "", fmt.Errorf("getting project path: %w", err)
+	}
+
+	return filepath.Join(projectResponse.Project.Path, targetDir), nil
 }
 
 // parseEndpoint extracts account and project names from a Foundry project endpoint URL.
@@ -189,16 +267,15 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
-// AgentServiceInfo holds the resolved name and version for an agent service.
+// AgentServiceInfo holds the resolved name for an agent service.
 type AgentServiceInfo struct {
 	ServiceName string // azure.yaml service key
-	AgentName   string // deployed agent name from env
-	Version     string // deployed agent version from env
+	AgentName   string // agent name (same as service name)
 }
 
-// resolveAgentServiceFromProject finds the first azure.ai.agent service in azure.yaml
-// and resolves its deployed agent name and version from the azd environment.
+// resolveAgentServiceFromProject finds the first azure.ai.agent service in azure.yaml.
 // The name parameter filters to a specific service; empty means use the first one found.
+// The service name from azure.yaml is used directly as the agent name.
 func resolveAgentServiceFromProject(ctx context.Context, name string) (*AgentServiceInfo, error) {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
@@ -231,33 +308,36 @@ func resolveAgentServiceFromProject(ctx context.Context, name string) (*AgentSer
 		return nil, fmt.Errorf("no azure.ai.agent service found in azure.yaml")
 	}
 
-	info := &AgentServiceInfo{ServiceName: svc.Name}
+	return &AgentServiceInfo{
+		ServiceName: svc.Name,
+		AgentName:   svc.Name,
+	}, nil
+}
 
-	// Resolve agent name and version from azd environment
-	envResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+// resolveLatestVersion fetches the latest deployed version of an agent via the API.
+func resolveLatestVersion(ctx context.Context, accountName, projectName, agentName string) (string, error) {
+	endpoint, err := resolveAgentEndpoint(ctx, accountName, projectName)
 	if err != nil {
-		return info, nil
+		return "", err
 	}
 
-	serviceKey := toServiceKey(svc.Name)
-	nameKey := fmt.Sprintf("AGENT_%s_NAME", serviceKey)
-	versionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
-
-	if v, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: envResponse.Environment.Name,
-		Key:     nameKey,
-	}); err == nil && v.Value != "" {
-		info.AgentName = v.Value
+	credential, err := newAgentCredential()
+	if err != nil {
+		return "", err
 	}
 
-	if v, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: envResponse.Environment.Name,
-		Key:     versionKey,
-	}); err == nil && v.Value != "" {
-		info.Version = v.Value
+	client := agent_api.NewAgentClient(endpoint, credential)
+	agent, err := client.GetAgent(ctx, agentName, DefaultAgentAPIVersion)
+	if err != nil {
+		return "", fmt.Errorf("failed to get agent '%s': %w", agentName, err)
 	}
 
-	return info, nil
+	version := agent.Versions.Latest.Version
+	if version == "" {
+		return "", fmt.Errorf("agent '%s' has no deployed versions", agentName)
+	}
+
+	return version, nil
 }
 
 // resolveStartupCommandFromService reads startupCommand from an azure.ai.agent

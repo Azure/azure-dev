@@ -59,23 +59,24 @@ This is useful for troubleshooting agent startup issues or monitoring agent beha
 			ctx := azdext.WithAccessToken(cmd.Context())
 			setupDebugLogging(cmd.Flags())
 
-			// Auto-resolve name and version from azure.yaml + azd environment if not provided
-			if flags.name == "" || flags.version == "" {
-				if info, err := resolveAgentServiceFromProject(ctx, flags.name); err == nil {
-					if flags.name == "" && info.AgentName != "" {
-						flags.name = info.AgentName
-					}
-					if flags.version == "" && info.Version != "" {
-						flags.version = info.Version
-					}
+			// Auto-resolve name from azure.yaml if not provided
+			if flags.name == "" {
+				if info, err := resolveAgentServiceFromProject(ctx, ""); err == nil {
+					flags.name = info.AgentName
 				}
 			}
 
 			if flags.name == "" {
-				return fmt.Errorf("agent name is required; use --name or deploy the agent first with 'azd deploy'")
+				return fmt.Errorf("agent name is required; use --name or define an azure.ai.agent service in azure.yaml")
 			}
+
+			// Auto-resolve version from API if not provided
 			if flags.version == "" {
-				return fmt.Errorf("agent version is required; use --version or deploy the agent first with 'azd deploy'")
+				v, err := resolveLatestVersion(ctx, flags.accountName, flags.projectName, flags.name)
+				if err != nil {
+					return fmt.Errorf("agent version is required; use --version or deploy the agent first with 'azd deploy'")
+				}
+				flags.version = v
 			}
 
 			agentContext, err := newAgentContext(ctx, flags.accountName, flags.projectName, flags.name, flags.version)

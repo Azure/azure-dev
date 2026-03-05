@@ -51,6 +51,7 @@ type initFlags struct {
 	host              string
 	env               string
 	infra             bool
+	startupCommand    string
 }
 
 // AiProjectResourceConfig represents the configuration for an AI project resource
@@ -305,6 +306,9 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 		"[Optional] For container based agents, can override the default host to target a container app instead. Accepted values: 'containerapp'")
 
 	cmd.Flags().StringVarP(&flags.env, "environment", "e", "", "The name of the azd environment to use.")
+
+	cmd.Flags().StringVar(&flags.startupCommand, "startup-command", "",
+		"Startup command for the agent service (e.g., 'uv run python main.py', 'dotnet Agent.csproj')")
 
 	cmd.Flags().BoolVar(&flags.infra, "infra", false,
 		"Include infrastructure-as-code (infra/) from the template. "+
@@ -1644,6 +1648,25 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		serviceConfig.Docker = &azdext.DockerProjectOptions{
 			RemoteBuild: true,
 		}
+
+		// Prompt for startup command (only for hosted/container agents)
+		absDir, dirErr := resolveProjectDir(ctx, a.azdClient, targetDir)
+		if dirErr != nil {
+			return fmt.Errorf("resolving project directory: %w", dirErr)
+		}
+
+		startupCmd, cmdErr := promptStartupCommand(ctx, a.azdClient, absDir, a.flags.startupCommand, a.flags.NoPrompt)
+		if cmdErr != nil {
+			return fmt.Errorf("prompting for startup command: %w", cmdErr)
+		}
+		if startupCmd != "" {
+			serviceConfig.AdditionalProperties, err = structpb.NewStruct(map[string]interface{}{
+				"startupCommand": startupCmd,
+			})
+			if err != nil {
+				return fmt.Errorf("creating additional properties: %w", err)
+			}
+		}
 	}
 
 	req := &azdext.AddServiceRequest{Service: serviceConfig}
@@ -1661,18 +1684,59 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	return nil
 }
 
-// populateContainerSettings returns default container resource settings.
-// Interactive prompts for memory, CPU, and replica customization were intentionally
-// removed to simplify the onboarding flow — most users accept the defaults.
+// populateContainerSettings prompts the user to select a container resource preset.
 func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.ContainerSettings, error) {
+	return promptContainerPreset(ctx, a.azdClient)
+}
+
+// promptContainerPreset presents the user with container configuration presets
+// and returns the selected container settings.
+func promptContainerPreset(ctx context.Context, azdClient *azdext.AzdClient) (*project.ContainerSettings, error) {
+	choices := make([]*azdext.SelectChoice, len(project.ContainerPresets))
+	for i, p := range project.ContainerPresets {
+		choices[i] = &azdext.SelectChoice{
+			Label: p.Label,
+			Value: fmt.Sprintf("%d", i),
+		}
+	}
+
+	resp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message: "Select a container configuration (can be changed later in azure.yaml):",
+			Choices: choices,
+		},
+	})
+	if err != nil {
+		// Fall back to defaults if prompting fails (e.g., --no-prompt)
+		return &project.ContainerSettings{
+			Resources: &project.ResourceSettings{
+				Memory: project.DefaultMemory,
+				Cpu:    project.DefaultCpu,
+			},
+			Scale: &project.ScaleSettings{
+				MinReplicas: project.DefaultMinReplicas,
+				MaxReplicas: project.DefaultMaxReplicas,
+			},
+		}, nil
+	}
+
+	idx := 0
+	if resp.Value != nil {
+		idx = int(*resp.Value)
+	}
+	if idx < 0 || idx >= len(project.ContainerPresets) {
+		idx = 0
+	}
+	preset := project.ContainerPresets[idx]
+
 	return &project.ContainerSettings{
 		Resources: &project.ResourceSettings{
-			Memory: project.DefaultMemory,
-			Cpu:    project.DefaultCpu,
+			Memory: preset.Memory,
+			Cpu:    preset.Cpu,
 		},
 		Scale: &project.ScaleSettings{
-			MinReplicas: project.DefaultMinReplicas,
-			MaxReplicas: project.DefaultMaxReplicas,
+			MinReplicas: preset.MinReplicas,
+			MaxReplicas: preset.MaxReplicas,
 		},
 	}, nil
 }

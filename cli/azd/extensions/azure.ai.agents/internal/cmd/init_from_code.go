@@ -121,7 +121,7 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 			fmt.Println("  2. Update your code to use these environment variables if needed.")
 			fmt.Println("  3. Verify the Docker image and container settings in azure.yaml match your project.")
 			fmt.Printf("  4. Run %s to run your agent locally, or %s to deploy.\n",
-				color.HiBlueString("azd ai agent dev"),
+				color.HiBlueString("azd ai agent run"),
 				color.HiBlueString("azd ai agent deploy"))
 		} else {
 			if srcDir == "." {
@@ -132,7 +132,7 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 
 			fmt.Println("\nYou can customize environment variables, cpu, memory, and replica settings in the agent.yaml.")
 			fmt.Printf("Next steps:\n")
-			fmt.Printf("  Run %s to run your agent locally.\n", color.HiBlueString("azd ai agent dev"))
+			fmt.Printf("  Run %s to run your agent locally.\n", color.HiBlueString("azd ai agent run"))
 			fmt.Printf("  Run %s to deploy your agent to Microsoft Foundry.\n", color.HiBlueString("azd ai agent deploy"))
 		}
 	}
@@ -424,12 +424,10 @@ func (a *InitFromCodeAction) scaffoldTemplate(ctx context.Context, azdClient *az
 // createDefinitionFromLocalAgent creates a ContainerAgent for local agent code
 // This is used when no manifest pointer is provided and we need to scaffold a new agent
 func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context) (*agent_yaml.ContainerAgent, error) {
-	// Default agent name to existing definition name if available, otherwise sanitized cwd
+	// Default agent name to existing definition name if available
 	defaultName := "my-agent"
 	if a.existingAgentDefName != "" {
 		defaultName = a.existingAgentDefName
-	} else if cwd, err := os.Getwd(); err == nil {
-		defaultName = sanitizeAgentName(filepath.Base(cwd))
 	}
 
 	// Prompt user for agent name
@@ -1291,21 +1289,15 @@ func (a *InitFromCodeAction) writeDefinitionToSrcDir(definition *agent_yaml.Cont
 func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string, agentName string) error {
 	var agentConfig = project.ServiceTargetAgentConfig{}
 
-	agentConfig.Container = &project.ContainerSettings{
-		Resources: &project.ResourceSettings{
-			Memory: project.DefaultMemory,
-			Cpu:    project.DefaultCpu,
-		},
-		Scale: &project.ScaleSettings{
-			MinReplicas: project.DefaultMinReplicas,
-			MaxReplicas: project.DefaultMaxReplicas,
-		},
+	containerSettings, err := promptContainerPreset(ctx, a.azdClient)
+	if err != nil {
+		return fmt.Errorf("failed to populate container settings: %w", err)
 	}
+	agentConfig.Container = containerSettings
 
 	agentConfig.Deployments = a.deploymentDetails
 
 	var agentConfigStruct *structpb.Struct
-	var err error
 	if agentConfigStruct, err = project.MarshalStruct(&agentConfig); err != nil {
 		return fmt.Errorf("failed to marshal agent config: %w", err)
 	}
@@ -1323,6 +1315,25 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 		RemoteBuild: true,
 	}
 
+	// Prompt for startup command
+	absDir, err := resolveProjectDir(ctx, a.azdClient, targetDir)
+	if err != nil {
+		return fmt.Errorf("resolving project directory: %w", err)
+	}
+
+	startupCmd, err := promptStartupCommand(ctx, a.azdClient, absDir, a.flags.startupCommand, a.flags.NoPrompt)
+	if err != nil {
+		return fmt.Errorf("prompting for startup command: %w", err)
+	}
+	if startupCmd != "" {
+		serviceConfig.AdditionalProperties, err = structpb.NewStruct(map[string]interface{}{
+			"startupCommand": startupCmd,
+		})
+		if err != nil {
+			return fmt.Errorf("creating additional properties: %w", err)
+		}
+	}
+
 	req := &azdext.AddServiceRequest{Service: serviceConfig}
 
 	if _, err := a.azdClient.Project().AddService(ctx, req); err != nil {
@@ -1331,7 +1342,7 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 
 	fmt.Printf("\nAdded your agent as a service entry named '%s' under the file azure.yaml.\n", agentName)
 	fmt.Printf("Run %s to run your agent locally, or %s to deploy.\n",
-		color.HiBlueString("azd ai agent dev"),
+		color.HiBlueString("azd ai agent run"),
 		color.HiBlueString("azd ai agent deploy"))
 	return nil
 }

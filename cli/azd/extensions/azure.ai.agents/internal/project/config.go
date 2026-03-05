@@ -19,6 +19,22 @@ const (
 	DefaultMaxReplicas = 1
 )
 
+// ContainerPreset defines a named configuration for container resources.
+type ContainerPreset struct {
+	Label       string
+	Cpu         string
+	Memory      string
+	MinReplicas int
+	MaxReplicas int
+}
+
+// ContainerPresets defines the available container configuration tiers.
+var ContainerPresets = []ContainerPreset{
+	{Label: "Cost Effective — 0.25 CPU, 0.5 GB RAM, 0–1 replicas", Cpu: "0.25", Memory: "0.5Gi", MinReplicas: 0, MaxReplicas: 1},
+	{Label: "Balanced — 0.5 CPU, 1.0 GB RAM, 0–3 replicas", Cpu: "0.5", Memory: "1.0Gi", MinReplicas: 0, MaxReplicas: 3},
+	{Label: "Performance — 1.0 CPU, 2.0 GB RAM, 1–5 replicas", Cpu: "1.0", Memory: "2.0Gi", MinReplicas: 1, MaxReplicas: 5},
+}
+
 // ServiceTargetAgentConfig provides custom configuration for the Azure AI Service target
 type ServiceTargetAgentConfig struct {
 	Environment map[string]string  `json:"env,omitempty"`

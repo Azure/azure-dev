@@ -283,7 +283,7 @@ func (a *InitFromTemplateAction) Run(ctx context.Context) error {
 	if len(a.deploymentDetails) > 0 {
 		fmt.Printf("  Run %s to provision infrastructure and deploy the model.\n", color.HiBlueString("azd provision"))
 	}
-	fmt.Printf("  Run %s to run your agent locally.\n", color.HiBlueString("azd ai agent dev"))
+	fmt.Printf("  Run %s to run your agent locally.\n", color.HiBlueString("azd ai agent run"))
 	fmt.Printf("  Run %s to deploy your agent to Microsoft Foundry.\n", color.HiBlueString("azd ai agent deploy"))
 
 	return nil
@@ -989,18 +989,14 @@ func (a *InitFromTemplateAction) processModelsInteractive(ctx context.Context, m
 
 // addToProject adds the agent service to the azd project with smart defaults.
 func (a *InitFromTemplateAction) addToProject(ctx context.Context, targetDir string, agentManifest *agent_yaml.AgentManifest) error {
+	containerSettings, err := promptContainerPreset(ctx, a.azdClient)
+	if err != nil {
+		return fmt.Errorf("failed to populate container settings: %w", err)
+	}
+
 	agentConfig := project.ServiceTargetAgentConfig{
 		Deployments: a.deploymentDetails,
-		Container: &project.ContainerSettings{
-			Resources: &project.ResourceSettings{
-				Memory: project.DefaultMemory,
-				Cpu:    project.DefaultCpu,
-			},
-			Scale: &project.ScaleSettings{
-				MinReplicas: project.DefaultMinReplicas,
-				MaxReplicas: project.DefaultMaxReplicas,
-			},
-		},
+		Container:   containerSettings,
 	}
 
 	// Handle tool resources that require connection names - use resource ID as default
@@ -1018,7 +1014,6 @@ func (a *InitFromTemplateAction) addToProject(ctx context.Context, targetDir str
 	}
 
 	var agentConfigStruct *structpb.Struct
-	var err error
 	if agentConfigStruct, err = project.MarshalStruct(&agentConfig); err != nil {
 		return fmt.Errorf("failed to marshal agent config: %w", err)
 	}
@@ -1034,6 +1029,25 @@ func (a *InitFromTemplateAction) addToProject(ctx context.Context, targetDir str
 		},
 	}
 
+	// Prompt for startup command
+	absDir, dirErr := resolveProjectDir(ctx, a.azdClient, targetDir)
+	if dirErr != nil {
+		return fmt.Errorf("resolving project directory: %w", dirErr)
+	}
+
+	startupCmd, cmdErr := promptStartupCommand(ctx, a.azdClient, absDir, a.flags.startupCommand, a.flags.NoPrompt)
+	if cmdErr != nil {
+		return fmt.Errorf("prompting for startup command: %w", cmdErr)
+	}
+	if startupCmd != "" {
+		serviceConfig.AdditionalProperties, err = structpb.NewStruct(map[string]interface{}{
+			"startupCommand": startupCmd,
+		})
+		if err != nil {
+			return fmt.Errorf("creating additional properties: %w", err)
+		}
+	}
+
 	req := &azdext.AddServiceRequest{Service: serviceConfig}
 	if _, err := a.azdClient.Project().AddService(ctx, req); err != nil {
 		return fmt.Errorf("adding agent service to project: %w", err)
@@ -1041,7 +1055,7 @@ func (a *InitFromTemplateAction) addToProject(ctx context.Context, targetDir str
 
 	fmt.Printf("\nAdded your agent as a service entry named '%s' under the file azure.yaml.\n", agentManifest.Name)
 	fmt.Printf("Run %s to run your agent locally, or %s to deploy.\n",
-		color.HiBlueString("azd ai agent dev"),
+		color.HiBlueString("azd ai agent run"),
 		color.HiBlueString("azd ai agent deploy"))
 	return nil
 }

@@ -24,11 +24,11 @@ type devFlags struct {
 	startCommand string
 }
 
-func newDevCommand() *cobra.Command {
+func newRunCommand() *cobra.Command {
 	flags := &devFlags{}
 
 	cmd := &cobra.Command{
-		Use:   "dev",
+		Use:   "run",
 		Short: "Run your agent locally for development.",
 		Long: `Run your agent locally for development.
 
@@ -42,19 +42,19 @@ project type. Use --start-command to override both.
 Use a separate terminal to invoke the running agent:
   azd ai agent invoke "Hello!"`,
 		Example: `  # Start the agent in the current directory
-  azd ai agent dev
+  azd ai agent run
 
   # Start from a specific source directory
-  azd ai agent dev --src ./my-agent
+  azd ai agent run --src ./my-agent
 
   # Start a specific agent by name
-  azd ai agent dev --name my-agent
+  azd ai agent run --name my-agent
 
   # Start on a custom port
-  azd ai agent dev --port 9090
+  azd ai agent run --port 9090
 
   # Start with an explicit command
-  azd ai agent dev --start-command "python app.py"`,
+  azd ai agent run --start-command "python app.py"`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			setupDebugLogging(cmd.Flags())

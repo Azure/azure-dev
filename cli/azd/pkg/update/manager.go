@@ -619,11 +619,7 @@ func copyFile(src, dst string) error {
 	if runtime.GOOS != "windows" {
 		removeErr := os.Remove(dst)
 		if removeErr != nil && !os.IsNotExist(removeErr) {
-			if os.IsPermission(removeErr) {
-				return removeErr
-			}
-			// Unexpected error removing dst — log but continue to os.Create fallback
-			log.Printf("warning: could not remove %s before replacement: %v", dst, removeErr)
+			return fmt.Errorf("removing %s before replacement: %w", dst, removeErr)
 		}
 	}
 

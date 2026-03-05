@@ -145,9 +145,9 @@ func TestInitFailFastMissingEnvNonInteractive(t *testing.T) {
 		action := setupInitAction(t, mockContext, flags)
 
 		// With sensible defaults, --no-prompt --template without --environment should not
-		// fail with the old "--environment is required" error. It may fail later in the
-		// init flow for other reasons (missing feature manager, etc.) but the env name
-		// validation is no longer a blocker.
+		// fail with the old "--environment is required" error. The action may panic or
+		// error later due to missing mocks (e.g., featureManager), which is expected and
+		// proves we got past the former fail-fast check.
 		err := runActionSafe(*mockContext.Context, action)
 		if err != nil {
 			require.NotContains(t, err.Error(),

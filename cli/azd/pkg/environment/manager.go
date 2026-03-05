@@ -551,17 +551,26 @@ func (m *manager) Delete(ctx context.Context, name string) error {
 func (m *manager) ensureValidEnvironmentName(ctx context.Context, spec *Spec) error {
 	// In --no-prompt mode with no name provided, generate from working directory
 	if spec.Name == "" && m.console.IsNoPromptMode() {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return fmt.Errorf(
-				"cannot determine working directory for default environment name: %w. "+
-					"Specify one explicitly with -e or as an argument", err)
+		// Prefer the project directory from azdContext, fall back to process working directory.
+		cwd := ""
+		if m.azdContext != nil {
+			cwd = m.azdContext.ProjectDirectory()
+		}
+
+		if cwd == "" {
+			var err error
+			cwd, err = os.Getwd()
+			if err != nil {
+				return fmt.Errorf(
+					"cannot determine working directory for default environment name: %w. "+
+						"Specify one explicitly with -e or as an argument", err)
+			}
 		}
 
 		dirName := filepath.Base(cwd)
 		cleaned := CleanName(dirName)
 
-		if cleaned == "" || cleaned == "-" || cleaned == "." {
+		if cleaned == "" || cleaned == "-" || cleaned == "." || cleaned == ".." {
 			return fmt.Errorf(
 				"cannot generate valid environment name from directory '%s'. "+
 					"Specify one explicitly with -e or as an argument", dirName)

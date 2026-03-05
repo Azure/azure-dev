@@ -757,6 +757,7 @@ func Test_CleanName_EdgeCases(t *testing.T) {
 		{"dots preserved", "my.project", "my.project"},
 		{"underscores preserved", "my_project", "my_project"},
 		{"unicode replaced", "projeçt-naïve", "proje-t-na-ve"},
+		// Note: parentheses are valid in env names per EnvironmentNameRegexp: [a-zA-Z0-9-\(\)_\.]
 		{"parens preserved", "my(project)", "my(project)"},
 	}
 

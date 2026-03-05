@@ -96,7 +96,7 @@ func Test_PromptService_PromptSubscription_NoPrompt_AutoSelect(t *testing.T) {
 			name:          "no subscriptions returns error",
 			subscriptions: []account.Subscription{},
 			wantErr:       true,
-			errContains:   "no Azure subscriptions found",
+			errContains:   "no Azure subscriptions found for the current account",
 		},
 		{
 			name: "multiple subscriptions without default returns error",

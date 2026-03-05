@@ -250,7 +250,10 @@ func (ps *promptService) PromptSubscription(
 		switch len(subscriptionList) {
 		case 0:
 			return nil, fmt.Errorf(
-				"no Azure subscriptions found. Run 'azd auth login' to authenticate")
+				"no Azure subscriptions found for the current account. " +
+					"Verify that you're logged into the correct Azure account and tenant, " +
+					"and that your account has one or more active subscriptions. " +
+					"If needed, run 'azd auth login' to sign in.")
 		case 1:
 			ps.console.Message(ctx, fmt.Sprintf(
 				"Auto-selected subscription: %s (%s)",

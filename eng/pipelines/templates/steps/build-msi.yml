@@ -50,3 +50,4 @@ steps:
         /p:Configuration=Release
         $(MSI_PRODUCT_NAME_PARAM)
         $(MSI_VERSION_PARAM)
+        $(RELEASE_BUILD_PARAM)

@@ -38,6 +38,7 @@ linters:
         - G302 # TODO: Expect file permissions to be 0600 or less
         - G304 # TODO: Potential file inclusion via variable
         - G104 # TODO: Errors unhandled
+        - G117 # Exported struct fields matching secret patterns (false positives on field names)
 formatters:
   enable:
     - gofmt

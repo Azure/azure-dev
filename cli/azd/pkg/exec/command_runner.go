@@ -340,7 +340,8 @@ func newCmdTree(ctx context.Context, cmd string, args []string, useShell bool, i
 		} else {
 			return CmdTree{
 				CmdTreeOptions: options,
-				Cmd:            exec.CommandContext(ctx, cmd, args...),
+				//nolint:gosec // G204: cmd/args are caller-controlled
+				Cmd: exec.CommandContext(ctx, cmd, args...),
 			}, nil
 		}
 	}
@@ -389,6 +390,6 @@ func newCmdTree(ctx context.Context, cmd string, args []string, useShell bool, i
 	// #nosec G204 - Subprocess launched with a potential tainted input or cmd arguments false positive
 	return CmdTree{
 		CmdTreeOptions: options,
-		Cmd:            exec.Command(shellName, allArgs...),
+		Cmd:            exec.Command(shellName, allArgs...), //nolint:gosec // G702: shellName is a known system shell path
 	}, nil
 }

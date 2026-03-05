@@ -851,6 +851,7 @@ func compileBicep(
 
 	if ext == ".bicep" {
 		paramFilePath := strings.TrimSuffix(bicepModulePath, ext) + ".parameters.json"
+		//nolint:gosec // G703: paramFilePath derived from project config
 		parametersBytes, err := os.ReadFile(paramFilePath)
 		if err != nil {
 			return result, fmt.Errorf("reading parameters file: %w", err)

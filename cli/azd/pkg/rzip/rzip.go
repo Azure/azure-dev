@@ -280,6 +280,7 @@ func ExtractTarGzToDirectory(artifactPath string, targetDirectory string) error 
 
 		case tar.TypeReg:
 			// Create the file
+			//nolint:gosec // G703: filePath is validated earlier
 			err = os.MkdirAll(filepath.Dir(filePath), os.ModePerm)
 			if err != nil {
 				return err

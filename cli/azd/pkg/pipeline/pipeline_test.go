@@ -63,6 +63,7 @@ func Test_ConfigOptions_EscapedValues(t *testing.T) {
 	// This simulates a value that is read from config.json.
 	// After JSON unmarshaling, the value `"[\"api://...\"]"` becomes `["api://..."]` (backslashes consumed)
 	// We need to re-escape it before sending to the pipeline so it's treated as a string, not an array
+	//nolint:gosec // G101: test data, not actual credentials
 	env := map[string]string{
 		"AzureAd_TokenValidationParameters_ValidAudiences": "[\"api://e935a748-8b59-4c26-a59c-9bcc83f5ab57\"]",
 	}
@@ -73,6 +74,7 @@ func Test_ConfigOptions_EscapedValues(t *testing.T) {
 
 	// After escaping, the value should have backslashes to prevent JSON parsing in the pipeline
 	// The value becomes: [\"api://e935a748-8b59-4c26-a59c-9bcc83f5ab57\"]
+	//nolint:gosec // G101: test data, not actual credentials
 	expectedVariables := map[string]string{
 		"AzureAd_TokenValidationParameters_ValidAudiences": "[\\\"api://e935a748-8b59-4c26-a59c-9bcc83f5ab57\\\"]",
 	}

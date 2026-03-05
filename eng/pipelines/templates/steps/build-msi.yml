@@ -21,13 +21,11 @@ steps:
         Write-Host "##vso[task.setvariable variable=MSI_VERSION_PARAM]/p:ProductVersion=$(MSI_VERSION)"
         Write-Host "##vso[task.setvariable variable=RELEASE_BUILD_PARAM]/p:ReleaseBuild=true"
       condition: ${{ parameters.Condition }}
-      displayName: Set MSI_PRODUCT_NAME_PARAM for release
+      displayName: Set MSI_PRODUCT_NAME_PARAM, MSI_VERSION_PARAM, and RELEASE_BUILD_PARAM for release
 
   - ${{ else }}:
-    # Leave version and product name empty for dev build (allows dev version to)
-    # install over any previously installed version. These variables must be set
-    # or DevOps will substitute in the literal string
-    # (e.g. '$(MSI_PRODUCT_NAME_PARAM)') into the msbuild command arguments.
+    # Set daily dev release specific parameters based on Build ID to ensure
+    # unique version and allow downgrades for easier testing.
     - pwsh: |
         $msiVersion = '$(MSI_VERSION)'
         $major = ($msiVersion -split '\.')[0]
@@ -38,7 +36,7 @@ steps:
         Write-Host "##vso[task.setvariable variable=MSI_VERSION_PARAM]/p:ProductVersion=$major.$minor.$build"
         Write-Host "##vso[task.setvariable variable=RELEASE_BUILD_PARAM]"
       condition: ${{ parameters.Condition }}
-      displayName: Set MSI_PRODUCT_NAME_PARAM and MSI_VERSION_PARAM for dev release
+      displayName: Set MSI_PRODUCT_NAME_PARAM, MSI_VERSION_PARAM, and RELEASE_BUILD_PARAM for dev release
 
   - task: MSBuild@1
     displayName: ${{ parameters.Title }}

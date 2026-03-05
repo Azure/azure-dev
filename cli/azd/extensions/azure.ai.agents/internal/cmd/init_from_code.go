@@ -438,10 +438,12 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 
 	var modelConfigChoice string
 	if a.flags.projectResourceId == "" {
+		defaultIndex := int32(0)
 		modelConfigResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 			Options: &azdext.SelectOptions{
-				Message: "How would you like to configure a model for your agent?",
-				Choices: modelConfigChoices,
+				Message:       "How would you like to configure a model for your agent?",
+				Choices:       modelConfigChoices,
+				SelectedIndex: &defaultIndex,
 			},
 		})
 		if err != nil {
@@ -590,41 +592,66 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 					fmt.Println("No existing deployments found. You can create a new model deployment.")
 				}
 
-				// Build choices: existing deployments + "Create a new model deployment"
-				deployChoices := make([]*azdext.SelectChoice, 0, len(deployments)+1)
-				for _, d := range deployments {
-					label := fmt.Sprintf("%s (%s v%s, %s)", d.Name, d.ModelName, d.Version, d.SkuName)
-					deployChoices = append(deployChoices, &azdext.SelectChoice{
-						Label: label,
-						Value: d.Name,
-					})
-				}
-				deployChoices = append(deployChoices, &azdext.SelectChoice{
-					Label: "Create a new model deployment",
-					Value: "__create_new__",
-				})
-
-				deployResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-					Options: &azdext.SelectOptions{
-						Message: "Select a model deployment:",
-						Choices: deployChoices,
-					},
-				})
-				if err != nil {
-					return nil, fmt.Errorf("failed to prompt for deployment selection: %w", err)
-				}
-
-				deploymentIdx := *deployResp.Value
-				if deploymentIdx < int32(len(deployments)) {
-					// User selected an existing deployment
-					d := deployments[deploymentIdx]
-					existingDeployment = &d
-					fmt.Printf("Model deployment name: %s\n", d.Name)
+				if a.flags.modelDeployment != "" {
+					// Flag provided: find the matching deployment by name
+					for _, d := range deployments {
+						if strings.EqualFold(d.Name, a.flags.modelDeployment) {
+							existingDeployment = &d
+							break
+						}
+					}
+					if existingDeployment == nil {
+						return nil, exterrors.Validation(
+							exterrors.CodeModelDeploymentNotFound,
+							fmt.Sprintf("model deployment %q not found in Foundry project", a.flags.modelDeployment),
+							"verify the deployment name or omit --model-deployment to select interactively",
+						)
+					}
 				} else {
-					// User wants to create a new deployment — region locked to the project's location
-					selectedModel, err = a.selectNewModel(ctx)
+					// No flag: prompt interactively
+					// Build choices: existing deployments + "Create a new model deployment"
+					deployChoices := make([]*azdext.SelectChoice, 0, len(deployments)+1)
+					for _, d := range deployments {
+						label := fmt.Sprintf("%s (%s v%s, %s)", d.Name, d.ModelName, d.Version, d.SkuName)
+						deployChoices = append(deployChoices, &azdext.SelectChoice{
+							Label: label,
+							Value: d.Name,
+						})
+					}
+					deployChoices = append(deployChoices, &azdext.SelectChoice{
+						Label: "Create a new model deployment",
+						Value: "__create_new__",
+					})
+
+					deployResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+						Options: &azdext.SelectOptions{
+							Message: "Select a model deployment:",
+							Choices: deployChoices,
+						},
+					})
 					if err != nil {
-						return nil, fmt.Errorf("failed to select new model: %w", err)
+						if exterrors.IsCancellation(err) {
+							return nil, exterrors.Cancelled("model deployment selection was cancelled")
+						}
+						return nil, exterrors.Dependency(
+							exterrors.CodePromptFailed,
+							fmt.Sprintf("failed to prompt for deployment selection: %v", err),
+							"use --model-deployment to specify a deployment name in non-interactive mode",
+						)
+					}
+
+					deploymentIdx := *deployResp.Value
+					if deploymentIdx < int32(len(deployments)) {
+						// User selected an existing deployment
+						d := deployments[deploymentIdx]
+						existingDeployment = &d
+						fmt.Printf("Model deployment name: %s\n", d.Name)
+					} else {
+						// User wants to create a new deployment — region locked to the project's location
+						selectedModel, err = a.selectNewModel(ctx)
+						if err != nil {
+							return nil, fmt.Errorf("failed to select new model: %w", err)
+						}
 					}
 				}
 			} else {
@@ -893,6 +920,11 @@ func (a *InitFromCodeAction) ensureLocation(ctx context.Context) error {
 }
 
 func (a *InitFromCodeAction) selectNewModel(ctx context.Context) (*azdext.AiModel, error) {
+	defaultModel := "gpt-4.1-mini"
+	if a.flags.model != "" {
+		defaultModel = a.flags.model
+	}
+
 	promptReq := &azdext.PromptAiModelRequest{
 		AzureContext: a.azureContext,
 		SelectOptions: &azdext.SelectOptions{
@@ -904,7 +936,7 @@ func (a *InitFromCodeAction) selectNewModel(ctx context.Context) (*azdext.AiMode
 		Filter: &azdext.AiModelFilterOptions{
 			Locations: []string{a.azureContext.Scope.Location},
 		},
-		DefaultValue: "gpt-4.1-mini",
+		DefaultValue: defaultModel,
 	}
 
 	modelResp, err := a.azdClient.Prompt().PromptAiModel(ctx, promptReq)

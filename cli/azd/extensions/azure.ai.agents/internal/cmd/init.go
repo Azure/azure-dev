@@ -46,6 +46,8 @@ import (
 type initFlags struct {
 	*rootFlagsDefinition
 	projectResourceId string
+	modelDeployment   string
+	model             string
 	manifestPointer   string
 	src               string
 	host              string
@@ -214,14 +216,20 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 	cmd.Flags().StringVarP(&flags.projectResourceId, "project-id", "p", "",
 		"Existing Microsoft Foundry Project Id to initialize your azd environment with")
 
+	cmd.Flags().StringVarP(&flags.modelDeployment, "model-deployment", "d", "",
+		"Name of an existing model deployment to use from the Foundry project. Only used when paired with an existing Foundry project, either via --project-id or interactive prompts")
+
+	cmd.Flags().StringVar(&flags.model, "model", "",
+		"Name of the AI model to use (e.g., 'gpt-4o'). If not specified, defaults to 'gpt-4.1-mini'. Mutually exclusive with --model-deployment, with --model-deployment being used if both are provided")
+
 	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "",
 		"Path or URI to an agent manifest to add to your azd project")
 
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "",
-		"[Optional] Directory to download the agent definition to (defaults to 'src/<agent-id>')")
+		"Directory to download the agent definition to (defaults to 'src/<agent-id>')")
 
 	cmd.Flags().StringVarP(&flags.host, "host", "", "",
-		"[Optional] For container based agents, can override the default host to target a container app instead. Accepted values: 'containerapp'")
+		"For container based agents, can override the default host to target a container app instead. Accepted values: 'containerapp'")
 
 	cmd.Flags().StringVarP(&flags.env, "environment", "e", "", "The name of the azd environment to use.")
 
@@ -311,6 +319,15 @@ func ensureProject(ctx context.Context, flags *initFlags, azdClient *azdext.AzdC
 
 		// Environment creation is handled separately in ensureEnvironment
 		initArgs := []string{"init", "-t", "Azure-Samples/azd-ai-starter-basic"}
+		if flags.env != "" {
+			initArgs = append(initArgs, "--environment", flags.env)
+		} else {
+			cwd, err := os.Getwd()
+			if err == nil {
+				sanitizedDirectoryName := sanitizeAgentName(filepath.Base(cwd))
+				initArgs = append(initArgs, "--environment", sanitizedDirectoryName+"-dev")
+			}
+		}
 
 		// We don't have a project yet
 		// Dispatch a workflow to init the project
@@ -501,6 +518,43 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 			return nil, exterrors.Validation(
 				exterrors.CodeSubscriptionMismatch,
 				fmt.Sprintf("subscription ID mismatch: environment has %s but project uses %s", currentSubscription.Value, foundryProject.SubscriptionId),
+				"update or recreate your environment with 'azd env new'",
+			)
+		}
+
+		// Resolve and set the tenant ID for the subscription so credentials are scoped correctly
+		currentTenant, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+			EnvName: existingEnv.Name,
+			Key:     "AZURE_TENANT_ID",
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current AZURE_TENANT_ID from azd environment: %w", err)
+		}
+
+		tenantResp, err := azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
+			SubscriptionId: foundryProject.SubscriptionId,
+		})
+		if err != nil {
+			return nil, exterrors.Auth(
+				exterrors.CodeTenantLookupFailed,
+				fmt.Sprintf("failed to lookup tenant for subscription %s: %s", foundryProject.SubscriptionId, err),
+				"verify your Azure login with 'azd auth login'",
+			)
+		}
+
+		if currentTenant.Value == "" {
+			_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+				EnvName: existingEnv.Name,
+				Key:     "AZURE_TENANT_ID",
+				Value:   tenantResp.TenantId,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("failed to set AZURE_TENANT_ID in azd environment: %w", err)
+			}
+		} else if currentTenant.Value != tenantResp.TenantId {
+			return nil, exterrors.Validation(
+				exterrors.CodeTenantMismatch,
+				fmt.Sprintf("tenant ID mismatch: environment has %s but project uses %s", currentTenant.Value, tenantResp.TenantId),
 				"update or recreate your environment with 'azd env new'",
 			)
 		}

@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -117,6 +118,7 @@ type extensionAction struct {
 	lazyEnv          *lazy.Lazy[*environment.Environment]
 	extensionManager *extensions.Manager
 	azdServer        *grpcserver.Server
+	globalOptions    *internal.GlobalCommandOptions
 	cmd              *cobra.Command
 	args             []string
 }
@@ -129,6 +131,7 @@ func newExtensionAction(
 	extensionManager *extensions.Manager,
 	cmd *cobra.Command,
 	azdServer *grpcserver.Server,
+	globalOptions *internal.GlobalCommandOptions,
 	args []string,
 ) actions.Action {
 	return &extensionAction{
@@ -137,6 +140,7 @@ func newExtensionAction(
 		lazyEnv:          lazyEnv,
 		extensionManager: extensionManager,
 		azdServer:        azdServer,
+		globalOptions:    globalOptions,
 		cmd:              cmd,
 		args:             args,
 	}
@@ -239,7 +243,6 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 	// Read global flags for propagation via InvokeOptions
 	debugEnabled, _ := a.cmd.Flags().GetBool("debug")
-	noPrompt, _ := a.cmd.Flags().GetBool("no-prompt")
 	cwd, _ := a.cmd.Flags().GetString("cwd")
 	envName, _ := a.cmd.Flags().GetString("environment")
 
@@ -249,7 +252,9 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		// cmd extensions are always interactive (connected to terminal)
 		Interactive: true,
 		Debug:       debugEnabled,
-		NoPrompt:    noPrompt,
+		// Use globalOptions.NoPrompt which includes agent detection,
+		// not just the --no-prompt CLI flag
+		NoPrompt:    a.globalOptions.NoPrompt,
 		Cwd:         cwd,
 		Environment: envName,
 	}

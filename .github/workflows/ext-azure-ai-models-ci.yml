@@ -1,0 +1,24 @@
+name: ext-azure-ai-models-ci
+
+on:
+  pull_request:
+    paths:
+      - "cli/azd/extensions/azure.ai.models/**"
+      - ".github/workflows/ext-azure-ai-models-ci.yml"
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  lint:
+    uses: ./.github/workflows/lint-go.yml
+    with:
+      working-directory: cli/azd/extensions/azure.ai.models
+      go-version: "^1.25"
+      golangci-lint-version: "v2.6"

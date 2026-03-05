@@ -134,7 +134,7 @@ func TestInitNoPromptRequiresMode(t *testing.T) {
 }
 
 func TestInitFailFastMissingEnvNonInteractive(t *testing.T) {
-	t.Run("FailsWhenNoPromptWithTemplateAndNoEnv", func(t *testing.T) {
+	t.Run("NoLongerFailsWhenNoPromptWithTemplateAndNoEnv", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 
 		flags := &initFlags{
@@ -144,11 +144,15 @@ func TestInitFailFastMissingEnvNonInteractive(t *testing.T) {
 
 		action := setupInitAction(t, mockContext, flags)
 
-		result, err := action.Run(*mockContext.Context)
-		require.Error(t, err)
-		require.Contains(t, err.Error(),
-			"--environment is required when running in non-interactive mode")
-		require.Nil(t, result)
+		// With sensible defaults, --no-prompt --template without --environment should not
+		// fail with the old "--environment is required" error. It may fail later in the
+		// init flow for other reasons (missing feature manager, etc.) but the env name
+		// validation is no longer a blocker.
+		err := runActionSafe(*mockContext.Context, action)
+		if err != nil {
+			require.NotContains(t, err.Error(),
+				"--environment is required when running in non-interactive mode")
+		}
 	})
 
 	t.Run("DoesNotFailWhenEnvProvidedViaFlag", func(t *testing.T) {

@@ -718,3 +718,52 @@ func Test_EnvManager_InstanceCaching(t *testing.T) {
 		localDataStore.AssertNumberOfCalls(t, "Get", 1) // Only initial load, not after Save
 	})
 }
+
+func Test_EnvManager_Create_NoPrompt_AutoName(t *testing.T) {
+	t.Run("generates name from working directory", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.Console.SetNoPromptMode(true)
+
+		envManager := createEnvManagerForManagerTest(t, mockContext)
+		env, err := envManager.Create(*mockContext.Context, Spec{Name: ""})
+		require.NoError(t, err)
+		require.NotNil(t, env)
+		// Name should be non-empty and valid
+		require.NotEmpty(t, env.Name())
+		require.True(t, IsValidEnvironmentName(env.Name()))
+	})
+
+	t.Run("uses provided name even in no-prompt mode", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.Console.SetNoPromptMode(true)
+
+		envManager := createEnvManagerForManagerTest(t, mockContext)
+		env, err := envManager.Create(*mockContext.Context, Spec{Name: "my-explicit-env"})
+		require.NoError(t, err)
+		require.NotNil(t, env)
+		require.Equal(t, "my-explicit-env", env.Name())
+	})
+}
+
+func Test_CleanName_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"simple name", "my-project", "my-project"},
+		{"spaces replaced", "my project", "my-project"},
+		{"special chars replaced", "my@project!v2", "my-project-v2"},
+		{"dots preserved", "my.project", "my.project"},
+		{"underscores preserved", "my_project", "my_project"},
+		{"unicode replaced", "projeçt-naïve", "proje-t-na-ve"},
+		{"parens preserved", "my(project)", "my(project)"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := CleanName(tt.input)
+			require.Equal(t, tt.expected, result)
+		})
+	}
+}

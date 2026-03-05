@@ -32,7 +32,7 @@ steps:
         $msiVersion = '$(MSI_VERSION)'
         $major = ($msiVersion -split '\.')[0]
         $minor = ($msiVersion -split '\.')[1]
-        $build = $(System.BuildId) % 65536
+        $build = $(Build.BuildId) % 65536
 
         Write-Host "##vso[task.setvariable variable=MSI_PRODUCT_NAME_PARAM]"
         Write-Host "##vso[task.setvariable variable=MSI_VERSION_PARAM]/p:ProductVersion=$major.$minor.$build"

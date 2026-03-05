@@ -640,7 +640,7 @@ func ensureAzureContext(
 			if exterrors.IsCancellation(err) {
 				return nil, nil, nil, exterrors.Cancelled("subscription selection was cancelled")
 			}
-			return nil, nil, nil, fmt.Errorf("failed to prompt for subscription: %w", err)
+			return nil, nil, nil, exterrors.FromPrompt(err, "failed to prompt for subscription")
 		}
 
 		azureContext.Scope.SubscriptionId = subscriptionResponse.Subscription.Id
@@ -680,7 +680,7 @@ func ensureAzureContext(
 			if exterrors.IsCancellation(err) {
 				return nil, nil, nil, exterrors.Cancelled("location selection was cancelled")
 			}
-			return nil, nil, nil, fmt.Errorf("failed to prompt for location: %w", err)
+			return nil, nil, nil, exterrors.FromPrompt(err, "failed to prompt for location")
 		}
 
 		azureContext.Scope.Location = locationResponse.Location.Name

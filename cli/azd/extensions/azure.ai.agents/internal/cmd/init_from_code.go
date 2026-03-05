@@ -837,7 +837,7 @@ func (a *InitFromCodeAction) ensureSubscription(ctx context.Context) error {
 			if exterrors.IsCancellation(err) {
 				return exterrors.Cancelled("subscription selection was cancelled")
 			}
-			return fmt.Errorf("failed to prompt for subscription: %w", err)
+			return exterrors.FromPrompt(err, "failed to prompt for subscription")
 		}
 
 		a.azureContext.Scope.SubscriptionId = subscriptionResponse.Subscription.Id
@@ -902,7 +902,7 @@ func (a *InitFromCodeAction) ensureLocation(ctx context.Context) error {
 		if exterrors.IsCancellation(err) {
 			return exterrors.Cancelled("location selection was cancelled")
 		}
-		return fmt.Errorf("failed to prompt for location: %w", err)
+		return exterrors.FromPrompt(err, "failed to prompt for location")
 	}
 
 	a.azureContext.Scope.Location = locationResponse.Location.Name

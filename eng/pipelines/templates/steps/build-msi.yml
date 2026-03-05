@@ -19,6 +19,7 @@ steps:
     - pwsh: |
         Write-Host "##vso[task.setvariable variable=MSI_PRODUCT_NAME_PARAM]/p:ProductName=`"Azure Developer CLI`""
         Write-Host "##vso[task.setvariable variable=MSI_VERSION_PARAM]/p:ProductVersion=$(MSI_VERSION)"
+        Write-Host "##vso[task.setvariable variable=RELEASE_BUILD_PARAM]/p:ReleaseBuild=true"
       condition: ${{ parameters.Condition }}
       displayName: Set MSI_PRODUCT_NAME_PARAM for release
 
@@ -28,8 +29,14 @@ steps:
     # or DevOps will substitute in the literal string
     # (e.g. '$(MSI_PRODUCT_NAME_PARAM)') into the msbuild command arguments.
     - pwsh: |
+        $msiVersion = '$(MSI_VERSION)'
+        $major = ($msiVersion -split '\.')[0]
+        $minor = ($msiVersion -split '\.')[1]
+        $build = $(System.BuildId) % 65536
+
         Write-Host "##vso[task.setvariable variable=MSI_PRODUCT_NAME_PARAM]"
-        Write-Host "##vso[task.setvariable variable=MSI_VERSION_PARAM]"
+        Write-Host "##vso[task.setvariable variable=MSI_VERSION_PARAM]/p:ProductVersion=$major.$minor.$build"
+        Write-Host "##vso[task.setvariable variable=RELEASE_BUILD_PARAM]"
       condition: ${{ parameters.Condition }}
       displayName: Set MSI_PRODUCT_NAME_PARAM and MSI_VERSION_PARAM for dev release
 

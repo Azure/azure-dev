@@ -611,19 +611,19 @@ func copyFile(src, dst string) error {
 		return err
 	}
 
-	out, err := os.Create(dst)
-	if err != nil {
-		// On Linux, overwriting a running executable fails with ETXTBSY ("text file busy").
-		// Unlink the old file first — the running process retains its fd via the inode —
-		// then create a new file at the same path.
-		if removeErr := os.Remove(dst); removeErr == nil {
-			out, err = os.Create(dst)
-		} else if os.IsPermission(removeErr) {
-			// Can't remove the old file due to directory permissions.
-			// Return the permission error so callers can handle elevation.
-			err = removeErr
+	// On unix, always remove the destination file before creating a new one.
+	// Truncating a running binary in place (os.Create on existing file) corrupts
+	// memory-mapped code pages and causes macOS to SIGKILL the process.
+	// Removing first creates a new inode — the OS keeps the old inode alive
+	// for the running process via its fd.
+	if runtime.GOOS != "windows" {
+		removeErr := os.Remove(dst)
+		if removeErr != nil && !os.IsNotExist(removeErr) {
+			return fmt.Errorf("removing %s before replacement: %w", dst, removeErr)
 		}
 	}
+
+	out, err := os.Create(dst)
 	if err != nil {
 		return err
 	}

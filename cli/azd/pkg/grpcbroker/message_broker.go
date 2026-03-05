@@ -511,9 +511,11 @@ func (mb *MessageBroker[TMessage]) processMessage(ctx context.Context, resp *TMe
 				)
 			}
 
-			mb.logger.Printf("[%s] Dispatching message to channel for RequestId=%s, MessageType=%v", mb.name, requestId, msgType)
+			mb.logger.Printf("[%s] Dispatching message to channel for RequestId=%s, MessageType=%v",
+				mb.name, requestId, msgType)
 			channelTyped <- resp
-			mb.logger.Printf("[%s] Message dispatched successfully to RequestId=%s, MessageType=%v", mb.name, requestId, msgType)
+			mb.logger.Printf("[%s] Message dispatched successfully to RequestId=%s, MessageType=%v",
+				mb.name, requestId, msgType)
 			return
 		}
 	}
@@ -532,7 +534,8 @@ func (mb *MessageBroker[TMessage]) processHandlerRequest(
 ) {
 	innerMsg := mb.envelope.GetInnerMessage(envelope)
 	if innerMsg == nil {
-		mb.logger.Printf("[%s] WARNING: No inner message found for RequestId=%s, MessageType=%v", mb.name, requestId, msgType)
+		mb.logger.Printf("[%s] WARNING: No inner message found for RequestId=%s, MessageType=%v",
+			mb.name, requestId, msgType)
 		return
 	}
 

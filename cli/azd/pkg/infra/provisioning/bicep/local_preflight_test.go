@@ -4,6 +4,7 @@
 package bicep
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
@@ -11,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestLocalPreflightValidate_ValidTemplate(t *testing.T) {
+func TestParseTemplate_ValidTemplate(t *testing.T) {
 	template := armTemplate{
 		Schema:         "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
 		ContentVersion: "1.0.0.0",
@@ -22,84 +23,110 @@ func TestLocalPreflightValidate_ValidTemplate(t *testing.T) {
 	raw, err := json.Marshal(template)
 	require.NoError(t, err)
 
-	preflight := newLocalArmPreflight()
-	props, err := preflight.validate(azure.RawArmTemplate(raw), nil)
+	preflight := &localArmPreflight{}
+	parsed, err := preflight.parseTemplate(azure.RawArmTemplate(raw))
 
 	require.NoError(t, err)
-	require.False(t, props.HasRoleAssignments)
+	require.NotNil(t, parsed)
+	require.Len(t, parsed.Resources, 1)
+	require.Equal(t, "Microsoft.Resources/resourceGroups", parsed.Resources[0].Type)
 }
 
-func TestLocalPreflightValidate_DetectsRoleAssignments(t *testing.T) {
-	template := armTemplate{
-		Schema:         "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
-		ContentVersion: "1.0.0.0",
-		Resources: armTemplateResources{
-			{Type: "Microsoft.Resources/resourceGroups", APIVersion: "2021-04-01", Name: "rg-test"},
-			{Type: "Microsoft.Authorization/roleAssignments", APIVersion: "2022-04-01", Name: "ra-test"},
-		},
-	}
-	raw, err := json.Marshal(template)
-	require.NoError(t, err)
+func TestParseTemplate_MissingSchema(t *testing.T) {
+	raw := []byte(`{"contentVersion": "1.0.0.0", "resources": [{"type": "Microsoft.Resources/resourceGroups"}]}`)
 
-	preflight := newLocalArmPreflight()
-	props, err := preflight.validate(azure.RawArmTemplate(raw), nil)
+	preflight := &localArmPreflight{}
+	_, err := preflight.parseTemplate(azure.RawArmTemplate(raw))
 
-	require.NoError(t, err)
-	require.True(t, props.HasRoleAssignments)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "missing required '$schema'")
 }
 
-func TestLocalPreflightValidate_DetectsRoleAssignmentsInNestedDeployment(t *testing.T) {
-	innerTemplate := armTemplate{
-		Schema:         "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-		ContentVersion: "1.0.0.0",
-		Resources: armTemplateResources{
-			{Type: "Microsoft.Authorization/roleAssignments", APIVersion: "2022-04-01", Name: "nested-ra"},
-		},
-	}
-	innerRaw, err := json.Marshal(innerTemplate)
-	require.NoError(t, err)
+func TestParseTemplate_MissingContentVersion(t *testing.T) {
+	raw := []byte(`{"$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#", "resources": [{"type": "Microsoft.Resources/resourceGroups"}]}`)
 
-	deploymentProps := map[string]any{
-		"template": json.RawMessage(innerRaw),
-		"mode":     "Incremental",
-	}
-	propsRaw, err := json.Marshal(deploymentProps)
-	require.NoError(t, err)
+	preflight := &localArmPreflight{}
+	_, err := preflight.parseTemplate(azure.RawArmTemplate(raw))
 
-	template := armTemplate{
-		Schema:         "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
-		ContentVersion: "1.0.0.0",
-		Resources: armTemplateResources{
-			{
-				Type:       "Microsoft.Resources/deployments",
-				APIVersion: "2021-04-01",
-				Name:       "nestedDeployment",
-				Properties: propsRaw,
-			},
-		},
-	}
-	raw, err := json.Marshal(template)
-	require.NoError(t, err)
-
-	preflight := newLocalArmPreflight()
-	props, err := preflight.validate(azure.RawArmTemplate(raw), nil)
-
-	require.NoError(t, err)
-	require.True(t, props.HasRoleAssignments)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "missing required 'contentVersion'")
 }
 
-func TestLocalPreflightValidate_InvalidTemplate(t *testing.T) {
-	preflight := newLocalArmPreflight()
-	_, err := preflight.validate(azure.RawArmTemplate([]byte(`{}`)), nil)
+func TestParseTemplate_NoResources(t *testing.T) {
+	raw := []byte(`{"$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#", "contentVersion": "1.0.0.0", "resources": []}`)
+
+	preflight := &localArmPreflight{}
+	_, err := preflight.parseTemplate(azure.RawArmTemplate(raw))
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no resources")
+}
+
+func TestParseTemplate_InvalidJSON(t *testing.T) {
+	preflight := &localArmPreflight{}
+	_, err := preflight.parseTemplate(azure.RawArmTemplate([]byte(`{}`)))
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "missing required")
 }
 
+func TestRegisteredChecks_RunInOrder(t *testing.T) {
+	valCtx := &validationContext{
+		Props: resourcesProperties{},
+	}
+
+	var checks []PreflightCheckFn
+
+	// Add a warning check
+	checks = append(checks, func(
+		ctx context.Context,
+		valCtx *validationContext,
+	) (*PreflightCheckResult, error) {
+		return &PreflightCheckResult{
+			Severity: PreflightCheckWarning,
+			Message:  "this is a warning",
+		}, nil
+	})
+
+	// Add a check that returns nil (no finding)
+	checks = append(checks, func(
+		ctx context.Context,
+		valCtx *validationContext,
+	) (*PreflightCheckResult, error) {
+		return nil, nil
+	})
+
+	// Add an error check
+	checks = append(checks, func(
+		ctx context.Context,
+		valCtx *validationContext,
+	) (*PreflightCheckResult, error) {
+		return &PreflightCheckResult{
+			Severity: PreflightCheckError,
+			Message:  "this is an error",
+		}, nil
+	})
+
+	var results []PreflightCheckResult
+	for _, check := range checks {
+		result, err := check(context.Background(), valCtx)
+		require.NoError(t, err)
+		if result != nil {
+			results = append(results, *result)
+		}
+	}
+
+	require.Len(t, results, 2)
+	require.Equal(t, PreflightCheckWarning, results[0].Severity)
+	require.Equal(t, "this is a warning", results[0].Message)
+	require.Equal(t, PreflightCheckError, results[1].Severity)
+	require.Equal(t, "this is an error", results[1].Message)
+}
+
 func TestAnalyzeResources(t *testing.T) {
 	tests := []struct {
 		name               string
-		resources          []preflightResource
+		resources          []armTemplateResource
 		hasRoleAssignments bool
 	}{
 		{
@@ -109,7 +136,7 @@ func TestAnalyzeResources(t *testing.T) {
 		},
 		{
 			name: "no role assignments",
-			resources: []preflightResource{
+			resources: []armTemplateResource{
 				{Type: "Microsoft.Storage/storageAccounts"},
 				{Type: "Microsoft.Web/sites"},
 			},
@@ -117,7 +144,7 @@ func TestAnalyzeResources(t *testing.T) {
 		},
 		{
 			name: "has role assignments",
-			resources: []preflightResource{
+			resources: []armTemplateResource{
 				{Type: "Microsoft.Storage/storageAccounts"},
 				{Type: "Microsoft.Authorization/roleAssignments"},
 			},
@@ -125,7 +152,7 @@ func TestAnalyzeResources(t *testing.T) {
 		},
 		{
 			name: "case insensitive match",
-			resources: []preflightResource{
+			resources: []armTemplateResource{
 				{Type: "microsoft.authorization/roleassignments"},
 			},
 			hasRoleAssignments: true,

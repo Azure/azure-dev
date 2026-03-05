@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -315,6 +316,117 @@ func (cli *Cli) BuildBicepParam(ctx context.Context, file string, env []string) 
 		Compiled: buildRes.Stdout,
 		LintErr:  buildRes.Stderr,
 	}, nil
+}
+
+// SnapshotOptions configures optional flags for the `bicep snapshot` command.
+// Use the With* methods to set values using the builder pattern:
+//
+//	opts := NewSnapshotOptions().
+//	    WithMode("validate").
+//	    WithSubscriptionID("sub-123").
+//	    WithLocation("eastus2")
+type SnapshotOptions struct {
+	// Mode sets the snapshot mode: "overwrite" (generate new) or "validate" (compare against existing).
+	Mode string
+	// TenantID is the tenant ID to use for the deployment.
+	TenantID string
+	// SubscriptionID is the subscription ID to use for the deployment.
+	SubscriptionID string
+	// ResourceGroup is the resource group name to use for the deployment.
+	ResourceGroup string
+	// Location is the location to use for the deployment.
+	Location string
+	// DeploymentName is the deployment name to use.
+	DeploymentName string
+}
+
+// NewSnapshotOptions returns a zero-valued SnapshotOptions ready for building.
+func NewSnapshotOptions() SnapshotOptions {
+	return SnapshotOptions{}
+}
+
+// WithMode sets the snapshot mode ("overwrite" or "validate").
+func (o SnapshotOptions) WithMode(mode string) SnapshotOptions {
+	o.Mode = mode
+	return o
+}
+
+// WithTenantID sets the tenant ID for the deployment.
+func (o SnapshotOptions) WithTenantID(tenantID string) SnapshotOptions {
+	o.TenantID = tenantID
+	return o
+}
+
+// WithSubscriptionID sets the subscription ID for the deployment.
+func (o SnapshotOptions) WithSubscriptionID(subscriptionID string) SnapshotOptions {
+	o.SubscriptionID = subscriptionID
+	return o
+}
+
+// WithResourceGroup sets the resource group name for the deployment.
+func (o SnapshotOptions) WithResourceGroup(resourceGroup string) SnapshotOptions {
+	o.ResourceGroup = resourceGroup
+	return o
+}
+
+// WithLocation sets the location for the deployment.
+func (o SnapshotOptions) WithLocation(location string) SnapshotOptions {
+	o.Location = location
+	return o
+}
+
+// WithDeploymentName sets the deployment name.
+func (o SnapshotOptions) WithDeploymentName(deploymentName string) SnapshotOptions {
+	o.DeploymentName = deploymentName
+	return o
+}
+
+// Snapshot runs `bicep snapshot <file>` and reads the resulting snapshot file.
+// The bicep CLI produces a `<basename>.snapshot.json` file next to the input .bicepparam file.
+// This method reads the snapshot content into a byte slice and removes the generated file.
+// If the snapshot file is not produced, it returns an error.
+func (cli *Cli) Snapshot(ctx context.Context, file string, opts SnapshotOptions) ([]byte, error) {
+	if err := cli.ensureInstalledOnce(ctx); err != nil {
+		return nil, fmt.Errorf("ensuring bicep is installed: %w", err)
+	}
+
+	args := []string{"snapshot", file}
+	if opts.Mode != "" {
+		args = append(args, "--mode", opts.Mode)
+	}
+	if opts.TenantID != "" {
+		args = append(args, "--tenant-id", opts.TenantID)
+	}
+	if opts.SubscriptionID != "" {
+		args = append(args, "--subscription-id", opts.SubscriptionID)
+	}
+	if opts.ResourceGroup != "" {
+		args = append(args, "--resource-group", opts.ResourceGroup)
+	}
+	if opts.Location != "" {
+		args = append(args, "--location", opts.Location)
+	}
+	if opts.DeploymentName != "" {
+		args = append(args, "--deployment-name", opts.DeploymentName)
+	}
+
+	if _, err := cli.runCommand(ctx, nil, args...); err != nil {
+		return nil, fmt.Errorf("failed running bicep snapshot: %w", err)
+	}
+
+	// The snapshot output file is <file-without-ext>.snapshot.json in the same directory.
+	snapshotFile := strings.TrimSuffix(file, filepath.Ext(file)) + ".snapshot.json"
+
+	data, err := os.ReadFile(snapshotFile)
+	if err != nil {
+		return nil, fmt.Errorf("reading snapshot file %s: %w", snapshotFile, err)
+	}
+
+	if err := os.Remove(snapshotFile); err != nil {
+		log.Printf("warning: failed to remove snapshot file %s: %v", snapshotFile, err)
+	}
+
+	return data, nil
 }
 
 func (cli *Cli) runCommand(ctx context.Context, env []string, args ...string) (exec.RunResult, error) {

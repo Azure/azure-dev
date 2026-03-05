@@ -4,11 +4,20 @@
 package bicep
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 )
 
 // armTemplateResource represents a single resource declaration within an ARM template.
@@ -185,59 +194,177 @@ type armTemplate struct {
 	Outputs         map[string]armTemplateOutputDef    `json:"outputs,omitempty"`
 }
 
-// preflightResource is a flattened resource entry produced by the parser, representing a single resource
-// that would be deployed. Nested/child resources are resolved to top-level entries with their full type
-// and name path.
-type preflightResource struct {
-	// Type is the fully-qualified resource type (e.g. "Microsoft.Storage/storageAccounts/blobServices").
-	Type string
-	// Name is the full name path (e.g. "myStorage/default").
-	Name string
-	// APIVersion is the REST API version used for the resource.
-	APIVersion string
-	// Location is the deployment location.
-	Location string
-	// Kind is the optional resource kind.
-	Kind string
-	// SKU is the optional SKU configuration.
-	SKU *armTemplateSKU
-	// DependsOn lists the dependencies.
-	DependsOn []string
-	// HasCondition indicates whether the resource has a condition expression.
-	HasCondition bool
-	// HasCopyLoop indicates whether the resource uses a copy/loop.
-	HasCopyLoop bool
-	// Properties is the raw JSON of the resource-specific properties.
-	Properties json.RawMessage
+// PreflightCheckSeverity indicates the severity level of a preflight check result.
+type PreflightCheckSeverity int
+
+const (
+	// PreflightCheckWarning indicates a non-blocking issue that should be reported to the user.
+	PreflightCheckWarning PreflightCheckSeverity = iota
+	// PreflightCheckError indicates a blocking issue that should prevent deployment.
+	PreflightCheckError
+)
+
+// PreflightCheckResult holds the outcome of a single preflight check function.
+type PreflightCheckResult struct {
+	// Severity indicates whether this result is a warning or a blocking error.
+	Severity PreflightCheckSeverity
+	// Message is a human-readable description of the finding.
+	Message string
 }
+
+// validationContext provides the data and utilities available to preflight check functions.
+// It acts as a bag of convenient values that checks may inspect to produce their results.
+type validationContext struct {
+	// Console provides user interaction capabilities (prompts, messages).
+	Console input.Console
+	// Props contains derived properties from analyzing the ARM template resources.
+	Props resourcesProperties
+	// ResourcesSnapshot is the raw JSON output from `bicep snapshot`, containing the fully
+	// resolved deployment graph. It may be nil if the Bicep CLI was not available.
+	ResourcesSnapshot json.RawMessage
+	// SnapshotResources is the parsed list of predicted resources from the Bicep snapshot.
+	// Each entry represents a resource that would be deployed, with resolved values.
+	// It may be nil if the Bicep CLI was not available.
+	SnapshotResources []armTemplateResource
+}
+
+// snapshotResult represents the top-level structure of the Bicep snapshot JSON output.
+type snapshotResult struct {
+	PredictedResources []armTemplateResource `json:"predictedResources"`
+}
+
+// PreflightCheckFn is a function that performs a single preflight validation check.
+// It receives the execution context and a validationContext containing the console,
+// analyzed resource properties, and the deployment snapshot.
+// It returns a result describing the finding (or nil if there is nothing to report)
+// and an error if the check itself failed to execute.
+type PreflightCheckFn func(
+	ctx context.Context,
+	valCtx *validationContext,
+) (*PreflightCheckResult, error)
 
 // localArmPreflight provides local (client-side) validation of an ARM template before deployment.
 // It parses the template and parameters to build a comprehensive view of all resources that would
 // be deployed, enabling early detection of issues without making Azure API calls.
-type localArmPreflight struct{}
+//
+// Callers can register additional check functions via AddCheck before calling validate. Each
+// registered function is invoked with the analyzed resource properties, and the results are
+// collected and returned alongside the resource properties.
+type localArmPreflight struct {
+	// modulePath is the absolute path to the source Bicep module (e.g. /project/infra/main.bicep).
+	modulePath string
+	// bicepCli is the Bicep CLI wrapper used to run bicep commands such as snapshot.
+	bicepCli *bicep.Cli
+	// target is the deployment scope (subscription or resource group) used to derive snapshot options.
+	// It may be nil, in which case snapshot options are left empty.
+	target infra.Deployment
+	checks []PreflightCheckFn
+}
 
 // newLocalArmPreflight creates a new instance of localArmPreflight.
-func newLocalArmPreflight() *localArmPreflight {
-	return &localArmPreflight{}
+// modulePath is the path to the source Bicep module file (e.g. "infra/main.bicep").
+// bicepCli is the Bicep CLI wrapper used to invoke bicep commands.
+// target is the deployment scope used to populate snapshot options; it may be nil.
+func newLocalArmPreflight(modulePath string, bicepCli *bicep.Cli, target infra.Deployment) *localArmPreflight {
+	return &localArmPreflight{modulePath: modulePath, bicepCli: bicepCli, target: target}
+}
+
+// AddCheck registers a preflight check function to be executed during validate.
+// Check functions are invoked in the order they are added.
+func (l *localArmPreflight) AddCheck(fn PreflightCheckFn) {
+	l.checks = append(l.checks, fn)
 }
 
 // validate performs local preflight validation on the given ARM template and parameters.
-// It parses the template, resolves parameters, and returns resourcesProperties summarizing
-// key characteristics of the deployment (such as whether it contains role assignments)
-// along with any validation errors detected locally.
+// It parses the template, resolves parameters, analyzes the resources, and then runs all
+// registered check functions. It returns the collected results from all checks and an error
+// if template parsing fails.
 func (l *localArmPreflight) validate(
+	ctx context.Context,
+	console input.Console,
 	armTemplate azure.RawArmTemplate,
-	_ azure.ArmParameters,
-) (resourcesProperties, error) {
-	parsed, err := l.parseTemplate(armTemplate)
+	armParameters azure.ArmParameters,
+) ([]PreflightCheckResult, error) {
+	_, err := l.parseTemplate(armTemplate)
 	if err != nil {
-		return resourcesProperties{}, fmt.Errorf("parsing ARM template: %w", err)
+		return nil, fmt.Errorf("parsing ARM template: %w", err)
 	}
 
-	resources := l.collectResources(parsed.Resources, "" /* parentType */, "" /* parentName */)
-	props := analyzeResources(resources)
+	// Determine the .bicepparam file to use for the snapshot.
+	// If the module path already points to a .bicepparam file, use it directly.
+	// Otherwise, create a temporary .bicepparam file next to the .bicep module with the resolved parameters.
+	var bicepParamFile string
+	if filepath.Ext(l.modulePath) == ".bicepparam" {
+		bicepParamFile = l.modulePath
+	} else {
+		bicepFileName := filepath.Base(l.modulePath)
+		moduleDir := filepath.Dir(l.modulePath)
 
-	return props, nil
+		bicepParamContent := generateBicepParam(bicepFileName, armParameters)
+
+		tmpFile, err := os.CreateTemp(moduleDir, "preflight-*.bicepparam")
+		if err != nil {
+			return nil, fmt.Errorf("creating temp bicepparam file: %w", err)
+		}
+		defer func() {
+			tmpFile.Close()
+			os.Remove(tmpFile.Name())
+		}()
+
+		if err := os.WriteFile(tmpFile.Name(), []byte(bicepParamContent), osutil.PermissionFile); err != nil {
+			return nil, fmt.Errorf("writing temp bicepparam file: %w", err)
+		}
+
+		bicepParamFile = tmpFile.Name()
+	}
+
+	// Build snapshot options from the deployment target scope.
+	snapshotOpts := bicep.NewSnapshotOptions()
+	if l.target != nil {
+		snapshotOpts = snapshotOpts.WithSubscriptionID(l.target.SubscriptionId())
+
+		switch t := l.target.(type) {
+		case *infra.ResourceGroupDeployment:
+			snapshotOpts = snapshotOpts.WithResourceGroup(t.ResourceGroupName())
+		case *infra.SubscriptionDeployment:
+			snapshotOpts = snapshotOpts.WithLocation(t.Location())
+		}
+	}
+
+	// Run the Bicep snapshot command to produce a deployment snapshot from the bicepparam file.
+	// The snapshot contains the fully resolved deployment graph with expressions evaluated,
+	// conditions applied, and copy loops expanded.
+	data, err := l.bicepCli.Snapshot(ctx, bicepParamFile, snapshotOpts)
+	if err != nil {
+		return nil, fmt.Errorf("running bicep snapshot: %w", err)
+	}
+
+	var snapshot snapshotResult
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		return nil, fmt.Errorf("parsing bicep snapshot: %w", err)
+	}
+
+	props := analyzeResources(snapshot.PredictedResources)
+
+	valCtx := &validationContext{
+		Console:           console,
+		Props:             props,
+		ResourcesSnapshot: json.RawMessage(data),
+		SnapshotResources: snapshot.PredictedResources,
+	}
+
+	var results []PreflightCheckResult
+	for _, check := range l.checks {
+		result, err := check(ctx, valCtx)
+		if err != nil {
+			return results, fmt.Errorf("preflight check failed: %w", err)
+		}
+		if result != nil {
+			results = append(results, *result)
+		}
+	}
+
+	return results, nil
 }
 
 // parseTemplate unmarshals a raw ARM template into the parser's own armTemplate structure.
@@ -262,102 +389,95 @@ func (l *localArmPreflight) parseTemplate(raw azure.RawArmTemplate) (*armTemplat
 	return &tmpl, nil
 }
 
-// armDeploymentProperties represents the properties block of a Microsoft.Resources/deployments resource.
-// This is used to extract inner template resources from nested deployments.
-type armDeploymentProperties struct {
-	Template *armTemplate `json:"template,omitempty"`
-	Mode     string       `json:"mode,omitempty"` // "Incremental" or "Complete"
-}
+// generateBicepParam produces a .bicepparam file content string from the given ARM parameters
+// and the name of the Bicep file they target. The output follows the Bicep parameters file
+// format:
+//
+//	using '<bicepFile>'
+//
+//	param <name> = <value>
+//
+// Parameter names are emitted in sorted order for deterministic output. Values are serialized
+// as Bicep literals: strings use single quotes, arrays and objects use JSON-like syntax with
+// single-quoted string values, booleans and numbers are written as-is, and null produces the
+// Bicep null keyword. Key Vault references are skipped because they cannot be represented
+// directly as Bicep parameter values.
+func generateBicepParam(bicepFile string, params azure.ArmParameters) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("using '%s'\n", bicepFile))
 
-// isNestedDeployment returns true if the resource type is Microsoft.Resources/deployments,
-// which is how Bicep compiles modules into ARM templates.
-func isNestedDeployment(resourceType string) bool {
-	return strings.EqualFold(resourceType, "Microsoft.Resources/deployments")
-}
+	for _, name := range slices.Sorted(maps.Keys(params)) {
+		param := params[name]
 
-// collectResources recursively walks the ARM template resource tree and produces a flat list of
-// preflightResource entries. It handles:
-//   - Child resources nested via the "resources" array (type/name are combined with parent).
-//   - Nested deployments (Microsoft.Resources/deployments) where actual resources live inside
-//     properties.template.resources. These are transparently expanded so callers see the
-//     real resources rather than the deployment wrapper.
-func (l *localArmPreflight) collectResources(
-	resources []armTemplateResource,
-	parentType string,
-	parentName string,
-) []preflightResource {
-	var result []preflightResource
-
-	for _, r := range resources {
-		fullType := r.Type
-		fullName := r.Name
-
-		// For child resources nested inside a parent, the type and name are relative.
-		// We need to combine them with the parent's type and name.
-		// e.g. parent type "Microsoft.Storage/storageAccounts" + child type "blobServices"
-		//   => "Microsoft.Storage/storageAccounts/blobServices"
-		if parentType != "" {
-			fullType = parentType + "/" + r.Type
-			fullName = parentName + "/" + r.Name
+		// Key Vault references cannot be expressed as bicepparam values; skip them.
+		if param.KeyVaultReference != nil {
+			continue
 		}
 
-		// For Microsoft.Resources/deployments (nested deployments produced by Bicep modules),
-		// extract the inner template resources instead of treating the deployment as a leaf resource.
-		if isNestedDeployment(fullType) && len(r.Properties) > 0 {
-			innerResources := l.extractNestedDeploymentResources(r)
-			if len(innerResources) > 0 {
-				result = append(result, innerResources...)
-				continue
-			}
-			// If we couldn't extract inner resources (e.g. templateLink or expression-based),
-			// fall through and include the deployment resource itself.
-		}
-
-		pr := preflightResource{
-			Type:         fullType,
-			Name:         fullName,
-			APIVersion:   r.APIVersion,
-			Location:     r.Location,
-			Kind:         r.Kind,
-			SKU:          r.SKU,
-			DependsOn:    r.DependsOn,
-			HasCondition: r.Condition != nil,
-			HasCopyLoop:  r.Copy != nil,
-			Properties:   r.Properties,
-		}
-
-		result = append(result, pr)
-
-		// Recursively collect nested child resources
-		if len(r.Resources) > 0 {
-			children := l.collectResources(r.Resources, fullType, fullName)
-			result = append(result, children...)
-		}
+		sb.WriteString(fmt.Sprintf("\nparam %s = %s\n", name, toBicepValue(param.Value)))
 	}
 
-	return result
+	return sb.String()
 }
 
-// extractNestedDeploymentResources parses the properties.template of a Microsoft.Resources/deployments
-// resource and recursively collects the resources declared within the inner template.
-// This is the primary mechanism by which Bicep modules are expanded — each module compiles to a
-// nested deployment whose inner template contains the actual resources.
-func (l *localArmPreflight) extractNestedDeploymentResources(
-	r armTemplateResource,
-) []preflightResource {
-	var props armDeploymentProperties
-	if err := json.Unmarshal(r.Properties, &props); err != nil {
-		// Can't parse properties — might be expression-based or use templateLink.
-		return nil
+// toBicepValue converts a Go value into its Bicep literal representation.
+// Supported types: string→'single-quoted', bool→true/false, nil→null,
+// numeric types→number literal, arrays→[...], maps/objects→{key: value}.
+func toBicepValue(v any) string {
+	if v == nil {
+		return "null"
 	}
 
-	if props.Template == nil || len(props.Template.Resources) == 0 {
-		return nil
+	switch val := v.(type) {
+	case string:
+		// Bicep strings use single quotes; escape embedded single quotes by doubling them.
+		escaped := strings.ReplaceAll(val, "'", "''")
+		return fmt.Sprintf("'%s'", escaped)
+	case bool:
+		if val {
+			return "true"
+		}
+		return "false"
+	case json.Number:
+		return val.String()
+	case float64:
+		// JSON numbers decode as float64 by default.
+		if val == float64(int64(val)) {
+			return fmt.Sprintf("%d", int64(val))
+		}
+		return fmt.Sprintf("%g", val)
+	case float32:
+		if val == float32(int32(val)) {
+			return fmt.Sprintf("%d", int32(val))
+		}
+		return fmt.Sprintf("%g", val)
+	case int:
+		return fmt.Sprintf("%d", val)
+	case int64:
+		return fmt.Sprintf("%d", val)
+	case []any:
+		items := make([]string, 0, len(val))
+		for _, item := range val {
+			items = append(items, toBicepValue(item))
+		}
+		return fmt.Sprintf("[\n  %s\n]", strings.Join(items, "\n  "))
+	case map[string]any:
+		if len(val) == 0 {
+			return "{}"
+		}
+		entries := make([]string, 0, len(val))
+		for _, k := range slices.Sorted(maps.Keys(val)) {
+			entries = append(entries, fmt.Sprintf("  %s: %s", k, toBicepValue(val[k])))
+		}
+		return fmt.Sprintf("{\n%s\n}", strings.Join(entries, "\n"))
+	default:
+		// Fallback: marshal to JSON.
+		b, err := json.Marshal(val)
+		if err != nil {
+			return fmt.Sprintf("'%v'", val)
+		}
+		return string(b)
 	}
-
-	// Recursively collect resources from the inner template.
-	// Inner template resources are top-level within their own scope, so we pass empty parent type/name.
-	return l.collectResources(props.Template.Resources, "", "")
 }
 
 // resourcesProperties contains derived properties from analyzing the collected preflight resources.
@@ -367,9 +487,9 @@ type resourcesProperties struct {
 	HasRoleAssignments bool
 }
 
-// analyzeResources inspects the list of preflight resources and returns a resourcesProperties
+// analyzeResources inspects the list of snapshot resources and returns a resourcesProperties
 // summarizing key characteristics of the deployment.
-func analyzeResources(resources []preflightResource) resourcesProperties {
+func analyzeResources(resources []armTemplateResource) resourcesProperties {
 	props := resourcesProperties{}
 	for _, r := range resources {
 		if strings.EqualFold(r.Type, "Microsoft.Authorization/roleAssignments") {

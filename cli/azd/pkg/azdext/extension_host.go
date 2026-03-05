@@ -110,7 +110,7 @@ func (er *ExtensionHost) Client() *AzdClient {
 	return er.client
 }
 
-func (er *ExtensionHost) initBrokerLogger(extensionId string, brokerLogger *log.Logger) {
+func (er *ExtensionHost) initManagers(extensionId string, brokerLogger *log.Logger) {
 	if er.serviceTargetManager == nil {
 		er.serviceTargetManager = NewServiceTargetManager(extensionId, er.client, brokerLogger)
 	}
@@ -171,7 +171,7 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	if isDebug, err := strconv.ParseBool(os.Getenv("AZD_EXT_DEBUG")); err == nil && isDebug {
 		brokerLogger = log.New(os.Stderr, "", log.LstdFlags)
 	}
-	er.initBrokerLogger(extensionId, brokerLogger)
+	er.initManagers(extensionId, brokerLogger)
 
 	// Determine which managers will be active
 	hasServiceTargets := len(er.serviceTargets) > 0

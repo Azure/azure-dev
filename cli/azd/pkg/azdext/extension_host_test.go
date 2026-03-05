@@ -8,6 +8,7 @@ import (
 	"errors"
 	"log"
 	"os"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -691,69 +692,55 @@ func TestExtensionHost_MultipleRegistrationErrors(t *testing.T) {
 	mockFrameworkServiceManager.AssertExpectations(t)
 }
 
-// TestExtensionHost_BrokerLogging verifies that the broker logger is configured
-// correctly based on the AZD_EXT_DEBUG environment variable.
-// When AZD_EXT_DEBUG is truthy, each manager should receive a non-nil broker logger
-// so that message-broker trace output is printed.
-// When AZD_EXT_DEBUG is falsy (or unset), each manager should receive a nil broker
-// logger, causing NewMessageBroker to default to io.Discard (silent).
 func TestExtensionHost_BrokerLogging(t *testing.T) {
-	t.Parallel()
+	tests := []struct {
+		name     string
+		envValue string // value to set; "" means unset
+		wantNil  bool   // true when broker logger should be nil (silent)
+	}{
+		{name: "AZD_EXT_DEBUG=true enables broker logging", envValue: "true", wantNil: false},
+		{name: "AZD_EXT_DEBUG=1 enables broker logging", envValue: "1", wantNil: false},
+		{name: "AZD_EXT_DEBUG=false disables broker logging", envValue: "false", wantNil: true},
+		{name: "AZD_EXT_DEBUG=0 disables broker logging", envValue: "0", wantNil: true},
+		{name: "AZD_EXT_DEBUG unset disables broker logging", envValue: "", wantNil: true},
+	}
 
-	t.Run("AZD_EXT_DEBUG=true enables broker logging", func(t *testing.T) {
-		t.Parallel()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set or unset AZD_EXT_DEBUG for this subtest.
+			if tt.envValue != "" {
+				t.Setenv("AZD_EXT_DEBUG", tt.envValue)
+			} else {
+				// Ensure the variable is not inherited from the outer process.
+				t.Setenv("AZD_EXT_DEBUG", "")
+				os.Unsetenv("AZD_EXT_DEBUG")
+			}
 
-		// Create extension host without pre-set managers so initBrokerLogger creates real ones
-		client := newTestAzdClient()
-		host := NewExtensionHost(client)
+			// Exercise the same strconv.ParseBool logic that Run() uses.
+			var brokerLogger *log.Logger
+			if isDebug, err := strconv.ParseBool(os.Getenv("AZD_EXT_DEBUG")); err == nil && isDebug {
+				brokerLogger = log.New(os.Stderr, "", log.LstdFlags)
+			}
 
-		// Simulate what Run() does when AZD_EXT_DEBUG is truthy:
-		// it creates a real *log.Logger and passes it to initBrokerLogger.
-		brokerLogger := log.New(os.Stderr, "", log.LstdFlags)
-		host.initBrokerLogger("test-ext", brokerLogger)
+			// Feed the result into initManagers so we can inspect the managers.
+			client := newTestAzdClient()
+			host := NewExtensionHost(client)
+			host.initManagers("test-ext", brokerLogger)
 
-		// Verify all managers received a non-nil broker logger
-		stm, ok := host.serviceTargetManager.(*ServiceTargetManager)
-		require.True(t, ok)
-		assert.NotNil(t, stm.brokerLogger,
-			"service target manager should have a broker logger when debug is enabled")
+			// Verify all three managers received the expected logger value.
+			stm := host.serviceTargetManager.(*ServiceTargetManager)
+			fsm := host.frameworkServiceManager.(*FrameworkServiceManager)
+			em := host.eventManager.(*EventManager)
 
-		fsm, ok := host.frameworkServiceManager.(*FrameworkServiceManager)
-		require.True(t, ok)
-		assert.NotNil(t, fsm.brokerLogger,
-			"framework service manager should have a broker logger when debug is enabled")
-
-		em, ok := host.eventManager.(*EventManager)
-		require.True(t, ok)
-		assert.NotNil(t, em.brokerLogger,
-			"event manager should have a broker logger when debug is enabled")
-	})
-
-	t.Run("AZD_EXT_DEBUG=false disables broker logging", func(t *testing.T) {
-		t.Parallel()
-
-		// Create extension host without pre-set managers so initBrokerLogger creates real ones
-		client := newTestAzdClient()
-		host := NewExtensionHost(client)
-
-		// Simulate what Run() does when AZD_EXT_DEBUG is unset or falsy:
-		// brokerLogger stays nil, so initBrokerLogger passes nil to each manager.
-		host.initBrokerLogger("test-ext", nil)
-
-		// Verify all managers received a nil broker logger (NewMessageBroker will use io.Discard)
-		stm, ok := host.serviceTargetManager.(*ServiceTargetManager)
-		require.True(t, ok)
-		assert.Nil(t, stm.brokerLogger,
-			"service target manager should have nil broker logger when debug is disabled")
-
-		fsm, ok := host.frameworkServiceManager.(*FrameworkServiceManager)
-		require.True(t, ok)
-		assert.Nil(t, fsm.brokerLogger,
-			"framework service manager should have nil broker logger when debug is disabled")
-
-		em, ok := host.eventManager.(*EventManager)
-		require.True(t, ok)
-		assert.Nil(t, em.brokerLogger,
-			"event manager should have nil broker logger when debug is disabled")
-	})
+			if tt.wantNil {
+				assert.Nil(t, stm.brokerLogger, "service target manager broker logger")
+				assert.Nil(t, fsm.brokerLogger, "framework service manager broker logger")
+				assert.Nil(t, em.brokerLogger, "event manager broker logger")
+			} else {
+				assert.NotNil(t, stm.brokerLogger, "service target manager broker logger")
+				assert.NotNil(t, fsm.brokerLogger, "framework service manager broker logger")
+				assert.NotNil(t, em.brokerLogger, "event manager broker logger")
+			}
+		})
+	}
 }

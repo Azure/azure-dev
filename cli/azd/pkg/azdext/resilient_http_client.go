@@ -34,7 +34,7 @@ const (
 	userAgentHeaderName       = "User-Agent"
 	clientRequestIDHeaderName = "x-ms-client-request-id"
 	msCorrelationIDHeaderName = "x-ms-correlation-request-id"
-	defaultUserAgent          = "azdext-resilient-client"
+	defaultUserAgent          = "azdext-resilient-client/" + Version
 )
 
 // ResilientClient is an HTTP client with built-in retry, exponential backoff,
@@ -74,6 +74,10 @@ type ResilientClientOptions struct {
 	// Timeout is the per-request timeout.
 	// A value of zero or less uses the default of 30s.
 	Timeout time.Duration
+
+	// UserAgent overrides the default User-Agent header.
+	// When empty, defaults to "azdext-resilient-client/<Version>".
+	UserAgent string
 
 	// Transport overrides the default HTTP transport. Useful for testing.
 	Transport http.RoundTripper
@@ -271,7 +275,11 @@ func (rc *ResilientClient) applyAuth(ctx context.Context, req *http.Request) err
 
 func (rc *ResilientClient) setRequestHeaders(req *http.Request) {
 	if req.Header.Get(userAgentHeaderName) == "" {
-		req.Header.Set(userAgentHeaderName, defaultUserAgent)
+		ua := rc.opts.UserAgent
+		if ua == "" {
+			ua = defaultUserAgent
+		}
+		req.Header.Set(userAgentHeaderName, ua)
 	}
 	correlationID := req.Header.Get(clientRequestIDHeaderName)
 	if correlationID == "" {

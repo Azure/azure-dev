@@ -106,8 +106,10 @@ func defaultRules() []scopeRule {
 
 // NewScopeDetector creates a [ScopeDetector] with the built-in Azure endpoint
 // mappings. Additional custom rules can be supplied via opts.
+// Custom rules take precedence over defaults, allowing callers to override
+// built-in mappings (e.g. Service Bus vs Event Hubs on .servicebus.windows.net).
 func NewScopeDetector(opts *ScopeDetectorOptions) *ScopeDetector {
-	rules := defaultRules()
+	var custom []scopeRule
 
 	if opts != nil {
 		// Sort keys for deterministic rule evaluation order.
@@ -127,20 +129,23 @@ func NewScopeDetector(opts *ScopeDetectorOptions) *ScopeDetector {
 
 			if strings.HasPrefix(hs, ".") {
 				// Dot-prefixed: suffix match (subdomain matching).
-				rules = append(rules, scopeRule{
+				custom = append(custom, scopeRule{
 					match: func(host string) bool { return strings.HasSuffix(host, hs) },
 					scope: scope,
 				})
 			} else {
 				// No dot prefix: exact host match to prevent partial-host
 				// matching (e.g. "azure.com" matching "fakeazure.com").
-				rules = append(rules, scopeRule{
+				custom = append(custom, scopeRule{
 					match: func(host string) bool { return host == hs },
 					scope: scope,
 				})
 			}
 		}
 	}
+
+	// Prepend custom rules before defaults so they take precedence.
+	rules := append(custom, defaultRules()...)
 
 	return &ScopeDetector{rules: rules}
 }
@@ -179,5 +184,5 @@ type ScopeDetectorError struct {
 }
 
 func (e *ScopeDetectorError) Error() string {
-	return "azdext.ScopeDetector: " + e.Reason + " (url=" + e.URL + ")"
+	return "azdext.ScopeDetector: " + e.Reason + " (url=" + redactURL(e.URL) + ")"
 }

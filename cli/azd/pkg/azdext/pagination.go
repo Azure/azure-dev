@@ -290,12 +290,14 @@ func (p *Pager[T]) Collect(ctx context.Context) ([]T, error) {
 				all = all[:p.opts.MaxItems]
 			}
 			p.truncated = true
+			p.done = true
 			break
 		}
 
 		// Enforce MaxPages: stop after collecting the configured number of pages.
 		if p.pageCount >= maxPages {
 			p.truncated = true
+			p.done = true
 			break
 		}
 	}

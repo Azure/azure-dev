@@ -291,7 +291,7 @@ func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
 }
 
 func Test_CLI_Up_Down_ContainerAppJob(t *testing.T) {
-	t.Skip("skipping until recording is available (azure-dev#7001)")
+	t.Skip("skipping until recording is available (azure-dev#7014)")
 	t.Parallel()
 
 	if ci_os := os.Getenv("AZURE_DEV_CI_OS"); ci_os != "" && ci_os != "lin" {

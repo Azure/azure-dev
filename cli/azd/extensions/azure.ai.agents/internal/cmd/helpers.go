@@ -304,6 +304,62 @@ func resolveStartupCommandFromService(ctx context.Context, name string) string {
 	return ""
 }
 
+// ServiceDevContext holds the resolved context needed for local development.
+type ServiceDevContext struct {
+	ProjectDir     string // absolute path to the service source directory
+	StartupCommand string // startupCommand from AdditionalProperties (may be empty)
+}
+
+// resolveServiceDevContext queries the azd project to find the matching azure.ai.agent
+// service, then returns the service's absolute source directory and startup command.
+func resolveServiceDevContext(ctx context.Context, name string) (*ServiceDevContext, error) {
+	azdClient, err := azdext.NewAzdClient()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create azd client: %w", err)
+	}
+	defer azdClient.Close()
+
+	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil || projectResponse.Project == nil {
+		return nil, fmt.Errorf("failed to get project config (is there an azure.yaml?): %w", err)
+	}
+
+	var svc *azdext.ServiceConfig
+	for _, s := range projectResponse.Project.Services {
+		if s.Host != AiAgentHost {
+			continue
+		}
+		if name != "" && s.Name != name {
+			continue
+		}
+		svc = s
+		break
+	}
+
+	if svc == nil {
+		if name != "" {
+			return nil, fmt.Errorf("no azure.ai.agent service named '%s' found in azure.yaml", name)
+		}
+		return nil, fmt.Errorf("no azure.ai.agent service found in azure.yaml")
+	}
+
+	projectDir := filepath.Join(projectResponse.Project.Path, svc.RelativePath)
+
+	var startupCmd string
+	if svc.AdditionalProperties != nil {
+		if fields := svc.AdditionalProperties.GetFields(); fields != nil {
+			if v, ok := fields["startupCommand"]; ok && v != nil {
+				startupCmd = v.GetStringValue()
+			}
+		}
+	}
+
+	return &ServiceDevContext{
+		ProjectDir:     projectDir,
+		StartupCommand: startupCmd,
+	}, nil
+}
+
 // toServiceKey converts a service name into the env var key format (uppercase, underscores).
 func toServiceKey(serviceName string) string {
 	key := strings.ReplaceAll(serviceName, " ", "_")

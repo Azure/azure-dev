@@ -18,7 +18,6 @@ import (
 )
 
 type devFlags struct {
-	src          string
 	port         int
 	name         string
 	startCommand string
@@ -44,9 +43,6 @@ Use a separate terminal to invoke the running agent:
 		Example: `  # Start the agent in the current directory
   azd ai agent dev
 
-  # Start from a specific source directory
-  azd ai agent dev --src ./my-agent
-
   # Start a specific agent by name
   azd ai agent dev --name my-agent
 
@@ -62,7 +58,6 @@ Use a separate terminal to invoke the running agent:
 		},
 	}
 
-	cmd.Flags().StringVarP(&flags.src, "src", "s", ".", "Project source directory")
 	cmd.Flags().IntVarP(&flags.port, "port", "p", DefaultPort, "Port to listen on")
 	cmd.Flags().StringVarP(&flags.name, "name", "n", "", "Agent service name (from azure.yaml)")
 	cmd.Flags().StringVarP(&flags.startCommand, "start-command", "c", "",
@@ -72,19 +67,17 @@ Use a separate terminal to invoke the running agent:
 }
 
 func runDev(ctx context.Context, flags *devFlags) error {
-	projectDir, err := filepath.Abs(flags.src)
+	// Resolve the service source directory and startup command from azure.yaml
+	devCtx, err := resolveServiceDevContext(ctx, flags.name)
 	if err != nil {
-		return fmt.Errorf("invalid source directory: %w", err)
+		return err
 	}
-
-	if _, err := os.Stat(projectDir); os.IsNotExist(err) {
-		return fmt.Errorf("source directory does not exist: %s", projectDir)
-	}
+	projectDir := devCtx.ProjectDir
 
 	// Resolve start command: --start-command flag > azure.yaml startupCommand > detect
 	startCmd := flags.startCommand
 	if startCmd == "" {
-		startCmd = resolveStartupCommandFromService(ctx, flags.name)
+		startCmd = devCtx.StartupCommand
 	}
 
 	if startCmd == "" {

@@ -78,7 +78,7 @@ func (s *eventService) EventStream(stream grpc.BidiStreamingServer[azdext.EventM
 
 	// Create message broker with EventMessageEnvelope
 	envelope := azdext.NewEventMessageEnvelope()
-	broker := grpcbroker.NewMessageBroker(stream, envelope, extension.Id)
+	broker := grpcbroker.NewMessageBroker(stream, envelope, extension.Id, nil)
 
 	// Register handlers for incoming subscription requests (no response needed)
 	broker.On(func(ctx context.Context, msg *azdext.SubscribeProjectEvent) (*azdext.EventMessage, error) {

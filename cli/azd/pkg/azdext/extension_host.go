@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"strconv"
@@ -111,16 +110,15 @@ func (er *ExtensionHost) Client() *AzdClient {
 	return er.client
 }
 
-func (er *ExtensionHost) init(extensionId string) {
-	// Only create managers if they haven't been set (allows tests to inject mocks)
+func (er *ExtensionHost) initBrokerLogger(extensionId string, brokerLogger *log.Logger) {
 	if er.serviceTargetManager == nil {
-		er.serviceTargetManager = NewServiceTargetManager(extensionId, er.client)
+		er.serviceTargetManager = NewServiceTargetManager(extensionId, er.client, brokerLogger)
 	}
 	if er.frameworkServiceManager == nil {
-		er.frameworkServiceManager = NewFrameworkServiceManager(extensionId, er.client)
+		er.frameworkServiceManager = NewFrameworkServiceManager(extensionId, er.client, brokerLogger)
 	}
 	if er.eventManager == nil {
-		er.eventManager = NewEventManager(extensionId, er.client)
+		er.eventManager = NewEventManager(extensionId, er.client, brokerLogger)
 	}
 }
 
@@ -159,26 +157,21 @@ func (er *ExtensionHost) WithServiceEventHandler(
 // Run wires the configured service targets and event handlers, signals readiness, and blocks until shutdown.
 func (er *ExtensionHost) Run(ctx context.Context) error {
 	extensionId := getExtensionId(ctx)
-	er.init(extensionId)
 
 	// Wait for debugger if AZD_EXT_DEBUG is set
 	// When user declines or cancels, continue so extension doesn't exit while azd continues
 	_ = WaitForDebugger(ctx, er.client)
 
-	// Silence the global logger in extension processes to prevent internal
-	// gRPC broker trace logs from appearing in stderr. When AZD_EXT_DEBUG
-	// is truthy, keep logging to stderr for diagnostics.
+	// Broker trace loggers are silent by default (io.Discard in NewMessageBroker).
+	// When AZD_EXT_DEBUG is truthy, enable verbose broker logging to stderr
+	// for diagnostics while keeping the global logger untouched.
 	// Uses strconv.ParseBool to match WaitForDebugger semantics (accepts
 	// "1", "t", "TRUE", "true", etc.).
-	originalLogWriter := log.Default().Writer()
-	restoreLogOutput := false
-	if isDebug, err := strconv.ParseBool(os.Getenv("AZD_EXT_DEBUG")); err != nil || !isDebug {
-		log.SetOutput(io.Discard)
-		restoreLogOutput = true
+	var brokerLogger *log.Logger
+	if isDebug, err := strconv.ParseBool(os.Getenv("AZD_EXT_DEBUG")); err == nil && isDebug {
+		brokerLogger = log.New(os.Stderr, "", log.LstdFlags)
 	}
-	if restoreLogOutput {
-		defer log.SetOutput(originalLogWriter)
-	}
+	er.initBrokerLogger(extensionId, brokerLogger)
 
 	// Determine which managers will be active
 	hasServiceTargets := len(er.serviceTargets) > 0

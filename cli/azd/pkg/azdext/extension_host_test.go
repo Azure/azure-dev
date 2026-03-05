@@ -4,10 +4,8 @@
 package azdext
 
 import (
-	"bytes"
 	"context"
 	"errors"
-	"io"
 	"log"
 	"os"
 	"sync"
@@ -229,7 +227,7 @@ func newTestAzdClient() *AzdClient {
 }
 
 func TestExtensionHost_ServiceTargetOnly(t *testing.T) {
-	// Not parallel: Run() mutates global log output which races with other tests.
+	t.Parallel()
 
 	// Setup mocks
 	mockServiceTargetManager := &MockServiceTargetRegistrar{}
@@ -283,7 +281,7 @@ func TestExtensionHost_ServiceTargetOnly(t *testing.T) {
 }
 
 func TestExtensionHost_EventHandlersOnly(t *testing.T) {
-	// Not parallel: Run() mutates global log output which races with other tests.
+	t.Parallel()
 
 	// Setup mocks
 	mockEventManager := &MockExtensionEventManager{}
@@ -349,7 +347,7 @@ func TestExtensionHost_EventHandlersOnly(t *testing.T) {
 }
 
 func TestExtensionHost_ServiceTargetsAndEvents(t *testing.T) {
-	// Not parallel: Run() mutates global log output which races with other tests.
+	t.Parallel()
 
 	// Setup mocks
 	mockServiceTargetManager := &MockServiceTargetRegistrar{}
@@ -427,7 +425,7 @@ func TestExtensionHost_ServiceTargetsAndEvents(t *testing.T) {
 }
 
 func TestExtensionHost_ServiceTargetRegistrationError(t *testing.T) {
-	// Not parallel: Run() mutates global log output which races with other tests.
+	t.Parallel()
 
 	// Setup mock with error
 	expectedError := status.Error(codes.Internal, "boom")
@@ -474,7 +472,7 @@ func TestExtensionHost_ServiceTargetRegistrationError(t *testing.T) {
 }
 
 func TestExtensionHost_WithFrameworkService(t *testing.T) {
-	// Not parallel: Run() mutates global log output which races with other tests.
+	t.Parallel()
 
 	// Setup mocks
 	mockFrameworkServiceManager := &MockFrameworkServiceRegistrar{}
@@ -528,7 +526,7 @@ func TestExtensionHost_WithFrameworkService(t *testing.T) {
 }
 
 func TestExtensionHost_MultipleServiceTypes(t *testing.T) {
-	// Not parallel: Run() mutates global log output which races with other tests.
+	t.Parallel()
 
 	// Setup mocks for all service types
 	var wg sync.WaitGroup
@@ -623,7 +621,7 @@ func TestExtensionHost_MultipleServiceTypes(t *testing.T) {
 }
 
 func TestExtensionHost_MultipleRegistrationErrors(t *testing.T) {
-	// Not parallel: Run() mutates global log output which races with other tests.
+	t.Parallel()
 
 	// Setup mocks with errors
 	error1 := status.Error(codes.Internal, "service target error")
@@ -693,126 +691,69 @@ func TestExtensionHost_MultipleRegistrationErrors(t *testing.T) {
 	mockFrameworkServiceManager.AssertExpectations(t)
 }
 
-// TestExtensionHost_RunSilencesLog tests that Run() silences the global logger
-// when AZD_EXT_DEBUG is not set, preventing internal gRPC broker trace logs
-// from appearing in extension stderr.
-// These tests mutate global state (log output, env vars) and must NOT run in parallel.
-// Do NOT add t.Parallel() — Run() mutates the global logger and this test mutates AZD_EXT_DEBUG,
-// both of which would race with any other test that calls ExtensionHost.Run() concurrently.
-func TestExtensionHost_RunSilencesLog(t *testing.T) {
+// TestExtensionHost_BrokerLogging verifies that the broker logger is configured
+// correctly based on the AZD_EXT_DEBUG environment variable.
+// When AZD_EXT_DEBUG is truthy, each manager should receive a non-nil broker logger
+// so that message-broker trace output is printed.
+// When AZD_EXT_DEBUG is falsy (or unset), each manager should receive a nil broker
+// logger, causing NewMessageBroker to default to io.Discard (silent).
+func TestExtensionHost_BrokerLogging(t *testing.T) {
+	t.Parallel()
 
-	// Save and restore global log output
-	originalOutput := log.Writer()
-	defer log.SetOutput(originalOutput)
+	t.Run("AZD_EXT_DEBUG=true enables broker logging", func(t *testing.T) {
+		t.Parallel()
 
-	// Save and restore AZD_EXT_DEBUG env var
-	originalDebug, hadDebug := os.LookupEnv("AZD_EXT_DEBUG")
-	defer func() {
-		if hadDebug {
-			os.Setenv("AZD_EXT_DEBUG", originalDebug)
-		} else {
-			os.Unsetenv("AZD_EXT_DEBUG")
-		}
-	}()
-
-	t.Run("silences log output by default", func(t *testing.T) {
-		// Reset log to a known non-discard writer
-		var buf bytes.Buffer
-		log.SetOutput(&buf)
-
-		// Ensure AZD_EXT_DEBUG is not set
-		os.Unsetenv("AZD_EXT_DEBUG")
-
-		// Setup extension host with a service target so we can observe logging during Run()
+		// Create extension host without pre-set managers so initBrokerLogger creates real ones
 		client := newTestAzdClient()
-		runner := NewExtensionHost(client)
+		host := NewExtensionHost(client)
 
-		mockSTM := &MockServiceTargetRegistrar{}
-		mockSTM.On("Ready", mock.Anything).Return(nil)
-		mockSTM.On("Receive", mock.Anything).Run(func(args mock.Arguments) {
-			// While Run() is active, the logger should be silenced
-			log.Printf("during-run message")
-			ctx := args.Get(0).(context.Context)
-			<-ctx.Done()
-		}).Return(nil)
-		mockSTM.On("Register", mock.Anything, mock.Anything, mock.AnythingOfType("string")).Return(nil)
-		mockSTM.On("Close").Return(nil)
-		runner.serviceTargetManager = mockSTM
-		runner.WithServiceTarget("test", func() ServiceTargetProvider { return &MockServiceTargetProvider{} })
+		// Simulate what Run() does when AZD_EXT_DEBUG is truthy:
+		// it creates a real *log.Logger and passes it to initBrokerLogger.
+		brokerLogger := log.New(os.Stderr, "", log.LstdFlags)
+		host.initBrokerLogger("test-ext", brokerLogger)
 
-		ctx, cancel := context.WithCancel(context.Background())
-		done := make(chan error, 1)
-		go func() { done <- runner.Run(ctx) }()
+		// Verify all managers received a non-nil broker logger
+		stm, ok := host.serviceTargetManager.(*ServiceTargetManager)
+		require.True(t, ok)
+		assert.NotNil(t, stm.brokerLogger,
+			"service target manager should have a broker logger when debug is enabled")
 
-		// Give Run() time to start and write the log message
-		time.Sleep(200 * time.Millisecond)
-		cancel()
-		err := <-done
-		require.NoError(t, err)
+		fsm, ok := host.frameworkServiceManager.(*FrameworkServiceManager)
+		require.True(t, ok)
+		assert.NotNil(t, fsm.brokerLogger,
+			"framework service manager should have a broker logger when debug is enabled")
 
-		// The message written during Run() should have been discarded
-		assert.NotContains(t, buf.String(), "during-run message",
-			"log output during Run() should be discarded when AZD_EXT_DEBUG is not set")
-
-		// After Run() returns, the logger should be restored (not left as io.Discard)
-		assert.NotEqual(t, io.Discard, log.Writer(),
-			"log output should be restored after Run() returns")
+		em, ok := host.eventManager.(*EventManager)
+		require.True(t, ok)
+		assert.NotNil(t, em.brokerLogger,
+			"event manager should have a broker logger when debug is enabled")
 	})
 
-	t.Run("silences log output when AZD_EXT_DEBUG is empty", func(t *testing.T) {
-		var buf bytes.Buffer
-		log.SetOutput(&buf)
+	t.Run("AZD_EXT_DEBUG=false disables broker logging", func(t *testing.T) {
+		t.Parallel()
 
-		os.Setenv("AZD_EXT_DEBUG", "")
-
+		// Create extension host without pre-set managers so initBrokerLogger creates real ones
 		client := newTestAzdClient()
-		runner := NewExtensionHost(client)
+		host := NewExtensionHost(client)
 
-		// No registrations — Run() returns immediately after signaling ready
-		err := runner.Run(context.Background())
-		require.NoError(t, err)
+		// Simulate what Run() does when AZD_EXT_DEBUG is unset or falsy:
+		// brokerLogger stays nil, so initBrokerLogger passes nil to each manager.
+		host.initBrokerLogger("test-ext", nil)
 
-		// After Run(), logger should be restored (defer fired)
-		assert.NotEqual(t, io.Discard, log.Writer(),
-			"log output should be restored after Run() returns")
+		// Verify all managers received a nil broker logger (NewMessageBroker will use io.Discard)
+		stm, ok := host.serviceTargetManager.(*ServiceTargetManager)
+		require.True(t, ok)
+		assert.Nil(t, stm.brokerLogger,
+			"service target manager should have nil broker logger when debug is disabled")
 
-		// Verify restore works — writing after Run() should appear in buffer
-		log.Printf("after-run message")
-		assert.Contains(t, buf.String(), "after-run message",
-			"log output should work after Run() restores the writer")
-	})
+		fsm, ok := host.frameworkServiceManager.(*FrameworkServiceManager)
+		require.True(t, ok)
+		assert.Nil(t, fsm.brokerLogger,
+			"framework service manager should have nil broker logger when debug is disabled")
 
-	t.Run("silences log output when AZD_EXT_DEBUG is false", func(t *testing.T) {
-		var buf bytes.Buffer
-		log.SetOutput(&buf)
-
-		os.Setenv("AZD_EXT_DEBUG", "false")
-
-		client := newTestAzdClient()
-		runner := NewExtensionHost(client)
-
-		err := runner.Run(context.Background())
-		require.NoError(t, err)
-
-		// After Run(), logger should be restored
-		assert.NotEqual(t, io.Discard, log.Writer(),
-			"log output should be restored after Run() returns")
-	})
-
-	t.Run("silences log output when AZD_EXT_DEBUG is invalid", func(t *testing.T) {
-		var buf bytes.Buffer
-		log.SetOutput(&buf)
-
-		os.Setenv("AZD_EXT_DEBUG", "notabool")
-
-		client := newTestAzdClient()
-		runner := NewExtensionHost(client)
-
-		err := runner.Run(context.Background())
-		require.NoError(t, err)
-
-		// After Run(), logger should be restored
-		assert.NotEqual(t, io.Discard, log.Writer(),
-			"log output should be restored after Run() returns")
+		em, ok := host.eventManager.(*EventManager)
+		require.True(t, ok)
+		assert.Nil(t, em.brokerLogger,
+			"event manager should have nil broker logger when debug is disabled")
 	})
 }

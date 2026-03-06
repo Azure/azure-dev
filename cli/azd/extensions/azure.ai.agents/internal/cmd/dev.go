@@ -85,11 +85,17 @@ func runDev(ctx context.Context, flags *devFlags) error {
 		if pt.StartCmd != "" {
 			startCmd = pt.StartCmd
 			fmt.Printf("Detected %s project. Start command: %s\n", pt.Language, startCmd)
+		} else if pt.Language != "unknown" {
+			return fmt.Errorf(
+				"detected %s project in %s but could not determine the entry point\n\n"+
+					"Use --start-command to specify explicitly, or set startupCommand in azure.yaml",
+				pt.Language, projectDir,
+			)
 		} else {
 			return fmt.Errorf(
 				"could not detect project type in %s\n\n"+
 					"Supported project types:\n"+
-					"  - Python (pyproject.toml or requirements.txt)\n"+
+					"  - Python (pyproject.toml or requirements.txt with main.py)\n"+
 					"  - .NET (*.csproj)\n"+
 					"  - Node.js (package.json)\n\n"+
 					"Use --start-command to specify explicitly, or set startupCommand in azure.yaml",

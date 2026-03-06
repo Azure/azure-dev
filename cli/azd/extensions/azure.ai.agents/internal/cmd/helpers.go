@@ -134,11 +134,12 @@ type ProjectType struct {
 
 func detectProjectType(projectDir string) ProjectType {
 	// Python: pyproject.toml or requirements.txt
-	if fileExists(filepath.Join(projectDir, "pyproject.toml")) {
-		return ProjectType{Language: "python", StartCmd: "python main.py"}
-	}
-	if fileExists(filepath.Join(projectDir, "requirements.txt")) {
-		return ProjectType{Language: "python", StartCmd: "python main.py"}
+	if fileExists(filepath.Join(projectDir, "pyproject.toml")) ||
+		fileExists(filepath.Join(projectDir, "requirements.txt")) {
+		if fileExists(filepath.Join(projectDir, "main.py")) {
+			return ProjectType{Language: "python", StartCmd: "python main.py"}
+		}
+		return ProjectType{Language: "python", StartCmd: ""}
 	}
 
 	// .NET: any .csproj file
@@ -152,7 +153,7 @@ func detectProjectType(projectDir string) ProjectType {
 		return ProjectType{Language: "node", StartCmd: "npm start"}
 	}
 
-	// Check for main.py as fallback
+	// Check for standalone main.py as fallback
 	if fileExists(filepath.Join(projectDir, "main.py")) {
 		return ProjectType{Language: "python", StartCmd: "python main.py"}
 	}
@@ -312,6 +313,7 @@ type ServiceDevContext struct {
 
 // resolveServiceDevContext queries the azd project to find the matching azure.ai.agent
 // service, then returns the service's absolute source directory and startup command.
+// When name is empty and multiple agent services exist, it returns an error listing them.
 func resolveServiceDevContext(ctx context.Context, name string) (*ServiceDevContext, error) {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
@@ -325,22 +327,42 @@ func resolveServiceDevContext(ctx context.Context, name string) (*ServiceDevCont
 	}
 
 	var svc *azdext.ServiceConfig
-	for _, s := range projectResponse.Project.Services {
-		if s.Host != AiAgentHost {
-			continue
-		}
-		if name != "" && s.Name != name {
-			continue
-		}
-		svc = s
-		break
-	}
 
-	if svc == nil {
-		if name != "" {
+	if name != "" {
+		// Filter to the specific named service
+		for _, s := range projectResponse.Project.Services {
+			if s.Host == AiAgentHost && s.Name == name {
+				svc = s
+				break
+			}
+		}
+		if svc == nil {
 			return nil, fmt.Errorf("no azure.ai.agent service named '%s' found in azure.yaml", name)
 		}
-		return nil, fmt.Errorf("no azure.ai.agent service found in azure.yaml")
+	} else {
+		// Collect all agent services
+		var agentServices []*azdext.ServiceConfig
+		for _, s := range projectResponse.Project.Services {
+			if s.Host == AiAgentHost {
+				agentServices = append(agentServices, s)
+			}
+		}
+
+		switch len(agentServices) {
+		case 0:
+			return nil, fmt.Errorf("no azure.ai.agent service found in azure.yaml")
+		case 1:
+			svc = agentServices[0]
+		default:
+			names := make([]string, len(agentServices))
+			for i, s := range agentServices {
+				names[i] = s.Name
+			}
+			return nil, fmt.Errorf(
+				"multiple azure.ai.agent services found in azure.yaml: %s\n\nUse --name to specify which service to run",
+				strings.Join(names, ", "),
+			)
+		}
 	}
 
 	projectDir := filepath.Join(projectResponse.Project.Path, svc.RelativePath)

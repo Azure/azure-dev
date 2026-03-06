@@ -18,14 +18,24 @@ func TestDetectStartupCommand(t *testing.T) {
 		expected string
 	}{
 		{
-			name:     "python with pyproject.toml",
-			files:    []string{"pyproject.toml"},
+			name:     "python with pyproject.toml and main.py",
+			files:    []string{"pyproject.toml", "main.py"},
 			expected: "python main.py",
 		},
 		{
-			name:     "python with requirements.txt",
-			files:    []string{"requirements.txt"},
+			name:     "python with pyproject.toml but no main.py",
+			files:    []string{"pyproject.toml"},
+			expected: "",
+		},
+		{
+			name:     "python with requirements.txt and main.py",
+			files:    []string{"requirements.txt", "main.py"},
 			expected: "python main.py",
+		},
+		{
+			name:     "python with requirements.txt but no main.py",
+			files:    []string{"requirements.txt"},
+			expected: "",
 		},
 		{
 			name:     "python with main.py only",
@@ -54,7 +64,7 @@ func TestDetectStartupCommand(t *testing.T) {
 		},
 		{
 			name:     "pyproject.toml takes precedence over package.json",
-			files:    []string{"pyproject.toml", "package.json"},
+			files:    []string{"pyproject.toml", "main.py", "package.json"},
 			expected: "python main.py",
 		},
 	}
@@ -88,10 +98,16 @@ func TestDetectProjectType(t *testing.T) {
 		wantStartCmd string
 	}{
 		{
-			name:         "python detected from pyproject.toml",
-			files:        []string{"pyproject.toml"},
+			name:         "python detected from pyproject.toml with main.py",
+			files:        []string{"pyproject.toml", "main.py"},
 			wantLanguage: "python",
 			wantStartCmd: "python main.py",
+		},
+		{
+			name:         "python detected but no start cmd without entry point",
+			files:        []string{"pyproject.toml"},
+			wantLanguage: "python",
+			wantStartCmd: "",
 		},
 		{
 			name:         "dotnet detected from csproj",

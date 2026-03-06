@@ -4,8 +4,9 @@ on:
   pull_request:
     paths:
       - "cli/**"
-      - "!cli/azd/extensions/**"
       - ".github/workflows/cli-ci.yml"
+    paths-ignore:
+      - "cli/azd/extensions/**"
     branches: [main]
 
 # If two events are triggered within a short time in the same PR, cancel the run of the oldest event

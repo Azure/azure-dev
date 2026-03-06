@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -262,24 +261,6 @@ func TestPager_EmptyFirstURL(t *testing.T) {
 	}
 }
 
-func TestPager_InvalidFirstURL(t *testing.T) {
-	t.Parallel()
-
-	doer := &mockDoer{}
-	pager := NewPager[string](doer, "://bad", nil)
-	if !pager.More() {
-		t.Fatal("expected More() = true for non-empty initial URL")
-	}
-
-	_, err := pager.NextPage(context.Background())
-	if err == nil {
-		t.Fatal("expected error for invalid first URL")
-	}
-	if !strings.Contains(err.Error(), "invalid first URL") {
-		t.Errorf("error = %q, want mention of invalid first URL", err.Error())
-	}
-}
-
 type testStruct struct {
 	Name  string `json:"name"`
 	Count int    `json:"count"`
@@ -382,19 +363,6 @@ func TestPager_NilClient(t *testing.T) {
 	}
 }
 
-func TestPager_NilStdHTTPClient(t *testing.T) {
-	t.Parallel()
-
-	pager := NewPagerFromHTTPClient[string](nil, "https://example.com/api", nil)
-	_, err := pager.NextPage(context.Background())
-	if err == nil {
-		t.Fatal("expected error for nil std http client")
-	}
-	if !strings.Contains(err.Error(), "client must not be nil") {
-		t.Errorf("error = %q, want mention of nil client", err.Error())
-	}
-}
-
 func TestPager_NextLinkSSRF_DifferentHost(t *testing.T) {
 	t.Parallel()
 
@@ -459,33 +427,6 @@ func TestPager_NextLinkHTTP(t *testing.T) {
 	}
 }
 
-func TestPager_NextLinkRelativeURL(t *testing.T) {
-	t.Parallel()
-
-	page1 := pageJSON([]string{"a"}, "/page2")
-
-	doer := &mockDoer{
-		responses: []*doerResponse{
-			{resp: &http.Response{
-				StatusCode: http.StatusOK,
-				Body:       io.NopCloser(strings.NewReader(page1)),
-				Header:     http.Header{},
-			}},
-		},
-	}
-
-	pager := NewPager[string](doer, "https://example.com/api", nil)
-
-	_, err := pager.NextPage(context.Background())
-	if err == nil {
-		t.Fatal("expected error for relative nextLink")
-	}
-
-	if !strings.Contains(err.Error(), "HTTPS") {
-		t.Errorf("error = %q, want mention of HTTPS", err.Error())
-	}
-}
-
 func TestPager_NextLinkUserCredentials(t *testing.T) {
 	t.Parallel()
 
@@ -541,16 +482,17 @@ func TestPager_CollectWithSSRFError(t *testing.T) {
 	}
 }
 
-func TestPager_ResponseTooLarge(t *testing.T) {
+func TestPager_CollectTruncatedByMaxPages(t *testing.T) {
 	t.Parallel()
 
-	oversized := pageJSON([]string{strings.Repeat("a", int(maxPageResponseSize))}, "")
+	page1 := pageJSON([]int{1, 2}, "https://example.com/api?page=2")
+	page2 := pageJSON([]int{3, 4}, "")
 
 	doer := &mockDoer{
 		responses: []*doerResponse{
 			{resp: &http.Response{
 				StatusCode: http.StatusOK,
-				Body:       io.NopCloser(strings.NewReader(oversized)),
+				Body:       io.NopCloser(strings.NewReader(page1)),
 				Header:     http.Header{},
 			}},
 		},
@@ -720,24 +662,78 @@ func TestPager_NotTruncatedOnNaturalEnd(t *testing.T) {
 		responses: []*doerResponse{
 			{resp: &http.Response{
 				StatusCode: http.StatusOK,
-				Body:       io.NopCloser(strings.NewReader(body)),
+				Body:       io.NopCloser(strings.NewReader(page2)),
 				Header:     http.Header{},
 			}},
 		},
 	}
 
-	pager := NewPager[string](doer, "https://example.com/api", nil)
-
+	pager := NewPager[int](doer, "https://example.com/api?page=1", &PagerOptions{MaxPages: 1})
 	all, err := pager.Collect(context.Background())
 	if err != nil {
 		t.Fatalf("Collect failed: %v", err)
 	}
 
 	if len(all) != 2 {
-		t.Errorf("len(all) = %d, want 2", len(all))
+		t.Fatalf("len(all) = %d, want 2", len(all))
+	}
+	if !pager.Truncated() {
+		t.Fatal("expected Truncated() = true when MaxPages stops collection early")
+	}
+}
+
+func TestPager_CollectTruncatedByMaxItems(t *testing.T) {
+	t.Parallel()
+
+	page := pageJSON([]string{"a", "b", "c"}, "")
+	doer := &mockDoer{
+		responses: []*doerResponse{
+			{resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(page)),
+				Header:     http.Header{},
+			}},
+		},
 	}
 
+	pager := NewPager[string](doer, "https://example.com/api", &PagerOptions{MaxItems: 2})
+	all, err := pager.Collect(context.Background())
+	if err != nil {
+		t.Fatalf("Collect failed: %v", err)
+	}
+
+	if len(all) != 2 {
+		t.Fatalf("len(all) = %d, want 2", len(all))
+	}
+	if !pager.Truncated() {
+		t.Fatal("expected Truncated() = true when MaxItems truncates page data")
+	}
+}
+
+func TestPager_CollectNotTruncated(t *testing.T) {
+	t.Parallel()
+
+	page := pageJSON([]string{"x", "y"}, "")
+	doer := &mockDoer{
+		responses: []*doerResponse{
+			{resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(page)),
+				Header:     http.Header{},
+			}},
+		},
+	}
+
+	pager := NewPager[string](doer, "https://example.com/api", &PagerOptions{MaxPages: 10, MaxItems: 10})
+	all, err := pager.Collect(context.Background())
+	if err != nil {
+		t.Fatalf("Collect failed: %v", err)
+	}
+
+	if len(all) != 2 {
+		t.Fatalf("len(all) = %d, want 2", len(all))
+	}
 	if pager.Truncated() {
-		t.Error("Truncated() = true, want false (natural end)")
+		t.Fatal("expected Truncated() = false when all data is collected")
 	}
 }

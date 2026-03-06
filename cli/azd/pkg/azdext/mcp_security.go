@@ -24,12 +24,10 @@ type MCPSecurityPolicy struct {
 	allowedBasePaths []string
 	blockedCIDRs     []*net.IPNet
 	blockedHosts     map[string]bool
+	// onBlocked is invoked whenever a URL or path is blocked, for audit logging.
+	onBlocked func(violation string)
 	// lookupHost is used for DNS resolution; override in tests.
 	lookupHost func(string) ([]string, error)
-	// onBlocked is an optional callback invoked when a URL or path is blocked.
-	// Parameters: action ("url_blocked", "path_blocked"),
-	// detail (human-readable explanation). Safe for concurrent use.
-	onBlocked func(action, detail string)
 }
 
 // NewMCPSecurityPolicy creates an empty security policy.
@@ -47,12 +45,7 @@ func (p *MCPSecurityPolicy) BlockMetadataEndpoints() *MCPSecurityPolicy {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.blockMetadata = true
-	for _, host := range []string{
-		"169.254.169.254",
-		"fd00:ec2::254",
-		"metadata.google.internal",
-		"100.100.100.200",
-	} {
+	for _, host := range ssrfMetadataHosts {
 		p.blockedHosts[strings.ToLower(host)] = true
 	}
 	return p
@@ -65,23 +58,7 @@ func (p *MCPSecurityPolicy) BlockPrivateNetworks() *MCPSecurityPolicy {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.blockPrivate = true
-	for _, cidr := range []string{
-		"0.0.0.0/8",      // "this" network (reaches loopback on Linux/macOS)
-		"10.0.0.0/8",     // RFC 1918 private
-		"172.16.0.0/12",  // RFC 1918 private
-		"192.168.0.0/16", // RFC 1918 private
-		"127.0.0.0/8",    // loopback
-		"100.64.0.0/10",  // RFC 6598 shared/CGNAT (internal in cloud environments)
-		"169.254.0.0/16", // IPv4 link-local
-		"::1/128",        // IPv6 loopback
-		"::/128",         // IPv6 unspecified (reaches loopback)
-		"fc00::/7",       // IPv6 unique local addresses (RFC 4193, equiv of RFC 1918)
-		"fe80::/10",      // IPv6 link-local
-		"2002::/16",      // 6to4 relay (deprecated RFC 7526; can embed private IPv4)
-		"2001::/32",      // Teredo tunneling (deprecated; can embed private IPv4)
-		"64:ff9b::/96",   // NAT64 well-known prefix (RFC 6052; embeds IPv4 in last 32 bits)
-		"64:ff9b:1::/48", // NAT64 local-use prefix (RFC 8215; embeds IPv4 in last 32 bits)
-	} {
+	for _, cidr := range ssrfBlockedCIDRs {
 		_, ipNet, err := net.ParseCIDR(cidr)
 		if err == nil {
 			p.blockedCIDRs = append(p.blockedCIDRs, ipNet)
@@ -116,14 +93,10 @@ func (p *MCPSecurityPolicy) ValidatePathsWithinBase(basePaths ...string) *MCPSec
 	return p
 }
 
-// OnBlocked registers a callback that is invoked whenever a URL or path is
-// blocked by the security policy. This enables security audit
-// logging without coupling the policy to a specific logging framework.
-//
-// The callback receives an action tag ("url_blocked", "path_blocked")
-// and a human-readable detail string. It must be safe
-// for concurrent invocation.
-func (p *MCPSecurityPolicy) OnBlocked(fn func(action, detail string)) *MCPSecurityPolicy {
+// OnBlocked registers a callback invoked whenever a URL or path check fails.
+// The callback receives a human-readable description of the violation.
+// This is intended for audit logging; the callback must not block.
+func (p *MCPSecurityPolicy) OnBlocked(fn func(violation string)) *MCPSecurityPolicy {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.onBlocked = fn
@@ -144,19 +117,17 @@ func isLocalhostHost(host string) bool {
 // Returns an error describing the violation, or nil if allowed.
 func (p *MCPSecurityPolicy) CheckURL(rawURL string) error {
 	p.mu.RLock()
-	fn := p.onBlocked
 	err := p.checkURLCore(rawURL)
+	onBlocked := p.onBlocked
 	p.mu.RUnlock()
 
-	if fn != nil && err != nil {
-		fn("url_blocked", err.Error())
+	if err != nil && onBlocked != nil {
+		onBlocked(err.Error())
 	}
 
 	return err
 }
 
-// checkURLCore performs URL validation without acquiring the lock or invoking
-// the onBlocked callback. Callers must hold p.mu (at least RLock).
 func (p *MCPSecurityPolicy) checkURLCore(rawURL string) error {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -171,7 +142,7 @@ func (p *MCPSecurityPolicy) checkURLCore(rawURL string) error {
 		// always allowed
 	case "http":
 		if p.requireHTTPS && !isLocalhostHost(host) {
-			return fmt.Errorf("HTTPS required: %s", redactSecurityURL(rawURL))
+			return fmt.Errorf("HTTPS required: %s", rawURL)
 		}
 	default:
 		return fmt.Errorf("scheme not allowed: %q (only http and https are permitted)", u.Scheme)
@@ -210,44 +181,9 @@ func (p *MCPSecurityPolicy) checkURLCore(rawURL string) error {
 	return nil
 }
 
-func redactSecurityURL(rawURL string) string {
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return "<invalid-url>"
-	}
-	u.RawQuery = ""
-	u.Fragment = ""
-	return u.String()
-}
-
 func (p *MCPSecurityPolicy) checkIP(ip net.IP, originalHost string) error {
-	for _, cidr := range p.blockedCIDRs {
-		if cidr.Contains(ip) {
-			return fmt.Errorf("blocked IP %s (CIDR %s) for host %s", ip, cidr, originalHost)
-		}
-	}
-
-	if p.blockPrivate {
-		// Catch encoding variants (e.g., IPv4-compatible IPv6 like ::127.0.0.1)
-		// that may not match CIDR entries due to byte-length mismatch.
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
-			return fmt.Errorf("blocked IP %s (private/loopback/link-local) for host %s", ip, originalHost)
-		}
-
-		// Handle encoding variants that Go's net.IP methods don't classify,
-		// by extracting the embedded IPv4 and re-checking it.
-		if v4 := extractEmbeddedIPv4(ip); v4 != nil {
-			for _, cidr := range p.blockedCIDRs {
-				if cidr.Contains(v4) {
-					return fmt.Errorf("blocked IP %s (embedded %s, CIDR %s) for host %s",
-						ip, v4, cidr, originalHost)
-				}
-			}
-			if v4.IsLoopback() || v4.IsPrivate() || v4.IsLinkLocalUnicast() || v4.IsUnspecified() {
-				return fmt.Errorf("blocked IP %s (embedded %s, private/loopback) for host %s",
-					ip, v4, originalHost)
-			}
-		}
+	if _, detail, blocked := ssrfCheckIP(ip, originalHost, p.blockedCIDRs, p.blockPrivate); blocked {
+		return fmt.Errorf("%s", detail)
 	}
 
 	return nil
@@ -256,35 +192,25 @@ func (p *MCPSecurityPolicy) checkIP(ip net.IP, originalHost string) error {
 // CheckPath validates a file path against the security policy.
 // Resolves symlinks and checks for directory traversal.
 //
-// Security note (TOCTOU): There is an inherent time-of-check to time-of-use
-// gap between the symlink resolution performed here and the caller's
-// subsequent file operation. An adversary with write access to the filesystem
-// could create or modify a symlink between the check and the use. This is a
-// fundamental limitation of path-based validation on POSIX systems.
-//
-// Mitigations callers should consider:
-//   - Use O_NOFOLLOW when opening files after validation (prevents symlink
-//     following at the final component).
-//   - Use file-descriptor-based approaches (openat2 with RESOLVE_BENEATH on
-//     Linux 5.6+) where possible.
-//   - Avoid writing to directories that untrusted users can modify.
-//   - Consider validating the opened fd's path post-open via /proc/self/fd/N
-//     or fstat.
+// SECURITY NOTE (TOCTOU): This check is inherently susceptible to
+// time-of-check-to-time-of-use races — the filesystem state may change between
+// the validation here and the actual file access by the caller. Callers that
+// operate in adversarial environments (e.g., shared file systems) should open
+// the file immediately after validation and re-verify the resolved path via
+// /proc/self/fd or fstat before processing.
 func (p *MCPSecurityPolicy) CheckPath(path string) error {
 	p.mu.RLock()
-	fn := p.onBlocked
 	err := p.checkPathCore(path)
+	onBlocked := p.onBlocked
 	p.mu.RUnlock()
 
-	if fn != nil && err != nil {
-		fn("path_blocked", err.Error())
+	if err != nil && onBlocked != nil {
+		onBlocked(err.Error())
 	}
 
 	return err
 }
 
-// checkPathCore performs path validation without acquiring the lock or invoking
-// the onBlocked callback. Callers must hold p.mu (at least RLock).
 func (p *MCPSecurityPolicy) checkPathCore(path string) error {
 	if len(p.allowedBasePaths) == 0 {
 		return nil
@@ -380,12 +306,10 @@ func resolveExistingPrefix(p string) string {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// Redirect SSRF protection
-// ---------------------------------------------------------------------------
-
-// redirectBlockedHosts lists cloud metadata service endpoints that must never
-// be the target of an HTTP redirect.
+// redirectBlockedHosts lists hostnames that HTTP redirects must never follow.
+// This covers cloud metadata services that attackers commonly target via
+// redirect-based SSRF (the initial request hits an allowed host which 302s
+// to the metadata endpoint).
 var redirectBlockedHosts = map[string]bool{
 	"169.254.169.254":          true,
 	"fd00:ec2::254":            true,
@@ -395,9 +319,8 @@ var redirectBlockedHosts = map[string]bool{
 
 // SSRFSafeRedirect is an [http.Client] CheckRedirect function that blocks
 // redirects to private/loopback IP literals, hostnames that resolve to private
-// networks, and cloud metadata endpoints. It prevents
-// redirect-based SSRF attacks where an attacker-controlled URL redirects to
-// an internal service.
+// networks, and cloud metadata endpoints. It prevents redirect-based SSRF
+// attacks where an attacker-controlled URL redirects to an internal service.
 //
 // Usage:
 //
@@ -414,8 +337,6 @@ func ssrfSafeRedirect(req *http.Request, via []*http.Request, lookupHost func(st
 
 	// Block HTTPS → HTTP scheme downgrades to prevent leaking
 	// Authorization headers (including Bearer tokens) in cleartext.
-	// Go's net/http preserves headers on same-host redirects regardless
-	// of scheme change.
 	if len(via) > 0 && via[len(via)-1].URL.Scheme == "https" && req.URL.Scheme != "https" {
 		return fmt.Errorf(
 			"redirect from HTTPS to %s blocked (credential protection)", req.URL.Scheme)
@@ -428,24 +349,18 @@ func ssrfSafeRedirect(req *http.Request, via []*http.Request, lookupHost func(st
 		return fmt.Errorf("redirect to metadata endpoint %s blocked (SSRF protection)", host)
 	}
 
-	// Block redirects to localhost hostnames (e.g. "localhost",
-	// "127.0.0.1") regardless of how they are spelled, preventing
-	// hostname-based SSRF bypasses of the IP-literal checks below.
+	// Block redirects to localhost hostnames.
 	if isLocalhostHost(host) {
 		return fmt.Errorf("redirect to localhost %s blocked (SSRF protection)", host)
 	}
 
 	// Block redirects to private/loopback IP addresses, including
-	// IPv4-compatible and IPv4-translated IPv6 encoding variants
-	// that bypass Go's IsPrivate()/IsLoopback() classification.
+	// IPv6 encoding variants that embed private IPv4 addresses.
 	if ip := net.ParseIP(host); ip != nil {
 		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
 			return fmt.Errorf("redirect to private/loopback IP %s blocked (SSRF protection)", ip)
 		}
 
-		// Check IPv6 encoding variants (IPv4-compatible, IPv4-translated)
-		// that embed private IPv4 addresses but aren't caught by Go's
-		// net.IP classifier methods.
 		if err := checkIPEncodingVariants(ip, host); err != nil {
 			return err
 		}
@@ -491,21 +406,10 @@ func checkIPEncodingVariants(ip net.IP, originalHost string) error {
 }
 
 // extractEmbeddedIPv4 returns the embedded IPv4 address from IPv4-compatible
-// (::x.x.x.x, RFC 4291 §2.5.5.1) or IPv4-translated (::ffff:0:x.x.x.x,
-// RFC 2765 §4.2.1) IPv6 encodings. Returns nil if the address is not one of
-// these encoding variants.
-//
-// This handles addresses that Go's net.IP.To4() does not classify as IPv4
-// (To4 returns nil for these), which means Go's IsPrivate()/IsLoopback()
-// methods also return false for them.
+// (::x.x.x.x) or IPv4-translated (::ffff:0:x.x.x.x) IPv6 encodings.
+// Returns nil if the address is not one of these encoding variants.
 func extractEmbeddedIPv4(ip net.IP) net.IP {
 	if len(ip) != net.IPv6len || ip.To4() != nil {
-		return nil // Not a pure IPv6 address or already handled as IPv4-mapped
-	}
-
-	// Check if last 4 bytes are non-zero (otherwise it's just :: which is
-	// already handled by IsUnspecified).
-	if ip[12] == 0 && ip[13] == 0 && ip[14] == 0 && ip[15] == 0 {
 		return nil
 	}
 

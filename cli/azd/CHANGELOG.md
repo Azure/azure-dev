@@ -4,6 +4,8 @@
 
 ### Features Added
 
+- [[#2743]](https://github.com/Azure/azure-dev/issues/2743) Support deploying Container App Jobs (`Microsoft.App/jobs`) via `host: containerapp`. The Bicep template determines whether the target is a Container App or Container App Job.
+
 ### Breaking Changes
 
 ### Bugs Fixed

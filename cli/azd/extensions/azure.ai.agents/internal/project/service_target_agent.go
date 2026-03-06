@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -667,6 +668,9 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		)
 	}
 
+	// Check enableHostedAgentVNext from azd env first, then OS env
+	applyVnextMetadata(request, azdEnv)
+
 	// Display agent information
 	p.displayAgentInfo(request)
 
@@ -1102,4 +1106,19 @@ func encodeSubscriptionID(subscriptionID string) (string, error) {
 	// Encode as base64 and remove padding
 	encoded := base64.URLEncoding.EncodeToString(guidBytes)
 	return strings.TrimRight(encoded, "="), nil
+}
+
+// applyVnextMetadata checks enableHostedAgentVNext from azdEnv then OS env,
+// and if truthy, sets the enableVnextExperience metadata on the request.
+func applyVnextMetadata(request *agent_api.CreateAgentRequest, azdEnv map[string]string) {
+	vnextValue := azdEnv["enableHostedAgentVNext"]
+	if vnextValue == "" {
+		vnextValue = os.Getenv("enableHostedAgentVNext")
+	}
+	if enabled, err := strconv.ParseBool(vnextValue); err == nil && enabled {
+		if request.Metadata == nil {
+			request.Metadata = make(map[string]string)
+		}
+		request.Metadata["enableVnextExperience"] = "true"
+	}
 }

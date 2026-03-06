@@ -941,7 +941,7 @@ func (a *InitFromCodeAction) selectNewModel(ctx context.Context) (*azdext.AiMode
 
 	modelResp, err := a.azdClient.Prompt().PromptAiModel(ctx, promptReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to prompt for model selection: %w", err)
+		return nil, exterrors.FromPrompt(err, "failed to prompt for model selection")
 	}
 
 	selectedModel := modelResp.Model
@@ -1551,7 +1551,7 @@ func (a *InitFromCodeAction) resolveModelDeploymentNoPrompt(
 		},
 	})
 	if err != nil {
-		return nil, exterrors.FromAzdHost(err, exterrors.CodeModelResolutionFailed)
+		return nil, exterrors.FromAiService(err, exterrors.CodeModelResolutionFailed)
 	}
 
 	if len(resolveResp.Deployments) == 0 {

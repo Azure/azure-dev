@@ -5,7 +5,6 @@ package exterrors
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -15,42 +14,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func TestIsAuthError(t *testing.T) {
-	tests := []struct {
-		name string
-		err  error
-		want bool
-	}{
-		{
-			name: "Unauthenticated gRPC error",
-			err:  status.Error(codes.Unauthenticated, "not logged in"),
-			want: true,
-		},
-		{
-			name: "Other gRPC error",
-			err:  status.Error(codes.NotFound, "not found"),
-			want: false,
-		},
-		{
-			name: "Plain error",
-			err:  errors.New("something went wrong"),
-			want: false,
-		},
-		{
-			name: "Nil error",
-			err:  nil,
-			want: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, IsAuthError(tt.err))
-		})
-	}
-}
-
-func TestFromAzdHost_AuthError(t *testing.T) {
+func TestFromAiService(t *testing.T) {
 	tests := []struct {
 		name         string
 		err          error
@@ -71,6 +35,13 @@ func TestFromAzdHost_AuthError(t *testing.T) {
 			fallbackCode: "model_catalog_failed",
 			wantCategory: azdext.LocalErrorCategoryAuth,
 			wantCode:     CodeLoginExpired,
+		},
+		{
+			name:         "Unauthenticated returns Auth with generic auth_failed",
+			err:          status.Error(codes.Unauthenticated, "insufficient permissions for this operation"),
+			fallbackCode: "model_catalog_failed",
+			wantCategory: azdext.LocalErrorCategoryAuth,
+			wantCode:     CodeAuthFailed,
 		},
 		{
 			name:         "Other gRPC error returns Internal",
@@ -95,7 +66,7 @@ func TestFromAzdHost_AuthError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := FromAzdHost(tt.err, tt.fallbackCode)
+			result := FromAiService(tt.err, tt.fallbackCode)
 			if tt.err == nil {
 				assert.Nil(t, result)
 				return

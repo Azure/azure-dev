@@ -48,9 +48,9 @@ const (
 const (
 	CodeCredentialCreationFailed = "credential_creation_failed"
 	CodeTenantLookupFailed       = "tenant_lookup_failed"
-	CodeNotLoggedIn              = "not_logged_in"
-	CodeLoginExpired             = "login_expired"
-	CodePromptAuthFailed         = "prompt_auth_failed"
+	CodeNotLoggedIn  = "not_logged_in"
+	CodeLoginExpired = "login_expired"
+	CodeAuthFailed   = "auth_failed"
 )
 
 // Error codes for compatibility errors.

@@ -103,12 +103,12 @@ func ServiceFromAzure(err error, operation string) error {
 	return Internal(operation, fmt.Sprintf("%s: %s", operation, err.Error()))
 }
 
-// FromAzdHost wraps a gRPC error returned by an azd host service call
+// FromAiService wraps a gRPC error returned by an azd host AI service call
 // into a structured LocalError. It detects auth errors (codes.Unauthenticated)
 // and classifies them as Auth errors. For other errors, it preserves the server's
 // ErrorInfo reason code (from the azd.ai domain) when available,
 // falling back to the provided code.
-func FromAzdHost(err error, fallbackCode string) error {
+func FromAiService(err error, fallbackCode string) error {
 	if err == nil {
 		return nil
 	}
@@ -146,28 +146,25 @@ func FromPrompt(err error, contextMsg string) error {
 		return Cancelled(contextMsg)
 	}
 
-	if IsAuthError(err) {
-		st, _ := status.FromError(err)
+	st, ok := status.FromError(err)
+	if ok && st.Code() == codes.Unauthenticated {
 		return authFromGrpcMessage(fmt.Sprintf("%s: %s", contextMsg, st.Message()))
 	}
 
 	return fmt.Errorf("%s: %w", contextMsg, err)
 }
 
-// IsAuthError checks if a gRPC error has code Unauthenticated,
-// indicating the user needs to log in or re-authenticate.
-func IsAuthError(err error) bool {
-	st, ok := status.FromError(err)
-	return ok && st.Code() == codes.Unauthenticated
-}
-
-// authFromGrpcMessage creates a structured Auth error from a gRPC Unauthenticated message,
-// choosing between not_logged_in and login_expired based on message content.
+// authFromGrpcMessage creates a structured Auth error from a gRPC Unauthenticated message.
+// It classifies the error as not_logged_in, login_expired, or a generic auth_failed
+// based on message content.
 func authFromGrpcMessage(msg string) error {
 	if strings.Contains(msg, "not logged in") {
-		return Auth(CodeNotLoggedIn, msg, "run 'azd auth login' to authenticate")
+		return Auth(CodeNotLoggedIn, msg, "run `azd auth login` to authenticate")
 	}
-	return Auth(CodeLoginExpired, msg, "run 'azd auth login' to acquire a new token")
+	if strings.Contains(msg, "expired") {
+		return Auth(CodeLoginExpired, msg, "run `azd auth login` to acquire a new token")
+	}
+	return Auth(CodeAuthFailed, msg, "run `azd auth login` to authenticate")
 }
 
 // IsCancellation checks if an error represents user cancellation (context.Canceled or gRPC Canceled).

@@ -1252,35 +1252,254 @@ azd ai training job download --name {id} [--path ./output] [--output-name defaul
 
 ## 8. Upload & Dedup — Design
 
-### 8.1 Code Upload (V1 — Always Upload)
+### 8.1 Content-Addressable Upload with Hash-as-Version
 
-For V1, code is always uploaded as a new dataset version. No dedup.
+Use a **truncated SHA256 hash as the dataset version** for built-in dedup. No metadata queries, no server-side support needed — just a GET to check if the version exists.
+
+#### Why Truncated SHA256?
+
+The dataset API version field validates against: `^[a-zA-Z0-9][a-zA-Z0-9\-_.]{0,49}$` (max 50 chars).
+
+| Hash Algorithm | Length | Fits 50-char? | Security |
+|----------------|--------|---------------|----------|
+| SHA256 full | 64 hex chars | ❌ No | ✅ No known collisions |
+| SHA1 | 40 hex chars | ✅ Yes | ❌ Known collision attacks (SHAttered) |
+| MD5 | 32 hex chars | ✅ Yes | ❌ Trivially broken |
+| **SHA256 truncated to 49 chars** | **49 hex chars** | **✅ Yes** | **✅ 196 bits — see below** |
+
+**Truncated SHA256 collision analysis:**
+- 49 hex chars = 196 bits of entropy
+- Birthday paradox: ~2⁹⁸ items needed for 50% collision probability (~3 × 10²⁹)
+- At 1,000 uploads/day for 100 years = ~36 million items → collision probability ≈ 10⁻⁴⁷
+- **Zero practical collision risk** for any realistic workload
+
+#### Upload Flow (with dedup + integrity check + collision detection)
+
+The dataset API is **optimistic** — `CreateOrUpdate` succeeds even if blob upload was partial/failed. There's no server-side "upload complete" state. So a simple 200 on GET is insufficient — we need:
+1. **Completion check** — sentinel blob confirms upload finished
+2. **Full hash verification** — sentinel stores full 64-char SHA256 to detect truncation collisions
+
+**Completion + integrity marker: Sentinel blob** — after azcopy finishes, write a `.content_hash` marker blob containing the **full 64-char SHA256**. This single artifact serves dual purpose:
+- **Exists?** → upload completed (not a zombie)
+- **Hash matches local?** → content is identical (no truncation collision)
 
 ```
-1. PATCH .../datasets/{name}/versions/{version}  → create dataset version (pending state)
-2. POST  .../datasets/{name}/versions/{version}/startPendingUpload  → get SAS URI
-3. azcopy upload local code directory → SAS URI
-4. PATCH .../datasets/{name}/versions/{version}  → confirm upload complete
+For each local asset (code or input data):
+
+1. HASH — Compute SHA256 of directory contents
+   └─ Walk files sorted by relative path
+   └─ Hash: file relative path + file content (deterministic ordering)
+   └─ Full hash (64 hex chars) retained in memory
+   └─ Truncate to 49 characters → use as dataset version
+
+2. CHECK — Does this version exist AND is the content verified?
+   └─ GET .../datasets/{name}/versions/{hash49}
+   │
+   ├─ 404 → version doesn't exist → go to step 3 (full upload)
+   │
+   └─ 200 → version record exists
+      └─ POST .../datasets/{name}/versions/{hash49}/startPendingUpload → SAS URI
+      └─ GET {blobBaseUri}/.content_hash  → read sentinel blob
+         │
+         ├─ 404 → sentinel missing → upload never completed (zombie)
+         │  └─ Delete stale: DELETE .../datasets/{name}/versions/{hash49}
+         │  └─ Go to step 3 (full upload)
+         │
+         └─ 200 → sentinel exists → compare value with local full SHA256
+            │
+            ├─ sentinel == localFullSHA256
+            │  → Upload complete + content verified → SKIP upload ✓
+            │
+            └─ sentinel != localFullSHA256
+               → ⚠️ TRUNCATION COLLISION
+               → Fall back to job-scoped naming (see §8.2)
+
+3. CREATE — Create dataset version
+   └─ PATCH .../datasets/{name}/versions/{hash49}
+
+4. GET SAS — Request upload credentials
+   └─ POST .../datasets/{name}/versions/{hash49}/startPendingUpload → SAS URI
+
+5. UPLOAD — Upload all data files via azcopy
+   └─ azcopy copy "./local-dir/*" "{sasUri}"
+
+6. WRITE SENTINEL — Upload hash marker (proves upload complete + records full hash)
+   └─ PUT {blobBaseUri}/.content_hash
+   └─ Body: plain text, just the full 64-char SHA256
+   └─ This is the LAST step after azcopy — if missing, upload is incomplete
+
+7. CONFIRM — Finalize the dataset version
+   └─ PATCH .../datasets/{name}/versions/{hash49} → confirm complete
+
+Result: dataset reference = datasets/{name}/versions/{hash49}
 ```
 
-**Naming convention:** Dataset name = `code-{jobName}`, version = timestamp or UUID.
+**One blob, two checks:**
 
-### 8.2 Input Data Upload (V1 — Always Upload)
+| Check | Sentinel missing (404) | Sentinel present, hash matches | Sentinel present, hash differs |
+|-------|----------------------|-------------------------------|-------------------------------|
+| Upload complete? | ❌ No (zombie) | ✅ Yes | ✅ Yes (but different content) |
+| Content verified? | — | ✅ Same content | ❌ Truncation collision |
+| Action | Delete + re-upload | **Skip upload** ✓ | **Fallback** to job-scoped |
 
-Same flow as code upload but with input-specific naming:
-- Dataset name = `input-{jobName}-{inputName}`, version = 1
+### 8.2 Collision Fallback — Job-Scoped Naming
 
-### 8.3 Dedup Strategy (Future V2)
+If the full SHA256 in the sentinel blob doesn't match the local directory's full SHA256, a truncation collision has occurred. The CLI falls back to **job-name-scoped** naming, which guarantees no conflict:
 
-**Approach:** Use blob storage metadata for content-addressable dedup.
+```
+⚠️ Hash version collision detected for dataset 'code-llama-training'.
+  Existing:  sha256=abcdef1234...7890 (different content)
+  Local:     sha256=abcdef1234...5555 (your content)
+  Falling back to job-scoped upload.
 
-1. Compute SHA256 hash of local directory (file content + relative paths)
-2. Check if dataset version with matching hash metadata already exists:
-   `GET .../datasets/{name}/versions?$filter=hash eq '{sha256}'`
-3. If exists → reuse dataset ID, skip upload
-4. If not → upload as normal, set hash in dataset metadata
+Fallback naming:
+  Dataset name: code-{jobName}      (e.g., code-llama-sft-run3)
+  Version:      1                   (simple numeric, no hash)
+  → Always uploads fresh, no dedup attempted
+```
 
-> **Note:** Partner team (Anthony Karloff) plans to build hash support into dataset API. For V1, always re-upload. Optimize in V2 when API supports hash metadata queries.
+**Fallback flow:**
+```
+1. Use dataset name = code-{jobName} (or input-{jobName}-{inputName})
+2. Version = "1" (numeric, unique per job name)
+3. Upload unconditionally (no dedup check — fresh per job)
+4. Log warning about collision for diagnostics
+```
+
+**Why this fallback is temporary:**
+- Collision probability with 196 bits is ~10⁻⁴⁷ — essentially never happens in practice
+- When the dataset API ships native hash query support, we switch to full 64-char SHA256 as the lookup key (no truncation, no collision possible)
+- The fallback code path remains as a safety net but will never be triggered with full-hash queries
+
+### 8.3 Migration Path to Server-Side Hash API
+
+```
+V1 (Now):                              V2 (When API supports hash query):
+─────────                              ──────────────────────────────────
+hash49 as version                      Full SHA256 in query parameter
++ sentinel blob for verification       GET .../datasets?hash={sha256_full}
++ collision fallback to job-name       → Server returns matching dataset
+                                       → No truncation, no sentinel needed
+                                       → Cross-name dedup (bonus)
+
+Migration:
+- V2 code checks for hash query API availability
+- If available → use native query (full SHA256, no sentinel)
+- If unavailable → fall back to V1 approach (hash49 + sentinel)
+- V1 datasets remain accessible by version lookup
+- Sentinel blobs become inert (not checked, not cleaned up)
+```
+
+### 8.4 SAS Token Permissions
+
+**Confirmed** (from `PendingUpload.cs` line 37):
+> `startPendingUpload` returns a **container-level read, write, list SAS**.
+
+The same SAS token used for azcopy upload can also be used to:
+- **GET** the sentinel `.upload_complete` blob (read permission) — for dedup full-hash verification
+- **PUT** the sentinel blob after upload (write permission)
+- **LIST** blobs under the container prefix (list permission) — for verification
+
+No additional token acquisition needed for the dedup integrity check.
+
+### 8.5 Naming Conventions
+
+| Asset Type | Dataset Name | Version | Example |
+|-----------|-------------|---------|---------|
+| Code | `code-{projectName}` | `{sha256-trunc49}` | `code-llama-training/versions/a1b2c3d4e5f...` |
+| Input data | `input-{inputName}` | `{sha256-trunc49}` | `input-training-data/versions/f6e5d4c3b2a...` |
+
+**Key design choice:** Dataset name is scoped by purpose (not job name), so the same code directory reused across multiple jobs deduplicates automatically. A `code-llama-training` dataset might have 3 versions if you changed code 3 times, but submitting the same code twice hits version 200 OK and skips.
+
+### 8.6 Hash Computation (Deterministic)
+
+```go
+// Returns both full (64-char) and truncated (49-char) SHA256 hashes
+func computeDirectoryHash(dir string) (fullHash string, truncHash string, err error) {
+    h := sha256.New()
+    // Walk files in sorted order for determinism
+    err = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+        if d.IsDir() { return nil }
+        relPath, _ := filepath.Rel(dir, path)
+        // Normalize to forward slashes for cross-platform consistency
+        relPath = filepath.ToSlash(relPath)
+        // Hash relative path (so moves don't change hash)
+        h.Write([]byte(relPath))
+        // Hash file content
+        f, _ := os.Open(path)
+        defer f.Close()
+        io.Copy(h, f)
+        return nil
+    })
+    fullHash = hex.EncodeToString(h.Sum(nil))       // 64 hex chars — stored in sentinel
+    truncHash = fullHash[:49]                         // 49 hex chars — used as version
+    return fullHash, truncHash, err
+}
+```
+
+### 8.7 Dedup Behavior in Practice
+
+**Normal case — content match (skip upload):**
+```
+$ azd ai training job create --file job.yaml
+
+Creating command job: llama-sft
+
+| Step 1: Uploading code (./src)...
+  Hashing ./src → a1b2c3d4e5f6789... (trunc49)
+  Checking existing version... found!
+  Verifying full hash... ✓ match
+✓ Code already uploaded (dataset: code-llama-training, version: a1b2c3d)  [SKIPPED]
+
+| Step 2: Uploading input data...
+  ├─ training_data (./data/train)
+  │  Hashing ./data/train → f6e5d4c3b2a1098...
+  │  Checking existing version... not found
+  │  Uploading... ██████████ 100%
+  ✓ Input uploaded (dataset: input-training-data, version: f6e5d4c)
+
+**Collision case — full hash mismatch (fallback to job-scoped):**
+```
+$ azd ai training job create --file job.yaml
+
+Creating command job: llama-sft
+
+| Step 1: Uploading code (./src)...
+  Hashing ./src → a1b2c3d4e5f6789... (trunc49)
+  Checking existing version... found!
+  Verifying full hash... ✗ MISMATCH
+  ⚠️ Hash collision detected. Falling back to job-scoped upload.
+  Uploading as code-llama-sft/versions/1... ██████████ 100%
+✓ Code uploaded (dataset: code-llama-sft, version: 1)
+```
+
+### 8.8 Edge Cases
+
+| Scenario | Behavior |
+|----------|----------|
+| Same code, different job names | Same hash → dedup works (dataset name is `code-{project}` not `code-{job}`) |
+| Different code, same job name | Different hash → new version uploaded |
+| Code changed by 1 byte | Completely different hash → new version uploaded |
+| Cross-platform (Windows vs Linux line endings) | Hash includes raw bytes — `.gitattributes` normalization recommended |
+| Empty directory | Valid hash → valid version (but likely an error — warn user) |
+| **Prior upload crashed mid-azcopy** | GET returns 200 but `.content_hash` sentinel missing → delete zombie + re-upload |
+| **Prior sentinel write failed after azcopy** | Data in blob but no sentinel → treated as zombie → safe re-upload (idempotent) |
+| **Concurrent uploads of same hash** | Race: both check → both 404 → both upload. Second PATCH wins (idempotent). No data corruption. |
+| **Full hash mismatch (collision)** | Fall back to `code-{jobName}` / `input-{jobName}-{inputName}` with version `1`. No dedup. Log warning. |
+
+### 8.9 Future: Server-Side Hash Query API
+
+The dataset API team plans to offer a **hash-based query endpoint**:
+```
+GET .../datasets/{name}/versions?$filter=hash eq '{sha256}'
+```
+
+When available:
+- Use full 64-char SHA256 (no truncation needed — server-side query, not version field)
+- Server-side integrity guaranteed — no sentinel blob needed
+- Enable cross-name dedup (same content under different dataset names)
+- Collision fallback code path becomes dead code (can be removed)
+- **Migration path:** V1 hash-as-version datasets remain findable by version lookup. V2 can adopt the native API alongside.
 
 ---
 

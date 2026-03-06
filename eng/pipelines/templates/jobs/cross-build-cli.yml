@@ -51,9 +51,11 @@ jobs:
         condition: and(succeeded(), eq(variables['GOOS'], 'windows'))
         displayName: Install goversioninfo (Windows x86_64)
 
-      # Set variables from build metadata artifact. Most interesting is
-      # MSI_VERSION used in Windows building.
-      - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
+      - ${{ if eq(parameters.OS, 'windows') }}:
+        - template: /eng/pipelines/templates/steps/set-msi-version.yml
+      - ${{ else }}:
+        - pwsh: Write-Host "###vso[task.setvariable variable=MSI_VERSION]"
+          displayName: Set MSI_VERSION for non-windows build
 
       - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
 

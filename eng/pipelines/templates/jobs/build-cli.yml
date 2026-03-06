@@ -40,9 +40,11 @@ jobs:
         parameters:
           Condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
 
-      # Sets variables based on release metadata, of primary import is
-      # MSI_VERSION.
-      - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
+      - ${{ if eq(parameters.OS, 'windows') }}:
+        - template: /eng/pipelines/templates/steps/set-msi-version.yml
+      - ${{ else }}:
+        - pwsh: Write-Host "###vso[task.setvariable variable=MSI_VERSION]"
+          displayName: Set MSI_VERSION for non-windows build
 
       - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
 

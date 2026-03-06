@@ -35,13 +35,7 @@ type AgentLocalContext struct {
 
 // resolveConfigPath returns the full path to the .foundry-agent.json file
 // in the azd project root directory.
-func resolveConfigPath(ctx context.Context) string {
-	azdClient, err := azdext.NewAzdClient()
-	if err != nil {
-		return ConfigFile // fall back to CWD
-	}
-	defer azdClient.Close()
-
+func resolveConfigPath(ctx context.Context, azdClient *azdext.AzdClient) string {
 	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil || projectResponse.Project == nil {
 		return ConfigFile
@@ -76,11 +70,11 @@ func saveLocalContext(agentCtx *AgentLocalContext, configPath string) error {
 
 // resolveSessionID resolves or generates a session ID for invoke.
 // Returns the session ID (existing or newly generated).
-func resolveSessionID(ctx context.Context, agentName string, explicit string, forceNew bool) (string, error) {
+func resolveSessionID(ctx context.Context, azdClient *azdext.AzdClient, agentName string, explicit string, forceNew bool) (string, error) {
 	if explicit != "" {
 		return explicit, nil
 	}
-	configPath := resolveConfigPath(ctx)
+	configPath := resolveConfigPath(ctx, azdClient)
 	agentCtx := loadLocalContext(configPath)
 	if agentCtx.Sessions == nil {
 		agentCtx.Sessions = make(map[string]string)
@@ -100,8 +94,8 @@ func resolveSessionID(ctx context.Context, agentName string, explicit string, fo
 
 // resolveConversationID resolves or creates a Foundry conversation ID.
 // Returns empty string if creation fails (multi-turn memory disabled).
-func resolveConversationID(ctx context.Context, agentName string, forceNew bool) string {
-	configPath := resolveConfigPath(ctx)
+func resolveConversationID(ctx context.Context, azdClient *azdext.AzdClient, agentName string, forceNew bool) string {
+	configPath := resolveConfigPath(ctx, azdClient)
 	agentCtx := loadLocalContext(configPath)
 	if agentCtx.Conversations == nil {
 		agentCtx.Conversations = make(map[string]string)
@@ -116,8 +110,8 @@ func resolveConversationID(ctx context.Context, agentName string, forceNew bool)
 }
 
 // saveConversationID persists a conversation ID for an agent.
-func saveConversationID(ctx context.Context, agentName, convID string) error {
-	configPath := resolveConfigPath(ctx)
+func saveConversationID(ctx context.Context, azdClient *azdext.AzdClient, agentName, convID string) error {
+	configPath := resolveConfigPath(ctx, azdClient)
 	agentCtx := loadLocalContext(configPath)
 	if agentCtx.Conversations == nil {
 		agentCtx.Conversations = make(map[string]string)
@@ -201,13 +195,7 @@ type AgentServiceInfo struct {
 // resolveAgentServiceFromProject finds the first azure.ai.agent service in azure.yaml
 // and resolves its deployed agent name and version from the azd environment.
 // The name parameter filters to a specific service; empty means use the first one found.
-func resolveAgentServiceFromProject(ctx context.Context, name string) (*AgentServiceInfo, error) {
-	azdClient, err := azdext.NewAzdClient()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create azd client: %w", err)
-	}
-	defer azdClient.Close()
-
+func resolveAgentServiceFromProject(ctx context.Context, azdClient *azdext.AzdClient, name string) (*AgentServiceInfo, error) {
 	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get project config: %w", err)
@@ -274,13 +262,7 @@ type ServiceRunContext struct {
 // resolveServiceRunContext queries the azd project to find the matching azure.ai.agent
 // service, then returns the service's absolute source directory and startup command.
 // When name is empty and multiple agent services exist, it returns an error listing them.
-func resolveServiceRunContext(ctx context.Context, name string) (*ServiceRunContext, error) {
-	azdClient, err := azdext.NewAzdClient()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create azd client: %w", err)
-	}
-	defer azdClient.Close()
-
+func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, name string) (*ServiceRunContext, error) {
 	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get project config (is there an azure.yaml?): %w", err)

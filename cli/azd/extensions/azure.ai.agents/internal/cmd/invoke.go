@@ -162,10 +162,16 @@ func (a *InvokeAction) invokeLocal(ctx context.Context) error {
 }
 
 func (a *InvokeAction) invokeRemote(ctx context.Context) error {
+	azdClient, err := azdext.NewAzdClient()
+	if err != nil {
+		return fmt.Errorf("failed to create azd client: %w", err)
+	}
+	defer azdClient.Close()
+
 	name := a.flags.name
 
 	// Auto-resolve agent name from azure.yaml
-	if info, err := resolveAgentServiceFromProject(ctx, name); err == nil {
+	if info, err := resolveAgentServiceFromProject(ctx, azdClient, name); err == nil {
 		if name == "" && info.AgentName != "" {
 			name = info.AgentName
 		}
@@ -196,14 +202,14 @@ func (a *InvokeAction) invokeRemote(ctx context.Context) error {
 	}
 
 	// Session ID — routes to the same microVM container instance
-	sid, err := resolveSessionID(ctx, name, a.flags.session, a.flags.newSession)
+	sid, err := resolveSessionID(ctx, azdClient, name, a.flags.session, a.flags.newSession)
 	if err != nil {
 		return err
 	}
 	body["session_id"] = sid
 
 	// Conversation ID — enables multi-turn memory via Foundry Conversations API
-	convID := resolveConversationID(ctx, name, a.flags.newSession)
+	convID := resolveConversationID(ctx, azdClient, name, a.flags.newSession)
 	if convID == "" {
 		// Create a new conversation
 		newConvID, err := createConversation(ctx, endpoint)
@@ -211,7 +217,7 @@ func (a *InvokeAction) invokeRemote(ctx context.Context) error {
 			fmt.Printf("Warning: could not create conversation; multi-turn memory disabled (%v)\n", err)
 		} else {
 			convID = newConvID
-			if err := saveConversationID(ctx, name, convID); err != nil {
+			if err := saveConversationID(ctx, azdClient, name, convID); err != nil {
 				return err
 			}
 		}

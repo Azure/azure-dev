@@ -67,8 +67,14 @@ Use a separate terminal to invoke the running agent:
 }
 
 func runRun(ctx context.Context, flags *runFlags) error {
+	azdClient, err := azdext.NewAzdClient()
+	if err != nil {
+		return fmt.Errorf("failed to create azd client: %w", err)
+	}
+	defer azdClient.Close()
+
 	// Resolve the service source directory and startup command from azure.yaml
-	runCtx, err := resolveServiceRunContext(ctx, flags.name)
+	runCtx, err := resolveServiceRunContext(ctx, azdClient, flags.name)
 	if err != nil {
 		return err
 	}
@@ -124,7 +130,7 @@ func runRun(ctx context.Context, flags *runFlags) error {
 
 	// Load azd environment variables (e.g., AZURE_AI_PROJECT_ENDPOINT)
 	// so the agent can reach Azure services during local development
-	if azdEnvVars, err := loadAzdEnvironment(ctx); err == nil {
+	if azdEnvVars, err := loadAzdEnvironment(ctx, azdClient); err == nil {
 		for k, v := range azdEnvVars {
 			env = append(env, fmt.Sprintf("%s=%s", k, v))
 		}
@@ -342,13 +348,7 @@ func venvBinDir(venvDir string) string {
 }
 
 // loadAzdEnvironment reads all key-value pairs from the current azd environment.
-func loadAzdEnvironment(ctx context.Context) (map[string]string, error) {
-	azdClient, err := azdext.NewAzdClient()
-	if err != nil {
-		return nil, err
-	}
-	defer azdClient.Close()
-
+func loadAzdEnvironment(ctx context.Context, azdClient *azdext.AzdClient) (map[string]string, error) {
 	envResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil {
 		return nil, err

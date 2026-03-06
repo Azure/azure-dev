@@ -66,7 +66,7 @@ func (s *FrameworkService) Stream(stream azdext.FrameworkService_StreamServer) e
 
 	// Create message broker for this stream
 	ops := azdext.NewFrameworkServiceEnvelope()
-	broker := grpcbroker.NewMessageBroker(stream, ops, extension.Id)
+	broker := grpcbroker.NewMessageBroker(stream, ops, extension.Id, log.Default())
 
 	// Track the language for cleanup when stream closes
 	var registeredLanguage string

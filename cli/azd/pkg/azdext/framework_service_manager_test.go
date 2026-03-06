@@ -87,7 +87,7 @@ func TestNewFrameworkServiceManager(t *testing.T) {
 	t.Parallel()
 
 	mockClient := &AzdClient{} // Can be nil for this test
-	manager := NewFrameworkServiceManager("microsoft.azd.demo", mockClient)
+	manager := NewFrameworkServiceManager("microsoft.azd.demo", mockClient, nil)
 
 	assert.NotNil(t, manager)
 	assert.Equal(t, mockClient, manager.client)

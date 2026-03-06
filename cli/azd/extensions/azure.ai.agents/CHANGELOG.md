@@ -1,5 +1,10 @@
 # Release History
 
+## 0.1.14-preview (2026-03-06)
+
+- [[#6980]](https://github.com/Azure/azure-dev/pull/6980) Add `--model-deployment` parameter to `azd ai agent init` and fix agent init in copilot/CI scenarios
+- [[#6979]](https://github.com/Azure/azure-dev/pull/6979) Detect and classify auth errors from azd core for improved error telemetry
+
 ## 0.1.13-preview (2026-03-04)
 
 - [[#6957]](https://github.com/Azure/azure-dev/pull/6957) Fix unmarshal error during `azd ai agent init`

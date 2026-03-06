@@ -197,7 +197,7 @@ func (e *AuthFailedError) Error() string {
 
 func (e *AuthFailedError) httpErrorDetails() string {
 	msg := &bytes.Buffer{}
-	fmt.Fprintf(msg,
+	fmt.Fprintf(msg, //nolint:gosec // G705: writing to bytes.Buffer, not an HTTP response
 		"%s %s://%s%s\n",
 		e.RawResp.Request.Method,
 		e.RawResp.Request.URL.Scheme,

@@ -80,9 +80,11 @@ func NewRegistryCacheManager() (*RegistryCacheManager, error) {
 func getCacheTTL() time.Duration {
 	if envTTL := os.Getenv(cacheTTLEnvVar); envTTL != "" {
 		if duration, err := time.ParseDuration(envTTL); err == nil {
+			//nolint:gosec // G706: env var in debug log
 			log.Printf("using custom cache TTL from %s: %s", cacheTTLEnvVar, duration)
 			return duration
 		}
+		//nolint:gosec // G706: env var in debug log
 		log.Printf("invalid cache TTL value '%s', using default %s", envTTL, defaultCacheTTL)
 	}
 	return defaultCacheTTL

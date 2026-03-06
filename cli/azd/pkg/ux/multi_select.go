@@ -405,14 +405,14 @@ func (p *MultiSelect) renderValidation(printer Printer) {
 }
 
 func (p *MultiSelect) renderMessage(printer Printer) {
-	printer.Fprintf(output.WithHighLightFormat("? "))
+	printer.Fprintf("%s", output.WithHighLightFormat("? "))
 
 	// Message
-	printer.Fprintf(BoldString("%s: ", p.options.Message))
+	printer.Fprintf("%s", BoldString("%s: ", p.options.Message))
 
 	// Cancelled
 	if p.cancelled {
-		printer.Fprintf(output.WithErrorFormat("(Cancelled)"))
+		printer.Fprintf("%s", output.WithErrorFormat("(Cancelled)"))
 	}
 
 	// Selected Value(s)
@@ -424,7 +424,7 @@ func (p *MultiSelect) renderMessage(printer Printer) {
 		}
 
 		rawValue := strings.Join(selectionValues, ", ")
-		printer.Fprintf(output.WithHighLightFormat(rawValue))
+		printer.Fprintf("%s", output.WithHighLightFormat(rawValue))
 	}
 
 	printer.Fprintln()
@@ -436,9 +436,9 @@ func (p *MultiSelect) renderMessage(printer Printer) {
 
 		if p.filter == "" {
 			p.cursorPosition = Ptr(printer.CursorPosition())
-			printer.Fprintf(output.WithGrayFormat("Type to filter list"))
+			printer.Fprintf("%s", output.WithGrayFormat("Type to filter list"))
 		} else {
-			printer.Fprintf(p.filter)
+			printer.Fprintf("%s", p.filter)
 			p.cursorPosition = Ptr(printer.CursorPosition())
 		}
 

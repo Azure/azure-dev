@@ -95,13 +95,13 @@ func createDeployableZip(svc *ServiceConfig, root string) (string, error) {
 	if err := rzip.CreateFromDirectory(root, zipFile, onZip); err != nil {
 		// if we fail here just do our best to close things out and cleanup
 		zipFile.Close()
-		os.Remove(zipFile.Name())
+		os.Remove(zipFile.Name()) //nolint:gosec // G703: temp file cleanup
 		return "", fmt.Errorf("creating deployable zip: %w", err)
 	}
 
 	if err := zipFile.Close(); err != nil {
 		// may fail but, again, we'll do our best to cleanup here.
-		os.Remove(zipFile.Name())
+		os.Remove(zipFile.Name()) //nolint:gosec // G703: temp file cleanup
 		return "", err
 	}
 

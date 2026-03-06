@@ -196,6 +196,6 @@ func TestPassthrough(t *testing.T) {
 }
 
 func runCmd(name string, args ...string) (string, error) {
-	output, err := exec.Command(name, args...).CombinedOutput()
+	output, err := exec.Command(name, args...).CombinedOutput() //nolint:gosec // G204: test helper with controlled inputs
 	return string(output), err
 }

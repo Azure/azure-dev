@@ -148,7 +148,7 @@ func (a *myAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 ### Modern Go
 
-This project uses Go 1.25. Use modern standard library features:
+This project uses Go 1.26. Use modern standard library features:
 
 - **`slices`, `maps`, `cmp` packages**: Use for searching, sorting, cloning, and iterating—avoid manual loops
 - **Iterators**: Use `range` over functions/iterators (e.g., `maps.Keys()`, `slices.All()`)

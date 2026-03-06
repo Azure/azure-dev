@@ -81,6 +81,7 @@ var Resources = []ResourceMeta{
 		ResourceType:      "Microsoft.Cache/redis",
 		ApiVersion:        "2024-03-01",
 		StandardVarPrefix: "REDIS",
+		//nolint:gosec // G101: template variable references, not hardcoded credentials
 		Variables: map[string]string{
 			"host":     "${.properties.hostName}",
 			"port":     "6380",
@@ -136,6 +137,7 @@ var Resources = []ResourceMeta{
 		ApiVersion:        "2023-12-30",
 		StandardVarPrefix: "MYSQL",
 		ParentForEval:     "Microsoft.DBforMySQL/flexibleServers",
+		//nolint:gosec // G101: template variable references, not hardcoded credentials
 		Variables: map[string]string{
 			"database": "${spec.name}",
 			"host":     "${.properties.fullyQualifiedDomainName}",
@@ -150,6 +152,7 @@ var Resources = []ResourceMeta{
 		ApiVersion:        "2022-12-01",
 		StandardVarPrefix: "POSTGRES",
 		ParentForEval:     "Microsoft.DBforPostgreSQL/flexibleServers",
+		//nolint:gosec // G101: template variable references, not hardcoded credentials
 		Variables: map[string]string{
 			"database": "${spec.name}",
 			"host":     "${.properties.fullyQualifiedDomainName}",

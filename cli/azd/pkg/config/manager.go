@@ -78,6 +78,7 @@ func GetUserConfigDir() (string, error) {
 		configDirPath = filepath.Join(homeDir, ".azd")
 	}
 
+	//nolint:gosec // G703: configDirPath is derived from user home directory
 	err := os.MkdirAll(configDirPath, osutil.PermissionDirectoryOwnerOnly)
 	if err != nil {
 		return configDirPath, err
@@ -87,6 +88,7 @@ func GetUserConfigDir() (string, error) {
 	// user. In cases where the config directory is ~/.azd, OS upgrades and
 	// other processes can remove the "x" permission
 	if runtime.GOOS == "linux" || runtime.GOOS == "darwin" {
+		//nolint:gosec // G703: configDirPath is derived from user home directory
 		info, err := os.Stat(configDirPath)
 		if err != nil {
 			return configDirPath, err
@@ -95,6 +97,7 @@ func GetUserConfigDir() (string, error) {
 		permissions := info.Mode().Perm()
 		if permissions&osutil.PermissionMaskDirectoryExecute == 0 {
 			// Ensure user execute permissions
+			//nolint:gosec // G703: configDirPath from user home
 			err := os.Chmod(configDirPath, permissions|osutil.PermissionMaskDirectoryExecute)
 			return configDirPath, err
 		}

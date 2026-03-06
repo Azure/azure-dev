@@ -116,6 +116,7 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var failedExtensions []extensionFailure
+	var extErrors []error
 
 	// Track total time for all extensions to become ready
 	allExtensionsStartTime := time.Now()
@@ -177,7 +178,9 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 				}
 
 				if _, err := m.extensionRunner.Invoke(ctx, ext, options); err != nil {
-					m.console.Message(ctx, err.Error())
+					mu.Lock()
+					extErrors = append(extErrors, err)
+					mu.Unlock()
 					ext.Fail(err)
 				}
 			}()
@@ -243,6 +246,7 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 				}
 			}
 
+			// Only add UI warnings for extensions that outdated or timeout
 			if hasUpdate {
 				needsUpdate = append(needsUpdate, upgradeInfo{failure.extension, upgradeResult})
 			} else if failure.timedOut {
@@ -254,7 +258,7 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 		if len(needsUpdate) == 1 {
 			info := needsUpdate[0]
 			m.console.Message(ctx, output.WithWarningFormat(
-				"WARNING: Extension %s needs an upgrade (%s \u2192 %s) and did not start.",
+				"WARNING: Extension %s did not start. An update is available (%s \u2192 %s) that may resolve this.",
 				info.ext.Id, info.result.InstalledVersion, info.result.LatestVersion,
 			))
 			m.console.Message(ctx, fmt.Sprintf(
@@ -263,7 +267,7 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 			m.console.Message(ctx, "")
 		} else if len(needsUpdate) > 1 {
 			m.console.Message(ctx, output.WithWarningFormat(
-				"WARNING: The following extensions need upgrade and did not start.",
+				"WARNING: The following extensions did not start. Updates are available that may resolve these issues.",
 			))
 			for _, info := range needsUpdate {
 				m.console.Message(ctx, output.WithWarningFormat(
@@ -294,6 +298,13 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 				m.console.Message(ctx, output.WithWarningFormat(
 					fmt.Sprintf("- %s", failure.extension.Id),
 				))
+			}
+			m.console.Message(ctx, "")
+		}
+
+		if len(extErrors) > 0 {
+			for _, e := range extErrors {
+				m.console.Message(ctx, e.Error())
 			}
 			m.console.Message(ctx, "")
 		}

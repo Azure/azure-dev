@@ -6,6 +6,7 @@
 
 - [[#7001]](https://github.com/Azure/azure-dev/pull/7001) Add support for deploying Container App Jobs (`Microsoft.App/jobs`) via `host: containerapp`. The Bicep template determines whether the target is a Container App or Container App Job. Thanks @jongio for the contribution!
 - [[#6968]](https://github.com/Azure/azure-dev/pull/6968) Add `Microsoft.App/agents` (SRE Agent) resource type recognition so provisioning progress output correctly displays SRE Agent resources. Thanks @dm-chelupati for the contribution!
+- [[#7016]](https://github.com/Azure/azure-dev/pull/7016) Add sensible defaults for `azd env new` and `azd init` in `--no-prompt` mode: auto-generate environment name from the working directory, auto-select subscription when only one is available, and remove the hard `--environment` requirement. Thanks @spboyer for the contribution!
 - [[#6962]](https://github.com/Azure/azure-dev/pull/6962) Improve `--no-prompt` error guidance for `azd init` and `azd provision` to report all missing inputs at once with actionable resolution commands and environment variable mappings.
 
 ### Bugs Fixed

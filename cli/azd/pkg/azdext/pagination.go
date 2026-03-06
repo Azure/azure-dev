@@ -106,7 +106,7 @@ func (s *stdHTTPDoer) Do(ctx context.Context, method, url string, body io.Reader
 		return nil, err
 	}
 
-	return s.client.Do(req)
+	return s.client.Do(req) //nolint:gosec // G704: URL from pagination
 }
 
 // NewPager creates a [Pager] that iterates over a paginated endpoint.

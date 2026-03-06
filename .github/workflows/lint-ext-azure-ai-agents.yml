@@ -3,7 +3,7 @@ name: ext-azure-ai-agents-ci
 on:
   pull_request:
     paths:
-      - "cli/azd/extensions/azure.ai-agents/**"
+      - "cli/azd/extensions/azure.ai.agents/**"
       - ".github/workflows/lint-ext-azure-ai-agents.yml"
     branches: [main]
 
@@ -19,4 +19,4 @@ jobs:
   lint:
     uses: ./.github/workflows/lint-go.yml
     with:
-      working-directory: cli/azd/extensions/azure.ai-agents
+      working-directory: cli/azd/extensions/azure.ai.agents

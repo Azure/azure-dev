@@ -56,6 +56,24 @@ func TestNewContainerAppTargetTypeValidation(t *testing.T) {
 			),
 			expectError: false,
 		},
+		"ValidateTypeSuccess_Job": {
+			targetResource: environment.NewTargetResource(
+				"SUB_ID",
+				"RG_ID",
+				"res",
+				string(azapi.AzureResourceTypeContainerAppJob),
+			),
+			expectError: false,
+		},
+		"ValidateTypeSuccess_JobLowerCase": {
+			targetResource: environment.NewTargetResource(
+				"SUB_ID",
+				"RG_ID",
+				"res",
+				strings.ToLower(string(azapi.AzureResourceTypeContainerAppJob)),
+			),
+			expectError: false,
+		},
 		"ValidateTypeFail": {
 			targetResource: environment.NewTargetResource("SUB_ID", "RG_ID", "res", "BadType"),
 			expectError:    true,
@@ -336,4 +354,101 @@ func setupMocksForContainerApps(mockContext *mocks.MockContext) {
 	mockazsdk.MockContainerAppSecretsList(mockContext, subscriptionId, resourceGroup, appName, secrets)
 	mockazsdk.MockContainerAppUpdate(mockContext, subscriptionId, resourceGroup, appName, containerApp)
 	mockazsdk.MockContainerRegistryTokenExchange(mockContext, subscriptionId, subscriptionId, "REFRESH_TOKEN")
+}
+
+func setupMocksForContainerAppJobs(mockContext *mocks.MockContext) {
+	setupMocksForDocker(mockContext)
+	setupMocksForAcr(mockContext)
+
+	subscriptionId := "SUBSCRIPTION_ID"
+	resourceGroup := "RESOURCE_GROUP"
+	jobName := "CONTAINER_APP_JOB"
+	originalImageName := "ORIGINAL_IMAGE_NAME"
+
+	job := &armappcontainers.Job{
+		Name: &jobName,
+		Properties: &armappcontainers.JobProperties{
+			Template: &armappcontainers.JobTemplate{
+				Containers: []*armappcontainers.Container{
+					{
+						Image: &originalImageName,
+					},
+				},
+			},
+		},
+	}
+
+	mockazsdk.MockContainerAppJobGet(mockContext, subscriptionId, resourceGroup, jobName, job)
+	mockazsdk.MockContainerAppJobUpdate(mockContext, subscriptionId, resourceGroup, jobName, job)
+	mockazsdk.MockContainerRegistryTokenExchange(mockContext, subscriptionId, subscriptionId, "REFRESH_TOKEN")
+}
+
+func Test_ContainerAppJob_Endpoints(t *testing.T) {
+	t.Parallel()
+	serviceTarget := &containerAppTarget{}
+
+	scope := environment.NewTargetResource(
+		"SUBSCRIPTION_ID",
+		"RESOURCE_GROUP",
+		"JOB_NAME",
+		string(azapi.AzureResourceTypeContainerAppJob),
+	)
+
+	endpoints, err := serviceTarget.Endpoints(
+		context.Background(),
+		&ServiceConfig{},
+		scope,
+	)
+
+	require.NoError(t, err)
+	require.Empty(t, endpoints)
+}
+
+func Test_ContainerAppJob_Deploy(t *testing.T) {
+	tempDir := t.TempDir()
+	ostest.Chdir(t, tempDir)
+
+	mockContext := mocks.NewMockContext(context.Background())
+	setupMocksForContainerAppJobs(mockContext)
+
+	serviceConfig := createTestServiceConfig(tempDir, ContainerAppTarget, ServiceLanguageTypeScript)
+	env := createEnv()
+
+	serviceTarget := createContainerAppServiceTarget(mockContext, env)
+
+	scope := environment.NewTargetResource(
+		"SUBSCRIPTION_ID",
+		"RESOURCE_GROUP",
+		"CONTAINER_APP_JOB",
+		string(azapi.AzureResourceTypeContainerAppJob),
+	)
+
+	deployResult, err := logProgress(
+		t, func(progress *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
+			serviceContext := NewServiceContext()
+			serviceContext.Publish = ArtifactCollection{
+				{
+					Kind:         ArtifactKindContainer,
+					Location:     "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0",
+					LocationKind: LocationKindRemote,
+					Metadata: map[string]string{
+						"remoteImage": "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0",
+					},
+				},
+			}
+			return serviceTarget.Deploy(*mockContext.Context, serviceConfig, serviceContext, scope, progress)
+		},
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, deployResult)
+	require.Greater(t, len(deployResult.Artifacts), 0)
+
+	// Verify the target resource has the correct type
+	resourceArtifacts := deployResult.Artifacts.Find(WithKind(ArtifactKindResource))
+	require.GreaterOrEqual(t, len(resourceArtifacts), 1)
+
+	// Verify no endpoint artifacts (jobs don't have ingress)
+	endpointArtifacts := deployResult.Artifacts.Find(WithKind(ArtifactKindEndpoint))
+	require.Empty(t, endpointArtifacts)
 }

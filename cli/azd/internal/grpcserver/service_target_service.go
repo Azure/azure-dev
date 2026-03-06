@@ -70,7 +70,7 @@ func (s *ServiceTargetService) Stream(stream azdext.ServiceTargetService_StreamS
 
 	// Create message broker for this stream
 	ops := azdext.NewServiceTargetEnvelope()
-	broker := grpcbroker.NewMessageBroker(stream, ops, extension.Id)
+	broker := grpcbroker.NewMessageBroker(stream, ops, extension.Id, log.Default())
 
 	// Track the hostType for cleanup when stream closes
 	var registeredHostType string

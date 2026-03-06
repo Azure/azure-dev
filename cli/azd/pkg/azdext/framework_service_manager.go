@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
@@ -50,17 +51,19 @@ type FrameworkServiceManager struct {
 	client           *AzdClient
 	broker           *grpcbroker.MessageBroker[FrameworkServiceMessage]
 	componentManager *ComponentManager[FrameworkServiceProvider]
+	brokerLogger     *log.Logger
 
 	// Synchronization for concurrent access
 	mu sync.RWMutex
 }
 
 // NewFrameworkServiceManager creates a new FrameworkServiceManager for an AzdClient.
-func NewFrameworkServiceManager(extensionId string, client *AzdClient) *FrameworkServiceManager {
+func NewFrameworkServiceManager(extensionId string, client *AzdClient, brokerLogger *log.Logger) *FrameworkServiceManager {
 	return &FrameworkServiceManager{
 		extensionId:      extensionId,
 		client:           client,
 		componentManager: NewComponentManager[FrameworkServiceProvider](FrameworkServiceFactoryKey, "framework service"),
+		brokerLogger:     brokerLogger,
 	}
 }
 
@@ -105,7 +108,7 @@ func (m *FrameworkServiceManager) ensureStream(ctx context.Context) error {
 	// Create broker with client stream
 	envelope := &FrameworkServiceEnvelope{}
 	// Use client as name since we're on the client side (extension process)
-	m.broker = grpcbroker.NewMessageBroker(stream, envelope, m.extensionId)
+	m.broker = grpcbroker.NewMessageBroker(stream, envelope, m.extensionId, m.brokerLogger)
 
 	// Register handlers for incoming requests
 	if err := m.broker.On(m.onInitialize); err != nil {

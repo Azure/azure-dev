@@ -19,6 +19,7 @@ type EventManager struct {
 	projectEvents map[string]ProjectEventHandler
 	serviceEvents map[string]ServiceEventHandler
 	eventsMutex   sync.RWMutex // Protects both projectEvents and serviceEvents maps
+	brokerLogger  *log.Logger
 
 	// Synchronization for concurrent access
 	mu sync.RWMutex
@@ -38,12 +39,13 @@ type ProjectEventHandler func(ctx context.Context, args *ProjectEventArgs) error
 
 type ServiceEventHandler func(ctx context.Context, args *ServiceEventArgs) error
 
-func NewEventManager(extensionId string, azdClient *AzdClient) *EventManager {
+func NewEventManager(extensionId string, azdClient *AzdClient, brokerLogger *log.Logger) *EventManager {
 	return &EventManager{
 		extensionId:   extensionId,
 		client:        azdClient,
 		projectEvents: make(map[string]ProjectEventHandler),
 		serviceEvents: make(map[string]ServiceEventHandler),
+		brokerLogger:  brokerLogger,
 	}
 }
 
@@ -86,7 +88,7 @@ func (em *EventManager) ensureStream(ctx context.Context) error {
 	// Create broker with client stream
 	envelope := &EventMessageEnvelope{}
 	// Use client as name since we're on the client side (extension process)
-	em.broker = grpcbroker.NewMessageBroker(stream, envelope, em.extensionId)
+	em.broker = grpcbroker.NewMessageBroker(stream, envelope, em.extensionId, em.brokerLogger)
 
 	// Register handlers for incoming requests
 	if err := em.broker.On(em.onInvokeProjectHandler); err != nil {

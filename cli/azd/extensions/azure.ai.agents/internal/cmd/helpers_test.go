@@ -6,6 +6,7 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 )
 
@@ -148,5 +149,118 @@ func TestDetectProjectType(t *testing.T) {
 				t.Errorf("StartCmd = %q, want %q", pt.StartCmd, tt.wantStartCmd)
 			}
 		})
+	}
+}
+
+func TestParseEndpoint(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		endpoint    string
+		wantAccount string
+		wantProject string
+		wantErr     bool
+	}{
+		{
+			name:        "valid endpoint",
+			endpoint:    "https://myaccount.services.ai.azure.com/api/projects/myproject",
+			wantAccount: "myaccount",
+			wantProject: "myproject",
+		},
+		{
+			name:        "valid endpoint with trailing slash",
+			endpoint:    "https://myaccount.services.ai.azure.com/api/projects/myproject/",
+			wantAccount: "myaccount",
+			wantProject: "myproject",
+		},
+		{
+			name:    "missing scheme",
+			endpoint: "myaccount.services.ai.azure.com/api/projects/myproject",
+			wantErr: true,
+		},
+		{
+			name:    "empty string",
+			endpoint: "",
+			wantErr: true,
+		},
+		{
+			name:        "hostname only path",
+			endpoint:    "https://myaccount.services.ai.azure.com/myproject",
+			wantAccount: "myaccount",
+			wantProject: "myproject",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			account, project, err := parseEndpoint(tt.endpoint)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("expected error, got account=%q project=%q", account, project)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if account != tt.wantAccount {
+				t.Errorf("account = %q, want %q", account, tt.wantAccount)
+			}
+			if project != tt.wantProject {
+				t.Errorf("project = %q, want %q", project, tt.wantProject)
+			}
+		})
+	}
+}
+
+func TestToServiceKey(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		input string
+		want string
+	}{
+		{name: "simple name", input: "myagent", want: "MYAGENT"},
+		{name: "with dashes", input: "my-agent-svc", want: "MY_AGENT_SVC"},
+		{name: "with spaces", input: "my agent svc", want: "MY_AGENT_SVC"},
+		{name: "mixed dashes and spaces", input: "my-agent svc", want: "MY_AGENT_SVC"},
+		{name: "already uppercase", input: "MY_AGENT", want: "MY_AGENT"},
+		{name: "empty string", input: "", want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := toServiceKey(tt.input)
+			if got != tt.want {
+				t.Errorf("toServiceKey(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGenerateSessionID(t *testing.T) {
+	t.Parallel()
+
+	id := generateSessionID()
+
+	if len(id) != 25 {
+		t.Errorf("expected length 25, got %d", len(id))
+	}
+
+	validChars := regexp.MustCompile(`^[a-z0-9]+$`)
+	if !validChars.MatchString(id) {
+		t.Errorf("session ID contains invalid characters: %q", id)
+	}
+
+	// Two calls should produce different IDs (probabilistic, but collision is vanishingly unlikely)
+	id2 := generateSessionID()
+	if id == id2 {
+		t.Errorf("two consecutive calls produced the same ID: %q", id)
 	}
 }

@@ -21,4 +21,3 @@ jobs:
     with:
       working-directory: cli/azd/extensions/microsoft.azd.concurx
       go-version: "^1.25"
-      golangci-lint-version: "v2.6"

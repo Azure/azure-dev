@@ -21,5 +21,4 @@ jobs:
     with:
       working-directory: cli/azd/extensions/azure.ai.agents
       go-version: "^1.25"
-      golangci-lint-version: "v2.6"
 

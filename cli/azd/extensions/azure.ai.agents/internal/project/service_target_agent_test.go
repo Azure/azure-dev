@@ -75,7 +75,7 @@ func TestApplyVnextMetadata(t *testing.T) {
 			if tt.osEnvValue != "" {
 				t.Setenv("enableHostedAgentVNext", tt.osEnvValue)
 			} else {
-				os.Unsetenv("enableHostedAgentVNext")
+				t.Setenv("enableHostedAgentVNext", "")
 			}
 
 			request := &agent_api.CreateAgentRequest{

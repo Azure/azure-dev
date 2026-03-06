@@ -113,9 +113,9 @@ func TestFromPrompt(t *testing.T) {
 			wantCode:     CodeCancelled,
 		},
 		{
-			name:       "Non-auth error returns wrapped error",
-			err:        status.Error(codes.Internal, "server error"),
-			contextMsg: "failed to prompt for subscription",
+			name:        "Non-auth error returns wrapped error",
+			err:         status.Error(codes.Internal, "server error"),
+			contextMsg:  "failed to prompt for subscription",
 			wantContain: "failed to prompt for subscription",
 		},
 		{

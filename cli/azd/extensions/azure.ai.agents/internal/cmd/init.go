@@ -699,38 +699,6 @@ func ensureAzureContext(
 	return azureContext, project, env, nil
 }
 
-func (a *InitAction) validateFlags(flags *initFlags) error {
-	if flags.manifestPointer != "" {
-		// Check if it's a valid URL
-		if _, err := url.ParseRequestURI(flags.manifestPointer); err != nil {
-			// If not a valid URL, check if it's an existing local file path
-			if _, fileErr := os.Stat(flags.manifestPointer); fileErr != nil {
-				return fmt.Errorf("manifest pointer '%s' is neither a valid URI nor an existing file path", flags.manifestPointer)
-			}
-		}
-	}
-
-	return nil
-}
-
-func (a *InitAction) promptForMissingValues(ctx context.Context, azdClient *azdext.AzdClient, flags *initFlags) error {
-	if flags.manifestPointer == "" {
-		resp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-			Options: &azdext.PromptOptions{
-				Message:        "Enter the location of the agent manifest",
-				IgnoreHintKeys: true,
-			},
-		})
-		if err != nil {
-			return fmt.Errorf("prompting for agent manifest pointer: %w", err)
-		}
-
-		flags.manifestPointer = resp.Value
-	}
-
-	return nil
-}
-
 type FoundryProject struct {
 	SubscriptionId    string `json:"subscriptionId"`
 	ResourceGroupName string `json:"resourceGroupName"`
@@ -749,7 +717,11 @@ func extractProjectDetails(projectResourceId string) (*FoundryProject, error) {
 
 	matches := regex.FindStringSubmatch(projectResourceId)
 	if matches == nil || len(matches) != 5 {
-		return nil, fmt.Errorf("the given Microsoft Foundry project ID does not match expected format: /subscriptions/[SUBSCRIPTION_ID]/resourceGroups/[RESOURCE_GROUP]/providers/Microsoft.CognitiveServices/accounts/[ACCOUNT_NAME]/projects/[PROJECT_NAME]")
+		return nil, fmt.Errorf(
+			"the given Microsoft Foundry project ID does not match expected format: " +
+				"/subscriptions/[SUBSCRIPTION_ID]/resourceGroups/[RESOURCE_GROUP]/providers/" +
+				"Microsoft.CognitiveServices/accounts/[ACCOUNT_NAME]/projects/[PROJECT_NAME]",
+		)
 	}
 
 	// Extract the components
@@ -1043,7 +1015,7 @@ func (a *InitAction) isRegistryUrl(manifestPointer string) (bool, *RegistryManif
 func (a *InitAction) downloadAgentYaml(
 	ctx context.Context, manifestPointer string, targetDir string) (*agent_yaml.AgentManifest, string, error) {
 	if manifestPointer == "" {
-		return nil, "", fmt.Errorf("The path to an agent manifest need to be provided (manifestPointer cannot be empty).")
+		return nil, "", fmt.Errorf("the path to an agent manifest needs to be provided (manifestPointer cannot be empty)")
 	}
 
 	var content []byte
@@ -1052,12 +1024,13 @@ func (a *InitAction) downloadAgentYaml(
 	var urlInfo *GitHubUrlInfo
 	var ghCli *github.Cli
 	var console input.Console
-	var useGhCli bool = false
+	useGhCli := false
 
 	// Check if manifestPointer is a local file path or a URI
 	if a.isLocalFilePath(manifestPointer) {
 		// Handle local file path
 		fmt.Printf("Reading agent.yaml from local file: %s\n", manifestPointer)
+		//nolint:gosec // manifest path is an explicit user-provided local path
 		content, err = os.ReadFile(manifestPointer)
 		if err != nil {
 			return nil, "", exterrors.Validation(
@@ -1169,6 +1142,7 @@ func (a *InitAction) downloadAgentYaml(
 			req, err := http.NewRequestWithContext(ctx, http.MethodGet, fileApiUrl, nil)
 			if err == nil {
 				req.Header.Set("Accept", "application/vnd.github.v3.raw")
+				//nolint:gosec // URL is constrained to GitHub API endpoint built from parsed GitHub URL
 				resp, err := a.httpClient.Do(req)
 				if err == nil {
 					defer resp.Body.Close()
@@ -1316,6 +1290,7 @@ func (a *InitAction) downloadAgentYaml(
 	}
 
 	// Create target directory if it doesn't exist
+	//nolint:gosec // project scaffold directory should be readable and traversable
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		return nil, "", fmt.Errorf("creating target directory %s: %w", targetDir, err)
 	}
@@ -1796,12 +1771,14 @@ func downloadDirectoryContents(
 				return fmt.Errorf("failed to download file %s: %w", itemPath, err)
 			}
 
+			//nolint:gosec // downloaded project files are intended to be readable by project tooling
 			if err := os.WriteFile(itemLocalPath, []byte(fileContent), 0644); err != nil {
 				return fmt.Errorf("failed to write file %s: %w", itemLocalPath, err)
 			}
 		} else if itemType == "dir" {
 			// Recursively download subdirectory
 			fmt.Printf("Downloading directory: %s\n", itemPath)
+			//nolint:gosec // scaffolded directories are intended to be readable/traversable
 			if err := os.MkdirAll(itemLocalPath, 0755); err != nil {
 				return fmt.Errorf("failed to create directory %s: %w", itemLocalPath, err)
 			}
@@ -1831,6 +1808,7 @@ func downloadDirectoryContentsWithoutGhCli(
 	}
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
+	//nolint:gosec // URL is explicitly constructed for GitHub contents API
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to get directory contents: %w", err)
@@ -1887,6 +1865,7 @@ func downloadDirectoryContentsWithoutGhCli(
 			}
 			fileReq.Header.Set("Accept", "application/vnd.github.v3.raw")
 
+			//nolint:gosec // URL is explicitly constructed for GitHub contents API
 			fileResp, err := httpClient.Do(fileReq)
 			if err != nil {
 				return fmt.Errorf("failed to download file %s: %w", itemPath, err)
@@ -1897,17 +1876,19 @@ func downloadDirectoryContentsWithoutGhCli(
 			}
 
 			fileContent, err := io.ReadAll(fileResp.Body)
-			fileResp.Body.Close()
+			_ = fileResp.Body.Close()
 			if err != nil {
 				return fmt.Errorf("failed to read file content %s: %w", itemPath, err)
 			}
 
+			//nolint:gosec // downloaded project files are intended to be readable by project tooling
 			if err := os.WriteFile(itemLocalPath, fileContent, 0644); err != nil {
 				return fmt.Errorf("failed to write file %s: %w", itemLocalPath, err)
 			}
 		} else if itemType == "dir" {
 			// Recursively download subdirectory
 			fmt.Printf("Downloading directory: %s\n", itemPath)
+			//nolint:gosec // scaffolded directories are intended to be readable/traversable
 			if err := os.MkdirAll(itemLocalPath, 0755); err != nil {
 				return fmt.Errorf("failed to create directory %s: %w", itemLocalPath, err)
 			}

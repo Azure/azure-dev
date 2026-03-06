@@ -156,9 +156,9 @@ func TestToServiceKey(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name string
+		name  string
 		input string
-		want string
+		want  string
 	}{
 		{name: "simple name", input: "myagent", want: "MYAGENT"},
 		{name: "with dashes", input: "my-agent-svc", want: "MY_AGENT_SVC"},

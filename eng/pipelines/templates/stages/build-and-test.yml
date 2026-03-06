@@ -228,6 +228,24 @@ stages:
             displayName: Show changelog content
 
           # Create release metadata
+          - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI') }}:
+            - pwsh: |
+                $since = (Get-Date).AddMonths(-6).ToString("yyyy-MM-dd")
+                Write-Host "Deepening git history since: $since"
+                git fetch --shallow-since="$since" --tags
+
+                $msiVersion = & eng/scripts/Get-MsiDevVersion.ps1
+                Write-Host "Using MSI version: $msiVersion"
+                Write-Host "##vso[task.setvariable variable=MSI_VERSION]$msiVersion"
+              displayName: Set MSI_VERSION for CI build
+
+          - ${{ else }}:
+            - pwsh: |
+                $msiVersion = & eng/scripts/Get-MsiVersion.ps1 -CliVersion $cliVersion
+                Write-Host "Using MSI version: $msiVersion"
+                Write-Host "##vso[task.setvariable variable=MSI_VERSION]$msiVersion"
+              displayName: Set MSI_VERSION
+
           - pwsh: |
               New-Item -ItemType Directory -Path release-metadata -Force
               # CLI Version may have been set by set-cli-version-cd.yml
@@ -247,7 +265,7 @@ stages:
 
               $releaseMetadata = @{
                 cliVersion = $cliVersion;
-                msiVersion = (eng/scripts/Get-MsiVersion.ps1 -CliVersion $cliVersion);
+                msiVersion = "$(MSI_VERSION)";
                 isPublishingGa = $submitPackage;
                 submitChocoPackage = $submitPackage;
                 submitWingetPackage = $submitPackage;

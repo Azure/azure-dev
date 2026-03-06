@@ -18,28 +18,17 @@ steps:
   - ${{ if eq(parameters.ShouldBuildForRelease, 'true') }}:
     - pwsh: |
         Write-Host "##vso[task.setvariable variable=MSI_PRODUCT_NAME_PARAM]/p:ProductName=`"Azure Developer CLI`""
-        Write-Host "##vso[task.setvariable variable=MSI_VERSION_PARAM]/p:ProductVersion=$(MSI_VERSION)"
         Write-Host "##vso[task.setvariable variable=RELEASE_BUILD_PARAM]/p:ReleaseBuild=true"
       condition: ${{ parameters.Condition }}
-      displayName: Set MSI_PRODUCT_NAME_PARAM, MSI_VERSION_PARAM, and RELEASE_BUILD_PARAM for release
+      displayName: Set MSI_PRODUCT_NAME_PARAM, and RELEASE_BUILD_PARAM for release
 
   - ${{ else }}:
     # Set daily dev release version
     - pwsh: |
-        $since = (Get-Date).AddMonths(-6).ToString("yyyy-MM-dd")
-        Write-Host "Deepening git history since $since"
-        git fetch origin --shallow-since="$since"
-
-        # Fetch tags now that the commits exist
-        git fetch origin --tags
-
-        $devVersion = ./eng/scripts/Get-MsiDevVersion.ps1
-
         Write-Host "##vso[task.setvariable variable=MSI_PRODUCT_NAME_PARAM]"
-        Write-Host "##vso[task.setvariable variable=MSI_VERSION_PARAM]/p:ProductVersion=$devVersion"
         Write-Host "##vso[task.setvariable variable=RELEASE_BUILD_PARAM]"
       condition: ${{ parameters.Condition }}
-      displayName: Set MSI_PRODUCT_NAME_PARAM, MSI_VERSION_PARAM, and RELEASE_BUILD_PARAM for dev release
+      displayName: Set MSI_PRODUCT_NAME_PARAM, and RELEASE_BUILD_PARAM for dev release
 
   - task: MSBuild@1
     displayName: ${{ parameters.Title }}
@@ -49,6 +38,6 @@ steps:
       msbuildArguments: >-
         /p:RunWixToolsOutOfProc=true
         /p:Configuration=Release
+        /p:ProductVersion=$(MSI_VERSION)
         $(MSI_PRODUCT_NAME_PARAM)
-        $(MSI_VERSION_PARAM)
         $(RELEASE_BUILD_PARAM)

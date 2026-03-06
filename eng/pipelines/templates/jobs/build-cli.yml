@@ -40,6 +40,10 @@ jobs:
         parameters:
           Condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
 
+      # Sets variables based on release metadata, of primary import is
+      # MSI_VERSION.
+      - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
+
       - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
 
       - task: PowerShell@2
@@ -64,6 +68,7 @@ jobs:
           filePath: cli/azd/ci-build.ps1
           arguments: >-
             -Version $(CLI_VERSION)
+            -ExeVersion $(MSI_VERSION)
             -SourceVersion $(Build.SourceVersion)
             -CodeCoverageEnabled
             -BuildRecordMode
@@ -178,6 +183,7 @@ jobs:
           filePath: cli/azd/ci-build.ps1
           arguments: >-
             -Version $(CLI_VERSION)
+            -ExeVersion $(MSI_VERSION)
             -SourceVersion $(Build.SourceVersion)
             -GitHubCopilotClientId "${{ parameters.ghCopilotClientId }}"
             -GitHubCopilotIntegrationId "${{ parameters.ghCopilotIntegrationId }}"

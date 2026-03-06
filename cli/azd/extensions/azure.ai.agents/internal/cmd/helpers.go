@@ -55,17 +55,17 @@ func loadLocalContext(configPath string) *AgentLocalContext {
 	if err != nil {
 		return &AgentLocalContext{}
 	}
-	var ctx AgentLocalContext
-	if err := json.Unmarshal(data, &ctx); err != nil {
+	var agentCtx AgentLocalContext
+	if err := json.Unmarshal(data, &agentCtx); err != nil {
 		return &AgentLocalContext{}
 	}
-	return &ctx
+	return &agentCtx
 }
 
 // saveLocalContext writes the .foundry-agent.json state file.
 // configPath is the full path to the config file (use resolveConfigPath to obtain it).
-func saveLocalContext(ctx *AgentLocalContext, configPath string) error {
-	data, err := json.MarshalIndent(ctx, "", "  ")
+func saveLocalContext(agentCtx *AgentLocalContext, configPath string) error {
+	data, err := json.MarshalIndent(agentCtx, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal local context: %w", err)
 	}
@@ -74,36 +74,38 @@ func saveLocalContext(ctx *AgentLocalContext, configPath string) error {
 
 // resolveSessionID resolves or generates a session ID for invoke.
 // Returns the session ID (existing or newly generated).
-func resolveSessionID(goCtx context.Context, agentName string, explicit string, forceNew bool) string {
+func resolveSessionID(ctx context.Context, agentName string, explicit string, forceNew bool) (string, error) {
 	if explicit != "" {
-		return explicit
+		return explicit, nil
 	}
-	configPath := resolveConfigPath(goCtx)
-	ctx := loadLocalContext(configPath)
-	if ctx.Sessions == nil {
-		ctx.Sessions = make(map[string]string)
+	configPath := resolveConfigPath(ctx)
+	agentCtx := loadLocalContext(configPath)
+	if agentCtx.Sessions == nil {
+		agentCtx.Sessions = make(map[string]string)
 	}
 	if !forceNew {
-		if sid, ok := ctx.Sessions[agentName]; ok {
-			return sid
+		if sid, ok := agentCtx.Sessions[agentName]; ok {
+			return sid, nil
 		}
 	}
 	sid := generateSessionID()
-	ctx.Sessions[agentName] = sid
-	_ = saveLocalContext(ctx, configPath)
-	return sid
+	agentCtx.Sessions[agentName] = sid
+	if err := saveLocalContext(agentCtx, configPath); err != nil {
+		return sid, fmt.Errorf("failed to save session ID: %w", err)
+	}
+	return sid, nil
 }
 
 // resolveConversationID resolves or creates a Foundry conversation ID.
 // Returns empty string if creation fails (multi-turn memory disabled).
-func resolveConversationID(goCtx context.Context, agentName string, forceNew bool) string {
-	configPath := resolveConfigPath(goCtx)
-	ctx := loadLocalContext(configPath)
-	if ctx.Conversations == nil {
-		ctx.Conversations = make(map[string]string)
+func resolveConversationID(ctx context.Context, agentName string, forceNew bool) string {
+	configPath := resolveConfigPath(ctx)
+	agentCtx := loadLocalContext(configPath)
+	if agentCtx.Conversations == nil {
+		agentCtx.Conversations = make(map[string]string)
 	}
 	if !forceNew {
-		if convID, ok := ctx.Conversations[agentName]; ok {
+		if convID, ok := agentCtx.Conversations[agentName]; ok {
 			return convID
 		}
 	}
@@ -112,14 +114,17 @@ func resolveConversationID(goCtx context.Context, agentName string, forceNew boo
 }
 
 // saveConversationID persists a conversation ID for an agent.
-func saveConversationID(goCtx context.Context, agentName, convID string) {
-	configPath := resolveConfigPath(goCtx)
-	ctx := loadLocalContext(configPath)
-	if ctx.Conversations == nil {
-		ctx.Conversations = make(map[string]string)
+func saveConversationID(ctx context.Context, agentName, convID string) error {
+	configPath := resolveConfigPath(ctx)
+	agentCtx := loadLocalContext(configPath)
+	if agentCtx.Conversations == nil {
+		agentCtx.Conversations = make(map[string]string)
 	}
-	ctx.Conversations[agentName] = convID
-	_ = saveLocalContext(ctx, configPath)
+	agentCtx.Conversations[agentName] = convID
+	if err := saveLocalContext(agentCtx, configPath); err != nil {
+		return fmt.Errorf("failed to save conversation ID: %w", err)
+	}
+	return nil
 }
 
 // generateSessionID creates a random 25-character session ID (lowercase + digits).

@@ -125,7 +125,8 @@ func (a *InvokeAction) invokeLocal() error {
 	}
 
 	url := fmt.Sprintf("http://localhost:%d/responses", port)
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(payload))
+	ctx := context.Background()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -239,7 +240,7 @@ func (a *InvokeAction) invokeRemote(ctx context.Context) error {
 	}
 
 	url := fmt.Sprintf("%s/openai/responses?api-version=%s", endpoint, DefaultAgentAPIVersion)
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -282,7 +283,7 @@ func createConversation(ctx context.Context, endpoint string) (string, error) {
 	}
 
 	url := fmt.Sprintf("%s/openai/conversations?api-version=%s", endpoint, DefaultAgentAPIVersion)
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader([]byte("{}")))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader([]byte("{}")))
 	if err != nil {
 		return "", err
 	}

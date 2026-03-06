@@ -134,7 +134,9 @@ func generateSessionID() string {
 	for i := range b {
 		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(chars))))
 		if err != nil {
-			panic(fmt.Sprintf("crypto/rand failed: %v", err))
+			// Fail gracefully instead of panicking so the CLI can surface a useful message.
+			fmt.Fprintf(os.Stderr, "failed to generate secure session ID: %v\n", err)
+			return ""
 		}
 		b[i] = chars[n.Int64()]
 	}
@@ -205,8 +207,11 @@ func resolveAgentServiceFromProject(ctx context.Context, name string) (*AgentSer
 	defer azdClient.Close()
 
 	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
-	if err != nil || projectResponse.Project == nil {
+	if err != nil {
 		return nil, fmt.Errorf("failed to get project config: %w", err)
+	}
+	if projectResponse.Project == nil {
+		return nil, fmt.Errorf("failed to get project config: project not found in azd response")
 	}
 
 	// Find the matching azure.ai.agent service
@@ -275,8 +280,11 @@ func resolveServiceRunContext(ctx context.Context, name string) (*ServiceRunCont
 	defer azdClient.Close()
 
 	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
-	if err != nil || projectResponse.Project == nil {
+	if err != nil {
 		return nil, fmt.Errorf("failed to get project config (is there an azure.yaml?): %w", err)
+	}
+	if projectResponse.Project == nil {
+		return nil, fmt.Errorf("failed to get project config (is there an azure.yaml?)")
 	}
 
 	var svc *azdext.ServiceConfig

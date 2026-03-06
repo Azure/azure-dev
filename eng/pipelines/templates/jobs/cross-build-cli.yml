@@ -72,9 +72,9 @@ jobs:
           targetType: filePath
           filePath: cli/azd/ci-build.ps1
           arguments: >-
-            -Version $(CLI_VERSION)
-            -ExeVersion $(MSI_VERSION)
-            -SourceVersion $(Build.SourceVersion)
+            -Version "$(CLI_VERSION)"
+            -ExeVersion "$(MSI_VERSION)"
+            -SourceVersion "$(Build.SourceVersion)"
             -GitHubCopilotClientId "${{ parameters.ghCopilotClientId }}"
             -GitHubCopilotIntegrationId "${{ parameters.ghCopilotIntegrationId }}"
           workingDirectory: cli/azd

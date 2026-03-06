@@ -137,7 +137,7 @@ func runRun(ctx context.Context, flags *runFlags) error {
 	fmt.Printf("Starting agent on %s (Ctrl+C to stop)\n\n", url)
 
 	// Create command with stdout/stderr piped to terminal
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	proc := exec.CommandContext(ctx, cmdParts[0], cmdParts[1:]...)

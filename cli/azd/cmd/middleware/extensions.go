@@ -298,10 +298,16 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 			m.console.Message(ctx, "")
 		}
 
-		m.console.Message(ctx, output.WithWarningFormat(
-			"WARNING: %d extensions did not start. Their features will be unavailable.",
-			len(failedExtensions),
-		))
+		if len(failedExtensions) == 1 {
+			m.console.Message(ctx, output.WithWarningFormat(
+				"WARNING: 1 extension did not start. Its features will be unavailable.",
+			))
+		} else {
+			m.console.Message(ctx, output.WithWarningFormat(
+				"WARNING: %d extensions did not start. Their features will be unavailable.",
+				len(failedExtensions),
+			))
+		}
 		m.console.Message(ctx, "")
 		m.console.Message(ctx, fmt.Sprintf("Run with %s for details.", output.WithHighLightFormat("--debug")))
 		m.console.Message(ctx, "")

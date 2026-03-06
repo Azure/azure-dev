@@ -103,7 +103,7 @@ func runRun(ctx context.Context, flags *runFlags) error {
 			)
 		}
 	} else {
-		fmt.Printf("Using startup command from azure.yaml: %s\n", startCmd)
+		fmt.Printf("Using startup command: %s\n", startCmd)
 	}
 
 	// Install dependencies

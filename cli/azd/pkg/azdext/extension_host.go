@@ -163,12 +163,17 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	_ = WaitForDebugger(ctx, er.client)
 
 	// Broker trace loggers are silent by default (io.Discard in NewMessageBroker).
-	// When AZD_EXT_DEBUG is truthy, enable verbose broker logging to stderr
-	// for diagnostics while keeping the global logger untouched.
+	// When AZD_EXT_DEBUG or AZD_DEBUG is truthy, enable verbose broker logging to
+	// stderr for diagnostics while keeping the global logger untouched.
+	// AZD_DEBUG is set automatically by azd core when the user passes --debug,
+	// so extension developers get consistent debug logging without needing to
+	// understand AZD_EXT_DEBUG separately.
 	// Uses strconv.ParseBool to match WaitForDebugger semantics (accepts
 	// "1", "t", "TRUE", "true", etc.).
 	var brokerLogger *log.Logger
 	if isDebug, err := strconv.ParseBool(os.Getenv("AZD_EXT_DEBUG")); err == nil && isDebug {
+		brokerLogger = log.New(os.Stderr, "", log.LstdFlags)
+	} else if isDebug, err := strconv.ParseBool(os.Getenv("AZD_DEBUG")); err == nil && isDebug {
 		brokerLogger = log.New(os.Stderr, "", log.LstdFlags)
 	}
 	er.initManagers(extensionId, brokerLogger)

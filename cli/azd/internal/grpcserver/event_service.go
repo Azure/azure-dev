@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -78,7 +79,7 @@ func (s *eventService) EventStream(stream grpc.BidiStreamingServer[azdext.EventM
 
 	// Create message broker with EventMessageEnvelope
 	envelope := azdext.NewEventMessageEnvelope()
-	broker := grpcbroker.NewMessageBroker(stream, envelope, extension.Id, nil)
+	broker := grpcbroker.NewMessageBroker(stream, envelope, extension.Id, log.Default())
 
 	// Register handlers for incoming subscription requests (no response needed)
 	broker.On(func(ctx context.Context, msg *azdext.SubscribeProjectEvent) (*azdext.EventMessage, error) {

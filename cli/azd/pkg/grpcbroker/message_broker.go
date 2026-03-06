@@ -92,7 +92,9 @@ type MessageBroker[TMessage any] struct {
 // or a server stream (grpc.BidiStreamingServer) as both implement the BidiStream interface.
 // The ops parameter provides stateless operations for message manipulation.
 // The name parameter is used for logging identification.
-// The logger parameter sets the broker's private logger; pass nil for silent (io.Discard).
+// The logger parameter sets the broker's private logger for trace output:
+// Pass [log.Default] on the server side (azd core CLI) to inherit --debug semantics.
+// Pass nil for silent operation (e.g., in extension processes where AZD_EXT_DEBUG controls logging).
 func NewMessageBroker[TMessage any](
 	stream BidiStream[TMessage],
 	ops MessageEnvelope[TMessage],

@@ -287,7 +287,7 @@ type AgentContainerDetails struct {
 	ProvisioningState string                       `json:"provisioning_state,omitempty"`
 	State             string                       `json:"state,omitempty"`
 	UpdatedOn         string                       `json:"updated_on,omitempty"`
-	Replicas          []AgentContainerReplicaState  `json:"replicas,omitempty"`
+	Replicas          []AgentContainerReplicaState `json:"replicas,omitempty"`
 }
 
 // AgentContainerObject represents the details of an agent container

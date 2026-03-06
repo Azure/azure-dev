@@ -55,6 +55,11 @@ type ExtensionCommandOptions struct {
 //   - Calls WithAccessToken() on the command context
 //
 // The returned command has PersistentPreRunE configured to set up the ExtensionContext.
+//
+// NOTE: This function and its companion helpers ([NewListenCommand], [NewMetadataCommand],
+// [NewVersionCommand]) depend on [github.com/spf13/cobra]. If non-cobra CLI frameworks
+// gain adoption among extension authors, these symbols are candidates for extraction into
+// an azdext/cobra sub-package so the core SDK remains framework-agnostic.
 func NewExtensionRootCommand(opts ExtensionCommandOptions) (*cobra.Command, *ExtensionContext) {
 	extCtx := &ExtensionContext{}
 

@@ -17,17 +17,17 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type devFlags struct {
+type runFlags struct {
 	port         int
 	name         string
 	startCommand string
 }
 
-func newDevCommand() *cobra.Command {
-	flags := &devFlags{}
+func newRunCommand() *cobra.Command {
+	flags := &runFlags{}
 
 	cmd := &cobra.Command{
-		Use:   "dev",
+		Use:   "run",
 		Short: "Run your agent locally for development.",
 		Long: `Run your agent locally for development.
 
@@ -39,22 +39,22 @@ agent service in azure.yaml. If not set, it is auto-detected from the
 project type. Use --start-command to override both.
 
 Use a separate terminal to invoke the running agent:
-  azd ai agent invoke "Hello!"`,
+  azd ai agent invoke --message "Hello!"`,
 		Example: `  # Start the agent in the current directory
-  azd ai agent dev
+  azd ai agent run
 
   # Start a specific agent by name
-  azd ai agent dev --name my-agent
+  azd ai agent run --name my-agent
 
   # Start on a custom port
-  azd ai agent dev --port 9090
+  azd ai agent run --port 9090
 
   # Start with an explicit command
-  azd ai agent dev --start-command "python app.py"`,
+  azd ai agent run --start-command "python app.py"`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			setupDebugLogging(cmd.Flags())
-			return runDev(ctx, flags)
+			return runRun(ctx, flags)
 		},
 	}
 
@@ -66,18 +66,18 @@ Use a separate terminal to invoke the running agent:
 	return cmd
 }
 
-func runDev(ctx context.Context, flags *devFlags) error {
+func runRun(ctx context.Context, flags *runFlags) error {
 	// Resolve the service source directory and startup command from azure.yaml
-	devCtx, err := resolveServiceDevContext(ctx, flags.name)
+	runCtx, err := resolveServiceRunContext(ctx, flags.name)
 	if err != nil {
 		return err
 	}
-	projectDir := devCtx.ProjectDir
+	projectDir := runCtx.ProjectDir
 
 	// Resolve start command: --start-command flag > azure.yaml startupCommand > detect
 	startCmd := flags.startCommand
 	if startCmd == "" {
-		startCmd = devCtx.StartupCommand
+		startCmd = runCtx.StartupCommand
 	}
 
 	if startCmd == "" {
@@ -132,7 +132,7 @@ func runDev(ctx context.Context, flags *devFlags) error {
 
 	url := fmt.Sprintf("http://localhost:%d", flags.port)
 	fmt.Println()
-	fmt.Println("In another terminal, try:")
+	fmt.Println("After startup, in another terminal, try:")
 	fmt.Printf("  azd ai agent invoke \"Hello!\"\n\n")
 	fmt.Printf("Starting agent on %s (Ctrl+C to stop)\n\n", url)
 

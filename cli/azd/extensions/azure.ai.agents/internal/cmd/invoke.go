@@ -40,12 +40,12 @@ func newInvokeCommand() *cobra.Command {
 		Short: "Send a message to your agent.",
 		Long: `Send a message to your agent.
 
-By default targets localhost:8088 (local dev).
+By default targets localhost:8088 (local run).
 Use --remote or --name <agent> to invoke on Foundry.
 
 Sessions are persisted per-agent — consecutive invokes reuse the same
 session automatically. Pass --new-session to force a reset.`,
-		Example: `  # Invoke locally (agent must be running via 'azd ai agent dev')
+		Example: `  # Invoke locally (agent must be running via 'azd ai agent run')
   azd ai agent invoke --message "Hello!"
 
   # Invoke the remote agent on Foundry (auto-detects agent from azure.yaml)

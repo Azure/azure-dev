@@ -305,16 +305,16 @@ func resolveStartupCommandFromService(ctx context.Context, name string) string {
 	return ""
 }
 
-// ServiceDevContext holds the resolved context needed for local development.
-type ServiceDevContext struct {
+// ServiceRunContext holds the resolved context needed for local development.
+type ServiceRunContext struct {
 	ProjectDir     string // absolute path to the service source directory
 	StartupCommand string // startupCommand from AdditionalProperties (may be empty)
 }
 
-// resolveServiceDevContext queries the azd project to find the matching azure.ai.agent
+// resolveServiceRunContext queries the azd project to find the matching azure.ai.agent
 // service, then returns the service's absolute source directory and startup command.
 // When name is empty and multiple agent services exist, it returns an error listing them.
-func resolveServiceDevContext(ctx context.Context, name string) (*ServiceDevContext, error) {
+func resolveServiceRunContext(ctx context.Context, name string) (*ServiceRunContext, error) {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create azd client: %w", err)
@@ -376,7 +376,7 @@ func resolveServiceDevContext(ctx context.Context, name string) (*ServiceDevCont
 		}
 	}
 
-	return &ServiceDevContext{
+	return &ServiceRunContext{
 		ProjectDir:     projectDir,
 		StartupCommand: startupCmd,
 	}, nil

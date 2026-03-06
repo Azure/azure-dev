@@ -1516,7 +1516,8 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 }
 
 // resolveStartupCommandForInit detects the startup command from the project source directory.
-// If detection fails, it prompts the user. Returns empty string if the user skips the prompt.
+// If detection fails, it prompts the user. Returns empty string if the user skips the prompt
+// or if running in no-prompt mode.
 func (a *InitAction) resolveStartupCommandForInit(ctx context.Context, targetDir string) (string, error) {
 	absDir := targetDir
 	if !filepath.IsAbs(targetDir) && a.projectConfig != nil {
@@ -1525,6 +1526,10 @@ func (a *InitAction) resolveStartupCommandForInit(ctx context.Context, targetDir
 
 	if cmd := detectStartupCommand(absDir); cmd != "" {
 		return cmd, nil
+	}
+
+	if a.flags.NoPrompt {
+		return "", nil
 	}
 
 	resp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{

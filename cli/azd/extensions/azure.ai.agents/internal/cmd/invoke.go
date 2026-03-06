@@ -196,11 +196,11 @@ func (a *InvokeAction) invokeRemote(ctx context.Context) error {
 	}
 
 	// Session ID — routes to the same microVM container instance
-	sid := resolveSessionID(name, a.flags.session, a.flags.newSession)
+	sid := resolveSessionID(ctx, name, a.flags.session, a.flags.newSession)
 	body["session_id"] = sid
 
 	// Conversation ID — enables multi-turn memory via Foundry Conversations API
-	convID := resolveConversationID(name, a.flags.newSession)
+	convID := resolveConversationID(ctx, name, a.flags.newSession)
 	if convID == "" {
 		// Create a new conversation
 		newConvID, err := createConversation(ctx, endpoint)
@@ -208,7 +208,7 @@ func (a *InvokeAction) invokeRemote(ctx context.Context) error {
 			fmt.Printf("Warning: could not create conversation; multi-turn memory disabled (%v)\n", err)
 		} else {
 			convID = newConvID
-			saveConversationID(name, convID)
+			saveConversationID(ctx, name, convID)
 		}
 	}
 	if convID != "" {

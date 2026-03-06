@@ -31,9 +31,27 @@ type AgentLocalContext struct {
 	Conversations map[string]string `json:"conversations,omitempty"`
 }
 
-// loadLocalContext reads the .foundry-agent.json state file from the project root.
-func loadLocalContext() *AgentLocalContext {
-	data, err := os.ReadFile(ConfigFile)
+// resolveConfigPath returns the full path to the .foundry-agent.json file
+// in the azd project root directory.
+func resolveConfigPath(ctx context.Context) string {
+	azdClient, err := azdext.NewAzdClient()
+	if err != nil {
+		return ConfigFile // fall back to CWD
+	}
+	defer azdClient.Close()
+
+	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil || projectResponse.Project == nil {
+		return ConfigFile
+	}
+
+	return filepath.Join(projectResponse.Project.Path, ConfigFile)
+}
+
+// loadLocalContext reads the .foundry-agent.json state file.
+// configPath is the full path to the config file (use resolveConfigPath to obtain it).
+func loadLocalContext(configPath string) *AgentLocalContext {
+	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return &AgentLocalContext{}
 	}
@@ -45,33 +63,23 @@ func loadLocalContext() *AgentLocalContext {
 }
 
 // saveLocalContext writes the .foundry-agent.json state file.
-func saveLocalContext(ctx *AgentLocalContext) error {
+// configPath is the full path to the config file (use resolveConfigPath to obtain it).
+func saveLocalContext(ctx *AgentLocalContext, configPath string) error {
 	data, err := json.MarshalIndent(ctx, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal local context: %w", err)
 	}
-	return os.WriteFile(ConfigFile, append(data, '\n'), 0644)
-}
-
-// resolveAgentNameLocal resolves the agent name from: explicit flag > .foundry-agent.json > error.
-func resolveAgentNameLocal(name string) (string, error) {
-	if name != "" {
-		return name, nil
-	}
-	ctx := loadLocalContext()
-	if ctx.AgentName != "" {
-		return ctx.AgentName, nil
-	}
-	return "", fmt.Errorf("no agent name specified; use --name or run 'azd ai agent init' first")
+	return os.WriteFile(configPath, append(data, '\n'), 0644)
 }
 
 // resolveSessionID resolves or generates a session ID for invoke.
 // Returns the session ID (existing or newly generated).
-func resolveSessionID(agentName string, explicit string, forceNew bool) string {
+func resolveSessionID(goCtx context.Context, agentName string, explicit string, forceNew bool) string {
 	if explicit != "" {
 		return explicit
 	}
-	ctx := loadLocalContext()
+	configPath := resolveConfigPath(goCtx)
+	ctx := loadLocalContext(configPath)
 	if ctx.Sessions == nil {
 		ctx.Sessions = make(map[string]string)
 	}
@@ -82,14 +90,15 @@ func resolveSessionID(agentName string, explicit string, forceNew bool) string {
 	}
 	sid := generateSessionID()
 	ctx.Sessions[agentName] = sid
-	_ = saveLocalContext(ctx)
+	_ = saveLocalContext(ctx, configPath)
 	return sid
 }
 
 // resolveConversationID resolves or creates a Foundry conversation ID.
 // Returns empty string if creation fails (multi-turn memory disabled).
-func resolveConversationID(agentName string, forceNew bool) string {
-	ctx := loadLocalContext()
+func resolveConversationID(goCtx context.Context, agentName string, forceNew bool) string {
+	configPath := resolveConfigPath(goCtx)
+	ctx := loadLocalContext(configPath)
 	if ctx.Conversations == nil {
 		ctx.Conversations = make(map[string]string)
 	}
@@ -103,13 +112,14 @@ func resolveConversationID(agentName string, forceNew bool) string {
 }
 
 // saveConversationID persists a conversation ID for an agent.
-func saveConversationID(agentName, convID string) {
-	ctx := loadLocalContext()
+func saveConversationID(goCtx context.Context, agentName, convID string) {
+	configPath := resolveConfigPath(goCtx)
+	ctx := loadLocalContext(configPath)
 	if ctx.Conversations == nil {
 		ctx.Conversations = make(map[string]string)
 	}
 	ctx.Conversations[agentName] = convID
-	_ = saveLocalContext(ctx)
+	_ = saveLocalContext(ctx, configPath)
 }
 
 // generateSessionID creates a random 25-character session ID (lowercase + digits).

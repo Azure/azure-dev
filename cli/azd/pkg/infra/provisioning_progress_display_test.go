@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -27,12 +28,18 @@ type mockResourceManager struct {
 	operations []*armresources.DeploymentOperation
 }
 
-func (mock *mockResourceManager) GetDeploymentResourceOperations(
+func (mock *mockResourceManager) WalkDeploymentOperations(
 	ctx context.Context,
 	target Deployment,
-	startTime *time.Time,
-) ([]*armresources.DeploymentOperation, error) {
-	return mock.operations, nil
+	fn WalkDeploymentOperationFunc,
+) error {
+	for _, operation := range mock.operations {
+		if err := fn(ctx, operation); err != nil && !errors.Is(err, SkipExpand) {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (mock *mockResourceManager) GetResourceTypeDisplayName(
@@ -151,4 +158,107 @@ func TestReportProgress(t *testing.T) {
 	err = progressDisplay.ReportProgress(*mockContext.Context, &startTime)
 	require.NoError(t, err)
 	assert.Len(t, mockContext.Console.Output(), outputLength)
+}
+
+type walkSkipAwareResourceManager struct {
+	nestedOperation *armresources.DeploymentOperation
+	childOperation  *armresources.DeploymentOperation
+	childVisits     int
+}
+
+func (mock *walkSkipAwareResourceManager) WalkDeploymentOperations(
+	ctx context.Context,
+	target Deployment,
+	fn WalkDeploymentOperationFunc,
+) error {
+	err := fn(ctx, mock.nestedOperation)
+	if err != nil {
+		if errors.Is(err, SkipExpand) {
+			return nil
+		}
+
+		return err
+	}
+
+	mock.childVisits++
+	return fn(ctx, mock.childOperation)
+}
+
+func (mock *walkSkipAwareResourceManager) GetResourceTypeDisplayName(
+	ctx context.Context,
+	subscriptionId string,
+	resourceId string,
+	resourceType azapi.AzureResourceType,
+) (string, error) {
+	return string(resourceType), nil
+}
+
+func (mock *walkSkipAwareResourceManager) GetResourceGroupsForEnvironment(
+	ctx context.Context,
+	subscriptionId string,
+	envName string,
+) ([]*azapi.Resource, error) {
+	return []*azapi.Resource{}, nil
+}
+
+func (mock *walkSkipAwareResourceManager) FindResourceGroupForEnvironment(
+	ctx context.Context,
+	subscriptionId string,
+	envName string,
+) (string, error) {
+	return "", nil
+}
+
+func TestReportProgressSkipsExpansionAfterTwoTerminalPolls(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	deploymentService := mockazapi.NewDeploymentsServiceFromMockContext(mockContext)
+
+	scope := newSubscriptionScope(deploymentService, "SUBSCRIPTION_ID", "eastus2")
+	deployment := NewSubscriptionDeployment(
+		scope,
+		"DEPLOYMENT_NAME",
+	)
+	mockAzDeploymentShow(t, *mockContext)
+
+	walkRm := &walkSkipAwareResourceManager{
+		nestedOperation: &armresources.DeploymentOperation{
+			ID: to.Ptr("nested-operation-id"),
+			Properties: &armresources.DeploymentOperationProperties{
+				ProvisioningOperation: to.Ptr(armresources.ProvisioningOperationCreate),
+				ProvisioningState:     to.Ptr(string(armresources.ProvisioningStateSucceeded)),
+				TargetResource: &armresources.TargetResource{
+					ResourceType: to.Ptr(string(azapi.AzureResourceTypeDeployment)),
+					ID: to.Ptr("/subscriptions/SUBSCRIPTION_ID/resourceGroups/resource-group-name/providers/" +
+						"Microsoft.Resources/deployments/nested"),
+					ResourceName: to.Ptr("nested"),
+				},
+				Timestamp: to.Ptr(time.Now().UTC()),
+			},
+		},
+		childOperation: &armresources.DeploymentOperation{
+			ID: to.Ptr("child-operation-id"),
+			Properties: &armresources.DeploymentOperationProperties{
+				ProvisioningOperation: to.Ptr(armresources.ProvisioningOperationCreate),
+				ProvisioningState:     to.Ptr(string(armresources.ProvisioningStateSucceeded)),
+				Duration:              to.Ptr("PT1S"),
+				TargetResource: &armresources.TargetResource{
+					ResourceType: to.Ptr(string(azapi.AzureResourceTypeWebSite)),
+					ID: to.Ptr("/subscriptions/SUBSCRIPTION_ID/resourceGroups/resource-group-name/providers/" +
+						"Microsoft.Web/sites/site"),
+					ResourceName: to.Ptr("site"),
+				},
+				Timestamp: to.Ptr(time.Now().UTC()),
+			},
+		},
+	}
+
+	progressDisplay := NewProvisioningProgressDisplay(walkRm, mockContext.Console, deployment)
+	startTime := time.Now().Add(-time.Minute)
+
+	err := progressDisplay.ReportProgress(*mockContext.Context, &startTime)
+	require.NoError(t, err)
+	err = progressDisplay.ReportProgress(*mockContext.Context, &startTime)
+	require.NoError(t, err)
+
+	require.Equal(t, 1, walkRm.childVisits)
 }

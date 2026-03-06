@@ -54,16 +54,10 @@
         <!-- Make sure any unversioned files including azd.exe (currently) are overwritten on install -->
         <Property Id="REINSTALLMODE" Value="amus"/>
 
-        <!-- Remove older product(s) late but within the transaction to support removing ~\.azd\bin -->
-        <?if $(var.ReleaseBuild) = "true"?>
-        <!-- Release builds should still be linear to prevent installing older version. -->
-        <MajorUpgrade Schedule="afterInstallExecute" DowngradeErrorMessage="A newer version of $(var.BaseProductName) is already installed."/>
-        <?else?>
-        <!-- Dev builds should install over any other version installed for easy testing. -->
-        <MajorUpgrade Schedule="afterInstallExecute" AllowDowngrades="yes"/>
-        <?endif?>
+        <!-- Prevent downgrades -->
+        <MajorUpgrade DowngradeErrorMessage="A newer version of $(var.BaseProductName) is already installed."/>
 
-        <!-- Also detect and remove the other channel (release vs. dev) installation -->
+        <!-- Also detect and remove the other channel (release vs. dev) installation at any version -->
         <Upgrade Id="$(var.OtherUpgradeCode)">
             <UpgradeVersion Minimum="0.0.0" IncludeMinimum="yes" Property="OLDOTHERCHANNELFOUND"/>
         </Upgrade>

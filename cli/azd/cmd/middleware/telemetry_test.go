@@ -122,13 +122,7 @@ func Test_Telemetry_Run(t *testing.T) {
 		// Call the method directly with a mock span to verify attributes
 		span := &mocktracing.Span{}
 		middleware.(*TelemetryMiddleware).setInstalledExtensionsAttributes(span)
-		var installedAttr *attribute.KeyValue
-		for i := range span.Attributes {
-			if span.Attributes[i].Key == "extension.installed" {
-				installedAttr = &span.Attributes[i]
-				break
-			}
-		}
+		installedAttr := findAttribute(span.Attributes, "extension.installed")
 		require.NotNil(t, installedAttr, "extension.installed attribute should be set")
 		require.Equal(t,
 			[]string{"microsoft.azd.ai@1.2.0", "microsoft.azd.demo@0.5.0"},
@@ -156,9 +150,9 @@ func Test_Telemetry_Run(t *testing.T) {
 		span := &mocktracing.Span{}
 		middleware.(*TelemetryMiddleware).setInstalledExtensionsAttributes(span)
 
-		require.Len(t, span.Attributes, 1, "extension.installed attribute should be set")
-		require.Equal(t, "extension.installed", string(span.Attributes[0].Key))
-		require.Empty(t, span.Attributes[0].Value.AsStringSlice(), "should be an empty slice when no extensions are installed")
+		installedAttr := findAttribute(span.Attributes, "extension.installed")
+		require.NotNil(t, installedAttr, "extension.installed attribute should be set")
+		require.Empty(t, installedAttr.Value.AsStringSlice(), "should be an empty slice when no extensions are installed")
 	})
 
 	t.Run("WithAllNilExtensionEntries", func(t *testing.T) {
@@ -191,9 +185,9 @@ func Test_Telemetry_Run(t *testing.T) {
 		span := &mocktracing.Span{}
 		middleware.(*TelemetryMiddleware).setInstalledExtensionsAttributes(span)
 
-		require.Len(t, span.Attributes, 1, "extension.installed attribute should be set")
-		require.Equal(t, "extension.installed", string(span.Attributes[0].Key))
-		require.Empty(t, span.Attributes[0].Value.AsStringSlice(), "should be an empty slice when all entries are nil")
+		installedAttr := findAttribute(span.Attributes, "extension.installed")
+		require.NotNil(t, installedAttr, "extension.installed attribute should be set")
+		require.Empty(t, installedAttr.Value.AsStringSlice(), "should be an empty slice when all entries are nil")
 	})
 
 	t.Run("WithNilExtensionManager", func(t *testing.T) {
@@ -209,4 +203,43 @@ func Test_Telemetry_Run(t *testing.T) {
 
 		require.Empty(t, span.Attributes, "no attributes should be set when manager is nil")
 	})
+
+	t.Run("WithListInstalledError", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+
+		userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+		userConfig, err := userConfigManager.Load()
+		require.NoError(t, err)
+
+		// Set a malformed value to cause ListInstalled to fail deserialization
+		err = userConfig.Set("extension.installed", "not-a-map")
+		require.NoError(t, err)
+
+		lazyRunner := lazy.NewLazy(func() (*extensions.Runner, error) {
+			return nil, nil
+		})
+		manager, err := extensions.NewManager(userConfigManager, nil, lazyRunner, mockContext.HttpClient)
+		require.NoError(t, err)
+
+		options := &Options{
+			CommandPath: "azd provision",
+			Name:        "provision",
+		}
+		middleware := NewTelemetryMiddleware(options, lazyPlatformConfig, manager)
+
+		span := &mocktracing.Span{}
+		middleware.(*TelemetryMiddleware).setInstalledExtensionsAttributes(span)
+
+		require.Empty(t, span.Attributes, "no attributes should be set when ListInstalled fails")
+	})
+}
+
+// findAttribute searches for an attribute by key and returns a pointer to it, or nil if not found.
+func findAttribute(attrs []attribute.KeyValue, key attribute.Key) *attribute.KeyValue {
+	for i := range attrs {
+		if attrs[i].Key == key {
+			return &attrs[i]
+		}
+	}
+	return nil
 }

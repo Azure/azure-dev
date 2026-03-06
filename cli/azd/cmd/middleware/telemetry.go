@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"maps"
 	"slices"
 	"strings"
 
@@ -172,16 +173,16 @@ func (m *TelemetryMiddleware) setInstalledExtensionsAttributes(span tracing.Span
 
 	installed, err := m.extensionManager.ListInstalled()
 	if err != nil {
+		log.Printf("failed to list installed extensions: %v", err)
 		return
 	}
 
 	entries := make([]string, 0, len(installed))
-	for id, ext := range installed {
-		if ext != nil {
+	for _, id := range slices.Sorted(maps.Keys(installed)) {
+		if ext := installed[id]; ext != nil {
 			entries = append(entries, id+"@"+ext.Version)
 		}
 	}
-	slices.Sort(entries)
 
 	span.SetAttributes(fields.ExtensionsInstalled.StringSlice(entries))
 }

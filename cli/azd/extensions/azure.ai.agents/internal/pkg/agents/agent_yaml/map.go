@@ -176,16 +176,6 @@ func CreatePromptAgentAPIRequest(promptAgent PromptAgent, buildConfig *AgentBuil
 	return createAgentAPIRequest(promptAgent.AgentDefinition, promptDef)
 }
 
-// Helper functions for type conversion (TODO: Implement based on answers to questions above)
-
-// extractFloat32FromOptions extracts a float32 value from ModelOptions
-func extractFloat32FromOptions(options ModelOptions, key string) *float32 {
-	// TODO QUESTION: How is ModelOptions structured? Is it a map or typed struct?
-	// If it's map[string]interface{}: check options[key] and convert to float32
-	// If it's typed struct: access specific fields
-	return nil // Placeholder
-}
-
 // convertYamlToolsToApiTools converts agent_yaml tools to agent_api tools
 func convertYamlToolsToApiTools(yamlTools []any) []any {
 	var apiTools []any
@@ -369,6 +359,9 @@ func convertIntToInt32(i *int) *int32 {
 	if i == nil {
 		return nil
 	}
+	if *i > 2147483647 || *i < -2147483648 {
+		return nil
+	}
 	i32 := int32(*i)
 	return &i32
 }
@@ -380,20 +373,6 @@ func convertFloat64ToFloat32(f64 *float64) *float32 {
 	}
 	f32 := float32(*f64)
 	return &f32
-}
-
-// mapInputSchemaToStructuredInputs converts PropertySchema to StructuredInputs
-func mapInputSchemaToStructuredInputs(inputSchema *PropertySchema) map[string]agent_api.StructuredInputDefinition {
-	// TODO QUESTION: How does PropertySchema map to StructuredInputDefinition?
-	// PropertySchema might have parameters that become structured inputs
-	return nil // Placeholder
-}
-
-// mapOutputSchemaToTextFormat converts PropertySchema to text response format
-func mapOutputSchemaToTextFormat(outputSchema *PropertySchema) *agent_api.ResponseTextFormatConfiguration {
-	// TODO QUESTION: How does PropertySchema influence text formatting?
-	// PropertySchema might specify response structure that affects text config
-	return nil // Placeholder
 }
 
 // CreateHostedAgentAPIRequest creates a CreateAgentRequest for hosted agents

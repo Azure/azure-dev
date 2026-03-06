@@ -66,7 +66,7 @@ This is useful for troubleshooting agent startup issues or monitoring agent beha
 
 			action := &MonitorAction{
 				AgentContext: agentContext,
-				flags:       flags,
+				flags:        flags,
 			}
 
 			return action.Run(ctx)

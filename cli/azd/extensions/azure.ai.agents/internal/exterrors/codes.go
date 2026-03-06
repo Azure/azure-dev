@@ -46,11 +46,12 @@ const (
 
 // Error codes for auth errors.
 const (
+	//nolint:gosec // error code identifier, not a credential
 	CodeCredentialCreationFailed = "credential_creation_failed"
 	CodeTenantLookupFailed       = "tenant_lookup_failed"
-	CodeNotLoggedIn  = "not_logged_in"
-	CodeLoginExpired = "login_expired"
-	CodeAuthFailed   = "auth_failed"
+	CodeNotLoggedIn              = "not_logged_in"
+	CodeLoginExpired             = "login_expired"
+	CodeAuthFailed               = "auth_failed"
 )
 
 // Error codes for compatibility errors.

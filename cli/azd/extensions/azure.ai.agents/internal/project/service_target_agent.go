@@ -97,7 +97,8 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 		return exterrors.Dependency(
 			exterrors.CodeMissingAzureSubscription,
 			"AZURE_SUBSCRIPTION_ID is required: environment variable was not found in the current azd environment",
-			"run 'azd env get-values' to verify environment values, or initialize/project-bind with 'azd ai agent init --project-id ...'",
+			"run 'azd env get-values' to verify environment values, or initialize/project-bind "+
+				"with 'azd ai agent init --project-id ...'",
 		)
 	}
 
@@ -133,6 +134,7 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 	// Check if user has specified agent definition path via environment variable
 	if envPath := os.Getenv("AGENT_DEFINITION_PATH"); envPath != "" {
 		// Verify the file exists and has correct extension
+		//nolint:gosec // env path is an explicit user override; existence check is intentional
 		if _, err := os.Stat(envPath); os.IsNotExist(err) {
 			return exterrors.Validation(
 				exterrors.CodeAgentDefinitionNotFound,
@@ -259,9 +261,12 @@ func (p *AgentServiceTargetProvider) GetTargetResource(
 	projectName := p.foundryProject.Name
 
 	// Create Cognitive Services Projects client
-	projectsClient, err := armcognitiveservices.NewProjectsClient(p.foundryProject.SubscriptionID, p.credential, azure.NewArmClientOptions())
+	projectsClient, err := armcognitiveservices.NewProjectsClient(
+		p.foundryProject.SubscriptionID, p.credential, azure.NewArmClientOptions())
 	if err != nil {
-		return nil, exterrors.Internal(exterrors.CodeCognitiveServicesClientFailed, fmt.Sprintf("failed to create Cognitive Services Projects client: %s", err))
+		return nil, exterrors.Internal(
+			exterrors.CodeCognitiveServicesClientFailed,
+			fmt.Sprintf("failed to create Cognitive Services Projects client: %s", err))
 	}
 
 	// Get the Microsoft Foundry project
@@ -741,7 +746,8 @@ func (p *AgentServiceTargetProvider) deployArtifacts(
 				"agentVersion": agentVersion,
 				"label":        "Agent endpoint",
 				"clickable":    "false",
-				"note":         "For information on invoking the agent, see " + output.WithLinkFormat("https://aka.ms/azd-agents-invoke"),
+				"note": "For information on invoking the agent, see " + output.WithLinkFormat(
+					"https://aka.ms/azd-agents-invoke"),
 			},
 		})
 	}
@@ -847,10 +853,24 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 	var minReplicas, maxReplicas *int32
 	if foundryAgentConfig.Container != nil && foundryAgentConfig.Container.Scale != nil {
 		if foundryAgentConfig.Container.Scale.MinReplicas > 0 {
+			if foundryAgentConfig.Container.Scale.MinReplicas > 2147483647 {
+				return exterrors.Validation(
+					exterrors.CodeInvalidServiceConfig,
+					fmt.Sprintf("minReplicas exceeds int32 range: %d", foundryAgentConfig.Container.Scale.MinReplicas),
+					"set container.scale.minReplicas to a value <= 2147483647",
+				)
+			}
 			minReplicasInt32 := int32(foundryAgentConfig.Container.Scale.MinReplicas)
 			minReplicas = &minReplicasInt32
 		}
 		if foundryAgentConfig.Container.Scale.MaxReplicas > 0 {
+			if foundryAgentConfig.Container.Scale.MaxReplicas > 2147483647 {
+				return exterrors.Validation(
+					exterrors.CodeInvalidServiceConfig,
+					fmt.Sprintf("maxReplicas exceeds int32 range: %d", foundryAgentConfig.Container.Scale.MaxReplicas),
+					"set container.scale.maxReplicas to a value <= 2147483647",
+				)
+			}
 			maxReplicasInt32 := int32(foundryAgentConfig.Container.Scale.MaxReplicas)
 			maxReplicas = &maxReplicasInt32
 		}
@@ -924,7 +944,10 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 							*containerInfo.ErrorMessage,
 						)
 					} else {
-						errorMsg = fmt.Sprintf("operation failed (id: %s): container status is %q with no error details", operation.Body.ID, containerInfo.Status)
+						errorMsg = fmt.Sprintf(
+							"operation failed (id: %s): container status is %q with no error details",
+							operation.Body.ID,
+							containerInfo.Status)
 					}
 
 					return exterrors.Internal(exterrors.CodeContainerStartFailed, errorMsg)

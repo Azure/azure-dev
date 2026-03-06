@@ -20,7 +20,8 @@ import (
 // ParameterValues represents the user-provided values for manifest parameters
 type ParameterValues map[string]interface{}
 
-func ProcessRegistryManifest(ctx context.Context, manifest *Manifest, azdClient *azdext.AzdClient) (*agent_yaml.AgentManifest, error) {
+func ProcessRegistryManifest(
+	ctx context.Context, manifest *Manifest, azdClient *azdext.AzdClient) (*agent_yaml.AgentManifest, error) {
 	// Convert the agent API definition into a MAML definition
 	promptAgent, err := ConvertAgentDefinition(manifest.Template)
 	if err != nil {
@@ -271,7 +272,11 @@ func ConvertParameters(parameters map[string]OpenApiParameter) (*agent_yaml.Prop
 }
 
 // ProcessManifestParameters prompts the user for parameter values and injects them into the template
-func ProcessManifestParameters(ctx context.Context, manifest *agent_yaml.AgentManifest, azdClient *azdext.AzdClient, noPrompt bool) (*agent_yaml.AgentManifest, error) {
+func ProcessManifestParameters(
+	ctx context.Context,
+	manifest *agent_yaml.AgentManifest,
+	azdClient *azdext.AzdClient,
+	noPrompt bool) (*agent_yaml.AgentManifest, error) {
 	// If no parameters are defined, return the manifest as-is
 	if len(manifest.Parameters.Properties) == 0 {
 		fmt.Println("The manifest does not contain parameters that need to be configured.")
@@ -297,7 +302,11 @@ func ProcessManifestParameters(ctx context.Context, manifest *agent_yaml.AgentMa
 }
 
 // promptForYamlParameterValues prompts the user for values for each YAML parameter
-func promptForYamlParameterValues(ctx context.Context, parameters agent_yaml.PropertySchema, azdClient *azdext.AzdClient, noPrompt bool) (ParameterValues, error) {
+func promptForYamlParameterValues(
+	ctx context.Context,
+	parameters agent_yaml.PropertySchema,
+	azdClient *azdext.AzdClient,
+	noPrompt bool) (ParameterValues, error) {
 	paramValues := make(ParameterValues)
 
 	for _, property := range parameters.Properties {
@@ -356,7 +365,8 @@ func promptForYamlParameterValues(ctx context.Context, parameters agent_yaml.Pro
 }
 
 // InjectParameterValuesIntoManifest replaces parameter placeholders in the manifest with actual values
-func InjectParameterValuesIntoManifest(manifest *agent_yaml.AgentManifest, paramValues ParameterValues) (*agent_yaml.AgentManifest, error) {
+func InjectParameterValuesIntoManifest(
+	manifest *agent_yaml.AgentManifest, paramValues ParameterValues) (*agent_yaml.AgentManifest, error) {
 	// Convert manifest to YAML for processing
 	manifestBytes, err := yaml.Marshal(manifest)
 	if err != nil {
@@ -379,7 +389,13 @@ func InjectParameterValuesIntoManifest(manifest *agent_yaml.AgentManifest, param
 }
 
 // promptForEnumValue prompts the user to select from enumerated values
-func promptForEnumValue(ctx context.Context, paramName string, enumValues []string, defaultValue interface{}, azdClient *azdext.AzdClient, noPrompt bool) (interface{}, error) {
+func promptForEnumValue(
+	ctx context.Context,
+	paramName string,
+	enumValues []string,
+	defaultValue interface{},
+	azdClient *azdext.AzdClient,
+	noPrompt bool) (interface{}, error) {
 	// Convert default value to string for comparison
 	var defaultStr string
 	if defaultValue != nil {
@@ -424,7 +440,12 @@ func promptForEnumValue(ctx context.Context, paramName string, enumValues []stri
 }
 
 // promptForTextValue prompts the user for a text value
-func promptForTextValue(ctx context.Context, paramName string, defaultValue interface{}, required bool, azdClient *azdext.AzdClient) (interface{}, error) {
+func promptForTextValue(
+	ctx context.Context,
+	paramName string,
+	defaultValue interface{},
+	required bool,
+	azdClient *azdext.AzdClient) (interface{}, error) {
 	var defaultStr string
 	if defaultValue != nil {
 		defaultStr = fmt.Sprintf("%v", defaultValue)

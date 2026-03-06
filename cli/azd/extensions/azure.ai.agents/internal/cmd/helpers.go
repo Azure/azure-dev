@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"azureaiagent/internal/exterrors"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
@@ -348,4 +350,43 @@ func toServiceKey(serviceName string) string {
 	key := strings.ReplaceAll(serviceName, " ", "_")
 	key = strings.ReplaceAll(key, "-", "_")
 	return strings.ToUpper(key)
+}
+
+// resolveStartupCommandForInit detects the startup command from the project source directory.
+// If detection fails and noPrompt is false, it prompts the user via the azdClient.
+// Returns empty string if the user skips the prompt or if running in no-prompt mode.
+func resolveStartupCommandForInit(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	projectPath string,
+	targetDir string,
+	noPrompt bool,
+) (string, error) {
+	absDir := targetDir
+	if !filepath.IsAbs(targetDir) && projectPath != "" {
+		absDir = filepath.Join(projectPath, targetDir)
+	}
+
+	if cmd := detectStartupCommand(absDir); cmd != "" {
+		return cmd, nil
+	}
+
+	if noPrompt {
+		return "", nil
+	}
+
+	resp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message:        "Enter the command to start your agent (e.g., python main.py), or leave blank to skip",
+			IgnoreHintKeys: true,
+		},
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("prompting for startup command: %w", err)
+	}
+
+	return strings.TrimSpace(resp.Value), nil
 }

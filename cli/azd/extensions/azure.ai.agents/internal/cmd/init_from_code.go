@@ -1295,7 +1295,7 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 	}
 
 	// Detect startup command from the project source directory
-	startupCmd, err := a.resolveStartupCommandForInit(ctx, targetDir)
+	startupCmd, err := resolveStartupCommandForInit(ctx, a.azdClient, a.projectConfig.Path, targetDir, a.flags.NoPrompt)
 	if err != nil {
 		return err
 	}
@@ -1322,39 +1322,6 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 			"you can directly use %s.\n",
 		color.HiBlueString("azd deploy %s", agentName))
 	return nil
-}
-
-// resolveStartupCommandForInit detects the startup command from the project source directory.
-// If detection fails, it prompts the user. Returns empty string if the user skips the prompt
-// or if running in no-prompt mode.
-func (a *InitFromCodeAction) resolveStartupCommandForInit(ctx context.Context, targetDir string) (string, error) {
-	absDir := targetDir
-	if !filepath.IsAbs(targetDir) && a.projectConfig != nil {
-		absDir = filepath.Join(a.projectConfig.Path, targetDir)
-	}
-
-	if cmd := detectStartupCommand(absDir); cmd != "" {
-		return cmd, nil
-	}
-
-	if a.flags.NoPrompt {
-		return "", nil
-	}
-
-	resp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-		Options: &azdext.PromptOptions{
-			Message:        "Enter the command to start your agent (e.g., python main.py), or leave blank to skip",
-			IgnoreHintKeys: true,
-		},
-	})
-	if err != nil {
-		if exterrors.IsCancellation(err) {
-			return "", nil
-		}
-		return "", fmt.Errorf("prompting for startup command: %w", err)
-	}
-
-	return strings.TrimSpace(resp.Value), nil
 }
 
 func (a *InitFromCodeAction) processExistingFoundryProject(ctx context.Context, foundryProject FoundryProjectInfo) error {

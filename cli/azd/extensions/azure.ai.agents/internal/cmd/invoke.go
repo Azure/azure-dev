@@ -24,6 +24,7 @@ type invokeFlags struct {
 	remote     bool
 	name       string
 	port       int
+	timeout    int
 	session    string
 	newSession bool
 }
@@ -36,7 +37,7 @@ func newInvokeCommand() *cobra.Command {
 	flags := &invokeFlags{}
 
 	cmd := &cobra.Command{
-		Use:   "invoke",
+		Use:   "invoke [message]",
 		Short: "Send a message to your agent.",
 		Long: `Send a message to your agent.
 
@@ -46,23 +47,31 @@ Use --remote or --name <agent> to invoke on Foundry.
 Sessions are persisted per-agent — consecutive invokes reuse the same
 session automatically. Pass --new-session to force a reset.`,
 		Example: `  # Invoke locally (agent must be running via 'azd ai agent run')
+  azd ai agent invoke "Hello!"
+
+  # Same thing using the --message flag
   azd ai agent invoke --message "Hello!"
 
   # Invoke the remote agent on Foundry (auto-detects agent from azure.yaml)
-  azd ai agent invoke --remote --message "Hello!"
+  azd ai agent invoke --remote "Hello!"
 
   # Invoke a specific remote agent by name
   azd ai agent invoke --name my-agent --message "Hello!"
 
   # Start a new session (discard conversation history)
   azd ai agent invoke --remote --new-session --message "Hello!"`,
-		Args: cobra.NoArgs,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			setupDebugLogging(cmd.Flags())
 
+			// Positional arg takes precedence over --message
+			if len(args) > 0 {
+				flags.message = args[0]
+			}
+
 			if flags.message == "" {
-				return fmt.Errorf("--message is required")
+				return fmt.Errorf("message is required; provide as a positional argument or use --message")
 			}
 
 			// --name implies --remote
@@ -75,11 +84,11 @@ session automatically. Pass --new-session to force a reset.`,
 		},
 	}
 
-	cmd.Flags().StringVarP(&flags.message, "message", "m", "", "Message to send")
-	_ = cmd.MarkFlagRequired("message")
+	cmd.Flags().StringVarP(&flags.message, "message", "m", "", "Message to send (or provide as positional argument)")
 	cmd.Flags().BoolVarP(&flags.remote, "remote", "r", false, "Invoke on Foundry instead of localhost")
 	cmd.Flags().StringVarP(&flags.name, "name", "n", "", "Agent name (implies --remote)")
 	cmd.Flags().IntVar(&flags.port, "port", DefaultPort, "Local server port")
+	cmd.Flags().IntVarP(&flags.timeout, "timeout", "t", 120, "Request timeout in seconds (0 for no timeout)")
 	cmd.Flags().StringVarP(&flags.session, "session", "s", "", "Explicit session ID override")
 	cmd.Flags().BoolVar(&flags.newSession, "new-session", false, "Force a new session (discard saved one)")
 
@@ -91,6 +100,13 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 		return a.invokeRemote(ctx)
 	}
 	return a.invokeLocal()
+}
+
+func (a *InvokeAction) httpTimeout() time.Duration {
+	if a.flags.timeout <= 0 {
+		return 0 // no timeout
+	}
+	return time.Duration(a.flags.timeout) * time.Second
 }
 
 func (a *InvokeAction) invokeLocal() error {
@@ -115,7 +131,7 @@ func (a *InvokeAction) invokeLocal() error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 120 * time.Second}
+	client := &http.Client{Timeout: a.httpTimeout()}
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("could not connect to localhost:%d — is the agent running? Start it with: azd ai agent run", port)
@@ -225,7 +241,7 @@ func (a *InvokeAction) invokeRemote(ctx context.Context) error {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token.Token)
 
-	client := &http.Client{Timeout: 120 * time.Second}
+	client := &http.Client{Timeout: a.httpTimeout()}
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)

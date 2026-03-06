@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -151,16 +152,23 @@ func runRun(ctx context.Context, flags *runFlags) error {
 		return fmt.Errorf("failed to start agent: %w", err)
 	}
 
-	// Handle Ctrl+C: forward signal to child, then wait for it to exit
+	// Handle Ctrl+C / SIGTERM: forward signal to child, then wait for it to exit.
+	// The done channel is closed after proc.Wait returns so the goroutine can exit.
 	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Interrupt)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	done := make(chan struct{})
 	go func() {
-		<-sigCh
-		fmt.Println("\nStopping agent...")
-		cancel()
+		defer signal.Stop(sigCh)
+		select {
+		case <-sigCh:
+			fmt.Println("\nStopping agent...")
+			cancel()
+		case <-done:
+		}
 	}()
 
 	err = proc.Wait()
+	close(done)
 
 	// Suppress the noisy "signal: interrupt" error on Ctrl+C
 	if ctx.Err() != nil {

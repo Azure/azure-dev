@@ -51,12 +51,6 @@ jobs:
         condition: and(succeeded(), eq(variables['GOOS'], 'windows'))
         displayName: Install goversioninfo (Windows x86_64)
 
-      - ${{ if eq(parameters.OS, 'windows') }}:
-        - template: /eng/pipelines/templates/steps/set-msi-version.yml
-      - ${{ else }}:
-        - pwsh: Write-Host "###vso[task.setvariable variable=MSI_VERSION]"
-          displayName: Set MSI_VERSION for non-windows build
-
       - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
 
       - task: PowerShell@2
@@ -65,6 +59,12 @@ jobs:
           targetType: filePath
           filePath: eng/scripts/Set-CliVersionVariable.ps1
         displayName: Set CLI_VERSION
+
+      - ${{ if eq(parameters.OS, 'windows') }}:
+        - template: /eng/pipelines/templates/steps/set-msi-version.yml
+      - ${{ else }}:
+        - pwsh: Write-Host "###vso[task.setvariable variable=MSI_VERSION]"
+          displayName: Set MSI_VERSION for non-windows build
 
       - task: PowerShell@2
         inputs:

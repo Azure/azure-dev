@@ -156,7 +156,44 @@ func Test_Telemetry_Run(t *testing.T) {
 		span := &mocktracing.Span{}
 		middleware.(*TelemetryMiddleware).setInstalledExtensionsAttributes(span)
 
-		require.Empty(t, span.Attributes, "no attributes should be set when no extensions are installed")
+		require.Len(t, span.Attributes, 1, "extension.installed attribute should be set")
+		require.Equal(t, "extension.installed", string(span.Attributes[0].Key))
+		require.Empty(t, span.Attributes[0].Value.AsStringSlice(), "should be an empty slice when no extensions are installed")
+	})
+
+	t.Run("WithAllNilExtensionEntries", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+
+		userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+		userConfig, err := userConfigManager.Load()
+		require.NoError(t, err)
+
+		// Simulate corrupted config where all extension values are nil
+		installedExtensions := map[string]*extensions.Extension{
+			"microsoft.azd.demo": nil,
+			"microsoft.azd.ai":   nil,
+		}
+		err = userConfig.Set("extension.installed", installedExtensions)
+		require.NoError(t, err)
+
+		lazyRunner := lazy.NewLazy(func() (*extensions.Runner, error) {
+			return nil, nil
+		})
+		manager, err := extensions.NewManager(userConfigManager, nil, lazyRunner, mockContext.HttpClient)
+		require.NoError(t, err)
+
+		options := &Options{
+			CommandPath: "azd provision",
+			Name:        "provision",
+		}
+		middleware := NewTelemetryMiddleware(options, lazyPlatformConfig, manager)
+
+		span := &mocktracing.Span{}
+		middleware.(*TelemetryMiddleware).setInstalledExtensionsAttributes(span)
+
+		require.Len(t, span.Attributes, 1, "extension.installed attribute should be set")
+		require.Equal(t, "extension.installed", string(span.Attributes[0].Key))
+		require.Empty(t, span.Attributes[0].Value.AsStringSlice(), "should be an empty slice when all entries are nil")
 	})
 
 	t.Run("WithNilExtensionManager", func(t *testing.T) {

@@ -171,7 +171,7 @@ func (m *TelemetryMiddleware) setInstalledExtensionsAttributes(span tracing.Span
 	}
 
 	installed, err := m.extensionManager.ListInstalled()
-	if err != nil || len(installed) == 0 {
+	if err != nil {
 		return
 	}
 

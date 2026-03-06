@@ -177,30 +177,6 @@ func detectStartupCommand(projectDir string) string {
 	return detectProjectType(projectDir).StartCmd
 }
 
-// parseEndpoint extracts account and project names from a Foundry project endpoint URL.
-// e.g., "https://myaccount.services.ai.azure.com/api/projects/myproject" → ("myaccount", "myproject")
-func parseEndpoint(endpoint string) (account, project string, err error) {
-	endpoint = strings.TrimRight(endpoint, "/")
-	// Extract account from hostname
-	if !strings.Contains(endpoint, "://") {
-		return "", "", fmt.Errorf("invalid endpoint URL: %s", endpoint)
-	}
-	hostPath := strings.SplitN(endpoint, "://", 2)[1]
-	hostParts := strings.SplitN(hostPath, "/", 2)
-	hostname := hostParts[0]
-	account = strings.SplitN(hostname, ".", 2)[0]
-
-	// Extract project from path
-	pathParts := strings.Split(endpoint, "/")
-	if len(pathParts) > 0 {
-		project = pathParts[len(pathParts)-1]
-	}
-	if account == "" || project == "" {
-		return "", "", fmt.Errorf("could not parse account/project from endpoint: %s", endpoint)
-	}
-	return account, project, nil
-}
-
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
@@ -275,44 +251,6 @@ func resolveAgentServiceFromProject(ctx context.Context, name string) (*AgentSer
 	}
 
 	return info, nil
-}
-
-// resolveStartupCommandFromService reads startupCommand from an azure.ai.agent
-// service's AdditionalProperties. Returns empty string if unavailable.
-func resolveStartupCommandFromService(ctx context.Context, name string) string {
-	azdClient, err := azdext.NewAzdClient()
-	if err != nil {
-		return ""
-	}
-	defer azdClient.Close()
-
-	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
-	if err != nil || projectResponse.Project == nil {
-		return ""
-	}
-
-	for _, s := range projectResponse.Project.Services {
-		if s.Host != AiAgentHost {
-			continue
-		}
-		if name != "" && s.Name != name {
-			continue
-		}
-		if s.AdditionalProperties == nil {
-			return ""
-		}
-		fields := s.AdditionalProperties.GetFields()
-		if fields == nil {
-			return ""
-		}
-		v, ok := fields["startupCommand"]
-		if !ok || v == nil {
-			return ""
-		}
-		return v.GetStringValue()
-	}
-
-	return ""
 }
 
 // ServiceRunContext holds the resolved context needed for local development.

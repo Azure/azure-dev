@@ -211,7 +211,7 @@ func (rc *ResilientClient) Do(ctx context.Context, method, url string, body io.R
 			}
 		}
 
-		resp, err := rc.httpClient.Do(req)
+		resp, err := rc.httpClient.Do(req) //nolint:gosec // G704: URL from caller
 		if err != nil {
 			lastErr = err
 

@@ -8,17 +8,48 @@
 azd extension install azure.ai.customtraining
 ```
 
-### 1.2 Initialization
+### 1.2 Two Modes of Operation
+
+Following the same pattern as the finetune extension, the custom training extension supports **two modes**:
+
+#### Mode 1: Init → Create (Interactive Setup)
 
 ```bash
+# Step 1: Initialize project configuration (interactive prompts)
 azd ai training init
+
+# Step 2: Use commands (config read from azd environment)
+azd ai training job create --file job.yaml
+azd ai training job stream --name llama-sft
 ```
 
-Prompts user for:
+`init` prompts for:
 - Azure Subscription
-- Azure AI Foundry Project endpoint
+- Azure AI Foundry Project endpoint (e.g., `https://account.services.ai.azure.com/api/projects/project-name`)
 
-Stores configuration in the azd environment.
+Stores configuration in the azd environment for subsequent commands.
+
+#### Mode 2: One-Liner (Implicit Init via Flags)
+
+```bash
+# Single command — no prior init needed
+azd ai training job create --file job.yaml \
+  --subscription <sub-id> \
+  --project-endpoint <endpoint-url>
+```
+
+When `--subscription` and `--project-endpoint` flags are provided on any `job` subcommand, the extension **implicitly initializes** the azd environment before executing the command. This enables:
+- CI/CD pipelines (non-interactive)
+- Quick one-off submissions
+- No separate `azd ai training init` step required
+
+**How it works** (same as finetune extension):
+1. `PersistentPreRunE` on the `job` command group calls `validateOrInitEnvironment()`
+2. If env vars already set → proceed (warn if flags also provided — they're ignored)
+3. If env vars missing AND both flags provided → implicit init (parse endpoint, resolve project, set env vars)
+4. If env vars missing AND flags incomplete → error with guidance
+
+**Flag precedence:** Stored environment values take priority. If already initialized, `--subscription` and `--project-endpoint` are ignored with a warning.
 
 ### 1.3 Command Structure
 
@@ -31,9 +62,16 @@ azd ai training
 │   ├── list    [--top]           # List jobs
 │   ├── cancel  --name            # Cancel a running job
 │   ├── delete  --name            # Delete a job
-│   ├── download --name           # Download job outputs (future)
-│   └── stream  --name            # Stream job logs (future — gap)
+│   ├── stream  --name            # Stream job logs
+│   └── download --name           # Download job outputs
 ```
+
+**Persistent flags on `job` command group** (available to all subcommands):
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--subscription` | `-s` | Azure subscription ID (enables implicit init) |
+| `--project-endpoint` | `-e` | Azure AI Foundry project endpoint URL |
 
 ---
 
@@ -44,7 +82,13 @@ azd ai training
 Submit a command job to Azure AI Foundry from a YAML definition file.
 
 ```bash
+# Mode 1: After init
 azd ai training job create --file job.yaml
+
+# Mode 2: One-liner (no prior init needed)
+azd ai training job create --file job.yaml \
+  --subscription <sub-id> \
+  --project-endpoint https://account.services.ai.azure.com/api/projects/project-name
 ```
 
 **Flags:**
@@ -52,6 +96,10 @@ azd ai training job create --file job.yaml
 | Flag | Required | Description |
 |------|----------|-------------|
 | `--file` / `-f` | Yes | Path to YAML job definition file |
+| `--subscription` / `-s` | No* | Azure subscription ID (inherited from `job` group) |
+| `--project-endpoint` / `-e` | No* | Azure AI Foundry project endpoint URL (inherited from `job` group) |
+
+\* Required if `azd ai training init` has not been run.
 
 **YAML job definition schema:**
 
@@ -220,27 +268,80 @@ azd ai training job delete --name llama-sft
 
 ---
 
-### 2.6 `azd ai training job download` (Future)
+### 2.6 `azd ai training job stream`
 
-Download job outputs to a local directory.
-
-```bash
-azd ai training job download --name llama-sft [--output-name model] [--path ./downloads]
-```
-
-**Assumption:** Job GET returns dataset IDs for outputs → resolve to SAS URI → download via azcopy.
-
----
-
-### 2.7 `azd ai training job stream` (Future — Gap)
-
-Stream real-time logs from a running job.
+Stream logs from a running (or completed) job. Uses polling-based artifact reading.
 
 ```bash
 azd ai training job stream --name llama-sft
 ```
 
-> **⚠️ Design Gap:** No log streaming API is currently defined in the Foundry jobs API surface. The requirement doc states "dataset APIs to pull log files and stream" but no concrete endpoint or polling mechanism is specified. This command will be implemented once the log streaming API is finalized.
+**Output:**
+
+```
+Streaming logs for job 'llama-sft'...
+(Discovering log files...)
+
+--- user_logs/std_log.txt ---
+[2026-03-06 08:01:12] Starting training...
+[2026-03-06 08:01:13] Loading dataset from /mnt/inputs/training_data
+[2026-03-06 08:01:45] Epoch 1/10 - loss: 2.3456 - accuracy: 0.45
+[2026-03-06 08:02:30] Epoch 2/10 - loss: 1.8721 - accuracy: 0.58
+...
+[2026-03-06 09:23:10] Training complete. Model saved to /mnt/outputs/model
+
+✓ Job 'llama-sft' completed with status: Completed
+```
+
+**How it works:**
+1. Discover log files via `GET .../jobs/{id}/artifacts/path?path=user_logs`
+2. Read initial tail via `GET .../artifacts/getcontent/{logPath}?tailBytes=8192`
+3. Poll for new content with `offset` at 1-2s intervals (backoff to 5s on idle)
+4. Stop when job reaches terminal status (Completed/Failed/Canceled)
+
+See §6 for detailed design.
+
+---
+
+### 2.7 `azd ai training job download`
+
+Download job output artifacts to a local directory.
+
+```bash
+azd ai training job download --name llama-sft [--output-name model] [--path ./downloads]
+```
+
+**Flags:**
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--name` | Yes | Job ID |
+| `--output-name` | No | Specific output to download (e.g., `model`). Default: all outputs |
+| `--path` | No | Local directory to download into. Default: `./` |
+
+**Output:**
+
+```
+Downloading artifacts for job 'llama-sft'...
+
+| Listing artifacts...
+✓ Found 3 artifacts (total: 1.2 GB)
+
+| Downloading...
+  ├─ outputs/model/model.bin         (1.1 GB) ██████████ 100%
+  ├─ outputs/model/config.json       (2 KB)   ██████████ 100%
+  └─ outputs/model/tokenizer.json    (4 KB)   ██████████ 100%
+
+✓ Downloaded to ./downloads/
+```
+
+**How it works:**
+1. Verify job exists via `GET .../jobs/{id}`
+2. List artifacts via `GET .../jobs/{id}/artifacts`
+3. Get SAS URIs via `GET .../jobs/{id}/artifacts/prefix/contentinfo?path={prefix}`
+4. Download via azcopy from SAS URIs
+
+See §7 for detailed design.
 
 ---
 
@@ -925,20 +1026,69 @@ func (s *StreamService) StreamLogs(ctx context.Context, jobID string, writer io.
 | Job type logic (Command, Pipeline) lives in Layer 2 | Layer 1 is type-agnostic |
 | Dual auth handled in Layer 1 client | Transparent to Layer 2/3 |
 
-### 5.4 Init Flow
+### 5.4 Init Flow & Implicit Init
 
-Same pattern as finetune extension. During `azd ai training init`:
+**Same dual-mode pattern as the finetune extension** (see §1.2).
 
+#### Explicit Init (`azd ai training init`)
+
+Interactive prompts:
 1. Prompt for subscription (or accept `--subscription`)
 2. Prompt for project endpoint (or accept `--project-endpoint`)
 3. Parse endpoint URL: extract `accountName` from hostname, `projectName` from path
 4. Resolve ARM context: find resource group via ARM API or prompt
-5. Store in azd environment:
+5. Store in azd environment
+
+#### Implicit Init (via `--subscription` + `--project-endpoint` flags)
+
+Runs automatically in `PersistentPreRunE` on the `job` command group:
+
+```go
+// internal/cmd/job.go — PersistentPreRunE hook
+func newJobCommand() *cobra.Command {
+    cmd := &cobra.Command{
+        Use:   "job",
+        Short: "Manage training jobs",
+        PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+            return validateOrInitEnvironment(cmd.Context(), flags.subscriptionId, flags.projectEndpoint)
+        },
+    }
+    cmd.PersistentFlags().StringVarP(&flags.subscriptionId, "subscription", "s", "", "...")
+    cmd.PersistentFlags().StringVarP(&flags.projectEndpoint, "project-endpoint", "e", "", "...")
+    // ... subcommands
+}
+```
+
+```go
+// internal/cmd/validation.go — validateOrInitEnvironment logic
+func validateOrInitEnvironment(ctx context.Context, subscriptionId, projectEndpoint string) error {
+    // 1. Check if env vars already configured
+    envVars := getRequiredEnvVars(ctx) // TENANT_ID, SUB_ID, ACCOUNT_NAME, PROJECT_NAME, etc.
+    if allConfigured(envVars) {
+        if subscriptionId != "" || projectEndpoint != "" {
+            warn("Environment already configured. Flags --subscription/--project-endpoint are ignored.")
+        }
+        return nil
+    }
+
+    // 2. Env not configured — need both flags for implicit init
+    if subscriptionId == "" || projectEndpoint == "" {
+        return fmt.Errorf("environment not configured. Run 'azd ai training init' or provide both --subscription and --project-endpoint")
+    }
+
+    // 3. Implicit init: parse endpoint, resolve project, set env vars
+    accountName, projectName := parseEndpoint(projectEndpoint)
+    // ... resolve ARM context, set env vars
+    return nil
+}
+```
+
+#### Environment Variables Stored
 
 | Environment Variable | Source | Used For |
 |---------------------|--------|----------|
 | `AZURE_TENANT_ID` | Auth context | Token acquisition |
-| `AZURE_SUBSCRIPTION_ID` | User selection | ARM API calls |
+| `AZURE_SUBSCRIPTION_ID` | User selection or `--subscription` flag | ARM API calls |
 | `AZURE_RESOURCE_GROUP_NAME` | ARM lookup or prompt | ARM API calls |
 | `AZURE_ACCOUNT_NAME` | Parsed from endpoint hostname | Both base URLs |
 | `AZURE_PROJECT_NAME` | Parsed from endpoint path | Data plane base URL |
@@ -1131,3 +1281,258 @@ Same flow as code upload but with input-specific naming:
 4. If not → upload as normal, set hash in dataset metadata
 
 > **Note:** Partner team (Anthony Karloff) plans to build hash support into dataset API. For V1, always re-upload. Optimize in V2 when API supports hash metadata queries.
+
+---
+
+## 9. YAML Schema — AML Compatibility Analysis
+
+### 9.1 Approach: Reuse AML Schema with Translation Layer
+
+The AML SDK defines a well-documented command job YAML schema at:
+`https://azuremlschemas.azureedge.net/latest/commandJob.schema.json`
+
+**Recommendation:** Accept the AML YAML format as input (familiar to existing AML users), but apply a **translation layer** to convert it into the Foundry API payload (`FoundryCommandJob`). This gives users a zero-migration-cost experience.
+
+### 9.2 Field-by-Field Compatibility
+
+| AML YAML Field | Foundry API Field | Status | Translation Needed |
+|---|---|---|---|
+| `$schema` | — | ✅ Ignored | Strip (client-only) |
+| `type: command` | `jobType: "Command"` | ⚠️ Rename | Rename field + capitalize value |
+| `name` | URL path `PUT /{id}` | ⚠️ Moved | Extract from YAML, put in URL path |
+| `display_name` | `displayName` | ✅ Rename | snake_case → camelCase |
+| `description` | `description` (ResourceBase) | ✅ Direct | snake_case → camelCase |
+| `tags` | `tags` (ResourceBase) | ✅ Direct | None |
+| `command` | `command` | ✅ **Direct match** | None |
+| `environment` | `environmentId` | ❌ **Major** | See §9.3 below |
+| `compute` | `computeId` | ⚠️ Resolve | Strip `azureml:` prefix, resolve to ARM ID |
+| `code` | `codeId` | ⚠️ Upload | Local path → upload as dataset → use dataset resource ID |
+| `inputs` | `inputs` | ⚠️ Format | `azureml:name:ver` → dataset resource ID; local path → upload |
+| `outputs` | `outputs` | ⚠️ Subset | No `mlflow_model`/`triton_model` in Foundry |
+| `distribution` | `distribution` | ✅ Mostly | PyTorch ✅, MPI ✅, TensorFlow ✅, **Ray ❌** |
+| `environment_variables` | `environmentVariables` | ✅ Rename | snake_case → camelCase |
+| `resources` | `resources` | ✅ Similar | snake_case → camelCase on sub-fields |
+| `limits` | `limits` | ✅ Similar | snake_case → camelCase |
+| `queue_settings` | `queueSettings` | ✅ Similar | snake_case → camelCase |
+| `identity` | — | ❌ **Not supported** | Error if specified |
+| `services` | `services` (readonly) | ❌ **Not writable** | Error if specified |
+| `experiment_name` | — | ❌ **Not in Foundry** | Warn and ignore |
+| `properties` | — | ⚠️ TBD | May map to ResourceBase properties |
+
+### 9.3 Environment — The Key Incompatibility
+
+**AML `environment` field accepts 4 formats:**
+
+1. **Inline anonymous environment** (Docker image + optional conda):
+   ```yaml
+   environment:
+     image: mcr.microsoft.com/azureml/openmpi4.1.0-cuda11.8-cudnn8-ubuntu22.04
+     conda_file: ./conda.yaml
+   ```
+
+2. **Inline build context** (Dockerfile):
+   ```yaml
+   environment:
+     build:
+       path: ./docker-context
+       dockerfile_path: Dockerfile
+   ```
+
+3. **Named reference** (`azureml:name:version`):
+   ```yaml
+   environment: azureml:AzureML-pytorch-1.9-ubuntu18.04-py37-cuda11.1-gpu:26
+   ```
+
+4. **Registry reference** (`azureml://registries/...`):
+   ```yaml
+   environment: azureml://registries/azureml/environments/AzureML-pytorch/versions/26
+   ```
+
+**Foundry `environmentId` accepts:**
+- A string that serves as the environment identifier — confirmed from `FoundryCommandJob.cs` as a **required string** field
+- Based on the requirement doc, this is a **raw container image URI** (pass-through to the runtime)
+- No anonymous environment building (no Dockerfile, no conda file resolution)
+
+**Translation strategy:**
+
+| AML YAML Format | Foundry Translation | Supported? |
+|---|---|---|
+| `environment: docker.io/myimage:tag` | `environmentId: "docker.io/myimage:tag"` | ✅ Direct pass-through |
+| `environment: mcr.microsoft.com/...` | `environmentId: "mcr.microsoft.com/..."` | ✅ Direct pass-through |
+| `environment: { image: "mcr.microsoft.com/..." }` | `environmentId: "mcr.microsoft.com/..."` | ✅ Extract `image` field |
+| `environment: { image: ..., conda_file: ... }` | ❌ **Error** | ❌ No conda resolution in Foundry |
+| `environment: { build: { path: ..., dockerfile_path: ... } }` | ❌ **Error** | ❌ No Dockerfile building in Foundry |
+| `environment: azureml:name:version` | `environmentId: "azureml:name:version"` | ⚠️ **TBD** — need to confirm if Foundry resolves `azureml:` references |
+| `environment: azureml://registries/...` | `environmentId: "azureml://registries/..."` | ⚠️ **TBD** — need to confirm registry reference support |
+
+**V1 recommendation:** Support container image URIs only (formats 1 with `image` only, and plain string URIs). Reject conda_file, build context, and azureml: references with clear error messages:
+
+```
+✗ Foundry does not support building environments from Dockerfiles or conda files.
+  Please provide a pre-built container image URI instead:
+  environment: mcr.microsoft.com/azureml/openmpi4.1.0-cuda11.8-cudnn8-ubuntu22.04
+```
+
+### 9.4 Compute Translation
+
+AML YAML `compute` field accepts:
+- `azureml:gpu-cluster` → strip `azureml:` prefix, resolve via ARM GET
+- `local` → ❌ Not supported in Foundry (no local compute)
+- Plain name `gpu-cluster` → resolve via ARM GET
+- Full ARM ID → pass through as `computeId`
+
+### 9.5 Code & Inputs Translation
+
+**Code:**
+- AML: `code: ./src` (local path) → Upload as dataset, use dataset resource ID as `codeId`
+- AML: `code: azureml:code-name:1` → ⚠️ TBD — need to confirm if Foundry resolves `azureml:` code references
+- AML: `code: git+https://...` → ❌ Not supported in V1
+
+**Inputs:**
+- AML: `path: azureml:data-name:version` → May need to resolve to dataset resource ID
+- AML: `path: ./local-data` (local path) → Upload as dataset, use dataset resource ID
+- AML: `path: https://...` or `wasbs://...` → ⚠️ TBD — direct URI support
+
+### 9.6 Unsupported AML Fields — Error/Warning Behavior
+
+| Field | Behavior | Reason |
+|-------|----------|--------|
+| `identity` | **Error** if specified | Not in Foundry API |
+| `services` | **Error** if specified | Read-only in Foundry |
+| `experiment_name` | **Warning**, ignore | Not in Foundry API |
+| `distribution.type: ray` | **Error** | Ray not supported |
+| `compute: local` | **Error** | No local compute |
+| `environment.conda_file` | **Error** | No conda resolution |
+| `environment.build` | **Error** | No Dockerfile building |
+
+### 9.7 Example: AML YAML → Foundry Payload
+
+**User's YAML (AML-compatible format):**
+```yaml
+$schema: https://azuremlschemas.azureedge.net/latest/commandJob.schema.json
+type: command
+name: train-cifar10
+display_name: CIFAR-10 Training
+description: Fine-tune ResNet on CIFAR-10
+compute: gpu-cluster
+environment: mcr.microsoft.com/azureml/openmpi4.1.0-cuda11.8-cudnn8-ubuntu22.04:latest
+code: ./src
+command: python train.py --epochs 10 --lr ${{inputs.learning_rate}}
+
+inputs:
+  training_data:
+    type: uri_folder
+    path: ./data/cifar10
+  learning_rate: 0.001
+
+outputs:
+  model_output:
+    type: uri_folder
+
+distribution:
+  type: pytorch
+  process_count_per_instance: 4
+
+resources:
+  instance_count: 2
+
+environment_variables:
+  NCCL_DEBUG: INFO
+
+tags:
+  project: cifar10
+  team: ml-platform
+```
+
+**Translated Foundry API payload (after CLI processing):**
+```json
+{
+  "properties": {
+    "jobType": "Command",
+    "displayName": "CIFAR-10 Training",
+    "description": "Fine-tune ResNet on CIFAR-10",
+    "computeId": "/subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.CognitiveServices/accounts/{acct}/computes/gpu-cluster",
+    "environmentId": "mcr.microsoft.com/azureml/openmpi4.1.0-cuda11.8-cudnn8-ubuntu22.04:latest",
+    "codeId": "azureml://datasets/code-train-cifar10/versions/1",
+    "command": "python train.py --epochs 10 --lr ${{inputs.learning_rate}}",
+    "inputs": {
+      "training_data": {
+        "jobInputType": "uri_folder",
+        "uri": "azureml://datasets/input-train-cifar10-training_data/versions/1"
+      },
+      "learning_rate": {
+        "jobInputType": "literal",
+        "value": "0.001"
+      }
+    },
+    "outputs": {
+      "model_output": {
+        "jobOutputType": "uri_folder"
+      }
+    },
+    "distribution": {
+      "distributionType": "PyTorch",
+      "processCountPerInstance": 4
+    },
+    "resources": {
+      "instanceCount": 2
+    },
+    "environmentVariables": {
+      "NCCL_DEBUG": "INFO"
+    }
+  },
+  "tags": {
+    "project": "cifar10",
+    "team": "ml-platform"
+  }
+}
+```
+
+### 9.8 Translation Layer Architecture
+
+The YAML → Foundry API translation lives in **Layer 2** (`internal/service/job_service.go`):
+
+```
+YAML file (AML format)
+    │
+    ▼
+internal/utils/yaml_parser.go     ← Parse + validate YAML fields
+    │
+    ▼
+internal/service/job_service.go   ← Translate:
+    │                                - environment → environmentId
+    │                                - compute → computeId (ARM resolve)
+    │                                - code → codeId (upload + reference)
+    │                                - inputs → upload local + resolve refs
+    │                                - snake_case → camelCase
+    │                                - validate unsupported fields
+    ▼
+pkg/client/jobs.go                ← Send to Foundry API (PUT /{id})
+```
+
+### 9.9 Decision: `$schema` Reference
+
+Options:
+1. **Reference AML schema** — `$schema: https://azuremlschemas.azureedge.net/latest/commandJob.schema.json`
+   - Pro: Users get IDE validation from existing schema
+   - Con: Schema allows fields we don't support (services, identity, conda_file)
+
+2. **Custom schema** — `$schema: https://azd.ms/schemas/customtraining/commandJob.schema.json`
+   - Pro: Only allows supported fields, no false positives
+   - Con: Need to host and maintain
+
+3. **No schema enforcement** — Accept `$schema` but don't validate against it
+   - Pro: Simplest, compatible with existing YAMLs
+   - Con: No IDE validation
+
+**V1 recommendation:** Option 3 — Accept existing AML YAMLs, ignore `$schema`, validate at the CLI layer with clear errors for unsupported fields. Ship a custom schema in V2 if demand warrants it.
+
+### 9.10 Open Questions
+
+| # | Question | Impact | Action |
+|---|----------|--------|--------|
+| 1 | Does Foundry `environmentId` resolve `azureml:` references? | Determines if named environment references work | Test with real API |
+| 2 | Does Foundry `environmentId` accept raw Docker image URIs? | Core assumption for V1 | Confirm with Savitha |
+| 3 | Does Foundry resolve `azureml:` code references in `codeId`? | Determines if pre-uploaded code assets work | Test with real API |
+| 4 | What input/output `jobInputType`/`jobOutputType` values does Foundry support? | Validation rules | Check FoundryCommandJob validator |
+| 5 | Does Foundry support `${{inputs.x}}` placeholder syntax in `command`? | Critical for parameterized commands | Confirm with Savitha |

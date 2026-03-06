@@ -115,7 +115,9 @@ func newConfigCommand() *cobra.Command {
 	cc := &cobra.Command{
 		Use:   "config",
 		Short: "Configure the GitHub Copilot coding agent to access Azure resources via the Azure MCP",
-		Long:  "Configure the GitHub Copilot coding agent to access Azure resources via the Azure MCP.\n\nFor more information about this command, including prerequisites and troubleshooting, view the readme at " + ux.Hyperlink("https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.coding-agent/README.md"),
+		Long: "Configure the GitHub Copilot coding agent to access Azure resources via the Azure MCP.\n\n" +
+			"For more information about this command, including prerequisites and troubleshooting, view the readme at " +
+			ux.Hyperlink("https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.coding-agent/README.md"),
 	}
 
 	flagValues := setupFlags(cc.Flags())
@@ -392,6 +394,7 @@ func listRemotes(ctx context.Context, gitCLI gitCLI, gitRepoRoot string) ([]stri
 func writeCopilotSetupStepsYaml(gitRepoRoot string) error {
 	workflowsDir := filepath.Join(gitRepoRoot, ".github", "workflows")
 
+	//nolint:gosec // GitHub workflows directory should be readable and traversable
 	if err := os.MkdirAll(workflowsDir, 0755); err != nil {
 		return fmt.Errorf("failed to create the %s folder: %w", workflowsDir, err)
 	}

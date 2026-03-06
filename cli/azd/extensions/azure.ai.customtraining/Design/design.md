@@ -393,10 +393,12 @@ job create --file job.yaml
 │
 ├─ 4. RESOLVE COMPUTE
 │     │
-│     └─ GET Microsoft.CognitiveServices/accounts/{accountName}/computes/{computeName}
+│     └─ V1: GET Microsoft.CognitiveServices/accounts/{accountName}/computes/{computeName}
 │           Auth: management.azure.com (ARM)    Owner: Rajat Garg    Status: New
-│           Note: Control Plane only today, pending data plane exposure
-│           → Returns: ARM resource ID for computeId
+│     └─ V2: GET api/projects/{project}/computes/{computeName}  (when data plane ready)
+│           Auth: ai.azure.com    Owner: Rajat Garg    Status: Planned
+│           Note: ComputeResolver interface makes this a drop-in swap
+│           → Returns: resource ID for computeId
 │
 ├─ 5. BUILD PAYLOAD
 │     ├─ codeId        = dataset resource ID (from step 2c)
@@ -462,7 +464,8 @@ job download --name {id}
 | Code upload (confirm) | `PATCH` | `.../datasets/{name}/versions/{ver}` | ai.azure.com | William Bauman | ✅ Existing |
 | Input upload (SAS) | `POST` | `.../datasets/{name}/versions/{ver}/startPendingUpload` | ai.azure.com | William Bauman | ✅ Existing |
 | Input upload (confirm) | `PATCH` | `.../datasets/{name}/versions/{ver}` | ai.azure.com | William Bauman | ✅ Existing |
-| Compute resolve | `GET` | `.../computes/{name}` (ARM) | management.azure.com | Rajat Garg | 🆕 New (Control Plane) |
+| Compute resolve (V1) | `GET` | `.../computes/{name}` (ARM) | management.azure.com | Rajat Garg | 🆕 New (Control Plane) |
+| Compute resolve (V2) | `GET` | `.../computes/{name}` (Data Plane, planned) | ai.azure.com | Rajat Garg | 🔜 Planned |
 | Job create | `PUT` | `.../jobs/{id}` | ai.azure.com | Savitha Mittal | 🆕 New |
 | Job get | `GET` | `.../jobs/{id}` | ai.azure.com | Savitha Mittal | 🆕 New |
 | Job list | `GET` | `.../jobs` | ai.azure.com | Savitha Mittal | 🆕 New |
@@ -595,15 +598,30 @@ Request/response same structure as Step 2c.
 
 ### 3.4 Step 4 — Resolve Compute
 
-Resolve the user-provided compute name to a full ARM resource ID. This uses the **ARM control plane** with a separate token scope.
+Resolve the user-provided compute name to a resource ID. The resolution strategy is designed to be **pluggable** — today it uses ARM (control plane), but compute GET is planned to move to data plane.
 
 The `compute` field in YAML accepts two formats:
-- **Name only**: `compute: gpu-cluster` → CLI attempts ARM resolution
+- **Name only**: `compute: gpu-cluster` → CLI resolves via API
 - **Full ARM ID**: `compute: /subscriptions/.../computes/gpu-cluster` → used as-is, skip resolution
 
 Detection: if value starts with `/subscriptions/`, it's a full ARM ID.
 
-**ARM resolution (when name only):**
+#### Resolution Strategy (pluggable)
+
+```go
+// internal/service/resolve_service.go
+type ComputeResolver interface {
+    ResolveCompute(ctx context.Context, name string) (string, error)
+}
+
+// V1: ARM-based resolver (control plane)
+type ARMComputeResolver struct { ... }
+
+// V2 (future): Data plane resolver — drop-in replacement, no other code changes
+type DataPlaneComputeResolver struct { ... }
+```
+
+**V1 — ARM resolution (control plane):**
 
 ```
 GET https://management.azure.com/subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.CognitiveServices/accounts/{accountName}/computes/{computeName}?api-version=2025-09-01
@@ -611,7 +629,17 @@ GET https://management.azure.com/subscriptions/{sub}/resourceGroups/{rg}/provide
 
 **Auth:** Bearer token with scope `https://management.azure.com/.default`
 
-**Fallback:** If ARM GET returns 401/403 (insufficient RBAC), the CLI will error with a message:
+**V2 — Data plane resolution (when available):**
+
+```
+GET https://{account}.services.ai.azure.com/api/projects/{project}/computes/{computeName}?api-version=TBD
+```
+
+**Auth:** Bearer token with scope `https://ai.azure.com/.default` (same as all other data plane calls)
+
+> **Benefit:** When compute moves to data plane, the extension becomes a **single-token extension** — no ARM scope needed at all. The switch is a one-line config change (swap resolver implementation).
+
+**Fallback (both V1 and V2):** If GET returns 401/403 (insufficient RBAC), the CLI will error:
 ```
 ✗ Failed to resolve compute 'gpu-cluster': insufficient permissions.
   Provide the full ARM resource ID in your YAML instead:
@@ -621,7 +649,7 @@ GET https://management.azure.com/subscriptions/{sub}/resourceGroups/{rg}/provide
 **Response (200):**
 ```json
 {
-  "id": "/subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.MachineLearningServices/virtualworkspaces/{ws}/computes/gpu-cluster",
+  "id": "/subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.CognitiveServices/accounts/{account}/computes/gpu-cluster",
   "name": "gpu-cluster",
   "properties": {
     "computeType": "AmlCompute",
@@ -632,7 +660,7 @@ GET https://management.azure.com/subscriptions/{sub}/resourceGroups/{rg}/provide
 
 **Result**: `computeId` = response `id` field
 
-> **⚠️ Assumption:** A Foundry compute GET API exists at this path. If not available, the user may need to provide the full ARM ID in the YAML, and we skip resolution.
+> **Note:** Compute GET is being discussed for data plane exposure. The `ComputeResolver` interface ensures we can switch without touching job creation, CLI, or any other code.
 
 ---
 
@@ -871,7 +899,7 @@ azure.ai.customtraining/
 │   │   ├── client.go              # Base HTTP client (auth, retries, errors)
 │   │   ├── jobs.go                # Jobs API: create, get, list, cancel, delete
 │   │   ├── datasets.go            # Datasets API: startPendingUpload, create/update, get
-│   │   ├── computes.go            # Computes API: get (ARM), list (ARM)
+│   │   ├── computes.go            # Computes API: get (ARM today, data plane future)
 │   │   └── artifacts.go           # Artifacts API: list, getcontent, contentinfo
 │   └── models/
 │       ├── job.go                 # Base: Job, JobProperties (jobType field)
@@ -982,15 +1010,25 @@ func (s *JobService) CreateJob(ctx context.Context, config *JobConfig) (*models.
 
 ```go
 // Example: internal/service/resolve_service.go
-type ResolveService struct {
+// ComputeResolver is an interface so we can swap ARM → data plane without changing callers
+type ComputeResolver interface {
+    ResolveCompute(ctx context.Context, name string) (string, error)
+}
+
+// V1: ARM-based (management.azure.com)
+type ARMComputeResolver struct {
     client *client.Client
 }
 
-func (s *ResolveService) ResolveCompute(ctx context.Context, compute string) (string, error) {
+func (s *ARMComputeResolver) ResolveCompute(ctx context.Context, compute string) (string, error) {
     // If starts with /subscriptions/ → return as-is
     // Otherwise → GET ARM compute → return ID
     // On 401/403 → return helpful error asking for full ARM ID
 }
+
+// V2 (future): Data plane — drop-in replacement
+// type DataPlaneComputeResolver struct { client *client.Client }
+// func (s *DataPlaneComputeResolver) ResolveCompute(...) (string, error) { ... }
 ```
 
 ```go
@@ -1025,6 +1063,7 @@ func (s *StreamService) StreamLogs(ctx context.Context, jobID string, writer io.
 | Layer 3 only calls Layer 2, never Layer 1 directly | Clean separation |
 | Job type logic (Command, Pipeline) lives in Layer 2 | Layer 1 is type-agnostic |
 | Dual auth handled in Layer 1 client | Transparent to Layer 2/3 |
+| Compute resolution behind interface | ARM → data plane swap is one-line change |
 
 ### 5.4 Init Flow & Implicit Init
 

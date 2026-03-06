@@ -99,7 +99,7 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	if a.flags.remote {
 		return a.invokeRemote(ctx)
 	}
-	return a.invokeLocal()
+	return a.invokeLocal(ctx)
 }
 
 func (a *InvokeAction) httpTimeout() time.Duration {
@@ -109,7 +109,7 @@ func (a *InvokeAction) httpTimeout() time.Duration {
 	return time.Duration(a.flags.timeout) * time.Second
 }
 
-func (a *InvokeAction) invokeLocal() error {
+func (a *InvokeAction) invokeLocal(ctx context.Context) error {
 	port := a.flags.port
 	msg := a.flags.message
 
@@ -125,7 +125,6 @@ func (a *InvokeAction) invokeLocal() error {
 	}
 
 	url := fmt.Sprintf("http://localhost:%d/responses", port)
-	ctx := context.Background()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)

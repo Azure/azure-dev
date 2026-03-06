@@ -1,5 +1,5 @@
 steps:
-  - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI') }}:
+  - ${{ if or(in(variables['BuildReasonOverride'], 'IndividualCI', 'BatchedCI'), and( eq('', variables['BuildReasonOverride']), in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI'))) }}:
     - pwsh: |
         $since = (Get-Date).AddMonths(-6).ToString("yyyy-MM-dd")
         Write-Host "Deepening git history since: $since"

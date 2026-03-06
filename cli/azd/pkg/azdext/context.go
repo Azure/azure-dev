@@ -21,6 +21,13 @@ const (
 )
 
 // NewContext initializes a new context with tracing information extracted from environment variables.
+//
+// Deprecated: Use [Run] for custom-command extensions — it creates the context,
+// injects the access token, reports structured errors, and handles os.Exit.
+// For lifecycle-listener extensions, use [NewListenCommand] which sets up
+// context and access token automatically.
+// If you need parsed global flags (--debug, --no-prompt, --cwd, -e), use
+// [NewExtensionRootCommand] together with [Run].
 func NewContext() context.Context {
 	ctx := context.Background()
 	parent := os.Getenv(TraceparentEnv)

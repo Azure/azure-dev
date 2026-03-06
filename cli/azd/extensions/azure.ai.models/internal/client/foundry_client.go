@@ -21,9 +21,9 @@ import (
 
 const (
 	DefaultAPIVersion = "2025-11-15-preview"
-	TokenScope        = "https://ai.azure.com/.default"
-	ARMTokenScope     = "https://management.azure.com/.default"
-	MLTokenScope      = "https://ml.azure.com/.default"
+	TokenScope        = "https://ai.azure.com/.default"         //nolint:gosec // not credentials, OAuth scope URL
+	ARMTokenScope     = "https://management.azure.com/.default" //nolint:gosec // not credentials, OAuth scope URL
+	MLTokenScope      = "https://ml.azure.com/.default"         //nolint:gosec // not credentials, OAuth scope URL
 )
 
 // FoundryClient is an HTTP client for Azure AI Foundry project APIs.
@@ -90,6 +90,7 @@ func (c *FoundryClient) ListModels(ctx context.Context) (*models.ListModelsRespo
 	}
 	req.Header.Set("Content-Type", "application/json")
 
+	//nolint:gosec // URL is constructed from validated project endpoint
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
@@ -127,6 +128,7 @@ func (c *FoundryClient) StartPendingUpload(ctx context.Context, modelName, versi
 	}
 	req.Header.Set("Content-Type", "application/json")
 
+	//nolint:gosec // URL is constructed from validated project endpoint
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
@@ -169,6 +171,7 @@ func (c *FoundryClient) RegisterModel(ctx context.Context, modelName, version st
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
+	//nolint:gosec // URL is constructed from validated project endpoint
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
@@ -220,6 +223,7 @@ func (c *FoundryClient) RegisterModelAsync(ctx context.Context, modelName, versi
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
+	//nolint:gosec // URL is constructed from validated project endpoint
 	resp, err := noRedirectClient.Do(httpReq)
 	if err != nil {
 		return "", fmt.Errorf("request failed: %w", err)
@@ -271,13 +275,14 @@ func (c *FoundryClient) PollOperation(ctx context.Context, operationURL string, 
 		}
 		req.Header.Set("Authorization", "Bearer "+token.Token)
 
+		//nolint:gosec // URL is constructed from validated project endpoint
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
 			return nil, fmt.Errorf("poll request failed: %w", err)
 		}
 
 		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close() //nolint:gosec // body already read, close is best-effort
 		if err != nil {
 			return nil, fmt.Errorf("failed to read poll response: %w", err)
 		}
@@ -382,6 +387,7 @@ func (c *FoundryClient) DeleteModel(ctx context.Context, modelName, version stri
 		return err
 	}
 
+	//nolint:gosec // URL is constructed from validated project endpoint
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
@@ -414,6 +420,7 @@ func (c *FoundryClient) GetModel(ctx context.Context, modelName, version string)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
+	//nolint:gosec // URL is constructed from validated project endpoint
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)

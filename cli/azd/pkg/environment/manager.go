@@ -580,6 +580,12 @@ func (m *manager) ensureValidEnvironmentName(ctx context.Context, spec *Spec) er
 			cleaned = cleaned[:EnvironmentNameMaxLength]
 		}
 
+		if !IsValidEnvironmentName(cleaned) {
+			return fmt.Errorf(
+				"auto-generated environment name '%s' from directory '%s' is invalid. "+
+					"Specify one explicitly with -e or as an argument", cleaned, dirName)
+		}
+
 		spec.Name = cleaned
 		m.console.Message(ctx, fmt.Sprintf("Using environment name: %s", spec.Name))
 

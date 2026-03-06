@@ -372,10 +372,7 @@ func (a *InitFromCodeAction) scaffoldTemplate(ctx context.Context, azdClient *az
 		}
 
 		content, err := io.ReadAll(fileResp.Body)
-		if closeErr := fileResp.Body.Close(); closeErr != nil {
-			_ = spinner.Stop(ctx)
-			return fmt.Errorf("closing response body for %s: %w", f.Path, closeErr)
-		}
+		_ = fileResp.Body.Close()
 		if err != nil {
 			_ = spinner.Stop(ctx)
 			return fmt.Errorf("reading %s: %w", f.Path, err)

@@ -1015,7 +1015,7 @@ func (a *InitAction) isRegistryUrl(manifestPointer string) (bool, *RegistryManif
 func (a *InitAction) downloadAgentYaml(
 	ctx context.Context, manifestPointer string, targetDir string) (*agent_yaml.AgentManifest, string, error) {
 	if manifestPointer == "" {
-		return nil, "", fmt.Errorf("the path to an agent manifest need to be provided (manifestPointer cannot be empty)")
+		return nil, "", fmt.Errorf("the path to an agent manifest needs to be provided (manifestPointer cannot be empty)")
 	}
 
 	var content []byte
@@ -1876,9 +1876,7 @@ func downloadDirectoryContentsWithoutGhCli(
 			}
 
 			fileContent, err := io.ReadAll(fileResp.Body)
-			if closeErr := fileResp.Body.Close(); closeErr != nil {
-				return fmt.Errorf("failed to close file response body for %s: %w", itemPath, closeErr)
-			}
+			_ = fileResp.Body.Close()
 			if err != nil {
 				return fmt.Errorf("failed to read file content %s: %w", itemPath, err)
 			}

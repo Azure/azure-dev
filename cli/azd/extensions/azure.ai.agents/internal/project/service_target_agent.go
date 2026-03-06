@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -853,22 +854,22 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 	var minReplicas, maxReplicas *int32
 	if foundryAgentConfig.Container != nil && foundryAgentConfig.Container.Scale != nil {
 		if foundryAgentConfig.Container.Scale.MinReplicas > 0 {
-			if foundryAgentConfig.Container.Scale.MinReplicas > 2147483647 {
+			if foundryAgentConfig.Container.Scale.MinReplicas > math.MaxInt32 {
 				return exterrors.Validation(
 					exterrors.CodeInvalidServiceConfig,
 					fmt.Sprintf("minReplicas exceeds int32 range: %d", foundryAgentConfig.Container.Scale.MinReplicas),
-					"set container.scale.minReplicas to a value <= 2147483647",
+					fmt.Sprintf("set container.scale.minReplicas to a value <= %d", math.MaxInt32),
 				)
 			}
 			minReplicasInt32 := int32(foundryAgentConfig.Container.Scale.MinReplicas)
 			minReplicas = &minReplicasInt32
 		}
 		if foundryAgentConfig.Container.Scale.MaxReplicas > 0 {
-			if foundryAgentConfig.Container.Scale.MaxReplicas > 2147483647 {
+			if foundryAgentConfig.Container.Scale.MaxReplicas > math.MaxInt32 {
 				return exterrors.Validation(
 					exterrors.CodeInvalidServiceConfig,
 					fmt.Sprintf("maxReplicas exceeds int32 range: %d", foundryAgentConfig.Container.Scale.MaxReplicas),
-					"set container.scale.maxReplicas to a value <= 2147483647",
+					fmt.Sprintf("set container.scale.maxReplicas to a value <= %d", math.MaxInt32),
 				)
 			}
 			maxReplicasInt32 := int32(foundryAgentConfig.Container.Scale.MaxReplicas)

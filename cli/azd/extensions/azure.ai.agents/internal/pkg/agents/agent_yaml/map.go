@@ -5,6 +5,7 @@ package agent_yaml
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -248,12 +249,16 @@ func convertYamlToolToApiTool(yamlTool any) (any, error) {
 		return apiTool, nil
 
 	case FileSearchTool:
+		maxResults, err := convertIntToInt32(tool.MaximumResultCount)
+		if err != nil {
+			return nil, fmt.Errorf("file_search maximumResultCount: %w", err)
+		}
 		apiTool := agent_api.FileSearchTool{
 			Tool: agent_api.Tool{
 				Type: agent_api.ToolTypeFileSearch,
 			},
 			VectorStoreIds: tool.VectorStoreIds,
-			MaxNumResults:  convertIntToInt32(tool.MaximumResultCount),
+			MaxNumResults:  maxResults,
 		}
 
 		// Set ranking options
@@ -355,15 +360,15 @@ func convertPropertySchemaToInterface(schema PropertySchema) interface{} {
 }
 
 // Helper function to convert *int to *int32
-func convertIntToInt32(i *int) *int32 {
+func convertIntToInt32(i *int) (*int32, error) {
 	if i == nil {
-		return nil
+		return nil, nil
 	}
-	if *i > 2147483647 || *i < -2147483648 {
-		return nil
+	if *i > math.MaxInt32 || *i < math.MinInt32 {
+		return nil, fmt.Errorf("value %d overflows int32 range", *i)
 	}
 	i32 := int32(*i)
-	return &i32
+	return &i32, nil
 }
 
 // Helper function to convert *float64 to *float32

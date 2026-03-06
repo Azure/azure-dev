@@ -12,12 +12,11 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
-	"github.com/google/uuid"
 )
 
 const (
@@ -25,23 +24,14 @@ const (
 	// a malicious or misconfigured server from stalling the client indefinitely.
 	maxRetryAfterDuration = 120 * time.Second
 
-	// maxRetryBodyDrain limits how many bytes are consumed when draining a
-	// retryable response body before the next attempt. This prevents a
-	// malicious or misconfigured server from stalling the client with an
-	// unbounded response body.
-	maxRetryBodyDrain int64 = 1 << 20 // 1 MB
-
-	userAgentHeaderName       = "User-Agent"
-	clientRequestIDHeaderName = "x-ms-client-request-id"
-	msCorrelationIDHeaderName = "x-ms-correlation-request-id"
-	defaultUserAgent          = "azdext-resilient-client/" + Version
+	// maxDrainBytes limits how many bytes we read from a retryable response body
+	// before discarding it. Prevents stalling on large or malicious payloads.
+	maxDrainBytes = 1 << 20 // 1 MiB
 )
 
 // ResilientClient is an HTTP client with built-in retry, exponential backoff,
 // timeout, and optional bearer-token injection. It is designed for extension
 // authors who need to call Azure REST APIs directly.
-// For full Azure SDK HTTP pipeline behavior (telemetry, logging, and
-// policy-chain extensibility), prefer runtime.NewPipeline with TokenProvider.
 //
 // Usage:
 //
@@ -54,13 +44,10 @@ type ResilientClient struct {
 	opts          ResilientClientOptions
 }
 
-var _ HTTPDoer = (*ResilientClient)(nil)
-
 // ResilientClientOptions configures a [ResilientClient].
 type ResilientClientOptions struct {
 	// MaxRetries is the maximum number of retry attempts for transient failures.
-	// A value of 0 disables retries.
-	// A negative value uses the default (3).
+	// Defaults to 3.
 	MaxRetries int
 
 	// InitialDelay is the base delay before the first retry. Subsequent retries
@@ -75,10 +62,6 @@ type ResilientClientOptions struct {
 	// A value of zero or less uses the default of 30s.
 	Timeout time.Duration
 
-	// UserAgent overrides the default User-Agent header.
-	// When empty, defaults to "azdext-resilient-client/<Version>".
-	UserAgent string
-
 	// Transport overrides the default HTTP transport. Useful for testing.
 	Transport http.RoundTripper
 
@@ -89,7 +72,7 @@ type ResilientClientOptions struct {
 
 // defaults fills zero-value fields with production defaults.
 func (o *ResilientClientOptions) defaults() {
-	if o.MaxRetries < 0 {
+	if o.MaxRetries <= 0 {
 		o.MaxRetries = 3
 	}
 
@@ -113,9 +96,7 @@ func (o *ResilientClientOptions) defaults() {
 // resolved from the request URL via the [ScopeDetector].
 func NewResilientClient(tokenProvider azcore.TokenCredential, opts *ResilientClientOptions) *ResilientClient {
 	if opts == nil {
-		opts = &ResilientClientOptions{
-			MaxRetries: 3,
-		}
+		opts = &ResilientClientOptions{}
 	}
 
 	opts.defaults()
@@ -153,9 +134,6 @@ func (rc *ResilientClient) Do(ctx context.Context, method, url string, body io.R
 		return nil, errors.New("azdext.ResilientClient.Do: context must not be nil")
 	}
 
-	// Validate body seekability upfront when retries are enabled.
-	// Fail fast rather than discovering the body is not seekable after the
-	// first attempt has already consumed it.
 	if body != nil && rc.opts.MaxRetries > 0 {
 		if _, ok := body.(io.ReadSeeker); !ok {
 			return nil, errors.New(
@@ -186,12 +164,7 @@ func (rc *ResilientClient) Do(ctx context.Context, method, url string, body io.R
 
 			// Reset body for retry — require io.ReadSeeker for non-nil bodies.
 			if body != nil {
-				seeker, ok := body.(io.ReadSeeker)
-				if !ok {
-					return nil, errors.New(
-						"azdext.ResilientClient.Do: request body does not implement io.ReadSeeker; " +
-							"retries require a seekable body (use bytes.NewReader or strings.NewReader)")
-				}
+				seeker := body.(io.ReadSeeker)
 				if _, err := seeker.Seek(0, io.SeekStart); err != nil {
 					return nil, fmt.Errorf("azdext.ResilientClient.Do: failed to reset request body: %w", err)
 				}
@@ -202,7 +175,6 @@ func (rc *ResilientClient) Do(ctx context.Context, method, url string, body io.R
 		if err != nil {
 			return nil, fmt.Errorf("azdext.ResilientClient.Do: failed to create request: %w", err)
 		}
-		rc.setRequestHeaders(req)
 
 		// Inject bearer token when a token provider is available.
 		if rc.tokenProvider != nil {
@@ -228,14 +200,13 @@ func (rc *ResilientClient) Do(ctx context.Context, method, url string, body io.R
 		}
 
 		// Consume body before retry to release the connection.
-		// Bound the read to prevent a malicious server from stalling the
-		// client with an infinitely long response body.
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxRetryBodyDrain))
+		// Bounded drain prevents stalling on very large or unbounded responses.
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxDrainBytes))
 		resp.Body.Close()
 
 		// Capture Retry-After for the next iteration's delay,
 		// capped to prevent indefinite stalling.
-		if ra := httputil.RetryAfter(resp); ra > 0 {
+		if ra := retryAfterFromResponse(resp); ra > 0 {
 			if ra > maxRetryAfterDuration {
 				ra = maxRetryAfterDuration
 			}
@@ -273,24 +244,6 @@ func (rc *ResilientClient) applyAuth(ctx context.Context, req *http.Request) err
 	return nil
 }
 
-func (rc *ResilientClient) setRequestHeaders(req *http.Request) {
-	if req.Header.Get(userAgentHeaderName) == "" {
-		ua := rc.opts.UserAgent
-		if ua == "" {
-			ua = defaultUserAgent
-		}
-		req.Header.Set(userAgentHeaderName, ua)
-	}
-	correlationID := req.Header.Get(clientRequestIDHeaderName)
-	if correlationID == "" {
-		correlationID = uuid.NewString()
-		req.Header.Set(clientRequestIDHeaderName, correlationID)
-	}
-	if req.Header.Get(msCorrelationIDHeaderName) == "" {
-		req.Header.Set(msCorrelationIDHeaderName, correlationID)
-	}
-}
-
 // backoff computes the delay for a given attempt using exponential backoff.
 func (rc *ResilientClient) backoff(attempt int) time.Duration {
 	delay := min(time.Duration(float64(rc.opts.InitialDelay)*math.Pow(2, float64(attempt-1))), rc.opts.MaxDelay)
@@ -303,7 +256,8 @@ func (rc *ResilientClient) backoff(attempt int) time.Duration {
 		randFloat := float64(binary.BigEndian.Uint64(b[:])) / (float64(math.MaxUint64) + 1)
 		jitter = 0.5 + randFloat*0.5
 	}
-	return time.Duration(float64(delay) * jitter)
+
+	return delay
 }
 
 // isRetryable returns true for status codes that indicate a transient failure.
@@ -319,6 +273,51 @@ func isRetryable(statusCode int) bool {
 	default:
 		return false
 	}
+}
+
+// retryAfterFromResponse extracts the Retry-After duration from response headers.
+// Checks: retry-after-ms, x-ms-retry-after-ms, retry-after (seconds or HTTP-date).
+func retryAfterFromResponse(resp *http.Response) time.Duration {
+	if resp == nil {
+		return 0
+	}
+
+	type retryHeader struct {
+		header string
+		units  time.Duration
+		custom func(string) time.Duration
+	}
+
+	nop := func(string) time.Duration { return 0 }
+
+	headers := []retryHeader{
+		{header: "retry-after-ms", units: time.Millisecond, custom: nop},
+		{header: "x-ms-retry-after-ms", units: time.Millisecond, custom: nop},
+		{header: "retry-after", units: time.Second, custom: func(v string) time.Duration {
+			t, err := time.Parse(time.RFC1123, v)
+			if err != nil {
+				return 0
+			}
+			return time.Until(t)
+		}},
+	}
+
+	for _, rh := range headers {
+		v := resp.Header.Get(rh.header)
+		if v == "" {
+			continue
+		}
+
+		if n, _ := strconv.Atoi(v); n > 0 {
+			return time.Duration(n) * rh.units
+		}
+
+		if d := rh.custom(v); d > 0 {
+			return d
+		}
+	}
+
+	return 0
 }
 
 // RetryableHTTPError represents a retryable HTTP failure.

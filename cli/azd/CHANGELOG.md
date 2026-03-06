@@ -4,6 +4,14 @@
 
 ### Features Added
 
+- [[#2743]](https://github.com/Azure/azure-dev/issues/2743) Support deploying Container App Jobs (`Microsoft.App/jobs`) via `host: containerapp`. The Bicep template determines whether the target is a Container App or Container App Job.
+- Add `ConfigHelper` for typed, ergonomic access to azd user and environment configuration through gRPC services, with validation support, shallow/deep merge, and structured error types (`ConfigError`).
+- Add `Pager[T]` generic pagination helper with SSRF-safe nextLink validation, `Collect` with `MaxPages`/`MaxItems` bounds, and `Truncated()` detection for callers.
+- Add `ResilientClient` hardening: exponential backoff with jitter, upfront body seekability validation, and `Retry-After` header cap at 120 s.
+- Add `SSRFGuard` standalone SSRF protection with metadata endpoint blocking, private network blocking, HTTPS enforcement, DNS fail-closed, IPv6 embedding extraction, and allowlist bypass.
+- Add atomic file operations (`WriteFileAtomic`, `CopyFileAtomic`, `BackupFile`, `EnsureDir`) with crash-safe write-temp-rename pattern.
+- Add runtime process utilities for cross-platform process management, tool discovery, and shell execution helpers.
+
 ### Breaking Changes
 
 ### Bugs Fixed
@@ -31,6 +39,9 @@
 
 - [[#7044]](https://github.com/Azure/azure-dev/pull/7044) Improve `--no-prompt` support for resource-group deployments by defaulting the resource group prompt to the `AZURE_RESOURCE_GROUP` environment variable value.
 - [[#7051]](https://github.com/Azure/azure-dev/pull/7051) Improve telemetry error classification with typed sentinel errors, replacing opaque `errors_errorString` result codes with descriptive error type codes across command domains.
+- Add Extension SDK Reference documentation covering `NewExtensionRootCommand`, `MCPServerBuilder`, `ToolArgs`, `MCPSecurityPolicy`, `BaseServiceTargetProvider`, and all SDK helpers introduced in [#6856](https://github.com/Azure/azure-dev/pull/6856). See [Extension SDK Reference](docs/extensions/extension-sdk-reference.md).
+- Add Extension Migration Guide with before/after examples for migrating from legacy patterns to SDK helpers. See [Extension Migration Guide](docs/extensions/extension-migration-guide.md).
+- Add Extension End-to-End Walkthrough demonstrating root command setup, MCP server construction, lifecycle event handlers, and security policy usage. See [Extension End-to-End Walkthrough](docs/extensions/extension-e2e-walkthrough.md).
 
 ## 1.23.8 (2026-03-06)
 

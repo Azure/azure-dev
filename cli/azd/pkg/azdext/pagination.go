@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"unicode"
 )
 
 const (
@@ -51,11 +52,10 @@ type Pager[T any] struct {
 	client     HTTPDoer
 	nextURL    string
 	done       bool
-	initErr    error
+	truncated  bool
 	opts       PagerOptions
 	originHost string // host of the initial URL for SSRF protection
 	pageCount  int    // number of pages fetched so far
-	truncated  bool
 }
 
 // PageResponse is a single page returned by [Pager.NextPage].
@@ -97,10 +97,6 @@ type stdHTTPDoer struct {
 }
 
 func (s *stdHTTPDoer) Do(ctx context.Context, method, url string, body io.Reader) (*http.Response, error) {
-	if s.client == nil {
-		return nil, errors.New("azdext.Pager.NextPage: client must not be nil")
-	}
-
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
 		return nil, err
@@ -122,32 +118,25 @@ func NewPager[T any](client HTTPDoer, firstURL string, opts *PagerOptions) *Page
 		opts.Method = http.MethodGet
 	}
 
-	var (
-		originHost string
-		initErr    error
-	)
-	if firstURL != "" {
-		u, err := url.Parse(firstURL)
-		if err != nil {
-			initErr = fmt.Errorf("azdext.NewPager: invalid first URL: %w", err)
-		} else if u.Hostname() == "" {
-			initErr = errors.New("azdext.NewPager: invalid first URL: missing host")
-		} else {
-			originHost = strings.ToLower(u.Hostname())
-		}
+	var originHost string
+	if u, err := url.Parse(firstURL); err == nil {
+		originHost = strings.ToLower(u.Hostname())
 	}
 
 	return &Pager[T]{
 		client:     client,
 		nextURL:    firstURL,
-		initErr:    initErr,
 		opts:       *opts,
 		originHost: originHost,
 	}
 }
 
 // NewPagerFromHTTPClient creates a [Pager] backed by a standard [*http.Client].
+// If client is nil, [http.DefaultClient] is used.
 func NewPagerFromHTTPClient[T any](client *http.Client, firstURL string, opts *PagerOptions) *Pager[T] {
+	if client == nil {
+		client = http.DefaultClient
+	}
 	return NewPager[T](&stdHTTPDoer{client: client}, firstURL, opts)
 }
 
@@ -156,10 +145,8 @@ func (p *Pager[T]) More() bool {
 	return !p.done && p.nextURL != ""
 }
 
-// Truncated reports whether the last [Collect] call stopped early due to
-// MaxPages or MaxItems limits. This allows callers to detect truncation
-// without a breaking API change (Collect still returns ([]T, nil) on
-// successful truncation).
+// Truncated reports whether the last [Collect] call stopped early because
+// a collection bound (MaxPages or MaxItems) was hit.
 func (p *Pager[T]) Truncated() bool {
 	return p.truncated
 }
@@ -175,11 +162,6 @@ func (p *Pager[T]) Truncated() bool {
 func (p *Pager[T]) NextPage(ctx context.Context) (*PageResponse[T], error) {
 	if !p.More() {
 		return nil, errors.New("azdext.Pager.NextPage: no more pages")
-	}
-	if p.initErr != nil {
-		p.done = true
-		p.nextURL = ""
-		return nil, p.initErr
 	}
 
 	if p.client == nil {
@@ -197,16 +179,13 @@ func (p *Pager[T]) NextPage(ctx context.Context) (*PageResponse[T], error) {
 		return nil, &PaginationError{
 			StatusCode: resp.StatusCode,
 			URL:        p.nextURL,
-			Body:       sanitizeErrorBody(string(body)),
+			Body:       sanitizeControlChars(string(body)),
 		}
 	}
 
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxPageResponseSize+1))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxPageResponseSize))
 	if err != nil {
 		return nil, fmt.Errorf("azdext.Pager.NextPage: failed to read response: %w", err)
-	}
-	if int64(len(data)) > maxPageResponseSize {
-		return nil, fmt.Errorf("azdext.Pager.NextPage: response exceeds max page size (%d bytes)", maxPageResponseSize)
 	}
 
 	var page PageResponse[T]
@@ -240,7 +219,7 @@ func (p *Pager[T]) validateNextLink(nextLink string) error {
 		return fmt.Errorf("invalid nextLink URL: %w", err)
 	}
 
-	if u.Scheme != "https" {
+	if u.Scheme != "" && u.Scheme != "https" {
 		return fmt.Errorf("nextLink must use HTTPS (got %q)", u.Scheme)
 	}
 
@@ -286,18 +265,21 @@ func (p *Pager[T]) Collect(ctx context.Context) ([]T, error) {
 
 		// Enforce MaxItems: truncate and stop if exceeded.
 		if p.opts.MaxItems > 0 && len(all) >= p.opts.MaxItems {
+			truncatedByItems := len(all) > p.opts.MaxItems
 			if len(all) > p.opts.MaxItems {
 				all = all[:p.opts.MaxItems]
 			}
-			p.truncated = true
-			p.done = true
+			if truncatedByItems || p.More() {
+				p.truncated = true
+			}
 			break
 		}
 
 		// Enforce MaxPages: stop after collecting the configured number of pages.
 		if p.pageCount >= maxPages {
-			p.truncated = true
-			p.done = true
+			if p.More() {
+				p.truncated = true
+			}
 			break
 		}
 	}
@@ -305,20 +287,11 @@ func (p *Pager[T]) Collect(ctx context.Context) ([]T, error) {
 	return all, nil
 }
 
-// maxPaginationErrorBodyLen limits the response body length stored in
-// PaginationError to prevent sensitive data leakage through error messages.
-// Response bodies from non-2xx pages may contain credentials, tokens, or
-// other secrets embedded by the upstream service.
-const maxPaginationErrorBodyLen = 1024
-
 // PaginationError is returned when a page request receives a non-2xx response.
 type PaginationError struct {
 	StatusCode int
 	URL        string
-	// Body is a truncated, sanitized excerpt of the error response body for
-	// diagnostics. It is capped at [maxPaginationErrorBodyLen] bytes and
-	// stripped of control characters to prevent log forging.
-	Body string
+	Body       string
 }
 
 func (e *PaginationError) Error() string {
@@ -326,33 +299,6 @@ func (e *PaginationError) Error() string {
 		"azdext.Pager: page request returned HTTP %d (url=%s)",
 		e.StatusCode, redactURL(e.URL),
 	)
-}
-
-// sanitizeErrorBody truncates and strips control characters from an error
-// response body to prevent log forging and sensitive data leakage.
-func sanitizeErrorBody(body string) string {
-	if len(body) > maxPaginationErrorBodyLen {
-		body = body[:maxPaginationErrorBodyLen] + "...[truncated]"
-	}
-	return stripControlChars(body)
-}
-
-// stripControlChars replaces ASCII control characters (except tab) with a
-// space to prevent log forging via CR/LF injection or terminal escape
-// sequences. Tab (0x09) is preserved as it appears in legitimate JSON.
-func stripControlChars(s string) string {
-	var b strings.Builder
-	b.Grow(len(s))
-	for _, r := range s {
-		if r < 0x20 && r != '\t' {
-			b.WriteRune(' ')
-		} else if r == 0x7F {
-			b.WriteRune(' ')
-		} else {
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
 }
 
 // redactURL strips query parameters and fragments from a URL to avoid leaking
@@ -365,4 +311,15 @@ func redactURL(rawURL string) string {
 	u.RawQuery = ""
 	u.Fragment = ""
 	return u.String()
+}
+
+// sanitizeControlChars replaces control characters (CR, LF, tabs, etc.) with
+// spaces to prevent log-forging attacks in stored error bodies.
+func sanitizeControlChars(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) && r != '\n' && r != '\t' {
+			return ' '
+		}
+		return r
+	}, s)
 }

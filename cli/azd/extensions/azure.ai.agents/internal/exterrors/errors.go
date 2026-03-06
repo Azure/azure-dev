@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -102,11 +103,12 @@ func ServiceFromAzure(err error, operation string) error {
 	return Internal(operation, fmt.Sprintf("%s: %s", operation, err.Error()))
 }
 
-// FromAzdHost wraps a gRPC error returned by an azd host service call
-// into a structured Internal LocalError. It preserves the server's
+// FromAiService wraps a gRPC error returned by an azd host AI service call
+// into a structured LocalError. It detects auth errors (codes.Unauthenticated)
+// and classifies them as Auth errors. For other errors, it preserves the server's
 // ErrorInfo reason code (from the azd.ai domain) when available,
 // falling back to the provided code.
-func FromAzdHost(err error, fallbackCode string) error {
+func FromAiService(err error, fallbackCode string) error {
 	if err == nil {
 		return nil
 	}
@@ -120,12 +122,49 @@ func FromAzdHost(err error, fallbackCode string) error {
 		return Internal(fallbackCode, err.Error())
 	}
 
+	if st.Code() == codes.Unauthenticated {
+		return authFromGrpcMessage(st.Message())
+	}
+
 	code := fallbackCode
 	if reason := aiErrorReason(st); reason != "" {
 		code = reason
 	}
 
 	return Internal(code, st.Message())
+}
+
+// FromPrompt wraps a gRPC error from an azd host Prompt call into a structured error.
+// Auth errors (codes.Unauthenticated) are classified as Auth errors with a suggestion
+// to re-authenticate. Other errors are returned with the provided context message.
+func FromPrompt(err error, contextMsg string) error {
+	if err == nil {
+		return nil
+	}
+
+	if IsCancellation(err) {
+		return Cancelled(contextMsg)
+	}
+
+	st, ok := status.FromError(err)
+	if ok && st.Code() == codes.Unauthenticated {
+		return authFromGrpcMessage(fmt.Sprintf("%s: %s", contextMsg, st.Message()))
+	}
+
+	return fmt.Errorf("%s: %w", contextMsg, err)
+}
+
+// authFromGrpcMessage creates a structured Auth error from a gRPC Unauthenticated message.
+// It classifies the error as not_logged_in, login_expired, or a generic auth_failed
+// based on message content.
+func authFromGrpcMessage(msg string) error {
+	if strings.Contains(msg, "not logged in") {
+		return Auth(CodeNotLoggedIn, msg, "run `azd auth login` to authenticate")
+	}
+	if strings.Contains(msg, "expired") {
+		return Auth(CodeLoginExpired, msg, "run `azd auth login` to acquire a new token")
+	}
+	return Auth(CodeAuthFailed, msg, "run `azd auth login` to authenticate")
 }
 
 // IsCancellation checks if an error represents user cancellation (context.Canceled or gRPC Canceled).

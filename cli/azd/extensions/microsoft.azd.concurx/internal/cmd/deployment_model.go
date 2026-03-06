@@ -587,6 +587,7 @@ func (m *deploymentModel) refreshLogContents() {
 
 // readLogFile reads the entire content of a log file
 func readLogFile(path string) (string, error) {
+	//nolint:gosec // path is a local log file path created by this package
 	file, err := os.Open(path)
 	if err != nil {
 		return "", err

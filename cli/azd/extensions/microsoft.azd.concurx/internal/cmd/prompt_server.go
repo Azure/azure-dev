@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -124,30 +125,15 @@ type pendingPrompt struct {
 	response chan *PromptResponse
 }
 
-// pendingDialogPrompt tracks an active dialog prompt waiting for user response
-type pendingDialogPrompt struct {
-	request  *PromptDialogRequest
-	response chan *PromptDialogResponse
-}
-
 // promptRequestMsg is sent to the TUI when a prompt arrives
 type promptRequestMsg struct {
 	request *PromptRequest
 }
 
-// promptDialogRequestMsg is sent to the TUI when a dialog prompt arrives
-type promptDialogRequestMsg struct {
-	request *PromptDialogRequest
-}
-
-// promptResponseMsg is sent from the TUI when the user responds
-type promptResponseMsg struct {
-	response *PromptResponse
-}
-
 // NewPromptServer creates a new prompt server
 func NewPromptServer(ctx context.Context) (*PromptServer, error) {
 	// Create debug log file
+	//nolint:gosec // debug log file, not sensitive data
 	logFile, err := os.OpenFile("/tmp/concurx-prompt-server.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		logFile = os.Stderr // fallback to stderr
@@ -186,7 +172,8 @@ func NewPromptServer(ctx context.Context) (*PromptServer, error) {
 	mux.HandleFunc("/prompt", ps.handlePrompt)
 
 	ps.server = &http.Server{
-		Handler: mux,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	return ps, nil

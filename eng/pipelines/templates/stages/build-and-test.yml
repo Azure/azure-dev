@@ -241,7 +241,7 @@ stages:
 
           - ${{ else }}:
             - pwsh: |
-                $msiVersion = & eng/scripts/Get-MsiVersion.ps1 -CliVersion $cliVersion
+                $msiVersion = & eng/scripts/Get-MsiVersion.ps1 -CliVersion "$(CLI_VERSION)"
                 Write-Host "Using MSI version: $msiVersion"
                 Write-Host "##vso[task.setvariable variable=MSI_VERSION]$msiVersion"
               displayName: Set MSI_VERSION

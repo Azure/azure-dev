@@ -837,7 +837,7 @@ func (a *InitFromCodeAction) ensureSubscription(ctx context.Context) error {
 			if exterrors.IsCancellation(err) {
 				return exterrors.Cancelled("subscription selection was cancelled")
 			}
-			return fmt.Errorf("failed to prompt for subscription: %w", err)
+			return exterrors.FromPrompt(err, "failed to prompt for subscription")
 		}
 
 		a.azureContext.Scope.SubscriptionId = subscriptionResponse.Subscription.Id
@@ -902,7 +902,7 @@ func (a *InitFromCodeAction) ensureLocation(ctx context.Context) error {
 		if exterrors.IsCancellation(err) {
 			return exterrors.Cancelled("location selection was cancelled")
 		}
-		return fmt.Errorf("failed to prompt for location: %w", err)
+		return exterrors.FromPrompt(err, "failed to prompt for location")
 	}
 
 	a.azureContext.Scope.Location = locationResponse.Location.Name
@@ -941,7 +941,7 @@ func (a *InitFromCodeAction) selectNewModel(ctx context.Context) (*azdext.AiMode
 
 	modelResp, err := a.azdClient.Prompt().PromptAiModel(ctx, promptReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to prompt for model selection: %w", err)
+		return nil, exterrors.FromPrompt(err, "failed to prompt for model selection")
 	}
 
 	selectedModel := modelResp.Model
@@ -1594,7 +1594,7 @@ func (a *InitFromCodeAction) resolveModelDeploymentNoPrompt(
 		},
 	})
 	if err != nil {
-		return nil, exterrors.FromAzdHost(err, exterrors.CodeModelResolutionFailed)
+		return nil, exterrors.FromAiService(err, exterrors.CodeModelResolutionFailed)
 	}
 
 	if len(resolveResp.Deployments) == 0 {

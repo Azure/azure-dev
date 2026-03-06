@@ -47,7 +47,7 @@ func (a *InitAction) loadAiCatalog(ctx context.Context) error {
 	})
 	stopErr := spinner.Stop(ctx)
 	if err != nil {
-		return exterrors.FromAzdHost(err, exterrors.CodeModelCatalogFailed)
+		return exterrors.FromAiService(err, exterrors.CodeModelCatalogFailed)
 	}
 	if stopErr != nil {
 		return stopErr
@@ -319,7 +319,7 @@ func (a *InitAction) getModelDetails(ctx context.Context, modelName string) (*az
 		}
 
 		if !isRecoverableDeploymentSelectionError(err) {
-			return nil, fmt.Errorf("failed to prompt for model deployment: %w", err)
+			return nil, exterrors.FromPrompt(err, "failed to prompt for model deployment")
 		}
 
 		resolvedModel, resolvedLocation, resolveErr := a.promptForModelLocationMismatch(
@@ -361,7 +361,7 @@ func (a *InitAction) resolveModelDeploymentNoPrompt(
 		},
 	})
 	if err != nil {
-		return nil, exterrors.FromAzdHost(err, exterrors.CodeModelResolutionFailed)
+		return nil, exterrors.FromAiService(err, exterrors.CodeModelResolutionFailed)
 	}
 
 	if len(resolveResp.Deployments) == 0 {
@@ -577,7 +577,7 @@ func (a *InitAction) promptForAlternativeModel(
 
 	modelResp, err := a.azdClient.Prompt().PromptAiModel(ctx, promptReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to prompt for model selection: %w", err)
+		return nil, exterrors.FromPrompt(err, "failed to prompt for model selection")
 	}
 
 	return modelResp.Model, nil
@@ -659,7 +659,7 @@ func (a *InitAction) promptForModelLocationMismatch(
 					continue
 				}
 
-				return nil, "", fmt.Errorf("failed to prompt for location selection: %w", err)
+				return nil, "", exterrors.FromPrompt(err, "failed to prompt for location selection")
 			}
 
 			selectedLocation := locationResp.Location.Name
@@ -689,7 +689,7 @@ func (a *InitAction) promptForModelLocationMismatch(
 					continue
 				}
 
-				return nil, "", fmt.Errorf("failed to prompt for model selection across all regions: %w", err)
+				return nil, "", exterrors.FromPrompt(err, "failed to prompt for model selection across all regions")
 			}
 
 			selectedModel := modelResp.Model
@@ -713,7 +713,7 @@ func (a *InitAction) promptForModelLocationMismatch(
 					continue
 				}
 
-				return nil, "", fmt.Errorf("failed to prompt for location selection: %w", err)
+				return nil, "", exterrors.FromPrompt(err, "failed to prompt for location selection")
 			}
 
 			selectedLocation := locationResp.Location.Name
@@ -744,7 +744,7 @@ func (a *InitAction) promptForModelLocationMismatch(
 				continue
 			}
 
-			return nil, "", fmt.Errorf("failed to prompt for model selection: %w", err)
+			return nil, "", exterrors.FromPrompt(err, "failed to prompt for model selection")
 		}
 
 		return modelResp.Model, currentLocation, nil

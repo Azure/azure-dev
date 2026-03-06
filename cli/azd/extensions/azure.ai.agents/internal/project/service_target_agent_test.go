@@ -4,7 +4,6 @@
 package project
 
 import (
-	"os"
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_api"

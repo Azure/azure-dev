@@ -5,6 +5,7 @@ package agent_yaml
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -176,16 +177,6 @@ func CreatePromptAgentAPIRequest(promptAgent PromptAgent, buildConfig *AgentBuil
 	return createAgentAPIRequest(promptAgent.AgentDefinition, promptDef)
 }
 
-// Helper functions for type conversion (TODO: Implement based on answers to questions above)
-
-// extractFloat32FromOptions extracts a float32 value from ModelOptions
-func extractFloat32FromOptions(options ModelOptions, key string) *float32 {
-	// TODO QUESTION: How is ModelOptions structured? Is it a map or typed struct?
-	// If it's map[string]interface{}: check options[key] and convert to float32
-	// If it's typed struct: access specific fields
-	return nil // Placeholder
-}
-
 // convertYamlToolsToApiTools converts agent_yaml tools to agent_api tools
 func convertYamlToolsToApiTools(yamlTools []any) []any {
 	var apiTools []any
@@ -258,12 +249,16 @@ func convertYamlToolToApiTool(yamlTool any) (any, error) {
 		return apiTool, nil
 
 	case FileSearchTool:
+		maxResults, err := convertIntToInt32(tool.MaximumResultCount)
+		if err != nil {
+			return nil, fmt.Errorf("file_search maximumResultCount: %w", err)
+		}
 		apiTool := agent_api.FileSearchTool{
 			Tool: agent_api.Tool{
 				Type: agent_api.ToolTypeFileSearch,
 			},
 			VectorStoreIds: tool.VectorStoreIds,
-			MaxNumResults:  convertIntToInt32(tool.MaximumResultCount),
+			MaxNumResults:  maxResults,
 		}
 
 		// Set ranking options
@@ -365,12 +360,15 @@ func convertPropertySchemaToInterface(schema PropertySchema) interface{} {
 }
 
 // Helper function to convert *int to *int32
-func convertIntToInt32(i *int) *int32 {
+func convertIntToInt32(i *int) (*int32, error) {
 	if i == nil {
-		return nil
+		return nil, nil
+	}
+	if *i > math.MaxInt32 || *i < math.MinInt32 {
+		return nil, fmt.Errorf("value %d overflows int32 range", *i)
 	}
 	i32 := int32(*i)
-	return &i32
+	return &i32, nil
 }
 
 // Helper function to convert *float64 to *float32
@@ -380,20 +378,6 @@ func convertFloat64ToFloat32(f64 *float64) *float32 {
 	}
 	f32 := float32(*f64)
 	return &f32
-}
-
-// mapInputSchemaToStructuredInputs converts PropertySchema to StructuredInputs
-func mapInputSchemaToStructuredInputs(inputSchema *PropertySchema) map[string]agent_api.StructuredInputDefinition {
-	// TODO QUESTION: How does PropertySchema map to StructuredInputDefinition?
-	// PropertySchema might have parameters that become structured inputs
-	return nil // Placeholder
-}
-
-// mapOutputSchemaToTextFormat converts PropertySchema to text response format
-func mapOutputSchemaToTextFormat(outputSchema *PropertySchema) *agent_api.ResponseTextFormatConfiguration {
-	// TODO QUESTION: How does PropertySchema influence text formatting?
-	// PropertySchema might specify response structure that affects text config
-	return nil // Placeholder
 }
 
 // CreateHostedAgentAPIRequest creates a CreateAgentRequest for hosted agents

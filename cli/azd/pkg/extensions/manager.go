@@ -773,6 +773,7 @@ func validateChecksum(filePath string, checksum ExtensionChecksum) error {
 	}
 
 	// Open the file for reading
+	//nolint:gosec // G703: filePath from extension install
 	file, err := os.Open(filePath)
 	if err != nil {
 		return fmt.Errorf("failed to open file for checksum validation: %w", err)

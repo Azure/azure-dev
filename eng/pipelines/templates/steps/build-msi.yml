@@ -24,16 +24,19 @@ steps:
       displayName: Set MSI_PRODUCT_NAME_PARAM, MSI_VERSION_PARAM, and RELEASE_BUILD_PARAM for release
 
   - ${{ else }}:
-    # Set daily dev release specific parameters based on Build ID to ensure
-    # unique version and allow downgrades for easier testing.
+    # Set daily dev release version
     - pwsh: |
-        $msiVersion = '$(MSI_VERSION)'
-        $major = ($msiVersion -split '\.')[0]
-        $minor = ($msiVersion -split '\.')[1]
-        $build = $(Build.BuildId) % 65536
+        $since = (Get-Date).AddMonths(-6).ToString("yyyy-MM-dd")
+        Write-Host "Deepening git history since $since"
+        git fetch origin --shallow-since="$since"
+
+        # Fetch tags now that the commits exist
+        git fetch origin --tags
+
+        $devVersion = ./eng/scripts/Get-MsiDevVersion.ps1
 
         Write-Host "##vso[task.setvariable variable=MSI_PRODUCT_NAME_PARAM]"
-        Write-Host "##vso[task.setvariable variable=MSI_VERSION_PARAM]/p:ProductVersion=$major.$minor.$build"
+        Write-Host "##vso[task.setvariable variable=MSI_VERSION_PARAM]/p:ProductVersion=$devVersion"
         Write-Host "##vso[task.setvariable variable=RELEASE_BUILD_PARAM]"
       condition: ${{ parameters.Condition }}
       displayName: Set MSI_PRODUCT_NAME_PARAM, MSI_VERSION_PARAM, and RELEASE_BUILD_PARAM for dev release

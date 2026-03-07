@@ -1330,14 +1330,17 @@ func Test_ContainerHelper_Publish_RemoteBuildLocalFallback(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Len(t, publishResult.Artifacts, 1)
-	require.Equal(t, "contoso.azurecr.io/my-project/my-service:azd-deploy-0", publishResult.Artifacts[0].Metadata["remoteImage"])
+	expectedImage := "contoso.azurecr.io/my-project/my-service:azd-deploy-0"
+	require.Equal(t, expectedImage,
+		publishResult.Artifacts[0].Metadata["remoteImage"])
 
 	_, dockerPushCalled := mockResults["docker-push"]
 	require.True(t, dockerPushCalled)
 
 	warningFound := false
 	for _, line := range mockContext.Console.Output() {
-		if strings.Contains(line, "Remote build failed, falling back to local Docker build.") {
+		if strings.Contains(line, "Remote build failed:") &&
+			strings.Contains(line, "Falling back to local Docker build.") {
 			warningFound = true
 			break
 		}

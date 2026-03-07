@@ -136,7 +136,7 @@ func TestResolveVenvCommand(t *testing.T) {
 		// Create a fake binary in the venv bin dir
 		binDir := venvBinDir(venvDir)
 		fakeBin := filepath.Join(binDir, "myrunner")
-		if err := os.WriteFile(fakeBin, []byte(""), 0755); err != nil {
+		if err := os.WriteFile(fakeBin, []byte(""), 0755); err != nil { //nolint:gosec // G306: test binary needs exec permission
 			t.Fatal(err)
 		}
 
@@ -191,7 +191,7 @@ func createVenv(t *testing.T, projectDir string) string {
 	if runtime.GOOS == "windows" {
 		pythonName = "python.exe"
 	}
-	if err := os.WriteFile(filepath.Join(binDir, pythonName), []byte(""), 0755); err != nil {
+	if err := os.WriteFile(filepath.Join(binDir, pythonName), []byte(""), 0755); err != nil { //nolint:gosec // G306: test binary needs exec permission
 		t.Fatal(err)
 	}
 

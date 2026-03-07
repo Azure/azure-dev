@@ -182,7 +182,7 @@ func createVenv(t *testing.T, projectDir string) string {
 	} else {
 		binDir = filepath.Join(venvDir, "bin")
 	}
-	if err := os.MkdirAll(binDir, 0755); err != nil {
+	if err := os.MkdirAll(binDir, 0750); err != nil {
 		t.Fatal(err)
 	}
 

@@ -47,7 +47,7 @@ func resolveConfigPath(ctx context.Context, azdClient *azdext.AzdClient) string 
 // loadLocalContext reads the .foundry-agent.json state file.
 // configPath is the full path to the config file (use resolveConfigPath to obtain it).
 func loadLocalContext(configPath string) *AgentLocalContext {
-	data, err := os.ReadFile(configPath)
+	data, err := os.ReadFile(configPath) //nolint:gosec // G304: configPath is resolved from azd project root, not user input
 	if err != nil {
 		return &AgentLocalContext{}
 	}
@@ -65,7 +65,7 @@ func saveLocalContext(agentCtx *AgentLocalContext, configPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal local context: %w", err)
 	}
-	return os.WriteFile(configPath, append(data, '\n'), 0644)
+	return os.WriteFile(configPath, append(data, '\n'), 0600)
 }
 
 // resolveSessionID resolves or generates a session ID for invoke.

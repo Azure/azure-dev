@@ -132,7 +132,7 @@ func (a *InvokeAction) invokeLocal(ctx context.Context) error {
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{Timeout: a.httpTimeout()}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // G704: URL targets localhost with user-configured port
 	if err != nil {
 		return fmt.Errorf("could not connect to localhost:%d — is the agent running? Start it with: azd ai agent run", port)
 	}
@@ -253,7 +253,7 @@ func (a *InvokeAction) invokeRemote(ctx context.Context) error {
 	req.Header.Set("Authorization", "Bearer "+token.Token)
 
 	client := &http.Client{Timeout: a.httpTimeout()}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // G704: endpoint is resolved from azd environment configuration
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
 	}
@@ -296,7 +296,7 @@ func createConversation(ctx context.Context, endpoint string) (string, error) {
 	req.Header.Set("Authorization", "Bearer "+token.Token)
 
 	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // G704: endpoint is resolved from azd environment configuration
 	if err != nil {
 		return "", err
 	}

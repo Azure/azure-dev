@@ -76,7 +76,7 @@ func TestDetectStartupCommand(t *testing.T) {
 
 			dir := t.TempDir()
 			for _, f := range tt.files {
-				if err := os.WriteFile(filepath.Join(dir, f), []byte(""), 0644); err != nil {
+				if err := os.WriteFile(filepath.Join(dir, f), []byte(""), 0600); err != nil {
 					t.Fatalf("failed to create test file %s: %v", f, err)
 				}
 			}
@@ -136,7 +136,7 @@ func TestDetectProjectType(t *testing.T) {
 
 			dir := t.TempDir()
 			for _, f := range tt.files {
-				if err := os.WriteFile(filepath.Join(dir, f), []byte(""), 0644); err != nil {
+				if err := os.WriteFile(filepath.Join(dir, f), []byte(""), 0600); err != nil {
 					t.Fatalf("failed to create test file %s: %v", f, err)
 				}
 			}

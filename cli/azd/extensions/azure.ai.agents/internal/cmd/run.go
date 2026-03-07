@@ -146,7 +146,7 @@ func runRun(ctx context.Context, flags *runFlags) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	proc := exec.CommandContext(ctx, cmdParts[0], cmdParts[1:]...)
+	proc := exec.CommandContext(ctx, cmdParts[0], cmdParts[1:]...) //nolint:gosec // G204: startup command is from azure.yaml config or --start-command flag
 	proc.Dir = projectDir
 	proc.Env = env
 	proc.Stdout = os.Stdout
@@ -206,7 +206,7 @@ func installPythonDeps(projectDir string) error {
 	venvDir := filepath.Join(projectDir, ".venv")
 	if _, err := os.Stat(venvDir); os.IsNotExist(err) {
 		fmt.Println("Setting up Python environment...")
-		cmd := exec.Command("uv", "venv", venvDir, "--python", ">=3.12")
+		cmd := exec.Command("uv", "venv", venvDir, "--python", ">=3.12") //nolint:gosec // G204: venvDir is derived from the project directory path
 		cmd.Dir = projectDir
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -219,7 +219,7 @@ func installPythonDeps(projectDir string) error {
 
 	if fileExists(filepath.Join(projectDir, "pyproject.toml")) {
 		fmt.Println("Installing dependencies (pyproject.toml)...")
-		cmd := exec.Command("uv", "pip", "install", "-e", ".", "--python", pythonPath, "--prerelease", "allow", "--quiet")
+		cmd := exec.Command("uv", "pip", "install", "-e", ".", "--python", pythonPath, "--prerelease", "allow", "--quiet") //nolint:gosec // G204: pythonPath is derived from the project venv directory
 		cmd.Dir = projectDir
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -231,7 +231,7 @@ func installPythonDeps(projectDir string) error {
 
 	if fileExists(filepath.Join(projectDir, "requirements.txt")) {
 		fmt.Println("Installing dependencies (requirements.txt)...")
-		cmd := exec.Command("uv", "pip", "install", "-r", "requirements.txt", "--python", pythonPath, "--prerelease", "allow", "--quiet")
+		cmd := exec.Command("uv", "pip", "install", "-r", "requirements.txt", "--python", pythonPath, "--prerelease", "allow", "--quiet") //nolint:gosec // G204: pythonPath is derived from the project venv directory
 		cmd.Dir = projectDir
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr

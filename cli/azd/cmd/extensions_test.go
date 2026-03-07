@@ -176,25 +176,3 @@ func TestBindExtension_DeeplyNestedNamespace(t *testing.T) {
 	require.Equal(t, "Extension for fine tuning AI models.", finetuneCmd.Options.Command.Short)
 	require.Equal(t, "Extension for evaluating AI models.", evalCmd.Options.Command.Short)
 }
-
-func TestParseEnvFlagFromArgs(t *testing.T) {
-	tests := []struct {
-		name     string
-		args     []string
-		expected string
-	}{
-		{name: "short flag -e", args: []string{"-e", "dev"}, expected: "dev"},
-		{name: "long flag --environment", args: []string{"--environment", "staging"}, expected: "staging"},
-		{name: "long flag with equals", args: []string{"--environment=prod"}, expected: "prod"},
-		{name: "no env flag", args: []string{"--debug", "run", "--foo", "bar"}, expected: ""},
-		{name: "env flag among other flags", args: []string{"--debug", "-e", "dev", "--no-prompt"}, expected: "dev"},
-		{name: "empty args", args: []string{}, expected: ""},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := parseEnvFlagFromArgs(tt.args)
-			require.Equal(t, tt.expected, got)
-		})
-	}
-}

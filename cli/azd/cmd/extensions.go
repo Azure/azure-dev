@@ -6,7 +6,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"strings"
@@ -25,7 +24,6 @@ import (
 	pkgux "github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 )
 
 // isJsonOutputFromArgs checks if --output json or -o json was passed in args
@@ -41,19 +39,6 @@ func isJsonOutputFromArgs(args []string) bool {
 		}
 	}
 	return false
-}
-
-// parseEnvFlagFromArgs extracts the value of the -e/--environment flag from a raw argument list.
-// This is used for commands with DisableFlagParsing: true (e.g. extension commands) where cobra
-// does not parse persistent flags, so cmd.Flags().GetString("environment") always returns "".
-func parseEnvFlagFromArgs(args []string) string {
-	fs := pflag.NewFlagSet("", pflag.ContinueOnError)
-	fs.ParseErrorsAllowlist.UnknownFlags = true
-	fs.SetOutput(io.Discard)
-	fs.StringP(internal.EnvironmentNameFlagName, "e", "", "")
-	_ = fs.Parse(args)
-	val, _ := fs.GetString(internal.EnvironmentNameFlagName)
-	return val
 }
 
 // bindExtension binds the extension to the root command
@@ -256,30 +241,20 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		allEnv = append(allEnv, traceEnv...)
 	}
 
-	// Read global flags for propagation via InvokeOptions
-	debugEnabled, _ := a.cmd.Flags().GetBool("debug")
-	cwd, _ := a.cmd.Flags().GetString("cwd")
-	envName, _ := a.cmd.Flags().GetString("environment")
-
-	// For extension commands (DisableFlagParsing: true), cobra does not parse persistent
-	// flags like -e/--environment from the raw args. Parse them manually here.
-	if a.cmd.DisableFlagParsing {
-		if envName == "" {
-			envName = parseEnvFlagFromArgs(a.args)
-		}
-	}
-
+	// Use pre-parsed global options for flag propagation.
+	// For extension commands (DisableFlagParsing: true), cobra doesn't parse persistent flags,
+	// but ParseGlobalFlags already parsed them into globalOptions before command execution.
 	options := &extensions.InvokeOptions{
 		Args: a.args,
 		Env:  allEnv,
 		// cmd extensions are always interactive (connected to terminal)
 		Interactive: true,
-		Debug:       debugEnabled,
+		Debug:       a.globalOptions.EnableDebugLogging,
 		// Use globalOptions.NoPrompt which includes agent detection,
 		// not just the --no-prompt CLI flag
 		NoPrompt:    a.globalOptions.NoPrompt,
-		Cwd:         cwd,
-		Environment: envName,
+		Cwd:         a.globalOptions.Cwd,
+		Environment: a.globalOptions.EnvironmentName,
 	}
 
 	_, invokeErr := a.extensionRunner.Invoke(ctx, extension, options)

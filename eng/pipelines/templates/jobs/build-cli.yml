@@ -16,6 +16,9 @@ parameters:
   - name: UploadArtifact
     type: boolean
     default: true
+  - name: AzureRecordMode
+    type: string
+    default: playback
   - name: ghCopilotClientId
     type: string
   - name: ghCopilotIntegrationId
@@ -148,7 +151,7 @@ jobs:
           AZD_TEST_TENANT_ID: $(AzureSubscriptionTenantId)
           AZD_TEST_AZURE_SUBSCRIPTION_ID: $(SubscriptionId)
           AZD_TEST_AZURE_LOCATION: eastus2
-          AZURE_RECORD_MODE: playback # Always run in 'playback' mode during CI builds
+          AZURE_RECORD_MODE: ${{ parameters.AzureRecordMode }}
           # AZD Live Test: Terraform authentication via `az`
           ARM_USE_CLI: true
           # Code Coverage: Generate junit report to publish results

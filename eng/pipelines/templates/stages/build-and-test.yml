@@ -1,4 +1,7 @@
 parameters: 
+  - name: AzureRecordMode
+    type: string
+    default: playback
   - name: BuildMatrix
     type: object
   - name: CrossBuildMatrix
@@ -79,6 +82,7 @@ stages:
             OS: ${{ build.value.OS }}
             UploadArtifact: ${{ build.value.UploadArtifact}}
             Variables: ${{ build.value.Variables }}
+            AzureRecordMode: ${{ parameters.AzureRecordMode }}
             ghCopilotClientId: ${{ build.value.GhCopilotClientId }}
             ghCopilotIntegrationId: ${{ build.value.GhCopilotIntegrationId }}
 

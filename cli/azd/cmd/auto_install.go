@@ -639,6 +639,12 @@ func CreateGlobalFlagSet() *pflag.FlagSet {
 func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error {
 	globalFlagSet := CreateGlobalFlagSet()
 
+	// Add the environment flag for early parsing. This is not in CreateGlobalFlagSet because
+	// it shouldn't be added to cobra's persistent flags (it's already registered per-command
+	// via EnvFlag.Bind). But we parse it here so GlobalCommandOptions.EnvironmentName is
+	// available for extension commands where DisableFlagParsing prevents cobra from parsing it.
+	globalFlagSet.StringP(internal.EnvironmentNameFlagName, "e", "", "")
+
 	// Set output to io.Discard to suppress any error messages from pflag
 	// Cobra will handle all user-facing output
 	globalFlagSet.SetOutput(io.Discard)
@@ -667,6 +673,10 @@ func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error 
 
 	if boolVal, err := globalFlagSet.GetBool("no-prompt"); err == nil {
 		opts.NoPrompt = boolVal
+	}
+
+	if strVal, err := globalFlagSet.GetString(internal.EnvironmentNameFlagName); err == nil {
+		opts.EnvironmentName = strVal
 	}
 
 	// Agent Detection: If --no-prompt was not explicitly set and we detect an AI coding agent

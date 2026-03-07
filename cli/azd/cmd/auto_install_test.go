@@ -421,3 +421,27 @@ func TestParseGlobalFlags_AgentDetection(t *testing.T) {
 		})
 	}
 }
+
+func TestParseGlobalFlags_EnvironmentName(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		expected string
+	}{
+		{name: "short flag -e", args: []string{"-e", "dev", "app", "run"}, expected: "dev"},
+		{name: "long flag --environment", args: []string{"--environment", "staging", "app", "run"}, expected: "staging"},
+		{name: "long flag with equals", args: []string{"--environment=prod", "app", "run"}, expected: "prod"},
+		{name: "no env flag", args: []string{"--debug", "app", "run"}, expected: ""},
+		{name: "env flag among other flags", args: []string{"--debug", "-e", "dev", "--no-prompt"}, expected: "dev"},
+		{name: "env flag with unknown extension flags", args: []string{"-e", "dev", "--foo", "bar"}, expected: "dev"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := &internal.GlobalCommandOptions{}
+			err := ParseGlobalFlags(tt.args, opts)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, opts.EnvironmentName)
+		})
+	}
+}

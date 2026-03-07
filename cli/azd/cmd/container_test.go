@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
-	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
@@ -151,50 +150,6 @@ func Test_Lazy_AzdContext_Resolution(t *testing.T) {
 	require.Same(t, lazyInstance, lazyComponent.lazy)
 	require.Same(t, lazyValue, directValue)
 	require.Same(t, directValue, staticComponent.concrete)
-}
-
-// Test_EnvFlag_DisableFlagParsing verifies that the EnvFlag resolver correctly extracts the
-// environment name from raw args when a command has DisableFlagParsing: true (extension commands).
-func Test_EnvFlag_DisableFlagParsing(t *testing.T) {
-	tests := []struct {
-		name     string
-		args     []string
-		expected string
-	}{
-		{name: "short flag -e", args: []string{"-e", "dev"}, expected: "dev"},
-		{name: "long flag --environment", args: []string{"--environment", "staging"}, expected: "staging"},
-		{name: "no env flag", args: []string{"--debug", "run"}, expected: ""},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
-
-			// Create a command with DisableFlagParsing: true, like an extension command
-			cmd := &cobra.Command{
-				Use:                "ext",
-				DisableFlagParsing: true,
-			}
-
-			container := ioc.NewNestedContainer(nil)
-			registerCommonDependencies(container)
-
-			// Create a scope to register scoped dependencies
-			scope, err := container.NewScope()
-			require.NoError(t, err)
-
-			ioc.RegisterInstance(scope, ctx)
-			ioc.RegisterInstance(scope, cmd)
-			ioc.RegisterInstance(scope, tt.args)
-			ioc.RegisterInstance(scope, &internal.GlobalCommandOptions{})
-
-			// Resolve the EnvFlag, which should now use parseEnvFlagFromArgs for DisableFlagParsing commands
-			var envFlag internal.EnvFlag
-			err = scope.Resolve(&envFlag)
-			require.NoError(t, err)
-			require.Equal(t, tt.expected, envFlag.EnvironmentName)
-		})
-	}
 }
 
 type testLazyComponent[T comparable] struct {

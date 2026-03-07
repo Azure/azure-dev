@@ -602,10 +602,12 @@ func (ch *ContainerHelper) Publish(
 		remoteImage, err = ch.runRemoteBuild(ctx, serviceConfig, targetResource, env, progress, imageOverride)
 		if err != nil && serviceConfig.Docker.LocalFallback {
 			ch.console.MessageUxItem(ctx, &ux.WarningMessage{
-				Description: "Remote build failed, falling back to local Docker build.",
-				HidePrefix:  false,
+				Description: fmt.Sprintf(
+					"Remote build failed: %s\nFalling back to local Docker build.", err),
+				HidePrefix: false,
 			})
-			remoteImage, err = ch.publishLocalImage(ctx, serviceConfig, serviceContext, env, progress, imageOverride)
+			remoteImage, err = ch.publishLocalImage(
+				ctx, serviceConfig, serviceContext, env, progress, imageOverride)
 		}
 	} else if useDotnetPublishForDockerBuild(serviceConfig) {
 		remoteImage, err = ch.runDotnetPublish(ctx, serviceConfig, targetResource, env, progress)

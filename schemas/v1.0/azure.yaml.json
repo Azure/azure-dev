@@ -139,11 +139,6 @@
                         "title": "Optional. Whether to use remote build for function app deployment",
                         "description": "When set to true, the deployment package will be built remotely using Oryx. When set to false, the package is deployed as-is. If omitted, defaults to true for JavaScript, TypeScript, and Python function apps."
                     },
-                    "localFallback": {
-                        "type": "boolean",
-                        "title": "Optional. Whether to fall back to a local Docker build when a remote build fails",
-                        "description": "When set to true and remoteBuild is also true for a container-based service, azd will automatically attempt a local Docker build if the remote Azure Container Registry build fails. This is useful for subscriptions that do not support ACR Tasks, such as free trial subscriptions."
-                    },
                     "docker": {
                         "$ref": "#/definitions/docker"
                     },

@@ -28,7 +28,7 @@ type DockerProjectOptions struct {
 	Registry      osutil.ExpandableString   `yaml:"registry,omitempty"    json:"registry,omitempty"`
 	Image         osutil.ExpandableString   `yaml:"image,omitempty"       json:"image,omitempty"`
 	Tag           osutil.ExpandableString   `yaml:"tag,omitempty"         json:"tag,omitempty"`
-	RemoteBuild   bool                      `yaml:"remoteBuild,omitempty" json:"remoteBuild,omitempty"`
+	RemoteBuild   bool                      `yaml:"remoteBuild,omitempty"  json:"remoteBuild,omitempty"`
 	LocalFallback bool                      `yaml:"localFallback,omitempty" json:"localFallback,omitempty"`
 	BuildArgs     []osutil.ExpandableString `yaml:"buildArgs,omitempty"   json:"buildArgs,omitempty"`
 	// not supported from azure.yaml directly yet. Adding it for Aspire to use it, initially.

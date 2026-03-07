@@ -1300,6 +1300,21 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 		RemoteBuild: true,
 	}
 
+	// Detect startup command from the project source directory
+	startupCmd, err := resolveStartupCommandForInit(ctx, a.azdClient, a.projectConfig.Path, targetDir, a.flags.NoPrompt)
+	if err != nil {
+		return err
+	}
+	if startupCmd != "" {
+		additionalProps, err := structpb.NewStruct(map[string]interface{}{
+			"startupCommand": startupCmd,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create additional properties: %w", err)
+		}
+		serviceConfig.AdditionalProperties = additionalProps
+	}
+
 	req := &azdext.AddServiceRequest{Service: serviceConfig}
 
 	if _, err := a.azdClient.Project().AddService(ctx, req); err != nil {

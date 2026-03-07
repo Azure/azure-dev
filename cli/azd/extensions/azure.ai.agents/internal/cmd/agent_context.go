@@ -56,7 +56,7 @@ func buildAgentEndpoint(accountName, projectName string) string {
 // resolveAgentEndpoint resolves the agent API endpoint from explicit flags or the azd environment.
 // If accountName and projectName are provided, those are used to construct the endpoint.
 // Otherwise, it falls back to the AZURE_AI_PROJECT_ENDPOINT environment variable from the current azd environment.
-func resolveAgentEndpoint(ctx context.Context, accountName, projectName string) (string, error) {
+func resolveAgentEndpoint(ctx context.Context, accountName string, projectName string) (string, error) {
 	if accountName != "" && projectName != "" {
 		return buildAgentEndpoint(accountName, projectName), nil
 	}

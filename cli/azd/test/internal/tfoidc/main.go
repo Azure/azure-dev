@@ -176,7 +176,7 @@ func fetchOIDCToken(ctx context.Context) (string, error) {
 	}
 
 	tokenReq.Header.Set("Authorization", "Bearer "+os.Getenv("SYSTEM_ACCESSTOKEN"))
-	tokenRes, err := http.DefaultClient.Do(tokenReq)
+	tokenRes, err := http.DefaultClient.Do(tokenReq) //nolint:gosec // G704: URL is constructed from a trusted OIDC endpoint
 	if err != nil {
 		return "", err
 	}

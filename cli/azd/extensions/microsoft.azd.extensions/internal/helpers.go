@@ -140,19 +140,19 @@ func DownloadAssetToTemp(assetUrl, assetName string) (string, error) {
 		// #nosec G107: Potential HTTP request made with variable url
 		resp, err := http.Get(assetUrl)
 		if err != nil {
-			os.Remove(tempFile.Name())
+			os.Remove(tempFile.Name()) //nolint:gosec // G703: temp file cleanup
 			return "", fmt.Errorf("failed to download asset: %w", err)
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
-			os.Remove(tempFile.Name())
+			os.Remove(tempFile.Name()) //nolint:gosec // G703: temp file cleanup
 			return "", fmt.Errorf("download returned status %d", resp.StatusCode)
 		}
 		reader = resp.Body
 	} else {
 		localFile, err := os.Open(assetUrl)
 		if err != nil {
-			os.Remove(tempFile.Name())
+			os.Remove(tempFile.Name()) //nolint:gosec // G703: temp file cleanup
 			return "", fmt.Errorf("failed to open local file: %w", err)
 		}
 		defer localFile.Close()
@@ -160,7 +160,7 @@ func DownloadAssetToTemp(assetUrl, assetName string) (string, error) {
 	}
 
 	if _, err := io.Copy(tempFile, reader); err != nil {
-		os.Remove(tempFile.Name())
+		os.Remove(tempFile.Name()) //nolint:gosec // G703: temp file cleanup
 		return "", fmt.Errorf("failed to write to temp file: %w", err)
 	}
 	tempFile.Close()
@@ -377,6 +377,7 @@ func CreateLocalRegistry() error {
 		return fmt.Errorf("failed to marshal empty registry: %w", err)
 	}
 
+	//nolint:gosec // G703: path from azd config directory
 	if err := os.WriteFile(localRegistryPath, registryJson, PermissionFile); err != nil {
 		return fmt.Errorf("failed to create local registry file: %w", err)
 	}
@@ -389,7 +390,7 @@ func CreateLocalRegistry() error {
 	}
 
 	/* #nosec G204 - args are hardcoded above, not user-controlled */
-	createExtSourceCmd := exec.Command("azd", args...)
+	createExtSourceCmd := exec.Command("azd", args...) //nolint:gosec // G702: args are hardcoded above, not user-controlled
 	if _, err := createExtSourceCmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to create local extension source: %w", err)
 	}

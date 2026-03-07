@@ -112,6 +112,7 @@ func (cli *Cli) EnsureInstalled(ctx context.Context) error {
 
 func (cli *Cli) ensureInstalled(ctx context.Context) error {
 	if override := os.Getenv("AZD_GH_TOOL_PATH"); override != "" {
+		//nolint:gosec // G706: env var in debug log
 		log.Printf("using external github cli tool: %s", override)
 		cli.path = override
 		cli.logVersion(ctx)
@@ -612,6 +613,7 @@ func extractFromTar(src, dst string) (string, error) {
 		// cspell: disable-next-line `Typeflag` is comming fron *tar.Header
 		if fileHeader.Typeflag == tar.TypeReg && fileName == "gh" {
 			filePath := filepath.Join(dst, fileName)
+			//nolint:gosec // G703: dst is a known install directory
 			ghCliFile, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, fileHeader.FileInfo().Mode())
 			if err != nil {
 				return extractedAt, err
@@ -706,7 +708,7 @@ func downloadGh(
 	}
 	defer func() {
 		_ = compressedRelease.Close()
-		_ = os.Remove(compressedRelease.Name())
+		_ = os.Remove(compressedRelease.Name()) //nolint:gosec // G703: temp file cleanup
 	}()
 
 	if _, err := io.Copy(compressedRelease, resp.Body); err != nil {

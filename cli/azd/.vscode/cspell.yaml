@@ -73,6 +73,10 @@ words:
   - genproto
   - errdetails
   - yarnpkg
+  - azconfig
+  - hostnames
+  - seekable
+  - seekability
 languageSettings:
   - languageId: go
     ignoreRegExpList:
@@ -297,6 +301,9 @@ overrides:
   - filename: extensions/microsoft.azd.concurx/internal/cmd/prompt_model.go
     words:
       - textinput
+  - filename: pkg/azdext/scope_detector.go
+    words:
+      - fakeazure
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

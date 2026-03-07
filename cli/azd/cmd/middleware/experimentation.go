@@ -31,6 +31,7 @@ func (m *ExperimentationMiddleware) Run(ctx context.Context, next NextFn) (*acti
 	// Allow overriding the assignment endpoint, either for local development (where you want to hit a private instance)
 	// or testing (we use this in our end to end tests to control assignment behavior for the CLI under test)/
 	if override := os.Getenv("AZD_DEBUG_EXPERIMENTATION_TAS_ENDPOINT"); override != "" {
+		//nolint:gosec // G706: env var in debug log
 		log.Printf("using override assignment endpoint: %s, from AZD_DEBUG_EXPERIMENTATION_TAS_ENDPOINT", override)
 		endpoint = override
 	}
@@ -42,6 +43,7 @@ func (m *ExperimentationMiddleware) Run(ctx context.Context, next NextFn) (*acti
 		if assignment, err := assignmentManager.Assignment(ctx); err != nil {
 			log.Printf("failed to get variant assignments: %v", err)
 		} else {
+			//nolint:gosec // G706: internal API value in debug log
 			log.Printf("assignment context: %v", assignment.AssignmentContext)
 			tracing.SetGlobalAttributes(fields.ExpAssignmentContextKey.String(assignment.AssignmentContext))
 

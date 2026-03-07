@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
@@ -65,17 +66,19 @@ type ServiceTargetManager struct {
 	client           *AzdClient
 	broker           *grpcbroker.MessageBroker[ServiceTargetMessage]
 	componentManager *ComponentManager[ServiceTargetProvider]
+	brokerLogger     *log.Logger
 
 	// Synchronization for concurrent access
 	mu sync.RWMutex
 }
 
 // NewServiceTargetManager creates a new ServiceTargetManager for an AzdClient.
-func NewServiceTargetManager(extensionId string, client *AzdClient) *ServiceTargetManager {
+func NewServiceTargetManager(extensionId string, client *AzdClient, brokerLogger *log.Logger) *ServiceTargetManager {
 	return &ServiceTargetManager{
 		extensionId:      extensionId,
 		client:           client,
 		componentManager: NewComponentManager[ServiceTargetProvider](ServiceTargetFactoryKey, "service target"),
+		brokerLogger:     brokerLogger,
 	}
 }
 
@@ -121,7 +124,7 @@ func (m *ServiceTargetManager) ensureStream(ctx context.Context) error {
 	// Create broker with client stream
 	envelope := &ServiceTargetEnvelope{}
 	// Use client as name since we're on the client side (extension process)
-	m.broker = grpcbroker.NewMessageBroker(stream, envelope, m.extensionId)
+	m.broker = grpcbroker.NewMessageBroker(stream, envelope, m.extensionId, m.brokerLogger)
 
 	// Register handlers for incoming requests
 	if err := m.broker.On(m.onInitialize); err != nil {

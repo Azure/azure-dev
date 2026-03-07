@@ -202,7 +202,7 @@ func fetchGithub(
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec // G704: URL is a known GitHub API endpoint
 	if err != nil {
 		return nil, err
 	}

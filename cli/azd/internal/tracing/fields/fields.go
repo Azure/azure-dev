@@ -580,6 +580,12 @@ var (
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
+	// The list of installed extensions, each formatted as "id@version".
+	ExtensionsInstalled = AttributeKey{
+		Key:            attribute.Key("extension.installed"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 )
 
 // Update related fields

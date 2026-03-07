@@ -682,6 +682,7 @@ func (t *TerraformProvider) isRemoteBackendConfig() (bool, error) {
 
 	for index := range files {
 		if !files[index].IsDir() && filepath.Ext(files[index].Name()) == ".tf" {
+			//nolint:gosec // G703: modulePath is a trusted project directory
 			fileContent, err := os.ReadFile(filepath.Join(modulePath, files[index].Name()))
 
 			if err != nil {

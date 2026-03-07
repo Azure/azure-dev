@@ -1,0 +1,12 @@
+name: containerappjob
+metadata: 
+  template: azd-test/containerappjobtest@v1
+services:
+  job:
+    project: src/job
+    module: job
+    host: containerapp
+    language: docker
+    docker:
+      path: ./Dockerfile
+      context: .

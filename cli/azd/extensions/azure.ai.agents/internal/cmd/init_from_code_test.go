@@ -426,6 +426,7 @@ func TestWriteDefinitionToSrcDir(t *testing.T) {
 			t.Errorf("path = %q, want %q", resultPath, expectedPath)
 		}
 
+		//nolint:gosec // test fixture path is created within test temp directory
 		content, err := os.ReadFile(resultPath)
 		if err != nil {
 			t.Fatalf("failed to read written file: %v", err)
@@ -467,6 +468,7 @@ func TestWriteDefinitionToSrcDir(t *testing.T) {
 
 		dir := t.TempDir()
 		existingFile := filepath.Join(dir, "agent.yaml")
+		//nolint:gosec // test fixture file permissions are intentional
 		if err := os.WriteFile(existingFile, []byte("old content"), 0644); err != nil {
 			t.Fatalf("write existing file: %v", err)
 		}
@@ -484,6 +486,7 @@ func TestWriteDefinitionToSrcDir(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
+		//nolint:gosec // test fixture path is created within test temp directory
 		content, err := os.ReadFile(existingFile)
 		if err != nil {
 			t.Fatalf("failed to read file: %v", err)

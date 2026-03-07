@@ -835,6 +835,7 @@ func (c *AgentClient) GetAgentContainerLogStream(
 	// Use raw http.Client — its Do() returns after response headers arrive,
 	// allowing the body to be read incrementally as a stream.
 	httpClient := &http.Client{}
+	//nolint:gosec // request URL is built from trusted SDK endpoint + path components
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		if cancel != nil {
@@ -844,7 +845,7 @@ func (c *AgentClient) GetAgentContainerLogStream(
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if cancel != nil {
 			cancel()
 		}

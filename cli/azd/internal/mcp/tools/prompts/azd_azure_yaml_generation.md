@@ -80,6 +80,7 @@ services:
 - All `project` paths must point to existing directories
 - All `docker.path` references must point to existing Dockerfiles **relative to the service project path**
 - Host types must be: `containerapp`, `appservice`, `function`, or `staticwebapp`
+- **Container App Jobs**: To deploy a Container App Job (`Microsoft.App/jobs`), use `host: containerapp`. The Bicep template determines whether the resource is a Container App or a Container App Job. Jobs do not have endpoints/ingress — `azd` will skip endpoint discovery automatically.
 - Language must match detected programming language
 - `dist` paths must match build output directories
 

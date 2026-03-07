@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -545,7 +547,51 @@ func (m *manager) Delete(ctx context.Context, name string) error {
 
 // ensureValidEnvironmentName ensures the environment name is valid, if it is not, an error is printed
 // and the user is prompted for a new name.
+// In --no-prompt mode, when no name is provided, the name is auto-generated from the working directory basename.
 func (m *manager) ensureValidEnvironmentName(ctx context.Context, spec *Spec) error {
+	// In --no-prompt mode with no name provided, generate from working directory
+	if spec.Name == "" && m.console.IsNoPromptMode() {
+		// Prefer the project directory from azdContext, fall back to process working directory.
+		cwd := ""
+		if m.azdContext != nil {
+			cwd = m.azdContext.ProjectDirectory()
+		}
+
+		if cwd == "" {
+			var err error
+			cwd, err = os.Getwd()
+			if err != nil {
+				return fmt.Errorf(
+					"cannot determine working directory for default environment name: %w. "+
+						"Specify one explicitly with -e or as an argument", err)
+			}
+		}
+
+		dirName := filepath.Base(cwd)
+		cleaned := CleanName(dirName)
+
+		if cleaned == "" || cleaned == "-" || cleaned == "." || cleaned == ".." {
+			return fmt.Errorf(
+				"cannot generate valid environment name from directory '%s'. "+
+					"Specify one explicitly with -e or as an argument", dirName)
+		}
+
+		if len(cleaned) > EnvironmentNameMaxLength {
+			cleaned = cleaned[:EnvironmentNameMaxLength]
+		}
+
+		if !IsValidEnvironmentName(cleaned) {
+			return fmt.Errorf(
+				"auto-generated environment name '%s' from directory '%s' is invalid. "+
+					"Specify one explicitly with -e or as an argument", cleaned, dirName)
+		}
+
+		spec.Name = cleaned
+		m.console.Message(ctx, fmt.Sprintf("Using environment name: %s", spec.Name))
+
+		return nil
+	}
+
 	exampleText := ""
 	if len(spec.Examples) > 0 {
 		exampleText = "\n\nExamples:"

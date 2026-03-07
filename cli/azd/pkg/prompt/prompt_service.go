@@ -19,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 )
@@ -161,6 +162,7 @@ type PromptService interface {
 // PromptService provides methods for prompting the user to select various Azure resources.
 type promptService struct {
 	authManager         AuthManager
+	console             input.Console
 	userConfigManager   config.UserConfigManager
 	resourceService     ResourceService
 	subscriptionManager SubscriptionManager
@@ -170,6 +172,7 @@ type promptService struct {
 // NewPromptService creates a new prompt service.
 func NewPromptService(
 	authManager AuthManager,
+	console input.Console,
 	userConfigManager config.UserConfigManager,
 	subscriptionManager SubscriptionManager,
 	resourceService ResourceService,
@@ -177,6 +180,7 @@ func NewPromptService(
 ) PromptService {
 	return &promptService{
 		authManager:         authManager,
+		console:             console,
 		userConfigManager:   userConfigManager,
 		subscriptionManager: subscriptionManager,
 		resourceService:     resourceService,
@@ -221,28 +225,45 @@ func (ps *promptService) PromptSubscription(
 
 	// Handle --no-prompt mode
 	if ps.globalOptions.NoPrompt {
-		if defaultSubscriptionId == "" {
-			return nil, fmt.Errorf(
-				"subscription selection required but cannot prompt in --no-prompt mode. " +
-					"Set a default subscription using 'azd config set defaults.subscription <subscription-id>'")
-		}
-
-		// Load subscriptions and find the default
+		// Load subscriptions for both default lookup and auto-selection
 		subscriptionList, err := ps.subscriptionManager.GetSubscriptions(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load subscriptions: %w", err)
 		}
 
-		for _, subscription := range subscriptionList {
-			if strings.EqualFold(subscription.Id, defaultSubscriptionId) {
-				return &subscription, nil
+		// If a default subscription is configured, use it
+		if defaultSubscriptionId != "" {
+			for _, subscription := range subscriptionList {
+				if strings.EqualFold(subscription.Id, defaultSubscriptionId) {
+					return &subscription, nil
+				}
 			}
+
+			return nil, fmt.Errorf(
+				"default subscription '%s' not found. "+
+					"Update your default subscription using "+
+					"'azd config set defaults.subscription <subscription-id>'",
+				defaultSubscriptionId)
 		}
 
-		return nil, fmt.Errorf(
-			"default subscription '%s' not found. "+
-				"Update your default subscription using 'azd config set defaults.subscription <subscription-id>'",
-			defaultSubscriptionId)
+		// No default configured — try auto-selecting if exactly one subscription exists
+		switch len(subscriptionList) {
+		case 0:
+			return nil, fmt.Errorf(
+				"no Azure subscriptions found for the current account. " +
+					"Verify that you're logged into the correct Azure account and tenant, " +
+					"and that your account has one or more active subscriptions. " +
+					"If needed, run 'azd auth login' to sign in.")
+		case 1:
+			ps.console.Message(ctx, fmt.Sprintf(
+				"Auto-selected subscription: %s (%s)",
+				subscriptionList[0].Name, subscriptionList[0].Id))
+			return &subscriptionList[0], nil
+		default:
+			return nil, fmt.Errorf(
+				"multiple Azure subscriptions found but running in non-interactive mode. " +
+					"Set a default subscription using 'azd config set defaults.subscription <subscription-id>'")
+		}
 	}
 
 	return PromptCustomResource(ctx, CustomResourceOptions[account.Subscription]{

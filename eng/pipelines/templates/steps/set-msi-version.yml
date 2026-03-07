@@ -1,18 +1,25 @@
 steps:
-  - ${{ if or(in(variables['BuildReasonOverride'], 'IndividualCI', 'BatchedCI'), and( eq('', variables['BuildReasonOverride']), in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI'))) }}:
-    - pwsh: |
-        $since = (Get-Date).AddMonths(-6).ToString("yyyy-MM-dd")
-        Write-Host "Deepening git history since: $since"
-        git fetch --shallow-since="$since" --tags
+  - pwsh: |
+      $since = (Get-Date).AddMonths(-6).ToString("yyyy-MM-dd")
+      Write-Host "Deepening git history since: $since"
+      git fetch --shallow-since="$since" --tags
 
-        $msiVersion = & eng/scripts/Get-MsiDevVersion.ps1
-        Write-Host "Using MSI version: $msiVersion"
-        Write-Host "##vso[task.setvariable variable=MSI_VERSION]$msiVersion"
-      displayName: Set MSI_VERSION for CI build
+      $msiVersion = & eng/scripts/Get-MsiDevVersion.ps1
+      Write-Host "Using MSI version: $msiVersion"
+      Write-Host "##vso[task.setvariable variable=MSI_VERSION]$msiVersion"
+    displayName: Set MSI_VERSION for CI build
+    condition: >-
+      or(
+        in(variables['BuildReasonOverride'], 'IndividualCI', 'BatchedCI'),
+        and(
+          eq('', variables['BuildReasonOverride']),
+          in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')
+        )
+      )
 
-  - ${{ else }}:
-    - pwsh: |
-        $msiVersion = & eng/scripts/Get-MsiVersion.ps1 -CliVersion "$(CLI_VERSION)"
-        Write-Host "Using MSI version: $msiVersion"
-        Write-Host "##vso[task.setvariable variable=MSI_VERSION]$msiVersion"
-      displayName: Set MSI_VERSION
+  - pwsh: |
+      $msiVersion = & eng/scripts/Get-MsiVersion.ps1 -CliVersion "$(CLI_VERSION)"
+      Write-Host "Using MSI version: $msiVersion"
+      Write-Host "##vso[task.setvariable variable=MSI_VERSION]$msiVersion"
+    displayName: Set MSI_VERSION
+    condition: eq('', variables['MSI_VERSION'])

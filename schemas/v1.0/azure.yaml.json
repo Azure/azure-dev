@@ -865,6 +865,11 @@
                     "type": "boolean",
                     "title": "Optional. Whether to build the image remotely",
                     "description": "If set to true, the image will be built remotely using the Azure Container Registry remote build feature. If set to false, the image will be built locally using Docker."
+                },
+                "localFallback": {
+                    "type": "boolean",
+                    "title": "Optional. Whether to fall back to local Docker build on remote build failure",
+                    "description": "When set to true and remoteBuild is also true, azd falls back to building the container image locally if the remote Azure Container Registry build fails. This is helpful for subscriptions that do not support ACR Tasks, such as free trial subscriptions."
                 }
             }
         },

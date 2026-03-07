@@ -32,6 +32,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
@@ -599,6 +600,15 @@ func (ch *ContainerHelper) Publish(
 
 	if serviceConfig.Docker.RemoteBuild {
 		remoteImage, err = ch.runRemoteBuild(ctx, serviceConfig, targetResource, env, progress, imageOverride)
+		if err != nil && serviceConfig.Docker.LocalFallback {
+			ch.console.MessageUxItem(ctx, &ux.WarningMessage{
+				Description: fmt.Sprintf(
+					"Remote build failed: %s\nFalling back to local Docker build.", err),
+				HidePrefix: false,
+			})
+			remoteImage, err = ch.publishLocalImage(
+				ctx, serviceConfig, serviceContext, env, progress, imageOverride)
+		}
 	} else if useDotnetPublishForDockerBuild(serviceConfig) {
 		remoteImage, err = ch.runDotnetPublish(ctx, serviceConfig, targetResource, env, progress)
 	} else {

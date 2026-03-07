@@ -1271,3 +1271,76 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 		})
 	}
 }
+
+func Test_ContainerHelper_Publish_RemoteBuildLocalFallback(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	mockResults := setupDockerMocks(mockContext)
+	env := environment.NewWithValues("dev", map[string]string{})
+	dockerCli := docker.NewCli(mockContext.CommandRunner)
+	dotnetCli := dotnet.NewCli(mockContext.CommandRunner)
+
+	mockContainerRegistryService := &mockContainerRegistryService{}
+	setupContainerRegistryMocks(mockContext, &mockContainerRegistryService.Mock)
+
+	containerHelper := NewContainerHelper(
+		clock.NewMock(),
+		mockContainerRegistryService,
+		nil,
+		mockContext.CommandRunner,
+		dockerCli,
+		dotnetCli,
+		mockContext.Console,
+		cloud.AzurePublic(),
+	)
+
+	serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
+	serviceConfig.Docker.Registry = osutil.NewExpandableString("contoso.azurecr.io")
+	serviceConfig.Docker.RemoteBuild = true
+	serviceConfig.Docker.LocalFallback = true
+	serviceConfig.Docker.Platform = "linux/arm64"
+
+	dockerArtifact := &Artifact{
+		Kind:         ArtifactKindContainer,
+		Location:     "my-project/my-service:azd-deploy-0",
+		LocationKind: LocationKindLocal,
+		Metadata: map[string]string{
+			"imageHash":   "IMAGE_ID",
+			"sourceImage": "",
+			"targetImage": "my-project/my-service:azd-deploy-0",
+		},
+	}
+
+	serviceContext := &ServiceContext{
+		Package: ArtifactCollection{dockerArtifact},
+	}
+
+	targetResource := environment.NewTargetResource(
+		"SUBSCRIPTION_ID",
+		"RESOURCE_GROUP",
+		"CONTAINER_APP",
+		"Microsoft.App/containerApps",
+	)
+
+	publishResult, err := logProgress(
+		t, func(progress *async.Progress[ServiceProgress]) (*ServicePublishResult, error) {
+			return containerHelper.Publish(
+				*mockContext.Context, serviceConfig, serviceContext, targetResource, env, progress, &PublishOptions{})
+		},
+	)
+
+	require.NoError(t, err)
+	require.Len(t, publishResult.Artifacts, 1)
+	require.Equal(t, "contoso.azurecr.io/my-project/my-service:azd-deploy-0", publishResult.Artifacts[0].Metadata["remoteImage"])
+
+	_, dockerPushCalled := mockResults["docker-push"]
+	require.True(t, dockerPushCalled)
+
+	warningFound := false
+	for _, line := range mockContext.Console.Output() {
+		if strings.Contains(line, "Remote build failed, falling back to local Docker build.") {
+			warningFound = true
+			break
+		}
+	}
+	require.True(t, warningFound)
+}

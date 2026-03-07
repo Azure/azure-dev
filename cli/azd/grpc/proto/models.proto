@@ -116,6 +116,7 @@ message DockerProjectOptions {
   string image = 6;
   string tag = 7;
   bool remote_build = 8;
+  bool local_fallback = 10;
   repeated string build_args = 9;
 }
 

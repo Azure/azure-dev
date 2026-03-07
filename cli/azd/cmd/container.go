@@ -188,7 +188,11 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return writer
 	})
 
-	container.MustRegisterScoped(func(ctx context.Context, cmd *cobra.Command) internal.EnvFlag {
+	container.MustRegisterScoped(func(
+		ctx context.Context,
+		cmd *cobra.Command,
+		globalOptions *internal.GlobalCommandOptions,
+	) internal.EnvFlag {
 		// The env flag `-e, --environment` is available on most azd commands but not all
 		// This is typically used to override the default environment and is used for bootstrapping other components
 		// such as the azd environment.
@@ -198,6 +202,13 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		if err != nil {
 			log.Printf("'%s' command did not include --environment so using default environment instead.", cmd.CommandPath())
 			envValue = ""
+		}
+
+		// Fall back to the pre-parsed global options value.
+		// This handles extension commands (DisableFlagParsing: true) where cobra
+		// doesn't parse persistent flags — the value was already parsed in ParseGlobalFlags.
+		if envValue == "" {
+			envValue = globalOptions.EnvironmentName
 		}
 
 		if envValue == "" {

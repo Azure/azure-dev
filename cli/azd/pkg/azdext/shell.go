@@ -58,8 +58,8 @@ type ShellInfo struct {
 //
 // Detection strategy (in order):
 //  1. SHELL environment variable (Unix) — most reliable on macOS/Linux.
-//  2. ComSpec environment variable (Windows) — standard Windows shell path.
-//  3. PSModulePath environment variable — indicates PowerShell on any platform.
+//  2. PSModulePath environment variable — indicates PowerShell on any platform.
+//  3. ComSpec environment variable (Windows) — standard Windows shell path.
 //  4. Platform default fallback (sh on Unix, cmd on Windows).
 //
 // Platform behavior:

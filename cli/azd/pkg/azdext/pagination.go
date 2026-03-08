@@ -313,8 +313,8 @@ func redactURL(rawURL string) string {
 	return u.String()
 }
 
-// sanitizeControlChars replaces control characters (CR, LF, tabs, etc.) with
-// spaces to prevent log-forging attacks in stored error bodies.
+// sanitizeControlChars replaces control characters with spaces to prevent
+// log-forging attacks in stored error bodies. Newlines and tabs are preserved.
 func sanitizeControlChars(s string) string {
 	return strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) && r != '\n' && r != '\t' {

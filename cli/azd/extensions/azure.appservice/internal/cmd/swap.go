@@ -267,11 +267,11 @@ func runSwap(ctx context.Context, flags *swapFlags, rootFlags rootFlagsDefinitio
 					return fmt.Errorf("selecting source slot: %w", err)
 				}
 
-				idx := int(prompt.GetValue())
-			if idx < 0 || idx >= len(srcChoices) {
-				return fmt.Errorf("invalid source slot selection index: %d", idx)
-			}
-			srcSlot = srcChoices[idx].Value
+					idx := int(prompt.GetValue())
+				if idx < 0 || idx >= len(srcChoices) {
+					return fmt.Errorf("invalid source slot selection index: %d", idx)
+				}
+				srcSlot = srcChoices[idx].Value
 			}
 
 			// Prompt for destination slot (excluding the selected source)
@@ -297,10 +297,10 @@ func runSwap(ctx context.Context, flags *swapFlags, rootFlags rootFlagsDefinitio
 				}
 
 				idx := int(prompt.GetValue())
-			if idx < 0 || idx >= len(dstChoices) {
-				return fmt.Errorf("invalid destination slot selection index: %d", idx)
-			}
-			dstSlot = dstChoices[idx].Value
+				if idx < 0 || idx >= len(dstChoices) {
+					return fmt.Errorf("invalid destination slot selection index: %d", idx)
+				}
+				dstSlot = dstChoices[idx].Value
 			}
 		}
 

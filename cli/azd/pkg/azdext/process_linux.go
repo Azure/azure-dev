@@ -6,6 +6,7 @@
 package azdext
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -22,7 +23,7 @@ func isProcessRunningOS(pid int) bool {
 	// Signal 0 does not send a signal but performs error checking.
 	// If the process exists, err is nil. If it doesn't, err is non-nil.
 	err = proc.Signal(syscall.Signal(0))
-	return err == nil
+	return err == nil || errors.Is(err, syscall.EPERM)
 }
 
 // getProcessInfoOS retrieves process info on Linux via /proc.

@@ -6,6 +6,7 @@ package azdext
 import (
 	"fmt"
 	"net"
+	"strings"
 )
 
 // ssrfMetadataHosts lists well-known cloud metadata service hostnames/IPs.
@@ -34,6 +35,17 @@ var ssrfBlockedCIDRs = []string{
 	"2001::/32",      // Teredo tunneling (deprecated)
 	"64:ff9b::/96",   // NAT64 well-known prefix (RFC 6052)
 	"64:ff9b:1::/48", // NAT64 local-use prefix (RFC 8215)
+}
+
+// isMetadataHost reports whether host (already lowercased) is a known
+// cloud metadata service endpoint.
+func isMetadataHost(host string) bool {
+	for _, h := range ssrfMetadataHosts {
+		if strings.ToLower(h) == host {
+			return true
+		}
+	}
+	return false
 }
 
 func ssrfCheckIP(

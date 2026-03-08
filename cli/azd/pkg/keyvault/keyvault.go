@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -75,6 +76,12 @@ type KeyVaultService interface {
 		secretValue string,
 	) error
 	SecretFromAkvs(ctx context.Context, akvs string) (string, error)
+	// SecretFromKeyVaultReference resolves a secret reference in either the
+	// akvs:// or @Microsoft.KeyVault(SecretUri=...) format. The subscriptionId
+	// is required for credential scoping; for @Microsoft.KeyVault references
+	// (which lack a subscription), the caller should provide the environment's
+	// default subscription.
+	SecretFromKeyVaultReference(ctx context.Context, ref string, defaultSubscriptionId string) (string, error)
 }
 
 type keyVaultService struct {
@@ -373,6 +380,45 @@ func (kvs *keyVaultService) SecretFromAkvs(ctx context.Context, akvs string) (st
 	return secretValue.Value, nil
 }
 
+func (kvs *keyVaultService) SecretFromKeyVaultReference(
+	ctx context.Context, ref string, defaultSubscriptionId string,
+) (string, error) {
+	// Try akvs:// first (includes its own subscription ID)
+	if IsAzureKeyVaultSecret(ref) {
+		return kvs.SecretFromAkvs(ctx, ref)
+	}
+
+	// Try @Microsoft.KeyVault(SecretUri=...)
+	if IsKeyVaultAppReference(ref) {
+		parsed, err := ParseKeyVaultAppReference(ref)
+		if err != nil {
+			return "", err
+		}
+
+		// Use the vault URL directly. The subscription ID is only needed
+		// for credential scoping (tenant lookup), so we use the default.
+		client, err := kvs.createSecretsDataClient(ctx, defaultSubscriptionId, parsed.VaultURL)
+		if err != nil {
+			return "", fmt.Errorf("creating Key Vault client for %s: %w", parsed.VaultURL, err)
+		}
+
+		resp, err := client.GetSecret(ctx, parsed.SecretName, parsed.SecretVersion, nil)
+		if err != nil {
+			return "", fmt.Errorf("fetching secret %q from vault %q: %w",
+				parsed.SecretName, parsed.VaultName, err)
+		}
+
+		if resp.Value == nil {
+			return "", fmt.Errorf("secret %q in vault %q has a nil value",
+				parsed.SecretName, parsed.VaultName)
+		}
+
+		return *resp.Value, nil
+	}
+
+	return "", fmt.Errorf("unrecognized Key Vault reference format: %s", ref)
+}
+
 // AzureKeyVaultSecret represents a secret stored in an Azure Key Vault.
 // It contains the necessary information to identify and access the secret.
 //
@@ -417,4 +463,150 @@ func ParseAzureKeyVaultSecret(akvs string) (AzureKeyVaultSecret, error) {
 		VaultName:      vaultParts[1],
 		SecretName:     vaultParts[2],
 	}, nil
+}
+
+const keyVaultAppRefPrefix = "@Microsoft.KeyVault("
+
+// IsKeyVaultAppReference reports whether s uses the @Microsoft.KeyVault(SecretUri=...) format
+// used by Azure App Service and App Configuration for Key Vault references.
+func IsKeyVaultAppReference(s string) bool {
+	return strings.HasPrefix(s, keyVaultAppRefPrefix) && strings.HasSuffix(s, ")")
+}
+
+// IsSecretReference reports whether s is a Key Vault secret reference in either
+// the akvs:// or @Microsoft.KeyVault(SecretUri=...) format.
+func IsSecretReference(s string) bool {
+	return IsAzureKeyVaultSecret(s) || IsKeyVaultAppReference(s)
+}
+
+// KeyVaultAppReference represents a parsed @Microsoft.KeyVault(SecretUri=...) reference.
+type KeyVaultAppReference struct {
+	// VaultURL is the full vault URL (e.g., "https://my-vault.vault.azure.net").
+	VaultURL string
+
+	// VaultName is the vault name extracted from the host.
+	VaultName string
+
+	// SecretName is the name of the secret.
+	SecretName string
+
+	// SecretVersion is the specific version, or empty for latest.
+	SecretVersion string
+}
+
+// ParseKeyVaultAppReference parses an @Microsoft.KeyVault(SecretUri=...) reference.
+//
+// Expected format:
+//
+//	@Microsoft.KeyVault(SecretUri=https://<vault>.vault.azure.net/secrets/<secret>[/<version>])
+func ParseKeyVaultAppReference(ref string) (KeyVaultAppReference, error) {
+	if !IsKeyVaultAppReference(ref) {
+		return KeyVaultAppReference{}, fmt.Errorf("invalid @Microsoft.KeyVault reference: %s", ref)
+	}
+
+	inner := strings.TrimSpace(ref[len(keyVaultAppRefPrefix) : len(ref)-1])
+
+	const secretURIPrefix = "SecretUri="
+	if !strings.HasPrefix(inner, secretURIPrefix) {
+		return KeyVaultAppReference{}, fmt.Errorf(
+			"invalid @Microsoft.KeyVault reference %q: expected SecretUri= parameter", ref)
+	}
+
+	secretURI := strings.TrimSpace(inner[len(secretURIPrefix):])
+	if secretURI == "" {
+		return KeyVaultAppReference{}, fmt.Errorf(
+			"invalid @Microsoft.KeyVault reference %q: SecretUri value must not be empty", ref)
+	}
+
+	u, err := url.Parse(secretURI)
+	if err != nil {
+		return KeyVaultAppReference{}, fmt.Errorf(
+			"invalid @Microsoft.KeyVault reference %q: malformed SecretUri: %w", ref, err)
+	}
+
+	if u.Scheme != "https" {
+		return KeyVaultAppReference{}, fmt.Errorf(
+			"invalid @Microsoft.KeyVault reference %q: SecretUri must use https scheme", ref)
+	}
+
+	if u.Host == "" {
+		return KeyVaultAppReference{}, fmt.Errorf(
+			"invalid @Microsoft.KeyVault reference %q: SecretUri must include a host", ref)
+	}
+
+	parts := strings.Split(strings.TrimPrefix(u.Path, "/"), "/")
+	if len(parts) < 2 || parts[0] != "secrets" {
+		return KeyVaultAppReference{}, fmt.Errorf(
+			"invalid @Microsoft.KeyVault reference %q: SecretUri path must be /secrets/<name>[/<version>]", ref)
+	}
+
+	secretName := parts[1]
+	if secretName == "" {
+		return KeyVaultAppReference{}, fmt.Errorf(
+			"invalid @Microsoft.KeyVault reference %q: secret name must not be empty", ref)
+	}
+
+	var secretVersion string
+	if len(parts) >= 3 && parts[2] != "" {
+		secretVersion = parts[2]
+	}
+
+	vaultName := u.Host
+	if idx := strings.Index(vaultName, "."); idx > 0 {
+		vaultName = vaultName[:idx]
+	}
+
+	return KeyVaultAppReference{
+		VaultURL:      fmt.Sprintf("https://%s", u.Host),
+		VaultName:     vaultName,
+		SecretName:    secretName,
+		SecretVersion: secretVersion,
+	}, nil
+}
+
+// ResolveSecretEnvironment resolves Key Vault secret references in a list of
+// environment variables (in "KEY=VALUE" format). Any value that matches the
+// akvs:// or @Microsoft.KeyVault(SecretUri=...) format is replaced with the
+// resolved secret value. Non-secret values are passed through unchanged.
+//
+// Resolution failures for individual variables are logged but do not stop
+// processing — the original unresolved value is kept. This ensures extensions
+// still launch even if a secret cannot be resolved (e.g., due to permissions).
+func ResolveSecretEnvironment(
+	ctx context.Context,
+	kvService KeyVaultService,
+	envVars []string,
+	defaultSubscriptionId string,
+) []string {
+	if kvService == nil || defaultSubscriptionId == "" {
+		return envVars
+	}
+
+	result := make([]string, len(envVars))
+	for i, envVar := range envVars {
+		eqIdx := strings.Index(envVar, "=")
+		if eqIdx < 0 {
+			result[i] = envVar
+			continue
+		}
+
+		key := envVar[:eqIdx]
+		value := envVar[eqIdx+1:]
+
+		if !IsSecretReference(value) {
+			result[i] = envVar
+			continue
+		}
+
+		resolved, err := kvService.SecretFromKeyVaultReference(ctx, value, defaultSubscriptionId)
+		if err != nil {
+			log.Printf("warning: failed to resolve Key Vault reference for %s: %v", key, err)
+			result[i] = envVar // Keep original value on failure
+			continue
+		}
+
+		result[i] = key + "=" + resolved
+	}
+
+	return result
 }

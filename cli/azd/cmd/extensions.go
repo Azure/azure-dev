@@ -19,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	kv "github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	pkgux "github.com/azure/azure-dev/cli/azd/pkg/ux"
@@ -119,6 +120,7 @@ type extensionAction struct {
 	extensionManager *extensions.Manager
 	azdServer        *grpcserver.Server
 	globalOptions    *internal.GlobalCommandOptions
+	kvService        kv.KeyVaultService
 	cmd              *cobra.Command
 	args             []string
 }
@@ -132,6 +134,7 @@ func newExtensionAction(
 	cmd *cobra.Command,
 	azdServer *grpcserver.Server,
 	globalOptions *internal.GlobalCommandOptions,
+	kvService kv.KeyVaultService,
 	args []string,
 ) actions.Action {
 	return &extensionAction{
@@ -141,6 +144,7 @@ func newExtensionAction(
 		extensionManager: extensionManager,
 		azdServer:        azdServer,
 		globalOptions:    globalOptions,
+		kvService:        kvService,
 		cmd:              cmd,
 		args:             args,
 	}
@@ -217,6 +221,12 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	env, err := a.lazyEnv.GetValue()
 	if err == nil && env != nil {
 		allEnv = append(allEnv, env.Environ()...)
+
+		// Resolve Key Vault secret references (akvs:// and @Microsoft.KeyVault formats)
+		// before passing environment to the extension, so extensions receive plain values.
+		if subId := env.Getenv("AZURE_SUBSCRIPTION_ID"); subId != "" {
+			allEnv = kv.ResolveSecretEnvironment(ctx, a.kvService, allEnv, subId)
+		}
 	}
 
 	serverInfo, err := a.azdServer.Start()

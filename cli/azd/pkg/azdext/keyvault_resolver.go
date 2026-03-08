@@ -20,9 +20,14 @@ import (
 // scenarios. It uses the extension's [TokenProvider] for authentication and
 // the Azure SDK data-plane client for secret retrieval.
 //
-// Secret references use the akvs:// URI scheme:
+// Two reference formats are supported:
 //
 //	akvs://<subscription-id>/<vault-name>/<secret-name>
+//	@Microsoft.KeyVault(SecretUri=https://<vault>.vault.azure.net/secrets/<secret>[/<version>])
+//
+// The akvs:// scheme is the preferred compact form. The @Microsoft.KeyVault
+// format is the standard Azure App Configuration / App Service reference
+// syntax, supported for backwards compatibility with existing configurations.
 //
 // Usage:
 //
@@ -98,9 +103,9 @@ func defaultSecretClientFactory(vaultURL string, credential azcore.TokenCredenti
 	return client, nil
 }
 
-// Resolve fetches the secret value for an akvs:// reference.
+// Resolve fetches the secret value for a Key Vault secret reference.
 //
-// The reference must match the format: akvs://<subscription-id>/<vault-name>/<secret-name>
+// Both akvs:// and @Microsoft.KeyVault(SecretUri=...) formats are accepted.
 //
 // Returns a [*KeyVaultResolveError] for all domain errors (invalid reference,
 // secret not found, authentication failure). No silent fallbacks or hidden retries.
@@ -118,7 +123,12 @@ func (r *KeyVaultResolver) Resolve(ctx context.Context, ref string) (string, err
 		}
 	}
 
-	vaultURL := fmt.Sprintf("https://%s.%s", parsed.VaultName, r.opts.VaultSuffix)
+	vaultURL := parsed.VaultURL
+	if vaultURL == "" {
+		vaultURL = fmt.Sprintf("https://%s.%s", parsed.VaultName, r.opts.VaultSuffix)
+	}
+
+	secretVersion := parsed.SecretVersion
 
 	client, err := r.clientFactory(vaultURL, r.credential)
 	if err != nil {
@@ -129,7 +139,7 @@ func (r *KeyVaultResolver) Resolve(ctx context.Context, ref string) (string, err
 		}
 	}
 
-	resp, err := client.GetSecret(ctx, parsed.SecretName, "", nil)
+	resp, err := client.GetSecret(ctx, parsed.SecretName, secretVersion, nil)
 	if err != nil {
 		reason := ResolveReasonAccessDenied
 
@@ -168,10 +178,11 @@ func (r *KeyVaultResolver) Resolve(ctx context.Context, ref string) (string, err
 	return *resp.Value, nil
 }
 
-// ResolveMap resolves a map of key → akvs:// references, returning a map of
-// key → resolved secret values. Processing stops at the first error.
+// ResolveMap resolves a map of key → secret references, returning a map of
+// key → resolved secret values. Both akvs:// and @Microsoft.KeyVault formats
+// are accepted. Processing stops at the first error.
 //
-// Non-akvs:// values are passed through unchanged, so callers can safely
+// Non-secret values are passed through unchanged, so callers can safely
 // resolve a mixed map of plain values and secret references.
 func (r *KeyVaultResolver) ResolveMap(ctx context.Context, refs map[string]string) (map[string]string, error) {
 	if ctx == nil {
@@ -197,9 +208,11 @@ func (r *KeyVaultResolver) ResolveMap(ctx context.Context, refs map[string]strin
 	return result, nil
 }
 
-// SecretReference represents a parsed akvs:// URI.
+// SecretReference represents a parsed Key Vault secret reference.
+// It may be populated from either the akvs:// or @Microsoft.KeyVault format.
 type SecretReference struct {
 	// SubscriptionID is the Azure subscription containing the Key Vault.
+	// Present for akvs:// references; empty for @Microsoft.KeyVault references.
 	SubscriptionID string
 
 	// VaultName is the Key Vault name (not the full URL).
@@ -207,11 +220,21 @@ type SecretReference struct {
 
 	// SecretName is the name of the secret within the vault.
 	SecretName string
+
+	// SecretVersion is the specific secret version to retrieve.
+	// Empty string means latest version.
+	SecretVersion string
+
+	// VaultURL is the full vault URL (e.g., "https://my-vault.vault.azure.net").
+	// Present for @Microsoft.KeyVault references; empty for akvs:// references
+	// (where the URL is constructed from VaultName + VaultSuffix).
+	VaultURL string
 }
 
-// IsSecretReference reports whether s uses the akvs:// scheme.
+// IsSecretReference reports whether s is a Key Vault secret reference
+// in either the akvs:// or @Microsoft.KeyVault(SecretUri=...) format.
 func IsSecretReference(s string) bool {
-	return keyvault.IsAzureKeyVaultSecret(s)
+	return keyvault.IsSecretReference(s)
 }
 
 // vaultNameRe validates Azure Key Vault names per Azure naming rules:
@@ -221,14 +244,26 @@ func IsSecretReference(s string) bool {
 //   - does not end with a hyphen
 var vaultNameRe = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9-]{1,22}[a-zA-Z0-9]$`)
 
-// ParseSecretReference parses an akvs:// URI into its components.
+// ParseSecretReference parses a Key Vault secret reference into its components.
 //
-// Expected format: akvs://<subscription-id>/<vault-name>/<secret-name>
+// Two formats are supported:
 //
-// The vault name is validated against Azure Key Vault naming rules (3–24
-// characters, starts with letter, alphanumeric and hyphens only, does not
-// end with a hyphen).
+//	akvs://<subscription-id>/<vault-name>/<secret-name>
+//	@Microsoft.KeyVault(SecretUri=https://<vault>.vault.azure.net/secrets/<secret>[/<version>])
+//
+// For the akvs:// format, the vault name is validated against Azure Key Vault
+// naming rules (3–24 characters, starts with letter, alphanumeric and hyphens
+// only, does not end with a hyphen).
 func ParseSecretReference(ref string) (*SecretReference, error) {
+	if keyvault.IsKeyVaultAppReference(ref) {
+		return parseKeyVaultAppReference(ref)
+	}
+
+	return parseAkvsReference(ref)
+}
+
+// parseAkvsReference parses an akvs:// URI into its components.
+func parseAkvsReference(ref string) (*SecretReference, error) {
 	parsed, err := keyvault.ParseAzureKeyVaultSecret(ref)
 	if err != nil {
 		return nil, err
@@ -258,11 +293,27 @@ func ParseSecretReference(ref string) (*SecretReference, error) {
 	}, nil
 }
 
+// parseKeyVaultAppReference parses an @Microsoft.KeyVault(SecretUri=...) reference
+// by delegating to the core keyvault package.
+func parseKeyVaultAppReference(ref string) (*SecretReference, error) {
+	parsed, err := keyvault.ParseKeyVaultAppReference(ref)
+	if err != nil {
+		return nil, err
+	}
+
+	return &SecretReference{
+		VaultName:     parsed.VaultName,
+		SecretName:    parsed.SecretName,
+		SecretVersion: parsed.SecretVersion,
+		VaultURL:      parsed.VaultURL,
+	}, nil
+}
+
 // ResolveReason classifies the cause of a [KeyVaultResolveError].
 type ResolveReason int
 
 const (
-	// ResolveReasonInvalidReference indicates the akvs:// URI is malformed.
+	// ResolveReasonInvalidReference indicates the secret reference is malformed.
 	ResolveReasonInvalidReference ResolveReason = iota
 
 	// ResolveReasonClientCreation indicates failure to create the Key Vault client.

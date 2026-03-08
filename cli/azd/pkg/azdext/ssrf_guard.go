@@ -223,9 +223,13 @@ func (g *SSRFGuard) checkCore(rawURL string) error {
 		return nil
 	}
 
-	// Step 5: Metadata endpoint check.
+	// Step 5: Blocked host check (with distinct reason for metadata endpoints).
 	if g.blockedHosts[lowerHost] {
-		return g.blocked(truncateValue(rawURL, 200), "blocked_host",
+		reason := "blocked_host"
+		if g.blockMetadata && isMetadataHost(lowerHost) {
+			reason = "metadata_endpoint"
+		}
+		return g.blocked(truncateValue(rawURL, 200), reason,
 			fmt.Sprintf("host %s is blocked", host))
 	}
 
@@ -244,7 +248,11 @@ func (g *SSRFGuard) checkCore(rawURL string) error {
 
 	for _, addr := range addrs {
 		if g.blockedHosts[strings.ToLower(addr)] {
-			return g.blocked(truncateValue(rawURL, 200), "blocked_host",
+			reason := "blocked_host"
+			if g.blockMetadata && isMetadataHost(strings.ToLower(addr)) {
+				reason = "metadata_endpoint"
+			}
+			return g.blocked(truncateValue(rawURL, 200), reason,
 				fmt.Sprintf("host %s resolved to blocked address %s", host, addr))
 		}
 		if ip := net.ParseIP(addr); ip != nil {

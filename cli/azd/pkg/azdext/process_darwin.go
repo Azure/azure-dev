@@ -6,6 +6,7 @@
 package azdext
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"strconv"
@@ -20,7 +21,7 @@ func isProcessRunningOS(pid int) bool {
 		return false
 	}
 	err = proc.Signal(syscall.Signal(0))
-	return err == nil
+	return err == nil || errors.Is(err, syscall.EPERM)
 }
 
 // getProcessInfoOS retrieves process info on macOS using ps(1).

@@ -443,12 +443,15 @@ func (i *initAction) initAppWithAgent(ctx context.Context) error {
 
 	defer azdAgent.Stop()
 
-	// Single prompt — uses trigger phrases that match the azure-prepare and azure-validate
-	// skill descriptions so the Copilot CLI invokes the correct skills from the Azure plugin.
-	prompt := `Prepare this application for deployment to Azure.
+	// Single prompt — explicitly invokes azure-prepare and azure-validate skills
+	// from the Azure plugin to handle the full init workflow.
+	prompt := `Prepare this application for deployment to Azure by invoking the following skills in order:
 
-Create the required infrastructure, Dockerfiles, and azure.yaml configuration needed to
-deploy this application to Azure. Then validate that everything is ready for deployment.
+1. First, invoke the @azure-prepare skill to analyze the project, generate infrastructure
+   (Bicep or Terraform), Dockerfiles, and azure.yaml configuration.
+
+2. Then, invoke the @azure-validate skill to run pre-deployment validation checks and
+   verify everything is ready for deployment.
 
 Ask the user for input when you need clarification about architecture choices,
 service selection, or configuration options.

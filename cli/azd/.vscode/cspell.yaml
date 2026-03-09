@@ -94,6 +94,15 @@ words:
   - unsanitized
   - PATHEXT
   - mintty
+  - dockerenv
+  - exfiltration
+  - Fprintf
+  - gocritic
+  - IMDS
+  - myhost
+  - preconfigured
+  - Println
+  - sctx
 languageSettings:
   - languageId: go
     ignoreRegExpList:

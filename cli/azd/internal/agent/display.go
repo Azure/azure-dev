@@ -211,6 +211,18 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 			return
 		}
 
+		// The report_intent tool carries the agent's current intent as its argument.
+		// Extract it and use as the spinner text instead of displaying as a tool run.
+		if toolName == "report_intent" {
+			if intent := extractIntentFromArgs(event.Data.Arguments); intent != "" {
+				d.mu.Lock()
+				d.lastIntent = intent
+				d.mu.Unlock()
+				d.spinner.UpdateText(intent)
+			}
+			return
+		}
+
 		// Print completion for previous tool and flush any accumulated reasoning
 		d.printToolCompletion()
 		d.flushReasoning()
@@ -408,4 +420,27 @@ func derefStr(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// extractIntentFromArgs extracts the intent text from report_intent tool arguments.
+func extractIntentFromArgs(args any) string {
+	if args == nil {
+		return ""
+	}
+
+	argsMap, ok := args.(map[string]any)
+	if !ok {
+		return ""
+	}
+
+	// The intent may be in "intent", "description", or "text" field
+	for _, key := range []string{"intent", "description", "text"} {
+		if val, exists := argsMap[key]; exists {
+			if s, ok := val.(string); ok && s != "" {
+				return logging.TruncateString(s, 80)
+			}
+		}
+	}
+
+	return ""
 }

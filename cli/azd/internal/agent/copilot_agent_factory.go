@@ -336,6 +336,16 @@ func (f *CopilotAgentFactory) createUserInputHandler(
 				choices[i] = &uxlib.SelectChoice{Value: c, Label: plain}
 			}
 
+			// If freeform is allowed alongside choices, add an "Other" option
+			allowFreeform := req.AllowFreeform != nil && *req.AllowFreeform
+			freeformValue := "__freeform__"
+			if allowFreeform {
+				choices = append(choices, &uxlib.SelectChoice{
+					Value: freeformValue,
+					Label: "Other (type your own answer)",
+				})
+			}
+
 			selector := uxlib.NewSelect(&uxlib.SelectOptions{
 				Message:         question,
 				Choices:         choices,
@@ -347,13 +357,26 @@ func (f *CopilotAgentFactory) createUserInputHandler(
 			if err != nil {
 				return copilot.UserInputResponse{}, fmt.Errorf("user input cancelled: %w", err)
 			}
-			if idx == nil || *idx < 0 || *idx >= len(req.Choices) {
+			if idx == nil || *idx < 0 || *idx >= len(choices) {
 				return copilot.UserInputResponse{}, fmt.Errorf("invalid selection")
 			}
 
-			answer := req.Choices[*idx]
-			log.Printf("[copilot] UserInput: selected=%q", answer)
-			return copilot.UserInputResponse{Answer: answer}, nil
+			selected := choices[*idx].Value
+			if selected == freeformValue {
+				// User chose freeform — prompt for text input
+				prompt := uxlib.NewPrompt(&uxlib.PromptOptions{
+					Message: question,
+				})
+				answer, promptErr := prompt.Ask(ctx)
+				if promptErr != nil {
+					return copilot.UserInputResponse{}, fmt.Errorf("user input cancelled: %w", promptErr)
+				}
+				log.Printf("[copilot] UserInput: freeform=%q", answer)
+				return copilot.UserInputResponse{Answer: answer, WasFreeform: true}, nil
+			}
+
+			log.Printf("[copilot] UserInput: selected=%q", selected)
+			return copilot.UserInputResponse{Answer: selected}, nil
 		}
 
 		// Freeform text input — use azd Prompt

@@ -186,8 +186,8 @@ func discoverCopilotCLIPath() string {
 	return ""
 }
 
-// discoverInstalledPluginDirs finds all installed Copilot plugin directories
-// under ~/.copilot/installed-plugins/ so they can be passed via --plugin-dir
+// discoverInstalledPluginDirs finds the Azure plugin directory
+// under ~/.copilot/installed-plugins/ to pass via --plugin-dir
 // to the headless CLI process which doesn't auto-discover them.
 func discoverInstalledPluginDirs() []string {
 	home, err := os.UserHomeDir()
@@ -196,46 +196,20 @@ func discoverInstalledPluginDirs() []string {
 	}
 
 	pluginsRoot := filepath.Join(home, ".copilot", "installed-plugins")
-	if _, err := os.Stat(pluginsRoot); err != nil {
-		return nil
+
+	// Look for the Azure plugin in known install locations
+	candidates := []string{
+		filepath.Join(pluginsRoot, "_direct", "microsoft--GitHub-Copilot-for-Azure--plugin"),
+		filepath.Join(pluginsRoot, "github-copilot-for-azure", "azure"),
 	}
 
 	var dirs []string
-
-	// Walk one level to find plugin group dirs (_direct, marketplace names)
-	groups, err := os.ReadDir(pluginsRoot)
-	if err != nil {
-		return nil
-	}
-
-	for _, group := range groups {
-		if !group.IsDir() {
-			continue
-		}
-		groupPath := filepath.Join(pluginsRoot, group.Name())
-
-		// Walk one more level to find individual plugin dirs
-		plugins, err := os.ReadDir(groupPath)
-		if err != nil {
-			continue
-		}
-
-		for _, plugin := range plugins {
-			if !plugin.IsDir() {
-				continue
-			}
-			pluginPath := filepath.Join(groupPath, plugin.Name())
-			// Verify it has skills/ or .claude-plugin/ to confirm it's a real plugin
-			if hasSubdir(pluginPath, "skills") || hasSubdir(pluginPath, ".claude-plugin") {
-				dirs = append(dirs, pluginPath)
-			}
+	for _, p := range candidates {
+		if _, err := os.Stat(filepath.Join(p, "skills")); err == nil {
+			dirs = append(dirs, p)
+			break
 		}
 	}
 
 	return dirs
-}
-
-func hasSubdir(parent, name string) bool {
-	info, err := os.Stat(filepath.Join(parent, name))
-	return err == nil && info.IsDir()
 }

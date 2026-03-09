@@ -44,7 +44,7 @@ require (
 	github.com/drone/envsubst v1.0.3
 	github.com/fatih/color v1.18.0
 	github.com/fsnotify/fsnotify v1.9.0
-	github.com/github/copilot-sdk/go v0.1.26-preview.0
+	github.com/github/copilot-sdk/go v0.1.32
 	github.com/gofrs/flock v0.12.1
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/golobby/container/v3 v3.3.2

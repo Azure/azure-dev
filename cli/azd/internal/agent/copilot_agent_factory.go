@@ -202,7 +202,7 @@ func (f *CopilotAgentFactory) createPermissionHandler(
 
 		// Build a consent request from the SDK permission request
 		consentReq := consent.ConsentRequest{
-			ToolID:     req.Kind,
+			ToolID:     string(req.Kind),
 			ServerName: "copilot",
 			Operation:  consent.OperationTypeTool,
 		}
@@ -221,7 +221,7 @@ func (f *CopilotAgentFactory) createPermissionHandler(
 			// Use the azd consent checker to prompt the user
 			checker := consent.NewConsentChecker(f.consentManager, "copilot")
 			consentDecision, promptErr := checker.CheckToolConsent(
-				ctx, req.Kind, fmt.Sprintf("Copilot permission request: %s", req.Kind),
+				ctx, string(req.Kind), fmt.Sprintf("Copilot permission request: %s", req.Kind),
 				mcp.ToolAnnotation{},
 			)
 			if promptErr != nil {

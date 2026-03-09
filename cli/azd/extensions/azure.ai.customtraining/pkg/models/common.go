@@ -1,0 +1,67 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package models
+
+// JobInput represents a discriminated union for job inputs.
+type JobInput struct {
+	JobInputType string `json:"jobInputType"` // "uri_folder", "uri_file", "literal"
+	URI          string `json:"uri,omitempty"`
+	Value        string `json:"value,omitempty"`
+	Mode         string `json:"mode,omitempty"` // "download", "ro_mount"
+}
+
+// JobOutput represents a discriminated union for job outputs.
+type JobOutput struct {
+	JobOutputType string `json:"jobOutputType"` // "uri_folder", "uri_file"
+	URI           string `json:"uri,omitempty"`
+	Mode          string `json:"mode,omitempty"` // "rw_mount", "upload"
+}
+
+// Distribution represents distributed training configuration.
+type Distribution struct {
+	DistributionType        string `json:"distributionType"`                  // "PyTorch", "Mpi", "TensorFlow"
+	ProcessCountPerInstance int    `json:"processCountPerInstance,omitempty"`
+}
+
+// ResourceConfig represents compute resource specifications.
+type ResourceConfig struct {
+	InstanceCount int    `json:"instanceCount,omitempty"`
+	InstanceType  string `json:"instanceType,omitempty"`
+	ShmSize       string `json:"shmSize,omitempty"`
+}
+
+// CommandJobLimits represents job limits.
+type CommandJobLimits struct {
+	Timeout string `json:"timeout,omitempty"` // ISO 8601 duration
+}
+
+// QueueSettings represents job priority/tier settings.
+type QueueSettings struct {
+	JobTier  string `json:"jobTier,omitempty"`
+	Priority string `json:"priority,omitempty"`
+}
+
+// PagedResponse represents a paginated API response.
+type PagedResponse struct {
+	Value    []JobResource `json:"value"`
+	NextLink string        `json:"nextLink,omitempty"`
+}
+
+// ErrorResponse represents an API error envelope.
+type ErrorResponse struct {
+	Error struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+// JobListItem is a flattened view of a job for table display.
+type JobListItem struct {
+	Name        string `json:"name" table:"NAME"`
+	DisplayName string `json:"displayName" table:"DISPLAY NAME"`
+	Status      string `json:"status" table:"STATUS"`
+	JobType     string `json:"jobType" table:"TYPE"`
+	ComputeID   string `json:"computeId" table:"COMPUTE"`
+	Created     string `json:"createdDateTime" table:"CREATED"`
+}

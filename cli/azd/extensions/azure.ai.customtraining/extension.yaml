@@ -1,0 +1,20 @@
+id: azure.ai.customtraining
+namespace: ai.training
+displayName: Azure AI Custom Training (Preview)
+description: Extension for Azure AI Foundry custom training jobs. (Preview)
+usage: azd ai training <command> [options]
+version: 0.0.1-preview
+language: go
+capabilities:
+    - custom-commands
+    - metadata
+examples:
+    - name: init
+      description: Initialize project configuration for custom training.
+      usage: azd ai training init
+    - name: job create
+      description: Submit a command job from YAML definition.
+      usage: azd ai training job create --file job.yaml
+    - name: job list
+      description: List all training jobs.
+      usage: azd ai training job list

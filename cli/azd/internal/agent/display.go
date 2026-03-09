@@ -378,21 +378,29 @@ func extractToolInputSummary(args any) string {
 	return ""
 }
 
-// toRelativePath converts an absolute path to relative if it's under cwd.
+// toRelativePath converts an absolute path to relative if it's under cwd
+// or a known skills directory.
 func toRelativePath(p string) string {
+	// Try cwd first
 	cwd, err := os.Getwd()
-	if err != nil {
-		return p
+	if err == nil {
+		rel, err := filepath.Rel(cwd, p)
+		if err == nil && !strings.HasPrefix(rel, "..") {
+			return rel
+		}
 	}
-	rel, err := filepath.Rel(cwd, p)
-	if err != nil {
-		return p
+
+	// Try skills directories (e.g., ~/.copilot/installed-plugins/.../skills/)
+	home, err := os.UserHomeDir()
+	if err == nil {
+		pluginsRoot := filepath.Join(home, ".copilot", "installed-plugins")
+		rel, err := filepath.Rel(pluginsRoot, p)
+		if err == nil && !strings.HasPrefix(rel, "..") {
+			return rel
+		}
 	}
-	// Don't return paths that escape cwd (e.g., "../../foo")
-	if strings.HasPrefix(rel, "..") {
-		return p
-	}
-	return rel
+
+	return p
 }
 
 func derefStr(s *string) string {

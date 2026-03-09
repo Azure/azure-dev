@@ -38,8 +38,12 @@ type AgentLocalContext struct {
 // in the current azd environment directory (<project root>/.azure/<env name>/).
 func resolveConfigPath(ctx context.Context, azdClient *azdext.AzdClient) (string, error) {
 	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
-	if err != nil || projectResponse.Project == nil {
+	if err != nil {
 		return "", fmt.Errorf("failed to get project config: %w", err)
+	}
+
+	if projectResponse.Project == nil {
+		return "", fmt.Errorf("failed to get project config (is there an azure.yaml?)")
 	}
 
 	envResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
@@ -52,12 +56,7 @@ func resolveConfigPath(ctx context.Context, azdClient *azdext.AzdClient) (string
 
 	return filepath.Join(projectResponse.Project.Path, ".azure", envResponse.Environment.Name, ConfigFile), nil
 }
-if err != nil {
-return "", fmt.Errorf("failed to get project config: %w", err)
-}
-if projectResponse.Project == nil {
-return "", fmt.Errorf("failed to get project config (is there an azure.yaml?)")
-}
+
 // loadLocalContext reads the .foundry-agent.json state file.
 // configPath is the full path to the config file (use resolveConfigPath to obtain it).
 func loadLocalContext(configPath string) *AgentLocalContext {

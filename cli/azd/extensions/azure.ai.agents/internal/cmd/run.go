@@ -81,7 +81,7 @@ func runRun(ctx context.Context, flags *runFlags) error {
 	defer azdClient.Close()
 
 	// Resolve the service source directory and startup command from azure.yaml
-	runCtx, err := resolveServiceRunContext(ctx, azdClient, flags.name)
+	runCtx, err := resolveServiceRunContext(ctx, azdClient, flags.name, rootFlags.NoPrompt)
 	if err != nil {
 		return err
 	}

@@ -192,36 +192,114 @@ type AgentServiceInfo struct {
 	Version     string // deployed agent version from env
 }
 
-// resolveAgentServiceFromProject finds the first azure.ai.agent service in azure.yaml
-// and resolves its deployed agent name and version from the azd environment.
-// The name parameter filters to a specific service; empty means use the first one found.
-func resolveAgentServiceFromProject(ctx context.Context, azdClient *azdext.AzdClient, name string) (*AgentServiceInfo, error) {
+// promptForAgentService prompts the user to select one of multiple azure.ai.agent services.
+// In no-prompt mode it returns an error listing the available services.
+func promptForAgentService(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	services []*azdext.ServiceConfig,
+	noPrompt bool,
+) (*azdext.ServiceConfig, error) {
+	if noPrompt {
+		names := make([]string, len(services))
+		for i, s := range services {
+			names[i] = s.Name
+		}
+		return nil, fmt.Errorf(
+			"multiple azure.ai.agent services found in azure.yaml: %s\n\n"+
+				"Provide the service name as a positional argument to specify which one to use",
+			strings.Join(names, ", "),
+		)
+	}
+
+	choices := make([]*azdext.SelectChoice, len(services))
+	for i, s := range services {
+		choices[i] = &azdext.SelectChoice{
+			Label: s.Name,
+			Value: s.Name,
+		}
+	}
+
+	defaultIndex := int32(0)
+	resp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message:       "Select an agent service",
+			Choices:       choices,
+			SelectedIndex: &defaultIndex,
+		},
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return nil, fmt.Errorf("selection cancelled")
+		}
+		return nil, fmt.Errorf("failed to prompt for service selection: %w", err)
+	}
+
+	return services[int(*resp.Value)], nil
+}
+
+// resolveAgentService finds an azure.ai.agent service from the project configuration.
+// When name is provided, it filters to that specific service.
+// When name is empty with a single service, that service is returned automatically.
+// When name is empty with multiple services, it prompts the user to select one
+// (or returns an error in no-prompt mode).
+func resolveAgentService(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	name string,
+	noPrompt bool,
+) (*azdext.ServiceConfig, *azdext.ProjectConfig, error) {
 	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get project config: %w", err)
+		return nil, nil, fmt.Errorf("failed to get project config (is there an azure.yaml?): %w", err)
 	}
 	if projectResponse.Project == nil {
-		return nil, fmt.Errorf("failed to get project config: project not found in azd response")
+		return nil, nil, fmt.Errorf("failed to get project config (is there an azure.yaml?)")
 	}
 
-	// Find the matching azure.ai.agent service
 	var svc *azdext.ServiceConfig
-	for _, s := range projectResponse.Project.Services {
-		if s.Host != AiAgentHost {
-			continue
+
+	if name != "" {
+		for _, s := range projectResponse.Project.Services {
+			if s.Host == AiAgentHost && s.Name == name {
+				svc = s
+				break
+			}
 		}
-		if name != "" && s.Name != name {
-			continue
+		if svc == nil {
+			return nil, nil, fmt.Errorf("no azure.ai.agent service named '%s' found in azure.yaml", name)
 		}
-		svc = s
-		break
+	} else {
+		var agentServices []*azdext.ServiceConfig
+		for _, s := range projectResponse.Project.Services {
+			if s.Host == AiAgentHost {
+				agentServices = append(agentServices, s)
+			}
+		}
+
+		switch len(agentServices) {
+		case 0:
+			return nil, nil, fmt.Errorf("no azure.ai.agent service found in azure.yaml")
+		case 1:
+			svc = agentServices[0]
+		default:
+			selected, err := promptForAgentService(ctx, azdClient, agentServices, noPrompt)
+			if err != nil {
+				return nil, nil, err
+			}
+			svc = selected
+		}
 	}
 
-	if svc == nil {
-		if name != "" {
-			return nil, fmt.Errorf("no azure.ai.agent service named '%s' found in azure.yaml", name)
-		}
-		return nil, fmt.Errorf("no azure.ai.agent service found in azure.yaml")
+	return svc, projectResponse.Project, nil
+}
+
+// resolveAgentServiceFromProject finds the azure.ai.agent service in azure.yaml
+// and resolves its deployed agent name and version from the azd environment.
+func resolveAgentServiceFromProject(ctx context.Context, azdClient *azdext.AzdClient, name string, noPrompt bool) (*AgentServiceInfo, error) {
+	svc, _, err := resolveAgentService(ctx, azdClient, name, noPrompt)
+	if err != nil {
+		return nil, err
 	}
 
 	info := &AgentServiceInfo{ServiceName: svc.Name}
@@ -261,56 +339,13 @@ type ServiceRunContext struct {
 
 // resolveServiceRunContext queries the azd project to find the matching azure.ai.agent
 // service, then returns the service's absolute source directory and startup command.
-// When name is empty and multiple agent services exist, it returns an error listing them.
-func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, name string) (*ServiceRunContext, error) {
-	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, name string, noPrompt bool) (*ServiceRunContext, error) {
+	svc, project, err := resolveAgentService(ctx, azdClient, name, noPrompt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get project config (is there an azure.yaml?): %w", err)
-	}
-	if projectResponse.Project == nil {
-		return nil, fmt.Errorf("failed to get project config (is there an azure.yaml?)")
+		return nil, err
 	}
 
-	var svc *azdext.ServiceConfig
-
-	if name != "" {
-		// Filter to the specific named service
-		for _, s := range projectResponse.Project.Services {
-			if s.Host == AiAgentHost && s.Name == name {
-				svc = s
-				break
-			}
-		}
-		if svc == nil {
-			return nil, fmt.Errorf("no azure.ai.agent service named '%s' found in azure.yaml", name)
-		}
-	} else {
-		// Collect all agent services
-		var agentServices []*azdext.ServiceConfig
-		for _, s := range projectResponse.Project.Services {
-			if s.Host == AiAgentHost {
-				agentServices = append(agentServices, s)
-			}
-		}
-
-		switch len(agentServices) {
-		case 0:
-			return nil, fmt.Errorf("no azure.ai.agent service found in azure.yaml")
-		case 1:
-			svc = agentServices[0]
-		default:
-			names := make([]string, len(agentServices))
-			for i, s := range agentServices {
-				names[i] = s.Name
-			}
-			return nil, fmt.Errorf(
-				"multiple azure.ai.agent services found in azure.yaml: %s\n\nProvide the service name as a positional argument to specify which one to use",
-				strings.Join(names, ", "),
-			)
-		}
-	}
-
-	projectDir := filepath.Join(projectResponse.Project.Path, svc.RelativePath)
+	projectDir := filepath.Join(project.Path, svc.RelativePath)
 
 	var startupCmd string
 	if svc.AdditionalProperties != nil {

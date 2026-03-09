@@ -170,7 +170,7 @@ func (a *InvokeAction) invokeRemote(ctx context.Context) error {
 	name := a.flags.name
 
 	// Auto-resolve agent name from azure.yaml
-	if info, err := resolveAgentServiceFromProject(ctx, azdClient, name); err == nil {
+	if info, err := resolveAgentServiceFromProject(ctx, azdClient, name, rootFlags.NoPrompt); err == nil {
 		if name == "" && info.AgentName != "" {
 			name = info.AgentName
 		}

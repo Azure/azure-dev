@@ -174,7 +174,7 @@ func (al *ThoughtLogger) HandleAgentAction(ctx context.Context, action schema.Ag
 		for _, param := range params {
 			for key := range prioritizedParams {
 				if strings.HasPrefix(param, key) {
-					paramStr := truncateString(param, 120)
+					paramStr := TruncateString(param, 120)
 					al.ThoughtChan <- Thought{
 						Action:      action.Tool,
 						ActionInput: paramStr,
@@ -196,7 +196,7 @@ func (al *ThoughtLogger) HandleAgentAction(ctx context.Context, action schema.Ag
 				Action: action.Tool,
 			}
 		} else {
-			toolInput = truncateString(toolInput, 120)
+			toolInput = TruncateString(toolInput, 120)
 			al.ThoughtChan <- Thought{
 				Action:      action.Tool,
 				ActionInput: toolInput,
@@ -217,8 +217,8 @@ func (al *ThoughtLogger) HandleLLMError(ctx context.Context, err error) {
 func (al *ThoughtLogger) HandleStreamingFunc(ctx context.Context, chunk []byte) {
 }
 
-// truncateString truncates a string to maxLen characters and adds "..." if truncated
-func truncateString(s string, maxLen int) string {
+// TruncateString truncates a string to maxLen characters and adds "..." if truncated
+func TruncateString(s string, maxLen int) string {
 	if len(s) > maxLen {
 		return s[:maxLen-3] + "..."
 	}

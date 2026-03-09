@@ -77,29 +77,13 @@ func (f *CopilotAgentFactory) Create(ctx context.Context, opts ...CopilotAgentOp
 	log.Printf("[copilot] Client started (state: %s)", f.clientManager.State())
 	cleanupTasks["copilot-client"] = f.clientManager.Stop
 
-	// Create thought channel for UX streaming
-	thoughtChan := make(chan logging.Thought)
-	cleanupTasks["thoughtChan"] = func() error {
-		close(thoughtChan)
-		return nil
-	}
-
-	// Create file logger for session events
+	// Create file logger for session event audit trail
 	fileLogger, fileLoggerCleanup, err := logging.NewSessionFileLogger()
 	if err != nil {
 		defer cleanup()
 		return nil, fmt.Errorf("failed to create session file logger: %w", err)
 	}
 	cleanupTasks["fileLogger"] = fileLoggerCleanup
-
-	// Create event logger for UX thought streaming
-	eventLogger := logging.NewSessionEventLogger(thoughtChan)
-
-	// Create composite handler
-	compositeHandler := logging.NewCompositeEventHandler(
-		eventLogger.HandleEvent,
-		fileLogger.HandleEvent,
-	)
 
 	// Load built-in MCP server configs
 	builtInServers, err := loadBuiltInMCPServers()
@@ -144,9 +128,10 @@ func (f *CopilotAgentFactory) Create(ctx context.Context, opts ...CopilotAgentOp
 	}
 	log.Println("[copilot] Session created successfully")
 
-	// Subscribe to session events
+	// Subscribe file logger to session events for audit trail
+	// UX rendering is handled by AgentDisplay in CopilotAgent.SendMessage()
 	unsubscribe := session.On(func(event copilot.SessionEvent) {
-		compositeHandler.HandleEvent(event)
+		fileLogger.HandleEvent(event)
 	})
 
 	cleanupTasks["session-events"] = func() error {
@@ -160,7 +145,6 @@ func (f *CopilotAgentFactory) Create(ctx context.Context, opts ...CopilotAgentOp
 
 	// Build agent options
 	allOpts := []CopilotAgentOption{
-		WithCopilotThoughtChannel(thoughtChan),
 		WithCopilotCleanup(cleanup),
 	}
 	allOpts = append(allOpts, opts...)

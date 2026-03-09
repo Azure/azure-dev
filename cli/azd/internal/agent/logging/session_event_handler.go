@@ -39,7 +39,7 @@ func (l *SessionEventLogger) HandleEvent(event copilot.SessionEvent) {
 	case copilot.AssistantMessage:
 		if event.Data.Content != nil && *event.Data.Content != "" {
 			content := strings.TrimSpace(*event.Data.Content)
-			log.Printf("[copilot-event] assistant.message: %s", truncateString(content, 200))
+			log.Printf("[copilot-event] assistant.message: %s", TruncateString(content, 200))
 			if content != "" && !strings.Contains(strings.ToLower(content), "do i need to use a tool?") {
 				l.thoughtChan <- Thought{
 					Thought: content,
@@ -90,7 +90,7 @@ func extractToolInputSummary(args any) string {
 	for _, key := range prioritizedKeys {
 		if val, exists := argsMap[key]; exists {
 			s := fmt.Sprintf("%s: %v", key, val)
-			return truncateString(s, 120)
+			return TruncateString(s, 120)
 		}
 	}
 
@@ -152,7 +152,7 @@ func (l *SessionFileLogger) HandleEvent(event copilot.SessionEvent) {
 	case copilot.AssistantMessage:
 		content := ""
 		if event.Data.Content != nil {
-			content = truncateString(*event.Data.Content, 200)
+			content = TruncateString(*event.Data.Content, 200)
 		}
 		detail = fmt.Sprintf("content=%s", content)
 	case copilot.SessionError:

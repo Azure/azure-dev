@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"path/filepath"
 
 	copilot "github.com/github/copilot-sdk/go"
 
@@ -39,9 +38,9 @@ func (b *SessionConfigBuilder) Build(
 		Streaming: true,
 	}
 
-	// Store Copilot session files in .azure/copilot relative to cwd
+	// Set working directory to cwd for tool operations
 	if cwd, err := os.Getwd(); err == nil {
-		cfg.ConfigDir = filepath.Join(cwd, ".azure", "copilot")
+		cfg.WorkingDirectory = cwd
 	}
 
 	userConfig, err := b.userConfigManager.Load()

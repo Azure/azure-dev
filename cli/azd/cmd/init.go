@@ -444,13 +444,13 @@ func (i *initAction) initAppWithAgent(ctx context.Context) error {
 	defer azdAgent.Stop()
 
 	// Single prompt — explicitly invokes azure-prepare and azure-validate skills
-	// from the Azure plugin to handle the full init workflow using the azd recipe.
+	// from the Azure plugin using fully qualified plugin:skill-name syntax.
 	prompt := `Prepare this application for deployment to Azure by invoking the following skills in order:
 
-1. First, invoke the @azure-prepare skill using the "azd" recipe to analyze the project,
+1. First, invoke the azure:azure-prepare skill using the "azd" recipe to analyze the project,
    generate infrastructure (Bicep or Terraform), Dockerfiles, and azure.yaml configuration.
 
-2. Then, invoke the @azure-validate skill using the "azd" recipe to run pre-deployment
+2. Then, invoke the azure:azure-validate skill using the "azd" recipe to run pre-deployment
    validation checks and verify everything is ready for deployment.
 
 Always select the "azd" recipe when prompted for recipe selection.

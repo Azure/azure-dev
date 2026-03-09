@@ -80,6 +80,7 @@ func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 	}
 
 	// Set permissions on temp file before rename.
+	//nolint:gosec // G703: tmpPath is constructed internally
 	if err := os.Chmod(tmpPath, perm); err != nil {
 		return fmt.Errorf("azdext.WriteFileAtomic: chmod: %w", err)
 	}
@@ -143,6 +144,7 @@ func CopyFileAtomic(src, dst string, perm os.FileMode) error {
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("azdext.CopyFileAtomic: close: %w", err)
 	}
+	//nolint:gosec // G703: tmpPath is constructed internally
 	if err := os.Chmod(tmpPath, perm); err != nil {
 		return fmt.Errorf("azdext.CopyFileAtomic: chmod: %w", err)
 	}

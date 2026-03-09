@@ -171,9 +171,11 @@ func ShellCommandWith(ctx context.Context, info ShellInfo, script string) (*exec
 
 	case ShellTypeUnknown:
 		// Last-resort fallback based on platform.
+		//nolint:gosec // G204: shell execution is the function's purpose
 		if runtime.GOOS == "windows" {
 			return exec.CommandContext(ctx, "cmd.exe", "/C", script), nil
 		}
+		//nolint:gosec // G204: shell execution is the function's purpose
 		return exec.CommandContext(ctx, "/bin/sh", "-c", script), nil
 
 	default:
@@ -193,7 +195,7 @@ func IsInteractiveTerminal(f *os.File) bool {
 	if f == nil {
 		return false
 	}
-	return term.IsTerminal(int(f.Fd()))
+	return term.IsTerminal(int(f.Fd())) //nolint:gosec // G115: file descriptor fits in int on all supported platforms
 }
 
 // IsStdinTerminal reports whether standard input is an interactive terminal.
@@ -216,6 +218,7 @@ func IsStdoutTerminal() bool {
 //
 // The name is resolved via [exec.LookPath]-style lookup (PATH search).
 func ExecCommand(ctx context.Context, name string, args ...string) *exec.Cmd {
+	//nolint:gosec // G204: callers pass validated program names
 	return exec.CommandContext(ctx, name, args...)
 }
 

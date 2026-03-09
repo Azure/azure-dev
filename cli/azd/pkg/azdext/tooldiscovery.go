@@ -258,7 +258,7 @@ func executableCandidates(base string) []string {
 }
 
 func isExecutableFile(path string) bool {
-	fi, err := os.Stat(path)
+	fi, err := os.Stat(path) //nolint:gosec // G703: path is from buildPATH directory walk, not user input
 	if err != nil || fi.IsDir() {
 		return false
 	}

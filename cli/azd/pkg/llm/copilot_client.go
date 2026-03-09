@@ -55,13 +55,6 @@ func NewCopilotClientManager(options *CopilotClientOptions) *CopilotClientManage
 		log.Printf("[copilot-client] Using CLI binary: %s", cliPath)
 	}
 
-	// Pass --plugin-dir for each installed plugin so headless mode discovers them
-	pluginDirs := discoverInstalledPluginDirs()
-	for _, dir := range pluginDirs {
-		clientOpts.CLIArgs = append(clientOpts.CLIArgs, "--plugin-dir", dir)
-		log.Printf("[copilot-client] Loading plugin from: %s", dir)
-	}
-
 	return &CopilotClientManager{
 		client:  copilot.NewClient(clientOpts),
 		options: options,

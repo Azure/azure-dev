@@ -6,7 +6,9 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"os"
+	"path/filepath"
 
 	copilot "github.com/github/copilot-sdk/go"
 
@@ -70,9 +72,13 @@ func (b *SessionConfigBuilder) Build(
 		cfg.ExcludedTools = excluded
 	}
 
-	// Skill control
-	if dirs := getStringSliceFromConfig(userConfig, "ai.agent.skills.directories"); len(dirs) > 0 {
-		cfg.SkillDirectories = dirs
+	// Skill directories: start with Azure plugin skills, then add user-configured
+	skillDirs := discoverAzurePluginSkillDirs()
+	if userDirs := getStringSliceFromConfig(userConfig, "ai.agent.skills.directories"); len(userDirs) > 0 {
+		skillDirs = append(skillDirs, userDirs...)
+	}
+	if len(skillDirs) > 0 {
+		cfg.SkillDirectories = skillDirs
 	}
 	if disabled := getStringSliceFromConfig(userConfig, "ai.agent.skills.disabled"); len(disabled) > 0 {
 		cfg.DisabledSkills = disabled
@@ -206,4 +212,30 @@ func indexOf(s string, c byte) int {
 		}
 	}
 	return -1
+}
+
+// discoverAzurePluginSkillDirs finds the skills directory from the installed
+// Azure plugin so skills are available in headless SDK sessions.
+func discoverAzurePluginSkillDirs() []string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+
+	pluginsRoot := filepath.Join(home, ".copilot", "installed-plugins")
+
+	// Check known install locations for the Azure plugin's skills directory
+	candidates := []string{
+		filepath.Join(pluginsRoot, "_direct", "microsoft--GitHub-Copilot-for-Azure--plugin", "skills"),
+		filepath.Join(pluginsRoot, "github-copilot-for-azure", "azure", "skills"),
+	}
+
+	for _, skillsDir := range candidates {
+		if info, err := os.Stat(skillsDir); err == nil && info.IsDir() {
+			log.Printf("[copilot-config] Found Azure plugin skills at: %s", skillsDir)
+			return []string{skillsDir}
+		}
+	}
+
+	return nil
 }

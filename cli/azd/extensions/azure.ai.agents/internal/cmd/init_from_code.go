@@ -1275,8 +1275,14 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 
 	agentConfig.Deployments = a.deploymentDetails
 
+	// Detect startup command from the project source directory
+	startupCmd, err := resolveStartupCommandForInit(ctx, a.azdClient, a.projectConfig.Path, targetDir, a.flags.NoPrompt)
+	if err != nil {
+		return err
+	}
+	agentConfig.StartupCommand = startupCmd
+
 	var agentConfigStruct *structpb.Struct
-	var err error
 	if agentConfigStruct, err = project.MarshalStruct(&agentConfig); err != nil {
 		return fmt.Errorf("failed to marshal agent config: %w", err)
 	}
@@ -1292,21 +1298,6 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 	// For hosted (container-based) agents, set remoteBuild to true by default
 	serviceConfig.Docker = &azdext.DockerProjectOptions{
 		RemoteBuild: true,
-	}
-
-	// Detect startup command from the project source directory
-	startupCmd, err := resolveStartupCommandForInit(ctx, a.azdClient, a.projectConfig.Path, targetDir, a.flags.NoPrompt)
-	if err != nil {
-		return err
-	}
-	if startupCmd != "" {
-		additionalProps, err := structpb.NewStruct(map[string]interface{}{
-			"startupCommand": startupCmd,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to create additional properties: %w", err)
-		}
-		serviceConfig.AdditionalProperties = additionalProps
 	}
 
 	req := &azdext.AddServiceRequest{Service: serviceConfig}

@@ -206,7 +206,10 @@ func (a *InvokeAction) invokeRemote(ctx context.Context) error {
 	body["session_id"] = sid
 
 	// Conversation ID — enables multi-turn memory via Foundry Conversations API
-	convID := resolveConversationID(ctx, azdClient, name, a.flags.newSession)
+	convID, err := resolveConversationID(ctx, azdClient, name, a.flags.newSession)
+	if err != nil {
+		return err
+	}
 	if convID == "" {
 		// Create a new conversation
 		newConvID, err := createConversation(ctx, endpoint)

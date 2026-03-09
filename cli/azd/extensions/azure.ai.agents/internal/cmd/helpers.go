@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
+	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -34,14 +35,22 @@ type AgentLocalContext struct {
 }
 
 // resolveConfigPath returns the full path to the .foundry-agent.json file
-// in the azd project root directory.
-func resolveConfigPath(ctx context.Context, azdClient *azdext.AzdClient) string {
+// in the current azd environment directory (<project root>/.azure/<env name>/).
+func resolveConfigPath(ctx context.Context, azdClient *azdext.AzdClient) (string, error) {
 	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil || projectResponse.Project == nil {
-		return ConfigFile
+		return "", fmt.Errorf("failed to get project config: %w", err)
 	}
 
-	return filepath.Join(projectResponse.Project.Path, ConfigFile)
+	envResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return "", fmt.Errorf("failed to get current environment: %w", err)
+	}
+	if envResponse.Environment == nil || envResponse.Environment.Name == "" {
+		return "", fmt.Errorf("no current environment set; run 'azd env select' or 'azd init' first")
+	}
+
+	return filepath.Join(projectResponse.Project.Path, ".azure", envResponse.Environment.Name, ConfigFile), nil
 }
 
 // loadLocalContext reads the .foundry-agent.json state file.
@@ -74,7 +83,10 @@ func resolveSessionID(ctx context.Context, azdClient *azdext.AzdClient, agentNam
 	if explicit != "" {
 		return explicit, nil
 	}
-	configPath := resolveConfigPath(ctx, azdClient)
+	configPath, err := resolveConfigPath(ctx, azdClient)
+	if err != nil {
+		return "", err
+	}
 	agentCtx := loadLocalContext(configPath)
 	if agentCtx.Sessions == nil {
 		agentCtx.Sessions = make(map[string]string)
@@ -93,25 +105,31 @@ func resolveSessionID(ctx context.Context, azdClient *azdext.AzdClient, agentNam
 }
 
 // resolveConversationID resolves or creates a Foundry conversation ID.
-// Returns empty string if creation fails (multi-turn memory disabled).
-func resolveConversationID(ctx context.Context, azdClient *azdext.AzdClient, agentName string, forceNew bool) string {
-	configPath := resolveConfigPath(ctx, azdClient)
+// Returns empty string if no existing conversation is found or on error.
+func resolveConversationID(ctx context.Context, azdClient *azdext.AzdClient, agentName string, forceNew bool) (string, error) {
+	configPath, err := resolveConfigPath(ctx, azdClient)
+	if err != nil {
+		return "", err
+	}
 	agentCtx := loadLocalContext(configPath)
 	if agentCtx.Conversations == nil {
 		agentCtx.Conversations = make(map[string]string)
 	}
 	if !forceNew {
 		if convID, ok := agentCtx.Conversations[agentName]; ok {
-			return convID
+			return convID, nil
 		}
 	}
 	// Conversation creation requires an API call — handled by the invoke command.
-	return ""
+	return "", nil
 }
 
 // saveConversationID persists a conversation ID for an agent.
 func saveConversationID(ctx context.Context, azdClient *azdext.AzdClient, agentName, convID string) error {
-	configPath := resolveConfigPath(ctx, azdClient)
+	configPath, err := resolveConfigPath(ctx, azdClient)
+	if err != nil {
+		return err
+	}
 	agentCtx := loadLocalContext(configPath)
 	if agentCtx.Conversations == nil {
 		agentCtx.Conversations = make(map[string]string)
@@ -348,11 +366,10 @@ func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, 
 	projectDir := filepath.Join(project.Path, svc.RelativePath)
 
 	var startupCmd string
-	if svc.AdditionalProperties != nil {
-		if fields := svc.AdditionalProperties.GetFields(); fields != nil {
-			if v, ok := fields["startupCommand"]; ok && v != nil {
-				startupCmd = v.GetStringValue()
-			}
+	if svc.Config != nil {
+		var agentConfig projectpkg.ServiceTargetAgentConfig
+		if err := projectpkg.UnmarshalStruct(svc.Config, &agentConfig); err == nil {
+			startupCmd = agentConfig.StartupCommand
 		}
 	}
 

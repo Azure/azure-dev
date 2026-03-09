@@ -33,7 +33,6 @@ type AgentDisplay struct {
 
 	// State — protected by mu
 	mu               sync.Mutex
-	latestThought    string
 	currentTool      string
 	currentToolInput string
 	toolStartTime    time.Time
@@ -66,14 +65,27 @@ func (d *AgentDisplay) Start(ctx context.Context) (func(), error) {
 		d.spinner,
 		uxlib.NewVisualElement(func(printer uxlib.Printer) error {
 			d.mu.Lock()
-			thought := d.latestThought
+			reasoning := d.reasoningBuf.String()
 			d.mu.Unlock()
 
-			printer.Fprintln()
-			if thought != "" {
-				printer.Fprintln(color.HiBlackString(thought))
-				printer.Fprintln()
+			if reasoning == "" {
+				return nil
 			}
+
+			// Show the last ~5 lines of reasoning below the spinner
+			lines := strings.Split(strings.TrimSpace(reasoning), "\n")
+			const maxLines = 5
+			start := 0
+			if len(lines) > maxLines {
+				start = len(lines) - maxLines
+			}
+			tail := lines[start:]
+
+			printer.Fprintln()
+			for _, line := range tail {
+				printer.Fprintln(color.HiBlackString("  %s", strings.TrimSpace(line)))
+			}
+			printer.Fprintln()
 			return nil
 		}),
 	)
@@ -125,7 +137,6 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 	case copilot.AssistantTurnStart:
 		d.spinner.UpdateText("Processing...")
 		d.mu.Lock()
-		d.latestThought = ""
 		d.currentTool = ""
 		d.currentToolInput = ""
 		d.reasoningBuf.Reset()
@@ -139,7 +150,7 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 	case copilot.AssistantReasoning:
 		if event.Data.ReasoningText != nil && *event.Data.ReasoningText != "" {
 			d.mu.Lock()
-			d.latestThought = logging.TruncateString(*event.Data.ReasoningText, 200)
+			d.reasoningBuf.WriteString(*event.Data.ReasoningText)
 			d.mu.Unlock()
 			d.canvas.Update()
 		}
@@ -147,14 +158,7 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 	case copilot.AssistantReasoningDelta:
 		if event.Data.DeltaContent != nil && *event.Data.DeltaContent != "" {
 			d.mu.Lock()
-			// Accumulate reasoning deltas into a rolling display
 			d.reasoningBuf.WriteString(*event.Data.DeltaContent)
-			// Show the tail of accumulated reasoning
-			full := d.reasoningBuf.String()
-			if len(full) > 200 {
-				full = full[len(full)-200:]
-			}
-			d.latestThought = strings.TrimSpace(full)
 			d.mu.Unlock()
 			d.canvas.Update()
 		}
@@ -165,11 +169,6 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 			if event.Data.DeltaContent != nil && *event.Data.DeltaContent != "" {
 				d.mu.Lock()
 				d.reasoningBuf.WriteString(*event.Data.DeltaContent)
-				full := d.reasoningBuf.String()
-				if len(full) > 200 {
-					full = full[len(full)-200:]
-				}
-				d.latestThought = strings.TrimSpace(full)
 				d.mu.Unlock()
 				d.canvas.Update()
 			}
@@ -182,13 +181,6 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 			d.mu.Unlock()
 		}
 
-	case copilot.AssistantMessageDelta:
-		if event.Data.DeltaContent != nil && *event.Data.DeltaContent != "" {
-			d.mu.Lock()
-			d.latestThought = logging.TruncateString(*event.Data.DeltaContent, 200)
-			d.mu.Unlock()
-		}
-
 	case copilot.ToolExecutionStart:
 		toolName := derefStr(event.Data.ToolName)
 		if toolName == "" {
@@ -198,8 +190,9 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 			return
 		}
 
-		// Print completion for previous tool
+		// Print completion for previous tool and flush any accumulated reasoning
 		d.printToolCompletion()
+		d.flushReasoning()
 
 		toolInput := extractToolInputSummary(event.Data.Arguments)
 
@@ -207,7 +200,6 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 		d.currentTool = toolName
 		d.currentToolInput = toolInput
 		d.toolStartTime = time.Now()
-		d.latestThought = ""
 		d.mu.Unlock()
 
 		text := fmt.Sprintf("Running %s", color.MagentaString(toolName))
@@ -267,6 +259,7 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 
 	case copilot.AssistantTurnEnd:
 		d.printToolCompletion()
+		d.flushReasoning()
 
 	case copilot.SessionIdle:
 		select {
@@ -297,7 +290,6 @@ func (d *AgentDisplay) printToolCompletion() {
 	d.mu.Lock()
 	tool := d.currentTool
 	toolInput := d.currentToolInput
-	thought := d.latestThought
 	d.mu.Unlock()
 
 	if tool == "" {
@@ -308,12 +300,30 @@ func (d *AgentDisplay) printToolCompletion() {
 	if toolInput != "" {
 		completionMsg += " with " + color.HiBlackString(toolInput)
 	}
-	if thought != "" {
-		completionMsg += color.MagentaString("\n  ◆ agent: ") + thought
-	}
 
 	d.canvas.Clear()
 	fmt.Println(completionMsg)
+}
+
+// flushReasoning prints the full accumulated reasoning as a dimmed block
+// and resets the buffer. Called when transitioning to a new phase (tool start, turn end).
+func (d *AgentDisplay) flushReasoning() {
+	d.mu.Lock()
+	reasoning := d.reasoningBuf.String()
+	d.reasoningBuf.Reset()
+	d.mu.Unlock()
+
+	reasoning = strings.TrimSpace(reasoning)
+	if reasoning == "" {
+		return
+	}
+
+	d.canvas.Clear()
+	lines := strings.Split(reasoning, "\n")
+	for _, line := range lines {
+		fmt.Println(color.HiBlackString("  %s", strings.TrimSpace(line)))
+	}
+	fmt.Println()
 }
 
 // extractToolInputSummary creates a short summary of tool arguments for display.

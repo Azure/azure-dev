@@ -304,7 +304,7 @@ func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, 
 				names[i] = s.Name
 			}
 			return nil, fmt.Errorf(
-				"multiple azure.ai.agent services found in azure.yaml: %s\n\nUse --name to specify which service to run",
+				"multiple azure.ai.agent services found in azure.yaml: %s\n\nProvide the service name as a positional argument to specify which one to use",
 				strings.Join(names, ", "),
 			)
 		}

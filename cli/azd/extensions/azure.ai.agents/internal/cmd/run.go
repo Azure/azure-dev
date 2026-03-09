@@ -43,7 +43,7 @@ agent service in azure.yaml. If not set, it is auto-detected from the
 project type. Use --start-command to override both.
 
 Use a separate terminal to invoke the running agent:
-  azd ai agent invoke --message "Hello!"`,
+  azd ai agent invoke "Hello!"`,
 		Example: `  # Start the agent in the current directory
   azd ai agent run
 

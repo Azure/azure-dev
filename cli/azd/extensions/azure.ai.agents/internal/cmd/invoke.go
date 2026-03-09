@@ -37,44 +37,45 @@ func newInvokeCommand() *cobra.Command {
 	flags := &invokeFlags{}
 
 	cmd := &cobra.Command{
-		Use:   "invoke [message]",
+		Use:   "invoke [name] [message]",
 		Short: "Send a message to your agent.",
 		Long: `Send a message to your agent.
 
-By default targets localhost:8088 (local run).
-Use --remote or --name <agent> to invoke on Foundry.
+With one argument the value is treated as the message and the agent is
+invoked locally on localhost:8088.
+
+With two arguments the first is the agent name and the second is the
+message. Providing a name implies --remote and invokes on Foundry.
+
+Use --remote to invoke on Foundry without specifying an agent name
+(auto-detected from azure.yaml).
 
 Sessions are persisted per-agent — consecutive invokes reuse the same
 session automatically. Pass --new-session to force a reset.`,
 		Example: `  # Invoke locally (agent must be running via 'azd ai agent run')
   azd ai agent invoke "Hello!"
 
-  # Same thing using the --message flag
-  azd ai agent invoke --message "Hello!"
-
   # Invoke the remote agent on Foundry (auto-detects agent from azure.yaml)
   azd ai agent invoke --remote "Hello!"
 
   # Invoke a specific remote agent by name
-  azd ai agent invoke --name my-agent --message "Hello!"
+  azd ai agent invoke my-agent "Hello!"
 
   # Start a new session (discard conversation history)
-  azd ai agent invoke --remote --new-session --message "Hello!"`,
-		Args: cobra.MaximumNArgs(1),
+  azd ai agent invoke --remote --new-session "Hello!"`,
+		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			setupDebugLogging(cmd.Flags())
 
-			// Positional arg takes precedence over --message
-			if len(args) > 0 {
+			if len(args) == 2 {
+				flags.name = args[0]
+				flags.message = args[1]
+			} else {
 				flags.message = args[0]
 			}
 
-			if flags.message == "" {
-				return fmt.Errorf("message is required; provide as a positional argument or use --message")
-			}
-
-			// --name implies --remote
+			// Providing a name implies --remote
 			if flags.name != "" {
 				flags.remote = true
 			}
@@ -84,9 +85,7 @@ session automatically. Pass --new-session to force a reset.`,
 		},
 	}
 
-	cmd.Flags().StringVarP(&flags.message, "message", "m", "", "Message to send (or provide as positional argument)")
 	cmd.Flags().BoolVarP(&flags.remote, "remote", "r", false, "Invoke on Foundry instead of localhost")
-	cmd.Flags().StringVarP(&flags.name, "name", "n", "", "Agent name (implies --remote)")
 	cmd.Flags().IntVar(&flags.port, "port", DefaultPort, "Local server port")
 	cmd.Flags().IntVarP(&flags.timeout, "timeout", "t", 120, "Request timeout in seconds (0 for no timeout)")
 	cmd.Flags().StringVarP(&flags.session, "session", "s", "", "Explicit session ID override")
@@ -178,7 +177,7 @@ func (a *InvokeAction) invokeRemote(ctx context.Context) error {
 	}
 
 	if name == "" {
-		return fmt.Errorf("agent name is required; use --name or define an azure.ai.agent service in azure.yaml")
+		return fmt.Errorf("agent name is required; provide as the first argument or define an azure.ai.agent service in azure.yaml")
 	}
 
 	endpoint, err := resolveAgentEndpoint(ctx, "", "")

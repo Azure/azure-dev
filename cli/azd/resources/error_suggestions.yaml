@@ -383,6 +383,23 @@ rules:
     suggestion: "Run 'azd auth login' to refresh your credentials, then retry."
 
   # ============================================================================
+  # Subscription Errors
+  # ============================================================================
+
+  - patterns:
+      - "no subscriptions found"
+    message: "No Azure subscriptions were found for your account."
+    suggestion: >
+      Ensure you have an active subscription at https://portal.azure.com.
+      If you have multiple tenants, run 'azd auth login --tenant-id <tenant-id>'
+      to sign in to a specific tenant. Multi-factor authentication (MFA) may prevent
+      automatic access to all tenants — visit the Azure portal and switch to each tenant
+      to refresh your MFA sessions, then retry 'azd auth login'.
+    links:
+      - url: "https://learn.microsoft.com/azure/developer/azure-developer-cli/reference#azd-auth-login"
+        title: "azd auth login reference"
+
+  # ============================================================================
   # Text Pattern Rules — Specific patterns first
   # These are fallbacks for errors without typed Go structs.
   # ============================================================================

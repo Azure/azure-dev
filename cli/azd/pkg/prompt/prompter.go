@@ -78,7 +78,8 @@ func (p *DefaultPrompter) PromptSubscription(ctx context.Context, msg string) (s
 		return "", errors.New(heredoc.Docf(
 			`no subscriptions found.
 			Ensure you have a subscription by visiting %s and search for Subscriptions in the search bar.
-			Once you have a subscription, run 'azd auth login' again to reload subscriptions.`,
+			Once you have a subscription, run 'azd auth login' again to reload subscriptions.
+			If you have multiple tenants, run 'azd auth login --tenant-id <tenant-id>' to specify your tenant.`,
 			p.portalUrlBase,
 		))
 	}

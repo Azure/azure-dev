@@ -101,6 +101,58 @@ func TestDeployActionResolveDeployTimeout(t *testing.T) {
 	}
 }
 
+func TestDeployActionResolveDeployTimeoutEnvVar(t *testing.T) {
+	tests := []struct {
+		name        string
+		envValue    string
+		flagTimeout *int
+		wantTimeout time.Duration
+		wantErr     bool
+	}{
+		{
+			name:        "EnvVarTimeout",
+			envValue:    "60",
+			wantTimeout: 60 * time.Second,
+		},
+		{
+			name:        "FlagOverridesEnvVar",
+			envValue:    "60",
+			flagTimeout: intPtr(300),
+			wantTimeout: 300 * time.Second,
+		},
+		{
+			name:     "InvalidEnvVar",
+			envValue: "abc",
+			wantErr:  true,
+		},
+		{
+			name:     "ZeroEnvVar",
+			envValue: "0",
+			wantErr:  true,
+		},
+		{
+			name:     "NegativeEnvVar",
+			envValue: "-5",
+			wantErr:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AZD_DEPLOY_TIMEOUT", tt.envValue)
+			action := newDeployTimeoutAction(t, tt.flagTimeout)
+
+			timeout, err := action.resolveDeployTimeout()
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.wantTimeout, timeout)
+		})
+	}
+}
+
 func TestDeployActionRunAppliesResolvedTimeout(t *testing.T) {
 	tests := []struct {
 		name        string

@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -433,6 +434,17 @@ func (da *DeployAction) resolveDeployTimeout() (time.Duration, error) {
 		}
 
 		return time.Duration(da.flags.Timeout) * time.Second, nil
+	}
+
+	if envVal, ok := os.LookupEnv("AZD_DEPLOY_TIMEOUT"); ok {
+		seconds, err := strconv.Atoi(envVal)
+		if err != nil {
+			return 0, fmt.Errorf("invalid AZD_DEPLOY_TIMEOUT value '%s': must be an integer number of seconds", envVal)
+		}
+		if seconds <= 0 {
+			return 0, fmt.Errorf("invalid AZD_DEPLOY_TIMEOUT value '%d': must be greater than 0 seconds", seconds)
+		}
+		return time.Duration(seconds) * time.Second, nil
 	}
 
 	return time.Duration(defaultDeployTimeoutSeconds) * time.Second, nil

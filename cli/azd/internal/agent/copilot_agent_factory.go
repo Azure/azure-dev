@@ -119,8 +119,9 @@ func (f *CopilotAgentFactory) Create(ctx context.Context, opts ...CopilotAgentOp
 		sessionConfig.Model, len(sessionConfig.MCPServers),
 		len(sessionConfig.AvailableTools), len(sessionConfig.ExcludedTools))
 
-	// Wire permission handler — delegates to azd consent system
-	sessionConfig.OnPermissionRequest = f.createPermissionHandler(ctx)
+	// Wire permission handler — approve CLI-level permission requests.
+	// Fine-grained tool consent is handled by OnPreToolUse hook below.
+	sessionConfig.OnPermissionRequest = f.createPermissionHandler()
 
 	// Wire lifecycle hooks — PreToolUse delegates to azd consent system
 	sessionConfig.Hooks = &copilot.SessionHooks{
@@ -190,50 +191,15 @@ func (f *CopilotAgentFactory) ensurePlugins(ctx context.Context) error {
 	return nil
 }
 
-// createPermissionHandler builds an OnPermissionRequest handler that delegates
-// to the azd consent system for approval decisions.
-func (f *CopilotAgentFactory) createPermissionHandler(
-	ctx context.Context,
-) copilot.PermissionHandlerFunc {
+// createPermissionHandler builds an OnPermissionRequest handler.
+// This handles the CLI's coarse-grained permission requests (file access, shell, URLs).
+// We approve all here — fine-grained tool consent is handled by OnPreToolUse.
+func (f *CopilotAgentFactory) createPermissionHandler() copilot.PermissionHandlerFunc {
 	return func(req copilot.PermissionRequest, inv copilot.PermissionInvocation) (
 		copilot.PermissionRequestResult, error,
 	) {
-		log.Printf("[copilot] PermissionRequest: kind=%s", req.Kind)
-
-		// Build a consent request from the SDK permission request
-		consentReq := consent.ConsentRequest{
-			ToolID:     string(req.Kind),
-			ServerName: "copilot",
-			Operation:  consent.OperationTypeTool,
-		}
-
-		decision, err := f.consentManager.CheckConsent(ctx, consentReq)
-		if err != nil {
-			log.Printf("[copilot] Consent check error: %v, approving by default", err)
-			return copilot.PermissionRequestResult{Kind: "approved"}, nil
-		}
-
-		if decision.Allowed {
-			return copilot.PermissionRequestResult{Kind: "approved"}, nil
-		}
-
-		if decision.RequiresPrompt {
-			// Use the azd consent checker to prompt the user
-			checker := consent.NewConsentChecker(f.consentManager, "copilot")
-			consentDecision, promptErr := checker.CheckToolConsent(
-				ctx, string(req.Kind), fmt.Sprintf("Copilot permission request: %s", req.Kind),
-				mcp.ToolAnnotation{},
-			)
-			if promptErr != nil {
-				return copilot.PermissionRequestResult{Kind: "denied"}, nil
-			}
-
-			if consentDecision.Allowed {
-				return copilot.PermissionRequestResult{Kind: "approved"}, nil
-			}
-		}
-
-		return copilot.PermissionRequestResult{Kind: "denied"}, nil
+		log.Printf("[copilot] PermissionRequest: kind=%s — approved", req.Kind)
+		return copilot.PermissionRequestResult{Kind: "approved"}, nil
 	}
 }
 

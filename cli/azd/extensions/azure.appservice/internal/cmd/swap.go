@@ -267,7 +267,7 @@ func runSwap(ctx context.Context, flags *swapFlags, rootFlags rootFlagsDefinitio
 					return fmt.Errorf("selecting source slot: %w", err)
 				}
 
-					idx := int(prompt.GetValue())
+				idx := int(prompt.GetValue())
 				if idx < 0 || idx >= len(srcChoices) {
 					return fmt.Errorf("invalid source slot selection index: %d", idx)
 				}

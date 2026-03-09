@@ -10,6 +10,8 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+
+	"golang.org/x/term"
 )
 
 // ---------------------------------------------------------------------------
@@ -182,20 +184,16 @@ func ShellCommandWith(ctx context.Context, info ShellInfo, script string) (*exec
 // IsInteractiveTerminal reports whether the given file descriptor is connected
 // to an interactive terminal (TTY).
 //
-// Platform behavior:
-//   - Unix: Uses [os.File.Stat] to check for character device mode.
-//   - Windows: Uses [os.File.Stat] to check for character device mode.
+// Uses [golang.org/x/term.IsTerminal] for reliable cross-platform detection,
+// correctly distinguishing TTYs from non-interactive character devices
+// like /dev/null.
 //
 // This function is safe to call with nil (returns false).
 func IsInteractiveTerminal(f *os.File) bool {
 	if f == nil {
 		return false
 	}
-	fi, err := f.Stat()
-	if err != nil {
-		return false
-	}
-	return fi.Mode()&os.ModeCharDevice != 0
+	return term.IsTerminal(int(f.Fd()))
 }
 
 // IsStdinTerminal reports whether standard input is an interactive terminal.

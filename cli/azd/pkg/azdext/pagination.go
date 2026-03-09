@@ -219,7 +219,13 @@ func (p *Pager[T]) validateNextLink(nextLink string) error {
 		return fmt.Errorf("invalid nextLink URL: %w", err)
 	}
 
-	if u.Scheme != "" && u.Scheme != "https" {
+	// Reject relative URLs (empty scheme) — they would fail at request time
+	// with a "missing protocol scheme" error, and non-absolute URLs may be
+	// used for path-based SSRF attacks.
+	if u.Scheme == "" {
+		return fmt.Errorf("nextLink must be an absolute URL with an HTTPS scheme")
+	}
+	if u.Scheme != "https" {
 		return fmt.Errorf("nextLink must use HTTPS (got %q)", u.Scheme)
 	}
 
@@ -313,8 +319,8 @@ func redactURL(rawURL string) string {
 	return u.String()
 }
 
-// sanitizeControlChars replaces control characters with spaces to prevent
-// log-forging attacks in stored error bodies. Newlines and tabs are preserved.
+// sanitizeControlChars replaces control characters (except newlines and tabs)
+// with spaces to prevent log-forging attacks in stored error bodies.
 func sanitizeControlChars(s string) string {
 	return strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) && r != '\n' && r != '\t' {

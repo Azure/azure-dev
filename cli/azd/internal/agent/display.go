@@ -62,11 +62,7 @@ func (d *AgentDisplay) Start(ctx context.Context) (func(), error) {
 	})
 
 	d.canvas = uxlib.NewCanvas(
-		uxlib.NewVisualElement(func(printer uxlib.Printer) error {
-			printer.Fprintln()
-			return nil
-		}),
-		d.spinner,
+		// Reasoning display — above the spinner, with blank lines before/after
 		uxlib.NewVisualElement(func(printer uxlib.Printer) error {
 			d.mu.Lock()
 			reasoning := d.reasoningBuf.String()
@@ -76,7 +72,7 @@ func (d *AgentDisplay) Start(ctx context.Context) (func(), error) {
 				return nil
 			}
 
-			// Show the last ~5 lines of reasoning below the spinner
+			// Show the last ~5 lines of reasoning above the spinner
 			lines := strings.Split(strings.TrimSpace(reasoning), "\n")
 			const maxLines = 5
 			start := 0
@@ -92,6 +88,12 @@ func (d *AgentDisplay) Start(ctx context.Context) (func(), error) {
 			printer.Fprintln()
 			return nil
 		}),
+		// Blank line before spinner
+		uxlib.NewVisualElement(func(printer uxlib.Printer) error {
+			printer.Fprintln()
+			return nil
+		}),
+		d.spinner,
 	)
 
 	// Ticker goroutine for spinner elapsed time updates
@@ -148,7 +150,8 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 
 	case copilot.AssistantIntent:
 		if event.Data.Intent != nil && *event.Data.Intent != "" {
-			d.spinner.UpdateText(fmt.Sprintf("◆ %s", *event.Data.Intent))
+			intent := logging.TruncateString(*event.Data.Intent, 80)
+			d.spinner.UpdateText(intent)
 		}
 
 	case copilot.AssistantReasoning:

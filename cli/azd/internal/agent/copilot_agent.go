@@ -105,9 +105,10 @@ func (a *CopilotAgent) SendMessage(ctx context.Context, args ...string) (string,
 	prompt := strings.Join(args, "\n")
 	log.Printf("[copilot] SendMessage: sending prompt (%d chars)...", len(prompt))
 
-	// Send prompt (non-blocking)
+	// Send prompt (non-blocking) in interactive mode
 	_, err = a.session.Send(ctx, copilot.MessageOptions{
 		Prompt: prompt,
+		Mode:   string(copilot.Interactive),
 	})
 	if err != nil {
 		log.Printf("[copilot] SendMessage: send error: %v", err)

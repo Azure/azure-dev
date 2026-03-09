@@ -322,7 +322,7 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 				return err
 			}
 
-			deployTimeout, err := da.resolveDeployTimeout(svc)
+			deployTimeout, err := da.resolveDeployTimeout()
 			if err != nil {
 				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 				return err
@@ -413,24 +413,13 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	}, nil
 }
 
-func (da *DeployAction) resolveDeployTimeout(serviceConfig *project.ServiceConfig) (time.Duration, error) {
+func (da *DeployAction) resolveDeployTimeout() (time.Duration, error) {
 	if da.flags.timeoutChanged() {
 		if da.flags.Timeout <= 0 {
 			return 0, errors.New("invalid value for --timeout: must be greater than 0 seconds")
 		}
 
 		return time.Duration(da.flags.Timeout) * time.Second, nil
-	}
-
-	if serviceConfig.DeployTimeout != nil {
-		if *serviceConfig.DeployTimeout <= 0 {
-			return 0, fmt.Errorf(
-				"invalid deployTimeout for service '%s': must be greater than 0 seconds",
-				serviceConfig.Name,
-			)
-		}
-
-		return time.Duration(*serviceConfig.DeployTimeout) * time.Second, nil
 	}
 
 	return time.Duration(defaultDeployTimeoutSeconds) * time.Second, nil

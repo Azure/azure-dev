@@ -205,6 +205,19 @@ func (a *InvokeAction) invokeRemote(ctx context.Context) error {
 	}
 	body["session_id"] = sid
 
+	// Acquire credential and token — used for both conversation creation and the invoke request
+	credential, err := newAgentCredential()
+	if err != nil {
+		return err
+	}
+
+	token, err := credential.GetToken(ctx, policy.TokenRequestOptions{
+		Scopes: []string{"https://ai.azure.com/.default"},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get auth token: %w", err)
+	}
+
 	// Conversation ID — enables multi-turn memory via Foundry Conversations API
 	convID, err := resolveConversationID(ctx, azdClient, name, a.flags.newSession)
 	if err != nil {
@@ -212,7 +225,7 @@ func (a *InvokeAction) invokeRemote(ctx context.Context) error {
 	}
 	if convID == "" {
 		// Create a new conversation
-		newConvID, err := createConversation(ctx, endpoint)
+		newConvID, err := createConversation(ctx, endpoint, token.Token)
 		if err != nil {
 			fmt.Printf("Warning: could not create conversation; multi-turn memory disabled (%v)\n", err)
 		} else {
@@ -224,19 +237,6 @@ func (a *InvokeAction) invokeRemote(ctx context.Context) error {
 	}
 	if convID != "" {
 		body["conversation"] = map[string]string{"id": convID}
-	}
-
-	// Make the API call
-	credential, err := newAgentCredential()
-	if err != nil {
-		return err
-	}
-
-	token, err := credential.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes: []string{"https://ai.azure.com/.default"},
-	})
-	if err != nil {
-		return fmt.Errorf("failed to get auth token: %w", err)
 	}
 
 	payload, err := json.Marshal(body)
@@ -274,26 +274,14 @@ func (a *InvokeAction) invokeRemote(ctx context.Context) error {
 }
 
 // createConversation creates a new Foundry conversation for multi-turn memory.
-func createConversation(ctx context.Context, endpoint string) (string, error) {
-	credential, err := newAgentCredential()
-	if err != nil {
-		return "", err
-	}
-
-	token, err := credential.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes: []string{"https://ai.azure.com/.default"},
-	})
-	if err != nil {
-		return "", err
-	}
-
+func createConversation(ctx context.Context, endpoint string, bearerToken string) (string, error) {
 	url := fmt.Sprintf("%s/openai/conversations?api-version=%s", endpoint, DefaultAgentAPIVersion)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader([]byte("{}")))
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token.Token)
+	req.Header.Set("Authorization", "Bearer "+bearerToken)
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req) //nolint:gosec // G704: endpoint is resolved from azd environment configuration

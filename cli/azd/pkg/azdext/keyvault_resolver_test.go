@@ -447,7 +447,7 @@ func TestResolveMap_MixedValues(t *testing.T) {
 		ClientFactory: stubSecretFactory(getter, nil),
 	})
 
-	input := map[string]string{
+	input := map[string]string{ //nolint:gosec // G101 false positive: test fixture, not real credentials
 		"plain":  "hello-world",
 		"secret": "akvs://sub/vault/secret",
 	}
@@ -496,7 +496,7 @@ func TestResolveMap_ErrorStopsProcessing(t *testing.T) {
 		ClientFactory: stubSecretFactory(getter, nil),
 	})
 
-	input := map[string]string{
+	input := map[string]string{ //nolint:gosec // G101 false positive: test fixture, not real credentials
 		"secret": "akvs://sub/vault/missing",
 	}
 

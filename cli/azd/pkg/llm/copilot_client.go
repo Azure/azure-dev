@@ -55,6 +55,13 @@ func NewCopilotClientManager(options *CopilotClientOptions) *CopilotClientManage
 		log.Printf("[copilot-client] Using CLI binary: %s", cliPath)
 	}
 
+	// Pass --plugin-dir for each installed plugin so headless mode discovers them
+	pluginDirs := discoverInstalledPluginDirs()
+	for _, dir := range pluginDirs {
+		clientOpts.CLIArgs = append(clientOpts.CLIArgs, "--plugin-dir", dir)
+		log.Printf("[copilot-client] Loading plugin from: %s", dir)
+	}
+
 	return &CopilotClientManager{
 		client:  copilot.NewClient(clientOpts),
 		options: options,
@@ -177,4 +184,58 @@ func discoverCopilotCLIPath() string {
 	}
 
 	return ""
+}
+
+// discoverInstalledPluginDirs finds all installed Copilot plugin directories
+// under ~/.copilot/installed-plugins/ so they can be passed via --plugin-dir
+// to the headless CLI process which doesn't auto-discover them.
+func discoverInstalledPluginDirs() []string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+
+	pluginsRoot := filepath.Join(home, ".copilot", "installed-plugins")
+	if _, err := os.Stat(pluginsRoot); err != nil {
+		return nil
+	}
+
+	var dirs []string
+
+	// Walk one level to find plugin group dirs (_direct, marketplace names)
+	groups, err := os.ReadDir(pluginsRoot)
+	if err != nil {
+		return nil
+	}
+
+	for _, group := range groups {
+		if !group.IsDir() {
+			continue
+		}
+		groupPath := filepath.Join(pluginsRoot, group.Name())
+
+		// Walk one more level to find individual plugin dirs
+		plugins, err := os.ReadDir(groupPath)
+		if err != nil {
+			continue
+		}
+
+		for _, plugin := range plugins {
+			if !plugin.IsDir() {
+				continue
+			}
+			pluginPath := filepath.Join(groupPath, plugin.Name())
+			// Verify it has skills/ or .claude-plugin/ to confirm it's a real plugin
+			if hasSubdir(pluginPath, "skills") || hasSubdir(pluginPath, ".claude-plugin") {
+				dirs = append(dirs, pluginPath)
+			}
+		}
+	}
+
+	return dirs
+}
+
+func hasSubdir(parent, name string) bool {
+	info, err := os.Stat(filepath.Join(parent, name))
+	return err == nil && info.IsDir()
 }

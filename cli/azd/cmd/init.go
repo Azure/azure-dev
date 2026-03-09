@@ -18,7 +18,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/agent"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
-	"github.com/azure/azure-dev/cli/azd/internal/agent/feedback"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -444,152 +443,31 @@ func (i *initAction) initAppWithAgent(ctx context.Context) error {
 
 	defer azdAgent.Stop()
 
-	type initStep struct {
-		Name         string
-		Description  string
-		SummaryTitle string
-	}
+	// Single prompt — delegates orchestration to azure-prepare and azure-validate skills.
+	// The agent can ask the user questions via the SDK's ask_user tool (OnUserInputRequest handler).
+	prompt := `Prepare this application for deployment to Azure.
 
-	taskInput := `Your task: %s
+Use the azure-prepare skill to analyze the project, generate infrastructure (Bicep or Terraform),
+Dockerfiles, and azure.yaml configuration. Then use the azure-validate skill to verify
+everything is ready for deployment.
 
-Break this task down into smaller steps if needed.
-If new information reveals more work to be done, pursue it.
-Do not stop until all tasks are complete and fully resolved.
-`
+Ask the user for input when you need clarification about architecture choices,
+service selection, or configuration options.
 
-	initSteps := []initStep{
-		{
-			Name:         "Step 1: Running Discovery & Analysis",
-			Description:  "Run a deep discovery and analysis on the current working directory.",
-			SummaryTitle: "Step 1 (discovery & analysis)",
-		},
-		{
-			Name:         "Step 2: Generating Architecture Plan",
-			Description:  "Create a high-level architecture plan for the application.",
-			SummaryTitle: "Step 2 (architecture plan)",
-		},
-		{
-			Name:         "Step 3: Generating Dockerfile(s)",
-			Description:  "Generate a Dockerfile for the application components as needed.",
-			SummaryTitle: "Step 3 (dockerfile generation)",
-		},
-		{
-			Name:         "Step 4: Generating infrastructure",
-			Description:  "Generate infrastructure as code (IaC) for the application.",
-			SummaryTitle: "Step 4 (infrastructure generation)",
-		},
-		{
-			Name:         "Step 5: Generating azure.yaml file",
-			Description:  "Generate an azure.yaml file for the application.",
-			SummaryTitle: "Step 5 (azure.yaml generation)",
-		},
-		{
-			Name:         "Step 6: Validating project",
-			Description:  "Validate the project structure and configuration.",
-			SummaryTitle: "Step 6 (project validation)",
-		},
-	}
+When complete, provide a brief summary of what was accomplished.`
 
-	var stepSummaries []string
+	i.console.Message(ctx, color.MagentaString("Preparing application for Azure deployment..."))
 
-	for idx, step := range initSteps {
-		// Collect and apply feedback for next steps
-		if idx > 0 {
-			if err := i.collectAndApplyFeedback(
-				ctx,
-				azdAgent,
-				"Any changes before moving to the next step?",
-			); err != nil {
-				return err
-			}
-		} else if idx == len(initSteps)-1 {
-			if err := i.collectAndApplyFeedback(
-				ctx,
-				azdAgent,
-				"Any changes before moving to the next completing interaction?",
-			); err != nil {
-				return err
-			}
-		}
-
-		// Run Step
-		i.console.Message(ctx, color.MagentaString(step.Name))
-		fullTaskInput := fmt.Sprintf(taskInput, strings.Join([]string{
-			step.Description,
-			"Provide a brief summary in around 6 bullet points format about what was scanned" +
-				" or analyzed and key actions performed:\n" +
-				"Keep it concise and focus on high-level accomplishments, not implementation details.",
-		}, "\n"))
-
-		agentOutput, err := azdAgent.SendMessageWithRetry(ctx, fullTaskInput)
-		if err != nil {
-			if agentOutput != "" {
-				i.console.Message(ctx, output.WithMarkdown(agentOutput))
-			}
-
-			return err
-		}
-
-		stepSummaries = append(stepSummaries, agentOutput)
-
-		i.console.Message(ctx, "")
-		i.console.Message(ctx, color.HiMagentaString(fmt.Sprintf("◆ %s Summary:", step.SummaryTitle)))
-		i.console.Message(ctx, output.WithMarkdown(agentOutput))
-		i.console.Message(ctx, "")
-	}
-
-	// Post-completion summary
-	if err := i.postCompletionSummary(ctx, azdAgent, stepSummaries); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// collectAndApplyFeedback prompts for user feedback and applies it using the agent in a loop
-func (i *initAction) collectAndApplyFeedback(
-	ctx context.Context,
-	azdAgent agent.Agent,
-	promptMessage string,
-) error {
-	AIDisclaimer := output.WithGrayFormat("The following content is AI-generated. AI responses may be incorrect.")
-	collector := feedback.NewFeedbackCollector(i.console, feedback.FeedbackCollectorOptions{
-		EnableLoop:      true,
-		FeedbackPrompt:  promptMessage,
-		FeedbackHint:    "Enter to skip",
-		RequireFeedback: false,
-		AIDisclaimer:    AIDisclaimer,
-	})
-
-	return collector.CollectFeedbackAndApply(ctx, azdAgent, AIDisclaimer)
-}
-
-// postCompletionSummary provides a final summary after all steps complete
-func (i *initAction) postCompletionSummary(
-	ctx context.Context,
-	azdAgent agent.Agent,
-	stepSummaries []string,
-) error {
-	i.console.Message(ctx, "")
-	i.console.Message(ctx, "🎉 All initialization steps completed!")
-	i.console.Message(ctx, "")
-
-	// Combine all step summaries into a single prompt
-	combinedSummaries := strings.Join(stepSummaries, "\n\n---\n\n")
-	summaryPrompt := fmt.Sprintf(`Based on the following summaries of the azd init process, please provide
-	a comprehensive overall summary of what was accomplished in bullet point format:\n%s`, combinedSummaries)
-
-	agentOutput, err := azdAgent.SendMessageWithRetry(ctx, summaryPrompt)
+	agentOutput, err := azdAgent.SendMessageWithRetry(ctx, prompt)
 	if err != nil {
 		if agentOutput != "" {
 			i.console.Message(ctx, output.WithMarkdown(agentOutput))
 		}
-
 		return err
 	}
 
 	i.console.Message(ctx, "")
-	i.console.Message(ctx, color.HiMagentaString("◆ Agentic init Summary:"))
+	i.console.Message(ctx, color.HiMagentaString("◆ Azure Init Summary:"))
 	i.console.Message(ctx, output.WithMarkdown(agentOutput))
 	i.console.Message(ctx, "")
 

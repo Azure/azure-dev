@@ -20,6 +20,7 @@ import (
 	azdmcp "github.com/azure/azure-dev/cli/azd/internal/mcp"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/llm"
+	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
 )
 
 // pluginSpec defines a required plugin with its install source and installed name.
@@ -115,6 +116,10 @@ func (f *CopilotAgentFactory) Create(ctx context.Context, opts ...CopilotAgentOp
 	// Wire permission handler — approve CLI-level permission requests.
 	// Fine-grained tool consent is handled by OnPreToolUse hook below.
 	sessionConfig.OnPermissionRequest = f.createPermissionHandler()
+
+	// Wire user input handler — enables the agent's ask_user tool.
+	// Questions are rendered using azd's UX prompts (Select, Prompt).
+	sessionConfig.OnUserInputRequest = f.createUserInputHandler(ctx)
 
 	// Wire lifecycle hooks — PreToolUse delegates to azd consent system
 	sessionConfig.Hooks = &copilot.SessionHooks{
@@ -308,6 +313,58 @@ func (f *CopilotAgentFactory) createPostToolUseHandler() copilot.PostToolUseHand
 	) {
 		log.Printf("[copilot] PostToolUse: tool=%s", input.ToolName)
 		return nil, nil
+	}
+}
+
+// createUserInputHandler builds an OnUserInputRequest handler that renders
+// agent questions using azd's UX prompt components (Select for choices, Prompt for freeform).
+func (f *CopilotAgentFactory) createUserInputHandler(
+	ctx context.Context,
+) copilot.UserInputHandler {
+	return func(req copilot.UserInputRequest, inv copilot.UserInputInvocation) (
+		copilot.UserInputResponse, error,
+	) {
+		log.Printf("[copilot] UserInput: question=%q choices=%d", req.Question, len(req.Choices))
+
+		if len(req.Choices) > 0 {
+			// Multiple choice — use azd Select prompt
+			choices := make([]*uxlib.SelectChoice, len(req.Choices))
+			for i, c := range req.Choices {
+				choices[i] = &uxlib.SelectChoice{Value: c, Label: c}
+			}
+
+			selector := uxlib.NewSelect(&uxlib.SelectOptions{
+				Message:         req.Question,
+				Choices:         choices,
+				EnableFiltering: uxlib.Ptr(false),
+				DisplayCount:    min(len(choices), 10),
+			})
+
+			idx, err := selector.Ask(ctx)
+			if err != nil {
+				return copilot.UserInputResponse{}, fmt.Errorf("user input cancelled: %w", err)
+			}
+			if idx == nil || *idx < 0 || *idx >= len(req.Choices) {
+				return copilot.UserInputResponse{}, fmt.Errorf("invalid selection")
+			}
+
+			answer := req.Choices[*idx]
+			log.Printf("[copilot] UserInput: selected=%q", answer)
+			return copilot.UserInputResponse{Answer: answer}, nil
+		}
+
+		// Freeform text input — use azd Prompt
+		prompt := uxlib.NewPrompt(&uxlib.PromptOptions{
+			Message: req.Question,
+		})
+
+		answer, err := prompt.Ask(ctx)
+		if err != nil {
+			return copilot.UserInputResponse{}, fmt.Errorf("user input cancelled: %w", err)
+		}
+
+		log.Printf("[copilot] UserInput: freeform=%q", answer)
+		return copilot.UserInputResponse{Answer: answer, WasFreeform: true}, nil
 	}
 }
 

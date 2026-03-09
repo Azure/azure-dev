@@ -380,9 +380,17 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 		d.flushReasoning()
 
 	case copilot.SessionIdle:
-		select {
-		case d.idleCh <- struct{}{}:
-		default:
+		d.mu.Lock()
+		hasContent := d.finalContent != ""
+		d.mu.Unlock()
+
+		// Only signal idle when we have a final assistant message.
+		// Ignore early idle events (e.g., between permission prompts).
+		if hasContent {
+			select {
+			case d.idleCh <- struct{}{}:
+			default:
+			}
 		}
 	}
 }

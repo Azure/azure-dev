@@ -56,6 +56,11 @@ func (b *SessionConfigBuilder) Build(
 		cfg.Model = model
 	}
 
+	// Reasoning effort
+	if effort, ok := userConfig.GetString("ai.agent.reasoningEffort"); ok {
+		cfg.ReasoningEffort = effort
+	}
+
 	// System message — use "append" mode to add to default prompt
 	if msg, ok := userConfig.GetString("ai.agent.systemMessage"); ok && msg != "" {
 		cfg.SystemMessage = &copilot.SystemMessageConfig{

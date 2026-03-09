@@ -36,6 +36,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
+	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 	"github.com/fatih/color"
 	"github.com/joho/godotenv"
@@ -433,6 +434,11 @@ func (i *initAction) initAppWithAgent(ctx context.Context) error {
 		i.console.Message(ctx, "")
 	}
 
+	// Configure model and reasoning effort
+	if err := i.configureAgentModel(ctx); err != nil {
+		return err
+	}
+
 	azdAgent, err := i.agentFactory.Create(
 		ctx,
 		agent.WithDebug(i.flags.global.EnableDebugLogging),
@@ -476,6 +482,120 @@ When complete, provide a brief summary of what was accomplished.`
 	i.console.Message(ctx, "")
 
 	return nil
+}
+
+// configureAgentModel prompts for reasoning effort and model on first run,
+// or shows current config on subsequent runs.
+func (i *initAction) configureAgentModel(ctx context.Context) error {
+	azdConfig, err := i.configManager.Load()
+	if err != nil {
+		return err
+	}
+
+	existingModel, hasModel := azdConfig.GetString("ai.agent.model")
+	existingEffort, hasEffort := azdConfig.GetString("ai.agent.reasoningEffort")
+
+	// If already configured, show info and continue
+	if hasModel || hasEffort {
+		modelDisplay := existingModel
+		if modelDisplay == "" {
+			modelDisplay = "default"
+		}
+		effortDisplay := existingEffort
+		if effortDisplay == "" {
+			effortDisplay = "default"
+		}
+
+		i.console.Message(ctx, output.WithGrayFormat(
+			"Agent config: model=%s, reasoning=%s. Change with `azd config set ai.agent.model <model>` "+
+				"or `azd config set ai.agent.reasoningEffort <level>`",
+			modelDisplay, effortDisplay))
+		i.console.Message(ctx, "")
+		return nil
+	}
+
+	// First run — prompt for reasoning effort
+	effortChoices := []*uxlib.SelectChoice{
+		{Value: "low", Label: "Low — fastest, lowest cost"},
+		{Value: "medium", Label: "Medium — balanced (recommended)"},
+		{Value: "high", Label: "High — more thorough, higher cost and premium requests"},
+	}
+
+	effortSelector := uxlib.NewSelect(&uxlib.SelectOptions{
+		Message:         "Select reasoning effort level for the AI agent:",
+		HelpMessage:     "Higher reasoning uses more premium requests and may cost more. You can change this later.",
+		Choices:         effortChoices,
+		SelectedIndex:   intPtr(1), // default to medium
+		EnableFiltering: uxlib.Ptr(false),
+		DisplayCount:    3,
+	})
+
+	effortIdx, err := effortSelector.Ask(ctx)
+	if err != nil {
+		return err
+	}
+	if effortIdx == nil {
+		return fmt.Errorf("reasoning effort selection cancelled")
+	}
+
+	selectedEffort := effortChoices[*effortIdx].Value
+
+	// Prompt for model selection
+	modelChoices := []*uxlib.SelectChoice{
+		{Value: "", Label: "Default model (recommended)"},
+		{Value: "claude-sonnet-4.5", Label: "Claude Sonnet 4.5"},
+		{Value: "claude-sonnet-4.6", Label: "Claude Sonnet 4.6"},
+		{Value: "claude-opus-4.6", Label: "Claude Opus 4.6 (premium)"},
+		{Value: "gpt-5.1", Label: "GPT-5.1"},
+		{Value: "gpt-5.2", Label: "GPT-5.2"},
+		{Value: "gpt-4.1", Label: "GPT-4.1"},
+	}
+
+	modelSelector := uxlib.NewSelect(&uxlib.SelectOptions{
+		Message:         "Select AI model (or use default):",
+		HelpMessage:     "Premium models may use more requests. You can change this later.",
+		Choices:         modelChoices,
+		SelectedIndex:   intPtr(0), // default
+		EnableFiltering: uxlib.Ptr(false),
+		DisplayCount:    7,
+	})
+
+	modelIdx, err := modelSelector.Ask(ctx)
+	if err != nil {
+		return err
+	}
+	if modelIdx == nil {
+		return fmt.Errorf("model selection cancelled")
+	}
+
+	selectedModel := modelChoices[*modelIdx].Value
+
+	// Save to config
+	if err := azdConfig.Set("ai.agent.reasoningEffort", selectedEffort); err != nil {
+		return fmt.Errorf("failed to save reasoning effort: %w", err)
+	}
+	if selectedModel != "" {
+		if err := azdConfig.Set("ai.agent.model", selectedModel); err != nil {
+			return fmt.Errorf("failed to save model: %w", err)
+		}
+	}
+	if err := i.configManager.Save(azdConfig); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+
+	modelDisplay := selectedModel
+	if modelDisplay == "" {
+		modelDisplay = "default"
+	}
+	i.console.Message(ctx, output.WithSuccessFormat(
+		"Agent configured: model=%s, reasoning=%s", modelDisplay, selectedEffort))
+	i.console.Message(ctx, "")
+
+	return nil
+}
+
+func intPtr(v int) *int {
+	return &v
 }
 
 type initType int
@@ -835,3 +955,4 @@ type initModeRequiredErrorOptions struct {
 	Description string `json:"description"`
 	Command     string `json:"command"`
 }
+

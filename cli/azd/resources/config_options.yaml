@@ -86,6 +86,11 @@
   description: "Default model to use for Copilot SDK agent sessions."
   type: string
   example: "gpt-4.1"
+- key: ai.agent.reasoningEffort
+  description: "Reasoning effort level for the AI agent. Higher effort uses more premium requests."
+  type: string
+  allowedValues: ["low", "medium", "high"]
+  example: "medium"
 - key: ai.agent.mode
   description: "Default agent mode for Copilot SDK sessions."
   type: string

@@ -324,17 +324,20 @@ func (f *CopilotAgentFactory) createUserInputHandler(
 	return func(req copilot.UserInputRequest, inv copilot.UserInputInvocation) (
 		copilot.UserInputResponse, error,
 	) {
-		log.Printf("[copilot] UserInput: question=%q choices=%d", req.Question, len(req.Choices))
+		// Strip markdown from question and choices for clean terminal prompts
+		question := stripMarkdown(req.Question)
+		log.Printf("[copilot] UserInput: question=%q choices=%d", question, len(req.Choices))
 
 		if len(req.Choices) > 0 {
 			// Multiple choice — use azd Select prompt
 			choices := make([]*uxlib.SelectChoice, len(req.Choices))
 			for i, c := range req.Choices {
-				choices[i] = &uxlib.SelectChoice{Value: c, Label: c}
+				plain := stripMarkdown(c)
+				choices[i] = &uxlib.SelectChoice{Value: c, Label: plain}
 			}
 
 			selector := uxlib.NewSelect(&uxlib.SelectOptions{
-				Message:         req.Question,
+				Message:         question,
 				Choices:         choices,
 				EnableFiltering: uxlib.Ptr(false),
 				DisplayCount:    min(len(choices), 10),
@@ -355,7 +358,7 @@ func (f *CopilotAgentFactory) createUserInputHandler(
 
 		// Freeform text input — use azd Prompt
 		prompt := uxlib.NewPrompt(&uxlib.PromptOptions{
-			Message: req.Question,
+			Message: question,
 		})
 
 		answer, err := prompt.Ask(ctx)
@@ -375,4 +378,31 @@ func loadBuiltInMCPServers() (map[string]*azdmcp.ServerConfig, error) {
 		return nil, fmt.Errorf("failed parsing embedded mcp.json: %w", err)
 	}
 	return mcpConfig.Servers, nil
+}
+
+// stripMarkdown removes common markdown formatting for clean terminal display.
+func stripMarkdown(s string) string {
+	s = strings.TrimSpace(s)
+
+	// Remove bold/italic markers
+	for _, marker := range []string{"***", "**", "*", "___", "__", "_"} {
+		s = strings.ReplaceAll(s, marker, "")
+	}
+
+	// Remove inline code backticks
+	s = strings.ReplaceAll(s, "`", "")
+
+	// Remove heading markers at line starts
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		trimmed := strings.TrimLeft(line, " ")
+		for _, prefix := range []string{"###### ", "##### ", "#### ", "### ", "## ", "# "} {
+			if strings.HasPrefix(trimmed, prefix) {
+				lines[i] = strings.TrimPrefix(trimmed, prefix)
+				break
+			}
+		}
+	}
+
+	return strings.Join(lines, "\n")
 }

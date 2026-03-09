@@ -443,13 +443,12 @@ func (i *initAction) initAppWithAgent(ctx context.Context) error {
 
 	defer azdAgent.Stop()
 
-	// Single prompt — delegates orchestration to azure-prepare and azure-validate skills.
-	// The agent can ask the user questions via the SDK's ask_user tool (OnUserInputRequest handler).
+	// Single prompt — uses trigger phrases that match the azure-prepare and azure-validate
+	// skill descriptions so the Copilot CLI invokes the correct skills from the Azure plugin.
 	prompt := `Prepare this application for deployment to Azure.
 
-Use the azure-prepare skill to analyze the project, generate infrastructure (Bicep or Terraform),
-Dockerfiles, and azure.yaml configuration. Then use the azure-validate skill to verify
-everything is ready for deployment.
+Create the required infrastructure, Dockerfiles, and azure.yaml configuration needed to
+deploy this application to Azure. Then validate that everything is ready for deployment.
 
 Ask the user for input when you need clarification about architecture choices,
 service selection, or configuration options.

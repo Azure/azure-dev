@@ -312,7 +312,7 @@ func (d *AgentDisplay) printToolCompletion() {
 	fmt.Println(completionMsg)
 }
 
-// flushReasoning prints the full accumulated reasoning as a dimmed block
+// flushReasoning prints the full accumulated reasoning with markdown rendering
 // and resets the buffer. Called when transitioning to a new phase (tool start, turn end).
 func (d *AgentDisplay) flushReasoning() {
 	d.mu.Lock()
@@ -326,10 +326,8 @@ func (d *AgentDisplay) flushReasoning() {
 	}
 
 	d.canvas.Clear()
-	lines := strings.Split(reasoning, "\n")
-	for _, line := range lines {
-		fmt.Println(color.HiBlackString("  %s", strings.TrimSpace(line)))
-	}
+	fmt.Println()
+	fmt.Println(output.WithMarkdown(reasoning))
 	fmt.Println()
 }
 

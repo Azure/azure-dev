@@ -10,19 +10,8 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets"
 )
-
-// stubCredential is a test double for azcore.TokenCredential.
-type stubCredential struct {
-	token azcore.AccessToken
-	err   error
-}
-
-func (s *stubCredential) GetToken(_ context.Context, _ policy.TokenRequestOptions) (azcore.AccessToken, error) {
-	return s.token, s.err
-}
 
 // stubSecretGetter is a test double for the Key Vault data-plane client.
 type stubSecretGetter struct {

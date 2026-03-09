@@ -218,8 +218,14 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 			return
 		}
 
+		// Suppress internal/UX tools from display
+		suppressedTools := map[string]bool{
+			"report_intent": true,
+			"ask_user":      true,
+			"task":          true,
+		}
+
 		// The report_intent tool carries the agent's current intent as its argument.
-		// Extract it and use as the spinner text instead of displaying as a tool run.
 		if toolName == "report_intent" {
 			if intent := extractIntentFromArgs(event.Data.Arguments); intent != "" {
 				d.mu.Lock()
@@ -227,6 +233,11 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 				d.mu.Unlock()
 				d.spinner.UpdateText(intent)
 			}
+			return
+		}
+
+		// Skip other suppressed tools and skill invocations
+		if suppressedTools[toolName] || strings.HasPrefix(toolName, "skill:") {
 			return
 		}
 
@@ -292,6 +303,7 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 		name := derefStr(event.Data.Name)
 		if name != "" {
 			d.canvas.Clear()
+			fmt.Println()
 			fmt.Println(color.CyanString("◇ Using skill: %s", name))
 		}
 
@@ -309,6 +321,7 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 
 		if displayName != "" {
 			d.canvas.Clear()
+			fmt.Println()
 			msg := color.MagentaString("◆ %s", displayName)
 			if description != "" {
 				msg += color.HiBlackString(" — %s", description)

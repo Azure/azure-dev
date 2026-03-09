@@ -1554,6 +1554,15 @@ const completionSpec: Fig.Spec = {
 						},
 					],
 				},
+				{
+					name: ['--timeout'],
+					description: 'Maximum time in seconds to wait for deployment to complete (default: 1200)',
+					args: [
+						{
+							name: 'timeout',
+						},
+					],
+				},
 			],
 			args: {
 				name: 'service',

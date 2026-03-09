@@ -139,6 +139,11 @@
                         "title": "Optional. Whether to use remote build for function app deployment",
                         "description": "When set to true, the deployment package will be built remotely using Oryx. When set to false, the package is deployed as-is. If omitted, defaults to true for JavaScript, TypeScript, and Python function apps."
                     },
+                    "deployTimeout": {
+                        "type": "integer",
+                        "title": "Optional. Maximum time in seconds to wait for service deployment to complete",
+                        "description": "When specified, azd waits up to this many seconds for the service deployment operation to finish before timing out."
+                    },
                     "docker": {
                         "$ref": "#/definitions/docker"
                     },

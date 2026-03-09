@@ -137,6 +137,26 @@ services:
 	}, service.Docker.BuildArgs)
 }
 
+func TestProjectWithServiceDeployTimeout(t *testing.T) {
+	const testProj = `
+name: test-proj
+services:
+  api:
+    project: src/api
+    language: js
+    host: appservice
+    deployTimeout: 1800
+`
+
+	mockContext := mocks.NewMockContext(context.Background())
+	projectConfig, err := Parse(*mockContext.Context, testProj)
+	require.NoError(t, err)
+
+	service := projectConfig.Services["api"]
+	require.NotNil(t, service.DeployTimeout)
+	require.Equal(t, 1800, *service.DeployTimeout)
+}
+
 func TestProjectWithExpandableDockerArgs(t *testing.T) {
 	env := environment.NewWithValues("test", map[string]string{
 		"REGISTRY": "myregistry",

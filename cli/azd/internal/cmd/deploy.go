@@ -35,10 +35,14 @@ import (
 type DeployFlags struct {
 	ServiceName string
 	All         bool
+	Timeout     int
 	fromPackage string
+	flagSet     *pflag.FlagSet
 	global      *internal.GlobalCommandOptions
 	*internal.EnvFlag
 }
+
+const defaultDeployTimeoutSeconds = 1200
 
 func (d *DeployFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	d.BindNonCommon(local, global)
@@ -63,6 +67,7 @@ func (d *DeployFlags) BindNonCommon(
 func (d *DeployFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	d.EnvFlag = &internal.EnvFlag{}
 	d.EnvFlag.Bind(local, global)
+	d.flagSet = local
 
 	local.BoolVar(
 		&d.All,
@@ -76,6 +81,12 @@ func (d *DeployFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCo
 		"",
 		//nolint:lll
 		"Deploys the packaged service located at the provided path. Supports zipped file packages (file path) or container images (image tag).",
+	)
+	local.IntVar(
+		&d.Timeout,
+		"timeout",
+		defaultDeployTimeoutSeconds,
+		fmt.Sprintf("Maximum time in seconds to wait for deployment to complete (default: %d)", defaultDeployTimeoutSeconds),
 	)
 }
 
@@ -92,9 +103,19 @@ func NewDeployFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *
 
 func NewDeployFlagsFromEnvAndOptions(envFlag *internal.EnvFlag, global *internal.GlobalCommandOptions) *DeployFlags {
 	return &DeployFlags{
+		Timeout: defaultDeployTimeoutSeconds,
 		EnvFlag: envFlag,
 		global:  global,
 	}
+}
+
+func (d *DeployFlags) timeoutChanged() bool {
+	if d.flagSet == nil {
+		return false
+	}
+
+	timeoutFlag := d.flagSet.Lookup("timeout")
+	return timeoutFlag != nil && timeoutFlag.Changed
 }
 
 func NewDeployCmd() *cobra.Command {
@@ -301,15 +322,23 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 				return err
 			}
 
+			deployTimeout, err := da.resolveDeployTimeout(svc)
+			if err != nil {
+				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+				return err
+			}
+
+			deployCtx, cancel := context.WithTimeout(ctx, deployTimeout)
 			deployResult, err := async.RunWithProgress(
 				func(deployProgress project.ServiceProgress) {
 					progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, deployProgress.Message)
 					da.console.ShowSpinner(ctx, progressMessage, input.Step)
 				},
 				func(progress *async.Progress[project.ServiceProgress]) (*project.ServiceDeployResult, error) {
-					return da.serviceManager.Deploy(ctx, svc, serviceContext, progress)
+					return da.serviceManager.Deploy(deployCtx, svc, serviceContext, progress)
 				},
 			)
+			cancel()
 
 			if err != nil {
 				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
@@ -375,6 +404,29 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			),
 		},
 	}, nil
+}
+
+func (da *DeployAction) resolveDeployTimeout(serviceConfig *project.ServiceConfig) (time.Duration, error) {
+	if da.flags.timeoutChanged() {
+		if da.flags.Timeout <= 0 {
+			return 0, errors.New("invalid value for --timeout: must be greater than 0 seconds")
+		}
+
+		return time.Duration(da.flags.Timeout) * time.Second, nil
+	}
+
+	if serviceConfig.DeployTimeout != nil {
+		if *serviceConfig.DeployTimeout <= 0 {
+			return 0, fmt.Errorf(
+				"invalid deployTimeout for service '%s': must be greater than 0 seconds",
+				serviceConfig.Name,
+			)
+		}
+
+		return time.Duration(*serviceConfig.DeployTimeout) * time.Second, nil
+	}
+
+	return time.Duration(defaultDeployTimeoutSeconds) * time.Second, nil
 }
 
 func GetCmdDeployHelpDescription(*cobra.Command) string {

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
@@ -528,6 +529,85 @@ services:
 	enabled, err = unconditionalService.IsEnabled(getenvFalse)
 	require.NoError(t, err)
 	require.True(t, enabled)
+}
+
+func TestServiceConfigDeployTimeoutYamlParsing(t *testing.T) {
+	field, ok := reflect.TypeOf(ServiceConfig{}).FieldByName("DeployTimeout")
+	if !ok {
+		t.Skip("deploy timeout feature is not available on this branch")
+	}
+
+	require.Equal(t, reflect.TypeOf((*int)(nil)), field.Type)
+	require.Contains(t, field.Tag.Get("yaml"), "deployTimeout")
+
+	tests := []struct {
+		name          string
+		deployTimeout string
+		expectNil     bool
+		expectValue   int
+	}{
+		{
+			name:      "Omitted",
+			expectNil: true,
+		},
+		{
+			name:          "PositiveValue",
+			deployTimeout: "    deployTimeout: 45\n",
+			expectValue:   45,
+		},
+		{
+			name:          "ZeroValue",
+			deployTimeout: "    deployTimeout: 0\n",
+			expectValue:   0,
+		},
+		{
+			name:          "NegativeValue",
+			deployTimeout: "    deployTimeout: -5\n",
+			expectValue:   -5,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			projectYaml := "name: test-proj\nservices:\n  api:\n    project: src/api\n    language: js\n" +
+				"    host: containerapp\n" + tt.deployTimeout
+
+			mockContext := mocks.NewMockContext(context.Background())
+			projectConfig, err := Parse(*mockContext.Context, projectYaml)
+			require.NoError(t, err)
+
+			service := projectConfig.Services["api"]
+			require.NotNil(t, service)
+
+			deployTimeout := serviceConfigDeployTimeoutValue(t, service)
+			if tt.expectNil {
+				require.Nil(t, deployTimeout)
+				return
+			}
+
+			require.NotNil(t, deployTimeout)
+			require.Equal(t, tt.expectValue, *deployTimeout)
+		})
+	}
+}
+
+func serviceConfigDeployTimeoutValue(t *testing.T, service *ServiceConfig) *int {
+	t.Helper()
+
+	field := reflect.ValueOf(service).Elem().FieldByName("DeployTimeout")
+	if !field.IsValid() {
+		t.Skip("deploy timeout feature is not available on this branch")
+	}
+
+	require.Equal(t, reflect.Pointer, field.Kind())
+	require.Equal(t, reflect.TypeOf((*int)(nil)), field.Type())
+
+	if field.IsNil() {
+		return nil
+	}
+
+	value := field.Elem().Interface().(int)
+	return &value
 }
 
 func createTestServiceConfig(path string, host ServiceTargetKind, language ServiceLanguageKind) *ServiceConfig {

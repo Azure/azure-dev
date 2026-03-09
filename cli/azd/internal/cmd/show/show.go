@@ -447,8 +447,6 @@ func showAppService(
 
 		value := *val
 		// TODO(azure/azure-dev#5174): Resolve the actual secret value from the AKV secret ref @Microsoft.KeyVault(...)
-		// Detection uses keyvault.IsSecretReference() which handles both akvs:// and @Microsoft.KeyVault formats.
-		// Extension environments auto-resolve via keyvault.ResolveSecretEnvironment() in cmd/extensions.go.
 		isSecret := strings.HasPrefix(value, "@Microsoft.KeyVault(") || slices.Contains(knownSecretKeys, key)
 
 		if isSecret && !opts.showSecrets {

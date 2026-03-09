@@ -89,14 +89,14 @@ func (b *SessionConfigBuilder) Build(
 		cfg.DisabledSkills = disabled
 	}
 
-	// MCP servers: merge built-in + user-configured
+	// MCP servers: merge built-in + Azure plugin + user-configured
 	cfg.MCPServers = b.buildMCPServers(userConfig, builtInServers)
 
 	return cfg, nil
 }
 
-// buildMCPServers merges built-in MCP servers with user-configured ones.
-// User-configured servers with matching names override built-in servers.
+// buildMCPServers merges MCP servers from built-in config, Azure plugin, and user config.
+// User-configured servers override plugin servers, which override built-in servers.
 func (b *SessionConfigBuilder) buildMCPServers(
 	userConfig config.Config,
 	builtInServers map[string]*mcp.ServerConfig,
@@ -106,6 +106,12 @@ func (b *SessionConfigBuilder) buildMCPServers(
 	// Add built-in servers
 	for name, srv := range builtInServers {
 		merged[name] = convertServerConfig(srv)
+	}
+
+	// Add Azure plugin MCP servers
+	pluginServers := loadAzurePluginMCPServers()
+	for name, srv := range pluginServers {
+		merged[name] = srv
 	}
 
 	// Merge user-configured servers (overrides built-in on name collision)
@@ -240,6 +246,46 @@ func discoverAzurePluginSkillDirs() []string {
 			log.Printf("[copilot-config] Found Azure plugin skills at: %s", skillsDir)
 			return []string{skillsDir}
 		}
+	}
+
+	return nil
+}
+
+// loadAzurePluginMCPServers reads MCP server configs from the Azure plugin's .mcp.json.
+func loadAzurePluginMCPServers() map[string]copilot.MCPServerConfig {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+
+	pluginsRoot := filepath.Join(home, ".copilot", "installed-plugins")
+
+	candidates := []string{
+		filepath.Join(pluginsRoot, "_direct", "microsoft--GitHub-Copilot-for-Azure--plugin", ".mcp.json"),
+		filepath.Join(pluginsRoot, "github-copilot-for-azure", "azure", ".mcp.json"),
+	}
+
+	for _, mcpFile := range candidates {
+		data, err := os.ReadFile(mcpFile)
+		if err != nil {
+			continue
+		}
+
+		var pluginConfig struct {
+			MCPServers map[string]map[string]any `json:"mcpServers"`
+		}
+		if err := json.Unmarshal(data, &pluginConfig); err != nil {
+			log.Printf("[copilot-config] Failed to parse %s: %v", mcpFile, err)
+			continue
+		}
+
+		result := make(map[string]copilot.MCPServerConfig)
+		for name, srv := range pluginConfig.MCPServers {
+			result[name] = copilot.MCPServerConfig(srv)
+		}
+
+		log.Printf("[copilot-config] Loaded %d MCP servers from Azure plugin", len(result))
+		return result
 	}
 
 	return nil

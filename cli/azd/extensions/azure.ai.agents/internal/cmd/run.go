@@ -28,12 +28,15 @@ func newRunCommand() *cobra.Command {
 	flags := &runFlags{}
 
 	cmd := &cobra.Command{
-		Use:   "run",
+		Use:   "run [name]",
 		Short: "Run your agent locally for development.",
 		Long: `Run your agent locally for development.
 
 Detects the project type (Python, .NET, Node.js), installs dependencies,
 and starts the agent server in the foreground. Press Ctrl+C to stop.
+
+Optionally specify the agent service name (from azure.yaml) as a
+positional argument. When omitted, the single agent service is used.
 
 The startup command is read from the startupCommand property of the
 agent service in azure.yaml. If not set, it is auto-detected from the
@@ -45,14 +48,18 @@ Use a separate terminal to invoke the running agent:
   azd ai agent run
 
   # Start a specific agent by name
-  azd ai agent run --name my-agent
+  azd ai agent run my-agent
 
   # Start on a custom port
   azd ai agent run --port 9090
 
   # Start with an explicit command
   azd ai agent run --start-command "python app.py"`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) > 0 {
+				flags.name = args[0]
+			}
 			ctx := azdext.WithAccessToken(cmd.Context())
 			setupDebugLogging(cmd.Flags())
 			return runRun(ctx, flags)
@@ -60,7 +67,6 @@ Use a separate terminal to invoke the running agent:
 	}
 
 	cmd.Flags().IntVarP(&flags.port, "port", "p", DefaultPort, "Port to listen on")
-	cmd.Flags().StringVarP(&flags.name, "name", "n", "", "Agent service name (from azure.yaml)")
 	cmd.Flags().StringVarP(&flags.startCommand, "start-command", "c", "",
 		"Explicit startup command (overrides azure.yaml and auto-detection)")
 

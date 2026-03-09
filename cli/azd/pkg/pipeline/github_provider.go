@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
-	"net/url"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -140,6 +139,10 @@ var gitHubRemoteHttpsUrlRegex = regexp.MustCompile(`^https://(?:www\.)?[a-zA-Z0-
 
 // ErrRemoteHostIsNotGitHub the error used when a non GitHub remote is found
 var ErrRemoteHostIsNotGitHub = errors.New("not a github host")
+
+// credentialNameSanitizer replaces characters not allowed in federated identity credential names.
+// Credential names only allow letters (A-Z, a-z), numbers, hyphens, and underscores.
+var credentialNameSanitizer = regexp.MustCompile(`[^A-Za-z0-9\-_]`)
 
 // gitRepoDetails extracts the information from a GitHub remote url into general scm concepts
 // like owner, name and path
@@ -385,11 +388,11 @@ func (p *GitHubCiProvider) credentialOptions(
 		}
 
 		repoSlug := repoDetails.owner + "/" + repoDetails.repoName
-		credentialSafeName := strings.ReplaceAll(repoSlug, "/", "-")
+		credentialSafeName := credentialNameSanitizer.ReplaceAllString(repoSlug, "-")
 
 		federatedCredentials := []*graphsdk.FederatedIdentityCredential{
 			{
-				Name:        url.PathEscape(fmt.Sprintf("%s-pull_request", credentialSafeName)),
+				Name:        fmt.Sprintf("%s-pull_request", credentialSafeName),
 				Issuer:      federatedIdentityIssuer,
 				Subject:     fmt.Sprintf("repo:%s:pull_request", repoSlug),
 				Description: to.Ptr("Created by Azure Developer CLI"),
@@ -398,9 +401,9 @@ func (p *GitHubCiProvider) credentialOptions(
 		}
 
 		for _, branch := range branches {
-			safeBranchName := regexp.MustCompile(`[^A-Za-z0-9-]`).ReplaceAllString(branch, "-")
+			safeBranchName := credentialNameSanitizer.ReplaceAllString(branch, "-")
 			branchCredentials := &graphsdk.FederatedIdentityCredential{
-				Name:        url.PathEscape(fmt.Sprintf("%s-%s", credentialSafeName, safeBranchName)),
+				Name:        fmt.Sprintf("%s-%s", credentialSafeName, safeBranchName),
 				Issuer:      federatedIdentityIssuer,
 				Subject:     fmt.Sprintf("repo:%s:ref:refs/heads/%s", repoSlug, branch),
 				Description: to.Ptr("Created by Azure Developer CLI"),

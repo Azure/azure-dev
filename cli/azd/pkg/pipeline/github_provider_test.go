@@ -118,3 +118,24 @@ func setupGithubCliMocks(mockContext *mocks.MockContext) {
 		return exec.NewRunResult(0, fmt.Sprintf("gh version %s", github.Version), ""), nil
 	})
 }
+
+func Test_credentialNameSanitizer(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"simple repo slug", "Azure/azure-dev", "Azure-azure-dev"},
+		{"repo with dots", "my-org/my.repo.name", "my-org-my-repo-name"},
+		{"repo with multiple special chars", "org/repo@v2.0", "org-repo-v2-0"},
+		{"already safe", "my-org-my-repo", "my-org-my-repo"},
+		{"underscores preserved", "org/my_repo", "org-my_repo"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := credentialNameSanitizer.ReplaceAllString(tt.input, "-")
+			require.Equal(t, tt.expected, result)
+		})
+	}
+}

@@ -38,6 +38,7 @@ type AgentDisplay struct {
 	toolStartTime    time.Time
 	finalContent     string
 	reasoningBuf     strings.Builder
+	lastIntent       string
 
 	// Lifecycle
 	idleCh chan struct{}
@@ -141,16 +142,24 @@ func (d *AgentDisplay) Start(ctx context.Context) (func(), error) {
 func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 	switch event.Type {
 	case copilot.AssistantTurnStart:
-		d.spinner.UpdateText("Thinking...")
 		d.mu.Lock()
+		intent := d.lastIntent
 		d.currentTool = ""
 		d.currentToolInput = ""
 		d.reasoningBuf.Reset()
 		d.mu.Unlock()
+		if intent != "" {
+			d.spinner.UpdateText(intent)
+		} else {
+			d.spinner.UpdateText("Thinking...")
+		}
 
 	case copilot.AssistantIntent:
 		if event.Data.Intent != nil && *event.Data.Intent != "" {
 			intent := logging.TruncateString(*event.Data.Intent, 80)
+			d.mu.Lock()
+			d.lastIntent = intent
+			d.mu.Unlock()
 			d.spinner.UpdateText(intent)
 		}
 
@@ -232,8 +241,13 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 		d.mu.Lock()
 		d.currentTool = ""
 		d.currentToolInput = ""
+		intent := d.lastIntent
 		d.mu.Unlock()
-		d.spinner.UpdateText("Thinking...")
+		if intent != "" {
+			d.spinner.UpdateText(intent)
+		} else {
+			d.spinner.UpdateText("Thinking...")
+		}
 
 	case copilot.SessionError:
 		msg := "unknown error"

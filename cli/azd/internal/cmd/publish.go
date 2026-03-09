@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -160,9 +159,10 @@ func (pa *PublishAction) Run(ctx context.Context) (*actions.ActionResult, error)
 	}
 
 	if pa.env.GetSubscriptionId() == "" {
-		return nil, errors.New(
-			"infrastructure has not been provisioned. Run `azd provision`",
-		)
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        internal.ErrInfraNotProvisioned,
+			Suggestion: "Run 'azd provision' to set up infrastructure before publishing.",
+		}
 	}
 
 	targetServiceName, err := getTargetServiceName(
@@ -180,32 +180,43 @@ func (pa *PublishAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 	// Validate that --to requires a specific service
 	if pa.flags.All && pa.flags.To != "" {
-		return nil, errors.New(
-			"'--to' cannot be specified when '--all' is set. Specify a specific service by passing a <service>")
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        fmt.Errorf("'--to' cannot be specified when '--all' is set: %w", internal.ErrInvalidFlagCombination),
+			Suggestion: "Use 'azd publish <service> --to <target>' to target a specific service.",
+		}
 	}
 
 	if targetServiceName == "" && pa.flags.To != "" {
-		return nil, errors.New(
-			"'--to' cannot be specified when publishing all services. Specify a specific service by passing a <service>",
-		)
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        fmt.Errorf("'--to' requires a specific service: %w", internal.ErrInvalidFlagCombination),
+			Suggestion: "Use 'azd publish <service> --to <target>' to target a specific service.",
+		}
 	}
 
 	if pa.flags.All && pa.flags.FromPackage != "" {
-		return nil, errors.New(
-			"'--from-package' cannot be specified when '--all' is set. Specify a specific service by passing a <service>")
+		return nil, &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf(
+				"'--from-package' cannot be specified when '--all' is set: %w",
+				internal.ErrInvalidFlagCombination),
+			Suggestion: "Use 'azd publish <service> --from-package <path>' to target a specific service.",
+		}
 	}
 
 	if targetServiceName == "" && pa.flags.FromPackage != "" {
-		return nil, errors.New(
-			//nolint:lll
-			"'--from-package' cannot be specified when publishing all services. Specify a specific service by passing a <service>",
-		)
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        fmt.Errorf("'--from-package' requires a specific service: %w", internal.ErrInvalidFlagCombination),
+			Suggestion: "Use 'azd publish <service> --from-package <path>' to target a specific service.",
+		}
 	}
 
 	if pa.flags.FromPackage != "" {
 		if parsedImage, err := docker.ParseContainerImage(pa.flags.FromPackage); err == nil && parsedImage.Registry != "" {
-			return nil, fmt.Errorf(
-				"'%s' is already a remote image. Use '--to' flag to specify target", pa.flags.FromPackage)
+			return nil, &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"'%s' is already a remote image: %w",
+					pa.flags.FromPackage, internal.ErrInvalidArgValue),
+				Suggestion: "Use '--to' flag to specify a publish target for remote images.",
+			}
 		}
 	}
 

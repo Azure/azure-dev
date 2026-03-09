@@ -190,9 +190,11 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	var subId, rgName string
 	if env, err := s.envManager.Get(ctx, environmentName); err != nil {
 		if errors.Is(err, environment.ErrNotFound) && s.flags.EnvironmentName != "" {
-			return nil, fmt.Errorf(
-				`"environment '%s' does not exist. You can create it with "azd env new"`, environmentName,
-			)
+			return nil, &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf("environment '%s' does not exist: %w",
+					environmentName, environment.ErrNotFound),
+				Suggestion: "Run 'azd env new <name>' to create an environment.",
+			}
 		}
 		log.Printf("could not load environment: %s, resource ids will not be available", err)
 	} else {

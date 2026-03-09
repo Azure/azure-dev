@@ -128,7 +128,10 @@ func (er *envRemoveAction) Run(ctx context.Context) (*actions.ActionResult, erro
 	}
 
 	if name == "" {
-		return nil, fmt.Errorf("no environment specified")
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        internal.ErrNoArgsProvided,
+			Suggestion: "Run 'azd env remove <environment-name>' specifying the environment.",
+		}
 	}
 
 	envs, err := er.envManager.List(ctx)
@@ -141,7 +144,12 @@ func (er *envRemoveAction) Run(ctx context.Context) (*actions.ActionResult, erro
 	})
 
 	if idx < 0 {
-		return nil, fmt.Errorf("environment '%s' does not exist", name)
+		return nil, &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf(
+				"environment '%s' does not exist: %w",
+				name, environment.ErrNotFound),
+			Suggestion: "Run 'azd env list' to see available environments.",
+		}
 	}
 
 	env := envs[idx]

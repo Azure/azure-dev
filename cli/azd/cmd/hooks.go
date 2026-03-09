@@ -139,7 +139,10 @@ func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		if has, err := hra.importManager.HasService(ctx, hra.projectConfig, hra.flags.service); err != nil {
 			return nil, err
 		} else if !has {
-			return nil, fmt.Errorf("service name '%s' doesn't exist", hra.flags.service)
+			return nil, &internal.ErrorWithSuggestion{
+				Err:        fmt.Errorf("service '%s': %w", hra.flags.service, internal.ErrServiceNotFound),
+				Suggestion: "Check the service name in azure.yaml or run 'azd show' to list services.",
+			}
 		}
 	}
 

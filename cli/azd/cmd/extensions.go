@@ -149,7 +149,10 @@ func newExtensionAction(
 func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	extensionId, has := a.cmd.Annotations["extension.id"]
 	if !has {
-		return nil, fmt.Errorf("extension id not found")
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        internal.ErrExtensionNotFound,
+			Suggestion: "This is an internal error — the extension annotation is missing from the command.",
+		}
 	}
 
 	extension, err := a.extensionManager.GetInstalled(extensions.FilterOptions{
@@ -228,7 +231,10 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 	jwtToken, err := grpcserver.GenerateExtensionToken(extension, serverInfo)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate extension token")
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        internal.ErrExtensionTokenFailed,
+			Suggestion: "This is an internal error generating the JWT token for extension communication.",
+		}
 	}
 
 	allEnv = append(allEnv,

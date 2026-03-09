@@ -6,8 +6,8 @@ package cmd
 import (
 	"context"
 	"io"
-	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,18 +24,10 @@ import (
 
 func TestDeployFlagsTimeoutFlag(t *testing.T) {
 	cmd := NewDeployCmd()
-	flags := NewDeployFlags(cmd, &internal.GlobalCommandOptions{})
-
-	timeoutField := reflect.ValueOf(flags).Elem().FieldByName("Timeout")
-	if !timeoutField.IsValid() {
-		t.Skip("deploy timeout feature is not available on this branch")
-	}
+	NewDeployFlags(cmd, &internal.GlobalCommandOptions{})
 
 	timeoutFlag := cmd.Flags().Lookup("timeout")
-	if timeoutFlag == nil {
-		t.Skip("deploy timeout flag is not available on this branch")
-	}
-
+	require.NotNil(t, timeoutFlag)
 	require.Equal(t, "1200", timeoutFlag.DefValue)
 
 	tests := []struct {
@@ -61,23 +53,12 @@ func TestDeployFlagsTimeoutFlag(t *testing.T) {
 			flags := NewDeployFlags(cmd, &internal.GlobalCommandOptions{})
 
 			require.NoError(t, cmd.ParseFlags(tt.args))
-			require.Equal(t, tt.want, deployFlagsTimeoutValue(t, flags))
+			require.Equal(t, tt.want, flags.Timeout)
 		})
 	}
 }
 
 func TestDeployActionResolveDeployTimeout(t *testing.T) {
-	cmd := NewDeployCmd()
-	flags := NewDeployFlags(cmd, &internal.GlobalCommandOptions{})
-
-	if reflect.ValueOf(flags).Elem().FieldByName("Timeout").IsValid() == false {
-		t.Skip("deploy timeout feature is not available on this branch")
-	}
-
-	if cmd.Flags().Lookup("timeout") == nil {
-		t.Skip("deploy timeout flag is not available on this branch")
-	}
-
 	tests := []struct {
 		name        string
 		flagTimeout *int
@@ -141,15 +122,37 @@ func TestDeployActionRunAppliesResolvedTimeout(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			deployErr := mockDeployErr(t.Name())
 			action, serviceManager := newDeployActionForTimeoutTest(t, tt.flagTimeout, deployErr)
+			start := time.Now()
 
 			_, err := action.Run(context.Background())
 			require.ErrorIs(t, err, deployErr)
 
 			require.True(t, serviceManager.deployHasDeadline, "deploy should run with a deadline")
-			require.WithinDuration(t, time.Now().Add(tt.wantTimeout), serviceManager.deployDeadline, 2*time.Second)
+			require.WithinDuration(t, start.Add(tt.wantTimeout), serviceManager.deployDeadline, 2*time.Second)
 			serviceManager.AssertExpectations(t)
 		})
 	}
+}
+
+func TestDeployActionRunTimeoutWarningAndErrorMessage(t *testing.T) {
+	action, serviceManager := newDeployActionForTimeoutTest(t, intPtr(30), context.DeadlineExceeded)
+
+	_, err := action.Run(context.Background())
+	require.EqualError(
+		t,
+		err,
+		"deployment of service 'api' timed out after 30 seconds. Note: azd has stopped waiting, but the deployment may still be running in Azure. Check the Azure Portal for current deployment status.",
+	)
+
+	console := action.console.(*mockinput.MockConsole)
+	output := strings.Join(console.Output(), "\n")
+	require.Contains(
+		t,
+		output,
+		"WARNING: Deployment of service 'api' exceeded the azd wait timeout. azd has stopped waiting, but the deployment may still be running in Azure.",
+	)
+	require.Contains(t, output, "Check the Azure Portal for current deployment status.")
+	serviceManager.AssertExpectations(t)
 }
 
 type mockDeployProjectManager struct {
@@ -360,18 +363,6 @@ func deployTimeoutTestProjectConfig(t *testing.T) *project.ProjectConfig {
 	require.NoError(t, err)
 
 	return projectConfig
-}
-
-func deployFlagsTimeoutValue(t *testing.T, flags *DeployFlags) int {
-	t.Helper()
-
-	field := reflect.ValueOf(flags).Elem().FieldByName("Timeout")
-	if !field.IsValid() {
-		t.Skip("deploy timeout feature is not available on this branch")
-	}
-
-	require.Equal(t, reflect.Int, field.Kind())
-	return int(field.Int())
 }
 
 func intPtr(value int) *int {

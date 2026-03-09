@@ -328,23 +328,36 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 				return err
 			}
 
+			var deployResult *project.ServiceDeployResult
 			deployCtx, cancel := context.WithTimeout(ctx, deployTimeout)
-			deployResult, err := async.RunWithProgress(
-				func(deployProgress project.ServiceProgress) {
-					progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, deployProgress.Message)
-					da.console.ShowSpinner(ctx, progressMessage, input.Step)
-				},
-				func(progress *async.Progress[project.ServiceProgress]) (*project.ServiceDeployResult, error) {
-					return da.serviceManager.Deploy(deployCtx, svc, serviceContext, progress)
-				},
-			)
-			cancel()
+			func() {
+				defer cancel()
+				deployResult, err = async.RunWithProgress(
+					func(deployProgress project.ServiceProgress) {
+						progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, deployProgress.Message)
+						da.console.ShowSpinner(ctx, progressMessage, input.Step)
+					},
+					func(progress *async.Progress[project.ServiceProgress]) (*project.ServiceDeployResult, error) {
+						return da.serviceManager.Deploy(deployCtx, svc, serviceContext, progress)
+					},
+				)
+			}()
 
 			if err != nil {
 				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 				if errors.Is(err, context.DeadlineExceeded) {
+					da.console.MessageUxItem(ctx, &ux.WarningMessage{
+						Description: fmt.Sprintf(
+							"Deployment of service '%s' exceeded the azd wait timeout. azd has stopped waiting, but the deployment may still be running in Azure.",
+							svc.Name,
+						),
+						Hints: []string{"Check the Azure Portal for current deployment status."},
+					})
+
 					return fmt.Errorf(
-						"deployment of service '%s' timed out after %d seconds",
+						"deployment of service '%s' timed out after %d seconds. Note: azd has stopped waiting, "+
+							"but the deployment may still be running in Azure. Check the Azure Portal for current "+
+							"deployment status.",
 						svc.Name,
 						int(deployTimeout.Seconds()),
 					)

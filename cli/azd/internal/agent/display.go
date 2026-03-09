@@ -7,6 +7,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -35,6 +38,7 @@ type AgentDisplay struct {
 	currentToolInput string
 	toolStartTime    time.Time
 	finalContent     string
+	reasoningBuf     strings.Builder
 
 	// Lifecycle
 	idleCh chan struct{}
@@ -124,6 +128,7 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 		d.latestThought = ""
 		d.currentTool = ""
 		d.currentToolInput = ""
+		d.reasoningBuf.Reset()
 		d.mu.Unlock()
 
 	case copilot.AssistantIntent:
@@ -136,13 +141,38 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 			d.mu.Lock()
 			d.latestThought = logging.TruncateString(*event.Data.ReasoningText, 200)
 			d.mu.Unlock()
+			d.canvas.Update()
 		}
 
 	case copilot.AssistantReasoningDelta:
 		if event.Data.DeltaContent != nil && *event.Data.DeltaContent != "" {
 			d.mu.Lock()
-			d.latestThought = logging.TruncateString(*event.Data.DeltaContent, 200)
+			// Accumulate reasoning deltas into a rolling display
+			d.reasoningBuf.WriteString(*event.Data.DeltaContent)
+			// Show the tail of accumulated reasoning
+			full := d.reasoningBuf.String()
+			if len(full) > 200 {
+				full = full[len(full)-200:]
+			}
+			d.latestThought = strings.TrimSpace(full)
 			d.mu.Unlock()
+			d.canvas.Update()
+		}
+
+	case copilot.AssistantStreamingDelta:
+		// Some models emit reasoning via streaming delta with phase="thinking"
+		if event.Data.Phase != nil && *event.Data.Phase == "thinking" {
+			if event.Data.DeltaContent != nil && *event.Data.DeltaContent != "" {
+				d.mu.Lock()
+				d.reasoningBuf.WriteString(*event.Data.DeltaContent)
+				full := d.reasoningBuf.String()
+				if len(full) > 200 {
+					full = full[len(full)-200:]
+				}
+				d.latestThought = strings.TrimSpace(full)
+				d.mu.Unlock()
+				d.canvas.Update()
+			}
 		}
 
 	case copilot.AssistantMessage:
@@ -287,6 +317,7 @@ func (d *AgentDisplay) printToolCompletion() {
 }
 
 // extractToolInputSummary creates a short summary of tool arguments for display.
+// Paths are shown relative to cwd when possible.
 func extractToolInputSummary(args any) string {
 	if args == nil {
 		return ""
@@ -300,12 +331,34 @@ func extractToolInputSummary(args any) string {
 	prioritizedKeys := []string{"path", "pattern", "filename", "command"}
 	for _, key := range prioritizedKeys {
 		if val, exists := argsMap[key]; exists {
-			s := fmt.Sprintf("%s: %v", key, val)
+			valStr := fmt.Sprintf("%v", val)
+			// Make paths relative to cwd for cleaner display
+			if key == "path" || key == "filename" {
+				valStr = toRelativePath(valStr)
+			}
+			s := fmt.Sprintf("%s: %s", key, valStr)
 			return logging.TruncateString(s, 120)
 		}
 	}
 
 	return ""
+}
+
+// toRelativePath converts an absolute path to relative if it's under cwd.
+func toRelativePath(p string) string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return p
+	}
+	rel, err := filepath.Rel(cwd, p)
+	if err != nil {
+		return p
+	}
+	// Don't return paths that escape cwd (e.g., "../../foo")
+	if strings.HasPrefix(rel, "..") {
+		return p
+	}
+	return rel
 }
 
 func derefStr(s *string) string {

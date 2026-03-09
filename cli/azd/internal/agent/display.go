@@ -39,6 +39,8 @@ type AgentDisplay struct {
 	finalContent     string
 	reasoningBuf     strings.Builder
 	lastIntent       string
+	activeSubagent   string // display name of active sub-agent, empty if none
+	inSubagent       bool
 
 	// Lifecycle
 	idleCh chan struct{}
@@ -116,11 +118,16 @@ func (d *AgentDisplay) Start(ctx context.Context) (func(), error) {
 				tool := d.currentTool
 				toolInput := d.currentToolInput
 				startTime := d.toolStartTime
+				nested := d.inSubagent
 				d.mu.Unlock()
 
 				if tool != "" {
 					elapsed := int(time.Since(startTime).Seconds())
-					text := fmt.Sprintf("Running %s", color.MagentaString(tool))
+					prefix := ""
+					if nested {
+						prefix = "  "
+					}
+					text := fmt.Sprintf("%sRunning %s", prefix, color.MagentaString(tool))
 					if toolInput != "" {
 						text += " with " + color.HiBlackString(toolInput)
 					}
@@ -289,11 +296,71 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 		}
 
 	case copilot.SubagentStarted:
-		name := derefStr(event.Data.AgentName)
-		if name != "" {
-			d.canvas.Clear()
-			fmt.Println(color.MagentaString("◆ Delegating to: %s", name))
+		displayName := derefStr(event.Data.AgentDisplayName)
+		if displayName == "" {
+			displayName = derefStr(event.Data.AgentName)
 		}
+		description := derefStr(event.Data.AgentDescription)
+
+		d.mu.Lock()
+		d.activeSubagent = displayName
+		d.inSubagent = true
+		d.mu.Unlock()
+
+		if displayName != "" {
+			d.canvas.Clear()
+			msg := color.MagentaString("◆ %s", displayName)
+			if description != "" {
+				msg += color.HiBlackString(" — %s", description)
+			}
+			fmt.Println(msg)
+		}
+
+	case copilot.SubagentCompleted:
+		displayName := derefStr(event.Data.AgentDisplayName)
+		if displayName == "" {
+			displayName = derefStr(event.Data.AgentName)
+		}
+		summary := derefStr(event.Data.Summary)
+
+		d.printToolCompletion()
+
+		d.mu.Lock()
+		d.activeSubagent = ""
+		d.inSubagent = false
+		d.mu.Unlock()
+
+		if displayName != "" {
+			d.canvas.Clear()
+			msg := fmt.Sprintf("%s %s completed", color.GreenString("✔︎"), color.MagentaString(displayName))
+			if summary != "" {
+				msg += "\n" + color.HiBlackString("  %s", logging.TruncateString(summary, 200))
+			}
+			fmt.Println(msg)
+		}
+
+	case copilot.SubagentFailed:
+		displayName := derefStr(event.Data.AgentDisplayName)
+		if displayName == "" {
+			displayName = derefStr(event.Data.AgentName)
+		}
+		errMsg := derefStr(event.Data.Message)
+
+		d.mu.Lock()
+		d.activeSubagent = ""
+		d.inSubagent = false
+		d.mu.Unlock()
+
+		if displayName != "" {
+			d.canvas.Clear()
+			fmt.Println(output.WithErrorFormat("✖ %s failed: %s", displayName, errMsg))
+		}
+
+	case copilot.SubagentDeselected:
+		d.mu.Lock()
+		d.activeSubagent = ""
+		d.inSubagent = false
+		d.mu.Unlock()
 
 	case copilot.AssistantTurnEnd:
 		d.printToolCompletion()
@@ -324,17 +391,24 @@ func (d *AgentDisplay) WaitForIdle(ctx context.Context) (string, error) {
 }
 
 // printToolCompletion prints a completion message for the current tool.
+// When inside a subagent, the output is indented to show nesting.
 func (d *AgentDisplay) printToolCompletion() {
 	d.mu.Lock()
 	tool := d.currentTool
 	toolInput := d.currentToolInput
+	nested := d.inSubagent
 	d.mu.Unlock()
 
 	if tool == "" {
 		return
 	}
 
-	completionMsg := fmt.Sprintf("%s Ran %s", color.GreenString("✔︎"), color.MagentaString(tool))
+	indent := ""
+	if nested {
+		indent = "  "
+	}
+
+	completionMsg := fmt.Sprintf("%s%s Ran %s", indent, color.GreenString("✔︎"), color.MagentaString(tool))
 	if toolInput != "" {
 		completionMsg += " with " + color.HiBlackString(toolInput)
 	}

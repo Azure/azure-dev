@@ -342,6 +342,13 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 			if err != nil {
 				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+				if errors.Is(err, context.DeadlineExceeded) {
+					return fmt.Errorf(
+						"deployment of service '%s' timed out after %d seconds",
+						svc.Name,
+						int(deployTimeout.Seconds()),
+					)
+				}
 				return err
 			}
 

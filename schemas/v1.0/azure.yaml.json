@@ -142,7 +142,8 @@
                     "deployTimeout": {
                         "type": "integer",
                         "title": "Optional. Maximum time in seconds to wait for service deployment to complete",
-                        "description": "When specified, azd waits up to this many seconds for the service deployment operation to finish before timing out."
+                        "description": "When specified, azd waits up to this many seconds for the service deployment operation to finish before timing out.",
+                        "minimum": 1
                     },
                     "docker": {
                         "$ref": "#/definitions/docker"

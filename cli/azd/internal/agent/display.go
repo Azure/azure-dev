@@ -58,7 +58,7 @@ func (d *AgentDisplay) Start(ctx context.Context) (func(), error) {
 	d.ctx = ctx
 
 	d.spinner = uxlib.NewSpinner(&uxlib.SpinnerOptions{
-		Text: "Working...",
+		Text: "Thinking...",
 	})
 
 	d.canvas = uxlib.NewCanvas(
@@ -141,7 +141,7 @@ func (d *AgentDisplay) Start(ctx context.Context) (func(), error) {
 func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 	switch event.Type {
 	case copilot.AssistantTurnStart:
-		d.spinner.UpdateText("Working...")
+		d.spinner.UpdateText("Thinking...")
 		d.mu.Lock()
 		d.currentTool = ""
 		d.currentToolInput = ""
@@ -233,7 +233,7 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 		d.currentTool = ""
 		d.currentToolInput = ""
 		d.mu.Unlock()
-		d.spinner.UpdateText("Working...")
+		d.spinner.UpdateText("Thinking...")
 
 	case copilot.SessionError:
 		msg := "unknown error"

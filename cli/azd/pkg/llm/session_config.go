@@ -6,6 +6,8 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 
 	copilot "github.com/github/copilot-sdk/go"
 
@@ -35,6 +37,11 @@ func (b *SessionConfigBuilder) Build(
 ) (*copilot.SessionConfig, error) {
 	cfg := &copilot.SessionConfig{
 		Streaming: true,
+	}
+
+	// Store Copilot session files in .azure/copilot relative to cwd
+	if cwd, err := os.Getwd(); err == nil {
+		cfg.ConfigDir = filepath.Join(cwd, ".azure", "copilot")
 	}
 
 	userConfig, err := b.userConfigManager.Load()

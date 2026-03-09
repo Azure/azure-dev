@@ -1,4 +1,6 @@
 steps:
+  # Deepen the commit history by 6 months to ensure that the
+  # minor-version-introducing tag is present.
   - pwsh: |
       $since = (Get-Date).AddMonths(-6).ToString("yyyy-MM-dd")
       Write-Host "Deepening git history since: $since"

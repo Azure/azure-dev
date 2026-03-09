@@ -1,3 +1,15 @@
+# This script returns a dev MSI version by finding the most recent release tag,
+# then finding the first release tag that introduced the current minor version,
+# and then calculating the "release distance" from that tag to the current
+# commit.
+#
+# The MSI version is of the form: <major>.<minor>.<commit-distance-from-minor-intro-release>.
+# This ensures a monotonically increasing version number for each build on the
+# "main" branch.
+#
+# By default, the git history is assumed to be deepened by 6 months in the CI
+# environment to ensure that a minor intro release is found.
+
 . "$PSScriptRoot../../common/scripts/common.ps1"
 
 Set-StrictMode -Version 4

@@ -21,7 +21,7 @@ import (
 
 type invokeFlags struct {
 	message    string
-	remote     bool
+	local      bool
 	name       string
 	port       int
 	timeout    int
@@ -41,28 +41,27 @@ func newInvokeCommand() *cobra.Command {
 		Short: "Send a message to your agent.",
 		Long: `Send a message to your agent.
 
-With one argument the value is treated as the message and the agent is
-invoked locally on localhost:8088.
+By default the agent is invoked remotely on Foundry. When a single
+argument is provided it is treated as the message and the agent name
+is auto-detected from azure.yaml. With two arguments the first is the
+agent name and the second is the message.
 
-With two arguments the first is the agent name and the second is the
-message. Providing a name implies --remote and invokes on Foundry.
-
-Use --remote to invoke on Foundry without specifying an agent name
-(auto-detected from azure.yaml).
+Use --local to target a locally running agent (started via 'azd ai agent run')
+instead of Foundry.
 
 Sessions are persisted per-agent — consecutive invokes reuse the same
 session automatically. Pass --new-session to force a reset.`,
-		Example: `  # Invoke locally (agent must be running via 'azd ai agent run')
+		Example: `  # Invoke the remote agent on Foundry (auto-detects agent from azure.yaml)
   azd ai agent invoke "Hello!"
-
-  # Invoke the remote agent on Foundry (auto-detects agent from azure.yaml)
-  azd ai agent invoke --remote "Hello!"
 
   # Invoke a specific remote agent by name
   azd ai agent invoke my-agent "Hello!"
 
+  # Invoke locally (agent must be running via 'azd ai agent run')
+  azd ai agent invoke --local "Hello!"
+
   # Start a new session (discard conversation history)
-  azd ai agent invoke --remote --new-session "Hello!"`,
+  azd ai agent invoke --new-session "Hello!"`,
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
@@ -75,9 +74,8 @@ session automatically. Pass --new-session to force a reset.`,
 				flags.message = args[0]
 			}
 
-			// Providing a name implies --remote
-			if flags.name != "" {
-				flags.remote = true
+			if flags.name != "" && flags.local {
+				return fmt.Errorf("cannot use --local with a named agent; named agents are always invoked remotely on Foundry")
 			}
 
 			action := &InvokeAction{flags: flags}
@@ -85,7 +83,7 @@ session automatically. Pass --new-session to force a reset.`,
 		},
 	}
 
-	cmd.Flags().BoolVarP(&flags.remote, "remote", "r", false, "Invoke on Foundry instead of localhost")
+	cmd.Flags().BoolVarP(&flags.local, "local", "l", false, "Invoke on localhost instead of Foundry")
 	cmd.Flags().IntVar(&flags.port, "port", DefaultPort, "Local server port")
 	cmd.Flags().IntVarP(&flags.timeout, "timeout", "t", 120, "Request timeout in seconds (0 for no timeout)")
 	cmd.Flags().StringVarP(&flags.session, "session", "s", "", "Explicit session ID override")
@@ -95,10 +93,10 @@ session automatically. Pass --new-session to force a reset.`,
 }
 
 func (a *InvokeAction) Run(ctx context.Context) error {
-	if a.flags.remote {
-		return a.invokeRemote(ctx)
+	if a.flags.local {
+		return a.invokeLocal(ctx)
 	}
-	return a.invokeLocal(ctx)
+	return a.invokeRemote(ctx)
 }
 
 func (a *InvokeAction) httpTimeout() time.Duration {

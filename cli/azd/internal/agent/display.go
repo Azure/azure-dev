@@ -95,6 +95,11 @@ func (d *AgentDisplay) Start(ctx context.Context) (func(), error) {
 			return nil
 		}),
 		d.spinner,
+		// Blank line after spinner
+		uxlib.NewVisualElement(func(printer uxlib.Printer) error {
+			printer.Fprintln()
+			return nil
+		}),
 	)
 
 	// Ticker goroutine for spinner elapsed time updates

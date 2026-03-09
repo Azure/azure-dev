@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"os/exec"
+	"strings"
 
 	copilot "github.com/github/copilot-sdk/go"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -21,9 +22,17 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/llm"
 )
 
+// pluginSpec defines a required plugin with its install source and installed name.
+type pluginSpec struct {
+	// Source is the install path (e.g., "microsoft/GitHub-Copilot-for-Azure:plugin")
+	Source string
+	// Name is the installed plugin name used for update (e.g., "azure")
+	Name string
+}
+
 // requiredPlugins lists plugins that must be installed before starting a Copilot session.
-var requiredPlugins = []string{
-	"microsoft/GitHub-Copilot-for-Azure:plugin",
+var requiredPlugins = []pluginSpec{
+	{Source: "microsoft/GitHub-Copilot-for-Azure:plugin", Name: "azure"},
 }
 
 // CopilotAgentFactory creates CopilotAgent instances using the GitHub Copilot SDK.
@@ -154,25 +163,73 @@ func (f *CopilotAgentFactory) Create(ctx context.Context, opts ...CopilotAgentOp
 	return agent, nil
 }
 
-// ensurePlugins installs required and user-configured plugins if not already present.
+// ensurePlugins checks required plugins and installs or updates them.
 func (f *CopilotAgentFactory) ensurePlugins(ctx context.Context) error {
 	cliPath := f.clientManager.CLIPath()
 	if cliPath == "" {
 		cliPath = "copilot"
 	}
 
+	// Get list of installed plugins
+	installed := f.getInstalledPlugins(ctx, cliPath)
+
 	for _, plugin := range requiredPlugins {
-		log.Printf("[copilot] Ensuring plugin installed: %s", plugin)
-		cmd := exec.CommandContext(ctx, cliPath, "plugin", "install", plugin)
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			log.Printf("[copilot] Plugin install warning for %s: %v (output: %s)", plugin, err, string(output))
+		if installed[plugin.Name] {
+			// Already installed — update to latest
+			log.Printf("[copilot] Updating plugin: %s", plugin.Name)
+			cmd := exec.CommandContext(ctx, cliPath, "plugin", "update", plugin.Name)
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				log.Printf("[copilot] Plugin update warning for %s: %v (output: %s)",
+					plugin.Name, err, string(out))
+			} else {
+				log.Printf("[copilot] Plugin updated: %s", plugin.Name)
+			}
 		} else {
-			log.Printf("[copilot] Plugin ready: %s", plugin)
+			// Not installed — full install
+			log.Printf("[copilot] Installing plugin: %s", plugin.Source)
+			cmd := exec.CommandContext(ctx, cliPath, "plugin", "install", plugin.Source)
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				log.Printf("[copilot] Plugin install warning for %s: %v (output: %s)",
+					plugin.Source, err, string(out))
+			} else {
+				log.Printf("[copilot] Plugin installed: %s", plugin.Name)
+			}
 		}
 	}
 
 	return nil
+}
+
+// getInstalledPlugins returns a set of installed plugin names.
+func (f *CopilotAgentFactory) getInstalledPlugins(ctx context.Context, cliPath string) map[string]bool {
+	cmd := exec.CommandContext(ctx, cliPath, "plugin", "list")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("[copilot] Failed to list plugins: %v", err)
+		return nil
+	}
+
+	installed := make(map[string]bool)
+	for _, line := range strings.Split(string(out), "\n") {
+		// Lines look like: "  • azure (v1.0.0)"
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "•") || strings.HasPrefix(line, "\u2022") {
+			name := strings.TrimPrefix(line, "•")
+			name = strings.TrimPrefix(name, "\u2022")
+			name = strings.TrimSpace(name)
+			// Strip version suffix: "azure (v1.0.0)" → "azure"
+			if idx := strings.Index(name, " "); idx > 0 {
+				name = name[:idx]
+			}
+			if name != "" {
+				installed[name] = true
+			}
+		}
+	}
+
+	return installed
 }
 
 // createPermissionHandler builds an OnPermissionRequest handler.

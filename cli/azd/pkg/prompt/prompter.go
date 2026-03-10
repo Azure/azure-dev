@@ -188,18 +188,11 @@ func (p *DefaultPrompter) PromptResourceGroupFrom(
 		choices[idx+canCreateOverride] = fmt.Sprintf("%d. %s", idx+canCreateOverride+1, group.Name)
 	}
 
-	pickPrompt := input.ConsoleOptions{
+	choice, err := p.console.Select(ctx, input.ConsoleOptions{
 		Message: "Pick a resource group to use:",
 		Options: choices,
 		Help:    options.PickResourceGroupHelp,
-	}
-
-	if canCreateNeResourceGroup && options.DefaultName != "" {
-		// Default selection to create new resource group with the default name provided
-		pickPrompt.DefaultValue = choices[0]
-	}
-
-	choice, err := p.console.Select(ctx, pickPrompt)
+	})
 	if err != nil {
 		return "", fmt.Errorf("selecting resource group: %w", err)
 	}

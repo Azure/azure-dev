@@ -38,6 +38,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -84,7 +85,7 @@ type BicepProvider struct {
 	keyvaultService     keyvault.KeyVaultService
 	subscriptionManager *account.SubscriptionsManager
 	aiModelService      *ai.AiModelService
-	userConfigManager   config.UserConfigManager
+	serviceLocator      ioc.ServiceLocator
 
 	// Internal state
 	// compileBicepResult is cached to avoid recompiling the same bicep file multiple times in the same azd run.
@@ -683,8 +684,9 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 
 	// Check if preflight validation is disabled via config
 	skipPreflight := false
-	if p.userConfigManager != nil {
-		if userConfig, err := p.userConfigManager.Load(); err == nil {
+	var userConfigManager config.UserConfigManager
+	if err := p.serviceLocator.Resolve(&userConfigManager); err == nil {
+		if userConfig, err := userConfigManager.Load(); err == nil {
 			if val, exists := userConfig.GetString("provision.preflight"); exists && val == "off" {
 				skipPreflight = true
 			}
@@ -693,9 +695,10 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 
 	if !skipPreflight {
 		p.console.ShowSpinner(ctx, "Validating deployment", input.Step)
-		preflightErr := p.validatePreflight(
+		abort, preflightErr := p.validatePreflight(
 			ctx,
 			deployment,
+			p.path,
 			planned.RawArmTemplate,
 			planned.Parameters,
 			deploymentTags,
@@ -704,6 +707,12 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		if preflightErr != nil {
 			p.console.StopSpinner(ctx, "Validating deployment", input.StepFailed)
 			return nil, preflightErr
+		}
+		if abort {
+			// Preflight detected issues and the deployment was intentionally aborted.
+			// This is a successful operation (exit code 0), not an internal failure.
+			p.console.StopSpinner(ctx, "Validating deployment", input.StepFailed)
+			return nil, nil
 		}
 		p.console.StopSpinner(ctx, "", input.StepDone)
 	}
@@ -2127,15 +2136,127 @@ func (p *BicepProvider) convertToDeployment(bicepTemplate azure.ArmTemplate) pro
 	return result
 }
 
+// validatePreflight runs client-side preflight validation on the ARM template.
+// It returns (abort, err) where:
+//   - abort=true, err=nil: checks detected issues and the deployment should be skipped (exit code 0).
+//   - abort=false, err!=nil: the validation itself failed to run (exit code 1).
+//   - abort=false, err=nil: validation passed, proceed with deployment.
 func (p *BicepProvider) validatePreflight(
 	ctx context.Context,
 	target infra.Deployment,
+	modulePath string,
 	armTemplate azure.RawArmTemplate,
 	armParameters azure.ArmParameters,
 	tags map[string]*string,
 	options map[string]any,
-) error {
-	return target.ValidatePreflight(ctx, armTemplate, armParameters, tags, options)
+) (bool, error) {
+	// Run local preflight validation before sending to Azure.
+	// Local validation catches common issues without requiring a network round-trip.
+	localPreflight := newLocalArmPreflight(modulePath, p.bicepCli, target)
+
+	// Register the role assignment permission check so it runs as part of the
+	// local preflight pipeline. The check inspects whether the template contains
+	// Microsoft.Authorization/roleAssignments and, if so, verifies the current
+	// principal has the required write permission.
+	localPreflight.AddCheck(p.checkRoleAssignmentPermissions)
+
+	results, err := localPreflight.validate(ctx, p.console, armTemplate, armParameters)
+	if err != nil {
+		return false, fmt.Errorf("local preflight validation failed: %w", err)
+	}
+
+	// Build a UX report from the preflight results and display it.
+	if len(results) > 0 {
+		report := &ux.PreflightReport{}
+		for _, result := range results {
+			report.Items = append(report.Items, ux.PreflightReportItem{
+				IsError: result.Severity == PreflightCheckError,
+				Message: result.Message,
+			})
+		}
+		p.console.MessageUxItem(ctx, report)
+
+		if report.HasErrors() {
+			// Errors were already displayed by the UX report above. The validation
+			// successfully detected problems and the deployment is intentionally aborted.
+			// This is not an internal failure, so no error is returned (exit code 0).
+			p.console.Message(ctx, "Preflight validation detected errors, deployment aborted.")
+			return true, nil
+		}
+
+		if report.HasWarnings() {
+			continueDeployment, promptErr := p.console.Confirm(ctx, input.ConsoleOptions{
+				Message: "Preflight validation found warnings that may cause the deployment to fail. " +
+					"Do you want to continue?",
+				DefaultValue: true,
+			})
+			if promptErr != nil {
+				return false, fmt.Errorf("prompting for preflight confirmation: %w", promptErr)
+			}
+			if !continueDeployment {
+				// User chose not to continue — this is an intentional abort, not a failure.
+				return true, nil
+			}
+		}
+	}
+
+	return false, target.ValidatePreflight(ctx, armTemplate, armParameters, tags, options)
+}
+
+// checkRoleAssignmentPermissions is a PreflightCheckFn that verifies the current principal
+// has Microsoft.Authorization/roleAssignments/write permission when the template contains
+// role assignments. The PermissionsService is resolved lazily via the service locator so it
+// is only instantiated when actually needed.
+func (p *BicepProvider) checkRoleAssignmentPermissions(
+	ctx context.Context, valCtx *validationContext,
+) (*PreflightCheckResult, error) {
+	if !valCtx.Props.HasRoleAssignments {
+		return nil, nil
+	}
+
+	var permissionsService *azapi.PermissionsService
+	if err := p.serviceLocator.Resolve(&permissionsService); err != nil {
+		log.Printf(
+			"could not resolve PermissionsService, skipping role assignment permission check: %v", err)
+		return nil, nil
+	}
+
+	principalId, err := p.curPrincipal.CurrentPrincipalId(ctx)
+	if err != nil {
+		log.Printf(
+			"could not determine current principal, skipping role assignment permission check: %v", err)
+		return nil, nil
+	}
+
+	subscriptionId := p.env.GetSubscriptionId()
+	requiredActions := []string{
+		"Microsoft.Authorization/roleAssignments/write",
+	}
+
+	hasPermission, err := permissionsService.HasRequiredPermissions(
+		ctx, subscriptionId, principalId, requiredActions,
+	)
+	if err != nil {
+		log.Printf("error checking role assignment permissions, skipping check: %v", err)
+		return nil, nil
+	}
+
+	if !hasPermission {
+		return &PreflightCheckResult{
+			Severity: PreflightCheckWarning,
+			Message: fmt.Sprintf(
+				"the current principal (%s) does not have permission to create role assignments "+
+					"(Microsoft.Authorization/roleAssignments/write) on subscription %s. "+
+					"The deployment includes role assignments and will fail without this permission. "+
+					"Ensure you have the 'User Access Administrator', 'Owner', or a custom role with "+
+					"'Microsoft.Authorization/roleAssignments/write' assigned to your account.",
+				principalId,
+				subscriptionId,
+			),
+		}, nil
+	}
+
+	return nil, nil
 }
 
 // Deploys the specified Bicep module and parameters with the selected provisioning scope (subscription vs resource group)
@@ -2546,7 +2667,7 @@ func NewBicepProvider(
 	cloud *cloud.Cloud,
 	subscriptionManager *account.SubscriptionsManager,
 	aiModelService *ai.AiModelService,
-	userConfigManager config.UserConfigManager,
+	serviceLocator ioc.ServiceLocator,
 ) provisioning.Provider {
 	return &BicepProvider{
 		envManager:          envManager,
@@ -2563,7 +2684,7 @@ func NewBicepProvider(
 		portalUrlBase:       cloud.PortalUrlBase,
 		subscriptionManager: subscriptionManager,
 		aiModelService:      aiModelService,
-		userConfigManager:   userConfigManager,
+		serviceLocator:      serviceLocator,
 	}
 }
 

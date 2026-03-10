@@ -482,7 +482,7 @@ func (i *initAction) initAppWithAgent(ctx context.Context) error {
 
 		fmt.Println()
 		selector := uxlib.NewSelect(&uxlib.SelectOptions{
-			Message:         "Previous sessions found:",
+			Message:         "Previous sessions found",
 			Choices:         choices,
 			EnableFiltering: uxlib.Ptr(true),
 			DisplayNumbers:  uxlib.Ptr(true),
@@ -629,7 +629,7 @@ func (i *initAction) configureAgentModel(ctx context.Context) error {
 	}
 
 	effortSelector := uxlib.NewSelect(&uxlib.SelectOptions{
-		Message:         "Select reasoning effort level for the AI agent:",
+		Message:         "Select reasoning effort level",
 		HelpMessage:     "Higher reasoning uses more premium requests and may cost more. You can change this later.",
 		Choices:         effortChoices,
 		SelectedIndex:   intPtr(1), // default to medium
@@ -648,25 +648,36 @@ func (i *initAction) configureAgentModel(ctx context.Context) error {
 
 	selectedEffort := effortChoices[*effortIdx].Value
 
-	// Prompt for model selection
+	// Prompt for model selection — fetch available models dynamically
 	modelChoices := []*uxlib.SelectChoice{
 		{Value: "", Label: "Default model (recommended)"},
-		{Value: "claude-sonnet-4.5", Label: "Claude Sonnet 4.5"},
-		{Value: "claude-sonnet-4.6", Label: "Claude Sonnet 4.6"},
-		{Value: "claude-opus-4.6", Label: "Claude Opus 4.6 (premium)"},
-		{Value: "gpt-5.1", Label: "GPT-5.1"},
-		{Value: "gpt-5.2", Label: "GPT-5.2"},
-		{Value: "gpt-4.1", Label: "GPT-4.1"},
+	}
+
+	models, modelsErr := i.copilotFactory.ListModels(ctx)
+	if modelsErr == nil && len(models) > 0 {
+		for _, m := range models {
+			label := m.Name
+			if m.DefaultReasoningEffort != "" {
+				label += fmt.Sprintf(" (%s)", m.DefaultReasoningEffort)
+			}
+			if m.Billing != nil {
+				label += fmt.Sprintf(" (%.0fx)", m.Billing.Multiplier)
+			}
+			modelChoices = append(modelChoices, &uxlib.SelectChoice{
+				Value: m.ID,
+				Label: label,
+			})
+		}
 	}
 
 	modelSelector := uxlib.NewSelect(&uxlib.SelectOptions{
-		Message:         "Select AI model (or use default):",
+		Message:         "Select AI model",
 		HelpMessage:     "Premium models may use more requests. You can change this later.",
 		Choices:         modelChoices,
 		SelectedIndex:   intPtr(0), // default
 		DisplayNumbers:  uxlib.Ptr(true),
 		EnableFiltering: uxlib.Ptr(true),
-		DisplayCount:    7,
+		DisplayCount:    min(len(modelChoices), 10),
 	})
 
 	modelIdx, err := modelSelector.Ask(ctx)

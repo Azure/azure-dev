@@ -215,6 +215,15 @@ func (f *CopilotAgentFactory) ListSessions(ctx context.Context, cwd string) ([]c
 	return sessions, nil
 }
 
+// ListModels returns available models from the Copilot service.
+func (f *CopilotAgentFactory) ListModels(ctx context.Context) ([]copilot.ModelInfo, error) {
+	if err := f.clientManager.Start(ctx); err != nil {
+		return nil, err
+	}
+
+	return f.clientManager.ListModels(ctx)
+}
+
 // Resume resumes a previous Copilot SDK session by ID with the same
 // configuration as Create (MCP servers, skills, permissions, hooks).
 func (f *CopilotAgentFactory) Resume(

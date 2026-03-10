@@ -110,7 +110,9 @@ func TestGenerateBicepParam_SkipsKeyVaultReferences(t *testing.T) {
 		"location": {Value: "eastus2"},
 		"secret": {
 			KeyVaultReference: &azure.KeyVaultParameterReference{
-				KeyVault:   azure.KeyVaultReference{ID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.KeyVault/vaults/myvault"},
+				KeyVault: azure.KeyVaultReference{
+					ID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.KeyVault/vaults/myvault",
+				},
 				SecretName: "mySecret",
 			},
 		},

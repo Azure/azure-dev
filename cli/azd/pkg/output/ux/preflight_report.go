@@ -57,20 +57,9 @@ func (r *PreflightReport) ToString(currentIndentation string) string {
 func (r *PreflightReport) MarshalJSON() ([]byte, error) {
 	warnings, errors := r.partition()
 
-	type jsonItem struct {
-		Severity string `json:"severity"`
-		Message  string `json:"message"`
-	}
-	items := make([]jsonItem, 0, len(r.Items))
-	for _, w := range warnings {
-		items = append(items, jsonItem{Severity: "warning", Message: w.Message})
-	}
-	for _, e := range errors {
-		items = append(items, jsonItem{Severity: "error", Message: e.Message})
-	}
-
-	return json.Marshal(output.EventForMessage(fmt.Sprintf("preflight: %d warning(s), %d error(s)",
-		len(warnings), len(errors))))
+	return json.Marshal(output.EventForMessage(
+		fmt.Sprintf("preflight: %d warning(s), %d error(s)",
+			len(warnings), len(errors))))
 }
 
 // HasErrors returns true if the report contains at least one error-level item.

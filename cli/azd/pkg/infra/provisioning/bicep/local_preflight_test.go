@@ -6,6 +6,7 @@ package bicep
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -43,7 +44,11 @@ func TestParseTemplate_MissingSchema(t *testing.T) {
 }
 
 func TestParseTemplate_MissingContentVersion(t *testing.T) {
-	raw := []byte(`{"$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#", "resources": [{"type": "Microsoft.Resources/resourceGroups"}]}`)
+	schema := "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#"
+	raw := []byte(fmt.Sprintf(
+		`{"$schema": "%s", "resources": [{"type": "Microsoft.Resources/resourceGroups"}]}`,
+		schema,
+	))
 
 	preflight := &localArmPreflight{}
 	_, err := preflight.parseTemplate(azure.RawArmTemplate(raw))
@@ -53,7 +58,11 @@ func TestParseTemplate_MissingContentVersion(t *testing.T) {
 }
 
 func TestParseTemplate_NoResources(t *testing.T) {
-	raw := []byte(`{"$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#", "contentVersion": "1.0.0.0", "resources": []}`)
+	schema := "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#"
+	raw := []byte(fmt.Sprintf(
+		`{"$schema": "%s", "contentVersion": "1.0.0.0", "resources": []}`,
+		schema,
+	))
 
 	preflight := &localArmPreflight{}
 	_, err := preflight.parseTemplate(azure.RawArmTemplate(raw))

@@ -16,7 +16,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 )
 
@@ -306,16 +305,18 @@ func (l *localArmPreflight) validate(
 		if err != nil {
 			return nil, fmt.Errorf("creating temp bicepparam file: %w", err)
 		}
+		bicepParamFile = tmpFile.Name()
 		defer func() {
 			tmpFile.Close()
-			os.Remove(tmpFile.Name())
+			os.Remove(bicepParamFile)
 		}()
 
-		if err := os.WriteFile(tmpFile.Name(), []byte(bicepParamContent), osutil.PermissionFile); err != nil {
+		if _, err := tmpFile.WriteString(bicepParamContent); err != nil {
 			return nil, fmt.Errorf("writing temp bicepparam file: %w", err)
 		}
-
-		bicepParamFile = tmpFile.Name()
+		if err := tmpFile.Close(); err != nil {
+			return nil, fmt.Errorf("closing temp bicepparam file: %w", err)
+		}
 	}
 
 	// Build snapshot options from the deployment target scope.

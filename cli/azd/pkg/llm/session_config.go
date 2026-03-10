@@ -61,12 +61,21 @@ func (b *SessionConfigBuilder) Build(
 		cfg.ReasoningEffort = effort
 	}
 
-	// System message — use "append" mode to add to default prompt
+	// System message — append azd-specific scope + any user-configured message
+	systemContent := `You are an Azure application development assistant running inside the Azure Developer CLI (azd).
+Your focus is application development, infrastructure, and deployment to Azure.
+
+Do not respond to requests unrelated to application development, Azure services, or deployment.
+For unrelated requests, briefly explain that you are focused on Azure application development
+and suggest the user use a general-purpose assistant for other topics.`
+
 	if msg, ok := userConfig.GetString("ai.agent.systemMessage"); ok && msg != "" {
-		cfg.SystemMessage = &copilot.SystemMessageConfig{
-			Mode:    "append",
-			Content: msg,
-		}
+		systemContent += "\n\n" + msg
+	}
+
+	cfg.SystemMessage = &copilot.SystemMessageConfig{
+		Mode:    "append",
+		Content: systemContent,
 	}
 
 	// Tool control

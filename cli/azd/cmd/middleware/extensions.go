@@ -262,7 +262,7 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 				info.ext.Id, info.result.InstalledVersion, info.result.LatestVersion,
 			))
 			m.console.Message(ctx, fmt.Sprintf(
-				"Run %s", output.WithHighLightFormat("azd extension upgrade %s", info.ext.Id),
+				"To upgrade extension, run %s", output.WithHighLightFormat("azd extension upgrade %s", info.ext.Id),
 			))
 			m.console.Message(ctx, "")
 		} else if len(needsUpdate) > 1 {

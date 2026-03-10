@@ -20,6 +20,7 @@ import (
 	azdmcp "github.com/azure/azure-dev/cli/azd/internal/mcp"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/llm"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
 )
 
@@ -113,7 +114,8 @@ func (f *CopilotAgentFactory) Create(ctx context.Context, opts ...CopilotAgentOp
 		sessionConfig.Model, len(sessionConfig.MCPServers),
 		len(sessionConfig.AvailableTools), len(sessionConfig.ExcludedTools))
 
-	// Log MCP server details for debugging
+	// Print MCP server and skill details to console for debugging
+	fmt.Println(output.WithGrayFormat("  MCP servers:"))
 	for name, srv := range sessionConfig.MCPServers {
 		serverType := "stdio"
 		if t, ok := srv["type"].(string); ok {
@@ -128,18 +130,20 @@ func (f *CopilotAgentFactory) Create(ctx context.Context, opts ...CopilotAgentOp
 			url = u
 		}
 		if cmd != "" {
-			log.Printf("[copilot]   MCP server: %s (type=%s, command=%s)", name, serverType, cmd)
+			fmt.Println(output.WithGrayFormat("  • %s (%s, command=%s)", name, serverType, cmd))
 		} else if url != "" {
-			log.Printf("[copilot]   MCP server: %s (type=%s, url=%s)", name, serverType, url)
+			fmt.Println(output.WithGrayFormat("  • %s (%s, url=%s)", name, serverType, url))
 		} else {
-			log.Printf("[copilot]   MCP server: %s (type=%s)", name, serverType)
+			fmt.Println(output.WithGrayFormat("  • %s (%s)", name, serverType))
 		}
 	}
 	if len(sessionConfig.SkillDirectories) > 0 {
+		fmt.Println(output.WithGrayFormat("  Skill directories:"))
 		for _, dir := range sessionConfig.SkillDirectories {
-			log.Printf("[copilot]   Skill dir: %s", dir)
+			fmt.Println(output.WithGrayFormat("  • %s", toRelativePath(dir)))
 		}
 	}
+	fmt.Println()
 
 	// Wire permission handler — approve CLI-level permission requests.
 	// Fine-grained tool consent is handled by OnPreToolUse hook below.

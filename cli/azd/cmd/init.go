@@ -512,10 +512,15 @@ func (i *initAction) configureAgentModel(ctx context.Context) error {
 			effortDisplay = "default"
 		}
 
+		i.console.Message(ctx, "")
+		i.console.Message(ctx, output.WithGrayFormat("  Agent configuration:"))
+		i.console.Message(ctx, output.WithGrayFormat("  • Model:     %s", modelDisplay))
+		i.console.Message(ctx, output.WithGrayFormat("  • Reasoning: %s", effortDisplay))
+		i.console.Message(ctx, "")
 		i.console.Message(ctx, output.WithGrayFormat(
-			"Agent config: model=%s, reasoning=%s. Change with `azd config set ai.agent.model <model>` "+
-				"or `azd config set ai.agent.reasoningEffort <level>`",
-			modelDisplay, effortDisplay))
+			"  To change, run %s or %s",
+			output.WithHighLightFormat("azd config set ai.agent.model <model>"),
+			output.WithHighLightFormat("azd config set ai.agent.reasoningEffort <level>")))
 		i.console.Message(ctx, "")
 		return nil
 	}

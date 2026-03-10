@@ -41,6 +41,7 @@ type AgentDisplay struct {
 	lastIntent       string
 	activeSubagent   string // display name of active sub-agent, empty if none
 	inSubagent       bool
+	lastPrintedBlank bool // tracks if last output ended with a blank line
 
 	// Lifecycle
 	idleCh chan struct{}
@@ -296,21 +297,19 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 		}
 		log.Printf("[copilot] Session error: %s", msg)
 		d.canvas.Clear()
-		fmt.Println(output.WithErrorFormat("Agent error: %s", msg))
+		d.printSeparated(output.WithErrorFormat("Agent error: %s", msg))
 
 	case copilot.SessionWarning:
 		if event.Data.Message != nil {
 			d.canvas.Clear()
-			fmt.Println(output.WithWarningFormat("Warning: %s", *event.Data.Message))
+			d.printSeparated(output.WithWarningFormat("Warning: %s", *event.Data.Message))
 		}
 
 	case copilot.SkillInvoked:
 		name := derefStr(event.Data.Name)
 		if name != "" {
 			d.canvas.Clear()
-			fmt.Println()
-			fmt.Println(color.CyanString("◇ Using skill: %s", name))
-			fmt.Println()
+			d.printSeparated(color.CyanString("◇ Using skill: %s", name))
 		}
 
 	case copilot.SubagentStarted:
@@ -327,12 +326,11 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 
 		if displayName != "" {
 			d.canvas.Clear()
-			fmt.Println()
 			msg := color.MagentaString("◆ %s", displayName)
 			if description != "" {
 				msg += color.HiBlackString(" — %s", description)
 			}
-			fmt.Println(msg)
+			d.printSeparated(msg)
 		}
 
 	case copilot.SubagentCompleted:
@@ -355,7 +353,7 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 			if summary != "" {
 				msg += "\n" + color.HiBlackString("  %s", logging.TruncateString(summary, 200))
 			}
-			fmt.Println(msg)
+			d.printSeparated(msg)
 		}
 
 	case copilot.SubagentFailed:
@@ -372,7 +370,7 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 
 		if displayName != "" {
 			d.canvas.Clear()
-			fmt.Println(output.WithErrorFormat("✖ %s failed: %s", displayName, errMsg))
+			d.printSeparated(output.WithErrorFormat("✖ %s failed: %s", displayName, errMsg))
 		}
 
 	case copilot.SubagentDeselected:
@@ -433,6 +431,7 @@ func (d *AgentDisplay) WaitForIdle(ctx context.Context) (string, error) {
 
 // printToolCompletion prints a completion message for the current tool.
 // When inside a subagent, the output is indented to show nesting.
+// Tool completions stack without blank lines between them.
 func (d *AgentDisplay) printToolCompletion() {
 	d.mu.Lock()
 	tool := d.currentTool
@@ -455,11 +454,11 @@ func (d *AgentDisplay) printToolCompletion() {
 	}
 
 	d.canvas.Clear()
-	fmt.Println(completionMsg)
+	d.printLine(completionMsg)
 }
 
 // flushReasoning prints the full accumulated reasoning with markdown rendering
-// and resets the buffer. Called when transitioning to a new phase (tool start, turn end).
+// and resets the buffer. Separated by blank lines before and after.
 func (d *AgentDisplay) flushReasoning() {
 	d.mu.Lock()
 	reasoning := d.reasoningBuf.String()
@@ -472,9 +471,34 @@ func (d *AgentDisplay) flushReasoning() {
 	}
 
 	d.canvas.Clear()
+	d.printSeparated(output.WithMarkdown(reasoning))
+}
+
+// printSeparated prints content with a blank line before and after,
+// avoiding duplicate blank lines.
+func (d *AgentDisplay) printSeparated(content string) {
+	d.mu.Lock()
+	wasBlank := d.lastPrintedBlank
+	d.mu.Unlock()
+
+	if !wasBlank {
+		fmt.Println()
+	}
+	fmt.Println(content)
 	fmt.Println()
-	fmt.Println(output.WithMarkdown(reasoning))
-	fmt.Println()
+
+	d.mu.Lock()
+	d.lastPrintedBlank = true
+	d.mu.Unlock()
+}
+
+// printLine prints a single line without extra blank lines.
+func (d *AgentDisplay) printLine(content string) {
+	fmt.Println(content)
+
+	d.mu.Lock()
+	d.lastPrintedBlank = false
+	d.mu.Unlock()
 }
 
 // extractToolInputSummary creates a short summary of tool arguments for display.

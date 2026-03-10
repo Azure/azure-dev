@@ -223,6 +223,7 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 			"report_intent": true,
 			"ask_user":      true,
 			"task":          true,
+			"skill":         true,
 		}
 
 		// The report_intent tool carries the agent's current intent as its argument.
@@ -305,6 +306,7 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 			d.canvas.Clear()
 			fmt.Println()
 			fmt.Println(color.CyanString("◇ Using skill: %s", name))
+			fmt.Println()
 		}
 
 	case copilot.SubagentStarted:

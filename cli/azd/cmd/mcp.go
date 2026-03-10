@@ -227,14 +227,6 @@ func (a *mcpStartAction) Run(ctx context.Context) (*actions.ActionResult, error)
 	mcpServer.EnableSampling()
 
 	azdTools := []server.ServerTool{
-		tools.NewAzdPlanInitTool(),
-		tools.NewAzdDiscoveryAnalysisTool(),
-		tools.NewAzdArchitecturePlanningTool(),
-		tools.NewAzdAzureYamlGenerationTool(),
-		tools.NewAzdDockerGenerationTool(),
-		tools.NewAzdInfrastructureGenerationTool(),
-		tools.NewAzdIacGenerationRulesTool(),
-		tools.NewAzdProjectValidationTool(),
 		tools.NewAzdYamlSchemaTool(),
 		tools.NewAzdErrorTroubleShootingTool(),
 		tools.NewAzdProvisionCommonErrorTool(),

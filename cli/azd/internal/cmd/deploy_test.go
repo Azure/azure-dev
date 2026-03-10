@@ -193,7 +193,10 @@ func TestDeployActionRunTimeoutWarningAndErrorMessage(t *testing.T) {
 	require.EqualError(
 		t,
 		err,
-		"deployment of service 'api' timed out after 30 seconds. Note: azd has stopped waiting, but the deployment may still be running in Azure. Check the Azure Portal for current deployment status.",
+		"deployment of service 'api' timed out after 30 seconds."+
+			" Note: azd has stopped waiting, but the deployment"+
+			" may still be running in Azure."+
+			" Check the Azure Portal for current deployment status.",
 	)
 
 	console := action.console.(*mockinput.MockConsole)
@@ -201,9 +204,13 @@ func TestDeployActionRunTimeoutWarningAndErrorMessage(t *testing.T) {
 	require.Contains(
 		t,
 		output,
-		"WARNING: Deployment of service 'api' exceeded the azd wait timeout. azd has stopped waiting, but the deployment may still be running in Azure.",
+		"WARNING: Deployment of service 'api'"+
+			" exceeded the azd wait timeout.",
 	)
-	require.Contains(t, output, "Check the Azure Portal for current deployment status.")
+	require.Contains(
+		t, output,
+		"Check the Azure Portal for current deployment status.",
+	)
 	serviceManager.AssertExpectations(t)
 }
 

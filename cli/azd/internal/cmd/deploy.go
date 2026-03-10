@@ -347,12 +347,15 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			if err != nil {
 				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 				if errors.Is(err, context.DeadlineExceeded) {
+					warnMsg := fmt.Sprintf(
+						"Deployment of service '%s' exceeded the azd wait timeout."+
+							" azd has stopped waiting, but the deployment may"+
+							" still be running in Azure.",
+						svc.Name,
+					)
 					da.console.MessageUxItem(ctx, &ux.WarningMessage{
-						Description: fmt.Sprintf(
-							"Deployment of service '%s' exceeded the azd wait timeout. azd has stopped waiting, but the deployment may still be running in Azure.",
-							svc.Name,
-						),
-						Hints: []string{"Check the Azure Portal for current deployment status."},
+						Description: warnMsg,
+						Hints:       []string{"Check the Azure Portal for current deployment status."},
 					})
 
 					return fmt.Errorf(

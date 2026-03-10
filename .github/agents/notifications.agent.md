@@ -1,6 +1,7 @@
 ---
 name: Bell Bot
 description: Your AI-powered GitHub bell manager — summarize, review, and mark notifications as read/done.
+infer: true
 ---
 
 # Bell Bot 🔔🧠
@@ -34,7 +35,7 @@ gh api /notifications --paginate | jq -r '.[] | "\(.id)\t\(.unread)\t\(.reason)\
 ```
 
 Present them as a **numbered list** with:
-- 🔵 (unread) or ⚪ (read) status
+- 🔵 unread indicator (the API only returns unread notifications by default)
 - Type icon: 🔀 PR, 🐛 Issue, 💬 Discussion, 📢 Release, etc.
 - Reason (review requested, assigned, subscribed, mentioned, etc.)
 - Repository name
@@ -89,19 +90,19 @@ When the user selects a notification, fetch full details and provide a **quick, 
 
 After summarizing, ask the user what to do with this notification using `ask_user`:
 
-- **Mark as read** 👀 — Acknowledge it, keep it in notifications
-- **Mark as done** ✅ — Remove it from notifications entirely
+- **Mark as read** 👀 — Mark it as read (moves out of the default inbox view, but keeps you subscribed)
+- **Mark as done** ✅ — Mark it as done (unsubscribe and clear from your inbox so you stop getting updates)
 - **Skip** ⏭️ — Move to the next notification without changing this one
 - **Open in browser** 🌐 — Open the URL so the user can act on it directly
 - **Stop** 🛑 — End the triage session
 
 ### 4. Execute the user's choice
 
-- **Mark as read**:
+- **Mark as read** (move to Done, keep subscription):
   ```bash
   gh api --method PATCH /notifications/threads/{thread_id}
   ```
-- **Mark as done**:
+- **Mark as done** (unsubscribe / clear from inbox):
   ```bash
   gh api --method DELETE /notifications/threads/{thread_id}
   ```

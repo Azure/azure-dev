@@ -328,6 +328,8 @@ func (f *CopilotAgentFactory) createUserInputHandler(
 		question := stripMarkdown(req.Question)
 		log.Printf("[copilot] UserInput: question=%q choices=%d", question, len(req.Choices))
 
+		fmt.Println() // blank line before prompt
+
 		if len(req.Choices) > 0 {
 			// Multiple choice — use azd Select prompt
 			choices := make([]*uxlib.SelectChoice, len(req.Choices))
@@ -354,6 +356,7 @@ func (f *CopilotAgentFactory) createUserInputHandler(
 			})
 
 			idx, err := selector.Ask(ctx)
+			fmt.Println() // blank line after prompt
 			if err != nil {
 				return copilot.UserInputResponse{}, fmt.Errorf("user input cancelled: %w", err)
 			}
@@ -368,6 +371,7 @@ func (f *CopilotAgentFactory) createUserInputHandler(
 					Message: question,
 				})
 				answer, promptErr := prompt.Ask(ctx)
+				fmt.Println() // blank line after prompt
 				if promptErr != nil {
 					return copilot.UserInputResponse{}, fmt.Errorf("user input cancelled: %w", promptErr)
 				}
@@ -385,6 +389,7 @@ func (f *CopilotAgentFactory) createUserInputHandler(
 		})
 
 		answer, err := prompt.Ask(ctx)
+		fmt.Println() // blank line after prompt
 		if err != nil {
 			return copilot.UserInputResponse{}, fmt.Errorf("user input cancelled: %w", err)
 		}

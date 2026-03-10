@@ -406,7 +406,7 @@ func (i *initAction) initAppWithAgent(ctx context.Context) error {
 		Title: fmt.Sprintf("Agentic mode init is in alpha mode. The agent will scan your repository and "+
 			"attempt to make an azd-ready template to init. You can always change permissions later "+
 			"by running `azd mcp consent`. Mistakes may occur in agent mode. "+
-			"To learn more, go to %s\n", output.WithLinkFormat("https://aka.ms/azd-feature-stages")),
+			"To learn more, go to %s", output.WithLinkFormat("https://aka.ms/azd-feature-stages")),
 		TitleNote: "CTRL C to cancel interaction \n? to pull up help text",
 	})
 
@@ -512,7 +512,6 @@ func (i *initAction) configureAgentModel(ctx context.Context) error {
 			effortDisplay = "default"
 		}
 
-		i.console.Message(ctx, "")
 		i.console.Message(ctx, output.WithGrayFormat("  Agent configuration:"))
 		i.console.Message(ctx, output.WithGrayFormat("  • Model:     %s", modelDisplay))
 		i.console.Message(ctx, output.WithGrayFormat("  • Reasoning: %s", effortDisplay))

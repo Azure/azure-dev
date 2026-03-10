@@ -451,11 +451,7 @@ func (i *initAction) initAppWithAgent(ctx context.Context) error {
 
 	// Single prompt — handles both existing projects and empty directories.
 	// Explicitly invokes azure-prepare and azure-validate skills using the azd recipe.
-	prompt := `Before starting, list ALL tools and MCP server tools available to you. 
-For each MCP server, list the server name and every tool it provides.
-Also list any loaded skills. Format as a structured list.
-
-After listing tools, prepare this application for deployment to Azure.
+	prompt := `Prepare this application for deployment to Azure.
 
 First, check if the current directory contains application code. If the directory is empty
 or has no application code, ask the user what type of Azure application they would like to
@@ -490,6 +486,29 @@ When complete, provide a brief summary of what was accomplished.`
 	i.console.Message(ctx, color.HiMagentaString("◆ Azure Init Summary:"))
 	i.console.Message(ctx, output.WithMarkdown(agentOutput))
 	i.console.Message(ctx, "")
+
+	// Post-init Q&A loop — let user ask follow-up questions
+	for {
+		followUp := uxlib.NewPrompt(&uxlib.PromptOptions{
+			Message: "Any questions? (press Enter to finish)",
+		})
+
+		question, err := followUp.Ask(ctx)
+		if err != nil || strings.TrimSpace(question) == "" {
+			break
+		}
+
+		fmt.Println()
+		answer, err := azdAgent.SendMessageWithRetry(ctx, question)
+		if err != nil {
+			i.console.Message(ctx, output.WithErrorFormat("Error: %s", err.Error()))
+			break
+		}
+
+		i.console.Message(ctx, "")
+		i.console.Message(ctx, output.WithMarkdown(answer))
+		i.console.Message(ctx, "")
+	}
 
 	return nil
 }

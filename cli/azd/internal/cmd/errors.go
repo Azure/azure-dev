@@ -61,21 +61,15 @@ func MapError(err error, span tracing.Span) {
 	var loginErr *auth.ReLoginRequiredError
 	var updateErr *update.UpdateError
 
-	// If the error is wrapped in ErrorWithSuggestion, unwrap it first so the inner error
-	// can be classified by its actual type (ResponseError, AzureDeploymentError, etc.)
-	// instead of being bucketed as the opaque "error.suggestion".
-	classifyErr := err
-	if errors.As(err, &errWithSuggestion) {
-		if inner := errWithSuggestion.Unwrap(); inner != nil {
-			classifyErr = inner
-		}
-	}
-
-	if errors.As(classifyErr, &updateErr) {
+	if errors.As(err, &updateErr) {
 		errCode = updateErr.Code
-	} else if errors.As(classifyErr, &loginErr) {
+	} else if errors.As(err, &loginErr) {
 		errCode = "auth.login_required"
-	} else if errors.As(classifyErr, &respErr) {
+	} else if errors.As(err, &errWithSuggestion) {
+		errCode = "error.suggestion"
+		errType := errorType(errWithSuggestion.Unwrap())
+		span.SetAttributes(fields.ErrType.String(errType))
+	} else if errors.As(err, &respErr) {
 		serviceName := "other"
 		statusCode := -1
 		errDetails = append(errDetails, fields.ServiceErrorCode.String(respErr.ErrorCode))
@@ -96,7 +90,7 @@ func MapError(err error, span tracing.Span) {
 		}
 
 		errCode = fmt.Sprintf("service.%s.%d", serviceName, statusCode)
-	} else if errors.As(classifyErr, &armDeployErr) {
+	} else if errors.As(err, &armDeployErr) {
 		errDetails = append(errDetails, fields.ServiceName.String("arm"))
 		codes := []*deploymentErrorCode{}
 		var collect func(details []*azapi.DeploymentErrorLine, frame int)
@@ -130,7 +124,7 @@ func MapError(err error, span tracing.Span) {
 			operation = "deployment"
 		}
 		errCode = fmt.Sprintf("service.arm.%s.failed", operation)
-	} else if errors.As(classifyErr, &extServiceErr) {
+	} else if errors.As(err, &extServiceErr) {
 		// Handle structured service errors from extensions.
 		// Emit whatever details are available rather than requiring all fields.
 		serviceName := ""
@@ -161,7 +155,7 @@ func MapError(err error, span tracing.Span) {
 		default:
 			errCode = "ext.service.unknown.failed"
 		}
-	} else if errors.As(classifyErr, &extLocalErr) {
+	} else if errors.As(err, &extLocalErr) {
 		domain := string(azdext.NormalizeLocalErrorCategory(extLocalErr.Category))
 		code := normalizeCodeSegment(extLocalErr.Code, "failed")
 
@@ -171,9 +165,9 @@ func MapError(err error, span tracing.Span) {
 		)
 
 		errCode = fmt.Sprintf("ext.%s.%s", domain, code)
-	} else if errors.As(classifyErr, &extensionRunErr) {
+	} else if errors.As(err, &extensionRunErr) {
 		errCode = "ext.run.failed"
-	} else if errors.As(classifyErr, &toolExecErr) {
+	} else if errors.As(err, &toolExecErr) {
 		toolName := "other"
 		cmdName := cmdAsName(toolExecErr.Cmd)
 		if cmdName != "" {
@@ -185,7 +179,7 @@ func MapError(err error, span tracing.Span) {
 			fields.ToolName.String(toolName))
 
 		errCode = fmt.Sprintf("tool.%s.failed", toolName)
-	} else if errors.As(classifyErr, &toolCheckErr) {
+	} else if errors.As(err, &toolCheckErr) {
 		if len(toolCheckErr.ToolNames) == 1 {
 			toolName := toolCheckErr.ToolNames[0]
 			errCode = fmt.Sprintf("tool.%s.missing", toolName)
@@ -194,7 +188,7 @@ func MapError(err error, span tracing.Span) {
 			errCode = "tool.multiple.missing"
 			errDetails = append(errDetails, fields.ToolName.String(strings.Join(toolCheckErr.ToolNames, ",")))
 		}
-	} else if errors.As(classifyErr, &authFailedErr) {
+	} else if errors.As(err, &authFailedErr) {
 		errDetails = append(errDetails, fields.ServiceName.String("aad"))
 		if authFailedErr.Parsed != nil {
 			codes := make([]string, 0, len(authFailedErr.Parsed.ErrorCodes))
@@ -208,83 +202,83 @@ func MapError(err error, span tracing.Span) {
 				fields.ServiceCorrelationId.String(authFailedErr.Parsed.CorrelationId))
 		}
 		errCode = "service.aad.failed"
-	} else if errors.Is(classifyErr, terminal.InterruptErr) {
+	} else if errors.Is(err, terminal.InterruptErr) {
 		errCode = "user.canceled"
-	} else if errors.Is(classifyErr, context.Canceled) {
+	} else if errors.Is(err, context.Canceled) {
 		errCode = "user.canceled"
-	} else if errors.Is(classifyErr, context.DeadlineExceeded) {
+	} else if errors.Is(err, context.DeadlineExceeded) {
 		errCode = "internal.timeout"
-	} else if errors.Is(classifyErr, auth.ErrNoCurrentUser) {
+	} else if errors.Is(err, auth.ErrNoCurrentUser) {
 		errCode = "auth.not_logged_in"
-	} else if errors.Is(classifyErr, consent.ErrToolExecutionDenied) {
+	} else if errors.Is(err, consent.ErrToolExecutionDenied) {
 		errCode = "user.tool_denied"
-	} else if errors.Is(classifyErr, git.ErrNotRepository) {
+	} else if errors.Is(err, git.ErrNotRepository) {
 		errCode = "internal.not_git_repo"
-	} else if errors.Is(classifyErr, azapi.ErrPreviewNotSupported) {
+	} else if errors.Is(err, azapi.ErrPreviewNotSupported) {
 		errCode = "internal.preview_not_supported"
-	} else if errors.Is(classifyErr, provisioning.ErrBindMountOperationDisabled) {
+	} else if errors.Is(err, provisioning.ErrBindMountOperationDisabled) {
 		errCode = "internal.bind_mount_disabled"
-	} else if errors.Is(classifyErr, update.ErrNeedsElevation) {
+	} else if errors.Is(err, update.ErrNeedsElevation) {
 		errCode = "update.elevationRequired"
-	} else if errors.Is(classifyErr, pipeline.ErrRemoteHostIsNotAzDo) {
+	} else if errors.Is(err, pipeline.ErrRemoteHostIsNotAzDo) {
 		errCode = "internal.remote_not_azdo"
-	} else if errors.Is(classifyErr, internal.ErrInfraNotProvisioned) {
+	} else if errors.Is(err, internal.ErrInfraNotProvisioned) {
 		errCode = "internal.infra_not_provisioned"
-	} else if errors.Is(classifyErr, internal.ErrFromPackageWithAll) ||
-		errors.Is(classifyErr, internal.ErrFromPackageNoService) {
+	} else if errors.Is(err, internal.ErrFromPackageWithAll) ||
+		errors.Is(err, internal.ErrFromPackageNoService) {
 		errCode = "internal.invalid_flag_combination"
-	} else if errors.Is(classifyErr, internal.ErrCannotChangeSubscription) {
+	} else if errors.Is(err, internal.ErrCannotChangeSubscription) {
 		errCode = "internal.cannot_change_subscription"
-	} else if errors.Is(classifyErr, internal.ErrCannotChangeLocation) {
+	} else if errors.Is(err, internal.ErrCannotChangeLocation) {
 		errCode = "internal.cannot_change_location"
-	} else if errors.Is(classifyErr, internal.ErrPreviewMultipleLayers) {
+	} else if errors.Is(err, internal.ErrPreviewMultipleLayers) {
 		errCode = "internal.preview_multiple_layers"
-	} else if errors.Is(classifyErr, internal.ErrNoKeyNameProvided) ||
-		errors.Is(classifyErr, internal.ErrNoEnvValuesProvided) ||
-		errors.Is(classifyErr, internal.ErrInvalidFlagCombination) {
+	} else if errors.Is(err, internal.ErrNoKeyNameProvided) ||
+		errors.Is(err, internal.ErrNoEnvValuesProvided) ||
+		errors.Is(err, internal.ErrInvalidFlagCombination) {
 		errCode = "internal.invalid_args"
-	} else if errors.Is(classifyErr, internal.ErrKeyNotFound) {
+	} else if errors.Is(err, internal.ErrKeyNotFound) {
 		errCode = "internal.key_not_found"
-	} else if errors.Is(classifyErr, internal.ErrNoEnvironmentsFound) {
+	} else if errors.Is(err, internal.ErrNoEnvironmentsFound) {
 		errCode = "internal.no_environments_found"
-	} else if errors.Is(classifyErr, internal.ErrLoginDisabledDelegatedMode) {
+	} else if errors.Is(err, internal.ErrLoginDisabledDelegatedMode) {
 		errCode = "auth.login_disabled_delegated"
-	} else if errors.Is(classifyErr, internal.ErrBranchRequiresTemplate) ||
-		errors.Is(classifyErr, internal.ErrMultipleInitModes) {
+	} else if errors.Is(err, internal.ErrBranchRequiresTemplate) ||
+		errors.Is(err, internal.ErrMultipleInitModes) {
 		errCode = "internal.invalid_args"
-	} else if errors.Is(classifyErr, environment.ErrNotFound) {
+	} else if errors.Is(err, environment.ErrNotFound) {
 		errCode = "internal.env_not_found"
-	} else if errors.Is(classifyErr, azdcontext.ErrNoProject) {
+	} else if errors.Is(err, azdcontext.ErrNoProject) {
 		errCode = "internal.no_project"
-	} else if errors.Is(classifyErr, internal.ErrNoArgsProvided) ||
-		errors.Is(classifyErr, internal.ErrInvalidArgValue) {
+	} else if errors.Is(err, internal.ErrNoArgsProvided) ||
+		errors.Is(err, internal.ErrInvalidArgValue) {
 		errCode = "internal.invalid_args"
-	} else if errors.Is(classifyErr, internal.ErrConfigKeyNotFound) {
+	} else if errors.Is(err, internal.ErrConfigKeyNotFound) {
 		errCode = "internal.config_key_not_found"
-	} else if errors.Is(classifyErr, internal.ErrExtensionNotFound) {
+	} else if errors.Is(err, internal.ErrExtensionNotFound) {
 		errCode = "internal.extension_not_found"
-	} else if errors.Is(classifyErr, internal.ErrServiceNotFound) {
+	} else if errors.Is(err, internal.ErrServiceNotFound) {
 		errCode = "internal.service_not_found"
-	} else if errors.Is(classifyErr, internal.ErrNoExtensionsAvailable) {
+	} else if errors.Is(err, internal.ErrNoExtensionsAvailable) {
 		errCode = "internal.no_extensions_available"
-	} else if errors.Is(classifyErr, internal.ErrValidationFailed) {
+	} else if errors.Is(err, internal.ErrValidationFailed) {
 		errCode = "internal.validation_failed"
-	} else if errors.Is(classifyErr, internal.ErrUnsupportedOperation) {
+	} else if errors.Is(err, internal.ErrUnsupportedOperation) {
 		errCode = "internal.unsupported_operation"
-	} else if errors.Is(classifyErr, internal.ErrExtensionTokenFailed) {
+	} else if errors.Is(err, internal.ErrExtensionTokenFailed) {
 		errCode = "internal.extension_error"
-	} else if errors.Is(classifyErr, internal.ErrMcpToolsLoadFailed) {
+	} else if errors.Is(err, internal.ErrMcpToolsLoadFailed) {
 		errCode = "internal.mcp_error"
-	} else if errors.Is(classifyErr, internal.ErrResourceNotConfigured) {
+	} else if errors.Is(err, internal.ErrResourceNotConfigured) {
 		errCode = "internal.resource_not_found"
-	} else if errors.Is(classifyErr, internal.ErrOperationCancelled) {
+	} else if errors.Is(err, internal.ErrOperationCancelled) {
 		errCode = "internal.operation_cancelled"
-	} else if isNetworkError(classifyErr) {
+	} else if isNetworkError(err) {
 		errCode = "internal.network"
-		errType := errorType(classifyErr)
+		errType := errorType(err)
 		span.SetAttributes(fields.ErrType.String(errType))
 	} else {
-		errType := errorType(classifyErr)
+		errType := errorType(err)
 		span.SetAttributes(fields.ErrType.String(errType))
 		errCode = fmt.Sprintf("internal.%s",
 			strings.ReplaceAll(strings.ReplaceAll(errType, ".", "_"), "*", ""))

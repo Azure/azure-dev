@@ -401,13 +401,9 @@ func Test_MapError(t *testing.T) {
 				},
 				Suggestion: "Request a quota increase in the Azure portal.",
 			},
-			wantErrReason: "service.arm.429",
+			wantErrReason: "error.suggestion",
 			wantErrDetails: []attribute.KeyValue{
-				fields.ErrorKey(fields.ServiceName.Key).String("arm"),
-				fields.ErrorKey(fields.ServiceHost.Key).String("management.azure.com"),
-				fields.ErrorKey(fields.ServiceMethod.Key).String("POST"),
-				fields.ErrorKey(fields.ServiceErrorCode.Key).String("QuotaExceeded"),
-				fields.ErrorKey(fields.ServiceStatusCode.Key).Int(429),
+				fields.ErrType.String("*exported.ResponseError"),
 			},
 		},
 		{
@@ -416,7 +412,7 @@ func Test_MapError(t *testing.T) {
 				Err:        errors.New("something failed"),
 				Suggestion: "Try again later.",
 			},
-			wantErrReason: "internal.errors_errorString",
+			wantErrReason: "error.suggestion",
 			wantErrDetails: []attribute.KeyValue{
 				fields.ErrType.String("*errors.errorString"),
 			},
@@ -567,9 +563,8 @@ func Test_MapError(t *testing.T) {
 	// Test cases that intentionally produce errors_errorString (the catch-all bucket).
 	// Any NEW test case that produces this is a signal that a typed sentinel is needed.
 	allowedCatchAll := map[string]bool{
-		"WithNilError":                     true,
-		"WithOtherError":                   true,
-		"WithSuggestionWrappingPlainError": true,
+		"WithNilError":   true,
+		"WithOtherError": true,
 	}
 
 	for _, tt := range tests {
@@ -591,20 +586,18 @@ func Test_MapError(t *testing.T) {
 	}
 }
 
-// TestMapError_ErrorWithSuggestionUnwrapsInnerError verifies that ErrorWithSuggestion no longer
-// masks the inner error's classification. Previously, any error wrapped in ErrorWithSuggestion
-// was reported as "error.suggestion" in telemetry, losing ~3,600 hits of actionable error data.
-// After the fix, the inner error is unwrapped and classified by its actual type.
-func TestMapError_ErrorWithSuggestionUnwrapsInnerError(t *testing.T) {
+// TestMapError_ErrorWithSuggestionSetsErrorType verifies that ErrorWithSuggestion errors
+// are classified as "error.suggestion" in telemetry, with the inner error type
+// recorded in the error.type span attribute for detailed analysis.
+func TestMapError_ErrorWithSuggestionSetsErrorType(t *testing.T) {
 	tests := []struct {
-		name          string
-		err           error
-		wantErrCode   string
-		wantNotCode   string // the code it would have been before the fix
-		wantAttribute *attribute.KeyValue
+		name        string
+		err         error
+		wantErrCode string
+		wantErrType string
 	}{
 		{
-			name: "ResponseError_classified_by_inner_type",
+			name: "ResponseError_inner_type_recorded",
 			err: &internal.ErrorWithSuggestion{
 				Err: &azcore.ResponseError{
 					ErrorCode:  "QuotaExceeded",
@@ -616,42 +609,17 @@ func TestMapError_ErrorWithSuggestionUnwrapsInnerError(t *testing.T) {
 				},
 				Suggestion: "Request a quota increase.",
 			},
-			wantErrCode: "service.arm.429",
-			wantNotCode: "error.suggestion",
+			wantErrCode: "error.suggestion",
+			wantErrType: "*exported.ResponseError",
 		},
 		{
-			name: "ArmDeploymentError_classified_by_inner_type",
-			err: &internal.ErrorWithSuggestion{
-				Err: &azapi.AzureDeploymentError{
-					Operation: azapi.DeploymentOperationDeploy,
-					Details:   &azapi.DeploymentErrorLine{Code: "Conflict"},
-				},
-				Suggestion: "Check for existing resources.",
-			},
-			wantErrCode: "service.arm.deployment.failed",
-			wantNotCode: "error.suggestion",
-		},
-		{
-			name: "ToolExitError_classified_by_inner_type",
-			err: &internal.ErrorWithSuggestion{
-				Err:        &exec.ExitError{Cmd: "docker", ExitCode: 1},
-				Suggestion: "Run docker login.",
-			},
-			wantErrCode: "tool.docker.failed",
-			wantNotCode: "error.suggestion",
-		},
-		{
-			name: "PlainError_falls_through_to_internal",
+			name: "PlainError_inner_type_recorded",
 			err: &internal.ErrorWithSuggestion{
 				Err:        errors.New("unknown failure"),
 				Suggestion: "Try again.",
 			},
-			wantErrCode: "internal.errors_errorString",
-			wantNotCode: "error.suggestion",
-			wantAttribute: func() *attribute.KeyValue {
-				kv := fields.ErrType.String("*errors.errorString")
-				return &kv
-			}(),
+			wantErrCode: "error.suggestion",
+			wantErrType: "*errors.errorString",
 		},
 	}
 
@@ -661,13 +629,11 @@ func TestMapError_ErrorWithSuggestionUnwrapsInnerError(t *testing.T) {
 			MapError(tt.err, span)
 
 			require.Equal(t, tt.wantErrCode, span.Status.Description,
-				"should classify by inner error type, not as opaque error.suggestion")
-			require.NotEqual(t, tt.wantNotCode, span.Status.Description,
-				"should NOT produce the old opaque code")
+				"ErrorWithSuggestion should produce error.suggestion")
 
-			if tt.wantAttribute != nil {
-				require.Contains(t, span.Attributes, *tt.wantAttribute)
-			}
+			wantAttr := fields.ErrType.String(tt.wantErrType)
+			require.Contains(t, span.Attributes, wantAttr,
+				"error.type attribute should record the inner error type")
 		})
 	}
 }

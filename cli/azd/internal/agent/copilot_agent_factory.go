@@ -175,31 +175,8 @@ func (f *CopilotAgentFactory) Create(ctx context.Context, opts ...CopilotAgentOp
 	log.Println("[copilot] Session created successfully")
 
 	// Subscribe file logger to session events for audit trail
-	// Also dump event details for debugging MCP integration
-	eventCount := 0
 	unsubscribe := session.On(func(event copilot.SessionEvent) {
 		fileLogger.HandleEvent(event)
-
-		eventCount++
-		if eventCount <= 30 {
-			extra := ""
-			if event.Data.AllowedTools != nil {
-				extra += fmt.Sprintf(" allowedTools=%v", event.Data.AllowedTools)
-			}
-			if event.Data.Tools != nil {
-				extra += fmt.Sprintf(" tools=%v", event.Data.Tools)
-			}
-			if event.Data.Message != nil {
-				extra += fmt.Sprintf(" msg=%s", logging.TruncateString(*event.Data.Message, 100))
-			}
-			if event.Data.InfoType != nil {
-				extra += fmt.Sprintf(" infoType=%s", *event.Data.InfoType)
-			}
-			if event.Data.Name != nil {
-				extra += fmt.Sprintf(" name=%s", *event.Data.Name)
-			}
-			fmt.Println(output.WithGrayFormat("  [event] %s%s", event.Type, extra))
-		}
 	})
 
 	cleanupTasks["session-events"] = func() error {

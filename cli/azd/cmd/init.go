@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,11 +36,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
-	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 	"github.com/fatih/color"
 	"github.com/joho/godotenv"
-	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -141,8 +138,7 @@ type initAction struct {
 	featuresManager   *alpha.FeatureManager
 	extensionsManager *extensions.Manager
 	azd               workflow.AzdCommandRunner
-	agentFactory      *agent.AgentFactory
-	copilotFactory    *agent.CopilotAgentFactory
+	agentFactory      *agent.CopilotAgentFactory
 	consentManager    consent.ConsentManager
 	configManager     config.UserConfigManager
 }
@@ -159,8 +155,7 @@ func newInitAction(
 	featuresManager *alpha.FeatureManager,
 	extensionsManager *extensions.Manager,
 	azd workflow.AzdCommandRunner,
-	agentFactory *agent.AgentFactory,
-	copilotFactory *agent.CopilotAgentFactory,
+	agentFactory *agent.CopilotAgentFactory,
 	consentManager consent.ConsentManager,
 	configManager config.UserConfigManager,
 ) actions.Action {
@@ -177,7 +172,6 @@ func newInitAction(
 		extensionsManager: extensionsManager,
 		azd:               azd,
 		agentFactory:      agentFactory,
-		copilotFactory:    copilotFactory,
 		consentManager:    consentManager,
 		configManager:     configManager,
 	}
@@ -405,7 +399,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 }
 
 func (i *initAction) initAppWithAgent(ctx context.Context) error {
-	// Warn user that this is an alpha feature
+	// Show alpha warning
 	i.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title: fmt.Sprintf("Agentic mode init is in alpha mode. The agent will scan your repository and "+
 			"attempt to make an azd-ready template to init. You can always change permissions later "+
@@ -414,117 +408,52 @@ func (i *initAction) initAppWithAgent(ctx context.Context) error {
 		TitleNote: "CTRL C to cancel interaction \n? to pull up help text",
 	})
 
-	// Check read only tool consent
-	readOnlyRule, err := i.consentManager.CheckConsent(ctx,
-		consent.ConsentRequest{
-			ToolID:     "*/*",
-			ServerName: "*",
-			Operation:  consent.OperationTypeTool,
-			Annotations: mcp.ToolAnnotation{
-				ReadOnlyHint: new(true),
-			},
-		},
+	// Create agent
+	copilotAgent, err := i.agentFactory.Create(ctx,
+		agent.WithMode(agent.AgentModeInteractive),
+		agent.WithDebug(i.flags.global.EnableDebugLogging),
 	)
 	if err != nil {
 		return err
 	}
+	defer copilotAgent.Stop()
 
-	if !readOnlyRule.Allowed {
-		consentChecker := consent.NewConsentChecker(i.consentManager, "")
-		err = consentChecker.PromptAndGrantReadOnlyToolConsent(ctx)
-		if err != nil {
-			return err
-		}
-		i.console.Message(ctx, "")
-	}
-
-	// Configure model and reasoning effort
-	if err := i.configureAgentModel(ctx); err != nil {
+	// Initialize — prompts on first run, returns config on subsequent
+	initResult, err := copilotAgent.Initialize(ctx)
+	if err != nil {
 		return err
 	}
 
-	// Check for previous sessions in this directory
-	cwd, _ := os.Getwd()
-	var azdAgent agent.Agent
+	// Show current config
+	modelDisplay := initResult.Model
+	if modelDisplay == "" {
+		modelDisplay = "default"
+	}
+	i.console.Message(ctx, output.WithGrayFormat("  Agent: model=%s, reasoning=%s",
+		modelDisplay, initResult.ReasoningEffort))
+	if !initResult.IsFirstRun {
+		i.console.Message(ctx, output.WithGrayFormat(
+			"  To change, run %s or %s",
+			output.WithHighLightFormat("azd config set ai.agent.model <model>"),
+			output.WithHighLightFormat("azd config set ai.agent.reasoningEffort <level>")))
+	}
+	i.console.Message(ctx, "")
 
-	sessions, listErr := i.copilotFactory.ListSessions(ctx, cwd)
-	if listErr == nil && len(sessions) > 0 {
-		// Offer to resume a previous session
-		choices := make([]*uxlib.SelectChoice, 0, len(sessions)+1)
-		choices = append(choices, &uxlib.SelectChoice{
-			Value: "__new__",
-			Label: "Start a new session",
-		})
-
-		for _, s := range sessions {
-			timeStr := formatSessionTime(s.ModifiedTime)
-			summary := ""
-			if s.Summary != nil && *s.Summary != "" {
-				// Collapse newlines and extra whitespace into single spaces
-				summary = strings.Join(strings.Fields(*s.Summary), " ")
-			}
-			// Keep label ≤ 120 chars total: "Resume ({time}) — {summary}"
-			prefix := fmt.Sprintf("Resume (%s)", timeStr)
-			if summary != "" {
-				maxSummary := 120 - len(prefix) - 3 // 3 for " — "
-				if maxSummary > 10 {
-					if len(summary) > maxSummary {
-						summary = summary[:maxSummary-3] + "..."
-					}
-					prefix += " — " + summary
-				}
-			}
-			choices = append(choices, &uxlib.SelectChoice{
-				Value: s.SessionID,
-				Label: prefix,
-			})
-		}
-
-		fmt.Println()
-		selector := uxlib.NewSelect(&uxlib.SelectOptions{
-			Message:         "Previous sessions found",
-			Choices:         choices,
-			EnableFiltering: uxlib.Ptr(true),
-			DisplayNumbers:  uxlib.Ptr(true),
-			DisplayCount:    min(len(choices), 6),
-		})
-
-		idx, selectErr := selector.Ask(ctx)
-		fmt.Println()
-
-		if selectErr == nil && idx != nil && *idx > 0 {
-			// Resume selected session
-			selectedID := choices[*idx].Value
-			resumed, resumeErr := i.copilotFactory.Resume(
-				ctx, selectedID,
-				agent.WithCopilotDebug(i.flags.global.EnableDebugLogging),
-			)
-			if resumeErr == nil {
-				azdAgent = resumed
-				i.console.Message(ctx, output.WithSuccessFormat("Session resumed"))
-				i.console.Message(ctx, "")
-			} else {
-				log.Printf("[copilot] Failed to resume session: %v, starting new", resumeErr)
-			}
-		}
+	// Session picker — resume previous or start fresh
+	selected, err := copilotAgent.SelectSession(ctx)
+	if err != nil {
+		return err
 	}
 
-	// If not resumed, create new session
-	if azdAgent == nil {
-		var err error
-		azdAgent, err = i.agentFactory.Create(
-			ctx,
-			agent.WithDebug(i.flags.global.EnableDebugLogging),
-		)
-		if err != nil {
-			return err
-		}
+	// Build send options
+	opts := []agent.SendOption{}
+	if selected != nil {
+		opts = append(opts, agent.WithSessionID(selected.SessionID))
+		i.console.Message(ctx, output.WithSuccessFormat("Session resumed"))
+		i.console.Message(ctx, "")
 	}
 
-	defer azdAgent.Stop()
-
-	// Single prompt — handles both existing projects and empty directories.
-	// Explicitly invokes azure-prepare and azure-validate skills using the azd recipe.
+	// Init prompt
 	prompt := `Prepare this application for deployment to Azure.
 
 First, check if the current directory contains application code. If the directory is empty
@@ -548,188 +477,24 @@ When complete, provide a brief summary of what was accomplished.`
 
 	i.console.Message(ctx, color.MagentaString("Preparing application for Azure deployment..."))
 
-	agentOutput, err := azdAgent.SendMessageWithRetry(ctx, prompt)
+	result, err := copilotAgent.SendMessageWithRetry(ctx, prompt, opts...)
 	if err != nil {
-		if agentOutput != "" {
-			i.console.Message(ctx, output.WithMarkdown(agentOutput))
-		}
 		return err
 	}
 
+	// Show summary
 	i.console.Message(ctx, "")
 	i.console.Message(ctx, color.HiMagentaString("◆ Azure Init Summary:"))
-	i.console.Message(ctx, output.WithMarkdown(agentOutput))
-	i.console.Message(ctx, "")
+	i.console.Message(ctx, output.WithMarkdown(result.Content))
 
-	// Print session usage metrics
-	if copilotAgent, ok := azdAgent.(*agent.CopilotAgent); ok {
-		if usage := copilotAgent.UsageSummary(); usage != "" {
-			i.console.Message(ctx, "")
-			i.console.Message(ctx, usage)
-			i.console.Message(ctx, "")
-		}
-	}
-
-	return nil
-}
-
-// configureAgentModel prompts for reasoning effort and model on first run,
-// or shows current config on subsequent runs.
-func (i *initAction) configureAgentModel(ctx context.Context) error {
-	azdConfig, err := i.configManager.Load()
-	if err != nil {
-		return err
-	}
-
-	existingModel, hasModel := azdConfig.GetString("ai.agent.model")
-	existingEffort, hasEffort := azdConfig.GetString("ai.agent.reasoningEffort")
-
-	// If already configured, show info and continue
-	if hasModel || hasEffort {
-		modelDisplay := existingModel
-		if modelDisplay == "" {
-			modelDisplay = "default"
-		}
-		effortDisplay := existingEffort
-		if effortDisplay == "" {
-			effortDisplay = "default"
-		}
-
-		i.console.Message(ctx, output.WithGrayFormat("  Agent configuration:"))
-		i.console.Message(ctx, output.WithGrayFormat("  • Model:     %s", modelDisplay))
-		i.console.Message(ctx, output.WithGrayFormat("  • Reasoning: %s", effortDisplay))
+	// Show usage
+	if usage := result.Usage.Format(); usage != "" {
 		i.console.Message(ctx, "")
-		i.console.Message(ctx, output.WithGrayFormat(
-			"  To change, run %s or %s",
-			output.WithHighLightFormat("azd config set ai.agent.model <model>"),
-			output.WithHighLightFormat("azd config set ai.agent.reasoningEffort <level>")))
-		i.console.Message(ctx, "")
-		return nil
+		i.console.Message(ctx, usage)
 	}
 
-	// First run — prompt for reasoning effort
-	effortChoices := []*uxlib.SelectChoice{
-		{Value: "low", Label: "Low — fastest, lowest cost"},
-		{Value: "medium", Label: "Medium — balanced (recommended)"},
-		{Value: "high", Label: "High — more thorough, higher cost and premium requests"},
-	}
-
-	effortSelector := uxlib.NewSelect(&uxlib.SelectOptions{
-		Message:         "Select reasoning effort level",
-		HelpMessage:     "Higher reasoning uses more premium requests and may cost more. You can change this later.",
-		Choices:         effortChoices,
-		SelectedIndex:   intPtr(1), // default to medium
-		DisplayNumbers:  uxlib.Ptr(true),
-		EnableFiltering: uxlib.Ptr(true),
-		DisplayCount:    3,
-	})
-
-	effortIdx, err := effortSelector.Ask(ctx)
-	if err != nil {
-		return err
-	}
-	if effortIdx == nil {
-		return fmt.Errorf("reasoning effort selection cancelled")
-	}
-
-	selectedEffort := effortChoices[*effortIdx].Value
-
-	// Prompt for model selection — fetch available models dynamically
-	modelChoices := []*uxlib.SelectChoice{
-		{Value: "", Label: "Default model (recommended)"},
-	}
-
-	models, modelsErr := i.copilotFactory.ListModels(ctx)
-	if modelsErr == nil && len(models) > 0 {
-		for _, m := range models {
-			label := m.Name
-			if m.DefaultReasoningEffort != "" {
-				label += fmt.Sprintf(" (%s)", m.DefaultReasoningEffort)
-			}
-			if m.Billing != nil {
-				label += fmt.Sprintf(" (%.0fx)", m.Billing.Multiplier)
-			}
-			modelChoices = append(modelChoices, &uxlib.SelectChoice{
-				Value: m.ID,
-				Label: label,
-			})
-		}
-	}
-
-	modelSelector := uxlib.NewSelect(&uxlib.SelectOptions{
-		Message:         "Select AI model",
-		HelpMessage:     "Premium models may use more requests. You can change this later.",
-		Choices:         modelChoices,
-		SelectedIndex:   intPtr(0), // default
-		DisplayNumbers:  uxlib.Ptr(true),
-		EnableFiltering: uxlib.Ptr(true),
-		DisplayCount:    min(len(modelChoices), 10),
-	})
-
-	modelIdx, err := modelSelector.Ask(ctx)
-	if err != nil {
-		return err
-	}
-	if modelIdx == nil {
-		return fmt.Errorf("model selection cancelled")
-	}
-
-	selectedModel := modelChoices[*modelIdx].Value
-
-	// Save to config
-	if err := azdConfig.Set("ai.agent.reasoningEffort", selectedEffort); err != nil {
-		return fmt.Errorf("failed to save reasoning effort: %w", err)
-	}
-	if selectedModel != "" {
-		if err := azdConfig.Set("ai.agent.model", selectedModel); err != nil {
-			return fmt.Errorf("failed to save model: %w", err)
-		}
-	}
-	if err := i.configManager.Save(azdConfig); err != nil {
-		return fmt.Errorf("failed to save config: %w", err)
-	}
-
-	modelDisplay := selectedModel
-	if modelDisplay == "" {
-		modelDisplay = "default"
-	}
-	i.console.Message(ctx, output.WithSuccessFormat(
-		"Agent configured: model=%s, reasoning=%s", modelDisplay, selectedEffort))
 	i.console.Message(ctx, "")
-
 	return nil
-}
-
-func intPtr(v int) *int {
-	return &v
-}
-
-// formatSessionTime converts an ISO timestamp to a local, human-friendly format.
-func formatSessionTime(ts string) string {
-	// Try common ISO formats
-	for _, layout := range []string{
-		time.RFC3339,
-		"2006-01-02T15:04:05.000Z",
-		"2006-01-02T15:04:05Z",
-	} {
-		if t, err := time.Parse(layout, ts); err == nil {
-			local := t.Local()
-			now := time.Now()
-			if local.Year() == now.Year() && local.YearDay() == now.YearDay() {
-				return "Today " + local.Format("3:04 PM")
-			}
-			yesterday := now.AddDate(0, 0, -1)
-			if local.Year() == yesterday.Year() && local.YearDay() == yesterday.YearDay() {
-				return "Yesterday " + local.Format("3:04 PM")
-			}
-			return local.Format("Jan 2, 3:04 PM")
-		}
-	}
-	// Fallback: truncate raw timestamp
-	if len(ts) > 19 {
-		ts = ts[:19]
-	}
-	return ts
 }
 
 type initType int

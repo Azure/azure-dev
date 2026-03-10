@@ -49,7 +49,7 @@ func NewFeedbackCollector(console input.Console, options FeedbackCollectorOption
 // CollectFeedbackAndApply collects user feedback and applies it using the provided agent
 func (c *FeedbackCollector) CollectFeedbackAndApply(
 	ctx context.Context,
-	azdAgent agent.Agent,
+	azdAgent *agent.CopilotAgent,
 	AIDisclaimer string,
 ) error {
 	if c.options.EnableLoop {
@@ -61,7 +61,7 @@ func (c *FeedbackCollector) CollectFeedbackAndApply(
 // collectFeedbackAndApplyWithLoop handles feedback collection with multiple rounds (init.go style)
 func (c *FeedbackCollector) collectFeedbackAndApplyWithLoop(
 	ctx context.Context,
-	azdAgent agent.Agent,
+	azdAgent *agent.CopilotAgent,
 	AIDisclaimer string,
 ) error {
 	// Loop to allow multiple rounds of feedback
@@ -91,7 +91,7 @@ func (c *FeedbackCollector) collectFeedbackAndApplyWithLoop(
 // collectFeedbackAndApplyOnce handles single feedback collection like error handling workflow
 func (c *FeedbackCollector) collectFeedbackAndApplyOnce(
 	ctx context.Context,
-	azdAgent agent.Agent,
+	azdAgent *agent.CopilotAgent,
 	AIDisclaimer string,
 ) error {
 	userInputPrompt := uxlib.NewPrompt(&uxlib.PromptOptions{
@@ -116,19 +116,15 @@ func (c *FeedbackCollector) collectFeedbackAndApplyOnce(
 // applyFeedback sends feedback to agent and displays response
 func (c *FeedbackCollector) applyFeedback(
 	ctx context.Context,
-	azdAgent agent.Agent,
+	azdAgent *agent.CopilotAgent,
 	userInput string,
 	AIDisclaimer string,
 ) error {
 	c.console.Message(ctx, "")
 	c.console.Message(ctx, color.MagentaString("Feedback"))
 
-	feedbackOutput, err := azdAgent.SendMessage(ctx, userInput)
+	result, err := azdAgent.SendMessage(ctx, userInput)
 	if err != nil {
-		if feedbackOutput != "" {
-			c.console.Message(ctx, AIDisclaimer)
-			c.console.Message(ctx, output.WithMarkdown(feedbackOutput))
-		}
 		return err
 	}
 
@@ -136,7 +132,7 @@ func (c *FeedbackCollector) applyFeedback(
 
 	c.console.Message(ctx, "")
 	c.console.Message(ctx, fmt.Sprintf("%s:", output.AzdAgentLabel()))
-	c.console.Message(ctx, output.WithMarkdown(feedbackOutput))
+	c.console.Message(ctx, output.WithMarkdown(result.Content))
 	c.console.Message(ctx, "")
 
 	return nil

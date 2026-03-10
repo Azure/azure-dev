@@ -463,58 +463,19 @@ func (d *AgentDisplay) WaitForIdle(ctx context.Context) (string, error) {
 	}
 }
 
-// UsageSummary returns a formatted string with session usage metrics.
-func (d *AgentDisplay) UsageSummary() string {
+// GetUsageMetrics returns the accumulated usage metrics for this display session.
+func (d *AgentDisplay) GetUsageMetrics() UsageMetrics {
 	d.mu.Lock()
-	inputTokens := d.totalInputTokens
-	outputTokens := d.totalOutputTokens
-	cost := d.totalCost
-	durationMS := d.totalDurationMS
-	premium := d.premiumRequests
-	model := d.lastModel
-	d.mu.Unlock()
+	defer d.mu.Unlock()
 
-	if inputTokens == 0 && outputTokens == 0 {
-		return ""
+	return UsageMetrics{
+		Model:           d.lastModel,
+		InputTokens:     d.totalInputTokens,
+		OutputTokens:    d.totalOutputTokens,
+		Cost:            d.totalCost,
+		PremiumRequests: d.premiumRequests,
+		DurationMS:      d.totalDurationMS,
 	}
-
-	lines := []string{
-		output.WithGrayFormat("  Session usage:"),
-	}
-
-	if model != "" {
-		lines = append(lines, output.WithGrayFormat("  • Model:            %s", model))
-	}
-	lines = append(lines, output.WithGrayFormat("  • Input tokens:     %s", formatTokenCount(inputTokens)))
-	lines = append(lines, output.WithGrayFormat("  • Output tokens:    %s", formatTokenCount(outputTokens)))
-	lines = append(lines, output.WithGrayFormat("  • Total tokens:     %s", formatTokenCount(inputTokens+outputTokens)))
-
-	if cost > 0 {
-		lines = append(lines, output.WithGrayFormat("  • Cost:             %.1fx premium", cost))
-	}
-	if premium > 0 {
-		lines = append(lines, output.WithGrayFormat("  • Premium requests: %.0f", premium))
-	}
-	if durationMS > 0 {
-		seconds := durationMS / 1000
-		if seconds >= 60 {
-			lines = append(lines, output.WithGrayFormat("  • API duration:     %.0fm %.0fs", seconds/60, float64(int(seconds)%60)))
-		} else {
-			lines = append(lines, output.WithGrayFormat("  • API duration:     %.1fs", seconds))
-		}
-	}
-
-	return strings.Join(lines, "\n")
-}
-
-func formatTokenCount(tokens float64) string {
-	if tokens >= 1_000_000 {
-		return fmt.Sprintf("%.1fM", tokens/1_000_000)
-	}
-	if tokens >= 1_000 {
-		return fmt.Sprintf("%.1fK", tokens/1_000)
-	}
-	return fmt.Sprintf("%.0f", tokens)
 }
 
 // printToolCompletion prints a completion message for the current tool.

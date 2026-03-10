@@ -49,7 +49,8 @@ func TestSessionConfigBuilder_Build(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, cfg.SystemMessage)
 		require.Equal(t, "append", cfg.SystemMessage.Mode)
-		require.Equal(t, "Use TypeScript", cfg.SystemMessage.Content)
+		require.Contains(t, cfg.SystemMessage.Content, "Use TypeScript")
+		require.Contains(t, cfg.SystemMessage.Content, "Azure application development")
 	})
 
 	t.Run("ToolControl", func(t *testing.T) {
@@ -81,8 +82,9 @@ func TestSessionConfigBuilder_Build(t *testing.T) {
 
 		cfg, err := builder.Build(context.Background(), builtIn)
 		require.NoError(t, err)
-		require.Len(t, cfg.MCPServers, 1)
 		require.Contains(t, cfg.MCPServers, "azd")
+		// Also includes Azure plugin MCP servers if installed
+		require.GreaterOrEqual(t, len(cfg.MCPServers), 1)
 	})
 
 	t.Run("UserMCPServersOverrideBuiltIn", func(t *testing.T) {
@@ -112,7 +114,7 @@ func TestSessionConfigBuilder_Build(t *testing.T) {
 
 		cfg, err := builder.Build(context.Background(), builtIn)
 		require.NoError(t, err)
-		require.Len(t, cfg.MCPServers, 2)
+		require.GreaterOrEqual(t, len(cfg.MCPServers), 2)
 
 		// User config overrides built-in "azd"
 		azdServer := cfg.MCPServers["azd"]
@@ -134,9 +136,10 @@ func TestConvertServerConfig(t *testing.T) {
 		}
 
 		result := convertServerConfig(srv)
-		require.Equal(t, "stdio", result["type"])
+		require.Equal(t, "local", result["type"])
 		require.Equal(t, "npx", result["command"])
 		require.Equal(t, []string{"-y", "@azure/mcp@latest"}, result["args"])
+		require.Equal(t, []string{"*"}, result["tools"])
 
 		envMap, ok := result["env"].(map[string]string)
 		require.True(t, ok)

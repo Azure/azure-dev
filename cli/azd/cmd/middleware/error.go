@@ -43,7 +43,7 @@ import (
 type ErrorMiddleware struct {
 	options           *Options
 	console           input.Console
-	agentFactory      *agent.AgentFactory
+	agentFactory      *agent.CopilotAgentFactory
 	global            *internal.GlobalCommandOptions
 	featuresManager   *alpha.FeatureManager
 	userConfigManager config.UserConfigManager
@@ -133,7 +133,7 @@ func shouldSkipErrorAnalysis(err error) bool {
 
 func NewErrorMiddleware(
 	options *Options, console input.Console,
-	agentFactory *agent.AgentFactory,
+	agentFactory *agent.CopilotAgentFactory,
 	global *internal.GlobalCommandOptions,
 	featuresManager *alpha.FeatureManager,
 	userConfigManager config.UserConfigManager,
@@ -261,15 +261,15 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			Do not provide fix steps. Do not perform any file changes.
 			Error details: %s`, errorInput)
 
-			agentOutput, err := azdAgent.SendMessage(ctx, errorExplanationPrompt)
+			agentResult, err := azdAgent.SendMessage(ctx, errorExplanationPrompt)
 
 			if err != nil {
-				e.displayAgentResponse(ctx, agentOutput, AIDisclaimer)
+				e.displayAgentResponse(ctx, agentResult.Content, AIDisclaimer)
 				span.SetStatus(codes.Error, "agent.send_message.failed")
 				return nil, err
 			}
 
-			e.displayAgentResponse(ctx, agentOutput, AIDisclaimer)
+			e.displayAgentResponse(ctx, agentResult.Content, AIDisclaimer)
 		}
 
 		// Ask user if they want step-by-step fix guidance
@@ -293,15 +293,14 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			DO NOT return JSON. Do not explain the error. Do not perform any file changes.
 			Error details: %s`, errorInput)
 
-		guideOutput, err := azdAgent.SendMessage(ctx, guidePrompt)
+		guideResult, err := azdAgent.SendMessage(ctx, guidePrompt)
 
 		if err != nil {
-			e.displayAgentResponse(ctx, guideOutput, AIDisclaimer)
 			span.SetStatus(codes.Error, "agent.send_message.failed")
 			return nil, err
 		}
 
-		e.displayAgentResponse(ctx, guideOutput, AIDisclaimer)
+		e.displayAgentResponse(ctx, guideResult.Content, AIDisclaimer)
 
 		// Do not proceed to automated fix/apply flow for machine or user context errors
 		if classifyError(originalError) != AzureContextAndOtherError {
@@ -334,7 +333,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		}
 
 		previousError = originalError
-		agentOutput, err := azdAgent.SendMessage(ctx, fmt.Sprintf(
+		agentResult, err := azdAgent.SendMessage(ctx, fmt.Sprintf(
 			`Steps to follow:
 			1. Check if the error is included in azd_provision_common_error tool. 
 			If not, jump to step 2.
@@ -355,18 +354,16 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
             Error details: %s`, errorInput))
 
 		// Extract solutions from agent output even if there's a parsing error
-		// The agent may return valid content
-		solutions := extractSuggestedSolutions(agentOutput)
+		solutions := extractSuggestedSolutions(agentResult.Content)
 
 		// If no solutions found in output, try extracting from the error message
-		// LangChain may fail to parse but errors include the valid JSON
 		if len(solutions) == 0 && err != nil {
 			solutions = extractSuggestedSolutions(err.Error())
 		}
 
 		// Only fail if we got an error AND couldn't extract any solutions
 		if err != nil && len(solutions) == 0 {
-			e.displayAgentResponse(ctx, agentOutput, AIDisclaimer)
+			e.displayAgentResponse(ctx, agentResult.Content, AIDisclaimer)
 			span.SetStatus(codes.Error, "agent.send_message.failed")
 			return nil, fmt.Errorf("failed to generate solutions: %w", err)
 		}
@@ -378,7 +375,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		}
 
 		if continueWithFix {
-			agentOutput, err := azdAgent.SendMessage(ctx, fmt.Sprintf(
+			agentResult, err := azdAgent.SendMessage(ctx, fmt.Sprintf(
 				`Steps to follow:
 			1. Check if the error is included in azd_provision_common_error tool. 
 			If so, jump to step 3 and only use the solution azd_provision_common_error provided.
@@ -391,7 +388,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
             Error details: %s`, e.options.CommandPath, errorInput))
 
 			if err != nil {
-				e.displayAgentResponse(ctx, agentOutput, AIDisclaimer)
+				e.displayAgentResponse(ctx, agentResult.Content, AIDisclaimer)
 				span.SetStatus(codes.Error, "agent.send_message.failed")
 				return nil, err
 			}
@@ -400,7 +397,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		} else {
 			if selectedSolution != "" {
 				// User selected a solution
-				agentOutput, err = azdAgent.SendMessage(ctx, fmt.Sprintf(
+				agentResult, err = azdAgent.SendMessage(ctx, fmt.Sprintf(
 					`Steps to follow:
 						1. Perform the following actions to resolve the error: %s. 
 						During this, make minimal changes and avoid unnecessary modifications.
@@ -410,7 +407,9 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 						Error details: %s`, selectedSolution, e.options.CommandPath, errorInput))
 
 				if err != nil {
-					e.displayAgentResponse(ctx, agentOutput, AIDisclaimer)
+					if agentResult != nil {
+						e.displayAgentResponse(ctx, agentResult.Content, AIDisclaimer)
+					}
 					span.SetStatus(codes.Error, "agent.send_message.failed")
 					return nil, err
 				}
@@ -705,3 +704,4 @@ func promptUserForSolution(ctx context.Context, solutions []string, agentName st
 		return selectedValue, false, nil // User selected a solution
 	}
 }
+

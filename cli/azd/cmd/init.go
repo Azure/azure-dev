@@ -561,29 +561,6 @@ When complete, provide a brief summary of what was accomplished.`
 	i.console.Message(ctx, output.WithMarkdown(agentOutput))
 	i.console.Message(ctx, "")
 
-	// Post-init Q&A loop — let user ask follow-up questions
-	for {
-		followUp := uxlib.NewPrompt(&uxlib.PromptOptions{
-			Message: "Any questions? (press Enter to finish)",
-		})
-
-		question, err := followUp.Ask(ctx)
-		if err != nil || strings.TrimSpace(question) == "" {
-			break
-		}
-
-		fmt.Println()
-		answer, err := azdAgent.SendMessageWithRetry(ctx, question)
-		if err != nil {
-			i.console.Message(ctx, output.WithErrorFormat("Error: %s", err.Error()))
-			break
-		}
-
-		i.console.Message(ctx, "")
-		i.console.Message(ctx, output.WithMarkdown(answer))
-		i.console.Message(ctx, "")
-	}
-
 	// Print session usage metrics
 	if copilotAgent, ok := azdAgent.(*agent.CopilotAgent); ok {
 		if usage := copilotAgent.UsageSummary(); usage != "" {

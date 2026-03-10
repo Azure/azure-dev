@@ -457,25 +457,34 @@ func (i *initAction) initAppWithAgent(ctx context.Context) error {
 		})
 
 		for _, s := range sessions {
-			label := fmt.Sprintf("Resume: %s", s.ModifiedTime)
+			timeStr := formatSessionTime(s.ModifiedTime)
+			summary := ""
 			if s.Summary != nil && *s.Summary != "" {
-				summary := *s.Summary
-				if len(summary) > 60 {
-					summary = summary[:60] + "..."
+				summary = *s.Summary
+			}
+			// Keep label ≤ 120 chars: "Resume ({time}) — {summary}"
+			prefix := fmt.Sprintf("Resume (%s)", timeStr)
+			if summary != "" {
+				maxSummary := 120 - len(prefix) - 3 // 3 for " — "
+				if maxSummary > 0 {
+					if len(summary) > maxSummary {
+						summary = summary[:maxSummary-3] + "..."
+					}
+					prefix += " — " + summary
 				}
-				label = fmt.Sprintf("Resume: %s — %s", s.ModifiedTime, summary)
 			}
 			choices = append(choices, &uxlib.SelectChoice{
 				Value: s.SessionID,
-				Label: label,
+				Label: prefix,
 			})
 		}
 
 		fmt.Println()
 		selector := uxlib.NewSelect(&uxlib.SelectOptions{
-			Message:         "Previous agent sessions found. Resume or start fresh?",
+			Message:         "Previous sessions found:",
 			Choices:         choices,
 			EnableFiltering: uxlib.Ptr(false),
+			DisplayNumbers:  uxlib.Ptr(true),
 			DisplayCount:    min(len(choices), 6),
 		})
 
@@ -693,6 +702,34 @@ func (i *initAction) configureAgentModel(ctx context.Context) error {
 
 func intPtr(v int) *int {
 	return &v
+}
+
+// formatSessionTime converts an ISO timestamp to a local, human-friendly format.
+func formatSessionTime(ts string) string {
+	// Try common ISO formats
+	for _, layout := range []string{
+		time.RFC3339,
+		"2006-01-02T15:04:05.000Z",
+		"2006-01-02T15:04:05Z",
+	} {
+		if t, err := time.Parse(layout, ts); err == nil {
+			local := t.Local()
+			now := time.Now()
+			if local.Year() == now.Year() && local.YearDay() == now.YearDay() {
+				return "Today " + local.Format("3:04 PM")
+			}
+			yesterday := now.AddDate(0, 0, -1)
+			if local.Year() == yesterday.Year() && local.YearDay() == yesterday.YearDay() {
+				return "Yesterday " + local.Format("3:04 PM")
+			}
+			return local.Format("Jan 2, 3:04 PM")
+		}
+	}
+	// Fallback: truncate raw timestamp
+	if len(ts) > 19 {
+		ts = ts[:19]
+	}
+	return ts
 }
 
 type initType int

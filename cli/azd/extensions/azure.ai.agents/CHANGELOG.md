@@ -3,7 +3,6 @@
 ## 0.1.14-preview (2026-03-10)
 
 - [[#7026]](https://github.com/Azure/azure-dev/pull/7026) Add `azd ai agent run` and `azd ai agent invoke` commands for running agents locally and invoking agents via a /responses call
-- [[#7015]](https://github.com/Azure/azure-dev/pull/7015) Add environment variable check for vnext experience
 - [[#6980]](https://github.com/Azure/azure-dev/pull/6980) Add `--model-deployment` parameter to `azd ai agent init` and fix agent init in copilot/CI scenarios
 - [[#6979]](https://github.com/Azure/azure-dev/pull/6979) Detect and classify auth errors from azd core for improved error telemetry
 

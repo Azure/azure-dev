@@ -110,6 +110,33 @@ Launch `azd` separately, then attach:
 1. Make your change, add tests, and ensure tests pass
 1. Submit a pull request: `gh pr create --web` (install [gh cli][gh cli] if needed). Select "Create a fork" to set up a fork for the first time if prompted for.
 
+## GitHub Copilot CLI
+
+This repository includes custom [GitHub Copilot CLI](https://docs.github.com/en/copilot) agents that automate common contributor workflows. To use them, open the repository in VS Code with the Copilot CLI extension and invoke an agent by name.
+
+### Available agents
+
+| Agent | File | Description |
+|-------|------|-------------|
+| **Bell Bot** 🔔🧠 | `.github/agents/notifications.agent.md` | Triage your GitHub notifications interactively. Fetches notifications, summarizes PRs/issues with actionable context, highlights external repos, and lets you mark them as read or done — all with an enthusiastic personality. |
+| **Generate changelog (azd core)** | `.github/agents/changelog-core.agent.md` | Prepare a release changelog entry for the core `azd` CLI by processing merged PRs, categorizing changes, and updating `cli/azd/CHANGELOG.md` and `cli/version.txt`. |
+| **Generate changelog (extensions)** | `.github/agents/changelog-extension.agent.md` | Prepare a release changelog entry for an azd extension under `cli/azd/extensions/`, updating the extension's `CHANGELOG.md`, `version.txt`, and `extension.yaml`. |
+
+### Usage examples
+
+```
+# Triage notifications
+@bell-bot Help me triage my notifications
+
+# Generate a release changelog
+@changelog-core Prepare the changelog for the next release
+
+# Update an extension changelog
+@changelog-extension Prepare the changelog for azure.ai.agents
+```
+
+> **Tip:** Agents are defined as `.agent.md` files in `.github/agents/`. To add a new agent, create a new file there following the same frontmatter + markdown format.
+
 ## Troubleshooting
 
 ### Access is denied

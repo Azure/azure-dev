@@ -108,9 +108,13 @@ func resolveSessionID(ctx context.Context, azdClient *azdext.AzdClient, agentNam
 	return sid, nil
 }
 
-// resolveConversationID resolves or creates a Foundry conversation ID.
-// Returns empty string if no existing conversation is found or on error.
-func resolveConversationID(ctx context.Context, azdClient *azdext.AzdClient, agentName string, forceNew bool) (string, error) {
+// resolveConversationID resolves a Foundry conversation ID.
+// When explicit is provided, it is returned directly.
+// Returns empty string if no existing conversation is found.
+func resolveConversationID(ctx context.Context, azdClient *azdext.AzdClient, agentName string, explicit string, forceNew bool) (string, error) {
+	if explicit != "" {
+		return explicit, nil
+	}
 	configPath, err := resolveConfigPath(ctx, azdClient)
 	if err != nil {
 		return "", err

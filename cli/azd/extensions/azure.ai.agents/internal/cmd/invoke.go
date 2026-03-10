@@ -20,13 +20,15 @@ import (
 )
 
 type invokeFlags struct {
-	message    string
-	local      bool
-	name       string
-	port       int
-	timeout    int
-	session    string
-	newSession bool
+	message         string
+	local           bool
+	name            string
+	port            int
+	timeout         int
+	session         string
+	newSession      bool
+	conversation    string
+	newConversation bool
 }
 
 type InvokeAction struct {
@@ -88,6 +90,8 @@ session automatically. Pass --new-session to force a reset.`,
 	cmd.Flags().IntVarP(&flags.timeout, "timeout", "t", 120, "Request timeout in seconds (0 for no timeout)")
 	cmd.Flags().StringVarP(&flags.session, "session", "s", "", "Explicit session ID override")
 	cmd.Flags().BoolVar(&flags.newSession, "new-session", false, "Force a new session (discard saved one)")
+	cmd.Flags().StringVar(&flags.conversation, "conversation", "", "Explicit conversation ID override")
+	cmd.Flags().BoolVar(&flags.newConversation, "new-conversation", false, "Force a new conversation (discard saved one)")
 
 	return cmd
 }
@@ -219,7 +223,7 @@ func (a *InvokeAction) invokeRemote(ctx context.Context) error {
 	}
 
 	// Conversation ID — enables multi-turn memory via Foundry Conversations API
-	convID, err := resolveConversationID(ctx, azdClient, name, a.flags.newSession)
+	convID, err := resolveConversationID(ctx, azdClient, name, a.flags.conversation, a.flags.newConversation)
 	if err != nil {
 		return err
 	}

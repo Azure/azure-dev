@@ -92,6 +92,12 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, projectP
 		return fmt.Errorf("failed to set identity: %w", err)
 	}
 
+	// Ensure agent identity RBAC is configured when vnext is enabled.
+	// Non-fatal: warn but don't block deployment on failure.
+	if err := projectParser.EnsureAgentIdentityRBAC(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: agent identity RBAC setup failed: %v\n", err)
+	}
+
 	for _, svc := range args.Project.Services {
 		switch svc.Host {
 		case AiAgentHost:

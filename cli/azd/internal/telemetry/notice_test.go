@@ -32,7 +32,7 @@ func setupSuite(withFirstRunFile bool, t *testing.T) func(t *testing.T) {
 			file.Close()
 
 			tmpFilename = file.Name()
-			err = os.Rename(firstRunFilePath, tmpFilename)
+			err = os.Rename(firstRunFilePath, tmpFilename) //nolint:gosec // G703: test file paths
 			if err != nil {
 				t.Fatalf("failed to rename first run file: %v", err)
 			}

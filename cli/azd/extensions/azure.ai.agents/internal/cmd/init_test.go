@@ -86,9 +86,11 @@ func TestCopyDirectory_RefusesToCopyIntoSubtree(t *testing.T) {
 	src := filepath.Join(root, "src")
 	dst := filepath.Join(src, "child")
 
+	//nolint:gosec // test fixture directory permissions are intentional
 	if err := os.MkdirAll(src, 0755); err != nil {
 		t.Fatalf("mkdir src: %v", err)
 	}
+	//nolint:gosec // test fixture file permissions are intentional
 	if err := os.WriteFile(filepath.Join(src, "file.txt"), []byte("hello"), 0644); err != nil {
 		t.Fatalf("write src file: %v", err)
 	}
@@ -102,6 +104,7 @@ func TestCopyDirectory_NoOpWhenSamePath(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
+	//nolint:gosec // test fixture file permissions are intentional
 	if err := os.WriteFile(filepath.Join(dir, "file.txt"), []byte("hello"), 0644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
@@ -120,6 +123,7 @@ func TestValidateLocalContainerAgentCopy_AllowsReinitInPlace(t *testing.T) {
 
 	dir := t.TempDir()
 	manifestPointer := filepath.Join(dir, "agent.yaml")
+	//nolint:gosec // test fixture file permissions are intentional
 	if err := os.WriteFile(manifestPointer, []byte("name: test"), 0644); err != nil {
 		t.Fatalf("write agent.yaml: %v", err)
 	}

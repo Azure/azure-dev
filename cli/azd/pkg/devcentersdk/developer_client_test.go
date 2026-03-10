@@ -36,6 +36,7 @@ func Test_DevCenter_Client(t *testing.T) {
 		mockContext.Console,
 		auth.ExternalAuthConfiguration{},
 		azCli,
+		"",
 	)
 	require.NoError(t, err)
 

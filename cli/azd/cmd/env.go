@@ -975,6 +975,14 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		en.console.Message(ctx,
 			fmt.Sprintf("New environment '%s' was set as default", env.Name()),
 		)
+	} else if en.console.IsNoPromptMode() {
+		// In --no-prompt mode, auto-set the new environment as default
+		if err := en.azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: env.Name()}); err != nil {
+			return nil, fmt.Errorf("saving default environment: %w", err)
+		}
+		en.console.Message(ctx,
+			fmt.Sprintf("New environment '%s' created and set as default", env.Name()),
+		)
 	} else {
 		// Ask the user if they want to set the new environment as the default environment
 		msg := fmt.Sprintf("Set new environment '%s' as default environment?", env.Name())
@@ -1230,6 +1238,7 @@ func newEnvGetValuesCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "get-values",
 		Short: "Get all environment values.",
+		Args:  cobra.NoArgs,
 	}
 }
 

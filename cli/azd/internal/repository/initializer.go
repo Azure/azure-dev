@@ -14,6 +14,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/names"
@@ -29,6 +30,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
+	gitignore "github.com/denormal/go-gitignore"
 	"github.com/joho/godotenv"
 	"github.com/otiai10/copy"
 )
@@ -58,7 +60,7 @@ func NewInitializer(
 	}
 }
 
-// Initializes a local repository in the project directory from a remote repository.
+// Initializes a local repository in the project directory from a remote repository or local template directory.
 //
 // A confirmation prompt is displayed for any existing files to be overwritten.
 func (i *Initializer) Initialize(
@@ -67,9 +69,6 @@ func (i *Initializer) Initialize(
 	template *templates.Template,
 	templateBranch string) error {
 	var err error
-	stepMessage := fmt.Sprintf("Downloading template code to: %s", output.WithLinkFormat("%s", azdCtx.ProjectDirectory()))
-	i.console.ShowSpinner(ctx, stepMessage, input.Step)
-	defer i.console.StopSpinner(ctx, stepMessage+"\n", input.GetStepResultFormat(err))
 
 	staging, err := os.MkdirTemp("", "az-dev-template")
 
@@ -90,7 +89,40 @@ func (i *Initializer) Initialize(
 		return err
 	}
 
-	filesWithExecPerms, err := i.fetchCode(ctx, templateUrl, templateBranch, staging)
+	// Reject overlapping source and destination for local templates.
+	// This catches "azd init -t ." (same dir) and "azd init -t .." (destination inside source).
+	if templates.IsLocalPath(templateUrl) {
+		rel, relErr := filepath.Rel(templateUrl, target)
+		if relErr == nil && !strings.HasPrefix(rel, "..") {
+			return fmt.Errorf(
+				"project directory (%s) overlaps with template source (%s); "+
+					"run 'azd init' from a directory outside the template",
+				target, templateUrl)
+		}
+	}
+
+	var stepMessage string
+	if templates.IsLocalPath(templateUrl) {
+		stepMessage = fmt.Sprintf(
+			"Copying template code from local path to: %s", output.WithLinkFormat("%s", azdCtx.ProjectDirectory()))
+	} else {
+		stepMessage = fmt.Sprintf(
+			"Downloading template code to: %s", output.WithLinkFormat("%s", azdCtx.ProjectDirectory()))
+	}
+	i.console.ShowSpinner(ctx, stepMessage, input.Step)
+	defer func() {
+		i.console.StopSpinner(ctx, stepMessage+"\n", input.GetStepResultFormat(err))
+	}()
+
+	var filesWithExecPerms []string
+	if templates.IsLocalPath(templateUrl) {
+		err = i.copyLocalTemplate(templateUrl, staging)
+		if err == nil {
+			filesWithExecPerms, err = findExecutableFiles(staging)
+		}
+	} else {
+		filesWithExecPerms, err = i.fetchCode(ctx, templateUrl, templateBranch, staging)
+	}
 	if err != nil {
 		return err
 	}
@@ -134,8 +166,6 @@ func (i *Initializer) Initialize(
 		return err
 	}
 
-	i.console.StopSpinner(ctx, stepMessage+"\n", input.GetStepResultFormat(err))
-
 	return nil
 }
 
@@ -164,6 +194,116 @@ func (i *Initializer) fetchCode(
 	}
 
 	return executableFilePaths, nil
+}
+
+// copyLocalTemplate copies a local template directory to the destination, respecting .gitignore
+// rules (including nested .gitignore files in subdirectories). The .git entry is always excluded
+// whether it is a directory or a file (as in git worktrees/submodules). Unlike fetchCode which uses
+// git clone (and only includes committed content), this copies the full working tree including
+// uncommitted changes — useful for local template development.
+func (i *Initializer) copyLocalTemplate(source, destination string) error {
+	// Verify the source is still a real directory and not a symlink.
+	// This mitigates TOCTOU attacks where the source directory could be replaced
+	// with a symlink between the initial path resolution and the copy operation.
+	info, err := os.Lstat(source)
+	if err != nil {
+		return fmt.Errorf("accessing local template: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("local template path '%s' is a symlink, which is not supported", source)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("local template path '%s' is not a directory", source)
+	}
+
+	// Collect .gitignore matchers from the source template, including nested .gitignore files.
+	// Each matcher is paired with its base directory for relative path computation.
+	type gitignoreMatcher struct {
+		base    string
+		ignorer gitignore.GitIgnore
+	}
+	var matchers []gitignoreMatcher
+
+	_ = filepath.WalkDir(source, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || d.Name() != ".gitignore" {
+			return err
+		}
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return nil // skip unreadable gitignore files
+		}
+		base := filepath.Dir(path)
+		ig := gitignore.New(strings.NewReader(string(data)), base, nil)
+		matchers = append(matchers, gitignoreMatcher{base: base, ignorer: ig})
+		return nil
+	})
+
+	err = copy.Copy(source, destination, copy.Options{
+		// Skip symlinks to prevent copying symlinks that could point outside the template directory.
+		OnSymlink: func(string) copy.SymlinkAction {
+			return copy.Skip
+		},
+		Skip: func(info os.FileInfo, src, dest string) (bool, error) {
+			// Always skip .git whether it is a directory (normal repos) or a
+			// file (git worktrees / submodules that use a gitdir pointer file).
+			if info.Name() == ".git" {
+				return true, nil
+			}
+
+			// Check all applicable .gitignore matchers (a matcher applies when
+			// the file is inside the matcher's base directory).
+			for _, m := range matchers {
+				rel, relErr := filepath.Rel(m.base, src)
+				if relErr != nil || strings.HasPrefix(rel, "..") {
+					continue // file not under this matcher's base
+				}
+				if rel != "." {
+					match := m.ignorer.Relative(filepath.ToSlash(rel), info.IsDir())
+					if match != nil && match.Ignore() {
+						return true, nil
+					}
+				}
+			}
+
+			return false, nil
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("copying local template: %w", err)
+	}
+	return nil
+}
+
+// findExecutableFiles walks root and returns paths (relative to root) of files
+// that have any executable permission bit set. On Windows, exec bits are not
+// meaningful so an empty list is returned immediately.
+func findExecutableFiles(root string) ([]string, error) {
+	if runtime.GOOS == "windows" {
+		return nil, nil
+	}
+
+	var execFiles []string
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		if info.Mode().Perm()&0o111 != 0 {
+			rel, err := filepath.Rel(root, path)
+			if err != nil {
+				return err
+			}
+			execFiles = append(execFiles, rel)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return execFiles, nil
 }
 
 // promptForDuplicates prompts the user for any duplicate files detected.

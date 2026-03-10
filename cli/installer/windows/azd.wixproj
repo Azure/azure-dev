@@ -6,7 +6,7 @@
         <Configuration Condition="'$(Configuration)'==''">Release</Configuration>
         <Platform Condition="'$(Platform)' == ''">x64</Platform>
         <ProductName Condition="'$(ProductName)' == ''">Azure Developer CLI (dev)</ProductName>
-        <ReleaseBuild Condition="'$(ProductVersion)' != ''">true</ReleaseBuild>
+        <ReleaseBuild Condition="'$(ReleaseBuild)' == 'true'">true</ReleaseBuild>
         <ProductVersion Condition="'$(ProductVersion)' == ''">0.1.0</ProductVersion>
         <!-- Windows Installer ProductVersion uses only major.minor.patch -->
         <ProductVersion Condition="$(ProductVersion.IndexOf('-')) &gt; 0">$(ProductVersion.Substring(0, $(ProductVersion.IndexOf('-'))))</ProductVersion>

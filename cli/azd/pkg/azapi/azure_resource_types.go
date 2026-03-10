@@ -19,6 +19,7 @@ const (
 	AzureResourceTypeContainerApp              AzureResourceType = "Microsoft.App/containerApps"
 	AzureResourceTypeContainerAppJob           AzureResourceType = "Microsoft.App/jobs"
 	AzureResourceTypeContainerAppEnvironment   AzureResourceType = "Microsoft.App/managedEnvironments"
+	AzureResourceTypeSreAgent                  AzureResourceType = "Microsoft.App/agents"
 	AzureResourceTypeDeployment                AzureResourceType = "Microsoft.Resources/deployments"
 	AzureResourceTypeKeyVault                  AzureResourceType = "Microsoft.KeyVault/vaults"
 	AzureResourceTypeManagedHSM                AzureResourceType = "Microsoft.KeyVault/managedHSMs"
@@ -92,6 +93,8 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Container App Job"
 	case AzureResourceTypeContainerAppEnvironment:
 		return "Container Apps Environment"
+	case AzureResourceTypeSreAgent:
+		return "SRE Agent"
 	case AzureResourceTypeServiceBusNamespace:
 		return "Service Bus Namespace"
 	case AzureResourceTypeEventHubsNamespace:

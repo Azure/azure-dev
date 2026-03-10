@@ -773,9 +773,12 @@ type ResolveModelDeploymentsRequest struct {
 	// Optional deployment filters (locations/versions/SKUs/capacity).
 	Options *AiModelDeploymentOptions `protobuf:"bytes,3,opt,name=options,proto3" json:"options,omitempty"`
 	// Optional quota filter. Requires options.locations with exactly one location.
-	Quota         *QuotaCheckOptions `protobuf:"bytes,4,opt,name=quota,proto3" json:"quota,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Quota *QuotaCheckOptions `protobuf:"bytes,4,opt,name=quota,proto3" json:"quota,omitempty"`
+	// Include fine-tune SKUs (usage names ending with "-finetune").
+	// Defaults to false (fine-tune SKUs are excluded).
+	IncludeFinetuneSkus bool `protobuf:"varint,5,opt,name=include_finetune_skus,json=includeFinetuneSkus,proto3" json:"include_finetune_skus,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *ResolveModelDeploymentsRequest) Reset() {
@@ -834,6 +837,13 @@ func (x *ResolveModelDeploymentsRequest) GetQuota() *QuotaCheckOptions {
 		return x.Quota
 	}
 	return nil
+}
+
+func (x *ResolveModelDeploymentsRequest) GetIncludeFinetuneSkus() bool {
+	if x != nil {
+		return x.IncludeFinetuneSkus
+	}
+	return false
 }
 
 type ResolveModelDeploymentsResponse struct {
@@ -1320,13 +1330,14 @@ const file_ai_model_proto_rawDesc = "" +
 	"\razure_context\x18\x01 \x01(\v2\x14.azdext.AzureContextR\fazureContext\x124\n" +
 	"\x06filter\x18\x02 \x01(\v2\x1c.azdext.AiModelFilterOptionsR\x06filter\"=\n" +
 	"\x12ListModelsResponse\x12'\n" +
-	"\x06models\x18\x01 \x03(\v2\x0f.azdext.AiModelR\x06models\"\xe7\x01\n" +
+	"\x06models\x18\x01 \x03(\v2\x0f.azdext.AiModelR\x06models\"\x9b\x02\n" +
 	"\x1eResolveModelDeploymentsRequest\x129\n" +
 	"\razure_context\x18\x01 \x01(\v2\x14.azdext.AzureContextR\fazureContext\x12\x1d\n" +
 	"\n" +
 	"model_name\x18\x02 \x01(\tR\tmodelName\x12:\n" +
 	"\aoptions\x18\x03 \x01(\v2 .azdext.AiModelDeploymentOptionsR\aoptions\x12/\n" +
-	"\x05quota\x18\x04 \x01(\v2\x19.azdext.QuotaCheckOptionsR\x05quota\"^\n" +
+	"\x05quota\x18\x04 \x01(\v2\x19.azdext.QuotaCheckOptionsR\x05quota\x122\n" +
+	"\x15include_finetune_skus\x18\x05 \x01(\bR\x13includeFinetuneSkus\"^\n" +
 	"\x1fResolveModelDeploymentsResponse\x12;\n" +
 	"\vdeployments\x18\x01 \x03(\v2\x19.azdext.AiModelDeploymentR\vdeployments\"j\n" +
 	"\x11ListUsagesRequest\x129\n" +

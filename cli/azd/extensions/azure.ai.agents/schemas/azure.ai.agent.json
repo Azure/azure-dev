@@ -23,6 +23,10 @@
       "type": "array",
       "description": "List of external resources for agent execution.",
       "items": { "$ref": "#/definitions/Resource" }
+    },
+    "startupCommand": {
+      "type": "string",
+      "description": "Command to start the agent server (e.g., 'python main.py'). Used by 'azd ai agent run' for local development."
     }
   },
   "additionalProperties": false,

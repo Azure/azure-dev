@@ -45,7 +45,11 @@ func Sha256Hash(val string) string {
 	return hash
 }
 
-// ErrorKey returns a new Key with "error." prefix appended.
+// ErrorKey returns a new Key with "error." prefix prepended.
+// Keys that already have the "error." prefix are returned as-is.
 func ErrorKey(k attribute.Key) attribute.Key {
+	if strings.HasPrefix(string(k), "error.") {
+		return k
+	}
 	return attribute.Key("error." + string(k))
 }

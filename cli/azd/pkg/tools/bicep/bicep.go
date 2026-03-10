@@ -26,7 +26,7 @@ import (
 
 // Version is the minimum version of bicep that we require (and the one we fetch when we fetch bicep on behalf of a
 // user).
-var Version semver.Version = semver.MustParse("0.39.26")
+var Version semver.Version = semver.MustParse("0.41.2")
 
 // Cli is a wrapper around the bicep CLI.
 // The CLI automatically ensures bicep is installed before executing commands.
@@ -76,6 +76,7 @@ func (cli *Cli) ensureInstalledOnce(ctx context.Context) error {
 
 func (cli *Cli) ensureInstalled(ctx context.Context) error {
 	if override := os.Getenv("AZD_BICEP_TOOL_PATH"); override != "" {
+		//nolint:gosec // G706: env var in debug log
 		log.Printf("using external bicep tool: %s", override)
 		cli.path = override
 		return nil
@@ -213,7 +214,7 @@ func downloadBicep(ctx context.Context, transporter policy.Transporter, bicepVer
 	}
 	defer func() {
 		_ = f.Close()
-		_ = os.Remove(f.Name())
+		_ = os.Remove(f.Name()) //nolint:gosec // G703: temp file cleanup
 	}()
 
 	if _, err := io.Copy(f, resp.Body); err != nil {

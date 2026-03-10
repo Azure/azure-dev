@@ -596,12 +596,7 @@ func (s *promptService) PromptAiModel(
 	}
 
 	if s.globalOptions.NoPrompt {
-		return nil, aiStatusError(
-			codes.FailedPrecondition,
-			azdext.AiErrorReasonInteractiveRequired,
-			"cannot prompt for model selection in non-interactive mode",
-			nil,
-		)
+		return selectModelNoPrompt(models, req.DefaultValue)
 	}
 
 	release, err := s.acquirePromptLock(ctx)
@@ -629,6 +624,10 @@ func (s *promptService) PromptAiModel(
 			Value: m.Name,
 			Label: label,
 		}
+	}
+
+	if req.DefaultValue != "" {
+		selectOpts.SelectedIndex = findDefaultIndex(selectOpts.Choices, req.DefaultValue)
 	}
 
 	selected, err := ux.NewSelect(selectOpts).Ask(ctx)
@@ -1000,6 +999,10 @@ func (s *promptService) PromptAiLocationWithQuota(
 		}
 	}
 
+	if req.DefaultValue != "" {
+		selectOpts.SelectedIndex = findDefaultIndex(selectOpts.Choices, req.DefaultValue)
+	}
+
 	selected, err := ux.NewSelect(selectOpts).Ask(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("prompting for location selection: %w", err)
@@ -1098,6 +1101,10 @@ func (s *promptService) PromptAiModelLocationWithQuota(
 		}
 	}
 
+	if req.DefaultValue != "" {
+		selectOpts.SelectedIndex = findDefaultIndex(selectOpts.Choices, req.DefaultValue)
+	}
+
 	selected, err := ux.NewSelect(selectOpts).Ask(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("prompting for location selection: %w", err)
@@ -1120,6 +1127,53 @@ func requirePromptSubscriptionID(azureContext *azdext.AzureContext) (string, err
 	}
 
 	return azureContext.Scope.SubscriptionId, nil
+}
+
+// selectModelNoPrompt handles model selection in non-interactive mode.
+// If defaultValue matches a model name (case-insensitive), it returns that model.
+// Returns NotFound if defaultValue doesn't match, or InteractiveRequired if no default is set.
+func selectModelNoPrompt(
+	models []ai.AiModel, defaultValue string,
+) (*azdext.PromptAiModelResponse, error) {
+	if defaultValue != "" {
+		for i, m := range models {
+			if strings.EqualFold(m.Name, defaultValue) {
+				var protoModel *azdext.AiModel
+				if err := mapper.Convert(&models[i], &protoModel); err != nil {
+					return nil, fmt.Errorf("converting selected model to proto: %w", err)
+				}
+				return &azdext.PromptAiModelResponse{Model: protoModel}, nil
+			}
+		}
+
+		return nil, aiStatusError(
+			codes.NotFound,
+			azdext.AiErrorReasonModelNotFound,
+			fmt.Sprintf("default model %q not found in available models", defaultValue),
+			map[string]string{"model_name": defaultValue},
+		)
+	}
+
+	return nil, aiStatusError(
+		codes.FailedPrecondition,
+		azdext.AiErrorReasonInteractiveRequired,
+		"cannot prompt for model selection in non-interactive mode",
+		nil,
+	)
+}
+
+// findDefaultIndex returns a pointer to the index of the first choice whose value
+// matches defaultValue (case-insensitive), or nil if no match is found.
+func findDefaultIndex(choices []*ux.SelectChoice, defaultValue string) *int {
+	if defaultValue == "" {
+		return nil
+	}
+	for i, c := range choices {
+		if strings.EqualFold(c.Value, defaultValue) {
+			return to.Ptr(i)
+		}
+	}
+	return nil
 }
 
 // modelQuotaSummary builds a gray-formatted quota summary for a model's SKUs.
@@ -1172,7 +1226,7 @@ func buildSkuCandidatesForVersion(
 			continue
 		}
 
-		if !includeFinetuneSkus && isFinetuneUsageName(sku.UsageName) {
+		if !includeFinetuneSkus && ai.IsFinetuneUsageName(sku.UsageName) {
 			continue
 		}
 
@@ -1221,10 +1275,6 @@ func maxSkuCandidateRemaining(skuCandidates []skuCandidate) (float64, bool) {
 	}
 
 	return maxRemaining, found
-}
-
-func isFinetuneUsageName(usageName string) bool {
-	return strings.HasSuffix(strings.ToLower(usageName), "-finetune")
 }
 
 func validateDeploymentCapacity(value string, sku ai.AiModelSku) (int32, error) {

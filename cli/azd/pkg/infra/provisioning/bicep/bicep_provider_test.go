@@ -452,6 +452,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 		cloud.AzurePublic(),
 		nil,
 		nil,
+		nil,
 	)
 
 	err := provider.Initialize(*mockContext.Context, projectDir, options)
@@ -1010,12 +1011,12 @@ type mockedScope struct {
 
 type mockResourceManager struct{}
 
-func (m *mockResourceManager) GetDeploymentResourceOperations(
+func (m *mockResourceManager) WalkDeploymentOperations(
 	ctx context.Context,
 	deployment infra.Deployment,
-	queryStart *time.Time,
-) ([]*armresources.DeploymentOperation, error) {
-	return nil, nil
+	fn infra.WalkDeploymentOperationFunc,
+) error {
+	return nil
 }
 
 func (m *mockResourceManager) GetResourceTypeDisplayName(
@@ -1125,6 +1126,7 @@ func TestUserDefinedTypes(t *testing.T) {
 			cloud.AzurePublic(),
 		),
 		cloud.AzurePublic(),
+		nil,
 		nil,
 		nil,
 	)
@@ -1778,6 +1780,7 @@ func createBicepProviderWithEnv(
 			cloud.AzurePublic(),
 		),
 		cloud.AzurePublic(),
+		nil,
 		nil,
 		nil,
 	)

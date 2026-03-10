@@ -189,10 +189,10 @@ func (p *Prompt) Render(printer Printer) error {
 		return nil
 	}
 
-	printer.Fprintf(output.WithHighLightFormat("? "))
+	printer.Fprintf("%s", output.WithHighLightFormat("? "))
 
 	// Message
-	printer.Fprintf(BoldString("%s: ", p.options.Message))
+	printer.Fprintf("%s", BoldString("%s: ", p.options.Message))
 
 	// Cancelled
 	if p.cancelled {
@@ -213,7 +213,7 @@ func (p *Prompt) Render(printer Printer) error {
 	// Placeholder
 	if p.value == "" && p.options.PlaceHolder != "" {
 		p.cursorPosition = Ptr(printer.CursorPosition())
-		printer.Fprintf(output.WithGrayFormat(p.options.PlaceHolder))
+		printer.Fprintf("%s", output.WithGrayFormat(p.options.PlaceHolder))
 	}
 
 	// Value
@@ -224,7 +224,7 @@ func (p *Prompt) Render(printer Printer) error {
 			valueOutput = output.WithHighLightFormat(p.value)
 		}
 
-		printer.Fprintf(valueOutput)
+		printer.Fprintf("%s", valueOutput)
 		p.cursorPosition = Ptr(printer.CursorPosition())
 	}
 

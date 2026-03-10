@@ -80,9 +80,11 @@ func NewRegistryCacheManager() (*RegistryCacheManager, error) {
 func getCacheTTL() time.Duration {
 	if envTTL := os.Getenv(cacheTTLEnvVar); envTTL != "" {
 		if duration, err := time.ParseDuration(envTTL); err == nil {
+			//nolint:gosec // G706: env var in debug log
 			log.Printf("using custom cache TTL from %s: %s", cacheTTLEnvVar, duration)
 			return duration
 		}
+		//nolint:gosec // G706: env var in debug log
 		log.Printf("invalid cache TTL value '%s', using default %s", envTTL, defaultCacheTTL)
 	}
 	return defaultCacheTTL
@@ -181,8 +183,8 @@ func (m *RegistryCacheManager) GetExtensionLatestVersion(
 			if len(ext.Versions) == 0 {
 				return "", fmt.Errorf("extension %s has no versions", extensionId)
 			}
-			// Latest version is the last element in the Versions slice
-			return ext.Versions[len(ext.Versions)-1].Version, nil
+			latest := LatestVersion(ext.Versions)
+			return latest.Version, nil
 		}
 	}
 

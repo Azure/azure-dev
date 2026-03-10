@@ -5,11 +5,14 @@ package azdext
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestExtensionError_RoundTrip(t *testing.T) {
@@ -32,24 +35,28 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 				assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_UNSPECIFIED, protoErr.GetOrigin())
 				assert.Nil(t, protoErr.GetSource())
 
-				// Unspecified origin falls back to ExtServiceError
-				var svcErr *ServiceError
-				require.ErrorAs(t, goErr, &svcErr)
-				assert.Equal(t, "simple error", svcErr.Message)
+				assert.Equal(t, "simple error", goErr.Error())
+
+				// Untyped errors round-trip as LocalError so the message is preserved
+				// through the display and telemetry pipelines.
+				var localErr *LocalError
+				require.ErrorAs(t, goErr, &localErr)
+				assert.Equal(t, "simple error", localErr.Message)
+				assert.Equal(t, LocalErrorCategoryLocal, localErr.Category)
 			},
 		},
 		{
 			name: "ExtServiceError",
 			inputErr: &ServiceError{
 				Message:     "Rate limit exceeded",
-				Details:     "Too many requests",
 				ErrorCode:   "RateLimitExceeded",
 				StatusCode:  429,
 				ServiceName: "openai.azure.com",
+				Suggestion:  "Retry with exponential backoff",
 			},
 			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
 				assert.Equal(t, "Rate limit exceeded", protoErr.GetMessage())
-				assert.Equal(t, "Too many requests", protoErr.GetDetails())
+				assert.Equal(t, "Retry with exponential backoff", protoErr.GetSuggestion())
 				assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_SERVICE, protoErr.GetOrigin())
 
 				svcDetail := protoErr.GetServiceError()
@@ -61,10 +68,34 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 				var svcErr *ServiceError
 				require.ErrorAs(t, goErr, &svcErr)
 				assert.Equal(t, "Rate limit exceeded", svcErr.Message)
-				assert.Equal(t, "Too many requests", svcErr.Details)
 				assert.Equal(t, "RateLimitExceeded", svcErr.ErrorCode)
 				assert.Equal(t, 429, svcErr.StatusCode)
 				assert.Equal(t, "openai.azure.com", svcErr.ServiceName)
+				assert.Equal(t, "Retry with exponential backoff", svcErr.Suggestion)
+			},
+		},
+		{
+			name: "ExtLocalError",
+			inputErr: &LocalError{
+				Message:    "invalid config",
+				Code:       "invalid_config",
+				Category:   LocalErrorCategoryValidation,
+				Suggestion: "Add the missing required field",
+			},
+			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
+				assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_LOCAL, protoErr.GetOrigin())
+				assert.Equal(t, "Add the missing required field", protoErr.GetSuggestion())
+
+				localDetail := protoErr.GetLocalError()
+				require.NotNil(t, localDetail)
+				assert.Equal(t, "invalid_config", localDetail.GetCode())
+				assert.Equal(t, "validation", localDetail.GetCategory())
+
+				var localErr *LocalError
+				require.ErrorAs(t, goErr, &localErr)
+				assert.Equal(t, "invalid_config", localErr.Code)
+				assert.Equal(t, LocalErrorCategoryValidation, localErr.Category)
+				assert.Equal(t, "Add the missing required field", localErr.Suggestion)
 			},
 		},
 		{
@@ -85,6 +116,37 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 				require.ErrorAs(t, goErr, &svcErr)
 				assert.Equal(t, "ResourceNotFound", svcErr.ErrorCode)
 				assert.Equal(t, 404, svcErr.StatusCode)
+			},
+		},
+		{
+			name:     "GrpcUnauthenticatedError",
+			inputErr: status.Error(codes.Unauthenticated, "not logged in, run `azd auth login` to login"),
+			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
+				assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_LOCAL, protoErr.GetOrigin())
+				assert.Contains(t, protoErr.GetMessage(), "not logged in")
+
+				localDetail := protoErr.GetLocalError()
+				require.NotNil(t, localDetail)
+				assert.Equal(t, "auth_failed", localDetail.GetCode())
+				assert.Equal(t, "auth", localDetail.GetCategory())
+
+				var localErr *LocalError
+				require.ErrorAs(t, goErr, &localErr)
+				assert.Equal(t, LocalErrorCategoryAuth, localErr.Category)
+				assert.Equal(t, "auth_failed", localErr.Code)
+			},
+		},
+		{
+			name:     "WrappedGrpcUnauthenticatedError",
+			inputErr: fmt.Errorf("failed to prompt: %w", status.Error(codes.Unauthenticated, "login expired")),
+			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
+				assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_LOCAL, protoErr.GetOrigin())
+				assert.Equal(t, "login expired", protoErr.GetMessage())
+
+				localDetail := protoErr.GetLocalError()
+				require.NotNil(t, localDetail)
+				assert.Equal(t, "auth_failed", localDetail.GetCode())
+				assert.Equal(t, "auth", localDetail.GetCategory())
 			},
 		},
 	}

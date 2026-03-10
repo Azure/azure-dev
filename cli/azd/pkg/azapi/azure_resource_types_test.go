@@ -46,6 +46,11 @@ func TestGetResourceTypeDisplayName(t *testing.T) {
 			expected:     "Azure DocumentDB",
 		},
 		{
+			name:         "SreAgent",
+			resourceType: AzureResourceTypeSreAgent,
+			expected:     "SRE Agent",
+		},
+		{
 			name:         "UnknownResourceType",
 			resourceType: AzureResourceType("Microsoft.Unknown/unknownResource"),
 			expected:     "",

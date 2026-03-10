@@ -185,7 +185,8 @@ func (at *staticWebAppTarget) Deploy(
 		targetResource.ResourceName(),
 		DefaultStaticWebAppEnvironmentName,
 		*deploymentToken,
-		dOptions)
+		dOptions,
+		at.env.Environ())
 
 	if err != nil {
 		return nil, fmt.Errorf("failed deploying static web app: %w", err)
@@ -289,7 +290,11 @@ func (at *staticWebAppTarget) verifyDeployment(ctx context.Context, targetResour
 			return fmt.Errorf("failed verifying static web app deployment. Still in %s state", envProps.Status)
 		}
 
-		time.Sleep(5 * time.Second)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(5 * time.Second):
+		}
 	}
 
 	return nil

@@ -9,13 +9,14 @@ import (
 	"slices"
 	"strings"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/registry_api"
 	"azureaiagent/internal/pkg/azure"
 	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
@@ -46,7 +47,7 @@ func (a *InitAction) loadAiCatalog(ctx context.Context) error {
 	})
 	stopErr := spinner.Stop(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to load the model catalog: %w", err)
+		return exterrors.FromAiService(err, exterrors.CodeModelCatalogFailed)
 	}
 	if stopErr != nil {
 		return stopErr
@@ -139,20 +140,6 @@ func (a *InitAction) selectFromList(
 	}
 
 	return options[*resp.Value], nil
-}
-
-func (a *InitAction) setEnvVar(ctx context.Context, key, value string) error {
-	_, err := a.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-		EnvName: a.environment.Name,
-		Key:     key,
-		Value:   value,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to set environment variable %s=%s: %w", key, value, err)
-	}
-
-	fmt.Printf("Set environment variable: %s=%s\n", key, value)
-	return nil
 }
 
 func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_yaml.Model) (*project.Deployment, error) {
@@ -332,7 +319,7 @@ func (a *InitAction) getModelDetails(ctx context.Context, modelName string) (*az
 		}
 
 		if !isRecoverableDeploymentSelectionError(err) {
-			return nil, fmt.Errorf("failed to prompt for model deployment: %w", err)
+			return nil, exterrors.FromPrompt(err, "failed to prompt for model deployment")
 		}
 
 		resolvedModel, resolvedLocation, resolveErr := a.promptForModelLocationMismatch(
@@ -374,11 +361,15 @@ func (a *InitAction) resolveModelDeploymentNoPrompt(
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve model deployment: %w", err)
+		return nil, exterrors.FromAiService(err, exterrors.CodeModelResolutionFailed)
 	}
 
 	if len(resolveResp.Deployments) == 0 {
-		return nil, fmt.Errorf("no deployment candidates found for model '%s' in location '%s'", model.Name, location)
+		return nil, exterrors.Dependency(
+			exterrors.CodeModelResolutionFailed,
+			fmt.Sprintf("no deployment candidates found for model '%s' in location '%s'", model.Name, location),
+			"",
+		)
 	}
 
 	orderedCandidates := slices.Clone(resolveResp.Deployments)
@@ -586,7 +577,7 @@ func (a *InitAction) promptForAlternativeModel(
 
 	modelResp, err := a.azdClient.Prompt().PromptAiModel(ctx, promptReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to prompt for model selection: %w", err)
+		return nil, exterrors.FromPrompt(err, "failed to prompt for model selection")
 	}
 
 	return modelResp.Model, nil
@@ -668,7 +659,7 @@ func (a *InitAction) promptForModelLocationMismatch(
 					continue
 				}
 
-				return nil, "", fmt.Errorf("failed to prompt for location selection: %w", err)
+				return nil, "", exterrors.FromPrompt(err, "failed to prompt for location selection")
 			}
 
 			selectedLocation := locationResp.Location.Name
@@ -698,7 +689,7 @@ func (a *InitAction) promptForModelLocationMismatch(
 					continue
 				}
 
-				return nil, "", fmt.Errorf("failed to prompt for model selection across all regions: %w", err)
+				return nil, "", exterrors.FromPrompt(err, "failed to prompt for model selection across all regions")
 			}
 
 			selectedModel := modelResp.Model
@@ -722,7 +713,7 @@ func (a *InitAction) promptForModelLocationMismatch(
 					continue
 				}
 
-				return nil, "", fmt.Errorf("failed to prompt for location selection: %w", err)
+				return nil, "", exterrors.FromPrompt(err, "failed to prompt for location selection")
 			}
 
 			selectedLocation := locationResp.Location.Name
@@ -753,7 +744,7 @@ func (a *InitAction) promptForModelLocationMismatch(
 				continue
 			}
 
-			return nil, "", fmt.Errorf("failed to prompt for model selection: %w", err)
+			return nil, "", exterrors.FromPrompt(err, "failed to prompt for model selection")
 		}
 
 		return modelResp.Model, currentLocation, nil

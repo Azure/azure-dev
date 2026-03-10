@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -117,6 +118,7 @@ type extensionAction struct {
 	lazyEnv          *lazy.Lazy[*environment.Environment]
 	extensionManager *extensions.Manager
 	azdServer        *grpcserver.Server
+	globalOptions    *internal.GlobalCommandOptions
 	cmd              *cobra.Command
 	args             []string
 }
@@ -129,6 +131,7 @@ func newExtensionAction(
 	extensionManager *extensions.Manager,
 	cmd *cobra.Command,
 	azdServer *grpcserver.Server,
+	globalOptions *internal.GlobalCommandOptions,
 	args []string,
 ) actions.Action {
 	return &extensionAction{
@@ -137,6 +140,7 @@ func newExtensionAction(
 		lazyEnv:          lazyEnv,
 		extensionManager: extensionManager,
 		azdServer:        azdServer,
+		globalOptions:    globalOptions,
 		cmd:              cmd,
 		args:             args,
 	}
@@ -237,11 +241,22 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		allEnv = append(allEnv, traceEnv...)
 	}
 
+	// Read global flags for propagation via InvokeOptions
+	debugEnabled, _ := a.cmd.Flags().GetBool("debug")
+	cwd, _ := a.cmd.Flags().GetString("cwd")
+	envName, _ := a.cmd.Flags().GetString("environment")
+
 	options := &extensions.InvokeOptions{
 		Args: a.args,
 		Env:  allEnv,
 		// cmd extensions are always interactive (connected to terminal)
 		Interactive: true,
+		Debug:       debugEnabled,
+		// Use globalOptions.NoPrompt which includes agent detection,
+		// not just the --no-prompt CLI flag
+		NoPrompt:    a.globalOptions.NoPrompt,
+		Cwd:         cwd,
+		Environment: envName,
 	}
 
 	_, invokeErr := a.extensionRunner.Invoke(ctx, extension, options)
@@ -249,6 +264,16 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	// Update warning is shown via defer above (runs after invoke completes)
 
 	if invokeErr != nil {
+		// Check if the extension reported a structured error via gRPC.
+		// This gives us a typed LocalError/ServiceError for telemetry classification
+		// instead of just a generic exit-code error.
+		if reportedErr := extension.GetReportedError(); reportedErr != nil {
+			// Wrap both errors so the chain contains both:
+			// - reportedErr (LocalError/ServiceError) for telemetry classification
+			// - invokeErr (ExtensionRunError) for UX middleware handling
+			return nil, fmt.Errorf("%w: %w", reportedErr, invokeErr)
+		}
+
 		return nil, invokeErr
 	}
 

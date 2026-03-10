@@ -34,6 +34,9 @@ type Extension struct {
 	readySignal chan error // consolidated channel, buffered with capacity 1
 	readyOnce   sync.Once  // ensures signal is sent only once
 	initialized bool
+
+	reportedError error      // structured error reported by the extension via gRPC
+	errorMu       sync.Mutex // guards reportedError
 }
 
 // init initializes the extension's buffers and signals.
@@ -113,4 +116,18 @@ func (e *Extension) StdOut() *output.DynamicMultiWriter {
 func (e *Extension) StdErr() *output.DynamicMultiWriter {
 	e.ensureInit()
 	return e.stderr
+}
+
+// SetReportedError stores a structured error reported by the extension via gRPC.
+func (e *Extension) SetReportedError(err error) {
+	e.errorMu.Lock()
+	defer e.errorMu.Unlock()
+	e.reportedError = err
+}
+
+// GetReportedError returns the structured error reported by the extension, if any.
+func (e *Extension) GetReportedError() error {
+	e.errorMu.Lock()
+	defer e.errorMu.Unlock()
+	return e.reportedError
 }

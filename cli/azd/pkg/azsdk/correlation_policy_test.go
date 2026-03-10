@@ -11,7 +11,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -42,7 +41,7 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 		correlationPolicyFunc func() policy.Policy
 	}{
 		{
-			name: "WithTraceId",
+			name: "CorrelationId_WithTraceId",
 			ctx: trace.ContextWithSpanContext(
 				context.Background(),
 				trace.SpanContext{}.WithTraceID(traceId),
@@ -52,7 +51,7 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 			correlationPolicyFunc: NewMsCorrelationPolicy,
 		},
 		{
-			name: "WithInvalidTraceId",
+			name: "CorrelationId_WithInvalidTraceId",
 			// nolint:lll
 			ctx: trace.ContextWithSpanContext(
 				context.Background(),
@@ -63,14 +62,41 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 			correlationPolicyFunc: NewMsCorrelationPolicy,
 		},
 		{
-			name:                  "WithoutTraceId",
+			name:                  "CorrelationId_WithoutTraceId",
 			ctx:                   context.Background(),
 			expect:                nil,
 			headerName:            MsCorrelationIdHeader,
 			correlationPolicyFunc: NewMsCorrelationPolicy,
 		},
 		{
-			name: "WithTraceId",
+			name: "ClientRequestId_WithTraceId",
+			ctx: trace.ContextWithSpanContext(
+				context.Background(),
+				trace.SpanContext{}.WithTraceID(traceId),
+			),
+			expect:                to.Ptr(traceId.String()),
+			headerName:            MsClientRequestIdHeader,
+			correlationPolicyFunc: NewMsClientRequestIdPolicy,
+		},
+		{
+			name: "ClientRequestId_WithInvalidTraceId",
+			ctx: trace.ContextWithSpanContext(
+				context.Background(),
+				trace.SpanContext{}.WithTraceID(invalidTraceId),
+			),
+			expect:                to.Ptr(""),
+			headerName:            MsClientRequestIdHeader,
+			correlationPolicyFunc: NewMsClientRequestIdPolicy,
+		},
+		{
+			name:                  "ClientRequestId_WithoutTraceId",
+			ctx:                   context.Background(),
+			expect:                nil,
+			headerName:            MsClientRequestIdHeader,
+			correlationPolicyFunc: NewMsClientRequestIdPolicy,
+		},
+		{
+			name: "GraphCorrelationId_WithTraceId",
 			ctx: trace.ContextWithSpanContext(
 				context.Background(),
 				trace.SpanContext{}.WithTraceID(traceId),
@@ -80,7 +106,7 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 			correlationPolicyFunc: NewMsGraphCorrelationPolicy,
 		},
 		{
-			name: "WithInvalidTraceId",
+			name: "GraphCorrelationId_WithInvalidTraceId",
 			// nolint:lll
 			ctx: trace.ContextWithSpanContext(
 				context.Background(),
@@ -91,7 +117,7 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 			correlationPolicyFunc: NewMsGraphCorrelationPolicy,
 		},
 		{
-			name:                  "WithoutTraceId",
+			name:                  "GraphCorrelationId_WithoutTraceId",
 			ctx:                   context.Background(),
 			expect:                nil,
 			headerName:            msGraphCorrelationIdHeader,
@@ -116,7 +142,7 @@ func Test_simpleCorrelationPolicy_Do(t *testing.T) {
 			require.NoError(t, err)
 
 			var response *http.Response
-			ctx := runtime.WithCaptureResponse(tt.ctx, &response)
+			ctx := policy.WithCaptureResponse(tt.ctx, &response)
 
 			_, _ = client.GetByID(ctx, "RESOURCE_ID", "", nil)
 

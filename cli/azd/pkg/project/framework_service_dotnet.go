@@ -94,7 +94,7 @@ func (dp *dotnetProject) Restore(
 		return nil, err
 	}
 
-	if err := dp.dotnetCli.Restore(ctx, projFile); err != nil {
+	if err := dp.dotnetCli.Restore(ctx, projFile, dp.env.Environ()); err != nil {
 		return nil, err
 	}
 
@@ -123,7 +123,7 @@ func (dp *dotnetProject) Build(
 	if err != nil {
 		return nil, err
 	}
-	if err := dp.dotnetCli.Build(ctx, projFile, defaultDotNetBuildConfiguration, ""); err != nil {
+	if err := dp.dotnetCli.Build(ctx, projFile, defaultDotNetBuildConfiguration, "", dp.env.Environ()); err != nil {
 		return nil, err
 	}
 
@@ -189,7 +189,10 @@ func (dp *dotnetProject) Package(
 	if err != nil {
 		return nil, err
 	}
-	if err := dp.dotnetCli.Publish(ctx, projFile, defaultDotNetBuildConfiguration, packageDest); err != nil {
+	err = dp.dotnetCli.Publish(
+		ctx, projFile, defaultDotNetBuildConfiguration, packageDest, dp.env.Environ(),
+	)
+	if err != nil {
 		return nil, err
 	}
 

@@ -12,6 +12,7 @@ import (
 	"net"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -198,14 +199,28 @@ func (s *Server) tokenAuthInterceptor(serverInfo *ServerInfo) grpc.UnaryServerIn
 // returns a new error that includes the suggestion text in the error message.
 // This ensures that helpful suggestions (like "run azd auth login") are preserved
 // when errors are transmitted over gRPC, where only the error message string is sent.
+//
+// Auth-related errors (ReLoginRequiredError, ErrNoCurrentUser) are returned with
+// codes.Unauthenticated so that extensions can detect auth failures via gRPC status code.
 func wrapErrorWithSuggestion(err error) error {
 	if err == nil {
 		return nil
 	}
 
+	var loginErr *auth.ReLoginRequiredError
+	isAuthErr := errors.Is(err, auth.ErrNoCurrentUser) || errors.As(err, &loginErr)
+
 	var suggestionErr *internal.ErrorWithSuggestion
 	if errors.As(err, &suggestionErr) {
+		msg := fmt.Sprintf("%s\n%s", err.Error(), suggestionErr.Suggestion)
+		if isAuthErr {
+			return status.Error(codes.Unauthenticated, msg)
+		}
 		return fmt.Errorf("%w\n%s", err, suggestionErr.Suggestion)
+	}
+
+	if isAuthErr {
+		return status.Error(codes.Unauthenticated, err.Error())
 	}
 
 	return err

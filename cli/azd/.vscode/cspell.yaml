@@ -1,10 +1,12 @@
 import: ../../../.vscode/cspell.global.yaml
 words:
   - agentdetect
+  - Authenticode
   - azcloud
   - azdext
   - azurefd
   - azcontainerregistry
+  - CGNAT
   - backoff
   - Canonicalize
   - Chans
@@ -12,6 +14,7 @@ words:
   - cmds
   - Codespace
   - Codespaces
+  - codesign
   - cooldown
   - customtype
   - devcontainers
@@ -26,6 +29,7 @@ words:
   - OPENCODE
   - opencode
   - grpcbroker
+  - msiexec
   - nosec
   - oneof
   - idxs
@@ -43,6 +47,7 @@ words:
   - protoreflect
   - SNAPPROCESS
   - structpb
+  - syscall
   - Retryable
   - runcontext
   - surveyterm
@@ -51,6 +56,7 @@ words:
   - unmarshaling
   - unsetting
   - usgovcloudapi
+  - worktrees
   - jdbc
   - springframework
   - santhosh
@@ -59,12 +65,18 @@ words:
   - rustc
   - figspec
   - finetune
+  - gitdir
   - bubbletea
   - lipgloss
   - gopxl
   - subcmd
   - genproto
   - errdetails
+  - yarnpkg
+  - azconfig
+  - hostnames
+  - seekable
+  - seekability
 languageSettings:
   - languageId: go
     ignoreRegExpList:
@@ -203,36 +215,6 @@ overrides:
       - dall
       - datasource
       - vectorizing
-  - filename: extensions/azure.ai.agents/internal/cmd/init.go
-    words:
-      - aoai
-      - azdaiagent
-  - filename: extensions/azure.ai.agents/internal/cmd/listen.go
-    words:
-      - hostedagent
-  - filename: extensions/azure.ai.agents/internal/pkg/agents/agent_yaml/yaml.go
-    words:
-      - anonymousconnection
-      - mcpservertoolalwaysrequireapprovalmode
-      - mcpservertoolneverrequireapprovalmode
-      - mcpservertoolspecifyapprovalmode
-      - protocolversionrecord
-      - openapitool
-  - filename: extensions/azure.ai.agents/internal/pkg/agents/agent_api/models.go
-    words:
-      - Dataagent
-      - dataagent
-      - webp
-  - filename: extensions/azure.ai.agents/internal/pkg/agents/registry_api/operations.go
-    words:
-      - Dataagent
-  - filename: extensions/azure.ai.agents/internal/project/parser.go
-    words:
-      - helloworld
-  - filename: extensions/azure.ai.agents/internal/project/service_target_agent.go
-    words:
-      - curr
-      - kval
   - filename: pkg/project/dockerfile_builder.go
     words:
       - WORKDIR
@@ -319,6 +301,9 @@ overrides:
   - filename: extensions/microsoft.azd.concurx/internal/cmd/prompt_model.go
     words:
       - textinput
+  - filename: pkg/azdext/scope_detector.go
+    words:
+      - fakeazure
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

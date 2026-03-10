@@ -52,6 +52,12 @@ jobs:
           filePath: eng/scripts/Set-CliVersionVariable.ps1
         displayName: Set CLI_VERSION
 
+      - ${{ if eq(parameters.OS, 'windows') }}:
+        - template: /eng/pipelines/templates/steps/set-msi-version.yml
+      - ${{ else }}:
+        - pwsh: Write-Host "###vso[task.setvariable variable=MSI_VERSION]"
+          displayName: Set MSI_VERSION for non-windows build
+
       - task: PowerShell@2
         inputs:
           pwsh: true
@@ -66,19 +72,15 @@ jobs:
           targetType: filePath
           filePath: cli/azd/ci-build.ps1
           arguments: >-
-            -Version $(CLI_VERSION)
-            -SourceVersion $(Build.SourceVersion)
+            -Version "$(CLI_VERSION)"
+            -ExeVersion "$(MSI_VERSION)"
+            -SourceVersion "$(Build.SourceVersion)"
             -CodeCoverageEnabled
             -BuildRecordMode
             -GitHubCopilotClientId "${{ parameters.ghCopilotClientId }}"
             -GitHubCopilotIntegrationId "${{ parameters.ghCopilotIntegrationId }}"
           workingDirectory: cli/azd
         displayName: Build Go Binary (For tests)
-
-      - pwsh: |
-          eng/scripts/Get-MsiVersion.ps1 -DevOpsOutput
-        displayName: Set MSI_VERSION
-        condition: and(succeeded(), eq(variables['BuildTestMsi'], 'true'))
 
       - template: /eng/pipelines/templates/steps/build-msi.yml
         parameters:
@@ -180,8 +182,9 @@ jobs:
           targetType: filePath
           filePath: cli/azd/ci-build.ps1
           arguments: >-
-            -Version $(CLI_VERSION)
-            -SourceVersion $(Build.SourceVersion)
+            -Version "$(CLI_VERSION)"
+            -ExeVersion "$(MSI_VERSION)"
+            -SourceVersion "$(Build.SourceVersion)"
             -GitHubCopilotClientId "${{ parameters.ghCopilotClientId }}"
             -GitHubCopilotIntegrationId "${{ parameters.ghCopilotIntegrationId }}"
           workingDirectory: cli/azd

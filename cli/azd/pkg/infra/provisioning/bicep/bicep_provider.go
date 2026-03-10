@@ -18,6 +18,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -83,6 +84,7 @@ type BicepProvider struct {
 	keyvaultService     keyvault.KeyVaultService
 	subscriptionManager *account.SubscriptionsManager
 	aiModelService      *ai.AiModelService
+	userConfigManager   config.UserConfigManager
 
 	// Internal state
 	// compileBicepResult is cached to avoid recompiling the same bicep file multiple times in the same azd run.
@@ -679,48 +681,71 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		return nil, err
 	}
 
-	err = p.validatePreflight(
-		ctx,
-		deployment,
-		planned.RawArmTemplate,
-		planned.Parameters,
-		deploymentTags,
-		optionsMap,
-	)
-	if err != nil {
-		return nil, err
+	// Check if preflight validation is disabled via config
+	skipPreflight := false
+	if p.userConfigManager != nil {
+		if userConfig, err := p.userConfigManager.Load(); err == nil {
+			if val, exists := userConfig.GetString("provision.preflight"); exists && val == "off" {
+				skipPreflight = true
+			}
+		}
 	}
 
-	cancelProgress := make(chan bool)
-	defer func() { cancelProgress <- true }()
+	if !skipPreflight {
+		p.console.ShowSpinner(ctx, "Validating deployment", input.Step)
+		preflightErr := p.validatePreflight(
+			ctx,
+			deployment,
+			planned.RawArmTemplate,
+			planned.Parameters,
+			deploymentTags,
+			optionsMap,
+		)
+		if preflightErr != nil {
+			p.console.StopSpinner(ctx, "Validating deployment", input.StepFailed)
+			return nil, preflightErr
+		}
+		p.console.StopSpinner(ctx, "", input.StepDone)
+	}
+
+	progressCtx, cancelProgress := context.WithCancel(ctx)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	defer func() {
+		cancelProgress()
+		// Wait for the progress reporting goroutine to exit to guarantee stopping the spinner
+		wg.Wait()
+		// Clean up the spinner fully
+		p.console.StopSpinner(ctx, "", input.StepDone)
+	}()
+
 	go func() {
+		defer wg.Done()
 		// Disable reporting progress if needed
 		if use, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_PROVISION_PROGRESS_DISABLE")); err == nil && use {
 			log.Println("Disabling progress reporting since AZD_DEBUG_PROVISION_PROGRESS_DISABLE was set")
-			<-cancelProgress
+			<-progressCtx.Done()
 			return
 		}
 
 		// Report incremental progress
 		progressDisplay := p.deploymentManager.ProgressDisplay(deployment)
-		// Make initial delay shorter to be more responsive in displaying initial progress
-		initialDelay := 3 * time.Second
-		regularDelay := 3 * time.Second
-		timer := time.NewTimer(initialDelay)
+		delay := 3 * time.Second
+		timer := time.NewTimer(delay)
 		queryStartTime := time.Now()
 
 		for {
 			select {
-			case <-cancelProgress:
+			case <-progressCtx.Done():
 				timer.Stop()
 				return
 			case <-timer.C:
-				if err := progressDisplay.ReportProgress(ctx, &queryStartTime); err != nil {
+				if err := progressDisplay.ReportProgress(progressCtx, &queryStartTime); err != nil {
 					// We don't want to fail the whole deployment if a progress reporting error occurs
 					log.Printf("error while reporting progress: %v", err)
 				}
 
-				timer.Reset(regularDelay)
+				timer.Reset(delay)
 			}
 		}
 	}()
@@ -2340,6 +2365,11 @@ func (p *BicepProvider) ensureParameters(
 		}{key: key, param: param})
 	}
 
+	// If in no-prompt mode and there are missing parameters, return an error with all missing inputs
+	if len(parameterPrompts) > 0 && p.console.IsNoPromptMode() {
+		return nil, p.buildMissingInputsError(parameterPrompts, parametersResult.envMapping)
+	}
+
 	if len(parameterPrompts) > 0 {
 		if p.console.SupportsPromptDialog() {
 
@@ -2516,6 +2546,7 @@ func NewBicepProvider(
 	cloud *cloud.Cloud,
 	subscriptionManager *account.SubscriptionsManager,
 	aiModelService *ai.AiModelService,
+	userConfigManager config.UserConfigManager,
 ) provisioning.Provider {
 	return &BicepProvider{
 		envManager:          envManager,
@@ -2532,6 +2563,7 @@ func NewBicepProvider(
 		portalUrlBase:       cloud.PortalUrlBase,
 		subscriptionManager: subscriptionManager,
 		aiModelService:      aiModelService,
+		userConfigManager:   userConfigManager,
 	}
 }
 

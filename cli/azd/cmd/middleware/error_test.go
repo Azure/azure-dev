@@ -6,16 +6,29 @@ package middleware
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
+	"strings"
 	"testing"
 
+	surveyterm "github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/llm"
+	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/pack"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/blang/semver/v4"
 	"github.com/stretchr/testify/require"
 )
 
@@ -512,4 +525,182 @@ func Test_ExtractSuggestedSolutions(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_PromptExplanationWithConsent_SavedSkipDisplaysWarning(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	cfg := config.NewEmptyConfig()
+	_ = cfg.Set("mcp.errorHandling.troubleshooting.skip", "allow")
+	mockContext.ConfigManager.WithConfig(cfg)
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+
+	middleware := &ErrorMiddleware{
+		console:           mockContext.Console,
+		userConfigManager: userConfigManager,
+	}
+
+	scope, err := middleware.promptExplanationWithConsent(*mockContext.Context)
+	require.NoError(t, err)
+	require.Equal(t, "", scope, "skip should return empty scope")
+
+	consoleOutput := mockContext.Console.Output()
+	require.NotEmpty(t, consoleOutput, "should display a warning message")
+	found := false
+	for _, msg := range consoleOutput {
+		if strings.Contains(msg, "always skip") && strings.Contains(msg, "azd config unset") {
+			found = true
+			break
+		}
+	}
+	require.True(t, found, "warning should mention always skip and how to unset it")
+}
+
+func Test_PromptExplanationWithConsent_AlwaysSkipSavesAndPersistsConfig(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	cfg := config.NewEmptyConfig()
+	mockContext.ConfigManager.WithConfig(cfg)
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+
+	// Verify config is empty initially
+	loadedCfg, err := userConfigManager.Load()
+	require.NoError(t, err)
+	_, ok := loadedCfg.GetString("mcp.errorHandling.troubleshooting.skip")
+	require.False(t, ok, "config should not have skip preference initially")
+
+	// Simulate what "always.skip" selection does: set and save the config key
+	err = loadedCfg.Set("mcp.errorHandling.troubleshooting.skip", "allow")
+	require.NoError(t, err)
+	err = userConfigManager.Save(loadedCfg)
+	require.NoError(t, err)
+
+	// Verify the value was persisted
+	reloadedCfg, err := userConfigManager.Load()
+	require.NoError(t, err)
+	val, ok := reloadedCfg.GetString("mcp.errorHandling.troubleshooting.skip")
+	require.True(t, ok, "config should have skip preference after save")
+	require.Equal(t, "allow", val)
+
+	// Now verify that promptTroubleshootingWithConsent auto-returns empty scope
+	middleware := &ErrorMiddleware{
+		console:           mockContext.Console,
+		userConfigManager: userConfigManager,
+	}
+
+	scope, err := middleware.promptExplanationWithConsent(*mockContext.Context)
+	require.NoError(t, err)
+	require.Equal(t, "", scope, "always.skip should auto-return empty scope")
+}
+
+func Test_ClassifyError(t *testing.T) {
+	// --- Machine context: typed errors ---
+	t.Run("MissingToolErrors classifies as MachineContext", func(t *testing.T) {
+		err := &tools.MissingToolErrors{
+			Errs:      []error{errors.New("docker not found")},
+			ToolNames: []string{"docker"},
+		}
+		require.Equal(t, MachineContextError, classifyError(err))
+	})
+
+	t.Run("Wrapped MissingToolErrors classifies as MachineContext", func(t *testing.T) {
+		inner := &tools.MissingToolErrors{
+			Errs:      []error{errors.New("node not found")},
+			ToolNames: []string{"node"},
+		}
+		wrapped := fmt.Errorf("setup failed: %w", inner)
+		require.Equal(t, MachineContextError, classifyError(wrapped))
+	})
+
+	t.Run("ErrSemver classifies as MachineContext", func(t *testing.T) {
+		err := &tools.ErrSemver{
+			ToolName: "node",
+			VersionInfo: tools.VersionInfo{
+				MinimumVersion: semver.MustParse("18.0.0"),
+				UpdateCommand:  "nvm install",
+			},
+		}
+		require.Equal(t, MachineContextError, classifyError(err))
+	})
+
+	t.Run("ExtensionRunError classifies as MachineContext", func(t *testing.T) {
+		err := &extensions.ExtensionRunError{
+			ExtensionId: "my-extension",
+			Err:         errors.New("extension crashed"),
+		}
+		require.Equal(t, MachineContextError, classifyError(err))
+	})
+
+	t.Run("StatusCodeError classifies as MachineContext", func(t *testing.T) {
+		err := &pack.StatusCodeError{
+			Code: 1,
+			Err:  errors.New("pack build failed"),
+		}
+		require.Equal(t, MachineContextError, classifyError(err))
+	})
+
+	// --- User context: typed errors ---
+	t.Run("ReLoginRequiredError classifies as UserContext", func(t *testing.T) {
+		err := &auth.ReLoginRequiredError{}
+		require.Equal(t, UserContextError, classifyError(err))
+	})
+
+	t.Run("AuthFailedError classifies as UserContext", func(t *testing.T) {
+		err := &auth.AuthFailedError{}
+		require.Equal(t, UserContextError, classifyError(err))
+	})
+
+	userContextSentinels := []struct {
+		name string
+		err  error
+	}{
+		// auth
+		{"auth.ErrNoCurrentUser", auth.ErrNoCurrentUser},
+		// azapi
+		{"azapi.ErrAzCliNotLoggedIn", azapi.ErrAzCliNotLoggedIn},
+		{"azapi.ErrAzCliRefreshTokenExpired", azapi.ErrAzCliRefreshTokenExpired},
+		// github
+		{"github.ErrGitHubCliNotLoggedIn", github.ErrGitHubCliNotLoggedIn},
+		{"github.ErrUserNotAuthorized", github.ErrUserNotAuthorized},
+		{"github.ErrRepositoryNameInUse", github.ErrRepositoryNameInUse},
+		// environment
+		{"environment.ErrNotFound", environment.ErrNotFound},
+		{"environment.ErrNameNotSpecified", environment.ErrNameNotSpecified},
+		{"environment.ErrDefaultEnvironmentNotFound", environment.ErrDefaultEnvironmentNotFound},
+		{"environment.ErrAccessDenied", environment.ErrAccessDenied},
+		// pipeline
+		{"pipeline.ErrAuthNotSupported", pipeline.ErrAuthNotSupported},
+		{"pipeline.ErrRemoteHostIsNotAzDo", pipeline.ErrRemoteHostIsNotAzDo},
+		{"pipeline.ErrSSHNotSupported", pipeline.ErrSSHNotSupported},
+		{"pipeline.ErrRemoteHostIsNotGitHub", pipeline.ErrRemoteHostIsNotGitHub},
+		// project
+		{"project.ErrNoDefaultService", project.ErrNoDefaultService},
+	}
+
+	for _, tc := range userContextSentinels {
+		t.Run(tc.name+" classifies as UserContext", func(t *testing.T) {
+			require.Equal(t, UserContextError, classifyError(tc.err))
+		})
+
+		t.Run("Wrapped "+tc.name+" classifies as UserContext", func(t *testing.T) {
+			wrapped := fmt.Errorf("operation failed: %w", tc.err)
+			require.Equal(t, UserContextError, classifyError(wrapped))
+		})
+	}
+
+	// --- Azure context: defaults ---
+	t.Run("Generic error defaults to AzureContext", func(t *testing.T) {
+		err := errors.New("deploying to Azure: InternalServerError")
+		require.Equal(t, AzureContextAndOtherError, classifyError(err))
+	})
+}
+
+func Test_ShouldSkipErrorAnalysis(t *testing.T) {
+	t.Run("Wrapped context.Canceled is skipped", func(t *testing.T) {
+		wrapped := fmt.Errorf("operation aborted: %w", context.Canceled)
+		require.True(t, shouldSkipErrorAnalysis(wrapped))
+	})
+
+	t.Run("Wrapped InterruptErr is skipped", func(t *testing.T) {
+		wrapped := fmt.Errorf("prompt failed: %w", surveyterm.InterruptErr)
+		require.True(t, shouldSkipErrorAnalysis(wrapped))
+	})
 }

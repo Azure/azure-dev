@@ -6,6 +6,9 @@ package azdext
 import (
 	"context"
 	"errors"
+	"log"
+	"os"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -30,6 +33,15 @@ func (m *MockExtensionServiceClient) Ready(
 ) (*ReadyResponse, error) {
 	args := m.Called(ctx, in, opts)
 	return args.Get(0).(*ReadyResponse), args.Error(1)
+}
+
+func (m *MockExtensionServiceClient) ReportError(
+	ctx context.Context,
+	in *ReportErrorRequest,
+	opts ...grpc.CallOption,
+) (*ReportErrorResponse, error) {
+	args := m.Called(ctx, in, opts)
+	return args.Get(0).(*ReportErrorResponse), args.Error(1)
 }
 
 // MockServiceTargetRegistrar implements serviceTargetRegistrar using testify/mock
@@ -123,6 +135,19 @@ func (m *MockExtensionEventManager) Ready(ctx context.Context) error {
 func (m *MockExtensionEventManager) Close() error {
 	args := m.Called()
 	return args.Error(0)
+}
+
+func TestExtensionHost_Client(t *testing.T) {
+	t.Parallel()
+
+	// Client() should return nil when host is created with nil client
+	host := NewExtensionHost(nil)
+	assert.Nil(t, host.Client())
+
+	// Client() should return the client passed to NewExtensionHost
+	client := &AzdClient{}
+	host2 := NewExtensionHost(client)
+	assert.Same(t, client, host2.Client())
 }
 
 func TestCallReady(t *testing.T) {
@@ -665,4 +690,57 @@ func TestExtensionHost_MultipleRegistrationErrors(t *testing.T) {
 
 	mockServiceTargetManager.AssertExpectations(t)
 	mockFrameworkServiceManager.AssertExpectations(t)
+}
+
+func TestExtensionHost_BrokerLogging(t *testing.T) {
+	tests := []struct {
+		name     string
+		envValue string // value to set; "" means unset
+		wantNil  bool   // true when broker logger should be nil (silent)
+	}{
+		{name: "AZD_EXT_DEBUG=true enables broker logging", envValue: "true", wantNil: false},
+		{name: "AZD_EXT_DEBUG=1 enables broker logging", envValue: "1", wantNil: false},
+		{name: "AZD_EXT_DEBUG=false disables broker logging", envValue: "false", wantNil: true},
+		{name: "AZD_EXT_DEBUG=0 disables broker logging", envValue: "0", wantNil: true},
+		{name: "AZD_EXT_DEBUG unset disables broker logging", envValue: "", wantNil: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set or unset AZD_EXT_DEBUG for this subtest.
+			if tt.envValue != "" {
+				t.Setenv("AZD_EXT_DEBUG", tt.envValue)
+			} else {
+				// Ensure the variable is not inherited from the outer process.
+				t.Setenv("AZD_EXT_DEBUG", "")
+				os.Unsetenv("AZD_EXT_DEBUG")
+			}
+
+			// Exercise the same strconv.ParseBool logic that Run() uses.
+			var brokerLogger *log.Logger
+			if isDebug, err := strconv.ParseBool(os.Getenv("AZD_EXT_DEBUG")); err == nil && isDebug {
+				brokerLogger = log.New(os.Stderr, "", log.LstdFlags)
+			}
+
+			// Feed the result into initManagers so we can inspect the managers.
+			client := newTestAzdClient()
+			host := NewExtensionHost(client)
+			host.initManagers("test-ext", brokerLogger)
+
+			// Verify all three managers received the expected logger value.
+			stm := host.serviceTargetManager.(*ServiceTargetManager)
+			fsm := host.frameworkServiceManager.(*FrameworkServiceManager)
+			em := host.eventManager.(*EventManager)
+
+			if tt.wantNil {
+				assert.Nil(t, stm.brokerLogger, "service target manager broker logger")
+				assert.Nil(t, fsm.brokerLogger, "framework service manager broker logger")
+				assert.Nil(t, em.brokerLogger, "event manager broker logger")
+			} else {
+				assert.NotNil(t, stm.brokerLogger, "service target manager broker logger")
+				assert.NotNil(t, fsm.brokerLogger, "framework service manager broker logger")
+				assert.NotNil(t, em.brokerLogger, "event manager broker logger")
+			}
+		})
+	}
 }

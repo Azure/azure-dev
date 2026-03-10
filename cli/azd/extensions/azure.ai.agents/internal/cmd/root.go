@@ -5,6 +5,8 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+	"strconv"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -46,11 +48,26 @@ func NewRootCommand() *cobra.Command {
 		"Accepts the default value instead of prompting, or it fails if there is no default.",
 	)
 
+	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		if !cmd.Flags().Changed("no-prompt") {
+			if v := os.Getenv("AZD_NO_PROMPT"); v != "" {
+				if b, err := strconv.ParseBool(v); err == nil {
+					rootFlags.NoPrompt = b
+				}
+			}
+		}
+		return nil
+	}
+
 	rootCmd.AddCommand(newListenCommand())
 	rootCmd.AddCommand(newVersionCommand())
 	rootCmd.AddCommand(newInitCommand(&rootFlags))
+	rootCmd.AddCommand(newRunCommand())
+	rootCmd.AddCommand(newInvokeCommand())
 	rootCmd.AddCommand(newMcpCommand())
 	rootCmd.AddCommand(newMetadataCommand())
+	rootCmd.AddCommand(newShowCommand())
+	rootCmd.AddCommand(newMonitorCommand())
 
 	return rootCmd
 }

@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"log"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -97,6 +99,9 @@ func (m *TelemetryMiddleware) Run(ctx context.Context, next NextFn) (*actions.Ac
 		span.SetAttributes(fields.PlatformTypeKey.String(string(platformConfig.Type)))
 	}
 
+	// Emit installed extension IDs and versions for all commands
+	m.setInstalledExtensionsAttributes(span)
+
 	defer func() {
 		// Include any usage attributes set
 		span.SetAttributes(tracing.GetUsageAttributes()...)
@@ -157,4 +162,27 @@ func (m *TelemetryMiddleware) extensionCmdInfo(extensionId string) (string, []st
 	namespacePath := strings.ReplaceAll(extension.Namespace, ".", " ")
 	fullPath := strings.Join(append([]string{"azd", namespacePath}, commandPath...), " ")
 	return events.GetCommandEventName(fullPath), commandFlags
+}
+
+// setInstalledExtensionsAttributes emits the list of installed extensions as span attributes.
+// Each entry is formatted as "id@version" (e.g. "microsoft.azd.ai@1.2.0").
+func (m *TelemetryMiddleware) setInstalledExtensionsAttributes(span tracing.Span) {
+	if m.extensionManager == nil {
+		return
+	}
+
+	installed, err := m.extensionManager.ListInstalled()
+	if err != nil {
+		log.Printf("failed to list installed extensions: %v", err)
+		return
+	}
+
+	entries := make([]string, 0, len(installed))
+	for _, id := range slices.Sorted(maps.Keys(installed)) {
+		if ext := installed[id]; ext != nil {
+			entries = append(entries, id+"@"+ext.Version)
+		}
+	}
+
+	span.SetAttributes(fields.ExtensionsInstalled.StringSlice(entries))
 }

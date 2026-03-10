@@ -231,6 +231,8 @@ message PromptAiModelRequest {
   // Quota is evaluated using effective locations from filter.locations.
   // With multiple locations, a model is kept if any location has sufficient quota.
   QuotaCheckOptions quota = 4;
+  // Optional default model name to pre-select in the list.
+  string default_value = 5;
 }
 
 message PromptAiModelResponse {
@@ -269,6 +271,8 @@ message PromptAiLocationWithQuotaRequest {
   repeated string allowed_locations = 3;
   // Optional select prompt customization (for example, message override).
   SelectOptions select_options = 4;
+  // Optional default location name to pre-select in the list.
+  string default_value = 5;
 }
 
 message PromptAiLocationWithQuotaResponse {
@@ -287,6 +291,8 @@ message PromptAiModelLocationWithQuotaRequest {
   QuotaCheckOptions quota = 4;
   // Optional select prompt customization (for example, message override).
   SelectOptions select_options = 5;
+  // Optional default location name to pre-select in the list.
+  string default_value = 6;
 }
 
 message PromptAiModelLocationWithQuotaResponse {

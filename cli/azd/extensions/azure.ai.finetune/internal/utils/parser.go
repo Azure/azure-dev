@@ -13,6 +13,7 @@ import (
 
 func ParseCreateFineTuningRequestConfig(filePath string) (*models.CreateFineTuningRequest, error) {
 	// Read the YAML file
+	//nolint:gosec // filePath is an explicit user-provided config path
 	yamlFile, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file %s: %w", filePath, err)

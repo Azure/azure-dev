@@ -86,7 +86,7 @@ func (transmitter *httpTransmitter) Transmit(payload []byte, items TelemetryItem
 	req.Header.Set("Content-Type", "application/x-json-stream")
 	req.Header.Set("Accept-Encoding", "gzip, deflate")
 
-	resp, err := transmitter.client.Do(req)
+	resp, err := transmitter.client.Do(req) //nolint:gosec // G704: endpoint is a known telemetry ingestion URL
 	if err != nil {
 		diagLog.Printf("Failed to transmit telemetry: %s", err.Error())
 		return nil, err

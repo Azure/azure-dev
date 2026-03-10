@@ -155,7 +155,7 @@ func TestParseCreateFineTuningRequestConfig_TempFile(t *testing.T) {
 	content := `model: gpt-4o-mini
 training_file: file-abc123
 `
-	err := os.WriteFile(tempFile, []byte(content), 0644)
+	err := os.WriteFile(tempFile, []byte(content), 0600)
 	require.NoError(t, err)
 
 	config, err := ParseCreateFineTuningRequestConfig(tempFile)
@@ -169,7 +169,7 @@ func TestParseCreateFineTuningRequestConfig_EmptyFile(t *testing.T) {
 	tempDir := t.TempDir()
 	tempFile := filepath.Join(tempDir, "empty_config.yaml")
 
-	err := os.WriteFile(tempFile, []byte(""), 0644)
+	err := os.WriteFile(tempFile, []byte(""), 0600)
 	require.NoError(t, err)
 
 	config, err := ParseCreateFineTuningRequestConfig(tempFile)
@@ -183,7 +183,7 @@ func TestParseCreateFineTuningRequestConfig_WhitespaceOnlyFile(t *testing.T) {
 	tempDir := t.TempDir()
 	tempFile := filepath.Join(tempDir, "whitespace_config.yaml")
 
-	err := os.WriteFile(tempFile, []byte("   \n\n   \t\t\n"), 0644)
+	err := os.WriteFile(tempFile, []byte("   \n\n   \t\t\n"), 0600)
 	require.NoError(t, err)
 
 	config, err := ParseCreateFineTuningRequestConfig(tempFile)
@@ -201,7 +201,7 @@ model: gpt-4o-mini  # Model name
 training_file: file-abc123
 # Final comment
 `
-	err := os.WriteFile(tempFile, []byte(content), 0644)
+	err := os.WriteFile(tempFile, []byte(content), 0600)
 	require.NoError(t, err)
 
 	config, err := ParseCreateFineTuningRequestConfig(tempFile)
@@ -219,7 +219,7 @@ training_file: file-abc123
 unknown_field: some_value
 another_unknown: 123
 `
-	err := os.WriteFile(tempFile, []byte(content), 0644)
+	err := os.WriteFile(tempFile, []byte(content), 0600)
 	require.NoError(t, err)
 
 	// Should parse successfully, ignoring unknown fields

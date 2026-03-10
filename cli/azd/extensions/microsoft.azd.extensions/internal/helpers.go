@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"unicode"
 )
@@ -66,7 +67,9 @@ func ComputeChecksum(filePath string) (string, error) {
 	return hex.EncodeToString(hasher.Sum(nil)), nil
 }
 
-// CopyFile copies a file from source to destination
+// CopyFile copies a file from source to destination.
+// On Windows, if the target file is locked (e.g., by a running process),
+// it attempts to rename the locked file out of the way before copying.
 func CopyFile(source, target string) error {
 	srcFile, err := os.Open(source)
 	if err != nil {
@@ -75,6 +78,19 @@ func CopyFile(source, target string) error {
 	defer srcFile.Close()
 
 	targetFile, err := os.Create(target)
+	if err != nil && runtime.GOOS == "windows" {
+		// On Windows, the target may be locked by a running process.
+		// Try to rename it out of the way, then create the new file.
+		oldTarget := target + ".old"
+		_ = os.Remove(oldTarget)
+		if renameErr := os.Rename(target, oldTarget); renameErr == nil {
+			targetFile, err = os.Create(target)
+			if err != nil {
+				// Rollback: restore original file if create fails
+				_ = os.Rename(oldTarget, target)
+			}
+		}
+	}
 	if err != nil {
 		return fmt.Errorf("failed to create target file: %w", err)
 	}
@@ -124,19 +140,19 @@ func DownloadAssetToTemp(assetUrl, assetName string) (string, error) {
 		// #nosec G107: Potential HTTP request made with variable url
 		resp, err := http.Get(assetUrl)
 		if err != nil {
-			os.Remove(tempFile.Name())
+			os.Remove(tempFile.Name()) //nolint:gosec // G703: temp file cleanup
 			return "", fmt.Errorf("failed to download asset: %w", err)
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
-			os.Remove(tempFile.Name())
+			os.Remove(tempFile.Name()) //nolint:gosec // G703: temp file cleanup
 			return "", fmt.Errorf("download returned status %d", resp.StatusCode)
 		}
 		reader = resp.Body
 	} else {
 		localFile, err := os.Open(assetUrl)
 		if err != nil {
-			os.Remove(tempFile.Name())
+			os.Remove(tempFile.Name()) //nolint:gosec // G703: temp file cleanup
 			return "", fmt.Errorf("failed to open local file: %w", err)
 		}
 		defer localFile.Close()
@@ -144,7 +160,7 @@ func DownloadAssetToTemp(assetUrl, assetName string) (string, error) {
 	}
 
 	if _, err := io.Copy(tempFile, reader); err != nil {
-		os.Remove(tempFile.Name())
+		os.Remove(tempFile.Name()) //nolint:gosec // G703: temp file cleanup
 		return "", fmt.Errorf("failed to write to temp file: %w", err)
 	}
 	tempFile.Close()
@@ -361,6 +377,7 @@ func CreateLocalRegistry() error {
 		return fmt.Errorf("failed to marshal empty registry: %w", err)
 	}
 
+	//nolint:gosec // G703: path from azd config directory
 	if err := os.WriteFile(localRegistryPath, registryJson, PermissionFile); err != nil {
 		return fmt.Errorf("failed to create local registry file: %w", err)
 	}
@@ -373,7 +390,7 @@ func CreateLocalRegistry() error {
 	}
 
 	/* #nosec G204 - args are hardcoded above, not user-controlled */
-	createExtSourceCmd := exec.Command("azd", args...)
+	createExtSourceCmd := exec.Command("azd", args...) //nolint:gosec // G702: args are hardcoded above, not user-controlled
 	if _, err := createExtSourceCmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to create local extension source: %w", err)
 	}

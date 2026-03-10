@@ -44,6 +44,37 @@ type VersionCompatibilityResult struct {
 	HasNewerIncompatible bool
 }
 
+// LatestVersion returns the ExtensionVersion with the highest semantic version from the provided slice.
+// It compares all elements using semver so the result is correct regardless of slice ordering.
+// Returns nil if the slice is empty.
+func LatestVersion(versions []ExtensionVersion) *ExtensionVersion {
+	if len(versions) == 0 {
+		return nil
+	}
+
+	var latest *ExtensionVersion
+	var latestSemver *semver.Version
+
+	for i := range versions {
+		v, err := semver.NewVersion(versions[i].Version)
+		if err != nil {
+			log.Printf("Warning: failed to parse extension version '%s': %v", versions[i].Version, err)
+			continue
+		}
+		if latestSemver == nil || v.GreaterThan(latestSemver) {
+			latest = &versions[i]
+			latestSemver = v
+		}
+	}
+
+	if latest == nil {
+		// All version strings failed to parse; fall back to the last element.
+		return &versions[len(versions)-1]
+	}
+
+	return latest
+}
+
 // FilterCompatibleVersions filters extension versions based on compatibility with the current azd version.
 // It returns a result containing compatible versions and information about incompatible newer versions.
 func FilterCompatibleVersions(
@@ -56,16 +87,19 @@ func FilterCompatibleVersions(
 		return result
 	}
 
-	// The latest overall is always the last element (versions are ordered).
+	// Find the latest overall version using semver comparison (order-independent).
 	// Store a copy so the result doesn't alias the caller's slice.
-	latestOverall := versions[len(versions)-1]
+	latestOverall := *LatestVersion(versions) // safe: len(versions) > 0 checked above
 	result.LatestOverall = &latestOverall
 
 	for i := range versions {
 		if VersionIsCompatible(&versions[i], azdVersion) {
 			result.Compatible = append(result.Compatible, versions[i])
-			result.LatestCompatible = &result.Compatible[len(result.Compatible)-1]
 		}
+	}
+
+	if len(result.Compatible) > 0 {
+		result.LatestCompatible = LatestVersion(result.Compatible)
 	}
 
 	// Check if there's a newer incompatible version

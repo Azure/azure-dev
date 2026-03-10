@@ -141,8 +141,8 @@ stages:
           parameters:
             Title: Build Release MSI
             # Only build for release in a manual (releasing) build. Otherwise
-            # the package version will be 0.1.0 with upgrade logic that allows
-            # it to be installed over any previously installed version.
+            # the package version will be based on the pipeline's build ID and
+            # the MSI will allow downgrades which is desirable for CI builds.
             ShouldBuildForRelease: ${{ eq(variables['Build.Reason'], 'Manual') }}
 
         - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:

@@ -75,6 +75,7 @@ func (s *aiModelService) ResolveModelDeployments(
 	if options == nil {
 		options = &ai.DeploymentOptions{}
 	}
+	options.IncludeFinetuneSkus = req.IncludeFinetuneSkus
 
 	var deployments []ai.AiModelDeployment
 	if req.Quota != nil {

@@ -20,7 +20,7 @@ In general, to make contributions a smooth and easy experience, we encourage the
 
 Prerequisites:
 
-- [Go](https://go.dev/dl/) 1.25
+- [Go](https://go.dev/dl/) 1.26
 
 Build:
 
@@ -33,6 +33,28 @@ Run the newly produced `azd` or `azd.exe` binary:
 
 - Unix-like systems: `./azd`
 - Windows: `.\azd.exe`
+
+### Dev Install (build + add to PATH)
+
+Install [mage](https://magefile.org/) (`go install github.com/magefile/mage@latest`), then:
+
+```bash
+cd cli/azd
+mage dev:install
+```
+
+This builds `azd-dev` (to avoid conflicting with a production `azd` install) with version
+info from `cli/version.txt` and the current git commit, installs it to `~/.azd/bin/`, and
+automatically adds that directory to your PATH if it isn't already there.
+
+### Preflight (all quality checks)
+
+Run all pre-commit checks (formatting, copyright headers, linting, spell check, build, unit tests) in one command:
+
+```bash
+cd cli/azd
+mage preflight
+```
 
 Run tests:
 

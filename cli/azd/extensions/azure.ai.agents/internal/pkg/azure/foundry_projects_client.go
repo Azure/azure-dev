@@ -143,7 +143,8 @@ func (c *FoundryProjectsClient) GetPagedConnections(ctx context.Context) (*Paged
 
 // GetConnectionWithCredentials retrieves a specific connection with its credentials
 func (c *FoundryProjectsClient) GetConnectionWithCredentials(ctx context.Context, name string) (*Connection, error) {
-	targetEndpoint := fmt.Sprintf("%s/connections/%s/getConnectionWithCredentials?api-version=%s", c.baseEndpoint, name, c.apiVersion)
+	targetEndpoint := fmt.Sprintf(
+		"%s/connections/%s/getConnectionWithCredentials?api-version=%s", c.baseEndpoint, name, c.apiVersion)
 
 	req, err := runtime.NewRequest(ctx, http.MethodPost, targetEndpoint)
 	if err != nil {

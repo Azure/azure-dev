@@ -150,7 +150,7 @@ func loginToAzureRegistry(t *testing.T, ctx context.Context, cli *docker.Cli, re
 
 	// Get access token using managed identity
 	/* #nosec G204 - Subprocess launched with a potential tainted input or cmd arguments */
-	cmd := osexec.CommandContext(ctx, "az", "acr", "login",
+	cmd := osexec.CommandContext(ctx, "az", "acr", "login", //nolint:gosec // G702: args are hardcoded literals
 		"--name", registryName,
 		"--expose-token",
 		"--query", "accessToken",

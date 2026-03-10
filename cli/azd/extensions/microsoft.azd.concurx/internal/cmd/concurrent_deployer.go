@@ -49,6 +49,7 @@ func NewConcurrentDeployer(
 	// Create logs directory with unique timestamp
 	timestamp := time.Now().Format("20060102-150405")
 	logsDir := filepath.Join(".azure", "logs", "deploy", timestamp)
+	//nolint:gosec // logs directory should be readable and traversable
 	if err := os.MkdirAll(logsDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create logs directory: %w", err)
 	}
@@ -372,6 +373,7 @@ func (sd *serviceDeployer) setup() error {
 	sd.logPath, _ = filepath.Abs(logFilePath)
 
 	var err error
+	//nolint:gosec // log file path is constructed from known logsDir and service name
 	sd.logFile, err = os.Create(logFilePath)
 	if err != nil {
 		return fmt.Errorf("failed to create log file for service %s: %w", sd.serviceName, err)
@@ -383,7 +385,7 @@ func (sd *serviceDeployer) setup() error {
 // cleanup closes log files
 func (sd *serviceDeployer) cleanup() {
 	if sd.logFile != nil {
-		sd.logFile.Close()
+		_ = sd.logFile.Close() //nolint:gosec // best-effort close
 	}
 }
 

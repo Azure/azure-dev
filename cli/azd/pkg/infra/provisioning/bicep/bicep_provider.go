@@ -28,6 +28,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
@@ -39,6 +40,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
+	"github.com/azure/azure-dev/cli/azd/pkg/local_preflight"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/password"
@@ -85,6 +87,7 @@ type BicepProvider struct {
 	subscriptionManager *account.SubscriptionsManager
 	aiModelService      *ai.AiModelService
 	userConfigManager   config.UserConfigManager
+	authManager         *auth.Manager
 
 	// Internal state
 	// compileBicepResult is cached to avoid recompiling the same bicep file multiple times in the same azd run.
@@ -692,6 +695,13 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 	}
 
 	if !skipPreflight {
+		// Run local preflight checks before calling Azure APIs.
+		// These checks are fast and surface common blockers (auth, subscription/location missing)
+		// before investing time in a round-trip to Azure Resource Manager.
+		if localPreflightErr := p.runLocalPreflight(ctx); localPreflightErr != nil {
+			return nil, localPreflightErr
+		}
+
 		p.console.ShowSpinner(ctx, "Validating deployment", input.Step)
 		preflightErr := p.validatePreflight(
 			ctx,
@@ -2138,6 +2148,20 @@ func (p *BicepProvider) validatePreflight(
 	return target.ValidatePreflight(ctx, armTemplate, armParameters, tags, options)
 }
 
+// runLocalPreflight executes the local (client-side) preflight checks before any Azure API calls.
+// It builds an engine with the standard set of checks and prints results to the console.
+// Returns an error if any check fails, allowing the caller to abort the deployment early.
+func (p *BicepProvider) runLocalPreflight(ctx context.Context) error {
+	engine := local_preflight.NewEngine(
+		local_preflight.NewAuthCheck(p.authManager),
+		local_preflight.NewSubscriptionCheck(p.env),
+	)
+
+	results, err := engine.Run(ctx)
+	local_preflight.PrintResults(ctx, p.console, results)
+	return err
+}
+
 // Deploys the specified Bicep module and parameters with the selected provisioning scope (subscription vs resource group)
 func (p *BicepProvider) deployModule(
 	ctx context.Context,
@@ -2547,6 +2571,7 @@ func NewBicepProvider(
 	subscriptionManager *account.SubscriptionsManager,
 	aiModelService *ai.AiModelService,
 	userConfigManager config.UserConfigManager,
+	authManager *auth.Manager,
 ) provisioning.Provider {
 	return &BicepProvider{
 		envManager:          envManager,
@@ -2564,6 +2589,7 @@ func NewBicepProvider(
 		subscriptionManager: subscriptionManager,
 		aiModelService:      aiModelService,
 		userConfigManager:   userConfigManager,
+		authManager:         authManager,
 	}
 }
 

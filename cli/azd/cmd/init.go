@@ -451,9 +451,15 @@ func (i *initAction) initAppWithAgent(ctx context.Context) error {
 
 	// Single prompt — handles both existing projects and empty directories.
 	// Explicitly invokes azure-prepare and azure-validate skills using the azd recipe.
-	prompt := `
-For dev debugging: First print out a list of available tool names available in the current context.
-	
+	prompt := `DIAGNOSTIC (temporary): Before doing anything else, list ALL tools available to you right now.
+Group them by category:
+- Built-in tools (read_file, write_file, shell, etc.)
+- MCP server tools (list the MCP server name and each tool it provides)
+- Skills (list any loaded skills)
+Print this as a structured list, then proceed with the task below.
+
+---
+
 Prepare this application for deployment to Azure.
 
 First, check if the current directory contains application code. If the directory is empty

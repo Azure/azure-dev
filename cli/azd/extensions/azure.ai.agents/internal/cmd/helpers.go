@@ -140,7 +140,7 @@ func resolveConversationID(
 	// Create and persist a new conversation for multi-turn memory.
 	newConvID, err := createConversation(ctx, endpoint, bearerToken)
 	if err != nil {
-		return "", fmt.Errorf("Warning: could not create conversation; multi-turn memory disabled (%v)", err)
+		return "", fmt.Errorf("failed to create conversation: %w", err)
 	}
 
 	agentCtx.Conversations[agentName] = newConvID
@@ -149,23 +149,6 @@ func resolveConversationID(
 	}
 
 	return newConvID, nil
-}
-
-// saveConversationID persists a conversation ID for an agent.
-func saveConversationID(ctx context.Context, azdClient *azdext.AzdClient, agentName, convID string) error {
-	configPath, err := resolveConfigPath(ctx, azdClient)
-	if err != nil {
-		return err
-	}
-	agentCtx := loadLocalContext(configPath)
-	if agentCtx.Conversations == nil {
-		agentCtx.Conversations = make(map[string]string)
-	}
-	agentCtx.Conversations[agentName] = convID
-	if err := saveLocalContext(agentCtx, configPath); err != nil {
-		return fmt.Errorf("failed to save conversation ID: %w", err)
-	}
-	return nil
 }
 
 // detectProjectType detects the project type and suggests a start command.

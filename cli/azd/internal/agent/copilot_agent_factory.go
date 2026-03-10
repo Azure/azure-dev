@@ -199,6 +199,124 @@ func (f *CopilotAgentFactory) Create(ctx context.Context, opts ...CopilotAgentOp
 	return agent, nil
 }
 
+// ListSessions returns previous sessions for the given working directory.
+func (f *CopilotAgentFactory) ListSessions(ctx context.Context, cwd string) ([]copilot.SessionMetadata, error) {
+	if err := f.clientManager.Start(ctx); err != nil {
+		return nil, err
+	}
+
+	sessions, err := f.clientManager.Client().ListSessions(ctx, &copilot.SessionListFilter{
+		Cwd: cwd,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list sessions: %w", err)
+	}
+
+	return sessions, nil
+}
+
+// Resume resumes a previous Copilot SDK session by ID with the same
+// configuration as Create (MCP servers, skills, permissions, hooks).
+func (f *CopilotAgentFactory) Resume(
+	ctx context.Context, sessionID string, opts ...CopilotAgentOption,
+) (Agent, error) {
+	cleanupTasks := map[string]func() error{}
+
+	cleanup := func() error {
+		for name, task := range cleanupTasks {
+			if err := task(); err != nil {
+				log.Printf("failed to cleanup %s: %v", name, err)
+			}
+		}
+		return nil
+	}
+
+	// Ensure client is started
+	if err := f.clientManager.Start(ctx); err != nil {
+		return nil, err
+	}
+	cleanupTasks["copilot-client"] = f.clientManager.Stop
+
+	// Create file logger
+	fileLogger, fileLoggerCleanup, err := logging.NewSessionFileLogger()
+	if err != nil {
+		defer cleanup()
+		return nil, fmt.Errorf("failed to create session file logger: %w", err)
+	}
+	cleanupTasks["fileLogger"] = fileLoggerCleanup
+
+	// Load built-in MCP server configs
+	builtInServers, err := loadBuiltInMCPServers()
+	if err != nil {
+		defer cleanup()
+		return nil, err
+	}
+
+	// Build session config for resume
+	sessionConfig, err := f.sessionConfigBuilder.Build(ctx, builtInServers)
+	if err != nil {
+		defer cleanup()
+		return nil, fmt.Errorf("failed to build session config: %w", err)
+	}
+
+	// Build resume config from session config
+	resumeConfig := &copilot.ResumeSessionConfig{
+		Model:               sessionConfig.Model,
+		ReasoningEffort:     sessionConfig.ReasoningEffort,
+		SystemMessage:       sessionConfig.SystemMessage,
+		AvailableTools:      sessionConfig.AvailableTools,
+		ExcludedTools:       sessionConfig.ExcludedTools,
+		WorkingDirectory:    sessionConfig.WorkingDirectory,
+		Streaming:           sessionConfig.Streaming,
+		MCPServers:          sessionConfig.MCPServers,
+		SkillDirectories:    sessionConfig.SkillDirectories,
+		DisabledSkills:      sessionConfig.DisabledSkills,
+		OnPermissionRequest: f.createPermissionHandler(),
+		OnUserInputRequest:  f.createUserInputHandler(ctx),
+		Hooks: &copilot.SessionHooks{
+			OnPreToolUse:  f.createPreToolUseHandler(ctx),
+			OnPostToolUse: f.createPostToolUseHandler(),
+			OnErrorOccurred: func(input copilot.ErrorOccurredHookInput, inv copilot.HookInvocation) (
+				*copilot.ErrorOccurredHookOutput, error,
+			) {
+				log.Printf("[copilot] ErrorOccurred: error=%s recoverable=%v", input.Error, input.Recoverable)
+				return nil, nil
+			},
+		},
+	}
+
+	// Resume session
+	log.Printf("[copilot] Resuming session %s...", sessionID)
+	session, err := f.clientManager.Client().ResumeSession(ctx, sessionID, resumeConfig)
+	if err != nil {
+		defer cleanup()
+		return nil, fmt.Errorf("failed to resume Copilot session: %w", err)
+	}
+	log.Println("[copilot] Session resumed successfully")
+
+	// Subscribe file logger
+	unsubscribe := session.On(func(event copilot.SessionEvent) {
+		fileLogger.HandleEvent(event)
+	})
+
+	cleanupTasks["session-events"] = func() error {
+		unsubscribe()
+		return nil
+	}
+
+	cleanupTasks["session"] = func() error {
+		return session.Destroy()
+	}
+
+	allOpts := []CopilotAgentOption{
+		WithCopilotCleanup(cleanup),
+	}
+	allOpts = append(allOpts, opts...)
+
+	agent := NewCopilotAgent(session, f.console, allOpts...)
+	return agent, nil
+}
+
 // ensurePlugins checks required plugins and installs or updates them.
 func (f *CopilotAgentFactory) ensurePlugins(ctx context.Context) error {
 	cliPath := f.clientManager.CLIPath()

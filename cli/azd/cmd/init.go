@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -141,6 +142,7 @@ type initAction struct {
 	extensionsManager *extensions.Manager
 	azd               workflow.AzdCommandRunner
 	agentFactory      *agent.AgentFactory
+	copilotFactory    *agent.CopilotAgentFactory
 	consentManager    consent.ConsentManager
 	configManager     config.UserConfigManager
 }
@@ -158,6 +160,7 @@ func newInitAction(
 	extensionsManager *extensions.Manager,
 	azd workflow.AzdCommandRunner,
 	agentFactory *agent.AgentFactory,
+	copilotFactory *agent.CopilotAgentFactory,
 	consentManager consent.ConsentManager,
 	configManager config.UserConfigManager,
 ) actions.Action {
@@ -174,6 +177,7 @@ func newInitAction(
 		extensionsManager: extensionsManager,
 		azd:               azd,
 		agentFactory:      agentFactory,
+		copilotFactory:    copilotFactory,
 		consentManager:    consentManager,
 		configManager:     configManager,
 	}
@@ -439,12 +443,72 @@ func (i *initAction) initAppWithAgent(ctx context.Context) error {
 		return err
 	}
 
-	azdAgent, err := i.agentFactory.Create(
-		ctx,
-		agent.WithDebug(i.flags.global.EnableDebugLogging),
-	)
-	if err != nil {
-		return err
+	// Check for previous sessions in this directory
+	cwd, _ := os.Getwd()
+	var azdAgent agent.Agent
+
+	sessions, listErr := i.copilotFactory.ListSessions(ctx, cwd)
+	if listErr == nil && len(sessions) > 0 {
+		// Offer to resume a previous session
+		choices := make([]*uxlib.SelectChoice, 0, len(sessions)+1)
+		choices = append(choices, &uxlib.SelectChoice{
+			Value: "__new__",
+			Label: "Start a new session",
+		})
+
+		for _, s := range sessions {
+			label := fmt.Sprintf("Resume: %s", s.ModifiedTime)
+			if s.Summary != nil && *s.Summary != "" {
+				summary := *s.Summary
+				if len(summary) > 60 {
+					summary = summary[:60] + "..."
+				}
+				label = fmt.Sprintf("Resume: %s — %s", s.ModifiedTime, summary)
+			}
+			choices = append(choices, &uxlib.SelectChoice{
+				Value: s.SessionID,
+				Label: label,
+			})
+		}
+
+		fmt.Println()
+		selector := uxlib.NewSelect(&uxlib.SelectOptions{
+			Message:         "Previous agent sessions found. Resume or start fresh?",
+			Choices:         choices,
+			EnableFiltering: uxlib.Ptr(false),
+			DisplayCount:    min(len(choices), 6),
+		})
+
+		idx, selectErr := selector.Ask(ctx)
+		fmt.Println()
+
+		if selectErr == nil && idx != nil && *idx > 0 {
+			// Resume selected session
+			selectedID := choices[*idx].Value
+			resumed, resumeErr := i.copilotFactory.Resume(
+				ctx, selectedID,
+				agent.WithCopilotDebug(i.flags.global.EnableDebugLogging),
+			)
+			if resumeErr == nil {
+				azdAgent = resumed
+				i.console.Message(ctx, output.WithSuccessFormat("Session resumed"))
+				i.console.Message(ctx, "")
+			} else {
+				log.Printf("[copilot] Failed to resume session: %v, starting new", resumeErr)
+			}
+		}
+	}
+
+	// If not resumed, create new session
+	if azdAgent == nil {
+		var err error
+		azdAgent, err = i.agentFactory.Create(
+			ctx,
+			agent.WithDebug(i.flags.global.EnableDebugLogging),
+		)
+		if err != nil {
+			return err
+		}
 	}
 
 	defer azdAgent.Stop()

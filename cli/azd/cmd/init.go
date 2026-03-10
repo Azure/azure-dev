@@ -460,13 +460,14 @@ func (i *initAction) initAppWithAgent(ctx context.Context) error {
 			timeStr := formatSessionTime(s.ModifiedTime)
 			summary := ""
 			if s.Summary != nil && *s.Summary != "" {
-				summary = *s.Summary
+				// Collapse newlines and extra whitespace into single spaces
+				summary = strings.Join(strings.Fields(*s.Summary), " ")
 			}
-			// Keep label ≤ 120 chars: "Resume ({time}) — {summary}"
+			// Keep label ≤ 120 chars total: "Resume ({time}) — {summary}"
 			prefix := fmt.Sprintf("Resume (%s)", timeStr)
 			if summary != "" {
 				maxSummary := 120 - len(prefix) - 3 // 3 for " — "
-				if maxSummary > 0 {
+				if maxSummary > 10 {
 					if len(summary) > maxSummary {
 						summary = summary[:maxSummary-3] + "..."
 					}

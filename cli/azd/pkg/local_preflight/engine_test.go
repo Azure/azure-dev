@@ -5,7 +5,6 @@ package local_preflight_test
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/local_preflight"
@@ -114,6 +113,5 @@ func TestEngine_MultipleFailures(t *testing.T) {
 
 	results, err := engine.Run(context.Background())
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, err), "should return non-nil error on failure")
 	assert.Len(t, results, 2)
 }

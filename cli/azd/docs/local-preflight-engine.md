@@ -27,7 +27,6 @@ could have been detected locally.
 
 | Check | What it validates |
 |-------|-------------------|
-| `AuthCheck` | The user is logged in and the stored credential can be exchanged for a valid access token. |
 | `SubscriptionCheck` | `AZURE_SUBSCRIPTION_ID` and `AZURE_LOCATION` are both set in the active environment. |
 
 ## How to add a new check
@@ -45,7 +44,6 @@ Then register it with the engine in `BicepProvider.runLocalPreflight()`:
 
 ```go
 engine := local_preflight.NewEngine(
-    local_preflight.NewAuthCheck(p.authManager),
     local_preflight.NewSubscriptionCheck(p.env),
     mypackage.NewMyCheck(someService),  // ← add here
 )
@@ -103,7 +101,6 @@ can be implemented with minimal effort:
 ```go
 // cmd/validate.go (future)
 type validateAction struct {
-    authManager         *auth.Manager
     env                 *environment.Environment
     subscriptionManager *account.SubscriptionsManager
     console             input.Console
@@ -111,10 +108,9 @@ type validateAction struct {
 
 func (a *validateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
     engine := local_preflight.NewEngine(
-        local_preflight.NewAuthCheck(a.authManager),
         local_preflight.NewSubscriptionCheck(a.env),
         // Add more checks as the feature matures:
-        // preflight.NewRoleAssignmentCheck(a.authManager, a.subscriptionManager, a.env),
+        // preflight.NewRoleAssignmentCheck(a.subscriptionManager, a.env),
         // preflight.NewResourceProviderCheck(a.subscriptionManager, a.env, requiredProviders),
     )
 
@@ -138,27 +134,24 @@ func (a *validateAction) Run(ctx context.Context) (*actions.ActionResult, error)
 The checks listed below address the most common provisioning failure patterns identified
 in the community. They can be implemented incrementally:
 
-1. **Authentication & identity** *(available now as `AuthCheck`)*
-   - User is logged in with valid, non-expired credentials.
-
-2. **Environment targeting** *(available now as `SubscriptionCheck`)*
+1. **Environment targeting** *(available now as `SubscriptionCheck`)*
    - `AZURE_SUBSCRIPTION_ID` and `AZURE_LOCATION` are set.
    - Subscription is accessible to the signed-in identity.
 
-3. **Resource provider registration** *(planned)*
+2. **Resource provider registration** *(planned)*
    - All resource providers required by the Bicep template are registered in the target
      subscription. Unregistered providers are a top source of silent deployment failures.
 
-4. **RBAC / role assignments** *(planned)*
+3. **RBAC / role assignments** *(planned)*
    - The signed-in identity (user or service principal) has at least `Contributor` on the
      target subscription or resource group, plus any resource-specific roles required by
      the template (e.g., `Key Vault Administrator`, `Cognitive Services Contributor`).
 
-5. **Quota / capacity** *(planned, longer-term)*
+4. **Quota / capacity** *(planned, longer-term)*
    - The target region has sufficient quota for the SKUs requested by the template.
    - Particularly relevant for GPU-intensive AI workloads and OpenAI capacity.
 
-6. **Required environment variables** *(planned)*
+5. **Required environment variables** *(planned)*
    - All `required` parameters in the Bicep template (those without a default value) are
      provided, either via `.env` file, shell environment, or `azure.yaml` configuration.
 

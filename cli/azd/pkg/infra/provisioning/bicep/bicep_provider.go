@@ -28,7 +28,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
-	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
@@ -87,7 +86,6 @@ type BicepProvider struct {
 	subscriptionManager *account.SubscriptionsManager
 	aiModelService      *ai.AiModelService
 	userConfigManager   config.UserConfigManager
-	authManager         *auth.Manager
 
 	// Internal state
 	// compileBicepResult is cached to avoid recompiling the same bicep file multiple times in the same azd run.
@@ -2153,7 +2151,6 @@ func (p *BicepProvider) validatePreflight(
 // Returns an error if any check fails, allowing the caller to abort the deployment early.
 func (p *BicepProvider) runLocalPreflight(ctx context.Context) error {
 	engine := local_preflight.NewEngine(
-		local_preflight.NewAuthCheck(p.authManager),
 		local_preflight.NewSubscriptionCheck(p.env),
 	)
 
@@ -2571,7 +2568,6 @@ func NewBicepProvider(
 	subscriptionManager *account.SubscriptionsManager,
 	aiModelService *ai.AiModelService,
 	userConfigManager config.UserConfigManager,
-	authManager *auth.Manager,
 ) provisioning.Provider {
 	return &BicepProvider{
 		envManager:          envManager,
@@ -2589,7 +2585,6 @@ func NewBicepProvider(
 		subscriptionManager: subscriptionManager,
 		aiModelService:      aiModelService,
 		userConfigManager:   userConfigManager,
-		authManager:         authManager,
 	}
 }
 

@@ -186,6 +186,7 @@ func (a *InitFromCodeAction) scaffoldTemplate(ctx context.Context, azdClient *az
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	setGitHubAuthHeader(req, ghToken)
 
+	//nolint:gosec // URL is explicitly constructed for GitHub API tree endpoint
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("fetching repo tree: %w", err)
@@ -343,6 +344,7 @@ func (a *InitFromCodeAction) scaffoldTemplate(ctx context.Context, azdClient *az
 		// Create parent directories
 		dir := filepath.Dir(localPath)
 		if dir != "." {
+			//nolint:gosec // scaffolded directories are intended to be readable/traversable
 			if err := os.MkdirAll(dir, 0755); err != nil {
 				_ = spinner.Stop(ctx)
 				return fmt.Errorf("creating directory %s: %w", dir, err)
@@ -357,6 +359,7 @@ func (a *InitFromCodeAction) scaffoldTemplate(ctx context.Context, azdClient *az
 		}
 		setGitHubAuthHeader(fileReq, ghToken)
 
+		//nolint:gosec // URL is from GitHub tree API entries for the selected template
 		fileResp, err := a.httpClient.Do(fileReq)
 		if err != nil {
 			_ = spinner.Stop(ctx)
@@ -369,12 +372,13 @@ func (a *InitFromCodeAction) scaffoldTemplate(ctx context.Context, azdClient *az
 		}
 
 		content, err := io.ReadAll(fileResp.Body)
-		fileResp.Body.Close()
+		_ = fileResp.Body.Close()
 		if err != nil {
 			_ = spinner.Stop(ctx)
 			return fmt.Errorf("reading %s: %w", f.Path, err)
 		}
 
+		//nolint:gosec // scaffolded files should remain readable by project tooling
 		if err := os.WriteFile(localPath, content, 0644); err != nil {
 			_ = spinner.Stop(ctx)
 			return fmt.Errorf("writing %s: %w", localPath, err)
@@ -438,10 +442,12 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 
 	var modelConfigChoice string
 	if a.flags.projectResourceId == "" {
+		defaultIndex := int32(0)
 		modelConfigResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 			Options: &azdext.SelectOptions{
-				Message: "How would you like to configure a model for your agent?",
-				Choices: modelConfigChoices,
+				Message:       "How would you like to configure a model for your agent?",
+				Choices:       modelConfigChoices,
+				SelectedIndex: &defaultIndex,
 			},
 		})
 		if err != nil {
@@ -554,7 +560,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 				}
 			}
 
-			if selectedIdx < int32(len(projects)) {
+			if selectedIdx >= 0 && int(selectedIdx) < len(projects) {
 				// User selected an existing Foundry project
 				selectedProject := projects[selectedIdx]
 
@@ -590,41 +596,66 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 					fmt.Println("No existing deployments found. You can create a new model deployment.")
 				}
 
-				// Build choices: existing deployments + "Create a new model deployment"
-				deployChoices := make([]*azdext.SelectChoice, 0, len(deployments)+1)
-				for _, d := range deployments {
-					label := fmt.Sprintf("%s (%s v%s, %s)", d.Name, d.ModelName, d.Version, d.SkuName)
-					deployChoices = append(deployChoices, &azdext.SelectChoice{
-						Label: label,
-						Value: d.Name,
-					})
-				}
-				deployChoices = append(deployChoices, &azdext.SelectChoice{
-					Label: "Create a new model deployment",
-					Value: "__create_new__",
-				})
-
-				deployResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-					Options: &azdext.SelectOptions{
-						Message: "Select a model deployment:",
-						Choices: deployChoices,
-					},
-				})
-				if err != nil {
-					return nil, fmt.Errorf("failed to prompt for deployment selection: %w", err)
-				}
-
-				deploymentIdx := *deployResp.Value
-				if deploymentIdx < int32(len(deployments)) {
-					// User selected an existing deployment
-					d := deployments[deploymentIdx]
-					existingDeployment = &d
-					fmt.Printf("Model deployment name: %s\n", d.Name)
+				if a.flags.modelDeployment != "" {
+					// Flag provided: find the matching deployment by name
+					for _, d := range deployments {
+						if strings.EqualFold(d.Name, a.flags.modelDeployment) {
+							existingDeployment = &d
+							break
+						}
+					}
+					if existingDeployment == nil {
+						return nil, exterrors.Validation(
+							exterrors.CodeModelDeploymentNotFound,
+							fmt.Sprintf("model deployment %q not found in Foundry project", a.flags.modelDeployment),
+							"verify the deployment name or omit --model-deployment to select interactively",
+						)
+					}
 				} else {
-					// User wants to create a new deployment — region locked to the project's location
-					selectedModel, err = a.selectNewModel(ctx)
+					// No flag: prompt interactively
+					// Build choices: existing deployments + "Create a new model deployment"
+					deployChoices := make([]*azdext.SelectChoice, 0, len(deployments)+1)
+					for _, d := range deployments {
+						label := fmt.Sprintf("%s (%s v%s, %s)", d.Name, d.ModelName, d.Version, d.SkuName)
+						deployChoices = append(deployChoices, &azdext.SelectChoice{
+							Label: label,
+							Value: d.Name,
+						})
+					}
+					deployChoices = append(deployChoices, &azdext.SelectChoice{
+						Label: "Create a new model deployment",
+						Value: "__create_new__",
+					})
+
+					deployResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+						Options: &azdext.SelectOptions{
+							Message: "Select a model deployment:",
+							Choices: deployChoices,
+						},
+					})
 					if err != nil {
-						return nil, fmt.Errorf("failed to select new model: %w", err)
+						if exterrors.IsCancellation(err) {
+							return nil, exterrors.Cancelled("model deployment selection was cancelled")
+						}
+						return nil, exterrors.Dependency(
+							exterrors.CodePromptFailed,
+							fmt.Sprintf("failed to prompt for deployment selection: %v", err),
+							"use --model-deployment to specify a deployment name in non-interactive mode",
+						)
+					}
+
+					deploymentIdx := *deployResp.Value
+					if deploymentIdx >= 0 && int(deploymentIdx) < len(deployments) {
+						// User selected an existing deployment
+						d := deployments[deploymentIdx]
+						existingDeployment = &d
+						fmt.Printf("Model deployment name: %s\n", d.Name)
+					} else {
+						// User wants to create a new deployment — region locked to the project's location
+						selectedModel, err = a.selectNewModel(ctx)
+						if err != nil {
+							return nil, fmt.Errorf("failed to select new model: %w", err)
+						}
 					}
 				}
 			} else {
@@ -810,7 +841,7 @@ func (a *InitFromCodeAction) ensureSubscription(ctx context.Context) error {
 			if exterrors.IsCancellation(err) {
 				return exterrors.Cancelled("subscription selection was cancelled")
 			}
-			return fmt.Errorf("failed to prompt for subscription: %w", err)
+			return exterrors.FromPrompt(err, "failed to prompt for subscription")
 		}
 
 		a.azureContext.Scope.SubscriptionId = subscriptionResponse.Subscription.Id
@@ -875,7 +906,7 @@ func (a *InitFromCodeAction) ensureLocation(ctx context.Context) error {
 		if exterrors.IsCancellation(err) {
 			return exterrors.Cancelled("location selection was cancelled")
 		}
-		return fmt.Errorf("failed to prompt for location: %w", err)
+		return exterrors.FromPrompt(err, "failed to prompt for location")
 	}
 
 	a.azureContext.Scope.Location = locationResponse.Location.Name
@@ -893,6 +924,11 @@ func (a *InitFromCodeAction) ensureLocation(ctx context.Context) error {
 }
 
 func (a *InitFromCodeAction) selectNewModel(ctx context.Context) (*azdext.AiModel, error) {
+	defaultModel := "gpt-4.1-mini"
+	if a.flags.model != "" {
+		defaultModel = a.flags.model
+	}
+
 	promptReq := &azdext.PromptAiModelRequest{
 		AzureContext: a.azureContext,
 		SelectOptions: &azdext.SelectOptions{
@@ -904,12 +940,12 @@ func (a *InitFromCodeAction) selectNewModel(ctx context.Context) (*azdext.AiMode
 		Filter: &azdext.AiModelFilterOptions{
 			Locations: []string{a.azureContext.Scope.Location},
 		},
-		DefaultValue: "gpt-4.1-mini",
+		DefaultValue: defaultModel,
 	}
 
 	modelResp, err := a.azdClient.Prompt().PromptAiModel(ctx, promptReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to prompt for model selection: %w", err)
+		return nil, exterrors.FromPrompt(err, "failed to prompt for model selection")
 	}
 
 	selectedModel := modelResp.Model
@@ -1206,6 +1242,7 @@ func (a *InitFromCodeAction) lookupAcrResourceId(ctx context.Context, subscripti
 // writeDefinitionToSrcDir writes a ContainerAgent to a YAML file in the src directory and returns the path
 func (a *InitFromCodeAction) writeDefinitionToSrcDir(definition *agent_yaml.ContainerAgent, srcDir string) (string, error) {
 	// Ensure the src directory exists
+	//nolint:gosec // scaffold directory should be readable/traversable for project tools
 	if err := os.MkdirAll(srcDir, 0755); err != nil {
 		return "", fmt.Errorf("creating src directory: %w", err)
 	}
@@ -1220,6 +1257,7 @@ func (a *InitFromCodeAction) writeDefinitionToSrcDir(definition *agent_yaml.Cont
 	}
 
 	// Write to the file
+	//nolint:gosec // generated manifest file should be readable by tooling and users
 	if err := os.WriteFile(definitionPath, content, 0644); err != nil {
 		return "", fmt.Errorf("writing definition to file: %w", err)
 	}
@@ -1519,7 +1557,7 @@ func (a *InitFromCodeAction) resolveModelDeploymentNoPrompt(
 		},
 	})
 	if err != nil {
-		return nil, exterrors.FromAzdHost(err, exterrors.CodeModelResolutionFailed)
+		return nil, exterrors.FromAiService(err, exterrors.CodeModelResolutionFailed)
 	}
 
 	if len(resolveResp.Deployments) == 0 {

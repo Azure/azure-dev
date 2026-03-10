@@ -46,6 +46,8 @@ import (
 type initFlags struct {
 	*rootFlagsDefinition
 	projectResourceId string
+	modelDeployment   string
+	model             string
 	manifestPointer   string
 	src               string
 	host              string
@@ -214,14 +216,20 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 	cmd.Flags().StringVarP(&flags.projectResourceId, "project-id", "p", "",
 		"Existing Microsoft Foundry Project Id to initialize your azd environment with")
 
+	cmd.Flags().StringVarP(&flags.modelDeployment, "model-deployment", "d", "",
+		"Name of an existing model deployment to use from the Foundry project. Only used when paired with an existing Foundry project, either via --project-id or interactive prompts")
+
+	cmd.Flags().StringVar(&flags.model, "model", "",
+		"Name of the AI model to use (e.g., 'gpt-4o'). If not specified, defaults to 'gpt-4.1-mini'. Mutually exclusive with --model-deployment, with --model-deployment being used if both are provided")
+
 	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "",
 		"Path or URI to an agent manifest to add to your azd project")
 
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "",
-		"[Optional] Directory to download the agent definition to (defaults to 'src/<agent-id>')")
+		"Directory to download the agent definition to (defaults to 'src/<agent-id>')")
 
 	cmd.Flags().StringVarP(&flags.host, "host", "", "",
-		"[Optional] For container based agents, can override the default host to target a container app instead. Accepted values: 'containerapp'")
+		"For container based agents, can override the default host to target a container app instead. Accepted values: 'containerapp'")
 
 	cmd.Flags().StringVarP(&flags.env, "environment", "e", "", "The name of the azd environment to use.")
 
@@ -311,6 +319,15 @@ func ensureProject(ctx context.Context, flags *initFlags, azdClient *azdext.AzdC
 
 		// Environment creation is handled separately in ensureEnvironment
 		initArgs := []string{"init", "-t", "Azure-Samples/azd-ai-starter-basic"}
+		if flags.env != "" {
+			initArgs = append(initArgs, "--environment", flags.env)
+		} else {
+			cwd, err := os.Getwd()
+			if err == nil {
+				sanitizedDirectoryName := sanitizeAgentName(filepath.Base(cwd))
+				initArgs = append(initArgs, "--environment", sanitizedDirectoryName+"-dev")
+			}
+		}
 
 		// We don't have a project yet
 		// Dispatch a workflow to init the project
@@ -505,6 +522,43 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 			)
 		}
 
+		// Resolve and set the tenant ID for the subscription so credentials are scoped correctly
+		currentTenant, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+			EnvName: existingEnv.Name,
+			Key:     "AZURE_TENANT_ID",
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current AZURE_TENANT_ID from azd environment: %w", err)
+		}
+
+		tenantResp, err := azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
+			SubscriptionId: foundryProject.SubscriptionId,
+		})
+		if err != nil {
+			return nil, exterrors.Auth(
+				exterrors.CodeTenantLookupFailed,
+				fmt.Sprintf("failed to lookup tenant for subscription %s: %s", foundryProject.SubscriptionId, err),
+				"verify your Azure login with 'azd auth login'",
+			)
+		}
+
+		if currentTenant.Value == "" {
+			_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+				EnvName: existingEnv.Name,
+				Key:     "AZURE_TENANT_ID",
+				Value:   tenantResp.TenantId,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("failed to set AZURE_TENANT_ID in azd environment: %w", err)
+			}
+		} else if currentTenant.Value != tenantResp.TenantId {
+			return nil, exterrors.Validation(
+				exterrors.CodeTenantMismatch,
+				fmt.Sprintf("tenant ID mismatch: environment has %s but project uses %s", currentTenant.Value, tenantResp.TenantId),
+				"update or recreate your environment with 'azd env new'",
+			)
+		}
+
 		// Get current location from environment
 		currentLocation, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 			EnvName: existingEnv.Name,
@@ -586,7 +640,7 @@ func ensureAzureContext(
 			if exterrors.IsCancellation(err) {
 				return nil, nil, nil, exterrors.Cancelled("subscription selection was cancelled")
 			}
-			return nil, nil, nil, fmt.Errorf("failed to prompt for subscription: %w", err)
+			return nil, nil, nil, exterrors.FromPrompt(err, "failed to prompt for subscription")
 		}
 
 		azureContext.Scope.SubscriptionId = subscriptionResponse.Subscription.Id
@@ -626,7 +680,7 @@ func ensureAzureContext(
 			if exterrors.IsCancellation(err) {
 				return nil, nil, nil, exterrors.Cancelled("location selection was cancelled")
 			}
-			return nil, nil, nil, fmt.Errorf("failed to prompt for location: %w", err)
+			return nil, nil, nil, exterrors.FromPrompt(err, "failed to prompt for location")
 		}
 
 		azureContext.Scope.Location = locationResponse.Location.Name
@@ -643,38 +697,6 @@ func ensureAzureContext(
 	}
 
 	return azureContext, project, env, nil
-}
-
-func (a *InitAction) validateFlags(flags *initFlags) error {
-	if flags.manifestPointer != "" {
-		// Check if it's a valid URL
-		if _, err := url.ParseRequestURI(flags.manifestPointer); err != nil {
-			// If not a valid URL, check if it's an existing local file path
-			if _, fileErr := os.Stat(flags.manifestPointer); fileErr != nil {
-				return fmt.Errorf("manifest pointer '%s' is neither a valid URI nor an existing file path", flags.manifestPointer)
-			}
-		}
-	}
-
-	return nil
-}
-
-func (a *InitAction) promptForMissingValues(ctx context.Context, azdClient *azdext.AzdClient, flags *initFlags) error {
-	if flags.manifestPointer == "" {
-		resp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-			Options: &azdext.PromptOptions{
-				Message:        "Enter the location of the agent manifest",
-				IgnoreHintKeys: true,
-			},
-		})
-		if err != nil {
-			return fmt.Errorf("prompting for agent manifest pointer: %w", err)
-		}
-
-		flags.manifestPointer = resp.Value
-	}
-
-	return nil
 }
 
 type FoundryProject struct {
@@ -695,7 +717,11 @@ func extractProjectDetails(projectResourceId string) (*FoundryProject, error) {
 
 	matches := regex.FindStringSubmatch(projectResourceId)
 	if matches == nil || len(matches) != 5 {
-		return nil, fmt.Errorf("the given Microsoft Foundry project ID does not match expected format: /subscriptions/[SUBSCRIPTION_ID]/resourceGroups/[RESOURCE_GROUP]/providers/Microsoft.CognitiveServices/accounts/[ACCOUNT_NAME]/projects/[PROJECT_NAME]")
+		return nil, fmt.Errorf(
+			"the given Microsoft Foundry project ID does not match expected format: " +
+				"/subscriptions/[SUBSCRIPTION_ID]/resourceGroups/[RESOURCE_GROUP]/providers/" +
+				"Microsoft.CognitiveServices/accounts/[ACCOUNT_NAME]/projects/[PROJECT_NAME]",
+		)
 	}
 
 	// Extract the components
@@ -989,7 +1015,7 @@ func (a *InitAction) isRegistryUrl(manifestPointer string) (bool, *RegistryManif
 func (a *InitAction) downloadAgentYaml(
 	ctx context.Context, manifestPointer string, targetDir string) (*agent_yaml.AgentManifest, string, error) {
 	if manifestPointer == "" {
-		return nil, "", fmt.Errorf("The path to an agent manifest need to be provided (manifestPointer cannot be empty).")
+		return nil, "", fmt.Errorf("the path to an agent manifest needs to be provided (manifestPointer cannot be empty)")
 	}
 
 	var content []byte
@@ -998,12 +1024,13 @@ func (a *InitAction) downloadAgentYaml(
 	var urlInfo *GitHubUrlInfo
 	var ghCli *github.Cli
 	var console input.Console
-	var useGhCli bool = false
+	useGhCli := false
 
 	// Check if manifestPointer is a local file path or a URI
 	if a.isLocalFilePath(manifestPointer) {
 		// Handle local file path
 		fmt.Printf("Reading agent.yaml from local file: %s\n", manifestPointer)
+		//nolint:gosec // manifest path is an explicit user-provided local path
 		content, err = os.ReadFile(manifestPointer)
 		if err != nil {
 			return nil, "", exterrors.Validation(
@@ -1115,6 +1142,7 @@ func (a *InitAction) downloadAgentYaml(
 			req, err := http.NewRequestWithContext(ctx, http.MethodGet, fileApiUrl, nil)
 			if err == nil {
 				req.Header.Set("Accept", "application/vnd.github.v3.raw")
+				//nolint:gosec // URL is constrained to GitHub API endpoint built from parsed GitHub URL
 				resp, err := a.httpClient.Do(req)
 				if err == nil {
 					defer resp.Body.Close()
@@ -1262,6 +1290,7 @@ func (a *InitAction) downloadAgentYaml(
 	}
 
 	// Create target directory if it doesn't exist
+	//nolint:gosec // project scaffold directory should be readable and traversable
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		return nil, "", fmt.Errorf("creating target directory %s: %w", targetDir, err)
 	}
@@ -1742,12 +1771,14 @@ func downloadDirectoryContents(
 				return fmt.Errorf("failed to download file %s: %w", itemPath, err)
 			}
 
+			//nolint:gosec // downloaded project files are intended to be readable by project tooling
 			if err := os.WriteFile(itemLocalPath, []byte(fileContent), 0644); err != nil {
 				return fmt.Errorf("failed to write file %s: %w", itemLocalPath, err)
 			}
 		} else if itemType == "dir" {
 			// Recursively download subdirectory
 			fmt.Printf("Downloading directory: %s\n", itemPath)
+			//nolint:gosec // scaffolded directories are intended to be readable/traversable
 			if err := os.MkdirAll(itemLocalPath, 0755); err != nil {
 				return fmt.Errorf("failed to create directory %s: %w", itemLocalPath, err)
 			}
@@ -1777,6 +1808,7 @@ func downloadDirectoryContentsWithoutGhCli(
 	}
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
+	//nolint:gosec // URL is explicitly constructed for GitHub contents API
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to get directory contents: %w", err)
@@ -1833,6 +1865,7 @@ func downloadDirectoryContentsWithoutGhCli(
 			}
 			fileReq.Header.Set("Accept", "application/vnd.github.v3.raw")
 
+			//nolint:gosec // URL is explicitly constructed for GitHub contents API
 			fileResp, err := httpClient.Do(fileReq)
 			if err != nil {
 				return fmt.Errorf("failed to download file %s: %w", itemPath, err)
@@ -1843,17 +1876,19 @@ func downloadDirectoryContentsWithoutGhCli(
 			}
 
 			fileContent, err := io.ReadAll(fileResp.Body)
-			fileResp.Body.Close()
+			_ = fileResp.Body.Close()
 			if err != nil {
 				return fmt.Errorf("failed to read file content %s: %w", itemPath, err)
 			}
 
+			//nolint:gosec // downloaded project files are intended to be readable by project tooling
 			if err := os.WriteFile(itemLocalPath, fileContent, 0644); err != nil {
 				return fmt.Errorf("failed to write file %s: %w", itemLocalPath, err)
 			}
 		} else if itemType == "dir" {
 			// Recursively download subdirectory
 			fmt.Printf("Downloading directory: %s\n", itemPath)
+			//nolint:gosec // scaffolded directories are intended to be readable/traversable
 			if err := os.MkdirAll(itemLocalPath, 0755); err != nil {
 				return fmt.Errorf("failed to create directory %s: %w", itemLocalPath, err)
 			}

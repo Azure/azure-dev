@@ -113,6 +113,7 @@ func (stg *StorageQueue) save(delayDuration time.Duration, retryCount int, messa
 	}
 
 	tempFileName := file.Name()
+	//nolint:gosec // G703: tempFileName from os.CreateTemp
 	err = os.WriteFile(tempFileName, message, osutil.PermissionFile)
 	if err != nil {
 		_ = removeIfExists(tempFileName)
@@ -124,6 +125,7 @@ func (stg *StorageQueue) save(delayDuration time.Duration, retryCount int, messa
 	randomSuffix := generatedFileName[:strings.LastIndex(generatedFileName, "_")]
 	readyTime := stg.clock.Now().Add(delayDuration)
 	fileName := formatFileName(readyTime, retryCount, randomSuffix, stg.itemFileExtension)
+	//nolint:gosec // G703: paths from os.CreateTemp within known folder
 	err = os.Rename(tempFileName, filepath.Join(stg.folder, fileName))
 	if err != nil {
 		_ = removeIfExists(tempFileName)
@@ -189,7 +191,7 @@ func (stg *StorageQueue) Remove(item *StoredItem) error {
 }
 
 func removeIfExists(filename string) error {
-	err := os.Remove(filename)
+	err := os.Remove(filename) //nolint:gosec // G703: internal cleanup
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}

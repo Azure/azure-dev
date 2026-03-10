@@ -23,8 +23,10 @@ const (
 	CodeAgentDefinitionNotFound   = "agent_definition_not_found"
 	CodeSubscriptionMismatch      = "subscription_mismatch"
 	CodeLocationMismatch          = "location_mismatch"
+	CodeTenantMismatch            = "tenant_mismatch"
 	CodeMissingPublishedContainer = "missing_published_container_artifact"
 	CodeScaffoldTemplateFailed    = "scaffold_template_failed"
+	CodeModelDeploymentNotFound   = "model_deployment_not_found"
 )
 
 // Error codes for dependency errors.
@@ -39,12 +41,17 @@ const (
 	CodeMissingAzureSubscription  = "missing_azure_subscription_id"
 	CodeMissingAgentEnvVars       = "missing_agent_env_vars"
 	CodeGitHubDownloadFailed      = "github_download_failed"
+	CodePromptFailed              = "prompt_failed"
 )
 
 // Error codes for auth errors.
 const (
+	//nolint:gosec // error code identifier, not a credential
 	CodeCredentialCreationFailed = "credential_creation_failed"
 	CodeTenantLookupFailed       = "tenant_lookup_failed"
+	CodeNotLoggedIn              = "not_logged_in"
+	CodeLoginExpired             = "login_expired"
+	CodeAuthFailed               = "auth_failed"
 )
 
 // Error codes for compatibility errors.

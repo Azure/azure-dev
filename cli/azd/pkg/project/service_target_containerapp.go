@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
@@ -269,6 +270,7 @@ func (at *containerAppTarget) Deploy(
 			return nil, fmt.Errorf("getting deployment host type: %w", err)
 		}
 		resourceName = deploymentHostDetails.name
+		resourceTypeContainer = deploymentHostDetails.hostType
 		outputs := azapi.CreateDeploymentOutput(deploymentResult.Outputs)
 
 		if len(outputs) > 0 {
@@ -287,6 +289,7 @@ func (at *containerAppTarget) Deploy(
 			}
 
 			targetResource = res
+			resourceName = targetResource.ResourceName()
 		}
 
 		// Fall back to only updating container image when no bicep infra is present
@@ -294,28 +297,55 @@ func (at *containerAppTarget) Deploy(
 			ApiVersion: serviceConfig.ApiVersion,
 		}
 
-		// Expand environment variables from service config
-		envVars, err := serviceConfig.Environment.Expand(at.env.Getenv)
-		if err != nil {
-			return nil, fmt.Errorf("expanding environment variables: %w", err)
-		}
+		isJob := isJobResource(targetResource)
 
-		progress.SetProgress(NewServiceProgress("Updating container app revision"))
-		err = at.containerAppService.AddRevision(
-			ctx,
-			targetResource.SubscriptionId(),
-			targetResource.ResourceGroupName(),
-			resourceName,
-			imageName,
-			envVars,
-			&containerAppOptions,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("updating container app service: %w", err)
+		if isJob {
+			tracing.AppendUsageAttributeUnique(fields.FeaturesKey.String(fields.FeatJobDeployment))
+			resourceTypeContainer = azapi.AzureResourceTypeContainerAppJob
+
+			// Expand environment variables from service config
+			envVars, err := serviceConfig.Environment.Expand(at.env.Getenv)
+			if err != nil {
+				return nil, fmt.Errorf("expanding environment variables: %w", err)
+			}
+
+			progress.SetProgress(NewServiceProgress("Updating container app job image"))
+			err = at.containerAppService.UpdateContainerAppJobImage(
+				ctx,
+				targetResource.SubscriptionId(),
+				targetResource.ResourceGroupName(),
+				resourceName,
+				imageName,
+				envVars,
+				&containerAppOptions,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("updating container app job: %w", err)
+			}
+		} else {
+			// Expand environment variables from service config
+			envVars, err := serviceConfig.Environment.Expand(at.env.Getenv)
+			if err != nil {
+				return nil, fmt.Errorf("expanding environment variables: %w", err)
+			}
+
+			progress.SetProgress(NewServiceProgress("Updating container app revision"))
+			err = at.containerAppService.AddRevision(
+				ctx,
+				targetResource.SubscriptionId(),
+				targetResource.ResourceGroupName(),
+				resourceName,
+				imageName,
+				envVars,
+				&containerAppOptions,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("updating container app service: %w", err)
+			}
 		}
 	}
 
-	progress.SetProgress(NewServiceProgress("Fetching endpoints for container app service"))
+	progress.SetProgress(NewServiceProgress("Fetching endpoints for service"))
 
 	// Create deployment deployArtifacts
 	deployArtifacts := ArtifactCollection{}
@@ -361,6 +391,11 @@ func (at *containerAppTarget) Endpoints(
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) ([]string, error) {
+	// Container App Jobs don't have ingress/endpoints
+	if isJobResource(targetResource) {
+		return []string{}, nil
+	}
+
 	containerAppOptions := containerapps.ContainerAppOptions{
 		ApiVersion: serviceConfig.ApiVersion,
 	}
@@ -391,12 +426,27 @@ func (at *containerAppTarget) validateTargetResource(
 	}
 
 	if targetResource.ResourceType() != "" {
-		if err := checkResourceType(targetResource, azapi.AzureResourceTypeContainerApp); err != nil {
-			return err
+		errApp := checkResourceType(targetResource, azapi.AzureResourceTypeContainerApp)
+		errJob := checkResourceType(targetResource, azapi.AzureResourceTypeContainerAppJob)
+		if errApp != nil && errJob != nil {
+			return fmt.Errorf(
+				"resource '%s' with type '%s' does not match expected types: %w",
+				targetResource.ResourceName(),
+				targetResource.ResourceType(),
+				errors.Join(errApp, errJob),
+			)
 		}
 	}
 
 	return nil
+}
+
+// isJobResource returns true when the target resource is a Container App Job.
+func isJobResource(targetResource *environment.TargetResource) bool {
+	return strings.EqualFold(
+		targetResource.ResourceType(),
+		string(azapi.AzureResourceTypeContainerAppJob),
+	)
 }
 
 // ResolveTargetResource implements TargetResourceResolver for containerAppTarget.
@@ -426,12 +476,14 @@ func (at *containerAppTarget) ResolveTargetResource(
 			return nil, err
 		}
 
-		// Return partial target resource to enable bicep-based deployments
+		// Return partial target resource to enable bicep-based deployments.
+		// Use empty resource type since the actual type (containerApp vs job)
+		// is determined by the Bicep template at deploy time.
 		return environment.NewTargetResource(
 			subscriptionId,
 			resourceGroupName,
 			"",
-			string(azapi.AzureResourceTypeContainerApp),
+			"",
 		), nil
 	}
 

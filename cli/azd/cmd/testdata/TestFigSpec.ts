@@ -1471,16 +1471,34 @@ const completionSpec: Fig.Spec = {
 			description: 'This extension provides examples of the azd extension framework.',
 			subcommands: [
 				{
+					name: ['ai'],
+					description: 'Interactive AI model discovery, deployment, and quota demos.',
+					subcommands: [
+						{
+							name: ['deployment'],
+							description: 'Select model/version/SKU/capacity and resolve a valid deployment configuration.',
+						},
+						{
+							name: ['models'],
+							description: 'Browse available AI models interactively.',
+						},
+						{
+							name: ['quota'],
+							description: 'View usage meters and limits for a selected location.',
+						},
+					],
+				},
+				{
 					name: ['colors', 'colours'],
 					description: 'Displays all ASCII colors with their standard and high-intensity variants.',
 				},
 				{
 					name: ['config'],
-					description: 'Setup monitoring configuration for the project and services',
+					description: 'Set up monitoring configuration for the project and services',
 				},
 				{
 					name: ['context'],
-					description: 'Get the context of the AZD project & environment.',
+					description: 'Get the context of the azd project & environment.',
 				},
 				{
 					name: ['gh-url-parse'],
@@ -2818,7 +2836,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['init'],
-					description: 'Initialize a new AZD extension project',
+					description: 'Initialize a new azd extension project',
 					options: [
 						{
 							name: ['--capabilities'],
@@ -2925,7 +2943,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--repo'],
-							description: 'Github repository to create the release in (e.g. owner/repo)',
+							description: 'GitHub repository to create the release in (e.g. owner/repo)',
 							args: [
 								{
 									name: 'repo',
@@ -2989,7 +3007,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--repo', '-r'],
-							description: 'Github repository to create the release in (e.g. owner/repo)',
+							description: 'GitHub repository to create the release in (e.g. owner/repo)',
 							args: [
 								{
 									name: 'repo',
@@ -3022,7 +3040,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['watch'],
-					description: 'Watches the AZD extension project for file changes and rebuilds it.',
+					description: 'Watches the azd extension project for file changes and rebuilds it.',
 				},
 			],
 		},
@@ -3271,16 +3289,34 @@ const completionSpec: Fig.Spec = {
 					description: 'This extension provides examples of the azd extension framework.',
 					subcommands: [
 						{
+							name: ['ai'],
+							description: 'Interactive AI model discovery, deployment, and quota demos.',
+							subcommands: [
+								{
+									name: ['deployment'],
+									description: 'Select model/version/SKU/capacity and resolve a valid deployment configuration.',
+								},
+								{
+									name: ['models'],
+									description: 'Browse available AI models interactively.',
+								},
+								{
+									name: ['quota'],
+									description: 'View usage meters and limits for a selected location.',
+								},
+							],
+						},
+						{
 							name: ['colors', 'colours'],
 							description: 'Displays all ASCII colors with their standard and high-intensity variants.',
 						},
 						{
 							name: ['config'],
-							description: 'Setup monitoring configuration for the project and services',
+							description: 'Set up monitoring configuration for the project and services',
 						},
 						{
 							name: ['context'],
-							description: 'Get the context of the AZD project & environment.',
+							description: 'Get the context of the azd project & environment.',
 						},
 						{
 							name: ['gh-url-parse'],
@@ -3562,7 +3598,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['init'],
-							description: 'Initialize a new AZD extension project',
+							description: 'Initialize a new azd extension project',
 						},
 						{
 							name: ['pack'],
@@ -3582,7 +3618,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['watch'],
-							description: 'Watches the AZD extension project for file changes and rebuilds it.',
+							description: 'Watches the azd extension project for file changes and rebuilds it.',
 						},
 					],
 				},

@@ -10,6 +10,35 @@
 
 ### Other Changes
 
+## 1.23.8 (2026-03-06)
+
+### Features Added
+
+- [[#7001]](https://github.com/Azure/azure-dev/pull/7001) Add support for deploying Container App Jobs (`Microsoft.App/jobs`) via `host: containerapp`. The Bicep template determines whether the target is a Container App or Container App Job. Thanks @jongio for the contribution!
+- [[#6968]](https://github.com/Azure/azure-dev/pull/6968) Add `Microsoft.App/agents` (SRE Agent) resource type recognition so provisioning progress output correctly displays SRE Agent resources. Thanks @dm-chelupati for the contribution!
+- [[#7016]](https://github.com/Azure/azure-dev/pull/7016) Add sensible defaults for `azd env new` and `azd init` in `--no-prompt` mode: auto-generate environment name from the working directory, auto-select subscription when only one is available, and remove the hard `--environment` requirement. Thanks @spboyer for the contribution!
+- [[#6962]](https://github.com/Azure/azure-dev/pull/6962) Improve `--no-prompt` error guidance for `azd init` and `azd provision` to report all missing inputs at once with actionable resolution commands and environment variable mappings.
+
+### Bugs Fixed
+
+- [[#6790]](https://github.com/Azure/azure-dev/pull/6790) Fix the azd user-agent string not flowing to authentication HTTP calls (Azure Identity SDK and MSAL), making azd-originated auth traffic identifiable in Azure telemetry. Thanks @spboyer for the contribution!
+- [[#6920]](https://github.com/Azure/azure-dev/pull/6920) Fix `Retry-After` header not being applied correctly in Azure Functions flex consumption deployment polling, and improve cancellation responsiveness in Static Web Apps deployment verification. Thanks @spboyer for the contribution!
+- [[#6922]](https://github.com/Azure/azure-dev/pull/6922) Fix Ctrl+C cancellation not being respected during remote ACR build source upload and log streaming. Thanks @spboyer for the contribution!
+- [[#6914]](https://github.com/Azure/azure-dev/pull/6914) Fix `azd extension install`, `show`, and `upgrade` potentially selecting the wrong version when the registry returns versions in descending order.
+
+### Other Changes
+
+- [[#7019]](https://github.com/Azure/azure-dev/pull/7019) Improve provisioning progress polling with concurrent nested deployment traversal and a terminal-operation cache to reduce redundant ARM API calls and decrease spinner flicker.
+- [[#7017]](https://github.com/Azure/azure-dev/pull/7017) Update azd core to Go 1.26.
+- [[#7004]](https://github.com/Azure/azure-dev/pull/7004) Improve provisioning completion responsiveness by replacing channel-based cancellation with context cancellation in the progress display goroutine.
+- [[#6977]](https://github.com/Azure/azure-dev/pull/6977) Improve AI-assisted error troubleshooting by categorizing errors (Azure, machine, or user context) and tailoring automated fix suggestions to appropriate error types.
+- [[#6978]](https://github.com/Azure/azure-dev/pull/6978) Improve auth error classification in the extension gRPC server so extensions receive `Unauthenticated` status codes instead of `Unknown` for login-required errors.
+- [[#6963]](https://github.com/Azure/azure-dev/pull/6963) Improve provisioning performance by caching resource type display name lookups to reduce redundant API calls during progress polling.
+- [[#6954]](https://github.com/Azure/azure-dev/pull/6954) Add extension SDK primitives for token provider, scope detection, resilient HTTP client, and pagination to simplify azd extension authoring. Thanks @jongio for the contribution!
+- [[#6953]](https://github.com/Azure/azure-dev/pull/6953) Update Bicep minimum required version to 0.41.2.
+- [[#6941]](https://github.com/Azure/azure-dev/pull/6941) Simplify AI-assisted error troubleshooting to a two-step flow: explain the error, then optionally generate step-by-step fix guidance.
+- [[#6912]](https://github.com/Azure/azure-dev/pull/6912) Improve storage blob client performance by verifying container existence only once per session instead of on every operation. Thanks @spboyer for the contribution!
+
 ## 1.23.7 (2026-02-27)
 
 ### Features Added

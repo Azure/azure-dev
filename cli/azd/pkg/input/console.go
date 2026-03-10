@@ -107,6 +107,8 @@ type Console interface {
 	// If false, the spinner is non-interactive, which means messages are rendered as a new console message on each
 	// call to ShowSpinner, even when the title is unchanged.
 	IsSpinnerInteractive() bool
+	// IsNoPromptMode returns true when --no-prompt is active and interactive prompts are disabled.
+	IsNoPromptMode() bool
 	SupportsPromptDialog() bool
 	PromptDialog(ctx context.Context, dialog PromptDialog) (map[string]any, error)
 	// Prompts the user for a single value
@@ -557,6 +559,10 @@ func promptFromOptions(options ConsoleOptions) survey.Prompt {
 // For example, after running Prompt or Confirm, the last characters on the terminal should be any char (represented by the
 // 0 in the sentinel), followed by a new line.
 const afterIoSentinel = "0\n"
+
+func (c *AskerConsole) IsNoPromptMode() bool {
+	return c.noPrompt
+}
 
 func (c *AskerConsole) SupportsPromptDialog() bool {
 	return c.promptClient != nil && !c.noPromptDialog

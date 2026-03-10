@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -27,9 +28,17 @@ type ProvisioningProgressDisplay struct {
 	deploymentStarted bool
 	// Keeps track of created resources
 	displayedResources map[string]bool
-	resourceManager    ResourceManager
-	console            input.Console
-	deployment         Deployment
+	// Cache for display names, keyed by resource IDs
+	resourceDisplayNames map[string]string
+	// Tracks the number of times we've observed a terminal provisioning state for a given deployment operation,
+	// keyed by operation ID
+	terminalOperationPollCounts map[string]int
+	// The last recorded spinner message, used to avoid unnecessary updates to the spinner
+	lastSpinnerMessage string
+
+	resourceManager ResourceManager
+	console         input.Console
+	deployment      Deployment
 }
 
 func NewProvisioningProgressDisplay(
@@ -38,11 +47,44 @@ func NewProvisioningProgressDisplay(
 	deployment Deployment,
 ) *ProvisioningProgressDisplay {
 	return &ProvisioningProgressDisplay{
-		displayedResources: map[string]bool{},
-		deployment:         deployment,
-		resourceManager:    rm,
-		console:            console,
+		displayedResources:          map[string]bool{},
+		resourceDisplayNames:        map[string]string{},
+		terminalOperationPollCounts: map[string]int{},
+		deployment:                  deployment,
+		resourceManager:             rm,
+		console:                     console,
 	}
+}
+
+// getResourceTypeDisplayName returns the display name for a resource type, using a cache to avoid repeated lookups.
+func (display *ProvisioningProgressDisplay) getResourceTypeDisplayName(
+	ctx context.Context,
+	resourceTypeName string,
+	subscriptionId string,
+	resourceId string,
+) string {
+	resourceType := azapi.AzureResourceType(resourceTypeName)
+	// Check cache first
+	if displayName, exists := display.resourceDisplayNames[resourceId]; exists {
+		return displayName
+	}
+
+	// Try to get dynamic display name
+	displayName, err := display.resourceManager.GetResourceTypeDisplayName(
+		ctx,
+		subscriptionId,
+		resourceId,
+		resourceType,
+	)
+
+	if err != nil {
+		// Dynamic resource type translation failed -- fallback to static translation
+		displayName = azapi.GetResourceTypeDisplayName(resourceType)
+	}
+
+	// Cache the result (even if empty)
+	display.resourceDisplayNames[resourceId] = displayName
+	return displayName
 }
 
 // ReportProgress reports the current deployment progress, setting the currently executing operation title and logging
@@ -87,31 +129,54 @@ func (display *ProvisioningProgressDisplay) ReportProgress(
 		)
 	}
 
-	operations, err := display.resourceManager.GetDeploymentResourceOperations(ctx, display.deployment, queryStart)
-	if err != nil {
-		// Status display is best-effort activity.
-		return err
-	}
-
 	newlyDeployedResources := []*armresources.DeploymentOperation{}
 	newlyFailedResources := []*armresources.DeploymentOperation{}
 	runningDeployments := []*armresources.DeploymentOperation{}
 
-	for i := range operations {
-		if operations[i].Properties.TargetResource != nil {
-			resourceId := *operations[i].Properties.TargetResource.ResourceName
+	err := display.resourceManager.WalkDeploymentOperations(ctx, display.deployment,
+		func(ctx context.Context, operation *armresources.DeploymentOperation) error {
+			if isNestedDeployment(operation) {
+				if isTerminalProvisioningState(operation.Properties.ProvisioningState) {
+					display.terminalOperationPollCounts[*operation.ID]++
+					if display.terminalOperationPollCounts[*operation.ID] >= 2 {
+						// we poll terminal operations twice to ensure we have properly seen it,
+						// to avoid missing any resources that are created right at the end of the deployment operation
+						return SkipExpand
+					}
 
-			if !display.displayedResources[resourceId] {
-				switch *operations[i].Properties.ProvisioningState {
+				} else {
+					// if the operation is observed in a non-terminal state again, clear its poll count
+					delete(display.terminalOperationPollCounts, *operation.ID)
+				}
+
+				return nil
+			}
+
+			if operation.Properties.Timestamp == nil ||
+				operation.Properties.ProvisioningOperation == nil ||
+				operation.Properties.TargetResource == nil ||
+				operation.Properties.TargetResource.ID == nil {
+				return nil
+			}
+
+			if *operation.Properties.ProvisioningOperation == armresources.ProvisioningOperationCreate &&
+				operation.Properties.Timestamp.After(*queryStart) &&
+				!display.displayedResources[*operation.Properties.TargetResource.ID] {
+				switch *operation.Properties.ProvisioningState {
 				case string(armresources.ProvisioningStateSucceeded):
-					newlyDeployedResources = append(newlyDeployedResources, operations[i])
+					newlyDeployedResources = append(newlyDeployedResources, operation)
 				case string(armresources.ProvisioningStateRunning):
-					runningDeployments = append(runningDeployments, operations[i])
+					runningDeployments = append(runningDeployments, operation)
 				case string(armresources.ProvisioningStateFailed):
-					newlyFailedResources = append(newlyFailedResources, operations[i])
+					newlyFailedResources = append(newlyFailedResources, operation)
 				}
 			}
-		}
+
+			return nil
+		})
+	if err != nil {
+		// Status display is best-effort activity.
+		return err
 	}
 
 	sort.Slice(newlyDeployedResources, func(i int, j int) bool {
@@ -125,7 +190,6 @@ func (display *ProvisioningProgressDisplay) ReportProgress(
 	display.logNewlyCreatedResources(ctx, displayedResources, runningDeployments)
 	return nil
 }
-
 func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 	ctx context.Context,
 	resources []*armresources.DeploymentOperation,
@@ -133,17 +197,12 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 ) {
 	for _, resource := range resources {
 		resourceTypeName := *resource.Properties.TargetResource.ResourceType
-		resourceTypeDisplayName, err := display.resourceManager.GetResourceTypeDisplayName(
+		resourceTypeDisplayName := display.getResourceTypeDisplayName(
 			ctx,
+			resourceTypeName,
 			display.deployment.SubscriptionId(),
 			*resource.Properties.TargetResource.ID,
-			azapi.AzureResourceType(resourceTypeName),
 		)
-
-		if err != nil {
-			// Dynamic resource type translation failed -- fallback to static translation
-			resourceTypeDisplayName = azapi.GetResourceTypeDisplayName(azapi.AzureResourceType(resourceTypeName))
-		}
 
 		// Don't log resource types for Azure resources that we do not have a translation of the resource type for.
 		// This will be improved on in a future iteration.
@@ -172,23 +231,18 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 			resourceTypeName,
 			*resource.Properties.TargetResource.ResourceName)
 
-		display.displayedResources[*resource.Properties.TargetResource.ResourceName] = true
+		display.displayedResources[*resource.Properties.TargetResource.ID] = true
 	}
 	// update progress
 	inProgress := []string{}
 	for _, inProgResource := range inProgressResources {
 		resourceTypeName := *inProgResource.Properties.TargetResource.ResourceType
-		resourceTypeDisplayName, err := display.resourceManager.GetResourceTypeDisplayName(
+		resourceTypeDisplayName := display.getResourceTypeDisplayName(
 			ctx,
+			resourceTypeName,
 			display.deployment.SubscriptionId(),
 			*inProgResource.Properties.TargetResource.ID,
-			azapi.AzureResourceType(resourceTypeName),
 		)
-
-		if err != nil {
-			// Dynamic resource type translation failed -- fallback to static translation
-			resourceTypeDisplayName = azapi.GetResourceTypeDisplayName(azapi.AzureResourceType(resourceTypeName))
-		}
 
 		// Don't log resource types for Azure resources that we do not have a translation of the resource type for.
 		// This will be improved on in a future iteration.
@@ -203,10 +257,18 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 		return
 	}
 
+	// ensure stable ordering
+	slices.Sort(inProgress)
+
+	message := "Creating/Updating resources"
 	if len(inProgress) > 0 {
-		display.console.ShowSpinner(ctx,
-			fmt.Sprintf("Creating/Updating resources (%s)", strings.Join(inProgress, ", ")), input.Step)
-	} else {
-		display.console.ShowSpinner(ctx, "Creating/Updating resources", input.Step)
+		message = fmt.Sprintf("%s (%s)", message, strings.Join(inProgress, ", "))
 	}
+
+	// only update the spinner message if it has changed, to avoid updates which can cause flickering
+	if message != display.lastSpinnerMessage {
+		display.console.ShowSpinner(ctx, message, input.Step)
+	}
+
+	display.lastSpinnerMessage = message
 }

@@ -621,6 +621,7 @@ func Test_isNetworkError(t *testing.T) {
 // 2. Add it to the excludedErrors list below with a comment explaining why.
 func Test_PackageLevelErrorsMapped(t *testing.T) {
 	// Package-level error variables that are intentionally NOT mapped in MapError, with reasons:
+	//nolint:gosec // G101: map variable name, not credentials
 	excludedErrors := map[string]string{
 		// Internal-only errors that never propagate to command-level
 		"ErrDuplicateRegistration": "internal/mapper: programming error, not a runtime user error",

@@ -7,4 +7,5 @@ package fields
 const (
 	FeatLayers             string = "layers"
 	FeatRevisionDeployment string = "aca.revisionDeployment"
+	FeatJobDeployment      string = "aca.jobDeployment"
 )

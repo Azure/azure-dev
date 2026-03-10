@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,8 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
@@ -46,10 +49,11 @@ func setupInitAction(t *testing.T, mockContext *mocks.MockContext, flags *initFl
 		lazyAzdCtx: lazy.NewLazy(func() (*azdcontext.AzdContext, error) {
 			return azdcontext.NewAzdContextWithDirectory(tmpDir), nil
 		}),
-		console: mockContext.Console,
-		cmdRun:  mockContext.CommandRunner,
-		gitCli:  gitCli,
-		flags:   flags,
+		console:         mockContext.Console,
+		cmdRun:          mockContext.CommandRunner,
+		gitCli:          gitCli,
+		flags:           flags,
+		featuresManager: alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
 	}
 }
 
@@ -68,9 +72,74 @@ func runActionSafe(ctx context.Context, action *initAction) (retErr error) {
 	return err
 }
 
-func TestInitFailFastMissingEnvNonInteractive(t *testing.T) {
-	t.Run("FailsWhenNoPromptWithTemplateAndNoEnv", func(t *testing.T) {
+func TestInitNoPromptRequiresMode(t *testing.T) {
+	t.Run("ReturnsInitNoPromptErrorWhenNoMode", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.Console.SetNoPromptMode(true)
+
+		flags := &initFlags{
+			global: &internal.GlobalCommandOptions{NoPrompt: true},
+		}
+
+		action := setupInitAction(t, mockContext, flags)
+
+		result, err := action.Run(*mockContext.Context)
+		require.Error(t, err)
+		require.Nil(t, result)
+
+		var noPromptErr *initModeRequiredError
+		require.ErrorAs(t, err, &noPromptErr)
+
+		output := noPromptErr.ToString("")
+		require.Contains(t, output, "Init cannot continue (interactive prompts disabled)")
+		require.Contains(t, output, "azd init --minimal")
+		require.Contains(t, output, "azd init --template")
+	})
+
+	t.Run("DoesNotErrorWhenMinimalFlagSet", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.Console.SetNoPromptMode(true)
+
+		flags := &initFlags{
+			minimal: true,
+			global:  &internal.GlobalCommandOptions{NoPrompt: true},
+		}
+
+		action := setupInitAction(t, mockContext, flags)
+
+		err := runActionSafe(*mockContext.Context, action)
+		if err != nil {
+			var noPromptErr *initModeRequiredError
+			require.False(t, errors.As(err, &noPromptErr),
+				"should not return InitNoPromptError when --minimal is set")
+		}
+	})
+
+	t.Run("DoesNotErrorWhenTemplateAndEnvironmentProvided", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.Console.SetNoPromptMode(true)
+
+		flags := &initFlags{
+			templatePath: "owner/repo",
+			global:       &internal.GlobalCommandOptions{NoPrompt: true},
+		}
+		flags.EnvironmentName = "myenv"
+
+		action := setupInitAction(t, mockContext, flags)
+
+		err := runActionSafe(*mockContext.Context, action)
+		if err != nil {
+			var noPromptErr *initModeRequiredError
+			require.False(t, errors.As(err, &noPromptErr),
+				"should not return InitNoPromptError when --template and --environment are both set")
+		}
+	})
+}
+
+func TestInitFailFastMissingEnvNonInteractive(t *testing.T) {
+	t.Run("NoLongerFailsWhenNoPromptWithTemplateAndNoEnv", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.Console.SetNoPromptMode(true)
 
 		flags := &initFlags{
 			templatePath: "owner/repo",
@@ -79,11 +148,15 @@ func TestInitFailFastMissingEnvNonInteractive(t *testing.T) {
 
 		action := setupInitAction(t, mockContext, flags)
 
-		result, err := action.Run(*mockContext.Context)
-		require.Error(t, err)
-		require.Contains(t, err.Error(),
-			"--environment is required when running in non-interactive mode")
-		require.Nil(t, result)
+		// With sensible defaults, --no-prompt --template without --environment should not
+		// fail with the old "--environment is required" error. The action will error or
+		// panic later due to missing mocks for template download, which is expected —
+		// we only verify the fail-fast guard was removed.
+		err := runActionSafe(*mockContext.Context, action)
+		if err != nil {
+			require.NotContains(t, err.Error(),
+				"--environment is required when running in non-interactive mode")
+		}
 	})
 
 	t.Run("DoesNotFailWhenEnvProvidedViaFlag", func(t *testing.T) {

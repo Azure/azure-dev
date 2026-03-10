@@ -193,6 +193,14 @@ func NewRootCmd(
 		},
 	})
 
+	root.Add("update", &actions.ActionDescriptorOptions{
+		Command:        newUpdateCmd(),
+		FlagsResolver:  newUpdateFlags,
+		ActionResolver: newUpdateAction,
+		OutputFormats:  []output.Format{output.NoneFormat},
+		DefaultFormat:  output.NoneFormat,
+	})
+
 	root.Add("vs-server", &actions.ActionDescriptorOptions{
 		Command:        newVsServerCmd(),
 		FlagsResolver:  newVsServerFlags,

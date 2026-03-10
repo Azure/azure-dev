@@ -1011,12 +1011,12 @@ type mockedScope struct {
 
 type mockResourceManager struct{}
 
-func (m *mockResourceManager) GetDeploymentResourceOperations(
+func (m *mockResourceManager) WalkDeploymentOperations(
 	ctx context.Context,
 	deployment infra.Deployment,
-	queryStart *time.Time,
-) ([]*armresources.DeploymentOperation, error) {
-	return nil, nil
+	fn infra.WalkDeploymentOperationFunc,
+) error {
+	return nil
 }
 
 func (m *mockResourceManager) GetResourceTypeDisplayName(

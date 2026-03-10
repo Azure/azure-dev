@@ -36,11 +36,6 @@ type promptModel struct {
 
 // Styles for prompt UI
 var (
-	promptTitleStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("205")).
-				MarginBottom(1)
-
 	promptMessageStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("15")).
 				MarginBottom(1)

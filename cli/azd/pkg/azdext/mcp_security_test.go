@@ -5,6 +5,9 @@ package azdext
 
 import (
 	"fmt"
+	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -333,5 +336,230 @@ func TestMCPSecurityFluentBuilder(t *testing.T) {
 	}
 	if len(policy.allowedBasePaths) != 1 {
 		t.Errorf("expected 1 base path, got %d", len(policy.allowedBasePaths))
+	}
+}
+
+func TestSSRFSafeRedirect_SchemeDowngrade(t *testing.T) {
+	t.Parallel()
+
+	// Simulate HTTPS → HTTP redirect (credential leak vector).
+	via := []*http.Request{
+		{URL: &url.URL{Scheme: "https", Host: "example.com", Path: "/api"}},
+	}
+	req := &http.Request{
+		URL: &url.URL{Scheme: "http", Host: "example.com", Path: "/api"},
+	}
+
+	err := SSRFSafeRedirect(req, via)
+	if err == nil {
+		t.Fatal("expected error for HTTPS → HTTP redirect (credential protection)")
+	}
+	if !strings.Contains(err.Error(), "credential protection") {
+		t.Errorf("error = %q, want mention of credential protection", err.Error())
+	}
+}
+
+func TestSSRFSafeRedirect_HTTPToHTTPAllowed(t *testing.T) {
+	t.Parallel()
+
+	// HTTP → HTTP redirect (no downgrade) should be allowed.
+	via := []*http.Request{
+		{URL: &url.URL{Scheme: "http", Host: "example.com", Path: "/api"}},
+	}
+	req := &http.Request{
+		URL: &url.URL{Scheme: "http", Host: "example.com", Path: "/other"},
+	}
+
+	err := SSRFSafeRedirect(req, via)
+	if err != nil {
+		t.Errorf("HTTP → HTTP redirect should be allowed, got: %v", err)
+	}
+}
+
+func TestSSRFSafeRedirect_LocalhostHostname(t *testing.T) {
+	t.Parallel()
+
+	// Redirect to "localhost" hostname should be blocked.
+	req := &http.Request{
+		URL: &url.URL{Scheme: "http", Host: "localhost:8080", Path: "/steal"},
+	}
+
+	err := SSRFSafeRedirect(req, nil)
+	if err == nil {
+		t.Fatal("expected error for redirect to localhost hostname")
+	}
+	if !strings.Contains(err.Error(), "localhost") {
+		t.Errorf("error = %q, want mention of localhost", err.Error())
+	}
+}
+
+func TestSSRFSafeRedirect_IPv4CompatiblePrivate(t *testing.T) {
+	t.Parallel()
+
+	// Redirect to IPv4-compatible IPv6 embedding private IP.
+	req := &http.Request{
+		URL: &url.URL{Scheme: "http", Host: "[::10.0.0.1]", Path: "/steal"},
+	}
+
+	err := SSRFSafeRedirect(req, nil)
+	if err == nil {
+		t.Fatal("expected error for redirect to IPv4-compatible private address")
+	}
+	if !strings.Contains(err.Error(), "SSRF") {
+		t.Errorf("error = %q, want mention of SSRF", err.Error())
+	}
+}
+
+func TestSSRFSafeRedirect_HostnameResolvesPrivateBlocked(t *testing.T) {
+	req := &http.Request{
+		URL: &url.URL{Scheme: "https", Host: "example.test", Path: "/next"},
+	}
+
+	err := ssrfSafeRedirect(req, nil, func(host string) ([]string, error) {
+		return []string{"10.0.0.10"}, nil
+	})
+	if err == nil {
+		t.Fatal("expected error for redirect hostname resolving to private IP")
+	}
+	if !strings.Contains(err.Error(), "resolved to private/loopback") {
+		t.Errorf("error = %q, want mention of resolved private/loopback", err.Error())
+	}
+}
+
+func TestSSRFSafeRedirect_HostnameDNSFailureBlocked(t *testing.T) {
+	req := &http.Request{
+		URL: &url.URL{Scheme: "https", Host: "example.test", Path: "/next"},
+	}
+
+	err := ssrfSafeRedirect(req, nil, func(host string) ([]string, error) {
+		return nil, fmt.Errorf("dns unavailable")
+	})
+	if err == nil {
+		t.Fatal("expected error for redirect hostname DNS failure")
+	}
+	if !strings.Contains(err.Error(), "DNS resolution failed") {
+		t.Errorf("error = %q, want mention of DNS resolution failed", err.Error())
+	}
+}
+
+func TestMCPSecurityOnBlocked_URLCallback(t *testing.T) {
+	t.Parallel()
+
+	var (
+		gotAction string
+		gotDetail string
+		callCount int
+	)
+
+	policy := NewMCPSecurityPolicy().
+		RequireHTTPS().
+		OnBlocked(func(action, detail string) {
+			gotAction = action
+			gotDetail = detail
+			callCount++
+		})
+
+	// This should trigger the callback: HTTP to non-localhost host.
+	err := policy.CheckURL("http://example.com/api")
+	if err == nil {
+		t.Fatal("expected error for HTTP URL with HTTPS required")
+	}
+
+	if callCount != 1 {
+		t.Errorf("callCount = %d, want 1", callCount)
+	}
+	if gotAction != "url_blocked" {
+		t.Errorf("action = %q, want %q", gotAction, "url_blocked")
+	}
+	if !strings.Contains(gotDetail, "HTTPS required") {
+		t.Errorf("detail = %q, want to contain %q", gotDetail, "HTTPS required")
+	}
+}
+
+func TestMCPSecurityOnBlocked_PathCallback(t *testing.T) {
+	t.Parallel()
+
+	var gotAction string
+
+	base := t.TempDir()
+	outside := t.TempDir()
+	outsideFile := filepath.Join(outside, "secret.txt")
+	if err := os.WriteFile(outsideFile, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	policy := NewMCPSecurityPolicy().
+		ValidatePathsWithinBase(base).
+		OnBlocked(func(action, detail string) {
+			gotAction = action
+		})
+
+	err := policy.CheckPath(outsideFile)
+	if err == nil {
+		t.Fatal("expected error for path outside base")
+	}
+
+	if gotAction != "path_blocked" {
+		t.Errorf("action = %q, want %q", gotAction, "path_blocked")
+	}
+}
+
+func TestExtractEmbeddedIPv4(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		ip     net.IP
+		wantV4 net.IP
+	}{
+		{
+			name:   "IPv4-compatible private",
+			ip:     net.ParseIP("::10.0.0.1"),
+			wantV4: net.IPv4(10, 0, 0, 1),
+		},
+		{
+			name:   "IPv4-compatible loopback",
+			ip:     net.ParseIP("::127.0.0.1"),
+			wantV4: net.IPv4(127, 0, 0, 1),
+		},
+		{
+			name:   "IPv4-translated private",
+			ip:     net.IP{0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF, 0, 0, 10, 0, 0, 1},
+			wantV4: net.IPv4(10, 0, 0, 1),
+		},
+		{
+			name:   "IPv4-mapped (handled by To4)",
+			ip:     net.ParseIP("::ffff:10.0.0.1"),
+			wantV4: nil, // To4() != nil, so extractEmbeddedIPv4 returns nil
+		},
+		{
+			name:   "public IPv6",
+			ip:     net.ParseIP("2607:f8b0:4004:800::200e"),
+			wantV4: nil,
+		},
+		{
+			name:   "pure IPv4",
+			ip:     net.ParseIP("10.0.0.1"),
+			wantV4: nil, // len != IPv6len, returns nil
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := extractEmbeddedIPv4(tt.ip)
+			if tt.wantV4 == nil {
+				if got != nil {
+					t.Errorf("extractEmbeddedIPv4(%s) = %s, want nil", tt.ip, got)
+				}
+			} else {
+				if got == nil {
+					t.Errorf("extractEmbeddedIPv4(%s) = nil, want %s", tt.ip, tt.wantV4)
+				} else if !got.Equal(tt.wantV4) {
+					t.Errorf("extractEmbeddedIPv4(%s) = %s, want %s", tt.ip, got, tt.wantV4)
+				}
+			}
+		})
 	}
 }

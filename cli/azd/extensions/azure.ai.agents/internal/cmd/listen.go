@@ -144,6 +144,7 @@ func kindEnvUpdate(ctx context.Context, azdClient *azdext.AzdClient, project *az
 	fullPath := filepath.Join(project.Path, servicePath)
 	agentYamlPath := filepath.Join(fullPath, "agent.yaml")
 
+	//nolint:gosec // agentYamlPath is resolved from project/service paths in current workspace
 	data, err := os.ReadFile(agentYamlPath)
 	if err != nil {
 		return fmt.Errorf("failed to read YAML file: %w", err)
@@ -207,6 +208,7 @@ func containerAgentHandling(ctx context.Context, azdClient *azdext.AzdClient, pr
 	fullPath := filepath.Join(project.Path, servicePath)
 	agentYamlPath := filepath.Join(fullPath, "agent.yaml")
 
+	//nolint:gosec // agentYamlPath is resolved from project/service paths in current workspace
 	data, err := os.ReadFile(agentYamlPath)
 	if err != nil {
 		return nil

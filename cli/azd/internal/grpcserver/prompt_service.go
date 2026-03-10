@@ -596,12 +596,7 @@ func (s *promptService) PromptAiModel(
 	}
 
 	if s.globalOptions.NoPrompt {
-		return nil, aiStatusError(
-			codes.FailedPrecondition,
-			azdext.AiErrorReasonInteractiveRequired,
-			"cannot prompt for model selection in non-interactive mode",
-			nil,
-		)
+		return selectModelNoPrompt(models, req.DefaultValue)
 	}
 
 	release, err := s.acquirePromptLock(ctx)
@@ -1132,6 +1127,39 @@ func requirePromptSubscriptionID(azureContext *azdext.AzureContext) (string, err
 	}
 
 	return azureContext.Scope.SubscriptionId, nil
+}
+
+// selectModelNoPrompt handles model selection in non-interactive mode.
+// If defaultValue matches a model name (case-insensitive), it returns that model.
+// Returns NotFound if defaultValue doesn't match, or InteractiveRequired if no default is set.
+func selectModelNoPrompt(
+	models []ai.AiModel, defaultValue string,
+) (*azdext.PromptAiModelResponse, error) {
+	if defaultValue != "" {
+		for i, m := range models {
+			if strings.EqualFold(m.Name, defaultValue) {
+				var protoModel *azdext.AiModel
+				if err := mapper.Convert(&models[i], &protoModel); err != nil {
+					return nil, fmt.Errorf("converting selected model to proto: %w", err)
+				}
+				return &azdext.PromptAiModelResponse{Model: protoModel}, nil
+			}
+		}
+
+		return nil, aiStatusError(
+			codes.NotFound,
+			azdext.AiErrorReasonModelNotFound,
+			fmt.Sprintf("default model %q not found in available models", defaultValue),
+			map[string]string{"model_name": defaultValue},
+		)
+	}
+
+	return nil, aiStatusError(
+		codes.FailedPrecondition,
+		azdext.AiErrorReasonInteractiveRequired,
+		"cannot prompt for model selection in non-interactive mode",
+		nil,
+	)
 }
 
 // findDefaultIndex returns a pointer to the index of the first choice whose value

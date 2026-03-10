@@ -57,7 +57,8 @@ const (
 	ConnectionKindAnonymous ConnectionKind = "anonymous"
 )
 
-// AgentDefinition The following is a specification for defining AI agents with structured metadata, inputs, outputs, tools, and templates.
+// AgentDefinition The following is a specification for defining AI agents with structured metadata, inputs, outputs, tools,
+// and templates.
 // It provides a way to create reusable and composable AI agents that can be executed with specific configurations.
 // The specification includes metadata about the agent, model configuration, input parameters, expected outputs,
 // available tools, and template configurations for prompt rendering.
@@ -158,7 +159,8 @@ type RemoteConnection struct {
 type ApiKeyConnection struct {
 	Connection `json:",inline" yaml:",inline"`
 	Endpoint   string `json:"endpoint" yaml:"endpoint"`
-	ApiKey     string `json:"apiKey" yaml:"apiKey"`
+	//nolint:gosec // schema field name for manifest serialization, not embedded credential
+	ApiKey string `json:"apiKey" yaml:"apiKey"`
 }
 
 // AnonymousConnection represents a anonymousconnection.

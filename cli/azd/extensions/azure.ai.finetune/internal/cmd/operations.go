@@ -164,7 +164,7 @@ func newOperationSubmitCommand() *cobra.Command {
 	cmd.Flags().Int64VarP(&seed, "seed", "r", 0, "Random seed for reproducibility of the job. If a seed is not specified, one will be generated for you. Overrides config file.")
 
 	//Either config file should be provided or at least `model` & `training-file` parameters
-	cmd.MarkFlagFilename("file", "yaml", "yml")
+	_ = cmd.MarkFlagFilename("file", "yaml", "yml") //nolint:gosec // error is informational only
 	cmd.MarkFlagsOneRequired("file", "model")
 	cmd.MarkFlagsRequiredTogether("model", "training-file")
 	return cmd
@@ -223,21 +223,21 @@ func newOperationShowCommand() *cobra.Command {
 
 			switch output {
 			case "json":
-				utils.PrintObject(job, utils.FormatJSON)
+				_ = utils.PrintObject(job, utils.FormatJSON)
 			case "yaml":
-				utils.PrintObject(job, utils.FormatYAML)
+				_ = utils.PrintObject(job, utils.FormatYAML)
 			case "table", "":
 				views := job.ToDetailViews()
 				indent := "  "
-				utils.PrintObjectWithIndent(views.Details, utils.FormatTable, indent)
+				_ = utils.PrintObjectWithIndent(views.Details, utils.FormatTable, indent)
 
 				fmt.Println("\nTimestamps:")
-				utils.PrintObjectWithIndent(views.Timestamps, utils.FormatTable, indent)
+				_ = utils.PrintObjectWithIndent(views.Timestamps, utils.FormatTable, indent)
 				fmt.Println("\nConfiguration:")
-				utils.PrintObjectWithIndent(views.Configuration, utils.FormatTable, indent)
+				_ = utils.PrintObjectWithIndent(views.Configuration, utils.FormatTable, indent)
 
 				fmt.Println("\nData:")
-				utils.PrintObjectWithIndent(views.Data, utils.FormatTable, indent)
+				_ = utils.PrintObjectWithIndent(views.Data, utils.FormatTable, indent)
 			default:
 				return fmt.Errorf("unsupported output format: %s (supported: table, json, yaml)", output)
 			}
@@ -276,7 +276,7 @@ func newOperationShowCommand() *cobra.Command {
 	cmd.Flags().StringVarP(&jobID, "id", "i", "", "Job ID (required)")
 	cmd.Flags().BoolVar(&logs, "logs", false, "Include recent training logs")
 	cmd.Flags().StringVarP(&output, "output", "o", "table", "Output format: table, json, yaml")
-	cmd.MarkFlagRequired(requiredFlag)
+	_ = cmd.MarkFlagRequired(requiredFlag)
 
 	return cmd
 }
@@ -330,9 +330,9 @@ func newOperationListCommand() *cobra.Command {
 
 			switch output {
 			case "json":
-				utils.PrintObject(jobs, utils.FormatJSON)
+				_ = utils.PrintObject(jobs, utils.FormatJSON)
 			case "table", "":
-				utils.PrintObject(jobs, utils.FormatTable)
+				_ = utils.PrintObject(jobs, utils.FormatTable)
 			default:
 				return fmt.Errorf("unsupported output format: %s (supported: table, json)", output)
 			}
@@ -400,7 +400,7 @@ func newOperationPauseCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&jobID, "id", "i", "", "Job ID (required)")
-	cmd.MarkFlagRequired(requiredFlag)
+	_ = cmd.MarkFlagRequired(requiredFlag)
 
 	return cmd
 }
@@ -459,7 +459,7 @@ func newOperationResumeCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&jobID, "id", "i", "", "Job ID (required)")
-	cmd.MarkFlagRequired(requiredFlag)
+	_ = cmd.MarkFlagRequired(requiredFlag)
 
 	return cmd
 }
@@ -488,7 +488,7 @@ func newOperationCancelCommand() *cobra.Command {
 			if !force {
 				fmt.Printf("Cancel fine-tuning job %s? (y/N): ", jobID)
 				var response string
-				fmt.Scanln(&response)
+				_, _ = fmt.Scanln(&response)
 				response = strings.ToLower(strings.TrimSpace(response))
 				if response != "y" && response != "yes" {
 					fmt.Println("Operation aborted.")
@@ -530,7 +530,7 @@ func newOperationCancelCommand() *cobra.Command {
 
 	cmd.Flags().StringVarP(&jobID, "id", "i", "", "Job ID (required)")
 	cmd.Flags().BoolVar(&force, "force", false, "Skip confirmation prompt")
-	cmd.MarkFlagRequired(requiredFlag)
+	_ = cmd.MarkFlagRequired(requiredFlag)
 
 	return cmd
 }
@@ -682,8 +682,8 @@ func newOperationDeployModelCommand() *cobra.Command {
 	cmd.Flags().StringVarP(&version, "version", "v", "1", "Model version")
 	cmd.Flags().Int32VarP(&capacity, "capacity", "c", 1, "Capacity units")
 	cmd.Flags().BoolVar(&noWait, "no-wait", false, "Do not wait for deployment to complete")
-	cmd.MarkFlagRequired(requiredFlagJobID)
-	cmd.MarkFlagRequired(requiredFlagDeploymentName)
+	_ = cmd.MarkFlagRequired(requiredFlagJobID)
+	_ = cmd.MarkFlagRequired(requiredFlagDeploymentName)
 
 	return cmd
 }

@@ -7,6 +7,8 @@ import (
 	"errors"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // ServiceError represents an HTTP/gRPC service error from an extension.
@@ -47,8 +49,18 @@ func (e *ServiceError) Error() string {
 	return e.Message
 }
 
-// WrapError wraps a Go error into an ExtensionError for transmission over gRPC.
-// It detects the error type and populates the appropriate source details.
+// WrapError converts a Go error into an ExtensionError proto for transmission to the azd host.
+// It is called from extension processes (via [ReportError] and envelope SetError methods)
+// to serialize errors before sending them over gRPC.
+//
+// The function applies detection in priority order:
+//  1. [ServiceError] / [LocalError] — already structured by extension code (highest specificity)
+//  2. [azcore.ResponseError] — Azure SDK HTTP errors
+//  3. gRPC Unauthenticated — auto-classified as auth category (safety net)
+//  4. Fallback — unclassified error with original message
+//
+// The counterpart [UnwrapError] is called from the azd host to deserialize
+// the proto back into typed Go errors for telemetry classification.
 func WrapError(err error) *ExtensionError {
 	if err == nil {
 		return nil
@@ -107,12 +119,35 @@ func WrapError(err error) *ExtensionError {
 				ServiceName: serviceName,
 			},
 		}
+		return extErr
+	}
+
+	// Detect gRPC Unauthenticated errors as an auth safety net.
+	// If the extension didn't already classify the error, this ensures auth failures
+	// from azd host calls are reported with the correct category in telemetry.
+	// Use errors.As to detect gRPC status errors even when wrapped by fmt.Errorf.
+	var grpcErr interface{ GRPCStatus() *status.Status }
+	if errors.As(err, &grpcErr) {
+		if st := grpcErr.GRPCStatus(); st.Code() == codes.Unauthenticated {
+			extErr.Origin = ErrorOrigin_ERROR_ORIGIN_LOCAL
+			extErr.Message = st.Message()
+			extErr.Source = &ExtensionError_LocalError{
+				LocalError: &LocalErrorDetail{
+					Code:     "auth_failed",
+					Category: string(LocalErrorCategoryAuth),
+				},
+			}
+			return extErr
+		}
 	}
 
 	return extErr
 }
 
-// UnwrapError converts an ExtensionError back to a typed Go error.
+// UnwrapError converts an ExtensionError proto back to a typed Go error.
+// It is called from the azd host (via [ExtensionService.ReportError] handler
+// and envelope GetError methods) to deserialize errors received from extensions
+// for telemetry classification and error handling.
 // It returns the appropriate error type based on the origin field.
 func UnwrapError(msg *ExtensionError) error {
 	if msg == nil || msg.GetMessage() == "" {

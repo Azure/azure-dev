@@ -1,5 +1,12 @@
 # Release History
 
+## 0.6.0 (2026-03-04)
+
+### Features Added
+
+- [[#6741]](https://github.com/Azure/azure-dev/pull/6741) Add `ai models`, `ai deployment`, and `ai quota` commands for interactive AI model browsing, deployment configuration, and quota viewing.
+- [[#6835]](https://github.com/Azure/azure-dev/pull/6835) Add `gh-url-parse` command and adopt `azdext.Run` lifecycle with structured error transport for improved error handling and telemetry.
+
 ## 0.5.0 (2026-01-23)
 
 ### Features Added

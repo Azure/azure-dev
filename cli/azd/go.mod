@@ -1,6 +1,6 @@
 module github.com/azure/azure-dev/cli/azd
 
-go 1.25
+go 1.26
 
 require (
 	dario.cat/mergo v1.0.2

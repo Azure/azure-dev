@@ -170,7 +170,7 @@ func TestOn_RegistersHandler(t *testing.T) {
 	defer sim.Close()
 
 	envelope := &SimpleMessageEnvelope{}
-	broker := NewMessageBroker(sim.ServerStream(), envelope, "test")
+	broker := NewMessageBroker(sim.ServerStream(), envelope, "test", nil)
 
 	// Valid handler with context and request only
 	handler := func(ctx context.Context, req *TestRequest) (*TestMessage, error) {
@@ -192,7 +192,7 @@ func TestOn_RegistersHandlerWithProgress(t *testing.T) {
 	defer sim.Close()
 
 	envelope := &SimpleMessageEnvelope{}
-	broker := NewMessageBroker(sim.ServerStream(), envelope, "test")
+	broker := NewMessageBroker(sim.ServerStream(), envelope, "test", nil)
 
 	// Valid handler with progress callback
 	handler := func(ctx context.Context, req *TestRequest, progress ProgressFunc) (*TestMessage, error) {
@@ -219,7 +219,7 @@ func TestOn_InvalidHandler(t *testing.T) {
 	defer sim.Close()
 
 	envelope := &SimpleMessageEnvelope{}
-	broker := NewMessageBroker(sim.ServerStream(), envelope, "test")
+	broker := NewMessageBroker(sim.ServerStream(), envelope, "test", nil)
 
 	tests := []struct {
 		name    string
@@ -280,7 +280,7 @@ func TestSend_Success(t *testing.T) {
 	defer sim.Close()
 
 	envelope := &SimpleMessageEnvelope{}
-	clientBroker := NewMessageBroker(sim.ClientStream(), envelope, "client")
+	clientBroker := NewMessageBroker(sim.ClientStream(), envelope, "client", nil)
 
 	ctx := context.Background()
 	msg := &TestMessage{RequestId: "fire-forget-123", Data: "notification"}
@@ -303,7 +303,7 @@ func TestSendAndWait_NoRequestId(t *testing.T) {
 	defer sim.Close()
 
 	envelope := &SimpleMessageEnvelope{}
-	clientBroker := NewMessageBroker(sim.ClientStream(), envelope, "client")
+	clientBroker := NewMessageBroker(sim.ClientStream(), envelope, "client", nil)
 
 	ctx := context.Background()
 	requestMsg := &TestMessage{Data: "request"} // No RequestId
@@ -319,8 +319,8 @@ func TestEndToEnd_ClientSendsServerResponds(t *testing.T) {
 	defer sim.Close()
 
 	envelope := &SimpleMessageEnvelope{}
-	clientBroker := NewMessageBroker(sim.ClientStream(), envelope, "client")
-	serverBroker := NewMessageBroker(sim.ServerStream(), envelope, "server")
+	clientBroker := NewMessageBroker(sim.ClientStream(), envelope, "client", nil)
+	serverBroker := NewMessageBroker(sim.ServerStream(), envelope, "server", nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -382,8 +382,8 @@ func TestEndToEnd_SendAndWaitWithProgress(t *testing.T) {
 	defer sim.Close()
 
 	envelope := &SimpleMessageEnvelope{}
-	clientBroker := NewMessageBroker(sim.ClientStream(), envelope, "client")
-	serverBroker := NewMessageBroker(sim.ServerStream(), envelope, "server")
+	clientBroker := NewMessageBroker(sim.ClientStream(), envelope, "client", nil)
+	serverBroker := NewMessageBroker(sim.ServerStream(), envelope, "server", nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -457,8 +457,8 @@ func TestEndToEnd_HandlerReturnsError(t *testing.T) {
 	defer sim.Close()
 
 	envelope := &SimpleMessageEnvelope{}
-	clientBroker := NewMessageBroker(sim.ClientStream(), envelope, "client")
-	serverBroker := NewMessageBroker(sim.ServerStream(), envelope, "server")
+	clientBroker := NewMessageBroker(sim.ClientStream(), envelope, "client", nil)
+	serverBroker := NewMessageBroker(sim.ServerStream(), envelope, "server", nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -508,8 +508,8 @@ func TestEndToEnd_MultipleHandlers(t *testing.T) {
 	defer sim.Close()
 
 	envelope := &SimpleMessageEnvelope{}
-	serverBroker := NewMessageBroker(sim.ServerStream(), envelope, "server")
-	clientBroker := NewMessageBroker(sim.ClientStream(), envelope, "client")
+	serverBroker := NewMessageBroker(sim.ServerStream(), envelope, "server", nil)
+	clientBroker := NewMessageBroker(sim.ClientStream(), envelope, "client", nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -598,7 +598,7 @@ func TestRun_ContextCancellation(t *testing.T) {
 	defer sim.Close()
 
 	envelope := &SimpleMessageEnvelope{}
-	broker := NewMessageBroker(sim.ServerStream(), envelope, "test")
+	broker := NewMessageBroker(sim.ServerStream(), envelope, "test", nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -625,7 +625,7 @@ func TestRun_GracefulShutdown_EOF(t *testing.T) {
 	sim := NewSimulatedBidiStream()
 
 	envelope := &SimpleMessageEnvelope{}
-	broker := NewMessageBroker(sim.ServerStream(), envelope, "test")
+	broker := NewMessageBroker(sim.ServerStream(), envelope, "test", nil)
 
 	ctx := context.Background()
 
@@ -643,7 +643,7 @@ func TestClose_ClosesAllChannels(t *testing.T) {
 	defer sim.Close()
 
 	envelope := &SimpleMessageEnvelope{}
-	broker := NewMessageBroker(sim.ClientStream(), envelope, "test")
+	broker := NewMessageBroker(sim.ClientStream(), envelope, "test", nil)
 
 	ctx := context.Background()
 
@@ -681,8 +681,8 @@ func TestEndToEnd_HandlerPanic(t *testing.T) {
 
 	// Create simulated stream and both client/server brokers
 	stream := NewSimulatedBidiStream()
-	clientBroker := NewMessageBroker(stream.ClientStream(), &SimpleMessageEnvelope{}, "client")
-	serverBroker := NewMessageBroker(stream.ServerStream(), &SimpleMessageEnvelope{}, "server")
+	clientBroker := NewMessageBroker(stream.ClientStream(), &SimpleMessageEnvelope{}, "client", nil)
+	serverBroker := NewMessageBroker(stream.ServerStream(), &SimpleMessageEnvelope{}, "server", nil)
 
 	// Register a handler that panics
 	panicHandler := func(ctx context.Context, req *TestRequest) (*TestMessage, error) {
@@ -749,7 +749,7 @@ func TestReady_BlocksUntilRunStarts(t *testing.T) {
 	stream := NewSimulatedBidiStream()
 	defer stream.Close()
 	envelope := &SimpleMessageEnvelope{}
-	broker := NewMessageBroker(stream.ClientStream(), envelope, "client")
+	broker := NewMessageBroker(stream.ClientStream(), envelope, "client", nil)
 
 	readyDone := make(chan error, 1)
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
@@ -792,7 +792,7 @@ func TestReady_CompletesImmediatelyAfterRunStarts(t *testing.T) {
 	stream := NewSimulatedBidiStream()
 	defer stream.Close()
 	envelope := &SimpleMessageEnvelope{}
-	broker := NewMessageBroker(stream.ClientStream(), envelope, "client")
+	broker := NewMessageBroker(stream.ClientStream(), envelope, "client", nil)
 
 	// Start Run() first
 	runCtx, runCancel := context.WithCancel(context.Background())
@@ -823,7 +823,7 @@ func TestReady_MultipleCallersAllComplete(t *testing.T) {
 	stream := NewSimulatedBidiStream()
 	defer stream.Close()
 	envelope := &SimpleMessageEnvelope{}
-	broker := NewMessageBroker(stream.ClientStream(), envelope, "client")
+	broker := NewMessageBroker(stream.ClientStream(), envelope, "client", nil)
 
 	const numCallers = 5
 	readyResults := make(chan error, numCallers)
@@ -865,7 +865,7 @@ func TestReady_ContextCancellation(t *testing.T) {
 	stream := NewSimulatedBidiStream()
 	defer stream.Close()
 	envelope := &SimpleMessageEnvelope{}
-	broker := NewMessageBroker(stream.ClientStream(), envelope, "client")
+	broker := NewMessageBroker(stream.ClientStream(), envelope, "client", nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -895,7 +895,7 @@ func TestReady_RunAlreadyStartedMultipleTimes(t *testing.T) {
 	stream := NewSimulatedBidiStream()
 	defer stream.Close()
 	envelope := &SimpleMessageEnvelope{}
-	broker := NewMessageBroker(stream.ClientStream(), envelope, "client")
+	broker := NewMessageBroker(stream.ClientStream(), envelope, "client", nil)
 
 	// Start Run()
 	runCtx, runCancel := context.WithCancel(context.Background())

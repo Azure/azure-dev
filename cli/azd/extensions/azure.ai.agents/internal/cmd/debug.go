@@ -22,6 +22,7 @@ func setupDebugLogging(flags *pflag.FlagSet) {
 		currentDate := time.Now().Format("2006-01-02")
 		logFileName := fmt.Sprintf("azd-ai-agents-%s.log", currentDate)
 
+		//nolint:gosec // log file name is generated locally from date and not user-controlled
 		logFile, err := os.OpenFile(logFileName, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 		if err != nil {
 			logFile = os.Stderr

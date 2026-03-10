@@ -112,6 +112,7 @@ func (r *Runner) Copy(ctx context.Context, source string, sasURI string) error {
 		"--block-size-mb", "100",
 	}
 
+	//nolint:gosec // azcopyPath is resolved from known install directory
 	cmd := exec.CommandContext(ctx, r.azcopyPath, args...)
 	cmd.Stderr = os.Stderr
 

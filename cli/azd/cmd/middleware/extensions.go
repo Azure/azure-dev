@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
@@ -37,6 +38,7 @@ type ExtensionsMiddleware struct {
 	serviceLocator   ioc.ServiceLocator
 	console          input.Console
 	options          *Options
+	globalOptions    *internal.GlobalCommandOptions
 }
 
 func NewExtensionsMiddleware(
@@ -45,6 +47,7 @@ func NewExtensionsMiddleware(
 	extensionsManager *extensions.Manager,
 	extensionRunner *extensions.Runner,
 	console input.Console,
+	globalOptions *internal.GlobalCommandOptions,
 ) Middleware {
 	return &ExtensionsMiddleware{
 		options:          options,
@@ -52,6 +55,7 @@ func NewExtensionsMiddleware(
 		extensionManager: extensionsManager,
 		extensionRunner:  extensionRunner,
 		console:          console,
+		globalOptions:    globalOptions,
 	}
 }
 
@@ -135,9 +139,12 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 
 				// Read global flags for propagation via InvokeOptions
 				debugEnabled, _ := m.options.Flags.GetBool("debug")
-				noPrompt, _ := m.options.Flags.GetBool("no-prompt")
 				cwd, _ := m.options.Flags.GetString("cwd")
 				env, _ := m.options.Flags.GetString("environment")
+
+				// Use globalOptions.NoPrompt which includes agent detection,
+				// not just the --no-prompt CLI flag
+				noPrompt := m.globalOptions.NoPrompt
 
 				// Propagate trace context to the extension process
 				if traceEnv := tracing.Environ(ctx); len(traceEnv) > 0 {

@@ -159,6 +159,7 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 		d.currentTool = ""
 		d.currentToolInput = ""
 		d.reasoningBuf.Reset()
+		d.finalContent = "" // Reset — only the last turn's message matters
 		d.mu.Unlock()
 		if intent != "" {
 			d.spinner.UpdateText(intent)
@@ -204,9 +205,12 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 
 	case copilot.AssistantMessage:
 		if event.Data.Content != nil {
+			log.Printf("[copilot-display] assistant.message received (%d chars)", len(*event.Data.Content))
 			d.mu.Lock()
 			d.finalContent = *event.Data.Content
 			d.mu.Unlock()
+		} else {
+			log.Println("[copilot-display] assistant.message received with nil content")
 		}
 
 	case copilot.ToolExecutionStart:
@@ -384,15 +388,28 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 	case copilot.SessionIdle:
 		d.mu.Lock()
 		hasContent := d.finalContent != ""
+		contentLen := len(d.finalContent)
 		d.mu.Unlock()
+
+		log.Printf("[copilot-display] session.idle received (hasContent=%v, contentLen=%d)", hasContent, contentLen)
 
 		// Only signal idle when we have a final assistant message.
 		// Ignore early idle events (e.g., between permission prompts).
 		if hasContent {
 			select {
 			case d.idleCh <- struct{}{}:
+				log.Println("[copilot-display] signaled idleCh")
 			default:
+				log.Println("[copilot-display] idleCh already full")
 			}
+		}
+
+	case copilot.SessionTaskComplete, copilot.SessionShutdown:
+		// Also signal completion on task_complete or shutdown
+		log.Printf("[copilot-display] %s received, signaling completion", event.Type)
+		select {
+		case d.idleCh <- struct{}{}:
+		default:
 		}
 	}
 }
@@ -400,6 +417,7 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 // WaitForIdle blocks until the session becomes idle or the context is cancelled.
 // Returns the final assistant message content.
 func (d *AgentDisplay) WaitForIdle(ctx context.Context) (string, error) {
+	log.Println("[copilot-display] WaitForIdle: waiting...")
 	select {
 	case <-d.idleCh:
 		d.mu.Lock()

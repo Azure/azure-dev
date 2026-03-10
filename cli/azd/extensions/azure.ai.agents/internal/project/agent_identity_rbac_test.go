@@ -81,25 +81,6 @@ func TestParseAgentIdentityInfo(t *testing.T) {
 	}
 }
 
-func TestAgentIdentityDisplayName(t *testing.T) {
-	tests := []struct {
-		account string
-		project string
-		want    string
-	}{
-		{"my-account", "my-project", "my-account-my-project-AgentIdentity"},
-		{"acct", "proj", "acct-proj-AgentIdentity"},
-		{"a-b-c", "x-y-z", "a-b-c-x-y-z-AgentIdentity"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.want, func(t *testing.T) {
-			got := agentIdentityDisplayName(tt.account, tt.project)
-			assert.Equal(t, tt.want, got)
-		})
-	}
-}
-
 func TestExtractSubscriptionID(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -139,11 +120,11 @@ func TestExtractSubscriptionID(t *testing.T) {
 
 func TestIsVnextEnabled(t *testing.T) {
 	tests := []struct {
-		name      string
-		azdEnv    map[string]string
-		osEnv     string
-		setOsEnv  bool
-		want      bool
+		name     string
+		azdEnv   map[string]string
+		osEnv    string
+		setOsEnv bool
+		want     bool
 	}{
 		{
 			name:   "enabled via azd env true",
@@ -191,4 +172,11 @@ func TestIsVnextEnabled(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestConstants(t *testing.T) {
+	assert.Equal(t, "53ca6127-db72-4b80-b1b0-d745d6d5456d", roleAzureAIUser)
+	assert.Equal(t, "5e0bd9bd-7b93-4f28-af87-19fc36ad61bd", roleCognitiveServicesOpenAIUser)
+	assert.Equal(t, "foundry-cli-setup", tempAgentName)
+	assert.Equal(t, "2025-04-01-preview", armProjectAPIVersion)
 }

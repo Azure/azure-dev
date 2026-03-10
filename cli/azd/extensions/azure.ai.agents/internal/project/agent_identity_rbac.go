@@ -18,24 +18,30 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/google/uuid"
 )
 
 const (
-	roleAzureAIUser              = "53ca6127-db72-4b80-b1b0-d745d6d5456d"
-	roleMonitoringMetricsPublish = "3913510d-42f4-4e42-8a64-420c390055eb"
-	agentIdentitySuffix          = "AgentIdentity"
+	roleAzureAIUser                  = "53ca6127-db72-4b80-b1b0-d745d6d5456d"
+	roleCognitiveServicesOpenAIUser   = "5e0bd9bd-7b93-4f28-af87-19fc36ad61bd"
 
 	// agentAPIVersion used for temp agent create/delete to trigger identity provisioning
 	agentAPIVersion = "v1"
+
+	// armProjectAPIVersion used for reading the project resource properties
+	armProjectAPIVersion = "2025-04-01-preview"
+
+	// tempAgentName is the fixed name for the temporary agent used to trigger identity creation.
+	tempAgentName = "foundry-cli-setup"
 
 	// Polling / timeout constants
 	endpointPollInterval = 10 * time.Second
 	endpointPollAttempts = 18 // ~3 minutes
 	identityPollInterval = 10 * time.Second
-	identityPollAttempts = 6 // ~1 minute
+	identityPollAttempts = 60 // ~10 minutes (matches Python reference)
 	rbacPropagationDelay = 30 * time.Second
 )
 
@@ -102,11 +108,6 @@ func parseAgentIdentityInfo(projectResourceID string) (*agentIdentityInfo, error
 	return info, nil
 }
 
-// agentIdentityDisplayName returns the expected display name for the agent identity SP.
-func agentIdentityDisplayName(accountName, projectName string) string {
-	return fmt.Sprintf("%s-%s-%s", accountName, projectName, agentIdentitySuffix)
-}
-
 // EnsureAgentIdentityRBAC discovers (or triggers creation of) the agent identity service principal
 // and assigns the required RBAC roles. This is designed to be called from the predeploy handler
 // when the vnext experience is enabled.
@@ -171,41 +172,32 @@ func ensureAgentIdentityRBACWithCred(
 	azdEnv map[string]string,
 	info *agentIdentityInfo,
 ) error {
-	displayName := agentIdentityDisplayName(info.AccountName, info.ProjectName)
-
 	fmt.Println()
 	fmt.Println("Agent Identity RBAC")
 	fmt.Printf("  AI Account: %s\n", info.AccountName)
 	fmt.Printf("  Project:    %s\n", info.ProjectName)
 
-	// Step 1: Discover or trigger agent identity
+	// Step 1: Discover agent identity via ARM project resource
 	fmt.Println("[1/2] Discovering agent identity...")
 
-	graphClient, err := graphsdk.NewGraphClient(cred, nil)
+	agentIdentityClientID, err := getAgentIdentityFromARM(ctx, cred, info)
 	if err != nil {
-		return fmt.Errorf("failed to create Graph client: %w", err)
+		fmt.Fprintf(os.Stderr, "  ARM lookup failed: %v\n", err)
 	}
 
-	agentIdentities, err := discoverAgentIdentity(ctx, graphClient, displayName)
-	if err != nil {
-		return fmt.Errorf("failed to discover agent identity: %w", err)
-	}
-
-	if len(agentIdentities) == 0 {
-		fmt.Println("  Agent identity not found — triggering creation via temp agent...")
+	if agentIdentityClientID == "" {
+		fmt.Println("  Agent identity not provisioned — triggering creation via temp agent...")
 
 		if err := triggerAgentIdentityCreation(ctx, cred, info, azdEnv); err != nil {
-			fmt.Fprintf(os.Stderr, "  ⚠ Could not trigger agent identity creation: %v\n", err)
-			fmt.Fprintln(os.Stderr, "    Wait a few minutes and re-run: azd deploy")
-			return nil
+			return fmt.Errorf("could not trigger agent identity creation: %w", err)
 		}
 
-		// Poll for agent identity to appear in Azure AD
-		fmt.Println("  Waiting for agent identity to appear...")
+		// Poll ARM for the agent identity to appear
+		fmt.Println("  Waiting for agent identity to be provisioned (this can take several minutes)...")
 		for i := range identityPollAttempts {
-			agentIdentities, err = discoverAgentIdentity(ctx, graphClient, displayName)
-			if err == nil && len(agentIdentities) > 0 {
-				fmt.Println("  ✓ Agent identity detected in Azure AD")
+			agentIdentityClientID, _ = getAgentIdentityFromARM(ctx, cred, info)
+			if agentIdentityClientID != "" {
+				fmt.Println("  ✓ Agent identity detected on project resource")
 				break
 			}
 			if i < identityPollAttempts-1 {
@@ -213,44 +205,43 @@ func ensureAgentIdentityRBACWithCred(
 			}
 		}
 
-		if len(agentIdentities) == 0 {
-			fmt.Fprintln(os.Stderr, "  ⚠ Agent identity not found yet — the platform can take up to 15 minutes.")
-			fmt.Fprintln(os.Stderr, "    Wait a few minutes and re-run: azd deploy")
-			return nil
+		if agentIdentityClientID == "" {
+			return fmt.Errorf("agent identity not provisioned after %d attempts — " +
+				"wait a few minutes and re-run: azd deploy",
+				identityPollAttempts)
 		}
+
+		// Clean up the temp agent now that identity is provisioned
+		deleteTempAgent(ctx, cred, azdEnv)
 	} else {
-		fmt.Println("  ✓ Agent identity found in Azure AD")
+		fmt.Printf("  ✓ Agent identity found: %s\n", agentIdentityClientID)
 	}
 
-	// Step 2: Assign RBAC roles
+	// Resolve the client/app ID to an object/principal ID for RBAC assignment
+	principalID, err := resolveAppIDToPrincipalID(ctx, cred, agentIdentityClientID)
+	if err != nil {
+		return fmt.Errorf("failed to resolve agent identity principal: %w", err)
+	}
+	fmt.Printf("  Principal ID: %s\n", principalID)
+
+	// Step 2: Assign RBAC roles on the AI account scope
 	fmt.Println()
 	fmt.Println("[2/2] Assigning RBAC to agent identity...")
 
-	for _, sp := range agentIdentities {
-		principalID := ""
-		if sp.Id != nil {
-			principalID = *sp.Id
-		}
-		if principalID == "" {
-			continue
-		}
+	if err := assignRoleToIdentity(
+		ctx, cred, principalID,
+		roleAzureAIUser, "Azure AI User → AI account",
+		info.AccountScope,
+	); err != nil {
+		return fmt.Errorf("failed to assign Azure AI User role: %w", err)
+	}
 
-		fmt.Printf("  Agent identity: %s (%s)\n", sp.DisplayName, principalID)
-
-		// Azure AI User on the AI account
-		if err := assignRoleToIdentity(ctx, cred, principalID, roleAzureAIUser, "Azure AI User → AI account", info.AccountScope); err != nil {
-			fmt.Fprintf(os.Stderr, "    ✗ Azure AI User — %v\n", err)
-		}
-
-		// Monitoring Metrics Publisher on App Insights
-		appInsightsRID := azdEnv["APPLICATIONINSIGHTS_RESOURCE_ID"]
-		if appInsightsRID != "" {
-			if err := assignRoleToIdentity(ctx, cred, principalID, roleMonitoringMetricsPublish, "Monitoring Metrics Publisher → App Insights", appInsightsRID); err != nil {
-				fmt.Fprintf(os.Stderr, "    ✗ Monitoring Metrics Publisher — %v\n", err)
-			}
-		} else {
-			fmt.Println("    ⚠ APPLICATIONINSIGHTS_RESOURCE_ID not set — skipping Monitoring Metrics Publisher")
-		}
+	if err := assignRoleToIdentity(
+		ctx, cred, principalID,
+		roleCognitiveServicesOpenAIUser, "Cognitive Services OpenAI User → AI account",
+		info.AccountScope,
+	); err != nil {
+		return fmt.Errorf("failed to assign Cognitive Services OpenAI User role: %w", err)
 	}
 
 	fmt.Println()
@@ -258,21 +249,83 @@ func ensureAgentIdentityRBACWithCred(
 	return nil
 }
 
-// discoverAgentIdentity searches Azure AD for service principals matching the given display name.
-func discoverAgentIdentity(ctx context.Context, graphClient *graphsdk.GraphClient, displayName string) ([]graphsdk.ServicePrincipal, error) {
-	filter := fmt.Sprintf("displayName eq '%s'", displayName)
+// getAgentIdentityFromARM reads the agent identity client ID from the ARM project resource.
+// The property path is properties.agentIdentity.agentIdentityId.
+func getAgentIdentityFromARM(
+	ctx context.Context,
+	cred *azidentity.AzureDeveloperCLICredential,
+	info *agentIdentityInfo,
+) (string, error) {
+	projectResourceID := fmt.Sprintf(
+		"/subscriptions/%s/resourceGroups/%s/providers/Microsoft.CognitiveServices/accounts/%s/projects/%s",
+		info.SubscriptionID, info.ResourceGroup, info.AccountName, info.ProjectName,
+	)
+
+	client, err := armresources.NewClient(info.SubscriptionID, cred, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create ARM resources client: %w", err)
+	}
+
+	resp, err := client.GetByID(ctx, projectResourceID, armProjectAPIVersion, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to GET project resource: %w", err)
+	}
+
+	// Navigate: properties.agentIdentity.agentIdentityId
+	props, ok := resp.Properties.(map[string]interface{})
+	if !ok || props == nil {
+		return "", nil
+	}
+
+	agentIdentity, ok := props["agentIdentity"].(map[string]interface{})
+	if !ok || agentIdentity == nil {
+		return "", nil
+	}
+
+	identityID, ok := agentIdentity["agentIdentityId"].(string)
+	if !ok || identityID == "" {
+		return "", nil
+	}
+
+	return identityID, nil
+}
+
+// resolveAppIDToPrincipalID looks up a service principal by its application/client ID
+// and returns the object/principal ID needed for RBAC assignments.
+func resolveAppIDToPrincipalID(
+	ctx context.Context,
+	cred *azidentity.AzureDeveloperCLICredential,
+	appID string,
+) (string, error) {
+	graphClient, err := graphsdk.NewGraphClient(cred, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create Graph client: %w", err)
+	}
+
+	filter := fmt.Sprintf("appId eq '%s'", appID)
 	resp, err := graphClient.
 		ServicePrincipals().
 		Filter(filter).
 		Get(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list service principals: %w", err)
+		return "", fmt.Errorf("failed to look up service principal by appId: %w", err)
 	}
-	return resp.Value, nil
+
+	if len(resp.Value) == 0 {
+		return "", fmt.Errorf("no service principal found for appId %s", appID)
+	}
+
+	sp := resp.Value[0]
+	if sp.Id == nil || *sp.Id == "" {
+		return "", fmt.Errorf("service principal for appId %s has no object ID", appID)
+	}
+
+	return *sp.Id, nil
 }
 
-// triggerAgentIdentityCreation creates and immediately deletes a throwaway Foundry agent
+// triggerAgentIdentityCreation creates and immediately deletes a temporary Foundry agent
 // to force the platform to provision the agent identity service principal.
+// Uses a fixed agent name for idempotency, deleting any existing agent with that name first.
 func triggerAgentIdentityCreation(
 	ctx context.Context,
 	cred *azidentity.AzureDeveloperCLICredential,
@@ -315,9 +368,13 @@ func triggerAgentIdentityCreation(
 		return fmt.Errorf("endpoint not reachable after %d attempts", endpointPollAttempts)
 	}
 
+	// Delete any existing temp agent with the same name for idempotency
+	if _, err := agentClient.DeleteAgent(ctx, tempAgentName, agentAPIVersion); err == nil {
+		fmt.Println("  Deleted existing temp agent")
+	}
+
 	// Create a temp agent to trigger identity creation
-	tempAgentName := "setup-temp-" + uuid.New().String()[:8]
-	description := "Temporary agent for identity provisioning."
+	description := "Temporary agent for project configuration."
 	createReq := &agent_api.CreateAgentRequest{
 		Name: tempAgentName,
 		CreateAgentVersionRequest: agent_api.CreateAgentVersionRequest{
@@ -338,15 +395,23 @@ func triggerAgentIdentityCreation(
 	}
 	fmt.Printf("  ✓ Created temp agent: %s\n", agent.Name)
 
-	// Delete the temp agent
-	_, deleteErr := agentClient.DeleteAgent(ctx, agent.Name, agentAPIVersion)
-	if deleteErr != nil {
-		fmt.Fprintf(os.Stderr, "  ⚠ Could not delete temp agent %s (clean up manually): %v\n", agent.Name, deleteErr)
-	} else {
-		fmt.Println("  ✓ Deleted temp agent")
-	}
+	// NOTE: Do NOT delete the temp agent here. The platform needs it to exist
+	// while it provisions the agent identity. Cleanup happens after identity is confirmed.
 
 	return nil
+}
+
+// deleteTempAgent removes the temporary agent after identity provisioning succeeds.
+// Best-effort: errors are logged but do not fail the flow.
+func deleteTempAgent(ctx context.Context, cred *azidentity.AzureDeveloperCLICredential, azdEnv map[string]string) {
+	endpoint := azdEnv["AZURE_AI_PROJECT_ENDPOINT"]
+	if endpoint == "" {
+		return
+	}
+	agentClient := agent_api.NewAgentClient(endpoint, cred)
+	if _, err := agentClient.DeleteAgent(ctx, tempAgentName, agentAPIVersion); err == nil {
+		fmt.Println("  ✓ Cleaned up temp agent")
+	}
 }
 
 // getFirstModelDeployment returns the name of the first model deployment for the AI account.

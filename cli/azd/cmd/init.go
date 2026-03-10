@@ -451,7 +451,10 @@ func (i *initAction) initAppWithAgent(ctx context.Context) error {
 
 	// Single prompt — handles both existing projects and empty directories.
 	// Explicitly invokes azure-prepare and azure-validate skills using the azd recipe.
-	prompt := `Prepare this application for deployment to Azure.
+	prompt := `
+For dev debugging: First print out a list of available tool names available in the current context.
+	
+Prepare this application for deployment to Azure.
 
 First, check if the current directory contains application code. If the directory is empty
 or has no application code, ask the user what type of Azure application they would like to
@@ -459,10 +462,10 @@ build (e.g., web app, API, function app, static site, containerized service) bef
 
 Then invoke the following skills in order:
 
-1. Invoke the azure:azure-prepare skill using the "azd" recipe to analyze the project,
+1. Invoke the azure-prepare skill using the "azd" recipe to analyze the project,
    generate infrastructure (Bicep or Terraform), Dockerfiles, and azure.yaml configuration.
 
-2. Invoke the azure:azure-validate skill using the "azd" recipe to run pre-deployment
+2. Invoke the azure-validate skill using the "azd" recipe to run pre-deployment
    validation checks and verify everything is ready for deployment.
 
 Always select the "azd" recipe when prompted for recipe selection.
@@ -965,4 +968,3 @@ type initModeRequiredErrorOptions struct {
 	Description string `json:"description"`
 	Command     string `json:"command"`
 }
-

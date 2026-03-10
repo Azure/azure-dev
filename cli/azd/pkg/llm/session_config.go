@@ -140,14 +140,16 @@ func (b *SessionConfigBuilder) buildMCPServers(
 func convertServerConfig(srv *mcp.ServerConfig) copilot.MCPServerConfig {
 	if srv.Type == "http" {
 		return copilot.MCPServerConfig{
-			"type": "http",
-			"url":  srv.Url,
+			"type":  "http",
+			"url":   srv.Url,
+			"tools": []string{"*"},
 		}
 	}
 
 	result := copilot.MCPServerConfig{
-		"type":    "stdio",
+		"type":    "local",
 		"command": srv.Command,
+		"tools":   []string{"*"},
 	}
 
 	if len(srv.Args) > 0 {
@@ -290,7 +292,25 @@ func loadAzurePluginMCPServers() map[string]copilot.MCPServerConfig {
 
 		result := make(map[string]copilot.MCPServerConfig)
 		for name, srv := range pluginConfig.MCPServers {
-			result[name] = copilot.MCPServerConfig(srv)
+			cfg := copilot.MCPServerConfig(srv)
+
+			// Normalize: ensure tools field is set to expose all tools
+			if _, hasTools := cfg["tools"]; !hasTools {
+				cfg["tools"] = []string{"*"}
+			}
+
+			// Normalize: use "local" instead of "stdio" for local servers
+			if t, ok := cfg["type"].(string); ok && t == "stdio" {
+				cfg["type"] = "local"
+			}
+			// Default type to "local" for command-based servers
+			if _, hasType := cfg["type"]; !hasType {
+				if _, hasCmd := cfg["command"]; hasCmd {
+					cfg["type"] = "local"
+				}
+			}
+
+			result[name] = cfg
 		}
 
 		log.Printf("[copilot-config] Loaded %d MCP servers from Azure plugin", len(result))

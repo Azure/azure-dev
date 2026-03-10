@@ -175,9 +175,20 @@ func (f *CopilotAgentFactory) Create(ctx context.Context, opts ...CopilotAgentOp
 	log.Println("[copilot] Session created successfully")
 
 	// Subscribe file logger to session events for audit trail
-	// UX rendering is handled by AgentDisplay in CopilotAgent.SendMessage()
+	// Also print available tools from session.start for debugging
+	toolsPrinted := false
 	unsubscribe := session.On(func(event copilot.SessionEvent) {
 		fileLogger.HandleEvent(event)
+
+		// Print available tools once from the first event that carries them
+		if !toolsPrinted && event.Data.AllowedTools != nil && len(event.Data.AllowedTools) > 0 {
+			toolsPrinted = true
+			fmt.Println(output.WithGrayFormat("  Available tools (%d):", len(event.Data.AllowedTools)))
+			for _, tool := range event.Data.AllowedTools {
+				fmt.Println(output.WithGrayFormat("  • %s", tool))
+			}
+			fmt.Println()
+		}
 	})
 
 	cleanupTasks["session-events"] = func() error {

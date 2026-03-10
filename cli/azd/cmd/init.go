@@ -584,6 +584,15 @@ When complete, provide a brief summary of what was accomplished.`
 		i.console.Message(ctx, "")
 	}
 
+	// Print session usage metrics
+	if copilotAgent, ok := azdAgent.(*agent.CopilotAgent); ok {
+		if usage := copilotAgent.UsageSummary(); usage != "" {
+			i.console.Message(ctx, "")
+			i.console.Message(ctx, usage)
+			i.console.Message(ctx, "")
+		}
+	}
+
 	return nil
 }
 

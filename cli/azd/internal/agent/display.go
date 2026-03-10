@@ -43,6 +43,14 @@ type AgentDisplay struct {
 	inSubagent       bool
 	lastPrintedBlank bool // tracks if last output ended with a blank line
 
+	// Usage metrics — accumulated from assistant.usage events
+	totalInputTokens  float64
+	totalOutputTokens float64
+	totalCost         float64
+	totalDurationMS   float64
+	premiumRequests   float64
+	lastModel         string
+
 	// Lifecycle
 	idleCh chan struct{}
 	ctx    context.Context
@@ -213,6 +221,32 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 		} else {
 			log.Println("[copilot-display] assistant.message received with nil content")
 		}
+
+	case copilot.AssistantUsage:
+		d.mu.Lock()
+		if event.Data.InputTokens != nil {
+			d.totalInputTokens += *event.Data.InputTokens
+		}
+		if event.Data.OutputTokens != nil {
+			d.totalOutputTokens += *event.Data.OutputTokens
+		}
+		if event.Data.Cost != nil {
+			d.totalCost += *event.Data.Cost
+		}
+		if event.Data.Duration != nil {
+			d.totalDurationMS += *event.Data.Duration
+		}
+		if event.Data.Model != nil {
+			d.lastModel = *event.Data.Model
+		}
+		d.mu.Unlock()
+
+	case copilot.SessionUsageInfo:
+		d.mu.Lock()
+		if event.Data.TotalPremiumRequests != nil {
+			d.premiumRequests = *event.Data.TotalPremiumRequests
+		}
+		d.mu.Unlock()
 
 	case copilot.ToolExecutionStart:
 		toolName := derefStr(event.Data.ToolName)
@@ -427,6 +461,60 @@ func (d *AgentDisplay) WaitForIdle(ctx context.Context) (string, error) {
 		log.Printf("[copilot] Context cancelled while waiting for idle")
 		return "", ctx.Err()
 	}
+}
+
+// UsageSummary returns a formatted string with session usage metrics.
+func (d *AgentDisplay) UsageSummary() string {
+	d.mu.Lock()
+	inputTokens := d.totalInputTokens
+	outputTokens := d.totalOutputTokens
+	cost := d.totalCost
+	durationMS := d.totalDurationMS
+	premium := d.premiumRequests
+	model := d.lastModel
+	d.mu.Unlock()
+
+	if inputTokens == 0 && outputTokens == 0 {
+		return ""
+	}
+
+	lines := []string{
+		output.WithGrayFormat("  Session usage:"),
+	}
+
+	if model != "" {
+		lines = append(lines, output.WithGrayFormat("  • Model:            %s", model))
+	}
+	lines = append(lines, output.WithGrayFormat("  • Input tokens:     %s", formatTokenCount(inputTokens)))
+	lines = append(lines, output.WithGrayFormat("  • Output tokens:    %s", formatTokenCount(outputTokens)))
+	lines = append(lines, output.WithGrayFormat("  • Total tokens:     %s", formatTokenCount(inputTokens+outputTokens)))
+
+	if cost > 0 {
+		lines = append(lines, output.WithGrayFormat("  • Cost:             %.1fx premium", cost))
+	}
+	if premium > 0 {
+		lines = append(lines, output.WithGrayFormat("  • Premium requests: %.0f", premium))
+	}
+	if durationMS > 0 {
+		seconds := durationMS / 1000
+		if seconds >= 60 {
+			lines = append(lines, output.WithGrayFormat("  • API duration:     %.0fm %.0fs", seconds/60, float64(int(seconds)%60)))
+		} else {
+			lines = append(lines, output.WithGrayFormat("  • API duration:     %.1fs", seconds))
+		}
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func formatTokenCount(tokens float64) string {
+	if tokens >= 1_000_000 {
+		return fmt.Sprintf("%.1fM", tokens/1_000_000)
+	}
+	if tokens >= 1_000 {
+		return fmt.Sprintf("%.1fK", tokens/1_000)
+	}
+	return fmt.Sprintf("%.0f", tokens)
 }
 
 // printToolCompletion prints a completion message for the current tool.

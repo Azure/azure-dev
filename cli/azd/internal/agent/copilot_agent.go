@@ -28,6 +28,7 @@ type CopilotAgent struct {
 	debug       bool
 
 	watchForFileChanges bool
+	lastDisplay         *AgentDisplay // tracks last display for usage metrics
 }
 
 // CopilotAgentOption is a functional option for configuring a CopilotAgent.
@@ -81,6 +82,7 @@ func (a *CopilotAgent) SendMessage(ctx context.Context, args ...string) (string,
 
 	// Create display for this message turn
 	display := NewAgentDisplay(a.console)
+	a.lastDisplay = display
 	displayCtx, displayCancel := context.WithCancel(ctx)
 
 	cleanup, err := display.Start(displayCtx)
@@ -144,6 +146,15 @@ func (a *CopilotAgent) Stop() error {
 		return a.cleanupFunc()
 	}
 	return nil
+}
+
+// UsageSummary returns a formatted string with session usage metrics.
+// Returns empty string if no usage data was collected.
+func (a *CopilotAgent) UsageSummary() string {
+	if a.lastDisplay == nil {
+		return ""
+	}
+	return a.lastDisplay.UsageSummary()
 }
 
 func (a *CopilotAgent) handleErrorWithRetryPrompt(ctx context.Context, err error) bool {

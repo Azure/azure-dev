@@ -175,19 +175,30 @@ func (f *CopilotAgentFactory) Create(ctx context.Context, opts ...CopilotAgentOp
 	log.Println("[copilot] Session created successfully")
 
 	// Subscribe file logger to session events for audit trail
-	// Also print available tools from session.start for debugging
-	toolsPrinted := false
+	// Also dump event details for debugging MCP integration
+	eventCount := 0
 	unsubscribe := session.On(func(event copilot.SessionEvent) {
 		fileLogger.HandleEvent(event)
 
-		// Print available tools once from the first event that carries them
-		if !toolsPrinted && event.Data.AllowedTools != nil && len(event.Data.AllowedTools) > 0 {
-			toolsPrinted = true
-			fmt.Println(output.WithGrayFormat("  Available tools (%d):", len(event.Data.AllowedTools)))
-			for _, tool := range event.Data.AllowedTools {
-				fmt.Println(output.WithGrayFormat("  • %s", tool))
+		eventCount++
+		if eventCount <= 30 {
+			extra := ""
+			if event.Data.AllowedTools != nil {
+				extra += fmt.Sprintf(" allowedTools=%v", event.Data.AllowedTools)
 			}
-			fmt.Println()
+			if event.Data.Tools != nil {
+				extra += fmt.Sprintf(" tools=%v", event.Data.Tools)
+			}
+			if event.Data.Message != nil {
+				extra += fmt.Sprintf(" msg=%s", logging.TruncateString(*event.Data.Message, 100))
+			}
+			if event.Data.InfoType != nil {
+				extra += fmt.Sprintf(" infoType=%s", *event.Data.InfoType)
+			}
+			if event.Data.Name != nil {
+				extra += fmt.Sprintf(" name=%s", *event.Data.Name)
+			}
+			fmt.Println(output.WithGrayFormat("  [event] %s%s", event.Type, extra))
 		}
 	})
 

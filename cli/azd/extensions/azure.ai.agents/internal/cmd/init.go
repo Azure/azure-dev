@@ -1440,6 +1440,13 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	agentConfig.Deployments = a.deploymentDetails
 	agentConfig.Resources = resourceDetails
 
+	// Detect startup command from the project source directory
+	startupCmd, err := resolveStartupCommandForInit(ctx, a.azdClient, a.projectConfig.Path, targetDir, a.flags.NoPrompt)
+	if err != nil {
+		return err
+	}
+	agentConfig.StartupCommand = startupCmd
+
 	var agentConfigStruct *structpb.Struct
 	if agentConfigStruct, err = project.MarshalStruct(&agentConfig); err != nil {
 		return fmt.Errorf("failed to marshal agent config: %w", err)

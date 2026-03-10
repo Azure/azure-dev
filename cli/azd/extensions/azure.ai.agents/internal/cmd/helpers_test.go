@@ -6,7 +6,6 @@ package cmd
 import (
 	"os"
 	"path/filepath"
-	"regexp"
 	"testing"
 )
 
@@ -177,26 +176,5 @@ func TestToServiceKey(t *testing.T) {
 				t.Errorf("toServiceKey(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
-	}
-}
-
-func TestGenerateSessionID(t *testing.T) {
-	t.Parallel()
-
-	id := generateSessionID()
-
-	if len(id) != 25 {
-		t.Errorf("expected length 25, got %d", len(id))
-	}
-
-	validChars := regexp.MustCompile(`^[a-z0-9]+$`)
-	if !validChars.MatchString(id) {
-		t.Errorf("session ID contains invalid characters: %q", id)
-	}
-
-	// Two calls should produce different IDs (probabilistic, but collision is vanishingly unlikely)
-	id2 := generateSessionID()
-	if id == id2 {
-		t.Errorf("two consecutive calls produced the same ID: %q", id)
 	}
 }

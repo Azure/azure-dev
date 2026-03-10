@@ -189,9 +189,6 @@ func (a *InvokeAction) invokeRemote(ctx context.Context) error {
 
 	msg := a.flags.message
 
-	fmt.Printf("Agent:   %s (remote)\n", name)
-	fmt.Printf("Message: %q\n\n", msg)
-
 	// Build request body — uses streaming to receive the full agent response.
 	body := map[string]interface{}{
 		"input": msg,
@@ -223,25 +220,25 @@ func (a *InvokeAction) invokeRemote(ctx context.Context) error {
 	}
 
 	// Conversation ID — enables multi-turn memory via Foundry Conversations API
-	convID, err := resolveConversationID(ctx, azdClient, name, a.flags.conversation, a.flags.newConversation)
+	convID, err := resolveConversationID(
+		ctx,
+		azdClient,
+		name,
+		a.flags.conversation,
+		a.flags.newConversation,
+		endpoint,
+		token.Token,
+	)
 	if err != nil {
 		return err
 	}
-	if convID == "" {
-		// Create a new conversation
-		newConvID, err := createConversation(ctx, endpoint, token.Token)
-		if err != nil {
-			fmt.Printf("Warning: could not create conversation; multi-turn memory disabled (%v)\n", err)
-		} else {
-			convID = newConvID
-			if err := saveConversationID(ctx, azdClient, name, convID); err != nil {
-				return err
-			}
-		}
-	}
-	if convID != "" {
-		body["conversation"] = map[string]string{"id": convID}
-	}
+	body["conversation"] = map[string]string{"id": convID}
+
+	fmt.Printf("Agent:        %s (remote)\n", name)
+	fmt.Printf("Message:      %q\n", msg)
+	fmt.Printf("Session:      %s\n", sid)
+	fmt.Printf("Conversation: %s\n", convID)
+	fmt.Println()
 
 	payload, err := json.Marshal(body)
 	if err != nil {

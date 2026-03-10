@@ -5,10 +5,8 @@ package cmd
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,6 +15,7 @@ import (
 	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/google/uuid"
 )
 
 const (
@@ -100,7 +99,7 @@ func resolveSessionID(ctx context.Context, azdClient *azdext.AzdClient, agentNam
 			return sid, nil
 		}
 	}
-	sid := generateSessionID()
+	sid := uuid.New().String()
 	agentCtx.Sessions[agentName] = sid
 	if err := saveLocalContext(agentCtx, configPath); err != nil {
 		return sid, fmt.Errorf("failed to save session ID: %w", err)
@@ -110,8 +109,17 @@ func resolveSessionID(ctx context.Context, azdClient *azdext.AzdClient, agentNam
 
 // resolveConversationID resolves a Foundry conversation ID.
 // When explicit is provided, it is returned directly.
-// Returns empty string if no existing conversation is found.
-func resolveConversationID(ctx context.Context, azdClient *azdext.AzdClient, agentName string, explicit string, forceNew bool) (string, error) {
+// If no conversation is found (or forceNew is true), it attempts to create one and persist it.
+// Returns empty string when conversation creation fails, allowing invoke to continue without multi-turn memory.
+func resolveConversationID(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	agentName string,
+	explicit string,
+	forceNew bool,
+	endpoint string,
+	bearerToken string,
+) (string, error) {
 	if explicit != "" {
 		return explicit, nil
 	}
@@ -128,8 +136,19 @@ func resolveConversationID(ctx context.Context, azdClient *azdext.AzdClient, age
 			return convID, nil
 		}
 	}
-	// Conversation creation requires an API call — handled by the invoke command.
-	return "", nil
+
+	// Create and persist a new conversation for multi-turn memory.
+	newConvID, err := createConversation(ctx, endpoint, bearerToken)
+	if err != nil {
+		return "", fmt.Errorf("Warning: could not create conversation; multi-turn memory disabled (%v)", err)
+	}
+
+	agentCtx.Conversations[agentName] = newConvID
+	if err := saveLocalContext(agentCtx, configPath); err != nil {
+		return newConvID, fmt.Errorf("failed to save conversation ID: %w", err)
+	}
+
+	return newConvID, nil
 }
 
 // saveConversationID persists a conversation ID for an agent.
@@ -147,22 +166,6 @@ func saveConversationID(ctx context.Context, azdClient *azdext.AzdClient, agentN
 		return fmt.Errorf("failed to save conversation ID: %w", err)
 	}
 	return nil
-}
-
-// generateSessionID creates a random 25-character session ID (lowercase + digits).
-func generateSessionID() string {
-	const chars = "abcdefghijklmnopqrstuvwxyz0123456789"
-	b := make([]byte, 25)
-	for i := range b {
-		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(chars))))
-		if err != nil {
-			// Fail gracefully instead of panicking so the CLI can surface a useful message.
-			fmt.Fprintf(os.Stderr, "failed to generate secure session ID: %v\n", err)
-			return ""
-		}
-		b[i] = chars[n.Int64()]
-	}
-	return string(b)
 }
 
 // detectProjectType detects the project type and suggests a start command.

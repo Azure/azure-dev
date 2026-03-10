@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"maps"
 	"os"
 	"path/filepath"
@@ -335,9 +336,12 @@ func (l *localArmPreflight) validate(
 	// Run the Bicep snapshot command to produce a deployment snapshot from the bicepparam file.
 	// The snapshot contains the fully resolved deployment graph with expressions evaluated,
 	// conditions applied, and copy loops expanded.
+	// If the snapshot fails (e.g., older Bicep binary without snapshot support), skip local
+	// preflight rather than blocking the deployment.
 	data, err := l.bicepCli.Snapshot(ctx, bicepParamFile, snapshotOpts)
 	if err != nil {
-		return nil, fmt.Errorf("running bicep snapshot: %w", err)
+		log.Printf("local preflight: skipping checks, bicep snapshot unavailable: %v", err)
+		return nil, nil
 	}
 
 	var snapshot snapshotResult

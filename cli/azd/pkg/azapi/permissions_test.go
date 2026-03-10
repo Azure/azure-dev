@@ -64,6 +64,36 @@ func TestActionMatches(t *testing.T) {
 			target:  "Microsoft.Authorization/roleAssignments/write",
 			want:    false,
 		},
+		{
+			name:    "multi-wildcard match any provider",
+			pattern: "*/roleAssignments/write",
+			target:  "Microsoft.Authorization/roleAssignments/write",
+			want:    true,
+		},
+		{
+			name:    "multi-wildcard match any resource type",
+			pattern: "Microsoft.*/roleAssignments/*",
+			target:  "Microsoft.Authorization/roleAssignments/write",
+			want:    true,
+		},
+		{
+			name:    "multi-wildcard match all segments",
+			pattern: "*/*/*",
+			target:  "Microsoft.Authorization/roleAssignments/write",
+			want:    true,
+		},
+		{
+			name:    "multi-wildcard no match different provider prefix",
+			pattern: "Microsoft.*/roleAssignments/*",
+			target:  "NotMicrosoft.Authorization/roleAssignments/write",
+			want:    false,
+		},
+		{
+			name:    "multi-wildcard no match missing segment",
+			pattern: "Microsoft.*/roleAssignments/*",
+			target:  "Microsoft.Authorization/write",
+			want:    false,
+		},
 	}
 
 	for _, tt := range tests {

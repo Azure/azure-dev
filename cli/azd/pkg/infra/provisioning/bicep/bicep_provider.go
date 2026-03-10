@@ -711,8 +711,8 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		if abort {
 			// Preflight detected issues and the deployment was intentionally aborted.
 			// This is a successful operation (exit code 0), not an internal failure.
-			p.console.StopSpinner(ctx, "Validating deployment", input.StepFailed)
-			return nil, nil
+			p.console.StopSpinner(ctx, "Validating deployment", input.StepSkipped)
+			return &provisioning.DeployResult{SkippedReason: provisioning.PreflightAbortedSkipped}, nil
 		}
 		p.console.StopSpinner(ctx, "", input.StepDone)
 	}

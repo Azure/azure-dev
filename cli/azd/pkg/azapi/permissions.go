@@ -204,15 +204,57 @@ func actionMatches(pattern, target string) bool {
 		return true
 	}
 
-	// Handle patterns with a single '*' wildcard by splitting into prefix and suffix.
-	if strings.Count(pattern, "*") == 1 {
-		parts := strings.SplitN(pattern, "*", 2)
-		prefix := parts[0]
-		suffix := parts[1]
-
-		return strings.HasPrefix(target, prefix) && strings.HasSuffix(target, suffix) &&
-			len(target) >= len(prefix)+len(suffix)
+	// Handle patterns with '*' wildcards by splitting into segments and matching each in order.
+	if strings.Contains(pattern, "*") {
+		return wildcardMatch(pattern, target)
 	}
 
 	return false
+}
+
+// wildcardMatch matches target against a pattern that may contain one or more '*' wildcards,
+// where each '*' matches zero or more characters.
+//
+// The algorithm:
+//   - The first segment (before the first '*') must be a strict prefix of target.
+//   - The last segment (after the last '*') must be a strict suffix of target.
+//   - All middle segments must appear in order in the remaining portion of target.
+func wildcardMatch(pattern, target string) bool {
+	segments := strings.Split(pattern, "*")
+
+	// First segment must match as a prefix (unless empty, meaning pattern starts with '*').
+	lo := 0
+	if segments[0] != "" {
+		if !strings.HasPrefix(target, segments[0]) {
+			return false
+		}
+		lo = len(segments[0])
+	}
+
+	// Last segment must match as a suffix (unless empty, meaning pattern ends with '*').
+	hi := len(target)
+	if lastSeg := segments[len(segments)-1]; lastSeg != "" {
+		if !strings.HasSuffix(target, lastSeg) {
+			return false
+		}
+		hi = len(target) - len(lastSeg)
+		if hi < lo {
+			return false
+		}
+	}
+
+	// Middle segments must appear in order within target[lo:hi].
+	pos := lo
+	for _, seg := range segments[1 : len(segments)-1] {
+		if seg == "" {
+			continue
+		}
+		idx := strings.Index(target[pos:hi], seg)
+		if idx == -1 {
+			return false
+		}
+		pos += idx + len(seg)
+	}
+
+	return true
 }

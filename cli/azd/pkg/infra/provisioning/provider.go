@@ -144,7 +144,10 @@ func (o *Options) Validate() error {
 
 type SkippedReasonType string
 
-const DeploymentStateSkipped SkippedReasonType = "deployment State"
+const (
+	DeploymentStateSkipped  SkippedReasonType = "deployment State"
+	PreflightAbortedSkipped SkippedReasonType = "preflight aborted"
+)
 
 type DeployResult struct {
 	Deployment    *Deployment

@@ -2,7 +2,7 @@ parameters:
   - name: AzureRecordMode
     displayName: Azure Record Mode
     type: string
-    default: playback
+    default: live
     values:
       - playback
       - live
@@ -42,10 +42,10 @@ extends:
     stages:
     - template: /eng/pipelines/templates/stages/build-and-test.yml
       parameters:
-        # Scheduled runs always use 'live' mode for nightly validation against real Azure resources.
-        # Manual and CI runs default to 'playback' but can be overridden via the AzureRecordMode parameter.
-        ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
-          AzureRecordMode: live
+        # Scheduled and manual runs use 'live' mode by default for validation against real Azure resources.
+        # CI runs (push/PR) use 'playback' mode. Manual runs can override via the AzureRecordMode parameter.
+        ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'PullRequest') }}:
+          AzureRecordMode: playback
         ${{ else }}:
           AzureRecordMode: ${{ parameters.AzureRecordMode }}
         BuildMatrix:

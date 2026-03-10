@@ -336,7 +336,18 @@ func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewer
 		options = defaultShowPreviewerOptions()
 	}
 
-	c.previewer = NewProgressLog(options.MaxLineCount, options.Prefix, options.Title, c.currentIndent.Load()+currentMsg)
+	c.previewer = newProgressLogWithWidthFn(
+		options.MaxLineCount,
+		options.Prefix,
+		options.Title,
+		c.currentIndent.Load()+currentMsg,
+		func() int {
+			if c.consoleWidth == nil {
+				return 0
+			}
+
+			return int(c.consoleWidth.Load())
+		})
 	c.previewer.Start()
 	c.writer = c.previewer
 	return &consolePreviewerWriter{

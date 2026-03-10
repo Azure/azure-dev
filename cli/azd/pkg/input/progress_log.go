@@ -55,8 +55,8 @@ type progressLog struct {
 	output []string
 	// The mutex is used to coordinate updating the header, stopping the component and printing logs.
 	outputMutex sync.Mutex
-	// This function is used to find out what's the terminal width. The log progress is disabled if this function
-	// returns a number <= 0.
+	// This function is used to find out what's the terminal width. The log progress is disabled, i.e. writes are no-opt,
+	// if this function returns a number <= 0.
 	terminalWidthFn TerminalWidthFn
 }
 
@@ -95,6 +95,11 @@ func (p *progressLog) Start() {
 	defer p.outputMutex.Unlock()
 
 	if p.output != nil {
+		return
+	}
+
+	consoleLen := p.terminalWidthFn()
+	if consoleLen <= 0 {
 		return
 	}
 

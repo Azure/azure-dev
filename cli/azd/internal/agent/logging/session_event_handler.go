@@ -161,6 +161,21 @@ func (l *SessionFileLogger) HandleEvent(event copilot.SessionEvent) {
 			msg = *event.Data.Message
 		}
 		detail = fmt.Sprintf("error=%s", msg)
+	case copilot.SessionInfo:
+		msg := ""
+		if event.Data.Message != nil {
+			msg = *event.Data.Message
+		}
+		detail = fmt.Sprintf("info=%s", msg)
+		if event.Data.AllowedTools != nil {
+			log.Printf("[copilot] Available tools: %v", event.Data.AllowedTools)
+		}
+	case copilot.SkillInvoked:
+		name := ""
+		if event.Data.Name != nil {
+			name = *event.Data.Name
+		}
+		detail = fmt.Sprintf("skill=%s", name)
 	default:
 		detail = eventType
 	}

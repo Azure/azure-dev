@@ -113,6 +113,34 @@ func (f *CopilotAgentFactory) Create(ctx context.Context, opts ...CopilotAgentOp
 		sessionConfig.Model, len(sessionConfig.MCPServers),
 		len(sessionConfig.AvailableTools), len(sessionConfig.ExcludedTools))
 
+	// Log MCP server details for debugging
+	for name, srv := range sessionConfig.MCPServers {
+		serverType := "stdio"
+		if t, ok := srv["type"].(string); ok {
+			serverType = t
+		}
+		cmd := ""
+		if c, ok := srv["command"].(string); ok {
+			cmd = c
+		}
+		url := ""
+		if u, ok := srv["url"].(string); ok {
+			url = u
+		}
+		if cmd != "" {
+			log.Printf("[copilot]   MCP server: %s (type=%s, command=%s)", name, serverType, cmd)
+		} else if url != "" {
+			log.Printf("[copilot]   MCP server: %s (type=%s, url=%s)", name, serverType, url)
+		} else {
+			log.Printf("[copilot]   MCP server: %s (type=%s)", name, serverType)
+		}
+	}
+	if len(sessionConfig.SkillDirectories) > 0 {
+		for _, dir := range sessionConfig.SkillDirectories {
+			log.Printf("[copilot]   Skill dir: %s", dir)
+		}
+	}
+
 	// Wire permission handler — approve CLI-level permission requests.
 	// Fine-grained tool consent is handled by OnPreToolUse hook below.
 	sessionConfig.OnPermissionRequest = f.createPermissionHandler()

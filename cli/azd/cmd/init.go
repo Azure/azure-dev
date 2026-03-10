@@ -484,7 +484,7 @@ func (i *initAction) initAppWithAgent(ctx context.Context) error {
 		selector := uxlib.NewSelect(&uxlib.SelectOptions{
 			Message:         "Previous sessions found:",
 			Choices:         choices,
-			EnableFiltering: uxlib.Ptr(false),
+			EnableFiltering: uxlib.Ptr(true),
 			DisplayNumbers:  uxlib.Ptr(true),
 			DisplayCount:    min(len(choices), 6),
 		})
@@ -633,7 +633,8 @@ func (i *initAction) configureAgentModel(ctx context.Context) error {
 		HelpMessage:     "Higher reasoning uses more premium requests and may cost more. You can change this later.",
 		Choices:         effortChoices,
 		SelectedIndex:   intPtr(1), // default to medium
-		EnableFiltering: uxlib.Ptr(false),
+		DisplayNumbers:  uxlib.Ptr(true),
+		EnableFiltering: uxlib.Ptr(true),
 		DisplayCount:    3,
 	})
 
@@ -663,7 +664,8 @@ func (i *initAction) configureAgentModel(ctx context.Context) error {
 		HelpMessage:     "Premium models may use more requests. You can change this later.",
 		Choices:         modelChoices,
 		SelectedIndex:   intPtr(0), // default
-		EnableFiltering: uxlib.Ptr(false),
+		DisplayNumbers:  uxlib.Ptr(true),
+		EnableFiltering: uxlib.Ptr(true),
 		DisplayCount:    7,
 	})
 

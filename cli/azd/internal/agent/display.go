@@ -332,6 +332,11 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 		log.Printf("[copilot] Session error: %s", msg)
 		d.canvas.Clear()
 		d.printSeparated(output.WithErrorFormat("Agent error: %s", msg))
+		// Signal idle so WaitForIdle unblocks on fatal errors
+		select {
+		case d.idleCh <- struct{}{}:
+		default:
+		}
 
 	case copilot.SessionWarning:
 		if event.Data.Message != nil {

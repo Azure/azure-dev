@@ -48,8 +48,13 @@ type CopilotAgent struct {
 	fileLogger *logging.SessionFileLogger
 	display    *AgentDisplay // last display for usage metrics
 
-	// Cleanup
-	cleanupTasks map[string]func() error
+	// Cleanup — ordered slice for deterministic teardown
+	cleanupTasks []cleanupTask
+}
+
+type cleanupTask struct {
+	name string
+	fn   func() error
 }
 
 // Initialize handles first-run configuration (model/reasoning prompts), plugin install,
@@ -339,14 +344,19 @@ func (a *CopilotAgent) SendMessageWithRetry(ctx context.Context, prompt string, 
 	}
 }
 
-// Stop terminates the agent and performs cleanup.
+// Stop terminates the agent and performs cleanup in reverse order.
 func (a *CopilotAgent) Stop() error {
-	for name, task := range a.cleanupTasks {
-		if err := task(); err != nil {
-			log.Printf("failed to cleanup %s: %v", name, err)
+	for i := len(a.cleanupTasks) - 1; i >= 0; i-- {
+		task := a.cleanupTasks[i]
+		if err := task.fn(); err != nil {
+			log.Printf("failed to cleanup %s: %v", task.name, err)
 		}
 	}
 	return nil
+}
+
+func (a *CopilotAgent) addCleanup(name string, fn func() error) {
+	a.cleanupTasks = append(a.cleanupTasks, cleanupTask{name: name, fn: fn})
 }
 
 // ensureSession creates or resumes a Copilot session if one doesn't exist.
@@ -362,7 +372,7 @@ func (a *CopilotAgent) ensureSession(ctx context.Context, resumeSessionID string
 	if err := a.clientManager.Start(ctx); err != nil {
 		return err
 	}
-	a.cleanupTasks["copilot-client"] = a.clientManager.Stop
+	a.addCleanup("copilot-client", a.clientManager.Stop)
 
 	// Create file logger
 	fileLogger, fileLoggerCleanup, err := logging.NewSessionFileLogger()
@@ -370,7 +380,7 @@ func (a *CopilotAgent) ensureSession(ctx context.Context, resumeSessionID string
 		return fmt.Errorf("failed to create session file logger: %w", err)
 	}
 	a.fileLogger = fileLogger
-	a.cleanupTasks["fileLogger"] = fileLoggerCleanup
+	a.addCleanup("fileLogger", fileLoggerCleanup)
 
 	// Load built-in MCP server configs
 	builtInServers, err := loadBuiltInMCPServers()
@@ -440,10 +450,10 @@ func (a *CopilotAgent) ensureSession(ctx context.Context, resumeSessionID string
 	unsubscribe := a.session.On(func(event copilot.SessionEvent) {
 		a.fileLogger.HandleEvent(event)
 	})
-	a.cleanupTasks["session-events"] = func() error {
+	a.addCleanup("session-events", func() error {
 		unsubscribe()
 		return nil
-	}
+	})
 
 	return nil
 }
@@ -537,7 +547,11 @@ func (a *CopilotAgent) createHooks(ctx context.Context) *copilot.SessionHooks {
 
 			decision, err := a.consentManager.CheckConsent(ctx, consentReq)
 			if err != nil {
-				return &copilot.PreToolUseHookOutput{PermissionDecision: "allow"}, nil
+				log.Printf("[copilot] Consent check error for tool %s: %v, denying", input.ToolName, err)
+				return &copilot.PreToolUseHookOutput{
+					PermissionDecision:       "deny",
+					PermissionDecisionReason: "consent check failed",
+				}, nil
 			}
 
 			if decision.Allowed {

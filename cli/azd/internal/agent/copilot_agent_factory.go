@@ -65,7 +65,6 @@ func (f *CopilotAgentFactory) Create(ctx context.Context, opts ...AgentOption) (
 		console:              f.console,
 		configManager:        f.configManager,
 		mode:                 "interactive",
-		cleanupTasks:         make(map[string]func() error),
 	}
 
 	for _, opt := range opts {

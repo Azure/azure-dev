@@ -264,12 +264,16 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			agentResult, err := azdAgent.SendMessage(ctx, errorExplanationPrompt)
 
 			if err != nil {
-				e.displayAgentResponse(ctx, agentResult.Content, AIDisclaimer)
+				if agentResult != nil {
+					e.displayAgentResponse(ctx, agentResult.Content, AIDisclaimer)
+				}
 				span.SetStatus(codes.Error, "agent.send_message.failed")
 				return nil, err
 			}
 
-			e.displayAgentResponse(ctx, agentResult.Content, AIDisclaimer)
+			if agentResult != nil {
+				e.displayAgentResponse(ctx, agentResult.Content, AIDisclaimer)
+			}
 		}
 
 		// Ask user if they want step-by-step fix guidance
@@ -354,7 +358,11 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
             Error details: %s`, errorInput))
 
 		// Extract solutions from agent output even if there's a parsing error
-		solutions := extractSuggestedSolutions(agentResult.Content)
+		agentContent := ""
+		if agentResult != nil {
+			agentContent = agentResult.Content
+		}
+		solutions := extractSuggestedSolutions(agentContent)
 
 		// If no solutions found in output, try extracting from the error message
 		if len(solutions) == 0 && err != nil {
@@ -363,7 +371,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 		// Only fail if we got an error AND couldn't extract any solutions
 		if err != nil && len(solutions) == 0 {
-			e.displayAgentResponse(ctx, agentResult.Content, AIDisclaimer)
+			e.displayAgentResponse(ctx, agentContent, AIDisclaimer)
 			span.SetStatus(codes.Error, "agent.send_message.failed")
 			return nil, fmt.Errorf("failed to generate solutions: %w", err)
 		}

@@ -333,7 +333,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			} else {
 				span.SetStatus(codes.Error, "agent.fix.declined")
 			}
-			return actionResult, err
+			return actionResult, originalError
 		}
 
 		previousError = originalError

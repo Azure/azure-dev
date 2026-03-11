@@ -487,7 +487,7 @@ func TestPager_CollectTruncatedByMaxPages(t *testing.T) {
 	t.Parallel()
 
 	page1 := pageJSON([]int{1, 2}, "https://example.com/api?page=2")
-	_ = pageJSON([]int{3, 4}, "") // page2 not needed; only page1 used for oversized-response test
+	page2 := pageJSON([]int{3, 4}, "")
 
 	doer := &mockDoer{
 		responses: []*doerResponse{
@@ -496,17 +496,25 @@ func TestPager_CollectTruncatedByMaxPages(t *testing.T) {
 				Body:       io.NopCloser(strings.NewReader(page1)),
 				Header:     http.Header{},
 			}},
+			{resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(page2)),
+				Header:     http.Header{},
+			}},
 		},
 	}
 
-	pager := NewPager[string](doer, "https://example.com/api", nil)
+	pager := NewPager[int](doer, "https://example.com/api", &PagerOptions{MaxPages: 1})
 
-	_, err := pager.NextPage(context.Background())
-	if err == nil {
-		t.Fatal("expected error for oversized response")
+	all, err := pager.Collect(context.Background())
+	if err != nil {
+		t.Fatalf("Collect failed: %v", err)
 	}
-	if !strings.Contains(err.Error(), "response exceeds max page size") {
-		t.Errorf("error = %q, want explicit max page size error", err.Error())
+	if len(all) != 2 {
+		t.Fatalf("len(all) = %d, want 2 (only first page)", len(all))
+	}
+	if !pager.Truncated() {
+		t.Fatal("expected Truncated() = true when MaxPages stops collection early")
 	}
 }
 
@@ -658,7 +666,7 @@ func TestPager_TruncatedByMaxItems(t *testing.T) {
 func TestPager_NotTruncatedOnNaturalEnd(t *testing.T) {
 	t.Parallel()
 
-	body := pageJSON([]string{"a", "b"}, "")
+	body := pageJSON([]int{1, 2}, "")
 	doer := &mockDoer{
 		responses: []*doerResponse{
 			{resp: &http.Response{
@@ -678,8 +686,8 @@ func TestPager_NotTruncatedOnNaturalEnd(t *testing.T) {
 	if len(all) != 2 {
 		t.Fatalf("len(all) = %d, want 2", len(all))
 	}
-	if !pager.Truncated() {
-		t.Fatal("expected Truncated() = true when MaxPages stops collection early")
+	if pager.Truncated() {
+		t.Fatal("Truncated() = true, want false (natural end, no more pages)")
 	}
 }
 

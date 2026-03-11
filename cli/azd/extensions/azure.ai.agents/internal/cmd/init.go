@@ -1615,7 +1615,7 @@ func (a *InitAction) parseGitHubUrlNaive(manifestPointer string) *GitHubUrlInfo 
 		repoPath := strings.TrimPrefix(parts[0], "/")
 		repoSlug := repoPath
 
-		branch, filePath, ok := strings.Cut(branchAndPath, "/")
+		branch, filePath, ok := strings.Cut(parts[1], "/")
 		if !ok {
 			return nil
 		}

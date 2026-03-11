@@ -79,6 +79,8 @@ words:
   - seekability
   - frontmatter
   - triaging
+  - projectpkg
+  - agentserver
 languageSettings:
   - languageId: go
     ignoreRegExpList:

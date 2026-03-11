@@ -231,6 +231,57 @@ func TestServiceConfigRaiseEventWithArgs(t *testing.T) {
 	require.True(t, handlerCalled)
 }
 
+func TestServiceConfigDeployTimeoutYamlParsing(t *testing.T) {
+	tests := []struct {
+		name          string
+		deployTimeout string
+		expectNil     bool
+		expectValue   int
+	}{
+		{
+			name:      "UnsetValue",
+			expectNil: true,
+		},
+		{
+			name:          "PositiveValue",
+			deployTimeout: "    deployTimeout: 45\n",
+			expectValue:   45,
+		},
+		{
+			name:          "ZeroValue",
+			deployTimeout: "    deployTimeout: 0\n",
+			expectValue:   0,
+		},
+		{
+			name:          "NegativeValue",
+			deployTimeout: "    deployTimeout: -5\n",
+			expectValue:   -5,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			projectYaml := "name: test-proj\nservices:\n  api:\n    project: src/api\n    language: js\n" +
+				"    host: containerapp\n" + tt.deployTimeout
+
+			mockContext := mocks.NewMockContext(context.Background())
+			projectConfig, err := Parse(*mockContext.Context, projectYaml)
+			require.NoError(t, err)
+
+			service := projectConfig.Services["api"]
+			require.NotNil(t, service)
+
+			if tt.expectNil {
+				require.Nil(t, service.DeployTimeout)
+				return
+			}
+
+			require.NotNil(t, service.DeployTimeout)
+			require.Equal(t, tt.expectValue, *service.DeployTimeout)
+		})
+	}
+}
+
 func TestServiceConfigEventHandlerReceivesServiceContext(t *testing.T) {
 	ctx := context.Background()
 	service := getServiceConfig()

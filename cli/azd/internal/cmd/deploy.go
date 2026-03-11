@@ -261,6 +261,10 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	}
 
 	deployResults := map[string]*project.ServiceDeployResult{}
+	deployTimeouts, err := da.resolveDeployTimeouts(stableServices)
+	if err != nil {
+		return nil, err
+	}
 
 	err = da.projectConfig.Invoke(ctx, project.ProjectEventDeploy, projectEventArgs, func() error {
 		for _, svc := range stableServices {
@@ -323,16 +327,14 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 				return err
 			}
 
-			deployTimeout, err := da.resolveDeployTimeout()
-			if err != nil {
-				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-				return err
-			}
-
+			deployTimeout := deployTimeouts[svc.Name]
 			var deployResult *project.ServiceDeployResult
-			deployCtx, cancel := context.WithTimeout(ctx, deployTimeout)
+			var deployCtx context.Context
 			func() {
-				defer cancel()
+				var deployCancel context.CancelFunc
+				deployCtx, deployCancel = context.WithTimeout(ctx, deployTimeout)
+				defer deployCancel()
+
 				deployResult, err = async.RunWithProgress(
 					func(deployProgress project.ServiceProgress) {
 						progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, deployProgress.Message)
@@ -346,7 +348,7 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 			if err != nil {
 				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-				if errors.Is(err, context.DeadlineExceeded) {
+				if deployCtx.Err() == context.DeadlineExceeded {
 					warnMsg := fmt.Sprintf(
 						"Deployment of service '%s' exceeded the azd wait timeout."+
 							" azd has stopped waiting, but the deployment may"+
@@ -359,9 +361,10 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 					})
 
 					return fmt.Errorf(
-						"deployment of service '%s' timed out after %d seconds. Note: azd has stopped waiting, "+
-							"but the deployment may still be running in Azure. Check the Azure Portal for current "+
-							"deployment status.",
+						"deployment of service '%s' timed out after %d seconds. To increase, use --timeout, "+
+							"AZD_DEPLOY_TIMEOUT env var, or deployTimeout in azure.yaml. Note: azd has stopped "+
+							"waiting, but the deployment may still be running in Azure. Check the Azure Portal for "+
+							"current deployment status.",
 						svc.Name,
 						int(deployTimeout.Seconds()),
 					)
@@ -430,7 +433,22 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	}, nil
 }
 
-func (da *DeployAction) resolveDeployTimeout() (time.Duration, error) {
+func (da *DeployAction) resolveDeployTimeouts(services []*project.ServiceConfig) (map[string]time.Duration, error) {
+	deployTimeouts := make(map[string]time.Duration, len(services))
+
+	for _, serviceConfig := range services {
+		timeout, err := da.resolveDeployTimeout(serviceConfig)
+		if err != nil {
+			return nil, err
+		}
+
+		deployTimeouts[serviceConfig.Name] = timeout
+	}
+
+	return deployTimeouts, nil
+}
+
+func (da *DeployAction) resolveDeployTimeout(serviceConfig *project.ServiceConfig) (time.Duration, error) {
 	if da.flags.timeoutChanged() {
 		if da.flags.Timeout <= 0 {
 			return 0, errors.New("invalid value for --timeout: must be greater than 0 seconds")
@@ -448,6 +466,17 @@ func (da *DeployAction) resolveDeployTimeout() (time.Duration, error) {
 			return 0, fmt.Errorf("invalid AZD_DEPLOY_TIMEOUT value '%d': must be greater than 0 seconds", seconds)
 		}
 		return time.Duration(seconds) * time.Second, nil
+	}
+
+	if serviceConfig.DeployTimeout != nil {
+		if *serviceConfig.DeployTimeout <= 0 {
+			return 0, fmt.Errorf(
+				"invalid deployTimeout for service '%s': must be greater than 0 seconds",
+				serviceConfig.Name,
+			)
+		}
+
+		return time.Duration(*serviceConfig.DeployTimeout) * time.Second, nil
 	}
 
 	return time.Duration(defaultDeployTimeoutSeconds) * time.Second, nil

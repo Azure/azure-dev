@@ -60,24 +60,48 @@ func TestDeployFlagsTimeoutFlag(t *testing.T) {
 
 func TestDeployActionResolveDeployTimeout(t *testing.T) {
 	tests := []struct {
-		name        string
-		flagTimeout *int
-		wantTimeout time.Duration
-		wantErr     bool
+		name          string
+		configTimeout *int
+		flagTimeout   *int
+		wantTimeout   time.Duration
+		wantErr       bool
 	}{
 		{
 			name:        "DefaultTimeout",
 			wantTimeout: 1200 * time.Second,
 		},
 		{
-			name:        "ZeroFlagReturnsError",
-			flagTimeout: intPtr(0),
-			wantErr:     true,
+			name:          "ConfigTimeout",
+			configTimeout: intPtr(45),
+			wantTimeout:   45 * time.Second,
 		},
 		{
-			name:        "NegativeFlagReturnsError",
-			flagTimeout: intPtr(-10),
-			wantErr:     true,
+			name:          "FlagOverridesConfig",
+			configTimeout: intPtr(90),
+			flagTimeout:   intPtr(30),
+			wantTimeout:   30 * time.Second,
+		},
+		{
+			name:          "ZeroConfigReturnsError",
+			configTimeout: intPtr(0),
+			wantErr:       true,
+		},
+		{
+			name:          "NegativeConfigReturnsError",
+			configTimeout: intPtr(-10),
+			wantErr:       true,
+		},
+		{
+			name:          "ZeroFlagReturnsError",
+			configTimeout: intPtr(90),
+			flagTimeout:   intPtr(0),
+			wantErr:       true,
+		},
+		{
+			name:          "NegativeFlagReturnsError",
+			configTimeout: intPtr(90),
+			flagTimeout:   intPtr(-10),
+			wantErr:       true,
 		},
 		{
 			name:        "LargeFlagTimeout",
@@ -88,9 +112,9 @@ func TestDeployActionResolveDeployTimeout(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			action := newDeployTimeoutAction(t, tt.flagTimeout)
+			action := newDeployTimeoutAction(t, tt.configTimeout, tt.flagTimeout)
 
-			timeout, err := action.resolveDeployTimeout()
+			timeout, err := action.resolveDeployTimeout(action.projectConfig.Services["api"])
 			if tt.wantErr {
 				require.Error(t, err)
 				return
@@ -103,11 +127,12 @@ func TestDeployActionResolveDeployTimeout(t *testing.T) {
 
 func TestDeployActionResolveDeployTimeoutEnvVar(t *testing.T) {
 	tests := []struct {
-		name        string
-		envValue    string
-		flagTimeout *int
-		wantTimeout time.Duration
-		wantErr     bool
+		name          string
+		envValue      string
+		configTimeout *int
+		flagTimeout   *int
+		wantTimeout   time.Duration
+		wantErr       bool
 	}{
 		{
 			name:        "EnvVarTimeout",
@@ -115,10 +140,17 @@ func TestDeployActionResolveDeployTimeoutEnvVar(t *testing.T) {
 			wantTimeout: 60 * time.Second,
 		},
 		{
-			name:        "FlagOverridesEnvVar",
-			envValue:    "60",
-			flagTimeout: intPtr(300),
-			wantTimeout: 300 * time.Second,
+			name:          "EnvVarOverridesConfig",
+			envValue:      "60",
+			configTimeout: intPtr(45),
+			wantTimeout:   60 * time.Second,
+		},
+		{
+			name:          "FlagOverridesEnvVar",
+			envValue:      "60",
+			configTimeout: intPtr(45),
+			flagTimeout:   intPtr(300),
+			wantTimeout:   300 * time.Second,
 		},
 		{
 			name:     "InvalidEnvVar",
@@ -140,9 +172,9 @@ func TestDeployActionResolveDeployTimeoutEnvVar(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("AZD_DEPLOY_TIMEOUT", tt.envValue)
-			action := newDeployTimeoutAction(t, tt.flagTimeout)
+			action := newDeployTimeoutAction(t, tt.configTimeout, tt.flagTimeout)
 
-			timeout, err := action.resolveDeployTimeout()
+			timeout, err := action.resolveDeployTimeout(action.projectConfig.Services["api"])
 			if tt.wantErr {
 				require.Error(t, err)
 				return
@@ -155,45 +187,53 @@ func TestDeployActionResolveDeployTimeoutEnvVar(t *testing.T) {
 
 func TestDeployActionRunAppliesResolvedTimeout(t *testing.T) {
 	tests := []struct {
-		name        string
-		flagTimeout *int
-		wantTimeout time.Duration
+		name          string
+		configTimeout *int
+		flagTimeout   *int
+		wantTimeout   time.Duration
 	}{
 		{
 			name:        "DefaultTimeout",
 			wantTimeout: 1200 * time.Second,
 		},
 		{
-			name:        "ExplicitValue",
-			flagTimeout: intPtr(30),
-			wantTimeout: 30 * time.Second,
+			name:          "ConfigTimeout",
+			configTimeout: intPtr(45),
+			wantTimeout:   45 * time.Second,
+		},
+		{
+			name:          "ExplicitValue",
+			configTimeout: intPtr(90),
+			flagTimeout:   intPtr(30),
+			wantTimeout:   30 * time.Second,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			deployErr := mockDeployErr(t.Name())
-			action, serviceManager := newDeployActionForTimeoutTest(t, tt.flagTimeout, deployErr)
-			start := time.Now()
+			action, serviceManager := newDeployActionForTimeoutTest(t, tt.configTimeout, tt.flagTimeout, deployErr, false)
+			startTime := time.Now()
 
 			_, err := action.Run(context.Background())
 			require.ErrorIs(t, err, deployErr)
 
 			require.True(t, serviceManager.deployHasDeadline, "deploy should run with a deadline")
-			require.WithinDuration(t, start.Add(tt.wantTimeout), serviceManager.deployDeadline, 2*time.Second)
+			require.WithinDuration(t, startTime.Add(tt.wantTimeout), serviceManager.deployDeadline, 2*time.Second)
 			serviceManager.AssertExpectations(t)
 		})
 	}
 }
 
 func TestDeployActionRunTimeoutWarningAndErrorMessage(t *testing.T) {
-	action, serviceManager := newDeployActionForTimeoutTest(t, intPtr(30), context.DeadlineExceeded)
+	action, serviceManager := newDeployActionForTimeoutTest(t, nil, intPtr(1), nil, true)
 
 	_, err := action.Run(context.Background())
 	require.EqualError(
 		t,
 		err,
-		"deployment of service 'api' timed out after 30 seconds."+
+		"deployment of service 'api' timed out after 1 seconds. To increase, use --timeout,"+
+			" AZD_DEPLOY_TIMEOUT env var, or deployTimeout in azure.yaml."+
 			" Note: azd has stopped waiting, but the deployment"+
 			" may still be running in Azure."+
 			" Check the Azure Portal for current deployment status.",
@@ -211,6 +251,15 @@ func TestDeployActionRunTimeoutWarningAndErrorMessage(t *testing.T) {
 		t, output,
 		"Check the Azure Portal for current deployment status.",
 	)
+	serviceManager.AssertExpectations(t)
+}
+
+func TestDeployActionRunDoesNotTreatInternalDeadlineExceededAsDeployTimeout(t *testing.T) {
+	action, serviceManager := newDeployActionForTimeoutTest(t, nil, intPtr(30), context.DeadlineExceeded, false)
+
+	_, err := action.Run(context.Background())
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.Equal(t, context.DeadlineExceeded, err)
 	serviceManager.AssertExpectations(t)
 }
 
@@ -272,6 +321,7 @@ type mockDeployServiceManager struct {
 	deployDeadline    time.Time
 	deployHasDeadline bool
 	deployErr         error
+	waitForTimeout    bool
 }
 
 func (m *mockDeployServiceManager) GetRequiredTools(
@@ -332,6 +382,11 @@ func (m *mockDeployServiceManager) Deploy(
 	m.deployDeadline, m.deployHasDeadline = ctx.Deadline()
 	m.Called(serviceConfig.Name)
 
+	if m.waitForTimeout {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+
 	if m.deployErr != nil {
 		return nil, m.deployErr
 	}
@@ -363,12 +418,14 @@ func (m *mockDeployServiceManager) GetServiceTarget(
 
 func newDeployActionForTimeoutTest(
 	t *testing.T,
+	configTimeout *int,
 	flagTimeout *int,
 	deployErr error,
+	waitForTimeout bool,
 ) (*DeployAction, *mockDeployServiceManager) {
 	t.Helper()
 
-	action := newDeployTimeoutAction(t, flagTimeout)
+	action := newDeployTimeoutAction(t, configTimeout, flagTimeout)
 	projectManager := &mockDeployProjectManager{}
 	projectManager.On("Initialize", action.projectConfig).Return(nil).Once()
 	projectManager.On("EnsureServiceTargetTools", action.projectConfig).Return(nil).Once()
@@ -376,7 +433,7 @@ func newDeployActionForTimeoutTest(
 		projectManager.AssertExpectations(t)
 	})
 
-	serviceManager := &mockDeployServiceManager{deployErr: deployErr}
+	serviceManager := &mockDeployServiceManager{deployErr: deployErr, waitForTimeout: waitForTimeout}
 	serviceManager.On("Deploy", "api").Return().Once()
 
 	action.projectManager = projectManager
@@ -384,10 +441,10 @@ func newDeployActionForTimeoutTest(
 	return action, serviceManager
 }
 
-func newDeployTimeoutAction(t *testing.T, flagTimeout *int) *DeployAction {
+func newDeployTimeoutAction(t *testing.T, configTimeout *int, flagTimeout *int) *DeployAction {
 	t.Helper()
 
-	projectConfig := deployTimeoutTestProjectConfig(t)
+	projectConfig := deployTimeoutTestProjectConfig(t, configTimeout)
 
 	cmd := NewDeployCmd()
 	flags := NewDeployFlags(cmd, &internal.GlobalCommandOptions{})
@@ -412,12 +469,17 @@ func newDeployTimeoutAction(t *testing.T, flagTimeout *int) *DeployAction {
 	}
 }
 
-func deployTimeoutTestProjectConfig(t *testing.T) *project.ProjectConfig {
+func deployTimeoutTestProjectConfig(t *testing.T, configTimeout *int) *project.ProjectConfig {
 	t.Helper()
+
+	projectYaml := "name: test-proj\nservices:\n  api:\n    project: src/api\n    language: js\n    host: containerapp\n"
+	if configTimeout != nil {
+		projectYaml += "    deployTimeout: " + intToString(*configTimeout) + "\n"
+	}
 
 	projectConfig, err := project.Parse(
 		context.Background(),
-		"name: test-proj\nservices:\n  api:\n    project: src/api\n    language: js\n    host: containerapp\n",
+		projectYaml,
 	)
 	require.NoError(t, err)
 

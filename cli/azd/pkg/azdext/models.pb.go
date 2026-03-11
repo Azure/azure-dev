@@ -1063,7 +1063,6 @@ type DockerProjectOptions struct {
 	Image         string                 `protobuf:"bytes,6,opt,name=image,proto3" json:"image,omitempty"`
 	Tag           string                 `protobuf:"bytes,7,opt,name=tag,proto3" json:"tag,omitempty"`
 	RemoteBuild   bool                   `protobuf:"varint,8,opt,name=remote_build,json=remoteBuild,proto3" json:"remote_build,omitempty"`
-	LocalFallback bool                   `protobuf:"varint,10,opt,name=local_fallback,json=localFallback,proto3" json:"local_fallback,omitempty"`
 	BuildArgs     []string               `protobuf:"bytes,9,rep,name=build_args,json=buildArgs,proto3" json:"build_args,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1151,13 +1150,6 @@ func (x *DockerProjectOptions) GetTag() string {
 func (x *DockerProjectOptions) GetRemoteBuild() bool {
 	if x != nil {
 		return x.RemoteBuild
-	}
-	return false
-}
-
-func (x *DockerProjectOptions) GetLocalFallback() bool {
-	if x != nil {
-		return x.LocalFallback
 	}
 	return false
 }

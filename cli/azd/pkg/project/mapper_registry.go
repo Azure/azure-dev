@@ -198,9 +198,8 @@ func registerProjectMappings() {
 			Registry:      registry,
 			Image:         image,
 			Tag:           tag,
-			RemoteBuild:   src.RemoteBuild,
-			LocalFallback: src.LocalFallback,
-			BuildArgs:     buildArgs,
+			RemoteBuild: src.RemoteBuild,
+			BuildArgs:   buildArgs,
 		}, nil
 	})
 
@@ -406,15 +405,14 @@ func registerProjectMappings() {
 		}
 
 		result := DockerProjectOptions{
-			Path:          src.Path,
-			Context:       src.Context,
-			Platform:      src.Platform,
-			Target:        src.Target,
-			Registry:      osutil.NewExpandableString(src.Registry),
-			Image:         osutil.NewExpandableString(src.Image),
-			Tag:           osutil.NewExpandableString(src.Tag),
-			RemoteBuild:   src.RemoteBuild,
-			LocalFallback: src.LocalFallback,
+			Path:        src.Path,
+			Context:     src.Context,
+			Platform:    src.Platform,
+			Target:      src.Target,
+			Registry:    osutil.NewExpandableString(src.Registry),
+			Image:       osutil.NewExpandableString(src.Image),
+			Tag:         osutil.NewExpandableString(src.Tag),
+			RemoteBuild: src.RemoteBuild,
 		}
 
 		if len(src.BuildArgs) > 0 {
@@ -434,15 +432,14 @@ func registerProjectMappings() {
 		}
 
 		result := &DockerProjectOptions{
-			Path:          src.Path,
-			Context:       src.Context,
-			Platform:      src.Platform,
-			Target:        src.Target,
-			Registry:      osutil.NewExpandableString(src.Registry),
-			Image:         osutil.NewExpandableString(src.Image),
-			Tag:           osutil.NewExpandableString(src.Tag),
-			RemoteBuild:   src.RemoteBuild,
-			LocalFallback: src.LocalFallback,
+			Path:        src.Path,
+			Context:     src.Context,
+			Platform:    src.Platform,
+			Target:      src.Target,
+			Registry:    osutil.NewExpandableString(src.Registry),
+			Image:       osutil.NewExpandableString(src.Image),
+			Tag:         osutil.NewExpandableString(src.Tag),
+			RemoteBuild: src.RemoteBuild,
 		}
 
 		if len(src.BuildArgs) > 0 {

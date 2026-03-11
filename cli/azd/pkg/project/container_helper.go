@@ -600,7 +600,14 @@ func (ch *ContainerHelper) Publish(
 
 	if serviceConfig.Docker.RemoteBuild {
 		remoteImage, err = ch.runRemoteBuild(ctx, serviceConfig, targetResource, env, progress, imageOverride)
-		if err != nil && serviceConfig.Docker.LocalFallback {
+		if err != nil {
+			// Check if a local container runtime (Docker/Podman) is available before falling back
+			if dockerErr := ch.docker.CheckInstalled(ctx); dockerErr != nil {
+				return nil, fmt.Errorf(
+					"remote build failed: %w\n\nLocal fallback unavailable: %s",
+					err, dockerErr)
+			}
+
 			ch.console.MessageUxItem(ctx, &ux.WarningMessage{
 				Description: fmt.Sprintf(
 					"Remote build failed: %s\nFalling back to local Docker build.", err),

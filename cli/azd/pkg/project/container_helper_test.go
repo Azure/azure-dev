@@ -1279,6 +1279,27 @@ func Test_ContainerHelper_Publish_RemoteBuildLocalFallback(t *testing.T) {
 	dockerCli := docker.NewCli(mockContext.CommandRunner)
 	dotnetCli := dotnet.NewCli(mockContext.CommandRunner)
 
+	// Mock Docker availability checks for local fallback
+	mockContext.CommandRunner.MockToolInPath("docker", nil)
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "docker --version")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{
+			Stdout:   "Docker version 20.10.17, build 100c701",
+			ExitCode: 0,
+		}, nil
+	})
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "docker ps")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{
+			Stdout:   "CONTAINER ID   IMAGE     COMMAND   CREATED   STATUS    PORTS     NAMES",
+			ExitCode: 0,
+		}, nil
+	})
+
 	mockContainerRegistryService := &mockContainerRegistryService{}
 	setupContainerRegistryMocks(mockContext, &mockContainerRegistryService.Mock)
 
@@ -1296,7 +1317,6 @@ func Test_ContainerHelper_Publish_RemoteBuildLocalFallback(t *testing.T) {
 	serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 	serviceConfig.Docker.Registry = osutil.NewExpandableString("contoso.azurecr.io")
 	serviceConfig.Docker.RemoteBuild = true
-	serviceConfig.Docker.LocalFallback = true
 	serviceConfig.Docker.Platform = "linux/arm64"
 
 	dockerArtifact := &Artifact{

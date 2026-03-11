@@ -222,20 +222,24 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	envChanged := false
 	if p.flags.subscription != "" {
 		if existing := p.env.GetSubscriptionId(); existing != "" && existing != p.flags.subscription {
-			return nil, fmt.Errorf(
-				"cannot change subscription for existing environment '%s' (current: %s, requested: %s). "+
-					"Create a new environment with 'azd env new' instead",
-				p.env.Name(), existing, p.flags.subscription)
+			return nil, &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"environment '%s' (current: %s, requested: %s): %w",
+					p.env.Name(), existing, p.flags.subscription, internal.ErrCannotChangeSubscription),
+				Suggestion: "Run 'azd env new <name>' to create a new environment with a different subscription.",
+			}
 		}
 		p.env.SetSubscriptionId(p.flags.subscription)
 		envChanged = true
 	}
 	if p.flags.location != "" {
 		if existing := p.env.GetLocation(); existing != "" && existing != p.flags.location {
-			return nil, fmt.Errorf(
-				"cannot change location for existing environment '%s' (current: %s, requested: %s). "+
-					"Create a new environment with 'azd env new' instead",
-				p.env.Name(), existing, p.flags.location)
+			return nil, &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"environment '%s' (current: %s, requested: %s): %w",
+					p.env.Name(), existing, p.flags.location, internal.ErrCannotChangeLocation),
+				Suggestion: "Run 'azd env new <name>' to create a new environment with a different location.",
+			}
 		}
 		p.env.SetLocation(p.flags.location)
 		envChanged = true
@@ -268,7 +272,10 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	}
 
 	if previewMode && len(layers) > 1 {
-		return nil, fmt.Errorf("--preview cannot be used when provisioning multiple layers. Specify a <layer> directly")
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        internal.ErrPreviewMultipleLayers,
+			Suggestion: "Run 'azd provision --preview <layer-name>' targeting a single layer.",
+		}
 	}
 
 	allSkipped := true

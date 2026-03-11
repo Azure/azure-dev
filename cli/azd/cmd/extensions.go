@@ -149,7 +149,7 @@ func newExtensionAction(
 func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	extensionId, has := a.cmd.Annotations["extension.id"]
 	if !has {
-		return nil, fmt.Errorf("extension id not found")
+		return nil, internal.ErrExtensionNotFound
 	}
 
 	extension, err := a.extensionManager.GetInstalled(extensions.FilterOptions{
@@ -228,7 +228,10 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 	jwtToken, err := grpcserver.GenerateExtensionToken(extension, serverInfo)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate extension token")
+		return nil, fmt.Errorf(
+			"generating extension token: %w",
+			internal.ErrExtensionTokenFailed,
+		)
 	}
 
 	allEnv = append(allEnv,

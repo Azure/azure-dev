@@ -18,6 +18,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -668,11 +669,11 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 	}
 
 	deploymentTags := map[string]*string{
-		azure.TagKeyAzdEnvName:   to.Ptr(p.env.Name()),
+		azure.TagKeyAzdEnvName:   new(p.env.Name()),
 		azure.TagKeyAzdLayerName: &p.layer,
 	}
 	if parametersHashErr == nil {
-		deploymentTags[azure.TagKeyAzdDeploymentStateParamHashName] = to.Ptr(currentParamsHash)
+		deploymentTags[azure.TagKeyAzdDeploymentStateParamHashName] = new(currentParamsHash)
 	}
 
 	optionsMap, err := convert.ToMap(p.options)
@@ -707,36 +708,44 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		p.console.StopSpinner(ctx, "", input.StepDone)
 	}
 
-	cancelProgress := make(chan bool)
-	defer func() { cancelProgress <- true }()
+	progressCtx, cancelProgress := context.WithCancel(ctx)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	defer func() {
+		cancelProgress()
+		// Wait for the progress reporting goroutine to exit to guarantee stopping the spinner
+		wg.Wait()
+		// Clean up the spinner fully
+		p.console.StopSpinner(ctx, "", input.StepDone)
+	}()
+
 	go func() {
+		defer wg.Done()
 		// Disable reporting progress if needed
 		if use, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_PROVISION_PROGRESS_DISABLE")); err == nil && use {
 			log.Println("Disabling progress reporting since AZD_DEBUG_PROVISION_PROGRESS_DISABLE was set")
-			<-cancelProgress
+			<-progressCtx.Done()
 			return
 		}
 
 		// Report incremental progress
 		progressDisplay := p.deploymentManager.ProgressDisplay(deployment)
-		// Make initial delay shorter to be more responsive in displaying initial progress
-		initialDelay := 3 * time.Second
-		regularDelay := 3 * time.Second
-		timer := time.NewTimer(initialDelay)
+		delay := 3 * time.Second
+		timer := time.NewTimer(delay)
 		queryStartTime := time.Now()
 
 		for {
 			select {
-			case <-cancelProgress:
+			case <-progressCtx.Done():
 				timer.Stop()
 				return
 			case <-timer.C:
-				if err := progressDisplay.ReportProgress(ctx, &queryStartTime); err != nil {
+				if err := progressDisplay.ReportProgress(progressCtx, &queryStartTime); err != nil {
 					// We don't want to fail the whole deployment if a progress reporting error occurs
 					log.Printf("error while reporting progress: %v", err)
 				}
 
-				timer.Reset(regularDelay)
+				timer.Reset(delay)
 			}
 		}
 	}()
@@ -816,12 +825,12 @@ func (p *BicepProvider) Preview(ctx context.Context) (*provisioning.DeployPrevie
 	for _, change := range deployPreviewResult.Properties.Changes {
 		// Use After state if available (e.g., Create, Modify), otherwise use Before state (e.g., Delete).
 		// ARM returns nil for After when a resource is being deleted and nil for Before when created.
-		var resourceState map[string]interface{}
+		var resourceState map[string]any
 		if change.After != nil {
-			resourceState, _ = change.After.(map[string]interface{})
+			resourceState, _ = change.After.(map[string]any)
 		}
 		if resourceState == nil && change.Before != nil {
-			resourceState, _ = change.Before.(map[string]interface{})
+			resourceState, _ = change.Before.(map[string]any)
 		}
 		if resourceState == nil {
 			// Skip changes with no resource state information
@@ -2070,13 +2079,9 @@ func combineMetadata(base map[string]json.RawMessage, override map[string]json.R
 	// final map is expected to be at least the same size as the base
 	finalMetadata := make(map[string]json.RawMessage, len(base))
 
-	for key, data := range base {
-		finalMetadata[key] = data
-	}
+	maps.Copy(finalMetadata, base)
 
-	for key, data := range override {
-		finalMetadata[key] = data
-	}
+	maps.Copy(finalMetadata, override)
 
 	return finalMetadata
 }
@@ -2354,6 +2359,11 @@ func (p *BicepProvider) ensureParameters(
 			key   string
 			param azure.ArmTemplateParameterDefinition
 		}{key: key, param: param})
+	}
+
+	// If in no-prompt mode and there are missing parameters, return an error with all missing inputs
+	if len(parameterPrompts) > 0 && p.console.IsNoPromptMode() {
+		return nil, p.buildMissingInputsError(parameterPrompts, parametersResult.envMapping)
 	}
 
 	if len(parameterPrompts) > 0 {

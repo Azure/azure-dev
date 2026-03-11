@@ -15,7 +15,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -43,7 +42,7 @@ type initFlags struct {
 
 // AiProjectResourceConfig represents the configuration for an AI project resource
 type AiProjectResourceConfig struct {
-	Models []map[string]interface{} `json:"models,omitempty"`
+	Models []map[string]any `json:"models,omitempty"`
 }
 
 type InitAction struct {
@@ -179,7 +178,10 @@ func extractProjectDetails(projectResourceId string) (*FoundryProject, error) {
 	// Validate that this is a Cognitive Services project resource
 	if resourceId.ResourceType.Namespace != "Microsoft.CognitiveServices" || len(resourceId.ResourceType.Types) != 2 ||
 		resourceId.ResourceType.Types[0] != "accounts" || resourceId.ResourceType.Types[1] != "projects" {
-		return nil, fmt.Errorf("the given resource ID is not a Microsoft Foundry project. Expected format: /subscriptions/[SUBSCRIPTION_ID]/resourceGroups/[RESOURCE_GROUP]/providers/Microsoft.CognitiveServices/accounts/[ACCOUNT_NAME]/projects/[PROJECT_NAME]")
+		return nil, fmt.Errorf(
+			"the given resource ID is not a Microsoft Foundry project. Expected format: " +
+				"/subscriptions/[SUBSCRIPTION_ID]/resourceGroups/[RESOURCE_GROUP]/providers/" +
+				"Microsoft.CognitiveServices/accounts/[ACCOUNT_NAME]/projects/[PROJECT_NAME]")
 	}
 
 	// Extract the components
@@ -626,7 +628,7 @@ func ensureAzureContext(
 				AzureContext: azureContext,
 				Options: &azdext.PromptResourceGroupOptions{
 					SelectOptions: &azdext.PromptResourceSelectOptions{
-						AllowNewResource: to.Ptr(false),
+						AllowNewResource: new(false),
 					},
 				},
 			})
@@ -653,7 +655,7 @@ func ensureAzureContext(
 				ResourceType:            "Microsoft.CognitiveServices/accounts/projects",
 				ResourceTypeDisplayName: "AI Foundry project",
 				SelectOptions: &azdext.PromptResourceSelectOptions{
-					AllowNewResource: to.Ptr(false),
+					AllowNewResource: new(false),
 					Message:          "Select a Foundry project",
 					LoadingMessage:   "Fetching Foundry projects...",
 				},
@@ -777,10 +779,12 @@ method:
 		}
 
 		yamlFilePath := filepath.Join(outputDir, "config", "job.yaml")
+		//nolint:gosec // project config directory should be readable and traversable
 		if err := os.MkdirAll(filepath.Dir(yamlFilePath), 0755); err != nil {
 			return fmt.Errorf("failed to create config directory: %w", err)
 		}
 
+		//nolint:gosec // generated config file should be readable by project tooling
 		if err := os.WriteFile(yamlFilePath, []byte(yamlContent), 0644); err != nil {
 			return fmt.Errorf("failed to write job.yaml file: %w", err)
 		}
@@ -903,18 +907,18 @@ method:
 
 		// Add grader for reinforcement method if present
 		if len(job.Grader) > 0 && strings.ToLower(job.Method) == "reinforcement" {
-			var graderMap map[string]interface{}
+			var graderMap map[string]any
 			if err := json.Unmarshal(job.Grader, &graderMap); err == nil {
 				graderYaml, err := yaml.Marshal(graderMap)
 				if err == nil {
 					// Indent the grader YAML to be nested under method.reinforcement.grader
-					indentedGrader := ""
-					for _, line := range strings.Split(string(graderYaml), "\n") {
+					var indentedGrader strings.Builder
+					for line := range strings.SplitSeq(string(graderYaml), "\n") {
 						if line != "" {
-							indentedGrader += "      " + line + "\n"
+							indentedGrader.WriteString("      " + line + "\n")
 						}
 					}
-					yamlContent += "    grader:\n" + indentedGrader
+					yamlContent += "    grader:\n" + indentedGrader.String()
 				}
 			}
 		}
@@ -941,10 +945,12 @@ method:
 		}
 
 		yamlFilePath := filepath.Join(outputDir, "config", "job.yaml")
+		//nolint:gosec // project config directory should be readable and traversable
 		if err := os.MkdirAll(filepath.Dir(yamlFilePath), 0755); err != nil {
 			return fmt.Errorf("failed to create config directory: %w", err)
 		}
 
+		//nolint:gosec // generated config file should be readable by project tooling
 		if err := os.WriteFile(yamlFilePath, []byte(yamlContent), 0644); err != nil {
 			return fmt.Errorf("failed to write job.yaml file: %w", err)
 		}
@@ -1011,7 +1017,7 @@ func downloadDirectoryContents(
 	}
 
 	// Parse the directory contents JSON
-	var dirContents []map[string]interface{}
+	var dirContents []map[string]any
 	if err := json.Unmarshal([]byte(dirContentsJson), &dirContents); err != nil {
 		return fmt.Errorf("failed to parse directory contents JSON: %w", err)
 	}
@@ -1046,12 +1052,14 @@ func downloadDirectoryContents(
 				return fmt.Errorf("failed to download file %s: %w", itemPath, err)
 			}
 
+			//nolint:gosec // downloaded project files are intended to be readable by project tooling
 			if err := os.WriteFile(itemLocalPath, []byte(fileContent), 0644); err != nil {
 				return fmt.Errorf("failed to write file %s: %w", itemLocalPath, err)
 			}
 		} else if itemType == "dir" {
 			// Recursively download subdirectory
 			fmt.Printf("Downloading directory: %s\n", itemPath)
+			//nolint:gosec // scaffolded directories are intended to be readable/traversable
 			if err := os.MkdirAll(itemLocalPath, 0755); err != nil {
 				return fmt.Errorf("failed to create directory %s: %w", itemLocalPath, err)
 			}
@@ -1082,6 +1090,7 @@ func copyDirectory(src, dst string) error {
 
 		if d.IsDir() {
 			// Create directory and continue processing its contents
+			//nolint:gosec // copied project directories should remain readable/traversable
 			return os.MkdirAll(dstPath, 0755)
 		} else {
 			// Copy file
@@ -1093,11 +1102,13 @@ func copyDirectory(src, dst string) error {
 // copyFile copies a single file from src to dst
 func copyFile(src, dst string) error {
 	// Create the destination directory if it doesn't exist
+	//nolint:gosec // copied project directories should remain readable/traversable
 	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
 		return err
 	}
 
 	// Open source file
+	//nolint:gosec // src is a local project file path from directory walk
 	srcFile, err := os.Open(src)
 	if err != nil {
 		return err
@@ -1105,6 +1116,7 @@ func copyFile(src, dst string) error {
 	defer srcFile.Close()
 
 	// Create destination file
+	//nolint:gosec // dst is a local project file path from directory walk
 	dstFile, err := os.Create(dst)
 	if err != nil {
 		return err

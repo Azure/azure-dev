@@ -16,6 +16,9 @@ parameters:
   - name: UploadArtifact
     type: boolean
     default: true
+  - name: AzureRecordMode
+    type: string
+    default: playback
   - name: ghCopilotClientId
     type: string
   - name: ghCopilotIntegrationId
@@ -49,6 +52,12 @@ jobs:
           filePath: eng/scripts/Set-CliVersionVariable.ps1
         displayName: Set CLI_VERSION
 
+      - ${{ if eq(parameters.OS, 'windows') }}:
+        - template: /eng/pipelines/templates/steps/set-msi-version.yml
+      - ${{ else }}:
+        - pwsh: Write-Host "###vso[task.setvariable variable=MSI_VERSION]"
+          displayName: Set MSI_VERSION for non-windows build
+
       - task: PowerShell@2
         inputs:
           pwsh: true
@@ -63,19 +72,15 @@ jobs:
           targetType: filePath
           filePath: cli/azd/ci-build.ps1
           arguments: >-
-            -Version $(CLI_VERSION)
-            -SourceVersion $(Build.SourceVersion)
+            -Version "$(CLI_VERSION)"
+            -ExeVersion "$(MSI_VERSION)"
+            -SourceVersion "$(Build.SourceVersion)"
             -CodeCoverageEnabled
             -BuildRecordMode
             -GitHubCopilotClientId "${{ parameters.ghCopilotClientId }}"
             -GitHubCopilotIntegrationId "${{ parameters.ghCopilotIntegrationId }}"
           workingDirectory: cli/azd
         displayName: Build Go Binary (For tests)
-
-      - pwsh: |
-          eng/scripts/Get-MsiVersion.ps1 -DevOpsOutput
-        displayName: Set MSI_VERSION
-        condition: and(succeeded(), eq(variables['BuildTestMsi'], 'true'))
 
       - template: /eng/pipelines/templates/steps/build-msi.yml
         parameters:
@@ -148,7 +153,7 @@ jobs:
           AZD_TEST_TENANT_ID: $(AzureSubscriptionTenantId)
           AZD_TEST_AZURE_SUBSCRIPTION_ID: $(SubscriptionId)
           AZD_TEST_AZURE_LOCATION: eastus2
-          AZURE_RECORD_MODE: playback # Always run in 'playback' mode during CI builds
+          AZURE_RECORD_MODE: ${{ parameters.AzureRecordMode }} # Defaults to 'playback'; controlled by AzureRecordMode parameter
           # AZD Live Test: Terraform authentication via `az`
           ARM_USE_CLI: true
           # Code Coverage: Generate junit report to publish results
@@ -177,8 +182,9 @@ jobs:
           targetType: filePath
           filePath: cli/azd/ci-build.ps1
           arguments: >-
-            -Version $(CLI_VERSION)
-            -SourceVersion $(Build.SourceVersion)
+            -Version "$(CLI_VERSION)"
+            -ExeVersion "$(MSI_VERSION)"
+            -SourceVersion "$(Build.SourceVersion)"
             -GitHubCopilotClientId "${{ parameters.ghCopilotClientId }}"
             -GitHubCopilotIntegrationId "${{ parameters.ghCopilotIntegrationId }}"
           workingDirectory: cli/azd

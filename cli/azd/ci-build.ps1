@@ -1,5 +1,6 @@
 param(
     [string] $Version = (Get-Content "$PSScriptRoot/../version.txt"),
+    [string] $ExeVersion = (."$PSScriptRoot/../../eng/scripts/Get-MsiVersion.ps1" -CliVersion $Version),
     [string] $SourceVersion = (git rev-parse HEAD),
     [switch] $CodeCoverageEnabled,
     [switch] $BuildRecordMode,
@@ -83,8 +84,7 @@ if ($IsWindows) {
 
     $VERSION_INFO_PATH = "$PSScriptRoot/versioninfo.json"
 
-    $exeFileVersion = ."$PSScriptRoot/../../eng/scripts/Get-MsiVersion.ps1" -CliVersion $Version
-    $splitExeFileVersion = $exeFileVersion -split '\.'
+    $splitExeFileVersion = $ExeVersion -split '\.'
     $versionInfo = Get-Content $VERSION_INFO_PATH | ConvertFrom-Json
 
     $versionInfo.FixedFileInfo.FileVersion.Major = [int]$splitExeFileVersion[0]

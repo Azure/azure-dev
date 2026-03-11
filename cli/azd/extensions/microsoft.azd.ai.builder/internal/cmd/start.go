@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.ai.builder/internal/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.ai.builder/internal/pkg/azure/ai"
@@ -395,7 +394,7 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 
 			overwriteResponse, err := a.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
 				Options: &azdext.ConfirmOptions{
-					DefaultValue: to.Ptr(false),
+					DefaultValue: new(false),
 					Message: fmt.Sprintf(
 						"The directory %s is not empty. Do you want to overwrite it?",
 						output.WithHighLightFormat(service.RelativePath),
@@ -506,7 +505,7 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 	confirmResponse, err := a.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
 		Options: &azdext.ConfirmOptions{
 			Message:      "Do you want to provision resources to your project now?",
-			DefaultValue: to.Ptr(true),
+			DefaultValue: new(true),
 			HelpMessage:  "Provisioning resources will create the necessary Azure infrastructure for your application.",
 		},
 	})
@@ -781,7 +780,7 @@ func (a *startAction) createQuestions(ctx context.Context) (map[string]qna.Quest
 				Client:          a.azdClient,
 				Message:         "What type of AI scenario are you building?",
 				HelpMessage:     "Choose the scenario that best fits your needs.",
-				EnableFiltering: to.Ptr(false),
+				EnableFiltering: new(false),
 				Choices: []qna.Choice{
 					{Label: "RAG Application (Retrieval-Augmented Generation)", Value: "rag"},
 					{Label: "AI Agent", Value: "agent"},
@@ -799,7 +798,7 @@ func (a *startAction) createQuestions(ctx context.Context) (map[string]qna.Quest
 				Client:       a.azdClient,
 				Message:      "Does your application require custom data?",
 				HelpMessage:  "Custom data is data that is not publicly available and is specific to your application.",
-				DefaultValue: to.Ptr(true),
+				DefaultValue: new(true),
 			},
 			AfterAsk: func(ctx context.Context, q *qna.Question, _ any) error {
 				switch a.scenarioData.SelectedScenario {
@@ -826,7 +825,7 @@ func (a *startAction) createQuestions(ctx context.Context) (map[string]qna.Quest
 				Client:          a.azdClient,
 				Message:         "What type of data are you using?",
 				HelpMessage:     "Select all the data types that apply to your application.",
-				EnableFiltering: to.Ptr(false),
+				EnableFiltering: new(false),
 				Choices: []qna.Choice{
 					{Label: "Structured documents, ex. JSON, CSV", Value: "structured-documents"},
 					{Label: "Unstructured documents, ex. PDF, Word", Value: "unstructured-documents"},
@@ -843,7 +842,7 @@ func (a *startAction) createQuestions(ctx context.Context) (map[string]qna.Quest
 				Client:          a.azdClient,
 				Message:         "Where is your data located?",
 				HelpMessage:     "Select all the data locations that apply to your application.",
-				EnableFiltering: to.Ptr(false),
+				EnableFiltering: new(false),
 				Choices: []qna.Choice{
 					{Label: "Azure Blob Storage", Value: "blob-storage"},
 					{Label: "Azure Database", Value: "databases"},
@@ -876,7 +875,7 @@ func (a *startAction) createQuestions(ctx context.Context) (map[string]qna.Quest
 					q.Prompt = &qna.ConfirmPrompt{
 						Client:       a.azdClient,
 						Message:      promptMessage,
-						DefaultValue: to.Ptr(true),
+						DefaultValue: new(true),
 						HelpMessage:  "Using an existing storage account will save you time and resources.",
 					}
 				}
@@ -922,7 +921,7 @@ func (a *startAction) createQuestions(ctx context.Context) (map[string]qna.Quest
 					q.Prompt = &qna.ConfirmPrompt{
 						Client:       a.azdClient,
 						Message:      "It looks like you already have a configured database. Do you want to reuse it?",
-						DefaultValue: to.Ptr(true),
+						DefaultValue: new(true),
 						HelpMessage:  "Using an existing database will save you time and resources.",
 					}
 				}
@@ -948,7 +947,7 @@ func (a *startAction) createQuestions(ctx context.Context) (map[string]qna.Quest
 				Message:         "Which type of database?",
 				HelpMessage:     "Select the type of database that best fits your needs.",
 				Client:          a.azdClient,
-				EnableFiltering: to.Ptr(false),
+				EnableFiltering: new(false),
 				Choices: []qna.Choice{
 					{Label: "CosmosDB", Value: "db.cosmos"},
 					{Label: "PostgreSQL", Value: "db.postgres"},
@@ -1002,7 +1001,7 @@ func (a *startAction) createQuestions(ctx context.Context) (map[string]qna.Quest
 				Client:          a.azdClient,
 				Message:         "Which files?",
 				HelpMessage:     "Select all files or use a glob expression to filter the files.",
-				EnableFiltering: to.Ptr(false),
+				EnableFiltering: new(false),
 				Choices: []qna.Choice{
 					{Label: "All Files", Value: "all-files"},
 					{Label: "Glob Expression", Value: "glob-expression"},
@@ -1038,7 +1037,7 @@ func (a *startAction) createQuestions(ctx context.Context) (map[string]qna.Quest
 					q.Prompt = &qna.ConfirmPrompt{
 						Client:       a.azdClient,
 						Message:      "It looks like you already have a configured vector store. Do you want to reuse it?",
-						DefaultValue: to.Ptr(true),
+						DefaultValue: new(true),
 						HelpMessage:  "Using an existing vector store will save you time and resources.",
 					}
 				}
@@ -1073,7 +1072,7 @@ func (a *startAction) createQuestions(ctx context.Context) (map[string]qna.Quest
 				Message:         "What type of vector store do you want to use?",
 				HelpMessage:     "Select the type of vector store that best fits your needs.",
 				Client:          a.azdClient,
-				EnableFiltering: to.Ptr(false),
+				EnableFiltering: new(false),
 				Choices: []qna.Choice{
 					{Label: "Choose for me", Value: "ai.search"},
 					{Label: "AI Search", Value: "ai.search"},
@@ -1124,7 +1123,7 @@ func (a *startAction) createQuestions(ctx context.Context) (map[string]qna.Quest
 				Client:          a.azdClient,
 				Message:         "How do you want users to interact with the data?",
 				HelpMessage:     "Select all the data interaction types that apply to your application.",
-				EnableFiltering: to.Ptr(false),
+				EnableFiltering: new(false),
 				Choices: []qna.Choice{
 					{Label: "Chatbot UI Frontend", Value: "rag-ui"},
 					{Label: "API Backend Application", Value: "rag-api"},
@@ -1173,7 +1172,7 @@ func (a *startAction) createQuestions(ctx context.Context) (map[string]qna.Quest
 					q.Prompt = &qna.ConfirmPrompt{
 						Client:       a.azdClient,
 						Message:      msg,
-						DefaultValue: to.Ptr(true),
+						DefaultValue: new(true),
 						HelpMessage:  "Using an existing application host will save you time and resources.",
 					}
 				}
@@ -1199,7 +1198,7 @@ func (a *startAction) createQuestions(ctx context.Context) (map[string]qna.Quest
 			Prompt: &qna.SingleSelectPrompt{
 				Message:         "Which application host do you want to use?",
 				Client:          a.azdClient,
-				EnableFiltering: to.Ptr(false),
+				EnableFiltering: new(false),
 				Choices: []qna.Choice{
 					{Label: "Choose for me", Value: "choose-app"},
 					{Label: "Container App", Value: "host.containerapp"},
@@ -1222,7 +1221,7 @@ func (a *startAction) createQuestions(ctx context.Context) (map[string]qna.Quest
 				Client:          a.azdClient,
 				Message:         "Which programming language do you want to use?",
 				HelpMessage:     "Select the programming language that best fits your needs.",
-				EnableFiltering: to.Ptr(false),
+				EnableFiltering: new(false),
 				Choices: []qna.Choice{
 					{Label: "Choose for me", Value: "default"},
 					{Label: "C#", Value: "csharp"},
@@ -1303,7 +1302,7 @@ func (a *startAction) createQuestions(ctx context.Context) (map[string]qna.Quest
 				Client:          a.azdClient,
 				Message:         "How do you want users to interact with the agent?",
 				HelpMessage:     "Select all the data interaction types that apply to your application.",
-				EnableFiltering: to.Ptr(false),
+				EnableFiltering: new(false),
 				Choices: []qna.Choice{
 					{Label: "Chatbot UI Frontend", Value: "agent-ui"},
 					{Label: "API Backend Application", Value: "agent-api"},
@@ -1327,7 +1326,7 @@ func (a *startAction) createQuestions(ctx context.Context) (map[string]qna.Quest
 				Client:          a.azdClient,
 				Message:         "What tasks do you want the AI agent to perform?",
 				HelpMessage:     "Select all the tasks that apply to your application.",
-				EnableFiltering: to.Ptr(false),
+				EnableFiltering: new(false),
 				Choices: []qna.Choice{
 					{Label: "Custom Function Calling", Value: "custom-function-calling"},
 					{Label: "Integrate with Open API based services", Value: "openapi"},
@@ -1353,7 +1352,7 @@ func (a *startAction) createQuestions(ctx context.Context) (map[string]qna.Quest
 					q.Prompt = &qna.ConfirmPrompt{
 						Client:       a.azdClient,
 						Message:      promptMessage,
-						DefaultValue: to.Ptr(true),
+						DefaultValue: new(true),
 						HelpMessage:  "Using an existing database will save you time and resources.",
 					}
 				}
@@ -1379,7 +1378,7 @@ func (a *startAction) createQuestions(ctx context.Context) (map[string]qna.Quest
 				Client:          a.azdClient,
 				Message:         "Which messaging service do you want to use?",
 				HelpMessage:     "Select the messaging service that best fits your needs.",
-				EnableFiltering: to.Ptr(false),
+				EnableFiltering: new(false),
 				Choices: []qna.Choice{
 					{Label: "Choose for me", Value: "messaging.servicebus"},
 					{Label: "Azure Service Bus", Value: "messaging.servicebus"},
@@ -1525,7 +1524,7 @@ func (a *startAction) createQuestions(ctx context.Context) (map[string]qna.Quest
 				},
 				Message:         "How do you want to find the right model?",
 				HelpMessage:     "Select the option that best fits your needs.",
-				EnableFiltering: to.Ptr(false),
+				EnableFiltering: new(false),
 				Choices: []qna.Choice{
 					{Label: "Choose for me", Value: "choose-model"},
 					{Label: "Help me choose", Value: "guide-model"},
@@ -1564,7 +1563,7 @@ func (a *startAction) createQuestions(ctx context.Context) (map[string]qna.Quest
 				Message: "Filter AI Models",
 				HelpMessage: "Select all the filters that apply to your application. " +
 					"These filters will help you narrow down the type of models you need.",
-				EnableFiltering: to.Ptr(false),
+				EnableFiltering: new(false),
 				BeforeAsk: func(ctx context.Context, q *qna.Question, p *qna.MultiSelectPrompt) error {
 					choices := []qna.Choice{}
 
@@ -1720,7 +1719,7 @@ func (a *startAction) createQuestions(ctx context.Context) (map[string]qna.Quest
 				Client:          a.azdClient,
 				Message:         "Filter by model release status?",
 				HelpMessage:     "Select all the model release status that apply to your application.",
-				EnableFiltering: to.Ptr(false),
+				EnableFiltering: new(false),
 			},
 			AfterAsk: func(ctx context.Context, q *qna.Question, value any) error {
 				q.State["status"] = value

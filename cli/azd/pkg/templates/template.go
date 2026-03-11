@@ -36,7 +36,7 @@ type Template struct {
 	Tags []string `json:"tags"`
 
 	// Additional metadata about the template
-	Metadata Metadata `json:"metadata,omitempty"`
+	Metadata Metadata `json:"metadata"`
 }
 
 // Metadata contains additional metadata about the template

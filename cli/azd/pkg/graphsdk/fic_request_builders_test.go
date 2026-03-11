@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockgraphsdk"
@@ -19,26 +18,26 @@ import (
 
 var (
 	application graphsdk.Application = graphsdk.Application{
-		Id:          to.Ptr("application-id"),
+		Id:          new("application-id"),
 		DisplayName: "application name",
-		Description: to.Ptr("app description"),
+		Description: new("app description"),
 	}
 
 	federatedCredentials []graphsdk.FederatedIdentityCredential = []graphsdk.FederatedIdentityCredential{
 		{
-			Id:          to.Ptr("cred-01"),
+			Id:          new("cred-01"),
 			Name:        "Credential 1",
 			Issuer:      "ISSUER",
 			Subject:     "SUBJECT",
-			Description: to.Ptr("DESCRIPTION"),
+			Description: new("DESCRIPTION"),
 			Audiences:   []string{"AUDIENCE"},
 		},
 		{
-			Id:          to.Ptr("cred-02"),
+			Id:          new("cred-02"),
 			Name:        "Credential 2",
 			Issuer:      "ISSUER",
 			Subject:     "SUBJECT",
-			Description: to.Ptr("DESCRIPTION"),
+			Description: new("DESCRIPTION"),
 		},
 	}
 )

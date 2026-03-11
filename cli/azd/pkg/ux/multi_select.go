@@ -43,8 +43,8 @@ var DefaultMultiSelectOptions MultiSelectOptions = MultiSelectOptions{
 	Writer:          os.Stdout,
 	Reader:          os.Stdin,
 	DisplayCount:    6,
-	EnableFiltering: Ptr(true),
-	DisplayNumbers:  Ptr(false),
+	EnableFiltering: new(true),
+	DisplayNumbers:  new(false),
 }
 
 type MultiSelectChoice struct {
@@ -172,15 +172,15 @@ func (p *MultiSelect) Ask(ctx context.Context) ([]*MultiSelectChoice, error) {
 
 		// Ensure currentIndex is initialized if there are any choices.
 		if p.currentIndex == nil && len(p.filteredChoices) > 0 {
-			p.currentIndex = Ptr(0)
+			p.currentIndex = new(0)
 		}
 
 		optionCount := len(p.filteredChoices)
 		if optionCount > 0 {
 			if args.Key == surveyterm.KeyArrowUp {
-				p.currentIndex = Ptr(((*p.currentIndex - 1 + optionCount) % optionCount))
+				p.currentIndex = new(((*p.currentIndex - 1 + optionCount) % optionCount))
 			} else if args.Key == surveyterm.KeyArrowDown {
-				p.currentIndex = Ptr(((*p.currentIndex + 1) % optionCount))
+				p.currentIndex = new(((*p.currentIndex + 1) % optionCount))
 			} else if args.Key == surveyterm.KeySpace {
 				choice := p.filteredChoices[*p.currentIndex]
 				choice.Selected = !choice.Selected
@@ -280,7 +280,7 @@ func (p *MultiSelect) applyFilter() {
 	}
 
 	if *p.currentIndex > len(p.filteredChoices)-1 {
-		p.currentIndex = Ptr(0)
+		p.currentIndex = new(0)
 	}
 }
 
@@ -405,14 +405,14 @@ func (p *MultiSelect) renderValidation(printer Printer) {
 }
 
 func (p *MultiSelect) renderMessage(printer Printer) {
-	printer.Fprintf(output.WithHighLightFormat("? "))
+	printer.Fprintf("%s", output.WithHighLightFormat("? "))
 
 	// Message
-	printer.Fprintf(BoldString("%s: ", p.options.Message))
+	printer.Fprintf("%s", BoldString("%s: ", p.options.Message))
 
 	// Cancelled
 	if p.cancelled {
-		printer.Fprintf(output.WithErrorFormat("(Cancelled)"))
+		printer.Fprintf("%s", output.WithErrorFormat("(Cancelled)"))
 	}
 
 	// Selected Value(s)
@@ -424,7 +424,7 @@ func (p *MultiSelect) renderMessage(printer Printer) {
 		}
 
 		rawValue := strings.Join(selectionValues, ", ")
-		printer.Fprintf(output.WithHighLightFormat(rawValue))
+		printer.Fprintf("%s", output.WithHighLightFormat(rawValue))
 	}
 
 	printer.Fprintln()
@@ -435,11 +435,11 @@ func (p *MultiSelect) renderMessage(printer Printer) {
 		printer.Fprintf("  Filter: ")
 
 		if p.filter == "" {
-			p.cursorPosition = Ptr(printer.CursorPosition())
-			printer.Fprintf(output.WithGrayFormat("Type to filter list"))
+			p.cursorPosition = new(printer.CursorPosition())
+			printer.Fprintf("%s", output.WithGrayFormat("Type to filter list"))
 		} else {
-			printer.Fprintf(p.filter)
-			p.cursorPosition = Ptr(printer.CursorPosition())
+			printer.Fprintf("%s", p.filter)
+			p.cursorPosition = new(printer.CursorPosition())
 		}
 
 		printer.Fprintln()
@@ -450,7 +450,7 @@ func (p *MultiSelect) renderMessage(printer Printer) {
 // Render renders the Select component.
 func (p *MultiSelect) Render(printer Printer) error {
 	if p.currentIndex == nil {
-		p.currentIndex = Ptr(0)
+		p.currentIndex = new(0)
 	}
 
 	p.renderMessage(printer)

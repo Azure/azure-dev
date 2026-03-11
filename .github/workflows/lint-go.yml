@@ -1,0 +1,61 @@
+name: lint-go
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: "Path to the Go module directory to lint"
+        required: true
+        type: string
+      go-version:
+        description: "Go version to use"
+        required: false
+        type: string
+        default: "^1.26"
+      golangci-lint-version:
+        description: "GolangCI-Lint version to use"
+        required: false
+        type: string
+        default: "v2.10.1"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  golangci-lint:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ inputs.go-version }}
+      - uses: actions/checkout@v4
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: ${{ inputs.golangci-lint-version }}
+          args: -v --timeout 10m0s
+          working-directory: ${{ inputs.working-directory }}
+
+  go-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ inputs.go-version }}
+      - uses: actions/checkout@v4
+      - name: Check for go fix suggestions
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          DIFF=$(go fix -diff ./... 2>/dev/null)
+          if [ -n "$DIFF" ]; then
+            echo "::error::go fix found code that should be modernized."
+            echo "Run 'go fix ./...' locally and commit the changes."
+            echo ""
+            echo "$DIFF"
+            exit 1
+          fi
+          echo "No go fix suggestions — code is up to date."

@@ -70,7 +70,7 @@ func TestProgress_IntegerProgress(t *testing.T) {
 		progress := NewProgress[int]()
 
 		go func() {
-			for i := 0; i < 5; i++ {
+			for i := range 5 {
 				progress.SetProgress(i * 10) // 0, 10, 20, 30, 40
 			}
 			progress.Done()
@@ -184,10 +184,10 @@ func TestProgress_ConcurrentAccess(t *testing.T) {
 		wg.Add(numGoroutines)
 
 		// Start multiple goroutines sending progress
-		for i := 0; i < numGoroutines; i++ {
+		for i := range numGoroutines {
 			go func(goroutineID int) {
 				defer wg.Done()
-				for j := 0; j < updatesPerGoroutine; j++ {
+				for j := range updatesPerGoroutine {
 					progress.SetProgress(goroutineID*100 + j)
 				}
 			}(i)

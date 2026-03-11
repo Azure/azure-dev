@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -334,7 +336,7 @@ func Test_EnvManager_CreateFromContainer(t *testing.T) {
 		mockContext.Container.MustRegisterSingleton(func() *state.RemoteConfig {
 			return &state.RemoteConfig{
 				Backend: string(RemoteKindAzureBlobStorage),
-				Config:  map[string]interface{}{},
+				Config:  map[string]any{},
 			}
 		})
 
@@ -385,6 +387,11 @@ func registerContainerComponents(t *testing.T, mockContext *mocks.MockContext) {
 	// Register a mock SubscriptionTenantResolver for tests
 	mockContext.Container.MustRegisterSingleton(func() account.SubscriptionTenantResolver {
 		return &mockSubscriptionTenantResolver{}
+	})
+
+	mockContext.Container.MustRegisterSingleton(func() config.UserConfigManager {
+		fileConfigManager := config.NewFileConfigManager(config.NewManager())
+		return config.NewUserConfigManager(fileConfigManager)
 	})
 
 	mockContext.Container.MustRegisterSingleton(storage.NewBlobSdkClient)
@@ -717,4 +724,101 @@ func Test_EnvManager_InstanceCaching(t *testing.T) {
 
 		localDataStore.AssertNumberOfCalls(t, "Get", 1) // Only initial load, not after Save
 	})
+}
+
+func Test_EnvManager_Create_NoPrompt_AutoName(t *testing.T) {
+	t.Run("generates name from working directory", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.Console.SetNoPromptMode(true)
+
+		// Use a known directory name so we can assert the generated env name
+		tmpDir := t.TempDir()
+		knownDir := filepath.Join(tmpDir, "my-cool-project")
+		require.NoError(t, os.Mkdir(knownDir, 0755))
+
+		azdCtx := azdcontext.NewAzdContextWithDirectory(knownDir)
+		localDataStore := NewLocalFileDataStore(azdCtx, config.NewFileConfigManager(config.NewManager()))
+		envManager := newManagerForTest(azdCtx, mockContext.Console, localDataStore, nil)
+
+		env, err := envManager.Create(*mockContext.Context, Spec{Name: ""})
+		require.NoError(t, err)
+		require.NotNil(t, env)
+		require.Equal(t, "my-cool-project", env.Name())
+	})
+
+	t.Run("cleans special characters in directory name", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.Console.SetNoPromptMode(true)
+
+		tmpDir := t.TempDir()
+		knownDir := filepath.Join(tmpDir, "my cool project!")
+		require.NoError(t, os.Mkdir(knownDir, 0755))
+
+		azdCtx := azdcontext.NewAzdContextWithDirectory(knownDir)
+		localDataStore := NewLocalFileDataStore(azdCtx, config.NewFileConfigManager(config.NewManager()))
+		envManager := newManagerForTest(azdCtx, mockContext.Console, localDataStore, nil)
+
+		env, err := envManager.Create(*mockContext.Context, Spec{Name: ""})
+		require.NoError(t, err)
+		require.NotNil(t, env)
+		require.Equal(t, "my-cool-project-", env.Name())
+	})
+
+	t.Run("truncates long directory names", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.Console.SetNoPromptMode(true)
+
+		tmpDir := t.TempDir()
+		longName := strings.Repeat("a", 100)
+		knownDir := filepath.Join(tmpDir, longName)
+		require.NoError(t, os.Mkdir(knownDir, 0755))
+
+		azdCtx := azdcontext.NewAzdContextWithDirectory(knownDir)
+		localDataStore := NewLocalFileDataStore(azdCtx, config.NewFileConfigManager(config.NewManager()))
+		envManager := newManagerForTest(azdCtx, mockContext.Console, localDataStore, nil)
+
+		env, err := envManager.Create(*mockContext.Context, Spec{Name: ""})
+		require.NoError(t, err)
+		require.NotNil(t, env)
+		require.LessOrEqual(t, len(env.Name()), EnvironmentNameMaxLength)
+		require.Equal(t, strings.Repeat("a", EnvironmentNameMaxLength), env.Name())
+	})
+
+	t.Run("uses provided name even in no-prompt mode", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.Console.SetNoPromptMode(true)
+
+		envManager := createEnvManagerForManagerTest(t, mockContext)
+		env, err := envManager.Create(*mockContext.Context, Spec{Name: "my-explicit-env"})
+		require.NoError(t, err)
+		require.NotNil(t, env)
+		require.Equal(t, "my-explicit-env", env.Name())
+	})
+}
+
+func Test_CleanName_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"simple name", "my-project", "my-project"},
+		{"spaces replaced", "my project", "my-project"},
+		{"special chars replaced", "my@project!v2", "my-project-v2"},
+		{"dots preserved", "my.project", "my.project"},
+		{"underscores preserved", "my_project", "my_project"},
+		{"unicode replaced", "projeçt-naïve", "proje-t-na-ve"},
+		// Note: parentheses are valid in env names per EnvironmentNameRegexp: [a-zA-Z0-9-\(\)_\.]
+		{"parens preserved", "my(project)", "my(project)"},
+		{"empty string", "", ""},
+		{"all special chars", "@#$", "---"},
+		{"long name not truncated by CleanName", strings.Repeat("a", 100), strings.Repeat("a", 100)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := CleanName(tt.input)
+			require.Equal(t, tt.expected, result)
+		})
+	}
 }

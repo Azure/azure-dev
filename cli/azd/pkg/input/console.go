@@ -107,6 +107,8 @@ type Console interface {
 	// If false, the spinner is non-interactive, which means messages are rendered as a new console message on each
 	// call to ShowSpinner, even when the title is unchanged.
 	IsSpinnerInteractive() bool
+	// IsNoPromptMode returns true when --no-prompt is active and interactive prompts are disabled.
+	IsNoPromptMode() bool
 	SupportsPromptDialog() bool
 	PromptDialog(ctx context.Context, dialog PromptDialog) (map[string]any, error)
 	// Prompts the user for a single value
@@ -217,7 +219,7 @@ func (c *AskerConsole) Message(ctx context.Context, message string) {
 	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
 		// we call json.Marshal directly, because the formatter marshalls using indentation, and we would prefer
 		// these objects be written on a single line.
-		var obj interface{} = output.EventForMessage(message)
+		var obj any = output.EventForMessage(message)
 		if q, ok := c.formatter.(output.Queryable); ok {
 			if filtered, err := q.QueryFilter(obj); err == nil {
 				obj = filtered
@@ -278,12 +280,12 @@ func (c *AskerConsole) MessageUxItem(ctx context.Context, item ux.UxItem) {
 	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
 		// no need to check the spinner for json format, as the spinner won't start when using json format
 		// instead, there would be a message about starting spinner
-		var obj interface{} = item
+		var obj any = item
 		if q, ok := c.formatter.(output.Queryable); ok {
 			// UxItem.MarshalJSON() produces an EventEnvelope. To apply JMESPath we
 			// need the unmarshaled structure, so round-trip through JSON first.
 			if raw, err := json.Marshal(item); err == nil {
-				var envelope interface{}
+				var envelope any
 				if err := json.Unmarshal(raw, &envelope); err == nil {
 					if filtered, err := q.QueryFilter(envelope); err == nil {
 						obj = filtered
@@ -334,7 +336,18 @@ func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewer
 		options = defaultShowPreviewerOptions()
 	}
 
-	c.previewer = NewProgressLog(options.MaxLineCount, options.Prefix, options.Title, c.currentIndent.Load()+currentMsg)
+	c.previewer = newProgressLogWithWidthFn(
+		options.MaxLineCount,
+		options.Prefix,
+		options.Title,
+		c.currentIndent.Load()+currentMsg,
+		func() int {
+			if c.consoleWidth == nil {
+				return 0
+			}
+
+			return int(c.consoleWidth.Load())
+		})
 	c.previewer.Start()
 	c.writer = c.previewer
 	return &consolePreviewerWriter{
@@ -558,6 +571,10 @@ func promptFromOptions(options ConsoleOptions) survey.Prompt {
 // 0 in the sentinel), followed by a new line.
 const afterIoSentinel = "0\n"
 
+func (c *AskerConsole) IsNoPromptMode() bool {
+	return c.noPrompt
+}
+
 func (c *AskerConsole) SupportsPromptDialog() bool {
 	return c.promptClient != nil && !c.noPromptDialog
 }
@@ -669,7 +686,7 @@ func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int,
 			Options: promptOptionsOptions{
 				Message: options.Message,
 				Help:    options.Help,
-				Choices: to.Ptr(choicesFromOptions(options)),
+				Choices: new(choicesFromOptions(options)),
 			},
 		}
 
@@ -749,7 +766,7 @@ func (c *AskerConsole) MultiSelect(ctx context.Context, options ConsoleOptions) 
 			Options: promptOptionsOptions{
 				Message: options.Message,
 				Help:    options.Help,
-				Choices: to.Ptr(choicesFromOptions(options)),
+				Choices: new(choicesFromOptions(options)),
 			},
 		}
 

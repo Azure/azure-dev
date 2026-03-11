@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -285,9 +286,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 		}
 	}
 	// Add the environment variables from the azd environment
-	for key, value := range at.env.Dotenv() {
-		env[key] = value
-	}
+	maps.Copy(env, at.env.Dotenv())
 
 	builder := strings.Builder{}
 	err = tmpl.Execute(&builder, struct {
@@ -851,6 +850,7 @@ func compileBicep(
 
 	if ext == ".bicep" {
 		paramFilePath := strings.TrimSuffix(bicepModulePath, ext) + ".parameters.json"
+		//nolint:gosec // G703: paramFilePath derived from project config
 		parametersBytes, err := os.ReadFile(paramFilePath)
 		if err != nil {
 			return result, fmt.Errorf("reading parameters file: %w", err)

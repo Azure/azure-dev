@@ -16,7 +16,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -190,9 +189,11 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	var subId, rgName string
 	if env, err := s.envManager.Get(ctx, environmentName); err != nil {
 		if errors.Is(err, environment.ErrNotFound) && s.flags.EnvironmentName != "" {
-			return nil, fmt.Errorf(
-				`"environment '%s' does not exist. You can create it with "azd env new"`, environmentName,
-			)
+			return nil, &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf("environment '%s' does not exist: %w",
+					environmentName, environment.ErrNotFound),
+				Suggestion: "Run 'azd env new <name>' to create an environment.",
+			}
 		}
 		log.Printf("could not load environment: %s, resource ids will not be available", err)
 	} else {
@@ -359,6 +360,11 @@ func (s *showAction) showResource(ctx context.Context, name string, env *environ
 		if err != nil {
 			return err
 		}
+	case strings.EqualFold(resType, string(azapi.AzureResourceTypeContainerAppJob)):
+		item, err = showContainerAppJob(ctx, credential, id, resourceOptions)
+		if err != nil {
+			return err
+		}
 	case strings.EqualFold(resType, string(azapi.AzureResourceTypeWebSite)):
 		item, err = showAppService(ctx, credential, id, resourceOptions)
 		if err != nil {
@@ -453,6 +459,35 @@ func showAppService(
 	return service, nil
 }
 
+// selectContainer picks the best container from a list by matching the resource name or "main".
+// Returns nil if no suitable container is found.
+func selectContainer(containers []*armappcontainers.Container, resourceName string) *armappcontainers.Container {
+	if len(containers) == 0 {
+		return nil
+	}
+
+	if len(containers) == 1 {
+		c := containers[0]
+		if c == nil {
+			return nil
+		}
+		return c
+	}
+
+	for _, c := range containers {
+		if c == nil {
+			continue
+		}
+		if c.Name != nil &&
+			(strings.EqualFold(*c.Name, resourceName) ||
+				strings.EqualFold(*c.Name, "main")) {
+			return c
+		}
+	}
+
+	return nil
+}
+
 func showContainerApp(
 	ctx context.Context,
 	cred azcore.TokenCredential,
@@ -488,23 +523,12 @@ func showContainerApp(
 
 	service.IngresUrl = fmt.Sprintf("https://%s", *app.Properties.Configuration.Ingress.Fqdn)
 
-	var container *armappcontainers.Container
-	if len(app.Properties.Template.Containers) == 1 {
-		container = app.Properties.Template.Containers[0]
-	} else {
-		for _, c := range app.Properties.Template.Containers {
-			if c.Name != nil && (strings.EqualFold(*c.Name, id.Name) || strings.EqualFold(*c.Name, "main")) {
-				container = c
-				break
-			}
-		}
-
-		if container == nil {
-			return nil, fmt.Errorf(
-				"container app %s has more than one container, and no containers match the name 'main' or '%s'",
-				id.Name,
-				id.Name)
-		}
+	container := selectContainer(app.Properties.Template.Containers, id.Name)
+	if container == nil {
+		return nil, fmt.Errorf(
+			"container app %s has more than one container, and no containers match the name 'main' or '%s'",
+			id.Name,
+			id.Name)
 	}
 
 	envVar := container.Env
@@ -517,7 +541,7 @@ func showContainerApp(
 		val := env.Value
 
 		if env.SecretRef != nil {
-			val = to.Ptr("*******")
+			val = new("*******")
 
 			// dereference the secret ref
 			for _, secret := range secrets {
@@ -529,6 +553,87 @@ func showContainerApp(
 		}
 
 		service.Env[key] = *val
+	}
+
+	return service, nil
+}
+
+func showContainerAppJob(
+	ctx context.Context,
+	cred azcore.TokenCredential,
+	id *arm.ResourceID,
+	opts showResourceOptions,
+) (*ux.ShowService, error) {
+	service := &ux.ShowService{
+		Name:        id.Name,
+		Env:         make(map[string]string),
+		DisplayType: "Container App Job",
+	}
+
+	client, err := armappcontainers.NewJobsClient(
+		id.SubscriptionID, cred, opts.clientOpts,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("creating container-app-jobs client: %w", err)
+	}
+
+	job, err := client.Get(ctx, id.ResourceGroupName, id.Name, nil)
+	if err != nil {
+		return nil, fmt.Errorf("getting container app job: %w", err)
+	}
+
+	// Container App Jobs don't have ingress/endpoints
+	if job.Properties == nil ||
+		job.Properties.Template == nil ||
+		len(job.Properties.Template.Containers) == 0 {
+		return service, nil
+	}
+
+	var secrets []*armappcontainers.Secret
+	if opts.showSecrets {
+		secretsRes, err := client.ListSecrets(ctx, id.ResourceGroupName, id.Name, nil)
+		if err != nil {
+			return nil, fmt.Errorf("listing job secrets: %w", err)
+		}
+		secrets = secretsRes.Value
+	}
+
+	container := selectContainer(job.Properties.Template.Containers, id.Name)
+	if container == nil {
+		if len(job.Properties.Template.Containers) == 1 {
+			// Single nil container — graceful degradation
+			return service, nil
+		}
+		return nil, fmt.Errorf(
+			"container app job %s has more than one container,"+
+				" and no containers match the name 'main' or '%s'",
+			id.Name,
+			id.Name)
+	}
+
+	for _, env := range container.Env {
+		if env == nil || env.Name == nil {
+			continue
+		}
+
+		key := *env.Name
+		val := env.Value
+
+		if env.SecretRef != nil {
+			val = new("*******")
+
+			// dereference the secret ref
+			for _, secret := range secrets {
+				if secret.Name != nil && *env.SecretRef == *secret.Name {
+					val = secret.Value
+					break
+				}
+			}
+		}
+
+		if val != nil {
+			service.Env[key] = *val
+		}
 	}
 
 	return service, nil

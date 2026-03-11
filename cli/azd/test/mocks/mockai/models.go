@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/machinelearning/armmachinelearning/v3"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 )
@@ -36,8 +35,8 @@ func RegisterGetModel(mockContext *mocks.MockContext, workspaceName string, mode
 			ModelContainer: armmachinelearning.ModelContainer{
 				Name: &modelName,
 				Properties: &armmachinelearning.ModelContainerProperties{
-					LatestVersion: to.Ptr("2"),
-					NextVersion:   to.Ptr("3"),
+					LatestVersion: new("2"),
+					NextVersion:   new("3"),
 				},
 			},
 		}
@@ -71,7 +70,7 @@ func RegisterGetModelVersion(
 
 		response := armmachinelearning.ModelVersionsClientGetResponse{
 			ModelVersion: armmachinelearning.ModelVersion{
-				Name: to.Ptr(fmt.Sprint(version)),
+				Name: new(fmt.Sprint(version)),
 			},
 		}
 

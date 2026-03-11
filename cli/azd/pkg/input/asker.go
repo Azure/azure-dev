@@ -15,19 +15,19 @@ import (
 	"github.com/fatih/color"
 )
 
-type Asker func(p survey.Prompt, response interface{}) error
+type Asker func(p survey.Prompt, response any) error
 
 func NewAsker(noPrompt bool, isTerminal bool, w io.Writer, r io.Reader) Asker {
 	if noPrompt {
 		return askOneNoPrompt
 	}
 
-	return func(p survey.Prompt, response interface{}) error {
+	return func(p survey.Prompt, response any) error {
 		return askOnePrompt(p, response, isTerminal, w, r)
 	}
 }
 
-func askOneNoPrompt(p survey.Prompt, response interface{}) error {
+func askOneNoPrompt(p survey.Prompt, response any) error {
 	switch v := p.(type) {
 	case *survey.Input:
 		if v.Default == "" {
@@ -81,7 +81,7 @@ func withShowCursor(o *survey.AskOptions) error {
 	return nil
 }
 
-func askOnePrompt(p survey.Prompt, response interface{}, isTerminal bool, stdout io.Writer, stdin io.Reader) error {
+func askOnePrompt(p survey.Prompt, response any, isTerminal bool, stdout io.Writer, stdin io.Reader) error {
 	// Like (*bufio.Reader).ReadString(byte) except that it does not buffer input from the input stream.
 	// Instead, it reads a byte at a time until a delimiter is found or EOF is encountered,
 	// returning bytes read with no extra characters consumed.

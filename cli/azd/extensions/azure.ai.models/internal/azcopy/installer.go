@@ -80,6 +80,7 @@ func downloadAzCopy(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	//nolint:gosec // install directory should be readable and traversable
 	if err := os.MkdirAll(destDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create directory %s: %w", destDir, err)
 	}
@@ -108,6 +109,7 @@ func downloadAzCopy(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("failed to create download request: %w", err)
 	}
 
+	//nolint:gosec // URL is from a trusted allowedHosts list with redirect validation
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to download azcopy: %w", err)
@@ -139,10 +141,10 @@ func downloadAzCopy(ctx context.Context) (string, error) {
 	limitedReader := io.LimitReader(resp.Body, maxDownloadSize+1)
 	written, err := io.Copy(tmpFile, limitedReader)
 	if err != nil {
-		tmpFile.Close()
+		_ = tmpFile.Close() //nolint:gosec // best-effort close before returning error
 		return "", fmt.Errorf("failed to save download: %w", err)
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close() //nolint:gosec // error checked implicitly by successful write
 
 	if written > maxDownloadSize {
 		return "", fmt.Errorf("download too large: exceeded limit of %d bytes", maxDownloadSize)
@@ -160,6 +162,7 @@ func downloadAzCopy(ctx context.Context) (string, error) {
 
 	// Set executable permission on Unix
 	if runtime.GOOS != "windows" {
+		//nolint:gosec // azcopy binary must be executable
 		if err := os.Chmod(destPath, 0755); err != nil {
 			return "", fmt.Errorf("failed to set executable permission: %w", err)
 		}
@@ -185,12 +188,14 @@ func extractFromZip(archivePath, binaryName, destPath string) error {
 			}
 			defer src.Close()
 
+			//nolint:gosec // destPath is constructed from installDir and known binary name
 			dst, err := os.Create(destPath)
 			if err != nil {
 				return fmt.Errorf("failed to create %s: %w", destPath, err)
 			}
 			defer dst.Close()
 
+			//nolint:gosec // archive size is bounded by maxDownloadSize during download
 			if _, err := io.Copy(dst, src); err != nil {
 				return fmt.Errorf("failed to extract %s: %w", binaryName, err)
 			}
@@ -203,6 +208,7 @@ func extractFromZip(archivePath, binaryName, destPath string) error {
 
 // extractFromTarGz finds the azcopy binary inside a tar.gz archive and extracts it to destPath.
 func extractFromTarGz(archivePath, binaryName, destPath string) error {
+	//nolint:gosec // archivePath is a temp file created by this package
 	f, err := os.Open(archivePath)
 	if err != nil {
 		return fmt.Errorf("failed to open archive: %w", err)
@@ -228,12 +234,14 @@ func extractFromTarGz(archivePath, binaryName, destPath string) error {
 		// The archive contains e.g. azcopy_linux_amd64_10.32.0/azcopy
 		name := filepath.Base(hdr.Name)
 		if name == binaryName && hdr.Typeflag == tar.TypeReg {
+			//nolint:gosec // destPath is constructed from installDir and known binary name
 			dst, err := os.Create(destPath)
 			if err != nil {
 				return fmt.Errorf("failed to create %s: %w", destPath, err)
 			}
 			defer dst.Close()
 
+			//nolint:gosec // archive size is bounded by maxDownloadSize during download
 			if _, err := io.Copy(dst, tr); err != nil {
 				return fmt.Errorf("failed to extract %s: %w", binaryName, err)
 			}

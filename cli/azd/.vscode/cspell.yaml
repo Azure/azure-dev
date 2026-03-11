@@ -1,6 +1,7 @@
 import: ../../../.vscode/cspell.global.yaml
 words:
   - agentdetect
+  - Authenticode
   - azcloud
   - azdext
   - azurefd
@@ -13,6 +14,7 @@ words:
   - cmds
   - Codespace
   - Codespaces
+  - codesign
   - cooldown
   - customtype
   - devcontainers
@@ -27,6 +29,7 @@ words:
   - OPENCODE
   - opencode
   - grpcbroker
+  - msiexec
   - nosec
   - oneof
   - idxs
@@ -44,6 +47,7 @@ words:
   - protoreflect
   - SNAPPROCESS
   - structpb
+  - syscall
   - Retryable
   - runcontext
   - surveyterm
@@ -69,6 +73,10 @@ words:
   - genproto
   - errdetails
   - yarnpkg
+  - azconfig
+  - hostnames
+  - seekable
+  - seekability
 languageSettings:
   - languageId: go
     ignoreRegExpList:
@@ -293,6 +301,9 @@ overrides:
   - filename: extensions/microsoft.azd.concurx/internal/cmd/prompt_model.go
     words:
       - textinput
+  - filename: pkg/azdext/scope_detector.go
+    words:
+      - fakeazure
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

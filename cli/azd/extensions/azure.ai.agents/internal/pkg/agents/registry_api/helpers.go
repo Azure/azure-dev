@@ -18,9 +18,10 @@ import (
 )
 
 // ParameterValues represents the user-provided values for manifest parameters
-type ParameterValues map[string]interface{}
+type ParameterValues map[string]any
 
-func ProcessRegistryManifest(ctx context.Context, manifest *Manifest, azdClient *azdext.AzdClient) (*agent_yaml.AgentManifest, error) {
+func ProcessRegistryManifest(
+	ctx context.Context, manifest *Manifest, azdClient *azdext.AzdClient) (*agent_yaml.AgentManifest, error) {
 	// Convert the agent API definition into a MAML definition
 	promptAgent, err := ConvertAgentDefinition(manifest.Template)
 	if err != nil {
@@ -96,7 +97,7 @@ func ConvertToolToYaml(apiTool any) (any, error) {
 			Strict:     tool.Strict,
 		}, nil
 	case agent_api.WebSearchPreviewTool:
-		options := make(map[string]interface{})
+		options := make(map[string]any)
 		if tool.UserLocation != nil {
 			options["userLocation"] = tool.UserLocation
 		}
@@ -111,7 +112,7 @@ func ConvertToolToYaml(apiTool any) (any, error) {
 			Options: options,
 		}, nil
 	case agent_api.BingGroundingAgentTool:
-		options := make(map[string]interface{})
+		options := make(map[string]any)
 		options["bingGrounding"] = tool.BingGrounding
 		return agent_yaml.BingGroundingTool{
 			Tool: agent_yaml.Tool{
@@ -121,7 +122,7 @@ func ConvertToolToYaml(apiTool any) (any, error) {
 			Options: options,
 		}, nil
 	case agent_api.FileSearchTool:
-		options := make(map[string]interface{})
+		options := make(map[string]any)
 		if tool.Filters != nil {
 			options["filters"] = tool.Filters
 		}
@@ -143,7 +144,7 @@ func ConvertToolToYaml(apiTool any) (any, error) {
 			Options:            options,
 		}, nil
 	case agent_api.MCPTool:
-		options := make(map[string]interface{})
+		options := make(map[string]any)
 		if tool.ServerURL != "" {
 			options["serverUrl"] = tool.ServerURL
 		}
@@ -171,7 +172,7 @@ func ConvertToolToYaml(apiTool any) (any, error) {
 			Options:           options,
 		}, nil
 	case agent_api.OpenApiAgentTool:
-		options := make(map[string]interface{})
+		options := make(map[string]any)
 		options["openapi"] = tool.OpenAPI
 		return agent_yaml.OpenApiTool{
 			Tool: agent_yaml.Tool{
@@ -182,7 +183,7 @@ func ConvertToolToYaml(apiTool any) (any, error) {
 			Options:       options,
 		}, nil
 	case agent_api.CodeInterpreterTool:
-		options := make(map[string]interface{})
+		options := make(map[string]any)
 		if tool.Container != nil {
 			options["container"] = tool.Container
 		}
@@ -199,7 +200,7 @@ func ConvertToolToYaml(apiTool any) (any, error) {
 }
 
 // Helper function to convert PropertySchema from interface{} (assuming it's already a PropertySchema or can be converted)
-func convertToPropertySchema(params interface{}) agent_yaml.PropertySchema {
+func convertToPropertySchema(params any) agent_yaml.PropertySchema {
 	// This is a placeholder implementation - you may need to adjust based on the actual structure
 	// of the parameters from the agent_api package
 	return agent_yaml.PropertySchema{
@@ -257,7 +258,7 @@ func ConvertParameters(parameters map[string]OpenApiParameter) (*agent_yaml.Prop
 
 		// Convert enum values if present
 		if openApiParam.Schema != nil && len(openApiParam.Schema.Enum) > 0 {
-			enumValues := make([]interface{}, len(openApiParam.Schema.Enum))
+			enumValues := make([]any, len(openApiParam.Schema.Enum))
 			copy(enumValues, openApiParam.Schema.Enum)
 			property.EnumValues = &enumValues
 		}
@@ -271,7 +272,11 @@ func ConvertParameters(parameters map[string]OpenApiParameter) (*agent_yaml.Prop
 }
 
 // ProcessManifestParameters prompts the user for parameter values and injects them into the template
-func ProcessManifestParameters(ctx context.Context, manifest *agent_yaml.AgentManifest, azdClient *azdext.AzdClient, noPrompt bool) (*agent_yaml.AgentManifest, error) {
+func ProcessManifestParameters(
+	ctx context.Context,
+	manifest *agent_yaml.AgentManifest,
+	azdClient *azdext.AzdClient,
+	noPrompt bool) (*agent_yaml.AgentManifest, error) {
 	// If no parameters are defined, return the manifest as-is
 	if len(manifest.Parameters.Properties) == 0 {
 		fmt.Println("The manifest does not contain parameters that need to be configured.")
@@ -297,7 +302,11 @@ func ProcessManifestParameters(ctx context.Context, manifest *agent_yaml.AgentMa
 }
 
 // promptForYamlParameterValues prompts the user for values for each YAML parameter
-func promptForYamlParameterValues(ctx context.Context, parameters agent_yaml.PropertySchema, azdClient *azdext.AzdClient, noPrompt bool) (ParameterValues, error) {
+func promptForYamlParameterValues(
+	ctx context.Context,
+	parameters agent_yaml.PropertySchema,
+	azdClient *azdext.AzdClient,
+	noPrompt bool) (ParameterValues, error) {
 	paramValues := make(ParameterValues)
 
 	for _, property := range parameters.Properties {
@@ -307,7 +316,7 @@ func promptForYamlParameterValues(ctx context.Context, parameters agent_yaml.Pro
 		}
 
 		// Get default value
-		var defaultValue interface{}
+		var defaultValue any
 		if property.Default != nil {
 			defaultValue = *property.Default
 		}
@@ -334,7 +343,7 @@ func promptForYamlParameterValues(ctx context.Context, parameters agent_yaml.Pro
 		fmt.Println()
 
 		// Prompt for value
-		var value interface{}
+		var value any
 		var err error
 		isRequired := property.Required != nil && *property.Required
 		if len(enumValues) > 0 {
@@ -356,7 +365,8 @@ func promptForYamlParameterValues(ctx context.Context, parameters agent_yaml.Pro
 }
 
 // InjectParameterValuesIntoManifest replaces parameter placeholders in the manifest with actual values
-func InjectParameterValuesIntoManifest(manifest *agent_yaml.AgentManifest, paramValues ParameterValues) (*agent_yaml.AgentManifest, error) {
+func InjectParameterValuesIntoManifest(
+	manifest *agent_yaml.AgentManifest, paramValues ParameterValues) (*agent_yaml.AgentManifest, error) {
 	// Convert manifest to YAML for processing
 	manifestBytes, err := yaml.Marshal(manifest)
 	if err != nil {
@@ -379,7 +389,13 @@ func InjectParameterValuesIntoManifest(manifest *agent_yaml.AgentManifest, param
 }
 
 // promptForEnumValue prompts the user to select from enumerated values
-func promptForEnumValue(ctx context.Context, paramName string, enumValues []string, defaultValue interface{}, azdClient *azdext.AzdClient, noPrompt bool) (interface{}, error) {
+func promptForEnumValue(
+	ctx context.Context,
+	paramName string,
+	enumValues []string,
+	defaultValue any,
+	azdClient *azdext.AzdClient,
+	noPrompt bool) (any, error) {
 	// Convert default value to string for comparison
 	var defaultStr string
 	if defaultValue != nil {
@@ -424,7 +440,12 @@ func promptForEnumValue(ctx context.Context, paramName string, enumValues []stri
 }
 
 // promptForTextValue prompts the user for a text value
-func promptForTextValue(ctx context.Context, paramName string, defaultValue interface{}, required bool, azdClient *azdext.AzdClient) (interface{}, error) {
+func promptForTextValue(
+	ctx context.Context,
+	paramName string,
+	defaultValue any,
+	required bool,
+	azdClient *azdext.AzdClient) (any, error) {
 	var defaultStr string
 	if defaultValue != nil {
 		defaultStr = fmt.Sprintf("%v", defaultValue)
@@ -482,7 +503,7 @@ func injectParameterValues(template string, paramValues ParameterValues) ([]byte
 }
 
 // ValidateParameterValue validates a parameter value against its schema
-func ValidateParameterValue(value interface{}, schema *OpenApiSchema) error {
+func ValidateParameterValue(value any, schema *OpenApiSchema) error {
 	if schema == nil {
 		return nil
 	}
@@ -507,7 +528,7 @@ func ValidateParameterValue(value interface{}, schema *OpenApiSchema) error {
 }
 
 // validateType validates that a value matches the expected type
-func validateType(value interface{}, expectedType string) error {
+func validateType(value any, expectedType string) error {
 	switch expectedType {
 	case "string":
 		if _, ok := value.(string); !ok {
@@ -555,7 +576,7 @@ func validateType(value interface{}, expectedType string) error {
 }
 
 // validateEnum validates that a value is one of the allowed enum values
-func validateEnum(value interface{}, enumValues []interface{}) error {
+func validateEnum(value any, enumValues []any) error {
 	valueStr := fmt.Sprintf("%v", value)
 
 	for _, enumVal := range enumValues {
@@ -655,14 +676,14 @@ func isEmptyValue(v reflect.Value) bool {
 		return v.Uint() == 0
 	case reflect.Float32, reflect.Float64:
 		return v.Float() == 0
-	case reflect.Interface, reflect.Ptr, reflect.Slice, reflect.Map, reflect.Chan, reflect.Func:
+	case reflect.Interface, reflect.Pointer, reflect.Slice, reflect.Map, reflect.Chan, reflect.Func:
 		return v.IsNil()
 	case reflect.Array:
 		return v.Len() == 0
 	case reflect.Struct:
 		// For structs, check if all fields are empty
-		for i := 0; i < v.NumField(); i++ {
-			if !isEmptyValue(v.Field(i)) {
+		for _, field := range v.Fields() {
+			if !isEmptyValue(field) {
 				return false
 			}
 		}

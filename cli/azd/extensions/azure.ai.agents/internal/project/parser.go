@@ -18,7 +18,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
@@ -64,7 +63,7 @@ func shouldRun(ctx context.Context, project *azdext.ProjectConfig) (bool, error)
 					return false, fmt.Errorf("agent.yaml is not valid to run: %w", err)
 				}
 
-				var genericTemplate map[string]interface{}
+				var genericTemplate map[string]any
 				if err := yaml.Unmarshal(content, &genericTemplate); err != nil {
 					return false, fmt.Errorf("YAML content is not valid to run: %w", err)
 				}
@@ -175,7 +174,11 @@ func (p *FoundryParser) SetIdentity(ctx context.Context, args *azdext.ProjectEve
 }
 
 // getProjectPrincipalID retrieves the principal ID from the Microsoft Foundry Project using Azure SDK
-func getProjectPrincipalID(ctx context.Context, cred *azidentity.AzureDeveloperCLICredential, resourceID, subscriptionID string) (string, error) {
+func getProjectPrincipalID(
+	ctx context.Context,
+	cred *azidentity.AzureDeveloperCLICredential,
+	resourceID,
+	subscriptionID string) (string, error) {
 	// Create resources client
 	client, err := armresources.NewClient(subscriptionID, cred, nil)
 	if err != nil {
@@ -208,7 +211,8 @@ func getProjectPrincipalID(ctx context.Context, cred *azidentity.AzureDeveloperC
 }
 
 // getApplicationID retrieves the application ID from the principal ID using Microsoft Graph API
-func getApplicationID(ctx context.Context, cred *azidentity.AzureDeveloperCLICredential, principalID string) (string, error) {
+func getApplicationID(
+	ctx context.Context, cred *azidentity.AzureDeveloperCLICredential, principalID string) (string, error) {
 	// Create Graph client
 	graphClient, err := graphsdk.NewGraphClient(cred, nil)
 	if err != nil {
@@ -233,7 +237,12 @@ func getApplicationID(ctx context.Context, cred *azidentity.AzureDeveloperCLICre
 }
 
 // getCognitiveServicesAccountLocation retrieves the location of a Cognitive Services account using Azure SDK
-func getCognitiveServicesAccountLocation(ctx context.Context, cred *azidentity.AzureDeveloperCLICredential, subscriptionID, resourceGroupName, accountName string) (string, error) {
+func getCognitiveServicesAccountLocation(
+	ctx context.Context,
+	cred *azidentity.AzureDeveloperCLICredential,
+	subscriptionID,
+	resourceGroupName,
+	accountName string) (string, error) {
 	// Create cognitive services accounts client
 	client, err := armcognitiveservices.NewAccountsClient(subscriptionID, cred, nil)
 	if err != nil {
@@ -384,7 +393,8 @@ func (p *FoundryParser) CoboPostDeploy(ctx context.Context, args *azdext.Project
 	}
 
 	// Get Microsoft Foundry region using SDK
-	aiFoundryRegion, err := getCognitiveServicesAccountLocation(ctx, cred, projectSubscriptionID, projectResourceGroup, projectAIFoundryName)
+	aiFoundryRegion, err := getCognitiveServicesAccountLocation(
+		ctx, cred, projectSubscriptionID, projectResourceGroup, projectAIFoundryName)
 	if err != nil {
 		return fmt.Errorf("failed to get Microsoft Foundry region: %w", err)
 	}
@@ -433,7 +443,8 @@ func (p *FoundryParser) CoboPostDeploy(ctx context.Context, args *azdext.Project
 
 	// Get Microsoft Foundry Project endpoint using SDK
 	fmt.Println("Retrieving Microsoft Foundry Project API endpoint...")
-	aiFoundryProjectEndpoint, err := getAIFoundryProjectEndpoint(ctx, cred, aiFoundryProjectResourceID, projectSubscriptionID)
+	aiFoundryProjectEndpoint, err := getAIFoundryProjectEndpoint(
+		ctx, cred, aiFoundryProjectResourceID, projectSubscriptionID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: Failed to retrieve Microsoft Foundry Project API endpoint: %v\n", err)
 	} else {
@@ -460,7 +471,9 @@ func (p *FoundryParser) CoboPostDeploy(ctx context.Context, args *azdext.Project
 
 	// Construct agent registration URI
 	workspaceName := fmt.Sprintf("%s@%s@AML", projectAIFoundryName, projectName)
-	apiPath := fmt.Sprintf("/agents/v2.0/subscriptions/%s/resourceGroups/%s/providers/Microsoft.MachineLearningServices/workspaces/%s/agents/%s/versions?api-version=2025-05-15-preview",
+	apiPath := fmt.Sprintf(
+		"/agents/v2.0/subscriptions/%s/resourceGroups/%s/providers/Microsoft.MachineLearningServices/"+
+			"workspaces/%s/agents/%s/versions?api-version=2025-05-15-preview",
 		projectSubscriptionID, projectResourceGroup, workspaceName, agentName)
 
 	uri := ""
@@ -540,7 +553,7 @@ func assignAzureAIRole(ctx context.Context, cred *azidentity.AzureDeveloperCLICr
 	// Check if the role assignment already exists
 	// Use atScope() to list all role assignments at this scope, then filter in code
 	pager := client.NewListForScopePager(scope, &armauthorization.RoleAssignmentsClientListForScopeOptions{
-		Filter: to.Ptr("atScope()"),
+		Filter: new("atScope()"),
 	})
 
 	assignmentExists := false
@@ -551,9 +564,12 @@ func assignAzureAIRole(ctx context.Context, cred *azidentity.AzureDeveloperCLICr
 			return fmt.Errorf("failed to list role assignments: %w", err)
 		}
 		for _, assignment := range page.Value {
-			if assignment.Properties != nil && assignment.Properties.PrincipalID != nil && assignment.Properties.RoleDefinitionID != nil {
+			if assignment.Properties != nil &&
+				assignment.Properties.PrincipalID != nil &&
+				assignment.Properties.RoleDefinitionID != nil {
 				// Filter by both principal ID and role definition ID
-				if *assignment.Properties.PrincipalID == principalID && *assignment.Properties.RoleDefinitionID == fullRoleDefinitionID {
+				if *assignment.Properties.PrincipalID == principalID &&
+					*assignment.Properties.RoleDefinitionID == fullRoleDefinitionID {
 					assignmentExists = true
 					if assignment.Name != nil {
 						existingAssignmentId = *assignment.Name
@@ -578,8 +594,8 @@ func assignAzureAIRole(ctx context.Context, cred *azidentity.AzureDeveloperCLICr
 		// Create role assignment
 		parameters := armauthorization.RoleAssignmentCreateParameters{
 			Properties: &armauthorization.RoleAssignmentProperties{
-				RoleDefinitionID: to.Ptr(fullRoleDefinitionID),
-				PrincipalID:      to.Ptr(principalID),
+				RoleDefinitionID: new(fullRoleDefinitionID),
+				PrincipalID:      new(principalID),
 			},
 		}
 
@@ -610,7 +626,7 @@ func assignAzureAIRole(ctx context.Context, cred *azidentity.AzureDeveloperCLICr
 		// Validate the assignment
 		fmt.Println("Validating role assignment...")
 		pager = client.NewListForScopePager(scope, &armauthorization.RoleAssignmentsClientListForScopeOptions{
-			Filter: to.Ptr("atScope()"),
+			Filter: new("atScope()"),
 		})
 
 		validated := false
@@ -645,7 +661,8 @@ func assignAzureAIRole(ctx context.Context, cred *azidentity.AzureDeveloperCLICr
 }
 
 // deactivateHelloWorldRevision deactivates the hello-world placeholder revision using Azure SDK
-func deactivateHelloWorldRevision(ctx context.Context, cred *azidentity.AzureDeveloperCLICredential, resourceID string) error {
+func deactivateHelloWorldRevision(
+	ctx context.Context, cred *azidentity.AzureDeveloperCLICredential, resourceID string) error {
 	fmt.Println()
 	fmt.Println("======================================")
 	fmt.Println("Deactivating Hello-World Revision")
@@ -828,7 +845,9 @@ func verifyAuthConfiguration(ctx context.Context, cred *azidentity.AzureDevelope
 
 		if authConfig.Properties.GlobalValidation != nil &&
 			authConfig.Properties.GlobalValidation.UnauthenticatedClientAction != nil {
-			fmt.Printf("  Unauthenticated Action: %s\n", string(*authConfig.Properties.GlobalValidation.UnauthenticatedClientAction))
+			fmt.Printf(
+				"  Unauthenticated Action: %s\n",
+				string(*authConfig.Properties.GlobalValidation.UnauthenticatedClientAction))
 		}
 	} else {
 		fmt.Fprintln(os.Stderr, "Warning: Azure AD authentication is not configured")
@@ -838,7 +857,11 @@ func verifyAuthConfiguration(ctx context.Context, cred *azidentity.AzureDevelope
 }
 
 // getContainerAppEndpoint retrieves the Container App FQDN using Azure SDK
-func getContainerAppEndpoint(ctx context.Context, cred *azidentity.AzureDeveloperCLICredential, resourceID, subscriptionID string) (string, error) {
+func getContainerAppEndpoint(
+	ctx context.Context,
+	cred *azidentity.AzureDeveloperCLICredential,
+	resourceID,
+	subscriptionID string) (string, error) {
 	// Parse resource ID
 	parsedResource, err := arm.ParseResourceID(resourceID)
 	if err != nil {
@@ -881,7 +904,11 @@ func getContainerAppEndpoint(ctx context.Context, cred *azidentity.AzureDevelope
 }
 
 // getAIFoundryProjectEndpoint retrieves the Microsoft Foundry Project API endpoint using Azure SDK
-func getAIFoundryProjectEndpoint(ctx context.Context, cred *azidentity.AzureDeveloperCLICredential, resourceID, subscriptionID string) (string, error) {
+func getAIFoundryProjectEndpoint(
+	ctx context.Context,
+	cred *azidentity.AzureDeveloperCLICredential,
+	resourceID,
+	subscriptionID string) (string, error) {
 	// Create resources client
 	client, err := armresources.NewClient(subscriptionID, cred, nil)
 	if err != nil {
@@ -902,12 +929,12 @@ func getAIFoundryProjectEndpoint(ctx context.Context, cred *azidentity.AzureDeve
 	}
 
 	// Parse properties as a map to access nested endpoints
-	propsMap, ok := resp.Properties.(map[string]interface{})
+	propsMap, ok := resp.Properties.(map[string]any)
 	if !ok {
 		return "", fmt.Errorf("failed to parse resource properties")
 	}
 
-	endpoints, ok := propsMap["endpoints"].(map[string]interface{})
+	endpoints, ok := propsMap["endpoints"].(map[string]any)
 	if !ok {
 		return "", fmt.Errorf("resource does not have endpoints")
 	}
@@ -934,7 +961,11 @@ func getAccessToken(ctx context.Context, cred *azidentity.AzureDeveloperCLICrede
 }
 
 // getLatestRevisionName retrieves the latest revision name for a Container App using Azure SDK
-func getLatestRevisionName(ctx context.Context, cred *azidentity.AzureDeveloperCLICredential, resourceID, subscriptionID string) (string, error) {
+func getLatestRevisionName(
+	ctx context.Context,
+	cred *azidentity.AzureDeveloperCLICredential,
+	resourceID,
+	subscriptionID string) (string, error) {
 	// Parse resource ID
 	parsedResource, err := arm.ParseResourceID(resourceID)
 	if err != nil {
@@ -1001,7 +1032,7 @@ func registerAgent(uri, token, resourceID, ingressSuffix string) string {
 	retryDelay := 60 * time.Second
 	agentVersion := ""
 
-	for attempt := 0; attempt < maxRetries; attempt++ {
+	for attempt := range maxRetries {
 		if attempt > 0 {
 			fmt.Printf("Retry attempt %d of %d...\n", attempt, maxRetries-1)
 		}
@@ -1017,6 +1048,7 @@ func registerAgent(uri, token, resourceID, ingressSuffix string) string {
 		req.Header.Set("authorization", "Bearer "+token)
 		req.Header.Set("content-type", "application/json")
 
+		//nolint:gosec // URI is user-selected debug target and call is intentional for diagnostics
 		resp, err := client.Do(req)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error making request: %v\n", err)
@@ -1024,7 +1056,9 @@ func registerAgent(uri, token, resourceID, ingressSuffix string) string {
 		}
 
 		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to close response body: %v\n", closeErr)
+		}
 
 		fmt.Printf("Response Status: %d\n", resp.StatusCode)
 		fmt.Println("Response Body:")
@@ -1077,6 +1111,7 @@ func testUnauthenticatedAccess(acaEndpoint string) {
 
 	req.Header.Set("content-type", "application/json")
 
+	//nolint:gosec // endpoint is explicit caller input for connectivity verification
 	resp, err := client.Do(req)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error making request: %v\n", err)
@@ -1093,6 +1128,7 @@ func testUnauthenticatedAccess(acaEndpoint string) {
 	if resp.StatusCode == 401 {
 		fmt.Println("✓ Authentication enforced (got 401)")
 	} else {
+		//nolint:gosec // formatted warning only; no untrusted HTML rendering context
 		fmt.Fprintf(os.Stderr, "Warning: Expected 401, got %d\n", resp.StatusCode)
 	}
 }
@@ -1132,6 +1168,7 @@ func testDataPlane(endpoint, token, agentName, agentVersion string) {
 	req.Header.Set("authorization", "Bearer "+token)
 	req.Header.Set("content-type", "application/json")
 
+	//nolint:gosec // endpoint is explicit caller input for connectivity verification
 	resp, err := client.Do(req)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error making request: %v\n", err)

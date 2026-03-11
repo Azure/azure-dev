@@ -1160,7 +1160,7 @@ func Test_ProjectService_TypeValidation_InvalidChangesNotPersisted(t *testing.T)
 
 	t.Run("Project_SetInfraProviderToObject_ShouldFailAndNotPersist", func(t *testing.T) {
 		// Try to set "infra.provider" (which should be a string) to an object
-		objectValue, err := structpb.NewStruct(map[string]interface{}{
+		objectValue, err := structpb.NewStruct(map[string]any{
 			"nested": "value",
 		})
 		require.NoError(t, err)
@@ -1242,7 +1242,7 @@ func Test_ProjectService_TypeValidation_InvalidChangesNotPersisted(t *testing.T)
 		originalLanguage := originalConfig.Services["web"].Language
 
 		// Try to set "language" to an array
-		arrayValue, err := structpb.NewList([]interface{}{"go", "python"})
+		arrayValue, err := structpb.NewList([]any{"go", "python"})
 		require.NoError(t, err)
 
 		_, err = service.SetServiceConfigValue(*mockContext.Context, &azdext.SetServiceConfigValueRequest{

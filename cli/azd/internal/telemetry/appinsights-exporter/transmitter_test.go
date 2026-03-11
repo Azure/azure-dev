@@ -430,7 +430,7 @@ func TestGetRetryItems(t *testing.T) {
 
 func makePayload() ([]byte, TelemetryItems) {
 	var buffer TelemetryItems
-	for i := 0; i < 7; i++ {
+	for range 7 {
 		buffer = append(buffer, *SpanToEnvelope(getDefaultSpanStub().Snapshot()))
 	}
 

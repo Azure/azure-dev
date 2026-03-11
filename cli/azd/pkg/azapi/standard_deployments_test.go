@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -62,26 +61,26 @@ func TestResourceGroupsFromDeployment(t *testing.T) {
 			Name:         "matell-2508",
 			Type:         "Microsoft.Resources/deployments",
 			Tags: map[string]*string{
-				"azd-env-name": to.Ptr("matell-2508"),
+				"azd-env-name": new("matell-2508"),
 			},
 			ProvisioningState: DeploymentProvisioningStateFailed,
 			Timestamp:         time.Now(),
 			Dependencies: []*armresources.Dependency{
 				{
 					//nolint:lll
-					ID: to.Ptr(
+					ID: new(
 						"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/matell-2508-rg/providers/Microsoft.Resources/deployments/resources",
 					),
-					ResourceName: to.Ptr("resources"),
-					ResourceType: to.Ptr("Microsoft.Resources/deployments"),
+					ResourceName: new("resources"),
+					ResourceType: new("Microsoft.Resources/deployments"),
 					DependsOn: []*armresources.BasicDependency{
 						{
 							//nolint:lll
-							ID: to.Ptr(
+							ID: new(
 								"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/matell-2508-rg",
 							),
-							ResourceName: to.Ptr("matell-2508-rg"),
-							ResourceType: to.Ptr("Microsoft.Resources/resourceGroups"),
+							ResourceName: new("matell-2508-rg"),
+							ResourceType: new("Microsoft.Resources/resourceGroups"),
 						},
 					},
 				},
@@ -98,21 +97,21 @@ func TestResourceGroupsFromDeployment(t *testing.T) {
 			Name: "test-env",
 			Resources: []*armresources.ResourceReference{
 				{
-					ID: to.Ptr("/subscriptions/sub-id/resourceGroups/groupA"),
+					ID: new("/subscriptions/sub-id/resourceGroups/groupA"),
 				},
 				{
-					ID: to.Ptr(
+					ID: new(
 						"/subscriptions/sub-id/resourceGroups/groupA/Microsoft.Storage/storageAccounts/storageAccount",
 					),
 				},
 				{
-					ID: to.Ptr("/subscriptions/sub-id/resourceGroups/groupB"),
+					ID: new("/subscriptions/sub-id/resourceGroups/groupB"),
 				},
 				{
-					ID: to.Ptr("/subscriptions/sub-id/resourceGroups/groupB/Microsoft.web/sites/test"),
+					ID: new("/subscriptions/sub-id/resourceGroups/groupB/Microsoft.web/sites/test"),
 				},
 				{
-					ID: to.Ptr("/subscriptions/sub-id/resourceGroups/groupC"),
+					ID: new("/subscriptions/sub-id/resourceGroups/groupC"),
 				},
 			},
 			ProvisioningState: DeploymentProvisioningStateSucceeded,

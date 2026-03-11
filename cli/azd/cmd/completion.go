@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/figspec"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -172,7 +173,10 @@ func (a *completionAction) Run(ctx context.Context) (*actions.ActionResult, erro
 	case shellPowerShell:
 		err = rootCmd.GenPowerShellCompletion(a.cmd.OutOrStdout())
 	default:
-		return nil, fmt.Errorf("unsupported shell: %s", a.shell)
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        fmt.Errorf("unsupported shell '%s': %w", a.shell, internal.ErrUnsupportedOperation),
+			Suggestion: "Supported shells are 'bash', 'zsh', 'fish', and 'powershell'.",
+		}
 	}
 
 	if err != nil {

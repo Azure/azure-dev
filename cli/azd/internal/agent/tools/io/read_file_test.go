@@ -647,7 +647,7 @@ func TestReadFileTool_JSONResponseStructure(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Test that result is valid JSON
-	var jsonResult map[string]interface{}
+	var jsonResult map[string]any
 	err = json.Unmarshal([]byte(result), &jsonResult)
 	require.NoError(t, err)
 

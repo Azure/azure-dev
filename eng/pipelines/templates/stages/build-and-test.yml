@@ -1,4 +1,7 @@
 parameters: 
+  - name: AzureRecordMode
+    type: string
+    default: playback
   - name: BuildMatrix
     type: object
   - name: CrossBuildMatrix
@@ -79,6 +82,7 @@ stages:
             OS: ${{ build.value.OS }}
             UploadArtifact: ${{ build.value.UploadArtifact}}
             Variables: ${{ build.value.Variables }}
+            AzureRecordMode: ${{ parameters.AzureRecordMode }}
             ghCopilotClientId: ${{ build.value.GhCopilotClientId }}
             ghCopilotIntegrationId: ${{ build.value.GhCopilotIntegrationId }}
 
@@ -228,6 +232,8 @@ stages:
             displayName: Show changelog content
 
           # Create release metadata
+          - template: /eng/pipelines/templates/steps/set-msi-version.yml
+
           - pwsh: |
               New-Item -ItemType Directory -Path release-metadata -Force
               # CLI Version may have been set by set-cli-version-cd.yml
@@ -247,7 +253,7 @@ stages:
 
               $releaseMetadata = @{
                 cliVersion = $cliVersion;
-                msiVersion = (eng/scripts/Get-MsiVersion.ps1 -CliVersion $cliVersion);
+                msiVersion = "$(MSI_VERSION)";
                 isPublishingGa = $submitPackage;
                 submitChocoPackage = $submitPackage;
                 submitWingetPackage = $submitPackage;

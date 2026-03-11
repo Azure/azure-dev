@@ -79,7 +79,7 @@ type ProtocolVersionRecord struct {
 // WorkflowDefinition represents a workflow agent
 type WorkflowDefinition struct {
 	AgentDefinition
-	Trigger map[string]interface{} `json:"trigger,omitempty"`
+	Trigger map[string]any `json:"trigger,omitempty"`
 }
 
 // HostedAgentDefinition represents a hosted agent
@@ -128,9 +128,9 @@ type ToolArgumentBinding struct {
 // StructuredInputDefinition represents a structured input definition
 type StructuredInputDefinition struct {
 	Description          *string               `json:"description,omitempty"`
-	DefaultValue         interface{}           `json:"default_value,omitempty"`
+	DefaultValue         any                   `json:"default_value,omitempty"`
 	ToolArgumentBindings []ToolArgumentBinding `json:"tool_argument_bindings,omitempty"`
-	Schema               interface{}           `json:"schema,omitempty"`
+	Schema               any                   `json:"schema,omitempty"`
 	Required             *bool                 `json:"required,omitempty"`
 }
 
@@ -151,7 +151,7 @@ type PromptAgentDefinition struct {
 type CreateAgentVersionRequest struct {
 	Description *string           `json:"description,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
-	Definition  interface{}       `json:"definition"` // Can be any of the agent definition types
+	Definition  any               `json:"definition"` // Can be any of the agent definition types
 }
 
 // CreateAgentRequest represents a request to create an agent
@@ -174,7 +174,7 @@ type AgentVersionObject struct {
 	Description *string           `json:"description,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
 	CreatedAt   int64             `json:"created_at"`
-	Definition  interface{}       `json:"definition"` // Can be any of the agent definition types
+	Definition  any               `json:"definition"` // Can be any of the agent definition types
 }
 
 // AgentObject represents an agent
@@ -287,7 +287,7 @@ type AgentContainerDetails struct {
 	ProvisioningState string                       `json:"provisioning_state,omitempty"`
 	State             string                       `json:"state,omitempty"`
 	UpdatedOn         string                       `json:"updated_on,omitempty"`
-	Replicas          []AgentContainerReplicaState  `json:"replicas,omitempty"`
+	Replicas          []AgentContainerReplicaState `json:"replicas,omitempty"`
 }
 
 // AgentContainerObject represents the details of an agent container
@@ -361,10 +361,10 @@ type Tool struct {
 // FunctionTool defines a function in your own code the model can choose to call
 type FunctionTool struct {
 	Tool
-	Name        string      `json:"name"`
-	Description *string     `json:"description,omitempty"`
-	Parameters  interface{} `json:"parameters"`
-	Strict      *bool       `json:"strict"`
+	Name        string  `json:"name"`
+	Description *string `json:"description,omitempty"`
+	Parameters  any     `json:"parameters"`
+	Strict      *bool   `json:"strict"`
 }
 
 // FileSearchTool enables searching for information across vector stores
@@ -373,27 +373,27 @@ type FileSearchTool struct {
 	VectorStoreIds []string        `json:"vector_store_ids"`
 	MaxNumResults  *int32          `json:"max_num_results,omitempty"`
 	RankingOptions *RankingOptions `json:"ranking_options,omitempty"`
-	Filters        interface{}     `json:"filters,omitempty"` // Can be ComparisonFilter or CompoundFilter
+	Filters        any             `json:"filters,omitempty"` // Can be ComparisonFilter or CompoundFilter
 }
 
 // CodeInterpreterTool runs Python code to help generate a response
 type CodeInterpreterTool struct {
 	Tool
-	Container interface{} `json:"container"` // Can be string (container ID) or CodeInterpreterToolAuto object
+	Container any `json:"container"` // Can be string (container ID) or CodeInterpreterToolAuto object
 }
 
 // ImageGenTool generates images using a model like gpt-image-1
 type ImageGenTool struct {
 	Tool
-	Model             *string     `json:"model,omitempty"`              // Default: "gpt-image-1"
-	Quality           *string     `json:"quality,omitempty"`            // low, medium, high, auto
-	Size              *string     `json:"size,omitempty"`               // 1024x1024, 1024x1536, 1536x1024, auto
-	OutputFormat      *string     `json:"output_format,omitempty"`      // png, webp, jpeg
-	OutputCompression *int32      `json:"output_compression,omitempty"` // 0-100
-	Moderation        *string     `json:"moderation,omitempty"`         // auto, low
-	Background        *string     `json:"background,omitempty"`         // transparent, opaque, auto
-	InputImageMask    interface{} `json:"input_image_mask,omitempty"`   // Object with image_url and/or file_id
-	PartialImages     *int32      `json:"partial_images,omitempty"`     // 0-3
+	Model             *string `json:"model,omitempty"`              // Default: "gpt-image-1"
+	Quality           *string `json:"quality,omitempty"`            // low, medium, high, auto
+	Size              *string `json:"size,omitempty"`               // 1024x1024, 1024x1536, 1536x1024, auto
+	OutputFormat      *string `json:"output_format,omitempty"`      // png, webp, jpeg
+	OutputCompression *int32  `json:"output_compression,omitempty"` // 0-100
+	Moderation        *string `json:"moderation,omitempty"`         // auto, low
+	Background        *string `json:"background,omitempty"`         // transparent, opaque, auto
+	InputImageMask    any     `json:"input_image_mask,omitempty"`   // Object with image_url and/or file_id
+	PartialImages     *int32  `json:"partial_images,omitempty"`     // 0-3
 }
 
 // WebSearchPreviewTool performs web searches (preview feature)
@@ -414,8 +414,8 @@ type MCPTool struct {
 	ServerLabel         string            `json:"server_label"`
 	ServerURL           string            `json:"server_url"`
 	Headers             map[string]string `json:"headers,omitempty"`
-	AllowedTools        interface{}       `json:"allowed_tools,omitempty"`    // Can be []string or object with tool_names
-	RequireApproval     interface{}       `json:"require_approval,omitempty"` // Can be string ("always"/"never") or object with always/never properties
+	AllowedTools        any               `json:"allowed_tools,omitempty"`    // Can be []string or object with tool_names
+	RequireApproval     any               `json:"require_approval,omitempty"` // Can be string ("always"/"never") or object with always/never properties
 	ProjectConnectionID *string           `json:"project_connection_id,omitempty"`
 }
 
@@ -506,15 +506,15 @@ type RankingOptions struct {
 
 // ComparisonFilter represents a filter for comparing an attribute key to a value
 type ComparisonFilter struct {
-	Type  string      `json:"type"` // eq, ne, gt, gte, lt, lte
-	Key   string      `json:"key"`
-	Value interface{} `json:"value"` // string, number, or boolean
+	Type  string `json:"type"` // eq, ne, gt, gte, lt, lte
+	Key   string `json:"key"`
+	Value any    `json:"value"` // string, number, or boolean
 }
 
 // CompoundFilter represents a filter that combines multiple filters
 type CompoundFilter struct {
-	Type    string        `json:"type"`    // and, or
-	Filters []interface{} `json:"filters"` // Array of ComparisonFilter or CompoundFilter
+	Type    string `json:"type"`    // and, or
+	Filters []any  `json:"filters"` // Array of ComparisonFilter or CompoundFilter
 }
 
 // Location represents a user location for web search
@@ -611,7 +611,7 @@ type OpenApiAuthDetails struct {
 type OpenApiFunctionDefinition struct {
 	Name          string             `json:"name"`
 	Description   *string            `json:"description,omitempty"`
-	Spec          interface{}        `json:"spec"` // JSON Schema object
+	Spec          any                `json:"spec"` // JSON Schema object
 	Auth          OpenApiAuthDetails `json:"auth"`
 	DefaultParams []string           `json:"default_params,omitempty"`
 	Functions     []OpenApiFunction  `json:"functions,omitempty"`
@@ -619,9 +619,9 @@ type OpenApiFunctionDefinition struct {
 
 // OpenApiFunction represents a function in OpenAPI definition
 type OpenApiFunction struct {
-	Name        string      `json:"name"`
-	Description *string     `json:"description,omitempty"`
-	Parameters  interface{} `json:"parameters"` // JSON Schema object
+	Name        string  `json:"name"`
+	Description *string `json:"description,omitempty"`
+	Parameters  any     `json:"parameters"` // JSON Schema object
 }
 
 // BingCustomSearchConfiguration represents Bing custom search configuration
@@ -663,9 +663,9 @@ type AzureFunctionBinding struct {
 
 // AzureFunction represents an Azure function definition
 type AzureFunction struct {
-	Name        string      `json:"name"`
-	Description *string     `json:"description,omitempty"`
-	Parameters  interface{} `json:"parameters"` // JSON Schema object
+	Name        string  `json:"name"`
+	Description *string `json:"description,omitempty"`
+	Parameters  any     `json:"parameters"` // JSON Schema object
 }
 
 // AzureFunctionDefinition represents the complete Azure function definition
@@ -677,8 +677,8 @@ type AzureFunctionDefinition struct {
 
 // StructuredOutputDefinition represents a structured output definition
 type StructuredOutputDefinition struct {
-	Name        string                 `json:"name"`
-	Description string                 `json:"description"`
-	Schema      map[string]interface{} `json:"schema"`
-	Strict      *bool                  `json:"strict"`
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Schema      map[string]any `json:"schema"`
+	Strict      *bool          `json:"strict"`
 }

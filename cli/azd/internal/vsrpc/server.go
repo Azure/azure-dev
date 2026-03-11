@@ -174,7 +174,7 @@ func serveRpc(w http.ResponseWriter, r *http.Request, handlers map[string]Handle
 
 			// Wrap the reply function to capture the response error returned by the handler before replying.
 			origReply := reply
-			reply = func(ctx context.Context, result interface{}, err error) error {
+			reply = func(ctx context.Context, result any, err error) error {
 				if err != nil {
 					respErr = err
 				}

@@ -31,12 +31,12 @@ type Project struct {
 }
 
 type GenericResource struct {
-	Id         string                 `json:"id"`
-	Location   string                 `json:"location"`
-	TenantId   string                 `json:"tenantId"`
-	Name       string                 `json:"name"`
-	Type       string                 `json:"type"`
-	Properties map[string]interface{} `json:"properties"`
+	Id         string         `json:"id"`
+	Location   string         `json:"location"`
+	TenantId   string         `json:"tenantId"`
+	Name       string         `json:"name"`
+	Type       string         `json:"type"`
+	Properties map[string]any `json:"properties"`
 }
 
 type ResourceId struct {

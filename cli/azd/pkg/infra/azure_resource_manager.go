@@ -9,9 +9,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"time"
-
-	"maps"
+	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
@@ -19,7 +17,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
-	"github.com/azure/azure-dev/cli/azd/pkg/compare"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
@@ -29,8 +26,11 @@ type AzureResourceManager struct {
 }
 
 type ResourceManager interface {
-	GetDeploymentResourceOperations(
-		ctx context.Context, deployment Deployment, queryStart *time.Time) ([]*armresources.DeploymentOperation, error)
+	WalkDeploymentOperations(
+		ctx context.Context,
+		deployment Deployment,
+		fn WalkDeploymentOperationFunc,
+	) error
 	GetResourceTypeDisplayName(
 		ctx context.Context,
 		subscriptionId string,
@@ -49,6 +49,19 @@ type ResourceManager interface {
 	) (string, error)
 }
 
+// WalkDeploymentOperationFunc is invoked for each valid deployment operation encountered during traversal.
+//
+// Returning a non-nil error will halt the traversal and return that error.
+// Returning SkipExpand will prevent traversal of any nested deployments within the current operation, but will continue
+// traversal of sibling operations.
+type WalkDeploymentOperationFunc func(ctx context.Context, operation *armresources.DeploymentOperation) error
+
+// SkipExpand can be returned by WalkDeploymentOperationFunc to skip expanding a nested deployment's children.
+var SkipExpand = errors.New("skip deployment expansion")
+
+// maxConcurrentDeploymentFetches limits concurrent ARM API calls when fetching nested deployment operations.
+const maxConcurrentDeploymentFetches = 10
+
 func NewAzureResourceManager(
 	resourceService *azapi.ResourceService,
 	deploymentService *azapi.StandardDeployments,
@@ -59,31 +72,149 @@ func NewAzureResourceManager(
 	}
 }
 
-// GetDeploymentResourceOperations gets the list of all the resources created as part of the provided deployment.
-// Each DeploymentOperation on the list holds a resource and the result of its deployment.
-// One deployment operation can trigger new deployment operations, GetDeploymentResourceOperations traverses all
-// operations recursively to find the leaf operations.
-func (rm *AzureResourceManager) GetDeploymentResourceOperations(
+// WalkDeploymentOperations traverses deployment operations and allows callers to skip nested expansion.
+func (rm *AzureResourceManager) WalkDeploymentOperations(
 	ctx context.Context,
 	deployment Deployment,
-	queryStart *time.Time,
-) ([]*armresources.DeploymentOperation, error) {
-	allOperations := []*armresources.DeploymentOperation{}
-
+	fn WalkDeploymentOperationFunc,
+) error {
 	rootDeploymentOperations, err := deployment.Operations(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("getting root deployment operations: %w", err)
+		return fmt.Errorf("getting root deployment operations: %w", err)
 	}
 
-	operationMap := map[string]*armresources.DeploymentOperation{}
-	if err := rm.appendDeploymentOperationsRecursive(ctx, queryStart, rootDeploymentOperations, operationMap); err != nil {
-		return nil, err
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	jobs := make(chan *arm.ResourceID, maxConcurrentDeploymentFetches)
+	results := make(chan []*armresources.DeploymentOperation, maxConcurrentDeploymentFetches)
+	errCh := make(chan error, 1)
+
+	var workers sync.WaitGroup
+	worker := func() {
+		defer workers.Done()
+
+		for resourceID := range jobs {
+			operations, err := rm.fetchNestedOperations(ctx, resourceID)
+			if err != nil {
+				select {
+				case errCh <- fmt.Errorf("getting deployment operations recursively: %w", err):
+				default:
+				}
+				cancel()
+				return
+			}
+
+			select {
+			case <-ctx.Done():
+				return
+			case results <- operations:
+			}
+		}
 	}
 
-	recursiveOperations := slices.Collect(maps.Values(operationMap))
-	allOperations = append(allOperations, recursiveOperations...)
+	for range maxConcurrentDeploymentFetches {
+		workers.Add(1)
+		go worker()
+	}
 
-	return allOperations, nil
+	queueNestedDeployments := func(
+		queue []*arm.ResourceID,
+		operations []*armresources.DeploymentOperation,
+	) ([]*arm.ResourceID, error) {
+		for _, operation := range operations {
+			if operation.ID == nil || operation.Properties == nil {
+				continue
+			}
+
+			if fn != nil {
+				// invoke the walk function for every deployment operation
+				walkErr := fn(ctx, operation)
+				if errors.Is(walkErr, SkipExpand) {
+					continue
+				} else if walkErr != nil {
+					return nil, walkErr
+				}
+			}
+
+			// handle nested deployments
+			if !isNestedDeployment(operation) {
+				continue
+			}
+			if operation.Properties.TargetResource == nil || operation.Properties.TargetResource.ID == nil {
+				continue
+			}
+
+			resourceID, err := arm.ParseResourceID(*operation.Properties.TargetResource.ID)
+			if err != nil {
+				return nil, fmt.Errorf("parsing deployment resource ID: %w", err)
+			}
+
+			queue = append(queue, resourceID)
+		}
+
+		return queue, nil
+	}
+
+	queue, err := queueNestedDeployments(nil, rootDeploymentOperations)
+	if err != nil {
+		cancel()
+		close(jobs)
+		workers.Wait()
+		return err
+	}
+
+	pending := 0
+
+	// we terminate when there are no more jobs and no more pending operations to fetch
+	for pending > 0 || len(queue) > 0 {
+		var nextJob *arm.ResourceID
+		var jobsCh chan *arm.ResourceID
+		if len(queue) > 0 {
+			nextJob = queue[0]
+			jobsCh = jobs
+		}
+
+		select {
+		case jobsCh <- nextJob:
+			queue = queue[1:]
+			pending++
+		case <-ctx.Done():
+			close(jobs)
+			workers.Wait()
+			select {
+			case walkErr := <-errCh:
+				return walkErr
+			default:
+				return ctx.Err()
+			}
+		case walkErr := <-errCh:
+			close(jobs)
+			workers.Wait()
+			return walkErr
+		case nestedOperations := <-results:
+			pending--
+
+			queue, err = queueNestedDeployments(queue, nestedOperations)
+			if err != nil {
+				cancel()
+				close(jobs)
+				workers.Wait()
+				return err
+			}
+		}
+	}
+
+	close(jobs)
+	workers.Wait()
+
+	select {
+	case walkErr := <-errCh:
+		return walkErr
+	default:
+	}
+
+	return nil
 }
 
 // GetResourceGroupsForEnvironment gets all resources groups for a given environment
@@ -317,64 +448,44 @@ func (rm *AzureResourceManager) getRedisEnterpriseResourceTypeDisplayName(
 	}
 }
 
-// appendDeploymentResourcesRecursive gets the leaf deployment operations and adds them to resourceOperations
-// if they are not already in the list.
-func (rm *AzureResourceManager) appendDeploymentOperationsRecursive(
-	ctx context.Context,
-	queryStart *time.Time,
-	operations []*armresources.DeploymentOperation,
-	operationMap map[string]*armresources.DeploymentOperation,
-) error {
-	for _, operation := range operations {
-		// Operations w/o target data can't be resolved. Ignoring them
-		if operation.Properties.TargetResource == nil ||
-			// The time stamp is used to filter only records after the queryStart.
-			// We ignore the resource if we can't know when it was created
-			operation.Properties.Timestamp == nil ||
-			// The resource type is required to resolve the name of the resource.
-			// If the dep-op is missing this, we can't resolve it.
-			compare.IsStringNilOrEmpty(operation.Properties.TargetResource.ResourceType) {
-			continue
-		}
-
-		// Process any nested deployments
-		if *operation.Properties.TargetResource.ResourceType == string(azapi.AzureResourceTypeDeployment) &&
-			*operation.Properties.ProvisioningOperation == armresources.ProvisioningOperationCreate {
-			deploymentResourceId, err := arm.ParseResourceID(*operation.Properties.TargetResource.ID)
-			if err != nil {
-				return fmt.Errorf("parsing deployment resource ID: %w", err)
-			}
-
-			var nestedOperations []*armresources.DeploymentOperation
-			var nestedError error
-
-			if deploymentResourceId.ResourceGroupName == "" {
-				nestedOperations, nestedError = rm.deploymentService.ListSubscriptionDeploymentOperations(
-					ctx,
-					deploymentResourceId.SubscriptionID,
-					deploymentResourceId.Name)
-			} else {
-				nestedOperations, nestedError = rm.deploymentService.ListResourceGroupDeploymentOperations(
-					ctx,
-					deploymentResourceId.SubscriptionID,
-					deploymentResourceId.ResourceGroupName,
-					deploymentResourceId.Name,
-				)
-			}
-
-			if nestedError != nil {
-				return fmt.Errorf("getting deployment operations recursively: %w", nestedError)
-			}
-
-			if err = rm.appendDeploymentOperationsRecursive(ctx, queryStart, nestedOperations, operationMap); err != nil {
-				return err
-			}
-		} else if *operation.Properties.ProvisioningOperation == armresources.ProvisioningOperationCreate &&
-			// Only append CREATE operations that started after our queryStart time
-			operation.Properties.Timestamp.After(*queryStart) {
-			operationMap[*operation.ID] = operation
-		}
+func isNestedDeployment(operation *armresources.DeploymentOperation) bool {
+	if operation.Properties.TargetResource == nil ||
+		operation.Properties.ProvisioningOperation == nil ||
+		operation.Properties.TargetResource.ResourceType == nil {
+		return false
 	}
 
-	return nil
+	return *operation.Properties.TargetResource.ResourceType == string(azapi.AzureResourceTypeDeployment) &&
+		*operation.Properties.ProvisioningOperation == armresources.ProvisioningOperationCreate
+}
+
+func isTerminalProvisioningState(state *string) bool {
+	if state == nil {
+		return false
+	}
+
+	switch *state {
+	case string(armresources.ProvisioningStateSucceeded),
+		string(armresources.ProvisioningStateFailed),
+		string(armresources.ProvisioningStateCanceled):
+		return true
+	default:
+		return false
+	}
+}
+
+func (rm *AzureResourceManager) fetchNestedOperations(
+	ctx context.Context,
+	resourceID *arm.ResourceID,
+) ([]*armresources.DeploymentOperation, error) {
+	if resourceID.ResourceGroupName == "" {
+		return rm.deploymentService.ListSubscriptionDeploymentOperations(ctx, resourceID.SubscriptionID, resourceID.Name)
+	}
+
+	return rm.deploymentService.ListResourceGroupDeploymentOperations(
+		ctx,
+		resourceID.SubscriptionID,
+		resourceID.ResourceGroupName,
+		resourceID.Name,
+	)
 }

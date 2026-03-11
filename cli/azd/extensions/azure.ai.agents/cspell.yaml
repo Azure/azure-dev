@@ -1,5 +1,6 @@
 words:
   - aiservices
+  - agentserver
   - anonymousconnection
   - aoai
   - azdaiagent
@@ -16,5 +17,7 @@ words:
   - myregistry
   - openapitool
   - posixpath
+  - projectpkg
   - protocolversionrecord
+  - Vnext
   - webp

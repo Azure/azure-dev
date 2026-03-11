@@ -56,10 +56,10 @@ type indexedSelectChoice struct {
 var DefaultSelectOptions SelectOptions = SelectOptions{
 	Writer:          os.Stdout,
 	Reader:          os.Stdin,
-	SelectedIndex:   Ptr(0),
+	SelectedIndex:   new(0),
 	DisplayCount:    6,
-	EnableFiltering: Ptr(true),
-	DisplayNumbers:  Ptr(false),
+	EnableFiltering: new(true),
+	DisplayNumbers:  new(false),
 }
 
 // Select is a component for prompting the user to select an option from a list.
@@ -173,9 +173,9 @@ func (p *Select) Ask(ctx context.Context) (*int, error) {
 		optionCount := len(p.filteredChoices)
 		if optionCount > 0 {
 			if args.Key == surveyterm.KeyArrowUp {
-				p.currentIndex = Ptr(((*p.currentIndex - 1 + optionCount) % optionCount))
+				p.currentIndex = new(((*p.currentIndex - 1 + optionCount) % optionCount))
 			} else if args.Key == surveyterm.KeyArrowDown {
-				p.currentIndex = Ptr(((*p.currentIndex + 1) % optionCount))
+				p.currentIndex = new(((*p.currentIndex + 1) % optionCount))
 			}
 
 			p.selectedChoice = p.filteredChoices[*p.currentIndex]
@@ -230,7 +230,7 @@ func (p *Select) applyFilter() {
 	}
 
 	if *p.currentIndex > len(p.filteredChoices)-1 {
-		p.currentIndex = Ptr(0)
+		p.currentIndex = new(0)
 	}
 }
 
@@ -337,20 +337,20 @@ func (p *Select) renderValidation(printer Printer) {
 }
 
 func (p *Select) renderMessage(printer Printer) {
-	printer.Fprintf(output.WithHighLightFormat("? "))
+	printer.Fprintf("%s", output.WithHighLightFormat("? "))
 
 	// Message
-	printer.Fprintf(BoldString("%s: ", p.options.Message))
+	printer.Fprintf("%s", BoldString("%s: ", p.options.Message))
 
 	// Cancelled
 	if p.cancelled {
-		printer.Fprintf(output.WithErrorFormat("(Cancelled)"))
+		printer.Fprintf("%s", output.WithErrorFormat("(Cancelled)"))
 	}
 
 	// Selected Value
 	if !p.cancelled && p.selectedChoice != nil {
 		rawValue := p.selectedChoice.Label
-		printer.Fprintf(output.WithHighLightFormat(rawValue))
+		printer.Fprintf("%s", output.WithHighLightFormat(rawValue))
 	}
 
 	printer.Fprintln()
@@ -361,11 +361,11 @@ func (p *Select) renderMessage(printer Printer) {
 		printer.Fprintf("  Filter: ")
 
 		if p.filter == "" {
-			p.cursorPosition = Ptr(printer.CursorPosition())
-			printer.Fprintf(output.WithGrayFormat("Type to filter list"))
+			p.cursorPosition = new(printer.CursorPosition())
+			printer.Fprintf("%s", output.WithGrayFormat("Type to filter list"))
 		} else {
-			printer.Fprintf(p.filter)
-			p.cursorPosition = Ptr(printer.CursorPosition())
+			printer.Fprintf("%s", p.filter)
+			p.cursorPosition = new(printer.CursorPosition())
 		}
 
 		printer.Fprintln()

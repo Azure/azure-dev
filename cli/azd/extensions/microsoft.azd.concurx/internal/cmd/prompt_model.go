@@ -36,11 +36,6 @@ type promptModel struct {
 
 // Styles for prompt UI
 var (
-	promptTitleStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("205")).
-				MarginBottom(1)
-
 	promptMessageStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("15")).
 				MarginBottom(1)
@@ -96,7 +91,7 @@ func newPromptModel(req *PromptRequest) promptModel {
 	selectedItems := make(map[int]bool)
 	if req.Type == PromptTypeMultiSelect {
 		// Check for default values in multiselect
-		if defaults, ok := req.Options.DefaultValue.([]interface{}); ok {
+		if defaults, ok := req.Options.DefaultValue.([]any); ok {
 			for _, d := range defaults {
 				if dStr, ok := d.(string); ok {
 					for i, choice := range req.Options.Choices {

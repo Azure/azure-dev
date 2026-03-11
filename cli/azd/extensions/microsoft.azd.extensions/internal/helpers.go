@@ -33,8 +33,9 @@ const (
 	PermissionMaskDirectoryExecute os.FileMode = 0100
 )
 
+//go:fix inline
 func ToPtr[T any](value T) *T {
-	return &value
+	return new(value)
 }
 
 func ToPascalCase(value string) string {
@@ -117,9 +118,9 @@ func InferOSArch(filename string) (string, error) {
 	archPart := parts[len(parts)-1] // Last part is the ARCH (with optional extension)
 
 	// Remove extension
-	if strings.HasSuffix(archPart, ".tar.gz") {
+	if before, ok := strings.CutSuffix(archPart, ".tar.gz"); ok {
 		// Special handling for .tar.gz since filepath.Ext only removes the last extension (.gz)
-		archPart = strings.TrimSuffix(archPart, ".tar.gz")
+		archPart = before
 	} else {
 		archPart = strings.TrimSuffix(archPart, filepath.Ext(archPart))
 	}
@@ -140,19 +141,19 @@ func DownloadAssetToTemp(assetUrl, assetName string) (string, error) {
 		// #nosec G107: Potential HTTP request made with variable url
 		resp, err := http.Get(assetUrl)
 		if err != nil {
-			os.Remove(tempFile.Name())
+			os.Remove(tempFile.Name()) //nolint:gosec // G703: temp file cleanup
 			return "", fmt.Errorf("failed to download asset: %w", err)
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
-			os.Remove(tempFile.Name())
+			os.Remove(tempFile.Name()) //nolint:gosec // G703: temp file cleanup
 			return "", fmt.Errorf("download returned status %d", resp.StatusCode)
 		}
 		reader = resp.Body
 	} else {
 		localFile, err := os.Open(assetUrl)
 		if err != nil {
-			os.Remove(tempFile.Name())
+			os.Remove(tempFile.Name()) //nolint:gosec // G703: temp file cleanup
 			return "", fmt.Errorf("failed to open local file: %w", err)
 		}
 		defer localFile.Close()
@@ -160,7 +161,7 @@ func DownloadAssetToTemp(assetUrl, assetName string) (string, error) {
 	}
 
 	if _, err := io.Copy(tempFile, reader); err != nil {
-		os.Remove(tempFile.Name())
+		os.Remove(tempFile.Name()) //nolint:gosec // G703: temp file cleanup
 		return "", fmt.Errorf("failed to write to temp file: %w", err)
 	}
 	tempFile.Close()
@@ -324,8 +325,8 @@ func GetFileNameWithoutExt(filePath string) string {
 	fileName := filepath.Base(filePath)
 
 	// Special handling for .tar.gz since filepath.Ext only removes the last extension (.gz)
-	if strings.HasSuffix(fileName, ".tar.gz") {
-		return strings.TrimSuffix(fileName, ".tar.gz")
+	if before, ok := strings.CutSuffix(fileName, ".tar.gz"); ok {
+		return before
 	}
 
 	// Remove the extension
@@ -377,6 +378,7 @@ func CreateLocalRegistry() error {
 		return fmt.Errorf("failed to marshal empty registry: %w", err)
 	}
 
+	//nolint:gosec // G703: path from azd config directory
 	if err := os.WriteFile(localRegistryPath, registryJson, PermissionFile); err != nil {
 		return fmt.Errorf("failed to create local registry file: %w", err)
 	}
@@ -389,7 +391,7 @@ func CreateLocalRegistry() error {
 	}
 
 	/* #nosec G204 - args are hardcoded above, not user-controlled */
-	createExtSourceCmd := exec.Command("azd", args...)
+	createExtSourceCmd := exec.Command("azd", args...) //nolint:gosec // G702: args are hardcoded above, not user-controlled
 	if _, err := createExtSourceCmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to create local extension source: %w", err)
 	}

@@ -138,6 +138,68 @@ func MockContainerAppRevisionGet(
 	return mockRequest
 }
 
+func MockContainerAppJobGet(
+	mockContext *mocks.MockContext,
+	subscriptionId string,
+	resourceGroup string,
+	jobName string,
+	job *armappcontainers.Job,
+) *http.Request {
+	mockRequest := &http.Request{}
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.Contains(
+			request.URL.Path,
+			fmt.Sprintf(
+				"/subscriptions/%s/resourceGroups/%s/providers/Microsoft.App/jobs/%s",
+				subscriptionId,
+				resourceGroup,
+				jobName,
+			),
+		)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		*mockRequest = *request
+
+		response := armappcontainers.JobsClientGetResponse{
+			Job: *job,
+		}
+
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, response)
+	})
+
+	return mockRequest
+}
+
+func MockContainerAppJobUpdate(
+	mockContext *mocks.MockContext,
+	subscriptionId string,
+	resourceGroup string,
+	jobName string,
+	job *armappcontainers.Job,
+) *http.Request {
+	mockRequest := &http.Request{}
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodPatch && strings.Contains(
+			request.URL.Path,
+			fmt.Sprintf(
+				"/subscriptions/%s/resourceGroups/%s/providers/Microsoft.App/jobs/%s",
+				subscriptionId,
+				resourceGroup,
+				jobName,
+			),
+		)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		*mockRequest = *request
+
+		response := armappcontainers.JobsClientUpdateResponse{}
+
+		return mocks.CreateHttpResponseWithBody(request, http.StatusAccepted, response)
+	})
+
+	return mockRequest
+}
+
 func MockContainerAppSecretsList(
 	mockContext *mocks.MockContext,
 	subscriptionId string,

@@ -17,7 +17,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -187,7 +186,7 @@ func Test_CLI_Up_Down_FuncApp(t *testing.T) {
 
 	t.Logf("env get-values command output: %s\n", result.Stdout)
 
-	var envValues map[string]interface{}
+	var envValues map[string]any
 	err = json.Unmarshal([]byte(result.Stdout), &envValues)
 	require.NoError(t, err)
 
@@ -285,6 +284,51 @@ func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
 			t, ctx, session.ProxyClient, retry.NewConstant(1*time.Millisecond), url, expectedTestAppResponse)
 		require.NoError(t, err)
 	}
+
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
+	require.NoError(t, err)
+}
+
+func Test_CLI_Up_Down_ContainerAppJob(t *testing.T) {
+	t.Skip("skipping until recording is available (azure-dev#7014)")
+	t.Parallel()
+
+	if ci_os := os.Getenv("AZURE_DEV_CI_OS"); ci_os != "" && ci_os != "lin" {
+		t.Skip("Skipping due to docker limitations for non-linux systems on CI")
+	}
+
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	session := recording.Start(t)
+
+	envName := randomOrStoredEnvName(session)
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
+	cli.WorkingDirectory = dir
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+
+	defer cleanupDeployments(ctx, t, cli, session, envName)
+
+	err := copySample(dir, "containerappjob")
+	require.NoError(t, err, "failed expanding sample")
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+	require.NoError(t, err)
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+
+	_, err = cli.RunCommand(ctx, "deploy", "--cwd", filepath.Join(dir, "src", "job"))
+	require.NoError(t, err)
+
+	// Container App Jobs have no ingress, so we skip the HTTP health probe.
+	// The deploy succeeding (image pushed + job resource updated) is sufficient validation.
 
 	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)
@@ -449,10 +493,10 @@ func Test_CLI_Up_ResourceGroupScope(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = rgClient.CreateOrUpdate(context.Background(), resourceGroupName, armresources.ResourceGroup{
-		Name:     to.Ptr(resourceGroupName),
-		Location: to.Ptr("eastus2"),
+		Name:     new(resourceGroupName),
+		Location: new("eastus2"),
 		Tags: map[string]*string{
-			"DeleteAfter": to.Ptr(time.Now().Add(60 * time.Minute).UTC().Format(time.RFC3339)),
+			"DeleteAfter": new(time.Now().Add(60 * time.Minute).UTC().Format(time.RFC3339)),
 		},
 	}, nil)
 

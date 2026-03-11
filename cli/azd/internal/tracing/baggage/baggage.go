@@ -24,9 +24,7 @@ func NewBaggage() Baggage {
 
 func (mb Baggage) copy() Baggage {
 	copied := Baggage{m: make(map[attribute.Key]attribute.Value, len(mb.m))}
-	for k, v := range mb.m {
-		copied.m[k] = v
-	}
+	maps.Copy(copied.m, mb.m)
 
 	return copied
 }

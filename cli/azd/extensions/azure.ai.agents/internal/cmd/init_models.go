@@ -15,7 +15,6 @@ import (
 	"azureaiagent/internal/pkg/azure"
 	"azureaiagent/internal/project"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -47,7 +46,7 @@ func (a *InitAction) loadAiCatalog(ctx context.Context) error {
 	})
 	stopErr := spinner.Stop(ctx)
 	if err != nil {
-		return exterrors.FromAzdHost(err, exterrors.CodeModelCatalogFailed)
+		return exterrors.FromAiService(err, exterrors.CodeModelCatalogFailed)
 	}
 	if stopErr != nil {
 		return stopErr
@@ -319,7 +318,7 @@ func (a *InitAction) getModelDetails(ctx context.Context, modelName string) (*az
 		}
 
 		if !isRecoverableDeploymentSelectionError(err) {
-			return nil, fmt.Errorf("failed to prompt for model deployment: %w", err)
+			return nil, exterrors.FromPrompt(err, "failed to prompt for model deployment")
 		}
 
 		resolvedModel, resolvedLocation, resolveErr := a.promptForModelLocationMismatch(
@@ -361,7 +360,7 @@ func (a *InitAction) resolveModelDeploymentNoPrompt(
 		},
 	})
 	if err != nil {
-		return nil, exterrors.FromAzdHost(err, exterrors.CodeModelResolutionFailed)
+		return nil, exterrors.FromAiService(err, exterrors.CodeModelResolutionFailed)
 	}
 
 	if len(resolveResp.Deployments) == 0 {
@@ -535,7 +534,7 @@ func (a *InitAction) promptForAlternativeModel(
 			Message:         "Would you like to select a different model or exit?",
 			Choices:         choices,
 			SelectedIndex:   &defaultIndex,
-			EnableFiltering: to.Ptr(false),
+			EnableFiltering: new(false),
 		},
 	})
 	if err != nil {
@@ -555,7 +554,7 @@ func (a *InitAction) promptForAlternativeModel(
 		Options: &azdext.SelectOptions{
 			Message:         "Which models would you like to explore?",
 			Choices:         regionChoices,
-			EnableFiltering: to.Ptr(false),
+			EnableFiltering: new(false),
 		},
 	})
 	if err != nil {
@@ -577,7 +576,7 @@ func (a *InitAction) promptForAlternativeModel(
 
 	modelResp, err := a.azdClient.Prompt().PromptAiModel(ctx, promptReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to prompt for model selection: %w", err)
+		return nil, exterrors.FromPrompt(err, "failed to prompt for model selection")
 	}
 
 	return modelResp.Model, nil
@@ -626,7 +625,7 @@ func (a *InitAction) promptForModelLocationMismatch(
 				Message:         "What would you like to do?",
 				Choices:         choices,
 				SelectedIndex:   &defaultIndex,
-				EnableFiltering: to.Ptr(false),
+				EnableFiltering: new(false),
 			},
 		})
 		if err != nil {
@@ -659,7 +658,7 @@ func (a *InitAction) promptForModelLocationMismatch(
 					continue
 				}
 
-				return nil, "", fmt.Errorf("failed to prompt for location selection: %w", err)
+				return nil, "", exterrors.FromPrompt(err, "failed to prompt for location selection")
 			}
 
 			selectedLocation := locationResp.Location.Name
@@ -689,7 +688,7 @@ func (a *InitAction) promptForModelLocationMismatch(
 					continue
 				}
 
-				return nil, "", fmt.Errorf("failed to prompt for model selection across all regions: %w", err)
+				return nil, "", exterrors.FromPrompt(err, "failed to prompt for model selection across all regions")
 			}
 
 			selectedModel := modelResp.Model
@@ -713,7 +712,7 @@ func (a *InitAction) promptForModelLocationMismatch(
 					continue
 				}
 
-				return nil, "", fmt.Errorf("failed to prompt for location selection: %w", err)
+				return nil, "", exterrors.FromPrompt(err, "failed to prompt for location selection")
 			}
 
 			selectedLocation := locationResp.Location.Name
@@ -744,7 +743,7 @@ func (a *InitAction) promptForModelLocationMismatch(
 				continue
 			}
 
-			return nil, "", fmt.Errorf("failed to prompt for model selection: %w", err)
+			return nil, "", exterrors.FromPrompt(err, "failed to prompt for model selection")
 		}
 
 		return modelResp.Model, currentLocation, nil
@@ -757,7 +756,7 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 		return nil, nil, fmt.Errorf("failed to marshal agent template to YAML: %w", err)
 	}
 
-	var templateDict map[string]interface{}
+	var templateDict map[string]any
 	if err := yaml.Unmarshal(templateBytes, &templateDict); err != nil {
 		return nil, nil, fmt.Errorf("failed to unmarshal agent template from YAML: %w", err)
 	}

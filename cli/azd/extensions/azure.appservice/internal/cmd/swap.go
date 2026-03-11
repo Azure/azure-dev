@@ -8,12 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -341,12 +341,7 @@ func normalizeSlotName(slot string) string {
 }
 
 func isValidSlotName(name string, availableSlots []string) bool {
-	for _, slot := range availableSlots {
-		if slot == name {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(availableSlots, name)
 }
 
 // spinner represents a simple terminal spinner with status updates
@@ -469,7 +464,7 @@ func swapSlot(
 	if sourceSlot == "" {
 		// Swapping production with a named slot (e.g., production -> staging)
 		swapRequest := armappservice.CsmSlotEntity{
-			TargetSlot: to.Ptr(targetSlot),
+			TargetSlot: new(targetSlot),
 		}
 		poller, err := client.BeginSwapSlotWithProduction(ctx, resourceGroup, appName, swapRequest, nil)
 		if err != nil {
@@ -479,7 +474,7 @@ func swapSlot(
 	} else if targetSlot == "" {
 		// Swapping a named slot with production (e.g., staging -> production)
 		swapRequest := armappservice.CsmSlotEntity{
-			TargetSlot: to.Ptr("production"),
+			TargetSlot: new("production"),
 		}
 		poller, err := client.BeginSwapSlot(ctx, resourceGroup, appName, sourceSlot, swapRequest, nil)
 		if err != nil {
@@ -489,7 +484,7 @@ func swapSlot(
 	} else {
 		// Swapping between two named slots
 		swapRequest := armappservice.CsmSlotEntity{
-			TargetSlot: to.Ptr(targetSlot),
+			TargetSlot: new(targetSlot),
 		}
 		poller, err := client.BeginSwapSlot(ctx, resourceGroup, appName, sourceSlot, swapRequest, nil)
 		if err != nil {

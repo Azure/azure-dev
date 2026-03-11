@@ -78,7 +78,7 @@ type Flag struct {
 	// Type is the data type: "string", "bool", "int", "stringArray", "intArray"
 	Type string `json:"type"`
 	// Default is the default value when the flag is not provided
-	Default interface{} `json:"default,omitempty"`
+	Default any `json:"default,omitempty"`
 	// Required indicates if the flag is required
 	Required bool `json:"required,omitempty"`
 	// ValidValues contains the allowed values for the flag

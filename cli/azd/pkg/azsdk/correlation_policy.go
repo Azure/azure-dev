@@ -12,6 +12,7 @@ import (
 
 // See https://github.com/Azure/azure-resource-manager-rpc/blob/master/v1.0/common-api-details.md#client-request-headers
 const MsCorrelationIdHeader = "x-ms-correlation-request-id"
+const MsClientRequestIdHeader = "x-ms-client-request-id"
 
 // See https://learn.microsoft.com/en-us/graph/best-practices-concept#reliability-and-support
 const msGraphCorrelationIdHeader = "client-request-id"
@@ -37,6 +38,12 @@ func (p *simpleCorrelationPolicy) Do(req *policy.Request) (*http.Response, error
 // tracing.
 func NewMsCorrelationPolicy() policy.Policy {
 	return &simpleCorrelationPolicy{headerName: MsCorrelationIdHeader}
+}
+
+// NewMsClientRequestIdPolicy creates a policy that sets the x-ms-client-request-id header on HTTP requests.
+// This is used by Azure services to log and correlate individual requests for diagnostics.
+func NewMsClientRequestIdPolicy() policy.Policy {
+	return &simpleCorrelationPolicy{headerName: MsClientRequestIdHeader}
 }
 
 // NewMsGraphCorrelationPolicy creates a policy that sets Microsoft Graph correlation ID headers on HTTP requests.

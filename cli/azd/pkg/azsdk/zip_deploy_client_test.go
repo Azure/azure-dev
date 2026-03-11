@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -108,7 +107,7 @@ func registerPollingMocks(mockContext *mocks.MockContext) {
 				Status:     http.StatusAccepted,
 				StatusText: "Accepted",
 				Message:    "Doing deploy things",
-				Progress:   to.Ptr("Running ORYX build"),
+				Progress:   new("Running ORYX build"),
 				Complete:   false,
 				Active:     false,
 				SiteName:   "APP_NAME",

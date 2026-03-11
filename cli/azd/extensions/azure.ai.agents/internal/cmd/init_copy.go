@@ -12,7 +12,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
@@ -80,7 +79,7 @@ func (a *InitAction) validateLocalContainerAgentCopy(ctx context.Context, manife
 	confirmResponse, err := a.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
 		Options: &azdext.ConfirmOptions{
 			Message:      "Continue?",
-			DefaultValue: to.Ptr(false),
+			DefaultValue: new(false),
 			HelpMessage:  "To avoid copying too much, move the manifest to a separate directory with only the agent files you want to include.",
 		},
 	})
@@ -161,6 +160,7 @@ func copyDirectory(src, dst string) error {
 
 		if d.IsDir() {
 			// Create directory and continue processing its contents
+			//nolint:gosec // copied project directories should remain readable/traversable
 			return os.MkdirAll(dstPath, 0755)
 		}
 
@@ -172,23 +172,30 @@ func copyDirectory(src, dst string) error {
 // copyFile copies a single file from src to dst.
 func copyFile(src, dst string) error {
 	// Create the destination directory if it doesn't exist
+	//nolint:gosec // copied project directories should remain readable/traversable
 	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
 		return err
 	}
 
 	// Open source file
+	//nolint:gosec // source path is computed from validated copy traversal
 	srcFile, err := os.Open(src)
 	if err != nil {
 		return err
 	}
-	defer srcFile.Close()
+	defer func() {
+		_ = srcFile.Close()
+	}()
 
 	// Create destination file
+	//nolint:gosec // destination path is computed from validated copy traversal
 	dstFile, err := os.Create(dst)
 	if err != nil {
 		return err
 	}
-	defer dstFile.Close()
+	defer func() {
+		_ = dstFile.Close()
+	}()
 
 	// Copy file contents
 	_, err = srcFile.WriteTo(dstFile)

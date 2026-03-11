@@ -71,6 +71,25 @@ type ContainerAppService interface {
 		envVars map[string]string,
 		options *ContainerAppOptions,
 	) error
+	// GetContainerAppJob gets a Container App Job by name
+	GetContainerAppJob(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		jobName string,
+		options *ContainerAppOptions,
+	) (*armappcontainers.Job, error)
+	// UpdateContainerAppJobImage updates the container image
+	// and environment variables for a Container App Job
+	UpdateContainerAppJobImage(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		jobName string,
+		imageName string,
+		envVars map[string]string,
+		options *ContainerAppOptions,
+	) error
 }
 
 // NewContainerAppService creates a new ContainerAppService
@@ -94,6 +113,7 @@ type containerAppService struct {
 	armClientOptions    *arm.ClientOptions
 	alphaFeatureManager *alpha.FeatureManager
 	appsClientCache     sync.Map
+	jobsClientCache     sync.Map
 }
 
 type ContainerAppOptions struct {
@@ -532,6 +552,189 @@ func (cas *containerAppService) createContainerAppsClient(
 	}
 
 	return client, nil
+}
+
+func (cas *containerAppService) createJobsClient(
+	ctx context.Context,
+	subscriptionId string,
+	customPolicy *containerAppCustomApiVersionAndBodyPolicy,
+) (*armappcontainers.JobsClient, error) {
+	if customPolicy == nil {
+		if cached, ok := cas.jobsClientCache.Load(subscriptionId); ok {
+			return cached.(*armappcontainers.JobsClient), nil
+		}
+	}
+
+	credential, err := cas.credentialProvider.CredentialForSubscription(
+		ctx, subscriptionId,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	options := *cas.armClientOptions
+
+	if customPolicy != nil {
+		// Clone the options so we don't modify the original -
+		// we don't want to inject this custom policy into
+		// every request.
+		options.PerCallPolicies = append(
+			slices.Clone(options.PerCallPolicies), customPolicy,
+		)
+	}
+
+	client, err := armappcontainers.NewJobsClient(
+		subscriptionId, credential, &options,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("creating Jobs client: %w", err)
+	}
+
+	if customPolicy == nil {
+		if cached, loaded := cas.jobsClientCache.LoadOrStore(
+			subscriptionId, client,
+		); loaded {
+			return cached.(*armappcontainers.JobsClient), nil
+		}
+	}
+
+	return client, nil
+}
+
+func (cas *containerAppService) GetContainerAppJob(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	jobName string,
+	options *ContainerAppOptions,
+) (*armappcontainers.Job, error) {
+	apiVersionPolicy := createApiVersionPolicy(options)
+
+	jobsClient, err := cas.createJobsClient(
+		ctx, subscriptionId, apiVersionPolicy,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	response, err := jobsClient.Get(
+		ctx, resourceGroupName, jobName, nil,
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"getting container app job: %w", err,
+		)
+	}
+
+	return &response.Job, nil
+}
+
+func (cas *containerAppService) UpdateContainerAppJobImage(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	jobName string,
+	imageName string,
+	envVars map[string]string,
+	options *ContainerAppOptions,
+) error {
+	if imageName == "" {
+		return fmt.Errorf(
+			"image name must not be empty for container app job %s",
+			jobName,
+		)
+	}
+
+	apiVersionPolicy := createApiVersionPolicy(options)
+
+	jobsClient, err := cas.createJobsClient(
+		ctx, subscriptionId, apiVersionPolicy,
+	)
+	if err != nil {
+		return fmt.Errorf("creating jobs client: %w", err)
+	}
+
+	// Get current job using the already-created client
+	getResp, err := jobsClient.Get(
+		ctx, resourceGroupName, jobName, nil,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"getting container app job for update: %w", err,
+		)
+	}
+	job := &getResp.Job
+
+	// Update image on first container in the template
+	if job.Properties == nil ||
+		job.Properties.Template == nil ||
+		len(job.Properties.Template.Containers) == 0 {
+		return fmt.Errorf(
+			"container app job %s has no containers to update",
+			jobName,
+		)
+	}
+
+	if job.Properties.Template.Containers[0] == nil {
+		return fmt.Errorf(
+			"container app job %s has a nil container entry",
+			jobName,
+		)
+	}
+	job.Properties.Template.Containers[0].Image = &imageName
+
+	// Merge environment variables if provided
+	if len(envVars) > 0 {
+		container := job.Properties.Template.Containers[0]
+		envMap := make(map[string]*armappcontainers.EnvironmentVar)
+
+		// Build map from existing env vars
+		for _, env := range container.Env {
+			if env != nil && env.Name != nil {
+				envMap[*env.Name] = env
+			}
+		}
+
+		// Merge new env vars (override existing with same name)
+		for key, value := range envVars {
+			envMap[key] = &armappcontainers.EnvironmentVar{
+				Name:  new(key),
+				Value: new(value),
+			}
+		}
+
+		// Convert back to slice
+		merged := make([]*armappcontainers.EnvironmentVar, 0, len(envMap))
+		for _, env := range envMap {
+			merged = append(merged, env)
+		}
+		container.Env = merged
+	}
+
+	// Patch the job with the updated template
+	jobPatch := armappcontainers.JobPatchProperties{
+		Properties: &armappcontainers.JobPatchPropertiesProperties{
+			Template: job.Properties.Template,
+		},
+	}
+
+	poller, err := jobsClient.BeginUpdate(
+		ctx, resourceGroupName, jobName, jobPatch, nil,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"updating container app job image: %w", err,
+		)
+	}
+
+	_, err = poller.PollUntilDone(ctx, nil)
+	if err != nil {
+		return fmt.Errorf(
+			"waiting for container app job update: %w", err,
+		)
+	}
+
+	return nil
 }
 
 type containerAppCustomApiVersionAndBodyPolicy struct {

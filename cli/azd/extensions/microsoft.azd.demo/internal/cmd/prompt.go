@@ -9,7 +9,6 @@ import (
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -66,7 +65,7 @@ func newPromptCommand() *cobra.Command {
 				Confirm(ctx, &azdext.ConfirmRequest{
 					Options: &azdext.ConfirmOptions{
 						Message:      "Do you want to search for Azure resources?",
-						DefaultValue: to.Ptr(true),
+						DefaultValue: new(true),
 					},
 				})
 			if err != nil {
@@ -96,7 +95,7 @@ func newPromptCommand() *cobra.Command {
 				Confirm(ctx, &azdext.ConfirmRequest{
 					Options: &azdext.ConfirmOptions{
 						Message:      "Do you want to filter by resource type?",
-						DefaultValue: to.Ptr(false),
+						DefaultValue: new(false),
 					},
 				})
 			if err != nil {
@@ -199,7 +198,7 @@ func newPromptCommand() *cobra.Command {
 				Confirm(ctx, &azdext.ConfirmRequest{
 					Options: &azdext.ConfirmOptions{
 						Message:      "Do you want to filter by resource group?",
-						DefaultValue: to.Ptr(false),
+						DefaultValue: new(false),
 					},
 				})
 			if err != nil {
@@ -216,7 +215,7 @@ func newPromptCommand() *cobra.Command {
 						AzureContext: &azureContext,
 						Options: &azdext.PromptResourceGroupOptions{
 							SelectOptions: &azdext.PromptResourceSelectOptions{
-								AllowNewResource: to.Ptr(false),
+								AllowNewResource: new(false),
 							},
 						},
 					})
@@ -233,7 +232,7 @@ func newPromptCommand() *cobra.Command {
 						Options: &azdext.PromptResourceOptions{
 							ResourceType: fullResourceType,
 							SelectOptions: &azdext.PromptResourceSelectOptions{
-								AllowNewResource: to.Ptr(false),
+								AllowNewResource: new(false),
 							},
 						},
 					})
@@ -250,7 +249,7 @@ func newPromptCommand() *cobra.Command {
 						Options: &azdext.PromptResourceOptions{
 							ResourceType: fullResourceType,
 							SelectOptions: &azdext.PromptResourceSelectOptions{
-								AllowNewResource: to.Ptr(false),
+								AllowNewResource: new(false),
 							},
 						},
 					})

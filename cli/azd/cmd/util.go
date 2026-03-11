@@ -27,7 +27,7 @@ type CmdAnnotations map[string]string
 // CmdCalledAs provides access to the cmd.CalledAs() value through dependency injection
 type CmdCalledAs string
 
-type Asker func(p survey.Prompt, response interface{}) error
+type Asker func(p survey.Prompt, response any) error
 
 func serviceNameWarningCheck(console input.Console, serviceNameFlag string, commandName string) {
 	if serviceNameFlag == "" {

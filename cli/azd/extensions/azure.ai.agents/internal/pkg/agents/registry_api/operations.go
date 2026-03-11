@@ -26,7 +26,8 @@ type RegistryAgentManifestClient struct {
 
 // NewRegistryAgentManifestClient creates a new instance of RegistryAgentManifestClient
 func NewRegistryAgentManifestClient(registryName string, cred azcore.TokenCredential) *RegistryAgentManifestClient {
-	baseEndpoint := fmt.Sprintf("https://int.api.azureml-test.ms/agent-asset/v1.0/registries/%s/agentManifests", registryName)
+	baseEndpoint := fmt.Sprintf(
+		"https://int.api.azureml-test.ms/agent-asset/v1.0/registries/%s/agentManifests", registryName)
 
 	userAgent := fmt.Sprintf("azd-ext-azure-ai-agents/%s", version.Version)
 
@@ -55,7 +56,10 @@ func NewRegistryAgentManifestClient(registryName string, cred azcore.TokenCreden
 }
 
 // GetManifest retrieves a specific agent manifest from the registry
-func (c *RegistryAgentManifestClient) GetManifest(ctx context.Context, manifestName string, manifestVersion string) (*Manifest, error) {
+func (c *RegistryAgentManifestClient) GetManifest(
+	ctx context.Context,
+	manifestName string,
+	manifestVersion string) (*Manifest, error) {
 	targetEndpoint := fmt.Sprintf("%s/%s/versions/%s", c.baseEndpoint, manifestName, manifestVersion)
 
 	req, err := runtime.NewRequest(ctx, http.MethodGet, targetEndpoint)
@@ -102,7 +106,7 @@ func HandleTools(manifest *Manifest) ([]any, error) {
 		return nil, fmt.Errorf("failed to marshal tools: %w", err)
 	}
 
-	var toolsBase []interface{}
+	var toolsBase []any
 	if err := json.Unmarshal(toolsBytes, &toolsBase); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal tools: %w", err)
 	}

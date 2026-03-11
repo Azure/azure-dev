@@ -556,7 +556,7 @@ type StartAgentContainerOptions struct {
 func (c *AgentClient) StartAgentContainer(ctx context.Context, agentName, agentVersion string, options *StartAgentContainerOptions, apiVersion string) (*AcceptedAgentContainerOperation, error) {
 	url := fmt.Sprintf("%s/agents/%s/versions/%s/containers/default:start?api-version=%s", c.endpoint, agentName, agentVersion, apiVersion)
 
-	requestBody := map[string]interface{}{}
+	requestBody := map[string]any{}
 	if options != nil && options.MinReplicas != nil {
 		requestBody["min_replicas"] = *options.MinReplicas
 	}
@@ -610,7 +610,7 @@ func (c *AgentClient) StartAgentContainer(ctx context.Context, agentName, agentV
 func (c *AgentClient) UpdateAgentContainer(ctx context.Context, agentName, agentVersion string, minReplicas *int32, maxReplicas *int32, apiVersion string) (*AcceptedAgentContainerOperation, error) {
 	url := fmt.Sprintf("%s/agents/%s/versions/%s/containers/default:update?api-version=%s", c.endpoint, agentName, agentVersion, apiVersion)
 
-	requestBody := map[string]interface{}{}
+	requestBody := map[string]any{}
 	if minReplicas != nil {
 		requestBody["min_replicas"] = *minReplicas
 	}
@@ -835,6 +835,7 @@ func (c *AgentClient) GetAgentContainerLogStream(
 	// Use raw http.Client — its Do() returns after response headers arrive,
 	// allowing the body to be read incrementally as a stream.
 	httpClient := &http.Client{}
+	//nolint:gosec // request URL is built from trusted SDK endpoint + path components
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		if cancel != nil {
@@ -844,7 +845,7 @@ func (c *AgentClient) GetAgentContainerLogStream(
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if cancel != nil {
 			cancel()
 		}

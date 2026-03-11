@@ -12,7 +12,7 @@ import (
 )
 
 func TestApplyQuery_EmptyQuery(t *testing.T) {
-	data := map[string]interface{}{
+	data := map[string]any{
 		"name": "test",
 	}
 
@@ -22,7 +22,7 @@ func TestApplyQuery_EmptyQuery(t *testing.T) {
 }
 
 func TestApplyQuery_PropertyAccess(t *testing.T) {
-	data := map[string]interface{}{
+	data := map[string]any{
 		"name":   "myenv",
 		"status": "active",
 	}
@@ -33,8 +33,8 @@ func TestApplyQuery_PropertyAccess(t *testing.T) {
 }
 
 func TestApplyQuery_NestedPropertyAccess(t *testing.T) {
-	data := map[string]interface{}{
-		"config": map[string]interface{}{
+	data := map[string]any{
+		"config": map[string]any{
 			"setting": "value",
 		},
 	}
@@ -45,67 +45,67 @@ func TestApplyQuery_NestedPropertyAccess(t *testing.T) {
 }
 
 func TestApplyQuery_ArrayFiltering(t *testing.T) {
-	data := []interface{}{
-		map[string]interface{}{"name": "env1", "status": "active"},
-		map[string]interface{}{"name": "env2", "status": "inactive"},
-		map[string]interface{}{"name": "env3", "status": "active"},
+	data := []any{
+		map[string]any{"name": "env1", "status": "active"},
+		map[string]any{"name": "env2", "status": "inactive"},
+		map[string]any{"name": "env3", "status": "active"},
 	}
 
 	result, err := ApplyQuery(data, "[?status=='active']")
 	require.NoError(t, err)
 
-	filtered, ok := result.([]interface{})
+	filtered, ok := result.([]any)
 	require.True(t, ok)
 	require.Len(t, filtered, 2)
 }
 
 func TestApplyQuery_ArrayProjection(t *testing.T) {
-	data := []interface{}{
-		map[string]interface{}{"name": "env1", "status": "active"},
-		map[string]interface{}{"name": "env2", "status": "inactive"},
+	data := []any{
+		map[string]any{"name": "env1", "status": "active"},
+		map[string]any{"name": "env2", "status": "inactive"},
 	}
 
 	result, err := ApplyQuery(data, "[].name")
 	require.NoError(t, err)
 
-	names, ok := result.([]interface{})
+	names, ok := result.([]any)
 	require.True(t, ok)
-	require.Equal(t, []interface{}{"env1", "env2"}, names)
+	require.Equal(t, []any{"env1", "env2"}, names)
 }
 
 func TestApplyQuery_ObjectProjection(t *testing.T) {
-	data := []interface{}{
-		map[string]interface{}{"name": "env1", "status": "active"},
+	data := []any{
+		map[string]any{"name": "env1", "status": "active"},
 	}
 
 	result, err := ApplyQuery(data, "[].{n: name, s: status}")
 	require.NoError(t, err)
 
-	projected, ok := result.([]interface{})
+	projected, ok := result.([]any)
 	require.True(t, ok)
 	require.Len(t, projected, 1)
 
-	item, ok := projected[0].(map[string]interface{})
+	item, ok := projected[0].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "env1", item["n"])
 	require.Equal(t, "active", item["s"])
 }
 
 func TestApplyQuery_EmptyResult(t *testing.T) {
-	data := []interface{}{
-		map[string]interface{}{"name": "env1", "status": "active"},
+	data := []any{
+		map[string]any{"name": "env1", "status": "active"},
 	}
 
 	result, err := ApplyQuery(data, "[?status=='nonexistent']")
 	require.NoError(t, err)
 
-	filtered, ok := result.([]interface{})
+	filtered, ok := result.([]any)
 	require.True(t, ok)
 	require.Len(t, filtered, 0)
 }
 
 func TestApplyQuery_InvalidQuery(t *testing.T) {
-	data := map[string]interface{}{"name": "test"}
+	data := map[string]any{"name": "test"}
 
 	_, err := ApplyQuery(data, "[invalid query syntax")
 	require.Error(t, err)
@@ -114,7 +114,7 @@ func TestApplyQuery_InvalidQuery(t *testing.T) {
 }
 
 func TestApplyQuery_ArrayIndexing(t *testing.T) {
-	data := []interface{}{"first", "second", "third"}
+	data := []any{"first", "second", "third"}
 
 	result, err := ApplyQuery(data, "[0]")
 	require.NoError(t, err)
@@ -122,7 +122,7 @@ func TestApplyQuery_ArrayIndexing(t *testing.T) {
 }
 
 func TestApplyQuery_NullResult(t *testing.T) {
-	data := map[string]interface{}{"name": "test"}
+	data := map[string]any{"name": "test"}
 
 	result, err := ApplyQuery(data, "nonexistent")
 	require.NoError(t, err)
@@ -130,9 +130,9 @@ func TestApplyQuery_NullResult(t *testing.T) {
 }
 
 func TestJsonFormatterWithQuery(t *testing.T) {
-	data := []interface{}{
-		map[string]interface{}{"name": "env1", "status": "active"},
-		map[string]interface{}{"name": "env2", "status": "inactive"},
+	data := []any{
+		map[string]any{"name": "env1", "status": "active"},
+		map[string]any{"name": "env2", "status": "inactive"},
 	}
 
 	formatter := &JsonFormatter{Query: "[].name"}
@@ -150,7 +150,7 @@ func TestJsonFormatterWithQuery(t *testing.T) {
 }
 
 func TestJsonFormatterWithQuery_InvalidQuery(t *testing.T) {
-	data := map[string]interface{}{"name": "test"}
+	data := map[string]any{"name": "test"}
 
 	formatter := &JsonFormatter{Query: "[invalid"}
 	buffer := &bytes.Buffer{}
@@ -161,9 +161,9 @@ func TestJsonFormatterWithQuery_InvalidQuery(t *testing.T) {
 }
 
 func TestJsonFormatterWithQuery_FilterAndProject(t *testing.T) {
-	data := []interface{}{
-		map[string]interface{}{"name": "env1", "isDefault": true},
-		map[string]interface{}{"name": "env2", "isDefault": false},
+	data := []any{
+		map[string]any{"name": "env1", "isDefault": true},
+		map[string]any{"name": "env2", "isDefault": false},
 	}
 
 	formatter := &JsonFormatter{Query: "[?isDefault].name"}
@@ -187,7 +187,7 @@ func TestApplyQuery_DocumentationHintInError(t *testing.T) {
 		{"bad syntax", "..."},
 	}
 
-	data := map[string]interface{}{"name": "test"}
+	data := map[string]any{"name": "test"}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -204,7 +204,7 @@ func TestApplyQuery_DocumentationHintInError(t *testing.T) {
 func TestJsonFormatter_QueryFilter(t *testing.T) {
 	t.Run("NoQuery", func(t *testing.T) {
 		f := &JsonFormatter{}
-		data := map[string]interface{}{"name": "test"}
+		data := map[string]any{"name": "test"}
 		result, err := f.QueryFilter(data)
 		require.NoError(t, err)
 		require.Equal(t, data, result)
@@ -212,9 +212,9 @@ func TestJsonFormatter_QueryFilter(t *testing.T) {
 
 	t.Run("WithQuery", func(t *testing.T) {
 		f := &JsonFormatter{Query: "data.message"}
-		data := map[string]interface{}{
+		data := map[string]any{
 			"type": "consoleMessage",
-			"data": map[string]interface{}{
+			"data": map[string]any{
 				"message": "hello world",
 			},
 		}
@@ -225,7 +225,7 @@ func TestJsonFormatter_QueryFilter(t *testing.T) {
 
 	t.Run("InvalidQuery", func(t *testing.T) {
 		f := &JsonFormatter{Query: "[invalid"}
-		data := map[string]interface{}{"name": "test"}
+		data := map[string]any{"name": "test"}
 		_, err := f.QueryFilter(data)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "jmespath.org")

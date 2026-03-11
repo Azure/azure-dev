@@ -26,12 +26,15 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
+	"github.com/azure/azure-dev/cli/azd/pkg/update"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 )
@@ -56,13 +59,21 @@ func MapError(err error, span tracing.Span) {
 	// internal errors
 	var errWithSuggestion *internal.ErrorWithSuggestion
 	var loginErr *auth.ReLoginRequiredError
+	var updateErr *update.UpdateError
 
-	if errors.As(err, &loginErr) {
+	if errors.As(err, &updateErr) {
+		errCode = updateErr.Code
+	} else if errors.As(err, &loginErr) {
 		errCode = "auth.login_required"
 	} else if errors.As(err, &errWithSuggestion) {
 		errCode = "error.suggestion"
-		errType := errorType(errWithSuggestion.Unwrap())
-		span.SetAttributes(fields.ErrType.String(errType))
+		inner := errWithSuggestion.Unwrap()
+		if code := classifySentinel(inner); code != "" {
+			span.SetAttributes(fields.ErrType.String(code))
+		} else {
+			span.SetAttributes(
+				fields.ErrType.String(errorType(inner)))
+		}
 	} else if errors.As(err, &respErr) {
 		serviceName := "other"
 		statusCode := -1
@@ -212,8 +223,14 @@ func MapError(err error, span tracing.Span) {
 		errCode = "internal.preview_not_supported"
 	} else if errors.Is(err, provisioning.ErrBindMountOperationDisabled) {
 		errCode = "internal.bind_mount_disabled"
+	} else if errors.Is(err, update.ErrNeedsElevation) {
+		errCode = "update.elevationRequired"
 	} else if errors.Is(err, pipeline.ErrRemoteHostIsNotAzDo) {
 		errCode = "internal.remote_not_azdo"
+	} else if errors.Is(err, internal.ErrExtensionNotFound) {
+		errCode = "internal.extension_not_found"
+	} else if errors.Is(err, internal.ErrExtensionTokenFailed) {
+		errCode = "internal.extension_error"
 	} else if isNetworkError(err) {
 		errCode = "internal.network"
 		errType := errorType(err)
@@ -234,6 +251,66 @@ func MapError(err error, span tracing.Span) {
 	}
 
 	span.SetStatus(codes.Error, errCode)
+}
+
+// classifySentinel checks if the error matches a known sentinel
+// and returns the corresponding telemetry code, or "" if no match.
+func classifySentinel(err error) string {
+	switch {
+	case errors.Is(err, internal.ErrInfraNotProvisioned):
+		return "internal.infra_not_provisioned"
+	case errors.Is(err, internal.ErrFromPackageWithAll),
+		errors.Is(err, internal.ErrFromPackageNoService):
+		return "internal.invalid_flag_combination"
+	case errors.Is(err, internal.ErrCannotChangeSubscription):
+		return "internal.cannot_change_subscription"
+	case errors.Is(err, internal.ErrCannotChangeLocation):
+		return "internal.cannot_change_location"
+	case errors.Is(err, internal.ErrPreviewMultipleLayers):
+		return "internal.preview_multiple_layers"
+	case errors.Is(err, internal.ErrNoKeyNameProvided),
+		errors.Is(err, internal.ErrNoEnvValuesProvided),
+		errors.Is(err, internal.ErrInvalidFlagCombination):
+		return "internal.invalid_args"
+	case errors.Is(err, internal.ErrKeyNotFound):
+		return "internal.key_not_found"
+	case errors.Is(err, internal.ErrNoEnvironmentsFound):
+		return "internal.no_environments_found"
+	case errors.Is(err, internal.ErrLoginDisabledDelegatedMode):
+		return "auth.login_disabled_delegated"
+	case errors.Is(err, internal.ErrBranchRequiresTemplate),
+		errors.Is(err, internal.ErrMultipleInitModes):
+		return "internal.invalid_args"
+	case errors.Is(err, environment.ErrNotFound):
+		return "internal.env_not_found"
+	case errors.Is(err, azdcontext.ErrNoProject):
+		return "internal.no_project"
+	case errors.Is(err, internal.ErrNoArgsProvided),
+		errors.Is(err, internal.ErrInvalidArgValue):
+		return "internal.invalid_args"
+	case errors.Is(err, internal.ErrConfigKeyNotFound):
+		return "internal.config_key_not_found"
+	case errors.Is(err, internal.ErrExtensionNotFound):
+		return "internal.extension_not_found"
+	case errors.Is(err, internal.ErrServiceNotFound):
+		return "internal.service_not_found"
+	case errors.Is(err, internal.ErrNoExtensionsAvailable):
+		return "internal.no_extensions_available"
+	case errors.Is(err, internal.ErrValidationFailed):
+		return "internal.validation_failed"
+	case errors.Is(err, internal.ErrUnsupportedOperation):
+		return "internal.unsupported_operation"
+	case errors.Is(err, internal.ErrExtensionTokenFailed):
+		return "internal.extension_error"
+	case errors.Is(err, internal.ErrMcpToolsLoadFailed):
+		return "internal.mcp_error"
+	case errors.Is(err, internal.ErrResourceNotConfigured):
+		return "internal.resource_not_found"
+	case errors.Is(err, internal.ErrOperationCancelled):
+		return "internal.operation_cancelled"
+	default:
+		return ""
+	}
 }
 
 // errorType returns the type name of the given error, unwrapping as needed to find the root cause(s).

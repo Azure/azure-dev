@@ -10,7 +10,6 @@ import (
 	"slices"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 )
@@ -61,7 +60,7 @@ func (s *ArmMsiService) CreateUserIdentity(
 
 	msi, err := client.CreateOrUpdate(
 		ctx, resourceGroup, name, armmsi.Identity{
-			Location: to.Ptr(location),
+			Location: new(location),
 		}, nil)
 	if err != nil {
 		return armmsi.Identity{}, err
@@ -191,13 +190,13 @@ func (s *ArmMsiService) CreateFederatedCredential(
 
 	audiencesRefs := make([]*string, len(audiences))
 	for i, audience := range audiences {
-		audiencesRefs[i] = to.Ptr(audience)
+		audiencesRefs[i] = new(audience)
 	}
 	response, err := client.CreateOrUpdate(ctx, resourceGroup, msiName, name,
 		armmsi.FederatedIdentityCredential{
 			Properties: &armmsi.FederatedIdentityCredentialProperties{
-				Subject:   to.Ptr(subject),
-				Issuer:    to.Ptr(issuer),
+				Subject:   new(subject),
+				Issuer:    new(issuer),
 				Audiences: audiencesRefs,
 			},
 		}, nil)

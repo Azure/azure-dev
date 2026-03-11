@@ -12,13 +12,13 @@ import (
 
 	"dario.cat/mergo"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 )
@@ -161,6 +161,7 @@ type PromptService interface {
 // PromptService provides methods for prompting the user to select various Azure resources.
 type promptService struct {
 	authManager         AuthManager
+	console             input.Console
 	userConfigManager   config.UserConfigManager
 	resourceService     ResourceService
 	subscriptionManager SubscriptionManager
@@ -170,6 +171,7 @@ type promptService struct {
 // NewPromptService creates a new prompt service.
 func NewPromptService(
 	authManager AuthManager,
+	console input.Console,
 	userConfigManager config.UserConfigManager,
 	subscriptionManager SubscriptionManager,
 	resourceService ResourceService,
@@ -177,6 +179,7 @@ func NewPromptService(
 ) PromptService {
 	return &promptService{
 		authManager:         authManager,
+		console:             console,
 		userConfigManager:   userConfigManager,
 		subscriptionManager: subscriptionManager,
 		resourceService:     resourceService,
@@ -198,7 +201,7 @@ func (ps *promptService) PromptSubscription(
 		Message:          "Select subscription",
 		LoadingMessage:   "Loading subscriptions...",
 		HelpMessage:      "Choose an Azure subscription for your project.",
-		AllowNewResource: ux.Ptr(false),
+		AllowNewResource: new(false),
 	}
 
 	if err := mergo.Merge(mergedOptions, selectorOptions, mergo.WithoutDereference); err != nil {
@@ -221,28 +224,45 @@ func (ps *promptService) PromptSubscription(
 
 	// Handle --no-prompt mode
 	if ps.globalOptions.NoPrompt {
-		if defaultSubscriptionId == "" {
-			return nil, fmt.Errorf(
-				"subscription selection required but cannot prompt in --no-prompt mode. " +
-					"Set a default subscription using 'azd config set defaults.subscription <subscription-id>'")
-		}
-
-		// Load subscriptions and find the default
+		// Load subscriptions for both default lookup and auto-selection
 		subscriptionList, err := ps.subscriptionManager.GetSubscriptions(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load subscriptions: %w", err)
 		}
 
-		for _, subscription := range subscriptionList {
-			if strings.EqualFold(subscription.Id, defaultSubscriptionId) {
-				return &subscription, nil
+		// If a default subscription is configured, use it
+		if defaultSubscriptionId != "" {
+			for _, subscription := range subscriptionList {
+				if strings.EqualFold(subscription.Id, defaultSubscriptionId) {
+					return &subscription, nil
+				}
 			}
+
+			return nil, fmt.Errorf(
+				"default subscription '%s' not found. "+
+					"Update your default subscription using "+
+					"'azd config set defaults.subscription <subscription-id>'",
+				defaultSubscriptionId)
 		}
 
-		return nil, fmt.Errorf(
-			"default subscription '%s' not found. "+
-				"Update your default subscription using 'azd config set defaults.subscription <subscription-id>'",
-			defaultSubscriptionId)
+		// No default configured — try auto-selecting if exactly one subscription exists
+		switch len(subscriptionList) {
+		case 0:
+			return nil, fmt.Errorf(
+				"no Azure subscriptions found for the current account. " +
+					"Verify that you're logged into the correct Azure account and tenant, " +
+					"and that your account has one or more active subscriptions. " +
+					"If needed, run 'azd auth login' to sign in.")
+		case 1:
+			ps.console.Message(ctx, fmt.Sprintf(
+				"Auto-selected subscription: %s (%s)",
+				subscriptionList[0].Name, subscriptionList[0].Id))
+			return &subscriptionList[0], nil
+		default:
+			return nil, fmt.Errorf(
+				"multiple Azure subscriptions found but running in non-interactive mode. " +
+					"Set a default subscription using 'azd config set defaults.subscription <subscription-id>'")
+		}
 	}
 
 	return PromptCustomResource(ctx, CustomResourceOptions[account.Subscription]{
@@ -293,7 +313,7 @@ func (ps *promptService) PromptLocation(
 		Message:          "Select location",
 		LoadingMessage:   "Loading locations...",
 		HelpMessage:      "Choose an Azure location for your project.",
-		AllowNewResource: ux.Ptr(false),
+		AllowNewResource: new(false),
 	}
 
 	if err := mergo.Merge(mergedOptions, selectorOptions, mergo.WithoutDereference); err != nil {
@@ -401,7 +421,7 @@ func (ps *promptService) PromptResourceGroup(
 		Message:            "Select resource group",
 		LoadingMessage:     "Loading resource groups...",
 		HelpMessage:        "Choose an Azure resource group for your project.",
-		AllowNewResource:   ux.Ptr(true),
+		AllowNewResource:   new(true),
 		NewResourceMessage: "Create new resource group",
 	}
 
@@ -533,7 +553,7 @@ func (ps *promptService) PromptSubscriptionResource(
 		Message:            fmt.Sprintf("Select %s", resourceName),
 		LoadingMessage:     fmt.Sprintf("Loading %s resources...", resourceName),
 		HelpMessage:        fmt.Sprintf("Choose an Azure %s for your project.", resourceName),
-		AllowNewResource:   ux.Ptr(true),
+		AllowNewResource:   new(true),
 		NewResourceMessage: fmt.Sprintf("Create new %s", resourceName),
 	}
 
@@ -567,7 +587,7 @@ func (ps *promptService) PromptSubscriptionResource(
 			var resourceListOptions *armresources.ClientListOptions
 			if options.ResourceType != nil {
 				resourceListOptions = &armresources.ClientListOptions{
-					Filter: to.Ptr(fmt.Sprintf("resourceType eq '%s'", string(*options.ResourceType))),
+					Filter: new(fmt.Sprintf("resourceType eq '%s'", string(*options.ResourceType))),
 				}
 			}
 
@@ -679,7 +699,7 @@ func (ps *promptService) PromptResourceGroupResource(
 		Message:            fmt.Sprintf("Select %s", resourceName),
 		LoadingMessage:     fmt.Sprintf("Loading %s resources...", resourceName),
 		HelpMessage:        fmt.Sprintf("Choose an Azure %s for your project.", resourceName),
-		AllowNewResource:   ux.Ptr(true),
+		AllowNewResource:   new(true),
 		NewResourceMessage: fmt.Sprintf("Create new %s", resourceName),
 	}
 
@@ -714,7 +734,7 @@ func (ps *promptService) PromptResourceGroupResource(
 			var resourceListOptions *azapi.ListResourceGroupResourcesOptions
 			if options.ResourceType != nil {
 				resourceListOptions = &azapi.ListResourceGroupResourcesOptions{
-					Filter: to.Ptr(fmt.Sprintf("resourceType eq '%s'", *options.ResourceType)),
+					Filter: new(fmt.Sprintf("resourceType eq '%s'", *options.ResourceType)),
 				}
 			}
 
@@ -777,10 +797,10 @@ func PromptCustomResource[T any](ctx context.Context, options CustomResourceOpti
 		Message:            "Select resource",
 		LoadingMessage:     "Loading resources...",
 		HelpMessage:        "Choose a resource for your project.",
-		AllowNewResource:   ux.Ptr(true),
-		ForceNewResource:   ux.Ptr(false),
+		AllowNewResource:   new(true),
+		ForceNewResource:   new(false),
 		NewResourceMessage: "Create new resource",
-		DisplayNumbers:     ux.Ptr(true),
+		DisplayNumbers:     new(true),
 		DisplayCount:       10,
 	}
 
@@ -800,7 +820,7 @@ func PromptCustomResource[T any](ctx context.Context, options CustomResourceOpti
 
 	if forceNewResource {
 		allowNewResource = true
-		selectedIndex = ux.Ptr(0)
+		selectedIndex = new(0)
 	} else {
 		loadingSpinner := ux.NewSpinner(&ux.SpinnerOptions{
 			Text: options.SelectorOptions.LoadingMessage,

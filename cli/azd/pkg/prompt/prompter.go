@@ -12,7 +12,6 @@ import (
 	"slices"
 	"strconv"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -188,11 +187,18 @@ func (p *DefaultPrompter) PromptResourceGroupFrom(
 		choices[idx+canCreateOverride] = fmt.Sprintf("%d. %s", idx+canCreateOverride+1, group.Name)
 	}
 
-	choice, err := p.console.Select(ctx, input.ConsoleOptions{
+	pickPrompt := input.ConsoleOptions{
 		Message: "Pick a resource group to use:",
 		Options: choices,
 		Help:    options.PickResourceGroupHelp,
-	})
+	}
+
+	if canCreateNeResourceGroup && options.DefaultName != "" {
+		// Default selection to create new resource group with the default name provided
+		pickPrompt.DefaultValue = choices[0]
+	}
+
+	choice, err := p.console.Select(ctx, pickPrompt)
 	if err != nil {
 		return "", fmt.Errorf("selecting resource group: %w", err)
 	}
@@ -224,7 +230,7 @@ func (p *DefaultPrompter) PromptResourceGroupFrom(
 
 	tagsParam := make(map[string]*string, len(options.Tags))
 	for k, v := range options.Tags {
-		tagsParam[k] = to.Ptr(v)
+		tagsParam[k] = new(v)
 	}
 
 	_, err = p.resourceService.CreateOrUpdateResourceGroup(ctx, subscriptionId, name, location, tagsParam)

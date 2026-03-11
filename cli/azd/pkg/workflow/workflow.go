@@ -18,11 +18,11 @@ type Workflow struct {
 
 // UnmarshalYAML will unmarshal the Workflow from YAML.
 // The workflow YAML can be specified as either a simple array of steps or a more verbose map/struct style
-func (w *Workflow) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (w *Workflow) UnmarshalYAML(unmarshal func(any) error) error {
 	parsed := false
 
 	// Map
-	var m map[string]interface{}
+	var m map[string]any
 	if err := unmarshal(&m); err == nil {
 		rawName, has := m["name"]
 		if has {
@@ -31,7 +31,7 @@ func (w *Workflow) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 		rawSteps, has := m["steps"]
 		if has {
-			stepsArray, ok := rawSteps.([]interface{})
+			stepsArray, ok := rawSteps.([]any)
 			if ok {
 				w.Steps, err = w.unmarshalSteps(stepsArray)
 				if err != nil {
@@ -44,7 +44,7 @@ func (w *Workflow) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 
 	// Array
-	var steps []interface{}
+	var steps []any
 	if err := unmarshal(&steps); err == nil {
 		w.Steps, err = w.unmarshalSteps(steps)
 		if err != nil {
@@ -63,7 +63,7 @@ func (w *Workflow) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 // unmarshalSteps will unmarshal the steps from YAML.
 func (w *Workflow) unmarshalSteps(rawSteps any) ([]*Step, error) {
-	stepsArray, ok := rawSteps.([]interface{})
+	stepsArray, ok := rawSteps.([]any)
 	if !ok {
 		return nil, fmt.Errorf("steps must be an array")
 	}
@@ -109,15 +109,15 @@ type Command struct {
 
 // UnmarshalYAML will unmarshal the Command from YAML.
 // In command YAML the command can be specified as a simple string or a more verbose map/struct style
-func (c *Command) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *Command) UnmarshalYAML(unmarshal func(any) error) error {
 	parsed := false
 
 	// Map
-	var m map[string]interface{}
+	var m map[string]any
 	if err := unmarshal(&m); err == nil {
 		rawArgs, has := m["args"]
 		if has {
-			argsArray, ok := rawArgs.([]interface{})
+			argsArray, ok := rawArgs.([]any)
 			if ok {
 				for _, arg := range argsArray {
 					argValue, ok := arg.(string)

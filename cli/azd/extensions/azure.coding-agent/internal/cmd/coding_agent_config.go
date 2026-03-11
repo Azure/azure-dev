@@ -115,7 +115,9 @@ func newConfigCommand() *cobra.Command {
 	cc := &cobra.Command{
 		Use:   "config",
 		Short: "Configure the GitHub Copilot coding agent to access Azure resources via the Azure MCP",
-		Long:  "Configure the GitHub Copilot coding agent to access Azure resources via the Azure MCP.\n\nFor more information about this command, including prerequisites and troubleshooting, view the readme at " + ux.Hyperlink("https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.coding-agent/README.md"),
+		Long: "Configure the GitHub Copilot coding agent to access Azure resources via the Azure MCP.\n\n" +
+			"For more information about this command, including prerequisites and troubleshooting, view the readme at " +
+			ux.Hyperlink("https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.coding-agent/README.md"),
 	}
 
 	flagValues := setupFlags(cc.Flags())
@@ -291,7 +293,7 @@ func openBrowserWindows(ctx context.Context,
 	resp, err := prompter.Confirm(ctx, &azdext.ConfirmRequest{
 		Options: &azdext.ConfirmOptions{
 			Message:      "Open browser window to create a pull request?",
-			DefaultValue: to.Ptr(true),
+			DefaultValue: new(true),
 		},
 	})
 
@@ -392,6 +394,7 @@ func listRemotes(ctx context.Context, gitCLI gitCLI, gitRepoRoot string) ([]stri
 func writeCopilotSetupStepsYaml(gitRepoRoot string) error {
 	workflowsDir := filepath.Join(gitRepoRoot, ".github", "workflows")
 
+	//nolint:gosec // GitHub workflows directory should be readable and traversable
 	if err := os.MkdirAll(workflowsDir, 0755); err != nil {
 		return fmt.Errorf("failed to create the %s folder: %w", workflowsDir, err)
 	}
@@ -507,9 +510,9 @@ func createFederatedCredential(ctx context.Context,
 
 	armFedCreds := []rm_armmsi.FederatedIdentityCredential{
 		{
-			Name: to.Ptr(url.PathEscape(fmt.Sprintf("%s-copilot-env", credentialSafeName))),
+			Name: new(url.PathEscape(fmt.Sprintf("%s-copilot-env", credentialSafeName))),
 			Properties: &rm_armmsi.FederatedIdentityCredentialProperties{
-				Subject:   to.Ptr(fmt.Sprintf("repo:%s:environment:%s", repoSlug, copilotEnvName)),
+				Subject:   new(fmt.Sprintf("repo:%s:environment:%s", repoSlug, copilotEnvName)),
 				Issuer:    to.Ptr(federatedIdentityIssuer),
 				Audiences: []*string{to.Ptr(federatedIdentityAudience)},
 			},
@@ -690,7 +693,7 @@ func pickOrCreateMSI(ctx context.Context,
 					DisplayName: *managedIdentity.Name,
 				},
 				&entraid.EnsureRoleAssignmentsOptions{
-					Scope: to.Ptr(azure.ResourceGroupRID(subscriptionId, parsedID.ResourceGroupName)),
+					Scope: new(azure.ResourceGroupRID(subscriptionId, parsedID.ResourceGroupName)),
 				},
 			)
 

@@ -36,7 +36,7 @@ func TestHandleAzdYamlSchema_ValidYaml(t *testing.T) {
 	oldWd, _ := os.Getwd()
 	os.Chdir(tmpDir)
 	defer os.Chdir(oldWd)
-	os.Rename(yamlPath, "azure.yaml")
+	os.Rename(yamlPath, "azure.yaml") //nolint:gosec // G703: test file rename with controlled paths
 	defer os.Remove("azure.yaml")
 
 	req := mcp.CallToolRequest{}
@@ -85,7 +85,7 @@ func TestHandleAzdYamlSchema_InvalidYaml(t *testing.T) {
 	oldWd, _ := os.Getwd()
 	os.Chdir(tmpDir)
 	defer os.Chdir(oldWd)
-	os.Rename(yamlPath, "azure.yaml")
+	os.Rename(yamlPath, "azure.yaml") //nolint:gosec // G703: test file rename with controlled paths
 	defer os.Remove("azure.yaml")
 
 	req := mcp.CallToolRequest{}
@@ -115,7 +115,7 @@ func TestHandleAzdYamlSchema_YamlNotValidSyntax(t *testing.T) {
 	oldWd, _ := os.Getwd()
 	os.Chdir(tmpDir)
 	defer os.Chdir(oldWd)
-	os.Rename(yamlPath, "azure.yaml")
+	os.Rename(yamlPath, "azure.yaml") //nolint:gosec // G703: test file rename with controlled paths
 	defer os.Remove("azure.yaml")
 
 	req := mcp.CallToolRequest{}
@@ -146,7 +146,7 @@ func TestHandleAzdYamlSchema_YamlValidButSchemaInvalid(t *testing.T) {
 	oldWd, _ := os.Getwd()
 	os.Chdir(tmpDir)
 	defer os.Chdir(oldWd)
-	os.Rename(yamlPath, "azure.yaml")
+	os.Rename(yamlPath, "azure.yaml") //nolint:gosec // G703: test file rename with controlled paths
 	defer os.Remove("azure.yaml")
 
 	req := mcp.CallToolRequest{}
@@ -176,7 +176,7 @@ func TestHandleAzdYamlSchema_InvalidYaml_Structural(t *testing.T) {
 	oldWd, _ := os.Getwd()
 	os.Chdir(tmpDir)
 	defer os.Chdir(oldWd)
-	os.Rename(yamlPath, "azure.yaml")
+	os.Rename(yamlPath, "azure.yaml") //nolint:gosec // G703: test file rename with controlled paths
 	defer os.Remove("azure.yaml")
 
 	req := mcp.CallToolRequest{}

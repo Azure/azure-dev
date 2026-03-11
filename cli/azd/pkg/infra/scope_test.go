@@ -33,33 +33,33 @@ func TestScopeGetDeployment(t *testing.T) {
 	// mocked response for get deployment from subscription
 	deploymentWithOptions := &armresources.DeploymentsClientGetAtSubscriptionScopeResponse{
 		DeploymentExtended: armresources.DeploymentExtended{
-			ID: to.Ptr(
+			ID: new(
 				"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/DEPLOYMENT_NAME",
 			),
-			Location: to.Ptr("eastus2"),
-			Type:     to.Ptr("Microsoft.Resources/deployments"),
+			Location: new("eastus2"),
+			Type:     new("Microsoft.Resources/deployments"),
 			Tags:     map[string]*string{},
-			Name:     to.Ptr("DEPLOYMENT_NAME"),
+			Name:     new("DEPLOYMENT_NAME"),
 			Properties: &armresources.DeploymentPropertiesExtended{
 				ProvisioningState: to.Ptr(armresources.ProvisioningStateCreated),
 				Outputs:           outputs,
-				Timestamp:         to.Ptr(time.Now().UTC()),
+				Timestamp:         new(time.Now().UTC()),
 			},
 		},
 	}
 	deploymentResourceGroupWithOptions := &armresources.DeploymentsClientGetResponse{
 		DeploymentExtended: armresources.DeploymentExtended{
-			ID: to.Ptr(
+			ID: new(
 				"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/DEPLOYMENT_NAME",
 			),
-			Location: to.Ptr("eastus2"),
-			Type:     to.Ptr("Microsoft.Resources/deployments"),
+			Location: new("eastus2"),
+			Type:     new("Microsoft.Resources/deployments"),
 			Tags:     map[string]*string{},
-			Name:     to.Ptr("DEPLOYMENT_NAME"),
+			Name:     new("DEPLOYMENT_NAME"),
 			Properties: &armresources.DeploymentPropertiesExtended{
 				ProvisioningState: to.Ptr(armresources.ProvisioningStateCreated),
 				Outputs:           outputs,
-				Timestamp:         to.Ptr(time.Now().UTC()),
+				Timestamp:         new(time.Now().UTC()),
 			},
 		},
 	}
@@ -96,7 +96,7 @@ func TestScopeGetDeployment(t *testing.T) {
 
 		deployment, err := target.Get(*mockContext.Context)
 		require.NoError(t, err)
-		responseOutputs := deployment.Outputs.(map[string]interface{})["APP_URL"].(map[string]interface{})
+		responseOutputs := deployment.Outputs.(map[string]any)["APP_URL"].(map[string]any)
 		require.Equal(t, outputs["APP_URL"].Value, responseOutputs["value"].(string))
 		require.Equal(t, outputs["APP_URL"].Type, responseOutputs["type"].(string))
 	})
@@ -135,21 +135,21 @@ func TestScopeGetDeployment(t *testing.T) {
 
 		deployment, err := target.Get(*mockContext.Context)
 		require.NoError(t, err)
-		responseOutputs := deployment.Outputs.(map[string]interface{})["APP_URL"].(map[string]interface{})
+		responseOutputs := deployment.Outputs.(map[string]any)["APP_URL"].(map[string]any)
 		require.Equal(t, outputs["APP_URL"].Value, responseOutputs["value"].(string))
 		require.Equal(t, outputs["APP_URL"].Type, responseOutputs["type"].(string))
 	})
 }
 
 var deploymentExtended = armresources.DeploymentExtended{
-	ID:       to.Ptr("/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/DEPLOYMENT_NAME"),
-	Location: to.Ptr("eastus2"),
-	Type:     to.Ptr("Microsoft.Resources/deployments"),
+	ID:       new("/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/DEPLOYMENT_NAME"),
+	Location: new("eastus2"),
+	Type:     new("Microsoft.Resources/deployments"),
 	Tags:     map[string]*string{},
-	Name:     to.Ptr("DEPLOYMENT_NAME"),
+	Name:     new("DEPLOYMENT_NAME"),
 	Properties: &armresources.DeploymentPropertiesExtended{
 		ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
-		Timestamp:         to.Ptr(time.Now().UTC()),
+		Timestamp:         new(time.Now().UTC()),
 	},
 }
 
@@ -219,16 +219,16 @@ func TestScopeDeploy(t *testing.T) {
 var deploymentOperationsListResult = armresources.DeploymentOperationsListResult{
 	Value: []*armresources.DeploymentOperation{
 		{
-			ID:          to.Ptr("operation-1"),
-			OperationID: to.Ptr("operation-1"),
+			ID:          new("operation-1"),
+			OperationID: new("operation-1"),
 			Properties: &armresources.DeploymentOperationProperties{
 				TargetResource: &armresources.TargetResource{
 					//nolint:lll
-					ID: to.Ptr(
+					ID: new(
 						"/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/providers/Microsoft.Storage/storageAccounts/storage-account-name",
 					),
-					ResourceName: to.Ptr("storage-account-name"),
-					ResourceType: to.Ptr("Microsoft.Storage/storageAccounts"),
+					ResourceName: new("storage-account-name"),
+					ResourceType: new("Microsoft.Storage/storageAccounts"),
 				},
 			},
 		},

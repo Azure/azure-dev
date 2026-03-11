@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -25,9 +24,9 @@ type DockerProjectOptions struct {
 	Context     string                    `yaml:"context,omitempty"     json:"context,omitempty"`
 	Platform    string                    `yaml:"platform,omitempty"    json:"platform,omitempty"`
 	Target      string                    `yaml:"target,omitempty"      json:"target,omitempty"`
-	Registry    osutil.ExpandableString   `yaml:"registry,omitempty"    json:"registry,omitempty"`
-	Image       osutil.ExpandableString   `yaml:"image,omitempty"       json:"image,omitempty"`
-	Tag         osutil.ExpandableString   `yaml:"tag,omitempty"         json:"tag,omitempty"`
+	Registry    osutil.ExpandableString   `yaml:"registry,omitempty"    json:"registry"`
+	Image       osutil.ExpandableString   `yaml:"image,omitempty"       json:"image"`
+	Tag         osutil.ExpandableString   `yaml:"tag,omitempty"         json:"tag"`
 	RemoteBuild bool                      `yaml:"remoteBuild,omitempty" json:"remoteBuild,omitempty"`
 	BuildArgs   []osutil.ExpandableString `yaml:"buildArgs,omitempty"   json:"buildArgs,omitempty"`
 	// not supported from azure.yaml directly yet. Adding it for Aspire to use it, initially.
@@ -168,7 +167,7 @@ func useDotnetPublishForDockerBuild(serviceConfig *ServiceConfig) bool {
 		return *serviceConfig.useDotNetPublishForDockerBuild
 	}
 
-	serviceConfig.useDotNetPublishForDockerBuild = to.Ptr(false)
+	serviceConfig.useDotNetPublishForDockerBuild = new(false)
 
 	if serviceConfig.Language.IsDotNet() {
 		projectPath := serviceConfig.Path()
@@ -186,7 +185,7 @@ func useDotnetPublishForDockerBuild(serviceConfig *ServiceConfig) bool {
 		}
 
 		if _, err := os.Stat(dockerfilePath); errors.Is(err, os.ErrNotExist) {
-			serviceConfig.useDotNetPublishForDockerBuild = to.Ptr(true)
+			serviceConfig.useDotNetPublishForDockerBuild = new(true)
 		}
 	}
 

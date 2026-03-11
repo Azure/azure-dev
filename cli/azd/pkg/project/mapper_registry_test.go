@@ -51,7 +51,7 @@ func TestServiceConfigMapping(t *testing.T) {
 		Host:         ContainerAppTarget,
 		Language:     ServiceLanguageDotNet,
 		RelativePath: "./src/api",
-		AdditionalProperties: map[string]interface{}{
+		AdditionalProperties: map[string]any{
 			"customField": "customValue",
 		},
 	}
@@ -573,7 +573,7 @@ func TestResourceConfigMapping(t *testing.T) {
 	resourceConfig := &ResourceConfig{
 		Name: "test-storage",
 		Type: ResourceTypeStorage,
-		Props: map[string]interface{}{
+		Props: map[string]any{
 			"sku":  "Standard_LRS",
 			"kind": "StorageV2",
 		},
@@ -591,7 +591,7 @@ func TestResourceConfigMapping(t *testing.T) {
 	require.Equal(t, "test-resource-id", protoResource.ResourceId)
 
 	// Verify the config JSON marshaling
-	var configData map[string]interface{}
+	var configData map[string]any
 	err = json.Unmarshal(protoResource.Config, &configData)
 	require.NoError(t, err)
 	require.Equal(t, "Standard_LRS", configData["sku"])
@@ -694,7 +694,7 @@ func TestFromProtoDockerProjectOptionsMapping(t *testing.T) {
 
 func TestFromProtoResourceConfigMapping(t *testing.T) {
 	// Create test proto composed resource with storage config
-	configData := map[string]interface{}{
+	configData := map[string]any{
 		"containers": []string{"images", "documents"},
 	}
 	configBytes, err := json.Marshal(configData)
@@ -985,9 +985,9 @@ func TestProjectConfigMapping(t *testing.T) {
 					RelativePath: "./api",
 				},
 			},
-			AdditionalProperties: map[string]interface{}{
+			AdditionalProperties: map[string]any{
 				"projectExtension": "projectValue",
-				"globalConfig":     map[string]interface{}{"enabled": true},
+				"globalConfig":     map[string]any{"enabled": true},
 			},
 		}
 
@@ -1015,9 +1015,9 @@ func TestProjectConfigMapping(t *testing.T) {
 	})
 
 	t.Run("proto ProjectConfig -> ProjectConfig", func(t *testing.T) {
-		additionalPropsData := map[string]interface{}{
+		additionalPropsData := map[string]any{
 			"reverseExtension": "reverseValue",
-			"config":           map[string]interface{}{"timeout": 60},
+			"config":           map[string]any{"timeout": 60},
 		}
 		additionalProps, err := structpb.NewStruct(additionalPropsData)
 		require.NoError(t, err)

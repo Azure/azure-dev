@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -18,7 +19,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/agent"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/feedback"
-	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -189,9 +189,10 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	i.lazyAzdCtx.SetValue(azdCtx)
 
 	if i.flags.templateBranch != "" && i.flags.templatePath == "" {
-		return nil,
-			errors.New(
-				"using branch argument (-b or --branch) requires a template argument (--template or -t) to be specified")
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        internal.ErrBranchRequiresTemplate,
+			Suggestion: "Add '--template <repo-url>' when using '--branch'.",
+		}
 	}
 
 	// ensure that git is available
@@ -225,11 +226,8 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Fail fast when running non-interactively with --template but without --environment
 	// to avoid downloading the template and then failing at the environment name prompt.
 	// This check runs after .env loading so that AZURE_ENV_NAME from .env is considered.
-	if i.flags.global.NoPrompt && i.flags.templatePath != "" && i.flags.EnvironmentName == "" {
-		return nil, errors.New(
-			"--environment is required when running in non-interactive mode (--no-prompt) with --template. " +
-				"Use: azd init --template <url> --environment <name> --no-prompt")
-	}
+	// When --no-prompt is active, the environment manager will auto-generate a name from the
+	// working directory if no explicit name is provided, so we no longer require --environment.
 
 	var existingProject bool
 	if _, err := os.Stat(azdCtx.ProjectPath()); err == nil {
@@ -256,13 +254,18 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	if initTypeCount > 1 {
-		return nil, errors.New("only one of init modes: --template, --from-code, or --minimal should be set")
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        internal.ErrMultipleInitModes,
+			Suggestion: "Choose one: 'azd init --template <url>', 'azd init --from-code', or 'azd init --minimal'.",
+		}
 	}
 
 	if initTypeSelect == initUnknown {
 		if existingProject {
 			// only initialize environment when no mode is set explicitly
 			initTypeSelect = initEnvironment
+		} else if i.console.IsNoPromptMode() {
+			return nil, &initModeRequiredError{}
 		} else {
 			// Prompt for init type for new projects
 			initTypeSelect, err = promptInitType(i.console, ctx, i.featuresManager, i.configManager)
@@ -414,7 +417,7 @@ func (i *initAction) initAppWithAgent(ctx context.Context) error {
 			ServerName: "*",
 			Operation:  consent.OperationTypeTool,
 			Annotations: mcp.ToolAnnotation{
-				ReadOnlyHint: common.ToPtr(true),
+				ReadOnlyHint: new(true),
 			},
 		},
 	)
@@ -879,4 +882,74 @@ func getCmdInitHelpFooter(*cobra.Command) string {
 			output.WithWarningFormat("[Branch name]"),
 		),
 	})
+}
+
+// initModeRequiredError is returned when azd init requires interactive prompts for initialization mode
+// but --no-prompt is set.
+type initModeRequiredError struct{}
+
+func (e *initModeRequiredError) Error() string {
+	return "initialization mode required when --no-prompt is set"
+}
+
+func (e *initModeRequiredError) ToString(currentIndentation string) string {
+	var buf strings.Builder
+	separator := "──────────────────────────────────────────────────────────────"
+
+	buf.WriteString(separator + "\n")
+	buf.WriteString("Init cannot continue (interactive prompts disabled)\n")
+	buf.WriteString(separator + "\n\n")
+
+	buf.WriteString("Choose one:\n\n")
+
+	buf.WriteString("  • Minimal (no template)\n")
+	buf.WriteString("      Creates required azd project files in the current directory.\n")
+	buf.WriteString("      azd init --minimal\n\n")
+
+	buf.WriteString("  • From template\n")
+	buf.WriteString("      Creates a new project from an azd template.\n")
+	buf.WriteString("      azd template list\n")
+	buf.WriteString("      azd init --template <template-id> --environment <environment>\n\n")
+
+	buf.WriteString("Environment name must be globally unique (for example: myapp-dev).\n")
+
+	return buf.String()
+}
+
+func (e *initModeRequiredError) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+		Details struct {
+			Type    string                         `json:"type"`
+			Options []initModeRequiredErrorOptions `json:"options"`
+		} `json:"details"`
+	}{
+		Code:    "initModeRequired",
+		Message: "Init cannot continue (interactive prompts disabled)",
+		Details: struct {
+			Type    string                         `json:"type"`
+			Options []initModeRequiredErrorOptions `json:"options"`
+		}{
+			Type: "initModeRequired",
+			Options: []initModeRequiredErrorOptions{
+				{
+					Name:        "minimal",
+					Description: "Creates required azd project files in the current directory.",
+					Command:     "azd init --minimal",
+				},
+				{
+					Name:        "template",
+					Description: "Creates a new project from an azd template.",
+					Command:     "azd init --template <template-id> --environment <environment>",
+				},
+			},
+		},
+	})
+}
+
+type initModeRequiredErrorOptions struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Command     string `json:"command"`
 }

@@ -169,6 +169,7 @@ func (p *OpenAIProvider) UploadFile(ctx context.Context, filePath string) (strin
 		fmt.Printf("failed to start spinner: %v\n", err)
 	}
 
+	//nolint:gosec // filePath is an explicit user-provided local file path
 	file, err := os.Open(filePath)
 	if err != nil {
 		_ = spinner.Stop(ctx)
@@ -214,7 +215,7 @@ func (p *OpenAIProvider) UploadFile(ctx context.Context, filePath string) (strin
 }
 
 // GetUploadedFile retrieves information about an uploaded file
-func (p *OpenAIProvider) GetUploadedFile(ctx context.Context, fileID string) (interface{}, error) {
+func (p *OpenAIProvider) GetUploadedFile(ctx context.Context, fileID string) (any, error) {
 	// TODO: Implement
 	return nil, nil
 }

@@ -580,4 +580,44 @@ var (
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
+	// The list of installed extensions, each formatted as "id@version".
+	ExtensionsInstalled = AttributeKey{
+		Key:            attribute.Key("extension.installed"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+)
+
+// Update related fields
+var (
+	// UpdateChannel is the update channel (stable, daily).
+	UpdateChannel = AttributeKey{
+		Key:            attribute.Key("update.channel"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// UpdateInstallMethod is the install method (brew, winget, choco, script, etc.).
+	UpdateInstallMethod = AttributeKey{
+		Key:            attribute.Key("update.installMethod"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// UpdateFromVersion is the version before the update.
+	UpdateFromVersion = AttributeKey{
+		Key:            attribute.Key("update.fromVersion"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// UpdateToVersion is the target version for the update.
+	UpdateToVersion = AttributeKey{
+		Key:            attribute.Key("update.toVersion"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// UpdateResult is the outcome of the update operation.
+	UpdateResult = AttributeKey{
+		Key:            attribute.Key("update.result"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 )

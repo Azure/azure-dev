@@ -610,14 +610,14 @@ func ResolveSecretEnvironment(
 
 	result := make([]string, len(envVars))
 	for i, envVar := range envVars {
-		eqIdx := strings.Index(envVar, "=")
-		if eqIdx < 0 {
+		before, after, ok := strings.Cut(envVar, "=")
+		if !ok {
 			result[i] = envVar
 			continue
 		}
 
-		key := envVar[:eqIdx]
-		value := envVar[eqIdx+1:]
+		key := before
+		value := after
 
 		if !IsSecretReference(value) {
 			result[i] = envVar

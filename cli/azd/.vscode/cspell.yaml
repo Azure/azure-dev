@@ -77,6 +77,8 @@ words:
   - hostnames
   - seekable
   - seekability
+  - frontmatter
+  - triaging
 languageSettings:
   - languageId: go
     ignoreRegExpList:

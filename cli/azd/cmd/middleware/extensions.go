@@ -116,7 +116,6 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var failedExtensions []extensionFailure
-	var extErrors []error
 
 	// Track total time for all extensions to become ready
 	allExtensionsStartTime := time.Now()
@@ -178,9 +177,7 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 				}
 
 				if _, err := m.extensionRunner.Invoke(ctx, ext, options); err != nil {
-					mu.Lock()
-					extErrors = append(extErrors, err)
-					mu.Unlock()
+					log.Printf(err.Error())
 					ext.Fail(err)
 				}
 			}()
@@ -223,6 +220,7 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 
 		var needsUpdate []upgradeInfo
 		var timedOut []extensionFailure
+		var otherFailures []extensionFailure
 
 		cacheManager, cacheErr := extensions.NewRegistryCacheManager()
 		var upgradeChecker *extensions.UpdateChecker
@@ -246,11 +244,12 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 				}
 			}
 
-			// Only add UI warnings for extensions that outdated or timeout
 			if hasUpdate {
 				needsUpdate = append(needsUpdate, upgradeInfo{failure.extension, upgradeResult})
 			} else if failure.timedOut {
 				timedOut = append(timedOut, failure)
+			} else {
+				otherFailures = append(otherFailures, failure)
 			}
 		}
 
@@ -277,7 +276,7 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 			}
 			m.console.Message(ctx, fmt.Sprintf(
 				"Run %s to upgrade a specific extension, or %s to upgrade all extensions.",
-				output.WithHighLightFormat("azd extension upgrade <extension>"),
+				output.WithHighLightFormat("azd extension upgrade <extension-id>"),
 				output.WithHighLightFormat("azd extension upgrade --all"),
 			))
 			m.console.Message(ctx, "")
@@ -302,11 +301,10 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 			m.console.Message(ctx, "")
 		}
 
-		if len(extErrors) > 0 {
-			for _, e := range extErrors {
-				m.console.Message(ctx, e.Error())
+		if len(otherFailures) > 0 {
+			for _, failure := range otherFailures {
+				log.Printf("Extension '%s' failed to start: %v", failure.extension.Id, failure.err)
 			}
-			m.console.Message(ctx, "")
 		}
 
 		if len(failedExtensions) == 1 {

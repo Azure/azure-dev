@@ -59,7 +59,7 @@ func Test_CLI_MCP_Server_CallTool(t *testing.T) {
 	defer cleanup()
 
 	// Test calling error_troubleshooting tool
-	toolArgs := map[string]interface{}{
+	toolArgs := map[string]any{
 		"query": "azd provision failed with deployment error",
 	}
 

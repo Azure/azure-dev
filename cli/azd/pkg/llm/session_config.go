@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
 
@@ -118,15 +119,11 @@ func (b *SessionConfigBuilder) buildMCPServers(
 
 	// Add Azure plugin MCP servers
 	pluginServers := loadAzurePluginMCPServers()
-	for name, srv := range pluginServers {
-		merged[name] = srv
-	}
+	maps.Copy(merged, pluginServers)
 
 	// Merge user-configured servers (overrides built-in on name collision)
 	userServers := getUserMCPServers(userConfig)
-	for name, srv := range userServers {
-		merged[name] = srv
-	}
+	maps.Copy(merged, userServers)
 
 	if len(merged) == 0 {
 		return nil

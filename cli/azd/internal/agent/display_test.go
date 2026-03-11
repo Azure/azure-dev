@@ -110,21 +110,21 @@ func TestGetUsageMetrics(t *testing.T) {
 	d.HandleEvent(copilot.SessionEvent{
 		Type: copilot.AssistantUsage,
 		Data: copilot.Data{
-			InputTokens:  floatPtr(1000),
-			OutputTokens: floatPtr(500),
-			Cost:         floatPtr(1.0),
-			Duration:     floatPtr(5000),
-			Model:        strPtr("gpt-4.1"),
+			InputTokens:  new(float64(1000)),
+			OutputTokens: new(float64(500)),
+			Cost:         new(1.0),
+			Duration:     new(float64(5000)),
+			Model:        new("gpt-4.1"),
 		},
 	})
 
 	d.HandleEvent(copilot.SessionEvent{
 		Type: copilot.AssistantUsage,
 		Data: copilot.Data{
-			InputTokens:  floatPtr(2000),
-			OutputTokens: floatPtr(800),
-			Cost:         floatPtr(1.0),
-			Duration:     floatPtr(3000),
+			InputTokens:  new(float64(2000)),
+			OutputTokens: new(float64(800)),
+			Cost:         new(1.0),
+			Duration:     new(float64(3000)),
 		},
 	})
 
@@ -136,5 +136,8 @@ func TestGetUsageMetrics(t *testing.T) {
 	require.Equal(t, "gpt-4.1", metrics.Model)
 }
 
-func floatPtr(v float64) *float64 { return &v }
-func strPtr(v string) *string     { return &v }
+//go:fix inline
+func floatPtr(v float64) *float64 { return new(v) }
+
+//go:fix inline
+func strPtr(v string) *string { return new(v) }

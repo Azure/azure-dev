@@ -5,6 +5,7 @@ package agent
 
 import (
 	"fmt"
+	"strings"
 
 	copilot "github.com/github/copilot-sdk/go"
 
@@ -69,14 +70,14 @@ func (u UsageMetrics) Format() string {
 		}
 	}
 
-	result := ""
+	var result strings.Builder
 	for i, line := range lines {
 		if i > 0 {
-			result += "\n"
+			result.WriteString("\n")
 		}
-		result += line
+		result.WriteString(line)
 	}
-	return result
+	return result.String()
 }
 
 func formatTokenCount(tokens float64) string {

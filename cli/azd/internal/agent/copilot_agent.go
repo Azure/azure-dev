@@ -103,7 +103,7 @@ func (a *CopilotAgent) Initialize(ctx context.Context, opts ...InitOption) (*Ini
 		Message:         "Select reasoning effort level",
 		HelpMessage:     "Higher reasoning uses more premium requests and may cost more. You can change this later.",
 		Choices:         effortChoices,
-		SelectedIndex:   intPtr(1),
+		SelectedIndex:   new(1),
 		DisplayNumbers:  uxlib.Ptr(true),
 		EnableFiltering: uxlib.Ptr(true),
 		DisplayCount:    3,
@@ -148,7 +148,7 @@ func (a *CopilotAgent) Initialize(ctx context.Context, opts ...InitOption) (*Ini
 		Message:         "Select AI model",
 		HelpMessage:     "Premium models may use more requests. You can change this later.",
 		Choices:         modelChoices,
-		SelectedIndex:   intPtr(0),
+		SelectedIndex:   new(0),
 		DisplayNumbers:  uxlib.Ptr(true),
 		EnableFiltering: uxlib.Ptr(true),
 		DisplayCount:    min(len(modelChoices), 10),
@@ -634,7 +634,7 @@ func getInstalledPlugins(ctx context.Context, cliPath string) map[string]bool {
 	}
 
 	installed := make(map[string]bool)
-	for _, line := range strings.Split(string(out), "\n") {
+	for line := range strings.SplitSeq(string(out), "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "•") || strings.HasPrefix(line, "\u2022") {
 			name := strings.TrimPrefix(line, "•")
@@ -651,8 +651,9 @@ func getInstalledPlugins(ctx context.Context, cliPath string) map[string]bool {
 	return installed
 }
 
+//go:fix inline
 func intPtr(v int) *int {
-	return &v
+	return new(v)
 }
 
 func formatSessionTime(ts string) string {
@@ -690,8 +691,8 @@ func stripMarkdown(s string) string {
 	for i, line := range lines {
 		trimmed := strings.TrimLeft(line, " ")
 		for _, prefix := range []string{"###### ", "##### ", "#### ", "### ", "## ", "# "} {
-			if strings.HasPrefix(trimmed, prefix) {
-				lines[i] = strings.TrimPrefix(trimmed, prefix)
+			if after, ok := strings.CutPrefix(trimmed, prefix); ok {
+				lines[i] = after
 				break
 			}
 		}

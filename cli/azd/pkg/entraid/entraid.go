@@ -13,7 +13,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
@@ -527,7 +526,7 @@ func (ad *entraIdService) ensureRoleAssignment(
 ) error {
 	if scope == nil {
 		// Find the specified role in the subscription scope
-		scope = to.Ptr(azure.SubscriptionRID(subscriptionId))
+		scope = new(azure.SubscriptionRID(subscriptionId))
 	}
 
 	roleDefinition, err := ad.getRoleDefinition(ctx, subscriptionId, *scope, roleName)
@@ -552,11 +551,11 @@ func (ad *entraIdService) CreateRbac(
 		subscriptionId,
 		scope,
 		&armauthorization.RoleDefinition{
-			ID:   to.Ptr(fullRoleId),
-			Name: to.Ptr(roleId),
+			ID:   new(fullRoleId),
+			Name: new(roleId),
 		},
 		&graphsdk.ServicePrincipal{
-			Id: to.Ptr(principalId),
+			Id: new(principalId),
 		})
 }
 
@@ -570,7 +569,7 @@ func (ad *entraIdService) applyRoleAssignmentWithRetry(
 	scope *string,
 ) error {
 	if scope == nil {
-		scope = to.Ptr(azure.SubscriptionRID(subscriptionId))
+		scope = new(azure.SubscriptionRID(subscriptionId))
 	}
 
 	return ad.applyRoleAssignmentWithRetryImpl(ctx, subscriptionId, *scope, roleDefinition, servicePrincipal)
@@ -644,7 +643,7 @@ func (ad *entraIdService) getRoleDefinition(
 	}
 
 	pager := roleDefinitionsClient.NewListPager(scope, &armauthorization.RoleDefinitionsClientListOptions{
-		Filter: to.Ptr(fmt.Sprintf("roleName eq '%s'", roleName)),
+		Filter: new(fmt.Sprintf("roleName eq '%s'", roleName)),
 	})
 
 	roleDefinitions := []*armauthorization.RoleDefinition{}

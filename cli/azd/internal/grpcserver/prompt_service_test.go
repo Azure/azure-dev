@@ -8,7 +8,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
@@ -29,7 +28,7 @@ func Test_PromptService_Confirm_NoPromptWithDefault(t *testing.T) {
 	resp, err := service.Confirm(context.Background(), &azdext.ConfirmRequest{
 		Options: &azdext.ConfirmOptions{
 			Message:      "Continue?",
-			DefaultValue: to.Ptr(true),
+			DefaultValue: new(true),
 		},
 	})
 
@@ -59,7 +58,7 @@ func Test_PromptService_Select_NoPromptWithDefault(t *testing.T) {
 	resp, err := service.Select(context.Background(), &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
 			Message:       "Choose option:",
-			SelectedIndex: to.Ptr(int32(1)),
+			SelectedIndex: new(int32(1)),
 			Choices: []*azdext.SelectChoice{
 				{Value: "a", Label: "Option A"},
 				{Value: "b", Label: "Option B"},
@@ -249,9 +248,9 @@ func Test_PromptService_PromptResourceGroup(t *testing.T) {
 		},
 		Options: &azdext.PromptResourceGroupOptions{
 			SelectOptions: &azdext.PromptResourceSelectOptions{
-				AllowNewResource: to.Ptr(false),
+				AllowNewResource: new(false),
 				Message:          "Select resource group",
-				EnableFiltering:  to.Ptr(true),
+				EnableFiltering:  new(true),
 			},
 		},
 	})
@@ -337,7 +336,7 @@ func Test_PromptService_PromptSubscriptionResource(t *testing.T) {
 			ResourceType: "Microsoft.Storage/storageAccounts",
 			Kinds:        []string{"StorageV2", "BlobStorage"},
 			SelectOptions: &azdext.PromptResourceSelectOptions{
-				AllowNewResource: to.Ptr(false),
+				AllowNewResource: new(false),
 				Hint:             "Filter storage accounts",
 			},
 		},
@@ -397,7 +396,7 @@ func Test_PromptService_PromptResourceGroupResource(t *testing.T) {
 			ResourceTypeDisplayName: "Web App",
 			SelectOptions: &azdext.PromptResourceSelectOptions{
 				Message:         "Select a web app",
-				EnableFiltering: to.Ptr(true),
+				EnableFiltering: new(true),
 			},
 		},
 	})
@@ -432,30 +431,30 @@ func Test_CreateResourceGroupOptions(t *testing.T) {
 			name: "with all options",
 			input: &azdext.PromptResourceGroupOptions{
 				SelectOptions: &azdext.PromptResourceSelectOptions{
-					ForceNewResource:   to.Ptr(true),
-					AllowNewResource:   to.Ptr(false),
+					ForceNewResource:   new(true),
+					AllowNewResource:   new(false),
 					NewResourceMessage: "Create new RG",
 					Message:            "Select RG",
 					HelpMessage:        "Help text",
 					LoadingMessage:     "Loading...",
-					DisplayNumbers:     to.Ptr(true),
+					DisplayNumbers:     new(true),
 					DisplayCount:       10,
 					Hint:               "Hint text",
-					EnableFiltering:    to.Ptr(true),
+					EnableFiltering:    new(true),
 				},
 			},
 			expected: &prompt.ResourceGroupOptions{
 				SelectorOptions: &prompt.SelectOptions{
-					ForceNewResource:   to.Ptr(true),
-					AllowNewResource:   to.Ptr(false),
+					ForceNewResource:   new(true),
+					AllowNewResource:   new(false),
 					NewResourceMessage: "Create new RG",
 					Message:            "Select RG",
 					HelpMessage:        "Help text",
 					LoadingMessage:     "Loading...",
-					DisplayNumbers:     to.Ptr(true),
+					DisplayNumbers:     new(true),
 					DisplayCount:       10,
 					Hint:               "Hint text",
-					EnableFiltering:    to.Ptr(true),
+					EnableFiltering:    new(true),
 				},
 			},
 		},
@@ -508,9 +507,9 @@ func Test_CreateResourceOptions(t *testing.T) {
 			input: &azdext.PromptResourceOptions{
 				ResourceType: "Microsoft.Web/sites",
 				SelectOptions: &azdext.PromptResourceSelectOptions{
-					AllowNewResource: to.Ptr(true),
+					AllowNewResource: new(true),
 					Message:          "Select web app",
-					EnableFiltering:  to.Ptr(true),
+					EnableFiltering:  new(true),
 					Hint:             "Filter by name",
 				},
 			},
@@ -742,12 +741,12 @@ func Test_validateCapacityAgainstRemainingQuota(t *testing.T) {
 		{
 			name:      "capacity within remaining quota",
 			capacity:  10,
-			remaining: to.Ptr(float64(25)),
+			remaining: new(float64(25)),
 		},
 		{
 			name:        "capacity exceeds remaining quota",
 			capacity:    30,
-			remaining:   to.Ptr(float64(20)),
+			remaining:   new(float64(20)),
 			errContains: "at most 20",
 		},
 	}
@@ -802,7 +801,7 @@ func Test_buildSkuCandidatesForVersion(t *testing.T) {
 
 	t.Run("applies quota and capacity filters", func(t *testing.T) {
 		options := &ai.DeploymentOptions{
-			Capacity: to.Ptr(int32(5)),
+			Capacity: new(int32(5)),
 		}
 		quota := &azdext.QuotaCheckOptions{
 			MinRemainingCapacity: 1,
@@ -860,22 +859,22 @@ func Test_findDefaultIndex(t *testing.T) {
 		{
 			name:         "exact match returns index",
 			defaultValue: "gpt-4o-mini",
-			wantIndex:    to.Ptr(1),
+			wantIndex:    new(1),
 		},
 		{
 			name:         "case insensitive match",
 			defaultValue: "GPT-4O-MINI",
-			wantIndex:    to.Ptr(1),
+			wantIndex:    new(1),
 		},
 		{
 			name:         "first item match",
 			defaultValue: "gpt-4o",
-			wantIndex:    to.Ptr(0),
+			wantIndex:    new(0),
 		},
 		{
 			name:         "last item match",
 			defaultValue: "gpt-35-turbo",
-			wantIndex:    to.Ptr(2),
+			wantIndex:    new(2),
 		},
 		{
 			name:         "no match returns nil",

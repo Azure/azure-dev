@@ -16,7 +16,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -540,7 +539,7 @@ func showContainerApp(
 		val := env.Value
 
 		if env.SecretRef != nil {
-			val = to.Ptr("*******")
+			val = new("*******")
 
 			// dereference the secret ref
 			for _, secret := range secrets {
@@ -619,7 +618,7 @@ func showContainerAppJob(
 		val := env.Value
 
 		if env.SecretRef != nil {
-			val = to.Ptr("*******")
+			val = new("*******")
 
 			// dereference the secret ref
 			for _, secret := range secrets {

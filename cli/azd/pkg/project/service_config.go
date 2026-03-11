@@ -64,7 +64,7 @@ type ServiceConfig struct {
 	RemoteBuild *bool `yaml:"remoteBuild,omitempty"`
 
 	// AdditionalProperties captures any unknown YAML fields for extension support
-	AdditionalProperties map[string]interface{} `yaml:",inline"`
+	AdditionalProperties map[string]any `yaml:",inline"`
 
 	*ext.EventDispatcher[ServiceLifecycleEventArgs] `yaml:"-"`
 

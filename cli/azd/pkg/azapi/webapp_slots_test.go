@@ -31,8 +31,8 @@ func Test_HasAppServiceDeployments(t *testing.T) {
 				DeploymentCollection: armappservice.DeploymentCollection{
 					Value: []*armappservice.Deployment{
 						{
-							ID:   to.Ptr("deployment-1"),
-							Name: to.Ptr("deployment-1"),
+							ID:   new("deployment-1"),
+							Name: new("deployment-1"),
 						},
 					},
 				},
@@ -93,10 +93,10 @@ func Test_GetAppServiceSlots(t *testing.T) {
 				WebAppCollection: armappservice.WebAppCollection{
 					Value: []*armappservice.Site{
 						{
-							Name: to.Ptr("WEB_APP_NAME/staging"),
+							Name: new("WEB_APP_NAME/staging"),
 						},
 						{
-							Name: to.Ptr("WEB_APP_NAME/production"),
+							Name: new("WEB_APP_NAME/production"),
 						},
 					},
 				},
@@ -158,15 +158,15 @@ func Test_DeployAppServiceSlotZip(t *testing.T) {
 		}).RespondFn(func(request *http.Request) (*http.Response, error) {
 			response := armappservice.WebAppsClientGetSlotResponse{
 				Site: armappservice.Site{
-					Location: to.Ptr("eastus2"),
-					Kind:     to.Ptr("app"),
-					Name:     to.Ptr("WEB_APP_NAME/staging"),
+					Location: new("eastus2"),
+					Kind:     new("app"),
+					Name:     new("WEB_APP_NAME/staging"),
 					Properties: &armappservice.SiteProperties{
-						DefaultHostName: to.Ptr("WEB_APP_NAME-staging.azurewebsites.net"),
+						DefaultHostName: new("WEB_APP_NAME-staging.azurewebsites.net"),
 						HostNameSSLStates: []*armappservice.HostNameSSLState{
 							{
 								HostType: to.Ptr(armappservice.HostTypeRepository),
-								Name:     to.Ptr("WEB_APP_NAME_STAGING_SCM_HOST"),
+								Name:     new("WEB_APP_NAME_STAGING_SCM_HOST"),
 							},
 						},
 					},

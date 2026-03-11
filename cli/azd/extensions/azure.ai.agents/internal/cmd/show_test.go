@@ -95,7 +95,7 @@ func TestPrintStatusJSON_Format(t *testing.T) {
 	jsonBytes, err := json.MarshalIndent(container, "", "  ")
 	require.NoError(t, err)
 
-	var result map[string]interface{}
+	var result map[string]any
 	err = json.Unmarshal(jsonBytes, &result)
 	require.NoError(t, err)
 
@@ -122,15 +122,15 @@ func TestPrintStatusJSON_WithContainerDetails(t *testing.T) {
 	jsonBytes, err := json.MarshalIndent(container, "", "  ")
 	require.NoError(t, err)
 
-	var result map[string]interface{}
+	var result map[string]any
 	err = json.Unmarshal(jsonBytes, &result)
 	require.NoError(t, err)
 
 	assert.Equal(t, "Failed", result["status"])
-	containerMap := result["container"].(map[string]interface{})
+	containerMap := result["container"].(map[string]any)
 	assert.Equal(t, "Unhealthy", containerMap["health_state"])
 	assert.Equal(t, "ActivationFailed", containerMap["state"])
-	replicas := containerMap["replicas"].([]interface{})
+	replicas := containerMap["replicas"].([]any)
 	assert.Len(t, replicas, 1)
 }
 

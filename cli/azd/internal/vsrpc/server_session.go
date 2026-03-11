@@ -108,21 +108,21 @@ func (s *serverSession) newContainer(rc RequestContext) (*container, error) {
 	// Useful for debugging, direct all the output to the console, so you can see it in VS Code.
 	outWriter.AddWriter(&lineWriter{
 		next: writerFunc(func(p []byte) (n int, err error) {
-			os.Stdout.Write([]byte(fmt.Sprintf("[%s stdout] %s", id, string(p))))
+			os.Stdout.Write(fmt.Appendf(nil, "[%s stdout] %s", id, string(p)))
 			return n, nil
 		}),
 	})
 
 	errWriter.AddWriter(&lineWriter{
 		next: writerFunc(func(p []byte) (n int, err error) {
-			os.Stdout.Write([]byte(fmt.Sprintf("[%s stderr] %s", id, string(p))))
+			os.Stdout.Write(fmt.Appendf(nil, "[%s stderr] %s", id, string(p)))
 			return n, nil
 		}),
 	})
 
 	spinnerWriter.AddWriter(&lineWriter{
 		next: writerFunc(func(p []byte) (n int, err error) {
-			os.Stdout.Write([]byte(fmt.Sprintf("[%s spinner] %s", id, string(p))))
+			os.Stdout.Write(fmt.Appendf(nil, "[%s spinner] %s", id, string(p)))
 			return n, nil
 		}),
 	})

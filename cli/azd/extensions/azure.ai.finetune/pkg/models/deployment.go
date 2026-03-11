@@ -37,7 +37,7 @@ type Deployment struct {
 	DeletedAt *time.Time
 
 	// Metadata
-	VendorMetadata map[string]interface{}
+	VendorMetadata map[string]any
 	ErrorDetails   *ErrorDetail
 }
 

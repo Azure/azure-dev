@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/operationalinsights/armoperationalinsights/v2"
 )
 
@@ -50,7 +49,7 @@ func (cli *AzureClient) PurgeLogAnalyticsWorkspace(
 	}
 
 	deleteOpts := &armoperationalinsights.WorkspacesClientBeginDeleteOptions{
-		Force: to.Ptr(true),
+		Force: new(true),
 	}
 
 	// https://learn.microsoft.com/rest/api/loganalytics/workspaces/delete?view=rest-loganalytics-2025-07-01&tabs=HTTP

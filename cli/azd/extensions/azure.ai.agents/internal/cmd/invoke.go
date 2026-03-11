@@ -117,7 +117,7 @@ func (a *InvokeAction) invokeLocal(ctx context.Context) error {
 	fmt.Printf("Target:  localhost:%d (local)\n", port)
 	fmt.Printf("Message: %q\n\n", msg)
 
-	body := map[string]interface{}{
+	body := map[string]any{
 		"input": msg,
 	}
 	payload, err := json.Marshal(body)
@@ -152,7 +152,7 @@ func (a *InvokeAction) invokeLocal(ctx context.Context) error {
 		return fmt.Errorf("HTTP %d: %s\n%s", resp.StatusCode, resp.Status, string(respBody))
 	}
 
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		// Not JSON — just print raw response
 		fmt.Println(string(respBody))
@@ -190,7 +190,7 @@ func (a *InvokeAction) invokeRemote(ctx context.Context) error {
 	msg := a.flags.message
 
 	// Build request body — uses streaming to receive the full agent response.
-	body := map[string]interface{}{
+	body := map[string]any{
 		"input": msg,
 		"agent": map[string]string{
 			"name": name,
@@ -300,7 +300,7 @@ func createConversation(ctx context.Context, endpoint string, bearerToken string
 		return "", err
 	}
 
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal(body, &result); err != nil {
 		return "", err
 	}
@@ -324,13 +324,13 @@ func readSSEStream(body io.Reader, agentName string) error {
 	for scanner.Scan() {
 		line := scanner.Text()
 
-		if strings.HasPrefix(line, "event: ") {
-			currentEvent = strings.TrimPrefix(line, "event: ")
+		if after, ok := strings.CutPrefix(line, "event: "); ok {
+			currentEvent = after
 			continue
 		}
 
-		if strings.HasPrefix(line, "data: ") {
-			data := strings.TrimPrefix(line, "data: ")
+		if after, ok := strings.CutPrefix(line, "data: "); ok {
+			data := after
 
 			switch currentEvent {
 			case "response.output_text.delta":
@@ -354,10 +354,10 @@ func readSSEStream(body io.Reader, agentName string) error {
 					Response json.RawMessage `json:"response"`
 				}
 				if err := json.Unmarshal([]byte(data), &event); err == nil && event.Response != nil {
-					var result map[string]interface{}
+					var result map[string]any
 					if err := json.Unmarshal(event.Response, &result); err == nil {
 						if status, _ := result["status"].(string); status == "failed" {
-							if errObj, ok := result["error"].(map[string]interface{}); ok {
+							if errObj, ok := result["error"].(map[string]any); ok {
 								msg, _ := errObj["message"].(string)
 								code, _ := errObj["code"].(string)
 								return fmt.Errorf("agent failed (%s): %s", code, msg)
@@ -402,10 +402,10 @@ func readSSEStream(body io.Reader, agentName string) error {
 }
 
 // printAgentResponse pretty-prints the output_text items from an agent response.
-func printAgentResponse(result map[string]interface{}, title string) error {
+func printAgentResponse(result map[string]any, title string) error {
 	// Check for agent-level errors (e.g., agent runtime failures)
 	if status, _ := result["status"].(string); status == "failed" {
-		if errObj, ok := result["error"].(map[string]interface{}); ok {
+		if errObj, ok := result["error"].(map[string]any); ok {
 			msg, _ := errObj["message"].(string)
 			code, _ := errObj["code"].(string)
 			return fmt.Errorf("agent failed (%s): %s", code, msg)
@@ -419,7 +419,7 @@ func printAgentResponse(result map[string]interface{}, title string) error {
 		return fmt.Errorf("agent error (%s): %s", code, msg)
 	}
 
-	outputItems, ok := result["output"].([]interface{})
+	outputItems, ok := result["output"].([]any)
 	if !ok {
 		// Try printing the whole response as formatted JSON
 		jsonBytes, _ := json.MarshalIndent(result, "", "  ")
@@ -429,16 +429,16 @@ func printAgentResponse(result map[string]interface{}, title string) error {
 
 	printed := false
 	for _, item := range outputItems {
-		itemMap, ok := item.(map[string]interface{})
+		itemMap, ok := item.(map[string]any)
 		if !ok {
 			continue
 		}
-		contentItems, ok := itemMap["content"].([]interface{})
+		contentItems, ok := itemMap["content"].([]any)
 		if !ok {
 			continue
 		}
 		for _, content := range contentItems {
-			contentMap, ok := content.(map[string]interface{})
+			contentMap, ok := content.(map[string]any)
 			if !ok {
 				continue
 			}

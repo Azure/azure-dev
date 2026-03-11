@@ -80,6 +80,15 @@ Run linter (install [golangci-lint](https://golangci-lint.run/welcome/install/#l
 golangci-lint run ./...
 ```
 
+Run code modernization check ([go fix](https://go.dev/blog/gofix)):
+
+```bash
+go fix -diff ./...
+```
+
+If `go fix -diff` reports any changes, apply them with `go fix ./...` and commit the result.
+CI enforces this check — PRs with pending `go fix` suggestions will fail the lint workflow.
+
 > Note: On Windows you may need to add `C:\Program Files\Git\usr\bin` to `%PATH%`
 
 ### Debugging (with VSCode)

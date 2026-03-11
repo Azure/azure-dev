@@ -10,6 +10,7 @@ package ioc
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"regexp"
 
@@ -38,9 +39,7 @@ func NewNestedContainer(parent *NestedContainer) *NestedContainer {
 	if parent != nil {
 		// Copy the bindings to the new container
 		// The bindings hold the concrete instance of singleton registrations
-		for key, value := range parent.inner {
-			current[key] = value
-		}
+		maps.Copy(current, parent.inner)
 	}
 
 	instance := &NestedContainer{
@@ -60,13 +59,13 @@ func NewRegistrationsOnly(from *NestedContainer) *NestedContainer {
 		// Reset all concrete instances by copying 'resolver' and 'isSingleton' fields
 		// Reflection is necessary since *container.binding is unexported
 		for key, value := range from.inner {
-			var valueType = reflect.TypeOf(value)
-			newValue := reflect.MakeMapWithSize(valueType, len(value))
+			valueReflect := reflect.ValueOf(value)
+			newValue := reflect.MakeMapWithSize(valueReflect.Type(), len(value))
 
 			for name, binding := range value {
 				bindingVal := reflect.ValueOf(binding).Elem()
 
-				newBinding := reflect.New(reflect.TypeOf(binding).Elem())
+				newBinding := reflect.New(bindingVal.Type())
 				setUnexportedField(
 					newBinding.Elem().FieldByName("resolver"),
 					getUnexportedField(bindingVal.FieldByName("resolver")))
@@ -91,11 +90,11 @@ func NewRegistrationsOnly(from *NestedContainer) *NestedContainer {
 	return instance
 }
 
-func getUnexportedField(field reflect.Value) interface{} {
+func getUnexportedField(field reflect.Value) any {
 	return reflect.NewAt(field.Type(), field.Addr().UnsafePointer()).Elem().Interface()
 }
 
-func setUnexportedField(field reflect.Value, value interface{}) {
+func setUnexportedField(field reflect.Value, value any) {
 	reflect.NewAt(field.Type(), field.Addr().UnsafePointer()).
 		Elem().
 		Set(reflect.ValueOf(value))

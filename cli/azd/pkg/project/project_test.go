@@ -45,13 +45,13 @@ services:
 	mockContext := mocks.NewMockContext(context.Background())
 	mockarmresources.AddAzResourceListMock(
 		mockContext.HttpClient,
-		to.Ptr("rg-test"),
+		new("rg-test"),
 		[]*armresources.GenericResourceExpanded{
 			{
-				ID:       to.Ptr("deployedApiSvc"),
-				Name:     to.Ptr("deployedApiSvc"),
+				ID:       new("deployedApiSvc"),
+				Name:     new("deployedApiSvc"),
 				Type:     to.Ptr(string(azapi.AzureResourceTypeWebSite)),
-				Location: to.Ptr("eastus2"),
+				Location: new("eastus2"),
 			},
 		})
 	resourceService := azapi.NewResourceService(mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
@@ -90,15 +90,15 @@ services:
 	resourceName := "app-api-abc123"
 	mockarmresources.AddAzResourceListMock(
 		mockContext.HttpClient,
-		to.Ptr("rg-test"),
+		new("rg-test"),
 		[]*armresources.GenericResourceExpanded{
 			{
-				ID:       to.Ptr("app-api-abc123"),
+				ID:       new("app-api-abc123"),
 				Name:     &resourceName,
 				Type:     to.Ptr(string(azapi.AzureResourceTypeWebSite)),
-				Location: to.Ptr("eastus2"),
+				Location: new("eastus2"),
 				Tags: map[string]*string{
-					azure.TagKeyAzdServiceName: to.Ptr("api"),
+					azure.TagKeyAzdServiceName: new("api"),
 				},
 			},
 		},
@@ -145,18 +145,18 @@ services:
 		&resourceGroupName,
 		[]*armresources.GenericResourceExpanded{
 			{
-				ID:       to.Ptr("deployedApiSvc"),
-				Name:     to.Ptr("deployedApiSvc"),
+				ID:       new("deployedApiSvc"),
+				Name:     new("deployedApiSvc"),
 				Type:     to.Ptr(string(azapi.AzureResourceTypeWebSite)),
-				Location: to.Ptr("eastus2"),
+				Location: new("eastus2"),
 			},
 			{
-				ID:       to.Ptr("webResource"),
-				Name:     to.Ptr("webResource"),
+				ID:       new("webResource"),
+				Name:     new("webResource"),
 				Type:     to.Ptr(string(azapi.AzureResourceTypeWebSite)),
-				Location: to.Ptr("eastus2"),
+				Location: new("eastus2"),
 				Tags: map[string]*string{
-					azure.TagKeyAzdServiceName: to.Ptr("web"),
+					azure.TagKeyAzdServiceName: new("web"),
 				},
 			},
 		})
@@ -206,18 +206,18 @@ services:
 		&expectedResourceGroupName,
 		[]*armresources.GenericResourceExpanded{
 			{
-				ID:       to.Ptr("deployedApiSvc"),
-				Name:     to.Ptr("deployedApiSvc"),
+				ID:       new("deployedApiSvc"),
+				Name:     new("deployedApiSvc"),
 				Type:     to.Ptr(string(azapi.AzureResourceTypeWebSite)),
-				Location: to.Ptr("eastus2"),
+				Location: new("eastus2"),
 			},
 			{
-				ID:       to.Ptr("webResource"),
-				Name:     to.Ptr("webResource"),
+				ID:       new("webResource"),
+				Name:     new("webResource"),
 				Type:     to.Ptr(string(azapi.AzureResourceTypeWebSite)),
-				Location: to.Ptr("eastus2"),
+				Location: new("eastus2"),
 				Tags: map[string]*string{
-					azure.TagKeyAzdServiceName: to.Ptr("web"),
+					azure.TagKeyAzdServiceName: new("web"),
 				},
 			},
 		})
@@ -736,17 +736,17 @@ func TestAdditionalPropertiesMarshalling(t *testing.T) {
 						RelativePath: "./src/api",
 					},
 				},
-				AdditionalProperties: map[string]interface{}{
+				AdditionalProperties: map[string]any{
 					"customProjectField": "project-level-extension",
-					"organizationSettings": map[string]interface{}{
+					"organizationSettings": map[string]any{
 						"billing":    "department-a",
 						"compliance": true,
-						"tags":       []interface{}{"production", "critical"},
+						"tags":       []any{"production", "critical"},
 					},
-					"extensionConfig": map[string]interface{}{
+					"extensionConfig": map[string]any{
 						"timeout": 300,
 						"retries": 3,
-						"database": map[string]interface{}{
+						"database": map[string]any{
 							"host": "localhost",
 							"port": 5432,
 						},
@@ -763,17 +763,17 @@ func TestAdditionalPropertiesMarshalling(t *testing.T) {
 						Language:     ServiceLanguageJavaScript,
 						Host:         ContainerAppTarget,
 						RelativePath: "./src/api",
-						AdditionalProperties: map[string]interface{}{
+						AdditionalProperties: map[string]any{
 							"customServiceField": "service-level-extension",
-							"monitoring": map[string]interface{}{
+							"monitoring": map[string]any{
 								"metrics": true,
 								"logging": "verbose",
-								"alerts":  []interface{}{"cpu > 80%", "memory > 90%"},
+								"alerts":  []any{"cpu > 80%", "memory > 90%"},
 							},
-							"extensionSettings": map[string]interface{}{
+							"extensionSettings": map[string]any{
 								"caching": "redis",
 								"timeout": 30,
-								"features": map[string]interface{}{
+								"features": map[string]any{
 									"featureA": true,
 									"featureB": false,
 								},
@@ -784,8 +784,8 @@ func TestAdditionalPropertiesMarshalling(t *testing.T) {
 						Language:     ServiceLanguageTypeScript,
 						Host:         StaticWebAppTarget,
 						RelativePath: "./src/web",
-						AdditionalProperties: map[string]interface{}{
-							"deployment": map[string]interface{}{
+						AdditionalProperties: map[string]any{
+							"deployment": map[string]any{
 								"strategy": "blue-green",
 								"region":   "eastus",
 							},
@@ -803,17 +803,17 @@ func TestAdditionalPropertiesMarshalling(t *testing.T) {
 						Language:     ServiceLanguageJavaScript,
 						Host:         ContainerAppTarget,
 						RelativePath: "./src/api",
-						AdditionalProperties: map[string]interface{}{
+						AdditionalProperties: map[string]any{
 							"serviceExtension": "api-specific",
-							"customConfig": map[string]interface{}{
+							"customConfig": map[string]any{
 								"setting1": "value1",
 							},
 						},
 					},
 				},
-				AdditionalProperties: map[string]interface{}{
+				AdditionalProperties: map[string]any{
 					"projectExtension": "global-setting",
-					"sharedConfig": map[string]interface{}{
+					"sharedConfig": map[string]any{
 						"environment": "production",
 						"version":     "1.0.0",
 					},
@@ -857,10 +857,10 @@ func TestAdditionalPropertiesMarshalling(t *testing.T) {
 
 // ExtensionConfig represents a type-safe configuration structure that an extension might define
 type ExtensionConfig struct {
-	Timeout  int                    `yaml:"timeout"`
-	Retries  int                    `yaml:"retries"`
-	Database DatabaseConfig         `yaml:"database"`
-	Features map[string]interface{} `yaml:"features,omitempty"`
+	Timeout  int            `yaml:"timeout"`
+	Retries  int            `yaml:"retries"`
+	Database DatabaseConfig `yaml:"database"`
+	Features map[string]any `yaml:"features,omitempty"`
 }
 
 type DatabaseConfig struct {
@@ -877,30 +877,30 @@ func TestAdditionalPropertiesExtraction(t *testing.T) {
 				Language:     ServiceLanguageJavaScript,
 				Host:         ContainerAppTarget,
 				RelativePath: "./src/api",
-				AdditionalProperties: map[string]interface{}{
+				AdditionalProperties: map[string]any{
 					"customServiceField": "service-extension",
-					"monitoring": map[string]interface{}{
+					"monitoring": map[string]any{
 						"enabled": true,
 						"level":   "verbose",
 					},
 				},
 			},
 		},
-		AdditionalProperties: map[string]interface{}{
+		AdditionalProperties: map[string]any{
 			"customProjectField": "project-extension",
-			"extensionConfig": map[string]interface{}{
+			"extensionConfig": map[string]any{
 				"timeout": 300,
 				"retries": 3,
-				"database": map[string]interface{}{
+				"database": map[string]any{
 					"host": "localhost",
 					"port": 5432,
 				},
-				"features": map[string]interface{}{
+				"features": map[string]any{
 					"caching":    true,
 					"monitoring": false,
 				},
 			},
-			"otherExtension": map[string]interface{}{
+			"otherExtension": map[string]any{
 				"setting1": "value1",
 				"setting2": 42,
 			},
@@ -974,7 +974,7 @@ func TestAdditionalPropertiesExtraction(t *testing.T) {
 		extensionConfig.Database.Host = "production-db"
 
 		// Create a new config from the modified struct and extract as raw map
-		modifiedCfg := config.NewConfig(map[string]interface{}{
+		modifiedCfg := config.NewConfig(map[string]any{
 			"extensionConfig": extensionConfig,
 		})
 		modifiedRaw := modifiedCfg.Raw()

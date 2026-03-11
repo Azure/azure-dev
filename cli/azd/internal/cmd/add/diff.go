@@ -118,8 +118,8 @@ func diffNotEq(diffs []dmp.Diff) bool {
 func lineDiffsFromStr(op dmp.Operation, s string) []diffLine {
 	var result []diffLine
 
-	lines := strings.Split(s, "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(s, "\n")
+	for line := range lines {
 		result = append(result, diffLine{Text: line, Type: op})
 	}
 
@@ -144,9 +144,9 @@ func linesDiffsFromTextDiffs(diffs []dmp.Diff) []diffLine {
 	var result []diffLine
 
 	for _, diff := range diffs {
-		lines := strings.Split(diff.Text, "\n")
+		lines := strings.SplitSeq(diff.Text, "\n")
 
-		for _, line := range lines {
+		for line := range lines {
 			result = append(result, diffLine{Text: line, Type: diff.Type})
 		}
 	}

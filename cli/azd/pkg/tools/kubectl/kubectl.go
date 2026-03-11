@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -116,9 +117,7 @@ func (cli *Cli) Name() string {
 
 // Sets the env vars available to the CLI
 func (cli *Cli) SetEnv(envValues map[string]string) {
-	for key, value := range envValues {
-		cli.env[key] = value
-	}
+	maps.Copy(cli.env, envValues)
 }
 
 // Sets the KUBECONFIG environment variable

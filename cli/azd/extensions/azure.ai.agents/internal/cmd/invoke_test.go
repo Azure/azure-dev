@@ -110,18 +110,18 @@ func TestPrintAgentResponse(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		result  map[string]interface{}
+		result  map[string]any
 		wantErr bool
 		errMsg  string
 	}{
 		{
 			name: "successful output_text",
-			result: map[string]interface{}{
+			result: map[string]any{
 				"status": "completed",
-				"output": []interface{}{
-					map[string]interface{}{
-						"content": []interface{}{
-							map[string]interface{}{
+				"output": []any{
+					map[string]any{
+						"content": []any{
+							map[string]any{
 								"type": "output_text",
 								"text": "Hello from agent",
 							},
@@ -133,9 +133,9 @@ func TestPrintAgentResponse(t *testing.T) {
 		},
 		{
 			name: "failed status with error details",
-			result: map[string]interface{}{
+			result: map[string]any{
 				"status": "failed",
-				"error": map[string]interface{}{
+				"error": map[string]any{
 					"code":    "timeout",
 					"message": "agent timed out",
 				},
@@ -145,7 +145,7 @@ func TestPrintAgentResponse(t *testing.T) {
 		},
 		{
 			name: "failed status without error details",
-			result: map[string]interface{}{
+			result: map[string]any{
 				"status": "failed",
 			},
 			wantErr: true,
@@ -153,7 +153,7 @@ func TestPrintAgentResponse(t *testing.T) {
 		},
 		{
 			name: "server error code",
-			result: map[string]interface{}{
+			result: map[string]any{
 				"code":    "server_error",
 				"message": "internal error",
 			},
@@ -162,7 +162,7 @@ func TestPrintAgentResponse(t *testing.T) {
 		},
 		{
 			name: "no output key prints JSON",
-			result: map[string]interface{}{
+			result: map[string]any{
 				"status": "completed",
 				"id":     "resp_123",
 			},
@@ -170,18 +170,18 @@ func TestPrintAgentResponse(t *testing.T) {
 		},
 		{
 			name: "empty output array prints JSON",
-			result: map[string]interface{}{
-				"output": []interface{}{},
+			result: map[string]any{
+				"output": []any{},
 			},
 			wantErr: false,
 		},
 		{
 			name: "content with non-output_text type is skipped",
-			result: map[string]interface{}{
-				"output": []interface{}{
-					map[string]interface{}{
-						"content": []interface{}{
-							map[string]interface{}{
+			result: map[string]any{
+				"output": []any{
+					map[string]any{
+						"content": []any{
+							map[string]any{
 								"type": "image",
 								"url":  "https://example.com/img.png",
 							},

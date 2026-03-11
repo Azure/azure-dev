@@ -11,7 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -49,7 +48,7 @@ func Test_Powershell_Execute(t *testing.T) {
 		runResult, err := powershellScript.Execute(
 			*mockContext.Context,
 			scriptPath,
-			tools.ExecOptions{UserPwsh: userPwsh, Interactive: to.Ptr(true)},
+			tools.ExecOptions{UserPwsh: userPwsh, Interactive: new(true)},
 		)
 
 		require.NotNil(t, runResult)
@@ -94,7 +93,7 @@ func Test_Powershell_Execute(t *testing.T) {
 		runResult, err := powershellScript.Execute(
 			*mockContext.Context,
 			scriptPath,
-			tools.ExecOptions{UserPwsh: userPwsh, Interactive: to.Ptr(true)},
+			tools.ExecOptions{UserPwsh: userPwsh, Interactive: new(true)},
 		)
 
 		require.NotNil(t, runResult)
@@ -117,7 +116,7 @@ func Test_Powershell_Execute(t *testing.T) {
 		runResult, err := powershellScript.Execute(
 			*mockContext.Context,
 			scriptPath,
-			tools.ExecOptions{UserPwsh: "pwsh", Interactive: to.Ptr(true)},
+			tools.ExecOptions{UserPwsh: "pwsh", Interactive: new(true)},
 		)
 
 		require.Equal(t, 1, runResult.ExitCode)
@@ -135,7 +134,7 @@ func Test_Powershell_Execute(t *testing.T) {
 		_, err := powershellScript.Execute(
 			*mockContext.Context,
 			scriptPath,
-			tools.ExecOptions{UserPwsh: "pwsh", Interactive: to.Ptr(true)},
+			tools.ExecOptions{UserPwsh: "pwsh", Interactive: new(true)},
 		)
 
 		require.Error(t, err)
@@ -145,8 +144,8 @@ func Test_Powershell_Execute(t *testing.T) {
 		name  string
 		value tools.ExecOptions
 	}{
-		{name: "Interactive", value: tools.ExecOptions{UserPwsh: "pwsh", Interactive: to.Ptr(true)}},
-		{name: "NonInteractive", value: tools.ExecOptions{UserPwsh: "pwsh", Interactive: to.Ptr(false)}},
+		{name: "Interactive", value: tools.ExecOptions{UserPwsh: "pwsh", Interactive: new(true)}},
+		{name: "NonInteractive", value: tools.ExecOptions{UserPwsh: "pwsh", Interactive: new(false)}},
 	}
 
 	for _, test := range tests {

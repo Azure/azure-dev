@@ -51,13 +51,13 @@ func ParameterTypeFromArmType(armType string) ParameterType {
 
 type InputParameter struct {
 	Type         string
-	DefaultValue interface{}
-	Value        interface{}
+	DefaultValue any
+	Value        any
 }
 
 type OutputParameter struct {
 	Type  ParameterType
-	Value interface{}
+	Value any
 }
 
 // OutputParametersFromArmOutputs converts the outputs from an ARM deployment to a map of provisioning.OutputParameter.

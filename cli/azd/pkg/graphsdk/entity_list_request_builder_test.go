@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockgraphsdk"
@@ -20,11 +19,11 @@ import (
 func TestEntityListRequestBuilder(t *testing.T) {
 	applications := []graphsdk.Application{
 		{
-			Id:          to.Ptr("1"),
+			Id:          new("1"),
 			DisplayName: "App 1",
 		},
 		{
-			Id:          to.Ptr("2"),
+			Id:          new("2"),
 			DisplayName: "App 2",
 		},
 	}

@@ -13,7 +13,7 @@ import (
 )
 
 func TestUnmarshalObserver(t *testing.T) {
-	fnType := reflect.TypeOf(func(ctx context.Context, o *Observer[int]) error { return nil })
+	fnType := reflect.TypeFor[func(ctx context.Context, o *Observer[int]) error]()
 
 	t.Parallel()
 	t.Run("Ok", func(t *testing.T) {

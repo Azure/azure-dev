@@ -19,7 +19,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/agent"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/feedback"
-	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -414,7 +413,7 @@ func (i *initAction) initAppWithAgent(ctx context.Context) error {
 			ServerName: "*",
 			Operation:  consent.OperationTypeTool,
 			Annotations: mcp.ToolAnnotation{
-				ReadOnlyHint: common.ToPtr(true),
+				ReadOnlyHint: new(true),
 			},
 		},
 	)

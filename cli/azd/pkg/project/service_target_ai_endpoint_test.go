@@ -74,45 +74,45 @@ func Test_MlEndpointTarget_Deploy(t *testing.T) {
 	}
 
 	environmentVersion := &armmachinelearning.EnvironmentVersion{
-		Name: to.Ptr("1"),
+		Name: new("1"),
 		Properties: &armmachinelearning.EnvironmentVersionProperties{
 			EnvironmentType: to.Ptr(armmachinelearning.EnvironmentTypeUserCreated),
 		},
-		ID: to.Ptr(
+		ID: new(
 			//nolint:lll
 			"/subscriptions/test/resourceGroups/test/providers/Microsoft.MachineLearningServices/workspaces/test/environments/test/versions/1",
 		),
-		Type: to.Ptr("Microsoft.MachineLearningServices/workspaces/environments/versions"),
+		Type: new("Microsoft.MachineLearningServices/workspaces/environments/versions"),
 	}
 
 	modelVersion := &armmachinelearning.ModelVersion{
-		Name: to.Ptr("1"),
-		ID: to.Ptr(
+		Name: new("1"),
+		ID: new(
 			//nolint:lll
 			"/subscriptions/test/resourceGroups/test/providers/Microsoft.MachineLearningServices/workspaces/test/models/test/versions/1",
 		),
-		Type: to.Ptr("Microsoft.MachineLearningServices/workspaces/models/versions"),
+		Type: new("Microsoft.MachineLearningServices/workspaces/models/versions"),
 		Properties: &armmachinelearning.ModelVersionProperties{
-			ModelType: to.Ptr("CustomModel"),
+			ModelType: new("CustomModel"),
 		},
 	}
 
 	onlineDeployment := &armmachinelearning.OnlineDeployment{
 		Name: &expectedDeploymentName,
-		ID: to.Ptr(
+		ID: new(
 			//nolint:lll
 			"/subscriptions/test/resourceGroups/test/providers/Microsoft.MachineLearningServices/workspaces/test/onlineEndpoints/test/deployments/" + expectedDeploymentName,
 		),
-		Type: to.Ptr("Microsoft.MachineLearningServices/workspaces/onlineEndpoints/deployments"),
+		Type: new("Microsoft.MachineLearningServices/workspaces/onlineEndpoints/deployments"),
 	}
 
 	onlineEndpoint := &armmachinelearning.OnlineEndpoint{
-		Name: to.Ptr(endpointName),
+		Name: new(endpointName),
 		Properties: &armmachinelearning.OnlineEndpointProperties{
-			ScoringURI: to.Ptr("https://SCRORING_URI"),
-			SwaggerURI: to.Ptr("https://SWAGGER_URI"),
+			ScoringURI: new("https://SCRORING_URI"),
+			SwaggerURI: new("https://SWAGGER_URI"),
 			Traffic: map[string]*int32{
-				deploymentName: to.Ptr(int32(100)),
+				deploymentName: new(int32(100)),
 			},
 		},
 	}

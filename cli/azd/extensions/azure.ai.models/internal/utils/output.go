@@ -21,7 +21,7 @@ const (
 )
 
 // PrintObject prints a struct or slice in the specified format
-func PrintObject(obj interface{}, format OutputFormat) error {
+func PrintObject(obj any, format OutputFormat) error {
 	switch format {
 	case FormatJSON:
 		return printJSON(obj)
@@ -32,7 +32,7 @@ func PrintObject(obj interface{}, format OutputFormat) error {
 	}
 }
 
-func printJSON(obj interface{}) error {
+func printJSON(obj any) error {
 	data, err := json.MarshalIndent(obj, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal JSON: %w", err)
@@ -41,9 +41,9 @@ func printJSON(obj interface{}) error {
 	return nil
 }
 
-func printTable(obj interface{}) error {
+func printTable(obj any) error {
 	v := reflect.ValueOf(obj)
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		if v.IsNil() {
 			return fmt.Errorf("table format does not support nil pointer values")
 		}
@@ -88,7 +88,7 @@ func printSliceAsTable(v reflect.Value) error {
 	}
 
 	firstElem := v.Index(0)
-	if firstElem.Kind() == reflect.Ptr {
+	if firstElem.Kind() == reflect.Pointer {
 		if firstElem.IsNil() {
 			return fmt.Errorf("first slice element is nil")
 		}
@@ -120,7 +120,7 @@ func printSliceAsTable(v reflect.Value) error {
 
 	for i := 0; i < v.Len(); i++ {
 		elem := v.Index(i)
-		if elem.Kind() == reflect.Ptr {
+		if elem.Kind() == reflect.Pointer {
 			if elem.IsNil() {
 				continue // Skip nil elements
 			}
@@ -160,7 +160,7 @@ func formatFieldValue(v reflect.Value) string {
 		return "-"
 	}
 
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		if v.IsNil() {
 			return "-"
 		}

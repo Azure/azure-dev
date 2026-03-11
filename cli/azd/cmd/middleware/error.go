@@ -518,7 +518,7 @@ func promptForErrorHandlingConsent(
 		Message:         message,
 		HelpMessage:     helpMessage,
 		Choices:         choices,
-		EnableFiltering: uxlib.Ptr(false),
+		EnableFiltering: new(false),
 		DisplayCount:    len(choices),
 	})
 
@@ -566,7 +566,7 @@ func (e *ErrorMiddleware) promptExplanationWithConsent(ctx context.Context) (str
 			" Edit permissions anytime by running %s.",
 			output.WithHighLightFormat("azd mcp consent")),
 		Choices:         choices,
-		EnableFiltering: uxlib.Ptr(false),
+		EnableFiltering: new(false),
 		DisplayCount:    len(choices),
 	})
 
@@ -582,8 +582,8 @@ func (e *ErrorMiddleware) promptExplanationWithConsent(ctx context.Context) (str
 	selected := choices[*choiceIndex].Value
 
 	// Handle "always" variants — save to config and return the scope
-	if strings.HasPrefix(selected, "always.") {
-		scope := strings.TrimPrefix(selected, "always.")
+	if after, ok := strings.CutPrefix(selected, "always."); ok {
+		scope := after
 		configKey := configPrefix + "." + scope
 		if err := userConfig.Set(configKey, "allow"); err != nil {
 			return "", fmt.Errorf("failed to set config %s: %w", configKey, err)
@@ -615,7 +615,7 @@ func (e *ErrorMiddleware) promptForFixGuidance(ctx context.Context) (bool, error
 	selector := uxlib.NewSelect(&uxlib.SelectOptions{
 		Message:         "Do you want to generate step-by-step fix guidance?",
 		Choices:         choices,
-		EnableFiltering: uxlib.Ptr(false),
+		EnableFiltering: new(false),
 		DisplayCount:    len(choices),
 	})
 
@@ -686,7 +686,7 @@ func promptUserForSolution(ctx context.Context, solutions []string, agentName st
 		Message:         fmt.Sprintf("Allow %s to fix the error?", agentName),
 		HelpMessage:     "Select a suggested fix, or let AI decide",
 		Choices:         choices,
-		EnableFiltering: uxlib.Ptr(false),
+		EnableFiltering: new(false),
 		DisplayCount:    len(choices),
 	})
 

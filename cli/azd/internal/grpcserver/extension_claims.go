@@ -37,7 +37,7 @@ func GenerateExtensionToken(extension *extensions.Extension, serverInfo *ServerI
 func ParseExtensionToken(tokenValue string, serverInfo *ServerInfo) (*extensions.ExtensionClaims, error) {
 	claims := &extensions.ExtensionClaims{}
 
-	token, err := jwt.ParseWithClaims(tokenValue, claims, func(t *jwt.Token) (interface{}, error) {
+	token, err := jwt.ParseWithClaims(tokenValue, claims, func(t *jwt.Token) (any, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
 		}

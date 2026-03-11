@@ -293,7 +293,7 @@ func openBrowserWindows(ctx context.Context,
 	resp, err := prompter.Confirm(ctx, &azdext.ConfirmRequest{
 		Options: &azdext.ConfirmOptions{
 			Message:      "Open browser window to create a pull request?",
-			DefaultValue: to.Ptr(true),
+			DefaultValue: new(true),
 		},
 	})
 
@@ -510,9 +510,9 @@ func createFederatedCredential(ctx context.Context,
 
 	armFedCreds := []rm_armmsi.FederatedIdentityCredential{
 		{
-			Name: to.Ptr(url.PathEscape(fmt.Sprintf("%s-copilot-env", credentialSafeName))),
+			Name: new(url.PathEscape(fmt.Sprintf("%s-copilot-env", credentialSafeName))),
 			Properties: &rm_armmsi.FederatedIdentityCredentialProperties{
-				Subject:   to.Ptr(fmt.Sprintf("repo:%s:environment:%s", repoSlug, copilotEnvName)),
+				Subject:   new(fmt.Sprintf("repo:%s:environment:%s", repoSlug, copilotEnvName)),
 				Issuer:    to.Ptr(federatedIdentityIssuer),
 				Audiences: []*string{to.Ptr(federatedIdentityAudience)},
 			},
@@ -693,7 +693,7 @@ func pickOrCreateMSI(ctx context.Context,
 					DisplayName: *managedIdentity.Name,
 				},
 				&entraid.EnsureRoleAssignmentsOptions{
-					Scope: to.Ptr(azure.ResourceGroupRID(subscriptionId, parsedID.ResourceGroupName)),
+					Scope: new(azure.ResourceGroupRID(subscriptionId, parsedID.ResourceGroupName)),
 				},
 			)
 

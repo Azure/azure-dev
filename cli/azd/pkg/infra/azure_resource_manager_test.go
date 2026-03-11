@@ -188,16 +188,16 @@ func createNestedDeploymentOperation(
 		"Microsoft.Resources/deployments/%s", deploymentName)
 
 	return &armresources.DeploymentOperation{
-		ID: to.Ptr(id),
+		ID: new(id),
 		Properties: &armresources.DeploymentOperationProperties{
 			ProvisioningOperation: to.Ptr(armresources.ProvisioningOperationCreate),
-			ProvisioningState:     to.Ptr(string(state)),
+			ProvisioningState:     new(string(state)),
 			TargetResource: &armresources.TargetResource{
 				ResourceType: to.Ptr(string(azapi.AzureResourceTypeDeployment)),
-				ID:           to.Ptr(resourceID),
-				ResourceName: to.Ptr(deploymentName),
+				ID:           new(resourceID),
+				ResourceName: new(deploymentName),
 			},
-			Timestamp: to.Ptr(time.Now().UTC().Add(time.Hour)),
+			Timestamp: new(time.Now().UTC().Add(time.Hour)),
 		},
 	}
 }
@@ -210,16 +210,16 @@ func createLeafOperation(id string, resourceType string, resourceName string) *a
 	)
 
 	return &armresources.DeploymentOperation{
-		ID: to.Ptr(id),
+		ID: new(id),
 		Properties: &armresources.DeploymentOperationProperties{
 			ProvisioningOperation: to.Ptr(armresources.ProvisioningOperationCreate),
 			ProvisioningState:     to.Ptr(string(armresources.ProvisioningStateSucceeded)),
 			TargetResource: &armresources.TargetResource{
-				ResourceType: to.Ptr(resourceType),
-				ID:           to.Ptr(resourceID),
-				ResourceName: to.Ptr(resourceName),
+				ResourceType: new(resourceType),
+				ID:           new(resourceID),
+				ResourceName: new(resourceName),
 			},
-			Timestamp: to.Ptr(time.Now().UTC().Add(time.Hour)),
+			Timestamp: new(time.Now().UTC().Add(time.Hour)),
 		},
 	}
 }
@@ -896,10 +896,10 @@ func TestFindResourceGroupForEnvironment(t *testing.T) {
 
 		for _, name := range groupNames {
 			res.Value = append(res.Value, &armresources.ResourceGroup{
-				ID:       to.Ptr(fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", SUBSCRIPTION_ID, name)),
-				Type:     to.Ptr("Microsoft.Resources/resourceGroups"),
-				Name:     to.Ptr(name),
-				Location: to.Ptr("eastus2"),
+				ID:       new(fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", SUBSCRIPTION_ID, name)),
+				Type:     new("Microsoft.Resources/resourceGroups"),
+				Name:     new(name),
+				Location: new("eastus2"),
 			})
 		}
 
@@ -1071,7 +1071,7 @@ func TestGetResourceTypeDisplayNameForCognitiveServices(t *testing.T) {
 				return request.Method == http.MethodGet &&
 					strings.Contains(request.URL.Path, "/Microsoft.CognitiveServices/accounts/")
 			}).RespondFn(func(request *http.Request) (*http.Response, error) {
-				response := map[string]interface{}{
+				response := map[string]any{
 					"id":       tt.resourceId,
 					"name":     "test-resource",
 					"type":     "Microsoft.CognitiveServices/accounts",
@@ -1151,7 +1151,7 @@ func TestGetResourceTypeDisplayNameForRedisEnterprise(t *testing.T) {
 				return request.Method == http.MethodGet &&
 					strings.Contains(request.URL.Path, "/Microsoft.Cache/redisEnterprise/test-redis")
 			}).RespondFn(func(request *http.Request) (*http.Response, error) {
-				response := map[string]interface{}{
+				response := map[string]any{
 					"id":       resourceId,
 					"name":     "test-redis",
 					"type":     "Microsoft.Cache/redisEnterprise",

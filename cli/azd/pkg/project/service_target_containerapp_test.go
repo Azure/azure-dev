@@ -328,7 +328,7 @@ func setupMocksForContainerApps(mockContext *mocks.MockContext) {
 				ActiveRevisionsMode: to.Ptr(armappcontainers.ActiveRevisionsModeSingle),
 				Secrets: []*armappcontainers.Secret{
 					{
-						Name:  to.Ptr("secret"),
+						Name:  new("secret"),
 						Value: nil,
 					},
 				},

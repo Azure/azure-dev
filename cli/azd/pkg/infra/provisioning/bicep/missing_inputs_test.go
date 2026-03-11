@@ -107,28 +107,28 @@ func TestConstraintDetails(t *testing.T) {
 		{
 			name: "MinAndMaxLength",
 			input: MissingInput{
-				Constraints: &InputConstraints{MinLength: intPtr(5), MaxLength: intPtr(20)},
+				Constraints: &InputConstraints{MinLength: new(5), MaxLength: new(20)},
 			},
 			expected: []string{"Length: 5–20"},
 		},
 		{
 			name: "MinLengthOnly",
 			input: MissingInput{
-				Constraints: &InputConstraints{MinLength: intPtr(3)},
+				Constraints: &InputConstraints{MinLength: new(3)},
 			},
 			expected: []string{"Min length: 3"},
 		},
 		{
 			name: "MaxLengthOnly",
 			input: MissingInput{
-				Constraints: &InputConstraints{MaxLength: intPtr(100)},
+				Constraints: &InputConstraints{MaxLength: new(100)},
 			},
 			expected: []string{"Max length: 100"},
 		},
 		{
 			name: "MinAndMaxValue",
 			input: MissingInput{
-				Constraints: &InputConstraints{MinValue: intPtr(1), MaxValue: intPtr(100)},
+				Constraints: &InputConstraints{MinValue: new(1), MaxValue: new(100)},
 			},
 			expected: []string{"Value: 1–100"},
 		},
@@ -149,7 +149,7 @@ func TestConstraintDetails(t *testing.T) {
 			input: MissingInput{
 				AllowedValues: []string{"x"},
 				Secure:        true,
-				Constraints:   &InputConstraints{MinLength: intPtr(1), MaxLength: intPtr(50)},
+				Constraints:   &InputConstraints{MinLength: new(1), MaxLength: new(50)},
 			},
 			expected: []string{"Allowed values: x", "Length: 1–50", "Secure: true"},
 		},
@@ -209,7 +209,7 @@ func TestMissingInputsError_Error_WithAllDetails(t *testing.T) {
 				ConfigKey:     "infra.parameters.resourceGroupLocation",
 				AllowedValues: []string{"eastus", "westus", "centralus"},
 				Description:   "Location for all resources",
-				Constraints:   &InputConstraints{MinLength: intPtr(1), MaxLength: intPtr(50)},
+				Constraints:   &InputConstraints{MinLength: new(1), MaxLength: new(50)},
 			},
 			{
 				Name:        "storageAccountKey",
@@ -253,7 +253,7 @@ func TestMissingInputsError_MarshalJSON(t *testing.T) {
 				EnvVarNames: []string{"AZURE_LOCATION"},
 				ConfigKey:   "infra.parameters.location",
 				Description: "The Azure region",
-				Constraints: &InputConstraints{MinLength: intPtr(1)},
+				Constraints: &InputConstraints{MinLength: new(1)},
 			},
 		},
 	}
@@ -309,8 +309,4 @@ func TestMissingInputsError_MarshalJSON_OmitsEmptyConstraints(t *testing.T) {
 	assert.NotContains(t, raw, "maxLength")
 	assert.NotContains(t, raw, "minValue")
 	assert.NotContains(t, raw, "maxValue")
-}
-
-func intPtr(v int) *int {
-	return &v
 }

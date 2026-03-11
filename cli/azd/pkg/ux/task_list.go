@@ -311,7 +311,7 @@ func (t *TaskList) runSyncTasks() {
 			continue
 		}
 
-		task.startTime = Ptr(time.Now())
+		task.startTime = new(time.Now())
 		task.State = Running
 
 		setProgress := func(progress string) {
@@ -325,7 +325,7 @@ func (t *TaskList) runSyncTasks() {
 			t.errorMutex.Unlock()
 		}
 
-		task.endTime = Ptr(time.Now())
+		task.endTime = new(time.Now())
 		task.Error = err
 		task.State = state
 
@@ -335,15 +335,13 @@ func (t *TaskList) runSyncTasks() {
 
 // addAsyncTask adds an asynchronous task and starts its execution in a goroutine.
 func (t *TaskList) addAsyncTask(task *Task) {
-	t.waitGroup.Add(1)
-	go func() {
-		defer t.waitGroup.Done()
+	t.waitGroup.Go(func() {
 
 		// Acquire a slot in the semaphore
 		t.asyncSemaphore <- struct{}{}
 		defer func() { <-t.asyncSemaphore }()
 
-		task.startTime = Ptr(time.Now())
+		task.startTime = new(time.Now())
 		task.State = Running
 
 		setProgress := func(progress string) {
@@ -357,12 +355,12 @@ func (t *TaskList) addAsyncTask(task *Task) {
 			t.errorMutex.Unlock()
 		}
 
-		task.endTime = Ptr(time.Now())
+		task.endTime = new(time.Now())
 		task.Error = err
 		task.State = state
 
 		atomic.AddInt32(&t.completed, 1)
-	}()
+	})
 }
 
 // addSyncTask queues a synchronous task for execution after async completion.

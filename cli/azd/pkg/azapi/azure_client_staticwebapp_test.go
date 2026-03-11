@@ -29,7 +29,7 @@ func Test_GetStaticWebAppProperties(t *testing.T) {
 			response := armappservice.StaticSitesClientGetStaticSiteResponse{
 				StaticSiteARMResource: armappservice.StaticSiteARMResource{
 					Properties: &armappservice.StaticSite{
-						DefaultHostname: to.Ptr("https://test.com")},
+						DefaultHostname: new("https://test.com")},
 				},
 			}
 
@@ -77,7 +77,7 @@ func Test_GetStaticWebAppEnvironmentProperties(t *testing.T) {
 			response := armappservice.StaticSitesClientGetStaticSiteBuildResponse{
 				StaticSiteBuildARMResource: armappservice.StaticSiteBuildARMResource{
 					Properties: &armappservice.StaticSiteBuildARMResourceProperties{
-						Hostname: to.Ptr("default-environment-name.azurestaticapps.net"),
+						Hostname: new("default-environment-name.azurestaticapps.net"),
 						Status:   to.Ptr(armappservice.BuildStatusReady),
 					},
 				},
@@ -139,7 +139,7 @@ func Test_GetStaticWebAppApiKey(t *testing.T) {
 			response := armappservice.StaticSitesClientListStaticSiteSecretsResponse{
 				StringDictionary: armappservice.StringDictionary{
 					Properties: map[string]*string{
-						"apiKey": to.Ptr("ABC123"),
+						"apiKey": new("ABC123"),
 					},
 				},
 			}

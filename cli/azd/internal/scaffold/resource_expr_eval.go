@@ -249,7 +249,7 @@ func evalExpression(env EvalEnv, key string, expr *Expression, results map[strin
 		}
 
 		// Evaluate all arguments
-		args := make([]interface{}, 0, len(funcData.Args))
+		args := make([]any, 0, len(funcData.Args))
 		for _, arg := range funcData.Args {
 			err := evalExpression(env, key, arg, results)
 			if err != nil {
@@ -324,7 +324,7 @@ func nextVal(evalCtx []*ExpressionVar, results map[string]string) (*ExpressionVa
 }
 
 // CallFn handles dynamic function calling with proper type reflection
-func CallFn(fn interface{}, funcName string, args []interface{}) (interface{}, error) {
+func CallFn(fn any, funcName string, args []any) (any, error) {
 	// Use reflection to call the function with proper types
 	funcValue := reflect.ValueOf(fn)
 	funcType := funcValue.Type()
@@ -334,7 +334,7 @@ func CallFn(fn interface{}, funcName string, args []interface{}) (interface{}, e
 	if numOut != 1 && numOut != 2 {
 		return nil, fmt.Errorf("function '%s' must have one or two return values", funcName)
 	}
-	if numOut == 2 && !funcType.Out(1).Implements(reflect.TypeOf((*error)(nil)).Elem()) {
+	if numOut == 2 && !funcType.Out(1).Implements(reflect.TypeFor[error]()) {
 		return nil, fmt.Errorf("second return value of function '%s' must be error", funcName)
 	}
 
@@ -361,7 +361,7 @@ func CallFn(fn interface{}, funcName string, args []interface{}) (interface{}, e
 	resultValues := funcValue.Call(reflectArgs)
 
 	// Process the results according to FuncMap requirements
-	var funcResult interface{}
+	var funcResult any
 
 	// First return value is the result
 	if len(resultValues) > 0 {

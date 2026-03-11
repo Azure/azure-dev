@@ -76,11 +76,11 @@ func TestCodingAgent_createFederatedCredential(t *testing.T) {
 		FedCredentialMatcher{
 			T: t,
 			Expected: azure_armmsi.FederatedIdentityCredential{
-				Name: to.Ptr("richardpark-msft-copilot-auth-tests-copilot-env"),
+				Name: new("richardpark-msft-copilot-auth-tests-copilot-env"),
 				Properties: &azure_armmsi.FederatedIdentityCredentialProperties{
-					Subject:   to.Ptr("repo:" + repoSlugForTests + ":environment:copilot-hi"),
-					Issuer:    to.Ptr("https://token.actions.githubusercontent.com"),
-					Audiences: []*string{to.Ptr("api://AzureADTokenExchange")},
+					Subject:   new("repo:" + repoSlugForTests + ":environment:copilot-hi"),
+					Issuer:    new("https://token.actions.githubusercontent.com"),
+					Audiences: []*string{new("api://AzureADTokenExchange")},
 				},
 			},
 		},
@@ -120,7 +120,7 @@ func TestCodingAgent_promptForRepoSlug(t *testing.T) {
 
 		promptClient.EXPECT().Select(gomock.Any(), gomock.Any()).Return(&azdext.SelectResponse{
 			// simulate they chose option 1
-			Value: to.Ptr(int32(1)),
+			Value: new(int32(1)),
 		}, nil)
 
 		slug, err := promptForCodingAgentRepoSlug(context.Background(), promptClient, gitCLI, "repo-root-used", "")
@@ -218,26 +218,26 @@ func TestCodingAgent_pickOrCreateMSI(t *testing.T) {
 		promptService.EXPECT().Select(gomock.Any(),
 			SelectMatcher{T: t, ExpectedQuestion: "Do you want to create a new Azure user-assigned managed identity or use an existing one?"}).
 			Return(&azdext.SelectResponse{
-				Value: to.Ptr(int32(0)), // ie, "create a new one"
+				Value: new(int32(0)), // ie, "create a new one"
 			}, nil)
 
 		msiService.EXPECT().
 			CreateUserIdentity(gomock.Any(), fakeSubscriptionID, fakeResourceGroup, fakeLocation, defaultManagedIdentityName).
 			Return(azure_armmsi.Identity{
 				Properties: &azure_armmsi.UserAssignedIdentityProperties{
-					PrincipalID: to.Ptr("principal-id"),
+					PrincipalID: new("principal-id"),
 					ClientID:    to.Ptr(fakeClientID),
 					TenantID:    to.Ptr(fakeTenantID),
 				},
-				Name: to.Ptr(string(defaultManagedIdentityName)),
-				ID:   to.Ptr(fmt.Sprintf("/subscriptions/%s/resourcegroups/%s/providers/Microsoft.ManagedIdentity/userAssignedIdentities/%s", fakeSubscriptionID, fakeResourceGroup, defaultManagedIdentityName)),
+				Name: new(string(defaultManagedIdentityName)),
+				ID:   new(fmt.Sprintf("/subscriptions/%s/resourcegroups/%s/providers/Microsoft.ManagedIdentity/userAssignedIdentities/%s", fakeSubscriptionID, fakeResourceGroup, defaultManagedIdentityName)),
 			}, nil)
 
 		entraService.EXPECT().EnsureRoleAssignments(gomock.Any(),
 			fakeSubscriptionID,
 			[]string{"Reader"},
 			&graphsdk.ServicePrincipal{
-				Id:          to.Ptr("principal-id"),
+				Id:          new("principal-id"),
 				DisplayName: defaultManagedIdentityName,
 			}, gomock.Any()).
 			Return(nil)
@@ -268,16 +268,16 @@ func TestCodingAgent_pickOrCreateMSI(t *testing.T) {
 			CreateUserIdentity(gomock.Any(), fakeSubscriptionID, fakeResourceGroup, fakeLocation, customManagedIdentityName).
 			Return(azure_armmsi.Identity{
 				Properties: &azure_armmsi.UserAssignedIdentityProperties{
-					PrincipalID: to.Ptr("principal-id"),
+					PrincipalID: new("principal-id"),
 					ClientID:    to.Ptr(fakeClientID),
 					TenantID:    to.Ptr(fakeTenantID),
 				},
 				Name: to.Ptr(customManagedIdentityName),
-				ID:   to.Ptr(fmt.Sprintf("/subscriptions/%s/resourcegroups/%s/providers/Microsoft.ManagedIdentity/userAssignedIdentities/%s", fakeSubscriptionID, fakeResourceGroup, customManagedIdentityName)),
+				ID:   new(fmt.Sprintf("/subscriptions/%s/resourcegroups/%s/providers/Microsoft.ManagedIdentity/userAssignedIdentities/%s", fakeSubscriptionID, fakeResourceGroup, customManagedIdentityName)),
 			}, nil)
 
 		entraService.EXPECT().EnsureRoleAssignments(gomock.Any(), fakeSubscriptionID, []string{"custom-role-name"}, &graphsdk.ServicePrincipal{
-			Id:          to.Ptr("principal-id"),
+			Id:          new("principal-id"),
 			DisplayName: customManagedIdentityName,
 		}, gomock.Any()).
 			Return(nil)
@@ -305,7 +305,7 @@ func TestCodingAgent_pickOrCreateMSI(t *testing.T) {
 		promptService.EXPECT().Select(gomock.Any(),
 			SelectMatcher{T: t, ExpectedQuestion: "Do you want to create a new Azure user-assigned managed identity or use an existing one?"}).
 			Return(&azdext.SelectResponse{
-				Value: to.Ptr(int32(1)), // ie, "use an existing one"
+				Value: new(int32(1)), // ie, "use an existing one"
 			}, nil)
 
 		msiService.EXPECT().
@@ -313,12 +313,12 @@ func TestCodingAgent_pickOrCreateMSI(t *testing.T) {
 			Return([]rm_armmsi.Identity{
 				{
 					Properties: &azure_armmsi.UserAssignedIdentityProperties{
-						PrincipalID: to.Ptr("principal-id"),
+						PrincipalID: new("principal-id"),
 						ClientID:    to.Ptr(fakeClientID),
 						TenantID:    to.Ptr(fakeTenantID),
 					},
-					Name:     to.Ptr(string(defaultManagedIdentityName)),
-					ID:       to.Ptr(fmt.Sprintf("/subscriptions/%s/resourcegroups/%s/providers/Microsoft.ManagedIdentity/userAssignedIdentities/%s", fakeSubscriptionID, fakeResourceGroup, defaultManagedIdentityName)),
+					Name:     new(string(defaultManagedIdentityName)),
+					ID:       new(fmt.Sprintf("/subscriptions/%s/resourcegroups/%s/providers/Microsoft.ManagedIdentity/userAssignedIdentities/%s", fakeSubscriptionID, fakeResourceGroup, defaultManagedIdentityName)),
 					Location: to.Ptr(fakeLocation),
 				},
 			}, nil)
@@ -326,14 +326,14 @@ func TestCodingAgent_pickOrCreateMSI(t *testing.T) {
 		promptService.EXPECT().
 			Select(gomock.Any(), SelectMatcher{T: t, ExpectedQuestion: "Select an existing User Managed Identity (MSI) to use"}).
 			Return(&azdext.SelectResponse{
-				Value: to.Ptr(int32(0)), // pick the first ID in the list (also, the only ID I returned)
+				Value: new(int32(0)), // pick the first ID in the list (also, the only ID I returned)
 			}, nil)
 
 		entraService.EXPECT().EnsureRoleAssignments(gomock.Any(),
 			fakeSubscriptionID,
 			[]string{"Reader"},
 			&graphsdk.ServicePrincipal{
-				Id:          to.Ptr("principal-id"),
+				Id:          new("principal-id"),
 				DisplayName: defaultManagedIdentityName,
 			}, gomock.Any()).
 			Return(nil)

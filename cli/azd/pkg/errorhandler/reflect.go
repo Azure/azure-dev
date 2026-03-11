@@ -34,7 +34,7 @@ func findErrorByTypeName(
 		}
 
 		t := reflect.TypeOf(current)
-		if t.Kind() == reflect.Ptr {
+		if t.Kind() == reflect.Pointer {
 			t = t.Elem()
 		}
 		if t.Name() == typeName {
@@ -91,7 +91,7 @@ func resolvePropertyPath(target any, path string) (string, bool) {
 
 	for _, part := range parts {
 		// Dereference pointers
-		for v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface {
+		for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
 			if v.IsNil() {
 				return "", false
 			}
@@ -109,7 +109,7 @@ func resolvePropertyPath(target any, path string) (string, bool) {
 	}
 
 	// Dereference final pointer
-	for v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface {
+	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
 		if v.IsNil() {
 			return "", false
 		}

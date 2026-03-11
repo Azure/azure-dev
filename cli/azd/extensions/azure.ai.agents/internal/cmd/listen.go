@@ -155,7 +155,7 @@ func kindEnvUpdate(ctx context.Context, azdClient *azdext.AzdClient, project *az
 		return fmt.Errorf("agent.yaml is not valid: %w", err)
 	}
 
-	var genericTemplate map[string]interface{}
+	var genericTemplate map[string]any
 	if err := yaml.Unmarshal(data, &genericTemplate); err != nil {
 		return fmt.Errorf("YAML content is not valid: %w", err)
 	}

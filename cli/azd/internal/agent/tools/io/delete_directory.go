@@ -28,10 +28,10 @@ func (t DeleteDirectoryTool) Name() string {
 func (t DeleteDirectoryTool) Annotations() mcp.ToolAnnotation {
 	return mcp.ToolAnnotation{
 		Title:           "Delete Directory",
-		ReadOnlyHint:    common.ToPtr(false),
-		DestructiveHint: common.ToPtr(true),
-		IdempotentHint:  common.ToPtr(false),
-		OpenWorldHint:   common.ToPtr(false),
+		ReadOnlyHint:    new(false),
+		DestructiveHint: new(true),
+		IdempotentHint:  new(false),
+		OpenWorldHint:   new(false),
 	}
 }
 

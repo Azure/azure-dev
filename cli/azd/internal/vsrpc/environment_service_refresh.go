@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -138,10 +137,10 @@ func (s *environmentService) refreshEnvironmentAsync(
 					resSvc := env.Services[svcIdx]
 
 					if len(resourceIds) > 0 {
-						resSvc.ResourceId = to.Ptr(resourceIds[0])
+						resSvc.ResourceId = new(resourceIds[0])
 					}
 
-					resSvc.Endpoint = to.Ptr(s.serviceEndpoint(
+					resSvc.Endpoint = new(s.serviceEndpoint(
 						ctx, subId, serviceConfig, c.resourceManager, c.serviceManager,
 					))
 				}

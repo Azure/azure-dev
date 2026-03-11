@@ -1615,15 +1615,10 @@ func (a *InitAction) parseGitHubUrlNaive(manifestPointer string) *GitHubUrlInfo 
 		repoPath := strings.TrimPrefix(parts[0], "/")
 		repoSlug := repoPath
 
-		// The second part is {branch}/{file-path}
-		branchAndPath := parts[1]
-		before, after, ok := strings.Cut(branchAndPath, "/")
+		branch, filePath, ok := strings.Cut(branchAndPath, "/")
 		if !ok {
 			return nil
 		}
-
-		branch := before
-		filePath := after
 
 		// Only use naive parsing if branch looks like a simple single word (no slashes)
 		if strings.Contains(branch, "/") {
@@ -1653,17 +1648,11 @@ func (a *InitAction) parseGitHubUrlNaive(manifestPointer string) *GitHubUrlInfo 
 
 		repoSlug := parts[0] + "/" + parts[1]
 		rest := parts[2]
-
-		// Check for refs/heads/ prefix
-		if after, ok := strings.CutPrefix(rest, "refs/heads/"); ok {
-			rest = after
-			before, after, ok := strings.Cut(rest, "/")
+		if rest, ok := strings.CutPrefix(rest, "refs/heads/"); ok {
+			branch, filePath, ok := strings.Cut(rest, "/")
 			if !ok {
 				return nil
 			}
-
-			branch := before
-			filePath := after
 
 			// Only use naive parsing if branch looks like a simple single word
 			if strings.Contains(branch, "/") {

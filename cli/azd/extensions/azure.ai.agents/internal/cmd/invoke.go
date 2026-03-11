@@ -329,9 +329,7 @@ func readSSEStream(body io.Reader, agentName string) error {
 			continue
 		}
 
-		if after, ok := strings.CutPrefix(line, "data: "); ok {
-			data := after
-
+		if data, ok := strings.CutPrefix(line, "data: "); ok {
 			switch currentEvent {
 			case "response.output_text.delta":
 				var delta struct {

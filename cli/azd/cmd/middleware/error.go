@@ -582,8 +582,7 @@ func (e *ErrorMiddleware) promptExplanationWithConsent(ctx context.Context) (str
 	selected := choices[*choiceIndex].Value
 
 	// Handle "always" variants — save to config and return the scope
-	if after, ok := strings.CutPrefix(selected, "always."); ok {
-		scope := after
+	if scope, ok := strings.CutPrefix(selected, "always."); ok {
 		configKey := configPrefix + "." + scope
 		if err := userConfig.Set(configKey, "allow"); err != nil {
 			return "", fmt.Errorf("failed to set config %s: %w", configKey, err)

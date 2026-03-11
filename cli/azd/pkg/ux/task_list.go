@@ -296,7 +296,7 @@ func (t *TaskList) Render(printer Printer) error {
 
 // isCompleted checks if all async tasks are complete.
 func (t *TaskList) isCompleted() bool {
-	return int(t.completed) == len(t.allTasks)
+	return int(atomic.LoadInt32(&t.completed)) == len(t.allTasks)
 }
 
 // runSyncTasks executes all synchronous tasks in order after async tasks are completed.

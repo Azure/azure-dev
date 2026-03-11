@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"azure.ai.models/internal/azcopy"
 	"azure.ai.models/internal/client"
@@ -30,8 +31,8 @@ type customCreateFlags struct {
 	Description string
 	BaseModel   string
 	Publisher   string
-	AzcopyPath  string
-	// NoWait   bool // TODO: re-enable with async registration when data-plane polling is available
+	AzcopyPath string
+	NoWait     bool
 }
 
 func newCustomCreateCommand(parentFlags *customFlags) *cobra.Command {
@@ -96,8 +97,7 @@ If you have already uploaded model files, use --blob-uri to skip upload and regi
 	cmd.Flags().StringVar(&flags.BaseModel, "base-model", "", "Base model identifier (e.g., FW-GPT-OSS-120B or full azureml:// URI)")
 	cmd.Flags().StringVar(&flags.Publisher, "publisher", "Fireworks", "Model publisher ID for catalog info")
 	cmd.Flags().StringVar(&flags.AzcopyPath, "azcopy-path", "", "Path to azcopy binary (auto-detected if not provided)")
-	// TODO: re-enable --no-wait when data-plane polling endpoint is available
-	// cmd.Flags().BoolVar(&flags.NoWait, "no-wait", false, "Start async registration and return immediately with the operation URL")
+	cmd.Flags().BoolVar(&flags.NoWait, "no-wait", false, "Start async registration and return immediately with the operation URL")
 
 	_ = cmd.MarkFlagRequired("name")
 	_ = cmd.MarkFlagRequired("base-model")
@@ -220,7 +220,7 @@ func runCustomCreate(ctx context.Context, parentFlags *customFlags, flags *custo
 		"baseArchitecture": extractBaseModelName(flags.BaseModel),
 	}
 
-	model, err := foundryClient.RegisterModel(ctx, flags.Name, flags.Version, regReq)
+	operationURL, err := foundryClient.RegisterModelAsync(ctx, flags.Name, flags.Version, regReq)
 	_ = regSpinner.Stop(ctx)
 	fmt.Println()
 
@@ -232,6 +232,31 @@ func runCustomCreate(ctx context.Context, parentFlags *customFlags, flags *custo
 		fmt.Println()
 		fmt.Printf("  azd ai models custom create --name %s --version %s --blob-uri \"%s\" -e \"%s\"\n",
 			flags.Name, flags.Version, blob.BlobURI, parentFlags.projectEndpoint)
+		return fmt.Errorf("registration failed: %w", err)
+	}
+
+	color.Green("✓ Registration started")
+	fmt.Printf("  Operation URL: %s\n\n", operationURL)
+
+	if flags.NoWait {
+		color.Yellow("--no-wait specified; skipping validation polling.")
+		fmt.Println("You can check the operation status manually using the operation URL above.")
+		return nil
+	}
+
+	pollSpinner := ux.NewSpinner(&ux.SpinnerOptions{
+		Text: "Validating and registering model (this may take a few minutes)...",
+	})
+	if err := pollSpinner.Start(ctx); err != nil {
+		fmt.Printf("failed to start spinner: %v\n", err)
+	}
+
+	model, err := foundryClient.PollOperation(ctx, operationURL, 5*time.Second)
+	_ = pollSpinner.Stop(ctx)
+	fmt.Println()
+
+	if err != nil {
+		color.Red("✗ Registration failed: %v", err)
 		return fmt.Errorf("registration failed: %w", err)
 	}
 
@@ -308,7 +333,7 @@ func runCustomCreateFromBlobURI(ctx context.Context, parentFlags *customFlags, f
 		"baseArchitecture": extractBaseModelName(flags.BaseModel),
 	}
 
-	model, err := foundryClient.RegisterModel(ctx, flags.Name, flags.Version, regReq)
+	operationURL, err := foundryClient.RegisterModelAsync(ctx, flags.Name, flags.Version, regReq)
 	_ = regSpinner.Stop(ctx)
 	fmt.Println()
 
@@ -319,6 +344,31 @@ func runCustomCreateFromBlobURI(ctx context.Context, parentFlags *customFlags, f
 		fmt.Println()
 		fmt.Printf("  azd ai models custom create --name %s --version %s --blob-uri \"%s\" -e \"%s\"\n",
 			flags.Name, flags.Version, flags.BlobURI, parentFlags.projectEndpoint)
+		return fmt.Errorf("registration failed: %w", err)
+	}
+
+	color.Green("✓ Registration started")
+	fmt.Printf("  Operation URL: %s\n\n", operationURL)
+
+	if flags.NoWait {
+		color.Yellow("--no-wait specified; skipping validation polling.")
+		fmt.Println("You can check the operation status manually using the operation URL above.")
+		return nil
+	}
+
+	pollSpinner := ux.NewSpinner(&ux.SpinnerOptions{
+		Text: "Validating and registering model (this may take a few minutes)...",
+	})
+	if err := pollSpinner.Start(ctx); err != nil {
+		fmt.Printf("failed to start spinner: %v\n", err)
+	}
+
+	model, err := foundryClient.PollOperation(ctx, operationURL, 5*time.Second)
+	_ = pollSpinner.Stop(ctx)
+	fmt.Println()
+
+	if err != nil {
+		color.Red("✗ Registration failed: %v", err)
 		return fmt.Errorf("registration failed: %w", err)
 	}
 

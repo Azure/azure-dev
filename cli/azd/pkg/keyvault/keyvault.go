@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -477,6 +478,28 @@ func IsSecretReference(s string) bool {
 	return IsAzureKeyVaultSecret(s) || IsKeyVaultAppReference(s)
 }
 
+// validVaultHostSuffixes lists the known Azure Key Vault DNS suffixes.
+// Used to validate SecretUri hostnames and prevent SSRF attacks via
+// @Microsoft.KeyVault(SecretUri=https://evil.com/...) references.
+var validVaultHostSuffixes = []string{
+	".vault.azure.net",
+	".vault.azure.cn",
+	".vault.usgovcloudapi.net",
+	".vault.microsoftazure.de",
+	".managedhsm.azure.net",
+}
+
+// isValidVaultHost reports whether host is a known Azure Key Vault endpoint.
+func isValidVaultHost(host string) bool {
+	host = strings.ToLower(host)
+	for _, suffix := range validVaultHostSuffixes {
+		if strings.HasSuffix(host, suffix) {
+			return true
+		}
+	}
+	return false
+}
+
 // KeyVaultAppReference represents a parsed @Microsoft.KeyVault(SecretUri=...) reference.
 type KeyVaultAppReference struct {
 	// VaultURL is the full vault URL (e.g., "https://my-vault.vault.azure.net").
@@ -532,6 +555,11 @@ func ParseKeyVaultAppReference(ref string) (KeyVaultAppReference, error) {
 			"invalid @Microsoft.KeyVault reference %q: SecretUri must include a host", ref)
 	}
 
+	if !isValidVaultHost(u.Host) {
+		return KeyVaultAppReference{}, fmt.Errorf(
+			"invalid @Microsoft.KeyVault reference %q: host %q is not a known Azure Key Vault endpoint", ref, u.Host)
+	}
+
 	parts := strings.Split(strings.TrimPrefix(u.Path, "/"), "/")
 	if len(parts) < 2 || parts[0] != "secrets" {
 		return KeyVaultAppReference{}, fmt.Errorf(
@@ -567,9 +595,9 @@ func ParseKeyVaultAppReference(ref string) (KeyVaultAppReference, error) {
 // akvs:// or @Microsoft.KeyVault(SecretUri=...) format is replaced with the
 // resolved secret value. Non-secret values are passed through unchanged.
 //
-// Resolution failures for individual variables are logged but do not stop
-// processing — the original unresolved value is kept. This ensures extensions
-// still launch even if a secret cannot be resolved (e.g., due to permissions).
+// Resolution failures for individual variables are logged. On failure the
+// value is set to an empty string rather than leaking the raw reference to
+// downstream consumers who would not know how to handle it.
 func ResolveSecretEnvironment(
 	ctx context.Context,
 	kvService KeyVaultService,
@@ -599,12 +627,15 @@ func ResolveSecretEnvironment(
 		resolved, err := kvService.SecretFromKeyVaultReference(ctx, value, defaultSubscriptionId)
 		if err != nil {
 			log.Printf("warning: failed to resolve Key Vault reference for %s: %v", key, err)
-			result[i] = envVar // Keep original value on failure
+			result[i] = key + "=" // Empty value — don't leak the raw reference
 			continue
 		}
 
 		result[i] = key + "=" + resolved
 	}
+
+	// Sort for deterministic output.
+	sort.Strings(result)
 
 	return result
 }

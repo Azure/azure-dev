@@ -26,7 +26,7 @@ type UsageMetrics struct {
 	Model           string
 	InputTokens     float64
 	OutputTokens    float64
-	Cost            float64
+	BillingRate     float64 // per-request cost multiplier (e.g., 1.0x, 2.0x)
 	PremiumRequests float64
 	DurationMS      float64
 }
@@ -53,8 +53,8 @@ func (u UsageMetrics) Format() string {
 	lines = append(lines, output.WithGrayFormat("  • Output tokens:    %s", formatTokenCount(u.OutputTokens)))
 	lines = append(lines, output.WithGrayFormat("  • Total tokens:     %s", formatTokenCount(u.TotalTokens())))
 
-	if u.Cost > 0 {
-		lines = append(lines, output.WithGrayFormat("  • Cost:             %.1fx premium", u.Cost))
+	if u.BillingRate > 0 {
+		lines = append(lines, output.WithGrayFormat("  • Billing rate:     %.0fx per request", u.BillingRate))
 	}
 	if u.PremiumRequests > 0 {
 		lines = append(lines, output.WithGrayFormat("  • Premium requests: %.0f", u.PremiumRequests))

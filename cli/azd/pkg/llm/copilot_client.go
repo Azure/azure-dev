@@ -178,31 +178,3 @@ func discoverCopilotCLIPath() string {
 
 	return ""
 }
-
-// discoverInstalledPluginDirs finds the Azure plugin directory
-// under ~/.copilot/installed-plugins/ to pass via --plugin-dir
-// to the headless CLI process which doesn't auto-discover them.
-func discoverInstalledPluginDirs() []string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil
-	}
-
-	pluginsRoot := filepath.Join(home, ".copilot", "installed-plugins")
-
-	// Look for the Azure plugin in known install locations
-	candidates := []string{
-		filepath.Join(pluginsRoot, "_direct", "microsoft--GitHub-Copilot-for-Azure--plugin"),
-		filepath.Join(pluginsRoot, "github-copilot-for-azure", "azure"),
-	}
-
-	var dirs []string
-	for _, p := range candidates {
-		if _, err := os.Stat(filepath.Join(p, "skills")); err == nil {
-			dirs = append(dirs, p)
-			break
-		}
-	}
-
-	return dirs
-}

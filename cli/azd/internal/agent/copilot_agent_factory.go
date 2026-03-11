@@ -9,7 +9,7 @@ import (
 	"fmt"
 
 	mcptools "github.com/azure/azure-dev/cli/azd/internal/agent/tools/mcp"
-	azdmcp "github.com/azure/azure-dev/cli/azd/internal/mcp"
+	azdMcp "github.com/azure/azure-dev/cli/azd/internal/mcp"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -76,8 +76,8 @@ func (f *CopilotAgentFactory) Create(ctx context.Context, opts ...AgentOption) (
 }
 
 // loadBuiltInMCPServers loads the embedded mcp.json configuration.
-func loadBuiltInMCPServers() (map[string]*azdmcp.ServerConfig, error) {
-	var mcpConfig *azdmcp.McpConfig
+func loadBuiltInMCPServers() (map[string]*azdMcp.ServerConfig, error) {
+	var mcpConfig *azdMcp.McpConfig
 	if err := json.Unmarshal([]byte(mcptools.McpJson), &mcpConfig); err != nil {
 		return nil, fmt.Errorf("failed parsing embedded mcp.json: %w", err)
 	}

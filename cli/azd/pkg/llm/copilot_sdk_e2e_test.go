@@ -87,8 +87,8 @@ func TestCopilotSDK_E2E(t *testing.T) {
 	require.NoError(t, err, "CreateSession failed")
 	t.Logf("Session created: %s", session.WorkspacePath())
 	defer func() {
-		if destroyErr := session.Destroy(); destroyErr != nil {
-			t.Logf("session.Destroy error: %v", destroyErr)
+		if disconnectErr := session.Disconnect(); disconnectErr != nil {
+			t.Logf("session.Destroy error: %v", disconnectErr)
 		}
 	}()
 

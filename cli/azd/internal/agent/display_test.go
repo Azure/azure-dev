@@ -131,7 +131,7 @@ func TestGetUsageMetrics(t *testing.T) {
 	metrics := d.GetUsageMetrics()
 	require.Equal(t, float64(3000), metrics.InputTokens)
 	require.Equal(t, float64(1300), metrics.OutputTokens)
-	require.Equal(t, float64(2.0), metrics.Cost)
+	require.Equal(t, float64(1.0), metrics.BillingRate) // last value, not sum
 	require.Equal(t, float64(8000), metrics.DurationMS)
 	require.Equal(t, "gpt-4.1", metrics.Model)
 }

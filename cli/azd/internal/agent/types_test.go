@@ -40,19 +40,19 @@ func TestUsageMetrics_Format(t *testing.T) {
 		u := UsageMetrics{
 			InputTokens:     50000,
 			OutputTokens:    20000,
-			Cost:            2.0,
+			BillingRate:     2.0,
 			PremiumRequests: 15,
 		}
 		result := u.Format()
-		require.Contains(t, result, "2.0x premium")
+		require.Contains(t, result, "2x per request")
 		require.Contains(t, result, "15")
 	})
 
 	t.Run("DurationSeconds", func(t *testing.T) {
 		u := UsageMetrics{
-			InputTokens: 100,
+			InputTokens:  100,
 			OutputTokens: 50,
-			DurationMS:  45000,
+			DurationMS:   45000,
 		}
 		result := u.Format()
 		require.Contains(t, result, "45.0s")
@@ -60,9 +60,9 @@ func TestUsageMetrics_Format(t *testing.T) {
 
 	t.Run("DurationMinutes", func(t *testing.T) {
 		u := UsageMetrics{
-			InputTokens: 100,
+			InputTokens:  100,
 			OutputTokens: 50,
-			DurationMS:  125000,
+			DurationMS:   125000,
 		}
 		result := u.Format()
 		require.Contains(t, result, "2m")

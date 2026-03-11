@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -549,7 +550,7 @@ func (a *CopilotAgent) createHooks(ctx context.Context) *copilot.SessionHooks {
 					ctx, input.ToolName, input.ToolName, mcp.ToolAnnotation{},
 				)
 				if promptErr != nil {
-					if promptErr == consent.ErrToolExecutionDenied {
+					if errors.Is(promptErr, consent.ErrToolExecutionDenied) {
 						return &copilot.PreToolUseHookOutput{
 							PermissionDecision:       "deny",
 							PermissionDecisionReason: "denied by user",
@@ -609,14 +610,14 @@ func (a *CopilotAgent) ensurePlugins(ctx context.Context) {
 	for _, plugin := range requiredPlugins {
 		if installed[plugin.Name] {
 			log.Printf("[copilot] Updating plugin: %s", plugin.Name)
-			cmd := exec.CommandContext(ctx, cliPath, "plugin", "update", plugin.Name)
+			cmd := exec.CommandContext(ctx, cliPath, "plugin", "update", plugin.Name) //nolint:gosec
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				log.Printf("[copilot] Plugin update warning: %v (%s)", err, string(out))
 			}
 		} else {
 			log.Printf("[copilot] Installing plugin: %s", plugin.Source)
-			cmd := exec.CommandContext(ctx, cliPath, "plugin", "install", plugin.Source)
+			cmd := exec.CommandContext(ctx, cliPath, "plugin", "install", plugin.Source) //nolint:gosec
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				log.Printf("[copilot] Plugin install warning: %v (%s)", err, string(out))

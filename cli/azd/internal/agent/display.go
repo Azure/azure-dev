@@ -46,7 +46,7 @@ type AgentDisplay struct {
 	// Usage metrics — accumulated from assistant.usage events
 	totalInputTokens  float64
 	totalOutputTokens float64
-	totalCost         float64
+	billingRate       float64
 	totalDurationMS   float64
 	premiumRequests   float64
 	lastModel         string
@@ -231,7 +231,7 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 			d.totalOutputTokens += *event.Data.OutputTokens
 		}
 		if event.Data.Cost != nil {
-			d.totalCost += *event.Data.Cost
+			d.billingRate = *event.Data.Cost // per-request multiplier, not cumulative
 		}
 		if event.Data.Duration != nil {
 			d.totalDurationMS += *event.Data.Duration
@@ -241,7 +241,7 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 		}
 		d.mu.Unlock()
 
-	case copilot.SessionUsageInfo:
+	case copilot.SessionUsageInfo, copilot.SessionShutdown:
 		d.mu.Lock()
 		if event.Data.TotalPremiumRequests != nil {
 			d.premiumRequests = *event.Data.TotalPremiumRequests
@@ -436,8 +436,8 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 			}
 		}
 
-	case copilot.SessionTaskComplete, copilot.SessionShutdown:
-		// Also signal completion on task_complete or shutdown
+	case copilot.SessionTaskComplete:
+		// Also signal completion on task_complete
 		log.Printf("[copilot-display] %s received, signaling completion", event.Type)
 		select {
 		case d.idleCh <- struct{}{}:
@@ -472,7 +472,7 @@ func (d *AgentDisplay) GetUsageMetrics() UsageMetrics {
 		Model:           d.lastModel,
 		InputTokens:     d.totalInputTokens,
 		OutputTokens:    d.totalOutputTokens,
-		Cost:            d.totalCost,
+		BillingRate:     d.billingRate,
 		PremiumRequests: d.premiumRequests,
 		DurationMS:      d.totalDurationMS,
 	}

@@ -704,4 +704,3 @@ func promptUserForSolution(ctx context.Context, solutions []string, agentName st
 		return selectedValue, false, nil // User selected a solution
 	}
 }
-

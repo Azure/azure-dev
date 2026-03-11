@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -95,7 +96,9 @@ func NewKeyVaultResolver(credential azcore.TokenCredential, opts *KeyVaultResolv
 
 // defaultSecretClientFactory creates a real Azure SDK secrets client.
 func defaultSecretClientFactory(vaultURL string, credential azcore.TokenCredential) (secretGetter, error) {
-	client, err := azsecrets.NewClient(vaultURL, credential, nil)
+	client, err := azsecrets.NewClient(vaultURL, credential, &azsecrets.ClientOptions{
+		DisableChallengeResourceVerification: false,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +144,10 @@ func (r *KeyVaultResolver) Resolve(ctx context.Context, ref string) (string, err
 
 	resp, err := client.GetSecret(ctx, parsed.SecretName, secretVersion, nil)
 	if err != nil {
-		reason := ResolveReasonAccessDenied
+		// Default to ServiceError for non-ResponseError failures (e.g., network
+		// timeouts, DNS resolution failures). AccessDenied is only used when the
+		// server explicitly returns 401/403.
+		reason := ResolveReasonServiceError
 
 		var respErr *azcore.ResponseError
 		if errors.As(err, &respErr) {
@@ -180,10 +186,13 @@ func (r *KeyVaultResolver) Resolve(ctx context.Context, ref string) (string, err
 
 // ResolveMap resolves a map of key → secret references, returning a map of
 // key → resolved secret values. Both akvs:// and @Microsoft.KeyVault formats
-// are accepted. Processing stops at the first error.
+// are accepted. All entries are attempted; errors are collected and returned
+// together via [errors.Join] so that callers see every failure at once.
 //
 // Non-secret values are passed through unchanged, so callers can safely
 // resolve a mixed map of plain values and secret references.
+//
+// Keys are processed in sorted order so that error messages are deterministic.
 func (r *KeyVaultResolver) ResolveMap(ctx context.Context, refs map[string]string) (map[string]string, error) {
 	if ctx == nil {
 		return nil, errors.New("azdext.KeyVaultResolver.ResolveMap: context must not be nil")
@@ -191,7 +200,18 @@ func (r *KeyVaultResolver) ResolveMap(ctx context.Context, refs map[string]strin
 
 	result := make(map[string]string, len(refs))
 
-	for key, value := range refs {
+	// Sort keys for deterministic iteration and error reporting.
+	keys := make([]string, 0, len(refs))
+	for k := range refs {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	var errs []error
+
+	for _, key := range keys {
+		value := refs[key]
+
 		if !IsSecretReference(value) {
 			result[key] = value
 			continue
@@ -199,10 +219,15 @@ func (r *KeyVaultResolver) ResolveMap(ctx context.Context, refs map[string]strin
 
 		resolved, err := r.Resolve(ctx, value)
 		if err != nil {
-			return nil, fmt.Errorf("azdext.KeyVaultResolver.ResolveMap: key %q: %w", key, err)
+			errs = append(errs, fmt.Errorf("key %q: %w", key, err))
+			continue
 		}
 
 		result[key] = resolved
+	}
+
+	if len(errs) > 0 {
+		return result, fmt.Errorf("azdext.KeyVaultResolver.ResolveMap: %w", errors.Join(errs...))
 	}
 
 	return result, nil

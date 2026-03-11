@@ -6,7 +6,9 @@ package azdext
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -422,9 +424,10 @@ func TestResolve_NonResponseError(t *testing.T) {
 		t.Fatalf("error type = %T, want *KeyVaultResolveError", err)
 	}
 
-	// Non-ResponseError defaults to access_denied
-	if resolveErr.Reason != ResolveReasonAccessDenied {
-		t.Errorf("Reason = %v, want %v", resolveErr.Reason, ResolveReasonAccessDenied)
+	// Non-ResponseError defaults to service_error (not access_denied),
+	// since non-HTTP errors are typically connectivity/network issues.
+	if resolveErr.Reason != ResolveReasonServiceError {
+		t.Errorf("Reason = %v, want %v", resolveErr.Reason, ResolveReasonServiceError)
 	}
 }
 
@@ -484,7 +487,7 @@ func TestResolveMap_Empty(t *testing.T) {
 	}
 }
 
-func TestResolveMap_ErrorStopsProcessing(t *testing.T) {
+func TestResolveMap_ErrorCollectsAllFailures(t *testing.T) {
 	t.Parallel()
 
 	getter := &stubSecretGetter{
@@ -500,9 +503,16 @@ func TestResolveMap_ErrorStopsProcessing(t *testing.T) {
 		"secret": "akvs://sub/vault/missing",
 	}
 
-	_, err := resolver.ResolveMap(context.Background(), input)
+	// ResolveMap now collects errors instead of stopping at the first one.
+	// The partial result should still be returned alongside the error.
+	result, err := resolver.ResolveMap(context.Background(), input)
 	if err == nil {
 		t.Fatal("expected error when resolution fails")
+	}
+
+	// Partial result should be non-nil (contains successfully resolved entries).
+	if result == nil {
+		t.Fatal("expected non-nil partial result")
 	}
 }
 
@@ -519,6 +529,185 @@ func TestResolveMap_NilContext(t *testing.T) {
 	_, err := resolver.ResolveMap(nil, map[string]string{"k": "v"})
 	if err == nil {
 		t.Fatal("expected error for nil context")
+	}
+}
+
+// --- @Microsoft.KeyVault format ---
+
+func TestParseSecretReference_AppRefValid(t *testing.T) {
+	t.Parallel()
+
+	ref, err := ParseSecretReference(
+		"@Microsoft.KeyVault(SecretUri=https://myvault.vault.azure.net/secrets/mysecret)")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if ref.VaultName != "myvault" {
+		t.Errorf("VaultName = %q, want %q", ref.VaultName, "myvault")
+	}
+	if ref.SecretName != "mysecret" {
+		t.Errorf("SecretName = %q, want %q", ref.SecretName, "mysecret")
+	}
+	if ref.SecretVersion != "" {
+		t.Errorf("SecretVersion = %q, want empty", ref.SecretVersion)
+	}
+	if ref.VaultURL != "https://myvault.vault.azure.net" {
+		t.Errorf("VaultURL = %q, want %q", ref.VaultURL, "https://myvault.vault.azure.net")
+	}
+}
+
+func TestParseSecretReference_AppRefValidWithVersion(t *testing.T) {
+	t.Parallel()
+
+	ref, err := ParseSecretReference(
+		"@Microsoft.KeyVault(SecretUri=https://myvault.vault.azure.net/secrets/mysecret/version123)")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if ref.SecretName != "mysecret" {
+		t.Errorf("SecretName = %q, want %q", ref.SecretName, "mysecret")
+	}
+	if ref.SecretVersion != "version123" {
+		t.Errorf("SecretVersion = %q, want %q", ref.SecretVersion, "version123")
+	}
+}
+
+func TestParseSecretReference_AppRefInvalidHost(t *testing.T) {
+	t.Parallel()
+
+	_, err := ParseSecretReference(
+		"@Microsoft.KeyVault(SecretUri=https://evil.com/secrets/foo)")
+	if err == nil {
+		t.Fatal("expected error for non-Azure Key Vault host")
+	}
+
+	if !strings.Contains(err.Error(), "not a known Azure Key Vault endpoint") {
+		t.Errorf("error = %q, want mention of 'not a known Azure Key Vault endpoint'", err.Error())
+	}
+}
+
+func TestParseSecretReference_AppRefMalformedURI(t *testing.T) {
+	t.Parallel()
+
+	_, err := ParseSecretReference(
+		"@Microsoft.KeyVault(SecretUri=not-a-url)")
+	if err == nil {
+		t.Fatal("expected error for malformed SecretUri")
+	}
+}
+
+func TestParseSecretReference_AppRefSovereignClouds(t *testing.T) {
+	t.Parallel()
+
+	validHosts := []struct {
+		name string
+		uri  string
+	}{
+		{"AzureChina", "https://myvault.vault.azure.cn/secrets/s"},
+		{"AzureGov", "https://myvault.vault.usgovcloudapi.net/secrets/s"},
+		{"AzureGermany", "https://myvault.vault.microsoftazure.de/secrets/s"},
+		{"ManagedHSM", "https://myvault.managedhsm.azure.net/secrets/s"},
+	}
+
+	for _, tc := range validHosts {
+		t.Run(tc.name, func(t *testing.T) {
+			ref, err := ParseSecretReference(
+				fmt.Sprintf("@Microsoft.KeyVault(SecretUri=%s)", tc.uri))
+			if err != nil {
+				t.Fatalf("unexpected error for %s: %v", tc.name, err)
+			}
+			if ref.SecretName != "s" {
+				t.Errorf("SecretName = %q, want %q", ref.SecretName, "s")
+			}
+		})
+	}
+}
+
+func TestResolve_AppRefSuccess(t *testing.T) {
+	t.Parallel()
+
+	secretValue := "app-ref-secret-value"
+	getter := &stubSecretGetter{
+		resp: azsecrets.GetSecretResponse{
+			Secret: azsecrets.Secret{
+				Value: &secretValue,
+			},
+		},
+	}
+
+	cred := &stubCredential{}
+	resolver, err := NewKeyVaultResolver(cred, &KeyVaultResolverOptions{
+		ClientFactory: stubSecretFactory(getter, nil),
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	val, err := resolver.Resolve(context.Background(),
+		"@Microsoft.KeyVault(SecretUri=https://myvault.vault.azure.net/secrets/mysecret)")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if val != secretValue {
+		t.Errorf("Resolve() = %q, want %q", val, secretValue)
+	}
+}
+
+func TestResolve_AppRefWithVersion(t *testing.T) {
+	t.Parallel()
+
+	secretValue := "versioned-value"
+	getter := &stubSecretGetter{
+		resp: azsecrets.GetSecretResponse{
+			Secret: azsecrets.Secret{
+				Value: &secretValue,
+			},
+		},
+	}
+
+	cred := &stubCredential{}
+	resolver, err := NewKeyVaultResolver(cred, &KeyVaultResolverOptions{
+		ClientFactory: stubSecretFactory(getter, nil),
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	val, err := resolver.Resolve(context.Background(),
+		"@Microsoft.KeyVault(SecretUri=https://myvault.vault.azure.net/secrets/mysecret/v1)")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if val != secretValue {
+		t.Errorf("Resolve() = %q, want %q", val, secretValue)
+	}
+}
+
+func TestResolve_AppRefInvalidHostReturnsError(t *testing.T) {
+	t.Parallel()
+
+	cred := &stubCredential{}
+	resolver, _ := NewKeyVaultResolver(cred, &KeyVaultResolverOptions{
+		ClientFactory: stubSecretFactory(&stubSecretGetter{}, nil),
+	})
+
+	_, err := resolver.Resolve(context.Background(),
+		"@Microsoft.KeyVault(SecretUri=https://evil.com/secrets/foo)")
+	if err == nil {
+		t.Fatal("expected error for invalid vault host")
+	}
+
+	var resolveErr *KeyVaultResolveError
+	if !errors.As(err, &resolveErr) {
+		t.Fatalf("error type = %T, want *KeyVaultResolveError", err)
+	}
+
+	if resolveErr.Reason != ResolveReasonInvalidReference {
+		t.Errorf("Reason = %v, want %v", resolveErr.Reason, ResolveReasonInvalidReference)
 	}
 }
 

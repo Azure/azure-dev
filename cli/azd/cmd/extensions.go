@@ -220,13 +220,16 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 	env, err := a.lazyEnv.GetValue()
 	if err == nil && env != nil {
-		allEnv = append(allEnv, env.Environ()...)
-
-		// Resolve Key Vault secret references (akvs:// and @Microsoft.KeyVault formats)
-		// before passing environment to the extension, so extensions receive plain values.
+		// Resolve Key Vault secret references only in azd-managed environment
+		// variables (akvs:// and @Microsoft.KeyVault formats). System env vars
+		// from os.Environ() are NOT processed — only the azd environment's
+		// variables may contain KV references.
+		azdEnvVars := env.Environ()
 		if subId := env.Getenv("AZURE_SUBSCRIPTION_ID"); subId != "" {
-			allEnv = kv.ResolveSecretEnvironment(ctx, a.kvService, allEnv, subId)
+			azdEnvVars = kv.ResolveSecretEnvironment(ctx, a.kvService, azdEnvVars, subId)
 		}
+
+		allEnv = append(allEnv, azdEnvVars...)
 	}
 
 	serverInfo, err := a.azdServer.Start()

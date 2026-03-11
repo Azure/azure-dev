@@ -191,13 +191,13 @@ func registerProjectMappings() {
 		}
 
 		return &azdext.DockerProjectOptions{
-			Path:          src.Path,
-			Context:       src.Context,
-			Platform:      src.Platform,
-			Target:        src.Target,
-			Registry:      registry,
-			Image:         image,
-			Tag:           tag,
+			Path:        src.Path,
+			Context:     src.Context,
+			Platform:    src.Platform,
+			Target:      src.Target,
+			Registry:    registry,
+			Image:       image,
+			Tag:         tag,
 			RemoteBuild: src.RemoteBuild,
 			BuildArgs:   buildArgs,
 		}, nil

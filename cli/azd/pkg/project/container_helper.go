@@ -604,7 +604,7 @@ func (ch *ContainerHelper) Publish(
 			// Check if a local container runtime (Docker/Podman) is available before falling back
 			if dockerErr := ch.docker.CheckInstalled(ctx); dockerErr != nil {
 				return nil, fmt.Errorf(
-					"remote build failed: %w\n\nLocal fallback unavailable: %s",
+					"remote build failed: %w\n\nLocal fallback unavailable: %w",
 					err, dockerErr)
 			}
 

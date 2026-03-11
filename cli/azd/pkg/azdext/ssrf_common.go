@@ -112,7 +112,7 @@ func ssrfCheckIP(
 // extractIPv4Compatible extracts the embedded IPv4 from an IPv4-compatible
 // IPv6 address (::x.x.x.x — first 12 bytes zero, last 4 non-zero).
 func extractIPv4Compatible(ip net.IP) net.IP {
-	for i := 0; i < 12; i++ {
+	for i := range 12 {
 		if ip[i] != 0 {
 			return nil
 		}
@@ -126,7 +126,7 @@ func extractIPv4Compatible(ip net.IP) net.IP {
 // extractIPv4Translated extracts the embedded IPv4 from an IPv4-translated
 // IPv6 address (::ffff:0:x.x.x.x — RFC 2765 §4.2.1).
 func extractIPv4Translated(ip net.IP) net.IP {
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		if ip[i] != 0 {
 			return nil
 		}

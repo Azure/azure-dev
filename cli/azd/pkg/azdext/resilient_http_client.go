@@ -257,7 +257,7 @@ func (rc *ResilientClient) backoff(attempt int) time.Duration {
 		jitter = 0.5 + randFloat*0.5
 	}
 
-	return delay
+	return time.Duration(float64(delay) * jitter)
 }
 
 // isRetryable returns true for status codes that indicate a transient failure.

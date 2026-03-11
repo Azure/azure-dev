@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -486,7 +487,7 @@ func TestPager_CollectTruncatedByMaxPages(t *testing.T) {
 	t.Parallel()
 
 	page1 := pageJSON([]int{1, 2}, "https://example.com/api?page=2")
-	page2 := pageJSON([]int{3, 4}, "")
+	_ = pageJSON([]int{3, 4}, "") // page2 not needed; only page1 used for oversized-response test
 
 	doer := &mockDoer{
 		responses: []*doerResponse{
@@ -662,7 +663,7 @@ func TestPager_NotTruncatedOnNaturalEnd(t *testing.T) {
 		responses: []*doerResponse{
 			{resp: &http.Response{
 				StatusCode: http.StatusOK,
-				Body:       io.NopCloser(strings.NewReader(page2)),
+				Body:       io.NopCloser(strings.NewReader(body)),
 				Header:     http.Header{},
 			}},
 		},

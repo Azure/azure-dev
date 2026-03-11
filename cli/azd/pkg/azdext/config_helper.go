@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"regexp"
 )
 
@@ -246,13 +247,9 @@ func (ch *ConfigHelper) UnsetEnv(ctx context.Context, path string) error {
 func MergeJSON(base, override map[string]any) map[string]any {
 	merged := make(map[string]any, len(base)+len(override))
 
-	for k, v := range base {
-		merged[k] = v
-	}
+	maps.Copy(merged, base)
 
-	for k, v := range override {
-		merged[k] = v
-	}
+	maps.Copy(merged, override)
 
 	return merged
 }
@@ -276,9 +273,7 @@ func DeepMergeJSON(base, override map[string]any) map[string]any {
 func deepMergeJSON(base, override map[string]any, depth int) map[string]any {
 	merged := make(map[string]any, len(base)+len(override))
 
-	for k, v := range base {
-		merged[k] = v
-	}
+	maps.Copy(merged, base)
 
 	for k, v := range override {
 		baseVal, exists := merged[k]

@@ -237,7 +237,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--host'],
-									description: '[Optional] For container based agents, can override the default host to target a container app instead. Accepted values: \'containerapp\'',
+									description: 'For container based agents, can override the default host to target a container app instead. Accepted values: \'containerapp\'',
 									args: [
 										{
 											name: 'host',
@@ -254,6 +254,24 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
+									name: ['--model'],
+									description: 'Name of the AI model to use (e.g., \'gpt-4o\'). If not specified, defaults to \'gpt-4.1-mini\'. Mutually exclusive with --model-deployment, with --model-deployment being used if both are provided',
+									args: [
+										{
+											name: 'model',
+										},
+									],
+								},
+								{
+									name: ['--model-deployment', '-d'],
+									description: 'Name of an existing model deployment to use from the Foundry project. Only used when paired with an existing Foundry project, either via --project-id or interactive prompts',
+									args: [
+										{
+											name: 'model-deployment',
+										},
+									],
+								},
+								{
 									name: ['--project-id', '-p'],
 									description: 'Existing Microsoft Foundry Project Id to initialize your azd environment with',
 									args: [
@@ -264,10 +282,64 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--src', '-s'],
-									description: '[Optional] Directory to download the agent definition to (defaults to \'src/<agent-id>\')',
+									description: 'Directory to download the agent definition to (defaults to \'src/<agent-id>\')',
 									args: [
 										{
 											name: 'src',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['invoke'],
+							description: 'Send a message to your agent.',
+							options: [
+								{
+									name: ['--conversation'],
+									description: 'Explicit conversation ID override',
+									args: [
+										{
+											name: 'conversation',
+										},
+									],
+								},
+								{
+									name: ['--local', '-l'],
+									description: 'Invoke on localhost instead of Foundry',
+								},
+								{
+									name: ['--new-conversation'],
+									description: 'Force a new conversation (discard saved one)',
+								},
+								{
+									name: ['--new-session'],
+									description: 'Force a new session (discard saved one)',
+								},
+								{
+									name: ['--port'],
+									description: 'Local server port',
+									args: [
+										{
+											name: 'port',
+										},
+									],
+								},
+								{
+									name: ['--session', '-s'],
+									description: 'Explicit session ID override',
+									args: [
+										{
+											name: 'session',
+										},
+									],
+								},
+								{
+									name: ['--timeout', '-t'],
+									description: 'Request timeout in seconds (0 for no timeout)',
+									args: [
+										{
+											name: 'timeout',
 										},
 									],
 								},
@@ -332,6 +404,30 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'version',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['run'],
+							description: 'Run your agent locally for development.',
+							options: [
+								{
+									name: ['--port', '-p'],
+									description: 'Port to listen on',
+									args: [
+										{
+											name: 'port',
+										},
+									],
+								},
+								{
+									name: ['--start-command', '-c'],
+									description: 'Explicit startup command (overrides azure.yaml and auto-detection)',
+									args: [
+										{
+											name: 'start-command',
 										},
 									],
 								},
@@ -3065,8 +3161,16 @@ const completionSpec: Fig.Spec = {
 									description: 'Initialize a new AI agent project. (Preview)',
 								},
 								{
+									name: ['invoke'],
+									description: 'Send a message to your agent.',
+								},
+								{
 									name: ['monitor'],
 									description: 'Monitor logs from a hosted agent container.',
+								},
+								{
+									name: ['run'],
+									description: 'Run your agent locally for development.',
 								},
 								{
 									name: ['show'],

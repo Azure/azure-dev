@@ -409,6 +409,11 @@ func (e *ConfigError) Unwrap() error {
 	return e.Err
 }
 
+// configPathRe validates config path segments. Paths must start with an alphanumeric
+// character and may contain alphanumeric characters, dots, underscores, and hyphens.
+// Note: Dotted path segments (e.g., ".hidden") are intentionally rejected because
+// config paths are logical keys, not file system paths. Leading dots could collide
+// with hidden-file conventions and cause confusion in serialized config formats.
 var configPathRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`)
 
 // validatePath checks that a config path is non-empty.

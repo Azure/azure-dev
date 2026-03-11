@@ -5,6 +5,7 @@ package azdext
 
 import (
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -120,8 +121,16 @@ func DetectInteractive() InteractiveInfo {
 
 // isNoPromptEnv checks AZD_NO_PROMPT for a truthy value.
 func isNoPromptEnv() bool {
-	v := strings.ToLower(os.Getenv("AZD_NO_PROMPT"))
-	return v == "1" || v == "true" || v == "yes"
+	v := os.Getenv("AZD_NO_PROMPT")
+	if v == "" {
+		return false
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		// Also accept "yes" for backward compatibility.
+		return strings.EqualFold(v, "yes")
+	}
+	return b
 }
 
 // ciEnvVars lists environment variables that indicate CI environments.

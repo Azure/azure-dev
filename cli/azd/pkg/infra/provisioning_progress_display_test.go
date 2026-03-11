@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -34,7 +33,7 @@ func (mock *mockResourceManager) WalkDeploymentOperations(
 	fn WalkDeploymentOperationFunc,
 ) error {
 	for _, operation := range mock.operations {
-		if err := fn(ctx, operation); err != nil && !errors.Is(err, SkipExpand) {
+		if err := fn(ctx, operation); err != nil && !IsSkipExpand(err) {
 			return err
 		}
 	}
@@ -173,7 +172,7 @@ func (mock *walkSkipAwareResourceManager) WalkDeploymentOperations(
 ) error {
 	err := fn(ctx, mock.nestedOperation)
 	if err != nil {
-		if errors.Is(err, SkipExpand) {
+		if IsSkipExpand(err) {
 			return nil
 		}
 

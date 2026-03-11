@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 )
@@ -252,6 +253,16 @@ func (p *MCPSecurityPolicy) checkPathCore(path string) error {
 		}
 		pathWithSep := absPath + string(filepath.Separator)
 		baseWithoutSep := strings.TrimSuffix(absBase, string(filepath.Separator))
+
+		// On Windows (NTFS), file paths are case-insensitive, so normalize both
+		// to lowercase before prefix comparison.
+		if runtime.GOOS == "windows" {
+			pathWithSep = strings.ToLower(pathWithSep)
+			absBase = strings.ToLower(absBase)
+			absPath = strings.ToLower(absPath)
+			baseWithoutSep = strings.ToLower(baseWithoutSep)
+		}
+
 		if strings.HasPrefix(pathWithSep, absBase) || absPath == baseWithoutSep {
 			return nil
 		}
@@ -354,15 +365,15 @@ func ssrfSafeRedirect(req *http.Request, via []*http.Request, lookupHost func(st
 		return fmt.Errorf("redirect to localhost %s blocked (SSRF protection)", host)
 	}
 
-	// Block redirects to private/loopback IP addresses, including
-	// IPv6 encoding variants that embed private IPv4 addresses.
-	if ip := net.ParseIP(host); ip != nil {
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
-			return fmt.Errorf("redirect to private/loopback IP %s blocked (SSRF protection)", ip)
-		}
+	// Parse the comprehensive CIDR blocklist once for the check.
+	blockedCIDRs := parseBlockedCIDRs()
 
-		if err := checkIPEncodingVariants(ip, host); err != nil {
-			return err
+	// Block redirects to private/loopback IP addresses using the comprehensive
+	// CIDR blocklist from ssrf_common.go. This covers RFC 1918, CGNAT, 6to4,
+	// Teredo, NAT64, and IPv6 encoding variants.
+	if ip := net.ParseIP(host); ip != nil {
+		if reason, detail, blocked := ssrfCheckIP(ip, host, blockedCIDRs, true); blocked {
+			return fmt.Errorf("redirect to %s blocked (SSRF protection: %s: %s)", host, reason, detail)
 		}
 	}
 
@@ -376,15 +387,26 @@ func ssrfSafeRedirect(req *http.Request, via []*http.Request, lookupHost func(st
 		if ip == nil {
 			continue
 		}
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
-			return fmt.Errorf("redirect host %s resolved to private/loopback IP %s blocked (SSRF protection)", host, ip)
-		}
-		if err := checkIPEncodingVariants(ip, host); err != nil {
-			return err
+		if reason, detail, blocked := ssrfCheckIP(ip, host, blockedCIDRs, true); blocked {
+			return fmt.Errorf(
+				"redirect host %s resolved to blocked IP (SSRF protection: %s: %s)", host, reason, detail)
 		}
 	}
 
 	return nil
+}
+
+// parseBlockedCIDRs parses the ssrfBlockedCIDRs strings into []*net.IPNet.
+// This mirrors the approach used by SSRFGuard.BlockPrivateNetworks().
+func parseBlockedCIDRs() []*net.IPNet {
+	var cidrs []*net.IPNet
+	for _, cidr := range ssrfBlockedCIDRs {
+		_, ipNet, err := net.ParseCIDR(cidr)
+		if err == nil {
+			cidrs = append(cidrs, ipNet)
+		}
+	}
+	return cidrs
 }
 
 // checkIPEncodingVariants detects IPv4-compatible (::x.x.x.x) and

@@ -240,6 +240,12 @@ func (g *SSRFGuard) checkCore(rawURL string) error {
 	}
 
 	// Step 7: DNS resolution for hostnames (fail-closed).
+	//
+	// NOTE: There is a TOCTOU window between DNS resolution during validation and the
+	// subsequent connection. A sophisticated attacker could exploit DNS rebinding to bypass
+	// SSRF checks. Mitigation: use short DNS TTLs and consider implementing an IP-pinning
+	// custom dialer in the future.
+	// TODO: Implement IP-pinning dialer to eliminate DNS rebinding TOCTOU window.
 	addrs, err := g.lookupHost(host)
 	if err != nil {
 		return g.blocked(truncateValue(rawURL, 200), "dns_failure",

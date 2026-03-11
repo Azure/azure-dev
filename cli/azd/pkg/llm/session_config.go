@@ -47,7 +47,7 @@ func (b *SessionConfigBuilder) Build(
 
 	userConfig, err := b.userConfigManager.Load()
 	if err != nil {
-		// Use defaults if config can't be loaded
+		log.Printf("[copilot-config] Warning: failed to load user config: %v, using defaults", err)
 		return cfg, nil
 	}
 
@@ -177,33 +177,16 @@ func getUserMCPServers(userConfig config.Config) map[string]copilot.MCPServerCon
 
 	result := make(map[string]copilot.MCPServerConfig)
 	for name, v := range raw {
-		// Marshal/unmarshal each server entry to get typed config
 		data, err := json.Marshal(v)
 		if err != nil {
 			continue
 		}
 
-		// Try to detect type field first
-		var probe struct {
-			Type string `json:"type"`
-		}
-		if err := json.Unmarshal(data, &probe); err != nil {
+		var serverConfig map[string]any
+		if err := json.Unmarshal(data, &serverConfig); err != nil {
 			continue
 		}
-
-		if probe.Type == "http" {
-			var remote map[string]any
-			if err := json.Unmarshal(data, &remote); err != nil {
-				continue
-			}
-			result[name] = copilot.MCPServerConfig(remote)
-		} else {
-			var local map[string]any
-			if err := json.Unmarshal(data, &local); err != nil {
-				continue
-			}
-			result[name] = copilot.MCPServerConfig(local)
-		}
+		result[name] = copilot.MCPServerConfig(serverConfig)
 	}
 
 	return result

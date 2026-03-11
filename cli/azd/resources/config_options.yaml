@@ -102,12 +102,20 @@
   example: "ai.agent.mcp.servers.<name>.type"
 - key: ai.agent.tools.available
   description: "Allowlist of tools available to the agent. When set, only these tools are active."
-  type: object
+  type: array
   example: '["read_file", "write_file"]'
 - key: ai.agent.tools.excluded
   description: "Denylist of tools blocked from the agent."
-  type: object
+  type: array
   example: '["execute_command"]'
+- key: ai.agent.skills.directories
+  description: "Additional skill directories to load in agent sessions."
+  type: array
+  example: '["./skills"]'
+- key: ai.agent.skills.disabled
+  description: "Skills to disable in agent sessions."
+  type: array
+  example: '["legacy-linter"]'
 - key: ai.agent.systemMessage
   description: "Custom system message appended to the agent's default system prompt."
   type: string

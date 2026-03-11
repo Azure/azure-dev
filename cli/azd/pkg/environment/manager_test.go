@@ -389,6 +389,11 @@ func registerContainerComponents(t *testing.T, mockContext *mocks.MockContext) {
 		return &mockSubscriptionTenantResolver{}
 	})
 
+	mockContext.Container.MustRegisterSingleton(func() config.UserConfigManager {
+		fileConfigManager := config.NewFileConfigManager(config.NewManager())
+		return config.NewUserConfigManager(fileConfigManager)
+	})
+
 	mockContext.Container.MustRegisterSingleton(storage.NewBlobSdkClient)
 	mockContext.Container.MustRegisterSingleton(config.NewManager)
 	mockContext.Container.MustRegisterSingleton(storage.NewBlobClient)

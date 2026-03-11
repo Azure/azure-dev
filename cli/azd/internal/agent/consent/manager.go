@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -254,22 +253,6 @@ func (cm *consentManager) IsProjectScopeAvailable(ctx context.Context) bool {
 	// Try to get the current environment
 	_, err = envManager.Get(ctx, "")
 	return err == nil
-}
-
-// WrapTool wraps a single langchaingo tool with consent protection
-func (cm *consentManager) WrapTool(tool common.AnnotatedTool) common.AnnotatedTool {
-	return newConsentWrapperTool(tool, cm.console, cm)
-}
-
-// WrapTools wraps multiple langchaingo tools with consent protection
-func (cm *consentManager) WrapTools(tools []common.AnnotatedTool) []common.AnnotatedTool {
-	wrappedTools := make([]common.AnnotatedTool, len(tools))
-
-	for i, tool := range tools {
-		wrappedTools[i] = cm.WrapTool(tool)
-	}
-
-	return wrappedTools
 }
 
 // evaluateRule evaluates a consent rule and returns a decision

@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -279,10 +278,6 @@ type ConsentManager interface {
 
 	// Environment context methods
 	IsProjectScopeAvailable(ctx context.Context) bool
-
-	// Tool wrapping methods
-	WrapTool(tool common.AnnotatedTool) common.AnnotatedTool
-	WrapTools(tools []common.AnnotatedTool) []common.AnnotatedTool
 }
 
 type ExecutingTool struct {

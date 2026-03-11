@@ -106,6 +106,7 @@ func (a *CopilotAgent) Initialize(ctx context.Context, opts ...InitOption) (*Ini
 	})
 
 	effortIdx, err := effortSelector.Ask(ctx)
+	fmt.Println()
 	if err != nil {
 		return nil, err
 	}
@@ -150,6 +151,7 @@ func (a *CopilotAgent) Initialize(ctx context.Context, opts ...InitOption) (*Ini
 	})
 
 	modelIdx, err := modelSelector.Ask(ctx)
+	fmt.Println()
 	if err != nil {
 		return nil, err
 	}
@@ -215,7 +217,6 @@ func (a *CopilotAgent) SelectSession(ctx context.Context) (*SessionMetadata, err
 		})
 	}
 
-	fmt.Println()
 	selector := uxlib.NewSelect(&uxlib.SelectOptions{
 		Message:         "Previous sessions found",
 		Choices:         choices,

@@ -31,8 +31,8 @@ type customCreateFlags struct {
 	Description string
 	BaseModel   string
 	Publisher   string
-	AzcopyPath string
-	NoWait     bool
+	AzcopyPath  string
+	NoWait      bool
 }
 
 func newCustomCreateCommand(parentFlags *customFlags) *cobra.Command {

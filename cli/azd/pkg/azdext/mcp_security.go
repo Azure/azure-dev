@@ -409,24 +409,6 @@ func parseBlockedCIDRs() []*net.IPNet {
 	return cidrs
 }
 
-// checkIPEncodingVariants detects IPv4-compatible (::x.x.x.x) and
-// IPv4-translated (::ffff:0:x.x.x.x) IPv6 addresses that embed
-// private IPv4 addresses but bypass Go's IsPrivate()/IsLoopback().
-func checkIPEncodingVariants(ip net.IP, originalHost string) error {
-	v4 := extractEmbeddedIPv4(ip)
-	if v4 == nil {
-		return nil
-	}
-
-	if v4.IsLoopback() || v4.IsPrivate() || v4.IsLinkLocalUnicast() || v4.IsUnspecified() {
-		return fmt.Errorf(
-			"redirect to embedded IPv4 address %s (embedded %s) blocked (SSRF protection)",
-			ip, v4)
-	}
-
-	return nil
-}
-
 // extractEmbeddedIPv4 returns the embedded IPv4 address from IPv4-compatible
 // (::x.x.x.x) or IPv4-translated (::ffff:0:x.x.x.x) IPv6 encodings.
 // Returns nil if the address is not one of these encoding variants.

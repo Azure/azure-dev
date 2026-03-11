@@ -93,14 +93,20 @@ words:
   - PATHEXT
   - mintty
   - dockerenv
+  - dedup
   - exfiltration
   - Fprintf
   - gocritic
+  - gradlew
   - IMDS
+  - managedhsm
+  - microsoftazure
   - myhost
+  - newtag
   - preconfigured
   - Println
   - sctx
+  - TTLs
 languageSettings:
   - languageId: go
     ignoreRegExpList:

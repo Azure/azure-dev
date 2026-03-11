@@ -188,10 +188,7 @@ func TestCopyFileAtomic_LargeFileStreaming(t *testing.T) {
 	}
 	written := 0
 	for written < size {
-		n := size - written
-		if n > len(chunk) {
-			n = len(chunk)
-		}
+		n := min(size-written, len(chunk))
 		copied, err := f.Write(chunk[:n])
 		if err != nil {
 			_ = f.Close()

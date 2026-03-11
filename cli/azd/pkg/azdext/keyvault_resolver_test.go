@@ -628,7 +628,7 @@ func TestParseSecretReference_AppRefSovereignClouds(t *testing.T) {
 func TestResolve_AppRefSuccess(t *testing.T) {
 	t.Parallel()
 
-	secretValue := "app-ref-secret-value"
+	secretValue := "app-ref-secret-value" //nolint:gosec // test data, not a real credential
 	getter := &stubSecretGetter{
 		resp: azsecrets.GetSecretResponse{
 			Secret: azsecrets.Secret{

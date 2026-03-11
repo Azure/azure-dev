@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -278,10 +277,4 @@ type ConsentManager interface {
 
 	// Environment context methods
 	IsProjectScopeAvailable(ctx context.Context) bool
-}
-
-type ExecutingTool struct {
-	sync.RWMutex
-	Name   string
-	Server string
 }

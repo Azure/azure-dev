@@ -20,47 +20,6 @@ const (
 	ConfigKeyMCPConsent = "mcp.consent"
 )
 
-// Global state for tracking current executing tool
-// This is a work around right now since the MCP protocol does not contain enough information in the sampling requests
-// Specifically, the tool name and server are not included in the request context
-var (
-	executingTool = &ExecutingTool{}
-)
-
-// SetCurrentExecutingTool sets the currently executing tool (thread-safe)
-func SetCurrentExecutingTool(name, server string) {
-	executingTool.Lock()
-	defer executingTool.Unlock()
-	executingTool.Name = name
-	executingTool.Server = server
-}
-
-// ClearCurrentExecutingTool clears the currently executing tool (thread-safe)
-func ClearCurrentExecutingTool() {
-	executingTool.Lock()
-	defer executingTool.Unlock()
-	executingTool.Name = ""
-	executingTool.Server = ""
-}
-
-// GetCurrentExecutingTool gets the currently executing tool (thread-safe)
-// Returns nil if no tool is currently executing
-func GetCurrentExecutingTool() *ExecutingTool {
-	executingTool.RLock()
-	defer executingTool.RUnlock()
-
-	// Return nil if no tool is currently executing
-	if executingTool.Name == "" && executingTool.Server == "" {
-		return nil
-	}
-
-	// Return a copy to avoid exposing the mutex
-	return &ExecutingTool{
-		Name:   executingTool.Name,
-		Server: executingTool.Server,
-	}
-}
-
 // consentManager implements the ConsentManager interface
 type consentManager struct {
 	lazyEnvManager    *lazy.Lazy[environment.Manager]

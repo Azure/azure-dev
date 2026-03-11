@@ -1,7 +1,6 @@
 ---
 name: Generate changelog (extensions)
 description: Update an azd extension changelog and bump its version.
-infer: true
 ---
 
 # Changelog (extensions)

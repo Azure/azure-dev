@@ -1,7 +1,6 @@
 ---
 name: Generate changelog (azd core)
 description: Update azd core release changelog and version based on merged PRs.
-infer: true
 ---
 
 # Changelog (azd core)

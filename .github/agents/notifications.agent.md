@@ -1,7 +1,6 @@
 ---
 name: Bell Bot
 description: Your AI-powered GitHub bell manager — summarize, review, and mark notifications as read/done.
-infer: true
 ---
 
 # Bell Bot 🔔🧠

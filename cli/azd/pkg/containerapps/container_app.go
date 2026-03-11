@@ -36,6 +36,7 @@ const (
 	pathTemplateRevisionSuffix             = "properties.template.revisionSuffix"
 	pathTemplateContainers                 = "properties.template.containers"
 	pathConfigurationActiveRevisionsMode   = "properties.configuration.activeRevisionsMode"
+	pathConfigurationDapr                  = "properties.configuration.dapr"
 	pathConfigurationSecrets               = "properties.configuration.secrets"
 	pathConfigurationIngressTraffic        = "properties.configuration.ingress.traffic"
 	pathConfigurationIngressFqdn           = "properties.configuration.ingress.fqdn"
@@ -168,7 +169,13 @@ func (cas *containerAppService) persistSettings(
 	shouldPersistDomains := cas.alphaFeatureManager.IsEnabled(persistCustomDomainsFeature)
 	shouldPersistIngressSessionAffinity := cas.alphaFeatureManager.IsEnabled(persistIngressSessionAffinity)
 
-	if !shouldPersistDomains && !shouldPersistIngressSessionAffinity {
+	// Preserve existing Dapr configuration when the deployment YAML does not include it.
+	// This prevents Dapr config set externally (e.g. via Terraform) from being removed on deploy.
+	objConfig := config.NewConfig(obj)
+	_, hasDaprConfig := objConfig.Get(pathConfigurationDapr)
+	shouldPreserveDapr := !hasDaprConfig
+
+	if !shouldPersistDomains && !shouldPersistIngressSessionAffinity && !shouldPreserveDapr {
 		return obj, nil
 	}
 
@@ -179,8 +186,6 @@ func (cas *containerAppService) persistSettings(
 		// so we can just return the existing state as is.
 		return obj, nil
 	}
-
-	objConfig := config.NewConfig(obj)
 
 	if shouldPersistDomains {
 		customDomains, has := aca.GetSlice(pathConfigurationIngressCustomDomains)
@@ -196,6 +201,15 @@ func (cas *containerAppService) persistSettings(
 		if has {
 			if err := objConfig.Set(pathConfigurationIngressStickySessions, stickySessions); err != nil {
 				return nil, fmt.Errorf("setting sticky sessions: %w", err)
+			}
+		}
+	}
+
+	if shouldPreserveDapr {
+		daprConfig, has := aca.Get(pathConfigurationDapr)
+		if has {
+			if err := objConfig.Set(pathConfigurationDapr, daprConfig); err != nil {
+				return nil, fmt.Errorf("setting dapr configuration: %w", err)
 			}
 		}
 	}

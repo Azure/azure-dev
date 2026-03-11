@@ -848,3 +848,149 @@ func Test_ContainerAppJob_UpdateImage_NilContainerElement(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "nil container entry")
 }
+
+// Test_ContainerApp_DeployYaml_PreservesDaprConfig verifies that when a deployment YAML does not include
+// Dapr configuration, any existing Dapr configuration on the container app is preserved.
+// This ensures that Dapr configuration set externally (e.g. via Terraform) is not removed on deploy.
+func Test_ContainerApp_DeployYaml_PreservesDaprConfig(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+
+	subscriptionId := "SUBSCRIPTION_ID"
+	location := "eastus2"
+	resourceGroup := "RESOURCE_GROUP"
+	appName := "APP_NAME"
+
+	// YAML does NOT include Dapr configuration
+	containerAppYaml := `
+location: eastus2
+name: APP_NAME
+properties:
+  configuration:
+    activeRevisionsMode: Single
+  template:
+    containers:
+      - image: IMAGE_NAME
+`
+
+	// Existing container app has Dapr enabled
+	existingApp := &armappcontainers.ContainerApp{
+		Location: to.Ptr(location),
+		Name:     to.Ptr(appName),
+		Properties: &armappcontainers.ContainerAppProperties{
+			Configuration: &armappcontainers.Configuration{
+				ActiveRevisionsMode: to.Ptr(armappcontainers.ActiveRevisionsModeSingle),
+				Dapr: &armappcontainers.Dapr{
+					AppID:   to.Ptr("my-app"),
+					AppPort: to.Ptr[int32](8080),
+					Enabled: to.Ptr(true),
+				},
+			},
+			Template: &armappcontainers.Template{
+				Containers: []*armappcontainers.Container{
+					{
+						Image: to.Ptr("IMAGE_NAME"),
+					},
+				},
+			},
+		},
+	}
+
+	_ = mockazsdk.MockContainerAppGet(mockContext, subscriptionId, resourceGroup, appName, existingApp)
+	containerAppUpdateRequest := mockazsdk.MockContainerAppCreateOrUpdate(
+		mockContext, subscriptionId, resourceGroup, appName, existingApp,
+	)
+
+	cas := NewContainerAppService(
+		mockContext.SubscriptionCredentialProvider,
+		clock.NewMock(),
+		mockContext.ArmClientOptions,
+		mockContext.AlphaFeaturesManager,
+	)
+
+	err := cas.DeployYaml(*mockContext.Context, subscriptionId, resourceGroup, appName, []byte(containerAppYaml), nil)
+	require.NoError(t, err)
+
+	var actual *armappcontainers.ContainerApp
+	err = mocks.ReadHttpBody(containerAppUpdateRequest.Body, &actual)
+	require.NoError(t, err)
+
+	// Dapr configuration should be preserved from the existing container app
+	require.NotNil(t, actual.Properties.Configuration.Dapr)
+	require.Equal(t, "my-app", *actual.Properties.Configuration.Dapr.AppID)
+	require.Equal(t, int32(8080), *actual.Properties.Configuration.Dapr.AppPort)
+	require.Equal(t, true, *actual.Properties.Configuration.Dapr.Enabled)
+}
+
+// Test_ContainerApp_DeployYaml_YamlDaprConfigNotOverridden verifies that when a deployment YAML already
+// includes Dapr configuration, the YAML's Dapr configuration is used (not the existing app's configuration).
+func Test_ContainerApp_DeployYaml_YamlDaprConfigNotOverridden(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+
+	subscriptionId := "SUBSCRIPTION_ID"
+	location := "eastus2"
+	resourceGroup := "RESOURCE_GROUP"
+	appName := "APP_NAME"
+
+	// YAML includes its own Dapr configuration
+	containerAppYaml := `
+location: eastus2
+name: APP_NAME
+properties:
+  configuration:
+    activeRevisionsMode: Single
+    dapr:
+      appId: yaml-app
+      appPort: 9090
+      enabled: true
+  template:
+    containers:
+      - image: IMAGE_NAME
+`
+
+	// Existing container app has different Dapr configuration
+	existingApp := &armappcontainers.ContainerApp{
+		Location: to.Ptr(location),
+		Name:     to.Ptr(appName),
+		Properties: &armappcontainers.ContainerAppProperties{
+			Configuration: &armappcontainers.Configuration{
+				ActiveRevisionsMode: to.Ptr(armappcontainers.ActiveRevisionsModeSingle),
+				Dapr: &armappcontainers.Dapr{
+					AppID:   to.Ptr("existing-app"),
+					AppPort: to.Ptr[int32](8080),
+					Enabled: to.Ptr(true),
+				},
+			},
+			Template: &armappcontainers.Template{
+				Containers: []*armappcontainers.Container{
+					{
+						Image: to.Ptr("IMAGE_NAME"),
+					},
+				},
+			},
+		},
+	}
+
+	_ = mockazsdk.MockContainerAppGet(mockContext, subscriptionId, resourceGroup, appName, existingApp)
+	containerAppUpdateRequest := mockazsdk.MockContainerAppCreateOrUpdate(
+		mockContext, subscriptionId, resourceGroup, appName, existingApp,
+	)
+
+	cas := NewContainerAppService(
+		mockContext.SubscriptionCredentialProvider,
+		clock.NewMock(),
+		mockContext.ArmClientOptions,
+		mockContext.AlphaFeaturesManager,
+	)
+
+	err := cas.DeployYaml(*mockContext.Context, subscriptionId, resourceGroup, appName, []byte(containerAppYaml), nil)
+	require.NoError(t, err)
+
+	var actual *armappcontainers.ContainerApp
+	err = mocks.ReadHttpBody(containerAppUpdateRequest.Body, &actual)
+	require.NoError(t, err)
+
+	// Dapr configuration from the YAML should be used, not the existing app's
+	require.NotNil(t, actual.Properties.Configuration.Dapr)
+	require.Equal(t, "yaml-app", *actual.Properties.Configuration.Dapr.AppID)
+	require.Equal(t, int32(9090), *actual.Properties.Configuration.Dapr.AppPort)
+}

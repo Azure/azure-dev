@@ -417,147 +417,352 @@ func Test_MapError(t *testing.T) {
 				fields.ErrType.String("*errors.errorString"),
 			},
 		},
-		// Sentinel error test cases — verify typed errors produce meaningful ResultCodes
+		// Sentinel error test cases — verify typed errors wrapped in
+		// ErrorWithSuggestion produce error.suggestion ResultCode with
+		// the sentinel code in error.type via classifySentinel.
 		{
-			name:          "WithErrNoProject",
-			err:           azdcontext.ErrNoProject,
-			wantErrReason: "internal.no_project",
+			name: "WithErrNoProject",
+			err: &internal.ErrorWithSuggestion{
+				Err:        azdcontext.ErrNoProject,
+				Suggestion: "Run azd init.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String("internal.no_project"),
+			},
 		},
 		{
-			name:          "WithErrEnvNotFound",
-			err:           fmt.Errorf("environment 'dev' does not exist: %w", environment.ErrNotFound),
-			wantErrReason: "internal.env_not_found",
+			name: "WithErrEnvNotFound",
+			err: &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"environment 'dev' does not exist: %w",
+					environment.ErrNotFound),
+				Suggestion: "Run azd env new.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String("internal.env_not_found"),
+			},
 		},
 		{
-			name:          "WithErrInfraNotProvisioned",
-			err:           fmt.Errorf("run `azd provision`: %w", internal.ErrInfraNotProvisioned),
-			wantErrReason: "internal.infra_not_provisioned",
+			name: "WithErrInfraNotProvisioned",
+			err: &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"run azd provision: %w",
+					internal.ErrInfraNotProvisioned),
+				Suggestion: "Run azd provision.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String(
+					"internal.infra_not_provisioned"),
+			},
 		},
 		{
-			name:          "WithErrFromPackageWithAll",
-			err:           fmt.Errorf("specify a service: %w", internal.ErrFromPackageWithAll),
-			wantErrReason: "internal.invalid_flag_combination",
+			name: "WithErrFromPackageWithAll",
+			err: &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"specify a service: %w",
+					internal.ErrFromPackageWithAll),
+				Suggestion: "Specify a service.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String(
+					"internal.invalid_flag_combination"),
+			},
 		},
 		{
-			name:          "WithErrFromPackageNoService",
-			err:           fmt.Errorf("specify a service: %w", internal.ErrFromPackageNoService),
-			wantErrReason: "internal.invalid_flag_combination",
+			name: "WithErrFromPackageNoService",
+			err: &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"specify a service: %w",
+					internal.ErrFromPackageNoService),
+				Suggestion: "Specify a service.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String(
+					"internal.invalid_flag_combination"),
+			},
 		},
 		{
-			name:          "WithErrCannotChangeSubscription",
-			err:           fmt.Errorf("env 'dev': %w", internal.ErrCannotChangeSubscription),
-			wantErrReason: "internal.cannot_change_subscription",
+			name: "WithErrCannotChangeSubscription",
+			err: &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"env 'dev': %w",
+					internal.ErrCannotChangeSubscription),
+				Suggestion: "Run azd env new.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String(
+					"internal.cannot_change_subscription"),
+			},
 		},
 		{
-			name:          "WithErrCannotChangeLocation",
-			err:           fmt.Errorf("env 'dev': %w", internal.ErrCannotChangeLocation),
-			wantErrReason: "internal.cannot_change_location",
+			name: "WithErrCannotChangeLocation",
+			err: &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"env 'dev': %w",
+					internal.ErrCannotChangeLocation),
+				Suggestion: "Run azd env new.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String(
+					"internal.cannot_change_location"),
+			},
 		},
 		{
-			name:          "WithErrPreviewMultipleLayers",
-			err:           fmt.Errorf("specify a layer: %w", internal.ErrPreviewMultipleLayers),
-			wantErrReason: "internal.preview_multiple_layers",
+			name: "WithErrPreviewMultipleLayers",
+			err: &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"specify a layer: %w",
+					internal.ErrPreviewMultipleLayers),
+				Suggestion: "Specify a single layer.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String(
+					"internal.preview_multiple_layers"),
+			},
 		},
 		{
-			name:          "WithErrNoKeyNameProvided",
-			err:           internal.ErrNoKeyNameProvided,
-			wantErrReason: "internal.invalid_args",
+			name: "WithErrNoKeyNameProvided",
+			err: &internal.ErrorWithSuggestion{
+				Err:        internal.ErrNoKeyNameProvided,
+				Suggestion: "Specify a key.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String("internal.invalid_args"),
+			},
 		},
 		{
-			name:          "WithErrNoEnvValuesProvided",
-			err:           fmt.Errorf("use key=value: %w", internal.ErrNoEnvValuesProvided),
-			wantErrReason: "internal.invalid_args",
+			name: "WithErrNoEnvValuesProvided",
+			err: &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"use key=value: %w",
+					internal.ErrNoEnvValuesProvided),
+				Suggestion: "Use key=value pairs.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String("internal.invalid_args"),
+			},
 		},
 		{
-			name:          "WithErrInvalidFlagCombination",
-			err:           fmt.Errorf("cannot combine flags: %w", internal.ErrInvalidFlagCombination),
-			wantErrReason: "internal.invalid_args",
+			name: "WithErrInvalidFlagCombination",
+			err: &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"cannot combine flags: %w",
+					internal.ErrInvalidFlagCombination),
+				Suggestion: "Choose one flag.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String("internal.invalid_args"),
+			},
 		},
 		{
-			name:          "WithErrKeyNotFound",
-			err:           fmt.Errorf("%w: 'MY_KEY'", internal.ErrKeyNotFound),
-			wantErrReason: "internal.key_not_found",
+			name: "WithErrKeyNotFound",
+			err: &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"%w: 'MY_KEY'", internal.ErrKeyNotFound),
+				Suggestion: "Run azd env get-values.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String(
+					"internal.key_not_found"),
+			},
 		},
 		{
-			name:          "WithErrNoEnvironmentsFound",
-			err:           fmt.Errorf("create one with azd env new: %w", internal.ErrNoEnvironmentsFound),
-			wantErrReason: "internal.no_environments_found",
+			name: "WithErrNoEnvironmentsFound",
+			err: &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"create one: %w",
+					internal.ErrNoEnvironmentsFound),
+				Suggestion: "Run azd env new.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String(
+					"internal.no_environments_found"),
+			},
 		},
 		{
-			name:          "WithErrLoginDisabledDelegatedMode",
-			err:           fmt.Errorf("current mode: az_delegated: %w", internal.ErrLoginDisabledDelegatedMode),
-			wantErrReason: "auth.login_disabled_delegated",
+			name: "WithErrLoginDisabledDelegatedMode",
+			err: &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"current mode: %w",
+					internal.ErrLoginDisabledDelegatedMode),
+				Suggestion: "Use delegated identity.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String(
+					"auth.login_disabled_delegated"),
+			},
 		},
 		{
-			name:          "WithErrBranchRequiresTemplate",
-			err:           fmt.Errorf("use --template: %w", internal.ErrBranchRequiresTemplate),
-			wantErrReason: "internal.invalid_args",
+			name: "WithErrBranchRequiresTemplate",
+			err: &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"use --template: %w",
+					internal.ErrBranchRequiresTemplate),
+				Suggestion: "Add --template.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String("internal.invalid_args"),
+			},
 		},
 		{
-			name:          "WithErrMultipleInitModes",
-			err:           internal.ErrMultipleInitModes,
-			wantErrReason: "internal.invalid_args",
+			name: "WithErrMultipleInitModes",
+			err: &internal.ErrorWithSuggestion{
+				Err:        internal.ErrMultipleInitModes,
+				Suggestion: "Choose one mode.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String("internal.invalid_args"),
+			},
 		},
-		// New sentinels — batch 2 (54 bare-error fixes)
+		// Sentinels — batch 2 (54 bare-error fixes)
 		{
-			name:          "WithErrNoArgsProvided",
-			err:           internal.ErrNoArgsProvided,
-			wantErrReason: "internal.invalid_args",
+			name: "WithErrNoArgsProvided",
+			err: &internal.ErrorWithSuggestion{
+				Err:        internal.ErrNoArgsProvided,
+				Suggestion: "Provide required args.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String("internal.invalid_args"),
+			},
 		},
 		{
-			name:          "WithErrInvalidArgValue",
-			err:           internal.ErrInvalidArgValue,
-			wantErrReason: "internal.invalid_args",
+			name: "WithErrInvalidArgValue",
+			err: &internal.ErrorWithSuggestion{
+				Err:        internal.ErrInvalidArgValue,
+				Suggestion: "Check the value.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String("internal.invalid_args"),
+			},
 		},
 		{
-			name:          "WithErrOperationCancelled",
-			err:           internal.ErrOperationCancelled,
-			wantErrReason: "internal.operation_cancelled",
+			name: "WithErrOperationCancelled",
+			err: &internal.ErrorWithSuggestion{
+				Err:        internal.ErrOperationCancelled,
+				Suggestion: "Try again.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String(
+					"internal.operation_cancelled"),
+			},
 		},
 		{
-			name:          "WithErrConfigKeyNotFound",
-			err:           internal.ErrConfigKeyNotFound,
-			wantErrReason: "internal.config_key_not_found",
+			name: "WithErrConfigKeyNotFound",
+			err: &internal.ErrorWithSuggestion{
+				Err:        internal.ErrConfigKeyNotFound,
+				Suggestion: "Run azd config show.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String(
+					"internal.config_key_not_found"),
+			},
 		},
+		// ErrExtensionNotFound: kept naked — matches real
+		// usage in extensions.go:152
 		{
 			name:          "WithErrExtensionNotFound",
 			err:           internal.ErrExtensionNotFound,
 			wantErrReason: "internal.extension_not_found",
 		},
 		{
-			name:          "WithErrNoExtensionsAvailable",
-			err:           internal.ErrNoExtensionsAvailable,
-			wantErrReason: "internal.no_extensions_available",
+			name: "WithErrNoExtensionsAvailable",
+			err: &internal.ErrorWithSuggestion{
+				Err:        internal.ErrNoExtensionsAvailable,
+				Suggestion: "Run azd extension list.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String(
+					"internal.no_extensions_available"),
+			},
 		},
+		// ErrExtensionTokenFailed: kept naked with %w —
+		// matches real usage in extensions.go:233
 		{
-			name:          "WithErrExtensionTokenFailed",
-			err:           internal.ErrExtensionTokenFailed,
+			name: "WithErrExtensionTokenFailed",
+			err: fmt.Errorf(
+				"generating token: %w",
+				internal.ErrExtensionTokenFailed),
 			wantErrReason: "internal.extension_error",
 		},
 		{
-			name:          "WithErrServiceNotFound",
-			err:           internal.ErrServiceNotFound,
-			wantErrReason: "internal.service_not_found",
+			name: "WithErrServiceNotFound",
+			err: &internal.ErrorWithSuggestion{
+				Err:        internal.ErrServiceNotFound,
+				Suggestion: "Check azure.yaml.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String(
+					"internal.service_not_found"),
+			},
 		},
 		{
-			name:          "WithErrResourceNotConfigured",
-			err:           internal.ErrResourceNotConfigured,
-			wantErrReason: "internal.resource_not_found",
+			name: "WithErrResourceNotConfigured",
+			err: &internal.ErrorWithSuggestion{
+				Err:        internal.ErrResourceNotConfigured,
+				Suggestion: "Run azd provision.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String(
+					"internal.resource_not_found"),
+			},
 		},
 		{
-			name:          "WithErrValidationFailed",
-			err:           internal.ErrValidationFailed,
-			wantErrReason: "internal.validation_failed",
+			name: "WithErrValidationFailed",
+			err: &internal.ErrorWithSuggestion{
+				Err:        internal.ErrValidationFailed,
+				Suggestion: "Fix validation errors.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String(
+					"internal.validation_failed"),
+			},
 		},
 		{
-			name:          "WithErrUnsupportedOperation",
-			err:           internal.ErrUnsupportedOperation,
-			wantErrReason: "internal.unsupported_operation",
+			name: "WithErrUnsupportedOperation",
+			err: &internal.ErrorWithSuggestion{
+				Err:        internal.ErrUnsupportedOperation,
+				Suggestion: "Check supported options.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String(
+					"internal.unsupported_operation"),
+			},
 		},
 		{
-			name:          "WithErrMcpToolsLoadFailed",
-			err:           internal.ErrMcpToolsLoadFailed,
-			wantErrReason: "internal.mcp_error",
+			name: "WithErrMcpToolsLoadFailed",
+			err: &internal.ErrorWithSuggestion{
+				Err:        internal.ErrMcpToolsLoadFailed,
+				Suggestion: "Check MCP config.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String("internal.mcp_error"),
+			},
 		},
 	}
 	// Test cases that intentionally produce errors_errorString (the catch-all bucket).
@@ -589,6 +794,8 @@ func Test_MapError(t *testing.T) {
 // TestMapError_ErrorWithSuggestionSetsErrorType verifies that ErrorWithSuggestion errors
 // are classified as "error.suggestion" in telemetry, with the inner error type
 // recorded in the error.type span attribute for detailed analysis.
+// When the inner error matches a known sentinel, the descriptive code is used
+// instead of the raw Go type name.
 func TestMapError_ErrorWithSuggestionSetsErrorType(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -597,14 +804,28 @@ func TestMapError_ErrorWithSuggestionSetsErrorType(t *testing.T) {
 		wantErrType string
 	}{
 		{
-			name: "ResponseError_inner_type_recorded",
+			name: "Sentinel_uses_descriptive_code",
+			err: &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"key not found: %w",
+					internal.ErrKeyNotFound),
+				Suggestion: "Run 'azd env get-values'.",
+			},
+			wantErrCode: "error.suggestion",
+			wantErrType: "internal.key_not_found",
+		},
+		{
+			name: "ResponseError_falls_back_to_go_type",
 			err: &internal.ErrorWithSuggestion{
 				Err: &azcore.ResponseError{
 					ErrorCode:  "QuotaExceeded",
 					StatusCode: 429,
 					RawResponse: &http.Response{
 						StatusCode: 429,
-						Request:    &http.Request{Method: "POST", Host: "management.azure.com"},
+						Request: &http.Request{
+							Method: "POST",
+							Host:   "management.azure.com",
+						},
 					},
 				},
 				Suggestion: "Request a quota increase.",
@@ -613,7 +834,7 @@ func TestMapError_ErrorWithSuggestionSetsErrorType(t *testing.T) {
 			wantErrType: "*exported.ResponseError",
 		},
 		{
-			name: "PlainError_inner_type_recorded",
+			name: "PlainError_falls_back_to_go_type",
 			err: &internal.ErrorWithSuggestion{
 				Err:        errors.New("unknown failure"),
 				Suggestion: "Try again.",

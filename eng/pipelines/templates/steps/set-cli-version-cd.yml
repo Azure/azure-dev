@@ -6,5 +6,5 @@ steps:
       targetType: filePath
       filePath: eng/scripts/Set-CliVersionInBuild.ps1
       arguments: >-
-                -BuildReason ($env:BUILDREASONOVERRIDE ?? $(Build.Reason))
+                -BuildReason ($env:BUILDREASONOVERRIDE ?? '$(Build.Reason)')
                 -BuildId $(Build.BuildId)

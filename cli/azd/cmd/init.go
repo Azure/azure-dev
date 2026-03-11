@@ -281,8 +281,9 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		output.WithLinkFormat("%s", "https://aka.ms/azd-third-party-code-notice"))
 
 	if i.featuresManager.IsEnabled(llm.FeatureLlm) {
-		followUp += fmt.Sprintf("\n%s Run azd up to deploy project to the cloud.`",
-			color.HiMagentaString("Next steps:"))
+		followUp += fmt.Sprintf("\n%s Run %s to deploy project to the cloud.",
+			color.HiMagentaString("Next steps:"),
+			output.WithHighLightFormat("azd up"))
 	}
 
 	switch initTypeSelect {

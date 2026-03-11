@@ -85,6 +85,8 @@ words:
   - yarnpkg
   - azconfig
   - hostnames
+  - managedhsm
+  - microsoftazure
   - seekable
   - seekability
   - APFS

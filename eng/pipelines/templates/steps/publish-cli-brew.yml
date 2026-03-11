@@ -2,12 +2,22 @@ parameters:
   - name: BaseRepoBranch
     type: string
     default: main
+  - name: Use1ESArtifactTask
+    type: boolean
+    default: false
 
 steps: 
-  - task: DownloadPipelineArtifact@2
-    inputs:
-      artifactName: homebrew-formula
-      targetPath: homebrew-formula
+  - ${{ if eq('true', parameters.Use1ESArtifactTask) }}:
+    - task: 1ES.DownloadPipelineArtifact@1
+      displayName: Download homebrew-formula artifact
+      inputs:
+        artifactName: homebrew-formula
+        targetPath: homebrew-formula
+  - ${{ else }}: 
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        artifactName: homebrew-formula
+        targetPath: homebrew-formula
 
   - pwsh: git clone https://github.com/Azure/homebrew-azd
     displayName: Clone Azure/homebrew-azd

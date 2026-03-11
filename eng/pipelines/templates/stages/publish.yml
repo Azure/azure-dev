@@ -378,6 +378,7 @@ stages:
 
                 - template: /eng/pipelines/templates/steps/publish-cli-brew.yml
                   parameters:
+                    Use1ESArtifactTask: true
                     BaseRepoBranch: daily-test
 
       - deployment: Publish_For_PR

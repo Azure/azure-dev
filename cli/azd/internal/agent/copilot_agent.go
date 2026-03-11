@@ -651,11 +651,6 @@ func getInstalledPlugins(ctx context.Context, cliPath string) map[string]bool {
 	return installed
 }
 
-//go:fix inline
-func intPtr(v int) *int {
-	return new(v)
-}
-
 func formatSessionTime(ts string) string {
 	for _, layout := range []string{
 		time.RFC3339,

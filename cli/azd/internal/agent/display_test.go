@@ -135,9 +135,3 @@ func TestGetUsageMetrics(t *testing.T) {
 	require.Equal(t, float64(8000), metrics.DurationMS)
 	require.Equal(t, "gpt-4.1", metrics.Model)
 }
-
-//go:fix inline
-func floatPtr(v float64) *float64 { return new(v) }
-
-//go:fix inline
-func strPtr(v string) *string { return new(v) }

@@ -64,7 +64,7 @@ func (f *CopilotAgentFactory) Create(ctx context.Context, opts ...AgentOption) (
 		consentManager:       f.consentManager,
 		console:              f.console,
 		configManager:        f.configManager,
-		mode:                 "interactive",
+		mode:                 AgentModeInteractive,
 	}
 
 	for _, opt := range opts {

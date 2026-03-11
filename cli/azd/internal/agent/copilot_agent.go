@@ -17,7 +17,6 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
-	"github.com/azure/azure-dev/cli/azd/internal/agent/logging"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/llm"
@@ -39,14 +38,13 @@ type CopilotAgent struct {
 	// Configuration overrides (from AgentOption)
 	modelOverride           string
 	reasoningEffortOverride string
-	mode                    string // "interactive", "autopilot", "plan"
+	mode                    AgentMode
 	debug                   bool
 
 	// Runtime state
-	session    *copilot.Session
-	sessionID  string
-	fileLogger *logging.SessionFileLogger
-	display    *AgentDisplay // last display for usage metrics
+	session   *copilot.Session
+	sessionID string
+	display   *AgentDisplay // last display for usage metrics
 
 	// Cleanup — ordered slice for deterministic teardown
 	cleanupTasks []cleanupTask
@@ -300,13 +298,13 @@ func (a *CopilotAgent) SendMessage(ctx context.Context, prompt string, opts ...S
 	// Determine mode
 	mode := a.mode
 	if mode == "" {
-		mode = string(copilot.Interactive)
+		mode = AgentModeInteractive
 	}
 
 	// Send prompt (non-blocking)
 	_, err = a.session.Send(ctx, copilot.MessageOptions{
 		Prompt: prompt,
-		Mode:   mode,
+		Mode:   string(mode),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("copilot agent error: %w", err)
@@ -374,14 +372,6 @@ func (a *CopilotAgent) ensureSession(ctx context.Context, resumeSessionID string
 	}
 	a.addCleanup("copilot-client", a.clientManager.Stop)
 
-	// Create file logger
-	fileLogger, fileLoggerCleanup, err := logging.NewSessionFileLogger()
-	if err != nil {
-		return fmt.Errorf("failed to create session file logger: %w", err)
-	}
-	a.fileLogger = fileLogger
-	a.addCleanup("fileLogger", fileLoggerCleanup)
-
 	// Load built-in MCP server configs
 	builtInServers, err := loadBuiltInMCPServers()
 	if err != nil {
@@ -445,15 +435,6 @@ func (a *CopilotAgent) ensureSession(ctx context.Context, resumeSessionID string
 		a.sessionID = session.SessionID
 		log.Printf("[copilot] Session created: %s", a.sessionID)
 	}
-
-	// Subscribe file logger
-	unsubscribe := a.session.On(func(event copilot.SessionEvent) {
-		a.fileLogger.HandleEvent(event)
-	})
-	a.addCleanup("session-events", func() error {
-		unsubscribe()
-		return nil
-	})
 
 	return nil
 }

@@ -99,6 +99,18 @@ type InitResult struct {
 	IsFirstRun bool
 }
 
+// AgentMode represents the operating mode for the agent.
+type AgentMode string
+
+const (
+	// AgentModeInteractive asks for approval before executing tools.
+	AgentModeInteractive AgentMode = "interactive"
+	// AgentModeAutopilot executes tools automatically without approval.
+	AgentModeAutopilot AgentMode = "autopilot"
+	// AgentModePlan creates a plan first, then executes after approval.
+	AgentModePlan AgentMode = "plan"
+)
+
 // AgentOption configures agent creation via the factory.
 type AgentOption func(*CopilotAgent)
 
@@ -112,8 +124,8 @@ func WithReasoningEffort(effort string) AgentOption {
 	return func(a *CopilotAgent) { a.reasoningEffortOverride = effort }
 }
 
-// WithMode sets the agent mode (interactive, autopilot, plan).
-func WithMode(mode string) AgentOption {
+// WithMode sets the agent mode.
+func WithMode(mode AgentMode) AgentOption {
 	return func(a *CopilotAgent) { a.mode = mode }
 }
 

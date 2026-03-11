@@ -25,7 +25,9 @@ const (
 	roleMonitoringMetricsPublisher = "3913510d-42f4-4e42-8a64-420c390055eb"
 	agentIdentitySuffix            = "AgentIdentity"
 
-	rbacPropagationDelay = 30 * time.Second
+	rbacPropagationDelay       = 30 * time.Second
+	identityLookupMaxAttempts  = 12
+	identityLookupPollInterval = 15 * time.Second
 )
 
 // agentIdentityInfo holds the parsed project information needed for agent identity RBAC.
@@ -174,9 +176,22 @@ func ensureAgentIdentityRBACWithCred(
 		return fmt.Errorf("failed to create Graph client: %w", err)
 	}
 
-	agentIdentities, err := discoverAgentIdentity(ctx, graphClient, displayName)
-	if err != nil {
-		return fmt.Errorf("failed to discover agent identity: %w", err)
+	// Poll for the identity — the platform provisions it asynchronously during agent deployment,
+	// so it may not be visible in Azure AD immediately after deploy completes.
+	var agentIdentities []graphsdk.ServicePrincipal
+	for attempt := range identityLookupMaxAttempts {
+		agentIdentities, err = discoverAgentIdentity(ctx, graphClient, displayName)
+		if err != nil {
+			return fmt.Errorf("failed to discover agent identity: %w", err)
+		}
+		if len(agentIdentities) > 0 {
+			break
+		}
+		if attempt < identityLookupMaxAttempts-1 {
+			fmt.Printf("  Identity not yet visible in Azure AD, retrying in %s (%d/%d)...\n",
+				identityLookupPollInterval, attempt+1, identityLookupMaxAttempts)
+			time.Sleep(identityLookupPollInterval)
+		}
 	}
 
 	if len(agentIdentities) == 0 {

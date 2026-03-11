@@ -80,7 +80,7 @@ This can happen if your azd login token has expired. You can fix this by logging
 azd auth login
 ```
 
-You might also get this error if you have not run azd init first.  To fix this error run azd init and go through the setup wizard.  After this is completed them you should be able to run azd coding-agent config.
+You might also get this error if you have not run `azd init` first. To fix this, run `azd init` and go through the setup wizard. After this is completed, you should be able to run `azd coding-agent config`.
 
 ### Must have admin rights to Repository
 

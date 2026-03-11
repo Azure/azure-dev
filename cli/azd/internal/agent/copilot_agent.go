@@ -439,6 +439,11 @@ func (a *CopilotAgent) ensureSession(ctx context.Context, resumeSessionID string
 	return nil
 }
 
+// createPermissionHandler builds the OnPermissionRequest handler.
+// This handles CLI-level capability requests (e.g., "can I write files?", "can I run shell?").
+// Without this handler, the SDK denies all tool categories and OnPreToolUse never fires.
+// Currently approves all — fine-grained per-tool consent is enforced by OnPreToolUse.
+// Can be expanded later with category-level checks if needed.
 func (a *CopilotAgent) createPermissionHandler() copilot.PermissionHandlerFunc {
 	return func(req copilot.PermissionRequest, inv copilot.PermissionInvocation) (
 		copilot.PermissionRequestResult, error,

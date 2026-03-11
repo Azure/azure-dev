@@ -199,7 +199,7 @@ func runConfigCommand(cmd *cobra.Command, flagValues *flagValues) error {
 		return fmt.Errorf("failed getting a subscription from prompt. Try logging in manually with 'azd auth login' before running this command %w", err)
 	}
 
-	tenantID := subscriptionResponse.Subscription.TenantId
+	tenantID := subscriptionResponse.Subscription.UserTenantId
 	subscriptionID := subscriptionResponse.Subscription.Id
 
 	cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{

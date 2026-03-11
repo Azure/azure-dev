@@ -62,10 +62,10 @@ func TestPasswordContainsRequestedChars(t *testing.T) {
 func TestPasswordAllDisallowed(t *testing.T) {
 	pwd, err := Generate(GenerateConfig{
 		Length:    10,
-		NoLower:   to.Ptr(true),
-		NoUpper:   to.Ptr(true),
-		NoNumeric: to.Ptr(true),
-		NoSpecial: to.Ptr(true),
+		NoLower:   new(true),
+		NoUpper:   new(true),
+		NoNumeric: new(true),
+		NoSpecial: new(true),
 	})
 	require.ErrorContains(t, err, "can't generate if all characters are disallowed (noLower, noUpper, noNumeric, noSpecial)")
 	require.Equal(t, "", pwd)
@@ -90,7 +90,7 @@ func countCharsFrom(s, choices string) int {
 func TestGenerateInput(t *testing.T) {
 	config := GenerateConfig{
 		Length:     8,
-		NoSpecial:  to.Ptr(true),
+		NoSpecial:  new(true),
 		MinLower:   to.Ptr[uint](2),
 		MinUpper:   to.Ptr[uint](2),
 		MinNumeric: to.Ptr[uint](2),

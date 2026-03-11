@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/machinelearning/armmachinelearning/v3"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 )
@@ -30,8 +29,8 @@ func RegisterGetWorkspaceMock(mockContext *mocks.MockContext, workspaceName stri
 		response := armmachinelearning.WorkspacesClientGetResponse{
 			Workspace: armmachinelearning.Workspace{
 				Name:     &workspaceName,
-				ID:       to.Ptr("ID"),
-				Location: to.Ptr("eastus2"),
+				ID:       new("ID"),
+				Location: new("eastus2"),
 			},
 		}
 

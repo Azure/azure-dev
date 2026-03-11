@@ -70,7 +70,7 @@ type DataView struct {
 type JobDetailViews struct {
 	Details       *JobDetailsView
 	Timestamps    *TimestampsView
-	Configuration interface{} // Can be Base, DPO, or Reinforcement view
+	Configuration any // Can be Base, DPO, or Reinforcement view
 	Data          *DataView
 }
 
@@ -98,7 +98,7 @@ func (j *FineTuningJobDetail) ToDetailViews() *JobDetailViews {
 	}
 
 	// Build configuration view based on method type
-	var configView interface{}
+	var configView any
 	switch j.Method {
 	case string(DPO):
 		configView = &DPOConfigurationView{

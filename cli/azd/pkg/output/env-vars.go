@@ -17,7 +17,7 @@ func (f *EnvVarsFormatter) Kind() Format {
 	return EnvVarsFormat
 }
 
-func (f *EnvVarsFormatter) Format(obj interface{}, writer io.Writer, _ interface{}) error {
+func (f *EnvVarsFormatter) Format(obj any, writer io.Writer, _ any) error {
 	values, ok := obj.(map[string]string)
 	if !ok {
 		return fmt.Errorf("EnvVarsFormatter can only format objects of type map[string]string")

@@ -20,6 +20,6 @@ func SetListener(listener func(s string)) {
 	diagLog.listen = listener
 }
 
-func (log *logger) Printf(format string, a ...interface{}) {
+func (log *logger) Printf(format string, a ...any) {
 	log.listen(fmt.Sprintf(format, a...))
 }

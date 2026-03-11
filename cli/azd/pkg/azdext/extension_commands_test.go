@@ -75,7 +75,7 @@ func TestExtensionCommands_NewMetadataCommand(t *testing.T) {
 		})
 
 		// Verify it's valid JSON
-		var result map[string]interface{}
+		var result map[string]any
 		err := json.Unmarshal(outBuf, &result)
 		require.NoError(t, err, "metadata output should be valid JSON")
 		require.Equal(t, "test.extension", result["id"])

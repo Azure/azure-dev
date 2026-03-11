@@ -24,7 +24,7 @@ func CompileSchema(schema *jsonschema.Schema) (*jsonschemav6.Schema, error) {
 		return nil, fmt.Errorf("failed to marshal schema: %w", err)
 	}
 
-	var schemaData interface{}
+	var schemaData any
 	if err := json.Unmarshal(schemaBytes, &schemaData); err != nil {
 		return nil, fmt.Errorf("invalid JSON schema: %w", err)
 	}
@@ -46,7 +46,7 @@ func CompileSchema(schema *jsonschema.Schema) (*jsonschemav6.Schema, error) {
 
 // ValidateAgainstSchema validates data against a JSON Schema.
 // Returns nil if validation succeeds, or a detailed error if it fails.
-func ValidateAgainstSchema(schema *jsonschema.Schema, data interface{}) error {
+func ValidateAgainstSchema(schema *jsonschema.Schema, data any) error {
 	compiled, err := CompileSchema(schema)
 	if err != nil {
 		return fmt.Errorf("schema compilation failed: %w", err)

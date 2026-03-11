@@ -61,13 +61,13 @@ services:
 
 	mockarmresources.AddAzResourceListMock(
 		mockContext.HttpClient,
-		to.Ptr("rg-test"),
+		new("rg-test"),
 		[]*armresources.GenericResourceExpanded{
 			{
-				ID:       to.Ptr("app-api-abc123"),
-				Name:     to.Ptr("test-containerapp-web"),
+				ID:       new("app-api-abc123"),
+				Name:     new("test-containerapp-web"),
 				Type:     to.Ptr(string(azapi.AzureResourceTypeContainerApp)),
-				Location: to.Ptr("eastus2"),
+				Location: new("eastus2"),
 			},
 		})
 
@@ -174,13 +174,13 @@ services:
 
 	mockarmresources.AddAzResourceListMock(
 		mockContext.HttpClient,
-		to.Ptr("rg-test"),
+		new("rg-test"),
 		[]*armresources.GenericResourceExpanded{
 			{
-				ID:       to.Ptr("app-api-abc123"),
-				Name:     to.Ptr("test-containerapp-web"),
+				ID:       new("app-api-abc123"),
+				Name:     new("test-containerapp-web"),
 				Type:     to.Ptr(string(azapi.AzureResourceTypeContainerApp)),
-				Location: to.Ptr("eastus2"),
+				Location: new("eastus2"),
 			},
 		})
 

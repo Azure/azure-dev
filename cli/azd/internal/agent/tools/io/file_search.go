@@ -34,10 +34,10 @@ func (t FileSearchTool) Name() string {
 func (t FileSearchTool) Annotations() mcp.ToolAnnotation {
 	return mcp.ToolAnnotation{
 		Title:           "Search Files by Pattern",
-		ReadOnlyHint:    common.ToPtr(true),
-		DestructiveHint: common.ToPtr(false),
-		IdempotentHint:  common.ToPtr(true),
-		OpenWorldHint:   common.ToPtr(false),
+		ReadOnlyHint:    new(true),
+		DestructiveHint: new(false),
+		IdempotentHint:  new(true),
+		OpenWorldHint:   new(false),
 	}
 }
 

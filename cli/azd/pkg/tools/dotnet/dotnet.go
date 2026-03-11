@@ -43,7 +43,7 @@ type responseContainerConfiguration struct {
 }
 
 type responseContainerConfigurationExpPorts struct {
-	ExposedPorts map[string]interface{} `json:"ExposedPorts"`
+	ExposedPorts map[string]any `json:"ExposedPorts"`
 }
 
 type targetPort struct {

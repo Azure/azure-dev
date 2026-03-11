@@ -181,7 +181,7 @@ func TestOn_RegistersHandler(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify handler was registered
-	requestType := reflect.TypeOf((*TestRequest)(nil))
+	requestType := reflect.TypeFor[*TestRequest]()
 	_, ok := broker.handlers.Load(requestType)
 	assert.True(t, ok, "Handler should be registered")
 }
@@ -204,7 +204,7 @@ func TestOn_RegistersHandlerWithProgress(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify handler was registered with progress flag
-	requestType := reflect.TypeOf((*TestRequest)(nil))
+	requestType := reflect.TypeFor[*TestRequest]()
 	wrapper, ok := broker.handlers.Load(requestType)
 	require.True(t, ok, "Handler should be registered")
 
@@ -769,8 +769,7 @@ func TestReady_BlocksUntilRunStarts(t *testing.T) {
 	}
 
 	// Start Run()
-	runCtx, runCancel := context.WithCancel(context.Background())
-	defer runCancel()
+	runCtx := t.Context()
 
 	go func() {
 		_ = broker.Run(runCtx)
@@ -795,8 +794,7 @@ func TestReady_CompletesImmediatelyAfterRunStarts(t *testing.T) {
 	broker := NewMessageBroker(stream.ClientStream(), envelope, "client", nil)
 
 	// Start Run() first
-	runCtx, runCancel := context.WithCancel(context.Background())
-	defer runCancel()
+	runCtx := t.Context()
 
 	go func() {
 		_ = broker.Run(runCtx)
@@ -831,7 +829,7 @@ func TestReady_MultipleCallersAllComplete(t *testing.T) {
 	defer cancel()
 
 	// Start multiple Ready() calls
-	for i := 0; i < numCallers; i++ {
+	for range numCallers {
 		go func() {
 			readyResults <- broker.Ready(ctx)
 		}()
@@ -840,15 +838,14 @@ func TestReady_MultipleCallersAllComplete(t *testing.T) {
 	time.Sleep(20 * time.Millisecond) // Let them block
 
 	// Start Run()
-	runCtx, runCancel := context.WithCancel(context.Background())
-	defer runCancel()
+	runCtx := t.Context()
 
 	go func() {
 		_ = broker.Run(runCtx)
 	}()
 
 	// All Ready() calls should complete
-	for i := 0; i < numCallers; i++ {
+	for i := range numCallers {
 		select {
 		case err := <-readyResults:
 			assert.NoError(t, err, "Ready() call %d should complete successfully", i)
@@ -898,8 +895,7 @@ func TestReady_RunAlreadyStartedMultipleTimes(t *testing.T) {
 	broker := NewMessageBroker(stream.ClientStream(), envelope, "client", nil)
 
 	// Start Run()
-	runCtx, runCancel := context.WithCancel(context.Background())
-	defer runCancel()
+	runCtx := t.Context()
 
 	go func() {
 		_ = broker.Run(runCtx)
@@ -909,7 +905,7 @@ func TestReady_RunAlreadyStartedMultipleTimes(t *testing.T) {
 
 	// Multiple Ready() calls should all be immediate
 	ctx := context.Background()
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		start := time.Now()
 		err := broker.Ready(ctx)
 		duration := time.Since(start)

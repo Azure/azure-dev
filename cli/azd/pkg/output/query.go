@@ -12,7 +12,7 @@ import (
 // ApplyQuery applies a JMESPath query to the given data and returns the filtered result.
 // If the query is empty, the original data is returned unchanged.
 // If the query is invalid, an error with a hint to JMESPath documentation is returned.
-func ApplyQuery(data interface{}, query string) (interface{}, error) {
+func ApplyQuery(data any, query string) (any, error) {
 	if query == "" {
 		return data, nil
 	}

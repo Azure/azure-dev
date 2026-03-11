@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 )
@@ -180,7 +179,7 @@ func (cli *AzureClient) DeployAppServiceZip(
 		} else {
 			// Deployment is successful
 			statusText := "OK"
-			return to.Ptr(statusText), nil
+			return new(statusText), nil
 		}
 	}
 
@@ -189,7 +188,7 @@ func (cli *AzureClient) DeployAppServiceZip(
 		return nil, err
 	}
 
-	return to.Ptr(response.StatusText), nil
+	return new(response.StatusText), nil
 }
 
 func (cli *AzureClient) createWebAppsClient(
@@ -336,5 +335,5 @@ func (cli *AzureClient) DeployAppServiceSlotZip(
 		return nil, err
 	}
 
-	return to.Ptr(response.StatusText), nil
+	return new(response.StatusText), nil
 }

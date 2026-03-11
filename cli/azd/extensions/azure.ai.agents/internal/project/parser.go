@@ -18,7 +18,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
@@ -64,7 +63,7 @@ func shouldRun(ctx context.Context, project *azdext.ProjectConfig) (bool, error)
 					return false, fmt.Errorf("agent.yaml is not valid to run: %w", err)
 				}
 
-				var genericTemplate map[string]interface{}
+				var genericTemplate map[string]any
 				if err := yaml.Unmarshal(content, &genericTemplate); err != nil {
 					return false, fmt.Errorf("YAML content is not valid to run: %w", err)
 				}
@@ -554,7 +553,7 @@ func assignAzureAIRole(ctx context.Context, cred *azidentity.AzureDeveloperCLICr
 	// Check if the role assignment already exists
 	// Use atScope() to list all role assignments at this scope, then filter in code
 	pager := client.NewListForScopePager(scope, &armauthorization.RoleAssignmentsClientListForScopeOptions{
-		Filter: to.Ptr("atScope()"),
+		Filter: new("atScope()"),
 	})
 
 	assignmentExists := false
@@ -595,8 +594,8 @@ func assignAzureAIRole(ctx context.Context, cred *azidentity.AzureDeveloperCLICr
 		// Create role assignment
 		parameters := armauthorization.RoleAssignmentCreateParameters{
 			Properties: &armauthorization.RoleAssignmentProperties{
-				RoleDefinitionID: to.Ptr(fullRoleDefinitionID),
-				PrincipalID:      to.Ptr(principalID),
+				RoleDefinitionID: new(fullRoleDefinitionID),
+				PrincipalID:      new(principalID),
 			},
 		}
 
@@ -627,7 +626,7 @@ func assignAzureAIRole(ctx context.Context, cred *azidentity.AzureDeveloperCLICr
 		// Validate the assignment
 		fmt.Println("Validating role assignment...")
 		pager = client.NewListForScopePager(scope, &armauthorization.RoleAssignmentsClientListForScopeOptions{
-			Filter: to.Ptr("atScope()"),
+			Filter: new("atScope()"),
 		})
 
 		validated := false
@@ -930,12 +929,12 @@ func getAIFoundryProjectEndpoint(
 	}
 
 	// Parse properties as a map to access nested endpoints
-	propsMap, ok := resp.Properties.(map[string]interface{})
+	propsMap, ok := resp.Properties.(map[string]any)
 	if !ok {
 		return "", fmt.Errorf("failed to parse resource properties")
 	}
 
-	endpoints, ok := propsMap["endpoints"].(map[string]interface{})
+	endpoints, ok := propsMap["endpoints"].(map[string]any)
 	if !ok {
 		return "", fmt.Errorf("resource does not have endpoints")
 	}
@@ -1033,7 +1032,7 @@ func registerAgent(uri, token, resourceID, ingressSuffix string) string {
 	retryDelay := 60 * time.Second
 	agentVersion := ""
 
-	for attempt := 0; attempt < maxRetries; attempt++ {
+	for attempt := range maxRetries {
 		if attempt > 0 {
 			fmt.Printf("Retry attempt %d of %d...\n", attempt, maxRetries-1)
 		}

@@ -102,7 +102,7 @@ type Resource struct {
 
 	// Bindings is present on container.v0, project.v0 and dockerfile.v0 resources, and is a map of binding names to
 	// binding details.
-	Bindings custommaps.WithOrder[Binding] `json:"bindings,omitempty"`
+	Bindings custommaps.WithOrder[Binding] `json:"bindings"`
 
 	// Env is present on project.v0, container.v0 and dockerfile.v0 resources, and is a map of environment variable
 	// names to value  expressions. The value expressions are simple expressions like "{redis.connectionString}" or

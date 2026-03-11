@@ -132,18 +132,18 @@ func registerIsLinuxWebAppMocks(mockContext *mocks.MockContext, ran *bool) {
 		*ran = true
 		response := armappservice.WebAppsClientGetResponse{
 			Site: armappservice.Site{
-				Location: to.Ptr("eastus2"),
-				Kind:     to.Ptr("app,linux"),
-				Name:     to.Ptr("LINUX_WEB_APP_NAME"),
+				Location: new("eastus2"),
+				Kind:     new("app,linux"),
+				Name:     new("LINUX_WEB_APP_NAME"),
 				Properties: &armappservice.SiteProperties{
-					DefaultHostName: to.Ptr("LINUX_WEB_APP_NAME.azurewebsites.net"),
+					DefaultHostName: new("LINUX_WEB_APP_NAME.azurewebsites.net"),
 					SiteConfig: &armappservice.SiteConfig{
-						LinuxFxVersion: to.Ptr("Python"),
+						LinuxFxVersion: new("Python"),
 					},
 					HostNameSSLStates: []*armappservice.HostNameSSLState{
 						{
 							HostType: to.Ptr(armappservice.HostTypeRepository),
-							Name:     to.Ptr("LINUX_WEB_APP_NAME_SCM_HOST"),
+							Name:     new("LINUX_WEB_APP_NAME_SCM_HOST"),
 						},
 					},
 				},
@@ -166,18 +166,18 @@ func registerLogicAppMocks(mockContext *mocks.MockContext, ran *bool) {
 		*ran = true
 		response := armappservice.WebAppsClientGetResponse{
 			Site: armappservice.Site{
-				Location: to.Ptr("eastus2"),
-				Kind:     to.Ptr("functionapp"),
-				Name:     to.Ptr("WINDOWS_LOGIC_APP_NAME"),
+				Location: new("eastus2"),
+				Kind:     new("functionapp"),
+				Name:     new("WINDOWS_LOGIC_APP_NAME"),
 				Properties: &armappservice.SiteProperties{
-					DefaultHostName: to.Ptr("WINDOWS_LOGIC_APP_NAME.azurewebsites.net"),
+					DefaultHostName: new("WINDOWS_LOGIC_APP_NAME.azurewebsites.net"),
 					SiteConfig: &armappservice.SiteConfig{
-						LinuxFxVersion: to.Ptr(""),
+						LinuxFxVersion: new(""),
 					},
 					HostNameSSLStates: []*armappservice.HostNameSSLState{
 						{
 							HostType: to.Ptr(armappservice.HostTypeRepository),
-							Name:     to.Ptr("WINDOWS_LOGIC_APP_SCM_HOST"),
+							Name:     new("WINDOWS_LOGIC_APP_SCM_HOST"),
 						},
 					},
 				},
@@ -229,9 +229,9 @@ func registerLinuxWebAppDeployRuntimeSuccessfulMocks(mockContext *mocks.MockCont
 				CsmDeploymentStatus: armappservice.CsmDeploymentStatus{
 					Properties: &armappservice.CsmDeploymentStatusProperties{
 						Status:                      to.Ptr(armappservice.DeploymentBuildStatusRuntimeSuccessful),
-						NumberOfInstancesSuccessful: to.Ptr(int32(1)),
-						NumberOfInstancesFailed:     to.Ptr(int32(0)),
-						NumberOfInstancesInProgress: to.Ptr(int32(0)),
+						NumberOfInstancesSuccessful: new(int32(1)),
+						NumberOfInstancesFailed:     new(int32(0)),
+						NumberOfInstancesInProgress: new(int32(0)),
 					},
 				},
 			},
@@ -258,9 +258,9 @@ func registerLinuxWebAppDeployRuntimeFailedMocks(mockContext *mocks.MockContext,
 				CsmDeploymentStatus: armappservice.CsmDeploymentStatus{
 					Properties: &armappservice.CsmDeploymentStatusProperties{
 						Status:                      to.Ptr(armappservice.DeploymentBuildStatusRuntimeFailed),
-						NumberOfInstancesSuccessful: to.Ptr(int32(0)),
-						NumberOfInstancesFailed:     to.Ptr(int32(1)),
-						NumberOfInstancesInProgress: to.Ptr(int32(0)),
+						NumberOfInstancesSuccessful: new(int32(0)),
+						NumberOfInstancesFailed:     new(int32(1)),
+						NumberOfInstancesInProgress: new(int32(0)),
 					},
 				},
 			},

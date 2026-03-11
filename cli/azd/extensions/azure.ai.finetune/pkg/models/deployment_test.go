@@ -55,7 +55,7 @@ func TestDeployment_Struct(t *testing.T) {
 			ID:     "deploy-456",
 			Name:   "test-deployment",
 			Status: DeploymentPending,
-			VendorMetadata: map[string]interface{}{
+			VendorMetadata: map[string]any{
 				"region":   "eastus",
 				"capacity": 10,
 			},

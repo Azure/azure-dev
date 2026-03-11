@@ -15,7 +15,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -395,7 +394,7 @@ func (p *GitHubCiProvider) credentialOptions(
 				Name:        fmt.Sprintf("%s-pull_request", credentialSafeName),
 				Issuer:      federatedIdentityIssuer,
 				Subject:     fmt.Sprintf("repo:%s:pull_request", repoSlug),
-				Description: to.Ptr("Created by Azure Developer CLI"),
+				Description: new("Created by Azure Developer CLI"),
 				Audiences:   []string{federatedIdentityAudience},
 			},
 		}
@@ -406,7 +405,7 @@ func (p *GitHubCiProvider) credentialOptions(
 				Name:        fmt.Sprintf("%s-%s", credentialSafeName, safeBranchName),
 				Issuer:      federatedIdentityIssuer,
 				Subject:     fmt.Sprintf("repo:%s:ref:refs/heads/%s", repoSlug, branch),
-				Description: to.Ptr("Created by Azure Developer CLI"),
+				Description: new("Created by Azure Developer CLI"),
 				Audiences:   []string{federatedIdentityAudience},
 			}
 

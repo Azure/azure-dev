@@ -56,12 +56,12 @@ type Resource struct {
 type PropertyDelta struct {
 	Path       string
 	ChangeType string
-	Before     interface{}
-	After      interface{}
+	Before     any
+	After      any
 }
 
-func colorType(opType OperationType) func(string, ...interface{}) string {
-	var final func(format string, a ...interface{}) string
+func colorType(opType OperationType) func(string, ...any) string {
+	var final func(format string, a ...any) string
 	switch opType {
 	case OperationTypeCreate:
 		final = color.GreenString
@@ -142,7 +142,7 @@ func (pp *PreviewProvision) ToString(currentIndentation string) string {
 // formatPropertyChange formats a single property change for display
 func formatPropertyChange(indent string, delta PropertyDelta) string {
 	changeSymbol := ""
-	changeColor := func(format string, a ...interface{}) string { return fmt.Sprintf(format, a...) }
+	changeColor := func(format string, a ...any) string { return fmt.Sprintf(format, a...) }
 
 	switch delta.ChangeType {
 	case "Create":
@@ -176,7 +176,7 @@ func formatPropertyChange(indent string, delta PropertyDelta) string {
 }
 
 // formatValue formats a value for display (handling various types)
-func formatValue(value interface{}) string {
+func formatValue(value any) string {
 	if value == nil {
 		return "(null)"
 	}
@@ -184,7 +184,7 @@ func formatValue(value interface{}) string {
 	switch v := value.(type) {
 	case string:
 		return fmt.Sprintf("\"%s\"", v)
-	case map[string]interface{}, []interface{}:
+	case map[string]any, []any:
 		// For complex types, use a JSON-like representation
 		data, err := json.Marshal(v)
 		if err != nil {

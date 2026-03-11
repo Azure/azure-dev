@@ -293,10 +293,7 @@ func (rc *ResilientClient) setRequestHeaders(req *http.Request) {
 
 // backoff computes the delay for a given attempt using exponential backoff.
 func (rc *ResilientClient) backoff(attempt int) time.Duration {
-	delay := time.Duration(float64(rc.opts.InitialDelay) * math.Pow(2, float64(attempt-1)))
-	if delay > rc.opts.MaxDelay {
-		delay = rc.opts.MaxDelay
-	}
+	delay := min(time.Duration(float64(rc.opts.InitialDelay)*math.Pow(2, float64(attempt-1))), rc.opts.MaxDelay)
 
 	// Add jitter: randomize between [50%, 100%) of computed delay to prevent
 	// thundering herd when multiple clients retry simultaneously.

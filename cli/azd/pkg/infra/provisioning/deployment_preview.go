@@ -21,8 +21,8 @@ type DeploymentPreviewChange struct {
 	ResourceType      string
 	Name              string
 	UnsupportedReason string
-	Before            interface{}
-	After             interface{}
+	Before            any
+	After             any
 	Delta             []DeploymentPreviewPropertyChange
 }
 
@@ -30,8 +30,8 @@ type DeploymentPreviewChange struct {
 type DeploymentPreviewPropertyChange struct {
 	ChangeType PropertyChangeType
 	Path       string
-	Before     interface{}
-	After      interface{}
+	Before     any
+	After      any
 	Children   []DeploymentPreviewPropertyChange
 }
 

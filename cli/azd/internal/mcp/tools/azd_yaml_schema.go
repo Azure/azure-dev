@@ -51,7 +51,7 @@ func HandleAzdYamlSchema(ctx context.Context, request mcp.CallToolRequest) (*mcp
 	}
 	defer f.Close()
 
-	var yamlData interface{}
+	var yamlData any
 	yamlBytes, err := io.ReadAll(f)
 	if err != nil {
 		return errorResult("Failed to read azure.yaml: " + err.Error()), nil
@@ -64,7 +64,7 @@ func HandleAzdYamlSchema(ctx context.Context, request mcp.CallToolRequest) (*mcp
 		return errorResult("Failed to marshal azure.yaml to JSON: " + err.Error()), nil
 	}
 
-	var jsonObj interface{}
+	var jsonObj any
 	if err := json.Unmarshal(jsonBytes, &jsonObj); err != nil {
 		return errorResult("Failed to unmarshal JSON: " + err.Error()), nil
 	}

@@ -6,7 +6,6 @@ package project
 import (
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/stretchr/testify/require"
@@ -26,7 +25,7 @@ func TestDeploymentHost(t *testing.T) {
 			deploymentResult: &azapi.ResourceDeployment{
 				Resources: []*armresources.ResourceReference{
 					{
-						ID: to.Ptr("/subscriptions/sub-id/resourceGroups/rg-name/" +
+						ID: new("/subscriptions/sub-id/resourceGroups/rg-name/" +
 							"providers/Microsoft.App/containerApps/my-container-app"),
 					},
 				},
@@ -40,7 +39,7 @@ func TestDeploymentHost(t *testing.T) {
 			deploymentResult: &azapi.ResourceDeployment{
 				Resources: []*armresources.ResourceReference{
 					{
-						ID: to.Ptr("/subscriptions/sub-id/resourceGroups/rg-name/providers/Microsoft.App/jobs/my-job"),
+						ID: new("/subscriptions/sub-id/resourceGroups/rg-name/providers/Microsoft.App/jobs/my-job"),
 					},
 				},
 			},
@@ -53,7 +52,7 @@ func TestDeploymentHost(t *testing.T) {
 			deploymentResult: &azapi.ResourceDeployment{
 				Resources: []*armresources.ResourceReference{
 					{
-						ID: to.Ptr("/subscriptions/sub-id/resourceGroups/rg-name/" +
+						ID: new("/subscriptions/sub-id/resourceGroups/rg-name/" +
 							"providers/Microsoft.Web/sites/my-web-app"),
 					},
 				},
@@ -67,7 +66,7 @@ func TestDeploymentHost(t *testing.T) {
 			deploymentResult: &azapi.ResourceDeployment{
 				Resources: []*armresources.ResourceReference{
 					{
-						ID: to.Ptr("/subscriptions/sub-id/resourceGroups/rg-name/" +
+						ID: new("/subscriptions/sub-id/resourceGroups/rg-name/" +
 							"providers/Microsoft.Storage/storageAccounts/my-storage"),
 					},
 				},
@@ -94,11 +93,11 @@ func TestDeploymentHost(t *testing.T) {
 			deploymentResult: &azapi.ResourceDeployment{
 				Resources: []*armresources.ResourceReference{
 					{
-						ID: to.Ptr("/subscriptions/sub-id/resourceGroups/rg-name/" +
+						ID: new("/subscriptions/sub-id/resourceGroups/rg-name/" +
 							"providers/Microsoft.Storage/storageAccounts/my-storage"),
 					},
 					{
-						ID: to.Ptr("/subscriptions/sub-id/resourceGroups/rg-name/" +
+						ID: new("/subscriptions/sub-id/resourceGroups/rg-name/" +
 							"providers/Microsoft.App/containerApps/my-container-app"),
 					},
 				},
@@ -112,11 +111,11 @@ func TestDeploymentHost(t *testing.T) {
 			deploymentResult: &azapi.ResourceDeployment{
 				Resources: []*armresources.ResourceReference{
 					{
-						ID: to.Ptr("/subscriptions/sub-id/resourceGroups/rg-name/" +
+						ID: new("/subscriptions/sub-id/resourceGroups/rg-name/" +
 							"providers/Microsoft.Storage/storageAccounts/my-storage"),
 					},
 					{
-						ID: to.Ptr("/subscriptions/sub-id/resourceGroups/rg-name/" +
+						ID: new("/subscriptions/sub-id/resourceGroups/rg-name/" +
 							"providers/Microsoft.App/jobs/my-processor-job"),
 					},
 				},

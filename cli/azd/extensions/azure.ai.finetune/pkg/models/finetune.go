@@ -57,12 +57,12 @@ func (d Duration) MarshalJSON() ([]byte, error) {
 
 	h := int(time.Duration(d).Hours())
 	m := int(time.Duration(d).Minutes()) % 60
-	return []byte(fmt.Sprintf(`"%dh %02dm"`, h, m)), nil
+	return fmt.Appendf(nil, `"%dh %02dm"`, h, m), nil
 }
 
 // MarshalYAML implements yaml.Marshaler for Duration
 // Returns the duration formatted as "Xh XXm" or "-" if zero
-func (d Duration) MarshalYAML() (interface{}, error) {
+func (d Duration) MarshalYAML() (any, error) {
 	if d == 0 {
 		return "-", nil
 	}
@@ -93,8 +93,8 @@ type FineTuningJob struct {
 	ValidationFileID string `json:"-" table:"-"`
 
 	// Metadata
-	VendorMetadata map[string]interface{} `json:"-" table:"-"` // Store vendor-specific details
-	ErrorDetails   *ErrorDetail           `json:"-" table:"-"`
+	VendorMetadata map[string]any `json:"-" table:"-"` // Store vendor-specific details
+	ErrorDetails   *ErrorDetail   `json:"-" table:"-"`
 }
 
 // Hyperparameters represents fine-tuning hyperparameters
@@ -117,21 +117,21 @@ type ListFineTuningJobsRequest struct {
 
 // FineTuningJobDetail represents detailed information about a fine-tuning job
 type FineTuningJobDetail struct {
-	ID              string                 `json:"id" yaml:"id"`
-	Status          JobStatus              `json:"status" yaml:"status"`
-	Model           string                 `json:"model" yaml:"model"`
-	FineTunedModel  string                 `json:"fine_tuned_model" yaml:"fine_tuned_model"`
-	CreatedAt       time.Time              `json:"created_at" yaml:"created_at"`
-	FinishedAt      *time.Time             `json:"finished_at,omitempty" yaml:"finished_at,omitempty"`
-	EstimatedFinish *time.Time             `json:"estimated_finish,omitempty" yaml:"estimated_finish,omitempty"`
-	Method          string                 `json:"method.type" yaml:"method.type"`
-	TrainingFile    string                 `json:"training_file" yaml:"training_file"`
-	ValidationFile  string                 `json:"validation_file,omitempty" yaml:"validation_file,omitempty"`
-	Hyperparameters *Hyperparameters       `json:"hyperparameters" yaml:"hyperparameters"`
-	Grader          json.RawMessage        `json:"grader,omitempty" yaml:"grader,omitempty"`
-	VendorMetadata  map[string]interface{} `json:"-" yaml:"-"`
-	Seed            int64                  `json:"-" yaml:"-"`
-	ExtraFields     map[string]interface{} `json:"extra_fields,omitempty" yaml:"extra_fields,omitempty"`
+	ID              string           `json:"id" yaml:"id"`
+	Status          JobStatus        `json:"status" yaml:"status"`
+	Model           string           `json:"model" yaml:"model"`
+	FineTunedModel  string           `json:"fine_tuned_model" yaml:"fine_tuned_model"`
+	CreatedAt       time.Time        `json:"created_at" yaml:"created_at"`
+	FinishedAt      *time.Time       `json:"finished_at,omitempty" yaml:"finished_at,omitempty"`
+	EstimatedFinish *time.Time       `json:"estimated_finish,omitempty" yaml:"estimated_finish,omitempty"`
+	Method          string           `json:"method.type" yaml:"method.type"`
+	TrainingFile    string           `json:"training_file" yaml:"training_file"`
+	ValidationFile  string           `json:"validation_file,omitempty" yaml:"validation_file,omitempty"`
+	Hyperparameters *Hyperparameters `json:"hyperparameters" yaml:"hyperparameters"`
+	Grader          json.RawMessage  `json:"grader,omitempty" yaml:"grader,omitempty"`
+	VendorMetadata  map[string]any   `json:"-" yaml:"-"`
+	Seed            int64            `json:"-" yaml:"-"`
+	ExtraFields     map[string]any   `json:"extra_fields,omitempty" yaml:"extra_fields,omitempty"`
 }
 
 // JobEvent represents an event associated with a fine-tuning job
@@ -140,7 +140,7 @@ type JobEvent struct {
 	CreatedAt time.Time
 	Level     string
 	Message   string
-	Data      interface{}
+	Data      any
 	Type      string
 }
 
@@ -202,7 +202,7 @@ type CreateFineTuningRequest struct {
 	Integrations []Integration `yaml:"integrations,omitempty"`
 
 	// Optional: Additional request body fields not covered by standard config
-	ExtraBody map[string]interface{} `yaml:"extra_body,omitempty"`
+	ExtraBody map[string]any `yaml:"extra_body,omitempty"`
 }
 
 // MethodConfig represents fine-tuning method configuration
@@ -236,7 +236,7 @@ type DPOConfig struct {
 // Suitable for reasoning models that benefit from reinforcement learning
 type ReinforcementConfig struct {
 	// Grader configuration for reinforcement learning (evaluates model outputs)
-	Grader map[string]interface{} `yaml:"grader,omitempty"`
+	Grader map[string]any `yaml:"grader,omitempty"`
 
 	// Hyperparameters specific to reinforcement learning
 	Hyperparameters HyperparametersConfig `yaml:"hyperparameters,omitempty"`
@@ -247,27 +247,27 @@ type ReinforcementConfig struct {
 type HyperparametersConfig struct {
 	// Number of training epochs
 	// Can be: integer (1-10), "auto"
-	Epochs interface{} `yaml:"epochs,omitempty"`
+	Epochs any `yaml:"epochs,omitempty"`
 
 	// Batch size for training
 	// Can be: integer (1, 8, 16, 32, 64, 128), "auto"
-	BatchSize interface{} `yaml:"batch_size,omitempty"`
+	BatchSize any `yaml:"batch_size,omitempty"`
 
 	// Learning rate multiplier
 	// Can be: float (0.1-2.0), "auto"
-	LearningRateMultiplier interface{} `yaml:"learning_rate_multiplier,omitempty"`
+	LearningRateMultiplier any `yaml:"learning_rate_multiplier,omitempty"`
 
 	// Weight for prompt loss in supervised learning (0.0-1.0)
 	PromptLossWeight *float64 `yaml:"prompt_loss_weight,omitempty"`
 
 	// Beta parameter for DPO (temperature-like parameter)
 	// Can be: float, "auto"
-	Beta interface{} `yaml:"beta,omitempty"`
+	Beta any `yaml:"beta,omitempty"`
 
 	// Compute multiplier for reinforcement learning
 	// Multiplier on amount of compute used for exploring search space during training
 	// Can be: float, "auto"
-	ComputeMultiplier interface{} `yaml:"compute_multiplier,omitempty"`
+	ComputeMultiplier any `yaml:"compute_multiplier,omitempty"`
 
 	// Reasoning effort level for reinforcement learning with reasoning models
 	// Options: "low", "medium", "high"
@@ -276,12 +276,12 @@ type HyperparametersConfig struct {
 	// Evaluation interval for reinforcement learning
 	// Number of training steps between evaluation runs
 	// Can be: integer, "auto"
-	EvalInterval interface{} `yaml:"eval_interval,omitempty"`
+	EvalInterval any `yaml:"eval_interval,omitempty"`
 
 	// Evaluation samples for reinforcement learning
 	// Number of evaluation samples to generate per training step
 	// Can be: integer, "auto"
-	EvalSamples interface{} `yaml:"eval_samples,omitempty"`
+	EvalSamples any `yaml:"eval_samples,omitempty"`
 }
 
 // Integration represents integration configuration (e.g., Weights & Biases)
@@ -290,7 +290,7 @@ type Integration struct {
 	Type string `yaml:"type"`
 
 	// Integration-specific configuration (API keys, project names, etc.)
-	Config map[string]interface{} `yaml:"config,omitempty"`
+	Config map[string]any `yaml:"config,omitempty"`
 }
 
 // Validate checks if the configuration is valid

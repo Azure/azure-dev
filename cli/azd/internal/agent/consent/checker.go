@@ -178,7 +178,8 @@ func (cc *ConsentChecker) formatToolDescriptionWithAnnotations(
 	}
 
 	// Start with the base description
-	description := toolDesc
+	var description strings.Builder
+	description.WriteString(toolDesc)
 
 	// Collect annotation information
 	var annotationBullets []string
@@ -221,13 +222,13 @@ func (cc *ConsentChecker) formatToolDescriptionWithAnnotations(
 
 	// Append annotations as bullet list if any exist
 	if len(annotationBullets) > 0 {
-		description += "\n\nTool characteristics:"
+		description.WriteString("\n\nTool characteristics:")
 		for _, bullet := range annotationBullets {
-			description += "\n" + bullet
+			description.WriteString("\n" + bullet)
 		}
 	}
 
-	return description
+	return description.String()
 }
 
 // promptForToolConsent shows an interactive consent prompt and returns the user's choice
@@ -272,7 +273,7 @@ func (cc *ConsentChecker) promptForToolConsent(
 		Message:         message,
 		HelpMessage:     helpMessage,
 		Choices:         choices,
-		EnableFiltering: ux.Ptr(false),
+		EnableFiltering: new(false),
 		DisplayCount:    4,
 	})
 
@@ -314,7 +315,7 @@ func (cc *ConsentChecker) promptForReadOnlyToolConsent(
 		Message:         message,
 		HelpMessage:     helpMessage,
 		Choices:         choices,
-		EnableFiltering: ux.Ptr(false),
+		EnableFiltering: new(false),
 		DisplayCount:    3,
 	})
 
@@ -506,7 +507,7 @@ func (cc *ConsentChecker) promptForSamplingConsent(
 		Message:         message,
 		HelpMessage:     helpMessage,
 		Choices:         choices,
-		EnableFiltering: ux.Ptr(false),
+		EnableFiltering: new(false),
 		DisplayCount:    5,
 	})
 
@@ -576,7 +577,7 @@ func (cc *ConsentChecker) promptForElicitationConsent(
 		Message:         message,
 		HelpMessage:     helpMessage,
 		Choices:         choices,
-		EnableFiltering: ux.Ptr(false),
+		EnableFiltering: new(false),
 		DisplayCount:    5,
 	})
 

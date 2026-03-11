@@ -385,7 +385,7 @@ func (ps *PromptServer) handleDialogPrompt(w http.ResponseWriter, bodyBytes []by
 			ps.debugLog.Printf("Context cancelled during dialog")
 			dialogResp := &PromptDialogResponse{
 				Result:  "cancelled",
-				Message: stringPtr("Server shutting down"),
+				Message: new("Server shutting down"),
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(dialogResp)
@@ -406,7 +406,7 @@ func (ps *PromptServer) handleDialogPrompt(w http.ResponseWriter, bodyBytes []by
 		if response.Status == PromptStatusError {
 			dialogResp := &PromptDialogResponse{
 				Result:  "error",
-				Message: stringPtr(response.Message),
+				Message: new(response.Message),
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(dialogResp)
@@ -484,9 +484,4 @@ func (ps *PromptServer) convertDialogPromptToSimple(prompt *PromptDialogPrompt) 
 			DefaultValue: defaultValue,
 		},
 	}
-}
-
-// stringPtr returns a pointer to the given string
-func stringPtr(s string) *string {
-	return &s
 }

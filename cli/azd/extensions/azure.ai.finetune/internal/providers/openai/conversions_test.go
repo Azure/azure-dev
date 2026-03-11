@@ -154,23 +154,23 @@ func TestConvertOpenAIJobToModel(t *testing.T) {
 func TestConvertHyperparameterToInt(t *testing.T) {
 	tests := []struct {
 		name     string
-		input    interface{}
+		input    any
 		expected *int64
 	}{
 		{
 			name:     "IntValue",
 			input:    3,
-			expected: int64Ptr(3),
+			expected: new(int64(3)),
 		},
 		{
 			name:     "Int64Value",
 			input:    int64(5),
-			expected: int64Ptr(5),
+			expected: new(int64(5)),
 		},
 		{
 			name:     "Float64Value_Truncates",
 			input:    float64(10.9),
-			expected: int64Ptr(10),
+			expected: new(int64(10)),
 		},
 		{
 			name:     "StringAuto_ReturnsNil",
@@ -205,23 +205,23 @@ func TestConvertHyperparameterToInt(t *testing.T) {
 func TestConvertHyperparameterToFloat(t *testing.T) {
 	tests := []struct {
 		name     string
-		input    interface{}
+		input    any
 		expected *float64
 	}{
 		{
 			name:     "IntValue_ConvertsToFloat",
 			input:    3,
-			expected: float64Ptr(3.0),
+			expected: new(3.0),
 		},
 		{
 			name:     "Int64Value_ConvertsToFloat",
 			input:    int64(5),
-			expected: float64Ptr(5.0),
+			expected: new(5.0),
 		},
 		{
 			name:     "Float64Value",
 			input:    float64(0.1),
-			expected: float64Ptr(0.1),
+			expected: new(0.1),
 		},
 		{
 			name:     "StringAuto_ReturnsNil",
@@ -438,7 +438,7 @@ func TestConvertInternalJobParamToOpenAiJobParams_WithIntegrations(t *testing.T)
 		Integrations: []models.Integration{
 			{
 				Type: "wandb",
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"project": "my-project",
 					"entity":  "my-org",
 				},
@@ -458,7 +458,7 @@ func TestConvertInternalJobParamToOpenAiJobParams_WithExtraBody(t *testing.T) {
 	config := &models.CreateFineTuningRequest{
 		BaseModel:    "gpt-4o-mini",
 		TrainingFile: "file-abc123",
-		ExtraBody: map[string]interface{}{
+		ExtraBody: map[string]any{
 			"custom_field": "custom_value",
 		},
 	}
@@ -472,7 +472,7 @@ func TestConvertInternalJobParamToOpenAiJobParams_WithExtraBody(t *testing.T) {
 }
 
 func TestConvertGraderMapToSDKParam_StringCheck(t *testing.T) {
-	graderMap := map[string]interface{}{
+	graderMap := map[string]any{
 		"type":      "string_check",
 		"name":      "exact",
 		"input":     "{{sample.output_text}}",
@@ -490,7 +490,7 @@ func TestConvertGraderMapToSDKParam_StringCheck(t *testing.T) {
 }
 
 func TestConvertGraderMapToSDKParam_TextSimilarity(t *testing.T) {
-	graderMap := map[string]interface{}{
+	graderMap := map[string]any{
 		"type":              "text_similarity",
 		"name":              "fuzzy",
 		"input":             "{{sample.output_text}}",
@@ -510,7 +510,7 @@ func TestConvertGraderMapToSDKParam_TextSimilarity(t *testing.T) {
 }
 
 func TestConvertGraderMapToSDKParam_PythonGrader(t *testing.T) {
-	graderMap := map[string]interface{}{
+	graderMap := map[string]any{
 		"type":      "python",
 		"name":      "custom_grader",
 		"source":    "def grade(output): return 1.0",
@@ -527,18 +527,18 @@ func TestConvertGraderMapToSDKParam_PythonGrader(t *testing.T) {
 }
 
 func TestConvertGraderMapToSDKParam_ScoreModel(t *testing.T) {
-	graderMap := map[string]interface{}{
+	graderMap := map[string]any{
 		"type":  "score_model",
 		"name":  "llm_grader",
 		"model": "gpt-4",
-		"input": []interface{}{
-			map[string]interface{}{
+		"input": []any{
+			map[string]any{
 				"role":    "user",
 				"content": "Grade this",
 				"type":    "text",
 			},
 		},
-		"sampling_params": map[string]interface{}{
+		"sampling_params": map[string]any{
 			"temperature":           0.7,
 			"top_p":                 0.9,
 			"max_completion_tokens": 100,
@@ -558,19 +558,19 @@ func TestConvertGraderMapToSDKParam_ScoreModel(t *testing.T) {
 
 func TestConvertGraderMapToSDKParam_MultiGrader(t *testing.T) {
 	// Multi-grader returns empty because it's handled via extraBody
-	graderMap := map[string]interface{}{
+	graderMap := map[string]any{
 		"type":             "multi",
 		"name":             "strict_partial_credit",
 		"calculate_output": "0.9 * exact + 0.1 * fuzzy",
-		"graders": map[string]interface{}{
-			"exact": map[string]interface{}{
+		"graders": map[string]any{
+			"exact": map[string]any{
 				"type":      "string_check",
 				"name":      "exact",
 				"input":     "{{sample.output_text}}",
 				"reference": "{{item.reference_answer}}",
 				"operation": "eq",
 			},
-			"fuzzy": map[string]interface{}{
+			"fuzzy": map[string]any{
 				"type":              "text_similarity",
 				"name":              "fuzzy",
 				"input":             "{{sample.output_text}}",
@@ -591,19 +591,19 @@ func TestConvertGraderMapToSDKParam_MultiGrader(t *testing.T) {
 }
 
 func TestBuildMultiGraderData(t *testing.T) {
-	graderMap := map[string]interface{}{
+	graderMap := map[string]any{
 		"type":             "multi",
 		"name":             "strict_partial_credit",
 		"calculate_output": "0.9 * exact + 0.1 * fuzzy",
-		"graders": map[string]interface{}{
-			"exact": map[string]interface{}{
+		"graders": map[string]any{
+			"exact": map[string]any{
 				"type":      "string_check",
 				"name":      "exact",
 				"input":     "{{sample.output_text}}",
 				"reference": "{{item.reference_answer}}",
 				"operation": "eq",
 			},
-			"fuzzy": map[string]interface{}{
+			"fuzzy": map[string]any{
 				"type":              "text_similarity",
 				"name":              "fuzzy",
 				"input":             "{{sample.output_text}}",
@@ -620,17 +620,17 @@ func TestBuildMultiGraderData(t *testing.T) {
 	require.Equal(t, "strict_partial_credit", result["name"])
 	require.Equal(t, "0.9 * exact + 0.1 * fuzzy", result["calculate_output"])
 
-	graders, ok := result["graders"].(map[string]interface{})
+	graders, ok := result["graders"].(map[string]any)
 	require.True(t, ok)
 	require.Len(t, graders, 2)
 
-	exactGrader, hasExact := graders["exact"].(map[string]interface{})
+	exactGrader, hasExact := graders["exact"].(map[string]any)
 	require.True(t, hasExact)
 	require.Equal(t, "string_check", exactGrader["type"])
 	require.Equal(t, "exact", exactGrader["name"])
 	require.Equal(t, "eq", exactGrader["operation"])
 
-	fuzzyGrader, hasFuzzy := graders["fuzzy"].(map[string]interface{})
+	fuzzyGrader, hasFuzzy := graders["fuzzy"].(map[string]any)
 	require.True(t, hasFuzzy)
 	require.Equal(t, "text_similarity", fuzzyGrader["type"])
 	require.Equal(t, "fuzzy", fuzzyGrader["name"])
@@ -646,7 +646,7 @@ func TestConvertGraderMapToSDKParam_EmptyMap(t *testing.T) {
 }
 
 func TestConvertGraderMapToSDKParam_UnknownType(t *testing.T) {
-	graderMap := map[string]interface{}{
+	graderMap := map[string]any{
 		"type": "unknown_type",
 	}
 	result := ConvertGraderMapToSDKParam(graderMap)
@@ -668,19 +668,19 @@ func TestConvertInternalJobParamToOpenAiJobParams_ReinforcementWithMultiGrader(t
 					Epochs:          &epochs,
 					ReasoningEffort: "high",
 				},
-				Grader: map[string]interface{}{
+				Grader: map[string]any{
 					"type":             "multi",
 					"name":             "strict_partial_credit",
 					"calculate_output": "0.9 * exact + 0.1 * fuzzy",
-					"graders": map[string]interface{}{
-						"exact": map[string]interface{}{
+					"graders": map[string]any{
+						"exact": map[string]any{
 							"type":      "string_check",
 							"name":      "exact",
 							"input":     "{{sample.output_text}}",
 							"reference": "{{item.reference_answer}}",
 							"operation": "eq",
 						},
-						"fuzzy": map[string]interface{}{
+						"fuzzy": map[string]any{
 							"type":              "text_similarity",
 							"name":              "fuzzy",
 							"input":             "{{sample.output_text}}",
@@ -703,13 +703,13 @@ func TestConvertInternalJobParamToOpenAiJobParams_ReinforcementWithMultiGrader(t
 
 	// Verify extraBody contains the grader
 	require.NotNil(t, extraBody)
-	grader, hasGrader := extraBody["method.reinforcement.grader"].(map[string]interface{})
+	grader, hasGrader := extraBody["method.reinforcement.grader"].(map[string]any)
 	require.True(t, hasGrader)
 	require.Equal(t, "multi", grader["type"])
 	require.Equal(t, "strict_partial_credit", grader["name"])
 	require.Equal(t, "0.9 * exact + 0.1 * fuzzy", grader["calculate_output"])
 
-	graders, hasGraders := grader["graders"].(map[string]interface{})
+	graders, hasGraders := grader["graders"].(map[string]any)
 	require.True(t, hasGraders)
 	require.Len(t, graders, 2)
 }
@@ -727,7 +727,7 @@ func TestConvertInternalJobParamToOpenAiJobParams_ReinforcementWithStringCheckGr
 					Epochs:          &epochs,
 					ReasoningEffort: "high",
 				},
-				Grader: map[string]interface{}{
+				Grader: map[string]any{
 					"type":      "string_check",
 					"name":      "exact",
 					"input":     "{{sample.output_text}}",
@@ -746,13 +746,4 @@ func TestConvertInternalJobParamToOpenAiJobParams_ReinforcementWithStringCheckGr
 	// Non-multi graders should be set via SDK params
 	require.NotNil(t, params.Method.Reinforcement.Grader.OfStringCheckGrader)
 	require.Equal(t, "exact", params.Method.Reinforcement.Grader.OfStringCheckGrader.Name)
-}
-
-// Helper functions
-func int64Ptr(i int64) *int64 {
-	return &i
-}
-
-func float64Ptr(f float64) *float64 {
-	return &f
 }

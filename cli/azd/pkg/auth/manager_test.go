@@ -16,7 +16,6 @@ import (
 
 	_ "embed"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
 	"github.com/azure/azure-dev/cli/azd/internal/runcontext"
@@ -266,7 +265,7 @@ func TestAuthFileConfigUpgrade(t *testing.T) {
 	userCfgMgr := newMemoryUserConfigManager()
 
 	err := userCfg.Set(currentUserKey, &userProperties{
-		HomeAccountID: to.Ptr("homeAccountID"),
+		HomeAccountID: new("homeAccountID"),
 	})
 	require.NoError(t, err)
 

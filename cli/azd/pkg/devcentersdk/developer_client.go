@@ -14,7 +14,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
@@ -88,7 +87,7 @@ func (c *devCenterClient) projectList(ctx context.Context) ([]*Project, error) {
 	queryRequest := armresourcegraph.QueryRequest{
 		Query: &query,
 		Options: &armresourcegraph.QueryRequestOptions{
-			AllowPartialScopes: to.Ptr(true),
+			AllowPartialScopes: new(true),
 		},
 	}
 	res, err := c.resourceGraphClient.Resources(ctx, queryRequest, nil)
@@ -96,7 +95,7 @@ func (c *devCenterClient) projectList(ctx context.Context) ([]*Project, error) {
 		return nil, err
 	}
 
-	list, ok := res.QueryResponse.Data.([]interface{})
+	list, ok := res.QueryResponse.Data.([]any)
 	if !ok {
 		return nil, errors.New("error converting data to list")
 	}

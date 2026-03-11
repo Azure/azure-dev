@@ -102,7 +102,7 @@ func MarshalStruct[T any](in *T) (*structpb.Struct, error) {
 		return nil, fmt.Errorf("failed to marshal agent config: %w", err)
 	}
 
-	var structMap map[string]interface{}
+	var structMap map[string]any
 	if err := json.Unmarshal(structBytes, &structMap); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal agent config to map: %w", err)
 	}

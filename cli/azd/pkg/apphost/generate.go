@@ -20,7 +20,6 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -420,7 +419,7 @@ func inputMetadata(config InputDefaultGenerate) (string, error) {
 		if b == nil {
 			return b
 		}
-		return to.Ptr(!*b)
+		return new(!*b)
 	}
 
 	metadataModel := azure.AutoGenInput{

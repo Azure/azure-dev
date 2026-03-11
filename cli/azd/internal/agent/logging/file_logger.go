@@ -104,7 +104,7 @@ func (fw *fileFlushWriter) Flush() error {
 }
 
 // writeAndFlush writes a message to the file and flushes immediately
-func (fl *FileLogger) writeAndFlush(format string, args ...interface{}) {
+func (fl *FileLogger) writeAndFlush(format string, args ...any) {
 	timestamp := time.Now().UTC().Format(time.RFC3339)
 	message := fmt.Sprintf("[%s] %s\n", timestamp, fmt.Sprintf(format, args...))
 

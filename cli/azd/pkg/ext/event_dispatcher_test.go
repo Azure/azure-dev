@@ -357,7 +357,7 @@ func Test_Duplicate_Handler_Detection_Multiple_Duplicates(t *testing.T) {
 	require.NoError(t, err)
 
 	// Multiple duplicate registrations
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		err = ed.AddHandler(context.Background(), testEvent, handler)
 		require.NoError(t, err)
 	}

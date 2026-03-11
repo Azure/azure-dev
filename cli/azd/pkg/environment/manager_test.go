@@ -336,7 +336,7 @@ func Test_EnvManager_CreateFromContainer(t *testing.T) {
 		mockContext.Container.MustRegisterSingleton(func() *state.RemoteConfig {
 			return &state.RemoteConfig{
 				Backend: string(RemoteKindAzureBlobStorage),
-				Config:  map[string]interface{}{},
+				Config:  map[string]any{},
 			}
 		})
 

@@ -78,7 +78,7 @@ func newGreetingTool() server.ServerTool {
 		),
 		Handler: func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			// Cast arguments to map
-			args, ok := request.Params.Arguments.(map[string]interface{})
+			args, ok := request.Params.Arguments.(map[string]any)
 			if !ok {
 				return mcp.NewToolResultError("Invalid arguments format"), nil
 			}
@@ -185,7 +185,7 @@ func newSamplingTool() server.ServerTool {
 		),
 		Handler: func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			// Cast arguments to map
-			args, ok := request.Params.Arguments.(map[string]interface{})
+			args, ok := request.Params.Arguments.(map[string]any)
 			if !ok {
 				return mcp.NewToolResultError("Invalid arguments format"), nil
 			}
@@ -256,7 +256,7 @@ func newElicitationTool() server.ServerTool {
 		),
 		Handler: func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			// Cast arguments to map
-			args, ok := request.Params.Arguments.(map[string]interface{})
+			args, ok := request.Params.Arguments.(map[string]any)
 			if !ok {
 				return mcp.NewToolResultError("Invalid arguments format"), nil
 			}

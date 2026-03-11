@@ -38,7 +38,7 @@ func FromAlphabet(alphabet string, length uint) (string, error) {
 
 func addRandomChars(buf []byte, pos *uint, count uint, choices string) error {
 	var i uint
-	for i = 0; i < count; i++ {
+	for i = range count {
 		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(choices))))
 		if err != nil {
 			return err

@@ -396,11 +396,11 @@ type dockerfileRunWithMounts struct {
 }
 
 func (s dockerfileRunWithMounts) write(w io.Writer) error {
-	var mountsStr string
+	var mountsStr strings.Builder
 	for _, mount := range s.mounts {
-		mountsStr += fmt.Sprintf(" --mount=%s", mount)
+		mountsStr.WriteString(fmt.Sprintf(" --mount=%s", mount))
 	}
-	_, err := fmt.Fprintf(w, "RUN%s %s\n", mountsStr, s.command)
+	_, err := fmt.Fprintf(w, "RUN%s %s\n", mountsStr.String(), s.command)
 	return err
 }
 
@@ -417,8 +417,8 @@ type dockerfileComment struct {
 
 func (s dockerfileComment) write(w io.Writer) error {
 	// Handle multi-line comments
-	lines := strings.Split(s.comment, "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(s.comment, "\n")
+	for line := range lines {
 		if _, err := fmt.Fprintf(w, "# %s\n", line); err != nil {
 			return err
 		}

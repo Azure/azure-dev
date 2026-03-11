@@ -98,10 +98,7 @@ func (c *canvas) writeBufferChunked() error {
 	out := c.buffer.Bytes()
 	if len(out) > 4096 {
 		for i := 0; i < len(out); i += 4096 {
-			end := i + 4096
-			if end > len(out) {
-				end = len(out)
-			}
+			end := min(i+4096, len(out))
 			if _, err := c.writer.Write(out[i:end]); err != nil {
 				return err
 			}

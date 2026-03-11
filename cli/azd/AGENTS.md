@@ -73,6 +73,7 @@ When writing tests, prefer table-driven tests. Use testify/mock for mocking.
 
 ```bash
 gofmt -s -w .
+go fix ./...
 golangci-lint run ./...
 cspell lint "**/*.go" --relative --config ./.vscode/cspell.yaml --no-progress
 ../../eng/scripts/copyright-check.sh . --fix
@@ -81,6 +82,8 @@ cspell lint "**/*.go" --relative --config ./.vscode/cspell.yaml --no-progress
 - **Line length**: 125 chars max for Go (enforced by `lll` linter); no limit for Markdown
 - **Spelling**: Add technical terms to `cli/azd/.vscode/cspell.yaml` overrides
 - **Copyright**: All Go files need the Microsoft header (handled by copyright-check.sh)
+- **Code modernization**: `go fix ./...` applies automatic modernizations (e.g. `interface{}` → `any`,
+  loop simplifications, use of `slices`/`maps` packages). CI enforces this check.
 
 ### Avoiding Unrelated go.mod/go.sum Changes
 

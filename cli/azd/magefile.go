@@ -174,7 +174,18 @@ func Preflight() error {
 		record("gofmt", "pass", "")
 	}
 
-	// 2. Copyright headers
+	// 2. go fix — check for code modernization opportunities
+	fmt.Println("══ Code modernization (go fix) ══")
+	if out, err := runCapture(azdDir, "go", "fix", "-diff", "./..."); err != nil {
+		record("go fix", "fail", err.Error())
+	} else if len(strings.TrimSpace(out)) > 0 {
+		record("go fix", "fail", "code should be modernized — run 'go fix ./...' to apply:\n"+out)
+		fmt.Print(out)
+	} else {
+		record("go fix", "pass", "")
+	}
+
+	// 3. Copyright headers
 	fmt.Println("══ Copyright headers ══")
 	script := filepath.Join(repoRoot, "eng", "scripts", "copyright-check.sh")
 	if _, err := os.Stat(script); err != nil {
@@ -185,7 +196,7 @@ func Preflight() error {
 		record("copyright", "pass", "")
 	}
 
-	// 3. golangci-lint
+	// 4. golangci-lint
 	fmt.Println("══ Lint (golangci-lint) ══")
 	if err := runStreaming(azdDir, "golangci-lint", "run", "./..."); err != nil {
 		record("lint", "fail", err.Error())
@@ -193,7 +204,7 @@ func Preflight() error {
 		record("lint", "pass", "")
 	}
 
-	// 4. Spell check (cspell)
+	// 5. Spell check (cspell)
 	fmt.Println("══ Spell check (cspell) ══")
 	if err := runStreaming(azdDir, "cspell", "lint", "**/*.go",
 		"--relative", "--config", "./.vscode/cspell.yaml", "--no-progress"); err != nil {
@@ -202,7 +213,7 @@ func Preflight() error {
 		record("cspell", "pass", "")
 	}
 
-	// 5. Compile check
+	// 6. Compile check
 	fmt.Println("══ Build (go build) ══")
 	if err := runStreaming(azdDir, "go", "build", "./..."); err != nil {
 		record("build", "fail", err.Error())
@@ -210,7 +221,7 @@ func Preflight() error {
 		record("build", "pass", "")
 	}
 
-	// 6. Unit tests (with -cover to match CI and catch os.Args leaks)
+	// 7. Unit tests (with -cover to match CI and catch os.Args leaks)
 	fmt.Println("══ Unit tests (go test -short -cover) ══")
 	if err := runStreaming(azdDir, "go", "test", "./...", "-short", "-cover", "-count=1"); err != nil {
 		record("test", "fail", err.Error())

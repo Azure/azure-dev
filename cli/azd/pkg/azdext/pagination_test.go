@@ -610,7 +610,7 @@ func TestPager_CollectMaxItems(t *testing.T) {
 
 	// Build 3 pages of 4 items each; set MaxItems to 5.
 	var responses []*doerResponse
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		items := []int{i*4 + 1, i*4 + 2, i*4 + 3, i*4 + 4}
 		nextLink := ""
 		if i < 2 {
@@ -679,7 +679,7 @@ func TestPager_TruncatedByMaxItems(t *testing.T) {
 	t.Parallel()
 
 	var responses []*doerResponse
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		items := []int{i*4 + 1, i*4 + 2, i*4 + 3, i*4 + 4}
 		nextLink := ""
 		if i < 2 {

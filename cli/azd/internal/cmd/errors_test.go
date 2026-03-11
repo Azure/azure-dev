@@ -109,7 +109,7 @@ func Test_MapError(t *testing.T) {
 			wantErrDetails: []attribute.KeyValue{
 				fields.ErrorKey(fields.ServiceName.Key).String("arm"),
 				fields.ErrorKey(fields.ServiceErrorCode.Key).String(mustMarshalJson(
-					[]map[string]interface{}{
+					[]map[string]any{
 						{
 							string(fields.ErrCode.Key):  "Conflict,PreconditionFailed",
 							string(fields.ErrFrame.Key): 0,
@@ -144,7 +144,7 @@ func Test_MapError(t *testing.T) {
 			wantErrDetails: []attribute.KeyValue{
 				fields.ErrorKey(fields.ServiceName.Key).String("arm"),
 				fields.ErrorKey(fields.ServiceErrorCode.Key).String(mustMarshalJson(
-					[]map[string]interface{}{
+					[]map[string]any{
 						{
 							string(fields.ErrCode.Key):  "InvalidTemplate",
 							string(fields.ErrFrame.Key): 0,
@@ -1002,7 +1002,7 @@ func (e *multiUnwrapError) Unwrap() []error {
 	return e.errs
 }
 
-func mustMarshalJson(v interface{}) string {
+func mustMarshalJson(v any) string {
 	b, err := json.Marshal(v)
 	if err != nil {
 		panic(err)

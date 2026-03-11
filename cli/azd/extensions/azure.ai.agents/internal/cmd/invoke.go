@@ -189,6 +189,9 @@ func (a *InvokeAction) invokeRemote(ctx context.Context) error {
 
 	msg := a.flags.message
 
+	// Determine API version based on VNext flag
+	apiVersion := resolveAgentAPIVersion(ctx, azdClient)
+
 	// Build request body — uses streaming to receive the full agent response.
 	body := map[string]interface{}{
 		"input": msg,
@@ -196,6 +199,7 @@ func (a *InvokeAction) invokeRemote(ctx context.Context) error {
 			"name": name,
 			"type": "agent_reference",
 		},
+		"store":  true,
 		"stream": true,
 	}
 
@@ -228,6 +232,7 @@ func (a *InvokeAction) invokeRemote(ctx context.Context) error {
 		a.flags.newConversation,
 		endpoint,
 		token.Token,
+		apiVersion,
 	)
 	if err != nil {
 		return err
@@ -245,7 +250,7 @@ func (a *InvokeAction) invokeRemote(ctx context.Context) error {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/openai/responses?api-version=%s", endpoint, DefaultAgentAPIVersion)
+	url := fmt.Sprintf("%s/openai/responses?api-version=%s", endpoint, apiVersion)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -275,8 +280,8 @@ func (a *InvokeAction) invokeRemote(ctx context.Context) error {
 }
 
 // createConversation creates a new Foundry conversation for multi-turn memory.
-func createConversation(ctx context.Context, endpoint string, bearerToken string) (string, error) {
-	url := fmt.Sprintf("%s/openai/conversations?api-version=%s", endpoint, DefaultAgentAPIVersion)
+func createConversation(ctx context.Context, endpoint string, bearerToken string, apiVersion string) (string, error) {
+	url := fmt.Sprintf("%s/openai/conversations?api-version=%s", endpoint, apiVersion)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader([]byte("{}")))
 	if err != nil {
 		return "", err

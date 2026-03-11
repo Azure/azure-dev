@@ -108,3 +108,65 @@ func TestApplyVnextMetadata(t *testing.T) {
 		})
 	}
 }
+
+func TestIsVnextEnabled(t *testing.T) {
+	tests := []struct {
+		name       string
+		azdEnv     map[string]string
+		osEnvValue string
+		expected   bool
+	}{
+		{
+			name:     "enabled via azd env",
+			azdEnv:   map[string]string{"enableHostedAgentVNext": "true"},
+			expected: true,
+		},
+		{
+			name:     "enabled via azd env value 1",
+			azdEnv:   map[string]string{"enableHostedAgentVNext": "1"},
+			expected: true,
+		},
+		{
+			name:     "disabled via azd env",
+			azdEnv:   map[string]string{"enableHostedAgentVNext": "false"},
+			expected: false,
+		},
+		{
+			name:       "enabled via OS env fallback",
+			azdEnv:     map[string]string{},
+			osEnvValue: "true",
+			expected:   true,
+		},
+		{
+			name:       "azd env takes precedence over OS env",
+			azdEnv:     map[string]string{"enableHostedAgentVNext": "false"},
+			osEnvValue: "true",
+			expected:   false,
+		},
+		{
+			name:     "absent from both envs",
+			azdEnv:   map[string]string{},
+			expected: false,
+		},
+		{
+			name:     "invalid value returns false",
+			azdEnv:   map[string]string{"enableHostedAgentVNext": "notabool"},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.osEnvValue != "" {
+				t.Setenv("enableHostedAgentVNext", tt.osEnvValue)
+			} else {
+				t.Setenv("enableHostedAgentVNext", "")
+			}
+
+			result := isVnextEnabled(tt.azdEnv)
+			if result != tt.expected {
+				t.Errorf("isVnextEnabled() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}

@@ -6,6 +6,7 @@ package project
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -19,6 +20,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/azure"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
@@ -680,6 +682,111 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	// Display agent information
 	p.displayAgentInfo(request)
 
+	vnextEnabled := isVnextEnabled(azdEnv)
+
+	if vnextEnabled {
+		// VNext (ADC) flow: auto-provisioning via version status polling
+		return p.deployHostedAgentVNext(ctx, serviceConfig, progress, request, azdEnv)
+	}
+
+	// Legacy flow: explicit container start/stop
+	return p.deployHostedAgentLegacy(ctx, serviceConfig, foundryAgentConfig, progress, request, azdEnv)
+}
+
+// deployHostedAgentVNext handles VNext (ADC) deployment where provisioning is automatic.
+// Creates the agent or a new version, then polls the version status until active.
+func (p *AgentServiceTargetProvider) deployHostedAgentVNext(
+	ctx context.Context,
+	serviceConfig *azdext.ServiceConfig,
+	progress azdext.ProgressReporter,
+	request *agent_api.CreateAgentRequest,
+	azdEnv map[string]string,
+) (*azdext.ServiceDeployResult, error) {
+	const apiVersion = "2025-11-15-preview"
+
+	agentClient := agent_api.NewAgentClient(
+		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+		p.credential,
+	)
+
+	// Check if agent already exists (tolerate 404)
+	progress("Checking if agent exists")
+	existing, err := agentClient.GetAgent(ctx, request.Name, apiVersion)
+
+	var agentVersionResponse *agent_api.AgentVersionObject
+
+	if err != nil {
+		// Check if this is a 404 (agent not found)
+		var respErr *azcore.ResponseError
+		if errors.As(err, &respErr) && respErr.StatusCode == 404 {
+			// Agent does not exist — create it (POST /agents)
+			progress("Creating agent")
+			fmt.Fprintf(os.Stderr, "Agent '%s' does not exist, creating...\n", request.Name)
+
+			agentObj, createErr := agentClient.CreateAgent(ctx, request, apiVersion)
+			if createErr != nil {
+				return nil, exterrors.ServiceFromAzure(createErr, exterrors.OpCreateAgent)
+			}
+
+			agentVersionResponse = &agentObj.Versions.Latest
+			fmt.Fprintf(os.Stderr, "Agent '%s' created (version %s)\n", agentObj.Name, agentVersionResponse.Version)
+		} else {
+			return nil, exterrors.ServiceFromAzure(err, "check-agent-exists")
+		}
+	} else {
+		// Agent exists — create a new version (POST /agents/{name}/versions)
+		prevVersion := existing.Versions.Latest.Version
+		fmt.Fprintf(os.Stderr, "Agent '%s' exists (version %s), deploying new version...\n", request.Name, prevVersion)
+
+		progress("Creating new agent version")
+		versionRequest := &agent_api.CreateAgentVersionRequest{
+			Description: request.Description,
+			Metadata:    request.Metadata,
+			Definition:  request.Definition,
+		}
+		agentVersionResponse, err = agentClient.CreateAgentVersion(ctx, request.Name, versionRequest, apiVersion)
+		if err != nil {
+			return nil, exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
+		}
+		fmt.Fprintf(os.Stderr, "Agent version '%s' (version %s) created\n",
+			agentVersionResponse.Name, agentVersionResponse.Version)
+	}
+
+	// Wait for the version to become active (VNext auto-provisions)
+	progress("Waiting for agent to become active")
+	err = p.waitForAgentVersionActive(ctx, agentClient, agentVersionResponse.Name, agentVersionResponse.Version, apiVersion)
+	if err != nil {
+		return nil, err
+	}
+
+	// Register agent info in environment
+	progress("Registering agent environment variables")
+	err = p.registerAgentEnvironmentVariables(ctx, azdEnv, serviceConfig, agentVersionResponse)
+	if err != nil {
+		return nil, err
+	}
+
+	artifacts := p.deployArtifacts(
+		agentVersionResponse.Name,
+		agentVersionResponse.Version,
+		azdEnv["AZURE_AI_PROJECT_ID"],
+		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+	)
+
+	return &azdext.ServiceDeployResult{
+		Artifacts: artifacts,
+	}, nil
+}
+
+// deployHostedAgentLegacy handles the legacy deployment flow with explicit container start/stop.
+func (p *AgentServiceTargetProvider) deployHostedAgentLegacy(
+	ctx context.Context,
+	serviceConfig *azdext.ServiceConfig,
+	foundryAgentConfig *ServiceTargetAgentConfig,
+	progress azdext.ProgressReporter,
+	request *agent_api.CreateAgentRequest,
+	azdEnv map[string]string,
+) (*azdext.ServiceDeployResult, error) {
 	// Step 4: Create agent
 	progress("Creating agent")
 	agentVersionResponse, err := p.createAgent(ctx, request, azdEnv)
@@ -1145,4 +1252,70 @@ func applyVnextMetadata(request *agent_api.CreateAgentRequest, azdEnv map[string
 		}
 		request.Metadata["enableVnextExperience"] = "true"
 	}
+}
+
+// isVnextEnabled checks enableHostedAgentVNext from azdEnv then OS env.
+func isVnextEnabled(azdEnv map[string]string) bool {
+	vnextValue := azdEnv["enableHostedAgentVNext"]
+	if vnextValue == "" {
+		vnextValue = os.Getenv("enableHostedAgentVNext")
+	}
+	enabled, err := strconv.ParseBool(vnextValue)
+	return err == nil && enabled
+}
+
+// waitForAgentVersionActive polls the agent version status until it becomes active or fails.
+// VNext auto-provisions the agent when a version is created, so we poll the version status
+// rather than using explicit container start/stop operations.
+func (p *AgentServiceTargetProvider) waitForAgentVersionActive(
+	ctx context.Context,
+	agentClient *agent_api.AgentClient,
+	agentName string,
+	agentVersion string,
+	apiVersion string,
+) error {
+	const (
+		pollInterval  = 5 * time.Second
+		maxIterations = 36 // ~3 minutes
+	)
+
+	fmt.Fprintf(os.Stderr, "Waiting for agent '%s' version '%s' to become active...\n", agentName, agentVersion)
+
+	for i := 0; i < maxIterations; i++ {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(pollInterval):
+		}
+
+		ver, err := agentClient.GetAgentVersion(ctx, agentName, agentVersion, apiVersion)
+		if err != nil {
+			return exterrors.ServiceFromAzure(err, "poll-agent-version-status")
+		}
+
+		switch ver.Status {
+		case agent_api.AgentVersionStatusActive:
+			fmt.Fprintf(os.Stderr, "Agent '%s' version '%s' is active and ready\n", agentName, agentVersion)
+			return nil
+		case agent_api.AgentVersionStatusFailed:
+			errorMsg := "provisioning failed"
+			if ver.Error != nil {
+				errorMsg = fmt.Sprintf("provisioning failed: [%s] %s", ver.Error.Code, ver.Error.Message)
+			}
+			return exterrors.Internal(
+				exterrors.CodeContainerStartFailed,
+				fmt.Sprintf("agent '%s' version '%s' %s", agentName, agentVersion, errorMsg),
+			)
+		case agent_api.AgentVersionStatusCreating:
+			fmt.Fprintf(os.Stderr, "Agent version status: %s\n", ver.Status)
+		default:
+			fmt.Fprintf(os.Stderr, "Agent version status: %s (unexpected)\n", ver.Status)
+		}
+	}
+
+	return exterrors.Internal(
+		exterrors.CodeContainerStartTimeout,
+		fmt.Sprintf("timeout waiting for agent '%s' version '%s' to become active after %d seconds",
+			agentName, agentVersion, int(maxIterations*pollInterval/time.Second)),
+	)
 }

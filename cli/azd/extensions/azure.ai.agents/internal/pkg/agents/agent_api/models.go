@@ -165,16 +165,35 @@ type UpdateAgentRequest struct {
 	CreateAgentVersionRequest
 }
 
+// AgentVersionStatus represents the provisioning status of an agent version (VNext)
+type AgentVersionStatus string
+
+const (
+	AgentVersionStatusCreating AgentVersionStatus = "creating"
+	AgentVersionStatusActive   AgentVersionStatus = "active"
+	AgentVersionStatusFailed   AgentVersionStatus = "failed"
+	AgentVersionStatusDeleting AgentVersionStatus = "deleting"
+	AgentVersionStatusDeleted  AgentVersionStatus = "deleted"
+)
+
+// AgentVersionError represents error details when an agent version fails provisioning
+type AgentVersionError struct {
+	Code    string `json:"code,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
 // AgentVersionObject represents an agent version
 type AgentVersionObject struct {
-	Object      string            `json:"object"`
-	ID          string            `json:"id"`
-	Name        string            `json:"name"`
-	Version     string            `json:"version"`
-	Description *string           `json:"description,omitempty"`
-	Metadata    map[string]string `json:"metadata,omitempty"`
-	CreatedAt   int64             `json:"created_at"`
-	Definition  interface{}       `json:"definition"` // Can be any of the agent definition types
+	Object      string             `json:"object"`
+	ID          string             `json:"id"`
+	Name        string             `json:"name"`
+	Version     string             `json:"version"`
+	Status      AgentVersionStatus `json:"status,omitempty"`
+	Description *string            `json:"description,omitempty"`
+	Metadata    map[string]string  `json:"metadata,omitempty"`
+	CreatedAt   int64              `json:"created_at"`
+	Definition  interface{}        `json:"definition"` // Can be any of the agent definition types
+	Error       *AgentVersionError `json:"error,omitempty"`
 }
 
 // AgentObject represents an agent

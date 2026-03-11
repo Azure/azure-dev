@@ -6,6 +6,8 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
+	"strconv"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
 
@@ -16,6 +18,9 @@ import (
 
 // DefaultAgentAPIVersion is the default API version for agent operations.
 const DefaultAgentAPIVersion = "2025-05-15-preview"
+
+// VNextAgentAPIVersion is the API version for VNext (ADC) hosted agent operations.
+const VNextAgentAPIVersion = "2025-11-15-preview"
 
 // AgentContext holds the common properties of a hosted agent.
 type AgentContext struct {
@@ -104,4 +109,30 @@ func newAgentCredential() (azcore.TokenCredential, error) {
 		return nil, fmt.Errorf("failed to create Azure credential: %w", err)
 	}
 	return credential, nil
+}
+
+// resolveAgentAPIVersion returns the appropriate API version based on the enableHostedAgentVNext setting.
+// Checks the azd environment first, then falls back to the OS environment variable.
+func resolveAgentAPIVersion(ctx context.Context, azdClient *azdext.AzdClient) string {
+	// Try azd environment first
+	envResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err == nil && envResponse.Environment != nil {
+		v, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+			EnvName: envResponse.Environment.Name,
+			Key:     "enableHostedAgentVNext",
+		})
+		if err == nil && v.Value != "" {
+			if enabled, err := strconv.ParseBool(v.Value); err == nil && enabled {
+				return VNextAgentAPIVersion
+			}
+		}
+	}
+
+	// Fall back to OS environment variable
+	vnextValue := os.Getenv("enableHostedAgentVNext")
+	if enabled, err := strconv.ParseBool(vnextValue); err == nil && enabled {
+		return VNextAgentAPIVersion
+	}
+
+	return DefaultAgentAPIVersion
 }

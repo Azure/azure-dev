@@ -248,13 +248,13 @@ func (rc *ResilientClient) applyAuth(ctx context.Context, req *http.Request) err
 func (rc *ResilientClient) backoff(attempt int) time.Duration {
 	delay := min(time.Duration(float64(rc.opts.InitialDelay)*math.Pow(2, float64(attempt-1))), rc.opts.MaxDelay)
 
-	// Add jitter: randomize between [50%, 100%) of computed delay to prevent
+	// Add jitter: randomize between [80%, 120%) of computed delay to prevent
 	// thundering herd when multiple clients retry simultaneously.
 	var b [8]byte
-	jitter := 0.75
+	jitter := 1.0
 	if _, err := rand.Read(b[:]); err == nil {
 		randFloat := float64(binary.BigEndian.Uint64(b[:])) / (float64(math.MaxUint64) + 1)
-		jitter = 0.5 + randFloat*0.5
+		jitter = 0.8 + randFloat*0.4
 	}
 
 	return time.Duration(float64(delay) * jitter)

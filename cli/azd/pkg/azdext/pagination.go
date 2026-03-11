@@ -188,6 +188,13 @@ func (p *Pager[T]) NextPage(ctx context.Context) (*PageResponse[T], error) {
 		return nil, fmt.Errorf("azdext.Pager.NextPage: failed to read response: %w", err)
 	}
 
+	// Detect silent truncation: if we read exactly maxPageResponseSize bytes,
+	// the response was likely larger than the limit. Return a clear error instead
+	// of letting JSON decode fail with a cryptic parse error.
+	if int64(len(data)) >= maxPageResponseSize {
+		return nil, fmt.Errorf("azdext.Pager.NextPage: response body exceeds maximum size of %d bytes", maxPageResponseSize)
+	}
+
 	var page PageResponse[T]
 	if err := json.Unmarshal(data, &page); err != nil {
 		return nil, fmt.Errorf("azdext.Pager.NextPage: failed to decode response: %w", err)

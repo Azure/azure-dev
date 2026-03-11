@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -165,6 +166,14 @@ func newHandler(opts LoggerOptions) slog.Handler {
 
 // isDebugEnv checks the AZD_DEBUG environment variable.
 func isDebugEnv() bool {
-	v := strings.ToLower(os.Getenv("AZD_DEBUG"))
-	return v == "1" || v == "true" || v == "yes"
+	v := os.Getenv("AZD_DEBUG")
+	if v == "" {
+		return false
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		// Also accept "yes" for backward compatibility.
+		return strings.EqualFold(v, "yes")
+	}
+	return b
 }

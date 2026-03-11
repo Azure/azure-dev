@@ -421,8 +421,8 @@ func TestSSRFSafeRedirect_HostnameResolvesPrivateBlocked(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for redirect hostname resolving to private IP")
 	}
-	if !strings.Contains(err.Error(), "resolved to private/loopback") {
-		t.Errorf("error = %q, want mention of resolved private/loopback", err.Error())
+	if !strings.Contains(err.Error(), "resolved to blocked IP") {
+		t.Errorf("error = %q, want mention of resolved blocked IP", err.Error())
 	}
 }
 

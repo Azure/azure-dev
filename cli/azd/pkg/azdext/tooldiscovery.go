@@ -30,6 +30,13 @@ type ToolInfo struct {
 // If not found on PATH, it also checks the current working directory for a
 // project-local executable with the same name (for example, ./mvnw).
 //
+// SECURITY NOTE: Project-local tools take precedence over PATH entries. This
+// means a project directory can shadow system tools by placing executables
+// with matching names in the project root. This is by design — project wrapper
+// scripts (e.g., mvnw, gradlew) should override system-installed versions to
+// ensure reproducible builds. However, users should be aware that cloning
+// untrusted repositories could expose them to malicious project-local binaries.
+//
 // Platform behavior:
 //   - Windows: Searches PATH and PATHEXT extensions (.exe, .cmd, .bat, etc.).
 //   - Unix: Searches PATH for files with the executable bit set.

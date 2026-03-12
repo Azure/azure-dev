@@ -4,12 +4,13 @@
 package account
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log"
 	"math"
 	"os"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -326,8 +327,8 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 	}
 	close(results)
 
-	sort.Slice(allSubscriptions, func(i, j int) bool {
-		return allSubscriptions[i].Name < allSubscriptions[j].Name
+	slices.SortFunc(allSubscriptions, func(a, b Subscription) int {
+		return cmp.Compare(a.Name, b.Name)
 	})
 
 	if !oneSuccess && len(tenants) > 0 {

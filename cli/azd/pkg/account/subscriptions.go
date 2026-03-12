@@ -4,9 +4,10 @@
 package account
 
 import (
+	"cmp"
 	"context"
 	"fmt"
-	"sort"
+	"slices"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
@@ -81,8 +82,8 @@ func (s *SubscriptionsService) ListSubscriptions(
 		subscriptions = append(subscriptions, page.SubscriptionListResult.Value...)
 	}
 
-	sort.Slice(subscriptions, func(i, j int) bool {
-		return *subscriptions[i].DisplayName < *subscriptions[j].DisplayName
+	slices.SortFunc(subscriptions, func(a, b *armsubscriptions.Subscription) int {
+		return cmp.Compare(*a.DisplayName, *b.DisplayName)
 	})
 
 	return subscriptions, nil
@@ -136,8 +137,8 @@ func (s *SubscriptionsService) ListSubscriptionLocations(
 		}
 	}
 
-	sort.Slice(locations, func(i, j int) bool {
-		return locations[i].RegionalDisplayName < locations[j].RegionalDisplayName
+	slices.SortFunc(locations, func(a, b Location) int {
+		return cmp.Compare(a.RegionalDisplayName, b.RegionalDisplayName)
 	})
 
 	return locations, nil
@@ -165,9 +166,11 @@ func (s *SubscriptionsService) ListTenants(ctx context.Context) ([]armsubscripti
 		}
 	}
 
-	sort.Slice(tenants, func(i, j int) bool {
-		return convert.ToValueWithDefault(tenants[i].DisplayName, "") <
-			convert.ToValueWithDefault(tenants[j].DisplayName, "")
+	slices.SortFunc(tenants, func(a, b armsubscriptions.TenantIDDescription) int {
+		return cmp.Compare(
+			convert.ToValueWithDefault(a.DisplayName, ""),
+			convert.ToValueWithDefault(b.DisplayName, ""),
+		)
 	})
 
 	return tenants, nil

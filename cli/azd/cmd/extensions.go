@@ -225,8 +225,10 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		// from os.Environ() are NOT processed — only the azd environment's
 		// variables may contain KV references.
 		azdEnvVars := env.Environ()
-		if subId := env.Getenv("AZURE_SUBSCRIPTION_ID"); subId != "" {
-			azdEnvVars = kv.ResolveSecretEnvironment(ctx, a.kvService, azdEnvVars, subId)
+		subId := env.Getenv("AZURE_SUBSCRIPTION_ID")
+		azdEnvVars, kvErr := kv.ResolveSecretEnvironment(ctx, a.kvService, azdEnvVars, subId)
+		if kvErr != nil {
+			log.Printf("warning: %v", kvErr)
 		}
 
 		allEnv = append(allEnv, azdEnvVars...)

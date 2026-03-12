@@ -468,8 +468,14 @@ const keyVaultAppRefPrefix = "@Microsoft.KeyVault("
 
 // IsKeyVaultAppReference reports whether s uses the @Microsoft.KeyVault(SecretUri=...) format
 // used by Azure App Service and App Configuration for Key Vault references.
+// Only the SecretUri= variant is supported; other forms (e.g., VaultName/SecretName) return false.
 func IsKeyVaultAppReference(s string) bool {
-	return strings.HasPrefix(s, keyVaultAppRefPrefix) && strings.HasSuffix(s, ")")
+	if !strings.HasPrefix(s, keyVaultAppRefPrefix) || !strings.HasSuffix(s, ")") {
+		return false
+	}
+
+	inner := strings.TrimSpace(s[len(keyVaultAppRefPrefix) : len(s)-1])
+	return strings.HasPrefix(inner, "SecretUri=") && len(inner) > len("SecretUri=")
 }
 
 // IsSecretReference reports whether s is a Key Vault secret reference in either
@@ -550,14 +556,15 @@ func ParseKeyVaultAppReference(ref string) (KeyVaultAppReference, error) {
 			"invalid @Microsoft.KeyVault reference %q: SecretUri must use https scheme", ref)
 	}
 
-	if u.Host == "" {
+	host := u.Hostname()
+	if host == "" {
 		return KeyVaultAppReference{}, fmt.Errorf(
 			"invalid @Microsoft.KeyVault reference %q: SecretUri must include a host", ref)
 	}
 
-	if !isValidVaultHost(u.Host) {
+	if !isValidVaultHost(host) {
 		return KeyVaultAppReference{}, fmt.Errorf(
-			"invalid @Microsoft.KeyVault reference %q: host %q is not a known Azure Key Vault endpoint", ref, u.Host)
+			"invalid @Microsoft.KeyVault reference %q: host %q is not a known Azure Key Vault endpoint", ref, host)
 	}
 
 	parts := strings.Split(strings.TrimPrefix(u.Path, "/"), "/")
@@ -577,7 +584,7 @@ func ParseKeyVaultAppReference(ref string) (KeyVaultAppReference, error) {
 		secretVersion = parts[2]
 	}
 
-	vaultName := u.Host
+	vaultName := host
 	if idx := strings.Index(vaultName, "."); idx > 0 {
 		vaultName = vaultName[:idx]
 	}
@@ -595,20 +602,23 @@ func ParseKeyVaultAppReference(ref string) (KeyVaultAppReference, error) {
 // akvs:// or @Microsoft.KeyVault(SecretUri=...) format is replaced with the
 // resolved secret value. Non-secret values are passed through unchanged.
 //
-// Resolution failures for individual variables are logged. On failure the
-// value is set to an empty string rather than leaking the raw reference to
-// downstream consumers who would not know how to handle it.
+// On failure, individual variables are set to empty values (to avoid leaking
+// raw references), and all errors are collected and returned via [errors.Join].
+// The returned env slice is always valid — callers can choose to proceed with
+// partial results or fail based on the error.
 func ResolveSecretEnvironment(
 	ctx context.Context,
 	kvService KeyVaultService,
 	envVars []string,
 	defaultSubscriptionId string,
-) []string {
-	if kvService == nil || defaultSubscriptionId == "" {
-		return envVars
+) ([]string, error) {
+	if kvService == nil {
+		return envVars, nil
 	}
 
 	result := make([]string, len(envVars))
+	var errs []error
+
 	for i, envVar := range envVars {
 		before, after, ok := strings.Cut(envVar, "=")
 		if !ok {
@@ -627,6 +637,7 @@ func ResolveSecretEnvironment(
 		resolved, err := kvService.SecretFromKeyVaultReference(ctx, value, defaultSubscriptionId)
 		if err != nil {
 			log.Printf("warning: failed to resolve Key Vault reference for %s: %v", key, err)
+			errs = append(errs, fmt.Errorf("key %q: %w", key, err))
 			result[i] = key + "=" // Empty value — don't leak the raw reference
 			continue
 		}
@@ -637,5 +648,9 @@ func ResolveSecretEnvironment(
 	// Sort for deterministic output.
 	sort.Strings(result)
 
-	return result
+	if len(errs) > 0 {
+		return result, fmt.Errorf("failed to resolve Key Vault references: %w", errors.Join(errs...))
+	}
+
+	return result, nil
 }

@@ -564,19 +564,34 @@ When you encounter this error, YOU MUST USE YOUR TERMINAL TOOL TO EXECUTE the fo
    
    Verify that the principal ID parameter for the role assignment hasn't changed between deployments (e.g., ensure you aren't accidentally switching between a user and a service principal).
 
-   **Step 2: Delete the Conflicting Role Assignment**
+   **Step 2: List the Conflicting Role Assignment**
    
-   If the principal ID has intentionally changed and you need to reassign, USE YOUR TERMINAL TOOL to delete the old role assignment first:
+   If the principal ID has intentionally changed and you need to reassign, first extract the **exact scope** from the error message (it may be at subscription, resource group, or resource level — do NOT assume subscription level).
    
-   `az role assignment delete --assignee <extracted-email-or-object-id> --role <role-assignment-name> --scope /subscriptions/<extracted-subscription-id>`
+   USE YOUR TERMINAL TOOL to list matching role assignments and capture the assignment ID:
+   
+   `az role assignment list --assignee <extracted-email-or-object-id> --scope <exact-scope-from-error>`
+   
+   Review the output to identify the specific conflicting assignment. Note the `id` field (the full resource ID of the role assignment).
+
+   **Step 3: Delete the Conflicting Role Assignment by ID**
+   
+   USE YOUR TERMINAL TOOL to delete **only** the specific assignment using its ID to avoid accidentally removing other assignments:
+   
+   `az role assignment delete --ids <assignment-id>`
+   
+   ⚠️ **WARNING:** Never use broad filters (e.g., `--assignee` + `--role` without `--ids`) to delete role assignments, as this can match and remove multiple assignments unintentionally.
 
 **Example Commands:**
 ```bash
 # Example 1: Search for role assignment definitions in Bicep files
 grep -r "Microsoft.Authorization/roleAssignments" infra/*.bicep infra/**/*.bicep
 
-# Example 2: Delete a conflicting role assignment
-az role assignment delete --assignee <extracted-email-or-object-id> --role <role-assignment-name> --scope /subscriptions/<extracted-subscription-id>
+# Example 2: List matching role assignments at the exact scope from the error
+az role assignment list --assignee <extracted-email-or-object-id> --scope <exact-scope-from-error>
+
+# Example 3: Delete ONLY the specific conflicting assignment by its ID
+az role assignment delete --ids <assignment-id>
 ```
 
 ## TPM Quota Exceeded for AI Models Error

@@ -298,7 +298,7 @@ func TestScopeDetector_DeterministicCustomRules(t *testing.T) {
 		".gamma.example.com": "https://gamma.example.com/.default",
 	}
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		sd := NewScopeDetector(&ScopeDetectorOptions{CustomRules: rules})
 
 		scopes, err := sd.ScopesForURL("https://api.alpha.example.com/data")

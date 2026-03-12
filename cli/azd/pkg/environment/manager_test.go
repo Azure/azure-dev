@@ -336,7 +336,7 @@ func Test_EnvManager_CreateFromContainer(t *testing.T) {
 		mockContext.Container.MustRegisterSingleton(func() *state.RemoteConfig {
 			return &state.RemoteConfig{
 				Backend: string(RemoteKindAzureBlobStorage),
-				Config:  map[string]interface{}{},
+				Config:  map[string]any{},
 			}
 		})
 
@@ -387,6 +387,11 @@ func registerContainerComponents(t *testing.T, mockContext *mocks.MockContext) {
 	// Register a mock SubscriptionTenantResolver for tests
 	mockContext.Container.MustRegisterSingleton(func() account.SubscriptionTenantResolver {
 		return &mockSubscriptionTenantResolver{}
+	})
+
+	mockContext.Container.MustRegisterSingleton(func() config.UserConfigManager {
+		fileConfigManager := config.NewFileConfigManager(config.NewManager())
+		return config.NewUserConfigManager(fileConfigManager)
 	})
 
 	mockContext.Container.MustRegisterSingleton(storage.NewBlobSdkClient)

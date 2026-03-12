@@ -41,7 +41,7 @@ func NewHandler(f any) Handler {
 		panic("NewHandler: function must take at least one argument")
 	}
 
-	if fnType.In(0) != reflect.TypeOf((*context.Context)(nil)).Elem() {
+	if fnType.In(0) != reflect.TypeFor[context.Context]() {
 		panic(fmt.Sprintf("NewHandler: first argument must be a context.Context, got %s", fnType.In(0)))
 	}
 
@@ -50,11 +50,11 @@ func NewHandler(f any) Handler {
 			fnType.NumOut()))
 	}
 
-	if fnType.NumOut() == 1 && fnType.Out(0) != reflect.TypeOf((*error)(nil)).Elem() {
+	if fnType.NumOut() == 1 && fnType.Out(0) != reflect.TypeFor[error]() {
 		panic(fmt.Sprintf("NewHandler: single return value must be an error, got %s", fnType.Out(0)))
 	}
 
-	if fnType.NumOut() == 2 && fnType.Out(1) != reflect.TypeOf((*error)(nil)).Elem() {
+	if fnType.NumOut() == 2 && fnType.Out(1) != reflect.TypeFor[error]() {
 		panic(fmt.Sprintf("NewHandler: second return value must be an error, got %s", fnType.Out(1)))
 	}
 

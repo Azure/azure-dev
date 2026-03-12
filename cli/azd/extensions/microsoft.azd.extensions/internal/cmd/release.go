@@ -224,7 +224,7 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 		confirmReleaseResponse, err := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
 			Options: &azdext.ConfirmOptions{
 				Message:      "Are you sure you want to create the GitHub release?",
-				DefaultValue: internal.ToPtr(false),
+				DefaultValue: new(false),
 				Placeholder:  "no",
 			},
 		})

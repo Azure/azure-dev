@@ -115,7 +115,7 @@ func TestEnvConfigGet(t *testing.T) {
 			},
 			path:          "nonexistent",
 			expectError:   true,
-			errorContains: "no value stored at path",
+			errorContains: "no value at path",
 		},
 		{
 			name: "GetDeeplyNestedValue",

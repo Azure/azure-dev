@@ -116,16 +116,16 @@ func TestErrorWithSuggestion_MarshalJSON(t *testing.T) {
 	data, marshalErr := json.Marshal(err)
 	require.NoError(t, marshalErr)
 
-	var result map[string]interface{}
+	var result map[string]any
 	require.NoError(t, json.Unmarshal(data, &result))
 
 	assert.Equal(t, "test error", result["error"])
 	assert.Equal(t, "test message", result["message"])
 	assert.Equal(t, "test suggestion", result["suggestion"])
 
-	links := result["links"].([]interface{})
+	links := result["links"].([]any)
 	require.Len(t, links, 1)
-	link := links[0].(map[string]interface{})
+	link := links[0].(map[string]any)
 	assert.Equal(t, "https://example.com", link["url"])
 	assert.Equal(t, "Example", link["title"])
 }
@@ -139,7 +139,7 @@ func TestErrorWithSuggestion_MarshalJSON_OmitsEmpty(t *testing.T) {
 	data, marshalErr := json.Marshal(err)
 	require.NoError(t, marshalErr)
 
-	var result map[string]interface{}
+	var result map[string]any
 	require.NoError(t, json.Unmarshal(data, &result))
 
 	assert.Equal(t, "test error", result["error"])

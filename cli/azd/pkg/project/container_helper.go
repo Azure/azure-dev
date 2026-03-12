@@ -32,6 +32,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
@@ -599,6 +600,22 @@ func (ch *ContainerHelper) Publish(
 
 	if serviceConfig.Docker.RemoteBuild {
 		remoteImage, err = ch.runRemoteBuild(ctx, serviceConfig, targetResource, env, progress, imageOverride)
+		if err != nil {
+			// Check if a local container runtime (Docker/Podman) is available before falling back
+			if dockerErr := ch.docker.CheckInstalled(ctx); dockerErr != nil {
+				return nil, fmt.Errorf(
+					"remote build failed: %w\n\nLocal fallback unavailable: %w",
+					err, dockerErr)
+			}
+
+			ch.console.MessageUxItem(ctx, &ux.WarningMessage{
+				Description: fmt.Sprintf(
+					"Remote build failed: %s\nFalling back to local Docker build.", err),
+				HidePrefix: false,
+			})
+			remoteImage, err = ch.publishLocalImage(
+				ctx, serviceConfig, serviceContext, env, progress, imageOverride)
+		}
 	} else if useDotnetPublishForDockerBuild(serviceConfig) {
 		remoteImage, err = ch.runDotnetPublish(ctx, serviceConfig, targetResource, env, progress)
 	} else {
@@ -823,9 +840,9 @@ func (ch *ContainerHelper) runRemoteBuild(
 
 	buildRequest := &armcontainerregistry.DockerBuildRequest{
 		SourceLocation: source.RelativePath,
-		DockerFilePath: to.Ptr(dockerPath),
-		IsPushEnabled:  to.Ptr(true),
-		ImageNames:     []*string{to.Ptr(imageName)},
+		DockerFilePath: new(dockerPath),
+		IsPushEnabled:  new(true),
+		ImageNames:     []*string{new(imageName)},
 		Platform: &armcontainerregistry.PlatformProperties{
 			OS:           to.Ptr(armcontainerregistry.OSLinux),
 			Architecture: to.Ptr(armcontainerregistry.ArchitectureAmd64),

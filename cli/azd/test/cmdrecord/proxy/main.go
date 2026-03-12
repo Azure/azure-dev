@@ -310,7 +310,7 @@ func (a *App) nextInteractionId() (int, error) {
 	name := filepath.Join(a.config.CassetteName, cmdrecord.InteractionIdFile)
 	contents, err := os.ReadFile(name)
 	if errors.Is(err, os.ErrNotExist) {
-		return 0, os.WriteFile(name, []byte(fmt.Sprint(0)), 0600)
+		return 0, os.WriteFile(name, fmt.Append(nil, 0), 0600)
 	}
 
 	if err != nil {
@@ -323,7 +323,7 @@ func (a *App) nextInteractionId() (int, error) {
 	}
 
 	newId := currentId + 1
-	err = os.WriteFile(name, []byte(fmt.Sprint(newId)), 0600)
+	err = os.WriteFile(name, fmt.Append(nil, newId), 0600)
 	return newId, err
 }
 

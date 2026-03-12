@@ -6,6 +6,7 @@ package appinsightsexporter
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"time"
 
 	"github.com/microsoft/ApplicationInsights-Go/appinsights/contracts"
@@ -31,9 +32,7 @@ func SpanToEnvelope(span trace.ReadOnlySpan) *contracts.Envelope {
 	envelope.Name = requestData.EnvelopeName("")
 	envelope.Tags[contracts.OperationName] = requestData.Name
 
-	for contextKey, contextVal := range contextTags {
-		envelope.Tags[contextKey] = contextVal
-	}
+	maps.Copy(envelope.Tags, contextTags)
 
 	// Sanitize.
 	for _, warn := range envelope.Sanitize() {

@@ -6,15 +6,14 @@ package convert
 import (
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/stretchr/testify/require"
 )
 
 func Test_ToStringWithDefault(t *testing.T) {
 	type testCase struct {
 		name     string
-		input    interface{}
-		expected interface{}
+		input    any
+		expected any
 	}
 
 	testCases := []testCase{
@@ -40,12 +39,12 @@ func Test_ToStringWithDefault(t *testing.T) {
 		},
 		{
 			name:     "StringPointer",
-			input:    to.Ptr("apple"),
+			input:    new("apple"),
 			expected: "apple",
 		},
 		{
 			name:     "NotStringPointer",
-			input:    to.Ptr(1),
+			input:    new(1),
 			expected: "default",
 		},
 	}
@@ -60,12 +59,12 @@ func Test_ToStringWithDefault(t *testing.T) {
 
 func Test_ToValueWithDefault(t *testing.T) {
 	t.Run("String", func(t *testing.T) {
-		value := ToValueWithDefault(to.Ptr("apple"), "default")
+		value := ToValueWithDefault(new("apple"), "default")
 		require.Equal(t, "apple", value)
 	})
 
 	t.Run("Int", func(t *testing.T) {
-		value := ToValueWithDefault(to.Ptr(1), 0)
+		value := ToValueWithDefault(new(1), 0)
 		require.Equal(t, 1, value)
 	})
 
@@ -75,7 +74,7 @@ func Test_ToValueWithDefault(t *testing.T) {
 	})
 
 	t.Run("EmptyString", func(t *testing.T) {
-		value := ToValueWithDefault(to.Ptr(""), "default")
+		value := ToValueWithDefault(new(""), "default")
 		require.Equal(t, "default", value)
 	})
 }
@@ -91,7 +90,7 @@ func Test_ToMap(t *testing.T) {
 			Name:    "John Doe",
 			Address: "123 Main St",
 		}
-		expected := map[string]interface{}{
+		expected := map[string]any{
 			"Name":    "John Doe",
 			"Address": "123 Main St",
 		}
@@ -102,7 +101,7 @@ func Test_ToMap(t *testing.T) {
 
 	t.Run("EmptyStruct", func(t *testing.T) {
 		input := struct{}{}
-		expected := map[string]interface{}{}
+		expected := map[string]any{}
 		actual, err := ToMap(input)
 		require.NoError(t, err)
 		require.Equal(t, expected, actual)

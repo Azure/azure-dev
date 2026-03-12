@@ -92,7 +92,7 @@ func (kvs *keyVaultService) CreateKeyVaultSecret(
 		return err
 	}
 	_, err = client.SetSecret(ctx, secretName, azsecrets.SetSecretParameters{
-		Value: to.Ptr(secretValue),
+		Value: new(secretValue),
 	}, nil)
 	return err
 }
@@ -307,14 +307,14 @@ func (kvs *keyVaultService) CreateVault(
 		resourceGroupName,
 		vaultName,
 		armkeyvault.VaultCreateOrUpdateParameters{
-			Location: to.Ptr(location),
+			Location: new(location),
 			Properties: &armkeyvault.VaultProperties{
 				SKU: &armkeyvault.SKU{
 					Family: to.Ptr(armkeyvault.SKUFamilyA),
 					Name:   to.Ptr(armkeyvault.SKUNameStandard),
 				},
-				TenantID:                to.Ptr(tenantId),
-				EnableRbacAuthorization: to.Ptr(true),
+				TenantID:                new(tenantId),
+				EnableRbacAuthorization: new(true),
 			},
 		},
 		nil)

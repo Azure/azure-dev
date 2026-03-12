@@ -92,10 +92,8 @@ func appendToUnique(v *valSynced, attr attribute.KeyValue) {
 		switch attr.Value.Type() {
 		case attribute.STRING:
 			attrValue := attr.Value.AsString()
-			for _, v := range val.AsStringSlice() {
-				if v == attrValue { // already exists
-					return
-				}
+			if slices.Contains(val.AsStringSlice(), attrValue) { // already exists
+				return
 			}
 
 			attr = attr.Key.StringSlice(append(val.AsStringSlice(), attrValue))

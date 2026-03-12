@@ -39,3 +39,23 @@ jobs:
           version: ${{ inputs.golangci-lint-version }}
           args: -v --timeout 10m0s
           working-directory: ${{ inputs.working-directory }}
+
+  go-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ inputs.go-version }}
+      - uses: actions/checkout@v4
+      - name: Check for go fix suggestions
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          DIFF=$(go fix -diff ./... 2>/dev/null)
+          if [ -n "$DIFF" ]; then
+            echo "::error::go fix found code that should be modernized."
+            echo "Run 'go fix ./...' locally and commit the changes."
+            echo ""
+            echo "$DIFF"
+            exit 1
+          fi
+          echo "No go fix suggestions — code is up to date."

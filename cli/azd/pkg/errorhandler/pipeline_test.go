@@ -572,6 +572,17 @@ func TestPipeline_RBACErrors(t *testing.T) {
 	}
 }
 
+func TestPipeline_NoSubscriptionsFound(t *testing.T) {
+	pipeline := NewErrorHandlerPipeline(nil)
+
+	err := errors.New("no subscriptions found")
+	result := pipeline.Process(context.Background(), err)
+	require.NotNil(t, result, "Should match 'no subscriptions found' pattern")
+	assert.Equal(t, "No Azure subscriptions were found for your account.", result.Message)
+	assert.Contains(t, result.Suggestion, "azd auth login --tenant-id")
+	assert.NotEmpty(t, result.Links, "Should include documentation links")
+}
+
 func TestErrorSuggestionsYaml_IsValid(t *testing.T) {
 	// Verify the embedded YAML can be parsed
 	var config ErrorSuggestionsConfig

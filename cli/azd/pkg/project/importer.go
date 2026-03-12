@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -69,13 +70,11 @@ func (im *ImportManager) ServiceStable(ctx context.Context, projectConfig *Proje
 					return nil, fmt.Errorf("importing services: %w", err)
 				}
 
-				for name, svcConfig := range services {
-					// TODO(ellismg): We should consider if we should prefix these services so the are of the form
-					// "app:frontend" instead of just "frontend". Perhaps both as the key here and and as the .Name
-					// property on the ServiceConfig.  This does have implications for things like service specific
-					// property names that translate to environment variables.
-					allServices[name] = svcConfig
-				}
+				// TODO(ellismg): We should consider if we should prefix these services so the are of the form
+				// "app:frontend" instead of just "frontend". Perhaps both as the key here and and as the .Name
+				// property on the ServiceConfig.  This does have implications for things like service specific
+				// property names that translate to environment variables.
+				maps.Copy(allServices, services)
 
 				continue
 			} else if err != nil {

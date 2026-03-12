@@ -143,7 +143,7 @@ func Test_CLI_Deploy_SlotDeployment(t *testing.T) {
 	result, err := cli.RunCommand(ctx, "env", "get-values", "-o", "json", "--cwd", dir)
 	require.NoError(t, err)
 
-	var envValues map[string]interface{}
+	var envValues map[string]any
 	err = json.Unmarshal([]byte(result.Stdout), &envValues)
 	require.NoError(t, err)
 

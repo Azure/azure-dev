@@ -3,6 +3,8 @@
 
 package extensions
 
+import "maps"
+
 import "encoding/json"
 
 type ExtensionExample struct {
@@ -157,9 +159,7 @@ func (c ExtensionArtifact) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 
-	for k, v := range c.AdditionalMetadata {
-		baseMap[k] = v
-	}
+	maps.Copy(baseMap, c.AdditionalMetadata)
 
 	return json.Marshal(baseMap)
 }
@@ -178,7 +178,7 @@ func (c *ExtensionArtifact) UnmarshalJSON(data []byte) error {
 	*c = ExtensionArtifact(alias)
 
 	// Deserialize the remaining fields into a map
-	temp := make(map[string]interface{})
+	temp := make(map[string]any)
 	if err := json.Unmarshal(data, &temp); err != nil {
 		return err
 	}

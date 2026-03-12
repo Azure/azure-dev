@@ -12,7 +12,6 @@ import (
 
 	"dario.cat/mergo"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
@@ -202,7 +201,7 @@ func (ps *promptService) PromptSubscription(
 		Message:          "Select subscription",
 		LoadingMessage:   "Loading subscriptions...",
 		HelpMessage:      "Choose an Azure subscription for your project.",
-		AllowNewResource: ux.Ptr(false),
+		AllowNewResource: new(false),
 	}
 
 	if err := mergo.Merge(mergedOptions, selectorOptions, mergo.WithoutDereference); err != nil {
@@ -314,7 +313,7 @@ func (ps *promptService) PromptLocation(
 		Message:          "Select location",
 		LoadingMessage:   "Loading locations...",
 		HelpMessage:      "Choose an Azure location for your project.",
-		AllowNewResource: ux.Ptr(false),
+		AllowNewResource: new(false),
 	}
 
 	if err := mergo.Merge(mergedOptions, selectorOptions, mergo.WithoutDereference); err != nil {
@@ -422,7 +421,7 @@ func (ps *promptService) PromptResourceGroup(
 		Message:            "Select resource group",
 		LoadingMessage:     "Loading resource groups...",
 		HelpMessage:        "Choose an Azure resource group for your project.",
-		AllowNewResource:   ux.Ptr(true),
+		AllowNewResource:   new(true),
 		NewResourceMessage: "Create new resource group",
 	}
 
@@ -554,7 +553,7 @@ func (ps *promptService) PromptSubscriptionResource(
 		Message:            fmt.Sprintf("Select %s", resourceName),
 		LoadingMessage:     fmt.Sprintf("Loading %s resources...", resourceName),
 		HelpMessage:        fmt.Sprintf("Choose an Azure %s for your project.", resourceName),
-		AllowNewResource:   ux.Ptr(true),
+		AllowNewResource:   new(true),
 		NewResourceMessage: fmt.Sprintf("Create new %s", resourceName),
 	}
 
@@ -588,7 +587,7 @@ func (ps *promptService) PromptSubscriptionResource(
 			var resourceListOptions *armresources.ClientListOptions
 			if options.ResourceType != nil {
 				resourceListOptions = &armresources.ClientListOptions{
-					Filter: to.Ptr(fmt.Sprintf("resourceType eq '%s'", string(*options.ResourceType))),
+					Filter: new(fmt.Sprintf("resourceType eq '%s'", string(*options.ResourceType))),
 				}
 			}
 
@@ -700,7 +699,7 @@ func (ps *promptService) PromptResourceGroupResource(
 		Message:            fmt.Sprintf("Select %s", resourceName),
 		LoadingMessage:     fmt.Sprintf("Loading %s resources...", resourceName),
 		HelpMessage:        fmt.Sprintf("Choose an Azure %s for your project.", resourceName),
-		AllowNewResource:   ux.Ptr(true),
+		AllowNewResource:   new(true),
 		NewResourceMessage: fmt.Sprintf("Create new %s", resourceName),
 	}
 
@@ -735,7 +734,7 @@ func (ps *promptService) PromptResourceGroupResource(
 			var resourceListOptions *azapi.ListResourceGroupResourcesOptions
 			if options.ResourceType != nil {
 				resourceListOptions = &azapi.ListResourceGroupResourcesOptions{
-					Filter: to.Ptr(fmt.Sprintf("resourceType eq '%s'", *options.ResourceType)),
+					Filter: new(fmt.Sprintf("resourceType eq '%s'", *options.ResourceType)),
 				}
 			}
 
@@ -798,10 +797,10 @@ func PromptCustomResource[T any](ctx context.Context, options CustomResourceOpti
 		Message:            "Select resource",
 		LoadingMessage:     "Loading resources...",
 		HelpMessage:        "Choose a resource for your project.",
-		AllowNewResource:   ux.Ptr(true),
-		ForceNewResource:   ux.Ptr(false),
+		AllowNewResource:   new(true),
+		ForceNewResource:   new(false),
 		NewResourceMessage: "Create new resource",
-		DisplayNumbers:     ux.Ptr(true),
+		DisplayNumbers:     new(true),
 		DisplayCount:       10,
 	}
 
@@ -821,7 +820,7 @@ func PromptCustomResource[T any](ctx context.Context, options CustomResourceOpti
 
 	if forceNewResource {
 		allowNewResource = true
-		selectedIndex = ux.Ptr(0)
+		selectedIndex = new(0)
 	} else {
 		loadingSpinner := ux.NewSpinner(&ux.SpinnerOptions{
 			Text: options.SelectorOptions.LoadingMessage,

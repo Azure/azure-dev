@@ -23,8 +23,8 @@ func TestErrorMessagesWithDifferentTypes(t *testing.T) {
 
 	tests := []struct {
 		name          string
-		srcType       interface{}
-		dstType       interface{}
+		srcType       any
+		dstType       any
 		expectedParts []string
 	}{
 		{
@@ -68,7 +68,7 @@ func TestErrorMessagesWithDifferentTypes(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			// Test NoMapperError
-			var dstVal interface{}
+			var dstVal any
 			switch tc.dstType.(type) {
 			case string, *string:
 				var s string
@@ -119,7 +119,7 @@ func TestConversionErrorMessages(t *testing.T) {
 func TestCleanTypeName(t *testing.T) {
 	tests := []struct {
 		name     string
-		input    interface{}
+		input    any
 		expected string
 	}{
 		{"nil", nil, "<nil>"},

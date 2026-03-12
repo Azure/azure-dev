@@ -63,13 +63,13 @@ const (
 // The specification includes metadata about the agent, model configuration, input parameters, expected outputs,
 // available tools, and template configurations for prompt rendering.
 type AgentDefinition struct {
-	Kind         AgentKind               `json:"kind" yaml:"kind"`
-	Name         string                  `json:"name" yaml:"name"`
-	DisplayName  *string                 `json:"displayName,omitempty" yaml:"displayName,omitempty"`
-	Description  *string                 `json:"description,omitempty" yaml:"description,omitempty"`
-	Metadata     *map[string]interface{} `json:"metadata,omitempty" yaml:"metadata,omitempty"`
-	InputSchema  *PropertySchema         `json:"inputSchema,omitempty" yaml:"inputSchema,omitempty"`
-	OutputSchema *PropertySchema         `json:"outputSchema,omitempty" yaml:"outputSchema,omitempty"`
+	Kind         AgentKind       `json:"kind" yaml:"kind"`
+	Name         string          `json:"name" yaml:"name"`
+	DisplayName  *string         `json:"displayName,omitempty" yaml:"displayName,omitempty"`
+	Description  *string         `json:"description,omitempty" yaml:"description,omitempty"`
+	Metadata     *map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty"`
+	InputSchema  *PropertySchema `json:"inputSchema,omitempty" yaml:"inputSchema,omitempty"`
+	OutputSchema *PropertySchema `json:"outputSchema,omitempty" yaml:"outputSchema,omitempty"`
 }
 
 // PromptAgent Prompt based agent definition. Used to create agents that can be executed directly.
@@ -95,7 +95,7 @@ type PromptAgent struct {
 // and would need to be implemented based on specific use cases and requirements.
 type Workflow struct {
 	AgentDefinition `json:",inline" yaml:",inline"`
-	Trigger         *map[string]interface{} `json:"trigger,omitempty" yaml:"trigger,omitempty"`
+	Trigger         *map[string]any `json:"trigger,omitempty" yaml:"trigger,omitempty"`
 }
 
 // ContainerAgent This represents a container based agent hosted by the provider/publisher.
@@ -117,13 +117,13 @@ type ContainerAgent struct {
 // This allows for dynamic configuration of the agent based on the provided parameters.
 // (This notation is used elsewhere, but only the `param` scope is supported here)
 type AgentManifest struct {
-	Name        string                  `json:"name" yaml:"name"`
-	DisplayName string                  `json:"displayName" yaml:"displayName"`
-	Description *string                 `json:"description,omitempty" yaml:"description,omitempty"`
-	Metadata    *map[string]interface{} `json:"metadata,omitempty" yaml:"metadata,omitempty"`
-	Template    any                     `json:"template" yaml:"template"`
-	Parameters  PropertySchema          `json:"parameters" yaml:"parameters"`
-	Resources   []any                   `json:"resources" yaml:"resources"` // Will be a type of Resource
+	Name        string          `json:"name" yaml:"name"`
+	DisplayName string          `json:"displayName" yaml:"displayName"`
+	Description *string         `json:"description,omitempty" yaml:"description,omitempty"`
+	Metadata    *map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty"`
+	Template    any             `json:"template" yaml:"template"`
+	Parameters  PropertySchema  `json:"parameters" yaml:"parameters"`
+	Resources   []any           `json:"resources" yaml:"resources"` // Will be a type of Resource
 }
 
 // Binding Represents a binding between an input property and a tool parameter.
@@ -177,9 +177,9 @@ type EnvironmentVariable struct {
 
 // Format Template format definition
 type Format struct {
-	Kind    string                  `json:"kind" yaml:"kind"`
-	Strict  *bool                   `json:"strict,omitempty" yaml:"strict,omitempty"`
-	Options *map[string]interface{} `json:"options,omitempty" yaml:"options,omitempty"`
+	Kind    string          `json:"kind" yaml:"kind"`
+	Strict  *bool           `json:"strict,omitempty" yaml:"strict,omitempty"`
+	Options *map[string]any `json:"options,omitempty" yaml:"options,omitempty"`
 }
 
 // McpServerApprovalMode The approval mode for MCP server tools.
@@ -221,22 +221,22 @@ type Model struct {
 // ModelOptions Options for configuring the behavior of the AI model.
 // `kind` is a required property here, but this section can accept additional via options.
 type ModelOptions struct {
-	FrequencyPenalty       *float64                `json:"frequencyPenalty,omitempty" yaml:"frequencyPenalty,omitempty"`
-	MaxOutputTokens        *int                    `json:"maxOutputTokens,omitempty" yaml:"maxOutputTokens,omitempty"`
-	PresencePenalty        *float64                `json:"presencePenalty,omitempty" yaml:"presencePenalty,omitempty"`
-	Seed                   *int                    `json:"seed,omitempty" yaml:"seed,omitempty"`
-	Temperature            *float64                `json:"temperature,omitempty" yaml:"temperature,omitempty"`
-	TopK                   *int                    `json:"topK,omitempty" yaml:"topK,omitempty"`
-	TopP                   *float64                `json:"topP,omitempty" yaml:"topP,omitempty"`
-	StopSequences          *[]string               `json:"stopSequences,omitempty" yaml:"stopSequences,omitempty"`
-	AllowMultipleToolCalls *bool                   `json:"allowMultipleToolCalls,omitempty" yaml:"allowMultipleToolCalls,omitempty"`
-	AdditionalProperties   *map[string]interface{} `json:"additionalProperties,omitempty" yaml:"additionalProperties,omitempty"`
+	FrequencyPenalty       *float64        `json:"frequencyPenalty,omitempty" yaml:"frequencyPenalty,omitempty"`
+	MaxOutputTokens        *int            `json:"maxOutputTokens,omitempty" yaml:"maxOutputTokens,omitempty"`
+	PresencePenalty        *float64        `json:"presencePenalty,omitempty" yaml:"presencePenalty,omitempty"`
+	Seed                   *int            `json:"seed,omitempty" yaml:"seed,omitempty"`
+	Temperature            *float64        `json:"temperature,omitempty" yaml:"temperature,omitempty"`
+	TopK                   *int            `json:"topK,omitempty" yaml:"topK,omitempty"`
+	TopP                   *float64        `json:"topP,omitempty" yaml:"topP,omitempty"`
+	StopSequences          *[]string       `json:"stopSequences,omitempty" yaml:"stopSequences,omitempty"`
+	AllowMultipleToolCalls *bool           `json:"allowMultipleToolCalls,omitempty" yaml:"allowMultipleToolCalls,omitempty"`
+	AdditionalProperties   *map[string]any `json:"additionalProperties,omitempty" yaml:"additionalProperties,omitempty"`
 }
 
 // Parser Template parser definition
 type Parser struct {
-	Kind    string                  `json:"kind" yaml:"kind"`
-	Options *map[string]interface{} `json:"options,omitempty" yaml:"options,omitempty"`
+	Kind    string          `json:"kind" yaml:"kind"`
+	Options *map[string]any `json:"options,omitempty" yaml:"options,omitempty"`
 }
 
 // Property Represents a single property.
@@ -245,13 +245,13 @@ type Parser struct {
 // It allows for the definition of dynamic inputs that can be filled with data
 // and processed to generate prompts for AI models.
 type Property struct {
-	Name        string         `json:"name" yaml:"name"`
-	Kind        string         `json:"kind" yaml:"kind"`
-	Description *string        `json:"description,omitempty" yaml:"description,omitempty"`
-	Required    *bool          `json:"required,omitempty" yaml:"required,omitempty"`
-	Default     *interface{}   `json:"default,omitempty" yaml:"default,omitempty"`
-	Example     *interface{}   `json:"example,omitempty" yaml:"example,omitempty"`
-	EnumValues  *[]interface{} `json:"enumValues,omitempty" yaml:"enumValues,omitempty"`
+	Name        string  `json:"name" yaml:"name"`
+	Kind        string  `json:"kind" yaml:"kind"`
+	Description *string `json:"description,omitempty" yaml:"description,omitempty"`
+	Required    *bool   `json:"required,omitempty" yaml:"required,omitempty"`
+	Default     *any    `json:"default,omitempty" yaml:"default,omitempty"`
+	Example     *any    `json:"example,omitempty" yaml:"example,omitempty"`
+	EnumValues  *[]any  `json:"enumValues,omitempty" yaml:"enumValues,omitempty"`
 }
 
 // ArrayProperty Represents an array property.
@@ -273,9 +273,9 @@ type ObjectProperty struct {
 // PropertySchema Definition for the property schema of a model.
 // This includes the properties and example records.
 type PropertySchema struct {
-	Examples   *[]map[string]interface{} `json:"examples,omitempty" yaml:"examples,omitempty"`
-	Strict     *bool                     `json:"strict,omitempty" yaml:"strict,omitempty"`
-	Properties []Property                `json:"properties" yaml:"properties"`
+	Examples   *[]map[string]any `json:"examples,omitempty" yaml:"examples,omitempty"`
+	Strict     *bool             `json:"strict,omitempty" yaml:"strict,omitempty"`
+	Properties []Property        `json:"properties" yaml:"properties"`
 }
 
 // ProtocolVersionRecord represents a protocolversionrecord.
@@ -301,8 +301,8 @@ type ModelResource struct {
 // ToolResource Represents a tool resource required by the agent
 type ToolResource struct {
 	Resource `json:",inline" yaml:",inline"`
-	Id       string                 `json:"id" yaml:"id"`
-	Options  map[string]interface{} `json:"options" yaml:"options"`
+	Id       string         `json:"id" yaml:"id"`
+	Options  map[string]any `json:"options" yaml:"options"`
 }
 
 // Template Template model for defining prompt templates.
@@ -340,59 +340,59 @@ type FunctionTool struct {
 // Server tools can be used to offload heavy processing from client applications.
 type CustomTool struct {
 	Tool       `json:",inline" yaml:",inline"`
-	Connection any                    `json:"connection" yaml:"connection"` // Must be a type of Connection
-	Options    map[string]interface{} `json:"options" yaml:"options"`
+	Connection any            `json:"connection" yaml:"connection"` // Must be a type of Connection
+	Options    map[string]any `json:"options" yaml:"options"`
 }
 
 // WebSearchTool The Bing search tool.
 type WebSearchTool struct {
 	Tool    `json:",inline" yaml:",inline"`
-	Options map[string]interface{} `json:"options,omitempty" yaml:"options,omitempty"`
+	Options map[string]any `json:"options,omitempty" yaml:"options,omitempty"`
 }
 
 // BingGroundingTool The Bing search tool.
 type BingGroundingTool struct {
 	Tool       `json:",inline" yaml:",inline"`
-	Connection any                    `json:"connection" yaml:"connection"` // Must be a type of Connection
-	Options    map[string]interface{} `json:"options,omitempty" yaml:"options,omitempty"`
+	Connection any            `json:"connection" yaml:"connection"` // Must be a type of Connection
+	Options    map[string]any `json:"options,omitempty" yaml:"options,omitempty"`
 }
 
 // FileSearchTool A tool for searching files.
 // This tool allows an AI agent to search for files based on a query.
 type FileSearchTool struct {
 	Tool               `json:",inline" yaml:",inline"`
-	Connection         any                     `json:"connection" yaml:"connection"` // Must be a type of Connection
-	VectorStoreIds     []string                `json:"vectorStoreIds" yaml:"vectorStoreIds"`
-	MaximumResultCount *int                    `json:"maximumResultCount,omitempty" yaml:"maximumResultCount,omitempty"`
-	Ranker             *string                 `json:"ranker,omitempty" yaml:"ranker,omitempty"`
-	ScoreThreshold     *float64                `json:"scoreThreshold,omitempty" yaml:"scoreThreshold,omitempty"`
-	Filters            *map[string]interface{} `json:"filters,omitempty" yaml:"filters,omitempty"`
-	Options            map[string]interface{}  `json:"options" yaml:"options"`
+	Connection         any             `json:"connection" yaml:"connection"` // Must be a type of Connection
+	VectorStoreIds     []string        `json:"vectorStoreIds" yaml:"vectorStoreIds"`
+	MaximumResultCount *int            `json:"maximumResultCount,omitempty" yaml:"maximumResultCount,omitempty"`
+	Ranker             *string         `json:"ranker,omitempty" yaml:"ranker,omitempty"`
+	ScoreThreshold     *float64        `json:"scoreThreshold,omitempty" yaml:"scoreThreshold,omitempty"`
+	Filters            *map[string]any `json:"filters,omitempty" yaml:"filters,omitempty"`
+	Options            map[string]any  `json:"options" yaml:"options"`
 }
 
 // McpTool The MCP Server tool.
 type McpTool struct {
 	Tool              `json:",inline" yaml:",inline"`
-	Connection        any                    `json:"connection" yaml:"connection"` // Must be a type of Connection
-	ServerName        string                 `json:"serverName" yaml:"serverName"`
-	ServerDescription *string                `json:"serverDescription,omitempty" yaml:"serverDescription,omitempty"`
-	ApprovalMode      McpServerApprovalMode  `json:"approvalMode" yaml:"approvalMode"`
-	AllowedTools      *[]string              `json:"allowedTools,omitempty" yaml:"allowedTools,omitempty"`
-	Options           map[string]interface{} `json:"options" yaml:"options"`
+	Connection        any                   `json:"connection" yaml:"connection"` // Must be a type of Connection
+	ServerName        string                `json:"serverName" yaml:"serverName"`
+	ServerDescription *string               `json:"serverDescription,omitempty" yaml:"serverDescription,omitempty"`
+	ApprovalMode      McpServerApprovalMode `json:"approvalMode" yaml:"approvalMode"`
+	AllowedTools      *[]string             `json:"allowedTools,omitempty" yaml:"allowedTools,omitempty"`
+	Options           map[string]any        `json:"options" yaml:"options"`
 }
 
 // OpenApiTool represents a openapitool.
 type OpenApiTool struct {
 	Tool          `json:",inline" yaml:",inline"`
-	Connection    any                    `json:"connection" yaml:"connection"` // Must be a type of Connection
-	Specification string                 `json:"specification" yaml:"specification"`
-	Options       map[string]interface{} `json:"options" yaml:"options"`
+	Connection    any            `json:"connection" yaml:"connection"` // Must be a type of Connection
+	Specification string         `json:"specification" yaml:"specification"`
+	Options       map[string]any `json:"options" yaml:"options"`
 }
 
 // CodeInterpreterTool A tool for running code.
 // This tool allows an AI agent to run and execute code snippets.
 type CodeInterpreterTool struct {
 	Tool    `json:",inline" yaml:",inline"`
-	FileIds []string               `json:"fileIds" yaml:"fileIds"`
-	Options map[string]interface{} `json:"options" yaml:"options"`
+	FileIds []string       `json:"fileIds" yaml:"fileIds"`
+	Options map[string]any `json:"options" yaml:"options"`
 }

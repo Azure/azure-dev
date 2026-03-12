@@ -28,10 +28,10 @@ func (t ChangeDirectoryTool) Name() string {
 func (t ChangeDirectoryTool) Annotations() mcp.ToolAnnotation {
 	return mcp.ToolAnnotation{
 		Title:           "Change Directory",
-		ReadOnlyHint:    common.ToPtr(false),
-		DestructiveHint: common.ToPtr(false),
-		IdempotentHint:  common.ToPtr(true),
-		OpenWorldHint:   common.ToPtr(false),
+		ReadOnlyHint:    new(false),
+		DestructiveHint: new(false),
+		IdempotentHint:  new(true),
+		OpenWorldHint:   new(false),
 	}
 }
 

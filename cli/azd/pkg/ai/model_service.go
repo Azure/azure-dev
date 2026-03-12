@@ -850,11 +850,8 @@ func (s *AiModelService) listUsagesByLocation(
 	var firstErr error
 
 	for _, location := range locations {
-		location := location
-		wg.Add(1)
 
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 
 			select {
 			case sem <- struct{}{}:
@@ -883,7 +880,7 @@ func (s *AiModelService) listUsagesByLocation(
 			mu.Lock()
 			usagesByLocation[location] = usages
 			mu.Unlock()
-		}()
+		})
 	}
 
 	wg.Wait()

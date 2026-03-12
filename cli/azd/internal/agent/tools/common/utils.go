@@ -11,8 +11,10 @@ import (
 )
 
 // ToPtr converts a value to a pointer
+//
+//go:fix inline
 func ToPtr[T any](value T) *T {
-	return &value
+	return new(value)
 }
 
 // ToLangChainTools converts a slice of AnnotatedTool to a slice of tools.Tool

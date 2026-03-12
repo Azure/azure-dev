@@ -74,7 +74,7 @@ func NewAzureDeploymentError(title string, jsonErrorResponse string, operation D
 }
 
 func (e *AzureDeploymentError) init() {
-	var errorMap map[string]interface{}
+	var errorMap map[string]any
 	if err := json.Unmarshal([]byte(e.Json), &errorMap); err == nil {
 		e.Details = getErrorsFromMap(errorMap)
 	}
@@ -128,7 +128,7 @@ func generateErrorOutput(err *DeploymentErrorLine) []string {
 	return lines
 }
 
-func getErrorsFromMap(errorMap map[string]interface{}) *DeploymentErrorLine {
+func getErrorsFromMap(errorMap map[string]any) *DeploymentErrorLine {
 	var output *DeploymentErrorLine
 	var code, message string
 
@@ -141,7 +141,7 @@ func getErrorsFromMap(errorMap map[string]interface{}) *DeploymentErrorLine {
 			code = fmt.Sprint(value)
 		case "message":
 			rawMessage := fmt.Sprint(value)
-			var messageMap map[string]interface{}
+			var messageMap map[string]any
 			err := json.Unmarshal([]byte(rawMessage), &messageMap)
 			if err == nil {
 				nestedOutput = append(nestedOutput, getErrorsFromMap(messageMap))
@@ -149,7 +149,7 @@ func getErrorsFromMap(errorMap map[string]interface{}) *DeploymentErrorLine {
 				message = rawMessage
 			}
 		case "error":
-			errorMap, ok := value.(map[string]interface{})
+			errorMap, ok := value.(map[string]any)
 			var line *DeploymentErrorLine
 			if !ok {
 				line = &DeploymentErrorLine{Message: fmt.Sprintf("%s", value)}
@@ -162,7 +162,7 @@ func getErrorsFromMap(errorMap map[string]interface{}) *DeploymentErrorLine {
 			}
 		case "details":
 			var lines []*DeploymentErrorLine
-			errorArray, ok := value.([]interface{})
+			errorArray, ok := value.([]any)
 			if !ok {
 				line := &DeploymentErrorLine{Message: fmt.Sprintf("%s", value)}
 				lines = []*DeploymentErrorLine{line}
@@ -192,10 +192,10 @@ func getErrorsFromMap(errorMap map[string]interface{}) *DeploymentErrorLine {
 	return output
 }
 
-func getErrorsFromArray(errorArray []interface{}) []*DeploymentErrorLine {
+func getErrorsFromArray(errorArray []any) []*DeploymentErrorLine {
 	output := make([]*DeploymentErrorLine, len(errorArray))
 	for index, value := range errorArray {
-		errorMap, ok := value.(map[string]interface{})
+		errorMap, ok := value.(map[string]any)
 		if !ok {
 			output[index] = &DeploymentErrorLine{Message: fmt.Sprintf("%s", value)}
 		} else {

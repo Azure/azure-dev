@@ -19,7 +19,7 @@ func TestMCPParseToolArgs_NilArguments(t *testing.T) {
 
 func TestMCPParseToolArgs_EmptyArguments(t *testing.T) {
 	req := mcp.CallToolRequest{}
-	req.Params.Arguments = map[string]interface{}{}
+	req.Params.Arguments = map[string]any{}
 	args := ParseToolArgs(req)
 	require.NotNil(t, args.Raw())
 	require.Empty(t, args.Raw())
@@ -27,7 +27,7 @@ func TestMCPParseToolArgs_EmptyArguments(t *testing.T) {
 
 func TestMCPParseToolArgs_PopulatedArguments(t *testing.T) {
 	req := mcp.CallToolRequest{}
-	req.Params.Arguments = map[string]interface{}{
+	req.Params.Arguments = map[string]any{
 		"name":  "test",
 		"count": float64(42),
 	}
@@ -37,130 +37,130 @@ func TestMCPParseToolArgs_PopulatedArguments(t *testing.T) {
 }
 
 func TestMCPRequireString_Present(t *testing.T) {
-	args := ToolArgs{raw: map[string]interface{}{"name": "hello"}}
+	args := ToolArgs{raw: map[string]any{"name": "hello"}}
 	val, err := args.RequireString("name")
 	require.NoError(t, err)
 	require.Equal(t, "hello", val)
 }
 
 func TestMCPRequireString_Missing(t *testing.T) {
-	args := ToolArgs{raw: map[string]interface{}{}}
+	args := ToolArgs{raw: map[string]any{}}
 	_, err := args.RequireString("name")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "required argument \"name\" not found")
 }
 
 func TestMCPRequireString_WrongType(t *testing.T) {
-	args := ToolArgs{raw: map[string]interface{}{"name": 123}}
+	args := ToolArgs{raw: map[string]any{"name": 123}}
 	_, err := args.RequireString("name")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "is not a string")
 }
 
 func TestMCPOptionalString_Present(t *testing.T) {
-	args := ToolArgs{raw: map[string]interface{}{"name": "hello"}}
+	args := ToolArgs{raw: map[string]any{"name": "hello"}}
 	require.Equal(t, "hello", args.OptionalString("name", "default"))
 }
 
 func TestMCPOptionalString_Missing(t *testing.T) {
-	args := ToolArgs{raw: map[string]interface{}{}}
+	args := ToolArgs{raw: map[string]any{}}
 	require.Equal(t, "default", args.OptionalString("name", "default"))
 }
 
 func TestMCPOptionalString_WrongType(t *testing.T) {
-	args := ToolArgs{raw: map[string]interface{}{"name": 42}}
+	args := ToolArgs{raw: map[string]any{"name": 42}}
 	require.Equal(t, "default", args.OptionalString("name", "default"))
 }
 
 func TestMCPRequireInt_Present(t *testing.T) {
 	// JSON numbers come as float64
-	args := ToolArgs{raw: map[string]interface{}{"count": float64(42)}}
+	args := ToolArgs{raw: map[string]any{"count": float64(42)}}
 	val, err := args.RequireInt("count")
 	require.NoError(t, err)
 	require.Equal(t, 42, val)
 }
 
 func TestMCPRequireInt_NativeInt(t *testing.T) {
-	args := ToolArgs{raw: map[string]interface{}{"count": 7}}
+	args := ToolArgs{raw: map[string]any{"count": 7}}
 	val, err := args.RequireInt("count")
 	require.NoError(t, err)
 	require.Equal(t, 7, val)
 }
 
 func TestMCPRequireInt_Missing(t *testing.T) {
-	args := ToolArgs{raw: map[string]interface{}{}}
+	args := ToolArgs{raw: map[string]any{}}
 	_, err := args.RequireInt("count")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "required argument \"count\" not found")
 }
 
 func TestMCPRequireInt_WrongType(t *testing.T) {
-	args := ToolArgs{raw: map[string]interface{}{"count": "not_a_number"}}
+	args := ToolArgs{raw: map[string]any{"count": "not_a_number"}}
 	_, err := args.RequireInt("count")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "is not a number")
 }
 
 func TestMCPOptionalInt_Present(t *testing.T) {
-	args := ToolArgs{raw: map[string]interface{}{"count": float64(10)}}
+	args := ToolArgs{raw: map[string]any{"count": float64(10)}}
 	require.Equal(t, 10, args.OptionalInt("count", 5))
 }
 
 func TestMCPOptionalInt_Missing(t *testing.T) {
-	args := ToolArgs{raw: map[string]interface{}{}}
+	args := ToolArgs{raw: map[string]any{}}
 	require.Equal(t, 5, args.OptionalInt("count", 5))
 }
 
 func TestMCPOptionalInt_WrongType(t *testing.T) {
-	args := ToolArgs{raw: map[string]interface{}{"count": "bad"}}
+	args := ToolArgs{raw: map[string]any{"count": "bad"}}
 	require.Equal(t, 5, args.OptionalInt("count", 5))
 }
 
 func TestMCPOptionalBool_Present(t *testing.T) {
-	args := ToolArgs{raw: map[string]interface{}{"verbose": true}}
+	args := ToolArgs{raw: map[string]any{"verbose": true}}
 	require.True(t, args.OptionalBool("verbose", false))
 }
 
 func TestMCPOptionalBool_Missing(t *testing.T) {
-	args := ToolArgs{raw: map[string]interface{}{}}
+	args := ToolArgs{raw: map[string]any{}}
 	require.False(t, args.OptionalBool("verbose", false))
 }
 
 func TestMCPOptionalBool_WrongType(t *testing.T) {
-	args := ToolArgs{raw: map[string]interface{}{"verbose": "yes"}}
+	args := ToolArgs{raw: map[string]any{"verbose": "yes"}}
 	require.False(t, args.OptionalBool("verbose", false))
 }
 
 func TestMCPOptionalFloat_Present(t *testing.T) {
-	args := ToolArgs{raw: map[string]interface{}{"rate": float64(3.14)}}
+	args := ToolArgs{raw: map[string]any{"rate": float64(3.14)}}
 	require.InDelta(t, 3.14, args.OptionalFloat("rate", 1.0), 0.001)
 }
 
 func TestMCPOptionalFloat_Missing(t *testing.T) {
-	args := ToolArgs{raw: map[string]interface{}{}}
+	args := ToolArgs{raw: map[string]any{}}
 	require.InDelta(t, 1.0, args.OptionalFloat("rate", 1.0), 0.001)
 }
 
 func TestMCPOptionalFloat_WrongType(t *testing.T) {
-	args := ToolArgs{raw: map[string]interface{}{"rate": "bad"}}
+	args := ToolArgs{raw: map[string]any{"rate": "bad"}}
 	require.InDelta(t, 1.0, args.OptionalFloat("rate", 1.0), 0.001)
 }
 
 func TestMCPHas(t *testing.T) {
-	args := ToolArgs{raw: map[string]interface{}{"key": "val"}}
+	args := ToolArgs{raw: map[string]any{"key": "val"}}
 	require.True(t, args.Has("key"))
 	require.False(t, args.Has("missing"))
 }
 
 func TestMCPRaw(t *testing.T) {
-	m := map[string]interface{}{"a": "b"}
+	m := map[string]any{"a": "b"}
 	args := ToolArgs{raw: m}
 	require.Equal(t, m, args.Raw())
 }
 
 func TestMCPRequireInt_FloatWithFraction(t *testing.T) {
 	// 3.7 is not a valid integer — should error.
-	args := ToolArgs{raw: map[string]interface{}{"count": float64(3.7)}}
+	args := ToolArgs{raw: map[string]any{"count": float64(3.7)}}
 	_, err := args.RequireInt("count")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "is not an integer")
@@ -168,7 +168,7 @@ func TestMCPRequireInt_FloatWithFraction(t *testing.T) {
 
 func TestMCPRequireInt_LargeFloat(t *testing.T) {
 	// A float64 beyond int range should error.
-	args := ToolArgs{raw: map[string]interface{}{"count": float64(1e18)}}
+	args := ToolArgs{raw: map[string]any{"count": float64(1e18)}}
 	_, err := args.RequireInt("count")
 	// On 64-bit systems 1e18 fits in int64 so it won't overflow,
 	// but it should still parse successfully as a valid integer.
@@ -179,11 +179,11 @@ func TestMCPRequireInt_LargeFloat(t *testing.T) {
 
 func TestMCPOptionalInt_FloatWithFraction(t *testing.T) {
 	// Non-integer float should fall back to default.
-	args := ToolArgs{raw: map[string]interface{}{"count": float64(2.5)}}
+	args := ToolArgs{raw: map[string]any{"count": float64(2.5)}}
 	require.Equal(t, 99, args.OptionalInt("count", 99))
 }
 
 func TestMCPOptionalInt_NativeInt(t *testing.T) {
-	args := ToolArgs{raw: map[string]interface{}{"count": 17}}
+	args := ToolArgs{raw: map[string]any{"count": 17}}
 	require.Equal(t, 17, args.OptionalInt("count", 99))
 }

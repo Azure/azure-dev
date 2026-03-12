@@ -669,11 +669,11 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 	}
 
 	deploymentTags := map[string]*string{
-		azure.TagKeyAzdEnvName:   to.Ptr(p.env.Name()),
+		azure.TagKeyAzdEnvName:   new(p.env.Name()),
 		azure.TagKeyAzdLayerName: &p.layer,
 	}
 	if parametersHashErr == nil {
-		deploymentTags[azure.TagKeyAzdDeploymentStateParamHashName] = to.Ptr(currentParamsHash)
+		deploymentTags[azure.TagKeyAzdDeploymentStateParamHashName] = new(currentParamsHash)
 	}
 
 	optionsMap, err := convert.ToMap(p.options)
@@ -825,12 +825,12 @@ func (p *BicepProvider) Preview(ctx context.Context) (*provisioning.DeployPrevie
 	for _, change := range deployPreviewResult.Properties.Changes {
 		// Use After state if available (e.g., Create, Modify), otherwise use Before state (e.g., Delete).
 		// ARM returns nil for After when a resource is being deleted and nil for Before when created.
-		var resourceState map[string]interface{}
+		var resourceState map[string]any
 		if change.After != nil {
-			resourceState, _ = change.After.(map[string]interface{})
+			resourceState, _ = change.After.(map[string]any)
 		}
 		if resourceState == nil && change.Before != nil {
-			resourceState, _ = change.Before.(map[string]interface{})
+			resourceState, _ = change.Before.(map[string]any)
 		}
 		if resourceState == nil {
 			// Skip changes with no resource state information
@@ -2079,13 +2079,9 @@ func combineMetadata(base map[string]json.RawMessage, override map[string]json.R
 	// final map is expected to be at least the same size as the base
 	finalMetadata := make(map[string]json.RawMessage, len(base))
 
-	for key, data := range base {
-		finalMetadata[key] = data
-	}
+	maps.Copy(finalMetadata, base)
 
-	for key, data := range override {
-		finalMetadata[key] = data
-	}
+	maps.Copy(finalMetadata, override)
 
 	return finalMetadata
 }

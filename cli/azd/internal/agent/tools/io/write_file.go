@@ -65,10 +65,10 @@ func (t WriteFileTool) Name() string {
 func (t WriteFileTool) Annotations() mcp.ToolAnnotation {
 	return mcp.ToolAnnotation{
 		Title:           "Write File Contents",
-		ReadOnlyHint:    common.ToPtr(false),
-		DestructiveHint: common.ToPtr(true),
-		IdempotentHint:  common.ToPtr(false),
-		OpenWorldHint:   common.ToPtr(false),
+		ReadOnlyHint:    new(false),
+		DestructiveHint: new(true),
+		IdempotentHint:  new(false),
+		OpenWorldHint:   new(false),
 	}
 }
 
@@ -276,10 +276,7 @@ func (t WriteFileTool) handlePartialWrite(ctx context.Context, req WriteFileRequ
 	newLines := strings.Split(newContent, "\n")
 
 	// If endLine is beyond file length, we'll append
-	actualEndLine := req.EndLine
-	if req.EndLine > originalLineCount {
-		actualEndLine = originalLineCount
-	}
+	actualEndLine := min(req.EndLine, originalLineCount)
 
 	// Build new file content
 	var result []string
@@ -463,19 +460,4 @@ func (t WriteFileTool) ensureDirectory(filePath string) error {
 		}
 	}
 	return nil
-}
-
-// Helper functions
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }

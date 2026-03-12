@@ -10,7 +10,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"gopkg.in/dnaeon/go-vcr.v3/cassette"
@@ -58,12 +57,12 @@ func sanitizeContainerAppListSecrets(i *cassette.Interaction) error {
 					val := *body.Value[i].Value
 					// Redis requirepass. Sanitize the password, remove other config.
 					if strings.Contains(val, "requirepass ") {
-						body.Value[i].Value = to.Ptr("requirepass SANITIZED")
+						body.Value[i].Value = new("requirepass SANITIZED")
 						continue
 					}
 				}
 
-				body.Value[i].Value = to.Ptr("SANITIZED")
+				body.Value[i].Value = new("SANITIZED")
 			}
 		}
 
@@ -94,7 +93,7 @@ func sanitizeContainerRegistryListBuildSourceUploadUrl(i *cassette.Interaction) 
 		if err != nil {
 			return fmt.Errorf("sanitizing UploadURL: %w", err)
 		}
-		body.UploadURL = to.Ptr(s)
+		body.UploadURL = new(s)
 
 		sanitized, err := json.Marshal(body)
 		if err != nil {
@@ -123,7 +122,7 @@ func sanitizeContainerRegistryListLogSasUrl(i *cassette.Interaction) error {
 		if err != nil {
 			return fmt.Errorf("sanitizing UploadURL: %w", err)
 		}
-		body.LogLink = to.Ptr(s)
+		body.LogLink = new(s)
 
 		sanitized, err := json.Marshal(body)
 		if err != nil {
@@ -158,7 +157,7 @@ func sanitizeContainerAppUpdate(i *cassette.Interaction) error {
 			ca.Properties.Configuration.Secrets != nil {
 			for i := range ca.Properties.Configuration.Secrets {
 				if ca.Properties.Configuration.Secrets[i] != nil {
-					ca.Properties.Configuration.Secrets[i].Value = to.Ptr("SANITIZED")
+					ca.Properties.Configuration.Secrets[i].Value = new("SANITIZED")
 				}
 			}
 		}

@@ -72,12 +72,12 @@ func TestCache(t *testing.T) {
 		res := treatmentAssignmentResponse{
 			FlightingVersion: 1,
 			Configs: []struct {
-				ID         string                 `json:"Id"`
-				Parameters map[string]interface{} `json:"Parameters"`
+				ID         string         `json:"Id"`
+				Parameters map[string]any `json:"Parameters"`
 			}{
 				{
 					ID: "config1",
-					Parameters: map[string]interface{}{
+					Parameters: map[string]any{
 						"number":  1,
 						"string":  "hello",
 						"boolean": true,
@@ -160,12 +160,12 @@ func TestCache(t *testing.T) {
 		res := treatmentAssignmentResponse{
 			FlightingVersion: 2,
 			Configs: []struct {
-				ID         string                 `json:"Id"`
-				Parameters map[string]interface{} `json:"Parameters"`
+				ID         string         `json:"Id"`
+				Parameters map[string]any `json:"Parameters"`
 			}{
 				{
 					ID: "config1",
-					Parameters: map[string]interface{}{
+					Parameters: map[string]any{
 						"number":  1,
 						"string":  "hello",
 						"boolean": true,

@@ -96,7 +96,7 @@ func (cli *Cli) unmarshalCliVersion(ctx context.Context, component string) (stri
 	if err != nil {
 		return "", err
 	}
-	var tfVerMap map[string]interface{}
+	var tfVerMap map[string]any
 	err = json.Unmarshal([]byte(azRes), &tfVerMap)
 	if err != nil {
 		return "", err

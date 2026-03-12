@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
@@ -22,8 +21,8 @@ func Test_FindContainerRegistryResourceGroup(t *testing.T) {
 
 		mockazsdk.MockContainerRegistryList(mockContext, []*armcontainerregistry.Registry{
 			{
-				Name: to.Ptr("myregistry"),
-				ID: to.Ptr(
+				Name: new("myregistry"),
+				ID: new(
 					"/subscriptions/sub1/resourceGroups/shared-rg/providers/" +
 						"Microsoft.ContainerRegistry/registries/myregistry",
 				),

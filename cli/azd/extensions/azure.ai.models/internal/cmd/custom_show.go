@@ -7,10 +7,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"azure.ai.models/internal/client"
 	"azure.ai.models/internal/utils"
+	"azure.ai.models/pkg/models"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -38,7 +40,7 @@ func newCustomShowCommand(parentFlags *customFlags) *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&flags.Name, "name", "n", "", "Model name (required)")
-	cmd.Flags().StringVar(&flags.Version, "version", "1", "Model version")
+	cmd.Flags().StringVar(&flags.Version, "version", "", "Model version (defaults to latest)")
 	cmd.Flags().StringVarP(&flags.Output, "output", "o", "table", "Output format (table, json)")
 
 	_ = cmd.MarkFlagRequired("name")
@@ -83,7 +85,39 @@ func runCustomShow(ctx context.Context, parentFlags *customFlags, flags *customS
 		return err
 	}
 
-	model, err := foundryClient.GetModel(ctx, flags.Name, flags.Version)
+	model, err := func() (*models.CustomModel, error) {
+		// If version specified, fetch directly
+		if flags.Version != "" {
+			return foundryClient.GetModel(ctx, flags.Name, flags.Version)
+		}
+
+		// Otherwise, find the latest version via list
+		listResp, err := foundryClient.ListModels(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list models: %w", err)
+		}
+
+		var latest *models.CustomModel
+		latestVersion := 0
+		for i := range listResp.Value {
+			m := &listResp.Value[i]
+			if !strings.EqualFold(m.Name, flags.Name) {
+				continue
+			}
+			v, _ := strconv.Atoi(m.Version)
+			if latest == nil || v > latestVersion {
+				latest = m
+				latestVersion = v
+			}
+		}
+
+		if latest == nil {
+			return nil, fmt.Errorf("model '%s' not found", flags.Name)
+		}
+
+		// Fetch full details for the latest version
+		return foundryClient.GetModel(ctx, flags.Name, latest.Version)
+	}()
 	_ = spinner.Stop(ctx)
 	fmt.Print("\n\n")
 

@@ -28,10 +28,10 @@ func (t MoveFileTool) Name() string {
 func (t MoveFileTool) Annotations() mcp.ToolAnnotation {
 	return mcp.ToolAnnotation{
 		Title:           "Move or Rename File",
-		ReadOnlyHint:    common.ToPtr(false),
-		DestructiveHint: common.ToPtr(true),
-		IdempotentHint:  common.ToPtr(false),
-		OpenWorldHint:   common.ToPtr(false),
+		ReadOnlyHint:    new(false),
+		DestructiveHint: new(true),
+		IdempotentHint:  new(false),
+		OpenWorldHint:   new(false),
 	}
 }
 

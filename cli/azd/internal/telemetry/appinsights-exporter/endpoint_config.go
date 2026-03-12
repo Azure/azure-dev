@@ -67,9 +67,9 @@ func NewEndpointConfig(connectionString string) (EndpointConfig, error) {
 func parseSettings(connectionString string) (map[string]string, error) {
 	results := map[string]string{}
 	// Split "foo=bar;bar=baz"
-	settings := strings.Split(connectionString, ";")
+	settings := strings.SplitSeq(connectionString, ";")
 
-	for _, setting := range settings {
+	for setting := range settings {
 		// Split "foo=bar"
 		kvp := strings.Split(setting, "=")
 		if len(kvp) != 2 {

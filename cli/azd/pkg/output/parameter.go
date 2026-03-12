@@ -5,6 +5,7 @@ package output
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -64,13 +65,7 @@ func GetCommandFormatter(cmd *cobra.Command) (Formatter, error) {
 		return NewFormatter(desiredFormatter)
 	}
 
-	supported := false
-	for _, formatter := range supportedFormatters {
-		if formatter == desiredFormatter {
-			supported = true
-			break
-		}
-	}
+	supported := slices.Contains(supportedFormatters, desiredFormatter)
 	if !supported {
 		return nil, fmt.Errorf("unsupported format '%s'", desiredFormatter)
 	}

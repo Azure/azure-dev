@@ -112,7 +112,7 @@ func setupMonitoringConfig(ctx context.Context, azdClient *azdext.AzdClient) err
 }
 
 // Helper functions to convert between type-safe structs and protobuf structs
-func structToProtobuf(v interface{}) (*structpb.Struct, error) {
+func structToProtobuf(v any) (*structpb.Struct, error) {
 	// Convert struct to JSON bytes
 	jsonBytes, err := json.Marshal(v)
 	if err != nil {
@@ -120,7 +120,7 @@ func structToProtobuf(v interface{}) (*structpb.Struct, error) {
 	}
 
 	// Convert JSON bytes to map
-	var m map[string]interface{}
+	var m map[string]any
 	if err := json.Unmarshal(jsonBytes, &m); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal JSON to map: %w", err)
 	}
@@ -129,7 +129,7 @@ func structToProtobuf(v interface{}) (*structpb.Struct, error) {
 	return structpb.NewStruct(m)
 }
 
-func protobufToStruct(pbStruct *structpb.Struct, target interface{}) error {
+func protobufToStruct(pbStruct *structpb.Struct, target any) error {
 	// Convert protobuf struct to JSON bytes
 	jsonBytes, err := json.Marshal(pbStruct.AsMap())
 	if err != nil {
@@ -320,7 +320,7 @@ func displayConfigurationSummary(
 	return nil
 }
 
-func printConfigSection(section map[string]interface{}) error {
+func printConfigSection(section map[string]any) error {
 	jsonBytes, err := json.MarshalIndent(section, "   ", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to format section: %w", err)

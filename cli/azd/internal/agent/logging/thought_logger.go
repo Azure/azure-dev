@@ -124,7 +124,7 @@ func (al *ThoughtLogger) HandleAgentAction(ctx context.Context, action schema.Ag
 		"command":  {},
 	}
 
-	var toolInput map[string]interface{}
+	var toolInput map[string]any
 	if err := json.Unmarshal([]byte(action.ToolInput), &toolInput); err == nil {
 		// Successfully parsed JSON, create comma-delimited key-value pairs
 		excludedKeys := map[string]bool{"content": true}
@@ -137,7 +137,7 @@ func (al *ThoughtLogger) HandleAgentAction(ctx context.Context, action schema.Ag
 
 			var valueStr string
 			switch v := value.(type) {
-			case []interface{}:
+			case []any:
 				// Skip empty arrays
 				if len(v) == 0 {
 					continue
@@ -148,7 +148,7 @@ func (al *ThoughtLogger) HandleAgentAction(ctx context.Context, action schema.Ag
 					strSlice = append(strSlice, strings.TrimSpace(string(fmt.Sprintf("%v", item))))
 				}
 				valueStr = strings.Join(strSlice, " ")
-			case map[string]interface{}:
+			case map[string]any:
 				// Skip empty maps
 				if len(v) == 0 {
 					continue

@@ -32,8 +32,8 @@ type treatmentAssignmentResponse struct {
 	Features []string          `json:"Features"`
 	Flights  map[string]string `json:"Flights"`
 	Configs  []struct {
-		ID         string                 `json:"Id"`
-		Parameters map[string]interface{} `json:"Parameters"`
+		ID         string         `json:"Id"`
+		Parameters map[string]any `json:"Parameters"`
 	} `json:"Configs"`
 	ParameterGroups   []string `json:"ParameterGroups"`
 	FlightingVersion  int64    `json:"FlightingVersion"`

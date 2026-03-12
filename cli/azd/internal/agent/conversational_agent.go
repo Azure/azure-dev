@@ -163,7 +163,7 @@ func (aai *ConversationalAzdAiAgent) handleErrorWithRetryPrompt(ctx context.Cont
 	// Prompt user if they want to try again
 	retryPrompt := uxlib.NewConfirm(&uxlib.ConfirmOptions{
 		Message:      "Oops, my reply didn’t quite fit what was needed. Want me to try again?",
-		DefaultValue: uxlib.Ptr(true),
+		DefaultValue: new(true),
 		HelpMessage:  "Choose 'yes' to retry the current step, or 'no' to stop the initialization.",
 	})
 

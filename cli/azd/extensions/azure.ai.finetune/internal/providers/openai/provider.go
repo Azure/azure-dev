@@ -215,7 +215,7 @@ func (p *OpenAIProvider) UploadFile(ctx context.Context, filePath string) (strin
 }
 
 // GetUploadedFile retrieves information about an uploaded file
-func (p *OpenAIProvider) GetUploadedFile(ctx context.Context, fileID string) (interface{}, error) {
+func (p *OpenAIProvider) GetUploadedFile(ctx context.Context, fileID string) (any, error) {
 	// TODO: Implement
 	return nil, nil
 }

@@ -5,8 +5,6 @@ package compare
 
 import (
 	"testing"
-
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 )
 
 func Test_StringUtil_IsStringNilOrEmpty(t *testing.T) {
@@ -22,17 +20,17 @@ func Test_StringUtil_IsStringNilOrEmpty(t *testing.T) {
 		},
 		{
 			name:  "empty",
-			value: to.Ptr(""),
+			value: new(""),
 			want:  true,
 		},
 		{
 			name:  "whitespace",
-			value: to.Ptr("  "),
+			value: new("  "),
 			want:  true,
 		},
 		{
 			name:  "non-empty",
-			value: to.Ptr("foo"),
+			value: new("foo"),
 			want:  false,
 		},
 	}
@@ -60,19 +58,19 @@ func Test_StringUtil_PtrValueEquals(t *testing.T) {
 		},
 		{
 			name:     "empty",
-			actual:   to.Ptr(""),
+			actual:   new(""),
 			expected: "foo",
 			want:     false,
 		},
 		{
 			name:     "whitespace",
-			actual:   to.Ptr("  "),
+			actual:   new("  "),
 			expected: "foo",
 			want:     false,
 		},
 		{
 			name:     "non-empty",
-			actual:   to.Ptr("foo"),
+			actual:   new("foo"),
 			expected: "foo",
 			want:     true,
 		},

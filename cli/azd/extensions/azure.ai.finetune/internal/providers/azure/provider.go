@@ -8,7 +8,6 @@ import (
 	"fmt"
 
 	"azure.ai.finetune/pkg/models"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 )
 
@@ -88,7 +87,7 @@ func (p *AzureProvider) UploadFile(ctx context.Context, filePath string) (string
 }
 
 // GetUploadedFile retrieves information about an uploaded file
-func (p *AzureProvider) GetUploadedFile(ctx context.Context, fileID string) (interface{}, error) {
+func (p *AzureProvider) GetUploadedFile(ctx context.Context, fileID string) (any, error) {
 	// TODO: Implement
 	return nil, nil
 }
@@ -124,14 +123,14 @@ func (p *AzureProvider) DeployModel(ctx context.Context, config *models.Deployme
 		armcognitiveservices.Deployment{
 			Properties: &armcognitiveservices.DeploymentProperties{
 				Model: &armcognitiveservices.DeploymentModel{
-					Name:    to.Ptr(config.ModelName),
-					Format:  to.Ptr(config.ModelFormat),
-					Version: to.Ptr(config.Version),
+					Name:    new(config.ModelName),
+					Format:  new(config.ModelFormat),
+					Version: new(config.Version),
 				},
 			},
 			SKU: &armcognitiveservices.SKU{
-				Name:     to.Ptr(config.SKU),
-				Capacity: to.Ptr(config.Capacity),
+				Name:     new(config.SKU),
+				Capacity: new(config.Capacity),
 			},
 		},
 		nil,

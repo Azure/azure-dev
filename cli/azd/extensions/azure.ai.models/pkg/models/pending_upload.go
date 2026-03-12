@@ -6,7 +6,7 @@ package models
 // PendingUploadResponse is the API response from startPendingUpload.
 type PendingUploadResponse struct {
 	BlobReferenceForConsumption  *BlobReferenceForConsumption `json:"blobReferenceForConsumption"`
-	ImageReferenceForConsumption interface{}                  `json:"imageReferenceForConsumption"`
+	ImageReferenceForConsumption any                          `json:"imageReferenceForConsumption"`
 	TemporaryDataReferenceID     string                       `json:"temporaryDataReferenceId"`
 	TemporaryDataReferenceType   *string                      `json:"temporaryDataReferenceType"`
 }

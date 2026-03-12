@@ -95,7 +95,7 @@ func Test_progressLogMultiWrite(t *testing.T) {
 	bufHandler.page()
 
 	for index := range make([]int, 3) {
-		w, err := pg.Write([]byte(fmt.Sprintf(", %x", index)))
+		w, err := pg.Write(fmt.Appendf(nil, ", %x", index))
 		require.NoError(t, err)
 		require.Equal(t, 3, w)
 		bufHandler.page()
@@ -199,7 +199,7 @@ func Test_progressLogManyLines(t *testing.T) {
 
 	// Duplicating the lines to display to see log progress displaying only the last `linesToDisplay`
 	for index := range make([]int, linesToDisplay*2) {
-		_, err := pg.Write([]byte(fmt.Sprintf("line: %x\n", index)))
+		_, err := pg.Write(fmt.Appendf(nil, "line: %x\n", index))
 		require.NoError(t, err)
 		bufHandler.page()
 	}
@@ -313,7 +313,7 @@ func Test_progressChangeHeader(t *testing.T) {
 
 	// Duplicating the lines to display to see log progress displaying only the last `linesToDisplay`
 	for index := range make([]int, linesToDisplay) {
-		_, err := pg.Write([]byte(fmt.Sprintf("line: %x\n", index)))
+		_, err := pg.Write(fmt.Appendf(nil, "line: %x\n", index))
 		require.NoError(t, err)
 		bufHandler.page()
 	}
@@ -322,7 +322,7 @@ func Test_progressChangeHeader(t *testing.T) {
 	bufHandler.page()
 
 	for index := range make([]int, linesToDisplay) {
-		_, err := pg.Write([]byte(fmt.Sprintf("line: %x\n", index)))
+		_, err := pg.Write(fmt.Appendf(nil, "line: %x\n", index))
 		require.NoError(t, err)
 		bufHandler.page()
 	}
@@ -353,7 +353,7 @@ func Test_progressLogConcurrentWriteProtection(t *testing.T) {
 			done <- true
 		}()
 
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			_, err := pg.Write([]byte("concurrent test line\n"))
 			if err != nil {
 				t.Errorf("Error in concurrent write: %v", err)
@@ -364,7 +364,7 @@ func Test_progressLogConcurrentWriteProtection(t *testing.T) {
 
 	// Try to cause race conditions by stopping/starting
 	go func() {
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			pg.Stop(false)
 			pg.Start()
 		}

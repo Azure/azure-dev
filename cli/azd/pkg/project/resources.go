@@ -132,7 +132,7 @@ type ResourceConfig struct {
 	Name string `yaml:"name,omitempty"`
 	// The properties for the resource
 	RawProps map[string]yaml.Node `yaml:",inline"`
-	Props    interface{}          `yaml:"-"`
+	Props    any                  `yaml:"-"`
 	// Relationships to other resources
 	Uses []string `yaml:"uses,omitempty"`
 	// Existing indicates whether the resource is an existing resource.
@@ -145,7 +145,7 @@ type ResourceConfig struct {
 	IncludeName bool `yaml:"-"`
 }
 
-func (r *ResourceConfig) MarshalYAML() (interface{}, error) {
+func (r *ResourceConfig) MarshalYAML() (any, error) {
 	type rawResourceConfig ResourceConfig
 	raw := rawResourceConfig(*r)
 
@@ -153,7 +153,7 @@ func (r *ResourceConfig) MarshalYAML() (interface{}, error) {
 		raw.Name = ""
 	}
 
-	var marshalRawProps = func(in interface{}) error {
+	var marshalRawProps = func(in any) error {
 		marshaled, err := yaml.Marshal(in)
 		if err != nil {
 			return fmt.Errorf("marshaling props: %w", err)
@@ -203,7 +203,7 @@ func (r *ResourceConfig) UnmarshalYAML(value *yaml.Node) error {
 		return err
 	}
 
-	var unmarshalProps = func(v interface{}) error {
+	var unmarshalProps = func(v any) error {
 		value, err := yaml.Marshal(raw.RawProps)
 		if err != nil {
 			return fmt.Errorf("failed to marshal raw props: %w", err)

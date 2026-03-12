@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -51,7 +52,7 @@ func (m *McpToolAdapter) Annotations() mcp.ToolAnnotation {
 // Call implements tools.Tool interface
 func (m *McpToolAdapter) Call(ctx context.Context, input string) (string, error) {
 	// Parse input JSON
-	var args map[string]interface{}
+	var args map[string]any
 	if err := json.Unmarshal([]byte(input), &args); err != nil {
 		return "", fmt.Errorf("invalid JSON input: %w", err)
 	}
@@ -77,26 +78,26 @@ func (m *McpToolAdapter) Call(ctx context.Context, input string) (string, error)
 	}
 
 	// Extract text from various content types
-	var response string
+	var response strings.Builder
 	for _, content := range result.Content {
 		switch c := content.(type) {
 		case mcp.TextContent:
-			response += c.Text
+			response.WriteString(c.Text)
 		case mcp.ImageContent:
-			response += fmt.Sprintf("[Image: %s]", c.Data)
+			response.WriteString(fmt.Sprintf("[Image: %s]", c.Data))
 		case mcp.EmbeddedResource:
 			if textResource, ok := c.Resource.(mcp.TextResourceContents); ok {
-				response += textResource.Text
+				response.WriteString(textResource.Text)
 			} else {
-				response += fmt.Sprintf("[Resource: %s]", c.Resource)
+				response.WriteString(fmt.Sprintf("[Resource: %s]", c.Resource))
 			}
 		default:
 			// Try to marshal unknown content as JSON
 			if jsonBytes, err := json.Marshal(content); err == nil {
-				response += string(jsonBytes)
+				response.WriteString(string(jsonBytes))
 			}
 		}
 	}
 
-	return response, nil
+	return response.String(), nil
 }

@@ -16,10 +16,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var defaultTemplateSourceData = map[string]interface{}{
-	"template": map[string]interface{}{
-		"sources": map[string]interface{}{
-			"default": map[string]interface{}{},
+var defaultTemplateSourceData = map[string]any{
+	"template": map[string]any{
+		"sources": map[string]any{
+			"default": map[string]any{},
 		},
 	},
 }
@@ -112,9 +112,9 @@ func Test_Templates_ListTemplates_SourceError(t *testing.T) {
 
 	configManager := &mockUserConfigManager{}
 	config := config.NewConfig(nil)
-	_ = config.Set(baseConfigKey, map[string]interface{}{
-		"default": map[string]interface{}{},
-		"invalid": map[string]interface{}{
+	_ = config.Set(baseConfigKey, map[string]any{
+		"default": map[string]any{},
+		"invalid": map[string]any{
 			"type":     "url",
 			"name":     "invalid",
 			"location": invalidUrl,

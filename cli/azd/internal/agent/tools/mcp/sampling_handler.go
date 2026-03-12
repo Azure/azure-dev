@@ -103,7 +103,7 @@ func (h *McpSamplingHandler) CreateMessage(
 		case string:
 			// Simple text content
 			parts = append(parts, llms.TextPart(h.cleanContent(content)))
-		case map[string]interface{}:
+		case map[string]any:
 			// Map content - convert each key/value pair to text content
 			for key, value := range content {
 				if key == "text" {
@@ -111,7 +111,7 @@ func (h *McpSamplingHandler) CreateMessage(
 					break
 				}
 			}
-		case []interface{}:
+		case []any:
 			// Array of content parts (could be text, images, etc.)
 			for _, part := range content {
 				if textPart, ok := part.(string); ok {

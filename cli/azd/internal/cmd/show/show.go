@@ -16,7 +16,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -190,9 +189,11 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	var subId, rgName string
 	if env, err := s.envManager.Get(ctx, environmentName); err != nil {
 		if errors.Is(err, environment.ErrNotFound) && s.flags.EnvironmentName != "" {
-			return nil, fmt.Errorf(
-				`"environment '%s' does not exist. You can create it with "azd env new"`, environmentName,
-			)
+			return nil, &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf("environment '%s' does not exist: %w",
+					environmentName, environment.ErrNotFound),
+				Suggestion: "Run 'azd env new <name>' to create an environment.",
+			}
 		}
 		log.Printf("could not load environment: %s, resource ids will not be available", err)
 	} else {
@@ -540,7 +541,7 @@ func showContainerApp(
 		val := env.Value
 
 		if env.SecretRef != nil {
-			val = to.Ptr("*******")
+			val = new("*******")
 
 			// dereference the secret ref
 			for _, secret := range secrets {
@@ -619,7 +620,7 @@ func showContainerAppJob(
 		val := env.Value
 
 		if env.SecretRef != nil {
-			val = to.Ptr("*******")
+			val = new("*******")
 
 			// dereference the secret ref
 			for _, secret := range secrets {

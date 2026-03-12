@@ -10,7 +10,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
@@ -24,11 +23,11 @@ func TestAZCLIWithUserAgent(t *testing.T) {
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		response := armresources.ClientGetByIDResponse{
 			GenericResource: armresources.GenericResource{
-				ID:       to.Ptr("RESOURCE_ID"),
-				Kind:     to.Ptr("RESOURCE_KIND"),
-				Name:     to.Ptr("RESOURCE_NAME"),
-				Type:     to.Ptr("RESOURCE_TYPE"),
-				Location: to.Ptr("RESOURCE_LOCATION"),
+				ID:       new("RESOURCE_ID"),
+				Kind:     new("RESOURCE_KIND"),
+				Name:     new("RESOURCE_NAME"),
+				Type:     new("RESOURCE_TYPE"),
+				Location: new("RESOURCE_LOCATION"),
 			},
 		}
 
@@ -59,11 +58,11 @@ func Test_AzSdk_User_Agent_Policy(t *testing.T) {
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		response := armresources.ClientGetByIDResponse{
 			GenericResource: armresources.GenericResource{
-				ID:       to.Ptr("RESOURCE_ID"),
-				Kind:     to.Ptr("RESOURCE_KIND"),
-				Name:     to.Ptr("RESOURCE_NAME"),
-				Type:     to.Ptr("RESOURCE_TYPE"),
-				Location: to.Ptr("RESOURCE_LOCATION"),
+				ID:       new("RESOURCE_ID"),
+				Kind:     new("RESOURCE_KIND"),
+				Name:     new("RESOURCE_NAME"),
+				Type:     new("RESOURCE_TYPE"),
+				Location: new("RESOURCE_LOCATION"),
 			},
 		}
 

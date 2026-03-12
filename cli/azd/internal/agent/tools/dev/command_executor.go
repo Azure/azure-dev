@@ -30,10 +30,10 @@ func (t CommandExecutorTool) Name() string {
 func (t CommandExecutorTool) Annotations() mcp.ToolAnnotation {
 	return mcp.ToolAnnotation{
 		Title:           "Execute Terminal Command",
-		ReadOnlyHint:    common.ToPtr(false),
-		DestructiveHint: common.ToPtr(true),
-		IdempotentHint:  common.ToPtr(false),
-		OpenWorldHint:   common.ToPtr(true),
+		ReadOnlyHint:    new(false),
+		DestructiveHint: new(true),
+		IdempotentHint:  new(false),
+		OpenWorldHint:   new(true),
 	}
 }
 

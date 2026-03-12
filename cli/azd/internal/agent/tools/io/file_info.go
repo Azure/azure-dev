@@ -29,10 +29,10 @@ func (t FileInfoTool) Name() string {
 func (t FileInfoTool) Annotations() mcp.ToolAnnotation {
 	return mcp.ToolAnnotation{
 		Title:           "Get File Information",
-		ReadOnlyHint:    common.ToPtr(true),
-		DestructiveHint: common.ToPtr(false),
-		IdempotentHint:  common.ToPtr(true),
-		OpenWorldHint:   common.ToPtr(false),
+		ReadOnlyHint:    new(true),
+		DestructiveHint: new(false),
+		IdempotentHint:  new(true),
+		OpenWorldHint:   new(false),
 	}
 }
 

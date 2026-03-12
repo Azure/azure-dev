@@ -16,41 +16,41 @@ import (
 )
 
 // withLinkFormat creates string with hyperlink-looking color
-func WithLinkFormat(link string, a ...interface{}) string {
+func WithLinkFormat(link string, a ...any) string {
 	return color.HiCyanString(link, a...)
 }
 
 // withHighLightFormat creates string with highlight-looking color
-func WithHighLightFormat(text string, a ...interface{}) string {
+func WithHighLightFormat(text string, a ...any) string {
 	return color.HiBlueString(text, a...)
 }
 
-func WithErrorFormat(text string, a ...interface{}) string {
+func WithErrorFormat(text string, a ...any) string {
 	return color.RedString(text, a...)
 }
 
-func WithWarningFormat(text string, a ...interface{}) string {
+func WithWarningFormat(text string, a ...any) string {
 	return color.YellowString(text, a...)
 }
 
-func WithSuccessFormat(text string, a ...interface{}) string {
+func WithSuccessFormat(text string, a ...any) string {
 	return color.GreenString(text, a...)
 }
 
-func WithGrayFormat(text string, a ...interface{}) string {
+func WithGrayFormat(text string, a ...any) string {
 	return color.HiBlackString(text, a...)
 }
 
-func WithHintFormat(text string, a ...interface{}) string {
+func WithHintFormat(text string, a ...any) string {
 	return color.MagentaString(text, a...)
 }
 
-func WithBold(text string, a ...interface{}) string {
+func WithBold(text string, a ...any) string {
 	format := color.New(color.FgHiWhite, color.Bold)
 	return format.Sprintf(text, a...)
 }
 
-func WithUnderline(text string, a ...interface{}) string {
+func WithUnderline(text string, a ...any) string {
 	format := color.New(color.Underline)
 	return format.Sprintf(text, a...)
 }

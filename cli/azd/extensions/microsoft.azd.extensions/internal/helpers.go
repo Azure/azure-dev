@@ -33,8 +33,9 @@ const (
 	PermissionMaskDirectoryExecute os.FileMode = 0100
 )
 
+//go:fix inline
 func ToPtr[T any](value T) *T {
-	return &value
+	return new(value)
 }
 
 func ToPascalCase(value string) string {
@@ -117,9 +118,9 @@ func InferOSArch(filename string) (string, error) {
 	archPart := parts[len(parts)-1] // Last part is the ARCH (with optional extension)
 
 	// Remove extension
-	if strings.HasSuffix(archPart, ".tar.gz") {
+	if before, ok := strings.CutSuffix(archPart, ".tar.gz"); ok {
 		// Special handling for .tar.gz since filepath.Ext only removes the last extension (.gz)
-		archPart = strings.TrimSuffix(archPart, ".tar.gz")
+		archPart = before
 	} else {
 		archPart = strings.TrimSuffix(archPart, filepath.Ext(archPart))
 	}
@@ -324,8 +325,8 @@ func GetFileNameWithoutExt(filePath string) string {
 	fileName := filepath.Base(filePath)
 
 	// Special handling for .tar.gz since filepath.Ext only removes the last extension (.gz)
-	if strings.HasSuffix(fileName, ".tar.gz") {
-		return strings.TrimSuffix(fileName, ".tar.gz")
+	if before, ok := strings.CutSuffix(fileName, ".tar.gz"); ok {
+		return before
 	}
 
 	// Remove the extension

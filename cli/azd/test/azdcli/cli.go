@@ -401,7 +401,7 @@ func startTestCredentialServer(t *testing.T) *httptest.Server {
 // createMockJWTToken creates a mock JWT token
 func createMockJWTToken(reqBody tokenRequestBody, expiryTime time.Time) (string, error) {
 	// Create mock JWT header (not validated, but needed for JWT format)
-	header := map[string]interface{}{
+	header := map[string]any{
 		"typ": "JWT",
 		"alg": "RS256",
 		"kid": "test-playback-key-id",
@@ -414,7 +414,7 @@ func createMockJWTToken(reqBody tokenRequestBody, expiryTime time.Time) (string,
 
 	// Create mock JWT payload with required claims
 	now := time.Now().Unix()
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"aud":                "https://management.azure.com/",
 		"iss":                fmt.Sprintf("https://sts.windows.net/%s/", reqBody.TenantId),
 		"iat":                now,

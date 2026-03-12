@@ -224,7 +224,7 @@ func createAzureDevPipelineArgs(
 		DefaultBranch: &defaultBranch,
 	}
 
-	process := map[string]interface{}{
+	process := map[string]any{
 		"type":         2,
 		"yamlFilename": AzurePipelineYamlPath,
 	}
@@ -234,7 +234,7 @@ func createAzureDevPipelineArgs(
 		Name: queue.Name,
 	}
 
-	trigger := map[string]interface{}{
+	trigger := map[string]any{
 		"batchChanges":                    false,
 		"maxConcurrentBuildsPerBranch":    1,
 		"pollingInterval":                 0,
@@ -244,7 +244,7 @@ func createAzureDevPipelineArgs(
 		"triggerType":                     2,
 	}
 
-	triggers := []interface{}{
+	triggers := []any{
 		trigger,
 	}
 

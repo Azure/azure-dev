@@ -21,7 +21,6 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
@@ -313,7 +312,7 @@ func (a *InitFromCodeAction) scaffoldTemplate(ctx context.Context, azdClient *az
 		confirmResp, err := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
 			Options: &azdext.ConfirmOptions{
 				Message:      "Initialize the starter template?",
-				DefaultValue: to.Ptr(true),
+				DefaultValue: new(true),
 			},
 		})
 		if err != nil {
@@ -845,7 +844,7 @@ func (a *InitFromCodeAction) ensureSubscription(ctx context.Context) error {
 		}
 
 		a.azureContext.Scope.SubscriptionId = subscriptionResponse.Subscription.Id
-		a.azureContext.Scope.TenantId = subscriptionResponse.Subscription.TenantId
+		a.azureContext.Scope.TenantId = subscriptionResponse.Subscription.UserTenantId
 	} else {
 		tenantResponse, err := a.azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
 			SubscriptionId: a.azureContext.Scope.SubscriptionId,

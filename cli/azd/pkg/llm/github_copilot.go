@@ -258,7 +258,7 @@ func copilotToken(ctx context.Context, console input.Console) (*tokenData, error
 	}
 
 	// Token is missing or expired, get a new one
-	newToken, err := newCopilotToken(githubToken)
+	newToken, err := newCopilotToken(ctx, githubToken)
 	if err != nil {
 		// If Copilot token request fails, GitHub token might be expired
 		if strings.Contains(err.Error(), "status 401") || strings.Contains(err.Error(), "status 403") {
@@ -281,7 +281,7 @@ func copilotToken(ctx context.Context, console input.Console) (*tokenData, error
 			}
 
 			// Try getting Copilot token again with new GitHub token
-			newToken, err = newCopilotToken(githubToken)
+			newToken, err = newCopilotToken(ctx, githubToken)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get Copilot token after re-authentication: %w", err)
 			}
@@ -383,9 +383,14 @@ func isTokenExpired(expiresAt int64) bool {
 }
 
 // newCopilotToken gets a Copilot session token using the GitHub token
-func newCopilotToken(githubToken string) (*tokenData, error) {
+func newCopilotToken(ctx context.Context, githubToken string) (*tokenData, error) {
 	client := &http.Client{}
-	req, err := http.NewRequest("GET", "https://api.github.com/copilot_internal/v2/token", nil)
+	req, err := http.NewRequestWithContext(
+		ctx,
+		"GET",
+		"https://api.github.com/copilot_internal/v2/token",
+		nil,
+	)
 	if err != nil {
 		return nil, err
 	}

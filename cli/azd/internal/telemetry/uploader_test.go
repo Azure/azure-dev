@@ -116,6 +116,7 @@ func NewTransmitterStub() *TransmitterStub {
 }
 
 func (tr *TransmitterStub) Transmit(
+	_ context.Context,
 	payload []byte,
 	items appinsightsexporter.TelemetryItems,
 ) (*appinsightsexporter.TransmissionResult, error) {

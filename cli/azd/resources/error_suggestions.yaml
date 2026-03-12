@@ -388,6 +388,7 @@ rules:
 
   - patterns:
       - "no subscriptions found"
+      - "no subscription found"
     message: "No Azure subscriptions were found for your account."
     suggestion: >
       Ensure you have an active subscription at https://portal.azure.com.

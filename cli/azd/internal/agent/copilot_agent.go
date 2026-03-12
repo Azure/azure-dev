@@ -10,6 +10,8 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -17,9 +19,9 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
+	agentcopilot "github.com/azure/azure-dev/cli/azd/internal/agent/copilot"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/llm"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/watch"
@@ -29,8 +31,8 @@ import (
 // It encapsulates initialization, session management, display, and usage tracking.
 type CopilotAgent struct {
 	// Dependencies
-	clientManager        *llm.CopilotClientManager
-	sessionConfigBuilder *llm.SessionConfigBuilder
+	clientManager        *agentcopilot.CopilotClientManager
+	sessionConfigBuilder *agentcopilot.SessionConfigBuilder
 	consentManager       consent.ConsentManager
 	console              input.Console
 	configManager        config.UserConfigManager
@@ -38,6 +40,7 @@ type CopilotAgent struct {
 	// Configuration overrides (from AgentOption)
 	modelOverride           string
 	reasoningEffortOverride string
+	systemMessageOverride   string
 	mode                    AgentMode
 	debug                   bool
 
@@ -70,8 +73,8 @@ func (a *CopilotAgent) Initialize(ctx context.Context, opts ...InitOption) (*Ini
 		return nil, err
 	}
 
-	existingModel, hasModel := azdConfig.GetString("ai.agent.model")
-	existingEffort, hasEffort := azdConfig.GetString("ai.agent.reasoningEffort")
+	existingModel, hasModel := azdConfig.GetString(agentcopilot.ConfigKeyModel)
+	existingEffort, hasEffort := azdConfig.GetString(agentcopilot.ConfigKeyReasoningEffort)
 
 	// Apply overrides
 	if a.modelOverride != "" {
@@ -165,11 +168,11 @@ func (a *CopilotAgent) Initialize(ctx context.Context, opts ...InitOption) (*Ini
 	selectedModel := modelChoices[*modelIdx].Value
 
 	// Save to config
-	if err := azdConfig.Set("ai.agent.reasoningEffort", selectedEffort); err != nil {
+	if err := azdConfig.Set(agentcopilot.ConfigKeyReasoningEffort, selectedEffort); err != nil {
 		return nil, fmt.Errorf("failed to save reasoning effort: %w", err)
 	}
 	if selectedModel != "" {
-		if err := azdConfig.Set("ai.agent.model", selectedModel); err != nil {
+		if err := azdConfig.Set(agentcopilot.ConfigKeyModel, selectedModel); err != nil {
 			return nil, fmt.Errorf("failed to save model: %w", err)
 		}
 	}
@@ -311,13 +314,11 @@ func (a *CopilotAgent) SendMessage(ctx context.Context, prompt string, opts ...S
 	}
 
 	// Wait for idle — display handles all UX rendering
-	content, err := display.WaitForIdle(ctx)
-	if err != nil {
+	if err := display.WaitForIdle(ctx); err != nil {
 		return nil, err
 	}
 
 	return &AgentResult{
-		Content:   content,
 		SessionID: a.sessionID,
 		Usage:     display.GetUsageMetrics(),
 	}, nil
@@ -328,9 +329,6 @@ func (a *CopilotAgent) SendMessageWithRetry(ctx context.Context, prompt string, 
 	for {
 		result, err := a.SendMessage(ctx, prompt, opts...)
 		if err != nil {
-			if result != nil && result.Content != "" {
-				a.console.Message(ctx, output.WithMarkdown(result.Content))
-			}
 
 			if shouldRetry := a.handleErrorWithRetryPrompt(ctx, err); shouldRetry {
 				continue
@@ -390,6 +388,12 @@ func (a *CopilotAgent) ensureSession(ctx context.Context, resumeSessionID string
 	}
 	if a.reasoningEffortOverride != "" {
 		sessionConfig.ReasoningEffort = a.reasoningEffortOverride
+	}
+	if a.systemMessageOverride != "" {
+		sessionConfig.SystemMessage = &copilot.SystemMessageConfig{
+			Mode:    "append",
+			Content: a.systemMessageOverride,
+		}
 	}
 
 	log.Printf("[copilot] Session config (model=%q, mcpServers=%d)", sessionConfig.Model, len(sessionConfig.MCPServers))
@@ -600,10 +604,7 @@ func (a *CopilotAgent) handleErrorWithRetryPrompt(ctx context.Context, err error
 }
 
 func (a *CopilotAgent) ensurePlugins(ctx context.Context) {
-	cliPath := a.clientManager.CLIPath()
-	if cliPath == "" {
-		cliPath = "copilot"
-	}
+	cliPath := resolveCopilotCLIPath()
 
 	installed := getInstalledPlugins(ctx, cliPath)
 
@@ -649,6 +650,48 @@ func getInstalledPlugins(ctx context.Context, cliPath string) map[string]bool {
 		}
 	}
 	return installed
+}
+
+// resolveCopilotCLIPath finds the Copilot CLI binary for plugin management commands.
+// Resolution order:
+//  1. COPILOT_CLI_PATH environment variable
+//  2. Bundled CLI extracted by the SDK to the user cache directory
+//  3. "copilot" (relies on PATH)
+func resolveCopilotCLIPath() string {
+	if p := os.Getenv("COPILOT_CLI_PATH"); p != "" {
+		return p
+	}
+
+	// Check the SDK bundler's install location: {UserCacheDir}/copilot-sdk/copilot_{version}{ext}
+	if cacheDir, err := os.UserCacheDir(); err == nil {
+		binaryName := "copilot"
+		if runtime.GOOS == "windows" {
+			binaryName = "copilot.exe"
+		}
+
+		sdkCacheDir := filepath.Join(cacheDir, "copilot-sdk")
+		entries, err := os.ReadDir(sdkCacheDir)
+		if err == nil {
+			for _, entry := range entries {
+				name := entry.Name()
+				if strings.HasPrefix(name, "copilot") && !strings.HasSuffix(name, ".lock") &&
+					!strings.HasSuffix(name, ".license") && !entry.IsDir() {
+					candidate := filepath.Join(sdkCacheDir, name)
+					if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+						return candidate
+					}
+				}
+			}
+		}
+
+		// Also check unversioned name
+		candidate := filepath.Join(sdkCacheDir, binaryName)
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+
+	return "copilot"
 }
 
 func formatSessionTime(ts string) string {

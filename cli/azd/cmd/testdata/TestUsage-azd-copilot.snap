@@ -1,20 +1,20 @@
 
-Manage Model Context Protocol (MCP) server. (Alpha)
+Manage Copilot agent settings. (Alpha)
 
 Usage
-  azd mcp [command]
+  azd copilot [command]
 
 Available Commands
-  start	: Starts the MCP server.
+  consent	: Manage tool consent.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.
         --debug      	: Enables debugging and diagnostics logging.
-        --docs       	: Opens the documentation for azd mcp in your web browser.
-    -h, --help       	: Gets help for mcp.
+        --docs       	: Opens the documentation for azd copilot in your web browser.
+    -h, --help       	: Gets help for copilot.
         --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
 
-Use azd mcp [command] --help to view examples and more information about a specific command.
+Use azd copilot [command] --help to view examples and more information about a specific command.
 
 Find a bug? Want to let us know how we're doing? Fill out this brief survey: https://aka.ms/azure-dev/hats.
 

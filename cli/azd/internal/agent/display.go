@@ -36,12 +36,13 @@ type AgentDisplay struct {
 	currentTool      string
 	currentToolInput string
 	toolStartTime    time.Time
-	finalContent     string
+	toolFailed       bool
 	reasoningBuf     strings.Builder
 	lastIntent       string
 	activeSubagent   string // display name of active sub-agent, empty if none
 	inSubagent       bool
 	lastPrintedBlank bool // tracks if last output ended with a blank line
+	messageReceived  bool // tracks if an assistant message has been received
 
 	// Usage metrics — accumulated from assistant.usage events
 	totalInputTokens  float64
@@ -168,7 +169,7 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 		d.currentTool = ""
 		d.currentToolInput = ""
 		d.reasoningBuf.Reset()
-		d.finalContent = "" // Reset — only the last turn's message matters
+		d.messageReceived = false
 		d.mu.Unlock()
 		if intent != "" {
 			d.spinner.UpdateText(intent)
@@ -214,9 +215,14 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 
 	case copilot.AssistantMessage:
 		if event.Data.Content != nil {
-			log.Printf("[copilot-display] assistant.message received (%d chars)", len(*event.Data.Content))
+			content := strings.TrimSpace(*event.Data.Content)
+			log.Printf("[copilot-display] assistant.message received (%d chars)", len(content))
+			if content != "" {
+				d.canvas.Clear()
+				d.printSeparated(output.WithMarkdown(content))
+			}
 			d.mu.Lock()
-			d.finalContent = *event.Data.Content
+			d.messageReceived = true
 			d.mu.Unlock()
 		} else {
 			log.Println("[copilot-display] assistant.message received with nil content")
@@ -291,6 +297,7 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 		d.currentTool = toolName
 		d.currentToolInput = toolInput
 		d.toolStartTime = time.Now()
+		d.toolFailed = false
 		d.mu.Unlock()
 
 		text := fmt.Sprintf("Running %s", color.MagentaString(toolName))
@@ -312,6 +319,11 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 		}
 
 	case copilot.ToolExecutionComplete:
+		if event.Data.Error != nil {
+			d.mu.Lock()
+			d.toolFailed = true
+			d.mu.Unlock()
+		}
 		d.printToolCompletion()
 		d.mu.Lock()
 		d.currentTool = ""
@@ -424,15 +436,14 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 
 	case copilot.SessionIdle:
 		d.mu.Lock()
-		hasContent := d.finalContent != ""
-		contentLen := len(d.finalContent)
+		hasMessage := d.messageReceived
 		d.mu.Unlock()
 
-		log.Printf("[copilot-display] session.idle received (hasContent=%v, contentLen=%d)", hasContent, contentLen)
+		log.Printf("[copilot-display] session.idle received (hasMessage=%v)", hasMessage)
 
-		// Only signal idle when we have a final assistant message.
+		// Only signal idle when we have received an assistant message.
 		// Ignore early idle events (e.g., between permission prompts).
-		if hasContent {
+		if hasMessage {
 			select {
 			case d.idleCh <- struct{}{}:
 				log.Println("[copilot-display] signaled idleCh")
@@ -453,18 +464,15 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 
 // WaitForIdle blocks until the session becomes idle or the context is cancelled.
 // Returns the final assistant message content.
-func (d *AgentDisplay) WaitForIdle(ctx context.Context) (string, error) {
+func (d *AgentDisplay) WaitForIdle(ctx context.Context) error {
 	log.Println("[copilot-display] WaitForIdle: waiting...")
 	select {
 	case <-d.idleCh:
-		d.mu.Lock()
-		content := d.finalContent
-		d.mu.Unlock()
-		log.Printf("[copilot] Session idle, response (%d chars)", len(content))
-		return content, nil
+		log.Println("[copilot] Session idle")
+		return nil
 	case <-ctx.Done():
 		log.Printf("[copilot] Context cancelled while waiting for idle")
-		return "", ctx.Err()
+		return ctx.Err()
 	}
 }
 
@@ -491,6 +499,8 @@ func (d *AgentDisplay) printToolCompletion() {
 	tool := d.currentTool
 	toolInput := d.currentToolInput
 	nested := d.inSubagent
+	failed := d.toolFailed
+	d.toolFailed = false
 	d.mu.Unlock()
 
 	if tool == "" {
@@ -502,7 +512,12 @@ func (d *AgentDisplay) printToolCompletion() {
 		indent = "  "
 	}
 
-	completionMsg := fmt.Sprintf("%s%s Ran %s", indent, color.GreenString("✔︎"), color.MagentaString(tool))
+	var completionMsg string
+	if failed {
+		completionMsg = fmt.Sprintf("%s%s %s", indent, color.RedString("✖"), color.MagentaString(tool))
+	} else {
+		completionMsg = fmt.Sprintf("%s%s Ran %s", indent, color.GreenString("✔︎"), color.MagentaString(tool))
+	}
 	if toolInput != "" {
 		completionMsg += " with " + color.HiBlackString(toolInput)
 	}

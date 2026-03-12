@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package llm
+package copilot
 
 import (
 	"context"
@@ -18,7 +18,7 @@ import (
 )
 
 // SessionConfigBuilder builds a copilot.SessionConfig from azd user configuration.
-// It reads ai.agent.* config keys and merges MCP server configurations from
+// It reads copilot.* config keys and merges MCP server configurations from
 // built-in, extension, and user sources.
 type SessionConfigBuilder struct {
 	userConfigManager config.UserConfigManager
@@ -53,12 +53,12 @@ func (b *SessionConfigBuilder) Build(
 	}
 
 	// Model selection
-	if model, ok := userConfig.GetString("ai.agent.model"); ok {
+	if model, ok := userConfig.GetString(ConfigKeyModel); ok {
 		cfg.Model = model
 	}
 
 	// Reasoning effort
-	if effort, ok := userConfig.GetString("ai.agent.reasoningEffort"); ok {
+	if effort, ok := userConfig.GetString(ConfigKeyReasoningEffort); ok {
 		cfg.ReasoningEffort = effort
 	}
 
@@ -69,7 +69,7 @@ func (b *SessionConfigBuilder) Build(
 	For unrelated requests, briefly explain that you are focused on Azure application development
 	and suggest the user use a general-purpose assistant for other topics.`
 
-	if msg, ok := userConfig.GetString("ai.agent.systemMessage"); ok && msg != "" {
+	if msg, ok := userConfig.GetString(ConfigKeySystemMessage); ok && msg != "" {
 		systemContent += "\n\n" + msg
 	}
 
@@ -79,22 +79,22 @@ func (b *SessionConfigBuilder) Build(
 	}
 
 	// Tool control
-	if available := getStringSliceFromConfig(userConfig, "ai.agent.tools.available"); len(available) > 0 {
+	if available := getStringSliceFromConfig(userConfig, ConfigKeyToolsAvailable); len(available) > 0 {
 		cfg.AvailableTools = available
 	}
-	if excluded := getStringSliceFromConfig(userConfig, "ai.agent.tools.excluded"); len(excluded) > 0 {
+	if excluded := getStringSliceFromConfig(userConfig, ConfigKeyToolsExcluded); len(excluded) > 0 {
 		cfg.ExcludedTools = excluded
 	}
 
 	// Skill directories: start with Azure plugin skills, then add user-configured
 	skillDirs := discoverAzurePluginSkillDirs()
-	if userDirs := getStringSliceFromConfig(userConfig, "ai.agent.skills.directories"); len(userDirs) > 0 {
+	if userDirs := getStringSliceFromConfig(userConfig, ConfigKeySkillsDirectories); len(userDirs) > 0 {
 		skillDirs = append(skillDirs, userDirs...)
 	}
 	if len(skillDirs) > 0 {
 		cfg.SkillDirectories = skillDirs
 	}
-	if disabled := getStringSliceFromConfig(userConfig, "ai.agent.skills.disabled"); len(disabled) > 0 {
+	if disabled := getStringSliceFromConfig(userConfig, ConfigKeySkillsDisabled); len(disabled) > 0 {
 		cfg.DisabledSkills = disabled
 	}
 
@@ -165,9 +165,9 @@ func convertServerConfig(srv *mcp.ServerConfig) copilot.MCPServerConfig {
 	return result
 }
 
-// getUserMCPServers reads user-configured MCP servers from the ai.agent.mcp.servers config key.
+// getUserMCPServers reads user-configured MCP servers from the copilot.mcp.servers config key.
 func getUserMCPServers(userConfig config.Config) map[string]copilot.MCPServerConfig {
-	raw, ok := userConfig.GetMap("ai.agent.mcp.servers")
+	raw, ok := userConfig.GetMap(ConfigKeyMCPServers)
 	if !ok || len(raw) == 0 {
 		return nil
 	}

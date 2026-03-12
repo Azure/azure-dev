@@ -53,6 +53,7 @@ require (
 	github.com/invopop/jsonschema v0.13.0
 	github.com/jmespath-community/go-jmespath v1.1.1
 	github.com/joho/godotenv v1.5.1
+	github.com/klauspost/compress v1.18.3
 	github.com/magefile/mage v1.16.0
 	github.com/mark3labs/mcp-go v0.41.1
 	github.com/mattn/go-colorable v0.1.14
@@ -72,7 +73,6 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/theckman/yacspin v0.13.12
 	github.com/tidwall/gjson v1.18.0
-	github.com/tmc/langchaingo v0.1.14
 	go.lsp.dev/jsonrpc2 v0.10.0
 	go.opentelemetry.io/otel v1.42.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.42.0
@@ -127,7 +127,6 @@ require (
 	github.com/muesli/termenv v0.16.0 // indirect
 	github.com/otiai10/mint v1.6.3 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
-	github.com/pkoukk/tiktoken-go v0.1.8 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
@@ -154,3 +153,5 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20260209200024-4cfbd4190f57 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+tool github.com/github/copilot-sdk/go/cmd/bundler

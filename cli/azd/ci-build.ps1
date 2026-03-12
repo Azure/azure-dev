@@ -4,28 +4,9 @@ param(
     [string] $SourceVersion = (git rev-parse HEAD),
     [switch] $CodeCoverageEnabled,
     [switch] $BuildRecordMode,
-    [string] $MSYS2Shell, # path to msys2_shell.cmd
-    [string] $GitHubCopilotClientId,
-    [string] $GitHubCopilotIntegrationId
+    [string] $MSYS2Shell # path to msys2_shell.cmd
 )
 $PSNativeCommandArgumentPassing = 'Legacy'
-
-# Validate GitHub Copilot parameters - both must be provided together or not at all
-$GitHubCopilotEnabled = $false
-if ($GitHubCopilotClientId -or $GitHubCopilotIntegrationId) {
-    if ([string]::IsNullOrWhiteSpace($GitHubCopilotClientId)) {
-        Write-Host "Error: GitHubCopilotClientId parameter is required when enabling GitHub Copilot integration" -ForegroundColor Red
-        Write-Host "Usage: -GitHubCopilotClientId 'your-client-id' -GitHubCopilotIntegrationId 'your-integration-id'" -ForegroundColor Yellow
-        exit 1
-    }
-    if ([string]::IsNullOrWhiteSpace($GitHubCopilotIntegrationId)) {
-        Write-Host "Error: GitHubCopilotIntegrationId parameter is required when enabling GitHub Copilot integration" -ForegroundColor Red
-        Write-Host "Usage: -GitHubCopilotClientId 'your-client-id' -GitHubCopilotIntegrationId 'your-integration-id'" -ForegroundColor Yellow
-        exit 1
-    }
-    $GitHubCopilotEnabled = $true
-    Write-Host "GitHub Copilot integration enabled with ClientId: $GitHubCopilotClientId and IntegrationId: $GitHubCopilotIntegrationId" -ForegroundColor Green
-}
 
 # specifying $MSYS2Shell implies building with OneAuth integration
 $OneAuth = $MSYS2Shell.length -gt 0 -and $IsWindows
@@ -132,11 +113,7 @@ if ($CodeCoverageEnabled) {
 # cfi: Enable Control Flow Integrity (CFI),
 # cfg: Enable Control Flow Guard (CFG),
 # osusergo: Optimize for OS user accounts
-# ghCopilot: Enable GitHub Copilot integration (when parameters provided)
 $tags = @("cfi", "cfg", "osusergo")
-if ($GitHubCopilotEnabled) {
-    $tags += "ghCopilot"
-}
 $tagsFlag = "-tags=$($tags -join ',')"
 
 # ld linker flags
@@ -149,12 +126,6 @@ $ldFlags = @(
     "-X 'github.com/azure/azure-dev/cli/azd/internal.Version=$Version (commit $SourceVersion)'"
 )
 
-# Add GitHub Copilot linker flags if enabled
-if ($GitHubCopilotEnabled) {
-    $ldFlags += "-X 'github.com/azure/azure-dev/cli/azd/pkg/llm.clientID=$GitHubCopilotClientId'"
-    $ldFlags += "-X 'github.com/azure/azure-dev/cli/azd/pkg/llm.copilotIntegrationID=$GitHubCopilotIntegrationId'"
-}
-
 $ldFlag = "-ldflags=$($ldFlags -join ' ')"
 
 if ($IsWindows) {
@@ -164,24 +135,13 @@ if ($IsWindows) {
         $tags += "oneauth"
         $tagsFlag = "-tags=$($tags -join ',')"
     }
-    if ($GitHubCopilotEnabled) {
-        $msg += " with GitHub Copilot integration"
-    }
     Write-Host $msg
 }
 elseif ($IsLinux) {
-    $msg = "Building for Linux"
-    if ($GitHubCopilotEnabled) {
-        $msg += " with GitHub Copilot integration"
-    }
-    Write-Host $msg
+    Write-Host "Building for Linux"
 }
 elseif ($IsMacOS) {
-    $msg = "Building for macOS"
-    if ($GitHubCopilotEnabled) {
-        $msg += " with GitHub Copilot integration"
-    }
-    Write-Host $msg
+    Write-Host "Building for macOS"
 }
 
 # Set output filename to azd (default would be azure-dev based on module path)
@@ -229,6 +189,14 @@ $oldGOEXPERIMENT = $env:GOEXPERIMENT
 $env:GOEXPERIMENT="loopvar"
 
 try {
+    # Bundle the Copilot CLI binary for embedding
+    Write-Host "Running: go tool bundler"
+    go tool bundler
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Error running go tool bundler"
+        exit $LASTEXITCODE
+    }
+
     Write-Host "Running: go build ``"
     PrintFlags -flags $buildFlags
     if ($OneAuth) {

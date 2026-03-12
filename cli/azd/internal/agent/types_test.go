@@ -121,6 +121,29 @@ func TestStripMarkdown(t *testing.T) {
 	}
 }
 
+func TestAgentOptions(t *testing.T) {
+	t.Run("WithSystemMessage", func(t *testing.T) {
+		agent := &CopilotAgent{}
+		opt := WithSystemMessage("Custom system prompt")
+		opt(agent)
+		require.Equal(t, "Custom system prompt", agent.systemMessageOverride)
+	})
+
+	t.Run("WithModel", func(t *testing.T) {
+		agent := &CopilotAgent{}
+		opt := WithModel("gpt-4.1")
+		opt(agent)
+		require.Equal(t, "gpt-4.1", agent.modelOverride)
+	})
+
+	t.Run("WithReasoningEffort", func(t *testing.T) {
+		agent := &CopilotAgent{}
+		opt := WithReasoningEffort("high")
+		opt(agent)
+		require.Equal(t, "high", agent.reasoningEffortOverride)
+	})
+}
+
 func TestFormatSessionTime(t *testing.T) {
 	t.Run("RFC3339", func(t *testing.T) {
 		// Just verify it doesn't crash and returns something

@@ -12,9 +12,9 @@ import (
 	azdMcp "github.com/azure/azure-dev/cli/azd/internal/mcp"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
+	agentcopilot "github.com/azure/azure-dev/cli/azd/internal/agent/copilot"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/llm"
 )
 
 // pluginSpec defines a required plugin with its install source and installed name.
@@ -31,8 +31,8 @@ var requiredPlugins = []pluginSpec{
 // CopilotAgentFactory creates CopilotAgent instances with all dependencies wired.
 // Designed for IoC injection — register with container, inject into commands.
 type CopilotAgentFactory struct {
-	clientManager        *llm.CopilotClientManager
-	sessionConfigBuilder *llm.SessionConfigBuilder
+	clientManager        *agentcopilot.CopilotClientManager
+	sessionConfigBuilder *agentcopilot.SessionConfigBuilder
 	consentManager       consent.ConsentManager
 	console              input.Console
 	configManager        config.UserConfigManager
@@ -40,8 +40,8 @@ type CopilotAgentFactory struct {
 
 // NewCopilotAgentFactory creates a new factory.
 func NewCopilotAgentFactory(
-	clientManager *llm.CopilotClientManager,
-	sessionConfigBuilder *llm.SessionConfigBuilder,
+	clientManager *agentcopilot.CopilotClientManager,
+	sessionConfigBuilder *agentcopilot.SessionConfigBuilder,
 	consentManager consent.ConsentManager,
 	console input.Console,
 	configManager config.UserConfigManager,

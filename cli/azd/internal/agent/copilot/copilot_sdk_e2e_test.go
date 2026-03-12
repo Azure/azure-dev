@@ -1,14 +1,12 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package llm
+package copilot
 
 import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
-	"runtime"
 	"testing"
 	"time"
 
@@ -30,21 +28,11 @@ func TestCopilotSDK_E2E(t *testing.T) {
 		t.Skip("SKIP_COPILOT_E2E is set")
 	}
 
-	// The Go SDK spawns copilot with --headless --stdio flags.
-	// The native copilot binary doesn't support these — we need to point
-	// CLIPath to the JS SDK entry point bundled in @github/copilot-sdk.
-	cliPath := findCopilotSDKCLIPath()
-	if cliPath == "" {
-		t.Skip("copilot SDK CLI path not found — install @github/copilot-sdk globally via npm")
-	}
-	t.Logf("Using CLI path: %s", cliPath)
-
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	// 1. Create and start client
+	// 1. Create and start client (uses embedded bundled CLI)
 	client := copilot.NewClient(&copilot.ClientOptions{
-		CLIPath:  cliPath,
 		LogLevel: "error",
 	})
 
@@ -142,62 +130,4 @@ func truncateForLog(s string, max int) string {
 		return s[:max] + "..."
 	}
 	return s
-}
-
-// findCopilotSDKCLIPath locates the native Copilot CLI binary bundled in the
-// @github/copilot-sdk npm package. This binary supports --headless --stdio
-// required by the Go SDK, unlike the copilot shim installed in PATH.
-func findCopilotSDKCLIPath() string {
-	if p := os.Getenv("COPILOT_CLI_PATH"); p != "" {
-		return p
-	}
-
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-
-	// Map Go arch to npm platform arch naming
-	arch := runtime.GOARCH
-	switch arch {
-	case "amd64":
-		arch = "x64"
-	case "386":
-		arch = "ia32"
-	}
-
-	// Platform-specific binary package name
-	var platformPkg string
-	switch runtime.GOOS {
-	case "windows":
-		platformPkg = fmt.Sprintf("copilot-win32-%s", arch)
-	case "darwin":
-		platformPkg = fmt.Sprintf("copilot-darwin-%s", arch)
-	case "linux":
-		platformPkg = fmt.Sprintf("copilot-linux-%s", arch)
-	default:
-		return ""
-	}
-
-	binaryName := "copilot"
-	if runtime.GOOS == "windows" {
-		binaryName = "copilot.exe"
-	}
-
-	// Search common npm global node_modules locations
-	candidates := []string{
-		filepath.Join(home, "AppData", "Roaming", "npm", "node_modules"),
-		filepath.Join(home, ".npm-global", "lib", "node_modules"),
-		"/usr/local/lib/node_modules",
-		"/usr/lib/node_modules",
-	}
-
-	for _, c := range candidates {
-		p := filepath.Join(c, "@github", "copilot-sdk", "node_modules", "@github", platformPkg, binaryName)
-		if _, err := os.Stat(p); err == nil {
-			return p
-		}
-	}
-
-	return ""
 }

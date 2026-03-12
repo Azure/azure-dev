@@ -64,21 +64,36 @@ azd functionality through the Model Context Protocol interface.`,
 		FlagsResolver:  newMcpStartFlags,
 	})
 
-	// azd mcp consent subcommands
-	consentGroup := group.Add("consent", &actions.ActionDescriptorOptions{
+	return group
+}
+
+// Register Copilot agent commands
+func copilotActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
+	group := root.Add("copilot", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Use:   "consent",
-			Short: "Manage MCP tool consent.",
-			Long:  "Manage consent rules for MCP tool execution.",
+			Use:   "copilot",
+			Short: fmt.Sprintf("Manage Copilot agent settings. %s", output.WithWarningFormat("(Alpha)")),
+		},
+		GroupingOptions: actions.CommandGroupOptions{
+			RootLevelHelp: actions.CmdGroupAlpha,
 		},
 	})
 
-	// azd mcp consent list
+	// azd copilot consent subcommands
+	consentGroup := group.Add("consent", &actions.ActionDescriptorOptions{
+		Command: &cobra.Command{
+			Use:   "consent",
+			Short: "Manage tool consent.",
+			Long:  "Manage consent rules for tool execution.",
+		},
+	})
+
+	// azd copilot consent list
 	consentGroup.Add("list", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
 			Use:   "list",
 			Short: "List consent rules.",
-			Long:  "List all consent rules for MCP tools.",
+			Long:  "List all consent rules for tools.",
 			Args:  cobra.NoArgs,
 		},
 		OutputFormats:  []output.Format{output.JsonFormat, output.TableFormat},
@@ -87,12 +102,12 @@ azd functionality through the Model Context Protocol interface.`,
 		FlagsResolver:  newMcpConsentListFlags,
 	})
 
-	// azd mcp consent revoke
+	// azd copilot consent revoke
 	consentGroup.Add("revoke", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
 			Use:   "revoke",
 			Short: "Revoke consent rules.",
-			Long:  "Revoke consent rules for MCP tools.",
+			Long:  "Revoke consent rules for tools.",
 			Args:  cobra.NoArgs,
 		},
 		OutputFormats:  []output.Format{output.NoneFormat},
@@ -101,23 +116,23 @@ azd functionality through the Model Context Protocol interface.`,
 		FlagsResolver:  newMcpConsentRevokeFlags,
 	})
 
-	// azd mcp consent grant
+	// azd copilot consent grant
 	consentGroup.Add("grant", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
 			Use:   "grant",
 			Short: "Grant consent trust rules.",
-			Long: `Grant trust rules for MCP tools and servers.
+			Long: `Grant trust rules for tools and servers.
 
-This command creates consent rules that allow MCP tools to execute
+This command creates consent rules that allow tools to execute
 without prompting for permission. You can specify different permission
 levels and scopes for the rules.
 
 Examples:
   # Grant always permission to all tools globally
-  azd mcp consent grant --global --permission always
+  azd copilot consent grant --global --permission always
 
   # Grant project permission to a specific tool with read-only scope
-  azd mcp consent grant --server my-server --tool my-tool --permission project --scope read-only`,
+  azd copilot consent grant --server my-server --tool my-tool --permission project --scope read-only`,
 			Args: cobra.NoArgs,
 		},
 		OutputFormats:  []output.Format{output.NoneFormat},
@@ -297,7 +312,7 @@ func (a *mcpStartAction) getExtensionServers(
 			continue
 		}
 
-		log.Printf("Loading MCP tools from extension: %s", ext.Id)
+		log.Printf("Loading tools from extension: %s", ext.Id)
 
 		serverConfig, err := a.getExtensionServerConfig(ctx, ext, serverInfo)
 		if err != nil {
@@ -396,7 +411,7 @@ func (a *mcpStartAction) getExtensionEnvironment(
 	return env, nil
 }
 
-// Flags for MCP consent list command
+// Flags for copilot consent list command
 type mcpConsentListFlags struct {
 	global     *internal.GlobalCommandOptions
 	scope      string
@@ -426,7 +441,7 @@ func (f *mcpConsentListFlags) Bind(local *pflag.FlagSet, global *internal.Global
 	local.StringVar(&f.permission, "permission", "", "Permission to filter by (allow, deny, prompt)")
 }
 
-// Flags for MCP consent grant command
+// Flags for copilot consent grant command
 type mcpConsentGrantFlags struct {
 	global     *internal.GlobalCommandOptions
 	tool       string
@@ -455,7 +470,7 @@ func (f *mcpConsentGrantFlags) Bind(local *pflag.FlagSet, global *internal.Globa
 	local.StringVar(&f.scope, "scope", "global", "Rule scope: 'global', or 'project'")
 }
 
-// Flags for MCP consent revoke command
+// Flags for copilot consent revoke command
 type mcpConsentRevokeFlags struct {
 	global     *internal.GlobalCommandOptions
 	scope      string
@@ -485,7 +500,7 @@ func (f *mcpConsentRevokeFlags) Bind(local *pflag.FlagSet, global *internal.Glob
 	local.StringVar(&f.permission, "permission", "", "Permission to filter by (allow, deny, prompt)")
 }
 
-// Action for MCP consent list command
+// Action for copilot consent list command
 type mcpConsentListAction struct {
 	flags             *mcpConsentListFlags
 	formatter         output.Formatter
@@ -646,7 +661,7 @@ func (a *mcpConsentListAction) Run(ctx context.Context) (*actions.ActionResult, 
 	return nil, a.formatter.Format(displayRules, a.writer, nil)
 }
 
-// Action for MCP consent revoke command
+// Action for copilot consent revoke command
 type mcpConsentRevokeAction struct {
 	flags             *mcpConsentRevokeFlags
 	console           input.Console
@@ -671,8 +686,8 @@ func newMcpConsentRevokeAction(
 func (a *mcpConsentRevokeAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Command heading
 	a.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title:     "Revoke MCP consent rules (azd mcp consent revoke)",
-		TitleNote: "Removes consent rules for MCP tools and servers",
+		Title:     "Revoke consent rules (azd copilot consent revoke)",
+		TitleNote: "Removes consent rules for tools and servers",
 	})
 
 	a.console.Message(ctx, "")
@@ -771,7 +786,7 @@ func (a *mcpConsentRevokeAction) Run(ctx context.Context) (*actions.ActionResult
 	}, nil
 }
 
-// Action for MCP consent grant command
+// Action for copilot consent grant command
 type mcpConsentGrantAction struct {
 	flags             *mcpConsentGrantFlags
 	console           input.Console
@@ -796,8 +811,8 @@ func newMcpConsentGrantAction(
 func (a *mcpConsentGrantAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Command heading
 	a.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title:     "Grant MCP consent rules (azd mcp consent grant)",
-		TitleNote: "Creates consent rules that allow MCP tools to execute without prompting",
+		Title:     "Grant consent rules (azd copilot consent grant)",
+		TitleNote: "Creates consent rules that allow tools to execute without prompting",
 	})
 
 	a.console.Message(ctx, "")

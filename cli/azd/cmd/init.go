@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/agent"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
+	agentcopilot "github.com/azure/azure-dev/cli/azd/internal/agent/copilot"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -29,7 +30,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
-	"github.com/azure/azure-dev/cli/azd/pkg/llm"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -280,8 +280,8 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		output.WithLinkFormat("%s", wd),
 		output.WithLinkFormat("%s", "https://aka.ms/azd-third-party-code-notice"))
 
-	if i.featuresManager.IsEnabled(llm.FeatureLlm) {
-		followUp += fmt.Sprintf("\n%s Run %s to deploy project to the cloud.",
+	if i.featuresManager.IsEnabled(agentcopilot.FeatureCopilot) {
+		followUp += fmt.Sprintf("\n\n%s Run %s to deploy project to the cloud.",
 			color.HiMagentaString("Next steps:"),
 			output.WithHighLightFormat("azd up"))
 	}
@@ -404,9 +404,11 @@ func (i *initAction) initAppWithAgent(ctx context.Context) error {
 	i.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title: fmt.Sprintf("Agentic mode init is in alpha mode. The agent will scan your repository and "+
 			"attempt to make an azd-ready template to init. You can always change permissions later "+
-			"by running `azd mcp consent`. Mistakes may occur in agent mode. "+
-			"To learn more, go to %s", output.WithLinkFormat("https://aka.ms/azd-feature-stages")),
-		TitleNote: "CTRL C to cancel interaction \n? to pull up help text",
+			"by running %s. Mistakes may occur in agent mode. "+
+			"To learn more, go to %s",
+			output.WithHighLightFormat("azd copilot consent"),
+			output.WithLinkFormat("https://aka.ms/azd-feature-stages")),
+		TitleNote: "CTRL+C to cancel interaction \n? to pull up help text",
 	})
 
 	// Create agent
@@ -435,8 +437,8 @@ func (i *initAction) initAppWithAgent(ctx context.Context) error {
 	if !initResult.IsFirstRun {
 		i.console.Message(ctx, output.WithGrayFormat(
 			"  To change, run %s or %s",
-			output.WithHighLightFormat("azd config set ai.agent.model <model>"),
-			output.WithHighLightFormat("azd config set ai.agent.reasoningEffort <level>")))
+			output.WithHighLightFormat("azd config set %s <model>", agentcopilot.ConfigKeyModel),
+			output.WithHighLightFormat("azd config set %s <level>", agentcopilot.ConfigKeyReasoningEffort)))
 	}
 	i.console.Message(ctx, "")
 
@@ -482,11 +484,6 @@ When complete, provide a brief summary of what was accomplished.`
 	if err != nil {
 		return err
 	}
-
-	// Show summary
-	i.console.Message(ctx, "")
-	i.console.Message(ctx, color.HiMagentaString("◆ Azure Init Summary:"))
-	i.console.Message(ctx, output.WithMarkdown(result.Content))
 
 	// Show usage
 	if usage := result.Usage.Format(); usage != "" {
@@ -534,7 +531,7 @@ func promptInitType(
 	case 1:
 		return initAppTemplate, nil
 	case 2:
-		if !featuresManager.IsEnabled(llm.FeatureLlm) {
+		if !featuresManager.IsEnabled(agentcopilot.FeatureCopilot) {
 			azdConfig, err := configManager.Load()
 			if err != nil {
 				return initUnknown, fmt.Errorf("failed to load config: %w", err)
@@ -553,9 +550,9 @@ func promptInitType(
 			console.Message(ctx, "\nThe azd agent feature has been enabled to support this new experience."+
 				" To turn off in the future run `azd config unset alpha.llm`.")
 
-			err = azdConfig.Set("ai.agent.model.type", "copilot")
+			err = azdConfig.Set(agentcopilot.ConfigKeyModelType, "copilot")
 			if err != nil {
-				return initUnknown, fmt.Errorf("failed to set ai.agent.model.type config: %w", err)
+				return initUnknown, fmt.Errorf("failed to set %s config: %w", agentcopilot.ConfigKeyModelType, err)
 			}
 
 			err = configManager.Save(azdConfig)
@@ -563,8 +560,8 @@ func promptInitType(
 				return initUnknown, fmt.Errorf("failed to save config: %w", err)
 			}
 
-			console.Message(ctx, "\nGitHub Copilot has been enabled to support this new experience."+
-				" To turn off in the future run `azd config unset ai.agent.model.type`.")
+			console.Message(ctx, fmt.Sprintf("\nGitHub Copilot has been enabled to support this new experience."+
+				" To turn off in the future run `azd config unset %s`.", agentcopilot.ConfigKeyModelType))
 		}
 
 		return initWithAgent, nil

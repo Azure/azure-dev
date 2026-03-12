@@ -12,10 +12,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
-// AgentResult is returned by SendMessage with response content and metrics.
+// AgentResult is returned by SendMessage with session and usage metadata.
 type AgentResult struct {
-	// Content is the final assistant message text.
-	Content string
 	// SessionID is the session identifier for resuming later.
 	SessionID string
 	// Usage contains token and cost metrics for the session.
@@ -57,9 +55,7 @@ func (u UsageMetrics) Format() string {
 	if u.BillingRate > 0 {
 		lines = append(lines, output.WithGrayFormat("  • Billing rate:     %.0fx per request", u.BillingRate))
 	}
-	if u.PremiumRequests > 0 {
-		lines = append(lines, output.WithGrayFormat("  • Premium requests: %.0f", u.PremiumRequests))
-	}
+	lines = append(lines, output.WithGrayFormat("  • Premium requests: %.0f", u.PremiumRequests))
 	if u.DurationMS > 0 {
 		seconds := u.DurationMS / 1000
 		if seconds >= 60 {
@@ -123,6 +119,11 @@ func WithModel(model string) AgentOption {
 // WithReasoningEffort overrides the configured reasoning effort.
 func WithReasoningEffort(effort string) AgentOption {
 	return func(a *CopilotAgent) { a.reasoningEffortOverride = effort }
+}
+
+// WithSystemMessage appends a custom system message to the agent's default system prompt.
+func WithSystemMessage(msg string) AgentOption {
+	return func(a *CopilotAgent) { a.systemMessageOverride = msg }
 }
 
 // WithMode sets the agent mode.

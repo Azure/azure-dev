@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package llm
+package copilot
 
 import (
 	"context"
@@ -28,7 +28,7 @@ func TestSessionConfigBuilder_Build(t *testing.T) {
 
 	t.Run("ModelFromConfig", func(t *testing.T) {
 		c := config.NewConfig(nil)
-		_ = c.Set("ai.agent.model", "gpt-4.1")
+		_ = c.Set(ConfigKeyModel, "gpt-4.1")
 
 		ucm := &mockUserConfigManager{config: c}
 		builder := NewSessionConfigBuilder(ucm)
@@ -40,7 +40,7 @@ func TestSessionConfigBuilder_Build(t *testing.T) {
 
 	t.Run("SystemMessage", func(t *testing.T) {
 		c := config.NewConfig(nil)
-		_ = c.Set("ai.agent.systemMessage", "Use TypeScript")
+		_ = c.Set(ConfigKeySystemMessage, "Use TypeScript")
 
 		ucm := &mockUserConfigManager{config: c}
 		builder := NewSessionConfigBuilder(ucm)
@@ -55,8 +55,8 @@ func TestSessionConfigBuilder_Build(t *testing.T) {
 
 	t.Run("ToolControl", func(t *testing.T) {
 		c := config.NewConfig(nil)
-		_ = c.Set("ai.agent.tools.available", []any{"read_file", "write_file"})
-		_ = c.Set("ai.agent.tools.excluded", []any{"execute_command"})
+		_ = c.Set(ConfigKeyToolsAvailable, []any{"read_file", "write_file"})
+		_ = c.Set(ConfigKeyToolsExcluded, []any{"execute_command"})
 
 		ucm := &mockUserConfigManager{config: c}
 		builder := NewSessionConfigBuilder(ucm)
@@ -89,7 +89,7 @@ func TestSessionConfigBuilder_Build(t *testing.T) {
 
 	t.Run("UserMCPServersOverrideBuiltIn", func(t *testing.T) {
 		c := config.NewConfig(nil)
-		_ = c.Set("ai.agent.mcp.servers", map[string]any{
+		_ = c.Set(ConfigKeyMCPServers, map[string]any{
 			"azd": map[string]any{
 				"type":    "stdio",
 				"command": "/custom/azd",

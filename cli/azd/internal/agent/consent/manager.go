@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	agentcopilot "github.com/azure/azure-dev/cli/azd/internal/agent/copilot"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -17,7 +18,7 @@ import (
 )
 
 const (
-	ConfigKeyMCPConsent = "mcp.consent"
+	ConfigKeyConsent = agentcopilot.ConfigKeyConsent
 )
 
 // consentManager implements the ConsentManager interface
@@ -255,7 +256,7 @@ func (cm *consentManager) addProjectRule(ctx context.Context, rule ConsentRule) 
 	}
 
 	var consentConfig ConsentConfig
-	if exists, err := env.Config.GetSection(ConfigKeyMCPConsent, &consentConfig); err != nil {
+	if exists, err := env.Config.GetSection(ConfigKeyConsent, &consentConfig); err != nil {
 		return fmt.Errorf("failed to get consent config from environment: %w", err)
 	} else if !exists {
 		consentConfig = ConsentConfig{}
@@ -264,7 +265,7 @@ func (cm *consentManager) addProjectRule(ctx context.Context, rule ConsentRule) 
 	// Add or update the rule
 	consentConfig.Rules = cm.addOrUpdateRule(consentConfig.Rules, rule)
 
-	if err := env.Config.Set(ConfigKeyMCPConsent, consentConfig); err != nil {
+	if err := env.Config.Set(ConfigKeyConsent, consentConfig); err != nil {
 		return fmt.Errorf("failed to set consent config in environment: %w", err)
 	}
 
@@ -279,7 +280,7 @@ func (cm *consentManager) addGlobalRule(ctx context.Context, rule ConsentRule) e
 	}
 
 	var consentConfig ConsentConfig
-	if exists, err := userConfig.GetSection(ConfigKeyMCPConsent, &consentConfig); err != nil {
+	if exists, err := userConfig.GetSection(ConfigKeyConsent, &consentConfig); err != nil {
 		return fmt.Errorf("failed to get consent config: %w", err)
 	} else if !exists {
 		consentConfig = ConsentConfig{}
@@ -288,7 +289,7 @@ func (cm *consentManager) addGlobalRule(ctx context.Context, rule ConsentRule) e
 	// Add or update the rule
 	consentConfig.Rules = cm.addOrUpdateRule(consentConfig.Rules, rule)
 
-	if err := userConfig.Set(ConfigKeyMCPConsent, consentConfig); err != nil {
+	if err := userConfig.Set(ConfigKeyConsent, consentConfig); err != nil {
 		return fmt.Errorf("failed to set consent config: %w", err)
 	}
 
@@ -341,7 +342,7 @@ func (cm *consentManager) getProjectRules(ctx context.Context) ([]ConsentRule, e
 	}
 
 	var consentConfig ConsentConfig
-	if exists, err := env.Config.GetSection(ConfigKeyMCPConsent, &consentConfig); err != nil {
+	if exists, err := env.Config.GetSection(ConfigKeyConsent, &consentConfig); err != nil {
 		return nil, fmt.Errorf("failed to get consent config from environment: %w", err)
 	} else if !exists {
 		return []ConsentRule{}, nil
@@ -368,7 +369,7 @@ func (cm *consentManager) getGlobalConsentConfig(ctx context.Context) (*ConsentC
 	}
 
 	var consentConfig ConsentConfig
-	if exists, err := userConfig.GetSection(ConfigKeyMCPConsent, &consentConfig); err != nil {
+	if exists, err := userConfig.GetSection(ConfigKeyConsent, &consentConfig); err != nil {
 		return nil, fmt.Errorf("failed to get consent config: %w", err)
 	} else if !exists {
 		consentConfig = ConsentConfig{}
@@ -412,7 +413,7 @@ func (cm *consentManager) removeProjectRule(ctx context.Context, target Target) 
 	}
 
 	var consentConfig ConsentConfig
-	if exists, err := env.Config.GetSection(ConfigKeyMCPConsent, &consentConfig); err != nil {
+	if exists, err := env.Config.GetSection(ConfigKeyConsent, &consentConfig); err != nil {
 		return fmt.Errorf("failed to get consent config from environment: %w", err)
 	} else if !exists {
 		return nil // Nothing to remove
@@ -428,7 +429,7 @@ func (cm *consentManager) removeProjectRule(ctx context.Context, target Target) 
 
 	consentConfig.Rules = filtered
 
-	if err := env.Config.Set(ConfigKeyMCPConsent, consentConfig); err != nil {
+	if err := env.Config.Set(ConfigKeyConsent, consentConfig); err != nil {
 		return fmt.Errorf("failed to update consent config in environment: %w", err)
 	}
 
@@ -443,7 +444,7 @@ func (cm *consentManager) removeGlobalRule(ctx context.Context, target Target) e
 	}
 
 	var consentConfig ConsentConfig
-	if exists, err := userConfig.GetSection(ConfigKeyMCPConsent, &consentConfig); err != nil {
+	if exists, err := userConfig.GetSection(ConfigKeyConsent, &consentConfig); err != nil {
 		return fmt.Errorf("failed to get consent config: %w", err)
 	} else if !exists {
 		return nil // Nothing to remove
@@ -459,7 +460,7 @@ func (cm *consentManager) removeGlobalRule(ctx context.Context, target Target) e
 
 	consentConfig.Rules = filtered
 
-	if err := userConfig.Set(ConfigKeyMCPConsent, consentConfig); err != nil {
+	if err := userConfig.Set(ConfigKeyConsent, consentConfig); err != nil {
 		return fmt.Errorf("failed to update consent config: %w", err)
 	}
 

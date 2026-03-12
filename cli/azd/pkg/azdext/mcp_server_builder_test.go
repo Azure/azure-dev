@@ -73,7 +73,7 @@ func TestMCPServerBuilder_HandlerReceivesParsedToolArgs(t *testing.T) {
 	wrappedHandler := builder.wrapHandler("echo", handler)
 	request := mcp.CallToolRequest{}
 	request.Params.Name = "echo"
-	request.Params.Arguments = map[string]interface{}{
+	request.Params.Arguments = map[string]any{
 		"message": "hello world",
 	}
 
@@ -101,7 +101,7 @@ func TestMCPServerBuilder_RateLimiting(t *testing.T) {
 	wrappedHandler := builder.wrapHandler("test", handler)
 	request := mcp.CallToolRequest{}
 	request.Params.Name = "test"
-	request.Params.Arguments = map[string]interface{}{}
+	request.Params.Arguments = map[string]any{}
 
 	// First call should succeed (consumes the 1 burst token)
 	result1, err1 := wrappedHandler(context.Background(), request)
@@ -136,10 +136,10 @@ func TestMCPServerBuilder_NoRateLimit(t *testing.T) {
 	wrappedHandler := builder.wrapHandler("test", handler)
 	request := mcp.CallToolRequest{}
 	request.Params.Name = "test"
-	request.Params.Arguments = map[string]interface{}{}
+	request.Params.Arguments = map[string]any{}
 
 	// Multiple rapid calls should all succeed
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		result, err := wrappedHandler(context.Background(), request)
 		require.NoError(t, err)
 		require.NotNil(t, result)

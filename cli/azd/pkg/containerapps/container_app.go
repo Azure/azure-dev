@@ -698,8 +698,8 @@ func (cas *containerAppService) UpdateContainerAppJobImage(
 		// Merge new env vars (override existing with same name)
 		for key, value := range envVars {
 			envMap[key] = &armappcontainers.EnvironmentVar{
-				Name:  to.Ptr(key),
-				Value: to.Ptr(value),
+				Name:  new(key),
+				Value: new(value),
 			}
 		}
 

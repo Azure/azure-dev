@@ -43,7 +43,7 @@ type FineTuningProvider interface {
 	UploadFile(ctx context.Context, filePath string) (string, error)
 
 	// GetUploadedFile retrieves information about an uploaded file
-	GetUploadedFile(ctx context.Context, fileID string) (interface{}, error)
+	GetUploadedFile(ctx context.Context, fileID string) (any, error)
 }
 
 // ModelDeploymentProvider defines the interface for model deployment operations

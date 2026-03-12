@@ -140,14 +140,14 @@ func (mb *MessageBroker[TMessage]) On(handler any) error {
 	}
 
 	// Validate first parameter is context.Context
-	contextType := reflect.TypeOf((*context.Context)(nil)).Elem()
+	contextType := reflect.TypeFor[context.Context]()
 	if !handlerType.In(0).Implements(contextType) {
 		return fmt.Errorf("first parameter must be context.Context, got %v", handlerType.In(0))
 	}
 
 	// Extract request type (second parameter)
 	requestType := handlerType.In(1)
-	if requestType.Kind() != reflect.Ptr {
+	if requestType.Kind() != reflect.Pointer {
 		return fmt.Errorf("request type must be a pointer, got %v", requestType)
 	}
 
@@ -155,7 +155,7 @@ func (mb *MessageBroker[TMessage]) On(handler any) error {
 	hasProgress := false
 	progressIndex := -1
 	if numIn == 3 {
-		progressType := reflect.TypeOf((*ProgressFunc)(nil)).Elem()
+		progressType := reflect.TypeFor[ProgressFunc]()
 		if handlerType.In(2) == progressType {
 			hasProgress = true
 			progressIndex = 2
@@ -171,14 +171,13 @@ func (mb *MessageBroker[TMessage]) On(handler any) error {
 
 	// Validate response type is *TMessage (pointer to envelope)
 	responseType := handlerType.Out(0)
-	var envelopeZero TMessage
-	envelopeType := reflect.TypeOf(&envelopeZero)
+	envelopeType := reflect.TypeFor[*TMessage]()
 	if responseType != envelopeType {
 		return fmt.Errorf("handler must return pointer to envelope type %v, got %v", envelopeType, responseType)
 	}
 
 	// Validate error return type
-	errorType := reflect.TypeOf((*error)(nil)).Elem()
+	errorType := reflect.TypeFor[error]()
 	if !handlerType.Out(1).Implements(errorType) {
 		return fmt.Errorf("second return value must be error, got %v", handlerType.Out(1))
 	}

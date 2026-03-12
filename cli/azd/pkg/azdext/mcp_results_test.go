@@ -45,7 +45,7 @@ func TestMCPJSONResult_Struct(t *testing.T) {
 }
 
 func TestMCPJSONResult_Map(t *testing.T) {
-	data := map[string]interface{}{
+	data := map[string]any{
 		"key": "value",
 	}
 	result := MCPJSONResult(data)
@@ -57,7 +57,7 @@ func TestMCPJSONResult_Map(t *testing.T) {
 	textContent, ok := result.Content[0].(mcp.TextContent)
 	require.True(t, ok)
 
-	var decoded map[string]interface{}
+	var decoded map[string]any
 	err := json.Unmarshal([]byte(textContent.Text), &decoded)
 	require.NoError(t, err)
 	require.Equal(t, "value", decoded["key"])

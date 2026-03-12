@@ -163,8 +163,8 @@ func Register[S, T any](fn func(context.Context, S) (T, error)) error {
 	}
 
 	key := [2]reflect.Type{
-		reflect.TypeOf((*S)(nil)).Elem(),
-		reflect.TypeOf((*T)(nil)).Elem(),
+		reflect.TypeFor[S](),
+		reflect.TypeFor[T](),
 	}
 
 	mu.Lock()

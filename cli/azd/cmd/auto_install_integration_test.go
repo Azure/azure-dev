@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -182,12 +183,7 @@ func TestAgentDetectionIntegration(t *testing.T) {
 
 // containsNoPromptFalse checks if args contain --no-prompt=false
 func containsNoPromptFalse(args []string) bool {
-	for _, arg := range args {
-		if arg == "--no-prompt=false" {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(args, "--no-prompt=false")
 }
 
 // clearAgentEnvVarsForTest clears all environment variables that could trigger agent detection.

@@ -37,9 +37,9 @@ type ExtensionSchema struct {
 
 type schemaAlias ExtensionSchema
 
-func (e ExtensionSchema) MarshalYAML() (interface{}, error) {
+func (e ExtensionSchema) MarshalYAML() (any, error) {
 	// Create a new map to build our output
-	base := make(map[string]interface{})
+	base := make(map[string]any)
 
 	// Add required fields
 	base["id"] = e.Id
@@ -85,7 +85,7 @@ func (e ExtensionSchema) MarshalYAML() (interface{}, error) {
 
 func (e *ExtensionSchema) UnmarshalYAML(value *yaml.Node) error {
 	// Create a temporary map to hold all YAML fields
-	var fields map[string]interface{}
+	var fields map[string]any
 	if err := value.Decode(&fields); err != nil {
 		return err
 	}

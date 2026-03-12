@@ -635,7 +635,7 @@ func emitVariableExpression(
 		id := func(s string) string { return s }
 
 		// Evaluate all arguments
-		args := make([]interface{}, 0, len(funcData.Args))
+		args := make([]any, 0, len(funcData.Args))
 		for _, arg := range funcData.Args {
 			err := emitVariableExpression(env, key, arg, id, results)
 			if err != nil {

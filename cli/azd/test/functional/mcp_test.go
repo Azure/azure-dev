@@ -61,7 +61,7 @@ func Test_CLI_MCP_Server_CallTool(t *testing.T) {
 	defer cleanup()
 
 	// Test calling plan_init tool
-	toolArgs := map[string]interface{}{
+	toolArgs := map[string]any{
 		"query": "Create a simple web application using Node.js and Express",
 	}
 

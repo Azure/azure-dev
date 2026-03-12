@@ -12,7 +12,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -382,7 +381,7 @@ func ensureAzureContext(
 			AzureContext: azureContext,
 			Options: &azdext.PromptResourceGroupOptions{
 				SelectOptions: &azdext.PromptResourceSelectOptions{
-					AllowNewResource: to.Ptr(false),
+					AllowNewResource: new(false),
 				},
 			},
 		})
@@ -404,7 +403,7 @@ func ensureAzureContext(
 				ResourceType:            "Microsoft.CognitiveServices/accounts/projects",
 				ResourceTypeDisplayName: "AI Foundry project",
 				SelectOptions: &azdext.PromptResourceSelectOptions{
-					AllowNewResource: to.Ptr(false),
+					AllowNewResource: new(false),
 					Message:          "Select a Foundry project",
 					LoadingMessage:   "Fetching Foundry projects...",
 				},

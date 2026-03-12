@@ -23,7 +23,7 @@ func (f *JsonFormatter) Kind() Format {
 	return JsonFormat
 }
 
-func (f *JsonFormatter) Format(obj interface{}, writer io.Writer, _ interface{}) error {
+func (f *JsonFormatter) Format(obj any, writer io.Writer, _ any) error {
 	// Apply JMESPath query if specified
 	data := obj
 	if f.Query != "" {
@@ -57,7 +57,7 @@ var _ Queryable = (*JsonFormatter)(nil)
 
 // QueryFilter applies the JMESPath query (if any) to the given object.
 // When no query is configured, the object is returned unchanged.
-func (f *JsonFormatter) QueryFilter(obj interface{}) (interface{}, error) {
+func (f *JsonFormatter) QueryFilter(obj any) (any, error) {
 	if f.Query == "" {
 		return obj, nil
 	}

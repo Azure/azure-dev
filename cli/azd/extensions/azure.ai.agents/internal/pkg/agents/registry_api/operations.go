@@ -106,7 +106,7 @@ func HandleTools(manifest *Manifest) ([]any, error) {
 		return nil, fmt.Errorf("failed to marshal tools: %w", err)
 	}
 
-	var toolsBase []interface{}
+	var toolsBase []any
 	if err := json.Unmarshal(toolsBytes, &toolsBase); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal tools: %w", err)
 	}

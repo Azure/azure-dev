@@ -42,10 +42,11 @@ func (t *WarningMessage) MarshalJSON() ([]byte, error) {
 		prefix = "WARNING: "
 	}
 
-	msg := fmt.Sprintf("%s%s", prefix, t.Description)
+	var msg strings.Builder
+	msg.WriteString(fmt.Sprintf("%s%s", prefix, t.Description))
 	for _, hint := range t.Hints {
-		msg += fmt.Sprintf("\n  \u2022 %s", hint)
+		msg.WriteString(fmt.Sprintf("\n  \u2022 %s", hint))
 	}
 
-	return json.Marshal(output.EventForMessage(msg))
+	return json.Marshal(output.EventForMessage(msg.String()))
 }

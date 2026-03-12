@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -286,7 +285,7 @@ func (a *AddAction) promptResource(
 	excludeResourceIds []string,
 ) (string, error) {
 	options := armresources.ClientListOptions{
-		Filter: to.Ptr(fmt.Sprintf("resourceType eq '%s'", resourceType)),
+		Filter: new(fmt.Sprintf("resourceType eq '%s'", resourceType)),
 	}
 
 	a.console.ShowSpinner(ctx, "Listing resources...", input.Step)

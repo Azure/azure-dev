@@ -213,6 +213,6 @@ func (f *fakeFileInfo) IsDir() bool {
 	return false
 }
 
-func (f *fakeFileInfo) Sys() interface{} {
+func (f *fakeFileInfo) Sys() any {
 	return nil
 }

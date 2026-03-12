@@ -1,6 +1,10 @@
 # Release History
 
 
+## 0.0.4-preview (2026-03-17)
+
+- Added async model registration with server-side validation and polling support
+
 ## 0.0.3-preview (2026-02-19)
 
 - Fixed azcopy download: added `githubusercontent.com` to allowed redirect hosts

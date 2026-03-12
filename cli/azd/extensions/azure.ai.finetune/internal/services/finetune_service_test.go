@@ -24,7 +24,7 @@ type MockFineTuningProvider struct {
 	ResumeJobFunc               func(ctx context.Context, jobID string) (*models.FineTuningJob, error)
 	CancelJobFunc               func(ctx context.Context, jobID string) (*models.FineTuningJob, error)
 	UploadFileFunc              func(ctx context.Context, filePath string) (string, error)
-	GetUploadedFileFunc         func(ctx context.Context, fileID string) (interface{}, error)
+	GetUploadedFileFunc         func(ctx context.Context, fileID string) (any, error)
 }
 
 func (m *MockFineTuningProvider) CreateFineTuningJob(ctx context.Context, req *models.CreateFineTuningRequest) (*models.FineTuningJob, error) {
@@ -97,7 +97,7 @@ func (m *MockFineTuningProvider) UploadFile(ctx context.Context, filePath string
 	return "", errors.New("not implemented")
 }
 
-func (m *MockFineTuningProvider) GetUploadedFile(ctx context.Context, fileID string) (interface{}, error) {
+func (m *MockFineTuningProvider) GetUploadedFile(ctx context.Context, fileID string) (any, error) {
 	if m.GetUploadedFileFunc != nil {
 		return m.GetUploadedFileFunc(ctx, fileID)
 	}

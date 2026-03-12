@@ -209,7 +209,7 @@ func (p *Confirm) Render(printer Printer) error {
 	}
 
 	printer.Fprintf("%s", valueOutput)
-	p.cursorPosition = Ptr(printer.CursorPosition())
+	p.cursorPosition = new(printer.CursorPosition())
 
 	printer.Fprintln()
 
@@ -254,11 +254,11 @@ func parseBooleanString(value string) (*bool, error) {
 	loweredValue := strings.ToLower(value)
 
 	if slices.Contains(yesValues, loweredValue) {
-		return Ptr(true), nil
+		return new(true), nil
 	}
 
 	if slices.Contains(noValues, loweredValue) {
-		return Ptr(false), nil
+		return new(false), nil
 	}
 
 	return nil, fmt.Errorf("invalid boolean value")

@@ -42,7 +42,7 @@ type ProjectConfig struct {
 	Resources         map[string]*ResourceConfig `yaml:"resources,omitempty"`
 
 	// AdditionalProperties captures any unknown YAML fields for extension support
-	AdditionalProperties map[string]interface{} `yaml:",inline"`
+	AdditionalProperties map[string]any `yaml:",inline"`
 
 	*ext.EventDispatcher[ProjectLifecycleEventArgs] `yaml:"-"`
 }
@@ -85,7 +85,7 @@ type HooksConfig map[string][]*ext.HookConfig
 
 // UnmarshalYAML converts the hooks configuration from YAML supporting both legacy single hook configurations
 // and new multiple hook configurations
-func (ch *HooksConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (ch *HooksConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	var legacyConfig map[string]*ext.HookConfig
 
 	// Attempt to unmarshal the legacy single hook configuration
@@ -110,7 +110,7 @@ func (ch *HooksConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 }
 
 // MarshalYAML marshals the hooks configuration to YAML supporting both legacy single hook configurations
-func (ch HooksConfig) MarshalYAML() (interface{}, error) {
+func (ch HooksConfig) MarshalYAML() (any, error) {
 	if len(ch) == 0 {
 		return nil, nil
 	}

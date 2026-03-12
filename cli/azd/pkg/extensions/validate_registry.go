@@ -6,6 +6,7 @@ package extensions
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
@@ -256,30 +257,15 @@ func (r *ExtensionValidationResult) addWarning(msg string) {
 }
 
 func isValidCapability(cap CapabilityType) bool {
-	for _, valid := range ValidCapabilities {
-		if cap == valid {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(ValidCapabilities, cap)
 }
 
 func isValidPlatform(platform string) bool {
-	for _, valid := range ValidPlatforms {
-		if platform == valid {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(ValidPlatforms, platform)
 }
 
 func isValidChecksumAlgorithm(alg string) bool {
-	for _, valid := range validChecksumAlgorithms {
-		if alg == valid {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(validChecksumAlgorithms, alg)
 }
 
 func capabilityStrings() []string {

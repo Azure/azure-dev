@@ -79,7 +79,7 @@ type Assignment struct {
 // AssignmentConfig is information about a specific config in an assignment.
 type AssignmentConfig struct {
 	ID         string
-	Parameters map[string]interface{}
+	Parameters map[string]any
 }
 
 // Assignment gets a the assignment information for this given machine.

@@ -31,19 +31,19 @@ func Test_GetFunctionAppProperties(t *testing.T) {
 
 			response := armappservice.WebAppsClientGetResponse{
 				Site: armappservice.Site{
-					Location: to.Ptr("eastus2"),
-					Kind:     to.Ptr("funcapp"),
-					Name:     to.Ptr("FUNC_APP_NAME"),
+					Location: new("eastus2"),
+					Kind:     new("funcapp"),
+					Name:     new("FUNC_APP_NAME"),
 					Properties: &armappservice.SiteProperties{
-						DefaultHostName: to.Ptr("FUNC_APP_NAME.azurewebsites.net"),
+						DefaultHostName: new("FUNC_APP_NAME.azurewebsites.net"),
 						//nolint:lll
-						ServerFarmID: to.Ptr(
+						ServerFarmID: new(
 							"/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP_ID/providers/Microsoft.Web/serverfarms/FUNC_APP_PLAN",
 						),
 						HostNameSSLStates: []*armappservice.HostNameSSLState{
 							{
 								HostType: to.Ptr(armappservice.HostTypeRepository),
-								Name:     to.Ptr("FUNC_APP_NAME.scm.azurewebsites.net"),
+								Name:     new("FUNC_APP_NAME.scm.azurewebsites.net"),
 							},
 						},
 					},
@@ -97,11 +97,11 @@ func Test_DeployFunctionAppUsingZipFileRegular(t *testing.T) {
 		HostNameSslStates: []*armappservice.HostNameSSLState{
 			{
 				HostType: to.Ptr(armappservice.HostTypeStandard),
-				Name:     to.Ptr("INVALID"),
+				Name:     new("INVALID"),
 			},
 			{
 				HostType: to.Ptr(armappservice.HostTypeRepository),
-				Name:     to.Ptr("FUNC_APP_NAME_SCM_HOST"),
+				Name:     new("FUNC_APP_NAME_SCM_HOST"),
 			},
 		},
 	}

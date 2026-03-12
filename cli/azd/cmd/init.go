@@ -19,7 +19,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/agent"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/feedback"
-	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -190,9 +189,10 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	i.lazyAzdCtx.SetValue(azdCtx)
 
 	if i.flags.templateBranch != "" && i.flags.templatePath == "" {
-		return nil,
-			errors.New(
-				"using branch argument (-b or --branch) requires a template argument (--template or -t) to be specified")
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        internal.ErrBranchRequiresTemplate,
+			Suggestion: "Add '--template <repo-url>' when using '--branch'.",
+		}
 	}
 
 	// ensure that git is available
@@ -254,7 +254,10 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	if initTypeCount > 1 {
-		return nil, errors.New("only one of init modes: --template, --from-code, or --minimal should be set")
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        internal.ErrMultipleInitModes,
+			Suggestion: "Choose one: 'azd init --template <url>', 'azd init --from-code', or 'azd init --minimal'.",
+		}
 	}
 
 	if initTypeSelect == initUnknown {
@@ -414,7 +417,7 @@ func (i *initAction) initAppWithAgent(ctx context.Context) error {
 			ServerName: "*",
 			Operation:  consent.OperationTypeTool,
 			Annotations: mcp.ToolAnnotation{
-				ReadOnlyHint: common.ToPtr(true),
+				ReadOnlyHint: new(true),
 			},
 		},
 	)

@@ -28,7 +28,7 @@ func MockDevCenterGraphQuery(mockContext *mocks.MockContext, devCenters []*devce
 				Name:     "Project1",
 				Type:     "microsoft.devcenter/projects",
 				TenantId: "TENANT_ID",
-				Properties: map[string]interface{}{
+				Properties: map[string]any{
 					"devCenterUri": devCenter.ServiceUri,
 					"devCenterId":  devCenter.Id,
 				},

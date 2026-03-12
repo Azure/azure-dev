@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -80,11 +79,11 @@ func Test_servicesFromManifest(t *testing.T) {
 				Resources: map[string]*apphost.Resource{
 					"webapi": {
 						Type: "project.v0",
-						Path: to.Ptr("./src/WebApi/WebApi.csproj"),
+						Path: new("./src/WebApi/WebApi.csproj"),
 					},
 					"frontend": {
 						Type: "project.v0",
-						Path: to.Ptr("./src/Frontend/Frontend.csproj"),
+						Path: new("./src/Frontend/Frontend.csproj"),
 					},
 				},
 			},
@@ -105,15 +104,15 @@ func Test_servicesFromManifest(t *testing.T) {
 				Resources: map[string]*apphost.Resource{
 					"api": {
 						Type: "project.v0",
-						Path: to.Ptr("./Api/Api.csproj"),
+						Path: new("./Api/Api.csproj"),
 					},
 					"database": {
 						Type:  "container.v1",
-						Image: to.Ptr("postgres:latest"),
+						Image: new("postgres:latest"),
 					},
 					"worker": {
 						Type: "project.v1",
-						Path: to.Ptr("./Worker/Worker.csproj"),
+						Path: new("./Worker/Worker.csproj"),
 					},
 				},
 			},
@@ -134,11 +133,11 @@ func Test_servicesFromManifest(t *testing.T) {
 				Resources: map[string]*apphost.Resource{
 					"redis": {
 						Type:  "container.v0",
-						Image: to.Ptr("redis:latest"),
+						Image: new("redis:latest"),
 					},
 					"postgres": {
 						Type:  "container.v0",
-						Image: to.Ptr("postgres:latest"),
+						Image: new("postgres:latest"),
 					},
 				},
 			},

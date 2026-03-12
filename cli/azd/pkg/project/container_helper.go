@@ -823,9 +823,9 @@ func (ch *ContainerHelper) runRemoteBuild(
 
 	buildRequest := &armcontainerregistry.DockerBuildRequest{
 		SourceLocation: source.RelativePath,
-		DockerFilePath: to.Ptr(dockerPath),
-		IsPushEnabled:  to.Ptr(true),
-		ImageNames:     []*string{to.Ptr(imageName)},
+		DockerFilePath: new(dockerPath),
+		IsPushEnabled:  new(true),
+		ImageNames:     []*string{new(imageName)},
 		Platform: &armcontainerregistry.PlatformProperties{
 			OS:           to.Ptr(armcontainerregistry.OSLinux),
 			Architecture: to.Ptr(armcontainerregistry.ArchitectureAmd64),

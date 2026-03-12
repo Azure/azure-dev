@@ -268,8 +268,8 @@ type AzCliDeploymentErrorResponse struct {
 }
 
 type AzCliDeploymentAdditionalInfo struct {
-	Type string      `json:"type"`
-	Info interface{} `json:"info"`
+	Type string `json:"type"`
+	Info any    `json:"info"`
 }
 
 type AzCliDeployment struct {
@@ -291,8 +291,8 @@ type AzCliDeploymentResourceReference struct {
 }
 
 type AzCliDeploymentOutput struct {
-	Type  string      `json:"type"`
-	Value interface{} `json:"value"`
+	Type  string `json:"type"`
+	Value any    `json:"value"`
 }
 
 func (o AzCliDeploymentOutput) Secured() bool {
@@ -339,15 +339,15 @@ type AzCliDeploymentStatusMessage struct {
 // convert from: sdk client outputs: interface{} to map[string]azapi.AzCliDeploymentOutput
 // sdk client parses http response from network as an interface{}
 // this function keeps the compatibility with the previous AzCliDeploymentOutput model
-func CreateDeploymentOutput(rawOutputs interface{}) (result map[string]AzCliDeploymentOutput) {
+func CreateDeploymentOutput(rawOutputs any) (result map[string]AzCliDeploymentOutput) {
 	if rawOutputs == nil {
 		return make(map[string]AzCliDeploymentOutput, 0)
 	}
 
-	castInput := rawOutputs.(map[string]interface{})
+	castInput := rawOutputs.(map[string]any)
 	result = make(map[string]AzCliDeploymentOutput, len(castInput))
 	for key, output := range castInput {
-		innerValue := output.(map[string]interface{})
+		innerValue := output.(map[string]any)
 		result[key] = AzCliDeploymentOutput{
 			Type:  innerValue["type"].(string),
 			Value: innerValue["value"],

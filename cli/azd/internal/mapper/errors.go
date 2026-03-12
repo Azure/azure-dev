@@ -114,7 +114,7 @@ func cleanTypeName(t reflect.Type) string {
 	}
 
 	switch t.Kind() {
-	case reflect.Ptr:
+	case reflect.Pointer:
 		// For pointers, get the element type and add pointer indicator
 		elem := t.Elem()
 		return "*" + cleanTypeName(elem)

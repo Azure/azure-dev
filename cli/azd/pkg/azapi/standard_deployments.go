@@ -224,7 +224,7 @@ func (ds *StandardDeployments) DeployToSubscription(
 				Parameters: parameters,
 				Mode:       to.Ptr(armresources.DeploymentModeIncremental),
 			},
-			Location: to.Ptr(location),
+			Location: new(location),
 			Tags:     tags,
 		}, nil)
 	if err != nil {
@@ -362,7 +362,7 @@ func (ds *StandardDeployments) ListSubscriptionDeploymentResources(
 
 		for _, resource := range resources {
 			allResources = append(allResources, &armresources.ResourceReference{
-				ID: to.Ptr(resource.Id),
+				ID: new(resource.Id),
 			})
 		}
 	}
@@ -423,7 +423,7 @@ func (ds *StandardDeployments) ListResourceGroupDeploymentResources(
 
 	for _, resource := range resources {
 		allResources = append(allResources, &armresources.ResourceReference{
-			ID: to.Ptr(resource.Id),
+			ID: new(resource.Id),
 		})
 	}
 
@@ -500,7 +500,7 @@ func (ds *StandardDeployments) voidSubscriptionDeploymentState(
 		emptyDeploymentName := ds.GenerateDeploymentName(*envName)
 		tags := map[string]*string{
 			azure.TagKeyAzdEnvName: envName,
-			"azd-deploy-reason":    to.Ptr("down"),
+			"azd-deploy-reason":    new("down"),
 		}
 
 		_, err = ds.DeployToSubscription(
@@ -577,7 +577,7 @@ func (ds *StandardDeployments) WhatIfDeployToSubscription(
 				Mode:           to.Ptr(armresources.DeploymentModeIncremental),
 				WhatIfSettings: &armresources.DeploymentWhatIfSettings{},
 			},
-			Location: to.Ptr(location),
+			Location: new(location),
 		}, nil)
 	if err != nil {
 		return nil, fmt.Errorf("starting deployment to subscription: %w", err)
@@ -732,7 +732,7 @@ func (ds *StandardDeployments) ValidatePreflightToSubscription(
 				Parameters: parameters,
 				Mode:       to.Ptr(armresources.DeploymentModeIncremental),
 			},
-			Location: to.Ptr(location),
+			Location: new(location),
 			Tags:     tags,
 		}, nil)
 	if err != nil {

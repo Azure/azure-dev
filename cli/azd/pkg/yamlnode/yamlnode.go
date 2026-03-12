@@ -155,7 +155,7 @@ func Append(root *yaml.Node, path string, node *yaml.Node) error {
 }
 
 // Encode encodes a value into a YAML node.
-func Encode(value interface{}) (*yaml.Node, error) {
+func Encode(value any) (*yaml.Node, error) {
 	var node yaml.Node
 	err := node.Encode(value)
 	if err != nil {

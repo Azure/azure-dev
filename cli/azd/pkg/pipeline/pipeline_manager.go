@@ -602,10 +602,10 @@ func (pm *PipelineManager) Configure(
 				armFedCreds := make([]msi.FederatedIdentityCredential, len(credentialOptions.FederatedCredentialOptions))
 				for i, fedCred := range credentialOptions.FederatedCredentialOptions {
 					armFedCreds[i] = msi.FederatedIdentityCredential{
-						Name: to.Ptr(fedCred.Name),
+						Name: new(fedCred.Name),
 						Properties: &msi.FederatedIdentityCredentialProperties{
-							Subject:   to.Ptr(fedCred.Subject),
-							Issuer:    to.Ptr(fedCred.Issuer),
+							Subject:   new(fedCred.Subject),
+							Issuer:    new(fedCred.Issuer),
 							Audiences: to.SliceOfPtrs(fedCred.Audiences...),
 						},
 					}

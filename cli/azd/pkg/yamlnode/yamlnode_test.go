@@ -38,7 +38,7 @@ func TestFind(t *testing.T) {
 	tests := []struct {
 		name     string
 		path     string
-		expected interface{}
+		expected any
 		wantErr  bool
 	}{
 		{"Simple path", "root.nested.key", "value", false},
@@ -73,7 +73,7 @@ func TestSet(t *testing.T) {
 	tests := []struct {
 		name    string
 		path    string
-		value   interface{}
+		value   any
 		wantErr bool
 	}{
 		{"root", "root", "new_value", false},
@@ -133,7 +133,7 @@ func TestAppend(t *testing.T) {
 	tests := []struct {
 		name     string
 		path     string
-		value    interface{} // Value to append
+		value    any // Value to append
 		wantErr  bool
 		checkLen int // Expected length after append
 	}{
@@ -191,7 +191,7 @@ func TestAppend(t *testing.T) {
 	}
 }
 
-func assertNodeEquals(t *testing.T, funcName string, node *yaml.Node, expected interface{}) {
+func assertNodeEquals(t *testing.T, funcName string, node *yaml.Node, expected any) {
 	t.Helper()
 	wantStr, err := yaml.Marshal(expected)
 	if err != nil {

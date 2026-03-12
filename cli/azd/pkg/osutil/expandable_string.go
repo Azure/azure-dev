@@ -40,11 +40,11 @@ func (e ExpandableString) MustEnvsubst(mapping func(string) string) string {
 	}
 }
 
-func (e ExpandableString) MarshalYAML() (interface{}, error) {
+func (e ExpandableString) MarshalYAML() (any, error) {
 	return e.template, nil
 }
 
-func (e *ExpandableString) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (e *ExpandableString) UnmarshalYAML(unmarshal func(any) error) error {
 	var s string
 	if err := unmarshal(&s); err != nil {
 		return err

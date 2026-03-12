@@ -541,22 +541,22 @@ func Test_HasDefaults(t *testing.T) {
 
 var allTestSubscriptions []*armsubscriptions.Subscription = []*armsubscriptions.Subscription{
 	{
-		ID:             to.Ptr("subscriptions/SUBSCRIPTION_01"),
-		SubscriptionID: to.Ptr("SUBSCRIPTION_01"),
-		DisplayName:    to.Ptr("Subscription 1"),
-		TenantID:       to.Ptr("TENANT_ID"),
+		ID:             new("subscriptions/SUBSCRIPTION_01"),
+		SubscriptionID: new("SUBSCRIPTION_01"),
+		DisplayName:    new("Subscription 1"),
+		TenantID:       new("TENANT_ID"),
 	},
 	{
-		ID:             to.Ptr("subscriptions/SUBSCRIPTION_02"),
-		SubscriptionID: to.Ptr("SUBSCRIPTION_02"),
-		DisplayName:    to.Ptr("Subscription 2"),
-		TenantID:       to.Ptr("TENANT_ID"),
+		ID:             new("subscriptions/SUBSCRIPTION_02"),
+		SubscriptionID: new("SUBSCRIPTION_02"),
+		DisplayName:    new("Subscription 2"),
+		TenantID:       new("TENANT_ID"),
 	},
 	{
-		ID:             to.Ptr("subscriptions/SUBSCRIPTION_03"),
-		SubscriptionID: to.Ptr("SUBSCRIPTION_03"),
-		DisplayName:    to.Ptr("Subscription 3"),
-		TenantID:       to.Ptr("TENANT_ID"),
+		ID:             new("subscriptions/SUBSCRIPTION_03"),
+		SubscriptionID: new("SUBSCRIPTION_03"),
+		DisplayName:    new("Subscription 3"),
+		TenantID:       new("TENANT_ID"),
 	},
 }
 
@@ -570,10 +570,10 @@ func setupGetSubscriptionMock(mockHttp *mockhttp.MockHttpClient, subscription *S
 	}
 
 	mockarmresources.MockGetSubscription(mockHttp, subscription.Id, armsubscriptions.Subscription{
-		ID:             to.Ptr(subscription.Id),
-		SubscriptionID: to.Ptr(subscription.Id),
-		DisplayName:    to.Ptr(subscription.Name),
-		TenantID:       to.Ptr(subscription.TenantId),
+		ID:             new(subscription.Id),
+		SubscriptionID: new(subscription.Id),
+		DisplayName:    new(subscription.Name),
+		TenantID:       new(subscription.TenantId),
 	})
 }
 
@@ -618,8 +618,8 @@ func setupAccountMocks(mockHttp *mockhttp.MockHttpClient) {
 	mockarmresources.MockListTenants(mockHttp, armsubscriptions.TenantListResult{
 		Value: []*armsubscriptions.TenantIDDescription{
 			{
-				DisplayName: to.Ptr("TENANT"),
-				TenantID:    to.Ptr("TENANT_ID"),
+				DisplayName: new("TENANT"),
+				TenantID:    new("TENANT_ID"),
 			},
 		},
 	})
@@ -629,37 +629,37 @@ func setupAccountMocks(mockHttp *mockhttp.MockHttpClient) {
 			armsubscriptions.LocationListResult{
 				Value: []*armsubscriptions.Location{
 					{
-						ID:                  to.Ptr("westus"),
-						Name:                to.Ptr("westus"),
-						DisplayName:         to.Ptr("West US"),
-						RegionalDisplayName: to.Ptr("(US) West US"),
+						ID:                  new("westus"),
+						Name:                new("westus"),
+						DisplayName:         new("West US"),
+						RegionalDisplayName: new("(US) West US"),
 						Metadata: &armsubscriptions.LocationMetadata{
 							RegionType: to.Ptr(armsubscriptions.RegionTypePhysical),
 						},
 					},
 					{
-						ID:                  to.Ptr("westus2"),
-						Name:                to.Ptr("westus2"),
-						DisplayName:         to.Ptr("West US 2"),
-						RegionalDisplayName: to.Ptr("(US) West US 2"),
+						ID:                  new("westus2"),
+						Name:                new("westus2"),
+						DisplayName:         new("West US 2"),
+						RegionalDisplayName: new("(US) West US 2"),
 						Metadata: &armsubscriptions.LocationMetadata{
 							RegionType: to.Ptr(armsubscriptions.RegionTypePhysical),
 						},
 					},
 					{
-						ID:                  to.Ptr("eastus"),
-						Name:                to.Ptr("eastus"),
-						DisplayName:         to.Ptr("East US"),
-						RegionalDisplayName: to.Ptr("(US) East US"),
+						ID:                  new("eastus"),
+						Name:                new("eastus"),
+						DisplayName:         new("East US"),
+						RegionalDisplayName: new("(US) East US"),
 						Metadata: &armsubscriptions.LocationMetadata{
 							RegionType: to.Ptr(armsubscriptions.RegionTypePhysical),
 						},
 					},
 					{
-						ID:                  to.Ptr("eastus2"),
-						Name:                to.Ptr("eastus2"),
-						DisplayName:         to.Ptr("East US 2"),
-						RegionalDisplayName: to.Ptr("(US) East US 2"),
+						ID:                  new("eastus2"),
+						Name:                new("eastus2"),
+						DisplayName:         new("East US 2"),
+						RegionalDisplayName: new("(US) East US 2"),
 						Metadata: &armsubscriptions.LocationMetadata{
 							RegionType: to.Ptr(armsubscriptions.RegionTypePhysical),
 						},

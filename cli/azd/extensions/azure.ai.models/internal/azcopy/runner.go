@@ -193,10 +193,7 @@ func (r *Runner) Copy(ctx context.Context, source string, sasURI string) error {
 func printProgress(transferred, total int64, percent float64, startTime time.Time) {
 	const barWidth = 35
 
-	filled := int(percent / 100 * float64(barWidth))
-	if filled > barWidth {
-		filled = barWidth
-	}
+	filled := min(int(percent/100*float64(barWidth)), barWidth)
 	bar := strings.Repeat("━", filled) + strings.Repeat("─", barWidth-filled)
 
 	elapsed := time.Since(startTime)

@@ -165,25 +165,25 @@ func Test_AddRevision_ARMCallCount(t *testing.T) {
 			var secrets []*armappcontainers.Secret
 			if tt.hasSecrets {
 				secrets = []*armappcontainers.Secret{
-					{Name: to.Ptr("secret"), Value: nil},
+					{Name: new("secret"), Value: nil},
 				}
 			}
 
 			containerApp := &armappcontainers.ContainerApp{
-				Location: to.Ptr("eastus2"),
+				Location: new("eastus2"),
 				Name:     &appName,
 				Properties: &armappcontainers.ContainerAppProperties{
-					LatestRevisionName: to.Ptr("rev-1"),
+					LatestRevisionName: new("rev-1"),
 					Configuration: &armappcontainers.Configuration{
-						ActiveRevisionsMode: to.Ptr(tt.revisionMode),
+						ActiveRevisionsMode: new(tt.revisionMode),
 						Secrets:             secrets,
 						Ingress: &armappcontainers.Ingress{
-							Fqdn: to.Ptr("app.azurecontainerapps.io"),
+							Fqdn: new("app.azurecontainerapps.io"),
 						},
 					},
 					Template: &armappcontainers.Template{
 						Containers: []*armappcontainers.Container{
-							{Image: to.Ptr("old-image")},
+							{Image: new("old-image")},
 						},
 					},
 				},
@@ -209,7 +209,7 @@ func Test_AddRevision_ARMCallCount(t *testing.T) {
 					appName,
 					&armappcontainers.SecretsCollection{
 						Value: []*armappcontainers.ContainerAppSecret{
-							{Name: to.Ptr("secret"), Value: to.Ptr("value")},
+							{Name: new("secret"), Value: new("value")},
 						},
 					}, &secretsCalls)
 			}
@@ -259,19 +259,19 @@ func Test_AddRevision_MultiRevision_CombinedPatch(t *testing.T) {
 	appName := "APP"
 
 	containerApp := &armappcontainers.ContainerApp{
-		Location: to.Ptr("eastus2"),
+		Location: new("eastus2"),
 		Name:     &appName,
 		Properties: &armappcontainers.ContainerAppProperties{
-			LatestRevisionName: to.Ptr("rev-1"),
+			LatestRevisionName: new("rev-1"),
 			Configuration: &armappcontainers.Configuration{
 				ActiveRevisionsMode: to.Ptr(armappcontainers.ActiveRevisionsModeMultiple),
 				Ingress: &armappcontainers.Ingress{
-					Fqdn: to.Ptr("app.azurecontainerapps.io"),
+					Fqdn: new("app.azurecontainerapps.io"),
 				},
 			},
 			Template: &armappcontainers.Template{
 				Containers: []*armappcontainers.Container{
-					{Image: to.Ptr("old-image")},
+					{Image: new("old-image")},
 				},
 			},
 		},
@@ -327,19 +327,19 @@ func Benchmark_AddRevision(b *testing.B) {
 	appName := "APP"
 
 	containerApp := &armappcontainers.ContainerApp{
-		Location: to.Ptr("eastus2"),
+		Location: new("eastus2"),
 		Name:     &appName,
 		Properties: &armappcontainers.ContainerAppProperties{
-			LatestRevisionName: to.Ptr("rev-1"),
+			LatestRevisionName: new("rev-1"),
 			Configuration: &armappcontainers.Configuration{
 				ActiveRevisionsMode: to.Ptr(armappcontainers.ActiveRevisionsModeSingle),
 				Secrets: []*armappcontainers.Secret{
-					{Name: to.Ptr("secret"), Value: nil},
+					{Name: new("secret"), Value: nil},
 				},
 			},
 			Template: &armappcontainers.Template{
 				Containers: []*armappcontainers.Container{
-					{Image: to.Ptr("old-image")},
+					{Image: new("old-image")},
 				},
 			},
 		},
@@ -347,7 +347,7 @@ func Benchmark_AddRevision(b *testing.B) {
 
 	secrets := &armappcontainers.SecretsCollection{
 		Value: []*armappcontainers.ContainerAppSecret{
-			{Name: to.Ptr("secret"), Value: to.Ptr("value")},
+			{Name: new("secret"), Value: new("value")},
 		},
 	}
 

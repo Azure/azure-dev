@@ -6,6 +6,7 @@ package consent
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -225,46 +226,22 @@ func (r ConsentRule) Validate() error {
 	}
 
 	// Validate enums have valid values
-	validScope := false
-	for _, scope := range AllowedScopes {
-		if r.Scope == scope {
-			validScope = true
-			break
-		}
-	}
+	validScope := slices.Contains(AllowedScopes, r.Scope)
 	if !validScope {
 		return fmt.Errorf("invalid scope: %s", r.Scope)
 	}
 
-	validAction := false
-	for _, action := range AllowedActionTypes {
-		if r.Action == action {
-			validAction = true
-			break
-		}
-	}
+	validAction := slices.Contains(AllowedActionTypes, r.Action)
 	if !validAction {
 		return fmt.Errorf("invalid action: %s", r.Action)
 	}
 
-	validContext := false
-	for _, operation := range AllowedOperationTypes {
-		if r.Operation == operation {
-			validContext = true
-			break
-		}
-	}
+	validContext := slices.Contains(AllowedOperationTypes, r.Operation)
 	if !validContext {
 		return fmt.Errorf("invalid operation context: %s", r.Operation)
 	}
 
-	validDecision := false
-	for _, permission := range AllowedPermissions {
-		if r.Permission == permission {
-			validDecision = true
-			break
-		}
-	}
+	validDecision := slices.Contains(AllowedPermissions, r.Permission)
 	if !validDecision {
 		return fmt.Errorf("invalid decision: %s", r.Permission)
 	}
@@ -282,7 +259,7 @@ type ConsentRequest struct {
 	ToolID      string
 	ServerName  string
 	Operation   OperationType // Type of consent being requested (tool, sampling, etc.)
-	Parameters  map[string]interface{}
+	Parameters  map[string]any
 	Annotations mcp.ToolAnnotation
 }
 

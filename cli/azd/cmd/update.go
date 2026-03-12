@@ -103,7 +103,10 @@ func newUpdateAction(
 func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Non-production builds (dev and PR) should not self-update.
 	if internal.IsNonProdVersion() {
-		return nil, fmt.Errorf("azd update is not supported for dev or PR builds")
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        fmt.Errorf("not supported for dev or PR builds: %w", internal.ErrUnsupportedOperation),
+			Suggestion: "Build from source or install a release build to use 'azd update'.",
+		}
 	}
 
 	// Auto-enable the alpha feature if not already enabled.

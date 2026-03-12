@@ -83,7 +83,7 @@ func Test_ContainerApp_AddRevision(t *testing.T) {
 				ActiveRevisionsMode: to.Ptr(armappcontainers.ActiveRevisionsModeSingle),
 				Secrets: []*armappcontainers.Secret{
 					{
-						Name:  to.Ptr("secret"),
+						Name:  new("secret"),
 						Value: nil,
 					},
 				},
@@ -101,8 +101,8 @@ func Test_ContainerApp_AddRevision(t *testing.T) {
 	secrets := &armappcontainers.SecretsCollection{
 		Value: []*armappcontainers.ContainerAppSecret{
 			{
-				Name:  to.Ptr("secret"),
-				Value: to.Ptr("value"),
+				Name:  new("secret"),
+				Value: new("value"),
 			},
 		},
 	}
@@ -152,7 +152,7 @@ func Test_ContainerApp_AddRevision_MultipleRevisionMode(t *testing.T) {
 				ActiveRevisionsMode: to.Ptr(armappcontainers.ActiveRevisionsModeMultiple),
 				Secrets: []*armappcontainers.Secret{
 					{
-						Name:  to.Ptr("secret"),
+						Name:  new("secret"),
 						Value: nil,
 					},
 				},
@@ -171,8 +171,8 @@ func Test_ContainerApp_AddRevision_MultipleRevisionMode(t *testing.T) {
 	secrets := &armappcontainers.SecretsCollection{
 		Value: []*armappcontainers.ContainerAppSecret{
 			{
-				Name:  to.Ptr("secret"),
-				Value: to.Ptr("value"),
+				Name:  new("secret"),
+				Value: new("value"),
 			},
 		},
 	}
@@ -247,11 +247,11 @@ func Test_ContainerApp_AddRevision_WithEnvVars(t *testing.T) {
 						Image: &originalImageName,
 						Env: []*armappcontainers.EnvironmentVar{
 							{
-								Name:  to.Ptr("EXISTING"),
+								Name:  new("EXISTING"),
 								Value: &existingValue,
 							},
 							{
-								Name:  to.Ptr("OVERRIDE"),
+								Name:  new("OVERRIDE"),
 								Value: &overrideValue,
 							},
 						},
@@ -324,16 +324,16 @@ properties:
 `
 
 	expected := &armappcontainers.ContainerApp{
-		Location: to.Ptr(location),
-		Name:     to.Ptr(appName),
+		Location: new(location),
+		Name:     new(appName),
 		Properties: &armappcontainers.ContainerAppProperties{
-			LatestRevisionName: to.Ptr("LATEST_REVISION_NAME"),
+			LatestRevisionName: new("LATEST_REVISION_NAME"),
 			Configuration: &armappcontainers.Configuration{
 				ActiveRevisionsMode: to.Ptr(armappcontainers.ActiveRevisionsModeSingle),
 				Ingress: &armappcontainers.Ingress{
 					CustomDomains: []*armappcontainers.CustomDomain{
 						{
-							Name: to.Ptr("DOMAIN_NAME"),
+							Name: new("DOMAIN_NAME"),
 						},
 					},
 					StickySessions: &armappcontainers.IngressStickySessions{
@@ -344,7 +344,7 @@ properties:
 			Template: &armappcontainers.Template{
 				Containers: []*armappcontainers.Container{
 					{
-						Image: to.Ptr("IMAGE_NAME"),
+						Image: new("IMAGE_NAME"),
 					},
 				},
 			},
@@ -400,14 +400,14 @@ func Test_ContainerAppJob_Get(t *testing.T) {
 	imageName := "myregistry.azurecr.io/myimage:latest"
 
 	job := &armappcontainers.Job{
-		Location: to.Ptr(location),
-		Name:     to.Ptr(jobName),
+		Location: new(location),
+		Name:     new(jobName),
 		Properties: &armappcontainers.JobProperties{
 			Template: &armappcontainers.JobTemplate{
 				Containers: []*armappcontainers.Container{
 					{
-						Name:  to.Ptr(jobName),
-						Image: to.Ptr(imageName),
+						Name:  new(jobName),
+						Image: new(imageName),
 					},
 				},
 			},
@@ -451,14 +451,14 @@ func Test_ContainerAppJob_UpdateImage(t *testing.T) {
 	updatedImage := "myregistry.azurecr.io/myimage:v2"
 
 	job := &armappcontainers.Job{
-		Location: to.Ptr(location),
-		Name:     to.Ptr(jobName),
+		Location: new(location),
+		Name:     new(jobName),
 		Properties: &armappcontainers.JobProperties{
 			Template: &armappcontainers.JobTemplate{
 				Containers: []*armappcontainers.Container{
 					{
-						Name:  to.Ptr(jobName),
-						Image: to.Ptr(originalImage),
+						Name:  new(jobName),
+						Image: new(originalImage),
 					},
 				},
 			},
@@ -502,7 +502,7 @@ func Test_ContainerAppJob_UpdateImage_NilContainers(t *testing.T) {
 	jobName := "MY_JOB"
 
 	job := &armappcontainers.Job{
-		Name:       to.Ptr(jobName),
+		Name:       new(jobName),
 		Properties: nil,
 	}
 
@@ -536,14 +536,14 @@ func Test_ContainerAppJob_CreateJobsClient_CacheHit(t *testing.T) {
 	imageName := "myregistry.azurecr.io/myimage:latest"
 
 	job := &armappcontainers.Job{
-		Location: to.Ptr(location),
-		Name:     to.Ptr(jobName),
+		Location: new(location),
+		Name:     new(jobName),
 		Properties: &armappcontainers.JobProperties{
 			Template: &armappcontainers.JobTemplate{
 				Containers: []*armappcontainers.Container{
 					{
-						Name:  to.Ptr(jobName),
-						Image: to.Ptr(imageName),
+						Name:  new(jobName),
+						Image: new(imageName),
 					},
 				},
 			},
@@ -701,14 +701,14 @@ func Test_ContainerAppJob_UpdateImage_CustomApiVersion(t *testing.T) {
 	customApiVersion := "2024-10-02-preview"
 
 	job := &armappcontainers.Job{
-		Location: to.Ptr(location),
-		Name:     to.Ptr(jobName),
+		Location: new(location),
+		Name:     new(jobName),
 		Properties: &armappcontainers.JobProperties{
 			Template: &armappcontainers.JobTemplate{
 				Containers: []*armappcontainers.Container{
 					{
-						Name:  to.Ptr(jobName),
-						Image: to.Ptr(originalImage),
+						Name:  new(jobName),
+						Image: new(originalImage),
 					},
 				},
 			},
@@ -816,7 +816,7 @@ func Test_ContainerAppJob_UpdateImage_NilContainerElement(t *testing.T) {
 	jobName := "MY_JOB"
 
 	job := &armappcontainers.Job{
-		Name: to.Ptr(jobName),
+		Name: new(jobName),
 		Properties: &armappcontainers.JobProperties{
 			Template: &armappcontainers.JobTemplate{
 				Containers: []*armappcontainers.Container{

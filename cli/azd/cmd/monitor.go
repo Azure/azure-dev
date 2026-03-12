@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -102,9 +101,10 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	}
 
 	if m.env.GetSubscriptionId() == "" {
-		return nil, errors.New(
-			"infrastructure has not been provisioned. Run `azd provision`",
-		)
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        internal.ErrInfraNotProvisioned,
+			Suggestion: "Run 'azd provision' to set up infrastructure before monitoring.",
+		}
 	}
 
 	aspireDashboard := apphost.AspireDashboardUrl(ctx, m.env, m.alphaFeaturesManager)
@@ -139,11 +139,17 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	}
 
 	if len(insightsResources) == 0 && (m.flags.monitorLive || m.flags.monitorLogs) {
-		return nil, fmt.Errorf("application does not contain an Application Insights resource")
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        fmt.Errorf("no Application Insights resource found: %w", internal.ErrResourceNotConfigured),
+			Suggestion: "Ensure your infrastructure includes an Application Insights component.",
+		}
 	}
 
 	if len(portalResources) == 0 && m.flags.monitorOverview {
-		return nil, fmt.Errorf("application does not contain an Application Insights dashboard")
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        fmt.Errorf("no Application Insights dashboard found: %w", internal.ErrResourceNotConfigured),
+			Suggestion: "Ensure your infrastructure includes an Application Insights dashboard.",
+		}
 	}
 
 	tenantId, err := m.subResolver.LookupTenant(ctx, m.env.GetSubscriptionId())

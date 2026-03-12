@@ -16,7 +16,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/machinelearning/armmachinelearning/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
@@ -542,7 +541,7 @@ func (a *aiHelper) UpdateTraffic(
 
 	// Send all traffic to new deployment
 	onlineEndpoint.Properties.Traffic = map[string]*int32{
-		deploymentName: to.Ptr(int32(100)),
+		deploymentName: new(int32(100)),
 	}
 
 	poller, err := a.endpointsClient.BeginCreateOrUpdate(

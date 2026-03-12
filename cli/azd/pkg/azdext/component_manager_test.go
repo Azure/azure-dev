@@ -175,7 +175,7 @@ func TestComponentManager_GetOrCreateInstance_ConcurrentAccess(t *testing.T) {
 	errors := make([]error, numGoroutines)
 	var wg sync.WaitGroup
 
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		wg.Add(1)
 		go func(index int) {
 			defer wg.Done()
@@ -189,7 +189,7 @@ func TestComponentManager_GetOrCreateInstance_ConcurrentAccess(t *testing.T) {
 
 	// All should succeed and return the same instance
 	var firstInstance *MockProvider
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		assert.NoError(t, errors[i])
 		assert.NotNil(t, instances[i])
 
@@ -382,7 +382,7 @@ func TestComponentManager_ConcurrentFactoryRegistration(t *testing.T) {
 	var wg sync.WaitGroup
 
 	// Concurrently register different factories
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		wg.Add(1)
 		go func(index int) {
 			defer wg.Done()
@@ -399,7 +399,7 @@ func TestComponentManager_ConcurrentFactoryRegistration(t *testing.T) {
 	wg.Wait()
 
 	// Verify all factories are registered
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		factoryKey := fmt.Sprintf("language-%d", i)
 		assert.True(t, manager.HasFactory(factoryKey))
 	}

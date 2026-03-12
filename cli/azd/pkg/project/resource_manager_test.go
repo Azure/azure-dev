@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -30,14 +29,14 @@ type testInitFunc func(*mocks.MockContext)
 // 4. Resource group tagged with azd-env-name
 func Test_ResourceManager_GetTargetResource(t *testing.T) {
 	taggedResourceGroup := &armresources.ResourceGroup{
-		ID: to.Ptr(fmt.Sprintf(
+		ID: new(fmt.Sprintf(
 			"/subscriptions/%s/resourceGroups/%s",
 			"SUBSCRIPTION_id",
 			"TAGGED_RESOURCE_GROUP",
 		)),
-		Name:     to.Ptr("TAGGED_RESOURCE_GROUP"),
-		Type:     to.Ptr("Microsoft.Resources/resourceGroups"),
-		Location: to.Ptr("eastus2"),
+		Name:     new("TAGGED_RESOURCE_GROUP"),
+		Type:     new("Microsoft.Resources/resourceGroups"),
+		Location: new("eastus2"),
 	}
 
 	fromProjectConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageJavaScript)
@@ -108,10 +107,10 @@ func Test_ResourceManager_GetTargetResource(t *testing.T) {
 			}
 
 			expectedResource := &armresources.GenericResourceExpanded{
-				ID:       to.Ptr("RESOURCE_ID"),
-				Name:     to.Ptr("RESOURCE_NAME"),
-				Type:     to.Ptr("Microsoft.Web/sites"),
-				Location: to.Ptr("eastus2"),
+				ID:       new("RESOURCE_ID"),
+				Name:     new("RESOURCE_NAME"),
+				Type:     new("Microsoft.Web/sites"),
+				Location: new("eastus2"),
 			}
 
 			setupGetResourceMock(mockContext, expectedResource)
@@ -185,10 +184,10 @@ func Test_ResourceManager_GetServiceResource_DuplicateHostTags(t *testing.T) {
 			name: "SingleHostResource_Success",
 			resources: []*armresources.GenericResourceExpanded{
 				{
-					ID:       to.Ptr("RESOURCE_ID_1"),
-					Name:     to.Ptr("my-container-app"),
-					Type:     to.Ptr("Microsoft.App/containerApps"),
-					Location: to.Ptr("eastus2"),
+					ID:       new("RESOURCE_ID_1"),
+					Name:     new("my-container-app"),
+					Type:     new("Microsoft.App/containerApps"),
+					Location: new("eastus2"),
 				},
 			},
 			expectError: false,
@@ -197,16 +196,16 @@ func Test_ResourceManager_GetServiceResource_DuplicateHostTags(t *testing.T) {
 			name: "DuplicateHostResources_Error",
 			resources: []*armresources.GenericResourceExpanded{
 				{
-					ID:       to.Ptr("RESOURCE_ID_1"),
-					Name:     to.Ptr("my-container-app-1"),
-					Type:     to.Ptr("Microsoft.App/containerApps"),
-					Location: to.Ptr("eastus2"),
+					ID:       new("RESOURCE_ID_1"),
+					Name:     new("my-container-app-1"),
+					Type:     new("Microsoft.App/containerApps"),
+					Location: new("eastus2"),
 				},
 				{
-					ID:       to.Ptr("RESOURCE_ID_2"),
-					Name:     to.Ptr("my-container-app-2"),
-					Type:     to.Ptr("Microsoft.App/containerApps"),
-					Location: to.Ptr("eastus2"),
+					ID:       new("RESOURCE_ID_2"),
+					Name:     new("my-container-app-2"),
+					Type:     new("Microsoft.App/containerApps"),
+					Location: new("eastus2"),
 				},
 			},
 			expectError: true,
@@ -217,16 +216,16 @@ func Test_ResourceManager_GetServiceResource_DuplicateHostTags(t *testing.T) {
 			name: "HostWithManagedIdentity_Success",
 			resources: []*armresources.GenericResourceExpanded{
 				{
-					ID:       to.Ptr("RESOURCE_ID_1"),
-					Name:     to.Ptr("my-container-app"),
-					Type:     to.Ptr("Microsoft.App/containerApps"),
-					Location: to.Ptr("eastus2"),
+					ID:       new("RESOURCE_ID_1"),
+					Name:     new("my-container-app"),
+					Type:     new("Microsoft.App/containerApps"),
+					Location: new("eastus2"),
 				},
 				{
-					ID:       to.Ptr("RESOURCE_ID_2"),
-					Name:     to.Ptr("my-managed-identity"),
-					Type:     to.Ptr("Microsoft.ManagedIdentity/userAssignedIdentities"),
-					Location: to.Ptr("eastus2"),
+					ID:       new("RESOURCE_ID_2"),
+					Name:     new("my-managed-identity"),
+					Type:     new("Microsoft.ManagedIdentity/userAssignedIdentities"),
+					Location: new("eastus2"),
 				},
 			},
 			expectError: false, // Should succeed because managed identity is not a host
@@ -235,16 +234,16 @@ func Test_ResourceManager_GetServiceResource_DuplicateHostTags(t *testing.T) {
 			name: "TwoHostsDifferentTypes_Error",
 			resources: []*armresources.GenericResourceExpanded{
 				{
-					ID:       to.Ptr("RESOURCE_ID_1"),
-					Name:     to.Ptr("my-container-app"),
-					Type:     to.Ptr("Microsoft.App/containerApps"),
-					Location: to.Ptr("eastus2"),
+					ID:       new("RESOURCE_ID_1"),
+					Name:     new("my-container-app"),
+					Type:     new("Microsoft.App/containerApps"),
+					Location: new("eastus2"),
 				},
 				{
-					ID:       to.Ptr("RESOURCE_ID_2"),
-					Name:     to.Ptr("my-app-service"),
-					Type:     to.Ptr("Microsoft.Web/sites"),
-					Location: to.Ptr("eastus2"),
+					ID:       new("RESOURCE_ID_2"),
+					Name:     new("my-app-service"),
+					Type:     new("Microsoft.Web/sites"),
+					Location: new("eastus2"),
 				},
 			},
 			expectError: true,

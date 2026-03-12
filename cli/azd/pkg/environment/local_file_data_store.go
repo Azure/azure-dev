@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -150,9 +151,7 @@ func (fs *LocalFileDataStore) Save(ctx context.Context, env *Environment, option
 	}
 
 	// Overlay current values before saving
-	for key, value := range currentValues {
-		env.dotenv[key] = value
-	}
+	maps.Copy(env.dotenv, currentValues)
 
 	// Replay deletion
 	for key := range deletedValues {

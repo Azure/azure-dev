@@ -12,14 +12,14 @@ import (
 
 // ToolArgs wraps parsed MCP tool arguments for typed access.
 type ToolArgs struct {
-	raw map[string]interface{}
+	raw map[string]any
 }
 
 // ParseToolArgs extracts the arguments map from an MCP CallToolRequest.
 func ParseToolArgs(request mcp.CallToolRequest) ToolArgs {
 	args := request.GetArguments()
 	if args == nil {
-		return ToolArgs{raw: make(map[string]interface{})}
+		return ToolArgs{raw: make(map[string]any)}
 	}
 	return ToolArgs{raw: args}
 }
@@ -119,7 +119,7 @@ func (a ToolArgs) OptionalFloat(key string, defaultValue float64) float64 {
 }
 
 // Raw returns the underlying argument map.
-func (a ToolArgs) Raw() map[string]interface{} {
+func (a ToolArgs) Raw() map[string]any {
 	return a.raw
 }
 

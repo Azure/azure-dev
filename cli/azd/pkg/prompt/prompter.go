@@ -74,6 +74,8 @@ func (p *DefaultPrompter) PromptSubscription(ctx context.Context, msg string) (s
 	}
 
 	if len(subscriptionOptions) == 0 {
+		// NOTE: Error text must contain "no subscriptions found" to match the
+		// pattern in error_suggestions.yaml. Update both if rewording.
 		return "", errors.New(heredoc.Docf(
 			`no subscriptions found.
 			Ensure you have a subscription by visiting %s and search for Subscriptions in the search bar.

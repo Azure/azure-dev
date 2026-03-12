@@ -20,10 +20,10 @@ import (
 )
 
 const (
-	roleAzureAIUser                = "53ca6127-db72-4b80-b1b0-d745d6d5456d"
+	roleAzureAIUser                 = "53ca6127-db72-4b80-b1b0-d745d6d5456d"
 	roleCognitiveServicesOpenAIUser = "5e0bd9bd-7b93-4f28-af87-19fc36ad61bd"
-	roleMonitoringMetricsPublisher = "3913510d-42f4-4e42-8a64-420c390055eb"
-	agentIdentitySuffix            = "AgentIdentity"
+	roleMonitoringMetricsPublisher  = "3913510d-42f4-4e42-8a64-420c390055eb"
+	agentIdentitySuffix             = "AgentIdentity"
 
 	rbacPropagationDelay       = 30 * time.Second
 	identityLookupMaxAttempts  = 12

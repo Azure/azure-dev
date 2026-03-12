@@ -88,7 +88,7 @@ func newPromptCommand() *cobra.Command {
 			}
 
 			azureContext.Scope.SubscriptionId = selectedSubscription.Subscription.Id
-			azureContext.Scope.TenantId = selectedSubscription.Subscription.TenantId
+			azureContext.Scope.TenantId = selectedSubscription.Subscription.UserTenantId
 
 			filterByResourceTypeResponse, err := azdClient.
 				Prompt().

@@ -4,6 +4,7 @@
 ## 0.0.4-preview (2026-03-17)
 
 - Added async model registration with server-side validation and polling support
+- Removed `--blob-uri` flag from `custom create` to prevent invalid data reference errors when registering models with externally uploaded blobs
 
 ## 0.0.3-preview (2026-02-19)
 

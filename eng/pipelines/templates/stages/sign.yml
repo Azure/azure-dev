@@ -367,7 +367,7 @@ stages:
             if (@('IndividualCI', 'BatchedCI') -contains $BuildReason) {
               Write-Host "CI build detected. Using daily brew formula template."
               $templatePath = 'eng/templates/brew.daily.template'
-              $outputFilename = 'azd@prerelease.rb'
+              $outputFilename = 'azd-daily.rb'
             }
 
             Write-Host "###vso[task.setvariable variable=FormulaTemplatePath]$templatePath"

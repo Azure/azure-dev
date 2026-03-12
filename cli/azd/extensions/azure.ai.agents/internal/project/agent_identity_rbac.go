@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -84,11 +83,11 @@ func parseAgentIdentityInfo(projectResourceID string) (*agentIdentityInfo, error
 	}
 
 	// AI account scope is the project resource ID up to (but not including) "/projects/{project}"
-	projectIdx := strings.Index(projectResourceID, "/projects/")
-	if projectIdx == -1 {
+	before, _, ok := strings.Cut(projectResourceID, "/projects/")
+	if !ok {
 		return nil, fmt.Errorf("could not derive AI account scope from project resource ID: %s", projectResourceID)
 	}
-	info.AccountScope = projectResourceID[:projectIdx]
+	info.AccountScope = before
 
 	return info, nil
 }
@@ -294,7 +293,7 @@ func assignRoleToIdentity(
 
 	// Check for existing assignment
 	pager := client.NewListForScopePager(scope, &armauthorization.RoleAssignmentsClientListForScopeOptions{
-		Filter: to.Ptr("atScope()"),
+		Filter: new("atScope()"),
 	})
 
 	alreadyExists := false
@@ -328,8 +327,8 @@ func assignRoleToIdentity(
 	principalType := armauthorization.PrincipalTypeServicePrincipal
 	parameters := armauthorization.RoleAssignmentCreateParameters{
 		Properties: &armauthorization.RoleAssignmentProperties{
-			RoleDefinitionID: to.Ptr(fullRoleDefinitionID),
-			PrincipalID:      to.Ptr(principalID),
+			RoleDefinitionID: new(fullRoleDefinitionID),
+			PrincipalID:      new(principalID),
 			PrincipalType:    &principalType,
 		},
 	}

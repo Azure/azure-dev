@@ -180,7 +180,7 @@ All flags persist their values to config, which can also be set directly via `az
 
 | Install Method | Strategy |
 |----------------|----------|
-| `brew` | Shell out: `brew upgrade azd` |
+| `brew` | Shell out: `brew upgrade azure/azd/azd` |
 | `winget` | Shell out: `winget upgrade Microsoft.Azd` |
 | `choco` | Shell out: `choco upgrade azd` |
 | `install-azd.sh`, `install-azd.ps1`, `msi`, `deb`, `rpm` | Direct binary download + replace |
@@ -226,12 +226,12 @@ Most install methods write to system directories requiring elevation:
 | `/opt/microsoft/azd/` (Linux script) | Yes — `sudo cp` | Direct binary replacement |
 | `C:\Program Files\` (Windows MSI) | Yes — handled by MSI installer | MSI via `msiexec /i` |
 | `~/.azd/bin/` (Windows PowerShell script) | No — user-writable | MSI via `msiexec /i` |
-| Homebrew prefix | No — user-writable | Delegates to `brew upgrade azd` |
+| Homebrew prefix | No — user-writable | Delegates to `brew upgrade azure/azd/azd` |
 | User home dirs | No | Direct binary replacement |
 
 **Windows**: Updates always use the MSI installer (`msiexec /i <path> /qn`), which handles UAC elevation when installing to protected locations like `C:\Program Files\`. Downgrades between GA versions are not supported via MSI.
 
-**macOS/Linux (brew)**: Homebrew tracks installed assets, so azd never overwrites brew-managed binaries directly. Same-channel updates delegate to `brew upgrade azd`. Channel switching (stable ↔ daily) currently requires uninstalling brew and reinstalling via script. A future brew pre-release formula could enable `brew` to handle daily builds natively.
+**macOS/Linux (brew)**: Homebrew tracks installed assets, so azd never overwrites brew-managed binaries directly. Same-channel updates delegate to `brew upgrade azure/azd/azd`. Channel switching (stable ↔ daily) currently requires uninstalling brew and reinstalling via script. A future brew pre-release formula could enable `brew` to handle daily builds natively.
 
 **macOS/Linux (script)**: For `sudo`, azd passes through stdin/stdout so the user sees the standard OS password prompt. Uses `CommandRunner` (`pkg/exec/command_runner.go`) for exec.
 

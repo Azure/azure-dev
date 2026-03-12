@@ -302,7 +302,7 @@ func TestCheckForUpdate_InvalidChannel(t *testing.T) {
 func TestUpdateViaPackageManager_Success(t *testing.T) {
 	mockRunner := mockexec.NewMockCommandRunner()
 	mockRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "brew upgrade azd")
+		return strings.Contains(command, "brew install azure/azd/azd")
 	}).Respond(exec.NewRunResult(0, "Updated azd", ""))
 
 	m := NewManager(mockRunner, nil)
@@ -316,7 +316,7 @@ func TestUpdateViaPackageManager_Success(t *testing.T) {
 func TestUpdateViaPackageManager_Failure(t *testing.T) {
 	mockRunner := mockexec.NewMockCommandRunner()
 	mockRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "brew upgrade azd")
+		return strings.Contains(command, "brew install azure/azd/azd")
 	}).Respond(exec.NewRunResult(1, "", "Error: no such formula"))
 
 	m := NewManager(mockRunner, nil)

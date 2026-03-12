@@ -53,6 +53,13 @@ provide a file containing the URL instead.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 
+			// If --version not explicitly set, try to extract from --base-model URI
+			if !cmd.Flags().Changed("version") {
+				if v := extractVersionFromURI(flags.BaseModel); v != "" {
+					flags.Version = v
+				}
+			}
+
 			// Resolve source from --source-file if --source is not set
 			if flags.Source == "" && flags.SourceFile != "" {
 				data, err := os.ReadFile(flags.SourceFile)
@@ -138,6 +145,16 @@ func runCustomCreate(ctx context.Context, parentFlags *customFlags, flags *custo
 	fmt.Println()
 
 	if err != nil {
+		if strings.Contains(err.Error(), "409") || strings.Contains(err.Error(), "already exists") {
+			fmt.Println()
+			color.Red("✗ Model '%s' version '%s' already exists.", flags.Name, flags.Version)
+			fmt.Println()
+			color.Yellow("To fetch the latest version, use show without --version:")
+			fmt.Printf("  azd ai models custom show --name %s\n\n", flags.Name)
+			color.Yellow("Then create with a new version:")
+			fmt.Printf("  azd ai models custom create --name %s --version <next-version> ...\n", flags.Name)
+			return fmt.Errorf("model version already exists")
+		}
 		return fmt.Errorf("failed to get upload location: %w", err)
 	}
 
@@ -277,4 +294,20 @@ func extractBaseModelName(baseModel string) string {
 		}
 	}
 	return baseModel
+}
+
+// extractVersionFromURI extracts the version segment from an azureml:// URI.
+// e.g. "azureml://registries/azureml-fireworks/models/FW-Qwen3-14B/versions/2" → "2"
+// Returns empty string if not an azureml URI or version not found.
+func extractVersionFromURI(uri string) string {
+	if !strings.HasPrefix(uri, "azureml://") {
+		return ""
+	}
+	parts := strings.Split(uri, "/")
+	for i, p := range parts {
+		if p == "versions" && i+1 < len(parts) {
+			return parts[i+1]
+		}
+	}
+	return ""
 }

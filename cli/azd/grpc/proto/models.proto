@@ -117,6 +117,8 @@ message DockerProjectOptions {
   string tag = 7;
   bool remote_build = 8;
   repeated string build_args = 9;
+  reserved 10;
+  reserved "local_fallback";
 }
 
 // ServiceContext defines the shared pipeline state across all phases of the service lifecycle

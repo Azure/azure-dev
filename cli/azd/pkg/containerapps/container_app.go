@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
@@ -181,9 +183,19 @@ func (cas *containerAppService) persistSettings(
 
 	aca, err := cas.getContainerApp(ctx, subscriptionId, resourceGroupName, appName, options)
 	if err != nil {
+		// On first deploy the app doesn't exist yet (404) — proceed without persisting.
+		var respErr *azcore.ResponseError
+		if errors.As(err, &respErr) && respErr.StatusCode == http.StatusNotFound {
+			return obj, nil
+		}
+
+		// For alpha-gated features, preserve existing behavior: log and continue.
+		// For Dapr preservation (correctness-critical), fail to prevent silent config wipe.
+		if shouldPreserveDapr {
+			return nil, fmt.Errorf("fetching existing container app to preserve Dapr config: %w", err)
+		}
+
 		log.Printf("failed getting current aca settings: %v. No settings will be persisted.", err)
-		// if the container app doesn't exist, there's nothing for us to update in the desired state,
-		// so we can just return the existing state as is.
 		return obj, nil
 	}
 
@@ -712,8 +724,8 @@ func (cas *containerAppService) UpdateContainerAppJobImage(
 		// Merge new env vars (override existing with same name)
 		for key, value := range envVars {
 			envMap[key] = &armappcontainers.EnvironmentVar{
-				Name:  to.Ptr(key),
-				Value: to.Ptr(value),
+				Name:  new(key),
+				Value: new(value),
 			}
 		}
 

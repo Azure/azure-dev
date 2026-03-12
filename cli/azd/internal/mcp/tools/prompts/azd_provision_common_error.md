@@ -231,7 +231,7 @@ When you encounter this error, YOU MUST USE YOUR TERMINAL TOOL TO EXECUTE the fo
    
    USE YOUR TERMINAL TOOL to search for location definitions:
    
-   `grep -r "location\|AZURE_LOCATION" infra/*.bicep infra/**/*.bicep`
+   `grep -r -e "location" -e "AZURE_LOCATION" infra/*.bicep infra/**/*.bicep`
    
    - If the location is hardcoded (e.g., `location: 'eastus'`), change it directly in the Bicep file to an unrestricted region.
    - If the Postgres resource has its own location parameter, update its default value in the Bicep file.

@@ -1,4 +1,4 @@
-class AzdATDaily < Formula
+class AzdATPrerelease < Formula
   desc "Azure Developer CLI"
   homepage "https://github.com/azure/azure-dev"
   

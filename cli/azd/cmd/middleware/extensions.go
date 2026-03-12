@@ -177,7 +177,7 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 				}
 
 				if _, err := m.extensionRunner.Invoke(ctx, ext, options); err != nil {
-					log.Printf(err.Error())
+					log.Printf("%v", err)
 					ext.Fail(err)
 				}
 			}()
@@ -295,7 +295,7 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 			))
 			for _, failure := range timedOut {
 				m.console.Message(ctx, output.WithWarningFormat(
-					fmt.Sprintf("- %s", failure.extension.Id),
+					"- %s", failure.extension.Id,
 				))
 			}
 			m.console.Message(ctx, "")
@@ -303,7 +303,7 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 
 		if len(otherFailures) > 0 {
 			for _, failure := range otherFailures {
-				log.Printf("Extension '%s' failed to start: %v", failure.extension.Id, failure.err)
+				log.Printf("%v", failure.err)
 			}
 		}
 

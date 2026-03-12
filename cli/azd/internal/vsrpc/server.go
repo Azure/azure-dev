@@ -161,8 +161,7 @@ func serveRpc(w http.ResponseWriter, r *http.Request, handlers map[string]Handle
 			defer func() {
 				if respErr != nil {
 					cmd.MapError(respErr, span)
-					var rpcErr *jsonrpc2.Error
-					if errors.As(respErr, &rpcErr) {
+					if rpcErr, ok := errors.AsType[*jsonrpc2.Error](respErr); ok {
 						span.SetAttributes(fields.JsonRpcErrorCode.Int(int(rpcErr.Code)))
 					}
 				}

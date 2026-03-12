@@ -131,14 +131,14 @@ func resumeDeployment(err error, progressLog func(msg string)) bool {
 		return true
 	}
 
-	var httpErr *azcore.ResponseError
-	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
+	if httpErr, ok := errors.AsType[*azcore.ResponseError](err); ok && httpErr.StatusCode == http.StatusNotFound {
 		progressLog("Resource not found. Failed to enable tracking runtime status." +
 			"Resuming deployment without tracking status.")
 		return true
 	}
 
-	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusInternalServerError {
+	if httpErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
+		httpErr.StatusCode == http.StatusInternalServerError {
 		progressLog("Internal server error. Failed to enable tracking runtime status. " +
 			"Resuming deployment without tracking status.")
 		return true

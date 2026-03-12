@@ -291,8 +291,7 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	stdout := a.console.Handles().Stdout
 	if err := mgr.Update(ctx, cfg, stdout); err != nil {
 		// UpdateError already has the right code, just track it
-		var updateErr *update.UpdateError
-		if errors.As(err, &updateErr) {
+		if updateErr, ok := errors.AsType[*update.UpdateError](err); ok {
 			tracing.SetUsageAttributes(fields.UpdateResult.String(updateErr.Code))
 		} else {
 			tracing.SetUsageAttributes(fields.UpdateResult.String(update.CodeReplaceFailed))

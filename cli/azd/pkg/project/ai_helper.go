@@ -222,8 +222,7 @@ func (a *aiHelper) CreateEnvironmentVersion(
 	if err != nil {
 		// An http 404 error is expected if the environment container does not exist
 		// Therefore we default to version 1
-		var httpErr *azcore.ResponseError
-		isHttpError := errors.As(err, &httpErr)
+		httpErr, isHttpError := errors.AsType[*azcore.ResponseError](err)
 		if !isHttpError || (isHttpError && httpErr.StatusCode != http.StatusNotFound) {
 			return nil, fmt.Errorf("failed getting environment container: %w", err)
 		}
@@ -300,8 +299,7 @@ func (a *aiHelper) CreateModelVersion(
 	if err != nil {
 		// An http 404 error is expected if the environment container does not exist
 		// Therefore we default to version 1
-		var httpErr *azcore.ResponseError
-		isHttpError := errors.As(err, &httpErr)
+		httpErr, isHttpError := errors.AsType[*azcore.ResponseError](err)
 		if !isHttpError || (isHttpError && httpErr.StatusCode != http.StatusNotFound) {
 			return nil, fmt.Errorf("failed getting environment container: %w", err)
 		}
@@ -716,8 +714,7 @@ func (a *aiHelper) waitForDeployment(
 			nil,
 		)
 		if err != nil {
-			var sdkErr *azcore.ResponseError
-			parseOk := errors.As(err, &sdkErr)
+			sdkErr, parseOk := errors.AsType[*azcore.ResponseError](err)
 			if parseOk && sdkErr.StatusCode == http.StatusNotFound {
 				// retryable error
 				return retry.RetryableError(err)

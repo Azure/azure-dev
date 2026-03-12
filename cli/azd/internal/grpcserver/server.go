@@ -207,11 +207,10 @@ func wrapErrorWithSuggestion(err error) error {
 		return nil
 	}
 
-	var loginErr *auth.ReLoginRequiredError
-	isAuthErr := errors.Is(err, auth.ErrNoCurrentUser) || errors.As(err, &loginErr)
+	_, loginErr := errors.AsType[*auth.ReLoginRequiredError](err)
+	isAuthErr := errors.Is(err, auth.ErrNoCurrentUser) || loginErr
 
-	var suggestionErr *internal.ErrorWithSuggestion
-	if errors.As(err, &suggestionErr) {
+	if suggestionErr, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok {
 		msg := fmt.Sprintf("%s\n%s", err.Error(), suggestionErr.Suggestion)
 		if isAuthErr {
 			return status.Error(codes.Unauthenticated, msg)

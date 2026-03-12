@@ -369,8 +369,7 @@ func responseToDeploymentError(title string, respErr *azcore.ResponseError, oper
 
 // Attempts to create an Azure Deployment error from the HTTP response error
 func createDeploymentError(err error, operation DeploymentOperation) error {
-	var responseErr *azcore.ResponseError
-	if errors.As(err, &responseErr) {
+	if responseErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
 		title := "Deployment Error Details"
 		switch operation {
 		case DeploymentOperationValidate:

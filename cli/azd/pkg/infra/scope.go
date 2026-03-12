@@ -221,8 +221,7 @@ func (s *ResourceGroupScope) ResourceGroupName() string {
 func (s *ResourceGroupScope) ListDeployments(ctx context.Context) ([]*azapi.ResourceDeployment, error) {
 	deployments, err := s.deploymentService.ListResourceGroupDeployments(ctx, s.subscriptionId, s.resourceGroupName)
 
-	var respErr *azcore.ResponseError
-	if errors.As(err, &respErr) && respErr.StatusCode == http.StatusNotFound {
+	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok && respErr.StatusCode == http.StatusNotFound {
 		return nil, fmt.Errorf("%w: %w", ErrDeploymentsNotFound, respErr)
 	}
 

@@ -311,10 +311,10 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		// We print any non-setup related errors to stderr.
 		// We always return a zero exit code.
 		token, err := la.verifyLoggedIn(ctx)
-		var loginExpiryError *auth.ReLoginRequiredError
+		_, loginExpiryError := errors.AsType[*auth.ReLoginRequiredError](err)
 		if err != nil &&
 			!errors.Is(err, auth.ErrNoCurrentUser) &&
-			!errors.As(err, &loginExpiryError) {
+			!loginExpiryError {
 			fmt.Fprintln(la.console.Handles().Stderr, err.Error())
 		}
 

@@ -36,8 +36,7 @@ func (c *azdCredential) GetToken(ctx context.Context, options policy.TokenReques
 		public.WithClaims(options.Claims))
 
 	if err != nil {
-		var authFailed *AuthFailedError
-		if errors.As(err, &authFailed) {
+		if authFailed, ok := errors.AsType[*AuthFailedError](err); ok {
 			if loginErr, ok := newReLoginRequiredError(authFailed.Parsed, options.Scopes, c.cloud); ok {
 				log.Println(authFailed.httpErrorDetails())
 

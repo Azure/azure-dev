@@ -72,8 +72,7 @@ func WrapError(err error) *ExtensionError {
 	}
 
 	// Check for extension error types (already structured)
-	var extServiceErr *ServiceError
-	if errors.As(err, &extServiceErr) {
+	if extServiceErr, ok := errors.AsType[*ServiceError](err); ok {
 		extErr.Message = extServiceErr.Message
 		extErr.Suggestion = extServiceErr.Suggestion
 		extErr.Origin = ErrorOrigin_ERROR_ORIGIN_SERVICE
@@ -88,8 +87,7 @@ func WrapError(err error) *ExtensionError {
 		return extErr
 	}
 
-	var extLocalErr *LocalError
-	if errors.As(err, &extLocalErr) {
+	if extLocalErr, ok := errors.AsType[*LocalError](err); ok {
 		normalizedCategory := NormalizeLocalErrorCategory(extLocalErr.Category)
 		extErr.Message = extLocalErr.Message
 		extErr.Suggestion = extLocalErr.Suggestion
@@ -104,8 +102,7 @@ func WrapError(err error) *ExtensionError {
 	}
 
 	// Try to detect Azure SDK errors
-	var respErr *azcore.ResponseError
-	if errors.As(err, &respErr) {
+	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
 		extErr.Origin = ErrorOrigin_ERROR_ORIGIN_SERVICE
 		serviceName := ""
 		if respErr.RawResponse != nil && respErr.RawResponse.Request != nil {
@@ -125,9 +122,11 @@ func WrapError(err error) *ExtensionError {
 	// Detect gRPC Unauthenticated errors as an auth safety net.
 	// If the extension didn't already classify the error, this ensures auth failures
 	// from azd host calls are reported with the correct category in telemetry.
-	// Use errors.As to detect gRPC status errors even when wrapped by fmt.Errorf.
-	var grpcErr interface{ GRPCStatus() *status.Status }
-	if errors.As(err, &grpcErr) {
+	// Use errors.AsType to detect gRPC status errors even when wrapped by fmt.Errorf.
+	if grpcErr, ok := errors.AsType[interface {
+		error
+		GRPCStatus() *status.Status
+	}](err); ok {
 		if st := grpcErr.GRPCStatus(); st.Code() == codes.Unauthenticated {
 			extErr.Origin = ErrorOrigin_ERROR_ORIGIN_LOCAL
 			extErr.Message = st.Message()

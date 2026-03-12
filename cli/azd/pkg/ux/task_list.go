@@ -229,8 +229,7 @@ func (t *TaskList) Render(printer Printer) error {
 
 		var errorDescription string
 		if task.Error != nil {
-			var detailedErr *common.DetailedError
-			if errors.As(task.Error, &detailedErr) {
+			if detailedErr, ok := errors.AsType[*common.DetailedError](task.Error); ok {
 				errorDescription = detailedErr.Description()
 			} else {
 				errorDescription = task.Error.Error()

@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets"
@@ -27,8 +28,8 @@ import (
 //	@Microsoft.KeyVault(SecretUri=https://<vault>.vault.azure.net/secrets/<secret>[/<version>])
 //
 // The akvs:// scheme is the preferred compact form. The @Microsoft.KeyVault
-// format is the standard Azure App Configuration / App Service reference
-// syntax, supported for backwards compatibility with existing configurations.
+// format supports only the SecretUri= variant; the VaultName/SecretName form
+// is not currently implemented.
 //
 // Usage:
 //
@@ -39,6 +40,7 @@ type KeyVaultResolver struct {
 	credential    azcore.TokenCredential
 	clientFactory secretClientFactory
 	opts          KeyVaultResolverOptions
+	clientCache   sync.Map // map[vaultURL]secretGetter — per-vault client cache
 }
 
 // secretClientFactory abstracts secret client creation for testability.
@@ -133,7 +135,7 @@ func (r *KeyVaultResolver) Resolve(ctx context.Context, ref string) (string, err
 
 	secretVersion := parsed.SecretVersion
 
-	client, err := r.clientFactory(vaultURL, r.credential)
+	client, err := r.getOrCreateClient(vaultURL)
 	if err != nil {
 		return "", &KeyVaultResolveError{
 			Reference: ref,
@@ -184,6 +186,24 @@ func (r *KeyVaultResolver) Resolve(ctx context.Context, ref string) (string, err
 	return *resp.Value, nil
 }
 
+// getOrCreateClient returns a cached client for the given vault URL, creating
+// one via the client factory if no cached entry exists. The cache is safe for
+// concurrent use.
+func (r *KeyVaultResolver) getOrCreateClient(vaultURL string) (secretGetter, error) {
+	if cached, ok := r.clientCache.Load(vaultURL); ok {
+		return cached.(secretGetter), nil
+	}
+
+	client, err := r.clientFactory(vaultURL, r.credential)
+	if err != nil {
+		return nil, err
+	}
+
+	// Store-or-load to handle concurrent creation for the same vault.
+	actual, _ := r.clientCache.LoadOrStore(vaultURL, client)
+	return actual.(secretGetter), nil
+}
+
 // ResolveMap resolves a map of key → secret references, returning a map of
 // key → resolved secret values. Both akvs:// and @Microsoft.KeyVault formats
 // are accepted. All entries are attempted; errors are collected and returned
@@ -220,6 +240,7 @@ func (r *KeyVaultResolver) ResolveMap(ctx context.Context, refs map[string]strin
 		resolved, err := r.Resolve(ctx, value)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("key %q: %w", key, err))
+			result[key] = value // preserve original reference so callers see all keys
 			continue
 		}
 

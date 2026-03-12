@@ -802,6 +802,7 @@ func (c *AgentClient) GetAgentContainerLogStream(
 	query.Set("api-version", apiVersion)
 	query.Set("kind", kind)
 	query.Set("tail", strconv.Itoa(tail))
+	query.Set("follow", strconv.FormatBool(follow))
 	u.RawQuery = query.Encode()
 
 	requestURL := u.String()
@@ -845,11 +846,12 @@ func (c *AgentClient) GetAgentContainerLogStream(
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		_ = resp.Body.Close()
 		if cancel != nil {
 			cancel()
 		}
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return nil, fmt.Errorf("unexpected status code: %d — %s", resp.StatusCode, string(body))
 	}
 
 	// Wrap the body to cancel the context timeout when closed.
@@ -869,6 +871,76 @@ type cancelOnCloseReader struct {
 func (r *cancelOnCloseReader) Close() error {
 	r.cancel()
 	return r.ReadCloser.Close()
+}
+
+// GetAgentSessionLogStream streams logs from an agent session.
+// This uses the session-based logstream endpoint for vnext agent configurations.
+func (c *AgentClient) GetAgentSessionLogStream(
+	ctx context.Context,
+	agentName, agentVersion, sessionID, apiVersion string,
+	follow bool,
+) (io.ReadCloser, error) {
+	u, err := url.Parse(c.endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("invalid endpoint URL: %w", err)
+	}
+
+	u.Path += fmt.Sprintf("/agents/%s/versions/%s/sessions/%s:logstream", agentName, agentVersion, sessionID)
+
+	query := u.Query()
+	query.Set("api-version", apiVersion)
+	query.Set("follow", strconv.FormatBool(follow))
+	u.RawQuery = query.Encode()
+
+	requestURL := u.String()
+	token, err := c.credential.GetToken(ctx, policy.TokenRequestOptions{
+		Scopes: []string{"https://ai.azure.com/.default"},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get auth token: %w", err)
+	}
+
+	requestCtx := ctx
+	var cancel context.CancelFunc
+	if !follow {
+		requestCtx, cancel = context.WithTimeout(ctx, 5*time.Second)
+	}
+
+	req, err := http.NewRequestWithContext(requestCtx, http.MethodGet, requestURL, nil)
+	if err != nil {
+		if cancel != nil {
+			cancel()
+		}
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token.Token)
+	req.Header.Set("User-Agent", fmt.Sprintf("azd-ext-azure-ai-agents/%s", version.Version))
+
+	httpClient := &http.Client{}
+	//nolint:gosec // request URL is built from trusted SDK endpoint + path components
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		if cancel != nil {
+			cancel()
+		}
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		_ = resp.Body.Close()
+		if cancel != nil {
+			cancel()
+		}
+		return nil, fmt.Errorf("unexpected status code: %d — %s", resp.StatusCode, string(body))
+	}
+
+	if cancel != nil {
+		return &cancelOnCloseReader{ReadCloser: resp.Body, cancel: cancel}, nil
+	}
+
+	return resp.Body, nil
 }
 
 // GetAgentContainerOperation retrieves the status of a container operation

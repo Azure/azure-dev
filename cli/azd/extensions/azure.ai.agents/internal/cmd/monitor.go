@@ -116,7 +116,9 @@ func (a *MonitorAction) Run(ctx context.Context) error {
 			a.Name,
 			a.Version,
 			a.flags.sessionID,
-			"2025-11-15-preview",
+			DefaultVNextAgentAPIVersion,
+			a.flags.logType,
+			a.flags.tail,
 			a.flags.follow,
 		)
 	} else {
@@ -171,7 +173,7 @@ func validateMonitorFlags(flags *monitorFlags) error {
 
 // resolveMonitorSession checks if vnext is enabled and resolves the session ID
 // from the .foundry-agent.json file. Returns the session ID and whether vnext is enabled.
-// If vnext is not enabled or the session cannot be resolved, returns empty string and false.
+// If vnext is not enabled or the session cannot be resolved, the returned string will be empty.
 func resolveMonitorSession(ctx context.Context, agentName string) (string, bool) {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {

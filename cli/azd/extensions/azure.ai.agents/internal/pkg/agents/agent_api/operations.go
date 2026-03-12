@@ -875,9 +875,14 @@ func (r *cancelOnCloseReader) Close() error {
 
 // GetAgentSessionLogStream streams logs from an agent session.
 // This uses the session-based logstream endpoint for vnext agent configurations.
+// kind should be "console" (stdout/stderr) or "system" (container events).
+// tail is the number of trailing lines to fetch (1-300).
+// follow controls whether to stream indefinitely (true) or fetch and exit (false).
 func (c *AgentClient) GetAgentSessionLogStream(
 	ctx context.Context,
 	agentName, agentVersion, sessionID, apiVersion string,
+	kind string,
+	tail int,
 	follow bool,
 ) (io.ReadCloser, error) {
 	u, err := url.Parse(c.endpoint)
@@ -889,6 +894,8 @@ func (c *AgentClient) GetAgentSessionLogStream(
 
 	query := u.Query()
 	query.Set("api-version", apiVersion)
+	query.Set("kind", kind)
+	query.Set("tail", strconv.Itoa(tail))
 	query.Set("follow", strconv.FormatBool(follow))
 	u.RawQuery = query.Encode()
 

@@ -222,7 +222,7 @@ func ensureAgentIdentityRBACWithCred(
 			ctx, cred, principalID, roleAzureAIUser,
 			"Azure AI User → AI account", info.AccountScope,
 		); err != nil {
-			fmt.Fprintf(os.Stderr, "    ✗ Azure AI User — %v\n", err)
+			return fmt.Errorf("failed to assign Azure AI User role: %w", err)
 		}
 
 		// Cognitive Services OpenAI User on the AI account
@@ -230,7 +230,7 @@ func ensureAgentIdentityRBACWithCred(
 			ctx, cred, principalID, roleCognitiveServicesOpenAIUser,
 			"Cognitive Services OpenAI User → AI account", info.AccountScope,
 		); err != nil {
-			fmt.Fprintf(os.Stderr, "    ✗ Cognitive Services OpenAI User — %v\n", err)
+			return fmt.Errorf("failed to assign Cognitive Services OpenAI User role: %w", err)
 		}
 
 		// Monitoring Metrics Publisher on App Insights
@@ -240,7 +240,7 @@ func ensureAgentIdentityRBACWithCred(
 				ctx, cred, principalID, roleMonitoringMetricsPublisher,
 				"Monitoring Metrics Publisher → App Insights", appInsightsRID,
 			); err != nil {
-				fmt.Fprintf(os.Stderr, "    ✗ Monitoring Metrics Publisher — %v\n", err)
+				return fmt.Errorf("failed to assign Monitoring Metrics Publisher role: %w", err)
 			}
 		} else {
 			fmt.Println("    ⚠ APPLICATIONINSIGHTS_RESOURCE_ID not set — skipping Monitoring Metrics Publisher")

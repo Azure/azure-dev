@@ -41,7 +41,7 @@ When you encounter this error, YOU MUST USE YOUR TERMINAL TOOL TO EXECUTE the fo
    
    USE YOUR TERMINAL TOOL to search for location definitions:
    
-   `grep -r "location" infra/*.bicep infra/**/*.bicep`
+   `grep -R --include='*.bicep' "location" infra`
    
    - If the location is hardcoded (e.g., `location: 'eastus'`), change it directly in the Bicep file to a working region.
    - If the location uses a parameter with a restrictive `@allowed` decorator, update the allowed values or default to include working regions.

@@ -2,10 +2,6 @@
 
 ## 0.6.1 (2026-03-13)
 
-### Features Added
-
-- [[#6962]](https://github.com/Azure/azure-dev/pull/6962) Improve no-prompt guidance for `init` and `provision` commands: when `--no-prompt` is set and required inputs are missing, all missing inputs are now reported at once with actionable resolution commands.
-
 ### Bugs Fixed
 
 - [[#7078]](https://github.com/Azure/azure-dev/pull/7078) Fix credential resolution to use `UserTenantId` instead of `TenantId`, preventing `AADSTS70043`/`AADSTS700082` authentication errors for multi-tenant and guest users.

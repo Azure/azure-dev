@@ -14,9 +14,9 @@
 
 ### Features Added
 
-- [[#7041]](https://github.com/Azure/azure-dev/pull/7041) Add `localFallback` option for Docker remote build in `azure.yaml`: when `remoteBuild: true` and `localFallback: true`, azd automatically falls back to a local Docker build with a warning if the remote ACR build fails. Thanks @spboyer for the contribution!
+- [[#7041]](https://github.com/Azure/azure-dev/pull/7041) Automatically fall back to a local Docker/Podman build when `remoteBuild: true` and the remote ACR build fails. Thanks @spboyer for the contribution!
 - [[#7053]](https://github.com/Azure/azure-dev/pull/7053) Add local preflight validation before Bicep deployment to detect parameter and configuration issues before submitting the deployment to ARM.
-- [[#7018]](https://github.com/Azure/azure-dev/pull/7018) Improve extension startup failure warnings with categorized, actionable messages distinguishing extensions needing an upgrade (with the exact `azd extension upgrade` command) from timeout failures, and include a `--debug` hint for details.
+- [[#7018]](https://github.com/Azure/azure-dev/pull/7018) Improve extension startup failure warnings with categorized, actionable messages distinguishing extensions needing an upgrade from timeout failures, and include a `--debug` hint for details.
 
 ### Bugs Fixed
 

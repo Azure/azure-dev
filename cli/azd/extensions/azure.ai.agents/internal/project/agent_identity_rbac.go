@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -24,7 +25,8 @@ const (
 	roleMonitoringMetricsPublisher  = "3913510d-42f4-4e42-8a64-420c390055eb"
 	agentIdentitySuffix             = "AgentIdentity"
 
-	rbacPropagationDelay       = 30 * time.Second
+	rbacVerifyMaxAttempts      = 12
+	rbacVerifyPollInterval     = 5 * time.Second
 	identityLookupMaxAttempts  = 12
 	identityLookupPollInterval = 15 * time.Second
 )
@@ -201,7 +203,7 @@ func ensureAgentIdentityRBACWithCred(
 	}
 	fmt.Println("  ✓ Agent identity found in Azure AD")
 
-	// Step 2: Assign RBAC roles
+	// Step 2: Assign RBAC roles in parallel
 	fmt.Println()
 	fmt.Println("[2/2] Assigning RBAC to agent identity...")
 
@@ -216,33 +218,71 @@ func ensureAgentIdentityRBACWithCred(
 
 		fmt.Printf("  Agent identity: %s (%s)\n", sp.DisplayName, principalID)
 
-		// Azure AI User on the AI account
-		if err := assignRoleToIdentity(
-			ctx, cred, principalID, roleAzureAIUser,
-			"Azure AI User → AI account", info.AccountScope,
-		); err != nil {
-			return fmt.Errorf("failed to assign Azure AI User role: %w", err)
+		// Build the list of role assignments to perform
+		type roleAssignment struct {
+			roleID   string
+			roleName string
+			scope    string
 		}
 
-		// Cognitive Services OpenAI User on the AI account
-		if err := assignRoleToIdentity(
-			ctx, cred, principalID, roleCognitiveServicesOpenAIUser,
-			"Cognitive Services OpenAI User → AI account", info.AccountScope,
-		); err != nil {
-			return fmt.Errorf("failed to assign Cognitive Services OpenAI User role: %w", err)
+		assignments := []roleAssignment{
+			{roleAzureAIUser, "Azure AI User → AI account", info.AccountScope},
+			{roleCognitiveServicesOpenAIUser, "Cognitive Services OpenAI User → AI account", info.AccountScope},
 		}
 
-		// Monitoring Metrics Publisher on App Insights
 		appInsightsRID := azdEnv["APPLICATIONINSIGHTS_RESOURCE_ID"]
 		if appInsightsRID != "" {
-			if err := assignRoleToIdentity(
-				ctx, cred, principalID, roleMonitoringMetricsPublisher,
-				"Monitoring Metrics Publisher → App Insights", appInsightsRID,
-			); err != nil {
-				return fmt.Errorf("failed to assign Monitoring Metrics Publisher role: %w", err)
-			}
+			assignments = append(assignments,
+				roleAssignment{roleMonitoringMetricsPublisher, "Monitoring Metrics Publisher → App Insights", appInsightsRID})
 		} else {
 			fmt.Println("    ⚠ APPLICATIONINSIGHTS_RESOURCE_ID not set — skipping Monitoring Metrics Publisher")
+		}
+
+		// Run all assignments in parallel
+		type assignResult struct {
+			created bool
+			err     error
+		}
+
+		results := make([]assignResult, len(assignments))
+		var wg sync.WaitGroup
+
+		for i, a := range assignments {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				created, err := assignRoleToIdentity(ctx, cred, principalID, a.roleID, a.roleName, a.scope)
+				results[i] = assignResult{created: created, err: err}
+			}()
+		}
+
+		wg.Wait()
+
+		// Report results in order and check for errors
+		for i, r := range results {
+			if r.err != nil {
+				return fmt.Errorf("failed to assign %s role: %w", assignments[i].roleName, r.err)
+			}
+			if r.created {
+				fmt.Printf("    ✓ %s (created)\n", assignments[i].roleName)
+			} else {
+				fmt.Printf("    ✓ %s (already assigned)\n", assignments[i].roleName)
+			}
+		}
+
+		// Verify newly created assignments have propagated
+		for i, r := range results {
+			if !r.created {
+				continue
+			}
+			a := assignments[i]
+			fmt.Printf("    ⏳ Verifying %s...\n", a.roleName)
+			if err := verifyRoleAssignment(
+				ctx, cred, principalID, a.roleID, a.scope,
+			); err != nil {
+				return fmt.Errorf("failed to verify %s role assignment: %w", a.roleName, err)
+			}
+			fmt.Printf("    ✓ %s (verified)\n", a.roleName)
 		}
 	}
 
@@ -270,6 +310,7 @@ func discoverAgentIdentity(
 
 // assignRoleToIdentity assigns a single RBAC role to a service principal at the given scope.
 // It is idempotent: existing assignments are detected and skipped.
+// Returns true if a new assignment was created, false if it already existed.
 func assignRoleToIdentity(
 	ctx context.Context,
 	cred *azidentity.AzureDeveloperCLICredential,
@@ -277,19 +318,18 @@ func assignRoleToIdentity(
 	roleID string,
 	roleName string,
 	scope string,
-) error {
+) (bool, error) {
 	subscriptionID := extractSubscriptionID(scope)
 	if subscriptionID == "" {
-		return fmt.Errorf("could not extract subscription ID from scope: %s", scope)
+		return false, fmt.Errorf("could not extract subscription ID from scope: %s", scope)
 	}
 
 	client, err := armauthorization.NewRoleAssignmentsClient(subscriptionID, cred, nil)
 	if err != nil {
-		return fmt.Errorf("failed to create role assignments client: %w", err)
+		return false, fmt.Errorf("failed to create role assignments client: %w", err)
 	}
 
-	fullRoleDefinitionID := fmt.Sprintf(
-		"%s/providers/Microsoft.Authorization/roleDefinitions/%s", scope, roleID)
+	roleDefinitionSuffix := fmt.Sprintf("/roleDefinitions/%s", roleID)
 
 	// Check for existing assignment
 	pager := client.NewListForScopePager(scope, &armauthorization.RoleAssignmentsClientListForScopeOptions{
@@ -300,14 +340,14 @@ func assignRoleToIdentity(
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to list role assignments: %w", err)
+			return false, fmt.Errorf("failed to list role assignments: %w", err)
 		}
 		for _, assignment := range page.Value {
 			if assignment.Properties != nil &&
 				assignment.Properties.PrincipalID != nil &&
 				assignment.Properties.RoleDefinitionID != nil &&
 				*assignment.Properties.PrincipalID == principalID &&
-				*assignment.Properties.RoleDefinitionID == fullRoleDefinitionID {
+				strings.HasSuffix(*assignment.Properties.RoleDefinitionID, roleDefinitionSuffix) {
 				alreadyExists = true
 				break
 			}
@@ -318,11 +358,12 @@ func assignRoleToIdentity(
 	}
 
 	if alreadyExists {
-		fmt.Printf("    ✓ %s (already assigned)\n", roleName)
-		return nil
+		return false, nil
 	}
 
 	// Create assignment with explicit ServicePrincipal type
+	fullRoleDefinitionID := fmt.Sprintf(
+		"%s/providers/Microsoft.Authorization/roleDefinitions/%s", scope, roleID)
 	roleAssignmentName := uuid.New().String()
 	principalType := armauthorization.PrincipalTypeServicePrincipal
 	parameters := armauthorization.RoleAssignmentCreateParameters{
@@ -337,18 +378,64 @@ func assignRoleToIdentity(
 	if err != nil {
 		if strings.Contains(err.Error(), "RoleAssignmentExists") ||
 			strings.Contains(err.Error(), "409") {
-			fmt.Printf("    ✓ %s (already assigned)\n", roleName)
-			return nil
+			return false, nil
 		}
-		return fmt.Errorf("failed to create role assignment: %w", err)
+		return false, fmt.Errorf("failed to create role assignment: %w", err)
 	}
 
-	fmt.Printf("    ✓ %s\n", roleName)
+	return true, nil
+}
 
-	fmt.Printf("    ⏳ Waiting %s for RBAC propagation...\n", rbacPropagationDelay)
-	time.Sleep(rbacPropagationDelay)
+// verifyRoleAssignment polls until the given role assignment is visible in the scope's
+// role assignment list, confirming that RBAC propagation has completed.
+func verifyRoleAssignment(
+	ctx context.Context,
+	cred *azidentity.AzureDeveloperCLICredential,
+	principalID string,
+	roleID string,
+	scope string,
+) error {
+	subscriptionID := extractSubscriptionID(scope)
+	if subscriptionID == "" {
+		return fmt.Errorf("could not extract subscription ID from scope: %s", scope)
+	}
 
-	return nil
+	client, err := armauthorization.NewRoleAssignmentsClient(subscriptionID, cred, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create role assignments client: %w", err)
+	}
+
+	roleDefinitionSuffix := fmt.Sprintf("/roleDefinitions/%s", roleID)
+
+	for attempt := range rbacVerifyMaxAttempts {
+		pager := client.NewListForScopePager(scope, &armauthorization.RoleAssignmentsClientListForScopeOptions{
+			Filter: new("atScope()"),
+		})
+
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to list role assignments: %w", err)
+			}
+			for _, assignment := range page.Value {
+				if assignment.Properties != nil &&
+					assignment.Properties.PrincipalID != nil &&
+					assignment.Properties.RoleDefinitionID != nil &&
+					*assignment.Properties.PrincipalID == principalID &&
+					strings.HasSuffix(*assignment.Properties.RoleDefinitionID, roleDefinitionSuffix) {
+					return nil
+				}
+			}
+		}
+
+		if attempt < rbacVerifyMaxAttempts-1 {
+			time.Sleep(rbacVerifyPollInterval)
+		}
+	}
+
+	return fmt.Errorf(
+		"role assignment not visible after %d attempts (principal: %s, role: %s, scope: %s)",
+		rbacVerifyMaxAttempts, principalID, roleID, scope)
 }
 
 // extractSubscriptionID pulls the subscription ID from an Azure resource ID.

@@ -14,8 +14,8 @@ steps:
 
   - pwsh: |
       # Ensure directory exists
-      New-Item -ItemType Directory homebrew-formula/Formula -Force
-      New-Item -ItemType Directory homebrew-formula/Cask -Force
+      New-Item -ItemType Directory homebrew-azd/Formula -Force
+      New-Item -ItemType Directory homebrew-azd/Cask -Force
 
       # Copy updated formula and casks if they exist
       Copy-Item homebrew-formula/Formula/*.rb homebrew-azd/Formula/ -Force

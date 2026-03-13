@@ -50,13 +50,7 @@ func MapError(err error, span tracing.Span) {
 		errCode = "auth.login_required"
 	} else if errWithSuggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok {
 		errCode = "error.suggestion"
-		inner := errWithSuggestion.Unwrap()
-		if code := classifySentinel(inner); code != "" {
-			span.SetAttributes(fields.ErrType.String(code))
-		} else {
-			span.SetAttributes(
-				fields.ErrType.String(errorType(inner)))
-		}
+		span.SetAttributes(fields.ErrType.String(classifySuggestionType(errWithSuggestion.Unwrap())))
 	} else if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
 		serviceName := "other"
 		statusCode := -1
@@ -294,6 +288,145 @@ func classifySentinel(err error) string {
 	default:
 		return ""
 	}
+}
+
+// classifySuggestionType returns the best telemetry category for an inner error wrapped by ErrorWithSuggestion.
+// It preserves the suggestion result code while improving the error.type attribute when the inner error is structured.
+func classifySuggestionType(err error) string {
+	if code := classifySentinel(err); code != "" {
+		return code
+	}
+
+	if updateErr, ok := errors.AsType[*update.UpdateError](err); ok {
+		return updateErr.Code
+	}
+
+	if _, ok := errors.AsType[*auth.ReLoginRequiredError](err); ok {
+		return "auth.login_required"
+	}
+
+	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
+		serviceName := "other"
+		statusCode := -1
+
+		if respErr.RawResponse != nil {
+			statusCode = respErr.RawResponse.StatusCode
+			if respErr.RawResponse.Request != nil {
+				serviceName, _ = mapService(respErr.RawResponse.Request.Host)
+			}
+		}
+
+		return fmt.Sprintf("service.%s.%d", serviceName, statusCode)
+	}
+
+	if armDeployErr, ok := errors.AsType[*azapi.AzureDeploymentError](err); ok {
+		operation := armDeployErr.Operation
+		if operation == azapi.DeploymentOperationDeploy {
+			operation = "deployment"
+		}
+
+		return fmt.Sprintf("service.arm.%s.failed", operation)
+	}
+
+	if extServiceErr, ok := errors.AsType[*azdext.ServiceError](err); ok {
+		serviceName := ""
+		if extServiceErr.ServiceName != "" {
+			serviceName, _ = mapService(extServiceErr.ServiceName)
+		}
+
+		switch {
+		case extServiceErr.ErrorCode != "":
+			return fmt.Sprintf("ext.service.%s", normalizeCodeSegment(extServiceErr.ErrorCode, "failed"))
+		case extServiceErr.StatusCode > 0 && serviceName != "":
+			return fmt.Sprintf("ext.service.%s.%d", serviceName, extServiceErr.StatusCode)
+		case extServiceErr.StatusCode > 0:
+			return fmt.Sprintf("ext.service.unknown.%d", extServiceErr.StatusCode)
+		default:
+			return "ext.service.unknown.failed"
+		}
+	}
+
+	if extLocalErr, ok := errors.AsType[*azdext.LocalError](err); ok {
+		domain := string(azdext.NormalizeLocalErrorCategory(extLocalErr.Category))
+		code := normalizeCodeSegment(extLocalErr.Code, "failed")
+
+		return fmt.Sprintf("ext.%s.%s", domain, code)
+	}
+
+	if _, ok := errors.AsType[*extensions.ExtensionRunError](err); ok {
+		return "ext.run.failed"
+	}
+
+	if toolExecErr, ok := errors.AsType[*exec.ExitError](err); ok {
+		toolName := "other"
+		if cmdName := cmdAsName(toolExecErr.Cmd); cmdName != "" {
+			toolName = cmdName
+		}
+
+		return fmt.Sprintf("tool.%s.failed", toolName)
+	}
+
+	if toolCheckErr, ok := errors.AsType[*tools.MissingToolErrors](err); ok {
+		if len(toolCheckErr.ToolNames) == 1 {
+			return fmt.Sprintf("tool.%s.missing", toolCheckErr.ToolNames[0])
+		}
+
+		return "tool.multiple.missing"
+	}
+
+	if _, ok := errors.AsType[*auth.AuthFailedError](err); ok {
+		return "service.aad.failed"
+	}
+
+	if errors.Is(err, terminal.InterruptErr) || errors.Is(err, context.Canceled) {
+		return "user.canceled"
+	}
+
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "internal.timeout"
+	}
+
+	if errors.Is(err, auth.ErrNoCurrentUser) {
+		return "auth.not_logged_in"
+	}
+
+	if errors.Is(err, consent.ErrToolExecutionDenied) {
+		return "user.tool_denied"
+	}
+
+	if errors.Is(err, git.ErrNotRepository) {
+		return "internal.not_git_repo"
+	}
+
+	if errors.Is(err, azapi.ErrPreviewNotSupported) {
+		return "internal.preview_not_supported"
+	}
+
+	if errors.Is(err, provisioning.ErrBindMountOperationDisabled) {
+		return "internal.bind_mount_disabled"
+	}
+
+	if errors.Is(err, update.ErrNeedsElevation) {
+		return "update.elevationRequired"
+	}
+
+	if errors.Is(err, pipeline.ErrRemoteHostIsNotAzDo) {
+		return "internal.remote_not_azdo"
+	}
+
+	if errors.Is(err, internal.ErrExtensionNotFound) {
+		return "internal.extension_not_found"
+	}
+
+	if errors.Is(err, internal.ErrExtensionTokenFailed) {
+		return "internal.extension_error"
+	}
+
+	if isNetworkError(err) {
+		return "internal.network"
+	}
+
+	return errorType(err)
 }
 
 // errorType returns the type name of the given error, unwrapping as needed to find the root cause(s).

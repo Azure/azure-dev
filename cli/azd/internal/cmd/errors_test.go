@@ -403,7 +403,26 @@ func Test_MapError(t *testing.T) {
 			},
 			wantErrReason: "error.suggestion",
 			wantErrDetails: []attribute.KeyValue{
-				fields.ErrType.String("*exported.ResponseError"),
+				fields.ErrType.String("service.arm.429"),
+			},
+		},
+		{
+			name: "WithSuggestionWrappingArmDeploymentError",
+			err: &internal.ErrorWithSuggestion{
+				Err: &azapi.AzureDeploymentError{
+					Operation: azapi.DeploymentOperationDeploy,
+					Details: &azapi.DeploymentErrorLine{
+						Code: "Conflict",
+						Inner: []*azapi.DeploymentErrorLine{
+							{Code: "OutOfCapacity"},
+						},
+					},
+				},
+				Suggestion: "Retry in another region.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String("service.arm.deployment.failed"),
 			},
 		},
 		{
@@ -815,7 +834,7 @@ func TestMapError_ErrorWithSuggestionSetsErrorType(t *testing.T) {
 			wantErrType: "internal.key_not_found",
 		},
 		{
-			name: "ResponseError_falls_back_to_go_type",
+			name: "ResponseError_uses_structured_category",
 			err: &internal.ErrorWithSuggestion{
 				Err: &azcore.ResponseError{
 					ErrorCode:  "QuotaExceeded",
@@ -831,7 +850,24 @@ func TestMapError_ErrorWithSuggestionSetsErrorType(t *testing.T) {
 				Suggestion: "Request a quota increase.",
 			},
 			wantErrCode: "error.suggestion",
-			wantErrType: "*exported.ResponseError",
+			wantErrType: "service.arm.429",
+		},
+		{
+			name: "ArmDeploymentError_uses_structured_category",
+			err: &internal.ErrorWithSuggestion{
+				Err: &azapi.AzureDeploymentError{
+					Operation: azapi.DeploymentOperationDeploy,
+					Details: &azapi.DeploymentErrorLine{
+						Code: "Conflict",
+						Inner: []*azapi.DeploymentErrorLine{
+							{Code: "OutOfCapacity"},
+						},
+					},
+				},
+				Suggestion: "Retry in another region.",
+			},
+			wantErrCode: "error.suggestion",
+			wantErrType: "service.arm.deployment.failed",
 		},
 		{
 			name: "PlainError_falls_back_to_go_type",

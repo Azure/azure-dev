@@ -249,11 +249,11 @@ func ensureAgentIdentityRBACWithCred(
 
 		for i, a := range assignments {
 			wg.Add(1)
-			go func() {
+			go func(i int, a roleAssignment) {
 				defer wg.Done()
 				created, err := assignRoleToIdentity(ctx, cred, principalID, a.roleID, a.roleName, a.scope)
 				results[i] = assignResult{created: created, err: err}
-			}()
+			}(i, a)
 		}
 
 		wg.Wait()
@@ -321,12 +321,12 @@ func assignRoleToIdentity(
 ) (bool, error) {
 	subscriptionID := extractSubscriptionID(scope)
 	if subscriptionID == "" {
-		return false, fmt.Errorf("could not extract subscription ID from scope: %s", scope)
+		return false, fmt.Errorf("could not extract subscription ID from scope %s for role %s", scope, roleName)
 	}
 
 	client, err := armauthorization.NewRoleAssignmentsClient(subscriptionID, cred, nil)
 	if err != nil {
-		return false, fmt.Errorf("failed to create role assignments client: %w", err)
+		return false, fmt.Errorf("failed to create role assignments client for role %s: %w", roleName, err)
 	}
 
 	roleDefinitionSuffix := fmt.Sprintf("/roleDefinitions/%s", roleID)
@@ -340,7 +340,7 @@ func assignRoleToIdentity(
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			return false, fmt.Errorf("failed to list role assignments: %w", err)
+			return false, fmt.Errorf("failed to list role assignments for role %s: %w", roleName, err)
 		}
 		for _, assignment := range page.Value {
 			if assignment.Properties != nil &&
@@ -380,7 +380,7 @@ func assignRoleToIdentity(
 			strings.Contains(err.Error(), "409") {
 			return false, nil
 		}
-		return false, fmt.Errorf("failed to create role assignment: %w", err)
+		return false, fmt.Errorf("failed to create role assignment for role %s: %w", roleName, err)
 	}
 
 	return true, nil
@@ -429,7 +429,12 @@ func verifyRoleAssignment(
 		}
 
 		if attempt < rbacVerifyMaxAttempts-1 {
-			time.Sleep(rbacVerifyPollInterval)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(rbacVerifyPollInterval):
+				// wait for the next polling attempt
+			}
 		}
 	}
 

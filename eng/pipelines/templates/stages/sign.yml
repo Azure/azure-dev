@@ -363,7 +363,7 @@ stages:
               $BuildReason = "$(BUILDREASONOVERRIDE)"
             }
             Write-Host "Build reason: $BuildReason"
-            $runInfo - @()
+            $runInfo = @()
 
             if (@('IndividualCI', 'BatchedCI') -contains $BuildReason) {
               Write-Host "CI build detected. Updating daily cask."

@@ -126,6 +126,7 @@ jobs:
         displayName: AZD Login
       
       - task: AzureCLI@2
+        condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
         inputs:
           azureSubscription: azd-service-connection
           # keepAzSessionActive is required when the service connection uses Workload Identity Federation authentication scheme

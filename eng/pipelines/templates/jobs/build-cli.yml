@@ -40,8 +40,6 @@ jobs:
     steps:
       - checkout: self
       - template: /eng/pipelines/templates/steps/setup-go.yml
-        parameters:
-          Condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
 
       - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
 

@@ -4,10 +4,10 @@ cask "azd@daily" do
   arch arm: "arm64", intel: "amd64"
   os macos: "darwin", linux: "linux"
 
-  url "https://azuresdkartifacts.z5.web.core.windows.net/azd/standalone/daily/archive/#{version}/azd-#{os}-#{arch}.zip"
-
   sha256 arm: "%SHA256ARM64%", intel: "%SHA256AMD64%",
          arm_linux: "%SHA256ARM64_LINUX%", x86_64_linux: "%SHA256AMD64_LINUX%"
+
+  url "https://azuresdkartifacts.z5.web.core.windows.net/azd/standalone/daily/archive/#{version}/azd-#{os}-#{arch}.zip"
 
   name "Azure Developer CLI (Daily)"
   desc "Azure Developer CLI"
@@ -18,7 +18,7 @@ cask "azd@daily" do
     File.write("#{bin}/.installed-by.txt", "brew")
   end
 
-  conflicts_with: "azd", because: "azd and azd@daily install the same executable"
+  conflicts_with cask: "azd", because: "azd and azd@daily install the same executable"
 
   caveats <<~EOS
     The Azure Developer CLI collects usage data and sends that usage data to Microsoft in order to help us improve your experience.

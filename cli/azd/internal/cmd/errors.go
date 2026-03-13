@@ -290,7 +290,7 @@ func classifySentinel(err error) string {
 	}
 }
 
-// classifySuggestionType returns the best telemetry category for an inner error wrapped by ErrorWithSuggestion.
+// classifySuggestionType returns a telemetry error type string for an inner error wrapped by ErrorWithSuggestion.
 // It preserves the suggestion result code while improving the error.type attribute when the inner error is structured.
 func classifySuggestionType(err error) string {
 	if code := classifySentinel(err); code != "" {
@@ -320,12 +320,12 @@ func classifySuggestionType(err error) string {
 	}
 
 	if armDeployErr, ok := errors.AsType[*azapi.AzureDeploymentError](err); ok {
-		operation := armDeployErr.Operation
-		if operation == azapi.DeploymentOperationDeploy {
-			operation = "deployment"
+		operationName := armDeployErr.Operation
+		if operationName == azapi.DeploymentOperationDeploy {
+			operationName = "deployment"
 		}
 
-		return fmt.Sprintf("service.arm.%s.failed", operation)
+		return fmt.Sprintf("service.arm.%s.failed", operationName)
 	}
 
 	if extServiceErr, ok := errors.AsType[*azdext.ServiceError](err); ok {

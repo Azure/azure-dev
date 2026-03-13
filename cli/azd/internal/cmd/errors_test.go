@@ -834,7 +834,7 @@ func TestMapError_ErrorWithSuggestionSetsErrorType(t *testing.T) {
 			wantErrType: "internal.key_not_found",
 		},
 		{
-			name: "ResponseError_uses_structured_category",
+			name: "ResponseErrorUsesStructuredCategory",
 			err: &internal.ErrorWithSuggestion{
 				Err: &azcore.ResponseError{
 					ErrorCode:  "QuotaExceeded",
@@ -853,7 +853,7 @@ func TestMapError_ErrorWithSuggestionSetsErrorType(t *testing.T) {
 			wantErrType: "service.arm.429",
 		},
 		{
-			name: "ArmDeploymentError_uses_structured_category",
+			name: "ArmDeploymentErrorUsesStructuredCategory",
 			err: &internal.ErrorWithSuggestion{
 				Err: &azapi.AzureDeploymentError{
 					Operation: azapi.DeploymentOperationDeploy,

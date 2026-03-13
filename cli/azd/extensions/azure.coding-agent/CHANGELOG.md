@@ -1,5 +1,17 @@
 # Release History
 
+## 0.6.1 (2026-03-13)
+
+### Bugs Fixed
+
+- [[#7078]](https://github.com/Azure/azure-dev/pull/7078) Fix credential resolution to use `UserTenantId` instead of `TenantId`, preventing `AADSTS70043`/`AADSTS700082` authentication errors for multi-tenant and guest users.
+- [[#6966]](https://github.com/Azure/azure-dev/pull/6966) Update `go.opentelemetry.io/otel/sdk` to v1.40.0 to address CVE-2026-24051 (arbitrary code execution via PATH hijacking on macOS/Darwin systems).
+
+### Other Changes
+
+- [[#7031]](https://github.com/Azure/azure-dev/pull/7031) Update extension to Go 1.26 and add `golangci-lint` configuration.
+- [[#7064]](https://github.com/Azure/azure-dev/pull/7064) Apply Go 1.26 code modernizations via `go fix` across the extension.
+
 ## 0.6.0
 
 ### Features Added

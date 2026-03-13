@@ -54,6 +54,84 @@ This framework enables:
 - Integration of new Azure services and capabilities
 - Third-party extension development
 
+## Error Handling in Extensions
+
+Extensions communicate with the azd host over gRPC. When an extension returns an error, it must be
+serialized into an `ExtensionError` proto message so that the host can display it to users and
+classify it in telemetry.
+
+### Structured Error Types
+
+The `azdext` package provides two structured error types:
+
+- **`azdext.ServiceError`** — for HTTP/gRPC service failures (e.g., Azure API returned 429).
+  Fields: `Message`, `ErrorCode`, `StatusCode`, `ServiceName`, `Suggestion`, `Cause`.
+
+- **`azdext.LocalError`** — for local errors such as validation, auth, config, or internal failures.
+  Fields: `Message`, `Code`, `Category`, `Suggestion`, `Cause`.
+
+Both types implement `Error()` and `Unwrap()`, so they work with Go's standard `errors.Is` /
+`errors.As` traversal when a `Cause` is set.
+
+### Telemetry Classification
+
+The host classifies extension errors into telemetry codes using the pattern:
+
+| Error type | Telemetry code pattern |
+|-----------|----------------------|
+| `ServiceError` with `ErrorCode` | `ext.service.<errorCode>` |
+| `ServiceError` with `StatusCode` | `ext.service.<serviceName>.<statusCode>` |
+| `LocalError` | `ext.<category>.<code>` |
+| Unclassified | `ext.run.failed` |
+
+### The Two-Layer Pattern (Recommended)
+
+**Command layer** (`internal/cmd/`): Creates structured errors with category, code, and suggestion.
+This is the only layer that should create `LocalError` / `ServiceError` values.
+
+**Business logic** (`internal/pkg/`): Returns plain Go errors with `fmt.Errorf("context: %w", err)`.
+Does not create structured errors.
+
+This separation ensures the command layer has the full context to choose the right category
+and write a helpful suggestion, while business logic stays generic and testable.
+
+### Wrapping Cause Errors
+
+Every structured error type has a `Cause` field. When set, `Unwrap()` returns the cause,
+enabling `errors.Is` / `errors.As` to traverse through the structured error to the original.
+
+The `Cause` is **not transmitted over gRPC** — only `Message`, `Code`, `Category`, `Suggestion`,
+and service metadata travel to the host. The cause is useful for local logging and debugging.
+
+### Error Chain Precedence
+
+When an error chain contains multiple structured error types (e.g., a `ValidationWrap` wrapping
+an `Internal` error), `WrapError` picks the **outermost** (first) match via `errors.As`:
+
+1. `ServiceError` (highest priority)
+2. `LocalError`
+3. `azcore.ResponseError` (auto-detected Azure SDK errors)
+4. gRPC `Unauthenticated` (safety-net auth classification)
+5. Fallback (unclassified)
+
+Because Go's `errors.As` walks from outermost to innermost, the command-boundary pattern
+naturally produces the correct classification.
+
+### Error Code Conventions
+
+Error codes should be:
+- Lowercase `snake_case` (e.g., `missing_subscription_id`, `invalid_agent_manifest`)
+- Descriptive of the specific failure, not the general category
+- Unique within the extension
+- Defined as `const` values (not inline strings) for consistency and grep-ability
+
+### Display and UX
+
+When a structured error has a non-empty `Suggestion`, the azd host displays it as a
+formatted "ERROR + Suggestion" block. When there is no suggestion, only the error message
+is shown. Extensions should provide suggestions for user-fixable errors (validation,
+auth, dependency) and omit them for internal/unexpected errors.
+
 ---
 
 *For core design principles that apply to all `azd` functionality, see [guiding-principles.md](../style-guidelines/guiding-principles.md).*

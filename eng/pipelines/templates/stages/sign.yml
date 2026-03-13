@@ -369,7 +369,7 @@ stages:
               Write-Host "CI build detected. Updating daily cask."
               $runInfo += @{ 
                 TemplatePath = 'eng/templates/brew.cask.daily.template'
-                OutputPath = 'azd@daily.rb'
+                OutputPath = 'Formula/azd@daily.rb'
               }
             } else {
               Write-Host "Non-CI build detected. Updating stable cask and formula."
@@ -392,7 +392,7 @@ stages:
                 -LinuxArchivePathAmd64 release/azd-linux-amd64.tar.gz `
                 -LinuxArchivePathArm64 release/azd-linux-arm64.tar.gz `
                 -Version $(CLI_VERSION) `
-                -OutFile homebrew-formula/$($item.OutputPath)  
+                -OutFile "homebrew-formula/$($item.OutputPath)"
             }
           displayName: Update brew formula and casks
           condition: eq(variables['SubmitBrewFormula'], 'true')

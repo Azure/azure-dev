@@ -12,6 +12,8 @@ import (
 	"os"
 	"strconv"
 
+	"azureaiagent/internal/exterrors"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
@@ -73,6 +75,13 @@ This is useful for troubleshooting agent startup issues or monitoring agent beha
 			if flags.sessionID == "" {
 				sessionID, vnext := resolveMonitorSession(ctx, flags.name)
 				if vnext {
+					if sessionID == "" {
+						return exterrors.Validation(
+							exterrors.CodeInvalidSessionId,
+							"VNext agents are currently enabled and require a session ID for log streaming.",
+							"Specify the session ID using --session, or run `azd ai agent invoke` first to create one",
+						)
+					}
 					flags.sessionID = sessionID
 				}
 			}

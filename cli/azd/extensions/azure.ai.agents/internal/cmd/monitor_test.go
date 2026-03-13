@@ -310,3 +310,77 @@ func TestMonitorFlags_SessionBranchingDecision(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateMonitorFlags_AllCombinations(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		flags   monitorFlags
+		wantErr string
+	}{
+		// Both invalid: tail checked first
+		{
+			name:    "tail and type both invalid",
+			flags:   monitorFlags{tail: 0, logType: "invalid"},
+			wantErr: "--tail must be between 1 and 300",
+		},
+		// Valid tail, invalid type
+		{
+			name:    "valid tail with empty type",
+			flags:   monitorFlags{tail: 50, logType: ""},
+			wantErr: "--type must be 'console' or 'system'",
+		},
+		// Valid type, invalid tail
+		{
+			name:    "system type with tail too high",
+			flags:   monitorFlags{tail: 500, logType: "system"},
+			wantErr: "--tail must be between 1 and 300",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := validateMonitorFlags(&tt.flags)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tt.wantErr)
+		})
+	}
+}
+
+func TestValidateMonitorFlags_ErrorMessages(t *testing.T) {
+	t.Parallel()
+
+	// Verify that validation error messages include the actual bad value
+	flags := &monitorFlags{tail: 999, logType: "console"}
+	err := validateMonitorFlags(flags)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "999")
+
+	flags = &monitorFlags{tail: 50, logType: "badtype"}
+	err = validateMonitorFlags(flags)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "badtype")
+}
+
+func TestValidateMonitorFlags_SessionDoesNotAffectValidation(t *testing.T) {
+	t.Parallel()
+
+	// Session flag doesn't bypass tail/type validation
+	flags := &monitorFlags{
+		sessionID: "some-session",
+		tail:      0,
+		logType:   "console",
+	}
+	err := validateMonitorFlags(flags)
+	assert.Error(t, err, "session ID should not bypass tail validation")
+
+	flags = &monitorFlags{
+		sessionID: "some-session",
+		tail:      50,
+		logType:   "invalid",
+	}
+	err = validateMonitorFlags(flags)
+	assert.Error(t, err, "session ID should not bypass type validation")
+}

@@ -1,9 +1,9 @@
 
-Manage environment-specific configuration stored in .azure/<environment>/config.json.
+Manage environment-specific configuration stored in .azure/{environment}/config.json.
 
   • Configuration values set with these commands are specific to the environment.
   • These values are separate from environment variables (.env file).
-  • Environment configuration is stored in .azure/<environment-name>/config.json.
+  • Environment configuration is stored in .azure/{environment-name}/config.json.
 
 Usage
   azd env config [command]

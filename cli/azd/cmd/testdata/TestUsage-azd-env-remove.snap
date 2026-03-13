@@ -1,7 +1,7 @@
 
 Removes an environment and its local configuration.
 
-  • This command only deletes local files stored in .azure/<environment>.
+  • This command only deletes local files stored in .azure/{environment}.
   • It does not delete any Azure resources. To delete Azure resources, run 'azd down' first.
 
 Usage

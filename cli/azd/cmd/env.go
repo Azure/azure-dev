@@ -1732,12 +1732,12 @@ func (a *envConfigUnsetAction) Run(ctx context.Context) (*actions.ActionResult, 
 
 func getCmdEnvConfigHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription(
-		"Manage environment-specific configuration stored in .azure/<environment>/config.json.",
+		"Manage environment-specific configuration stored in .azure/{environment}/config.json.",
 		[]string{
 			formatHelpNote("Configuration values set with these commands are specific to the environment."),
 			formatHelpNote("These values are separate from environment variables (.env file)."),
 			formatHelpNote(
-				"Environment configuration is stored in .azure/<environment-name>/config.json.",
+				"Environment configuration is stored in .azure/{environment-name}/config.json.",
 			),
 		})
 }
@@ -1766,9 +1766,9 @@ func getCmdEnvHelpDescription(*cobra.Command) string {
 			formatHelpNote("Each environment may have a different configuration (that is, connectivity information)" +
 				" for accessing Azure resources."),
 			formatHelpNote(fmt.Sprintf("You can find all environment configuration under the %s folder.",
-				output.WithLinkFormat(".azure/<environment-name>"))),
+				output.WithLinkFormat(".azure/{environment-name}"))),
 			formatHelpNote(fmt.Sprintf("The environment name is stored as the %s environment variable in the %s file.",
 				output.WithHighLightFormat("AZURE_ENV_NAME"),
-				output.WithLinkFormat(".azure/<environment-name>/.env"))),
+				output.WithLinkFormat(".azure/{environment-name}/.env"))),
 		})
 }

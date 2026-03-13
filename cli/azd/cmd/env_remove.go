@@ -25,7 +25,7 @@ func getCmdEnvRemoveHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription(
 		"Removes an environment and its local configuration.",
 		[]string{
-			formatHelpNote("This command only deletes local files stored in .azure/<environment>."),
+			formatHelpNote("This command only deletes local files stored in .azure/{environment}."),
 			formatHelpNote("It does not delete any Azure resources. To delete Azure resources, run 'azd down' first."),
 		})
 }

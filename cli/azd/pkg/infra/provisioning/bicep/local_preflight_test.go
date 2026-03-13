@@ -45,10 +45,10 @@ func TestParseTemplate_MissingSchema(t *testing.T) {
 
 func TestParseTemplate_MissingContentVersion(t *testing.T) {
 	schema := "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#"
-	raw := []byte(fmt.Sprintf(
+	raw := fmt.Appendf(nil,
 		`{"$schema": "%s", "resources": [{"type": "Microsoft.Resources/resourceGroups"}]}`,
 		schema,
-	))
+	)
 
 	preflight := &localArmPreflight{}
 	_, err := preflight.parseTemplate(azure.RawArmTemplate(raw))
@@ -59,10 +59,10 @@ func TestParseTemplate_MissingContentVersion(t *testing.T) {
 
 func TestParseTemplate_NoResources(t *testing.T) {
 	schema := "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#"
-	raw := []byte(fmt.Sprintf(
+	raw := fmt.Appendf(nil,
 		`{"$schema": "%s", "contentVersion": "1.0.0.0", "resources": []}`,
 		schema,
-	))
+	)
 
 	preflight := &localArmPreflight{}
 	_, err := preflight.parseTemplate(azure.RawArmTemplate(raw))

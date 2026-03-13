@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 )
@@ -78,7 +77,7 @@ func (s *PermissionsService) HasRequiredPermissions(
 	pager := roleAssignmentsClient.NewListForScopePager(
 		subscriptionScope,
 		&armauthorization.RoleAssignmentsClientListForScopeOptions{
-			Filter: to.Ptr(filter),
+			Filter: new(filter),
 		},
 	)
 

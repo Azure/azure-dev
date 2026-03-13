@@ -208,7 +208,7 @@ func TestOn_RegistersHandlerWithProgress(t *testing.T) {
 	wrapper, ok := broker.handlers.Load(requestType)
 	require.True(t, ok, "Handler should be registered")
 
-	handlerWrapper := wrapper.(*handlerWrapper)
+	handlerWrapper := wrapper
 	assert.True(t, handlerWrapper.hasProgress, "Handler should be marked as having progress")
 	assert.Equal(t, 2, handlerWrapper.progressIndex, "Progress parameter should be at index 2")
 }
@@ -666,7 +666,7 @@ func TestClose_ClosesAllChannels(t *testing.T) {
 
 	// Verify all channels are removed
 	count := 0
-	broker.responseChans.Range(func(key, value any) bool {
+	broker.responseChans.Range(func(_ string, _ chan *TestMessage) bool {
 		count++
 		return true
 	})

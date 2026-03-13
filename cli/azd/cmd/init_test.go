@@ -28,12 +28,9 @@ import (
 func setupInitAction(t *testing.T, mockContext *mocks.MockContext, flags *initFlags) *initAction {
 	t.Helper()
 
-	// Work in a temp directory so os.Getwd / godotenv.Overload operate in isolation.
+	// Work in a temp directory so godotenv.Overload and azdcontext work in isolation.
 	tmpDir := t.TempDir()
-	origDir, err := os.Getwd()
-	require.NoError(t, err)
-	require.NoError(t, os.Chdir(tmpDir))
-	t.Cleanup(func() { os.Chdir(origDir) })
+	t.Chdir(tmpDir)
 
 	// Mock git so tools.EnsureInstalled succeeds.
 	mockContext.CommandRunner.MockToolInPath("git", nil)

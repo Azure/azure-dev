@@ -97,15 +97,17 @@ function New-GitHubAppJwt {
   $UnsignedTokenBytes = [System.Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::ASCII.GetBytes($UnsignedToken))
   $Base64Value = [Convert]::ToBase64String($UnsignedTokenBytes)
 
-  $SignResultJson = az keyvault key sign `
+  $signRaw = az keyvault key sign `
       --vault-name $VaultName `
       --name $KeyName `
       --algorithm RS256 `
-      --digest $Base64Value | ConvertFrom-Json
+      --digest $Base64Value 2>&1
 
   if ($LASTEXITCODE -ne 0) {
-    throw "Failed to sign JWT with Azure Key Vault. Error: $($SignResultJson | ConvertTo-Json -Compress)"
+    throw "Failed to sign JWT with Azure Key Vault. Error: $signRaw"
   }
+
+  $SignResultJson = $signRaw | ConvertFrom-Json
 
   if (!$SignResultJson.signature) {
     throw "Azure Key Vault response does not contain a signature. Response: $($SignResultJson | ConvertTo-Json -Compress)"
@@ -125,14 +127,29 @@ function Get-GitHubInstallationId {
 
     $headers = Get-Headers -Jwt $Jwt -ApiVersion $ApiVersion
 
-    $uri = "$ApiBase/app/installations"
-    $resp = Invoke-RestMethod -Method Get -Headers $headers -Uri $uri -TimeoutSec 30 -MaximumRetryCount 3
+    # Paginate through all installations (GitHub API defaults to 30 per page)
+    $allInstallations = @()
+    $page = 1
+    do {
+        $uri = "$ApiBase/app/installations?per_page=100&page=$page"
+        $pageResults = @(Invoke-RestMethod -Method Get -Headers $headers -Uri $uri -TimeoutSec 30 -MaximumRetryCount 3)
+        if ($pageResults.Count -eq 0) { break }
+        $allInstallations += $pageResults
+        $page++
+    } while ($pageResults.Count -eq 100)
 
-    $resp | Foreach-Object { Write-Host "  $($_.id): $($_.account.login) [$($_.target_type)]" }
+    $allInstallations | Foreach-Object { Write-Host "  $($_.id): $($_.account.login) [$($_.target_type)]" }
 
-    $resp = $resp | Where-Object { $_.account.login -ieq $InstallationTokenOwner }
-    if (!$resp.id) { throw "No installations found for this App." }
-    return $resp.id
+    $matchingInstallations = @($allInstallations | Where-Object { $_.account.login -ieq $InstallationTokenOwner } | Sort-Object id)
+    if ($matchingInstallations.Count -eq 0) {
+        throw "No installations found for this App."
+    }
+    if ($matchingInstallations.Count -gt 1) {
+        $matchingIds = $matchingInstallations | ForEach-Object { $_.id } | Join-String -Separator ", "
+        Write-Warning "Multiple installations found for '$InstallationTokenOwner'. Selecting deterministic lowest id: $($matchingInstallations[0].id). Matches: $matchingIds"
+    }
+    $match = $matchingInstallations[0]
+    return $match.id
 }
 
 function New-GitHubInstallationToken {
@@ -152,7 +169,7 @@ function New-GitHubInstallationToken {
 Write-Host "Generating GitHub App JWT by signing via Azure Key Vault (no key export)..."
 $jwt = New-GitHubAppJwt -VaultName $KeyVaultName -KeyName $KeyName -AppId $GitHubAppId
 
-foreach ($InstallationTokenOwner in $InstallationTokenOwners) 
+foreach ($InstallationTokenOwner in $InstallationTokenOwners)
 {
   Write-Host "Fetching installation ID for $InstallationTokenOwner ..."
   $installationId = Get-GitHubInstallationId -Jwt $jwt -ApiBase $GitHubApiBaseUrl -ApiVersion $GitHubApiVersion -InstallationTokenOwner $InstallationTokenOwner

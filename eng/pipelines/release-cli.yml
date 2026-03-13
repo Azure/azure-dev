@@ -1,4 +1,8 @@
 parameters:
+  - name: DoPublish
+    displayName: Check to run a release build
+    type: boolean
+    default: false
   - name: AzureRecordMode
     displayName: Azure Record Mode
     type: string
@@ -142,5 +146,6 @@ extends:
     - ${{ if ne(variables['Build.Reason'], 'Schedule') }}:
       - template: /eng/pipelines/templates/stages/sign.yml
 
-    - ${{ if and(ne(variables['Build.Reason'], 'Schedule'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
-      - template: /eng/pipelines/templates/stages/publish.yml
+    - ${{ if eq('true', parameters.DoPublish) }}:
+      - ${{ if and(ne(variables['Build.Reason'], 'Schedule'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
+        - template: /eng/pipelines/templates/stages/publish.yml

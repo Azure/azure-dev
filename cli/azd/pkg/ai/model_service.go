@@ -223,15 +223,14 @@ func (s *AiModelService) ListLocationsWithQuota(
 		if !slices.Contains(skuLocations, loc) {
 			continue
 		}
-		wg.Add(1)
-		go func(loc string) {
-			defer wg.Done()
+		loc := loc
+		wg.Go(func() {
 			usages, err := s.azureClient.GetAiUsages(ctx, subscriptionId, loc)
 			if err != nil {
 				return
 			}
 			sharedResults.Store(loc, usages)
-		}(loc)
+		})
 	}
 	wg.Wait()
 
@@ -305,15 +304,13 @@ func (s *AiModelService) ListModelLocationsWithQuota(
 	var wg sync.WaitGroup
 
 	for _, loc := range modelLocations {
-		wg.Add(1)
-		go func(loc string) {
-			defer wg.Done()
+		wg.Go(func() {
 			usages, err := s.ListUsages(ctx, subscriptionId, loc)
 			if err != nil {
 				return
 			}
 			sharedResults.Store(loc, usages)
-		}(loc)
+		})
 	}
 	wg.Wait()
 
@@ -542,9 +539,8 @@ func (s *AiModelService) fetchModelsForLocations(
 			continue
 		}
 
-		wg.Add(1)
-		go func(loc string) {
-			defer wg.Done()
+		loc := loc
+		wg.Go(func() {
 			models, err := s.azureClient.GetAiModels(ctx, subscriptionId, loc)
 			if err != nil {
 				errMu.Lock()
@@ -562,7 +558,7 @@ func (s *AiModelService) fetchModelsForLocations(
 			mu.Lock()
 			result[loc] = models
 			mu.Unlock()
-		}(loc)
+		})
 	}
 	wg.Wait()
 

@@ -2,7 +2,6 @@
 
 ## 0.1.15-preview (2026-03-13)
 
-- [[#7101]](https://github.com/Azure/azure-dev/pull/7101) Add hosted agent next-generation platform support with automatic RBAC role assignment post-deploy and updated `azd ai agent monitor` to query the new session-based API
 - [[#7080]](https://github.com/Azure/azure-dev/pull/7080) Fix authentication failures (`AADSTS70043`/`AADSTS700082`) for multi-tenant and guest users by using `UserTenantId` for credential resolution
 
 ## 0.1.14-preview (2026-03-10)

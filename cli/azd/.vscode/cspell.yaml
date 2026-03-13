@@ -72,11 +72,41 @@ words:
   - subcmd
   - genproto
   - errdetails
+  - slogger
+  - SSRF
+  - ssrf
+  - Teredo
+  - allowlist
+  - blocklist
+  - metacharacter
+  - metacharacters
   - yarnpkg
   - azconfig
   - hostnames
   - seekable
   - seekability
+  - APFS
+  - NTFS
+  - mcpgo
+  - cpus
+  - unsanitized
+  - PATHEXT
+  - mintty
+  - dockerenv
+  - dedup
+  - exfiltration
+  - Fprintf
+  - gocritic
+  - gradlew
+  - IMDS
+  - managedhsm
+  - microsoftazure
+  - myhost
+  - newtag
+  - preconfigured
+  - Println
+  - sctx
+  - TTLs
 languageSettings:
   - languageId: go
     ignoreRegExpList:
@@ -90,6 +120,9 @@ dictionaryDefinitions:
 dictionaries:
   - azdProjectDictionary
 overrides:
+  - filename: pkg/azdext/config_helper.go
+    words:
+      - myext
   - filename: internal/tracing/fields/domains.go
     words:
       - azmk

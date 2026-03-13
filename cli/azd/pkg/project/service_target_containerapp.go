@@ -299,15 +299,15 @@ func (at *containerAppTarget) Deploy(
 
 		isJob := isJobResource(targetResource)
 
+		// Expand environment variables from service config (common to both jobs and apps)
+		envVars, err := serviceConfig.Environment.Expand(at.env.Getenv)
+		if err != nil {
+			return nil, fmt.Errorf("expanding environment variables: %w", err)
+		}
+
 		if isJob {
 			tracing.AppendUsageAttributeUnique(fields.FeaturesKey.String(fields.FeatJobDeployment))
 			resourceTypeContainer = azapi.AzureResourceTypeContainerAppJob
-
-			// Expand environment variables from service config
-			envVars, err := serviceConfig.Environment.Expand(at.env.Getenv)
-			if err != nil {
-				return nil, fmt.Errorf("expanding environment variables: %w", err)
-			}
 
 			progress.SetProgress(NewServiceProgress("Updating container app job image"))
 			err = at.containerAppService.UpdateContainerAppJobImage(
@@ -323,12 +323,6 @@ func (at *containerAppTarget) Deploy(
 				return nil, fmt.Errorf("updating container app job: %w", err)
 			}
 		} else {
-			// Expand environment variables from service config
-			envVars, err := serviceConfig.Environment.Expand(at.env.Getenv)
-			if err != nil {
-				return nil, fmt.Errorf("expanding environment variables: %w", err)
-			}
-
 			progress.SetProgress(NewServiceProgress("Updating container app revision"))
 			err = at.containerAppService.AddRevision(
 				ctx,

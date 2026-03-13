@@ -420,7 +420,7 @@ func TestWalkDeploymentOperationsSkipExpand(t *testing.T) {
 	err := arm.WalkDeploymentOperations(*mockContext.Context, deployment,
 		func(ctx context.Context, operation *armresources.DeploymentOperation) error {
 			if operation.ID != nil && *operation.ID == "deployment-id" {
-				return SkipExpand
+				return SkipExpand()
 			}
 
 			return nil

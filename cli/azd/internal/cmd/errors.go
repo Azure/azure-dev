@@ -289,11 +289,10 @@ func classifySentinel(err error) string {
 
 // classifySuggestionType returns a telemetry error type string for an inner error wrapped by ErrorWithSuggestion.
 // It preserves the suggestion result code while improving the error.type attribute when the inner error is structured.
+//
+// The check order here should match MapError to ensure consistent classification.
+// Structured error types are checked first, then sentinels, then network errors, then fallback.
 func classifySuggestionType(err error) string {
-	if code := classifySentinel(err); code != "" {
-		return code
-	}
-
 	if updateErr, ok := errors.AsType[*update.UpdateError](err); ok {
 		return updateErr.Code
 	}
@@ -373,6 +372,10 @@ func classifySuggestionType(err error) string {
 
 	if _, ok := errors.AsType[*auth.AuthFailedError](err); ok {
 		return "service.aad.failed"
+	}
+
+	if code := classifySentinel(err); code != "" {
+		return code
 	}
 
 	if isNetworkError(err) {

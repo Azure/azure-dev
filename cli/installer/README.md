@@ -35,10 +35,8 @@ See [MSI configuration](#msi-configuration) for advanced install scenarios.
 #### Homebrew (recommended)
 
 ```bash
-brew tap azure/azd && brew install azd
+brew install azure/azd/azd
 ```
-
-The `brew tap azure/azd` command only needs to be run once to configure the tap in `brew`.
 
 If using `brew` to upgrade `azd` from a version not installed using `brew`, remove the existing version of `azd` using the uninstall script (if installed to the default location) or by deleting the `azd` binary manually.
 

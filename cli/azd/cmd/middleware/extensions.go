@@ -123,9 +123,8 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 
 	// Single loop: start goroutines for each extension
 	for _, extension := range extensionList {
-		wg.Add(1)
-		go func(ext *extensions.Extension) {
-			defer wg.Done()
+		ext := extension
+		wg.Go(func() {
 
 			jwtToken, err := grpcserver.GenerateExtensionToken(ext, serverInfo)
 			if err != nil {
@@ -205,7 +204,7 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 				elapsed := time.Since(startTime)
 				log.Printf("'%s' extension became ready in %v\n", ext.Id, elapsed)
 			}
-		}(extension)
+		})
 	}
 
 	// Wait for all extensions to reach a terminal state (ready or failed)

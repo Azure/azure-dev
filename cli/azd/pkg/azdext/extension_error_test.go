@@ -169,3 +169,93 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 		})
 	}
 }
+
+func TestLocalError_Unwrap(t *testing.T) {
+	cause := errors.New("root cause")
+	localErr := &LocalError{
+		Message:  "validation failed",
+		Code:     "bad_input",
+		Category: LocalErrorCategoryValidation,
+		Cause:    cause,
+	}
+
+	// errors.Is traverses through LocalError to cause
+	assert.True(t, errors.Is(localErr, cause))
+
+	// errors.Unwrap returns the cause
+	assert.Equal(t, cause, errors.Unwrap(localErr))
+
+	// Nil cause returns nil from Unwrap
+	noCause := &LocalError{Message: "no cause"}
+	assert.Nil(t, errors.Unwrap(noCause))
+}
+
+func TestServiceError_Unwrap(t *testing.T) {
+	cause := errors.New("connection timeout")
+	svcErr := &ServiceError{
+		Message:     "request failed",
+		ErrorCode:   "Timeout",
+		StatusCode:  504,
+		ServiceName: "api.example.com",
+		Cause:       cause,
+	}
+
+	// errors.Is traverses through ServiceError to cause
+	assert.True(t, errors.Is(svcErr, cause))
+
+	// errors.Unwrap returns the cause
+	assert.Equal(t, cause, errors.Unwrap(svcErr))
+
+	// Nil cause returns nil from Unwrap
+	noCause := &ServiceError{Message: "no cause"}
+	assert.Nil(t, errors.Unwrap(noCause))
+}
+
+func TestWrapError_NestedStructuredErrors(t *testing.T) {
+	// Scenario: inner LocalError wrapped by outer ServiceError (via Cause).
+	// WrapError should pick the outermost (ServiceError).
+	innerLocal := &LocalError{
+		Message:  "config missing",
+		Code:     "missing_config",
+		Category: LocalErrorCategoryValidation,
+	}
+	outerService := &ServiceError{
+		Message:     "deployment failed",
+		ErrorCode:   "DeployFailed",
+		StatusCode:  500,
+		ServiceName: "mgmt.azure.com",
+		Cause:       innerLocal,
+	}
+
+	protoErr := WrapError(outerService)
+	require.NotNil(t, protoErr)
+	assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_SERVICE, protoErr.GetOrigin())
+	assert.Equal(t, "deployment failed", protoErr.GetMessage())
+
+	svcDetail := protoErr.GetServiceError()
+	require.NotNil(t, svcDetail)
+	assert.Equal(t, "DeployFailed", svcDetail.GetErrorCode())
+}
+
+func TestWrapError_FmtWrappedStructuredError(t *testing.T) {
+	// Scenario: structured error wrapped by fmt.Errorf (common pattern).
+	// WrapError should still detect the structured error via errors.As.
+	local := &LocalError{
+		Message:    "invalid manifest",
+		Code:       "invalid_manifest",
+		Category:   LocalErrorCategoryValidation,
+		Suggestion: "check your agent.yaml",
+	}
+	wrapped := fmt.Errorf("init failed: %w", local)
+
+	protoErr := WrapError(wrapped)
+	require.NotNil(t, protoErr)
+	assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_LOCAL, protoErr.GetOrigin())
+	assert.Equal(t, "invalid manifest", protoErr.GetMessage())
+	assert.Equal(t, "check your agent.yaml", protoErr.GetSuggestion())
+
+	localDetail := protoErr.GetLocalError()
+	require.NotNil(t, localDetail)
+	assert.Equal(t, "invalid_manifest", localDetail.GetCode())
+	assert.Equal(t, "validation", localDetail.GetCategory())
+}

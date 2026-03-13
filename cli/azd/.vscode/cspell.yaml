@@ -75,6 +75,8 @@ words:
   - yarnpkg
   - azconfig
   - hostnames
+  - managedhsm
+  - microsoftazure
   - seekable
   - seekability
 languageSettings:

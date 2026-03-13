@@ -1,11 +1,13 @@
 cask "azd@daily" do
-  version "%VERSION%"
-
   arch arm: "arm64", intel: "amd64"
   os macos: "darwin", linux: "linux"
 
-  sha256 arm: "%SHA256ARM64%", intel: "%SHA256AMD64%",
-         arm_linux: "%SHA256ARM64_LINUX%", x86_64_linux: "%SHA256AMD64_LINUX%"
+  version "%VERSION%"
+
+  sha256 arm: "%SHA256ARM64%",
+         intel: "%SHA256AMD64%",
+         arm_linux: "%SHA256ARM64_LINUX%",
+         x86_64_linux: "%SHA256AMD64_LINUX%"
 
   url "https://azuresdkartifacts.z5.web.core.windows.net/azd/standalone/daily/archive/#{version}/azd-#{os}-#{arch}.zip"
 
@@ -13,12 +15,12 @@ cask "azd@daily" do
   desc "Azure Developer CLI"
   homepage "https://github.com/azure/azure-dev"
 
+  conflicts_with cask: "azd", because: "azd and azd@daily install the same executable"
+
   postflight do
     # Set .installed-by.txt to "brew" to configure azd behavior for homebrew-managed installs
-    File.write("#{bin}/.installed-by.txt", "brew")
+    File.write("#{staged_path}/.installed-by.txt", "brew")
   end
-
-  conflicts_with cask: "azd", because: "azd and azd@daily install the same executable"
 
   caveats <<~EOS
     The Azure Developer CLI collects usage data and sends that usage data to Microsoft in order to help us improve your experience.

@@ -13,7 +13,14 @@ steps:
     displayName: Clone Azure/homebrew-azd
 
   - pwsh: |
-      Copy-Item homebrew-formula/*.rb homebrew-azd/Formula/
+      # Ensure directory exists
+      New-Item -ItemType Directory homebrew-formula/Formula -Force
+      New-Item -ItemType Directory homebrew-formula/Cask -Force
+
+      # Copy updated formula and casks if they exist
+      Copy-Item homebrew-formula/Formula/*.rb homebrew-azd/Formula/ -Force
+      Copy-Item homebrew-formula/Cask/*.rb homebrew-azd/Cask/ -Force
+    displayName: Copy updated formula and casks to homebrew-azd
 
   - template: /eng/common/pipelines/templates/steps/git-push-changes.yml
     parameters:

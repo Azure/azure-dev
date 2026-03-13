@@ -6,6 +6,7 @@ package appinsightsexporter
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -106,7 +107,7 @@ func doBasicTransmit(client Transmitter, server *testServer, t *testing.T) {
 
 	server.responseData = []byte(`{"itemsReceived":3, "itemsAccepted":5, "errors":[]}`)
 	server.responseHeaders["Content-type"] = "application/json"
-	result, err := client.Transmit([]byte("foobar"), make(TelemetryItems, 0))
+	result, err := client.Transmit(context.Background(), []byte("foobar"), make(TelemetryItems, 0))
 	if err != nil {
 		t.Log(err.Error())
 	}
@@ -185,7 +186,7 @@ func TestFailedTransmit(t *testing.T) {
 		`{"itemsReceived":3, "itemsAccepted":0, "errors":[{"index": 2, "statusCode": 500, "message": "Hello"}]}`,
 	)
 	server.responseHeaders["Content-type"] = "application/json"
-	result, err := client.Transmit([]byte("foobar"), make(TelemetryItems, 0))
+	result, err := client.Transmit(context.Background(), []byte("foobar"), make(TelemetryItems, 0))
 	server.waitForRequest(t)
 
 	if err != nil {
@@ -237,7 +238,7 @@ func TestThrottledTransmit(t *testing.T) {
 	server.responseData = make([]byte, 0)
 	server.responseHeaders["Content-type"] = "application/json"
 	server.responseHeaders["retry-after"] = "Wed, 09 Aug 2017 23:43:57 UTC"
-	result, err := client.Transmit([]byte("foobar"), make(TelemetryItems, 0))
+	result, err := client.Transmit(context.Background(), []byte("foobar"), make(TelemetryItems, 0))
 	server.waitForRequest(t)
 
 	if err != nil {

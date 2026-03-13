@@ -1,236 +1,128 @@
 # Azure AI Agents Extension - Agent Instructions
 
-Instructions for AI coding agents working on the `azure.ai.agents` azd extension.
+Use this file together with `cli/azd/AGENTS.md`. This guide supplements the root azd instructions with the conventions that are specific to this extension.
 
 ## Overview
 
-This extension adds Foundry Agent Service support to the Azure Developer CLI (`azd`).
-It provides commands for initializing, deploying, running, and monitoring AI agents
-via `azd ai agent <command>`.
+`azure.ai.agents` is a first-party azd extension under `cli/azd/extensions/azure.ai.agents/`. It runs as a separate Go binary and talks to the azd host over gRPC.
 
-The extension runs as a separate Go binary that communicates with the azd host over gRPC.
-It lives under `cli/azd/extensions/azure.ai.agents/` and has its own `go.mod`.
+Useful places to start:
 
-## Directory Structure
+- `internal/cmd/`: Cobra commands and top-level orchestration
+- `internal/project/`: project/service target integration and deployment flows
+- `internal/pkg/`: lower-level helpers, parsers, and API-facing logic
+- `internal/exterrors/`: structured error factories and extension-specific codes
 
-```
-cli/azd/extensions/azure.ai.agents/
-├── main.go                         # Extension entry point
-├── extension.yaml                  # Extension metadata and capabilities
-├── internal/
-│   ├── cmd/                        # Command handlers (init, run, invoke, show, etc.)
-│   │   └── root.go                 # Command tree registration
-│   ├── exterrors/                   # Error factories and codes (see Error Handling)
-│   │   ├── errors.go               # Structured error factory functions
-│   │   └── codes.go                # Machine-readable error code constants
-│   ├── pkg/                        # Business logic and API clients
-│   │   └── agents/                 # Agent YAML parsing, service clients
-│   ├── project/                    # Project-level configuration
-│   ├── tools/                      # External tool wrappers
-│   └── version/                    # Version constants
-├── schemas/                        # JSON/YAML schemas
-└── tests/                          # Test data and fixtures
-```
+## Build and test
 
-## Development
-
-### Build
+From `cli/azd/extensions/azure.ai.agents`:
 
 ```bash
-cd cli/azd/extensions/azure.ai.agents
-
-# Build using developer extension (preferred for local development)
+# Build using developer extension (for local development)
 azd x build
 
 # Or build using Go directly
 go build
 ```
 
-### Test
+If extension work depends on a new azd core change, plan for two PRs:
 
-```bash
-# All tests
-go test ./... -short
+1. Land the core change in `cli/azd` first.
+2. Land the extension change after that, updating this module to the newer azd dependency with `go get github.com/azure/azure-dev/cli/azd && go mod tidy`.
 
-# Specific package
-go test ./internal/exterrors/... -count=1
+For local development, draft work, or validating both sides together before the core PR is merged, you may temporarily add:
 
-# Specific test
-go test ./internal/cmd/... -run TestInit -count=1
-```
-
-### Pre-Commit Checklist
-
-```bash
-gofmt -s -w .
-go fix ./...
-golangci-lint run ./...
-cspell lint "**/*.go" --relative --config ./cspell.yaml --no-progress
-```
-
-- **Line length**: 125 chars max for Go
-- **Spelling**: Add technical terms to `cspell.yaml` overrides
-- **Copyright**: All Go files need the Microsoft header
-
-### Local Development with azd Core Changes
-
-When making coordinated changes to both the azd core (`cli/azd/pkg/azdext/`) and
-this extension, add a `replace` directive to `go.mod`:
-
-```
+```go
 replace github.com/azure/azure-dev/cli/azd => ../../
 ```
 
-Run `go mod tidy` after adding/removing the directive. **Remove the replace
-directive before merging.**
+That `replace` points this extension at your local `cli/azd` checkout instead of the version in `go.mod`. Do not merge the extension with that `replace` still present.
 
-## Error Handling
+## Error handling
 
-Error handling in this extension uses a structured error system that provides:
-- Machine-readable codes for telemetry classification
-- Human-readable messages for display
-- Optional user-facing suggestions for remediation
+This extension uses `internal/exterrors` so the azd host can show a useful message, attach an optional suggestion, and emit stable telemetry.
 
-### The Two-Layer Pattern
+### Default rule
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│  Command Boundary (internal/cmd/)                                │
-│                                                                  │
-│  Translates errors into structured types with category, code,    │
-│  and suggestion. This is where you choose the error category.    │
-│                                                                  │
-│  return exterrors.Validation(                                     │
-│      exterrors.CodeInvalidAgentManifest,                          │
-│      fmt.Sprintf("agent manifest is invalid: %s", err),          │
-│      "check the agent.yaml schema documentation")                │
-└────────────────────────────┬─────────────────────────────────────┘
-                             │
-                             │  plain Go errors (fmt.Errorf + %w)
-                             │
-┌────────────────────────────┴─────────────────────────────────────┐
-│  Business Logic (internal/pkg/)                                   │
-│                                                                   │
-│  Returns plain Go errors. Wraps lower-level errors with           │
-│  fmt.Errorf("context: %w", err) for debugging.                    │
-│  Does NOT create structured errors — that's the command layer's   │
-│  job.                                                             │
-└──────────────────────────────────────────────────────────────────┘
-```
+Use plain Go errors by default. Switch to `exterrors.*` only when the current code can confidently answer all three of these:
 
-**Why this separation?** The command layer has the full context to decide the
-right category (validation? dependency? auth?) and to write a helpful suggestion.
-Business logic often doesn't know why it was called or what the user should do next.
+1. What category should telemetry see?
+2. What stable error code should be recorded?
+3. What suggestion, if any, should the user get?
 
-### When to Use Each Error Type
+That usually means:
 
-| Situation | What to use | Example |
-|-----------|------------|---------|
-| User input or manifest is invalid | `exterrors.Validation` | Missing required field in agent.yaml |
-| Required resource is missing or unavailable | `exterrors.Dependency` | AI project endpoint not configured |
-| Authentication or authorization failure | `exterrors.Auth` | Credential creation failed |
-| Version or feature mismatch | `exterrors.Compatibility` | azd version too old |
-| User cancellation (e.g., Ctrl+C) | `exterrors.Cancelled` | User cancelled subscription prompt |
-| Azure HTTP API returned an error | `exterrors.ServiceFromAzure` | ARM deployment failed |
-| azd host gRPC call failed | `exterrors.FromAiService` / `FromPrompt` | Model catalog call failed |
-| Unexpected internal failure | `exterrors.Internal` | JSON marshalling failed |
-| Error in a helper / business logic layer | `fmt.Errorf("context: %w", err)` | Pass it up for the command layer to classify |
+- lower-level helpers return `fmt.Errorf("context: %w", err)`
+- user-facing orchestration code classifies the failure with `exterrors.*`
 
-### Including Original Error Context
+In this extension, that classification often happens in `internal/cmd/` and `internal/project/`, not only in Cobra `RunE` handlers.
 
-When creating a structured error, include the original error's message in the
-Message field so that debugging context is preserved in telemetry:
+### Most important rule
+
+Create a structured error once, as close as possible to the place where you know the final category, code, and suggestion.
+
+If `err` is already a structured error, usually return it unchanged.
+
+Do **not** add context with `fmt.Errorf("context: %w", err)` after `err` is already structured. During gRPC serialization, azd preserves the structured error's own message/code/category, not the outer wrapper text. If you need extra context, include it in the structured error message when you create it.
+
+### Choosing an Error Type
+
+| Situation | Prefer |
+| --- | --- |
+| Invalid input, manifest, or option combination | `exterrors.Validation` |
+| Missing environment value, missing resource, unavailable dependency | `exterrors.Dependency` |
+| Auth or tenant/credential failure | `exterrors.Auth` |
+| azd/extension version or capability mismatch | `exterrors.Compatibility` |
+| User cancellation | `exterrors.Cancelled` |
+| Azure SDK HTTP failure | `exterrors.ServiceFromAzure` |
+| gRPC failure from azd host AI/prompt calls | `exterrors.FromAiService` / `exterrors.FromPrompt` |
+| Unexpected bug or local failure with no better category | `exterrors.Internal` |
+
+### Recommended pattern
 
 ```go
-// Include the original error message for debugging context
-return exterrors.Validation(
-    exterrors.CodeInvalidAgentManifest,
-    fmt.Sprintf("agent manifest is invalid: %s", err),
-    "check the agent.yaml schema documentation",
-)
-```
+func loadThing(path string) error {
+    if err := parse(path); err != nil {
+        return fmt.Errorf("parse %s: %w", path, err)
+    }
 
-Note: Structured errors (`LocalError` / `ServiceError`) do not currently support
-Go's `errors.Unwrap` interface — the original error is not part of the error chain.
-Only the structured metadata (Message, Code, Category, Suggestion) is transmitted
-over gRPC to the azd host.
+    return nil
+}
 
-### Error Chain Precedence
+func runCommand() error {
+    if err := loadThing("agent.yaml"); err != nil {
+        return exterrors.Validation(
+            exterrors.CodeInvalidAgentManifest,
+            fmt.Sprintf("agent manifest is invalid: %s", err),
+            "fix the manifest and retry",
+        )
+    }
 
-When `WrapError` serializes an error for gRPC transmission, it checks the error
-chain (via `errors.As`) and picks the **first** match in this order:
-
-1. `ServiceError` — service/HTTP failures (highest priority)
-2. `LocalError` — local/config/auth failures
-3. `azcore.ResponseError` — raw Azure SDK errors
-4. gRPC Unauthenticated — safety-net auth classification
-5. Fallback — unclassified
-
-Because `errors.As` walks from outermost to innermost, the command-boundary
-pattern naturally produces the correct telemetry classification.
-
-### Error Codes
-
-Define new error codes as constants in `internal/exterrors/codes.go`. Codes must be:
-- lowercase `snake_case` (e.g., `missing_subscription_id`)
-- Descriptive of the specific failure, not the general category
-- Unique within the extension
-
-### How Errors Flow to the azd Host
-
-```
-Extension process                    gRPC                    azd host
-─────────────────                    ────                    ────────
-exterrors.Validation(...)       →  WrapError()  →  ExtensionError proto
-                                                           │
-                                                   UnwrapError()
-                                                           │
-                                                   ┌───────┴──────────┐
-                                                   │ UX middleware:    │
-                                                   │  displays message │
-                                                   │  + suggestion     │
-                                                   ├──────────────────┤
-                                                   │ Telemetry:       │
-                                                   │  ext.validation. │
-                                                   │  invalid_manifest │
-                                                   └──────────────────┘
-```
-
-### Common Patterns
-
-**Converting Azure SDK errors at the command boundary:**
-
-```go
-result, err := client.CreateAgent(ctx, request)
-if err != nil {
-    return exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
+    return nil
 }
 ```
 
-**Converting gRPC errors from azd host calls:**
+### Azure and gRPC boundaries
 
-```go
-models, err := aiClient.ListModels(ctx, &azdext.ListModelsRequest{})
-if err != nil {
-    return exterrors.FromAiService(err, exterrors.CodeModelCatalogFailed)
-}
-```
+Prefer the dedicated helpers instead of hand-rolling conversions:
 
-**Handling prompt errors:**
+- `exterrors.ServiceFromAzure(err, operation)` for `azcore.ResponseError`
+- `exterrors.FromAiService(err, fallbackCode)` for azd host AI service calls
+- `exterrors.FromPrompt(err, contextMessage)` for prompt failures
 
-```go
-sub, err := promptClient.PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{})
-if err != nil {
-    return exterrors.FromPrompt(err, "failed to select subscription")
-}
-```
+These helpers keep telemetry and user-facing behavior consistent.
 
-## Key Conventions
+### Error codes
 
-- **Import order**: stdlib → external → `github.com/azure/azure-dev/cli/azd/` → local `azureaiagent/`
-- **Context propagation**: Always pass `ctx context.Context` as the first parameter
-- **Subscription tenant**: When creating credentials from a prompted subscription,
-  use `Subscription.UserTenantId` (user access tenant), NOT `Subscription.TenantId`
-  (resource tenant). For multi-tenant/guest users these differ.
-- **Modern Go**: This project uses Go 1.26. Prefer `slices`, `maps`, `min()`/`max()`,
-  `range` over integers, and other modern features.
+Define new codes in `internal/exterrors/codes.go`.
+
+- use lowercase `snake_case`
+- describe the specific failure, not the general category
+- keep them stable once introduced
+
+## Other extension conventions
+
+- Import order: stdlib -> external -> `github.com/azure/azure-dev/cli/azd/` -> local `azureaiagent/`
+- Pass `ctx context.Context` first on functions that do I/O or may block
+- Use modern Go 1.26 patterns where they help readability
+- When using `PromptSubscription()`, create credentials with `Subscription.UserTenantId`, not `Subscription.TenantId`

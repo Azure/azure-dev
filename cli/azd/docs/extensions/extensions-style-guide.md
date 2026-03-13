@@ -94,19 +94,6 @@ Does not create structured errors.
 This separation ensures the command layer has the full context to choose the right category
 and write a helpful suggestion, while business logic stays generic and testable.
 
-### Including Original Error Context
-
-Structured errors do not currently support Go's `errors.Unwrap` — the original error is not
-preserved in the error chain. To retain debugging context, include the original error's message
-in the `Message` field:
-
-```go
-return exterrors.Validation(code, fmt.Sprintf("manifest is invalid: %s", err), suggestion)
-```
-
-Only the structured metadata (`Message`, `Code`, `Category`, `Suggestion`, and service fields)
-is transmitted over gRPC to the host. The original Go error is not available on the host side.
-
 ### Error Chain Precedence
 
 When `WrapError` serializes an error for gRPC, it checks the chain via `errors.As` and picks

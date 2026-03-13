@@ -1,35 +1,16 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// Package exterrors provides error factories for the azure.ai.agents extension.
+// Package exterrors provides structured error helpers for the azure.ai.agents extension.
 //
-// # Choosing an error type
+// Use plain Go errors until the current code can confidently choose a final
+// category, code, and suggestion. At that point, create a structured error with
+// [Validation], [Dependency], [Auth], [Compatibility], [Internal], or one of the
+// Azure/gRPC conversion helpers.
 //
-// Use the structured factory functions ([Validation], [Dependency], [Auth], etc.)
-// at the **command boundary** — typically in RunE handlers or top-level action
-// methods. These create [azdext.LocalError] / [azdext.ServiceError] values that
-// carry a machine-readable Code, human-readable Message, and optional Suggestion
-// for the user.
-//
-// Below that boundary (business-logic helpers, API clients, parsers), prefer
-// plain Go errors via [fmt.Errorf] with %w wrapping. The command boundary
-// translates them into structured errors when it has enough context to choose
-// the right category, code, and suggestion.
-//
-// # Error chain precedence
-//
-// When an error chain contains multiple structured types, [azdext.WrapError]
-// picks the **outermost** (first) match in this order:
-//
-//  1. [azdext.ServiceError]  — service/HTTP failures
-//  2. [azdext.LocalError]    — local/config/auth failures
-//  3. [azcore.ResponseError] — raw Azure SDK errors
-//  4. gRPC Unauthenticated   — safety-net auth classification
-//  5. Fallback               — unclassified
-//
-// Because the outermost structured error wins, the command-boundary pattern
-// naturally produces the correct classification: the command creates a structured
-// error with a specific category, and that category is what telemetry sees.
+// Once an error is structured, usually return it unchanged. Avoid wrapping a
+// structured error with [fmt.Errorf] and %w for extra context: azd serializes the
+// structured error's own message and metadata, not the outer wrapper text.
 package exterrors
 
 import (

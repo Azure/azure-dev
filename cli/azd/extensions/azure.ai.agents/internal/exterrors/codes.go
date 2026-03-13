@@ -8,9 +8,9 @@ const (
 	CodeCancelled = "cancelled"
 )
 
-// Error codes for validation errors.
+// Error codes commonly used for validation errors.
 //
-// Use these with [Validation] when user input, manifests,
+// These are usually paired with [Validation] when user input, manifests,
 // or configuration values fail validation.
 const (
 	CodeInvalidAgentManifest      = "invalid_agent_manifest"
@@ -28,13 +28,12 @@ const (
 	CodeLocationMismatch          = "location_mismatch"
 	CodeTenantMismatch            = "tenant_mismatch"
 	CodeMissingPublishedContainer = "missing_published_container_artifact"
-	CodeScaffoldTemplateFailed    = "scaffold_template_failed"
 	CodeModelDeploymentNotFound   = "model_deployment_not_found"
 )
 
-// Error codes for dependency errors.
+// Error codes commonly used for dependency errors.
 //
-// Use these with [Dependency] when required external
+// These are usually paired with [Dependency] when required external
 // resources, services, or environment values are missing or unavailable.
 const (
 	CodeProjectNotFound           = "project_not_found"
@@ -47,12 +46,13 @@ const (
 	CodeMissingAzureSubscription  = "missing_azure_subscription_id"
 	CodeMissingAgentEnvVars       = "missing_agent_env_vars"
 	CodeGitHubDownloadFailed      = "github_download_failed"
+	CodeScaffoldTemplateFailed    = "scaffold_template_failed"
 	CodePromptFailed              = "prompt_failed"
 )
 
-// Error codes for auth errors.
+// Error codes commonly used for auth errors.
 //
-// Use these with [Auth] for authentication/authorization failures.
+// These are usually paired with [Auth] for authentication/authorization failures.
 const (
 	//nolint:gosec // error code identifier, not a credential
 	CodeCredentialCreationFailed = "credential_creation_failed"
@@ -64,7 +64,7 @@ const (
 
 // Error codes for compatibility errors.
 //
-// Use these with [Compatibility] for version mismatches.
+// These are usually paired with [Compatibility] for version mismatches.
 const (
 	CodeIncompatibleAzdVersion = "incompatible_azd_version"
 )
@@ -78,9 +78,9 @@ const (
 	CodeModelResolutionFailed = "model_resolution_failed"
 )
 
-// Error codes for internal errors.
+// Error codes commonly used for internal errors.
 //
-// Use these with [Internal] for unexpected failures
+// These are usually paired with [Internal] for unexpected failures
 // that are not directly caused by user input.
 const (
 	CodeAzdClientFailed               = "azd_client_failed"

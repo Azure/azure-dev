@@ -184,30 +184,8 @@ func MapError(err error, span tracing.Span) {
 				fields.ServiceCorrelationId.String(authFailedErr.Parsed.CorrelationId))
 		}
 		errCode = "service.aad.failed"
-	} else if errors.Is(err, terminal.InterruptErr) {
-		errCode = "user.canceled"
-	} else if errors.Is(err, context.Canceled) {
-		errCode = "user.canceled"
-	} else if errors.Is(err, context.DeadlineExceeded) {
-		errCode = "internal.timeout"
-	} else if errors.Is(err, auth.ErrNoCurrentUser) {
-		errCode = "auth.not_logged_in"
-	} else if errors.Is(err, consent.ErrToolExecutionDenied) {
-		errCode = "user.tool_denied"
-	} else if errors.Is(err, git.ErrNotRepository) {
-		errCode = "internal.not_git_repo"
-	} else if errors.Is(err, azapi.ErrPreviewNotSupported) {
-		errCode = "internal.preview_not_supported"
-	} else if errors.Is(err, provisioning.ErrBindMountOperationDisabled) {
-		errCode = "internal.bind_mount_disabled"
-	} else if errors.Is(err, update.ErrNeedsElevation) {
-		errCode = "update.elevationRequired"
-	} else if errors.Is(err, pipeline.ErrRemoteHostIsNotAzDo) {
-		errCode = "internal.remote_not_azdo"
-	} else if errors.Is(err, internal.ErrExtensionNotFound) {
-		errCode = "internal.extension_not_found"
-	} else if errors.Is(err, internal.ErrExtensionTokenFailed) {
-		errCode = "internal.extension_error"
+	} else if code := classifySentinel(err); code != "" {
+		errCode = code
 	} else if isNetworkError(err) {
 		errCode = "internal.network"
 		errType := errorType(err)
@@ -285,6 +263,25 @@ func classifySentinel(err error) string {
 		return "internal.resource_not_found"
 	case errors.Is(err, internal.ErrOperationCancelled):
 		return "internal.operation_cancelled"
+	case errors.Is(err, terminal.InterruptErr),
+		errors.Is(err, context.Canceled):
+		return "user.canceled"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "internal.timeout"
+	case errors.Is(err, auth.ErrNoCurrentUser):
+		return "auth.not_logged_in"
+	case errors.Is(err, consent.ErrToolExecutionDenied):
+		return "user.tool_denied"
+	case errors.Is(err, git.ErrNotRepository):
+		return "internal.not_git_repo"
+	case errors.Is(err, azapi.ErrPreviewNotSupported):
+		return "internal.preview_not_supported"
+	case errors.Is(err, provisioning.ErrBindMountOperationDisabled):
+		return "internal.bind_mount_disabled"
+	case errors.Is(err, update.ErrNeedsElevation):
+		return "update.elevationRequired"
+	case errors.Is(err, pipeline.ErrRemoteHostIsNotAzDo):
+		return "internal.remote_not_azdo"
 	default:
 		return ""
 	}
@@ -376,50 +373,6 @@ func classifySuggestionType(err error) string {
 
 	if _, ok := errors.AsType[*auth.AuthFailedError](err); ok {
 		return "service.aad.failed"
-	}
-
-	if errors.Is(err, terminal.InterruptErr) || errors.Is(err, context.Canceled) {
-		return "user.canceled"
-	}
-
-	if errors.Is(err, context.DeadlineExceeded) {
-		return "internal.timeout"
-	}
-
-	if errors.Is(err, auth.ErrNoCurrentUser) {
-		return "auth.not_logged_in"
-	}
-
-	if errors.Is(err, consent.ErrToolExecutionDenied) {
-		return "user.tool_denied"
-	}
-
-	if errors.Is(err, git.ErrNotRepository) {
-		return "internal.not_git_repo"
-	}
-
-	if errors.Is(err, azapi.ErrPreviewNotSupported) {
-		return "internal.preview_not_supported"
-	}
-
-	if errors.Is(err, provisioning.ErrBindMountOperationDisabled) {
-		return "internal.bind_mount_disabled"
-	}
-
-	if errors.Is(err, update.ErrNeedsElevation) {
-		return "update.elevationRequired"
-	}
-
-	if errors.Is(err, pipeline.ErrRemoteHostIsNotAzDo) {
-		return "internal.remote_not_azdo"
-	}
-
-	if errors.Is(err, internal.ErrExtensionNotFound) {
-		return "internal.extension_not_found"
-	}
-
-	if errors.Is(err, internal.ErrExtensionTokenFailed) {
-		return "internal.extension_error"
 	}
 
 	if isNetworkError(err) {

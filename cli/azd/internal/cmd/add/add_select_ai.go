@@ -359,9 +359,8 @@ func (a *AddAction) aiDeploymentCatalog(
 	a.console.ShowSpinner(ctx, "Retrieving available models...", input.Step)
 
 	for _, location := range allLocations {
-		wg.Add(1)
-		go func(location string) {
-			defer wg.Done()
+		location := location.Name
+		wg.Go(func() {
 			results, err := a.supportedModelsInLocation(ctx, subId, location)
 			if err != nil {
 				// log the error and continue. Do not fail the entire operation when pulling location error
@@ -386,7 +385,7 @@ func (a *AddAction) aiDeploymentCatalog(
 				filterSkusWithZeroCapacity = append(filterSkusWithZeroCapacity, model)
 			}
 			sharedResults.Store(location, filterSkusWithZeroCapacity)
-		}(location.Name)
+		})
 	}
 	wg.Wait()
 	a.console.StopSpinner(ctx, "", input.StepDone)

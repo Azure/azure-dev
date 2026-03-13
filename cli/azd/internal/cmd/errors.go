@@ -50,13 +50,7 @@ func MapError(err error, span tracing.Span) {
 		errCode = "auth.login_required"
 	} else if errWithSuggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok {
 		errCode = "error.suggestion"
-		inner := errWithSuggestion.Unwrap()
-		if code := classifySentinel(inner); code != "" {
-			span.SetAttributes(fields.ErrType.String(code))
-		} else {
-			span.SetAttributes(
-				fields.ErrType.String(errorType(inner)))
-		}
+		span.SetAttributes(fields.ErrType.String(classifySuggestionType(errWithSuggestion.Unwrap())))
 	} else if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
 		serviceName := "other"
 		statusCode := -1
@@ -190,30 +184,8 @@ func MapError(err error, span tracing.Span) {
 				fields.ServiceCorrelationId.String(authFailedErr.Parsed.CorrelationId))
 		}
 		errCode = "service.aad.failed"
-	} else if errors.Is(err, terminal.InterruptErr) {
-		errCode = "user.canceled"
-	} else if errors.Is(err, context.Canceled) {
-		errCode = "user.canceled"
-	} else if errors.Is(err, context.DeadlineExceeded) {
-		errCode = "internal.timeout"
-	} else if errors.Is(err, auth.ErrNoCurrentUser) {
-		errCode = "auth.not_logged_in"
-	} else if errors.Is(err, consent.ErrToolExecutionDenied) {
-		errCode = "user.tool_denied"
-	} else if errors.Is(err, git.ErrNotRepository) {
-		errCode = "internal.not_git_repo"
-	} else if errors.Is(err, azapi.ErrPreviewNotSupported) {
-		errCode = "internal.preview_not_supported"
-	} else if errors.Is(err, provisioning.ErrBindMountOperationDisabled) {
-		errCode = "internal.bind_mount_disabled"
-	} else if errors.Is(err, update.ErrNeedsElevation) {
-		errCode = "update.elevationRequired"
-	} else if errors.Is(err, pipeline.ErrRemoteHostIsNotAzDo) {
-		errCode = "internal.remote_not_azdo"
-	} else if errors.Is(err, internal.ErrExtensionNotFound) {
-		errCode = "internal.extension_not_found"
-	} else if errors.Is(err, internal.ErrExtensionTokenFailed) {
-		errCode = "internal.extension_error"
+	} else if code := classifySentinel(err); code != "" {
+		errCode = code
 	} else if isNetworkError(err) {
 		errCode = "internal.network"
 		errType := errorType(err)
@@ -291,9 +263,126 @@ func classifySentinel(err error) string {
 		return "internal.resource_not_found"
 	case errors.Is(err, internal.ErrOperationCancelled):
 		return "internal.operation_cancelled"
+	case errors.Is(err, terminal.InterruptErr),
+		errors.Is(err, context.Canceled):
+		return "user.canceled"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "internal.timeout"
+	case errors.Is(err, auth.ErrNoCurrentUser):
+		return "auth.not_logged_in"
+	case errors.Is(err, consent.ErrToolExecutionDenied):
+		return "user.tool_denied"
+	case errors.Is(err, git.ErrNotRepository):
+		return "internal.not_git_repo"
+	case errors.Is(err, azapi.ErrPreviewNotSupported):
+		return "internal.preview_not_supported"
+	case errors.Is(err, provisioning.ErrBindMountOperationDisabled):
+		return "internal.bind_mount_disabled"
+	case errors.Is(err, update.ErrNeedsElevation):
+		return "update.elevationRequired"
+	case errors.Is(err, pipeline.ErrRemoteHostIsNotAzDo):
+		return "internal.remote_not_azdo"
 	default:
 		return ""
 	}
+}
+
+// classifySuggestionType returns a telemetry error type string for an inner error wrapped by ErrorWithSuggestion.
+// It preserves the suggestion result code while improving the error.type attribute when the inner error is structured.
+//
+// The check order here should match MapError to ensure consistent classification.
+// Structured error types are checked first, then sentinels, then network errors, then fallback.
+func classifySuggestionType(err error) string {
+	if updateErr, ok := errors.AsType[*update.UpdateError](err); ok {
+		return updateErr.Code
+	}
+
+	if _, ok := errors.AsType[*auth.ReLoginRequiredError](err); ok {
+		return "auth.login_required"
+	}
+
+	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
+		serviceName := "other"
+		statusCode := -1
+
+		if respErr.RawResponse != nil {
+			statusCode = respErr.RawResponse.StatusCode
+			if respErr.RawResponse.Request != nil {
+				serviceName, _ = mapService(respErr.RawResponse.Request.Host)
+			}
+		}
+
+		return fmt.Sprintf("service.%s.%d", serviceName, statusCode)
+	}
+
+	if armDeployErr, ok := errors.AsType[*azapi.AzureDeploymentError](err); ok {
+		operationName := armDeployErr.Operation
+		if operationName == azapi.DeploymentOperationDeploy {
+			operationName = "deployment"
+		}
+
+		return fmt.Sprintf("service.arm.%s.failed", operationName)
+	}
+
+	if extServiceErr, ok := errors.AsType[*azdext.ServiceError](err); ok {
+		serviceName := ""
+		if extServiceErr.ServiceName != "" {
+			serviceName, _ = mapService(extServiceErr.ServiceName)
+		}
+
+		switch {
+		case extServiceErr.ErrorCode != "":
+			return fmt.Sprintf("ext.service.%s", normalizeCodeSegment(extServiceErr.ErrorCode, "failed"))
+		case extServiceErr.StatusCode > 0 && serviceName != "":
+			return fmt.Sprintf("ext.service.%s.%d", serviceName, extServiceErr.StatusCode)
+		case extServiceErr.StatusCode > 0:
+			return fmt.Sprintf("ext.service.unknown.%d", extServiceErr.StatusCode)
+		default:
+			return "ext.service.unknown.failed"
+		}
+	}
+
+	if extLocalErr, ok := errors.AsType[*azdext.LocalError](err); ok {
+		domain := string(azdext.NormalizeLocalErrorCategory(extLocalErr.Category))
+		code := normalizeCodeSegment(extLocalErr.Code, "failed")
+
+		return fmt.Sprintf("ext.%s.%s", domain, code)
+	}
+
+	if _, ok := errors.AsType[*extensions.ExtensionRunError](err); ok {
+		return "ext.run.failed"
+	}
+
+	if toolExecErr, ok := errors.AsType[*exec.ExitError](err); ok {
+		toolName := "other"
+		if cmdName := cmdAsName(toolExecErr.Cmd); cmdName != "" {
+			toolName = cmdName
+		}
+
+		return fmt.Sprintf("tool.%s.failed", toolName)
+	}
+
+	if toolCheckErr, ok := errors.AsType[*tools.MissingToolErrors](err); ok {
+		if len(toolCheckErr.ToolNames) == 1 {
+			return fmt.Sprintf("tool.%s.missing", toolCheckErr.ToolNames[0])
+		}
+
+		return "tool.multiple.missing"
+	}
+
+	if _, ok := errors.AsType[*auth.AuthFailedError](err); ok {
+		return "service.aad.failed"
+	}
+
+	if code := classifySentinel(err); code != "" {
+		return code
+	}
+
+	if isNetworkError(err) {
+		return "internal.network"
+	}
+
+	return errorType(err)
 }
 
 // errorType returns the type name of the given error, unwrapping as needed to find the root cause(s).

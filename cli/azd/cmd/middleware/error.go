@@ -219,7 +219,6 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 	attempt := 0
 	var previousError error
-	var errorWithTraceId *internal.ErrorWithTraceId
 
 	for {
 		if originalError == nil {

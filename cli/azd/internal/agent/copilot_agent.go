@@ -10,8 +10,6 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -33,6 +31,7 @@ type CopilotAgent struct {
 	// Dependencies
 	clientManager        *agentcopilot.CopilotClientManager
 	sessionConfigBuilder *agentcopilot.SessionConfigBuilder
+	cli                  *agentcopilot.CopilotCLI
 	consentManager       consent.ConsentManager
 	console              input.Console
 	configManager        config.UserConfigManager
@@ -361,14 +360,14 @@ func (a *CopilotAgent) ensureSession(ctx context.Context, resumeSessionID string
 		return nil
 	}
 
-	// Ensure plugins
-	a.ensurePlugins(ctx)
-
-	// Start client
+	// Start client (extracts bundled CLI to cache if needed)
 	if err := a.clientManager.Start(ctx); err != nil {
 		return err
 	}
 	a.addCleanup("copilot-client", a.clientManager.Stop)
+
+	// Ensure plugins — must run after Start() so the bundled CLI is extracted
+	a.ensurePlugins(ctx)
 
 	// Load built-in MCP server configs
 	builtInServers, err := loadBuiltInMCPServers()
@@ -604,7 +603,11 @@ func (a *CopilotAgent) handleErrorWithRetryPrompt(ctx context.Context, err error
 }
 
 func (a *CopilotAgent) ensurePlugins(ctx context.Context) {
-	cliPath := resolveCopilotCLIPath()
+	cliPath, err := a.cli.Path(ctx)
+	if err != nil {
+		log.Printf("[copilot] Failed to resolve CLI path for plugins: %v", err)
+		return
+	}
 
 	installed := getInstalledPlugins(ctx, cliPath)
 
@@ -650,48 +653,6 @@ func getInstalledPlugins(ctx context.Context, cliPath string) map[string]bool {
 		}
 	}
 	return installed
-}
-
-// resolveCopilotCLIPath finds the Copilot CLI binary for plugin management commands.
-// Resolution order:
-//  1. COPILOT_CLI_PATH environment variable
-//  2. Bundled CLI extracted by the SDK to the user cache directory
-//  3. "copilot" (relies on PATH)
-func resolveCopilotCLIPath() string {
-	if p := os.Getenv("COPILOT_CLI_PATH"); p != "" {
-		return p
-	}
-
-	// Check the SDK bundler's install location: {UserCacheDir}/copilot-sdk/copilot_{version}{ext}
-	if cacheDir, err := os.UserCacheDir(); err == nil {
-		binaryName := "copilot"
-		if runtime.GOOS == "windows" {
-			binaryName = "copilot.exe"
-		}
-
-		sdkCacheDir := filepath.Join(cacheDir, "copilot-sdk")
-		entries, err := os.ReadDir(sdkCacheDir)
-		if err == nil {
-			for _, entry := range entries {
-				name := entry.Name()
-				if strings.HasPrefix(name, "copilot") && !strings.HasSuffix(name, ".lock") &&
-					!strings.HasSuffix(name, ".license") && !entry.IsDir() {
-					candidate := filepath.Join(sdkCacheDir, name)
-					if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-						return candidate
-					}
-				}
-			}
-		}
-
-		// Also check unversioned name
-		candidate := filepath.Join(sdkCacheDir, binaryName)
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate
-		}
-	}
-
-	return "copilot"
 }
 
 func formatSessionTime(ts string) string {

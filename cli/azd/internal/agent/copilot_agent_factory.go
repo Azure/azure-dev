@@ -33,6 +33,7 @@ var requiredPlugins = []pluginSpec{
 type CopilotAgentFactory struct {
 	clientManager        *agentcopilot.CopilotClientManager
 	sessionConfigBuilder *agentcopilot.SessionConfigBuilder
+	cli                  *agentcopilot.CopilotCLI
 	consentManager       consent.ConsentManager
 	console              input.Console
 	configManager        config.UserConfigManager
@@ -42,6 +43,7 @@ type CopilotAgentFactory struct {
 func NewCopilotAgentFactory(
 	clientManager *agentcopilot.CopilotClientManager,
 	sessionConfigBuilder *agentcopilot.SessionConfigBuilder,
+	cli *agentcopilot.CopilotCLI,
 	consentManager consent.ConsentManager,
 	console input.Console,
 	configManager config.UserConfigManager,
@@ -49,6 +51,7 @@ func NewCopilotAgentFactory(
 	return &CopilotAgentFactory{
 		clientManager:        clientManager,
 		sessionConfigBuilder: sessionConfigBuilder,
+		cli:                  cli,
 		consentManager:       consentManager,
 		console:              console,
 		configManager:        configManager,
@@ -61,6 +64,7 @@ func (f *CopilotAgentFactory) Create(ctx context.Context, opts ...AgentOption) (
 	agent := &CopilotAgent{
 		clientManager:        f.clientManager,
 		sessionConfigBuilder: f.sessionConfigBuilder,
+		cli:                  f.cli,
 		consentManager:       f.consentManager,
 		console:              f.console,
 		configManager:        f.configManager,

@@ -580,8 +580,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Copilot agent components
 	container.MustRegisterSingleton(agentcopilot.NewSessionConfigBuilder)
-	container.MustRegisterSingleton(func() *agentcopilot.CopilotClientManager {
-		return agentcopilot.NewCopilotClientManager(nil)
+	container.MustRegisterSingleton(agentcopilot.NewCopilotCLI)
+	container.MustRegisterSingleton(func(cli *agentcopilot.CopilotCLI) *agentcopilot.CopilotClientManager {
+		return agentcopilot.NewCopilotClientManager(nil, cli)
 	})
 	container.MustRegisterScoped(agent.NewCopilotAgentFactory)
 	container.MustRegisterScoped(consent.NewConsentManager)

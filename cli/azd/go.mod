@@ -53,7 +53,6 @@ require (
 	github.com/invopop/jsonschema v0.13.0
 	github.com/jmespath-community/go-jmespath v1.1.1
 	github.com/joho/godotenv v1.5.1
-	github.com/klauspost/compress v1.18.3
 	github.com/magefile/mage v1.16.0
 	github.com/mark3labs/mcp-go v0.41.1
 	github.com/mattn/go-colorable v0.1.14
@@ -153,5 +152,3 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20260209200024-4cfbd4190f57 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-tool github.com/github/copilot-sdk/go/cmd/bundler

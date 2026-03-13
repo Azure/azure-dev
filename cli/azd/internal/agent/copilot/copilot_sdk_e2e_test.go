@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"testing"
 	"time"
 
@@ -26,6 +27,13 @@ func TestCopilotSDK_E2E(t *testing.T) {
 
 	if os.Getenv("SKIP_COPILOT_E2E") == "1" {
 		t.Skip("SKIP_COPILOT_E2E is set")
+	}
+
+	// Skip if copilot CLI is not available (CI environments without copilot installed)
+	if _, err := exec.LookPath("copilot"); err != nil {
+		if os.Getenv("COPILOT_CLI_PATH") == "" && os.Getenv("AZD_COPILOT_CLI_PATH") == "" {
+			t.Skip("copilot CLI not found in PATH and no override set — skipping e2e test")
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)

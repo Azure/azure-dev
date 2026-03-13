@@ -189,14 +189,6 @@ $oldGOEXPERIMENT = $env:GOEXPERIMENT
 $env:GOEXPERIMENT="loopvar"
 
 try {
-    # Bundle the Copilot CLI binary for embedding
-    Write-Host "Running: go tool bundler"
-    go tool bundler
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "Error running go tool bundler"
-        exit $LASTEXITCODE
-    }
-
     Write-Host "Running: go build ``"
     PrintFlags -flags $buildFlags
     if ($OneAuth) {

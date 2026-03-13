@@ -16,6 +16,7 @@ import (
 type CopilotClientManager struct {
 	client  *copilot.Client
 	options *CopilotClientOptions
+	cli     *CopilotCLI
 }
 
 // CopilotClientOptions configures the CopilotClientManager.
@@ -23,42 +24,49 @@ type CopilotClientOptions struct {
 	// LogLevel controls SDK logging verbosity (e.g., "info", "debug", "error").
 	LogLevel string
 	// CLIPath overrides the path to the Copilot CLI binary.
-	// If empty, the SDK uses its built-in resolution:
-	//  1. COPILOT_CLI_PATH environment variable
-	//  2. Embedded binary (from go tool bundler, auto-extracted to cache)
-	//  3. "copilot" in PATH
+	// If empty, the managed CopilotCLI handles download and caching.
 	CLIPath string
 }
 
 // NewCopilotClientManager creates a new CopilotClientManager with the given options.
 // If options is nil, defaults are used.
-func NewCopilotClientManager(options *CopilotClientOptions) *CopilotClientManager {
+func NewCopilotClientManager(options *CopilotClientOptions, cli *CopilotCLI) *CopilotClientManager {
 	if options == nil {
 		options = &CopilotClientOptions{}
 	}
 
-	clientOpts := &copilot.ClientOptions{}
-	if options.LogLevel != "" {
-		clientOpts.LogLevel = options.LogLevel
-	} else {
-		clientOpts.LogLevel = "debug"
-	}
-
-	if options.CLIPath != "" {
-		clientOpts.CLIPath = options.CLIPath
-		log.Printf("[copilot-client] Using explicit CLI path: %s", options.CLIPath)
-	}
-
 	return &CopilotClientManager{
-		client:  copilot.NewClient(clientOpts),
 		options: options,
+		cli:     cli,
 	}
 }
 
 // Start initializes the Copilot SDK client and establishes a connection
 // to the copilot-agent-runtime process.
 func (m *CopilotClientManager) Start(ctx context.Context) error {
-	log.Printf("[copilot-client] Starting client (logLevel=%q)...", m.options.LogLevel)
+	clientOpts := &copilot.ClientOptions{}
+	if m.options.LogLevel != "" {
+		clientOpts.LogLevel = m.options.LogLevel
+	} else {
+		clientOpts.LogLevel = "debug"
+	}
+
+	// Resolve CLI path: explicit option > managed CopilotCLI (downloads if needed)
+	if m.options.CLIPath != "" {
+		clientOpts.CLIPath = m.options.CLIPath
+		log.Printf("[copilot-client] Using explicit CLI path: %s", m.options.CLIPath)
+	} else if m.cli != nil {
+		cliPath, err := m.cli.Path(ctx)
+		if err != nil {
+			return fmt.Errorf("resolving copilot CLI: %w", err)
+		}
+		clientOpts.CLIPath = cliPath
+		log.Printf("[copilot-client] Using managed CLI: %s", cliPath)
+	}
+
+	m.client = copilot.NewClient(clientOpts)
+
+	log.Printf("[copilot-client] Starting client (logLevel=%q)...", clientOpts.LogLevel)
 	if err := m.client.Start(ctx); err != nil {
 		log.Printf("[copilot-client] Start failed: %v", err)
 		return fmt.Errorf(

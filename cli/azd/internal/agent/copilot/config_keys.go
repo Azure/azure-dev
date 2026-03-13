@@ -4,7 +4,7 @@
 package copilot
 
 // Config key constants for the copilot.* namespace in azd user configuration.
-// All keys are built compositionally so renaming any level requires a single change.
+// All keys are built from shared prefix constants so renaming any level requires a single change.
 const (
 	// ConfigRoot is the root namespace for all Copilot agent configuration keys.
 	ConfigRoot = "copilot"

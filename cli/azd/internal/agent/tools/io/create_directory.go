@@ -28,10 +28,10 @@ func (t CreateDirectoryTool) Name() string {
 func (t CreateDirectoryTool) Annotations() mcp.ToolAnnotation {
 	return mcp.ToolAnnotation{
 		Title:           "Create Directory",
-		ReadOnlyHint:    common.ToPtr(false),
-		DestructiveHint: common.ToPtr(false),
-		IdempotentHint:  common.ToPtr(true),
-		OpenWorldHint:   common.ToPtr(false),
+		ReadOnlyHint:    new(false),
+		DestructiveHint: new(false),
+		IdempotentHint:  new(true),
+		OpenWorldHint:   new(false),
 	}
 }
 

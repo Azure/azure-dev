@@ -7,7 +7,6 @@ import (
 	"net/http"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 )
 
 const (
@@ -22,7 +21,7 @@ type apiVersionPolicy struct {
 // Policy to ensure the AZD custom user agent is set on all HTTP requests.
 func NewApiVersionPolicy(apiVersion *string) policy.Policy {
 	if apiVersion == nil {
-		apiVersion = to.Ptr(defaultApiVersion)
+		apiVersion = new(defaultApiVersion)
 	}
 
 	return &apiVersionPolicy{

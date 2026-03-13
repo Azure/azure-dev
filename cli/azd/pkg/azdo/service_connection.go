@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -199,16 +198,16 @@ func createAzureRMServiceEndPointArgs(
 		Name:        &ServiceConnectionName,
 		Description: &description,
 		ProjectReference: &serviceendpoint.ProjectReference{
-			Id:   to.Ptr(uuid.MustParse(*projectId)),
+			Id:   new(uuid.MustParse(*projectId)),
 			Name: projectName,
 		}}}
 
 	serviceEndpoint := &serviceendpoint.ServiceEndpoint{
-		Type:                             to.Ptr("azurerm"),
-		Owner:                            to.Ptr("library"),
-		Url:                              to.Ptr("https://management.azure.com/"),
+		Type:                             new("azurerm"),
+		Owner:                            new("library"),
+		Url:                              new("https://management.azure.com/"),
 		Name:                             &ServiceConnectionName,
-		IsShared:                         to.Ptr(false),
+		IsShared:                         new(false),
 		Authorization:                    &endpointAuthorization,
 		Data:                             &endpointData,
 		ServiceEndpointProjectReferences: &pRef,

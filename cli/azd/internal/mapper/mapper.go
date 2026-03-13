@@ -163,8 +163,8 @@ func Register[S, T any](fn func(context.Context, S) (T, error)) error {
 	}
 
 	key := [2]reflect.Type{
-		reflect.TypeOf((*S)(nil)).Elem(),
-		reflect.TypeOf((*T)(nil)).Elem(),
+		reflect.TypeFor[S](),
+		reflect.TypeFor[T](),
 	}
 
 	mu.Lock()
@@ -238,7 +238,7 @@ func MustRegister[S, T any](fn func(context.Context, S) (T, error)) {
 //	var target *UserProto
 //	if err := mapper.Convert(user, &target); err != nil {
 //	    var noMapper *NoMapperError
-//	    if errors.As(err, &noMapper) {
+//	    if noMapper, ok := errors.AsType[*NoMapperError](err); ok {
 //	        log.Printf("No converter from %v to %v", noMapper.SrcType, noMapper.DstType)
 //	    }
 //	    return err

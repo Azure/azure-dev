@@ -3,6 +3,8 @@
 
 package environment
 
+import "maps"
+
 type TargetResource struct {
 	subscriptionId    string
 	resourceGroupName string
@@ -48,9 +50,7 @@ func (ds *TargetResource) Metadata() map[string]string {
 	}
 
 	copyMap := make(map[string]string, len(ds.metadata))
-	for key, value := range ds.metadata {
-		copyMap[key] = value
-	}
+	maps.Copy(copyMap, ds.metadata)
 
 	return copyMap
 }
@@ -62,9 +62,7 @@ func (ds *TargetResource) SetMetadata(metadata map[string]string) {
 	}
 
 	copyMap := make(map[string]string, len(metadata))
-	for key, value := range metadata {
-		copyMap[key] = value
-	}
+	maps.Copy(copyMap, metadata)
 
 	ds.metadata = copyMap
 }

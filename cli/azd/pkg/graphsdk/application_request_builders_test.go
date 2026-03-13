@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockgraphsdk"
@@ -20,13 +19,13 @@ import (
 var (
 	applications []graphsdk.Application = []graphsdk.Application{
 		{
-			Id:          to.Ptr("1"),
-			AppId:       to.Ptr("app-01"),
+			Id:          new("1"),
+			AppId:       new("app-01"),
 			DisplayName: "App 1",
 		},
 		{
-			Id:          to.Ptr("2"),
-			AppId:       to.Ptr("app-02"),
+			Id:          new("2"),
+			AppId:       new("app-02"),
 			DisplayName: "App 2",
 		},
 	}
@@ -178,9 +177,9 @@ func TestApplicationAddPassword(t *testing.T) {
 		application := applications[0]
 
 		mockCredential := graphsdk.ApplicationPasswordCredential{
-			KeyId:       to.Ptr("key1"),
-			DisplayName: to.Ptr("Name"),
-			SecretText:  to.Ptr("foobar"),
+			KeyId:       new("key1"),
+			DisplayName: new("Name"),
+			SecretText:  new("foobar"),
 		}
 
 		mockContext := mocks.NewMockContext(context.Background())

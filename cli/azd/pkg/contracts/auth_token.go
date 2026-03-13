@@ -22,7 +22,7 @@ type AuthTokenResult struct {
 type RFC3339Time time.Time
 
 func (r RFC3339Time) MarshalJSON() ([]byte, error) {
-	return []byte(fmt.Sprintf(`"%s"`, time.Time(r).Format(time.RFC3339))), nil
+	return fmt.Appendf(nil, `"%s"`, time.Time(r).Format(time.RFC3339)), nil
 }
 
 func (r *RFC3339Time) UnmarshalJSON(data []byte) error {

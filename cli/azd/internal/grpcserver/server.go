@@ -155,10 +155,10 @@ func (s *Server) Stop() error {
 func (s *Server) errorWrappingInterceptor() grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
-		req interface{},
+		req any,
 		info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler,
-	) (interface{}, error) {
+	) (any, error) {
 		resp, err := handler(ctx, req)
 		if err != nil {
 			err = wrapErrorWithSuggestion(err)
@@ -170,10 +170,10 @@ func (s *Server) errorWrappingInterceptor() grpc.UnaryServerInterceptor {
 func (s *Server) tokenAuthInterceptor(serverInfo *ServerInfo) grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
-		req interface{},
+		req any,
 		info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler,
-	) (interface{}, error) {
+	) (any, error) {
 		md, ok := metadata.FromIncomingContext(ctx)
 		if !ok {
 			return nil, status.Error(codes.Unauthenticated, "metadata missing")
@@ -207,11 +207,10 @@ func wrapErrorWithSuggestion(err error) error {
 		return nil
 	}
 
-	var loginErr *auth.ReLoginRequiredError
-	isAuthErr := errors.Is(err, auth.ErrNoCurrentUser) || errors.As(err, &loginErr)
+	_, loginErr := errors.AsType[*auth.ReLoginRequiredError](err)
+	isAuthErr := errors.Is(err, auth.ErrNoCurrentUser) || loginErr
 
-	var suggestionErr *internal.ErrorWithSuggestion
-	if errors.As(err, &suggestionErr) {
+	if suggestionErr, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok {
 		msg := fmt.Sprintf("%s\n%s", err.Error(), suggestionErr.Suggestion)
 		if isAuthErr {
 			return status.Error(codes.Unauthenticated, msg)

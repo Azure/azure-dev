@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -182,9 +181,10 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	}
 
 	if da.env.GetSubscriptionId() == "" {
-		return nil, errors.New(
-			"infrastructure has not been provisioned. Run `azd provision`",
-		)
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        internal.ErrInfraNotProvisioned,
+			Suggestion: "Run 'azd provision' to set up infrastructure before deploying.",
+		}
 	}
 
 	targetServiceName, err := getTargetServiceName(
@@ -201,15 +201,17 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	}
 
 	if da.flags.All && da.flags.fromPackage != "" {
-		return nil, errors.New(
-			"'--from-package' cannot be specified when '--all' is set. Specify a specific service by passing a <service>")
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        internal.ErrFromPackageWithAll,
+			Suggestion: "Use 'azd deploy <service> --from-package <path>' to target a specific service.",
+		}
 	}
 
 	if targetServiceName == "" && da.flags.fromPackage != "" {
-		return nil, errors.New(
-			//nolint:lll
-			"'--from-package' cannot be specified when deploying all services. Specify a specific service by passing a <service>",
-		)
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        internal.ErrFromPackageNoService,
+			Suggestion: "Use 'azd deploy <service> --from-package <path>' to target a specific service.",
+		}
 	}
 
 	if err := da.projectManager.Initialize(ctx, da.projectConfig); err != nil {

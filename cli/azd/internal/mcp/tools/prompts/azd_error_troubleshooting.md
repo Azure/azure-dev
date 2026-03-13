@@ -19,6 +19,20 @@
 
 🧠 **Execution Guidelines**  
 
+## ⚠️ IMPORTANT: Prefer Permanent Infrastructure Fixes Over Temporary Workarounds
+
+When resolving errors related to SKU capacity, resource configuration, or similar provisioning issues:
+
+1. **Always check the `infra/` directory first** for hardcoded values in Bicep (`.bicep`) or Terraform (`.tf`) files.
+2. **Prefer fixing the infrastructure code directly** (e.g., updating a default parameter value).
+3. **Only use `az` CLI commands to modify Azure resources as a last resort.** Always check whether the fix can be made
+   in the `infra/` Bicep or Terraform files first. When `azd provision` is re-run, the templates will redeploy the
+   infrastructure and **override any manual changes** made via `az` commands (e.g., `az resource update`, `az webapp config set`),
+   causing the same error to reoccur. If no infrastructure-level fix is possible, `az` CLI commands may be used, but
+   inform the user that the change is **not permanent** and will be lost on the next `azd provision` run.
+
+This principle applies to all error types below.
+
 ## Azure REST API Response Errors
 
 **Error Pattern:** HTTP status codes (400, 401, 403, 404, 429, 500, etc.) with Azure error codes

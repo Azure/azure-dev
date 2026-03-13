@@ -56,8 +56,8 @@ func getParentProcessInfoWithPPID(pid int) (parentProcessInfo, int, error) {
 		output, err = cmd.Output()
 		if err == nil {
 			// Parse lsof output - lines starting with 'n' contain file names
-			lines := bytes.Split(output, []byte("\n"))
-			for _, line := range lines {
+			lines := bytes.SplitSeq(output, []byte("\n"))
+			for line := range lines {
 				if len(line) > 1 && line[0] == 'n' {
 					path := string(line[1:])
 					// Skip non-file entries

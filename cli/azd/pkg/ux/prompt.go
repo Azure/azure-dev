@@ -207,12 +207,12 @@ func (p *Prompt) Render(printer Printer) error {
 
 	// Always capture cursor position for input, used for SecondLineMessage
 	if p.cursorPosition == nil {
-		p.cursorPosition = Ptr(printer.CursorPosition())
+		p.cursorPosition = new(printer.CursorPosition())
 	}
 
 	// Placeholder
 	if p.value == "" && p.options.PlaceHolder != "" {
-		p.cursorPosition = Ptr(printer.CursorPosition())
+		p.cursorPosition = new(printer.CursorPosition())
 		printer.Fprintf("%s", output.WithGrayFormat(p.options.PlaceHolder))
 	}
 
@@ -225,7 +225,7 @@ func (p *Prompt) Render(printer Printer) error {
 		}
 
 		printer.Fprintf("%s", valueOutput)
-		p.cursorPosition = Ptr(printer.CursorPosition())
+		p.cursorPosition = new(printer.CursorPosition())
 	}
 
 	// Display SecondLineMessage on next line in gray

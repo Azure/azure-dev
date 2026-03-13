@@ -119,7 +119,7 @@ func (sm *sourceManager) List(ctx context.Context) ([]*SourceConfig, error) {
 
 	rawSources, ok := config.Get(baseConfigKey)
 	if ok {
-		sourceMap := rawSources.(map[string]interface{})
+		sourceMap := rawSources.(map[string]any)
 		for key, rawSource := range sourceMap {
 			var sourceConfig *SourceConfig
 

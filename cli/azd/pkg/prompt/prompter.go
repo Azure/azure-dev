@@ -12,7 +12,6 @@ import (
 	"slices"
 	"strconv"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -75,6 +74,8 @@ func (p *DefaultPrompter) PromptSubscription(ctx context.Context, msg string) (s
 	}
 
 	if len(subscriptionOptions) == 0 {
+		// NOTE: Error text must contain "no subscriptions found" to match the
+		// pattern in error_suggestions.yaml. Update both if rewording.
 		return "", errors.New(heredoc.Docf(
 			`no subscriptions found.
 			Ensure you have a subscription by visiting %s and search for Subscriptions in the search bar.
@@ -231,7 +232,7 @@ func (p *DefaultPrompter) PromptResourceGroupFrom(
 
 	tagsParam := make(map[string]*string, len(options.Tags))
 	for k, v := range options.Tags {
-		tagsParam[k] = to.Ptr(v)
+		tagsParam[k] = new(v)
 	}
 
 	_, err = p.resourceService.CreateOrUpdateResourceGroup(ctx, subscriptionId, name, location, tagsParam)

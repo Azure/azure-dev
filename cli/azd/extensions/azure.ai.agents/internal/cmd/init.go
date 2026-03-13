@@ -26,7 +26,6 @@ import (
 	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -56,7 +55,7 @@ type initFlags struct {
 
 // AiProjectResourceConfig represents the configuration for an AI project resource
 type AiProjectResourceConfig struct {
-	Models []map[string]interface{} `json:"models,omitempty"`
+	Models []map[string]any `json:"models,omitempty"`
 }
 
 type InitAction struct {
@@ -644,7 +643,7 @@ func ensureAzureContext(
 		}
 
 		azureContext.Scope.SubscriptionId = subscriptionResponse.Subscription.Id
-		azureContext.Scope.TenantId = subscriptionResponse.Subscription.TenantId
+		azureContext.Scope.TenantId = subscriptionResponse.Subscription.UserTenantId
 
 		// Set the subscription ID in the environment
 		_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
@@ -1041,7 +1040,7 @@ func (a *InitAction) downloadAgentYaml(
 		}
 
 		// Parse the YAML content into genericManifest
-		var genericManifest map[string]interface{}
+		var genericManifest map[string]any
 		if err := yaml.Unmarshal(content, &genericManifest); err != nil {
 			return nil, "", exterrors.Validation(
 				exterrors.CodeInvalidAgentManifest,
@@ -1073,7 +1072,7 @@ func (a *InitAction) downloadAgentYaml(
 				confirmResponse, err := a.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
 					Options: &azdext.ConfirmOptions{
 						Message:      "This operation will overwrite the provided manifest file. Continue?",
-						DefaultValue: to.Ptr(false),
+						DefaultValue: new(false),
 					},
 				})
 				if err != nil {
@@ -1368,7 +1367,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	}
 
 	// Convert the bytes to a dictionary
-	var templateDict map[string]interface{}
+	var templateDict map[string]any
 	if err := json.Unmarshal(templateBytes, &templateDict); err != nil {
 		return fmt.Errorf("failed to unmarshal agent template from JSON: %w", err)
 	}
@@ -1616,15 +1615,10 @@ func (a *InitAction) parseGitHubUrlNaive(manifestPointer string) *GitHubUrlInfo 
 		repoPath := strings.TrimPrefix(parts[0], "/")
 		repoSlug := repoPath
 
-		// The second part is {branch}/{file-path}
-		branchAndPath := parts[1]
-		slashIndex := strings.Index(branchAndPath, "/")
-		if slashIndex == -1 {
+		branch, filePath, ok := strings.Cut(parts[1], "/")
+		if !ok {
 			return nil
 		}
-
-		branch := branchAndPath[:slashIndex]
-		filePath := branchAndPath[slashIndex+1:]
 
 		// Only use naive parsing if branch looks like a simple single word (no slashes)
 		if strings.Contains(branch, "/") {
@@ -1654,17 +1648,11 @@ func (a *InitAction) parseGitHubUrlNaive(manifestPointer string) *GitHubUrlInfo 
 
 		repoSlug := parts[0] + "/" + parts[1]
 		rest := parts[2]
-
-		// Check for refs/heads/ prefix
-		if strings.HasPrefix(rest, "refs/heads/") {
-			rest = strings.TrimPrefix(rest, "refs/heads/")
-			slashIndex := strings.Index(rest, "/")
-			if slashIndex == -1 {
+		if rest, ok := strings.CutPrefix(rest, "refs/heads/"); ok {
+			branch, filePath, ok := strings.Cut(rest, "/")
+			if !ok {
 				return nil
 			}
-
-			branch := rest[:slashIndex]
-			filePath := rest[slashIndex+1:]
 
 			// Only use naive parsing if branch looks like a simple single word
 			if strings.Contains(branch, "/") {
@@ -1743,7 +1731,7 @@ func downloadDirectoryContents(
 	}
 
 	// Parse the directory contents JSON
-	var dirContents []map[string]interface{}
+	var dirContents []map[string]any
 	if err := json.Unmarshal([]byte(dirContentsJson), &dirContents); err != nil {
 		return fmt.Errorf("failed to parse directory contents JSON: %w", err)
 	}
@@ -1832,7 +1820,7 @@ func downloadDirectoryContentsWithoutGhCli(
 	}
 
 	// Parse the directory contents JSON
-	var dirContents []map[string]interface{}
+	var dirContents []map[string]any
 	if err := json.Unmarshal(body, &dirContents); err != nil {
 		return fmt.Errorf("failed to parse directory contents JSON: %w", err)
 	}

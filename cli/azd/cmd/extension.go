@@ -531,10 +531,16 @@ func (t *extensionShowItem) Display(writer io.Writer) error {
 
 func (a *extensionShowAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if len(a.args) == 0 {
-		return nil, fmt.Errorf("must specify an extension id")
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        internal.ErrNoArgsProvided,
+			Suggestion: "Run 'azd extension show <extension-id>' specifying the extension.",
+		}
 	}
 	if len(a.args) > 1 {
-		return nil, fmt.Errorf("cannot specify multiple extensions")
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        fmt.Errorf("cannot specify multiple extensions: %w", internal.ErrInvalidFlagCombination),
+			Suggestion: "Specify a single extension ID.",
+		}
 	}
 	extensionId := a.args[0]
 	filterOptions := &extensions.FilterOptions{
@@ -646,11 +652,19 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 
 	extensionIds := a.args
 	if len(extensionIds) == 0 {
-		return nil, fmt.Errorf("must specify an extension id")
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        internal.ErrNoArgsProvided,
+			Suggestion: "Run 'azd extension install <extension-id>' specifying one or more extensions.",
+		}
 	}
 
 	if len(extensionIds) > 1 && a.flags.version != "" {
-		return nil, fmt.Errorf("cannot specify --version flag when using multiple extensions")
+		return nil, &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf(
+				"cannot specify --version with multiple extensions: %w",
+				internal.ErrInvalidFlagCombination),
+			Suggestion: "Install one extension at a time when using --version.",
+		}
 	}
 
 	azdVersion := currentAzdSemver()
@@ -830,11 +844,19 @@ func newExtensionUninstallAction(
 
 func (a *extensionUninstallAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if len(a.args) > 0 && a.flags.all {
-		return nil, fmt.Errorf("cannot specify both an extension name and --all flag")
+		return nil, &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf(
+				"cannot specify both an extension name and --all flag: %w",
+				internal.ErrInvalidFlagCombination),
+			Suggestion: "Use either 'azd extension uninstall <id>' or 'azd extension uninstall --all'.",
+		}
 	}
 
 	if len(a.args) == 0 && !a.flags.all {
-		return nil, fmt.Errorf("must specify an extension id or use --all flag")
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        internal.ErrNoArgsProvided,
+			Suggestion: "Run 'azd extension uninstall <extension-id>' or 'azd extension uninstall --all'.",
+		}
 	}
 
 	a.console.MessageUxItem(ctx, &ux.MessageTitle{
@@ -856,7 +878,10 @@ func (a *extensionUninstallAction) Run(ctx context.Context) (*actions.ActionResu
 	}
 
 	if len(extensionIds) == 0 {
-		return nil, fmt.Errorf("no extensions to uninstall")
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        internal.ErrNoExtensionsAvailable,
+			Suggestion: "No extensions are currently installed. Run 'azd extension list' to verify.",
+		}
 	}
 
 	for _, extensionId := range extensionIds {
@@ -932,15 +957,28 @@ func newExtensionUpgradeAction(
 
 func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if len(a.args) > 0 && a.flags.all {
-		return nil, fmt.Errorf("cannot specify both an extension name and --all flag")
+		return nil, &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf(
+				"cannot specify both an extension name and --all flag: %w",
+				internal.ErrInvalidFlagCombination),
+			Suggestion: "Use either 'azd extension upgrade <id>' or 'azd extension upgrade --all'.",
+		}
 	}
 
 	if len(a.args) > 1 && a.flags.version != "" {
-		return nil, fmt.Errorf("cannot specify --version flag when using multiple extensions")
+		return nil, &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf(
+				"cannot specify --version with multiple extensions: %w",
+				internal.ErrInvalidFlagCombination),
+			Suggestion: "Upgrade one extension at a time when using --version.",
+		}
 	}
 
 	if len(a.args) == 0 && !a.flags.all {
-		return nil, fmt.Errorf("must specify an extension id or use --all flag")
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        internal.ErrNoArgsProvided,
+			Suggestion: "Run 'azd extension upgrade <extension-id>' or 'azd extension upgrade --all'.",
+		}
 	}
 
 	a.console.MessageUxItem(ctx, &ux.MessageTitle{
@@ -964,7 +1002,10 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 	}
 
 	if len(extensionIds) == 0 {
-		return nil, fmt.Errorf("no extensions to upgrade")
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        internal.ErrNoExtensionsAvailable,
+			Suggestion: "No extensions are currently installed. Run 'azd extension list' to verify.",
+		}
 	}
 
 	for index, extensionId := range extensionIds {
@@ -997,7 +1038,10 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 
 		if len(matches) == 0 {
 			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-			return nil, fmt.Errorf("extension %s not found", extensionId)
+			return nil, &internal.ErrorWithSuggestion{
+				Err:        fmt.Errorf("extension '%s': %w", extensionId, internal.ErrExtensionNotFound),
+				Suggestion: "Run 'azd extension list' to browse available extensions.",
+			}
 		}
 
 		selectedExtension, err := selectDistinctExtension(ctx, a.console, extensionId, matches, a.flags.global)
@@ -1181,11 +1225,12 @@ func (a *extensionSourceAddAction) Run(ctx context.Context) (*actions.ActionResu
 	a.console.StopSpinner(ctx, spinnerMessage, input.GetStepResultFormat(err))
 	if err != nil {
 		if errors.Is(err, extensions.ErrSourceTypeInvalid) {
-			return nil, fmt.Errorf(
-				"extension source type '%s' is not supported. Supported types are %s",
-				a.flags.kind,
-				ux.ListAsText([]string{"'file'", "'url'"}),
-			)
+			return nil, &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"extension source type '%s' not supported: %w",
+					a.flags.kind, internal.ErrValidationFailed),
+				Suggestion: fmt.Sprintf("Supported source types are %s.", ux.ListAsText([]string{"'file'", "'url'"})),
+			}
 		}
 
 		return nil, fmt.Errorf("extension source validation failed: %w", err)
@@ -1228,10 +1273,16 @@ func newExtensionSourceRemoveAction(
 
 func (a *extensionSourceRemoveAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if len(a.args) == 0 {
-		return nil, fmt.Errorf("must specify an extension source name")
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        internal.ErrNoArgsProvided,
+			Suggestion: "Run 'azd extension source remove <source-name>'.",
+		}
 	}
 	if len(a.args) > 1 {
-		return nil, fmt.Errorf("cannot specify multiple extension sources")
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        fmt.Errorf("cannot specify multiple extension sources: %w", internal.ErrInvalidFlagCombination),
+			Suggestion: "Remove one source at a time.",
+		}
 	}
 	a.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title: "Remove extension source (azd extension source remove)",
@@ -1535,10 +1586,16 @@ func newExtensionSourceValidateAction(
 
 func (a *extensionSourceValidateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if len(a.args) == 0 {
-		return nil, fmt.Errorf("must specify a source name, file path, or URL")
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        internal.ErrNoArgsProvided,
+			Suggestion: "Run 'azd extension source validate <source-name|path|url>'.",
+		}
 	}
 	if len(a.args) > 1 {
-		return nil, fmt.Errorf("cannot specify multiple sources")
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        fmt.Errorf("cannot specify multiple sources: %w", internal.ErrInvalidFlagCombination),
+			Suggestion: "Validate one source at a time.",
+		}
 	}
 
 	arg := a.args[0]
@@ -1572,7 +1629,10 @@ func (a *extensionSourceValidateAction) Run(ctx context.Context) (*actions.Actio
 	}
 
 	if len(extensionList) == 0 {
-		return nil, fmt.Errorf("source contains no extensions")
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        fmt.Errorf("source contains no extensions: %w", internal.ErrValidationFailed),
+			Suggestion: "Verify the source configuration contains valid extension definitions.",
+		}
 	}
 
 	result := extensions.ValidateExtensions(extensionList, a.flags.strict)
@@ -1586,7 +1646,10 @@ func (a *extensionSourceValidateAction) Run(ctx context.Context) (*actions.Actio
 	}
 
 	if !result.Valid {
-		return nil, fmt.Errorf("validation failed: one or more extensions have errors")
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        fmt.Errorf("one or more extensions have errors: %w", internal.ErrValidationFailed),
+			Suggestion: "Review the validation output above and fix the reported errors.",
+		}
 	}
 
 	return nil, nil

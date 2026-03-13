@@ -83,7 +83,7 @@ func Test_ContainerApp_AddRevision(t *testing.T) {
 				ActiveRevisionsMode: to.Ptr(armappcontainers.ActiveRevisionsModeSingle),
 				Secrets: []*armappcontainers.Secret{
 					{
-						Name:  to.Ptr("secret"),
+						Name:  new("secret"),
 						Value: nil,
 					},
 				},
@@ -101,8 +101,8 @@ func Test_ContainerApp_AddRevision(t *testing.T) {
 	secrets := &armappcontainers.SecretsCollection{
 		Value: []*armappcontainers.ContainerAppSecret{
 			{
-				Name:  to.Ptr("secret"),
-				Value: to.Ptr("value"),
+				Name:  new("secret"),
+				Value: new("value"),
 			},
 		},
 	}
@@ -152,7 +152,7 @@ func Test_ContainerApp_AddRevision_MultipleRevisionMode(t *testing.T) {
 				ActiveRevisionsMode: to.Ptr(armappcontainers.ActiveRevisionsModeMultiple),
 				Secrets: []*armappcontainers.Secret{
 					{
-						Name:  to.Ptr("secret"),
+						Name:  new("secret"),
 						Value: nil,
 					},
 				},
@@ -171,8 +171,8 @@ func Test_ContainerApp_AddRevision_MultipleRevisionMode(t *testing.T) {
 	secrets := &armappcontainers.SecretsCollection{
 		Value: []*armappcontainers.ContainerAppSecret{
 			{
-				Name:  to.Ptr("secret"),
-				Value: to.Ptr("value"),
+				Name:  new("secret"),
+				Value: new("value"),
 			},
 		},
 	}
@@ -247,11 +247,11 @@ func Test_ContainerApp_AddRevision_WithEnvVars(t *testing.T) {
 						Image: &originalImageName,
 						Env: []*armappcontainers.EnvironmentVar{
 							{
-								Name:  to.Ptr("EXISTING"),
+								Name:  new("EXISTING"),
 								Value: &existingValue,
 							},
 							{
-								Name:  to.Ptr("OVERRIDE"),
+								Name:  new("OVERRIDE"),
 								Value: &overrideValue,
 							},
 						},
@@ -324,16 +324,16 @@ properties:
 `
 
 	expected := &armappcontainers.ContainerApp{
-		Location: to.Ptr(location),
-		Name:     to.Ptr(appName),
+		Location: new(location),
+		Name:     new(appName),
 		Properties: &armappcontainers.ContainerAppProperties{
-			LatestRevisionName: to.Ptr("LATEST_REVISION_NAME"),
+			LatestRevisionName: new("LATEST_REVISION_NAME"),
 			Configuration: &armappcontainers.Configuration{
 				ActiveRevisionsMode: to.Ptr(armappcontainers.ActiveRevisionsModeSingle),
 				Ingress: &armappcontainers.Ingress{
 					CustomDomains: []*armappcontainers.CustomDomain{
 						{
-							Name: to.Ptr("DOMAIN_NAME"),
+							Name: new("DOMAIN_NAME"),
 						},
 					},
 					StickySessions: &armappcontainers.IngressStickySessions{
@@ -344,7 +344,7 @@ properties:
 			Template: &armappcontainers.Template{
 				Containers: []*armappcontainers.Container{
 					{
-						Image: to.Ptr("IMAGE_NAME"),
+						Image: new("IMAGE_NAME"),
 					},
 				},
 			},
@@ -400,14 +400,14 @@ func Test_ContainerAppJob_Get(t *testing.T) {
 	imageName := "myregistry.azurecr.io/myimage:latest"
 
 	job := &armappcontainers.Job{
-		Location: to.Ptr(location),
-		Name:     to.Ptr(jobName),
+		Location: new(location),
+		Name:     new(jobName),
 		Properties: &armappcontainers.JobProperties{
 			Template: &armappcontainers.JobTemplate{
 				Containers: []*armappcontainers.Container{
 					{
-						Name:  to.Ptr(jobName),
-						Image: to.Ptr(imageName),
+						Name:  new(jobName),
+						Image: new(imageName),
 					},
 				},
 			},
@@ -451,14 +451,14 @@ func Test_ContainerAppJob_UpdateImage(t *testing.T) {
 	updatedImage := "myregistry.azurecr.io/myimage:v2"
 
 	job := &armappcontainers.Job{
-		Location: to.Ptr(location),
-		Name:     to.Ptr(jobName),
+		Location: new(location),
+		Name:     new(jobName),
 		Properties: &armappcontainers.JobProperties{
 			Template: &armappcontainers.JobTemplate{
 				Containers: []*armappcontainers.Container{
 					{
-						Name:  to.Ptr(jobName),
-						Image: to.Ptr(originalImage),
+						Name:  new(jobName),
+						Image: new(originalImage),
 					},
 				},
 			},
@@ -502,7 +502,7 @@ func Test_ContainerAppJob_UpdateImage_NilContainers(t *testing.T) {
 	jobName := "MY_JOB"
 
 	job := &armappcontainers.Job{
-		Name:       to.Ptr(jobName),
+		Name:       new(jobName),
 		Properties: nil,
 	}
 
@@ -536,14 +536,14 @@ func Test_ContainerAppJob_CreateJobsClient_CacheHit(t *testing.T) {
 	imageName := "myregistry.azurecr.io/myimage:latest"
 
 	job := &armappcontainers.Job{
-		Location: to.Ptr(location),
-		Name:     to.Ptr(jobName),
+		Location: new(location),
+		Name:     new(jobName),
 		Properties: &armappcontainers.JobProperties{
 			Template: &armappcontainers.JobTemplate{
 				Containers: []*armappcontainers.Container{
 					{
-						Name:  to.Ptr(jobName),
-						Image: to.Ptr(imageName),
+						Name:  new(jobName),
+						Image: new(imageName),
 					},
 				},
 			},
@@ -701,14 +701,14 @@ func Test_ContainerAppJob_UpdateImage_CustomApiVersion(t *testing.T) {
 	customApiVersion := "2024-10-02-preview"
 
 	job := &armappcontainers.Job{
-		Location: to.Ptr(location),
-		Name:     to.Ptr(jobName),
+		Location: new(location),
+		Name:     new(jobName),
 		Properties: &armappcontainers.JobProperties{
 			Template: &armappcontainers.JobTemplate{
 				Containers: []*armappcontainers.Container{
 					{
-						Name:  to.Ptr(jobName),
-						Image: to.Ptr(originalImage),
+						Name:  new(jobName),
+						Image: new(originalImage),
 					},
 				},
 			},
@@ -816,7 +816,7 @@ func Test_ContainerAppJob_UpdateImage_NilContainerElement(t *testing.T) {
 	jobName := "MY_JOB"
 
 	job := &armappcontainers.Job{
-		Name: to.Ptr(jobName),
+		Name: new(jobName),
 		Properties: &armappcontainers.JobProperties{
 			Template: &armappcontainers.JobTemplate{
 				Containers: []*armappcontainers.Container{
@@ -847,4 +847,232 @@ func Test_ContainerAppJob_UpdateImage_NilContainerElement(t *testing.T) {
 	)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "nil container entry")
+}
+
+// Test_ContainerApp_DeployYaml_PreservesDaprConfig verifies that when a deployment YAML does not include
+// Dapr configuration, any existing Dapr configuration on the container app is preserved.
+// This ensures that Dapr configuration set externally (e.g. via Terraform) is not removed on deploy.
+func Test_ContainerApp_DeployYaml_PreservesDaprConfig(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+
+	subscriptionId := "SUBSCRIPTION_ID"
+	location := "eastus2"
+	resourceGroup := "RESOURCE_GROUP"
+	appName := "APP_NAME"
+
+	// YAML does NOT include Dapr configuration
+	containerAppYaml := `
+location: eastus2
+name: APP_NAME
+properties:
+  configuration:
+    activeRevisionsMode: Single
+  template:
+    containers:
+      - image: IMAGE_NAME
+`
+
+	// Existing container app has Dapr enabled
+	existingApp := &armappcontainers.ContainerApp{
+		Location: new(location),
+		Name:     new(appName),
+		Properties: &armappcontainers.ContainerAppProperties{
+			Configuration: &armappcontainers.Configuration{
+				ActiveRevisionsMode: to.Ptr(armappcontainers.ActiveRevisionsModeSingle),
+				Dapr: &armappcontainers.Dapr{
+					AppID:   new("my-app"),
+					AppPort: to.Ptr[int32](8080),
+					Enabled: new(true),
+				},
+			},
+			Template: &armappcontainers.Template{
+				Containers: []*armappcontainers.Container{
+					{
+						Image: new("IMAGE_NAME"),
+					},
+				},
+			},
+		},
+	}
+
+	_ = mockazsdk.MockContainerAppGet(mockContext, subscriptionId, resourceGroup, appName, existingApp)
+	containerAppUpdateRequest := mockazsdk.MockContainerAppCreateOrUpdate(
+		mockContext, subscriptionId, resourceGroup, appName, existingApp,
+	)
+
+	cas := NewContainerAppService(
+		mockContext.SubscriptionCredentialProvider,
+		clock.NewMock(),
+		mockContext.ArmClientOptions,
+		mockContext.AlphaFeaturesManager,
+	)
+
+	err := cas.DeployYaml(*mockContext.Context, subscriptionId, resourceGroup, appName, []byte(containerAppYaml), nil)
+	require.NoError(t, err)
+
+	var actual *armappcontainers.ContainerApp
+	err = mocks.ReadHttpBody(containerAppUpdateRequest.Body, &actual)
+	require.NoError(t, err)
+
+	// Dapr configuration should be preserved from the existing container app
+	require.NotNil(t, actual.Properties.Configuration.Dapr)
+	require.Equal(t, "my-app", *actual.Properties.Configuration.Dapr.AppID)
+	require.Equal(t, int32(8080), *actual.Properties.Configuration.Dapr.AppPort)
+	require.Equal(t, true, *actual.Properties.Configuration.Dapr.Enabled)
+}
+
+// Test_ContainerApp_DeployYaml_YamlDaprConfigNotOverridden verifies that when a deployment YAML already
+// includes Dapr configuration, the YAML's Dapr configuration is used (not the existing app's configuration).
+func Test_ContainerApp_DeployYaml_YamlDaprConfigNotOverridden(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+
+	subscriptionId := "SUBSCRIPTION_ID"
+	location := "eastus2"
+	resourceGroup := "RESOURCE_GROUP"
+	appName := "APP_NAME"
+
+	// YAML includes its own Dapr configuration
+	containerAppYaml := `
+location: eastus2
+name: APP_NAME
+properties:
+  configuration:
+    activeRevisionsMode: Single
+    dapr:
+      appId: yaml-app
+      appPort: 9090
+      enabled: true
+  template:
+    containers:
+      - image: IMAGE_NAME
+`
+
+	// Existing container app has different Dapr configuration
+	existingApp := &armappcontainers.ContainerApp{
+		Location: new(location),
+		Name:     new(appName),
+		Properties: &armappcontainers.ContainerAppProperties{
+			Configuration: &armappcontainers.Configuration{
+				ActiveRevisionsMode: to.Ptr(armappcontainers.ActiveRevisionsModeSingle),
+				Dapr: &armappcontainers.Dapr{
+					AppID:   new("existing-app"),
+					AppPort: to.Ptr[int32](8080),
+					Enabled: new(true),
+				},
+			},
+			Template: &armappcontainers.Template{
+				Containers: []*armappcontainers.Container{
+					{
+						Image: new("IMAGE_NAME"),
+					},
+				},
+			},
+		},
+	}
+
+	_ = mockazsdk.MockContainerAppGet(mockContext, subscriptionId, resourceGroup, appName, existingApp)
+	containerAppUpdateRequest := mockazsdk.MockContainerAppCreateOrUpdate(
+		mockContext, subscriptionId, resourceGroup, appName, existingApp,
+	)
+
+	cas := NewContainerAppService(
+		mockContext.SubscriptionCredentialProvider,
+		clock.NewMock(),
+		mockContext.ArmClientOptions,
+		mockContext.AlphaFeaturesManager,
+	)
+
+	err := cas.DeployYaml(*mockContext.Context, subscriptionId, resourceGroup, appName, []byte(containerAppYaml), nil)
+	require.NoError(t, err)
+
+	var actual *armappcontainers.ContainerApp
+	err = mocks.ReadHttpBody(containerAppUpdateRequest.Body, &actual)
+	require.NoError(t, err)
+
+	// Dapr configuration from the YAML should be used, not the existing app's
+	require.NotNil(t, actual.Properties.Configuration.Dapr)
+	require.Equal(t, "yaml-app", *actual.Properties.Configuration.Dapr.AppID)
+	require.Equal(t, int32(9090), *actual.Properties.Configuration.Dapr.AppPort)
+}
+
+// Test_ContainerApp_DeployYaml_FirstDeploy_NoDaprInjected verifies that on first deploy (GET returns 404),
+// no Dapr configuration is injected into the deployment payload.
+func Test_ContainerApp_DeployYaml_FirstDeploy_NoDaprInjected(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+
+	subscriptionId := "SUBSCRIPTION_ID"
+	resourceGroup := "RESOURCE_GROUP"
+	appName := "NEW_APP"
+
+	// YAML does NOT include Dapr configuration
+	containerAppYaml := `
+location: eastus2
+name: NEW_APP
+properties:
+  configuration:
+    activeRevisionsMode: Single
+  template:
+    containers:
+      - image: IMAGE_NAME
+`
+
+	// Mock GET: first call returns 404 (app doesn't exist for persistSettings),
+	// subsequent calls return 200 (for CreateOrUpdate polling)
+	getCallCount := 0
+	createdApp := &armappcontainers.ContainerApp{
+		Location: new("eastus2"),
+		Name:     new("NEW_APP"),
+		Properties: &armappcontainers.ContainerAppProperties{
+			Configuration: &armappcontainers.Configuration{
+				ActiveRevisionsMode: to.Ptr(armappcontainers.ActiveRevisionsModeSingle),
+			},
+			Template: &armappcontainers.Template{
+				Containers: []*armappcontainers.Container{
+					{Image: new("IMAGE_NAME")},
+				},
+			},
+		},
+	}
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.Contains(
+			request.URL.Path,
+			fmt.Sprintf(
+				"/subscriptions/%s/resourceGroups/%s/providers/Microsoft.App/containerApps/%s",
+				subscriptionId,
+				resourceGroup,
+				appName,
+			),
+		)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		getCallCount++
+		if getCallCount == 1 {
+			return mocks.CreateEmptyHttpResponse(request, http.StatusNotFound)
+		}
+		response := armappcontainers.ContainerAppsClientGetResponse{
+			ContainerApp: *createdApp,
+		}
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, response)
+	})
+
+	containerAppUpdateRequest := mockazsdk.MockContainerAppCreateOrUpdate(
+		mockContext, subscriptionId, resourceGroup, appName, createdApp,
+	)
+
+	cas := NewContainerAppService(
+		mockContext.SubscriptionCredentialProvider,
+		clock.NewMock(),
+		mockContext.ArmClientOptions,
+		mockContext.AlphaFeaturesManager,
+	)
+
+	err := cas.DeployYaml(*mockContext.Context, subscriptionId, resourceGroup, appName, []byte(containerAppYaml), nil)
+	require.NoError(t, err)
+
+	var actual *armappcontainers.ContainerApp
+	err = mocks.ReadHttpBody(containerAppUpdateRequest.Body, &actual)
+	require.NoError(t, err)
+
+	// No Dapr configuration should be injected on first deploy
+	require.Nil(t, actual.Properties.Configuration.Dapr)
 }

@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -420,17 +421,15 @@ func (a *templateSourceAddAction) Run(ctx context.Context) (*actions.ActionResul
 	for _, wellKnownSource := range templates.WellKnownSources {
 		if wellKnownSource.Type == templates.SourceKind(strings.ToLower(a.flags.kind)) {
 			a.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
-			return nil, fmt.Errorf(
-				"'%s' is a known key. It can't be used as type for the custom key '%s'. "+
-					"For custom key, supported types are %s. "+
-					"If you are trying to add the known source '%s', "+
-					"run `azd template source add %s` (w/o the --type flag). ",
-				a.flags.kind,
-				key,
-				ux.ListAsText([]string{"'file'", "'url'", "'gh'"}),
-				a.flags.kind,
-				a.flags.kind,
-			)
+			return nil, &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"'%s' is a known source type, cannot be used as custom key '%s': %w",
+					a.flags.kind, key, internal.ErrValidationFailed),
+				Suggestion: fmt.Sprintf(
+					"For custom keys, supported types are %s."+
+						" To add the known source '%s', run 'azd template source add %s' without --type.",
+					ux.ListAsText([]string{"'file'", "'url'", "'gh'"}), a.flags.kind, a.flags.kind),
+			}
 		}
 	}
 
@@ -447,11 +446,14 @@ func (a *templateSourceAddAction) Run(ctx context.Context) (*actions.ActionResul
 		a.console.StopSpinner(ctx, spinnerMessage, input.GetStepResultFormat(err))
 		if err != nil {
 			if errors.Is(err, templates.ErrSourceTypeInvalid) {
-				return nil, fmt.Errorf(
-					"template source type '%s' is not supported. Supported types are %s",
-					a.flags.kind,
-					ux.ListAsText([]string{"'file'", "'url'", "'gh'"}),
-				)
+				return nil, &internal.ErrorWithSuggestion{
+					Err: fmt.Errorf(
+						"template source type '%s' not supported: %w",
+						a.flags.kind, internal.ErrValidationFailed),
+					Suggestion: fmt.Sprintf(
+						"Supported source types are %s.",
+						ux.ListAsText([]string{"'file'", "'url'", "'gh'"})),
+				}
 			}
 
 			return nil, fmt.Errorf("template source validation failed: %w", err)

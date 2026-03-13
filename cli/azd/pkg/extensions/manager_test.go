@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -1096,12 +1097,7 @@ func Test_FetchAndCacheMetadata(t *testing.T) {
 		// Mock CommandRunner to simulate timeout for ANY metadata command
 		timeoutMockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			// Match any command that has "metadata" as an argument
-			for _, arg := range args.Args {
-				if arg == "metadata" {
-					return true
-				}
-			}
-			return false
+			return slices.Contains(args.Args, "metadata")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			return exec.RunResult{}, context.DeadlineExceeded
 		})

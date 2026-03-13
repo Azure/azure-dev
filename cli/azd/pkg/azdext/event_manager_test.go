@@ -52,12 +52,12 @@ func (m *MockBidiStreamingClient[Req, Resp]) CloseSend() error {
 	return args.Error(0)
 }
 
-func (m *MockBidiStreamingClient[Req, Resp]) SendMsg(msg interface{}) error {
+func (m *MockBidiStreamingClient[Req, Resp]) SendMsg(msg any) error {
 	args := m.Called(msg)
 	return args.Error(0)
 }
 
-func (m *MockBidiStreamingClient[Req, Resp]) RecvMsg(msg interface{}) error {
+func (m *MockBidiStreamingClient[Req, Resp]) RecvMsg(msg any) error {
 	args := m.Called(msg)
 	return args.Error(0)
 }

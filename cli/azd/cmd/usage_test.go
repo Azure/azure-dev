@@ -68,7 +68,7 @@ func usageSnapshot(t *testing.T, cmd *cobra.Command) {
 	})
 }
 
-func resolveTemplate(text string, data interface{}) (string, error) {
+func resolveTemplate(text string, data any) (string, error) {
 	finalBuffer := &bytes.Buffer{}
 	t := template.New("resolve template with command")
 	template.Must(t.Parse(text))

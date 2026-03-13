@@ -15,7 +15,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -43,7 +42,7 @@ type initFlags struct {
 
 // AiProjectResourceConfig represents the configuration for an AI project resource
 type AiProjectResourceConfig struct {
-	Models []map[string]interface{} `json:"models,omitempty"`
+	Models []map[string]any `json:"models,omitempty"`
 }
 
 type InitAction struct {
@@ -326,7 +325,7 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 				return nil, fmt.Errorf("failed to prompt for subscription: %w", err)
 			}
 			subscriptionId = subscriptionResponse.Subscription.Id
-			tenantId = subscriptionResponse.Subscription.TenantId
+			tenantId = subscriptionResponse.Subscription.UserTenantId
 		} else {
 			// Get tenant ID from subscription
 			tenantResponse, err := azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
@@ -599,7 +598,7 @@ func ensureAzureContext(
 		}
 
 		azureContext.Scope.SubscriptionId = subscriptionResponse.Subscription.Id
-		azureContext.Scope.TenantId = subscriptionResponse.Subscription.TenantId
+		azureContext.Scope.TenantId = subscriptionResponse.Subscription.UserTenantId
 
 		// Set the subscription ID in the environment
 		_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
@@ -629,7 +628,7 @@ func ensureAzureContext(
 				AzureContext: azureContext,
 				Options: &azdext.PromptResourceGroupOptions{
 					SelectOptions: &azdext.PromptResourceSelectOptions{
-						AllowNewResource: to.Ptr(false),
+						AllowNewResource: new(false),
 					},
 				},
 			})
@@ -656,7 +655,7 @@ func ensureAzureContext(
 				ResourceType:            "Microsoft.CognitiveServices/accounts/projects",
 				ResourceTypeDisplayName: "AI Foundry project",
 				SelectOptions: &azdext.PromptResourceSelectOptions{
-					AllowNewResource: to.Ptr(false),
+					AllowNewResource: new(false),
 					Message:          "Select a Foundry project",
 					LoadingMessage:   "Fetching Foundry projects...",
 				},
@@ -908,18 +907,18 @@ method:
 
 		// Add grader for reinforcement method if present
 		if len(job.Grader) > 0 && strings.ToLower(job.Method) == "reinforcement" {
-			var graderMap map[string]interface{}
+			var graderMap map[string]any
 			if err := json.Unmarshal(job.Grader, &graderMap); err == nil {
 				graderYaml, err := yaml.Marshal(graderMap)
 				if err == nil {
 					// Indent the grader YAML to be nested under method.reinforcement.grader
-					indentedGrader := ""
-					for _, line := range strings.Split(string(graderYaml), "\n") {
+					var indentedGrader strings.Builder
+					for line := range strings.SplitSeq(string(graderYaml), "\n") {
 						if line != "" {
-							indentedGrader += "      " + line + "\n"
+							indentedGrader.WriteString("      " + line + "\n")
 						}
 					}
-					yamlContent += "    grader:\n" + indentedGrader
+					yamlContent += "    grader:\n" + indentedGrader.String()
 				}
 			}
 		}
@@ -1018,7 +1017,7 @@ func downloadDirectoryContents(
 	}
 
 	// Parse the directory contents JSON
-	var dirContents []map[string]interface{}
+	var dirContents []map[string]any
 	if err := json.Unmarshal([]byte(dirContentsJson), &dirContents); err != nil {
 		return fmt.Errorf("failed to parse directory contents JSON: %w", err)
 	}

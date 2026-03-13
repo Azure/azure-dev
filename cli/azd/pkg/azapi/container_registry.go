@@ -144,8 +144,7 @@ func (crs *containerRegistryService) Credentials(
 	// First attempt to get ACR credentials from the logged in user
 	dockerCreds, tokenErr := crs.getTokenCredentials(ctx, subscriptionId, loginServer)
 	if tokenErr != nil {
-		var httpErr *azcore.ResponseError
-		if errors.As(tokenErr, &httpErr) {
+		if httpErr, ok := errors.AsType[*azcore.ResponseError](tokenErr); ok {
 			if httpErr.StatusCode == 404 {
 				// No need to try admin user credentials if getToken returns 404. It means the registry was not found.
 				return nil, tokenErr

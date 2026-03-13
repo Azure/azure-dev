@@ -245,7 +245,10 @@ func (a *mcpStartAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 	extensionTools, err := mcpHost.AllTools(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load MCP host tools")
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        internal.ErrMcpToolsLoadFailed,
+			Suggestion: "Check that MCP extensions are installed and configured correctly.",
+		}
 	}
 
 	allTools = append(allTools, extensionTools...)
@@ -809,15 +812,26 @@ func (a *mcpConsentGrantAction) Run(ctx context.Context) (*actions.ActionResult,
 
 	// Validate flag combinations
 	if a.flags.tool != "" && a.flags.server == "" {
-		return nil, fmt.Errorf("--tool requires --server")
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        fmt.Errorf("--tool requires --server: %w", internal.ErrInvalidFlagCombination),
+			Suggestion: "Add '--server <server-name>' when using '--tool'.",
+		}
 	}
 
 	if a.flags.globalFlag && (a.flags.server != "" || a.flags.tool != "") {
-		return nil, fmt.Errorf("--global cannot be combined with --server or --tool")
+		return nil, &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf(
+				"--global cannot be combined with --server or --tool: %w",
+				internal.ErrInvalidFlagCombination),
+			Suggestion: "Use '--global' alone, or use '--server' and '--tool' without '--global'.",
+		}
 	}
 
 	if !a.flags.globalFlag && a.flags.server == "" {
-		return nil, fmt.Errorf("specify either --global or --server")
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        fmt.Errorf("must specify --global or --server: %w", internal.ErrInvalidFlagCombination),
+			Suggestion: "Use '--global' for all servers, or '--server <name>' for a specific server.",
+		}
 	}
 
 	// Validate action type
@@ -846,7 +860,10 @@ func (a *mcpConsentGrantAction) Run(ctx context.Context) (*actions.ActionResult,
 
 	// For sampling context, tool-specific grants are not supported
 	if operation == consent.OperationTypeSampling && a.flags.tool != "" {
-		return nil, fmt.Errorf("--tool is not supported for sampling rules")
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        fmt.Errorf("--tool is not supported for sampling rules: %w", internal.ErrInvalidFlagCombination),
+			Suggestion: "Remove '--tool' when granting sampling consent. Sampling rules apply per-server.",
+		}
 	}
 
 	// Build target

@@ -14,7 +14,7 @@ func (f *NoneFormatter) Kind() Format {
 	return NoneFormat
 }
 
-func (f *NoneFormatter) Format(obj interface{}, writer io.Writer, opts interface{}) error {
+func (f *NoneFormatter) Format(obj any, writer io.Writer, opts any) error {
 	return fmt.Errorf("attempted to output formatted data when 'none' was chosen as output format")
 }
 

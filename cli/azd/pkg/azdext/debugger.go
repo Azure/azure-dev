@@ -10,7 +10,6 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/golang-jwt/jwt/v5"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -45,7 +44,7 @@ func WaitForDebugger(ctx context.Context, azdClient *AzdClient) error {
 	response, err := azdClient.Prompt().Confirm(ctx, &ConfirmRequest{
 		Options: &ConfirmOptions{
 			Message:      message,
-			DefaultValue: ux.Ptr(true),
+			DefaultValue: new(true),
 		},
 	})
 

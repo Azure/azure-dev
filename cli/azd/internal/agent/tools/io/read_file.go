@@ -64,10 +64,10 @@ func (t ReadFileTool) Name() string {
 func (t ReadFileTool) Annotations() mcp.ToolAnnotation {
 	return mcp.ToolAnnotation{
 		Title:           "Read File Contents",
-		ReadOnlyHint:    common.ToPtr(true),
-		DestructiveHint: common.ToPtr(false),
-		IdempotentHint:  common.ToPtr(true),
-		OpenWorldHint:   common.ToPtr(false),
+		ReadOnlyHint:    new(true),
+		DestructiveHint: new(false),
+		IdempotentHint:  new(true),
+		OpenWorldHint:   new(false),
 	}
 }
 

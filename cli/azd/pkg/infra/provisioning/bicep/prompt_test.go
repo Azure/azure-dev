@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
@@ -90,7 +89,7 @@ func TestPromptForParameterValidation(t *testing.T) {
 			name: "minValue",
 			param: azure.ArmTemplateParameterDefinition{
 				Type:     "int",
-				MinValue: to.Ptr(1),
+				MinValue: new(1),
 			},
 			provided: []string{"0", "1"},
 			expected: 1,
@@ -100,7 +99,7 @@ func TestPromptForParameterValidation(t *testing.T) {
 			name: "maxValue",
 			param: azure.ArmTemplateParameterDefinition{
 				Type:     "int",
-				MaxValue: to.Ptr(10),
+				MaxValue: new(10),
 			},
 			provided: []string{"11", "10"},
 			expected: 10,
@@ -110,8 +109,8 @@ func TestPromptForParameterValidation(t *testing.T) {
 			name: "rangeValue",
 			param: azure.ArmTemplateParameterDefinition{
 				Type:     "int",
-				MinValue: to.Ptr(1),
-				MaxValue: to.Ptr(10),
+				MinValue: new(1),
+				MaxValue: new(10),
 			},
 			provided: []string{"0", "11", "5"},
 			expected: 5,
@@ -121,7 +120,7 @@ func TestPromptForParameterValidation(t *testing.T) {
 			name: "minLength",
 			param: azure.ArmTemplateParameterDefinition{
 				Type:      "string",
-				MinLength: to.Ptr(1),
+				MinLength: new(1),
 			},
 			provided: []string{"", "ok"},
 			expected: "ok",
@@ -131,7 +130,7 @@ func TestPromptForParameterValidation(t *testing.T) {
 			name: "maxLength",
 			param: azure.ArmTemplateParameterDefinition{
 				Type:      "string",
-				MaxLength: to.Ptr(10),
+				MaxLength: new(10),
 			},
 			provided: []string{"this is a very long string and will be rejected", "ok"},
 			expected: "ok",
@@ -141,8 +140,8 @@ func TestPromptForParameterValidation(t *testing.T) {
 			name: "rangeLength",
 			param: azure.ArmTemplateParameterDefinition{
 				Type:      "string",
-				MinLength: to.Ptr(1),
-				MaxLength: to.Ptr(10),
+				MinLength: new(1),
+				MaxLength: new(10),
 			},
 			provided: []string{"this is a very long string and will be rejected", "", "ok"},
 			expected: "ok",
@@ -227,7 +226,7 @@ func TestPromptForParameterAllowedValues(t *testing.T) {
 
 	value, err := p.promptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameterDefinition{
 		Type:          "string",
-		AllowedValues: to.Ptr([]any{"three", "good", "choices"}),
+		AllowedValues: new([]any{"three", "good", "choices"}),
 	}, nil)
 
 	require.NoError(t, err)
@@ -235,7 +234,7 @@ func TestPromptForParameterAllowedValues(t *testing.T) {
 
 	value, err = p.promptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameterDefinition{
 		Type:          "int",
-		AllowedValues: to.Ptr([]any{10, 20, 30}),
+		AllowedValues: new([]any{10, 20, 30}),
 	}, nil)
 
 	require.NoError(t, err)
@@ -349,7 +348,7 @@ func TestPromptForParameterOverrideDefault(t *testing.T) {
 
 	value, err := p.promptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameterDefinition{
 		Type:          "string",
-		AllowedValues: to.Ptr([]any{"three", "good", "choices"}),
+		AllowedValues: new([]any{"three", "good", "choices"}),
 		Metadata: map[string]json.RawMessage{
 			"azd": json.RawMessage(`{"default": "good"}`),
 		},
@@ -370,7 +369,7 @@ func TestPromptForParameterOverrideDefaultError(t *testing.T) {
 
 	_, err := p.promptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameterDefinition{
 		Type:          "string",
-		AllowedValues: to.Ptr([]any{"three", "good", "choices"}),
+		AllowedValues: new([]any{"three", "good", "choices"}),
 		Metadata: map[string]json.RawMessage{
 			"azd": json.RawMessage(`{"default": "other"}`),
 		},
@@ -390,7 +389,7 @@ func TestPromptForParameterEmptyAllowedValuesError(t *testing.T) {
 
 	_, err := p.promptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameterDefinition{
 		Type:          "string",
-		AllowedValues: to.Ptr([]any{}),
+		AllowedValues: new([]any{}),
 	}, nil)
 
 	require.Error(t, err)

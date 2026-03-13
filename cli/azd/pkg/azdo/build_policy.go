@@ -82,7 +82,7 @@ func CreateBuildPolicy(
 	}
 
 	for _, policy := range existingPolicies {
-		pSettings := policy.Settings.(map[string]interface{})
+		pSettings := policy.Settings.(map[string]any)
 		if def, exists := pSettings["buildDefinitionId"]; exists {
 			defId, castOk := def.(float64)
 			if !castOk {
@@ -103,17 +103,17 @@ func CreateBuildPolicy(
 	policyIsBlocking := true
 	policyIsEnabled := true
 
-	policySettingsScope := map[string]interface{}{
+	policySettingsScope := map[string]any{
 		"repositoryId": repoId,
 		"refName":      fmt.Sprintf("refs/heads/%s", DefaultBranch),
 		"matchKind":    "Exact",
 	}
 
-	policySettingsScopes := []map[string]interface{}{
+	policySettingsScopes := []map[string]any{
 		policySettingsScope,
 	}
 
-	policySettings := map[string]interface{}{
+	policySettings := map[string]any{
 		"buildDefinitionId":       buildDefinition.Id,
 		"displayName":             fmt.Sprintf("Azure Dev Deploy PR - %s", env.Name()),
 		"manualQueueOnly":         false,

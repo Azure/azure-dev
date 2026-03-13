@@ -174,7 +174,7 @@ func runInitAction(ctx context.Context, flags *initFlags) error {
 			Confirm(ctx, &azdext.ConfirmRequest{
 				Options: &azdext.ConfirmOptions{
 					Message:      fmt.Sprintf("Continue creating the extension at %s?", extensionMetadata.Id),
-					DefaultValue: internal.ToPtr(false),
+					DefaultValue: new(false),
 					Placeholder:  "no",
 					HelpMessage:  "Confirm if you want to continue creating the extension.",
 				},
@@ -202,7 +202,7 @@ func runInitAction(ctx context.Context, flags *initFlags) error {
 						"The extension directory '%s' already exists. Do you want to continue?",
 						extensionMetadata.Id,
 					),
-					DefaultValue: internal.ToPtr(false),
+					DefaultValue: new(false),
 				},
 			})
 			if err != nil {
@@ -550,8 +550,8 @@ func collectExtensionMetadata(ctx context.Context, azdClient *azdext.AzdClient) 
 					Value: "service-target-provider",
 				},
 			},
-			EnableFiltering: internal.ToPtr(false),
-			DisplayNumbers:  internal.ToPtr(false),
+			EnableFiltering: new(false),
+			DisplayNumbers:  new(false),
 			HelpMessage: "Capabilities define the features and functionalities of your extension. " +
 				"You can select multiple capabilities.",
 		},
@@ -583,8 +583,8 @@ func collectExtensionMetadata(ctx context.Context, azdClient *azdext.AzdClient) 
 		Options: &azdext.SelectOptions{
 			Message:         "Select a programming language for your extension",
 			Choices:         languageChoices,
-			EnableFiltering: internal.ToPtr(false),
-			DisplayNumbers:  internal.ToPtr(false),
+			EnableFiltering: new(false),
+			DisplayNumbers:  new(false),
 			HelpMessage: "Programming language is used to define the language in which your extension is written. " +
 				"You can select one programming language.",
 		},

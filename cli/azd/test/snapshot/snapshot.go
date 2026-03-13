@@ -68,7 +68,7 @@ func NewDefaultConfig() *cupaloy.Config {
 // To update the snapshots simply set the UPDATE_SNAPSHOTS environment variable and run your tests e.g.
 //
 //	UPDATE_SNAPSHOTS=true go test ./...
-func SnapshotT(t *testing.T, i ...interface{}) {
+func SnapshotT(t *testing.T, i ...any) {
 	cupaloy.SnapshotT(t, i...)
 }
 

@@ -15,8 +15,8 @@ import (
 func TestErrorTypes(t *testing.T) {
 	t.Run("NoMapperError", func(t *testing.T) {
 		err := &NoMapperError{
-			SrcType: reflect.TypeOf(""),
-			DstType: reflect.TypeOf(0),
+			SrcType: reflect.TypeFor[string](),
+			DstType: reflect.TypeFor[int](),
 		}
 
 		assert.Contains(t, err.Error(), "no mapper registered from string to int")
@@ -27,8 +27,8 @@ func TestErrorTypes(t *testing.T) {
 	t.Run("ConversionError", func(t *testing.T) {
 		innerErr := errors.New("test error")
 		err := &ConversionError{
-			SrcType: reflect.TypeOf(""),
-			DstType: reflect.TypeOf(0),
+			SrcType: reflect.TypeFor[string](),
+			DstType: reflect.TypeFor[int](),
 			Err:     innerErr,
 		}
 

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"slices"
 	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -86,13 +87,7 @@ func (e *Extension) WaitUntilReady(ctx context.Context) error {
 // HasCapability checks if the extension has the specified capabilities.
 func (e *Extension) HasCapability(capability ...CapabilityType) bool {
 	for _, cap := range capability {
-		found := false
-		for _, existing := range e.Capabilities {
-			if existing == cap {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(e.Capabilities, cap)
 		if !found {
 			return false
 		}

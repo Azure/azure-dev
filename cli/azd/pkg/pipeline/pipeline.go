@@ -56,7 +56,7 @@ type gitRepositoryDetails struct {
 	// branch
 	branch string
 
-	details interface{}
+	details any
 }
 
 // ScmProvider defines the base behavior for a source control manager provider.

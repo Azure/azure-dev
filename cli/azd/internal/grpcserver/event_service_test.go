@@ -58,12 +58,12 @@ func (m *MockBidiStreamingServer[Req, Resp]) Context() context.Context {
 	return context.Background()
 }
 
-func (m *MockBidiStreamingServer[Req, Resp]) SendMsg(msg interface{}) error {
+func (m *MockBidiStreamingServer[Req, Resp]) SendMsg(msg any) error {
 	args := m.Called(msg)
 	return args.Error(0)
 }
 
-func (m *MockBidiStreamingServer[Req, Resp]) RecvMsg(msg interface{}) error {
+func (m *MockBidiStreamingServer[Req, Resp]) RecvMsg(msg any) error {
 	args := m.Called(msg)
 	return args.Error(0)
 }

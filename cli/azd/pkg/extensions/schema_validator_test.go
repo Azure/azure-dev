@@ -65,7 +65,7 @@ func TestValidateAgainstSchema_Success(t *testing.T) {
 		Required:   []string{"name"},
 	}
 
-	validData := map[string]interface{}{
+	validData := map[string]any{
 		"name": "John Doe",
 		"age":  float64(30),
 	}
@@ -84,7 +84,7 @@ func TestValidateAgainstSchema_MissingRequired(t *testing.T) {
 		Required:   []string{"apiKey"},
 	}
 
-	invalidData := map[string]interface{}{
+	invalidData := map[string]any{
 		"otherField": "value",
 	}
 
@@ -102,7 +102,7 @@ func TestValidateAgainstSchema_WrongType(t *testing.T) {
 		Properties: props,
 	}
 
-	invalidData := map[string]interface{}{
+	invalidData := map[string]any{
 		"count": "not-a-number",
 	}
 
@@ -123,7 +123,7 @@ func TestValidateAgainstSchema_MinimumConstraint(t *testing.T) {
 		Properties: props,
 	}
 
-	invalidData := map[string]interface{}{
+	invalidData := map[string]any{
 		"timeout": float64(0),
 	}
 
@@ -159,12 +159,12 @@ func TestValidateAgainstSchema_ComplexSchema(t *testing.T) {
 		Required:   []string{"server"},
 	}
 
-	validData := map[string]interface{}{
-		"server": map[string]interface{}{
+	validData := map[string]any{
+		"server": map[string]any{
 			"host": "localhost",
 			"port": float64(8080),
 		},
-		"features": []interface{}{"auth", "logging"},
+		"features": []any{"auth", "logging"},
 	}
 
 	err := ValidateAgainstSchema(schema, validData)
@@ -243,7 +243,7 @@ func TestConfigurationMetadata_FromGoTypes(t *testing.T) {
 	require.NotNil(t, config.Service)
 
 	// Test that generated schema validates correctly
-	validGlobalData := map[string]interface{}{
+	validGlobalData := map[string]any{
 		"apiKey":  "my-secret-key-123",
 		"timeout": float64(30),
 		"debug":   true,
@@ -253,7 +253,7 @@ func TestConfigurationMetadata_FromGoTypes(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Test validation failure for required field
-	invalidGlobalData := map[string]interface{}{
+	invalidGlobalData := map[string]any{
 		"timeout": float64(30),
 		// missing required apiKey
 	}
@@ -263,7 +263,7 @@ func TestConfigurationMetadata_FromGoTypes(t *testing.T) {
 	assert.Contains(t, err.Error(), "validation failed")
 
 	// Test validation failure for minimum constraint
-	invalidGlobalData2 := map[string]interface{}{
+	invalidGlobalData2 := map[string]any{
 		"apiKey":  "short", // violates minLength=10
 		"timeout": float64(30),
 	}
@@ -272,16 +272,16 @@ func TestConfigurationMetadata_FromGoTypes(t *testing.T) {
 	assert.Error(t, err)
 
 	// Test enum validation
-	validProjectData := map[string]interface{}{
+	validProjectData := map[string]any{
 		"projectName": "my-project",
 		"environment": "staging",
-		"features":    []interface{}{"auth", "logging"},
+		"features":    []any{"auth", "logging"},
 	}
 
 	err = ValidateAgainstSchema(config.Project, validProjectData)
 	assert.NoError(t, err)
 
-	invalidProjectData := map[string]interface{}{
+	invalidProjectData := map[string]any{
 		"projectName": "my-project",
 		"environment": "invalid-env", // not in enum
 	}

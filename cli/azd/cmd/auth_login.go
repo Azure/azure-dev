@@ -279,9 +279,12 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			return nil, err
 		}
 		if !response {
-			return nil, fmt.Errorf(
-				"'azd auth login' is disabled when the auth mode is delegated. "+
-					"Use the delegated identity to authenticate instead. Current mode: %s", loginMode)
+			return nil, &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"current auth mode is '%s': %w", loginMode, internal.ErrLoginDisabledDelegatedMode),
+				Suggestion: "Use the delegated identity to authenticate." +
+					" To switch to built-in auth, confirm the prompt when re-running 'azd auth login'.",
+			}
 		}
 		if err := la.authManager.SetBuiltInAuthMode(); err != nil {
 			return nil, fmt.Errorf("setting auth mode: %w", err)
@@ -308,10 +311,10 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		// We print any non-setup related errors to stderr.
 		// We always return a zero exit code.
 		token, err := la.verifyLoggedIn(ctx)
-		var loginExpiryError *auth.ReLoginRequiredError
+		_, loginExpiryError := errors.AsType[*auth.ReLoginRequiredError](err)
 		if err != nil &&
 			!errors.Is(err, auth.ErrNoCurrentUser) &&
-			!errors.As(err, &loginExpiryError) {
+			!loginExpiryError {
 			fmt.Fprintln(la.console.Handles().Stderr, err.Error())
 		}
 

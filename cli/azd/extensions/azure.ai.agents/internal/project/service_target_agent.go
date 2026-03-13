@@ -452,7 +452,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 		)
 	}
 
-	var genericTemplate map[string]interface{}
+	var genericTemplate map[string]any
 	if err := yaml.Unmarshal(data, &genericTemplate); err != nil {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
@@ -512,7 +512,7 @@ func (p *AgentServiceTargetProvider) isContainerAgent() bool {
 		return false
 	}
 
-	var genericTemplate map[string]interface{}
+	var genericTemplate map[string]any
 	if err := yaml.Unmarshal(data, &genericTemplate); err != nil {
 		return false
 	}

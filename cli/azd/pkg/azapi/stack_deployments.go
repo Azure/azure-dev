@@ -41,7 +41,7 @@ const (
 )
 
 var defaultDeploymentStackOptions = &deploymentStackOptions{
-	BypassStackOutOfSyncError: to.Ptr(false),
+	BypassStackOutOfSyncError: new(false),
 	ActionOnUnmanage: &armdeploymentstacks.ActionOnUnmanage{
 		ManagementGroups: to.Ptr(armdeploymentstacks.DeploymentStacksDeleteDetachEnumDelete),
 		ResourceGroups:   to.Ptr(armdeploymentstacks.DeploymentStacksDeleteDetachEnumDelete),

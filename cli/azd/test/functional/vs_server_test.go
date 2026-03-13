@@ -55,7 +55,7 @@ func Test_CLI_VsServerExternalAuth(t *testing.T) {
 	var svr contracts.VsServerResult
 	var outputData []byte
 	maxAttempts := 20 // Increased from 5 to give more time
-	for i := 0; i < maxAttempts; i++ {
+	for i := range maxAttempts {
 		time.Sleep(150 * time.Millisecond) // Reduced sleep time but more attempts
 		if stdout.Len() > 0 {
 			outputData = stdout.Bytes()
@@ -255,7 +255,7 @@ func Test_CLI_VsServer(t *testing.T) {
 			var svr contracts.VsServerResult
 			var outputData []byte
 			maxAttempts := 20 // Increased from 5 to give more time
-			for i := 0; i < maxAttempts; i++ {
+			for i := range maxAttempts {
 				time.Sleep(150 * time.Millisecond) // Reduced sleep time but more attempts
 				if stdout.Len() > 0 {
 					outputData = stdout.Bytes()

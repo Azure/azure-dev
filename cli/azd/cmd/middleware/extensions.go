@@ -5,6 +5,7 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -31,6 +32,13 @@ var (
 		extensions.FrameworkServiceProviderCapability,
 	}
 )
+
+// extensionFailure tracks a failed extension and its startup error.
+type extensionFailure struct {
+	extension *extensions.Extension
+	err       error
+	timedOut  bool
+}
 
 type ExtensionsMiddleware struct {
 	extensionManager *extensions.Manager
@@ -107,7 +115,7 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 	forceColor := !color.NoColor
 	var wg sync.WaitGroup
 	var mu sync.Mutex
-	var failedExtensions []*extensions.Extension
+	var failedExtensions []extensionFailure
 
 	// Track total time for all extensions to become ready
 	allExtensionsStartTime := time.Now()
@@ -169,7 +177,7 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 				}
 
 				if _, err := m.extensionRunner.Invoke(ctx, ext, options); err != nil {
-					m.console.Message(ctx, err.Error())
+					log.Printf("%v", err)
 					ext.Fail(err)
 				}
 			}()
@@ -187,7 +195,11 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 
 				// Track failed extensions for warning display
 				mu.Lock()
-				failedExtensions = append(failedExtensions, ext)
+				failedExtensions = append(failedExtensions, extensionFailure{
+					extension: ext,
+					err:       err,
+					timedOut:  errors.Is(err, context.DeadlineExceeded),
+				})
 				mu.Unlock()
 			} else {
 				elapsed := time.Since(startTime)
@@ -199,19 +211,114 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 	// Wait for all extensions to reach a terminal state (ready or failed)
 	wg.Wait()
 
-	// Check for failed extensions and display warnings
-
+	// Check for failed extensions and display categorized warnings
 	if len(failedExtensions) > 0 {
-		m.console.Message(ctx, output.WithWarningFormat("WARNING: Extension startup failures detected"))
-		m.console.Message(ctx, "The following extensions failed to initialize within the timeout period:")
-		for _, ext := range failedExtensions {
-			m.console.Message(ctx, fmt.Sprintf("  - %s (%s)", ext.DisplayName, ext.Id))
+		type upgradeInfo struct {
+			ext    *extensions.Extension
+			result *extensions.UpdateCheckResult
+		}
+
+		var needsUpdate []upgradeInfo
+		var timedOut []extensionFailure
+		var otherFailures []extensionFailure
+
+		cacheManager, cacheErr := extensions.NewRegistryCacheManager()
+		var upgradeChecker *extensions.UpdateChecker
+		if cacheErr != nil {
+			log.Printf("skipping upgrade check for failed extensions (cache unavailable): %v", cacheErr)
+		} else {
+			upgradeChecker = extensions.NewUpdateChecker(cacheManager)
+		}
+
+		for _, failure := range failedExtensions {
+			hasUpdate := false
+			var upgradeResult *extensions.UpdateCheckResult
+
+			if upgradeChecker != nil {
+				result, err := upgradeChecker.CheckForUpdate(ctx, failure.extension)
+				if err != nil {
+					log.Printf("failed to check for upgrade for '%s': %v", failure.extension.Id, err)
+				} else if result != nil && result.HasUpdate {
+					hasUpdate = true
+					upgradeResult = result
+				}
+			}
+
+			if hasUpdate {
+				needsUpdate = append(needsUpdate, upgradeInfo{failure.extension, upgradeResult})
+			} else if failure.timedOut {
+				timedOut = append(timedOut, failure)
+			} else {
+				otherFailures = append(otherFailures, failure)
+			}
+		}
+
+		// Display upgrade warnings (single vs multiple)
+		if len(needsUpdate) == 1 {
+			info := needsUpdate[0]
+			m.console.Message(ctx, output.WithWarningFormat(
+				"WARNING: Extension %s did not start. An update is available (%s \u2192 %s) that may resolve this.",
+				info.ext.Id, info.result.InstalledVersion, info.result.LatestVersion,
+			))
+			m.console.Message(ctx, fmt.Sprintf(
+				"To upgrade extension, run %s", output.WithHighLightFormat("azd extension upgrade %s", info.ext.Id),
+			))
+			m.console.Message(ctx, "")
+		} else if len(needsUpdate) > 1 {
+			m.console.Message(ctx, output.WithWarningFormat(
+				"WARNING: The following extensions did not start. Updates are available that may resolve these issues.",
+			))
+			for _, info := range needsUpdate {
+				m.console.Message(ctx, output.WithWarningFormat(
+					fmt.Sprintf("- %s (%s \u2192 %s)", info.ext.Id,
+						info.result.InstalledVersion, info.result.LatestVersion),
+				))
+			}
+			m.console.Message(ctx, fmt.Sprintf(
+				"Run %s to upgrade a specific extension, or %s to upgrade all extensions.",
+				output.WithHighLightFormat("azd extension upgrade <extension-id>"),
+				output.WithHighLightFormat("azd extension upgrade --all"),
+			))
+			m.console.Message(ctx, "")
+		}
+
+		// Display timeout warnings (single vs multiple)
+		if len(timedOut) == 1 {
+			m.console.Message(ctx, output.WithWarningFormat(
+				"WARNING: Extension %s didn't start due to timeout.",
+				timedOut[0].extension.Id,
+			))
+			m.console.Message(ctx, "")
+		} else if len(timedOut) > 1 {
+			m.console.Message(ctx, output.WithWarningFormat(
+				"WARNING: The following extensions didn't start due to timeout.",
+			))
+			for _, failure := range timedOut {
+				m.console.Message(ctx, output.WithWarningFormat(
+					"- %s", failure.extension.Id,
+				))
+			}
+			m.console.Message(ctx, "")
+		}
+
+		if len(otherFailures) > 0 {
+			for _, failure := range otherFailures {
+				log.Printf("%v", failure.err)
+			}
+		}
+
+		if len(failedExtensions) == 1 {
+			m.console.Message(ctx, output.WithWarningFormat(
+				"WARNING: 1 extension did not start. Its features will be unavailable.",
+			))
+		} else {
+			m.console.Message(ctx, output.WithWarningFormat(
+				"WARNING: %d extensions did not start. Their features will be unavailable.",
+				len(failedExtensions),
+			))
 		}
 		m.console.Message(ctx, "")
-		m.console.Message(
-			ctx,
-			"Some features may be unavailable. Increase timeout with AZD_EXT_TIMEOUT=<seconds> if needed.",
-		)
+		m.console.Message(ctx, fmt.Sprintf("Run with %s for details.", output.WithHighLightFormat("--debug")))
 		m.console.Message(ctx, "")
 	}
 

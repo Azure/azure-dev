@@ -26,6 +26,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -42,32 +44,20 @@ func MapError(err error, span tracing.Span) {
 	var errCode string
 	var errDetails []attribute.KeyValue
 
-	// external service errors
-	var respErr *azcore.ResponseError
-	var armDeployErr *azapi.AzureDeploymentError
-	var authFailedErr *auth.AuthFailedError
-	var extServiceErr *azdext.ServiceError
-	var extLocalErr *azdext.LocalError
-
-	// external tool errors
-	var toolExecErr *exec.ExitError
-	var toolCheckErr *tools.MissingToolErrors
-	var extensionRunErr *extensions.ExtensionRunError
-
-	// internal errors
-	var errWithSuggestion *internal.ErrorWithSuggestion
-	var loginErr *auth.ReLoginRequiredError
-	var updateErr *update.UpdateError
-
-	if errors.As(err, &updateErr) {
+	if updateErr, ok := errors.AsType[*update.UpdateError](err); ok {
 		errCode = updateErr.Code
-	} else if errors.As(err, &loginErr) {
+	} else if _, ok := errors.AsType[*auth.ReLoginRequiredError](err); ok {
 		errCode = "auth.login_required"
-	} else if errors.As(err, &errWithSuggestion) {
+	} else if errWithSuggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok {
 		errCode = "error.suggestion"
-		errType := errorType(errWithSuggestion.Unwrap())
-		span.SetAttributes(fields.ErrType.String(errType))
-	} else if errors.As(err, &respErr) {
+		inner := errWithSuggestion.Unwrap()
+		if code := classifySentinel(inner); code != "" {
+			span.SetAttributes(fields.ErrType.String(code))
+		} else {
+			span.SetAttributes(
+				fields.ErrType.String(errorType(inner)))
+		}
+	} else if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
 		serviceName := "other"
 		statusCode := -1
 		errDetails = append(errDetails, fields.ServiceErrorCode.String(respErr.ErrorCode))
@@ -88,7 +78,7 @@ func MapError(err error, span tracing.Span) {
 		}
 
 		errCode = fmt.Sprintf("service.%s.%d", serviceName, statusCode)
-	} else if errors.As(err, &armDeployErr) {
+	} else if armDeployErr, ok := errors.AsType[*azapi.AzureDeploymentError](err); ok {
 		errDetails = append(errDetails, fields.ServiceName.String("arm"))
 		codes := []*deploymentErrorCode{}
 		var collect func(details []*azapi.DeploymentErrorLine, frame int)
@@ -122,7 +112,7 @@ func MapError(err error, span tracing.Span) {
 			operation = "deployment"
 		}
 		errCode = fmt.Sprintf("service.arm.%s.failed", operation)
-	} else if errors.As(err, &extServiceErr) {
+	} else if extServiceErr, ok := errors.AsType[*azdext.ServiceError](err); ok {
 		// Handle structured service errors from extensions.
 		// Emit whatever details are available rather than requiring all fields.
 		serviceName := ""
@@ -153,7 +143,7 @@ func MapError(err error, span tracing.Span) {
 		default:
 			errCode = "ext.service.unknown.failed"
 		}
-	} else if errors.As(err, &extLocalErr) {
+	} else if extLocalErr, ok := errors.AsType[*azdext.LocalError](err); ok {
 		domain := string(azdext.NormalizeLocalErrorCategory(extLocalErr.Category))
 		code := normalizeCodeSegment(extLocalErr.Code, "failed")
 
@@ -163,9 +153,9 @@ func MapError(err error, span tracing.Span) {
 		)
 
 		errCode = fmt.Sprintf("ext.%s.%s", domain, code)
-	} else if errors.As(err, &extensionRunErr) {
+	} else if _, ok := errors.AsType[*extensions.ExtensionRunError](err); ok {
 		errCode = "ext.run.failed"
-	} else if errors.As(err, &toolExecErr) {
+	} else if toolExecErr, ok := errors.AsType[*exec.ExitError](err); ok {
 		toolName := "other"
 		cmdName := cmdAsName(toolExecErr.Cmd)
 		if cmdName != "" {
@@ -177,7 +167,7 @@ func MapError(err error, span tracing.Span) {
 			fields.ToolName.String(toolName))
 
 		errCode = fmt.Sprintf("tool.%s.failed", toolName)
-	} else if errors.As(err, &toolCheckErr) {
+	} else if toolCheckErr, ok := errors.AsType[*tools.MissingToolErrors](err); ok {
 		if len(toolCheckErr.ToolNames) == 1 {
 			toolName := toolCheckErr.ToolNames[0]
 			errCode = fmt.Sprintf("tool.%s.missing", toolName)
@@ -186,7 +176,7 @@ func MapError(err error, span tracing.Span) {
 			errCode = "tool.multiple.missing"
 			errDetails = append(errDetails, fields.ToolName.String(strings.Join(toolCheckErr.ToolNames, ",")))
 		}
-	} else if errors.As(err, &authFailedErr) {
+	} else if authFailedErr, ok := errors.AsType[*auth.AuthFailedError](err); ok {
 		errDetails = append(errDetails, fields.ServiceName.String("aad"))
 		if authFailedErr.Parsed != nil {
 			codes := make([]string, 0, len(authFailedErr.Parsed.ErrorCodes))
@@ -220,6 +210,10 @@ func MapError(err error, span tracing.Span) {
 		errCode = "update.elevationRequired"
 	} else if errors.Is(err, pipeline.ErrRemoteHostIsNotAzDo) {
 		errCode = "internal.remote_not_azdo"
+	} else if errors.Is(err, internal.ErrExtensionNotFound) {
+		errCode = "internal.extension_not_found"
+	} else if errors.Is(err, internal.ErrExtensionTokenFailed) {
+		errCode = "internal.extension_error"
 	} else if isNetworkError(err) {
 		errCode = "internal.network"
 		errType := errorType(err)
@@ -240,6 +234,66 @@ func MapError(err error, span tracing.Span) {
 	}
 
 	span.SetStatus(codes.Error, errCode)
+}
+
+// classifySentinel checks if the error matches a known sentinel
+// and returns the corresponding telemetry code, or "" if no match.
+func classifySentinel(err error) string {
+	switch {
+	case errors.Is(err, internal.ErrInfraNotProvisioned):
+		return "internal.infra_not_provisioned"
+	case errors.Is(err, internal.ErrFromPackageWithAll),
+		errors.Is(err, internal.ErrFromPackageNoService):
+		return "internal.invalid_flag_combination"
+	case errors.Is(err, internal.ErrCannotChangeSubscription):
+		return "internal.cannot_change_subscription"
+	case errors.Is(err, internal.ErrCannotChangeLocation):
+		return "internal.cannot_change_location"
+	case errors.Is(err, internal.ErrPreviewMultipleLayers):
+		return "internal.preview_multiple_layers"
+	case errors.Is(err, internal.ErrNoKeyNameProvided),
+		errors.Is(err, internal.ErrNoEnvValuesProvided),
+		errors.Is(err, internal.ErrInvalidFlagCombination):
+		return "internal.invalid_args"
+	case errors.Is(err, internal.ErrKeyNotFound):
+		return "internal.key_not_found"
+	case errors.Is(err, internal.ErrNoEnvironmentsFound):
+		return "internal.no_environments_found"
+	case errors.Is(err, internal.ErrLoginDisabledDelegatedMode):
+		return "auth.login_disabled_delegated"
+	case errors.Is(err, internal.ErrBranchRequiresTemplate),
+		errors.Is(err, internal.ErrMultipleInitModes):
+		return "internal.invalid_args"
+	case errors.Is(err, environment.ErrNotFound):
+		return "internal.env_not_found"
+	case errors.Is(err, azdcontext.ErrNoProject):
+		return "internal.no_project"
+	case errors.Is(err, internal.ErrNoArgsProvided),
+		errors.Is(err, internal.ErrInvalidArgValue):
+		return "internal.invalid_args"
+	case errors.Is(err, internal.ErrConfigKeyNotFound):
+		return "internal.config_key_not_found"
+	case errors.Is(err, internal.ErrExtensionNotFound):
+		return "internal.extension_not_found"
+	case errors.Is(err, internal.ErrServiceNotFound):
+		return "internal.service_not_found"
+	case errors.Is(err, internal.ErrNoExtensionsAvailable):
+		return "internal.no_extensions_available"
+	case errors.Is(err, internal.ErrValidationFailed):
+		return "internal.validation_failed"
+	case errors.Is(err, internal.ErrUnsupportedOperation):
+		return "internal.unsupported_operation"
+	case errors.Is(err, internal.ErrExtensionTokenFailed):
+		return "internal.extension_error"
+	case errors.Is(err, internal.ErrMcpToolsLoadFailed):
+		return "internal.mcp_error"
+	case errors.Is(err, internal.ErrResourceNotConfigured):
+		return "internal.resource_not_found"
+	case errors.Is(err, internal.ErrOperationCancelled):
+		return "internal.operation_cancelled"
+	default:
+		return ""
+	}
 }
 
 // errorType returns the type name of the given error, unwrapping as needed to find the root cause(s).
@@ -328,20 +382,17 @@ func isNetworkError(err error) bool {
 	}
 
 	// Check for DNS errors
-	var dnsErr *net.DNSError
-	if errors.As(err, &dnsErr) {
+	if _, ok := errors.AsType[*net.DNSError](err); ok {
 		return true
 	}
 
 	// Check for network operation errors (connection refused, timeout, etc.)
-	var opErr *net.OpError
-	if errors.As(err, &opErr) {
+	if _, ok := errors.AsType[*net.OpError](err); ok {
 		return true
 	}
 
 	// Check for TLS errors
-	var tlsRecordErr *tls.RecordHeaderError
-	if errors.As(err, &tlsRecordErr) {
+	if _, ok := errors.AsType[*tls.RecordHeaderError](err); ok {
 		return true
 	}
 

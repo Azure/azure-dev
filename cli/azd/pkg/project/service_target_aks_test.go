@@ -616,12 +616,12 @@ func setupGetClusterMock(mockContext *mocks.MockContext, statusCode int) {
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		managedCluster := armcontainerservice.ManagedClustersClientGetResponse{
 			ManagedCluster: armcontainerservice.ManagedCluster{
-				ID:       to.Ptr("cluster1"),
-				Location: to.Ptr("eastus2"),
-				Type:     to.Ptr("Microsoft.ContainerService/managedClusters"),
+				ID:       new("cluster1"),
+				Location: new("eastus2"),
+				Type:     new("Microsoft.ContainerService/managedClusters"),
 				Properties: &armcontainerservice.ManagedClusterProperties{
-					EnableRBAC:           to.Ptr(true),
-					DisableLocalAccounts: to.Ptr(false),
+					EnableRBAC:           new(true),
+					DisableLocalAccounts: new(false),
 				},
 			},
 		}
@@ -648,7 +648,7 @@ func setupListClusterAdminCredentialsMock(mockContext *mocks.MockContext, status
 		creds := armcontainerservice.CredentialResults{
 			Kubeconfigs: []*armcontainerservice.CredentialResult{
 				{
-					Name:  to.Ptr("context"),
+					Name:  new("context"),
 					Value: kubeConfigBytes,
 				},
 			},
@@ -678,7 +678,7 @@ func setupListClusterUserCredentialsMock(mockContext *mocks.MockContext, statusC
 		creds := armcontainerservice.CredentialResults{
 			Kubeconfigs: []*armcontainerservice.CredentialResult{
 				{
-					Name:  to.Ptr("context"),
+					Name:  new("context"),
 					Value: kubeConfigBytes,
 				},
 			},
@@ -697,24 +697,24 @@ func setupListClusterUserCredentialsMock(mockContext *mocks.MockContext, statusC
 func setupMocksForAcr(mockContext *mocks.MockContext) {
 	mockazsdk.MockContainerRegistryList(mockContext, []*armcontainerregistry.Registry{
 		{
-			ID: to.Ptr(
+			ID: new(
 				//nolint:lll
 				"/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/providers/Microsoft.ContainerRegistry/registries/REGISTRY",
 			),
-			Location: to.Ptr("eastus2"),
-			Name:     to.Ptr("REGISTRY"),
+			Location: new("eastus2"),
+			Name:     new("REGISTRY"),
 			Properties: &armcontainerregistry.RegistryProperties{
-				LoginServer: to.Ptr("REGISTRY.azurecr.io"),
+				LoginServer: new("REGISTRY.azurecr.io"),
 			},
 		},
 	})
 
 	mockazsdk.MockContainerRegistryCredentials(mockContext, &armcontainerregistry.RegistryListCredentialsResult{
-		Username: to.Ptr("admin"),
+		Username: new("admin"),
 		Passwords: []*armcontainerregistry.RegistryPassword{
 			{
 				Name:  to.Ptr(armcontainerregistry.PasswordName("admin")),
-				Value: to.Ptr("password"),
+				Value: new("password"),
 			},
 		},
 	})

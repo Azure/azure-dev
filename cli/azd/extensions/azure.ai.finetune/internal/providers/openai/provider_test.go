@@ -137,7 +137,7 @@ func TestOpenAIProvider_MethodSignatures(t *testing.T) {
 	})
 
 	t.Run("GetUploadedFile_Signature", func(t *testing.T) {
-		var getFileFunc func(context.Context, string) (interface{}, error)
+		var getFileFunc func(context.Context, string) (any, error)
 		getFileFunc = provider.GetUploadedFile
 		require.NotNil(t, getFileFunc)
 	})

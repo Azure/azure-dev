@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -202,10 +203,8 @@ func isBuiltInCommand(rootCmd *cobra.Command, commandName string) bool {
 			return true
 		}
 		// Also check aliases
-		for _, alias := range cmd.Aliases {
-			if alias == commandName {
-				return true
-			}
+		if slices.Contains(cmd.Aliases, commandName) {
+			return true
 		}
 	}
 
@@ -218,10 +217,8 @@ func hasSubcommand(cmd *cobra.Command, name string) bool {
 		if sub.Name() == name {
 			return true
 		}
-		for _, alias := range sub.Aliases {
-			if alias == name {
-				return true
-			}
+		if slices.Contains(sub.Aliases, name) {
+			return true
 		}
 	}
 	return false
@@ -432,8 +429,8 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 		}
 
 		// auto-install for target service
-		var unsupportedErr *project.UnsupportedServiceHostError
-		if !errors.As(err, &unsupportedErr) {
+		unsupportedErr, ok := errors.AsType[*project.UnsupportedServiceHostError](err)
+		if !ok {
 			return err
 		}
 

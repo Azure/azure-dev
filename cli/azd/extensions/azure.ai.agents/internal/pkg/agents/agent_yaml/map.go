@@ -5,6 +5,7 @@ package agent_yaml
 
 import (
 	"fmt"
+	"maps"
 	"math"
 	"strings"
 
@@ -89,9 +90,7 @@ func WithEnvironmentVariables(envVars map[string]string) AgentBuildOption {
 		if config.EnvironmentVariables == nil {
 			config.EnvironmentVariables = make(map[string]string)
 		}
-		for k, v := range envVars {
-			config.EnvironmentVariables[k] = v
-		}
+		maps.Copy(config.EnvironmentVariables, envVars)
 	}
 }
 
@@ -350,12 +349,12 @@ func convertYamlToolToApiTool(yamlTool any) (any, error) {
 }
 
 // Helper function to convert PropertySchema to interface{} for agent_api
-func convertPropertySchemaToInterface(schema PropertySchema) interface{} {
+func convertPropertySchemaToInterface(schema PropertySchema) any {
 	// This is a placeholder implementation - would need to convert PropertySchema
 	// back to the original format expected by agent_api
-	return map[string]interface{}{
+	return map[string]any{
 		"type":       "object",
-		"properties": map[string]interface{}{},
+		"properties": map[string]any{},
 	}
 }
 
@@ -443,13 +442,13 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 }
 
 // createAgentAPIRequest is a helper function to create the final request with common fields
-func createAgentAPIRequest(agentDefinition AgentDefinition, agentDef interface{}) (*agent_api.CreateAgentRequest, error) {
+func createAgentAPIRequest(agentDefinition AgentDefinition, agentDef any) (*agent_api.CreateAgentRequest, error) {
 	// Prepare metadata
 	metadata := make(map[string]string)
 	if agentDefinition.Metadata != nil {
 		// Handle authors specially - convert slice to comma-separated string
 		if authors, exists := (*agentDefinition.Metadata)["authors"]; exists {
-			if authorsSlice, ok := authors.([]interface{}); ok {
+			if authorsSlice, ok := authors.([]any); ok {
 				var authorsStr []string
 				for _, author := range authorsSlice {
 					if authorStr, ok := author.(string); ok {

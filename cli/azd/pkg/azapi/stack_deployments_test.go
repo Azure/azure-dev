@@ -68,10 +68,10 @@ func Test_ParseDeploymentStackOptions(t *testing.T) {
 		customOptions := &deploymentStackOptions{
 			DenySettings: &armdeploymentstacks.DenySettings{
 				Mode:               to.Ptr(armdeploymentstacks.DenySettingsModeDenyDelete),
-				ApplyToChildScopes: to.Ptr(true),
+				ApplyToChildScopes: new(true),
 				ExcludedPrincipals: []*string{
-					to.Ptr("principal1"),
-					to.Ptr("principal2"),
+					new("principal1"),
+					new("principal2"),
 				},
 			},
 		}
@@ -92,7 +92,7 @@ func Test_ParseDeploymentStackOptions(t *testing.T) {
 
 	t.Run("override all settings", func(t *testing.T) {
 		customOptions := &deploymentStackOptions{
-			BypassStackOutOfSyncError: to.Ptr(true),
+			BypassStackOutOfSyncError: new(true),
 			ActionOnUnmanage: &armdeploymentstacks.ActionOnUnmanage{
 				ManagementGroups: to.Ptr(armdeploymentstacks.DeploymentStacksDeleteDetachEnumDetach),
 				ResourceGroups:   to.Ptr(armdeploymentstacks.DeploymentStacksDeleteDetachEnumDetach),
@@ -100,10 +100,10 @@ func Test_ParseDeploymentStackOptions(t *testing.T) {
 			},
 			DenySettings: &armdeploymentstacks.DenySettings{
 				Mode:               to.Ptr(armdeploymentstacks.DenySettingsModeDenyDelete),
-				ApplyToChildScopes: to.Ptr(true),
+				ApplyToChildScopes: new(true),
 				ExcludedPrincipals: []*string{
-					to.Ptr("principal1"),
-					to.Ptr("principal2"),
+					new("principal1"),
+					new("principal2"),
 				},
 			},
 		}

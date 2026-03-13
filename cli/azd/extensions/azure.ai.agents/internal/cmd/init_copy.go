@@ -12,7 +12,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
@@ -80,7 +79,7 @@ func (a *InitAction) validateLocalContainerAgentCopy(ctx context.Context, manife
 	confirmResponse, err := a.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
 		Options: &azdext.ConfirmOptions{
 			Message:      "Continue?",
-			DefaultValue: to.Ptr(false),
+			DefaultValue: new(false),
 			HelpMessage:  "To avoid copying too much, move the manifest to a separate directory with only the agent files you want to include.",
 		},
 	})

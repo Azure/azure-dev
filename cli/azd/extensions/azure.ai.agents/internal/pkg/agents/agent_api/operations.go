@@ -556,7 +556,7 @@ type StartAgentContainerOptions struct {
 func (c *AgentClient) StartAgentContainer(ctx context.Context, agentName, agentVersion string, options *StartAgentContainerOptions, apiVersion string) (*AcceptedAgentContainerOperation, error) {
 	url := fmt.Sprintf("%s/agents/%s/versions/%s/containers/default:start?api-version=%s", c.endpoint, agentName, agentVersion, apiVersion)
 
-	requestBody := map[string]interface{}{}
+	requestBody := map[string]any{}
 	if options != nil && options.MinReplicas != nil {
 		requestBody["min_replicas"] = *options.MinReplicas
 	}
@@ -610,7 +610,7 @@ func (c *AgentClient) StartAgentContainer(ctx context.Context, agentName, agentV
 func (c *AgentClient) UpdateAgentContainer(ctx context.Context, agentName, agentVersion string, minReplicas *int32, maxReplicas *int32, apiVersion string) (*AcceptedAgentContainerOperation, error) {
 	url := fmt.Sprintf("%s/agents/%s/versions/%s/containers/default:update?api-version=%s", c.endpoint, agentName, agentVersion, apiVersion)
 
-	requestBody := map[string]interface{}{}
+	requestBody := map[string]any{}
 	if minReplicas != nil {
 		requestBody["min_replicas"] = *minReplicas
 	}

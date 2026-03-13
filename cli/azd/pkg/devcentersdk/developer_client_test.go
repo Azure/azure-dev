@@ -158,7 +158,7 @@ func Test_DevCenter_Client(t *testing.T) {
 		CatalogName:               catalogName,
 		EnvironmentDefinitionName: environmentDefinitionName,
 		EnvironmentType:           environmentTypeName,
-		Parameters: map[string]interface{}{
+		Parameters: map[string]any{
 			"environmentName": envName,
 			"repoUrl":         "https://github.com/wbreza/azd-hello-world",
 		},

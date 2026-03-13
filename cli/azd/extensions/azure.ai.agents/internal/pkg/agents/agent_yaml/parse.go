@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"go.yaml.in/yaml/v3"
@@ -42,7 +43,7 @@ func LoadAndValidateAgentManifest(manifestYamlContent []byte) (*AgentManifest, e
 
 // Returns a specific agent definition based on the "kind" field in the template
 func ExtractAgentDefinition(manifestYamlContent []byte) (any, error) {
-	var genericManifest map[string]interface{}
+	var genericManifest map[string]any
 	if err := yaml.Unmarshal(manifestYamlContent, &genericManifest); err != nil {
 		return nil, fmt.Errorf("YAML content is not valid: %w", err)
 	}
@@ -52,7 +53,7 @@ func ExtractAgentDefinition(manifestYamlContent []byte) (any, error) {
 
 	if templateValue, exists := genericManifest["template"]; exists && templateValue != nil {
 		// Manifest format with "template" field
-		template, ok := templateValue.(map[string]interface{})
+		template, ok := templateValue.(map[string]any)
 		if !ok {
 			return nil, fmt.Errorf("template field must be a map, got %T", templateValue)
 		}
@@ -94,7 +95,7 @@ func ExtractAgentDefinition(manifestYamlContent []byte) (any, error) {
 		}
 	}
 	if agentDef.Metadata == nil {
-		if metadata, ok := genericManifest["metadata"].(map[string]interface{}); ok {
+		if metadata, ok := genericManifest["metadata"].(map[string]any); ok {
 			agentDef.Metadata = &metadata
 		}
 	}
@@ -132,7 +133,7 @@ func ExtractAgentDefinition(manifestYamlContent []byte) (any, error) {
 
 // Returns a specific resource type based on the "kind" field in the resource
 func ExtractResourceDefinitions(manifestYamlContent []byte) ([]any, error) {
-	var genericManifest map[string]interface{}
+	var genericManifest map[string]any
 	if err := yaml.Unmarshal(manifestYamlContent, &genericManifest); err != nil {
 		return nil, fmt.Errorf("YAML content is not valid: %w", err)
 	}
@@ -142,7 +143,7 @@ func ExtractResourceDefinitions(manifestYamlContent []byte) ([]any, error) {
 		return []any{}, nil // Return empty slice if no resources key
 	}
 
-	resources, ok := resourcesValue.([]interface{})
+	resources, ok := resourcesValue.([]any)
 	if !ok {
 		return nil, fmt.Errorf("resources field is not a valid array")
 	}
@@ -177,12 +178,12 @@ func ExtractResourceDefinitions(manifestYamlContent []byte) ([]any, error) {
 	return resourceDefs, nil
 }
 
-func ExtractToolsDefinitions(template map[string]interface{}) ([]any, error) {
+func ExtractToolsDefinitions(template map[string]any) ([]any, error) {
 	var tools []any
 
 	toolsValue, exists := template["tools"]
 	if exists && toolsValue != nil {
-		toolsArray, ok := toolsValue.([]interface{})
+		toolsArray, ok := toolsValue.([]any)
 		if !ok {
 			return nil, fmt.Errorf("tools field is not a valid array")
 		}
@@ -397,11 +398,12 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 	}
 
 	if len(errors) > 0 {
-		errorMsg := "validation failed:"
+		var errorMsg strings.Builder
+		errorMsg.WriteString("validation failed:")
 		for _, err := range errors {
-			errorMsg += fmt.Sprintf("\n  - %s", err)
+			errorMsg.WriteString(fmt.Sprintf("\n  - %s", err))
 		}
-		return fmt.Errorf("%s", errorMsg)
+		return fmt.Errorf("%s", errorMsg.String())
 	}
 
 	return nil

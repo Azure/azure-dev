@@ -14,7 +14,7 @@ import (
 )
 
 // mustMarshalJSON is a test helper function to marshal request structs to JSON strings
-func mustMarshalJSON(v interface{}) string {
+func mustMarshalJSON(v any) string {
 	data, err := json.Marshal(v)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to marshal JSON: %v", err))
@@ -43,10 +43,10 @@ func createTestSecurityManager(t *testing.T) (*security.Manager, string) {
 }
 
 // createTestTools creates all IO tools with proper SecurityManager injection for testing
-func createTestTools(t *testing.T) (map[string]interface{}, string) {
+func createTestTools(t *testing.T) (map[string]any, string) {
 	sm, tempDir := createTestSecurityManager(t)
 
-	tools := map[string]interface{}{
+	tools := map[string]any{
 		"read":       ReadFileTool{securityManager: sm},
 		"write":      WriteFileTool{securityManager: sm},
 		"copy":       CopyFileTool{securityManager: sm},

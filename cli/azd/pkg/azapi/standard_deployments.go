@@ -124,8 +124,7 @@ func (ds *StandardDeployments) GetSubscriptionDeployment(
 
 	deployment, err := deploymentClient.GetAtSubscriptionScope(ctx, deploymentName, nil)
 	if err != nil {
-		var errDetails *azcore.ResponseError
-		if errors.As(err, &errDetails) && errDetails.StatusCode == 404 {
+		if errDetails, ok := errors.AsType[*azcore.ResponseError](err); ok && errDetails.StatusCode == 404 {
 			return nil, ErrDeploymentNotFound
 		}
 		return nil, fmt.Errorf("getting deployment from subscription: %w", err)
@@ -174,8 +173,7 @@ func (ds *StandardDeployments) GetResourceGroupDeployment(
 
 	deployment, err := deploymentClient.Get(ctx, resourceGroupName, deploymentName, nil)
 	if err != nil {
-		var errDetails *azcore.ResponseError
-		if errors.As(err, &errDetails) && errDetails.StatusCode == 404 {
+		if errDetails, ok := errors.AsType[*azcore.ResponseError](err); ok && errDetails.StatusCode == 404 {
 			return nil, ErrDeploymentNotFound
 		}
 		return nil, fmt.Errorf("getting deployment from resource group: %w", err)
@@ -224,7 +222,7 @@ func (ds *StandardDeployments) DeployToSubscription(
 				Parameters: parameters,
 				Mode:       to.Ptr(armresources.DeploymentModeIncremental),
 			},
-			Location: to.Ptr(location),
+			Location: new(location),
 			Tags:     tags,
 		}, nil)
 	if err != nil {
@@ -292,8 +290,7 @@ func (ds *StandardDeployments) ListSubscriptionDeploymentOperations(
 
 	for getDeploymentsPager.More() {
 		page, err := getDeploymentsPager.NextPage(ctx)
-		var errDetails *azcore.ResponseError
-		if errors.As(err, &errDetails) && errDetails.StatusCode == 404 {
+		if errDetails, ok := errors.AsType[*azcore.ResponseError](err); ok && errDetails.StatusCode == 404 {
 			return nil, ErrDeploymentNotFound
 		}
 		if err != nil {
@@ -322,8 +319,7 @@ func (ds *StandardDeployments) ListResourceGroupDeploymentOperations(
 
 	for getDeploymentsPager.More() {
 		page, err := getDeploymentsPager.NextPage(ctx)
-		var errDetails *azcore.ResponseError
-		if errors.As(err, &errDetails) && errDetails.StatusCode == 404 {
+		if errDetails, ok := errors.AsType[*azcore.ResponseError](err); ok && errDetails.StatusCode == 404 {
 			return nil, ErrDeploymentNotFound
 		}
 		if err != nil {
@@ -362,7 +358,7 @@ func (ds *StandardDeployments) ListSubscriptionDeploymentResources(
 
 		for _, resource := range resources {
 			allResources = append(allResources, &armresources.ResourceReference{
-				ID: to.Ptr(resource.Id),
+				ID: new(resource.Id),
 			})
 		}
 	}
@@ -423,7 +419,7 @@ func (ds *StandardDeployments) ListResourceGroupDeploymentResources(
 
 	for _, resource := range resources {
 		allResources = append(allResources, &armresources.ResourceReference{
-			ID: to.Ptr(resource.Id),
+			ID: new(resource.Id),
 		})
 	}
 
@@ -500,7 +496,7 @@ func (ds *StandardDeployments) voidSubscriptionDeploymentState(
 		emptyDeploymentName := ds.GenerateDeploymentName(*envName)
 		tags := map[string]*string{
 			azure.TagKeyAzdEnvName: envName,
-			"azd-deploy-reason":    to.Ptr("down"),
+			"azd-deploy-reason":    new("down"),
 		}
 
 		_, err = ds.DeployToSubscription(
@@ -577,7 +573,7 @@ func (ds *StandardDeployments) WhatIfDeployToSubscription(
 				Mode:           to.Ptr(armresources.DeploymentModeIncremental),
 				WhatIfSettings: &armresources.DeploymentWhatIfSettings{},
 			},
-			Location: to.Ptr(location),
+			Location: new(location),
 		}, nil)
 	if err != nil {
 		return nil, fmt.Errorf("starting deployment to subscription: %w", err)
@@ -732,7 +728,7 @@ func (ds *StandardDeployments) ValidatePreflightToSubscription(
 				Parameters: parameters,
 				Mode:       to.Ptr(armresources.DeploymentModeIncremental),
 			},
-			Location: to.Ptr(location),
+			Location: new(location),
 			Tags:     tags,
 		}, nil)
 	if err != nil {

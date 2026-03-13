@@ -511,7 +511,7 @@ func extractEmbeddedIPv4(ip net.IP) net.IP {
 
 	// IPv4-compatible (::x.x.x.x): first 12 bytes are zero.
 	isV4Compatible := true
-	for i := 0; i < 12; i++ {
+	for i := range 12 {
 		if ip[i] != 0 {
 			isV4Compatible = false
 			break
@@ -526,7 +526,7 @@ func extractEmbeddedIPv4(ip net.IP) net.IP {
 	// Distinct from IPv4-mapped (bytes 10-11 = 0xFF), so To4() returns nil.
 	if ip[8] == 0xFF && ip[9] == 0xFF && ip[10] == 0x00 && ip[11] == 0x00 {
 		allZero := true
-		for i := 0; i < 8; i++ {
+		for i := range 8 {
 			if ip[i] != 0 {
 				allZero = false
 				break

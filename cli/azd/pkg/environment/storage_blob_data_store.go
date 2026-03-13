@@ -227,9 +227,7 @@ func (sbd *StorageBlobDataStore) Delete(ctx context.Context, name string) error 
 }
 
 func describeError(err error) error {
-	var responseErr *azcore.ResponseError
-
-	if errors.As(err, &responseErr) {
+	if responseErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
 		switch responseErr.ErrorCode {
 		case "AuthorizationPermissionMismatch":
 			errorMsg := "Ensure your Azure account has `Storage Blob Contributor` role on the storage account or container."

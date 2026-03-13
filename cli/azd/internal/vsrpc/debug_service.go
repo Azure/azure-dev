@@ -54,7 +54,7 @@ func (s *debugService) TestCancelAsync(ctx context.Context, timeoutMs int) (bool
 //
 // It emits a sequence of integers to the observer, from 0 to max, and then completes the observer, before returning.
 func (s *debugService) TestIObserverAsync(ctx context.Context, max int, observer *Observer[int]) error {
-	for i := 0; i < max; i++ {
+	for i := range max {
 		_ = observer.OnNext(ctx, i)
 	}
 	_ = observer.OnCompleted(ctx)

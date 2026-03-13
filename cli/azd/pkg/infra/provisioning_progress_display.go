@@ -9,7 +9,6 @@ import (
 	"log"
 	"os"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -179,11 +178,11 @@ func (display *ProvisioningProgressDisplay) ReportProgress(
 		return err
 	}
 
-	sort.Slice(newlyDeployedResources, func(i int, j int) bool {
-		return time.Time.Before(
-			*newlyDeployedResources[i].Properties.Timestamp,
-			*newlyDeployedResources[j].Properties.Timestamp,
-		)
+	slices.SortFunc(newlyDeployedResources, func(
+		a *armresources.DeploymentOperation,
+		b *armresources.DeploymentOperation,
+	) int {
+		return a.Properties.Timestamp.Compare(*b.Properties.Timestamp)
 	})
 
 	displayedResources := append(newlyDeployedResources, newlyFailedResources...)

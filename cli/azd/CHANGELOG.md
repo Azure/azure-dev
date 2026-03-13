@@ -10,6 +10,28 @@
 
 ### Other Changes
 
+## 1.23.9 (2026-03-13)
+
+### Features Added
+
+- [[#7041]](https://github.com/Azure/azure-dev/pull/7041) Automatically fall back to a local Docker/Podman build when `remoteBuild: true` and the remote ACR build fails. Thanks @spboyer for the contribution!
+- [[#7053]](https://github.com/Azure/azure-dev/pull/7053) Add local preflight validation before Bicep deployment to detect parameter and configuration issues before submitting the deployment to ARM.
+- [[#7018]](https://github.com/Azure/azure-dev/pull/7018) Improve extension startup failure warnings with categorized, actionable messages distinguishing extensions needing an upgrade from timeout failures, and include a `--debug` hint for details.
+
+### Bugs Fixed
+
+- [[#7040]](https://github.com/Azure/azure-dev/pull/7040) Fix `azd pipeline config` failing when the GitHub repository name contains dots (e.g., `my-org/my.app`) because dots were not sanitized out of federated identity credential names. Thanks @spboyer for the contribution!
+- [[#7046]](https://github.com/Azure/azure-dev/pull/7046) Fix error message when no Azure subscriptions are found to include actionable guidance for multi-tenant and MFA scenarios, suggesting `azd auth login --tenant-id`.
+- [[#7047]](https://github.com/Azure/azure-dev/pull/7047) Fix progress log previewer outputting blank lines on start and not respecting no-tty mode.
+- [[#7062]](https://github.com/Azure/azure-dev/pull/7062) Fix `azd deploy` silently removing externally-configured Dapr settings when performing a Container App update; Dapr configuration is now preserved when not present in the deployment YAML.
+- [[#7072]](https://github.com/Azure/azure-dev/pull/7072) Fix remote state blob client not falling back to the default subscription from user config when `state.remote.config.subscriptionId` is not explicitly set.
+- [[#7076]](https://github.com/Azure/azure-dev/pull/7076) Fix race condition in `ux.TaskList` when concurrently accessing the completed task count. Thanks @richardpark-msft for the contribution!
+
+### Other Changes
+
+- [[#7044]](https://github.com/Azure/azure-dev/pull/7044) Improve `--no-prompt` support for resource-group deployments by defaulting the resource group prompt to the `AZURE_RESOURCE_GROUP` environment variable value.
+- [[#7051]](https://github.com/Azure/azure-dev/pull/7051) Improve telemetry error classification with typed sentinel errors, replacing opaque `errors_errorString` result codes with descriptive error type codes across command domains.
+
 ## 1.23.8 (2026-03-06)
 
 ### Features Added

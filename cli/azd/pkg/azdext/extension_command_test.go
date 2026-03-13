@@ -165,10 +165,10 @@ func TestExtensionCommand_CwdEnvVarFallback(t *testing.T) {
 	cmd.SetContext(context.Background())
 	cmd.SetArgs([]string{"sub"})
 
-	err = cmd.Execute()
-
-	// Restore cwd before any assertions so TempDir cleanup can succeed
-	_ = os.Chdir(origDir)
+	t.Run("execute", func(t *testing.T) {
+		t.Chdir(origDir)
+		err = cmd.Execute()
+	})
 
 	require.NoError(t, err)
 	require.Equal(t, tmpDir, extCtx.Cwd)

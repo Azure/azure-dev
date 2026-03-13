@@ -264,3 +264,36 @@ func TestFindAgentManifest(t *testing.T) {
 		require.Empty(t, found)
 	})
 }
+
+func TestDirIsEmpty(t *testing.T) {
+	t.Parallel()
+
+	t.Run("empty directory", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+
+		empty, err := dirIsEmpty(dir)
+		require.NoError(t, err)
+		require.True(t, empty)
+	})
+
+	t.Run("directory with files", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "main.py"), []byte("print()"), 0600))
+
+		empty, err := dirIsEmpty(dir)
+		require.NoError(t, err)
+		require.False(t, empty)
+	})
+
+	t.Run("directory with only subdirectories", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, "subdir"), 0700))
+
+		empty, err := dirIsEmpty(dir)
+		require.NoError(t, err)
+		require.False(t, empty)
+	})
+}

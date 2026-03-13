@@ -10,6 +10,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -59,8 +60,18 @@ const (
 )
 
 // promptInitMode asks the user whether to use existing code or start from a template.
+// If the current directory is empty, automatically returns initModeTemplate.
 // Returns initModeFromCode or initModeTemplate.
 func promptInitMode(ctx context.Context, azdClient *azdext.AzdClient) (string, error) {
+	empty, err := dirIsEmpty(".")
+	if err != nil {
+		return "", fmt.Errorf("checking current directory: %w", err)
+	}
+
+	if empty {
+		return initModeTemplate, nil
+	}
+
 	choices := []*azdext.SelectChoice{
 		{Label: "Use the code in the current directory", Value: initModeFromCode},
 		{Label: "Start new from a template", Value: initModeTemplate},
@@ -80,6 +91,16 @@ func promptInitMode(ctx context.Context, azdClient *azdext.AzdClient) (string, e
 	}
 
 	return choices[*resp.Value].Value, nil
+}
+
+// dirIsEmpty reports whether dir contains no entries at all.
+func dirIsEmpty(dir string) (bool, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false, err
+	}
+
+	return len(entries) == 0, nil
 }
 
 // fetchAgentTemplates retrieves the agent template catalog from the remote JSON URL.

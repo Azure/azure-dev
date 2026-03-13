@@ -66,6 +66,13 @@ const (
 	CodeModelResolutionFailed = "model_resolution_failed"
 )
 
+// Error codes for file operation errors.
+const (
+	CodeFileNotFound     = "file_not_found"
+	CodeFileUploadFailed = "file_upload_failed"
+	CodeInvalidFilePath  = "invalid_file_path"
+)
+
 // Error codes for internal errors.
 const (
 	CodeAzdClientFailed               = "azd_client_failed"

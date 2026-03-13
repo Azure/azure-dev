@@ -682,3 +682,17 @@ type StructuredOutputDefinition struct {
 	Schema      map[string]any `json:"schema"`
 	Strict      *bool          `json:"strict"`
 }
+
+// SessionFileInfo represents a file or directory entry in a session.
+type SessionFileInfo struct {
+	Name         string `json:"name"`
+	Path         string `json:"path"`
+	IsDirectory  bool   `json:"is_directory"`
+	Size         int64  `json:"size,omitempty"`
+	LastModified string `json:"last_modified,omitempty"`
+}
+
+// SessionFileList represents the response from listing session files.
+type SessionFileList struct {
+	Files []SessionFileInfo `json:"files"`
+}

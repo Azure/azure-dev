@@ -200,6 +200,7 @@ overrides:
     words:
       - GHSA
       - gjrc
+      - richardpark
   - filename: pkg/apphost/generate.go
     words:
       - alue

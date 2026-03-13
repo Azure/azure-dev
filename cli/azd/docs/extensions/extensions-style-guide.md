@@ -83,16 +83,13 @@ The host classifies extension errors into telemetry codes using the pattern:
 | `LocalError` | `ext.<category>.<code>` |
 | Unclassified | `ext.run.failed` |
 
-### The Two-Layer Pattern (Recommended)
+### Recommended Layering Pattern
 
-**Command layer** (`internal/cmd/`): Creates structured errors with category, code, and suggestion.
-This is the only layer that should create `LocalError` / `ServiceError` values.
+**Entry-point or orchestration layer**: Usually creates structured errors once it can confidently choose the final category, code, and suggestion. This often includes command handlers, top-level actions, or other user-facing coordination code.
 
-**Business logic** (`internal/pkg/`): Returns plain Go errors with `fmt.Errorf("context: %w", err)`.
-Does not create structured errors.
+**Lower-level helpers, parsers, and clients**: Usually return plain Go errors with `fmt.Errorf("context: %w", err)` and let a higher layer classify the failure.
 
-This separation ensures the command layer has the full context to choose the right category
-and write a helpful suggestion, while business logic stays generic and testable.
+Treat this as guidance, not a strict package boundary. The important part is that structured classification happens in a layer with enough context to produce the right telemetry and a useful suggestion.
 
 ### Error Chain Precedence
 
@@ -105,8 +102,7 @@ the **first** match in this order:
 4. gRPC `Unauthenticated` (safety-net auth classification)
 5. Fallback (unclassified)
 
-Because Go's `errors.As` walks from outermost to innermost, the command-boundary pattern
-naturally produces the correct classification.
+Because Go's `errors.As` walks from outermost to innermost, classifying near the outer orchestration layer naturally produces the intended classification.
 
 ### Error Code Conventions
 

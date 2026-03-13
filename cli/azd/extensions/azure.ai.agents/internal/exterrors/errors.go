@@ -5,8 +5,8 @@
 //
 // Use plain Go errors until the current code can confidently choose a final
 // category, code, and suggestion. At that point, create a structured error with
-// [Validation], [Dependency], [Auth], [Compatibility], [Internal], or one of the
-// Azure/gRPC conversion helpers.
+// one of the helpers in this package or with one of the Azure/gRPC conversion
+// helpers.
 //
 // Once an error is structured, usually return it unchanged. Avoid wrapping a
 // structured error with [fmt.Errorf] and %w for extra context: azd serializes the

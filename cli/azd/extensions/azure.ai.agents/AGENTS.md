@@ -122,7 +122,5 @@ Define new codes in `internal/exterrors/codes.go`.
 
 ## Other extension conventions
 
-- Import order: stdlib -> external -> `github.com/azure/azure-dev/cli/azd/` -> local `azureaiagent/`
-- Pass `ctx context.Context` first on functions that do I/O or may block
 - Use modern Go 1.26 patterns where they help readability
 - When using `PromptSubscription()`, create credentials with `Subscription.UserTenantId`, not `Subscription.TenantId`

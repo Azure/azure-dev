@@ -1691,7 +1691,7 @@ const completionSpec: Fig.Spec = {
 			subcommands: [
 				{
 					name: ['config'],
-					description: 'Manage environment configuration (ex: stored in .azure/<environment>/config.json).',
+					description: 'Manage environment configuration (ex: stored in .azure`.azure/<environment>/config.json`config.json).',
 					subcommands: [
 						{
 							name: ['get'],
@@ -3464,7 +3464,7 @@ const completionSpec: Fig.Spec = {
 					subcommands: [
 						{
 							name: ['config'],
-							description: 'Manage environment configuration (ex: stored in .azure/<environment>/config.json).',
+							description: 'Manage environment configuration (ex: stored in .azure`.azure/<environment>/config.json`config.json).',
 							subcommands: [
 								{
 									name: ['get'],

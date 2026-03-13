@@ -1,5 +1,5 @@
 
-Manage environment-specific configuration stored in .azure/<environment>/config.json.
+Manage environment-specific configuration stored in .azure`.azure/<environment>/config.json`config.json.
 
   • Configuration values set with these commands are specific to the environment.
   • These values are separate from environment variables (.env file).

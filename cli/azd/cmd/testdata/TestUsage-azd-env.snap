@@ -10,7 +10,7 @@ Usage
   azd env [command]
 
 Available Commands
-  config    	: Manage environment configuration (ex: stored in .azure/<environment>/config.json).
+  config    	: Manage environment configuration (ex: stored in .azure`.azure/<environment>/config.json`config.json).
   get-value 	: Get specific environment value.
   get-values	: Get all environment values.
   list      	: List environments.

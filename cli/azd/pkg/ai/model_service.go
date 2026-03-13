@@ -14,6 +14,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/syncmap"
 )
 
 // AiModelService provides operations for querying AI model availability,
@@ -215,7 +216,7 @@ func (s *AiModelService) ListLocationsWithQuota(
 		allowedLocations = skuLocations
 	}
 
-	var sharedResults sync.Map
+	var sharedResults syncmap.Map[string, []*armcognitiveservices.Usage]
 	var wg sync.WaitGroup
 
 	for _, loc := range allowedLocations {
@@ -236,10 +237,7 @@ func (s *AiModelService) ListLocationsWithQuota(
 	wg.Wait()
 
 	var results []string
-	sharedResults.Range(func(key, value any) bool {
-		loc := key.(string)
-		usages := value.([]*armcognitiveservices.Usage)
-
+	sharedResults.Range(func(loc string, usages []*armcognitiveservices.Usage) bool {
 		for _, req := range requirements {
 			minCap := req.MinCapacity
 			if minCap <= 0 {
@@ -301,7 +299,7 @@ func (s *AiModelService) ListModelLocationsWithQuota(
 		})
 	}
 
-	var sharedResults sync.Map
+	var sharedResults syncmap.Map[string, []AiModelUsage]
 	var wg sync.WaitGroup
 
 	for _, loc := range modelLocations {
@@ -318,9 +316,7 @@ func (s *AiModelService) ListModelLocationsWithQuota(
 	wg.Wait()
 
 	results := []ModelLocationQuota{}
-	sharedResults.Range(func(key, value any) bool {
-		loc := key.(string)
-		usages := value.([]AiModelUsage)
+	sharedResults.Range(func(loc string, usages []AiModelUsage) bool {
 		usageMap := make(map[string]AiModelUsage, len(usages))
 		for _, usage := range usages {
 			usageMap[usage.Name] = usage

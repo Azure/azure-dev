@@ -47,6 +47,7 @@ words:
   - protoreflect
   - SNAPPROCESS
   - structpb
+  - syncmap
   - syscall
   - Retryable
   - runcontext

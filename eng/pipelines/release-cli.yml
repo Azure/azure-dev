@@ -148,6 +148,6 @@ extends:
 
       # Do not publish on scheduled builds, only release from Azure/azure-dev
       - ${{ if and(ne(variables['Build.Reason'], 'Schedule'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
-        # Only publish if build is manually tiggered & DoPublish is true, or if it's a CI build (push to main)
+        # Only publish if build is manually triggered & DoPublish is true, or if it's a CI build (push to main)
         - ${{ if or(and(eq('Manual', variables['Build.Reason']), eq('true', parameters.DoPublish)), in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')) }}:
           - template: /eng/pipelines/templates/stages/publish.yml

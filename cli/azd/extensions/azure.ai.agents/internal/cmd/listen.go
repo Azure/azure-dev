@@ -50,7 +50,9 @@ func newListenCommand() *cobra.Command {
 				WithProjectEventHandler("predeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 					return predeployHandler(ctx, azdClient, projectParser, args)
 				}).
-				WithProjectEventHandler("postdeploy", projectParser.CoboPostDeploy)
+				WithProjectEventHandler("postdeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+					return postdeployHandler(ctx, projectParser, args)
+				})
 
 			// Start listening for events
 			// This is a blocking call and will not return until the server connection is closed.
@@ -102,6 +104,20 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, projectP
 				return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
 			}
 		}
+	}
+
+	return nil
+}
+
+func postdeployHandler(ctx context.Context, projectParser *project.FoundryParser, args *azdext.ProjectEventArgs) error {
+	if err := projectParser.CoboPostDeploy(ctx, args); err != nil {
+		return err
+	}
+
+	// Ensure agent identity RBAC is configured when vnext is enabled.
+	// Runs post-deploy because the platform provisions the identity during agent deployment.
+	if err := projectParser.EnsureAgentIdentityRBAC(ctx); err != nil {
+		return fmt.Errorf("agent identity RBAC setup failed: %w", err)
 	}
 
 	return nil

@@ -16,18 +16,6 @@
 // translates them into structured errors when it has enough context to choose
 // the right category, code, and suggestion.
 //
-// # Wrapping cause errors
-//
-// Every factory function has a "Wrap" counterpart (e.g. [ValidationWrap]) that
-// accepts a cause error. The cause is stored in [azdext.LocalError.Cause] so
-// that [errors.Is] and [errors.As] can still traverse the chain.  The cause is
-// NOT transmitted over gRPC — only the structured metadata travels to the host.
-//
-// Use Wrap variants when you want to preserve the original error for local
-// debugging / logging while still reporting a structured error to telemetry:
-//
-//	return exterrors.ValidationWrap(err, CodeInvalidManifest, "manifest is invalid", "check the schema docs")
-//
 // # Error chain precedence
 //
 // When an error chain contains multiple structured types, [azdext.WrapError]
@@ -40,8 +28,8 @@
 //  5. Fallback               — unclassified
 //
 // Because the outermost structured error wins, the command-boundary pattern
-// naturally produces the correct classification: the command wraps a cause with
-// a specific category, and that category is what telemetry sees.
+// naturally produces the correct classification: the command creates a structured
+// error with a specific category, and that category is what telemetry sees.
 package exterrors
 
 import (
@@ -58,7 +46,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Structured error factories — no cause
+// Structured error factories
 // ---------------------------------------------------------------------------
 
 // Validation returns a validation [azdext.LocalError] for user-input or manifest errors.
@@ -130,81 +118,10 @@ func Internal(code, message string) error {
 }
 
 // ---------------------------------------------------------------------------
-// Structured error factories — with cause wrapping
-// ---------------------------------------------------------------------------
-
-// ValidationWrap is like [Validation] but sets [azdext.LocalError.Cause] so that
-// [errors.Is] and [errors.As] can traverse through to the original error.
-func ValidationWrap(cause error, code, message, suggestion string) error {
-	return &azdext.LocalError{
-		Message:    message,
-		Code:       code,
-		Category:   azdext.LocalErrorCategoryValidation,
-		Suggestion: suggestion,
-		Cause:      cause,
-	}
-}
-
-// DependencyWrap is like [Dependency] but preserves the cause error.
-func DependencyWrap(cause error, code, message, suggestion string) error {
-	return &azdext.LocalError{
-		Message:    message,
-		Code:       code,
-		Category:   azdext.LocalErrorCategoryDependency,
-		Suggestion: suggestion,
-		Cause:      cause,
-	}
-}
-
-// CompatibilityWrap is like [Compatibility] but preserves the cause error.
-func CompatibilityWrap(cause error, code, message, suggestion string) error {
-	return &azdext.LocalError{
-		Message:    message,
-		Code:       code,
-		Category:   azdext.LocalErrorCategoryCompatibility,
-		Suggestion: suggestion,
-		Cause:      cause,
-	}
-}
-
-// AuthWrap is like [Auth] but preserves the cause error.
-func AuthWrap(cause error, code, message, suggestion string) error {
-	return &azdext.LocalError{
-		Message:    message,
-		Code:       code,
-		Category:   azdext.LocalErrorCategoryAuth,
-		Suggestion: suggestion,
-		Cause:      cause,
-	}
-}
-
-// ConfigurationWrap is like [Configuration] but preserves the cause error.
-func ConfigurationWrap(cause error, code, message, suggestion string) error {
-	return &azdext.LocalError{
-		Message:    message,
-		Code:       code,
-		Category:   azdext.LocalErrorCategoryLocal,
-		Suggestion: suggestion,
-		Cause:      cause,
-	}
-}
-
-// InternalWrap is like [Internal] but preserves the cause error.
-func InternalWrap(cause error, code, message string) error {
-	return &azdext.LocalError{
-		Message:  message,
-		Code:     code,
-		Category: azdext.LocalErrorCategoryInternal,
-		Cause:    cause,
-	}
-}
-
-// ---------------------------------------------------------------------------
 // Azure / gRPC error converters
 // ---------------------------------------------------------------------------
 
 // ServiceFromAzure wraps an [azcore.ResponseError] into an [azdext.ServiceError] with operation context.
-// The original error is preserved as [azdext.ServiceError.Cause] for local debugging.
 // If the error is not an azcore.ResponseError, it returns a generic internal [azdext.LocalError].
 func ServiceFromAzure(err error, operation string) error {
 	var respErr *azcore.ResponseError
@@ -222,13 +139,12 @@ func ServiceFromAzure(err error, operation string) error {
 			ErrorCode:   fmt.Sprintf("%s.%s", operation, code),
 			StatusCode:  respErr.StatusCode,
 			ServiceName: serviceName,
-			Cause:       err,
 		}
 	}
 	if IsCancellation(err) {
 		return Cancelled(fmt.Sprintf("%s was cancelled", operation))
 	}
-	return InternalWrap(err, operation, fmt.Sprintf("%s: %s", operation, err.Error()))
+	return Internal(operation, fmt.Sprintf("%s: %s", operation, err.Error()))
 }
 
 // FromAiService wraps a gRPC error returned by an azd host AI service call
@@ -247,7 +163,7 @@ func FromAiService(err error, fallbackCode string) error {
 
 	st, ok := status.FromError(err)
 	if !ok {
-		return InternalWrap(err, fallbackCode, err.Error())
+		return Internal(fallbackCode, err.Error())
 	}
 
 	if st.Code() == codes.Unauthenticated {
@@ -259,7 +175,7 @@ func FromAiService(err error, fallbackCode string) error {
 		code = reason
 	}
 
-	return InternalWrap(err, code, st.Message())
+	return Internal(code, st.Message())
 }
 
 // FromPrompt wraps a gRPC error from an azd host Prompt call into a structured error.

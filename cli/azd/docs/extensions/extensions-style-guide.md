@@ -65,13 +65,12 @@ classify it in telemetry.
 The `azdext` package provides two structured error types:
 
 - **`azdext.ServiceError`** — for HTTP/gRPC service failures (e.g., Azure API returned 429).
-  Fields: `Message`, `ErrorCode`, `StatusCode`, `ServiceName`, `Suggestion`, `Cause`.
+  Fields: `Message`, `ErrorCode`, `StatusCode`, `ServiceName`, `Suggestion`.
 
 - **`azdext.LocalError`** — for local errors such as validation, auth, config, or internal failures.
-  Fields: `Message`, `Code`, `Category`, `Suggestion`, `Cause`.
+  Fields: `Message`, `Code`, `Category`, `Suggestion`.
 
-Both types implement `Error()` and `Unwrap()`, so they work with Go's standard `errors.Is` /
-`errors.As` traversal when a `Cause` is set.
+Both types implement `Error()`. They are detected via `errors.As` during serialization.
 
 ### Telemetry Classification
 
@@ -95,18 +94,23 @@ Does not create structured errors.
 This separation ensures the command layer has the full context to choose the right category
 and write a helpful suggestion, while business logic stays generic and testable.
 
-### Wrapping Cause Errors
+### Including Original Error Context
 
-Every structured error type has a `Cause` field. When set, `Unwrap()` returns the cause,
-enabling `errors.Is` / `errors.As` to traverse through the structured error to the original.
+Structured errors do not currently support Go's `errors.Unwrap` — the original error is not
+preserved in the error chain. To retain debugging context, include the original error's message
+in the `Message` field:
 
-The `Cause` is **not transmitted over gRPC** — only `Message`, `Code`, `Category`, `Suggestion`,
-and service metadata travel to the host. The cause is useful for local logging and debugging.
+```go
+return exterrors.Validation(code, fmt.Sprintf("manifest is invalid: %s", err), suggestion)
+```
+
+Only the structured metadata (`Message`, `Code`, `Category`, `Suggestion`, and service fields)
+is transmitted over gRPC to the host. The original Go error is not available on the host side.
 
 ### Error Chain Precedence
 
-When an error chain contains multiple structured error types (e.g., a `ValidationWrap` wrapping
-an `Internal` error), `WrapError` picks the **outermost** (first) match via `errors.As`:
+When `WrapError` serializes an error for gRPC, it checks the chain via `errors.As` and picks
+the **first** match in this order:
 
 1. `ServiceError` (highest priority)
 2. `LocalError`

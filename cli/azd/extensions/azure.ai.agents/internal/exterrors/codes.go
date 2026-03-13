@@ -10,7 +10,7 @@ const (
 
 // Error codes for validation errors.
 //
-// Use these with [Validation] or [ValidationWrap] when user input, manifests,
+// Use these with [Validation] when user input, manifests,
 // or configuration values fail validation.
 const (
 	CodeInvalidAgentManifest      = "invalid_agent_manifest"
@@ -34,7 +34,7 @@ const (
 
 // Error codes for dependency errors.
 //
-// Use these with [Dependency] or [DependencyWrap] when required external
+// Use these with [Dependency] when required external
 // resources, services, or environment values are missing or unavailable.
 const (
 	CodeProjectNotFound           = "project_not_found"
@@ -52,7 +52,7 @@ const (
 
 // Error codes for auth errors.
 //
-// Use these with [Auth] or [AuthWrap] for authentication/authorization failures.
+// Use these with [Auth] for authentication/authorization failures.
 const (
 	//nolint:gosec // error code identifier, not a credential
 	CodeCredentialCreationFailed = "credential_creation_failed"
@@ -64,7 +64,7 @@ const (
 
 // Error codes for compatibility errors.
 //
-// Use these with [Compatibility] or [CompatibilityWrap] for version mismatches.
+// Use these with [Compatibility] for version mismatches.
 const (
 	CodeIncompatibleAzdVersion = "incompatible_azd_version"
 )
@@ -80,7 +80,7 @@ const (
 
 // Error codes for internal errors.
 //
-// Use these with [Internal] or [InternalWrap] for unexpected failures
+// Use these with [Internal] for unexpected failures
 // that are not directly caused by user input.
 const (
 	CodeAzdClientFailed               = "azd_client_failed"

@@ -100,9 +100,9 @@ Error handling in this extension uses a structured error system that provides:
 │  Translates errors into structured types with category, code,    │
 │  and suggestion. This is where you choose the error category.    │
 │                                                                  │
-│  return exterrors.ValidationWrap(err,                             │
+│  return exterrors.Validation(                                     │
 │      exterrors.CodeInvalidAgentManifest,                          │
-│      "agent manifest is invalid",                                │
+│      fmt.Sprintf("agent manifest is invalid: %s", err),          │
 │      "check the agent.yaml schema documentation")                │
 └────────────────────────────┬─────────────────────────────────────┘
                              │
@@ -126,46 +126,39 @@ Business logic often doesn't know why it was called or what the user should do n
 
 | Situation | What to use | Example |
 |-----------|------------|---------|
-| User input or manifest is invalid | `exterrors.Validation` / `ValidationWrap` | Missing required field in agent.yaml |
-| Required resource is missing or unavailable | `exterrors.Dependency` / `DependencyWrap` | AI project endpoint not configured |
-| Authentication or authorization failure | `exterrors.Auth` / `AuthWrap` | Credential creation failed |
-| Version or feature mismatch | `exterrors.Compatibility` / `CompatibilityWrap` | azd version too old |
+| User input or manifest is invalid | `exterrors.Validation` | Missing required field in agent.yaml |
+| Required resource is missing or unavailable | `exterrors.Dependency` | AI project endpoint not configured |
+| Authentication or authorization failure | `exterrors.Auth` | Credential creation failed |
+| Version or feature mismatch | `exterrors.Compatibility` | azd version too old |
 | User cancellation (e.g., Ctrl+C) | `exterrors.Cancelled` | User cancelled subscription prompt |
 | Azure HTTP API returned an error | `exterrors.ServiceFromAzure` | ARM deployment failed |
 | azd host gRPC call failed | `exterrors.FromAiService` / `FromPrompt` | Model catalog call failed |
-| Unexpected internal failure | `exterrors.Internal` / `InternalWrap` | JSON marshalling failed |
+| Unexpected internal failure | `exterrors.Internal` | JSON marshalling failed |
 | Error in a helper / business logic layer | `fmt.Errorf("context: %w", err)` | Pass it up for the command layer to classify |
 
-### Wrapping vs. Not Wrapping Causes
+### Including Original Error Context
 
-Every structured factory function has a `Wrap` variant (e.g., `ValidationWrap`)
-that accepts a cause error and stores it in the `Cause` field:
+When creating a structured error, include the original error's message in the
+Message field so that debugging context is preserved in telemetry:
 
 ```go
-// WITHOUT cause — use when the error is self-explanatory
+// Include the original error message for debugging context
 return exterrors.Validation(
-    exterrors.CodeInvalidAgentManifest,
-    "agent manifest is invalid",
-    "check the agent.yaml schema documentation",
-)
-
-// WITH cause — use when you want to preserve the original error for debugging
-return exterrors.ValidationWrap(err,
     exterrors.CodeInvalidAgentManifest,
     fmt.Sprintf("agent manifest is invalid: %s", err),
     "check the agent.yaml schema documentation",
 )
 ```
 
-The cause is available locally via `errors.Is` / `errors.As` for debugging but
-is **not** transmitted over gRPC — only the structured metadata (Message, Code,
-Category, Suggestion) travels to the azd host.
+Note: Structured errors (`LocalError` / `ServiceError`) do not currently support
+Go's `errors.Unwrap` interface — the original error is not part of the error chain.
+Only the structured metadata (Message, Code, Category, Suggestion) is transmitted
+over gRPC to the azd host.
 
 ### Error Chain Precedence
 
-When multiple structured errors exist in the same error chain (e.g., a
-`ValidationWrap` wrapping an `Internal` error), `WrapError` picks the
-**outermost** (first) match in this order:
+When `WrapError` serializes an error for gRPC transmission, it checks the error
+chain (via `errors.As`) and picks the **first** match in this order:
 
 1. `ServiceError` — service/HTTP failures (highest priority)
 2. `LocalError` — local/config/auth failures
@@ -173,8 +166,8 @@ When multiple structured errors exist in the same error chain (e.g., a
 4. gRPC Unauthenticated — safety-net auth classification
 5. Fallback — unclassified
 
-Because `errors.As` walks the chain from outermost to innermost, the
-command-boundary pattern naturally produces the correct telemetry classification.
+Because `errors.As` walks from outermost to innermost, the command-boundary
+pattern naturally produces the correct telemetry classification.
 
 ### Error Codes
 

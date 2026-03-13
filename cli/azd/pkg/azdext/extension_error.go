@@ -13,11 +13,6 @@ import (
 
 // ServiceError represents an HTTP/gRPC service error from an extension.
 // It preserves structured error information for telemetry and error handling.
-//
-// ServiceError supports Go error wrapping via the optional Cause field.
-// When Cause is set, [errors.Unwrap] returns it, enabling the standard
-// errors.Is / errors.As traversal through the cause chain while still
-// carrying the structured service metadata for telemetry.
 type ServiceError struct {
 	// Message is the human-readable error message
 	Message string
@@ -29,18 +24,9 @@ type ServiceError struct {
 	ServiceName string
 	// Suggestion contains optional user-facing remediation guidance.
 	Suggestion string
-	// Cause is the optional underlying error that triggered this service error.
-	// It is not transmitted over gRPC but enables local errors.Is / errors.As checks.
-	Cause error
 }
 
 // LocalError represents non-service extension errors, such as validation/config failures.
-//
-// LocalError supports Go error wrapping via the optional Cause field.
-// When Cause is set, [errors.Unwrap] returns it, enabling the standard
-// errors.Is / errors.As traversal through the cause chain while still
-// carrying the structured metadata (Code, Category, Suggestion) for
-// telemetry and UX display.
 type LocalError struct {
 	// Message is the human-readable error message
 	Message string
@@ -51,9 +37,6 @@ type LocalError struct {
 	Category LocalErrorCategory
 	// Suggestion contains optional user-facing remediation guidance.
 	Suggestion string
-	// Cause is the optional underlying error that triggered this local error.
-	// It is not transmitted over gRPC but enables local errors.Is / errors.As checks.
-	Cause error
 }
 
 // Error implements the error interface.
@@ -61,21 +44,9 @@ func (e *LocalError) Error() string {
 	return e.Message
 }
 
-// Unwrap returns the underlying cause, enabling errors.Is and errors.As
-// to traverse through the LocalError to the original error.
-func (e *LocalError) Unwrap() error {
-	return e.Cause
-}
-
 // Error implements the error interface.
 func (e *ServiceError) Error() string {
 	return e.Message
-}
-
-// Unwrap returns the underlying cause, enabling errors.Is and errors.As
-// to traverse through the ServiceError to the original error.
-func (e *ServiceError) Unwrap() error {
-	return e.Cause
 }
 
 // WrapError converts a Go error into an ExtensionError proto for transmission to the azd host.

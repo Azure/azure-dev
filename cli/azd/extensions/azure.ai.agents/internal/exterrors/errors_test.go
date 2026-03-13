@@ -5,9 +5,6 @@ package exterrors
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"io"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -146,105 +143,4 @@ func TestFromPrompt(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestWrapVariants_PreserveCause(t *testing.T) {
-	cause := io.ErrUnexpectedEOF
-
-	t.Run("ValidationWrap preserves cause", func(t *testing.T) {
-		err := ValidationWrap(cause, "bad_input", "invalid", "fix it")
-		var localErr *azdext.LocalError
-		require.ErrorAs(t, err, &localErr)
-		assert.Equal(t, azdext.LocalErrorCategoryValidation, localErr.Category)
-		assert.Equal(t, "bad_input", localErr.Code)
-		assert.Equal(t, "fix it", localErr.Suggestion)
-		assert.True(t, errors.Is(err, io.ErrUnexpectedEOF), "cause should be reachable via errors.Is")
-	})
-
-	t.Run("DependencyWrap preserves cause", func(t *testing.T) {
-		err := DependencyWrap(cause, "missing", "not found", "create it")
-		assert.True(t, errors.Is(err, io.ErrUnexpectedEOF))
-	})
-
-	t.Run("CompatibilityWrap preserves cause", func(t *testing.T) {
-		err := CompatibilityWrap(cause, "old_version", "too old", "upgrade")
-		assert.True(t, errors.Is(err, io.ErrUnexpectedEOF))
-	})
-
-	t.Run("AuthWrap preserves cause", func(t *testing.T) {
-		err := AuthWrap(cause, "auth_fail", "not authed", "login")
-		assert.True(t, errors.Is(err, io.ErrUnexpectedEOF))
-	})
-
-	t.Run("ConfigurationWrap preserves cause", func(t *testing.T) {
-		err := ConfigurationWrap(cause, "bad_cfg", "config error", "fix config")
-		assert.True(t, errors.Is(err, io.ErrUnexpectedEOF))
-	})
-
-	t.Run("InternalWrap preserves cause", func(t *testing.T) {
-		err := InternalWrap(cause, "internal_fail", "unexpected")
-		assert.True(t, errors.Is(err, io.ErrUnexpectedEOF))
-	})
-}
-
-func TestErrorChain_OutermostStructuredErrorWins(t *testing.T) {
-	// Simulate a chain: inner Internal error wrapped by outer Validation error.
-	// The outermost structured error should be the one detected by WrapError.
-	inner := Internal("inner_code", "inner failure")
-	outer := ValidationWrap(inner, "outer_code", "outer failure", "fix the outer thing")
-
-	// errors.As finds the outermost LocalError first
-	var localErr *azdext.LocalError
-	require.ErrorAs(t, outer, &localErr)
-	assert.Equal(t, "outer_code", localErr.Code)
-	assert.Equal(t, azdext.LocalErrorCategoryValidation, localErr.Category)
-
-	// The inner error is reachable via Unwrap chain
-	var innerLocal *azdext.LocalError
-	require.ErrorAs(t, localErr.Cause, &innerLocal)
-	assert.Equal(t, "inner_code", innerLocal.Code)
-	assert.Equal(t, azdext.LocalErrorCategoryInternal, innerLocal.Category)
-}
-
-func TestErrorChain_WrapErrorPicksOutermostStructured(t *testing.T) {
-	// Build chain: ServiceError → (cause) → LocalError (inner)
-	innerLocal := Internal("inner_local", "inner local error")
-	outerService := &azdext.ServiceError{
-		Message:     "service failed",
-		ErrorCode:   "SvcFail",
-		StatusCode:  500,
-		ServiceName: "test.azure.com",
-		Cause:       innerLocal,
-	}
-
-	// WrapError should pick the outermost ServiceError
-	protoErr := azdext.WrapError(outerService)
-	require.NotNil(t, protoErr)
-	assert.Equal(t, azdext.ErrorOrigin_ERROR_ORIGIN_SERVICE, protoErr.GetOrigin())
-	assert.Equal(t, "service failed", protoErr.GetMessage())
-
-	svcDetail := protoErr.GetServiceError()
-	require.NotNil(t, svcDetail)
-	assert.Equal(t, "SvcFail", svcDetail.GetErrorCode())
-}
-
-func TestServiceFromAzure_PreservesCause(t *testing.T) {
-	// When wrapping a non-Azure error, the cause should be preserved.
-	cause := fmt.Errorf("connection refused")
-	result := ServiceFromAzure(cause, "get_project")
-
-	var localErr *azdext.LocalError
-	require.ErrorAs(t, result, &localErr)
-	assert.Equal(t, "get_project", localErr.Code)
-	assert.True(t, errors.Is(result, cause), "original cause should be reachable")
-}
-
-func TestFromAiService_PreservesCause(t *testing.T) {
-	grpcErr := status.Error(codes.InvalidArgument, "bad request")
-	result := FromAiService(grpcErr, "model_catalog_failed")
-
-	var localErr *azdext.LocalError
-	require.ErrorAs(t, result, &localErr)
-	assert.Equal(t, azdext.LocalErrorCategoryInternal, localErr.Category)
-	assert.NotNil(t, localErr.Cause, "cause should be preserved for debugging")
 }

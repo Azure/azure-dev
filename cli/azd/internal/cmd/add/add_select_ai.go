@@ -97,8 +97,7 @@ func (a *AddAction) promptOpenAi(
 
 		_, err = a.rm.FindResourceGroupForEnvironment(
 			ctx, a.env.GetSubscriptionId(), a.env.Name())
-		var notFoundError *azureutil.ResourceNotFoundError
-		if errors.As(err, &notFoundError) { // not yet provisioned, we're safe here
+		if _, ok := errors.AsType[*azureutil.ResourceNotFoundError](err); ok { // not yet provisioned, we're safe here
 			console.MessageUxItem(ctx, &ux.WarningMessage{
 				Description: fmt.Sprintf("No models found in %s", a.env.GetLocation()),
 			})

@@ -301,8 +301,9 @@ func (rs *ResourceService) DeleteResourceGroup(ctx context.Context, subscription
 	}
 
 	poller, err := client.BeginDelete(ctx, resourceGroupName, nil)
-	var respErr *azcore.ResponseError
-	if errors.As(err, &respErr) && respErr.StatusCode == 404 { // Resource group is already deleted
+	// Resource group is already deleted
+	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
+		respErr.StatusCode == 404 {
 		return nil
 	}
 

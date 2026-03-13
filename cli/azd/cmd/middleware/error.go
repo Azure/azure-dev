@@ -72,15 +72,12 @@ const (
 // AzureContextAndOtherError, MachineContextError, or UserContextError
 func classifyError(err error) ErrorCategory {
 	// --- Machine context: typed errors ---
-	var toolCheckErr *tools.MissingToolErrors
-	var semverErr *tools.ErrSemver
-	var extRunErr *extensions.ExtensionRunError
-	var packStatusErr *pack.StatusCodeError
+	_, toolCheckErr := errors.AsType[*tools.MissingToolErrors](err)
+	_, semverErr := errors.AsType[*tools.ErrSemver](err)
+	_, extRunErr := errors.AsType[*extensions.ExtensionRunError](err)
+	_, packStatusErr := errors.AsType[*pack.StatusCodeError](err)
 
-	if errors.As(err, &toolCheckErr) ||
-		errors.As(err, &semverErr) ||
-		errors.As(err, &extRunErr) ||
-		errors.As(err, &packStatusErr) {
+	if toolCheckErr || semverErr || extRunErr || packStatusErr {
 		return MachineContextError
 	}
 
@@ -89,10 +86,10 @@ func classifyError(err error) ErrorCategory {
 	}
 
 	// --- User context: typed errors ---
-	var loginErr *auth.ReLoginRequiredError
-	var authFailedErr *auth.AuthFailedError
+	_, loginErr := errors.AsType[*auth.ReLoginRequiredError](err)
+	_, authFailedErr := errors.AsType[*auth.AuthFailedError](err)
 
-	if errors.As(err, &loginErr) || errors.As(err, &authFailedErr) {
+	if loginErr || authFailedErr {
 		return UserContextError
 	}
 
@@ -130,8 +127,8 @@ func shouldSkipErrorAnalysis(err error) bool {
 	}
 
 	// Environment was already initialized
-	var envInitErr *environment.EnvironmentInitError
-	return errors.As(err, &envInitErr)
+	_, ok := errors.AsType[*environment.EnvironmentInitError](err)
+	return ok
 }
 
 func NewErrorMiddleware(
@@ -174,8 +171,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 	}
 
 	// Check if error already has a suggestion
-	var suggestionErr *internal.ErrorWithSuggestion
-	if errors.As(err, &suggestionErr) {
+	if _, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok {
 		// Already has a suggestion, return as-is
 		return actionResult, err
 	}
@@ -218,7 +214,6 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 	attempt := 0
 	var previousError error
-	var errorWithTraceId *internal.ErrorWithTraceId
 	AIDisclaimer := output.WithGrayFormat("The following content is AI-generated. AI responses may be incorrect.")
 	agentName := "agent mode"
 
@@ -242,7 +237,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			}
 		}
 
-		if errors.As(originalError, &errorWithTraceId) {
+		if errorWithTraceId, ok := errors.AsType[*internal.ErrorWithTraceId](originalError); ok {
 			e.console.Message(ctx, output.WithErrorFormat("TraceID: %s", errorWithTraceId.TraceId))
 		}
 

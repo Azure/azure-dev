@@ -179,8 +179,7 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 
 	logMsg.result = &result
 
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 		outputAvailable := !args.Interactive
 		err = NewExitError(
 			*exitErr,
@@ -241,8 +240,7 @@ func (r *commandRunner) RunList(ctx context.Context, commands []string, args Run
 	)
 	logMsg.result = &result
 
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 		err = NewExitError(
 			*exitErr,
 			args.Cmd,

@@ -161,14 +161,15 @@ func (ad *entraIdService) CreateOrUpdateServicePrincipal(
 		application, err = ad.createApplication(ctx, subscriptionId, appIdOrName, options)
 		if err != nil {
 			// Check if the error is specifically "ServiceTreeNullValueProvided"
-			var responseError *azcore.ResponseError
-			if errors.As(err, &responseError) && responseError.ErrorCode == "ServiceTreeNullValueProvided" {
+			if responseError, ok := errors.AsType[*azcore.ResponseError](err); ok &&
+				responseError.ErrorCode == "ServiceTreeNullValueProvided" {
 				return nil, &ServiceTreeNullValueError{
 					ApplicationName: appIdOrName,
 					Err:             err,
 				}
 			}
-			if errors.As(err, &responseError) && responseError.ErrorCode == "ServiceTreeInvalid" {
+			if responseError, ok := errors.AsType[*azcore.ResponseError](err); ok &&
+				responseError.ErrorCode == "ServiceTreeInvalid" {
 				return nil, &ServiceTreeInvalidError{
 					ApplicationName: appIdOrName,
 					Err:             err,
@@ -600,14 +601,15 @@ func (ad *entraIdService) applyRoleAssignmentWithRetryImpl(
 		}, nil)
 
 		if err != nil {
-			var responseError *azcore.ResponseError
 			// If the response is a 409 conflict then the role has already been assigned.
-			if errors.As(err, &responseError) && responseError.StatusCode == http.StatusConflict {
+			if responseError, ok := errors.AsType[*azcore.ResponseError](err); ok &&
+				responseError.StatusCode == http.StatusConflict {
 				return nil
 			}
 
 			// If the response is a 403 then the required role is missing.
-			if errors.As(err, &responseError) && responseError.StatusCode == http.StatusForbidden {
+			if responseError, ok := errors.AsType[*azcore.ResponseError](err); ok &&
+				responseError.StatusCode == http.StatusForbidden {
 				return &internal.ErrorWithSuggestion{
 					Suggestion: fmt.Sprintf("\nSuggested Action: Ensure you have either the `User Access Administrator`, " +
 						"Owner` or custom azure roles assigned to your subscription to perform action " +

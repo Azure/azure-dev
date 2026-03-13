@@ -205,8 +205,7 @@ func (t CommandExecutorTool) executeCommand(ctx context.Context, command string,
 	var cmdError error
 
 	if err != nil {
-		var exitError *exec.ExitError
-		if errors.As(err, &exitError) {
+		if exitError, ok := errors.AsType[*exec.ExitError](err); ok {
 			// Command ran but exited with non-zero code - this is normal
 			exitCode = exitError.ExitCode()
 			cmdError = nil // Don't treat non-zero exit as a system error

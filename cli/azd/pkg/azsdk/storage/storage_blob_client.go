@@ -235,8 +235,7 @@ func (bc *blobClient) resetAndEnsureContainer(ctx context.Context) error {
 
 // isContainerNotFound checks if the error indicates the container was not found.
 func (bc *blobClient) isContainerNotFound(err error) bool {
-	var respErr *azcore.ResponseError
-	if errors.As(err, &respErr) {
+	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
 		return respErr.ErrorCode == "ContainerNotFound"
 	}
 	return false

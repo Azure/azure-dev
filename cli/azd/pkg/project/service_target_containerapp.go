@@ -464,8 +464,7 @@ func (at *containerAppTarget) ResolveTargetResource(
 		return targetResource, nil
 	}
 
-	var resourceNotFoundError *azureutil.ResourceNotFoundError
-	if errors.As(err, &resourceNotFoundError) {
+	if _, ok := errors.AsType[*azureutil.ResourceNotFoundError](err); ok {
 		resourceGroupTemplate := serviceConfig.ResourceGroupName
 		if resourceGroupTemplate.Empty() {
 			resourceGroupTemplate = serviceConfig.Project.ResourceGroupName

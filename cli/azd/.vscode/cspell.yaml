@@ -201,6 +201,7 @@ overrides:
       - GHSA
       - gjrc
       - richardpark
+      - msft
   - filename: pkg/apphost/generate.go
     words:
       - alue

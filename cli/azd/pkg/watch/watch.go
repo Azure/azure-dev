@@ -203,6 +203,4 @@ func (fw *fileWatcher) PrintChangedFiles(ctx context.Context) {
 			fmt.Println(output.WithGrayFormat("| "), color.RedString("- Deleted  "), getDisplayPath(file))
 		}
 	}
-
-	fmt.Println("")
 }

@@ -58,7 +58,7 @@ func TestGetAllConfigOptions(t *testing.T) {
 		case "cloud.name":
 			foundCloudName = true
 			require.Equal(t, "string", option.Type)
-		case "ai.agent.model.type":
+		case "copilot.model.type":
 			foundAgentModelType = true
 			require.Equal(t, "string", option.Type)
 		}
@@ -72,7 +72,7 @@ func TestGetAllConfigOptions(t *testing.T) {
 	require.True(t, foundPlatformType, "platform.type option should be present")
 	require.True(t, foundPlatformConfig, "platform.config option should be present")
 	require.True(t, foundCloudName, "cloud.name option should be present")
-	require.True(t, foundAgentModelType, "ai.agent.model.type option should be present")
+	require.True(t, foundAgentModelType, "copilot.model.type option should be present")
 }
 
 func TestConfigOptionStructure(t *testing.T) {

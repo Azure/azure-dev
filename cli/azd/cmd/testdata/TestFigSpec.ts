@@ -1572,6 +1572,196 @@ const completionSpec: Fig.Spec = {
 			],
 		},
 		{
+			name: ['copilot'],
+			description: 'Manage Copilot agent settings. (Alpha)',
+			subcommands: [
+				{
+					name: ['consent'],
+					description: 'Manage tool consent.',
+					subcommands: [
+						{
+							name: ['grant'],
+							description: 'Grant consent trust rules.',
+							options: [
+								{
+									name: ['--action'],
+									description: 'Action type: \'all\' or \'readonly\'',
+									args: [
+										{
+											name: 'action',
+											suggestions: ['all', 'readonly'],
+										},
+									],
+								},
+								{
+									name: ['--global'],
+									description: 'Apply globally to all servers',
+								},
+								{
+									name: ['--operation'],
+									description: 'Operation type: \'tool\' or \'sampling\'',
+									args: [
+										{
+											name: 'operation',
+											suggestions: ['tool', 'sampling'],
+										},
+									],
+								},
+								{
+									name: ['--permission'],
+									description: 'Permission: \'allow\', \'deny\', or \'prompt\'',
+									args: [
+										{
+											name: 'permission',
+											suggestions: ['allow', 'deny', 'prompt'],
+										},
+									],
+								},
+								{
+									name: ['--scope'],
+									description: 'Rule scope: \'global\', or \'project\'',
+									args: [
+										{
+											name: 'scope',
+											suggestions: ['global', 'project'],
+										},
+									],
+								},
+								{
+									name: ['--server'],
+									description: 'Server name',
+									args: [
+										{
+											name: 'server',
+										},
+									],
+								},
+								{
+									name: ['--tool'],
+									description: 'Specific tool name (requires --server)',
+									args: [
+										{
+											name: 'tool',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['list'],
+							description: 'List consent rules.',
+							options: [
+								{
+									name: ['--action'],
+									description: 'Action type to filter by (readonly, any)',
+									args: [
+										{
+											name: 'action',
+											suggestions: ['all', 'readonly'],
+										},
+									],
+								},
+								{
+									name: ['--operation'],
+									description: 'Operation to filter by (tool, sampling)',
+									args: [
+										{
+											name: 'operation',
+											suggestions: ['tool', 'sampling'],
+										},
+									],
+								},
+								{
+									name: ['--permission'],
+									description: 'Permission to filter by (allow, deny, prompt)',
+									args: [
+										{
+											name: 'permission',
+											suggestions: ['allow', 'deny', 'prompt'],
+										},
+									],
+								},
+								{
+									name: ['--scope'],
+									description: 'Consent scope to filter by (global, project). If not specified, lists rules from all scopes.',
+									args: [
+										{
+											name: 'scope',
+											suggestions: ['global', 'project'],
+										},
+									],
+								},
+								{
+									name: ['--target'],
+									description: 'Specific target to operate on (server/tool format)',
+									args: [
+										{
+											name: 'target',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['revoke'],
+							description: 'Revoke consent rules.',
+							options: [
+								{
+									name: ['--action'],
+									description: 'Action type to filter by (readonly, any)',
+									args: [
+										{
+											name: 'action',
+											suggestions: ['all', 'readonly'],
+										},
+									],
+								},
+								{
+									name: ['--operation'],
+									description: 'Operation to filter by (tool, sampling)',
+									args: [
+										{
+											name: 'operation',
+											suggestions: ['tool', 'sampling'],
+										},
+									],
+								},
+								{
+									name: ['--permission'],
+									description: 'Permission to filter by (allow, deny, prompt)',
+									args: [
+										{
+											name: 'permission',
+											suggestions: ['allow', 'deny', 'prompt'],
+										},
+									],
+								},
+								{
+									name: ['--scope'],
+									description: 'Consent scope to filter by (global, project). If not specified, revokes rules from all scopes.',
+									args: [
+										{
+											name: 'scope',
+											suggestions: ['global', 'project'],
+										},
+									],
+								},
+								{
+									name: ['--target'],
+									description: 'Specific target to operate on (server/tool format)',
+									args: [
+										{
+											name: 'target',
+										},
+									],
+								},
+							],
+						},
+					],
+				},
+			],
+		},
+		{
 			name: ['demo'],
 			description: 'This extension provides examples of the azd extension framework.',
 			subcommands: [
@@ -2313,190 +2503,6 @@ const completionSpec: Fig.Spec = {
 			name: ['mcp'],
 			description: 'Manage Model Context Protocol (MCP) server. (Alpha)',
 			subcommands: [
-				{
-					name: ['consent'],
-					description: 'Manage MCP tool consent.',
-					subcommands: [
-						{
-							name: ['grant'],
-							description: 'Grant consent trust rules.',
-							options: [
-								{
-									name: ['--action'],
-									description: 'Action type: \'all\' or \'readonly\'',
-									args: [
-										{
-											name: 'action',
-											suggestions: ['all', 'readonly'],
-										},
-									],
-								},
-								{
-									name: ['--global'],
-									description: 'Apply globally to all servers',
-								},
-								{
-									name: ['--operation'],
-									description: 'Operation type: \'tool\' or \'sampling\'',
-									args: [
-										{
-											name: 'operation',
-											suggestions: ['tool', 'sampling'],
-										},
-									],
-								},
-								{
-									name: ['--permission'],
-									description: 'Permission: \'allow\', \'deny\', or \'prompt\'',
-									args: [
-										{
-											name: 'permission',
-											suggestions: ['allow', 'deny', 'prompt'],
-										},
-									],
-								},
-								{
-									name: ['--scope'],
-									description: 'Rule scope: \'global\', or \'project\'',
-									args: [
-										{
-											name: 'scope',
-											suggestions: ['global', 'project'],
-										},
-									],
-								},
-								{
-									name: ['--server'],
-									description: 'Server name',
-									args: [
-										{
-											name: 'server',
-										},
-									],
-								},
-								{
-									name: ['--tool'],
-									description: 'Specific tool name (requires --server)',
-									args: [
-										{
-											name: 'tool',
-										},
-									],
-								},
-							],
-						},
-						{
-							name: ['list'],
-							description: 'List consent rules.',
-							options: [
-								{
-									name: ['--action'],
-									description: 'Action type to filter by (readonly, any)',
-									args: [
-										{
-											name: 'action',
-											suggestions: ['all', 'readonly'],
-										},
-									],
-								},
-								{
-									name: ['--operation'],
-									description: 'Operation to filter by (tool, sampling)',
-									args: [
-										{
-											name: 'operation',
-											suggestions: ['tool', 'sampling'],
-										},
-									],
-								},
-								{
-									name: ['--permission'],
-									description: 'Permission to filter by (allow, deny, prompt)',
-									args: [
-										{
-											name: 'permission',
-											suggestions: ['allow', 'deny', 'prompt'],
-										},
-									],
-								},
-								{
-									name: ['--scope'],
-									description: 'Consent scope to filter by (global, project). If not specified, lists rules from all scopes.',
-									args: [
-										{
-											name: 'scope',
-											suggestions: ['global', 'project'],
-										},
-									],
-								},
-								{
-									name: ['--target'],
-									description: 'Specific target to operate on (server/tool format)',
-									args: [
-										{
-											name: 'target',
-										},
-									],
-								},
-							],
-						},
-						{
-							name: ['revoke'],
-							description: 'Revoke consent rules.',
-							options: [
-								{
-									name: ['--action'],
-									description: 'Action type to filter by (readonly, any)',
-									args: [
-										{
-											name: 'action',
-											suggestions: ['all', 'readonly'],
-										},
-									],
-								},
-								{
-									name: ['--operation'],
-									description: 'Operation to filter by (tool, sampling)',
-									args: [
-										{
-											name: 'operation',
-											suggestions: ['tool', 'sampling'],
-										},
-									],
-								},
-								{
-									name: ['--permission'],
-									description: 'Permission to filter by (allow, deny, prompt)',
-									args: [
-										{
-											name: 'permission',
-											suggestions: ['allow', 'deny', 'prompt'],
-										},
-									],
-								},
-								{
-									name: ['--scope'],
-									description: 'Consent scope to filter by (global, project). If not specified, revokes rules from all scopes.',
-									args: [
-										{
-											name: 'scope',
-											suggestions: ['global', 'project'],
-										},
-									],
-								},
-								{
-									name: ['--target'],
-									description: 'Specific target to operate on (server/tool format)',
-									args: [
-										{
-											name: 'target',
-										},
-									],
-								},
-							],
-						},
-					],
-				},
 				{
 					name: ['start'],
 					description: 'Starts the MCP server.',
@@ -3398,6 +3404,30 @@ const completionSpec: Fig.Spec = {
 					],
 				},
 				{
+					name: ['copilot'],
+					description: 'Manage Copilot agent settings. (Alpha)',
+					subcommands: [
+						{
+							name: ['consent'],
+							description: 'Manage tool consent.',
+							subcommands: [
+								{
+									name: ['grant'],
+									description: 'Grant consent trust rules.',
+								},
+								{
+									name: ['list'],
+									description: 'List consent rules.',
+								},
+								{
+									name: ['revoke'],
+									description: 'Revoke consent rules.',
+								},
+							],
+						},
+					],
+				},
+				{
 					name: ['demo'],
 					description: 'This extension provides examples of the azd extension framework.',
 					subcommands: [
@@ -3603,24 +3633,6 @@ const completionSpec: Fig.Spec = {
 					name: ['mcp'],
 					description: 'Manage Model Context Protocol (MCP) server. (Alpha)',
 					subcommands: [
-						{
-							name: ['consent'],
-							description: 'Manage MCP tool consent.',
-							subcommands: [
-								{
-									name: ['grant'],
-									description: 'Grant consent trust rules.',
-								},
-								{
-									name: ['list'],
-									description: 'List consent rules.',
-								},
-								{
-									name: ['revoke'],
-									description: 'Revoke consent rules.',
-								},
-							],
-						},
 						{
 							name: ['start'],
 							description: 'Starts the MCP server.',

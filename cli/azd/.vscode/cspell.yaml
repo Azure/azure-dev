@@ -1,5 +1,6 @@
 import: ../../../.vscode/cspell.global.yaml
 words:
+  - agentcopilot
   - agentdetect
   - Authenticode
   - azcloud

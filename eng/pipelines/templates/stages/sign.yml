@@ -354,7 +354,7 @@ stages:
         - pwsh: |
             New-Item -ItemType Directory -Path homebrew-formula -Force
             New-Item -ItemType Directory -Path homebrew-formula/Formula -Force
-            New-Item -ItemType Directory -Path homebrew-formula/Cask -Force            
+            New-Item -ItemType Directory -Path homebrew-formula/Casks -Force            
           displayName: Create homebrew formula directory
 
         - pwsh: |

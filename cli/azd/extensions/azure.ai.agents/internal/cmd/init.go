@@ -104,6 +104,62 @@ func checkAiModelServiceAvailable(ctx context.Context, azdClient *azdext.AzdClie
 	return nil
 }
 
+// runInitFromManifest sets up Azure context, credentials, console, and runs the
+// InitAction for a given manifest pointer. This is the shared code path used when
+// initializing from a manifest URL/path (the -m flag, agent template, or azd template
+// that contains an agent manifest).
+func runInitFromManifest(
+	ctx context.Context,
+	flags *initFlags,
+	azdClient *azdext.AzdClient,
+	httpClient *http.Client,
+) error {
+	azureContext, projectConfig, environment, err := ensureAzureContext(ctx, flags, azdClient)
+	if err != nil {
+		return err
+	}
+
+	credential, err := azidentity.NewAzureDeveloperCLICredential(
+		&azidentity.AzureDeveloperCLICredentialOptions{
+			TenantID:                   azureContext.Scope.TenantId,
+			AdditionallyAllowedTenants: []string{"*"},
+		},
+	)
+	if err != nil {
+		return exterrors.Auth(
+			exterrors.CodeCredentialCreationFailed,
+			fmt.Sprintf("failed to create Azure credential: %s", err),
+			"run 'azd auth login' to authenticate",
+		)
+	}
+
+	console := input.NewConsole(
+		false, // noPrompt
+		true,  // isTerminal
+		input.Writers{Output: os.Stdout},
+		input.ConsoleHandles{
+			Stderr: os.Stderr,
+			Stdin:  os.Stdin,
+			Stdout: os.Stdout,
+		},
+		nil, // formatter
+		nil, // externalPromptCfg
+	)
+
+	action := &InitAction{
+		azdClient:     azdClient,
+		azureContext:  azureContext,
+		console:       console,
+		credential:    credential,
+		projectConfig: projectConfig,
+		environment:   environment,
+		flags:         flags,
+		httpClient:    httpClient,
+	}
+
+	return action.Run(ctx)
+}
+
 func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 	flags := &initFlags{
 		rootFlagsDefinition: rootFlags,
@@ -141,70 +197,125 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 			}
 
 			if flags.manifestPointer != "" {
-				azureContext, projectConfig, environment, err := ensureAzureContext(ctx, flags, azdClient)
-				if err != nil {
-					if exterrors.IsCancellation(err) {
-						return exterrors.Cancelled("initialization was cancelled")
-					}
-					return err
-				}
-
-				credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
-					TenantID:                   azureContext.Scope.TenantId,
-					AdditionallyAllowedTenants: []string{"*"},
-				})
-				if err != nil {
-					return exterrors.Auth(
-						exterrors.CodeCredentialCreationFailed,
-						fmt.Sprintf("failed to create Azure credential: %s", err),
-						"run 'azd auth login' to authenticate",
-					)
-				}
-
-				console := input.NewConsole(
-					false, // noPrompt
-					true,  // isTerminal
-					input.Writers{Output: os.Stdout},
-					input.ConsoleHandles{
-						Stderr: os.Stderr,
-						Stdin:  os.Stdin,
-						Stdout: os.Stdout,
-					},
-					nil, // formatter
-					nil, // externalPromptCfg
-				)
-
-				action := &InitAction{
-					azdClient: azdClient,
-					// azureClient:         azure.NewAzureClient(credential),
-					azureContext: azureContext,
-					// composedResources:   getComposedResourcesResponse.Resources,
-					console:       console,
-					credential:    credential,
-					projectConfig: projectConfig,
-					environment:   environment,
-					flags:         flags,
-					httpClient:    httpClient,
-				}
-
-				if err := action.Run(ctx); err != nil {
+				if err := runInitFromManifest(ctx, flags, azdClient, httpClient); err != nil {
 					if exterrors.IsCancellation(err) {
 						return exterrors.Cancelled("initialization was cancelled")
 					}
 					return err
 				}
 			} else {
-				action := &InitFromCodeAction{
-					azdClient:  azdClient,
-					flags:      flags,
-					httpClient: httpClient,
-				}
-
-				if err := action.Run(ctx); err != nil {
+				// No manifest provided - prompt user for init mode
+				initMode, err := promptInitMode(ctx, azdClient)
+				if err != nil {
 					if exterrors.IsCancellation(err) {
 						return exterrors.Cancelled("initialization was cancelled")
 					}
 					return err
+				}
+
+				switch initMode {
+				case initModeTemplate:
+					// User chose to start from a template - select one
+					selectedTemplate, err := promptAgentTemplate(ctx, azdClient, httpClient)
+					if err != nil {
+						if exterrors.IsCancellation(err) {
+							return exterrors.Cancelled("initialization was cancelled")
+						}
+						return err
+					}
+
+					switch selectedTemplate.EffectiveType() {
+					case TemplateTypeAzd:
+						// Full azd template - dispatch azd init -t <repo>
+						initArgs := []string{"init", "-t", selectedTemplate.Source}
+						if flags.env != "" {
+							initArgs = append(initArgs, "--environment", flags.env)
+						} else {
+							cwd, err := os.Getwd()
+							if err == nil {
+								sanitizedDirectoryName := sanitizeAgentName(filepath.Base(cwd))
+								initArgs = append(
+									initArgs, "--environment", sanitizedDirectoryName+"-dev",
+								)
+							}
+						}
+
+						workflow := &azdext.Workflow{
+							Name: "init",
+							Steps: []*azdext.WorkflowStep{
+								{Command: &azdext.WorkflowCommand{Args: initArgs}},
+							},
+						}
+
+						_, err := azdClient.Workflow().Run(ctx, &azdext.RunWorkflowRequest{
+							Workflow: workflow,
+						})
+						if err != nil {
+							if exterrors.IsCancellation(err) {
+								return exterrors.Cancelled("initialization was cancelled")
+							}
+							return exterrors.Dependency(
+								exterrors.CodeProjectInitFailed,
+								fmt.Sprintf(
+									"failed to initialize project from template: %s", err,
+								),
+								"",
+							)
+						}
+
+						fmt.Printf(
+							"\nProject initialized from template: %s\n",
+							selectedTemplate.Title,
+						)
+
+						// Search for an agent manifest in the scaffolded project
+						cwd, err := os.Getwd()
+						if err != nil {
+							return fmt.Errorf("getting current directory: %w", err)
+						}
+
+						manifestPath, err := findAgentManifest(cwd)
+						if err != nil {
+							return fmt.Errorf("searching for agent manifest: %w", err)
+						}
+
+						if manifestPath != "" {
+							flags.manifestPointer = manifestPath
+							if err := runInitFromManifest(ctx, flags, azdClient, httpClient); err != nil {
+								if exterrors.IsCancellation(err) {
+									return exterrors.Cancelled("initialization was cancelled")
+								}
+								return err
+							}
+						} else {
+							fmt.Println("No agent manifest found in the scaffolded project.")
+						}
+
+					default:
+						// Agent manifest template - use existing -m flow
+						flags.manifestPointer = selectedTemplate.Source
+						if err := runInitFromManifest(ctx, flags, azdClient, httpClient); err != nil {
+							if exterrors.IsCancellation(err) {
+								return exterrors.Cancelled("initialization was cancelled")
+							}
+							return err
+						}
+					}
+
+				default:
+					// initModeFromCode - use existing code in current directory
+					action := &InitFromCodeAction{
+						azdClient:  azdClient,
+						flags:      flags,
+						httpClient: httpClient,
+					}
+
+					if err := action.Run(ctx); err != nil {
+						if exterrors.IsCancellation(err) {
+							return exterrors.Cancelled("initialization was cancelled")
+						}
+						return err
+					}
 				}
 			}
 

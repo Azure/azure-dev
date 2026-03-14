@@ -369,13 +369,13 @@ stages:
               Write-Host "CI build detected. Updating daily cask."
               $runInfo += @{ 
                 TemplatePath = 'eng/templates/brew.cask.daily.template'
-                OutputPath = 'Cask/azd@daily.rb'
+                OutputPath = 'Casks/azd@daily.rb'
               }
             } else {
               Write-Host "Non-CI build detected. Updating stable cask and formula."
               $runInfo += @{ 
                 TemplatePath = 'eng/templates/brew.cask.template'
-                OutputPath = 'Cask/azd.rb'
+                OutputPath = 'Casks/azd.rb'
               }
               $runInfo += @{ 
                 TemplatePath = 'eng/templates/brew.formula.template'

@@ -136,6 +136,11 @@ func WithDebug(debug bool) AgentOption {
 	return func(a *CopilotAgent) { a.debug = debug }
 }
 
+// OnSessionStarted registers a callback that fires when a session is created or resumed.
+func OnSessionStarted(fn func(sessionID string)) AgentOption {
+	return func(a *CopilotAgent) { a.onSessionStarted = fn }
+}
+
 // InitOption configures the Initialize call.
 type InitOption func(*initOptions)
 

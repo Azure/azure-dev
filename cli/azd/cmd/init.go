@@ -36,6 +36,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
+	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 	"github.com/fatih/color"
 	"github.com/joho/godotenv"
@@ -380,7 +381,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		followUp = ""
 	case initWithAgent:
 		tracing.SetUsageAttributes(fields.InitMethod.String("agent"))
-		if err := i.initAppWithAgent(ctx); err != nil {
+		if err := i.initAppWithAgent(ctx, azdCtx); err != nil {
 			return nil, err
 		}
 	default:
@@ -399,22 +400,30 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}, nil
 }
 
-func (i *initAction) initAppWithAgent(ctx context.Context) error {
+func (i *initAction) initAppWithAgent(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
 	// Show alpha warning
 	i.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title: fmt.Sprintf("Agentic mode init is in alpha mode. The agent will scan your repository and "+
-			"attempt to make an azd-ready template to init. You can always change permissions later "+
-			"by running %s. Mistakes may occur in agent mode. "+
+		Title: fmt.Sprintf("Agentic mode init is in preview. The agent will scan your repository and "+
+			"attempt to make an azd-ready template to init.\nYou can always change permissions later "+
+			"by running %s. Mistakes may occur in agent mode.\n\n"+
 			"To learn more, go to %s",
 			output.WithHighLightFormat("azd copilot consent"),
 			output.WithLinkFormat("https://aka.ms/azd-feature-stages")),
-		TitleNote: "CTRL+C to cancel interaction \n? to pull up help text",
 	})
 
 	// Create agent
 	copilotAgent, err := i.agentFactory.Create(ctx,
 		agent.WithMode(agent.AgentModeInteractive),
 		agent.WithDebug(i.flags.global.EnableDebugLogging),
+		agent.OnSessionStarted(func(sessionID string) {
+			if azdCtx != nil {
+				_ = azdCtx.SetCopilotSession(&azdcontext.CopilotSession{
+					SessionID: sessionID,
+					Command:   "init",
+					StartedAt: time.Now().UTC().Format(time.RFC3339),
+				})
+			}
+		}),
 	)
 	if err != nil {
 		return err
@@ -442,18 +451,22 @@ func (i *initAction) initAppWithAgent(ctx context.Context) error {
 	}
 	i.console.Message(ctx, "")
 
-	// Session picker — resume previous or start fresh
-	selected, err := copilotAgent.SelectSession(ctx)
-	if err != nil {
-		return err
-	}
-
-	// Build send options
+	// Check for an in-progress session to resume
 	opts := []agent.SendOption{}
-	if selected != nil {
-		opts = append(opts, agent.WithSessionID(selected.SessionID))
-		i.console.Message(ctx, output.WithSuccessFormat("Session resumed"))
-		i.console.Message(ctx, "")
+	if azdCtx != nil {
+		if session := azdCtx.GetCopilotSession(); session != nil {
+			timeDisplay := agent.FormatSessionTime(session.StartedAt)
+			defaultYes := true
+			confirm := uxlib.NewConfirm(&uxlib.ConfirmOptions{
+				Message:      fmt.Sprintf("Resume previous session from %s?", timeDisplay),
+				DefaultValue: &defaultYes,
+			})
+			if result, err := confirm.Ask(ctx); err == nil && result != nil && *result {
+				opts = append(opts, agent.WithSessionID(session.SessionID))
+				i.console.Message(ctx, output.WithSuccessFormat("Session resumed"))
+				i.console.Message(ctx, "")
+			}
+		}
 	}
 
 	// Init prompt
@@ -483,6 +496,11 @@ When complete, provide a brief summary of what was accomplished.`
 	result, err := copilotAgent.SendMessageWithRetry(ctx, prompt, opts...)
 	if err != nil {
 		return err
+	}
+
+	// Clear session on success
+	if azdCtx != nil {
+		_ = azdCtx.ClearCopilotSession()
 	}
 
 	// Show usage

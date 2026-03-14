@@ -20,6 +20,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	azdexec "github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -33,6 +34,7 @@ const cliVersion = "1.0.2"
 // Follows the same pattern as pkg/tools/bicep for on-demand tool installation.
 type CopilotCLI struct {
 	path        string
+	runner      azdexec.CommandRunner
 	console     input.Console
 	transporter policy.Transporter
 
@@ -58,10 +60,57 @@ func (c *CopilotCLI) CheckInstalled(ctx context.Context) error {
 	return err
 }
 
+// ListPlugins returns a map of installed plugin names.
+func (c *CopilotCLI) ListPlugins(ctx context.Context) (map[string]bool, error) {
+	result, err := c.runCommand(ctx, "plugin", "list")
+	if err != nil {
+		return nil, fmt.Errorf("listing plugins: %w", err)
+	}
+
+	log.Printf("[copilot-cli] Plugin list output: %s", strings.TrimSpace(result.Stdout))
+
+	installed := make(map[string]bool)
+	for line := range strings.SplitSeq(result.Stdout, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "•") || strings.HasPrefix(line, "\u2022") {
+			name := strings.TrimPrefix(line, "•")
+			name = strings.TrimPrefix(name, "\u2022")
+			name = strings.TrimSpace(name)
+			if idx := strings.Index(name, " "); idx > 0 {
+				name = name[:idx]
+			}
+			if name != "" {
+				installed[name] = true
+			}
+		}
+	}
+	return installed, nil
+}
+
+// InstallPlugin installs a plugin by source reference.
+func (c *CopilotCLI) InstallPlugin(ctx context.Context, source string) error {
+	result, err := c.runCommand(ctx, "plugin", "install", source)
+	if err != nil {
+		return fmt.Errorf("installing plugin: %w", err)
+	}
+
+	log.Printf("[copilot-cli] %s", strings.TrimSpace(result.Stdout))
+	return nil
+}
+
+// runCommand executes a copilot CLI command using the command runner.
+// Uses "copilot" from PATH for plugin management commands (the npm-distributed
+// native binary doesn't support CLI subcommands like "plugin list").
+func (c *CopilotCLI) runCommand(ctx context.Context, args ...string) (azdexec.RunResult, error) {
+	runArgs := azdexec.NewRunArgs("copilot", args...)
+	return c.runner.Run(ctx, runArgs)
+}
+
 // NewCopilotCLI creates a new CopilotCLI manager.
-func NewCopilotCLI(console input.Console, transporter policy.Transporter) *CopilotCLI {
+func NewCopilotCLI(console input.Console, runner azdexec.CommandRunner, transporter policy.Transporter) *CopilotCLI {
 	return &CopilotCLI{
 		console:     console,
+		runner:      runner,
 		transporter: transporter,
 	}
 }
@@ -76,18 +125,10 @@ func (c *CopilotCLI) Path(ctx context.Context) (string, error) {
 }
 
 func (c *CopilotCLI) ensureInstalled(ctx context.Context) error {
-	// Check for explicit override
+	// Check for explicit azd override first
 	if override := os.Getenv("AZD_COPILOT_CLI_PATH"); override != "" {
 		//nolint:gosec // G706: env var in debug log
 		log.Printf("[copilot-cli] Using override: %s", override)
-		c.path = override
-		return nil
-	}
-
-	// Also check the SDK's env var
-	if override := os.Getenv("COPILOT_CLI_PATH"); override != "" {
-		//nolint:gosec // G706: env var in debug log
-		log.Printf("[copilot-cli] Using COPILOT_CLI_PATH: %s", override)
 		c.path = override
 		return nil
 	}

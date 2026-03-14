@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -42,11 +43,13 @@ type CopilotAgent struct {
 	systemMessageOverride   string
 	mode                    AgentMode
 	debug                   bool
+	onSessionStarted        func(sessionID string)
 
 	// Runtime state
-	session   *copilot.Session
-	sessionID string
-	display   *AgentDisplay // last display for usage metrics
+	session    *copilot.Session
+	sessionID  string
+	sessionCtx context.Context
+	display    *AgentDisplay // last display for usage metrics
 
 	// Cleanup — ordered slice for deterministic teardown
 	cleanupTasks []cleanupTask
@@ -107,7 +110,7 @@ func (a *CopilotAgent) Initialize(ctx context.Context, opts ...InitOption) (*Ini
 		Choices:         effortChoices,
 		SelectedIndex:   new(1),
 		DisplayNumbers:  uxlib.Ptr(true),
-		EnableFiltering: uxlib.Ptr(true),
+		EnableFiltering: new(false),
 		DisplayCount:    3,
 	})
 
@@ -202,7 +205,7 @@ func (a *CopilotAgent) SelectSession(ctx context.Context) (*SessionMetadata, err
 	})
 
 	for _, s := range sessions {
-		timeStr := formatSessionTime(s.ModifiedTime)
+		timeStr := FormatSessionTime(s.ModifiedTime)
 		summary := ""
 		if s.Summary != nil && *s.Summary != "" {
 			summary = strings.Join(strings.Fields(*s.Summary), " ")
@@ -350,6 +353,19 @@ func (a *CopilotAgent) Stop() error {
 	return nil
 }
 
+// SessionID returns the current session ID, or empty if no session exists.
+func (a *CopilotAgent) SessionID() string {
+	return a.sessionID
+}
+
+// ctx returns the session context for use in permission/consent handlers.
+func (a *CopilotAgent) ctx() context.Context {
+	if a.sessionCtx != nil {
+		return a.sessionCtx
+	}
+	return context.Background()
+}
+
 func (a *CopilotAgent) addCleanup(name string, fn func() error) {
 	a.cleanupTasks = append(a.cleanupTasks, cleanupTask{name: name, fn: fn})
 }
@@ -359,6 +375,8 @@ func (a *CopilotAgent) ensureSession(ctx context.Context, resumeSessionID string
 	if a.session != nil {
 		return nil
 	}
+
+	a.sessionCtx = ctx
 
 	// Start client (extracts bundled CLI to cache if needed)
 	if err := a.clientManager.Start(ctx); err != nil {
@@ -439,21 +457,237 @@ func (a *CopilotAgent) ensureSession(ctx context.Context, resumeSessionID string
 		log.Printf("[copilot] Session created: %s", a.sessionID)
 	}
 
+	if a.onSessionStarted != nil {
+		a.onSessionStarted(a.sessionID)
+	}
+
 	return nil
 }
 
 // createPermissionHandler builds the OnPermissionRequest handler.
-// This handles CLI-level capability requests (e.g., "can I write files?", "can I run shell?").
-// Without this handler, the SDK denies all tool categories and OnPreToolUse never fires.
-// Currently approves all — fine-grained per-tool consent is enforced by OnPreToolUse.
-// Can be expanded later with category-level checks if needed.
+// Routes all permission kinds through the consent manager for unified access control.
 func (a *CopilotAgent) createPermissionHandler() copilot.PermissionHandlerFunc {
 	return func(req copilot.PermissionRequest, inv copilot.PermissionInvocation) (
 		copilot.PermissionRequestResult, error,
 	) {
-		log.Printf("[copilot] PermissionRequest: kind=%s — approved", req.Kind)
-		return copilot.PermissionRequestResult{Kind: "approved"}, nil
+		server, tool, readOnly := permissionToConsentTarget(req)
+		toolID := fmt.Sprintf("%s/%s", server, tool)
+
+		log.Printf("[copilot] PermissionRequest: kind=%s target=%s", req.Kind, toolID)
+
+		consentReq := consent.ConsentRequest{
+			ToolID:     toolID,
+			ServerName: server,
+			Operation:  consent.OperationTypeTool,
+			Annotations: mcp.ToolAnnotation{
+				ReadOnlyHint: &readOnly,
+			},
+		}
+
+		decision, err := a.consentManager.CheckConsent(a.ctx(), consentReq)
+		if err != nil {
+			log.Printf("[copilot] Consent check error for %s: %v, denying", toolID, err)
+			return copilot.PermissionRequestResult{Kind: "denied-by-rules"}, nil
+		}
+
+		if decision.Allowed {
+			return copilot.PermissionRequestResult{Kind: "approved"}, nil
+		}
+
+		if decision.RequiresPrompt {
+			// Pause the display to prevent ticker/spinner from
+			// interfering with the interactive consent prompt
+			if a.display != nil {
+				a.display.Pause()
+				defer a.display.Resume()
+			}
+
+			displayName := permissionDisplayName(req)
+			checker := consent.NewConsentChecker(a.consentManager, server)
+			description := buildPermissionDescription(req)
+
+			promptErr := checker.PromptAndGrantConsent(
+				a.ctx(), tool, displayName, description, mcp.ToolAnnotation{ReadOnlyHint: &readOnly},
+			)
+
+			if promptErr != nil {
+				if errors.Is(promptErr, consent.ErrToolExecutionSkipped) {
+					// Skip — deny this tool but let the agent continue
+					return copilot.PermissionRequestResult{Kind: "denied-by-rules"}, nil
+				}
+				if errors.Is(promptErr, consent.ErrToolExecutionDenied) {
+					// Deny — block and exit the interaction
+					return copilot.PermissionRequestResult{Kind: "denied-interactively-by-user"}, nil
+				}
+				log.Printf("[copilot] Consent grant error for %s: %v", toolID, promptErr)
+				return copilot.PermissionRequestResult{Kind: "denied-by-rules"}, nil
+			}
+			return copilot.PermissionRequestResult{Kind: "approved"}, nil
+		}
+
+		return copilot.PermissionRequestResult{Kind: "denied-by-rules"}, nil
 	}
+}
+
+// permissionToConsentTarget maps a PermissionRequest to consent server/tool/readOnly.
+func permissionToConsentTarget(req copilot.PermissionRequest) (server, tool string, readOnly bool) {
+	switch req.Kind {
+	case copilot.MCP:
+		server = "copilot"
+		if req.ServerName != nil {
+			server = *req.ServerName
+		}
+		tool = "unknown"
+		if req.ToolName != nil {
+			tool = *req.ToolName
+		}
+		readOnly = req.ReadOnly != nil && *req.ReadOnly
+
+	case copilot.KindShell:
+		server = "copilot"
+		tool = "shell"
+		readOnly = false
+
+	case copilot.Write:
+		server = "copilot"
+		tool = "write"
+		readOnly = false
+
+	case copilot.Read:
+		server = "copilot"
+		tool = "read"
+		readOnly = true
+
+	case copilot.URL:
+		server = "copilot"
+		tool = "url"
+		readOnly = true
+
+	case copilot.Memory:
+		server = "copilot"
+		tool = "memory"
+		readOnly = false
+
+	case copilot.CustomTool:
+		server = "copilot"
+		tool = "custom-tool"
+		if req.ToolName != nil {
+			tool = *req.ToolName
+		}
+		readOnly = false
+
+	default:
+		server = "copilot"
+		tool = string(req.Kind)
+		readOnly = false
+	}
+
+	return server, tool, readOnly
+}
+
+// buildPermissionDescription creates a rich description from a PermissionRequest
+// for display in consent prompts.
+func buildPermissionDescription(req copilot.PermissionRequest) string {
+	var parts []string
+
+	// Tool title/description
+	if req.ToolTitle != nil && *req.ToolTitle != "" {
+		parts = append(parts, *req.ToolTitle)
+	} else if req.ToolDescription != nil && *req.ToolDescription != "" {
+		parts = append(parts, *req.ToolDescription)
+	}
+
+	// Intention — what the agent wants to do
+	if req.Intention != nil && *req.Intention != "" {
+		parts = append(parts, fmt.Sprintf("Intent: %s", *req.Intention))
+	}
+
+	// Context-specific details
+	switch req.Kind {
+	case copilot.KindShell:
+		if req.FullCommandText != nil && *req.FullCommandText != "" {
+			parts = append(parts, fmt.Sprintf("Command: %s", *req.FullCommandText))
+		}
+	case copilot.Write:
+		if req.FileName != nil && *req.FileName != "" {
+			parts = append(parts, fmt.Sprintf("File: %s", *req.FileName))
+		}
+	case copilot.Read:
+		if req.Path != nil && *req.Path != "" {
+			parts = append(parts, fmt.Sprintf("Path: %s", *req.Path))
+		}
+	case copilot.URL:
+		if req.URL != nil && *req.URL != "" {
+			parts = append(parts, fmt.Sprintf("URL: %s", *req.URL))
+		}
+	case copilot.Memory:
+		if req.Subject != nil && *req.Subject != "" {
+			parts = append(parts, fmt.Sprintf("Subject: %s", *req.Subject))
+		}
+	}
+
+	// Warning from the SDK
+	if req.Warning != nil && *req.Warning != "" {
+		parts = append(parts, fmt.Sprintf("⚠ %s", *req.Warning))
+	}
+
+	if len(parts) == 0 {
+		return "No description available"
+	}
+
+	return strings.Join(parts, "\n")
+}
+
+// permissionDisplayName returns a user-friendly display name for the consent prompt.
+func permissionDisplayName(req copilot.PermissionRequest) string {
+	switch req.Kind {
+	case copilot.KindShell:
+		if req.FullCommandText != nil && *req.FullCommandText != "" {
+			cmd := *req.FullCommandText
+			if len(cmd) > 80 {
+				cmd = cmd[:77] + "..."
+			}
+			return fmt.Sprintf("shell command: %s", cmd)
+		}
+		return "shell command"
+	case copilot.Write:
+		if req.FileName != nil && *req.FileName != "" {
+			return fmt.Sprintf("write to %s", relativePath(*req.FileName))
+		}
+		return "file write"
+	case copilot.Read:
+		if req.Path != nil && *req.Path != "" {
+			return fmt.Sprintf("read %s", relativePath(*req.Path))
+		}
+		return "file read"
+	case copilot.URL:
+		if req.URL != nil && *req.URL != "" {
+			u := *req.URL
+			if len(u) > 60 {
+				u = u[:57] + "..."
+			}
+			return fmt.Sprintf("fetch %s", u)
+		}
+		return "URL access"
+	case copilot.MCP:
+		name := "tool"
+		if req.ToolName != nil {
+			name = *req.ToolName
+		}
+		return name
+	default:
+		return string(req.Kind)
+	}
+}
+
+// relativePath converts an absolute path to relative from cwd if possible.
+func relativePath(p string) string {
+	if cwd, err := os.Getwd(); err == nil {
+		if rel, err := filepath.Rel(cwd, p); err == nil && !strings.HasPrefix(rel, "..") {
+			return rel
+		}
+	}
+	return p
 }
 
 func (a *CopilotAgent) createUserInputHandler(ctx context.Context) copilot.UserInputHandler {
@@ -462,6 +696,15 @@ func (a *CopilotAgent) createUserInputHandler(ctx context.Context) copilot.UserI
 	) {
 		question := stripMarkdown(req.Question)
 		log.Printf("[copilot] UserInput: question=%q choices=%d", question, len(req.Choices))
+
+		if a.display != nil {
+			a.display.Pause()
+		}
+		defer func() {
+			if a.display != nil {
+				a.display.Resume()
+			}
+		}()
 
 		fmt.Println()
 
@@ -483,7 +726,7 @@ func (a *CopilotAgent) createUserInputHandler(ctx context.Context) copilot.UserI
 			selector := uxlib.NewSelect(&uxlib.SelectOptions{
 				Message:         question,
 				Choices:         choices,
-				EnableFiltering: uxlib.Ptr(true),
+				EnableFiltering: new(false),
 				DisplayNumbers:  uxlib.Ptr(true),
 				DisplayCount:    min(len(choices), 10),
 			})
@@ -527,47 +770,7 @@ func (a *CopilotAgent) createHooks(ctx context.Context) *copilot.SessionHooks {
 			*copilot.PreToolUseHookOutput, error,
 		) {
 			log.Printf("[copilot] PreToolUse: tool=%s", input.ToolName)
-
-			consentReq := consent.ConsentRequest{
-				ToolID:     fmt.Sprintf("copilot/%s", input.ToolName),
-				ServerName: "copilot",
-				Operation:  consent.OperationTypeTool,
-			}
-
-			decision, err := a.consentManager.CheckConsent(ctx, consentReq)
-			if err != nil {
-				log.Printf("[copilot] Consent check error for tool %s: %v, denying", input.ToolName, err)
-				return &copilot.PreToolUseHookOutput{
-					PermissionDecision:       "deny",
-					PermissionDecisionReason: "consent check failed",
-				}, nil
-			}
-
-			if decision.Allowed {
-				return &copilot.PreToolUseHookOutput{PermissionDecision: "allow"}, nil
-			}
-
-			if decision.RequiresPrompt {
-				checker := consent.NewConsentChecker(a.consentManager, "copilot")
-				promptErr := checker.PromptAndGrantConsent(
-					ctx, input.ToolName, input.ToolName, mcp.ToolAnnotation{},
-				)
-				if promptErr != nil {
-					if errors.Is(promptErr, consent.ErrToolExecutionDenied) {
-						return &copilot.PreToolUseHookOutput{
-							PermissionDecision:       "deny",
-							PermissionDecisionReason: "denied by user",
-						}, nil
-					}
-					return &copilot.PreToolUseHookOutput{PermissionDecision: "deny"}, nil
-				}
-				return &copilot.PreToolUseHookOutput{PermissionDecision: "allow"}, nil
-			}
-
-			return &copilot.PreToolUseHookOutput{
-				PermissionDecision:       "deny",
-				PermissionDecisionReason: decision.Reason,
-			}, nil
+			return &copilot.PreToolUseHookOutput{}, nil
 		},
 		OnPostToolUse: func(input copilot.PostToolUseHookInput, inv copilot.HookInvocation) (
 			*copilot.PostToolUseHookOutput, error,
@@ -603,59 +806,78 @@ func (a *CopilotAgent) handleErrorWithRetryPrompt(ctx context.Context, err error
 }
 
 func (a *CopilotAgent) ensurePlugins(ctx context.Context) {
-	cliPath, err := a.cli.Path(ctx)
-	if err != nil {
-		log.Printf("[copilot] Failed to resolve CLI path for plugins: %v", err)
+	// Plugin management requires "copilot" CLI in PATH (the npm-installed version).
+	// The managed native binary only supports SDK headless mode, not CLI subcommands.
+	if _, err := exec.LookPath("copilot"); err != nil {
+		log.Printf("[copilot] 'copilot' CLI not found in PATH — skipping plugin management")
+		a.console.Message(ctx, output.WithWarningFormat(
+			"The Copilot CLI is not installed. Some features may be limited.\n"+
+				"Install it with: npm install -g @github/copilot"))
 		return
 	}
 
-	installed := getInstalledPlugins(ctx, cliPath)
+	installed, err := a.cli.ListPlugins(ctx)
+	if err != nil {
+		log.Printf("[copilot] Failed to list plugins: %v", err)
+		return
+	}
 
 	for _, plugin := range requiredPlugins {
 		if installed[plugin.Name] {
-			log.Printf("[copilot] Updating plugin: %s", plugin.Name)
-			cmd := exec.CommandContext(ctx, cliPath, "plugin", "update", plugin.Name) //nolint:gosec
-			out, err := cmd.CombinedOutput()
-			if err != nil {
-				log.Printf("[copilot] Plugin update warning: %v (%s)", err, string(out))
-			}
+			log.Printf("[copilot] Plugin already installed: %s", plugin.Name)
+			continue
+		}
+
+		// Prompt user before installing
+		shouldInstall, err := a.promptPluginInstall(ctx, plugin)
+		if err != nil {
+			log.Printf("[copilot] Plugin install prompt failed: %v", err)
+			continue
+		}
+
+		if !shouldInstall {
+			log.Printf("[copilot] User declined plugin install: %s", plugin.Name)
+			continue
+		}
+
+		a.console.ShowSpinner(ctx, fmt.Sprintf("Installing %s plugin", plugin.Name), input.Step)
+		if err := a.cli.InstallPlugin(ctx, plugin.Source); err != nil {
+			a.console.StopSpinner(ctx, fmt.Sprintf("Installing %s plugin", plugin.Name), input.StepFailed)
+			log.Printf("[copilot] Plugin install failed: %v", err)
 		} else {
-			log.Printf("[copilot] Installing plugin: %s", plugin.Source)
-			cmd := exec.CommandContext(ctx, cliPath, "plugin", "install", plugin.Source) //nolint:gosec
-			out, err := cmd.CombinedOutput()
-			if err != nil {
-				log.Printf("[copilot] Plugin install warning: %v (%s)", err, string(out))
-			}
+			a.console.StopSpinner(ctx, fmt.Sprintf("Installing %s plugin", plugin.Name), input.StepDone)
 		}
 	}
 }
 
-func getInstalledPlugins(ctx context.Context, cliPath string) map[string]bool {
-	cmd := exec.CommandContext(ctx, cliPath, "plugin", "list")
-	out, err := cmd.CombinedOutput()
+func (a *CopilotAgent) promptPluginInstall(ctx context.Context, plugin pluginSpec) (bool, error) {
+	defaultYes := true
+
+	a.console.Message(ctx, "")
+	confirm := uxlib.NewConfirm(&uxlib.ConfirmOptions{
+		Message: fmt.Sprintf("The %s plugin is not installed. Would you like to install it?", plugin.Name),
+		HelpMessage: fmt.Sprintf(
+			"The %s plugin provides Azure-specific skills for infrastructure generation, "+
+				"project validation, and deployment guidance. Without it, the agent will have "+
+				"limited Azure capabilities. The plugin is installed globally at ~/.copilot/installed-plugins/.",
+			plugin.Name),
+		DefaultValue: &defaultYes,
+	})
+
+	result, err := confirm.Ask(ctx)
 	if err != nil {
-		return nil
+		return false, err
 	}
 
-	installed := make(map[string]bool)
-	for line := range strings.SplitSeq(string(out), "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "•") || strings.HasPrefix(line, "\u2022") {
-			name := strings.TrimPrefix(line, "•")
-			name = strings.TrimPrefix(name, "\u2022")
-			name = strings.TrimSpace(name)
-			if idx := strings.Index(name, " "); idx > 0 {
-				name = name[:idx]
-			}
-			if name != "" {
-				installed[name] = true
-			}
-		}
+	if result == nil {
+		return false, nil
 	}
-	return installed
+
+	return *result, nil
 }
 
-func formatSessionTime(ts string) string {
+// FormatSessionTime formats a timestamp string into a human-friendly relative time display.
+func FormatSessionTime(ts string) string {
 	for _, layout := range []string{
 		time.RFC3339,
 		"2006-01-02T15:04:05.000Z",

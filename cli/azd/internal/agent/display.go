@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -33,16 +34,21 @@ type AgentDisplay struct {
 
 	// State — protected by mu
 	mu               sync.Mutex
-	currentTool      string
-	currentToolInput string
-	toolStartTime    time.Time
-	toolFailed       bool
+	activeTools      map[string]*toolState // keyed by toolCallID or generated ID
+	currentToolID    string                // most recent tool for spinner display
+	toolCounter      int                   // monotonic counter for generating unique tool IDs
 	reasoningBuf     strings.Builder
 	lastIntent       string
 	activeSubagent   string // display name of active sub-agent, empty if none
 	inSubagent       bool
 	lastPrintedBlank bool // tracks if last output ended with a blank line
 	messageReceived  bool // tracks if an assistant message has been received
+	paused           bool // true while interactive prompts are active
+	pendingIdle      bool // true when SessionIdle arrived before messageReceived
+
+	// renderGuard serializes ticker renders with Pause/Resume.
+	// Pause() write-locks to block ticker renders; ticker read-locks around canvas.Update().
+	renderGuard sync.RWMutex
 
 	// Usage metrics — accumulated from assistant.usage events
 	totalInputTokens  float64
@@ -57,12 +63,44 @@ type AgentDisplay struct {
 	ctx    context.Context
 }
 
+// toolState tracks the state of an in-progress tool execution.
+type toolState struct {
+	name      string
+	input     string // short summary for spinner display
+	detail    string // richer detail for completion line (e.g., diff stats)
+	subDetail string // optional second line (e.g., shell command text)
+	errorMsg  string // error message on failure
+	startTime time.Time
+	failed    bool
+	nested    bool // inside a subagent
+}
+
 // NewAgentDisplay creates a new AgentDisplay.
 func NewAgentDisplay(console input.Console) *AgentDisplay {
 	return &AgentDisplay{
-		console: console,
-		idleCh:  make(chan struct{}, 1),
+		console:     console,
+		activeTools: make(map[string]*toolState),
+		idleCh:      make(chan struct{}, 1),
 	}
+}
+
+// Pause stops canvas updates for interactive prompts.
+// Write-locks renderGuard so any in-flight ticker render completes
+// and future renders are blocked until Resume().
+func (d *AgentDisplay) Pause() {
+	d.renderGuard.Lock()
+	d.mu.Lock()
+	d.paused = true
+	d.mu.Unlock()
+	d.canvas.Clear()
+}
+
+// Resume restarts canvas updates after an interactive prompt.
+func (d *AgentDisplay) Resume() {
+	d.mu.Lock()
+	d.paused = false
+	d.mu.Unlock()
+	d.renderGuard.Unlock()
 }
 
 // Start initializes the canvas and spinner for rendering.
@@ -81,12 +119,14 @@ func (d *AgentDisplay) Start(ctx context.Context) (func(), error) {
 			reasoning := d.reasoningBuf.String()
 			d.mu.Unlock()
 
+			// Trim only leading/trailing whitespace from the whole block
+			reasoning = strings.TrimSpace(reasoning)
 			if reasoning == "" {
 				return nil
 			}
 
 			// Show the last ~5 lines of reasoning above the spinner
-			lines := strings.Split(strings.TrimSpace(reasoning), "\n")
+			lines := strings.Split(reasoning, "\n")
 			const maxLines = 5
 			start := 0
 			if len(lines) > maxLines {
@@ -96,7 +136,7 @@ func (d *AgentDisplay) Start(ctx context.Context) (func(), error) {
 
 			printer.Fprintln()
 			for _, line := range tail {
-				printer.Fprintln(color.HiBlackString("  %s", strings.TrimSpace(line)))
+				printer.Fprintln(color.HiBlackString("  %s", line))
 			}
 			printer.Fprintln()
 			return nil
@@ -107,7 +147,32 @@ func (d *AgentDisplay) Start(ctx context.Context) (func(), error) {
 			return nil
 		}),
 		d.spinner,
-		// Blank line after spinner
+		// Sub-detail lines below spinner (e.g., shell command, MCP args)
+		uxlib.NewVisualElement(func(printer uxlib.Printer) error {
+			d.mu.Lock()
+			ts := d.activeTools[d.currentToolID]
+			d.mu.Unlock()
+
+			if ts != nil && ts.subDetail != "" {
+				printer.Fprintln() // newline after spinner text
+				lines := strings.Split(ts.subDetail, "\n")
+				for i, line := range lines {
+					connector := "├"
+					if i == len(lines)-1 {
+						connector = "└"
+					}
+					printer.Fprintln(color.HiBlackString("  %s %s", connector, line))
+				}
+			}
+			return nil
+		}),
+		// Newline after spinner, then cancel hint
+		uxlib.NewVisualElement(func(printer uxlib.Printer) error {
+			printer.Fprintln()
+			printer.Fprintln(color.HiBlackString("  Press %s to cancel", color.New(color.Bold).Sprint("Ctrl+C")))
+			return nil
+		}),
+		// Blank line after
 		uxlib.NewVisualElement(func(printer uxlib.Printer) error {
 			printer.Fprintln()
 			return nil
@@ -124,29 +189,35 @@ func (d *AgentDisplay) Start(ctx context.Context) (func(), error) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
+				d.renderGuard.RLock()
+
 				d.mu.Lock()
-				tool := d.currentTool
-				toolInput := d.currentToolInput
-				startTime := d.toolStartTime
-				nested := d.inSubagent
+				isPaused := d.paused
+				ts := d.activeTools[d.currentToolID]
 				d.mu.Unlock()
 
-				if tool != "" {
-					elapsed := int(time.Since(startTime).Seconds())
+				if isPaused {
+					d.renderGuard.RUnlock()
+					continue
+				}
+
+				if ts != nil {
+					elapsed := int(time.Since(ts.startTime).Seconds())
 					prefix := ""
-					if nested {
+					if ts.nested {
 						prefix = "  "
 					}
-					text := fmt.Sprintf("%sRunning %s", prefix, color.MagentaString(tool))
-					if toolInput != "" {
-						text += " with " + color.HiBlackString(toolInput)
+					verb := toolVerb(ts.name)
+					text := fmt.Sprintf("%sRunning %s", prefix, verb)
+					if ts.input != "" {
+						text += " " + color.HiBlackString(ts.input)
 					}
-					text += "..."
-					text += color.HiBlackString(fmt.Sprintf("\n(%ds, CTRL+C to cancel)", elapsed))
+					text += color.HiBlackString("...") + color.HiBlackString(fmt.Sprintf(" (%ds)", elapsed))
 					d.spinner.UpdateText(text)
 				}
 
 				d.canvas.Update()
+				d.renderGuard.RUnlock()
 			}
 		}
 	}()
@@ -166,10 +237,11 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 	case copilot.AssistantTurnStart:
 		d.mu.Lock()
 		intent := d.lastIntent
-		d.currentTool = ""
-		d.currentToolInput = ""
+		d.activeTools = make(map[string]*toolState)
+		d.currentToolID = ""
 		d.reasoningBuf.Reset()
 		d.messageReceived = false
+		d.pendingIdle = false
 		d.mu.Unlock()
 		if intent != "" {
 			d.spinner.UpdateText(intent)
@@ -223,7 +295,20 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 			}
 			d.mu.Lock()
 			d.messageReceived = true
+			hasPendingIdle := d.pendingIdle
+			d.pendingIdle = false
 			d.mu.Unlock()
+
+			// If SessionIdle arrived before this message, flush the deferred signal now
+			if hasPendingIdle {
+				log.Println("[copilot-display] flushing deferred idle signal after message received")
+				select {
+				case d.idleCh <- struct{}{}:
+					log.Println("[copilot-display] signaled idleCh (deferred)")
+				default:
+					log.Println("[copilot-display] idleCh already full (deferred)")
+				}
+			}
 		} else {
 			log.Println("[copilot-display] assistant.message received with nil content")
 		}
@@ -282,52 +367,95 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 			return
 		}
 
-		// Skip other suppressed tools and skill invocations
+		// Skip suppressed tools and skill invocations
 		if suppressedTools[toolName] || strings.HasPrefix(toolName, "skill:") {
 			return
 		}
 
-		// Print completion for previous tool and flush any accumulated reasoning
-		d.printToolCompletion()
 		d.flushReasoning()
 
 		toolInput := extractToolInputSummary(event.Data.Arguments)
+		toolDetail, toolSubDetail := extractToolDetail(toolName, event.Data.Arguments)
+		toolID := ""
+		if event.Data.ToolCallID != nil {
+			toolID = *event.Data.ToolCallID
+		}
 
 		d.mu.Lock()
-		d.currentTool = toolName
-		d.currentToolInput = toolInput
-		d.toolStartTime = time.Now()
-		d.toolFailed = false
+		if toolID == "" {
+			d.toolCounter++
+			toolID = fmt.Sprintf("%s-%d", toolName, d.toolCounter)
+		}
+		d.activeTools[toolID] = &toolState{
+			name:      toolName,
+			input:     toolInput,
+			detail:    toolDetail,
+			subDetail: toolSubDetail,
+			startTime: time.Now(),
+			nested:    d.inSubagent,
+		}
+		d.currentToolID = toolID
 		d.mu.Unlock()
 
-		text := fmt.Sprintf("Running %s", color.MagentaString(toolName))
+		// Spinner text: show tool verb + short input summary (not the full detail/subDetail)
+		verb := toolVerb(toolName)
+		text := fmt.Sprintf("Running %s", verb)
 		if toolInput != "" {
-			text += " with " + color.HiBlackString(toolInput)
+			text += " " + color.HiBlackString(toolInput)
 		}
-		text += "..."
+		text += color.HiBlackString("...")
 		d.spinner.UpdateText(text)
 
 	case copilot.ToolExecutionProgress:
 		if event.Data.ProgressMessage != nil && *event.Data.ProgressMessage != "" {
 			d.mu.Lock()
-			tool := d.currentTool
+			ts := d.activeTools[d.currentToolID]
 			d.mu.Unlock()
 
-			text := fmt.Sprintf("Running %s", color.MagentaString(tool))
-			text += " — " + color.HiBlackString(*event.Data.ProgressMessage)
-			d.spinner.UpdateText(text)
+			if ts != nil {
+				text := fmt.Sprintf("Running %s", color.MagentaString(ts.name))
+				text += " — " + color.HiBlackString(*event.Data.ProgressMessage)
+				d.spinner.UpdateText(text)
+			}
 		}
 
 	case copilot.ToolExecutionComplete:
-		if event.Data.Error != nil {
-			d.mu.Lock()
-			d.toolFailed = true
-			d.mu.Unlock()
+		toolID := ""
+		if event.Data.ToolCallID != nil {
+			toolID = *event.Data.ToolCallID
 		}
-		d.printToolCompletion()
+
 		d.mu.Lock()
-		d.currentTool = ""
-		d.currentToolInput = ""
+		// If no toolCallID, try to find by tool name (fallback for SDK versions without IDs)
+		if toolID == "" {
+			toolName := derefStr(event.Data.ToolName)
+			for id, ts := range d.activeTools {
+				if ts.name == toolName {
+					toolID = id
+					break
+				}
+			}
+		}
+		ts := d.activeTools[toolID]
+		if ts != nil {
+			ts.failed = event.Data.Error != nil
+			if event.Data.Error != nil {
+				if event.Data.Error.ErrorClass != nil {
+					ts.errorMsg = event.Data.Error.ErrorClass.Message
+				} else if event.Data.Error.String != nil {
+					ts.errorMsg = *event.Data.Error.String
+				}
+			}
+		}
+		d.mu.Unlock()
+
+		d.printToolCompletionByID(toolID)
+
+		d.mu.Lock()
+		delete(d.activeTools, toolID)
+		if d.currentToolID == toolID {
+			d.currentToolID = ""
+		}
 		intent := d.lastIntent
 		d.mu.Unlock()
 		if intent != "" {
@@ -360,7 +488,17 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 		name := derefStr(event.Data.Name)
 		if name != "" {
 			d.canvas.Clear()
-			d.printSeparated(color.CyanString("◇ Using skill: %s", name))
+			msg := color.CyanString("◇ Using skill: %s", name)
+			pluginName := derefStr(event.Data.PluginName)
+			pluginVersion := derefStr(event.Data.PluginVersion)
+			if pluginName != "" {
+				origin := pluginName
+				if pluginVersion != "" {
+					origin += "@" + pluginVersion
+				}
+				msg += color.HiBlackString(" from %s", origin)
+			}
+			d.printSeparated(msg)
 		}
 
 	case copilot.SubagentStarted:
@@ -368,7 +506,7 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 		if displayName == "" {
 			displayName = derefStr(event.Data.AgentName)
 		}
-		description := derefStr(event.Data.AgentDescription)
+		agentDesc := derefStr(event.Data.AgentDescription)
 
 		d.mu.Lock()
 		d.activeSubagent = displayName
@@ -378,8 +516,8 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 		if displayName != "" {
 			d.canvas.Clear()
 			msg := color.MagentaString("◆ %s", displayName)
-			if description != "" {
-				msg += color.HiBlackString(" — %s", description)
+			if agentDesc != "" {
+				msg += "\n" + fmt.Sprintf("  %s %s", color.HiBlackString("└"), color.HiBlackString(agentDesc))
 			}
 			d.printSeparated(msg)
 		}
@@ -391,7 +529,7 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 		}
 		summary := derefStr(event.Data.Summary)
 
-		d.printToolCompletion()
+		d.flushActiveTools()
 
 		d.mu.Lock()
 		d.activeSubagent = ""
@@ -402,7 +540,7 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 			d.canvas.Clear()
 			msg := fmt.Sprintf("%s %s completed", color.GreenString("✔︎"), color.MagentaString(displayName))
 			if summary != "" {
-				msg += "\n" + color.HiBlackString("  %s", logging.TruncateString(summary, 200))
+				msg += "\n" + fmt.Sprintf("  %s %s", color.HiBlackString("└"), color.HiBlackString(summary))
 			}
 			d.printSeparated(msg)
 		}
@@ -431,18 +569,19 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 		d.mu.Unlock()
 
 	case copilot.AssistantTurnEnd:
-		d.printToolCompletion()
+		d.flushActiveTools()
 		d.flushReasoning()
 
 	case copilot.SessionIdle:
 		d.mu.Lock()
 		hasMessage := d.messageReceived
+		if !hasMessage {
+			d.pendingIdle = true
+		}
 		d.mu.Unlock()
 
 		log.Printf("[copilot-display] session.idle received (hasMessage=%v)", hasMessage)
 
-		// Only signal idle when we have received an assistant message.
-		// Ignore early idle events (e.g., between permission prompts).
 		if hasMessage {
 			select {
 			case d.idleCh <- struct{}{}:
@@ -450,6 +589,8 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 			default:
 				log.Println("[copilot-display] idleCh already full")
 			}
+		} else {
+			log.Println("[copilot-display] session.idle deferred (no message yet)")
 		}
 
 	case copilot.SessionTaskComplete:
@@ -491,39 +632,88 @@ func (d *AgentDisplay) GetUsageMetrics() UsageMetrics {
 	}
 }
 
-// printToolCompletion prints a completion message for the current tool.
-// When inside a subagent, the output is indented to show nesting.
-// Tool completions stack without blank lines between them.
-func (d *AgentDisplay) printToolCompletion() {
+// printToolCompletionByID prints a completion message for a specific tool by its ID.
+func (d *AgentDisplay) printToolCompletionByID(toolID string) {
 	d.mu.Lock()
-	tool := d.currentTool
-	toolInput := d.currentToolInput
-	nested := d.inSubagent
-	failed := d.toolFailed
-	d.toolFailed = false
+	ts := d.activeTools[toolID]
 	d.mu.Unlock()
 
-	if tool == "" {
+	if ts == nil {
 		return
 	}
 
+	d.printToolState(ts)
+}
+
+// flushActiveTools prints completion for all remaining active tools.
+func (d *AgentDisplay) flushActiveTools() {
+	d.mu.Lock()
+	tools := make([]*toolState, 0, len(d.activeTools))
+	for _, ts := range d.activeTools {
+		tools = append(tools, ts)
+	}
+	d.activeTools = make(map[string]*toolState)
+	d.currentToolID = ""
+	d.mu.Unlock()
+
+	for _, ts := range tools {
+		d.printToolState(ts)
+	}
+}
+
+// printToolState prints a single tool completion line with contextual verb and detail.
+func (d *AgentDisplay) printToolState(ts *toolState) {
 	indent := ""
-	if nested {
+	if ts.nested {
 		indent = "  "
 	}
 
 	var completionMsg string
-	if failed {
-		completionMsg = fmt.Sprintf("%s%s %s", indent, color.RedString("✖"), color.MagentaString(tool))
+	if ts.failed {
+		completionMsg = fmt.Sprintf("%s%s %s", indent, color.RedString("✖"), color.MagentaString(ts.name))
+		if ts.input != "" {
+			completionMsg += " " + color.HiBlackString(ts.input)
+		}
 	} else {
-		completionMsg = fmt.Sprintf("%s%s Ran %s", indent, color.GreenString("✔︎"), color.MagentaString(tool))
-	}
-	if toolInput != "" {
-		completionMsg += " with " + color.HiBlackString(toolInput)
+		verb := toolVerb(ts.name)
+		completionMsg = fmt.Sprintf("%s%s %s", indent, color.GreenString("✔︎"), verb)
+		// Detail is pre-colorized for tools with diff stats (edit, create);
+		// other tools get gray detail text.
+		if ts.detail != "" {
+			completionMsg += " " + ts.detail
+		} else if ts.input != "" {
+			completionMsg += " " + color.HiBlackString(ts.input)
+		}
 	}
 
 	d.canvas.Clear()
-	d.printLine(completionMsg)
+
+	// For multi-line output (error or tree), build the full block and use printSeparated
+	hasSubLines := (ts.failed && ts.errorMsg != "") || (ts.subDetail != "" && !ts.failed)
+	if hasSubLines {
+		var block strings.Builder
+		block.WriteString(completionMsg)
+
+		if ts.failed && ts.errorMsg != "" {
+			block.WriteString(fmt.Sprintf("\n%s  %s %s", indent, color.RedString("└"), color.RedString(ts.errorMsg)))
+		}
+
+		if ts.subDetail != "" && !ts.failed {
+			lines := strings.Split(ts.subDetail, "\n")
+			for i, line := range lines {
+				connector := "├"
+				if i == len(lines)-1 {
+					connector = "└"
+				}
+				block.WriteString(fmt.Sprintf("\n%s  %s %s",
+					indent, color.HiBlackString(connector), color.HiBlackString(line)))
+			}
+		}
+
+		d.printSeparated(block.String())
+	} else {
+		d.printLine(completionMsg)
+	}
 }
 
 // flushReasoning prints the full accumulated reasoning with markdown rendering
@@ -544,8 +734,13 @@ func (d *AgentDisplay) flushReasoning() {
 }
 
 // printSeparated prints content with a blank line before and after,
-// avoiding duplicate blank lines.
+// avoiding duplicate blank lines. Content is trimmed to prevent stacking.
 func (d *AgentDisplay) printSeparated(content string) {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return
+	}
+
 	d.mu.Lock()
 	wasBlank := d.lastPrintedBlank
 	d.mu.Unlock()
@@ -570,8 +765,8 @@ func (d *AgentDisplay) printLine(content string) {
 	d.mu.Unlock()
 }
 
-// extractToolInputSummary creates a short summary of tool arguments for display.
-// Paths are shown relative to cwd when possible.
+// extractToolInputSummary creates a short summary of tool arguments for the spinner.
+// Prefers description/intent over raw values for a cleaner in-progress display.
 func extractToolInputSummary(args any) string {
 	if args == nil {
 		return ""
@@ -582,11 +777,18 @@ func extractToolInputSummary(args any) string {
 		return ""
 	}
 
+	// Prefer human-readable description for spinner display
+	if desc := stringArg(argsMap, "description"); desc != "" {
+		return logging.TruncateString(desc, 100)
+	}
+	if intent := stringArg(argsMap, "intent"); intent != "" {
+		return logging.TruncateString(intent, 100)
+	}
+
 	prioritizedKeys := []string{"path", "pattern", "filename", "command"}
 	for _, key := range prioritizedKeys {
 		if val, exists := argsMap[key]; exists {
 			valStr := fmt.Sprintf("%v", val)
-			// Make paths relative to cwd for cleaner display
 			if key == "path" || key == "filename" {
 				valStr = toRelativePath(valStr)
 			}
@@ -596,6 +798,243 @@ func extractToolInputSummary(args any) string {
 	}
 
 	return ""
+}
+
+// toolVerb returns a contextual past-tense verb for the tool completion line.
+func toolVerb(toolName string) string {
+	switch toolName {
+	case "view":
+		return "Read"
+	case "edit":
+		return "Edit"
+	case "create":
+		return "Create"
+	case "grep":
+		return "Search"
+	case "glob":
+		return "Find"
+	case "powershell":
+		return fmt.Sprintf("Ran %s", color.MagentaString("powershell"))
+	case "web_fetch":
+		return "Fetched"
+	case "web_search":
+		return "Searched"
+	case "sql":
+		return "Queried"
+	default:
+		return fmt.Sprintf("Ran %s", color.MagentaString(toolName))
+	}
+}
+
+// extractToolDetail builds a rich completion detail string from tool arguments.
+// Returns (detail, subDetail) where subDetail is an optional second line (e.g., shell command).
+func extractToolDetail(toolName string, args any) (string, string) {
+	if args == nil {
+		return "", ""
+	}
+	argsMap, ok := args.(map[string]any)
+	if !ok {
+		return "", ""
+	}
+
+	switch toolName {
+	case "view":
+		return viewDetail(argsMap), ""
+	case "edit":
+		return editDetail(argsMap), ""
+	case "create":
+		return createDetail(argsMap), ""
+	case "grep":
+		return grepDetail(argsMap), ""
+	case "glob":
+		return globDetail(argsMap), ""
+	case "powershell":
+		return powershellDetail(argsMap)
+	case "web_fetch":
+		return color.HiBlackString(stringArg(argsMap, "url")), ""
+	case "web_search":
+		return color.HiBlackString(stringArg(argsMap, "query")), ""
+	case "sql":
+		return color.HiBlackString(stringArg(argsMap, "description")), ""
+	default:
+		return mcpToolDetail(toolName, argsMap)
+	}
+}
+
+func viewDetail(args map[string]any) string {
+	path := toRelativePath(stringArg(args, "path"))
+	if path == "" {
+		return ""
+	}
+
+	// Show line range if specified
+	if viewRange, ok := args["view_range"]; ok {
+		if rangeSlice, ok := viewRange.([]any); ok && len(rangeSlice) == 2 {
+			start, _ := rangeSlice[0].(float64)
+			end, _ := rangeSlice[1].(float64)
+			if start > 0 && end > 0 {
+				lines := int(end - start + 1)
+				return fmt.Sprintf("%s %s", color.HiBlackString(path), color.HiBlackString("(%d lines)", lines))
+			} else if start > 0 && end < 0 {
+				return fmt.Sprintf("%s %s", color.HiBlackString(path), color.HiBlackString("(from line %d)", int(start)))
+			}
+		}
+	}
+
+	return color.HiBlackString(path)
+}
+
+func editDetail(args map[string]any) string {
+	path := toRelativePath(stringArg(args, "path"))
+	if path == "" {
+		return ""
+	}
+
+	oldStr := stringArg(args, "old_str")
+	newStr := stringArg(args, "new_str")
+	if oldStr == "" && newStr == "" {
+		return color.HiBlackString(path)
+	}
+
+	added := countLines(newStr)
+	removed := countLines(oldStr)
+	return fmt.Sprintf("%s (%s %s)",
+		color.HiBlackString(path), color.GreenString("+%d", added), color.RedString("-%d", removed))
+}
+
+func createDetail(args map[string]any) string {
+	path := toRelativePath(stringArg(args, "path"))
+	if path == "" {
+		return ""
+	}
+
+	fileText := stringArg(args, "file_text")
+	if fileText == "" {
+		return color.HiBlackString(path)
+	}
+
+	lines := countLines(fileText)
+	return fmt.Sprintf("%s (%s)", color.HiBlackString(path), color.GreenString("+%d", lines))
+}
+
+func grepDetail(args map[string]any) string {
+	pattern := stringArg(args, "pattern")
+	if pattern == "" {
+		return ""
+	}
+
+	detail := color.HiBlackString(logging.TruncateString(pattern, 60))
+	if path := stringArg(args, "path"); path != "" {
+		detail += color.HiBlackString(" in %s", toRelativePath(path))
+	}
+	return detail
+}
+
+func globDetail(args map[string]any) string {
+	pattern := stringArg(args, "pattern")
+	if pattern == "" {
+		return ""
+	}
+
+	detail := color.HiBlackString(pattern)
+	if path := stringArg(args, "path"); path != "" {
+		detail += color.HiBlackString(" in %s", toRelativePath(path))
+	}
+	return detail
+}
+
+func powershellDetail(args map[string]any) (string, string) {
+	desc := stringArg(args, "description")
+	cmd := stringArg(args, "command")
+
+	detail := ""
+	if desc != "" {
+		detail = color.HiBlackString(logging.TruncateString(desc, 80))
+	}
+
+	subDetail := ""
+	if cmd != "" {
+		subDetail = logging.TruncateString(cmd, 120)
+	}
+
+	return detail, subDetail
+}
+
+// mcpToolDetail formats MCP/unknown tool arguments as a tree of key: value lines.
+func mcpToolDetail(toolName string, args map[string]any) (string, string) {
+	if len(args) == 0 {
+		return "", ""
+	}
+
+	// Build sub-detail lines from args, skipping large values
+	var lines []string
+	for key, val := range args {
+		valStr := formatArgValue(val)
+		if valStr != "" {
+			lines = append(lines, fmt.Sprintf("%s: %s", key, valStr))
+		}
+	}
+
+	if len(lines) == 0 {
+		return "", ""
+	}
+
+	// Sort for deterministic output
+	sort.Strings(lines)
+
+	return "", strings.Join(lines, "\n")
+}
+
+// formatArgValue formats a tool argument value for display, truncating large values.
+func formatArgValue(val any) string {
+	switch v := val.(type) {
+	case string:
+		if len(v) > 120 {
+			return logging.TruncateString(v, 120)
+		}
+		return v
+	case float64:
+		if v == float64(int(v)) {
+			return fmt.Sprintf("%d", int(v))
+		}
+		return fmt.Sprintf("%g", v)
+	case bool:
+		return fmt.Sprintf("%v", v)
+	case nil:
+		return ""
+	case map[string]any:
+		return "{...}"
+	case []any:
+		if len(v) == 0 {
+			return "[]"
+		}
+		return fmt.Sprintf("[%d items]", len(v))
+	default:
+		s := fmt.Sprintf("%v", v)
+		return logging.TruncateString(s, 120)
+	}
+}
+
+func stringArg(args map[string]any, key string) string {
+	if val, ok := args[key]; ok {
+		if s, ok := val.(string); ok {
+			return s
+		}
+		return fmt.Sprintf("%v", val)
+	}
+	return ""
+}
+
+func countLines(s string) int {
+	if s == "" {
+		return 0
+	}
+	n := strings.Count(s, "\n")
+	// Content without a trailing newline still has at least one line
+	if !strings.HasSuffix(s, "\n") {
+		n++
+	}
+	return n
 }
 
 // toRelativePath converts an absolute path to relative if it's under cwd

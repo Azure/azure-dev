@@ -6,6 +6,7 @@ package consent
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -493,6 +494,8 @@ func (cm *consentManager) checkUnifiedRules(ctx context.Context, request Consent
 			); decision != nil {
 				return decision
 			}
+		} else {
+			log.Printf("[consent] failed to load project rules: %v", err)
 		}
 	}
 
@@ -503,6 +506,8 @@ func (cm *consentManager) checkUnifiedRules(ctx context.Context, request Consent
 		); decision != nil {
 			return decision
 		}
+	} else {
+		log.Printf("[consent] failed to load global rules: %v", err)
 	}
 
 	return nil

@@ -12,7 +12,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	copilot "github.com/github/copilot-sdk/go"
@@ -283,30 +282,15 @@ func (a *CopilotAgent) SendMessage(ctx context.Context, prompt string, opts ...S
 		return nil, err
 	}
 
-	// Start file watcher in background — don't block message send.
-	// On WSL with Windows filesystem mounts, fsnotify can be slow or hang.
 	var watcher watch.Watcher
-	var watcherMu sync.Mutex
-	go func() {
-		w, err := watch.NewWatcher(ctx)
-		if err != nil {
-			log.Printf("[copilot] File watcher failed: %v", err)
-			return
-		}
-		watcherMu.Lock()
-		watcher = w
-		watcherMu.Unlock()
-	}()
+	watcher, _ = watch.NewWatcher(ctx)
 
 	defer func() {
 		displayCancel()
 		time.Sleep(100 * time.Millisecond)
 		cleanup()
-		watcherMu.Lock()
-		w := watcher
-		watcherMu.Unlock()
-		if w != nil {
-			w.PrintChangedFiles(ctx)
+		if watcher != nil {
+			watcher.PrintChangedFiles(ctx)
 		}
 	}()
 
@@ -399,6 +383,11 @@ func (a *CopilotAgent) ensureSession(ctx context.Context, resumeSessionID string
 		return err
 	}
 	a.addCleanup("copilot-client", a.clientManager.Stop)
+
+	// Check authentication — prompt to sign in if needed
+	if err := a.ensureAuthenticated(ctx); err != nil {
+		return err
+	}
 
 	// Ensure plugins — must run after Start() so the bundled CLI is extracted
 	a.ensurePlugins(ctx)
@@ -819,6 +808,57 @@ func (a *CopilotAgent) handleErrorWithRetryPrompt(ctx context.Context, err error
 	}
 
 	return shouldRetry != nil && *shouldRetry
+}
+
+// ensureAuthenticated checks GitHub Copilot auth status and prompts for login if needed.
+func (a *CopilotAgent) ensureAuthenticated(ctx context.Context) error {
+	authStatus, err := a.clientManager.GetAuthStatus(ctx)
+	if err != nil {
+		log.Printf("[copilot] Auth status check failed: %v", err)
+		// Don't block — the SDK will handle auth errors during session creation
+		return nil
+	}
+
+	if authStatus.IsAuthenticated {
+		login := ""
+		if authStatus.Login != nil {
+			login = *authStatus.Login
+		}
+		log.Printf("[copilot] Authenticated as %s", login)
+		return nil
+	}
+
+	// Not authenticated — prompt to sign in
+	a.console.Message(ctx, "")
+	a.console.Message(ctx, output.WithWarningFormat("Not authenticated with GitHub Copilot"))
+	a.console.Message(ctx, "")
+
+	confirm := uxlib.NewConfirm(&uxlib.ConfirmOptions{
+		Message:      "Sign in to GitHub Copilot? (opens browser)",
+		DefaultValue: uxlib.Ptr(true),
+	})
+
+	shouldLogin, err := confirm.Ask(ctx)
+	if err != nil {
+		return fmt.Errorf("authentication prompt failed: %w", err)
+	}
+
+	if shouldLogin == nil || !*shouldLogin {
+		return fmt.Errorf("GitHub Copilot authentication is required to continue")
+	}
+
+	fmt.Println()
+	if err := a.cli.Login(ctx); err != nil {
+		return fmt.Errorf("GitHub Copilot sign-in failed: %w", err)
+	}
+
+	// Verify auth succeeded
+	authStatus, err = a.clientManager.GetAuthStatus(ctx)
+	if err != nil || !authStatus.IsAuthenticated {
+		return fmt.Errorf("GitHub Copilot authentication was not completed")
+	}
+
+	return nil
 }
 
 func (a *CopilotAgent) ensurePlugins(ctx context.Context) {

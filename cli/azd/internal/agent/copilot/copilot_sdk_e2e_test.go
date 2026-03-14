@@ -79,6 +79,7 @@ func TestCopilotSDK_E2E(t *testing.T) {
 			Mode:    "replace",
 			Content: "You are a helpful assistant. Answer concisely in one sentence.",
 		},
+		OnPermissionRequest: copilot.PermissionHandler.ApproveAll,
 	})
 	require.NoError(t, err, "CreateSession failed")
 	t.Logf("Session created: %s", session.WorkspacePath())

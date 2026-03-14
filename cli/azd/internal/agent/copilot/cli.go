@@ -98,6 +98,17 @@ func (c *CopilotCLI) InstallPlugin(ctx context.Context, source string) error {
 	return nil
 }
 
+// Login runs the copilot login command (OAuth device flow).
+func (c *CopilotCLI) Login(ctx context.Context) error {
+	runArgs := azdexec.NewRunArgs("copilot", "login").
+		WithInteractive(true)
+	_, err := c.runner.Run(ctx, runArgs)
+	if err != nil {
+		return fmt.Errorf("copilot login failed: %w", err)
+	}
+	return nil
+}
+
 // runCommand executes a copilot CLI command using the command runner.
 // Uses "copilot" from PATH for plugin management commands (the npm-distributed
 // native binary doesn't support CLI subcommands like "plugin list").

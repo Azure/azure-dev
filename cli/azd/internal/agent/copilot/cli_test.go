@@ -205,3 +205,46 @@ func TestCopilotCLI_PathOverride(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "/custom/copilot", path)
 }
+
+func TestCopilotCLI_Login(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+
+	var capturedArgs []string
+	var capturedInteractive bool
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return args.Cmd == "copilot" && len(args.Args) >= 1 && args.Args[0] == "login"
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		capturedArgs = args.Args
+		capturedInteractive = args.Interactive
+		return exec.NewRunResult(0, "Authentication complete.", ""), nil
+	})
+
+	cli := &CopilotCLI{
+		runner: mockContext.CommandRunner,
+		path:   "copilot",
+	}
+
+	err := cli.Login(*mockContext.Context)
+	require.NoError(t, err)
+	require.Equal(t, []string{"login"}, capturedArgs)
+	require.True(t, capturedInteractive, "login should run in interactive mode")
+}
+
+func TestCopilotCLI_Login_Error(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return args.Cmd == "copilot"
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.NewRunResult(1, "", "auth failed"), &exec.ExitError{ExitCode: 1}
+	})
+
+	cli := &CopilotCLI{
+		runner: mockContext.CommandRunner,
+		path:   "copilot",
+	}
+
+	err := cli.Login(*mockContext.Context)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "copilot login failed")
+}

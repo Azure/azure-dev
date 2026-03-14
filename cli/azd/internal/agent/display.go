@@ -207,8 +207,7 @@ func (d *AgentDisplay) Start(ctx context.Context) (func(), error) {
 					if ts.nested {
 						prefix = "  "
 					}
-					verb := toolVerb(ts.name)
-					text := fmt.Sprintf("%sRunning %s", prefix, verb)
+					text := fmt.Sprintf("%sRunning %s", prefix, color.MagentaString(ts.name))
 					if ts.input != "" {
 						text += " " + color.HiBlackString(ts.input)
 					}
@@ -397,9 +396,8 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 		d.currentToolID = toolID
 		d.mu.Unlock()
 
-		// Spinner text: show tool verb + short input summary (not the full detail/subDetail)
-		verb := toolVerb(toolName)
-		text := fmt.Sprintf("Running %s", verb)
+		// Spinner text: show tool name + short input summary (not the full detail/subDetail)
+		text := fmt.Sprintf("Running %s", color.MagentaString(toolName))
 		if toolInput != "" {
 			text += " " + color.HiBlackString(toolInput)
 		}

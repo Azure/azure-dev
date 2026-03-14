@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	copilot "github.com/github/copilot-sdk/go"
@@ -282,15 +283,30 @@ func (a *CopilotAgent) SendMessage(ctx context.Context, prompt string, opts ...S
 		return nil, err
 	}
 
+	// Start file watcher in background — don't block message send.
+	// On WSL with Windows filesystem mounts, fsnotify can be slow or hang.
 	var watcher watch.Watcher
-	watcher, _ = watch.NewWatcher(ctx)
+	var watcherMu sync.Mutex
+	go func() {
+		w, err := watch.NewWatcher(ctx)
+		if err != nil {
+			log.Printf("[copilot] File watcher failed: %v", err)
+			return
+		}
+		watcherMu.Lock()
+		watcher = w
+		watcherMu.Unlock()
+	}()
 
 	defer func() {
 		displayCancel()
 		time.Sleep(100 * time.Millisecond)
 		cleanup()
-		if watcher != nil {
-			watcher.PrintChangedFiles(ctx)
+		watcherMu.Lock()
+		w := watcher
+		watcherMu.Unlock()
+		if w != nil {
+			w.PrintChangedFiles(ctx)
 		}
 	}()
 

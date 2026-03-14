@@ -1,21 +1,34 @@
 cask "azd" do
   arch arm: "arm64", intel: "amd64"
-  os macos: "darwin", linux: "linux"
 
   version "%VERSION%"
 
   sha256 arm: "%SHA256ARM64%",
          intel: "%SHA256AMD64%",
-         arm_linux: "%SHA256ARM64_LINUX%",
+         arm64_linux: "%SHA256ARM64_LINUX%",
          x86_64_linux: "%SHA256AMD64_LINUX%"
 
-  url "https://github.com/Azure/azure-dev/releases/download/azure-dev-cli_#{version}/azd-#{os}-#{arch}.zip"
+  # File extension differs between mac (.zip) and linux (.tar.gz)
+  on_macos do
+    # Daily releases are staged in a different storage location to keep the repo
+    # releases focused on supported releases.
+    url "https://azuresdkartifacts.z5.web.core.windows.net/azd/standalone/daily/archive/#{version}/azd-darwin-#{arch}.zip"
+    binary "azd-darwin-#{arch}", target: "azd"
+  end
+
+  # File extension differs between mac (.zip) and linux (.tar.gz)
+  on_linux do
+    # Daily releases are staged in a different storage location to keep the repo
+    # releases focused on supported releases.
+    url "https://azuresdkartifacts.z5.web.core.windows.net/azd/standalone/daily/archive/#{version}/azd-linux-#{arch}.tar.gz"
+    binary "azd-linux-#{arch}", target: "azd"
+  end
 
   name "Azure Developer CLI"
   desc "Azure Developer CLI"
   homepage "https://github.com/azure/azure-dev"
 
-  conflicts_with cask: "azd@daily", because: "azd and azd@daily install the same executable"
+  conflicts_with cask: "azd"
 
   postflight do
     # Set .installed-by.txt to "brew" to configure azd behavior for homebrew-managed installs

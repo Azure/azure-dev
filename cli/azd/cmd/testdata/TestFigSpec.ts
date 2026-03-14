@@ -347,7 +347,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['monitor'],
-							description: 'Monitor logs from a hosted agent container.',
+							description: 'Monitor logs from a hosted agent.',
 							options: [
 								{
 									name: ['--account-name', '-a'],
@@ -377,6 +377,15 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'project-name',
+										},
+									],
+								},
+								{
+									name: ['--session', '-s'],
+									description: 'Session ID to stream logs for',
+									args: [
+										{
+											name: 'session',
 										},
 									],
 								},
@@ -3166,7 +3175,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['monitor'],
-									description: 'Monitor logs from a hosted agent container.',
+									description: 'Monitor logs from a hosted agent.',
 								},
 								{
 									name: ['run'],

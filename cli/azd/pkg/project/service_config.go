@@ -62,6 +62,8 @@ type ServiceConfig struct {
 	// Whether to build the service remotely. Only applicable to function app services.
 	// When set to nil (unset), the default behavior based on language is used.
 	RemoteBuild *bool `yaml:"remoteBuild,omitempty"`
+	// Maximum time in seconds to wait for deployment to complete.
+	DeployTimeout *int `yaml:"deployTimeout,omitempty" json:"deployTimeout,omitempty"`
 
 	// AdditionalProperties captures any unknown YAML fields for extension support
 	AdditionalProperties map[string]any `yaml:",inline"`

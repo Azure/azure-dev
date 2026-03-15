@@ -426,18 +426,26 @@ func TestParseGlobalFlags_EnvironmentName(t *testing.T) {
 	tests := []struct {
 		name     string
 		args     []string
+		envVar   string
 		expected string
 	}{
-		{name: "short flag -e", args: []string{"-e", "dev", "app", "run"}, expected: "dev"},
-		{name: "long flag --environment", args: []string{"--environment", "staging", "app", "run"}, expected: "staging"},
-		{name: "long flag with equals", args: []string{"--environment=prod", "app", "run"}, expected: "prod"},
-		{name: "no env flag", args: []string{"--debug", "app", "run"}, expected: ""},
-		{name: "env flag among other flags", args: []string{"--debug", "-e", "dev", "--no-prompt"}, expected: "dev"},
-		{name: "env flag with unknown extension flags", args: []string{"-e", "dev", "--foo", "bar"}, expected: "dev"},
+		{name: "short flag -e", args: []string{"-e", "dev", "app", "run"}, envVar: "", expected: "dev"},
+		{name: "long flag --environment", args: []string{"--environment", "staging", "app", "run"}, envVar: "", expected: "staging"},
+		{name: "long flag with equals", args: []string{"--environment=prod", "app", "run"}, envVar: "", expected: "prod"},
+		{name: "no env flag", args: []string{"--debug", "app", "run"}, envVar: "", expected: ""},
+		{name: "env flag among other flags", args: []string{"--debug", "-e", "dev", "--no-prompt"}, envVar: "", expected: "dev"},
+		{name: "env flag with unknown extension flags", args: []string{"-e", "dev", "--foo", "bar"}, envVar: "", expected: "dev"},
+		{name: "AZURE_ENV_NAME fallback", args: []string{"--debug", "app", "run"}, envVar: "from-env", expected: "from-env"},
+		{name: "-e flag overrides AZURE_ENV_NAME", args: []string{"-e", "from-flag", "app", "run"}, envVar: "from-env", expected: "from-flag"},
+		{name: "empty AZURE_ENV_NAME no effect", args: []string{"app", "run"}, envVar: "", expected: ""},
+		{name: "concatenated short flag -edev", args: []string{"-edev", "app", "run"}, envVar: "", expected: "dev"},
+		{name: "multiple -e flags last wins", args: []string{"-e", "first", "-e", "second"}, envVar: "", expected: "second"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(internal.EnvNameEnvVarName, tt.envVar)
+
 			opts := &internal.GlobalCommandOptions{}
 			err := ParseGlobalFlags(tt.args, opts)
 			require.NoError(t, err)

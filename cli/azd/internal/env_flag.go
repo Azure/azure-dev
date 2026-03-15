@@ -19,11 +19,11 @@ type EnvFlag struct {
 // EnvironmentNameFlagName is the full name of the flag as it appears on the command line.
 const EnvironmentNameFlagName string = "environment"
 
-// envNameEnvVarName is the same as environment.EnvNameEnvVarName, but duplicated here to prevent an import cycle.
-const envNameEnvVarName = "AZURE_ENV_NAME"
+// EnvNameEnvVarName is the same as environment.EnvNameEnvVarName, but duplicated here to prevent an import cycle.
+const EnvNameEnvVarName = "AZURE_ENV_NAME"
 
 func (e *EnvFlag) Bind(local *pflag.FlagSet, global *GlobalCommandOptions) {
-	e.fromEnvVarValue = os.Getenv(envNameEnvVarName)
+	e.fromEnvVarValue = os.Getenv(EnvNameEnvVarName)
 	local.StringVarP(
 		&e.EnvironmentName,
 		EnvironmentNameFlagName,

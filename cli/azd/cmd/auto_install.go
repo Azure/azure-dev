@@ -390,7 +390,7 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 	// This also enables the global options to be set in the container for support during extension framework callbacks.
 	globalOpts := &internal.GlobalCommandOptions{}
 	if err := ParseGlobalFlags(os.Args[1:], globalOpts); err != nil {
-		return fmt.Errorf("Warning: failed to parse global flags: %w", err)
+		return fmt.Errorf("failed to parse global flags: %w", err)
 	}
 
 	// Register GlobalCommandOptions as a singleton in the container BEFORE building the command tree.
@@ -643,7 +643,7 @@ func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error 
 	// it shouldn't be added to cobra's persistent flags (it's already registered per-command
 	// via EnvFlag.Bind). But we parse it here so GlobalCommandOptions.EnvironmentName is
 	// available for extension commands where DisableFlagParsing prevents cobra from parsing it.
-	globalFlagSet.StringP(internal.EnvironmentNameFlagName, "e", "", "")
+	globalFlagSet.StringP(internal.EnvironmentNameFlagName, "e", os.Getenv(internal.EnvNameEnvVarName), "")
 
 	// Set output to io.Discard to suppress any error messages from pflag
 	// Cobra will handle all user-facing output

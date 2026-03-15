@@ -10,17 +10,13 @@ cask "azd" do
 
   # File extension differs between mac (.zip) and linux (.tar.gz)
   on_macos do
-    # Daily releases are staged in a different storage location to keep the repo
-    # releases focused on supported releases.
-    url "https://azuresdkartifacts.z5.web.core.windows.net/azd/standalone/daily/archive/#{version}/azd-darwin-#{arch}.zip"
+    url "https://github.com/Azure/azure-dev/releases/download/azure-dev-cli_#{version}/azd-darwin-#{arch}.zip"
     binary "azd-darwin-#{arch}", target: "azd"
   end
 
   # File extension differs between mac (.zip) and linux (.tar.gz)
   on_linux do
-    # Daily releases are staged in a different storage location to keep the repo
-    # releases focused on supported releases.
-    url "https://azuresdkartifacts.z5.web.core.windows.net/azd/standalone/daily/archive/#{version}/azd-linux-#{arch}.tar.gz"
+    url "https://github.com/Azure/azure-dev/releases/download/azure-dev-cli_#{version}/azd-darwin-#{arch}.tar.gz"
     binary "azd-linux-#{arch}", target: "azd"
   end
 
@@ -28,7 +24,7 @@ cask "azd" do
   desc "Azure Developer CLI"
   homepage "https://github.com/azure/azure-dev"
 
-  conflicts_with cask: "azd"
+  conflicts_with cask: "azd@daily"
 
   postflight do
     # Set .installed-by.txt to "brew" to configure azd behavior for homebrew-managed installs

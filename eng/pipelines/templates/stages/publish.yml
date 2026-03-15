@@ -395,8 +395,6 @@ stages:
           - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
 
           - template: /eng/pipelines/templates/steps/publish-cli-brew.yml
-            parameters:
-              BaseRepoBranch: cask-test
 
       - deployment: Publish_For_PR
         environment: none

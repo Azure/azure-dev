@@ -27,6 +27,6 @@ steps:
       # The azure-sdk user has permission to push directly to main
       BaseRepoBranch: ${{ parameters.BaseRepoBranch }}
       BaseRepoOwner: Azure
-      CommitMsg: Update formula for azd release $(CLI_VERSION)
+      CommitMsg: Update for azd release $(CLI_VERSION)
       TargetRepoName: homebrew-azd
       WorkingDirectory: homebrew-azd

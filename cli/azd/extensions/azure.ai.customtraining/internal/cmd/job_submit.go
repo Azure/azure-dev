@@ -91,7 +91,81 @@ func newJobSubmitCommand() *cobra.Command {
 
 			fmt.Printf("Submitting command job: %s\n\n", jobDef.Name)
 
+<<<<<<< HEAD:cli/azd/extensions/azure.ai.customtraining/internal/cmd/job_submit.go
 			result, err := apiClient.CreateOrUpdateJob(ctx, jobDef.Name, jobResource)
+=======
+				// Content-scoped naming: code-{projectName} so dedup works across jobs
+				datasetName := fmt.Sprintf("code-%s", projectName)
+				fmt.Printf("| Step 1: Uploading code (%s)...\n", jobDef.Code)
+
+				result, err := uploadSvc.UploadDirectory(
+					ctx, codePath, datasetName,
+					fmt.Sprintf("Code for project %s", projectName),
+				)
+				if err != nil {
+					return fmt.Errorf("failed to upload code: %w", err)
+				}
+				codeID = result.DatasetResourceID
+				if result.Skipped {
+					fmt.Printf("✓ Code unchanged, reusing existing upload (dataset: %s, version: %s)\n\n",
+						datasetName, result.DatasetVersion)
+				} else {
+					fmt.Printf("✓ Code uploaded (dataset: %s, version: %s)\n\n",
+						datasetName, result.DatasetVersion)
+				}
+			} else if jobDef.Code != "" {
+				// Remote URI — pass through as-is
+				codeID = jobDef.Code
+			}
+
+			// Resolve inputs: upload local paths
+			resolvedInputs := make(map[string]string)
+			localInputCount := 0
+			for _, input := range jobDef.Inputs {
+				if input.Path != "" && service.IsLocalPath(input.Path) {
+					localInputCount++
+				}
+			}
+
+			if localInputCount > 0 {
+				fmt.Println("| Step 2: Uploading input data...")
+				for name, input := range jobDef.Inputs {
+					if input.Path == "" || !service.IsLocalPath(input.Path) {
+						continue
+					}
+
+					inputPath := input.Path
+					if !filepath.IsAbs(inputPath) {
+						inputPath = filepath.Join(yamlDir, inputPath)
+					}
+
+					// Content-scoped naming: input-{inputName} so same data reuses across jobs
+					datasetName := fmt.Sprintf("input-%s", name)
+					fmt.Printf("  ├─ %s: uploading %s...\n", name, input.Path)
+
+					result, err := uploadSvc.UploadDirectory(
+						ctx, inputPath, datasetName,
+						fmt.Sprintf("Input %s for project %s", name, projectName),
+					)
+					if err != nil {
+						return fmt.Errorf("failed to upload input %s: %w", name, err)
+					}
+					resolvedInputs[name] = result.DatasetResourceID
+					if result.Skipped {
+						fmt.Printf("  ✓ %s unchanged, reusing existing upload (version: %s)\n", name, result.DatasetVersion)
+					} else {
+						fmt.Printf("  ✓ %s uploaded (dataset: %s, version: %s)\n", name, datasetName, result.DatasetVersion)
+					}
+				}
+				fmt.Println()
+			}
+
+			// Build REST payload with resolved IDs
+			jobResource := buildJobResource(jobDef, codeID, resolvedInputs)
+
+			fmt.Println("| Submitting job...")
+			jobResult, err := apiClient.CreateOrUpdateJob(ctx, jobDef.Name, jobResource)
+>>>>>>> e3ae9cd1 (Add content-based dedup for artifact uploads using SHA-256 directory hashing):cli/azd/extensions/azure.ai.customtraining/internal/cmd/job_create.go
 			if err != nil {
 				return fmt.Errorf("failed to create job: %w", err)
 			}

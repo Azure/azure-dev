@@ -71,6 +71,9 @@ func (c *Client) CreateOrUpdateDatasetVersion(
 
 // GetDatasetVersion retrieves a dataset version.
 // GET .../datasets/{name}/versions/{version}
+//
+// Returns (nil, nil) if the dataset version does not exist (HTTP 404).
+// This makes it easy for callers to check existence without error-type inspection.
 func (c *Client) GetDatasetVersion(
 	ctx context.Context, datasetName, version string,
 ) (*models.DatasetVersion, error) {
@@ -82,6 +85,11 @@ func (c *Client) GetDatasetVersion(
 		return nil, fmt.Errorf("failed to get dataset %s: %w", datasetName, err)
 	}
 	defer resp.Body.Close()
+
+	// 404 means the dataset version doesn't exist — return nil without error
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, c.HandleError(resp)

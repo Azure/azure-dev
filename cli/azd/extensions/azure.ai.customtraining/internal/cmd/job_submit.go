@@ -105,13 +105,27 @@ func newJobSubmitCommand() *cobra.Command {
 				if err != nil {
 					return fmt.Errorf("failed to upload code: %w", err)
 				}
+
+				// Hash collision fallback: use job-scoped naming without dedup
+				if result.Collision {
+					fallbackName := fmt.Sprintf("code-%s", jobDef.Name)
+					fmt.Printf("  (hash collision on %s, falling back to %s)\n", datasetName, fallbackName)
+					result, err = uploadSvc.UploadDirectoryNoDedup(
+						ctx, codePath, fallbackName, "1",
+						fmt.Sprintf("Code for job %s", jobDef.Name),
+					)
+					if err != nil {
+						return fmt.Errorf("failed to upload code (fallback): %w", err)
+					}
+				}
+
 				codeID = result.DatasetResourceID
 				if result.Skipped {
 					fmt.Printf("✓ Code unchanged, reusing existing upload (dataset: %s, version: %s)\n\n",
-						datasetName, result.DatasetVersion)
+						result.DatasetName, result.DatasetVersion)
 				} else {
 					fmt.Printf("✓ Code uploaded (dataset: %s, version: %s)\n\n",
-						datasetName, result.DatasetVersion)
+						result.DatasetName, result.DatasetVersion)
 				}
 			} else if jobDef.Code != "" {
 				// Remote URI — pass through as-is
@@ -150,11 +164,25 @@ func newJobSubmitCommand() *cobra.Command {
 					if err != nil {
 						return fmt.Errorf("failed to upload input %s: %w", name, err)
 					}
+
+					// Hash collision fallback: use job-scoped naming without dedup
+					if result.Collision {
+						fallbackName := fmt.Sprintf("input-%s-%s", jobDef.Name, name)
+						fmt.Printf("  (hash collision on %s, falling back to %s)\n", datasetName, fallbackName)
+						result, err = uploadSvc.UploadDirectoryNoDedup(
+							ctx, inputPath, fallbackName, "1",
+							fmt.Sprintf("Input %s for job %s", name, jobDef.Name),
+						)
+						if err != nil {
+							return fmt.Errorf("failed to upload input %s (fallback): %w", name, err)
+						}
+					}
+
 					resolvedInputs[name] = result.DatasetResourceID
 					if result.Skipped {
 						fmt.Printf("  ✓ %s unchanged, reusing existing upload (version: %s)\n", name, result.DatasetVersion)
 					} else {
-						fmt.Printf("  ✓ %s uploaded (dataset: %s, version: %s)\n", name, datasetName, result.DatasetVersion)
+						fmt.Printf("  ✓ %s uploaded (dataset: %s, version: %s)\n", name, result.DatasetName, result.DatasetVersion)
 					}
 				}
 				fmt.Println()

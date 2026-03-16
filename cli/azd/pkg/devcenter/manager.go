@@ -133,11 +133,8 @@ func (m *manager) WritableProjects(ctx context.Context) ([]*devcentersdk.Project
 	var wg sync.WaitGroup
 
 	for _, devCenter := range devCenterList.Value {
-		wg.Add(1)
-
-		go func(dc *devcentersdk.DevCenter) {
-			defer wg.Done()
-
+		dc := devCenter
+		wg.Go(func() {
 			projects, err := m.client.
 				DevCenterByEndpoint(dc.ServiceUri).
 				Projects().
@@ -149,11 +146,8 @@ func (m *manager) WritableProjects(ctx context.Context) ([]*devcentersdk.Project
 			}
 
 			for _, project := range projects.Value {
-				wg.Add(1)
-
-				go func(p *devcentersdk.Project) {
-					defer wg.Done()
-
+				p := project
+				wg.Go(func() {
 					hasWriteAccess := m.client.
 						DevCenterByEndpoint(p.DevCenter.ServiceUri).
 						ProjectByName(p.Name).
@@ -163,9 +157,9 @@ func (m *manager) WritableProjects(ctx context.Context) ([]*devcentersdk.Project
 					if hasWriteAccess {
 						projectsChan <- p
 					}
-				}(project)
+				})
 			}
-		}(devCenter)
+		})
 	}
 
 	go func() {

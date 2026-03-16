@@ -215,13 +215,12 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	receiverErrors := make(chan error, len(receivers))
 
 	for _, receiver := range receivers {
-		receiveWaitGroup.Add(1)
-		go func(r serviceReceiver) {
-			defer receiveWaitGroup.Done()
+		r := receiver
+		receiveWaitGroup.Go(func() {
 			if err := r.Receive(ctx); err != nil {
 				receiverErrors <- fmt.Errorf("receiver error: %w", err)
 			}
-		}(receiver)
+		})
 	}
 
 	// Wait for all active receivers' brokers to signal readiness before starting registrations
@@ -251,13 +250,12 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 			return fmt.Errorf("service target provider for host '%s' is nil", reg.Host)
 		}
 
-		registrationsWaitGroup.Add(1)
-		go func(r ServiceTargetRegistration) {
-			defer registrationsWaitGroup.Done()
+		r := reg
+		registrationsWaitGroup.Go(func() {
 			if err := er.serviceTargetManager.Register(ctx, r.Factory, r.Host); err != nil {
 				registrationErrChan <- fmt.Errorf("failed to register service target '%s': %w", r.Host, err)
 			}
-		}(reg)
+		})
 	}
 
 	// Register framework services in parallel
@@ -266,13 +264,12 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 			return fmt.Errorf("framework service provider for language '%s' is nil", reg.Language)
 		}
 
-		registrationsWaitGroup.Add(1)
-		go func(r FrameworkServiceRegistration) {
-			defer registrationsWaitGroup.Done()
+		r := reg
+		registrationsWaitGroup.Go(func() {
 			if err := er.frameworkServiceManager.Register(ctx, r.Factory, r.Language); err != nil {
 				registrationErrChan <- fmt.Errorf("failed to register framework service '%s': %w", r.Language, err)
 			}
-		}(reg)
+		})
 	}
 
 	// Register project event handlers in parallel
@@ -281,13 +278,12 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 			return fmt.Errorf("project event handler for '%s' is nil", reg.EventName)
 		}
 
-		registrationsWaitGroup.Add(1)
-		go func(r ProjectEventRegistration) {
-			defer registrationsWaitGroup.Done()
+		r := reg
+		registrationsWaitGroup.Go(func() {
 			if err := er.eventManager.AddProjectEventHandler(ctx, r.EventName, r.Handler); err != nil {
 				registrationErrChan <- fmt.Errorf("failed to add project event handler '%s': %w", r.EventName, err)
 			}
-		}(reg)
+		})
 	}
 
 	// Register service event handlers in parallel
@@ -296,13 +292,12 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 			return fmt.Errorf("service event handler for '%s' is nil", reg.EventName)
 		}
 
-		registrationsWaitGroup.Add(1)
-		go func(r ServiceEventRegistration) {
-			defer registrationsWaitGroup.Done()
+		r := reg
+		registrationsWaitGroup.Go(func() {
 			if err := er.eventManager.AddServiceEventHandler(ctx, r.EventName, r.Handler, r.Options); err != nil {
 				registrationErrChan <- fmt.Errorf("failed to add service event handler '%s': %w", r.EventName, err)
 			}
-		}(reg)
+		})
 	}
 
 	// Wait for ALL registrations to complete in parallel

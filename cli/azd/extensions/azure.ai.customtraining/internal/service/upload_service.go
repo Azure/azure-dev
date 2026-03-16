@@ -61,10 +61,11 @@ func (s *UploadService) UploadDirectory(
 		return nil, fmt.Errorf("failed to resolve local path %s: %w", localPath, err)
 	}
 
-	version, err := ComputeDirectoryHash(absPath)
+	fullHash, err := ComputeDirectoryHash(absPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute hash for %s: %w", localPath, err)
 	}
+	version := TruncateHashVersion(fullHash)
 
 	// Step 2: Check if this version already exists (dedup)
 	existing, err := s.client.GetDatasetVersion(ctx, datasetName, version)
@@ -100,10 +101,16 @@ func (s *UploadService) UploadDirectory(
 	}
 
 	// Step 5: Confirm the dataset version via PATCH
+	// Include the full content hash as a sentinel tag. This serves as a completion
+	// marker — if this tag is present, we know both azcopy and PATCH succeeded.
+	// Commit 3 will read this tag during dedup to detect zombie uploads.
 	datasetReq := &models.DatasetVersion{
 		DataURI:     blobURI,
 		DataType:    "uri_folder",
 		Description: description,
+		Tags: map[string]string{
+			"contentHash": fullHash,
+		},
 	}
 
 	datasetResp, err := s.client.CreateOrUpdateDatasetVersion(ctx, datasetName, version, datasetReq)

@@ -24,7 +24,8 @@ const (
 // so any change to filenames, directory structure, or file data produces a different hash.
 //
 // Files are sorted lexicographically by relative path to ensure determinism across platforms.
-// The returned string is the hex-encoded hash truncated to MaxHashVersionLength characters.
+// The returned string is the full hex-encoded SHA-256 hash (64 characters).
+// Use TruncateHashVersion() to shorten it for use as a dataset version.
 func ComputeDirectoryHash(dirPath string) (string, error) {
 	absDir, err := filepath.Abs(dirPath)
 	if err != nil {
@@ -89,11 +90,14 @@ func ComputeDirectoryHash(dirPath string) (string, error) {
 		file.Close()
 	}
 
-	fullHash := fmt.Sprintf("%x", h.Sum(nil))
+	return fmt.Sprintf("%x", h.Sum(nil)), nil
+}
 
-	// Truncate to MaxHashVersionLength for use as a dataset version
+// TruncateHashVersion truncates a full hash to MaxHashVersionLength characters
+// for use as a dataset version string.
+func TruncateHashVersion(fullHash string) string {
 	if len(fullHash) > MaxHashVersionLength {
-		return fullHash[:MaxHashVersionLength], nil
+		return fullHash[:MaxHashVersionLength]
 	}
-	return fullHash, nil
+	return fullHash
 }

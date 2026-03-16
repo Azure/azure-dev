@@ -5,7 +5,6 @@ package azdext
 
 import (
 	"context"
-	"os"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -148,10 +147,6 @@ func TestExtensionCommand_ContextMethodReturnsBackground(t *testing.T) {
 }
 
 func TestExtensionCommand_CwdEnvVarFallback(t *testing.T) {
-	// Save and restore cwd
-	origDir, err := os.Getwd()
-	require.NoError(t, err)
-
 	tmpDir := t.TempDir()
 	t.Setenv("AZD_CWD", tmpDir)
 
@@ -165,10 +160,7 @@ func TestExtensionCommand_CwdEnvVarFallback(t *testing.T) {
 	cmd.SetContext(context.Background())
 	cmd.SetArgs([]string{"sub"})
 
-	err = cmd.Execute()
-
-	// Restore cwd before any assertions so TempDir cleanup can succeed
-	_ = os.Chdir(origDir)
+	err := cmd.Execute()
 
 	require.NoError(t, err)
 	require.Equal(t, tmpDir, extCtx.Cwd)

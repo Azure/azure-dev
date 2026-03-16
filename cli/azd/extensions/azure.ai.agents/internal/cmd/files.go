@@ -29,7 +29,7 @@ type filesFlags struct {
 
 func newFilesCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "files <command>",
+		Use:   "files",
 		Short: "Manage files in a hosted agent session.",
 		Long: `Manage files in a hosted agent session.
 

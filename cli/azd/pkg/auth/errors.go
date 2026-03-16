@@ -132,12 +132,10 @@ type AuthFailedError struct {
 }
 
 func newAuthFailedErrorFromMsalErr(err error) error {
-	var msalCallErr msal.CallErr
-	var authFailedErr *AuthFailedError
 	var res *http.Response
-	if errors.As(err, &msalCallErr) {
+	if msalCallErr, ok := errors.AsType[msal.CallErr](err); ok {
 		res = msalCallErr.Resp
-	} else if errors.As(err, &authFailedErr) { // in case this is re-thrown in a retry loop
+	} else if authFailedErr, ok := errors.AsType[*AuthFailedError](err); ok { // in case this is re-thrown in a retry loop
 		res = authFailedErr.RawResp
 	}
 

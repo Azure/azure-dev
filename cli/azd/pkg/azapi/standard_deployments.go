@@ -124,8 +124,7 @@ func (ds *StandardDeployments) GetSubscriptionDeployment(
 
 	deployment, err := deploymentClient.GetAtSubscriptionScope(ctx, deploymentName, nil)
 	if err != nil {
-		var errDetails *azcore.ResponseError
-		if errors.As(err, &errDetails) && errDetails.StatusCode == 404 {
+		if errDetails, ok := errors.AsType[*azcore.ResponseError](err); ok && errDetails.StatusCode == 404 {
 			return nil, ErrDeploymentNotFound
 		}
 		return nil, fmt.Errorf("getting deployment from subscription: %w", err)
@@ -174,8 +173,7 @@ func (ds *StandardDeployments) GetResourceGroupDeployment(
 
 	deployment, err := deploymentClient.Get(ctx, resourceGroupName, deploymentName, nil)
 	if err != nil {
-		var errDetails *azcore.ResponseError
-		if errors.As(err, &errDetails) && errDetails.StatusCode == 404 {
+		if errDetails, ok := errors.AsType[*azcore.ResponseError](err); ok && errDetails.StatusCode == 404 {
 			return nil, ErrDeploymentNotFound
 		}
 		return nil, fmt.Errorf("getting deployment from resource group: %w", err)
@@ -292,8 +290,7 @@ func (ds *StandardDeployments) ListSubscriptionDeploymentOperations(
 
 	for getDeploymentsPager.More() {
 		page, err := getDeploymentsPager.NextPage(ctx)
-		var errDetails *azcore.ResponseError
-		if errors.As(err, &errDetails) && errDetails.StatusCode == 404 {
+		if errDetails, ok := errors.AsType[*azcore.ResponseError](err); ok && errDetails.StatusCode == 404 {
 			return nil, ErrDeploymentNotFound
 		}
 		if err != nil {
@@ -322,8 +319,7 @@ func (ds *StandardDeployments) ListResourceGroupDeploymentOperations(
 
 	for getDeploymentsPager.More() {
 		page, err := getDeploymentsPager.NextPage(ctx)
-		var errDetails *azcore.ResponseError
-		if errors.As(err, &errDetails) && errDetails.StatusCode == 404 {
+		if errDetails, ok := errors.AsType[*azcore.ResponseError](err); ok && errDetails.StatusCode == 404 {
 			return nil, ErrDeploymentNotFound
 		}
 		if err != nil {

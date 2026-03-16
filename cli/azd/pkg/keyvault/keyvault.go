@@ -155,8 +155,7 @@ func (kvs *keyVaultService) GetKeyVaultSecret(
 
 	response, err := client.GetSecret(ctx, secretName, "", nil)
 	if err != nil {
-		var httpErr *azcore.ResponseError
-		if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
+		if httpErr, ok := errors.AsType[*azcore.ResponseError](err); ok && httpErr.StatusCode == http.StatusNotFound {
 			return nil, ErrAzCliSecretNotFound
 		}
 		return nil, fmt.Errorf("getting key vault secret: %w", err)
@@ -203,8 +202,7 @@ func (kvs *keyVaultService) PurgeKeyVault(
 
 	poller, err := client.BeginPurgeDeleted(ctx, vaultName, location, nil)
 	if err != nil {
-		var httpErr *azcore.ResponseError
-		if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
+		if httpErr, ok := errors.AsType[*azcore.ResponseError](err); ok && httpErr.StatusCode == http.StatusNotFound {
 			// no need to purge if the vault is already deleted (not found)
 			log.Printf("key vault '%s' was not found. No need to purge.", vaultName)
 			return nil

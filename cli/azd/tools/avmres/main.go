@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -190,7 +191,7 @@ func fetchGithub(
 	repo string,
 	path string,
 	tag string) ([]byte, error) {
-	req, err := http.NewRequest("GET",
+	req, err := http.NewRequestWithContext(context.Background(), "GET",
 		fmt.Sprintf("https://api.github.com/repos/%s/contents/%s?ref=%s", repo, path, tag), nil)
 	if err != nil {
 		return nil, err

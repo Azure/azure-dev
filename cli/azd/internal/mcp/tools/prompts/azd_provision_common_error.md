@@ -2,6 +2,21 @@
 
 This document provides solutions for common errors encountered during `azd provision` based on telemetry data.
 
+## ⚠️ IMPORTANT: Prefer Permanent Bicep/Terraform Fixes Over Temporary Workarounds
+
+When resolving provisioning errors (e.g., resource naming conflicts),
+**always prefer permanent fixes in the `infra/` Bicep or Terraform files** over temporary workarounds.
+
+**Resolution priority order:**
+1. **First**, check if the fix can be made directly in the `infra/` infrastructure files (e.g., updating a default parameter value).
+2. **Only use `az` CLI commands to modify Azure resources as a last resort.** Always check whether the fix can be made
+   in the `infra/` Bicep or Terraform files first. When `azd provision` is re-run, the templates will redeploy the
+   infrastructure and **override any manual changes** made via `az` commands (e.g., `az resource update`, `az webapp config set`),
+   causing the same error to reoccur. If no infrastructure-level fix is possible, `az` CLI commands may be used, but
+   inform the user that the change is **not permanent** and will be lost on the next `azd provision` run.
+
+This priority applies to **all error sections below**.
+
 ## Azure Service Unavailable Error
 
 **Error Pattern:** 
@@ -20,17 +35,36 @@ When you encounter this error, YOU MUST USE YOUR TERMINAL TOOL TO EXECUTE the fo
 
 2. **Immediate Solutions (USE TERMINAL TOOL TO EXECUTE):**
 
-   USE YOUR TERMINAL TOOL to change to a different region:
+   **Option 1 (Preferred - Permanent Bicep Fix):**
+   
+   First, check if the location is hardcoded or parameterized in the Bicep infrastructure files:
+   
+   USE YOUR TERMINAL TOOL to search for location definitions:
+   
+   `grep -R --include='*.bicep' "location" infra`
+   
+   - If the location is hardcoded (e.g., `location: 'eastus'`), change it directly in the Bicep file to a working region.
+   - If the location uses a parameter with a restrictive `@allowed` decorator, update the allowed values or default to include working regions.
+   - If the location is parameterized with `param location string`, proceed to Option 2.
+
+   **Option 2 (Temporary Workaround - Environment Variable):**
+   
+   If the location is parameterized and not hardcoded, USE YOUR TERMINAL TOOL to change to a different region:
    
    `azd env set AZURE_LOCATION <location>`
    
    USE YOUR TERMINAL TOOL to verify the change:
    
    `azd env get-values`
+   
+   Note: This is a temporary workaround. The setting will not persist if the environment is recreated or shared with teammates.
 
 **Example Commands:**
 ```bash
-# Change to a different region
+# Option 1: Search for location in Bicep files and fix directly
+grep -r "location" infra/*.bicep infra/**/*.bicep
+
+# Option 2 (temporary): Change to a different region via environment variable
 azd env set AZURE_LOCATION westus
 
 # Check current environment settings
@@ -191,15 +225,17 @@ When you encounter this error, YOU MUST USE YOUR TERMINAL TOOL TO EXECUTE the fo
 
 2. **Immediate Solutions (USE TERMINAL TOOL TO EXECUTE):**
 
-   **Option 1: Use a Different Region if Available Region is Known**
+   **Option 1 (Preferred - Permanent Bicep Fix):**
    
-   USE YOUR TERMINAL TOOL to change to an unrestricted region:
+   First, check if the location is hardcoded or if a location-specific parameter exists in the Bicep infrastructure files:
    
-   `azd env set AZURE_LOCATION westus3`
+   USE YOUR TERMINAL TOOL to search for location definitions:
    
-   USE YOUR TERMINAL TOOL to verify the change:
+   `grep -r -e "location" -e "AZURE_LOCATION" infra/*.bicep infra/**/*.bicep`
    
-   `azd env get-values`
+   - If the location is hardcoded (e.g., `location: 'eastus'`), change it directly in the Bicep file to an unrestricted region.
+   - If the Postgres resource has its own location parameter, update its default value in the Bicep file.
+   - If the location uses a parameter with a restrictive `@allowed` decorator, update the allowed values.
 
    **Option 2: Check Available Regions for the Resource Type (USE TERMINAL TOOL TO EXECUTE)**
    
@@ -214,6 +250,18 @@ When you encounter this error, YOU MUST USE YOUR TERMINAL TOOL TO EXECUTE the fo
    USE YOUR TERMINAL TOOL to check other available locations:
    
    `az account list-locations --output table`
+
+   **Option 3 (Temporary Workaround - Environment Variable):**
+   
+   If the location is parameterized and not hardcoded, USE YOUR TERMINAL TOOL to change to an unrestricted region:
+   
+   `azd env set AZURE_LOCATION westus3`
+   
+   USE YOUR TERMINAL TOOL to verify the change:
+   
+   `azd env get-values`
+   
+   Note: This is a temporary workaround. The setting will not persist if the environment is recreated or shared with teammates.
 
 3. **Long-term Solution (If you need the specific region):**
 
@@ -237,8 +285,8 @@ When you encounter this error, YOU MUST USE YOUR TERMINAL TOOL TO EXECUTE the fo
 
 **Example Commands:**
 ```bash
-# Example 1: Change region
-azd env set AZURE_LOCATION westus3
+# Example 1 (Preferred): Search for location in Bicep files and fix directly
+grep -r "location" infra/*.bicep infra/**/*.bicep
 
 # Example 2: Check available skus in PostgreSQL regions
 az postgres flexible-server list-skus --location westus3 --output table
@@ -248,10 +296,13 @@ az postgres flexible-server list-skus --location westus3
 az postgres flexible-server list-skus --location centralus
 az postgres flexible-server list-skus --location westus
 
-# Example 4: View current environment configuration
+# Example 4 (Temporary workaround): Change region via environment variable
+azd env set AZURE_LOCATION westus3
+
+# Example 5: View current environment configuration
 azd env get-values
 
-# Example 5: Check resource provider registration
+# Example 6: Check resource provider registration
 az provider show --namespace Microsoft.DBforPostgreSQL --query "registrationState"
 az provider show --namespace Microsoft.DBforPostgreSQL --query "resourceTypes[?resourceType=='flexibleServers'].locations"
 az postgres flexible-server list-skus --location westus3 --query "[0].supportedFeatures[?name=='OfferRestricted'].status" -o tsv
@@ -278,7 +329,18 @@ When you encounter this error, YOU MUST USE YOUR TERMINAL TOOL TO EXECUTE the fo
 
 2. **Immediate Solutions (USE TERMINAL TOOL TO EXECUTE):**
 
-   **Option 1: Check Current Quota Usage and Use New Location**
+   **Option 1 (Preferred - Permanent Bicep Fix): Use a Different VM SKU**
+   
+   If the error is for Basic VMs or a restricted tier, modify your infrastructure to use available VM families:
+   
+   USE YOUR TERMINAL TOOL to search for VM size/SKU definitions in your infrastructure:
+   
+   `grep -r "sku\|vmSize" infra/*.bicep infra/**/*.bicep`
+   
+   - If the SKU is hardcoded (e.g., `vmSize: 'Standard_D4s_v3'`), change it directly in the Bicep file to an available tier (e.g., Standard_B2s, Standard_D2s_v3).
+   - If the SKU uses a parameter, update the default value in the Bicep file.
+
+   **Option 2: Check Current Quota Usage and Use New Location**
    
    USE YOUR TERMINAL TOOL to check VM quota of a specific region:
    
@@ -288,26 +350,19 @@ When you encounter this error, YOU MUST USE YOUR TERMINAL TOOL TO EXECUTE the fo
    
    `az vm list-usage --location <region> --output table | grep -i <VM-family-mention-in-error>`
 
-   USE YOUR TERMINAL TOOL to set location to available regions:
+   **Option 3 (Temporary Workaround - Environment Variable):**
+   
+   If the location is parameterized and not hardcoded, USE YOUR TERMINAL TOOL to set location to available regions:
    
    `azd env set AZURE_LOCATION westus`
 
    USE YOUR TERMINAL TOOL to check current environment settings:
    
    `azd env get-values`
-
-   **Option 2: Use a Different VM SKU (Quick Fix)**
    
-   If the error is for Basic VMs or a restricted tier, modify your infrastructure to use available VM families:
-   
-   - Locate the VM/resource definition in your `infra/` files
-   - Change the SKU to an available tier (e.g., Standard_B2s, Standard_D2s_v3)
+   Note: This is a temporary workaround. The setting will not persist if the environment is recreated or shared with teammates.
 
-   USE YOUR TERMINAL TOOL to search for VM size/SKU definitions in your infrastructure:
-   
-   `grep -r "sku\|vmSize" infra/*.bicep`
-
-   **Option 3: Request Quota Increase**
+   **Option 4: Request Quota Increase**
    
    If you need the specific VM family:
    
@@ -324,16 +379,19 @@ When you encounter this error, YOU MUST USE YOUR TERMINAL TOOL TO EXECUTE the fo
 
 **Example Commands:**
 ```bash
-# Example 1: Check VM quota in a region (e.g eastus)
-az vm list-usage --location eastus --output table
-
-# Example 2: Check available VM sizes in a region (e.g eastus)
-az vm list-sizes --location eastus --output table
-
-# Example 3: Search for VM SKU in infrastructure files
+# Example 1 (Preferred): Search for VM SKU in infrastructure files and fix directly
 grep -r "vmSize\|sku" infra/*.bicep infra/**/*.bicep
 
-# Example 4: Check quota for specific VM family (e.g standardDSv3Family)
+# Example 2: Check VM quota in a region (e.g eastus)
+az vm list-usage --location eastus --output table
+
+# Example 3: Check available VM sizes in a region (e.g eastus)
+az vm list-sizes --location eastus --output table
+
+# Example 4 (Temporary workaround): Change region via environment variable
+azd env set AZURE_LOCATION westus
+
+# Example 5: Check quota for specific VM family (e.g standardDSv3Family)
 az vm list-usage --location eastus --query "[?contains(name.value, 'standardDSv3Family')]"
 ```
 ## Cognitive Services Account Provisioning State Invalid Error
@@ -433,35 +491,198 @@ When you encounter this error, YOU MUST USE YOUR TERMINAL TOOL TO EXECUTE the fo
 
 2. **Immediate Solutions (USE TERMINAL TOOL TO EXECUTE):**
 
-   **Option 1: Use a Different Region**
+   **Option 1 (Preferred - Permanent Bicep Fix): Use a Different SKU**
    
-   USE YOUR TERMINAL TOOL to change to a different region:
+   USE YOUR TERMINAL TOOL to search for SKU definitions in your infrastructure files:
+   
+   `grep -r "sku\|Sku" infra/*.bicep infra/**/*.bicep`
+   
+   - If the SKU is hardcoded (e.g., `name: 'basic'`), change it directly in the Bicep file to a different tier (e.g., from `basic` to `standard`, or from `free` to `basic`).
+   - If the SKU uses a parameter, update the default value in the Bicep file.
+   - If the location is hardcoded, also consider changing it in the Bicep file to a region with available capacity.
+
+   **Option 2 (Preferred - Permanent Bicep Fix): Use a Different Region in Bicep**
+   
+   USE YOUR TERMINAL TOOL to search for location definitions:
+   
+   `grep -r "location" infra/*.bicep infra/**/*.bicep`
+   
+   - If the location is hardcoded, change it directly in the Bicep file.
+   - If the location uses a restrictive `@allowed` decorator, update the allowed values.
+
+   **Option 3 (Temporary Workaround - Environment Variable):**
+   
+   If the location is parameterized and not hardcoded, USE YOUR TERMINAL TOOL to change to a different region:
    
    `azd env set AZURE_LOCATION <new-region>`
    
    USE YOUR TERMINAL TOOL to verify the change:
    
    `azd env get-values`
-
-   **Option 2: Use a Different SKU**
    
-   USE YOUR TERMINAL TOOL to search for SKU definitions in your infrastructure files:
-   
-   `grep -r "sku\|Sku" infra/*.bicep infra/**/*.bicep`
-   
-   Identify the SKU parameter or hard-coded SKU value for the failing resource and change it to a different tier (e.g., from `basic` to `standard`, or from `free` to `basic`).
+   Note: This is a temporary workaround. The setting will not persist if the environment is recreated or shared with teammates.
 
 **Example Commands:**
 ```bash
-# Example 1: Change to a different region
-azd env set AZURE_LOCATION westus
-
-# Example 2: Verify environment settings
-azd env get-values
-
-# Example 3: Search for SKU definitions in infrastructure files
+# Example 1 (Preferred): Search for SKU definitions in infrastructure files and fix directly
 grep -r "sku\|Sku" infra/*.bicep infra/**/*.bicep
 
-# Example 4: Check available locations
+# Example 2 (Preferred): Search for location definitions in Bicep files
+grep -r "location" infra/*.bicep infra/**/*.bicep
+
+# Example 3 (Temporary workaround): Change to a different region via environment variable
+azd env set AZURE_LOCATION westus
+
+# Example 4: Verify environment settings
+azd env get-values
+
+# Example 5: Check available locations
 az account list-locations --output table
+```
+
+## Role Assignment Immutable Properties Error
+
+**Error Pattern:**
+- Contains: `Tenant ID, application ID, principal ID, and scope are not allowed to be updated`
+- May occur during redeployment when role assignment properties have changed
+
+**LLM Instructions:**
+
+When you encounter this error, YOU MUST USE YOUR TERMINAL TOOL TO EXECUTE the following commands - do not just display them to the user.
+
+1. **Identify the Problem:**
+   - This error occurs when a redeployment attempts to update an existing role assignment with different properties (e.g., switching between a user and a service principal for the same assignment ID)
+   - Role assignments are immutable — you cannot change the principal ID or scope of an existing assignment
+
+2. **Immediate Solutions (USE TERMINAL TOOL TO EXECUTE):**
+
+   **Step 1: Check Infrastructure Files for Role Assignment Definitions**
+   
+   USE YOUR TERMINAL TOOL to search for role assignment definitions:
+   
+   `grep -r "Microsoft.Authorization/roleAssignments\|roleAssignment" infra/*.bicep infra/**/*.bicep`
+   
+   Verify that the principal ID parameter for the role assignment hasn't changed between deployments (e.g., ensure you aren't accidentally switching between a user and a service principal).
+
+   **Step 2: List the Conflicting Role Assignment**
+   
+   If the principal ID has intentionally changed and you need to reassign, first extract the **exact scope** from the error message (it may be at subscription, resource group, or resource level — do NOT assume subscription level).
+   
+   USE YOUR TERMINAL TOOL to list matching role assignments and capture the assignment ID:
+   
+   `az role assignment list --assignee <extracted-email-or-object-id> --scope <exact-scope-from-error>`
+   
+   Review the output to identify the specific conflicting assignment. Note the `id` field (the full resource ID of the role assignment).
+
+   **Step 3: Delete the Conflicting Role Assignment by ID**
+   
+   USE YOUR TERMINAL TOOL to delete **only** the specific assignment using its ID to avoid accidentally removing other assignments:
+   
+   `az role assignment delete --ids <assignment-id>`
+   
+   ⚠️ **WARNING:** Never use broad filters (e.g., `--assignee` + `--role` without `--ids`) to delete role assignments, as this can match and remove multiple assignments unintentionally.
+
+**Example Commands:**
+```bash
+# Example 1: Search for role assignment definitions in Bicep files
+grep -r "Microsoft.Authorization/roleAssignments" infra/*.bicep infra/**/*.bicep
+
+# Example 2: List matching role assignments at the exact scope from the error
+az role assignment list --assignee <extracted-email-or-object-id> --scope <exact-scope-from-error>
+
+# Example 3: Delete ONLY the specific conflicting assignment by its ID
+az role assignment delete --ids <assignment-id>
+```
+
+## TPM Quota Exceeded for AI Models Error
+
+**Error Pattern:**
+- Contains: `This operation require` and `new capacity in quota Tokens Per Minute`
+- May contain: `Tokens Per Minute (thousands)` followed by model name (e.g., `gpt-4o`, `gpt-35-turbo`)
+- May contain: `GlobalStandard` or `Standard`
+- May contain: `which is bigger than the current available capacity`
+
+**LLM Instructions:**
+
+When you encounter this error, YOU MUST USE YOUR TERMINAL TOOL TO EXECUTE the following commands - do not just display them to the user.
+
+1. **Identify the Problem:**
+   - Extract the model name from the error message (e.g., "gpt-4o", "gpt-35-turbo")
+   - Extract the required TPM capacity and available capacity
+   - Extract the deployment type (e.g., "GlobalStandard", "Standard")
+   - Confirm it's a Tokens Per Minute (TPM) quota limitation
+
+2. **Immediate Solutions (USE TERMINAL TOOL TO EXECUTE):**
+
+   **Option 1 (Preferred - Permanent Bicep Fix): Reduce TPM Capacity in Infrastructure**
+   
+   USE YOUR TERMINAL TOOL to search for model deployment and capacity definitions:
+   
+   `grep -r "capacity\|deployments\|model\|sku" infra/*.bicep infra/**/*.bicep`
+   
+   - If the TPM capacity is hardcoded (e.g., `capacity: 30`), reduce it to fit within your available quota.
+   - If the model or deployment type is hardcoded, consider changing to a model/region with available quota.
+   - If the capacity uses a parameter, update the default value in the Bicep file.
+
+   **Option 2: Change to a Different Region with Available Quota**
+   
+   USE YOUR TERMINAL TOOL to search for location definitions:
+   
+   `grep -r "location" infra/*.bicep infra/**/*.bicep`
+   
+   - If the location is hardcoded, change it in the Bicep file to a region where you have unused TPM quota.
+   - If parameterized, USE YOUR TERMINAL TOOL:
+   
+   `azd env set AZURE_LOCATION <new-region>`
+
+   **Option 3: Request Quota Increase**
+   
+   - Open [Azure AI Studio](https://ai.azure.com/) or the Azure portal
+   - Navigate to the Azure OpenAI resource → Quotas
+   - Request a quota increase for the specific model and deployment type
+   - For more information, see [Manage Azure OpenAI Service quota](https://learn.microsoft.com/azure/ai-services/openai/how-to/quota)
+   - Do NOT request a quota increase on behalf of the user. Inform the user of the steps and let them perform the quota increase themselves.
+
+**Example Commands:**
+```bash
+# Example 1 (Preferred): Search for model capacity in Bicep files and reduce
+grep -r "capacity\|deployments\|model" infra/*.bicep infra/**/*.bicep
+
+# Example 2: Search for location in Bicep files
+grep -r "location" infra/*.bicep infra/**/*.bicep
+```
+
+## If-Match Precondition Failed Error
+
+**Error Pattern:**
+- Contains: `The specified precondition 'If-Match'`
+- May contain: `failed` or `precondition failed`
+- May contain a GUID in the If-Match header value
+
+**LLM Instructions:**
+
+When you encounter this error, YOU MUST USE YOUR TERMINAL TOOL TO EXECUTE the following commands - do not just display them to the user.
+
+1. **Identify the Problem:**
+   - This error indicates a concurrency conflict — two processes may be trying to update the same resource simultaneously, or the local state is out of sync with the cloud resource (stale ETag)
+   - This is often intermittent and resolves on retry
+
+2. **Immediate Solutions (USE TERMINAL TOOL TO EXECUTE):**
+
+   **Step 1: Check for Concurrent Deployments**
+   
+   Ensure no other deployments (CI/CD pipelines, teammates) are targeting the same environment simultaneously.
+   
+   USE YOUR TERMINAL TOOL to check recent deployments if resource group is known:
+   
+   `az deployment group list --resource-group <resource-group> --output table`
+
+   **Step 2: Fix Infrastructure Code if Needed**
+   
+   If this error occurs repeatedly, check that your Bicep template correctly defines dependencies (`dependsOn`) to prevent parallel modifications to the same resource.
+
+**Example Commands:**
+```bash
+# Example 1: Check recent deployments for concurrency issues
+az deployment group list --resource-group <resource-group> --output table
 ```

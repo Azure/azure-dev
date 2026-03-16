@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
@@ -36,6 +38,7 @@ const (
 	pathTemplateRevisionSuffix             = "properties.template.revisionSuffix"
 	pathTemplateContainers                 = "properties.template.containers"
 	pathConfigurationActiveRevisionsMode   = "properties.configuration.activeRevisionsMode"
+	pathConfigurationDapr                  = "properties.configuration.dapr"
 	pathConfigurationSecrets               = "properties.configuration.secrets"
 	pathConfigurationIngressTraffic        = "properties.configuration.ingress.traffic"
 	pathConfigurationIngressFqdn           = "properties.configuration.ingress.fqdn"
@@ -168,19 +171,33 @@ func (cas *containerAppService) persistSettings(
 	shouldPersistDomains := cas.alphaFeatureManager.IsEnabled(persistCustomDomainsFeature)
 	shouldPersistIngressSessionAffinity := cas.alphaFeatureManager.IsEnabled(persistIngressSessionAffinity)
 
-	if !shouldPersistDomains && !shouldPersistIngressSessionAffinity {
+	// Preserve existing Dapr configuration when the deployment YAML does not include it.
+	// This prevents Dapr config set externally (e.g. via Terraform) from being removed on deploy.
+	objConfig := config.NewConfig(obj)
+	_, hasDaprConfig := objConfig.Get(pathConfigurationDapr)
+	shouldPreserveDapr := !hasDaprConfig
+
+	if !shouldPersistDomains && !shouldPersistIngressSessionAffinity && !shouldPreserveDapr {
 		return obj, nil
 	}
 
 	aca, err := cas.getContainerApp(ctx, subscriptionId, resourceGroupName, appName, options)
 	if err != nil {
+		// On first deploy the app doesn't exist yet (404) — proceed without persisting.
+		var respErr *azcore.ResponseError
+		if errors.As(err, &respErr) && respErr.StatusCode == http.StatusNotFound {
+			return obj, nil
+		}
+
+		// For alpha-gated features, preserve existing behavior: log and continue.
+		// For Dapr preservation (correctness-critical), fail to prevent silent config wipe.
+		if shouldPreserveDapr {
+			return nil, fmt.Errorf("fetching existing container app to preserve Dapr config: %w", err)
+		}
+
 		log.Printf("failed getting current aca settings: %v. No settings will be persisted.", err)
-		// if the container app doesn't exist, there's nothing for us to update in the desired state,
-		// so we can just return the existing state as is.
 		return obj, nil
 	}
-
-	objConfig := config.NewConfig(obj)
 
 	if shouldPersistDomains {
 		customDomains, has := aca.GetSlice(pathConfigurationIngressCustomDomains)
@@ -196,6 +213,15 @@ func (cas *containerAppService) persistSettings(
 		if has {
 			if err := objConfig.Set(pathConfigurationIngressStickySessions, stickySessions); err != nil {
 				return nil, fmt.Errorf("setting sticky sessions: %w", err)
+			}
+		}
+	}
+
+	if shouldPreserveDapr {
+		daprConfig, has := aca.Get(pathConfigurationDapr)
+		if has {
+			if err := objConfig.Set(pathConfigurationDapr, daprConfig); err != nil {
+				return nil, fmt.Errorf("setting dapr configuration: %w", err)
 			}
 		}
 	}

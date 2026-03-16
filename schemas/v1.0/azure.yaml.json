@@ -864,7 +864,7 @@
                 "remoteBuild": {
                     "type": "boolean",
                     "title": "Optional. Whether to build the image remotely",
-                    "description": "If set to true, the image will be built remotely using the Azure Container Registry remote build feature. If set to false, the image will be built locally using Docker."
+                    "description": "If set to true, the image will be built remotely using the Azure Container Registry remote build feature. If the remote build fails, azd automatically falls back to building locally using Docker or Podman if available. If set to false, the image will be built locally."
                 }
             }
         },

@@ -271,7 +271,7 @@ func (m *Manager) Update(ctx context.Context, cfg *UpdateConfig, writer io.Write
 
 	switch installedBy {
 	case installer.InstallTypeBrew:
-		return m.updateViaPackageManager(ctx, "brew", []string{"upgrade", "azd"}, writer)
+		return m.updateViaPackageManager(ctx, "brew", []string{"upgrade", "azure/azd/azd"}, writer)
 	case installer.InstallTypeWinget:
 		return m.updateViaPackageManager(ctx, "winget", []string{"upgrade", "Microsoft.Azd"}, writer)
 	case installer.InstallTypeChoco:

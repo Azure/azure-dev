@@ -121,12 +121,11 @@ func (m *TelemetryMiddleware) Run(ctx context.Context, next NextFn) (*actions.Ac
 		// where we have full server logs to troubleshoot from.
 		//
 		// For client errors, we don't want to show the trace ID, as it is not useful to the user currently.
-		var respErr *azcore.ResponseError
-		var azureErr *azapi.AzureDeploymentError
-		var toolExitErr *exec.ExitError
+		_, respErr := errors.AsType[*azcore.ResponseError](err)
+		_, azureErr := errors.AsType[*azapi.AzureDeploymentError](err)
+		toolExitErr, toolExitOk := errors.AsType[*exec.ExitError](err)
 
-		if errors.As(err, &respErr) || errors.As(err, &azureErr) ||
-			(errors.As(err, &toolExitErr) && toolExitErr.Cmd == "terraform") {
+		if respErr || azureErr || (toolExitOk && toolExitErr.Cmd == "terraform") {
 			err = &internal.ErrorWithTraceId{
 				Err:     err,
 				TraceId: span.SpanContext().TraceID().String(),

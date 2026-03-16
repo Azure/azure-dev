@@ -32,6 +32,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
@@ -302,8 +303,7 @@ func (ch *ContainerHelper) Credentials(
 		func(ctx context.Context) error {
 			cred, err := ch.containerRegistryService.Credentials(ctx, targetResource.SubscriptionId(), loginServer)
 			if err != nil {
-				var httpErr *azcore.ResponseError
-				if errors.As(err, &httpErr) {
+				if httpErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
 					if httpErr.StatusCode == 404 {
 						// Retry if the registry is not found while logging in
 						return retry.RetryableError(err)
@@ -599,6 +599,22 @@ func (ch *ContainerHelper) Publish(
 
 	if serviceConfig.Docker.RemoteBuild {
 		remoteImage, err = ch.runRemoteBuild(ctx, serviceConfig, targetResource, env, progress, imageOverride)
+		if err != nil {
+			// Check if a local container runtime (Docker/Podman) is available before falling back
+			if dockerErr := ch.docker.CheckInstalled(ctx); dockerErr != nil {
+				return nil, fmt.Errorf(
+					"remote build failed: %w\n\nLocal fallback unavailable: %w",
+					err, dockerErr)
+			}
+
+			ch.console.MessageUxItem(ctx, &ux.WarningMessage{
+				Description: fmt.Sprintf(
+					"Remote build failed: %s\nFalling back to local Docker build.", err),
+				HidePrefix: false,
+			})
+			remoteImage, err = ch.publishLocalImage(
+				ctx, serviceConfig, serviceContext, env, progress, imageOverride)
+		}
 	} else if useDotnetPublishForDockerBuild(serviceConfig) {
 		remoteImage, err = ch.runDotnetPublish(ctx, serviceConfig, targetResource, env, progress)
 	} else {
@@ -1005,8 +1021,8 @@ func (ch *ContainerHelper) packBuild(
 	if err != nil {
 		span.EndWithStatus(err)
 
-		var statusCodeErr *pack.StatusCodeError
-		if errors.As(err, &statusCodeErr) && statusCodeErr.Code == pack.StatusCodeUndetectedNoError {
+		if statusCodeErr, ok := errors.AsType[*pack.StatusCodeError](err); ok &&
+			statusCodeErr.Code == pack.StatusCodeUndetectedNoError {
 			return nil, &internal.ErrorWithSuggestion{
 				Err: err,
 				Suggestion: "No Dockerfile was found, and image could not be automatically built from source. " +

@@ -66,8 +66,7 @@ func (p *subscriptionCredentialProvider) CredentialForSubscription(
 		// If this is an AADSTS refresh token error, enhance it with tenant-specific login guidance
 		if aadRefreshTokenExpiredRegex.MatchString(err.Error()) {
 			// Check if the error already has a suggestion (ErrorWithSuggestion from auth layer)
-			var errWithSuggestion *internal.ErrorWithSuggestion
-			if errors.As(err, &errWithSuggestion) {
+			if errWithSuggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok {
 				// Enhance the existing suggestion with tenant-specific guidance
 				enhancedSuggestion := fmt.Sprintf(
 					"%s To re-authenticate specifically to this tenant, run `azd auth login --tenant-id %s`.",

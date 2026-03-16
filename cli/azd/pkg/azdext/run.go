@@ -98,13 +98,11 @@ func printError(err error) {
 // ErrorSuggestion extracts the Suggestion field from a [LocalError] or [ServiceError].
 // Returns an empty string if the error has no suggestion.
 func ErrorSuggestion(err error) string {
-	var localErr *LocalError
-	if errors.As(err, &localErr) && localErr.Suggestion != "" {
+	if localErr, ok := errors.AsType[*LocalError](err); ok && localErr.Suggestion != "" {
 		return localErr.Suggestion
 	}
 
-	var svcErr *ServiceError
-	if errors.As(err, &svcErr) && svcErr.Suggestion != "" {
+	if svcErr, ok := errors.AsType[*ServiceError](err); ok && svcErr.Suggestion != "" {
 		return svcErr.Suggestion
 	}
 
@@ -114,13 +112,11 @@ func ErrorSuggestion(err error) string {
 // ErrorMessage extracts the user-friendly Message field from a [LocalError] or [ServiceError].
 // Returns an empty string if the error is not an extension error type.
 func ErrorMessage(err error) string {
-	var localErr *LocalError
-	if errors.As(err, &localErr) && localErr.Message != "" {
+	if localErr, ok := errors.AsType[*LocalError](err); ok && localErr.Message != "" {
 		return localErr.Message
 	}
 
-	var svcErr *ServiceError
-	if errors.As(err, &svcErr) && svcErr.Message != "" {
+	if svcErr, ok := errors.AsType[*ServiceError](err); ok && svcErr.Message != "" {
 		return svcErr.Message
 	}
 

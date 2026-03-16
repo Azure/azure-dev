@@ -643,7 +643,7 @@ func ensureAzureContext(
 		}
 
 		azureContext.Scope.SubscriptionId = subscriptionResponse.Subscription.Id
-		azureContext.Scope.TenantId = subscriptionResponse.Subscription.TenantId
+		azureContext.Scope.TenantId = subscriptionResponse.Subscription.UserTenantId
 
 		// Set the subscription ID in the environment
 		_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{

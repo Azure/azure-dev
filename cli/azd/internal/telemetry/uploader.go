@@ -180,7 +180,7 @@ func (u *TelemetryUploader) transmit(ctx context.Context, item *StoredItem) {
 		// When in debug mode, we deserialize to get better error messages
 		telemetryItems.Deserialize(payload)
 	}
-	result, err := u.transmitter.Transmit(payload, telemetryItems)
+	result, err := u.transmitter.Transmit(ctx, payload, telemetryItems)
 	if err == nil && result != nil && result.IsSuccess() {
 		return
 	}

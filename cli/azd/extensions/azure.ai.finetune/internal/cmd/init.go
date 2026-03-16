@@ -325,7 +325,7 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 				return nil, fmt.Errorf("failed to prompt for subscription: %w", err)
 			}
 			subscriptionId = subscriptionResponse.Subscription.Id
-			tenantId = subscriptionResponse.Subscription.TenantId
+			tenantId = subscriptionResponse.Subscription.UserTenantId
 		} else {
 			// Get tenant ID from subscription
 			tenantResponse, err := azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
@@ -598,7 +598,7 @@ func ensureAzureContext(
 		}
 
 		azureContext.Scope.SubscriptionId = subscriptionResponse.Subscription.Id
-		azureContext.Scope.TenantId = subscriptionResponse.Subscription.TenantId
+		azureContext.Scope.TenantId = subscriptionResponse.Subscription.UserTenantId
 
 		// Set the subscription ID in the environment
 		_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{

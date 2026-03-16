@@ -1,5 +1,9 @@
 # Release History
 
+## 0.1.15-preview (2026-03-13)
+
+- [[#7080]](https://github.com/Azure/azure-dev/pull/7080) Fix authentication failures (`AADSTS70043`/`AADSTS700082`) for multi-tenant and guest users by using `UserTenantId` for credential resolution
+
 ## 0.1.14-preview (2026-03-10)
 
 - [[#7026]](https://github.com/Azure/azure-dev/pull/7026) Add `azd ai agent run` and `azd ai agent invoke` commands for running agents locally and invoking agents via a /responses call

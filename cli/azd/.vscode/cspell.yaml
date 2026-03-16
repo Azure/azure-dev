@@ -304,6 +304,9 @@ overrides:
   - filename: pkg/azdext/scope_detector.go
     words:
       - fakeazure
+  - filename: extensions/azure.ai.models/internal/cmd/custom_create.go
+    words:
+      - Qwen
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

@@ -844,7 +844,7 @@ func (a *InitFromCodeAction) ensureSubscription(ctx context.Context) error {
 		}
 
 		a.azureContext.Scope.SubscriptionId = subscriptionResponse.Subscription.Id
-		a.azureContext.Scope.TenantId = subscriptionResponse.Subscription.TenantId
+		a.azureContext.Scope.TenantId = subscriptionResponse.Subscription.UserTenantId
 	} else {
 		tenantResponse, err := a.azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
 			SubscriptionId: a.azureContext.Scope.SubscriptionId,

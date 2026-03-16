@@ -429,8 +429,8 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 		}
 
 		// auto-install for target service
-		var unsupportedErr *project.UnsupportedServiceHostError
-		if !errors.As(err, &unsupportedErr) {
+		unsupportedErr, ok := errors.AsType[*project.UnsupportedServiceHostError](err)
+		if !ok {
 			return err
 		}
 

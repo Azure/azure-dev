@@ -144,7 +144,7 @@ func promptForProject(ctx context.Context, flags *customFlags, azdClient *azdext
 			return fmt.Errorf("failed to prompt for subscription: %w", err)
 		}
 		subscriptionId = resp.Subscription.Id
-		tenantId = resp.Subscription.TenantId
+		tenantId = resp.Subscription.UserTenantId
 	} else {
 		tenantResp, err := azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
 			SubscriptionId: subscriptionId,

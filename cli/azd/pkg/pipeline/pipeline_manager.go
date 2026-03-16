@@ -382,10 +382,8 @@ func (pm *PipelineManager) Configure(
 				options)
 
 			if err != nil {
-				var serviceTreeError *entraid.ServiceTreeNullValueError
-				var serviceTreeInvalidError *entraid.ServiceTreeInvalidError
-				invalidInput := errors.As(err, &serviceTreeInvalidError)
-				if errors.As(err, &serviceTreeError) || invalidInput {
+				serviceTreeInvalidError, invalidInput := errors.AsType[*entraid.ServiceTreeInvalidError](err)
+				if _, ok := errors.AsType[*entraid.ServiceTreeNullValueError](err); ok || invalidInput {
 					pm.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
 
 					invalidInputNotes := ""

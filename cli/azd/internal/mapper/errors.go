@@ -19,10 +19,10 @@ import (
 //		// Handle missing mapper case
 //	}
 //
-// 2. Using errors.As() for detailed inspection:
+// 2. Using errors.AsType() for detailed inspection:
 //
 //	var noMapperErr *NoMapperError
-//	if errors.As(err, &noMapperErr) {
+//	if noMapperErr, ok := errors.AsType[*NoMapperError](err); ok {
 //		log.Printf("Missing mapper from %v to %v", noMapperErr.SrcType, noMapperErr.DstType)
 //	}
 //
@@ -52,10 +52,10 @@ var ErrConversionFailure = &ConversionError{}
 // It wraps the original error and provides context about which types were being converted.
 // Callers can check for this error in multiple ways:
 //
-// 1. Using errors.As() for detailed inspection:
+// 1. Using errors.AsType() for detailed inspection:
 //
 //	var convErr *ConversionError
-//	if errors.As(err, &convErr) {
+//	if convErr, ok := errors.AsType[*ConversionError](err); ok {
 //		log.Printf("Conversion failed from %v to %v: %v", convErr.SrcType, convErr.DstType, convErr.Err)
 //	}
 //
@@ -103,8 +103,8 @@ func (e *NoMapperError) Is(target error) bool {
 
 // IsNoMapperError returns true if the error is a NoMapperError
 func IsNoMapperError(err error) bool {
-	var noMapperErr *NoMapperError
-	return err != nil && errors.As(err, &noMapperErr)
+	_, ok := errors.AsType[*NoMapperError](err)
+	return err != nil && ok
 }
 
 // cleanTypeName returns a user-friendly type name with package prefixes for clarity
@@ -184,6 +184,6 @@ func (e *ConversionError) Is(target error) bool {
 
 // IsConversionError returns true if the error is a ConversionError
 func IsConversionError(err error) bool {
-	var convErr *ConversionError
-	return err != nil && errors.As(err, &convErr)
+	_, ok := errors.AsType[*ConversionError](err)
+	return err != nil && ok
 }

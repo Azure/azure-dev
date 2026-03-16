@@ -81,10 +81,10 @@ func (a *authStatusAction) Run(ctx context.Context) (*actions.ActionResult, erro
 
 	// get user account information
 	details, err := a.authManager.LogInDetails(ctx)
-	var loginExpiryError *auth.ReLoginRequiredError
+	_, loginExpiryError := errors.AsType[*auth.ReLoginRequiredError](err)
 	if err != nil {
 		if !errors.Is(err, auth.ErrNoCurrentUser) &&
-			!errors.As(err, &loginExpiryError) {
+			!loginExpiryError {
 			// print a useful message for unknown errors
 			fmt.Fprintln(a.console.Handles().Stderr, err.Error())
 		}

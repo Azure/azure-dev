@@ -224,8 +224,7 @@ func streamLogs(ctx context.Context, blobClient *blockblob.Client, writer io.Wri
 				}
 			}
 		}()
-		var azErr *azcore.ResponseError
-		if errors.As(err, &azErr) {
+		if azErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
 			if azErr.StatusCode == http.StatusNotFound {
 				// Mark log not found as a retryable error, we assume that the blob client was formed around a result from
 				// the queue job request and the fact that the log is not found means that the log is not yet available, not

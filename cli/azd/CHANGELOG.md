@@ -5,6 +5,7 @@
 ### Bugs Fixed
 
 - [[#7157]](https://github.com/Azure/azure-dev/pull/7157) Fix: handle ARM expression strings in preflight resource fields.
+- [[#7140]](https://github.com/Azure/azure-dev/pull/7140) Fix `error.type` telemetry classification for wrapped `error.suggestion` failures
 
 ## 1.23.9 (2026-03-13)
 

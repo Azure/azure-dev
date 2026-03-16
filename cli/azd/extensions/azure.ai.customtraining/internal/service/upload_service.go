@@ -73,13 +73,26 @@ func (s *UploadService) UploadDirectory(
 		return nil, fmt.Errorf("failed to check existing dataset version: %w", err)
 	}
 	if existing != nil {
-		// Already uploaded — skip
-		return &UploadResult{
-			DatasetResourceID: existing.ID,
-			DatasetName:       datasetName,
-			DatasetVersion:    version,
-			Skipped:           true,
-		}, nil
+		// Version record exists — check the sentinel tag to verify upload completed
+		storedHash, hasTag := existing.Tags["contentHash"]
+
+		if !hasTag || storedHash == "" {
+			// Zombie: POST created the version but azcopy/PATCH never completed.
+			// Delete the incomplete version and re-upload from scratch.
+			fmt.Printf("  (detected incomplete upload for %s, re-uploading)\n", datasetName)
+			if err := s.client.DeleteDatasetVersion(ctx, datasetName, version); err != nil {
+				return nil, fmt.Errorf("failed to delete zombie dataset version: %w", err)
+			}
+			// Fall through to fresh upload below
+		} else {
+			// Sentinel present — upload was completed previously, skip
+			return &UploadResult{
+				DatasetResourceID: existing.ID,
+				DatasetName:       datasetName,
+				DatasetVersion:    version,
+				Skipped:           true,
+			}, nil
+		}
 	}
 
 	// Step 3: Request pending upload to get SAS URI
@@ -102,8 +115,8 @@ func (s *UploadService) UploadDirectory(
 
 	// Step 5: Confirm the dataset version via PATCH
 	// Include the full content hash as a sentinel tag. This serves as a completion
-	// marker — if this tag is present, we know both azcopy and PATCH succeeded.
-	// Commit 3 will read this tag during dedup to detect zombie uploads.
+	// marker — if this tag is present on GET, we know both azcopy and PATCH succeeded.
+	// Absence of this tag indicates a zombie (incomplete) upload.
 	datasetReq := &models.DatasetVersion{
 		DataURI:     blobURI,
 		DataType:    "uri_folder",

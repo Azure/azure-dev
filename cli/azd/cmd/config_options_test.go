@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	agentcopilot "github.com/azure/azure-dev/cli/azd/internal/agent/copilot"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -77,7 +78,7 @@ func TestConfigOptionsAction_JSON(t *testing.T) {
 		if opt.Key == "cloud.name" {
 			foundCloudName = true
 		}
-		if opt.Key == "ai.agent.model.type" {
+		if opt.Key == agentcopilot.ConfigKeyModelType {
 			foundAgentModelType = true
 		}
 	}
@@ -87,7 +88,7 @@ func TestConfigOptionsAction_JSON(t *testing.T) {
 	require.True(t, foundPlatformType, "platform.type should be present")
 	require.True(t, foundPlatformConfig, "platform.config should be present")
 	require.True(t, foundCloudName, "cloud.name should be present")
-	require.True(t, foundAgentModelType, "ai.agent.model.type should be present")
+	require.True(t, foundAgentModelType, agentcopilot.ConfigKeyModelType+" should be present")
 }
 
 func TestConfigOptionsAction_Table(t *testing.T) {
@@ -124,7 +125,7 @@ func TestConfigOptionsAction_Table(t *testing.T) {
 	require.Contains(t, outputStr, "platform.type")
 	require.Contains(t, outputStr, "platform.config")
 	require.Contains(t, outputStr, "cloud.name")
-	require.Contains(t, outputStr, "ai.agent.model.type")
+	require.Contains(t, outputStr, agentcopilot.ConfigKeyModelType)
 }
 
 func TestConfigOptionsAction_DefaultFormat(t *testing.T) {
@@ -164,7 +165,7 @@ func TestConfigOptionsAction_DefaultFormat(t *testing.T) {
 	require.Contains(t, outputStr, "Key: platform.type")
 	require.Contains(t, outputStr, "Key: platform.config")
 	require.Contains(t, outputStr, "Key: cloud.name")
-	require.Contains(t, outputStr, "Key: ai.agent.model.type")
+	require.Contains(t, outputStr, "Key: "+agentcopilot.ConfigKeyModelType)
 }
 
 func TestConfigOptionsAction_WithCurrentValues(t *testing.T) {

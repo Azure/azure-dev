@@ -1278,8 +1278,9 @@ func Test_PackageLevelErrorsMapped(t *testing.T) {
 		"ErrDebuggerAborted": "defined in both cmd/middleware and pkg/azdext, handled at debug middleware level",
 
 		// Agent consent errors that map to user-initiated cancellation
-		"ErrSamplingDenied":    "agent consent: similar to user.canceled, low frequency",
-		"ErrElicitationDenied": "agent consent: similar to user.canceled, low frequency",
+		"ErrSamplingDenied":       "agent consent: similar to user.canceled, low frequency",
+		"ErrElicitationDenied":    "agent consent: similar to user.canceled, low frequency",
+		"ErrToolExecutionSkipped": "agent consent: user chose to skip tool, agent continues with other tools",
 
 		// UX cancellation that is always joined with context.Canceled (already mapped as user.canceled)
 		"ErrCancelled": "pkg/ux: always errors.Join'd with ctx.Err(), caught by context.Canceled check",

@@ -6,6 +6,7 @@ package consent
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -14,6 +15,7 @@ import (
 )
 
 var ErrToolExecutionDenied = fmt.Errorf("tool execution denied by user")
+var ErrToolExecutionSkipped = fmt.Errorf("tool execution skipped by user")
 var ErrSamplingDenied = fmt.Errorf("sampling denied by user")
 var ErrElicitationDenied = fmt.Errorf("elicitation denied by user")
 
@@ -87,25 +89,40 @@ func (cc *ConsentChecker) CheckElicitationConsent(
 	return cc.consentMgr.CheckConsent(ctx, consentRequest)
 }
 
-// PromptAndGrantConsent shows consent prompt and grants permission based on user choice
+// PromptAndGrantConsent shows consent prompt and grants permission based on user choice.
+// toolName is the consent rule identifier (e.g., "shell").
+// displayName is what the user sees in the prompt (e.g., "shell command: npm install").
+// toolDesc is the help text with additional context.
 func (cc *ConsentChecker) PromptAndGrantConsent(
 	ctx context.Context,
-	toolName, toolDesc string,
+	toolName, displayName, toolDesc string,
 	annotations mcp.ToolAnnotation,
 ) error {
 	toolId := fmt.Sprintf("%s/%s", cc.serverName, toolName)
 
-	choice, err := cc.promptForToolConsent(ctx, toolName, toolDesc, annotations)
+	choice, err := cc.promptForToolConsent(ctx, displayName, toolDesc, annotations)
 	if err != nil {
 		return err
 	}
 
-	if choice == "deny" {
+	switch choice {
+	case "deny":
 		return ErrToolExecutionDenied
+	case "skip":
+		return ErrToolExecutionSkipped
+	case "once":
+		// Allow without persisting any rule
+		return nil
+	default:
+		// Grant consent based on user choice (always, session, server).
+		// Persistence errors are logged but do not block tool execution —
+		// the user approved it, so the tool should run even if the rule
+		// can't be saved for next time.
+		if grantErr := cc.grantConsentFromChoice(ctx, toolId, choice, OperationTypeTool); grantErr != nil {
+			log.Printf("[consent] failed to persist consent rule for %s (choice=%s): %v", toolId, choice, grantErr)
+		}
+		return nil
 	}
-
-	// Grant consent based on user choice
-	return cc.grantConsentFromChoice(ctx, toolId, choice, OperationTypeTool)
 }
 
 // PromptAndGrantReadOnlyToolConsent shows consent prompt and grants permission based on user choice for read only tools
@@ -123,7 +140,10 @@ func (cc *ConsentChecker) PromptAndGrantReadOnlyToolConsent(
 	}
 
 	// Grant consent based on user choice
-	return cc.grantConsentFromChoice(ctx, "*/*", choice, OperationTypeTool)
+	if grantErr := cc.grantConsentFromChoice(ctx, "*/*", choice, OperationTypeTool); grantErr != nil {
+		log.Printf("[consent] failed to persist read-only consent (choice=%s): %v", choice, grantErr)
+	}
+	return nil
 }
 
 // PromptAndGrantSamplingConsent shows sampling consent prompt and grants permission based on user choice
@@ -143,7 +163,10 @@ func (cc *ConsentChecker) PromptAndGrantSamplingConsent(
 	}
 
 	// Grant sampling consent based on user choice
-	return cc.grantConsentFromChoice(ctx, toolId, choice, OperationTypeSampling)
+	if grantErr := cc.grantConsentFromChoice(ctx, toolId, choice, OperationTypeSampling); grantErr != nil {
+		log.Printf("[consent] failed to persist sampling consent for %s (choice=%s): %v", toolId, choice, grantErr)
+	}
+	return nil
 }
 
 // PromptAndGrantElicitationConsent shows elicitation consent prompt and grants permission based on user choice
@@ -163,7 +186,10 @@ func (cc *ConsentChecker) PromptAndGrantElicitationConsent(
 	}
 
 	// Grant elicitation consent based on user choice
-	return cc.grantConsentFromChoice(ctx, toolId, choice, OperationTypeElicitation)
+	if grantErr := cc.grantConsentFromChoice(ctx, toolId, choice, OperationTypeElicitation); grantErr != nil {
+		log.Printf("[consent] failed to persist elicitation consent for %s (choice=%s): %v", toolId, choice, grantErr)
+	}
+	return nil
 }
 
 // Private Struct Methods
@@ -238,9 +264,8 @@ func (cc *ConsentChecker) promptForToolConsent(
 	annotations mcp.ToolAnnotation,
 ) (string, error) {
 	message := fmt.Sprintf(
-		"Allow %s tool from %s server?",
+		"Allow %s?",
 		output.WithHighLightFormat(toolName),
-		output.WithHighLightFormat(cc.serverName),
 	)
 
 	helpMessage := cc.formatToolDescriptionWithAnnotations(toolDesc, annotations)
@@ -256,25 +281,35 @@ func (cc *ConsentChecker) promptForToolConsent(
 		},
 	}
 
-	// Add server trust option if not already trusted
+	// Add trust-all option for this provider if not already trusted
 	if !cc.isServerAlreadyTrusted(ctx, OperationTypeTool) {
 		choices = append(choices, &ux.SelectChoice{
 			Value: "server",
-			Label: fmt.Sprintf("Yes, always allow all tools from %s server", cc.serverName),
+			Label: fmt.Sprintf("Yes, always allow all %s tools", cc.serverName),
 		})
 	}
 
-	choices = append(choices, &ux.SelectChoice{
-		Value: "deny",
-		Label: "No, block this tool and exit interaction",
-	})
+	choices = append(choices,
+		&ux.SelectChoice{
+			Value: "once",
+			Label: "Yes, just this once",
+		},
+		&ux.SelectChoice{
+			Value: "skip",
+			Label: "No, skip this tool",
+		},
+		&ux.SelectChoice{
+			Value: "deny",
+			Label: "No, block this tool and exit interaction",
+		},
+	)
 
 	selector := ux.NewSelect(&ux.SelectOptions{
 		Message:         message,
 		HelpMessage:     helpMessage,
 		Choices:         choices,
 		EnableFiltering: new(false),
-		DisplayCount:    4,
+		DisplayCount:    len(choices),
 	})
 
 	choiceIndex, err := selector.Ask(ctx)
@@ -459,9 +494,8 @@ func (cc *ConsentChecker) promptForSamplingConsent(
 	toolName, toolDesc string,
 ) (string, error) {
 	message := fmt.Sprintf(
-		"Allow tool %s from server %s to communicate with the AI Model?",
+		"Allow %s to communicate with the AI Model?",
 		output.WithHighLightFormat(toolName),
-		output.WithHighLightFormat(cc.serverName),
 	)
 
 	helpMessage := fmt.Sprintf("This will allow the tool to send data to an LLM for analysis or generation. %s", toolDesc)
@@ -493,14 +527,14 @@ func (cc *ConsentChecker) promptForSamplingConsent(
 	if !cc.isServerAlreadyTrusted(ctx, OperationTypeSampling) {
 		choices = append(choices, &ux.SelectChoice{
 			Value: "server",
-			Label: "Allow sampling for all tools from this server",
+			Label: fmt.Sprintf("Allow sampling for all %s tools", cc.serverName),
 		})
 	}
 
 	// Add global sampling trust option
 	choices = append(choices, &ux.SelectChoice{
 		Value: "global",
-		Label: "Allow sampling for all tools from any server",
+		Label: "Allow sampling for all tools",
 	})
 
 	selector := ux.NewSelect(&ux.SelectOptions{
@@ -529,9 +563,8 @@ func (cc *ConsentChecker) promptForElicitationConsent(
 	toolName, toolDesc string,
 ) (string, error) {
 	message := fmt.Sprintf(
-		"Allow %s tool from %s server to collect additional information?",
+		"Allow %s to collect additional information?",
 		output.WithHighLightFormat(toolName),
-		output.WithHighLightFormat(cc.serverName),
 	)
 
 	helpMessage := fmt.Sprintf("This will allow the tool prompt you for additional information as needed. %s", toolDesc)
@@ -563,14 +596,14 @@ func (cc *ConsentChecker) promptForElicitationConsent(
 	if !cc.isServerAlreadyTrusted(ctx, OperationTypeElicitation) {
 		choices = append(choices, &ux.SelectChoice{
 			Value: "server",
-			Label: "Allow elicitation for all tools from this server",
+			Label: fmt.Sprintf("Allow elicitation for all %s tools", cc.serverName),
 		})
 	}
 
 	// Add global elicitation trust option
 	choices = append(choices, &ux.SelectChoice{
 		Value: "global",
-		Label: "Allow elicitation for all tools from any server",
+		Label: "Allow elicitation for all tools",
 	})
 
 	selector := ux.NewSelect(&ux.SelectOptions{

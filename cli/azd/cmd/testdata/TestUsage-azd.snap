@@ -35,6 +35,7 @@ Commands
     template    	: Find and view template details.
 
   Enabled alpha commands
+    copilot     	: Manage Copilot agent settings. (Alpha)
     mcp         	: Manage Model Context Protocol (MCP) server. (Alpha)
 
   Enabled extensions commands 

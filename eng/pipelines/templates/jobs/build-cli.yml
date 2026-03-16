@@ -19,10 +19,6 @@ parameters:
   - name: AzureRecordMode
     type: string
     default: playback
-  - name: ghCopilotClientId
-    type: string
-  - name: ghCopilotIntegrationId
-    type: string
 
 jobs: 
   - job: BuildCLI_${{ parameters.NameSuffix }}
@@ -75,8 +71,6 @@ jobs:
             -SourceVersion "$(Build.SourceVersion)"
             -CodeCoverageEnabled
             -BuildRecordMode
-            -GitHubCopilotClientId "${{ parameters.ghCopilotClientId }}"
-            -GitHubCopilotIntegrationId "${{ parameters.ghCopilotIntegrationId }}"
           workingDirectory: cli/azd
         displayName: Build Go Binary (For tests)
 
@@ -184,8 +178,6 @@ jobs:
             -Version "$(CLI_VERSION)"
             -ExeVersion "$(MSI_VERSION)"
             -SourceVersion "$(Build.SourceVersion)"
-            -GitHubCopilotClientId "${{ parameters.ghCopilotClientId }}"
-            -GitHubCopilotIntegrationId "${{ parameters.ghCopilotIntegrationId }}"
           workingDirectory: cli/azd
         displayName: Build Go Binary
 

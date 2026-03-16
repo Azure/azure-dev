@@ -178,6 +178,7 @@ func NewRootCmd(
 	authActions(root)
 	hooksActions(root)
 	mcpActions(root)
+	copilotActions(root)
 
 	root.Add("version", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{

@@ -1,0 +1,142 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package copilot
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/exec"
+	"testing"
+	"time"
+
+	copilot "github.com/github/copilot-sdk/go"
+	"github.com/stretchr/testify/require"
+)
+
+// TestCopilotSDK_E2E validates the Copilot SDK client lifecycle end-to-end:
+// client start → session create → send message → receive response → cleanup.
+//
+// Requires: copilot CLI in PATH (v0.0.419+), GitHub Copilot subscription.
+// Skip with: go test -short
+func TestCopilotSDK_E2E(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping e2e test in short mode")
+	}
+
+	if os.Getenv("SKIP_COPILOT_E2E") == "1" {
+		t.Skip("SKIP_COPILOT_E2E is set")
+	}
+
+	// Skip if copilot CLI is not available (CI environments without copilot installed)
+	if _, err := exec.LookPath("copilot"); err != nil {
+		if os.Getenv("COPILOT_CLI_PATH") == "" && os.Getenv("AZD_COPILOT_CLI_PATH") == "" {
+			t.Skip("copilot CLI not found in PATH and no override set — skipping e2e test")
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	// 1. Create and start client (uses embedded bundled CLI)
+	client := copilot.NewClient(&copilot.ClientOptions{
+		LogLevel: "error",
+	})
+
+	err := client.Start(ctx)
+	require.NoError(t, err, "client.Start failed — is copilot CLI installed and authenticated?")
+	defer func() {
+		stopErr := client.Stop()
+		if stopErr != nil {
+			t.Logf("client.Stop error: %v", stopErr)
+		}
+	}()
+
+	t.Logf("Client started, state: %s", client.State())
+	require.Equal(t, copilot.StateConnected, client.State())
+
+	// 2. Check auth
+	auth, err := client.GetAuthStatus(ctx)
+	require.NoError(t, err)
+	t.Logf("Auth: authenticated=%v, login=%v", auth.IsAuthenticated, auth.Login)
+	require.True(t, auth.IsAuthenticated, "not authenticated with GitHub Copilot")
+
+	// 3. List models
+	models, err := client.ListModels(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, models, "no models available")
+	t.Logf("Available models: %d", len(models))
+	for i, m := range models {
+		if i < 5 {
+			t.Logf("  - %s (id=%s)", m.Name, m.ID)
+		}
+	}
+
+	// 4. Create session
+	session, err := client.CreateSession(ctx, &copilot.SessionConfig{
+		SystemMessage: &copilot.SystemMessageConfig{
+			Mode:    "replace",
+			Content: "You are a helpful assistant. Answer concisely in one sentence.",
+		},
+		OnPermissionRequest: copilot.PermissionHandler.ApproveAll,
+	})
+	require.NoError(t, err, "CreateSession failed")
+	t.Logf("Session created: %s", session.WorkspacePath())
+	defer func() {
+		if disconnectErr := session.Disconnect(); disconnectErr != nil {
+			t.Logf("session.Destroy error: %v", disconnectErr)
+		}
+	}()
+
+	// 5. Collect events
+	var events []copilot.SessionEvent
+	unsubscribe := session.On(func(event copilot.SessionEvent) {
+		events = append(events, event)
+		t.Logf("Event: type=%s", event.Type)
+	})
+	defer unsubscribe()
+
+	// 6. Send message and wait for response
+	t.Log("Sending prompt...")
+	response, err := session.SendAndWait(ctx, copilot.MessageOptions{
+		Prompt: "What is 2+2? Reply with just the number.",
+	})
+	require.NoError(t, err, "SendAndWait failed")
+
+	// 7. Validate response
+	t.Logf("Received %d events total", len(events))
+	if response != nil && response.Data.Content != nil {
+		t.Logf("Response content: %s", *response.Data.Content)
+		require.Contains(t, *response.Data.Content, "4",
+			"expected response to contain '4'")
+	} else {
+		// If SendAndWait returned nil, check events for assistant message
+		var found bool
+		for _, e := range events {
+			if e.Type == copilot.AssistantMessage && e.Data.Content != nil {
+				t.Logf("Found assistant message in events: %s", *e.Data.Content)
+				found = true
+				break
+			}
+		}
+		if !found {
+			// Log all event types for debugging
+			for _, e := range events {
+				detail := ""
+				if e.Data.Content != nil {
+					detail = fmt.Sprintf(" content=%s", truncateForLog(*e.Data.Content, 100))
+				}
+				t.Logf("  event: type=%s%s", e.Type, detail)
+			}
+			t.Fatal("no assistant message received")
+		}
+	}
+}
+
+func truncateForLog(s string, max int) string {
+	if len(s) > max {
+		return s[:max] + "..."
+	}
+	return s
+}

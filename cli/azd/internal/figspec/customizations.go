@@ -55,7 +55,7 @@ func (c *Customizations) GetSuggestions(ctx *FlagContext) []string {
 		}
 	}
 
-	if strings.HasPrefix(path, "azd mcp consent") {
+	if strings.HasPrefix(path, "azd copilot consent") {
 		switch flagName {
 		case "action":
 			return []string{"all", "readonly"}

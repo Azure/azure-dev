@@ -1,14 +1,10 @@
 # Release History
 
-## 1.24.0-beta.1 (Unreleased)
-
-### Features Added
-
-### Breaking Changes
+## 1.23.10 (2026-03-16)
 
 ### Bugs Fixed
 
-### Other Changes
+- [[#7157]](https://github.com/Azure/azure-dev/pull/7157) Fix: handle ARM expression strings in preflight resource fields.
 
 ## 1.23.9 (2026-03-13)
 

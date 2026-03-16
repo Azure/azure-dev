@@ -275,6 +275,11 @@ type ConsentManager interface {
 	ListConsentRules(ctx context.Context, options ...FilterOption) ([]ConsentRule, error)
 	ClearConsentRules(ctx context.Context, options ...FilterOption) error
 
+	// PromptWorkflowConsent shows an upfront consent prompt asking the user whether to grant
+	// blanket access to the given MCP tool servers. If all servers are already trusted, the
+	// prompt is skipped.
+	PromptWorkflowConsent(ctx context.Context, servers []string) error
+
 	// Environment context methods
 	IsProjectScopeAvailable(ctx context.Context) bool
 }

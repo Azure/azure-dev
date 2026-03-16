@@ -272,12 +272,16 @@ func (cc *ConsentChecker) promptForToolConsent(
 
 	choices := []*ux.SelectChoice{
 		{
-			Value: "always",
-			Label: "Yes, always allow this tool",
+			Value: "once",
+			Label: "Yes, just this once",
 		},
 		{
 			Value: "session",
 			Label: "Yes, until I restart azd",
+		},
+		{
+			Value: "always",
+			Label: "Yes, always allow this tool",
 		},
 	}
 
@@ -290,10 +294,6 @@ func (cc *ConsentChecker) promptForToolConsent(
 	}
 
 	choices = append(choices,
-		&ux.SelectChoice{
-			Value: "once",
-			Label: "Yes, just this once",
-		},
 		&ux.SelectChoice{
 			Value: "skip",
 			Label: "No, skip this tool",

@@ -46,10 +46,11 @@ type CopilotAgent struct {
 	onSessionStarted        func(sessionID string)
 
 	// Runtime state
-	session    *copilot.Session
-	sessionID  string
-	sessionCtx context.Context
-	display    *AgentDisplay // last display for usage metrics
+	clientStarted bool
+	session       *copilot.Session
+	sessionID     string
+	sessionCtx    context.Context
+	display       *AgentDisplay // last display for usage metrics
 
 	// Cleanup — ordered slice for deterministic teardown
 	cleanupTasks []cleanupTask
@@ -67,6 +68,15 @@ func (a *CopilotAgent) Initialize(ctx context.Context, opts ...InitOption) (*Ini
 	options := &initOptions{}
 	for _, opt := range opts {
 		opt(options)
+	}
+
+	// Always ensure copilot is downloaded and user is authenticated first
+	if err := a.ensureClientStarted(ctx); err != nil {
+		return nil, err
+	}
+
+	if err := a.ensureAuthenticated(ctx); err != nil {
+		return nil, err
 	}
 
 	// Load current config
@@ -97,7 +107,7 @@ func (a *CopilotAgent) Initialize(ctx context.Context, opts ...InitOption) (*Ini
 		}, nil
 	}
 
-	// First run — prompt for reasoning effort
+	// Prompt for reasoning effort
 	effortChoices := []*uxlib.SelectChoice{
 		{Value: "low", Label: "Low — fastest, lowest cost"},
 		{Value: "medium", Label: "Medium — balanced (recommended)"},
@@ -115,7 +125,6 @@ func (a *CopilotAgent) Initialize(ctx context.Context, opts ...InitOption) (*Ini
 	})
 
 	effortIdx, err := effortSelector.Ask(ctx)
-	fmt.Println()
 	if err != nil {
 		return nil, err
 	}
@@ -129,23 +138,21 @@ func (a *CopilotAgent) Initialize(ctx context.Context, opts ...InitOption) (*Ini
 		{Value: "", Label: "Default model (recommended)"},
 	}
 
-	// Start client to list models
-	if startErr := a.clientManager.Start(ctx); startErr == nil {
-		models, modelsErr := a.clientManager.ListModels(ctx)
-		if modelsErr == nil {
-			for _, m := range models {
-				label := m.Name
-				if m.DefaultReasoningEffort != "" {
-					label += fmt.Sprintf(" (%s)", m.DefaultReasoningEffort)
-				}
-				if m.Billing != nil {
-					label += fmt.Sprintf(" (%.0fx)", m.Billing.Multiplier)
-				}
-				modelChoices = append(modelChoices, &uxlib.SelectChoice{
-					Value: m.ID,
-					Label: label,
-				})
+	// Client already started — list models
+	models, modelsErr := a.clientManager.ListModels(ctx)
+	if modelsErr == nil {
+		for _, m := range models {
+			label := m.Name
+			if m.DefaultReasoningEffort != "" {
+				label += fmt.Sprintf(" (%s)", m.DefaultReasoningEffort)
 			}
+			if m.Billing != nil {
+				label += fmt.Sprintf(" (%.0fx)", m.Billing.Multiplier)
+			}
+			modelChoices = append(modelChoices, &uxlib.SelectChoice{
+				Value: m.ID,
+				Label: label,
+			})
 		}
 	}
 
@@ -160,7 +167,6 @@ func (a *CopilotAgent) Initialize(ctx context.Context, opts ...InitOption) (*Ini
 	})
 
 	modelIdx, err := modelSelector.Ask(ctx)
-	fmt.Println()
 	if err != nil {
 		return nil, err
 	}
@@ -235,7 +241,7 @@ func (a *CopilotAgent) SelectSession(ctx context.Context) (*SessionMetadata, err
 	})
 
 	idx, err := selector.Ask(ctx)
-	fmt.Println()
+	a.console.Message(ctx, "")
 	if err != nil {
 		return nil, nil
 	}
@@ -249,7 +255,7 @@ func (a *CopilotAgent) SelectSession(ctx context.Context) (*SessionMetadata, err
 
 // ListSessions returns previous sessions for the given working directory.
 func (a *CopilotAgent) ListSessions(ctx context.Context, cwd string) ([]SessionMetadata, error) {
-	if err := a.clientManager.Start(ctx); err != nil {
+	if err := a.ensureClientStarted(ctx); err != nil {
 		return nil, err
 	}
 
@@ -370,6 +376,21 @@ func (a *CopilotAgent) addCleanup(name string, fn func() error) {
 	a.cleanupTasks = append(a.cleanupTasks, cleanupTask{name: name, fn: fn})
 }
 
+// ensureClientStarted starts the Copilot client if not already running.
+// Idempotent — safe to call multiple times.
+func (a *CopilotAgent) ensureClientStarted(ctx context.Context) error {
+	if a.clientStarted {
+		return nil
+	}
+
+	if err := a.clientManager.Start(ctx); err != nil {
+		return err
+	}
+	a.addCleanup("copilot-client", a.clientManager.Stop)
+	a.clientStarted = true
+	return nil
+}
+
 // ensureSession creates or resumes a Copilot session if one doesn't exist.
 func (a *CopilotAgent) ensureSession(ctx context.Context, resumeSessionID string) error {
 	if a.session != nil {
@@ -379,10 +400,9 @@ func (a *CopilotAgent) ensureSession(ctx context.Context, resumeSessionID string
 	a.sessionCtx = ctx
 
 	// Start client (extracts bundled CLI to cache if needed)
-	if err := a.clientManager.Start(ctx); err != nil {
+	if err := a.ensureClientStarted(ctx); err != nil {
 		return err
 	}
-	a.addCleanup("copilot-client", a.clientManager.Stop)
 
 	// Check authentication — prompt to sign in if needed
 	if err := a.ensureAuthenticated(ctx); err != nil {
@@ -847,7 +867,7 @@ func (a *CopilotAgent) ensureAuthenticated(ctx context.Context) error {
 		return fmt.Errorf("GitHub Copilot authentication is required to continue")
 	}
 
-	fmt.Println()
+	a.console.Message(ctx, "")
 	if err := a.cli.Login(ctx); err != nil {
 		return fmt.Errorf("GitHub Copilot sign-in failed: %w", err)
 	}
@@ -857,6 +877,8 @@ func (a *CopilotAgent) ensureAuthenticated(ctx context.Context) error {
 	if err != nil || !authStatus.IsAuthenticated {
 		return fmt.Errorf("GitHub Copilot authentication was not completed")
 	}
+
+	a.console.Message(ctx, "")
 
 	return nil
 }

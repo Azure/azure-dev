@@ -71,7 +71,9 @@ func promptForWorkflowConsent(ctx context.Context, servers []string) (Scope, err
 		"Azure MCP, azd CLI) without prompting for each tool individually.\n\n" +
 		"This command does not create or provision any resources in Azure. " +
 		"It only generates configuration files locally in your workspace.\n\n" +
-		"You can review or revoke permissions at any time with: azd copilot consent list / revoke"
+		"You can review or revoke permissions at any time with:\n" +
+		"  azd copilot consent list\n" +
+		"  azd copilot consent revoke"
 
 	choices := []*ux.SelectChoice{
 		{

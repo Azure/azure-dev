@@ -260,7 +260,7 @@ func (cli *Cli) GetStatus(ctx context.Context, repositoryPath string) (string, e
 		return "", fmt.Errorf("failed to get repository status: %w", err)
 	}
 
-	return strings.TrimSpace(res.Stdout), nil
+	return strings.TrimRight(res.Stdout, "\r\n"), nil
 }
 
 // IsDirty returns true if the repository has uncommitted changes including

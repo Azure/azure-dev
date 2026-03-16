@@ -34,13 +34,13 @@ func TestGetStatus(t *testing.T) {
 			name:       "DirtyRepo_ModifiedFile",
 			stdout:     " M file.go\n",
 			exitCode:   0,
-			wantStatus: "M file.go",
+			wantStatus: " M file.go",
 		},
 		{
 			name:       "DirtyRepo_MultipleChanges",
 			stdout:     " M file.go\n?? newfile.txt\nA  staged.go\n",
 			exitCode:   0,
-			wantStatus: "M file.go\n?? newfile.txt\nA  staged.go",
+			wantStatus: " M file.go\n?? newfile.txt\nA  staged.go",
 		},
 		{
 			name:    "NotAGitRepo",

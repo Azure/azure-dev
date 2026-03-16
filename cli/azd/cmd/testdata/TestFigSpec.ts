@@ -996,15 +996,6 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
-											name: ['--blob-uri'],
-											description: 'Already-uploaded blob URI (skips upload, registers directly)',
-											args: [
-												{
-													name: 'blob-uri',
-												},
-											],
-										},
-										{
 											name: ['--description'],
 											description: 'Model description',
 											args: [
@@ -1021,6 +1012,10 @@ const completionSpec: Fig.Spec = {
 													name: 'name',
 												},
 											],
+										},
+										{
+											name: ['--no-wait'],
+											description: 'Start async registration and return immediately with the operation URL',
 										},
 										{
 											name: ['--project-endpoint', '-e'],
@@ -1200,7 +1195,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--version'],
-											description: 'Model version',
+											description: 'Model version (defaults to latest)',
 											args: [
 												{
 													name: 'version',

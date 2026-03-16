@@ -132,6 +132,113 @@ func TestRegisteredChecks_RunInOrder(t *testing.T) {
 	require.Equal(t, "this is an error", results[1].Message)
 }
 
+func TestArmField_TypedValue(t *testing.T) {
+	input := `{"sku": {"name": "Standard_LRS", "tier": "Standard"}}`
+	var res armTemplateResource
+	require.NoError(t, json.Unmarshal([]byte(input), &res))
+
+	sku, ok := res.SKU.Value()
+	require.True(t, ok)
+	require.Equal(t, "Standard_LRS", sku.Name)
+	require.Equal(t, "Standard", sku.Tier)
+	require.True(t, res.SKU.HasValue())
+}
+
+func TestArmField_ExpressionString(t *testing.T) {
+	// Bicep conditional expressions compile to ARM expression strings.
+	input := `{"identity":` +
+		`"[if(equals(parameters('id'), ''),` +
+		` createObject('type', 'SystemAssigned'),` +
+		` createObject('type', 'UserAssigned'))]"}`
+	var res armTemplateResource
+	require.NoError(t, json.Unmarshal([]byte(input), &res))
+
+	// Typed parse should fail gracefully — it's an expression string, not an object.
+	_, ok := res.Identity.Value()
+	require.False(t, ok)
+
+	// Raw access should return the expression string.
+	require.True(t, res.Identity.HasValue())
+	require.Contains(t, string(res.Identity.Raw()), "[if(equals(")
+}
+
+func TestArmField_Null(t *testing.T) {
+	input := `{"sku": null}`
+	var res armTemplateResource
+	require.NoError(t, json.Unmarshal([]byte(input), &res))
+
+	require.False(t, res.SKU.HasValue())
+	_, ok := res.SKU.Value()
+	require.False(t, ok)
+}
+
+func TestArmField_Absent(t *testing.T) {
+	input := `{"type": "Microsoft.Web/sites"}`
+	var res armTemplateResource
+	require.NoError(t, json.Unmarshal([]byte(input), &res))
+
+	require.False(t, res.SKU.HasValue())
+	require.False(t, res.Identity.HasValue())
+	require.False(t, res.Tags.HasValue())
+	require.Nil(t, res.SKU.Raw())
+}
+
+func TestArmField_Tags(t *testing.T) {
+	input := `{"tags": {"env": "dev", "team": "platform"}}`
+	var res armTemplateResource
+	require.NoError(t, json.Unmarshal([]byte(input), &res))
+
+	tags, ok := res.Tags.Value()
+	require.True(t, ok)
+	require.Equal(t, "dev", tags["env"])
+	require.Equal(t, "platform", tags["team"])
+}
+
+func TestArmField_TagsExpression(t *testing.T) {
+	input := `{"tags": "[variables('tags')]"}`
+	var res armTemplateResource
+	require.NoError(t, json.Unmarshal([]byte(input), &res))
+
+	_, ok := res.Tags.Value()
+	require.False(t, ok)
+	require.True(t, res.Tags.HasValue())
+	require.Contains(t, string(res.Tags.Raw()), "variables('tags')")
+}
+
+func TestArmField_RoundTrip(t *testing.T) {
+	input := `{"type":"Microsoft.Web/sites","sku":{"name":"S1"},"identity":{"type":"SystemAssigned"}}`
+	var res armTemplateResource
+	require.NoError(t, json.Unmarshal([]byte(input), &res))
+
+	data, err := json.Marshal(res)
+	require.NoError(t, err)
+
+	var res2 armTemplateResource
+	require.NoError(t, json.Unmarshal(data, &res2))
+
+	sku, ok := res2.SKU.Value()
+	require.True(t, ok)
+	require.Equal(t, "S1", sku.Name)
+
+	id, ok := res2.Identity.Value()
+	require.True(t, ok)
+	require.Equal(t, "SystemAssigned", id.Type)
+}
+
+func TestArmField_OmitZero(t *testing.T) {
+	// Absent armField fields should be omitted from marshaled JSON via omitzero.
+	res := armTemplateResource{Type: "Microsoft.Web/sites", APIVersion: "2020-06-01", Name: "test"}
+	data, err := json.Marshal(res)
+	require.NoError(t, err)
+
+	raw := string(data)
+	require.NotContains(t, raw, "sku")
+	require.NotContains(t, raw, "tags")
+	require.NotContains(t, raw, "identity")
+	require.NotContains(t, raw, "zones")
+	require.Contains(t, raw, `"type":"Microsoft.Web/sites"`)
+}
+
 func TestAnalyzeResources(t *testing.T) {
 	tests := []struct {
 		name               string

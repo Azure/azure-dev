@@ -204,6 +204,7 @@ nologo
 notrail
 ollama
 omitempty
+omitzero
 oneauth
 oneline
 onmicrosoft

@@ -16,7 +16,7 @@ cask "azd" do
 
   # File extension differs between mac (.zip) and linux (.tar.gz)
   on_linux do
-    url "https://github.com/Azure/azure-dev/releases/download/azure-dev-cli_#{version}/azd-darwin-#{arch}.tar.gz"
+    url "https://github.com/Azure/azure-dev/releases/download/azure-dev-cli_#{version}/azd-linux-#{arch}.tar.gz"
     binary "azd-linux-#{arch}", target: "azd"
   end
 

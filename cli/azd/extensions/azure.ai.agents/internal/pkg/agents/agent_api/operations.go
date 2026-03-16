@@ -988,7 +988,7 @@ func (c *AgentClient) GetAgentContainerOperation(ctx context.Context, agentName,
 func (c *AgentClient) UploadSessionFile(
 	ctx context.Context,
 	agentName, agentVersion, sessionID, remotePath, apiVersion string,
-	body io.Reader,
+	body io.ReadSeeker,
 ) error {
 	u, err := url.Parse(c.endpoint)
 	if err != nil {
@@ -1005,33 +1005,23 @@ func (c *AgentClient) UploadSessionFile(
 	query.Set("path", remotePath)
 	u.RawQuery = query.Encode()
 
-	token, err := c.credential.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes: []string{"https://ai.azure.com/.default"},
-	})
-	if err != nil {
-		return fmt.Errorf("failed to get auth token: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, u.String(), body)
+	req, err := runtime.NewRequest(ctx, http.MethodPut, u.String())
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+token.Token)
-	req.Header.Set("Content-Type", "application/octet-stream")
-	req.Header.Set("User-Agent", fmt.Sprintf("azd-ext-azure-ai-agents/%s", version.Version))
+	if err := req.SetBody(streaming.NopCloser(body), "application/octet-stream"); err != nil {
+		return fmt.Errorf("failed to set request body: %w", err)
+	}
 
-	httpClient := &http.Client{}
-	//nolint:gosec // request URL is built from trusted SDK endpoint + path components
-	resp, err := httpClient.Do(req)
+	resp, err := c.pipeline.Do(req)
 	if err != nil {
 		return fmt.Errorf("HTTP request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return fmt.Errorf("upload failed with status %d: %s", resp.StatusCode, string(respBody))
+	if !runtime.HasStatusCode(resp, http.StatusOK, http.StatusCreated) {
+		return runtime.NewResponseError(resp)
 	}
 
 	return nil
@@ -1059,32 +1049,21 @@ func (c *AgentClient) DownloadSessionFile(
 	query.Set("path", remotePath)
 	u.RawQuery = query.Encode()
 
-	token, err := c.credential.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes: []string{"https://ai.azure.com/.default"},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get auth token: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	req, err := runtime.NewRequest(ctx, http.MethodGet, u.String())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+token.Token)
-	req.Header.Set("User-Agent", fmt.Sprintf("azd-ext-azure-ai-agents/%s", version.Version))
+	runtime.SkipBodyDownload(req)
 
-	httpClient := &http.Client{}
-	//nolint:gosec // request URL is built from trusted SDK endpoint + path components
-	resp, err := httpClient.Do(req)
+	resp, err := c.pipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		_ = resp.Body.Close()
-		return nil, fmt.Errorf("download failed with status %d: %s", resp.StatusCode, string(respBody))
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		defer resp.Body.Close()
+		return nil, runtime.NewResponseError(resp)
 	}
 
 	return resp.Body, nil

@@ -374,7 +374,27 @@ stages:
                 - template: /eng/pipelines/templates/steps/publish-cli.yml
                   parameters:
                     CreateGitHubRelease: false
-                    PublishUploadLocations: release/daily;daily/archive/$(Build.BuildId)-$(Build.SourceVersion)
+                    PublishUploadLocations: release/daily;daily/archive/$(CLI_VERSION)
+
+      - job: Publish_Brew
+        dependsOn: Publish_Continuous_Deployment
+        condition: >-
+          and(
+            succeeded(),
+            ne('true', variables['Skip.Publish'])
+          )
+
+        pool:
+          name: $(LINUXPOOL)
+          image: $(LINUXVMIMAGE)
+          os: linux
+
+        steps:
+          - checkout: self
+
+          - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
+
+          - template: /eng/pipelines/templates/steps/publish-cli-brew.yml
 
       - deployment: Publish_For_PR
         environment: none

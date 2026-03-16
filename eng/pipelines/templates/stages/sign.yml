@@ -351,19 +351,48 @@ stages:
           displayName: Copy signed Linux packages to release
 
         # Homebrew formula
-        - pwsh: New-Item -ItemType Directory -Path homebrew-formula -Force
+        - pwsh: |
+            New-Item -ItemType Directory -Path homebrew-formula -Force
+            New-Item -ItemType Directory -Path homebrew-formula/Formula -Force
+            New-Item -ItemType Directory -Path homebrew-formula/Casks -Force            
           displayName: Create homebrew formula directory
 
-        - task: PowerShell@2
+        - pwsh: |
+            $BuildReason = "$(Build.Reason)"
+            if ($env:BUILDREASONOVERRIDE) {
+              $BuildReason = "$(BUILDREASONOVERRIDE)"
+            }
+            Write-Host "Build reason: $BuildReason"
+            $runInfo = @()
+
+            if (@('IndividualCI', 'BatchedCI') -contains $BuildReason) {
+              Write-Host "CI build detected. Updating daily cask."
+              $runInfo += @{ 
+                TemplatePath = 'eng/templates/brew.cask.daily.template'
+                OutputPath = 'Casks/azd@daily.rb'
+              }
+            } else {
+              Write-Host "Non-CI build detected. Updating stable cask and formula."
+              $runInfo += @{ 
+                TemplatePath = 'eng/templates/brew.cask.template'
+                OutputPath = 'Casks/azd.rb'
+              }
+              $runInfo += @{ 
+                TemplatePath = 'eng/templates/brew.formula.template'
+                OutputPath = 'Formula/azd.rb'
+              }
+            }
+
+            foreach ($item in $runInfo) {
+              Write-Host "Updating Homebrew template: $($item.TemplatePath) with output filename: $($item.OutputPath)"
+              eng/scripts/Update-HomebrewFormula.ps1 `
+                -TemplatePath $item.TemplatePath `
+                -ZipFilePathAmd64 release/azd-darwin-amd64.zip `
+                -ZipFilePathArm64 release/azd-darwin-arm64.zip `
+                -LinuxArchivePathAmd64 release/azd-linux-amd64.tar.gz `
+                -LinuxArchivePathArm64 release/azd-linux-arm64.tar.gz `
+                -Version $(CLI_VERSION) `
+                -OutFile "homebrew-formula/$($item.OutputPath)"
+            }
+          displayName: Update brew formula and casks
           condition: eq(variables['SubmitBrewFormula'], 'true')
-          displayName: Create updated brew formula
-          inputs:
-            targetType: filePath
-            filePath: eng/scripts/Update-HomebrewFormula.ps1
-            arguments: >-
-              -ZipFilePathAmd64 release/azd-darwin-amd64.zip
-              -ZipFilePathArm64 release/azd-darwin-arm64.zip
-              -LinuxArchivePathAmd64 release/azd-linux-amd64.tar.gz
-              -LinuxArchivePathArm64 release/azd-linux-arm64.tar.gz
-              -Version $(CLI_VERSION)
-              -OutFile homebrew-formula/azd.rb

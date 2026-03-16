@@ -251,13 +251,25 @@ stages:
                 Write-Host "Package version is not valid: $(CLI_VERSION). `$submitPackage is set to false."
               }
 
+              $submitBrewFormula = $submitPackage
+
+              $BuildReason = "$(Build.Reason)"
+              if ($env:BUILDREASONOVERRIDE) {
+                $BuildReason = "$(BUILDREASONOVERRIDE)"
+              }
+
+              if (@('IndividualCI', 'BatchedCI') -contains $BuildReason) {
+                Write-Host "CI build detected. Overriding `$submitBrewFormula to true for CI release."
+                $submitBrewFormula = $true
+              }
+
               $releaseMetadata = @{
                 cliVersion = $cliVersion;
                 msiVersion = "$(MSI_VERSION)";
                 isPublishingGa = $submitPackage;
                 submitChocoPackage = $submitPackage;
                 submitWingetPackage = $submitPackage;
-                submitBrewFormula = $submitPackage;
+                submitBrewFormula = $submitBrewFormula;
               }
 
               Set-Content -Path release-metadata/metadata.json -Value ($releaseMetadata | ConvertTo-Json -Depth 100)

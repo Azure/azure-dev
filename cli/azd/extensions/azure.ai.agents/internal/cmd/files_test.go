@@ -27,52 +27,42 @@ func TestFilesCommand_HasSubcommands(t *testing.T) {
 	assert.Contains(t, names, "remove")
 }
 
-func TestFilesUploadCommand_RequiredFlags(t *testing.T) {
+func TestFilesUploadCommand_MissingArgs(t *testing.T) {
 	cmd := newFilesUploadCommand()
 
-	// No flags and no args should fail
+	// No args should fail (requires remote-path positional arg)
 	cmd.SetArgs([]string{})
 	err := cmd.Execute()
 	assert.Error(t, err)
 }
 
-func TestFilesUploadCommand_MissingName(t *testing.T) {
-	cmd := newFilesUploadCommand()
-
-	cmd.SetArgs([]string{"/remote/path", "--path", "local.txt", "--version", "1", "--session", "abc"})
-	err := cmd.Execute()
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "name")
-}
-
-func TestFilesUploadCommand_MissingVersion(t *testing.T) {
-	cmd := newFilesUploadCommand()
-
-	cmd.SetArgs([]string{"/remote/path", "--path", "local.txt", "--name", "agent", "--session", "abc"})
-	err := cmd.Execute()
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "version")
-}
-
-func TestFilesUploadCommand_MissingSession(t *testing.T) {
-	cmd := newFilesUploadCommand()
-
-	cmd.SetArgs([]string{"/remote/path", "--path", "local.txt", "--name", "agent", "--version", "1"})
-	err := cmd.Execute()
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "session")
-}
-
 func TestFilesUploadCommand_MissingPath(t *testing.T) {
 	cmd := newFilesUploadCommand()
 
-	cmd.SetArgs([]string{"/remote/path", "--name", "agent", "--version", "1", "--session", "abc"})
+	// Missing required --path flag
+	cmd.SetArgs([]string{"/remote/path"})
 	err := cmd.Execute()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "path")
 }
 
-func TestFilesDownloadCommand_RequiredFlags(t *testing.T) {
+func TestFilesUploadCommand_HasServiceFlag(t *testing.T) {
+	cmd := newFilesUploadCommand()
+
+	f := cmd.Flags().Lookup("service")
+	require.NotNil(t, f)
+	assert.Equal(t, "", f.DefValue)
+}
+
+func TestFilesUploadCommand_HasSessionFlag(t *testing.T) {
+	cmd := newFilesUploadCommand()
+
+	f := cmd.Flags().Lookup("session")
+	require.NotNil(t, f)
+	assert.Equal(t, "", f.DefValue)
+}
+
+func TestFilesDownloadCommand_MissingArgs(t *testing.T) {
 	cmd := newFilesDownloadCommand()
 
 	cmd.SetArgs([]string{})
@@ -85,15 +75,6 @@ func TestFilesDownloadCommand_DefaultOutputPath(t *testing.T) {
 
 	output, _ := cmd.Flags().GetString("output")
 	assert.Equal(t, "", output, "output should default to empty (uses remote filename)")
-}
-
-func TestFilesListCommand_RequiredFlags(t *testing.T) {
-	cmd := newFilesListCommand()
-
-	// No flags should fail due to missing required flags
-	cmd.SetArgs([]string{})
-	err := cmd.Execute()
-	assert.Error(t, err)
 }
 
 func TestFilesListCommand_DefaultOutputFormat(t *testing.T) {
@@ -110,7 +91,7 @@ func TestFilesListCommand_OptionalRemotePath(t *testing.T) {
 	assert.NotNil(t, cmd.Args)
 }
 
-func TestFilesRemoveCommand_RequiredFlags(t *testing.T) {
+func TestFilesRemoveCommand_MissingArgs(t *testing.T) {
 	cmd := newFilesRemoveCommand()
 
 	cmd.SetArgs([]string{})

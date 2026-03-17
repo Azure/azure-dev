@@ -305,6 +305,9 @@ overrides:
   - filename: pkg/azdext/scope_detector.go
     words:
       - fakeazure
+  - filename: "{pkg/azapi/permissions.go,pkg/infra/provisioning/bicep/bicep_provider.go}"
+    words:
+      - ABAC
   - filename: extensions/azure.ai.models/internal/cmd/custom_create.go
     words:
       - Qwen

@@ -104,86 +104,66 @@ func TestActionMatches(t *testing.T) {
 	}
 }
 
-func TestIsActionAllowed(t *testing.T) {
+func TestIsActionAllowedByRole(t *testing.T) {
 	tests := []struct {
 		name           string
 		requiredAction string
-		actions        *allowedActionSet
+		actions        []string
+		notActions     []string
 		want           bool
 	}{
 		{
 			name:           "allowed by exact match",
 			requiredAction: "Microsoft.Authorization/roleAssignments/write",
-			actions: &allowedActionSet{
-				actions:    []string{"Microsoft.Authorization/roleAssignments/write"},
-				notActions: nil,
-			},
-			want: true,
+			actions:        []string{"Microsoft.Authorization/roleAssignments/write"},
+			want:           true,
 		},
 		{
 			name:           "allowed by wildcard",
 			requiredAction: "Microsoft.Authorization/roleAssignments/write",
-			actions: &allowedActionSet{
-				actions:    []string{"*"},
-				notActions: nil,
-			},
-			want: true,
+			actions:        []string{"*"},
+			want:           true,
 		},
 		{
 			name:           "denied by NotActions",
 			requiredAction: "Microsoft.Authorization/roleAssignments/write",
-			actions: &allowedActionSet{
-				actions:    []string{"*"},
-				notActions: []string{"Microsoft.Authorization/roleAssignments/write"},
-			},
-			want: false,
+			actions:        []string{"*"},
+			notActions:     []string{"Microsoft.Authorization/roleAssignments/write"},
+			want:           false,
 		},
 		{
 			name:           "denied by NotActions wildcard",
 			requiredAction: "Microsoft.Authorization/roleAssignments/write",
-			actions: &allowedActionSet{
-				actions:    []string{"*"},
-				notActions: []string{"Microsoft.Authorization/*"},
-			},
-			want: false,
+			actions:        []string{"*"},
+			notActions:     []string{"Microsoft.Authorization/*"},
+			want:           false,
 		},
 		{
 			name:           "not matched at all",
 			requiredAction: "Microsoft.Authorization/roleAssignments/write",
-			actions: &allowedActionSet{
-				actions:    []string{"Microsoft.Storage/*"},
-				notActions: nil,
-			},
-			want: false,
+			actions:        []string{"Microsoft.Storage/*"},
+			want:           false,
 		},
 		{
 			name:           "empty actions",
 			requiredAction: "Microsoft.Authorization/roleAssignments/write",
-			actions: &allowedActionSet{
-				actions:    nil,
-				notActions: nil,
-			},
-			want: false,
+			want:           false,
 		},
 		{
 			name:           "allowed by provider wildcard not blocked",
 			requiredAction: "Microsoft.Authorization/roleAssignments/write",
-			actions: &allowedActionSet{
-				actions:    []string{"Microsoft.Authorization/*"},
-				notActions: []string{"Microsoft.Storage/*"},
-			},
-			want: true,
+			actions:        []string{"Microsoft.Authorization/*"},
+			notActions:     []string{"Microsoft.Storage/*"},
+			want:           true,
 		},
 		{
-			name:           "Contributor role pattern - allowed by star but blocked by NotActions",
+			name:           "Contributor role - allowed by star but blocked by NotActions",
 			requiredAction: "Microsoft.Authorization/roleAssignments/write",
-			actions: &allowedActionSet{
-				actions: []string{"*"},
-				notActions: []string{
-					"Microsoft.Authorization/*/Delete",
-					"Microsoft.Authorization/*/Write",
-					"Microsoft.Authorization/elevateAccess/Action",
-				},
+			actions:        []string{"*"},
+			notActions: []string{
+				"Microsoft.Authorization/*/Delete",
+				"Microsoft.Authorization/*/Write",
+				"Microsoft.Authorization/elevateAccess/Action",
 			},
 			want: false,
 		},
@@ -191,8 +171,37 @@ func TestIsActionAllowed(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := isActionAllowed(tt.requiredAction, tt.actions)
+			got := isActionAllowedByRole(tt.requiredAction, tt.actions, tt.notActions)
 			require.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestIsActionAllowedByRole_MultiRoleUnion(t *testing.T) {
+	// Simulates: Contributor (Actions=*, NotActions=Microsoft.Authorization/*/Write)
+	// + User Access Administrator (Actions=Microsoft.Authorization/roleAssignments/*, NotActions=none).
+	// Contributor alone denies roleAssignments/write, but User Access Admin grants it.
+	// The per-role evaluation should find it allowed via User Access Admin.
+	required := "Microsoft.Authorization/roleAssignments/write"
+
+	contributorActions := []string{"*"}
+	contributorNotActions := []string{
+		"Microsoft.Authorization/*/Delete",
+		"Microsoft.Authorization/*/Write",
+		"Microsoft.Authorization/elevateAccess/Action",
+	}
+
+	uaaActions := []string{
+		"Microsoft.Authorization/roleAssignments/*",
+		"Microsoft.Authorization/roleAssignments/read",
+		"Microsoft.Support/*",
+		"*/read",
+	}
+	var uaaNotActions []string
+
+	// Contributor alone denies it.
+	require.False(t, isActionAllowedByRole(required, contributorActions, contributorNotActions))
+
+	// User Access Administrator alone allows it.
+	require.True(t, isActionAllowedByRole(required, uaaActions, uaaNotActions))
 }

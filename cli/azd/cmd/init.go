@@ -401,6 +401,28 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 }
 
 func (i *initAction) initAppWithAgent(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
+	// Warn the user if the working directory has uncommitted git changes
+	dirty, err := i.gitCli.IsDirty(ctx, azdCtx.ProjectDirectory())
+	if err != nil && !errors.Is(err, git.ErrNotRepository) {
+		return fmt.Errorf("checking git status: %w", err)
+	}
+
+	if dirty {
+		defaultNo := false
+		confirm := uxlib.NewConfirm(&uxlib.ConfirmOptions{
+			Message:      "Your working directory has uncommitted changes. Continue initializing?",
+			DefaultValue: &defaultNo,
+		})
+		result, promptErr := confirm.Ask(ctx)
+		i.console.Message(ctx, "")
+		if promptErr != nil {
+			return promptErr
+		}
+		if result == nil || !*result {
+			return errors.New("user declined to continue with uncommitted changes")
+		}
+	}
+
 	// Show alpha warning
 	i.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title: fmt.Sprintf("Agentic mode init is in preview. The agent will scan your repository and "+
@@ -410,6 +432,13 @@ func (i *initAction) initAppWithAgent(ctx context.Context, azdCtx *azdcontext.Az
 			output.WithHighLightFormat("azd copilot consent"),
 			output.WithLinkFormat("https://aka.ms/azd-feature-stages")),
 	})
+
+	// Prompt for upfront tool access before starting the agent
+	if err := i.consentManager.PromptWorkflowConsent(ctx,
+		[]string{"copilot", "azure", "azd"},
+	); err != nil {
+		return err
+	}
 
 	// Create agent
 	copilotAgent, err := i.agentFactory.Create(ctx,
@@ -466,6 +495,7 @@ func (i *initAction) initAppWithAgent(ctx context.Context, azdCtx *azdcontext.Az
 				i.console.Message(ctx, output.WithSuccessFormat("Session resumed"))
 				i.console.Message(ctx, "")
 			}
+			i.console.Message(ctx, "")
 		}
 	}
 

@@ -141,9 +141,14 @@ func (d *AgentDisplay) Start(ctx context.Context) (func(), error) {
 			printer.Fprintln()
 			return nil
 		}),
-		// Blank line before spinner
+		// Blank line before spinner (skip if last output was already blank)
 		uxlib.NewVisualElement(func(printer uxlib.Printer) error {
-			printer.Fprintln()
+			d.mu.Lock()
+			wasBlank := d.lastPrintedBlank
+			d.mu.Unlock()
+			if !wasBlank {
+				printer.Fprintln()
+			}
 			return nil
 		}),
 		d.spinner,

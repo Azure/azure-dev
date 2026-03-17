@@ -135,6 +135,9 @@ func (p *printer) Fprintf(format string, a ...any) {
 	// Check if the content includes any line breaks
 	hasNewLines := strings.Count(content, "\n") > 0
 
+	// Wrapping already counted for the current accumulated line
+	alreadyCounted := CountLineBreaks(p.currentLine, p.consoleWidth)
+
 	var lastLine string
 	newLines := 0
 
@@ -143,13 +146,17 @@ func (p *printer) Fprintf(format string, a ...any) {
 		// This is used to keep track of the current line being printed
 		lastNewLineIndex := strings.LastIndex(content, "\n")
 		lastLine = content[lastNewLineIndex+1:]
-		newLines = CountLineBreaks(content, p.consoleWidth)
+
+		// Include accumulated currentLine for accurate wrapping of the first line
+		fullContent := p.currentLine + content
+		newLines = CountLineBreaks(fullContent, p.consoleWidth) - alreadyCounted
 		p.currentLine = lastLine
 	} else {
 		// Need to see if appending content to the current line will cause wrapping
 		// (i.e. if the line is longer than the console width)
 		p.currentLine += content
-		newLines = CountLineBreaks(p.currentLine, p.consoleWidth)
+		// Only count NEW wrapping lines (delta from what was already tracked)
+		newLines = CountLineBreaks(p.currentLine, p.consoleWidth) - alreadyCounted
 	}
 
 	fmt.Fprint(p.writer, content)

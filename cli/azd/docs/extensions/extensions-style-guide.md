@@ -54,6 +54,71 @@ This framework enables:
 - Integration of new Azure services and capabilities
 - Third-party extension development
 
+## Error Handling in Extensions
+
+Extensions communicate with the azd host over gRPC. When an extension returns an error, it must be
+serialized into an `ExtensionError` proto message so that the host can display it to users and
+classify it in telemetry.
+
+### Structured Error Types
+
+The `azdext` package provides two structured error types:
+
+- **`azdext.ServiceError`** — for HTTP/gRPC service failures (e.g., Azure API returned 429).
+  Fields: `Message`, `ErrorCode`, `StatusCode`, `ServiceName`, `Suggestion`.
+
+- **`azdext.LocalError`** — for local errors such as validation, auth, config, or internal failures.
+  Fields: `Message`, `Code`, `Category`, `Suggestion`.
+
+Both types implement `Error()`. They are detected via `errors.As` during serialization.
+
+### Telemetry Classification
+
+The host classifies extension errors into telemetry codes using the pattern:
+
+| Error type | Telemetry code pattern |
+|-----------|----------------------|
+| `ServiceError` with `ErrorCode` | `ext.service.<errorCode>` |
+| `ServiceError` with `StatusCode` | `ext.service.<serviceName>.<statusCode>` |
+| `LocalError` | `ext.<category>.<code>` |
+| Unclassified | `ext.run.failed` |
+
+### Recommended Layering Pattern
+
+**Entry-point or orchestration layer**: Usually creates structured errors once it can confidently choose the final category, code, and suggestion. This often includes command handlers, top-level actions, or other user-facing coordination code.
+
+**Lower-level helpers, parsers, and clients**: Usually return plain Go errors with `fmt.Errorf("context: %w", err)` and let a higher layer classify the failure.
+
+Treat this as guidance, not a strict package boundary. The important part is that structured classification happens in a layer with enough context to produce the right telemetry and a useful suggestion.
+
+### Error Chain Precedence
+
+When `WrapError` serializes an error for gRPC, it checks the chain via `errors.As` and picks
+the **first** match in this order:
+
+1. `ServiceError` (highest priority)
+2. `LocalError`
+3. `azcore.ResponseError` (auto-detected Azure SDK errors)
+4. gRPC `Unauthenticated` (safety-net auth classification)
+5. Fallback (unclassified)
+
+Because Go's `errors.As` walks from outermost to innermost, classifying near the outer orchestration layer naturally produces the intended classification.
+
+### Error Code Conventions
+
+Error codes should be:
+- Lowercase `snake_case` (e.g., `missing_subscription_id`, `invalid_agent_manifest`)
+- Descriptive of the specific failure, not the general category
+- Unique within the extension
+- Defined as `const` values (not inline strings) for consistency and grep-ability
+
+### Display and UX
+
+When a structured error has a non-empty `Suggestion`, the azd host displays it as a
+formatted "ERROR + Suggestion" block. When there is no suggestion, only the error message
+is shown. Extensions should provide suggestions for user-fixable errors (validation,
+auth, dependency) and omit them for internal/unexpected errors.
+
 ---
 
 *For core design principles that apply to all `azd` functionality, see [guiding-principles.md](../style-guidelines/guiding-principles.md).*

@@ -8,7 +8,10 @@ const (
 	CodeCancelled = "cancelled"
 )
 
-// Error codes for validation errors.
+// Error codes commonly used for validation errors.
+//
+// These are usually paired with [Validation] when user input, manifests,
+// or configuration values fail validation.
 const (
 	CodeInvalidAgentManifest      = "invalid_agent_manifest"
 	CodeInvalidManifestPointer    = "invalid_manifest_pointer"
@@ -26,11 +29,13 @@ const (
 	CodeLocationMismatch          = "location_mismatch"
 	CodeTenantMismatch            = "tenant_mismatch"
 	CodeMissingPublishedContainer = "missing_published_container_artifact"
-	CodeScaffoldTemplateFailed    = "scaffold_template_failed"
 	CodeModelDeploymentNotFound   = "model_deployment_not_found"
 )
 
-// Error codes for dependency errors.
+// Error codes commonly used for dependency errors.
+//
+// These are usually paired with [Dependency] when required external
+// resources, services, or environment values are missing or unavailable.
 const (
 	CodeProjectNotFound           = "project_not_found"
 	CodeProjectInitFailed         = "project_init_failed"
@@ -42,10 +47,13 @@ const (
 	CodeMissingAzureSubscription  = "missing_azure_subscription_id"
 	CodeMissingAgentEnvVars       = "missing_agent_env_vars"
 	CodeGitHubDownloadFailed      = "github_download_failed"
+	CodeScaffoldTemplateFailed    = "scaffold_template_failed"
 	CodePromptFailed              = "prompt_failed"
 )
 
-// Error codes for auth errors.
+// Error codes commonly used for auth errors.
+//
+// These are usually paired with [Auth] for authentication/authorization failures.
 const (
 	//nolint:gosec // error code identifier, not a credential
 	CodeCredentialCreationFailed = "credential_creation_failed"
@@ -56,11 +64,16 @@ const (
 )
 
 // Error codes for compatibility errors.
+//
+// These are usually paired with [Compatibility] for version mismatches.
 const (
 	CodeIncompatibleAzdVersion = "incompatible_azd_version"
 )
 
 // Error codes for azd host AI service errors.
+//
+// Used as fallback codes with [FromAiService] when the gRPC response
+// doesn't include a more specific ErrorInfo reason.
 const (
 	CodeModelCatalogFailed    = "model_catalog_failed"
 	CodeModelResolutionFailed = "model_resolution_failed"
@@ -73,7 +86,10 @@ const (
 	CodeInvalidFilePath  = "invalid_file_path"
 )
 
-// Error codes for internal errors.
+// Error codes commonly used for internal errors.
+//
+// These are usually paired with [Internal] for unexpected failures
+// that are not directly caused by user input.
 const (
 	CodeAzdClientFailed               = "azd_client_failed"
 	CodeCognitiveServicesClientFailed = "cognitiveservices_client_failed"
@@ -81,7 +97,7 @@ const (
 	CodeContainerStartTimeout         = "container_start_timeout"
 )
 
-// Operation names for ServiceFromAzure errors.
+// Operation names for [ServiceFromAzure] errors.
 // These are prefixed to the Azure error code (e.g., "create_agent.NotFound").
 const (
 	OpGetFoundryProject     = "get_foundry_project"

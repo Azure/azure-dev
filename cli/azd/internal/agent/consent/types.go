@@ -8,10 +8,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -277,16 +275,11 @@ type ConsentManager interface {
 	ListConsentRules(ctx context.Context, options ...FilterOption) ([]ConsentRule, error)
 	ClearConsentRules(ctx context.Context, options ...FilterOption) error
 
+	// PromptWorkflowConsent shows an upfront consent prompt asking the user whether to grant
+	// blanket access to the given MCP tool servers. If all servers are already trusted, the
+	// prompt is skipped.
+	PromptWorkflowConsent(ctx context.Context, servers []string) error
+
 	// Environment context methods
 	IsProjectScopeAvailable(ctx context.Context) bool
-
-	// Tool wrapping methods
-	WrapTool(tool common.AnnotatedTool) common.AnnotatedTool
-	WrapTools(tools []common.AnnotatedTool) []common.AnnotatedTool
-}
-
-type ExecutingTool struct {
-	sync.RWMutex
-	Name   string
-	Server string
 }

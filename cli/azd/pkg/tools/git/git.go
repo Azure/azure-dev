@@ -249,6 +249,31 @@ func (cli *Cli) IsUntrackedFile(ctx context.Context, repositoryPath string, file
 	return false, nil
 }
 
+// GetStatus returns the porcelain status output of the repository.
+// An empty string indicates a clean working directory with no uncommitted changes.
+func (cli *Cli) GetStatus(ctx context.Context, repositoryPath string) (string, error) {
+	runArgs := newRunArgs("-C", repositoryPath, "status", "--porcelain")
+	res, err := cli.commandRunner.Run(ctx, runArgs)
+	if notGitRepositoryRegex.MatchString(res.Stderr) {
+		return "", ErrNotRepository
+	} else if err != nil {
+		return "", fmt.Errorf("failed to get repository status: %w", err)
+	}
+
+	return strings.TrimRight(res.Stdout, "\r\n"), nil
+}
+
+// IsDirty returns true if the repository has uncommitted changes including
+// staged, unstaged, or untracked files.
+func (cli *Cli) IsDirty(ctx context.Context, repositoryPath string) (bool, error) {
+	status, err := cli.GetStatus(ctx, repositoryPath)
+	if err != nil {
+		return false, err
+	}
+
+	return status != "", nil
+}
+
 // SetGitHubAuthForRepo creates git config for the repositoryPath like
 //
 // [credential "https://github.com"]  (when credential is equal to "https://github.com")

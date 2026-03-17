@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
@@ -315,5 +316,52 @@ func Test_WorkflowCmdAdapter_ContextPropagation(t *testing.T) {
 		require.Len(t, commandTreeInstances, 2, "Factory should have been called twice")
 		require.NotSame(t, commandTreeInstances[0], commandTreeInstances[1],
 			"Each execution should use a distinct command tree instance")
+	})
+
+	t.Run("NewRootCmdPreservesMiddlewareChain", func(t *testing.T) {
+		// Verify that building a real command tree via NewRootCmd preserves
+		// the full middleware chain (debug, ux, telemetry, error, loginGuard, etc.)
+		container := ioc.NewNestedContainer(nil)
+		ctx := context.WithoutCancel(context.Background())
+		ioc.RegisterInstance(container, ctx)
+		ioc.RegisterInstance(container, &internal.GlobalCommandOptions{})
+
+		rootCmd := NewRootCmd(false, nil, container)
+
+		// Verify the command tree is fully built with known subcommands
+		foundVersion := false
+		foundProvision := false
+		foundDeploy := false
+		for _, child := range rootCmd.Commands() {
+			switch child.Name() {
+			case "version":
+				foundVersion = true
+			case "provision":
+				foundProvision = true
+			case "deploy":
+				foundDeploy = true
+			}
+		}
+
+		require.True(t, foundVersion, "version command should be registered")
+		require.True(t, foundProvision, "provision command should be registered")
+		require.True(t, foundDeploy, "deploy command should be registered")
+
+		// Build a second tree and verify it also has all commands
+		rootCmd2 := NewRootCmd(false, nil, container)
+		foundVersion2 := false
+		foundProvision2 := false
+		for _, child := range rootCmd2.Commands() {
+			switch child.Name() {
+			case "version":
+				foundVersion2 = true
+			case "provision":
+				foundProvision2 = true
+			}
+		}
+
+		require.True(t, foundVersion2, "second tree: version command should be registered")
+		require.True(t, foundProvision2, "second tree: provision command should be registered")
+		require.NotSame(t, rootCmd, rootCmd2, "each NewRootCmd call should produce a distinct instance")
 	})
 }

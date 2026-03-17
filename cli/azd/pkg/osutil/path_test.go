@@ -12,18 +12,11 @@ import (
 )
 
 func Test_ResolveContainedPath(t *testing.T) {
-	// Create temp directories to serve as roots
-	root1 := filepath.Join(os.TempDir(), "resolvetest_root1")
-	root2 := filepath.Join(os.TempDir(), "resolvetest_root2")
+	// Use t.TempDir() for unique per-test roots that auto-cleanup
+	root1 := t.TempDir()
+	root2 := t.TempDir()
 	err := os.MkdirAll(filepath.Join(root1, "subdir"), 0755)
 	require.NoError(t, err)
-	err = os.MkdirAll(root2, 0755)
-	require.NoError(t, err)
-
-	t.Cleanup(func() {
-		os.RemoveAll(root1)
-		os.RemoveAll(root2)
-	})
 
 	// Create test files
 	file1 := filepath.Join(root1, "file.txt")
@@ -117,6 +110,8 @@ func Test_ResolveContainedPath(t *testing.T) {
 
 func Test_IsPathContained(t *testing.T) {
 	base := filepath.Join(os.TempDir(), "testbase")
+	// Construct OS-appropriate filesystem root for root path tests
+	root := filepath.VolumeName(os.TempDir()) + string(os.PathSeparator)
 
 	tests := []struct {
 		name     string
@@ -159,6 +154,18 @@ func Test_IsPathContained(t *testing.T) {
 			base:     base,
 			target:   base + `\..\..\escape`,
 			expected: false,
+		},
+		{
+			name:     "root path contains child",
+			base:     root,
+			target:   filepath.Join(root, "somechild"),
+			expected: true,
+		},
+		{
+			name:     "root path exact match",
+			base:     root,
+			target:   root,
+			expected: true,
 		},
 	}
 

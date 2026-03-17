@@ -99,7 +99,7 @@ type Cli struct {
 }
 
 // EnsureInstalled checks if GitHub CLI is available and downloads/upgrades if needed.
-// This is safe to call multiple times; installation only happens once.
+// This is safe to call multiple times; successful installation is cached and failed attempts are retried.
 // Should be called with a request-scoped context before first use.
 func (cli *Cli) EnsureInstalled(ctx context.Context) error {
 	return cli.installInit.Do(func() error {

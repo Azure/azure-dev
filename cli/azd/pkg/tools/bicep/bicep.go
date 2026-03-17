@@ -65,7 +65,7 @@ func newCliWithTransporter(
 }
 
 // ensureInstalledOnce checks if bicep is available and downloads/upgrades if needed.
-// This is safe to call multiple times; installation only happens once.
+// This is safe to call multiple times; successful installation is cached and failed attempts are retried.
 func (cli *Cli) ensureInstalledOnce(ctx context.Context) error {
 	return cli.installInit.Do(func() error {
 		return cli.ensureInstalled(ctx)

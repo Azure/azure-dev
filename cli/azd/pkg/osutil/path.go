@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -19,15 +20,41 @@ func IsPathContained(basePath, targetPath string) bool {
 	// Normalize backslashes to OS separator so traversal via "..\.." is caught on Linux too.
 	normalizedTarget := strings.ReplaceAll(targetPath, "\\", string(os.PathSeparator))
 
-	cleanedBase := filepath.Clean(basePath) + string(os.PathSeparator)
+	cleanedBase := filepath.Clean(basePath)
 	cleanedTarget := filepath.Clean(normalizedTarget)
 
-	// Also handle the case where target IS exactly the base directory
-	if cleanedTarget == filepath.Clean(basePath) {
+	// Handle exact match (target IS the base directory).
+	if pathEqual(cleanedTarget, cleanedBase) {
 		return true
 	}
 
-	return strings.HasPrefix(cleanedTarget, cleanedBase)
+	// Build prefix for containment check.
+	// filepath.Clean on root paths (e.g., "/" or "C:\") retains the trailing separator,
+	// so only add one if not already present to avoid a "//"-prefix false negative.
+	basePrefix := cleanedBase
+	if !strings.HasSuffix(basePrefix, string(os.PathSeparator)) {
+		basePrefix += string(os.PathSeparator)
+	}
+
+	return pathHasPrefix(cleanedTarget, basePrefix)
+}
+
+// pathEqual compares two cleaned file paths. On Windows, paths are compared
+// case-insensitively to match the filesystem's behavior.
+func pathEqual(a, b string) bool {
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
+}
+
+// pathHasPrefix checks if target starts with prefix. On Windows, the comparison
+// is case-insensitive to match the filesystem's behavior.
+func pathHasPrefix(target, prefix string) bool {
+	if runtime.GOOS == "windows" {
+		return strings.HasPrefix(strings.ToLower(target), strings.ToLower(prefix))
+	}
+	return strings.HasPrefix(target, prefix)
 }
 
 // ResolveContainedPath attempts to resolve filePath within one of the given root directories.

@@ -1203,7 +1203,10 @@ func (c *AgentClient) MkdirSessionFile(
 
 	req.Raw().Header.Set("Content-Type", "application/json")
 	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview")
-	req.SetBody(streaming.NopCloser(bytes.NewReader(body)), "application/json")
+
+	if err := req.SetBody(streaming.NopCloser(bytes.NewReader(body)), "application/json"); err != nil {
+		return fmt.Errorf("failed to set request body: %w", err)
+	}
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {

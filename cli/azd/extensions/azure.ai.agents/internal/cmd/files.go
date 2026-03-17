@@ -21,7 +21,7 @@ import (
 // filesFlags holds the common flags shared by all file subcommands.
 type filesFlags struct {
 	agentName string // optional: agent name (matches azure.yaml service name)
-	session string // optional: explicit session ID override
+	session   string // optional: explicit session ID override
 }
 
 func newFilesCommand() *cobra.Command {

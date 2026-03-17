@@ -107,14 +107,16 @@ func TestFilesRemoveCommand_RecursiveDefault(t *testing.T) {
 }
 
 func TestPrintFileListJSON(t *testing.T) {
+	modified := "2025-01-01T00:00:00Z"
 	fileList := &agent_api.SessionFileList{
-		Files: []agent_api.SessionFileInfo{
+		Path: "/data",
+		Entries: []agent_api.SessionFileInfo{
 			{
 				Name:         "test.txt",
 				Path:         "/data/test.txt",
 				IsDirectory:  false,
 				Size:         1024,
-				LastModified: "2025-01-01T00:00:00Z",
+				LastModified: &modified,
 			},
 			{
 				Name:        "subdir",
@@ -129,14 +131,16 @@ func TestPrintFileListJSON(t *testing.T) {
 }
 
 func TestPrintFileListTable(t *testing.T) {
+	modified := "2025-01-01T00:00:00Z"
 	fileList := &agent_api.SessionFileList{
-		Files: []agent_api.SessionFileInfo{
+		Path: "/data",
+		Entries: []agent_api.SessionFileInfo{
 			{
 				Name:         "test.txt",
 				Path:         "/data/test.txt",
 				IsDirectory:  false,
 				Size:         1024,
-				LastModified: "2025-01-01T00:00:00Z",
+				LastModified: &modified,
 			},
 			{
 				Name:        "subdir",
@@ -152,7 +156,8 @@ func TestPrintFileListTable(t *testing.T) {
 
 func TestPrintFileListJSON_Empty(t *testing.T) {
 	fileList := &agent_api.SessionFileList{
-		Files: []agent_api.SessionFileInfo{},
+		Path:    "/",
+		Entries: []agent_api.SessionFileInfo{},
 	}
 
 	err := printFileListJSON(fileList)
@@ -161,7 +166,8 @@ func TestPrintFileListJSON_Empty(t *testing.T) {
 
 func TestPrintFileListTable_Empty(t *testing.T) {
 	fileList := &agent_api.SessionFileList{
-		Files: []agent_api.SessionFileInfo{},
+		Path:    "/",
+		Entries: []agent_api.SessionFileInfo{},
 	}
 
 	err := printFileListTable(fileList)

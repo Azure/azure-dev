@@ -411,12 +411,16 @@ func printFileListTable(fileList *agent_api.SessionFileList) error {
 	fmt.Fprintln(w, "NAME\tPATH\tTYPE\tSIZE\tLAST MODIFIED")
 	fmt.Fprintln(w, "----\t----\t----\t----\t-------------")
 
-	for _, f := range fileList.Files {
+	for _, f := range fileList.Entries {
 		fileType := "file"
 		if f.IsDirectory {
 			fileType = "dir"
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\n", f.Name, f.Path, fileType, f.Size, f.LastModified)
+		modified := ""
+		if f.LastModified != nil {
+			modified = *f.LastModified
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\n", f.Name, f.Path, fileType, f.Size, modified)
 	}
 
 	return w.Flush()

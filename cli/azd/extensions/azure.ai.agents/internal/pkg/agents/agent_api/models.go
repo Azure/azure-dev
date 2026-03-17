@@ -685,14 +685,16 @@ type StructuredOutputDefinition struct {
 
 // SessionFileInfo represents a file or directory entry in a session.
 type SessionFileInfo struct {
-	Name         string `json:"name"`
-	Path         string `json:"path"`
-	IsDirectory  bool   `json:"is_directory"`
-	Size         int64  `json:"size,omitempty"`
-	LastModified string `json:"last_modified,omitempty"`
+	Name         string  `json:"name"`
+	Path         string  `json:"path"`
+	IsDirectory  bool    `json:"is_dir"`
+	Size         int64   `json:"size,omitempty"`
+	Mode         int     `json:"mode,omitempty"`
+	LastModified *string `json:"modified_time,omitempty"`
 }
 
 // SessionFileList represents the response from listing session files.
 type SessionFileList struct {
-	Files []SessionFileInfo `json:"files"`
+	Path    string            `json:"path"`
+	Entries []SessionFileInfo `json:"entries"`
 }

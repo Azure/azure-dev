@@ -1014,6 +1014,8 @@ func (c *AgentClient) UploadSessionFile(
 		return fmt.Errorf("failed to set request body: %w", err)
 	}
 
+	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview")
+
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
 		return fmt.Errorf("HTTP request failed: %w", err)
@@ -1056,6 +1058,8 @@ func (c *AgentClient) DownloadSessionFile(
 
 	runtime.SkipBodyDownload(req)
 
+	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview")
+
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
@@ -1096,6 +1100,8 @@ func (c *AgentClient) ListSessionFiles(
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
+
+	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview")
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
@@ -1149,6 +1155,8 @@ func (c *AgentClient) RemoveSessionFile(
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
+
+	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview")
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {

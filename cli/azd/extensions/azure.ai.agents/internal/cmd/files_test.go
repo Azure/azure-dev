@@ -27,54 +27,44 @@ func TestFilesCommand_HasSubcommands(t *testing.T) {
 	assert.Contains(t, names, "remove")
 }
 
-func TestFilesUploadCommand_MissingArgs(t *testing.T) {
+func TestFilesUploadCommand_MissingFile(t *testing.T) {
 	cmd := newFilesUploadCommand()
 
-	// No args should fail (requires remote-path positional arg)
+	// Missing required --file flag
 	cmd.SetArgs([]string{})
 	err := cmd.Execute()
 	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "file")
 }
 
-func TestFilesUploadCommand_MissingPath(t *testing.T) {
+func TestFilesUploadCommand_HasFlags(t *testing.T) {
 	cmd := newFilesUploadCommand()
 
-	// Missing required --path flag
-	cmd.SetArgs([]string{"/remote/path"})
-	err := cmd.Execute()
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "path")
+	for _, name := range []string{"file", "target-path", "agent-name", "session"} {
+		f := cmd.Flags().Lookup(name)
+		require.NotNil(t, f, "expected flag %q", name)
+		assert.Equal(t, "", f.DefValue)
+	}
 }
 
-func TestFilesUploadCommand_HasServiceFlag(t *testing.T) {
-	cmd := newFilesUploadCommand()
-
-	f := cmd.Flags().Lookup("service")
-	require.NotNil(t, f)
-	assert.Equal(t, "", f.DefValue)
-}
-
-func TestFilesUploadCommand_HasSessionFlag(t *testing.T) {
-	cmd := newFilesUploadCommand()
-
-	f := cmd.Flags().Lookup("session")
-	require.NotNil(t, f)
-	assert.Equal(t, "", f.DefValue)
-}
-
-func TestFilesDownloadCommand_MissingArgs(t *testing.T) {
+func TestFilesDownloadCommand_MissingFile(t *testing.T) {
 	cmd := newFilesDownloadCommand()
 
+	// Missing required --file flag
 	cmd.SetArgs([]string{})
 	err := cmd.Execute()
 	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "file")
 }
 
-func TestFilesDownloadCommand_DefaultOutputPath(t *testing.T) {
+func TestFilesDownloadCommand_HasFlags(t *testing.T) {
 	cmd := newFilesDownloadCommand()
 
-	output, _ := cmd.Flags().GetString("output")
-	assert.Equal(t, "", output, "output should default to empty (uses remote filename)")
+	for _, name := range []string{"file", "target-path", "agent-name", "session"} {
+		f := cmd.Flags().Lookup(name)
+		require.NotNil(t, f, "expected flag %q", name)
+		assert.Equal(t, "", f.DefValue)
+	}
 }
 
 func TestFilesListCommand_DefaultOutputFormat(t *testing.T) {
@@ -91,19 +81,46 @@ func TestFilesListCommand_OptionalRemotePath(t *testing.T) {
 	assert.NotNil(t, cmd.Args)
 }
 
-func TestFilesRemoveCommand_MissingArgs(t *testing.T) {
+func TestFilesRemoveCommand_MissingFile(t *testing.T) {
 	cmd := newFilesRemoveCommand()
 
+	// Missing required --file flag
 	cmd.SetArgs([]string{})
 	err := cmd.Execute()
 	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "file")
 }
 
-func TestFilesRemoveCommand_RecursiveDefault(t *testing.T) {
+func TestFilesRemoveCommand_HasFlags(t *testing.T) {
 	cmd := newFilesRemoveCommand()
+
+	for _, name := range []string{"file", "recursive", "agent-name", "session"} {
+		f := cmd.Flags().Lookup(name)
+		require.NotNil(t, f, "expected flag %q", name)
+	}
 
 	recursive, _ := cmd.Flags().GetBool("recursive")
 	assert.False(t, recursive, "recursive should default to false")
+}
+
+func TestFilesMkdirCommand_MissingDir(t *testing.T) {
+	cmd := newFilesMkdirCommand()
+
+	// Missing required --dir flag
+	cmd.SetArgs([]string{})
+	err := cmd.Execute()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "dir")
+}
+
+func TestFilesMkdirCommand_HasFlags(t *testing.T) {
+	cmd := newFilesMkdirCommand()
+
+	for _, name := range []string{"dir", "agent-name", "session"} {
+		f := cmd.Flags().Lookup(name)
+		require.NotNil(t, f, "expected flag %q", name)
+		assert.Equal(t, "", f.DefValue)
+	}
 }
 
 func TestPrintFileListJSON(t *testing.T) {

@@ -1170,3 +1170,50 @@ func (c *AgentClient) RemoveSessionFile(
 
 	return nil
 }
+
+// MkdirSessionFile creates a directory in a session's filesystem.
+func (c *AgentClient) MkdirSessionFile(
+	ctx context.Context,
+	agentName, agentVersion, sessionID, remotePath string,
+	apiVersion string,
+) error {
+	u, err := url.Parse(c.endpoint)
+	if err != nil {
+		return fmt.Errorf("invalid endpoint URL: %w", err)
+	}
+
+	u.Path += fmt.Sprintf(
+		"/agents/%s/versions/%s/sessions/%s/files/mkdir",
+		agentName, agentVersion, sessionID,
+	)
+
+	query := u.Query()
+	query.Set("api-version", apiVersion)
+	u.RawQuery = query.Encode()
+
+	body, err := json.Marshal(map[string]string{"path": remotePath})
+	if err != nil {
+		return fmt.Errorf("failed to marshal request body: %w", err)
+	}
+
+	req, err := runtime.NewRequest(ctx, http.MethodPost, u.String())
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Raw().Header.Set("Content-Type", "application/json")
+	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview")
+	req.SetBody(streaming.NopCloser(bytes.NewReader(body)), "application/json")
+
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		return fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if !runtime.HasStatusCode(resp, http.StatusOK, http.StatusCreated, http.StatusNoContent) {
+		return runtime.NewResponseError(resp)
+	}
+
+	return nil
+}

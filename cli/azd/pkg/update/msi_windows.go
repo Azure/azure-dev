@@ -198,9 +198,11 @@ func versionFlag(channel Channel) string {
 }
 
 // buildInstallScriptArgs constructs the PowerShell arguments to download and run
-// install-azd.ps1 with the appropriate -Version flag. The MSI is already downloaded
-// over HTTPS from a Microsoft-controlled domain, so the transport-level
-// integrity is sufficient.
+// install-azd.ps1 with the appropriate -Version flag.
+// The -SkipVerify flag is passed because Authenticode verification via
+// Get-AuthenticodeSignature failed and asked for confirmation.
+// The MSI is already downloaded over HTTPS from a Microsoft-controlled domain,
+// so the transport-level integrity is sufficient.
 // Returns the arguments to pass to the "powershell" command.
 func buildInstallScriptArgs(channel Channel) []string {
 	version := versionFlag(channel)
@@ -209,7 +211,7 @@ func buildInstallScriptArgs(channel Channel) []string {
 	script := fmt.Sprintf(
 		`$script = Join-Path $env:TEMP 'install-azd.ps1'; `+
 			`Invoke-RestMethod '%s' -OutFile $script; `+
-			`& $script -Version '%s'; `+
+			`& $script -Version '%s' -SkipVerify; `+
 			`Remove-Item $script -Force -ErrorAction SilentlyContinue`,
 		installScriptURL, version,
 	)

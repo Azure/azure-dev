@@ -315,43 +315,69 @@ func (m *Manager) updateViaPackageManager(
 }
 
 func (m *Manager) updateViaMSI(ctx context.Context, cfg *UpdateConfig, writer io.Writer) error {
-	msiURL, err := m.buildMSIDownloadURL(cfg.Channel)
-	if err != nil {
+	// Step 1: Check for other running azd.exe processes (same exe path, different PID).
+	// The MSI installer cannot replace a locked binary, so all other instances must be closed.
+	fmt.Fprintf(writer, "Checking for other running azd instances...\n")
+	if err := checkOtherAzdProcesses(ctx, m.commandRunner); err != nil {
 		return err
 	}
 
-	fmt.Fprintf(writer, "Downloading MSI from %s...\n", msiURL)
-
-	tempDir := os.TempDir()
-	msiPath := filepath.Join(tempDir, "azd-windows-amd64.msi")
-
-	if err := m.downloadFile(ctx, msiURL, msiPath, writer); err != nil {
-		return newUpdateError(CodeDownloadFailed, err)
-	}
-	// Don't defer os.Remove — the detached msiexec process needs this file after we exit.
-
-	// Build msiexec args. Always write a verbose log so failures are diagnosable.
-	msiLogPath, logErr := msiLogFilePath()
-	args := []string{"/i", msiPath, "/qn"}
-	if logErr == nil {
-		args = append(args, "/l*v", msiLogPath)
-		log.Printf("MSI install log: %s", msiLogPath)
+	// Step 2: Verify the install is the standard per-user MSI configuration.
+	// install-azd.ps1 installs with ALLUSERS=2 to %LOCALAPPDATA%\Programs\Azure Dev CLI.
+	// If the current install is non-standard, abort and advise the user.
+	if err := isStandardMSIInstall(); err != nil {
+		return err
 	}
 
-	log.Printf("Spawning detached msiexec: msiexec %s", strings.Join(args, " "))
-	fmt.Fprintf(writer, "Installing update via MSI...\n")
+	// Step 3: Backup the current exe by renaming it.
+	// Windows allows renaming a running executable — the OS handle follows the file.
+	// This frees the original path so the MSI installer can write the new binary.
+	fmt.Fprintf(writer, "Backing up current azd executable...\n")
+	originalPath, backupPath, err := backupCurrentExe()
+	if err != nil {
+		return newUpdateError(CodeReplaceFailed, fmt.Errorf("failed to backup current executable: %w", err))
+	}
 
-	// Spawn msiexec detached so it can replace the running azd binary.
-	// msiexec cannot overwrite a locked executable; by detaching, azd can exit
-	// and release the file lock before msiexec attempts the replacement.
+	// Ensure the backup is always handled: restored on failure, cleaned up on success.
+	// Using defer guarantees this runs even if an unexpected error or panic occurs.
+	updateSucceeded := false
+	defer func() {
+		if updateSucceeded {
+			cleanupOldBackups(originalPath)
+			return
+		}
+		// Update failed — restore the backup so the user still has a working binary.
+		fmt.Fprintf(writer, "Restoring previous version...\n")
+		if restoreErr := restoreExeFromBackup(originalPath, backupPath); restoreErr != nil {
+			fmt.Fprintf(writer, "WARNING: failed to restore previous version: %v\n", restoreErr)
+			fmt.Fprintf(writer, "Your backup is at: %s\n", backupPath)
+			fmt.Fprintf(writer, "To recover manually, rename it to: %s\n", originalPath)
+		}
+	}()
+
+	// Step 4: Run the install script synchronously and wait for it to complete.
+	psArgs := buildInstallScriptArgs(cfg.Channel)
+
+	log.Printf("Running install script: powershell %s", strings.Join(psArgs, " "))
+	fmt.Fprintf(writer, "Installing azd %s channel...\n", cfg.Channel)
+
 	//nolint:gosec // args are constructed from controlled constants, not user input
-	cmd := osexec.Command("msiexec", args...)
-	cmd.SysProcAttr = newDetachedSysProcAttr()
-	if err := cmd.Start(); err != nil {
-		return newUpdateError(CodeReplaceFailed, fmt.Errorf("failed to start msiexec: %w", err))
+	cmd := osexec.Command("powershell", psArgs...)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	if err := cmd.Run(); err != nil {
+		return newUpdateError(CodeReplaceFailed, fmt.Errorf("install script failed: %w", err))
 	}
 
-	log.Printf("msiexec started with PID %d, azd will exit to release binary lock", cmd.Process.Pid)
+	// Step 5: Verify the installer actually produced a new binary at the expected path.
+	if _, err := os.Stat(originalPath); err != nil {
+		return newUpdateError(CodeReplaceFailed,
+			fmt.Errorf("install script completed but %s was not found", originalPath))
+	}
+
+	updateSucceeded = true
+	log.Printf("Update completed successfully")
 	return nil
 }
 
@@ -428,20 +454,6 @@ func (m *Manager) buildDownloadURL(channel Channel) (string, error) {
 	}
 
 	return fmt.Sprintf("%s/%s/azd-%s-%s%s", blobBaseURL, folder, platform, arch, ext), nil
-}
-
-func (m *Manager) buildMSIDownloadURL(channel Channel) (string, error) {
-	var folder string
-	switch channel {
-	case ChannelStable:
-		folder = "stable"
-	case ChannelDaily:
-		folder = "daily"
-	default:
-		return "", fmt.Errorf("unsupported channel: %s", channel)
-	}
-
-	return fmt.Sprintf("%s/%s/azd-windows-%s.msi", blobBaseURL, folder, runtime.GOARCH), nil
 }
 
 func archiveExtension() string {
@@ -588,15 +600,6 @@ func (m *Manager) replaceBinary(ctx context.Context, newBinaryPath, currentBinar
 	}
 
 	return fmt.Errorf("failed to replace binary: %w", err)
-}
-
-// currentExePath returns the resolved path of the currently running azd binary.
-func currentExePath() (string, error) {
-	exePath, err := os.Executable()
-	if err != nil {
-		return "", err
-	}
-	return filepath.EvalSymlinks(exePath)
 }
 
 func copyFile(src, dst string) error {

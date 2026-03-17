@@ -953,21 +953,16 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 // See: https://github.com/Azure/azure-dev/issues/6530
 type workflowCmdAdapter struct {
 	newCommand func() *cobra.Command
-	args       []string
-}
-
-func (w *workflowCmdAdapter) SetArgs(args []string) {
-	w.args = args
 }
 
 // ExecuteContext implements workflow.AzdCommandRunner.
 // It rebuilds the cobra command tree on each call to ensure a clean slate,
 // preventing "context cancelled" errors from stale command state during retries.
-func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context) error {
+func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context, args []string) error {
 	childCtx := middleware.WithChildAction(ctx)
 	rootCmd := w.newCommand()
-	if w.args != nil {
-		rootCmd.SetArgs(w.args)
+	if len(args) > 0 {
+		rootCmd.SetArgs(args)
 	}
 	return rootCmd.ExecuteContext(childCtx)
 }

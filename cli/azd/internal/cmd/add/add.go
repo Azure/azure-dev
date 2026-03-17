@@ -359,8 +359,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	if provisionOption == provision {
-		a.azd.SetArgs([]string{followUpCmd})
-		err = a.azd.ExecuteContext(ctx)
+		err = a.azd.ExecuteContext(ctx, []string{followUpCmd})
 		if err != nil {
 			return nil, err
 		}

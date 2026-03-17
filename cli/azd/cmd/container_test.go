@@ -196,8 +196,7 @@ func Test_WorkflowCmdAdapter_ContextPropagation(t *testing.T) {
 		// In production, main.go wraps with context.WithoutCancel.
 		// Simulate this by using a non-cancellable context.
 		ctx := context.WithoutCancel(context.Background())
-		adapter.SetArgs([]string{"sub"})
-		err := adapter.ExecuteContext(ctx)
+		err := adapter.ExecuteContext(ctx, []string{"sub"})
 		require.NoError(t, err)
 		require.Len(t, receivedContexts, 1, "Execution should have received context")
 
@@ -214,8 +213,7 @@ func Test_WorkflowCmdAdapter_ContextPropagation(t *testing.T) {
 		}
 
 		// Execute again - should still work (fresh command tree each time)
-		adapter.SetArgs([]string{"sub"})
-		err = adapter.ExecuteContext(ctx)
+		err = adapter.ExecuteContext(ctx, []string{"sub"})
 		require.NoError(t, err)
 		require.Len(t, receivedContexts, 2, "Second execution should have received context")
 
@@ -255,8 +253,7 @@ func Test_WorkflowCmdAdapter_ContextPropagation(t *testing.T) {
 
 		// In production, main.go wraps with context.WithoutCancel.
 		ctx := context.WithoutCancel(context.Background())
-		adapter.SetArgs([]string{"parent", "child"})
-		err := adapter.ExecuteContext(ctx)
+		err := adapter.ExecuteContext(ctx, []string{"parent", "child"})
 		require.NoError(t, err)
 		require.Len(t, receivedContexts, 1)
 
@@ -265,8 +262,7 @@ func Test_WorkflowCmdAdapter_ContextPropagation(t *testing.T) {
 			"Nested context should be marked as child action")
 
 		// Second execution should also work (fresh command tree)
-		adapter.SetArgs([]string{"parent", "child"})
-		err = adapter.ExecuteContext(ctx)
+		err = adapter.ExecuteContext(ctx, []string{"parent", "child"})
 		require.NoError(t, err)
 		require.Len(t, receivedContexts, 2)
 
@@ -304,12 +300,10 @@ func Test_WorkflowCmdAdapter_ContextPropagation(t *testing.T) {
 		adapter := &workflowCmdAdapter{newCommand: newCommand}
 		ctx := context.WithoutCancel(context.Background())
 
-		adapter.SetArgs([]string{"test"})
-		err := adapter.ExecuteContext(ctx)
+		err := adapter.ExecuteContext(ctx, []string{"test"})
 		require.NoError(t, err)
 
-		adapter.SetArgs([]string{"test"})
-		err = adapter.ExecuteContext(ctx)
+		err = adapter.ExecuteContext(ctx, []string{"test"})
 		require.NoError(t, err)
 
 		// Each execution should have created a distinct command tree

@@ -891,13 +891,12 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		container.MustRegisterNamedSingleton(platformName, constructor)
 	}
 
-	container.MustRegisterSingleton(func(s ioc.ServiceLocator) (workflow.AzdCommandRunner, error) {
-		var rootCmd *cobra.Command
-		if err := s.ResolveNamed("root-cmd", &rootCmd); err != nil {
-			return nil, err
+	container.MustRegisterSingleton(func() workflow.AzdCommandRunner {
+		return &workflowCmdAdapter{
+			newCommand: func() *cobra.Command {
+				return NewRootCmd(false, nil, container)
+			},
 		}
-		return &workflowCmdAdapter{cmd: rootCmd}, nil
-
 	})
 	container.MustRegisterSingleton(workflow.NewRunner)
 
@@ -948,19 +947,29 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	registerAction[*configShowAction](container, "azd-config-show-action")
 }
 
-// workflowCmdAdapter adapts a cobra command to the workflow.AzdCommandRunner interface
+// workflowCmdAdapter adapts a cobra command to the workflow.AzdCommandRunner interface.
+// On each ExecuteContext call, a fresh cobra command tree is built via the newCommand factory
+// to avoid stale context or command state from previous executions.
+// See: https://github.com/Azure/azure-dev/issues/6530
 type workflowCmdAdapter struct {
-	cmd *cobra.Command
+	newCommand func() *cobra.Command
+	args       []string
 }
 
 func (w *workflowCmdAdapter) SetArgs(args []string) {
-	w.cmd.SetArgs(args)
+	w.args = args
 }
 
-// ExecuteContext implements workflow.AzdCommandRunner
+// ExecuteContext implements workflow.AzdCommandRunner.
+// It rebuilds the cobra command tree on each call to ensure a clean slate,
+// preventing "context cancelled" errors from stale command state during retries.
 func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context) error {
 	childCtx := middleware.WithChildAction(ctx)
-	return w.cmd.ExecuteContext(childCtx)
+	rootCmd := w.newCommand()
+	if w.args != nil {
+		rootCmd.SetArgs(w.args)
+	}
+	return rootCmd.ExecuteContext(childCtx)
 }
 
 // ArmClientInitializer is a function definition for all Azure SDK ARM Client

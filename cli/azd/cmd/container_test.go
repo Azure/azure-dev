@@ -170,24 +170,27 @@ func Test_WorkflowCmdAdapter_ContextPropagation(t *testing.T) {
 		// Track which contexts were seen by the subcommand
 		var receivedContexts []context.Context
 
-		// Create a root command with a subcommand
-		rootCmd := &cobra.Command{
-			Use: "root",
+		// Create a command factory that builds a fresh tree on each call
+		newCommand := func() *cobra.Command {
+			rootCmd := &cobra.Command{
+				Use: "root",
+			}
+
+			subCmd := &cobra.Command{
+				Use: "sub",
+				RunE: func(cmd *cobra.Command, args []string) error {
+					// Capture the context that the subcommand receives
+					receivedContexts = append(receivedContexts, cmd.Context())
+					return nil
+				},
+			}
+
+			rootCmd.AddCommand(subCmd)
+			return rootCmd
 		}
 
-		subCmd := &cobra.Command{
-			Use: "sub",
-			RunE: func(cmd *cobra.Command, args []string) error {
-				// Capture the context that the subcommand receives
-				receivedContexts = append(receivedContexts, cmd.Context())
-				return nil
-			},
-		}
-
-		rootCmd.AddCommand(subCmd)
-
-		// Create the adapter
-		adapter := &workflowCmdAdapter{cmd: rootCmd}
+		// Create the adapter with a factory
+		adapter := &workflowCmdAdapter{newCommand: newCommand}
 
 		// In production, main.go wraps with context.WithoutCancel.
 		// Simulate this by using a non-cancellable context.
@@ -209,7 +212,7 @@ func Test_WorkflowCmdAdapter_ContextPropagation(t *testing.T) {
 			// Expected: context is still valid
 		}
 
-		// Execute again - should still work
+		// Execute again - should still work (fresh command tree each time)
 		adapter.SetArgs([]string{"sub"})
 		err = adapter.ExecuteContext(ctx)
 		require.NoError(t, err)
@@ -224,27 +227,30 @@ func Test_WorkflowCmdAdapter_ContextPropagation(t *testing.T) {
 		// Track which contexts were seen
 		var receivedContexts []context.Context
 
-		// Create a root command with nested subcommands
-		rootCmd := &cobra.Command{
-			Use: "root",
+		// Create a command factory that builds a fresh tree on each call
+		newCommand := func() *cobra.Command {
+			rootCmd := &cobra.Command{
+				Use: "root",
+			}
+
+			parentCmd := &cobra.Command{
+				Use: "parent",
+			}
+
+			childCmd := &cobra.Command{
+				Use: "child",
+				RunE: func(cmd *cobra.Command, args []string) error {
+					receivedContexts = append(receivedContexts, cmd.Context())
+					return nil
+				},
+			}
+
+			parentCmd.AddCommand(childCmd)
+			rootCmd.AddCommand(parentCmd)
+			return rootCmd
 		}
 
-		parentCmd := &cobra.Command{
-			Use: "parent",
-		}
-
-		childCmd := &cobra.Command{
-			Use: "child",
-			RunE: func(cmd *cobra.Command, args []string) error {
-				receivedContexts = append(receivedContexts, cmd.Context())
-				return nil
-			},
-		}
-
-		parentCmd.AddCommand(childCmd)
-		rootCmd.AddCommand(parentCmd)
-
-		adapter := &workflowCmdAdapter{cmd: rootCmd}
+		adapter := &workflowCmdAdapter{newCommand: newCommand}
 
 		// In production, main.go wraps with context.WithoutCancel.
 		ctx := context.WithoutCancel(context.Background())
@@ -257,7 +263,7 @@ func Test_WorkflowCmdAdapter_ContextPropagation(t *testing.T) {
 		require.True(t, middleware.IsChildAction(receivedContexts[0]),
 			"Nested context should be marked as child action")
 
-		// Second execution should also work
+		// Second execution should also work (fresh command tree)
 		adapter.SetArgs([]string{"parent", "child"})
 		err = adapter.ExecuteContext(ctx)
 		require.NoError(t, err)
@@ -273,5 +279,41 @@ func Test_WorkflowCmdAdapter_ContextPropagation(t *testing.T) {
 
 		require.True(t, middleware.IsChildAction(receivedContexts[1]),
 			"Second nested context should also be marked as child action")
+	})
+
+	t.Run("FreshCommandTreeOnEachExecution", func(t *testing.T) {
+		// Verify that each ExecuteContext call creates a new command tree,
+		// ensuring no stale state from previous executions.
+		var commandTreeInstances []*cobra.Command
+
+		newCommand := func() *cobra.Command {
+			rootCmd := &cobra.Command{
+				Use: "root",
+			}
+			rootCmd.AddCommand(&cobra.Command{
+				Use: "test",
+				RunE: func(cmd *cobra.Command, args []string) error {
+					return nil
+				},
+			})
+			commandTreeInstances = append(commandTreeInstances, rootCmd)
+			return rootCmd
+		}
+
+		adapter := &workflowCmdAdapter{newCommand: newCommand}
+		ctx := context.WithoutCancel(context.Background())
+
+		adapter.SetArgs([]string{"test"})
+		err := adapter.ExecuteContext(ctx)
+		require.NoError(t, err)
+
+		adapter.SetArgs([]string{"test"})
+		err = adapter.ExecuteContext(ctx)
+		require.NoError(t, err)
+
+		// Each execution should have created a distinct command tree
+		require.Len(t, commandTreeInstances, 2, "Factory should have been called twice")
+		require.NotSame(t, commandTreeInstances[0], commandTreeInstances[1],
+			"Each execution should use a distinct command tree instance")
 	})
 }

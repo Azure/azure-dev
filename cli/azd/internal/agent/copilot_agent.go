@@ -43,14 +43,16 @@ type CopilotAgent struct {
 	systemMessageOverride   string
 	mode                    AgentMode
 	debug                   bool
+	headless                bool
 	onSessionStarted        func(sessionID string)
 
 	// Runtime state
-	clientStarted bool
-	session       *copilot.Session
-	sessionID     string
-	sessionCtx    context.Context
-	display       *AgentDisplay // last display for usage metrics
+	clientStarted   bool
+	session         *copilot.Session
+	sessionID       string
+	sessionCtx      context.Context
+	display         *AgentDisplay // last display for usage metrics (interactive mode)
+	cumulativeUsage UsageMetrics  // cumulative metrics across multiple SendMessage calls
 
 	// Cleanup — ordered slice for deterministic teardown
 	cleanupTasks []cleanupTask
@@ -277,7 +279,29 @@ func (a *CopilotAgent) SendMessage(ctx context.Context, prompt string, opts ...S
 		return nil, err
 	}
 
-	// Create display for this message turn
+	// Determine mode — headless defaults to autopilot
+	mode := a.mode
+	if mode == "" {
+		if a.headless {
+			mode = AgentModeAutopilot
+		} else {
+			mode = AgentModeInteractive
+		}
+	}
+
+	log.Printf("[copilot] SendMessage: sending prompt (%d chars, headless=%v)...", len(prompt), a.headless)
+
+	if a.headless {
+		return a.sendMessageHeadless(ctx, prompt, mode)
+	}
+
+	return a.sendMessageInteractive(ctx, prompt, mode)
+}
+
+// sendMessageInteractive sends a message with full interactive display and file watcher.
+func (a *CopilotAgent) sendMessageInteractive(
+	ctx context.Context, prompt string, mode AgentMode,
+) (*AgentResult, error) {
 	display := NewAgentDisplay(a.console)
 	a.display = display
 	displayCtx, displayCancel := context.WithCancel(ctx)
@@ -300,19 +324,9 @@ func (a *CopilotAgent) SendMessage(ctx context.Context, prompt string, opts ...S
 		}
 	}()
 
-	// Subscribe display to session events
 	unsubscribe := a.session.On(display.HandleEvent)
 	defer unsubscribe()
 
-	log.Printf("[copilot] SendMessage: sending prompt (%d chars)...", len(prompt))
-
-	// Determine mode
-	mode := a.mode
-	if mode == "" {
-		mode = AgentModeInteractive
-	}
-
-	// Send prompt (non-blocking)
 	_, err = a.session.Send(ctx, copilot.MessageOptions{
 		Prompt: prompt,
 		Mode:   string(mode),
@@ -321,15 +335,67 @@ func (a *CopilotAgent) SendMessage(ctx context.Context, prompt string, opts ...S
 		return nil, fmt.Errorf("copilot agent error: %w", err)
 	}
 
-	// Wait for idle — display handles all UX rendering
 	if err := display.WaitForIdle(ctx); err != nil {
 		return nil, err
 	}
 
+	turnUsage := display.GetUsageMetrics()
+	a.accumulateUsage(turnUsage)
+
 	return &AgentResult{
 		SessionID: a.sessionID,
-		Usage:     display.GetUsageMetrics(),
+		Usage:     turnUsage,
 	}, nil
+}
+
+// sendMessageHeadless sends a message silently using the HeadlessCollector.
+func (a *CopilotAgent) sendMessageHeadless(
+	ctx context.Context, prompt string, mode AgentMode,
+) (*AgentResult, error) {
+	collector := NewHeadlessCollector()
+
+	unsubscribe := a.session.On(collector.HandleEvent)
+	defer unsubscribe()
+
+	_, err := a.session.Send(ctx, copilot.MessageOptions{
+		Prompt: prompt,
+		Mode:   string(mode),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("copilot agent error: %w", err)
+	}
+
+	if err := collector.WaitForIdle(ctx); err != nil {
+		return nil, err
+	}
+
+	turnUsage := collector.GetUsageMetrics()
+	a.accumulateUsage(turnUsage)
+
+	return &AgentResult{
+		SessionID: a.sessionID,
+		Usage:     turnUsage,
+	}, nil
+}
+
+// accumulateUsage adds turn usage to the cumulative total.
+func (a *CopilotAgent) accumulateUsage(turn UsageMetrics) {
+	a.cumulativeUsage.InputTokens += turn.InputTokens
+	a.cumulativeUsage.OutputTokens += turn.OutputTokens
+	a.cumulativeUsage.DurationMS += turn.DurationMS
+	a.cumulativeUsage.PremiumRequests += turn.PremiumRequests
+	// These are per-request values, not cumulative — use latest
+	if turn.Model != "" {
+		a.cumulativeUsage.Model = turn.Model
+	}
+	if turn.BillingRate > 0 {
+		a.cumulativeUsage.BillingRate = turn.BillingRate
+	}
+}
+
+// GetCumulativeUsage returns the cumulative usage metrics across all SendMessage calls.
+func (a *CopilotAgent) GetCumulativeUsage() UsageMetrics {
+	return a.cumulativeUsage
 }
 
 // SendMessageWithRetry wraps SendMessage with interactive retry-on-error UX.
@@ -490,11 +556,18 @@ func (a *CopilotAgent) ensureSession(ctx context.Context, resumeSessionID string
 }
 
 // createPermissionHandler builds the OnPermissionRequest handler.
-// Routes all permission kinds through the consent manager for unified access control.
+// In headless mode, auto-approves all requests. Otherwise routes
+// through the consent manager for unified access control.
 func (a *CopilotAgent) createPermissionHandler() copilot.PermissionHandlerFunc {
 	return func(req copilot.PermissionRequest, inv copilot.PermissionInvocation) (
 		copilot.PermissionRequestResult, error,
 	) {
+		// In headless mode, auto-approve all permission requests
+		if a.headless {
+			log.Printf("[copilot] PermissionRequest (headless auto-approve): kind=%s", req.Kind)
+			return copilot.PermissionRequestResult{Kind: "approved"}, nil
+		}
+
 		server, tool, readOnly := permissionToConsentTarget(req)
 		toolID := fmt.Sprintf("%s/%s", server, tool)
 

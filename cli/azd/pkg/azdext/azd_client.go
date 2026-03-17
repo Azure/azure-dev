@@ -33,6 +33,7 @@ type AzdClient struct {
 	containerClient     ContainerServiceClient
 	accountClient       AccountServiceClient
 	aiClient            AiModelServiceClient
+	copilotClient       CopilotServiceClient
 }
 
 // WithAddress sets the address of the `azd` gRPC server.
@@ -230,4 +231,13 @@ func (c *AzdClient) Ai() AiModelServiceClient {
 	}
 
 	return c.aiClient
+}
+
+// Copilot returns the Copilot agent service client.
+func (c *AzdClient) Copilot() CopilotServiceClient {
+	if c.copilotClient == nil {
+		c.copilotClient = NewCopilotServiceClient(c.connection)
+	}
+
+	return c.copilotClient
 }

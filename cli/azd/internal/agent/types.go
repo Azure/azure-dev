@@ -136,6 +136,13 @@ func WithDebug(debug bool) AgentOption {
 	return func(a *CopilotAgent) { a.debug = debug }
 }
 
+// WithHeadless enables headless mode, suppressing all console output.
+// In headless mode, the agent uses a silent collector instead of the
+// interactive display, and defaults to autopilot mode.
+func WithHeadless(headless bool) AgentOption {
+	return func(a *CopilotAgent) { a.headless = headless }
+}
+
 // OnSessionStarted registers a callback that fires when a session is created or resumed.
 func OnSessionStarted(fn func(sessionID string)) AgentOption {
 	return func(a *CopilotAgent) { a.onSessionStarted = fn }

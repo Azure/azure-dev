@@ -40,6 +40,7 @@ func Test_Server_Start(t *testing.T) {
 		azdext.UnimplementedContainerServiceServer{},
 		azdext.UnimplementedAccountServiceServer{},
 		azdext.UnimplementedAiModelServiceServer{},
+		azdext.UnimplementedCopilotServiceServer{},
 	)
 
 	serverInfo, err := server.Start()

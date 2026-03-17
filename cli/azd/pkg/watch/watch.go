@@ -19,6 +19,7 @@ import (
 
 type Watcher interface {
 	PrintChangedFiles(ctx context.Context)
+	GetFileChanges() []FileChange
 }
 
 type fileWatcher struct {
@@ -203,4 +204,43 @@ func (fw *fileWatcher) PrintChangedFiles(ctx context.Context) {
 			fmt.Println(output.WithGrayFormat("| "), color.RedString("- Deleted  "), getDisplayPath(file))
 		}
 	}
+}
+
+// FileChangeType enumerates the types of file changes.
+type FileChangeType int
+
+const (
+	// FileCreated indicates a new file was created.
+	FileCreated FileChangeType = iota
+	// FileModified indicates an existing file was modified.
+	FileModified
+	// FileDeleted indicates a file was deleted.
+	FileDeleted
+)
+
+// FileChange describes a single file change with its path and type.
+type FileChange struct {
+	Path       string
+	ChangeType FileChangeType
+}
+
+// GetFileChanges returns all file changes tracked by the watcher as structured data.
+func (fw *fileWatcher) GetFileChanges() []FileChange {
+	fw.mu.Lock()
+	defer fw.mu.Unlock()
+
+	changes := make([]FileChange, 0,
+		len(fw.fileChanges.Created)+len(fw.fileChanges.Modified)+len(fw.fileChanges.Deleted))
+
+	for file := range fw.fileChanges.Created {
+		changes = append(changes, FileChange{Path: file, ChangeType: FileCreated})
+	}
+	for file := range fw.fileChanges.Modified {
+		changes = append(changes, FileChange{Path: file, ChangeType: FileModified})
+	}
+	for file := range fw.fileChanges.Deleted {
+		changes = append(changes, FileChange{Path: file, ChangeType: FileDeleted})
+	}
+
+	return changes
 }

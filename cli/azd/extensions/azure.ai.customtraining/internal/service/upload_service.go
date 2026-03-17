@@ -218,31 +218,17 @@ func (s *UploadService) doUpload(
 }
 
 // IsLocalPath returns true if the path is a local file/directory path (not a remote URI).
-// Remote paths include https://, azureml://, wasbs://, etc.
+// Any path containing "://" is treated as remote (azureml://, https://, wasbs://, etc.).
+// The short-form azureml:name:version is also treated as remote.
 func IsLocalPath(path string) bool {
 	if path == "" {
 		return false
 	}
-
-	// Remote URI schemes
-	remoteSchemes := []string{
-		"https://",
-		"http://",
-		"azureml://",
-		"wasbs://",
-		"abfss://",
-	}
-	lowerPath := strings.ToLower(path)
-	for _, scheme := range remoteSchemes {
-		if strings.HasPrefix(lowerPath, scheme) {
-			return false
-		}
-	}
-
-	// If it starts with azureml: (short form like azureml:name:version), it's remote
-	if strings.HasPrefix(lowerPath, "azureml:") {
+	if strings.Contains(path, "://") {
 		return false
 	}
-
+	if strings.HasPrefix(strings.ToLower(path), "azureml:") {
+		return false
+	}
 	return true
 }

@@ -1844,6 +1844,15 @@ const completionSpec: Fig.Spec = {
 						},
 					],
 				},
+				{
+					name: ['--timeout'],
+					description: 'Maximum time in seconds for azd to wait for each service deployment. This stops azd from waiting but does not cancel the Azure-side deployment. (default: 1200)',
+					args: [
+						{
+							name: 'timeout',
+						},
+					],
+				},
 			],
 			args: {
 				name: 'service',

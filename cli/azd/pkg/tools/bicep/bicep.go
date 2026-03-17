@@ -14,7 +14,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -32,7 +31,7 @@ var Version semver.Version = semver.MustParse("0.41.2")
 // Cli is a wrapper around the bicep CLI.
 // The CLI automatically ensures bicep is installed before executing commands.
 //
-// Concurrency notes: The sync.Once is per-instance, not global. In normal operation, the IoC
+// Concurrency notes: The sync.Mutex is per-instance, not global. In normal operation, the IoC
 // container registers Cli as a singleton, so one shared instance is used. However, some code paths
 // (e.g., service_target_containerapp.go) create new instances inline. If multiple instances race to
 // install bicep concurrently, this is safe because downloadBicep uses atomic file operations
@@ -43,8 +42,7 @@ type Cli struct {
 	console     input.Console
 	transporter policy.Transporter
 
-	installOnce sync.Once
-	installErr  error
+	installInit osutil.LazyRetryInit
 }
 
 // NewCli creates a new Bicep CLI wrapper.
@@ -69,10 +67,9 @@ func newCliWithTransporter(
 // ensureInstalledOnce checks if bicep is available and downloads/upgrades if needed.
 // This is safe to call multiple times; installation only happens once.
 func (cli *Cli) ensureInstalledOnce(ctx context.Context) error {
-	cli.installOnce.Do(func() {
-		cli.installErr = cli.ensureInstalled(ctx)
+	return cli.installInit.Do(func() error {
+		return cli.ensureInstalled(ctx)
 	})
-	return cli.installErr
 }
 
 func (cli *Cli) ensureInstalled(ctx context.Context) error {

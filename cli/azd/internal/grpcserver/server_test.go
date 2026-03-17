@@ -108,6 +108,125 @@ func Test_Server_Start(t *testing.T) {
 	})
 }
 
+// Test_Server_StreamInterceptor validates that the streaming RPC interceptor
+// enforces authentication the same way as the unary interceptor.
+func Test_Server_StreamInterceptor(t *testing.T) {
+	server := NewServer(
+		azdext.UnimplementedProjectServiceServer{},
+		azdext.UnimplementedEnvironmentServiceServer{},
+		azdext.UnimplementedPromptServiceServer{},
+		azdext.UnimplementedUserConfigServiceServer{},
+		azdext.UnimplementedDeploymentServiceServer{},
+		azdext.UnimplementedEventServiceServer{},
+		azdext.UnimplementedComposeServiceServer{},
+		azdext.UnimplementedWorkflowServiceServer{},
+		azdext.UnimplementedExtensionServiceServer{},
+		azdext.UnimplementedServiceTargetServiceServer{},
+		azdext.UnimplementedFrameworkServiceServer{},
+		azdext.UnimplementedContainerServiceServer{},
+		azdext.UnimplementedAccountServiceServer{},
+		azdext.UnimplementedAiModelServiceServer{},
+	)
+
+	serverInfo, err := server.Start()
+	require.NotNil(t, serverInfo)
+	require.NoError(t, err)
+	defer func() {
+		err := server.Stop()
+		require.NoError(t, err)
+	}()
+
+	extension := &extensions.Extension{
+		Id: "azd.internal.test",
+		Capabilities: []extensions.CapabilityType{
+			extensions.CustomCommandCapability,
+		},
+		Namespace: "test",
+	}
+
+	t.Run("ValidToken", func(t *testing.T) {
+		accessToken, err := GenerateExtensionToken(extension, serverInfo)
+		require.NoError(t, err)
+
+		ctx := azdext.WithAccessToken(context.Background(), accessToken)
+		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
+		require.NoError(t, err)
+		defer client.Close()
+
+		stream, err := client.Events().EventStream(ctx)
+		// With a valid token, the stream should open successfully.
+		// The underlying service is unimplemented, so we may get Unimplemented on Send/Recv,
+		// but the stream itself should be created without an auth error.
+		if err != nil {
+			st, ok := status.FromError(err)
+			require.True(t, ok)
+			// Unimplemented is acceptable (mock service), but Unauthenticated is not.
+			require.NotEqual(t, codes.Unauthenticated, st.Code(),
+				"valid token should not get Unauthenticated")
+		} else {
+			require.NotNil(t, stream)
+			// Try to close the send side; any error should be Unimplemented, not Unauthenticated.
+			err = stream.CloseSend()
+			if err != nil {
+				st, ok := status.FromError(err)
+				if ok {
+					require.NotEqual(t, codes.Unauthenticated, st.Code())
+				}
+			}
+		}
+	})
+
+	t.Run("MissingToken", func(t *testing.T) {
+		ctx := context.Background()
+		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
+		require.NoError(t, err)
+		defer client.Close()
+
+		stream, err := client.Events().EventStream(ctx)
+		if err != nil {
+			st, ok := status.FromError(err)
+			require.True(t, ok)
+			require.Equal(t, codes.Unauthenticated, st.Code())
+		} else {
+			// For bidi streams, the auth error may surface on Recv rather than stream creation.
+			_, recvErr := stream.Recv()
+			require.Error(t, recvErr)
+			st, ok := status.FromError(recvErr)
+			require.True(t, ok)
+			require.Equal(t, codes.Unauthenticated, st.Code())
+		}
+	})
+
+	t.Run("InvalidToken", func(t *testing.T) {
+		invalidServerInfo := &ServerInfo{
+			Address:    serverInfo.Address,
+			Port:       serverInfo.Port,
+			SigningKey: []byte("invalid"),
+		}
+		accessToken, err := GenerateExtensionToken(extension, invalidServerInfo)
+		require.NoError(t, err)
+
+		ctx := azdext.WithAccessToken(context.Background(), accessToken)
+		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
+		require.NoError(t, err)
+		defer client.Close()
+
+		stream, err := client.Events().EventStream(ctx)
+		if err != nil {
+			st, ok := status.FromError(err)
+			require.True(t, ok)
+			require.Equal(t, codes.Unauthenticated, st.Code())
+		} else {
+			// For bidi streams, the auth error may surface on Recv rather than stream creation.
+			_, recvErr := stream.Recv()
+			require.Error(t, recvErr)
+			st, ok := status.FromError(recvErr)
+			require.True(t, ok)
+			require.Equal(t, codes.Unauthenticated, st.Code())
+		}
+	})
+}
+
 func Test_wrapErrorWithSuggestion(t *testing.T) {
 	tests := []struct {
 		name             string

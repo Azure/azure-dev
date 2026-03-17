@@ -193,3 +193,31 @@ func TestPanic(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "this is the panic office, again.")
 }
+
+func TestCheckLocalhostOrigin(t *testing.T) {
+	tests := []struct {
+		name     string
+		origin   string
+		expected bool
+	}{
+		{"empty origin (same-origin)", "", true},
+		{"localhost", "http://localhost:8080", true},
+		{"127.0.0.1", "http://127.0.0.1:3000", true},
+		{"ipv6 loopback", "http://[::1]:8080", true},
+		{"external domain rejected", "http://evil.com", false},
+		{"localhost subdomain rejected", "http://localhost.evil.com", false},
+		{"non-localhost IP rejected", "http://192.168.1.1:8080", false},
+		{"malformed URL rejected", "not-a-url://%%%", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/", nil)
+			if tt.origin != "" {
+				req.Header.Set("Origin", tt.origin)
+			}
+			result := checkLocalhostOrigin(req)
+			require.Equal(t, tt.expected, result)
+		})
+	}
+}

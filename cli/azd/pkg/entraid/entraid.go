@@ -552,7 +552,7 @@ func (ad *entraIdService) CreateRbac(
 		subscriptionId,
 		scope,
 		&armauthorization.RoleDefinition{
-			ID:   new(fullRoleId),
+			ID:   &fullRoleId,
 			Name: new(roleId),
 		},
 		&graphsdk.ServicePrincipal{

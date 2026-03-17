@@ -19,7 +19,6 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
-	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -96,18 +95,16 @@ type Cli struct {
 	extractImplementation extractGitHubCliFromFileImplementation
 	path                  string
 
-	installOnce sync.Once
-	installErr  error
+	installInit osutil.LazyRetryInit
 }
 
 // EnsureInstalled checks if GitHub CLI is available and downloads/upgrades if needed.
 // This is safe to call multiple times; installation only happens once.
 // Should be called with a request-scoped context before first use.
 func (cli *Cli) EnsureInstalled(ctx context.Context) error {
-	cli.installOnce.Do(func() {
-		cli.installErr = cli.ensureInstalled(ctx)
+	return cli.installInit.Do(func() error {
+		return cli.ensureInstalled(ctx)
 	})
-	return cli.installErr
 }
 
 func (cli *Cli) ensureInstalled(ctx context.Context) error {

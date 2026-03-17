@@ -767,7 +767,10 @@ func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context) error {
 	}
 
 	// Create FoundryProjectsClient and get connections
-	foundryClient := azure.NewFoundryProjectsClient(foundryProject.AiAccountName, foundryProject.AiProjectName, a.credential)
+	foundryClient, err := azure.NewFoundryProjectsClient(foundryProject.AiAccountName, foundryProject.AiProjectName, a.credential)
+	if err != nil {
+		return fmt.Errorf("creating Foundry client: %w", err)
+	}
 	connections, err := foundryClient.GetAllConnections(ctx)
 	if err != nil {
 		fmt.Printf("Could not get Microsoft Foundry project connections to initialize AZURE_CONTAINER_REGISTRY_ENDPOINT: %v. Please set this environment variable manually.\n", err)

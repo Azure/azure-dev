@@ -33,9 +33,7 @@ func TestHandleAzdYamlSchema_ValidYaml(t *testing.T) {
 	tmpFile.Close()
 	yamlPath := tmpFile.Name()
 
-	oldWd, _ := os.Getwd()
-	os.Chdir(tmpDir)
-	defer os.Chdir(oldWd)
+	t.Chdir(tmpDir)
 	os.Rename(yamlPath, "azure.yaml") //nolint:gosec // G703: test file rename with controlled paths
 	defer os.Remove("azure.yaml")
 
@@ -54,9 +52,7 @@ func TestHandleAzdYamlSchema_ValidYaml(t *testing.T) {
 func TestHandleAzdYamlSchema_MissingYaml(t *testing.T) {
 	// Arrange
 	tmpDir := t.TempDir()
-	oldWd, _ := os.Getwd()
-	os.Chdir(tmpDir)
-	defer os.Chdir(oldWd)
+	t.Chdir(tmpDir)
 
 	req := mcp.CallToolRequest{}
 	req.Params.Arguments = map[string]any{"path": "azure.yaml"}
@@ -82,9 +78,7 @@ func TestHandleAzdYamlSchema_InvalidYaml(t *testing.T) {
 	tmpFile.Close()
 	yamlPath := tmpFile.Name()
 
-	oldWd, _ := os.Getwd()
-	os.Chdir(tmpDir)
-	defer os.Chdir(oldWd)
+	t.Chdir(tmpDir)
 	os.Rename(yamlPath, "azure.yaml") //nolint:gosec // G703: test file rename with controlled paths
 	defer os.Remove("azure.yaml")
 
@@ -112,9 +106,7 @@ func TestHandleAzdYamlSchema_YamlNotValidSyntax(t *testing.T) {
 	tmpFile.Close()
 	yamlPath := tmpFile.Name()
 
-	oldWd, _ := os.Getwd()
-	os.Chdir(tmpDir)
-	defer os.Chdir(oldWd)
+	t.Chdir(tmpDir)
 	os.Rename(yamlPath, "azure.yaml") //nolint:gosec // G703: test file rename with controlled paths
 	defer os.Remove("azure.yaml")
 
@@ -143,9 +135,7 @@ func TestHandleAzdYamlSchema_YamlValidButSchemaInvalid(t *testing.T) {
 	tmpFile.Close()
 	yamlPath := tmpFile.Name()
 
-	oldWd, _ := os.Getwd()
-	os.Chdir(tmpDir)
-	defer os.Chdir(oldWd)
+	t.Chdir(tmpDir)
 	os.Rename(yamlPath, "azure.yaml") //nolint:gosec // G703: test file rename with controlled paths
 	defer os.Remove("azure.yaml")
 
@@ -173,9 +163,7 @@ func TestHandleAzdYamlSchema_InvalidYaml_Structural(t *testing.T) {
 	tmpFile.Close()
 	yamlPath := tmpFile.Name()
 
-	oldWd, _ := os.Getwd()
-	os.Chdir(tmpDir)
-	defer os.Chdir(oldWd)
+	t.Chdir(tmpDir)
 	os.Rename(yamlPath, "azure.yaml") //nolint:gosec // G703: test file rename with controlled paths
 	defer os.Remove("azure.yaml")
 

@@ -238,8 +238,7 @@ func chatLoop(
 
 		// SendMessage creates the session on the first call, reuses it after
 		sendReq := &azdext.SendCopilotMessageRequest{
-			Prompt:   input,
-			Headless: true,
+			Prompt: input,
 		}
 		if sessionID != "" {
 			sendReq.SessionId = sessionID
@@ -261,35 +260,10 @@ func chatLoop(
 		// Capture the session ID from the response for reuse
 		sessionID = sendResp.SessionId
 
-		// Display turn usage
-		if sendResp.Usage != nil {
-			displayTurnUsage(turn, sendResp.Usage)
-		}
-
 		fmt.Println()
 	}
 
 	return sessionID, nil
-}
-
-// displayTurnUsage shows brief usage metrics for a single turn.
-func displayTurnUsage(turn int, usage *azdext.CopilotUsageMetrics) {
-	fmt.Printf("  %s Turn %d complete", color.GreenString("✓"), turn)
-	if usage.Model != "" {
-		fmt.Printf(" (%s)", color.CyanString(usage.Model))
-	}
-	fmt.Println()
-
-	fmt.Printf("    %s Tokens: %s in / %s out / %s total\n",
-		color.HiBlackString("•"),
-		formatTokens(usage.InputTokens),
-		formatTokens(usage.OutputTokens),
-		formatTokens(usage.TotalTokens))
-
-	if usage.DurationMs > 0 {
-		fmt.Printf("    %s Duration: %s\n",
-			color.HiBlackString("•"), formatDuration(usage.DurationMs))
-	}
 }
 
 // showCumulativeMetrics displays cumulative session usage.

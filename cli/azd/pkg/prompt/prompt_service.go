@@ -35,17 +35,17 @@ func isDemoModeEnabled() bool {
 	return err == nil && v
 }
 
-func formatSubscriptionDisplayName(subscription *account.Subscription) string {
-	if isDemoModeEnabled() {
+func formatSubscriptionDisplayName(subscription *account.Subscription, hideId bool) string {
+	if hideId {
 		return subscription.Name
 	}
 
 	return fmt.Sprintf("%s %s", subscription.Name, output.WithGrayFormat("(%s)", subscription.Id))
 }
 
-func formatAutoSelectedSubscriptionMessage(subscription *account.Subscription) string {
+func formatAutoSelectedSubscriptionMessage(subscription *account.Subscription, hideId bool) string {
 	message := fmt.Sprintf("Auto-selected subscription: %s", subscription.Name)
-	if isDemoModeEnabled() {
+	if hideId {
 		return message
 	}
 
@@ -246,6 +246,8 @@ func (ps *promptService) PromptSubscription(
 		}
 	}
 
+	hideId := isDemoModeEnabled()
+
 	// Handle --no-prompt mode
 	if ps.globalOptions.NoPrompt {
 		// Load subscriptions for both default lookup and auto-selection
@@ -262,7 +264,7 @@ func (ps *promptService) PromptSubscription(
 				}
 			}
 
-			if isDemoModeEnabled() {
+			if hideId {
 				return nil, fmt.Errorf(
 					"default subscription not found. " +
 						"Update your default subscription using " +
@@ -285,7 +287,7 @@ func (ps *promptService) PromptSubscription(
 					"and that your account has one or more active subscriptions. " +
 					"If needed, run 'azd auth login' to sign in.")
 		case 1:
-			ps.console.Message(ctx, formatAutoSelectedSubscriptionMessage(&subscriptionList[0]))
+			ps.console.Message(ctx, formatAutoSelectedSubscriptionMessage(&subscriptionList[0], hideId))
 			return &subscriptionList[0], nil
 		default:
 			return nil, fmt.Errorf(
@@ -310,7 +312,7 @@ func (ps *promptService) PromptSubscription(
 			return subscriptions, nil
 		},
 		DisplayResource: func(subscription *account.Subscription) (string, error) {
-			return formatSubscriptionDisplayName(subscription), nil
+			return formatSubscriptionDisplayName(subscription, hideId), nil
 		},
 		Selected: func(subscription *account.Subscription) bool {
 			return strings.EqualFold(subscription.Id, defaultSubscriptionId)

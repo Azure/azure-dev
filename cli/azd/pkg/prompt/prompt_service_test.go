@@ -168,18 +168,16 @@ func Test_PromptService_PromptSubscription_NoPrompt_AutoSelect(t *testing.T) {
 	}
 }
 
-func Test_formatSubscriptionDisplayName_DemoModeHidesId(t *testing.T) {
-	t.Setenv("AZD_DEMO_MODE", "true")
-
+func TestFormatSubscriptionDisplayName_DemoModeHidesId(t *testing.T) {
 	displayName := formatSubscriptionDisplayName(&account.Subscription{
 		Id:   "/subscriptions/sub-1",
 		Name: "Subscription 1",
-	})
+	}, true)
 
 	require.Equal(t, "Subscription 1", displayName)
 }
 
-func Test_PromptService_PromptSubscription_NoPrompt_AutoSelect_DemoModeRedactsOutput(t *testing.T) {
+func TestPromptSubscription_NoPrompt_AutoSelect_DemoModeRedactsOutput(t *testing.T) {
 	t.Setenv("AZD_DEMO_MODE", "true")
 
 	ucm := newInMemoryUserConfigManager(nil)
@@ -211,7 +209,7 @@ func Test_PromptService_PromptSubscription_NoPrompt_AutoSelect_DemoModeRedactsOu
 	require.Equal(t, "Auto-selected subscription: My Only Sub", mockConsole.Output()[0])
 }
 
-func Test_PromptService_PromptSubscription_NoPrompt_DefaultNotFound_DemoModeRedactsId(t *testing.T) {
+func TestPromptSubscription_NoPrompt_DefaultNotFound_DemoModeRedactsId(t *testing.T) {
 	t.Setenv("AZD_DEMO_MODE", "true")
 
 	cfg := config.NewEmptyConfig()

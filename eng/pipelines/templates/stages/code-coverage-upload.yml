@@ -63,8 +63,12 @@ stages:
         displayName: Merge code coverage files
 
       - ${{ if gt(parameters.MinimumCoveragePercent, 0) }}:
-        - pwsh: |
-            pwsh -File "$(Build.SourcesDirectory)/eng/scripts/Test-CodeCoverageThreshold.ps1" -CoverageFile cover.out -MinimumCoveragePercent ${{ parameters.MinimumCoveragePercent }}
+        - task: PowerShell@2
+          inputs:
+            pwsh: true
+            targetType: filePath
+            filePath: $(Build.SourcesDirectory)/eng/scripts/Test-CodeCoverageThreshold.ps1
+            arguments: -CoverageFile cover.out -MinimumCoveragePercent ${{ parameters.MinimumCoveragePercent }}
           displayName: Check code coverage threshold
 
       - task: PublishCodeCoverageResults@1

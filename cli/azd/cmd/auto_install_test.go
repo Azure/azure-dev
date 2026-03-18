@@ -9,6 +9,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
@@ -486,7 +487,7 @@ func TestParseGlobalFlags_EnvironmentName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv(internal.EnvNameEnvVarName, tt.envVar)
+			t.Setenv(environment.EnvNameEnvVarName, tt.envVar)
 
 			opts := &internal.GlobalCommandOptions{}
 			err := ParseGlobalFlags(tt.args, opts)
@@ -497,7 +498,7 @@ func TestParseGlobalFlags_EnvironmentName(t *testing.T) {
 
 	// Cross-field assertion: verify -e does not interfere with adjacent flags
 	t.Run("env flag does not interfere with other flags", func(t *testing.T) {
-		t.Setenv(internal.EnvNameEnvVarName, "")
+		t.Setenv(environment.EnvNameEnvVarName, "")
 
 		opts := &internal.GlobalCommandOptions{}
 		err := ParseGlobalFlags(
@@ -514,7 +515,7 @@ func TestParseGlobalFlags_EnvironmentName(t *testing.T) {
 
 	// Edge case: -e at end of args with no value — pflag returns an error
 	t.Run("-e without value returns error", func(t *testing.T) {
-		t.Setenv(internal.EnvNameEnvVarName, "")
+		t.Setenv(environment.EnvNameEnvVarName, "")
 
 		opts := &internal.GlobalCommandOptions{}
 		err := ParseGlobalFlags([]string{"app", "-e"}, opts)

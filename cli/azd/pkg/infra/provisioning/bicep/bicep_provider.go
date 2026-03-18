@@ -2412,6 +2412,7 @@ func (p *BicepProvider) checkLocalAuthPolicy(
 	ctx context.Context, valCtx *validationContext,
 ) (*PreflightCheckResult, error) {
 	if len(valCtx.SnapshotResources) == 0 {
+		log.Printf("policy preflight: no snapshot resources, skipping local auth policy check")
 		return nil, nil
 	}
 
@@ -2429,6 +2430,8 @@ func (p *BicepProvider) checkLocalAuthPolicy(
 		return nil, nil
 	}
 
+	log.Printf("policy preflight: found %d deny policies targeting local auth", len(denyPolicies))
+
 	if len(denyPolicies) == 0 {
 		return nil, nil
 	}
@@ -2438,6 +2441,14 @@ func (p *BicepProvider) checkLocalAuthPolicy(
 	for _, policy := range denyPolicies {
 		key := strings.ToLower(policy.ResourceType)
 		policiesByType[key] = append(policiesByType[key], policy)
+	}
+
+	// Log snapshot resource types for diagnostics.
+	for _, resource := range valCtx.SnapshotResources {
+		_, matched := policiesByType[strings.ToLower(resource.Type)]
+		hasLocalAuthDisabled := azapi.ResourceHasLocalAuthDisabled(resource.Type, resource.Properties)
+		log.Printf("policy preflight: resource %q type=%s policyMatch=%v localAuthDisabled=%v",
+			resource.Name, resource.Type, matched, hasLocalAuthDisabled)
 	}
 
 	// Check each snapshot resource against the deny policies.

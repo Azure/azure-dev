@@ -82,6 +82,7 @@ func (s *PolicyService) FindLocalAuthDenyPolicies(
 		}
 		assignments = append(assignments, page.Value...)
 	}
+	log.Printf("policy preflight: found %d policy assignments for subscription %s", len(assignments), subscriptionId)
 
 	var results []LocalAuthDenyPolicy
 
@@ -267,6 +268,8 @@ func extractLocalAuthDenyPolicies(
 
 	ruleMap, ok := def.Properties.PolicyRule.(map[string]any)
 	if !ok {
+		log.Printf("policy preflight: policy rule is not a map for definition %s (type %T)",
+			stringOrEmpty(def.Name), def.Properties.PolicyRule)
 		return nil
 	}
 
@@ -281,7 +284,12 @@ func extractLocalAuthDenyPolicies(
 		return nil
 	}
 
-	return findLocalAuthConditions(ifBlock, assignmentName)
+	results := findLocalAuthConditions(ifBlock, assignmentName)
+	if len(results) > 0 {
+		log.Printf("policy preflight: found %d local auth deny condition(s) in policy %q",
+			len(results), assignmentName)
+	}
+	return results
 }
 
 // isDenyEffect checks whether the policy's effect resolves to "deny".
@@ -308,6 +316,7 @@ func isDenyEffect(
 
 	effectStr, ok := effectVal.(string)
 	if !ok {
+		log.Printf("policy preflight: effect value is not a string (type %T): %v", effectVal, effectVal)
 		return false
 	}
 
@@ -613,4 +622,12 @@ func ResourceHasLocalAuthDisabled(resourceType string, properties json.RawMessag
 	}
 
 	return false
+}
+
+// stringOrEmpty safely dereferences a string pointer, returning "" if nil.
+func stringOrEmpty(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }

@@ -586,6 +586,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return agentcopilot.NewCopilotClientManager(nil, cli)
 	})
 	container.MustRegisterScoped(agent.NewCopilotAgentFactory)
+	// Register the factory as the AgentFactory interface for the gRPC service
+	container.MustRegisterScoped(func(f *agent.CopilotAgentFactory) agent.AgentFactory {
+		return f
+	})
 	container.MustRegisterScoped(consent.NewConsentManager)
 
 	// Agent security manager

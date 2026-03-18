@@ -60,7 +60,7 @@ func NewCopilotAgentFactory(
 
 // Create builds a new CopilotAgent with all dependencies wired.
 // Use AgentOption functions to override model, reasoning, mode, etc.
-func (f *CopilotAgentFactory) Create(ctx context.Context, opts ...AgentOption) (*CopilotAgent, error) {
+func (f *CopilotAgentFactory) Create(ctx context.Context, opts ...AgentOption) (Agent, error) {
 	agent := &CopilotAgent{
 		clientManager:        f.clientManager,
 		sessionConfigBuilder: f.sessionConfigBuilder,

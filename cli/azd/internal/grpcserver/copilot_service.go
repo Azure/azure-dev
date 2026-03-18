@@ -22,17 +22,17 @@ import (
 type copilotService struct {
 	azdext.UnimplementedCopilotServiceServer
 
-	agentFactory *agent.CopilotAgentFactory
+	agentFactory agent.AgentFactory
 
 	mu       sync.RWMutex
-	sessions map[string]*agent.CopilotAgent
+	sessions map[string]agent.Agent
 }
 
 // NewCopilotService creates a new CopilotService gRPC server.
-func NewCopilotService(agentFactory *agent.CopilotAgentFactory) azdext.CopilotServiceServer {
+func NewCopilotService(agentFactory agent.AgentFactory) azdext.CopilotServiceServer {
 	return &copilotService{
 		agentFactory: agentFactory,
-		sessions:     make(map[string]*agent.CopilotAgent),
+		sessions:     make(map[string]agent.Agent),
 	}
 }
 
@@ -152,7 +152,7 @@ func (s *copilotService) SendMessage(
 // or prepares one for SDK session resumption.
 func (s *copilotService) resolveOrCreateAgent(
 	ctx context.Context, req *azdext.SendCopilotMessageRequest,
-) (copilotAgent *agent.CopilotAgent, isResume bool, err error) {
+) (copilotAgent agent.Agent, isResume bool, err error) {
 	if req.SessionId != "" {
 		// Try to reuse an existing managed session
 		s.mu.RLock()
@@ -192,7 +192,7 @@ func (s *copilotService) GetUsageMetrics(
 	}
 
 	return &azdext.GetCopilotUsageMetricsResponse{
-		Usage: convertUsageMetrics(copilotAgent.GetCumulativeUsage()),
+		Usage: convertUsageMetrics(copilotAgent.GetUsage()),
 	}, nil
 }
 
@@ -206,7 +206,7 @@ func (s *copilotService) GetFileChanges(
 	}
 
 	return &azdext.GetCopilotFileChangesResponse{
-		FileChanges: convertFileChanges(copilotAgent.GetAccumulatedFileChanges()),
+		FileChanges: convertFileChanges(copilotAgent.GetFileChanges()),
 	}, nil
 }
 
@@ -230,7 +230,7 @@ func (s *copilotService) StopSession(
 }
 
 // getAgent retrieves a managed agent by session ID.
-func (s *copilotService) getAgent(sessionID string) (*agent.CopilotAgent, error) {
+func (s *copilotService) getAgent(sessionID string) (agent.Agent, error) {
 	if sessionID == "" {
 		return nil, status.Error(codes.InvalidArgument, "session_id is required")
 	}

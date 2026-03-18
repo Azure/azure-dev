@@ -533,7 +533,9 @@ When complete, provide a brief summary of what was accomplished.`
 	}
 
 	// Show session metrics (usage + file changes)
-	copilotAgent.PrintSessionMetrics(ctx)
+	if ca, ok := copilotAgent.(*agent.CopilotAgent); ok {
+		ca.PrintSessionMetrics(ctx)
+	}
 
 	i.console.Message(ctx, "")
 	return nil

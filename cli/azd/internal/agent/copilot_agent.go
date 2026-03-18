@@ -404,8 +404,8 @@ func (a *CopilotAgent) accumulateUsage(turn UsageMetrics) {
 	}
 }
 
-// GetCumulativeUsage returns the cumulative usage metrics across all SendMessage calls.
-func (a *CopilotAgent) GetCumulativeUsage() UsageMetrics {
+// GetUsage returns cumulative usage metrics across all SendMessage calls.
+func (a *CopilotAgent) GetUsage() UsageMetrics {
 	return a.cumulativeUsage
 }
 
@@ -423,8 +423,8 @@ func (a *CopilotAgent) collectFileChanges(watcher watch.Watcher) []watch.FileCha
 	return turnChanges
 }
 
-// GetAccumulatedFileChanges returns all file changes across all SendMessage calls.
-func (a *CopilotAgent) GetAccumulatedFileChanges() []watch.FileChange {
+// GetFileChanges returns accumulated file changes across all SendMessage calls.
+func (a *CopilotAgent) GetFileChanges() []watch.FileChange {
 	return a.accumulatedFileChanges
 }
 

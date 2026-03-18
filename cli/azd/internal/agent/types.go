@@ -4,6 +4,7 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -177,3 +178,30 @@ func WithSessionID(id string) SendOption {
 
 // SessionMetadata contains metadata about a previous session.
 type SessionMetadata = copilot.SessionMetadata
+
+// Agent defines the interface for Copilot agent operations.
+// Used by the gRPC service layer to decouple from the concrete CopilotAgent implementation.
+type Agent interface {
+	// Initialize handles first-run configuration (model/reasoning setup).
+	Initialize(ctx context.Context, opts ...InitOption) (*InitResult, error)
+	// SendMessage sends a prompt and returns per-turn results.
+	SendMessage(ctx context.Context, prompt string, opts ...SendOption) (*AgentResult, error)
+	// SendMessageWithRetry wraps SendMessage with interactive retry-on-error UX.
+	SendMessageWithRetry(ctx context.Context, prompt string, opts ...SendOption) (*AgentResult, error)
+	// ListSessions returns previous sessions for the given working directory.
+	ListSessions(ctx context.Context, cwd string) ([]SessionMetadata, error)
+	// GetUsage returns cumulative usage metrics across all SendMessage calls.
+	GetUsage() UsageMetrics
+	// GetFileChanges returns accumulated file changes across all SendMessage calls.
+	GetFileChanges() []watch.FileChange
+	// SessionID returns the current session ID, or empty if no session exists.
+	SessionID() string
+	// Stop terminates the agent and releases resources.
+	Stop() error
+}
+
+// AgentFactory creates Agent instances with all dependencies wired.
+type AgentFactory interface {
+	// Create builds a new Agent with the given options.
+	Create(ctx context.Context, opts ...AgentOption) (Agent, error)
+}

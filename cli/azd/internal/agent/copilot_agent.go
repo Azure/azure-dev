@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	copilot "github.com/github/copilot-sdk/go"
@@ -50,10 +51,10 @@ type CopilotAgent struct {
 	clientStarted          bool
 	session                *copilot.Session
 	sessionID              string
-	sessionCtx             context.Context
-	display                *AgentDisplay      // last display for usage metrics (interactive mode)
-	cumulativeUsage        UsageMetrics       // cumulative metrics across multiple SendMessage calls
-	accumulatedFileChanges []watch.FileChange // accumulated file changes across all SendMessage calls
+	activeCtx              atomic.Pointer[context.Context] // current SendMessage context for SDK callbacks
+	display                *AgentDisplay                   // last display for usage metrics (interactive mode)
+	cumulativeUsage        UsageMetrics                    // cumulative metrics across multiple SendMessage calls
+	accumulatedFileChanges []watch.FileChange              // accumulated file changes across all SendMessage calls
 
 	// Cleanup — ordered slice for deterministic teardown
 	cleanupTasks []cleanupTask
@@ -275,6 +276,9 @@ func (a *CopilotAgent) SendMessage(ctx context.Context, prompt string, opts ...S
 		opt(options)
 	}
 
+	// Update active context so SDK callbacks use this call's context
+	a.activeCtx.Store(&ctx)
+
 	// Ensure session exists
 	if err := a.ensureSession(ctx, options.sessionID); err != nil {
 		return nil, err
@@ -424,19 +428,19 @@ func (a *CopilotAgent) GetAccumulatedFileChanges() []watch.FileChange {
 	return a.accumulatedFileChanges
 }
 
-// PrintSessionMetrics prints cumulative usage metrics and accumulated file changes.
+// PrintSessionMetrics prints accumulated file changes followed by cumulative usage metrics.
 // Call this after the last SendMessage to display session summary.
 func (a *CopilotAgent) PrintSessionMetrics(ctx context.Context) {
+	// Print file changes first
+	if len(a.accumulatedFileChanges) > 0 {
+		printFileChanges(a.accumulatedFileChanges)
+	}
+
 	// Print usage metrics
 	usageStr := a.cumulativeUsage.Format()
 	if usageStr != "" {
 		a.console.Message(ctx, "")
 		a.console.Message(ctx, usageStr)
-	}
-
-	// Print file changes
-	if len(a.accumulatedFileChanges) > 0 {
-		printFileChanges(a.accumulatedFileChanges)
 	}
 }
 
@@ -484,15 +488,24 @@ func (a *CopilotAgent) SendMessageWithRetry(ctx context.Context, prompt string, 
 	}
 }
 
-// Stop terminates the agent and performs cleanup in reverse order.
+// Stop terminates the agent, cleans up the Copilot SDK client and runtime process.
+// Cleanup tasks run in reverse registration order. Safe to call multiple times.
 func (a *CopilotAgent) Stop() error {
-	for i := len(a.cleanupTasks) - 1; i >= 0; i-- {
-		task := a.cleanupTasks[i]
+	tasks := a.cleanupTasks
+	a.cleanupTasks = nil
+
+	var firstErr error
+	for i := len(tasks) - 1; i >= 0; i-- {
+		task := tasks[i]
 		if err := task.fn(); err != nil {
 			log.Printf("failed to cleanup %s: %v", task.name, err)
+			if firstErr == nil {
+				firstErr = err
+			}
 		}
 	}
-	return nil
+
+	return firstErr
 }
 
 // SessionID returns the current session ID, or empty if no session exists.
@@ -500,10 +513,11 @@ func (a *CopilotAgent) SessionID() string {
 	return a.sessionID
 }
 
-// ctx returns the session context for use in permission/consent handlers.
-func (a *CopilotAgent) ctx() context.Context {
-	if a.sessionCtx != nil {
-		return a.sessionCtx
+// activeContext returns the context from the currently executing SendMessage call.
+// Used by SDK callbacks (permission, user input) that don't receive a context parameter.
+func (a *CopilotAgent) activeContext() context.Context {
+	if p := a.activeCtx.Load(); p != nil {
+		return *p
 	}
 	return context.Background()
 }
@@ -543,25 +557,29 @@ func (a *CopilotAgent) EnsureStarted(ctx context.Context) error {
 }
 
 // ensureSession creates or resumes a Copilot session if one doesn't exist.
+// Uses context.WithoutCancel to prevent the SDK session from being torn down
+// when a per-request context (e.g., gRPC) is cancelled between calls.
 func (a *CopilotAgent) ensureSession(ctx context.Context, resumeSessionID string) error {
 	if a.session != nil {
 		return nil
 	}
 
-	a.sessionCtx = ctx
+	// Detach from the caller's cancellation so the client and session
+	// outlive individual requests (e.g., gRPC calls).
+	sessionCtx := context.WithoutCancel(ctx)
 
 	// Start client (extracts bundled CLI to cache if needed)
-	if err := a.ensureClientStarted(ctx); err != nil {
+	if err := a.ensureClientStarted(sessionCtx); err != nil {
 		return err
 	}
 
 	// Check authentication — prompt to sign in if needed
-	if err := a.ensureAuthenticated(ctx); err != nil {
+	if err := a.ensureAuthenticated(sessionCtx); err != nil {
 		return err
 	}
 
 	// Ensure plugins — must run after Start() so the bundled CLI is extracted
-	a.ensurePlugins(ctx)
+	a.ensurePlugins(sessionCtx)
 
 	// Load built-in MCP server configs
 	builtInServers, err := loadBuiltInMCPServers()
@@ -570,7 +588,7 @@ func (a *CopilotAgent) ensureSession(ctx context.Context, resumeSessionID string
 	}
 
 	// Build session config
-	sessionConfig, err := a.sessionConfigBuilder.Build(ctx, builtInServers)
+	sessionConfig, err := a.sessionConfigBuilder.Build(sessionCtx, builtInServers)
 	if err != nil {
 		return fmt.Errorf("failed to build session config: %w", err)
 	}
@@ -605,12 +623,12 @@ func (a *CopilotAgent) ensureSession(ctx context.Context, resumeSessionID string
 			SkillDirectories:    sessionConfig.SkillDirectories,
 			DisabledSkills:      sessionConfig.DisabledSkills,
 			OnPermissionRequest: a.createPermissionHandler(),
-			OnUserInputRequest:  a.createUserInputHandler(ctx),
-			Hooks:               a.createHooks(ctx),
+			OnUserInputRequest:  a.createUserInputHandler(sessionCtx),
+			Hooks:               a.createHooks(sessionCtx),
 		}
 
 		log.Printf("[copilot] Resuming session %s...", resumeSessionID)
-		session, err := a.clientManager.Client().ResumeSession(ctx, resumeSessionID, resumeConfig)
+		session, err := a.clientManager.Client().ResumeSession(sessionCtx, resumeSessionID, resumeConfig)
 		if err != nil {
 			return fmt.Errorf("failed to resume session: %w", err)
 		}
@@ -620,11 +638,11 @@ func (a *CopilotAgent) ensureSession(ctx context.Context, resumeSessionID string
 	} else {
 		// Create new session
 		sessionConfig.OnPermissionRequest = a.createPermissionHandler()
-		sessionConfig.OnUserInputRequest = a.createUserInputHandler(ctx)
-		sessionConfig.Hooks = a.createHooks(ctx)
+		sessionConfig.OnUserInputRequest = a.createUserInputHandler(sessionCtx)
+		sessionConfig.Hooks = a.createHooks(sessionCtx)
 
 		log.Println("[copilot] Creating session...")
-		session, err := a.clientManager.Client().CreateSession(ctx, sessionConfig)
+		session, err := a.clientManager.Client().CreateSession(sessionCtx, sessionConfig)
 		if err != nil {
 			return fmt.Errorf("creating copilot session: %w", err)
 		}
@@ -667,7 +685,7 @@ func (a *CopilotAgent) createPermissionHandler() copilot.PermissionHandlerFunc {
 			},
 		}
 
-		decision, err := a.consentManager.CheckConsent(a.ctx(), consentReq)
+		decision, err := a.consentManager.CheckConsent(a.activeContext(), consentReq)
 		if err != nil {
 			log.Printf("[copilot] Consent check error for %s: %v, denying", toolID, err)
 			return copilot.PermissionRequestResult{Kind: "denied-by-rules"}, nil
@@ -690,7 +708,7 @@ func (a *CopilotAgent) createPermissionHandler() copilot.PermissionHandlerFunc {
 			description := buildPermissionDescription(req)
 
 			promptErr := checker.PromptAndGrantConsent(
-				a.ctx(), tool, displayName, description, mcp.ToolAnnotation{ReadOnlyHint: &readOnly},
+				a.activeContext(), tool, displayName, description, mcp.ToolAnnotation{ReadOnlyHint: &readOnly},
 			)
 
 			if promptErr != nil {
@@ -1042,8 +1060,12 @@ func (a *CopilotAgent) ensureAuthenticated(ctx context.Context) error {
 }
 
 func (a *CopilotAgent) ensurePlugins(ctx context.Context) {
+	// Skip plugin management in headless mode — plugins are managed externally
+	if a.headless {
+		return
+	}
+
 	// Plugin management requires "copilot" CLI in PATH (the npm-installed version).
-	// The managed native binary only supports SDK headless mode, not CLI subcommands.
 	if _, err := exec.LookPath("copilot"); err != nil {
 		log.Printf("[copilot] 'copilot' CLI not found in PATH — skipping plugin management")
 		a.console.Message(ctx, output.WithWarningFormat(
@@ -1064,7 +1086,6 @@ func (a *CopilotAgent) ensurePlugins(ctx context.Context) {
 			continue
 		}
 
-		// Prompt user before installing
 		shouldInstall, err := a.promptPluginInstall(ctx, plugin)
 		if err != nil {
 			log.Printf("[copilot] Plugin install prompt failed: %v", err)

@@ -82,7 +82,7 @@ func runCopilotChat(ctx context.Context, client *azdext.AzdClient, flags copilot
 	fmt.Println(color.HiCyanString("╔══════════════════════════════════════╗"))
 	fmt.Println(color.HiCyanString("║") +
 		color.HiWhiteString("   Copilot Chat — Demo Extension   ") +
-		color.HiCyanString("  ║"))
+		color.HiCyanString("   ║"))
 	fmt.Println(color.HiCyanString("╚══════════════════════════════════════╝"))
 	fmt.Println()
 
@@ -133,6 +133,7 @@ func runCopilotChat(ctx context.Context, client *azdext.AzdClient, flags copilot
 		}); stopErr != nil {
 			fmt.Printf("  %s Failed to stop session: %v\n", color.RedString("✗"), stopErr)
 		} else {
+			fmt.Println()
 			fmt.Printf("  %s Session stopped\n", color.GreenString("✓"))
 		}
 	}
@@ -213,14 +214,12 @@ func chatLoop(
 	sessionID string,
 	flags copilotFlags,
 ) (string, error) {
-	turn := 0
 	for {
-		turn++
-
 		resp, err := promptSvc.Prompt(ctx, &azdext.PromptRequest{
 			Options: &azdext.PromptOptions{
-				Message:     fmt.Sprintf("[%d] You", turn),
-				Placeholder: "Type a message...",
+				Message:        "You",
+				Placeholder:    "Type a message...",
+				IgnoreHintKeys: true,
 			},
 		})
 		if err != nil {
@@ -233,8 +232,6 @@ func chatLoop(
 			fmt.Println(color.HiBlackString("  Ending chat session..."))
 			break
 		}
-
-		fmt.Printf("  %s Sending to agent...\n", color.HiBlackString("⏳"))
 
 		// SendMessage creates the session on the first call, reuses it after
 		sendReq := &azdext.SendCopilotMessageRequest{

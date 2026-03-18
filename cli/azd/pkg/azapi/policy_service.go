@@ -85,6 +85,11 @@ func (s *PolicyService) FindLocalAuthDenyPolicies(
 
 	var results []LocalAuthDenyPolicy
 
+	// Cache fetched definitions/set definitions to avoid duplicate API calls when
+	// multiple assignments reference the same definition.
+	defCache := make(map[string]*armpolicy.Definition)
+	setDefCache := make(map[string]*armpolicy.SetDefinition)
+
 	for _, assignment := range assignments {
 		if assignment.Properties == nil || assignment.Properties.PolicyDefinitionID == nil {
 			continue
@@ -102,13 +107,14 @@ func (s *PolicyService) FindLocalAuthDenyPolicies(
 		if isBuiltInPolicyDefinition(defID) || isCustomPolicyDefinition(defID) {
 			// Single policy definition — check it directly.
 			policies := s.checkPolicyDefinition(
-				ctx, definitionsClient, defID, assignmentName, assignmentParams,
+				ctx, definitionsClient, defID, assignmentName, assignmentParams, defCache,
 			)
 			results = append(results, policies...)
 		} else if isPolicySetDefinition(defID) {
 			// Policy set (initiative) — enumerate its member definitions.
 			policies := s.checkPolicySetDefinition(
 				ctx, setDefinitionsClient, definitionsClient, defID, assignmentName, assignmentParams,
+				defCache, setDefCache,
 			)
 			results = append(results, policies...)
 		}
@@ -117,7 +123,7 @@ func (s *PolicyService) FindLocalAuthDenyPolicies(
 	return results, nil
 }
 
-// checkPolicyDefinition fetches a single policy definition and inspects it for
+// checkPolicyDefinition fetches a single policy definition (using cache) and inspects it for
 // disableLocalAuth deny rules. Returns any matching policies found.
 func (s *PolicyService) checkPolicyDefinition(
 	ctx context.Context,
@@ -125,10 +131,20 @@ func (s *PolicyService) checkPolicyDefinition(
 	definitionID string,
 	assignmentName string,
 	assignmentParams map[string]any,
+	cache map[string]*armpolicy.Definition,
 ) []LocalAuthDenyPolicy {
-	definition, err := getPolicyDefinitionByID(ctx, client, definitionID)
-	if err != nil {
-		log.Printf("policy preflight: could not fetch policy definition %s: %v", definitionID, err)
+	definition, ok := cache[definitionID]
+	if !ok {
+		var err error
+		definition, err = getPolicyDefinitionByID(ctx, client, definitionID)
+		if err != nil {
+			log.Printf("policy preflight: could not fetch policy definition %s: %v", definitionID, err)
+			cache[definitionID] = nil
+			return nil
+		}
+		cache[definitionID] = definition
+	}
+	if definition == nil {
 		return nil
 	}
 
@@ -144,10 +160,22 @@ func (s *PolicyService) checkPolicySetDefinition(
 	setDefinitionID string,
 	assignmentName string,
 	assignmentParams map[string]any,
+	defCache map[string]*armpolicy.Definition,
+	setDefCache map[string]*armpolicy.SetDefinition,
 ) []LocalAuthDenyPolicy {
-	setDef, err := getPolicySetDefinitionByID(ctx, setClient, setDefinitionID)
-	if err != nil {
-		log.Printf("policy preflight: could not fetch policy set definition %s: %v", setDefinitionID, err)
+	setDef, ok := setDefCache[setDefinitionID]
+	if !ok {
+		var err error
+		setDef, err = getPolicySetDefinitionByID(ctx, setClient, setDefinitionID)
+		if err != nil {
+			log.Printf(
+				"policy preflight: could not fetch policy set definition %s: %v", setDefinitionID, err)
+			setDefCache[setDefinitionID] = nil
+			return nil
+		}
+		setDefCache[setDefinitionID] = setDef
+	}
+	if setDef == nil {
 		return nil
 	}
 
@@ -165,7 +193,7 @@ func (s *PolicyService) checkPolicySetDefinition(
 		memberParams := mergeParams(assignmentParams, member.Parameters)
 
 		policies := s.checkPolicyDefinition(
-			ctx, defClient, *member.PolicyDefinitionID, assignmentName, memberParams,
+			ctx, defClient, *member.PolicyDefinitionID, assignmentName, memberParams, defCache,
 		)
 		results = append(results, policies...)
 	}
@@ -324,56 +352,53 @@ func findLocalAuthConditions(ifBlock any, assignmentName string) []LocalAuthDeny
 
 	// Check for allOf / anyOf compound conditions.
 	if allOf, ok := condMap["allOf"]; ok {
-		return findInCompoundCondition(allOf, assignmentName)
+		return findInCompoundCondition(allOf, assignmentName, nil)
 	}
 	if anyOf, ok := condMap["anyOf"]; ok {
-		return findInCompoundCondition(anyOf, assignmentName)
+		return findInCompoundCondition(anyOf, assignmentName, nil)
 	}
 
 	// Single condition — unlikely to be the full pattern but check anyway.
-	return checkSingleCondition(condMap, assignmentName, "")
+	return checkSingleCondition(condMap, assignmentName, nil)
 }
 
 // findInCompoundCondition processes an allOf/anyOf array looking for conditions that
 // reference both a resource type and a disableLocalAuth field.
-func findInCompoundCondition(compound any, assignmentName string) []LocalAuthDenyPolicy {
+// parentResourceTypes carries any resource types resolved by an ancestor compound condition.
+func findInCompoundCondition(
+	compound any, assignmentName string, parentResourceTypes []string,
+) []LocalAuthDenyPolicy {
 	conditions, ok := compound.([]any)
 	if !ok {
 		return nil
 	}
 
-	// First pass: find the resource type from "field: type, equals: ..." conditions.
-	resourceType := ""
+	// First pass: find resource types from "field: type, equals/in: ..." conditions.
+	var resourceTypes []string
 	for _, cond := range conditions {
 		condMap, ok := cond.(map[string]any)
 		if !ok {
 			continue
 		}
 
-		// Handle nested allOf/anyOf.
-		if allOf, ok := condMap["allOf"]; ok {
-			if results := findInCompoundCondition(allOf, assignmentName); len(results) > 0 {
-				return results
-			}
-		}
-		if anyOf, ok := condMap["anyOf"]; ok {
-			if results := findInCompoundCondition(anyOf, assignmentName); len(results) > 0 {
-				return results
-			}
-		}
-
 		fieldVal, _ := condMap["field"].(string)
 		if strings.EqualFold(fieldVal, "type") {
 			if eq, ok := condMap["equals"].(string); ok {
-				resourceType = eq
+				resourceTypes = append(resourceTypes, eq)
 			}
-			if in, ok := condMap["in"].([]any); ok && len(in) > 0 {
-				// Multiple resource types — take the first one for now.
-				if s, ok := in[0].(string); ok {
-					resourceType = s
+			if in, ok := condMap["in"].([]any); ok {
+				for _, item := range in {
+					if s, ok := item.(string); ok {
+						resourceTypes = append(resourceTypes, s)
+					}
 				}
 			}
 		}
+	}
+
+	// Merge with parent resource types if this level didn't find any.
+	if len(resourceTypes) == 0 {
+		resourceTypes = parentResourceTypes
 	}
 
 	// Second pass: find disableLocalAuth field references.
@@ -383,14 +408,14 @@ func findInCompoundCondition(compound any, assignmentName string) []LocalAuthDen
 		if !ok {
 			continue
 		}
-		results = append(results, checkSingleCondition(condMap, assignmentName, resourceType)...)
+		results = append(results, checkSingleCondition(condMap, assignmentName, resourceTypes)...)
 
-		// Also recurse into nested conditions.
+		// Recurse into nested conditions, passing resolved resource types.
 		if allOf, ok := condMap["allOf"]; ok {
-			results = append(results, findInCompoundCondition(allOf, assignmentName)...)
+			results = append(results, findInCompoundCondition(allOf, assignmentName, resourceTypes)...)
 		}
 		if anyOf, ok := condMap["anyOf"]; ok {
-			results = append(results, findInCompoundCondition(anyOf, assignmentName)...)
+			results = append(results, findInCompoundCondition(anyOf, assignmentName, resourceTypes)...)
 		}
 	}
 
@@ -398,10 +423,11 @@ func findInCompoundCondition(compound any, assignmentName string) []LocalAuthDen
 }
 
 // checkSingleCondition checks if a single condition references a disableLocalAuth field.
+// resourceTypes are the candidate resource types resolved from sibling conditions.
 func checkSingleCondition(
 	condMap map[string]any,
 	assignmentName string,
-	resourceType string,
+	resourceTypes []string,
 ) []LocalAuthDenyPolicy {
 	fieldVal, ok := condMap["field"].(string)
 	if !ok {
@@ -412,21 +438,28 @@ func checkSingleCondition(
 		return nil
 	}
 
-	// If we don't have the resource type from a sibling condition, try to derive it
+	// If we don't have resource types from a sibling condition, try to derive one
 	// from the field path (e.g. "Microsoft.Storage/storageAccounts/allowSharedKeyAccess").
-	if resourceType == "" {
-		resourceType = resourceTypeFromFieldPath(fieldVal)
+	if len(resourceTypes) == 0 {
+		if rt := resourceTypeFromFieldPath(fieldVal); rt != "" {
+			resourceTypes = []string{rt}
+		}
 	}
 
-	if resourceType == "" {
+	if len(resourceTypes) == 0 {
 		return nil
 	}
 
-	return []LocalAuthDenyPolicy{{
-		PolicyName:   assignmentName,
-		ResourceType: resourceType,
-		FieldPath:    fieldVal,
-	}}
+	// Emit one result per resource type.
+	results := make([]LocalAuthDenyPolicy, 0, len(resourceTypes))
+	for _, rt := range resourceTypes {
+		results = append(results, LocalAuthDenyPolicy{
+			PolicyName:   assignmentName,
+			ResourceType: rt,
+			FieldPath:    fieldVal,
+		})
+	}
+	return results
 }
 
 // isLocalAuthField returns true if the field path references a local authentication property.
@@ -434,7 +467,6 @@ func isLocalAuthField(field string) bool {
 	lower := strings.ToLower(field)
 	return strings.HasSuffix(lower, "/disablelocalauth") ||
 		strings.HasSuffix(lower, "/allowsharedkeyaccess") ||
-		strings.HasSuffix(lower, "/localauthenabled") ||
 		strings.EqualFold(field, "disableLocalAuth") ||
 		strings.EqualFold(field, "allowSharedKeyAccess")
 }
@@ -458,12 +490,13 @@ func resourceTypeFromFieldPath(field string) string {
 // extractParameterReference extracts the parameter name from an ARM template parameter
 // reference expression like "[parameters('effect')]". Returns empty if not a parameter reference.
 func extractParameterReference(expr string) string {
-	lower := strings.ToLower(strings.TrimSpace(expr))
+	trimmed := strings.TrimSpace(expr)
+	lower := strings.ToLower(trimmed)
 	if !strings.HasPrefix(lower, "[parameters('") || !strings.HasSuffix(lower, "')]") {
 		return ""
 	}
 	// Extract between [parameters(' and ')]
-	inner := expr[len("[parameters('"):]
+	inner := trimmed[len("[parameters('"):]
 	before, _, ok := strings.Cut(inner, "')]")
 	if !ok {
 		return ""

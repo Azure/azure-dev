@@ -2433,24 +2433,35 @@ func (p *BicepProvider) checkLocalAuthPolicy(
 		return nil, nil
 	}
 
-	// Build a set of resource types that have deny policies.
-	policyByType := make(map[string]azapi.LocalAuthDenyPolicy)
+	// Build a map of resource types to their deny policies (may have multiple per type).
+	policiesByType := make(map[string][]azapi.LocalAuthDenyPolicy)
 	for _, policy := range denyPolicies {
-		policyByType[strings.ToLower(policy.ResourceType)] = policy
+		key := strings.ToLower(policy.ResourceType)
+		policiesByType[key] = append(policiesByType[key], policy)
 	}
 
 	// Check each snapshot resource against the deny policies.
 	var violations []string
 	for _, resource := range valCtx.SnapshotResources {
-		policy, found := policyByType[strings.ToLower(resource.Type)]
+		policies, found := policiesByType[strings.ToLower(resource.Type)]
 		if !found {
 			continue
 		}
 
 		if !azapi.ResourceHasLocalAuthDisabled(resource.Type, resource.Properties) {
+			policyNames := make([]string, 0, len(policies))
+			for _, p := range policies {
+				if p.PolicyName != "" {
+					policyNames = append(policyNames, p.PolicyName)
+				}
+			}
+			policyDesc := strings.Join(policyNames, ", ")
+			if policyDesc == "" {
+				policyDesc = "(unnamed)"
+			}
 			violations = append(violations, fmt.Sprintf(
-				"  - %s (type: %s) — policy: %q",
-				resource.Name, resource.Type, policy.PolicyName,
+				"  - %s (type: %s) — policies: %s",
+				resource.Name, resource.Type, policyDesc,
 			))
 		}
 	}
@@ -2464,7 +2475,8 @@ func (p *BicepProvider) checkLocalAuthPolicy(
 		Message: fmt.Sprintf(
 			"subscription %s has Azure Policy assignments that deny resources with local "+
 				"authentication enabled. The following resources may be blocked:\n%s\n"+
-				"Set 'disableLocalAuth: true' on these resources or request a policy exemption. "+
+				"Disable local authentication on these resources (e.g. set 'disableLocalAuth: true' "+
+				"or 'allowSharedKeyAccess: false' for storage accounts) or request a policy exemption. "+
 				"See https://aka.ms/safesecretsstandard for details.",
 			subscriptionId,
 			strings.Join(violations, "\n"),

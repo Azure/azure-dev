@@ -211,6 +211,81 @@ func TestExtractLocalAuthDenyPolicies_NestedAnyOf(t *testing.T) {
 	require.Equal(t, "Microsoft.ServiceBus/namespaces", results[0].ResourceType)
 }
 
+func TestExtractLocalAuthDenyPolicies_MultipleResourceTypesInArray(t *testing.T) {
+	t.Parallel()
+
+	def := &armpolicy.Definition{
+		Properties: &armpolicy.DefinitionProperties{
+			PolicyRule: map[string]any{
+				"if": map[string]any{
+					"allOf": []any{
+						map[string]any{
+							"field": "type",
+							"in": []any{
+								"Microsoft.EventHub/namespaces",
+								"Microsoft.ServiceBus/namespaces",
+							},
+						},
+						map[string]any{
+							"field":     "disableLocalAuth",
+							"notEquals": true,
+						},
+					},
+				},
+				"then": map[string]any{
+					"effect": "Deny",
+				},
+			},
+		},
+	}
+
+	results := extractLocalAuthDenyPolicies(def, "multi-type-policy", nil)
+	require.Len(t, results, 2)
+
+	types := make(map[string]bool)
+	for _, r := range results {
+		types[r.ResourceType] = true
+	}
+	require.True(t, types["Microsoft.EventHub/namespaces"])
+	require.True(t, types["Microsoft.ServiceBus/namespaces"])
+}
+
+func TestExtractLocalAuthDenyPolicies_NestedConditionInheritsResourceType(t *testing.T) {
+	t.Parallel()
+
+	// The resource type is declared at the outer allOf level, and the disableLocalAuth
+	// condition is in a nested anyOf. The nested level should inherit the resource type.
+	def := &armpolicy.Definition{
+		Properties: &armpolicy.DefinitionProperties{
+			PolicyRule: map[string]any{
+				"if": map[string]any{
+					"allOf": []any{
+						map[string]any{
+							"field":  "type",
+							"equals": "Microsoft.Search/searchServices",
+						},
+						map[string]any{
+							"anyOf": []any{
+								map[string]any{
+									"field":  "disableLocalAuth",
+									"equals": false,
+								},
+							},
+						},
+					},
+				},
+				"then": map[string]any{
+					"effect": "Deny",
+				},
+			},
+		},
+	}
+
+	results := extractLocalAuthDenyPolicies(def, "nested-inherit", nil)
+	require.Len(t, results, 1)
+	require.Equal(t, "Microsoft.Search/searchServices", results[0].ResourceType)
+}
+
 func TestIsLocalAuthField(t *testing.T) {
 	t.Parallel()
 
@@ -269,6 +344,8 @@ func TestExtractParameterReference(t *testing.T) {
 		{"deny", ""},
 		{"[concat('a', 'b')]", ""},
 		{"", ""},
+		{"  [parameters('effect')]  ", "effect"},
+		{"\t[parameters('effect')]\n", "effect"},
 	}
 
 	for _, tt := range tests {

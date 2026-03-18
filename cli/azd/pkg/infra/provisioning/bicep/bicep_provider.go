@@ -2179,6 +2179,11 @@ func (p *BicepProvider) validatePreflight(
 		Fn:     p.checkRoleAssignmentPermissions,
 	})
 
+	// Register the local auth policy check. This detects Azure Policy assignments
+	// that deny resources with local authentication enabled (disableLocalAuth != true)
+	// and warns if the template contains affected resources.
+	localPreflight.AddCheck(p.checkLocalAuthPolicy)
+
 	results, err := localPreflight.validate(ctx, p.console, armTemplate, armParameters)
 	if err != nil {
 		p.setPreflightOutcome(span, preflightOutcomeError, nil)
@@ -2397,6 +2402,74 @@ func (p *BicepProvider) resolveResourceTenantPrincipalId(
 	}
 
 	return principalId, nil
+}
+
+// checkLocalAuthPolicy is a PreflightCheckFn that detects Azure Policy assignments on the
+// subscription that deny resources with local authentication enabled. If any template resources
+// have disableLocalAuth unset or false while a deny policy exists for that resource type,
+// a warning is returned so the user knows the deployment will be blocked.
+func (p *BicepProvider) checkLocalAuthPolicy(
+	ctx context.Context, valCtx *validationContext,
+) (*PreflightCheckResult, error) {
+	if len(valCtx.SnapshotResources) == 0 {
+		return nil, nil
+	}
+
+	var policyService *azapi.PolicyService
+	if err := p.serviceLocator.Resolve(&policyService); err != nil {
+		log.Printf("could not resolve PolicyService, skipping local auth policy check: %v", err)
+		return nil, nil
+	}
+
+	subscriptionId := p.env.GetSubscriptionId()
+
+	denyPolicies, err := policyService.FindLocalAuthDenyPolicies(ctx, subscriptionId)
+	if err != nil {
+		log.Printf("error checking local auth policies, skipping check: %v", err)
+		return nil, nil
+	}
+
+	if len(denyPolicies) == 0 {
+		return nil, nil
+	}
+
+	// Build a set of resource types that have deny policies.
+	policyByType := make(map[string]azapi.LocalAuthDenyPolicy)
+	for _, policy := range denyPolicies {
+		policyByType[strings.ToLower(policy.ResourceType)] = policy
+	}
+
+	// Check each snapshot resource against the deny policies.
+	var violations []string
+	for _, resource := range valCtx.SnapshotResources {
+		policy, found := policyByType[strings.ToLower(resource.Type)]
+		if !found {
+			continue
+		}
+
+		if !azapi.ResourceHasLocalAuthDisabled(resource.Type, resource.Properties) {
+			violations = append(violations, fmt.Sprintf(
+				"  - %s (type: %s) — policy: %q",
+				resource.Name, resource.Type, policy.PolicyName,
+			))
+		}
+	}
+
+	if len(violations) == 0 {
+		return nil, nil
+	}
+
+	return &PreflightCheckResult{
+		Severity: PreflightCheckWarning,
+		Message: fmt.Sprintf(
+			"subscription %s has Azure Policy assignments that deny resources with local "+
+				"authentication enabled. The following resources may be blocked:\n%s\n"+
+				"Set 'disableLocalAuth: true' on these resources or request a policy exemption. "+
+				"See https://aka.ms/safesecretsstandard for details.",
+			subscriptionId,
+			strings.Join(violations, "\n"),
+		),
+	}, nil
 }
 
 // Deploys the specified Bicep module and parameters with the selected provisioning scope (subscription vs resource group)

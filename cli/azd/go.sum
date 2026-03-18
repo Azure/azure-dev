@@ -49,6 +49,8 @@ github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourceg
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph v0.9.0/go.mod h1:wVEOJfGTj0oPAUGA1JuRAvz/lxXQsWW16axmHPP47Bk=
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeploymentstacks v1.0.1 h1:bcgO/crpp7wqI0Froi/I4C2fme7Vk/WLusbV399Do8I=
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeploymentstacks v1.0.1/go.mod h1:kvfPmsE8gpOwwC1qrO1FeyBDDNfnwBN5UU3MPNiWW7I=
+github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armpolicy v0.10.0 h1:FCprRw2Uzske3FiFVGm6MqJY829zrAJLiN4coFueWis=
+github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armpolicy v0.10.0/go.mod h1:koK4/Mf6lxFkYavGzZnzTUOEmY8ic9tN44UmWZsGfrk=
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.2.0 h1:Dd+RhdJn0OTtVGaeDLZpcumkIVCtA/3/Fo42+eoYvVM=
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.2.0/go.mod h1:5kakwfW5CjC9KK+Q4wjXAg+ShuIm2mBMua0ZFj2C8PE=
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions v1.3.0 h1:wxQx2Bt4xzPIKvW59WQf1tJNx/ZZKPfN+EhPX3Z6CYY=

@@ -54,7 +54,7 @@ type CopilotAgent struct {
 	activeCtx              atomic.Pointer[context.Context] // current SendMessage context for SDK callbacks
 	display                *AgentDisplay                   // last display for usage metrics (interactive mode)
 	cumulativeUsage        UsageMetrics                    // cumulative metrics across multiple SendMessage calls
-	accumulatedFileChanges []watch.FileChange              // accumulated file changes across all SendMessage calls
+	accumulatedFileChanges watch.FileChanges               // accumulated file changes across all SendMessage calls
 
 	// Cleanup — ordered slice for deterministic teardown
 	cleanupTasks []cleanupTask
@@ -404,14 +404,17 @@ func (a *CopilotAgent) accumulateUsage(turn UsageMetrics) {
 	}
 }
 
-// GetUsage returns cumulative usage metrics across all SendMessage calls.
-func (a *CopilotAgent) GetUsage() UsageMetrics {
-	return a.cumulativeUsage
+// GetMetrics returns cumulative session metrics (usage + file changes).
+func (a *CopilotAgent) GetMetrics() AgentMetrics {
+	return AgentMetrics{
+		Usage:       a.cumulativeUsage,
+		FileChanges: a.accumulatedFileChanges,
+	}
 }
 
 // collectFileChanges stops the watcher, collects its changes, and appends them
 // to the accumulated list. Returns the per-turn changes.
-func (a *CopilotAgent) collectFileChanges(watcher watch.Watcher) []watch.FileChange {
+func (a *CopilotAgent) collectFileChanges(watcher watch.Watcher) watch.FileChanges {
 	if watcher == nil {
 		return nil
 	}
@@ -421,55 +424,6 @@ func (a *CopilotAgent) collectFileChanges(watcher watch.Watcher) []watch.FileCha
 		a.accumulatedFileChanges = append(a.accumulatedFileChanges, turnChanges...)
 	}
 	return turnChanges
-}
-
-// GetFileChanges returns accumulated file changes across all SendMessage calls.
-func (a *CopilotAgent) GetFileChanges() []watch.FileChange {
-	return a.accumulatedFileChanges
-}
-
-// PrintSessionMetrics prints accumulated file changes followed by cumulative usage metrics.
-// Call this after the last SendMessage to display session summary.
-func (a *CopilotAgent) PrintSessionMetrics(ctx context.Context) {
-	// Print file changes first
-	if len(a.accumulatedFileChanges) > 0 {
-		printFileChanges(a.accumulatedFileChanges)
-	}
-
-	// Print usage metrics
-	usageStr := a.cumulativeUsage.Format()
-	if usageStr != "" {
-		a.console.Message(ctx, "")
-		a.console.Message(ctx, usageStr)
-	}
-}
-
-// printFileChanges prints file changes in the standard format.
-func printFileChanges(changes []watch.FileChange) {
-	fmt.Println(output.WithGrayFormat("\n| Files changed:"))
-
-	cwd, cwdErr := os.Getwd()
-	getDisplayPath := func(file string) string {
-		if cwdErr != nil {
-			return file
-		}
-		if relPath, err := filepath.Rel(cwd, file); err == nil {
-			return relPath
-		}
-		return file
-	}
-
-	for _, change := range changes {
-		path := getDisplayPath(change.Path)
-		switch change.ChangeType {
-		case watch.FileCreated:
-			fmt.Println(output.WithGrayFormat("| "), output.WithSuccessFormat("+ Created  "), path)
-		case watch.FileModified:
-			fmt.Println(output.WithGrayFormat("| "), output.WithWarningFormat("± Modified "), path)
-		case watch.FileDeleted:
-			fmt.Println(output.WithGrayFormat("| "), output.WithErrorFormat("- Deleted  "), path)
-		}
-	}
 }
 
 // SendMessageWithRetry wraps SendMessage with interactive retry-on-error UX.

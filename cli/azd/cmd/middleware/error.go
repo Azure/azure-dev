@@ -57,7 +57,7 @@ var (
 type ErrorMiddleware struct {
 	options           *Options
 	console           input.Console
-	agentFactory      *agent.CopilotAgentFactory
+	agentFactory      agent.AgentFactory
 	global            *internal.GlobalCommandOptions
 	featuresManager   *alpha.FeatureManager
 	userConfigManager config.UserConfigManager
@@ -147,7 +147,7 @@ func shouldSkipErrorAnalysis(err error) bool {
 
 func NewErrorMiddleware(
 	options *Options, console input.Console,
-	agentFactory *agent.CopilotAgentFactory,
+	agentFactory agent.AgentFactory,
 	global *internal.GlobalCommandOptions,
 	featuresManager *alpha.FeatureManager,
 	userConfigManager config.UserConfigManager,
@@ -275,7 +275,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		// Display usage metrics if available
 		if agentResult != nil && agentResult.Usage.TotalTokens() > 0 {
 			e.console.Message(ctx, "")
-			e.console.Message(ctx, agentResult.Usage.Format())
+			e.console.Message(ctx, agentResult.Usage.String())
 		}
 
 		// Ask user if the agent applied a fix and they want to retry the command

@@ -47,7 +47,7 @@ func NewCopilotAgentFactory(
 	consentManager consent.ConsentManager,
 	console input.Console,
 	configManager config.UserConfigManager,
-) *CopilotAgentFactory {
+) AgentFactory {
 	return &CopilotAgentFactory{
 		clientManager:        clientManager,
 		sessionConfigBuilder: sessionConfigBuilder,

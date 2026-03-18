@@ -56,17 +56,9 @@ func (m *MockAgent) ListSessions(ctx context.Context, cwd string) ([]agent.Sessi
 	return nil, args.Error(1)
 }
 
-func (m *MockAgent) GetUsage() agent.UsageMetrics {
+func (m *MockAgent) GetMetrics() agent.AgentMetrics {
 	args := m.Called()
-	return args.Get(0).(agent.UsageMetrics)
-}
-
-func (m *MockAgent) GetFileChanges() []watch.FileChange {
-	args := m.Called()
-	if result := args.Get(0); result != nil {
-		return result.([]watch.FileChange)
-	}
-	return nil
+	return args.Get(0).(agent.AgentMetrics)
 }
 
 func (m *MockAgent) SessionID() string {
@@ -208,8 +200,10 @@ func TestCopilotService_GetUsageMetrics_ValidSession(t *testing.T) {
 		SessionID: "metrics-session",
 		Usage:     agent.UsageMetrics{InputTokens: 100},
 	}, nil)
-	mockAgent.On("GetUsage").Return(agent.UsageMetrics{
-		Model: "gpt-4o", InputTokens: 500, OutputTokens: 250, DurationMS: 3000,
+	mockAgent.On("GetMetrics").Return(agent.AgentMetrics{
+		Usage: agent.UsageMetrics{
+			Model: "gpt-4o", InputTokens: 500, OutputTokens: 250, DurationMS: 3000,
+		},
 	})
 
 	svc := NewCopilotService(factory)
@@ -253,9 +247,11 @@ func TestCopilotService_GetFileChanges_ValidSession(t *testing.T) {
 	mockAgent.On("SendMessage", mock.Anything, "test", mock.Anything).Return(&agent.AgentResult{
 		SessionID: "files-session",
 	}, nil)
-	mockAgent.On("GetFileChanges").Return([]watch.FileChange{
-		{Path: "main.go", ChangeType: watch.FileModified},
-		{Path: "new.txt", ChangeType: watch.FileCreated},
+	mockAgent.On("GetMetrics").Return(agent.AgentMetrics{
+		FileChanges: watch.FileChanges{
+			{Path: "main.go", ChangeType: watch.FileModified},
+			{Path: "new.txt", ChangeType: watch.FileCreated},
+		},
 	})
 
 	svc := NewCopilotService(factory)

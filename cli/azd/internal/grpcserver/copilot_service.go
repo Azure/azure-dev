@@ -94,14 +94,14 @@ func (s *copilotService) ListSessions(
 	}
 
 	protoSessions := make([]*azdext.CopilotSessionMetadata, len(sessions))
-	for i, sess := range sessions {
+	for i, session := range sessions {
 		summary := ""
-		if sess.Summary != nil {
-			summary = *sess.Summary
+		if session.Summary != nil {
+			summary = *session.Summary
 		}
 		protoSessions[i] = &azdext.CopilotSessionMetadata{
-			SessionId:    sess.SessionID,
-			ModifiedTime: sess.ModifiedTime,
+			SessionId:    session.SessionID,
+			ModifiedTime: session.ModifiedTime,
 			Summary:      summary,
 		}
 	}
@@ -191,8 +191,9 @@ func (s *copilotService) GetUsageMetrics(
 		return nil, err
 	}
 
+	metrics := copilotAgent.GetMetrics()
 	return &azdext.GetCopilotUsageMetricsResponse{
-		Usage: convertUsageMetrics(copilotAgent.GetUsage()),
+		Usage: convertUsageMetrics(metrics.Usage),
 	}, nil
 }
 
@@ -205,8 +206,9 @@ func (s *copilotService) GetFileChanges(
 		return nil, err
 	}
 
+	metrics := copilotAgent.GetMetrics()
 	return &azdext.GetCopilotFileChangesResponse{
-		FileChanges: convertFileChanges(copilotAgent.GetFileChanges()),
+		FileChanges: convertFileChanges(metrics.FileChanges),
 	}, nil
 }
 

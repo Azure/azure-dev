@@ -139,7 +139,7 @@ type initAction struct {
 	featuresManager   *alpha.FeatureManager
 	extensionsManager *extensions.Manager
 	azd               workflow.AzdCommandRunner
-	agentFactory      *agent.CopilotAgentFactory
+	agentFactory      agent.AgentFactory
 	consentManager    consent.ConsentManager
 	configManager     config.UserConfigManager
 }
@@ -156,7 +156,7 @@ func newInitAction(
 	featuresManager *alpha.FeatureManager,
 	extensionsManager *extensions.Manager,
 	azd workflow.AzdCommandRunner,
-	agentFactory *agent.CopilotAgentFactory,
+	agentFactory agent.AgentFactory,
 	consentManager consent.ConsentManager,
 	configManager config.UserConfigManager,
 ) actions.Action {
@@ -533,8 +533,9 @@ When complete, provide a brief summary of what was accomplished.`
 	}
 
 	// Show session metrics (usage + file changes)
-	if ca, ok := copilotAgent.(*agent.CopilotAgent); ok {
-		ca.PrintSessionMetrics(ctx)
+	if metrics := copilotAgent.GetMetrics().String(); metrics != "" {
+		i.console.Message(ctx, "")
+		i.console.Message(ctx, metrics)
 	}
 
 	i.console.Message(ctx, "")

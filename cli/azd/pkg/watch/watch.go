@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -18,8 +19,9 @@ import (
 )
 
 type Watcher interface {
+	// Deprecated: Use GetFileChanges().String() instead.
 	PrintChangedFiles(ctx context.Context)
-	GetFileChanges() []FileChange
+	GetFileChanges() FileChanges
 }
 
 type fileWatcher struct {
@@ -224,12 +226,61 @@ type FileChange struct {
 	ChangeType FileChangeType
 }
 
-// GetFileChanges returns all file changes tracked by the watcher as structured data.
-func (fw *fileWatcher) GetFileChanges() []FileChange {
+// String returns a formatted display string for a single file change.
+func (fc FileChange) String() string {
+	cwd, cwdErr := os.Getwd()
+	path := fc.Path
+	if cwdErr == nil {
+		if rel, err := filepath.Rel(cwd, fc.Path); err == nil {
+			path = rel
+		}
+	}
+
+	switch fc.ChangeType {
+	case FileCreated:
+		return fmt.Sprintf("%s %s %s",
+			output.WithGrayFormat("|"),
+			color.GreenString("+ Created  "),
+			path)
+	case FileModified:
+		return fmt.Sprintf("%s %s %s",
+			output.WithGrayFormat("|"),
+			color.YellowString("± Modified "),
+			path)
+	case FileDeleted:
+		return fmt.Sprintf("%s %s %s",
+			output.WithGrayFormat("|"),
+			color.RedString("- Deleted  "),
+			path)
+	default:
+		return fmt.Sprintf("%s   %s", output.WithGrayFormat("|"), path)
+	}
+}
+
+// FileChanges is a collection of file changes with formatted output support.
+type FileChanges []FileChange
+
+// String returns a formatted display of all file changes.
+func (fc FileChanges) String() string {
+	if len(fc) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString(output.WithGrayFormat("| Files changed:"))
+	for _, change := range fc {
+		b.WriteString("\n")
+		b.WriteString(change.String())
+	}
+	return b.String()
+}
+
+// GetFileChanges returns all file changes tracked by the watcher.
+func (fw *fileWatcher) GetFileChanges() FileChanges {
 	fw.mu.Lock()
 	defer fw.mu.Unlock()
 
-	changes := make([]FileChange, 0,
+	changes := make(FileChanges, 0,
 		len(fw.fileChanges.Created)+len(fw.fileChanges.Modified)+len(fw.fileChanges.Deleted))
 
 	for file := range fw.fileChanges.Created {

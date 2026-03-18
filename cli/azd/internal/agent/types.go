@@ -21,7 +21,7 @@ type AgentResult struct {
 	// Usage contains token and cost metrics for this turn.
 	Usage UsageMetrics
 	// FileChanges contains files created/modified/deleted during this turn.
-	FileChanges []watch.FileChange
+	FileChanges watch.FileChanges
 }
 
 // UsageMetrics tracks resource consumption for an agent session.
@@ -39,8 +39,8 @@ func (u UsageMetrics) TotalTokens() float64 {
 	return u.InputTokens + u.OutputTokens
 }
 
-// Format returns a multi-line formatted string for display.
-func (u UsageMetrics) Format() string {
+// String returns a multi-line formatted string for display.
+func (u UsageMetrics) String() string {
 	if u.InputTokens == 0 && u.OutputTokens == 0 {
 		return ""
 	}
@@ -98,6 +98,26 @@ type InitResult struct {
 	ReasoningEffort string
 	// IsFirstRun is true if the user was prompted for configuration.
 	IsFirstRun bool
+}
+
+// AgentMetrics contains cumulative session metrics for usage and file changes.
+type AgentMetrics struct {
+	// Usage contains cumulative token and cost metrics.
+	Usage UsageMetrics
+	// FileChanges contains accumulated file changes across all SendMessage calls.
+	FileChanges watch.FileChanges
+}
+
+// String returns a formatted display of file changes followed by usage metrics.
+func (m AgentMetrics) String() string {
+	var parts []string
+	if s := m.FileChanges.String(); s != "" {
+		parts = append(parts, s)
+	}
+	if s := m.Usage.String(); s != "" {
+		parts = append(parts, s)
+	}
+	return strings.Join(parts, "\n")
 }
 
 // AgentMode represents the operating mode for the agent.
@@ -190,10 +210,8 @@ type Agent interface {
 	SendMessageWithRetry(ctx context.Context, prompt string, opts ...SendOption) (*AgentResult, error)
 	// ListSessions returns previous sessions for the given working directory.
 	ListSessions(ctx context.Context, cwd string) ([]SessionMetadata, error)
-	// GetUsage returns cumulative usage metrics across all SendMessage calls.
-	GetUsage() UsageMetrics
-	// GetFileChanges returns accumulated file changes across all SendMessage calls.
-	GetFileChanges() []watch.FileChange
+	// GetMetrics returns cumulative session metrics (usage + file changes).
+	GetMetrics() AgentMetrics
 	// SessionID returns the current session ID, or empty if no session exists.
 	SessionID() string
 	// Stop terminates the agent and releases resources.

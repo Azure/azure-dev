@@ -7,7 +7,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"slices"
+	"strconv"
 	"strings"
 
 	"dario.cat/mergo"
@@ -27,6 +29,28 @@ var (
 	ErrNoResourcesFound   = fmt.Errorf("no resources found")
 	ErrNoResourceSelected = fmt.Errorf("no resource selected")
 )
+
+func isDemoModeEnabled() bool {
+	v, err := strconv.ParseBool(os.Getenv("AZD_DEMO_MODE"))
+	return err == nil && v
+}
+
+func formatSubscriptionDisplayName(subscription *account.Subscription) string {
+	if isDemoModeEnabled() {
+		return subscription.Name
+	}
+
+	return fmt.Sprintf("%s %s", subscription.Name, output.WithGrayFormat("(%s)", subscription.Id))
+}
+
+func formatAutoSelectedSubscriptionMessage(subscription *account.Subscription) string {
+	message := fmt.Sprintf("Auto-selected subscription: %s", subscription.Name)
+	if isDemoModeEnabled() {
+		return message
+	}
+
+	return fmt.Sprintf("%s (%s)", message, subscription.Id)
+}
 
 // ResourceOptions contains options for prompting the user to select a resource.
 type ResourceOptions struct {
@@ -238,6 +262,13 @@ func (ps *promptService) PromptSubscription(
 				}
 			}
 
+			if isDemoModeEnabled() {
+				return nil, fmt.Errorf(
+					"default subscription not found. " +
+						"Update your default subscription using " +
+						"'azd config set defaults.subscription <subscription-id>'")
+			}
+
 			return nil, fmt.Errorf(
 				"default subscription '%s' not found. "+
 					"Update your default subscription using "+
@@ -254,9 +285,7 @@ func (ps *promptService) PromptSubscription(
 					"and that your account has one or more active subscriptions. " +
 					"If needed, run 'azd auth login' to sign in.")
 		case 1:
-			ps.console.Message(ctx, fmt.Sprintf(
-				"Auto-selected subscription: %s (%s)",
-				subscriptionList[0].Name, subscriptionList[0].Id))
+			ps.console.Message(ctx, formatAutoSelectedSubscriptionMessage(&subscriptionList[0]))
 			return &subscriptionList[0], nil
 		default:
 			return nil, fmt.Errorf(
@@ -281,7 +310,7 @@ func (ps *promptService) PromptSubscription(
 			return subscriptions, nil
 		},
 		DisplayResource: func(subscription *account.Subscription) (string, error) {
-			return fmt.Sprintf("%s %s", subscription.Name, output.WithGrayFormat("(%s)", subscription.Id)), nil
+			return formatSubscriptionDisplayName(subscription), nil
 		},
 		Selected: func(subscription *account.Subscription) bool {
 			return strings.EqualFold(subscription.Id, defaultSubscriptionId)

@@ -156,13 +156,13 @@ func (c *CopilotCLI) ensureInstalled(ctx context.Context) error {
 			return fmt.Errorf("creating copilot CLI directory: %w", err)
 		}
 
-		c.console.ShowSpinner(ctx, "Downloading Copilot CLI", input.Step)
+		c.console.ShowSpinner(ctx, "Downloading GitHub Copilot CLI", input.Step)
 		err := downloadCopilotCLI(ctx, c.transporter, cliVersion, cliPath)
 		if err != nil {
-			c.console.StopSpinner(ctx, "Downloading Copilot CLI", input.StepFailed)
+			c.console.StopSpinner(ctx, "Downloading GitHub Copilot CLI", input.StepFailed)
 			return fmt.Errorf("downloading copilot CLI: %w", err)
 		}
-		c.console.StopSpinner(ctx, "Downloading Copilot CLI", input.StepDone)
+		c.console.StopSpinner(ctx, "Downloading GitHub Copilot CLI", input.StepDone)
 		c.console.Message(ctx, "")
 	}
 

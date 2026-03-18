@@ -494,6 +494,32 @@ func TestParseGlobalFlags_EnvironmentName(t *testing.T) {
 			assert.Equal(t, tt.expected, opts.EnvironmentName)
 		})
 	}
+
+	// Cross-field assertion: verify -e does not interfere with adjacent flags
+	t.Run("env flag does not interfere with other flags", func(t *testing.T) {
+		t.Setenv(internal.EnvNameEnvVarName, "")
+
+		opts := &internal.GlobalCommandOptions{}
+		err := ParseGlobalFlags(
+			[]string{"--debug", "-e", "dev", "--no-prompt"},
+			opts,
+		)
+		require.NoError(t, err)
+		assert.Equal(t, "dev", opts.EnvironmentName)
+		assert.True(t, opts.EnableDebugLogging,
+			"--debug should be true alongside -e")
+		assert.True(t, opts.NoPrompt,
+			"--no-prompt should be true alongside -e")
+	})
+
+	// Edge case: -e at end of args with no value — pflag returns an error
+	t.Run("-e without value returns error", func(t *testing.T) {
+		t.Setenv(internal.EnvNameEnvVarName, "")
+
+		opts := &internal.GlobalCommandOptions{}
+		err := ParseGlobalFlags([]string{"app", "-e"}, opts)
+		require.Error(t, err)
+	})
 }
 
 func TestParseGlobalFlags_InvalidEnvironmentName(t *testing.T) {

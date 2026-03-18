@@ -79,6 +79,13 @@ const (
 	CodeModelResolutionFailed = "model_resolution_failed"
 )
 
+// Error codes for file operation errors.
+const (
+	CodeFileNotFound     = "file_not_found"
+	CodeFileUploadFailed = "file_upload_failed"
+	CodeInvalidFilePath  = "invalid_file_path"
+)
+
 // Error codes commonly used for internal errors.
 //
 // These are usually paired with [Internal] for unexpected failures

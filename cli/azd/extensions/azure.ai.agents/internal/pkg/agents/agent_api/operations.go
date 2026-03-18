@@ -981,3 +981,292 @@ func (c *AgentClient) GetAgentContainerOperation(ctx context.Context, agentName,
 
 	return &operation, nil
 }
+
+// UploadSessionFile uploads a file to a session's filesystem.
+// remotePath is the destination path on the session's filesystem.
+// body is the file content to upload.
+func (c *AgentClient) UploadSessionFile(
+	ctx context.Context,
+	agentName, agentVersion, sessionID, remotePath, apiVersion string,
+	body io.ReadSeeker,
+) error {
+	u, err := url.Parse(c.endpoint)
+	if err != nil {
+		return fmt.Errorf("invalid endpoint URL: %w", err)
+	}
+
+	u.Path += fmt.Sprintf(
+		"/agents/%s/versions/%s/sessions/%s/files",
+		agentName, agentVersion, sessionID,
+	)
+
+	query := u.Query()
+	query.Set("api-version", apiVersion)
+	query.Set("path", remotePath)
+	u.RawQuery = query.Encode()
+
+	req, err := runtime.NewRequest(ctx, http.MethodPut, u.String())
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	if err := req.SetBody(streaming.NopCloser(body), "application/octet-stream"); err != nil {
+		return fmt.Errorf("failed to set request body: %w", err)
+	}
+
+	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview")
+
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		return fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if !runtime.HasStatusCode(resp, http.StatusOK, http.StatusCreated) {
+		return runtime.NewResponseError(resp)
+	}
+
+	return nil
+}
+
+// DownloadSessionFile downloads a file from a session's filesystem.
+// remotePath is the source path on the session's filesystem.
+// Returns an io.ReadCloser with the file content; the caller must close it.
+func (c *AgentClient) DownloadSessionFile(
+	ctx context.Context,
+	agentName, agentVersion, sessionID, remotePath, apiVersion string,
+) (io.ReadCloser, error) {
+	u, err := url.Parse(c.endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("invalid endpoint URL: %w", err)
+	}
+
+	u.Path += fmt.Sprintf(
+		"/agents/%s/versions/%s/sessions/%s/files",
+		agentName, agentVersion, sessionID,
+	)
+
+	query := u.Query()
+	query.Set("api-version", apiVersion)
+	query.Set("path", remotePath)
+	u.RawQuery = query.Encode()
+
+	req, err := runtime.NewRequest(ctx, http.MethodGet, u.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	runtime.SkipBodyDownload(req)
+
+	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview")
+
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
+	}
+
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		defer resp.Body.Close()
+		return nil, runtime.NewResponseError(resp)
+	}
+
+	return resp.Body, nil
+}
+
+// ListSessionFiles lists files in a session's filesystem.
+// remotePath is the directory path to list (empty string for root).
+func (c *AgentClient) ListSessionFiles(
+	ctx context.Context,
+	agentName, agentVersion, sessionID, remotePath, apiVersion string,
+) (*SessionFileList, error) {
+	u, err := url.Parse(c.endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("invalid endpoint URL: %w", err)
+	}
+
+	u.Path += fmt.Sprintf(
+		"/agents/%s/versions/%s/sessions/%s/files/list",
+		agentName, agentVersion, sessionID,
+	)
+
+	query := u.Query()
+	query.Set("api-version", apiVersion)
+	if remotePath != "" {
+		query.Set("path", remotePath)
+	}
+	u.RawQuery = query.Encode()
+
+	req, err := runtime.NewRequest(ctx, http.MethodGet, u.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview")
+
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	var fileList SessionFileList
+	if err := json.Unmarshal(respBody, &fileList); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &fileList, nil
+}
+
+// RemoveSessionFile removes a file or directory from a session's filesystem.
+// remotePath is the path to remove.
+// recursive controls whether to recursively remove directories.
+func (c *AgentClient) RemoveSessionFile(
+	ctx context.Context,
+	agentName, agentVersion, sessionID, remotePath string,
+	recursive bool,
+	apiVersion string,
+) error {
+	u, err := url.Parse(c.endpoint)
+	if err != nil {
+		return fmt.Errorf("invalid endpoint URL: %w", err)
+	}
+
+	u.Path += fmt.Sprintf(
+		"/agents/%s/versions/%s/sessions/%s/files",
+		agentName, agentVersion, sessionID,
+	)
+
+	query := u.Query()
+	query.Set("api-version", apiVersion)
+	query.Set("path", remotePath)
+	query.Set("recursive", strconv.FormatBool(recursive))
+	u.RawQuery = query.Encode()
+
+	req, err := runtime.NewRequest(ctx, http.MethodDelete, u.String())
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview")
+
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		return fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if !runtime.HasStatusCode(resp, http.StatusOK, http.StatusNoContent) {
+		return runtime.NewResponseError(resp)
+	}
+
+	return nil
+}
+
+// MkdirSessionFile creates a directory in a session's filesystem.
+func (c *AgentClient) MkdirSessionFile(
+	ctx context.Context,
+	agentName, agentVersion, sessionID, remotePath string,
+	apiVersion string,
+) error {
+	u, err := url.Parse(c.endpoint)
+	if err != nil {
+		return fmt.Errorf("invalid endpoint URL: %w", err)
+	}
+
+	u.Path += fmt.Sprintf(
+		"/agents/%s/versions/%s/sessions/%s/files/mkdir",
+		agentName, agentVersion, sessionID,
+	)
+
+	query := u.Query()
+	query.Set("api-version", apiVersion)
+	u.RawQuery = query.Encode()
+
+	body, err := json.Marshal(map[string]string{"path": remotePath})
+	if err != nil {
+		return fmt.Errorf("failed to marshal request body: %w", err)
+	}
+
+	req, err := runtime.NewRequest(ctx, http.MethodPost, u.String())
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Raw().Header.Set("Content-Type", "application/json")
+	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview")
+
+	if err := req.SetBody(streaming.NopCloser(bytes.NewReader(body)), "application/json"); err != nil {
+		return fmt.Errorf("failed to set request body: %w", err)
+	}
+
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		return fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if !runtime.HasStatusCode(resp, http.StatusOK, http.StatusCreated, http.StatusNoContent) {
+		return runtime.NewResponseError(resp)
+	}
+
+	return nil
+}
+
+// StatSessionFile returns file/directory metadata from a session's filesystem.
+func (c *AgentClient) StatSessionFile(
+	ctx context.Context,
+	agentName, agentVersion, sessionID, remotePath, apiVersion string,
+) (*SessionFileInfo, error) {
+	u, err := url.Parse(c.endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("invalid endpoint URL: %w", err)
+	}
+
+	u.Path += fmt.Sprintf(
+		"/agents/%s/versions/%s/sessions/%s/files/stat",
+		agentName, agentVersion, sessionID,
+	)
+
+	query := u.Query()
+	query.Set("api-version", apiVersion)
+	query.Set("path", remotePath)
+	u.RawQuery = query.Encode()
+
+	req, err := runtime.NewRequest(ctx, http.MethodGet, u.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview")
+
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	var fileInfo SessionFileInfo
+	if err := json.Unmarshal(respBody, &fileInfo); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &fileInfo, nil
+}

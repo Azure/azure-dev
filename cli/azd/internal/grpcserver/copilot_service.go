@@ -5,12 +5,9 @@ package grpcserver
 
 import (
 	"context"
-	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"sync"
-	"sync/atomic"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -19,113 +16,54 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// sessionCounter generates unique session handles without external dependencies.
-var sessionCounter atomic.Int64
-
-// managedCopilotSession tracks an active Copilot agent session and its associated resources.
-type managedCopilotSession struct {
-	agent           *agent.CopilotAgent
-	watcher         watch.Watcher
-	watchCancel     context.CancelFunc
-	resumeSessionID string // SDK session ID for resumption in SendMessage
-	workingDir      string // working directory for this session
-}
-
 // copilotService implements the CopilotServiceServer gRPC interface.
-// It manages agent sessions, delegating to CopilotAgent for all operations.
+// It is a thin routing layer that maps session IDs to CopilotAgent instances.
+// All metrics and file change state lives on the agent itself.
 type copilotService struct {
 	azdext.UnimplementedCopilotServiceServer
 
 	agentFactory *agent.CopilotAgentFactory
 
 	mu       sync.RWMutex
-	sessions map[string]*managedCopilotSession
+	sessions map[string]*agent.CopilotAgent
 }
 
 // NewCopilotService creates a new CopilotService gRPC server.
 func NewCopilotService(agentFactory *agent.CopilotAgentFactory) azdext.CopilotServiceServer {
 	return &copilotService{
 		agentFactory: agentFactory,
-		sessions:     make(map[string]*managedCopilotSession),
+		sessions:     make(map[string]*agent.CopilotAgent),
 	}
 }
 
-// CreateSession creates a new Copilot agent session with the given configuration.
-func (s *copilotService) CreateSession(
-	ctx context.Context, req *azdext.CreateCopilotSessionRequest,
-) (*azdext.CreateCopilotSessionResponse, error) {
-	opts := buildAgentOptions(
-		req.Model, req.ReasoningEffort, req.SystemMessage, req.Mode, req.Debug, req.Headless,
-	)
+// Initialize starts the Copilot client, verifies authentication, and resolves
+// model/reasoning configuration. Does not create a session. Idempotent.
+func (s *copilotService) Initialize(
+	ctx context.Context, req *azdext.InitializeCopilotRequest,
+) (*azdext.InitializeCopilotResponse, error) {
+	var opts []agent.AgentOption
+	if req.Model != "" {
+		opts = append(opts, agent.WithModel(req.Model))
+	}
+	if req.ReasoningEffort != "" {
+		opts = append(opts, agent.WithReasoningEffort(req.ReasoningEffort))
+	}
 
-	copilotAgent, err := s.agentFactory.Create(ctx, opts...)
+	tempAgent, err := s.agentFactory.Create(ctx, opts...)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to create copilot agent: %v", err)
+		return nil, status.Errorf(codes.Internal, "failed to create agent: %v", err)
 	}
+	defer tempAgent.Stop()
 
-	cwd := req.WorkingDirectory
-	if cwd == "" {
-		cwd, _ = os.Getwd()
-	}
-
-	watchCtx, watchCancel := context.WithCancel(context.Background()) //nolint:gosec // cancel stored in session
-	watcher, watchErr := watch.NewWatcher(watchCtx)
-	if watchErr != nil {
-		log.Printf("[copilot-service] file watcher unavailable: %v", watchErr)
-	}
-
-	sessionHandle := fmt.Sprintf("copilot-%d", sessionCounter.Add(1))
-
-	s.mu.Lock()
-	s.sessions[sessionHandle] = &managedCopilotSession{
-		agent:       copilotAgent,
-		watcher:     watcher,
-		watchCancel: watchCancel,
-		workingDir:  cwd,
-	}
-	s.mu.Unlock()
-
-	return &azdext.CreateCopilotSessionResponse{
-		SessionId: sessionHandle,
-	}, nil
-}
-
-// ResumeSession resumes an existing Copilot session by ID.
-func (s *copilotService) ResumeSession(
-	ctx context.Context, req *azdext.ResumeCopilotSessionRequest,
-) (*azdext.ResumeCopilotSessionResponse, error) {
-	if req.SessionId == "" {
-		return nil, status.Error(codes.InvalidArgument, "session_id is required")
-	}
-
-	opts := buildAgentOptions(
-		req.Model, req.ReasoningEffort, req.SystemMessage, req.Mode, req.Debug, req.Headless,
-	)
-
-	copilotAgent, err := s.agentFactory.Create(ctx, opts...)
+	result, err := tempAgent.Initialize(ctx)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to create copilot agent: %v", err)
+		return nil, status.Errorf(codes.Internal, "failed to initialize copilot: %v", err)
 	}
 
-	watchCtx, watchCancel := context.WithCancel(context.Background()) //nolint:gosec // cancel stored in session
-	watcher, watchErr := watch.NewWatcher(watchCtx)
-	if watchErr != nil {
-		log.Printf("[copilot-service] file watcher unavailable: %v", watchErr)
-	}
-
-	sessionHandle := fmt.Sprintf("copilot-%d", sessionCounter.Add(1))
-
-	s.mu.Lock()
-	s.sessions[sessionHandle] = &managedCopilotSession{
-		agent:           copilotAgent,
-		watcher:         watcher,
-		watchCancel:     watchCancel,
-		resumeSessionID: req.SessionId,
-	}
-	s.mu.Unlock()
-
-	return &azdext.ResumeCopilotSessionResponse{
-		SessionId: sessionHandle,
+	return &azdext.InitializeCopilotResponse{
+		Model:           result.Model,
+		ReasoningEffort: result.ReasoningEffort,
+		IsFirstRun:      result.IsFirstRun,
 	}, nil
 }
 
@@ -138,14 +76,15 @@ func (s *copilotService) ListSessions(
 		var err error
 		cwd, err = os.Getwd()
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to get working directory: %v", err)
+			return nil, status.Errorf(codes.Internal,
+				"failed to get working directory: %v", err)
 		}
 	}
 
-	// Create a temporary agent to list sessions
 	tempAgent, err := s.agentFactory.Create(ctx, agent.WithHeadless(true))
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to create agent for listing sessions: %v", err)
+		return nil, status.Errorf(codes.Internal,
+			"failed to create agent for listing sessions: %v", err)
 	}
 	defer tempAgent.Stop()
 
@@ -155,132 +94,119 @@ func (s *copilotService) ListSessions(
 	}
 
 	protoSessions := make([]*azdext.CopilotSessionMetadata, len(sessions))
-	for i, session := range sessions {
+	for i, sess := range sessions {
 		summary := ""
-		if session.Summary != nil {
-			summary = *session.Summary
+		if sess.Summary != nil {
+			summary = *sess.Summary
 		}
-
 		protoSessions[i] = &azdext.CopilotSessionMetadata{
-			SessionId:    session.SessionID,
-			ModifiedTime: session.ModifiedTime,
+			SessionId:    sess.SessionID,
+			ModifiedTime: sess.ModifiedTime,
 			Summary:      summary,
 		}
 	}
 
-	return &azdext.ListCopilotSessionsResponse{
-		Sessions: protoSessions,
-	}, nil
+	return &azdext.ListCopilotSessionsResponse{Sessions: protoSessions}, nil
 }
 
-// Initialize performs first-run configuration for a session.
-func (s *copilotService) Initialize(
-	ctx context.Context, req *azdext.InitializeCopilotRequest,
-) (*azdext.InitializeCopilotResponse, error) {
-	managed, err := s.getSession(req.SessionId)
-	if err != nil {
-		return nil, err
-	}
-
-	// Apply model/reasoning overrides if provided
-	if req.Model != "" {
-		agent.WithModel(req.Model)(managed.agent)
-	}
-	if req.ReasoningEffort != "" {
-		agent.WithReasoningEffort(req.ReasoningEffort)(managed.agent)
-	}
-
-	result, err := managed.agent.Initialize(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to initialize agent: %v", err)
-	}
-
-	return &azdext.InitializeCopilotResponse{
-		Model:           result.Model,
-		ReasoningEffort: result.ReasoningEffort,
-		IsFirstRun:      result.IsFirstRun,
-	}, nil
-}
-
-// SendMessage sends a prompt to the agent and blocks until processing completes.
+// SendMessage sends a prompt to the Copilot agent. On the first call a new
+// session is created using the provided configuration. If session_id is set
+// and matches a managed session, that session is reused. If session_id is set
+// but not found, it is treated as an SDK session ID to resume.
 func (s *copilotService) SendMessage(
 	ctx context.Context, req *azdext.SendCopilotMessageRequest,
 ) (*azdext.SendCopilotMessageResponse, error) {
-	managed, err := s.getSession(req.SessionId)
-	if err != nil {
-		return nil, err
-	}
-
 	if req.Prompt == "" {
 		return nil, status.Error(codes.InvalidArgument, "prompt cannot be empty")
 	}
 
-	// Pass the resume session ID if this session was created via ResumeSession
-	var sendOpts []agent.SendOption
-	if managed.resumeSessionID != "" {
-		sendOpts = append(sendOpts, agent.WithSessionID(managed.resumeSessionID))
-		// Clear after first use — subsequent calls reuse the same session
-		managed.resumeSessionID = ""
+	copilotAgent, isResume, err := s.resolveOrCreateAgent(ctx, req)
+	if err != nil {
+		return nil, err
 	}
 
-	result, err := managed.agent.SendMessage(ctx, req.Prompt, sendOpts...)
+	var sendOpts []agent.SendOption
+	if isResume {
+		sendOpts = append(sendOpts, agent.WithSessionID(req.SessionId))
+	}
+
+	result, err := copilotAgent.SendMessage(ctx, req.Prompt, sendOpts...)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "copilot agent error: %v", err)
 	}
 
+	// Store the agent by its SDK session ID for reuse
+	sessionID := result.SessionID
+	s.mu.Lock()
+	s.sessions[sessionID] = copilotAgent
+	s.mu.Unlock()
+
 	return &azdext.SendCopilotMessageResponse{
-		SessionId: req.SessionId,
-		Usage:     convertUsageMetrics(result.Usage),
+		SessionId:   sessionID,
+		Usage:       convertUsageMetrics(result.Usage),
+		FileChanges: convertFileChanges(result.FileChanges),
 	}, nil
 }
 
-// GetUsageMetrics returns cumulative usage metrics for a session.
+// resolveOrCreateAgent finds an existing managed agent, creates a new one,
+// or prepares one for SDK session resumption.
+func (s *copilotService) resolveOrCreateAgent(
+	ctx context.Context, req *azdext.SendCopilotMessageRequest,
+) (copilotAgent *agent.CopilotAgent, isResume bool, err error) {
+	if req.SessionId != "" {
+		// Try to reuse an existing managed session
+		s.mu.RLock()
+		existing, ok := s.sessions[req.SessionId]
+		s.mu.RUnlock()
+
+		if ok {
+			return existing, false, nil
+		}
+
+		// Not in our map — treat as an SDK session ID to resume
+		isResume = true
+	}
+
+	// Create a new agent
+	opts := buildAgentOptions(
+		req.Model, req.ReasoningEffort, req.SystemMessage,
+		req.Mode, req.Debug, req.Headless,
+	)
+
+	copilotAgent, err = s.agentFactory.Create(ctx, opts...)
+	if err != nil {
+		return nil, false, status.Errorf(codes.Internal,
+			"failed to create copilot agent: %v", err)
+	}
+
+	return copilotAgent, isResume, nil
+}
+
+// GetUsageMetrics returns cumulative usage metrics cached on the agent.
 func (s *copilotService) GetUsageMetrics(
 	ctx context.Context, req *azdext.GetCopilotUsageMetricsRequest,
 ) (*azdext.GetCopilotUsageMetricsResponse, error) {
-	managed, err := s.getSession(req.SessionId)
+	copilotAgent, err := s.getAgent(req.SessionId)
 	if err != nil {
 		return nil, err
 	}
 
 	return &azdext.GetCopilotUsageMetricsResponse{
-		Usage: convertUsageMetrics(managed.agent.GetCumulativeUsage()),
+		Usage: convertUsageMetrics(copilotAgent.GetCumulativeUsage()),
 	}, nil
 }
 
-// GetFileChanges returns files created, modified, or deleted during the session.
+// GetFileChanges returns accumulated file changes cached on the agent.
 func (s *copilotService) GetFileChanges(
 	ctx context.Context, req *azdext.GetCopilotFileChangesRequest,
 ) (*azdext.GetCopilotFileChangesResponse, error) {
-	managed, err := s.getSession(req.SessionId)
+	copilotAgent, err := s.getAgent(req.SessionId)
 	if err != nil {
 		return nil, err
 	}
 
-	if managed.watcher == nil {
-		return &azdext.GetCopilotFileChangesResponse{}, nil
-	}
-
-	changes := managed.watcher.GetFileChanges()
-	cwd, _ := os.Getwd()
-
-	protoChanges := make([]*azdext.CopilotFileChange, len(changes))
-	for i, change := range changes {
-		path := change.Path
-		if cwd != "" {
-			if rel, err := filepath.Rel(cwd, change.Path); err == nil {
-				path = rel
-			}
-		}
-
-		protoChanges[i] = &azdext.CopilotFileChange{
-			Path:       path,
-			ChangeType: convertFileChangeType(change.ChangeType),
-		}
-	}
-
 	return &azdext.GetCopilotFileChangesResponse{
-		FileChanges: protoChanges,
+		FileChanges: convertFileChanges(copilotAgent.GetAccumulatedFileChanges()),
 	}, nil
 }
 
@@ -289,7 +215,7 @@ func (s *copilotService) StopSession(
 	ctx context.Context, req *azdext.StopCopilotSessionRequest,
 ) (*azdext.EmptyResponse, error) {
 	s.mu.Lock()
-	managed, ok := s.sessions[req.SessionId]
+	copilotAgent, ok := s.sessions[req.SessionId]
 	if ok {
 		delete(s.sessions, req.SessionId)
 	}
@@ -299,16 +225,12 @@ func (s *copilotService) StopSession(
 		return nil, status.Errorf(codes.NotFound, "session %q not found", req.SessionId)
 	}
 
-	if managed.watchCancel != nil {
-		managed.watchCancel()
-	}
-	managed.agent.Stop()
-
+	copilotAgent.Stop()
 	return &azdext.EmptyResponse{}, nil
 }
 
-// getSession retrieves a managed session by its handle.
-func (s *copilotService) getSession(sessionID string) (*managedCopilotSession, error) {
+// getAgent retrieves a managed agent by session ID.
+func (s *copilotService) getAgent(sessionID string) (*agent.CopilotAgent, error) {
 	if sessionID == "" {
 		return nil, status.Error(codes.InvalidArgument, "session_id is required")
 	}
@@ -316,12 +238,12 @@ func (s *copilotService) getSession(sessionID string) (*managedCopilotSession, e
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	managed, ok := s.sessions[sessionID]
+	copilotAgent, ok := s.sessions[sessionID]
 	if !ok {
 		return nil, status.Errorf(codes.NotFound, "session %q not found", sessionID)
 	}
 
-	return managed, nil
+	return copilotAgent, nil
 }
 
 // buildAgentOptions constructs AgentOption slice from request fields.
@@ -331,7 +253,6 @@ func buildAgentOptions(
 	opts := []agent.AgentOption{
 		agent.WithHeadless(headless),
 	}
-
 	if model != "" {
 		opts = append(opts, agent.WithModel(model))
 	}
@@ -347,7 +268,6 @@ func buildAgentOptions(
 	if debug {
 		opts = append(opts, agent.WithDebug(true))
 	}
-
 	return opts
 }
 
@@ -362,6 +282,31 @@ func convertUsageMetrics(usage agent.UsageMetrics) *azdext.CopilotUsageMetrics {
 		PremiumRequests: usage.PremiumRequests,
 		DurationMs:      usage.DurationMS,
 	}
+}
+
+// convertFileChanges converts internal FileChanges to the proto representation.
+func convertFileChanges(changes []watch.FileChange) []*azdext.CopilotFileChange {
+	if len(changes) == 0 {
+		return nil
+	}
+
+	cwd, _ := os.Getwd()
+	protoChanges := make([]*azdext.CopilotFileChange, len(changes))
+
+	for i, change := range changes {
+		path := change.Path
+		if cwd != "" {
+			if rel, err := filepath.Rel(cwd, change.Path); err == nil {
+				path = rel
+			}
+		}
+		protoChanges[i] = &azdext.CopilotFileChange{
+			Path:       path,
+			ChangeType: convertFileChangeType(change.ChangeType),
+		}
+	}
+
+	return protoChanges
 }
 
 // convertFileChangeType converts internal FileChangeType to the proto enum.

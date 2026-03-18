@@ -22,10 +22,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	CopilotService_CreateSession_FullMethodName   = "/azdext.CopilotService/CreateSession"
-	CopilotService_ResumeSession_FullMethodName   = "/azdext.CopilotService/ResumeSession"
-	CopilotService_ListSessions_FullMethodName    = "/azdext.CopilotService/ListSessions"
 	CopilotService_Initialize_FullMethodName      = "/azdext.CopilotService/Initialize"
+	CopilotService_ListSessions_FullMethodName    = "/azdext.CopilotService/ListSessions"
 	CopilotService_SendMessage_FullMethodName     = "/azdext.CopilotService/SendMessage"
 	CopilotService_GetUsageMetrics_FullMethodName = "/azdext.CopilotService/GetUsageMetrics"
 	CopilotService_GetFileChanges_FullMethodName  = "/azdext.CopilotService/GetFileChanges"
@@ -37,25 +35,24 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
 // CopilotService provides Copilot agent capabilities to extensions.
-// Extensions can create sessions, send messages, track file changes, and collect
-// usage metrics. Sessions run in headless/autopilot mode by default when invoked
-// via gRPC, suppressing all console output.
+// Sessions are created lazily on the first SendMessage call and can be
+// reused across multiple calls. Sessions run in headless/autopilot mode
+// by default when invoked via gRPC, suppressing all console output.
 type CopilotServiceClient interface {
-	// CreateSession creates a new Copilot agent session with the given configuration.
-	// The session can be reused for multiple SendMessage calls without re-bootstrapping.
-	CreateSession(ctx context.Context, in *CreateCopilotSessionRequest, opts ...grpc.CallOption) (*CreateCopilotSessionResponse, error)
-	// ResumeSession resumes an existing Copilot session by its session ID.
-	ResumeSession(ctx context.Context, in *ResumeCopilotSessionRequest, opts ...grpc.CallOption) (*ResumeCopilotSessionResponse, error)
+	// Initialize starts the Copilot client, verifies authentication, and
+	// resolves model/reasoning configuration. Call before SendMessage to
+	// warm up the client and validate settings. Idempotent.
+	Initialize(ctx context.Context, in *InitializeCopilotRequest, opts ...grpc.CallOption) (*InitializeCopilotResponse, error)
 	// ListSessions returns available Copilot sessions for a working directory.
 	ListSessions(ctx context.Context, in *ListCopilotSessionsRequest, opts ...grpc.CallOption) (*ListCopilotSessionsResponse, error)
-	// Initialize performs first-run configuration (model/reasoning setup).
-	// When called through gRPC, uses provided config values rather than interactive prompts.
-	Initialize(ctx context.Context, in *InitializeCopilotRequest, opts ...grpc.CallOption) (*InitializeCopilotResponse, error)
-	// SendMessage sends a prompt to the agent and blocks until processing completes.
+	// SendMessage sends a prompt to the Copilot agent. On the first call,
+	// a new session is created using the provided configuration. If session_id
+	// is set, that existing session is resumed instead. Subsequent calls with
+	// the returned session_id reuse the same session without re-bootstrapping.
 	SendMessage(ctx context.Context, in *SendCopilotMessageRequest, opts ...grpc.CallOption) (*SendCopilotMessageResponse, error)
-	// GetUsageMetrics returns cumulative usage metrics for a session.
+	// GetUsageMetrics returns cumulative usage metrics cached for a session.
 	GetUsageMetrics(ctx context.Context, in *GetCopilotUsageMetricsRequest, opts ...grpc.CallOption) (*GetCopilotUsageMetricsResponse, error)
-	// GetFileChanges returns files created, modified, or deleted during the session.
+	// GetFileChanges returns files created, modified, or deleted during a session.
 	GetFileChanges(ctx context.Context, in *GetCopilotFileChangesRequest, opts ...grpc.CallOption) (*GetCopilotFileChangesResponse, error)
 	// StopSession stops and cleans up a Copilot agent session.
 	StopSession(ctx context.Context, in *StopCopilotSessionRequest, opts ...grpc.CallOption) (*EmptyResponse, error)
@@ -69,20 +66,10 @@ func NewCopilotServiceClient(cc grpc.ClientConnInterface) CopilotServiceClient {
 	return &copilotServiceClient{cc}
 }
 
-func (c *copilotServiceClient) CreateSession(ctx context.Context, in *CreateCopilotSessionRequest, opts ...grpc.CallOption) (*CreateCopilotSessionResponse, error) {
+func (c *copilotServiceClient) Initialize(ctx context.Context, in *InitializeCopilotRequest, opts ...grpc.CallOption) (*InitializeCopilotResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(CreateCopilotSessionResponse)
-	err := c.cc.Invoke(ctx, CopilotService_CreateSession_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *copilotServiceClient) ResumeSession(ctx context.Context, in *ResumeCopilotSessionRequest, opts ...grpc.CallOption) (*ResumeCopilotSessionResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ResumeCopilotSessionResponse)
-	err := c.cc.Invoke(ctx, CopilotService_ResumeSession_FullMethodName, in, out, cOpts...)
+	out := new(InitializeCopilotResponse)
+	err := c.cc.Invoke(ctx, CopilotService_Initialize_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -93,16 +80,6 @@ func (c *copilotServiceClient) ListSessions(ctx context.Context, in *ListCopilot
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListCopilotSessionsResponse)
 	err := c.cc.Invoke(ctx, CopilotService_ListSessions_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *copilotServiceClient) Initialize(ctx context.Context, in *InitializeCopilotRequest, opts ...grpc.CallOption) (*InitializeCopilotResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(InitializeCopilotResponse)
-	err := c.cc.Invoke(ctx, CopilotService_Initialize_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -154,25 +131,24 @@ func (c *copilotServiceClient) StopSession(ctx context.Context, in *StopCopilotS
 // for forward compatibility.
 //
 // CopilotService provides Copilot agent capabilities to extensions.
-// Extensions can create sessions, send messages, track file changes, and collect
-// usage metrics. Sessions run in headless/autopilot mode by default when invoked
-// via gRPC, suppressing all console output.
+// Sessions are created lazily on the first SendMessage call and can be
+// reused across multiple calls. Sessions run in headless/autopilot mode
+// by default when invoked via gRPC, suppressing all console output.
 type CopilotServiceServer interface {
-	// CreateSession creates a new Copilot agent session with the given configuration.
-	// The session can be reused for multiple SendMessage calls without re-bootstrapping.
-	CreateSession(context.Context, *CreateCopilotSessionRequest) (*CreateCopilotSessionResponse, error)
-	// ResumeSession resumes an existing Copilot session by its session ID.
-	ResumeSession(context.Context, *ResumeCopilotSessionRequest) (*ResumeCopilotSessionResponse, error)
+	// Initialize starts the Copilot client, verifies authentication, and
+	// resolves model/reasoning configuration. Call before SendMessage to
+	// warm up the client and validate settings. Idempotent.
+	Initialize(context.Context, *InitializeCopilotRequest) (*InitializeCopilotResponse, error)
 	// ListSessions returns available Copilot sessions for a working directory.
 	ListSessions(context.Context, *ListCopilotSessionsRequest) (*ListCopilotSessionsResponse, error)
-	// Initialize performs first-run configuration (model/reasoning setup).
-	// When called through gRPC, uses provided config values rather than interactive prompts.
-	Initialize(context.Context, *InitializeCopilotRequest) (*InitializeCopilotResponse, error)
-	// SendMessage sends a prompt to the agent and blocks until processing completes.
+	// SendMessage sends a prompt to the Copilot agent. On the first call,
+	// a new session is created using the provided configuration. If session_id
+	// is set, that existing session is resumed instead. Subsequent calls with
+	// the returned session_id reuse the same session without re-bootstrapping.
 	SendMessage(context.Context, *SendCopilotMessageRequest) (*SendCopilotMessageResponse, error)
-	// GetUsageMetrics returns cumulative usage metrics for a session.
+	// GetUsageMetrics returns cumulative usage metrics cached for a session.
 	GetUsageMetrics(context.Context, *GetCopilotUsageMetricsRequest) (*GetCopilotUsageMetricsResponse, error)
-	// GetFileChanges returns files created, modified, or deleted during the session.
+	// GetFileChanges returns files created, modified, or deleted during a session.
 	GetFileChanges(context.Context, *GetCopilotFileChangesRequest) (*GetCopilotFileChangesResponse, error)
 	// StopSession stops and cleans up a Copilot agent session.
 	StopSession(context.Context, *StopCopilotSessionRequest) (*EmptyResponse, error)
@@ -186,17 +162,11 @@ type CopilotServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedCopilotServiceServer struct{}
 
-func (UnimplementedCopilotServiceServer) CreateSession(context.Context, *CreateCopilotSessionRequest) (*CreateCopilotSessionResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method CreateSession not implemented")
-}
-func (UnimplementedCopilotServiceServer) ResumeSession(context.Context, *ResumeCopilotSessionRequest) (*ResumeCopilotSessionResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method ResumeSession not implemented")
+func (UnimplementedCopilotServiceServer) Initialize(context.Context, *InitializeCopilotRequest) (*InitializeCopilotResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Initialize not implemented")
 }
 func (UnimplementedCopilotServiceServer) ListSessions(context.Context, *ListCopilotSessionsRequest) (*ListCopilotSessionsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListSessions not implemented")
-}
-func (UnimplementedCopilotServiceServer) Initialize(context.Context, *InitializeCopilotRequest) (*InitializeCopilotResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Initialize not implemented")
 }
 func (UnimplementedCopilotServiceServer) SendMessage(context.Context, *SendCopilotMessageRequest) (*SendCopilotMessageResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SendMessage not implemented")
@@ -231,38 +201,20 @@ func RegisterCopilotServiceServer(s grpc.ServiceRegistrar, srv CopilotServiceSer
 	s.RegisterService(&CopilotService_ServiceDesc, srv)
 }
 
-func _CopilotService_CreateSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CreateCopilotSessionRequest)
+func _CopilotService_Initialize_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InitializeCopilotRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(CopilotServiceServer).CreateSession(ctx, in)
+		return srv.(CopilotServiceServer).Initialize(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: CopilotService_CreateSession_FullMethodName,
+		FullMethod: CopilotService_Initialize_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CopilotServiceServer).CreateSession(ctx, req.(*CreateCopilotSessionRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _CopilotService_ResumeSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ResumeCopilotSessionRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(CopilotServiceServer).ResumeSession(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: CopilotService_ResumeSession_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CopilotServiceServer).ResumeSession(ctx, req.(*ResumeCopilotSessionRequest))
+		return srv.(CopilotServiceServer).Initialize(ctx, req.(*InitializeCopilotRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -281,24 +233,6 @@ func _CopilotService_ListSessions_Handler(srv interface{}, ctx context.Context, 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(CopilotServiceServer).ListSessions(ctx, req.(*ListCopilotSessionsRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _CopilotService_Initialize_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(InitializeCopilotRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(CopilotServiceServer).Initialize(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: CopilotService_Initialize_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CopilotServiceServer).Initialize(ctx, req.(*InitializeCopilotRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -383,20 +317,12 @@ var CopilotService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*CopilotServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "CreateSession",
-			Handler:    _CopilotService_CreateSession_Handler,
-		},
-		{
-			MethodName: "ResumeSession",
-			Handler:    _CopilotService_ResumeSession_Handler,
+			MethodName: "Initialize",
+			Handler:    _CopilotService_Initialize_Handler,
 		},
 		{
 			MethodName: "ListSessions",
 			Handler:    _CopilotService_ListSessions_Handler,
-		},
-		{
-			MethodName: "Initialize",
-			Handler:    _CopilotService_Initialize_Handler,
 		},
 		{
 			MethodName: "SendMessage",

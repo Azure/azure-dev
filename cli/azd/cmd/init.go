@@ -522,7 +522,7 @@ When complete, provide a brief summary of what was accomplished.`
 
 	i.console.Message(ctx, color.MagentaString("Preparing application for Azure deployment..."))
 
-	result, err := copilotAgent.SendMessageWithRetry(ctx, prompt, opts...)
+	_, err = copilotAgent.SendMessageWithRetry(ctx, prompt, opts...)
 	if err != nil {
 		return err
 	}
@@ -532,11 +532,8 @@ When complete, provide a brief summary of what was accomplished.`
 		_ = azdCtx.ClearCopilotSession()
 	}
 
-	// Show usage
-	if usage := result.Usage.Format(); usage != "" {
-		i.console.Message(ctx, "")
-		i.console.Message(ctx, usage)
-	}
+	// Show session metrics (usage + file changes)
+	copilotAgent.PrintSessionMetrics(ctx)
 
 	i.console.Message(ctx, "")
 	return nil

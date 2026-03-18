@@ -24,9 +24,9 @@ func newCopilotCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "copilot",
 		Short: "Interactive Copilot chat loop demonstrating the CopilotService gRPC API.",
-		Long: `Demonstrates the full CopilotService gRPC integration by running an interactive
-chat loop. Creates a session, sends messages, displays usage metrics per turn,
-and shows cumulative stats and file changes on exit.
+		Long: `Demonstrates the CopilotService gRPC integration by running an interactive
+chat loop. Sessions are created lazily on the first message. Usage metrics
+and file changes accumulate across turns and are displayed on exit.
 
 Use --resume to list and resume a previous session.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -76,84 +76,91 @@ type copilotFlags struct {
 
 func runCopilotChat(ctx context.Context, client *azdext.AzdClient, flags copilotFlags) error {
 	copilot := client.Copilot()
-	prompt := client.Prompt()
+	promptSvc := client.Prompt()
 
 	fmt.Println()
 	fmt.Println(color.HiCyanString("╔══════════════════════════════════════╗"))
-	fmt.Println(color.HiCyanString("║") + color.HiWhiteString("   Copilot Chat — Demo Extension   ") +
+	fmt.Println(color.HiCyanString("║") +
+		color.HiWhiteString("   Copilot Chat — Demo Extension   ") +
 		color.HiCyanString("  ║"))
 	fmt.Println(color.HiCyanString("╚══════════════════════════════════════╝"))
 	fmt.Println()
 
+	// Optional: Initialize to warm up client and show resolved config
+	initResp, err := copilot.Initialize(ctx, &azdext.InitializeCopilotRequest{
+		Model:           flags.model,
+		ReasoningEffort: flags.reasoningEffort,
+	})
+	if err != nil {
+		fmt.Printf("  %s Initialize warning: %v\n", color.YellowString("⚠"), err)
+	} else {
+		if initResp.Model != "" {
+			fmt.Printf("  %s Model: %s\n", color.HiBlackString("•"), initResp.Model)
+		}
+		if initResp.ReasoningEffort != "" {
+			fmt.Printf("  %s Reasoning: %s\n",
+				color.HiBlackString("•"), initResp.ReasoningEffort)
+		}
+		if initResp.IsFirstRun {
+			fmt.Printf("  %s First-time configuration applied\n", color.HiBlackString("•"))
+		}
+	}
+
+	// Determine starting session ID (empty = new, or from --resume)
 	var sessionID string
-
 	if flags.resume {
-		// List and resume an existing session
-		resumed, err := resumeExistingSession(ctx, copilot, prompt)
-		if err != nil {
-			return err
-		}
-		if resumed != "" {
-			sessionID = resumed
-		}
+		sessionID = pickExistingSession(ctx, copilot, promptSvc)
 	}
 
-	if sessionID == "" {
-		// Create a new session
-		created, err := createNewSession(ctx, copilot, flags)
-		if err != nil {
-			return err
-		}
-		sessionID = created
-	}
+	fmt.Println()
+	fmt.Println(color.HiBlackString("  Type your message and press Enter. Type 'exit' or 'quit' to stop."))
+	fmt.Println()
 
-	// Run the chat loop
-	if err := chatLoop(ctx, copilot, prompt, sessionID); err != nil {
+	// Chat loop — SendMessage handles session creation/resumption on first call
+	sessionID, err = chatLoop(ctx, copilot, promptSvc, sessionID, flags)
+	if err != nil {
 		return err
 	}
 
-	// Show cumulative usage metrics
-	showCumulativeMetrics(ctx, copilot, sessionID)
+	// Show cumulative metrics and file changes
+	if sessionID != "" {
+		showCumulativeMetrics(ctx, copilot, sessionID)
+		showFileChanges(ctx, copilot, sessionID)
 
-	// Show file changes
-	showFileChanges(ctx, copilot, sessionID)
-
-	// Stop the session
-	_, err := copilot.StopSession(ctx, &azdext.StopCopilotSessionRequest{
-		SessionId: sessionID,
-	})
-	if err != nil {
-		fmt.Printf("  %s Failed to stop session: %v\n", color.RedString("✗"), err)
-	} else {
-		fmt.Printf("  %s Session stopped\n", color.GreenString("✓"))
+		// Stop the session
+		if _, stopErr := copilot.StopSession(ctx, &azdext.StopCopilotSessionRequest{
+			SessionId: sessionID,
+		}); stopErr != nil {
+			fmt.Printf("  %s Failed to stop session: %v\n", color.RedString("✗"), stopErr)
+		} else {
+			fmt.Printf("  %s Session stopped\n", color.GreenString("✓"))
+		}
 	}
 
 	fmt.Println()
 	return nil
 }
 
-// resumeExistingSession lists available sessions and prompts the user to select one.
-// Returns the session handle if resumed, or empty string if user chose to start new.
-func resumeExistingSession(
+// pickExistingSession lists sessions and lets the user pick one to resume.
+// Returns the SDK session ID to resume, or empty for a new session.
+func pickExistingSession(
 	ctx context.Context,
 	copilot azdext.CopilotServiceClient,
-	prompt azdext.PromptServiceClient,
-) (string, error) {
+	promptSvc azdext.PromptServiceClient,
+) string {
 	fmt.Println(color.HiYellowString("  Looking for existing sessions..."))
 
 	listResp, err := copilot.ListSessions(ctx, &azdext.ListCopilotSessionsRequest{})
 	if err != nil {
 		fmt.Printf("  %s Could not list sessions: %v\n", color.YellowString("⚠"), err)
-		return "", nil
+		return ""
 	}
 
 	if len(listResp.Sessions) == 0 {
-		fmt.Println(color.HiBlackString("  No existing sessions found. Starting new session."))
-		fmt.Println()
-		return "", nil
+		fmt.Println(color.HiBlackString("  No existing sessions found."))
+		return ""
 	}
 
-	// Build choices for the session picker
 	choices := []*azdext.SelectChoice{
 		{Value: "__new__", Label: "Start a new session"},
 	}
@@ -175,102 +182,41 @@ func resumeExistingSession(
 		})
 	}
 
-	selectResp, err := prompt.Select(ctx, &azdext.SelectRequest{
+	selectResp, err := promptSvc.Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
 			Message: "Select a session",
 			Choices: choices,
 		},
 	})
 	if err != nil {
-		return "", nil
+		return ""
 	}
 
 	idx := int(selectResp.GetValue())
 	if idx < 0 || idx >= len(choices) || choices[idx].Value == "__new__" {
-		fmt.Println()
-		return "", nil
+		return ""
 	}
 
-	selectedSDKSessionID := choices[idx].Value
+	sdkSessionID := choices[idx].Value
+	fmt.Printf("  %s Will resume session: %s\n",
+		color.GreenString("✓"), color.CyanString(sdkSessionID))
 
-	resumeResp, err := copilot.ResumeSession(ctx, &azdext.ResumeCopilotSessionRequest{
-		SessionId: selectedSDKSessionID,
-		Headless:  true,
-	})
-	if err != nil {
-		return "", fmt.Errorf("failed to resume session: %w", err)
-	}
-
-	fmt.Printf("  %s Resumed session: %s\n",
-		color.GreenString("✓"), color.CyanString(resumeResp.SessionId))
-	fmt.Println()
-
-	return resumeResp.SessionId, nil
-}
-
-// createNewSession creates a fresh Copilot session with the given flags.
-func createNewSession(
-	ctx context.Context,
-	copilot azdext.CopilotServiceClient,
-	flags copilotFlags,
-) (string, error) {
-	fmt.Println(color.HiYellowString("  Creating Copilot session..."))
-
-	createResp, err := copilot.CreateSession(ctx, &azdext.CreateCopilotSessionRequest{
-		Model:           flags.model,
-		ReasoningEffort: flags.reasoningEffort,
-		SystemMessage:   flags.systemMessage,
-		Mode:            flags.mode,
-		Headless:        true,
-	})
-	if err != nil {
-		return "", fmt.Errorf("failed to create session: %w", err)
-	}
-
-	sessionID := createResp.SessionId
-	fmt.Printf("  %s Session created: %s\n",
-		color.GreenString("✓"), color.CyanString(sessionID))
-
-	// Initialize the session
-	initResp, err := copilot.Initialize(ctx, &azdext.InitializeCopilotRequest{
-		SessionId:       sessionID,
-		Model:           flags.model,
-		ReasoningEffort: flags.reasoningEffort,
-	})
-	if err != nil {
-		fmt.Printf("  %s Initialize warning: %v\n", color.YellowString("⚠"), err)
-	} else {
-		if initResp.Model != "" {
-			fmt.Printf("  %s Model: %s\n", color.HiBlackString("•"), initResp.Model)
-		}
-		if initResp.ReasoningEffort != "" {
-			fmt.Printf("  %s Reasoning: %s\n",
-				color.HiBlackString("•"), initResp.ReasoningEffort)
-		}
-		if initResp.IsFirstRun {
-			fmt.Printf("  %s First-time configuration applied\n", color.HiBlackString("•"))
-		}
-	}
-
-	fmt.Println()
-	fmt.Println(color.HiBlackString("  Type your message and press Enter. Type 'exit' or 'quit' to stop."))
-	fmt.Println()
-
-	return sessionID, nil
+	return sdkSessionID
 }
 
 // chatLoop runs the interactive prompt → send → display cycle.
+// Returns the session ID assigned by the server (from the first SendMessage response).
 func chatLoop(
 	ctx context.Context,
 	copilot azdext.CopilotServiceClient,
 	promptSvc azdext.PromptServiceClient,
 	sessionID string,
-) error {
+	flags copilotFlags,
+) (string, error) {
 	turn := 0
 	for {
 		turn++
 
-		// Prompt user for input
 		resp, err := promptSvc.Prompt(ctx, &azdext.PromptRequest{
 			Options: &azdext.PromptOptions{
 				Message:     fmt.Sprintf("[%d] You", turn),
@@ -278,7 +224,7 @@ func chatLoop(
 			},
 		})
 		if err != nil {
-			return nil // user cancelled
+			return sessionID, nil // user cancelled
 		}
 
 		input := strings.TrimSpace(resp.Value)
@@ -288,20 +234,34 @@ func chatLoop(
 			break
 		}
 
-		// Send message to agent
 		fmt.Printf("  %s Sending to agent...\n", color.HiBlackString("⏳"))
 
-		sendResp, err := copilot.SendMessage(ctx, &azdext.SendCopilotMessageRequest{
-			SessionId: sessionID,
-			Prompt:    input,
-		})
+		// SendMessage creates the session on the first call, reuses it after
+		sendReq := &azdext.SendCopilotMessageRequest{
+			Prompt:   input,
+			Headless: true,
+		}
+		if sessionID != "" {
+			sendReq.SessionId = sessionID
+		} else {
+			// First call — include config options
+			sendReq.Model = flags.model
+			sendReq.ReasoningEffort = flags.reasoningEffort
+			sendReq.SystemMessage = flags.systemMessage
+			sendReq.Mode = flags.mode
+		}
+
+		sendResp, err := copilot.SendMessage(ctx, sendReq)
 		if err != nil {
 			fmt.Printf("  %s Error: %v\n", color.RedString("✗"), err)
 			fmt.Println()
 			continue
 		}
 
-		// Display turn usage metrics
+		// Capture the session ID from the response for reuse
+		sessionID = sendResp.SessionId
+
+		// Display turn usage
 		if sendResp.Usage != nil {
 			displayTurnUsage(turn, sendResp.Usage)
 		}
@@ -309,10 +269,10 @@ func chatLoop(
 		fmt.Println()
 	}
 
-	return nil
+	return sessionID, nil
 }
 
-// displayTurnUsage shows usage metrics for a single turn.
+// displayTurnUsage shows brief usage metrics for a single turn.
 func displayTurnUsage(turn int, usage *azdext.CopilotUsageMetrics) {
 	fmt.Printf("  %s Turn %d complete", color.GreenString("✓"), turn)
 	if usage.Model != "" {
@@ -329,10 +289,6 @@ func displayTurnUsage(turn int, usage *azdext.CopilotUsageMetrics) {
 	if usage.DurationMs > 0 {
 		fmt.Printf("    %s Duration: %s\n",
 			color.HiBlackString("•"), formatDuration(usage.DurationMs))
-	}
-	if usage.PremiumRequests > 0 {
-		fmt.Printf("    %s Premium requests: %.0f\n",
-			color.HiBlackString("•"), usage.PremiumRequests)
 	}
 }
 
@@ -378,7 +334,7 @@ func showCumulativeMetrics(
 	}
 }
 
-// showFileChanges displays files changed during the session.
+// showFileChanges displays accumulated file changes from the session.
 func showFileChanges(
 	ctx context.Context,
 	copilot azdext.CopilotServiceClient,
@@ -387,11 +343,7 @@ func showFileChanges(
 	changesResp, err := copilot.GetFileChanges(ctx, &azdext.GetCopilotFileChangesRequest{
 		SessionId: sessionID,
 	})
-	if err != nil {
-		return
-	}
-
-	if len(changesResp.FileChanges) == 0 {
+	if err != nil || len(changesResp.FileChanges) == 0 {
 		return
 	}
 

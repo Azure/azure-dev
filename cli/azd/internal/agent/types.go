@@ -10,14 +10,17 @@ import (
 	copilot "github.com/github/copilot-sdk/go"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/watch"
 )
 
 // AgentResult is returned by SendMessage with session and usage metadata.
 type AgentResult struct {
 	// SessionID is the session identifier for resuming later.
 	SessionID string
-	// Usage contains token and cost metrics for the session.
+	// Usage contains token and cost metrics for this turn.
 	Usage UsageMetrics
+	// FileChanges contains files created/modified/deleted during this turn.
+	FileChanges []watch.FileChange
 }
 
 // UsageMetrics tracks resource consumption for an agent session.

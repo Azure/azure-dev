@@ -77,446 +77,18 @@ func (CopilotFileChangeType) EnumDescriptor() ([]byte, []int) {
 	return file_copilot_proto_rawDescGZIP(), []int{0}
 }
 
-// CreateCopilotSessionRequest configures a new Copilot agent session.
-type CreateCopilotSessionRequest struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	Model            string                 `protobuf:"bytes,1,opt,name=model,proto3" json:"model,omitempty"`                                               // Model to use (empty = default).
-	ReasoningEffort  string                 `protobuf:"bytes,2,opt,name=reasoning_effort,json=reasoningEffort,proto3" json:"reasoning_effort,omitempty"`    // Reasoning effort level (low, medium, high).
-	SystemMessage    string                 `protobuf:"bytes,3,opt,name=system_message,json=systemMessage,proto3" json:"system_message,omitempty"`          // Custom system message appended to the default prompt.
-	Mode             string                 `protobuf:"bytes,4,opt,name=mode,proto3" json:"mode,omitempty"`                                                 // Agent mode (autopilot, interactive, plan). Defaults to autopilot.
-	Debug            bool                   `protobuf:"varint,5,opt,name=debug,proto3" json:"debug,omitempty"`                                              // Enable debug logging.
-	WorkingDirectory string                 `protobuf:"bytes,6,opt,name=working_directory,json=workingDirectory,proto3" json:"working_directory,omitempty"` // Working directory for the session (empty = cwd).
-	Headless         bool                   `protobuf:"varint,7,opt,name=headless,proto3" json:"headless,omitempty"`                                        // Suppress all console output. Defaults to true for gRPC.
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
-}
-
-func (x *CreateCopilotSessionRequest) Reset() {
-	*x = CreateCopilotSessionRequest{}
-	mi := &file_copilot_proto_msgTypes[0]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CreateCopilotSessionRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CreateCopilotSessionRequest) ProtoMessage() {}
-
-func (x *CreateCopilotSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_copilot_proto_msgTypes[0]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CreateCopilotSessionRequest.ProtoReflect.Descriptor instead.
-func (*CreateCopilotSessionRequest) Descriptor() ([]byte, []int) {
-	return file_copilot_proto_rawDescGZIP(), []int{0}
-}
-
-func (x *CreateCopilotSessionRequest) GetModel() string {
-	if x != nil {
-		return x.Model
-	}
-	return ""
-}
-
-func (x *CreateCopilotSessionRequest) GetReasoningEffort() string {
-	if x != nil {
-		return x.ReasoningEffort
-	}
-	return ""
-}
-
-func (x *CreateCopilotSessionRequest) GetSystemMessage() string {
-	if x != nil {
-		return x.SystemMessage
-	}
-	return ""
-}
-
-func (x *CreateCopilotSessionRequest) GetMode() string {
-	if x != nil {
-		return x.Mode
-	}
-	return ""
-}
-
-func (x *CreateCopilotSessionRequest) GetDebug() bool {
-	if x != nil {
-		return x.Debug
-	}
-	return false
-}
-
-func (x *CreateCopilotSessionRequest) GetWorkingDirectory() string {
-	if x != nil {
-		return x.WorkingDirectory
-	}
-	return ""
-}
-
-func (x *CreateCopilotSessionRequest) GetHeadless() bool {
-	if x != nil {
-		return x.Headless
-	}
-	return false
-}
-
-// CreateCopilotSessionResponse contains the ID of the created session.
-type CreateCopilotSessionResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"` // Unique session handle for subsequent calls.
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CreateCopilotSessionResponse) Reset() {
-	*x = CreateCopilotSessionResponse{}
-	mi := &file_copilot_proto_msgTypes[1]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CreateCopilotSessionResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CreateCopilotSessionResponse) ProtoMessage() {}
-
-func (x *CreateCopilotSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_copilot_proto_msgTypes[1]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CreateCopilotSessionResponse.ProtoReflect.Descriptor instead.
-func (*CreateCopilotSessionResponse) Descriptor() ([]byte, []int) {
-	return file_copilot_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *CreateCopilotSessionResponse) GetSessionId() string {
-	if x != nil {
-		return x.SessionId
-	}
-	return ""
-}
-
-// ResumeCopilotSessionRequest resumes an existing session by ID.
-type ResumeCopilotSessionRequest struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	SessionId       string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`                   // Session ID to resume (from ListSessions or previous CreateSession).
-	Model           string                 `protobuf:"bytes,2,opt,name=model,proto3" json:"model,omitempty"`                                            // Optional model override for the resumed session.
-	ReasoningEffort string                 `protobuf:"bytes,3,opt,name=reasoning_effort,json=reasoningEffort,proto3" json:"reasoning_effort,omitempty"` // Optional reasoning effort override.
-	SystemMessage   string                 `protobuf:"bytes,4,opt,name=system_message,json=systemMessage,proto3" json:"system_message,omitempty"`       // Optional system message override.
-	Mode            string                 `protobuf:"bytes,5,opt,name=mode,proto3" json:"mode,omitempty"`                                              // Optional mode override.
-	Debug           bool                   `protobuf:"varint,6,opt,name=debug,proto3" json:"debug,omitempty"`                                           // Enable debug logging.
-	Headless        bool                   `protobuf:"varint,7,opt,name=headless,proto3" json:"headless,omitempty"`                                     // Suppress all console output. Defaults to true for gRPC.
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
-}
-
-func (x *ResumeCopilotSessionRequest) Reset() {
-	*x = ResumeCopilotSessionRequest{}
-	mi := &file_copilot_proto_msgTypes[2]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ResumeCopilotSessionRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ResumeCopilotSessionRequest) ProtoMessage() {}
-
-func (x *ResumeCopilotSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_copilot_proto_msgTypes[2]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ResumeCopilotSessionRequest.ProtoReflect.Descriptor instead.
-func (*ResumeCopilotSessionRequest) Descriptor() ([]byte, []int) {
-	return file_copilot_proto_rawDescGZIP(), []int{2}
-}
-
-func (x *ResumeCopilotSessionRequest) GetSessionId() string {
-	if x != nil {
-		return x.SessionId
-	}
-	return ""
-}
-
-func (x *ResumeCopilotSessionRequest) GetModel() string {
-	if x != nil {
-		return x.Model
-	}
-	return ""
-}
-
-func (x *ResumeCopilotSessionRequest) GetReasoningEffort() string {
-	if x != nil {
-		return x.ReasoningEffort
-	}
-	return ""
-}
-
-func (x *ResumeCopilotSessionRequest) GetSystemMessage() string {
-	if x != nil {
-		return x.SystemMessage
-	}
-	return ""
-}
-
-func (x *ResumeCopilotSessionRequest) GetMode() string {
-	if x != nil {
-		return x.Mode
-	}
-	return ""
-}
-
-func (x *ResumeCopilotSessionRequest) GetDebug() bool {
-	if x != nil {
-		return x.Debug
-	}
-	return false
-}
-
-func (x *ResumeCopilotSessionRequest) GetHeadless() bool {
-	if x != nil {
-		return x.Headless
-	}
-	return false
-}
-
-// ResumeCopilotSessionResponse contains the ID of the resumed session.
-type ResumeCopilotSessionResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"` // Session handle for subsequent calls.
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ResumeCopilotSessionResponse) Reset() {
-	*x = ResumeCopilotSessionResponse{}
-	mi := &file_copilot_proto_msgTypes[3]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ResumeCopilotSessionResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ResumeCopilotSessionResponse) ProtoMessage() {}
-
-func (x *ResumeCopilotSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_copilot_proto_msgTypes[3]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ResumeCopilotSessionResponse.ProtoReflect.Descriptor instead.
-func (*ResumeCopilotSessionResponse) Descriptor() ([]byte, []int) {
-	return file_copilot_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *ResumeCopilotSessionResponse) GetSessionId() string {
-	if x != nil {
-		return x.SessionId
-	}
-	return ""
-}
-
-// ListCopilotSessionsRequest requests available sessions for a directory.
-type ListCopilotSessionsRequest struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	WorkingDirectory string                 `protobuf:"bytes,1,opt,name=working_directory,json=workingDirectory,proto3" json:"working_directory,omitempty"` // Directory to list sessions for (empty = cwd).
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
-}
-
-func (x *ListCopilotSessionsRequest) Reset() {
-	*x = ListCopilotSessionsRequest{}
-	mi := &file_copilot_proto_msgTypes[4]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListCopilotSessionsRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListCopilotSessionsRequest) ProtoMessage() {}
-
-func (x *ListCopilotSessionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_copilot_proto_msgTypes[4]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListCopilotSessionsRequest.ProtoReflect.Descriptor instead.
-func (*ListCopilotSessionsRequest) Descriptor() ([]byte, []int) {
-	return file_copilot_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *ListCopilotSessionsRequest) GetWorkingDirectory() string {
-	if x != nil {
-		return x.WorkingDirectory
-	}
-	return ""
-}
-
-// ListCopilotSessionsResponse contains available sessions.
-type ListCopilotSessionsResponse struct {
-	state         protoimpl.MessageState    `protogen:"open.v1"`
-	Sessions      []*CopilotSessionMetadata `protobuf:"bytes,1,rep,name=sessions,proto3" json:"sessions,omitempty"` // Available sessions.
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ListCopilotSessionsResponse) Reset() {
-	*x = ListCopilotSessionsResponse{}
-	mi := &file_copilot_proto_msgTypes[5]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListCopilotSessionsResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListCopilotSessionsResponse) ProtoMessage() {}
-
-func (x *ListCopilotSessionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_copilot_proto_msgTypes[5]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListCopilotSessionsResponse.ProtoReflect.Descriptor instead.
-func (*ListCopilotSessionsResponse) Descriptor() ([]byte, []int) {
-	return file_copilot_proto_rawDescGZIP(), []int{5}
-}
-
-func (x *ListCopilotSessionsResponse) GetSessions() []*CopilotSessionMetadata {
-	if x != nil {
-		return x.Sessions
-	}
-	return nil
-}
-
-// CopilotSessionMetadata describes a previous Copilot session.
-type CopilotSessionMetadata struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`          // Unique session identifier.
-	ModifiedTime  string                 `protobuf:"bytes,2,opt,name=modified_time,json=modifiedTime,proto3" json:"modified_time,omitempty"` // Last modified time (RFC3339 format).
-	Summary       string                 `protobuf:"bytes,3,opt,name=summary,proto3" json:"summary,omitempty"`                               // Optional session summary.
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CopilotSessionMetadata) Reset() {
-	*x = CopilotSessionMetadata{}
-	mi := &file_copilot_proto_msgTypes[6]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CopilotSessionMetadata) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CopilotSessionMetadata) ProtoMessage() {}
-
-func (x *CopilotSessionMetadata) ProtoReflect() protoreflect.Message {
-	mi := &file_copilot_proto_msgTypes[6]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CopilotSessionMetadata.ProtoReflect.Descriptor instead.
-func (*CopilotSessionMetadata) Descriptor() ([]byte, []int) {
-	return file_copilot_proto_rawDescGZIP(), []int{6}
-}
-
-func (x *CopilotSessionMetadata) GetSessionId() string {
-	if x != nil {
-		return x.SessionId
-	}
-	return ""
-}
-
-func (x *CopilotSessionMetadata) GetModifiedTime() string {
-	if x != nil {
-		return x.ModifiedTime
-	}
-	return ""
-}
-
-func (x *CopilotSessionMetadata) GetSummary() string {
-	if x != nil {
-		return x.Summary
-	}
-	return ""
-}
-
-// InitializeCopilotRequest configures model and reasoning for a session.
+// InitializeCopilotRequest configures and starts the Copilot client.
 type InitializeCopilotRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
-	SessionId       string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`                   // Session to initialize.
-	Model           string                 `protobuf:"bytes,2,opt,name=model,proto3" json:"model,omitempty"`                                            // Model to use (overrides session config).
-	ReasoningEffort string                 `protobuf:"bytes,3,opt,name=reasoning_effort,json=reasoningEffort,proto3" json:"reasoning_effort,omitempty"` // Reasoning effort to use (overrides session config).
+	Model           string                 `protobuf:"bytes,1,opt,name=model,proto3" json:"model,omitempty"`                                            // Model to configure (empty = use existing/default).
+	ReasoningEffort string                 `protobuf:"bytes,2,opt,name=reasoning_effort,json=reasoningEffort,proto3" json:"reasoning_effort,omitempty"` // Reasoning effort level (low, medium, high).
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
 
 func (x *InitializeCopilotRequest) Reset() {
 	*x = InitializeCopilotRequest{}
-	mi := &file_copilot_proto_msgTypes[7]
+	mi := &file_copilot_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -528,7 +100,7 @@ func (x *InitializeCopilotRequest) String() string {
 func (*InitializeCopilotRequest) ProtoMessage() {}
 
 func (x *InitializeCopilotRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_copilot_proto_msgTypes[7]
+	mi := &file_copilot_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -541,14 +113,7 @@ func (x *InitializeCopilotRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InitializeCopilotRequest.ProtoReflect.Descriptor instead.
 func (*InitializeCopilotRequest) Descriptor() ([]byte, []int) {
-	return file_copilot_proto_rawDescGZIP(), []int{7}
-}
-
-func (x *InitializeCopilotRequest) GetSessionId() string {
-	if x != nil {
-		return x.SessionId
-	}
-	return ""
+	return file_copilot_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *InitializeCopilotRequest) GetModel() string {
@@ -577,7 +142,7 @@ type InitializeCopilotResponse struct {
 
 func (x *InitializeCopilotResponse) Reset() {
 	*x = InitializeCopilotResponse{}
-	mi := &file_copilot_proto_msgTypes[8]
+	mi := &file_copilot_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -589,7 +154,7 @@ func (x *InitializeCopilotResponse) String() string {
 func (*InitializeCopilotResponse) ProtoMessage() {}
 
 func (x *InitializeCopilotResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_copilot_proto_msgTypes[8]
+	mi := &file_copilot_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -602,7 +167,7 @@ func (x *InitializeCopilotResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InitializeCopilotResponse.ProtoReflect.Descriptor instead.
 func (*InitializeCopilotResponse) Descriptor() ([]byte, []int) {
-	return file_copilot_proto_rawDescGZIP(), []int{8}
+	return file_copilot_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *InitializeCopilotResponse) GetModel() string {
@@ -626,18 +191,178 @@ func (x *InitializeCopilotResponse) GetIsFirstRun() bool {
 	return false
 }
 
-// SendCopilotMessageRequest sends a prompt to the agent.
-type SendCopilotMessageRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"` // Session to send the message to.
-	Prompt        string                 `protobuf:"bytes,2,opt,name=prompt,proto3" json:"prompt,omitempty"`                        // The prompt/message to send.
+// ListCopilotSessionsRequest requests available sessions for a directory.
+type ListCopilotSessionsRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	WorkingDirectory string                 `protobuf:"bytes,1,opt,name=working_directory,json=workingDirectory,proto3" json:"working_directory,omitempty"` // Directory to list sessions for (empty = cwd).
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *ListCopilotSessionsRequest) Reset() {
+	*x = ListCopilotSessionsRequest{}
+	mi := &file_copilot_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListCopilotSessionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListCopilotSessionsRequest) ProtoMessage() {}
+
+func (x *ListCopilotSessionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_copilot_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListCopilotSessionsRequest.ProtoReflect.Descriptor instead.
+func (*ListCopilotSessionsRequest) Descriptor() ([]byte, []int) {
+	return file_copilot_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *ListCopilotSessionsRequest) GetWorkingDirectory() string {
+	if x != nil {
+		return x.WorkingDirectory
+	}
+	return ""
+}
+
+// ListCopilotSessionsResponse contains available sessions.
+type ListCopilotSessionsResponse struct {
+	state         protoimpl.MessageState    `protogen:"open.v1"`
+	Sessions      []*CopilotSessionMetadata `protobuf:"bytes,1,rep,name=sessions,proto3" json:"sessions,omitempty"` // Available sessions.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
+func (x *ListCopilotSessionsResponse) Reset() {
+	*x = ListCopilotSessionsResponse{}
+	mi := &file_copilot_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListCopilotSessionsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListCopilotSessionsResponse) ProtoMessage() {}
+
+func (x *ListCopilotSessionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_copilot_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListCopilotSessionsResponse.ProtoReflect.Descriptor instead.
+func (*ListCopilotSessionsResponse) Descriptor() ([]byte, []int) {
+	return file_copilot_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ListCopilotSessionsResponse) GetSessions() []*CopilotSessionMetadata {
+	if x != nil {
+		return x.Sessions
+	}
+	return nil
+}
+
+// CopilotSessionMetadata describes a previous Copilot session.
+type CopilotSessionMetadata struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`          // Unique session identifier.
+	ModifiedTime  string                 `protobuf:"bytes,2,opt,name=modified_time,json=modifiedTime,proto3" json:"modified_time,omitempty"` // Last modified time (RFC3339 format).
+	Summary       string                 `protobuf:"bytes,3,opt,name=summary,proto3" json:"summary,omitempty"`                               // Optional session summary.
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CopilotSessionMetadata) Reset() {
+	*x = CopilotSessionMetadata{}
+	mi := &file_copilot_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CopilotSessionMetadata) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CopilotSessionMetadata) ProtoMessage() {}
+
+func (x *CopilotSessionMetadata) ProtoReflect() protoreflect.Message {
+	mi := &file_copilot_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CopilotSessionMetadata.ProtoReflect.Descriptor instead.
+func (*CopilotSessionMetadata) Descriptor() ([]byte, []int) {
+	return file_copilot_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *CopilotSessionMetadata) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *CopilotSessionMetadata) GetModifiedTime() string {
+	if x != nil {
+		return x.ModifiedTime
+	}
+	return ""
+}
+
+func (x *CopilotSessionMetadata) GetSummary() string {
+	if x != nil {
+		return x.Summary
+	}
+	return ""
+}
+
+// SendCopilotMessageRequest sends a prompt to the agent.
+// On the first call, include session configuration fields. If session_id
+// is provided, the existing session is resumed. If omitted, a new session
+// is created with the provided configuration.
+type SendCopilotMessageRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Prompt          string                 `protobuf:"bytes,1,opt,name=prompt,proto3" json:"prompt,omitempty"`                                          // The prompt/message to send.
+	SessionId       string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`                   // Optional: session to reuse or resume.
+	Model           string                 `protobuf:"bytes,3,opt,name=model,proto3" json:"model,omitempty"`                                            // Optional: model override (first call or resume).
+	ReasoningEffort string                 `protobuf:"bytes,4,opt,name=reasoning_effort,json=reasoningEffort,proto3" json:"reasoning_effort,omitempty"` // Optional: reasoning effort (low, medium, high).
+	SystemMessage   string                 `protobuf:"bytes,5,opt,name=system_message,json=systemMessage,proto3" json:"system_message,omitempty"`       // Optional: custom system message appended to default.
+	Mode            string                 `protobuf:"bytes,6,opt,name=mode,proto3" json:"mode,omitempty"`                                              // Optional: agent mode (autopilot, interactive, plan).
+	Debug           bool                   `protobuf:"varint,7,opt,name=debug,proto3" json:"debug,omitempty"`                                           // Optional: enable debug logging.
+	Headless        bool                   `protobuf:"varint,8,opt,name=headless,proto3" json:"headless,omitempty"`                                     // Optional: suppress console output (default true for gRPC).
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
 func (x *SendCopilotMessageRequest) Reset() {
 	*x = SendCopilotMessageRequest{}
-	mi := &file_copilot_proto_msgTypes[9]
+	mi := &file_copilot_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -649,7 +374,7 @@ func (x *SendCopilotMessageRequest) String() string {
 func (*SendCopilotMessageRequest) ProtoMessage() {}
 
 func (x *SendCopilotMessageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_copilot_proto_msgTypes[9]
+	mi := &file_copilot_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -662,14 +387,7 @@ func (x *SendCopilotMessageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendCopilotMessageRequest.ProtoReflect.Descriptor instead.
 func (*SendCopilotMessageRequest) Descriptor() ([]byte, []int) {
-	return file_copilot_proto_rawDescGZIP(), []int{9}
-}
-
-func (x *SendCopilotMessageRequest) GetSessionId() string {
-	if x != nil {
-		return x.SessionId
-	}
-	return ""
+	return file_copilot_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *SendCopilotMessageRequest) GetPrompt() string {
@@ -679,18 +397,68 @@ func (x *SendCopilotMessageRequest) GetPrompt() string {
 	return ""
 }
 
+func (x *SendCopilotMessageRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *SendCopilotMessageRequest) GetModel() string {
+	if x != nil {
+		return x.Model
+	}
+	return ""
+}
+
+func (x *SendCopilotMessageRequest) GetReasoningEffort() string {
+	if x != nil {
+		return x.ReasoningEffort
+	}
+	return ""
+}
+
+func (x *SendCopilotMessageRequest) GetSystemMessage() string {
+	if x != nil {
+		return x.SystemMessage
+	}
+	return ""
+}
+
+func (x *SendCopilotMessageRequest) GetMode() string {
+	if x != nil {
+		return x.Mode
+	}
+	return ""
+}
+
+func (x *SendCopilotMessageRequest) GetDebug() bool {
+	if x != nil {
+		return x.Debug
+	}
+	return false
+}
+
+func (x *SendCopilotMessageRequest) GetHeadless() bool {
+	if x != nil {
+		return x.Headless
+	}
+	return false
+}
+
 // SendCopilotMessageResponse contains the result of the message.
 type SendCopilotMessageResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"` // Session that processed the message.
-	Usage         *CopilotUsageMetrics   `protobuf:"bytes,2,opt,name=usage,proto3" json:"usage,omitempty"`                          // Usage metrics for this message turn.
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`       // Session ID — use in subsequent calls to reuse.
+	Usage         *CopilotUsageMetrics   `protobuf:"bytes,2,opt,name=usage,proto3" json:"usage,omitempty"`                                // Usage metrics for this message turn.
+	FileChanges   []*CopilotFileChange   `protobuf:"bytes,3,rep,name=file_changes,json=fileChanges,proto3" json:"file_changes,omitempty"` // Files changed during this message turn.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SendCopilotMessageResponse) Reset() {
 	*x = SendCopilotMessageResponse{}
-	mi := &file_copilot_proto_msgTypes[10]
+	mi := &file_copilot_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -702,7 +470,7 @@ func (x *SendCopilotMessageResponse) String() string {
 func (*SendCopilotMessageResponse) ProtoMessage() {}
 
 func (x *SendCopilotMessageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_copilot_proto_msgTypes[10]
+	mi := &file_copilot_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -715,7 +483,7 @@ func (x *SendCopilotMessageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendCopilotMessageResponse.ProtoReflect.Descriptor instead.
 func (*SendCopilotMessageResponse) Descriptor() ([]byte, []int) {
-	return file_copilot_proto_rawDescGZIP(), []int{10}
+	return file_copilot_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *SendCopilotMessageResponse) GetSessionId() string {
@@ -732,7 +500,14 @@ func (x *SendCopilotMessageResponse) GetUsage() *CopilotUsageMetrics {
 	return nil
 }
 
-// GetCopilotUsageMetricsRequest requests usage metrics for a session.
+func (x *SendCopilotMessageResponse) GetFileChanges() []*CopilotFileChange {
+	if x != nil {
+		return x.FileChanges
+	}
+	return nil
+}
+
+// GetCopilotUsageMetricsRequest requests cached usage metrics for a session.
 type GetCopilotUsageMetricsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"` // Session to get metrics for.
@@ -742,7 +517,7 @@ type GetCopilotUsageMetricsRequest struct {
 
 func (x *GetCopilotUsageMetricsRequest) Reset() {
 	*x = GetCopilotUsageMetricsRequest{}
-	mi := &file_copilot_proto_msgTypes[11]
+	mi := &file_copilot_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -754,7 +529,7 @@ func (x *GetCopilotUsageMetricsRequest) String() string {
 func (*GetCopilotUsageMetricsRequest) ProtoMessage() {}
 
 func (x *GetCopilotUsageMetricsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_copilot_proto_msgTypes[11]
+	mi := &file_copilot_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -767,7 +542,7 @@ func (x *GetCopilotUsageMetricsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCopilotUsageMetricsRequest.ProtoReflect.Descriptor instead.
 func (*GetCopilotUsageMetricsRequest) Descriptor() ([]byte, []int) {
-	return file_copilot_proto_rawDescGZIP(), []int{11}
+	return file_copilot_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *GetCopilotUsageMetricsRequest) GetSessionId() string {
@@ -787,7 +562,7 @@ type GetCopilotUsageMetricsResponse struct {
 
 func (x *GetCopilotUsageMetricsResponse) Reset() {
 	*x = GetCopilotUsageMetricsResponse{}
-	mi := &file_copilot_proto_msgTypes[12]
+	mi := &file_copilot_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -799,7 +574,7 @@ func (x *GetCopilotUsageMetricsResponse) String() string {
 func (*GetCopilotUsageMetricsResponse) ProtoMessage() {}
 
 func (x *GetCopilotUsageMetricsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_copilot_proto_msgTypes[12]
+	mi := &file_copilot_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -812,7 +587,7 @@ func (x *GetCopilotUsageMetricsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCopilotUsageMetricsResponse.ProtoReflect.Descriptor instead.
 func (*GetCopilotUsageMetricsResponse) Descriptor() ([]byte, []int) {
-	return file_copilot_proto_rawDescGZIP(), []int{12}
+	return file_copilot_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *GetCopilotUsageMetricsResponse) GetUsage() *CopilotUsageMetrics {
@@ -838,7 +613,7 @@ type CopilotUsageMetrics struct {
 
 func (x *CopilotUsageMetrics) Reset() {
 	*x = CopilotUsageMetrics{}
-	mi := &file_copilot_proto_msgTypes[13]
+	mi := &file_copilot_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -850,7 +625,7 @@ func (x *CopilotUsageMetrics) String() string {
 func (*CopilotUsageMetrics) ProtoMessage() {}
 
 func (x *CopilotUsageMetrics) ProtoReflect() protoreflect.Message {
-	mi := &file_copilot_proto_msgTypes[13]
+	mi := &file_copilot_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -863,7 +638,7 @@ func (x *CopilotUsageMetrics) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CopilotUsageMetrics.ProtoReflect.Descriptor instead.
 func (*CopilotUsageMetrics) Descriptor() ([]byte, []int) {
-	return file_copilot_proto_rawDescGZIP(), []int{13}
+	return file_copilot_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *CopilotUsageMetrics) GetModel() string {
@@ -915,7 +690,7 @@ func (x *CopilotUsageMetrics) GetDurationMs() float64 {
 	return 0
 }
 
-// GetCopilotFileChangesRequest requests file changes for a session.
+// GetCopilotFileChangesRequest requests cached file changes for a session.
 type GetCopilotFileChangesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"` // Session to get file changes for.
@@ -925,7 +700,7 @@ type GetCopilotFileChangesRequest struct {
 
 func (x *GetCopilotFileChangesRequest) Reset() {
 	*x = GetCopilotFileChangesRequest{}
-	mi := &file_copilot_proto_msgTypes[14]
+	mi := &file_copilot_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -937,7 +712,7 @@ func (x *GetCopilotFileChangesRequest) String() string {
 func (*GetCopilotFileChangesRequest) ProtoMessage() {}
 
 func (x *GetCopilotFileChangesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_copilot_proto_msgTypes[14]
+	mi := &file_copilot_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -950,7 +725,7 @@ func (x *GetCopilotFileChangesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCopilotFileChangesRequest.ProtoReflect.Descriptor instead.
 func (*GetCopilotFileChangesRequest) Descriptor() ([]byte, []int) {
-	return file_copilot_proto_rawDescGZIP(), []int{14}
+	return file_copilot_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *GetCopilotFileChangesRequest) GetSessionId() string {
@@ -970,7 +745,7 @@ type GetCopilotFileChangesResponse struct {
 
 func (x *GetCopilotFileChangesResponse) Reset() {
 	*x = GetCopilotFileChangesResponse{}
-	mi := &file_copilot_proto_msgTypes[15]
+	mi := &file_copilot_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -982,7 +757,7 @@ func (x *GetCopilotFileChangesResponse) String() string {
 func (*GetCopilotFileChangesResponse) ProtoMessage() {}
 
 func (x *GetCopilotFileChangesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_copilot_proto_msgTypes[15]
+	mi := &file_copilot_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -995,7 +770,7 @@ func (x *GetCopilotFileChangesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCopilotFileChangesResponse.ProtoReflect.Descriptor instead.
 func (*GetCopilotFileChangesResponse) Descriptor() ([]byte, []int) {
-	return file_copilot_proto_rawDescGZIP(), []int{15}
+	return file_copilot_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *GetCopilotFileChangesResponse) GetFileChanges() []*CopilotFileChange {
@@ -1016,7 +791,7 @@ type CopilotFileChange struct {
 
 func (x *CopilotFileChange) Reset() {
 	*x = CopilotFileChange{}
-	mi := &file_copilot_proto_msgTypes[16]
+	mi := &file_copilot_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1028,7 +803,7 @@ func (x *CopilotFileChange) String() string {
 func (*CopilotFileChange) ProtoMessage() {}
 
 func (x *CopilotFileChange) ProtoReflect() protoreflect.Message {
-	mi := &file_copilot_proto_msgTypes[16]
+	mi := &file_copilot_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1041,7 +816,7 @@ func (x *CopilotFileChange) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CopilotFileChange.ProtoReflect.Descriptor instead.
 func (*CopilotFileChange) Descriptor() ([]byte, []int) {
-	return file_copilot_proto_rawDescGZIP(), []int{16}
+	return file_copilot_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *CopilotFileChange) GetPath() string {
@@ -1068,7 +843,7 @@ type StopCopilotSessionRequest struct {
 
 func (x *StopCopilotSessionRequest) Reset() {
 	*x = StopCopilotSessionRequest{}
-	mi := &file_copilot_proto_msgTypes[17]
+	mi := &file_copilot_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1080,7 +855,7 @@ func (x *StopCopilotSessionRequest) String() string {
 func (*StopCopilotSessionRequest) ProtoMessage() {}
 
 func (x *StopCopilotSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_copilot_proto_msgTypes[17]
+	mi := &file_copilot_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1093,7 +868,7 @@ func (x *StopCopilotSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopCopilotSessionRequest.ProtoReflect.Descriptor instead.
 func (*StopCopilotSessionRequest) Descriptor() ([]byte, []int) {
-	return file_copilot_proto_rawDescGZIP(), []int{17}
+	return file_copilot_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *StopCopilotSessionRequest) GetSessionId() string {
@@ -1107,30 +882,15 @@ var File_copilot_proto protoreflect.FileDescriptor
 
 const file_copilot_proto_rawDesc = "" +
 	"\n" +
-	"\rcopilot.proto\x12\x06azdext\x1a\fmodels.proto\"\xf8\x01\n" +
-	"\x1bCreateCopilotSessionRequest\x12\x14\n" +
+	"\rcopilot.proto\x12\x06azdext\x1a\fmodels.proto\"[\n" +
+	"\x18InitializeCopilotRequest\x12\x14\n" +
 	"\x05model\x18\x01 \x01(\tR\x05model\x12)\n" +
-	"\x10reasoning_effort\x18\x02 \x01(\tR\x0freasoningEffort\x12%\n" +
-	"\x0esystem_message\x18\x03 \x01(\tR\rsystemMessage\x12\x12\n" +
-	"\x04mode\x18\x04 \x01(\tR\x04mode\x12\x14\n" +
-	"\x05debug\x18\x05 \x01(\bR\x05debug\x12+\n" +
-	"\x11working_directory\x18\x06 \x01(\tR\x10workingDirectory\x12\x1a\n" +
-	"\bheadless\x18\a \x01(\bR\bheadless\"=\n" +
-	"\x1cCreateCopilotSessionResponse\x12\x1d\n" +
-	"\n" +
-	"session_id\x18\x01 \x01(\tR\tsessionId\"\xea\x01\n" +
-	"\x1bResumeCopilotSessionRequest\x12\x1d\n" +
-	"\n" +
-	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x14\n" +
-	"\x05model\x18\x02 \x01(\tR\x05model\x12)\n" +
-	"\x10reasoning_effort\x18\x03 \x01(\tR\x0freasoningEffort\x12%\n" +
-	"\x0esystem_message\x18\x04 \x01(\tR\rsystemMessage\x12\x12\n" +
-	"\x04mode\x18\x05 \x01(\tR\x04mode\x12\x14\n" +
-	"\x05debug\x18\x06 \x01(\bR\x05debug\x12\x1a\n" +
-	"\bheadless\x18\a \x01(\bR\bheadless\"=\n" +
-	"\x1cResumeCopilotSessionResponse\x12\x1d\n" +
-	"\n" +
-	"session_id\x18\x01 \x01(\tR\tsessionId\"I\n" +
+	"\x10reasoning_effort\x18\x02 \x01(\tR\x0freasoningEffort\"~\n" +
+	"\x19InitializeCopilotResponse\x12\x14\n" +
+	"\x05model\x18\x01 \x01(\tR\x05model\x12)\n" +
+	"\x10reasoning_effort\x18\x02 \x01(\tR\x0freasoningEffort\x12 \n" +
+	"\fis_first_run\x18\x03 \x01(\bR\n" +
+	"isFirstRun\"I\n" +
 	"\x1aListCopilotSessionsRequest\x12+\n" +
 	"\x11working_directory\x18\x01 \x01(\tR\x10workingDirectory\"Y\n" +
 	"\x1bListCopilotSessionsResponse\x12:\n" +
@@ -1139,25 +899,22 @@ const file_copilot_proto_rawDesc = "" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12#\n" +
 	"\rmodified_time\x18\x02 \x01(\tR\fmodifiedTime\x12\x18\n" +
-	"\asummary\x18\x03 \x01(\tR\asummary\"z\n" +
-	"\x18InitializeCopilotRequest\x12\x1d\n" +
+	"\asummary\x18\x03 \x01(\tR\asummary\"\x80\x02\n" +
+	"\x19SendCopilotMessageRequest\x12\x16\n" +
+	"\x06prompt\x18\x01 \x01(\tR\x06prompt\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x14\n" +
-	"\x05model\x18\x02 \x01(\tR\x05model\x12)\n" +
-	"\x10reasoning_effort\x18\x03 \x01(\tR\x0freasoningEffort\"~\n" +
-	"\x19InitializeCopilotResponse\x12\x14\n" +
-	"\x05model\x18\x01 \x01(\tR\x05model\x12)\n" +
-	"\x10reasoning_effort\x18\x02 \x01(\tR\x0freasoningEffort\x12 \n" +
-	"\fis_first_run\x18\x03 \x01(\bR\n" +
-	"isFirstRun\"R\n" +
-	"\x19SendCopilotMessageRequest\x12\x1d\n" +
-	"\n" +
-	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x16\n" +
-	"\x06prompt\x18\x02 \x01(\tR\x06prompt\"n\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\x12\x14\n" +
+	"\x05model\x18\x03 \x01(\tR\x05model\x12)\n" +
+	"\x10reasoning_effort\x18\x04 \x01(\tR\x0freasoningEffort\x12%\n" +
+	"\x0esystem_message\x18\x05 \x01(\tR\rsystemMessage\x12\x12\n" +
+	"\x04mode\x18\x06 \x01(\tR\x04mode\x12\x14\n" +
+	"\x05debug\x18\a \x01(\bR\x05debug\x12\x1a\n" +
+	"\bheadless\x18\b \x01(\bR\bheadless\"\xac\x01\n" +
 	"\x1aSendCopilotMessageResponse\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x121\n" +
-	"\x05usage\x18\x02 \x01(\v2\x1b.azdext.CopilotUsageMetricsR\x05usage\">\n" +
+	"\x05usage\x18\x02 \x01(\v2\x1b.azdext.CopilotUsageMetricsR\x05usage\x12<\n" +
+	"\ffile_changes\x18\x03 \x03(\v2\x19.azdext.CopilotFileChangeR\vfileChanges\">\n" +
 	"\x1dGetCopilotUsageMetricsRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\"S\n" +
@@ -1188,13 +945,11 @@ const file_copilot_proto_rawDesc = "" +
 	"$COPILOT_FILE_CHANGE_TYPE_UNSPECIFIED\x10\x00\x12$\n" +
 	" COPILOT_FILE_CHANGE_TYPE_CREATED\x10\x01\x12%\n" +
 	"!COPILOT_FILE_CHANGE_TYPE_MODIFIED\x10\x02\x12$\n" +
-	" COPILOT_FILE_CHANGE_TYPE_DELETED\x10\x032\xd4\x05\n" +
-	"\x0eCopilotService\x12Z\n" +
-	"\rCreateSession\x12#.azdext.CreateCopilotSessionRequest\x1a$.azdext.CreateCopilotSessionResponse\x12Z\n" +
-	"\rResumeSession\x12#.azdext.ResumeCopilotSessionRequest\x1a$.azdext.ResumeCopilotSessionResponse\x12W\n" +
-	"\fListSessions\x12\".azdext.ListCopilotSessionsRequest\x1a#.azdext.ListCopilotSessionsResponse\x12Q\n" +
+	" COPILOT_FILE_CHANGE_TYPE_DELETED\x10\x032\x9c\x04\n" +
+	"\x0eCopilotService\x12Q\n" +
 	"\n" +
-	"Initialize\x12 .azdext.InitializeCopilotRequest\x1a!.azdext.InitializeCopilotResponse\x12T\n" +
+	"Initialize\x12 .azdext.InitializeCopilotRequest\x1a!.azdext.InitializeCopilotResponse\x12W\n" +
+	"\fListSessions\x12\".azdext.ListCopilotSessionsRequest\x1a#.azdext.ListCopilotSessionsResponse\x12T\n" +
 	"\vSendMessage\x12!.azdext.SendCopilotMessageRequest\x1a\".azdext.SendCopilotMessageResponse\x12`\n" +
 	"\x0fGetUsageMetrics\x12%.azdext.GetCopilotUsageMetricsRequest\x1a&.azdext.GetCopilotUsageMetricsResponse\x12]\n" +
 	"\x0eGetFileChanges\x12$.azdext.GetCopilotFileChangesRequest\x1a%.azdext.GetCopilotFileChangesResponse\x12G\n" +
@@ -1213,56 +968,49 @@ func file_copilot_proto_rawDescGZIP() []byte {
 }
 
 var file_copilot_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_copilot_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
+var file_copilot_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_copilot_proto_goTypes = []any{
 	(CopilotFileChangeType)(0),             // 0: azdext.CopilotFileChangeType
-	(*CreateCopilotSessionRequest)(nil),    // 1: azdext.CreateCopilotSessionRequest
-	(*CreateCopilotSessionResponse)(nil),   // 2: azdext.CreateCopilotSessionResponse
-	(*ResumeCopilotSessionRequest)(nil),    // 3: azdext.ResumeCopilotSessionRequest
-	(*ResumeCopilotSessionResponse)(nil),   // 4: azdext.ResumeCopilotSessionResponse
-	(*ListCopilotSessionsRequest)(nil),     // 5: azdext.ListCopilotSessionsRequest
-	(*ListCopilotSessionsResponse)(nil),    // 6: azdext.ListCopilotSessionsResponse
-	(*CopilotSessionMetadata)(nil),         // 7: azdext.CopilotSessionMetadata
-	(*InitializeCopilotRequest)(nil),       // 8: azdext.InitializeCopilotRequest
-	(*InitializeCopilotResponse)(nil),      // 9: azdext.InitializeCopilotResponse
-	(*SendCopilotMessageRequest)(nil),      // 10: azdext.SendCopilotMessageRequest
-	(*SendCopilotMessageResponse)(nil),     // 11: azdext.SendCopilotMessageResponse
-	(*GetCopilotUsageMetricsRequest)(nil),  // 12: azdext.GetCopilotUsageMetricsRequest
-	(*GetCopilotUsageMetricsResponse)(nil), // 13: azdext.GetCopilotUsageMetricsResponse
-	(*CopilotUsageMetrics)(nil),            // 14: azdext.CopilotUsageMetrics
-	(*GetCopilotFileChangesRequest)(nil),   // 15: azdext.GetCopilotFileChangesRequest
-	(*GetCopilotFileChangesResponse)(nil),  // 16: azdext.GetCopilotFileChangesResponse
-	(*CopilotFileChange)(nil),              // 17: azdext.CopilotFileChange
-	(*StopCopilotSessionRequest)(nil),      // 18: azdext.StopCopilotSessionRequest
-	(*EmptyResponse)(nil),                  // 19: azdext.EmptyResponse
+	(*InitializeCopilotRequest)(nil),       // 1: azdext.InitializeCopilotRequest
+	(*InitializeCopilotResponse)(nil),      // 2: azdext.InitializeCopilotResponse
+	(*ListCopilotSessionsRequest)(nil),     // 3: azdext.ListCopilotSessionsRequest
+	(*ListCopilotSessionsResponse)(nil),    // 4: azdext.ListCopilotSessionsResponse
+	(*CopilotSessionMetadata)(nil),         // 5: azdext.CopilotSessionMetadata
+	(*SendCopilotMessageRequest)(nil),      // 6: azdext.SendCopilotMessageRequest
+	(*SendCopilotMessageResponse)(nil),     // 7: azdext.SendCopilotMessageResponse
+	(*GetCopilotUsageMetricsRequest)(nil),  // 8: azdext.GetCopilotUsageMetricsRequest
+	(*GetCopilotUsageMetricsResponse)(nil), // 9: azdext.GetCopilotUsageMetricsResponse
+	(*CopilotUsageMetrics)(nil),            // 10: azdext.CopilotUsageMetrics
+	(*GetCopilotFileChangesRequest)(nil),   // 11: azdext.GetCopilotFileChangesRequest
+	(*GetCopilotFileChangesResponse)(nil),  // 12: azdext.GetCopilotFileChangesResponse
+	(*CopilotFileChange)(nil),              // 13: azdext.CopilotFileChange
+	(*StopCopilotSessionRequest)(nil),      // 14: azdext.StopCopilotSessionRequest
+	(*EmptyResponse)(nil),                  // 15: azdext.EmptyResponse
 }
 var file_copilot_proto_depIdxs = []int32{
-	7,  // 0: azdext.ListCopilotSessionsResponse.sessions:type_name -> azdext.CopilotSessionMetadata
-	14, // 1: azdext.SendCopilotMessageResponse.usage:type_name -> azdext.CopilotUsageMetrics
-	14, // 2: azdext.GetCopilotUsageMetricsResponse.usage:type_name -> azdext.CopilotUsageMetrics
-	17, // 3: azdext.GetCopilotFileChangesResponse.file_changes:type_name -> azdext.CopilotFileChange
-	0,  // 4: azdext.CopilotFileChange.change_type:type_name -> azdext.CopilotFileChangeType
-	1,  // 5: azdext.CopilotService.CreateSession:input_type -> azdext.CreateCopilotSessionRequest
-	3,  // 6: azdext.CopilotService.ResumeSession:input_type -> azdext.ResumeCopilotSessionRequest
-	5,  // 7: azdext.CopilotService.ListSessions:input_type -> azdext.ListCopilotSessionsRequest
-	8,  // 8: azdext.CopilotService.Initialize:input_type -> azdext.InitializeCopilotRequest
-	10, // 9: azdext.CopilotService.SendMessage:input_type -> azdext.SendCopilotMessageRequest
-	12, // 10: azdext.CopilotService.GetUsageMetrics:input_type -> azdext.GetCopilotUsageMetricsRequest
-	15, // 11: azdext.CopilotService.GetFileChanges:input_type -> azdext.GetCopilotFileChangesRequest
-	18, // 12: azdext.CopilotService.StopSession:input_type -> azdext.StopCopilotSessionRequest
-	2,  // 13: azdext.CopilotService.CreateSession:output_type -> azdext.CreateCopilotSessionResponse
-	4,  // 14: azdext.CopilotService.ResumeSession:output_type -> azdext.ResumeCopilotSessionResponse
-	6,  // 15: azdext.CopilotService.ListSessions:output_type -> azdext.ListCopilotSessionsResponse
-	9,  // 16: azdext.CopilotService.Initialize:output_type -> azdext.InitializeCopilotResponse
-	11, // 17: azdext.CopilotService.SendMessage:output_type -> azdext.SendCopilotMessageResponse
-	13, // 18: azdext.CopilotService.GetUsageMetrics:output_type -> azdext.GetCopilotUsageMetricsResponse
-	16, // 19: azdext.CopilotService.GetFileChanges:output_type -> azdext.GetCopilotFileChangesResponse
-	19, // 20: azdext.CopilotService.StopSession:output_type -> azdext.EmptyResponse
-	13, // [13:21] is the sub-list for method output_type
-	5,  // [5:13] is the sub-list for method input_type
-	5,  // [5:5] is the sub-list for extension type_name
-	5,  // [5:5] is the sub-list for extension extendee
-	0,  // [0:5] is the sub-list for field type_name
+	5,  // 0: azdext.ListCopilotSessionsResponse.sessions:type_name -> azdext.CopilotSessionMetadata
+	10, // 1: azdext.SendCopilotMessageResponse.usage:type_name -> azdext.CopilotUsageMetrics
+	13, // 2: azdext.SendCopilotMessageResponse.file_changes:type_name -> azdext.CopilotFileChange
+	10, // 3: azdext.GetCopilotUsageMetricsResponse.usage:type_name -> azdext.CopilotUsageMetrics
+	13, // 4: azdext.GetCopilotFileChangesResponse.file_changes:type_name -> azdext.CopilotFileChange
+	0,  // 5: azdext.CopilotFileChange.change_type:type_name -> azdext.CopilotFileChangeType
+	1,  // 6: azdext.CopilotService.Initialize:input_type -> azdext.InitializeCopilotRequest
+	3,  // 7: azdext.CopilotService.ListSessions:input_type -> azdext.ListCopilotSessionsRequest
+	6,  // 8: azdext.CopilotService.SendMessage:input_type -> azdext.SendCopilotMessageRequest
+	8,  // 9: azdext.CopilotService.GetUsageMetrics:input_type -> azdext.GetCopilotUsageMetricsRequest
+	11, // 10: azdext.CopilotService.GetFileChanges:input_type -> azdext.GetCopilotFileChangesRequest
+	14, // 11: azdext.CopilotService.StopSession:input_type -> azdext.StopCopilotSessionRequest
+	2,  // 12: azdext.CopilotService.Initialize:output_type -> azdext.InitializeCopilotResponse
+	4,  // 13: azdext.CopilotService.ListSessions:output_type -> azdext.ListCopilotSessionsResponse
+	7,  // 14: azdext.CopilotService.SendMessage:output_type -> azdext.SendCopilotMessageResponse
+	9,  // 15: azdext.CopilotService.GetUsageMetrics:output_type -> azdext.GetCopilotUsageMetricsResponse
+	12, // 16: azdext.CopilotService.GetFileChanges:output_type -> azdext.GetCopilotFileChangesResponse
+	15, // 17: azdext.CopilotService.StopSession:output_type -> azdext.EmptyResponse
+	12, // [12:18] is the sub-list for method output_type
+	6,  // [6:12] is the sub-list for method input_type
+	6,  // [6:6] is the sub-list for extension type_name
+	6,  // [6:6] is the sub-list for extension extendee
+	0,  // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_copilot_proto_init() }
@@ -1277,7 +1025,7 @@ func file_copilot_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_copilot_proto_rawDesc), len(file_copilot_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   18,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -47,12 +47,13 @@ type CopilotAgent struct {
 	onSessionStarted        func(sessionID string)
 
 	// Runtime state
-	clientStarted   bool
-	session         *copilot.Session
-	sessionID       string
-	sessionCtx      context.Context
-	display         *AgentDisplay // last display for usage metrics (interactive mode)
-	cumulativeUsage UsageMetrics  // cumulative metrics across multiple SendMessage calls
+	clientStarted          bool
+	session                *copilot.Session
+	sessionID              string
+	sessionCtx             context.Context
+	display                *AgentDisplay      // last display for usage metrics (interactive mode)
+	cumulativeUsage        UsageMetrics       // cumulative metrics across multiple SendMessage calls
+	accumulatedFileChanges []watch.FileChange // accumulated file changes across all SendMessage calls
 
 	// Cleanup — ordered slice for deterministic teardown
 	cleanupTasks []cleanupTask
@@ -319,9 +320,6 @@ func (a *CopilotAgent) sendMessageInteractive(
 		displayCancel()
 		time.Sleep(100 * time.Millisecond)
 		cleanup()
-		if watcher != nil {
-			watcher.PrintChangedFiles(ctx)
-		}
 	}()
 
 	unsubscribe := a.session.On(display.HandleEvent)
@@ -342,9 +340,12 @@ func (a *CopilotAgent) sendMessageInteractive(
 	turnUsage := display.GetUsageMetrics()
 	a.accumulateUsage(turnUsage)
 
+	turnFileChanges := a.collectFileChanges(watcher)
+
 	return &AgentResult{
-		SessionID: a.sessionID,
-		Usage:     turnUsage,
+		SessionID:   a.sessionID,
+		Usage:       turnUsage,
+		FileChanges: turnFileChanges,
 	}, nil
 }
 
@@ -353,6 +354,9 @@ func (a *CopilotAgent) sendMessageHeadless(
 	ctx context.Context, prompt string, mode AgentMode,
 ) (*AgentResult, error) {
 	collector := NewHeadlessCollector()
+
+	var watcher watch.Watcher
+	watcher, _ = watch.NewWatcher(ctx)
 
 	unsubscribe := a.session.On(collector.HandleEvent)
 	defer unsubscribe()
@@ -372,9 +376,12 @@ func (a *CopilotAgent) sendMessageHeadless(
 	turnUsage := collector.GetUsageMetrics()
 	a.accumulateUsage(turnUsage)
 
+	turnFileChanges := a.collectFileChanges(watcher)
+
 	return &AgentResult{
-		SessionID: a.sessionID,
-		Usage:     turnUsage,
+		SessionID:   a.sessionID,
+		Usage:       turnUsage,
+		FileChanges: turnFileChanges,
 	}, nil
 }
 
@@ -396,6 +403,69 @@ func (a *CopilotAgent) accumulateUsage(turn UsageMetrics) {
 // GetCumulativeUsage returns the cumulative usage metrics across all SendMessage calls.
 func (a *CopilotAgent) GetCumulativeUsage() UsageMetrics {
 	return a.cumulativeUsage
+}
+
+// collectFileChanges stops the watcher, collects its changes, and appends them
+// to the accumulated list. Returns the per-turn changes.
+func (a *CopilotAgent) collectFileChanges(watcher watch.Watcher) []watch.FileChange {
+	if watcher == nil {
+		return nil
+	}
+
+	turnChanges := watcher.GetFileChanges()
+	if len(turnChanges) > 0 {
+		a.accumulatedFileChanges = append(a.accumulatedFileChanges, turnChanges...)
+	}
+	return turnChanges
+}
+
+// GetAccumulatedFileChanges returns all file changes across all SendMessage calls.
+func (a *CopilotAgent) GetAccumulatedFileChanges() []watch.FileChange {
+	return a.accumulatedFileChanges
+}
+
+// PrintSessionMetrics prints cumulative usage metrics and accumulated file changes.
+// Call this after the last SendMessage to display session summary.
+func (a *CopilotAgent) PrintSessionMetrics(ctx context.Context) {
+	// Print usage metrics
+	usageStr := a.cumulativeUsage.Format()
+	if usageStr != "" {
+		a.console.Message(ctx, "")
+		a.console.Message(ctx, usageStr)
+	}
+
+	// Print file changes
+	if len(a.accumulatedFileChanges) > 0 {
+		printFileChanges(a.accumulatedFileChanges)
+	}
+}
+
+// printFileChanges prints file changes in the standard format.
+func printFileChanges(changes []watch.FileChange) {
+	fmt.Println(output.WithGrayFormat("\n| Files changed:"))
+
+	cwd, cwdErr := os.Getwd()
+	getDisplayPath := func(file string) string {
+		if cwdErr != nil {
+			return file
+		}
+		if relPath, err := filepath.Rel(cwd, file); err == nil {
+			return relPath
+		}
+		return file
+	}
+
+	for _, change := range changes {
+		path := getDisplayPath(change.Path)
+		switch change.ChangeType {
+		case watch.FileCreated:
+			fmt.Println(output.WithGrayFormat("| "), output.WithSuccessFormat("+ Created  "), path)
+		case watch.FileModified:
+			fmt.Println(output.WithGrayFormat("| "), output.WithWarningFormat("± Modified "), path)
+		case watch.FileDeleted:
+			fmt.Println(output.WithGrayFormat("| "), output.WithErrorFormat("- Deleted  "), path)
+		}
+	}
 }
 
 // SendMessageWithRetry wraps SendMessage with interactive retry-on-error UX.

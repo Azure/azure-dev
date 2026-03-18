@@ -31,6 +31,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newGhUrlParseCommand())
 	rootCmd.AddCommand(newMetadataCommand())
 	rootCmd.AddCommand(newAiCommand())
+	rootCmd.AddCommand(newCopilotCommand())
 
 	return rootCmd
 }

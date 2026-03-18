@@ -219,7 +219,11 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		// Fall back to the pre-parsed global options value.
 		// This handles extension commands (DisableFlagParsing: true) where cobra
 		// doesn't parse persistent flags — the value was already parsed in ParseGlobalFlags.
-		if envValue == "" {
+		if envValue == "" && globalOptions.EnvironmentName != "" {
+			log.Printf(
+				"using pre-parsed environment name '%s' from global options",
+				globalOptions.EnvironmentName,
+			)
 			envValue = globalOptions.EnvironmentName
 		}
 

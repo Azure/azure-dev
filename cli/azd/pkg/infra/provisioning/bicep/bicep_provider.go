@@ -2451,8 +2451,9 @@ func (p *BicepProvider) checkLocalAuthPolicy(
 			resource.Name, resource.Type, matched, hasLocalAuthDisabled)
 	}
 
-	// Check each snapshot resource against the deny policies.
-	var violations []string
+	// Collect affected resource types (deduplicated) and unique policy names.
+	affectedTypes := make(map[string]bool)
+	uniquePolicyNames := make(map[string]bool)
 	for _, resource := range valCtx.SnapshotResources {
 		policies, found := policiesByType[strings.ToLower(resource.Type)]
 		if !found {
@@ -2460,37 +2461,39 @@ func (p *BicepProvider) checkLocalAuthPolicy(
 		}
 
 		if !azapi.ResourceHasLocalAuthDisabled(resource.Type, resource.Properties) {
-			policyNames := make([]string, 0, len(policies))
+			affectedTypes[resource.Type] = true
 			for _, p := range policies {
 				if p.PolicyName != "" {
-					policyNames = append(policyNames, p.PolicyName)
+					uniquePolicyNames[p.PolicyName] = true
 				}
 			}
-			policyDesc := strings.Join(policyNames, ", ")
-			if policyDesc == "" {
-				policyDesc = "(unnamed)"
-			}
-			violations = append(violations, fmt.Sprintf(
-				"  - %s (type: %s) — policies: %s",
-				resource.Name, resource.Type, policyDesc,
-			))
 		}
 	}
 
-	if len(violations) == 0 {
+	if len(affectedTypes) == 0 {
 		return nil, nil
+	}
+
+	typeList := slices.Sorted(maps.Keys(affectedTypes))
+	var lines []string
+	for _, t := range typeList {
+		lines = append(lines, fmt.Sprintf("  - %s", t))
+	}
+
+	policyList := slices.Sorted(maps.Keys(uniquePolicyNames))
+	policyDesc := strings.Join(policyList, ", ")
+	if policyDesc == "" {
+		policyDesc = "(unnamed policy)"
 	}
 
 	return &PreflightCheckResult{
 		Severity: PreflightCheckWarning,
 		Message: fmt.Sprintf(
-			"subscription %s has Azure Policy assignments that deny resources with local "+
-				"authentication enabled. The following resources may be blocked:\n%s\n"+
-				"Disable local authentication on these resources (e.g. set 'disableLocalAuth: true' "+
-				"or 'allowSharedKeyAccess: false' for storage accounts) or request a policy exemption. "+
-				"See https://aka.ms/safesecretsstandard for details.",
-			subscriptionId,
-			strings.Join(violations, "\n"),
+			"Azure Policy denies resources with local authentication enabled (%s). "+
+				"Affected resource types in this deployment:\n%s\n"+
+				"Disable local authentication on these resources or request a policy exemption.",
+			policyDesc,
+			strings.Join(lines, "\n"),
 		),
 	}, nil
 }

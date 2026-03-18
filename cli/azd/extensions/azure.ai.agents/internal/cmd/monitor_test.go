@@ -13,22 +13,34 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestMonitorCommand_RequiredFlags(t *testing.T) {
+func TestMonitorCommand_AcceptsPositionalArg(t *testing.T) {
+	cmd := newMonitorCommand()
+
+	// The command should accept a positional argument without Cobra arg-count error.
+	cmd.SetArgs([]string{"my-service"})
+	err := cmd.Execute()
+	// Expect a runtime error (no azd client available), not an arg-count error
+	assert.Error(t, err)
+	assert.NotContains(t, err.Error(), "accepts at most")
+}
+
+func TestMonitorCommand_AcceptsNoArgs(t *testing.T) {
 	cmd := newMonitorCommand()
 
 	cmd.SetArgs([]string{})
 	err := cmd.Execute()
+	// Expect a runtime error (no azd client available), not a missing-flag error
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "name")
+	assert.NotContains(t, err.Error(), "required flag")
 }
 
-func TestMonitorCommand_MissingVersionFlag(t *testing.T) {
+func TestMonitorCommand_RejectsMultipleArgs(t *testing.T) {
 	cmd := newMonitorCommand()
 
-	cmd.SetArgs([]string{"--name", "test-agent"})
+	cmd.SetArgs([]string{"svc1", "svc2"})
 	err := cmd.Execute()
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "version")
+	assert.Contains(t, err.Error(), "accepts at most 1 arg")
 }
 
 func TestValidateMonitorFlags_Valid(t *testing.T) {

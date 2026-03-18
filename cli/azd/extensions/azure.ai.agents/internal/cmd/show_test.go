@@ -13,23 +13,35 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestShowCommand_RequiredFlags(t *testing.T) {
+func TestShowCommand_AcceptsPositionalArg(t *testing.T) {
 	cmd := newShowCommand()
 
-	// Execute with no flags should fail (missing required flags)
-	cmd.SetArgs([]string{})
+	// The command should accept a positional argument without error from Cobra arg validation.
+	// It will fail at runtime (no azd client), but Cobra should not reject the args.
+	cmd.SetArgs([]string{"my-service"})
 	err := cmd.Execute()
+	// Expect a runtime error (no azd client available), not an arg-count error
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "name")
+	assert.NotContains(t, err.Error(), "accepts at most")
 }
 
-func TestShowCommand_MissingVersionFlag(t *testing.T) {
+func TestShowCommand_AcceptsNoArgs(t *testing.T) {
 	cmd := newShowCommand()
 
-	cmd.SetArgs([]string{"--name", "test-agent"})
+	cmd.SetArgs([]string{})
+	err := cmd.Execute()
+	// Expect a runtime error (no azd client available), not a missing-flag error
+	assert.Error(t, err)
+	assert.NotContains(t, err.Error(), "required flag")
+}
+
+func TestShowCommand_RejectsMultipleArgs(t *testing.T) {
+	cmd := newShowCommand()
+
+	cmd.SetArgs([]string{"svc1", "svc2"})
 	err := cmd.Execute()
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "version")
+	assert.Contains(t, err.Error(), "accepts at most 1 arg")
 }
 
 func TestPrintStatusJSON(t *testing.T) {

@@ -19,14 +19,11 @@ import (
 )
 
 type monitorFlags struct {
-	accountName string
-	projectName string
-	name        string
-	version     string
-	sessionID   string
-	follow      bool
-	tail        int
-	logType     string
+	name      string
+	sessionID string
+	follow    bool
+	tail      int
+	logType   string
 }
 
 // MonitorAction handles the execution of the monitor command.
@@ -39,26 +36,38 @@ func newMonitorCommand() *cobra.Command {
 	flags := &monitorFlags{}
 
 	cmd := &cobra.Command{
-		Use:   "monitor",
+		Use:   "monitor [service]",
 		Short: "Monitor logs from a hosted agent.",
 		Long: `Monitor logs from a hosted agent.
 
 Streams console output (stdout/stderr) or system events from an agent session or container.
 Use --session to stream logs for a specific session, or omit it to use the container logstream.
 Use --follow to stream logs in real-time, or omit it to fetch recent logs and exit.
-This is useful for troubleshooting agent startup issues or monitoring agent behavior.`,
-		Example: `  # Stream session logs
-  azd ai agent monitor --name my-agent --version 1 --session <session-id>
+This is useful for troubleshooting agent startup issues or monitoring agent behavior.
+
+The agent name and version are resolved automatically from the azure.yaml service
+configuration and the current azd environment. Optionally specify the service name
+(from azure.yaml) as a positional argument when multiple agent services exist.`,
+		Example: `  # Monitor logs (auto-resolves from azure.yaml)
+  azd ai agent monitor
+
+  # Monitor logs for a specific service
+  azd ai agent monitor my-service
+
+  # Stream session logs
+  azd ai agent monitor --session <session-id>
 
   # Stream session logs in real-time
-  azd ai agent monitor --name my-agent --version 1 --session <session-id> --follow
+  azd ai agent monitor --session <session-id> --follow
 
-  # Fetch container console logs (legacy)
-  azd ai agent monitor --name my-agent --version 1
-
-  # Fetch system event logs from container (legacy)
-  azd ai agent monitor --name my-agent --version 1 --type system`,
+  # Fetch system event logs from container
+  azd ai agent monitor --type system`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) > 0 {
+				flags.name = args[0]
+			}
+
 			if err := validateMonitorFlags(flags); err != nil {
 				return err
 			}
@@ -66,14 +75,40 @@ This is useful for troubleshooting agent startup issues or monitoring agent beha
 			ctx := azdext.WithAccessToken(cmd.Context())
 			setupDebugLogging(cmd.Flags())
 
-			agentContext, err := newAgentContext(ctx, flags.accountName, flags.projectName, flags.name, flags.version)
+			azdClient, err := azdext.NewAzdClient()
+			if err != nil {
+				return fmt.Errorf("failed to create azd client: %w", err)
+			}
+			defer azdClient.Close()
+
+			info, err := resolveAgentServiceFromProject(ctx, azdClient, flags.name, rootFlags.NoPrompt)
+			if err != nil {
+				return err
+			}
+
+			if info.AgentName == "" {
+				return fmt.Errorf(
+					"agent name could not be resolved from azd environment for service '%s'\n\n"+
+						"Run 'azd deploy' first to deploy the agent, or check your azd environment values",
+					info.ServiceName,
+				)
+			}
+			if info.Version == "" {
+				return fmt.Errorf(
+					"agent version could not be resolved from azd environment for service '%s'\n\n"+
+						"Run 'azd deploy' first to deploy the agent, or check your azd environment values",
+					info.ServiceName,
+				)
+			}
+
+			agentContext, err := newAgentContext(ctx, "", "", info.AgentName, info.Version)
 			if err != nil {
 				return err
 			}
 
 			// When vnext is enabled, resolve session ID for session-based logstream.
 			if flags.sessionID == "" {
-				sessionID, vnext := resolveMonitorSession(ctx, flags.name)
+				sessionID, vnext := resolveMonitorSession(ctx, info.AgentName)
 				if vnext {
 					if sessionID == "" {
 						return exterrors.Validation(
@@ -95,17 +130,11 @@ This is useful for troubleshooting agent startup issues or monitoring agent beha
 		},
 	}
 
-	cmd.Flags().StringVarP(&flags.accountName, "account-name", "a", "", "Cognitive Services account name")
-	cmd.Flags().StringVarP(&flags.projectName, "project-name", "p", "", "AI Foundry project name")
-	cmd.Flags().StringVarP(&flags.name, "name", "n", "", "Name of the hosted agent (required)")
-	cmd.Flags().StringVarP(&flags.version, "version", "v", "", "Version of the hosted agent (required)")
 	cmd.Flags().StringVarP(&flags.sessionID, "session", "s", "", "Session ID to stream logs for")
 	cmd.Flags().BoolVarP(&flags.follow, "follow", "f", false, "Stream logs in real-time")
 	cmd.Flags().IntVarP(&flags.tail, "tail", "l", 50, "Number of trailing log lines to fetch (1-300)")
-	cmd.Flags().StringVarP(&flags.logType, "type", "t", "console", "Type of logs: 'console' (stdout/stderr) or 'system' (container events)")
-
-	_ = cmd.MarkFlagRequired("name")
-	_ = cmd.MarkFlagRequired("version")
+	cmd.Flags().StringVarP(&flags.logType, "type", "t", "console",
+		"Type of logs: 'console' (stdout/stderr) or 'system' (container events)")
 
 	return cmd
 }

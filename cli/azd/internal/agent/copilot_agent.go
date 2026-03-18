@@ -457,6 +457,21 @@ func (a *CopilotAgent) ensureClientStarted(ctx context.Context) error {
 	return nil
 }
 
+// EnsureStarted starts the Copilot SDK client and verifies authentication.
+// Call this eagerly to catch startup errors (missing binary, auth failures)
+// before entering a chat loop. Idempotent — safe to call multiple times.
+func (a *CopilotAgent) EnsureStarted(ctx context.Context) error {
+	if err := a.ensureClientStarted(ctx); err != nil {
+		return fmt.Errorf("starting copilot client: %w", err)
+	}
+
+	if err := a.ensureAuthenticated(ctx); err != nil {
+		return fmt.Errorf("copilot authentication: %w", err)
+	}
+
+	return nil
+}
+
 // ensureSession creates or resumes a Copilot session if one doesn't exist.
 func (a *CopilotAgent) ensureSession(ctx context.Context, resumeSessionID string) error {
 	if a.session != nil {
@@ -541,7 +556,7 @@ func (a *CopilotAgent) ensureSession(ctx context.Context, resumeSessionID string
 		log.Println("[copilot] Creating session...")
 		session, err := a.clientManager.Client().CreateSession(ctx, sessionConfig)
 		if err != nil {
-			return fmt.Errorf("failed to create session: %w", err)
+			return fmt.Errorf("creating copilot session: %w", err)
 		}
 		a.session = session
 		a.sessionID = session.SessionID

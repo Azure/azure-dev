@@ -31,7 +31,7 @@ func newShowCommand() *cobra.Command {
 	flags := &showFlags{}
 
 	cmd := &cobra.Command{
-		Use:   "show [service]",
+		Use:   "show [name]",
 		Short: "Show the status of a hosted agent deployment.",
 		Long: `Show the status of a hosted agent deployment.
 
@@ -44,8 +44,8 @@ configuration and the current azd environment. Optionally specify the service na
 		Example: `  # Show status (auto-resolves from azure.yaml)
   azd ai agent show
 
-  # Show status for a specific service
-  azd ai agent show my-service
+  # Show status for a specific agent service
+  azd ai agent show my-agent
 
   # Show status in table format
   azd ai agent show --output table`,

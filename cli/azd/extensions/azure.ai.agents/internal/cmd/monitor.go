@@ -36,7 +36,7 @@ func newMonitorCommand() *cobra.Command {
 	flags := &monitorFlags{}
 
 	cmd := &cobra.Command{
-		Use:   "monitor [service]",
+		Use:   "monitor [name]",
 		Short: "Monitor logs from a hosted agent.",
 		Long: `Monitor logs from a hosted agent.
 
@@ -51,8 +51,8 @@ configuration and the current azd environment. Optionally specify the service na
 		Example: `  # Monitor logs (auto-resolves from azure.yaml)
   azd ai agent monitor
 
-  # Monitor logs for a specific service
-  azd ai agent monitor my-service
+  # Monitor logs for a specific agent service
+  azd ai agent monitor my-agent
 
   # Stream session logs
   azd ai agent monitor --session <session-id>

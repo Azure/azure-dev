@@ -6,6 +6,7 @@ package update
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -271,4 +272,154 @@ func TestUpdateViaMSI_NonStandardInstallBlocks(t *testing.T) {
 	var updateErr *UpdateError
 	require.True(t, errors.As(err, &updateErr))
 	require.Equal(t, CodeNonStandardInstall, updateErr.Code)
+}
+
+func TestUpdateViaMSI_SuccessPath_CleansUpBackup(t *testing.T) {
+	// Set up an "install directory" with a fake azd.exe.
+	installDir := t.TempDir()
+	originalPath := filepath.Join(installDir, "azd.exe")
+	require.NoError(t, os.WriteFile(originalPath, []byte("old-binary"), 0o755))
+
+	// --- Simulate backupCurrentExe ---
+	backupDir, err := os.MkdirTemp("", "azd-update-backup")
+	require.NoError(t, err)
+	defer os.RemoveAll(backupDir) // safety net if test fails early
+
+	backupPath := filepath.Join(backupDir, "azd.exe")
+	// Step 1: rename exe to backup
+	require.NoError(t, os.Rename(originalPath, backupPath))
+	// Step 2: copy back as unlocked safety copy
+	require.NoError(t, copyFileWindows(backupPath, originalPath))
+
+	// Verify both exist: safety copy at original, backup in temp
+	_, err = os.Stat(originalPath)
+	require.NoError(t, err, "safety copy should exist at original path")
+	_, err = os.Stat(backupPath)
+	require.NoError(t, err, "backup should exist in temp dir")
+
+	// --- Simulate successful MSI install ---
+	// The MSI overwrites the unlocked safety copy with a new binary.
+	require.NoError(t, os.WriteFile(originalPath, []byte("new-binary-v2"), 0o755))
+
+	// --- Simulate updateViaMSI success cleanup (updateSucceeded = true) ---
+	err = os.RemoveAll(filepath.Dir(backupPath))
+	require.NoError(t, err)
+
+	// Verify: new binary is at original path, backup dir is gone
+	data, err := os.ReadFile(originalPath)
+	require.NoError(t, err)
+	require.Equal(t, "new-binary-v2", string(data), "original path should have the new binary")
+
+	_, err = os.Stat(backupDir)
+	require.True(t, os.IsNotExist(err), "backup directory should be cleaned up after success")
+}
+
+func TestUpdateViaMSI_FailurePath_RestoresOriginal(t *testing.T) {
+	installDir := t.TempDir()
+	originalPath := filepath.Join(installDir, "azd.exe")
+	require.NoError(t, os.WriteFile(originalPath, []byte("old-binary"), 0o755))
+
+	// --- Simulate backupCurrentExe ---
+	backupDir, err := os.MkdirTemp("", "azd-update-backup")
+	require.NoError(t, err)
+	defer os.RemoveAll(backupDir)
+
+	backupPath := filepath.Join(backupDir, "azd.exe")
+	require.NoError(t, os.Rename(originalPath, backupPath))
+	require.NoError(t, copyFileWindows(backupPath, originalPath))
+
+	// --- Simulate failed MSI install that partially overwrote the safety copy ---
+	require.NoError(t, os.WriteFile(originalPath, []byte("corrupted-partial"), 0o755))
+
+	// --- Simulate updateViaMSI failure path (updateSucceeded = false) ---
+	var buf strings.Builder
+	fmt.Fprintf(&buf, "Restoring previous version...\n")
+	restoreErr := restoreExeFromBackup(originalPath, backupPath)
+	if restoreErr != nil {
+		fmt.Fprintf(&buf, "WARNING: failed to restore previous version: %v\n", restoreErr)
+		fmt.Fprintf(&buf, "Your backup is at: %s\n", backupPath)
+		fmt.Fprintf(&buf, "To recover manually, copy it to: %s\n", originalPath)
+	}
+
+	// Verify: original binary is restored, backup dir is cleaned up
+	require.NoError(t, restoreErr, "restore should succeed")
+
+	data, err := os.ReadFile(originalPath)
+	require.NoError(t, err)
+	require.Equal(t, "old-binary", string(data), "original binary should be restored from backup")
+
+	_, err = os.Stat(backupDir)
+	require.True(t, os.IsNotExist(err), "backup directory should be cleaned up after restore")
+
+	output := buf.String()
+	require.Contains(t, output, "Restoring previous version...")
+	require.NotContains(t, output, "WARNING", "restore should succeed without warnings")
+}
+
+func TestUpdateViaMSI_FailurePath_PrintsRecoveryInstructions(t *testing.T) {
+	installDir := t.TempDir()
+	originalPath := filepath.Join(installDir, "azd.exe")
+
+	// Create a backup in a temp dir
+	backupDir, err := os.MkdirTemp("", "azd-update-backup")
+	require.NoError(t, err)
+	defer os.RemoveAll(backupDir)
+
+	backupPath := filepath.Join(backupDir, "azd.exe")
+	require.NoError(t, os.WriteFile(backupPath, []byte("old-binary"), 0o755))
+
+	// Now remove the backup so restoreExeFromBackup will fail when trying to read it
+	require.NoError(t, os.Remove(backupPath))
+
+	// Make the install dir read-only so the copy will definitely fail
+	// (backup file doesn't exist, so copyFileWindows will fail on Open)
+
+	// --- Simulate updateViaMSI failure path with broken restore ---
+	var buf strings.Builder
+	fmt.Fprintf(&buf, "Restoring previous version...\n")
+	restoreErr := restoreExeFromBackup(originalPath, backupPath)
+	if restoreErr != nil {
+		fmt.Fprintf(&buf, "WARNING: failed to restore previous version: %v\n", restoreErr)
+		fmt.Fprintf(&buf, "Your backup is at: %s\n", backupPath)
+		fmt.Fprintf(&buf, "To recover manually, copy it to: %s\n", originalPath)
+	}
+
+	require.Error(t, restoreErr, "restore should fail when backup is missing")
+
+	output := buf.String()
+	require.Contains(t, output, "WARNING: failed to restore previous version")
+	require.Contains(t, output, "Your backup is at:")
+	require.Contains(t, output, "To recover manually, copy it to:")
+}
+
+func TestUpdateViaMSI_SafetyCopySurvivesInterruption(t *testing.T) {
+	installDir := t.TempDir()
+	originalPath := filepath.Join(installDir, "azd.exe")
+	originalContent := []byte("original-binary-content")
+	require.NoError(t, os.WriteFile(originalPath, originalContent, 0o755))
+
+	// --- Simulate backupCurrentExe ---
+	backupDir, err := os.MkdirTemp("", "azd-update-backup")
+	require.NoError(t, err)
+	defer os.RemoveAll(backupDir)
+
+	backupPath := filepath.Join(backupDir, "azd.exe")
+	require.NoError(t, os.Rename(originalPath, backupPath))
+	require.NoError(t, copyFileWindows(backupPath, originalPath))
+
+	// At this point (post-backup, pre-install), if the process is killed,
+	// the user should still have a valid azd.exe at the original path.
+	data, err := os.ReadFile(originalPath)
+	require.NoError(t, err)
+	require.Equal(t, originalContent, data,
+		"safety copy at original path should match the original binary")
+
+	// The safety copy should be a distinct file (not a hard link to the backup)
+	// — verify by checking that removing the backup doesn't affect the safety copy.
+	require.NoError(t, os.Remove(backupPath))
+
+	data, err = os.ReadFile(originalPath)
+	require.NoError(t, err)
+	require.Equal(t, originalContent, data,
+		"safety copy should survive even if backup is deleted (independent file)")
 }

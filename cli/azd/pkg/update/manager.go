@@ -353,6 +353,15 @@ func (m *Manager) updateViaMSI(ctx context.Context, cfg *UpdateConfig, writer io
 	// safety copy at the original path with the new version.
 	psArgs := buildInstallScriptArgs(cfg.Channel)
 
+	// Snapshot the safety copy's mod time before the install so we can detect
+	// whether the MSI actually replaced the file. A plain os.Stat after install
+	// would always succeed because the safety copy already exists at originalPath.
+	preInfo, statErr := os.Stat(originalPath)
+	if statErr != nil {
+		return newUpdateError(CodeReplaceFailed,
+			fmt.Errorf("failed to stat safety copy before install: %w", statErr))
+	}
+
 	log.Printf("Running install script: powershell %s", strings.Join(psArgs, " "))
 	fmt.Fprintf(writer, "Installing azd %s channel...\n", cfg.Channel)
 
@@ -364,10 +373,19 @@ func (m *Manager) updateViaMSI(ctx context.Context, cfg *UpdateConfig, writer io
 		return newUpdateError(CodeReplaceFailed, fmt.Errorf("install script failed: %w", err))
 	}
 
-	// Verify the installer actually produced a new binary at the expected path.
-	if _, err := os.Stat(originalPath); err != nil {
+	// Verify the MSI actually replaced the binary by comparing mod time and
+	// size against the pre-install safety copy. If both are identical the MSI
+	// did not write a new file (silent failure).
+	postInfo, statErr := os.Stat(originalPath)
+	if statErr != nil {
 		return newUpdateError(CodeReplaceFailed,
 			fmt.Errorf("install script completed but %s was not found", originalPath))
+	}
+
+	if postInfo.ModTime().Equal(preInfo.ModTime()) && postInfo.Size() == preInfo.Size() {
+		return newUpdateError(CodeReplaceFailed,
+			fmt.Errorf("install script completed but the binary at %s was not updated "+
+				"(file unchanged); the MSI may have failed silently", originalPath))
 	}
 
 	updateSucceeded = true

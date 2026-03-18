@@ -36,7 +36,7 @@ func expectedPerUserInstallDir() string {
 //     This frees the original path AND keeps the running process alive.
 //  2. Copy the backup back to the original path (azd.exe).
 //     This is an unlocked copy that acts as a safety net: if the process is
-//     killed at any point after this (Ctrl+C, power loss, taskkill), the user
+//     killed at any point after this (Ctrl+C, power loss, ect), the user
 //     still has a working azd.exe.
 //  3. The MSI installer later overwrites the unlocked safety copy with the new version.
 //
@@ -76,7 +76,7 @@ func backupCurrentExe() (originalPath string, backupPath string, err error) {
 	return originalPath, backupPath, nil
 }
 
-// copyFileWindows copies src to dst, preserving the file mode.
+// copyFileWindows copies src to dst.
 func copyFileWindows(src, dst string) error {
 	in, err := os.Open(src)
 	if err != nil {
@@ -88,9 +88,9 @@ func copyFileWindows(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer out.Close()
 
 	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
 		return err
 	}
 

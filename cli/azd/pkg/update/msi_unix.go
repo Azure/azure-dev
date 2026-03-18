@@ -18,18 +18,6 @@ func backupCurrentExe() (string, string, error) {
 // restoreExeFromBackup is a no-op stub on non-Windows platforms.
 func restoreExeFromBackup(_, _ string) error { return nil }
 
-// versionFlag returns the install script parameter value for the given channel.
-func versionFlag(channel Channel) string {
-	switch channel {
-	case ChannelDaily:
-		return "daily"
-	case ChannelStable:
-		return "stable"
-	default:
-		return "stable"
-	}
-}
-
 // buildInstallScriptArgs is a no-op on non-Windows platforms.
 func buildInstallScriptArgs(_ Channel) []string {
 	return nil

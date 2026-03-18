@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"text/tabwriter"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -24,10 +25,41 @@ type filesFlags struct {
 	session   string // optional: explicit session ID override
 }
 
+// isVNextEnabled checks whether hosted agent vnext is enabled
+// by looking at both the OS environment and the azd environment.
+func isVNextEnabled(ctx context.Context) bool {
+	if v := os.Getenv("enableHostedAgentVNext"); v != "" {
+		if enabled, err := strconv.ParseBool(v); err == nil && enabled {
+			return true
+		}
+	}
+
+	// Best-effort check of azd environment
+	azdClient, err := azdext.NewAzdClient()
+	if err != nil {
+		return false
+	}
+	defer azdClient.Close()
+
+	azdEnv, err := loadAzdEnvironment(ctx, azdClient)
+	if err != nil {
+		return false
+	}
+
+	if v := azdEnv["enableHostedAgentVNext"]; v != "" {
+		if enabled, err := strconv.ParseBool(v); err == nil && enabled {
+			return true
+		}
+	}
+
+	return false
+}
+
 func newFilesCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "files",
-		Short: "Manage files in a hosted agent session.",
+		Use:    "files",
+		Short:  "Manage files in a hosted agent session.",
+		Hidden: !isVNextEnabled(context.Background()),
 		Long: `Manage files in a hosted agent session.
 
 Upload, download, list, and remove files in the session-scoped filesystem
@@ -37,6 +69,23 @@ Agent details (name, version, endpoint) are automatically resolved from the
 azd environment. Use --agent-name to select a specific agent when the project
 has multiple azure.ai.agent services. The session ID is automatically resolved
 from the last invoke session, or can be overridden with --session.`,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			// Chain with parent's PersistentPreRunE (root sets NoPrompt)
+			if parent := cmd.Parent(); parent != nil && parent.PersistentPreRunE != nil {
+				if err := parent.PersistentPreRunE(cmd, args); err != nil {
+					return err
+				}
+			}
+
+			ctx := azdext.WithAccessToken(cmd.Context())
+			if !isVNextEnabled(ctx) {
+				return fmt.Errorf(
+					"files commands require hosted agent vnext to be enabled\n\n" +
+						"Set 'enableHostedAgentVNext' to 'true' in your azd environment or as an OS environment variable.",
+				)
+			}
+			return nil
+		},
 	}
 
 	cmd.AddCommand(newFilesUploadCommand())

@@ -5,6 +5,9 @@ parameters:
       - cover-win
       - cover-lin
       - cover-mac
+  - name: MinimumCoveragePercent
+    type: number
+    default: 0
 stages: 
 - stage: CodeCoverage_Upload
   condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
@@ -58,6 +61,11 @@ stages:
               exit $LASTEXITCODE 
           }
         displayName: Merge code coverage files
+
+      - ${{ if gt(parameters.MinimumCoveragePercent, 0) }}:
+        - pwsh: |
+            pwsh -File "$(Build.SourcesDirectory)/eng/scripts/Test-CodeCoverageThreshold.ps1" -CoverageFile cover.out -MinimumCoveragePercent ${{ parameters.MinimumCoveragePercent }}
+          displayName: Check code coverage threshold
 
       - task: PublishCodeCoverageResults@1
         inputs:

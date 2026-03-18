@@ -4,6 +4,9 @@
 
 - [[#7141]](https://github.com/Azure/azure-dev/pull/7141) Add `azd ai agent files` command group with `upload`, `download`, `list`, and `remove` subcommands for managing session-scoped files on hosted agent sandboxes.
 - [[#7175]](https://github.com/Azure/azure-dev/pull/7175) Improve input validation, error handling, and path safety across the extension, including hardened path resolution, sensitive data redaction in error paths, and WebSocket origin validation.
+
+### Breaking Changes
+
 - [[#7181]](https://github.com/Azure/azure-dev/pull/7181) Update `azd ai agent show` and `azd ai agent monitor` commands to read agent name and version from the azd service entry, removing the requirement to pass them as parameters.
 
 ## 0.1.15-preview (2026-03-13)

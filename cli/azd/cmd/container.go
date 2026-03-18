@@ -967,7 +967,12 @@ type workflowCmdAdapter struct {
 func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context, args []string) error {
 	childCtx := middleware.WithChildAction(ctx)
 	rootCmd := w.newCommand()
+	// Always set args explicitly to prevent Cobra from falling back to os.Args[1:].
+	// Cobra uses os.Args when cmd.args is nil (but not when it's an empty slice).
 	mergedArgs := append(slices.Clone(args), w.globalArgs...)
+	if mergedArgs == nil {
+		mergedArgs = []string{}
+	}
 	rootCmd.SetArgs(mergedArgs)
 	return rootCmd.ExecuteContext(childCtx)
 }

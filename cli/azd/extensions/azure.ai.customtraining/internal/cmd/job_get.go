@@ -14,13 +14,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newJobGetCommand() *cobra.Command {
+func newJobShowCommand() *cobra.Command {
 	var name string
 	var outputFormat string
 
 	cmd := &cobra.Command{
-		Use:   "get",
-		Short: "Get details of a specific training job",
+		Use:   "show",
+		Short: "Show details of a specific training job",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())

@@ -375,6 +375,6 @@ func setEnvValues(ctx context.Context, azdClient *azdext.AzdClient, envName stri
 
 // buildProjectEndpoint constructs a Foundry project endpoint from account name and project name.
 func buildProjectEndpoint(accountName, projectName string) string {
-	return fmt.Sprintf("https://%s.cognitiveservices.azure.com/api/projects/%s",
+	return fmt.Sprintf("https://%s.services.ai.azure.com/api/projects/%s",
 		url.PathEscape(accountName), url.PathEscape(projectName))
 }

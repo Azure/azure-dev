@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -676,6 +677,13 @@ func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error 
 	}
 
 	if strVal, err := globalFlagSet.GetString(internal.EnvironmentNameFlagName); err == nil {
+		if strVal != "" && !environment.IsValidEnvironmentName(strVal) {
+			return fmt.Errorf(
+				"invalid environment name '%s': must match %s",
+				strVal,
+				environment.EnvironmentNameRegexp.String(),
+			)
+		}
 		opts.EnvironmentName = strVal
 	}
 

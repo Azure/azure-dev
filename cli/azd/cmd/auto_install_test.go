@@ -495,3 +495,28 @@ func TestParseGlobalFlags_EnvironmentName(t *testing.T) {
 		})
 	}
 }
+
+func TestParseGlobalFlags_InvalidEnvironmentName(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "invalid characters",
+			args: []string{"-e", "env name with spaces"},
+		},
+		{
+			name: "special characters",
+			args: []string{"-e", "env@#$%"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := &internal.GlobalCommandOptions{}
+			err := ParseGlobalFlags(tt.args, opts)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "invalid environment name")
+		})
+	}
+}

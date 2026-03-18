@@ -4,16 +4,12 @@
 package update
 
 import (
-	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
-	"time"
-
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 )
 
 // installScriptURL is the PowerShell install script for azd on Windows.
@@ -29,128 +25,97 @@ func expectedPerUserInstallDir() string {
 	return filepath.Join(localAppData, "Programs", "Azure Dev CLI")
 }
 
-// currentExePath returns the resolved path of the currently running executable.
-func currentExePath() (string, error) {
-	exePath, err := os.Executable()
-	if err != nil {
-		return "", fmt.Errorf("failed to determine current executable path: %w", err)
-	}
-	resolved, err := filepath.EvalSymlinks(exePath)
-	if err != nil {
-		return "", fmt.Errorf("failed to resolve executable path: %w", err)
-	}
-	return resolved, nil
-}
-
-// backupCurrentExe renames the currently running azd executable so the MSI installer
-// can write a new binary to the original path. Windows allows renaming a file that is
-// locked by a running process — the handle follows the renamed file.
-// Returns the original path and the backup path.
+// backupCurrentExe prepares the install directory for the MSI to write a new binary.
+//
+// On Windows a running executable is locked — it cannot be overwritten or deleted.
+// However, it CAN be renamed/moved. After a rename the OS handle follows the file,
+// so the running process continues from the new path without issues.
+//
+// Strategy ("rename + safety copy"):
+//  1. Rename azd.exe → %TEMP%/azd-update-backup-XXXX/azd.exe
+//     This frees the original path AND keeps the running process alive.
+//  2. Copy the backup back to the original path (azd.exe).
+//     This is an unlocked copy that acts as a safety net: if the process is
+//     killed at any point after this (Ctrl+C, power loss, taskkill), the user
+//     still has a working azd.exe.
+//  3. The MSI installer later overwrites the unlocked safety copy with the new version.
+//
+// Returns the original path and the backup path (in the temp directory).
 func backupCurrentExe() (originalPath string, backupPath string, err error) {
 	originalPath, err = currentExePath()
 	if err != nil {
 		return "", "", err
 	}
 
-	timestamp := time.Now().Unix()
-	backupPath = fmt.Sprintf("%s.old.%d", originalPath, timestamp)
+	// Create a dedicated temp directory for the backup.
+	tmpDir, err := os.MkdirTemp("", "azd-update-backup")
+	if err != nil {
+		return "", "", fmt.Errorf("failed to create temp directory for backup: %w", err)
+	}
 
+	backupPath = filepath.Join(tmpDir, filepath.Base(originalPath))
+
+	// Step 1: Rename the running exe out of the way.
+	// The OS handle follows the renamed file — the running process is unaffected.
 	if err := os.Rename(originalPath, backupPath); err != nil {
+		_ = os.Remove(tmpDir)
 		return "", "", fmt.Errorf("failed to rename executable for backup: %w", err)
+	}
+
+	// Step 2: Copy the backup back as an unlocked safety copy.
+	// If the process is killed before the MSI finishes, this file ensures the
+	// user still has a working azd.exe at the original path.
+	if err := copyFileWindows(backupPath, originalPath); err != nil {
+		// Copy failed — restore the rename so we don't leave a broken state.
+		_ = os.Rename(backupPath, originalPath)
+		_ = os.Remove(tmpDir)
+		return "", "", fmt.Errorf("failed to create safety copy of executable: %w", err)
 	}
 
 	log.Printf("Backed up %s -> %s", originalPath, backupPath)
 	return originalPath, backupPath, nil
 }
 
-// restoreExeFromBackup moves the backup back to the original location.
-// This is called when the install script fails so the user is not left without a working binary.
+// copyFileWindows copies src to dst, preserving the file mode.
+func copyFileWindows(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+
+	return out.Close()
+}
+
+// restoreExeFromBackup overwrites the original path with the backup copy.
+// This is called when the install script fails so the user has the same
+// binary they started with (rather than a partially-installed one).
 // Returns an error if the restore fails, so the caller can advise the user on manual recovery.
 func restoreExeFromBackup(originalPath, backupPath string) error {
-	// Remove any partially-installed new binary that might be in the way.
+	// The safety copy at originalPath may be the old version or a partially-installed
+	// new binary. Overwrite it with the known-good backup.
 	_ = os.Remove(originalPath)
 
-	if err := os.Rename(backupPath, originalPath); err != nil {
+	if err := copyFileWindows(backupPath, originalPath); err != nil {
 		log.Printf("WARNING: failed to restore executable from backup %s -> %s: %v", backupPath, originalPath, err)
 		return fmt.Errorf("failed to restore executable from backup %s -> %s: %w", backupPath, originalPath, err)
 	}
 
+	// Clean up the backup directory.
+	_ = os.RemoveAll(filepath.Dir(backupPath))
+
 	log.Printf("Restored executable from backup: %s -> %s", backupPath, originalPath)
 	return nil
-}
-
-// cleanupOldBackups removes any leftover azd.exe.old.* files from the install directory.
-func cleanupOldBackups(exePath string) {
-	dir := filepath.Dir(exePath)
-	base := filepath.Base(exePath)
-	pattern := filepath.Join(dir, base+".old.*")
-
-	matches, err := filepath.Glob(pattern)
-	if err != nil {
-		return
-	}
-
-	for _, m := range matches {
-		if err := os.Remove(m); err != nil {
-			log.Printf("warning: failed to remove old backup %s: %v", m, err)
-		} else {
-			log.Printf("Cleaned up old backup: %s", m)
-		}
-	}
-}
-
-// checkOtherAzdProcesses checks whether other azd.exe processes are running from the same
-// executable path, excluding the current process. Returns an error if other instances are found.
-func checkOtherAzdProcesses(ctx context.Context, commandRunner exec.CommandRunner) error {
-	currentPID := os.Getpid()
-
-	exePath, err := currentExePath()
-	if err != nil {
-		return err
-	}
-
-	// Use PowerShell to find all azd.exe processes and their executable paths.
-	// Filter to processes matching our exe path but not our PID.
-	script := fmt.Sprintf(
-		`Get-Process -Name azd -ErrorAction SilentlyContinue | `+
-			`Where-Object { $_.Id -ne %d } | `+
-			`Where-Object { try { $_.Path -eq '%s' } catch { $false } } | `+
-			`Select-Object -ExpandProperty Id`,
-		currentPID, exePath,
-	)
-
-	runArgs := exec.NewRunArgs("powershell", "-NoProfile", "-Command", script)
-	result, err := commandRunner.Run(ctx, runArgs)
-	if err != nil {
-		// If the command itself fails, log and allow update to proceed.
-		// This avoids blocking updates when process enumeration is restricted.
-		log.Printf("warning: failed to check for other azd processes: %v", err)
-		return nil
-	}
-
-	output := strings.TrimSpace(result.Stdout)
-	if output == "" {
-		return nil
-	}
-
-	// Parse the PIDs from the output to build a helpful message
-	var pids []int
-	for _, line := range strings.Split(output, "\n") {
-		line = strings.TrimSpace(line)
-		if pid, parseErr := strconv.Atoi(line); parseErr == nil {
-			pids = append(pids, pid)
-		}
-	}
-
-	if len(pids) == 0 {
-		return nil
-	}
-
-	return newUpdateError(CodeOtherProcessesRunning, fmt.Errorf(
-		"found %d other azd process(es) running (PIDs: %v).\n"+
-			"Please close all other azd instances before running azd update",
-		len(pids), pids,
-	))
 }
 
 // isStandardMSIInstall checks whether the current azd binary is installed in the standard
@@ -200,7 +165,7 @@ func versionFlag(channel Channel) string {
 // buildInstallScriptArgs constructs the PowerShell arguments to download and run
 // install-azd.ps1 with the appropriate -Version flag.
 // The -SkipVerify flag is passed because Authenticode verification via
-// Get-AuthenticodeSignature failed and asked for confirmation.
+// Get-AuthenticodeSignature failed.
 // The MSI is already downloaded over HTTPS from a Microsoft-controlled domain,
 // so the transport-level integrity is sufficient.
 // Returns the arguments to pass to the "powershell" command.

@@ -6,13 +6,11 @@ package update
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
 	"github.com/stretchr/testify/require"
 )
@@ -129,54 +127,6 @@ func TestBuildInstallScriptArgs_Structure(t *testing.T) {
 	require.Contains(t, script, "Remove-Item")
 }
 
-func TestCheckOtherAzdProcesses_NoneFound(t *testing.T) {
-	mockRunner := mockexec.NewMockCommandRunner()
-	mockRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "Get-Process -Name azd")
-	}).Respond(exec.NewRunResult(0, "", ""))
-
-	err := checkOtherAzdProcesses(context.Background(), mockRunner)
-	require.NoError(t, err)
-}
-
-func TestCheckOtherAzdProcesses_OtherInstanceFound(t *testing.T) {
-	mockRunner := mockexec.NewMockCommandRunner()
-	mockRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "Get-Process -Name azd")
-	}).Respond(exec.NewRunResult(0, "12345\n67890\n", ""))
-
-	err := checkOtherAzdProcesses(context.Background(), mockRunner)
-	require.Error(t, err)
-
-	var updateErr *UpdateError
-	require.ErrorAs(t, err, &updateErr)
-	require.Equal(t, CodeOtherProcessesRunning, updateErr.Code)
-	require.Contains(t, err.Error(), "12345")
-	require.Contains(t, err.Error(), "67890")
-}
-
-func TestCheckOtherAzdProcesses_CommandFails(t *testing.T) {
-	// When the PowerShell command itself fails, checkOtherAzdProcesses should log
-	// a warning but return nil (allow the update to proceed).
-	mockRunner := mockexec.NewMockCommandRunner()
-	mockRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "Get-Process -Name azd")
-	}).SetError(fmt.Errorf("powershell not found"))
-
-	err := checkOtherAzdProcesses(context.Background(), mockRunner)
-	require.NoError(t, err, "should not block update when process check fails")
-}
-
-func TestCheckOtherAzdProcesses_WhitespaceOnlyOutput(t *testing.T) {
-	mockRunner := mockexec.NewMockCommandRunner()
-	mockRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "Get-Process -Name azd")
-	}).Respond(exec.NewRunResult(0, "   \n  \n  ", ""))
-
-	err := checkOtherAzdProcesses(context.Background(), mockRunner)
-	require.NoError(t, err, "whitespace-only output should be treated as no other processes")
-}
-
 func TestIsStandardMSIInstall_StandardPath(t *testing.T) {
 	// Get the actual exe path and set LOCALAPPDATA so that
 	// expectedPerUserInstallDir() == filepath.Dir(exePath).
@@ -229,19 +179,23 @@ func TestIsStandardMSIInstall_MissingLocalAppData(t *testing.T) {
 }
 
 func TestBackupCurrentExe(t *testing.T) {
-	// Create a temp dir with a fake azd.exe
-	dir := t.TempDir()
-	exePath := filepath.Join(dir, "azd.exe")
+	// backupCurrentExe relies on os.Executable(), which we can't override,
+	// so we test the underlying move-to-temp-dir logic directly.
+	installDir := t.TempDir()
+	exePath := filepath.Join(installDir, "azd.exe")
 	require.NoError(t, os.WriteFile(exePath, []byte("original"), 0o755))
 
-	// backupCurrentExe relies on os.Executable(), which we can't override,
-	// so we test the lower-level rename logic directly.
-	backupPath := exePath + ".old.1234567890"
+	// Simulate what backupCurrentExe does: create temp dir, move exe there.
+	tmpDir, err := os.MkdirTemp("", "azd-update-backup")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	backupPath := filepath.Join(tmpDir, "azd.exe")
 	require.NoError(t, os.Rename(exePath, backupPath))
 
-	// Original should be gone, backup should exist
-	_, err := os.Stat(exePath)
-	require.True(t, os.IsNotExist(err), "original should no longer exist after rename")
+	// Original should be gone, backup should exist in temp dir
+	_, err = os.Stat(exePath)
+	require.True(t, os.IsNotExist(err), "original should no longer exist after move")
 
 	data, err := os.ReadFile(backupPath)
 	require.NoError(t, err)
@@ -249,14 +203,18 @@ func TestBackupCurrentExe(t *testing.T) {
 }
 
 func TestRestoreExeFromBackup(t *testing.T) {
-	dir := t.TempDir()
-	originalPath := filepath.Join(dir, "azd.exe")
-	backupPath := originalPath + ".old.1234567890"
+	installDir := t.TempDir()
+	originalPath := filepath.Join(installDir, "azd.exe")
 
-	// Create the backup file
+	// Create a temp backup dir with the backed-up exe
+	tmpDir, err := os.MkdirTemp("", "azd-update-backup")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	backupPath := filepath.Join(tmpDir, "azd.exe")
 	require.NoError(t, os.WriteFile(backupPath, []byte("backup-content"), 0o755))
 
-	// Restore should move backup → original
+	// Restore should move backup → original and remove the temp dir
 	require.NoError(t, restoreExeFromBackup(originalPath, backupPath))
 
 	data, err := os.ReadFile(originalPath)
@@ -265,12 +223,21 @@ func TestRestoreExeFromBackup(t *testing.T) {
 
 	_, err = os.Stat(backupPath)
 	require.True(t, os.IsNotExist(err), "backup should be gone after restore")
+
+	// The temp directory should have been cleaned up
+	_, err = os.Stat(tmpDir)
+	require.True(t, os.IsNotExist(err), "temp backup dir should be removed after restore")
 }
 
 func TestRestoreExeFromBackup_RemovesPartialInstall(t *testing.T) {
-	dir := t.TempDir()
-	originalPath := filepath.Join(dir, "azd.exe")
-	backupPath := originalPath + ".old.1234567890"
+	installDir := t.TempDir()
+	originalPath := filepath.Join(installDir, "azd.exe")
+
+	tmpDir, err := os.MkdirTemp("", "azd-update-backup")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	backupPath := filepath.Join(tmpDir, "azd.exe")
 
 	// Simulate a partial install that left a corrupt file at the original path
 	require.NoError(t, os.WriteFile(originalPath, []byte("partial-new"), 0o755))
@@ -283,126 +250,17 @@ func TestRestoreExeFromBackup_RemovesPartialInstall(t *testing.T) {
 	require.Equal(t, "good-backup", string(data), "should have restored backup content")
 }
 
-func TestCleanupOldBackups(t *testing.T) {
-	dir := t.TempDir()
-	exePath := filepath.Join(dir, "azd.exe")
-
-	// Create the main exe and several backup files
-	require.NoError(t, os.WriteFile(exePath, []byte("current"), 0o755))
-	require.NoError(t, os.WriteFile(exePath+".old.111", []byte("old1"), 0o755))
-	require.NoError(t, os.WriteFile(exePath+".old.222", []byte("old2"), 0o755))
-	require.NoError(t, os.WriteFile(exePath+".old.333", []byte("old3"), 0o755))
-
-	// Also create a file that shouldn't be touched
-	otherFile := filepath.Join(dir, "other.txt")
-	require.NoError(t, os.WriteFile(otherFile, []byte("keep"), 0o644))
-
-	cleanupOldBackups(exePath)
-
-	// Backups should be removed
-	for _, suffix := range []string{".old.111", ".old.222", ".old.333"} {
-		_, err := os.Stat(exePath + suffix)
-		require.True(t, os.IsNotExist(err), "backup %s should be cleaned up", suffix)
-	}
-
-	// The main exe and unrelated file should remain
-	_, err := os.Stat(exePath)
-	require.NoError(t, err, "main exe should still exist")
-	_, err = os.Stat(otherFile)
-	require.NoError(t, err, "unrelated file should still exist")
-}
-
-func TestUpdateErrorCodes(t *testing.T) {
-	// Verify the new error codes are distinct and well-formed
-	codes := []string{
-		CodeOtherProcessesRunning,
-		CodeNonStandardInstall,
-	}
-
-	for _, code := range codes {
-		require.True(t, strings.HasPrefix(code, "update."), "code %q should have update. prefix", code)
-	}
-
-	require.NotEqual(t, CodeOtherProcessesRunning, CodeNonStandardInstall)
-}
-
-func TestCheckOtherAzdProcesses_ExcludesCurrentPID(t *testing.T) {
-	// Verify the PowerShell script excludes the current PID
-	currentPID := os.Getpid()
-	pidStr := fmt.Sprintf("%d", currentPID)
-
-	mockRunner := mockexec.NewMockCommandRunner()
-	var capturedCommand string
-	mockRunner.When(func(args exec.RunArgs, command string) bool {
-		if strings.Contains(command, "Get-Process -Name azd") {
-			capturedCommand = command
-			return true
-		}
-		return false
-	}).Respond(exec.NewRunResult(0, "", ""))
-
-	_ = checkOtherAzdProcesses(context.Background(), mockRunner)
-	require.Contains(t, capturedCommand, pidStr,
-		"PowerShell command should reference current PID %s to exclude it", pidStr)
-}
-
-func TestCheckOtherAzdProcesses_ParsesMultiplePIDs(t *testing.T) {
-	mockRunner := mockexec.NewMockCommandRunner()
-	mockRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "Get-Process -Name azd")
-	}).Respond(exec.NewRunResult(0, "1111\n2222\n3333\n", ""))
-
-	err := checkOtherAzdProcesses(context.Background(), mockRunner)
-	require.Error(t, err)
-
-	var updateErr *UpdateError
-	require.ErrorAs(t, err, &updateErr)
-	require.Contains(t, err.Error(), "3 other azd process(es)")
-
-	// Verify all PIDs are mentioned
-	errMsg := err.Error()
-	require.True(t, strings.Contains(errMsg, "1111") &&
-		strings.Contains(errMsg, "2222") &&
-		strings.Contains(errMsg, "3333"),
-		"error message should include all PIDs")
-}
-
 func TestInstallScriptURL(t *testing.T) {
 	require.Equal(t, "https://aka.ms/install-azd.ps1", installScriptURL)
-}
-
-// TestUpdateViaMSI_OtherProcessesBlocks verifies that updateViaMSI returns an error
-// when other azd processes are detected.
-func TestUpdateViaMSI_OtherProcessesBlocks(t *testing.T) {
-	mockRunner := mockexec.NewMockCommandRunner()
-	mockRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "Get-Process -Name azd")
-	}).Respond(exec.NewRunResult(0, "99999\n", ""))
-
-	m := NewManager(mockRunner, nil)
-	var buf strings.Builder
-	cfg := &UpdateConfig{Channel: ChannelStable}
-
-	err := m.updateViaMSI(context.Background(), cfg, &buf)
-	require.Error(t, err)
-
-	var updateErr *UpdateError
-	require.True(t, errors.As(err, &updateErr))
-	require.Equal(t, CodeOtherProcessesRunning, updateErr.Code)
 }
 
 // TestUpdateViaMSI_NonStandardInstallBlocks verifies that updateViaMSI returns an error
 // when the install location doesn't match the expected per-user path.
 func TestUpdateViaMSI_NonStandardInstallBlocks(t *testing.T) {
-	// Mock: no other processes found
-	mockRunner := mockexec.NewMockCommandRunner()
-	mockRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "Get-Process -Name azd")
-	}).Respond(exec.NewRunResult(0, "", ""))
-
 	// Set LOCALAPPDATA to something that won't match the test binary location
 	t.Setenv("LOCALAPPDATA", `C:\NonExistentPath`)
 
+	mockRunner := mockexec.NewMockCommandRunner()
 	m := NewManager(mockRunner, nil)
 	var buf strings.Builder
 	cfg := &UpdateConfig{Channel: ChannelStable}

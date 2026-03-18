@@ -41,3 +41,6 @@ qbsearch
 mystorageacct
 aiapps
 itemprop
+ALLUSERS
+pids
+INSTALLDIR

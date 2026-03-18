@@ -315,62 +315,56 @@ func (m *Manager) updateViaPackageManager(
 }
 
 func (m *Manager) updateViaMSI(ctx context.Context, cfg *UpdateConfig, writer io.Writer) error {
-	// Step 1: Check for other running azd.exe processes (same exe path, different PID).
-	// The MSI installer cannot replace a locked binary, so all other instances must be closed.
-	fmt.Fprintf(writer, "Checking for other running azd instances...\n")
-	if err := checkOtherAzdProcesses(ctx, m.commandRunner); err != nil {
-		return err
-	}
-
-	// Step 2: Verify the install is the standard per-user MSI configuration.
+	// Verify the install is the standard per-user MSI configuration.
 	// install-azd.ps1 installs with ALLUSERS=2 to %LOCALAPPDATA%\Programs\Azure Dev CLI.
 	// If the current install is non-standard, abort and advise the user.
 	if err := isStandardMSIInstall(); err != nil {
 		return err
 	}
 
-	// Step 3: Backup the current exe by renaming it.
-	// Windows allows renaming a running executable — the OS handle follows the file.
-	// This frees the original path so the MSI installer can write the new binary.
+	//  1. Rename the running exe to temp (frees the path; process continues via the OS handle)
+	//  2. Copy it back as an unlocked safety net (if killed at any point, azd.exe still exists)
+	//  3. The MSI will overwrite the unlocked safety copy with the new version
 	fmt.Fprintf(writer, "Backing up current azd executable...\n")
 	originalPath, backupPath, err := backupCurrentExe()
 	if err != nil {
 		return newUpdateError(CodeReplaceFailed, fmt.Errorf("failed to backup current executable: %w", err))
 	}
 
-	// Ensure the backup is always handled: restored on failure, cleaned up on success.
-	// Using defer guarantees this runs even if an unexpected error or panic occurs.
+	// Track whether the install succeeded so we know whether to restore or clean up.
 	updateSucceeded := false
 	defer func() {
 		if updateSucceeded {
-			cleanupOldBackups(originalPath)
+			// Remove the temp backup directory. If this fails, the OS
+			// will clean it up eventually since it lives under %TEMP%.
+			_ = os.RemoveAll(filepath.Dir(backupPath))
 			return
 		}
-		// Update failed — restore the backup so the user still has a working binary.
+		// Update failed — restore the backup so the user has the original binary.
 		fmt.Fprintf(writer, "Restoring previous version...\n")
 		if restoreErr := restoreExeFromBackup(originalPath, backupPath); restoreErr != nil {
 			fmt.Fprintf(writer, "WARNING: failed to restore previous version: %v\n", restoreErr)
 			fmt.Fprintf(writer, "Your backup is at: %s\n", backupPath)
-			fmt.Fprintf(writer, "To recover manually, rename it to: %s\n", originalPath)
+			fmt.Fprintf(writer, "To recover manually, copy it to: %s\n", originalPath)
 		}
 	}()
 
-	// Step 4: Run the install script synchronously and wait for it to complete.
+	// Run the install script synchronously. The MSI overwrites the unlocked
+	// safety copy at the original path with the new version.
 	psArgs := buildInstallScriptArgs(cfg.Channel)
 
 	log.Printf("Running install script: powershell %s", strings.Join(psArgs, " "))
 	fmt.Fprintf(writer, "Installing azd %s channel...\n", cfg.Channel)
 
-	//nolint:gosec // args are constructed from controlled constants, not user input
-	cmd := osexec.Command("powershell", psArgs...)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
+	runArgs := exec.NewRunArgs("powershell", psArgs...).
+		WithStdOut(writer).
+		WithStdErr(writer)
 
-	if err := cmd.Run(); err != nil {
+	if _, err := m.commandRunner.Run(ctx, runArgs); err != nil {
 		return newUpdateError(CodeReplaceFailed, fmt.Errorf("install script failed: %w", err))
 	}
 
-	// Step 5: Verify the installer actually produced a new binary at the expected path.
+	// Verify the installer actually produced a new binary at the expected path.
 	if _, err := os.Stat(originalPath); err != nil {
 		return newUpdateError(CodeReplaceFailed,
 			fmt.Errorf("install script completed but %s was not found", originalPath))
@@ -600,6 +594,19 @@ func (m *Manager) replaceBinary(ctx context.Context, newBinaryPath, currentBinar
 	}
 
 	return fmt.Errorf("failed to replace binary: %w", err)
+}
+
+// currentExePath returns the resolved path of the currently running executable.
+func currentExePath() (string, error) {
+	exePath, err := os.Executable()
+	if err != nil {
+		return "", fmt.Errorf("failed to determine current executable path: %w", err)
+	}
+	resolved, err := filepath.EvalSymlinks(exePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve executable path: %w", err)
+	}
+	return resolved, nil
 }
 
 func copyFile(src, dst string) error {

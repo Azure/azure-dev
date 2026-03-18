@@ -305,7 +305,7 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header: fmt.Sprintf(
-				"Successfully updated azd to version %s. Changes take effect on next invocation.",
+				"Updated azd to version %s. Changes take effect on next invocation.",
 				versionInfo.Version,
 			),
 		},

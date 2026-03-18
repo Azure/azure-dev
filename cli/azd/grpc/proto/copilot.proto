@@ -85,7 +85,7 @@ message SendCopilotMessageRequest {
   string system_message = 5;     // Optional: custom system message appended to default.
   string mode = 6;               // Optional: agent mode (autopilot, interactive, plan).
   bool debug = 7;                // Optional: enable debug logging.
-  bool headless = 8;             // Optional: suppress console output (default true for gRPC).
+  bool headless = 8;             // Set to true for headless mode (suppresses console output).
 }
 
 // SendCopilotMessageResponse contains the result of the message.

@@ -37,32 +37,24 @@ func TestGetFileChanges_CreatedFile(t *testing.T) {
 	watcher, err := NewWatcher(ctx)
 	require.NoError(t, err)
 
-	// Create a file
 	testFile := filepath.Join(dir, "test.txt")
 	err = os.WriteFile(testFile, []byte("hello"), 0600)
 	require.NoError(t, err)
 
-	// Wait for the watcher to pick up the change
-	time.Sleep(200 * time.Millisecond)
-
-	changes := watcher.GetFileChanges()
-	require.NotEmpty(t, changes)
-
-	found := false
-	for _, change := range changes {
-		if filepath.Base(change.Path) == "test.txt" && change.ChangeType == FileCreated {
-			found = true
-			break
+	require.Eventually(t, func() bool {
+		for _, c := range watcher.GetFileChanges() {
+			if filepath.Base(c.Path) == "test.txt" && c.ChangeType == FileCreated {
+				return true
+			}
 		}
-	}
-	require.True(t, found, "expected to find created file test.txt in changes")
+		return false
+	}, 2*time.Second, 50*time.Millisecond, "expected created file test.txt")
 }
 
 func TestGetFileChanges_ModifiedFile(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 
-	// Create a file before starting the watcher
 	testFile := filepath.Join(dir, "existing.txt")
 	err := os.WriteFile(testFile, []byte("original"), 0600)
 	require.NoError(t, err)
@@ -73,31 +65,23 @@ func TestGetFileChanges_ModifiedFile(t *testing.T) {
 	watcher, err := NewWatcher(ctx)
 	require.NoError(t, err)
 
-	// Modify the file
 	err = os.WriteFile(testFile, []byte("modified"), 0600)
 	require.NoError(t, err)
 
-	// Wait for the watcher to pick up the change
-	time.Sleep(200 * time.Millisecond)
-
-	changes := watcher.GetFileChanges()
-	require.NotEmpty(t, changes)
-
-	found := false
-	for _, change := range changes {
-		if filepath.Base(change.Path) == "existing.txt" && change.ChangeType == FileModified {
-			found = true
-			break
+	require.Eventually(t, func() bool {
+		for _, c := range watcher.GetFileChanges() {
+			if filepath.Base(c.Path) == "existing.txt" && c.ChangeType == FileModified {
+				return true
+			}
 		}
-	}
-	require.True(t, found, "expected to find modified file existing.txt in changes")
+		return false
+	}, 2*time.Second, 50*time.Millisecond, "expected modified file existing.txt")
 }
 
 func TestGetFileChanges_DeletedFile(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 
-	// Create a file before starting the watcher
 	testFile := filepath.Join(dir, "deleteme.txt")
 	err := os.WriteFile(testFile, []byte("delete me"), 0600)
 	require.NoError(t, err)
@@ -108,24 +92,17 @@ func TestGetFileChanges_DeletedFile(t *testing.T) {
 	watcher, err := NewWatcher(ctx)
 	require.NoError(t, err)
 
-	// Delete the file
 	err = os.Remove(testFile)
 	require.NoError(t, err)
 
-	// Wait for the watcher to pick up the change
-	time.Sleep(200 * time.Millisecond)
-
-	changes := watcher.GetFileChanges()
-	require.NotEmpty(t, changes)
-
-	found := false
-	for _, change := range changes {
-		if filepath.Base(change.Path) == "deleteme.txt" && change.ChangeType == FileDeleted {
-			found = true
-			break
+	require.Eventually(t, func() bool {
+		for _, c := range watcher.GetFileChanges() {
+			if filepath.Base(c.Path) == "deleteme.txt" && c.ChangeType == FileDeleted {
+				return true
+			}
 		}
-	}
-	require.True(t, found, "expected to find deleted file deleteme.txt in changes")
+		return false
+	}, 2*time.Second, 50*time.Millisecond, "expected deleted file deleteme.txt")
 }
 
 func TestFileChangeType_Values(t *testing.T) {

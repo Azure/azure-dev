@@ -355,7 +355,7 @@ type SendCopilotMessageRequest struct {
 	SystemMessage   string                 `protobuf:"bytes,5,opt,name=system_message,json=systemMessage,proto3" json:"system_message,omitempty"`       // Optional: custom system message appended to default.
 	Mode            string                 `protobuf:"bytes,6,opt,name=mode,proto3" json:"mode,omitempty"`                                              // Optional: agent mode (autopilot, interactive, plan).
 	Debug           bool                   `protobuf:"varint,7,opt,name=debug,proto3" json:"debug,omitempty"`                                           // Optional: enable debug logging.
-	Headless        bool                   `protobuf:"varint,8,opt,name=headless,proto3" json:"headless,omitempty"`                                     // Optional: suppress console output (default true for gRPC).
+	Headless        bool                   `protobuf:"varint,8,opt,name=headless,proto3" json:"headless,omitempty"`                                     // Set to true for headless mode (suppresses console output).
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }

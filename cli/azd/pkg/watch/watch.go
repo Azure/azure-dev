@@ -4,11 +4,13 @@
 package watch
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 
@@ -275,7 +277,7 @@ func (fc FileChanges) String() string {
 	return b.String()
 }
 
-// GetFileChanges returns all file changes tracked by the watcher.
+// GetFileChanges returns all file changes tracked by the watcher, sorted by path.
 func (fw *fileWatcher) GetFileChanges() FileChanges {
 	fw.mu.Lock()
 	defer fw.mu.Unlock()
@@ -292,6 +294,10 @@ func (fw *fileWatcher) GetFileChanges() FileChanges {
 	for file := range fw.fileChanges.Deleted {
 		changes = append(changes, FileChange{Path: file, ChangeType: FileDeleted})
 	}
+
+	slices.SortFunc(changes, func(a, b FileChange) int {
+		return cmp.Compare(a.Path, b.Path)
+	})
 
 	return changes
 }

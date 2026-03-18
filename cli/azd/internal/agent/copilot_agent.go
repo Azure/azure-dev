@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -53,6 +54,7 @@ type CopilotAgent struct {
 	sessionID              string
 	activeCtx              atomic.Pointer[context.Context] // current SendMessage context for SDK callbacks
 	display                *AgentDisplay                   // last display for usage metrics (interactive mode)
+	mu                     sync.Mutex                      // guards cumulative metrics and file changes
 	cumulativeUsage        UsageMetrics                    // cumulative metrics across multiple SendMessage calls
 	accumulatedFileChanges watch.FileChanges               // accumulated file changes across all SendMessage calls
 
@@ -317,10 +319,14 @@ func (a *CopilotAgent) sendMessageInteractive(
 		return nil, err
 	}
 
-	var watcher watch.Watcher
-	watcher, _ = watch.NewWatcher(ctx)
+	watchCtx, watchCancel := context.WithCancel(ctx)
+	watcher, watchErr := watch.NewWatcher(watchCtx)
+	if watchErr != nil {
+		log.Printf("[copilot] file watcher unavailable: %v", watchErr)
+	}
 
 	defer func() {
+		watchCancel()
 		displayCancel()
 		time.Sleep(100 * time.Millisecond)
 		cleanup()
@@ -342,9 +348,10 @@ func (a *CopilotAgent) sendMessageInteractive(
 	}
 
 	turnUsage := display.GetUsageMetrics()
+	a.mu.Lock()
 	a.accumulateUsage(turnUsage)
-
 	turnFileChanges := a.collectFileChanges(watcher)
+	a.mu.Unlock()
 
 	return &AgentResult{
 		SessionID:   a.sessionID,
@@ -359,8 +366,12 @@ func (a *CopilotAgent) sendMessageHeadless(
 ) (*AgentResult, error) {
 	collector := NewHeadlessCollector()
 
-	var watcher watch.Watcher
-	watcher, _ = watch.NewWatcher(ctx)
+	watchCtx, watchCancel := context.WithCancel(ctx)
+	watcher, watchErr := watch.NewWatcher(watchCtx)
+	if watchErr != nil {
+		log.Printf("[copilot] file watcher unavailable: %v", watchErr)
+	}
+	defer watchCancel()
 
 	unsubscribe := a.session.On(collector.HandleEvent)
 	defer unsubscribe()
@@ -378,9 +389,10 @@ func (a *CopilotAgent) sendMessageHeadless(
 	}
 
 	turnUsage := collector.GetUsageMetrics()
+	a.mu.Lock()
 	a.accumulateUsage(turnUsage)
-
 	turnFileChanges := a.collectFileChanges(watcher)
+	a.mu.Unlock()
 
 	return &AgentResult{
 		SessionID:   a.sessionID,
@@ -406,6 +418,9 @@ func (a *CopilotAgent) accumulateUsage(turn UsageMetrics) {
 
 // GetMetrics returns cumulative session metrics (usage + file changes).
 func (a *CopilotAgent) GetMetrics() AgentMetrics {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
 	return AgentMetrics{
 		Usage:       a.cumulativeUsage,
 		FileChanges: a.accumulatedFileChanges,

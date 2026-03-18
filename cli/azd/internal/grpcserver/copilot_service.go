@@ -5,6 +5,7 @@ package grpcserver
 
 import (
 	"context"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -120,7 +121,7 @@ func (s *copilotService) SendMessage(
 		return nil, status.Error(codes.InvalidArgument, "prompt cannot be empty")
 	}
 
-	copilotAgent, isResume, err := s.resolveOrCreateAgent(ctx, req)
+	copilotAgent, isNew, isResume, err := s.resolveOrCreateAgent(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -132,6 +133,10 @@ func (s *copilotService) SendMessage(
 
 	result, err := copilotAgent.SendMessage(ctx, req.Prompt, sendOpts...)
 	if err != nil {
+		// Clean up newly created agents that failed on first message
+		if isNew {
+			copilotAgent.Stop()
+		}
 		return nil, status.Errorf(codes.Internal, "copilot agent error: %v", err)
 	}
 
@@ -152,7 +157,7 @@ func (s *copilotService) SendMessage(
 // or prepares one for SDK session resumption.
 func (s *copilotService) resolveOrCreateAgent(
 	ctx context.Context, req *azdext.SendCopilotMessageRequest,
-) (copilotAgent agent.Agent, isResume bool, err error) {
+) (copilotAgent agent.Agent, isNew bool, isResume bool, err error) {
 	if req.SessionId != "" {
 		// Try to reuse an existing managed session
 		s.mu.RLock()
@@ -160,7 +165,7 @@ func (s *copilotService) resolveOrCreateAgent(
 		s.mu.RUnlock()
 
 		if ok {
-			return existing, false, nil
+			return existing, false, false, nil
 		}
 
 		// Not in our map — treat as an SDK session ID to resume
@@ -175,11 +180,11 @@ func (s *copilotService) resolveOrCreateAgent(
 
 	copilotAgent, err = s.agentFactory.Create(ctx, opts...)
 	if err != nil {
-		return nil, false, status.Errorf(codes.Internal,
+		return nil, false, false, status.Errorf(codes.Internal,
 			"failed to create copilot agent: %v", err)
 	}
 
-	return copilotAgent, isResume, nil
+	return copilotAgent, true, isResume, nil
 }
 
 // GetUsageMetrics returns cumulative usage metrics cached on the agent.
@@ -227,7 +232,9 @@ func (s *copilotService) StopSession(
 		return nil, status.Errorf(codes.NotFound, "session %q not found", req.SessionId)
 	}
 
-	copilotAgent.Stop()
+	if err := copilotAgent.Stop(); err != nil {
+		log.Printf("[copilot-service] session %q stop error: %v", req.SessionId, err)
+	}
 	return &azdext.EmptyResponse{}, nil
 }
 

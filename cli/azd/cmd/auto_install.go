@@ -644,7 +644,13 @@ func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error 
 	// it shouldn't be added to cobra's persistent flags (it's already registered per-command
 	// via EnvFlag.Bind). But we parse it here so GlobalCommandOptions.EnvironmentName is
 	// available for extension commands where DisableFlagParsing prevents cobra from parsing it.
-	globalFlagSet.StringP(internal.EnvironmentNameFlagName, "e", os.Getenv(environment.EnvNameEnvVarName), "")
+	// Guard against duplicate registration — pflag.StringP panics if the name already exists.
+	if globalFlagSet.Lookup(internal.EnvironmentNameFlagName) == nil {
+		globalFlagSet.StringP(
+			internal.EnvironmentNameFlagName, "e",
+			os.Getenv(environment.EnvNameEnvVarName), "",
+		)
+	}
 
 	// Set output to io.Discard to suppress any error messages from pflag
 	// Cobra will handle all user-facing output

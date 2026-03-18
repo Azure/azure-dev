@@ -184,7 +184,7 @@ func TestBackupCurrentExe(t *testing.T) {
 	// so we test the underlying move-to-temp-dir logic directly.
 	installDir := t.TempDir()
 	exePath := filepath.Join(installDir, "azd.exe")
-	require.NoError(t, os.WriteFile(exePath, []byte("original"), 0o755))
+	require.NoError(t, os.WriteFile(exePath, []byte("original"), 0600))
 
 	// Simulate what backupCurrentExe does: create temp dir, move exe there.
 	tmpDir, err := os.MkdirTemp("", "azd-update-backup")
@@ -213,7 +213,7 @@ func TestRestoreExeFromBackup(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	backupPath := filepath.Join(tmpDir, "azd.exe")
-	require.NoError(t, os.WriteFile(backupPath, []byte("backup-content"), 0o755))
+	require.NoError(t, os.WriteFile(backupPath, []byte("backup-content"), 0600))
 
 	// Restore should move backup → original and remove the temp dir
 	require.NoError(t, restoreExeFromBackup(originalPath, backupPath))
@@ -241,8 +241,8 @@ func TestRestoreExeFromBackup_RemovesPartialInstall(t *testing.T) {
 	backupPath := filepath.Join(tmpDir, "azd.exe")
 
 	// Simulate a partial install that left a corrupt file at the original path
-	require.NoError(t, os.WriteFile(originalPath, []byte("partial-new"), 0o755))
-	require.NoError(t, os.WriteFile(backupPath, []byte("good-backup"), 0o755))
+	require.NoError(t, os.WriteFile(originalPath, []byte("partial-new"), 0600))
+	require.NoError(t, os.WriteFile(backupPath, []byte("good-backup"), 0600))
 
 	require.NoError(t, restoreExeFromBackup(originalPath, backupPath))
 
@@ -278,7 +278,7 @@ func TestUpdateViaMSI_SuccessPath_CleansUpBackup(t *testing.T) {
 	// Set up an "install directory" with a fake azd.exe.
 	installDir := t.TempDir()
 	originalPath := filepath.Join(installDir, "azd.exe")
-	require.NoError(t, os.WriteFile(originalPath, []byte("old-binary"), 0o755))
+	require.NoError(t, os.WriteFile(originalPath, []byte("old-binary"), 0600))
 
 	// --- Simulate backupCurrentExe ---
 	backupDir, err := os.MkdirTemp("", "azd-update-backup")
@@ -299,7 +299,7 @@ func TestUpdateViaMSI_SuccessPath_CleansUpBackup(t *testing.T) {
 
 	// --- Simulate successful MSI install ---
 	// The MSI overwrites the unlocked safety copy with a new binary.
-	require.NoError(t, os.WriteFile(originalPath, []byte("new-binary-v2"), 0o755))
+	require.NoError(t, os.WriteFile(originalPath, []byte("new-binary-v2"), 0600))
 
 	// --- Simulate updateViaMSI success cleanup (updateSucceeded = true) ---
 	err = os.RemoveAll(filepath.Dir(backupPath))
@@ -317,7 +317,7 @@ func TestUpdateViaMSI_SuccessPath_CleansUpBackup(t *testing.T) {
 func TestUpdateViaMSI_FailurePath_RestoresOriginal(t *testing.T) {
 	installDir := t.TempDir()
 	originalPath := filepath.Join(installDir, "azd.exe")
-	require.NoError(t, os.WriteFile(originalPath, []byte("old-binary"), 0o755))
+	require.NoError(t, os.WriteFile(originalPath, []byte("old-binary"), 0600))
 
 	// --- Simulate backupCurrentExe ---
 	backupDir, err := os.MkdirTemp("", "azd-update-backup")
@@ -329,7 +329,7 @@ func TestUpdateViaMSI_FailurePath_RestoresOriginal(t *testing.T) {
 	require.NoError(t, copyFileWindows(backupPath, originalPath))
 
 	// --- Simulate failed MSI install that partially overwrote the safety copy ---
-	require.NoError(t, os.WriteFile(originalPath, []byte("corrupted-partial"), 0o755))
+	require.NoError(t, os.WriteFile(originalPath, []byte("corrupted-partial"), 0600))
 
 	// --- Simulate updateViaMSI failure path (updateSucceeded = false) ---
 	var buf strings.Builder
@@ -366,7 +366,7 @@ func TestUpdateViaMSI_FailurePath_PrintsRecoveryInstructions(t *testing.T) {
 	defer os.RemoveAll(backupDir)
 
 	backupPath := filepath.Join(backupDir, "azd.exe")
-	require.NoError(t, os.WriteFile(backupPath, []byte("old-binary"), 0o755))
+	require.NoError(t, os.WriteFile(backupPath, []byte("old-binary"), 0600))
 
 	// Now remove the backup so restoreExeFromBackup will fail when trying to read it
 	require.NoError(t, os.Remove(backupPath))
@@ -396,7 +396,7 @@ func TestUpdateViaMSI_SafetyCopySurvivesInterruption(t *testing.T) {
 	installDir := t.TempDir()
 	originalPath := filepath.Join(installDir, "azd.exe")
 	originalContent := []byte("original-binary-content")
-	require.NoError(t, os.WriteFile(originalPath, originalContent, 0o755))
+	require.NoError(t, os.WriteFile(originalPath, originalContent, 0600))
 
 	// --- Simulate backupCurrentExe ---
 	backupDir, err := os.MkdirTemp("", "azd-update-backup")

@@ -203,7 +203,7 @@ func (s *PolicyService) checkPolicySetDefinition(
 }
 
 // getPolicyDefinitionByID fetches a policy definition by its full resource ID.
-// It handles both built-in (/providers/Microsoft.Authorization/...) and subscription-scoped definitions.
+// It handles built-in, subscription-scoped, and management-group-scoped definitions.
 func getPolicyDefinitionByID(
 	ctx context.Context,
 	client *armpolicy.DefinitionsClient,
@@ -222,6 +222,14 @@ func getPolicyDefinitionByID(
 		return &resp.Definition, nil
 	}
 
+	if mgID := extractManagementGroupID(definitionID); mgID != "" {
+		resp, err := client.GetAtManagementGroup(ctx, mgID, name, nil)
+		if err != nil {
+			return nil, err
+		}
+		return &resp.Definition, nil
+	}
+
 	resp, err := client.Get(ctx, name, nil)
 	if err != nil {
 		return nil, err
@@ -230,6 +238,7 @@ func getPolicyDefinitionByID(
 }
 
 // getPolicySetDefinitionByID fetches a policy set definition by its full resource ID.
+// It handles built-in, subscription-scoped, and management-group-scoped set definitions.
 func getPolicySetDefinitionByID(
 	ctx context.Context,
 	client *armpolicy.SetDefinitionsClient,
@@ -242,6 +251,14 @@ func getPolicySetDefinitionByID(
 
 	if isBuiltInPolicySetDefinition(setDefinitionID) {
 		resp, err := client.GetBuiltIn(ctx, name, nil)
+		if err != nil {
+			return nil, err
+		}
+		return &resp.SetDefinition, nil
+	}
+
+	if mgID := extractManagementGroupID(setDefinitionID); mgID != "" {
+		resp, err := client.GetAtManagementGroup(ctx, mgID, name, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -589,6 +606,24 @@ func lastSegment(resourceID string) string {
 		return ""
 	}
 	return parts[len(parts)-1]
+}
+
+// extractManagementGroupID extracts the management group ID from a resource ID like
+// "/providers/Microsoft.Management/managementGroups/{mgId}/providers/Microsoft.Authorization/..."
+// Returns empty string if the ID is not management-group-scoped.
+func extractManagementGroupID(resourceID string) string {
+	lower := strings.ToLower(resourceID)
+	const prefix = "/providers/microsoft.management/managementgroups/"
+	idx := strings.Index(lower, prefix)
+	if idx < 0 {
+		return ""
+	}
+	rest := resourceID[idx+len(prefix):]
+	end := strings.Index(rest, "/")
+	if end < 0 {
+		return rest
+	}
+	return rest[:end]
 }
 
 // ResourceHasLocalAuthDisabled checks whether a resource's properties JSON has

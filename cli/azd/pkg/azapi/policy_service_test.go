@@ -286,6 +286,52 @@ func TestExtractLocalAuthDenyPolicies_NestedConditionInheritsResourceType(t *tes
 	require.Equal(t, "Microsoft.Search/searchServices", results[0].ResourceType)
 }
 
+func TestExtractManagementGroupID(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		id   string
+		want string
+	}{
+		{
+			"management group scoped policy definition",
+			"/providers/Microsoft.Management/managementGroups/myMgGroup" +
+				"/providers/Microsoft.Authorization/policyDefinitions/abc123",
+			"myMgGroup",
+		},
+		{
+			"management group scoped policy set definition",
+			"/providers/Microsoft.Management/managementGroups/" +
+				"72f988bf-86f1-41af-91ab-2d7cd011db47" +
+				"/providers/Microsoft.Authorization/policySetDefinitions/8e7a35ba",
+			"72f988bf-86f1-41af-91ab-2d7cd011db47",
+		},
+		{
+			"built-in policy definition",
+			"/providers/Microsoft.Authorization/policyDefinitions/6300012e-e9a4-4649-b41f-a85f5c43be91",
+			"",
+		},
+		{
+			"subscription scoped custom definition",
+			"/subscriptions/faa080af/providers/Microsoft.Authorization/policyDefinitions/custom123",
+			"",
+		},
+		{
+			"empty string",
+			"",
+			"",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, extractManagementGroupID(tt.id))
+		})
+	}
+}
+
 func TestIsLocalAuthField(t *testing.T) {
 	t.Parallel()
 

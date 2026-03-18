@@ -371,6 +371,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			return nil, err
 		}
 	case initEnvironment:
+		tracing.SetUsageAttributes(fields.InitMethod.String("environment"))
 		env, err := i.initializeEnv(ctx, azdCtx, templates.Metadata{})
 		if err != nil {
 			return nil, err
@@ -379,7 +380,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		header = fmt.Sprintf("Initialized environment %s.", env.Name())
 		followUp = ""
 	case initWithAgent:
-		tracing.SetUsageAttributes(fields.InitMethod.String("agent"))
+		tracing.SetUsageAttributes(fields.InitMethod.String("copilot"))
 		if err := i.initAppWithAgent(ctx, azdCtx); err != nil {
 			return nil, err
 		}
@@ -540,10 +541,21 @@ When complete, provide a brief summary of what was accomplished.`
 		_ = azdCtx.ClearCopilotSession()
 	}
 
+	// Record aggregate copilot metrics as usage attributes
+	metrics := copilotAgent.GetMetrics()
+	tracing.SetUsageAttributes(
+		fields.CopilotMode.String(string(agent.AgentModeInteractive)),
+		fields.CopilotMessageModel.String(metrics.Usage.Model),
+		fields.CopilotMessageInputTokens.Float64(metrics.Usage.InputTokens),
+		fields.CopilotMessageOutputTokens.Float64(metrics.Usage.OutputTokens),
+		fields.CopilotMessagePremiumRequests.Float64(metrics.Usage.PremiumRequests),
+		fields.CopilotMessageDurationMs.Float64(metrics.Usage.DurationMS),
+	)
+
 	// Show session metrics (usage + file changes)
-	if metrics := copilotAgent.GetMetrics().String(); metrics != "" {
+	if metricsStr := metrics.String(); metricsStr != "" {
 		i.console.Message(ctx, "")
-		i.console.Message(ctx, metrics)
+		i.console.Message(ctx, metricsStr)
 	}
 
 	i.console.Message(ctx, "")

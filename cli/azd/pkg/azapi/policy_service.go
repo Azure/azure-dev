@@ -619,11 +619,11 @@ func extractManagementGroupID(resourceID string) string {
 		return ""
 	}
 	rest := resourceID[idx+len(prefix):]
-	end := strings.Index(rest, "/")
-	if end < 0 {
+	before, _, ok := strings.Cut(rest, "/")
+	if !ok {
 		return rest
 	}
-	return rest[:end]
+	return before
 }
 
 // ResourceHasLocalAuthDisabled checks whether a resource's properties JSON has

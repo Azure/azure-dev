@@ -362,9 +362,9 @@ overrides:
       - armpolicy
       - disablelocalauth
       - allowsharedkeyaccess
-      - localauthenabled
       - policydefinitions
       - policysetdefinitions
+      - managementgroups
   - filename: extensions/azure.ai.models/internal/cmd/custom_create.go
     words:
       - Qwen

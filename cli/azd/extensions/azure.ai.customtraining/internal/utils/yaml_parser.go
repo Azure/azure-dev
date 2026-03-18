@@ -67,9 +67,6 @@ func ParseJobFile(path string) (*JobDefinition, error) {
 
 // ValidateJobDefinition checks that required fields are present.
 func ValidateJobDefinition(job *JobDefinition) error {
-	if job.Name == "" {
-		return fmt.Errorf("job YAML validation: 'name' is required")
-	}
 	if job.Command == "" {
 		return fmt.Errorf("job YAML validation: 'command' is required")
 	}

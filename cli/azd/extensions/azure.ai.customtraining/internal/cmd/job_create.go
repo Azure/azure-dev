@@ -70,6 +70,11 @@ func newJobCreateCommand() *cobra.Command {
 				return fmt.Errorf("failed to create API client: %w", err)
 			}
 
+			// Auto-generate job name if not provided (same pattern as AML SDK)
+			if jobDef.Name == "" {
+				jobDef.Name = utils.GenerateJobName()
+			}
+
 			// Build REST payload from YAML definition
 			jobResource := buildJobResource(jobDef)
 

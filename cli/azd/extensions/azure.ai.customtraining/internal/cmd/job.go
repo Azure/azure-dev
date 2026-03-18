@@ -31,7 +31,7 @@ func newJobCommand() *cobra.Command {
 
 	cmd.AddCommand(newJobListCommand())
 	cmd.AddCommand(newJobCreateCommand())
-	cmd.AddCommand(newJobGetCommand())
+	cmd.AddCommand(newJobShowCommand())
 
 	return cmd
 }

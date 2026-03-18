@@ -205,20 +205,22 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			envValue = ""
 		}
 
+		if envValue == "" {
+			// If no explicit environment flag was set, but one was provided
+			// in the context, use that instead.
+			// This is used in workflow execution (in `up`) to influence the environment used.
+			// Context takes precedence over globalOptions because azd up uses
+			// context.WithValue to propagate the environment to sub-commands.
+			if envFlag, ok := ctx.Value(envFlagCtxKey).(internal.EnvFlag); ok {
+				return envFlag
+			}
+		}
+
 		// Fall back to the pre-parsed global options value.
 		// This handles extension commands (DisableFlagParsing: true) where cobra
 		// doesn't parse persistent flags — the value was already parsed in ParseGlobalFlags.
 		if envValue == "" {
 			envValue = globalOptions.EnvironmentName
-		}
-
-		if envValue == "" {
-			// If no explicit environment flag was set, but one was provided
-			// in the context, use that instead.
-			// This is used in workflow execution (in `up`) to influence the environment used.
-			if envFlag, ok := ctx.Value(envFlagCtxKey).(internal.EnvFlag); ok {
-				return envFlag
-			}
 		}
 
 		return internal.EnvFlag{EnvironmentName: envValue}

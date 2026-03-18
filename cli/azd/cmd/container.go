@@ -80,6 +80,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 	"github.com/mattn/go-colorable"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 // Registers a transient action initializer for the specified action name
@@ -891,13 +892,13 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		container.MustRegisterNamedSingleton(platformName, constructor)
 	}
 
-	container.MustRegisterSingleton(func(s ioc.ServiceLocator) (workflow.AzdCommandRunner, error) {
-		var rootCmd *cobra.Command
-		if err := s.ResolveNamed("root-cmd", &rootCmd); err != nil {
-			return nil, err
+	container.MustRegisterSingleton(func() workflow.AzdCommandRunner {
+		return &workflowCmdAdapter{
+			newCommand: func() *cobra.Command {
+				return NewRootCmd(false, nil, container)
+			},
+			globalArgs: extractGlobalArgs(),
 		}
-		return &workflowCmdAdapter{cmd: rootCmd}, nil
-
 	})
 	container.MustRegisterSingleton(workflow.NewRunner)
 
@@ -948,19 +949,50 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	registerAction[*configShowAction](container, "azd-config-show-action")
 }
 
-// workflowCmdAdapter adapts a cobra command to the workflow.AzdCommandRunner interface
+// workflowCmdAdapter adapts a cobra command to the workflow.AzdCommandRunner interface.
+// On each ExecuteContext call, a fresh cobra command tree is built via the newCommand factory
+// to avoid stale context or command state from previous executions.
+// See: https://github.com/Azure/azure-dev/issues/6530
 type workflowCmdAdapter struct {
-	cmd *cobra.Command
+	newCommand func() *cobra.Command
+	globalArgs []string
 }
 
-func (w *workflowCmdAdapter) SetArgs(args []string) {
-	w.cmd.SetArgs(args)
-}
-
-// ExecuteContext implements workflow.AzdCommandRunner
-func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context) error {
+// ExecuteContext implements workflow.AzdCommandRunner.
+// It rebuilds the cobra command tree on each call to ensure a clean slate,
+// preventing "context canceled" errors from stale command state during retries.
+// Global flags from the original process invocation are appended to the step args
+// so that persistent flags (e.g., --trace-log-file) are properly parsed and visible
+// to telemetry middleware on the fresh command tree.
+func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context, args []string) error {
 	childCtx := middleware.WithChildAction(ctx)
-	return w.cmd.ExecuteContext(childCtx)
+	rootCmd := w.newCommand()
+	// Always set args explicitly to prevent Cobra from falling back to os.Args[1:].
+	// Cobra uses os.Args when cmd.args is nil (but not when it's an empty slice).
+	mergedArgs := append(slices.Clone(args), w.globalArgs...)
+	if mergedArgs == nil {
+		mergedArgs = []string{}
+	}
+	rootCmd.SetArgs(mergedArgs)
+	return rootCmd.ExecuteContext(childCtx)
+}
+
+// extractGlobalArgs extracts global flag arguments from the process command line.
+// It parses os.Args against the global flag set and returns only the flags that were
+// explicitly set by the user, formatted as command-line arguments.
+func extractGlobalArgs() []string {
+	globalFlagSet := CreateGlobalFlagSet()
+	globalFlagSet.SetOutput(io.Discard)
+	globalFlagSet.ParseErrorsAllowlist = pflag.ParseErrorsAllowlist{UnknownFlags: true}
+	_ = globalFlagSet.Parse(os.Args[1:])
+
+	var result []string
+	globalFlagSet.VisitAll(func(f *pflag.Flag) {
+		if f.Changed {
+			result = append(result, fmt.Sprintf("--%s", f.Name), f.Value.String())
+		}
+	})
+	return result
 }
 
 // ArmClientInitializer is a function definition for all Azure SDK ARM Client

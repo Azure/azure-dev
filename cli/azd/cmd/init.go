@@ -314,8 +314,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			if deploy {
 				// Call azd up
 				startTime := time.Now()
-				i.azd.SetArgs([]string{"up", "--cwd", azdCtx.ProjectDirectory()})
-				err := i.azd.ExecuteContext(ctx)
+				err := i.azd.ExecuteContext(ctx, []string{"up", "--cwd", azdCtx.ProjectDirectory()})
 				header = "New project initialized! Provision and deploy to Azure was completed in " +
 					ux.DurationAsText(since(startTime)) + "."
 				if err != nil {

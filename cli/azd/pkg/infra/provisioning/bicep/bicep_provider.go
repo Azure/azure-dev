@@ -2451,22 +2451,16 @@ func (p *BicepProvider) checkLocalAuthPolicy(
 			resource.Name, resource.Type, matched, hasLocalAuthDisabled)
 	}
 
-	// Collect affected resource types (deduplicated) and unique policy names.
+	// Collect affected resource types (deduplicated).
 	affectedTypes := make(map[string]bool)
-	uniquePolicyNames := make(map[string]bool)
 	for _, resource := range valCtx.SnapshotResources {
-		policies, found := policiesByType[strings.ToLower(resource.Type)]
+		_, found := policiesByType[strings.ToLower(resource.Type)]
 		if !found {
 			continue
 		}
 
 		if !azapi.ResourceHasLocalAuthDisabled(resource.Type, resource.Properties) {
 			affectedTypes[resource.Type] = true
-			for _, p := range policies {
-				if p.PolicyName != "" {
-					uniquePolicyNames[p.PolicyName] = true
-				}
-			}
 		}
 	}
 
@@ -2480,19 +2474,12 @@ func (p *BicepProvider) checkLocalAuthPolicy(
 		lines = append(lines, fmt.Sprintf("  - %s", t))
 	}
 
-	policyList := slices.Sorted(maps.Keys(uniquePolicyNames))
-	policyDesc := strings.Join(policyList, ", ")
-	if policyDesc == "" {
-		policyDesc = "(unnamed policy)"
-	}
-
 	return &PreflightCheckResult{
 		Severity: PreflightCheckWarning,
 		Message: fmt.Sprintf(
-			"Azure Policy denies resources with local authentication enabled (%s). "+
-				"Affected resource types in this deployment:\n%s\n"+
+			"an Azure Policy on this subscription denies resources with local authentication enabled. "+
+				"The following resource types in this deployment may be blocked:\n%s\n"+
 				"Disable local authentication on these resources or request a policy exemption.",
-			policyDesc,
 			strings.Join(lines, "\n"),
 		),
 	}, nil

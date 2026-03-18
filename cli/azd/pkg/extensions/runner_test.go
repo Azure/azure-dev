@@ -46,7 +46,7 @@ func TestRunnerInvoke_GlobalFlagPropagation(t *testing.T) {
 	// Create a temp file to act as the extension binary
 	tmpDir := t.TempDir()
 	extBin := filepath.Join(tmpDir, "test-ext")
-	require.NoError(t, os.WriteFile(extBin, []byte("#!/bin/sh\n"), 0o755))
+	require.NoError(t, os.WriteFile(extBin, []byte("#!/bin/sh\n"), 0o600)) //nolint:gosec
 
 	// Point the user config dir to our temp dir so extensionPath resolves
 	t.Setenv("AZD_CONFIG_DIR", tmpDir)
@@ -60,10 +60,10 @@ func TestRunnerInvoke_GlobalFlagPropagation(t *testing.T) {
 	}
 
 	tests := []struct {
-		name        string
-		options     *InvokeOptions
-		expectEnvs  map[string]string
-		absentEnvs  []string
+		name       string
+		options    *InvokeOptions
+		expectEnvs map[string]string
+		absentEnvs []string
 	}{
 		{
 			name: "all global flags set",

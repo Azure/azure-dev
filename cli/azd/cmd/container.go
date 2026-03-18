@@ -23,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/agent"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
+	agentcopilot "github.com/azure/azure-dev/cli/azd/internal/agent/copilot"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/security"
 	"github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
@@ -58,7 +59,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/kubelogin"
 	"github.com/azure/azure-dev/cli/azd/pkg/kustomize"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
-	"github.com/azure/azure-dev/cli/azd/pkg/llm"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
@@ -578,14 +578,14 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		})
 	})
 
-	// AI & LLM components
-	container.MustRegisterSingleton(llm.NewManager)
-	container.MustRegisterSingleton(llm.NewModelFactory)
-	container.MustRegisterScoped(agent.NewAgentFactory)
+	// Copilot agent components
+	container.MustRegisterSingleton(agentcopilot.NewSessionConfigBuilder)
+	container.MustRegisterSingleton(agentcopilot.NewCopilotCLI)
+	container.MustRegisterSingleton(func(cli *agentcopilot.CopilotCLI) *agentcopilot.CopilotClientManager {
+		return agentcopilot.NewCopilotClientManager(nil, cli)
+	})
+	container.MustRegisterScoped(agent.NewCopilotAgentFactory)
 	container.MustRegisterScoped(consent.NewConsentManager)
-	container.MustRegisterNamedSingleton("ollama", llm.NewOllamaModelProvider)
-	container.MustRegisterNamedSingleton("azure", llm.NewAzureOpenAiModelProvider)
-	registerGitHubCopilotProvider(container)
 
 	// Agent security manager
 	container.MustRegisterSingleton(func() (*security.Manager, error) {

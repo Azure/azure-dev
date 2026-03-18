@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"slices"
 	"strings"
-	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -28,6 +27,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/syncmap"
 	"github.com/benbjohnson/clock"
 	"github.com/braydonk/yaml"
 )
@@ -115,8 +115,8 @@ type containerAppService struct {
 	clock               clock.Clock
 	armClientOptions    *arm.ClientOptions
 	alphaFeatureManager *alpha.FeatureManager
-	appsClientCache     sync.Map
-	jobsClientCache     sync.Map
+	appsClientCache     syncmap.Map[string, *armappcontainers.ContainerAppsClient]
+	jobsClientCache     syncmap.Map[string, *armappcontainers.JobsClient]
 }
 
 type ContainerAppOptions struct {
@@ -550,7 +550,7 @@ func (cas *containerAppService) createContainerAppsClient(
 ) (*armappcontainers.ContainerAppsClient, error) {
 	if customPolicy == nil {
 		if cachedClient, ok := cas.appsClientCache.Load(subscriptionId); ok {
-			return cachedClient.(*armappcontainers.ContainerAppsClient), nil
+			return cachedClient, nil
 		}
 	}
 
@@ -573,7 +573,7 @@ func (cas *containerAppService) createContainerAppsClient(
 
 	if customPolicy == nil {
 		if cachedClient, loaded := cas.appsClientCache.LoadOrStore(subscriptionId, client); loaded {
-			return cachedClient.(*armappcontainers.ContainerAppsClient), nil
+			return cachedClient, nil
 		}
 	}
 
@@ -587,7 +587,7 @@ func (cas *containerAppService) createJobsClient(
 ) (*armappcontainers.JobsClient, error) {
 	if customPolicy == nil {
 		if cached, ok := cas.jobsClientCache.Load(subscriptionId); ok {
-			return cached.(*armappcontainers.JobsClient), nil
+			return cached, nil
 		}
 	}
 
@@ -620,7 +620,7 @@ func (cas *containerAppService) createJobsClient(
 		if cached, loaded := cas.jobsClientCache.LoadOrStore(
 			subscriptionId, client,
 		); loaded {
-			return cached.(*armappcontainers.JobsClient), nil
+			return cached, nil
 		}
 	}
 

@@ -1,5 +1,6 @@
 import: ../../../.vscode/cspell.global.yaml
 words:
+  - agentcopilot
   - agentdetect
   - Authenticode
   - azcloud
@@ -47,6 +48,7 @@ words:
   - protoreflect
   - SNAPPROCESS
   - structpb
+  - syncmap
   - syscall
   - Retryable
   - runcontext

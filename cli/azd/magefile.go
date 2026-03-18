@@ -14,10 +14,12 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+
+	"github.com/magefile/mage/mg"
 )
 
 // Dev contains developer tooling commands for building and installing azd from source.
-type Dev struct{}
+type Dev mg.Namespace
 
 // Install builds azd from source as 'azd-dev' and installs it to ~/.azd/bin.
 // The binary is named azd-dev to avoid conflicting with a production azd install.

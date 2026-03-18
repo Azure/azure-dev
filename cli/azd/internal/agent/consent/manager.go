@@ -6,11 +6,12 @@ package consent
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
+	agentcopilot "github.com/azure/azure-dev/cli/azd/internal/agent/copilot"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -18,49 +19,8 @@ import (
 )
 
 const (
-	ConfigKeyMCPConsent = "mcp.consent"
+	ConfigKeyConsent = agentcopilot.ConfigKeyConsent
 )
-
-// Global state for tracking current executing tool
-// This is a work around right now since the MCP protocol does not contain enough information in the sampling requests
-// Specifically, the tool name and server are not included in the request context
-var (
-	executingTool = &ExecutingTool{}
-)
-
-// SetCurrentExecutingTool sets the currently executing tool (thread-safe)
-func SetCurrentExecutingTool(name, server string) {
-	executingTool.Lock()
-	defer executingTool.Unlock()
-	executingTool.Name = name
-	executingTool.Server = server
-}
-
-// ClearCurrentExecutingTool clears the currently executing tool (thread-safe)
-func ClearCurrentExecutingTool() {
-	executingTool.Lock()
-	defer executingTool.Unlock()
-	executingTool.Name = ""
-	executingTool.Server = ""
-}
-
-// GetCurrentExecutingTool gets the currently executing tool (thread-safe)
-// Returns nil if no tool is currently executing
-func GetCurrentExecutingTool() *ExecutingTool {
-	executingTool.RLock()
-	defer executingTool.RUnlock()
-
-	// Return nil if no tool is currently executing
-	if executingTool.Name == "" && executingTool.Server == "" {
-		return nil
-	}
-
-	// Return a copy to avoid exposing the mutex
-	return &ExecutingTool{
-		Name:   executingTool.Name,
-		Server: executingTool.Server,
-	}
-}
 
 // consentManager implements the ConsentManager interface
 type consentManager struct {
@@ -256,22 +216,6 @@ func (cm *consentManager) IsProjectScopeAvailable(ctx context.Context) bool {
 	return err == nil
 }
 
-// WrapTool wraps a single langchaingo tool with consent protection
-func (cm *consentManager) WrapTool(tool common.AnnotatedTool) common.AnnotatedTool {
-	return newConsentWrapperTool(tool, cm.console, cm)
-}
-
-// WrapTools wraps multiple langchaingo tools with consent protection
-func (cm *consentManager) WrapTools(tools []common.AnnotatedTool) []common.AnnotatedTool {
-	wrappedTools := make([]common.AnnotatedTool, len(tools))
-
-	for i, tool := range tools {
-		wrappedTools[i] = cm.WrapTool(tool)
-	}
-
-	return wrappedTools
-}
-
 // evaluateRule evaluates a consent rule and returns a decision
 func (cm *consentManager) evaluateRule(rule ConsentRule) *ConsentDecision {
 	switch rule.Permission {
@@ -313,7 +257,7 @@ func (cm *consentManager) addProjectRule(ctx context.Context, rule ConsentRule) 
 	}
 
 	var consentConfig ConsentConfig
-	if exists, err := env.Config.GetSection(ConfigKeyMCPConsent, &consentConfig); err != nil {
+	if exists, err := env.Config.GetSection(ConfigKeyConsent, &consentConfig); err != nil {
 		return fmt.Errorf("failed to get consent config from environment: %w", err)
 	} else if !exists {
 		consentConfig = ConsentConfig{}
@@ -322,7 +266,7 @@ func (cm *consentManager) addProjectRule(ctx context.Context, rule ConsentRule) 
 	// Add or update the rule
 	consentConfig.Rules = cm.addOrUpdateRule(consentConfig.Rules, rule)
 
-	if err := env.Config.Set(ConfigKeyMCPConsent, consentConfig); err != nil {
+	if err := env.Config.Set(ConfigKeyConsent, consentConfig); err != nil {
 		return fmt.Errorf("failed to set consent config in environment: %w", err)
 	}
 
@@ -337,7 +281,7 @@ func (cm *consentManager) addGlobalRule(ctx context.Context, rule ConsentRule) e
 	}
 
 	var consentConfig ConsentConfig
-	if exists, err := userConfig.GetSection(ConfigKeyMCPConsent, &consentConfig); err != nil {
+	if exists, err := userConfig.GetSection(ConfigKeyConsent, &consentConfig); err != nil {
 		return fmt.Errorf("failed to get consent config: %w", err)
 	} else if !exists {
 		consentConfig = ConsentConfig{}
@@ -346,7 +290,7 @@ func (cm *consentManager) addGlobalRule(ctx context.Context, rule ConsentRule) e
 	// Add or update the rule
 	consentConfig.Rules = cm.addOrUpdateRule(consentConfig.Rules, rule)
 
-	if err := userConfig.Set(ConfigKeyMCPConsent, consentConfig); err != nil {
+	if err := userConfig.Set(ConfigKeyConsent, consentConfig); err != nil {
 		return fmt.Errorf("failed to set consent config: %w", err)
 	}
 
@@ -399,7 +343,7 @@ func (cm *consentManager) getProjectRules(ctx context.Context) ([]ConsentRule, e
 	}
 
 	var consentConfig ConsentConfig
-	if exists, err := env.Config.GetSection(ConfigKeyMCPConsent, &consentConfig); err != nil {
+	if exists, err := env.Config.GetSection(ConfigKeyConsent, &consentConfig); err != nil {
 		return nil, fmt.Errorf("failed to get consent config from environment: %w", err)
 	} else if !exists {
 		return []ConsentRule{}, nil
@@ -426,7 +370,7 @@ func (cm *consentManager) getGlobalConsentConfig(ctx context.Context) (*ConsentC
 	}
 
 	var consentConfig ConsentConfig
-	if exists, err := userConfig.GetSection(ConfigKeyMCPConsent, &consentConfig); err != nil {
+	if exists, err := userConfig.GetSection(ConfigKeyConsent, &consentConfig); err != nil {
 		return nil, fmt.Errorf("failed to get consent config: %w", err)
 	} else if !exists {
 		consentConfig = ConsentConfig{}
@@ -470,7 +414,7 @@ func (cm *consentManager) removeProjectRule(ctx context.Context, target Target) 
 	}
 
 	var consentConfig ConsentConfig
-	if exists, err := env.Config.GetSection(ConfigKeyMCPConsent, &consentConfig); err != nil {
+	if exists, err := env.Config.GetSection(ConfigKeyConsent, &consentConfig); err != nil {
 		return fmt.Errorf("failed to get consent config from environment: %w", err)
 	} else if !exists {
 		return nil // Nothing to remove
@@ -486,7 +430,7 @@ func (cm *consentManager) removeProjectRule(ctx context.Context, target Target) 
 
 	consentConfig.Rules = filtered
 
-	if err := env.Config.Set(ConfigKeyMCPConsent, consentConfig); err != nil {
+	if err := env.Config.Set(ConfigKeyConsent, consentConfig); err != nil {
 		return fmt.Errorf("failed to update consent config in environment: %w", err)
 	}
 
@@ -501,7 +445,7 @@ func (cm *consentManager) removeGlobalRule(ctx context.Context, target Target) e
 	}
 
 	var consentConfig ConsentConfig
-	if exists, err := userConfig.GetSection(ConfigKeyMCPConsent, &consentConfig); err != nil {
+	if exists, err := userConfig.GetSection(ConfigKeyConsent, &consentConfig); err != nil {
 		return fmt.Errorf("failed to get consent config: %w", err)
 	} else if !exists {
 		return nil // Nothing to remove
@@ -517,7 +461,7 @@ func (cm *consentManager) removeGlobalRule(ctx context.Context, target Target) e
 
 	consentConfig.Rules = filtered
 
-	if err := userConfig.Set(ConfigKeyMCPConsent, consentConfig); err != nil {
+	if err := userConfig.Set(ConfigKeyConsent, consentConfig); err != nil {
 		return fmt.Errorf("failed to update consent config: %w", err)
 	}
 
@@ -550,6 +494,8 @@ func (cm *consentManager) checkUnifiedRules(ctx context.Context, request Consent
 			); decision != nil {
 				return decision
 			}
+		} else {
+			log.Printf("[consent] failed to load project rules: %v", err)
 		}
 	}
 
@@ -560,6 +506,8 @@ func (cm *consentManager) checkUnifiedRules(ctx context.Context, request Consent
 		); decision != nil {
 			return decision
 		}
+	} else {
+		log.Printf("[consent] failed to load global rules: %v", err)
 	}
 
 	return nil

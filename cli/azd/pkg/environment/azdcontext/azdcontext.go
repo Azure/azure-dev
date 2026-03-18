@@ -91,10 +91,9 @@ type ProjectState struct {
 // SetProjectState persists the state of the project to the file system, like the default environment.
 func (c *AzdContext) SetProjectState(state ProjectState) error {
 	path := filepath.Join(c.EnvironmentDirectory(), ConfigFileName)
-	config := configFile{
-		Version:            ConfigFileVersion,
-		DefaultEnvironment: state.DefaultEnvironment,
-	}
+	config := c.readConfig()
+	config.Version = ConfigFileVersion
+	config.DefaultEnvironment = state.DefaultEnvironment
 
 	if err := writeConfig(path, config); err != nil {
 		return err
@@ -103,6 +102,47 @@ func (c *AzdContext) SetProjectState(state ProjectState) error {
 	// make sure to ignore the environment directory
 	path = filepath.Join(c.EnvironmentDirectory(), ".gitignore")
 	return os.WriteFile(path, []byte("# .azure is not intended to be committed\n*"), osutil.PermissionFile)
+}
+
+// GetCopilotSession returns the in-progress Copilot session, if any.
+func (c *AzdContext) GetCopilotSession() *CopilotSession {
+	config := c.readConfig()
+	return config.CopilotSession
+}
+
+// SetCopilotSession saves a Copilot session ID for resume support.
+func (c *AzdContext) SetCopilotSession(session *CopilotSession) error {
+	path := filepath.Join(c.EnvironmentDirectory(), ConfigFileName)
+	config := c.readConfig()
+	config.Version = ConfigFileVersion
+	config.CopilotSession = session
+
+	if err := os.MkdirAll(filepath.Dir(path), osutil.PermissionDirectory); err != nil {
+		return fmt.Errorf("creating environment directory: %w", err)
+	}
+
+	return writeConfig(path, config)
+}
+
+// ClearCopilotSession removes the saved Copilot session.
+func (c *AzdContext) ClearCopilotSession() error {
+	return c.SetCopilotSession(nil)
+}
+
+// readConfig reads the current config file, returning an empty config if it doesn't exist.
+func (c *AzdContext) readConfig() configFile {
+	path := filepath.Join(c.EnvironmentDirectory(), ConfigFileName)
+	file, err := os.ReadFile(path)
+	if err != nil {
+		return configFile{Version: ConfigFileVersion}
+	}
+
+	var config configFile
+	if err := json.Unmarshal(file, &config); err != nil {
+		return configFile{Version: ConfigFileVersion}
+	}
+
+	return config
 }
 
 // Creates context with project directory set to the desired directory.
@@ -178,8 +218,16 @@ func NewAzdContextFromWd(wd string) (*AzdContext, error) {
 }
 
 type configFile struct {
-	Version            int    `json:"version"`
-	DefaultEnvironment string `json:"defaultEnvironment,omitempty"`
+	Version            int             `json:"version"`
+	DefaultEnvironment string          `json:"defaultEnvironment,omitempty"`
+	CopilotSession     *CopilotSession `json:"copilotSession,omitempty"`
+}
+
+// CopilotSession tracks an in-progress Copilot agent session for resume support.
+type CopilotSession struct {
+	SessionID string `json:"sessionId"`
+	Command   string `json:"command"`
+	StartedAt string `json:"startedAt"`
 }
 
 func writeConfig(path string, config configFile) error {

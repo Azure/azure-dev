@@ -1220,3 +1220,53 @@ func (c *AgentClient) MkdirSessionFile(
 
 	return nil
 }
+
+// StatSessionFile returns file/directory metadata from a session's filesystem.
+func (c *AgentClient) StatSessionFile(
+	ctx context.Context,
+	agentName, agentVersion, sessionID, remotePath, apiVersion string,
+) (*SessionFileInfo, error) {
+	u, err := url.Parse(c.endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("invalid endpoint URL: %w", err)
+	}
+
+	u.Path += fmt.Sprintf(
+		"/agents/%s/versions/%s/sessions/%s/files/stat",
+		agentName, agentVersion, sessionID,
+	)
+
+	query := u.Query()
+	query.Set("api-version", apiVersion)
+	query.Set("path", remotePath)
+	u.RawQuery = query.Encode()
+
+	req, err := runtime.NewRequest(ctx, http.MethodGet, u.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Raw().Header.Set("Foundry-Features", "HostedAgents=V1Preview")
+
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	var fileInfo SessionFileInfo
+	if err := json.Unmarshal(respBody, &fileInfo); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &fileInfo, nil
+}

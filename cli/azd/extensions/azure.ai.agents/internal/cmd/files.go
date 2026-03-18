@@ -44,6 +44,7 @@ from the last invoke session, or can be overridden with --session.`,
 	cmd.AddCommand(newFilesListCommand())
 	cmd.AddCommand(newFilesRemoveCommand())
 	cmd.AddCommand(newFilesMkdirCommand())
+	cmd.AddCommand(newFilesStatCommand())
 
 	return cmd
 }
@@ -598,4 +599,115 @@ func (a *FilesMkdirAction) Run(ctx context.Context) error {
 
 	fmt.Printf("Created %s\n", a.remotePath)
 	return nil
+}
+
+// --- stat ---
+
+type filesStatFlags struct {
+	filesFlags
+	output string
+}
+
+// FilesStatAction handles getting file/directory metadata from a session.
+type FilesStatAction struct {
+	*AgentContext
+	flags      *filesStatFlags
+	sessionID  string
+	remotePath string
+}
+
+func newFilesStatCommand() *cobra.Command {
+	flags := &filesStatFlags{}
+
+	cmd := &cobra.Command{
+		Use:   "stat <remote-path>",
+		Short: "Get file or directory metadata in a hosted agent session.",
+		Long: `Get file or directory metadata in a hosted agent session.
+
+Returns metadata about the specified file or directory in the session's filesystem.
+
+Agent details are automatically resolved from the azd environment.`,
+		Example: `  # Get metadata for a file
+  azd ai agent files stat /data/output.csv
+
+  # Get metadata in table format
+  azd ai agent files stat /data/output.csv --output table
+
+  # Get metadata with explicit session
+  azd ai agent files stat /data/output.csv --session <session-id>`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := azdext.WithAccessToken(cmd.Context())
+			setupDebugLogging(cmd.Flags())
+
+			fc, err := resolveFilesContext(ctx, &flags.filesFlags)
+			if err != nil {
+				return err
+			}
+
+			action := &FilesStatAction{
+				AgentContext: fc.AgentContext,
+				flags:        flags,
+				sessionID:    fc.sessionID,
+				remotePath:   args[0],
+			}
+
+			return action.Run(ctx)
+		},
+	}
+
+	addFilesFlags(cmd, &flags.filesFlags)
+	cmd.Flags().StringVarP(&flags.output, "output", "o", "json", "Output format (json or table)")
+
+	return cmd
+}
+
+// Run executes the stat action.
+func (a *FilesStatAction) Run(ctx context.Context) error {
+	agentClient, err := a.NewClient()
+	if err != nil {
+		return err
+	}
+
+	fileInfo, err := agentClient.StatSessionFile(
+		ctx,
+		a.Name,
+		a.Version,
+		a.sessionID,
+		a.remotePath,
+		DefaultVNextAgentAPIVersion,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to stat file: %w", err)
+	}
+
+	if a.flags.output == "table" {
+		return printFileInfoTable(fileInfo)
+	}
+
+	output, err := json.MarshalIndent(fileInfo, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to format output: %w", err)
+	}
+
+	fmt.Println(string(output))
+	return nil
+}
+
+func printFileInfoTable(f *agent_api.SessionFileInfo) error {
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "NAME\tPATH\tTYPE\tSIZE\tLAST MODIFIED")
+	fmt.Fprintln(w, "----\t----\t----\t----\t-------------")
+
+	fileType := "file"
+	if f.IsDirectory {
+		fileType = "dir"
+	}
+	modified := ""
+	if f.LastModified != nil {
+		modified = *f.LastModified
+	}
+	fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\n", f.Name, f.Path, fileType, f.Size, modified)
+
+	return w.Flush()
 }

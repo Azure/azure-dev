@@ -77,7 +77,7 @@ func (s *PermissionsService) HasRequiredPermissions(
 	pager := roleAssignmentsClient.NewListForScopePager(
 		subscriptionScope,
 		&armauthorization.RoleAssignmentsClientListForScopeOptions{
-			Filter: new(filter),
+			Filter: &filter,
 		},
 	)
 

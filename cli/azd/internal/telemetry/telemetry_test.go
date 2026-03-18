@@ -5,7 +5,6 @@ package telemetry
 
 import (
 	"context"
-	"sync"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -50,12 +49,29 @@ func TestGetTelemetrySystem(t *testing.T) {
 			devEndpointConfig,
 		},
 
-		{"ProdVersion", args{"1.0.0 (commit 13ec2b11aa755b11640fa16b8664cb8741d5d300)", "no"}, true, prodEndpointConfig},
-		{"ProdVersion", args{"1.0.0 (commit 13ec2b11aa755b11640fa16b8664cb8741d5d300)", "unset"}, false, prodEndpointConfig},
-		{"ProdVersion", args{"1.0.0 (commit 13ec2b11aa755b11640fa16b8664cb8741d5d300)", "yes"}, false, prodEndpointConfig},
+		{
+			"ProdVersion_telemetryDisabled",
+			args{"1.0.0 (commit 13ec2b11aa755b11640fa16b8664cb8741d5d300)", "no"},
+			true,
+			prodEndpointConfig,
+		},
+		{
+			"ProdVersion_telemetryUnset",
+			args{"1.0.0 (commit 13ec2b11aa755b11640fa16b8664cb8741d5d300)", "unset"},
+			false,
+			prodEndpointConfig,
+		},
+		{
+			"ProdVersion_telemetryEnabled",
+			args{"1.0.0 (commit 13ec2b11aa755b11640fa16b8664cb8741d5d300)", "yes"},
+			false,
+			prodEndpointConfig,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			defer resetTelemetryForTest()
+
 			orig := internal.Version
 			defer func() { internal.Version = orig }()
 			internal.Version = tt.args.version
@@ -79,7 +95,6 @@ func TestGetTelemetrySystem(t *testing.T) {
 				err := ts.Shutdown(context.Background())
 				assert.NoError(t, err)
 			}
-			once = sync.Once{}
 		})
 	}
 }

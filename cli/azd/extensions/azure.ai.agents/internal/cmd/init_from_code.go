@@ -1351,7 +1351,10 @@ func (a *InitFromCodeAction) processExistingFoundryProject(ctx context.Context, 
 	}
 
 	// Create FoundryProjectsClient and get connections
-	foundryClient := azure.NewFoundryProjectsClient(foundryProject.AccountName, foundryProject.ProjectName, a.credential)
+	foundryClient, err := azure.NewFoundryProjectsClient(foundryProject.AccountName, foundryProject.ProjectName, a.credential)
+	if err != nil {
+		return fmt.Errorf("creating Foundry client: %w", err)
+	}
 	connections, err := foundryClient.GetAllConnections(ctx)
 	if err != nil {
 		fmt.Printf("Could not get Microsoft Foundry project connections to initialize AZURE_CONTAINER_REGISTRY_ENDPOINT: %v. Please set this environment variable manually.\n", err)

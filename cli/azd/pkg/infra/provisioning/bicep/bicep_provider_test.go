@@ -566,7 +566,7 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 			string(resourceType), resourceName)
 
 		return &armresources.GenericResourceExpanded{
-			ID:       new(id),
+			ID:       &id,
 			Name:     new(resourceName),
 			Type:     new(string(resourceType)),
 			Location: new("eastus2"),
@@ -846,7 +846,7 @@ func prepareLogAnalyticsDestroyMocks(mockContext *mocks.MockContext) {
 			string(resourceType), resourceName)
 
 		return &armresources.GenericResourceExpanded{
-			ID:       new(id),
+			ID:       &id,
 			Name:     new(resourceName),
 			Type:     new(string(resourceType)),
 			Location: new("eastus2"),

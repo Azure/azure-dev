@@ -19,7 +19,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -115,18 +114,16 @@ type Cli struct {
 	transporter policy.Transporter
 	extract     func(string, string) (string, error)
 
-	installOnce sync.Once
-	installErr  error
+	installInit osutil.LazyRetryInit
 }
 
 // EnsureInstalled checks if pack CLI is available and downloads/upgrades if needed.
-// This is safe to call multiple times; installation only happens once.
+// This is safe to call multiple times; successful installation is cached and failed attempts are retried.
 // Should be called with a request-scoped context before first use.
 func (cli *Cli) EnsureInstalled(ctx context.Context) error {
-	cli.installOnce.Do(func() {
-		cli.installErr = cli.ensureInstalled(ctx)
+	return cli.installInit.Do(func() error {
+		return cli.ensureInstalled(ctx)
 	})
-	return cli.installErr
 }
 
 func (cli *Cli) ensureInstalled(ctx context.Context) error {

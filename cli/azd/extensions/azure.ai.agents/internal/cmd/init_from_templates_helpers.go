@@ -17,6 +17,7 @@ import (
 	"azureaiagent/internal/exterrors"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/fatih/color"
 )
 
 const agentTemplatesURL = "https://aka.ms/foundry-agents"
@@ -153,7 +154,7 @@ func promptAgentTemplate(
 		)
 	}
 
-	fmt.Println("Retrieving agent templates...")
+	color.New(color.Faint).Println("Retrieving agent templates...")
 
 	templates, err := fetchAgentTemplates(ctx, httpClient)
 	if err != nil {
@@ -172,7 +173,7 @@ func promptAgentTemplate(
 
 	langResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
-			Message: "Select a language:",
+			Message: "Select a language",
 			Choices: languageChoices,
 		},
 	})
@@ -209,7 +210,7 @@ func promptAgentTemplate(
 
 	templateResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
-			Message: "Select an agent template:",
+			Message: "Select an agent template",
 			Choices: templateChoices,
 		},
 	})

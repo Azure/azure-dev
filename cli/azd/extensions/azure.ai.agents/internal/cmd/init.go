@@ -15,7 +15,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -1613,8 +1612,6 @@ func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.Co
 	// Default values
 	defaultMemory := project.DefaultMemory
 	defaultCpu := project.DefaultCpu
-	defaultMinReplicas := fmt.Sprintf("%d", project.DefaultMinReplicas)
-	defaultMaxReplicas := fmt.Sprintf("%d", project.DefaultMaxReplicas)
 
 	// Prompt for memory allocation
 	memoryResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
@@ -1638,52 +1635,14 @@ func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.Co
 		return nil, fmt.Errorf("prompting for CPU allocation: %w", err)
 	}
 
-	// Prompt for minimum replicas
-	minReplicasResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-		Options: &azdext.PromptOptions{
-			Message:      "Enter desired container minimum number of replicas",
-			DefaultValue: defaultMinReplicas,
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("prompting for minimum replicas: %w", err)
-	}
-
-	// Prompt for maximum replicas
-	maxReplicasResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-		Options: &azdext.PromptOptions{
-			Message:      "Enter desired container maximum number of replicas",
-			DefaultValue: defaultMaxReplicas,
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("prompting for maximum replicas: %w", err)
-	}
-
-	// Convert string values to appropriate types
-	minReplicas, err := strconv.Atoi(minReplicasResp.Value)
-	if err != nil {
-		return nil, fmt.Errorf("invalid minimum replicas value: %w", err)
-	}
-
-	maxReplicas, err := strconv.Atoi(maxReplicasResp.Value)
-	if err != nil {
-		return nil, fmt.Errorf("invalid maximum replicas value: %w", err)
-	}
-
-	// Validate that max replicas >= min replicas
-	if maxReplicas < minReplicas {
-		return nil, fmt.Errorf("maximum replicas (%d) must be greater than or equal to minimum replicas (%d)", maxReplicas, minReplicas)
-	}
-
 	return &project.ContainerSettings{
 		Resources: &project.ResourceSettings{
 			Memory: memoryResp.Value,
 			Cpu:    cpuResp.Value,
 		},
 		Scale: &project.ScaleSettings{
-			MinReplicas: minReplicas,
-			MaxReplicas: maxReplicas,
+			MinReplicas: project.DefaultMinReplicas,
+			MaxReplicas: project.DefaultMaxReplicas,
 		},
 	}, nil
 }
@@ -1867,7 +1826,7 @@ func downloadDirectoryContents(
 
 		if itemType == "file" {
 			// Download file
-			fmt.Printf("Downloading file: %s\n", itemPath)
+			fmt.Printf("%s\n", color.New(color.Faint).Sprintf("Downloading file: %s", itemPath))
 			fileApiPath := fmt.Sprintf("/repos/%s/contents/%s", repoSlug, itemPath)
 			if branch != "" {
 				fileApiPath += fmt.Sprintf("?ref=%s", branch)
@@ -1956,7 +1915,7 @@ func downloadDirectoryContentsWithoutGhCli(
 
 		if itemType == "file" {
 			// Download file using GitHub Contents API with raw accept header
-			fmt.Printf("Downloading file: %s\n", itemPath)
+			fmt.Printf("%s\n", color.New(color.Faint).Sprintf("Downloading file: %s", itemPath))
 			fileURL := &url.URL{
 				Scheme: "https",
 				Host:   "api.github.com",

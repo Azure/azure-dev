@@ -495,8 +495,6 @@ func injectParameterValues(template string, paramValues ParameterValues) ([]byte
 	// Check for any remaining unreplaced placeholders
 	if strings.Contains(template, "{{") && strings.Contains(template, "}}") {
 		fmt.Println("Warning: Template contains unresolved placeholders.")
-	} else {
-		fmt.Println("No remaining placeholders found.")
 	}
 
 	return []byte(template), nil

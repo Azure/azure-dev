@@ -734,7 +734,12 @@ func (m *Manager) replaceBinary(ctx context.Context, newBinaryPath, currentBinar
 	// On unix, try with sudo if permission denied
 	if runtime.GOOS != "windows" {
 		log.Printf("direct replacement failed (%v), trying with sudo", err)
-		runArgs := exec.NewRunArgs("sudo", "cp", newBinaryPath, currentBinaryPath)
+		// Use "rm -f && cp" instead of plain "cp" to avoid "Text file busy" (ETXTBSY) errors.
+		// On Linux, writing to a running binary's inode fails because the kernel holds a
+		// write lock on executing files. Removing first unlinks the filename (the running
+		// process keeps the old inode alive via its fd), then cp creates a new inode.
+		shellCmd := fmt.Sprintf("rm -f %q && cp %q %q", currentBinaryPath, newBinaryPath, currentBinaryPath)
+		runArgs := exec.NewRunArgs("sudo", "sh", "-c", shellCmd)
 		runArgs = runArgs.WithInteractive(true)
 		result, sudoErr := m.commandRunner.Run(ctx, runArgs)
 		if sudoErr != nil {

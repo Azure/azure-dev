@@ -92,6 +92,12 @@ func TestIsSecretReference(t *testing.T) {
 		{"AKVS://sub/vault/secret", false}, // case-sensitive
 		{"https://vault.azure.net", false},
 		{"", false},
+		// @Microsoft.KeyVault format
+		{"@Microsoft.KeyVault(SecretUri=https://v.vault.azure.net/secrets/s)", true},
+		// case-insensitive prefix (matches Azure App Service behavior)
+		{"@microsoft.keyvault(secreturi=https://v.vault.azure.net/secrets/s)", true},
+		// VaultName/SecretName form is not supported
+		{"@Microsoft.KeyVault(VaultName=v;SecretName=s)", false},
 	}
 
 	for _, tt := range tests {

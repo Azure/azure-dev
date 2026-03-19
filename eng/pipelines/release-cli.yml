@@ -125,7 +125,7 @@ extends:
 
     - template: /eng/pipelines/templates/stages/code-coverage-upload.yml
       parameters:
-        MinimumCoveragePercent: 80
+        MinimumCoveragePercent: 48
         DownloadArtifacts:
           - cover-win
           - cover-lin

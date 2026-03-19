@@ -25,6 +25,7 @@ param(
     [string]$CoverageFile,
 
     [Parameter(Mandatory = $true)]
+    [ValidateRange(0, 100)]
     [double]$MinimumCoveragePercent
 )
 
@@ -42,13 +43,18 @@ if ($LASTEXITCODE -ne 0) {
     throw "go tool cover -func failed: $output"
 }
 
-# The last line looks like: "total:    (statements)   48.3%"
-$lastLine = ($output | Select-Object -Last 1).ToString()
+# Find the "total:" summary line, which looks like: "total:  (statements)  48.3%"
+$totalLine = $output | Where-Object { $_ -match '^\s*total:' } | Select-Object -Last 1
 
-if ($lastLine -match '(\d+\.\d+)%') {
-    $coveragePercent = [double]$matches[1]
+if (-not $totalLine) {
+    throw "Could not find 'total:' line in 'go tool cover -func' output"
+}
+
+# Match both integer (100%) and decimal (48.3%) percentages using invariant culture
+if ($totalLine -match '(\d+(?:\.\d+)?)%') {
+    $coveragePercent = [double]::Parse($matches[1], [System.Globalization.CultureInfo]::InvariantCulture)
 } else {
-    throw "Could not parse total coverage from 'go tool cover -func' output: $lastLine"
+    throw "Could not parse coverage percentage from: $totalLine"
 }
 
 Write-Host "Total statement coverage: $coveragePercent%"

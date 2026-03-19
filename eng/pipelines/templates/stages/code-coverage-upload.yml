@@ -73,6 +73,7 @@ stages:
           displayName: Check code coverage threshold
 
       - task: PublishCodeCoverageResults@1
+        condition: succeededOrFailed()
         inputs:
           codeCoverageTool: Cobertura
           summaryFileLocation: '$(Build.SourcesDirectory)/**/coverage.xml'

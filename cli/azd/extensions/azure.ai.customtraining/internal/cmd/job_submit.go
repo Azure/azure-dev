@@ -6,6 +6,7 @@ package cmd
 import (
 	"fmt"
 
+	"azure.ai.customtraining/internal/service"
 	"azure.ai.customtraining/internal/utils"
 	"azure.ai.customtraining/pkg/client"
 	"azure.ai.customtraining/pkg/models"
@@ -15,14 +16,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newJobCreateCommand() *cobra.Command {
+func newJobSubmitCommand() *cobra.Command {
 	var filePath string
 	var outputFormat string
 
 	cmd := &cobra.Command{
-		Use:   "create",
-		Short: "Create a new training job from a YAML definition file",
-		Long:  "Create a new training job by providing a YAML job definition file.\n\nExample:\n  azd ai training job create --file job.yaml",
+		Use:   "submit",
+		Short: "Submit a new training job from a YAML definition file",
+		Long:  "Submit a new training job by providing a YAML job definition file.\n\nExample:\n  azd ai training job submit --file job.yaml",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
@@ -75,17 +76,27 @@ func newJobCreateCommand() *cobra.Command {
 				jobDef.Name = utils.GenerateJobName()
 			}
 
+			// Resolve references (compute name → ARM ID, local paths → datastore URIs)
+			resolver := service.NewJobResolver(
+				service.NewDefaultComputeResolver(),
+				service.NewDefaultCodeResolver(),
+				service.NewDefaultInputResolver(),
+			)
+			if err := resolver.ResolveJobDefinition(ctx, jobDef); err != nil {
+				return fmt.Errorf("failed to resolve job definition: %w", err)
+			}
+
 			// Build REST payload from YAML definition
 			jobResource := buildJobResource(jobDef)
 
-			fmt.Printf("Creating command job: %s\n\n", jobDef.Name)
+			fmt.Printf("Submitting command job: %s\n\n", jobDef.Name)
 
 			result, err := apiClient.CreateOrUpdateJob(ctx, jobDef.Name, jobResource)
 			if err != nil {
 				return fmt.Errorf("failed to create job: %w", err)
 			}
 
-			fmt.Printf("✓ Job '%s' created successfully\n\n", jobDef.Name)
+			fmt.Printf("✓ Job '%s' submitted successfully\n\n", jobDef.Name)
 
 			if err := utils.PrintObject(result, utils.OutputFormat(outputFormat)); err != nil {
 				return err

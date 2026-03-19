@@ -30,7 +30,7 @@ func newJobCommand() *cobra.Command {
 		"Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)")
 
 	cmd.AddCommand(newJobListCommand())
-	cmd.AddCommand(newJobCreateCommand())
+	cmd.AddCommand(newJobSubmitCommand())
 	cmd.AddCommand(newJobShowCommand())
 
 	return cmd

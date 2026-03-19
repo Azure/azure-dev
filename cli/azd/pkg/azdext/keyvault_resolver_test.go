@@ -16,14 +16,21 @@ import (
 )
 
 // stubSecretGetter is a test double for the Key Vault data-plane client.
+// It records the name and version args it receives for verification.
 type stubSecretGetter struct {
 	resp azsecrets.GetSecretResponse
 	err  error
+
+	// Recorded call args (set on each GetSecret call).
+	calledName    string
+	calledVersion string
 }
 
 func (s *stubSecretGetter) GetSecret(
-	_ context.Context, _ string, _ string, _ *azsecrets.GetSecretOptions,
+	_ context.Context, name string, version string, _ *azsecrets.GetSecretOptions,
 ) (azsecrets.GetSecretResponse, error) {
+	s.calledName = name
+	s.calledVersion = version
 	return s.resp, s.err
 }
 
@@ -205,6 +212,14 @@ func TestResolve_Success(t *testing.T) {
 	if val != secretValue {
 		t.Errorf("Resolve() = %q, want %q", val, secretValue)
 	}
+
+	// Verify the stub received the correct name and version args.
+	if getter.calledName != "my-secret" {
+		t.Errorf("stub received name = %q, want %q", getter.calledName, "my-secret")
+	}
+	if getter.calledVersion != "" {
+		t.Errorf("stub received version = %q, want empty", getter.calledVersion)
+	}
 }
 
 func TestResolve_NilContext(t *testing.T) {
@@ -269,111 +284,47 @@ func TestResolve_ClientCreationFailure(t *testing.T) {
 	}
 }
 
-func TestResolve_SecretNotFound(t *testing.T) {
+func TestResolve_HTTPErrorClassification(t *testing.T) {
 	t.Parallel()
 
-	getter := &stubSecretGetter{
-		err: &azcore.ResponseError{StatusCode: http.StatusNotFound},
+	tests := []struct {
+		name       string
+		statusCode int
+		wantReason ResolveReason
+	}{
+		{"NotFound", http.StatusNotFound, ResolveReasonNotFound},
+		{"Forbidden", http.StatusForbidden, ResolveReasonAccessDenied},
+		{"Unauthorized", http.StatusUnauthorized, ResolveReasonAccessDenied},
+		{"InternalServerError", http.StatusInternalServerError, ResolveReasonServiceError},
 	}
 
-	cred := &stubCredential{}
-	resolver, _ := NewKeyVaultResolver(cred, &KeyVaultResolverOptions{
-		ClientFactory: stubSecretFactory(getter, nil),
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	_, err := resolver.Resolve(t.Context(), "akvs://sub/vault/missing-secret")
-	if err == nil {
-		t.Fatal("expected error for missing secret")
-	}
+			getter := &stubSecretGetter{
+				err: &azcore.ResponseError{StatusCode: tt.statusCode},
+			}
 
-	var resolveErr *KeyVaultResolveError
-	if !errors.As(err, &resolveErr) {
-		t.Fatalf("error type = %T, want *KeyVaultResolveError", err)
-	}
+			cred := &stubCredential{}
+			resolver, _ := NewKeyVaultResolver(cred, &KeyVaultResolverOptions{
+				ClientFactory: stubSecretFactory(getter, nil),
+			})
 
-	if resolveErr.Reason != ResolveReasonNotFound {
-		t.Errorf("Reason = %v, want %v", resolveErr.Reason, ResolveReasonNotFound)
-	}
-}
+			_, err := resolver.Resolve(t.Context(), "akvs://sub/vault/secret")
+			if err == nil {
+				t.Fatalf("expected error for HTTP %d", tt.statusCode)
+			}
 
-func TestResolve_AccessDenied(t *testing.T) {
-	t.Parallel()
+			var resolveErr *KeyVaultResolveError
+			if !errors.As(err, &resolveErr) {
+				t.Fatalf("error type = %T, want *KeyVaultResolveError", err)
+			}
 
-	getter := &stubSecretGetter{
-		err: &azcore.ResponseError{StatusCode: http.StatusForbidden},
-	}
-
-	cred := &stubCredential{}
-	resolver, _ := NewKeyVaultResolver(cred, &KeyVaultResolverOptions{
-		ClientFactory: stubSecretFactory(getter, nil),
-	})
-
-	_, err := resolver.Resolve(t.Context(), "akvs://sub/vault/secret")
-	if err == nil {
-		t.Fatal("expected error for forbidden access")
-	}
-
-	var resolveErr *KeyVaultResolveError
-	if !errors.As(err, &resolveErr) {
-		t.Fatalf("error type = %T, want *KeyVaultResolveError", err)
-	}
-
-	if resolveErr.Reason != ResolveReasonAccessDenied {
-		t.Errorf("Reason = %v, want %v", resolveErr.Reason, ResolveReasonAccessDenied)
-	}
-}
-
-func TestResolve_Unauthorized(t *testing.T) {
-	t.Parallel()
-
-	getter := &stubSecretGetter{
-		err: &azcore.ResponseError{StatusCode: http.StatusUnauthorized},
-	}
-
-	cred := &stubCredential{}
-	resolver, _ := NewKeyVaultResolver(cred, &KeyVaultResolverOptions{
-		ClientFactory: stubSecretFactory(getter, nil),
-	})
-
-	_, err := resolver.Resolve(t.Context(), "akvs://sub/vault/secret")
-	if err == nil {
-		t.Fatal("expected error for unauthorized access")
-	}
-
-	var resolveErr *KeyVaultResolveError
-	if !errors.As(err, &resolveErr) {
-		t.Fatalf("error type = %T, want *KeyVaultResolveError", err)
-	}
-
-	if resolveErr.Reason != ResolveReasonAccessDenied {
-		t.Errorf("Reason = %v, want %v", resolveErr.Reason, ResolveReasonAccessDenied)
-	}
-}
-
-func TestResolve_ServiceError(t *testing.T) {
-	t.Parallel()
-
-	getter := &stubSecretGetter{
-		err: &azcore.ResponseError{StatusCode: http.StatusInternalServerError},
-	}
-
-	cred := &stubCredential{}
-	resolver, _ := NewKeyVaultResolver(cred, &KeyVaultResolverOptions{
-		ClientFactory: stubSecretFactory(getter, nil),
-	})
-
-	_, err := resolver.Resolve(t.Context(), "akvs://sub/vault/secret")
-	if err == nil {
-		t.Fatal("expected error for server error")
-	}
-
-	var resolveErr *KeyVaultResolveError
-	if !errors.As(err, &resolveErr) {
-		t.Fatalf("error type = %T, want *KeyVaultResolveError", err)
-	}
-
-	if resolveErr.Reason != ResolveReasonServiceError {
-		t.Errorf("Reason = %v, want %v", resolveErr.Reason, ResolveReasonServiceError)
+			if resolveErr.Reason != tt.wantReason {
+				t.Errorf("Reason = %v, want %v", resolveErr.Reason, tt.wantReason)
+			}
+		})
 	}
 }
 
@@ -506,19 +457,33 @@ func TestResolveMap_ErrorCollectsAllFailures(t *testing.T) {
 	})
 
 	input := map[string]string{ //nolint:gosec // G101 false positive: test fixture, not real credentials
-		"secret": "akvs://sub/vault/missing",
+		"secret1": "akvs://sub/vault/missing1",
+		"secret2": "akvs://sub/vault/missing2",
+		"secret3": "akvs://sub/vault/missing3",
+		"plain":   "not-a-secret-ref",
 	}
 
-	// ResolveMap now collects errors instead of stopping at the first one.
-	// The partial result should still be returned alongside the error.
+	// ResolveMap collects errors instead of stopping at the first one.
 	result, err := resolver.ResolveMap(t.Context(), input)
 	if err == nil {
 		t.Fatal("expected error when resolution fails")
 	}
 
-	// Partial result should be non-nil (contains successfully resolved entries).
+	// Partial result should be non-nil and contain the plain value.
 	if result == nil {
 		t.Fatal("expected non-nil partial result")
+	}
+
+	if result["plain"] != "not-a-secret-ref" {
+		t.Errorf("result[plain] = %q, want %q", result["plain"], "not-a-secret-ref")
+	}
+
+	// The error should mention all 3 failing keys.
+	errMsg := err.Error()
+	for _, key := range []string{"secret1", "secret2", "secret3"} {
+		if !strings.Contains(errMsg, key) {
+			t.Errorf("error should mention %q, got: %s", key, errMsg)
+		}
 	}
 }
 
@@ -690,6 +655,14 @@ func TestResolve_AppRefWithVersion(t *testing.T) {
 
 	if val != secretValue {
 		t.Errorf("Resolve() = %q, want %q", val, secretValue)
+	}
+
+	// Verify name and version were dispatched correctly.
+	if getter.calledName != "mysecret" {
+		t.Errorf("stub received name = %q, want %q", getter.calledName, "mysecret")
+	}
+	if getter.calledVersion != "v1" {
+		t.Errorf("stub received version = %q, want %q", getter.calledVersion, "v1")
 	}
 }
 

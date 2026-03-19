@@ -39,12 +39,16 @@ describe("azd command sequencing", () => {
     expect(result.exitCode).not.toBe(0);
 
     const output = (result.stdout + result.stderr).toLowerCase();
-    // Should mention what's missing so the user knows what to do
+    // Should mention what's missing so the user knows what to do.
+    // In CI without auth, azd may report an auth error instead of a project error.
     const mentionsGuidance =
       output.includes("azure.yaml") ||
       output.includes("init") ||
       output.includes("project") ||
-      output.includes("no project");
+      output.includes("no project") ||
+      output.includes("logged in") ||
+      output.includes("login") ||
+      output.includes("auth");
     expect(mentionsGuidance).toBe(true);
   });
 
@@ -57,7 +61,10 @@ describe("azd command sequencing", () => {
       output.includes("azure.yaml") ||
       output.includes("init") ||
       output.includes("project") ||
-      output.includes("no project");
+      output.includes("no project") ||
+      output.includes("logged in") ||
+      output.includes("login") ||
+      output.includes("auth");
     expect(mentionsGuidance).toBe(true);
   });
 
@@ -71,7 +78,10 @@ describe("azd command sequencing", () => {
       output.includes("init") ||
       output.includes("project") ||
       output.includes("no project") ||
-      output.includes("environment");
+      output.includes("environment") ||
+      output.includes("logged in") ||
+      output.includes("login") ||
+      output.includes("auth");
     expect(mentionsGuidance).toBe(true);
   });
 

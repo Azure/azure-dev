@@ -54,6 +54,8 @@ func newJobSubmitCommand() *cobra.Command {
 			accountName := envValues[utils.EnvAzureAccountName]
 			projectName := envValues[utils.EnvAzureProjectName]
 			tenantID := envValues[utils.EnvAzureTenantID]
+			subscriptionID := envValues[utils.EnvAzureSubscriptionID]
+			resourceGroup := envValues[utils.EnvAzureResourceGroup]
 
 			if accountName == "" || projectName == "" {
 				return fmt.Errorf("environment not configured. Run 'azd ai training init' first")
@@ -91,7 +93,7 @@ func newJobSubmitCommand() *cobra.Command {
 
 			// Resolve references (compute name → ARM ID, local paths → datastore URIs)
 			resolver := service.NewJobResolver(
-				service.NewDefaultComputeResolver(),
+				service.NewDefaultComputeResolver(subscriptionID, resourceGroup, accountName, credential),
 				service.NewDefaultCodeResolver(uploadSvc, projectName),
 				service.NewDefaultInputResolver(uploadSvc),
 			)

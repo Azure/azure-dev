@@ -7,9 +7,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 
@@ -221,15 +222,9 @@ func (r *KeyVaultResolver) ResolveMap(ctx context.Context, refs map[string]strin
 	result := make(map[string]string, len(refs))
 
 	// Sort keys for deterministic iteration and error reporting.
-	keys := make([]string, 0, len(refs))
-	for k := range refs {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
 	var errs []error
 
-	for _, key := range keys {
+	for _, key := range slices.Sorted(maps.Keys(refs)) {
 		value := refs[key]
 
 		if !IsSecretReference(value) {

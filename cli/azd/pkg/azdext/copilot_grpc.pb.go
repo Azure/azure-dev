@@ -28,6 +28,7 @@ const (
 	CopilotService_GetUsageMetrics_FullMethodName = "/azdext.CopilotService/GetUsageMetrics"
 	CopilotService_GetFileChanges_FullMethodName  = "/azdext.CopilotService/GetFileChanges"
 	CopilotService_StopSession_FullMethodName     = "/azdext.CopilotService/StopSession"
+	CopilotService_GetMessages_FullMethodName     = "/azdext.CopilotService/GetMessages"
 )
 
 // CopilotServiceClient is the client API for CopilotService service.
@@ -56,6 +57,9 @@ type CopilotServiceClient interface {
 	GetFileChanges(ctx context.Context, in *GetCopilotFileChangesRequest, opts ...grpc.CallOption) (*GetCopilotFileChangesResponse, error)
 	// StopSession stops and cleans up a Copilot agent session.
 	StopSession(ctx context.Context, in *StopCopilotSessionRequest, opts ...grpc.CallOption) (*EmptyResponse, error)
+	// GetMessages returns the session event log from the Copilot SDK.
+	// Each event contains a type, timestamp, and dynamic data as a Struct.
+	GetMessages(ctx context.Context, in *GetCopilotMessagesRequest, opts ...grpc.CallOption) (*GetCopilotMessagesResponse, error)
 }
 
 type copilotServiceClient struct {
@@ -126,6 +130,16 @@ func (c *copilotServiceClient) StopSession(ctx context.Context, in *StopCopilotS
 	return out, nil
 }
 
+func (c *copilotServiceClient) GetMessages(ctx context.Context, in *GetCopilotMessagesRequest, opts ...grpc.CallOption) (*GetCopilotMessagesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetCopilotMessagesResponse)
+	err := c.cc.Invoke(ctx, CopilotService_GetMessages_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CopilotServiceServer is the server API for CopilotService service.
 // All implementations must embed UnimplementedCopilotServiceServer
 // for forward compatibility.
@@ -152,6 +166,9 @@ type CopilotServiceServer interface {
 	GetFileChanges(context.Context, *GetCopilotFileChangesRequest) (*GetCopilotFileChangesResponse, error)
 	// StopSession stops and cleans up a Copilot agent session.
 	StopSession(context.Context, *StopCopilotSessionRequest) (*EmptyResponse, error)
+	// GetMessages returns the session event log from the Copilot SDK.
+	// Each event contains a type, timestamp, and dynamic data as a Struct.
+	GetMessages(context.Context, *GetCopilotMessagesRequest) (*GetCopilotMessagesResponse, error)
 	mustEmbedUnimplementedCopilotServiceServer()
 }
 
@@ -179,6 +196,9 @@ func (UnimplementedCopilotServiceServer) GetFileChanges(context.Context, *GetCop
 }
 func (UnimplementedCopilotServiceServer) StopSession(context.Context, *StopCopilotSessionRequest) (*EmptyResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StopSession not implemented")
+}
+func (UnimplementedCopilotServiceServer) GetMessages(context.Context, *GetCopilotMessagesRequest) (*GetCopilotMessagesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetMessages not implemented")
 }
 func (UnimplementedCopilotServiceServer) mustEmbedUnimplementedCopilotServiceServer() {}
 func (UnimplementedCopilotServiceServer) testEmbeddedByValue()                        {}
@@ -309,6 +329,24 @@ func _CopilotService_StopSession_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CopilotService_GetMessages_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetCopilotMessagesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CopilotServiceServer).GetMessages(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CopilotService_GetMessages_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CopilotServiceServer).GetMessages(ctx, req.(*GetCopilotMessagesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CopilotService_ServiceDesc is the grpc.ServiceDesc for CopilotService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -339,6 +377,10 @@ var CopilotService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "StopSession",
 			Handler:    _CopilotService_StopSession_Handler,
+		},
+		{
+			MethodName: "GetMessages",
+			Handler:    _CopilotService_GetMessages_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

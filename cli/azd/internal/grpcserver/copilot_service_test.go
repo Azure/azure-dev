@@ -5,13 +5,17 @@ package grpcserver
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/watch"
+	copilot "github.com/github/copilot-sdk/go"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 // --- Mocks ---
@@ -59,6 +63,14 @@ func (m *MockAgent) ListSessions(ctx context.Context, cwd string) ([]agent.Sessi
 func (m *MockAgent) GetMetrics() agent.AgentMetrics {
 	args := m.Called()
 	return args.Get(0).(agent.AgentMetrics)
+}
+
+func (m *MockAgent) GetMessages(ctx context.Context) ([]agent.SessionEvent, error) {
+	args := m.Called(ctx)
+	if result := args.Get(0); result != nil {
+		return result.([]agent.SessionEvent), args.Error(1)
+	}
+	return nil, args.Error(1)
 }
 
 func (m *MockAgent) SessionID() string {
@@ -385,4 +397,152 @@ func TestCopilotService_SendMessage_WithFileChanges(t *testing.T) {
 		resp.FileChanges[0].ChangeType)
 	require.Equal(t, azdext.CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_DELETED,
 		resp.FileChanges[1].ChangeType)
+}
+
+func TestCopilotService_GetMessages_ValidSession(t *testing.T) {
+	t.Parallel()
+	factory := &MockAgentFactory{}
+	mockAgent := &MockAgent{}
+
+	now := time.Now()
+	content := "Hello, I can help with that."
+	toolName := "read_file"
+
+	factory.On("Create", mock.Anything, mock.Anything).Return(mockAgent, nil)
+	mockAgent.On("SendMessage", mock.Anything, "test", mock.Anything).Return(&agent.AgentResult{
+		SessionID: "msg-session",
+	}, nil)
+	mockAgent.On("GetMessages", mock.Anything).Return([]agent.SessionEvent{
+		{
+			Type:      copilot.AssistantMessage,
+			Timestamp: now,
+			Data:      copilot.Data{Content: &content},
+		},
+		{
+			Type:      copilot.ToolExecutionStart,
+			Timestamp: now.Add(time.Second),
+			Data:      copilot.Data{ToolName: &toolName},
+		},
+	}, nil)
+
+	svc := NewCopilotService(factory)
+	ctx := t.Context()
+
+	_, err := svc.SendMessage(ctx, &azdext.SendCopilotMessageRequest{Prompt: "test"})
+	require.NoError(t, err)
+
+	resp, err := svc.GetMessages(ctx, &azdext.GetCopilotMessagesRequest{
+		SessionId: "msg-session",
+	})
+
+	require.NoError(t, err)
+	require.Len(t, resp.Events, 2)
+	require.Equal(t, "assistant.message", resp.Events[0].Type)
+	require.Equal(t, "tool.execution_start", resp.Events[1].Type)
+
+	// Verify data struct contains the content field
+	contentVal := resp.Events[0].Data.Fields["content"].GetStringValue()
+	require.Equal(t, "Hello, I can help with that.", contentVal)
+
+	toolVal := resp.Events[1].Data.Fields["toolName"].GetStringValue()
+	require.Equal(t, "read_file", toolVal)
+}
+
+func TestCopilotService_GetMessages_UnknownSession(t *testing.T) {
+	t.Parallel()
+	svc := NewCopilotService(&MockAgentFactory{})
+	ctx := t.Context()
+
+	_, err := svc.GetMessages(ctx, &azdext.GetCopilotMessagesRequest{
+		SessionId: "nonexistent",
+	})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not found")
+}
+
+func TestCopilotService_GetMessages_RoundTrip(t *testing.T) {
+	t.Parallel()
+
+	// Build realistic SDK events with multiple data fields
+	content := "I'll create the infrastructure files for your app."
+	model := "gpt-4o"
+	inputTokens := float64(500)
+	outputTokens := float64(200)
+	toolName := "write"
+	filePath := "infra/main.bicep"
+	intent := "Creating infrastructure"
+
+	originalEvents := []agent.SessionEvent{
+		{
+			ID:        "evt-1",
+			Type:      copilot.AssistantMessage,
+			Timestamp: time.Date(2026, 3, 18, 12, 0, 0, 0, time.UTC),
+			Data:      copilot.Data{Content: &content},
+		},
+		{
+			ID:        "evt-2",
+			Type:      copilot.AssistantUsage,
+			Timestamp: time.Date(2026, 3, 18, 12, 0, 1, 0, time.UTC),
+			Data: copilot.Data{
+				Model:        &model,
+				InputTokens:  &inputTokens,
+				OutputTokens: &outputTokens,
+			},
+		},
+		{
+			ID:        "evt-3",
+			Type:      copilot.ToolExecutionStart,
+			Timestamp: time.Date(2026, 3, 18, 12, 0, 2, 0, time.UTC),
+			Data: copilot.Data{
+				ToolName: &toolName,
+				Path:     &filePath,
+				Intent:   &intent,
+			},
+		},
+	}
+
+	// Convert to proto (simulating gRPC transport)
+	protoEvents := make([]*azdext.CopilotSessionEvent, len(originalEvents))
+	for i, event := range originalEvents {
+		protoEvents[i] = convertSessionEvent(event)
+	}
+
+	// Verify proto types and timestamps
+	require.Equal(t, "assistant.message", protoEvents[0].Type)
+	require.Equal(t, "assistant.usage", protoEvents[1].Type)
+	require.Equal(t, "tool.execution_start", protoEvents[2].Type)
+
+	// Round-trip: convert proto Struct back to SDK Data type
+	for i, protoEvent := range protoEvents {
+		// Marshal proto Struct to JSON
+		jsonBytes, err := protojson.Marshal(protoEvent.Data)
+		require.NoError(t, err, "failed to marshal proto struct for event %d", i)
+
+		// Unmarshal JSON into SDK Data type
+		var roundTripped copilot.Data
+		err = json.Unmarshal(jsonBytes, &roundTripped)
+		require.NoError(t, err, "failed to unmarshal to SDK Data for event %d", i)
+
+		// Verify the round-tripped data matches the original
+		switch originalEvents[i].Type {
+		case copilot.AssistantMessage:
+			require.NotNil(t, roundTripped.Content)
+			require.Equal(t, *originalEvents[i].Data.Content, *roundTripped.Content)
+
+		case copilot.AssistantUsage:
+			require.NotNil(t, roundTripped.Model)
+			require.Equal(t, *originalEvents[i].Data.Model, *roundTripped.Model)
+			require.NotNil(t, roundTripped.InputTokens)
+			require.Equal(t, *originalEvents[i].Data.InputTokens, *roundTripped.InputTokens)
+			require.NotNil(t, roundTripped.OutputTokens)
+			require.Equal(t, *originalEvents[i].Data.OutputTokens, *roundTripped.OutputTokens)
+
+		case copilot.ToolExecutionStart:
+			require.NotNil(t, roundTripped.ToolName)
+			require.Equal(t, *originalEvents[i].Data.ToolName, *roundTripped.ToolName)
+			require.NotNil(t, roundTripped.Path)
+			require.Equal(t, *originalEvents[i].Data.Path, *roundTripped.Path)
+		}
+	}
 }

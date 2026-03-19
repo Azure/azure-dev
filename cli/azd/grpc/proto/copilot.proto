@@ -7,6 +7,7 @@ package azdext;
 option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext";
 
 import "models.proto";
+import "include/google/protobuf/struct.proto";
 
 // CopilotService provides Copilot agent capabilities to extensions.
 // Sessions are created lazily on the first SendMessage call and can be
@@ -35,6 +36,10 @@ service CopilotService {
 
   // StopSession stops and cleans up a Copilot agent session.
   rpc StopSession(StopCopilotSessionRequest) returns (EmptyResponse);
+
+  // GetMessages returns the session event log from the Copilot SDK.
+  // Each event contains a type, timestamp, and dynamic data as a Struct.
+  rpc GetMessages(GetCopilotMessagesRequest) returns (GetCopilotMessagesResponse);
 }
 
 // --- Initialize messages ---
@@ -149,4 +154,25 @@ enum CopilotFileChangeType {
 // StopCopilotSessionRequest stops a session and releases resources.
 message StopCopilotSessionRequest {
   string session_id = 1; // Session to stop.
+}
+
+// --- Session log messages ---
+
+// GetCopilotMessagesRequest requests the session event log.
+message GetCopilotMessagesRequest {
+  string session_id = 1; // Session to get messages for.
+}
+
+// GetCopilotMessagesResponse contains the session event log.
+message GetCopilotMessagesResponse {
+  repeated CopilotSessionEvent events = 1; // Session events in chronological order.
+}
+
+// CopilotSessionEvent represents a single event from the Copilot session log.
+// The data field uses google.protobuf.Struct to carry dynamic event data
+// without requiring schema updates when the SDK adds new event types or fields.
+message CopilotSessionEvent {
+  string type = 1;                    // Event type (e.g., "assistant.message", "tool.execution_complete").
+  string timestamp = 2;               // ISO 8601 timestamp.
+  google.protobuf.Struct data = 3;    // Full event data as a dynamic struct.
 }

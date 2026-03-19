@@ -12,6 +12,7 @@ package azdext
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	structpb "google.golang.org/protobuf/types/known/structpb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -878,11 +879,164 @@ func (x *StopCopilotSessionRequest) GetSessionId() string {
 	return ""
 }
 
+// GetCopilotMessagesRequest requests the session event log.
+type GetCopilotMessagesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"` // Session to get messages for.
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetCopilotMessagesRequest) Reset() {
+	*x = GetCopilotMessagesRequest{}
+	mi := &file_copilot_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetCopilotMessagesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetCopilotMessagesRequest) ProtoMessage() {}
+
+func (x *GetCopilotMessagesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_copilot_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetCopilotMessagesRequest.ProtoReflect.Descriptor instead.
+func (*GetCopilotMessagesRequest) Descriptor() ([]byte, []int) {
+	return file_copilot_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *GetCopilotMessagesRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+// GetCopilotMessagesResponse contains the session event log.
+type GetCopilotMessagesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Events        []*CopilotSessionEvent `protobuf:"bytes,1,rep,name=events,proto3" json:"events,omitempty"` // Session events in chronological order.
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetCopilotMessagesResponse) Reset() {
+	*x = GetCopilotMessagesResponse{}
+	mi := &file_copilot_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetCopilotMessagesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetCopilotMessagesResponse) ProtoMessage() {}
+
+func (x *GetCopilotMessagesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_copilot_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetCopilotMessagesResponse.ProtoReflect.Descriptor instead.
+func (*GetCopilotMessagesResponse) Descriptor() ([]byte, []int) {
+	return file_copilot_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *GetCopilotMessagesResponse) GetEvents() []*CopilotSessionEvent {
+	if x != nil {
+		return x.Events
+	}
+	return nil
+}
+
+// CopilotSessionEvent represents a single event from the Copilot session log.
+// The data field uses google.protobuf.Struct to carry dynamic event data
+// without requiring schema updates when the SDK adds new event types or fields.
+type CopilotSessionEvent struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`           // Event type (e.g., "assistant.message", "tool.execution_complete").
+	Timestamp     string                 `protobuf:"bytes,2,opt,name=timestamp,proto3" json:"timestamp,omitempty"` // ISO 8601 timestamp.
+	Data          *structpb.Struct       `protobuf:"bytes,3,opt,name=data,proto3" json:"data,omitempty"`           // Full event data as a dynamic struct.
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CopilotSessionEvent) Reset() {
+	*x = CopilotSessionEvent{}
+	mi := &file_copilot_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CopilotSessionEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CopilotSessionEvent) ProtoMessage() {}
+
+func (x *CopilotSessionEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_copilot_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CopilotSessionEvent.ProtoReflect.Descriptor instead.
+func (*CopilotSessionEvent) Descriptor() ([]byte, []int) {
+	return file_copilot_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *CopilotSessionEvent) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *CopilotSessionEvent) GetTimestamp() string {
+	if x != nil {
+		return x.Timestamp
+	}
+	return ""
+}
+
+func (x *CopilotSessionEvent) GetData() *structpb.Struct {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
 var File_copilot_proto protoreflect.FileDescriptor
 
 const file_copilot_proto_rawDesc = "" +
 	"\n" +
-	"\rcopilot.proto\x12\x06azdext\x1a\fmodels.proto\"[\n" +
+	"\rcopilot.proto\x12\x06azdext\x1a\fmodels.proto\x1a$include/google/protobuf/struct.proto\"[\n" +
 	"\x18InitializeCopilotRequest\x12\x14\n" +
 	"\x05model\x18\x01 \x01(\tR\x05model\x12)\n" +
 	"\x10reasoning_effort\x18\x02 \x01(\tR\x0freasoningEffort\"~\n" +
@@ -940,12 +1094,21 @@ const file_copilot_proto_rawDesc = "" +
 	"changeType\":\n" +
 	"\x19StopCopilotSessionRequest\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x01 \x01(\tR\tsessionId*\xb4\x01\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\":\n" +
+	"\x19GetCopilotMessagesRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\"Q\n" +
+	"\x1aGetCopilotMessagesResponse\x123\n" +
+	"\x06events\x18\x01 \x03(\v2\x1b.azdext.CopilotSessionEventR\x06events\"t\n" +
+	"\x13CopilotSessionEvent\x12\x12\n" +
+	"\x04type\x18\x01 \x01(\tR\x04type\x12\x1c\n" +
+	"\ttimestamp\x18\x02 \x01(\tR\ttimestamp\x12+\n" +
+	"\x04data\x18\x03 \x01(\v2\x17.google.protobuf.StructR\x04data*\xb4\x01\n" +
 	"\x15CopilotFileChangeType\x12(\n" +
 	"$COPILOT_FILE_CHANGE_TYPE_UNSPECIFIED\x10\x00\x12$\n" +
 	" COPILOT_FILE_CHANGE_TYPE_CREATED\x10\x01\x12%\n" +
 	"!COPILOT_FILE_CHANGE_TYPE_MODIFIED\x10\x02\x12$\n" +
-	" COPILOT_FILE_CHANGE_TYPE_DELETED\x10\x032\x9c\x04\n" +
+	" COPILOT_FILE_CHANGE_TYPE_DELETED\x10\x032\xf2\x04\n" +
 	"\x0eCopilotService\x12Q\n" +
 	"\n" +
 	"Initialize\x12 .azdext.InitializeCopilotRequest\x1a!.azdext.InitializeCopilotResponse\x12W\n" +
@@ -953,7 +1116,8 @@ const file_copilot_proto_rawDesc = "" +
 	"\vSendMessage\x12!.azdext.SendCopilotMessageRequest\x1a\".azdext.SendCopilotMessageResponse\x12`\n" +
 	"\x0fGetUsageMetrics\x12%.azdext.GetCopilotUsageMetricsRequest\x1a&.azdext.GetCopilotUsageMetricsResponse\x12]\n" +
 	"\x0eGetFileChanges\x12$.azdext.GetCopilotFileChangesRequest\x1a%.azdext.GetCopilotFileChangesResponse\x12G\n" +
-	"\vStopSession\x12!.azdext.StopCopilotSessionRequest\x1a\x15.azdext.EmptyResponseB/Z-github.com/azure/azure-dev/cli/azd/pkg/azdextb\x06proto3"
+	"\vStopSession\x12!.azdext.StopCopilotSessionRequest\x1a\x15.azdext.EmptyResponse\x12T\n" +
+	"\vGetMessages\x12!.azdext.GetCopilotMessagesRequest\x1a\".azdext.GetCopilotMessagesResponseB/Z-github.com/azure/azure-dev/cli/azd/pkg/azdextb\x06proto3"
 
 var (
 	file_copilot_proto_rawDescOnce sync.Once
@@ -968,7 +1132,7 @@ func file_copilot_proto_rawDescGZIP() []byte {
 }
 
 var file_copilot_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_copilot_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_copilot_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_copilot_proto_goTypes = []any{
 	(CopilotFileChangeType)(0),             // 0: azdext.CopilotFileChangeType
 	(*InitializeCopilotRequest)(nil),       // 1: azdext.InitializeCopilotRequest
@@ -985,7 +1149,11 @@ var file_copilot_proto_goTypes = []any{
 	(*GetCopilotFileChangesResponse)(nil),  // 12: azdext.GetCopilotFileChangesResponse
 	(*CopilotFileChange)(nil),              // 13: azdext.CopilotFileChange
 	(*StopCopilotSessionRequest)(nil),      // 14: azdext.StopCopilotSessionRequest
-	(*EmptyResponse)(nil),                  // 15: azdext.EmptyResponse
+	(*GetCopilotMessagesRequest)(nil),      // 15: azdext.GetCopilotMessagesRequest
+	(*GetCopilotMessagesResponse)(nil),     // 16: azdext.GetCopilotMessagesResponse
+	(*CopilotSessionEvent)(nil),            // 17: azdext.CopilotSessionEvent
+	(*structpb.Struct)(nil),                // 18: google.protobuf.Struct
+	(*EmptyResponse)(nil),                  // 19: azdext.EmptyResponse
 }
 var file_copilot_proto_depIdxs = []int32{
 	5,  // 0: azdext.ListCopilotSessionsResponse.sessions:type_name -> azdext.CopilotSessionMetadata
@@ -994,23 +1162,27 @@ var file_copilot_proto_depIdxs = []int32{
 	10, // 3: azdext.GetCopilotUsageMetricsResponse.usage:type_name -> azdext.CopilotUsageMetrics
 	13, // 4: azdext.GetCopilotFileChangesResponse.file_changes:type_name -> azdext.CopilotFileChange
 	0,  // 5: azdext.CopilotFileChange.change_type:type_name -> azdext.CopilotFileChangeType
-	1,  // 6: azdext.CopilotService.Initialize:input_type -> azdext.InitializeCopilotRequest
-	3,  // 7: azdext.CopilotService.ListSessions:input_type -> azdext.ListCopilotSessionsRequest
-	6,  // 8: azdext.CopilotService.SendMessage:input_type -> azdext.SendCopilotMessageRequest
-	8,  // 9: azdext.CopilotService.GetUsageMetrics:input_type -> azdext.GetCopilotUsageMetricsRequest
-	11, // 10: azdext.CopilotService.GetFileChanges:input_type -> azdext.GetCopilotFileChangesRequest
-	14, // 11: azdext.CopilotService.StopSession:input_type -> azdext.StopCopilotSessionRequest
-	2,  // 12: azdext.CopilotService.Initialize:output_type -> azdext.InitializeCopilotResponse
-	4,  // 13: azdext.CopilotService.ListSessions:output_type -> azdext.ListCopilotSessionsResponse
-	7,  // 14: azdext.CopilotService.SendMessage:output_type -> azdext.SendCopilotMessageResponse
-	9,  // 15: azdext.CopilotService.GetUsageMetrics:output_type -> azdext.GetCopilotUsageMetricsResponse
-	12, // 16: azdext.CopilotService.GetFileChanges:output_type -> azdext.GetCopilotFileChangesResponse
-	15, // 17: azdext.CopilotService.StopSession:output_type -> azdext.EmptyResponse
-	12, // [12:18] is the sub-list for method output_type
-	6,  // [6:12] is the sub-list for method input_type
-	6,  // [6:6] is the sub-list for extension type_name
-	6,  // [6:6] is the sub-list for extension extendee
-	0,  // [0:6] is the sub-list for field type_name
+	17, // 6: azdext.GetCopilotMessagesResponse.events:type_name -> azdext.CopilotSessionEvent
+	18, // 7: azdext.CopilotSessionEvent.data:type_name -> google.protobuf.Struct
+	1,  // 8: azdext.CopilotService.Initialize:input_type -> azdext.InitializeCopilotRequest
+	3,  // 9: azdext.CopilotService.ListSessions:input_type -> azdext.ListCopilotSessionsRequest
+	6,  // 10: azdext.CopilotService.SendMessage:input_type -> azdext.SendCopilotMessageRequest
+	8,  // 11: azdext.CopilotService.GetUsageMetrics:input_type -> azdext.GetCopilotUsageMetricsRequest
+	11, // 12: azdext.CopilotService.GetFileChanges:input_type -> azdext.GetCopilotFileChangesRequest
+	14, // 13: azdext.CopilotService.StopSession:input_type -> azdext.StopCopilotSessionRequest
+	15, // 14: azdext.CopilotService.GetMessages:input_type -> azdext.GetCopilotMessagesRequest
+	2,  // 15: azdext.CopilotService.Initialize:output_type -> azdext.InitializeCopilotResponse
+	4,  // 16: azdext.CopilotService.ListSessions:output_type -> azdext.ListCopilotSessionsResponse
+	7,  // 17: azdext.CopilotService.SendMessage:output_type -> azdext.SendCopilotMessageResponse
+	9,  // 18: azdext.CopilotService.GetUsageMetrics:output_type -> azdext.GetCopilotUsageMetricsResponse
+	12, // 19: azdext.CopilotService.GetFileChanges:output_type -> azdext.GetCopilotFileChangesResponse
+	19, // 20: azdext.CopilotService.StopSession:output_type -> azdext.EmptyResponse
+	16, // 21: azdext.CopilotService.GetMessages:output_type -> azdext.GetCopilotMessagesResponse
+	15, // [15:22] is the sub-list for method output_type
+	8,  // [8:15] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_copilot_proto_init() }
@@ -1025,7 +1197,7 @@ func file_copilot_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_copilot_proto_rawDesc), len(file_copilot_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   14,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -199,6 +199,9 @@ func WithSessionID(id string) SendOption {
 // SessionMetadata contains metadata about a previous session.
 type SessionMetadata = copilot.SessionMetadata
 
+// SessionEvent represents a single event from the Copilot session log.
+type SessionEvent = copilot.SessionEvent
+
 // Agent defines the interface for Copilot agent operations.
 // Used by the gRPC service layer to decouple from the concrete CopilotAgent implementation.
 type Agent interface {
@@ -212,6 +215,8 @@ type Agent interface {
 	ListSessions(ctx context.Context, cwd string) ([]SessionMetadata, error)
 	// GetMetrics returns cumulative session metrics (usage + file changes).
 	GetMetrics() AgentMetrics
+	// GetMessages returns the session event log from the Copilot SDK.
+	GetMessages(ctx context.Context) ([]SessionEvent, error)
 	// SessionID returns the current session ID, or empty if no session exists.
 	SessionID() string
 	// Stop terminates the agent and releases resources.

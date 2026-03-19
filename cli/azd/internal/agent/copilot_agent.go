@@ -427,6 +427,16 @@ func (a *CopilotAgent) GetMetrics() AgentMetrics {
 	}
 }
 
+// GetMessages returns the session event log from the Copilot SDK.
+// Returns an error if no session exists.
+func (a *CopilotAgent) GetMessages(ctx context.Context) ([]SessionEvent, error) {
+	if a.session == nil {
+		return nil, fmt.Errorf("no active session")
+	}
+
+	return a.session.GetMessages(ctx)
+}
+
 // collectFileChanges stops the watcher, collects its changes, and appends them
 // to the accumulated list. Returns the per-turn changes.
 func (a *CopilotAgent) collectFileChanges(watcher watch.Watcher) watch.FileChanges {

@@ -5,6 +5,7 @@ package grpcserver
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"os"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/watch"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // copilotService implements the CopilotServiceServer gRPC interface.
@@ -217,6 +219,28 @@ func (s *copilotService) GetFileChanges(
 	}, nil
 }
 
+// GetMessages returns the session event log from the Copilot SDK.
+func (s *copilotService) GetMessages(
+	ctx context.Context, req *azdext.GetCopilotMessagesRequest,
+) (*azdext.GetCopilotMessagesResponse, error) {
+	copilotAgent, err := s.getAgent(req.SessionId)
+	if err != nil {
+		return nil, err
+	}
+
+	events, err := copilotAgent.GetMessages(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get messages: %v", err)
+	}
+
+	protoEvents := make([]*azdext.CopilotSessionEvent, len(events))
+	for i, event := range events {
+		protoEvents[i] = convertSessionEvent(event)
+	}
+
+	return &azdext.GetCopilotMessagesResponse{Events: protoEvents}, nil
+}
+
 // StopSession stops and cleans up a Copilot agent session.
 func (s *copilotService) StopSession(
 	ctx context.Context, req *azdext.StopCopilotSessionRequest,
@@ -330,4 +354,36 @@ func convertFileChangeType(ct watch.FileChangeType) azdext.CopilotFileChangeType
 	default:
 		return azdext.CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_UNSPECIFIED
 	}
+}
+
+// convertSessionEvent converts a Copilot SDK SessionEvent to the proto representation.
+// Event data is marshaled to JSON then converted to google.protobuf.Struct for
+// dynamic, schema-free transport.
+func convertSessionEvent(event agent.SessionEvent) *azdext.CopilotSessionEvent {
+	protoEvent := &azdext.CopilotSessionEvent{
+		Type:      string(event.Type),
+		Timestamp: event.Timestamp.Format("2006-01-02T15:04:05.000Z"),
+	}
+
+	// Marshal event.Data to JSON, then to protobuf Struct
+	jsonBytes, err := json.Marshal(event.Data)
+	if err != nil {
+		log.Printf("[copilot-service] failed to marshal event data: %v", err)
+		return protoEvent
+	}
+
+	var dataMap map[string]any
+	if err := json.Unmarshal(jsonBytes, &dataMap); err != nil {
+		log.Printf("[copilot-service] failed to unmarshal event data to map: %v", err)
+		return protoEvent
+	}
+
+	protoStruct, err := structpb.NewStruct(dataMap)
+	if err != nil {
+		log.Printf("[copilot-service] failed to create protobuf struct: %v", err)
+		return protoEvent
+	}
+
+	protoEvent.Data = protoStruct
+	return protoEvent
 }

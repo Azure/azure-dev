@@ -37,7 +37,7 @@ if (-not (Test-Path $CoverageFile)) {
 Write-Host "Checking code coverage threshold (minimum: $MinimumCoveragePercent%)..."
 
 # Use 'go tool cover -func' to get per-function coverage and the total line.
-$output = & go tool cover -func=$CoverageFile 2>&1
+$output = & go tool cover "-func=$CoverageFile" 2>&1
 if ($LASTEXITCODE -ne 0) {
     throw "go tool cover -func failed: $output"
 }

@@ -63,5 +63,13 @@ type JobListItem struct {
 	Status      string `json:"status" table:"STATUS"`
 	JobType     string `json:"jobType" table:"TYPE"`
 	ComputeID   string `json:"computeId" table:"COMPUTE"`
+	CreatedBy   string `json:"createdBy" table:"CREATED BY"`
 	Created     string `json:"createdDateTime" table:"CREATED"`
+}
+
+// SystemData contains metadata about who created/modified the resource.
+type SystemData struct {
+	CreatedAt     string `json:"createdAt,omitempty"`
+	CreatedBy     string `json:"createdBy,omitempty"`
+	CreatedByType string `json:"createdByType,omitempty"`
 }

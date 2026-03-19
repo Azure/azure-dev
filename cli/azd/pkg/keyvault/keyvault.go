@@ -467,14 +467,18 @@ const keyVaultAppRefPrefix = "@Microsoft.KeyVault("
 
 // IsKeyVaultAppReference reports whether s uses the @Microsoft.KeyVault(SecretUri=...) format
 // used by Azure App Service and App Configuration for Key Vault references.
+// The prefix check is case-insensitive to match Azure App Service behavior.
 // Only the SecretUri= variant is supported; other forms (e.g., VaultName/SecretName) return false.
 func IsKeyVaultAppReference(s string) bool {
-	if !strings.HasPrefix(s, keyVaultAppRefPrefix) || !strings.HasSuffix(s, ")") {
+	if len(s) < len(keyVaultAppRefPrefix) ||
+		!strings.EqualFold(s[:len(keyVaultAppRefPrefix)], keyVaultAppRefPrefix) ||
+		!strings.HasSuffix(s, ")") {
 		return false
 	}
 
 	inner := strings.TrimSpace(s[len(keyVaultAppRefPrefix) : len(s)-1])
-	return strings.HasPrefix(inner, "SecretUri=") && len(inner) > len("SecretUri=")
+	return len(inner) > len("SecretUri=") &&
+		strings.EqualFold(inner[:len("SecretUri=")], "SecretUri=")
 }
 
 // IsSecretReference reports whether s is a Key Vault secret reference in either
@@ -533,7 +537,8 @@ func ParseKeyVaultAppReference(ref string) (KeyVaultAppReference, error) {
 	inner := strings.TrimSpace(ref[len(keyVaultAppRefPrefix) : len(ref)-1])
 
 	const secretURIPrefix = "SecretUri="
-	if !strings.HasPrefix(inner, secretURIPrefix) {
+	if len(inner) < len(secretURIPrefix) ||
+		!strings.EqualFold(inner[:len(secretURIPrefix)], secretURIPrefix) {
 		return KeyVaultAppReference{}, fmt.Errorf(
 			"invalid @Microsoft.KeyVault reference %q: expected SecretUri= parameter", ref)
 	}

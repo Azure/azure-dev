@@ -28,3 +28,5 @@
 /cli/azd/extensions/azure.ai.finetune/  @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @trangevi @achauhan-scc @kingernupur @rabollin @saanikaguptamicrosoft
 
 /cli/azd/extensions/azure.ai.models/  @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @trangevi @achauhan-scc @kingernupur @rabollin @saanikaguptamicrosoft
+
+/cli/azd/extensions/azure.ai.customtraining/  @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @trangevi @achauhan-scc @kingernupur @rabollin @saanikaguptamicrosoft

@@ -33,6 +33,8 @@ const (
 	stableVersionURL = "https://aka.ms/azure-dev/versions/cli/latest"
 	// blobBaseURL is the base URL for Azure Blob Storage where azd binaries are hosted.
 	blobBaseURL = "https://azuresdkartifacts.z5.web.core.windows.net/azd/standalone/release"
+	// installShScriptURL is the shell install script for azd on Linux/macOS.
+	installShScriptURL = "https://aka.ms/install-azd.sh"
 )
 
 // VersionInfo holds the result of a version check.
@@ -276,7 +278,12 @@ func (m *Manager) Update(ctx context.Context, cfg *UpdateConfig, writer io.Write
 		return m.updateViaPackageManager(ctx, "winget", []string{"upgrade", "Microsoft.Azd"}, writer)
 	case installer.InstallTypeChoco:
 		return m.updateViaPackageManager(ctx, "choco", []string{"upgrade", "azd"}, writer)
-	case installer.InstallTypePs, installer.InstallTypeSh, installer.InstallTypeDeb,
+	case installer.InstallTypeSh:
+		if runtime.GOOS == "windows" {
+			return m.updateViaMSI(ctx, cfg, writer)
+		}
+		return m.updateViaInstallScript(ctx, cfg, writer)
+	case installer.InstallTypePs, installer.InstallTypeDeb,
 		installer.InstallTypeRpm, installer.InstallTypeUnknown:
 		if runtime.GOOS == "windows" {
 			return m.updateViaMSI(ctx, cfg, writer)
@@ -368,6 +375,55 @@ func (m *Manager) updateViaBrew(ctx context.Context, cfg *UpdateConfig, writer i
 	default:
 		return fmt.Errorf("unsupported channel: %s", targetChannel)
 	}
+}
+
+func (m *Manager) updateViaInstallScript(ctx context.Context, cfg *UpdateConfig, writer io.Writer) error {
+	fmt.Fprintf(writer, "Updating azd via install script...\n")
+
+	currentPath, err := currentExePath()
+	if err != nil {
+		return fmt.Errorf("failed to determine current path: %w", err)
+	}
+	installFolder := filepath.Dir(currentPath)
+
+	// Download install-azd.sh to a temp file.
+	tempDir := os.TempDir()
+	scriptPath := filepath.Join(tempDir, "install-azd.sh")
+
+	if err := m.downloadFile(ctx, installShScriptURL, scriptPath, writer); err != nil {
+		return newUpdateError(CodeDownloadFailed, fmt.Errorf("failed to download install script: %w", err))
+	}
+	defer os.Remove(scriptPath)
+
+	// Make the script executable.
+	if err := os.Chmod(scriptPath, 0o555); err != nil {
+		return newUpdateError(CodeReplaceFailed, fmt.Errorf("failed to set script permissions: %w", err))
+	}
+
+	versionArg := string(cfg.Channel)
+	runArgs := exec.NewRunArgs("bash", scriptPath,
+		"--version", versionArg,
+		"--install-folder", installFolder,
+		"--symlink-folder", "",
+	)
+	runArgs = runArgs.WithStdOut(writer).WithStdErr(writer).WithInteractive(true)
+
+	log.Printf("Running install script: bash %s --version %s --install-folder %s --symlink-folder \"\"",
+		scriptPath, versionArg, installFolder)
+	fmt.Fprintf(writer, "Installing azd %s channel to %s...\n", cfg.Channel, installFolder)
+
+	result, err := m.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return newUpdateError(CodeReplaceFailed, fmt.Errorf("install script failed: %w", err))
+	}
+
+	if result.ExitCode != 0 {
+		return newUpdateErrorf(CodeReplaceFailed,
+			"install script failed with exit code %d", result.ExitCode)
+	}
+
+	log.Printf("Install script completed successfully")
+	return nil
 }
 
 func (m *Manager) updateViaPackageManager(

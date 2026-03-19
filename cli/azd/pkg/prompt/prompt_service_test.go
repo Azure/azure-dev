@@ -5,6 +5,7 @@ package prompt
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -165,4 +166,80 @@ func Test_PromptService_PromptSubscription_NoPrompt_AutoSelect(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFormatSubscriptionDisplayName_DemoModeHidesId(t *testing.T) {
+	displayName := formatSubscriptionDisplayName(&account.Subscription{
+		Id:   "/subscriptions/sub-1",
+		Name: "Subscription 1",
+	}, true)
+
+	require.Equal(t, "Subscription 1", displayName)
+}
+
+func TestPromptSubscription_NoPrompt_AutoSelect_DemoModeRedactsOutput(t *testing.T) {
+	t.Setenv("AZD_DEMO_MODE", "true")
+
+	ucm := newInMemoryUserConfigManager(nil)
+	authManager := &mockauth.MockAuthManager{}
+	subscriptionManager := &mockaccount.MockSubscriptionManager{}
+	resourceService := &mockazapi.MockResourceService{}
+	mockConsole := mockinput.NewMockConsole()
+	mockConsole.SetNoPromptMode(true)
+
+	subscriptionManager.
+		On("GetSubscriptions", mock.Anything).
+		Return([]account.Subscription{
+			{Id: "sub-1", TenantId: "tenant-1", Name: "My Only Sub"},
+		}, nil)
+
+	ps := NewPromptService(
+		authManager,
+		mockConsole,
+		ucm,
+		subscriptionManager,
+		resourceService,
+		&internal.GlobalCommandOptions{NoPrompt: true},
+	)
+
+	result, err := ps.PromptSubscription(context.Background(), nil)
+	require.NoError(t, err)
+	require.Equal(t, "sub-1", result.Id)
+	require.Len(t, mockConsole.Output(), 1)
+	require.Equal(t, "Auto-selected subscription: My Only Sub", mockConsole.Output()[0])
+}
+
+func TestPromptSubscription_NoPrompt_DefaultNotFound_DemoModeRedactsId(t *testing.T) {
+	t.Setenv("AZD_DEMO_MODE", "true")
+
+	cfg := config.NewEmptyConfig()
+	err := cfg.Set("defaults.subscription", "sub-secret")
+	require.NoError(t, err)
+
+	ucm := newInMemoryUserConfigManager(cfg)
+	authManager := &mockauth.MockAuthManager{}
+	subscriptionManager := &mockaccount.MockSubscriptionManager{}
+	resourceService := &mockazapi.MockResourceService{}
+	mockConsole := mockinput.NewMockConsole()
+	mockConsole.SetNoPromptMode(true)
+
+	subscriptionManager.
+		On("GetSubscriptions", mock.Anything).
+		Return([]account.Subscription{
+			{Id: "sub-1", TenantId: "tenant-1", Name: "Sub 1"},
+		}, nil)
+
+	ps := NewPromptService(
+		authManager,
+		mockConsole,
+		ucm,
+		subscriptionManager,
+		resourceService,
+		&internal.GlobalCommandOptions{NoPrompt: true},
+	)
+
+	_, err = ps.PromptSubscription(context.Background(), nil)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "default subscription not found")
+	require.False(t, strings.Contains(err.Error(), "sub-secret"))
 }

@@ -4,11 +4,14 @@
 package watch
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -18,7 +21,9 @@ import (
 )
 
 type Watcher interface {
+	// Deprecated: Use GetFileChanges().String() instead.
 	PrintChangedFiles(ctx context.Context)
+	GetFileChanges() FileChanges
 }
 
 type fileWatcher struct {
@@ -203,4 +208,96 @@ func (fw *fileWatcher) PrintChangedFiles(ctx context.Context) {
 			fmt.Println(output.WithGrayFormat("| "), color.RedString("- Deleted  "), getDisplayPath(file))
 		}
 	}
+}
+
+// FileChangeType enumerates the types of file changes.
+type FileChangeType int
+
+const (
+	// FileCreated indicates a new file was created.
+	FileCreated FileChangeType = iota
+	// FileModified indicates an existing file was modified.
+	FileModified
+	// FileDeleted indicates a file was deleted.
+	FileDeleted
+)
+
+// FileChange describes a single file change with its path and type.
+type FileChange struct {
+	Path       string
+	ChangeType FileChangeType
+}
+
+// String returns a formatted display string for a single file change.
+func (fc FileChange) String() string {
+	cwd, cwdErr := os.Getwd()
+	path := fc.Path
+	if cwdErr == nil {
+		if rel, err := filepath.Rel(cwd, fc.Path); err == nil {
+			path = rel
+		}
+	}
+
+	switch fc.ChangeType {
+	case FileCreated:
+		return fmt.Sprintf("%s %s %s",
+			output.WithGrayFormat("|"),
+			color.GreenString("+ Created  "),
+			path)
+	case FileModified:
+		return fmt.Sprintf("%s %s %s",
+			output.WithGrayFormat("|"),
+			color.YellowString("± Modified "),
+			path)
+	case FileDeleted:
+		return fmt.Sprintf("%s %s %s",
+			output.WithGrayFormat("|"),
+			color.RedString("- Deleted  "),
+			path)
+	default:
+		return fmt.Sprintf("%s   %s", output.WithGrayFormat("|"), path)
+	}
+}
+
+// FileChanges is a collection of file changes with formatted output support.
+type FileChanges []FileChange
+
+// String returns a formatted display of all file changes.
+func (fc FileChanges) String() string {
+	if len(fc) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString(output.WithGrayFormat("| Files changed:"))
+	for _, change := range fc {
+		b.WriteString("\n")
+		b.WriteString(change.String())
+	}
+	return b.String()
+}
+
+// GetFileChanges returns all file changes tracked by the watcher, sorted by path.
+func (fw *fileWatcher) GetFileChanges() FileChanges {
+	fw.mu.Lock()
+	defer fw.mu.Unlock()
+
+	changes := make(FileChanges, 0,
+		len(fw.fileChanges.Created)+len(fw.fileChanges.Modified)+len(fw.fileChanges.Deleted))
+
+	for file := range fw.fileChanges.Created {
+		changes = append(changes, FileChange{Path: file, ChangeType: FileCreated})
+	}
+	for file := range fw.fileChanges.Modified {
+		changes = append(changes, FileChange{Path: file, ChangeType: FileModified})
+	}
+	for file := range fw.fileChanges.Deleted {
+		changes = append(changes, FileChange{Path: file, ChangeType: FileDeleted})
+	}
+
+	slices.SortFunc(changes, func(a, b FileChange) int {
+		return cmp.Compare(a.Path, b.Path)
+	})
+
+	return changes
 }

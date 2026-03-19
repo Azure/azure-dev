@@ -139,7 +139,7 @@ type initAction struct {
 	featuresManager   *alpha.FeatureManager
 	extensionsManager *extensions.Manager
 	azd               workflow.AzdCommandRunner
-	agentFactory      *agent.CopilotAgentFactory
+	agentFactory      agent.AgentFactory
 	consentManager    consent.ConsentManager
 	configManager     config.UserConfigManager
 }
@@ -156,7 +156,7 @@ func newInitAction(
 	featuresManager *alpha.FeatureManager,
 	extensionsManager *extensions.Manager,
 	azd workflow.AzdCommandRunner,
-	agentFactory *agent.CopilotAgentFactory,
+	agentFactory agent.AgentFactory,
 	consentManager consent.ConsentManager,
 	configManager config.UserConfigManager,
 ) actions.Action {
@@ -530,7 +530,7 @@ When complete, provide a brief summary of what was accomplished.`
 
 	i.console.Message(ctx, color.MagentaString("Preparing application for Azure deployment..."))
 
-	result, err := copilotAgent.SendMessageWithRetry(ctx, prompt, opts...)
+	_, err = copilotAgent.SendMessageWithRetry(ctx, prompt, opts...)
 	if err != nil {
 		return err
 	}
@@ -540,10 +540,10 @@ When complete, provide a brief summary of what was accomplished.`
 		_ = azdCtx.ClearCopilotSession()
 	}
 
-	// Show usage
-	if usage := result.Usage.Format(); usage != "" {
+	// Show session metrics (usage + file changes)
+	if metrics := copilotAgent.GetMetrics().String(); metrics != "" {
 		i.console.Message(ctx, "")
-		i.console.Message(ctx, usage)
+		i.console.Message(ctx, metrics)
 	}
 
 	i.console.Message(ctx, "")

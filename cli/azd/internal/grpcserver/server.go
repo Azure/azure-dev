@@ -43,6 +43,7 @@ type Server struct {
 	containerService     azdext.ContainerServiceServer
 	accountService       azdext.AccountServiceServer
 	aiModelService       azdext.AiModelServiceServer
+	copilotService       azdext.CopilotServiceServer
 }
 
 func NewServer(
@@ -60,6 +61,7 @@ func NewServer(
 	containerService azdext.ContainerServiceServer,
 	accountService azdext.AccountServiceServer,
 	aiModelService azdext.AiModelServiceServer,
+	copilotService azdext.CopilotServiceServer,
 ) *Server {
 	return &Server{
 		projectService:       projectService,
@@ -76,6 +78,7 @@ func NewServer(
 		containerService:     containerService,
 		accountService:       accountService,
 		aiModelService:       aiModelService,
+		copilotService:       copilotService,
 	}
 }
 
@@ -122,6 +125,7 @@ func (s *Server) Start() (*ServerInfo, error) {
 	azdext.RegisterContainerServiceServer(s.grpcServer, s.containerService)
 	azdext.RegisterAccountServiceServer(s.grpcServer, s.accountService)
 	azdext.RegisterAiModelServiceServer(s.grpcServer, s.aiModelService)
+	azdext.RegisterCopilotServiceServer(s.grpcServer, s.copilotService)
 
 	serverInfo.Address = fmt.Sprintf("localhost:%d", randomPort)
 	serverInfo.Port = randomPort

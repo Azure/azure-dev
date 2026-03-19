@@ -68,7 +68,8 @@ stages:
             pwsh: true
             targetType: filePath
             filePath: $(Build.SourcesDirectory)/eng/scripts/Test-CodeCoverageThreshold.ps1
-            arguments: -CoverageFile cover.out -MinimumCoveragePercent ${{ parameters.MinimumCoveragePercent }}
+            arguments: -CoverageFile $(Build.SourcesDirectory)/cover.out -MinimumCoveragePercent ${{ parameters.MinimumCoveragePercent }}
+            workingDirectory: $(Build.SourcesDirectory)/cli/azd
           displayName: Check code coverage threshold
 
       - task: PublishCodeCoverageResults@1

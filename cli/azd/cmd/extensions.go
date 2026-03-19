@@ -244,22 +244,20 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		allEnv = append(allEnv, traceEnv...)
 	}
 
-	// Read global flags for propagation via InvokeOptions
-	debugEnabled, _ := a.cmd.Flags().GetBool("debug")
-	cwd, _ := a.cmd.Flags().GetString("cwd")
-	envName, _ := a.cmd.Flags().GetString("environment")
-
+	// Use pre-parsed global options for flag propagation.
+	// For extension commands (DisableFlagParsing: true), cobra doesn't parse persistent flags,
+	// but ParseGlobalFlags already parsed them into globalOptions before command execution.
 	options := &extensions.InvokeOptions{
 		Args: a.args,
 		Env:  allEnv,
 		// cmd extensions are always interactive (connected to terminal)
 		Interactive: true,
-		Debug:       debugEnabled,
+		Debug:       a.globalOptions.EnableDebugLogging,
 		// Use globalOptions.NoPrompt which includes agent detection,
 		// not just the --no-prompt CLI flag
 		NoPrompt:    a.globalOptions.NoPrompt,
-		Cwd:         cwd,
-		Environment: envName,
+		Cwd:         a.globalOptions.Cwd,
+		Environment: a.globalOptions.EnvironmentName,
 	}
 
 	_, invokeErr := a.extensionRunner.Invoke(ctx, extension, options)

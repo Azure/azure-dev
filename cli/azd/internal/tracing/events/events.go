@@ -15,6 +15,9 @@ const CommandEventPrefix = "cmd."
 // Prefix for vsrpc events.
 const VsRpcEventPrefix = "vsrpc."
 
+// Prefix for MCP related events.
+const McpEventPrefix = "mcp."
+
 // PackBuildEvent is the name of the event which tracks the overall pack build operation.
 const PackBuildEvent = "tools.pack.build"
 

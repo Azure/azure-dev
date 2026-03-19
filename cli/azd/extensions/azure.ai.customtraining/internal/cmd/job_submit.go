@@ -78,17 +78,8 @@ func newJobSubmitCommand() *cobra.Command {
 				jobDef.Name = utils.GenerateJobName()
 			}
 
-			// Resolve relative paths in YAML to absolute paths as it's required during upload
-			yamlDir := filepath.Dir(filePath)
-			if jobDef.Code != "" && !filepath.IsAbs(jobDef.Code) && !service.IsRemoteURI(jobDef.Code) {
-				jobDef.Code = filepath.Join(yamlDir, jobDef.Code)
-			}
-			for name, input := range jobDef.Inputs {
-				if input.Path != "" && !filepath.IsAbs(input.Path) && !service.IsRemoteURI(input.Path) {
-					input.Path = filepath.Join(yamlDir, input.Path)
-					jobDef.Inputs[name] = input
-				}
-			}
+			// Resolve relative paths in YAML to absolute paths (required during upload)
+			jobDef.ResolveRelativePaths(filepath.Dir(filePath))
 
 			// Initialize azcopy runner (auto-detects or auto-installs)
 			azRunner, err := azcopy.NewRunner(ctx, "")

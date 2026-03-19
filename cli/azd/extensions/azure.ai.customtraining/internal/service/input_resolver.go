@@ -21,7 +21,7 @@ type DefaultInputResolver struct {
 //   - uploadSvc: handles the actual dataset upload (POST → azcopy → PATCH) with dedup
 func NewDefaultInputResolver(uploadSvc *UploadService) *DefaultInputResolver {
 	return &DefaultInputResolver{
-		uploadSvc:   uploadSvc
+		uploadSvc: uploadSvc,
 	}
 }
 

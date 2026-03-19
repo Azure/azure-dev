@@ -54,7 +54,7 @@ func (r *JobResolver) ResolveJobDefinition(ctx context.Context, jobDef *utils.Jo
 	}
 
 	// Resolve code: local path → datastore asset ID
-	if jobDef.Code != "" && !IsRemoteURI(jobDef.Code) {
+	if jobDef.Code != "" && !utils.IsRemoteURI(jobDef.Code) {
 		codeID, err := r.code.ResolveCode(ctx, jobDef.Code)
 		if err != nil {
 			return fmt.Errorf("failed to resolve code path '%s': %w", jobDef.Code, err)
@@ -64,7 +64,7 @@ func (r *JobResolver) ResolveJobDefinition(ctx context.Context, jobDef *utils.Jo
 
 	// Resolve inputs: local paths → datastore URIs
 	for name, input := range jobDef.Inputs {
-		if input.Path != "" && !IsRemoteURI(input.Path) && input.Value == "" {
+		if input.Path != "" && !utils.IsRemoteURI(input.Path) && input.Value == "" {
 			uri, err := r.input.ResolveInput(ctx, name, input.Path, input.Type)
 			if err != nil {
 				return fmt.Errorf("failed to resolve input '%s' path '%s': %w", name, input.Path, err)
@@ -80,12 +80,4 @@ func (r *JobResolver) ResolveJobDefinition(ctx context.Context, jobDef *utils.Jo
 // isARMResourceID checks if a string is a full ARM resource ID.
 func isARMResourceID(s string) bool {
 	return strings.HasPrefix(strings.ToLower(s), "/subscriptions/")
-}
-
-// IsRemoteURI checks if a string is a remote URI (not a local path).
-func IsRemoteURI(s string) bool {
-	lower := strings.ToLower(s)
-	return strings.HasPrefix(lower, "azureml://") ||
-		strings.HasPrefix(lower, "https://") ||
-		strings.HasPrefix(lower, "http://")
 }

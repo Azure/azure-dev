@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"strings"
 
 	"azure.ai.customtraining/internal/azcopy"
 	"azure.ai.customtraining/pkg/client"
@@ -215,20 +214,4 @@ func (s *UploadService) doUpload(
 		DatasetName:       datasetName,
 		DatasetVersion:    version,
 	}, nil
-}
-
-// IsLocalPath returns true if the path is a local file/directory path (not a remote URI).
-// Any path containing "://" is treated as remote (azureml://, https://, wasbs://, etc.).
-// The short-form azureml:name:version is also treated as remote.
-func IsLocalPath(path string) bool {
-	if path == "" {
-		return false
-	}
-	if strings.Contains(path, "://") {
-		return false
-	}
-	if strings.HasPrefix(strings.ToLower(path), "azureml:") {
-		return false
-	}
-	return true
 }

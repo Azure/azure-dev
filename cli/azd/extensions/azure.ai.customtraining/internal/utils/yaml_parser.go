@@ -6,6 +6,8 @@ package utils
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -63,6 +65,28 @@ func ParseJobFile(path string) (*JobDefinition, error) {
 	}
 
 	return &job, nil
+}
+
+// ResolveRelativePaths converts relative paths in the job definition to absolute paths
+// based on the YAML file's directory. Remote URIs (azureml://, https://, http://) are left as-is.
+func (j *JobDefinition) ResolveRelativePaths(yamlDir string) {
+	if j.Code != "" && !filepath.IsAbs(j.Code) && !IsRemoteURI(j.Code) {
+		j.Code = filepath.Join(yamlDir, j.Code)
+	}
+	for name, input := range j.Inputs {
+		if input.Path != "" && !filepath.IsAbs(input.Path) && !IsRemoteURI(input.Path) {
+			input.Path = filepath.Join(yamlDir, input.Path)
+			j.Inputs[name] = input
+		}
+	}
+}
+
+// IsRemoteURI checks if a string is a remote URI (not a local path).
+func IsRemoteURI(s string) bool {
+	lower := strings.ToLower(s)
+	return strings.HasPrefix(lower, "azureml://") ||
+		strings.HasPrefix(lower, "https://") ||
+		strings.HasPrefix(lower, "http://")
 }
 
 // ValidateJobDefinition checks that required fields are present.

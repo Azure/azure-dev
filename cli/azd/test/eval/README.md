@@ -362,39 +362,79 @@ cli/azd/test/eval/
 
 ## Authentication & Secrets
 
-### No credentials needed
+### Test tiers and what they need
 
-| Command | Description |
-|---------|-------------|
-| `npm run test:unit` | 75 Jest unit tests against the local `azd` binary |
-| `npm run waza:run:mock` | Waza LLM evals with mock executor (offline) |
-| `npm run test:human` | Human usage baseline tests |
+| Tier | Command | Azure Auth | Copilot Token | Browser Popups |
+|------|---------|-----------|---------------|----------------|
+| Unit tests | `npm run test:unit` | ❌ None | ❌ None | Never |
+| Human tests | `npm run test:human` | ❌ None | ❌ None | Never |
+| Mock LLM eval | `npm run waza:run:mock` | ❌ None | ❌ None | Never |
+| LLM eval | `npm run waza:run` | ❌ None | ✅ Required | Never |
+| E2E lifecycle | `eval-e2e.yml` | ✅ Required | ✅ Required | Never (OIDC) |
+
+> **No test should ever open a browser.** Unit and human tests use `--no-prompt` and only test help text / error messages — they never call Azure APIs. E2E workflows use OIDC service principal auth (headless).
 
 ### Local development
 
 ```bash
-# Azure auth (required for E2E graders that validate infrastructure/cleanup)
+# 1. Log in to Azure (one-time, uses your existing browser session)
 az login
-az account set --subscription <SUBSCRIPTION_ID>
+az account set --subscription <YOUR_SUBSCRIPTION_ID>
 
-# Copilot CLI token (required for real Waza LLM eval runs)
+# 2. Verify your auth works (no browser should open)
+azd auth login    # uses cached az credentials
+
+# 3. Run tests — unit tests never touch Azure
+npm run test:unit
+
+# 4. For LLM evals (optional)
 export COPILOT_CLI_TOKEN=<your-copilot-cli-token>
 npm run waza:run
 ```
 
-### GitHub Actions secrets
+**Configuring a specific subscription for E2E graders:**
 
-Configure these in the repository settings for CI workflows:
+```bash
+# Set the subscription that E2E graders will validate against
+export AZURE_SUBSCRIPTION_ID=<your-subscription-id>
+
+# Or configure via azd
+azd config set defaults.subscription <your-subscription-id>
+```
+
+### CI/CD setup (GitHub Actions)
+
+Configure these repository secrets (**Settings → Secrets and variables → Actions**):
 
 | Secret | Used By | Purpose | How to Obtain |
 |--------|---------|---------|---------------|
-| `AZURE_CLIENT_ID` | `eval-e2e.yml` | OIDC Azure Login | Create a service principal in Microsoft Entra ID with [federated credential](https://learn.microsoft.com/en-us/entra/workload-id/workload-identity-federation-create-trust) for GitHub Actions |
+| `AZURE_CLIENT_ID` | `eval-e2e.yml` | OIDC Azure Login (no browser) | Create a service principal in Microsoft Entra ID with [federated credential](https://learn.microsoft.com/en-us/entra/workload-id/workload-identity-federation-create-trust) for GitHub Actions |
 | `AZURE_TENANT_ID` | `eval-e2e.yml` | OIDC Azure Login | Microsoft Entra ID → Overview → Tenant ID |
 | `AZURE_SUBSCRIPTION_ID` | `eval-e2e.yml`, graders | Target subscription for E2E deployments | Azure Portal → Subscriptions |
 | `COPILOT_CLI_TOKEN` | `eval-waza.yml`, `eval-e2e.yml` | Authenticate Waza Copilot SDK executor | Copilot CLI API token |
 | `GITHUB_TOKEN` | `eval-report.yml` | Create regression issues from reports | Auto-provided by GitHub Actions (no setup needed) |
 
-> **Note:** The `AZURE_*` secrets use [OIDC federated credentials](https://learn.microsoft.com/en-us/entra/workload-id/workload-identity-federation) — no client secret is stored. The service principal needs `Contributor` role on the target subscription. The graders obtain Azure access tokens at runtime via `az account get-access-token` (falling back to the `AZURE_ACCESS_TOKEN` env var).
+**Setting up the service principal for CI:**
+
+```bash
+# 1. Create the service principal
+az ad sp create-for-rbac --name "azd-eval-ci" --role Contributor \
+  --scopes /subscriptions/<SUBSCRIPTION_ID>
+
+# 2. Add OIDC federated credential for GitHub Actions
+az ad app federated-credential create \
+  --id <APP_OBJECT_ID> \
+  --parameters '{
+    "name": "azd-eval-github",
+    "issuer": "https://token.actions.githubusercontent.com",
+    "subject": "repo:Azure/azure-dev:ref:refs/heads/main",
+    "audiences": ["api://AzureADTokenExchange"]
+  }'
+
+# 3. Add the 3 secrets to the repo (AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID)
+```
+
+> **Note:** OIDC federated credentials mean no client secret is stored anywhere. The service principal needs `Contributor` role on the target subscription. Graders obtain Azure access tokens at runtime via `az account get-access-token`.
 
 ## Reports
 

@@ -367,6 +367,11 @@ overrides:
     words:
       - covdata
       - GOWORK
+  - filename: test/eval/README.md
+    words:
+      - Waza
+      - waza
+      - urlopen
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

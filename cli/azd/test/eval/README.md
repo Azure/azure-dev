@@ -107,6 +107,42 @@ graders:
 | `eval-human.yml` | Weekly | Human usage baseline tests |
 | `eval-report.yml` | Weekly | Comparison report + auto-issue creation |
 
+## Authentication & Secrets
+
+### No credentials needed
+
+| Command | Description |
+|---------|-------------|
+| `npm run test:unit` | 75 Jest unit tests against the local `azd` binary |
+| `npm run waza:run:mock` | Waza LLM evals with mock executor (offline) |
+| `npm run test:human` | Human usage baseline tests |
+
+### Local development
+
+```bash
+# Azure auth (required for E2E graders that validate infrastructure/cleanup)
+az login
+az account set --subscription <SUBSCRIPTION_ID>
+
+# Copilot CLI token (required for real Waza LLM eval runs)
+export COPILOT_CLI_TOKEN=<your-copilot-cli-token>
+npm run waza:run
+```
+
+### GitHub Actions secrets
+
+Configure these in the repository settings for CI workflows:
+
+| Secret | Used By | Purpose | How to Obtain |
+|--------|---------|---------|---------------|
+| `AZURE_CLIENT_ID` | `eval-e2e.yml` | OIDC Azure Login | Create a service principal in Microsoft Entra ID with [federated credential](https://learn.microsoft.com/en-us/entra/workload-id/workload-identity-federation-create-trust) for GitHub Actions |
+| `AZURE_TENANT_ID` | `eval-e2e.yml` | OIDC Azure Login | Microsoft Entra ID → Overview → Tenant ID |
+| `AZURE_SUBSCRIPTION_ID` | `eval-e2e.yml`, graders | Target subscription for E2E deployments | Azure Portal → Subscriptions |
+| `COPILOT_CLI_TOKEN` | `eval-waza.yml`, `eval-e2e.yml` | Authenticate Waza Copilot SDK executor | Copilot CLI API token |
+| `GITHUB_TOKEN` | `eval-report.yml` | Create regression issues from reports | Auto-provided by GitHub Actions (no setup needed) |
+
+> **Note:** The `AZURE_*` secrets use [OIDC federated credentials](https://learn.microsoft.com/en-us/entra/workload-id/workload-identity-federation) — no client secret is stored. The service principal needs `Contributor` role on the target subscription. The graders obtain Azure access tokens at runtime via `az account get-access-token` (falling back to the `AZURE_ACCESS_TOKEN` env var).
+
 ## Reports
 
 Generated reports are saved to `reports/` (gitignored). In CI, they're uploaded as workflow artifacts with 30-day retention.

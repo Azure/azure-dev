@@ -5,7 +5,9 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,8 +18,66 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/denormal/go-gitignore"
 )
+
+const functionAppRemoteBuildDocURL = "https://aka.ms/azd-functionapp-remote-build"
+
+// resolveFunctionAppRemoteBuild returns the appropriate remote build setting for function apps.
+func resolveFunctionAppRemoteBuild(serviceConfig *ServiceConfig) (remoteBuild bool, err error) {
+	switch serviceConfig.Language {
+	case ServiceLanguageJavaScript, ServiceLanguageTypeScript:
+		ignore, err := gitignore.NewFromFile(filepath.Join(serviceConfig.Path(), serviceConfig.Host.IgnoreFile()))
+		if errors.Is(err, fs.ErrNotExist) {
+			// no ignore file, default to true
+			return true, nil
+		}
+
+		if err != nil {
+			return false, fmt.Errorf("reading ignore file: %w", err)
+		}
+
+		nodeModulesExcluded := false
+		if match := ignore.Relative("node_modules", true); match != nil && match.Ignore() {
+			nodeModulesExcluded = true
+		}
+
+		if serviceConfig.RemoteBuild == nil { // remoteBuild option unset
+			// enable remote build only if 'node_modules' is excluded
+			return nodeModulesExcluded, nil
+		}
+
+		if *serviceConfig.RemoteBuild && !nodeModulesExcluded {
+			return false, &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf("'remoteBuild: true' requires '.funcignore' to exclude node_modules"),
+				Suggestion: fmt.Sprintf(
+					"Update '.funcignore' to exclude node_modules, or set 'remoteBuild: false'. Learn more: %s",
+					output.WithLinkFormat(functionAppRemoteBuildDocURL),
+				),
+			}
+		}
+
+		if !*serviceConfig.RemoteBuild && nodeModulesExcluded {
+			return false, &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf("'remoteBuild: false' cannot be used when '.funcignore' excludes node_modules"),
+				Suggestion: fmt.Sprintf(
+					"Set 'remoteBuild: true', or remove node_modules from '.funcignore'. Learn more: %s",
+					output.WithLinkFormat(functionAppRemoteBuildDocURL),
+				),
+			}
+		}
+
+		return *serviceConfig.RemoteBuild, nil
+	default:
+		if serviceConfig.RemoteBuild != nil {
+			return *serviceConfig.RemoteBuild, nil
+		}
+
+		return serviceConfig.Language == ServiceLanguagePython, nil
+	}
+}
 
 // functionAppTarget specifies an Azure Function to deploy to.
 // Implements `project.ServiceTarget`
@@ -156,17 +216,14 @@ func (f *functionAppTarget) Deploy(
 	}
 
 	progress.SetProgress(NewServiceProgress("Uploading deployment package"))
-	var remoteBuild bool
-	if serviceConfig.RemoteBuild != nil {
-		remoteBuild = *serviceConfig.RemoteBuild
-	} else {
-		remoteBuild = serviceConfig.Language == ServiceLanguageJavaScript ||
-			serviceConfig.Language == ServiceLanguageTypeScript ||
-			serviceConfig.Language == ServiceLanguagePython
-	}
 
 	// Deploy to appropriate plan type
 	if isFlexConsumption {
+		remoteBuild, buildErr := resolveFunctionAppRemoteBuild(serviceConfig)
+		if buildErr != nil {
+			return nil, buildErr
+		}
+
 		_, err = f.cli.DeployFunctionAppUsingZipFileFlexConsumption(
 			ctx,
 			targetResource.SubscriptionId(),

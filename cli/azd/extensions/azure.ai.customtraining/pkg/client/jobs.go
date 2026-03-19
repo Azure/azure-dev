@@ -12,10 +12,32 @@ import (
 	"azure.ai.customtraining/pkg/models"
 )
 
+// ListJobsOptions contains optional parameters for listing jobs.
+type ListJobsOptions struct {
+	SkipToken       string
+	Tag             string
+	Properties      string
+	IncludeArchived bool
+}
+
 // ListJobs lists all jobs in the project.
 // GET .../jobs
-func (c *Client) ListJobs(ctx context.Context) (*models.PagedResponse, error) {
-	resp, err := c.doDataPlane(ctx, http.MethodGet, "jobs", nil)
+func (c *Client) ListJobs(ctx context.Context, opts *ListJobsOptions) (*models.PagedResponse, error) {
+	var queryParams []string
+	if opts != nil && opts.SkipToken != "" {
+		queryParams = append(queryParams, "$skipToken", opts.SkipToken)
+	}
+	if opts != nil && opts.Tag != "" {
+		queryParams = append(queryParams, "tag", opts.Tag)
+	}
+	if opts != nil && opts.Properties != "" {
+		queryParams = append(queryParams, "properties", opts.Properties)
+	}
+	if opts != nil && opts.IncludeArchived {
+		queryParams = append(queryParams, "listViewType", "All")
+	}
+
+	resp, err := c.doDataPlane(ctx, http.MethodGet, "jobs", nil, queryParams...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list jobs: %w", err)
 	}

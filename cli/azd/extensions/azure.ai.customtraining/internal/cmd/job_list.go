@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 
 	"azure.ai.customtraining/internal/utils"
@@ -18,6 +19,10 @@ import (
 
 func newJobListCommand() *cobra.Command {
 	var outputFormat string
+	var skipToken string
+	var tag string
+	var properties string
+	var includeArchived bool
 
 	cmd := &cobra.Command{
 		Use:   "list",
@@ -58,7 +63,19 @@ func newJobListCommand() *cobra.Command {
 				return fmt.Errorf("failed to create API client: %w", err)
 			}
 
-			result, err := apiClient.ListJobs(ctx)
+			opts := &client.ListJobsOptions{}
+			if skipToken != "" {
+				opts.SkipToken = skipToken
+			}
+			if tag != "" {
+				opts.Tag = tag
+			}
+			if properties != "" {
+				opts.Properties = properties
+			}
+			opts.IncludeArchived = includeArchived
+
+			result, err := apiClient.ListJobs(ctx, opts)
 			if err != nil {
 				return fmt.Errorf("failed to list jobs: %w", err)
 			}
@@ -78,13 +95,20 @@ func newJobListCommand() *cobra.Command {
 					computeName = parts[len(parts)-1]
 				}
 
+				var createdAt, createdBy string
+				if job.SystemData != nil {
+					createdAt = job.SystemData.CreatedAt
+					createdBy = job.SystemData.CreatedBy
+				}
+
 				items[i] = models.JobListItem{
 					Name:        job.Name,
 					DisplayName: job.Properties.DisplayName,
 					Status:      job.Properties.Status,
 					JobType:     job.Properties.JobType,
 					ComputeID:   computeName,
-					Created:     job.Properties.CreatedDateTime,
+					CreatedBy:   createdBy,
+					Created:     createdAt,
 				}
 			}
 
@@ -92,11 +116,32 @@ func newJobListCommand() *cobra.Command {
 				return err
 			}
 
+			if nextToken := extractSkipToken(result.NextLink); nextToken != "" {
+				fmt.Printf("\nMore results available. Run the following command to see the next page:\n")
+				fmt.Printf("  azd ai training job list --skip-token \"%s\"\n", nextToken)
+			}
+
 			return nil
 		},
 	}
 
 	cmd.Flags().StringVarP(&outputFormat, "output", "o", "table", "Output format (table|json)")
+	cmd.Flags().StringVar(&skipToken, "skip-token", "", "Continuation token for next page of results")
+	cmd.Flags().StringVar(&tag, "tag", "", "Filter results by tag key (e.g., --tag team)")
+	cmd.Flags().StringVar(&properties, "properties", "", "Filter results by properties (comma-separated, e.g., --properties \"prop1,prop2=value2\")")
+	cmd.Flags().BoolVar(&includeArchived, "include-archived", false, "Include archived jobs in the results (default: active only)")
 
 	return cmd
+}
+
+// extractSkipToken parses the $skipToken query parameter from a nextLink URL.
+func extractSkipToken(nextLink string) string {
+	if nextLink == "" {
+		return ""
+	}
+	parsed, err := url.Parse(nextLink)
+	if err != nil {
+		return ""
+	}
+	return parsed.Query().Get("$skipToken")
 }

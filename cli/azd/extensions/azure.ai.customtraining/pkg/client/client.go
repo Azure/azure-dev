@@ -75,8 +75,11 @@ func NewClient(projectEndpoint string, credential azcore.TokenCredential) (*Clie
 }
 
 // doDataPlane executes an authenticated HTTP request against the data plane.
-func (c *Client) doDataPlane(ctx context.Context, method, path string, body interface{}) (*http.Response, error) {
+func (c *Client) doDataPlane(ctx context.Context, method, path string, body interface{}, queryParams ...string) (*http.Response, error) {
 	reqURL := fmt.Sprintf("%s%s/%s?api-version=%s", c.baseURL, c.subPath, path, c.apiVersion)
+	for i := 0; i+1 < len(queryParams); i += 2 {
+		reqURL += fmt.Sprintf("&%s=%s", queryParams[i], url.QueryEscape(queryParams[i+1]))
+	}
 
 	fmt.Printf("[DEBUG] %s %s\n", method, reqURL)
 

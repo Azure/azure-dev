@@ -8,6 +8,7 @@ type JobResource struct {
 	ID         string            `json:"id,omitempty"`
 	Name       string            `json:"name,omitempty" table:"NAME"`
 	Properties CommandJob        `json:"properties"`
+	SystemData *SystemData       `json:"systemData,omitempty"`
 	Tags       map[string]string `json:"tags,omitempty"`
 }
 

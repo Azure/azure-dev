@@ -6,7 +6,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 
 	"github.com/google/uuid"
 )
@@ -17,36 +16,27 @@ import (
 type DefaultCodeResolver struct {
 	uploadSvc   *UploadService
 	projectName string
-	yamlDir     string
 }
 
 // NewDefaultCodeResolver creates a code resolver that uploads local code directories.
 //   - uploadSvc: handles the actual dataset upload (POST → azcopy → PATCH) with dedup
 //   - projectName: used for content-scoped naming (e.g., "code-{projectName}")
-//   - yamlDir: base directory for resolving relative code paths in the YAML
-func NewDefaultCodeResolver(uploadSvc *UploadService, projectName, yamlDir string) *DefaultCodeResolver {
+func NewDefaultCodeResolver(uploadSvc *UploadService, projectName string) *DefaultCodeResolver {
 	return &DefaultCodeResolver{
 		uploadSvc:   uploadSvc,
 		projectName: projectName,
-		yamlDir:     yamlDir,
 	}
 }
 
 // ResolveCode uploads a local code directory and returns the dataset resource ID.
-// The codePath is the raw value from the YAML (e.g., "./src" or "../code").
+// The codePath must be an absolute path (relative paths should be resolved by the caller).
 func (r *DefaultCodeResolver) ResolveCode(ctx context.Context, codePath string) (string, error) {
-	// Resolve relative paths against the YAML file's directory
-	resolvedPath := codePath
-	if !filepath.IsAbs(resolvedPath) {
-		resolvedPath = filepath.Join(r.yamlDir, resolvedPath)
-	}
-
 	// Content-scoped naming: code-{projectName}. Dedup is handled by version (content hash).
 	assetName := fmt.Sprintf("code-%s", r.projectName)
 	fmt.Printf("  Uploading code (%s)...\n", codePath)
 
 	result, err := r.uploadSvc.UploadDirectory(
-		ctx, resolvedPath, assetName,
+		ctx, codePath, assetName,
 		fmt.Sprintf("Code for project %s", r.projectName),
 	)
 	if err != nil {
@@ -58,7 +48,7 @@ func (r *DefaultCodeResolver) ResolveCode(ctx context.Context, codePath string) 
 		fallbackName := fmt.Sprintf("code-%s", uuid.New().String())
 		fmt.Printf("  (hash collision on %s, falling back to %s)\n", assetName, fallbackName)
 		result, err = r.uploadSvc.UploadDirectoryNoDedup(
-			ctx, resolvedPath, fallbackName, "1",
+			ctx, codePath, fallbackName, "1",
 			fmt.Sprintf("Code for project %s (collision fallback)", r.projectName),
 		)
 		if err != nil {

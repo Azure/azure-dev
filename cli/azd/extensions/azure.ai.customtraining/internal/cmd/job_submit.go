@@ -78,8 +78,17 @@ func newJobSubmitCommand() *cobra.Command {
 				jobDef.Name = utils.GenerateJobName()
 			}
 
-			// Resolve base directory for relative paths in the YAML file
+			// Resolve relative paths in YAML against the YAML file's directory
 			yamlDir := filepath.Dir(filePath)
+			if jobDef.Code != "" && !filepath.IsAbs(jobDef.Code) && !service.IsRemoteURI(jobDef.Code) {
+				jobDef.Code = filepath.Join(yamlDir, jobDef.Code)
+			}
+			for name, input := range jobDef.Inputs {
+				if input.Path != "" && !filepath.IsAbs(input.Path) && !service.IsRemoteURI(input.Path) {
+					input.Path = filepath.Join(yamlDir, input.Path)
+					jobDef.Inputs[name] = input
+				}
+			}
 
 			// Initialize azcopy runner (auto-detects or auto-installs)
 			azRunner, err := azcopy.NewRunner(ctx, "")
@@ -92,8 +101,8 @@ func newJobSubmitCommand() *cobra.Command {
 			// Resolve references (compute name → ARM ID, local paths → datastore URIs)
 			resolver := service.NewJobResolver(
 				service.NewDefaultComputeResolver(),
-				service.NewDefaultCodeResolver(uploadSvc, projectName, yamlDir),
-				service.NewDefaultInputResolver(uploadSvc, projectName, yamlDir),
+				service.NewDefaultCodeResolver(uploadSvc, projectName),
+				service.NewDefaultInputResolver(uploadSvc, projectName),
 			)
 			if err := resolver.ResolveJobDefinition(ctx, jobDef); err != nil {
 				return fmt.Errorf("failed to resolve job definition: %w", err)

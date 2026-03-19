@@ -6,7 +6,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 
 	"github.com/google/uuid"
 )
@@ -17,37 +16,28 @@ import (
 type DefaultInputResolver struct {
 	uploadSvc   *UploadService
 	projectName string
-	yamlDir     string
 }
 
 // NewDefaultInputResolver creates an input resolver that uploads local input directories.
 //   - uploadSvc: handles the actual dataset upload (POST → azcopy → PATCH) with dedup
 //   - projectName: used in dataset descriptions
-//   - yamlDir: base directory for resolving relative input paths in the YAML
-func NewDefaultInputResolver(uploadSvc *UploadService, projectName, yamlDir string) *DefaultInputResolver {
+func NewDefaultInputResolver(uploadSvc *UploadService, projectName string) *DefaultInputResolver {
 	return &DefaultInputResolver{
 		uploadSvc:   uploadSvc,
 		projectName: projectName,
-		yamlDir:     yamlDir,
 	}
 }
 
 // ResolveInput uploads a local input directory and returns the dataset resource ID.
-// The inputPath is the raw value from the YAML (e.g., "./data" or "../datasets/train").
+// The inputPath must be an absolute path (relative paths should be resolved by the caller).
 // inputName is the YAML key (e.g., "training_data") used for dataset naming.
 func (r *DefaultInputResolver) ResolveInput(ctx context.Context, inputName string, inputPath string, inputType string) (string, error) {
-	// Resolve relative paths against the YAML file's directory
-	resolvedPath := inputPath
-	if !filepath.IsAbs(resolvedPath) {
-		resolvedPath = filepath.Join(r.yamlDir, resolvedPath)
-	}
-
 	// Content-scoped naming: input-{inputName}. Dedup is handled by version (content hash).
 	assetName := fmt.Sprintf("input-%s", inputName)
 	fmt.Printf("  ├─ %s: uploading %s...\n", inputName, inputPath)
 
 	result, err := r.uploadSvc.UploadDirectory(
-		ctx, resolvedPath, assetName,
+		ctx, inputPath, assetName,
 		fmt.Sprintf("Input %s for project %s", inputName, r.projectName),
 	)
 	if err != nil {
@@ -59,7 +49,7 @@ func (r *DefaultInputResolver) ResolveInput(ctx context.Context, inputName strin
 		fallbackName := fmt.Sprintf("input-%s-%s", uuid.New().String(), inputName)
 		fmt.Printf("  (hash collision on %s, falling back to %s)\n", assetName, fallbackName)
 		result, err = r.uploadSvc.UploadDirectoryNoDedup(
-			ctx, resolvedPath, fallbackName, "1",
+			ctx, inputPath, fallbackName, "1",
 			fmt.Sprintf("Input %s for project %s (collision fallback)", inputName, r.projectName),
 		)
 		if err != nil {

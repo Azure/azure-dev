@@ -55,36 +55,289 @@ npm run waza:run
 npm run test:human
 ```
 
-## Adding a New Scenario
+## How-To Guides
 
-1. Create a YAML file in the appropriate `tasks/` subdirectory
-2. Define `id`, `description`, `inputs.prompt`, and `graders`
-3. Choose graders:
-   - `text` — regex pattern matching on LLM response
-   - `action_sequence` — verify command ordering
-   - `behavior` — efficiency constraints (max tool calls, tokens)
-   - `code` — custom Python validation (for E2E tests)
-4. Submit a PR — CI validates YAML syntax automatically
+### Adding a Waza LLM Eval Task
 
-### Example
+Waza tasks are YAML files that define a prompt → grader pipeline. Each task sends a user prompt to the LLM and grades the response.
+
+**Step 1: Pick the right category folder**
+
+| Category | Directory | When to use |
+|----------|-----------|-------------|
+| `tasks/deploy/` | User wants to deploy something to Azure |
+| `tasks/troubleshoot/` | User pastes an error and asks for help |
+| `tasks/environment/` | User manages azd environments |
+| `tasks/lifecycle/` | Full init→provision→deploy→down workflows |
+| `tasks/negative/` | Questions where azd is the **wrong** tool |
+
+**Step 2: Create the YAML file**
+
+```bash
+# Example: test that the LLM handles a "wrong SKU" error
+touch tasks/troubleshoot/wrong-sku-error.yaml
+```
+
+**Step 3: Define the task structure**
+
+Every task file needs these fields:
 
 ```yaml
-id: my-new-scenario-001
-description: User asks how to create a new azd project
+id: troubleshoot-wrong-sku-001    # Unique ID (category-name-NNN)
+description: >                    # What this task tests
+  User's azd provision failed because the requested VM SKU
+  is not available in their region.
 inputs:
-  prompt: "How do I start a new Azure project with azd?"
-graders:
+  prompt: |                       # The exact prompt sent to the LLM
+    I ran azd provision and got this error:
+    ERROR: deployment failed: The requested VM size Standard_NC6 is not
+    available in the current region (eastus2). Available sizes: Standard_D2s_v3,
+    Standard_D4s_v3.
+    How do I fix this?
+  context: |                      # Optional background (not sent to LLM, used by graders)
+    User is deploying a GPU workload but picked a region without GPU SKUs.
+graders:                          # One or more graders (weights must sum to 1.0)
   - type: text
-    weight: 0.5
+    weight: 0.4
     config:
       must_match:
-        - "azd init"
+        - "(region|location|SKU|size)"
       must_not_match:
-        - "azd down"
+        - "I don't know"
+  - type: text
+    weight: 0.3
+    config:
+      must_match_any:
+        - "different (region|location)"
+        - "Standard_D"
+        - "az vm list-sizes"
   - type: behavior
-    weight: 0.5
+    weight: 0.3
     config:
       max_tool_calls: 5
+      max_tokens: 2000
+```
+
+**Step 4: Validate and test**
+
+```bash
+npm run waza:validate                  # Check YAML syntax
+npm run waza:run:mock                  # Quick test with mock executor
+COPILOT_CLI_TOKEN=<token> npm run waza:run   # Real LLM test
+```
+
+### Grader Reference
+
+| Grader | Purpose | Key config fields |
+|--------|---------|-------------------|
+| `text` | Regex matching on LLM response | `must_match` (all must hit), `must_not_match` (none can hit), `must_match_any` (at least one) |
+| `action_sequence` | Verify commands appear in order | `expected_order` (list of commands/patterns) |
+| `behavior` | Efficiency constraints | `max_tool_calls`, `max_tokens` |
+| `code` | Custom Python validation | `script` (path to grader in `graders/`), `params` (dict passed to script) |
+
+**Grader weights** must sum to 1.0 across all graders in a task. Each grader returns a 0.0–1.0 score, and the weighted average is the task score.
+
+**Regex tips for `text` graders:**
+- Patterns are Python regexes, case-insensitive by default
+- Use `(a|b|c)` for alternatives: `"azd (up|provision)"`
+- Use `must_match` when ALL patterns must appear
+- Use `must_match_any` when at least ONE pattern must appear
+- Use `must_not_match` as guardrails (e.g., don't suggest destructive commands)
+
+### Adding a Custom Python Grader
+
+Custom graders validate real Azure resources during E2E evals. They live in `graders/` and are referenced from task YAML via the `code` grader type.
+
+**Step 1: Create the grader**
+
+```python
+# graders/my_validator.py
+import json
+import os
+import subprocess
+import sys
+import urllib.request
+
+def get_azure_token():
+    """Get Azure access token via CLI or environment."""
+    try:
+        result = subprocess.run(
+            ["az", "account", "get-access-token", "--query", "accessToken", "-o", "tsv"],
+            capture_output=True, text=True, check=True
+        )
+        return result.stdout.strip()
+    except Exception:
+        return os.environ.get("AZURE_ACCESS_TOKEN")
+
+def grade(inputs: dict, params: dict) -> dict:
+    """
+    Called by Waza with:
+      - inputs: the task inputs (prompt, context, etc.)
+      - params: the config.params from the task YAML
+
+    Must return: {"score": 0.0-1.0, "reason": "explanation"}
+    """
+    subscription_id = params.get("subscription_id", os.environ.get("AZURE_SUBSCRIPTION_ID"))
+    resource_group = params.get("resource_group")
+    token = get_azure_token()
+
+    if not token:
+        return {"score": 0.0, "reason": "No Azure credentials available"}
+
+    # Make ARM API calls to validate resources...
+    url = (
+        f"https://management.azure.com/subscriptions/{subscription_id}"
+        f"/resourceGroups/{resource_group}?api-version=2021-04-01"
+    )
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+    try:
+        resp = urllib.request.urlopen(req)
+        data = json.loads(resp.read())
+        return {"score": 1.0, "reason": f"Resource group '{resource_group}' exists"}
+    except Exception as e:
+        return {"score": 0.0, "reason": str(e)}
+
+if __name__ == "__main__":
+    inputs = json.loads(sys.argv[1]) if len(sys.argv) > 1 else {}
+    params = json.loads(sys.argv[2]) if len(sys.argv) > 2 else {}
+    print(json.dumps(grade(inputs, params)))
+```
+
+**Step 2: Reference it from a task YAML**
+
+```yaml
+graders:
+  - type: code
+    weight: 0.3
+    config:
+      script: graders/my_validator.py
+      params:
+        resource_group: "rg-myapp-dev"
+        expected_resources:
+          - "Microsoft.Web/sites"
+```
+
+**Existing graders you can reuse:**
+- `graders/infra_validator.py` — checks that a resource group and its resources exist after `azd provision`
+- `graders/cleanup_validator.py` — checks that resources are deleted after `azd down`
+- `graders/app_health.py` — HTTP health checks against deployed app URLs
+
+### Adding a Jest Unit Test
+
+Unit tests validate `azd` CLI behavior directly — no LLM, no Azure. They run fast and catch regressions in command structure, help text, and flags.
+
+**Step 1: Create or edit a test file in `tests/unit/`**
+
+```typescript
+// tests/unit/my-new-test.test.ts
+import { execSync } from "child_process";
+import { resolve } from "path";
+
+const AZD_BIN = resolve(__dirname, "../../../../azd");
+
+function azd(args: string): { stdout: string; stderr: string; exitCode: number } {
+  try {
+    const stdout = execSync(`${AZD_BIN} ${args}`, {
+      encoding: "utf-8",
+      timeout: 30_000,
+      env: { ...process.env, NO_COLOR: "1" },
+    });
+    return { stdout, stderr: "", exitCode: 0 };
+  } catch (e: any) {
+    return { stdout: e.stdout || "", stderr: e.stderr || "", exitCode: e.status || 1 };
+  }
+}
+
+describe("my new azd tests", () => {
+  test("version outputs a semver string", () => {
+    const result = azd("version");
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toMatch(/\d+\.\d+\.\d+/);
+  });
+});
+```
+
+> **Important:** Always pass `NO_COLOR: "1"` in the env to strip ANSI codes. Without it, regex matches against help text will fail.
+
+**Step 2: Run it**
+
+```bash
+# Build azd first (tests shell out to the binary)
+cd ../../../ && go build && cd test/eval
+
+# Run just your test
+npx jest tests/unit/my-new-test.test.ts
+
+# Run all unit tests
+npm run test:unit
+```
+
+### Adding a Human Scenario Test
+
+Human tests validate CLI usability patterns — things like "can a user discover the right command?" These run against the real `azd` binary but test the experience, not the LLM.
+
+```typescript
+// tests/human/my-scenario.test.ts
+import { execSync } from "child_process";
+import { resolve } from "path";
+
+const AZD_BIN = resolve(__dirname, "../../../../azd");
+
+function azd(args: string): { stdout: string; stderr: string; exitCode: number } {
+  try {
+    const stdout = execSync(`${AZD_BIN} ${args}`, {
+      encoding: "utf-8",
+      timeout: 30_000,
+      env: { ...process.env, NO_COLOR: "1", AZD_DEBUG_FORCE_NO_TTY: "true" },
+    });
+    return { stdout, stderr: "", exitCode: 0 };
+  } catch (e: any) {
+    return { stdout: e.stdout || "", stderr: e.stderr || "", exitCode: e.status || 1 };
+  }
+}
+
+describe("deploy command discovery", () => {
+  test("user can find deploy command from root help", () => {
+    const root = azd("--help");
+    expect(root.stdout).toContain("deploy");
+
+    const deploy = azd("deploy --help");
+    expect(deploy.exitCode).toBe(0);
+    expect(deploy.stdout).toMatch(/\bUsage\b/);
+  });
+});
+```
+
+### Directory Structure Reference
+
+```
+cli/azd/test/eval/
+├── eval.yaml              # Waza eval config (model, metrics, thresholds)
+├── jest.config.ts          # Jest config for unit + human tests
+├── package.json            # Node dependencies and npm scripts
+├── tsconfig.json           # TypeScript config
+├── graders/                # Custom Python graders for E2E validation
+│   ├── app_health.py       #   HTTP health checks on deployed apps
+│   ├── cleanup_validator.py #  Validates resources deleted after azd down
+│   └── infra_validator.py  #   Validates resources exist after azd provision
+├── tasks/                  # Waza LLM eval task definitions
+│   ├── deploy/             #   Deployment scenarios
+│   ├── environment/        #   Environment management scenarios
+│   ├── lifecycle/          #   Full init→provision→deploy→down E2E
+│   ├── negative/           #   Questions where azd is the wrong tool
+│   └── troubleshoot/       #   Error diagnosis scenarios
+├── tests/
+│   ├── unit/               # Jest unit tests (no LLM, no Azure)
+│   │   ├── command-registry.test.ts
+│   │   ├── command-sequencing.test.ts
+│   │   ├── flag-validation.test.ts
+│   │   └── help-text-quality.test.ts
+│   └── human/              # Human CLI usability tests
+│       ├── cli-workflow.test.ts
+│       ├── command-discovery.test.ts
+│       └── error-recovery.test.ts
+├── reports/                # Generated reports (gitignored)
+└── scripts/                # Report generation + telemetry analysis
 ```
 
 ## Scenario Categories

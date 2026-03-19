@@ -66,7 +66,6 @@ func ParseJobFile(path string) (*JobDefinition, error) {
 }
 
 // ValidateJobDefinition checks that required fields are present.
-// Note: 'name' is optional — if omitted, the CLI will auto-generate a UUID.
 func ValidateJobDefinition(job *JobDefinition) error {
 	if job.Command == "" {
 		return fmt.Errorf("job YAML validation: 'command' is required")

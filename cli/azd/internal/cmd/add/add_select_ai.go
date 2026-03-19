@@ -20,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/syncmap"
 )
 
 func (a *AddAction) selectSearch(
@@ -353,15 +354,14 @@ func (a *AddAction) aiDeploymentCatalog(
 		return nil, fmt.Errorf("getting locations: %w", err)
 	}
 
-	var sharedResults sync.Map
+	var sharedResults syncmap.Map[string, []ModelList]
 	var wg sync.WaitGroup
 
 	a.console.ShowSpinner(ctx, "Retrieving available models...", input.Step)
 
 	for _, location := range allLocations {
-		wg.Add(1)
-		go func(location string) {
-			defer wg.Done()
+		location := location.Name
+		wg.Go(func() {
 			results, err := a.supportedModelsInLocation(ctx, subId, location)
 			if err != nil {
 				// log the error and continue. Do not fail the entire operation when pulling location error
@@ -386,16 +386,13 @@ func (a *AddAction) aiDeploymentCatalog(
 				filterSkusWithZeroCapacity = append(filterSkusWithZeroCapacity, model)
 			}
 			sharedResults.Store(location, filterSkusWithZeroCapacity)
-		}(location.Name)
+		})
 	}
 	wg.Wait()
 	a.console.StopSpinner(ctx, "", input.StepDone)
 
 	combinedResults := map[string]ModelCatalogKind{}
-	sharedResults.Range(func(key, value any) bool {
-		// cast should be safe as the call to sharedResults.Store() use a string key
-		locationNameKey := key.(string)
-		models := value.([]ModelList)
+	sharedResults.Range(func(locationNameKey string, models []ModelList) bool {
 		for _, model := range models {
 			if model.Kind == "OpenAI" {
 				// OpenAI kind is part of the `Add OpenAI` where clients connect directly to the service w/o an AIProject

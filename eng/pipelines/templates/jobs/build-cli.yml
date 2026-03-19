@@ -19,10 +19,6 @@ parameters:
   - name: AzureRecordMode
     type: string
     default: playback
-  - name: ghCopilotClientId
-    type: string
-  - name: ghCopilotIntegrationId
-    type: string
 
 jobs: 
   - job: BuildCLI_${{ parameters.NameSuffix }}
@@ -40,8 +36,6 @@ jobs:
     steps:
       - checkout: self
       - template: /eng/pipelines/templates/steps/setup-go.yml
-        parameters:
-          Condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
 
       - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
 
@@ -77,8 +71,6 @@ jobs:
             -SourceVersion "$(Build.SourceVersion)"
             -CodeCoverageEnabled
             -BuildRecordMode
-            -GitHubCopilotClientId "${{ parameters.ghCopilotClientId }}"
-            -GitHubCopilotIntegrationId "${{ parameters.ghCopilotIntegrationId }}"
           workingDirectory: cli/azd
         displayName: Build Go Binary (For tests)
 
@@ -128,6 +120,7 @@ jobs:
         displayName: AZD Login
       
       - task: AzureCLI@2
+        condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
         inputs:
           azureSubscription: azd-service-connection
           # keepAzSessionActive is required when the service connection uses Workload Identity Federation authentication scheme
@@ -185,8 +178,6 @@ jobs:
             -Version "$(CLI_VERSION)"
             -ExeVersion "$(MSI_VERSION)"
             -SourceVersion "$(Build.SourceVersion)"
-            -GitHubCopilotClientId "${{ parameters.ghCopilotClientId }}"
-            -GitHubCopilotIntegrationId "${{ parameters.ghCopilotIntegrationId }}"
           workingDirectory: cli/azd
         displayName: Build Go Binary
 

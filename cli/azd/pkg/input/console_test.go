@@ -260,7 +260,7 @@ func newTestExternalPromptServer(handler func(promptOptions) json.RawMessage) *h
 
 		respBody, _ := json.Marshal(promptResponse{
 			Status: "success",
-			Value:  new(res),
+			Value:  &res,
 		})
 
 		_, _ = w.Write(respBody)

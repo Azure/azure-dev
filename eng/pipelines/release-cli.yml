@@ -59,8 +59,6 @@ extends:
             OS: windows
             ImageKey: image
             UploadArtifact: true
-            GhCopilotClientId: $(GH_COPILOT_CLIENT_ID)
-            GhCopilotIntegrationId: $(GH_COPILOT_INTEGRATION_ID)
             Variables:
               BuildTarget: azd-windows-amd64.exe
               BuildOutputName: azd.exe
@@ -75,8 +73,6 @@ extends:
             OS: linux
             ImageKey: image
             UploadArtifact: true
-            GhCopilotClientId: $(GH_COPILOT_CLIENT_ID)
-            GhCopilotIntegrationId: $(GH_COPILOT_INTEGRATION_ID)
             Variables:
               BuildTarget: azd-linux-amd64
               BuildOutputName: azd
@@ -103,8 +99,6 @@ extends:
             OS: macOS
             ImageKey: vmImage
             UploadArtifact: true
-            GhCopilotClientId: $(GH_COPILOT_CLIENT_ID)
-            GhCopilotIntegrationId: $(GH_COPILOT_INTEGRATION_ID)
             Variables:
               BuildTarget: azd-darwin-amd64
               BuildOutputName: azd
@@ -122,8 +116,6 @@ extends:
               OS: macOS
               ImageKey: vmImage
               UploadArtifact: false
-              GhCopilotClientId: $(GH_COPILOT_CLIENT_ID)
-              GhCopilotIntegrationId: $(GH_COPILOT_INTEGRATION_ID)
               Variables:
                 BuildTarget: azd-darwin-amd64
                 BuildOutputName: azd
@@ -149,5 +141,5 @@ extends:
     # Do not publish on scheduled builds, only release from Azure/azure-dev
     - ${{ if and(ne(variables['Build.Reason'], 'Schedule'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
       # Only publish if build is manually triggered & DoPublish is true, or if it's a CI build (push to main)
-      - ${{ if or(and(eq('Manual', variables['Build.Reason']), eq('true', parameters.DoPublish)), in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')) }}:
+      - ${{ if or(and(eq('Manual', variables['Build.Reason']), eq('true', parameters.DoPublish)), in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'PullRequest')) }}:
         - template: /eng/pipelines/templates/stages/publish.yml

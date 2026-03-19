@@ -11,7 +11,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"sync"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -19,6 +18,7 @@ import (
 	appinsightsexporter "github.com/azure/azure-dev/cli/azd/internal/telemetry/appinsights-exporter"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/benbjohnson/clock"
 	"github.com/gofrs/flock"
 	"github.com/spf13/pflag"
@@ -52,8 +52,16 @@ type TelemetrySystem struct {
 	telemetryDirectory string
 }
 
-var once sync.Once
-var instance *TelemetrySystem
+var (
+	telemetryInit osutil.LazyRetryInit
+	instance      *TelemetrySystem
+)
+
+// resetTelemetryForTest resets the telemetry singleton state, allowing re-initialization in tests.
+func resetTelemetryForTest() {
+	telemetryInit = osutil.LazyRetryInit{}
+	instance = nil
+}
 
 func getTelemetryDirectory() (string, error) {
 	configDir, err := config.GetUserConfigDir()
@@ -82,15 +90,18 @@ func IsTelemetryEnabled() bool {
 // Returns the singleton TelemetrySystem instance.
 // Returns nil if telemetry failed to initialize, or user has disabled telemetry.
 func GetTelemetrySystem() *TelemetrySystem {
-	once.Do(func() {
+	err := telemetryInit.Do(func() error {
 		telemetrySystem, err := initialize()
 		if err != nil {
 			log.Printf("failed to initialize telemetry: %v\n", err)
-		} else {
-			instance = telemetrySystem
+			return err
 		}
+		instance = telemetrySystem
+		return nil
 	})
-
+	if err != nil {
+		return nil
+	}
 	return instance
 }
 

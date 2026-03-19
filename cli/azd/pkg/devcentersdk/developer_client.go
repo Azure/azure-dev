@@ -17,6 +17,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/azure/azure-dev/cli/azd/pkg/syncmap"
 )
 
 const (
@@ -35,7 +36,8 @@ type devCenterClient struct {
 	options             *azcore.ClientOptions
 	resourceGraphClient *armresourcegraph.Client
 	pipeline            runtime.Pipeline
-	cache               sync.Map
+	projectCache        syncmap.Map[string, []*Project]
+	devCenterCache      syncmap.Map[string, []*DevCenter]
 	cacheMutex          sync.RWMutex
 	cloud               *cloud.Cloud
 }
@@ -54,7 +56,6 @@ func NewDevCenterClient(
 		credential:          credential,
 		options:             options,
 		resourceGraphClient: resourceGraphClient,
-		cache:               sync.Map{},
 		cloud:               cloud,
 	}, nil
 }
@@ -72,10 +73,8 @@ func (c *devCenterClient) DevCenterByName(name string) *DevCenterItemRequestBuil
 }
 
 func (c *devCenterClient) projectList(ctx context.Context) ([]*Project, error) {
-	if cachedProjects, has := c.cache.Load(projectKey); has {
-		if value, ok := cachedProjects.([]*Project); ok {
-			return value, nil
-		}
+	if cachedProjects, has := c.projectCache.Load(projectKey); has {
+		return cachedProjects, nil
 	}
 
 	query := `
@@ -148,7 +147,7 @@ func (c *devCenterClient) projectList(ctx context.Context) ([]*Project, error) {
 	// This cache is safe since during the lifetime of this client the list will be only be used by a single user
 	c.cacheMutex.Lock()
 	defer c.cacheMutex.Unlock()
-	c.cache.Store(projectKey, projects)
+	c.projectCache.Store(projectKey, projects)
 
 	return projects, nil
 }
@@ -194,10 +193,8 @@ func (c *devCenterClient) projectByDevCenter(
 }
 
 func (c *devCenterClient) devCenterList(ctx context.Context) ([]*DevCenter, error) {
-	if cachedDevCenters, has := c.cache.Load(devCenterKey); has {
-		if value, ok := cachedDevCenters.([]*DevCenter); ok {
-			return value, nil
-		}
+	if cachedDevCenters, has := c.devCenterCache.Load(devCenterKey); has {
+		return cachedDevCenters, nil
 	}
 
 	devCenters := []*DevCenter{}
@@ -220,7 +217,7 @@ func (c *devCenterClient) devCenterList(ctx context.Context) ([]*DevCenter, erro
 	// This cache is safe since during the lifetime of this client the list will be only be used by a single user
 	c.cacheMutex.Lock()
 	defer c.cacheMutex.Unlock()
-	c.cache.Store(devCenterKey, devCenters)
+	c.devCenterCache.Store(devCenterKey, devCenters)
 
 	return devCenters, nil
 }

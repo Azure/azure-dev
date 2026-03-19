@@ -4,6 +4,7 @@
 package bicep
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -20,6 +21,62 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 )
 
+// armField is a generic JSON field that gracefully handles both structured values and
+// ARM template expression strings. ARM templates compiled from Bicep may emit fields as
+// expression strings (e.g. "[if(equals(...))]") when conditional logic is used, instead
+// of the expected typed object.
+//
+// Use [armField.Value] for typed access (returns ok=false if the raw JSON cannot be parsed
+// as T), and [armField.Raw] for the underlying JSON regardless of shape.
+type armField[T any] struct {
+	raw json.RawMessage
+}
+
+// HasValue reports whether the field was present and non-null in the JSON input.
+func (f armField[T]) HasValue() bool {
+	return len(f.raw) > 0 && !bytes.Equal(f.raw, []byte("null"))
+}
+
+// Value attempts to unmarshal the raw JSON into the typed representation T.
+// It returns the parsed value and true on success, or the zero value and false
+// if the field is absent, null, or not representable as T (e.g. an ARM expression string).
+func (f armField[T]) Value() (T, bool) {
+	var v T
+	if !f.HasValue() {
+		return v, false
+	}
+	if err := json.Unmarshal(f.raw, &v); err != nil {
+		return v, false
+	}
+	return v, true
+}
+
+// Raw returns the underlying JSON bytes exactly as they appeared in the input.
+// Returns nil if the field was absent from the JSON.
+func (f armField[T]) Raw() json.RawMessage {
+	return f.raw
+}
+
+// UnmarshalJSON stores the raw JSON bytes for deferred parsing.
+func (f *armField[T]) UnmarshalJSON(data []byte) error {
+	f.raw = append(json.RawMessage(nil), data...)
+	return nil
+}
+
+// IsZero reports whether the field is absent (no raw JSON stored).
+// This is used by encoding/json's omitzero tag to omit the field during marshaling.
+func (f armField[T]) IsZero() bool {
+	return f.raw == nil
+}
+
+// MarshalJSON writes the stored raw JSON bytes, or null if no value was stored.
+func (f armField[T]) MarshalJSON() ([]byte, error) {
+	if f.raw == nil {
+		return []byte("null"), nil
+	}
+	return f.raw, nil
+}
+
 // armTemplateResource represents a single resource declaration within an ARM template.
 // It follows the schema defined at:
 // https://learn.microsoft.com/azure/azure-resource-manager/templates/resource-declaration
@@ -32,25 +89,25 @@ type armTemplateResource struct {
 	Name string `json:"name"`
 	// Location is the deployment location for the resource.
 	Location string `json:"location,omitempty"`
-	// Tags are resource tags. Stored as json.RawMessage because the value can be either
-	// a map[string]string literal or an ARM expression string (e.g. "[variables('tags')]").
-	Tags json.RawMessage `json:"tags,omitempty"`
+	// Tags holds resource tags, which may be a map[string]string literal or an ARM expression string.
+	Tags armField[map[string]string] `json:"tags,omitzero"`
 	// DependsOn lists symbolic names or resource IDs of resources that must be deployed first.
 	DependsOn []string `json:"dependsOn,omitempty"`
 	// Kind is the resource kind (e.g. "StorageV2" for storage or "app,linux" for web apps).
 	Kind string `json:"kind,omitempty"`
 	// SKU is the pricing tier / SKU for the resource.
-	SKU *armTemplateSKU `json:"sku,omitempty"`
+	SKU armField[armTemplateSKU] `json:"sku,omitzero"`
 	// Plan is the marketplace plan for the resource.
-	Plan *armTemplatePlan `json:"plan,omitempty"`
+	Plan armField[armTemplatePlan] `json:"plan,omitzero"`
 	// Identity is the managed identity configuration for the resource.
-	Identity *armTemplateIdentity `json:"identity,omitempty"`
-	// Properties is the resource-specific configuration.
+	Identity armField[armTemplateIdentity] `json:"identity,omitzero"`
+	// Properties is the resource-specific configuration. Kept as json.RawMessage because each
+	// resource type has a different properties schema with no single typed representation.
 	Properties json.RawMessage `json:"properties,omitempty"`
 	// Condition is an expression that evaluates to true/false controlling whether the resource is deployed.
 	Condition any `json:"condition,omitempty"`
 	// Copy defines iteration for deploying multiple instances.
-	Copy *armTemplateCopy `json:"copy,omitempty"`
+	Copy armField[armTemplateCopy] `json:"copy,omitzero"`
 	// Comments are optional authoring comments.
 	Comments string `json:"comments,omitempty"`
 	// Scope is used when deploying extension resources or cross-scope resources.
@@ -58,8 +115,8 @@ type armTemplateResource struct {
 	// Resources are child resources nested inside this resource declaration.
 	// Uses armTemplateResources to handle both array and symbolic-name map formats.
 	Resources armTemplateResources `json:"resources,omitempty"`
-	// Zones lists Availability Zones for the resource (e.g. ["1","2","3"]).
-	Zones []string `json:"zones,omitempty"`
+	// Zones lists Availability Zones for the resource.
+	Zones armField[[]string] `json:"zones,omitzero"`
 }
 
 // armTemplateSKU represents the SKU block of an ARM resource.

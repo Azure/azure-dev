@@ -5,8 +5,7 @@ Usage
   azd mcp [command]
 
 Available Commands
-  consent	: Manage MCP tool consent.
-  start  	: Starts the MCP server.
+  start	: Starts the MCP server.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

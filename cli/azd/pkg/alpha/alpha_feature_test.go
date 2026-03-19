@@ -5,7 +5,6 @@ package alpha
 
 import (
 	"fmt"
-	"os"
 	"sync"
 	"testing"
 
@@ -188,16 +187,54 @@ func Test_AlphaFeature_IsEnabled(t *testing.T) {
 	})
 
 	t.Run("enabled from env var", func(t *testing.T) {
-		os.Setenv("AZD_ALPHA_ENABLE_CATEGORY_FEATURE_3", "true")
+		t.Setenv("AZD_ALPHA_ENABLE_CATEGORY_FEATURE_3", "true")
 		actual := alphaManager.IsEnabled(FeatureId("category.feature.3"))
 		require.True(t, actual)
 	})
 
 	t.Run("enabled from default", func(t *testing.T) {
 		SetDefaultEnablement("category.feature.9", true)
+		t.Cleanup(func() {
+			ResetDefaultEnablement("category.feature.9")
+		})
 		actual := alphaManager.IsEnabled(FeatureId("category.feature.9"))
 		require.True(t, actual)
 	})
+}
+
+func Test_DefaultEnablement_ConcurrentAccess(t *testing.T) {
+	t.Parallel()
+
+	mockConfig := config.NewConfig(nil)
+	alphaManager := newFeatureManagerForTest(func() []Feature { return nil }, mockConfig)
+
+	const goroutines = 50
+	var wg sync.WaitGroup
+	wg.Add(goroutines * 2)
+
+	t.Cleanup(func() {
+		for i := range goroutines {
+			ResetDefaultEnablement(fmt.Sprintf("race.feature.%d", i))
+		}
+	})
+
+	// Concurrent writers
+	for i := range goroutines {
+		go func(i int) {
+			defer wg.Done()
+			SetDefaultEnablement(fmt.Sprintf("race.feature.%d", i), i%2 == 0)
+		}(i)
+	}
+
+	// Concurrent readers
+	for i := range goroutines {
+		go func(i int) {
+			defer wg.Done()
+			_ = alphaManager.IsEnabled(FeatureId(fmt.Sprintf("race.feature.%d", i)))
+		}(i)
+	}
+
+	wg.Wait()
 }
 
 func newFeatureManagerForTest(alphaFeatureResolver func() []Feature, config config.Config) *FeatureManager {

@@ -78,10 +78,7 @@ func (s *TemplateSource) ListTemplates(ctx context.Context) ([]*templates.Templa
 	var wg sync.WaitGroup
 
 	for _, project := range projects {
-		wg.Add(1)
-
-		go func(project *devcentersdk.Project) {
-			defer wg.Done()
+		wg.Go(func() {
 
 			// If a project is specified in the config then only consider templates for the specified project
 			if s.config.Project != "" && !strings.EqualFold(s.config.Project, project.Name) {
@@ -166,7 +163,7 @@ func (s *TemplateSource) ListTemplates(ctx context.Context) ([]*templates.Templa
 					}
 				}
 			}
-		}(project)
+		})
 	}
 
 	go func() {

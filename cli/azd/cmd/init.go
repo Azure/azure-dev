@@ -18,7 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/agent"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
-	"github.com/azure/azure-dev/cli/azd/internal/agent/feedback"
+	agentcopilot "github.com/azure/azure-dev/cli/azd/internal/agent/copilot"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -30,17 +30,16 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
-	"github.com/azure/azure-dev/cli/azd/pkg/llm"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
+	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 	"github.com/fatih/color"
 	"github.com/joho/godotenv"
-	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -140,7 +139,7 @@ type initAction struct {
 	featuresManager   *alpha.FeatureManager
 	extensionsManager *extensions.Manager
 	azd               workflow.AzdCommandRunner
-	agentFactory      *agent.AgentFactory
+	agentFactory      agent.AgentFactory
 	consentManager    consent.ConsentManager
 	configManager     config.UserConfigManager
 }
@@ -157,7 +156,7 @@ func newInitAction(
 	featuresManager *alpha.FeatureManager,
 	extensionsManager *extensions.Manager,
 	azd workflow.AzdCommandRunner,
-	agentFactory *agent.AgentFactory,
+	agentFactory agent.AgentFactory,
 	consentManager consent.ConsentManager,
 	configManager config.UserConfigManager,
 ) actions.Action {
@@ -282,9 +281,10 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		output.WithLinkFormat("%s", wd),
 		output.WithLinkFormat("%s", "https://aka.ms/azd-third-party-code-notice"))
 
-	if i.featuresManager.IsEnabled(llm.FeatureLlm) {
-		followUp += fmt.Sprintf("\n%s Run azd up to deploy project to the cloud.`",
-			color.HiMagentaString("Next steps:"))
+	if i.featuresManager.IsEnabled(agentcopilot.FeatureCopilot) {
+		followUp += fmt.Sprintf("\n\n%s Run %s to deploy project to the cloud.",
+			output.WithHintFormat("(→) NEXT STEPS:"),
+			output.WithHighLightFormat("azd up"))
 	}
 
 	switch initTypeSelect {
@@ -314,8 +314,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			if deploy {
 				// Call azd up
 				startTime := time.Now()
-				i.azd.SetArgs([]string{"up", "--cwd", azdCtx.ProjectDirectory()})
-				err := i.azd.ExecuteContext(ctx)
+				err := i.azd.ExecuteContext(ctx, []string{"up", "--cwd", azdCtx.ProjectDirectory()})
 				header = "New project initialized! Provision and deploy to Azure was completed in " +
 					ux.DurationAsText(since(startTime)) + "."
 				if err != nil {
@@ -381,7 +380,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		followUp = ""
 	case initWithAgent:
 		tracing.SetUsageAttributes(fields.InitMethod.String("agent"))
-		if err := i.initAppWithAgent(ctx); err != nil {
+		if err := i.initAppWithAgent(ctx, azdCtx); err != nil {
 			return nil, err
 		}
 	default:
@@ -400,199 +399,154 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}, nil
 }
 
-func (i *initAction) initAppWithAgent(ctx context.Context) error {
-	// Warn user that this is an alpha feature
+func (i *initAction) initAppWithAgent(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
+	// Warn the user if the working directory has uncommitted git changes
+	dirty, err := i.gitCli.IsDirty(ctx, azdCtx.ProjectDirectory())
+	if err != nil && !errors.Is(err, git.ErrNotRepository) {
+		return fmt.Errorf("checking git status: %w", err)
+	}
+
+	if dirty {
+		defaultNo := false
+		confirm := uxlib.NewConfirm(&uxlib.ConfirmOptions{
+			Message: "Your working directory has uncommitted changes. Continue initializing?",
+			HelpMessage: fmt.Sprintf(
+				"%s may create or modify files in your working directory. "+
+					"Consider committing or stashing your changes first to avoid losing work.",
+				agentcopilot.DisplayTitle),
+			DefaultValue: &defaultNo,
+		})
+		result, promptErr := confirm.Ask(ctx)
+		i.console.Message(ctx, "")
+		if promptErr != nil {
+			return promptErr
+		}
+		if result == nil || !*result {
+			return errors.New("user declined to continue with uncommitted changes")
+		}
+	}
+
+	// Show preview notice
 	i.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title: fmt.Sprintf("Agentic mode init is in alpha mode. The agent will scan your repository and "+
-			"attempt to make an azd-ready template to init. You can always change permissions later "+
-			"by running `azd mcp consent`. Mistakes may occur in agent mode. "+
-			"To learn more, go to %s\n", output.WithLinkFormat("https://aka.ms/azd-feature-stages")),
-		TitleNote: "CTRL C to cancel interaction \n? to pull up help text",
+		Title: fmt.Sprintf(
+			"%s will scan your repository and help generate an azd compatible project to get you started. "+
+				"This experience is currently in preview.\n\n"+
+				"You can always change permissions later by running %s.\n\n"+
+				"To learn more, go to %s",
+			agentcopilot.DisplayTitle,
+			output.WithHighLightFormat("azd copilot consent"),
+			output.WithLinkFormat("https://aka.ms/azd-feature-stages")),
 	})
 
-	// Check read only tool consent
-	readOnlyRule, err := i.consentManager.CheckConsent(ctx,
-		consent.ConsentRequest{
-			ToolID:     "*/*",
-			ServerName: "*",
-			Operation:  consent.OperationTypeTool,
-			Annotations: mcp.ToolAnnotation{
-				ReadOnlyHint: new(true),
-			},
-		},
-	)
-	if err != nil {
+	// Prompt for upfront tool access before starting the agent
+	if err := i.consentManager.PromptWorkflowConsent(ctx,
+		[]string{"copilot", "azure", "azd"},
+	); err != nil {
 		return err
 	}
 
-	if !readOnlyRule.Allowed {
-		consentChecker := consent.NewConsentChecker(i.consentManager, "")
-		err = consentChecker.PromptAndGrantReadOnlyToolConsent(ctx)
-		if err != nil {
-			return err
-		}
-		i.console.Message(ctx, "")
-	}
-
-	azdAgent, err := i.agentFactory.Create(
-		ctx,
+	// Create agent
+	copilotAgent, err := i.agentFactory.Create(ctx,
+		agent.WithMode(agent.AgentModeInteractive),
 		agent.WithDebug(i.flags.global.EnableDebugLogging),
+		agent.OnSessionStarted(func(sessionID string) {
+			if azdCtx != nil {
+				_ = azdCtx.SetCopilotSession(&azdcontext.CopilotSession{
+					SessionID: sessionID,
+					Command:   "init",
+					StartedAt: time.Now().UTC().Format(time.RFC3339),
+				})
+			}
+		}),
 	)
 	if err != nil {
 		return err
 	}
+	defer copilotAgent.Stop()
 
-	defer azdAgent.Stop()
-
-	type initStep struct {
-		Name         string
-		Description  string
-		SummaryTitle string
-	}
-
-	taskInput := `Your task: %s
-
-Break this task down into smaller steps if needed.
-If new information reveals more work to be done, pursue it.
-Do not stop until all tasks are complete and fully resolved.
-`
-
-	initSteps := []initStep{
-		{
-			Name:         "Step 1: Running Discovery & Analysis",
-			Description:  "Run a deep discovery and analysis on the current working directory.",
-			SummaryTitle: "Step 1 (discovery & analysis)",
-		},
-		{
-			Name:         "Step 2: Generating Architecture Plan",
-			Description:  "Create a high-level architecture plan for the application.",
-			SummaryTitle: "Step 2 (architecture plan)",
-		},
-		{
-			Name:         "Step 3: Generating Dockerfile(s)",
-			Description:  "Generate a Dockerfile for the application components as needed.",
-			SummaryTitle: "Step 3 (dockerfile generation)",
-		},
-		{
-			Name:         "Step 4: Generating infrastructure",
-			Description:  "Generate infrastructure as code (IaC) for the application.",
-			SummaryTitle: "Step 4 (infrastructure generation)",
-		},
-		{
-			Name:         "Step 5: Generating azure.yaml file",
-			Description:  "Generate an azure.yaml file for the application.",
-			SummaryTitle: "Step 5 (azure.yaml generation)",
-		},
-		{
-			Name:         "Step 6: Validating project",
-			Description:  "Validate the project structure and configuration.",
-			SummaryTitle: "Step 6 (project validation)",
-		},
-	}
-
-	var stepSummaries []string
-
-	for idx, step := range initSteps {
-		// Collect and apply feedback for next steps
-		if idx > 0 {
-			if err := i.collectAndApplyFeedback(
-				ctx,
-				azdAgent,
-				"Any changes before moving to the next step?",
-			); err != nil {
-				return err
-			}
-		} else if idx == len(initSteps)-1 {
-			if err := i.collectAndApplyFeedback(
-				ctx,
-				azdAgent,
-				"Any changes before moving to the next completing interaction?",
-			); err != nil {
-				return err
-			}
-		}
-
-		// Run Step
-		i.console.Message(ctx, color.MagentaString(step.Name))
-		fullTaskInput := fmt.Sprintf(taskInput, strings.Join([]string{
-			step.Description,
-			"Provide a brief summary in around 6 bullet points format about what was scanned" +
-				" or analyzed and key actions performed:\n" +
-				"Keep it concise and focus on high-level accomplishments, not implementation details.",
-		}, "\n"))
-
-		agentOutput, err := azdAgent.SendMessageWithRetry(ctx, fullTaskInput)
-		if err != nil {
-			if agentOutput != "" {
-				i.console.Message(ctx, output.WithMarkdown(agentOutput))
-			}
-
-			return err
-		}
-
-		stepSummaries = append(stepSummaries, agentOutput)
-
-		i.console.Message(ctx, "")
-		i.console.Message(ctx, color.HiMagentaString(fmt.Sprintf("◆ %s Summary:", step.SummaryTitle)))
-		i.console.Message(ctx, output.WithMarkdown(agentOutput))
-		i.console.Message(ctx, "")
-	}
-
-	// Post-completion summary
-	if err := i.postCompletionSummary(ctx, azdAgent, stepSummaries); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// collectAndApplyFeedback prompts for user feedback and applies it using the agent in a loop
-func (i *initAction) collectAndApplyFeedback(
-	ctx context.Context,
-	azdAgent agent.Agent,
-	promptMessage string,
-) error {
-	AIDisclaimer := output.WithGrayFormat("The following content is AI-generated. AI responses may be incorrect.")
-	collector := feedback.NewFeedbackCollector(i.console, feedback.FeedbackCollectorOptions{
-		EnableLoop:      true,
-		FeedbackPrompt:  promptMessage,
-		FeedbackHint:    "Enter to skip",
-		RequireFeedback: false,
-		AIDisclaimer:    AIDisclaimer,
-	})
-
-	return collector.CollectFeedbackAndApply(ctx, azdAgent, AIDisclaimer)
-}
-
-// postCompletionSummary provides a final summary after all steps complete
-func (i *initAction) postCompletionSummary(
-	ctx context.Context,
-	azdAgent agent.Agent,
-	stepSummaries []string,
-) error {
-	i.console.Message(ctx, "")
-	i.console.Message(ctx, "🎉 All initialization steps completed!")
-	i.console.Message(ctx, "")
-
-	// Combine all step summaries into a single prompt
-	combinedSummaries := strings.Join(stepSummaries, "\n\n---\n\n")
-	summaryPrompt := fmt.Sprintf(`Based on the following summaries of the azd init process, please provide
-	a comprehensive overall summary of what was accomplished in bullet point format:\n%s`, combinedSummaries)
-
-	agentOutput, err := azdAgent.SendMessageWithRetry(ctx, summaryPrompt)
+	// Initialize — prompts on first run, returns config on subsequent
+	initResult, err := copilotAgent.Initialize(ctx)
 	if err != nil {
-		if agentOutput != "" {
-			i.console.Message(ctx, output.WithMarkdown(agentOutput))
-		}
-
 		return err
 	}
 
-	i.console.Message(ctx, "")
-	i.console.Message(ctx, color.HiMagentaString("◆ Agentic init Summary:"))
-	i.console.Message(ctx, output.WithMarkdown(agentOutput))
+	// Show current config
+	modelDisplay := initResult.Model
+	if modelDisplay == "" {
+		modelDisplay = "default"
+	}
+	i.console.Message(ctx, output.WithGrayFormat("  Agent: model=%s, reasoning=%s",
+		modelDisplay, initResult.ReasoningEffort))
+	if !initResult.IsFirstRun {
+		i.console.Message(ctx, output.WithGrayFormat(
+			"  To change, run %s or %s",
+			output.WithHighLightFormat("azd config set %s <model>", agentcopilot.ConfigKeyModel),
+			output.WithHighLightFormat("azd config set %s <level>", agentcopilot.ConfigKeyReasoningEffort)))
+	}
 	i.console.Message(ctx, "")
 
+	// Check for an in-progress session to resume
+	opts := []agent.SendOption{}
+	if azdCtx != nil {
+		if session := azdCtx.GetCopilotSession(); session != nil {
+			timeDisplay := agent.FormatSessionTime(session.StartedAt)
+			defaultYes := true
+			confirm := uxlib.NewConfirm(&uxlib.ConfirmOptions{
+				Message: fmt.Sprintf("Resume previous session from %s?", timeDisplay),
+				HelpMessage: "Resuming continues where you left off. " +
+					"Choosing no starts a fresh session.",
+				DefaultValue: &defaultYes,
+			})
+			if result, err := confirm.Ask(ctx); err == nil && result != nil && *result {
+				opts = append(opts, agent.WithSessionID(session.SessionID))
+				i.console.Message(ctx, output.WithSuccessFormat("Session resumed"))
+				i.console.Message(ctx, "")
+			}
+			i.console.Message(ctx, "")
+		}
+	}
+
+	// Init prompt
+	prompt := `Prepare this application for deployment to Azure.
+
+First, check if the current directory contains application code. If the directory is empty
+or has no application code, ask the user what type of Azure application they would like to
+build (e.g., web app, API, function app, static site, containerized service) before proceeding.
+
+Then invoke the following skills in order:
+
+1. Invoke the azure-prepare skill using the "azd" recipe to analyze the project,
+   generate infrastructure (Bicep or Terraform), Dockerfiles, and azure.yaml configuration.
+
+2. Invoke the azure-validate skill using the "azd" recipe to run pre-deployment
+   validation checks and verify everything is ready for deployment.
+
+Always select the "azd" recipe when prompted for recipe selection.
+
+Ask the user for input when you need clarification about architecture choices,
+service selection, or configuration options.
+
+When complete, provide a brief summary of what was accomplished.`
+
+	i.console.Message(ctx, color.MagentaString("Preparing application for Azure deployment..."))
+
+	_, err = copilotAgent.SendMessageWithRetry(ctx, prompt, opts...)
+	if err != nil {
+		return err
+	}
+
+	// Clear session on success
+	if azdCtx != nil {
+		_ = azdCtx.ClearCopilotSession()
+	}
+
+	// Show session metrics (usage + file changes)
+	if metrics := copilotAgent.GetMetrics().String(); metrics != "" {
+		i.console.Message(ctx, "")
+		i.console.Message(ctx, metrics)
+	}
+
+	i.console.Message(ctx, "")
 	return nil
 }
 
@@ -615,7 +569,7 @@ func promptInitType(
 	options := []string{
 		"Scan current directory", // This now covers minimal project creation too
 		"Select a template",
-		fmt.Sprintf("Use agent mode %s", color.YellowString("(Alpha)")),
+		fmt.Sprintf("Set up with %s %s", agentcopilot.DisplayTitle, color.YellowString("(Preview)")),
 	}
 
 	selection, err := console.Select(ctx, input.ConsoleOptions{
@@ -632,7 +586,7 @@ func promptInitType(
 	case 1:
 		return initAppTemplate, nil
 	case 2:
-		if !featuresManager.IsEnabled(llm.FeatureLlm) {
+		if !featuresManager.IsEnabled(agentcopilot.FeatureCopilot) {
 			azdConfig, err := configManager.Load()
 			if err != nil {
 				return initUnknown, fmt.Errorf("failed to load config: %w", err)
@@ -648,12 +602,12 @@ func promptInitType(
 				return initUnknown, fmt.Errorf("failed to save config: %w", err)
 			}
 
-			console.Message(ctx, "\nThe azd agent feature has been enabled to support this new experience."+
-				" To turn off in the future run `azd config unset alpha.llm`.")
+			console.Message(ctx, fmt.Sprintf("\n%s has been enabled to support this new experience."+
+				" To turn off in the future run `azd config unset alpha.llm`.", agentcopilot.DisplayTitle))
 
-			err = azdConfig.Set("ai.agent.model.type", "github-copilot")
+			err = azdConfig.Set(agentcopilot.ConfigKeyModelType, "copilot")
 			if err != nil {
-				return initUnknown, fmt.Errorf("failed to set ai.agent.model.type config: %w", err)
+				return initUnknown, fmt.Errorf("failed to set %s config: %w", agentcopilot.ConfigKeyModelType, err)
 			}
 
 			err = configManager.Save(azdConfig)
@@ -661,8 +615,10 @@ func promptInitType(
 				return initUnknown, fmt.Errorf("failed to save config: %w", err)
 			}
 
-			console.Message(ctx, "\nGitHub Copilot has been enabled to support this new experience."+
-				" To turn off in the future run `azd config unset ai.agent.model.type`.")
+			console.Message(ctx, fmt.Sprintf(
+				"\n%s has been enabled to support this new experience."+
+					" To turn off in the future run `azd config unset %s`.",
+				agentcopilot.DisplayTitle, agentcopilot.ConfigKeyModelType))
 		}
 
 		return initWithAgent, nil

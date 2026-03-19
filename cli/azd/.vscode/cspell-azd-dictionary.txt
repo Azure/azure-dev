@@ -1,6 +1,7 @@
 AADSTS
 ABRT
 ACCESSTOKEN
+ALLUSERS
 AZCLI
 AZURECLI
 AZURESUBSCRIPTION
@@ -176,6 +177,7 @@ ldflags
 lechnerc77
 libc
 llms
+INSTALLDIR
 localtools
 maml
 mcptools
@@ -204,6 +206,7 @@ nologo
 notrail
 ollama
 omitempty
+omitzero
 oneauth
 oneline
 onmicrosoft

@@ -8,12 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 	"testing"
 
 	surveyterm "github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	agentcopilot "github.com/azure/azure-dev/cli/azd/internal/agent/copilot"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -21,7 +21,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
-	"github.com/azure/azure-dev/cli/azd/pkg/llm"
 	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -36,7 +35,7 @@ func Test_ErrorMiddleware_SuccessNoError(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	cfg := config.NewConfig(map[string]any{
 		"alpha": map[string]any{
-			string(llm.FeatureLlm): "on",
+			string(agentcopilot.FeatureCopilot): "on",
 		},
 	})
 	featureManager := alpha.NewFeaturesManagerWithConfig(cfg)
@@ -105,7 +104,7 @@ func Test_ErrorMiddleware_ChildAction(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	cfg := config.NewConfig(map[string]any{
 		"alpha": map[string]any{
-			string(llm.FeatureLlm): "on",
+			string(agentcopilot.FeatureCopilot): "on",
 		},
 	})
 	featureManager := alpha.NewFeaturesManagerWithConfig(cfg)
@@ -145,7 +144,7 @@ func Test_ErrorMiddleware_ErrorWithSuggestion(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	cfg := config.NewConfig(map[string]any{
 		"alpha": map[string]any{
-			string(llm.FeatureLlm): "on",
+			string(agentcopilot.FeatureCopilot): "on",
 		},
 	})
 	featureManager := alpha.NewFeaturesManagerWithConfig(cfg)
@@ -256,339 +255,6 @@ func Test_ErrorMiddleware_NoPatternMatch(t *testing.T) {
 	var suggestionErr *internal.ErrorWithSuggestion
 	require.False(t, errors.As(err, &suggestionErr), "Expected error NOT to be wrapped with suggestion")
 	require.Equal(t, unknownError, err)
-}
-
-func Test_ExtractSuggestedSolutions(t *testing.T) {
-	tests := []struct {
-		name          string
-		llmResponse   string
-		expectedCount int
-		expectedFirst string
-	}{
-		{
-			name: "Valid JSON with Three Solutions",
-			llmResponse: `{
-				"analysis": "Brief explanation of the error",
-				"solutions": [
-					"Log out and log in again with Azure Developer CLI",
-					"Check and fix your network environment",
-					"Retry after reboot or from a clean terminal"
-				]
-			}`,
-			expectedCount: 3,
-			expectedFirst: "Log out and log in again with Azure Developer CLI",
-		},
-		{
-			name: "Valid JSON with One Solution",
-			llmResponse: `{
-				"analysis": "Error analysis",
-				"solutions": [
-					"Only one solution"
-				]
-			}`,
-			expectedCount: 1,
-			expectedFirst: "Only one solution",
-		},
-		{
-			name: "Valid JSON with Two Solutions",
-			llmResponse: `{
-				"analysis": "Error analysis",
-				"solutions": [
-					"First solution",
-					"Second solution"
-				]
-			}`,
-			expectedCount: 2,
-			expectedFirst: "First solution",
-		},
-		{
-			name:          "Invalid JSON",
-			llmResponse:   `This is not valid JSON at all`,
-			expectedCount: 0,
-		},
-		{
-			name: "JSON with Empty Solutions Array",
-			llmResponse: `{
-				"analysis": "Error analysis",
-				"solutions": []
-			}`,
-			expectedCount: 0,
-		},
-		{
-			name: "JSON Missing Solutions Field",
-			llmResponse: `{
-				"analysis": "Error analysis only"
-			}`,
-			expectedCount: 0,
-		},
-		{
-			name: "JSON with Extra Whitespace",
-			llmResponse: `  {
-				"analysis": "Error analysis",
-				"solutions": [
-					"  First solution with spaces  ",
-					"  Second solution  "
-				]
-			}  `,
-			expectedCount: 2,
-			expectedFirst: "  First solution with spaces  ",
-		},
-		{
-			name: "JSON Mixed with Text Before",
-			llmResponse: `Here's the analysis of the error:
-
-			{
-				"analysis": "The deployment failed due to a configuration issue",
-				"solutions": [
-					"Update the configuration file",
-					"Restart the service"
-				]
-			}`,
-			expectedCount: 2,
-			expectedFirst: "Update the configuration file",
-		},
-		{
-			name: "JSON Mixed with Text After",
-			llmResponse: `{
-				"analysis": "Authentication failed",
-				"solutions": [
-					"Run az login to authenticate",
-					"Check your subscription permissions"
-				]
-			}
-			
-			That should resolve the authentication issues.`,
-			expectedCount: 2,
-			expectedFirst: "Run az login to authenticate",
-		},
-		{
-			name: "JSON Mixed with Text Before and After",
-			llmResponse: `I analyzed the error and found the following:
-			
-			{
-				"analysis": "Network connectivity issue",
-				"solutions": [
-					"Check network connectivity",
-					"Retry with different endpoint",
-					"Contact network administrator"
-				]
-			}
-			
-			Please try these solutions in order.`,
-			expectedCount: 3,
-			expectedFirst: "Check network connectivity",
-		},
-		{
-			name: "JSON with Braces in Strings",
-			llmResponse: `{
-				"analysis": "Error contains { and } characters in message",
-				"solutions": [
-					"Fix the {configuration} file issue",
-					"Update values in {section} configuration"
-				]
-			}`,
-			expectedCount: 2,
-			expectedFirst: "Fix the {configuration} file issue",
-		},
-		{
-			name: "JSON with Escaped Quotes",
-			llmResponse: `{
-				"analysis": "String parsing error",
-				"solutions": [
-					"Fix the \"quoted value\" in configuration",
-					"Escape the \\\"special characters\\\" properly"
-				]
-			}`,
-			expectedCount: 2,
-			expectedFirst: "Fix the \"quoted value\" in configuration",
-		},
-		{
-			name: "JSON with Nested Objects",
-			llmResponse: `{
-				"analysis": "Complex configuration error",
-				"metadata": {
-					"severity": "high",
-					"details": {
-						"cause": "invalid syntax"
-					}
-				},
-				"solutions": [
-					"Fix nested configuration",
-					"Validate JSON structure"
-				]
-			}`,
-			expectedCount: 2,
-			expectedFirst: "Fix nested configuration",
-		},
-		{
-			name: "Multiple JSON Objects - First One Wins",
-			llmResponse: `{
-				"analysis": "First analysis",
-				"solutions": [
-					"First solution"
-				]
-			}
-			{
-				"analysis": "Second analysis",
-				"solutions": [
-					"Second solution"
-				]
-			}`,
-			expectedCount: 1,
-			expectedFirst: "First solution",
-		},
-		{
-			name:          "Empty Response",
-			llmResponse:   "",
-			expectedCount: 0,
-		},
-		{
-			name:          "Only Opening Brace",
-			llmResponse:   "{",
-			expectedCount: 0,
-		},
-		{
-			name:          "Only Closing Brace",
-			llmResponse:   "}",
-			expectedCount: 0,
-		},
-		{
-			name: "JSON with Line Breaks in Strings",
-			llmResponse: `{
-				"analysis": "Multi-line error message",
-				"solutions": [
-					"Fix the multi-line\nconfiguration issue",
-					"Handle\r\nCRLF line endings"
-				]
-			}`,
-			expectedCount: 2,
-			expectedFirst: "Fix the multi-line\nconfiguration issue",
-		},
-		{
-			name:          "Agent Framework Wrapped Response - Text Field with JSON String",
-			llmResponse:   `{"text": "{\"analysis\": \"Error analysis\", \"solutions\": [\"S1\", \"S2\", \"S3\"]}"}`,
-			expectedCount: 3,
-			expectedFirst: "S1",
-		},
-		{
-			name: "Agent Framework Wrapped Response - Text Field with Escaped JSON",
-			llmResponse: `{"text": "{\"analysis\": \"The deployment failed due to insufficient permissions\", ` +
-				`\"solutions\": [\"Grant Owner role to the user\", \"Use User Access Administrator role\", ` +
-				`\"Contact subscription admin\"]}"}`,
-			expectedCount: 3,
-			expectedFirst: "Grant Owner role to the user",
-		},
-		{
-			name:          "Agent Framework Wrapped Response - Text Field with Single Solution",
-			llmResponse:   `{"text": "{\"analysis\": \"Simple error\", \"solutions\": [\"Single fix\"]}"}`,
-			expectedCount: 1,
-			expectedFirst: "Single fix",
-		},
-		{
-			name:          "Agent Framework Wrapped Response - Text Field with Empty Solutions",
-			llmResponse:   `{"text": "{\"analysis\": \"Error with no solutions\", \"solutions\": []}"}`,
-			expectedCount: 0,
-		},
-		{
-			name:          "Agent Framework Wrapped Response - Text Field Not a String",
-			llmResponse:   `{"text": 12345}`,
-			expectedCount: 0,
-		},
-		{
-			name:          "Agent Framework Wrapped Response - Text Field is Object Not String",
-			llmResponse:   `{"text": {"analysis": "nested", "solutions": ["should not extract"]}}`,
-			expectedCount: 0,
-		},
-		{
-			name:          "Agent Framework Wrapped Response - Text Field with Invalid Inner JSON",
-			llmResponse:   `{"text": "this is not valid json inside"}`,
-			expectedCount: 0,
-		},
-		{
-			name: "Direct JSON Takes Precedence When Text Field Missing",
-			llmResponse: `{
-				"analysis": "Direct analysis",
-				"solutions": ["Direct solution 1", "Direct solution 2"]
-			}`,
-			expectedCount: 2,
-			expectedFirst: "Direct solution 1",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			solutions := extractSuggestedSolutions(tt.llmResponse)
-			require.Equal(t, tt.expectedCount, len(solutions))
-
-			if tt.expectedCount > 0 {
-				require.Equal(t, tt.expectedFirst, solutions[0])
-			}
-		})
-	}
-}
-
-func Test_PromptExplanationWithConsent_SavedSkipDisplaysWarning(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
-	cfg := config.NewEmptyConfig()
-	_ = cfg.Set("mcp.errorHandling.troubleshooting.skip", "allow")
-	mockContext.ConfigManager.WithConfig(cfg)
-	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
-
-	middleware := &ErrorMiddleware{
-		console:           mockContext.Console,
-		userConfigManager: userConfigManager,
-	}
-
-	scope, err := middleware.promptExplanationWithConsent(*mockContext.Context)
-	require.NoError(t, err)
-	require.Equal(t, "", scope, "skip should return empty scope")
-
-	consoleOutput := mockContext.Console.Output()
-	require.NotEmpty(t, consoleOutput, "should display a warning message")
-	found := false
-	for _, msg := range consoleOutput {
-		if strings.Contains(msg, "always skip") && strings.Contains(msg, "azd config unset") {
-			found = true
-			break
-		}
-	}
-	require.True(t, found, "warning should mention always skip and how to unset it")
-}
-
-func Test_PromptExplanationWithConsent_AlwaysSkipSavesAndPersistsConfig(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
-	cfg := config.NewEmptyConfig()
-	mockContext.ConfigManager.WithConfig(cfg)
-	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
-
-	// Verify config is empty initially
-	loadedCfg, err := userConfigManager.Load()
-	require.NoError(t, err)
-	_, ok := loadedCfg.GetString("mcp.errorHandling.troubleshooting.skip")
-	require.False(t, ok, "config should not have skip preference initially")
-
-	// Simulate what "always.skip" selection does: set and save the config key
-	err = loadedCfg.Set("mcp.errorHandling.troubleshooting.skip", "allow")
-	require.NoError(t, err)
-	err = userConfigManager.Save(loadedCfg)
-	require.NoError(t, err)
-
-	// Verify the value was persisted
-	reloadedCfg, err := userConfigManager.Load()
-	require.NoError(t, err)
-	val, ok := reloadedCfg.GetString("mcp.errorHandling.troubleshooting.skip")
-	require.True(t, ok, "config should have skip preference after save")
-	require.Equal(t, "allow", val)
-
-	// Now verify that promptTroubleshootingWithConsent auto-returns empty scope
-	middleware := &ErrorMiddleware{
-		console:           mockContext.Console,
-		userConfigManager: userConfigManager,
-	}
-
-	scope, err := middleware.promptExplanationWithConsent(*mockContext.Context)
-	require.NoError(t, err)
-	require.Equal(t, "", scope, "always.skip should auto-return empty scope")
 }
 
 func Test_ClassifyError(t *testing.T) {

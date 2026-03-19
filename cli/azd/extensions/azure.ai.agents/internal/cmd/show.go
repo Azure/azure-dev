@@ -17,11 +17,8 @@ import (
 )
 
 type showFlags struct {
-	accountName string
-	projectName string
-	name        string
-	version     string
-	output      string
+	name   string
+	output string
 }
 
 // ShowAction handles the execution of the show command.
@@ -34,25 +31,59 @@ func newShowCommand() *cobra.Command {
 	flags := &showFlags{}
 
 	cmd := &cobra.Command{
-		Use:   "show",
+		Use:   "show [name]",
 		Short: "Show the status of a hosted agent deployment.",
 		Long: `Show the status of a hosted agent deployment.
 
 Retrieves the runtime status of a hosted agent container, including its current state,
-replica configuration, and any error messages.`,
-		Example: `  # Show status using azd environment configuration
-  azd ai agent show --name my-agent --version 1
+replica configuration, and any error messages.
 
-  # Show status with explicit account and project
-  azd ai agent show --name my-agent --version 1 --account-name myAccount --project-name myProject
+The agent name and version are resolved automatically from the azure.yaml service
+configuration and the current azd environment. Optionally specify the service name
+(from azure.yaml) as a positional argument when multiple agent services exist.`,
+		Example: `  # Show status (auto-resolves from azure.yaml)
+  azd ai agent show
+
+  # Show status for a specific agent service
+  azd ai agent show my-agent
 
   # Show status in table format
-  azd ai agent show --name my-agent --version 1 --output table`,
+  azd ai agent show --output table`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) > 0 {
+				flags.name = args[0]
+			}
 			ctx := azdext.WithAccessToken(cmd.Context())
 			setupDebugLogging(cmd.Flags())
 
-			agentContext, err := newAgentContext(ctx, flags.accountName, flags.projectName, flags.name, flags.version)
+			azdClient, err := azdext.NewAzdClient()
+			if err != nil {
+				return fmt.Errorf("failed to create azd client: %w", err)
+			}
+			defer azdClient.Close()
+
+			info, err := resolveAgentServiceFromProject(ctx, azdClient, flags.name, rootFlags.NoPrompt)
+			if err != nil {
+				return err
+			}
+
+			if info.AgentName == "" {
+				return fmt.Errorf(
+					"agent name could not be resolved from azd environment for service '%s'\n\n"+
+						"Run 'azd deploy' first to deploy the agent, or check your azd environment values",
+					info.ServiceName,
+				)
+			}
+			if info.Version == "" {
+				return fmt.Errorf(
+					"agent version could not be resolved from azd environment for service '%s'\n\n"+
+						"Run 'azd deploy' first to deploy the agent, or check your azd environment values",
+					info.ServiceName,
+				)
+			}
+
+			agentContext, err := newAgentContext(ctx, "", "", info.AgentName, info.Version)
 			if err != nil {
 				return err
 			}
@@ -66,14 +97,7 @@ replica configuration, and any error messages.`,
 		},
 	}
 
-	cmd.Flags().StringVarP(&flags.accountName, "account-name", "a", "", "Cognitive Services account name")
-	cmd.Flags().StringVarP(&flags.projectName, "project-name", "p", "", "AI Foundry project name")
-	cmd.Flags().StringVarP(&flags.name, "name", "n", "", "Name of the hosted agent (required)")
-	cmd.Flags().StringVarP(&flags.version, "version", "v", "", "Version of the hosted agent (required)")
 	cmd.Flags().StringVarP(&flags.output, "output", "o", "json", "Output format (json or table)")
-
-	_ = cmd.MarkFlagRequired("name")
-	_ = cmd.MarkFlagRequired("version")
 
 	return cmd
 }

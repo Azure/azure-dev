@@ -13,13 +13,20 @@ steps:
     displayName: Clone Azure/homebrew-azd
 
   - pwsh: |
-      Copy-Item homebrew-formula/azd.rb homebrew-azd/Formula/azd.rb
+      # Ensure directory exists
+      New-Item -ItemType Directory homebrew-azd/Formula -Force
+      New-Item -ItemType Directory homebrew-azd/Casks -Force
+
+      # Copy updated formula and casks if they exist
+      Copy-Item homebrew-formula/Formula/*.rb homebrew-azd/Formula/ -Force
+      Copy-Item homebrew-formula/Casks/*.rb homebrew-azd/Casks/ -Force
+    displayName: Copy updated formula and casks to homebrew-azd
 
   - template: /eng/common/pipelines/templates/steps/git-push-changes.yml
     parameters:
       # The azure-sdk user has permission to push directly to main
       BaseRepoBranch: ${{ parameters.BaseRepoBranch }}
       BaseRepoOwner: Azure
-      CommitMsg: Update formula for azd release $(CLI_VERSION)
+      CommitMsg: Update for azd release $(CLI_VERSION)
       TargetRepoName: homebrew-azd
       WorkingDirectory: homebrew-azd

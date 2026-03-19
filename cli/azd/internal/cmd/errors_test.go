@@ -30,8 +30,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mocktracing"
 	"github.com/stretchr/testify/require"
@@ -403,7 +405,26 @@ func Test_MapError(t *testing.T) {
 			},
 			wantErrReason: "error.suggestion",
 			wantErrDetails: []attribute.KeyValue{
-				fields.ErrType.String("*exported.ResponseError"),
+				fields.ErrType.String("service.arm.429"),
+			},
+		},
+		{
+			name: "WithSuggestionWrappingArmDeploymentError",
+			err: &internal.ErrorWithSuggestion{
+				Err: &azapi.AzureDeploymentError{
+					Operation: azapi.DeploymentOperationDeploy,
+					Details: &azapi.DeploymentErrorLine{
+						Code: "Conflict",
+						Inner: []*azapi.DeploymentErrorLine{
+							{Code: "OutOfCapacity"},
+						},
+					},
+				},
+				Suggestion: "Retry in another region.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String("service.arm.deployment.failed"),
 			},
 		},
 		{
@@ -815,7 +836,7 @@ func TestMapError_ErrorWithSuggestionSetsErrorType(t *testing.T) {
 			wantErrType: "internal.key_not_found",
 		},
 		{
-			name: "ResponseError_falls_back_to_go_type",
+			name: "ResponseErrorUsesStructuredCategory",
 			err: &internal.ErrorWithSuggestion{
 				Err: &azcore.ResponseError{
 					ErrorCode:  "QuotaExceeded",
@@ -831,7 +852,24 @@ func TestMapError_ErrorWithSuggestionSetsErrorType(t *testing.T) {
 				Suggestion: "Request a quota increase.",
 			},
 			wantErrCode: "error.suggestion",
-			wantErrType: "*exported.ResponseError",
+			wantErrType: "service.arm.429",
+		},
+		{
+			name: "ArmDeploymentErrorUsesStructuredCategory",
+			err: &internal.ErrorWithSuggestion{
+				Err: &azapi.AzureDeploymentError{
+					Operation: azapi.DeploymentOperationDeploy,
+					Details: &azapi.DeploymentErrorLine{
+						Code: "Conflict",
+						Inner: []*azapi.DeploymentErrorLine{
+							{Code: "OutOfCapacity"},
+						},
+					},
+				},
+				Suggestion: "Retry in another region.",
+			},
+			wantErrCode: "error.suggestion",
+			wantErrType: "service.arm.deployment.failed",
 		},
 		{
 			name: "PlainError_falls_back_to_go_type",
@@ -855,6 +893,121 @@ func TestMapError_ErrorWithSuggestionSetsErrorType(t *testing.T) {
 			wantAttr := fields.ErrType.String(tt.wantErrType)
 			require.Contains(t, span.Attributes, wantAttr,
 				"error.type attribute should record the inner error type")
+		})
+	}
+}
+
+// Test_ClassifySuggestionType_MatchesMapError verifies that classifySuggestionType produces
+// the same errCode as MapError for every structured error type and sentinel.
+// This catches drift if someone updates the classification logic in one function but not the other.
+func Test_ClassifySuggestionType_MatchesMapError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{
+			name: "ResponseError",
+			err: &azcore.ResponseError{
+				ErrorCode:  "QuotaExceeded",
+				StatusCode: 429,
+				RawResponse: &http.Response{
+					StatusCode: 429,
+					Request: &http.Request{
+						Method: "POST",
+						Host:   "management.azure.com",
+					},
+				},
+			},
+		},
+		{
+			name: "ArmDeploymentError",
+			err: &azapi.AzureDeploymentError{
+				Operation: azapi.DeploymentOperationDeploy,
+				Details: &azapi.DeploymentErrorLine{
+					Code: "Conflict",
+				},
+			},
+		},
+		{
+			name: "ArmValidationError",
+			err: &azapi.AzureDeploymentError{
+				Operation: azapi.DeploymentOperationValidate,
+				Details:   &azapi.DeploymentErrorLine{Code: "InvalidTemplate"},
+			},
+		},
+		{
+			name: "ExtServiceError",
+			err: &azdext.ServiceError{
+				Message:     "Rate limit",
+				ErrorCode:   "create_agent.RateLimitExceeded",
+				StatusCode:  429,
+				ServiceName: "openai.azure.com",
+			},
+		},
+		{
+			name: "ExtLocalError",
+			err: &azdext.LocalError{
+				Message:  "invalid config",
+				Code:     "Invalid-Config",
+				Category: azdext.LocalErrorCategoryValidation,
+			},
+		},
+		{
+			name: "ExtensionRunError",
+			err:  &extensions.ExtensionRunError{ExtensionId: "test", Err: errors.New("fail")},
+		},
+		{
+			name: "ExitError",
+			err:  &exec.ExitError{Cmd: "docker", ExitCode: 1},
+		},
+		{
+			name: "MissingToolErrors_single",
+			err:  &tools.MissingToolErrors{ToolNames: []string{"docker"}},
+		},
+		{
+			name: "MissingToolErrors_multiple",
+			err:  &tools.MissingToolErrors{ToolNames: []string{"docker", "kubectl"}},
+		},
+		{
+			name: "AuthFailedError",
+			err: &auth.AuthFailedError{
+				Parsed: &auth.AadErrorResponse{Error: "invalid_grant"},
+			},
+		},
+		// Sentinels
+		{name: "context.Canceled", err: context.Canceled},
+		{name: "context.DeadlineExceeded", err: context.DeadlineExceeded},
+		{name: "ErrNoCurrentUser", err: auth.ErrNoCurrentUser},
+		{name: "ErrNoProject", err: azdcontext.ErrNoProject},
+		{name: "ErrNotFound", err: environment.ErrNotFound},
+		{name: "ErrToolExecutionDenied", err: consent.ErrToolExecutionDenied},
+		{name: "ErrNotRepository", err: git.ErrNotRepository},
+		{name: "ErrPreviewNotSupported", err: azapi.ErrPreviewNotSupported},
+		{name: "ErrBindMountDisabled", err: provisioning.ErrBindMountOperationDisabled},
+		{name: "ErrRemoteHostIsNotAzDo", err: pipeline.ErrRemoteHostIsNotAzDo},
+		{name: "ErrInfraNotProvisioned", err: internal.ErrInfraNotProvisioned},
+		{name: "ErrKeyNotFound", err: internal.ErrKeyNotFound},
+		{name: "ErrExtensionNotFound", err: internal.ErrExtensionNotFound},
+		{name: "ErrOperationCancelled", err: internal.ErrOperationCancelled},
+		// Network error
+		{
+			name: "DNSError",
+			err:  &net.DNSError{Err: "no such host", Name: "example.com"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Get errCode from MapError
+			span := &mocktracing.Span{}
+			MapError(tt.err, span)
+			mapErrorCode := span.Status.Description
+
+			// Get code from classifySuggestionType
+			suggestionCode := classifySuggestionType(tt.err)
+
+			require.Equal(t, mapErrorCode, suggestionCode,
+				"classifySuggestionType and MapError must produce the same code for %T", tt.err)
 		})
 	}
 }
@@ -1125,8 +1278,9 @@ func Test_PackageLevelErrorsMapped(t *testing.T) {
 		"ErrDebuggerAborted": "defined in both cmd/middleware and pkg/azdext, handled at debug middleware level",
 
 		// Agent consent errors that map to user-initiated cancellation
-		"ErrSamplingDenied":    "agent consent: similar to user.canceled, low frequency",
-		"ErrElicitationDenied": "agent consent: similar to user.canceled, low frequency",
+		"ErrSamplingDenied":       "agent consent: similar to user.canceled, low frequency",
+		"ErrElicitationDenied":    "agent consent: similar to user.canceled, low frequency",
+		"ErrToolExecutionSkipped": "agent consent: user chose to skip tool, agent continues with other tools",
 
 		// UX cancellation that is always joined with context.Canceled (already mapped as user.canceled)
 		"ErrCancelled": "pkg/ux: always errors.Join'd with ctx.Err(), caught by context.Canceled check",

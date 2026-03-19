@@ -325,7 +325,7 @@ func (m *Manager) CredentialForCurrentUser(
 		for i, account := range accounts {
 			if account.HomeAccountID == *currentUser.HomeAccountID {
 				if options.TenantID == "" {
-					return newAzdCredential(m.publicClient, &accounts[i], m.cloud, ""), nil
+					return newAzdCredential(m.publicClient, &accounts[i], m.cloud, "" /* tenantID */), nil
 				} else {
 					newAuthority := m.cloud.Configuration.ActiveDirectoryAuthorityHost + options.TenantID
 
@@ -742,7 +742,7 @@ func (m *Manager) LoginInteractive(
 		_ = os.Remove(claimsFile)
 	}
 
-	return newAzdCredential(m.publicClient, &res.Account, m.cloud, ""), nil
+	return newAzdCredential(m.publicClient, &res.Account, m.cloud, "" /* tenantID */), nil
 }
 
 // LoginWithBrokerAccount logs in an account provided by the system authentication broker via OneAuth.
@@ -852,7 +852,7 @@ func (m *Manager) LoginWithDeviceCode(
 		_ = os.Remove(claimsFile)
 	}
 
-	return newAzdCredential(m.publicClient, &res.Account, m.cloud, ""), nil
+	return newAzdCredential(m.publicClient, &res.Account, m.cloud, "" /* tenantID */), nil
 
 }
 

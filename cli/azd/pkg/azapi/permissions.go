@@ -62,10 +62,10 @@ func (s *PermissionsService) HasRequiredPermissions(
 	subscriptionId string,
 	principalId string,
 	requiredActions []string,
-) (*PermissionCheckResult, error) {
+) (PermissionCheckResult, error) {
 	credential, err := s.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {
-		return nil, fmt.Errorf("getting credential for subscription %s: %w", subscriptionId, err)
+		return PermissionCheckResult{}, fmt.Errorf("getting credential for subscription %s: %w", subscriptionId, err)
 	}
 
 	// Create a role assignments client to list the principal's role assignments at subscription scope.
@@ -73,13 +73,13 @@ func (s *PermissionsService) HasRequiredPermissions(
 		subscriptionId, credential, s.armClientOptions,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("creating role assignments client: %w", err)
+		return PermissionCheckResult{}, fmt.Errorf("creating role assignments client: %w", err)
 	}
 
 	// Create a role definitions client to retrieve the definition for each assignment.
 	roleDefinitionsClient, err := armauthorization.NewRoleDefinitionsClient(credential, s.armClientOptions)
 	if err != nil {
-		return nil, fmt.Errorf("creating role definitions client: %w", err)
+		return PermissionCheckResult{}, fmt.Errorf("creating role definitions client: %w", err)
 	}
 
 	// Collect role assignments with metadata about conditions.
@@ -96,7 +96,7 @@ func (s *PermissionsService) HasRequiredPermissions(
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			return nil, fmt.Errorf(
+			return PermissionCheckResult{}, fmt.Errorf(
 				"listing role assignments for principal %s: %w", principalId, err)
 		}
 		for _, ra := range page.Value {
@@ -112,7 +112,7 @@ func (s *PermissionsService) HasRequiredPermissions(
 	}
 
 	if len(assignments) == 0 {
-		return &PermissionCheckResult{HasPermission: false}, nil
+		return PermissionCheckResult{HasPermission: false}, nil
 	}
 
 	// Check each role definition and track whether granting roles have conditions.
@@ -135,25 +135,25 @@ func (s *PermissionsService) checkActionsFromRoles(
 	client *armauthorization.RoleDefinitionsClient,
 	assignments []roleAssignmentInfo,
 	requiredActions []string,
-) (*PermissionCheckResult, error) {
-	// Track which required actions are still unresolved, and whether any granting
-	// role is unconditional (no ABAC condition).
+) (PermissionCheckResult, error) {
+	// Track which required actions are still unresolved.
 	remaining := make(map[string]bool, len(requiredActions))
 	for _, a := range requiredActions {
 		remaining[a] = true
 	}
 
-	// hasUnconditionalGrant tracks whether at least one granting role has no condition.
-	hasUnconditionalGrant := false
+	// Track which required actions have been granted unconditionally (no ABAC condition).
+	// An action needs at least one unconditional grant to avoid the conditional warning.
+	unconditionalActions := make(map[string]bool, len(requiredActions))
 
 	for _, assignment := range assignments {
-		if len(remaining) == 0 && hasUnconditionalGrant {
+		if len(remaining) == 0 && len(unconditionalActions) == len(requiredActions) {
 			break
 		}
 
 		resp, err := client.GetByID(ctx, assignment.roleDefinitionID, nil)
 		if err != nil {
-			return nil, fmt.Errorf(
+			return PermissionCheckResult{}, fmt.Errorf(
 				"getting role definition %s: %w", assignment.roleDefinitionID, err)
 		}
 
@@ -176,24 +176,29 @@ func (s *PermissionsService) checkActionsFromRoles(
 			}
 		}
 
-		// Check each remaining required action against this role.
-		for action := range remaining {
+		// Check each required action against this role. Even if the action was already
+		// granted by an earlier role, we still check for unconditional grants so that a
+		// later unconditional assignment can clear the conditional flag.
+		for _, action := range requiredActions {
+			if unconditionalActions[action] {
+				continue
+			}
 			if isActionAllowedByRole(action, actions, notActions) {
 				delete(remaining, action)
 				if !assignment.hasCondition {
-					hasUnconditionalGrant = true
+					unconditionalActions[action] = true
 				}
 			}
 		}
 	}
 
 	if len(remaining) > 0 {
-		return &PermissionCheckResult{HasPermission: false}, nil
+		return PermissionCheckResult{HasPermission: false}, nil
 	}
 
-	return &PermissionCheckResult{
+	return PermissionCheckResult{
 		HasPermission: true,
-		Conditional:   !hasUnconditionalGrant,
+		Conditional:   len(unconditionalActions) < len(requiredActions),
 	}, nil
 }
 

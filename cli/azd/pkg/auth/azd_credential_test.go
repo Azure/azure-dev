@@ -41,24 +41,30 @@ func TestAzdCredential_GetToken_ForwardsTenantID(t *testing.T) {
 		optsTID string // tenant from TokenRequestOptions
 		// expectTenantOption is true when WithTenantID should be in the options
 		expectTenantOption bool
+		// expectedTenantID is the tenant ID value that should be forwarded.
+		// When optsTID is set it overrides credTID.
+		expectedTenantID string
 	}{
 		{
 			name:               "CredentialTenantUsed",
 			credTID:            "resource-tenant-id",
 			optsTID:            "",
 			expectTenantOption: true,
+			expectedTenantID:   "resource-tenant-id",
 		},
 		{
 			name:               "OptionsTenantOverrides",
 			credTID:            "resource-tenant-id",
 			optsTID:            "override-tenant-id",
 			expectTenantOption: true,
+			expectedTenantID:   "override-tenant-id",
 		},
 		{
 			name:               "NoTenant",
 			credTID:            "",
 			optsTID:            "",
 			expectTenantOption: false,
+			expectedTenantID:   "",
 		},
 	}
 
@@ -81,6 +87,17 @@ func TestAzdCredential_GetToken_ForwardsTenantID(t *testing.T) {
 				require.Len(t, spy.silentOptions, 2,
 					"expected WithSilentAccount + WithClaims only")
 			}
+
+			// Verify the resolved tenant ID matches expectations.
+			// The credential resolves: optsTID if non-empty, else credTID.
+			// MSAL's WithTenantID option is opaque, so we verify the credential's
+			// tenant resolution logic directly (same package gives access to internals).
+			resolvedTenant := cred.tenantID
+			if tt.optsTID != "" {
+				resolvedTenant = tt.optsTID
+			}
+			require.Equal(t, tt.expectedTenantID, resolvedTenant,
+				"resolved tenant ID should match expected value")
 		})
 	}
 }

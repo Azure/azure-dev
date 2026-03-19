@@ -10,7 +10,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"sort"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -644,9 +643,6 @@ func ResolveSecretEnvironment(
 
 		result[i] = key + "=" + resolved
 	}
-
-	// Sort for deterministic output.
-	sort.Strings(result)
 
 	if len(errs) > 0 {
 		return result, fmt.Errorf("failed to resolve Key Vault references: %w", errors.Join(errs...))

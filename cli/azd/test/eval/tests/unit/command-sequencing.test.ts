@@ -15,7 +15,7 @@ function azdInDir(
       encoding: "utf-8",
       timeout: 60_000,
       cwd,
-      env: { ...process.env, AZD_CONFIG_DIR: cwd, NO_COLOR: "1" },
+      env: { ...process.env, NO_COLOR: "1" },
     });
     return { stdout, stderr: "", exitCode: 0 };
   } catch (e: any) {

@@ -78,7 +78,7 @@ func newJobSubmitCommand() *cobra.Command {
 				jobDef.Name = utils.GenerateJobName()
 			}
 
-			// Resolve relative paths in YAML against the YAML file's directory
+			// Resolve relative paths in YAML to absolute paths as it's required during upload
 			yamlDir := filepath.Dir(filePath)
 			if jobDef.Code != "" && !filepath.IsAbs(jobDef.Code) && !service.IsRemoteURI(jobDef.Code) {
 				jobDef.Code = filepath.Join(yamlDir, jobDef.Code)
@@ -102,7 +102,7 @@ func newJobSubmitCommand() *cobra.Command {
 			resolver := service.NewJobResolver(
 				service.NewDefaultComputeResolver(),
 				service.NewDefaultCodeResolver(uploadSvc, projectName),
-				service.NewDefaultInputResolver(uploadSvc, projectName),
+				service.NewDefaultInputResolver(uploadSvc),
 			)
 			if err := resolver.ResolveJobDefinition(ctx, jobDef); err != nil {
 				return fmt.Errorf("failed to resolve job definition: %w", err)

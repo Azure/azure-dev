@@ -14,17 +14,14 @@ import (
 // It uses content-based dedup via UploadService: if the same directory contents were uploaded before,
 // the existing dataset version is reused. On the rare hash collision, it falls back to job-scoped naming.
 type DefaultInputResolver struct {
-	uploadSvc   *UploadService
-	projectName string
+	uploadSvc *UploadService
 }
 
 // NewDefaultInputResolver creates an input resolver that uploads local input directories.
 //   - uploadSvc: handles the actual dataset upload (POST → azcopy → PATCH) with dedup
-//   - projectName: used in dataset descriptions
-func NewDefaultInputResolver(uploadSvc *UploadService, projectName string) *DefaultInputResolver {
+func NewDefaultInputResolver(uploadSvc *UploadService) *DefaultInputResolver {
 	return &DefaultInputResolver{
-		uploadSvc:   uploadSvc,
-		projectName: projectName,
+		uploadSvc:   uploadSvc
 	}
 }
 
@@ -38,7 +35,7 @@ func (r *DefaultInputResolver) ResolveInput(ctx context.Context, inputName strin
 
 	result, err := r.uploadSvc.UploadDirectory(
 		ctx, inputPath, assetName,
-		fmt.Sprintf("Input %s for project %s", inputName, r.projectName),
+		fmt.Sprintf("Input %s", inputName),
 	)
 	if err != nil {
 		return "", fmt.Errorf("failed to upload input %s: %w", inputName, err)
@@ -50,7 +47,7 @@ func (r *DefaultInputResolver) ResolveInput(ctx context.Context, inputName strin
 		fmt.Printf("  (hash collision on %s, falling back to %s)\n", assetName, fallbackName)
 		result, err = r.uploadSvc.UploadDirectoryNoDedup(
 			ctx, inputPath, fallbackName, "1",
-			fmt.Sprintf("Input %s for project %s (collision fallback)", inputName, r.projectName),
+			fmt.Sprintf("Input %s (collision fallback)", inputName),
 		)
 		if err != nil {
 			return "", fmt.Errorf("failed to upload input %s (fallback): %w", inputName, err)

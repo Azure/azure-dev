@@ -566,6 +566,13 @@ func ParseKeyVaultAppReference(ref string) (KeyVaultAppReference, error) {
 			"invalid @Microsoft.KeyVault reference %q: SecretUri must include a host", ref)
 	}
 
+	// Reject non-standard ports to prevent SSRF — bearer tokens should only be
+	// sent to the default HTTPS port (443).
+	if port := u.Port(); port != "" && port != "443" {
+		return KeyVaultAppReference{}, fmt.Errorf(
+			"invalid @Microsoft.KeyVault reference %q: non-standard port %q is not allowed", ref, port)
+	}
+
 	if !isValidVaultHost(host) {
 		return KeyVaultAppReference{}, fmt.Errorf(
 			"invalid @Microsoft.KeyVault reference %q: host %q is not a known Azure Key Vault endpoint", ref, host)

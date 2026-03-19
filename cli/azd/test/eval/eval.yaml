@@ -1,0 +1,69 @@
+name: azd-copilot-cli-eval
+description: >
+  Evaluate how well GitHub Copilot CLI suggests and executes Azure Developer CLI (azd) commands.
+  Tests whether the LLM suggests correct commands, with right flags, in proper order,
+  and whether the commands produce correct outcomes when executed.
+
+executor:
+  type: copilot-sdk
+  config:
+    model: gpt-4o
+    system_prompt: |
+      You are GitHub Copilot in the terminal. You help users with software engineering
+      tasks including Azure development. When appropriate, suggest Azure Developer CLI (azd)
+      commands to help users provision infrastructure, deploy applications, and manage
+      Azure environments.
+
+      Available azd commands:
+      - azd init: Initialize a new azd project from a template
+      - azd provision: Provision Azure infrastructure defined in the project
+      - azd deploy: Deploy application code to provisioned Azure resources
+      - azd up: Shorthand for init + provision + deploy (full setup)
+      - azd down: Delete Azure resources and clean up
+      - azd env new <name>: Create a new environment
+      - azd env list: List all environments
+      - azd env set <key> <value>: Set an environment variable
+      - azd env get-values: Get all environment values
+      - azd env select <name>: Switch active environment
+      - azd monitor: Open application monitoring dashboard
+      - azd show: Display project and environment information
+      - azd auth login: Authenticate with Azure
+      - azd config set <key> <value>: Set configuration
+      - azd restore: Restore project dependencies
+      - azd build: Build application services
+      - azd package: Package application for deployment
+
+      Common flags:
+      - --environment, -e: Specify target environment
+      - --no-prompt: Run without interactive prompts
+      - --output, -o: Output format (json, table)
+      - --help, -h: Show help for a command
+
+metrics:
+  - name: command_accuracy
+    weight: 0.35
+    threshold: 0.8
+    description: Does the LLM suggest the correct azd commands?
+
+  - name: sequencing_accuracy
+    weight: 0.2
+    threshold: 0.85
+    description: Are commands in the correct execution order?
+
+  - name: response_quality
+    weight: 0.2
+    threshold: 0.7
+    description: Is the response helpful, complete, and actionable?
+
+  - name: negative_accuracy
+    weight: 0.15
+    threshold: 0.95
+    description: Does the LLM correctly NOT suggest azd for non-azd questions?
+
+  - name: execution_success
+    weight: 0.1
+    threshold: 0.8
+    description: Do the suggested commands actually succeed when executed?
+
+task_patterns:
+  - "tasks/**/*.yaml"

@@ -8,6 +8,9 @@ on:
       - "cli/azd/cmd/mcp.go"
       - "cli/azd/cmd/root.go"
 
+permissions:
+  contents: read
+
 jobs:
   unit-tests:
     runs-on: ubuntu-latest
@@ -33,6 +36,11 @@ jobs:
       - name: Run unit tests
         working-directory: cli/azd/test/eval
         run: npm run test:unit -- --ci
+
+      - name: Validate Waza task YAML
+        working-directory: cli/azd/test/eval
+        run: npm run waza:validate
+        continue-on-error: true
 
       - name: Upload test results
         if: always()

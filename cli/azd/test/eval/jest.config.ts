@@ -25,7 +25,7 @@ const config: Config = {
         ]
       : []),
   ],
-  testTimeout: 300_000, // 5 min — CLI workflows can be slow
+  testTimeout: 30_000, // 30s default — override per-test for slow CLI workflows
 };
 
 export default config;

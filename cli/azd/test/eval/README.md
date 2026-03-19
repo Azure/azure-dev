@@ -357,7 +357,6 @@ cli/azd/test/eval/
 | `eval-unit.yml` | On PR | Jest unit tests + `waza validate` |
 | `eval-waza.yml` | 3x daily (Tue-Sat) | Waza evals via Copilot SDK |
 | `eval-e2e.yml` | Weekly | Waza E2E with Azure resource validation |
-| `eval-human.yml` | Weekly | Human usage baseline tests |
 | `eval-report.yml` | Weekly | Comparison report + auto-issue creation |
 
 ## Authentication & Secrets

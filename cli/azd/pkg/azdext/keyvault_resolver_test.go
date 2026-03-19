@@ -191,7 +191,7 @@ func TestResolve_Success(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	val, err := resolver.Resolve(context.Background(), "akvs://sub-id/my-vault/my-secret")
+	val, err := resolver.Resolve(t.Context(), "akvs://sub-id/my-vault/my-secret")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -225,7 +225,7 @@ func TestResolve_InvalidReference(t *testing.T) {
 		ClientFactory: stubSecretFactory(&stubSecretGetter{}, nil),
 	})
 
-	_, err := resolver.Resolve(context.Background(), "not-akvs://x")
+	_, err := resolver.Resolve(t.Context(), "not-akvs://x")
 	if err == nil {
 		t.Fatal("expected error for invalid reference")
 	}
@@ -248,7 +248,7 @@ func TestResolve_ClientCreationFailure(t *testing.T) {
 		ClientFactory: stubSecretFactory(nil, errors.New("connection refused")),
 	})
 
-	_, err := resolver.Resolve(context.Background(), "akvs://sub/vault/secret")
+	_, err := resolver.Resolve(t.Context(), "akvs://sub/vault/secret")
 	if err == nil {
 		t.Fatal("expected error for client creation failure")
 	}
@@ -275,7 +275,7 @@ func TestResolve_SecretNotFound(t *testing.T) {
 		ClientFactory: stubSecretFactory(getter, nil),
 	})
 
-	_, err := resolver.Resolve(context.Background(), "akvs://sub/vault/missing-secret")
+	_, err := resolver.Resolve(t.Context(), "akvs://sub/vault/missing-secret")
 	if err == nil {
 		t.Fatal("expected error for missing secret")
 	}
@@ -302,7 +302,7 @@ func TestResolve_AccessDenied(t *testing.T) {
 		ClientFactory: stubSecretFactory(getter, nil),
 	})
 
-	_, err := resolver.Resolve(context.Background(), "akvs://sub/vault/secret")
+	_, err := resolver.Resolve(t.Context(), "akvs://sub/vault/secret")
 	if err == nil {
 		t.Fatal("expected error for forbidden access")
 	}
@@ -329,7 +329,7 @@ func TestResolve_Unauthorized(t *testing.T) {
 		ClientFactory: stubSecretFactory(getter, nil),
 	})
 
-	_, err := resolver.Resolve(context.Background(), "akvs://sub/vault/secret")
+	_, err := resolver.Resolve(t.Context(), "akvs://sub/vault/secret")
 	if err == nil {
 		t.Fatal("expected error for unauthorized access")
 	}
@@ -356,7 +356,7 @@ func TestResolve_ServiceError(t *testing.T) {
 		ClientFactory: stubSecretFactory(getter, nil),
 	})
 
-	_, err := resolver.Resolve(context.Background(), "akvs://sub/vault/secret")
+	_, err := resolver.Resolve(t.Context(), "akvs://sub/vault/secret")
 	if err == nil {
 		t.Fatal("expected error for server error")
 	}
@@ -387,7 +387,7 @@ func TestResolve_NilValue(t *testing.T) {
 		ClientFactory: stubSecretFactory(getter, nil),
 	})
 
-	_, err := resolver.Resolve(context.Background(), "akvs://sub/vault/secret")
+	_, err := resolver.Resolve(t.Context(), "akvs://sub/vault/secret")
 	if err == nil {
 		t.Fatal("expected error for nil secret value")
 	}
@@ -414,7 +414,7 @@ func TestResolve_NonResponseError(t *testing.T) {
 		ClientFactory: stubSecretFactory(getter, nil),
 	})
 
-	_, err := resolver.Resolve(context.Background(), "akvs://sub/vault/secret")
+	_, err := resolver.Resolve(t.Context(), "akvs://sub/vault/secret")
 	if err == nil {
 		t.Fatal("expected error for network failure")
 	}
@@ -455,7 +455,7 @@ func TestResolveMap_MixedValues(t *testing.T) {
 		"secret": "akvs://sub/vault/secret",
 	}
 
-	result, err := resolver.ResolveMap(context.Background(), input)
+	result, err := resolver.ResolveMap(t.Context(), input)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -477,7 +477,7 @@ func TestResolveMap_Empty(t *testing.T) {
 		ClientFactory: stubSecretFactory(&stubSecretGetter{}, nil),
 	})
 
-	result, err := resolver.ResolveMap(context.Background(), map[string]string{})
+	result, err := resolver.ResolveMap(t.Context(), map[string]string{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -505,7 +505,7 @@ func TestResolveMap_ErrorCollectsAllFailures(t *testing.T) {
 
 	// ResolveMap now collects errors instead of stopping at the first one.
 	// The partial result should still be returned alongside the error.
-	result, err := resolver.ResolveMap(context.Background(), input)
+	result, err := resolver.ResolveMap(t.Context(), input)
 	if err == nil {
 		t.Fatal("expected error when resolution fails")
 	}
@@ -645,7 +645,7 @@ func TestResolve_AppRefSuccess(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	val, err := resolver.Resolve(context.Background(),
+	val, err := resolver.Resolve(t.Context(),
 		"@Microsoft.KeyVault(SecretUri=https://myvault.vault.azure.net/secrets/mysecret)")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -676,7 +676,7 @@ func TestResolve_AppRefWithVersion(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	val, err := resolver.Resolve(context.Background(),
+	val, err := resolver.Resolve(t.Context(),
 		"@Microsoft.KeyVault(SecretUri=https://myvault.vault.azure.net/secrets/mysecret/v1)")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -695,7 +695,7 @@ func TestResolve_AppRefInvalidHostReturnsError(t *testing.T) {
 		ClientFactory: stubSecretFactory(&stubSecretGetter{}, nil),
 	})
 
-	_, err := resolver.Resolve(context.Background(),
+	_, err := resolver.Resolve(t.Context(),
 		"@Microsoft.KeyVault(SecretUri=https://evil.com/secrets/foo)")
 	if err == nil {
 		t.Fatal("expected error for invalid vault host")

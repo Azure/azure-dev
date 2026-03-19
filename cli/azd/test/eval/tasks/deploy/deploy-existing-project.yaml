@@ -1,0 +1,36 @@
+id: deploy-existing-project-001
+description: >
+  User already has an azd project with azure.yaml and wants to deploy.
+  LLM should suggest azd deploy (or azd up) but NOT azd init since
+  the project is already initialized.
+inputs:
+  prompt: "I already have my azd project set up with azure.yaml. How do I deploy it?"
+  context: |
+    The user has an existing azd project with a valid azure.yaml file.
+    Infrastructure has already been provisioned. They just need to deploy
+    their application code.
+graders:
+  - type: text
+    weight: 0.3
+    config:
+      must_match:
+        - "azd (deploy|up)"
+      must_not_match:
+        - "azd init"
+        - "az group delete"
+  - type: action_sequence
+    weight: 0.3
+    config:
+      expected_order:
+        - "azd deploy"
+  - type: behavior
+    weight: 0.2
+    config:
+      max_tool_calls: 10
+      max_tokens: 3000
+  - type: text
+    weight: 0.2
+    config:
+      must_match_any:
+        - "azd deploy"
+        - "azd up"

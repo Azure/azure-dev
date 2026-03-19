@@ -1,0 +1,43 @@
+name: "Eval: Unit Tests"
+
+on:
+  pull_request:
+    paths:
+      - "cli/azd/test/eval/**"
+      - "cli/azd/internal/mcp/**"
+      - "cli/azd/cmd/mcp.go"
+      - "cli/azd/cmd/root.go"
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: "cli/azd/go.mod"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build azd
+        working-directory: cli/azd
+        run: go build -o ./azd .
+
+      - name: Install eval dependencies
+        working-directory: cli/azd/test/eval
+        run: npm ci
+
+      - name: Run unit tests
+        working-directory: cli/azd/test/eval
+        run: npm run test:unit -- --ci
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-unit-results
+          path: cli/azd/test/eval/reports/
+          retention-days: 30

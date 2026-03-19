@@ -1,20 +1,4 @@
-import { execSync } from "child_process";
-import { resolve } from "path";
-
-const AZD_BIN = resolve(__dirname, "../../../../azd");
-
-function azd(args: string): { stdout: string; stderr: string; exitCode: number } {
-  try {
-    const stdout = execSync(`${AZD_BIN} ${args}`, {
-      encoding: "utf-8",
-      timeout: 30_000,
-      env: { ...process.env, NO_COLOR: "1" },
-    });
-    return { stdout, stderr: "", exitCode: 0 };
-  } catch (e: any) {
-    return { stdout: e.stdout || "", stderr: e.stderr || "", exitCode: e.status || 1 };
-  }
-}
+import { azd } from "../test-utils";
 
 const COMMANDS_WITH_HELP = [
   "init", "provision", "deploy", "up", "down",

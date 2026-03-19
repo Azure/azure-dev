@@ -374,6 +374,8 @@ overrides:
   - filename: pkg/project/project.go
     words:
       - copylocks
+      - covdata
+      - GOWORK
   - filename: pkg/ext/models.go
     words:
       - unvalidated
@@ -383,6 +385,11 @@ overrides:
     words:
       - covdata
       - GOWORK
+  - filename: test/eval/README.md
+    words:
+      - Waza
+      - waza
+      - urlopen
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

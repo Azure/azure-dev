@@ -216,7 +216,7 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 				switch initMode {
 				case initModeTemplate:
 					// User chose to start from a template - select one
-					selectedTemplate, err := promptAgentTemplate(ctx, azdClient, httpClient)
+					selectedTemplate, err := promptAgentTemplate(ctx, azdClient, httpClient, flags.NoPrompt)
 					if err != nil {
 						if exterrors.IsCancellation(err) {
 							return exterrors.Cancelled("initialization was cancelled")

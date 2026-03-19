@@ -77,10 +77,13 @@ func promptInitMode(ctx context.Context, azdClient *azdext.AzdClient) (string, e
 		{Label: "Start new from a template", Value: initModeTemplate},
 	}
 
+	defaultIndex := int32(0)
+
 	resp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
-			Message: "How do you want to initialize your agent?",
-			Choices: choices,
+			Message:       "How do you want to initialize your agent?",
+			Choices:       choices,
+			SelectedIndex: &defaultIndex,
 		},
 	})
 	if err != nil {
@@ -140,7 +143,16 @@ func promptAgentTemplate(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	httpClient *http.Client,
+	noPrompt bool,
 ) (*AgentTemplate, error) {
+	if noPrompt {
+		return nil, exterrors.Validation(
+			exterrors.CodePromptFailed,
+			"template selection requires interactive mode",
+			"use 'azd ai agent init -m <manifest>' to initialize from a template non-interactively",
+		)
+	}
+
 	fmt.Println("Retrieving agent templates...")
 
 	templates, err := fetchAgentTemplates(ctx, httpClient)

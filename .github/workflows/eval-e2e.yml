@@ -1,0 +1,71 @@
+name: "Eval: E2E Lifecycle"
+
+on:
+  schedule:
+    # 6am UTC Monday
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  e2e-lifecycle:
+    runs-on: ubuntu-latest
+    env:
+      AZURE_ENV_NAME: eval-e2e-${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: "cli/azd/go.mod"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build azd
+        working-directory: cli/azd
+        run: go build -o ./azd .
+
+      - name: Add azd to PATH
+        run: echo "${{ github.workspace }}/cli/azd" >> "$GITHUB_PATH"
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install Waza CLI
+        run: npm install -g @anthropic/waza
+
+      - name: Install eval dependencies
+        working-directory: cli/azd/test/eval
+        run: npm ci
+
+      - name: Run lifecycle evaluations
+        working-directory: cli/azd/test/eval
+        continue-on-error: true
+        env:
+          COPILOT_CLI_TOKEN: ${{ secrets.COPILOT_CLI_TOKEN }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: waza run --executor copilot-sdk --filter "tasks/lifecycle/"
+
+      - name: Upload E2E results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results-${{ github.run_id }}
+          path: cli/azd/test/eval/reports/
+          retention-days: 30
+
+      - name: Cleanup Azure resources
+        if: always()
+        working-directory: cli/azd
+        run: ./azd down --purge --force --no-prompt
+        env:
+          AZURE_ENV_NAME: eval-e2e-${{ github.run_id }}

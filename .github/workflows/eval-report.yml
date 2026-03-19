@@ -1,0 +1,85 @@
+name: "Eval: Weekly Report"
+
+on:
+  schedule:
+    # 8am UTC Monday, after E2E completes
+    - cron: "0 8 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  actions: read
+
+jobs:
+  generate-report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install eval dependencies
+        working-directory: cli/azd/test/eval
+        run: npm ci
+
+      - name: Download recent Waza artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: waza-results-*
+          path: cli/azd/test/eval/reports/waza
+          merge-multiple: true
+
+      - name: Download recent E2E artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: e2e-results-*
+          path: cli/azd/test/eval/reports/e2e
+          merge-multiple: true
+
+      - name: Generate comparison report
+        working-directory: cli/azd/test/eval
+        run: npm run report
+
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-weekly-report-${{ github.run_id }}
+          path: cli/azd/test/eval/reports/
+          retention-days: 90
+
+      - name: Create issues for regressions
+        if: always()
+        working-directory: cli/azd/test/eval
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REPORT_FILE="reports/regression-issues.json"
+          if [ ! -f "$REPORT_FILE" ]; then
+            echo "No regression issues file found, skipping."
+            exit 0
+          fi
+
+          ISSUE_COUNT=0
+          MAX_ISSUES=10
+
+          jq -c '.[]' "$REPORT_FILE" | while read -r issue; do
+            if [ "$ISSUE_COUNT" -ge "$MAX_ISSUES" ]; then
+              echo "Reached max issue limit ($MAX_ISSUES), stopping."
+              break
+            fi
+
+            TITLE=$(echo "$issue" | jq -r '.title')
+            BODY=$(echo "$issue" | jq -r '.body')
+            LABELS=$(echo "$issue" | jq -r '.labels // ["eval-regression"] | join(",")')
+
+            gh issue create \
+              --repo "${{ github.repository }}" \
+              --title "$TITLE" \
+              --body "$BODY" \
+              --label "$LABELS" || true
+
+            ISSUE_COUNT=$((ISSUE_COUNT + 1))
+          done

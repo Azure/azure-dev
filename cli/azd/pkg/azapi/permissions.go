@@ -34,6 +34,17 @@ func NewPermissionsService(
 	}
 }
 
+// PermissionCheckResult describes the outcome of a permission check.
+type PermissionCheckResult struct {
+	// HasPermission is true when the required actions are granted by at least one role.
+	HasPermission bool
+	// Conditional is true when every role that grants the required action has an
+	// ABAC condition attached. Conditions restrict the scope of the action (e.g.,
+	// limiting which role definitions can be assigned) and the deployment may still
+	// fail at the server-side validation stage.
+	Conditional bool
+}
+
 // HasRequiredPermissions checks whether the given principal has all the specified
 // permissions at the subscription scope. Each required permission should be an Azure
 // resource provider action string such as
@@ -42,17 +53,19 @@ func NewPermissionsService(
 // The check is performed by:
 //  1. Listing all role assignments for the principal on the subscription.
 //  2. Retrieving the role definition for each assignment.
-//  3. Checking that the required actions are included in the allowed actions
-//     and not excluded by NotActions.
+//  3. Checking that the required actions are included in at least one role's
+//     effective permissions (Actions minus NotActions). NotActions are evaluated
+//     per role definition, not globally, matching Azure RBAC semantics.
+//  4. Detecting whether all granting role assignments have ABAC conditions.
 func (s *PermissionsService) HasRequiredPermissions(
 	ctx context.Context,
 	subscriptionId string,
 	principalId string,
 	requiredActions []string,
-) (bool, error) {
+) (PermissionCheckResult, error) {
 	credential, err := s.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {
-		return false, fmt.Errorf("getting credential for subscription %s: %w", subscriptionId, err)
+		return PermissionCheckResult{}, fmt.Errorf("getting credential for subscription %s: %w", subscriptionId, err)
 	}
 
 	// Create a role assignments client to list the principal's role assignments at subscription scope.
@@ -60,18 +73,16 @@ func (s *PermissionsService) HasRequiredPermissions(
 		subscriptionId, credential, s.armClientOptions,
 	)
 	if err != nil {
-		return false, fmt.Errorf("creating role assignments client: %w", err)
+		return PermissionCheckResult{}, fmt.Errorf("creating role assignments client: %w", err)
 	}
 
 	// Create a role definitions client to retrieve the definition for each assignment.
 	roleDefinitionsClient, err := armauthorization.NewRoleDefinitionsClient(credential, s.armClientOptions)
 	if err != nil {
-		return false, fmt.Errorf("creating role definitions client: %w", err)
+		return PermissionCheckResult{}, fmt.Errorf("creating role definitions client: %w", err)
 	}
 
-	// Collect all role definition IDs assigned to this principal at subscription scope.
-	// Use assignedTo() filter which is supported by the API and also captures
-	// role assignments inherited through group membership.
+	// Collect role assignments with metadata about conditions.
 	subscriptionScope := fmt.Sprintf("/subscriptions/%s", subscriptionId)
 	filter := fmt.Sprintf("assignedTo('%s')", principalId)
 	pager := roleAssignmentsClient.NewListForScopePager(
@@ -81,106 +92,135 @@ func (s *PermissionsService) HasRequiredPermissions(
 		},
 	)
 
-	roleDefinitionIDs := []string{}
+	var assignments []roleAssignmentInfo
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			return false, fmt.Errorf("listing role assignments for principal %s: %w", principalId, err)
+			return PermissionCheckResult{}, fmt.Errorf(
+				"listing role assignments for principal %s: %w", principalId, err)
 		}
 		for _, ra := range page.Value {
 			if ra.Properties != nil && ra.Properties.RoleDefinitionID != nil {
-				roleDefinitionIDs = append(roleDefinitionIDs, *ra.Properties.RoleDefinitionID)
+				hasCondition := ra.Properties.Condition != nil &&
+					*ra.Properties.Condition != ""
+				assignments = append(assignments, roleAssignmentInfo{
+					roleDefinitionID: *ra.Properties.RoleDefinitionID,
+					hasCondition:     hasCondition,
+				})
 			}
 		}
 	}
 
-	if len(roleDefinitionIDs) == 0 {
-		return false, nil
+	if len(assignments) == 0 {
+		return PermissionCheckResult{HasPermission: false}, nil
 	}
 
-	// Build the set of allowed actions from all role definitions.
-	allowedActions, err := s.collectAllowedActions(ctx, roleDefinitionsClient, roleDefinitionIDs)
-	if err != nil {
-		return false, err
-	}
-
-	// Check that every required action is covered.
-	for _, required := range requiredActions {
-		if !isActionAllowed(required, allowedActions) {
-			return false, nil
-		}
-	}
-
-	return true, nil
+	// Check each role definition and track whether granting roles have conditions.
+	return s.checkActionsFromRoles(
+		ctx, roleDefinitionsClient, assignments, requiredActions)
 }
 
-// allowedActionSet represents the collected allowed and denied actions from role definitions.
-type allowedActionSet struct {
-	actions    []string
-	notActions []string
+// roleAssignmentInfo pairs a role definition ID with whether the assignment has a condition.
+type roleAssignmentInfo struct {
+	roleDefinitionID string
+	hasCondition     bool
 }
 
-// collectAllowedActions retrieves the allowed/denied actions from all specified role definitions.
-func (s *PermissionsService) collectAllowedActions(
+// checkActionsFromRoles checks whether every required action is granted by at least
+// one role definition. Each role is evaluated independently: an action is granted by a
+// role if it matches an Action entry and is NOT excluded by a NotAction entry of that
+// same role. It also tracks whether all granting assignments are conditional (ABAC).
+func (s *PermissionsService) checkActionsFromRoles(
 	ctx context.Context,
 	client *armauthorization.RoleDefinitionsClient,
-	roleDefinitionIDs []string,
-) (*allowedActionSet, error) {
-	result := &allowedActionSet{}
+	assignments []roleAssignmentInfo,
+	requiredActions []string,
+) (PermissionCheckResult, error) {
+	// Track which required actions are still unresolved.
+	remaining := make(map[string]bool, len(requiredActions))
+	for _, a := range requiredActions {
+		remaining[a] = true
+	}
 
-	for _, rdID := range roleDefinitionIDs {
-		resp, err := client.GetByID(ctx, rdID, nil)
+	// Track which required actions have been granted unconditionally (no ABAC condition).
+	// An action needs at least one unconditional grant to avoid the conditional warning.
+	unconditionalActions := make(map[string]bool, len(requiredActions))
+
+	for _, assignment := range assignments {
+		if len(remaining) == 0 && len(unconditionalActions) == len(requiredActions) {
+			break
+		}
+
+		resp, err := client.GetByID(ctx, assignment.roleDefinitionID, nil)
 		if err != nil {
-			return nil, fmt.Errorf("getting role definition %s: %w", rdID, err)
+			return PermissionCheckResult{}, fmt.Errorf(
+				"getting role definition %s: %w", assignment.roleDefinitionID, err)
 		}
 
 		if resp.Properties == nil || resp.Properties.Permissions == nil {
 			continue
 		}
 
+		// Collect this role's actions and notActions.
+		var actions, notActions []string
 		for _, perm := range resp.Properties.Permissions {
-			if perm.Actions != nil {
-				for _, action := range perm.Actions {
-					if action != nil {
-						result.actions = append(result.actions, *action)
-					}
+			for _, a := range perm.Actions {
+				if a != nil {
+					actions = append(actions, *a)
 				}
 			}
-			if perm.NotActions != nil {
-				for _, notAction := range perm.NotActions {
-					if notAction != nil {
-						result.notActions = append(result.notActions, *notAction)
-					}
+			for _, na := range perm.NotActions {
+				if na != nil {
+					notActions = append(notActions, *na)
+				}
+			}
+		}
+
+		// Check each required action against this role. Even if the action was already
+		// granted by an earlier role, we still check for unconditional grants so that a
+		// later unconditional assignment can clear the conditional flag.
+		for _, action := range requiredActions {
+			if unconditionalActions[action] {
+				continue
+			}
+			if isActionAllowedByRole(action, actions, notActions) {
+				delete(remaining, action)
+				if !assignment.hasCondition {
+					unconditionalActions[action] = true
 				}
 			}
 		}
 	}
 
-	return result, nil
+	if len(remaining) > 0 {
+		return PermissionCheckResult{HasPermission: false}, nil
+	}
+
+	return PermissionCheckResult{
+		HasPermission: true,
+		Conditional:   len(unconditionalActions) < len(requiredActions),
+	}, nil
 }
 
-// isActionAllowed checks whether the given action is matched by any allowed action
-// and not excluded by any NotAction. Action matching supports the wildcard "*".
-func isActionAllowed(requiredAction string, actions *allowedActionSet) bool {
+// isActionAllowedByRole checks whether a single role's Actions (minus NotActions)
+// grant the required action.
+func isActionAllowedByRole(requiredAction string, actions []string, notActions []string) bool {
 	matched := false
-	for _, action := range actions.actions {
+	for _, action := range actions {
 		if actionMatches(action, requiredAction) {
 			matched = true
 			break
 		}
 	}
-
 	if !matched {
 		return false
 	}
 
-	// Check if any NotAction excludes this action.
-	for _, notAction := range actions.notActions {
+	for _, notAction := range notActions {
 		if actionMatches(notAction, requiredAction) {
 			return false
 		}
 	}
-
 	return true
 }
 

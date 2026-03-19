@@ -271,7 +271,7 @@ func (m *Manager) Update(ctx context.Context, cfg *UpdateConfig, writer io.Write
 
 	switch installedBy {
 	case installer.InstallTypeBrew:
-		return m.updateViaPackageManager(ctx, "brew", []string{"upgrade", "azd"}, writer)
+		return m.updateViaBrew(ctx, cfg, writer)
 	case installer.InstallTypeWinget:
 		return m.updateViaPackageManager(ctx, "winget", []string{"upgrade", "Microsoft.Azd"}, writer)
 	case installer.InstallTypeChoco:
@@ -287,6 +287,86 @@ func (m *Manager) Update(ctx context.Context, cfg *UpdateConfig, writer io.Write
 			return m.updateViaMSI(ctx, cfg, writer)
 		}
 		return m.updateViaBinaryDownload(ctx, cfg, writer)
+	}
+}
+
+func (m *Manager) updateViaBrew(ctx context.Context, cfg *UpdateConfig, writer io.Writer) error {
+	fmt.Fprintf(writer, "Checking Homebrew cask installation...\n")
+
+	// Determine which cask is currently installed by checking `brew list --cask`.
+	listArgs := exec.NewRunArgs("brew", "list", "--cask")
+	listResult, err := m.commandRunner.Run(ctx, listArgs)
+	if err != nil {
+		log.Printf("brew list --cask failed: %v", err)
+	}
+
+	caskOutput := ""
+	if err == nil {
+		caskOutput = listResult.Stdout
+	}
+
+	hasAzd := false
+	hasAzdDaily := false
+	for _, line := range strings.Split(caskOutput, "\n") {
+		name := strings.TrimSpace(line)
+		if name == "azd@daily" {
+			hasAzdDaily = true
+		} else if name == "azd" {
+			hasAzd = true
+		}
+	}
+
+	targetChannel := cfg.Channel
+
+	if !hasAzd && !hasAzdDaily {
+		// azd is not installed as a cask (formula install or other).
+		// Uninstall the non-cask version and install the correct cask.
+		fmt.Fprintf(writer, "azd is not installed as a Homebrew cask. Reinstalling as cask...\n")
+		if err := m.updateViaPackageManager(ctx, "brew", []string{"uninstall", "azd"}, writer); err != nil {
+			log.Printf("brew uninstall azd failed: %v", err)
+		}
+		switch targetChannel {
+		case ChannelStable:
+			return m.updateViaPackageManager(ctx, "brew", []string{"install", "--cask", "azure/azd/azd"}, writer)
+		case ChannelDaily:
+			return m.updateViaPackageManager(ctx, "brew", []string{"install", "--cask", "azure/azd/azd@daily"}, writer)
+		default:
+			return fmt.Errorf("unsupported channel: %s", targetChannel)
+		}
+	}
+
+	// Determine if the user is switching channels.
+	currentlyDaily := hasAzdDaily
+	currentlyStable := hasAzd
+
+	if currentlyDaily && targetChannel == ChannelStable {
+		// Switching from daily to stable
+		fmt.Fprintf(writer, "Switching from daily to stable channel...\n")
+		if err := m.updateViaPackageManager(ctx, "brew", []string{"uninstall", "--cask", "azd@daily"}, writer); err != nil {
+			return err
+		}
+		return m.updateViaPackageManager(ctx, "brew", []string{"install", "--cask", "azure/azd/azd"}, writer)
+	}
+
+	if currentlyStable && targetChannel == ChannelDaily {
+		// Switching from stable to daily
+		fmt.Fprintf(writer, "Switching from stable to daily channel...\n")
+		if err := m.updateViaPackageManager(ctx, "brew", []string{"uninstall", "--cask", "azd"}, writer); err != nil {
+			return err
+		}
+		return m.updateViaPackageManager(ctx, "brew", []string{"install", "--cask", "azure/azd/azd@daily"}, writer)
+	}
+
+	// Same channel — update in place.
+	switch targetChannel {
+	case ChannelStable:
+		fmt.Fprintf(writer, "Updating azd (stable channel)...\n")
+		return m.updateViaPackageManager(ctx, "brew", []string{"upgrade", "--cask", "azure/azd/azd"}, writer)
+	case ChannelDaily:
+		fmt.Fprintf(writer, "Updating azd (daily channel)...\n")
+		return m.updateViaPackageManager(ctx, "brew", []string{"upgrade", "--cask", "azure/azd/azd@daily"}, writer)
+	default:
+		return fmt.Errorf("unsupported channel: %s", targetChannel)
 	}
 }
 
@@ -766,7 +846,7 @@ func extractFromZip(archivePath, binaryName, destPath string) error {
 // IsPackageManagerInstall returns true if azd was installed via a package manager.
 func IsPackageManagerInstall() bool {
 	switch installer.InstalledBy() {
-	case installer.InstallTypeBrew, installer.InstallTypeWinget, installer.InstallTypeChoco:
+	case installer.InstallTypeWinget, installer.InstallTypeChoco:
 		return true
 	default:
 		return false

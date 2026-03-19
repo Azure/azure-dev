@@ -5,7 +5,9 @@ package cmd
 
 import (
 	"fmt"
+	"path/filepath"
 
+	"azure.ai.customtraining/internal/azcopy"
 	"azure.ai.customtraining/internal/service"
 	"azure.ai.customtraining/internal/utils"
 	"azure.ai.customtraining/pkg/client"
@@ -76,11 +78,22 @@ func newJobSubmitCommand() *cobra.Command {
 				jobDef.Name = utils.GenerateJobName()
 			}
 
+			// Resolve base directory for relative paths in the YAML file
+			yamlDir := filepath.Dir(filePath)
+
+			// Initialize azcopy runner (auto-detects or auto-installs)
+			azRunner, err := azcopy.NewRunner(ctx, "")
+			if err != nil {
+				return fmt.Errorf("failed to initialize azcopy: %w", err)
+			}
+
+			uploadSvc := service.NewUploadService(apiClient, azRunner)
+
 			// Resolve references (compute name → ARM ID, local paths → datastore URIs)
 			resolver := service.NewJobResolver(
 				service.NewDefaultComputeResolver(),
-				service.NewDefaultCodeResolver(),
-				service.NewDefaultInputResolver(),
+				service.NewDefaultCodeResolver(uploadSvc, projectName, yamlDir),
+				service.NewDefaultInputResolver(uploadSvc, projectName, yamlDir),
 			)
 			if err := resolver.ResolveJobDefinition(ctx, jobDef); err != nil {
 				return fmt.Errorf("failed to resolve job definition: %w", err)
@@ -121,6 +134,7 @@ func buildJobResource(def *utils.JobDefinition) *models.JobResource {
 		Command:              def.Command,
 		EnvironmentID:        def.Environment,
 		ComputeID:            def.Compute,
+		CodeID:               def.Code,
 		EnvironmentVariables: def.EnvironmentVariables,
 	}
 

@@ -23,7 +23,7 @@ type CodeResolver interface {
 
 // InputResolver resolves a local input path to a datastore URI.
 type InputResolver interface {
-	ResolveInput(ctx context.Context, inputPath string, inputType string) (uri string, err error)
+	ResolveInput(ctx context.Context, inputName string, inputPath string, inputType string) (uri string, err error)
 }
 
 // JobResolver orchestrates resolution of all references in a JobDefinition.
@@ -65,7 +65,7 @@ func (r *JobResolver) ResolveJobDefinition(ctx context.Context, jobDef *utils.Jo
 	// Resolve inputs: local paths → datastore URIs
 	for name, input := range jobDef.Inputs {
 		if input.Path != "" && !isRemoteURI(input.Path) && input.Value == "" {
-			uri, err := r.input.ResolveInput(ctx, input.Path, input.Type)
+			uri, err := r.input.ResolveInput(ctx, name, input.Path, input.Type)
 			if err != nil {
 				return fmt.Errorf("failed to resolve input '%s' path '%s': %w", name, input.Path, err)
 			}

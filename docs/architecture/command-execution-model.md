@@ -57,7 +57,7 @@ type Action interface {
 }
 ```
 
-Actions receive dependencies via constructor injection through the IoC container. They return an `ActionResult` with a message and optional structured data for output formatting.
+The `ActionResult` contains a `Message` (displayed to the user) and optional structured data used by output formatters (JSON, table). Actions receive dependencies via constructor injection through the IoC container.
 
 ### 5. Output Formatting
 

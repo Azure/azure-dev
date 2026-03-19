@@ -52,8 +52,7 @@ func Test_FileConfigManager_GetSetSecrets(t *testing.T) {
 	tempDir := t.TempDir()
 	azdConfigDir := filepath.Join(tempDir, ".azd")
 
-	err := os.Setenv("AZD_CONFIG_DIR", azdConfigDir)
-	require.NoError(t, err)
+	t.Setenv("AZD_CONFIG_DIR", azdConfigDir)
 
 	// Set and save secrets
 	configFilePath := filepath.Join(tempDir, "config.json")
@@ -62,7 +61,7 @@ func Test_FileConfigManager_GetSetSecrets(t *testing.T) {
 
 	// Standard secrets
 	expectedPassword := "P@55w0rd!"
-	err = azdConfig.SetSecret("secrets.password", expectedPassword)
+	err := azdConfig.SetSecret("secrets.password", expectedPassword)
 	require.NoError(t, err)
 
 	err = azdConfig.SetSecret("infra.provisioning.sqlPassword", expectedPassword)
@@ -119,15 +118,14 @@ func Test_FileConfigManager_GetSetSecretsInSection(t *testing.T) {
 	tempDir := t.TempDir()
 	azdConfigDir := filepath.Join(tempDir, ".azd")
 
-	err := os.Setenv("AZD_CONFIG_DIR", azdConfigDir)
-	require.NoError(t, err)
+	t.Setenv("AZD_CONFIG_DIR", azdConfigDir)
 
 	// Set and save secrets
 	configFilePath := filepath.Join(tempDir, "config.json")
 	configManager := NewFileConfigManager(NewManager())
 	azdConfig := NewConfig(nil)
 
-	err = azdConfig.SetSecret("infra.provisioning.secret1", "secrect1Value")
+	err := azdConfig.SetSecret("infra.provisioning.secret1", "secrect1Value")
 	require.NoError(t, err)
 
 	err = azdConfig.SetSecret("infra.provisioning.secret2", "secrect2Value")
@@ -155,4 +153,133 @@ func Test_FileConfigManager_GetSetSecretsInSection(t *testing.T) {
 	normalValue, ok := provisioningParams["normalValue"]
 	require.True(t, ok)
 	require.Equal(t, "normalValue", normalValue)
+}
+
+func Test_FileConfigManager_VaultID_PathTraversal(t *testing.T) {
+	tests := []struct {
+		name    string
+		vaultId string
+		wantErr bool
+	}{
+		{"valid vault ID", "my-vault-123", false},
+		{"double dot traversal", "../../../etc/shadow", true},
+		{"forward slash", "path/to/vault", true},
+		{"backslash", `path\to\vault`, true},
+		{"embedded double dot", "vault..id", true},
+		{"clean vault ID with dash and underscore", "vault-id_123", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tempDir := t.TempDir()
+			configFilePath := filepath.Join(tempDir, "config.json")
+			configManager := NewFileConfigManager(NewManager())
+
+			// Create a config with the vault reference
+			azdConfig := NewConfig(map[string]any{
+				vaultKeyName: tt.vaultId,
+			})
+
+			err := configManager.Save(azdConfig, configFilePath)
+			require.NoError(t, err)
+			// Load will validate the vault ID
+			if tt.wantErr {
+				// For save: the vaultId in the raw config won't trigger Save's vault path,
+				// but Load will reject it
+				_, err = configManager.Load(configFilePath)
+				require.Error(t, err)
+				require.Contains(t, err.Error(), "invalid vault ID")
+			} else {
+				// Valid vault IDs may still fail if the vault file doesn't exist, but
+				// they should NOT fail with "invalid vault ID"
+				_, err = configManager.Load(configFilePath)
+				if err != nil {
+					require.NotContains(t, err.Error(), "invalid vault ID")
+				}
+			}
+		})
+	}
+}
+
+// Test_FileConfigManager_Save_VaultID_PathTraversal exercises the vault ID
+// path-traversal guard inside Save (line 105-109 of file_config_manager.go).
+// Save checks baseConfig.vaultId (the struct field), so we must set it directly
+// on the *config struct along with a non-nil vault to trigger the vault-save branch.
+func Test_FileConfigManager_Save_VaultID_PathTraversal(t *testing.T) {
+	tests := []struct {
+		name    string
+		vaultId string
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name:    "traversal with parent directory sequence",
+			vaultId: "../../../etc/passwd",
+			wantErr: true,
+			errMsg:  "invalid vault ID",
+		},
+		{
+			name:    "bare double dot",
+			vaultId: "..",
+			wantErr: true,
+			errMsg:  "invalid vault ID",
+		},
+		{
+			name:    "forward slash in vault ID",
+			vaultId: "malicious/vault",
+			wantErr: true,
+			errMsg:  "invalid vault ID",
+		},
+		{
+			name:    "backslash in vault ID",
+			vaultId: `malicious\vault`,
+			wantErr: true,
+			errMsg:  "invalid vault ID",
+		},
+		{
+			name:    "valid vault ID succeeds",
+			vaultId: "good-vault-id-123",
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tempDir := t.TempDir()
+			azdConfigDir := filepath.Join(tempDir, ".azd")
+
+			t.Setenv("AZD_CONFIG_DIR", azdConfigDir)
+
+			configFilePath := filepath.Join(tempDir, "config.json")
+			configManager := NewFileConfigManager(NewManager())
+
+			// Build a config with the vaultId struct field set directly.
+			// This is the field Save checks (line 104), not the "vault" key in data.
+			cfg := &config{
+				vaultId: tt.vaultId,
+				vault:   NewConfig(map[string]any{"secret-key": "secret-value"}),
+				data:    map[string]any{"key": "value"},
+			}
+
+			err := configManager.Save(cfg, configFilePath)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tt.errMsg)
+
+				// Verify no file was written to the vaults directory for malicious IDs
+				vaultsDir := filepath.Join(azdConfigDir, "vaults")
+				if _, statErr := os.Stat(vaultsDir); statErr == nil {
+					entries, _ := os.ReadDir(vaultsDir)
+					require.Empty(t, entries, "no vault files should be created for malicious vault IDs")
+				}
+			} else {
+				require.NoError(t, err)
+
+				// Verify the vault file was written to the expected location
+				expectedVaultPath := filepath.Join(azdConfigDir, "vaults", fmt.Sprintf("%s.json", tt.vaultId))
+				require.FileExists(t, expectedVaultPath)
+			}
+		})
+	}
 }

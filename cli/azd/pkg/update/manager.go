@@ -315,43 +315,81 @@ func (m *Manager) updateViaPackageManager(
 }
 
 func (m *Manager) updateViaMSI(ctx context.Context, cfg *UpdateConfig, writer io.Writer) error {
-	msiURL, err := m.buildMSIDownloadURL(cfg.Channel)
-	if err != nil {
+	// Verify the install is the standard per-user MSI configuration.
+	// install-azd.ps1 installs with ALLUSERS=2 to %LOCALAPPDATA%\Programs\Azure Dev CLI.
+	// If the current install is non-standard, abort and advise the user.
+	if err := isStandardMSIInstall(); err != nil {
 		return err
 	}
 
-	fmt.Fprintf(writer, "Downloading MSI from %s...\n", msiURL)
-
-	tempDir := os.TempDir()
-	msiPath := filepath.Join(tempDir, "azd-windows-amd64.msi")
-
-	if err := m.downloadFile(ctx, msiURL, msiPath, writer); err != nil {
-		return newUpdateError(CodeDownloadFailed, err)
-	}
-	// Don't defer os.Remove — the detached msiexec process needs this file after we exit.
-
-	// Build msiexec args. Always write a verbose log so failures are diagnosable.
-	msiLogPath, logErr := msiLogFilePath()
-	args := []string{"/i", msiPath, "/qn"}
-	if logErr == nil {
-		args = append(args, "/l*v", msiLogPath)
-		log.Printf("MSI install log: %s", msiLogPath)
+	//  1. Rename the running exe to temp (frees the path; process continues via the OS handle)
+	//  2. Copy it back as an unlocked safety net (if killed at any point, azd.exe still exists)
+	//  3. The MSI will overwrite the unlocked safety copy with the new version
+	fmt.Fprintf(writer, "Backing up current azd executable...\n")
+	originalPath, backupPath, err := backupCurrentExe()
+	if err != nil {
+		return newUpdateError(CodeReplaceFailed, fmt.Errorf("failed to backup current executable: %w", err))
 	}
 
-	log.Printf("Spawning detached msiexec: msiexec %s", strings.Join(args, " "))
-	fmt.Fprintf(writer, "Installing update via MSI...\n")
+	// Track whether the install succeeded so we know whether to restore or clean up.
+	updateSucceeded := false
+	defer func() {
+		if updateSucceeded {
+			// Remove the temp backup directory. If this fails, the OS
+			// will clean it up eventually since it lives under %TEMP%.
+			_ = os.RemoveAll(filepath.Dir(backupPath))
+			return
+		}
+		// Update failed — restore the backup so the user has the original binary.
+		fmt.Fprintf(writer, "Restoring previous version...\n")
+		if restoreErr := restoreExeFromBackup(originalPath, backupPath); restoreErr != nil {
+			fmt.Fprintf(writer, "WARNING: failed to restore previous version: %v\n", restoreErr)
+			fmt.Fprintf(writer, "Your backup is at: %s\n", backupPath)
+			fmt.Fprintf(writer, "To recover manually, copy it to: %s\n", originalPath)
+		}
+	}()
 
-	// Spawn msiexec detached so it can replace the running azd binary.
-	// msiexec cannot overwrite a locked executable; by detaching, azd can exit
-	// and release the file lock before msiexec attempts the replacement.
-	//nolint:gosec // args are constructed from controlled constants, not user input
-	cmd := osexec.Command("msiexec", args...)
-	cmd.SysProcAttr = newDetachedSysProcAttr()
-	if err := cmd.Start(); err != nil {
-		return newUpdateError(CodeReplaceFailed, fmt.Errorf("failed to start msiexec: %w", err))
+	// Run the install script synchronously. The MSI overwrites the unlocked
+	// safety copy at the original path with the new version.
+	psArgs := buildInstallScriptArgs(cfg.Channel)
+
+	// Snapshot the safety copy's mod time before the install so we can detect
+	// whether the MSI actually replaced the file. A plain os.Stat after install
+	// would always succeed because the safety copy already exists at originalPath.
+	preInfo, statErr := os.Stat(originalPath)
+	if statErr != nil {
+		return newUpdateError(CodeReplaceFailed,
+			fmt.Errorf("failed to stat safety copy before install: %w", statErr))
 	}
 
-	log.Printf("msiexec started with PID %d, azd will exit to release binary lock", cmd.Process.Pid)
+	log.Printf("Running install script: powershell %s", strings.Join(psArgs, " "))
+	fmt.Fprintf(writer, "Installing azd %s channel...\n", cfg.Channel)
+
+	runArgs := exec.NewRunArgs("powershell", psArgs...).
+		WithStdOut(writer).
+		WithStdErr(writer)
+
+	if _, err := m.commandRunner.Run(ctx, runArgs); err != nil {
+		return newUpdateError(CodeReplaceFailed, fmt.Errorf("install script failed: %w", err))
+	}
+
+	// Verify the MSI actually replaced the binary by comparing mod time and
+	// size against the pre-install safety copy. If both are identical the MSI
+	// did not write a new file (silent failure).
+	postInfo, statErr := os.Stat(originalPath)
+	if statErr != nil {
+		return newUpdateError(CodeReplaceFailed,
+			fmt.Errorf("install script completed but %s was not found", originalPath))
+	}
+
+	if postInfo.ModTime().Equal(preInfo.ModTime()) && postInfo.Size() == preInfo.Size() {
+		return newUpdateError(CodeReplaceFailed,
+			fmt.Errorf("install script completed but the binary at %s was not updated "+
+				"(file unchanged); the MSI may have failed silently", originalPath))
+	}
+
+	updateSucceeded = true
+	log.Printf("Update completed successfully")
 	return nil
 }
 
@@ -428,20 +466,6 @@ func (m *Manager) buildDownloadURL(channel Channel) (string, error) {
 	}
 
 	return fmt.Sprintf("%s/%s/azd-%s-%s%s", blobBaseURL, folder, platform, arch, ext), nil
-}
-
-func (m *Manager) buildMSIDownloadURL(channel Channel) (string, error) {
-	var folder string
-	switch channel {
-	case ChannelStable:
-		folder = "stable"
-	case ChannelDaily:
-		folder = "daily"
-	default:
-		return "", fmt.Errorf("unsupported channel: %s", channel)
-	}
-
-	return fmt.Sprintf("%s/%s/azd-windows-%s.msi", blobBaseURL, folder, runtime.GOARCH), nil
 }
 
 func archiveExtension() string {
@@ -590,13 +614,17 @@ func (m *Manager) replaceBinary(ctx context.Context, newBinaryPath, currentBinar
 	return fmt.Errorf("failed to replace binary: %w", err)
 }
 
-// currentExePath returns the resolved path of the currently running azd binary.
+// currentExePath returns the resolved path of the currently running executable.
 func currentExePath() (string, error) {
 	exePath, err := os.Executable()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to determine current executable path: %w", err)
 	}
-	return filepath.EvalSymlinks(exePath)
+	resolved, err := filepath.EvalSymlinks(exePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve executable path: %w", err)
+	}
+	return resolved, nil
 }
 
 func copyFile(src, dst string) error {

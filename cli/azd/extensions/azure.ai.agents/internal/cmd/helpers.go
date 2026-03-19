@@ -4,11 +4,13 @@
 package cmd
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
@@ -212,6 +214,10 @@ func promptForAgentService(
 	services []*azdext.ServiceConfig,
 	noPrompt bool,
 ) (*azdext.ServiceConfig, error) {
+	slices.SortFunc(services, func(a, b *azdext.ServiceConfig) int {
+		return cmp.Compare(a.Name, b.Name)
+	})
+
 	if noPrompt {
 		names := make([]string, len(services))
 		for i, s := range services {

@@ -7,9 +7,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
+
+// validVaultIDPattern matches vault IDs containing only alphanumeric characters, hyphens, and underscores.
+var validVaultIDPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
 
 // FileConfigManager provides the ability to load, parse and save azd configuration files
 type FileConfigManager interface {
@@ -48,12 +52,11 @@ func (m *fileConfigManager) Load(filePath string) (Config, error) {
 	// If the configuration contains a vault, then also load the vault configuration
 	vaultId, ok := azdConfig.GetString(vaultKeyName)
 	if ok {
-		configPath, err := GetUserConfigDir()
+		vaultPath, err := resolveVaultPath(vaultId)
 		if err != nil {
-			return nil, fmt.Errorf("failed getting user config directory: %w", err)
+			return nil, err
 		}
 
-		vaultPath := filepath.Join(configPath, "vaults", fmt.Sprintf("%s.json", vaultId))
 		vaultConfig, err := m.Load(vaultPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed loading vault configuration from '%s': %w", vaultPath, err)
@@ -96,12 +99,11 @@ func (m *fileConfigManager) Save(c Config, filePath string) error {
 	// If the configuration contains a vault, then also save the vault configuration
 	// Vault configuration always gets saved in a separate file in the users HOME directory.
 	if baseConfig.vaultId != "" {
-		configPath, err := GetUserConfigDir()
+		vaultPath, err := resolveVaultPath(baseConfig.vaultId)
 		if err != nil {
-			return fmt.Errorf("failed getting user config directory: %w", err)
+			return err
 		}
 
-		vaultPath := filepath.Join(configPath, "vaults", fmt.Sprintf("%s.json", baseConfig.vaultId))
 		if err = os.MkdirAll(filepath.Dir(vaultPath), osutil.PermissionDirectory); err != nil {
 			return fmt.Errorf("failed creating vaults directory: %w", err)
 		}
@@ -110,4 +112,30 @@ func (m *fileConfigManager) Save(c Config, filePath string) error {
 	}
 
 	return nil
+}
+
+// resolveVaultPath validates a vault ID and returns the full path to the vault JSON file.
+// It enforces an allowlist of safe characters and verifies the resolved path stays within the vaults directory.
+func resolveVaultPath(vaultId string) (string, error) {
+	if !validVaultIDPattern.MatchString(vaultId) {
+		return "", fmt.Errorf(
+			"invalid vault ID %q: must contain only alphanumeric characters, hyphens, and underscores",
+			vaultId,
+		)
+	}
+
+	configPath, err := GetUserConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("failed getting user config directory: %w", err)
+	}
+
+	vaultsDir := filepath.Join(configPath, "vaults")
+	vaultPath := filepath.Join(vaultsDir, fmt.Sprintf("%s.json", vaultId))
+
+	// Defense-in-depth: also verify the resolved path stays within the vaults directory
+	if !osutil.IsPathContained(vaultsDir, vaultPath) {
+		return "", fmt.Errorf("invalid vault ID %q: resolved path is outside the vaults directory", vaultId)
+	}
+
+	return vaultPath, nil
 }

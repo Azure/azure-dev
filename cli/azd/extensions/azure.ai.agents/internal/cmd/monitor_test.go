@@ -13,22 +13,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestMonitorCommand_RequiredFlags(t *testing.T) {
+func TestMonitorCommand_AcceptsPositionalArg(t *testing.T) {
 	cmd := newMonitorCommand()
-
-	cmd.SetArgs([]string{})
-	err := cmd.Execute()
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "name")
+	err := cmd.Args(cmd, []string{"my-agent"})
+	assert.NoError(t, err)
 }
 
-func TestMonitorCommand_MissingVersionFlag(t *testing.T) {
+func TestMonitorCommand_AcceptsNoArgs(t *testing.T) {
 	cmd := newMonitorCommand()
+	err := cmd.Args(cmd, []string{})
+	assert.NoError(t, err)
+}
 
-	cmd.SetArgs([]string{"--name", "test-agent"})
-	err := cmd.Execute()
+func TestMonitorCommand_RejectsMultipleArgs(t *testing.T) {
+	cmd := newMonitorCommand()
+	err := cmd.Args(cmd, []string{"svc1", "svc2"})
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "version")
 }
 
 func TestValidateMonitorFlags_Valid(t *testing.T) {

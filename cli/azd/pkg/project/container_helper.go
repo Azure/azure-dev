@@ -839,7 +839,7 @@ func (ch *ContainerHelper) runRemoteBuild(
 
 	buildRequest := &armcontainerregistry.DockerBuildRequest{
 		SourceLocation: source.RelativePath,
-		DockerFilePath: new(dockerPath),
+		DockerFilePath: &dockerPath,
 		IsPushEnabled:  new(true),
 		ImageNames:     []*string{new(imageName)},
 		Platform: &armcontainerregistry.PlatformProperties{

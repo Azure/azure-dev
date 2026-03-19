@@ -350,35 +350,8 @@ const completionSpec: Fig.Spec = {
 							description: 'Monitor logs from a hosted agent.',
 							options: [
 								{
-									name: ['--account-name', '-a'],
-									description: 'Cognitive Services account name',
-									args: [
-										{
-											name: 'account-name',
-										},
-									],
-								},
-								{
 									name: ['--follow', '-f'],
 									description: 'Stream logs in real-time',
-								},
-								{
-									name: ['--name', '-n'],
-									description: 'Name of the hosted agent (required)',
-									args: [
-										{
-											name: 'name',
-										},
-									],
-								},
-								{
-									name: ['--project-name', '-p'],
-									description: 'AI Foundry project name',
-									args: [
-										{
-											name: 'project-name',
-										},
-									],
 								},
 								{
 									name: ['--session', '-s'],
@@ -404,15 +377,6 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'type',
-										},
-									],
-								},
-								{
-									name: ['--version', '-v'],
-									description: 'Version of the hosted agent (required)',
-									args: [
-										{
-											name: 'version',
 										},
 									],
 								},
@@ -447,47 +411,11 @@ const completionSpec: Fig.Spec = {
 							description: 'Show the status of a hosted agent deployment.',
 							options: [
 								{
-									name: ['--account-name', '-a'],
-									description: 'Cognitive Services account name',
-									args: [
-										{
-											name: 'account-name',
-										},
-									],
-								},
-								{
-									name: ['--name', '-n'],
-									description: 'Name of the hosted agent (required)',
-									args: [
-										{
-											name: 'name',
-										},
-									],
-								},
-								{
 									name: ['--output', '-o'],
 									description: 'Output format (json or table)',
 									args: [
 										{
 											name: 'output',
-										},
-									],
-								},
-								{
-									name: ['--project-name', '-p'],
-									description: 'AI Foundry project name',
-									args: [
-										{
-											name: 'project-name',
-										},
-									],
-								},
-								{
-									name: ['--version', '-v'],
-									description: 'Version of the hosted agent (required)',
-									args: [
-										{
-											name: 'version',
 										},
 									],
 								},

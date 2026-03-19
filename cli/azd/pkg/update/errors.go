@@ -35,6 +35,7 @@ const (
 	CodeSignatureInvalid         = "update.signatureInvalid"
 	CodeElevationRequired        = "update.elevationRequired"
 	CodeUnsupportedInstallMethod = "update.unsupportedInstallMethod"
+	CodeNonStandardInstall       = "update.nonStandardInstall"
 )
 
 func newUpdateError(code string, err error) *UpdateError {

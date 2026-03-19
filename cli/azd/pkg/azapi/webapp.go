@@ -188,7 +188,7 @@ func (cli *AzureClient) DeployAppServiceZip(
 		return nil, err
 	}
 
-	return new(response.StatusText), nil
+	return &response.StatusText, nil
 }
 
 func (cli *AzureClient) createWebAppsClient(
@@ -335,5 +335,5 @@ func (cli *AzureClient) DeployAppServiceSlotZip(
 		return nil, err
 	}
 
-	return new(response.StatusText), nil
+	return &response.StatusText, nil
 }

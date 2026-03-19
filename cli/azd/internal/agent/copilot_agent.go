@@ -767,7 +767,10 @@ func (a *CopilotAgent) createUserInputHandler(ctx context.Context) copilot.UserI
 
 			selected := choices[*idx].Value
 			if selected == freeformValue {
-				prompt := uxlib.NewPrompt(&uxlib.PromptOptions{Message: question})
+				prompt := uxlib.NewPrompt(&uxlib.PromptOptions{
+					Message:        question,
+					IgnoreHintKeys: true,
+				})
 				answer, err := prompt.Ask(ctx)
 				fmt.Println()
 				if err != nil {
@@ -779,7 +782,12 @@ func (a *CopilotAgent) createUserInputHandler(ctx context.Context) copilot.UserI
 			return copilot.UserInputResponse{Answer: selected}, nil
 		}
 
-		prompt := uxlib.NewPrompt(&uxlib.PromptOptions{Message: question})
+		// TODO: IgnoreHintKeys should not be needed — Prompt should auto-suppress
+		// hint key handling when no HelpMessage is provided.
+		prompt := uxlib.NewPrompt(&uxlib.PromptOptions{
+			Message:        question,
+			IgnoreHintKeys: true,
+		})
 		answer, err := prompt.Ask(ctx)
 		fmt.Println()
 		if err != nil {
@@ -850,11 +858,14 @@ func (a *CopilotAgent) ensureAuthenticated(ctx context.Context) error {
 
 	// Not authenticated — prompt to sign in
 	a.console.Message(ctx, "")
-	a.console.Message(ctx, output.WithWarningFormat("Not authenticated with GitHub Copilot"))
+	a.console.Message(ctx, output.WithWarningFormat("Not authenticated with %s", agentcopilot.DisplayTitle))
 	a.console.Message(ctx, "")
 
 	confirm := uxlib.NewConfirm(&uxlib.ConfirmOptions{
-		Message:      "Sign in to GitHub Copilot? (opens browser)",
+		Message: fmt.Sprintf("Sign in to %s? (opens browser)", agentcopilot.DisplayTitle),
+		HelpMessage: fmt.Sprintf(
+			"%s requires GitHub authentication to access AI models and agent capabilities.",
+			agentcopilot.DisplayTitle),
 		DefaultValue: uxlib.Ptr(true),
 	})
 
@@ -864,18 +875,18 @@ func (a *CopilotAgent) ensureAuthenticated(ctx context.Context) error {
 	}
 
 	if shouldLogin == nil || !*shouldLogin {
-		return fmt.Errorf("GitHub Copilot authentication is required to continue")
+		return fmt.Errorf("%s authentication is required to continue", agentcopilot.DisplayTitle)
 	}
 
 	a.console.Message(ctx, "")
 	if err := a.cli.Login(ctx); err != nil {
-		return fmt.Errorf("GitHub Copilot sign-in failed: %w", err)
+		return fmt.Errorf("%s sign-in failed: %w", agentcopilot.DisplayTitle, err)
 	}
 
 	// Verify auth succeeded
 	authStatus, err = a.clientManager.GetAuthStatus(ctx)
 	if err != nil || !authStatus.IsAuthenticated {
-		return fmt.Errorf("GitHub Copilot authentication was not completed")
+		return fmt.Errorf("%s authentication was not completed", agentcopilot.DisplayTitle)
 	}
 
 	a.console.Message(ctx, "")
@@ -889,7 +900,7 @@ func (a *CopilotAgent) ensurePlugins(ctx context.Context) {
 	if _, err := exec.LookPath("copilot"); err != nil {
 		log.Printf("[copilot] 'copilot' CLI not found in PATH — skipping plugin management")
 		a.console.Message(ctx, output.WithWarningFormat(
-			"The Copilot CLI is not installed. Some features may be limited.\n"+
+			"The GitHub Copilot CLI is not installed. Some features may be limited.\n"+
 				"Install it with: npm install -g @github/copilot"))
 		return
 	}
@@ -933,12 +944,13 @@ func (a *CopilotAgent) promptPluginInstall(ctx context.Context, plugin pluginSpe
 
 	a.console.Message(ctx, "")
 	confirm := uxlib.NewConfirm(&uxlib.ConfirmOptions{
-		Message: fmt.Sprintf("The %s plugin is not installed. Would you like to install it?", plugin.Name),
-		HelpMessage: fmt.Sprintf(
-			"The %s plugin provides Azure-specific skills for infrastructure generation, "+
-				"project validation, and deployment guidance. Without it, the agent will have "+
-				"limited Azure capabilities. The plugin is installed globally at ~/.copilot/installed-plugins/.",
-			plugin.Name),
+		Message: fmt.Sprintf(
+			"%s works better with the %s plugin. Would you like to install it?",
+			agentcopilot.DisplayTitle, plugin.Name),
+		HelpMessage: "The Azure plugin provides:\n" +
+			"• Azure MCP server that contains additional tools for Azure\n" +
+			"• Skills that streamline and provide better results for creating, " +
+			"validating, and deploying applications to Azure",
 		DefaultValue: &defaultYes,
 	})
 

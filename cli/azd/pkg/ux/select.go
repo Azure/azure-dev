@@ -405,5 +405,9 @@ func (p *Select) renderFooter(printer Printer) {
 
 	printer.Fprintln()
 	printer.Fprintln(output.WithGrayFormat("───────────────────────────────────"))
-	printer.Fprintln(output.WithGrayFormat("Use arrows to move, type ? for hint"))
+	if p.options.HelpMessage != "" {
+		printer.Fprintln(output.WithGrayFormat("Use arrows to move, type ? for hint"))
+	} else {
+		printer.Fprintln(output.WithGrayFormat("Use arrows to move"))
+	}
 }

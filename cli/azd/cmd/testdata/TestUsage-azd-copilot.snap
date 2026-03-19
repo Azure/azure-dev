@@ -1,5 +1,5 @@
 
-Manage Copilot agent settings. (Alpha)
+Manage GitHub Copilot agent settings. (Preview)
 
 Usage
   azd copilot [command]

@@ -35,7 +35,7 @@ Commands
     template    	: Find and view template details.
 
   Enabled alpha commands
-    copilot     	: Manage Copilot agent settings. (Alpha)
+    copilot     	: Manage GitHub Copilot agent settings. (Preview)
     mcp         	: Manage Model Context Protocol (MCP) server. (Alpha)
 
   Enabled extensions commands 

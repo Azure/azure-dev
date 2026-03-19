@@ -1496,7 +1496,7 @@ const completionSpec: Fig.Spec = {
 		},
 		{
 			name: ['copilot'],
-			description: 'Manage Copilot agent settings. (Alpha)',
+			description: 'Manage GitHub Copilot agent settings. (Preview)',
 			subcommands: [
 				{
 					name: ['consent'],
@@ -3337,7 +3337,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['copilot'],
-					description: 'Manage Copilot agent settings. (Alpha)',
+					description: 'Manage GitHub Copilot agent settings. (Preview)',
 					subcommands: [
 						{
 							name: ['consent'],

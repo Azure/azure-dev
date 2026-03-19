@@ -39,7 +39,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/pack"
 	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
-	"github.com/fatih/color"
 	"go.opentelemetry.io/otel/codes"
 )
 
@@ -262,7 +261,8 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		troubleshootPrompt := e.buildTroubleshootingPrompt(originalError)
 
 		previousError = originalError
-		e.console.Message(ctx, color.MagentaString("Preparing Copilot to troubleshoot error..."))
+		e.console.Message(ctx, output.WithHintFormat(
+			"Preparing %s to troubleshoot error...", agentcopilot.DisplayTitle))
 		agentResult, err := azdAgent.SendMessage(ctx, troubleshootPrompt)
 
 		if err != nil {
@@ -337,7 +337,8 @@ func (e *ErrorMiddleware) promptTroubleshootConsent(ctx context.Context) (bool, 
 	// Check for saved "always allow" preference
 	if val, ok := userConfig.GetString(agentcopilot.ConfigKeyErrorHandlingFix); ok && val == "allow" {
 		e.console.Message(ctx, output.WithWarningFormat(
-			"Agent troubleshooting is set to always allow. To change, run %s.\n",
+			"%s troubleshooting is set to always allow. To change, run %s.\n",
+			agentcopilot.DisplayTitle,
 			output.WithHighLightFormat(
 				fmt.Sprintf("azd config unset %s", agentcopilot.ConfigKeyErrorHandlingFix)),
 		))
@@ -347,7 +348,8 @@ func (e *ErrorMiddleware) promptTroubleshootConsent(ctx context.Context) (bool, 
 	// Check for saved "always skip" preference
 	if val, ok := userConfig.GetString(agentcopilot.ConfigKeyErrorHandlingTroubleshootSkip); ok && val == "allow" {
 		e.console.Message(ctx, output.WithWarningFormat(
-			"Agent troubleshooting is set to always skip. To change, run %s.\n",
+			"%s troubleshooting is set to always skip. To change, run %s.\n",
+			agentcopilot.DisplayTitle,
 			output.WithHighLightFormat(
 				fmt.Sprintf("azd config unset %s", agentcopilot.ConfigKeyErrorHandlingTroubleshootSkip)),
 		))
@@ -362,10 +364,11 @@ func (e *ErrorMiddleware) promptTroubleshootConsent(ctx context.Context) (bool, 
 	}
 
 	selector := uxlib.NewSelect(&uxlib.SelectOptions{
-		Message: "Would you like the agent to troubleshoot this error?",
+		Message: fmt.Sprintf("Would you like %s to troubleshoot this error?", agentcopilot.DisplayTitle),
 		HelpMessage: fmt.Sprintf(
-			"The agent will explain the error and offer to fix it. "+
+			"%s will explain the error and offer to fix it. "+
 				"Edit permissions anytime by running %s.",
+			agentcopilot.DisplayTitle,
 			output.WithHighLightFormat("azd copilot consent")),
 		Choices:         choices,
 		EnableFiltering: new(false),

@@ -29,3 +29,12 @@ const (
 	ExtensionRunEvent     = "ext.run"
 	ExtensionInstallEvent = "ext.install"
 )
+
+// Copilot agent related events.
+const (
+	// CopilotInitializeEvent tracks the agent initialization flow (model/reasoning config).
+	CopilotInitializeEvent = "copilot.initialize"
+
+	// CopilotSessionEvent tracks session creation or resumption.
+	CopilotSessionEvent = "copilot.session"
+)

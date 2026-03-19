@@ -22,6 +22,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
 	agentcopilot "github.com/azure/azure-dev/cli/azd/internal/agent/copilot"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -75,9 +76,18 @@ type cleanupTask struct {
 // Initialize handles first-run configuration (model/reasoning prompts), plugin install,
 // and Copilot client startup. If config already exists, returns current values without
 // prompting. Use WithForcePrompt() to always show prompts.
-func (a *CopilotAgent) Initialize(ctx context.Context, opts ...InitOption) (*InitResult, error) {
-	ctx, span := tracing.Start(ctx, "copilot.initialize")
-	defer span.End()
+func (a *CopilotAgent) Initialize(ctx context.Context, opts ...InitOption) (result *InitResult, err error) {
+	ctx, span := tracing.Start(ctx, events.CopilotInitializeEvent)
+	defer func() {
+		if result != nil {
+			tracing.SetUsageAttributes(
+				fields.CopilotInitIsFirstRun.Bool(result.IsFirstRun),
+				fields.CopilotInitModel.String(result.Model),
+				fields.CopilotInitReasoningEffort.String(result.ReasoningEffort),
+			)
+		}
+		span.EndWithStatus(err)
+	}()
 
 	options := &initOptions{}
 	for _, opt := range opts {
@@ -114,19 +124,11 @@ func (a *CopilotAgent) Initialize(ctx context.Context, opts ...InitOption) (*Ini
 
 	// If already configured and not forcing, return current config
 	if (hasModel || hasEffort) && !options.forcePrompt {
-		result := &InitResult{
+		return &InitResult{
 			Model:           existingModel,
 			ReasoningEffort: existingEffort,
 			IsFirstRun:      false,
-		}
-
-		tracing.SetUsageAttributes(
-			fields.CopilotInitIsFirstRun.Bool(false),
-			fields.CopilotInitModel.String(result.Model),
-			fields.CopilotInitReasoningEffort.String(result.ReasoningEffort),
-		)
-
-		return result, nil
+		}, nil
 	}
 
 	// Prompt for reasoning effort
@@ -210,19 +212,11 @@ func (a *CopilotAgent) Initialize(ctx context.Context, opts ...InitOption) (*Ini
 		return nil, fmt.Errorf("failed to save config: %w", err)
 	}
 
-	result := &InitResult{
+	return &InitResult{
 		Model:           selectedModel,
 		ReasoningEffort: selectedEffort,
 		IsFirstRun:      true,
-	}
-
-	tracing.SetUsageAttributes(
-		fields.CopilotInitIsFirstRun.Bool(true),
-		fields.CopilotInitModel.String(result.Model),
-		fields.CopilotInitReasoningEffort.String(result.ReasoningEffort),
-	)
-
-	return result, nil
+	}, nil
 }
 
 // SelectSession shows a UX picker with previous sessions for the current directory.
@@ -297,9 +291,6 @@ func (a *CopilotAgent) ListSessions(ctx context.Context, cwd string) ([]SessionM
 // SendMessage sends a prompt to the agent and returns the result.
 // Creates a new session or resumes one if WithSessionID is provided.
 func (a *CopilotAgent) SendMessage(ctx context.Context, prompt string, opts ...SendOption) (*AgentResult, error) {
-	ctx, span := tracing.Start(ctx, "copilot.message")
-	defer span.End()
-
 	options := &sendOptions{}
 	for _, opt := range opts {
 		opt(options)
@@ -307,10 +298,6 @@ func (a *CopilotAgent) SendMessage(ctx context.Context, prompt string, opts ...S
 
 	// Update active context so SDK callbacks use this call's context
 	a.activeCtx.Store(&ctx)
-
-	// Track whether this is a new session vs resumed
-	// A session is "not new" if it already exists OR if we're resuming by ID
-	isNewSession := a.session == nil && options.sessionID == ""
 
 	// Ensure session exists
 	if err := a.ensureSession(ctx, options.sessionID); err != nil {
@@ -326,13 +313,6 @@ func (a *CopilotAgent) SendMessage(ctx context.Context, prompt string, opts ...S
 			mode = AgentModeInteractive
 		}
 	}
-
-	// Set telemetry attributes for this message
-	span.SetAttributes(
-		fields.StringHashed(fields.CopilotSessionId, a.sessionID),
-		fields.CopilotSessionIsNew.Bool(isNewSession),
-		fields.CopilotMode.String(string(mode)),
-	)
 
 	log.Printf("[copilot] SendMessage: sending prompt (%d chars, headless=%v)...", len(prompt), a.headless)
 
@@ -351,21 +331,6 @@ func (a *CopilotAgent) SendMessage(ctx context.Context, prompt string, opts ...S
 
 	// Increment message count only after successful send
 	a.messageCount++
-
-	// Record per-message usage metrics on the span
-	span.SetAttributes(
-		fields.CopilotMessageModel.String(result.Usage.Model),
-		fields.CopilotMessageInputTokens.Float64(result.Usage.InputTokens),
-		fields.CopilotMessageOutputTokens.Float64(result.Usage.OutputTokens),
-		fields.CopilotMessageBillingRate.Float64(result.Usage.BillingRate),
-		fields.CopilotMessagePremiumRequests.Float64(result.Usage.PremiumRequests),
-		fields.CopilotMessageDurationMs.Float64(result.Usage.DurationMS),
-	)
-
-	// Update cumulative usage attributes
-	tracing.SetUsageAttributes(
-		fields.CopilotSessionMessageCount.Int(a.messageCount),
-	)
 
 	return result, nil
 }
@@ -535,11 +500,22 @@ func (a *CopilotAgent) SendMessageWithRetry(ctx context.Context, prompt string, 
 // Stop terminates the agent, cleans up the Copilot SDK client and runtime process.
 // Cleanup tasks run in reverse registration order. Safe to call multiple times.
 func (a *CopilotAgent) Stop() error {
-	// Record final consent counts as usage attributes
+	// Record all cumulative session metrics as usage attributes
 	tracing.SetUsageAttributes(
+		fields.CopilotMode.String(string(a.mode)),
+		fields.CopilotSessionMessageCount.Int(a.messageCount),
+		fields.CopilotMessageModel.String(a.cumulativeUsage.Model),
+		fields.CopilotMessageInputTokens.Float64(a.cumulativeUsage.InputTokens),
+		fields.CopilotMessageOutputTokens.Float64(a.cumulativeUsage.OutputTokens),
+		fields.CopilotMessageBillingRate.Float64(a.cumulativeUsage.BillingRate),
+		fields.CopilotMessagePremiumRequests.Float64(a.cumulativeUsage.PremiumRequests),
+		fields.CopilotMessageDurationMs.Float64(a.cumulativeUsage.DurationMS),
 		fields.CopilotConsentApprovedCount.Int(a.consentApprovedCount),
 		fields.CopilotConsentDeniedCount.Int(a.consentDeniedCount),
 	)
+	if a.sessionID != "" {
+		tracing.SetUsageAttributes(fields.StringHashed(fields.CopilotSessionId, a.sessionID))
+	}
 
 	tasks := a.cleanupTasks
 	a.cleanupTasks = nil
@@ -609,13 +585,23 @@ func (a *CopilotAgent) EnsureStarted(ctx context.Context) error {
 // ensureSession creates or resumes a Copilot session if one doesn't exist.
 // Uses context.WithoutCancel to prevent the SDK session from being torn down
 // when a per-request context (e.g., gRPC) is cancelled between calls.
-func (a *CopilotAgent) ensureSession(ctx context.Context, resumeSessionID string) error {
+func (a *CopilotAgent) ensureSession(ctx context.Context, resumeSessionID string) (err error) {
 	if a.session != nil {
 		return nil
 	}
 
-	ctx, span := tracing.Start(ctx, "copilot.session")
-	defer span.End()
+	ctx, span := tracing.Start(ctx, events.CopilotSessionEvent)
+	defer func() {
+		// Log session ID even on failure (e.g., resume failure still has the attempted ID)
+		sessionID := a.sessionID
+		if sessionID == "" && resumeSessionID != "" {
+			sessionID = resumeSessionID
+		}
+		if sessionID != "" {
+			span.SetAttributes(fields.StringHashed(fields.CopilotSessionId, sessionID))
+		}
+		span.EndWithStatus(err)
+	}()
 
 	isResume := resumeSessionID != ""
 	span.SetAttributes(fields.CopilotSessionIsNew.Bool(!isResume))
@@ -710,8 +696,6 @@ func (a *CopilotAgent) ensureSession(ctx context.Context, resumeSessionID string
 	if a.onSessionStarted != nil {
 		a.onSessionStarted(a.sessionID)
 	}
-
-	span.SetAttributes(fields.StringHashed(fields.CopilotSessionId, a.sessionID))
 
 	return nil
 }

@@ -372,6 +372,20 @@ overrides:
       - Waza
       - waza
       - urlopen
+  - filename: "test/eval/graders/*.py"
+    words:
+      - Waza
+      - waza
+  - filename: "test/eval/tasks/**/*.yaml"
+    words:
+      - authenticat
+      - idempoten
+  - filename: "test/eval/tests/human/*.test.ts"
+    words:
+      - compdef
+      - badcfg
+      - provison
+      - notacommand
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

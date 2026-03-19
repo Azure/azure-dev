@@ -1,27 +1,7 @@
-import { execSync } from "child_process";
-import { resolve } from "path";
 import { mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-
-const AZD_BIN = resolve(__dirname, "../../../../azd");
-
-function azdInDir(
-  args: string,
-  cwd: string
-): { stdout: string; stderr: string; exitCode: number } {
-  try {
-    const stdout = execSync(`${AZD_BIN} ${args} --no-prompt`, {
-      encoding: "utf-8",
-      timeout: 60_000,
-      cwd,
-      env: { ...process.env, NO_COLOR: "1" },
-    });
-    return { stdout, stderr: "", exitCode: 0 };
-  } catch (e: any) {
-    return { stdout: e.stdout || "", stderr: e.stderr || "", exitCode: e.status || 1 };
-  }
-}
+import { azd } from "../test-utils";
 
 describe("azd command sequencing", () => {
   let tempDir: string;
@@ -35,11 +15,10 @@ describe("azd command sequencing", () => {
   });
 
   test("provision in empty directory fails with guidance about init or azure.yaml", () => {
-    const result = azdInDir("provision", tempDir);
+    const result = azd("provision --no-prompt", { cwd: tempDir });
     expect(result.exitCode).not.toBe(0);
 
     const output = (result.stdout + result.stderr).toLowerCase();
-    // Should mention what's missing so the user knows what to do.
     // In CI without auth, azd may report an auth error instead of a project error.
     const mentionsGuidance =
       output.includes("azure.yaml") ||
@@ -53,7 +32,7 @@ describe("azd command sequencing", () => {
   });
 
   test("deploy in empty directory fails with guidance about missing project", () => {
-    const result = azdInDir("deploy", tempDir);
+    const result = azd("deploy --no-prompt", { cwd: tempDir });
     expect(result.exitCode).not.toBe(0);
 
     const output = (result.stdout + result.stderr).toLowerCase();
@@ -69,7 +48,7 @@ describe("azd command sequencing", () => {
   });
 
   test("down in empty directory fails with helpful message", () => {
-    const result = azdInDir("down", tempDir);
+    const result = azd("down --no-prompt", { cwd: tempDir });
     expect(result.exitCode).not.toBe(0);
 
     const output = (result.stdout + result.stderr).toLowerCase();
@@ -86,7 +65,7 @@ describe("azd command sequencing", () => {
   });
 
   test("restore in empty directory fails with project-related message", () => {
-    const result = azdInDir("restore", tempDir);
+    const result = azd("restore --no-prompt", { cwd: tempDir });
     expect(result.exitCode).not.toBe(0);
 
     const output = (result.stdout + result.stderr).toLowerCase();

@@ -53,10 +53,8 @@ def check_endpoint(
                 continue
 
             if expected_body_contains and expected_body_contains not in body:
-                return {
-                    "passed": False,
-                    "reason": f"Response body missing expected string '{expected_body_contains}'",
-                }
+                last_error = f"Response body missing expected string '{expected_body_contains}'"
+                continue
 
             return {"passed": True, "reason": f"Status {status} OK"}
 

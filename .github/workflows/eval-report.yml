@@ -26,22 +26,38 @@ jobs:
         run: npm ci
 
       - name: Download recent Waza artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: waza-results-*
-          path: cli/azd/test/eval/reports/waza
-          merge-multiple: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p cli/azd/test/eval/reports/waza
+          # Find the latest successful waza run and download its artifacts
+          RUN_ID=$(gh api repos/${{ github.repository }}/actions/workflows/eval-waza.yml/runs \
+            --jq '.workflow_runs | map(select(.conclusion == "success")) | .[0].id // empty' 2>/dev/null)
+          if [ -n "$RUN_ID" ]; then
+            gh run download "$RUN_ID" -D cli/azd/test/eval/reports/waza 2>/dev/null || echo "No waza artifacts found"
+          else
+            echo "No successful waza runs found, skipping"
+          fi
 
       - name: Download recent E2E artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: e2e-results-*
-          path: cli/azd/test/eval/reports/e2e
-          merge-multiple: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p cli/azd/test/eval/reports/e2e
+          # Find the latest successful E2E run and download its artifacts
+          RUN_ID=$(gh api repos/${{ github.repository }}/actions/workflows/eval-e2e.yml/runs \
+            --jq '.workflow_runs | map(select(.conclusion == "success")) | .[0].id // empty' 2>/dev/null)
+          if [ -n "$RUN_ID" ]; then
+            gh run download "$RUN_ID" -D cli/azd/test/eval/reports/e2e 2>/dev/null || echo "No e2e artifacts found"
+          else
+            echo "No successful e2e runs found, skipping"
+          fi
 
       - name: Generate comparison report
         working-directory: cli/azd/test/eval
-        run: npm run report
+        run: |
+          echo "Report generation placeholder — add scripts/generate-report.ts when ready"
+          ls -la reports/ 2>/dev/null || echo "No report data available yet"
 
       - name: Upload report
         uses: actions/upload-artifact@v4

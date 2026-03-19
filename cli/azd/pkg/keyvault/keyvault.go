@@ -600,6 +600,13 @@ func ParseKeyVaultAppReference(ref string) (KeyVaultAppReference, error) {
 		vaultName = vaultName[:idx]
 	}
 
+	if vaultName == "" || vaultName == host {
+		// Either the host had no subdomain (e.g., "vault.azure.net") or the
+		// dot was at position 0 — both indicate a missing vault name.
+		return KeyVaultAppReference{}, fmt.Errorf(
+			"invalid @Microsoft.KeyVault reference %q: could not extract vault name from host %q", ref, host)
+	}
+
 	return KeyVaultAppReference{
 		VaultURL:      fmt.Sprintf("https://%s", u.Host),
 		VaultName:     vaultName,

@@ -1491,10 +1491,14 @@ func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.Co
 	}
 
 	tiers := []resourceTier{
-		{label: "0.25 cores, 0.5 GB memory", cpu: "0.25", memory: "0.5Gi"},
-		{label: "0.5 cores, 1 GB memory", cpu: "0.5", memory: "1Gi"},
-		{label: "1 core, 2 GB memory", cpu: "1", memory: "2Gi"},
-		{label: "2 cores, 4 GB memory", cpu: "2", memory: "4Gi"},
+		{
+			label:  fmt.Sprintf("%s cores, %s memory", project.DefaultCpu, project.DefaultMemory),
+			cpu:    project.DefaultCpu,
+			memory: project.DefaultMemory,
+		},
+		{label: "0.5 cores, 1Gi memory", cpu: "0.5", memory: "1Gi"},
+		{label: "1 core, 2Gi memory", cpu: "1", memory: "2Gi"},
+		{label: "2 cores, 4Gi memory", cpu: "2", memory: "4Gi"},
 	}
 
 	choices := make([]*azdext.SelectChoice, len(tiers))

@@ -1595,50 +1595,45 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 }
 
 func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.ContainerSettings, error) {
-	if a.flags.NoPrompt {
-		fmt.Printf("No prompt mode enabled, using default container settings\n")
-		return &project.ContainerSettings{
-			Resources: &project.ResourceSettings{
-				Memory: project.DefaultMemory,
-				Cpu:    project.DefaultCpu,
-			},
-			Scale: &project.ScaleSettings{
-				MinReplicas: project.DefaultMinReplicas,
-				MaxReplicas: project.DefaultMaxReplicas,
-			},
-		}, nil
+	type resourceTier struct {
+		label  string
+		cpu    string
+		memory string
 	}
 
-	// Default values
-	defaultMemory := project.DefaultMemory
-	defaultCpu := project.DefaultCpu
+	tiers := []resourceTier{
+		{label: "0.25 cores, 0.5 GB memory", cpu: "0.25", memory: "0.5Gi"},
+		{label: "0.5 cores, 1 GB memory", cpu: "0.5", memory: "1Gi"},
+		{label: "1 core, 2 GB memory", cpu: "1", memory: "2Gi"},
+		{label: "2 cores, 4 GB memory", cpu: "2", memory: "4Gi"},
+	}
 
-	// Prompt for memory allocation
-	memoryResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-		Options: &azdext.PromptOptions{
-			Message:      "Enter desired container memory allocation (e.g., '1Gi', '512Mi')",
-			DefaultValue: defaultMemory,
+	choices := make([]*azdext.SelectChoice, len(tiers))
+	for i, t := range tiers {
+		choices[i] = &azdext.SelectChoice{
+			Label: t.label,
+			Value: fmt.Sprintf("%d", i),
+		}
+	}
+
+	defaultIndex := int32(0)
+	resp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message:       "Select container resource allocation (CPU and Memory) for your agent. You can adjust these settings later in the azure.yaml file if needed.",
+			Choices:       choices,
+			SelectedIndex: &defaultIndex,
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("prompting for memory allocation: %w", err)
+		return nil, fmt.Errorf("prompting for container resources: %w", err)
 	}
 
-	// Prompt for CPU allocation
-	cpuResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-		Options: &azdext.PromptOptions{
-			Message:      "Enter desired container CPU allocation (e.g., '1', '500m')",
-			DefaultValue: defaultCpu,
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("prompting for CPU allocation: %w", err)
-	}
+	selected := tiers[*resp.Value]
 
 	return &project.ContainerSettings{
 		Resources: &project.ResourceSettings{
-			Memory: memoryResp.Value,
-			Cpu:    cpuResp.Value,
+			Memory: selected.memory,
+			Cpu:    selected.cpu,
 		},
 		Scale: &project.ScaleSettings{
 			MinReplicas: project.DefaultMinReplicas,

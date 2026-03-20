@@ -382,7 +382,7 @@ func (m *Manager) updateViaInstallScript(ctx context.Context, cfg *UpdateConfig,
 
 	currentPath, err := currentExePath()
 	if err != nil {
-		return fmt.Errorf("failed to determine current path: %w", err)
+		return newUpdateError(CodeReplaceFailed, fmt.Errorf("failed to determine current path: %w", err))
 	}
 	installFolder := filepath.Dir(currentPath)
 

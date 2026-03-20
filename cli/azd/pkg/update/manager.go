@@ -743,20 +743,27 @@ func (m *Manager) replaceBinary(ctx context.Context, newBinaryPath, currentBinar
 	// On unix, try with sudo if permission denied
 	if runtime.GOOS != "windows" {
 		log.Printf("direct replacement failed (%v), trying with sudo", err)
-		// Use "rm -f && cp" instead of plain "cp" to avoid "Text file busy" (ETXTBSY) errors.
-		// On Linux, writing to a running binary's inode fails because the kernel holds a
-		// write lock on executing files. Removing first unlinks the filename (the running
-		// process keeps the old inode alive via its fd), then cp creates a new inode.
-		shellCmd := fmt.Sprintf("rm -f %q && cp %q %q", currentBinaryPath, newBinaryPath, currentBinaryPath)
-		runArgs := exec.NewRunArgs("sudo", "sh", "-c", shellCmd)
-		runArgs = runArgs.WithInteractive(true)
-		result, sudoErr := m.commandRunner.Run(ctx, runArgs)
-		if sudoErr != nil {
-			return newUpdateError(CodeElevationFailed, sudoErr)
+		// Remove the destination first to avoid "Text file busy" (ETXTBSY) errors.
+		rmArgs := exec.NewRunArgs("sudo", "rm", "-f", currentBinaryPath)
+		rmArgs = rmArgs.WithInteractive(true)
+		rmResult, rmErr := m.commandRunner.Run(ctx, rmArgs)
+		if rmErr != nil {
+			return newUpdateError(CodeElevationFailed, fmt.Errorf("sudo rm failed: %w", rmErr))
 		}
-		if result.ExitCode != 0 {
+		if rmResult.ExitCode != 0 {
 			return newUpdateErrorf(CodeElevationFailed,
-				"sudo copy failed with exit code %d", result.ExitCode)
+				"sudo rm failed with exit code %d", rmResult.ExitCode)
+		}
+
+		cpArgs := exec.NewRunArgs("sudo", "cp", newBinaryPath, currentBinaryPath)
+		cpArgs = cpArgs.WithInteractive(true)
+		cpResult, cpErr := m.commandRunner.Run(ctx, cpArgs)
+		if cpErr != nil {
+			return newUpdateError(CodeElevationFailed, fmt.Errorf("sudo cp failed: %w", cpErr))
+		}
+		if cpResult.ExitCode != 0 {
+			return newUpdateErrorf(CodeElevationFailed,
+				"sudo cp failed with exit code %d", cpResult.ExitCode)
 		}
 		return nil
 	}

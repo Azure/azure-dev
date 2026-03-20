@@ -1586,11 +1586,14 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	}
 
 	fmt.Printf("\nAdded your agent as a service entry named '%s' under the file azure.yaml.\n", agentDef.Name)
-	fmt.Printf("To provision and deploy the whole solution, use %s.\n", color.HiBlueString("azd up"))
-	fmt.Printf(
-		"If you already have your project provisioned with hosted agents requirements, "+
-			"you can directly use %s.\n",
-		color.HiBlueString("azd deploy %s", agentDef.Name))
+	if projectID, _ := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: a.environment.Name,
+		Key:     "AZURE_AI_PROJECT_ID",
+	}); projectID != nil && projectID.Value != "" {
+		fmt.Printf("To deploy your agent, use %s.\n", color.HiBlueString("azd deploy %s", agentDef.Name))
+	} else {
+		fmt.Printf("To provision and deploy the whole solution, use %s.\n", color.HiBlueString("azd up"))
+	}
 	return nil
 }
 

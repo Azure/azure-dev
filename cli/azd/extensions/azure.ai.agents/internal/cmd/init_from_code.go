@@ -107,7 +107,16 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		}
 
 		fmt.Println("\nYou can customize environment variables, cpu, memory, and replica settings in the agent.yaml.")
-		fmt.Printf("Next steps: Run %s to deploy your agent to Microsoft Foundry.\n", color.HiBlueString("azd up"))
+		if projectID, _ := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+			EnvName: a.environment.Name,
+			Key:     "AZURE_AI_PROJECT_ID",
+		}); projectID != nil && projectID.Value != "" {
+			fmt.Printf("Next steps: Run %s to deploy your agent to Microsoft Foundry.\n",
+				color.HiBlueString("azd deploy %s", localDefinition.Name))
+		} else {
+			fmt.Printf("Next steps: Run %s to deploy your agent to Microsoft Foundry.\n",
+				color.HiBlueString("azd up"))
+		}
 	}
 
 	return nil
@@ -1312,11 +1321,6 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 	}
 
 	fmt.Printf("\nAdded your agent as a service entry named '%s' under the file azure.yaml.\n", agentName)
-	fmt.Printf("To provision and deploy the whole solution, use %s.\n", color.HiBlueString("azd up"))
-	fmt.Printf(
-		"If you already have your project provisioned with hosted agents requirements, "+
-			"you can directly use %s.\n",
-		color.HiBlueString("azd deploy %s", agentName))
 	return nil
 }
 

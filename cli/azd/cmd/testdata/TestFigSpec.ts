@@ -220,7 +220,7 @@ const completionSpec: Fig.Spec = {
 			subcommands: [
 				{
 					name: ['agent'],
-					description: 'Extension for the Foundry Agent Service. (Preview)',
+					description: 'Ship agents with Microsoft Foundry from your terminal. (Preview)',
 					subcommands: [
 						{
 							name: ['init'],
@@ -3101,7 +3101,7 @@ const completionSpec: Fig.Spec = {
 					subcommands: [
 						{
 							name: ['agent'],
-							description: 'Extension for the Foundry Agent Service. (Preview)',
+							description: 'Ship agents with Microsoft Foundry from your terminal. (Preview)',
 							subcommands: [
 								{
 									name: ['init'],

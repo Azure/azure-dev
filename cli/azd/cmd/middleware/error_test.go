@@ -370,3 +370,72 @@ func Test_ShouldSkipErrorAnalysis(t *testing.T) {
 		require.True(t, shouldSkipErrorAnalysis(wrapped))
 	})
 }
+
+func Test_TroubleshootCategory_Constants(t *testing.T) {
+	// Verify constant values match expected strings used in config
+	require.Equal(t, troubleshootCategory("explain"), categoryExplain)
+	require.Equal(t, troubleshootCategory("guidance"), categoryGuidance)
+	require.Equal(t, troubleshootCategory("troubleshoot"), categoryTroubleshoot)
+	require.Equal(t, troubleshootCategory("skip"), categorySkip)
+}
+
+func Test_BuildPromptForCategory(t *testing.T) {
+	middleware := &ErrorMiddleware{
+		options: &Options{CommandPath: "azd provision"},
+	}
+	testErr := errors.New("deployment failed: QuotaExceeded")
+
+	tests := []struct {
+		name     string
+		category troubleshootCategory
+		contains []string
+	}{
+		{
+			name:     "explain category",
+			category: categoryExplain,
+			contains: []string{"azd provision", "QuotaExceeded", "EXPLAIN TO THE USER", "What happened"},
+		},
+		{
+			name:     "guidance category",
+			category: categoryGuidance,
+			contains: []string{"azd provision", "QuotaExceeded", "actionable fix steps"},
+		},
+		{
+			name:     "troubleshoot category",
+			category: categoryTroubleshoot,
+			contains: []string{"azd provision", "QuotaExceeded", "EXPLAIN TO THE USER", "RECOMMEND MANUAL STEPS"},
+		},
+		{
+			name:     "default falls back to troubleshoot manual",
+			category: troubleshootCategory("unknown"),
+			contains: []string{"azd provision", "QuotaExceeded", "EXPLAIN TO THE USER", "RECOMMEND MANUAL STEPS"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			prompt := middleware.buildPromptForCategory(tt.category, testErr)
+			for _, s := range tt.contains {
+				require.Contains(t, prompt, s)
+			}
+		})
+	}
+}
+
+func Test_BuildFixPrompt(t *testing.T) {
+	middleware := &ErrorMiddleware{
+		options: &Options{CommandPath: "azd up"},
+	}
+	testErr := errors.New("resource group not found")
+
+	prompt := middleware.buildFixPrompt(testErr)
+	require.Contains(t, prompt, "azd up")
+	require.Contains(t, prompt, "resource group not found")
+	require.Contains(t, prompt, "FIX")
+	require.Contains(t, prompt, "minimal change")
+}
+
+func Test_ConfigKeyErrorHandlingCategory(t *testing.T) {
+	// Verify the config key is properly namespaced
+	require.Equal(t, "copilot.errorHandling.category", agentcopilot.ConfigKeyErrorHandlingCategory)
+}

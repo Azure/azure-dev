@@ -64,8 +64,9 @@ const (
 
 	// ConfigKeyErrorHandlingRoot is the root for error handling preferences.
 	ConfigKeyErrorHandlingRoot = ConfigRoot + ".errorHandling"
+	// ConfigKeyErrorHandlingCategory controls the default troubleshooting scope
+	// (explain, guidance, troubleshoot, skip).
+	ConfigKeyErrorHandlingCategory = ConfigKeyErrorHandlingRoot + ".category"
 	// ConfigKeyErrorHandlingFix controls auto-approval of agent-applied fixes.
 	ConfigKeyErrorHandlingFix = ConfigKeyErrorHandlingRoot + ".fix"
-	// ConfigKeyErrorHandlingTroubleshootSkip controls skipping error troubleshooting.
-	ConfigKeyErrorHandlingTroubleshootSkip = ConfigKeyErrorHandlingRoot + ".troubleshooting.skip"
 )

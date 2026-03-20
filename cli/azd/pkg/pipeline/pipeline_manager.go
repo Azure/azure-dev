@@ -676,7 +676,8 @@ func (pm *PipelineManager) Configure(
 	// Merge azd default variables and secrets with the ones defined on azure.yaml
 	pm.configOptions.variables, pm.configOptions.secrets, err = mergeProjectVariablesAndSecrets(
 		pm.configOptions.projectVariables, pm.configOptions.projectSecrets,
-		defaultAzdVariables, defaultAzdSecrets, pm.configOptions.providerParameters, pm.env.Dotenv())
+		defaultAzdVariables, defaultAzdSecrets, pm.configOptions.providerParameters,
+		pm.configOptions.plannedOutputs, pm.env.Dotenv())
 	if err != nil {
 		return result, fmt.Errorf("failed to merge variables and secrets: %w", err)
 	}
@@ -1314,6 +1315,15 @@ func generatePipelineDefinition(path string, props projectProperties) error {
 		}
 	}
 
+	// Apply planned outputs so that the generated pipeline definition contains the output env var names
+	for _, output := range props.plannedOutputs {
+		if output.Secret {
+			tmplContext.Secrets = append(tmplContext.Secrets, output.Name)
+		} else {
+			tmplContext.Variables = append(tmplContext.Variables, output.Name)
+		}
+	}
+
 	if props.InfraProvider == infraProviderTerraform {
 		// terraform provider does not resolve this variables automatically, AZD needs to define them
 		tmplContext.Variables = append(tmplContext.Variables, "AZURE_LOCATION")
@@ -1442,6 +1452,17 @@ func (pm *PipelineManager) SetParameters(parameters []provisioning.Parameter) {
 	pm.configOptions.providerParameters = parameters
 }
 
+// SetPlannedOutputs stores the outputs the provisioning provider plans to produce.
+// When a subsequent pipeline configuration run finds values for these outputs in the current environment
+// (i.e. provisioning has already been executed), they are automatically included as CI variables or
+// secrets without requiring the user to list them in azure.yaml.
+func (pm *PipelineManager) SetPlannedOutputs(outputs []provisioning.PlannedOutput) {
+	if pm.configOptions == nil {
+		pm.configOptions = &configurePipelineOptions{}
+	}
+	pm.configOptions.plannedOutputs = outputs
+}
+
 func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context) error {
 	// pipeline definition files
 	hasAppHost := pm.importManager.HasAppHost(ctx, pm.prjConfig)
@@ -1487,6 +1508,7 @@ func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context) error {
 			Secrets:               pm.prjConfig.Pipeline.Secrets,
 			RequiredAlphaFeatures: requiredAlphaFeatures,
 			providerParameters:    pm.configOptions.providerParameters,
+			plannedOutputs:        pm.configOptions.plannedOutputs,
 		})
 	if err != nil {
 		return err

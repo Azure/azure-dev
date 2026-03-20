@@ -179,6 +179,19 @@ type Parameter struct {
 	UsingEnvVarMapping bool
 }
 
+// PlannedOutput describes an output that an infrastructure provider will produce after a successful deployment.
+// The Name field matches the environment variable key set by the provider when the deployment completes.
+type PlannedOutput struct {
+	// Name is the output name and the key used when the value is written to the environment.
+	Name string
+	// Type is the ARM type of the output (e.g. "string", "object", "array", "int", "bool",
+	// "secureString", "secureObject").
+	Type string
+	// Secret is true when the output is of a secure type and its value should be treated as
+	// a secret in CI/CD pipelines.
+	Secret bool
+}
+
 type Provider interface {
 	Name() string
 	Initialize(ctx context.Context, projectPath string, options Options) error
@@ -188,4 +201,7 @@ type Provider interface {
 	Destroy(ctx context.Context, options DestroyOptions) (*DestroyResult, error)
 	EnsureEnv(ctx context.Context) error
 	Parameters(ctx context.Context) ([]Parameter, error)
+	// PlannedOutputs returns the list of outputs the provider will produce after a successful deployment.
+	// Implementations that do not support this can return nil, nil.
+	PlannedOutputs(ctx context.Context) ([]PlannedOutput, error)
 }

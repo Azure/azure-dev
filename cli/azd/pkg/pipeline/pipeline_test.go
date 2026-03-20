@@ -5,6 +5,7 @@ package pipeline
 import (
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -31,7 +32,7 @@ func Test_ConfigOptions_SecretsAndVars(t *testing.T) {
 
 	// Call the SecretsAndVars function
 	variables, secrets, err := mergeProjectVariablesAndSecrets(
-		projectVariables, projectSecrets, initialVariables, initialSecrets, nil, env)
+		projectVariables, projectSecrets, initialVariables, initialSecrets, nil, nil, env)
 	assert.NoError(t, err)
 
 	// Assert the expected results
@@ -69,7 +70,7 @@ func Test_ConfigOptions_EscapedValues(t *testing.T) {
 	}
 
 	variables, secrets, err := mergeProjectVariablesAndSecrets(
-		projectVariables, projectSecrets, initialVariables, initialSecrets, nil, env)
+		projectVariables, projectSecrets, initialVariables, initialSecrets, nil, nil, env)
 	require.NoError(t, err)
 
 	// After escaping, the value should have backslashes to prevent JSON parsing in the pipeline
@@ -98,7 +99,7 @@ func Test_ConfigOptions_SimpleValues(t *testing.T) {
 	}
 
 	variables, secrets, err := mergeProjectVariablesAndSecrets(
-		projectVariables, projectSecrets, initialVariables, initialSecrets, nil, env)
+		projectVariables, projectSecrets, initialVariables, initialSecrets, nil, nil, env)
 	require.NoError(t, err)
 
 	// Simple values remain mostly the same, quotes get escaped
@@ -153,4 +154,46 @@ func Test_escapeValuesForPipeline(t *testing.T) {
 			assert.Equal(t, tt.expected, values["test"])
 		})
 	}
+}
+
+// Test_PlannedOutputs_IncludedWhenEnvHasValues verifies that planned outputs whose env var is already set in the
+// environment (e.g. from a previous provisioning run) are automatically included as CI variables or secrets
+// without requiring the user to list them in azure.yaml.
+func Test_PlannedOutputs_IncludedWhenEnvHasValues(t *testing.T) {
+plannedOutputs := []provisioning.PlannedOutput{
+{Name: "AZURE_RESOURCE_GROUP", Type: "string", Secret: false},
+{Name: "AZURE_KEY_VAULT_NAME", Type: "secureString", Secret: true},
+{Name: "OUTPUT_NOT_SET", Type: "string", Secret: false},
+}
+
+env := map[string]string{
+"AZURE_RESOURCE_GROUP": "my-rg",
+"AZURE_KEY_VAULT_NAME": "my-kv",
+// OUTPUT_NOT_SET intentionally absent
+}
+
+variables, secrets, err := mergeProjectVariablesAndSecrets(
+nil, nil, map[string]string{}, map[string]string{}, nil, plannedOutputs, env)
+require.NoError(t, err)
+
+assert.Equal(t, map[string]string{"AZURE_RESOURCE_GROUP": "my-rg"}, variables)
+assert.Equal(t, map[string]string{"AZURE_KEY_VAULT_NAME": "my-kv"}, secrets)
+assert.NotContains(t, variables, "OUTPUT_NOT_SET")
+assert.NotContains(t, secrets, "OUTPUT_NOT_SET")
+}
+
+// Test_PlannedOutputs_NotIncludedWhenNoEnvValue verifies that planned outputs with no value in the environment
+// (provisioning has not yet run) are silently skipped and do not cause errors.
+func Test_PlannedOutputs_NotIncludedWhenNoEnvValue(t *testing.T) {
+plannedOutputs := []provisioning.PlannedOutput{
+{Name: "AZURE_RESOURCE_GROUP", Type: "string", Secret: false},
+}
+
+// Env does not contain AZURE_RESOURCE_GROUP
+variables, secrets, err := mergeProjectVariablesAndSecrets(
+nil, nil, map[string]string{}, map[string]string{}, nil, plannedOutputs, map[string]string{})
+require.NoError(t, err)
+
+assert.Empty(t, variables)
+assert.Empty(t, secrets)
 }

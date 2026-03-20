@@ -75,6 +75,14 @@ func (m *Manager) Parameters(ctx context.Context) ([]Parameter, error) {
 	return m.provider.Parameters(ctx)
 }
 
+// PlannedOutputs returns the list of outputs the provider will produce after a successful deployment.
+func (m *Manager) PlannedOutputs(ctx context.Context) ([]PlannedOutput, error) {
+	if m.provider == nil {
+		panic("called PlannedOutputs() with provider not initialized. Make sure to call manager.Initialize() first.")
+	}
+	return m.provider.PlannedOutputs(ctx)
+}
+
 // Gets the latest deployment details for the specified scope
 func (m *Manager) State(ctx context.Context, options *StateOptions) (*StateResult, error) {
 	result, err := m.provider.State(ctx, options)

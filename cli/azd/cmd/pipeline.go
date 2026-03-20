@@ -176,6 +176,7 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 
 	layers := infra.Options.GetLayers()
 	allParameters := []provisioning.Parameter{}
+	allPlannedOutputs := []provisioning.PlannedOutput{}
 
 	for _, layer := range layers {
 		err = p.provisioningManager.Initialize(ctx, p.projectConfig.Path, layer)
@@ -190,9 +191,18 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 		}
 
 		allParameters = append(allParameters, providerParameters...)
+
+		// Pull planned outputs so we can track them in CI without requiring the user to list them in azure.yaml
+		plannedOutputs, err := p.provisioningManager.PlannedOutputs(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get planned outputs for provider %s: %w", pipelineProviderName, err)
+		}
+
+		allPlannedOutputs = append(allPlannedOutputs, plannedOutputs...)
 	}
 
 	p.manager.SetParameters(allParameters)
+	p.manager.SetPlannedOutputs(allPlannedOutputs)
 	pipelineResult, err := p.manager.Configure(ctx, p.projectConfig.Name, infra)
 	if err != nil {
 		return nil, err

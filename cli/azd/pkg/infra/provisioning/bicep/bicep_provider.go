@@ -2791,3 +2791,32 @@ func (p *BicepProvider) Parameters(ctx context.Context) ([]provisioning.Paramete
 
 	return provisionParameters, nil
 }
+
+// PlannedOutputs returns the list of outputs defined in the compiled Bicep template.
+// Each entry corresponds to one ARM template output and carries the name and type information.
+// Outputs whose type is secureString or secureObject are marked as secrets.
+// The result is sorted by name for deterministic ordering.
+// The underlying compileBicep call is cached within a single azd run, so repeated calls are inexpensive.
+func (p *BicepProvider) PlannedOutputs(ctx context.Context) ([]provisioning.PlannedOutput, error) {
+	compileResult, err := p.compileBicep(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("creating template: %w", err)
+	}
+
+	planned := make([]provisioning.PlannedOutput, 0, len(compileResult.Template.Outputs))
+	for key, output := range compileResult.Template.Outputs {
+		outputType := strings.ToLower(output.Type)
+		isSecret := outputType == "securestring" || outputType == "secureobject"
+		planned = append(planned, provisioning.PlannedOutput{
+			Name:   key,
+			Type:   output.Type,
+			Secret: isSecret,
+		})
+	}
+
+	slices.SortFunc(planned, func(a, b provisioning.PlannedOutput) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+
+	return planned, nil
+}

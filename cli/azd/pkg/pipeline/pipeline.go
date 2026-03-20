@@ -110,6 +110,11 @@ type configurePipelineOptions struct {
 	// This is useful for fully-managed scenarios like Aspire, where user is not manually defining the variables and secrets
 	// in the azure.yaml file. The provider can provide the parameters and values required in CI.
 	providerParameters []provisioning.Parameter
+	// plannedOutputs are the outputs the provisioning provider will produce after a successful deployment.
+	// When the environment already contains values for these outputs (from a previous provisioning run),
+	// they are automatically included as CI variables or secrets without requiring the user to list them in
+	// azure.yaml. This avoids prompting the user to manually specify output env var names.
+	plannedOutputs []provisioning.PlannedOutput
 }
 
 // CiProvider defines the base behavior for a continuous integration provider.
@@ -148,6 +153,7 @@ func mergeProjectVariablesAndSecrets(
 	projectVariables, projectSecrets []string,
 	initialVariables, initialSecrets map[string]string,
 	providerParameters []provisioning.Parameter,
+	plannedOutputs []provisioning.PlannedOutput,
 	env map[string]string) (variables, secrets map[string]string, err error) {
 
 	// initial state comes from the list of initial variables and secrets
@@ -215,6 +221,21 @@ func mergeProjectVariablesAndSecrets(
 			secrets[envVar] = strValue
 		} else {
 			variables[envVar] = strValue
+		}
+	}
+
+	// planned outputs from a previous provisioning run are included when they already have a value in the environment.
+	// This avoids prompting the user to manually list output env var names in azure.yaml.
+	for _, output := range plannedOutputs {
+		value := env[output.Name]
+		if value == "" {
+			// Output not yet populated (provisioning has not run), skip it.
+			continue
+		}
+		if output.Secret {
+			secrets[output.Name] = value
+		} else {
+			variables[output.Name] = value
 		}
 	}
 
@@ -366,6 +387,7 @@ type projectProperties struct {
 	Secrets               []string
 	RequiredAlphaFeatures []string
 	providerParameters    []provisioning.Parameter
+	plannedOutputs        []provisioning.PlannedOutput
 }
 
 type authConfiguration struct {

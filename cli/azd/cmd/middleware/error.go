@@ -274,6 +274,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 		if category == categorySkip {
 			span.SetStatus(codes.Error, "agent.troubleshoot.skip")
+			return actionResult, originalError
 		} else {
 			// Step 2: Execute the selected category prompt
 			categoryPrompt := e.buildPromptForCategory(category, originalError)
@@ -503,7 +504,7 @@ func (e *ErrorMiddleware) promptForFix(ctx context.Context) (bool, error) {
 	}
 
 	if choiceIndex == nil || *choiceIndex < 0 || *choiceIndex >= len(choices) {
-		return false, nil
+		return false, fmt.Errorf("invalid fix choice selected")
 	}
 
 	return choices[*choiceIndex].Value == "yes", nil
@@ -530,7 +531,7 @@ func (e *ErrorMiddleware) promptRetryAfterFix(ctx context.Context) (bool, error)
 	}
 
 	if choiceIndex == nil || *choiceIndex < 0 || *choiceIndex >= len(choices) {
-		return false, nil
+		return false, fmt.Errorf("invalid retry choice selected")
 	}
 
 	return choices[*choiceIndex].Value == "retry", nil

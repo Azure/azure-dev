@@ -16,19 +16,21 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 )
 
-// LocalAuthDenyPolicy describes a deny policy that requires disableLocalAuth to be true
-// for a specific Azure resource type.
-type LocalAuthDenyPolicy struct {
+// DenyPolicy describes a deny-effect policy that targets a specific field on
+// an Azure resource type (e.g. disableLocalAuth, allowSharedKeyAccess).
+type DenyPolicy struct {
 	// PolicyName is the display name of the policy assignment.
 	PolicyName string
-	// ResourceType is the Azure resource type targeted (e.g. "Microsoft.CognitiveServices/accounts").
+	// ResourceType is the Azure resource type targeted
+	// (e.g. "Microsoft.CognitiveServices/accounts").
 	ResourceType string
-	// FieldPath is the full field path checked (e.g. "Microsoft.CognitiveServices/accounts/disableLocalAuth").
+	// FieldPath is the full field path checked
+	// (e.g. "Microsoft.CognitiveServices/accounts/disableLocalAuth").
 	FieldPath string
 }
 
 // PolicyService queries Azure Policy assignments and definitions to detect
-// policies that would block deployment of resources with local authentication enabled.
+// deny-effect policies that would block resource deployment.
 type PolicyService struct {
 	credentialProvider account.SubscriptionCredentialProvider
 	armClientOptions   *arm.ClientOptions
@@ -45,31 +47,49 @@ func NewPolicyService(
 	}
 }
 
-// FindLocalAuthDenyPolicies lists policy assignments on the subscription and inspects
-// their definitions for deny-effect rules that require disableLocalAuth to be true.
+// FindDenyPolicies lists policy assignments on the subscription (including
+// inherited assignments from management groups) and inspects their definitions
+// for deny-effect rules that target resource property fields.
 // It returns a list of matching policies with their target resource types.
-func (s *PolicyService) FindLocalAuthDenyPolicies(
+func (s *PolicyService) FindDenyPolicies(
 	ctx context.Context,
 	subscriptionId string,
-) ([]LocalAuthDenyPolicy, error) {
-	credential, err := s.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+) ([]DenyPolicy, error) {
+	credential, err := s.credentialProvider.CredentialForSubscription(
+		ctx, subscriptionId,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("getting credential for subscription %s: %w", subscriptionId, err)
+		return nil, fmt.Errorf(
+			"getting credential for subscription %s: %w",
+			subscriptionId, err,
+		)
 	}
 
-	assignmentsClient, err := armpolicy.NewAssignmentsClient(subscriptionId, credential, s.armClientOptions)
+	assignmentsClient, err := armpolicy.NewAssignmentsClient(
+		subscriptionId, credential, s.armClientOptions,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("creating policy assignments client: %w", err)
+		return nil, fmt.Errorf(
+			"creating policy assignments client: %w", err,
+		)
 	}
 
-	definitionsClient, err := armpolicy.NewDefinitionsClient(subscriptionId, credential, s.armClientOptions)
+	definitionsClient, err := armpolicy.NewDefinitionsClient(
+		subscriptionId, credential, s.armClientOptions,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("creating policy definitions client: %w", err)
+		return nil, fmt.Errorf(
+			"creating policy definitions client: %w", err,
+		)
 	}
 
-	setDefinitionsClient, err := armpolicy.NewSetDefinitionsClient(subscriptionId, credential, s.armClientOptions)
+	setDefinitionsClient, err := armpolicy.NewSetDefinitionsClient(
+		subscriptionId, credential, s.armClientOptions,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("creating policy set definitions client: %w", err)
+		return nil, fmt.Errorf(
+			"creating policy set definitions client: %w", err,
+		)
 	}
 
 	// List all policy assignments for the subscription.
@@ -82,17 +102,21 @@ func (s *PolicyService) FindLocalAuthDenyPolicies(
 		}
 		assignments = append(assignments, page.Value...)
 	}
-	log.Printf("policy preflight: found %d policy assignments for subscription %s", len(assignments), subscriptionId)
+	log.Printf(
+		"policy preflight: found %d policy assignments for subscription %s",
+		len(assignments), subscriptionId,
+	)
 
-	var results []LocalAuthDenyPolicy
+	var results []DenyPolicy
 
-	// Cache fetched definitions/set definitions to avoid duplicate API calls when
-	// multiple assignments reference the same definition.
+	// Cache fetched definitions/set definitions to avoid duplicate API
+	// calls when multiple assignments reference the same definition.
 	defCache := make(map[string]*armpolicy.Definition)
 	setDefCache := make(map[string]*armpolicy.SetDefinition)
 
 	for _, assignment := range assignments {
-		if assignment.Properties == nil || assignment.Properties.PolicyDefinitionID == nil {
+		if assignment.Properties == nil ||
+			assignment.Properties.PolicyDefinitionID == nil {
 			continue
 		}
 
@@ -102,19 +126,21 @@ func (s *PolicyService) FindLocalAuthDenyPolicies(
 			assignmentName = *assignment.Properties.DisplayName
 		}
 
-		// Resolve the assignment's parameter values so we can evaluate parameterized effects.
+		// Resolve the assignment's parameter values so we can evaluate
+		// parameterized effects.
 		assignmentParams := extractAssignmentParams(assignment)
 
-		if isBuiltInPolicyDefinition(defID) || isCustomPolicyDefinition(defID) {
-			// Single policy definition — check it directly.
+		if isBuiltInPolicyDefinition(defID) ||
+			isCustomPolicyDefinition(defID) {
 			policies := s.checkPolicyDefinition(
-				ctx, definitionsClient, defID, assignmentName, assignmentParams, defCache,
+				ctx, definitionsClient, defID, assignmentName,
+				assignmentParams, defCache,
 			)
 			results = append(results, policies...)
 		} else if isPolicySetDefinition(defID) {
-			// Policy set (initiative) — enumerate its member definitions.
 			policies := s.checkPolicySetDefinition(
-				ctx, setDefinitionsClient, definitionsClient, defID, assignmentName, assignmentParams,
+				ctx, setDefinitionsClient, definitionsClient,
+				defID, assignmentName, assignmentParams,
 				defCache, setDefCache,
 			)
 			results = append(results, policies...)
@@ -124,8 +150,8 @@ func (s *PolicyService) FindLocalAuthDenyPolicies(
 	return results, nil
 }
 
-// checkPolicyDefinition fetches a single policy definition (using cache) and inspects it for
-// disableLocalAuth deny rules. Returns any matching policies found.
+// checkPolicyDefinition fetches a single policy definition (using cache) and
+// inspects it for deny rules targeting resource property fields.
 func (s *PolicyService) checkPolicyDefinition(
 	ctx context.Context,
 	client *armpolicy.DefinitionsClient,
@@ -133,13 +159,18 @@ func (s *PolicyService) checkPolicyDefinition(
 	assignmentName string,
 	assignmentParams map[string]any,
 	cache map[string]*armpolicy.Definition,
-) []LocalAuthDenyPolicy {
+) []DenyPolicy {
 	definition, ok := cache[definitionID]
 	if !ok {
 		var err error
-		definition, err = getPolicyDefinitionByID(ctx, client, definitionID)
+		definition, err = getPolicyDefinitionByID(
+			ctx, client, definitionID,
+		)
 		if err != nil {
-			log.Printf("policy preflight: could not fetch policy definition %s: %v", definitionID, err)
+			log.Printf(
+				"policy preflight: could not fetch policy definition %s: %v",
+				definitionID, err,
+			)
 			cache[definitionID] = nil
 			return nil
 		}
@@ -149,11 +180,13 @@ func (s *PolicyService) checkPolicyDefinition(
 		return nil
 	}
 
-	return extractLocalAuthDenyPolicies(definition, assignmentName, assignmentParams)
+	return extractDenyPolicies(
+		definition, assignmentName, assignmentParams,
+	)
 }
 
-// checkPolicySetDefinition fetches a policy set definition (initiative) and checks
-// each of its member policy definitions for disableLocalAuth deny rules.
+// checkPolicySetDefinition fetches a policy set definition (initiative) and
+// checks each of its member policy definitions for deny rules.
 func (s *PolicyService) checkPolicySetDefinition(
 	ctx context.Context,
 	setClient *armpolicy.SetDefinitionsClient,
@@ -163,14 +196,18 @@ func (s *PolicyService) checkPolicySetDefinition(
 	assignmentParams map[string]any,
 	defCache map[string]*armpolicy.Definition,
 	setDefCache map[string]*armpolicy.SetDefinition,
-) []LocalAuthDenyPolicy {
+) []DenyPolicy {
 	setDef, ok := setDefCache[setDefinitionID]
 	if !ok {
 		var err error
-		setDef, err = getPolicySetDefinitionByID(ctx, setClient, setDefinitionID)
+		setDef, err = getPolicySetDefinitionByID(
+			ctx, setClient, setDefinitionID,
+		)
 		if err != nil {
 			log.Printf(
-				"policy preflight: could not fetch policy set definition %s: %v", setDefinitionID, err)
+				"policy preflight: could not fetch policy set definition %s: %v",
+				setDefinitionID, err,
+			)
 			setDefCache[setDefinitionID] = nil
 			return nil
 		}
@@ -180,21 +217,32 @@ func (s *PolicyService) checkPolicySetDefinition(
 		return nil
 	}
 
-	if setDef.Properties == nil || setDef.Properties.PolicyDefinitions == nil {
+	if setDef.Properties == nil ||
+		setDef.Properties.PolicyDefinitions == nil {
 		return nil
 	}
 
-	var results []LocalAuthDenyPolicy
+	// Build effective parameters by applying the set definition's defaults
+	// for any parameters not explicitly set by the assignment. Without this,
+	// "Opt In" policies whose assignment relies on the set's default (e.g.
+	// "Audit") would incorrectly fall back to the member definition's
+	// default (often "Deny").
+	effectiveParams := applySetDefaults(
+		assignmentParams, setDef.Properties.Parameters,
+	)
+
+	var results []DenyPolicy
 	for _, member := range setDef.Properties.PolicyDefinitions {
 		if member.PolicyDefinitionID == nil {
 			continue
 		}
 
 		// Merge set-level parameters with member-level parameter values.
-		memberParams := mergeParams(assignmentParams, member.Parameters)
+		memberParams := mergeParams(effectiveParams, member.Parameters)
 
 		policies := s.checkPolicyDefinition(
-			ctx, defClient, *member.PolicyDefinitionID, assignmentName, memberParams, defCache,
+			ctx, defClient, *member.PolicyDefinitionID,
+			assignmentName, memberParams, defCache,
 		)
 		results = append(results, policies...)
 	}
@@ -203,7 +251,8 @@ func (s *PolicyService) checkPolicySetDefinition(
 }
 
 // getPolicyDefinitionByID fetches a policy definition by its full resource ID.
-// It handles built-in, subscription-scoped, and management-group-scoped definitions.
+// It handles built-in, subscription-scoped, and management-group-scoped
+// definitions.
 func getPolicyDefinitionByID(
 	ctx context.Context,
 	client *armpolicy.DefinitionsClient,
@@ -211,7 +260,9 @@ func getPolicyDefinitionByID(
 ) (*armpolicy.Definition, error) {
 	name := lastSegment(definitionID)
 	if name == "" {
-		return nil, fmt.Errorf("invalid policy definition ID: %s", definitionID)
+		return nil, fmt.Errorf(
+			"invalid policy definition ID: %s", definitionID,
+		)
 	}
 
 	if isBuiltInPolicyDefinition(definitionID) {
@@ -237,8 +288,9 @@ func getPolicyDefinitionByID(
 	return &resp.Definition, nil
 }
 
-// getPolicySetDefinitionByID fetches a policy set definition by its full resource ID.
-// It handles built-in, subscription-scoped, and management-group-scoped set definitions.
+// getPolicySetDefinitionByID fetches a policy set definition by its full
+// resource ID. It handles built-in, subscription-scoped, and
+// management-group-scoped set definitions.
 func getPolicySetDefinitionByID(
 	ctx context.Context,
 	client *armpolicy.SetDefinitionsClient,
@@ -246,7 +298,9 @@ func getPolicySetDefinitionByID(
 ) (*armpolicy.SetDefinition, error) {
 	name := lastSegment(setDefinitionID)
 	if name == "" {
-		return nil, fmt.Errorf("invalid policy set definition ID: %s", setDefinitionID)
+		return nil, fmt.Errorf(
+			"invalid policy set definition ID: %s", setDefinitionID,
+		)
 	}
 
 	if isBuiltInPolicySetDefinition(setDefinitionID) {
@@ -272,45 +326,59 @@ func getPolicySetDefinitionByID(
 	return &resp.SetDefinition, nil
 }
 
-// extractLocalAuthDenyPolicies inspects a policy definition for deny-effect rules
-// that target disableLocalAuth fields. It returns any matching policies.
-func extractLocalAuthDenyPolicies(
+// extractDenyPolicies inspects a policy definition for deny-effect rules
+// that target resource property fields. It returns any matching policies.
+func extractDenyPolicies(
 	def *armpolicy.Definition,
 	assignmentName string,
 	assignmentParams map[string]any,
-) []LocalAuthDenyPolicy {
+) []DenyPolicy {
 	if def.Properties == nil || def.Properties.PolicyRule == nil {
 		return nil
 	}
 
 	ruleMap, ok := def.Properties.PolicyRule.(map[string]any)
 	if !ok {
-		log.Printf("policy preflight: policy rule is not a map for definition %s (type %T)",
-			stringOrEmpty(def.Name), def.Properties.PolicyRule)
+		log.Printf(
+			"policy preflight: policy rule is not a map "+
+				"for definition %s (type %T)",
+			stringOrEmpty(def.Name), def.Properties.PolicyRule,
+		)
 		return nil
 	}
 
-	// Check if the effect is "deny" (either literal or via parameter reference).
-	if !isDenyEffect(ruleMap, def.Properties.Parameters, assignmentParams) {
+	// Check if the effect is "deny" (literal or via parameter reference).
+	if !isDenyEffect(
+		ruleMap, def.Properties.Parameters, assignmentParams,
+	) {
 		return nil
 	}
 
-	// Parse the "if" condition to find disableLocalAuth field references.
+	log.Printf(
+		"policy preflight: definition %q resolved as deny effect "+
+			"(assignment=%q)",
+		stringOrEmpty(def.Name), assignmentName,
+	)
+
+	// Parse the "if" condition to find field references.
 	ifBlock, ok := ruleMap["if"]
 	if !ok {
 		return nil
 	}
 
-	results := findLocalAuthConditions(ifBlock, assignmentName)
+	results := findDenyConditions(ifBlock, assignmentName)
 	if len(results) > 0 {
-		log.Printf("policy preflight: found %d local auth deny condition(s) in policy %q",
-			len(results), assignmentName)
+		log.Printf(
+			"policy preflight: found %d deny condition(s) in policy %q",
+			len(results), assignmentName,
+		)
 	}
 	return results
 }
 
 // isDenyEffect checks whether the policy's effect resolves to "deny".
-// Effects can be a literal string or a parameter reference like "[parameters('effect')]".
+// Effects can be a literal string or a parameter reference like
+// "[parameters('effect')]".
 func isDenyEffect(
 	ruleMap map[string]any,
 	definitionParams map[string]*armpolicy.ParameterDefinitionsValue,
@@ -333,24 +401,33 @@ func isDenyEffect(
 
 	effectStr, ok := effectVal.(string)
 	if !ok {
-		log.Printf("policy preflight: effect value is not a string (type %T): %v", effectVal, effectVal)
+		log.Printf(
+			"policy preflight: effect value is not a string (type %T): %v",
+			effectVal, effectVal,
+		)
 		return false
 	}
 
 	// Check for literal deny.
 	if strings.EqualFold(effectStr, "deny") {
+		log.Printf("policy preflight: effect is literal deny")
 		return true
 	}
 
-	// Check for parameter reference: "[parameters('effect')]" or "[parameters('effectName')]".
+	// Check for parameter reference.
 	paramName := extractParameterReference(effectStr)
 	if paramName == "" {
 		return false
 	}
 
-	// First check assignment-level parameters (these override definition defaults).
+	// First check assignment-level parameters (override definition defaults).
 	if v, ok := assignmentParams[paramName]; ok {
 		if s, ok := v.(string); ok && strings.EqualFold(s, "deny") {
+			log.Printf(
+				"policy preflight: effect resolved to deny "+
+					"via assignment param %q=%q",
+				paramName, s,
+			)
 			return true
 		}
 		return false
@@ -358,8 +435,15 @@ func isDenyEffect(
 
 	// Fall back to the definition's default value.
 	if definitionParams != nil {
-		if paramDef, ok := definitionParams[paramName]; ok && paramDef.DefaultValue != nil {
-			if s, ok := paramDef.DefaultValue.(string); ok && strings.EqualFold(s, "deny") {
+		if paramDef, ok := definitionParams[paramName]; ok &&
+			paramDef.DefaultValue != nil {
+			if s, ok := paramDef.DefaultValue.(string); ok &&
+				strings.EqualFold(s, "deny") {
+				log.Printf(
+					"policy preflight: effect resolved to deny "+
+						"via definition default param %q=%q",
+					paramName, s,
+				)
 				return true
 			}
 		}
@@ -368,9 +452,12 @@ func isDenyEffect(
 	return false
 }
 
-// findLocalAuthConditions traverses the policy rule's "if" block to find conditions
-// that reference disableLocalAuth fields and extracts the target resource type.
-func findLocalAuthConditions(ifBlock any, assignmentName string) []LocalAuthDenyPolicy {
+// findDenyConditions traverses the policy rule's "if" block to find
+// conditions that reference resource property fields and extracts the target
+// resource type.
+func findDenyConditions(
+	ifBlock any, assignmentName string,
+) []DenyPolicy {
 	condMap, ok := ifBlock.(map[string]any)
 	if !ok {
 		return nil
@@ -384,22 +471,23 @@ func findLocalAuthConditions(ifBlock any, assignmentName string) []LocalAuthDeny
 		return findInCompoundCondition(anyOf, assignmentName, nil)
 	}
 
-	// Single condition — unlikely to be the full pattern but check anyway.
+	// Single condition.
 	return checkSingleCondition(condMap, assignmentName, nil)
 }
 
-// findInCompoundCondition processes an allOf/anyOf array looking for conditions that
-// reference both a resource type and a disableLocalAuth field.
-// parentResourceTypes carries any resource types resolved by an ancestor compound condition.
+// findInCompoundCondition processes an allOf/anyOf array looking for
+// conditions that reference both a resource type and a property field.
+// parentResourceTypes carries any resource types resolved by an ancestor
+// compound condition.
 func findInCompoundCondition(
 	compound any, assignmentName string, parentResourceTypes []string,
-) []LocalAuthDenyPolicy {
+) []DenyPolicy {
 	conditions, ok := compound.([]any)
 	if !ok {
 		return nil
 	}
 
-	// First pass: find resource types from "field: type, equals/in: ..." conditions.
+	// First pass: find resource types from "field: type" conditions.
 	var resourceTypes []string
 	for _, cond := range conditions {
 		condMap, ok := cond.(map[string]any)
@@ -427,45 +515,61 @@ func findInCompoundCondition(
 		resourceTypes = parentResourceTypes
 	}
 
-	// Second pass: find disableLocalAuth field references.
-	var results []LocalAuthDenyPolicy
+	// Second pass: find property field references.
+	var results []DenyPolicy
 	for _, cond := range conditions {
 		condMap, ok := cond.(map[string]any)
 		if !ok {
 			continue
 		}
-		results = append(results, checkSingleCondition(condMap, assignmentName, resourceTypes)...)
+		results = append(
+			results,
+			checkSingleCondition(
+				condMap, assignmentName, resourceTypes,
+			)...,
+		)
 
 		// Recurse into nested conditions, passing resolved resource types.
 		if allOf, ok := condMap["allOf"]; ok {
-			results = append(results, findInCompoundCondition(allOf, assignmentName, resourceTypes)...)
+			results = append(
+				results,
+				findInCompoundCondition(
+					allOf, assignmentName, resourceTypes,
+				)...,
+			)
 		}
 		if anyOf, ok := condMap["anyOf"]; ok {
-			results = append(results, findInCompoundCondition(anyOf, assignmentName, resourceTypes)...)
+			results = append(
+				results,
+				findInCompoundCondition(
+					anyOf, assignmentName, resourceTypes,
+				)...,
+			)
 		}
 	}
 
 	return results
 }
 
-// checkSingleCondition checks if a single condition references a disableLocalAuth field.
-// resourceTypes are the candidate resource types resolved from sibling conditions.
+// checkSingleCondition checks if a single condition references a resource
+// property field. resourceTypes are the candidate resource types resolved
+// from sibling conditions.
 func checkSingleCondition(
 	condMap map[string]any,
 	assignmentName string,
 	resourceTypes []string,
-) []LocalAuthDenyPolicy {
+) []DenyPolicy {
 	fieldVal, ok := condMap["field"].(string)
 	if !ok {
 		return nil
 	}
 
-	if !isLocalAuthField(fieldVal) {
+	if !IsLocalAuthField(fieldVal) {
 		return nil
 	}
 
-	// If we don't have resource types from a sibling condition, try to derive one
-	// from the field path (e.g. "Microsoft.Storage/storageAccounts/allowSharedKeyAccess").
+	// If we don't have resource types from a sibling condition, try to
+	// derive one from the field path.
 	if len(resourceTypes) == 0 {
 		if rt := resourceTypeFromFieldPath(fieldVal); rt != "" {
 			resourceTypes = []string{rt}
@@ -477,9 +581,9 @@ func checkSingleCondition(
 	}
 
 	// Emit one result per resource type.
-	results := make([]LocalAuthDenyPolicy, 0, len(resourceTypes))
+	results := make([]DenyPolicy, 0, len(resourceTypes))
 	for _, rt := range resourceTypes {
-		results = append(results, LocalAuthDenyPolicy{
+		results = append(results, DenyPolicy{
 			PolicyName:   assignmentName,
 			ResourceType: rt,
 			FieldPath:    fieldVal,
@@ -488,8 +592,9 @@ func checkSingleCondition(
 	return results
 }
 
-// isLocalAuthField returns true if the field path references a local authentication property.
-func isLocalAuthField(field string) bool {
+// IsLocalAuthField returns true if the field path references a local
+// authentication property.
+func IsLocalAuthField(field string) bool {
 	lower := strings.ToLower(field)
 	return strings.HasSuffix(lower, "/disablelocalauth") ||
 		strings.HasSuffix(lower, "/allowsharedkeyaccess") ||
@@ -497,8 +602,9 @@ func isLocalAuthField(field string) bool {
 		strings.EqualFold(field, "allowSharedKeyAccess")
 }
 
-// resourceTypeFromFieldPath extracts the resource type from a fully qualified field path.
-// For example, "Microsoft.CognitiveServices/accounts/disableLocalAuth" returns
+// resourceTypeFromFieldPath extracts the resource type from a fully qualified
+// field path. For example,
+// "Microsoft.CognitiveServices/accounts/disableLocalAuth" returns
 // "Microsoft.CognitiveServices/accounts".
 func resourceTypeFromFieldPath(field string) string {
 	idx := strings.LastIndex(field, "/")
@@ -513,15 +619,16 @@ func resourceTypeFromFieldPath(field string) string {
 	return candidate
 }
 
-// extractParameterReference extracts the parameter name from an ARM template parameter
-// reference expression like "[parameters('effect')]". Returns empty if not a parameter reference.
+// extractParameterReference extracts the parameter name from an ARM template
+// parameter reference expression like "[parameters('effect')]". Returns empty
+// if not a parameter reference.
 func extractParameterReference(expr string) string {
 	trimmed := strings.TrimSpace(expr)
 	lower := strings.ToLower(trimmed)
-	if !strings.HasPrefix(lower, "[parameters('") || !strings.HasSuffix(lower, "')]") {
+	if !strings.HasPrefix(lower, "[parameters('") ||
+		!strings.HasSuffix(lower, "')]") {
 		return ""
 	}
-	// Extract between [parameters(' and ')]
 	inner := trimmed[len("[parameters('"):]
 	before, _, ok := strings.Cut(inner, "')]")
 	if !ok {
@@ -530,13 +637,19 @@ func extractParameterReference(expr string) string {
 	return before
 }
 
-// extractAssignmentParams extracts parameter values from a policy assignment into a simple map.
-func extractAssignmentParams(assignment *armpolicy.Assignment) map[string]any {
-	if assignment.Properties == nil || assignment.Properties.Parameters == nil {
+// extractAssignmentParams extracts parameter values from a policy assignment
+// into a simple map.
+func extractAssignmentParams(
+	assignment *armpolicy.Assignment,
+) map[string]any {
+	if assignment.Properties == nil ||
+		assignment.Properties.Parameters == nil {
 		return nil
 	}
 
-	params := make(map[string]any, len(assignment.Properties.Parameters))
+	params := make(
+		map[string]any, len(assignment.Properties.Parameters),
+	)
 	for name, val := range assignment.Properties.Parameters {
 		if val != nil && val.Value != nil {
 			params[name] = val.Value
@@ -545,15 +658,21 @@ func extractAssignmentParams(assignment *armpolicy.Assignment) map[string]any {
 	return params
 }
 
-// mergeParams merges assignment-level parameters with member-level parameter values
-// from a policy set definition reference. Member parameters may contain parameter
-// references like "[parameters('effect')]" that resolve against the assignment parameters.
-func mergeParams(assignmentParams map[string]any, memberParams map[string]*armpolicy.ParameterValuesValue) map[string]any {
+// mergeParams merges assignment-level parameters with member-level parameter
+// values from a policy set definition reference. Member parameters may contain
+// parameter references like "[parameters('effect')]" that resolve against the
+// assignment parameters.
+func mergeParams(
+	assignmentParams map[string]any,
+	memberParams map[string]*armpolicy.ParameterValuesValue,
+) map[string]any {
 	if len(memberParams) == 0 {
 		return assignmentParams
 	}
 
-	merged := make(map[string]any, len(assignmentParams)+len(memberParams))
+	merged := make(
+		map[string]any, len(assignmentParams)+len(memberParams),
+	)
 	maps.Copy(merged, assignmentParams)
 
 	for name, val := range memberParams {
@@ -561,7 +680,8 @@ func mergeParams(assignmentParams map[string]any, memberParams map[string]*armpo
 			continue
 		}
 
-		// Check if the member parameter value is itself a reference to an assignment parameter.
+		// Check if the member parameter value is itself a reference to
+		// an assignment parameter.
 		if s, ok := val.Value.(string); ok {
 			if refName := extractParameterReference(s); refName != "" {
 				if resolved, ok := assignmentParams[refName]; ok {
@@ -577,26 +697,69 @@ func mergeParams(assignmentParams map[string]any, memberParams map[string]*armpo
 	return merged
 }
 
-// isBuiltInPolicyDefinition returns true if the definition ID is a built-in policy.
-func isBuiltInPolicyDefinition(id string) bool {
-	return strings.HasPrefix(strings.ToLower(id), "/providers/microsoft.authorization/policydefinitions/")
+// applySetDefaults fills in default values from the policy set definition's
+// parameter declarations for any parameters not explicitly set by the
+// assignment. This ensures that "Opt In" initiatives whose assignments rely
+// on the set's default value (e.g. "Audit") are correctly resolved instead
+// of falling through to the member definition's default (often "Deny").
+func applySetDefaults(
+	assignmentParams map[string]any,
+	setParams map[string]*armpolicy.ParameterDefinitionsValue,
+) map[string]any {
+	if len(setParams) == 0 {
+		return assignmentParams
+	}
+
+	effective := make(map[string]any, len(assignmentParams)+len(setParams))
+	maps.Copy(effective, assignmentParams)
+
+	for name, paramDef := range setParams {
+		if _, alreadySet := effective[name]; alreadySet {
+			continue
+		}
+		if paramDef != nil && paramDef.DefaultValue != nil {
+			effective[name] = paramDef.DefaultValue
+		}
+	}
+
+	return effective
 }
 
-// isCustomPolicyDefinition returns true if the definition ID is a subscription-scoped custom policy.
+// isBuiltInPolicyDefinition returns true if the definition ID is a built-in
+// policy.
+func isBuiltInPolicyDefinition(id string) bool {
+	return strings.HasPrefix(
+		strings.ToLower(id),
+		"/providers/microsoft.authorization/policydefinitions/",
+	)
+}
+
+// isCustomPolicyDefinition returns true if the definition ID is a
+// subscription-scoped custom policy.
 func isCustomPolicyDefinition(id string) bool {
 	lower := strings.ToLower(id)
-	return strings.Contains(lower, "/providers/microsoft.authorization/policydefinitions/") &&
-		!isBuiltInPolicyDefinition(id)
+	return strings.Contains(
+		lower,
+		"/providers/microsoft.authorization/policydefinitions/",
+	) && !isBuiltInPolicyDefinition(id)
 }
 
-// isPolicySetDefinition returns true if the definition ID references a policy set (initiative).
+// isPolicySetDefinition returns true if the definition ID references a policy
+// set (initiative).
 func isPolicySetDefinition(id string) bool {
-	return strings.Contains(strings.ToLower(id), "/providers/microsoft.authorization/policysetdefinitions/")
+	return strings.Contains(
+		strings.ToLower(id),
+		"/providers/microsoft.authorization/policysetdefinitions/",
+	)
 }
 
-// isBuiltInPolicySetDefinition returns true if the set definition ID is a built-in policy set.
+// isBuiltInPolicySetDefinition returns true if the set definition ID is a
+// built-in policy set.
 func isBuiltInPolicySetDefinition(id string) bool {
-	return strings.HasPrefix(strings.ToLower(id), "/providers/microsoft.authorization/policysetdefinitions/")
+	return strings.HasPrefix(
+		strings.ToLower(id),
+		"/providers/microsoft.authorization/policysetdefinitions/",
+	)
 }
 
 // lastSegment returns the last path segment of a resource ID.
@@ -608,8 +771,8 @@ func lastSegment(resourceID string) string {
 	return parts[len(parts)-1]
 }
 
-// extractManagementGroupID extracts the management group ID from a resource ID like
-// "/providers/Microsoft.Management/managementGroups/{mgId}/providers/Microsoft.Authorization/..."
+// extractManagementGroupID extracts the management group ID from a resource ID
+// like "/providers/Microsoft.Management/managementGroups/{mgId}/providers/...".
 // Returns empty string if the ID is not management-group-scoped.
 func extractManagementGroupID(resourceID string) string {
 	lower := strings.ToLower(resourceID)
@@ -627,9 +790,11 @@ func extractManagementGroupID(resourceID string) string {
 }
 
 // ResourceHasLocalAuthDisabled checks whether a resource's properties JSON has
-// the disableLocalAuth property set to true (or allowSharedKeyAccess set to false
-// for storage accounts).
-func ResourceHasLocalAuthDisabled(resourceType string, properties json.RawMessage) bool {
+// the disableLocalAuth property set to true (or allowSharedKeyAccess set to
+// false for storage accounts).
+func ResourceHasLocalAuthDisabled(
+	resourceType string, properties json.RawMessage,
+) bool {
 	if len(properties) == 0 {
 		return false
 	}
@@ -640,10 +805,12 @@ func ResourceHasLocalAuthDisabled(resourceType string, properties json.RawMessag
 	}
 
 	// Storage accounts use allowSharedKeyAccess (inverted logic).
-	if strings.EqualFold(resourceType, "Microsoft.Storage/storageAccounts") {
+	if strings.EqualFold(
+		resourceType, "Microsoft.Storage/storageAccounts",
+	) {
 		if v, ok := props["allowSharedKeyAccess"]; ok {
 			if b, ok := v.(bool); ok {
-				return !b // allowSharedKeyAccess=false means local auth is disabled
+				return !b
 			}
 		}
 		return false

@@ -14,7 +14,9 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -265,10 +267,6 @@ const (
 type PreflightCheckResult struct {
 	// Severity indicates whether this result is a warning or a blocking error.
 	Severity PreflightCheckSeverity
-	// DiagnosticID is a unique, stable identifier for this specific finding type
-	// (e.g. "role_assignment_missing"). Used in telemetry to correlate actioned
-	// warnings with deployment outcomes and to track error frequency over time.
-	DiagnosticID string
 	// Message is a human-readable description of the finding.
 	Message string
 }
@@ -280,6 +278,9 @@ type validationContext struct {
 	Console input.Console
 	// Props contains derived properties from analyzing the ARM template resources.
 	Props resourcesProperties
+	// Target is the deployment scope (subscription or resource group).
+	// It may be nil when the deployment scope is unknown.
+	Target infra.Deployment
 	// ResourcesSnapshot is the raw JSON output from `bicep snapshot`, containing the fully
 	// resolved deployment graph. It may be nil if the Bicep CLI was not available.
 	ResourcesSnapshot json.RawMessage
@@ -287,6 +288,10 @@ type validationContext struct {
 	// Each entry represents a resource that would be deployed, with resolved values.
 	// It may be nil if the Bicep CLI was not available.
 	SnapshotResources []armTemplateResource
+	// DenyPolicies contains deny-effect policies fetched from the subscription's
+	// policy assignments, including inherited policies from management groups.
+	// Populated in parallel with the snapshot.
+	DenyPolicies []azapi.DenyPolicy
 }
 
 // snapshotResult represents the top-level structure of the Bicep snapshot JSON output.
@@ -304,17 +309,6 @@ type PreflightCheckFn func(
 	valCtx *validationContext,
 ) (*PreflightCheckResult, error)
 
-// PreflightCheck pairs a unique rule identifier with its check function.
-// The RuleID is a stable, unique string used in telemetry to identify which rule
-// produced a result (e.g. for crash tracking). Each rule may emit results with
-// different DiagnosticIDs to distinguish specific finding types.
-type PreflightCheck struct {
-	// RuleID is a unique, stable identifier for the rule (e.g. "role_assignment_permissions").
-	RuleID string
-	// Fn is the check function that performs the validation.
-	Fn PreflightCheckFn
-}
-
 // localArmPreflight provides local (client-side) validation of an ARM template before deployment.
 // It parses the template and parameters to build a comprehensive view of all resources that would
 // be deployed, enabling early detection of issues without making Azure API calls.
@@ -330,7 +324,10 @@ type localArmPreflight struct {
 	// target is the deployment scope (subscription or resource group) used to derive snapshot options.
 	// It may be nil, in which case snapshot options are left empty.
 	target infra.Deployment
-	checks []PreflightCheck
+	checks []PreflightCheckFn
+	// denyPoliciesFn fetches deny policies for the subscription.
+	// Called in parallel with the snapshot. May be nil.
+	denyPoliciesFn func(ctx context.Context) ([]azapi.DenyPolicy, error)
 }
 
 // newLocalArmPreflight creates a new instance of localArmPreflight.
@@ -341,10 +338,18 @@ func newLocalArmPreflight(modulePath string, bicepCli *bicep.Cli, target infra.D
 	return &localArmPreflight{modulePath: modulePath, bicepCli: bicepCli, target: target}
 }
 
-// AddCheck registers a preflight check to be executed during validate.
-// Checks are invoked in the order they are added.
-func (l *localArmPreflight) AddCheck(check PreflightCheck) {
-	l.checks = append(l.checks, check)
+// AddCheck registers a preflight check function to be executed during validate.
+// Check functions are invoked in the order they are added.
+func (l *localArmPreflight) AddCheck(fn PreflightCheckFn) {
+	l.checks = append(l.checks, fn)
+}
+
+// SetDenyPoliciesFn sets a function that fetches deny policies in parallel
+// with the Bicep snapshot. If not set, no policies are fetched.
+func (l *localArmPreflight) SetDenyPoliciesFn(
+	fn func(ctx context.Context) ([]azapi.DenyPolicy, error),
+) {
+	l.denyPoliciesFn = fn
 }
 
 // validate performs local preflight validation on the given ARM template and parameters.
@@ -405,19 +410,51 @@ func (l *localArmPreflight) validate(
 		}
 	}
 
-	// Run the Bicep snapshot command to produce a deployment snapshot from the bicepparam file.
-	// The snapshot contains the fully resolved deployment graph with expressions evaluated,
-	// conditions applied, and copy loops expanded.
-	// If the snapshot fails (e.g., older Bicep binary without snapshot support), skip local
-	// preflight rather than blocking the deployment.
-	data, err := l.bicepCli.Snapshot(ctx, bicepParamFile, snapshotOpts)
-	if err != nil {
-		log.Printf("local preflight: skipping checks, bicep snapshot unavailable: %v", err)
+	// Run the Bicep snapshot and policy fetch in parallel.
+	// The snapshot produces the fully resolved deployment graph; the policy fetch
+	// retrieves deny-effect policies from the subscription's assignments (including
+	// management-group-inherited policies).
+	console.ShowSpinner(ctx, "Validating deployment [setup]", input.Step)
+
+	var wg sync.WaitGroup
+	var snapshotData []byte
+	var snapshotErr error
+	var denyPolicies []azapi.DenyPolicy
+
+	wg.Go(func() {
+		snapshotData, snapshotErr = l.bicepCli.Snapshot(
+			ctx, bicepParamFile, snapshotOpts,
+		)
+	})
+
+	if l.denyPoliciesFn != nil {
+		wg.Go(func() {
+			policies, err := l.denyPoliciesFn(ctx)
+			if err != nil {
+				log.Printf(
+					"policy preflight: failed to fetch deny policies: %v",
+					err,
+				)
+				return // non-fatal
+			}
+			denyPolicies = policies
+		})
+	}
+
+	wg.Wait()
+
+	// If the snapshot fails (e.g., older Bicep binary without snapshot
+	// support), skip local preflight rather than blocking the deployment.
+	if snapshotErr != nil {
+		log.Printf(
+			"local preflight: skipping checks, bicep snapshot unavailable: %v",
+			snapshotErr,
+		)
 		return nil, nil
 	}
 
 	var snapshot snapshotResult
-	if err := json.Unmarshal(data, &snapshot); err != nil {
+	if err := json.Unmarshal(snapshotData, &snapshot); err != nil {
 		return nil, fmt.Errorf("parsing bicep snapshot: %w", err)
 	}
 
@@ -426,15 +463,19 @@ func (l *localArmPreflight) validate(
 	valCtx := &validationContext{
 		Console:           console,
 		Props:             props,
-		ResourcesSnapshot: json.RawMessage(data),
+		Target:            l.target,
+		ResourcesSnapshot: json.RawMessage(snapshotData),
 		SnapshotResources: snapshot.PredictedResources,
+		DenyPolicies:      denyPolicies,
 	}
+
+	console.ShowSpinner(ctx, "Validating deployment [checks]", input.Step)
 
 	var results []PreflightCheckResult
 	for _, check := range l.checks {
-		result, err := check.Fn(ctx, valCtx)
+		result, err := check(ctx, valCtx)
 		if err != nil {
-			return results, fmt.Errorf("preflight check %q failed: %w", check.RuleID, err)
+			return results, fmt.Errorf("preflight check failed: %w", err)
 		}
 		if result != nil {
 			results = append(results, *result)

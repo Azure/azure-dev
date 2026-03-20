@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestExtractLocalAuthDenyPolicies_DenyLiteral(t *testing.T) {
+func TestExtractDenyPolicies_DenyLiteral(t *testing.T) {
 	t.Parallel()
 
 	def := &armpolicy.Definition{
@@ -35,14 +35,14 @@ func TestExtractLocalAuthDenyPolicies_DenyLiteral(t *testing.T) {
 		},
 	}
 
-	results := extractLocalAuthDenyPolicies(def, "test-policy", nil)
+	results := extractDenyPolicies(def, "test-policy", nil)
 	require.Len(t, results, 1)
 	require.Equal(t, "Microsoft.CognitiveServices/accounts", results[0].ResourceType)
 	require.Equal(t, "test-policy", results[0].PolicyName)
 	require.Contains(t, results[0].FieldPath, "disableLocalAuth")
 }
 
-func TestExtractLocalAuthDenyPolicies_ParameterizedEffect_Deny(t *testing.T) {
+func TestExtractDenyPolicies_ParameterizedEffect_Deny(t *testing.T) {
 	t.Parallel()
 
 	def := &armpolicy.Definition{
@@ -74,12 +74,12 @@ func TestExtractLocalAuthDenyPolicies_ParameterizedEffect_Deny(t *testing.T) {
 
 	// With assignment params overriding to Deny.
 	assignmentParams := map[string]any{"effect": "Deny"}
-	results := extractLocalAuthDenyPolicies(def, "test-policy", assignmentParams)
+	results := extractDenyPolicies(def, "test-policy", assignmentParams)
 	require.Len(t, results, 1)
 	require.Equal(t, "Microsoft.EventHub/namespaces", results[0].ResourceType)
 }
 
-func TestExtractLocalAuthDenyPolicies_ParameterizedEffect_Audit(t *testing.T) {
+func TestExtractDenyPolicies_ParameterizedEffect_Audit(t *testing.T) {
 	t.Parallel()
 
 	def := &armpolicy.Definition{
@@ -110,11 +110,11 @@ func TestExtractLocalAuthDenyPolicies_ParameterizedEffect_Audit(t *testing.T) {
 	}
 
 	// No assignment params — falls back to default "Audit", which is not deny.
-	results := extractLocalAuthDenyPolicies(def, "test-policy", nil)
+	results := extractDenyPolicies(def, "test-policy", nil)
 	require.Empty(t, results)
 }
 
-func TestExtractLocalAuthDenyPolicies_NoLocalAuthField(t *testing.T) {
+func TestExtractDenyPolicies_NoLocalAuthField(t *testing.T) {
 	t.Parallel()
 
 	def := &armpolicy.Definition{
@@ -139,11 +139,11 @@ func TestExtractLocalAuthDenyPolicies_NoLocalAuthField(t *testing.T) {
 		},
 	}
 
-	results := extractLocalAuthDenyPolicies(def, "test-policy", nil)
+	results := extractDenyPolicies(def, "test-policy", nil)
 	require.Empty(t, results)
 }
 
-func TestExtractLocalAuthDenyPolicies_StorageAllowSharedKeyAccess(t *testing.T) {
+func TestExtractDenyPolicies_StorageAllowSharedKeyAccess(t *testing.T) {
 	t.Parallel()
 
 	def := &armpolicy.Definition{
@@ -168,12 +168,12 @@ func TestExtractLocalAuthDenyPolicies_StorageAllowSharedKeyAccess(t *testing.T) 
 		},
 	}
 
-	results := extractLocalAuthDenyPolicies(def, "test-policy", nil)
+	results := extractDenyPolicies(def, "test-policy", nil)
 	require.Len(t, results, 1)
 	require.Equal(t, "Microsoft.Storage/storageAccounts", results[0].ResourceType)
 }
 
-func TestExtractLocalAuthDenyPolicies_NestedAnyOf(t *testing.T) {
+func TestExtractDenyPolicies_NestedAnyOf(t *testing.T) {
 	t.Parallel()
 
 	def := &armpolicy.Definition{
@@ -206,12 +206,12 @@ func TestExtractLocalAuthDenyPolicies_NestedAnyOf(t *testing.T) {
 		},
 	}
 
-	results := extractLocalAuthDenyPolicies(def, "test-nested", nil)
+	results := extractDenyPolicies(def, "test-nested", nil)
 	require.NotEmpty(t, results)
 	require.Equal(t, "Microsoft.ServiceBus/namespaces", results[0].ResourceType)
 }
 
-func TestExtractLocalAuthDenyPolicies_MultipleResourceTypesInArray(t *testing.T) {
+func TestExtractDenyPolicies_MultipleResourceTypesInArray(t *testing.T) {
 	t.Parallel()
 
 	def := &armpolicy.Definition{
@@ -239,7 +239,7 @@ func TestExtractLocalAuthDenyPolicies_MultipleResourceTypesInArray(t *testing.T)
 		},
 	}
 
-	results := extractLocalAuthDenyPolicies(def, "multi-type-policy", nil)
+	results := extractDenyPolicies(def, "multi-type-policy", nil)
 	require.Len(t, results, 2)
 
 	types := make(map[string]bool)
@@ -250,11 +250,12 @@ func TestExtractLocalAuthDenyPolicies_MultipleResourceTypesInArray(t *testing.T)
 	require.True(t, types["Microsoft.ServiceBus/namespaces"])
 }
 
-func TestExtractLocalAuthDenyPolicies_NestedConditionInheritsResourceType(t *testing.T) {
+func TestExtractDenyPolicies_NestedConditionInheritsResourceType(t *testing.T) {
 	t.Parallel()
 
-	// The resource type is declared at the outer allOf level, and the disableLocalAuth
-	// condition is in a nested anyOf. The nested level should inherit the resource type.
+	// The resource type is declared at the outer allOf level, and the
+	// disableLocalAuth condition is in a nested anyOf. The nested level
+	// should inherit the resource type.
 	def := &armpolicy.Definition{
 		Properties: &armpolicy.DefinitionProperties{
 			PolicyRule: map[string]any{
@@ -281,7 +282,7 @@ func TestExtractLocalAuthDenyPolicies_NestedConditionInheritsResourceType(t *tes
 		},
 	}
 
-	results := extractLocalAuthDenyPolicies(def, "nested-inherit", nil)
+	results := extractDenyPolicies(def, "nested-inherit", nil)
 	require.Len(t, results, 1)
 	require.Equal(t, "Microsoft.Search/searchServices", results[0].ResourceType)
 }
@@ -309,12 +310,14 @@ func TestExtractManagementGroupID(t *testing.T) {
 		},
 		{
 			"built-in policy definition",
-			"/providers/Microsoft.Authorization/policyDefinitions/6300012e-e9a4-4649-b41f-a85f5c43be91",
+			"/providers/Microsoft.Authorization/policyDefinitions/" +
+				"6300012e-e9a4-4649-b41f-a85f5c43be91",
 			"",
 		},
 		{
 			"subscription scoped custom definition",
-			"/subscriptions/faa080af/providers/Microsoft.Authorization/policyDefinitions/custom123",
+			"/subscriptions/faa080af/providers/" +
+				"Microsoft.Authorization/policyDefinitions/custom123",
 			"",
 		},
 		{
@@ -339,12 +342,27 @@ func TestIsLocalAuthField(t *testing.T) {
 		field string
 		want  bool
 	}{
-		{"Microsoft.CognitiveServices/accounts/disableLocalAuth", true},
-		{"Microsoft.EventHub/namespaces/disableLocalAuth", true},
-		{"Microsoft.Storage/storageAccounts/allowSharedKeyAccess", true},
-		{"Microsoft.ServiceBus/namespaces/disableLocalAuth", true},
+		{
+			"Microsoft.CognitiveServices/accounts/disableLocalAuth",
+			true,
+		},
+		{
+			"Microsoft.EventHub/namespaces/disableLocalAuth",
+			true,
+		},
+		{
+			"Microsoft.Storage/storageAccounts/allowSharedKeyAccess",
+			true,
+		},
+		{
+			"Microsoft.ServiceBus/namespaces/disableLocalAuth",
+			true,
+		},
 		{"disableLocalAuth", true},
-		{"Microsoft.Storage/storageAccounts/supportsHttpsTrafficOnly", false},
+		{
+			"Microsoft.Storage/storageAccounts/supportsHttpsTrafficOnly",
+			false,
+		},
 		{"type", false},
 		{"location", false},
 	}
@@ -352,7 +370,7 @@ func TestIsLocalAuthField(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.field, func(t *testing.T) {
 			t.Parallel()
-			require.Equal(t, tt.want, isLocalAuthField(tt.field))
+			require.Equal(t, tt.want, IsLocalAuthField(tt.field))
 		})
 	}
 }
@@ -364,8 +382,14 @@ func TestResourceTypeFromFieldPath(t *testing.T) {
 		field string
 		want  string
 	}{
-		{"Microsoft.CognitiveServices/accounts/disableLocalAuth", "Microsoft.CognitiveServices/accounts"},
-		{"Microsoft.EventHub/namespaces/disableLocalAuth", "Microsoft.EventHub/namespaces"},
+		{
+			"Microsoft.CognitiveServices/accounts/disableLocalAuth",
+			"Microsoft.CognitiveServices/accounts",
+		},
+		{
+			"Microsoft.EventHub/namespaces/disableLocalAuth",
+			"Microsoft.EventHub/namespaces",
+		},
 		{"disableLocalAuth", ""},
 		{"", ""},
 	}
@@ -486,14 +510,22 @@ func TestIsDenyEffect(t *testing.T) {
 		},
 		{
 			"parameterized deny via assignment",
-			map[string]any{"then": map[string]any{"effect": "[parameters('effect')]"}},
+			map[string]any{
+				"then": map[string]any{
+					"effect": "[parameters('effect')]",
+				},
+			},
 			nil,
 			map[string]any{"effect": "Deny"},
 			true,
 		},
 		{
 			"parameterized deny via default",
-			map[string]any{"then": map[string]any{"effect": "[parameters('effect')]"}},
+			map[string]any{
+				"then": map[string]any{
+					"effect": "[parameters('effect')]",
+				},
+			},
 			map[string]*armpolicy.ParameterDefinitionsValue{
 				"effect": {DefaultValue: "Deny"},
 			},
@@ -501,7 +533,11 @@ func TestIsDenyEffect(t *testing.T) {
 		},
 		{
 			"parameterized audit via default",
-			map[string]any{"then": map[string]any{"effect": "[parameters('effect')]"}},
+			map[string]any{
+				"then": map[string]any{
+					"effect": "[parameters('effect')]",
+				},
+			},
 			map[string]*armpolicy.ParameterDefinitionsValue{
 				"effect": {DefaultValue: "Audit"},
 			},
@@ -517,7 +553,14 @@ func TestIsDenyEffect(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			require.Equal(t, tt.want, isDenyEffect(tt.ruleMap, tt.definitionParams, tt.assignmentParams))
+			require.Equal(
+				t, tt.want,
+				isDenyEffect(
+					tt.ruleMap,
+					tt.definitionParams,
+					tt.assignmentParams,
+				),
+			)
 		})
 	}
 }

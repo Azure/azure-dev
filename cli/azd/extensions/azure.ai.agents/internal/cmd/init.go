@@ -113,6 +113,8 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 		Short: fmt.Sprintf("Initialize a new AI agent project. %s", color.YellowString("(Preview)")),
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			printBanner(cmd.OutOrStdout())
+
 			ctx := azdext.WithAccessToken(cmd.Context())
 
 			setupDebugLogging(cmd.Flags())
@@ -235,8 +237,6 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 }
 
 func (a *InitAction) Run(ctx context.Context) error {
-	color.Green("Initializing AI agent project...")
-	fmt.Println()
 
 	// If src path is absolute, convert it to relative path compared to the azd project path
 	if a.flags.src != "" && filepath.IsAbs(a.flags.src) {

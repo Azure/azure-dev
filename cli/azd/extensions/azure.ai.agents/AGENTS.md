@@ -120,6 +120,16 @@ Define new codes in `internal/exterrors/codes.go`.
 - describe the specific failure, not the general category
 - keep them stable once introduced
 
+## Release preparation
+
+When bumping the extension version for a patch release, update **only** these files:
+
+- `version.txt` — new semver string
+- `extension.yaml` — `version:` field
+- `CHANGELOG.md` — new release section at the top
+
+**Do NOT update `cli/azd/extensions/registry.json`.** The registry entry (checksums, artifact URLs) is generated automatically by CI after the release build produces the binaries. Editing it manually by hand will result in wrong or placeholder checksums that break installation.
+
 ## Other extension conventions
 
 - Use modern Go 1.26 patterns where they help readability

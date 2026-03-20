@@ -302,13 +302,13 @@ func TestCheckForUpdate_InvalidChannel(t *testing.T) {
 func TestUpdateViaPackageManager_Success(t *testing.T) {
 	mockRunner := mockexec.NewMockCommandRunner()
 	mockRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "brew upgrade azd")
+		return strings.Contains(command, "brew upgrade azure/azd/azd")
 	}).Respond(exec.NewRunResult(0, "Updated azd", ""))
 
 	m := NewManager(mockRunner, nil)
 	var buf bytes.Buffer
 
-	err := m.updateViaPackageManager(context.Background(), "brew", []string{"upgrade", "azd"}, &buf)
+	err := m.updateViaPackageManager(context.Background(), "brew", []string{"upgrade", "azure/azd/azd"}, &buf)
 	require.NoError(t, err)
 	require.Contains(t, buf.String(), "Updating azd via brew")
 }
@@ -316,13 +316,13 @@ func TestUpdateViaPackageManager_Success(t *testing.T) {
 func TestUpdateViaPackageManager_Failure(t *testing.T) {
 	mockRunner := mockexec.NewMockCommandRunner()
 	mockRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "brew upgrade azd")
+		return strings.Contains(command, "brew upgrade azure/azd/azd")
 	}).Respond(exec.NewRunResult(1, "", "Error: no such formula"))
 
 	m := NewManager(mockRunner, nil)
 	var buf bytes.Buffer
 
-	err := m.updateViaPackageManager(context.Background(), "brew", []string{"upgrade", "azd"}, &buf)
+	err := m.updateViaPackageManager(context.Background(), "brew", []string{"upgrade", "azure/azd/azd"}, &buf)
 	require.Error(t, err)
 
 	var updateErr *UpdateError
@@ -339,7 +339,7 @@ func TestUpdateViaPackageManager_CommandError(t *testing.T) {
 	m := NewManager(mockRunner, nil)
 	var buf bytes.Buffer
 
-	err := m.updateViaPackageManager(context.Background(), "brew", []string{"upgrade", "azd"}, &buf)
+	err := m.updateViaPackageManager(context.Background(), "brew", []string{"upgrade", "azure/azd/azd"}, &buf)
 	require.Error(t, err)
 
 	var updateErr *UpdateError

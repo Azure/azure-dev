@@ -356,10 +356,10 @@ func TestCreateProxyTool(t *testing.T) {
 		Name:        "original-tool",
 		Description: "Test tool description",
 		Annotations: mcp.ToolAnnotation{
-			ReadOnlyHint:    boolPtr(true),
-			IdempotentHint:  boolPtr(false),
-			DestructiveHint: boolPtr(false),
-			OpenWorldHint:   boolPtr(true),
+			ReadOnlyHint:    new(true),
+			IdempotentHint:  new(false),
+			DestructiveHint: new(false),
+			OpenWorldHint:   new(true),
 		},
 	}
 
@@ -521,11 +521,6 @@ func TestCreateProxyTool_HandlerCallsExactlyOnce(t *testing.T) {
 
 	// Verify that the mock expectations were met (exactly one call)
 	mockClient.AssertExpectations(t)
-}
-
-// Helper function to create bool pointers
-func boolPtr(b bool) *bool {
-	return &b
 }
 
 // MockMcpClient is a testify mock implementation of client.MCPClient for testing
@@ -739,7 +734,7 @@ func TestMcpHost_ServersImmutability(t *testing.T) {
 // Test that reflects the Go code organization patterns from the instructions
 func TestMcpHost_StructureFollowsStandards(t *testing.T) {
 	// Verify that McpHost has the expected structure as defined
-	hostType := reflect.TypeOf(McpHost{})
+	hostType := reflect.TypeFor[McpHost]()
 
 	// Check that all expected fields exist
 	expectedFields := []string{"proxyServer", "servers", "capabilities", "clients", "session"}

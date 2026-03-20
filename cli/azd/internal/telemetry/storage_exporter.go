@@ -56,7 +56,7 @@ func (e *Exporter) ExportSpans(ctx context.Context, spans []trace.ReadOnlySpan) 
 	// Add a small, immediate retry loop in case of transient failures with disk storage.
 	// To avoid any delay while telemetry is flushed during application exit, no backoff is added.
 	var err error
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		err = e.queue.Enqueue(message)
 		if err == nil {
 			break
@@ -75,7 +75,7 @@ func (e *Exporter) Shutdown(ctx context.Context) error {
 }
 
 // MarshalLog is the marshaling function used by the logging system to represent this exporter.
-func (e *Exporter) MarshalLog() interface{} {
+func (e *Exporter) MarshalLog() any {
 	return struct {
 		Type string
 	}{

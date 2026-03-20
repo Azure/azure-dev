@@ -30,13 +30,11 @@ func Test_CLI_MCP_Server_ListTools(t *testing.T) {
 	// Verify we have tools available
 	assert.Greater(t, len(result.Tools), 0, "Expected at least one MCP tool to be available")
 
-	// Check for some expected tools
+	// Check for expected tools (remaining after migration to Copilot SDK skills)
 	expectedTools := []string{
-		"plan_init",
-		"architecture_planning",
-		"azure_yaml_generation",
-		"discovery_analysis",
-		"project_validation",
+		"error_troubleshooting",
+		"provision_common_error",
+		"validate_azure_yaml",
 	}
 
 	toolNames := make([]string, len(result.Tools))
@@ -51,7 +49,7 @@ func Test_CLI_MCP_Server_ListTools(t *testing.T) {
 	t.Logf("Found %d MCP tools: %v", len(result.Tools), toolNames)
 }
 
-// Test_CLI_MCP_Server_CallTool tests that we can call the plan_init tool
+// Test_CLI_MCP_Server_CallTool tests that we can call the error_troubleshooting tool
 func Test_CLI_MCP_Server_CallTool(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
@@ -60,17 +58,17 @@ func Test_CLI_MCP_Server_CallTool(t *testing.T) {
 	mcpClient, cleanup := createMCPClient(t, ctx)
 	defer cleanup()
 
-	// Test calling plan_init tool
-	toolArgs := map[string]interface{}{
-		"query": "Create a simple web application using Node.js and Express",
+	// Test calling error_troubleshooting tool
+	toolArgs := map[string]any{
+		"query": "azd provision failed with deployment error",
 	}
 
 	callRequest := mcp.CallToolRequest{}
-	callRequest.Params.Name = "plan_init"
+	callRequest.Params.Name = "error_troubleshooting"
 	callRequest.Params.Arguments = toolArgs
 
 	result, err := mcpClient.CallTool(ctx, callRequest)
-	require.NoError(t, err, "Failed to call plan_init tool")
+	require.NoError(t, err, "Failed to call error_troubleshooting tool")
 
 	// Verify the response structure
 	assert.NotNil(t, result, "Expected non-nil result from tool call")

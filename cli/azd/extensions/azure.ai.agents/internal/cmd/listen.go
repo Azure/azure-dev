@@ -50,7 +50,9 @@ func newListenCommand() *cobra.Command {
 				WithProjectEventHandler("predeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 					return predeployHandler(ctx, azdClient, projectParser, args)
 				}).
-				WithProjectEventHandler("postdeploy", projectParser.CoboPostDeploy)
+				WithProjectEventHandler("postdeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+					return postdeployHandler(ctx, projectParser, args)
+				})
 
 			// Start listening for events
 			// This is a blocking call and will not return until the server connection is closed.
@@ -107,6 +109,20 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, projectP
 	return nil
 }
 
+func postdeployHandler(ctx context.Context, projectParser *project.FoundryParser, args *azdext.ProjectEventArgs) error {
+	if err := projectParser.CoboPostDeploy(ctx, args); err != nil {
+		return err
+	}
+
+	// Ensure agent identity RBAC is configured when vnext is enabled.
+	// Runs post-deploy because the platform provisions the identity during agent deployment.
+	if err := projectParser.EnsureAgentIdentityRBAC(ctx); err != nil {
+		return fmt.Errorf("agent identity RBAC setup failed: %w", err)
+	}
+
+	return nil
+}
+
 func envUpdate(ctx context.Context, azdClient *azdext.AzdClient, azdProject *azdext.ProjectConfig, svc *azdext.ServiceConfig) error {
 
 	var foundryAgentConfig *project.ServiceTargetAgentConfig
@@ -155,7 +171,7 @@ func kindEnvUpdate(ctx context.Context, azdClient *azdext.AzdClient, project *az
 		return fmt.Errorf("agent.yaml is not valid: %w", err)
 	}
 
-	var genericTemplate map[string]interface{}
+	var genericTemplate map[string]any
 	if err := yaml.Unmarshal(data, &genericTemplate); err != nil {
 		return fmt.Errorf("YAML content is not valid: %w", err)
 	}

@@ -62,7 +62,7 @@ func (sc *SpanContext) Validate() error {
 
 type Value struct {
 	Type  string
-	Value interface{}
+	Value any
 }
 
 type Attribute struct {
@@ -383,8 +383,8 @@ func Test_Telemetry_AlphaFeatures_Enabled(t *testing.T) {
 	require.NotContains(t, values, "aks.helm")
 }
 
-func attributesMap(attributes []Attribute) map[attribute.Key]interface{} {
-	m := map[attribute.Key]interface{}{}
+func attributesMap(attributes []Attribute) map[attribute.Key]any {
+	m := map[attribute.Key]any{}
 	for _, attrib := range attributes {
 		m[attribute.Key(attrib.Key)] = attrib.Value.Value
 	}

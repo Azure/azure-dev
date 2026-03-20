@@ -4,12 +4,13 @@
 package account
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log"
 	"math"
 	"os"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -302,11 +303,11 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 	}
 
 	numWorkers := int(math.Min(float64(len(tenants)), float64(maxWorkers)))
-	for i := 0; i < numWorkers; i++ {
+	for range numWorkers {
 		go listForTenant(jobs, results, m.service)
 	}
 
-	for i := 0; i < numJobs; i++ {
+	for i := range numJobs {
 		jobs <- tenants[i]
 	}
 	close(jobs)
@@ -314,7 +315,7 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 	allSubscriptions := []Subscription{}
 	errors := []error{}
 	oneSuccess := false
-	for i := 0; i < numJobs; i++ {
+	for range numJobs {
 		res := <-results
 		if res.err != nil {
 			errors = append(errors, res.err)
@@ -326,8 +327,8 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 	}
 	close(results)
 
-	sort.Slice(allSubscriptions, func(i, j int) bool {
-		return allSubscriptions[i].Name < allSubscriptions[j].Name
+	slices.SortFunc(allSubscriptions, func(a, b Subscription) int {
+		return cmp.Compare(a.Name, b.Name)
 	})
 
 	if !oneSuccess && len(tenants) > 0 {

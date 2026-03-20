@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"strings"
 	"testing"
@@ -285,16 +286,16 @@ func TestDeploymentForResourceGroup(t *testing.T) {
 		body := armresources.ResourceGroupListResult{
 			Value: []*armresources.ResourceGroup{
 				{
-					ID:       to.Ptr("/subscriptions/SUBSCRIPTION_ID/resourcegroups/existingGroup2"),
-					Name:     to.Ptr("existingGroup2"),
-					Type:     to.Ptr("Microsoft.Resources/resourceGroup"),
-					Location: to.Ptr("eastus2"),
+					ID:       new("/subscriptions/SUBSCRIPTION_ID/resourcegroups/existingGroup2"),
+					Name:     new("existingGroup2"),
+					Type:     new("Microsoft.Resources/resourceGroup"),
+					Location: new("eastus2"),
 				},
 				{
-					ID:       to.Ptr("/subscriptions/SUBSCRIPTION_ID/resourcegroups/existingGroup1"),
-					Name:     to.Ptr("existingGroup1"),
-					Type:     to.Ptr("Microsoft.Resources/resourceGroup"),
-					Location: to.Ptr("eastus2"),
+					ID:       new("/subscriptions/SUBSCRIPTION_ID/resourcegroups/existingGroup1"),
+					Name:     new("existingGroup1"),
+					Type:     new("Microsoft.Resources/resourceGroup"),
+					Location: new("eastus2"),
 				},
 			},
 		}
@@ -314,10 +315,10 @@ func TestDeploymentForResourceGroup(t *testing.T) {
 			strings.HasSuffix(request.URL.Path, "/subscriptions/SUBSCRIPTION_ID/resourcegroups/rg-test-env")
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		body := armresources.ResourceGroup{
-			ID:       to.Ptr("/subscriptions/SUBSCRIPTION_ID/resourcegroups/rg-test-env"),
-			Name:     to.Ptr("rg-test-env"),
-			Type:     to.Ptr("Microsoft.Resources/resourceGroup"),
-			Location: to.Ptr("eastus2"),
+			ID:       new("/subscriptions/SUBSCRIPTION_ID/resourcegroups/rg-test-env"),
+			Name:     new("rg-test-env"),
+			Type:     new("Microsoft.Resources/resourceGroup"),
+			Location: new("eastus2"),
 		}
 
 		bodyBytes, _ := json.Marshal(body)
@@ -452,7 +453,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 		cloud.AzurePublic(),
 		nil,
 		nil,
-		nil,
+		mockContext.Container,
 	)
 
 	err := provider.Initialize(*mockContext.Context, projectDir, options)
@@ -501,24 +502,24 @@ func prepareBicepMocks(
 }
 
 var testEnvDeployment armresources.DeploymentExtended = armresources.DeploymentExtended{
-	ID:       to.Ptr("DEPLOYMENT_ID"),
-	Name:     to.Ptr("test-env"),
-	Location: to.Ptr("eastus2"),
+	ID:       new("DEPLOYMENT_ID"),
+	Name:     new("test-env"),
+	Location: new("eastus2"),
 	Tags: map[string]*string{
-		"azd-env-name": to.Ptr("test-env"),
+		"azd-env-name": new("test-env"),
 	},
-	Type: to.Ptr("Microsoft.Resources/deployments"),
+	Type: new("Microsoft.Resources/deployments"),
 	Properties: &armresources.DeploymentPropertiesExtended{
-		Outputs: map[string]interface{}{
-			"WEBSITE_URL": map[string]interface{}{"value": "http://myapp.azurewebsites.net", "type": "string"},
+		Outputs: map[string]any{
+			"WEBSITE_URL": map[string]any{"value": "http://myapp.azurewebsites.net", "type": "string"},
 		},
 		OutputResources: []*armresources.ResourceReference{
 			{
-				ID: to.Ptr("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP"),
+				ID: new("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP"),
 			},
 		},
 		ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
-		Timestamp:         to.Ptr(time.Now()),
+		Timestamp:         new(time.Now()),
 	},
 }
 
@@ -565,10 +566,10 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 			string(resourceType), resourceName)
 
 		return &armresources.GenericResourceExpanded{
-			ID:       to.Ptr(id),
-			Name:     to.Ptr(resourceName),
-			Type:     to.Ptr(string(resourceType)),
-			Location: to.Ptr("eastus2"),
+			ID:       &id,
+			Name:     new(resourceName),
+			Type:     new(string(resourceType)),
+			Location: new("eastus2"),
 		}
 	}
 
@@ -587,12 +588,12 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 	}
 
 	resourceGroup := &armresources.ResourceGroup{
-		ID:       to.Ptr(azure.ResourceGroupRID("SUBSCRIPTION_ID", "RESOURCE_GROUP")),
-		Location: to.Ptr("eastus2"),
-		Name:     to.Ptr("RESOURCE_GROUP"),
+		ID:       new(azure.ResourceGroupRID("SUBSCRIPTION_ID", "RESOURCE_GROUP")),
+		Location: new("eastus2"),
+		Name:     new("RESOURCE_GROUP"),
 		Type:     to.Ptr(string(azapi.AzureResourceTypeResourceGroup)),
 		Tags: map[string]*string{
-			"azd-env-name": to.Ptr("test-env"),
+			"azd-env-name": new("test-env"),
 		},
 	}
 
@@ -697,16 +698,16 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		result := &armresources.DeploymentsClientCreateOrUpdateAtSubscriptionScopeResponse{
 			DeploymentExtended: armresources.DeploymentExtended{
-				ID:       to.Ptr("DEPLOYMENT_ID"),
-				Name:     to.Ptr("test-env"),
-				Location: to.Ptr("eastus2"),
+				ID:       new("DEPLOYMENT_ID"),
+				Name:     new("test-env"),
+				Location: new("eastus2"),
 				Tags: map[string]*string{
-					"azd-env-name": to.Ptr("test-env"),
+					"azd-env-name": new("test-env"),
 				},
-				Type: to.Ptr("Microsoft.Resources/deployments"),
+				Type: new("Microsoft.Resources/deployments"),
 				Properties: &armresources.DeploymentPropertiesExtended{
 					ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
-					Timestamp:         to.Ptr(time.Now()),
+					Timestamp:         new(time.Now()),
 				},
 			},
 		}
@@ -721,14 +722,14 @@ func getKeyVaultMock(mockContext *mocks.MockContext, keyVaultString string, name
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		keyVaultResponse := armkeyvault.VaultsClientGetResponse{
 			Vault: armkeyvault.Vault{
-				ID: to.Ptr(
+				ID: new(
 					fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
 						string(azapi.AzureResourceTypeKeyVault), name)),
-				Name:     to.Ptr(name),
-				Location: to.Ptr(location),
+				Name:     new(name),
+				Location: new(location),
 				Properties: &armkeyvault.VaultProperties{
-					EnableSoftDelete:      to.Ptr(true),
-					EnablePurgeProtection: to.Ptr(false),
+					EnableSoftDelete:      new(true),
+					EnablePurgeProtection: new(false),
 				},
 			},
 		}
@@ -748,14 +749,14 @@ func getManagedHSMMock(mockContext *mocks.MockContext, managedHSMString string, 
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		managedHSMResponse := armkeyvault.ManagedHsmsClientGetResponse{
 			ManagedHsm: armkeyvault.ManagedHsm{
-				ID: to.Ptr(
+				ID: new(
 					fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
 						string(azapi.AzureResourceTypeManagedHSM), name)),
-				Name:     to.Ptr(name),
-				Location: to.Ptr(location),
+				Name:     new(name),
+				Location: new(location),
 				Properties: &armkeyvault.ManagedHsmProperties{
-					EnableSoftDelete:      to.Ptr(true),
-					EnablePurgeProtection: to.Ptr(false),
+					EnableSoftDelete:      new(true),
+					EnablePurgeProtection: new(false),
 				},
 			},
 		}
@@ -775,14 +776,14 @@ func getAppConfigMock(mockContext *mocks.MockContext, appConfigString string, na
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		appConfigResponse := armappconfiguration.ConfigurationStoresClientGetResponse{
 			ConfigurationStore: armappconfiguration.ConfigurationStore{
-				ID: to.Ptr(
+				ID: new(
 					fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
 						string(azapi.AzureResourceTypeAppConfig), name)),
 
-				Name:     to.Ptr(name),
-				Location: to.Ptr(location),
+				Name:     new(name),
+				Location: new(location),
 				Properties: &armappconfiguration.ConfigurationStoreProperties{
-					EnablePurgeProtection: to.Ptr(false),
+					EnablePurgeProtection: new(false),
 				},
 			},
 		}
@@ -802,12 +803,12 @@ func getAPIMMock(mockContext *mocks.MockContext, apimString string, name string,
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		apimResponse := armapimanagement.ServiceClientGetResponse{
 			ServiceResource: armapimanagement.ServiceResource{
-				ID: to.Ptr(
+				ID: new(
 					fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
 						string(azapi.AzureResourceTypeApim), name)),
 
-				Name:     to.Ptr(name),
-				Location: to.Ptr(location),
+				Name:     new(name),
+				Location: new(location),
 			},
 		}
 
@@ -824,7 +825,7 @@ func getLogAnalyticsMock(mockContext *mocks.MockContext, logAnalyticsString stri
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && strings.HasSuffix(request.URL.Path, logAnalyticsString)
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		logAnalyticsResponse := map[string]interface{}{
+		logAnalyticsResponse := map[string]any{
 			"id": fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
 				string(azapi.AzureResourceTypeLogAnalyticsWorkspace), name),
 			"name": name,
@@ -845,10 +846,10 @@ func prepareLogAnalyticsDestroyMocks(mockContext *mocks.MockContext) {
 			string(resourceType), resourceName)
 
 		return &armresources.GenericResourceExpanded{
-			ID:       to.Ptr(id),
-			Name:     to.Ptr(resourceName),
-			Type:     to.Ptr(string(resourceType)),
-			Location: to.Ptr("eastus2"),
+			ID:       &id,
+			Name:     new(resourceName),
+			Type:     new(string(resourceType)),
+			Location: new("eastus2"),
 		}
 	}
 
@@ -860,12 +861,12 @@ func prepareLogAnalyticsDestroyMocks(mockContext *mocks.MockContext) {
 	}
 
 	resourceGroup := &armresources.ResourceGroup{
-		ID:       to.Ptr(azure.ResourceGroupRID("SUBSCRIPTION_ID", "RESOURCE_GROUP")),
-		Location: to.Ptr("eastus2"),
-		Name:     to.Ptr("RESOURCE_GROUP"),
+		ID:       new(azure.ResourceGroupRID("SUBSCRIPTION_ID", "RESOURCE_GROUP")),
+		Location: new("eastus2"),
+		Name:     new("RESOURCE_GROUP"),
 		Type:     to.Ptr(string(azapi.AzureResourceTypeResourceGroup)),
 		Tags: map[string]*string{
-			"azd-env-name": to.Ptr("test-env"),
+			"azd-env-name": new("test-env"),
 		},
 	}
 
@@ -923,16 +924,16 @@ func prepareLogAnalyticsDestroyMocks(mockContext *mocks.MockContext) {
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		result := &armresources.DeploymentsClientCreateOrUpdateAtSubscriptionScopeResponse{
 			DeploymentExtended: armresources.DeploymentExtended{
-				ID:       to.Ptr("DEPLOYMENT_ID"),
-				Name:     to.Ptr("test-env"),
-				Location: to.Ptr("eastus2"),
+				ID:       new("DEPLOYMENT_ID"),
+				Name:     new("test-env"),
+				Location: new("eastus2"),
 				Tags: map[string]*string{
-					"azd-env-name": to.Ptr("test-env"),
+					"azd-env-name": new("test-env"),
 				},
-				Type: to.Ptr("Microsoft.Resources/deployments"),
+				Type: new("Microsoft.Resources/deployments"),
 				Properties: &armresources.DeploymentPropertiesExtended{
 					ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
-					Timestamp:         to.Ptr(time.Now()),
+					Timestamp:         new(time.Now()),
 				},
 			},
 		}
@@ -1128,7 +1129,7 @@ func TestUserDefinedTypes(t *testing.T) {
 		cloud.AzurePublic(),
 		nil,
 		nil,
-		nil,
+		mockContext.Container,
 	)
 	bicepProvider, gooCast := provider.(*BicepProvider)
 	require.True(t, gooCast)
@@ -1150,19 +1151,19 @@ func TestUserDefinedTypes(t *testing.T) {
 	require.True(t, exists)
 	require.Equal(t, "string", stringLimitedParam.Type)
 	require.NotNil(t, stringLimitedParam.AllowedValues)
-	require.Equal(t, []interface{}{"arm", "azure", "bicep"}, *stringLimitedParam.AllowedValues)
+	require.Equal(t, []any{"arm", "azure", "bicep"}, *stringLimitedParam.AllowedValues)
 
 	intType, exists := template.Parameters["intType"]
 	require.True(t, exists)
 	require.Equal(t, "int", intType.Type)
 	require.NotNil(t, intType.AllowedValues)
-	require.Equal(t, []interface{}{float64(10)}, *intType.AllowedValues)
+	require.Equal(t, []any{float64(10)}, *intType.AllowedValues)
 
 	boolParam, exists := template.Parameters["boolParam"]
 	require.True(t, exists)
 	require.Equal(t, "bool", boolParam.Type)
 	require.NotNil(t, boolParam.AllowedValues)
-	require.Equal(t, []interface{}{true}, *boolParam.AllowedValues)
+	require.Equal(t, []any{true}, *boolParam.AllowedValues)
 
 	arrayStringType, exists := template.Parameters["arrayParam"]
 	require.True(t, exists)
@@ -1173,14 +1174,14 @@ func TestUserDefinedTypes(t *testing.T) {
 	require.True(t, exists)
 	require.Equal(t, "array", arrayLimitedParam.Type)
 	require.NotNil(t, arrayLimitedParam.AllowedValues)
-	require.Equal(t, []interface{}{"a", "b", "c"}, *arrayLimitedParam.AllowedValues)
+	require.Equal(t, []any{"a", "b", "c"}, *arrayLimitedParam.AllowedValues)
 
 	mixedParam, exists := template.Parameters["mixedParam"]
 	require.True(t, exists)
 	require.Equal(t, "array", mixedParam.Type)
 	require.NotNil(t, mixedParam.AllowedValues)
 	require.Equal(
-		t, []interface{}{"fizz", float64(42), nil, map[string]interface{}{"an": "object"}}, *mixedParam.AllowedValues)
+		t, []any{"fizz", float64(42), nil, map[string]any{"an": "object"}}, *mixedParam.AllowedValues)
 
 	objectParam, exists := template.Parameters["objectParam"]
 	require.True(t, exists)
@@ -1200,7 +1201,7 @@ func TestUserDefinedTypes(t *testing.T) {
 		t,
 		azure.ArmTemplateParameterAdditionalPropertiesProperties{
 			Type:      "string",
-			MinLength: to.Ptr(10),
+			MinLength: new(10),
 			Metadata: map[string]json.RawMessage{
 				"fromDefinitionFoo": []byte(`"foo"`),
 				"fromDefinitionBar": []byte(`"bar"`),
@@ -1240,7 +1241,7 @@ func TestUserDefinedTypes(t *testing.T) {
 	require.True(t, exists)
 	require.Equal(t, "string", customOutput.Type)
 	require.Equal(t, "[parameters('stringLimitedParam')]", customOutput.Value)
-	require.Equal(t, map[string]interface{}{
+	require.Equal(t, map[string]any{
 		"foo": "bar",
 	}, customOutput.Metadata)
 }
@@ -1451,7 +1452,7 @@ const userDefinedParamsSample = `{
 }`
 
 func TestInputsParameter(t *testing.T) {
-	existingInputs := map[string]map[string]interface{}{
+	existingInputs := map[string]map[string]any{
 		"resource1": {
 			"input1": "value1",
 		},
@@ -1481,7 +1482,7 @@ func TestInputsParameter(t *testing.T) {
 		},
 	}
 
-	expectedInputsParameter := map[string]map[string]interface{}{
+	expectedInputsParameter := map[string]map[string]any{
 		"resource1": {
 			"input1": "value1",
 			"input3": "to-be-gen-with-len-8",
@@ -1499,7 +1500,7 @@ func TestInputsParameter(t *testing.T) {
 	inputsParameter, inputsUpdated, err := inputsParameter(existingInputs, autoGenParameters)
 
 	require.NoError(t, err)
-	result, parse := inputsParameter.Value.(map[string]map[string]interface{})
+	result, parse := inputsParameter.Value.(map[string]map[string]any)
 	require.True(t, parse)
 
 	require.Equal(
@@ -1581,15 +1582,15 @@ func TestPreviewWithNilResourceState(t *testing.T) {
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		// Return a WhatIfOperationResult with various scenarios
 		whatIfResult := armresources.WhatIfOperationResult{
-			Status: to.Ptr("Succeeded"),
+			Status: new("Succeeded"),
 			Properties: &armresources.WhatIfOperationProperties{
 				Changes: []*armresources.WhatIfChange{
 					// Create scenario: Before is nil, After has value
 					{
 						ChangeType: to.Ptr(armresources.ChangeTypeCreate),
-						ResourceID: to.Ptr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Web/sites/app1"),
+						ResourceID: new("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Web/sites/app1"),
 						Before:     nil,
-						After: map[string]interface{}{
+						After: map[string]any{
 							"type": "Microsoft.Web/sites",
 							"name": "app1",
 						},
@@ -1597,8 +1598,8 @@ func TestPreviewWithNilResourceState(t *testing.T) {
 					// Delete scenario: After is nil, Before has value
 					{
 						ChangeType: to.Ptr(armresources.ChangeTypeDelete),
-						ResourceID: to.Ptr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Web/sites/app2"),
-						Before: map[string]interface{}{
+						ResourceID: new("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Web/sites/app2"),
+						Before: map[string]any{
 							"type": "Microsoft.Web/sites",
 							"name": "app2",
 						},
@@ -1607,12 +1608,12 @@ func TestPreviewWithNilResourceState(t *testing.T) {
 					// Modify scenario: Both Before and After have values
 					{
 						ChangeType: to.Ptr(armresources.ChangeTypeModify),
-						ResourceID: to.Ptr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Web/sites/app3"),
-						Before: map[string]interface{}{
+						ResourceID: new("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Web/sites/app3"),
+						Before: map[string]any{
 							"type": "Microsoft.Web/sites",
 							"name": "app3",
 						},
-						After: map[string]interface{}{
+						After: map[string]any{
 							"type": "Microsoft.Web/sites",
 							"name": "app3",
 						},
@@ -1620,7 +1621,7 @@ func TestPreviewWithNilResourceState(t *testing.T) {
 					// Edge case: Both Before and After are nil (should be skipped)
 					{
 						ChangeType: to.Ptr(armresources.ChangeTypeUnsupported),
-						ResourceID: to.Ptr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Unknown/unknown"),
+						ResourceID: new("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Unknown/unknown"),
 						Before:     nil,
 						After:      nil,
 					},
@@ -1727,9 +1728,7 @@ func createBicepProviderWithEnv(
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 		environment.EnvNameEnvVarName:        "test-env",
 	}
-	for k, v := range envVars {
-		baseEnvVars[k] = v
-	}
+	maps.Copy(baseEnvVars, envVars)
 
 	env := environment.NewWithValues("test-env", baseEnvVars)
 
@@ -1782,7 +1781,7 @@ func createBicepProviderWithEnv(
 		cloud.AzurePublic(),
 		nil,
 		nil,
-		nil,
+		mockContext.Container,
 	)
 
 	err := provider.Initialize(*mockContext.Context, projectDir, options)

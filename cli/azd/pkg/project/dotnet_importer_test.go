@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/stretchr/testify/assert"
@@ -122,11 +121,11 @@ func TestBuildArgsArrayAndEnv(t *testing.T) {
 	bArgs := map[string]apphost.ContainerV1BuildSecrets{
 		"arg1": {
 			Type:  "env",
-			Value: to.Ptr("{param1.value}"),
+			Value: new("{param1.value}"),
 		},
 		"arg2": {
 			Type:   "file",
-			Source: to.Ptr("/path/to/secret"),
+			Source: new("/path/to/secret"),
 		},
 	}
 

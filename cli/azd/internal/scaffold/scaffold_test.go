@@ -261,8 +261,8 @@ func TestExecInfra(t *testing.T) {
 			res, err := cli.Build(ctx, filepath.Join(dir, "main.bicep"))
 			require.NoError(t, err)
 
-			lintErrs := strings.Split(res.LintErr, "\n")
-			for _, lintErr := range lintErrs {
+			lintErrs := strings.SplitSeq(res.LintErr, "\n")
+			for lintErr := range lintErrs {
 				if lintErr == "" {
 					continue
 				}

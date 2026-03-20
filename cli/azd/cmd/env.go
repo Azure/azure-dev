@@ -220,7 +220,12 @@ func (e *envSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Handle file input if specified
 	if e.flags.file != "" {
 		if len(e.args) > 0 {
-			return nil, fmt.Errorf("cannot combine --file flag with key-value arguments")
+			return nil, &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"cannot combine --file flag with key-value arguments: %w",
+					internal.ErrInvalidFlagCombination),
+				Suggestion: "Use either '--file <path>' or '<key> <value>' arguments, not both.",
+			}
 		}
 		filename := e.flags.file
 		file, err := os.Open(filename)
@@ -234,8 +239,11 @@ func (e *envSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			return nil, fmt.Errorf("failed to parse file %s: %w", filename, err)
 		}
 	} else if len(e.args) == 0 {
-		//nolint:lll
-		return nil, fmt.Errorf("no environment values provided. Use '<key> <value>', '<key>=<value>', or '--file <filepath>'")
+		return nil, &internal.ErrorWithSuggestion{
+			Err: internal.ErrNoEnvValuesProvided,
+			Suggestion: "Provide values as 'azd env set <key> <value>'," +
+				" 'azd env set <key>=<value>', or 'azd env set --file <path>'.",
+		}
 	} else if len(e.args) == 2 && !strings.Contains(e.args[0], "=") {
 		// Handle single key-value pair format: azd env set key value
 		key := e.args[0]
@@ -254,7 +262,11 @@ func (e *envSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	// No environment values to set
 	if len(keyValues) == 0 {
-		return nil, fmt.Errorf("no environment values to set")
+		return nil, &internal.ErrorWithSuggestion{
+			Err: internal.ErrNoEnvValuesProvided,
+			Suggestion: "Provide values as 'azd env set <key> <value>'," +
+				" 'azd env set <key>=<value>', or 'azd env set --file <path>'.",
+		}
 	}
 
 	// Apply the values
@@ -353,8 +365,10 @@ type envSetSecretAction struct {
 
 func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if len(e.args) < 1 {
-		return nil, fmt.Errorf(
-			"no <name> provided. Please provide a name as argument like: 'azd env set-secret <name>'")
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        internal.ErrNoArgsProvided,
+			Suggestion: "Run 'azd env set-secret <name>' specifying the secret name.",
+		}
 	}
 	secretName := e.args[0]
 
@@ -458,7 +472,10 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 			return nil, fmt.Errorf("selecting key vault option: %w", err)
 		}
 		if useProjectKvPrompt == 1 { // Cancel
-			return nil, fmt.Errorf("operation cancelled. Run 'azd provision' to provision the project Key Vault first")
+			return nil, &internal.ErrorWithSuggestion{
+				Err:        internal.ErrOperationCancelled,
+				Suggestion: "Run 'azd provision' to provision the project Key Vault first.",
+			}
 		}
 	}
 
@@ -777,7 +794,10 @@ func (e *envSelectAction) Run(ctx context.Context) (*actions.ActionResult, error
 		}
 
 		if len(envs) == 0 {
-			return nil, fmt.Errorf("no environments found. You can create one with \"azd env new <environment-name>\"")
+			return nil, &internal.ErrorWithSuggestion{
+				Err:        internal.ErrNoEnvironmentsFound,
+				Suggestion: "Run 'azd env new <environment-name>' to create an environment.",
+			}
 		}
 
 		// Build list of environment names
@@ -801,11 +821,12 @@ func (e *envSelectAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 	_, err := e.envManager.Get(ctx, environmentName)
 	if errors.Is(err, environment.ErrNotFound) {
-		return nil, fmt.Errorf(
-			`environment '%s' does not exist. You can create it with "azd env new %s"`,
-			environmentName,
-			environmentName,
-		)
+		return nil, &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf("environment '%s' does not exist: %w",
+				environmentName, environment.ErrNotFound),
+			Suggestion: fmt.Sprintf(
+				"Run 'azd env list' to see environments, or 'azd env new %s' to create it.", environmentName),
+		}
 	} else if err != nil {
 		return nil, fmt.Errorf("ensuring environment exists: %w", err)
 	}
@@ -1305,9 +1326,10 @@ func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, e
 
 	env, err := eg.envManager.Get(ctx, name)
 	if errors.Is(err, environment.ErrNotFound) {
-		return nil, fmt.Errorf(
-			`"environment does not exist. You can create it with "azd env new"`,
-		)
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        fmt.Errorf("environment does not exist: %w", environment.ErrNotFound),
+			Suggestion: "Run 'azd env new <name>' to create an environment.",
+		}
 	} else if err != nil {
 		return nil, fmt.Errorf("ensuring environment exists: %w", err)
 	}
@@ -1372,7 +1394,10 @@ func newEnvGetValueAction(
 
 func (eg *envGetValueAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if len(eg.args) < 1 {
-		return nil, fmt.Errorf("no key name provided")
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        internal.ErrNoKeyNameProvided,
+			Suggestion: "Run 'azd env get-value <key>' specifying the key name.",
+		}
 	}
 
 	keyName := eg.args[0]
@@ -1390,11 +1415,12 @@ func (eg *envGetValueAction) Run(ctx context.Context) (*actions.ActionResult, er
 	}
 	env, err := eg.envManager.Get(ctx, name)
 	if errors.Is(err, environment.ErrNotFound) {
-		return nil, fmt.Errorf(
-			`environment '%s' does not exist. You can create it with "azd env new %s"`,
-			name,
-			name,
-		)
+		return nil, &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf("environment '%s' does not exist: %w",
+				name, environment.ErrNotFound),
+			Suggestion: fmt.Sprintf(
+				"Run 'azd env list' to see environments, or 'azd env new %s' to create it.", name),
+		}
 	} else if err != nil {
 		return nil, fmt.Errorf("ensuring environment exists: %w", err)
 	}
@@ -1402,7 +1428,10 @@ func (eg *envGetValueAction) Run(ctx context.Context) (*actions.ActionResult, er
 	values := env.Dotenv()
 	keyValue, exists := values[keyName]
 	if !exists {
-		return nil, fmt.Errorf("key '%s' not found in the environment values", keyName)
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        fmt.Errorf("%w: '%s'", internal.ErrKeyNotFound, keyName),
+			Suggestion: "Run 'azd env get-values' to see available keys, or 'azd env set <key> <value>' to set one.",
+		}
 	}
 
 	// Directly write the key value to the writer
@@ -1478,11 +1507,11 @@ func (a *envConfigGetAction) Run(ctx context.Context) (*actions.ActionResult, er
 
 	env, err := a.envManager.Get(ctx, name)
 	if errors.Is(err, environment.ErrNotFound) {
-		return nil, fmt.Errorf(
-			`environment '%s' does not exist. You can create it with "azd env new %s"`,
-			name,
-			name,
-		)
+		return nil, &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf("environment '%s' does not exist: %w", name, environment.ErrNotFound),
+			Suggestion: fmt.Sprintf(
+				"Run 'azd env list' to see environments, or 'azd env new %s' to create it.", name),
+		}
 	} else if err != nil {
 		return nil, fmt.Errorf("getting environment: %w", err)
 	}
@@ -1491,7 +1520,10 @@ func (a *envConfigGetAction) Run(ctx context.Context) (*actions.ActionResult, er
 	value, ok := env.Config.Get(key)
 
 	if !ok {
-		return nil, fmt.Errorf("no value stored at path '%s'", key)
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        fmt.Errorf("no value at path '%s': %w", key, internal.ErrConfigKeyNotFound),
+			Suggestion: "Check the key name and run 'azd env config get <key>' to retrieve a specific value.",
+		}
 	}
 
 	if a.formatter.Kind() == output.JsonFormat {
@@ -1573,11 +1605,11 @@ func (a *envConfigSetAction) Run(ctx context.Context) (*actions.ActionResult, er
 
 	env, err := a.envManager.Get(ctx, name)
 	if errors.Is(err, environment.ErrNotFound) {
-		return nil, fmt.Errorf(
-			`environment '%s' does not exist. You can create it with "azd env new %s"`,
-			name,
-			name,
-		)
+		return nil, &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf("environment '%s' does not exist: %w", name, environment.ErrNotFound),
+			Suggestion: fmt.Sprintf(
+				"Run 'azd env list' to see environments, or 'azd env new %s' to create it.", name),
+		}
 	} else if err != nil {
 		return nil, fmt.Errorf("getting environment: %w", err)
 	}
@@ -1673,11 +1705,11 @@ func (a *envConfigUnsetAction) Run(ctx context.Context) (*actions.ActionResult, 
 
 	env, err := a.envManager.Get(ctx, name)
 	if errors.Is(err, environment.ErrNotFound) {
-		return nil, fmt.Errorf(
-			`environment '%s' does not exist. You can create it with "azd env new %s"`,
-			name,
-			name,
-		)
+		return nil, &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf("environment '%s' does not exist: %w", name, environment.ErrNotFound),
+			Suggestion: fmt.Sprintf(
+				"Run 'azd env list' to see environments, or 'azd env new %s' to create it.", name),
+		}
 	} else if err != nil {
 		return nil, fmt.Errorf("getting environment: %w", err)
 	}

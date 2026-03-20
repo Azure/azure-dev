@@ -21,14 +21,19 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mocktracing"
 	"github.com/stretchr/testify/require"
@@ -106,7 +111,7 @@ func Test_MapError(t *testing.T) {
 			wantErrDetails: []attribute.KeyValue{
 				fields.ErrorKey(fields.ServiceName.Key).String("arm"),
 				fields.ErrorKey(fields.ServiceErrorCode.Key).String(mustMarshalJson(
-					[]map[string]interface{}{
+					[]map[string]any{
 						{
 							string(fields.ErrCode.Key):  "Conflict,PreconditionFailed",
 							string(fields.ErrFrame.Key): 0,
@@ -141,7 +146,7 @@ func Test_MapError(t *testing.T) {
 			wantErrDetails: []attribute.KeyValue{
 				fields.ErrorKey(fields.ServiceName.Key).String("arm"),
 				fields.ErrorKey(fields.ServiceErrorCode.Key).String(mustMarshalJson(
-					[]map[string]interface{}{
+					[]map[string]any{
 						{
 							string(fields.ErrCode.Key):  "InvalidTemplate",
 							string(fields.ErrFrame.Key): 0,
@@ -382,7 +387,412 @@ func Test_MapError(t *testing.T) {
 				fields.ErrorKey(fields.ErrCode.Key).String("token_expired"),
 			},
 		},
+		{
+			name: "WithSuggestionWrappingResponseError",
+			err: &internal.ErrorWithSuggestion{
+				Err: &azcore.ResponseError{
+					ErrorCode:  "QuotaExceeded",
+					StatusCode: 429,
+					RawResponse: &http.Response{
+						StatusCode: 429,
+						Request: &http.Request{
+							Method: "POST",
+							Host:   "management.azure.com",
+						},
+					},
+				},
+				Suggestion: "Request a quota increase in the Azure portal.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String("service.arm.429"),
+			},
+		},
+		{
+			name: "WithSuggestionWrappingArmDeploymentError",
+			err: &internal.ErrorWithSuggestion{
+				Err: &azapi.AzureDeploymentError{
+					Operation: azapi.DeploymentOperationDeploy,
+					Details: &azapi.DeploymentErrorLine{
+						Code: "Conflict",
+						Inner: []*azapi.DeploymentErrorLine{
+							{Code: "OutOfCapacity"},
+						},
+					},
+				},
+				Suggestion: "Retry in another region.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String("service.arm.deployment.failed"),
+			},
+		},
+		{
+			name: "WithSuggestionWrappingPlainError",
+			err: &internal.ErrorWithSuggestion{
+				Err:        errors.New("something failed"),
+				Suggestion: "Try again later.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String("*errors.errorString"),
+			},
+		},
+		// Sentinel error test cases — verify typed errors wrapped in
+		// ErrorWithSuggestion produce error.suggestion ResultCode with
+		// the sentinel code in error.type via classifySentinel.
+		{
+			name: "WithErrNoProject",
+			err: &internal.ErrorWithSuggestion{
+				Err:        azdcontext.ErrNoProject,
+				Suggestion: "Run azd init.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String("internal.no_project"),
+			},
+		},
+		{
+			name: "WithErrEnvNotFound",
+			err: &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"environment 'dev' does not exist: %w",
+					environment.ErrNotFound),
+				Suggestion: "Run azd env new.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String("internal.env_not_found"),
+			},
+		},
+		{
+			name: "WithErrInfraNotProvisioned",
+			err: &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"run azd provision: %w",
+					internal.ErrInfraNotProvisioned),
+				Suggestion: "Run azd provision.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String(
+					"internal.infra_not_provisioned"),
+			},
+		},
+		{
+			name: "WithErrFromPackageWithAll",
+			err: &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"specify a service: %w",
+					internal.ErrFromPackageWithAll),
+				Suggestion: "Specify a service.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String(
+					"internal.invalid_flag_combination"),
+			},
+		},
+		{
+			name: "WithErrFromPackageNoService",
+			err: &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"specify a service: %w",
+					internal.ErrFromPackageNoService),
+				Suggestion: "Specify a service.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String(
+					"internal.invalid_flag_combination"),
+			},
+		},
+		{
+			name: "WithErrCannotChangeSubscription",
+			err: &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"env 'dev': %w",
+					internal.ErrCannotChangeSubscription),
+				Suggestion: "Run azd env new.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String(
+					"internal.cannot_change_subscription"),
+			},
+		},
+		{
+			name: "WithErrCannotChangeLocation",
+			err: &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"env 'dev': %w",
+					internal.ErrCannotChangeLocation),
+				Suggestion: "Run azd env new.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String(
+					"internal.cannot_change_location"),
+			},
+		},
+		{
+			name: "WithErrPreviewMultipleLayers",
+			err: &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"specify a layer: %w",
+					internal.ErrPreviewMultipleLayers),
+				Suggestion: "Specify a single layer.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String(
+					"internal.preview_multiple_layers"),
+			},
+		},
+		{
+			name: "WithErrNoKeyNameProvided",
+			err: &internal.ErrorWithSuggestion{
+				Err:        internal.ErrNoKeyNameProvided,
+				Suggestion: "Specify a key.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String("internal.invalid_args"),
+			},
+		},
+		{
+			name: "WithErrNoEnvValuesProvided",
+			err: &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"use key=value: %w",
+					internal.ErrNoEnvValuesProvided),
+				Suggestion: "Use key=value pairs.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String("internal.invalid_args"),
+			},
+		},
+		{
+			name: "WithErrInvalidFlagCombination",
+			err: &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"cannot combine flags: %w",
+					internal.ErrInvalidFlagCombination),
+				Suggestion: "Choose one flag.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String("internal.invalid_args"),
+			},
+		},
+		{
+			name: "WithErrKeyNotFound",
+			err: &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"%w: 'MY_KEY'", internal.ErrKeyNotFound),
+				Suggestion: "Run azd env get-values.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String(
+					"internal.key_not_found"),
+			},
+		},
+		{
+			name: "WithErrNoEnvironmentsFound",
+			err: &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"create one: %w",
+					internal.ErrNoEnvironmentsFound),
+				Suggestion: "Run azd env new.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String(
+					"internal.no_environments_found"),
+			},
+		},
+		{
+			name: "WithErrLoginDisabledDelegatedMode",
+			err: &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"current mode: %w",
+					internal.ErrLoginDisabledDelegatedMode),
+				Suggestion: "Use delegated identity.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String(
+					"auth.login_disabled_delegated"),
+			},
+		},
+		{
+			name: "WithErrBranchRequiresTemplate",
+			err: &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"use --template: %w",
+					internal.ErrBranchRequiresTemplate),
+				Suggestion: "Add --template.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String("internal.invalid_args"),
+			},
+		},
+		{
+			name: "WithErrMultipleInitModes",
+			err: &internal.ErrorWithSuggestion{
+				Err:        internal.ErrMultipleInitModes,
+				Suggestion: "Choose one mode.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String("internal.invalid_args"),
+			},
+		},
+		// Sentinels — batch 2 (54 bare-error fixes)
+		{
+			name: "WithErrNoArgsProvided",
+			err: &internal.ErrorWithSuggestion{
+				Err:        internal.ErrNoArgsProvided,
+				Suggestion: "Provide required args.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String("internal.invalid_args"),
+			},
+		},
+		{
+			name: "WithErrInvalidArgValue",
+			err: &internal.ErrorWithSuggestion{
+				Err:        internal.ErrInvalidArgValue,
+				Suggestion: "Check the value.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String("internal.invalid_args"),
+			},
+		},
+		{
+			name: "WithErrOperationCancelled",
+			err: &internal.ErrorWithSuggestion{
+				Err:        internal.ErrOperationCancelled,
+				Suggestion: "Try again.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String(
+					"internal.operation_cancelled"),
+			},
+		},
+		{
+			name: "WithErrConfigKeyNotFound",
+			err: &internal.ErrorWithSuggestion{
+				Err:        internal.ErrConfigKeyNotFound,
+				Suggestion: "Run azd config show.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String(
+					"internal.config_key_not_found"),
+			},
+		},
+		// ErrExtensionNotFound: kept naked — matches real
+		// usage in extensions.go:152
+		{
+			name:          "WithErrExtensionNotFound",
+			err:           internal.ErrExtensionNotFound,
+			wantErrReason: "internal.extension_not_found",
+		},
+		{
+			name: "WithErrNoExtensionsAvailable",
+			err: &internal.ErrorWithSuggestion{
+				Err:        internal.ErrNoExtensionsAvailable,
+				Suggestion: "Run azd extension list.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String(
+					"internal.no_extensions_available"),
+			},
+		},
+		// ErrExtensionTokenFailed: kept naked with %w —
+		// matches real usage in extensions.go:233
+		{
+			name: "WithErrExtensionTokenFailed",
+			err: fmt.Errorf(
+				"generating token: %w",
+				internal.ErrExtensionTokenFailed),
+			wantErrReason: "internal.extension_error",
+		},
+		{
+			name: "WithErrServiceNotFound",
+			err: &internal.ErrorWithSuggestion{
+				Err:        internal.ErrServiceNotFound,
+				Suggestion: "Check azure.yaml.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String(
+					"internal.service_not_found"),
+			},
+		},
+		{
+			name: "WithErrResourceNotConfigured",
+			err: &internal.ErrorWithSuggestion{
+				Err:        internal.ErrResourceNotConfigured,
+				Suggestion: "Run azd provision.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String(
+					"internal.resource_not_found"),
+			},
+		},
+		{
+			name: "WithErrValidationFailed",
+			err: &internal.ErrorWithSuggestion{
+				Err:        internal.ErrValidationFailed,
+				Suggestion: "Fix validation errors.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String(
+					"internal.validation_failed"),
+			},
+		},
+		{
+			name: "WithErrUnsupportedOperation",
+			err: &internal.ErrorWithSuggestion{
+				Err:        internal.ErrUnsupportedOperation,
+				Suggestion: "Check supported options.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String(
+					"internal.unsupported_operation"),
+			},
+		},
+		{
+			name: "WithErrMcpToolsLoadFailed",
+			err: &internal.ErrorWithSuggestion{
+				Err:        internal.ErrMcpToolsLoadFailed,
+				Suggestion: "Check MCP config.",
+			},
+			wantErrReason: "error.suggestion",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrType.String("internal.mcp_error"),
+			},
+		},
 	}
+	// Test cases that intentionally produce errors_errorString (the catch-all bucket).
+	// Any NEW test case that produces this is a signal that a typed sentinel is needed.
+	allowedCatchAll := map[string]bool{
+		"WithNilError":   true,
+		"WithOtherError": true,
+	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			span := &mocktracing.Span{}
@@ -390,6 +800,214 @@ func Test_MapError(t *testing.T) {
 
 			require.Equal(t, tt.wantErrReason, span.Status.Description)
 			require.ElementsMatch(t, tt.wantErrDetails, span.Attributes)
+
+			// Enforcement: no test case should produce the opaque errors_errorString
+			// unless explicitly allowed. This catches regressions where new error paths
+			// return bare errors.New() without typed sentinels.
+			if !allowedCatchAll[tt.name] {
+				require.NotContains(t, span.Status.Description, "errors_errorString",
+					"test case %q produces opaque errors_errorString — use a typed sentinel error instead", tt.name)
+			}
+		})
+	}
+}
+
+// TestMapError_ErrorWithSuggestionSetsErrorType verifies that ErrorWithSuggestion errors
+// are classified as "error.suggestion" in telemetry, with the inner error type
+// recorded in the error.type span attribute for detailed analysis.
+// When the inner error matches a known sentinel, the descriptive code is used
+// instead of the raw Go type name.
+func TestMapError_ErrorWithSuggestionSetsErrorType(t *testing.T) {
+	tests := []struct {
+		name        string
+		err         error
+		wantErrCode string
+		wantErrType string
+	}{
+		{
+			name: "Sentinel_uses_descriptive_code",
+			err: &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"key not found: %w",
+					internal.ErrKeyNotFound),
+				Suggestion: "Run 'azd env get-values'.",
+			},
+			wantErrCode: "error.suggestion",
+			wantErrType: "internal.key_not_found",
+		},
+		{
+			name: "ResponseErrorUsesStructuredCategory",
+			err: &internal.ErrorWithSuggestion{
+				Err: &azcore.ResponseError{
+					ErrorCode:  "QuotaExceeded",
+					StatusCode: 429,
+					RawResponse: &http.Response{
+						StatusCode: 429,
+						Request: &http.Request{
+							Method: "POST",
+							Host:   "management.azure.com",
+						},
+					},
+				},
+				Suggestion: "Request a quota increase.",
+			},
+			wantErrCode: "error.suggestion",
+			wantErrType: "service.arm.429",
+		},
+		{
+			name: "ArmDeploymentErrorUsesStructuredCategory",
+			err: &internal.ErrorWithSuggestion{
+				Err: &azapi.AzureDeploymentError{
+					Operation: azapi.DeploymentOperationDeploy,
+					Details: &azapi.DeploymentErrorLine{
+						Code: "Conflict",
+						Inner: []*azapi.DeploymentErrorLine{
+							{Code: "OutOfCapacity"},
+						},
+					},
+				},
+				Suggestion: "Retry in another region.",
+			},
+			wantErrCode: "error.suggestion",
+			wantErrType: "service.arm.deployment.failed",
+		},
+		{
+			name: "PlainError_falls_back_to_go_type",
+			err: &internal.ErrorWithSuggestion{
+				Err:        errors.New("unknown failure"),
+				Suggestion: "Try again.",
+			},
+			wantErrCode: "error.suggestion",
+			wantErrType: "*errors.errorString",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			span := &mocktracing.Span{}
+			MapError(tt.err, span)
+
+			require.Equal(t, tt.wantErrCode, span.Status.Description,
+				"ErrorWithSuggestion should produce error.suggestion")
+
+			wantAttr := fields.ErrType.String(tt.wantErrType)
+			require.Contains(t, span.Attributes, wantAttr,
+				"error.type attribute should record the inner error type")
+		})
+	}
+}
+
+// Test_ClassifySuggestionType_MatchesMapError verifies that classifySuggestionType produces
+// the same errCode as MapError for every structured error type and sentinel.
+// This catches drift if someone updates the classification logic in one function but not the other.
+func Test_ClassifySuggestionType_MatchesMapError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{
+			name: "ResponseError",
+			err: &azcore.ResponseError{
+				ErrorCode:  "QuotaExceeded",
+				StatusCode: 429,
+				RawResponse: &http.Response{
+					StatusCode: 429,
+					Request: &http.Request{
+						Method: "POST",
+						Host:   "management.azure.com",
+					},
+				},
+			},
+		},
+		{
+			name: "ArmDeploymentError",
+			err: &azapi.AzureDeploymentError{
+				Operation: azapi.DeploymentOperationDeploy,
+				Details: &azapi.DeploymentErrorLine{
+					Code: "Conflict",
+				},
+			},
+		},
+		{
+			name: "ArmValidationError",
+			err: &azapi.AzureDeploymentError{
+				Operation: azapi.DeploymentOperationValidate,
+				Details:   &azapi.DeploymentErrorLine{Code: "InvalidTemplate"},
+			},
+		},
+		{
+			name: "ExtServiceError",
+			err: &azdext.ServiceError{
+				Message:     "Rate limit",
+				ErrorCode:   "create_agent.RateLimitExceeded",
+				StatusCode:  429,
+				ServiceName: "openai.azure.com",
+			},
+		},
+		{
+			name: "ExtLocalError",
+			err: &azdext.LocalError{
+				Message:  "invalid config",
+				Code:     "Invalid-Config",
+				Category: azdext.LocalErrorCategoryValidation,
+			},
+		},
+		{
+			name: "ExtensionRunError",
+			err:  &extensions.ExtensionRunError{ExtensionId: "test", Err: errors.New("fail")},
+		},
+		{
+			name: "ExitError",
+			err:  &exec.ExitError{Cmd: "docker", ExitCode: 1},
+		},
+		{
+			name: "MissingToolErrors_single",
+			err:  &tools.MissingToolErrors{ToolNames: []string{"docker"}},
+		},
+		{
+			name: "MissingToolErrors_multiple",
+			err:  &tools.MissingToolErrors{ToolNames: []string{"docker", "kubectl"}},
+		},
+		{
+			name: "AuthFailedError",
+			err: &auth.AuthFailedError{
+				Parsed: &auth.AadErrorResponse{Error: "invalid_grant"},
+			},
+		},
+		// Sentinels
+		{name: "context.Canceled", err: context.Canceled},
+		{name: "context.DeadlineExceeded", err: context.DeadlineExceeded},
+		{name: "ErrNoCurrentUser", err: auth.ErrNoCurrentUser},
+		{name: "ErrNoProject", err: azdcontext.ErrNoProject},
+		{name: "ErrNotFound", err: environment.ErrNotFound},
+		{name: "ErrToolExecutionDenied", err: consent.ErrToolExecutionDenied},
+		{name: "ErrNotRepository", err: git.ErrNotRepository},
+		{name: "ErrPreviewNotSupported", err: azapi.ErrPreviewNotSupported},
+		{name: "ErrBindMountDisabled", err: provisioning.ErrBindMountOperationDisabled},
+		{name: "ErrRemoteHostIsNotAzDo", err: pipeline.ErrRemoteHostIsNotAzDo},
+		{name: "ErrInfraNotProvisioned", err: internal.ErrInfraNotProvisioned},
+		{name: "ErrKeyNotFound", err: internal.ErrKeyNotFound},
+		{name: "ErrExtensionNotFound", err: internal.ErrExtensionNotFound},
+		{name: "ErrOperationCancelled", err: internal.ErrOperationCancelled},
+		// Network error
+		{
+			name: "DNSError",
+			err:  &net.DNSError{Err: "no such host", Name: "example.com"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Get errCode from MapError
+			span := &mocktracing.Span{}
+			MapError(tt.err, span)
+			mapErrorCode := span.Status.Description
+
+			// Get code from classifySuggestionType
+			suggestionCode := classifySuggestionType(tt.err)
+
+			require.Equal(t, mapErrorCode, suggestionCode,
+				"classifySuggestionType and MapError must produce the same code for %T", tt.err)
 		})
 	}
 }
@@ -537,7 +1155,7 @@ func (e *multiUnwrapError) Unwrap() []error {
 	return e.errs
 }
 
-func mustMarshalJson(v interface{}) string {
+func mustMarshalJson(v any) string {
 	b, err := json.Marshal(v)
 	if err != nil {
 		panic(err)
@@ -645,7 +1263,6 @@ func Test_PackageLevelErrorsMapped(t *testing.T) {
 		"ErrDeploymentNotFound":                "caught in provisioning/deployment callers before reaching telemetry",
 		"ErrDeploymentsNotFound":               "caught in infra callers before reaching telemetry",
 		"ErrDeploymentResourcesNotFound":       "caught in infra callers before reaching telemetry",
-		"ErrNoProject":                         "caught in environment/context callers before reaching telemetry",
 		"ErrContainerNotFound":                 "caught in storage blob callers before reaching telemetry",
 		"ErrPlatformNotSupported":              "caught in platform config resolver before reaching telemetry",
 		"ErrPlatformConfigNotFound":            "caught in platform config resolver before reaching telemetry",
@@ -661,15 +1278,15 @@ func Test_PackageLevelErrorsMapped(t *testing.T) {
 		"ErrDebuggerAborted": "defined in both cmd/middleware and pkg/azdext, handled at debug middleware level",
 
 		// Agent consent errors that map to user-initiated cancellation
-		"ErrSamplingDenied":    "agent consent: similar to user.canceled, low frequency",
-		"ErrElicitationDenied": "agent consent: similar to user.canceled, low frequency",
+		"ErrSamplingDenied":       "agent consent: similar to user.canceled, low frequency",
+		"ErrElicitationDenied":    "agent consent: similar to user.canceled, low frequency",
+		"ErrToolExecutionSkipped": "agent consent: user chose to skip tool, agent continues with other tools",
 
 		// UX cancellation that is always joined with context.Canceled (already mapped as user.canceled)
 		"ErrCancelled": "pkg/ux: always errors.Join'd with ctx.Err(), caught by context.Canceled check",
 
 		// Environment management errors surfaced as user-facing messages with suggestions
 		"ErrExists":                     "environment: user-facing with suggestion, wrapped before reaching telemetry",
-		"ErrNotFound":                   "environment: user-facing with suggestion, wrapped before reaching telemetry",
 		"ErrNameNotSpecified":           "environment: user-facing with suggestion, wrapped before reaching telemetry",
 		"ErrDefaultEnvironmentNotFound": "environment: user-facing with suggestion, wrapped before reaching telemetry",
 
@@ -820,4 +1437,262 @@ func isErrorConstructorCall(call *ast.CallExpr) bool {
 
 	return (ident.Name == "errors" && sel.Sel.Name == "New") ||
 		(ident.Name == "fmt" && sel.Sel.Name == "Errorf")
+}
+
+// Test_RunMethodsNoBareErrors walks all action Run() methods and flags inline bare errors
+// (errors.New or fmt.Errorf without %w) that would produce opaque errors_errorString in telemetry.
+// These errors reach MapError via the telemetry middleware and must use typed sentinels or wrap
+// an existing error with %w for proper classification.
+func Test_RunMethodsNoBareErrors(t *testing.T) {
+	azdRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	require.NoError(t, err)
+
+	// knownBareErrors tracks pre-existing bare error violations in Run() methods.
+	// This list should be EMPTY — all bare errors should use typed sentinels.
+	// If a new bare error must be temporarily added, it requires justification.
+	knownBareErrors := map[string]bool{}
+
+	var violations []string
+	var knownFound int
+
+	err = filepath.Walk(azdRoot, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if info.IsDir() {
+			base := filepath.Base(path)
+			if base == "vendor" || base == "extensions" || base == ".git" || base == "test" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+
+		fset := token.NewFileSet()
+		file, parseErr := parser.ParseFile(fset, path, nil, 0)
+		if parseErr != nil {
+			return nil
+		}
+
+		for _, decl := range file.Decls {
+			funcDecl, ok := decl.(*ast.FuncDecl)
+			if !ok {
+				continue
+			}
+
+			if !isActionRunMethod(funcDecl) {
+				continue
+			}
+
+			relPath, _ := filepath.Rel(azdRoot, path)
+			receiverName := getReceiverTypeName(funcDecl)
+
+			// Walk the function body looking for return statements with bare errors
+			ast.Inspect(funcDecl.Body, func(n ast.Node) bool {
+				retStmt, ok := n.(*ast.ReturnStmt)
+				if !ok || len(retStmt.Results) < 2 {
+					return true
+				}
+
+				// The error is the last return value
+				errExpr := retStmt.Results[len(retStmt.Results)-1]
+
+				// Check for direct errors.New(...) or fmt.Errorf() without %w
+				if call, ok := errExpr.(*ast.CallExpr); ok {
+					if isBareErrorCall(call) {
+						pos := fset.Position(retStmt.Pos())
+						key := fmt.Sprintf("%s:%d", relPath, pos.Line)
+						if knownBareErrors[key] {
+							knownFound++
+						} else {
+							violations = append(violations, fmt.Sprintf(
+								"  %s %s.Run() — bare %s (use a typed sentinel with %%w)",
+								key, receiverName, callName(call)))
+						}
+					}
+				}
+
+				// Check for &ErrorWithSuggestion{Err: errors.New(...)} or similar
+				// where the inner Err field is a bare error
+				if unary, ok := errExpr.(*ast.UnaryExpr); ok {
+					if comp, ok := unary.X.(*ast.CompositeLit); ok {
+						checkCompositeLitForBareErr(
+							fset, comp, relPath, receiverName, knownBareErrors, &knownFound, &violations)
+					}
+				}
+
+				return true
+			})
+		}
+
+		return nil
+	})
+	require.NoError(t, err)
+
+	if len(violations) > 0 {
+		t.Errorf(
+			"Found %d NEW bare error(s) in action Run() methods that would produce opaque telemetry.\n"+
+				"Use typed sentinel errors (internal.ErrXxx) with %%w wrapping, or wrap with an existing\n"+
+				"typed error from a dependency. Bare errors.New()/fmt.Errorf() without %%w produce\n"+
+				"'internal.errors_errorString' in telemetry.\n\n"+
+				"Violations:\n%s",
+			len(violations),
+			strings.Join(violations, "\n"),
+		)
+	}
+
+	// Verify allowlist isn't stale — if a known error was fixed, remove it from the list
+	if knownFound != len(knownBareErrors) {
+		t.Errorf(
+			"knownBareErrors allowlist has %d entries but only %d were found.\n"+
+				"Remove fixed entries from the allowlist to keep it accurate.",
+			len(knownBareErrors), knownFound)
+	}
+}
+
+// isActionRunMethod checks if a function declaration is a method named "Run" that returns
+// (*actions.ActionResult, error) — the signature of azd action entry points.
+func isActionRunMethod(fn *ast.FuncDecl) bool {
+	if fn.Name.Name != "Run" {
+		return false
+	}
+	// Must be a method (have a receiver)
+	if fn.Recv == nil || len(fn.Recv.List) == 0 {
+		return false
+	}
+	// Must have parameters (ctx context.Context)
+	if fn.Type.Params == nil || len(fn.Type.Params.List) == 0 {
+		return false
+	}
+	// Must return two values where the second is error
+	if fn.Type.Results == nil || len(fn.Type.Results.List) != 2 {
+		return false
+	}
+
+	// Check first return type contains "ActionResult" (pointer to it)
+	firstResult := fn.Type.Results.List[0]
+	if star, ok := firstResult.Type.(*ast.StarExpr); ok {
+		if sel, ok := star.X.(*ast.SelectorExpr); ok {
+			if sel.Sel.Name != "ActionResult" {
+				return false
+			}
+		} else {
+			return false
+		}
+	} else {
+		return false
+	}
+
+	// Check second return type is "error"
+	secondResult := fn.Type.Results.List[1]
+	if ident, ok := secondResult.Type.(*ast.Ident); ok {
+		if ident.Name != "error" {
+			return false
+		}
+	} else {
+		return false
+	}
+
+	return true
+}
+
+// getReceiverTypeName extracts the receiver type name from a method declaration.
+func getReceiverTypeName(fn *ast.FuncDecl) string {
+	if fn.Recv == nil || len(fn.Recv.List) == 0 {
+		return "<unknown>"
+	}
+	switch t := fn.Recv.List[0].Type.(type) {
+	case *ast.StarExpr:
+		if ident, ok := t.X.(*ast.Ident); ok {
+			return ident.Name
+		}
+	case *ast.Ident:
+		return t.Name
+	}
+	return "<unknown>"
+}
+
+// isBareErrorCall checks if a call expression is errors.New(...) or fmt.Errorf(...) without %w.
+func isBareErrorCall(call *ast.CallExpr) bool {
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	ident, ok := sel.X.(*ast.Ident)
+	if !ok {
+		return false
+	}
+
+	// errors.New(...) is always bare
+	if ident.Name == "errors" && sel.Sel.Name == "New" {
+		return true
+	}
+
+	// fmt.Errorf(...) is bare only if format string has no %w
+	if ident.Name == "fmt" && sel.Sel.Name == "Errorf" {
+		return !fmtErrorfHasWrap(call)
+	}
+
+	return false
+}
+
+// fmtErrorfHasWrap checks if a fmt.Errorf call contains %w in the format string.
+func fmtErrorfHasWrap(call *ast.CallExpr) bool {
+	if len(call.Args) == 0 {
+		return false
+	}
+	lit, ok := call.Args[0].(*ast.BasicLit)
+	if !ok {
+		return false
+	}
+	return strings.Contains(lit.Value, "%w")
+}
+
+// callName returns a human-readable name for a call expression (e.g. "errors.New" or "fmt.Errorf").
+func callName(call *ast.CallExpr) string {
+	if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+		if ident, ok := sel.X.(*ast.Ident); ok {
+			return ident.Name + "." + sel.Sel.Name
+		}
+	}
+	return "<call>"
+}
+
+// checkCompositeLitForBareErr checks if a composite literal (e.g., ErrorWithSuggestion{})
+// has an Err field set to a bare error.
+func checkCompositeLitForBareErr(
+	fset *token.FileSet,
+	comp *ast.CompositeLit,
+	relPath, receiverName string,
+	knownBareErrors map[string]bool,
+	knownFound *int,
+	violations *[]string,
+) {
+	for _, elt := range comp.Elts {
+		kv, ok := elt.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		keyIdent, ok := kv.Key.(*ast.Ident)
+		if !ok || keyIdent.Name != "Err" {
+			continue
+		}
+		if call, ok := kv.Value.(*ast.CallExpr); ok {
+			if isBareErrorCall(call) {
+				pos := fset.Position(comp.Pos())
+				key := fmt.Sprintf("%s:%d", relPath, pos.Line)
+				if knownBareErrors[key] {
+					(*knownFound)++
+				} else {
+					*violations = append(*violations, fmt.Sprintf(
+						"  %s %s.Run() — ErrorWithSuggestion wrapping bare %s (use a typed sentinel with %%w)",
+						key, receiverName, callName(call)))
+				}
+			}
+		}
+	}
 }

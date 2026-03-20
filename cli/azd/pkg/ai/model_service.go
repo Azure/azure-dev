@@ -14,6 +14,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/syncmap"
 )
 
 // AiModelService provides operations for querying AI model availability,
@@ -215,7 +216,7 @@ func (s *AiModelService) ListLocationsWithQuota(
 		allowedLocations = skuLocations
 	}
 
-	var sharedResults sync.Map
+	var sharedResults syncmap.Map[string, []*armcognitiveservices.Usage]
 	var wg sync.WaitGroup
 
 	for _, loc := range allowedLocations {
@@ -223,23 +224,19 @@ func (s *AiModelService) ListLocationsWithQuota(
 		if !slices.Contains(skuLocations, loc) {
 			continue
 		}
-		wg.Add(1)
-		go func(loc string) {
-			defer wg.Done()
+		loc := loc
+		wg.Go(func() {
 			usages, err := s.azureClient.GetAiUsages(ctx, subscriptionId, loc)
 			if err != nil {
 				return
 			}
 			sharedResults.Store(loc, usages)
-		}(loc)
+		})
 	}
 	wg.Wait()
 
 	var results []string
-	sharedResults.Range(func(key, value any) bool {
-		loc := key.(string)
-		usages := value.([]*armcognitiveservices.Usage)
-
+	sharedResults.Range(func(loc string, usages []*armcognitiveservices.Usage) bool {
 		for _, req := range requirements {
 			minCap := req.MinCapacity
 			if minCap <= 0 {
@@ -301,26 +298,22 @@ func (s *AiModelService) ListModelLocationsWithQuota(
 		})
 	}
 
-	var sharedResults sync.Map
+	var sharedResults syncmap.Map[string, []AiModelUsage]
 	var wg sync.WaitGroup
 
 	for _, loc := range modelLocations {
-		wg.Add(1)
-		go func(loc string) {
-			defer wg.Done()
+		wg.Go(func() {
 			usages, err := s.ListUsages(ctx, subscriptionId, loc)
 			if err != nil {
 				return
 			}
 			sharedResults.Store(loc, usages)
-		}(loc)
+		})
 	}
 	wg.Wait()
 
 	results := []ModelLocationQuota{}
-	sharedResults.Range(func(key, value any) bool {
-		loc := key.(string)
-		usages := value.([]AiModelUsage)
+	sharedResults.Range(func(loc string, usages []AiModelUsage) bool {
 		usageMap := make(map[string]AiModelUsage, len(usages))
 		for _, usage := range usages {
 			usageMap[usage.Name] = usage
@@ -542,9 +535,8 @@ func (s *AiModelService) fetchModelsForLocations(
 			continue
 		}
 
-		wg.Add(1)
-		go func(loc string) {
-			defer wg.Done()
+		loc := loc
+		wg.Go(func() {
 			models, err := s.azureClient.GetAiModels(ctx, subscriptionId, loc)
 			if err != nil {
 				errMu.Lock()
@@ -562,7 +554,7 @@ func (s *AiModelService) fetchModelsForLocations(
 			mu.Lock()
 			result[loc] = models
 			mu.Unlock()
-		}(loc)
+		})
 	}
 	wg.Wait()
 
@@ -850,11 +842,8 @@ func (s *AiModelService) listUsagesByLocation(
 	var firstErr error
 
 	for _, location := range locations {
-		location := location
-		wg.Add(1)
 
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 
 			select {
 			case sem <- struct{}{}:
@@ -883,7 +872,7 @@ func (s *AiModelService) listUsagesByLocation(
 			mu.Lock()
 			usagesByLocation[location] = usages
 			mu.Unlock()
-		}()
+		})
 	}
 
 	wg.Wait()

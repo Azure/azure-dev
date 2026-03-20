@@ -11,8 +11,10 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -46,7 +48,31 @@ func NewServer(rootContainer *ioc.NestedContainer) *Server {
 }
 
 // upgrader is the websocket.Upgrader used by the server to upgrade each request to a websocket connection.
-var upgrader = websocket.Upgrader{}
+var upgrader = websocket.Upgrader{
+	CheckOrigin: checkLocalhostOrigin,
+}
+
+// checkLocalhostOrigin prevents Cross-Site WebSocket Hijacking (CSWSH) by rejecting
+// WebSocket upgrade requests from non-localhost origins. Without this check, any web
+// page the user visits could open a WebSocket connection to the local RPC server.
+func checkLocalhostOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true // same-origin requests don't send Origin
+	}
+
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+
+	host := u.Hostname()
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
 
 // Serve calls http.Serve with the given listener and a handler that serves the VS RPC protocol.
 func (s *Server) Serve(l net.Listener) error {
@@ -161,8 +187,7 @@ func serveRpc(w http.ResponseWriter, r *http.Request, handlers map[string]Handle
 			defer func() {
 				if respErr != nil {
 					cmd.MapError(respErr, span)
-					var rpcErr *jsonrpc2.Error
-					if errors.As(respErr, &rpcErr) {
+					if rpcErr, ok := errors.AsType[*jsonrpc2.Error](respErr); ok {
 						span.SetAttributes(fields.JsonRpcErrorCode.Int(int(rpcErr.Code)))
 					}
 				}
@@ -174,7 +199,7 @@ func serveRpc(w http.ResponseWriter, r *http.Request, handlers map[string]Handle
 
 			// Wrap the reply function to capture the response error returned by the handler before replying.
 			origReply := reply
-			reply = func(ctx context.Context, result interface{}, err error) error {
+			reply = func(ctx context.Context, result any, err error) error {
 				if err != nil {
 					respErr = err
 				}

@@ -36,7 +36,7 @@ func TestJsonFormatterScalar(t *testing.T) {
 }
 
 func TestJsonFormatterSlice(t *testing.T) {
-	obj := []interface{}{
+	obj := []any{
 		jsonInput{
 			Size:   "mega",
 			IsCool: true,

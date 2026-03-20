@@ -13,6 +13,8 @@ param(
     [string]$BuildId
 )
 
+Write-Host "Build reason: $BuildReason"
+
 $prereleaseCategory = ""
 
 if ($BuildReason -eq "Manual") {

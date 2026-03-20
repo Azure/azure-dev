@@ -388,7 +388,7 @@ func TestConcurrentAccess(t *testing.T) {
 	const numGoroutines = 100
 	results := make(chan error, numGoroutines)
 
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		go func(id int) {
 			var result string
 			err := Convert(fmt.Sprintf("test-%d", id), &result)
@@ -397,7 +397,7 @@ func TestConcurrentAccess(t *testing.T) {
 	}
 
 	// Check all conversions succeeded
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		err := <-results
 		assert.NoError(t, err)
 	}
@@ -465,13 +465,13 @@ func TestNoMapperError(t *testing.T) {
 func TestNoMapperErrorIs(t *testing.T) {
 	// Create two different NoMapperError instances with different types
 	err1 := &NoMapperError{
-		SrcType: reflect.TypeOf(""),
-		DstType: reflect.TypeOf(0),
+		SrcType: reflect.TypeFor[string](),
+		DstType: reflect.TypeFor[int](),
 	}
 
 	err2 := &NoMapperError{
-		SrcType: reflect.TypeOf(0),
-		DstType: reflect.TypeOf(""),
+		SrcType: reflect.TypeFor[int](),
+		DstType: reflect.TypeFor[string](),
 	}
 
 	// Both should be considered equal to ErrNoMapper via errors.Is()
@@ -585,8 +585,8 @@ func TestConversionError(t *testing.T) {
 	assert.Equal(t, expectedErr, errors.Unwrap(err))
 
 	// Check type information
-	assert.Equal(t, reflect.TypeOf(""), convErr.SrcType)
-	assert.Equal(t, reflect.TypeOf(0), convErr.DstType)
+	assert.Equal(t, reflect.TypeFor[string](), convErr.SrcType)
+	assert.Equal(t, reflect.TypeFor[int](), convErr.DstType)
 }
 
 func TestConversionErrorUnwrap(t *testing.T) {
@@ -737,17 +737,17 @@ func TestConversionErrorTypes(t *testing.T) {
 		{
 			name:        "simple error",
 			setupError:  errors.New("simple"),
-			expectTypes: []reflect.Type{reflect.TypeOf(""), reflect.TypeOf(0)},
+			expectTypes: []reflect.Type{reflect.TypeFor[string](), reflect.TypeFor[int]()},
 		},
 		{
 			name:        "formatted error",
 			setupError:  fmt.Errorf("formatted: %s", "value"),
-			expectTypes: []reflect.Type{reflect.TypeOf(""), reflect.TypeOf(0)},
+			expectTypes: []reflect.Type{reflect.TypeFor[string](), reflect.TypeFor[int]()},
 		},
 		{
 			name:        "wrapped error",
 			setupError:  fmt.Errorf("wrapper: %w", errors.New("inner")),
-			expectTypes: []reflect.Type{reflect.TypeOf(""), reflect.TypeOf(0)},
+			expectTypes: []reflect.Type{reflect.TypeFor[string](), reflect.TypeFor[int]()},
 		},
 	}
 

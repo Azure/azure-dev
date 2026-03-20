@@ -138,9 +138,7 @@ func TestSecurityManager_ValidatePath_DirectoryChange(t *testing.T) {
 	}
 
 	// Change to temp directory first
-	originalWd, _ := os.Getwd()
-	defer os.Chdir(originalWd)
-	os.Chdir(tempDir)
+	t.Chdir(tempDir)
 
 	// Test valid directory changes within security root
 	subDirPath := filepath.Join(tempDir, "subdir")
@@ -186,10 +184,7 @@ func TestResolvePath_ExistingFiles(t *testing.T) {
 	}
 
 	// Test with relative path to existing file
-	oldWd, _ := os.Getwd()
-	defer os.Chdir(oldWd)
-
-	os.Chdir(tempDir)
+	t.Chdir(tempDir)
 	resolved, err = resolvePath("test.txt")
 	if err != nil {
 		t.Errorf("resolvePath failed for relative path to existing file: %v", err)

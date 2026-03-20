@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
@@ -26,7 +25,7 @@ func Test_GetCognitiveAccount(t *testing.T) {
 				strings.Contains(request.URL.Path, "/Microsoft.CognitiveServices/accounts/ACCOUNT_NAME")
 		}).RespondFn(func(request *http.Request) (*http.Response, error) {
 			response := armcognitiveservices.Account{
-				Name: to.Ptr(expectedName),
+				Name: new(expectedName),
 			}
 
 			return mocks.CreateHttpResponseWithBody(request, http.StatusOK, response)

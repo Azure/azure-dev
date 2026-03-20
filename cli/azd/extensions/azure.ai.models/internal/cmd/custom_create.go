@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"azure.ai.models/internal/azcopy"
 	"azure.ai.models/internal/client"
@@ -26,12 +27,11 @@ type customCreateFlags struct {
 	Version     string
 	Source      string
 	SourceFile  string
-	BlobURI     string
 	Description string
 	BaseModel   string
 	Publisher   string
 	AzcopyPath  string
-	// NoWait   bool // TODO: re-enable with async registration when data-plane polling is available
+	NoWait      bool
 }
 
 func newCustomCreateCommand(parentFlags *customFlags) *cobra.Command {
@@ -49,22 +49,15 @@ This command performs three steps:
 
 The --source flag accepts a local file/directory path or a remote blob URL with SAS token.
 For remote URLs containing special characters (& in SAS tokens), use --source-file to
-provide a file containing the URL instead.
-
-If you have already uploaded model files, use --blob-uri to skip upload and register directly.`,
+provide a file containing the URL instead.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 
-			// Validate mutually exclusive flags
-			if flags.BlobURI != "" && (flags.Source != "" || flags.SourceFile != "") {
-				return fmt.Errorf("--blob-uri cannot be used with --source or --source-file")
-			}
-
-			if flags.BlobURI != "" {
-				if !strings.HasPrefix(flags.BlobURI, "https://") {
-					return fmt.Errorf("--blob-uri must be an HTTPS URL")
+			// If --version not explicitly set, try to extract from --base-model URI
+			if !cmd.Flags().Changed("version") {
+				if v := extractVersionFromURI(flags.BaseModel); v != "" {
+					flags.Version = v
 				}
-				return runCustomCreateFromBlobURI(ctx, parentFlags, flags)
 			}
 
 			// Resolve source from --source-file if --source is not set
@@ -80,7 +73,7 @@ If you have already uploaded model files, use --blob-uri to skip upload and regi
 			}
 
 			if flags.Source == "" {
-				return fmt.Errorf("either --source, --source-file, or --blob-uri is required")
+				return fmt.Errorf("either --source or --source-file is required")
 			}
 
 			return runCustomCreate(ctx, parentFlags, flags)
@@ -90,14 +83,12 @@ If you have already uploaded model files, use --blob-uri to skip upload and regi
 	cmd.Flags().StringVarP(&flags.Name, "name", "n", "", "Model name (required)")
 	cmd.Flags().StringVar(&flags.Source, "source", "", "Local path or remote URL to model files")
 	cmd.Flags().StringVar(&flags.SourceFile, "source-file", "", "Path to a file containing the source URL (useful for URLs with special characters)")
-	cmd.Flags().StringVar(&flags.BlobURI, "blob-uri", "", "Already-uploaded blob URI (skips upload, registers directly)")
 	cmd.Flags().StringVar(&flags.Version, "version", "1", "Model version")
 	cmd.Flags().StringVar(&flags.Description, "description", "", "Model description")
 	cmd.Flags().StringVar(&flags.BaseModel, "base-model", "", "Base model identifier (e.g., FW-GPT-OSS-120B or full azureml:// URI)")
 	cmd.Flags().StringVar(&flags.Publisher, "publisher", "Fireworks", "Model publisher ID for catalog info")
 	cmd.Flags().StringVar(&flags.AzcopyPath, "azcopy-path", "", "Path to azcopy binary (auto-detected if not provided)")
-	// TODO: re-enable --no-wait when data-plane polling endpoint is available
-	// cmd.Flags().BoolVar(&flags.NoWait, "no-wait", false, "Start async registration and return immediately with the operation URL")
+	cmd.Flags().BoolVar(&flags.NoWait, "no-wait", false, "Start async registration and return immediately with the operation URL")
 
 	_ = cmd.MarkFlagRequired("name")
 	_ = cmd.MarkFlagRequired("base-model")
@@ -154,6 +145,16 @@ func runCustomCreate(ctx context.Context, parentFlags *customFlags, flags *custo
 	fmt.Println()
 
 	if err != nil {
+		if strings.Contains(err.Error(), "409") || strings.Contains(err.Error(), "already exists") {
+			fmt.Println()
+			color.Red("✗ Model '%s' version '%s' already exists.", flags.Name, flags.Version)
+			fmt.Println()
+			color.Yellow("To fetch the latest version, use show without --version:")
+			fmt.Printf("  azd ai models custom show --name %s\n\n", flags.Name)
+			color.Yellow("Then create with a new version:")
+			fmt.Printf("  azd ai models custom create --name %s --version <next-version> ...\n", flags.Name)
+			return fmt.Errorf("model version already exists")
+		}
 		return fmt.Errorf("failed to get upload location: %w", err)
 	}
 
@@ -184,11 +185,6 @@ func runCustomCreate(ctx context.Context, parentFlags *customFlags, flags *custo
 			}
 		}
 		fmt.Printf("  azcopy copy \"%s\" \"%s\" --recursive=true\n", sourceHint, blob.Credential.SasURI)
-		fmt.Println()
-		color.Yellow("After upload completes, re-run with --blob-uri to register the model:")
-		fmt.Println()
-		fmt.Printf("  azd ai models custom create --name %s --version %s --blob-uri \"%s\" -e \"%s\"\n",
-			flags.Name, flags.Version, blob.BlobURI, parentFlags.projectEndpoint)
 		return fmt.Errorf("upload failed: %w", err)
 	}
 
@@ -220,105 +216,38 @@ func runCustomCreate(ctx context.Context, parentFlags *customFlags, flags *custo
 		"baseArchitecture": extractBaseModelName(flags.BaseModel),
 	}
 
-	model, err := foundryClient.RegisterModel(ctx, flags.Name, flags.Version, regReq)
+	operationURL, err := foundryClient.RegisterModelAsync(ctx, flags.Name, flags.Version, regReq)
 	_ = regSpinner.Stop(ctx)
 	fmt.Println()
 
 	if err != nil {
 		// Upload succeeded but register failed — print recovery instructions
 		color.Red("✗ Registration failed: %v", err)
-		fmt.Println()
-		color.Yellow("Upload completed successfully. You can retry registration with --blob-uri:")
-		fmt.Println()
-		fmt.Printf("  azd ai models custom create --name %s --version %s --blob-uri \"%s\" -e \"%s\"\n",
-			flags.Name, flags.Version, blob.BlobURI, parentFlags.projectEndpoint)
 		return fmt.Errorf("registration failed: %w", err)
 	}
 
-	// ── Success ──
-	color.Green("✓ Model registered successfully!")
-	fmt.Println()
-	fmt.Println(strings.Repeat("─", 50))
-	fmt.Printf("  Name:        %s\n", model.Name)
-	fmt.Printf("  Version:     %s\n", model.Version)
-	if model.Description != "" {
-		fmt.Printf("  Description: %s\n", model.Description)
-	}
-	if model.SystemData != nil && model.SystemData.CreatedAt != "" {
-		fmt.Printf("  Created:     %s\n", model.SystemData.CreatedAt)
-	}
-	fmt.Println(strings.Repeat("─", 50))
+	color.Green("✓ Registration started")
+	fmt.Printf("  Operation URL: %s\n\n", operationURL)
 
-	return nil
-}
-
-// runCustomCreateFromBlobURI registers a model directly from an already-uploaded blob URI,
-// skipping the upload steps.
-func runCustomCreateFromBlobURI(ctx context.Context, parentFlags *customFlags, flags *customCreateFlags) error {
-	azdClient, err := azdext.NewAzdClient()
-	if err != nil {
-		return fmt.Errorf("failed to create azd client: %w", err)
-	}
-	defer azdClient.Close()
-
-	if err := azdext.WaitForDebugger(ctx, azdClient); err != nil {
-		if errors.Is(err, context.Canceled) || errors.Is(err, azdext.ErrDebuggerAborted) {
-			return nil
-		}
-		return fmt.Errorf("failed waiting for debugger: %w", err)
+	if flags.NoWait {
+		color.Yellow("--no-wait specified; skipping validation polling.")
+		fmt.Println("You can check the operation status manually using the operation URL above.")
+		return nil
 	}
 
-	credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
-		AdditionallyAllowedTenants: []string{"*"},
+	pollSpinner := ux.NewSpinner(&ux.SpinnerOptions{
+		Text: "Validating and registering model (this may take a few minutes)...",
 	})
-	if err != nil {
-		return fmt.Errorf("failed to create Azure credential: %w", err)
-	}
-
-	foundryClient, err := client.NewFoundryClient(parentFlags.projectEndpoint, credential)
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("Creating custom model: %s (version %s)\n\n", flags.Name, flags.Version)
-	fmt.Printf("  Using provided blob URI, skipping upload...\n")
-	fmt.Printf("  Blob URI: %s\n\n", flags.BlobURI)
-
-	// ── Register model ──
-	regSpinner := ux.NewSpinner(&ux.SpinnerOptions{
-		Text: "Registering model...",
-	})
-	if err := regSpinner.Start(ctx); err != nil {
+	if err := pollSpinner.Start(ctx); err != nil {
 		fmt.Printf("failed to start spinner: %v\n", err)
 	}
 
-	derivedURI := buildDerivedModelURI(flags.BaseModel)
-	regReq := &models.RegisterModelRequest{
-		BlobURI:     flags.BlobURI,
-		Description: flags.Description,
-		CatalogInfo: &models.CatalogInfo{
-			PublisherID: flags.Publisher,
-		},
-		DerivedModelInformation: &models.DerivedModelInformation{
-			BaseModel: &derivedURI,
-		},
-	}
-
-	regReq.Tags = map[string]string{
-		"baseArchitecture": extractBaseModelName(flags.BaseModel),
-	}
-
-	model, err := foundryClient.RegisterModel(ctx, flags.Name, flags.Version, regReq)
-	_ = regSpinner.Stop(ctx)
+	model, err := foundryClient.PollOperation(ctx, operationURL, 5*time.Second)
+	_ = pollSpinner.Stop(ctx)
 	fmt.Println()
 
 	if err != nil {
 		color.Red("✗ Registration failed: %v", err)
-		fmt.Println()
-		color.Yellow("You can retry registration by re-running:")
-		fmt.Println()
-		fmt.Printf("  azd ai models custom create --name %s --version %s --blob-uri \"%s\" -e \"%s\"\n",
-			flags.Name, flags.Version, flags.BlobURI, parentFlags.projectEndpoint)
 		return fmt.Errorf("registration failed: %w", err)
 	}
 
@@ -365,4 +294,20 @@ func extractBaseModelName(baseModel string) string {
 		}
 	}
 	return baseModel
+}
+
+// extractVersionFromURI extracts the version segment from an azureml:// URI.
+// e.g. "azureml://registries/azureml-fireworks/models/FW-Qwen3-14B/versions/2" → "2"
+// Returns empty string if not an azureml URI or version not found.
+func extractVersionFromURI(uri string) string {
+	if !strings.HasPrefix(uri, "azureml://") {
+		return ""
+	}
+	parts := strings.Split(uri, "/")
+	for i, p := range parts {
+		if p == "versions" && i+1 < len(parts) {
+			return parts[i+1]
+		}
+	}
+	return ""
 }

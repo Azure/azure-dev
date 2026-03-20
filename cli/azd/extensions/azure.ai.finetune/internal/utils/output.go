@@ -30,12 +30,12 @@ const (
 )
 
 var (
-	timeDurationType   = reflect.TypeOf(time.Duration(0))
-	modelsDurationType = reflect.TypeOf(models.Duration(0))
+	timeDurationType   = reflect.TypeFor[time.Duration]()
+	modelsDurationType = reflect.TypeFor[models.Duration]()
 )
 
 // PrintObject prints a struct or slice in the specified format
-func PrintObject(obj interface{}, format OutputFormat) error {
+func PrintObject(obj any, format OutputFormat) error {
 	switch format {
 	case FormatJSON:
 		return printJSON(obj)
@@ -49,7 +49,7 @@ func PrintObject(obj interface{}, format OutputFormat) error {
 }
 
 // printJSON uses encoding/json which respects `json` tags
-func printJSON(obj interface{}) error {
+func printJSON(obj any) error {
 	data, err := json.MarshalIndent(obj, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal JSON: %w", err)
@@ -59,7 +59,7 @@ func printJSON(obj interface{}) error {
 }
 
 // printYAML uses gopkg.in/yaml.v3 which respects `yaml` tags
-func printYAML(obj interface{}) error {
+func printYAML(obj any) error {
 	data, err := yaml.Marshal(obj)
 	if err != nil {
 		return fmt.Errorf("failed to marshal YAML: %w", err)
@@ -69,9 +69,9 @@ func printYAML(obj interface{}) error {
 }
 
 // printTable uses text/tabwriter and reads `table` tags
-func printTable(obj interface{}) error {
+func printTable(obj any) error {
 	v := reflect.ValueOf(obj)
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		v = v.Elem()
 	}
 
@@ -117,7 +117,7 @@ func printSliceAsTable(v reflect.Value) error {
 
 	// Get element type
 	firstElem := v.Index(0)
-	if firstElem.Kind() == reflect.Ptr {
+	if firstElem.Kind() == reflect.Pointer {
 		firstElem = firstElem.Elem()
 	}
 
@@ -150,7 +150,7 @@ func printSliceAsTable(v reflect.Value) error {
 	// Print data rows
 	for i := 0; i < v.Len(); i++ {
 		elem := v.Index(i)
-		if elem.Kind() == reflect.Ptr {
+		if elem.Kind() == reflect.Pointer {
 			elem = elem.Elem()
 		}
 
@@ -184,13 +184,13 @@ func printStructAsKeyValue(v reflect.Value) error {
 }
 
 // PrintObjectWithIndent prints a struct or slice in the specified format with indentation
-func PrintObjectWithIndent(obj interface{}, format OutputFormat, indent string) error {
+func PrintObjectWithIndent(obj any, format OutputFormat, indent string) error {
 	if format != FormatTable {
 		return PrintObject(obj, format)
 	}
 
 	v := reflect.ValueOf(obj)
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		if v.IsNil() {
 			return nil
 		}
@@ -225,7 +225,7 @@ func formatFieldValue(v reflect.Value) string {
 	}
 
 	// Handle pointers
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		if v.IsNil() {
 			return "-"
 		}

@@ -482,6 +482,13 @@ func (m *Manager) Install(
 
 		targetPath := filepath.Join(targetDir, entryPoint)
 
+		// Prevent path traversal attacks by ensuring entryPoint stays within the extension install directory
+		if !osutil.IsPathContained(targetDir, targetPath) {
+			return nil, fmt.Errorf(
+				"invalid entry point path: entry point %q resolves outside extension directory. "+
+					"Use relative paths (e.g., 'bin/myext' or 'bin\\myext') without '..' sequences", entryPoint)
+		}
+
 		// Need to set the executable permission for the binary
 		// This change is specifically required for Linux but will apply consistently across all platforms
 		if err := os.Chmod(targetPath, osutil.PermissionExecutableFile); err != nil {
@@ -692,6 +699,15 @@ func (m *Manager) copyFromLocalPath(artifactPath string) (string, error) {
 		}
 
 		artifactPath = filepath.Join(userConfigDir, artifactPath)
+
+		// Prevent path traversal attacks by ensuring artifact path stays within the user config directory.
+		// This validation only applies to relative paths resolved against userConfigDir.
+		// Absolute paths are trusted since they are explicitly configured by the user/admin.
+		if !osutil.IsPathContained(userConfigDir, artifactPath) {
+			return "", fmt.Errorf(
+				"invalid artifact path: path %q resolves outside user config directory %q. "+
+					"Use an absolute path or a path relative to %q", artifactPath, userConfigDir, userConfigDir)
+		}
 	}
 
 	if _, err := os.Stat(artifactPath); os.IsNotExist(err) {

@@ -1,4 +1,7 @@
 parameters: 
+  - name: AzureRecordMode
+    type: string
+    default: playback
   - name: BuildMatrix
     type: object
   - name: CrossBuildMatrix
@@ -6,8 +9,6 @@ parameters:
     default:
       # Compliant image name required
       LinuxARM64:
-        GhCopilotClientId: $(GH_COPILOT_CLIENT_ID)
-        GhCopilotIntegrationId: $(GH_COPILOT_INTEGRATION_ID)
         Pool: $(LINUXPOOL)
         OSVmImage: $(LINUXVMIMAGE)
         OS: linux
@@ -27,8 +28,6 @@ parameters:
           GOARCH: arm64
           BuildLinuxPackages: true
       MacARM64:
-        GhCopilotClientId: $(GH_COPILOT_CLIENT_ID)
-        GhCopilotIntegrationId: $(GH_COPILOT_INTEGRATION_ID)
         Pool: Azure Pipelines
         OSVmImage: $(MACVMIMAGE)
         OS: macOS
@@ -42,8 +41,6 @@ parameters:
           # CGO_ENABLED is required on MacOS to cross-compile pkg/outil/osversion
           CGO_ENABLED: 1
       WindowsARM64:
-        GhCopilotClientId: $(GH_COPILOT_CLIENT_ID)
-        GhCopilotIntegrationId: $(GH_COPILOT_INTEGRATION_ID)
         Pool: $(WINDOWSPOOL)
         OSVmImage: $(WINDOWSVMIMAGE)
         OS: windows
@@ -79,8 +76,7 @@ stages:
             OS: ${{ build.value.OS }}
             UploadArtifact: ${{ build.value.UploadArtifact}}
             Variables: ${{ build.value.Variables }}
-            ghCopilotClientId: ${{ build.value.GhCopilotClientId }}
-            ghCopilotIntegrationId: ${{ build.value.GhCopilotIntegrationId }}
+            AzureRecordMode: ${{ parameters.AzureRecordMode }}
 
       # This is separated today because Skip.LiveTest is a queue-time variable
       # and cannot be set in a matrix entry.       
@@ -93,8 +89,6 @@ stages:
             OSVmImage: ${{ build.value.OSVmImage }} 
             OS: ${{ build.value.OS }}
             Variables: ${{ build.value.Variables }}
-            ghCopilotClientId: ${{ build.value.GhCopilotClientId }}
-            ghCopilotIntegrationId: ${{ build.value.GhCopilotIntegrationId }}
 
       - job: MergeLinuxPackages
         pool:
@@ -247,13 +241,25 @@ stages:
                 Write-Host "Package version is not valid: $(CLI_VERSION). `$submitPackage is set to false."
               }
 
+              $submitBrewFormula = $submitPackage
+
+              $BuildReason = "$(Build.Reason)"
+              if ($env:BUILDREASONOVERRIDE) {
+                $BuildReason = "$(BUILDREASONOVERRIDE)"
+              }
+
+              if (@('IndividualCI', 'BatchedCI') -contains $BuildReason) {
+                Write-Host "CI build detected. Overriding `$submitBrewFormula to true for CI release."
+                $submitBrewFormula = $true
+              }
+
               $releaseMetadata = @{
                 cliVersion = $cliVersion;
                 msiVersion = "$(MSI_VERSION)";
                 isPublishingGa = $submitPackage;
                 submitChocoPackage = $submitPackage;
                 submitWingetPackage = $submitPackage;
-                submitBrewFormula = $submitPackage;
+                submitBrewFormula = $submitBrewFormula;
               }
 
               Set-Content -Path release-metadata/metadata.json -Value ($releaseMetadata | ConvertTo-Json -Depth 100)

@@ -13,11 +13,11 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
 
 	osexec "os/exec"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
@@ -30,8 +30,7 @@ type Cli struct {
 
 	// Lazily initialized. Access through mvnCmd.
 	mvnCmdStr  string
-	mvnCmdOnce sync.Once
-	mvnCmdErr  error
+	mvnCmdInit osutil.LazyRetryInit
 }
 
 func (m *Cli) Name() string {
@@ -61,17 +60,17 @@ func (m *Cli) SetPath(projectPath string, rootProjectPath string) {
 }
 
 func (m *Cli) mvnCmd() (string, error) {
-	m.mvnCmdOnce.Do(func() {
+	err := m.mvnCmdInit.Do(func() error {
 		mvnCmd, err := getMavenPath(m.projectPath, m.rootProjectPath)
 		if err != nil {
-			m.mvnCmdErr = err
-		} else {
-			m.mvnCmdStr = mvnCmd
+			return err
 		}
-	})
 
-	if m.mvnCmdErr != nil {
-		return "", m.mvnCmdErr
+		m.mvnCmdStr = mvnCmd
+		return nil
+	})
+	if err != nil {
+		return "", err
 	}
 
 	return m.mvnCmdStr, nil

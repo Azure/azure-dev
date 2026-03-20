@@ -92,7 +92,7 @@ func (kvs *keyVaultService) CreateKeyVaultSecret(
 		return err
 	}
 	_, err = client.SetSecret(ctx, secretName, azsecrets.SetSecretParameters{
-		Value: to.Ptr(secretValue),
+		Value: new(secretValue),
 	}, nil)
 	return err
 }
@@ -155,8 +155,7 @@ func (kvs *keyVaultService) GetKeyVaultSecret(
 
 	response, err := client.GetSecret(ctx, secretName, "", nil)
 	if err != nil {
-		var httpErr *azcore.ResponseError
-		if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
+		if httpErr, ok := errors.AsType[*azcore.ResponseError](err); ok && httpErr.StatusCode == http.StatusNotFound {
 			return nil, ErrAzCliSecretNotFound
 		}
 		return nil, fmt.Errorf("getting key vault secret: %w", err)
@@ -203,8 +202,7 @@ func (kvs *keyVaultService) PurgeKeyVault(
 
 	poller, err := client.BeginPurgeDeleted(ctx, vaultName, location, nil)
 	if err != nil {
-		var httpErr *azcore.ResponseError
-		if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
+		if httpErr, ok := errors.AsType[*azcore.ResponseError](err); ok && httpErr.StatusCode == http.StatusNotFound {
 			// no need to purge if the vault is already deleted (not found)
 			log.Printf("key vault '%s' was not found. No need to purge.", vaultName)
 			return nil
@@ -307,14 +305,14 @@ func (kvs *keyVaultService) CreateVault(
 		resourceGroupName,
 		vaultName,
 		armkeyvault.VaultCreateOrUpdateParameters{
-			Location: to.Ptr(location),
+			Location: new(location),
 			Properties: &armkeyvault.VaultProperties{
 				SKU: &armkeyvault.SKU{
 					Family: to.Ptr(armkeyvault.SKUFamilyA),
 					Name:   to.Ptr(armkeyvault.SKUNameStandard),
 				},
-				TenantID:                to.Ptr(tenantId),
-				EnableRbacAuthorization: to.Ptr(true),
+				TenantID:                new(tenantId),
+				EnableRbacAuthorization: new(true),
 			},
 		},
 		nil)

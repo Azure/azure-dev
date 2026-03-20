@@ -1016,7 +1016,7 @@ func resetContext(tempDir string, ctx context.Context) *mocks.MockContext {
 	return newMockContext
 }
 
-func createYamlFiles(t *testing.T, tempDir string, createOptionsAndFileIndex ...interface{}) {
+func createYamlFiles(t *testing.T, tempDir string, createOptionsAndFileIndex ...any) {
 	shouldCreateGitHub := true
 	shouldCreateAzdo := true
 	fileIndex := 0

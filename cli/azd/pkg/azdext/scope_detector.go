@@ -5,6 +5,7 @@ package azdext
 
 import (
 	"errors"
+	"maps"
 	"net/url"
 	"slices"
 	"strings"
@@ -113,11 +114,7 @@ func NewScopeDetector(opts *ScopeDetectorOptions) *ScopeDetector {
 
 	if opts != nil {
 		// Sort keys for deterministic rule evaluation order.
-		keys := make([]string, 0, len(opts.CustomRules))
-		for k := range opts.CustomRules {
-			keys = append(keys, k)
-		}
-		slices.Sort(keys)
+		keys := slices.Sorted(maps.Keys(opts.CustomRules))
 
 		for _, hostSuffix := range keys {
 			if hostSuffix == "" {

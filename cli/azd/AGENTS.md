@@ -1,5 +1,7 @@
 # Azure Developer CLI (azd) - Agent Instructions
 
+<!-- cspell:ignore Errorf Chdir azapi gofmt golangci stdlib -->
+
 Instructions for AI coding agents working with the Azure Developer CLI.
 
 ## Overview
@@ -73,6 +75,7 @@ When writing tests, prefer table-driven tests. Use testify/mock for mocking.
 
 ```bash
 gofmt -s -w .
+go fix ./...
 golangci-lint run ./...
 cspell lint "**/*.go" --relative --config ./.vscode/cspell.yaml --no-progress
 ../../eng/scripts/copyright-check.sh . --fix
@@ -80,7 +83,31 @@ cspell lint "**/*.go" --relative --config ./.vscode/cspell.yaml --no-progress
 
 - **Line length**: 125 chars max for Go (enforced by `lll` linter); no limit for Markdown
 - **Spelling**: Add technical terms to `cli/azd/.vscode/cspell.yaml` overrides
+  - Use file-scoped `overrides` entries (not the global `words` list) for terms specific to one file
 - **Copyright**: All Go files need the Microsoft header (handled by copyright-check.sh)
+- **Code modernization**: `go fix ./...` applies automatic modernizations (e.g. `interface{}` → `any`,
+  loop simplifications, use of `slices`/`maps` packages). CI enforces this check.
+
+### Linting Details
+
+The project uses `golangci-lint` with these key linters enabled (see `.golangci.yaml`):
+- **`lll`** — max line length 125 characters (tab width 4). Break long lines with continuation.
+- **`gofmt`** — standard Go formatting
+- **`gosec`** — security checks
+- **`errorlint`** — correct `errors.Is`/`errors.As`/`errors.AsType` usage
+- **`unused`** — detect unused code
+- **`staticcheck`** — comprehensive static analysis
+
+Common line-length issues and fixes:
+```go
+// BAD: 135 chars — too long for lll
+if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok && respErr.StatusCode == 404 { // already deleted
+
+// GOOD: break the condition across lines
+// Resource group is already deleted
+if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
+    respErr.StatusCode == 404 {
+```
 
 ### Avoiding Unrelated go.mod/go.sum Changes
 
@@ -154,6 +181,20 @@ This project uses Go 1.26. Use modern standard library features:
 - **Iterators**: Use `range` over functions/iterators (e.g., `maps.Keys()`, `slices.All()`)
 - **Built-ins**: Use `min()`, `max()`, `clear()` directly
 - **Range over integers**: `for i := range 10 { }`
+
+### Modern Go Patterns (Go 1.26+)
+
+- Use `errors.AsType[*MyError](err)` instead of `var e *MyError; errors.As(err, &e)`
+- Use `slices.SortFunc(items, func(a, b T) int { return cmp.Compare(a.Name, b.Name) })` instead of `sort.Slice`
+- Use `slices.Clone(s)` instead of `append([]T{}, s...)`
+- Use `slices.Sorted(maps.Keys(m))` instead of collecting keys and sorting them separately
+- Use `http.NewRequestWithContext(ctx, method, url, body)` instead of `http.NewRequest(...)`
+- Use `new(expr)` instead of `to.Ptr(expr)`; `go fix ./...` applies this automatically
+- Use `wg.Go(func() { ... })` instead of `wg.Add(1); go func() { defer wg.Done(); ... }()`
+- Use `for i := range n` instead of `for i := 0; i < n; i++` for simple counted loops
+- Use `t.Context()` instead of `context.Background()` in tests
+- Use `t.Chdir(dir)` instead of `os.Chdir` plus a deferred restore in tests
+- Run `go fix ./...` before committing; CI enforces these modernizations
 
 ## MCP Tools
 

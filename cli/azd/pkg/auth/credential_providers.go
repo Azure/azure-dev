@@ -5,9 +5,9 @@ package auth
 
 import (
 	"context"
-	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/azure/azure-dev/cli/azd/pkg/syncmap"
 )
 
 // MultiTenantCredentialProvider provides token credentials for different tenants.
@@ -24,7 +24,7 @@ type multiTenantCredentialProvider struct {
 	// In-memory store for tenant credentials. Since azcore.TokenCredential is usually backed by a publicClient
 	// that holds an in-memory cache, we need to hold on to azcore.TokenCredential instances to maintain that cache.
 	// It also allows us to call EnsureLoggedInCredential once.
-	tenantCredentials sync.Map
+	tenantCredentials syncmap.Map[string, azcore.TokenCredential]
 }
 
 func NewMultiTenantCredentialProvider(auth *Manager) MultiTenantCredentialProvider {
@@ -37,7 +37,7 @@ func NewMultiTenantCredentialProvider(auth *Manager) MultiTenantCredentialProvid
 func (t *multiTenantCredentialProvider) GetTokenCredential(
 	ctx context.Context, tenantId string) (azcore.TokenCredential, error) {
 	if val, ok := t.tenantCredentials.Load(tenantId); ok {
-		return val.(azcore.TokenCredential), nil
+		return val, nil
 	}
 
 	credential, err := t.auth.CredentialForCurrentUser(ctx, &CredentialForCurrentUserOptions{

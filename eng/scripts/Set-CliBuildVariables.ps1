@@ -24,13 +24,5 @@
  }
 
 
-# AZURE_RECORD_MODE is used for running tests in a specific recording mode.
-if (-not $env:AZURE_RECORD_MODE) {
-    $recordMode = "playback"
-
-    if ($BuildReason -eq "PullRequest") {
-        $recordMode = "playback"
-    }
-
-    Set-BuildVariable -Key "AZURE_RECORD_MODE" -Value $recordMode
-}
+# AZURE_RECORD_MODE is controlled by the AzureRecordMode pipeline parameter
+# defined in release-cli.yml and passed through build-and-test.yml → build-cli.yml.

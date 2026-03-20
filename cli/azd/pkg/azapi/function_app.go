@@ -9,7 +9,6 @@ import (
 	"io"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 )
@@ -97,7 +96,7 @@ func (cli *AzureClient) DeployFunctionAppUsingZipFileFlexConsumption(
 	if err != nil {
 		return nil, fmt.Errorf("publishing zip file: %w", err)
 	}
-	return to.Ptr(response.StatusText), nil
+	return &response.StatusText, nil
 }
 
 // DeployFunctionAppUsingZipFileRegular deploys to a regular (non-Flex Consumption) function app
@@ -124,7 +123,7 @@ func (cli *AzureClient) DeployFunctionAppUsingZipFileRegular(
 		return nil, err
 	}
 
-	return to.Ptr(response.StatusText), nil
+	return &response.StatusText, nil
 }
 
 // functionAppRepositoryHost finds the SCM host name from function app properties.

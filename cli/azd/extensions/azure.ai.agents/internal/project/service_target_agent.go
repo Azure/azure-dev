@@ -452,7 +452,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 		)
 	}
 
-	var genericTemplate map[string]interface{}
+	var genericTemplate map[string]any
 	if err := yaml.Unmarshal(data, &genericTemplate); err != nil {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
@@ -512,7 +512,7 @@ func (p *AgentServiceTargetProvider) isContainerAgent() bool {
 		return false
 	}
 
-	var genericTemplate map[string]interface{}
+	var genericTemplate map[string]any
 	if err := yaml.Unmarshal(data, &genericTemplate); err != nil {
 		return false
 	}
@@ -687,11 +687,13 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		return nil, err
 	}
 
-	// Step 5: Start agent container
-	progress("Starting agent container")
-	err = p.startAgentContainer(ctx, foundryAgentConfig, agentVersionResponse, azdEnv)
-	if err != nil {
-		return nil, err
+	// Step 5: Start agent container (skip in vnext — the platform manages the container lifecycle)
+	if !isVnextEnabled(azdEnv) {
+		progress("Starting agent container")
+		err = p.startAgentContainer(ctx, foundryAgentConfig, agentVersionResponse, azdEnv)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Register agent info in environment

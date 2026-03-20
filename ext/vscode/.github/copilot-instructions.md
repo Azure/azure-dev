@@ -1,5 +1,7 @@
 # Azure Developer CLI VS Code Extension - Copilot Instructions
 
+<!-- cspell:ignore Chdir azext azureresources -->
+
 ## Project Overview
 This is the official Visual Studio Code extension for the Azure Developer CLI (azd). It provides an integrated development experience for building, deploying, and managing Azure applications.
 
@@ -66,6 +68,29 @@ All TypeScript source files MUST include the Microsoft copyright header at the v
 - Leverage VS Code API types from `vscode` module
 - Use `async/await` for asynchronous operations
 - Handle errors gracefully with try/catch blocks
+
+### Modern Go Patterns (Go 1.26+)
+When working in Go code under `cli/azd/`, prefer these patterns:
+
+- Use `errors.AsType[*MyError](err)` instead of `var e *MyError; errors.As(err, &e)`
+- Use `slices.SortFunc(items, func(a, b T) int { return cmp.Compare(a.Name, b.Name) })` instead of `sort.Slice`
+- Use `slices.Clone(s)` instead of `append([]T{}, s...)`
+- Use `slices.Sorted(maps.Keys(m))` instead of collecting keys and sorting them separately
+- Use `http.NewRequestWithContext(ctx, method, url, body)` instead of `http.NewRequest(...)`
+- Use `new(expr)` instead of `to.Ptr(expr)`; `go fix ./...` applies this automatically
+- Use `wg.Go(func() { ... })` instead of `wg.Add(1); go func() { defer wg.Done(); ... }()`
+- Use `for i := range n` instead of `for i := 0; i < n; i++` for simple counted loops
+- Use `t.Context()` instead of `context.Background()` in tests
+- Use `t.Chdir(dir)` instead of `os.Chdir` plus a deferred restore in tests
+- Run `go fix ./...` before committing; CI enforces these modernizations
+
+### Go Linting Rules
+When writing Go code under `cli/azd/`:
+
+- **Max line length is 125 characters** (enforced by `lll` linter, tab width 4)
+- Break long `if` conditions across lines using `&&` or `||` at line end
+- Add cspell overrides to `cli/azd/.vscode/cspell.yaml` using file-scoped `overrides` entries
+- Run `golangci-lint run ./...` before committing
 
 ### Azure YAML Language Features
 When working on `azure.yaml` language support in `src/language/`:

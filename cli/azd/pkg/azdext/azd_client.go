@@ -5,10 +5,12 @@ package azdext
 
 import (
 	"context"
+	"net"
 	"os"
 	"strings"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 )
@@ -31,12 +33,22 @@ type AzdClient struct {
 	containerClient     ContainerServiceClient
 	accountClient       AccountServiceClient
 	aiClient            AiModelServiceClient
+	copilotClient       CopilotServiceClient
 }
 
 // WithAddress sets the address of the `azd` gRPC server.
 func WithAddress(address string) AzdClientOption {
 	return func(c *AzdClient) error {
-		connection, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		var opts []grpc.DialOption
+
+		if isLocalhostAddress(address) {
+			opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		} else {
+			// For non-localhost connections, require TLS to prevent MITM attacks
+			opts = append(opts, grpc.WithTransportCredentials(credentials.NewTLS(nil)))
+		}
+
+		connection, err := grpc.NewClient(address, opts...)
 		if err != nil {
 			return err
 		}
@@ -44,6 +56,27 @@ func WithAddress(address string) AzdClientOption {
 		c.connection = connection
 		return nil
 	}
+}
+
+// isLocalhostAddress checks if the given address refers to the local machine.
+// It parses host:port format and checks against known localhost identifiers.
+func isLocalhostAddress(address string) bool {
+	host := address
+	// Strip port if present
+	if h, _, err := net.SplitHostPort(address); err == nil {
+		host = h
+	}
+
+	host = strings.TrimSpace(strings.ToLower(host))
+
+	switch host {
+	case "localhost", "127.0.0.1", "::1", "[::1]":
+		return true
+	}
+
+	// Check if it's a loopback IP
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // WithAccessToken sets the access token for the `azd` client into a new Go context.
@@ -198,4 +231,13 @@ func (c *AzdClient) Ai() AiModelServiceClient {
 	}
 
 	return c.aiClient
+}
+
+// Copilot returns the Copilot agent service client.
+func (c *AzdClient) Copilot() CopilotServiceClient {
+	if c.copilotClient == nil {
+		c.copilotClient = NewCopilotServiceClient(c.connection)
+	}
+
+	return c.copilotClient
 }

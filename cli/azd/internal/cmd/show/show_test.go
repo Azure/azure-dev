@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
@@ -63,25 +62,25 @@ func newJobResourceID(jobName string) *arm.ResourceID {
 func Test_showContainerAppJob_SingleContainer(t *testing.T) {
 	jobName := "my-job"
 	job := &armappcontainers.Job{
-		Name: to.Ptr(jobName),
+		Name: new(jobName),
 		Properties: &armappcontainers.JobProperties{
 			Template: &armappcontainers.JobTemplate{
 				Containers: []*armappcontainers.Container{
 					{
-						Name:  to.Ptr(jobName),
-						Image: to.Ptr("myregistry.azurecr.io/myimage:latest"),
+						Name:  new(jobName),
+						Image: new("myregistry.azurecr.io/myimage:latest"),
 						Env: []*armappcontainers.EnvironmentVar{
 							{
-								Name:  to.Ptr("APP_ENV"),
-								Value: to.Ptr("production"),
+								Name:  new("APP_ENV"),
+								Value: new("production"),
 							},
 							{
-								Name:  to.Ptr("APP_PORT"),
-								Value: to.Ptr("8080"),
+								Name:  new("APP_PORT"),
+								Value: new("8080"),
 							},
 							{
-								Name:      to.Ptr("DB_PASSWORD"),
-								SecretRef: to.Ptr("db-password-secret"),
+								Name:      new("DB_PASSWORD"),
+								SecretRef: new("db-password-secret"),
 							},
 						},
 					},
@@ -114,7 +113,7 @@ func Test_showContainerAppJob_SingleContainer(t *testing.T) {
 func Test_showContainerAppJob_NilProperties(t *testing.T) {
 	jobName := "nil-props-job"
 	job := &armappcontainers.Job{
-		Name:       to.Ptr(jobName),
+		Name:       new(jobName),
 		Properties: nil,
 	}
 
@@ -139,27 +138,27 @@ func Test_showContainerAppJob_NilProperties(t *testing.T) {
 func Test_showContainerAppJob_MultiContainer_MatchByName(t *testing.T) {
 	jobName := "multi-job"
 	job := &armappcontainers.Job{
-		Name: to.Ptr(jobName),
+		Name: new(jobName),
 		Properties: &armappcontainers.JobProperties{
 			Template: &armappcontainers.JobTemplate{
 				Containers: []*armappcontainers.Container{
 					{
-						Name:  to.Ptr("sidecar"),
-						Image: to.Ptr("sidecar:latest"),
+						Name:  new("sidecar"),
+						Image: new("sidecar:latest"),
 						Env: []*armappcontainers.EnvironmentVar{
 							{
-								Name:  to.Ptr("SIDECAR_VAR"),
-								Value: to.Ptr("sidecar-value"),
+								Name:  new("SIDECAR_VAR"),
+								Value: new("sidecar-value"),
 							},
 						},
 					},
 					{
-						Name:  to.Ptr(jobName),
-						Image: to.Ptr("main-app:latest"),
+						Name:  new(jobName),
+						Image: new("main-app:latest"),
 						Env: []*armappcontainers.EnvironmentVar{
 							{
-								Name:  to.Ptr("MAIN_VAR"),
-								Value: to.Ptr("main-value"),
+								Name:  new("MAIN_VAR"),
+								Value: new("main-value"),
 							},
 						},
 					},
@@ -190,17 +189,17 @@ func Test_showContainerAppJob_MultiContainer_MatchByName(t *testing.T) {
 func Test_showContainerAppJob_MultiContainer_NoMatch(t *testing.T) {
 	jobName := "no-match-job"
 	job := &armappcontainers.Job{
-		Name: to.Ptr(jobName),
+		Name: new(jobName),
 		Properties: &armappcontainers.JobProperties{
 			Template: &armappcontainers.JobTemplate{
 				Containers: []*armappcontainers.Container{
 					{
-						Name:  to.Ptr("worker-a"),
-						Image: to.Ptr("worker-a:latest"),
+						Name:  new("worker-a"),
+						Image: new("worker-a:latest"),
 					},
 					{
-						Name:  to.Ptr("worker-b"),
-						Image: to.Ptr("worker-b:latest"),
+						Name:  new("worker-b"),
+						Image: new("worker-b:latest"),
 					},
 				},
 			},
@@ -227,18 +226,18 @@ func Test_showContainerAppJob_MultiContainer_NoMatch(t *testing.T) {
 func Test_showContainerAppJob_NilContainerElement(t *testing.T) {
 	jobName := "nil-elem-job"
 	job := &armappcontainers.Job{
-		Name: to.Ptr(jobName),
+		Name: new(jobName),
 		Properties: &armappcontainers.JobProperties{
 			Template: &armappcontainers.JobTemplate{
 				Containers: []*armappcontainers.Container{
 					nil,
 					{
-						Name:  to.Ptr(jobName),
-						Image: to.Ptr("app:latest"),
+						Name:  new(jobName),
+						Image: new("app:latest"),
 						Env: []*armappcontainers.EnvironmentVar{
 							{
-								Name:  to.Ptr("FOUND"),
-								Value: to.Ptr("yes"),
+								Name:  new("FOUND"),
+								Value: new("yes"),
 							},
 						},
 					},
@@ -266,7 +265,7 @@ func Test_showContainerAppJob_NilContainerElement(t *testing.T) {
 func Test_showContainerAppJob_SingleNilContainer(t *testing.T) {
 	jobName := "single-nil-job"
 	job := &armappcontainers.Job{
-		Name: to.Ptr(jobName),
+		Name: new(jobName),
 		Properties: &armappcontainers.JobProperties{
 			Template: &armappcontainers.JobTemplate{
 				Containers: []*armappcontainers.Container{

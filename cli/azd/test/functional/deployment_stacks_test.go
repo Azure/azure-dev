@@ -13,7 +13,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/azure/azure-dev/cli/azd/test/recording"
@@ -113,10 +112,10 @@ func Test_DeploymentStacks(t *testing.T) {
 		require.NoError(t, err)
 
 		_, err = rgClient.CreateOrUpdate(context.Background(), resourceGroupName, armresources.ResourceGroup{
-			Name:     to.Ptr(resourceGroupName),
+			Name:     new(resourceGroupName),
 			Location: &location,
 			Tags: map[string]*string{
-				"DeleteAfter": to.Ptr(time.Now().Add(60 * time.Minute).UTC().Format(time.RFC3339)),
+				"DeleteAfter": new(time.Now().Add(60 * time.Minute).UTC().Format(time.RFC3339)),
 			},
 		}, nil)
 

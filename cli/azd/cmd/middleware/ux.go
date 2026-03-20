@@ -45,16 +45,10 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 	m.console.StopSpinner(ctx, "", input.Step)
 
 	if err != nil {
-		var suggestionErr *internal.ErrorWithSuggestion
-		var errorWithTraceId *internal.ErrorWithTraceId
-
-		// For specific errors, we silent the output display here and let the caller handle it
-		var unsupportedErr *project.UnsupportedServiceHostError
-
 		// Use ErrorWithSuggestion for errors with suggestions (better UX).
 		// This catches errors wrapped by the error pipeline's YAML rules
 		// or other host code that already created an ErrorWithSuggestion.
-		if errors.As(err, &suggestionErr) {
+		if suggestionErr, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok {
 			displayErr := &ux.ErrorWithSuggestion{
 				Err:        suggestionErr.Err,
 				Message:    suggestionErr.Message,
@@ -83,8 +77,7 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 		}
 
 		// ExtensionRunError without suggestion
-		var extensionRunErr *extensions.ExtensionRunError
-		if errors.As(err, &extensionRunErr) {
+		if _, ok := errors.AsType[*extensions.ExtensionRunError](err); ok {
 			if message := azdext.ErrorMessage(err); message != "" {
 				m.console.Message(ctx, output.WithErrorFormat("\nERROR: %s", message))
 			}
@@ -95,13 +88,13 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 		errorMessage := &strings.Builder{}
 		errorMessage.WriteString(output.WithErrorFormat("\nERROR: %s", err.Error()))
 
-		if errors.As(err, &errorWithTraceId) {
+		if errorWithTraceId, ok := errors.AsType[*internal.ErrorWithTraceId](err); ok {
 			errorMessage.WriteString(output.WithErrorFormat("\nTraceID: %s", errorWithTraceId.TraceId))
 		}
 
 		errMessage := errorMessage.String()
 
-		if errors.As(err, &unsupportedErr) {
+		if unsupportedErr, ok := errors.AsType[*project.UnsupportedServiceHostError](err); ok {
 			// set the error message so the caller can use it if needed
 			unsupportedErr.ErrorMessage = errMessage
 			return actionResult, err
@@ -110,8 +103,10 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 		m.console.Message(ctx, errMessage)
 
 		// Print out additional text for errors that have it.
-		var uxItemErr ux.UxItem
-		if errors.As(err, &uxItemErr) {
+		if uxItemErr, ok := errors.AsType[interface {
+			error
+			ux.UxItem
+		}](err); ok {
 			m.console.Message(ctx, "")
 			m.console.MessageUxItem(ctx, uxItemErr)
 			return actionResult, err

@@ -285,8 +285,7 @@ func (rm *AzureResourceManager) FindResourceGroupForEnvironment(
 ) (string, error) {
 	// Let's first try to find the resource group by environment name tag (azd-env-name)
 	rgs, err := rm.GetResourceGroupsForEnvironment(ctx, subscriptionId, envName)
-	var notFoundError *azureutil.ResourceNotFoundError
-	if err != nil && !errors.As(err, &notFoundError) {
+	if _, ok := errors.AsType[*azureutil.ResourceNotFoundError](err); err != nil && !ok {
 		return "", fmt.Errorf("getting resource group for environment: %s: %w", envName, err)
 	}
 	// Several Azure resources can create managed resource groups automatically. Here are a few examples:

@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -42,6 +43,7 @@ type Server struct {
 	containerService     azdext.ContainerServiceServer
 	accountService       azdext.AccountServiceServer
 	aiModelService       azdext.AiModelServiceServer
+	copilotService       azdext.CopilotServiceServer
 }
 
 func NewServer(
@@ -59,6 +61,7 @@ func NewServer(
 	containerService azdext.ContainerServiceServer,
 	accountService azdext.AccountServiceServer,
 	aiModelService azdext.AiModelServiceServer,
+	copilotService azdext.CopilotServiceServer,
 ) *Server {
 	return &Server{
 		projectService:       projectService,
@@ -75,6 +78,7 @@ func NewServer(
 		containerService:     containerService,
 		accountService:       accountService,
 		aiModelService:       aiModelService,
+		copilotService:       copilotService,
 	}
 }
 
@@ -90,6 +94,10 @@ func (s *Server) Start() (*ServerInfo, error) {
 		grpc.ChainUnaryInterceptor(
 			s.errorWrappingInterceptor(),
 			s.tokenAuthInterceptor(&serverInfo),
+		),
+		grpc.ChainStreamInterceptor(
+			s.errorWrappingStreamInterceptor(),
+			s.tokenAuthStreamInterceptor(&serverInfo),
 		),
 	)
 
@@ -117,6 +125,7 @@ func (s *Server) Start() (*ServerInfo, error) {
 	azdext.RegisterContainerServiceServer(s.grpcServer, s.containerService)
 	azdext.RegisterAccountServiceServer(s.grpcServer, s.accountService)
 	azdext.RegisterAiModelServiceServer(s.grpcServer, s.aiModelService)
+	azdext.RegisterCopilotServiceServer(s.grpcServer, s.copilotService)
 
 	serverInfo.Address = fmt.Sprintf("localhost:%d", randomPort)
 	serverInfo.Port = randomPort
@@ -155,10 +164,10 @@ func (s *Server) Stop() error {
 func (s *Server) errorWrappingInterceptor() grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
-		req interface{},
+		req any,
 		info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler,
-	) (interface{}, error) {
+	) (any, error) {
 		resp, err := handler(ctx, req)
 		if err != nil {
 			err = wrapErrorWithSuggestion(err)
@@ -167,32 +176,95 @@ func (s *Server) errorWrappingInterceptor() grpc.UnaryServerInterceptor {
 	}
 }
 
+// errorWrappingStreamInterceptor is the streaming counterpart of errorWrappingInterceptor.
+// It wraps ErrorWithSuggestion errors from stream handlers so that actionable suggestions
+// are preserved in gRPC stream error responses.
+func (s *Server) errorWrappingStreamInterceptor() grpc.StreamServerInterceptor {
+	return func(
+		srv any,
+		ss grpc.ServerStream,
+		info *grpc.StreamServerInfo,
+		handler grpc.StreamHandler,
+	) error {
+		err := handler(srv, ss)
+		if err != nil {
+			err = wrapErrorWithSuggestion(err)
+		}
+		return err
+	}
+}
+
+// validateAuthToken extracts and validates the authorization token from gRPC metadata,
+// returning a new context with validated claims attached. This shared helper ensures
+// both unary and stream RPCs enforce the same token validation.
+func (s *Server) validateAuthToken(ctx context.Context, serverInfo *ServerInfo) (context.Context, error) {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return ctx, status.Error(codes.Unauthenticated, "metadata missing")
+	}
+
+	// Extract the authorization token from metadata
+	token := md["authorization"]
+	if len(token) == 0 {
+		return ctx, status.Error(codes.Unauthenticated, "invalid token")
+	}
+
+	claims, err := ParseExtensionToken(token[0], serverInfo)
+	if err != nil {
+		return ctx, status.Error(codes.Unauthenticated, "invalid token")
+	}
+
+	// Store validated claims in context for downstream handlers
+	return extensions.WithClaimsContext(ctx, claims), nil
+}
+
 func (s *Server) tokenAuthInterceptor(serverInfo *ServerInfo) grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
-		req interface{},
+		req any,
 		info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler,
-	) (interface{}, error) {
-		md, ok := metadata.FromIncomingContext(ctx)
-		if !ok {
-			return nil, status.Error(codes.Unauthenticated, "metadata missing")
-		}
-
-		// Extract the authorization token from metadata
-		token := md["authorization"]
-		if len(token) == 0 {
-			return nil, status.Error(codes.Unauthenticated, "invalid token")
-		}
-
-		_, err := ParseExtensionToken(token[0], serverInfo)
+	) (any, error) {
+		ctx, err := s.validateAuthToken(ctx, serverInfo)
 		if err != nil {
-			return nil, status.Error(codes.Unauthenticated, "invalid token")
+			return nil, err
 		}
 
-		// Proceed to the handler
+		// Proceed to the handler with enriched context
 		return handler(ctx, req)
 	}
+}
+
+func (s *Server) tokenAuthStreamInterceptor(serverInfo *ServerInfo) grpc.StreamServerInterceptor {
+	return func(
+		srv any,
+		ss grpc.ServerStream,
+		info *grpc.StreamServerInfo,
+		handler grpc.StreamHandler,
+	) error {
+		ctx, err := s.validateAuthToken(ss.Context(), serverInfo)
+		if err != nil {
+			return err
+		}
+
+		// Wrap the stream to inject validated claims into its context
+		wrappedStream := &authenticatedStream{
+			ServerStream: ss,
+			ctx:          ctx,
+		}
+
+		return handler(srv, wrappedStream)
+	}
+}
+
+// authenticatedStream wraps a grpc.ServerStream to provide a context with validated claims.
+type authenticatedStream struct {
+	grpc.ServerStream
+	ctx context.Context
+}
+
+func (s *authenticatedStream) Context() context.Context {
+	return s.ctx
 }
 
 // wrapErrorWithSuggestion checks if the error contains an ErrorWithSuggestion and if so,
@@ -207,11 +279,10 @@ func wrapErrorWithSuggestion(err error) error {
 		return nil
 	}
 
-	var loginErr *auth.ReLoginRequiredError
-	isAuthErr := errors.Is(err, auth.ErrNoCurrentUser) || errors.As(err, &loginErr)
+	_, loginErr := errors.AsType[*auth.ReLoginRequiredError](err)
+	isAuthErr := errors.Is(err, auth.ErrNoCurrentUser) || loginErr
 
-	var suggestionErr *internal.ErrorWithSuggestion
-	if errors.As(err, &suggestionErr) {
+	if suggestionErr, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok {
 		msg := fmt.Sprintf("%s\n%s", err.Error(), suggestionErr.Suggestion)
 		if isAuthErr {
 			return status.Error(codes.Unauthenticated, msg)
@@ -227,7 +298,7 @@ func wrapErrorWithSuggestion(err error) error {
 }
 
 func generateSigningKey() ([]byte, error) {
-	bytes := make([]byte, 16) // 128-bit token
+	bytes := make([]byte, 32) // 256-bit HMAC signing key
 	if _, err := rand.Read(bytes); err != nil {
 		return nil, err
 	}

@@ -54,8 +54,7 @@ func EnsureInstalled(ctx context.Context, tools ...ExternalTool) error {
 		}
 
 		err := tool.CheckInstalled(ctx)
-		var errSem *ErrSemver
-		if errors.As(err, &errSem) {
+		if _, ok := errors.AsType[*ErrSemver](err); ok {
 			errorMsg := err.Error()
 			if _, hasV := errorsEncountered[errorMsg]; !hasV {
 				allErrors = append(allErrors, err)

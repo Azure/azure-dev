@@ -5,6 +5,7 @@ package openai
 
 import (
 	"encoding/json"
+	"maps"
 	"strings"
 	"time"
 
@@ -64,10 +65,10 @@ func convertOpenAIJobToModel(openaiJob openai.FineTuningJob) *models.FineTuningJ
 // convertOpenAIJobToDetailModel converts OpenAI SDK job to detailed domain model
 func convertOpenAIJobToDetailModel(openaiJob *openai.FineTuningJob) *models.FineTuningJobDetail {
 	// Extract extra fields from the API response
-	extraFields := make(map[string]interface{})
+	extraFields := make(map[string]any)
 	for key, field := range openaiJob.JSON.ExtraFields {
 		// Parse the raw JSON value
-		var value interface{}
+		var value any
 		if err := json.Unmarshal([]byte(field.Raw()), &value); err == nil {
 			extraFields[key] = value
 		} else {
@@ -197,7 +198,7 @@ func convertOpenAIJobCheckpointsToModel(checkpointsPage *pagination.CursorPage[o
 }
 
 // Converts the internal create finetuning request model to OpenAI job parameters
-func convertInternalJobParamToOpenAiJobParams(config *models.CreateFineTuningRequest) (*openai.FineTuningJobNewParams, map[string]interface{}, error) {
+func convertInternalJobParamToOpenAiJobParams(config *models.CreateFineTuningRequest) (*openai.FineTuningJobNewParams, map[string]any, error) {
 	jobParams := openai.FineTuningJobNewParams{
 		Model:        openai.FineTuningJobNewParamsModel(config.BaseModel),
 		TrainingFile: config.TrainingFile,
@@ -219,9 +220,7 @@ func convertInternalJobParamToOpenAiJobParams(config *models.CreateFineTuningReq
 	// Set metadata if provided
 	if len(config.Metadata) > 0 {
 		jobParams.Metadata = make(map[string]string)
-		for k, v := range config.Metadata {
-			jobParams.Metadata[k] = v
-		}
+		maps.Copy(jobParams.Metadata, config.Metadata)
 	}
 
 	// Set hyperparameters if provided
@@ -370,7 +369,7 @@ func convertInternalJobParamToOpenAiJobParams(config *models.CreateFineTuningReq
 				multiGraderData := buildMultiGraderData(grader)
 				if multiGraderData != nil {
 					if config.ExtraBody == nil {
-						config.ExtraBody = make(map[string]interface{})
+						config.ExtraBody = make(map[string]any)
 					}
 					// Use dot-path key so WithJSONSet merges ONLY the grader field
 					// This preserves method.type, hyperparameters, and any existing extra_body fields
@@ -422,7 +421,7 @@ func convertInternalJobParamToOpenAiJobParams(config *models.CreateFineTuningReq
 }
 
 // convertHyperparameterToInt converts interface{} hyperparameter to *int64
-func convertHyperparameterToInt(value interface{}) *int64 {
+func convertHyperparameterToInt(value any) *int64 {
 	if value == nil {
 		return nil
 	}
@@ -444,7 +443,7 @@ func convertHyperparameterToInt(value interface{}) *int64 {
 }
 
 // convertHyperparameterToFloat converts interface{} hyperparameter to *float64
-func convertHyperparameterToFloat(value interface{}) *float64 {
+func convertHyperparameterToFloat(value any) *float64 {
 	if value == nil {
 		return nil
 	}
@@ -481,18 +480,18 @@ func getReasoningEffortValue(effort string) openai.ReinforcementHyperparametersR
 
 // ExtractGraderFromOpenAI extracts grader data from OpenAI SDK response to a clean map
 // This is used when cloning a job to YAML - only extracts relevant fields per grader type
-func ExtractGraderFromOpenAI(grader openai.ReinforcementMethodGraderUnion) map[string]interface{} {
+func ExtractGraderFromOpenAI(grader openai.ReinforcementMethodGraderUnion) map[string]any {
 	if grader.Type == "" {
 		return nil
 	}
 
 	graderType := grader.Type
-	var graderData map[string]interface{}
+	var graderData map[string]any
 
 	switch graderType {
 	case "python":
 		g := grader.AsPythonGrader()
-		graderData = map[string]interface{}{
+		graderData = map[string]any{
 			"type":   graderType,
 			"name":   g.Name,
 			"source": g.Source,
@@ -502,7 +501,7 @@ func ExtractGraderFromOpenAI(grader openai.ReinforcementMethodGraderUnion) map[s
 		}
 	case "string_check":
 		g := grader.AsStringCheckGrader()
-		graderData = map[string]interface{}{
+		graderData = map[string]any{
 			"type":      graderType,
 			"input":     g.Input,
 			"name":      g.Name,
@@ -511,7 +510,7 @@ func ExtractGraderFromOpenAI(grader openai.ReinforcementMethodGraderUnion) map[s
 		}
 	case "text_similarity":
 		g := grader.AsTextSimilarityGrader()
-		graderData = map[string]interface{}{
+		graderData = map[string]any{
 			"type":              graderType,
 			"input":             g.Input,
 			"name":              g.Name,
@@ -520,14 +519,14 @@ func ExtractGraderFromOpenAI(grader openai.ReinforcementMethodGraderUnion) map[s
 		}
 	case "score_model":
 		g := grader.AsScoreModelGrader()
-		graderData = map[string]interface{}{
+		graderData = map[string]any{
 			"type":  graderType,
 			"input": g.Input,
 			"name":  g.Name,
 			"model": g.Model,
 		}
 		// Extract sampling params if present
-		samplingData := map[string]interface{}{}
+		samplingData := map[string]any{}
 		if g.SamplingParams.Temperature != 0 {
 			samplingData["temperature"] = g.SamplingParams.Temperature
 		}
@@ -545,7 +544,7 @@ func ExtractGraderFromOpenAI(grader openai.ReinforcementMethodGraderUnion) map[s
 		}
 	case "multi":
 		g := grader.AsMultiGrader()
-		graderData = map[string]interface{}{
+		graderData = map[string]any{
 			"type":             graderType,
 			"name":             g.Name,
 			"calculate_output": g.CalculateOutput,
@@ -560,7 +559,7 @@ func ExtractGraderFromOpenAI(grader openai.ReinforcementMethodGraderUnion) map[s
 
 // ConvertGraderMapToSDKParam converts a grader map (from YAML or extracted) to OpenAI SDK param type
 // This is the reverse operation - used when creating a job from config
-func ConvertGraderMapToSDKParam(graderMap map[string]interface{}) openai.ReinforcementMethodGraderUnionParam {
+func ConvertGraderMapToSDKParam(graderMap map[string]any) openai.ReinforcementMethodGraderUnionParam {
 	if graderMap == nil {
 		return openai.ReinforcementMethodGraderUnionParam{}
 	}
@@ -603,7 +602,7 @@ func ConvertGraderMapToSDKParam(graderMap map[string]interface{}) openai.Reinfor
 			Model: getString(graderMap, "model"),
 		}
 		// Handle sampling parameters
-		if samplingMap, ok := graderMap["sampling_params"].(map[string]interface{}); ok {
+		if samplingMap, ok := graderMap["sampling_params"].(map[string]any); ok {
 			if temp := getFloat(samplingMap, "temperature"); temp != nil {
 				grader.SamplingParams.Temperature = openai.Opt(*temp)
 			}
@@ -624,7 +623,7 @@ func ConvertGraderMapToSDKParam(graderMap map[string]interface{}) openai.Reinfor
 }
 
 // Helper functions for safe type conversions
-func getString(m map[string]interface{}, key string) string {
+func getString(m map[string]any, key string) string {
 	if v, ok := m[key].(string); ok {
 		return v
 	}
@@ -632,11 +631,11 @@ func getString(m map[string]interface{}, key string) string {
 }
 
 // getScoreModelInput converts input data to ScoreModelGraderInputParam slice
-func getScoreModelInput(m map[string]interface{}, key string) []openai.ScoreModelGraderInputParam {
+func getScoreModelInput(m map[string]any, key string) []openai.ScoreModelGraderInputParam {
 	result := []openai.ScoreModelGraderInputParam{}
-	if v, ok := m[key].([]interface{}); ok {
+	if v, ok := m[key].([]any); ok {
 		for _, item := range v {
-			if itemMap, ok := item.(map[string]interface{}); ok {
+			if itemMap, ok := item.(map[string]any); ok {
 				inputParam := openai.ScoreModelGraderInputParam{
 					Role: getString(itemMap, "role"),
 				}
@@ -655,7 +654,7 @@ func getScoreModelInput(m map[string]interface{}, key string) []openai.ScoreMode
 	return result
 }
 
-func getFloat(m map[string]interface{}, key string) *float64 {
+func getFloat(m map[string]any, key string) *float64 {
 	switch v := m[key].(type) {
 	case float64:
 		return &v
@@ -669,7 +668,7 @@ func getFloat(m map[string]interface{}, key string) *float64 {
 	return nil
 }
 
-func getInt(m map[string]interface{}, key string) *int64 {
+func getInt(m map[string]any, key string) *int64 {
 	switch v := m[key].(type) {
 	case int:
 		i := int64(v)
@@ -685,22 +684,22 @@ func getInt(m map[string]interface{}, key string) *int64 {
 
 // buildMultiGraderData constructs the multi-grader data structure for API submission
 // This is needed because the SDK type definition doesn't match the API spec
-func buildMultiGraderData(graderMap map[string]interface{}) map[string]interface{} {
+func buildMultiGraderData(graderMap map[string]any) map[string]any {
 	if graderMap == nil {
 		return nil
 	}
 
-	result := map[string]interface{}{
+	result := map[string]any{
 		"type":             "multi",
 		"name":             getString(graderMap, "name"),
 		"calculate_output": getString(graderMap, "calculate_output"),
 	}
 
 	// Build the graders map from the input
-	if gradersMap, ok := graderMap["graders"].(map[string]interface{}); ok {
-		graders := make(map[string]interface{})
+	if gradersMap, ok := graderMap["graders"].(map[string]any); ok {
+		graders := make(map[string]any)
 		for key, value := range gradersMap {
-			graderData, ok := value.(map[string]interface{})
+			graderData, ok := value.(map[string]any)
 			if !ok {
 				continue
 			}
@@ -716,12 +715,12 @@ func buildMultiGraderData(graderMap map[string]interface{}) map[string]interface
 
 // buildGraderData constructs a grader data structure from a grader map
 // Supports all grader types that can be sub-graders of multi-grader
-func buildGraderData(graderMap map[string]interface{}) map[string]interface{} {
+func buildGraderData(graderMap map[string]any) map[string]any {
 	graderType, _ := graderMap["type"].(string)
 
 	switch graderType {
 	case "python":
-		grader := map[string]interface{}{
+		grader := map[string]any{
 			"type":   "python",
 			"name":   getString(graderMap, "name"),
 			"source": getString(graderMap, "source"),
@@ -732,7 +731,7 @@ func buildGraderData(graderMap map[string]interface{}) map[string]interface{} {
 		return grader
 
 	case "string_check":
-		return map[string]interface{}{
+		return map[string]any{
 			"type":      "string_check",
 			"name":      getString(graderMap, "name"),
 			"input":     getString(graderMap, "input"),
@@ -741,7 +740,7 @@ func buildGraderData(graderMap map[string]interface{}) map[string]interface{} {
 		}
 
 	case "text_similarity":
-		return map[string]interface{}{
+		return map[string]any{
 			"type":              "text_similarity",
 			"name":              getString(graderMap, "name"),
 			"input":             getString(graderMap, "input"),
@@ -750,35 +749,35 @@ func buildGraderData(graderMap map[string]interface{}) map[string]interface{} {
 		}
 
 	case "score_model":
-		grader := map[string]interface{}{
+		grader := map[string]any{
 			"type":  "score_model",
 			"name":  getString(graderMap, "name"),
 			"model": getString(graderMap, "model"),
 		}
 		// Copy input array if present
-		if input, ok := graderMap["input"].([]interface{}); ok {
+		if input, ok := graderMap["input"].([]any); ok {
 			grader["input"] = input
 		}
 		// Copy sampling params if present
-		if samplingParams, ok := graderMap["sampling_params"].(map[string]interface{}); ok {
+		if samplingParams, ok := graderMap["sampling_params"].(map[string]any); ok {
 			grader["sampling_params"] = samplingParams
 		}
 		return grader
 
 	case "label_model":
-		grader := map[string]interface{}{
+		grader := map[string]any{
 			"type":  "label_model",
 			"name":  getString(graderMap, "name"),
 			"model": getString(graderMap, "model"),
 		}
 		// Copy required fields for label_model
-		if input, ok := graderMap["input"].([]interface{}); ok {
+		if input, ok := graderMap["input"].([]any); ok {
 			grader["input"] = input
 		}
-		if labels, ok := graderMap["labels"].([]interface{}); ok {
+		if labels, ok := graderMap["labels"].([]any); ok {
 			grader["labels"] = labels
 		}
-		if passingLabels, ok := graderMap["passing_labels"].([]interface{}); ok {
+		if passingLabels, ok := graderMap["passing_labels"].([]any); ok {
 			grader["passing_labels"] = passingLabels
 		}
 		return grader

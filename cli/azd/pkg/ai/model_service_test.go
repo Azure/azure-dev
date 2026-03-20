@@ -233,7 +233,7 @@ func TestResolveCapacity(t *testing.T) {
 				MaxCapacity:     100,
 				CapacityStep:    1,
 			},
-			preferred: intPtr(50),
+			preferred: new(int32(50)),
 			expected:  50,
 		},
 		{
@@ -244,7 +244,7 @@ func TestResolveCapacity(t *testing.T) {
 				MaxCapacity:     100,
 				CapacityStep:    1,
 			},
-			preferred: intPtr(200),
+			preferred: new(int32(200)),
 			expected:  10,
 		},
 		{
@@ -255,7 +255,7 @@ func TestResolveCapacity(t *testing.T) {
 				MaxCapacity:     100,
 				CapacityStep:    1,
 			},
-			preferred: intPtr(2),
+			preferred: new(int32(2)),
 			expected:  10,
 		},
 		{
@@ -266,7 +266,7 @@ func TestResolveCapacity(t *testing.T) {
 				MaxCapacity:     100,
 				CapacityStep:    10,
 			},
-			preferred: intPtr(15),
+			preferred: new(int32(15)),
 			expected:  10,
 		},
 		{
@@ -426,8 +426,4 @@ func TestIsFinetuneUsageName(t *testing.T) {
 			require.Equal(t, tt.expected, IsFinetuneUsageName(tt.usageName))
 		})
 	}
-}
-
-func intPtr(v int32) *int32 {
-	return &v
 }

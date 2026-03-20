@@ -213,8 +213,8 @@ func genMarkdownCustom(cmd *cobra.Command, w io.Writer, linkHandler func(string)
 
 	if len(cmd.Example) > 0 {
 		buf.WriteString("### Examples\n\n```azdeveloper\n")
-		lines := strings.Split(cmd.Example, "\n")
-		for _, line := range lines {
+		lines := strings.SplitSeq(cmd.Example, "\n")
+		for line := range lines {
 			buf.WriteString(formatCommandLine(line) + "\n")
 		}
 		buf.WriteString("```\n\n")

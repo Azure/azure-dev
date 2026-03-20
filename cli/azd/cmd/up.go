@@ -107,20 +107,24 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	updatedEnv := false
 	if flagSub := u.flags.ProvisionFlags.Subscription(); flagSub != "" {
 		if existing := u.env.GetSubscriptionId(); existing != "" && existing != flagSub {
-			return nil, fmt.Errorf(
-				"cannot change subscription for existing environment '%s' (current: %s, requested: %s). "+
-					"Create a new environment with 'azd env new' instead",
-				u.env.Name(), existing, flagSub)
+			return nil, &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"environment '%s' (current: %s, requested: %s): %w",
+					u.env.Name(), existing, flagSub, internal.ErrCannotChangeSubscription),
+				Suggestion: "Run 'azd env new <name>' to create a new environment with a different subscription.",
+			}
 		}
 		u.env.SetSubscriptionId(flagSub)
 		updatedEnv = true
 	}
 	if flagLoc := u.flags.ProvisionFlags.Location(); flagLoc != "" {
 		if existing := u.env.GetLocation(); existing != "" && existing != flagLoc {
-			return nil, fmt.Errorf(
-				"cannot change location for existing environment '%s' (current: %s, requested: %s). "+
-					"Create a new environment with 'azd env new' instead",
-				u.env.Name(), existing, flagLoc)
+			return nil, &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"environment '%s' (current: %s, requested: %s): %w",
+					u.env.Name(), existing, flagLoc, internal.ErrCannotChangeLocation),
+				Suggestion: "Run 'azd env new <name>' to create a new environment with a different location.",
+			}
 		}
 		u.env.SetLocation(flagLoc)
 		updatedEnv = true

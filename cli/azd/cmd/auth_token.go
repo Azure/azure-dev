@@ -169,7 +169,12 @@ func (a *authTokenAction) Run(ctx context.Context) (*actions.ActionResult, error
 	if a.flags.claims != "" {
 		c, err := base64.StdEncoding.DecodeString(a.flags.claims)
 		if err != nil {
-			return nil, fmt.Errorf("invalid claims '%s': expected a base64-encoded string", a.flags.claims)
+			return nil, &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"invalid claims '%s', expected base64: %w",
+					a.flags.claims, internal.ErrInvalidArgValue),
+				Suggestion: "Provide a valid base64-encoded string for the --claims flag.",
+			}
 		}
 
 		claims = string(c)

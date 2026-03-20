@@ -280,7 +280,7 @@ func Test_CLI_Env_Remove(t *testing.T) {
 	// Verify removing when no environment is present
 	res, err := cli.RunCommand(ctx, "env", "remove")
 	require.Error(t, err)
-	require.Contains(t, res.Stdout, "no environment specified")
+	require.Contains(t, res.Stdout, "required arguments not provided")
 
 	// Create two environments
 	envName1 := randomEnvName()
@@ -351,7 +351,7 @@ func Test_CLI_Env_GetValue(t *testing.T) {
 	// Test non-existent key
 	res, err := cli.RunCommand(ctx, "env", "get-value", "non_existent_key")
 	require.Error(t, err)
-	require.Contains(t, res.Stdout, "key 'non_existent_key' not found in the environment values")
+	require.Contains(t, res.Stdout, "key not found in environment values: 'non_existent_key'")
 }
 
 func envGetValue(ctx context.Context, t *testing.T, cli *azdcli.CLI, key string) string {

@@ -13,7 +13,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
@@ -162,14 +161,15 @@ func (ad *entraIdService) CreateOrUpdateServicePrincipal(
 		application, err = ad.createApplication(ctx, subscriptionId, appIdOrName, options)
 		if err != nil {
 			// Check if the error is specifically "ServiceTreeNullValueProvided"
-			var responseError *azcore.ResponseError
-			if errors.As(err, &responseError) && responseError.ErrorCode == "ServiceTreeNullValueProvided" {
+			if responseError, ok := errors.AsType[*azcore.ResponseError](err); ok &&
+				responseError.ErrorCode == "ServiceTreeNullValueProvided" {
 				return nil, &ServiceTreeNullValueError{
 					ApplicationName: appIdOrName,
 					Err:             err,
 				}
 			}
-			if errors.As(err, &responseError) && responseError.ErrorCode == "ServiceTreeInvalid" {
+			if responseError, ok := errors.AsType[*azcore.ResponseError](err); ok &&
+				responseError.ErrorCode == "ServiceTreeInvalid" {
 				return nil, &ServiceTreeInvalidError{
 					ApplicationName: appIdOrName,
 					Err:             err,
@@ -527,7 +527,7 @@ func (ad *entraIdService) ensureRoleAssignment(
 ) error {
 	if scope == nil {
 		// Find the specified role in the subscription scope
-		scope = to.Ptr(azure.SubscriptionRID(subscriptionId))
+		scope = new(azure.SubscriptionRID(subscriptionId))
 	}
 
 	roleDefinition, err := ad.getRoleDefinition(ctx, subscriptionId, *scope, roleName)
@@ -552,11 +552,11 @@ func (ad *entraIdService) CreateRbac(
 		subscriptionId,
 		scope,
 		&armauthorization.RoleDefinition{
-			ID:   to.Ptr(fullRoleId),
-			Name: to.Ptr(roleId),
+			ID:   &fullRoleId,
+			Name: new(roleId),
 		},
 		&graphsdk.ServicePrincipal{
-			Id: to.Ptr(principalId),
+			Id: new(principalId),
 		})
 }
 
@@ -570,7 +570,7 @@ func (ad *entraIdService) applyRoleAssignmentWithRetry(
 	scope *string,
 ) error {
 	if scope == nil {
-		scope = to.Ptr(azure.SubscriptionRID(subscriptionId))
+		scope = new(azure.SubscriptionRID(subscriptionId))
 	}
 
 	return ad.applyRoleAssignmentWithRetryImpl(ctx, subscriptionId, *scope, roleDefinition, servicePrincipal)
@@ -601,14 +601,15 @@ func (ad *entraIdService) applyRoleAssignmentWithRetryImpl(
 		}, nil)
 
 		if err != nil {
-			var responseError *azcore.ResponseError
 			// If the response is a 409 conflict then the role has already been assigned.
-			if errors.As(err, &responseError) && responseError.StatusCode == http.StatusConflict {
+			if responseError, ok := errors.AsType[*azcore.ResponseError](err); ok &&
+				responseError.StatusCode == http.StatusConflict {
 				return nil
 			}
 
 			// If the response is a 403 then the required role is missing.
-			if errors.As(err, &responseError) && responseError.StatusCode == http.StatusForbidden {
+			if responseError, ok := errors.AsType[*azcore.ResponseError](err); ok &&
+				responseError.StatusCode == http.StatusForbidden {
 				return &internal.ErrorWithSuggestion{
 					Suggestion: fmt.Sprintf("\nSuggested Action: Ensure you have either the `User Access Administrator`, " +
 						"Owner` or custom azure roles assigned to your subscription to perform action " +
@@ -644,7 +645,7 @@ func (ad *entraIdService) getRoleDefinition(
 	}
 
 	pager := roleDefinitionsClient.NewListPager(scope, &armauthorization.RoleDefinitionsClientListOptions{
-		Filter: to.Ptr(fmt.Sprintf("roleName eq '%s'", roleName)),
+		Filter: new(fmt.Sprintf("roleName eq '%s'", roleName)),
 	})
 
 	roleDefinitions := []*armauthorization.RoleDefinition{}

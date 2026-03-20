@@ -17,7 +17,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -187,7 +186,7 @@ func Test_CLI_Up_Down_FuncApp(t *testing.T) {
 
 	t.Logf("env get-values command output: %s\n", result.Stdout)
 
-	var envValues map[string]interface{}
+	var envValues map[string]any
 	err = json.Unmarshal([]byte(result.Stdout), &envValues)
 	require.NoError(t, err)
 
@@ -494,10 +493,10 @@ func Test_CLI_Up_ResourceGroupScope(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = rgClient.CreateOrUpdate(context.Background(), resourceGroupName, armresources.ResourceGroup{
-		Name:     to.Ptr(resourceGroupName),
-		Location: to.Ptr("eastus2"),
+		Name:     new(resourceGroupName),
+		Location: new("eastus2"),
 		Tags: map[string]*string{
-			"DeleteAfter": to.Ptr(time.Now().Add(60 * time.Minute).UTC().Format(time.RFC3339)),
+			"DeleteAfter": new(time.Now().Add(60 * time.Minute).UTC().Format(time.RFC3339)),
 		},
 	}, nil)
 

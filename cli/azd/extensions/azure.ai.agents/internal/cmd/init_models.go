@@ -15,7 +15,6 @@ import (
 	"azureaiagent/internal/pkg/azure"
 	"azureaiagent/internal/project"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -535,7 +534,7 @@ func (a *InitAction) promptForAlternativeModel(
 			Message:         "Would you like to select a different model or exit?",
 			Choices:         choices,
 			SelectedIndex:   &defaultIndex,
-			EnableFiltering: to.Ptr(false),
+			EnableFiltering: new(false),
 		},
 	})
 	if err != nil {
@@ -555,7 +554,7 @@ func (a *InitAction) promptForAlternativeModel(
 		Options: &azdext.SelectOptions{
 			Message:         "Which models would you like to explore?",
 			Choices:         regionChoices,
-			EnableFiltering: to.Ptr(false),
+			EnableFiltering: new(false),
 		},
 	})
 	if err != nil {
@@ -626,7 +625,7 @@ func (a *InitAction) promptForModelLocationMismatch(
 				Message:         "What would you like to do?",
 				Choices:         choices,
 				SelectedIndex:   &defaultIndex,
-				EnableFiltering: to.Ptr(false),
+				EnableFiltering: new(false),
 			},
 		})
 		if err != nil {
@@ -757,7 +756,7 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 		return nil, nil, fmt.Errorf("failed to marshal agent template to YAML: %w", err)
 	}
 
-	var templateDict map[string]interface{}
+	var templateDict map[string]any
 	if err := yaml.Unmarshal(templateBytes, &templateDict); err != nil {
 		return nil, nil, fmt.Errorf("failed to unmarshal agent template from YAML: %w", err)
 	}

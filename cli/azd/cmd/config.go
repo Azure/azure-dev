@@ -285,7 +285,10 @@ func (a *configGetAction) Run(ctx context.Context) (*actions.ActionResult, error
 	value, ok := azdConfig.Get(key)
 
 	if !ok {
-		return nil, fmt.Errorf("no value stored at path '%s'", key)
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        fmt.Errorf("no value at path '%s': %w", key, internal.ErrConfigKeyNotFound),
+			Suggestion: "Run 'azd config show' to see available configuration keys.",
+		}
 	}
 
 	if a.formatter.Kind() == output.JsonFormat {

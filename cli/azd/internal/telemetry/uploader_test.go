@@ -116,6 +116,7 @@ func NewTransmitterStub() *TransmitterStub {
 }
 
 func (tr *TransmitterStub) Transmit(
+	_ context.Context,
 	payload []byte,
 	items appinsightsexporter.TelemetryItems,
 ) (*appinsightsexporter.TransmissionResult, error) {
@@ -244,7 +245,7 @@ func TestUpload_OnPersistentFailure_DiscardItem(t *testing.T) {
 	transmitter.mockResponse.StatusCode = 503
 	defaultTransmitRetryDelay = time.Duration(1) * time.Second
 
-	for i := 0; i < maxRetryCount; i++ {
+	for i := range maxRetryCount {
 		err := syncUpload(uploader)
 		assert.NoError(t, err)
 		assert.Len(t, transmitter.seen, len(messages)*(i+1))
@@ -304,7 +305,7 @@ func assertRetryDelayOnAllItems(t *testing.T, queue *InMemoryTelemetryQueue, ret
 
 func makeTelemetryPayload(count int) ([]byte, appinsightsexporter.TelemetryItems) {
 	var buffer appinsightsexporter.TelemetryItems
-	for i := 0; i < count; i++ {
+	for range count {
 		buffer = append(buffer, *appinsightsexporter.SpanToEnvelope(GetSpanStub().Snapshot()))
 	}
 

@@ -46,8 +46,9 @@ func Hyperlink(url string, text ...string) string {
 
 var BoldString = color.New(color.Bold).SprintfFunc()
 
+//go:fix inline
 func Ptr[T any](value T) *T {
-	return &value
+	return new(value)
 }
 
 func Render(renderFn RenderFn) Visual {

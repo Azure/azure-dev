@@ -125,8 +125,8 @@ func (ed *EventDispatcher[T]) RaiseEvent(ctx context.Context, name Event, eventA
 		var suggestions []string
 		for i, err := range handlerErrors {
 			lines[i] = err.Error()
-			var errWithSuggestion *internal.ErrorWithSuggestion
-			if errors.As(err, &errWithSuggestion) && errWithSuggestion.Suggestion != "" {
+			if errWithSuggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok &&
+				errWithSuggestion.Suggestion != "" {
 				suggestions = append(suggestions, errWithSuggestion.Suggestion)
 			}
 		}

@@ -27,7 +27,8 @@ type PromptOptions struct {
 	Message string
 	// The optional message to display when the user types ? (default: "")
 	HelpMessage string
-	// The optional hint text that display after the message (default: "[Type ? for hint]")
+	// The optional hint text displayed after the message.
+	// When empty (default), auto-generated as "[Type ? for hint]" only if HelpMessage is set.
 	Hint string
 	// The optional placeholder text to display when the value is empty (default: "")
 	PlaceHolder string
@@ -53,7 +54,7 @@ var DefaultPromptOptions PromptOptions = PromptOptions{
 	Required:          false,
 	ValidationMessage: "Invalid input",
 	RequiredMessage:   "This field is required",
-	Hint:              "[Type ? for hint]",
+	Hint:              "",
 	ClearOnCompletion: false,
 	IgnoreHintKeys:    false,
 	ValidationFn: func(input string) (bool, string) {
@@ -86,6 +87,11 @@ func NewPrompt(options *PromptOptions) *Prompt {
 
 	if err := mergo.Merge(&mergedOptions, DefaultPromptOptions, mergo.WithoutDereference); err != nil {
 		panic(err)
+	}
+
+	// Auto-generate hint text only when a help message is available
+	if mergedOptions.Hint == "" && mergedOptions.HelpMessage != "" {
+		mergedOptions.Hint = "[Type ? for hint]"
 	}
 
 	return &Prompt{
@@ -207,12 +213,12 @@ func (p *Prompt) Render(printer Printer) error {
 
 	// Always capture cursor position for input, used for SecondLineMessage
 	if p.cursorPosition == nil {
-		p.cursorPosition = Ptr(printer.CursorPosition())
+		p.cursorPosition = new(printer.CursorPosition())
 	}
 
 	// Placeholder
 	if p.value == "" && p.options.PlaceHolder != "" {
-		p.cursorPosition = Ptr(printer.CursorPosition())
+		p.cursorPosition = new(printer.CursorPosition())
 		printer.Fprintf("%s", output.WithGrayFormat(p.options.PlaceHolder))
 	}
 
@@ -225,7 +231,7 @@ func (p *Prompt) Render(printer Printer) error {
 		}
 
 		printer.Fprintf("%s", valueOutput)
-		p.cursorPosition = Ptr(printer.CursorPosition())
+		p.cursorPosition = new(printer.CursorPosition())
 	}
 
 	// Display SecondLineMessage on next line in gray

@@ -20,7 +20,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/vsrpc"
@@ -102,7 +101,8 @@ func (s *vsServerAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		}
 
 		listener = tls.NewListener(listener, config)
-		res.CertificateBytes = to.Ptr(base64.StdEncoding.EncodeToString(derBytes))
+		certBytesStr := base64.StdEncoding.EncodeToString(derBytes)
+		res.CertificateBytes = &certBytesStr
 	}
 
 	resString, err := json.Marshal(res)

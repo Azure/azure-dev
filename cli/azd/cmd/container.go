@@ -23,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/agent"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
+	agentcopilot "github.com/azure/azure-dev/cli/azd/internal/agent/copilot"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/security"
 	"github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
@@ -58,7 +59,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/kubelogin"
 	"github.com/azure/azure-dev/cli/azd/pkg/kustomize"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
-	"github.com/azure/azure-dev/cli/azd/pkg/llm"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
@@ -80,6 +80,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 	"github.com/mattn/go-colorable"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 // Registers a transient action initializer for the specified action name
@@ -188,7 +189,11 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return writer
 	})
 
-	container.MustRegisterScoped(func(ctx context.Context, cmd *cobra.Command) internal.EnvFlag {
+	container.MustRegisterScoped(func(
+		ctx context.Context,
+		cmd *cobra.Command,
+		globalOptions *internal.GlobalCommandOptions,
+	) internal.EnvFlag {
 		// The env flag `-e, --environment` is available on most azd commands but not all
 		// This is typically used to override the default environment and is used for bootstrapping other components
 		// such as the azd environment.
@@ -204,9 +209,22 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			// If no explicit environment flag was set, but one was provided
 			// in the context, use that instead.
 			// This is used in workflow execution (in `up`) to influence the environment used.
+			// Context takes precedence over globalOptions because azd up uses
+			// context.WithValue to propagate the environment to sub-commands.
 			if envFlag, ok := ctx.Value(envFlagCtxKey).(internal.EnvFlag); ok {
 				return envFlag
 			}
+		}
+
+		// Fall back to the pre-parsed global options value.
+		// This handles extension commands (DisableFlagParsing: true) where cobra
+		// doesn't parse persistent flags — the value was already parsed in ParseGlobalFlags.
+		if envValue == "" && globalOptions.EnvironmentName != "" {
+			log.Printf(
+				"using pre-parsed environment name '%s' from global options",
+				globalOptions.EnvironmentName,
+			)
+			envValue = globalOptions.EnvironmentName
 		}
 
 		return internal.EnvFlag{EnvironmentName: envValue}
@@ -578,14 +596,14 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		})
 	})
 
-	// AI & LLM components
-	container.MustRegisterSingleton(llm.NewManager)
-	container.MustRegisterSingleton(llm.NewModelFactory)
-	container.MustRegisterScoped(agent.NewAgentFactory)
+	// Copilot agent components
+	container.MustRegisterSingleton(agentcopilot.NewSessionConfigBuilder)
+	container.MustRegisterSingleton(agentcopilot.NewCopilotCLI)
+	container.MustRegisterSingleton(func(cli *agentcopilot.CopilotCLI) *agentcopilot.CopilotClientManager {
+		return agentcopilot.NewCopilotClientManager(nil, cli)
+	})
+	container.MustRegisterScoped(agent.NewCopilotAgentFactory)
 	container.MustRegisterScoped(consent.NewConsentManager)
-	container.MustRegisterNamedSingleton("ollama", llm.NewOllamaModelProvider)
-	container.MustRegisterNamedSingleton("azure", llm.NewAzureOpenAiModelProvider)
-	registerGitHubCopilotProvider(container)
 
 	// Agent security manager
 	container.MustRegisterSingleton(func() (*security.Manager, error) {
@@ -697,6 +715,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Tools
 	container.MustRegisterSingleton(azapi.NewResourceService)
+	container.MustRegisterSingleton(azapi.NewPermissionsService)
 	container.MustRegisterSingleton(docker.NewCli)
 	container.MustRegisterSingleton(dotnet.NewCli)
 	container.MustRegisterSingleton(git.NewCli)
@@ -890,13 +909,13 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		container.MustRegisterNamedSingleton(platformName, constructor)
 	}
 
-	container.MustRegisterSingleton(func(s ioc.ServiceLocator) (workflow.AzdCommandRunner, error) {
-		var rootCmd *cobra.Command
-		if err := s.ResolveNamed("root-cmd", &rootCmd); err != nil {
-			return nil, err
+	container.MustRegisterSingleton(func() workflow.AzdCommandRunner {
+		return &workflowCmdAdapter{
+			newCommand: func() *cobra.Command {
+				return NewRootCmd(false, nil, container)
+			},
+			globalArgs: extractGlobalArgs(),
 		}
-		return &workflowCmdAdapter{cmd: rootCmd}, nil
-
 	})
 	container.MustRegisterSingleton(workflow.NewRunner)
 
@@ -940,6 +959,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(grpcserver.NewServiceTargetService)
 	container.MustRegisterSingleton(grpcserver.NewFrameworkService)
 	container.MustRegisterSingleton(grpcserver.NewAiModelService)
+	container.MustRegisterScoped(grpcserver.NewCopilotService)
 
 	// Required for nested actions called from composite actions like 'up'
 	registerAction[*cmd.ProvisionAction](container, "azd-provision-action")
@@ -947,19 +967,52 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	registerAction[*configShowAction](container, "azd-config-show-action")
 }
 
-// workflowCmdAdapter adapts a cobra command to the workflow.AzdCommandRunner interface
+// workflowCmdAdapter adapts a cobra command to the workflow.AzdCommandRunner interface.
+// On each ExecuteContext call, a fresh cobra command tree is built via the newCommand factory
+// to avoid stale context or command state from previous executions.
+// See: https://github.com/Azure/azure-dev/issues/6530
 type workflowCmdAdapter struct {
-	cmd *cobra.Command
+	newCommand func() *cobra.Command
+	globalArgs []string
 }
 
-func (w *workflowCmdAdapter) SetArgs(args []string) {
-	w.cmd.SetArgs(args)
-}
-
-// ExecuteContext implements workflow.AzdCommandRunner
-func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context) error {
+// ExecuteContext implements workflow.AzdCommandRunner.
+// It rebuilds the cobra command tree on each call to ensure a clean slate,
+// preventing "context canceled" errors from stale command state during retries.
+// Global flags from the original process invocation are appended to the step args
+// so that persistent flags (e.g., --trace-log-file) are properly parsed and visible
+// to telemetry middleware on the fresh command tree.
+func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context, args []string) error {
 	childCtx := middleware.WithChildAction(ctx)
-	return w.cmd.ExecuteContext(childCtx)
+	rootCmd := w.newCommand()
+	// Always set args explicitly to prevent Cobra from falling back to os.Args[1:].
+	// Cobra uses os.Args when cmd.args is nil (but not when it's an empty slice).
+	mergedArgs := append(slices.Clone(args), w.globalArgs...)
+	if mergedArgs == nil {
+		mergedArgs = []string{}
+	}
+	rootCmd.SetArgs(mergedArgs)
+	return rootCmd.ExecuteContext(childCtx)
+}
+
+// extractGlobalArgs extracts global flag arguments from the process command line.
+// It parses os.Args against the global flag set and returns only the flags that were
+// explicitly set by the user, formatted as command-line arguments.
+func extractGlobalArgs() []string {
+	globalFlagSet := CreateGlobalFlagSet()
+	globalFlagSet.SetOutput(io.Discard)
+	globalFlagSet.ParseErrorsAllowlist = pflag.ParseErrorsAllowlist{UnknownFlags: true}
+	_ = globalFlagSet.Parse(os.Args[1:])
+
+	var result []string
+	globalFlagSet.VisitAll(func(f *pflag.Flag) {
+		if f.Changed {
+			// Use --flag=value syntax to avoid ambiguity. The two-arg form (--flag value)
+			// doesn't work for boolean flags, where the value is treated as a positional arg.
+			result = append(result, fmt.Sprintf("--%s=%s", f.Name, f.Value.String()))
+		}
+	})
+	return result
 }
 
 // ArmClientInitializer is a function definition for all Azure SDK ARM Client

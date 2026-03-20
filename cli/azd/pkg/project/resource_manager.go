@@ -276,9 +276,9 @@ func (rm *resourceManager) resolveServiceResource(
 
 	// If the service target supports delayed provisioning, the resource isn't expected to be found yet.
 	// Return the empty resource
-	var resourceNotFoundError *azureutil.ResourceNotFoundError
+	_, resourceNotFound := errors.AsType[*azureutil.ResourceNotFoundError](err)
 	if err != nil &&
-		errors.As(err, &resourceNotFoundError) &&
+		resourceNotFound &&
 		ServiceTargetKind(serviceConfig.Host).SupportsDelayedProvisioning() {
 		return &azapi.ResourceExtended{}, nil
 	}

@@ -5,9 +5,11 @@ package cmd
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
@@ -170,30 +172,32 @@ func Test_WorkflowCmdAdapter_ContextPropagation(t *testing.T) {
 		// Track which contexts were seen by the subcommand
 		var receivedContexts []context.Context
 
-		// Create a root command with a subcommand
-		rootCmd := &cobra.Command{
-			Use: "root",
+		// Create a command factory that builds a fresh tree on each call
+		newCommand := func() *cobra.Command {
+			rootCmd := &cobra.Command{
+				Use: "root",
+			}
+
+			subCmd := &cobra.Command{
+				Use: "sub",
+				RunE: func(cmd *cobra.Command, args []string) error {
+					// Capture the context that the subcommand receives
+					receivedContexts = append(receivedContexts, cmd.Context())
+					return nil
+				},
+			}
+
+			rootCmd.AddCommand(subCmd)
+			return rootCmd
 		}
 
-		subCmd := &cobra.Command{
-			Use: "sub",
-			RunE: func(cmd *cobra.Command, args []string) error {
-				// Capture the context that the subcommand receives
-				receivedContexts = append(receivedContexts, cmd.Context())
-				return nil
-			},
-		}
-
-		rootCmd.AddCommand(subCmd)
-
-		// Create the adapter
-		adapter := &workflowCmdAdapter{cmd: rootCmd}
+		// Create the adapter with a factory
+		adapter := &workflowCmdAdapter{newCommand: newCommand}
 
 		// In production, main.go wraps with context.WithoutCancel.
 		// Simulate this by using a non-cancellable context.
 		ctx := context.WithoutCancel(context.Background())
-		adapter.SetArgs([]string{"sub"})
-		err := adapter.ExecuteContext(ctx)
+		err := adapter.ExecuteContext(ctx, []string{"sub"})
 		require.NoError(t, err)
 		require.Len(t, receivedContexts, 1, "Execution should have received context")
 
@@ -209,9 +213,8 @@ func Test_WorkflowCmdAdapter_ContextPropagation(t *testing.T) {
 			// Expected: context is still valid
 		}
 
-		// Execute again - should still work
-		adapter.SetArgs([]string{"sub"})
-		err = adapter.ExecuteContext(ctx)
+		// Execute again - should still work (fresh command tree each time)
+		err = adapter.ExecuteContext(ctx, []string{"sub"})
 		require.NoError(t, err)
 		require.Len(t, receivedContexts, 2, "Second execution should have received context")
 
@@ -224,32 +227,34 @@ func Test_WorkflowCmdAdapter_ContextPropagation(t *testing.T) {
 		// Track which contexts were seen
 		var receivedContexts []context.Context
 
-		// Create a root command with nested subcommands
-		rootCmd := &cobra.Command{
-			Use: "root",
+		// Create a command factory that builds a fresh tree on each call
+		newCommand := func() *cobra.Command {
+			rootCmd := &cobra.Command{
+				Use: "root",
+			}
+
+			parentCmd := &cobra.Command{
+				Use: "parent",
+			}
+
+			childCmd := &cobra.Command{
+				Use: "child",
+				RunE: func(cmd *cobra.Command, args []string) error {
+					receivedContexts = append(receivedContexts, cmd.Context())
+					return nil
+				},
+			}
+
+			parentCmd.AddCommand(childCmd)
+			rootCmd.AddCommand(parentCmd)
+			return rootCmd
 		}
 
-		parentCmd := &cobra.Command{
-			Use: "parent",
-		}
-
-		childCmd := &cobra.Command{
-			Use: "child",
-			RunE: func(cmd *cobra.Command, args []string) error {
-				receivedContexts = append(receivedContexts, cmd.Context())
-				return nil
-			},
-		}
-
-		parentCmd.AddCommand(childCmd)
-		rootCmd.AddCommand(parentCmd)
-
-		adapter := &workflowCmdAdapter{cmd: rootCmd}
+		adapter := &workflowCmdAdapter{newCommand: newCommand}
 
 		// In production, main.go wraps with context.WithoutCancel.
 		ctx := context.WithoutCancel(context.Background())
-		adapter.SetArgs([]string{"parent", "child"})
-		err := adapter.ExecuteContext(ctx)
+		err := adapter.ExecuteContext(ctx, []string{"parent", "child"})
 		require.NoError(t, err)
 		require.Len(t, receivedContexts, 1)
 
@@ -257,9 +262,8 @@ func Test_WorkflowCmdAdapter_ContextPropagation(t *testing.T) {
 		require.True(t, middleware.IsChildAction(receivedContexts[0]),
 			"Nested context should be marked as child action")
 
-		// Second execution should also work
-		adapter.SetArgs([]string{"parent", "child"})
-		err = adapter.ExecuteContext(ctx)
+		// Second execution should also work (fresh command tree)
+		err = adapter.ExecuteContext(ctx, []string{"parent", "child"})
 		require.NoError(t, err)
 		require.Len(t, receivedContexts, 2)
 
@@ -273,5 +277,136 @@ func Test_WorkflowCmdAdapter_ContextPropagation(t *testing.T) {
 
 		require.True(t, middleware.IsChildAction(receivedContexts[1]),
 			"Second nested context should also be marked as child action")
+	})
+
+	t.Run("FreshCommandTreeOnEachExecution", func(t *testing.T) {
+		// Verify that each ExecuteContext call creates a new command tree,
+		// ensuring no stale state from previous executions.
+		var commandTreeInstances []*cobra.Command
+
+		newCommand := func() *cobra.Command {
+			rootCmd := &cobra.Command{
+				Use: "root",
+			}
+			rootCmd.AddCommand(&cobra.Command{
+				Use: "test",
+				RunE: func(cmd *cobra.Command, args []string) error {
+					return nil
+				},
+			})
+			commandTreeInstances = append(commandTreeInstances, rootCmd)
+			return rootCmd
+		}
+
+		adapter := &workflowCmdAdapter{newCommand: newCommand}
+		ctx := context.WithoutCancel(context.Background())
+
+		err := adapter.ExecuteContext(ctx, []string{"test"})
+		require.NoError(t, err)
+
+		err = adapter.ExecuteContext(ctx, []string{"test"})
+		require.NoError(t, err)
+
+		// Each execution should have created a distinct command tree
+		require.Len(t, commandTreeInstances, 2, "Factory should have been called twice")
+		require.NotSame(t, commandTreeInstances[0], commandTreeInstances[1],
+			"Each execution should use a distinct command tree instance")
+	})
+
+	t.Run("GlobalBoolFlagsRemainSingleTokenWhenMerged", func(t *testing.T) {
+		originalArgs := os.Args
+		os.Args = []string{"azd", "--debug", "up"}
+		t.Cleanup(func() {
+			os.Args = originalArgs
+		})
+
+		globalArgs := extractGlobalArgs()
+		require.Equal(t, []string{"--debug=true"}, globalArgs)
+
+		var (
+			capturedPositionalArgs []string
+			debugEnabled           bool
+		)
+
+		newCommand := func() *cobra.Command {
+			rootCmd := &cobra.Command{Use: "root"}
+			rootCmd.PersistentFlags().AddFlagSet(CreateGlobalFlagSet())
+
+			packageCmd := &cobra.Command{
+				Use:  "package",
+				Args: cobra.NoArgs,
+				RunE: func(cmd *cobra.Command, args []string) error {
+					capturedPositionalArgs = append([]string(nil), args...)
+
+					var err error
+					debugEnabled, err = cmd.Flags().GetBool("debug")
+					require.NoError(t, err)
+
+					return nil
+				},
+			}
+			packageCmd.Flags().Bool("all", false, "")
+			rootCmd.AddCommand(packageCmd)
+
+			return rootCmd
+		}
+
+		adapter := &workflowCmdAdapter{
+			newCommand: newCommand,
+			globalArgs: globalArgs,
+		}
+
+		err := adapter.ExecuteContext(context.WithoutCancel(context.Background()), []string{"package", "--all"})
+		require.NoError(t, err)
+		require.True(t, debugEnabled, "global --debug flag should still be parsed on the rebuilt tree")
+		require.Empty(t, capturedPositionalArgs,
+			"boolean global flag value should not leak into workflow step positional args")
+	})
+
+	t.Run("NewRootCmdPreservesMiddlewareChain", func(t *testing.T) {
+		// Verify that building a real command tree via NewRootCmd preserves
+		// the full middleware chain (debug, ux, telemetry, error, loginGuard, etc.)
+		container := ioc.NewNestedContainer(nil)
+		ctx := context.WithoutCancel(context.Background())
+		ioc.RegisterInstance(container, ctx)
+		ioc.RegisterInstance(container, &internal.GlobalCommandOptions{})
+
+		rootCmd := NewRootCmd(false, nil, container)
+
+		// Verify the command tree is fully built with known subcommands
+		foundVersion := false
+		foundProvision := false
+		foundDeploy := false
+		for _, child := range rootCmd.Commands() {
+			switch child.Name() {
+			case "version":
+				foundVersion = true
+			case "provision":
+				foundProvision = true
+			case "deploy":
+				foundDeploy = true
+			}
+		}
+
+		require.True(t, foundVersion, "version command should be registered")
+		require.True(t, foundProvision, "provision command should be registered")
+		require.True(t, foundDeploy, "deploy command should be registered")
+
+		// Build a second tree and verify it also has all commands
+		rootCmd2 := NewRootCmd(false, nil, container)
+		foundVersion2 := false
+		foundProvision2 := false
+		for _, child := range rootCmd2.Commands() {
+			switch child.Name() {
+			case "version":
+				foundVersion2 = true
+			case "provision":
+				foundProvision2 = true
+			}
+		}
+
+		require.True(t, foundVersion2, "second tree: version command should be registered")
+		require.True(t, foundProvision2, "second tree: provision command should be registered")
+		require.NotSame(t, rootCmd, rootCmd2, "each NewRootCmd call should produce a distinct instance")
 	})
 }

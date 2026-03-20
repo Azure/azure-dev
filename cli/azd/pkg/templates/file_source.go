@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
 // newFileTemplateSource creates a new template source from a file.
@@ -48,20 +49,5 @@ func getAbsolutePath(filePath string) (string, error) {
 	roots = append(roots, cwd)
 	roots = append(roots, azdConfigPath)
 
-	for _, root := range roots {
-		// Join the root directory with the relative path
-		absolutePath := filepath.Join(root, filePath)
-
-		// Normalize the path to handle any ".." or "." segments
-		absolutePath, err = filepath.Abs(absolutePath)
-		if err != nil {
-			return "", err
-		}
-
-		if _, err := os.Stat(absolutePath); err == nil {
-			return absolutePath, nil
-		}
-	}
-
-	return "", fmt.Errorf("file '%s' was not found, %w", filePath, os.ErrNotExist)
+	return osutil.ResolveContainedPath(roots, filePath)
 }

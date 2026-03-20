@@ -47,10 +47,10 @@ type OpenApiSchema struct {
 	// Schema Object properties following JSON Schema definition
 
 	// Basic metadata
-	Title       string      `json:"title,omitempty"`
-	Description string      `json:"description,omitempty"`
-	Default     interface{} `json:"default,omitempty"`
-	Example     interface{} `json:"example,omitempty"`
+	Title       string `json:"title,omitempty"`
+	Description string `json:"description,omitempty"`
+	Default     any    `json:"default,omitempty"`
+	Example     any    `json:"example,omitempty"`
 
 	// Type and format
 	Type   string `json:"type,omitempty"`
@@ -76,13 +76,13 @@ type OpenApiSchema struct {
 
 	// Object validation
 	Properties           map[string]*OpenApiSchema `json:"properties,omitempty"`
-	AdditionalProperties interface{}               `json:"additionalProperties,omitempty"` // can be bool or schema
+	AdditionalProperties any                       `json:"additionalProperties,omitempty"` // can be bool or schema
 	Required             []string                  `json:"required,omitempty"`
 	MinProperties        *int                      `json:"minProperties,omitempty"`
 	MaxProperties        *int                      `json:"maxProperties,omitempty"`
 
 	// Enumeration
-	Enum []interface{} `json:"enum,omitempty"`
+	Enum []any `json:"enum,omitempty"`
 
 	// Composition keywords
 	AllOf []*OpenApiSchema `json:"allOf,omitempty"`
@@ -98,16 +98,16 @@ type OpenApiSchema struct {
 	Deprecated    bool   `json:"deprecated,omitempty"`
 
 	// External documentation
-	ExternalDocs map[string]interface{} `json:"externalDocs,omitempty"`
+	ExternalDocs map[string]any `json:"externalDocs,omitempty"`
 
 	// XML metadata
-	XML map[string]interface{} `json:"xml,omitempty"`
+	XML map[string]any `json:"xml,omitempty"`
 
 	// Reference for $ref usage
 	Reference string `json:"$ref,omitempty"`
 
 	// Extensions (handled specially in OpenAPI)
-	Extensions map[string]interface{} `json:"-"`
+	Extensions map[string]any `json:"-"`
 }
 
 // OpenApiParameter represents an OpenAPI parameter definition
@@ -146,19 +146,19 @@ type OpenApiParameter struct {
 	Schema *OpenApiSchema `json:"schema,omitempty"`
 
 	// Example of the media type. The example SHOULD match the specified schema.
-	Example interface{} `json:"example,omitempty"`
+	Example any `json:"example,omitempty"`
 
 	// Examples of the media type. Each example SHOULD contain a value in the correct format.
-	Examples map[string]interface{} `json:"examples,omitempty"`
+	Examples map[string]any `json:"examples,omitempty"`
 
 	// A map containing the representations for the parameter. The key is the media type.
-	Content map[string]interface{} `json:"content,omitempty"`
+	Content map[string]any `json:"content,omitempty"`
 
 	// Reference object for $ref usage
 	Reference string `json:"$ref,omitempty"`
 
 	// This object MAY be extended with Specification Extensions.
-	Extensions map[string]interface{} `json:"-"` // Extensions are handled specially in OpenAPI
+	Extensions map[string]any `json:"-"` // Extensions are handled specially in OpenAPI
 }
 
 // ManifestList represents a list of manifests returned from GetAllLatest

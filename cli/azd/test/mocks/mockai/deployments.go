@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/machinelearning/armmachinelearning/v3"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 )
@@ -101,7 +100,7 @@ func RegisterListOnlineDeployment(
 		deployments := []*armmachinelearning.OnlineDeployment{}
 		for _, deploymentName := range deploymentNames {
 			deployments = append(deployments, &armmachinelearning.OnlineDeployment{
-				Name: to.Ptr(deploymentName),
+				Name: new(deploymentName),
 			})
 		}
 

@@ -18,7 +18,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
@@ -64,7 +63,7 @@ func shouldRun(ctx context.Context, project *azdext.ProjectConfig) (bool, error)
 					return false, fmt.Errorf("agent.yaml is not valid to run: %w", err)
 				}
 
-				var genericTemplate map[string]interface{}
+				var genericTemplate map[string]any
 				if err := yaml.Unmarshal(content, &genericTemplate); err != nil {
 					return false, fmt.Errorf("YAML content is not valid to run: %w", err)
 				}
@@ -147,7 +146,7 @@ func (p *FoundryParser) SetIdentity(ctx context.Context, args *azdext.ProjectEve
 
 	// Get Application ID from Principal ID
 	fmt.Println("Retrieving Application ID...")
-	projectClientID, err := getApplicationID(context.Background(), cred, projectPrincipalID)
+	projectClientID, err := getApplicationID(ctx, cred, projectPrincipalID)
 	if err != nil {
 		return fmt.Errorf("failed to get Application ID: %w", err)
 	}
@@ -485,12 +484,12 @@ func (p *FoundryParser) CoboPostDeploy(ctx context.Context, args *azdext.Project
 	}
 
 	// Register agent with retry logic
-	agentVersion := registerAgent(uri, token, resourceID, ingressSuffix)
+	agentVersion := registerAgent(ctx, uri, token, resourceID, ingressSuffix)
 
 	// Test authentication and agent
 	if agentVersion != "" {
-		testUnauthenticatedAccess(acaEndpoint)
-		testDataPlane(aiFoundryProjectEndpoint, token, agentName, agentVersion)
+		testUnauthenticatedAccess(ctx, acaEndpoint)
+		testDataPlane(ctx, aiFoundryProjectEndpoint, token, agentName, agentVersion)
 	}
 
 	// Print Azure Portal link
@@ -554,7 +553,7 @@ func assignAzureAIRole(ctx context.Context, cred *azidentity.AzureDeveloperCLICr
 	// Check if the role assignment already exists
 	// Use atScope() to list all role assignments at this scope, then filter in code
 	pager := client.NewListForScopePager(scope, &armauthorization.RoleAssignmentsClientListForScopeOptions{
-		Filter: to.Ptr("atScope()"),
+		Filter: new("atScope()"),
 	})
 
 	assignmentExists := false
@@ -595,8 +594,8 @@ func assignAzureAIRole(ctx context.Context, cred *azidentity.AzureDeveloperCLICr
 		// Create role assignment
 		parameters := armauthorization.RoleAssignmentCreateParameters{
 			Properties: &armauthorization.RoleAssignmentProperties{
-				RoleDefinitionID: to.Ptr(fullRoleDefinitionID),
-				PrincipalID:      to.Ptr(principalID),
+				RoleDefinitionID: new(fullRoleDefinitionID),
+				PrincipalID:      new(principalID),
 			},
 		}
 
@@ -627,7 +626,7 @@ func assignAzureAIRole(ctx context.Context, cred *azidentity.AzureDeveloperCLICr
 		// Validate the assignment
 		fmt.Println("Validating role assignment...")
 		pager = client.NewListForScopePager(scope, &armauthorization.RoleAssignmentsClientListForScopeOptions{
-			Filter: to.Ptr("atScope()"),
+			Filter: new("atScope()"),
 		})
 
 		validated := false
@@ -930,12 +929,12 @@ func getAIFoundryProjectEndpoint(
 	}
 
 	// Parse properties as a map to access nested endpoints
-	propsMap, ok := resp.Properties.(map[string]interface{})
+	propsMap, ok := resp.Properties.(map[string]any)
 	if !ok {
 		return "", fmt.Errorf("failed to parse resource properties")
 	}
 
-	endpoints, ok := propsMap["endpoints"].(map[string]interface{})
+	endpoints, ok := propsMap["endpoints"].(map[string]any)
 	if !ok {
 		return "", fmt.Errorf("resource does not have endpoints")
 	}
@@ -1006,7 +1005,7 @@ func getLatestRevisionName(
 }
 
 // registerAgent registers the agent with Microsoft Foundry
-func registerAgent(uri, token, resourceID, ingressSuffix string) string {
+func registerAgent(ctx context.Context, uri, token, resourceID, ingressSuffix string) string {
 	fmt.Println()
 	fmt.Println("======================================")
 	fmt.Println("Registering Agent Version")
@@ -1033,13 +1032,13 @@ func registerAgent(uri, token, resourceID, ingressSuffix string) string {
 	retryDelay := 60 * time.Second
 	agentVersion := ""
 
-	for attempt := 0; attempt < maxRetries; attempt++ {
+	for attempt := range maxRetries {
 		if attempt > 0 {
 			fmt.Printf("Retry attempt %d of %d...\n", attempt, maxRetries-1)
 		}
 
 		client := &http.Client{}
-		req, err := http.NewRequest("POST", uri, bytes.NewBuffer(payloadBytes))
+		req, err := http.NewRequestWithContext(ctx, "POST", uri, bytes.NewBuffer(payloadBytes))
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error creating request: %v\n", err)
 			continue
@@ -1091,7 +1090,7 @@ func registerAgent(uri, token, resourceID, ingressSuffix string) string {
 }
 
 // testUnauthenticatedAccess tests unauthenticated access (should return 401)
-func testUnauthenticatedAccess(acaEndpoint string) {
+func testUnauthenticatedAccess(ctx context.Context, acaEndpoint string) {
 	fmt.Println()
 	fmt.Println("======================================")
 	fmt.Println("Testing Unauthenticated Access")
@@ -1104,7 +1103,7 @@ func testUnauthenticatedAccess(acaEndpoint string) {
 	fmt.Printf("Request Body: %s\n", string(payload))
 
 	client := &http.Client{}
-	req, err := http.NewRequest("POST", uri, bytes.NewBuffer(payload))
+	req, err := http.NewRequestWithContext(ctx, "POST", uri, bytes.NewBuffer(payload))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating request: %v\n", err)
 		return
@@ -1135,7 +1134,7 @@ func testUnauthenticatedAccess(acaEndpoint string) {
 }
 
 // testDataPlane tests the agent data plane with authenticated request
-func testDataPlane(endpoint, token, agentName, agentVersion string) {
+func testDataPlane(ctx context.Context, endpoint, token, agentName, agentVersion string) {
 	fmt.Println()
 	fmt.Println("======================================")
 	fmt.Println("Testing Agent Data Plane")
@@ -1159,7 +1158,7 @@ func testDataPlane(endpoint, token, agentName, agentVersion string) {
 	fmt.Println(string(payloadBytes))
 
 	client := &http.Client{}
-	req, err := http.NewRequest("POST", uri, bytes.NewBuffer(payloadBytes))
+	req, err := http.NewRequestWithContext(ctx, "POST", uri, bytes.NewBuffer(payloadBytes))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating request: %v\n", err)
 		return

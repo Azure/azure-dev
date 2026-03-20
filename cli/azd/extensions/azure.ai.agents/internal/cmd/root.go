@@ -68,6 +68,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newMetadataCommand())
 	rootCmd.AddCommand(newShowCommand())
 	rootCmd.AddCommand(newMonitorCommand())
+	rootCmd.AddCommand(newFilesCommand())
 
 	return rootCmd
 }

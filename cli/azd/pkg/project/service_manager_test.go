@@ -111,7 +111,7 @@ func Test_ServiceManager_Restore(t *testing.T) {
 			return nil
 		})
 
-	restoreCalled := to.Ptr(false)
+	restoreCalled := new(false)
 	ctx := context.WithValue(*mockContext.Context, frameworkRestoreCalled, restoreCalled)
 	result, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
 		serviceContext := NewServiceContext()
@@ -151,7 +151,7 @@ func Test_ServiceManager_Build(t *testing.T) {
 			return nil
 		})
 
-	buildCalled := to.Ptr(false)
+	buildCalled := new(false)
 	ctx := context.WithValue(*mockContext.Context, frameworkBuildCalled, buildCalled)
 
 	result, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServiceBuildResult, error) {
@@ -191,8 +191,8 @@ func Test_ServiceManager_Package(t *testing.T) {
 			return nil
 		})
 
-	fakeFrameworkPackageCalled := to.Ptr(false)
-	fakeServiceTargetPackageCalled := to.Ptr(false)
+	fakeFrameworkPackageCalled := new(false)
+	fakeServiceTargetPackageCalled := new(false)
 	ctx := context.WithValue(*mockContext.Context, frameworkPackageCalled, fakeFrameworkPackageCalled)
 	ctx = context.WithValue(ctx, serviceTargetPackageCalled, fakeServiceTargetPackageCalled)
 
@@ -236,7 +236,7 @@ func Test_ServiceManager_Deploy(t *testing.T) {
 			return nil
 		})
 
-	deployCalled := to.Ptr(false)
+	deployCalled := new(false)
 	ctx := context.WithValue(*mockContext.Context, serviceTargetDeployCalled, deployCalled)
 
 	result, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
@@ -279,7 +279,7 @@ func Test_ServiceManager_Publish(t *testing.T) {
 			return nil
 		})
 
-	publishCalled := to.Ptr(false)
+	publishCalled := new(false)
 	ctx := context.WithValue(*mockContext.Context, serviceTargetPublishCalled, publishCalled)
 
 	// Create a proper ServiceContext for the publish operation
@@ -372,7 +372,7 @@ func Test_ServiceManager_CacheResults(t *testing.T) {
 	sm := createServiceManager(mockContext, env, ServiceOperationCache{})
 	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
 
-	buildCalled := to.Ptr(false)
+	buildCalled := new(false)
 	ctx := context.WithValue(*mockContext.Context, frameworkBuildCalled, buildCalled)
 
 	buildResult1, _ := logProgress(
@@ -404,7 +404,7 @@ func Test_ServiceManager_CacheResults_Across_Instances(t *testing.T) {
 	sm1 := createServiceManager(mockContext, env, operationCache)
 	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
 
-	packageCalled := to.Ptr(false)
+	packageCalled := new(false)
 	ctx := context.WithValue(*mockContext.Context, serviceTargetPackageCalled, packageCalled)
 
 	packageResult1, _ := logProgress(
@@ -540,24 +540,24 @@ func setupMocksForServiceManager(mockContext *mocks.MockContext) {
 
 	mockarmresources.AddResourceGroupListMock(mockContext.HttpClient, "SUBSCRIPTION_ID", []*armresources.ResourceGroup{
 		{
-			ID:       to.Ptr("ID"),
-			Name:     to.Ptr("RESOURCE_GROUP"),
-			Location: to.Ptr("eastus2"),
+			ID:       new("ID"),
+			Name:     new("RESOURCE_GROUP"),
+			Location: new("eastus2"),
 			Type:     to.Ptr(string(azapi.AzureResourceTypeResourceGroup)),
 		},
 	})
 
 	mockarmresources.AddAzResourceListMock(
 		mockContext.HttpClient,
-		to.Ptr("RESOURCE_GROUP"),
+		new("RESOURCE_GROUP"),
 		[]*armresources.GenericResourceExpanded{
 			{
-				ID:       to.Ptr("ID"),
-				Name:     to.Ptr("WEB_APP"),
-				Location: to.Ptr("eastus2"),
+				ID:       new("ID"),
+				Name:     new("WEB_APP"),
+				Location: new("eastus2"),
 				Type:     to.Ptr(string(azapi.AzureResourceTypeWebSite)),
 				Tags: map[string]*string{
-					azure.TagKeyAzdServiceName: to.Ptr("api"),
+					azure.TagKeyAzdServiceName: new("api"),
 				},
 			},
 		},

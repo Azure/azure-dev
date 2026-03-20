@@ -117,7 +117,7 @@ func TestDuration_MarshalYAML(t *testing.T) {
 	tests := []struct {
 		name     string
 		duration Duration
-		expected interface{}
+		expected any
 	}{
 		{
 			name:     "ZeroDuration",
@@ -288,7 +288,7 @@ func TestCreateFineTuningRequest_Validate(t *testing.T) {
 			request: CreateFineTuningRequest{
 				BaseModel:    "gpt-4o-mini",
 				TrainingFile: "file-abc123",
-				Suffix:       stringPtr(string(make([]byte, 65))), // 65 characters
+				Suffix:       new(string(make([]byte, 65))), // 65 characters
 			},
 			expectError: true,
 			errorMsg:    "suffix exceeds maximum length of 64 characters",
@@ -298,7 +298,7 @@ func TestCreateFineTuningRequest_Validate(t *testing.T) {
 			request: CreateFineTuningRequest{
 				BaseModel:    "gpt-4o-mini",
 				TrainingFile: "file-abc123",
-				Suffix:       stringPtr(string(make([]byte, 64))), // exactly 64 characters
+				Suffix:       new(string(make([]byte, 64))), // exactly 64 characters
 			},
 			expectError: false,
 		},
@@ -351,7 +351,7 @@ func TestCreateFineTuningRequest_Validate(t *testing.T) {
 				BaseModel:    "gpt-4o-mini",
 				TrainingFile: "file-abc123",
 				Integrations: []Integration{
-					{Type: "", Config: map[string]interface{}{"key": "value"}},
+					{Type: "", Config: map[string]any{"key": "value"}},
 				},
 			},
 			expectError: true,
@@ -375,7 +375,7 @@ func TestCreateFineTuningRequest_Validate(t *testing.T) {
 				BaseModel:    "gpt-4o-mini",
 				TrainingFile: "file-abc123",
 				Integrations: []Integration{
-					{Type: "wandb", Config: map[string]interface{}{"project": "my-project"}},
+					{Type: "wandb", Config: map[string]any{"project": "my-project"}},
 				},
 			},
 			expectError: false,
@@ -385,9 +385,9 @@ func TestCreateFineTuningRequest_Validate(t *testing.T) {
 			request: CreateFineTuningRequest{
 				BaseModel:      "gpt-4o-mini",
 				TrainingFile:   "file-abc123",
-				ValidationFile: stringPtr("file-val456"),
-				Suffix:         stringPtr("my-custom-model"),
-				Seed:           int64Ptr(42),
+				ValidationFile: new("file-val456"),
+				Suffix:         new("my-custom-model"),
+				Seed:           new(int64(42)),
 				Metadata:       map[string]string{"project": "test"},
 				Method: MethodConfig{
 					Type: "supervised",
@@ -429,7 +429,7 @@ func TestFineTuningJob_JSONMarshaling(t *testing.T) {
 	data, err := json.Marshal(job)
 	require.NoError(t, err)
 
-	var unmarshaled map[string]interface{}
+	var unmarshaled map[string]any
 	err = json.Unmarshal(data, &unmarshaled)
 	require.NoError(t, err)
 
@@ -439,18 +439,9 @@ func TestFineTuningJob_JSONMarshaling(t *testing.T) {
 	require.Equal(t, "2h 30m", unmarshaled["duration"])
 }
 
-// Helper functions
-func stringPtr(s string) *string {
-	return &s
-}
-
-func int64Ptr(i int64) *int64 {
-	return &i
-}
-
 func generateMetadata(count int) map[string]string {
 	metadata := make(map[string]string)
-	for i := 0; i < count; i++ {
+	for i := range count {
 		metadata[string(rune('a'+i))] = "value"
 	}
 	return metadata

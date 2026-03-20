@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 )
 
 // AccountConfig contains the configuration for connecting to a storage account
@@ -234,8 +235,7 @@ func (bc *blobClient) resetAndEnsureContainer(ctx context.Context) error {
 
 // isContainerNotFound checks if the error indicates the container was not found.
 func (bc *blobClient) isContainerNotFound(err error) bool {
-	var respErr *azcore.ResponseError
-	if errors.As(err, &respErr) {
+	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
 		return respErr.ErrorCode == "ContainerNotFound"
 	}
 	return false
@@ -274,6 +274,7 @@ func (bc *blobClient) ensureContainerExists(ctx context.Context) error {
 func NewBlobSdkClient(
 	credentialProvider auth.MultiTenantCredentialProvider,
 	accountConfig *AccountConfig,
+	userConfigManager config.UserConfigManager,
 	coreClientOptions *azcore.ClientOptions,
 	cloud *cloud.Cloud,
 	tenantResolver account.SubscriptionTenantResolver,
@@ -286,17 +287,29 @@ func NewBlobSdkClient(
 		accountConfig.Endpoint = cloud.StorageEndpointSuffix
 	}
 
-	// Determine which tenant to use for authentication
+	// Determine if we have a subscriptionId either from the config, or the default subscription
+	subscriptionId := accountConfig.SubscriptionId
+	if subscriptionId == "" {
+		userConfig, err := userConfigManager.Load()
+		if err == nil {
+			userSubscription, exists := userConfig.GetString("defaults.subscription")
+			if exists && userSubscription != "" {
+				subscriptionId = userSubscription
+			}
+		}
+	}
+
 	tenantId := ""
-	if accountConfig.SubscriptionId != "" {
+	if subscriptionId != "" {
 		// If a subscription ID is configured, resolve the tenant ID for that subscription
-		resolvedTenantId, err := tenantResolver.LookupTenant(context.Background(), accountConfig.SubscriptionId)
+		resolvedTenantId, err := tenantResolver.LookupTenant(context.Background(), subscriptionId)
 		if err != nil {
 			return nil, fmt.Errorf(
-				"failed to resolve tenant for subscription '%s': %w", accountConfig.SubscriptionId, err)
+				"failed to resolve tenant for subscription '%s': %w", subscriptionId, err)
 		}
 		tenantId = resolvedTenantId
 	}
+
 	// Otherwise, use home tenant ID (empty string)
 
 	credential, err := credentialProvider.GetTokenCredential(context.Background(), tenantId)

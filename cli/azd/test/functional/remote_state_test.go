@@ -96,9 +96,11 @@ func createBlobClient(
 	// Create a mock SubscriptionTenantResolver that returns empty tenant (home tenant)
 	tenantResolver := &mockTenantResolver{}
 
+	userConfigManager := config.NewUserConfigManager(fileConfigManager)
 	sdkClient, err := storage.NewBlobSdkClient(
 		auth.NewMultiTenantCredentialProvider(authManager),
 		storageConfig,
+		userConfigManager,
 		coreClientOptions,
 		cloud.AzurePublic(),
 		tenantResolver,

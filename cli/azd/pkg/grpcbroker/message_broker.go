@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/syncmap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -77,10 +78,10 @@ type MessageBroker[TMessage any] struct {
 	logger        *log.Logger // Private logger for broker trace output; can be silenced independently
 	stream        BidiStream[TMessage]
 	envelope      MessageEnvelope[TMessage]
-	name          string     // Name identifier for logging purposes
-	responseChans sync.Map   // Used for storing response channels by request id
-	handlers      sync.Map   // Used for storing message handlers by request type
-	sendMu        sync.Mutex // Protects concurrent stream.Send() calls
+	name          string                                     // Name identifier for logging purposes
+	responseChans syncmap.Map[string, chan *TMessage]        // Used for storing response channels by request id
+	handlers      syncmap.Map[reflect.Type, *handlerWrapper] // Used for storing message handlers by request type
+	sendMu        sync.Mutex                                 // Protects concurrent stream.Send() calls
 
 	// Ready signaling for when the broker starts receiving messages
 	readyCh   chan struct{} // Closed when Run() starts, signals readiness to all waiters
@@ -140,14 +141,14 @@ func (mb *MessageBroker[TMessage]) On(handler any) error {
 	}
 
 	// Validate first parameter is context.Context
-	contextType := reflect.TypeOf((*context.Context)(nil)).Elem()
+	contextType := reflect.TypeFor[context.Context]()
 	if !handlerType.In(0).Implements(contextType) {
 		return fmt.Errorf("first parameter must be context.Context, got %v", handlerType.In(0))
 	}
 
 	// Extract request type (second parameter)
 	requestType := handlerType.In(1)
-	if requestType.Kind() != reflect.Ptr {
+	if requestType.Kind() != reflect.Pointer {
 		return fmt.Errorf("request type must be a pointer, got %v", requestType)
 	}
 
@@ -155,7 +156,7 @@ func (mb *MessageBroker[TMessage]) On(handler any) error {
 	hasProgress := false
 	progressIndex := -1
 	if numIn == 3 {
-		progressType := reflect.TypeOf((*ProgressFunc)(nil)).Elem()
+		progressType := reflect.TypeFor[ProgressFunc]()
 		if handlerType.In(2) == progressType {
 			hasProgress = true
 			progressIndex = 2
@@ -171,14 +172,13 @@ func (mb *MessageBroker[TMessage]) On(handler any) error {
 
 	// Validate response type is *TMessage (pointer to envelope)
 	responseType := handlerType.Out(0)
-	var envelopeZero TMessage
-	envelopeType := reflect.TypeOf(&envelopeZero)
+	envelopeType := reflect.TypeFor[*TMessage]()
 	if responseType != envelopeType {
 		return fmt.Errorf("handler must return pointer to envelope type %v, got %v", envelopeType, responseType)
 	}
 
 	// Validate error return type
-	errorType := reflect.TypeOf((*error)(nil)).Elem()
+	errorType := reflect.TypeFor[error]()
 	if !handlerType.Out(1).Implements(errorType) {
 		return fmt.Errorf("second return value must be error, got %v", handlerType.Out(1))
 	}
@@ -476,14 +476,13 @@ func (mb *MessageBroker[TMessage]) processMessage(ctx context.Context, resp *TMe
 	if mb.envelope.IsProgressMessage(resp) {
 		mb.logger.Printf("[%s] Received progress message: RequestId=%s, MessageType=%v", mb.name, requestId, msgType)
 		if ch, ok := mb.responseChans.Load(requestId); ok {
-			channelTyped := ch.(chan *TMessage)
 			mb.logger.Printf(
 				"[%s] Dispatching progress message to channel for RequestId=%s, MessageType=%v",
 				mb.name,
 				requestId,
 				msgType,
 			)
-			channelTyped <- resp
+			ch <- resp
 		} else {
 			mb.logger.Printf(
 				"[%s] WARNING: No channel found for progress message RequestId=%s, MessageType=%v",
@@ -500,22 +499,20 @@ func (mb *MessageBroker[TMessage]) processMessage(ctx context.Context, resp *TMe
 	// Try to route to channel first (client pattern - awaiting response)
 	if requestId != "" {
 		if ch, ok := mb.responseChans.Load(requestId); ok {
-			channelTyped := ch.(chan *TMessage)
-
-			// Check if channel is full
-			if len(channelTyped) >= cap(channelTyped)-1 {
+			// Warn when channel buffer is actually nearly full
+			if cap(ch) > 1 && len(ch) >= cap(ch)-1 {
 				mb.logger.Printf(
 					"[%s] WARNING: Channel buffer nearly full for RequestId=%s (len=%d, cap=%d)",
 					mb.name,
 					requestId,
-					len(channelTyped),
-					cap(channelTyped),
+					len(ch),
+					cap(ch),
 				)
 			}
 
 			mb.logger.Printf("[%s] Dispatching message to channel for RequestId=%s, MessageType=%v",
 				mb.name, requestId, msgType)
-			channelTyped <- resp
+			ch <- resp
 			mb.logger.Printf("[%s] Message dispatched successfully to RequestId=%s, MessageType=%v",
 				mb.name, requestId, msgType)
 			return
@@ -552,7 +549,7 @@ func (mb *MessageBroker[TMessage]) processHandlerRequest(
 		return
 	}
 
-	wrapper := handlerVal.(*handlerWrapper)
+	wrapper := handlerVal
 	mb.logger.Printf(
 		"[%s] Dispatching to handler for RequestId=%s, MessageType=%v",
 		mb.name,
@@ -675,8 +672,7 @@ func (mb *MessageBroker[TMessage]) createProgressFunc(ctx context.Context, reque
 // Close gracefully shuts down the broker (optional, for cleanup)
 func (mb *MessageBroker[TMessage]) Close() {
 	// Close all pending channels
-	mb.responseChans.Range(func(key, value any) bool {
-		ch := value.(chan *TMessage)
+	mb.responseChans.Range(func(key string, ch chan *TMessage) bool {
 		close(ch)
 		mb.responseChans.Delete(key)
 		return true

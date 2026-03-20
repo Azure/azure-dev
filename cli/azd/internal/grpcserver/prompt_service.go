@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
@@ -415,7 +414,7 @@ func createResourceOptions(options *azdext.PromptResourceOptions) prompt.Resourc
 
 	var resourceType *azapi.AzureResourceType
 	if options.ResourceType != "" {
-		resourceType = to.Ptr(azapi.AzureResourceType(options.ResourceType))
+		resourceType = new(azapi.AzureResourceType(options.ResourceType))
 	}
 
 	var selectOptions *prompt.SelectOptions
@@ -613,7 +612,7 @@ func (s *promptService) PromptAiModel(
 	selectOpts := &ux.SelectOptions{
 		Message:         message,
 		Choices:         make([]*ux.SelectChoice, len(models)),
-		EnableFiltering: to.Ptr(true),
+		EnableFiltering: new(true),
 	}
 	for i, m := range models {
 		label := m.Name
@@ -990,7 +989,7 @@ func (s *promptService) PromptAiLocationWithQuota(
 	selectOpts := &ux.SelectOptions{
 		Message:         message,
 		Choices:         make([]*ux.SelectChoice, len(locations)),
-		EnableFiltering: to.Ptr(true),
+		EnableFiltering: new(true),
 	}
 	for i, loc := range locations {
 		selectOpts.Choices[i] = &ux.SelectChoice{
@@ -1090,7 +1089,7 @@ func (s *promptService) PromptAiModelLocationWithQuota(
 	selectOpts := &ux.SelectOptions{
 		Message:         message,
 		Choices:         make([]*ux.SelectChoice, len(locations)),
-		EnableFiltering: to.Ptr(true),
+		EnableFiltering: new(true),
 	}
 	for i, loc := range locations {
 		quotaLabel := output.WithGrayFormat("[up to %.0f quota available]", loc.MaxRemainingQuota)
@@ -1170,7 +1169,7 @@ func findDefaultIndex(choices []*ux.SelectChoice, defaultValue string) *int {
 	}
 	for i, c := range choices {
 		if strings.EqualFold(c.Value, defaultValue) {
-			return to.Ptr(i)
+			return new(i)
 		}
 	}
 	return nil

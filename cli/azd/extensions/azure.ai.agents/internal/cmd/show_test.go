@@ -13,23 +13,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestShowCommand_RequiredFlags(t *testing.T) {
+func TestShowCommand_AcceptsPositionalArg(t *testing.T) {
 	cmd := newShowCommand()
-
-	// Execute with no flags should fail (missing required flags)
-	cmd.SetArgs([]string{})
-	err := cmd.Execute()
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "name")
+	err := cmd.Args(cmd, []string{"my-agent"})
+	assert.NoError(t, err)
 }
 
-func TestShowCommand_MissingVersionFlag(t *testing.T) {
+func TestShowCommand_AcceptsNoArgs(t *testing.T) {
 	cmd := newShowCommand()
+	err := cmd.Args(cmd, []string{})
+	assert.NoError(t, err)
+}
 
-	cmd.SetArgs([]string{"--name", "test-agent"})
-	err := cmd.Execute()
+func TestShowCommand_RejectsMultipleArgs(t *testing.T) {
+	cmd := newShowCommand()
+	err := cmd.Args(cmd, []string{"svc1", "svc2"})
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "version")
 }
 
 func TestPrintStatusJSON(t *testing.T) {
@@ -95,7 +94,7 @@ func TestPrintStatusJSON_Format(t *testing.T) {
 	jsonBytes, err := json.MarshalIndent(container, "", "  ")
 	require.NoError(t, err)
 
-	var result map[string]interface{}
+	var result map[string]any
 	err = json.Unmarshal(jsonBytes, &result)
 	require.NoError(t, err)
 
@@ -122,15 +121,15 @@ func TestPrintStatusJSON_WithContainerDetails(t *testing.T) {
 	jsonBytes, err := json.MarshalIndent(container, "", "  ")
 	require.NoError(t, err)
 
-	var result map[string]interface{}
+	var result map[string]any
 	err = json.Unmarshal(jsonBytes, &result)
 	require.NoError(t, err)
 
 	assert.Equal(t, "Failed", result["status"])
-	containerMap := result["container"].(map[string]interface{})
+	containerMap := result["container"].(map[string]any)
 	assert.Equal(t, "Unhealthy", containerMap["health_state"])
 	assert.Equal(t, "ActivationFailed", containerMap["state"])
-	replicas := containerMap["replicas"].([]interface{})
+	replicas := containerMap["replicas"].([]any)
 	assert.Len(t, replicas, 1)
 }
 

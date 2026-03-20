@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 )
 
 // SubscriptionFromRID returns the subscription id component of a resource or panics if the resource id does not
@@ -109,5 +107,5 @@ func GetResourceGroupName(resourceId string) *string {
 		return nil
 	}
 
-	return to.Ptr(string(matches[1]))
+	return new(string(matches[1]))
 }

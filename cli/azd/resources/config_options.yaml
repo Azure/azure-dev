@@ -78,10 +78,53 @@
   type: string
   allowedValues: ["AzureCloud", "AzureChinaCloud", "AzureUSGovernment"]
   example: "AzureCloud"
-- key: ai.agent.model.type
-  description: "Default AI agent model provider."
+- key: copilot.model.type
+  description: "Default Copilot model provider."
   type: string
-  example: "github-copilot"
+  example: "copilot"
+- key: copilot.model
+  description: "Default model to use for Copilot agent sessions."
+  type: string
+  example: "gpt-4.1"
+- key: copilot.reasoningEffort
+  description: "Reasoning effort level for the Copilot agent. Higher effort uses more premium requests."
+  type: string
+  allowedValues: ["low", "medium", "high"]
+  example: "medium"
+- key: copilot.mode
+  description: "Default agent mode for Copilot sessions."
+  type: string
+  allowedValues: ["autopilot", "interactive", "plan"]
+  example: "interactive"
+- key: copilot.mcp.servers
+  description: "Additional MCP servers to load in Copilot agent sessions. Merged with built-in servers."
+  type: object
+  example: "copilot.mcp.servers.<name>.type"
+- key: copilot.tools.available
+  description: "Allowlist of tools available to the Copilot agent. When set, only these tools are active."
+  type: array
+  example: '["read_file", "write_file"]'
+- key: copilot.tools.excluded
+  description: "Denylist of tools blocked from the Copilot agent."
+  type: array
+  example: '["execute_command"]'
+- key: copilot.skills.directories
+  description: "Additional skill directories to load in Copilot agent sessions."
+  type: array
+  example: '["./skills"]'
+- key: copilot.skills.disabled
+  description: "Skills to disable in Copilot agent sessions."
+  type: array
+  example: '["legacy-linter"]'
+- key: copilot.systemMessage
+  description: "Custom system message appended to the Copilot agent's default system prompt."
+  type: string
+  example: "Always use TypeScript for code generation."
+- key: copilot.logLevel
+  description: "Log level for the Copilot SDK client."
+  type: string
+  allowedValues: ["error", "warn", "info", "debug"]
+  example: "info"
 - key: pipeline.config.applicationServiceManagementReference
   description: "Application Service Management Reference for Azure pipeline configuration."
   type: string

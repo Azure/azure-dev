@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -139,7 +138,10 @@ func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		if has, err := hra.importManager.HasService(ctx, hra.projectConfig, hra.flags.service); err != nil {
 			return nil, err
 		} else if !has {
-			return nil, fmt.Errorf("service name '%s' doesn't exist", hra.flags.service)
+			return nil, &internal.ErrorWithSuggestion{
+				Err:        fmt.Errorf("service '%s': %w", hra.flags.service, internal.ErrServiceNotFound),
+				Suggestion: "Check the service name in azure.yaml or run 'azd show' to list services.",
+			}
 		}
 	}
 
@@ -258,7 +260,7 @@ func (hra *hooksRunAction) execHook(
 
 	// Always run in interactive mode for 'azd hooks run', to help with testing/debugging
 	runOptions := &tools.ExecOptions{
-		Interactive: to.Ptr(true),
+		Interactive: new(true),
 	}
 
 	err := hooksRunner.RunHooks(ctx, hookType, runOptions, commandName)

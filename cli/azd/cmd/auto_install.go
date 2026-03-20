@@ -10,11 +10,13 @@ import (
 	"io"
 	"log"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -202,10 +204,8 @@ func isBuiltInCommand(rootCmd *cobra.Command, commandName string) bool {
 			return true
 		}
 		// Also check aliases
-		for _, alias := range cmd.Aliases {
-			if alias == commandName {
-				return true
-			}
+		if slices.Contains(cmd.Aliases, commandName) {
+			return true
 		}
 	}
 
@@ -218,10 +218,8 @@ func hasSubcommand(cmd *cobra.Command, name string) bool {
 		if sub.Name() == name {
 			return true
 		}
-		for _, alias := range sub.Aliases {
-			if alias == name {
-				return true
-			}
+		if slices.Contains(sub.Aliases, name) {
+			return true
 		}
 	}
 	return false
@@ -393,7 +391,7 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 	// This also enables the global options to be set in the container for support during extension framework callbacks.
 	globalOpts := &internal.GlobalCommandOptions{}
 	if err := ParseGlobalFlags(os.Args[1:], globalOpts); err != nil {
-		return fmt.Errorf("Warning: failed to parse global flags: %w", err)
+		return fmt.Errorf("failed to parse global flags: %w", err)
 	}
 
 	// Register GlobalCommandOptions as a singleton in the container BEFORE building the command tree.
@@ -432,8 +430,8 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 		}
 
 		// auto-install for target service
-		var unsupportedErr *project.UnsupportedServiceHostError
-		if !errors.As(err, &unsupportedErr) {
+		unsupportedErr, ok := errors.AsType[*project.UnsupportedServiceHostError](err)
+		if !ok {
 			return err
 		}
 
@@ -642,6 +640,18 @@ func CreateGlobalFlagSet() *pflag.FlagSet {
 func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error {
 	globalFlagSet := CreateGlobalFlagSet()
 
+	// Add the environment flag for early parsing. This is not in CreateGlobalFlagSet because
+	// it shouldn't be added to cobra's persistent flags (it's already registered per-command
+	// via EnvFlag.Bind). But we parse it here so GlobalCommandOptions.EnvironmentName is
+	// available for extension commands where DisableFlagParsing prevents cobra from parsing it.
+	// Guard against duplicate registration — pflag.StringP panics if the name already exists.
+	if globalFlagSet.Lookup(internal.EnvironmentNameFlagName) == nil {
+		globalFlagSet.StringP(
+			internal.EnvironmentNameFlagName, "e",
+			os.Getenv(environment.EnvNameEnvVarName), "",
+		)
+	}
+
 	// Set output to io.Discard to suppress any error messages from pflag
 	// Cobra will handle all user-facing output
 	globalFlagSet.SetOutput(io.Discard)
@@ -670,6 +680,17 @@ func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error 
 
 	if boolVal, err := globalFlagSet.GetBool("no-prompt"); err == nil {
 		opts.NoPrompt = boolVal
+	}
+
+	if strVal, err := globalFlagSet.GetString(internal.EnvironmentNameFlagName); err == nil {
+		if strVal != "" && !environment.IsValidEnvironmentName(strVal) {
+			return fmt.Errorf(
+				"invalid environment name '%s': must match %s",
+				strVal,
+				environment.EnvironmentNameRegexp.String(),
+			)
+		}
+		opts.EnvironmentName = strVal
 	}
 
 	// Agent Detection: If --no-prompt was not explicitly set and we detect an AI coding agent

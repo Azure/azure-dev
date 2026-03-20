@@ -53,8 +53,8 @@ func AnalyzeDocker(dockerFilePath string) (*Docker, error) {
 
 func parsePortsInLine(s string) ([]Port, error) {
 	var ports []Port
-	portSpecs := strings.Fields(s)
-	for _, portSpec := range portSpecs {
+	portSpecs := strings.FieldsSeq(s)
+	for portSpec := range portSpecs {
 		var portString string
 		var protocol string
 		if strings.Contains(portSpec, "/") {

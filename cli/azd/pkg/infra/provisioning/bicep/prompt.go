@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -39,7 +38,7 @@ func (p *BicepProvider) promptDialogItemForParameter(
 	dialogItem.Required = true
 
 	if help != "" {
-		dialogItem.Description = to.Ptr(help)
+		dialogItem.Description = new(help)
 	}
 
 	if paramType == provisioning.ParameterTypeBoolean {

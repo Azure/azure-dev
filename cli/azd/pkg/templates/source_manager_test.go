@@ -35,8 +35,8 @@ func Test_sourceManager_List(t *testing.T) {
 	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
 
 	config := config.NewConfig(nil)
-	_ = config.Set("template.sources", map[string]interface{}{
-		"test": map[string]interface{}{
+	_ = config.Set("template.sources", map[string]any{
+		"test": map[string]any{
 			"type":     "file",
 			"location": "testdata/templates.json",
 		},
@@ -58,7 +58,7 @@ func Test_sourceManager_List_EmptySources(t *testing.T) {
 	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
 
 	config := config.NewConfig(nil)
-	_ = config.Set("template.sources", map[string]interface{}{})
+	_ = config.Set("template.sources", map[string]any{})
 	configManager.On("Load").Return(config, nil)
 
 	// Empty source list should still return default azd template source
@@ -94,8 +94,8 @@ func Test_sourceManager_Get(t *testing.T) {
 	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
 
 	config := config.NewConfig(nil)
-	_ = config.Set("template.sources", map[string]interface{}{
-		"test": map[string]interface{}{
+	_ = config.Set("template.sources", map[string]any{
+		"test": map[string]any{
 			"type":     "file",
 			"location": "testdata/templates.json",
 		},
@@ -136,7 +136,7 @@ func Test_sourceManager_Add_DuplicateKey(t *testing.T) {
 
 	key := "test"
 	config := config.NewConfig(nil)
-	_ = config.Set("template.sources.test", map[string]interface{}{})
+	_ = config.Set("template.sources.test", map[string]any{})
 	configManager.On("Load").Return(config, nil)
 
 	source := &SourceConfig{
@@ -156,7 +156,7 @@ func Test_sourceManager_Remove(t *testing.T) {
 
 	key := "test"
 	config := config.NewConfig(defaultTemplateSourceData)
-	_ = config.Set("template.sources.test", map[string]interface{}{})
+	_ = config.Set("template.sources.test", map[string]any{})
 	configManager.On("Load").Return(config, nil)
 	configManager.On("Save", mock.Anything).Return(nil)
 

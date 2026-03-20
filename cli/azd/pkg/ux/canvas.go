@@ -8,6 +8,8 @@ import (
 	"io"
 	"os"
 	"sync"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/syncmap"
 )
 
 // Canvas is a base component for UX components that require a canvas for rendering.
@@ -98,10 +100,7 @@ func (c *canvas) writeBufferChunked() error {
 	out := c.buffer.Bytes()
 	if len(out) > 4096 {
 		for i := 0; i < len(out); i += 4096 {
-			end := i + 4096
-			if end > len(out) {
-				end = len(out)
-			}
+			end := min(i+4096, len(out))
 			if _, err := c.writer.Write(out[i:end]); err != nil {
 				return err
 			}
@@ -153,16 +152,14 @@ func newCanvasSize() *CanvasSize {
 }
 
 type canvasManager struct {
-	items         sync.Map
+	items         syncmap.Map[Canvas, struct{}]
 	focusedCanvas Canvas
 	focusLock     sync.Mutex
 	updateLock    sync.Mutex
 }
 
 func newCanvasManager() *canvasManager {
-	return &canvasManager{
-		items: sync.Map{},
-	}
+	return &canvasManager{}
 }
 
 func (cm *canvasManager) Add(canvas Canvas) {
@@ -190,8 +187,8 @@ func (cm *canvasManager) Focus(canvas Canvas) func() {
 	cm.focusedCanvas = canvas
 
 	// Clear non-focused canvases
-	cm.items.Range(func(key, value any) bool {
-		if c, ok := key.(Canvas); ok && c != canvas {
+	cm.items.Range(func(c Canvas, _ struct{}) bool {
+		if c != canvas {
 			c.Clear()
 		}
 		return true

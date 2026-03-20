@@ -103,7 +103,10 @@ func newUpdateAction(
 func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Non-production builds (dev and PR) should not self-update.
 	if internal.IsNonProdVersion() {
-		return nil, fmt.Errorf("azd update is not supported for dev or PR builds")
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        fmt.Errorf("not supported for dev or PR builds: %w", internal.ErrUnsupportedOperation),
+			Suggestion: "Build from source or install a release build to use 'azd update'.",
+		}
 	}
 
 	// Auto-enable the alpha feature if not already enabled.
@@ -288,8 +291,7 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	stdout := a.console.Handles().Stdout
 	if err := mgr.Update(ctx, cfg, stdout); err != nil {
 		// UpdateError already has the right code, just track it
-		var updateErr *update.UpdateError
-		if errors.As(err, &updateErr) {
+		if updateErr, ok := errors.AsType[*update.UpdateError](err); ok {
 			tracing.SetUsageAttributes(fields.UpdateResult.String(updateErr.Code))
 		} else {
 			tracing.SetUsageAttributes(fields.UpdateResult.String(update.CodeReplaceFailed))

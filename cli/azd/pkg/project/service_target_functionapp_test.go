@@ -15,10 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func boolPtr(value bool) *bool {
-	return &value
-}
-
 func TestNewFunctionAppTargetTypeValidation(t *testing.T) {
 	t.Parallel()
 
@@ -83,25 +79,25 @@ func TestResolveFunctionAppRemoteBuild_JavaScriptMatrix(t *testing.T) {
 		},
 		{
 			name:              "RemoteBuildFalseAndFuncIgnoreExcludesNodeModules_Errors",
-			remoteBuild:       boolPtr(false),
+			remoteBuild:       new(false),
 			funcIgnoreContent: "node_modules\n",
 			expectError:       "'remoteBuild: false' cannot be used when '.funcignore' excludes node_modules",
 		},
 		{
 			name:              "RemoteBuildFalseAndFuncIgnoreDoesNotExcludeNodeModules_Succeeds",
-			remoteBuild:       boolPtr(false),
+			remoteBuild:       new(false),
 			funcIgnoreContent: "dist\n",
 			expectRemoteBuild: false,
 		},
 		{
 			name:              "RemoteBuildTrueAndFuncIgnoreExcludesNodeModules_Succeeds",
-			remoteBuild:       boolPtr(true),
+			remoteBuild:       new(true),
 			funcIgnoreContent: "node_modules\n",
 			expectRemoteBuild: true,
 		},
 		{
 			name:              "RemoteBuildTrueAndFuncIgnoreDoesNotExcludeNodeModules_Errors",
-			remoteBuild:       boolPtr(true),
+			remoteBuild:       new(true),
 			funcIgnoreContent: "dist\n",
 			expectError:       "'remoteBuild: true' requires '.funcignore' to exclude node_modules",
 		},
@@ -148,7 +144,7 @@ func TestResolveFunctionAppRemoteBuild_NonJavaScriptDefaults(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, remoteBuild)
 
-	pythonConfig.RemoteBuild = boolPtr(false)
+	pythonConfig.RemoteBuild = new(false)
 	remoteBuild, err = resolveFunctionAppRemoteBuild(pythonConfig)
 	require.NoError(t, err)
 	require.False(t, remoteBuild)

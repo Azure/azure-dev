@@ -30,13 +30,13 @@ func printBanner(w io.Writer) {
 	dim := color.New(color.Faint)
 	fmt.Fprintln(w)
 
-	for _, line := range strings.Split(bannerArt, "\n") {
-		purple.Fprintln(w, line)
+	for line := range strings.SplitSeq(bannerArt, "\n") {
+		purple.Fprintln(w, line) //nolint:gosec // G104 - banner output errors are non-critical
 	}
 
-	dim.Fprintf(w, "v%s", version.Version)
+	dim.Fprintf(w, "v%s", version.Version) //nolint:gosec // G104 - banner output errors are non-critical
 	fmt.Fprint(w, " ")
 	fmt.Fprintln(w)
-	dim.Fprintln(w, "Visit the docs at https://aka.ms/azd-ai-agent-docs")
+	dim.Fprintln(w, "Visit the docs at https://aka.ms/azd-ai-agent-docs") //nolint:gosec // G104 - banner output errors are non-critical
 	fmt.Fprintln(w)
 }

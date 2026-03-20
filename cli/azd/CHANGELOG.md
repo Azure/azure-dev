@@ -17,8 +17,6 @@
 - [[#7174]](https://github.com/Azure/azure-dev/pull/7174) Fix preflight role assignment permission check producing false-positive warnings for B2B/guest users by resolving the principal ID against the resource tenant, and fix per-role RBAC evaluation to match Azure semantics.
 - [[#7175]](https://github.com/Azure/azure-dev/pull/7175) Fix path traversal vulnerabilities with containment checks for extensions and templates, add WebSocket origin validation for localhost-only connections, harden JWT signing key size and algorithm, and add sensitive data redaction in error paths. Thanks @jongio for the contribution!
 - [[#7193]](https://github.com/Azure/azure-dev/pull/7193) Fix extension `PromptSubscription` not masking subscription IDs when `AZD_DEMO_MODE` is enabled.
-- [[#7212]](https://github.com/Azure/azure-dev/pull/7212) Fix `azd up --debug` and `azd up --no-prompt` failing with unexpected positional arguments during workflow step execution.
-- [[#7218]](https://github.com/Azure/azure-dev/pull/7218) Fix regression introduced by #7171 where rebuilding the cobra command tree on workflow step re-execution re-registered IoC singletons, causing event handlers (e.g., lifecycle hooks for `preprovision`, `postprovision`, `predeploy`) to be silently lost.
 
 ### Other Changes
 

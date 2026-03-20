@@ -38,7 +38,7 @@ docker run -d --name jaeger \
 Then pass the endpoint to any command:
 
 ```bash
-azd provision --trace-log-url localhost
+azd provision --trace-log-url http://localhost:4318
 ```
 
 View results at [http://localhost:16686/search](http://localhost:16686/search).

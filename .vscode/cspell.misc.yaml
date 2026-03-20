@@ -36,3 +36,29 @@ overrides:
           - azureai
           - entra
           - flexconsumption
+    - filename: docs/architecture/**/*.md
+      words:
+          - azapi
+          - Errorf
+          - grpcbroker
+          - vsrpc
+    - filename: docs/guides/**/*.md
+      words:
+          - errorlint
+          - Errorf
+          - gofmt
+          - golangci
+          - gosec
+          - jaegertracing
+          - mycommand
+          - mypackage
+          - pflag
+          - staticcheck
+          - stdlib
+          - vsrpc
+    - filename: docs/reference/**/*.md
+      words:
+          - appservice
+          - Buildpacks
+          - containerapp
+          - staticwebapp

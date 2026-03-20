@@ -27,7 +27,7 @@
 
 ## 🤖 AI Agents
 
-**Contributing to this repo?** See [AGENTS.md](cli/azd/AGENTS.md) for coding standards and [docs/](docs/README.md) for contributor documentation.
+**Contributing to this repo?** See [AGENTS.md](AGENTS.md) for coding standards and [docs/](docs/README.md) for contributor documentation.
 
 **Using `azd` with an AI coding assistant?** Check out the [docs](https://aka.ms/azd) and [templates](https://azure.github.io/awesome-azd/).
 

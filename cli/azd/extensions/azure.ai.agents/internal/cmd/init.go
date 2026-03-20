@@ -15,7 +15,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -1485,94 +1484,36 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 }
 
 func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.ContainerSettings, error) {
-	if a.flags.NoPrompt {
-		fmt.Printf("No prompt mode enabled, using default container settings\n")
-		return &project.ContainerSettings{
-			Resources: &project.ResourceSettings{
-				Memory: project.DefaultMemory,
-				Cpu:    project.DefaultCpu,
-			},
-			Scale: &project.ScaleSettings{
-				MinReplicas: project.DefaultMinReplicas,
-				MaxReplicas: project.DefaultMaxReplicas,
-			},
-		}, nil
+	choices := make([]*azdext.SelectChoice, len(project.ResourceTiers))
+	for i, t := range project.ResourceTiers {
+		choices[i] = &azdext.SelectChoice{
+			Label: t.String(),
+			Value: fmt.Sprintf("%d", i),
+		}
 	}
 
-	// Default values
-	defaultMemory := project.DefaultMemory
-	defaultCpu := project.DefaultCpu
-	defaultMinReplicas := fmt.Sprintf("%d", project.DefaultMinReplicas)
-	defaultMaxReplicas := fmt.Sprintf("%d", project.DefaultMaxReplicas)
-
-	// Prompt for memory allocation
-	memoryResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-		Options: &azdext.PromptOptions{
-			Message:      "Enter desired container memory allocation (e.g., '1Gi', '512Mi')",
-			DefaultValue: defaultMemory,
+	defaultIndex := int32(0)
+	resp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message:       "Select container resource allocation (CPU and Memory) for your agent. You can adjust these settings later in the azure.yaml file if needed.",
+			Choices:       choices,
+			SelectedIndex: &defaultIndex,
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("prompting for memory allocation: %w", err)
+		return nil, fmt.Errorf("prompting for container resources: %w", err)
 	}
 
-	// Prompt for CPU allocation
-	cpuResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-		Options: &azdext.PromptOptions{
-			Message:      "Enter desired container CPU allocation (e.g., '1', '500m')",
-			DefaultValue: defaultCpu,
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("prompting for CPU allocation: %w", err)
-	}
-
-	// Prompt for minimum replicas
-	minReplicasResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-		Options: &azdext.PromptOptions{
-			Message:      "Enter desired container minimum number of replicas",
-			DefaultValue: defaultMinReplicas,
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("prompting for minimum replicas: %w", err)
-	}
-
-	// Prompt for maximum replicas
-	maxReplicasResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-		Options: &azdext.PromptOptions{
-			Message:      "Enter desired container maximum number of replicas",
-			DefaultValue: defaultMaxReplicas,
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("prompting for maximum replicas: %w", err)
-	}
-
-	// Convert string values to appropriate types
-	minReplicas, err := strconv.Atoi(minReplicasResp.Value)
-	if err != nil {
-		return nil, fmt.Errorf("invalid minimum replicas value: %w", err)
-	}
-
-	maxReplicas, err := strconv.Atoi(maxReplicasResp.Value)
-	if err != nil {
-		return nil, fmt.Errorf("invalid maximum replicas value: %w", err)
-	}
-
-	// Validate that max replicas >= min replicas
-	if maxReplicas < minReplicas {
-		return nil, fmt.Errorf("maximum replicas (%d) must be greater than or equal to minimum replicas (%d)", maxReplicas, minReplicas)
-	}
+	selected := project.ResourceTiers[*resp.Value]
 
 	return &project.ContainerSettings{
 		Resources: &project.ResourceSettings{
-			Memory: memoryResp.Value,
-			Cpu:    cpuResp.Value,
+			Memory: selected.Memory,
+			Cpu:    selected.Cpu,
 		},
 		Scale: &project.ScaleSettings{
-			MinReplicas: minReplicas,
-			MaxReplicas: maxReplicas,
+			MinReplicas: project.DefaultMinReplicas,
+			MaxReplicas: project.DefaultMaxReplicas,
 		},
 	}, nil
 }

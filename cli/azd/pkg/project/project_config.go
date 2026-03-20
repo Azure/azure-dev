@@ -5,7 +5,6 @@ package project
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
@@ -78,51 +77,7 @@ type ProjectMetadata struct {
 	Template string
 }
 
-// HooksConfig is an alias for map of hook names to slice of hook configurations
-// This custom alias type is used to help support YAML unmarshalling of legacy single hook configurations
-// and new multiple hook configurations
-type HooksConfig map[string][]*ext.HookConfig
-
-// UnmarshalYAML converts the hooks configuration from YAML supporting both legacy single hook configurations
-// and new multiple hook configurations
-func (ch *HooksConfig) UnmarshalYAML(unmarshal func(any) error) error {
-	var legacyConfig map[string]*ext.HookConfig
-
-	// Attempt to unmarshal the legacy single hook configuration
-	if err := unmarshal(&legacyConfig); err == nil {
-		newConfig := HooksConfig{}
-
-		for key, value := range legacyConfig {
-			newConfig[key] = []*ext.HookConfig{value}
-		}
-
-		*ch = newConfig
-	} else { // Unmarshal the new multiple hook configuration
-		var newConfig map[string][]*ext.HookConfig
-		if err := unmarshal(&newConfig); err != nil {
-			return fmt.Errorf("failed to unmarshal hooks configuration: %w", err)
-		}
-
-		*ch = newConfig
-	}
-
-	return nil
-}
-
-// MarshalYAML marshals the hooks configuration to YAML supporting both legacy single hook configurations
-func (ch HooksConfig) MarshalYAML() (any, error) {
-	if len(ch) == 0 {
-		return nil, nil
-	}
-
-	result := map[string]any{}
-	for key, hooks := range ch {
-		if len(hooks) == 1 {
-			result[key] = hooks[0]
-		} else {
-			result[key] = hooks
-		}
-	}
-
-	return result, nil
-}
+// HooksConfig is an alias for ext.HooksConfig.
+// This type supports YAML unmarshalling of both the legacy single hook configuration format
+// and the newer multiple hook configuration format.
+type HooksConfig = ext.HooksConfig

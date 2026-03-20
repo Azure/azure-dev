@@ -477,6 +477,82 @@ postbuild:
 	})
 }
 
+func TestLayerHooksParsedFromYaml(t *testing.T) {
+	const testProj = `
+name: test-proj
+infra:
+  layers:
+    - name: networking
+      path: infra/networking
+      hooks:
+        preprovision:
+          run: echo 'pre-network'
+          shell: sh
+        postprovision:
+          run: echo 'post-network'
+          shell: sh
+    - name: application
+      path: infra/app
+      hooks:
+        preprovision:
+          run: echo 'pre-app'
+          shell: sh
+`
+
+	projectConfig, err := Parse(context.Background(), testProj)
+	require.NoError(t, err)
+
+	// Verify layers are parsed
+	require.Len(t, projectConfig.Infra.Layers, 2)
+
+	networkingLayer := projectConfig.Infra.Layers[0]
+	appLayer := projectConfig.Infra.Layers[1]
+
+	// Verify networking layer hooks
+	assert.Len(t, networkingLayer.Hooks, 2)
+	require.Contains(t, networkingLayer.Hooks, "preprovision")
+	require.Contains(t, networkingLayer.Hooks, "postprovision")
+	assert.Equal(t, "echo 'pre-network'", networkingLayer.Hooks["preprovision"][0].Run)
+	assert.Equal(t, ext.ShellTypeBash, networkingLayer.Hooks["preprovision"][0].Shell)
+	assert.Equal(t, "echo 'post-network'", networkingLayer.Hooks["postprovision"][0].Run)
+
+	// Verify application layer hooks
+	assert.Len(t, appLayer.Hooks, 1)
+	require.Contains(t, appLayer.Hooks, "preprovision")
+	assert.Equal(t, "echo 'pre-app'", appLayer.Hooks["preprovision"][0].Run)
+
+	// Verify EventDispatchers are initialized for all layers
+	assert.NotNil(t, networkingLayer.EventDispatcher,
+		"EventDispatcher should be initialized for networking layer")
+	assert.NotNil(t, appLayer.EventDispatcher,
+		"EventDispatcher should be initialized for application layer")
+}
+
+func TestLayerHooksLegacyFormatParsedFromYaml(t *testing.T) {
+	const testProj = `
+name: test-proj
+infra:
+  layers:
+    - name: networking
+      path: infra/networking
+      hooks:
+        preprovision:
+          run: echo 'pre-network'
+          shell: sh
+`
+
+	projectConfig, err := Parse(context.Background(), testProj)
+	require.NoError(t, err)
+
+	require.Len(t, projectConfig.Infra.Layers, 1)
+	networkingLayer := projectConfig.Infra.Layers[0]
+
+	// Legacy single-hook format should be parsed into a slice of one hook
+	require.Contains(t, networkingLayer.Hooks, "preprovision")
+	require.Len(t, networkingLayer.Hooks["preprovision"], 1)
+	assert.Equal(t, "echo 'pre-network'", networkingLayer.Hooks["preprovision"][0].Run)
+}
+
 func TestInfraDefaultsNotSavedToYaml(t *testing.T) {
 	t.Run("DefaultValuesNotWritten", func(t *testing.T) {
 		// Create a minimal project config with no infra settings

@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
@@ -286,6 +287,143 @@ func Test_ServiceHooks_Registered(t *testing.T) {
 	require.NotNil(t, result)
 	require.NoError(t, err)
 	require.Equal(t, 1, preDeployCount)
+}
+
+func Test_LayerHooks_Registered(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	azdContext := createAzdContext(t)
+
+	envName := "test"
+	runOptions := Options{CommandPath: "provision"}
+
+	layerDispatcher := ext.NewEventDispatcher[provisioning.InfraLayerLifecycleEventArgs](
+		provisioning.InfraLayerEventProvision,
+	)
+
+	projectConfig := project.ProjectConfig{
+		Name: envName,
+		Infra: provisioning.Options{
+			Layers: []provisioning.Options{
+				{
+					Name:            "networking",
+					Path:            "infra/networking",
+					EventDispatcher: layerDispatcher,
+					Hooks: map[string][]*ext.HookConfig{
+						"preprovision": {
+							{
+								Shell: ext.ShellTypeBash,
+								Run:   "echo 'Hello'",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	preProvisionCount := 0
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "preprovision")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		preProvisionCount++
+		return exec.NewRunResult(0, "", ""), nil
+	})
+
+	err := ensureAzdValid(mockContext, azdContext, envName, &projectConfig)
+	require.NoError(t, err)
+
+	nextFn := func(ctx context.Context) (*actions.ActionResult, error) {
+		layer := &projectConfig.Infra.Layers[0]
+		err := layer.EventDispatcher.Invoke(
+			ctx,
+			provisioning.InfraLayerEventProvision,
+			provisioning.InfraLayerLifecycleEventArgs{Layer: layer},
+			func() error {
+				return nil
+			},
+		)
+
+		return &actions.ActionResult{}, err
+	}
+
+	result, err := runMiddleware(mockContext, envName, &projectConfig, &runOptions, nextFn)
+
+	require.NotNil(t, result)
+	require.NoError(t, err)
+	require.Equal(t, 1, preProvisionCount)
+}
+
+func Test_LayerHooks_PreAndPost_BothRun(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	azdContext := createAzdContext(t)
+
+	envName := "test"
+	runOptions := Options{CommandPath: "provision"}
+
+	layerDispatcher := ext.NewEventDispatcher[provisioning.InfraLayerLifecycleEventArgs](
+		provisioning.InfraLayerEventProvision,
+	)
+
+	projectConfig := project.ProjectConfig{
+		Name: envName,
+		Infra: provisioning.Options{
+			Layers: []provisioning.Options{
+				{
+					Name:            "networking",
+					Path:            "infra/networking",
+					EventDispatcher: layerDispatcher,
+					Hooks: map[string][]*ext.HookConfig{
+						"preprovision": {
+							{
+								Shell: ext.ShellTypeBash,
+								Run:   "echo 'pre'",
+							},
+						},
+						"postprovision": {
+							{
+								Shell: ext.ShellTypeBash,
+								Run:   "echo 'post'",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	hookRunCount := 0
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "provision")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		hookRunCount++
+		return exec.NewRunResult(0, "", ""), nil
+	})
+
+	err := ensureAzdValid(mockContext, azdContext, envName, &projectConfig)
+	require.NoError(t, err)
+
+	nextFn := func(ctx context.Context) (*actions.ActionResult, error) {
+		layer := &projectConfig.Infra.Layers[0]
+		err := layer.EventDispatcher.Invoke(
+			ctx,
+			provisioning.InfraLayerEventProvision,
+			provisioning.InfraLayerLifecycleEventArgs{Layer: layer},
+			func() error {
+				return nil
+			},
+		)
+
+		return &actions.ActionResult{}, err
+	}
+
+	result, err := runMiddleware(mockContext, envName, &projectConfig, &runOptions, nextFn)
+
+	require.NotNil(t, result)
+	require.NoError(t, err)
+	// Both pre and post provision hooks should have run
+	require.Equal(t, 2, hookRunCount)
 }
 
 func createAzdContext(t *testing.T) *azdcontext.AzdContext {

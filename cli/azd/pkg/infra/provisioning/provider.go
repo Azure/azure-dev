@@ -11,6 +11,7 @@ import (
 	"dario.cat/mergo"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 )
 
 type ProviderKind string
@@ -33,6 +34,18 @@ const (
 	ModeDestroy Mode = "destroy"
 )
 
+// InfraLayerEventProvision is the event name for infra layer provisioning lifecycle.
+const InfraLayerEventProvision ext.Event = "provision"
+
+// InfraLayerLifecycleEventArgs contains event arguments for infra layer lifecycle events.
+type InfraLayerLifecycleEventArgs struct {
+	Layer *Options
+	Args  map[string]any
+}
+
+// InfraLayerLifecycleEventHandlerFn is a function type for handling infra layer lifecycle events.
+type InfraLayerLifecycleEventHandlerFn func(ctx context.Context, args InfraLayerLifecycleEventArgs) error
+
 // Options for a provisioning provider.
 type Options struct {
 	Provider         ProviderKind   `yaml:"provider,omitempty"`
@@ -42,6 +55,8 @@ type Options struct {
 	DeploymentStacks map[string]any `yaml:"deploymentStacks,omitempty"`
 	// Provisioning options for each individually defined layer.
 	Layers []Options `yaml:"layers,omitempty"`
+	// Hook configuration for the infra layer.
+	Hooks ext.HooksConfig `yaml:"hooks,omitempty"`
 
 	// Runtime options
 
@@ -49,6 +64,10 @@ type Options struct {
 	IgnoreDeploymentState bool `yaml:"-"`
 	// The mode in which the deployment is being run.
 	Mode Mode `yaml:"-"`
+
+	// EventDispatcher for infra layer lifecycle events.
+	// This is used to register and invoke hooks for the infra layer.
+	EventDispatcher *ext.EventDispatcher[InfraLayerLifecycleEventArgs] `yaml:"-"`
 }
 
 // GetWithDefaults merges the provided infra options with the default provisioning options

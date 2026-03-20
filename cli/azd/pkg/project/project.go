@@ -81,8 +81,10 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 		return nil, fmt.Errorf("parsing project %s: %w", projectConfig.Name, err)
 	}
 
-	for _, layer := range projectConfig.Infra.Layers {
-		layer.Provider = projectConfig.Infra.Provider
+	for i := range projectConfig.Infra.Layers {
+		projectConfig.Infra.Layers[i].EventDispatcher = ext.NewEventDispatcher[provisioning.InfraLayerLifecycleEventArgs](
+			provisioning.InfraLayerEventProvision,
+		)
 	}
 
 	if strings.Contains(projectConfig.Infra.Path, "\\") && !strings.Contains(projectConfig.Infra.Path, "/") {

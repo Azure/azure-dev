@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -63,6 +64,10 @@ func (m *HooksMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 	if err := m.registerServiceHooks(ctx); err != nil {
 		return nil, fmt.Errorf("failed registering service hooks, %w", err)
+	}
+
+	if err := m.registerLayerHooks(ctx); err != nil {
+		return nil, fmt.Errorf("failed registering layer hooks, %w", err)
 	}
 
 	return m.registerCommandHooks(ctx, next)
@@ -179,6 +184,77 @@ func (m *HooksMiddleware) createServiceEventHandler(
 	}
 }
 
+// registerLayerHooks registers event handlers for all infra layers within the project configuration.
+// Runs hooks for each matching event handler when the layer EventDispatcher is invoked.
+func (m *HooksMiddleware) registerLayerHooks(ctx context.Context) error {
+	for i := range m.projectConfig.Infra.Layers {
+		layer := &m.projectConfig.Infra.Layers[i]
+		layerName := layer.Name
+
+		// If the layer hasn't configured any hooks we can continue on.
+		if len(layer.Hooks) == 0 {
+			log.Printf("infra layer '%s' does not require any hooks.\n", layerName)
+			continue
+		}
+
+		if layer.EventDispatcher == nil {
+			log.Printf("infra layer '%s' has hooks but no event dispatcher, skipping.\n", layerName)
+			continue
+		}
+
+		layerPath := layer.Path
+		if layerPath == "" {
+			layerPath = m.projectConfig.Path
+		}
+
+		layerHooksManager := ext.NewHooksManager(layerPath, m.commandRunner)
+		layerHooksRunner := ext.NewHooksRunner(
+			layerHooksManager,
+			m.commandRunner,
+			m.envManager,
+			m.console,
+			layerPath,
+			layer.Hooks,
+			m.env,
+			m.serviceLocator,
+		)
+
+		for hookName := range layer.Hooks {
+			hookType, eventName := ext.InferHookType(hookName)
+			// If not a pre or post hook we can continue on.
+			if hookType == ext.HookTypeNone {
+				continue
+			}
+
+			if err := layer.EventDispatcher.AddHandler(
+				ctx,
+				ext.Event(hookName),
+				m.createLayerEventHandler(hookType, eventName, layerHooksRunner),
+			); err != nil {
+				return fmt.Errorf(
+					"failed registering event handler for layer '%s' and event '%s', %w",
+					layerName,
+					hookName,
+					err,
+				)
+			}
+		}
+	}
+
+	return nil
+}
+
+// createLayerEventHandler creates an event handler for the specified infra layer and hook name
+func (m *HooksMiddleware) createLayerEventHandler(
+	hookType ext.HookType,
+	hookName string,
+	hooksRunner *ext.HooksRunner,
+) ext.EventHandlerFn[provisioning.InfraLayerLifecycleEventArgs] {
+	return func(ctx context.Context, eventArgs provisioning.InfraLayerLifecycleEventArgs) error {
+		return hooksRunner.RunHooks(ctx, hookType, nil, hookName)
+	}
+}
+
 // validateHooks validates hook configurations and displays any warnings
 func (m *HooksMiddleware) validateHooks(ctx context.Context, projectConfig *project.ProjectConfig) error {
 	// Get service hooks for validation
@@ -192,7 +268,7 @@ func (m *HooksMiddleware) validateHooks(ctx context.Context, projectConfig *proj
 		serviceHooks = append(serviceHooks, service.Hooks)
 	}
 
-	// Combine project and service hooks into a single map
+	// Combine project, service, and layer hooks into a single map
 	allHooks := make(map[string][]*ext.HookConfig)
 
 	// Add project hooks
@@ -203,6 +279,13 @@ func (m *HooksMiddleware) validateHooks(ctx context.Context, projectConfig *proj
 	// Add service hooks
 	for _, serviceHookMap := range serviceHooks {
 		for hookName, hookConfigs := range serviceHookMap {
+			allHooks[hookName] = append(allHooks[hookName], hookConfigs...)
+		}
+	}
+
+	// Add layer hooks
+	for _, layer := range projectConfig.Infra.Layers {
+		for hookName, hookConfigs := range layer.Hooks {
 			allHooks[hookName] = append(allHooks[hookName], hookConfigs...)
 		}
 	}

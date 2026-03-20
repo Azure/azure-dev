@@ -341,10 +341,27 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		if previewMode {
 			deployPreviewResult, err = p.provisionManager.Preview(ctx)
 		} else {
-			err = p.projectConfig.Invoke(ctx, project.ProjectEventProvision, projectEventArgs, func() error {
+			deployFn := func() error {
 				var err error
 				deployResult, err = p.provisionManager.Deploy(ctx)
 				return err
+			}
+
+			err = p.projectConfig.Invoke(ctx, project.ProjectEventProvision, projectEventArgs, func() error {
+				// Invoke layer-specific hooks if an EventDispatcher is configured for this layer
+				if layer.EventDispatcher != nil {
+					layerEventArgs := provisioning.InfraLayerLifecycleEventArgs{
+						Layer: &layers[i],
+					}
+					return layer.EventDispatcher.Invoke(
+						ctx,
+						provisioning.InfraLayerEventProvision,
+						layerEventArgs,
+						deployFn,
+					)
+				}
+
+				return deployFn()
 			})
 		}
 

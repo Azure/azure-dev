@@ -1484,27 +1484,10 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 }
 
 func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.ContainerSettings, error) {
-	type resourceTier struct {
-		label  string
-		cpu    string
-		memory string
-	}
-
-	tiers := []resourceTier{
-		{
-			label:  fmt.Sprintf("%s cores, %s memory", project.DefaultCpu, project.DefaultMemory),
-			cpu:    project.DefaultCpu,
-			memory: project.DefaultMemory,
-		},
-		{label: "0.5 cores, 1Gi memory", cpu: "0.5", memory: "1Gi"},
-		{label: "1 core, 2Gi memory", cpu: "1", memory: "2Gi"},
-		{label: "2 cores, 4Gi memory", cpu: "2", memory: "4Gi"},
-	}
-
-	choices := make([]*azdext.SelectChoice, len(tiers))
-	for i, t := range tiers {
+	choices := make([]*azdext.SelectChoice, len(project.ResourceTiers))
+	for i, t := range project.ResourceTiers {
 		choices[i] = &azdext.SelectChoice{
-			Label: t.label,
+			Label: t.String(),
 			Value: fmt.Sprintf("%d", i),
 		}
 	}
@@ -1521,12 +1504,12 @@ func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.Co
 		return nil, fmt.Errorf("prompting for container resources: %w", err)
 	}
 
-	selected := tiers[*resp.Value]
+	selected := project.ResourceTiers[*resp.Value]
 
 	return &project.ContainerSettings{
 		Resources: &project.ResourceSettings{
-			Memory: selected.memory,
-			Cpu:    selected.cpu,
+			Memory: selected.Memory,
+			Cpu:    selected.Cpu,
 		},
 		Scale: &project.ScaleSettings{
 			MinReplicas: project.DefaultMinReplicas,

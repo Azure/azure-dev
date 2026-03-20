@@ -5,7 +5,7 @@
 ### Features Added
 
 - [[#7045]](https://github.com/Azure/azure-dev/pull/7045) Add `--timeout` flag to `azd deploy` and a `deployTimeout` service configuration field in `azure.yaml` for user-configurable deployment timeouts (CLI flag > `azure.yaml` > default 1200 seconds). Thanks @spboyer for the contribution!
-- [[#7162]](https://github.com/Azure/azure-dev/pull/7162) Add git dirty working directory check when running `azd init` with GitHub Copilot agent mode, prompting for confirmation before modifying uncommitted changes, and add upfront MCP server tool consent prompt.
+- [[#7162]](https://github.com/Azure/azure-dev/pull/7162) Add git dirty working directory check when running `azd init` with "Set up with GitHub Copilot (Preview)", prompting for confirmation before modifying uncommitted changes, and add upfront MCP server tool consent prompt.
 - [[#7172]](https://github.com/Azure/azure-dev/pull/7172) Add `CopilotService` gRPC service to the extension framework, enabling extensions to programmatically interact with GitHub Copilot agent capabilities (initialize sessions, send messages, retrieve usage metrics and file changes).
 - [[#7194]](https://github.com/Azure/azure-dev/pull/7194) Rebrand `azd init` agent experience to "Set up with GitHub Copilot (Preview)" with improved prompt quality and system message guidance.
 - [[#7216]](https://github.com/Azure/azure-dev/pull/7216) Improve AI-assisted error troubleshooting with a multi-step flow: select a troubleshooting category (explain, guidance, troubleshoot, or skip), optionally allow the agent to apply a fix, and retry the failed command.
@@ -15,7 +15,7 @@
 - [[#7035]](https://github.com/Azure/azure-dev/pull/7035) Fix default environment variables leaking into extension processes when a different environment is specified with `-e`.
 - [[#7171]](https://github.com/Azure/azure-dev/pull/7171) Fix "context cancelled" errors when retrying `azd` commands after GitHub Copilot agent troubleshooting, by rebuilding the cobra command tree on each workflow re-execution.
 - [[#7174]](https://github.com/Azure/azure-dev/pull/7174) Fix preflight role assignment permission check producing false-positive warnings for B2B/guest users by resolving the principal ID against the resource tenant, and fix per-role RBAC evaluation to match Azure semantics.
-- [[#7175]](https://github.com/Azure/azure-dev/pull/7175) Fix path traversal vulnerabilities with containment checks for extensions and templates, add WebSocket origin validation for localhost-only connections, harden JWT signing key size and algorithm, and add sensitive data redaction in error paths. Thanks @jongio for the contribution!
+- [[#7175]](https://github.com/Azure/azure-dev/pull/7175) Fix security issues: path traversal in extensions and templates, WebSocket origin validation, JWT hardening, and sensitive data redaction. Thanks @jongio for the contribution!
 - [[#7193]](https://github.com/Azure/azure-dev/pull/7193) Fix extension `PromptSubscription` not masking subscription IDs when `AZD_DEMO_MODE` is enabled.
 
 ### Other Changes

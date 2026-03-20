@@ -114,7 +114,7 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 		Short: fmt.Sprintf("Initialize a new AI agent project. %s", color.YellowString("(Preview)")),
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			printBanner(os.Stdout)
+			printBanner(cmd.OutOrStdout())
 
 			ctx := azdext.WithAccessToken(cmd.Context())
 

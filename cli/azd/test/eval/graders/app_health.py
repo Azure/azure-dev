@@ -59,6 +59,8 @@ def check_endpoint(
             return {"passed": True, "reason": f"Status {status} OK"}
 
         except HTTPError as e:
+            if e.code == expected_status:
+                return {"passed": True, "reason": f"Status {e.code} matches expected"}
             last_error = f"HTTP {e.code}: {e.reason}"
         except URLError as e:
             last_error = f"Connection error: {e.reason}"

@@ -109,6 +109,40 @@ class TestAppHealthGrader:
         assert result["score"] == 0.0
         assert "Connection error" in result["reason"]
 
+    @patch("app_health.urlopen")
+    def test_non_2xx_expected_status(self, mock_urlopen):
+        """Non-2xx expected_status should match against HTTPError code."""
+        mock_urlopen.side_effect = HTTPError(
+            url="", code=404, msg="Not Found", hdrs={}, fp=None
+        )
+
+        result = app_health.grade({
+            "params": {
+                "endpoints": [
+                    {"url": "https://example.com/deleted", "expected_status": 404},
+                ],
+                "retries": 1,
+            }
+        })
+        assert result["score"] == 1.0
+
+    @patch("app_health.urlopen")
+    def test_non_2xx_unexpected_status(self, mock_urlopen):
+        """HTTPError with wrong code should fail."""
+        mock_urlopen.side_effect = HTTPError(
+            url="", code=500, msg="Server Error", hdrs={}, fp=None
+        )
+
+        result = app_health.grade({
+            "params": {
+                "endpoints": [
+                    {"url": "https://example.com/fail", "expected_status": 200},
+                ],
+                "retries": 1,
+            }
+        })
+        assert result["score"] == 0.0
+
     def test_empty_url_fails(self):
         result = app_health.grade({
             "params": {
@@ -131,7 +165,7 @@ class TestCleanupValidatorGrader:
         assert result["score"] == 0.0
         assert "Missing" in result["reason"]
 
-    @patch("cleanup_validator.get_access_token")
+    @patch("azure_auth.get_access_token")
     @patch("cleanup_validator.urlopen")
     def test_resource_group_deleted(self, mock_urlopen, mock_token):
         mock_token.return_value = "fake-token"
@@ -148,7 +182,7 @@ class TestCleanupValidatorGrader:
         assert result["score"] == 1.0
         assert "successfully deleted" in result["reason"]
 
-    @patch("cleanup_validator.get_access_token")
+    @patch("azure_auth.get_access_token")
     @patch("cleanup_validator.urlopen")
     def test_resource_group_still_exists(self, mock_urlopen, mock_token):
         mock_token.return_value = "fake-token"
@@ -174,7 +208,7 @@ class TestCleanupValidatorGrader:
         assert result["score"] == 0.0
         assert "still exists" in result["reason"]
 
-    @patch("cleanup_validator.get_access_token")
+    @patch("azure_auth.get_access_token")
     @patch("cleanup_validator.urlopen")
     def test_resource_group_deleting(self, mock_urlopen, mock_token):
         mock_token.return_value = "fake-token"
@@ -207,7 +241,7 @@ class TestInfraValidatorGrader:
         assert result["score"] == 0.0
         assert "Missing" in result["reason"]
 
-    @patch("infra_validator.get_access_token")
+    @patch("azure_auth.get_access_token")
     @patch("infra_validator.urlopen")
     def test_resource_group_not_found(self, mock_urlopen, mock_token):
         mock_token.return_value = "fake-token"
@@ -224,7 +258,7 @@ class TestInfraValidatorGrader:
         assert result["score"] == 0.0
         assert "does not exist" in result["reason"]
 
-    @patch("infra_validator.get_access_token")
+    @patch("azure_auth.get_access_token")
     @patch("infra_validator.urlopen")
     def test_all_expected_resources_found(self, mock_urlopen, mock_token):
         mock_token.return_value = "fake-token"
@@ -255,7 +289,7 @@ class TestInfraValidatorGrader:
         assert result["score"] == 1.0
         assert "All expected resources found" in result["reason"]
 
-    @patch("infra_validator.get_access_token")
+    @patch("azure_auth.get_access_token")
     @patch("infra_validator.urlopen")
     def test_missing_expected_resources(self, mock_urlopen, mock_token):
         mock_token.return_value = "fake-token"
@@ -283,7 +317,7 @@ class TestInfraValidatorGrader:
         assert result["score"] == 0.5
         assert "Missing resources" in result["reason"]
 
-    @patch("infra_validator.get_access_token")
+    @patch("azure_auth.get_access_token")
     @patch("infra_validator.urlopen")
     def test_rg_exists_no_expected_resources(self, mock_urlopen, mock_token):
         mock_token.return_value = "fake-token"

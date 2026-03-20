@@ -1,7 +1,7 @@
 import { execSync } from "child_process";
 import { resolve } from "path";
 
-export const AZD_BIN = resolve(__dirname, "../../../azd");
+export const AZD_BIN = resolve(__dirname, "../../../azd" + (process.platform === "win32" ? ".exe" : ""));
 
 export interface AzdResult {
   stdout: string;

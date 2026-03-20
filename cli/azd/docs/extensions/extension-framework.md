@@ -24,9 +24,8 @@ Table of Contents
 
 ## Getting Started
 
-`azd` extensions are currently an alpha feature within `azd`.
+`azd` extensions are currently a beta feature (Public Preview) within `azd`.
 
-- Initially official extensions will start shipping at //BUILD 2025.
 - Official extensions must be developed in a fork of the [azure/azure-dev](https://github.com/azure/azure-dev) github repo.
 - Extension binaries are shipped as Github releases to the same repo through our official pipelines.
 
@@ -759,7 +758,7 @@ Common issues you might encounter when developing and publishing extensions:
 
 ### Capabilities
 
-#### Current Capabilities (October 2025)
+#### Current Capabilities
 
 The following lists the current capabilities available to `azd` extensions:
 
@@ -1087,17 +1086,26 @@ examples:
 The following is an example of an [extension manifest](../extensions/microsoft.azd.demo/extension.yaml).
 
 ```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/registry.schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/extension.schema.json
 
 id: microsoft.azd.demo
 namespace: demo
 displayName: Demo Extension
 description: This extension provides examples of the azd extension framework.
 usage: azd demo <command> [options]
-version: 0.1.0
+version: 0.6.0
+language: go
 capabilities:
   - custom-commands
   - lifecycle-events
+  - mcp-server
+  - service-target-provider
+  - framework-service-provider
+  - metadata
+providers:
+  - name: demo
+    type: service-target
+    description: Deploys application components to demo
 examples:
   - name: context
     description: Displays the current `azd` project & environment context.

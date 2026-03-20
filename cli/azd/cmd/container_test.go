@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
@@ -310,6 +311,56 @@ func Test_WorkflowCmdAdapter_ContextPropagation(t *testing.T) {
 		require.Len(t, commandTreeInstances, 2, "Factory should have been called twice")
 		require.NotSame(t, commandTreeInstances[0], commandTreeInstances[1],
 			"Each execution should use a distinct command tree instance")
+	})
+
+	t.Run("GlobalBoolFlagsRemainSingleTokenWhenMerged", func(t *testing.T) {
+		originalArgs := os.Args
+		os.Args = []string{"azd", "--debug", "up"}
+		t.Cleanup(func() {
+			os.Args = originalArgs
+		})
+
+		globalArgs := extractGlobalArgs()
+		require.Equal(t, []string{"--debug=true"}, globalArgs)
+
+		var (
+			capturedPositionalArgs []string
+			debugEnabled           bool
+		)
+
+		newCommand := func() *cobra.Command {
+			rootCmd := &cobra.Command{Use: "root"}
+			rootCmd.PersistentFlags().AddFlagSet(CreateGlobalFlagSet())
+
+			packageCmd := &cobra.Command{
+				Use:  "package",
+				Args: cobra.NoArgs,
+				RunE: func(cmd *cobra.Command, args []string) error {
+					capturedPositionalArgs = append([]string(nil), args...)
+
+					var err error
+					debugEnabled, err = cmd.Flags().GetBool("debug")
+					require.NoError(t, err)
+
+					return nil
+				},
+			}
+			packageCmd.Flags().Bool("all", false, "")
+			rootCmd.AddCommand(packageCmd)
+
+			return rootCmd
+		}
+
+		adapter := &workflowCmdAdapter{
+			newCommand: newCommand,
+			globalArgs: globalArgs,
+		}
+
+		err := adapter.ExecuteContext(context.WithoutCancel(context.Background()), []string{"package", "--all"})
+		require.NoError(t, err)
+		require.True(t, debugEnabled, "global --debug flag should still be parsed on the rebuilt tree")
+		require.Empty(t, capturedPositionalArgs,
+			"boolean global flag value should not leak into workflow step positional args")
 	})
 
 	t.Run("NewRootCmdPreservesMiddlewareChain", func(t *testing.T) {

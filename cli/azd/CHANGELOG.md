@@ -18,12 +18,11 @@
 - [[#7175]](https://github.com/Azure/azure-dev/pull/7175) Fix path traversal vulnerabilities with containment checks for extensions and templates, add WebSocket origin validation for localhost-only connections, harden JWT signing key size and algorithm, and add sensitive data redaction in error paths. Thanks @jongio for the contribution!
 - [[#7193]](https://github.com/Azure/azure-dev/pull/7193) Fix extension `PromptSubscription` not masking subscription IDs when `AZD_DEMO_MODE` is enabled.
 - [[#7212]](https://github.com/Azure/azure-dev/pull/7212) Fix `azd up --debug` and `azd up --no-prompt` failing with unexpected positional arguments during workflow step execution.
+- [[#7218]](https://github.com/Azure/azure-dev/pull/7218) Fix regression introduced by #7171 where rebuilding the cobra command tree on workflow step re-execution re-registered IoC singletons, causing event handlers (e.g., lifecycle hooks for `preprovision`, `postprovision`, `predeploy`) to be silently lost.
 
 ### Other Changes
 
-- [[#7166]](https://github.com/Azure/azure-dev/pull/7166) Improve `azd update` on Windows to use the PowerShell installation script with backup/restore safety and standard-installation-path validation.
 - [[#7199]](https://github.com/Azure/azure-dev/pull/7199) Add telemetry instrumentation for Copilot agent flows, including session, initialization, usage metrics, and consent fields.
-- [[#7213]](https://github.com/Azure/azure-dev/pull/7213) Improve `azd update` on Linux/macOS to use the shell installation script with Homebrew cask support and reliable binary replacement.
 
 ## 1.23.10 (2026-03-16)
 

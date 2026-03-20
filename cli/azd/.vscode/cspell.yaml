@@ -394,6 +394,9 @@ overrides:
     words:
       - Waza
       - waza
+      - hdrs
+      - mysite
+      - mydb
   - filename: "test/eval/tasks/**/*.yaml"
     words:
       - authenticat

@@ -18,26 +18,7 @@ import json
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
-
-def get_access_token():
-    """Get Azure access token using Azure CLI or managed identity."""
-    # Try az cli first
-    try:
-        import subprocess
-        result = subprocess.run(
-            ["az", "account", "get-access-token", "--query", "accessToken", "-o", "tsv"],
-            capture_output=True, text=True, check=True
-        )
-        return result.stdout.strip()
-    except Exception:
-        pass
-
-    # Fall back to AZURE_ACCESS_TOKEN env var
-    token = os.environ.get("AZURE_ACCESS_TOKEN")
-    if token:
-        return token
-
-    raise RuntimeError("No Azure credentials available. Run 'az login' or set AZURE_ACCESS_TOKEN.")
+from azure_auth import get_access_token
 
 
 def check_resource_group_exists(subscription_id: str, resource_group: str, token: str) -> bool:

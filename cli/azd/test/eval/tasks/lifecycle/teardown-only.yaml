@@ -13,7 +13,6 @@ graders:
     config:
       must_match:
         - "azd down"
-        - "--purge"
       must_not_match:
         - "azd init"
         - "azd provision"

@@ -8,7 +8,6 @@ on:
 
 permissions:
   contents: read
-  issues: write
   actions: read
 
 jobs:
@@ -30,7 +29,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p cli/azd/test/eval/reports/waza
-          # Find the latest successful waza run and download its artifacts
           RUN_ID=$(gh api repos/${{ github.repository }}/actions/workflows/eval-waza.yml/runs \
             --jq '.workflow_runs | map(select(.conclusion == "success")) | .[0].id // empty' 2>/dev/null)
           if [ -n "$RUN_ID" ]; then
@@ -44,7 +42,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p cli/azd/test/eval/reports/e2e
-          # Find the latest successful E2E run and download its artifacts
           RUN_ID=$(gh api repos/${{ github.repository }}/actions/workflows/eval-e2e.yml/runs \
             --jq '.workflow_runs | map(select(.conclusion == "success")) | .[0].id // empty' 2>/dev/null)
           if [ -n "$RUN_ID" ]; then
@@ -53,49 +50,13 @@ jobs:
             echo "No successful e2e runs found, skipping"
           fi
 
-      - name: Generate comparison report
-        working-directory: cli/azd/test/eval
-        run: |
-          echo "Report generation placeholder — add scripts/generate-report.ts when ready"
-          ls -la reports/ 2>/dev/null || echo "No report data available yet"
+      # TODO: Implement report generation script (scripts/generate-report.ts)
+      # that diffs Waza result JSON files and produces regression-issues.json.
+      # Once implemented, add a step to create GitHub issues from regressions.
 
-      - name: Upload report
+      - name: Upload aggregated artifacts
         uses: actions/upload-artifact@v4
         with:
           name: eval-weekly-report-${{ github.run_id }}
           path: cli/azd/test/eval/reports/
           retention-days: 90
-
-      - name: Create issues for regressions
-        if: always()
-        working-directory: cli/azd/test/eval
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          REPORT_FILE="reports/regression-issues.json"
-          if [ ! -f "$REPORT_FILE" ]; then
-            echo "No regression issues file found, skipping."
-            exit 0
-          fi
-
-          ISSUE_COUNT=0
-          MAX_ISSUES=10
-
-          jq -c '.[]' "$REPORT_FILE" | while read -r issue; do
-            if [ "$ISSUE_COUNT" -ge "$MAX_ISSUES" ]; then
-              echo "Reached max issue limit ($MAX_ISSUES), stopping."
-              break
-            fi
-
-            TITLE=$(echo "$issue" | jq -r '.title')
-            BODY=$(echo "$issue" | jq -r '.body')
-            LABELS=$(echo "$issue" | jq -r '.labels // ["eval-regression"] | join(",")')
-
-            gh issue create \
-              --repo "${{ github.repository }}" \
-              --title "$TITLE" \
-              --body "$BODY" \
-              --label "$LABELS" || true
-
-            ISSUE_COUNT=$((ISSUE_COUNT + 1))
-          done

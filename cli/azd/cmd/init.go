@@ -371,6 +371,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			return nil, err
 		}
 	case initEnvironment:
+		tracing.SetUsageAttributes(fields.InitMethod.String("environment"))
 		env, err := i.initializeEnv(ctx, azdCtx, templates.Metadata{})
 		if err != nil {
 			return nil, err
@@ -379,7 +380,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		header = fmt.Sprintf("Initialized environment %s.", env.Name())
 		followUp = ""
 	case initWithAgent:
-		tracing.SetUsageAttributes(fields.InitMethod.String("agent"))
+		tracing.SetUsageAttributes(fields.InitMethod.String("copilot"))
 		if err := i.initAppWithAgent(ctx, azdCtx); err != nil {
 			return nil, err
 		}
@@ -541,9 +542,9 @@ When complete, provide a brief summary of what was accomplished.`
 	}
 
 	// Show session metrics (usage + file changes)
-	if metrics := copilotAgent.GetMetrics().String(); metrics != "" {
+	if metricsStr := copilotAgent.GetMetrics().String(); metricsStr != "" {
 		i.console.Message(ctx, "")
-		i.console.Message(ctx, metrics)
+		i.console.Message(ctx, metricsStr)
 	}
 
 	i.console.Message(ctx, "")

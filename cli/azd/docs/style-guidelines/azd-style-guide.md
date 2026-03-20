@@ -70,7 +70,7 @@ func (s *Service) Run(ctx context.Context) error {
 
 ### Progress Reports
 
-Progress reports provide real-time feedback during multi-step operations. Use progress reports to:
+Progress reports provide real-time feedback during a single command's execution, showing the status of individual steps as they happen. Use progress reports to:
 
 - Show status of long-running commands
 - Display individual service provisioning/deployment states
@@ -148,6 +148,193 @@ move to root directory.
   (-) Skipped: [Verb] Message goes here
 ```
 
+### Success / Error / Warning Logs
+
+These logs represent the final outcome of a command, displayed after execution completes. Standard logs (Success, Error, Warning) use an **all-caps prefix** followed by a colon to separate the log type from the message.
+
+All logs should:
+
+- Be **succinct**
+- Be **human legible**
+- **Provide a path forward** when possible
+
+There are some specific edge cases where the log prefix is not required.
+
+#### Log Format
+
+```
+PREFIX: Message goes here.
+```
+
+#### Log Types
+
+**Success logs** — Indicate the success of a specific command or action. Success logs use the green (or bright green) color variable (`WithSuccessFormat`).
+```
+SUCCESS: Message goes here.
+```
+
+**Error logs** — Indicate when an error occurs, or indicate overall command failure. Error logs use the red (or bright red) color variable (`WithErrorFormat`). Error logs should attempt to follow a `[Reason] [Outcome]` structure when possible.
+```
+ERROR: Message goes here.
+```
+
+**Warning logs** — Used when a command or action has an outcome that may provide unexpected results, or when the user needs to be made aware of something potentially destructive. Warning logs use the yellow (or bright yellow) color variable (`WithWarningFormat`).
+```
+WARNING: Message goes here.
+```
+
+**Next steps logs** — The arrow indicates the next step. Used when the command output includes follow-up actions or recommended next steps for the user. Next steps logs use the format `(->) NEXT STEPS:` followed by the message.
+
+```
+(->) NEXT STEPS: Message goes here.
+```
+
+#### Hint Text
+
+Hint copy can directly follow any Success, Error, or Warning log. Hint text should:
+
+- Provide more context to the log above
+- In some cases, provide an actionable path forward (see: Actionable Hints)
+- Use the white color variable (`WithHintFormat`)
+
+#### In-Context Examples
+
+**Success example:**
+
+```
+SUCCESS: Your Azure app has been deployed!
+You can view the resources created under the resource group case-code-test-rg in Azure Portal:
+https://portal.azure.com/#@/resource/subscriptions/.../resourceGroups/case-code-test-rg
+```
+
+**Error example:**
+
+```
+ERROR: 'todo-mongojs' is misspelled or missing a recognized flag.
+Run azd up --help to see all available flags.
+```
+
+**Warning example:**
+
+```
+WARNING: You have already provisioned Azure resources to the (US) West US (westus) region.
+You may want to run azd down to delete your existing resources before provisioning to a new region.
+```
+
+### User Inputs
+
+Certain azd commands require the user to input text, select yes/no, or select an item from a list. Examples include:
+
+- Inputting an environment name (text input)
+- Initializing a new Git repository (y/n)
+- Selecting a location to deploy to (list select)
+
+#### General Guidelines
+
+All input requests are in bold and begin with a blue `?`. This helps ensure that they stand out to users as different from other plain text logs and CLI outputs.
+
+#### Text Input
+
+Text input captures a single line of input from the user.
+
+**Initial state:**
+
+TODO: this is not shown as magenta in actual azd. confirm this. also i see that 'type' is not mentioned in azd either. 
+The prompt is displayed with a `[Type ? for hint]` helper in hi-magenta bold text, followed by ghost-text (secondary text color) as placeholder content.
+
+```
+? This captures a single line of input: [Type ? for hint] This is ghost-text
+```
+
+**Hint feature:**
+
+If the user types `?`, a hint line appears below the prompt to provide additional guidance. The hint label is displayed in magenta.
+
+```
+? This captures a single line of input: [Type ? for hint] This is ghost-text
+Hint: This is a help message
+```
+
+**User input (before submitting):**
+
+As the user types, their input replaces the ghost-text and appears in primary text color.
+
+```
+? This captures a single line of input: [Type ? for hint] Input
+```
+
+**After submitting:**
+
+Once the user submits their answer:
+
+- The input changes from primary text to hi-blue text
+- The `[Type ? for hint]` helper disappears
+- If the hint line was visible, it also disappears
+
+```
+? This captures a single line of input: Input
+```
+
+#### Yes or No Input
+
+- Yes/no inputs include a `(Y/n)` delineator at the end of the input request (before the colon).
+- Users can either input `y`/`n` or hit the return key which will select the capitalized choice in the `(Y/n)` delineator.
+- Once a user has selected y or n, the result should be printed in blue text (**yes** or **no**).
+
+```
+? Do you want to initialize a new Git repository in this directory? (Y/n):
+```
+
+With input provided:
+
+```
+? Do you want to initialize a new Git repository in this directory? (Y/n): Yes
+```
+
+#### List Select
+
+The list select pattern presents a list of options for the user to choose from.
+
+**Initial state:**
+
+The prompt is displayed with a `Filter:` line showing ghost-text ("Type to filter list") and a footer hint ("Use arrows to move, type ? for hint"). The active selection is indicated by `>` and displayed in bold blue text.
+
+```
+? Select an single option:  [Use arrows to move, type to filter]
+
+  > Option 1
+    Option 2
+    Option 3
+    Option 4
+    Option 5
+    Option 6
+    ...
+```
+
+**Display rules:**
+
+- The list should display no more than 7 items at a time.
+- When a list contains more than 7 items, ellipses (`...`) should be used to help users understand there are more items available up or down the list.
+- If possible, the most commonly selected item (or the item we want to guide the user into selecting) should be highlighted by default.
+- The active selection in the list should be bold and in blue text, prefixed with `>`.
+
+**Hint:**
+
+- The `[Type ? for hint]` pattern follows the same behavior as Text Input — hi-magenta in bold, with ghost-text in secondary text color.
+
+**After submitting:**
+
+Once the user makes their selection:
+
+- The input changes from primary text to hi-blue text
+- The `[Type ? for hint]` helper disappears
+- If the hint line was visible, it also disappears
+- The list collapses and the selected value is printed in blue text next to the prompt
+
+```
+? Select an Azure location to use: (US) East US 2 (eastus2)
+```
+
 ### Command Output Standards
 
 - **Structured output**: Support `--output json` for machine-readable output
@@ -160,6 +347,8 @@ move to root directory.
 The CLI uses consistent color formatting through helper functions defined in [`cli/azd/pkg/output/colors.go`](../../pkg/output/colors.go). **Always use these helper functions** instead of writing raw ANSI escape codes.
 
 **Important**: Colors will appear differently depending on which terminal and theme (dark/light) the customer prefers. Always test output in both dark and light terminal themes.
+
+TODO: add something about using Magenta for agentic experience
 
 #### Standard Color Helper Functions
 

@@ -23,13 +23,22 @@ var rootFlags rootFlagsDefinition
 func NewRootCommand() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:           "agent <command> [options]",
-		Short:         fmt.Sprintf("Extension for the Foundry Agent Service. %s", color.YellowString("(Preview)")),
+		Short:         fmt.Sprintf("Ship agents with Microsoft Foundry from your terminal. %s", color.YellowString("(Preview)")),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		CompletionOptions: cobra.CompletionOptions{
 			DisableDefaultCmd: true,
 		},
 	}
+
+	// Show the ASCII art banner above the default help text for the root command
+	defaultHelp := rootCmd.HelpFunc()
+	rootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		if cmd == rootCmd {
+			printBanner(cmd.OutOrStdout())
+		}
+		defaultHelp(cmd, args)
+	})
 
 	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
 	rootCmd.PersistentFlags().BoolVar(

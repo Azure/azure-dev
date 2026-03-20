@@ -336,6 +336,17 @@ func runMiddleware(
 	runOptions *Options,
 	nextFn NextFn,
 ) (*actions.ActionResult, error) {
+	return runMiddlewareWithContext(*mockContext.Context, mockContext, envName, projectConfig, runOptions, nextFn)
+}
+
+func runMiddlewareWithContext(
+	ctx context.Context,
+	mockContext *mocks.MockContext,
+	envName string,
+	projectConfig *project.ProjectConfig,
+	runOptions *Options,
+	nextFn NextFn,
+) (*actions.ActionResult, error) {
 	env := environment.NewWithValues(envName, nil)
 
 	// Setup environment mocks for save & reload
@@ -354,7 +365,7 @@ func runMiddleware(
 		mockContext.Container,
 	)
 
-	result, err := middleware.Run(*mockContext.Context, nextFn)
+	result, err := middleware.Run(ctx, nextFn)
 
 	return result, err
 }
@@ -538,6 +549,174 @@ func Test_PowerShellWarning_WithoutPowerShellHooks(t *testing.T) {
 		}
 	}
 	require.False(t, foundWarning, "Expected no PowerShell warning for bash hooks")
+}
+
+// Test_CommandHooks_ChildAction_HooksStillFire verifies that command hooks fire even when running
+// as a child action (e.g., "provision" step inside "azd up" workflow). PR #7171 changed the
+// workflowCmdAdapter to rebuild the command tree, and this test ensures hooks still execute
+// for workflow step commands.
+func Test_CommandHooks_ChildAction_HooksStillFire(t *testing.T) {
+	tests := []struct {
+		name        string
+		commandPath string
+		hookName    string
+	}{
+		{
+			name:        "ProvisionHooksFireInWorkflow",
+			commandPath: "azd provision",
+			hookName:    "preprovision",
+		},
+		{
+			name:        "DeployHooksFireInWorkflow",
+			commandPath: "azd deploy",
+			hookName:    "predeploy",
+		},
+		{
+			name:        "PackageHooksFireInWorkflow",
+			commandPath: "azd package",
+			hookName:    "prepackage",
+		},
+		{
+			name:        "RestoreHooksFireInWorkflow",
+			commandPath: "azd restore",
+			hookName:    "prerestore",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(context.Background())
+			azdContext := createAzdContext(t)
+
+			envName := "test"
+			runOptions := Options{CommandPath: tt.commandPath}
+
+			projectConfig := project.ProjectConfig{
+				Name: envName,
+				Hooks: map[string][]*ext.HookConfig{
+					tt.hookName: {
+						{
+							Run:   "echo 'hook running'",
+							Shell: ext.ShellTypeBash,
+						},
+					},
+				},
+			}
+
+			err := ensureAzdValid(mockContext, azdContext, envName, &projectConfig)
+			require.NoError(t, err)
+
+			nextFn, actionRan := createNextFn()
+			hookRan := setupHookMock(mockContext, 0)
+
+			// Simulate workflow execution: mark context as child action
+			childCtx := WithChildAction(*mockContext.Context)
+			result, err := runMiddlewareWithContext(
+				childCtx, mockContext, envName, &projectConfig, &runOptions, nextFn,
+			)
+
+			require.NotNil(t, result)
+			require.NoError(t, err)
+			require.True(t, *hookRan, "Hook %q should fire even when running as a child action (workflow step)", tt.hookName)
+			require.True(t, *actionRan, "Action should run for child action")
+		})
+	}
+}
+
+// Test_CommandHooks_ChildAction_SkipsValidationOnly verifies that when running as a child action,
+// hook validation warnings are suppressed but hooks still execute. This ensures the IsChildAction
+// guard in HooksMiddleware.Run() only affects validation, not hook execution itself.
+func Test_CommandHooks_ChildAction_SkipsValidationOnly(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	azdContext := createAzdContext(t)
+
+	envName := "test"
+	runOptions := Options{CommandPath: "azd provision"}
+
+	projectConfig := project.ProjectConfig{
+		Name: envName,
+		Hooks: map[string][]*ext.HookConfig{
+			"preprovision": {
+				{
+					Run:   "echo 'preprovision hook'",
+					Shell: ext.ShellTypeBash,
+				},
+			},
+			"postprovision": {
+				{
+					Run:   "echo 'postprovision hook'",
+					Shell: ext.ShellTypeBash,
+				},
+			},
+		},
+	}
+
+	err := ensureAzdValid(mockContext, azdContext, envName, &projectConfig)
+	require.NoError(t, err)
+
+	hookCount := 0
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return true
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		hookCount++
+		return exec.NewRunResult(0, "", ""), nil
+	})
+
+	nextFn, actionRan := createNextFn()
+
+	// Execute as child action (workflow step)
+	childCtx := WithChildAction(*mockContext.Context)
+	result, err := runMiddlewareWithContext(
+		childCtx, mockContext, envName, &projectConfig, &runOptions, nextFn,
+	)
+
+	require.NotNil(t, result)
+	require.NoError(t, err)
+	require.True(t, *actionRan, "Action should run")
+
+	// Both pre and post hooks should fire (2 hooks total)
+	require.Equal(t, 2, hookCount,
+		"Both preprovision and postprovision hooks should fire for child actions")
+}
+
+// Test_CommandHooks_ChildAction_PreHookError_StopsAction verifies that when running as a child
+// action, a failing pre-hook still prevents the action from executing (same behavior as direct
+// command execution).
+func Test_CommandHooks_ChildAction_PreHookError_StopsAction(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	azdContext := createAzdContext(t)
+
+	envName := "test"
+	runOptions := Options{CommandPath: "azd provision"}
+
+	projectConfig := project.ProjectConfig{
+		Name: envName,
+		Hooks: map[string][]*ext.HookConfig{
+			"preprovision": {
+				{
+					Run:   "exit 1",
+					Shell: ext.ShellTypeBash,
+				},
+			},
+		},
+	}
+
+	err := ensureAzdValid(mockContext, azdContext, envName, &projectConfig)
+	require.NoError(t, err)
+
+	nextFn, actionRan := createNextFn()
+	hookRan := setupHookMock(mockContext, 1) // Non-zero exit code
+
+	// Execute as child action (workflow step)
+	childCtx := WithChildAction(*mockContext.Context)
+	result, err := runMiddlewareWithContext(
+		childCtx, mockContext, envName, &projectConfig, &runOptions, nextFn,
+	)
+
+	require.Nil(t, result)
+	require.Error(t, err)
+	require.True(t, *hookRan, "Pre-hook should still execute for child actions")
+	require.False(t, *actionRan, "Action should NOT run when pre-hook fails")
 }
 
 func Test_PowerShellWarning_WithPwshAvailable(t *testing.T) {

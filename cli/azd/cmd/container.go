@@ -912,7 +912,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(func() workflow.AzdCommandRunner {
 		return &workflowCmdAdapter{
 			newCommand: func() *cobra.Command {
-				return NewRootCmd(false, nil, container)
+				return newRootCmdWithoutRegistration(container)
 			},
 			globalArgs: extractGlobalArgs(),
 		}

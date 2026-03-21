@@ -530,7 +530,7 @@ func (m *Manager) updateViaMSI(ctx context.Context, cfg *UpdateConfig, writer io
 	if preHash == postHash {
 		return newUpdateError(CodeReplaceFailed,
 			fmt.Errorf("install script completed but the binary at %s was not updated."+
-				"MSI may have failed silently", originalPath))
+				" MSI may have failed silently", originalPath))
 	}
 
 	updateSucceeded = true

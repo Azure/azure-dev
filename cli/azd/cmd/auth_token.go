@@ -28,6 +28,7 @@ type authTokenFlags struct {
 	tenantID string
 	scopes   []string
 	claims   string
+	check    bool
 	global   *internal.GlobalCommandOptions
 }
 
@@ -50,6 +51,10 @@ func (f *authTokenFlags) Bind(local *pflag.FlagSet, global *internal.GlobalComma
 	local.StringArrayVar(&f.scopes, "scope", nil, "The scope to use when requesting an access token")
 	local.StringVar(&f.tenantID, "tenant-id", "", "The tenant id to use when requesting an access token.")
 	local.StringVar(&f.claims, "claims", "", "Additional claims to include when requesting an access token.")
+	local.BoolVar(
+		&f.check, "check", false,
+		"Validate that authentication is configured and a token can be acquired. "+
+			"Exits with code 0 if valid, non-zero if not. Produces no standard output.")
 }
 
 type CredentialProviderFn func(context.Context, *auth.CredentialForCurrentUserOptions) (azcore.TokenCredential, error)
@@ -143,6 +148,9 @@ func (a *authTokenAction) Run(ctx context.Context) (*actions.ActionResult, error
 	if tenantId == "" {
 		tenantIdFromAzdEnv, err := getTenantIdFromAzdEnv(ctx, a.envResolver, a.subResolver)
 		if err != nil {
+			if a.flags.check {
+				return nil, err
+			}
 			return nil, err
 		}
 		tenantId = tenantIdFromAzdEnv
@@ -151,6 +159,9 @@ func (a *authTokenAction) Run(ctx context.Context) (*actions.ActionResult, error
 	if tenantId == "" {
 		tenantIdFromSysEnv, err := getTenantIdFromEnv(ctx, a.subResolver)
 		if err != nil {
+			if a.flags.check {
+				return nil, err
+			}
 			return nil, err
 		}
 		tenantId = tenantIdFromSysEnv
@@ -162,7 +173,23 @@ func (a *authTokenAction) Run(ctx context.Context) (*actions.ActionResult, error
 		TenantID: tenantId,
 	})
 	if err != nil {
+		if a.flags.check {
+			return nil, err
+		}
 		return nil, err
+	}
+
+	// --check mode: validate that a token can be acquired, produce no output.
+	// Exit code 0 = auth valid, exit code 1 = auth invalid.
+	if a.flags.check {
+		_, err := cred.GetToken(ctx, policy.TokenRequestOptions{
+			Scopes: a.flags.scopes,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("authentication check failed: %w", err)
+		}
+		// Auth is valid — return success with no output
+		return nil, nil
 	}
 
 	claims := ""

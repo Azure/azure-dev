@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -202,6 +203,22 @@ func Test_MapError(t *testing.T) {
 			},
 		},
 		{
+			name:          "WithReLoginRequiredError",
+			err:           &auth.ReLoginRequiredError{},
+			wantErrReason: "auth.login_required",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrorKey(fields.ErrCategory.Key).String("auth"),
+			},
+		},
+		{
+			name:          "WithAzidentityAuthenticationFailedError",
+			err:           &azidentity.AuthenticationFailedError{},
+			wantErrReason: "auth.identity_failed",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrorKey(fields.ErrCategory.Key).String("auth"),
+			},
+		},
+		{
 			name: "WithExtServiceError",
 			err: &azdext.ServiceError{
 				Message:     "Rate limit exceeded",
@@ -274,16 +291,20 @@ func Test_MapError(t *testing.T) {
 			wantErrDetails: nil,
 		},
 		{
-			name:           "WithErrNoCurrentUser",
-			err:            auth.ErrNoCurrentUser,
-			wantErrReason:  "auth.not_logged_in",
-			wantErrDetails: nil,
+			name:          "WithErrNoCurrentUser",
+			err:           auth.ErrNoCurrentUser,
+			wantErrReason: "auth.not_logged_in",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrorKey(fields.ErrCategory.Key).String("auth"),
+			},
 		},
 		{
-			name:           "WithWrappedErrNoCurrentUser",
-			err:            fmt.Errorf("failed to create credential: %w: %w", errors.New("inner"), auth.ErrNoCurrentUser),
-			wantErrReason:  "auth.not_logged_in",
-			wantErrDetails: nil,
+			name:          "WithWrappedErrNoCurrentUser",
+			err:           fmt.Errorf("failed to create credential: %w: %w", errors.New("inner"), auth.ErrNoCurrentUser),
+			wantErrReason: "auth.not_logged_in",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrorKey(fields.ErrCategory.Key).String("auth"),
+			},
 		},
 		{
 			name:           "WithErrToolExecutionDenied",
@@ -973,6 +994,14 @@ func Test_ClassifySuggestionType_MatchesMapError(t *testing.T) {
 			err: &auth.AuthFailedError{
 				Parsed: &auth.AadErrorResponse{Error: "invalid_grant"},
 			},
+		},
+		{
+			name: "ReLoginRequiredError",
+			err:  &auth.ReLoginRequiredError{},
+		},
+		{
+			name: "AzidentityAuthenticationFailedError",
+			err:  &azidentity.AuthenticationFailedError{},
 		},
 		// Sentinels
 		{name: "context.Canceled", err: context.Canceled},

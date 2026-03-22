@@ -21,6 +21,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
 	agentcopilot "github.com/azure/azure-dev/cli/azd/internal/agent/copilot"
+	"github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -86,7 +87,10 @@ func (a *CopilotAgent) Initialize(ctx context.Context, opts ...InitOption) (resu
 				fields.CopilotInitReasoningEffort.String(result.ReasoningEffort),
 			)
 		}
-		span.EndWithStatus(err)
+		if err != nil {
+			cmd.MapError(err, span)
+		}
+		span.End()
 	}()
 
 	options := &initOptions{}
@@ -600,7 +604,10 @@ func (a *CopilotAgent) ensureSession(ctx context.Context, resumeSessionID string
 		if sessionID != "" {
 			span.SetAttributes(fields.StringHashed(fields.CopilotSessionId, sessionID))
 		}
-		span.EndWithStatus(err)
+		if err != nil {
+			cmd.MapError(err, span)
+		}
+		span.End()
 	}()
 
 	isResume := resumeSessionID != ""

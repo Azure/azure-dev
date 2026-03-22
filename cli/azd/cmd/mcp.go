@@ -14,6 +14,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	internalcmd "github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
 	"github.com/azure/azure-dev/cli/azd/internal/mcp"
 	"github.com/azure/azure-dev/cli/azd/internal/mcp/tools"
@@ -152,7 +153,10 @@ func (a *mcpStartAction) Run(ctx context.Context) (*actions.ActionResult, error)
 				}
 
 				result, err = next(ctx, request)
-				span.EndWithStatus(err)
+				if err != nil {
+					internalcmd.MapError(err, span)
+				}
+				span.End()
 
 				return result, err
 			}

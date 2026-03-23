@@ -21,6 +21,8 @@ type Scope interface {
 	SubscriptionId() string
 	// ListDeployments returns all the deployments at this scope.
 	ListDeployments(ctx context.Context) ([]*azapi.ResourceDeployment, error)
+	// ListActiveDeployments returns only the deployments that are currently in progress.
+	ListActiveDeployments(ctx context.Context) ([]*azapi.ResourceDeployment, error)
 	Deployment(deploymentName string) Deployment
 }
 
@@ -228,6 +230,26 @@ func (s *ResourceGroupScope) ListDeployments(ctx context.Context) ([]*azapi.Reso
 	return deployments, err
 }
 
+// ListActiveDeployments returns only the deployments in this resource group
+// that are currently in progress (e.g. Running, Deploying, Accepted).
+func (s *ResourceGroupScope) ListActiveDeployments(
+	ctx context.Context,
+) ([]*azapi.ResourceDeployment, error) {
+	all, err := s.ListDeployments(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var active []*azapi.ResourceDeployment
+	for _, d := range all {
+		if azapi.IsActiveDeploymentState(d.ProvisioningState) {
+			active = append(active, d)
+		}
+	}
+
+	return active, nil
+}
+
 // Deployment gets the deployment with the specified name.
 func (s *ResourceGroupScope) Deployment(deploymentName string) Deployment {
 	return NewResourceGroupDeployment(s, deploymentName)
@@ -379,6 +401,26 @@ func (s *SubscriptionScope) Deployment(deploymentName string) Deployment {
 // ListDeployments returns all the deployments at subscription scope.
 func (s *SubscriptionScope) ListDeployments(ctx context.Context) ([]*azapi.ResourceDeployment, error) {
 	return s.deploymentService.ListSubscriptionDeployments(ctx, s.subscriptionId)
+}
+
+// ListActiveDeployments returns only subscription-scoped deployments
+// that are currently in progress (e.g. Running, Deploying, Accepted).
+func (s *SubscriptionScope) ListActiveDeployments(
+	ctx context.Context,
+) ([]*azapi.ResourceDeployment, error) {
+	all, err := s.ListDeployments(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var active []*azapi.ResourceDeployment
+	for _, d := range all {
+		if azapi.IsActiveDeploymentState(d.ProvisioningState) {
+			active = append(active, d)
+		}
+	}
+
+	return active, nil
 }
 
 func newSubscriptionScope(

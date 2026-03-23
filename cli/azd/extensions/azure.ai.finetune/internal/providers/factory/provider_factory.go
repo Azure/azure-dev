@@ -123,6 +123,26 @@ func NewFineTuningProvider(ctx context.Context, azdClient *azdext.AzdClient) (pr
 	return openaiprovider.NewOpenAIProvider(client), err
 }
 
+// NewFineTuningProviderWithEndpoint creates a FineTuningProvider using a direct project endpoint URL
+// and tenant ID, bypassing azd environment configuration. This allows callers to supply the
+// endpoint and credentials explicitly rather than relying on stored environment values.
+func NewFineTuningProviderWithEndpoint(endpoint, tenantId string) (providers.FineTuningProvider, error) {
+	credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
+		TenantID:                   tenantId,
+		AdditionallyAllowedTenants: []string{"*"},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create azure credential: %w", err)
+	}
+
+	client := openai.NewClient(
+		option.WithBaseURL(endpoint),
+		option.WithQuery("api-version", DefaultApiVersion),
+		WithTokenCredential(credential, DefaultAzureFinetuningScope),
+	)
+	return openaiprovider.NewOpenAIProvider(&client), nil
+}
+
 // NewModelDeploymentProvider creates a ModelDeploymentProvider based on provider type
 func NewModelDeploymentProvider(subscriptionId string, credential azcore.TokenCredential) (providers.ModelDeploymentProvider, error) {
 	clientFactory, err := armcognitiveservices.NewClientFactory(

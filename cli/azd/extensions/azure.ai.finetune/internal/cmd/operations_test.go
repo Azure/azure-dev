@@ -49,7 +49,7 @@ func TestNewOperationCommand_HasAllSubcommands(t *testing.T) {
 }
 
 func TestNewOperationSubmitCommand(t *testing.T) {
-	cmd := newOperationSubmitCommand()
+	cmd := newOperationSubmitCommand(&jobsFlags{})
 
 	require.NotNil(t, cmd)
 	require.Equal(t, "submit", cmd.Use)
@@ -58,7 +58,7 @@ func TestNewOperationSubmitCommand(t *testing.T) {
 }
 
 func TestNewOperationSubmitCommand_Flags(t *testing.T) {
-	cmd := newOperationSubmitCommand()
+	cmd := newOperationSubmitCommand(&jobsFlags{})
 
 	// Test that all expected flags are defined
 	expectedFlags := []struct {
@@ -84,7 +84,7 @@ func TestNewOperationSubmitCommand_Flags(t *testing.T) {
 }
 
 func TestNewOperationShowCommand(t *testing.T) {
-	cmd := newOperationShowCommand()
+	cmd := newOperationShowCommand(&jobsFlags{})
 
 	require.NotNil(t, cmd)
 	require.Equal(t, "show", cmd.Use)
@@ -93,7 +93,7 @@ func TestNewOperationShowCommand(t *testing.T) {
 }
 
 func TestNewOperationShowCommand_Flags(t *testing.T) {
-	cmd := newOperationShowCommand()
+	cmd := newOperationShowCommand(&jobsFlags{})
 
 	expectedFlags := []struct {
 		name         string
@@ -120,7 +120,7 @@ func TestNewOperationShowCommand_Flags(t *testing.T) {
 }
 
 func TestNewOperationListCommand(t *testing.T) {
-	cmd := newOperationListCommand()
+	cmd := newOperationListCommand(&jobsFlags{})
 
 	require.NotNil(t, cmd)
 	require.Equal(t, "list", cmd.Use)
@@ -129,7 +129,7 @@ func TestNewOperationListCommand(t *testing.T) {
 }
 
 func TestNewOperationListCommand_Flags(t *testing.T) {
-	cmd := newOperationListCommand()
+	cmd := newOperationListCommand(&jobsFlags{})
 
 	// top flag (limit)
 	topFlag := cmd.Flags().Lookup("top")
@@ -150,7 +150,7 @@ func TestNewOperationListCommand_Flags(t *testing.T) {
 }
 
 func TestNewOperationPauseCommand(t *testing.T) {
-	cmd := newOperationPauseCommand()
+	cmd := newOperationPauseCommand(&jobsFlags{})
 
 	require.NotNil(t, cmd)
 	require.Equal(t, "pause", cmd.Use)
@@ -160,7 +160,7 @@ func TestNewOperationPauseCommand(t *testing.T) {
 }
 
 func TestNewOperationPauseCommand_Flags(t *testing.T) {
-	cmd := newOperationPauseCommand()
+	cmd := newOperationPauseCommand(&jobsFlags{})
 
 	idFlag := cmd.Flags().Lookup("id")
 	require.NotNil(t, idFlag)
@@ -168,7 +168,7 @@ func TestNewOperationPauseCommand_Flags(t *testing.T) {
 }
 
 func TestNewOperationResumeCommand(t *testing.T) {
-	cmd := newOperationResumeCommand()
+	cmd := newOperationResumeCommand(&jobsFlags{})
 
 	require.NotNil(t, cmd)
 	require.Equal(t, "resume", cmd.Use)
@@ -178,7 +178,7 @@ func TestNewOperationResumeCommand(t *testing.T) {
 }
 
 func TestNewOperationResumeCommand_Flags(t *testing.T) {
-	cmd := newOperationResumeCommand()
+	cmd := newOperationResumeCommand(&jobsFlags{})
 
 	idFlag := cmd.Flags().Lookup("id")
 	require.NotNil(t, idFlag)
@@ -186,7 +186,7 @@ func TestNewOperationResumeCommand_Flags(t *testing.T) {
 }
 
 func TestNewOperationCancelCommand(t *testing.T) {
-	cmd := newOperationCancelCommand()
+	cmd := newOperationCancelCommand(&jobsFlags{})
 
 	require.NotNil(t, cmd)
 	require.Equal(t, "cancel", cmd.Use)
@@ -196,7 +196,7 @@ func TestNewOperationCancelCommand(t *testing.T) {
 }
 
 func TestNewOperationCancelCommand_Flags(t *testing.T) {
-	cmd := newOperationCancelCommand()
+	cmd := newOperationCancelCommand(&jobsFlags{})
 
 	idFlag := cmd.Flags().Lookup("id")
 	require.NotNil(t, idFlag)
@@ -208,7 +208,7 @@ func TestNewOperationCancelCommand_Flags(t *testing.T) {
 }
 
 func TestNewOperationDeployModelCommand(t *testing.T) {
-	cmd := newOperationDeployModelCommand()
+	cmd := newOperationDeployModelCommand(&jobsFlags{})
 
 	require.NotNil(t, cmd)
 	require.Equal(t, "deploy", cmd.Use)
@@ -218,7 +218,7 @@ func TestNewOperationDeployModelCommand(t *testing.T) {
 }
 
 func TestNewOperationDeployModelCommand_Flags(t *testing.T) {
-	cmd := newOperationDeployModelCommand()
+	cmd := newOperationDeployModelCommand(&jobsFlags{})
 
 	expectedFlags := []struct {
 		name         string
@@ -254,7 +254,7 @@ func TestNewOperationDeployModelCommand_Flags(t *testing.T) {
 }
 
 func TestNewOperationDeployModelCommand_RequiredFlags(t *testing.T) {
-	cmd := newOperationDeployModelCommand()
+	cmd := newOperationDeployModelCommand(&jobsFlags{})
 
 	// Check that job-id and deployment-name are marked as required
 	jobIDFlag := cmd.Flags().Lookup("job-id")
@@ -274,13 +274,13 @@ func TestCommandsHaveDescriptions(t *testing.T) {
 		name    string
 		cmdFunc func() *cobra.Command
 	}{
-		{"submit", func() *cobra.Command { return newOperationSubmitCommand() }},
-		{"show", func() *cobra.Command { return newOperationShowCommand() }},
-		{"list", func() *cobra.Command { return newOperationListCommand() }},
-		{"pause", func() *cobra.Command { return newOperationPauseCommand() }},
-		{"resume", func() *cobra.Command { return newOperationResumeCommand() }},
-		{"cancel", func() *cobra.Command { return newOperationCancelCommand() }},
-		{"deploy", func() *cobra.Command { return newOperationDeployModelCommand() }},
+		{"submit", func() *cobra.Command { return newOperationSubmitCommand(&jobsFlags{}) }},
+		{"show", func() *cobra.Command { return newOperationShowCommand(&jobsFlags{}) }},
+		{"list", func() *cobra.Command { return newOperationListCommand(&jobsFlags{}) }},
+		{"pause", func() *cobra.Command { return newOperationPauseCommand(&jobsFlags{}) }},
+		{"resume", func() *cobra.Command { return newOperationResumeCommand(&jobsFlags{}) }},
+		{"cancel", func() *cobra.Command { return newOperationCancelCommand(&jobsFlags{}) }},
+		{"deploy", func() *cobra.Command { return newOperationDeployModelCommand(&jobsFlags{}) }},
 	}
 
 	for _, tc := range commands {

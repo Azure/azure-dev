@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 
+	"azure.ai.finetune/internal/providers"
 	"azure.ai.finetune/internal/providers/factory"
 	"azure.ai.finetune/internal/services"
 	"azure.ai.finetune/internal/utils"
@@ -40,22 +41,52 @@ func newOperationCommand() *cobra.Command {
 	}
 
 	cmd.PersistentFlags().StringVarP(&flags.subscriptionId, "subscription", "s", "",
-		"Azure subscription ID (enables implicit init if environment not configured)")
+		"Azure subscription ID. When provided together with --project-endpoint, takes priority over any configured azd environment.")
 	cmd.PersistentFlags().StringVarP(&flags.projectEndpoint, "project-endpoint", "e", "",
 		"Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)")
 
-	cmd.AddCommand(newOperationSubmitCommand())
-	cmd.AddCommand(newOperationShowCommand())
-	cmd.AddCommand(newOperationListCommand())
-	cmd.AddCommand(newOperationPauseCommand())
-	cmd.AddCommand(newOperationResumeCommand())
-	cmd.AddCommand(newOperationCancelCommand())
-	cmd.AddCommand(newOperationDeployModelCommand())
+	cmd.AddCommand(newOperationSubmitCommand(flags))
+	cmd.AddCommand(newOperationShowCommand(flags))
+	cmd.AddCommand(newOperationListCommand(flags))
+	cmd.AddCommand(newOperationPauseCommand(flags))
+	cmd.AddCommand(newOperationResumeCommand(flags))
+	cmd.AddCommand(newOperationCancelCommand(flags))
+	cmd.AddCommand(newOperationDeployModelCommand(flags))
 
 	return cmd
 }
 
-func newOperationSubmitCommand() *cobra.Command {
+// resolveFineTuningProvider creates a FineTuningProvider using the provided flags when available,
+// falling back to azd environment configuration. This implements the priority order:
+// (1) explicit --project-endpoint and --subscription flags, (2) azd environment variables.
+func resolveFineTuningProvider(
+	ctx context.Context,
+	flags *jobsFlags,
+	azdClient *azdext.AzdClient,
+) (providers.FineTuningProvider, error) {
+	if flags != nil && flags.projectEndpoint != "" {
+		tenantResp, err := azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
+			SubscriptionId: flags.subscriptionId,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to look up tenant for subscription %s: %w", flags.subscriptionId, err)
+		}
+		return factory.NewFineTuningProviderWithEndpoint(flags.projectEndpoint, tenantResp.TenantId)
+	}
+	return factory.NewFineTuningProvider(ctx, azdClient)
+}
+
+// createFineTuningService creates a FineTuningService using the provided flags when available,
+// falling back to azd environment configuration.
+func createFineTuningService(ctx context.Context, flags *jobsFlags, azdClient *azdext.AzdClient) (services.FineTuningService, error) {
+	provider, err := resolveFineTuningProvider(ctx, flags, azdClient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create fine-tuning provider: %w", err)
+	}
+	return services.NewFineTuningServiceWithProvider(provider, nil), nil
+}
+
+func newOperationSubmitCommand(flags *jobsFlags) *cobra.Command {
 	var filename string
 	var model string
 	var trainingFile string
@@ -125,14 +156,12 @@ func newOperationSubmitCommand() *cobra.Command {
 				config.Seed = &seed
 			}
 
-			fineTuneSvc, err := services.NewFineTuningService(ctx, azdClient, nil)
+			fineTuneSvc, err := createFineTuningService(ctx, flags, azdClient)
 			if err != nil {
 				_ = spinner.Stop(ctx)
 				fmt.Println()
 				return err
 			}
-
-			// Submit the fine-tuning job using CreateJob from JobWrapper
 			job, err := fineTuneSvc.CreateFineTuningJob(ctx, config)
 			_ = spinner.Stop(ctx)
 			fmt.Println()
@@ -171,7 +200,7 @@ func newOperationSubmitCommand() *cobra.Command {
 }
 
 // newOperationShowCommand creates a command to show the fine-tuning job details
-func newOperationShowCommand() *cobra.Command {
+func newOperationShowCommand(flags *jobsFlags) *cobra.Command {
 	var jobID string
 	var logs bool
 	var output string
@@ -207,7 +236,7 @@ func newOperationShowCommand() *cobra.Command {
 				fmt.Printf("failed to start spinner: %v\n", err)
 			}
 
-			fineTuneSvc, err := services.NewFineTuningService(ctx, azdClient, nil)
+			fineTuneSvc, err := createFineTuningService(ctx, flags, azdClient)
 			if err != nil {
 				_ = spinner.Stop(ctx)
 				fmt.Print("\n\n")
@@ -282,7 +311,7 @@ func newOperationShowCommand() *cobra.Command {
 }
 
 // newOperationListCommand creates a command to list fine-tuning jobs
-func newOperationListCommand() *cobra.Command {
+func newOperationListCommand(flags *jobsFlags) *cobra.Command {
 	var limit int
 	var after string
 	var output string
@@ -313,7 +342,7 @@ func newOperationListCommand() *cobra.Command {
 				fmt.Printf("failed to start spinner: %v\n", err)
 			}
 
-			fineTuneSvc, err := services.NewFineTuningService(ctx, azdClient, nil)
+			fineTuneSvc, err := createFineTuningService(ctx, flags, azdClient)
 			if err != nil {
 				_ = spinner.Stop(ctx)
 				fmt.Println()
@@ -347,7 +376,7 @@ func newOperationListCommand() *cobra.Command {
 }
 
 // newOperationPauseCommand creates a command to pause a running fine-tuning job
-func newOperationPauseCommand() *cobra.Command {
+func newOperationPauseCommand(flags *jobsFlags) *cobra.Command {
 	var jobID string
 	requiredFlag := "id"
 
@@ -373,7 +402,7 @@ func newOperationPauseCommand() *cobra.Command {
 				fmt.Printf("failed to start spinner: %v\n", err)
 			}
 
-			fineTuneSvc, err := services.NewFineTuningService(ctx, azdClient, nil)
+			fineTuneSvc, err := createFineTuningService(ctx, flags, azdClient)
 			if err != nil {
 				_ = spinner.Stop(ctx)
 				fmt.Println()
@@ -406,7 +435,7 @@ func newOperationPauseCommand() *cobra.Command {
 }
 
 // newOperationResumeCommand creates a command to resume a paused fine-tuning job
-func newOperationResumeCommand() *cobra.Command {
+func newOperationResumeCommand(flags *jobsFlags) *cobra.Command {
 	var jobID string
 	requiredFlag := "id"
 
@@ -432,7 +461,7 @@ func newOperationResumeCommand() *cobra.Command {
 				fmt.Printf("failed to start spinner: %v\n", err)
 			}
 
-			fineTuneSvc, err := services.NewFineTuningService(ctx, azdClient, nil)
+			fineTuneSvc, err := createFineTuningService(ctx, flags, azdClient)
 			if err != nil {
 				_ = spinner.Stop(ctx)
 				fmt.Println()
@@ -465,7 +494,7 @@ func newOperationResumeCommand() *cobra.Command {
 }
 
 // newOperationCancelCommand creates a command to cancel a fine-tuning job
-func newOperationCancelCommand() *cobra.Command {
+func newOperationCancelCommand(flags *jobsFlags) *cobra.Command {
 	var jobID string
 	var force bool
 	requiredFlag := "id"
@@ -504,7 +533,7 @@ func newOperationCancelCommand() *cobra.Command {
 				fmt.Printf("failed to start spinner: %v\n", err)
 			}
 
-			fineTuneSvc, err := services.NewFineTuningService(ctx, azdClient, nil)
+			fineTuneSvc, err := createFineTuningService(ctx, flags, azdClient)
 			if err != nil {
 				_ = spinner.Stop(ctx)
 				fmt.Println()
@@ -535,7 +564,7 @@ func newOperationCancelCommand() *cobra.Command {
 	return cmd
 }
 
-func newOperationDeployModelCommand() *cobra.Command {
+func newOperationDeployModelCommand(flags *jobsFlags) *cobra.Command {
 	var jobID string
 	var deploymentName string
 	var modelFormat string
@@ -591,6 +620,27 @@ func newOperationDeployModelCommand() *cobra.Command {
 				}
 			}
 
+			// Apply flag overrides: flags take priority over environment variables.
+			if flags != nil && flags.subscriptionId != "" {
+				envValueMap["AZURE_SUBSCRIPTION_ID"] = flags.subscriptionId
+			}
+			if flags != nil && flags.projectEndpoint != "" {
+				accountName, _, err := parseProjectEndpoint(flags.projectEndpoint)
+				if err == nil && accountName != "" {
+					envValueMap["AZURE_ACCOUNT_NAME"] = accountName
+				}
+			}
+
+			// Resolve tenant ID: look it up from subscription if not in env.
+			if envValueMap["AZURE_TENANT_ID"] == "" && envValueMap["AZURE_SUBSCRIPTION_ID"] != "" {
+				tenantResp, err := azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
+					SubscriptionId: envValueMap["AZURE_SUBSCRIPTION_ID"],
+				})
+				if err == nil {
+					envValueMap["AZURE_TENANT_ID"] = tenantResp.TenantId
+				}
+			}
+
 			// Validate required environment variables
 			requiredEnvVars := []string{
 				"AZURE_SUBSCRIPTION_ID",
@@ -632,8 +682,8 @@ func newOperationDeployModelCommand() *cobra.Command {
 				return fmt.Errorf("failed to create azure credential: %w", err)
 			}
 
-			// Initialize fine-tuning provider
-			ftProvider, err := factory.NewFineTuningProvider(ctx, azdClient)
+			// Initialize fine-tuning provider (honors flags if provided)
+			ftProvider, err := resolveFineTuningProvider(ctx, flags, azdClient)
 			if err != nil {
 				_ = spinner.Stop(ctx)
 				fmt.Println()

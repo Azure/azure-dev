@@ -6,7 +6,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"sort"
 	"strings"
 
@@ -15,36 +14,6 @@ import (
 
 	"azure.ai.finetune/internal/utils"
 )
-
-// sanitizeEnvironmentName converts a project name to a valid azd environment name.
-// azd environment names must contain only lowercase letters, numbers, and hyphens,
-// and must start and end with a letter or number.
-func sanitizeEnvironmentName(name string) string {
-	// Convert to lowercase
-	result := strings.ToLower(name)
-
-	// Replace spaces, underscores, and other common separators with hyphens
-	result = strings.ReplaceAll(result, " ", "-")
-	result = strings.ReplaceAll(result, "_", "-")
-
-	// Remove any characters that aren't lowercase letters, numbers, or hyphens
-	re := regexp.MustCompile(`[^a-z0-9-]`)
-	result = re.ReplaceAllString(result, "")
-
-	// Replace multiple consecutive hyphens with a single hyphen
-	re = regexp.MustCompile(`-+`)
-	result = re.ReplaceAllString(result, "-")
-
-	// Trim leading and trailing hyphens (must start/end with letter or number)
-	result = strings.Trim(result, "-")
-
-	// If empty after sanitization, use a default name
-	if result == "" {
-		result = "finetuning-env"
-	}
-
-	return result
-}
 
 // Common hints for required flags
 const (
@@ -138,9 +107,23 @@ func validateSubmitFlags(file, model, trainingFile string) error {
 
 // validateOrInitEnvironment checks if environment is configured, and if not, attempts implicit initialization
 // using the provided subscription ID and project endpoint flags.
+// Priority order: (1) flags, (2) azd environment variables, (3) error with guidance.
 func validateOrInitEnvironment(ctx context.Context, subscriptionId, projectEndpoint string) error {
 	ctx = azdext.WithAccessToken(ctx)
 
+	// Priority 1: If explicit flags are provided, validate their format and use them directly.
+	// This takes precedence over any previously configured azd environment.
+	if projectEndpoint != "" {
+		if subscriptionId == "" {
+			return fmt.Errorf("--subscription (-s) is required when --project-endpoint (-e) is provided")
+		}
+		if _, _, err := parseProjectEndpoint(projectEndpoint); err != nil {
+			return fmt.Errorf("invalid --project-endpoint: %w", err)
+		}
+		return nil
+	}
+
+	// Priority 2: Check whether the azd environment already has all required variables.
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
 		return err
@@ -150,7 +133,6 @@ func validateOrInitEnvironment(ctx context.Context, subscriptionId, projectEndpo
 	envValues, _ := utils.GetEnvironmentValues(ctx, azdClient)
 	required := []string{utils.EnvAzureTenantID, utils.EnvAzureSubscriptionID, utils.EnvAzureLocation, utils.EnvAzureAccountName}
 
-	// Check if environment is already configured
 	allConfigured := true
 	for _, varName := range required {
 		if envValues[varName] == "" {
@@ -160,50 +142,9 @@ func validateOrInitEnvironment(ctx context.Context, subscriptionId, projectEndpo
 	}
 
 	if allConfigured {
-		// Warn user if they provided flags that will be ignored
-		if subscriptionId != "" || projectEndpoint != "" {
-			color.Yellow("Warning: Environment is already configured. The --subscription and --project-endpoint flags are being ignored.")
-			color.Yellow("To reconfigure, run 'azd ai finetuning init' with the new values.\n")
-		}
 		return nil
 	}
 
-	// Environment not configured - check if we have flags for implicit init
-	if projectEndpoint == "" || subscriptionId == "" {
-		return fmt.Errorf("required environment variables not set. Either run 'azd ai finetuning init' or provide both --subscription (-s) and --project-endpoint (-e) flags")
-	}
-
-	// Perform implicit initialization
-	fmt.Println("Environment not configured. Running implicit initialization...")
-
-	// Extract project name from endpoint to use as default environment name
-	_, projectName, err := parseProjectEndpoint(projectEndpoint)
-	if err != nil {
-		return fmt.Errorf("failed to parse project endpoint: %w", err)
-	}
-
-	// Sanitize project name for use as azd environment name
-	// (must be lowercase letters, numbers, hyphens, and start/end with letter or number)
-	envName := sanitizeEnvironmentName(projectName)
-
-	initFlags := &initFlags{
-		subscriptionId:  subscriptionId,
-		projectEndpoint: projectEndpoint,
-		env:             envName,
-	}
-	initFlags.NoPrompt = true // Run in non-interactive mode
-
-	// Ensure project exists first (required before creating environment)
-	_, err = ensureProject(ctx, initFlags, azdClient)
-	if err != nil {
-		return fmt.Errorf("implicit initialization failed: %w", err)
-	}
-
-	_, err = ensureEnvironment(ctx, initFlags, azdClient)
-	if err != nil {
-		return fmt.Errorf("implicit initialization failed: %w", err)
-	}
-
-	fmt.Println("Environment configured successfully.")
-	return nil
+	// Priority 3: Neither flags nor environment are configured.
+	return fmt.Errorf("required environment variables not set. Either run 'azd ai finetuning init' or provide both --subscription (-s) and --project-endpoint (-e) flags")
 }

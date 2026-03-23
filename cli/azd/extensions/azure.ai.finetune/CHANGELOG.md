@@ -1,6 +1,12 @@
 # Release History
 
 
+## 0.0.18-preview (2026-03-23)
+
+- Fix: `--project-endpoint` and `--subscription` flags now take priority over any previously configured azd environment when running `jobs` commands (list, show, submit, pause, resume, cancel, deploy).
+- Fix: Removed warning that incorrectly ignored user-provided flags when an environment was already configured.
+- The priority order for endpoint resolution is now: (1) explicit flags, (2) azd environment variables, (3) error with guidance to run `azd ai finetuning init`.
+
 ## 0.0.17-preview (2026-02-20)
 
 - Add multi-grader support for reinforcement fine-tuning

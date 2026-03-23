@@ -40,6 +40,16 @@ func NewFineTuningService(ctx context.Context, azdClient *azdext.AzdClient, stat
 	}, nil
 }
 
+// NewFineTuningServiceWithProvider creates a FineTuningService with a pre-built provider.
+// Use this when the provider has been constructed directly (e.g., from explicit flag values)
+// rather than from azd environment configuration.
+func NewFineTuningServiceWithProvider(provider providers.FineTuningProvider, stateStore StateStore) FineTuningService {
+	return &fineTuningServiceImpl{
+		provider:   provider,
+		stateStore: stateStore,
+	}
+}
+
 // CreateFineTuningJob creates a new fine-tuning job with business validation
 func (s *fineTuningServiceImpl) CreateFineTuningJob(ctx context.Context, req *models.CreateFineTuningRequest) (*models.FineTuningJob, error) {
 	// Validate request

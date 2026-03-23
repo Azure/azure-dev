@@ -624,10 +624,10 @@ var (
 
 // Copilot agent session related fields
 var (
-	// CopilotSessionId is the hashed session ID for correlation across messages.
+	// CopilotSessionId is the session ID for correlation across messages.
 	CopilotSessionId = AttributeKey{
 		Key:            attribute.Key("copilot.session.id"),
-		Classification: EndUserPseudonymizedInformation,
+		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
 	// CopilotSessionIsNew indicates whether this was a new session (true) or resumed (false).

@@ -514,7 +514,7 @@ func (a *CopilotAgent) Stop() error {
 		fields.CopilotConsentDeniedCount.Int(a.consentDeniedCount),
 	)
 	if a.sessionID != "" {
-		tracing.SetUsageAttributes(fields.StringHashed(fields.CopilotSessionId, a.sessionID))
+		tracing.SetUsageAttributes(fields.CopilotSessionId.String(a.sessionID))
 	}
 
 	tasks := a.cleanupTasks
@@ -598,7 +598,7 @@ func (a *CopilotAgent) ensureSession(ctx context.Context, resumeSessionID string
 			sessionID = resumeSessionID
 		}
 		if sessionID != "" {
-			span.SetAttributes(fields.StringHashed(fields.CopilotSessionId, sessionID))
+			span.SetAttributes(fields.CopilotSessionId.String(sessionID))
 		}
 		span.EndWithStatus(err)
 	}()

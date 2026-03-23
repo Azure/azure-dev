@@ -16,24 +16,48 @@ import (
 )
 
 type azdCredential struct {
-	client  publicClient
-	account *public.Account
-	cloud   *cloud.Cloud
+	client   publicClient
+	account  *public.Account
+	cloud    *cloud.Cloud
+	tenantID string
 }
 
-func newAzdCredential(client publicClient, account *public.Account, cloud *cloud.Cloud) *azdCredential {
+// newAzdCredential creates a credential that acquires tokens via MSAL's public client.
+// tenantID, when non-empty, is forwarded to AcquireTokenSilent so MSAL issues tokens
+// for that specific tenant instead of defaulting to the account's home tenant.
+func newAzdCredential(
+	client publicClient, account *public.Account, cloud *cloud.Cloud, tenantID string,
+) *azdCredential {
 	return &azdCredential{
-		client:  client,
-		account: account,
-		cloud:   cloud,
+		client:   client,
+		account:  account,
+		cloud:    cloud,
+		tenantID: tenantID,
 	}
 }
 
 func (c *azdCredential) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
-	res, err := c.client.AcquireTokenSilent(ctx,
-		options.Scopes,
+	silentOpts := []public.AcquireSilentOption{
 		public.WithSilentAccount(*c.account),
-		public.WithClaims(options.Claims))
+		public.WithClaims(options.Claims),
+	}
+
+	// Forward the tenant ID so MSAL acquires a token from the correct tenant
+	// authority. The credential's tenantID is set when the credential is created
+	// for a specific tenant (e.g. resource tenant for B2B guests). The caller
+	// can override via options.TenantID (e.g. during CAE challenges).
+	// Without this, MSAL defaults to the account's home tenant, which causes
+	// cross-tenant calls (e.g. Graph /me for B2B guests) to return identity
+	// information for the home tenant instead of the resource tenant.
+	tenantID := c.tenantID
+	if options.TenantID != "" {
+		tenantID = options.TenantID
+	}
+	if tenantID != "" {
+		silentOpts = append(silentOpts, public.WithTenantID(tenantID))
+	}
+
+	res, err := c.client.AcquireTokenSilent(ctx, options.Scopes, silentOpts...)
 
 	if err != nil {
 		if authFailed, ok := errors.AsType[*AuthFailedError](err); ok {

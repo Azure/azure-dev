@@ -21,6 +21,9 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
 	agentcopilot "github.com/azure/azure-dev/cli/azd/internal/agent/copilot"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -57,6 +60,9 @@ type CopilotAgent struct {
 	mu                     sync.Mutex                      // guards cumulative metrics and file changes
 	cumulativeUsage        UsageMetrics                    // cumulative metrics across multiple SendMessage calls
 	accumulatedFileChanges watch.FileChanges               // accumulated file changes across all SendMessage calls
+	messageCount           int                             // number of messages sent in current session
+	consentApprovedCount   int                             // running count of tool calls approved
+	consentDeniedCount     int                             // running count of tool calls denied
 
 	// Cleanup — ordered slice for deterministic teardown
 	cleanupTasks []cleanupTask
@@ -70,7 +76,19 @@ type cleanupTask struct {
 // Initialize handles first-run configuration (model/reasoning prompts), plugin install,
 // and Copilot client startup. If config already exists, returns current values without
 // prompting. Use WithForcePrompt() to always show prompts.
-func (a *CopilotAgent) Initialize(ctx context.Context, opts ...InitOption) (*InitResult, error) {
+func (a *CopilotAgent) Initialize(ctx context.Context, opts ...InitOption) (result *InitResult, err error) {
+	ctx, span := tracing.Start(ctx, events.CopilotInitializeEvent)
+	defer func() {
+		if result != nil {
+			tracing.SetUsageAttributes(
+				fields.CopilotInitIsFirstRun.Bool(result.IsFirstRun),
+				fields.CopilotInitModel.String(result.Model),
+				fields.CopilotInitReasoningEffort.String(result.ReasoningEffort),
+			)
+		}
+		span.EndWithStatus(err)
+	}()
+
 	options := &initOptions{}
 	for _, opt := range opts {
 		opt(options)
@@ -298,11 +316,23 @@ func (a *CopilotAgent) SendMessage(ctx context.Context, prompt string, opts ...S
 
 	log.Printf("[copilot] SendMessage: sending prompt (%d chars, headless=%v)...", len(prompt), a.headless)
 
+	var result *AgentResult
+	var err error
+
 	if a.headless {
-		return a.sendMessageHeadless(ctx, prompt, mode)
+		result, err = a.sendMessageHeadless(ctx, prompt, mode)
+	} else {
+		result, err = a.sendMessageInteractive(ctx, prompt, mode)
 	}
 
-	return a.sendMessageInteractive(ctx, prompt, mode)
+	if err != nil {
+		return nil, err
+	}
+
+	// Increment message count only after successful send
+	a.messageCount++
+
+	return result, nil
 }
 
 // sendMessageInteractive sends a message with full interactive display and file watcher.
@@ -470,6 +500,23 @@ func (a *CopilotAgent) SendMessageWithRetry(ctx context.Context, prompt string, 
 // Stop terminates the agent, cleans up the Copilot SDK client and runtime process.
 // Cleanup tasks run in reverse registration order. Safe to call multiple times.
 func (a *CopilotAgent) Stop() error {
+	// Record all cumulative session metrics as usage attributes
+	tracing.SetUsageAttributes(
+		fields.CopilotMode.String(string(a.mode)),
+		fields.CopilotSessionMessageCount.Int(a.messageCount),
+		fields.CopilotMessageModel.String(a.cumulativeUsage.Model),
+		fields.CopilotMessageInputTokens.Float64(a.cumulativeUsage.InputTokens),
+		fields.CopilotMessageOutputTokens.Float64(a.cumulativeUsage.OutputTokens),
+		fields.CopilotMessageBillingRate.Float64(a.cumulativeUsage.BillingRate),
+		fields.CopilotMessagePremiumRequests.Float64(a.cumulativeUsage.PremiumRequests),
+		fields.CopilotMessageDurationMs.Float64(a.cumulativeUsage.DurationMS),
+		fields.CopilotConsentApprovedCount.Int(a.consentApprovedCount),
+		fields.CopilotConsentDeniedCount.Int(a.consentDeniedCount),
+	)
+	if a.sessionID != "" {
+		tracing.SetUsageAttributes(fields.StringHashed(fields.CopilotSessionId, a.sessionID))
+	}
+
 	tasks := a.cleanupTasks
 	a.cleanupTasks = nil
 
@@ -538,10 +585,26 @@ func (a *CopilotAgent) EnsureStarted(ctx context.Context) error {
 // ensureSession creates or resumes a Copilot session if one doesn't exist.
 // Uses context.WithoutCancel to prevent the SDK session from being torn down
 // when a per-request context (e.g., gRPC) is cancelled between calls.
-func (a *CopilotAgent) ensureSession(ctx context.Context, resumeSessionID string) error {
+func (a *CopilotAgent) ensureSession(ctx context.Context, resumeSessionID string) (err error) {
 	if a.session != nil {
 		return nil
 	}
+
+	ctx, span := tracing.Start(ctx, events.CopilotSessionEvent)
+	defer func() {
+		// Log session ID even on failure (e.g., resume failure still has the attempted ID)
+		sessionID := a.sessionID
+		if sessionID == "" && resumeSessionID != "" {
+			sessionID = resumeSessionID
+		}
+		if sessionID != "" {
+			span.SetAttributes(fields.StringHashed(fields.CopilotSessionId, sessionID))
+		}
+		span.EndWithStatus(err)
+	}()
+
+	isResume := resumeSessionID != ""
+	span.SetAttributes(fields.CopilotSessionIsNew.Bool(!isResume))
 
 	// Detach from the caller's cancellation so the client and session
 	// outlive individual requests (e.g., gRPC calls).
@@ -647,6 +710,7 @@ func (a *CopilotAgent) createPermissionHandler() copilot.PermissionHandlerFunc {
 		// In headless mode, auto-approve all permission requests
 		if a.headless {
 			log.Printf("[copilot] PermissionRequest (headless auto-approve): kind=%s", req.Kind)
+			a.consentApprovedCount++
 			return copilot.PermissionRequestResult{Kind: "approved"}, nil
 		}
 
@@ -667,10 +731,12 @@ func (a *CopilotAgent) createPermissionHandler() copilot.PermissionHandlerFunc {
 		decision, err := a.consentManager.CheckConsent(a.activeContext(), consentReq)
 		if err != nil {
 			log.Printf("[copilot] Consent check error for %s: %v, denying", toolID, err)
+			a.consentDeniedCount++
 			return copilot.PermissionRequestResult{Kind: "denied-by-rules"}, nil
 		}
 
 		if decision.Allowed {
+			a.consentApprovedCount++
 			return copilot.PermissionRequestResult{Kind: "approved"}, nil
 		}
 
@@ -693,18 +759,23 @@ func (a *CopilotAgent) createPermissionHandler() copilot.PermissionHandlerFunc {
 			if promptErr != nil {
 				if errors.Is(promptErr, consent.ErrToolExecutionSkipped) {
 					// Skip — deny this tool but let the agent continue
+					a.consentDeniedCount++
 					return copilot.PermissionRequestResult{Kind: "denied-by-rules"}, nil
 				}
 				if errors.Is(promptErr, consent.ErrToolExecutionDenied) {
 					// Deny — block and exit the interaction
+					a.consentDeniedCount++
 					return copilot.PermissionRequestResult{Kind: "denied-interactively-by-user"}, nil
 				}
 				log.Printf("[copilot] Consent grant error for %s: %v", toolID, promptErr)
+				a.consentDeniedCount++
 				return copilot.PermissionRequestResult{Kind: "denied-by-rules"}, nil
 			}
+			a.consentApprovedCount++
 			return copilot.PermissionRequestResult{Kind: "approved"}, nil
 		}
 
+		a.consentDeniedCount++
 		return copilot.PermissionRequestResult{Kind: "denied-by-rules"}, nil
 	}
 }

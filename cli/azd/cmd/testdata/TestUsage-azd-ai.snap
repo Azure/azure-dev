@@ -5,7 +5,7 @@ Usage
   azd ai [command]
 
 Available Commands
-  agent     	: Extension for the Foundry Agent Service. (Preview)
+  agent     	: Ship agents with Microsoft Foundry from your terminal. (Preview)
   finetuning	: Extension for Foundry Fine Tuning. (Preview)
   models    	: Extension for managing custom models in Azure AI Foundry. (Preview)
 

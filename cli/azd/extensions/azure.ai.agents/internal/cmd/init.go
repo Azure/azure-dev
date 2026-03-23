@@ -184,6 +184,8 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 		Short: fmt.Sprintf("Initialize a new AI agent project. %s", color.YellowString("(Preview)")),
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			printBanner(cmd.OutOrStdout())
+
 			ctx := azdext.WithAccessToken(cmd.Context())
 
 			setupDebugLogging(cmd.Flags())
@@ -361,8 +363,6 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 }
 
 func (a *InitAction) Run(ctx context.Context) error {
-	color.Green("Initializing AI agent project...")
-	fmt.Println()
 
 	// If src path is absolute, convert it to relative path compared to the azd project path
 	if a.flags.src != "" && filepath.IsAbs(a.flags.src) {
@@ -1197,23 +1197,10 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 }
 
 func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.ContainerSettings, error) {
-	type resourceTier struct {
-		label  string
-		cpu    string
-		memory string
-	}
-
-	tiers := []resourceTier{
-		{label: "0.25 cores, 0.5 GB memory", cpu: "0.25", memory: "0.5Gi"},
-		{label: "0.5 cores, 1 GB memory", cpu: "0.5", memory: "1Gi"},
-		{label: "1 core, 2 GB memory", cpu: "1", memory: "2Gi"},
-		{label: "2 cores, 4 GB memory", cpu: "2", memory: "4Gi"},
-	}
-
-	choices := make([]*azdext.SelectChoice, len(tiers))
-	for i, t := range tiers {
+	choices := make([]*azdext.SelectChoice, len(project.ResourceTiers))
+	for i, t := range project.ResourceTiers {
 		choices[i] = &azdext.SelectChoice{
-			Label: t.label,
+			Label: t.String(),
 			Value: fmt.Sprintf("%d", i),
 		}
 	}
@@ -1230,12 +1217,12 @@ func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.Co
 		return nil, fmt.Errorf("prompting for container resources: %w", err)
 	}
 
-	selected := tiers[*resp.Value]
+	selected := project.ResourceTiers[*resp.Value]
 
 	return &project.ContainerSettings{
 		Resources: &project.ResourceSettings{
-			Memory: selected.memory,
-			Cpu:    selected.cpu,
+			Memory: selected.Memory,
+			Cpu:    selected.Cpu,
 		},
 		Scale: &project.ScaleSettings{
 			MinReplicas: project.DefaultMinReplicas,

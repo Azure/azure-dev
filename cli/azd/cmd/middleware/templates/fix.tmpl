@@ -1,0 +1,20 @@
+The user saw the following error while running `{{.Command}}` and wants you to fix it.
+
+Error message:
+{{.ErrorMessage}}
+
+You MUST complete every step below in exact order. Do NOT skip ahead.
+
+## STEP 1 — DIAGNOSE
+
+Call the `azd_error_troubleshooting` tool now. Pass the full error message above as input.
+Wait for the tool result before continuing.
+
+## STEP 2 — FIX
+
+Using the tool result from Step 1:
+- Describe the exact change you will make (file, setting, or command) and why it fixes the problem.
+- Apply the minimal change required using available tools.
+- Do NOT modify anything unrelated to this error.
+- Do NOT run `{{.Command}}`.
+- Remove any changes that were created solely for validation and are not part of the actual error fix.

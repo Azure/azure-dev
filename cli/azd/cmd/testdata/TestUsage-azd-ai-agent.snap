@@ -1,5 +1,5 @@
 
-Extension for the Foundry Agent Service. (Preview)
+Ship agents with Microsoft Foundry from your terminal. (Preview)
 
 Usage
   azd ai agent [flags]

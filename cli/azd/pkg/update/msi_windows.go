@@ -36,7 +36,7 @@ func expectedPerUserInstallDir() string {
 //     This frees the original path AND keeps the running process alive.
 //  2. Copy the backup back to the original path (azd.exe).
 //     This is an unlocked copy that acts as a safety net: if the process is
-//     killed at any point after this (Ctrl+C, power loss, ect), the user
+//     killed at any point after this (Ctrl+C, power loss, etc.), the user
 //     still has a working azd.exe.
 //  3. The MSI installer later overwrites the unlocked safety copy with the new version.
 //

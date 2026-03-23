@@ -1,5 +1,10 @@
 # Release History
 
+## 0.1.17-preview (2026-03-20)
+
+- [[#7214]](https://github.com/Azure/azure-dev/pull/7214) Add ASCII art banner with Foundry branding and version info displayed at extension startup.
+- [[#7217]](https://github.com/Azure/azure-dev/pull/7217) Update container settings to use discrete CPU and memory options, and remove min/max replicas prompts.
+
 ## 0.1.16-preview (2026-03-18)
 
 - [[#7141]](https://github.com/Azure/azure-dev/pull/7141) Add `azd ai agent files` command group with `upload`, `download`, `list`, and `remove` subcommands for managing session-scoped files on hosted agent sandboxes.

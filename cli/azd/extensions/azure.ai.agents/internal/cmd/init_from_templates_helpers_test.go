@@ -180,6 +180,7 @@ func fetchAgentTemplatesFromURL(
 		return nil, err
 	}
 
+	//nolint:gosec // URL points to a local httptest server, not user input
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err

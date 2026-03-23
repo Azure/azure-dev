@@ -115,6 +115,7 @@ func fetchAgentTemplates(ctx context.Context, httpClient *http.Client) ([]AgentT
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
+	//nolint:gosec // URL is the hard-coded agentTemplatesURL constant, not user input
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch agent templates: %w", err)
@@ -155,7 +156,7 @@ func promptAgentTemplate(
 		)
 	}
 
-	color.New(color.Faint).Println("Retrieving agent templates...")
+	_, _ = color.New(color.Faint).Println("Retrieving agent templates...")
 
 	templates, err := fetchAgentTemplates(ctx, httpClient)
 	if err != nil {

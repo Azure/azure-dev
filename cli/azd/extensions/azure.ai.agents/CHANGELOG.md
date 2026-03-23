@@ -1,5 +1,9 @@
 # Release History
 
+## 0.1.18-preview (2026-03-23)
+
+- [[#7147]](https://github.com/Azure/azure-dev/pull/7147) Add `azd ai agent init` support for initializing from an agent template.
+
 ## 0.1.17-preview (2026-03-20)
 
 - [[#7214]](https://github.com/Azure/azure-dev/pull/7214) Add ASCII art banner with Foundry branding and version info displayed at extension startup.

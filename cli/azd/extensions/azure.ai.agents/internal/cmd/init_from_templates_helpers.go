@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
@@ -197,6 +198,11 @@ func promptAgentTemplate(
 	if len(filtered) == 0 {
 		return nil, fmt.Errorf("no agent templates available for %s", languageChoices[*langResp.Value].Label)
 	}
+
+	// Sort templates alphabetically by title
+	slices.SortFunc(filtered, func(a, b AgentTemplate) int {
+		return strings.Compare(a.Title, b.Title)
+	})
 
 	// Build template choices with framework in label
 	templateChoices := make([]*azdext.SelectChoice, len(filtered))

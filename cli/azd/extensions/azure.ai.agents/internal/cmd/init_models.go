@@ -12,10 +12,8 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/registry_api"
-	"azureaiagent/internal/pkg/azure"
 	"azureaiagent/internal/project"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
@@ -162,33 +160,16 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 		resourceGroup := parts[4]
 		accountName := parts[8]
 
-		deploymentsClient, err := armcognitiveservices.NewDeploymentsClient(subscription, a.credential, azure.NewArmClientOptions())
+		allDeployments, err := listProjectDeployments(ctx, a.credential, subscription, resourceGroup, accountName)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create deployments client: %w", err)
+			return nil, fmt.Errorf("failed to list deployments: %w", err)
 		}
 
-		pager := deploymentsClient.NewListPager(resourceGroup, accountName, nil)
-		var deployments []*armcognitiveservices.Deployment
-		for pager.More() {
-			page, err := pager.NextPage(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("failed to list deployments: %w", err)
-			}
-			deployments = append(deployments, page.Value...)
-		}
-
-		matchingDeployments := make(map[string]*armcognitiveservices.Deployment)
-		for _, deployment := range deployments {
-			if deployment.Name == nil ||
-				deployment.Properties == nil || deployment.Properties.Model == nil ||
-				deployment.Properties.Model.Name == nil || deployment.Properties.Model.Format == nil ||
-				deployment.Properties.Model.Version == nil ||
-				deployment.SKU == nil || deployment.SKU.Name == nil || deployment.SKU.Capacity == nil {
-				continue
-			}
-
-			if *deployment.Properties.Model.Name == model.Id {
-				matchingDeployments[*deployment.Name] = deployment
+		matchingDeployments := make(map[string]*FoundryDeploymentInfo)
+		for i := range allDeployments {
+			d := &allDeployments[i]
+			if d.ModelName == model.Id {
+				matchingDeployments[d.Name] = d
 			}
 		}
 
@@ -214,16 +195,21 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 						Name: selection,
 						Model: project.DeploymentModel{
 							Name:    model.Id,
-							Format:  *deployment.Properties.Model.Format,
-							Version: *deployment.Properties.Model.Version,
+							Format:  deployment.ModelFormat,
+							Version: deployment.Version,
 						},
 						Sku: project.DeploymentSku{
-							Name:     *deployment.SKU.Name,
-							Capacity: int(*deployment.SKU.Capacity),
+							Name:     deployment.SkuName,
+							Capacity: deployment.SkuCapacity,
 						},
 					}, nil
 				}
 			}
+		} else {
+			fmt.Printf(
+				"No existing deployment for model '%s' found in your Foundry project. A new deployment will be configured.\n",
+				model.Id,
+			)
 		}
 	}
 
@@ -299,7 +285,7 @@ func (a *InitAction) getModelDetails(ctx context.Context, modelName string) (*az
 
 	if a.flags.NoPrompt {
 		fmt.Println("No prompt mode enabled, automatically selecting a model deployment based on availability and quota...")
-		return a.resolveModelDeploymentNoPrompt(ctx, model, currentLocation)
+		return resolveModelDeployment(ctx, a.azdClient, a.azureContext, model, currentLocation)
 	}
 
 	for {
@@ -342,83 +328,6 @@ func (a *InitAction) getModelDetails(ctx context.Context, modelName string) (*az
 		model = resolvedModel
 		currentLocation = resolvedLocation
 	}
-}
-
-func (a *InitAction) resolveModelDeploymentNoPrompt(
-	ctx context.Context,
-	model *azdext.AiModel,
-	location string,
-) (*azdext.AiModelDeployment, error) {
-	resolveResp, err := a.azdClient.Ai().ResolveModelDeployments(ctx, &azdext.ResolveModelDeploymentsRequest{
-		AzureContext: a.azureContext,
-		ModelName:    model.Name,
-		Options: &azdext.AiModelDeploymentOptions{
-			Locations: []string{location},
-		},
-		Quota: &azdext.QuotaCheckOptions{
-			MinRemainingCapacity: 1,
-		},
-	})
-	if err != nil {
-		return nil, exterrors.FromAiService(err, exterrors.CodeModelResolutionFailed)
-	}
-
-	if len(resolveResp.Deployments) == 0 {
-		return nil, exterrors.Dependency(
-			exterrors.CodeModelResolutionFailed,
-			fmt.Sprintf("no deployment candidates found for model '%s' in location '%s'", model.Name, location),
-			"",
-		)
-	}
-
-	orderedCandidates := slices.Clone(resolveResp.Deployments)
-	defaultVersions := make(map[string]struct{}, len(model.Versions))
-	for _, version := range model.Versions {
-		if version.IsDefault {
-			defaultVersions[version.Version] = struct{}{}
-		}
-	}
-
-	slices.SortFunc(orderedCandidates, func(a, b *azdext.AiModelDeployment) int {
-		_, aDefault := defaultVersions[a.Version]
-		_, bDefault := defaultVersions[b.Version]
-		if aDefault != bDefault {
-			if aDefault {
-				return -1
-			}
-			return 1
-		}
-
-		aSkuPriority := skuPriority(a.Sku.Name)
-		bSkuPriority := skuPriority(b.Sku.Name)
-		if aSkuPriority != bSkuPriority {
-			if aSkuPriority < bSkuPriority {
-				return -1
-			}
-			return 1
-		}
-
-		if cmp := strings.Compare(a.Version, b.Version); cmp != 0 {
-			return cmp
-		}
-
-		if cmp := strings.Compare(a.Sku.Name, b.Sku.Name); cmp != 0 {
-			return cmp
-		}
-
-		return strings.Compare(a.Sku.UsageName, b.Sku.UsageName)
-	})
-
-	for _, candidate := range orderedCandidates {
-		capacity, ok := resolveNoPromptCapacity(candidate)
-		if !ok {
-			continue
-		}
-
-		return cloneDeploymentWithCapacity(candidate, capacity), nil
-	}
-
-	return nil, fmt.Errorf("no deployment candidates found for model '%s' with a valid non-interactive capacity", model.Name)
 }
 
 func resolveNoPromptCapacity(candidate *azdext.AiModelDeployment) (int32, bool) {

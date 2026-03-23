@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
+	"github.com/fatih/color"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -206,10 +207,76 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 				}
 			}
 		} else {
-			fmt.Printf(
-				"No existing deployment for model '%s' found in your Foundry project. A new deployment will be configured.\n",
+			color.Yellow(
+				"No existing deployment for model '%s' specified in the selected agent manifest was found in your Foundry project.\n",
 				model.Id,
 			)
+
+			noMatchChoices := []*azdext.SelectChoice{
+				{
+					Label: fmt.Sprintf("Deploy a new '%s' model to the selected Foundry project", model.Id),
+					Value: "deploy_new",
+				},
+				{
+					Label: "Use a different model already deployed in this project",
+					Value: "use_different",
+				},
+			}
+
+			defaultIdx := int32(0)
+			noMatchResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+				Options: &azdext.SelectOptions{
+					Message:       "How would you like to proceed?",
+					Choices:       noMatchChoices,
+					SelectedIndex: &defaultIdx,
+				},
+			})
+			if err != nil {
+				if exterrors.IsCancellation(err) {
+					return nil, exterrors.Cancelled("model deployment selection was cancelled")
+				}
+				return nil, fmt.Errorf("failed to prompt for no-match choice: %w", err)
+			}
+
+			if noMatchChoices[*noMatchResp.Value].Value == "use_different" {
+				if len(allDeployments) == 0 {
+					fmt.Println("No deployments found in this project. A new deployment will be configured.")
+				} else {
+					// Let user pick from all deployments in the project
+					deploymentOptions := make([]string, 0, len(allDeployments))
+					deploymentMap := make(map[string]*FoundryDeploymentInfo)
+					for i := range allDeployments {
+						d := &allDeployments[i]
+						label := fmt.Sprintf("%s (%s)", d.Name, d.ModelName)
+						deploymentOptions = append(deploymentOptions, label)
+						deploymentMap[label] = d
+					}
+
+					slices.Sort(deploymentOptions)
+
+					selection, err := a.selectFromList(ctx, "deployment", deploymentOptions, deploymentOptions[0])
+					if err != nil {
+						return nil, fmt.Errorf("failed to select deployment: %w", err)
+					}
+
+					if deployment, exists := deploymentMap[selection]; exists {
+						fmt.Printf("Using existing model deployment: %s\n", deployment.Name)
+						return &project.Deployment{
+							Name: deployment.Name,
+							Model: project.DeploymentModel{
+								Name:    deployment.ModelName,
+								Format:  deployment.ModelFormat,
+								Version: deployment.Version,
+							},
+							Sku: project.DeploymentSku{
+								Name:     deployment.SkuName,
+								Capacity: deployment.SkuCapacity,
+							},
+						}, nil
+					}
+				}
+			}
+			// "deploy_new" or no deployments available — fall through to deploy-new logic below
 		}
 	}
 

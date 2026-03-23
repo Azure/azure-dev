@@ -677,10 +677,15 @@ func (p *BicepProvider) waitForActiveDeployments(
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-deadline:
+			// Refresh names from latest poll for an accurate timeout message
+			currentNames := make([]string, len(active))
+			for i, d := range active {
+				currentNames[i] = d.Name
+			}
 			return fmt.Errorf(
 				"timed out after %s waiting for active "+
 					"deployment(s) to complete: %s",
-				timeout, strings.Join(names, ", "))
+				timeout, strings.Join(currentNames, ", "))
 		case <-ticker.C:
 			active, err = scope.ListActiveDeployments(ctx)
 			if err != nil {

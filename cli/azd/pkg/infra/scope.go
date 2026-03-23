@@ -240,14 +240,7 @@ func (s *ResourceGroupScope) ListActiveDeployments(
 		return nil, err
 	}
 
-	var active []*azapi.ResourceDeployment
-	for _, d := range all {
-		if azapi.IsActiveDeploymentState(d.ProvisioningState) {
-			active = append(active, d)
-		}
-	}
-
-	return active, nil
+	return filterActiveDeployments(all), nil
 }
 
 // Deployment gets the deployment with the specified name.
@@ -413,14 +406,18 @@ func (s *SubscriptionScope) ListActiveDeployments(
 		return nil, err
 	}
 
+	return filterActiveDeployments(all), nil
+}
+
+// filterActiveDeployments returns only deployments with an active provisioning state.
+func filterActiveDeployments(deployments []*azapi.ResourceDeployment) []*azapi.ResourceDeployment {
 	var active []*azapi.ResourceDeployment
-	for _, d := range all {
+	for _, d := range deployments {
 		if azapi.IsActiveDeploymentState(d.ProvisioningState) {
 			active = append(active, d)
 		}
 	}
-
-	return active, nil
+	return active
 }
 
 func newSubscriptionScope(

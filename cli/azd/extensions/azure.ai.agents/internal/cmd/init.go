@@ -541,10 +541,20 @@ func manifestHasModelResources(manifest *agent_yaml.AgentManifest) bool {
 func (a *InitAction) configureModelChoice(
 	ctx context.Context, agentManifest *agent_yaml.AgentManifest,
 ) (*agent_yaml.AgentManifest, error) {
-	// If --project-id is provided, extract the subscription ID so ensureSubscription
-	// can skip the prompt and just resolve the tenant
+	// If --project-id is provided, validate the ARM format and extract the subscription ID
+	// so ensureSubscription can skip the prompt and just resolve the tenant
 	if a.flags.projectResourceId != "" {
-		a.azureContext.Scope.SubscriptionId = extractSubscriptionId(a.flags.projectResourceId)
+		projectDetails, err := extractProjectDetails(a.flags.projectResourceId)
+		if err != nil {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidProjectResourceId,
+				fmt.Sprintf("invalid --project-id value: %s", err),
+				"Provide a valid Foundry project resource ID in the format:\n"+
+					"/subscriptions/<SUBSCRIPTION_ID>/resourceGroups/<RESOURCE_GROUP>/providers/"+
+					"Microsoft.CognitiveServices/accounts/<ACCOUNT_NAME>/projects/<PROJECT_NAME>",
+			)
+		}
+		a.azureContext.Scope.SubscriptionId = projectDetails.SubscriptionId
 	}
 
 	// If the manifest has no model resources, skip the model configuration prompt
@@ -611,8 +621,10 @@ func (a *InitAction) configureModelChoice(
 		}
 
 		if selectedProject == nil {
-			// No projects found or user chose "Create new" → fall back to "deploy new" path
-			fmt.Println("No Foundry projects found in your subscription. Falling back to deploying a new model.")
+			// No existing project selected (no projects found or user chose "Create new") → fall back to "deploy new" path
+			_, _ = color.New(color.Faint).Println(
+				"No existing Foundry project was selected. Falling back to deploying a new model.",
+			)
 			if err := ensureLocation(ctx, a.azdClient, a.azureContext, a.environment.Name); err != nil {
 				return nil, err
 			}

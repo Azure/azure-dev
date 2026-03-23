@@ -150,9 +150,6 @@ func (a *authTokenAction) Run(ctx context.Context) (*actions.ActionResult, error
 	if tenantId == "" {
 		tenantIdFromAzdEnv, err := getTenantIdFromAzdEnv(ctx, a.envResolver, a.subResolver)
 		if err != nil {
-			if a.flags.check {
-				return nil, err
-			}
 			return nil, err
 		}
 		tenantId = tenantIdFromAzdEnv
@@ -161,9 +158,6 @@ func (a *authTokenAction) Run(ctx context.Context) (*actions.ActionResult, error
 	if tenantId == "" {
 		tenantIdFromSysEnv, err := getTenantIdFromEnv(ctx, a.subResolver)
 		if err != nil {
-			if a.flags.check {
-				return nil, err
-			}
 			return nil, err
 		}
 		tenantId = tenantIdFromSysEnv
@@ -175,9 +169,6 @@ func (a *authTokenAction) Run(ctx context.Context) (*actions.ActionResult, error
 		TenantID: tenantId,
 	})
 	if err != nil {
-		if a.flags.check {
-			return nil, err
-		}
 		return nil, err
 	}
 

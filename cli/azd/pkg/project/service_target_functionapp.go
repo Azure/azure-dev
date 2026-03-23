@@ -4,6 +4,7 @@
 package project
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -18,19 +19,23 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/denormal/go-gitignore"
 )
-
-const functionAppRemoteBuildDocURL = "https://aka.ms/azd-functionapp-remote-build"
 
 // resolveFunctionAppRemoteBuild returns the appropriate remote build setting for function apps.
 func resolveFunctionAppRemoteBuild(serviceConfig *ServiceConfig) (remoteBuild bool, err error) {
 	switch serviceConfig.Language {
 	case ServiceLanguageJavaScript, ServiceLanguageTypeScript:
-		ignore, err := gitignore.NewFromFile(filepath.Join(serviceConfig.Path(), serviceConfig.Host.IgnoreFile()))
+		ignoreFile := serviceConfig.Host.IgnoreFile()
+		ignoreFilePath := filepath.Join(serviceConfig.Path(), ignoreFile)
+		ignoreFileContents, err := os.ReadFile(ignoreFilePath)
 		if errors.Is(err, fs.ErrNotExist) {
+			if serviceConfig.RemoteBuild != nil {
+				// no ignore file, nothing to validate -- return true
+				return *serviceConfig.RemoteBuild, nil
+			}
+
 			// no ignore file, default to true
 			return true, nil
 		}
@@ -38,6 +43,9 @@ func resolveFunctionAppRemoteBuild(serviceConfig *ServiceConfig) (remoteBuild bo
 		if err != nil {
 			return false, fmt.Errorf("reading ignore file: %w", err)
 		}
+
+		// Parse from in-memory contents so we don't hold an open file handle (important on Windows temp dirs).
+		ignore := gitignore.New(bytes.NewReader(ignoreFileContents), serviceConfig.Path(), nil)
 
 		nodeModulesExcluded := false
 		if match := ignore.Relative("node_modules", true); match != nil && match.Ignore() {
@@ -51,21 +59,15 @@ func resolveFunctionAppRemoteBuild(serviceConfig *ServiceConfig) (remoteBuild bo
 
 		if *serviceConfig.RemoteBuild && !nodeModulesExcluded {
 			return false, &internal.ErrorWithSuggestion{
-				Err: fmt.Errorf("'remoteBuild: true' requires '.funcignore' to exclude node_modules"),
-				Suggestion: fmt.Sprintf(
-					"Update '.funcignore' to exclude node_modules, or set 'remoteBuild: false'. Learn more: %s",
-					output.WithLinkFormat(functionAppRemoteBuildDocURL),
-				),
+				Err:        fmt.Errorf("'remoteBuild: true' requires '%s' to exclude node_modules", ignoreFile),
+				Suggestion: fmt.Sprintf("Update '%s' to exclude node_modules, or set 'remoteBuild: false'.", ignoreFile),
 			}
 		}
 
 		if !*serviceConfig.RemoteBuild && nodeModulesExcluded {
 			return false, &internal.ErrorWithSuggestion{
-				Err: fmt.Errorf("'remoteBuild: false' cannot be used when '.funcignore' excludes node_modules"),
-				Suggestion: fmt.Sprintf(
-					"Set 'remoteBuild: true', or remove node_modules from '.funcignore'. Learn more: %s",
-					output.WithLinkFormat(functionAppRemoteBuildDocURL),
-				),
+				Err:        fmt.Errorf("'remoteBuild: false' cannot be used when '%s' excludes node_modules", ignoreFile),
+				Suggestion: fmt.Sprintf("Set 'remoteBuild: true', or remove node_modules from '%s'.", ignoreFile),
 			}
 		}
 

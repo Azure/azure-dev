@@ -78,6 +78,12 @@ func TestResolveFunctionAppRemoteBuild_JavaScriptMatrix(t *testing.T) {
 			expectRemoteBuild: true,
 		},
 		{
+			name:              "RemoteBuildFalseAndMissingFuncIgnore_RemoteBuildDisabled",
+			remoteBuild:       new(false),
+			funcIgnoreContent: "",
+			expectRemoteBuild: false,
+		},
+		{
 			name:              "RemoteBuildFalseAndFuncIgnoreExcludesNodeModules_Errors",
 			remoteBuild:       new(false),
 			funcIgnoreContent: "node_modules\n",
@@ -126,7 +132,6 @@ func TestResolveFunctionAppRemoteBuild_JavaScriptMatrix(t *testing.T) {
 
 				var suggestionErr *internal.ErrorWithSuggestion
 				require.ErrorAs(t, err, &suggestionErr)
-				require.Contains(t, suggestionErr.Suggestion, functionAppRemoteBuildDocURL)
 				return
 			}
 

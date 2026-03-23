@@ -86,6 +86,21 @@ const (
 	CodeInvalidFilePath  = "invalid_file_path"
 )
 
+// Error codes for toolset operations.
+const (
+	CodeToolsetNotFound      = "toolset_not_found"
+	CodeInvalidToolsetPayload = "invalid_toolset_payload"
+)
+
+// Operation names for toolset [ServiceFromAzure] errors.
+const (
+	OpListToolsets  = "list_toolsets"
+	OpGetToolset    = "get_toolset"
+	OpCreateToolset = "create_toolset"
+	OpUpdateToolset = "update_toolset"
+	OpDeleteToolset = "delete_toolset"
+)
+
 // Error codes commonly used for internal errors.
 //
 // These are usually paired with [Internal] for unexpected failures

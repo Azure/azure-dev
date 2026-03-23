@@ -91,6 +91,12 @@ type BicepProvider struct {
 	// Internal state
 	// compileBicepResult is cached to avoid recompiling the same bicep file multiple times in the same azd run.
 	compileBicepMemoryCache *compileBicepResult
+
+	// activeDeployPollInterval and activeDeployTimeout override the defaults
+	// for the active-deployment wait loop. Zero means use the default. These
+	// are only set in tests.
+	activeDeployPollInterval time.Duration
+	activeDeployTimeout      time.Duration
 }
 
 // Name gets the name of the infra provider
@@ -607,6 +613,87 @@ func logDS(msg string, v ...any) {
 	log.Printf("%s : %s", "deployment-state: ", fmt.Sprintf(msg, v...))
 }
 
+const (
+	// defaultActiveDeploymentPollInterval is how often we re-check for active deployments.
+	defaultActiveDeploymentPollInterval = 30 * time.Second
+	// defaultActiveDeploymentTimeout caps the total wait time for active deployments.
+	defaultActiveDeploymentTimeout = 30 * time.Minute
+)
+
+// waitForActiveDeployments checks for deployments that are already in progress
+// at the target scope. If any are found it logs a warning and polls until they
+// finish or the timeout is reached.
+func (p *BicepProvider) waitForActiveDeployments(
+	ctx context.Context,
+	scope infra.Scope,
+) error {
+	active, err := scope.ListActiveDeployments(ctx)
+	if err != nil {
+		// If the resource group doesn't exist yet, there are no active
+		// deployments — proceed normally.
+		if errors.Is(err, infra.ErrDeploymentsNotFound) {
+			return nil
+		}
+		// For other errors (auth, throttling, transient), surface them
+		// so the user knows the pre-check couldn't run.
+		log.Printf(
+			"active-deployment-check: unable to list deployments: %v", err)
+		return fmt.Errorf("checking for active deployments: %w", err)
+	}
+
+	if len(active) == 0 {
+		return nil
+	}
+
+	names := make([]string, len(active))
+	for i, d := range active {
+		names[i] = d.Name
+	}
+	p.console.MessageUxItem(ctx, &ux.WarningMessage{
+		Description: fmt.Sprintf(
+			"Waiting for %d active deployment(s) to complete: %s",
+			len(active), strings.Join(names, ", ")),
+	})
+
+	p.console.ShowSpinner(ctx,
+		"Waiting for active deployment(s) to complete", input.Step)
+	defer p.console.StopSpinner(ctx, "", input.StepDone)
+
+	pollInterval := p.activeDeployPollInterval
+	if pollInterval == 0 {
+		pollInterval = defaultActiveDeploymentPollInterval
+	}
+	timeout := p.activeDeployTimeout
+	if timeout == 0 {
+		timeout = defaultActiveDeploymentTimeout
+	}
+
+	deadline := time.After(timeout)
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadline:
+			return fmt.Errorf(
+				"timed out after %s waiting for active "+
+					"deployment(s) to complete: %s",
+				timeout, strings.Join(names, ", "))
+		case <-ticker.C:
+			active, err = scope.ListActiveDeployments(ctx)
+			if err != nil {
+				return fmt.Errorf(
+					"checking active deployments: %w", err)
+			}
+			if len(active) == 0 {
+				return nil
+			}
+		}
+	}
+}
+
 // Provisioning the infrastructure within the specified template
 func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult, error) {
 	if p.ignoreDeploymentState {
@@ -716,6 +803,11 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 			return &provisioning.DeployResult{SkippedReason: provisioning.PreflightAbortedSkipped}, nil
 		}
 		p.console.StopSpinner(ctx, "", input.StepDone)
+	}
+
+	// Check for active deployments at the target scope and wait if any are in progress
+	if err := p.waitForActiveDeployments(ctx, deployment); err != nil {
+		return nil, err
 	}
 
 	progressCtx, cancelProgress := context.WithCancel(ctx)

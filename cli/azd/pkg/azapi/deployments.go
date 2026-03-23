@@ -107,6 +107,28 @@ const (
 	DeploymentProvisioningStateUpdating                DeploymentProvisioningState = "Updating"
 )
 
+// IsActiveDeploymentState reports whether the given provisioning state
+// indicates a deployment that is still in progress, including transitional
+// states like canceling or deleting that can still block new deployments.
+func IsActiveDeploymentState(state DeploymentProvisioningState) bool {
+	switch state {
+	case DeploymentProvisioningStateAccepted,
+		DeploymentProvisioningStateCanceling,
+		DeploymentProvisioningStateCreating,
+		DeploymentProvisioningStateDeleting,
+		DeploymentProvisioningStateDeletingResources,
+		DeploymentProvisioningStateDeploying,
+		DeploymentProvisioningStateRunning,
+		DeploymentProvisioningStateUpdating,
+		DeploymentProvisioningStateUpdatingDenyAssignments,
+		DeploymentProvisioningStateValidating,
+		DeploymentProvisioningStateWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
 type DeploymentService interface {
 	GenerateDeploymentName(baseName string) string
 	CalculateTemplateHash(

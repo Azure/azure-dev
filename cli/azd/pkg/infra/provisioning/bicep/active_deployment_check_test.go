@@ -175,7 +175,7 @@ func TestWaitForActiveDeployments_Timeout(t *testing.T) {
 	}
 	// Return active on every call.
 	perCall := make(map[int][]*azapi.ResourceDeployment)
-	for i := 0; i < 200; i++ {
+	for i := range 200 {
 		perCall[i] = running
 	}
 

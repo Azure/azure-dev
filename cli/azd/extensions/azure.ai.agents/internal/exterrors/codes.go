@@ -88,7 +88,7 @@ const (
 
 // Error codes for toolset operations.
 const (
-	CodeToolsetNotFound      = "toolset_not_found"
+	CodeToolsetNotFound       = "toolset_not_found"
 	CodeInvalidToolsetPayload = "invalid_toolset_payload"
 )
 

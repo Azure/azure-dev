@@ -43,7 +43,7 @@ before overwriting (use --no-prompt to auto-confirm).`,
 					exterrors.CodeInvalidToolsetPayload,
 					"missing required payload file path",
 					"Provide a path to a toolset JSON file, for example:\n"+
-					"  azd ai agent toolset create path/to/toolset.json",
+						"  azd ai agent toolset create path/to/toolset.json",
 				)
 			}
 

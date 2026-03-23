@@ -325,12 +325,11 @@ rules:
     properties:
       Code: "ContainerAppOperationError"
     message: "A Container Apps operation failed during deployment."
-    suggestion: >
-      Check your container image is valid and accessible, verify your
-      ingress and networking configuration, and ensure your scaling rules
-      are correct. Run 'az containerapp revision list -g <resource-group>
-      -n <app-name>' to check revision status, or inspect logs with
-      'az containerapp logs show --name <app> -g <resource-group> --follow'.
+    suggestion: >-
+      Check your container image is valid and accessible, verify your ingress and networking
+      configuration, and ensure your scaling rules are correct.
+      Run 'az containerapp revision list -g <resource-group> -n <app-name>' to check revision status,
+      or inspect logs with 'az containerapp logs show --name <app> -g <resource-group> --follow'.
     links:
       - url: "https://learn.microsoft.com/azure/container-apps/troubleshooting"
         title: "Troubleshoot Azure Container Apps"

@@ -494,6 +494,8 @@ rules:
     links:
       - url: "https://aka.ms/azure-dev/docker-install"
         title: "Install Docker"
+      - url: "https://aka.ms/azure-dev/podman-install"
+        title: "Install Podman"
       - url: "https://learn.microsoft.com/azure/developer/azure-developer-cli/azd-schema"
         title: "azure.yaml schema reference"
 

@@ -117,6 +117,11 @@ func (a *authStatusAction) Run(ctx context.Context) (*actions.ActionResult, erro
 
 	if a.formatter.Kind() != output.NoneFormat {
 		a.formatter.Format(res, a.writer, nil)
+		// In machine-readable mode, exit non-zero when unauthenticated so agents
+		// can rely on the exit code without parsing output.
+		if res.Status == contracts.AuthStatusUnauthenticated {
+			return nil, fmt.Errorf("not authenticated")
+		}
 		return nil, nil
 	}
 

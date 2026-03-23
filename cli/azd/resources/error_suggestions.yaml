@@ -480,6 +480,24 @@ rules:
         title: "azd auth login reference"
 
   # ============================================================================
+  # Tool Missing Errors — Docker / Container Runtime
+  # ============================================================================
+
+  - errorType: "MissingToolErrors"
+    patterns:
+      - "Docker"
+    message: "Docker is not installed or not running."
+    suggestion: >-
+      If your services use Container Apps or AKS, you can build on Azure instead
+      of locally. Set 'remoteBuild: true' under the 'docker:' section for each
+      service in azure.yaml. Otherwise, install Docker or Podman.
+    links:
+      - url: "https://aka.ms/azure-dev/docker-install"
+        title: "Install Docker"
+      - url: "https://learn.microsoft.com/azure/developer/azure-developer-cli/azd-schema"
+        title: "azure.yaml schema reference"
+
+  # ============================================================================
   # Text Pattern Rules — Specific patterns first
   # These are fallbacks for errors without typed Go structs.
   # ============================================================================

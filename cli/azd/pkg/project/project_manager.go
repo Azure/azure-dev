@@ -8,7 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
+	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -232,10 +235,61 @@ func (pm *projectManager) EnsureServiceTargetTools(
 	}
 
 	if err := tools.EnsureInstalled(ctx, tools.Unique(requiredTools)...); err != nil {
+		if toolErr, ok := errors.AsType[*tools.MissingToolErrors](err); ok {
+			if suggestion := suggestRemoteBuild(servicesStable, toolErr, serviceFilterFn); suggestion != nil {
+				return suggestion
+			}
+		}
 		return err
 	}
 
 	return nil
+}
+
+// suggestRemoteBuild checks if Docker is in the missing tools list and whether the affected
+// services support remote builds. If so, it returns an ErrorWithSuggestion guiding the user
+// to enable remoteBuild instead of installing Docker locally.
+func suggestRemoteBuild(
+	services []*ServiceConfig,
+	toolErr *tools.MissingToolErrors,
+	serviceFilterFn ServiceFilterPredicate,
+) *internal.ErrorWithSuggestion {
+	if !slices.Contains(toolErr.ToolNames, "Docker") {
+		return nil
+	}
+
+	// Find services that actually require Docker locally and support remote builds.
+	// Exclude services that use dotnet publish (no Docker needed) or already have remoteBuild enabled.
+	var remoteBuildCapable []string
+	for _, svc := range services {
+		if serviceFilterFn != nil && !serviceFilterFn(svc) {
+			continue
+		}
+		if !svc.Host.RequiresContainer() {
+			continue
+		}
+		if svc.Docker.RemoteBuild {
+			continue
+		}
+		if useDotnetPublishForDockerBuild(svc) {
+			continue
+		}
+		remoteBuildCapable = append(remoteBuildCapable, svc.Name)
+	}
+
+	if len(remoteBuildCapable) == 0 {
+		return nil
+	}
+
+	serviceList := strings.Join(remoteBuildCapable, ", ")
+	return &internal.ErrorWithSuggestion{
+		Err: toolErr,
+		Suggestion: fmt.Sprintf(
+			"Services [%s] can build on Azure instead of locally.\n"+
+				"Set 'remoteBuild: true' under the 'docker:' section for each service in azure.yaml,\n"+
+				"or install Docker: https://aka.ms/azure-dev/docker-install",
+			serviceList),
+	}
 }
 
 func (pm *projectManager) EnsureRestoreTools(

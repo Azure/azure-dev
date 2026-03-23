@@ -4,6 +4,7 @@
 package project
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -14,7 +15,11 @@ import (
 func Test_suggestRemoteBuild(t *testing.T) {
 	dockerMissing := &tools.MissingToolErrors{
 		ToolNames: []string{"Docker"},
-		Errs:      []error{assert.AnError},
+		Errs:      []error{fmt.Errorf("neither docker nor podman is installed")},
+	}
+	dockerNotRunning := &tools.MissingToolErrors{
+		ToolNames: []string{"Docker"},
+		Errs:      []error{fmt.Errorf("the Docker service is not running, please start it")},
 	}
 	bicepMissing := &tools.MissingToolErrors{
 		ToolNames: []string{"bicep"},
@@ -120,6 +125,24 @@ func Test_suggestRemoteBuild(t *testing.T) {
 			}(),
 			toolErr:        dockerMissing,
 			wantSuggestion: false,
+		},
+		{
+			name: "Docker_not_running_suggests_start",
+			services: []*ServiceConfig{
+				{Name: "api", Host: ContainerAppTarget},
+			},
+			toolErr:        dockerNotRunning,
+			wantSuggestion: true,
+			wantContains:   "start your container runtime",
+		},
+		{
+			name: "Docker_not_installed_suggests_install",
+			services: []*ServiceConfig{
+				{Name: "api", Host: ContainerAppTarget},
+			},
+			toolErr:        dockerMissing,
+			wantSuggestion: true,
+			wantContains:   "install Docker",
 		},
 	}
 

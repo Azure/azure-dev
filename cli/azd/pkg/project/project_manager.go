@@ -258,7 +258,7 @@ func suggestRemoteBuild(
 		return nil
 	}
 
-	// Find services that actually require Docker locally and support remote builds.
+	// Find services that actually require Docker/Podman locally and support remote builds.
 	// Exclude services that use dotnet publish (no Docker needed) or already have remoteBuild enabled.
 	var remoteBuildCapable []string
 	for _, svc := range services {
@@ -281,14 +281,29 @@ func suggestRemoteBuild(
 		return nil
 	}
 
+	// Check whether the container runtime is not installed or just not running
+	errMsg := toolErr.Error()
+	isNotRunning := strings.Contains(errMsg, "is not running")
+
 	serviceList := strings.Join(remoteBuildCapable, ", ")
-	return &internal.ErrorWithSuggestion{
-		Err: toolErr,
-		Suggestion: fmt.Sprintf(
+	var suggestion string
+	if isNotRunning {
+		suggestion = fmt.Sprintf(
 			"Services [%s] can build on Azure instead of locally.\n"+
 				"Set 'remoteBuild: true' under the 'docker:' section for each service in azure.yaml,\n"+
-				"or install Docker: https://aka.ms/azure-dev/docker-install",
-			serviceList),
+				"or start your container runtime (Docker/Podman).",
+			serviceList)
+	} else {
+		suggestion = fmt.Sprintf(
+			"Services [%s] can build on Azure instead of locally.\n"+
+				"Set 'remoteBuild: true' under the 'docker:' section for each service in azure.yaml,\n"+
+				"or install Docker (https://aka.ms/azure-dev/docker-install) or Podman (https://aka.ms/azure-dev/podman-install).",
+			serviceList)
+	}
+
+	return &internal.ErrorWithSuggestion{
+		Err:        toolErr,
+		Suggestion: suggestion,
 	}
 }
 

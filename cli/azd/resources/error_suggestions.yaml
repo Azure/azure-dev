@@ -485,8 +485,16 @@ rules:
 
   - errorType: "MissingToolErrors"
     patterns:
+      - "is not running"
+    message: "The container runtime (Docker/Podman) is not running."
+    suggestion: >-
+      Start your container runtime, or build on Azure instead by setting
+      'remoteBuild: true' under the 'docker:' section for each service in azure.yaml.
+
+  - errorType: "MissingToolErrors"
+    patterns:
       - "Docker"
-    message: "Docker is not installed or not running."
+    message: "No container runtime (Docker/Podman) is installed."
     suggestion: >-
       If your services use Container Apps or AKS, you can build on Azure instead
       of locally. Set 'remoteBuild: true' under the 'docker:' section for each

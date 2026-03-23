@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -87,10 +88,11 @@ func resolveAgentEndpoint(ctx context.Context, accountName string, projectName s
 		Key:     "AZURE_AI_PROJECT_ENDPOINT",
 	})
 	if err != nil || envValue.Value == "" {
-		return "", fmt.Errorf(
-			"AZURE_AI_PROJECT_ENDPOINT not found in azd environment '%s'\n\n"+
-				"Provide --account-name and --project-name flags, "+
-				"or run 'azd ai agent init' to configure the endpoint", envResponse.Environment.Name)
+		return "", exterrors.Dependency(
+			exterrors.CodeMissingAiProjectEndpoint,
+			fmt.Sprintf("AZURE_AI_PROJECT_ENDPOINT not found in azd environment '%s'", envResponse.Environment.Name),
+			"run 'azd provision' to provision your Azure resources and set the endpoint",
+		)
 	}
 
 	return envValue.Value, nil

@@ -810,9 +810,13 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		p.console.StopSpinner(ctx, "", input.StepDone)
 	}
 
-	// Check for active deployments at the target scope and wait if any are in progress
-	if err := p.waitForActiveDeployments(ctx, deployment); err != nil {
-		return nil, err
+	// Check for active deployments at the target scope and wait if any are in progress.
+	// Use scopeForTemplate to get the raw scope — deployment.Scope may have a nil
+	// inner scope in test mocks.
+	if activeScope, err := p.scopeForTemplate(planned.Template); err == nil {
+		if err := p.waitForActiveDeployments(ctx, activeScope); err != nil {
+			return nil, err
+		}
 	}
 
 	progressCtx, cancelProgress := context.WithCancel(ctx)

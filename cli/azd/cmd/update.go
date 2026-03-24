@@ -48,12 +48,6 @@ func (f *updateFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		"",
 		"Update channel: stable or daily.",
 	)
-	local.StringVar(
-		&f.autoUpdate,
-		"auto-update",
-		"",
-		"Enable or disable auto-update: on or off.",
-	)
 	local.IntVar(
 		&f.checkIntervalHours,
 		"check-interval-hours",
@@ -126,7 +120,7 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 
 		a.console.MessageUxItem(ctx, &ux.MessageTitle{
-			Title: "azd update is in alpha. Auto-update and channel-aware version checks are now enabled.\n",
+			Title: "azd update is in alpha. Channel-aware version checks are now enabled.\n",
 		})
 	}
 
@@ -315,20 +309,14 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}, nil
 }
 
-// persistNonChannelFlags saves auto-update and check-interval flags to config.
+// persistNonChannelFlags saves check-interval flags to config.
 // Channel is handled separately to allow confirmation before persisting.
 func (a *updateAction) persistNonChannelFlags(cfg config.Config) (bool, error) {
 	changed := false
 
 	if a.flags.autoUpdate != "" {
-		enabled := a.flags.autoUpdate == "on"
-		if a.flags.autoUpdate != "on" && a.flags.autoUpdate != "off" {
-			return false, fmt.Errorf("invalid auto-update value %q, must be \"on\" or \"off\"", a.flags.autoUpdate)
-		}
-		if err := update.SaveAutoUpdate(cfg, enabled); err != nil {
-			return false, err
-		}
-		changed = true
+		return false, fmt.Errorf(
+			"the --auto-update flag is work in progress. Run 'azd update' to update manually")
 	}
 
 	if a.flags.checkIntervalHours > 0 {

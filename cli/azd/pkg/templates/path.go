@@ -108,3 +108,50 @@ func looksLikeLocalPath(path string) bool {
 		strings.HasPrefix(path, `.\`) ||
 		filepath.IsAbs(path)
 }
+
+// DeriveDirectoryName extracts a directory name from a template path,
+// following git clone conventions. For example:
+//
+//   - "todo-nodejs-mongo" → "todo-nodejs-mongo"
+//   - "Azure-Samples/todo-nodejs-mongo" → "todo-nodejs-mongo"
+//   - "https://github.com/Azure-Samples/todo-nodejs-mongo" → "todo-nodejs-mongo"
+//   - "https://github.com/Azure-Samples/todo-nodejs-mongo.git" → "todo-nodejs-mongo"
+//   - "../my-template" → "my-template"
+func DeriveDirectoryName(templatePath string) string {
+	path := strings.TrimSpace(templatePath)
+	path = strings.TrimRight(path, "/")
+
+	// Strip .git suffix (like git clone does)
+	path = strings.TrimSuffix(path, ".git")
+
+	var name string
+
+	// For remote URIs, extract the last path segment from the URL
+	if isRemoteURI(path) {
+		// Handle git@host:owner/repo format
+		if strings.HasPrefix(path, "git@") {
+			if idx := strings.LastIndex(path, ":"); idx >= 0 {
+				path = path[idx+1:]
+			}
+		}
+
+		// Take the last path segment
+		if idx := strings.LastIndex(path, "/"); idx >= 0 {
+			name = path[idx+1:]
+		} else {
+			name = path
+		}
+	} else {
+		// For local paths and bare names, use the last path component
+		name = filepath.Base(path)
+	}
+
+	// Reject unsafe directory names that could cause path traversal
+	if name == "." || name == ".." || name == "" {
+		// Fall back to a sanitized version of the full path
+		name = strings.NewReplacer("/", "-", "\\", "-", ":", "-").Replace(
+			strings.TrimRight(templatePath, "/"))
+	}
+
+	return name
+}

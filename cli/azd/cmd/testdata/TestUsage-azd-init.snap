@@ -5,7 +5,7 @@ Initialize a new application in your current directory.
   • To view all available sample templates, including those submitted by the azd community, visit: https://azure.github.io/awesome-azd.
 
 Usage
-  azd init [flags]
+  azd init [directory] [flags]
 
 Flags
     -b, --branch string       	: The template branch to initialize from. Must be used with a template argument (--template or -t).

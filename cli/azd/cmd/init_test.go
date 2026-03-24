@@ -25,7 +25,9 @@ import (
 
 // setupInitAction creates an initAction wired with mocks that pass git-install checks.
 // The working directory is changed to a temp dir so that .env loading and azdcontext work.
-func setupInitAction(t *testing.T, mockContext *mocks.MockContext, flags *initFlags) *initAction {
+func setupInitAction(
+	t *testing.T, mockContext *mocks.MockContext, flags *initFlags, args ...string,
+) *initAction {
 	t.Helper()
 
 	// Work in a temp directory so os.Getwd / godotenv.Overload operate in isolation.
@@ -50,6 +52,7 @@ func setupInitAction(t *testing.T, mockContext *mocks.MockContext, flags *initFl
 		cmdRun:          mockContext.CommandRunner,
 		gitCli:          gitCli,
 		flags:           flags,
+		args:            args,
 		featuresManager: alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
 	}
 }
@@ -229,5 +232,197 @@ func TestInitFailFastMissingEnvNonInteractive(t *testing.T) {
 			require.NotContains(t, err.Error(),
 				"--environment is required when running in non-interactive mode")
 		}
+	})
+}
+
+func TestInitResolveTargetDirectory(t *testing.T) {
+	t.Run("DotArgUsesCwd", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		flags := &initFlags{
+			templatePath: "owner/repo",
+			global:       &internal.GlobalCommandOptions{},
+		}
+		action := setupInitAction(t, mockContext, flags, ".")
+
+		wd, err := os.Getwd()
+		require.NoError(t, err)
+
+		result, err := action.resolveTargetDirectory(wd)
+		require.NoError(t, err)
+		require.Equal(t, wd, result)
+	})
+
+	t.Run("ExplicitDirectoryUsesArg", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		flags := &initFlags{
+			templatePath: "owner/repo",
+			global:       &internal.GlobalCommandOptions{},
+		}
+		action := setupInitAction(t, mockContext, flags, "my-project")
+
+		wd, err := os.Getwd()
+		require.NoError(t, err)
+
+		result, err := action.resolveTargetDirectory(wd)
+		require.NoError(t, err)
+		require.Equal(t, filepath.Join(wd, "my-project"), result)
+	})
+
+	t.Run("NoArgDerivesFromTemplatePath", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		flags := &initFlags{
+			templatePath: "Azure-Samples/todo-nodejs-mongo",
+			global:       &internal.GlobalCommandOptions{},
+		}
+		action := setupInitAction(t, mockContext, flags)
+
+		wd, err := os.Getwd()
+		require.NoError(t, err)
+
+		result, err := action.resolveTargetDirectory(wd)
+		require.NoError(t, err)
+		require.Equal(t, filepath.Join(wd, "todo-nodejs-mongo"), result)
+	})
+
+	t.Run("NoArgWithFilterTagsUsesCwd", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		flags := &initFlags{
+			templateTags: []string{"python"},
+			global:       &internal.GlobalCommandOptions{},
+		}
+		action := setupInitAction(t, mockContext, flags)
+
+		wd, err := os.Getwd()
+		require.NoError(t, err)
+
+		result, err := action.resolveTargetDirectory(wd)
+		require.NoError(t, err)
+		require.Equal(t, wd, result)
+	})
+
+	t.Run("TemplateWithDotGitSuffix", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		flags := &initFlags{
+			templatePath: "https://github.com/Azure-Samples/todo-nodejs-mongo.git",
+			global:       &internal.GlobalCommandOptions{},
+		}
+		action := setupInitAction(t, mockContext, flags)
+
+		wd, err := os.Getwd()
+		require.NoError(t, err)
+
+		result, err := action.resolveTargetDirectory(wd)
+		require.NoError(t, err)
+		require.Equal(t, filepath.Join(wd, "todo-nodejs-mongo"), result)
+	})
+}
+
+func TestInitValidateTargetDirectory(t *testing.T) {
+	t.Run("NonExistentDirectoryIsValid", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		flags := &initFlags{
+			templatePath: "owner/repo",
+			global:       &internal.GlobalCommandOptions{},
+		}
+		action := setupInitAction(t, mockContext, flags)
+
+		err := action.validateTargetDirectory(
+			*mockContext.Context, filepath.Join(t.TempDir(), "nonexistent"))
+		require.NoError(t, err)
+	})
+
+	t.Run("EmptyDirectoryIsValid", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		flags := &initFlags{
+			templatePath: "owner/repo",
+			global:       &internal.GlobalCommandOptions{},
+		}
+		action := setupInitAction(t, mockContext, flags)
+
+		emptyDir := t.TempDir()
+		err := action.validateTargetDirectory(*mockContext.Context, emptyDir)
+		require.NoError(t, err)
+	})
+
+	t.Run("NonEmptyDirectoryErrorsInNoPromptMode", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.Console.SetNoPromptMode(true)
+		flags := &initFlags{
+			templatePath: "owner/repo",
+			global:       &internal.GlobalCommandOptions{NoPrompt: true},
+		}
+		action := setupInitAction(t, mockContext, flags)
+
+		nonEmptyDir := t.TempDir()
+		require.NoError(t, os.WriteFile(
+			filepath.Join(nonEmptyDir, "existing.txt"), []byte("content"), 0600))
+
+		err := action.validateTargetDirectory(*mockContext.Context, nonEmptyDir)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "already exists and is not empty")
+	})
+}
+
+func TestInitCreatesProjectDirectory(t *testing.T) {
+	t.Run("TemplateInitCreatesDirectory", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.Console.SetNoPromptMode(true)
+		flags := &initFlags{
+			templatePath: "Azure-Samples/todo-nodejs-mongo",
+			global:       &internal.GlobalCommandOptions{NoPrompt: true},
+		}
+		flags.EnvironmentName = "testenv"
+		action := setupInitAction(t, mockContext, flags)
+
+		wd, err := os.Getwd()
+		require.NoError(t, err)
+
+		expectedDir := filepath.Join(wd, "todo-nodejs-mongo")
+		require.NoDirExists(t, expectedDir)
+
+		// Run will panic or error later due to missing template mocks,
+		// but the directory should be created before that point.
+		_ = runActionSafe(*mockContext.Context, action)
+		require.DirExists(t, expectedDir)
+	})
+
+	t.Run("DotArgDoesNotCreateDirectory", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.Console.SetNoPromptMode(true)
+		flags := &initFlags{
+			templatePath: "Azure-Samples/todo-nodejs-mongo",
+			global:       &internal.GlobalCommandOptions{NoPrompt: true},
+		}
+		flags.EnvironmentName = "testenv"
+		action := setupInitAction(t, mockContext, flags, ".")
+
+		wd, err := os.Getwd()
+		require.NoError(t, err)
+
+		// Should NOT create a todo-nodejs-mongo subdirectory
+		_ = runActionSafe(*mockContext.Context, action)
+
+		derivedDir := filepath.Join(wd, "todo-nodejs-mongo")
+		require.NoDirExists(t, derivedDir)
+	})
+
+	t.Run("ExplicitDirArgCreatesNamedDirectory", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.Console.SetNoPromptMode(true)
+		flags := &initFlags{
+			templatePath: "Azure-Samples/todo-nodejs-mongo",
+			global:       &internal.GlobalCommandOptions{NoPrompt: true},
+		}
+		flags.EnvironmentName = "testenv"
+		action := setupInitAction(t, mockContext, flags, "my-custom-project")
+
+		wd, err := os.Getwd()
+		require.NoError(t, err)
+
+		expectedDir := filepath.Join(wd, "my-custom-project")
+		require.NoDirExists(t, expectedDir)
+
+		_ = runActionSafe(*mockContext.Context, action)
+		require.DirExists(t, expectedDir)
 	})
 }

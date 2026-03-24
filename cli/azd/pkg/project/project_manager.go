@@ -208,6 +208,12 @@ func (pm *projectManager) EnsureFrameworkTools(
 	return nil
 }
 
+// svcToolInfo tracks whether a service's target required Docker.
+type svcToolInfo struct {
+	svc         *ServiceConfig
+	needsDocker bool
+}
+
 func (pm *projectManager) EnsureServiceTargetTools(
 	ctx context.Context,
 	projectConfig *ProjectConfig,
@@ -220,6 +226,8 @@ func (pm *projectManager) EnsureServiceTargetTools(
 		return err
 	}
 
+	var svcTools []svcToolInfo
+
 	for _, svc := range servicesStable {
 		if serviceFilterFn != nil && !serviceFilterFn(svc) {
 			continue
@@ -230,13 +238,22 @@ func (pm *projectManager) EnsureServiceTargetTools(
 			return fmt.Errorf("getting service target: %w", err)
 		}
 
-		serviceTargetTools := serviceTarget.RequiredExternalTools(ctx, svc)
-		requiredTools = append(requiredTools, serviceTargetTools...)
+		targetTools := serviceTarget.RequiredExternalTools(ctx, svc)
+		requiredTools = append(requiredTools, targetTools...)
+
+		needsDocker := false
+		for _, tool := range targetTools {
+			if tool.Name() == "Docker" {
+				needsDocker = true
+				break
+			}
+		}
+		svcTools = append(svcTools, svcToolInfo{svc: svc, needsDocker: needsDocker})
 	}
 
 	if err := tools.EnsureInstalled(ctx, tools.Unique(requiredTools)...); err != nil {
 		if toolErr, ok := errors.AsType[*tools.MissingToolErrors](err); ok {
-			if suggestion := suggestRemoteBuild(servicesStable, toolErr, serviceFilterFn); suggestion != nil {
+			if suggestion := suggestRemoteBuild(svcTools, toolErr); suggestion != nil {
 				return suggestion
 			}
 		}
@@ -246,35 +263,25 @@ func (pm *projectManager) EnsureServiceTargetTools(
 	return nil
 }
 
-// suggestRemoteBuild checks if Docker is in the missing tools list and whether the affected
-// services support remote builds. If so, it returns an ErrorWithSuggestion guiding the user
-// to enable remoteBuild instead of installing Docker locally.
+// suggestRemoteBuild checks if Docker is in the missing tools list and whether any
+// services that required it could use remote builds instead. Only services whose
+// service target actually listed Docker as required are included in the suggestion.
 func suggestRemoteBuild(
-	services []*ServiceConfig,
+	svcTools []svcToolInfo,
 	toolErr *tools.MissingToolErrors,
-	serviceFilterFn ServiceFilterPredicate,
 ) *internal.ErrorWithSuggestion {
 	if !slices.Contains(toolErr.ToolNames, "Docker") {
 		return nil
 	}
 
-	// Find services that actually require Docker/Podman locally and support remote builds.
-	// Exclude services that use dotnet publish (no Docker needed) or already have remoteBuild enabled.
+	// Find services that actually required Docker (per their service target)
+	// and could use remoteBuild instead.
 	var remoteBuildCapable []string
-	for _, svc := range services {
-		if serviceFilterFn != nil && !serviceFilterFn(svc) {
+	for _, info := range svcTools {
+		if !info.needsDocker {
 			continue
 		}
-		if !svc.Host.RequiresContainer() {
-			continue
-		}
-		if svc.Docker.RemoteBuild {
-			continue
-		}
-		if useDotnetPublishForDockerBuild(svc) {
-			continue
-		}
-		remoteBuildCapable = append(remoteBuildCapable, svc.Name)
+		remoteBuildCapable = append(remoteBuildCapable, info.svc.Name)
 	}
 
 	if len(remoteBuildCapable) == 0 {

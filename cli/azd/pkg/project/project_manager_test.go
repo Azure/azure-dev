@@ -27,109 +27,62 @@ func Test_suggestRemoteBuild(t *testing.T) {
 	}
 
 	tests := []struct {
-		name            string
-		services        []*ServiceConfig
-		toolErr         *tools.MissingToolErrors
-		serviceFilterFn ServiceFilterPredicate
-		wantSuggestion  bool
-		wantContains    string
+		name           string
+		svcTools       []svcToolInfo
+		toolErr        *tools.MissingToolErrors
+		wantSuggestion bool
+		wantContains   string
 	}{
 		{
-			name: "ContainerApp_without_remoteBuild_suggests",
-			services: []*ServiceConfig{
-				{Name: "api", Host: ContainerAppTarget},
+			name: "Service_needing_Docker_suggests",
+			svcTools: []svcToolInfo{
+				{svc: &ServiceConfig{Name: "api"}, needsDocker: true},
 			},
 			toolErr:        dockerMissing,
 			wantSuggestion: true,
 			wantContains:   "api",
 		},
 		{
-			name: "AKS_without_remoteBuild_suggests",
-			services: []*ServiceConfig{
-				{Name: "worker", Host: AksTarget},
-			},
-			toolErr:        dockerMissing,
-			wantSuggestion: true,
-			wantContains:   "worker",
-		},
-		{
 			name: "Multiple_services_lists_all",
-			services: []*ServiceConfig{
-				{Name: "api", Host: ContainerAppTarget},
-				{Name: "web", Host: ContainerAppTarget},
+			svcTools: []svcToolInfo{
+				{svc: &ServiceConfig{Name: "api"}, needsDocker: true},
+				{svc: &ServiceConfig{Name: "web"}, needsDocker: true},
 			},
 			toolErr:        dockerMissing,
 			wantSuggestion: true,
 			wantContains:   "api, web",
 		},
 		{
-			name: "ContainerApp_with_remoteBuild_no_suggestion",
-			services: []*ServiceConfig{
-				{Name: "api", Host: ContainerAppTarget, Docker: DockerProjectOptions{RemoteBuild: true}},
-			},
-			toolErr:        dockerMissing,
-			wantSuggestion: false,
-		},
-		{
-			name: "AppService_no_suggestion",
-			services: []*ServiceConfig{
-				{Name: "web", Host: AppServiceTarget},
+			name: "Service_not_needing_Docker_no_suggestion",
+			svcTools: []svcToolInfo{
+				{svc: &ServiceConfig{Name: "api"}, needsDocker: false},
 			},
 			toolErr:        dockerMissing,
 			wantSuggestion: false,
 		},
 		{
 			name: "Non_Docker_tool_missing_no_suggestion",
-			services: []*ServiceConfig{
-				{Name: "api", Host: ContainerAppTarget},
+			svcTools: []svcToolInfo{
+				{svc: &ServiceConfig{Name: "api"}, needsDocker: true},
 			},
 			toolErr:        bicepMissing,
 			wantSuggestion: false,
 		},
 		{
-			name: "Mixed_services_only_suggests_container_targets",
-			services: []*ServiceConfig{
-				{Name: "api", Host: ContainerAppTarget},
-				{Name: "web", Host: AppServiceTarget},
-				{Name: "worker", Host: AksTarget},
+			name: "Mixed_services_only_Docker_ones",
+			svcTools: []svcToolInfo{
+				{svc: &ServiceConfig{Name: "api"}, needsDocker: true},
+				{svc: &ServiceConfig{Name: "web"}, needsDocker: false},
+				{svc: &ServiceConfig{Name: "worker"}, needsDocker: true},
 			},
 			toolErr:        dockerMissing,
 			wantSuggestion: true,
 			wantContains:   "api, worker",
 		},
 		{
-			name: "Service_filter_excludes_service",
-			services: []*ServiceConfig{
-				{Name: "api", Host: ContainerAppTarget},
-				{Name: "worker", Host: ContainerAppTarget},
-			},
-			toolErr: dockerMissing,
-			serviceFilterFn: func(svc *ServiceConfig) bool {
-				return svc.Name == "api"
-			},
-			wantSuggestion: true,
-			wantContains:   "api",
-		},
-		{
-			name: "DotNet_without_Dockerfile_no_suggestion",
-			services: func() []*ServiceConfig {
-				useDotNet := true
-				return []*ServiceConfig{
-					{
-						Name:                           "api",
-						Host:                           ContainerAppTarget,
-						Language:                       ServiceLanguageCsharp,
-						useDotNetPublishForDockerBuild: &useDotNet,
-					},
-				}
-			}(),
-			toolErr:        dockerMissing,
-			wantSuggestion: false,
-		},
-		{
 			name: "Docker_not_running_suggests_start",
-			services: []*ServiceConfig{
-				{Name: "api", Host: ContainerAppTarget},
+			svcTools: []svcToolInfo{
+				{svc: &ServiceConfig{Name: "api"}, needsDocker: true},
 			},
 			toolErr:        dockerNotRunning,
 			wantSuggestion: true,
@@ -137,18 +90,24 @@ func Test_suggestRemoteBuild(t *testing.T) {
 		},
 		{
 			name: "Docker_not_installed_suggests_install",
-			services: []*ServiceConfig{
-				{Name: "api", Host: ContainerAppTarget},
+			svcTools: []svcToolInfo{
+				{svc: &ServiceConfig{Name: "api"}, needsDocker: true},
 			},
 			toolErr:        dockerMissing,
 			wantSuggestion: true,
 			wantContains:   "install Docker",
 		},
+		{
+			name:           "Empty_services_no_suggestion",
+			svcTools:       []svcToolInfo{},
+			toolErr:        dockerMissing,
+			wantSuggestion: false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := suggestRemoteBuild(tt.services, tt.toolErr, tt.serviceFilterFn)
+			result := suggestRemoteBuild(tt.svcTools, tt.toolErr)
 
 			if !tt.wantSuggestion {
 				assert.Nil(t, result)

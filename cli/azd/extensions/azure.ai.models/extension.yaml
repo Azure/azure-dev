@@ -24,3 +24,15 @@ examples:
     - name: delete
       description: Delete a custom model.
       usage: azd ai models custom delete --name my-model
+    - name: deploy
+      description: Deploy a model to an inference endpoint.
+      usage: azd ai models deployment create --name my-deploy --model-name my-model --model-version 1 --model-format OpenAI
+    - name: list-deployments
+      description: List all model deployments.
+      usage: azd ai models deployment list
+    - name: show-deployment
+      description: Show details of a model deployment.
+      usage: azd ai models deployment show --name my-deploy
+    - name: delete-deployment
+      description: Delete a model deployment.
+      usage: azd ai models deployment delete --name my-deploy

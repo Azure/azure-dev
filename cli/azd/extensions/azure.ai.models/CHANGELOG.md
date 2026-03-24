@@ -3,6 +3,13 @@
 
 ## 0.0.5-preview (2026-03-24)
 
+- Added `deployment create` command to deploy models (custom and base) using the ARM Cognitive Services SDK
+- Added `deployment list` command to list all model deployments with table/JSON output
+- Added `deployment show` command to view detailed deployment information
+- Added `deployment delete` command to remove model deployments with confirmation prompt
+- Auto-resolves `--model-source` (project ARM resource ID) for custom model formats
+- Layered context resolution: explicit flags → azd environment → interactive prompt
+- User-friendly error handling for 403 (RBAC), 409 (conflict), and quota errors
 - Improved error handling for 403 (Forbidden) during `custom create` upload, with guidance on required roles and links to prerequisites and RBAC documentation (#7278)
 
 ## 0.0.4-preview (2026-03-17)

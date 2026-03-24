@@ -201,9 +201,10 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				Err: fmt.Errorf("daily builds aren't available via %s", installedBy),
 				Suggestion: fmt.Sprintf(
 					"Uninstall first with: %s\nThen install daily with: "+
-						"powershell -ex AllSigned -c \"Invoke-RestMethod 'https://aka.ms/install-azd.ps1'"+
+						"powershell -ex AllSigned -c \"Invoke-RestMethod '%s'"+
 						" -OutFile 'install-azd.ps1'; ./install-azd.ps1 -Version 'daily'\"",
-					uninstallCmd),
+					uninstallCmd,
+					update.InstallScriptURL),
 			},
 		}
 	}

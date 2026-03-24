@@ -38,8 +38,8 @@ if (-not (Test-Path $CoverageFile)) {
 Write-Host "Checking code coverage threshold (minimum: $MinimumCoveragePercent%)..."
 
 # Use 'go tool cover -func' to get per-function coverage and the total line.
-$output = & go tool cover "-func=$CoverageFile" 2>&1
-if ($LASTEXITCODE -ne 0) {
+$output = & go tool cover "-func=$CoverageFile"
+if ($LASTEXITCODE) {
     throw "go tool cover -func failed: $output"
 }
 
@@ -61,7 +61,6 @@ Write-Host "Total statement coverage: $coveragePercent%"
 
 if ($coveragePercent -lt $MinimumCoveragePercent) {
     Write-Host "##vso[task.logissue type=error]Code coverage $coveragePercent% is below the minimum threshold of $MinimumCoveragePercent%."
-    Write-Host "##vso[task.complete result=Failed;]Coverage threshold not met."
     exit 1
 }
 

@@ -1,14 +1,16 @@
 # Release History
 
-## 1.24.0-beta.1 (Unreleased)
-
-### Features Added
-
-### Breaking Changes
+## 1.23.12 (2026-03-24)
 
 ### Bugs Fixed
 
+- [[#7274]](https://github.com/Azure/azure-dev/pull/7274) Revert env-flag change from v1.23.11 to fix regression where the `-e` shorthand for `--environment` conflicted with extension commands that use `-e` for their own flags (e.g., `--project-endpoint` in `azure.ai.models` and `azure.ai.finetune`), restoring compatibility with those extensions.
+- [[#7232]](https://github.com/Azure/azure-dev/pull/7232) Fix `azd update` reliability on Windows by using SHA-256 hash comparison instead of file metadata checks to accurately detect whether an MSI-based update changed the binary.
+
 ### Other Changes
+
+- [[#7241]](https://github.com/Azure/azure-dev/pull/7241) Improve telemetry error classification by routing MCP tool, Copilot agent, and container/extension error spans through `MapError` to reduce unclassified error entries. Thanks @spboyer for the contribution!
+- [[#7253]](https://github.com/Azure/azure-dev/pull/7253) Fix `copilot.session.id` telemetry field classification to use the correct PII category.
 
 ## 1.23.11 (2026-03-20)
 

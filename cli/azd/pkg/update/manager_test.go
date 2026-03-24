@@ -135,38 +135,6 @@ func TestPackageManagerUninstallCmd(t *testing.T) {
 	}
 }
 
-func TestDailyInstallCmd(t *testing.T) {
-	tests := []struct {
-		name string
-		goos string
-		want string
-	}{
-		{
-			name: "windows",
-			goos: "windows",
-			want: "powershell -ex AllSigned -c " +
-				"\"Invoke-RestMethod 'https://aka.ms/install-azd.ps1' -OutFile 'install-azd.ps1'; " +
-				"./install-azd.ps1 -Version 'daily'\"",
-		},
-		{
-			name: "linux",
-			goos: "linux",
-			want: "curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version daily",
-		},
-		{
-			name: "darwin",
-			goos: "darwin",
-			want: "curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version daily",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, DailyInstallCmd(tt.goos))
-		})
-	}
-}
-
 func TestBuildVersionInfoFromCache_Stable(t *testing.T) {
 	m := NewManager(nil, nil)
 

@@ -960,17 +960,6 @@ func PackageManagerUninstallCmd(installedBy installer.InstallType) string {
 	}
 }
 
-// DailyInstallCmd returns the platform-specific command to install the daily build.
-func DailyInstallCmd(goos string) string {
-	if goos == "windows" {
-		return "powershell -ex AllSigned -c " +
-			"\"Invoke-RestMethod 'https://aka.ms/install-azd.ps1' -OutFile 'install-azd.ps1'; " +
-			"./install-azd.ps1 -Version 'daily'\""
-	}
-
-	return "curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version daily"
-}
-
 // progressReader wraps an io.Reader to report download progress.
 type progressReader struct {
 	reader  io.Reader

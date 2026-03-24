@@ -11,8 +11,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
+
+	"azureaiagent/internal/pkg/agents/agent_api"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -98,9 +101,44 @@ session automatically. Pass --new-session to force a reset.`,
 
 func (a *InvokeAction) Run(ctx context.Context) error {
 	if a.flags.local {
-		return a.invokeLocal(ctx)
+		protocol := a.resolveLocalProtocol(ctx)
+		switch protocol {
+		case agent_api.AgentProtocolInvocations:
+			return a.invokeLocalInvocations(ctx)
+		default:
+			return a.invokeLocal(ctx)
+		}
 	}
-	return a.invokeRemote(ctx)
+
+	protocol := a.resolveRemoteProtocol(ctx)
+	switch protocol {
+	case agent_api.AgentProtocolInvocations:
+		return a.invokeRemoteInvocations(ctx)
+	default:
+		return a.invokeRemote(ctx)
+	}
+}
+
+// resolveRemoteProtocol determines the protocol for remote invocation from agent.yaml.
+func (a *InvokeAction) resolveRemoteProtocol(ctx context.Context) agent_api.AgentProtocol {
+	azdClient, err := azdext.NewAzdClient()
+	if err != nil {
+		return agent_api.AgentProtocolResponses
+	}
+	defer azdClient.Close()
+
+	return resolveAgentProtocol(ctx, azdClient, a.flags.name, rootFlags.NoPrompt)
+}
+
+// resolveLocalProtocol determines the protocol for local invocation from agent.yaml.
+func (a *InvokeAction) resolveLocalProtocol(ctx context.Context) agent_api.AgentProtocol {
+	azdClient, err := azdext.NewAzdClient()
+	if err != nil {
+		return agent_api.AgentProtocolResponses
+	}
+	defer azdClient.Close()
+
+	return resolveAgentProtocol(ctx, azdClient, "", rootFlags.NoPrompt)
 }
 
 func (a *InvokeAction) httpTimeout() time.Duration {
@@ -272,6 +310,384 @@ func (a *InvokeAction) invokeRemote(ctx context.Context) error {
 
 	// Parse SSE stream for agent output
 	return readSSEStream(resp.Body, name)
+}
+
+// invokeLocalInvocations sends the user's message to a locally running agent using
+// the invocations protocol (POST /invocations).
+func (a *InvokeAction) invokeLocalInvocations(ctx context.Context) error {
+	port := a.flags.port
+	msg := a.flags.message
+
+	fmt.Printf("Target:   localhost:%d (local, invocations protocol)\n", port)
+	fmt.Printf("Message:  %q\n\n", msg)
+
+	url := fmt.Sprintf("http://localhost:%d/invocations", port)
+
+	// Pass agent_session_id as query parameter for multi-turn support (§5.5)
+	if sid := a.flags.session; sid != "" {
+		url += "?agent_session_id=" + sid
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(msg))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: a.httpTimeout()}
+	resp, err := client.Do(req) //nolint:gosec // G704: URL targets localhost with user-configured port
+	if err != nil {
+		return fmt.Errorf(
+			"could not connect to localhost:%d — is the agent running? Start it with: azd ai agent run",
+			port,
+		)
+	}
+	defer resp.Body.Close()
+
+	return handleInvocationResponse(resp, "", "", "local", a.httpTimeout())
+}
+
+// invokeRemoteInvocations sends the user's message to Foundry using
+// the invocations protocol (POST /agents/{name}/versions/{version}/invocations).
+func (a *InvokeAction) invokeRemoteInvocations(ctx context.Context) error {
+	azdClient, err := azdext.NewAzdClient()
+	if err != nil {
+		return fmt.Errorf("failed to create azd client: %w", err)
+	}
+	defer azdClient.Close()
+
+	name := a.flags.name
+
+	// Auto-resolve agent name and version from azure.yaml / azd environment
+	var version string
+	if info, err := resolveAgentServiceFromProject(ctx, azdClient, name, rootFlags.NoPrompt); err == nil {
+		if name == "" && info.AgentName != "" {
+			name = info.AgentName
+		}
+		version = info.Version
+	}
+
+	if name == "" {
+		return fmt.Errorf(
+			"agent name is required; provide as the first argument or define an azure.ai.agent service in azure.yaml",
+		)
+	}
+	if version == "" {
+		return fmt.Errorf(
+			"agent version is required for the invocations protocol but was not found.\n\n" +
+				"Deploy your agent first with 'azd deploy' so that the version is recorded in the environment",
+		)
+	}
+
+	endpoint, err := resolveAgentEndpoint(ctx, "", "")
+	if err != nil {
+		return err
+	}
+
+	msg := a.flags.message
+
+	// Session ID — routes to the same container instance
+	sid, err := resolveSessionID(ctx, azdClient, name, a.flags.session, a.flags.newSession)
+	if err != nil {
+		return err
+	}
+
+	// Acquire credential and token
+	credential, err := newAgentCredential()
+	if err != nil {
+		return err
+	}
+
+	token, err := credential.GetToken(ctx, policy.TokenRequestOptions{
+		Scopes: []string{"https://ai.azure.com/.default"},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get auth token: %w", err)
+	}
+
+	fmt.Printf("Agent:    %s (remote, invocations protocol)\n", name)
+	fmt.Printf("Version:  %s\n", version)
+	fmt.Printf("Message:  %q\n", msg)
+	fmt.Printf("Session:  %s\n\n", sid)
+
+	url := fmt.Sprintf(
+		"%s/agents/%s/versions/%s/invocations?api-version=%s&agent_session_id=%s",
+		endpoint, name, version, DefaultAgentAPIVersion, sid,
+	)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(msg))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token.Token)
+
+	client := &http.Client{Timeout: a.httpTimeout()}
+	resp, err := client.Do(req) //nolint:gosec // G704: endpoint is resolved from azd environment configuration
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	return handleInvocationResponse(resp, endpoint, token.Token, name, a.httpTimeout())
+}
+
+// handleInvocationResponse dispatches the response from a POST /invocations call
+// to the correct handler based on the HTTP status code and content type.
+func handleInvocationResponse(
+	resp *http.Response,
+	endpoint string,
+	bearerToken string,
+	agentName string,
+	timeout time.Duration,
+) error {
+	requestID := resp.Header.Get("apim-request-id")
+	if requestID != "" {
+		fmt.Printf("Trace ID: %s\n", requestID)
+	}
+
+	if resp.StatusCode >= 400 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("HTTP %d: %s\n%s", resp.StatusCode, resp.Status, string(respBody))
+	}
+
+	if resp.StatusCode == http.StatusAccepted {
+		return handleInvocationLRO(resp, endpoint, bearerToken, agentName, timeout)
+	}
+
+	contentType := resp.Header.Get("Content-Type")
+	if strings.HasPrefix(contentType, "text/event-stream") {
+		return handleInvocationSSE(resp.Body, agentName)
+	}
+
+	return handleInvocationSync(resp.Body, agentName)
+}
+
+// handleInvocationSync handles a synchronous (200 OK, immediate result) invocations response.
+func handleInvocationSync(body io.Reader, agentName string) error {
+	respBody, err := io.ReadAll(body)
+	if err != nil {
+		return fmt.Errorf("failed to read response: %w", err)
+	}
+
+	// Try to detect the recommended error envelope
+	var result map[string]any
+	if err := json.Unmarshal(respBody, &result); err == nil {
+		if errObj, ok := result["error"].(map[string]any); ok {
+			msg, _ := errObj["message"].(string)
+			errType, _ := errObj["type"].(string)
+			code, _ := errObj["code"].(string)
+			label := code
+			if label == "" {
+				label = errType
+			}
+			if label != "" {
+				return fmt.Errorf("agent error (%s): %s", label, msg)
+			}
+			return fmt.Errorf("agent error: %s", msg)
+		}
+	}
+
+	// Print response — try pretty JSON, fall back to raw text
+	if json.Valid(respBody) {
+		var pretty bytes.Buffer
+		if err := json.Indent(&pretty, respBody, "", "  "); err == nil {
+			fmt.Printf("[%s] %s\n", agentName, pretty.String())
+			return nil
+		}
+	}
+
+	fmt.Printf("[%s] %s\n", agentName, string(respBody))
+	return nil
+}
+
+// handleInvocationSSE handles a streaming (200 OK, text/event-stream) invocations response.
+// The invocations protocol has a developer-defined SSE format, so we print data lines as they arrive.
+func handleInvocationSSE(body io.Reader, agentName string) error {
+	scanner := bufio.NewScanner(body)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+
+	var printed bool
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		if data, ok := strings.CutPrefix(line, "data: "); ok {
+			if data == "[DONE]" {
+				break
+			}
+
+			// Try to detect error events
+			var errEnvelope struct {
+				Error struct {
+					Message string `json:"message"`
+					Type    string `json:"type"`
+					Code    string `json:"code"`
+				} `json:"error"`
+			}
+			if json.Unmarshal([]byte(data), &errEnvelope) == nil && errEnvelope.Error.Message != "" {
+				if printed {
+					fmt.Println()
+				}
+				label := errEnvelope.Error.Code
+				if label == "" {
+					label = errEnvelope.Error.Type
+				}
+				if label != "" {
+					return fmt.Errorf("agent error (%s): %s", label, errEnvelope.Error.Message)
+				}
+				return fmt.Errorf("agent error: %s", errEnvelope.Error.Message)
+			}
+
+			// Print data as-is
+			if !printed {
+				fmt.Printf("[%s] ", agentName)
+				printed = true
+			}
+			fmt.Print(data)
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("error reading response stream: %w", err)
+	}
+
+	if printed {
+		fmt.Println()
+	}
+	return nil
+}
+
+const (
+	defaultLROPollInterval = 2 * time.Second
+	maxLROPollInterval     = 30 * time.Second
+)
+
+// handleInvocationLRO handles a long-running operation (202 Accepted) invocations response
+// by polling GET /invocations/{invocation_id} until a terminal state is reached.
+func handleInvocationLRO(
+	resp *http.Response,
+	endpoint string,
+	bearerToken string,
+	agentName string,
+	timeout time.Duration,
+) error {
+	invocationID := resp.Header.Get("x-agent-invocation-id")
+	if invocationID == "" {
+		// Try to read the ID from the response body as fallback
+		respBody, _ := io.ReadAll(resp.Body)
+		var result map[string]any
+		if json.Unmarshal(respBody, &result) == nil {
+			if id, ok := result["invocation_id"].(string); ok {
+				invocationID = id
+			}
+		}
+	}
+	if invocationID == "" {
+		return fmt.Errorf(
+			"received 202 Accepted but no invocation ID found " +
+				"(expected x-agent-invocation-id response header)",
+		)
+	}
+
+	// Read and display the initial 202 body if present
+	initialBody, _ := io.ReadAll(resp.Body)
+	if len(initialBody) > 0 {
+		var result map[string]any
+		if json.Unmarshal(initialBody, &result) == nil {
+			if status, _ := result["status"].(string); status != "" {
+				fmt.Printf("[%s] Invocation %s: %s\n", agentName, invocationID, status)
+			}
+		}
+	}
+
+	// TODO: Async-with-callbacks (§5.4) is not yet supported. If the agent uses
+	// a callback pattern, this polling loop will time out. Consider adding callback
+	// support in a future iteration.
+
+	fmt.Printf("[%s] Polling for result (invocation %s)...\n", agentName, invocationID)
+
+	pollURL := fmt.Sprintf("%s/agents/invocations/%s?api-version=%s", endpoint, invocationID, DefaultAgentAPIVersion)
+
+	var deadline time.Time
+	if timeout > 0 {
+		deadline = time.Now().Add(timeout)
+	}
+
+	pollInterval := defaultLROPollInterval
+
+	for {
+		if !deadline.IsZero() && time.Now().After(deadline) {
+			return fmt.Errorf(
+				"timed out waiting for invocation %s to complete (timeout: %s)",
+				invocationID, timeout,
+			)
+		}
+
+		time.Sleep(pollInterval)
+
+		req, err := http.NewRequestWithContext(
+			resp.Request.Context(), http.MethodGet, pollURL, nil,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create poll request: %w", err)
+		}
+		if bearerToken != "" {
+			req.Header.Set("Authorization", "Bearer "+bearerToken)
+		}
+
+		client := &http.Client{Timeout: 30 * time.Second}
+		pollResp, err := client.Do(req) //nolint:gosec // G704: endpoint from azd environment
+		if err != nil {
+			return fmt.Errorf("poll request failed: %w", err)
+		}
+
+		pollBody, _ := io.ReadAll(pollResp.Body)
+		pollResp.Body.Close()
+
+		if pollResp.StatusCode == http.StatusNotFound {
+			continue // invocation not yet registered
+		}
+
+		if pollResp.StatusCode >= 400 {
+			return fmt.Errorf("poll HTTP %d: %s\n%s", pollResp.StatusCode, pollResp.Status, string(pollBody))
+		}
+
+		var result map[string]any
+		if err := json.Unmarshal(pollBody, &result); err == nil {
+			status, _ := result["status"].(string)
+			switch status {
+			case "completed":
+				fmt.Printf("[%s] Invocation completed.\n", agentName)
+				// Pretty-print the result
+				if json.Valid(pollBody) {
+					var pretty bytes.Buffer
+					if err := json.Indent(&pretty, pollBody, "", "  "); err == nil {
+						fmt.Println(pretty.String())
+						return nil
+					}
+				}
+				fmt.Println(string(pollBody))
+				return nil
+			case "failed":
+				if errObj, ok := result["error"].(map[string]any); ok {
+					msg, _ := errObj["message"].(string)
+					code, _ := errObj["code"].(string)
+					return fmt.Errorf("invocation failed (%s): %s", code, msg)
+				}
+				return fmt.Errorf("invocation failed: %s", string(pollBody))
+			case "cancelled":
+				return fmt.Errorf("invocation was cancelled")
+			}
+		}
+
+		// Respect Retry-After header from the poll response
+		if ra := pollResp.Header.Get("Retry-After"); ra != "" {
+			if seconds, err := strconv.Atoi(ra); err == nil && seconds > 0 {
+				pollInterval = min(time.Duration(seconds)*time.Second, maxLROPollInterval)
+			}
+		}
+	}
 }
 
 // createConversation creates a new Foundry conversation for multi-turn memory.

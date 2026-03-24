@@ -14,6 +14,8 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
 	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -423,4 +425,37 @@ func resolveStartupCommandForInit(
 	}
 
 	return strings.TrimSpace(resp.Value), nil
+}
+
+// resolveAgentProtocol loads the agent.yaml manifest for the service and returns the
+// protocol that the agent implements (e.g. "responses", "invocations").
+// Defaults to "responses" when the manifest cannot be loaded or has no protocols.
+func resolveAgentProtocol(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	name string,
+	noPrompt bool,
+) agent_api.AgentProtocol {
+	svc, project, err := resolveAgentService(ctx, azdClient, name, noPrompt)
+	if err != nil {
+		return agent_api.AgentProtocolResponses
+	}
+
+	manifestPath := filepath.Join(project.Path, svc.RelativePath, "agent.yaml")
+	data, err := os.ReadFile(manifestPath) //nolint:gosec // G304: path constructed from azd project root
+	if err != nil {
+		return agent_api.AgentProtocolResponses
+	}
+
+	agentDef, err := agent_yaml.ExtractAgentDefinition(data)
+	if err != nil {
+		return agent_api.AgentProtocolResponses
+	}
+
+	hosted, ok := agentDef.(agent_yaml.ContainerAgent)
+	if !ok || len(hosted.Protocols) == 0 {
+		return agent_api.AgentProtocolResponses
+	}
+
+	return agent_api.AgentProtocol(hosted.Protocols[0].Protocol)
 }

@@ -631,7 +631,7 @@ func (p *BicepProvider) waitForActiveDeployments(
 	ctx context.Context,
 	scope infra.Scope,
 ) error {
-	active, err := scope.ListActiveDeployments(ctx)
+	active, err := infra.ListActiveDeployments(ctx, scope)
 	if err != nil {
 		// If the resource group doesn't exist yet, there are no active
 		// deployments — proceed normally.
@@ -691,7 +691,7 @@ func (p *BicepProvider) waitForActiveDeployments(
 					"deployment(s) to complete: %s",
 				timeout, strings.Join(currentNames, ", "))
 		case <-ticker.C:
-			active, err = scope.ListActiveDeployments(ctx)
+			active, err = infra.ListActiveDeployments(ctx, scope)
 			if err != nil {
 				return fmt.Errorf(
 					"checking active deployments: %w", err)

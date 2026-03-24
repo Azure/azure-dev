@@ -17,11 +17,12 @@ import (
 )
 
 // activeDeploymentScope is a test helper that implements infra.Scope and lets
-// the caller control what ListActiveDeployments returns on each call.
+// the caller control what ListDeployments returns on each call. The standalone
+// infra.ListActiveDeployments function filters these results.
 type activeDeploymentScope struct {
-	// calls tracks how many times ListActiveDeployments has been invoked.
+	// calls tracks how many times ListDeployments has been invoked.
 	calls atomic.Int32
-	// activePerCall maps a 0-based call index to the list of active deployments
+	// activePerCall maps a 0-based call index to the list of deployments
 	// returned for that call.  If the index is missing, nil is returned.
 	activePerCall map[int][]*azapi.ResourceDeployment
 	// errOnCall, if non-nil, maps a call index to an error to return.
@@ -34,12 +35,6 @@ func (s *activeDeploymentScope) Deployment(_ string) infra.Deployment { return n
 
 func (s *activeDeploymentScope) ListDeployments(
 	_ context.Context,
-) ([]*azapi.ResourceDeployment, error) {
-	return nil, nil
-}
-
-func (s *activeDeploymentScope) ListActiveDeployments(
-	ctx context.Context,
 ) ([]*azapi.ResourceDeployment, error) {
 	idx := int(s.calls.Add(1)) - 1
 	if s.errOnCall != nil {

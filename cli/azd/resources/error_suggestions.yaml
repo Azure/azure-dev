@@ -49,21 +49,6 @@ rules:
   # 4th most common error category (~128,054 errors in 90-day analysis)
   # ============================================================================
 
-  # ============================================================================
-  # ARM Deployment Errors — Active deployment conflict
-  # ============================================================================
-
-  - errorType: "DeploymentErrorLine"
-    properties:
-      Code: "DeploymentActive"
-    message: "Another deployment is already in progress on this scope."
-    suggestion: >
-      Wait for the current deployment to complete, then retry.
-      You can check deployment status in the Azure portal under the Deployments blade.
-    links:
-      - url: "https://learn.microsoft.com/azure/azure-resource-manager/troubleshooting/error-deployment-active"
-        title: "Troubleshoot DeploymentActive errors"
-
   - errorType: "DeploymentErrorLine"
     properties:
       Code: "FlagMustBeSetForRestore"
@@ -75,6 +60,17 @@ rules:
     links:
       - url: "https://learn.microsoft.com/azure/key-vault/general/key-vault-recovery"
         title: "Azure Key Vault soft-delete recovery"
+
+  - errorType: "DeploymentErrorLine"
+    properties:
+      Code: "DeploymentActive"
+    message: "Another deployment is already in progress on this scope."
+    suggestion: >-
+      Wait for the current deployment to complete, then retry.
+      You can check deployment status in the Azure portal under the Deployments blade.
+    links:
+      - url: "https://learn.microsoft.com/azure/azure-resource-manager/troubleshooting/error-deployment-active"
+        title: "Troubleshoot DeploymentActive errors"
 
   - errorType: "DeploymentErrorLine"
     properties:

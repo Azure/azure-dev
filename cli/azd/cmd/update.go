@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"runtime"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -201,8 +202,9 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				Err: fmt.Errorf("daily builds aren't available via %s", installedBy),
 				Suggestion: fmt.Sprintf(
 					"Uninstall first with: %s\nThen install daily with: "+
-						"curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version daily",
-					uninstallCmd),
+						"%s",
+					uninstallCmd,
+					update.DailyInstallCmd(runtime.GOOS)),
 			},
 		}
 	}

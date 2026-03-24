@@ -316,7 +316,8 @@ func (a *updateAction) persistNonChannelFlags(cfg config.Config) (bool, error) {
 
 	if a.flags.autoUpdate != "" {
 		return false, fmt.Errorf(
-			"the --auto-update flag is work in progress. Run 'azd update' to update manually")
+			"the --auto-update flag is work in progress. Run 'azd config unset updates.autoUpdate' and" +
+				" then 'azd update' to update manually")
 	}
 
 	if a.flags.checkIntervalHours > 0 {

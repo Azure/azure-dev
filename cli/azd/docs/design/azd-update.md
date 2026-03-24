@@ -117,6 +117,7 @@ Two config keys via `azd config`:
 
 ```bash
 azd config set updates.channel daily     # "stable" (default) or "daily"
+azd config set updates.checkIntervalHours 4
 ```
 
 Channel is set via `azd update --channel <stable|daily>` (which persists the choice to `updates.channel` config). Default channel is `stable`.
@@ -352,7 +353,7 @@ These codes are integrated into azd's `MapError` pipeline, so update failures sh
 
 The entire update feature ships behind `alpha.update` (default: off). This means:
 
-- **Toggle off** (default): Zero behavior changes. `azd version` output is the same. Update notification shows the existing platform-specific install instructions. `azd update` returns an error telling the user to enable the feature.
+- **Toggle off** (default): Zero behavior changes. `azd version` output is the same. Update notification shows the existing platform-specific install instructions. Running `azd update` auto-enables the feature.
 - **Toggle on** (`azd config set alpha.update on`): All update features are active — `azd update` works, `azd version` shows the channel suffix, notifications say "run `azd update`."
 
 This lets us roll out to internal users first, gather feedback, and fix issues before broader availability. Once stable, the toggle can be removed and the feature enabled by default.

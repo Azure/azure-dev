@@ -48,6 +48,12 @@ func (f *updateFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		"",
 		"Update channel: stable or daily.",
 	)
+	// local.StringVar(
+	// 	&f.autoUpdate,
+	// 	"auto-update",
+	// 	"",
+	// 	"Enable or disable auto-update: on or off.",
+	// )
 	local.IntVar(
 		&f.checkIntervalHours,
 		"check-interval-hours",
@@ -314,11 +320,16 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 func (a *updateAction) persistNonChannelFlags(cfg config.Config) (bool, error) {
 	changed := false
 
-	if a.flags.autoUpdate != "" {
-		return false, fmt.Errorf(
-			"the --auto-update flag is work in progress. Run 'azd config unset updates.autoUpdate' and" +
-				" then 'azd update' to update manually")
-	}
+	// if a.flags.autoUpdate != "" {
+	// 	enabled := a.flags.autoUpdate == "on"
+	// 	if a.flags.autoUpdate != "on" && a.flags.autoUpdate != "off" {
+	// 		return false, fmt.Errorf("invalid auto-update value %q, must be \"on\" or \"off\"", a.flags.autoUpdate)
+	// 	}
+	// 	if err := update.SaveAutoUpdate(cfg, enabled); err != nil {
+	// 		return false, err
+	// 	}
+	// 	changed = true
+	// }
 
 	if a.flags.checkIntervalHours > 0 {
 		if err := update.SaveCheckIntervalHours(cfg, a.flags.checkIntervalHours); err != nil {
@@ -332,6 +343,5 @@ func (a *updateAction) persistNonChannelFlags(cfg config.Config) (bool, error) {
 
 // onlyConfigFlagsSet returns true if only config flags were provided (no channel that requires an update).
 func (a *updateAction) onlyConfigFlagsSet() bool {
-	return a.flags.channel == "" &&
-		(a.flags.autoUpdate != "" || a.flags.checkIntervalHours > 0)
+	return a.flags.channel == "" && a.flags.checkIntervalHours > 0
 }

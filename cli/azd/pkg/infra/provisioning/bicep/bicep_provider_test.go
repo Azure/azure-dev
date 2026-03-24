@@ -1085,10 +1085,6 @@ func (m *mockedScope) ListDeployments(ctx context.Context) ([]*azapi.ResourceDep
 	}, nil
 }
 
-func (m *mockedScope) ListActiveDeployments(ctx context.Context) ([]*azapi.ResourceDeployment, error) {
-	return nil, nil
-}
-
 func TestUserDefinedTypes(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {

@@ -30,6 +30,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -53,8 +54,14 @@ func newInitFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *in
 
 func newInitCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "init",
+		Use:   "init [directory]",
 		Short: "Initialize a new application.",
+		Long: `Initialize a new application.
+
+When used with --template, a new directory is created (named after the template)
+and the project is initialized inside it — similar to git clone.
+Pass "." as the directory to initialize in the current directory instead.`,
+		Args: cobra.MaximumNArgs(1),
 	}
 }
 
@@ -134,6 +141,7 @@ type initAction struct {
 	cmdRun            exec.CommandRunner
 	gitCli            *git.Cli
 	flags             *initFlags
+	args              []string
 	repoInitializer   *repository.Initializer
 	templateManager   *templates.TemplateManager
 	featuresManager   *alpha.FeatureManager
@@ -151,6 +159,7 @@ func newInitAction(
 	console input.Console,
 	gitCli *git.Cli,
 	flags *initFlags,
+	args []string,
 	repoInitializer *repository.Initializer,
 	templateManager *templates.TemplateManager,
 	featuresManager *alpha.FeatureManager,
@@ -167,6 +176,7 @@ func newInitAction(
 		cmdRun:            cmdRun,
 		gitCli:            gitCli,
 		flags:             flags,
+		args:              args,
 		repoInitializer:   repoInitializer,
 		templateManager:   templateManager,
 		featuresManager:   featuresManager,
@@ -182,6 +192,40 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	wd, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("getting cwd: %w", err)
+	}
+
+	// When a template is specified, auto-create a project directory (like git clone).
+	// The user can pass a positional [directory] argument to override the folder name,
+	// or pass "." to use the current directory (preserving existing behavior).
+	createdProjectDir := ""
+	originalWd := wd
+	isTemplateInit := i.flags.templatePath != "" || len(i.flags.templateTags) > 0
+
+	if isTemplateInit {
+		targetDir, err := i.resolveTargetDirectory(wd)
+		if err != nil {
+			return nil, err
+		}
+
+		if targetDir != wd {
+			// Check if target already exists and is non-empty
+			if err := i.validateTargetDirectory(ctx, targetDir); err != nil {
+				return nil, err
+			}
+
+			if err := os.MkdirAll(targetDir, osutil.PermissionDirectory); err != nil {
+				return nil, fmt.Errorf("creating project directory '%s': %w",
+					filepath.Base(targetDir), err)
+			}
+
+			if err := os.Chdir(targetDir); err != nil {
+				return nil, fmt.Errorf("changing to project directory '%s': %w",
+					filepath.Base(targetDir), err)
+			}
+
+			wd = targetDir
+			createdProjectDir = targetDir
+		}
 	}
 
 	azdCtx := azdcontext.NewAzdContextWithDirectory(wd)
@@ -280,6 +324,16 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	Learn more about running 3rd party code on our DevHub: %s`,
 		output.WithLinkFormat("%s", wd),
 		output.WithLinkFormat("%s", "https://aka.ms/azd-third-party-code-notice"))
+
+	if createdProjectDir != "" {
+		// Compute a user-friendly cd path relative to where they started
+		cdPath, relErr := filepath.Rel(originalWd, createdProjectDir)
+		if relErr != nil {
+			cdPath = createdProjectDir // Fall back to absolute path
+		}
+		followUp += fmt.Sprintf("\n\nChange to the project directory:\n  %s",
+			output.WithHighLightFormat("cd %s", cdPath))
+	}
 
 	if i.featuresManager.IsEnabled(agentcopilot.FeatureCopilot) {
 		followUp += fmt.Sprintf("\n\n%s Run %s to deploy project to the cloud.",
@@ -909,4 +963,71 @@ type initModeRequiredErrorOptions struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Command     string `json:"command"`
+}
+
+// resolveTargetDirectory determines the target directory for template initialization.
+// It returns the current working directory when "." is passed or no template is specified,
+// otherwise it derives or uses the explicit directory name.
+func (i *initAction) resolveTargetDirectory(wd string) (string, error) {
+	if len(i.args) > 0 {
+		dirArg := i.args[0]
+		if dirArg == "." {
+			return wd, nil
+		}
+
+		if filepath.IsAbs(dirArg) {
+			return dirArg, nil
+		}
+
+		return filepath.Join(wd, dirArg), nil
+	}
+
+	// No positional arg: auto-derive from template path
+	if i.flags.templatePath != "" {
+		dirName := templates.DeriveDirectoryName(i.flags.templatePath)
+		return filepath.Join(wd, dirName), nil
+	}
+
+	// Template selected via --filter tags (interactive selection) — use CWD
+	return wd, nil
+}
+
+// validateTargetDirectory checks that the target directory is safe to use.
+// If it already exists and is non-empty, it prompts the user for confirmation
+// or returns an error in non-interactive mode.
+func (i *initAction) validateTargetDirectory(ctx context.Context, targetDir string) error {
+	entries, err := os.ReadDir(targetDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil // Directory doesn't exist yet — will be created
+	}
+	if err != nil {
+		return fmt.Errorf("reading directory '%s': %w", filepath.Base(targetDir), err)
+	}
+
+	if len(entries) == 0 {
+		return nil // Empty directory is fine
+	}
+
+	dirName := filepath.Base(targetDir)
+
+	if i.console.IsNoPromptMode() {
+		return fmt.Errorf(
+			"directory '%s' already exists and is not empty; "+
+				"use '.' to initialize in the current directory instead", dirName)
+	}
+
+	proceed, err := i.console.Confirm(ctx, input.ConsoleOptions{
+		Message: fmt.Sprintf(
+			"Directory '%s' already exists and is not empty. Initialize here anyway?", dirName),
+		DefaultValue: false,
+	})
+	if err != nil {
+		return fmt.Errorf("prompting for directory confirmation: %w", err)
+	}
+
+	if !proceed {
+		return errors.New("initialization cancelled")
+	}
+
+	return nil
 }

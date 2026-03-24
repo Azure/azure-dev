@@ -117,10 +117,11 @@ func (a *authStatusAction) Run(ctx context.Context) (*actions.ActionResult, erro
 
 	if a.formatter.Kind() != output.NoneFormat {
 		a.formatter.Format(res, a.writer, nil)
-		// In machine-readable mode, exit non-zero when unauthenticated so agents
-		// can rely on the exit code without parsing output.
 		if res.Status == contracts.AuthStatusUnauthenticated {
-			return nil, fmt.Errorf("not authenticated")
+			// Return ErrNoCurrentUser so the process exits non-zero.
+			// The JSON output is already written above; the UX middleware
+			// skips formatting for JSON output, so this won't double-print.
+			return nil, auth.ErrNoCurrentUser
 		}
 		return nil, nil
 	}
@@ -154,6 +155,10 @@ func (a *authStatusAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		a.console.Message(ctx, "")
 		a.console.Message(ctx,
 			"The authentication mode is controlled externally and cannot be changed from within azd.")
+	}
+
+	if res.Status == contracts.AuthStatusUnauthenticated {
+		return nil, auth.ErrNoCurrentUser
 	}
 
 	return nil, nil

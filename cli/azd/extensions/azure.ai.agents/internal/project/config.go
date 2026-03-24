@@ -19,6 +19,29 @@ const (
 	DefaultMaxReplicas = 1
 )
 
+// ResourceTier defines a preset CPU and memory allocation for container resources.
+type ResourceTier struct {
+	Cpu    string
+	Memory string
+}
+
+// String returns a human-readable label for the resource tier.
+func (t ResourceTier) String() string {
+	coreUnit := "cores"
+	if t.Cpu == "1" {
+		coreUnit = "core"
+	}
+	return fmt.Sprintf("%s %s, %s memory", t.Cpu, coreUnit, t.Memory)
+}
+
+// ResourceTiers defines the available container resource allocation options.
+var ResourceTiers = []ResourceTier{
+	{Cpu: DefaultCpu, Memory: DefaultMemory},
+	{Cpu: "0.5", Memory: "1Gi"},
+	{Cpu: "1", Memory: "2Gi"},
+	{Cpu: "2", Memory: "4Gi"},
+}
+
 // ServiceTargetAgentConfig provides custom configuration for the Azure AI Service target
 type ServiceTargetAgentConfig struct {
 	Environment    map[string]string  `json:"env,omitempty"`

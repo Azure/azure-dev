@@ -621,3 +621,123 @@ var (
 		Purpose:        FeatureInsight,
 	}
 )
+
+// Copilot agent session related fields
+var (
+	// CopilotSessionId is the session ID for correlation across messages.
+	CopilotSessionId = AttributeKey{
+		Key:            attribute.Key("copilot.session.id"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// CopilotSessionIsNew indicates whether this was a new session (true) or resumed (false).
+	CopilotSessionIsNew = AttributeKey{
+		Key:            attribute.Key("copilot.session.isNew"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// CopilotSessionMessageCount is the number of messages sent in the session.
+	CopilotSessionMessageCount = AttributeKey{
+		Key:            attribute.Key("copilot.session.messageCount"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
+)
+
+// Copilot agent initialization related fields
+var (
+	// CopilotInitIsFirstRun indicates whether this was the user's first agent initialization.
+	CopilotInitIsFirstRun = AttributeKey{
+		Key:            attribute.Key("copilot.init.isFirstRun"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// CopilotInitReasoningEffort is the reasoning level selected (low/medium/high).
+	CopilotInitReasoningEffort = AttributeKey{
+		Key:            attribute.Key("copilot.init.reasoningEffort"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// CopilotInitModel is the model ID selected (empty string = default).
+	CopilotInitModel = AttributeKey{
+		Key:            attribute.Key("copilot.init.model"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// CopilotInitConsentScope is the workflow consent scope chosen (session/project/global).
+	CopilotInitConsentScope = AttributeKey{
+		Key:            attribute.Key("copilot.init.consentScope"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+)
+
+// Copilot agent mode and message related fields
+var (
+	// CopilotMode is the agent operating mode (interactive/autopilot/plan).
+	CopilotMode = AttributeKey{
+		Key:            attribute.Key("copilot.mode"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// CopilotMessageModel is the model used for a specific message.
+	CopilotMessageModel = AttributeKey{
+		Key:            attribute.Key("copilot.message.model"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// CopilotMessageInputTokens is the number of input tokens consumed per message.
+	CopilotMessageInputTokens = AttributeKey{
+		Key:            attribute.Key("copilot.message.inputTokens"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+	// CopilotMessageOutputTokens is the number of output tokens consumed per message.
+	CopilotMessageOutputTokens = AttributeKey{
+		Key:            attribute.Key("copilot.message.outputTokens"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+	// CopilotMessageBillingRate is the billing rate multiplier per message.
+	CopilotMessageBillingRate = AttributeKey{
+		Key:            attribute.Key("copilot.message.billingRate"),
+		Classification: SystemMetadata,
+		Purpose:        BusinessInsight,
+		IsMeasurement:  true,
+	}
+	// CopilotMessagePremiumRequests is the number of premium requests used per message.
+	CopilotMessagePremiumRequests = AttributeKey{
+		Key:            attribute.Key("copilot.message.premiumRequests"),
+		Classification: SystemMetadata,
+		Purpose:        BusinessInsight,
+		IsMeasurement:  true,
+	}
+	// CopilotMessageDurationMs is the API call duration in milliseconds per message.
+	CopilotMessageDurationMs = AttributeKey{
+		Key:            attribute.Key("copilot.message.durationMs"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+)
+
+// Copilot consent related fields
+var (
+	// CopilotConsentApprovedCount is the running count of tool calls approved during the session.
+	CopilotConsentApprovedCount = AttributeKey{
+		Key:            attribute.Key("copilot.consent.approvedCount"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
+	// CopilotConsentDeniedCount is the running count of tool calls denied during the session.
+	CopilotConsentDeniedCount = AttributeKey{
+		Key:            attribute.Key("copilot.consent.deniedCount"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
+)

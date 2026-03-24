@@ -42,6 +42,23 @@ func NewRootCmd(
 	middlewareChain []*actions.MiddlewareRegistration,
 	rootContainer *ioc.NestedContainer,
 ) *cobra.Command {
+	return newRootCmd(staticHelp, middlewareChain, rootContainer, true)
+}
+
+// newRootCmdWithoutRegistration builds a fresh cobra command tree for workflow re-execution without
+// re-registering shared IoC dependencies. This preserves cached singleton instances (and any event
+// handlers attached to them, such as lifecycle hooks on ProjectConfig/ServiceConfig) while still
+// providing a clean command tree free of stale cobra state.
+func newRootCmdWithoutRegistration(rootContainer *ioc.NestedContainer) *cobra.Command {
+	return newRootCmd(false, nil, rootContainer, false)
+}
+
+func newRootCmd(
+	staticHelp bool,
+	middlewareChain []*actions.MiddlewareRegistration,
+	rootContainer *ioc.NestedContainer,
+	registerDependencies bool,
+) *cobra.Command {
 	prevDir := ""
 
 	// Register common dependencies for the IoC rootContainer
@@ -436,7 +453,10 @@ func NewRootCmd(
 		})
 
 	ioc.RegisterNamedInstance(rootContainer, "root-cmd", rootCmd)
-	registerCommonDependencies(rootContainer)
+
+	if registerDependencies {
+		registerCommonDependencies(rootContainer)
+	}
 
 	// Register the 'extension' commands
 	err := rootContainer.Invoke(func(extensionManager *extensions.Manager) error {
@@ -473,8 +493,10 @@ func NewRootCmd(
 	// Initialize the platform specific components for the IoC container
 	// Only container resolution errors will return an error
 	// Invalid configurations will fall back to default platform
-	if _, err := platform.Initialize(rootContainer, azd.PlatformKindDefault); err != nil {
-		panic(err)
+	if registerDependencies {
+		if _, err := platform.Initialize(rootContainer, azd.PlatformKindDefault); err != nil {
+			panic(err)
+		}
 	}
 
 	// Compose the hierarchy of action descriptions into cobra commands

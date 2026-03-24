@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
+	agentcopilot "github.com/azure/azure-dev/cli/azd/internal/agent/copilot"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -24,8 +25,10 @@ import (
 func copilotActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 	group := root.Add("copilot", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Use:   "copilot",
-			Short: fmt.Sprintf("Manage Copilot agent settings. %s", output.WithWarningFormat("(Alpha)")),
+			Use: "copilot",
+			Short: fmt.Sprintf(
+				"Manage %s agent settings. %s",
+				agentcopilot.DisplayTitle, output.WithWarningFormat("(Preview)")),
 		},
 		GroupingOptions: actions.CommandGroupOptions{
 			RootLevelHelp: actions.CmdGroupAlpha,

@@ -4,20 +4,24 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	copilot "github.com/github/copilot-sdk/go"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/watch"
 )
 
 // AgentResult is returned by SendMessage with session and usage metadata.
 type AgentResult struct {
 	// SessionID is the session identifier for resuming later.
 	SessionID string
-	// Usage contains token and cost metrics for the session.
+	// Usage contains token and cost metrics for this turn.
 	Usage UsageMetrics
+	// FileChanges contains files created/modified/deleted during this turn.
+	FileChanges watch.FileChanges
 }
 
 // UsageMetrics tracks resource consumption for an agent session.
@@ -35,8 +39,8 @@ func (u UsageMetrics) TotalTokens() float64 {
 	return u.InputTokens + u.OutputTokens
 }
 
-// Format returns a multi-line formatted string for display.
-func (u UsageMetrics) Format() string {
+// String returns a multi-line formatted string for display.
+func (u UsageMetrics) String() string {
 	if u.InputTokens == 0 && u.OutputTokens == 0 {
 		return ""
 	}
@@ -96,6 +100,26 @@ type InitResult struct {
 	IsFirstRun bool
 }
 
+// AgentMetrics contains cumulative session metrics for usage and file changes.
+type AgentMetrics struct {
+	// Usage contains cumulative token and cost metrics.
+	Usage UsageMetrics
+	// FileChanges contains accumulated file changes across all SendMessage calls.
+	FileChanges watch.FileChanges
+}
+
+// String returns a formatted display of file changes followed by usage metrics.
+func (m AgentMetrics) String() string {
+	var parts []string
+	if s := m.FileChanges.String(); s != "" {
+		parts = append(parts, s)
+	}
+	if s := m.Usage.String(); s != "" {
+		parts = append(parts, s)
+	}
+	return strings.Join(parts, "\n")
+}
+
 // AgentMode represents the operating mode for the agent.
 type AgentMode string
 
@@ -136,6 +160,13 @@ func WithDebug(debug bool) AgentOption {
 	return func(a *CopilotAgent) { a.debug = debug }
 }
 
+// WithHeadless enables headless mode, suppressing all console output.
+// In headless mode, the agent uses a silent collector instead of the
+// interactive display, and defaults to autopilot mode.
+func WithHeadless(headless bool) AgentOption {
+	return func(a *CopilotAgent) { a.headless = headless }
+}
+
 // OnSessionStarted registers a callback that fires when a session is created or resumed.
 func OnSessionStarted(fn func(sessionID string)) AgentOption {
 	return func(a *CopilotAgent) { a.onSessionStarted = fn }
@@ -167,3 +198,33 @@ func WithSessionID(id string) SendOption {
 
 // SessionMetadata contains metadata about a previous session.
 type SessionMetadata = copilot.SessionMetadata
+
+// SessionEvent represents a single event from the Copilot session log.
+type SessionEvent = copilot.SessionEvent
+
+// Agent defines the interface for Copilot agent operations.
+// Used by the gRPC service layer to decouple from the concrete CopilotAgent implementation.
+type Agent interface {
+	// Initialize handles first-run configuration (model/reasoning setup).
+	Initialize(ctx context.Context, opts ...InitOption) (*InitResult, error)
+	// SendMessage sends a prompt and returns per-turn results.
+	SendMessage(ctx context.Context, prompt string, opts ...SendOption) (*AgentResult, error)
+	// SendMessageWithRetry wraps SendMessage with interactive retry-on-error UX.
+	SendMessageWithRetry(ctx context.Context, prompt string, opts ...SendOption) (*AgentResult, error)
+	// ListSessions returns previous sessions for the given working directory.
+	ListSessions(ctx context.Context, cwd string) ([]SessionMetadata, error)
+	// GetMetrics returns cumulative session metrics (usage + file changes).
+	GetMetrics() AgentMetrics
+	// GetMessages returns the session event log from the Copilot SDK.
+	GetMessages(ctx context.Context) ([]SessionEvent, error)
+	// SessionID returns the current session ID, or empty if no session exists.
+	SessionID() string
+	// Stop terminates the agent and releases resources.
+	Stop() error
+}
+
+// AgentFactory creates Agent instances with all dependencies wired.
+type AgentFactory interface {
+	// Create builds a new Agent with the given options.
+	Create(ctx context.Context, opts ...AgentOption) (Agent, error)
+}

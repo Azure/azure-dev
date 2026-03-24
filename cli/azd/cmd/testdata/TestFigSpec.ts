@@ -220,7 +220,7 @@ const completionSpec: Fig.Spec = {
 			subcommands: [
 				{
 					name: ['agent'],
-					description: 'Extension for the Foundry Agent Service. (Preview)',
+					description: 'Ship agents with Microsoft Foundry from your terminal. (Preview)',
 					subcommands: [
 						{
 							name: ['init'],
@@ -1496,7 +1496,7 @@ const completionSpec: Fig.Spec = {
 		},
 		{
 			name: ['copilot'],
-			description: 'Manage Copilot agent settings. (Alpha)',
+			description: 'Manage GitHub Copilot agent settings. (Preview)',
 			subcommands: [
 				{
 					name: ['consent'],
@@ -3101,7 +3101,7 @@ const completionSpec: Fig.Spec = {
 					subcommands: [
 						{
 							name: ['agent'],
-							description: 'Extension for the Foundry Agent Service. (Preview)',
+							description: 'Ship agents with Microsoft Foundry from your terminal. (Preview)',
 							subcommands: [
 								{
 									name: ['init'],
@@ -3337,7 +3337,7 @@ const completionSpec: Fig.Spec = {
 				},
 				{
 					name: ['copilot'],
-					description: 'Manage Copilot agent settings. (Alpha)',
+					description: 'Manage GitHub Copilot agent settings. (Preview)',
 					subcommands: [
 						{
 							name: ['consent'],

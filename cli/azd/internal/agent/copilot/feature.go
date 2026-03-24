@@ -20,8 +20,9 @@ func IsFeatureEnabled(alphaManager *alpha.FeatureManager) error {
 		panic("alphaManager cannot be nil")
 	}
 	if !alphaManager.IsEnabled(FeatureCopilot) {
-		return fmt.Errorf("the Copilot agent feature is not enabled. Please enable it using the command: \"%s\"",
-			alpha.GetEnableCommand(FeatureCopilot))
+		return fmt.Errorf(
+			"the %s feature is not enabled. Please enable it using the command: \"%s\"",
+			DisplayTitle, alpha.GetEnableCommand(FeatureCopilot))
 	}
 	return nil
 }

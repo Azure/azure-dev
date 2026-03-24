@@ -139,7 +139,7 @@ type initAction struct {
 	featuresManager   *alpha.FeatureManager
 	extensionsManager *extensions.Manager
 	azd               workflow.AzdCommandRunner
-	agentFactory      *agent.CopilotAgentFactory
+	agentFactory      agent.AgentFactory
 	consentManager    consent.ConsentManager
 	configManager     config.UserConfigManager
 }
@@ -156,7 +156,7 @@ func newInitAction(
 	featuresManager *alpha.FeatureManager,
 	extensionsManager *extensions.Manager,
 	azd workflow.AzdCommandRunner,
-	agentFactory *agent.CopilotAgentFactory,
+	agentFactory agent.AgentFactory,
 	consentManager consent.ConsentManager,
 	configManager config.UserConfigManager,
 ) actions.Action {
@@ -283,7 +283,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	if i.featuresManager.IsEnabled(agentcopilot.FeatureCopilot) {
 		followUp += fmt.Sprintf("\n\n%s Run %s to deploy project to the cloud.",
-			color.HiMagentaString("Next steps:"),
+			output.WithHintFormat("(→) NEXT STEPS:"),
 			output.WithHighLightFormat("azd up"))
 	}
 
@@ -371,6 +371,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			return nil, err
 		}
 	case initEnvironment:
+		tracing.SetUsageAttributes(fields.InitMethod.String("environment"))
 		env, err := i.initializeEnv(ctx, azdCtx, templates.Metadata{})
 		if err != nil {
 			return nil, err
@@ -379,7 +380,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		header = fmt.Sprintf("Initialized environment %s.", env.Name())
 		followUp = ""
 	case initWithAgent:
-		tracing.SetUsageAttributes(fields.InitMethod.String("agent"))
+		tracing.SetUsageAttributes(fields.InitMethod.String("copilot"))
 		if err := i.initAppWithAgent(ctx, azdCtx); err != nil {
 			return nil, err
 		}
@@ -409,7 +410,11 @@ func (i *initAction) initAppWithAgent(ctx context.Context, azdCtx *azdcontext.Az
 	if dirty {
 		defaultNo := false
 		confirm := uxlib.NewConfirm(&uxlib.ConfirmOptions{
-			Message:      "Your working directory has uncommitted changes. Continue initializing?",
+			Message: "Your working directory has uncommitted changes. Continue initializing?",
+			HelpMessage: fmt.Sprintf(
+				"%s may create or modify files in your working directory. "+
+					"Consider committing or stashing your changes first to avoid losing work.",
+				agentcopilot.DisplayTitle),
 			DefaultValue: &defaultNo,
 		})
 		result, promptErr := confirm.Ask(ctx)
@@ -422,12 +427,14 @@ func (i *initAction) initAppWithAgent(ctx context.Context, azdCtx *azdcontext.Az
 		}
 	}
 
-	// Show alpha warning
+	// Show preview notice
 	i.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title: fmt.Sprintf("Agentic mode init is in preview. The agent will scan your repository and "+
-			"attempt to make an azd-ready template to init.\nYou can always change permissions later "+
-			"by running %s. Mistakes may occur in agent mode.\n\n"+
-			"To learn more, go to %s",
+		Title: fmt.Sprintf(
+			"%s will scan your repository and help generate an azd compatible project to get you started. "+
+				"This experience is currently in preview.\n\n"+
+				"You can always change permissions later by running %s.\n\n"+
+				"To learn more, go to %s",
+			agentcopilot.DisplayTitle,
 			output.WithHighLightFormat("azd copilot consent"),
 			output.WithLinkFormat("https://aka.ms/azd-feature-stages")),
 	})
@@ -486,7 +493,9 @@ func (i *initAction) initAppWithAgent(ctx context.Context, azdCtx *azdcontext.Az
 			timeDisplay := agent.FormatSessionTime(session.StartedAt)
 			defaultYes := true
 			confirm := uxlib.NewConfirm(&uxlib.ConfirmOptions{
-				Message:      fmt.Sprintf("Resume previous session from %s?", timeDisplay),
+				Message: fmt.Sprintf("Resume previous session from %s?", timeDisplay),
+				HelpMessage: "Resuming continues where you left off. " +
+					"Choosing no starts a fresh session.",
 				DefaultValue: &defaultYes,
 			})
 			if result, err := confirm.Ask(ctx); err == nil && result != nil && *result {
@@ -522,7 +531,7 @@ When complete, provide a brief summary of what was accomplished.`
 
 	i.console.Message(ctx, color.MagentaString("Preparing application for Azure deployment..."))
 
-	result, err := copilotAgent.SendMessageWithRetry(ctx, prompt, opts...)
+	_, err = copilotAgent.SendMessageWithRetry(ctx, prompt, opts...)
 	if err != nil {
 		return err
 	}
@@ -532,10 +541,10 @@ When complete, provide a brief summary of what was accomplished.`
 		_ = azdCtx.ClearCopilotSession()
 	}
 
-	// Show usage
-	if usage := result.Usage.Format(); usage != "" {
+	// Show session metrics (usage + file changes)
+	if metricsStr := copilotAgent.GetMetrics().String(); metricsStr != "" {
 		i.console.Message(ctx, "")
-		i.console.Message(ctx, usage)
+		i.console.Message(ctx, metricsStr)
 	}
 
 	i.console.Message(ctx, "")
@@ -561,7 +570,7 @@ func promptInitType(
 	options := []string{
 		"Scan current directory", // This now covers minimal project creation too
 		"Select a template",
-		fmt.Sprintf("Use agent mode %s", color.YellowString("(Alpha)")),
+		fmt.Sprintf("Set up with %s %s", agentcopilot.DisplayTitle, color.YellowString("(Preview)")),
 	}
 
 	selection, err := console.Select(ctx, input.ConsoleOptions{
@@ -594,8 +603,8 @@ func promptInitType(
 				return initUnknown, fmt.Errorf("failed to save config: %w", err)
 			}
 
-			console.Message(ctx, "\nThe azd agent feature has been enabled to support this new experience."+
-				" To turn off in the future run `azd config unset alpha.llm`.")
+			console.Message(ctx, fmt.Sprintf("\n%s has been enabled to support this new experience."+
+				" To turn off in the future run `azd config unset alpha.llm`.", agentcopilot.DisplayTitle))
 
 			err = azdConfig.Set(agentcopilot.ConfigKeyModelType, "copilot")
 			if err != nil {
@@ -607,8 +616,10 @@ func promptInitType(
 				return initUnknown, fmt.Errorf("failed to save config: %w", err)
 			}
 
-			console.Message(ctx, fmt.Sprintf("\nGitHub Copilot has been enabled to support this new experience."+
-				" To turn off in the future run `azd config unset %s`.", agentcopilot.ConfigKeyModelType))
+			console.Message(ctx, fmt.Sprintf(
+				"\n%s has been enabled to support this new experience."+
+					" To turn off in the future run `azd config unset %s`.",
+				agentcopilot.DisplayTitle, agentcopilot.ConfigKeyModelType))
 		}
 
 		return initWithAgent, nil

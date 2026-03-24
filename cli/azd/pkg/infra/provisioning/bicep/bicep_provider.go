@@ -30,6 +30,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/cmdsubst"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -2203,6 +2204,11 @@ func (p *BicepProvider) validatePreflight(
 // has Microsoft.Authorization/roleAssignments/write permission when the template contains
 // role assignments. The PermissionsService is resolved lazily via the service locator so it
 // is only instantiated when actually needed.
+//
+// For B2B/guest users, the principal's object ID differs between the home tenant and the
+// resource tenant. This check resolves the principal ID in the resource tenant context
+// (sub.TenantId) so that the role assignment query uses the correct identity.
+// See https://github.com/Azure/azure-dev/issues/7173 for the broader fix.
 func (p *BicepProvider) checkRoleAssignmentPermissions(
 	ctx context.Context, valCtx *validationContext,
 ) (*PreflightCheckResult, error) {
@@ -2217,14 +2223,20 @@ func (p *BicepProvider) checkRoleAssignmentPermissions(
 		return nil, nil
 	}
 
-	principalId, err := p.curPrincipal.CurrentPrincipalId(ctx)
+	subscriptionId := p.env.GetSubscriptionId()
+
+	// Resolve the principal ID in the resource tenant context rather than the user-access
+	// (home) tenant. For B2B/guest users, CurrentPrincipalId returns the home-tenant oid,
+	// which does not match the guest identity in the resource tenant. The assignedTo() role
+	// assignment filter cannot resolve cross-tenant identities, causing false positive
+	// warnings. This is a tactical fix; see #7173 for the full CurrentPrincipalId fix.
+	principalId, err := p.resolveResourceTenantPrincipalId(ctx, subscriptionId)
 	if err != nil {
 		log.Printf(
 			"could not determine current principal, skipping role assignment permission check: %v", err)
 		return nil, nil
 	}
 
-	subscriptionId := p.env.GetSubscriptionId()
 	requiredActions := []string{
 		"Microsoft.Authorization/roleAssignments/write",
 	}
@@ -2237,14 +2249,15 @@ func (p *BicepProvider) checkRoleAssignmentPermissions(
 		return nil, nil
 	}
 
-	if !hasPermission {
+	if !hasPermission.HasPermission {
 		return &PreflightCheckResult{
 			Severity: PreflightCheckWarning,
 			Message: fmt.Sprintf(
 				"the current principal (%s) does not have permission to create role assignments "+
 					"(Microsoft.Authorization/roleAssignments/write) on subscription %s. "+
 					"The deployment includes role assignments and will fail without this permission. "+
-					"Ensure you have the 'User Access Administrator', 'Owner', or a custom role with "+
+					"Ensure you have the 'Role Based Access Control Administrator', "+
+					"'User Access Administrator', 'Owner', or a custom role with "+
 					"'Microsoft.Authorization/roleAssignments/write' assigned to your account.",
 				principalId,
 				subscriptionId,
@@ -2252,7 +2265,51 @@ func (p *BicepProvider) checkRoleAssignmentPermissions(
 		}, nil
 	}
 
+	if hasPermission.Conditional {
+		return &PreflightCheckResult{
+			Severity: PreflightCheckWarning,
+			Message: fmt.Sprintf(
+				"the current principal (%s) has conditional permission to create role "+
+					"assignments (Microsoft.Authorization/roleAssignments/write) on "+
+					"subscription %s. The role assignment that grants this permission "+
+					"has an ABAC condition that may restrict which roles can be assigned. "+
+					"The deployment may fail if the condition does not permit the "+
+					"specific role assignments in the template.",
+				principalId,
+				subscriptionId,
+			),
+		}, nil
+	}
+
 	return nil, nil
+}
+
+// resolveResourceTenantPrincipalId returns the current user's object ID as seen in the
+// subscription's resource tenant. This is needed because B2B/guest users have a different
+// object ID in the resource tenant than in their home tenant. Returns an error if the
+// resource tenant principal cannot be resolved; the caller should skip the check rather
+// than fall back to the home-tenant oid (which would produce false positive warnings).
+func (p *BicepProvider) resolveResourceTenantPrincipalId(
+	ctx context.Context, subscriptionId string,
+) (string, error) {
+	sub, err := p.subscriptionManager.GetSubscription(ctx, subscriptionId)
+	if err != nil {
+		return "", fmt.Errorf("getting subscription %s: %w", subscriptionId, err)
+	}
+
+	var userProfileService *azapi.UserProfileService
+	if err := p.serviceLocator.Resolve(&userProfileService); err != nil {
+		return "", fmt.Errorf("resolving UserProfileService: %w", err)
+	}
+
+	// Call Graph /me against the resource tenant to get the guest oid.
+	principalId, err := azureutil.GetCurrentPrincipalId(ctx, userProfileService, sub.TenantId)
+	if err != nil {
+		return "", fmt.Errorf(
+			"resolving principal in resource tenant %s: %w", sub.TenantId, err)
+	}
+
+	return principalId, nil
 }
 
 // Deploys the specified Bicep module and parameters with the selected provisioning scope (subscription vs resource group)

@@ -6,6 +6,10 @@ package copilot
 // Config key constants for the copilot.* namespace in azd user configuration.
 // All keys are built from shared prefix constants so renaming any level requires a single change.
 const (
+	// DisplayTitle is the user-facing brand name for the agent experience.
+	// Change this single constant to rebrand across all UI text.
+	DisplayTitle = "GitHub Copilot"
+
 	// ConfigRoot is the root namespace for all Copilot agent configuration keys.
 	ConfigRoot = "copilot"
 
@@ -60,8 +64,9 @@ const (
 
 	// ConfigKeyErrorHandlingRoot is the root for error handling preferences.
 	ConfigKeyErrorHandlingRoot = ConfigRoot + ".errorHandling"
+	// ConfigKeyErrorHandlingCategory controls the default troubleshooting scope
+	// (explain, guidance, troubleshoot, skip).
+	ConfigKeyErrorHandlingCategory = ConfigKeyErrorHandlingRoot + ".category"
 	// ConfigKeyErrorHandlingFix controls auto-approval of agent-applied fixes.
 	ConfigKeyErrorHandlingFix = ConfigKeyErrorHandlingRoot + ".fix"
-	// ConfigKeyErrorHandlingTroubleshootSkip controls skipping error troubleshooting.
-	ConfigKeyErrorHandlingTroubleshootSkip = ConfigKeyErrorHandlingRoot + ".troubleshooting.skip"
 )

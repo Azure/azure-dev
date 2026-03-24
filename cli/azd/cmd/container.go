@@ -912,7 +912,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(func() workflow.AzdCommandRunner {
 		return &workflowCmdAdapter{
 			newCommand: func() *cobra.Command {
-				return NewRootCmd(false, nil, container)
+				return newRootCmdWithoutRegistration(container)
 			},
 			globalArgs: extractGlobalArgs(),
 		}
@@ -959,6 +959,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(grpcserver.NewServiceTargetService)
 	container.MustRegisterSingleton(grpcserver.NewFrameworkService)
 	container.MustRegisterSingleton(grpcserver.NewAiModelService)
+	container.MustRegisterScoped(grpcserver.NewCopilotService)
 
 	// Required for nested actions called from composite actions like 'up'
 	registerAction[*cmd.ProvisionAction](container, "azd-provision-action")
@@ -1006,7 +1007,9 @@ func extractGlobalArgs() []string {
 	var result []string
 	globalFlagSet.VisitAll(func(f *pflag.Flag) {
 		if f.Changed {
-			result = append(result, fmt.Sprintf("--%s", f.Name), f.Value.String())
+			// Use --flag=value syntax to avoid ambiguity. The two-arg form (--flag value)
+			// doesn't work for boolean flags, where the value is treated as a positional arg.
+			result = append(result, fmt.Sprintf("--%s=%s", f.Name, f.Value.String()))
 		}
 	})
 	return result

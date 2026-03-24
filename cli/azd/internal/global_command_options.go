@@ -18,11 +18,6 @@ type GlobalCommandOptions struct {
 	// if there is no default value the prompt returns an error.
 	NoPrompt bool
 
-	// EnvironmentName is the name of the environment to use, set via `-e` or `--environment`.
-	// This is parsed early from raw args by ParseGlobalFlags so it is available even for
-	// commands with DisableFlagParsing: true (e.g. extension commands).
-	EnvironmentName string
-
 	// EnableTelemetry indicates if telemetry should be sent.
 	// The rootCmd will disable this based if the environment variable
 	// AZURE_DEV_COLLECT_TELEMETRY is set to 'no'.

@@ -418,6 +418,12 @@ func (a *InitAction) Run(ctx context.Context) error {
 			return fmt.Errorf("configuring model choice: %w", err)
 		}
 
+		// Inject manifest resources (tool/toolbox) into the ContainerAgent tools section.
+		// The AgentSchema doesn't yet include tools on ContainerAgent, so resources
+		// defined at the manifest level need to be projected into the template so they
+		// are persisted in the local agent.yaml.
+		injectResourcesAsTools(agentManifest)
+
 		// Write the final agent.yaml to disk (after deployment names have been injected)
 		if err := writeAgentDefinitionFile(targetDir, agentManifest); err != nil {
 			return fmt.Errorf("writing agent definition: %w", err)
@@ -1057,6 +1063,53 @@ func (a *InitAction) downloadAgentYaml(
 	}
 
 	return agentManifest, targetDir, nil
+}
+
+// injectResourcesAsTools projects manifest-level tool and toolbox resources into the
+// ContainerAgent.Tools field so they are written to the local agent.yaml. This is a
+// workaround until the AgentSchema adds native tools support on ContainerAgent.
+func injectResourcesAsTools(manifest *agent_yaml.AgentManifest) {
+	if len(manifest.Resources) == 0 {
+		return
+	}
+
+	containerAgent, ok := manifest.Template.(agent_yaml.ContainerAgent)
+	if !ok {
+		return
+	}
+
+	var tools []any
+	if containerAgent.Tools != nil {
+		tools = *containerAgent.Tools
+	}
+
+	for _, resource := range manifest.Resources {
+		switch res := resource.(type) {
+		case agent_yaml.ToolboxResource:
+			entry := map[string]any{
+				"kind": string(agent_yaml.ResourceKindToolbox),
+				"id":   res.Id,
+			}
+			if res.Options != nil {
+				entry["options"] = res.Options
+			}
+			tools = append(tools, entry)
+		case agent_yaml.ToolResource:
+			entry := map[string]any{
+				"kind": string(agent_yaml.ResourceKindTool),
+				"id":   res.Id,
+			}
+			if res.Options != nil {
+				entry["options"] = res.Options
+			}
+			tools = append(tools, entry)
+		}
+	}
+
+	if len(tools) > 0 {
+		containerAgent.Tools = &tools
+		manifest.Template = containerAgent
+	}
 }
 
 // writeAgentDefinitionFile writes the agent definition to disk as agent.yaml in targetDir.

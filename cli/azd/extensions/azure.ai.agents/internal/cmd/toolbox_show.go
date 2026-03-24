@@ -85,9 +85,9 @@ type toolboxShowOutput struct {
 	MCPEndpoint string `json:"mcp_endpoint"`
 }
 
-func printToolboxShowJSON(toolset *agent_api.ToolboxObject, mcpEndpoint string) error {
+func printToolboxShowJSON(toolbox *agent_api.ToolboxObject, mcpEndpoint string) error {
 	output := toolboxShowOutput{
-		ToolboxObject: *toolset,
+		ToolboxObject: *toolbox,
 		MCPEndpoint:   mcpEndpoint,
 	}
 
@@ -99,26 +99,26 @@ func printToolboxShowJSON(toolset *agent_api.ToolboxObject, mcpEndpoint string) 
 	return nil
 }
 
-func printToolboxShowTable(toolset *agent_api.ToolboxObject, mcpEndpoint string) error {
+func printToolboxShowTable(toolbox *agent_api.ToolboxObject, mcpEndpoint string) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "FIELD\tVALUE")
 	fmt.Fprintln(w, "-----\t-----")
 
-	fmt.Fprintf(w, "Name\t%s\n", toolset.Name)
-	fmt.Fprintf(w, "ID\t%s\n", toolset.ID)
-	if toolset.Description != "" {
-		fmt.Fprintf(w, "Description\t%s\n", toolset.Description)
+	fmt.Fprintf(w, "Name\t%s\n", toolbox.Name)
+	fmt.Fprintf(w, "ID\t%s\n", toolbox.ID)
+	if toolbox.Description != "" {
+		fmt.Fprintf(w, "Description\t%s\n", toolbox.Description)
 	}
 
-	if toolset.CreatedAt > 0 {
-		fmt.Fprintf(w, "Created\t%s\n", time.Unix(toolset.CreatedAt, 0).Format(time.RFC3339))
+	if toolbox.CreatedAt > 0 {
+		fmt.Fprintf(w, "Created\t%s\n", time.Unix(toolbox.CreatedAt, 0).Format(time.RFC3339))
 	}
-	if toolset.UpdatedAt > 0 {
-		fmt.Fprintf(w, "Updated\t%s\n", time.Unix(toolset.UpdatedAt, 0).Format(time.RFC3339))
+	if toolbox.UpdatedAt > 0 {
+		fmt.Fprintf(w, "Updated\t%s\n", time.Unix(toolbox.UpdatedAt, 0).Format(time.RFC3339))
 	}
 
-	fmt.Fprintf(w, "Tools\t%d\n", len(toolset.Tools))
-	for i, raw := range toolset.Tools {
+	fmt.Fprintf(w, "Tools\t%d\n", len(toolbox.Tools))
+	for i, raw := range toolbox.Tools {
 		toolType, toolName := agent_api.ToolSummary(raw)
 		label := toolType
 		if toolName != "" {

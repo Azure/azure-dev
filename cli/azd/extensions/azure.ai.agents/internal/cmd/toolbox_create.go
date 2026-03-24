@@ -23,7 +23,7 @@ func newToolboxCreateCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create <path-to-toolbox.json>",
 		Short: "Create a toolbox in the Foundry project.",
-		Long: `Create a new toolset from a JSON payload file.
+		Long: `Create a new toolbox from a JSON payload file.
 
 The payload file must contain a JSON object with at least "name" and "tools" fields.
 If a toolbox with the same name already exists, you will be prompted to confirm
@@ -102,7 +102,7 @@ before overwriting (use --no-prompt to auto-confirm).`,
 			// Check if toolbox already exists
 			existing, err := client.GetToolbox(ctx, createReq.Name, agent_api.ToolboxAPIVersion)
 			if err == nil && existing != nil {
-				// Toolset exists — prompt for overwrite confirmation
+				// Toolbox exists — prompt for overwrite confirmation
 				if !rootFlags.NoPrompt {
 					azdClient, azdErr := azdext.NewAzdClient()
 					if azdErr != nil {
@@ -124,7 +124,7 @@ before overwriting (use --no-prompt to auto-confirm).`,
 						}
 						return fmt.Errorf("failed to prompt for confirmation: %w", promptErr)
 					}
-					if !*resp.Value {
+					if resp == nil || resp.Value == nil || !*resp.Value {
 						fmt.Println("toolbox creation cancelled.")
 						return nil
 					}
@@ -173,7 +173,7 @@ before overwriting (use --no-prompt to auto-confirm).`,
 }
 
 func printMcpEnvTip(toolboxName, mcpEndpoint string) {
-	envVar := project.ToolboxNameToEnvVar(toolboxName) + "_MCP_ENDPOINT"
+	envVar := project.ToolboxEnvVar(toolboxName)
 	fmt.Println()
 	fmt.Println(output.WithHintFormat(
 		"Hint: Store the endpoint in your azd environment so your agent code can reference it:"))

@@ -105,6 +105,7 @@ type Workflow struct {
 type ContainerAgent struct {
 	AgentDefinition      `json:",inline" yaml:",inline"`
 	Protocols            []ProtocolVersionRecord `json:"protocols" yaml:"protocols"`
+	Tools                *[]any                  `json:"tools,omitempty" yaml:"tools,omitempty"`
 	EnvironmentVariables *[]EnvironmentVariable  `json:"environmentVariables,omitempty" yaml:"environment_variables,omitempty"`
 }
 

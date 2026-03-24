@@ -242,7 +242,7 @@ func toolboxEnvUpdate(ctx context.Context, toolboxes []project.Toolbox, azdClien
 
 	for _, tb := range toolboxes {
 		mcpEndpoint := project.ToolboxMcpEndpoint(projectEndpoint, tb.Name)
-		envVar := project.ToolboxNameToEnvVar(tb.Name) + "_MCP_ENDPOINT"
+		envVar := project.ToolboxEnvVar(tb.Name)
 		if err := setEnvVar(ctx, azdClient, envName, envVar, mcpEndpoint); err != nil {
 			return err
 		}

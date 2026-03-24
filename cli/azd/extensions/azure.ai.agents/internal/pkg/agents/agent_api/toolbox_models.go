@@ -5,13 +5,13 @@ package agent_api
 
 import "encoding/json"
 
-// ToolboxAPIVersion is the API version for toolset operations.
+// ToolboxAPIVersion is the API version for toolbox operations.
 const ToolboxAPIVersion = "v1"
 
-// ToolboxFeatureHeader is the required preview feature flag header for toolset operations.
+// ToolboxFeatureHeader is the required preview feature flag header for toolbox operations.
 const ToolboxFeatureHeader = "Toolsets=V1Preview"
 
-// ToolboxObject represents a toolset returned by the Foundry Toolsets API.
+// ToolboxObject represents a toolbox returned by the Foundry Toolboxes API.
 type ToolboxObject struct {
 	Object      string            `json:"object"`
 	ID          string            `json:"id"`
@@ -23,19 +23,19 @@ type ToolboxObject struct {
 	Tools       []json.RawMessage `json:"tools"`
 }
 
-// ToolboxList represents the paginated list response from the Toolsets API.
+// ToolboxList represents the paginated list response from the Toolboxes API.
 type ToolboxList struct {
 	Data []ToolboxObject `json:"data"`
 }
 
-// DeleteToolboxResponse represents the response from deleting a toolset.
+// DeleteToolboxResponse represents the response from deleting a toolbox.
 type DeleteToolboxResponse struct {
 	Object  string `json:"object"`
 	Name    string `json:"name"`
 	Deleted bool   `json:"deleted"`
 }
 
-// CreateToolboxRequest represents the request body for creating a toolset.
+// CreateToolboxRequest represents the request body for creating a toolbox.
 type CreateToolboxRequest struct {
 	Name        string            `json:"name"`
 	Description string            `json:"description,omitempty"`
@@ -43,7 +43,7 @@ type CreateToolboxRequest struct {
 	Tools       []json.RawMessage `json:"tools"`
 }
 
-// UpdateToolboxRequest represents the request body for updating a toolset.
+// UpdateToolboxRequest represents the request body for updating a toolbox.
 type UpdateToolboxRequest struct {
 	Description string            `json:"description,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"`

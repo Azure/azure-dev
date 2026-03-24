@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"azureaiagent/internal/pkg/agents/agent_yaml"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
@@ -393,4 +395,91 @@ func TestParseGitHubUrlNaive(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestInjectResourcesAsTools(t *testing.T) {
+	t.Parallel()
+
+	t.Run("toolbox resources become tools", func(t *testing.T) {
+		manifest := &agent_yaml.AgentManifest{
+			Template: agent_yaml.ContainerAgent{
+				AgentDefinition: agent_yaml.AgentDefinition{
+					Kind: agent_yaml.AgentKindHosted,
+					Name: "test-agent",
+				},
+				Protocols: []agent_yaml.ProtocolVersionRecord{
+					{Protocol: "responses", Version: "v1"},
+				},
+			},
+			Resources: []any{
+				agent_yaml.ToolboxResource{
+					Resource: agent_yaml.Resource{Kind: agent_yaml.ResourceKindToolbox},
+					Id:       "echo-github-toolset",
+					Options: map[string]any{
+						"description": "GitHub tools",
+					},
+				},
+			},
+		}
+
+		injectResourcesAsTools(manifest)
+
+		ca := manifest.Template.(agent_yaml.ContainerAgent)
+		if ca.Tools == nil {
+			t.Fatal("Expected tools to be injected, got nil")
+		}
+		if len(*ca.Tools) != 1 {
+			t.Fatalf("Expected 1 tool, got %d", len(*ca.Tools))
+		}
+
+		tool := (*ca.Tools)[0].(map[string]any)
+		if tool["kind"] != "toolbox" {
+			t.Errorf("Expected kind 'toolbox', got %v", tool["kind"])
+		}
+		if tool["id"] != "echo-github-toolset" {
+			t.Errorf("Expected id 'echo-github-toolset', got %v", tool["id"])
+		}
+		opts := tool["options"].(map[string]any)
+		if opts["description"] != "GitHub tools" {
+			t.Errorf("Expected description 'GitHub tools', got %v", opts["description"])
+		}
+	})
+
+	t.Run("no resources is a no-op", func(t *testing.T) {
+		manifest := &agent_yaml.AgentManifest{
+			Template: agent_yaml.ContainerAgent{
+				AgentDefinition: agent_yaml.AgentDefinition{Kind: agent_yaml.AgentKindHosted, Name: "a"},
+			},
+		}
+
+		injectResourcesAsTools(manifest)
+
+		ca := manifest.Template.(agent_yaml.ContainerAgent)
+		if ca.Tools != nil {
+			t.Errorf("Expected nil tools, got %v", ca.Tools)
+		}
+	})
+
+	t.Run("preserves existing template tools", func(t *testing.T) {
+		existing := []any{map[string]any{"kind": "mcp", "id": "existing-tool"}}
+		manifest := &agent_yaml.AgentManifest{
+			Template: agent_yaml.ContainerAgent{
+				AgentDefinition: agent_yaml.AgentDefinition{Kind: agent_yaml.AgentKindHosted, Name: "a"},
+				Tools:           &existing,
+			},
+			Resources: []any{
+				agent_yaml.ToolboxResource{
+					Resource: agent_yaml.Resource{Kind: agent_yaml.ResourceKindToolbox},
+					Id:       "new-toolbox",
+				},
+			},
+		}
+
+		injectResourcesAsTools(manifest)
+
+		ca := manifest.Template.(agent_yaml.ContainerAgent)
+		if len(*ca.Tools) != 2 {
+			t.Fatalf("Expected 2 tools (1 existing + 1 injected), got %d", len(*ca.Tools))
+		}
+	})
 }

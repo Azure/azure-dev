@@ -40,6 +40,53 @@ template:
 	}
 }
 
+// TestExtractAgentDefinition_WithTools tests that tools in the template are preserved during parsing
+func TestExtractAgentDefinition_WithTools(t *testing.T) {
+	yamlContent := []byte(`
+name: test-manifest
+template:
+  kind: hosted
+  name: test-agent
+  protocols:
+    - protocol: responses
+      version: v1
+  tools:
+    - type: toolbox
+      toolbox_name: echo-github-toolset
+`)
+
+	agent, err := ExtractAgentDefinition(yamlContent)
+	if err != nil {
+		t.Fatalf("ExtractAgentDefinition failed: %v", err)
+	}
+
+	containerAgent, ok := agent.(ContainerAgent)
+	if !ok {
+		t.Fatalf("Expected ContainerAgent, got %T", agent)
+	}
+
+	if containerAgent.Tools == nil {
+		t.Fatal("Expected tools to be present, got nil")
+	}
+
+	if len(*containerAgent.Tools) != 1 {
+		t.Fatalf("Expected 1 tool, got %d", len(*containerAgent.Tools))
+	}
+
+	tool, ok := (*containerAgent.Tools)[0].(map[string]any)
+	if !ok {
+		t.Fatalf("Expected tool to be map[string]any, got %T", (*containerAgent.Tools)[0])
+	}
+
+	if tool["type"] != "toolbox" {
+		t.Errorf("Expected tool type 'toolbox', got '%v'", tool["type"])
+	}
+
+	if tool["toolbox_name"] != "echo-github-toolset" {
+		t.Errorf("Expected toolbox_name 'echo-github-toolset', got '%v'", tool["toolbox_name"])
+	}
+}
+
 // TestExtractAgentDefinition_EmptyTemplateField tests that an empty or null template field returns an error
 func TestExtractAgentDefinition_EmptyTemplateField(t *testing.T) {
 	testCases := []struct {

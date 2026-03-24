@@ -102,6 +102,26 @@ func TestToolboxNameToEnvVar(t *testing.T) {
 	}
 }
 
+func TestToolboxEnvVar(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"simple", "my-toolbox", "FOUNDRY_TOOLBOX__MY_TOOLBOX__ENDPOINT"},
+		{"echo github toolset", "echo-github-toolset", "FOUNDRY_TOOLBOX__ECHO_GITHUB_TOOLSET__ENDPOINT"},
+		{"already upper", "MY_TOOLBOX", "FOUNDRY_TOOLBOX__MY_TOOLBOX__ENDPOINT"},
+		{"empty name", "", "FOUNDRY_TOOLBOX____ENDPOINT"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := project.ToolboxEnvVar(tt.in)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestPrintToolboxListTable_Empty(t *testing.T) {
 	list := &agent_api.ToolboxList{}
 	err := printToolboxListTable(t.Context(), list)

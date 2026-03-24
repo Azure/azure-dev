@@ -66,7 +66,7 @@ You will be prompted to confirm before deleting (use --no-prompt to auto-confirm
 					}
 					return fmt.Errorf("failed to prompt for confirmation: %w", promptErr)
 				}
-				if !*resp.Value {
+				if resp == nil || resp.Value == nil || !*resp.Value {
 					fmt.Println("toolbox deletion cancelled.")
 					return nil
 				}

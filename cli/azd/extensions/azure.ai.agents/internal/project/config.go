@@ -133,6 +133,12 @@ func ToolboxNameToEnvVar(name string) string {
 	return b.String()
 }
 
+// ToolboxEnvVar returns the full environment variable name for a toolbox's MCP endpoint.
+// The format is FOUNDRY_TOOLBOX__<SANITIZED_NAME>__ENDPOINT.
+func ToolboxEnvVar(name string) string {
+	return "FOUNDRY_TOOLBOX__" + ToolboxNameToEnvVar(name) + "__ENDPOINT"
+}
+
 // ToolboxMcpEndpoint returns the MCP endpoint URL for a toolbox.
 func ToolboxMcpEndpoint(projectEndpoint, toolboxName string) string {
 	return fmt.Sprintf("%s/toolsets/%s/mcp", projectEndpoint, toolboxName)

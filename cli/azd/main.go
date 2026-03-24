@@ -7,7 +7,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -16,7 +15,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
-	"syscall"
 	"time"
 
 	azcorelog "github.com/Azure/azure-sdk-for-go/sdk/azcore/log"
@@ -411,30 +409,30 @@ func platformUpgradeText() string {
 // reExec replaces the current process with the binary at the given path,
 // passing the same arguments. On Unix, this uses syscall.Exec to replace
 // the process in-place. On Windows, it spawns a new process and exits.
-func reExec(binaryPath string) error {
-	args := os.Args
-	args[0] = binaryPath
+// func reExec(binaryPath string) error {
+// 	args := os.Args
+// 	args[0] = binaryPath
 
-	if runtime.GOOS == "windows" {
-		// Windows doesn't support exec-style process replacement.
-		// Spawn the new binary and exit.
-		// #nosec G204 -- binaryPath is the staged azd binary we just verified
-		cmd := exec.Command(binaryPath, args[1:]...) //nolint:gosec
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			var exitErr *exec.ExitError
-			if errors.As(err, &exitErr) {
-				os.Exit(exitErr.ExitCode())
-			}
-			return err
-		}
-		os.Exit(0)
-	}
+// 	if runtime.GOOS == "windows" {
+// 		// Windows doesn't support exec-style process replacement.
+// 		// Spawn the new binary and exit.
+// 		// #nosec G204 -- binaryPath is the staged azd binary we just verified
+// 		cmd := exec.Command(binaryPath, args[1:]...) //nolint:gosec
+// 		cmd.Stdin = os.Stdin
+// 		cmd.Stdout = os.Stdout
+// 		cmd.Stderr = os.Stderr
+// 		if err := cmd.Run(); err != nil {
+// 			var exitErr *exec.ExitError
+// 			if errors.As(err, &exitErr) {
+// 				os.Exit(exitErr.ExitCode())
+// 			}
+// 			return err
+// 		}
+// 		os.Exit(0)
+// 	}
 
-	return syscall.Exec(binaryPath, args, os.Environ()) //nolint:gosec
-}
+// 	return syscall.Exec(binaryPath, args, os.Environ()) //nolint:gosec
+// }
 
 func startBackgroundUploadProcess() error {
 	// The background upload process executable is ourself

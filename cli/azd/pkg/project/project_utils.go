@@ -84,6 +84,11 @@ func createDeployableZip(svc *ServiceConfig, root string) (string, error) {
 				}
 			} else if svc.Language == ServiceLanguageJavaScript || svc.Language == ServiceLanguageTypeScript {
 				if name == "node_modules" && isDir {
+					if svc.RemoteBuild != nil && !*svc.RemoteBuild {
+						// if remote build is false, we do not exclude node_modules by default
+						return true, nil
+					}
+
 					return false, nil
 				}
 			}

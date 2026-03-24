@@ -32,6 +32,7 @@ func newJobCommand() *cobra.Command {
 	cmd.AddCommand(newJobListCommand())
 	cmd.AddCommand(newJobSubmitCommand())
 	cmd.AddCommand(newJobShowCommand())
+	cmd.AddCommand(newJobDeleteCommand())
 
 	return cmd
 }

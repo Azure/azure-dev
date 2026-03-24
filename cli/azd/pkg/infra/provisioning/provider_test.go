@@ -4,6 +4,7 @@
 package provisioning
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -262,6 +263,37 @@ func TestOptions_GetWithDefaults(t *testing.T) {
 	}
 }
 
+func TestOptions_AbsolutePath(t *testing.T) {
+	projectPath := filepath.Join(string(filepath.Separator), "tmp", "project")
+
+	tests := []struct {
+		name     string
+		options  Options
+		expected string
+	}{
+		{
+			name: "resolves relative path against project path",
+			options: Options{
+				Path: filepath.Join("infra", "core"),
+			},
+			expected: filepath.Join(projectPath, "infra", "core"),
+		},
+		{
+			name: "keeps absolute path",
+			options: Options{
+				Path: filepath.Join(string(filepath.Separator), "shared", "infra"),
+			},
+			expected: filepath.Join(string(filepath.Separator), "shared", "infra"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, tt.options.AbsolutePath(projectPath))
+		})
+	}
+}
+
 func TestOptions_GetWithDefaults_MergePrecedence(t *testing.T) {
 	// Save original defaultOptions and restore after tests
 	originalDefaults := defaultOptions
@@ -351,5 +383,81 @@ func TestOptions_GetWithDefaults_EmptyVariations(t *testing.T) {
 		assert.Equal(t, Arm, result.Provider)
 		assert.Equal(t, "main", result.Module)
 		assert.Equal(t, "infra", result.Path)
+	})
+}
+
+func TestOptions_Validate_Hooks(t *testing.T) {
+	t.Run("valid layer hooks", func(t *testing.T) {
+		err := (&Options{
+			Layers: []Options{
+				{
+					Name: "infra-core",
+					Path: "infra/core",
+					Hooks: HooksConfig{
+						"preprovision": {
+							{Run: "echo pre"},
+						},
+						"postprovision": {
+							{Run: "echo post"},
+						},
+					},
+				},
+			},
+		}).Validate()
+
+		require.NoError(t, err)
+	})
+
+	t.Run("invalid layer hook event", func(t *testing.T) {
+		err := (&Options{
+			Layers: []Options{
+				{
+					Name: "infra-core",
+					Path: "infra/core",
+					Hooks: HooksConfig{
+						"predeploy": {
+							{Run: "echo pre"},
+						},
+					},
+				},
+			},
+		}).Validate()
+
+		require.Error(t, err)
+		require.ErrorContains(t, err, "only 'preprovision' and 'postprovision' hooks are supported")
+	})
+
+	t.Run("layers cannot be mixed with root hooks", func(t *testing.T) {
+		err := (&Options{
+			Path: "infra",
+			Hooks: HooksConfig{
+				"preprovision": {
+					{Run: "echo root"},
+				},
+			},
+			Layers: []Options{
+				{
+					Name: "infra-core",
+					Path: "infra/core",
+				},
+			},
+		}).Validate()
+
+		require.Error(t, err)
+		require.ErrorContains(t, err, "'hooks' can only be declared under 'infra.layers[]'")
+	})
+
+	t.Run("root infra hooks are not allowed", func(t *testing.T) {
+		err := (&Options{
+			Path: "infra",
+			Hooks: HooksConfig{
+				"preprovision": {
+					{Run: "echo root"},
+				},
+			},
+		}).Validate()
+
+		require.Error(t, err)
+		require.ErrorContains(t, err, "'hooks' can only be declared under 'infra.layers[]'")
 	})
 }

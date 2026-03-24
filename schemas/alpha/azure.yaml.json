@@ -93,9 +93,27 @@
                                 "title": "Name of the default module within the Azure provisioning templates",
                                 "description": "Optional. The name of the Azure provisioning module used when provisioning resources. (Default: main)"
                             },
-                             "deploymentStacks": {
-                                 "$ref": "#/definitions/deploymentStacksConfig"
-                             }
+                            "hooks": {
+                                "type": "object",
+                                "title": "Provisioning layer hooks",
+                                "description": "Hooks should match `provision` event names prefixed with `pre` or `post` depending on when the script should execute. When specifying paths they should be relative to the layer path.",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "preprovision": {
+                                        "title": "pre provision hook",
+                                        "description": "Runs before provisioning the layer",
+                                        "$ref": "#/definitions/hooks"
+                                    },
+                                    "postprovision": {
+                                        "title": "post provision hook",
+                                        "description": "Runs after provisioning the layer",
+                                        "$ref": "#/definitions/hooks"
+                                    }
+                                }
+                            },
+                            "deploymentStacks": {
+                                "$ref": "#/definitions/deploymentStacksConfig"
+                            }
                         }
                     },
                     "allOf": [
@@ -137,7 +155,9 @@
                 },
                 {
                     "if": {
-                        "required": ["layers"],
+                        "required": [
+                            "layers"
+                        ],
                         "properties": {
                             "layers": {
                                 "type": "array",
@@ -325,18 +345,32 @@
                         "comment": "ContainerApp host - supports image OR project, docker config, and apiVersion",
                         "if": {
                             "properties": {
-                                "host": { "const": "containerapp" }
+                                "host": {
+                                    "const": "containerapp"
+                                }
                             }
                         },
                         "then": {
                             "anyOf": [
                                 {
-                                    "required": ["image"],
-                                    "not": { "required": ["project"] }
+                                    "required": [
+                                        "image"
+                                    ],
+                                    "not": {
+                                        "required": [
+                                            "project"
+                                        ]
+                                    }
                                 },
                                 {
-                                    "required": ["project"],
-                                    "not": { "required": ["image"] }
+                                    "required": [
+                                        "project"
+                                    ],
+                                    "not": {
+                                        "required": [
+                                            "image"
+                                        ]
+                                    }
                                 }
                             ],
                             "properties": {
@@ -348,7 +382,9 @@
                         "comment": "AKS host - project is optional, supports docker and k8s config",
                         "if": {
                             "properties": {
-                                "host": { "const": "aks" }
+                                "host": {
+                                    "const": "aks"
+                                }
                             }
                         },
                         "then": {
@@ -363,11 +399,16 @@
                         "comment": "AI Endpoint host - requires project and config, supports docker",
                         "if": {
                             "properties": {
-                                "host": { "const": "ai.endpoint" }
+                                "host": {
+                                    "const": "ai.endpoint"
+                                }
                             }
                         },
                         "then": {
-                            "required": ["project", "config"],
+                            "required": [
+                                "project",
+                                "config"
+                            ],
                             "properties": {
                                 "config": {
                                     "$ref": "#/definitions/aiEndpointConfig",
@@ -385,11 +426,15 @@
                         "comment": "Azure AI Agent host - requires project, supports docker and config",
                         "if": {
                             "properties": {
-                                "host": { "const": "azure.ai.agent" }
+                                "host": {
+                                    "const": "azure.ai.agent"
+                                }
                             }
                         },
                         "then": {
-                            "required": ["project"],
+                            "required": [
+                                "project"
+                            ],
                             "properties": {
                                 "config": {
                                     "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/azure.ai.agents/schemas/azure.ai.agent.json",
@@ -407,11 +452,20 @@
                         "comment": "Traditional hosts - require project only, disable container-specific properties",
                         "if": {
                             "properties": {
-                                "host": { "enum": ["appservice", "function", "springapp", "staticwebapp"] }
+                                "host": {
+                                    "enum": [
+                                        "appservice",
+                                        "function",
+                                        "springapp",
+                                        "staticwebapp"
+                                    ]
+                                }
                             }
                         },
                         "then": {
-                            "required": ["project"],
+                            "required": [
+                                "project"
+                            ],
                             "properties": {
                                 "image": false,
                                 "docker": false,
@@ -425,7 +479,11 @@
                         "comment": "remoteBuild is only valid for function host",
                         "if": {
                             "properties": {
-                                "host": { "not": { "const": "function" } }
+                                "host": {
+                                    "not": {
+                                        "const": "function"
+                                    }
+                                }
                             }
                         },
                         "then": {
@@ -482,20 +540,174 @@
                     }
                 },
                 "allOf": [
-                    { "if": { "properties": { "type": { "const": "host.appservice" } } }, "then": { "$ref": "#/definitions/appServiceResource" } },
-                    { "if": { "properties": { "type": { "const": "host.containerapp" }}}, "then": { "$ref": "#/definitions/containerAppResource" } },
-                    { "if": { "properties": { "type": { "const": "ai.openai.model" }}}, "then": { "$ref": "#/definitions/aiModelResource" } },
-                    { "if": { "properties": { "type": { "const": "ai.project" }}}, "then": { "$ref": "#/definitions/aiProjectResource" } },
-                    { "if": { "properties": { "type": { "const": "ai.search" }}}, "then": { "$ref": "#/definitions/aiSearchResource" } },
-                    { "if": { "properties": { "type": { "const": "db.postgres"  }}}, "then": { "$ref": "#/definitions/genericDbResource"} },
-                    { "if": { "properties": { "type": { "const": "db.mysql"  }}}, "then": { "$ref": "#/definitions/genericDbResource"} },
-                    { "if": { "properties": { "type": { "const": "db.redis"  }}}, "then": { "$ref": "#/definitions/genericDbResource"} },
-                    { "if": { "properties": { "type": { "const": "db.mongo"  }}}, "then": { "$ref": "#/definitions/genericDbResource"} },
-                    { "if": { "properties": { "type": { "const": "db.cosmos" }}}, "then": { "$ref": "#/definitions/cosmosDbResource"} },
-                    { "if": { "properties": { "type": { "const": "messaging.eventhubs" }}}, "then": { "$ref": "#/definitions/eventHubsResource" } },
-                    { "if": { "properties": { "type": { "const": "messaging.servicebus" }}}, "then": { "$ref": "#/definitions/serviceBusResource" } },
-                    { "if": { "properties": { "type": { "const": "storage"  }}}, "then": { "$ref": "#/definitions/storageAccountResource"} },
-                    { "if": { "properties": { "type": { "const": "keyvault" }}}, "then": { "$ref": "#/definitions/keyVaultResource"} }
+                    {
+                        "if": {
+                            "properties": {
+                                "type": {
+                                    "const": "host.appservice"
+                                }
+                            }
+                        },
+                        "then": {
+                            "$ref": "#/definitions/appServiceResource"
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "type": {
+                                    "const": "host.containerapp"
+                                }
+                            }
+                        },
+                        "then": {
+                            "$ref": "#/definitions/containerAppResource"
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "type": {
+                                    "const": "ai.openai.model"
+                                }
+                            }
+                        },
+                        "then": {
+                            "$ref": "#/definitions/aiModelResource"
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "type": {
+                                    "const": "ai.project"
+                                }
+                            }
+                        },
+                        "then": {
+                            "$ref": "#/definitions/aiProjectResource"
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "type": {
+                                    "const": "ai.search"
+                                }
+                            }
+                        },
+                        "then": {
+                            "$ref": "#/definitions/aiSearchResource"
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "type": {
+                                    "const": "db.postgres"
+                                }
+                            }
+                        },
+                        "then": {
+                            "$ref": "#/definitions/genericDbResource"
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "type": {
+                                    "const": "db.mysql"
+                                }
+                            }
+                        },
+                        "then": {
+                            "$ref": "#/definitions/genericDbResource"
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "type": {
+                                    "const": "db.redis"
+                                }
+                            }
+                        },
+                        "then": {
+                            "$ref": "#/definitions/genericDbResource"
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "type": {
+                                    "const": "db.mongo"
+                                }
+                            }
+                        },
+                        "then": {
+                            "$ref": "#/definitions/genericDbResource"
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "type": {
+                                    "const": "db.cosmos"
+                                }
+                            }
+                        },
+                        "then": {
+                            "$ref": "#/definitions/cosmosDbResource"
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "type": {
+                                    "const": "messaging.eventhubs"
+                                }
+                            }
+                        },
+                        "then": {
+                            "$ref": "#/definitions/eventHubsResource"
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "type": {
+                                    "const": "messaging.servicebus"
+                                }
+                            }
+                        },
+                        "then": {
+                            "$ref": "#/definitions/serviceBusResource"
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "type": {
+                                    "const": "storage"
+                                }
+                            }
+                        },
+                        "then": {
+                            "$ref": "#/definitions/storageAccountResource"
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "type": {
+                                    "const": "keyvault"
+                                }
+                            }
+                        },
+                        "then": {
+                            "$ref": "#/definitions/keyVaultResource"
+                        }
+                    }
                 ]
             }
         },
@@ -1626,7 +1838,12 @@
                     "items": {
                         "type": "object",
                         "additionalProperties": false,
-                        "required": ["name", "version", "format", "sku"],
+                        "required": [
+                            "name",
+                            "version",
+                            "format",
+                            "sku"
+                        ],
                         "properties": {
                             "name": {
                                 "type": "string",
@@ -1648,7 +1865,11 @@
                                 "title": "The SKU configuration for the AI model.",
                                 "description": "Required. The SKU details for the AI model.",
                                 "additionalProperties": false,
-                                "required": ["name", "usageName", "capacity"],
+                                "required": [
+                                    "name",
+                                    "usageName",
+                                    "capacity"
+                                ],
                                 "properties": {
                                     "name": {
                                         "type": "string",

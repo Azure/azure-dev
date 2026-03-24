@@ -6,11 +6,13 @@ package provisioning
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"dario.cat/mergo"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 )
 
 type ProviderKind string
@@ -39,6 +41,7 @@ type Options struct {
 	Path             string         `yaml:"path,omitempty"`
 	Module           string         `yaml:"module,omitempty"`
 	Name             string         `yaml:"name,omitempty"`
+	Hooks            HooksConfig    `yaml:"hooks,omitempty"`
 	DeploymentStacks map[string]any `yaml:"deploymentStacks,omitempty"`
 	// Provisioning options for each individually defined layer.
 	Layers []Options `yaml:"layers,omitempty"`
@@ -50,6 +53,9 @@ type Options struct {
 	// The mode in which the deployment is being run.
 	Mode Mode `yaml:"-"`
 }
+
+// HooksConfig aliases ext.HooksConfig for compatibility with existing provisioning package references.
+type HooksConfig = ext.HooksConfig
 
 // GetWithDefaults merges the provided infra options with the default provisioning options
 func (o Options) GetWithDefaults(other ...Options) (Options, error) {
@@ -73,6 +79,15 @@ func (o Options) GetWithDefaults(other ...Options) (Options, error) {
 	}
 
 	return mergedOptions, nil
+}
+
+// AbsolutePath returns the layer path resolved against the project path when needed.
+func (o Options) AbsolutePath(projectPath string) string {
+	if filepath.IsAbs(o.Path) {
+		return filepath.Clean(o.Path)
+	}
+
+	return filepath.Join(projectPath, o.Path)
 }
 
 // GetLayers return the provisioning layers defined.
@@ -121,7 +136,24 @@ func (o *Options) Validate() error {
 	}
 
 	anyIncompatibleFieldsSet := func() bool {
-		return o.Name != "" || o.Module != "" || o.Path != "" || o.DeploymentStacks != nil
+		return o.Name != "" || o.Module != "" || o.Path != "" || len(o.Hooks) > 0 || o.DeploymentStacks != nil
+	}
+
+	validateHooks := func(scope string, hooks HooksConfig) error {
+		for hookName := range hooks {
+			hookType, eventName := ext.InferHookType(hookName)
+			if hookType == ext.HookTypeNone || eventName != "provision" {
+				return errWrap(
+					fmt.Sprintf("%s: only 'preprovision' and 'postprovision' hooks are supported", scope),
+				)
+			}
+		}
+
+		return nil
+	}
+
+	if len(o.Hooks) > 0 {
+		return errWrap("'hooks' can only be declared under 'infra.layers[]'")
 	}
 
 	if len(o.Layers) > 0 && anyIncompatibleFieldsSet() {
@@ -136,6 +168,10 @@ func (o *Options) Validate() error {
 
 		if layer.Path == "" {
 			return errWrap(fmt.Sprintf("%s: path must be specified", layer.Name))
+		}
+
+		if err := validateHooks(layer.Name, layer.Hooks); err != nil {
+			return err
 		}
 	}
 

@@ -54,7 +54,7 @@ func newHooksRunFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions)
 func newHooksRunCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "run <name>",
-		Short: "Runs the specified hook for the project and services",
+		Short: "Runs the specified hook for the project, infrastructure layers, and services",
 		Args:  cobra.ExactArgs(1),
 	}
 }
@@ -62,6 +62,7 @@ func newHooksRunCmd() *cobra.Command {
 type hooksRunFlags struct {
 	internal.EnvFlag
 	global   *internal.GlobalCommandOptions
+	layer    string
 	platform string
 	service  string
 }
@@ -70,6 +71,7 @@ func (f *hooksRunFlags) Bind(local *pflag.FlagSet, global *internal.GlobalComman
 	f.EnvFlag.Bind(local, global)
 	f.global = global
 
+	local.StringVar(&f.layer, "layer", "", "Only runs hooks for the specified infrastructure layer.")
 	local.StringVar(&f.platform, "platform", "", "Forces hooks to run for the specified platform.")
 	local.StringVar(&f.service, "service", "", "Only runs hooks for the specified service.")
 }
@@ -114,6 +116,7 @@ type hookContextType string
 
 const (
 	hookContextProject hookContextType = "command"
+	hookContextLayer   hookContextType = "layer"
 	hookContextService hookContextType = "service"
 )
 
@@ -184,6 +187,12 @@ func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		}
 	}
 
+	if hra.flags.layer != "" {
+		if _, err := hra.projectConfig.Infra.GetLayer(hra.flags.layer); err != nil {
+			return nil, err
+		}
+	}
+
 	// Project level hooks
 	projectHooks := hra.projectConfig.Hooks[hookName]
 
@@ -204,6 +213,24 @@ func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		return nil, err
 	}
 
+	for _, layer := range hra.projectConfig.Infra.Layers {
+		layerPath := layer.AbsolutePath(hra.projectConfig.Path)
+
+		skip := hra.flags.layer != "" && layer.Name != hra.flags.layer
+
+		hra.console.Message(ctx, "\n"+output.WithHighLightFormat(fmt.Sprintf("Layer: %s", layer.Name)))
+		if err := hra.processHooks(
+			ctx,
+			layerPath,
+			hookName,
+			layer.Hooks[hookName],
+			hookContextLayer,
+			skip,
+		); err != nil {
+			return nil, err
+		}
+	}
+
 	// Service level hooks
 	for _, service := range stableServices {
 		serviceHooks := service.Hooks[hookName]
@@ -212,7 +239,7 @@ func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		hra.console.Message(ctx, "\n"+output.WithHighLightFormat(service.Name))
 		if err := hra.processHooks(
 			ctx,
-			service.RelativePath,
+			service.Path(),
 			hookName,
 			serviceHooks,
 			hookContextService,
@@ -246,7 +273,7 @@ func (hra *hooksRunAction) processHooks(
 		// When skipping, show individual skip messages for each hook that would have run
 		for i := range hooks {
 			hra.console.MessageUxItem(ctx, &ux.SkippedMessage{
-				Message: fmt.Sprintf("service hook %d/%d", i+1, len(hooks)),
+				Message: fmt.Sprintf("%s hook %d/%d", contextType, i+1, len(hooks)),
 			})
 		}
 
@@ -327,6 +354,13 @@ func (hra *hooksRunAction) validateAndWarnHooks(ctx context.Context) error {
 			for hookName, hookConfigs := range service.Hooks {
 				allHooks[hookName] = append(allHooks[hookName], hookConfigs...)
 			}
+		}
+	}
+
+	// Add layer hooks
+	for _, layer := range hra.projectConfig.Infra.Layers {
+		for hookName, hookConfigs := range layer.Hooks {
+			allHooks[hookName] = append(allHooks[hookName], hookConfigs...)
 		}
 	}
 

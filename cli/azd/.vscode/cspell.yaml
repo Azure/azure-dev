@@ -92,6 +92,9 @@ dictionaryDefinitions:
 dictionaries:
   - azdProjectDictionary
 overrides:
+  - filename: cmd/mcp.go
+    words:
+      - internalcmd
   - filename: internal/tracing/fields/domains.go
     words:
       - azmk

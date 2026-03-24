@@ -24,6 +24,11 @@
       "description": "List of external resources for agent execution.",
       "items": { "$ref": "#/definitions/Resource" }
     },
+    "toolboxes": {
+      "type": "array",
+      "description": "List of toolboxes (Foundry Toolsets) to deploy.",
+      "items": { "$ref": "#/definitions/Toolbox" }
+    },
     "startupCommand": {
       "type": "string",
       "description": "Command to start the agent server (e.g., 'python main.py'). Used by 'azd ai agent run' for local development."
@@ -118,6 +123,21 @@
         "connectionName": { "type": "string", "description": "Connection name for the resource." }
       },
       "required": ["resource", "connectionName"],
+      "additionalProperties": false
+    },
+    "Toolbox": {
+      "type": "object",
+      "description": "A reusable collection of tools deployed as a Foundry Toolset.",
+      "properties": {
+        "name": { "type": "string", "description": "Name of the toolbox." },
+        "description": { "type": "string", "description": "Description of the toolbox." },
+        "tools": {
+          "type": "array",
+          "description": "List of tools in the toolbox. Each tool is an object with properties passed to the Foundry Toolsets API.",
+          "items": { "type": "object" }
+        }
+      },
+      "required": ["name", "tools"],
       "additionalProperties": false
     }
   }

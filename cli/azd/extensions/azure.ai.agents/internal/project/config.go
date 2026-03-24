@@ -48,6 +48,7 @@ type ServiceTargetAgentConfig struct {
 	Container      *ContainerSettings `json:"container,omitempty"`
 	Deployments    []Deployment       `json:"deployments,omitempty"`
 	Resources      []Resource         `json:"resources,omitempty"`
+	Toolboxes      []Toolbox          `json:"toolboxes,omitempty"`
 	StartupCommand string             `json:"startupCommand,omitempty"`
 }
 
@@ -106,6 +107,13 @@ type DeploymentSku struct {
 type Resource struct {
 	Resource       string `json:"resource"`
 	ConnectionName string `json:"connectionName"`
+}
+
+// Toolbox represents a reusable collection of tools deployed as a Foundry Toolset
+type Toolbox struct {
+	Name        string           `json:"name"`
+	Description string           `json:"description,omitempty"`
+	Tools       []map[string]any `json:"tools"`
 }
 
 // UnmarshalStruct converts a structpb.Struct to a Go struct of type T

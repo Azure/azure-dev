@@ -31,8 +31,9 @@ func ValidAgentKinds() []AgentKind {
 type ResourceKind string
 
 const (
-	ResourceKindModel ResourceKind = "model"
-	ResourceKindTool  ResourceKind = "tool"
+	ResourceKindModel   ResourceKind = "model"
+	ResourceKindTool    ResourceKind = "tool"
+	ResourceKindToolbox ResourceKind = "toolbox"
 )
 
 type ToolKind string
@@ -300,6 +301,14 @@ type ModelResource struct {
 
 // ToolResource Represents a tool resource required by the agent
 type ToolResource struct {
+	Resource `json:",inline" yaml:",inline"`
+	Id       string         `json:"id" yaml:"id"`
+	Options  map[string]any `json:"options" yaml:"options"`
+}
+
+// ToolboxResource Represents a toolbox resource required by the agent.
+// A toolbox is a reusable collection of tools that can be deployed as a Foundry Toolset.
+type ToolboxResource struct {
 	Resource `json:",inline" yaml:",inline"`
 	Id       string         `json:"id" yaml:"id"`
 	Options  map[string]any `json:"options" yaml:"options"`

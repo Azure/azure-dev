@@ -5,7 +5,6 @@
 ### Bugs Fixed
 
 - [[#7274]](https://github.com/Azure/azure-dev/pull/7274) Revert env-flag change from v1.23.11 to fix regression where the `-e` shorthand for `--environment` conflicted with extension commands that use `-e` for their own flags (e.g., `--project-endpoint` in `azure.ai.models` and `azure.ai.finetune`), restoring compatibility with those extensions.
-- [[#7232]](https://github.com/Azure/azure-dev/pull/7232) Fix `azd update` reliability on Windows by using SHA-256 hash comparison instead of file metadata checks to accurately detect whether an MSI-based update changed the binary.
 
 ### Other Changes
 

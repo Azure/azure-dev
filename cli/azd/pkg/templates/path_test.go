@@ -198,6 +198,102 @@ func Test_Absolute_OwnerRepoResolvesToGitHub(t *testing.T) {
 	require.Equal(t, "https://github.com/owner/repo", result)
 }
 
+func Test_DeriveDirectoryName(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "BareRepoName",
+			input:    "todo-nodejs-mongo",
+			expected: "todo-nodejs-mongo",
+		},
+		{
+			name:     "OwnerRepo",
+			input:    "Azure-Samples/todo-nodejs-mongo",
+			expected: "todo-nodejs-mongo",
+		},
+		{
+			name:     "HttpsURL",
+			input:    "https://github.com/Azure-Samples/todo-nodejs-mongo",
+			expected: "todo-nodejs-mongo",
+		},
+		{
+			name:     "HttpsURLWithDotGit",
+			input:    "https://github.com/Azure-Samples/todo-nodejs-mongo.git",
+			expected: "todo-nodejs-mongo",
+		},
+		{
+			name:     "HttpsURLTrailingSlash",
+			input:    "https://github.com/Azure-Samples/todo-nodejs-mongo/",
+			expected: "todo-nodejs-mongo",
+		},
+		{
+			name:     "GitAtURI",
+			input:    "git@github.com:Azure-Samples/todo-nodejs-mongo.git",
+			expected: "todo-nodejs-mongo",
+		},
+		{
+			name:     "SshURL",
+			input:    "ssh://git@github.com/Azure-Samples/todo-nodejs-mongo.git",
+			expected: "todo-nodejs-mongo",
+		},
+		{
+			name:     "GitProtocolURL",
+			input:    "git://github.com/Azure-Samples/todo-nodejs-mongo.git",
+			expected: "todo-nodejs-mongo",
+		},
+		{
+			name:     "RelativePath",
+			input:    "../my-template",
+			expected: "my-template",
+		},
+		{
+			name:     "DotSlashRelativePath",
+			input:    "./my-template",
+			expected: "my-template",
+		},
+		{
+			name:     "AbsolutePath",
+			input:    "/home/user/projects/my-template",
+			expected: "my-template",
+		},
+		{
+			name:     "BareNameTrailingSlash",
+			input:    "todo-nodejs-mongo/",
+			expected: "todo-nodejs-mongo",
+		},
+		{
+			name:     "NestedLocalPath",
+			input:    "../projects/my-template",
+			expected: "my-template",
+		},
+		{
+			name:     "FileURL",
+			input:    "file:///home/user/my-template",
+			expected: "my-template",
+		},
+		{
+			name:     "DotDotTraversalIsSanitized",
+			input:    "owner/..",
+			expected: "owner-..",
+		},
+		{
+			name:     "BareDotDotIsSanitized",
+			input:    "..",
+			expected: "..",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := DeriveDirectoryName(tt.input)
+			require.Equal(t, tt.expected, result)
+		})
+	}
+}
+
 func Test_IsLocalPath(t *testing.T) {
 	tests := []struct {
 		name     string

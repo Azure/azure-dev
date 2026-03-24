@@ -5,6 +5,9 @@ parameters:
       - cover-win
       - cover-lin
       - cover-mac
+  - name: MinimumCoveragePercent
+    type: number
+    default: 0
 stages: 
 - stage: CodeCoverage_Upload
   condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
@@ -59,7 +62,18 @@ stages:
           }
         displayName: Merge code coverage files
 
+      - ${{ if gt(parameters.MinimumCoveragePercent, 0) }}:
+        - task: PowerShell@2
+          inputs:
+            pwsh: true
+            targetType: filePath
+            filePath: $(Build.SourcesDirectory)/eng/scripts/Test-CodeCoverageThreshold.ps1
+            arguments: -CoverageFile $(Build.SourcesDirectory)/cover.out -MinimumCoveragePercent ${{ parameters.MinimumCoveragePercent }}
+            workingDirectory: $(Build.SourcesDirectory)/cli/azd
+          displayName: Check code coverage threshold
+
       - task: PublishCodeCoverageResults@1
+        condition: succeededOrFailed()
         inputs:
           codeCoverageTool: Cobertura
           summaryFileLocation: '$(Build.SourcesDirectory)/**/coverage.xml'

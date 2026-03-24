@@ -1163,6 +1163,13 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	agentConfig.Deployments = a.deploymentDetails
 	agentConfig.Resources = resourceDetails
 
+	// Process toolbox resources from the manifest
+	toolboxes, err := extractToolboxConfigs(agentManifest)
+	if err != nil {
+		return err
+	}
+	agentConfig.Toolboxes = toolboxes
+
 	// Detect startup command from the project source directory
 	startupCmd, err := resolveStartupCommandForInit(ctx, a.azdClient, a.projectConfig.Path, targetDir, a.flags.NoPrompt)
 	if err != nil {
@@ -1565,4 +1572,60 @@ func downloadDirectoryContentsWithoutGhCli(
 	}
 
 	return nil
+}
+
+// extractToolboxConfigs extracts toolbox resource definitions from the agent manifest
+// and converts them into project.Toolbox config entries.
+// Each toolbox resource's options must contain a "tools" array with tool definitions.
+func extractToolboxConfigs(manifest *agent_yaml.AgentManifest) ([]project.Toolbox, error) {
+	if manifest == nil || manifest.Resources == nil {
+		return nil, nil
+	}
+
+	var toolboxes []project.Toolbox
+
+	for _, resource := range manifest.Resources {
+		tbResource, ok := resource.(agent_yaml.ToolboxResource)
+		if !ok {
+			continue
+		}
+
+		description, _ := tbResource.Options["description"].(string)
+
+		rawTools, ok := tbResource.Options["tools"]
+		if !ok {
+			return nil, fmt.Errorf(
+				"toolbox resource '%s' is missing required 'tools' in options",
+				tbResource.Name,
+			)
+		}
+
+		toolsList, ok := rawTools.([]any)
+		if !ok {
+			return nil, fmt.Errorf(
+				"toolbox resource '%s' has invalid 'tools' format: expected array",
+				tbResource.Name,
+			)
+		}
+
+		tools := make([]map[string]any, 0, len(toolsList))
+		for _, rawTool := range toolsList {
+			toolMap, ok := rawTool.(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf(
+					"toolbox resource '%s' has invalid tool entry: expected object",
+					tbResource.Name,
+				)
+			}
+			tools = append(tools, toolMap)
+		}
+
+		toolboxes = append(toolboxes, project.Toolbox{
+			Name:        tbResource.Name,
+			Description: description,
+			Tools:       tools,
+		})
+	}
+
+	return toolboxes, nil
 }

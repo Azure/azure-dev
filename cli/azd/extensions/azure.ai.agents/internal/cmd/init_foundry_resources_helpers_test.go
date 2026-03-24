@@ -89,6 +89,49 @@ func TestExtractProjectDetails(t *testing.T) {
 	}
 }
 
+func TestNormalizeLoginServer(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "plain hostname",
+			input: "myregistry.azurecr.io",
+			want:  "myregistry.azurecr.io",
+		},
+		{
+			name:  "https prefix",
+			input: "https://myregistry.azurecr.io",
+			want:  "myregistry.azurecr.io",
+		},
+		{
+			name:  "http prefix",
+			input: "http://myregistry.azurecr.io",
+			want:  "myregistry.azurecr.io",
+		},
+		{
+			name:  "https with trailing slash",
+			input: "https://myregistry.azurecr.io/",
+			want:  "myregistry.azurecr.io",
+		},
+		{
+			name:  "empty string",
+			input: "",
+			want:  "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, normalizeLoginServer(tt.input))
+		})
+	}
+}
+
 func TestFoundryProjectInfoResourceIdConstruction(t *testing.T) {
 	t.Parallel()
 

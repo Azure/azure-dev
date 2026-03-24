@@ -246,6 +246,16 @@ func listProjectDeployments(
 	return results, nil
 }
 
+// normalizeLoginServer strips any URL scheme prefix (e.g. "https://") from a
+// container registry login server so that callers always work with a plain
+// hostname like "myregistry.azurecr.io".
+func normalizeLoginServer(loginServer string) string {
+	loginServer = strings.TrimPrefix(loginServer, "https://")
+	loginServer = strings.TrimPrefix(loginServer, "http://")
+	loginServer = strings.TrimSuffix(loginServer, "/")
+	return loginServer
+}
+
 // lookupAcrResourceId finds the ARM resource ID for an ACR given its login server endpoint.
 func lookupAcrResourceId(
 	ctx context.Context,
@@ -253,6 +263,7 @@ func lookupAcrResourceId(
 	subscriptionId string,
 	loginServer string,
 ) (string, error) {
+	loginServer = normalizeLoginServer(loginServer)
 	parts := strings.Split(loginServer, ".")
 	if len(parts) < 2 || parts[0] == "" {
 		return "", fmt.Errorf("invalid login server format: %q, expected e.g. %q", loginServer, "registry.azurecr.io")
@@ -395,12 +406,13 @@ func configureAcrConnection(
 		}
 
 		if resp.Value != "" {
-			resourceId, err := lookupAcrResourceId(ctx, credential, subscriptionId, resp.Value)
+			loginServer := normalizeLoginServer(resp.Value)
+			resourceId, err := lookupAcrResourceId(ctx, credential, subscriptionId, loginServer)
 			if err != nil {
 				return fmt.Errorf("failed to lookup ACR resource ID: %w", err)
 			}
 
-			if err := setEnvValue(ctx, azdClient, envName, "AZURE_CONTAINER_REGISTRY_ENDPOINT", resp.Value); err != nil {
+			if err := setEnvValue(ctx, azdClient, envName, "AZURE_CONTAINER_REGISTRY_ENDPOINT", loginServer); err != nil {
 				return err
 			}
 			if err := setEnvValue(ctx, azdClient, envName, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID", resourceId); err != nil {
@@ -443,7 +455,9 @@ func configureAcrConnection(
 	if err := setEnvValue(ctx, azdClient, envName, "AZURE_AI_PROJECT_ACR_CONNECTION_NAME", selectedConnection.Name); err != nil {
 		return err
 	}
-	if err := setEnvValue(ctx, azdClient, envName, "AZURE_CONTAINER_REGISTRY_ENDPOINT", selectedConnection.Target); err != nil {
+	if err := setEnvValue(
+		ctx, azdClient, envName, "AZURE_CONTAINER_REGISTRY_ENDPOINT", normalizeLoginServer(selectedConnection.Target),
+	); err != nil {
 		return err
 	}
 

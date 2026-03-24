@@ -86,6 +86,13 @@ const (
 	CodeInvalidFilePath  = "invalid_file_path"
 )
 
+// Error codes for toolbox/toolset operations.
+const (
+	CodeInvalidToolbox      = "invalid_toolbox"
+	CodeCreateToolsetFailed = "create_toolset_failed"
+	CodeUpdateToolsetFailed = "update_toolset_failed"
+)
+
 // Error codes commonly used for internal errors.
 //
 // These are usually paired with [Internal] for unexpected failures
@@ -107,4 +114,7 @@ const (
 	OpCreateAgent           = "create_agent"
 	OpStartContainer        = "start_container"
 	OpGetContainerOperation = "get_container_operation"
+	OpCreateToolset         = "create_toolset"
+	OpUpdateToolset         = "update_toolset"
+	OpGetToolset            = "get_toolset"
 )

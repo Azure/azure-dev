@@ -1,6 +1,10 @@
 # Release History
 
 
+## 0.0.5-preview (2026-03-24)
+
+- Improved error handling for 403 (Forbidden) during `custom create` upload, with guidance on required roles and links to prerequisites and RBAC documentation (#7278)
+
 ## 0.0.4-preview (2026-03-17)
 
 - Added async model registration with server-side validation and polling support

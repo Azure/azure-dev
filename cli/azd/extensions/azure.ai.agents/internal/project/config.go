@@ -6,6 +6,7 @@ package project
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -48,6 +49,7 @@ type ServiceTargetAgentConfig struct {
 	Container      *ContainerSettings `json:"container,omitempty"`
 	Deployments    []Deployment       `json:"deployments,omitempty"`
 	Resources      []Resource         `json:"resources,omitempty"`
+	Toolboxes      []Toolbox          `json:"toolboxes,omitempty"`
 	StartupCommand string             `json:"startupCommand,omitempty"`
 }
 
@@ -106,6 +108,34 @@ type DeploymentSku struct {
 type Resource struct {
 	Resource       string `json:"resource"`
 	ConnectionName string `json:"connectionName"`
+}
+
+// Toolbox represents a Foundry project toolbox dependency for an agent.
+// When Tools is populated, the toolbox will be created if it doesn't exist.
+// When Tools is empty, the toolbox is expected to already exist.
+type Toolbox struct {
+	Name        string            `json:"name"`
+	Description string            `json:"description,omitempty"`
+	Tools       []json.RawMessage `json:"tools,omitempty"`
+}
+
+// ToolboxNameToEnvVar converts a toolbox name to an environment variable prefix
+// by upper-casing and replacing non-alphanumeric characters with underscores.
+func ToolboxNameToEnvVar(name string) string {
+	var b strings.Builder
+	for _, r := range strings.ToUpper(name) {
+		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
+}
+
+// ToolboxMcpEndpoint returns the MCP endpoint URL for a toolbox.
+func ToolboxMcpEndpoint(projectEndpoint, toolboxName string) string {
+	return fmt.Sprintf("%s/toolsets/%s/mcp", projectEndpoint, toolboxName)
 }
 
 // UnmarshalStruct converts a structpb.Struct to a Go struct of type T

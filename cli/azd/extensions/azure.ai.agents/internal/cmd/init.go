@@ -1120,35 +1120,54 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	var agentConfig = project.ServiceTargetAgentConfig{}
 
 	resourceDetails := []project.Resource{}
+	toolboxDetails := []project.Toolbox{}
 	switch agentDef.Kind {
 	case agent_yaml.AgentKindHosted:
-		// Handle tool resources that require connection names
+		// Handle tool resources that require connection names or toolbox dependencies
 		if agentManifest.Resources != nil {
 			for _, resource := range agentManifest.Resources {
-				// Try to cast to ToolResource
-				if toolResource, ok := resource.(agent_yaml.ToolResource); ok {
-					// Check if this is a resource that requires a connection name
-					if toolResource.Id == "bing_grounding" || toolResource.Id == "azure_ai_search" {
-						// Prompt the user for a connection name
-						resp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-							Options: &azdext.PromptOptions{
-								Message:        fmt.Sprintf("Enter a connection name for adding the resource %s to your Microsoft Foundry project", toolResource.Id),
-								IgnoreHintKeys: true,
-								DefaultValue:   toolResource.Id,
-							},
-						})
-						if err != nil {
-							return fmt.Errorf("prompting for connection name for %s: %w", toolResource.Id, err)
-						}
-
-						// Add to resource details
-						resourceDetails = append(resourceDetails, project.Resource{
-							Resource:       toolResource.Id,
-							ConnectionName: resp.Value,
-						})
+				switch res := resource.(type) {
+				case agent_yaml.ToolResource:
+					// Prompt the user for a connection name
+					resp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+						Options: &azdext.PromptOptions{
+							Message:        fmt.Sprintf("Enter a connection name for adding the resource %s to your Microsoft Foundry project", res.Id),
+							IgnoreHintKeys: true,
+							DefaultValue:   res.Id,
+						},
+					})
+					if err != nil {
+						return fmt.Errorf("prompting for connection name for %s: %w", res.Id, err)
 					}
+
+					resourceDetails = append(resourceDetails, project.Resource{
+						Resource:       res.Id,
+						ConnectionName: resp.Value,
+					})
+
+				case agent_yaml.ToolboxResource:
+					toolbox := project.Toolbox{
+						Name: res.Id,
+					}
+
+					if res.Options != nil {
+						if desc, ok := res.Options["description"].(string); ok {
+							toolbox.Description = desc
+						}
+						if tools, ok := res.Options["tools"].([]any); ok {
+							for _, t := range tools {
+								toolJSON, err := json.Marshal(t)
+								if err != nil {
+									return fmt.Errorf("failed to marshal tool definition for toolbox %s: %w",
+										res.Id, err)
+								}
+								toolbox.Tools = append(toolbox.Tools, toolJSON)
+							}
+						}
+					}
+
+					toolboxDetails = append(toolboxDetails, toolbox)
 				}
-				// Skip the resource if the cast fails
 			}
 		}
 
@@ -1162,6 +1181,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 
 	agentConfig.Deployments = a.deploymentDetails
 	agentConfig.Resources = resourceDetails
+	agentConfig.Toolboxes = toolboxDetails
 
 	// Detect startup command from the project source directory
 	startupCmd, err := resolveStartupCommandForInit(ctx, a.azdClient, a.projectConfig.Path, targetDir, a.flags.NoPrompt)

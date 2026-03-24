@@ -8,10 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -19,20 +19,20 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newToolsetCreateCommand() *cobra.Command {
+func newToolboxCreateCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "create <path-to-toolset.json>",
-		Short: "Create a toolset in the Foundry project.",
+		Use:   "create <path-to-toolbox.json>",
+		Short: "Create a toolbox in the Foundry project.",
 		Long: `Create a new toolset from a JSON payload file.
 
 The payload file must contain a JSON object with at least "name" and "tools" fields.
-If a toolset with the same name already exists, you will be prompted to confirm
+If a toolbox with the same name already exists, you will be prompted to confirm
 before overwriting (use --no-prompt to auto-confirm).`,
-		Example: `  # Create a toolset from a JSON file
-  azd ai agent toolset create toolset.json
+		Example: `  # Create a toolbox from a JSON file
+  azd ai agent toolbox create toolbox.json
 
   # Create with auto-confirm for scripting
-  azd ai agent toolset create toolset.json --no-prompt`,
+  azd ai agent toolbox create toolbox.json --no-prompt`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
@@ -40,10 +40,10 @@ before overwriting (use --no-prompt to auto-confirm).`,
 
 			if len(args) == 0 {
 				return exterrors.Validation(
-					exterrors.CodeInvalidToolsetPayload,
+					exterrors.CodeInvalidToolboxPayload,
 					"missing required payload file path",
-					"Provide a path to a toolset JSON file, for example:\n"+
-						"  azd ai agent toolset create path/to/toolset.json",
+					"Provide a path to a toolbox JSON file, for example:\n"+
+						"  azd ai agent toolbox create path/to/toolbox.json",
 				)
 			}
 
@@ -53,16 +53,16 @@ before overwriting (use --no-prompt to auto-confirm).`,
 			data, err := os.ReadFile(payloadPath) //nolint:gosec // G304: path is from user CLI arg, validated below
 			if err != nil {
 				return exterrors.Validation(
-					exterrors.CodeInvalidToolsetPayload,
+					exterrors.CodeInvalidToolboxPayload,
 					fmt.Sprintf("failed to read payload file '%s': %s", payloadPath, err),
 					"Check that the file path is correct and the file is readable",
 				)
 			}
 
-			var createReq agent_api.CreateToolsetRequest
+			var createReq agent_api.CreateToolboxRequest
 			if err := json.Unmarshal(data, &createReq); err != nil {
 				return exterrors.Validation(
-					exterrors.CodeInvalidToolsetPayload,
+					exterrors.CodeInvalidToolboxPayload,
 					fmt.Sprintf("failed to parse payload file '%s': %s", payloadPath, err),
 					"Ensure the file contains valid JSON with 'name' and 'tools' fields",
 				)
@@ -70,15 +70,15 @@ before overwriting (use --no-prompt to auto-confirm).`,
 
 			if createReq.Name == "" {
 				return exterrors.Validation(
-					exterrors.CodeInvalidToolsetPayload,
-					"toolset payload is missing required 'name' field",
+					exterrors.CodeInvalidToolboxPayload,
+					"toolbox payload is missing required 'name' field",
 					"Add a 'name' field to the JSON payload",
 				)
 			}
 			if len(createReq.Tools) == 0 {
 				return exterrors.Validation(
-					exterrors.CodeInvalidToolsetPayload,
-					"toolset payload is missing required 'tools' field or tools array is empty",
+					exterrors.CodeInvalidToolboxPayload,
+					"toolbox payload is missing required 'tools' field or tools array is empty",
 					"Add a 'tools' array with at least one tool definition",
 				)
 			}
@@ -99,8 +99,8 @@ before overwriting (use --no-prompt to auto-confirm).`,
 
 			client := agent_api.NewAgentClient(endpoint, credential)
 
-			// Check if toolset already exists
-			existing, err := client.GetToolset(ctx, createReq.Name, agent_api.ToolsetAPIVersion)
+			// Check if toolbox already exists
+			existing, err := client.GetToolbox(ctx, createReq.Name, agent_api.ToolboxAPIVersion)
 			if err == nil && existing != nil {
 				// Toolset exists — prompt for overwrite confirmation
 				if !rootFlags.NoPrompt {
@@ -113,58 +113,58 @@ before overwriting (use --no-prompt to auto-confirm).`,
 					resp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
 						Options: &azdext.ConfirmOptions{
 							Message: fmt.Sprintf(
-								"Toolset '%s' already exists with %d tool(s). Overwrite?",
+								"Toolbox '%s' already exists with %d tool(s). Overwrite?",
 								existing.Name, len(existing.Tools),
 							),
 						},
 					})
 					if promptErr != nil {
 						if exterrors.IsCancellation(promptErr) {
-							return exterrors.Cancelled("toolset creation cancelled")
+							return exterrors.Cancelled("toolbox creation cancelled")
 						}
 						return fmt.Errorf("failed to prompt for confirmation: %w", promptErr)
 					}
 					if !*resp.Value {
-						fmt.Println("Toolset creation cancelled.")
+						fmt.Println("toolbox creation cancelled.")
 						return nil
 					}
 				}
 
-				// Update the existing toolset
-				updateReq := &agent_api.UpdateToolsetRequest{
+				// Update the existing toolbox
+				updateReq := &agent_api.UpdateToolboxRequest{
 					Description: createReq.Description,
 					Metadata:    createReq.Metadata,
 					Tools:       createReq.Tools,
 				}
 
-				toolset, updateErr := client.UpdateToolset(ctx, createReq.Name, updateReq, agent_api.ToolsetAPIVersion)
+				toolbox, updateErr := client.UpdateToolbox(ctx, createReq.Name, updateReq, agent_api.ToolboxAPIVersion)
 				if updateErr != nil {
-					return exterrors.ServiceFromAzure(updateErr, exterrors.OpUpdateToolset)
+					return exterrors.ServiceFromAzure(updateErr, exterrors.OpUpdateToolbox)
 				}
 
-				mcpEndpoint := fmt.Sprintf("%s/toolsets/%s/mcp", endpoint, toolset.Name)
-				fmt.Printf("Toolset '%s' updated successfully (%d tool(s)).\n", toolset.Name, len(toolset.Tools))
+				mcpEndpoint := project.ToolboxMcpEndpoint(endpoint, toolbox.Name)
+				fmt.Printf("Toolbox '%s' updated successfully (%d tool(s)).\n", toolbox.Name, len(toolbox.Tools))
 				fmt.Printf("MCP Endpoint: %s\n", mcpEndpoint)
-				printMcpEnvTip(toolset.Name, mcpEndpoint)
+				printMcpEnvTip(toolbox.Name, mcpEndpoint)
 				return nil
 			}
 
 			// Check if the error is a 404 (not found) — proceed with create
 			var respErr *azcore.ResponseError
 			if err != nil && !(errors.As(err, &respErr) && respErr.StatusCode == 404) {
-				return exterrors.ServiceFromAzure(err, exterrors.OpGetToolset)
+				return exterrors.ServiceFromAzure(err, exterrors.OpGetToolbox)
 			}
 
-			// Create new toolset
-			toolset, createErr := client.CreateToolset(ctx, &createReq, agent_api.ToolsetAPIVersion)
+			// Create new toolbox
+			toolbox, createErr := client.CreateToolbox(ctx, &createReq, agent_api.ToolboxAPIVersion)
 			if createErr != nil {
-				return exterrors.ServiceFromAzure(createErr, exterrors.OpCreateToolset)
+				return exterrors.ServiceFromAzure(createErr, exterrors.OpCreateToolbox)
 			}
 
-			mcpEndpoint := fmt.Sprintf("%s/toolsets/%s/mcp", endpoint, toolset.Name)
-			fmt.Printf("Toolset '%s' created successfully (%d tool(s)).\n", toolset.Name, len(toolset.Tools))
+			mcpEndpoint := project.ToolboxMcpEndpoint(endpoint, toolbox.Name)
+			fmt.Printf("Toolbox '%s' created successfully (%d tool(s)).\n", toolbox.Name, len(toolbox.Tools))
 			fmt.Printf("MCP Endpoint: %s\n", mcpEndpoint)
-			printMcpEnvTip(toolset.Name, mcpEndpoint)
+			printMcpEnvTip(toolbox.Name, mcpEndpoint)
 			return nil
 		},
 	}
@@ -172,22 +172,8 @@ before overwriting (use --no-prompt to auto-confirm).`,
 	return cmd
 }
 
-// toolsetNameToEnvVar converts a toolset name to an environment variable name
-// by upper-casing and replacing non-alphanumeric characters with underscores.
-func toolsetNameToEnvVar(name string) string {
-	var b strings.Builder
-	for _, r := range strings.ToUpper(name) {
-		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
-			b.WriteRune(r)
-		} else {
-			b.WriteByte('_')
-		}
-	}
-	return b.String()
-}
-
-func printMcpEnvTip(toolsetName, mcpEndpoint string) {
-	envVar := toolsetNameToEnvVar(toolsetName) + "_MCP_ENDPOINT"
+func printMcpEnvTip(toolboxName, mcpEndpoint string) {
+	envVar := project.ToolboxNameToEnvVar(toolboxName) + "_MCP_ENDPOINT"
 	fmt.Println()
 	fmt.Println(output.WithHintFormat(
 		"Hint: Store the endpoint in your azd environment so your agent code can reference it:"))

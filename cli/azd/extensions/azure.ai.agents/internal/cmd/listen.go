@@ -152,6 +152,12 @@ func envUpdate(ctx context.Context, azdClient *azdext.AzdClient, azdProject *azd
 		}
 	}
 
+	if len(foundryAgentConfig.Toolboxes) > 0 {
+		if err := toolboxEnvUpdate(ctx, foundryAgentConfig.Toolboxes, azdClient, currentEnvResponse.Environment.Name); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -217,6 +223,32 @@ func resourcesEnvUpdate(ctx context.Context, resources []project.Resource, azdCl
 	escapedJsonString = strings.ReplaceAll(escapedJsonString, "\"", "\\\"")
 
 	return setEnvVar(ctx, azdClient, envName, "AI_PROJECT_DEPENDENT_RESOURCES", escapedJsonString)
+}
+
+func toolboxEnvUpdate(ctx context.Context, toolboxes []project.Toolbox, azdClient *azdext.AzdClient, envName string) error {
+	// Resolve the project endpoint to construct MCP URLs
+	envResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     "AZURE_AI_PROJECT_ENDPOINT",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get AZURE_AI_PROJECT_ENDPOINT: %w", err)
+	}
+
+	projectEndpoint := envResp.Value
+	if projectEndpoint == "" {
+		return fmt.Errorf("AZURE_AI_PROJECT_ENDPOINT not set; required to resolve toolbox MCP endpoints")
+	}
+
+	for _, tb := range toolboxes {
+		mcpEndpoint := project.ToolboxMcpEndpoint(projectEndpoint, tb.Name)
+		envVar := project.ToolboxNameToEnvVar(tb.Name) + "_MCP_ENDPOINT"
+		if err := setEnvVar(ctx, azdClient, envName, envVar, mcpEndpoint); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func containerAgentHandling(ctx context.Context, azdClient *azdext.AzdClient, project *azdext.ProjectConfig, svc *azdext.ServiceConfig) error {

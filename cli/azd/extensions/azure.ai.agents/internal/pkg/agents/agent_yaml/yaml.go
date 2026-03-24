@@ -31,8 +31,9 @@ func ValidAgentKinds() []AgentKind {
 type ResourceKind string
 
 const (
-	ResourceKindModel ResourceKind = "model"
-	ResourceKindTool  ResourceKind = "tool"
+	ResourceKindModel   ResourceKind = "model"
+	ResourceKindTool    ResourceKind = "tool"
+	ResourceKindToolbox ResourceKind = "toolbox"
 )
 
 type ToolKind string
@@ -303,6 +304,13 @@ type ToolResource struct {
 	Resource `json:",inline" yaml:",inline"`
 	Id       string         `json:"id" yaml:"id"`
 	Options  map[string]any `json:"options" yaml:"options"`
+}
+
+// ToolboxResource Represents a Foundry project toolbox dependency
+type ToolboxResource struct {
+	Resource `json:",inline" yaml:",inline"`
+	Id       string         `json:"id" yaml:"id"`
+	Options  map[string]any `json:"options,omitempty" yaml:"options,omitempty"`
 }
 
 // Template Template model for defining prompt templates.

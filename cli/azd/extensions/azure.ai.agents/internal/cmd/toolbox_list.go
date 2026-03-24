@@ -18,25 +18,25 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type toolsetListFlags struct {
+type toolboxListFlags struct {
 	output string
 }
 
-func newToolsetListCommand() *cobra.Command {
-	flags := &toolsetListFlags{}
+func newToolboxListCommand() *cobra.Command {
+	flags := &toolboxListFlags{}
 
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List all toolsets in the Foundry project.",
-		Long: `List all toolsets in the current Azure AI Foundry project.
+		Short: "List all toolboxes in the Foundry project.",
+		Long: `List all toolboxes in the current Azure AI Foundry project.
 
 Displays the name, description, number of tools, and creation time
-for each toolset. Requires AZURE_AI_PROJECT_ENDPOINT in the azd environment.`,
-		Example: `  # List toolsets in table format (default)
-  azd ai agent toolset list
+for each toolbox. Requires AZURE_AI_PROJECT_ENDPOINT in the azd environment.`,
+		Example: `  # List toolboxes in table format (default)
+  azd ai agent toolbox list
 
-  # List toolsets as JSON
-  azd ai agent toolset list --output json`,
+  # List toolboxes as JSON
+  azd ai agent toolbox list --output json`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
@@ -57,16 +57,16 @@ for each toolset. Requires AZURE_AI_PROJECT_ENDPOINT in the azd environment.`,
 			}
 
 			client := agent_api.NewAgentClient(endpoint, credential)
-			list, err := client.ListToolsets(ctx, agent_api.ToolsetAPIVersion)
+			list, err := client.ListToolboxes(ctx, agent_api.ToolboxAPIVersion)
 			if err != nil {
-				return exterrors.ServiceFromAzure(err, exterrors.OpListToolsets)
+				return exterrors.ServiceFromAzure(err, exterrors.OpListToolboxes)
 			}
 
 			switch flags.output {
 			case "json":
-				return printToolsetListJSON(list)
+				return printToolboxListJSON(list)
 			default:
-				return printToolsetListTable(ctx, list)
+				return printToolboxListTable(ctx, list)
 			}
 		},
 	}
@@ -76,18 +76,18 @@ for each toolset. Requires AZURE_AI_PROJECT_ENDPOINT in the azd environment.`,
 	return cmd
 }
 
-func printToolsetListJSON(list *agent_api.ToolsetList) error {
+func printToolboxListJSON(list *agent_api.ToolboxList) error {
 	jsonBytes, err := json.MarshalIndent(list, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal toolset list to JSON: %w", err)
+		return fmt.Errorf("failed to marshal toolbox list to JSON: %w", err)
 	}
 	fmt.Println(string(jsonBytes))
 	return nil
 }
 
-func printToolsetListTable(_ context.Context, list *agent_api.ToolsetList) error {
+func printToolboxListTable(_ context.Context, list *agent_api.ToolboxList) error {
 	if len(list.Data) == 0 {
-		fmt.Println("No toolsets found.")
+		fmt.Println("No toolboxes found.")
 		return nil
 	}
 

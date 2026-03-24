@@ -15,18 +15,18 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newToolsetDeleteCommand() *cobra.Command {
+func newToolboxDeleteCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "delete <name>",
-		Short: "Delete a toolset from the Foundry project.",
-		Long: `Delete a toolset by name from the current Azure AI Foundry project.
+		Short: "Delete a toolbox from the Foundry project.",
+		Long: `Delete a toolbox by name from the current Azure AI Foundry project.
 
 You will be prompted to confirm before deleting (use --no-prompt to auto-confirm).`,
-		Example: `  # Delete a toolset (with confirmation prompt)
-  azd ai agent toolset delete my-toolset
+		Example: `  # Delete a toolbox (with confirmation prompt)
+  azd ai agent toolbox delete my-toolbox
 
   # Delete without prompting
-  azd ai agent toolset delete my-toolset --no-prompt`,
+  azd ai agent toolbox delete my-toolbox --no-prompt`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
@@ -57,37 +57,37 @@ You will be prompted to confirm before deleting (use --no-prompt to auto-confirm
 
 				resp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
 					Options: &azdext.ConfirmOptions{
-						Message: fmt.Sprintf("Are you sure you want to delete toolset '%s'?", name),
+						Message: fmt.Sprintf("Are you sure you want to delete Toolbox '%s'?", name),
 					},
 				})
 				if promptErr != nil {
 					if exterrors.IsCancellation(promptErr) {
-						return exterrors.Cancelled("toolset deletion cancelled")
+						return exterrors.Cancelled("toolbox deletion cancelled")
 					}
 					return fmt.Errorf("failed to prompt for confirmation: %w", promptErr)
 				}
 				if !*resp.Value {
-					fmt.Println("Toolset deletion cancelled.")
+					fmt.Println("toolbox deletion cancelled.")
 					return nil
 				}
 			}
 
 			client := agent_api.NewAgentClient(endpoint, credential)
 
-			_, err = client.DeleteToolset(ctx, name, agent_api.ToolsetAPIVersion)
+			_, err = client.DeleteToolbox(ctx, name, agent_api.ToolboxAPIVersion)
 			if err != nil {
 				var respErr *azcore.ResponseError
 				if errors.As(err, &respErr) && respErr.StatusCode == 404 {
 					return exterrors.Validation(
-						exterrors.CodeToolsetNotFound,
-						fmt.Sprintf("toolset '%s' not found", name),
-						"Run 'azd ai agent toolset list' to see available toolsets",
+						exterrors.CodeToolboxNotFound,
+						fmt.Sprintf("Toolbox '%s' not found", name),
+						"Run 'azd ai agent toolbox list' to see available toolboxes",
 					)
 				}
-				return exterrors.ServiceFromAzure(err, exterrors.OpDeleteToolset)
+				return exterrors.ServiceFromAzure(err, exterrors.OpDeleteToolbox)
 			}
 
-			fmt.Printf("Toolset '%s' deleted successfully.\n", name)
+			fmt.Printf("Toolbox '%s' deleted successfully.\n", name)
 			return nil
 		},
 	}

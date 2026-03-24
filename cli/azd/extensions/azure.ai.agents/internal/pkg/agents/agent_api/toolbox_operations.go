@@ -15,15 +15,15 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
 )
 
-// ListToolsets returns all toolsets in the Foundry project.
-func (c *AgentClient) ListToolsets(ctx context.Context, apiVersion string) (*ToolsetList, error) {
+// ListToolboxes returns all toolboxes in the Foundry project.
+func (c *AgentClient) ListToolboxes(ctx context.Context, apiVersion string) (*ToolboxList, error) {
 	url := fmt.Sprintf("%s/toolsets?api-version=%s", c.endpoint, apiVersion)
 
 	req, err := runtime.NewRequest(ctx, http.MethodGet, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	req.Raw().Header.Set("Foundry-Features", ToolsetFeatureHeader)
+	req.Raw().Header.Set("Foundry-Features", ToolboxFeatureHeader)
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
@@ -40,7 +40,7 @@ func (c *AgentClient) ListToolsets(ctx context.Context, apiVersion string) (*Too
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	var list ToolsetList
+	var list ToolboxList
 	if err := json.Unmarshal(body, &list); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
@@ -48,15 +48,15 @@ func (c *AgentClient) ListToolsets(ctx context.Context, apiVersion string) (*Too
 	return &list, nil
 }
 
-// GetToolset retrieves a specific toolset by name.
-func (c *AgentClient) GetToolset(ctx context.Context, name, apiVersion string) (*ToolsetObject, error) {
+// GetToolbox retrieves a specific toolbox by name.
+func (c *AgentClient) GetToolbox(ctx context.Context, name, apiVersion string) (*ToolboxObject, error) {
 	url := fmt.Sprintf("%s/toolsets/%s?api-version=%s", c.endpoint, name, apiVersion)
 
 	req, err := runtime.NewRequest(ctx, http.MethodGet, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	req.Raw().Header.Set("Foundry-Features", ToolsetFeatureHeader)
+	req.Raw().Header.Set("Foundry-Features", ToolboxFeatureHeader)
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
@@ -73,18 +73,18 @@ func (c *AgentClient) GetToolset(ctx context.Context, name, apiVersion string) (
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	var toolset ToolsetObject
-	if err := json.Unmarshal(body, &toolset); err != nil {
+	var toolbox ToolboxObject
+	if err := json.Unmarshal(body, &toolbox); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	return &toolset, nil
+	return &toolbox, nil
 }
 
-// CreateToolset creates a new toolset.
-func (c *AgentClient) CreateToolset(
-	ctx context.Context, request *CreateToolsetRequest, apiVersion string,
-) (*ToolsetObject, error) {
+// CreateToolbox creates a new toolbox.
+func (c *AgentClient) CreateToolbox(
+	ctx context.Context, request *CreateToolboxRequest, apiVersion string,
+) (*ToolboxObject, error) {
 	url := fmt.Sprintf("%s/toolsets?api-version=%s", c.endpoint, apiVersion)
 
 	payload, err := json.Marshal(request)
@@ -96,7 +96,7 @@ func (c *AgentClient) CreateToolset(
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	req.Raw().Header.Set("Foundry-Features", ToolsetFeatureHeader)
+	req.Raw().Header.Set("Foundry-Features", ToolboxFeatureHeader)
 
 	if err := req.SetBody(streaming.NopCloser(bytes.NewReader(payload)), "application/json"); err != nil {
 		return nil, fmt.Errorf("failed to set request body: %w", err)
@@ -117,18 +117,18 @@ func (c *AgentClient) CreateToolset(
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	var toolset ToolsetObject
-	if err := json.Unmarshal(body, &toolset); err != nil {
+	var toolbox ToolboxObject
+	if err := json.Unmarshal(body, &toolbox); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	return &toolset, nil
+	return &toolbox, nil
 }
 
-// UpdateToolset updates an existing toolset by name.
-func (c *AgentClient) UpdateToolset(
-	ctx context.Context, name string, request *UpdateToolsetRequest, apiVersion string,
-) (*ToolsetObject, error) {
+// UpdateToolbox updates an existing toolbox by name.
+func (c *AgentClient) UpdateToolbox(
+	ctx context.Context, name string, request *UpdateToolboxRequest, apiVersion string,
+) (*ToolboxObject, error) {
 	url := fmt.Sprintf("%s/toolsets/%s?api-version=%s", c.endpoint, name, apiVersion)
 
 	payload, err := json.Marshal(request)
@@ -140,7 +140,7 @@ func (c *AgentClient) UpdateToolset(
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	req.Raw().Header.Set("Foundry-Features", ToolsetFeatureHeader)
+	req.Raw().Header.Set("Foundry-Features", ToolboxFeatureHeader)
 
 	if err := req.SetBody(streaming.NopCloser(bytes.NewReader(payload)), "application/json"); err != nil {
 		return nil, fmt.Errorf("failed to set request body: %w", err)
@@ -161,23 +161,23 @@ func (c *AgentClient) UpdateToolset(
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	var toolset ToolsetObject
-	if err := json.Unmarshal(body, &toolset); err != nil {
+	var toolbox ToolboxObject
+	if err := json.Unmarshal(body, &toolbox); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	return &toolset, nil
+	return &toolbox, nil
 }
 
-// DeleteToolset deletes a toolset by name.
-func (c *AgentClient) DeleteToolset(ctx context.Context, name, apiVersion string) (*DeleteToolsetResponse, error) {
+// DeleteToolbox deletes a toolbox by name.
+func (c *AgentClient) DeleteToolbox(ctx context.Context, name, apiVersion string) (*DeleteToolboxResponse, error) {
 	url := fmt.Sprintf("%s/toolsets/%s?api-version=%s", c.endpoint, name, apiVersion)
 
 	req, err := runtime.NewRequest(ctx, http.MethodDelete, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	req.Raw().Header.Set("Foundry-Features", ToolsetFeatureHeader)
+	req.Raw().Header.Set("Foundry-Features", ToolboxFeatureHeader)
 
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
@@ -194,10 +194,10 @@ func (c *AgentClient) DeleteToolset(ctx context.Context, name, apiVersion string
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	var deleteResponse DeleteToolsetResponse
-	if err := json.Unmarshal(body, &deleteResponse); err != nil {
+	var deleteResp DeleteToolboxResponse
+	if err := json.Unmarshal(body, &deleteResp); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	return &deleteResponse, nil
+	return &deleteResp, nil
 }

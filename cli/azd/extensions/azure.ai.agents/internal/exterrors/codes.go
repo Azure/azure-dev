@@ -86,19 +86,19 @@ const (
 	CodeInvalidFilePath  = "invalid_file_path"
 )
 
-// Error codes for toolset operations.
+// Error codes for toolbox operations.
 const (
-	CodeToolsetNotFound       = "toolset_not_found"
-	CodeInvalidToolsetPayload = "invalid_toolset_payload"
+	CodeToolboxNotFound       = "toolbox_not_found"
+	CodeInvalidToolboxPayload = "invalid_toolbox_payload"
 )
 
-// Operation names for toolset [ServiceFromAzure] errors.
+// Operation names for toolbox [ServiceFromAzure] errors.
 const (
-	OpListToolsets  = "list_toolsets"
-	OpGetToolset    = "get_toolset"
-	OpCreateToolset = "create_toolset"
-	OpUpdateToolset = "update_toolset"
-	OpDeleteToolset = "delete_toolset"
+	OpListToolboxes  = "list_toolboxes"
+	OpGetToolbox     = "get_toolbox"
+	OpCreateToolbox  = "create_toolbox"
+	OpUpdateToolbox  = "update_toolbox"
+	OpDeleteToolbox  = "delete_toolbox"
 )
 
 // Error codes commonly used for internal errors.

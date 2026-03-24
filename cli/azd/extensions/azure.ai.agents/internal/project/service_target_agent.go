@@ -579,6 +579,7 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 		agentVersionResponse.Version,
 		azdEnv["AZURE_AI_PROJECT_ID"],
 		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+		nil,
 	)
 
 	return &azdext.ServiceDeployResult{
@@ -645,6 +646,13 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		)
 	}
 
+	// Ensure toolbox dependencies exist before creating the agent
+	if len(foundryAgentConfig.Toolboxes) > 0 {
+		if err := p.ensureToolboxes(ctx, foundryAgentConfig.Toolboxes, azdEnv, progress); err != nil {
+			return nil, err
+		}
+	}
+
 	var cpu, memory string
 	if foundryAgentConfig.Container != nil && foundryAgentConfig.Container.Resources != nil {
 		cpu = foundryAgentConfig.Container.Resources.Cpu
@@ -708,6 +716,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		agentVersionResponse.Version,
 		azdEnv["AZURE_AI_PROJECT_ID"],
 		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+		foundryAgentConfig.Toolboxes,
 	)
 
 	return &azdext.ServiceDeployResult{
@@ -721,6 +730,7 @@ func (p *AgentServiceTargetProvider) deployArtifacts(
 	agentVersion string,
 	projectResourceID string,
 	projectEndpoint string,
+	toolboxes []Toolbox,
 ) []*azdext.Artifact {
 	artifacts := []*azdext.Artifact{}
 
@@ -759,10 +769,24 @@ func (p *AgentServiceTargetProvider) deployArtifacts(
 		})
 	}
 
+	// Add toolbox MCP endpoints
+	if projectEndpoint != "" {
+		for _, tb := range toolboxes {
+			mcpEndpoint := ToolboxMcpEndpoint(projectEndpoint, tb.Name)
+			artifacts = append(artifacts, &azdext.Artifact{
+				Kind:         azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+				Location:     mcpEndpoint,
+				LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
+				Metadata: map[string]string{
+					"label":     fmt.Sprintf("Toolbox MCP endpoint (%s)", tb.Name),
+					"clickable": "false",
+				},
+			})
+		}
+	}
+
 	return artifacts
 }
-
-// agentEndpoint constructs the agent endpoint URL from the provided parameters
 func (p *AgentServiceTargetProvider) agentEndpoint(projectEndpoint, agentName, agentVersion string) string {
 	return fmt.Sprintf("%s/agents/%s/versions/%s", projectEndpoint, agentName, agentVersion)
 }
@@ -825,6 +849,53 @@ func (p *AgentServiceTargetProvider) createAgent(
 
 	fmt.Fprintf(os.Stderr, "Agent version '%s' created successfully!\n", agentVersionResponse.Name)
 	return agentVersionResponse, nil
+}
+
+// ensureToolboxes checks that each toolbox dependency exists, creating greenfield ones as needed.
+func (p *AgentServiceTargetProvider) ensureToolboxes(
+	ctx context.Context,
+	toolboxes []Toolbox,
+	azdEnv map[string]string,
+	progress azdext.ProgressReporter,
+) error {
+	agentClient := agent_api.NewAgentClient(
+		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+		p.credential,
+	)
+
+	for _, tb := range toolboxes {
+		progress(fmt.Sprintf("Checking toolbox '%s'", tb.Name))
+		_, err := agentClient.GetToolbox(ctx, tb.Name, agent_api.ToolboxAPIVersion)
+		if err == nil {
+			fmt.Fprintf(os.Stderr, "Toolbox '%s' already exists, skipping creation\n", tb.Name)
+			continue
+		}
+
+		// If no tools defined, this is brownfield — the toolbox must already exist
+		if len(tb.Tools) == 0 {
+			return exterrors.Dependency(
+				exterrors.CodeToolboxNotFound,
+				fmt.Sprintf("toolbox '%s' not found and no tool definitions provided to create it", tb.Name),
+				fmt.Sprintf("create the toolbox first with 'azd ai agent toolbox create --name %s' "+
+					"or add tool definitions in azure.yaml config.toolboxes", tb.Name),
+			)
+		}
+
+		// Greenfield — create the toolbox
+		progress(fmt.Sprintf("Creating toolbox '%s'", tb.Name))
+		createReq := &agent_api.CreateToolboxRequest{
+			Name:        tb.Name,
+			Description: tb.Description,
+			Tools:       tb.Tools,
+		}
+		_, err = agentClient.CreateToolbox(ctx, createReq, agent_api.ToolboxAPIVersion)
+		if err != nil {
+			return exterrors.ServiceFromAzure(err, exterrors.OpCreateToolbox)
+		}
+		fmt.Fprintf(os.Stderr, "Toolbox '%s' created successfully\n", tb.Name)
+	}
+
+	return nil
 }
 
 // startAgentContainer starts the hosted agent container

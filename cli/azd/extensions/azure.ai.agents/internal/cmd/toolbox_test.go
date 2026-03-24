@@ -8,13 +8,14 @@ import (
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/project"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestToolsetCommand_HasSubcommands(t *testing.T) {
-	cmd := newToolsetCommand()
+func TestToolboxCommand_HasSubcommands(t *testing.T) {
+	cmd := newToolboxCommand()
 
 	subcommands := cmd.Commands()
 	names := make([]string, len(subcommands))
@@ -28,66 +29,66 @@ func TestToolsetCommand_HasSubcommands(t *testing.T) {
 	assert.Contains(t, names, "delete")
 }
 
-func TestToolsetListCommand_DefaultOutputFormat(t *testing.T) {
-	cmd := newToolsetListCommand()
+func TestToolboxListCommand_DefaultOutputFormat(t *testing.T) {
+	cmd := newToolboxListCommand()
 
 	output, _ := cmd.Flags().GetString("output")
 	assert.Equal(t, "table", output)
 }
 
-func TestToolsetListCommand_HasFlags(t *testing.T) {
-	cmd := newToolsetListCommand()
+func TestToolboxListCommand_HasFlags(t *testing.T) {
+	cmd := newToolboxListCommand()
 
 	f := cmd.Flags().Lookup("output")
 	require.NotNil(t, f, "expected flag 'output'")
 	assert.Equal(t, "o", f.Shorthand)
 }
 
-func TestToolsetShowCommand_RequiresArg(t *testing.T) {
-	cmd := newToolsetShowCommand()
+func TestToolboxShowCommand_RequiresArg(t *testing.T) {
+	cmd := newToolboxShowCommand()
 
 	cmd.SetArgs([]string{})
 	err := cmd.Execute()
 	assert.Error(t, err)
 }
 
-func TestToolsetShowCommand_DefaultOutputFormat(t *testing.T) {
-	cmd := newToolsetShowCommand()
+func TestToolboxShowCommand_DefaultOutputFormat(t *testing.T) {
+	cmd := newToolboxShowCommand()
 
 	output, _ := cmd.Flags().GetString("output")
 	assert.Equal(t, "json", output)
 }
 
-func TestToolsetShowCommand_HasFlags(t *testing.T) {
-	cmd := newToolsetShowCommand()
+func TestToolboxShowCommand_HasFlags(t *testing.T) {
+	cmd := newToolboxShowCommand()
 
 	f := cmd.Flags().Lookup("output")
 	require.NotNil(t, f, "expected flag 'output'")
 	assert.Equal(t, "o", f.Shorthand)
 }
 
-func TestToolsetCreateCommand_AcceptsOneArg(t *testing.T) {
-	cmd := newToolsetCreateCommand()
+func TestToolboxCreateCommand_AcceptsOneArg(t *testing.T) {
+	cmd := newToolboxCreateCommand()
 	assert.NotNil(t, cmd.Args)
 }
 
-func TestToolsetDeleteCommand_RequiresArg(t *testing.T) {
-	cmd := newToolsetDeleteCommand()
+func TestToolboxDeleteCommand_RequiresArg(t *testing.T) {
+	cmd := newToolboxDeleteCommand()
 
 	cmd.SetArgs([]string{})
 	err := cmd.Execute()
 	assert.Error(t, err)
 }
 
-func TestToolsetNameToEnvVar(t *testing.T) {
+func TestToolboxNameToEnvVar(t *testing.T) {
 	tests := []struct {
 		name string
 		in   string
 		want string
 	}{
-		{"simple", "my-toolset", "MY_TOOLSET"},
-		{"already upper", "MY_TOOLSET", "MY_TOOLSET"},
-		{"dots and spaces", "my.toolset name", "MY_TOOLSET_NAME"},
+		{"simple", "my-toolbox", "MY_TOOLBOX"},
+		{"already upper", "MY_TOOLBOX", "MY_TOOLBOX"},
+		{"dots and spaces", "my.toolbox name", "MY_TOOLBOX_NAME"},
 		{"numeric", "tools123", "TOOLS123"},
 		{"empty", "", ""},
 		{"special chars", "a@b#c", "A_B_C"},
@@ -95,30 +96,30 @@ func TestToolsetNameToEnvVar(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := toolsetNameToEnvVar(tt.in)
+			got := project.ToolboxNameToEnvVar(tt.in)
 			assert.Equal(t, tt.want, got)
 		})
 	}
 }
 
-func TestPrintToolsetListTable_Empty(t *testing.T) {
-	list := &agent_api.ToolsetList{}
-	err := printToolsetListTable(t.Context(), list)
+func TestPrintToolboxListTable_Empty(t *testing.T) {
+	list := &agent_api.ToolboxList{}
+	err := printToolboxListTable(t.Context(), list)
 	require.NoError(t, err)
 }
 
-func TestPrintToolsetListJSON_Empty(t *testing.T) {
-	list := &agent_api.ToolsetList{}
-	err := printToolsetListJSON(list)
+func TestPrintToolboxListJSON_Empty(t *testing.T) {
+	list := &agent_api.ToolboxList{}
+	err := printToolboxListJSON(list)
 	require.NoError(t, err)
 }
 
-func TestPrintToolsetListTable_WithData(t *testing.T) {
-	list := &agent_api.ToolsetList{
-		Data: []agent_api.ToolsetObject{
+func TestPrintToolboxListTable_WithData(t *testing.T) {
+	list := &agent_api.ToolboxList{
+		Data: []agent_api.ToolboxObject{
 			{
-				Name:        "test-toolset",
-				Description: "A test toolset",
+				Name:        "test-toolbox",
+				Description: "A Test toolbox",
 				Tools:       []json.RawMessage{json.RawMessage(`{"type":"mcp_server"}`)},
 				CreatedAt:   1700000000,
 			},
@@ -130,40 +131,40 @@ func TestPrintToolsetListTable_WithData(t *testing.T) {
 		},
 	}
 
-	err := printToolsetListTable(t.Context(), list)
+	err := printToolboxListTable(t.Context(), list)
 	require.NoError(t, err)
 }
 
-func TestPrintToolsetListJSON_WithData(t *testing.T) {
-	list := &agent_api.ToolsetList{
-		Data: []agent_api.ToolsetObject{
+func TestPrintToolboxListJSON_WithData(t *testing.T) {
+	list := &agent_api.ToolboxList{
+		Data: []agent_api.ToolboxObject{
 			{
-				Name:  "test-toolset",
+				Name:  "test-toolbox",
 				Tools: []json.RawMessage{json.RawMessage(`{"type":"mcp_server"}`)},
 			},
 		},
 	}
 
-	err := printToolsetListJSON(list)
+	err := printToolboxListJSON(list)
 	require.NoError(t, err)
 }
 
-func TestPrintToolsetShowJSON(t *testing.T) {
-	toolset := &agent_api.ToolsetObject{
-		Name:  "my-toolset",
+func TestPrintToolboxShowJSON(t *testing.T) {
+	toolbox := &agent_api.ToolboxObject{
+		Name:  "my-toolbox",
 		ID:    "ts-123",
 		Tools: []json.RawMessage{json.RawMessage(`{"type":"openapi"}`)},
 	}
 
-	err := printToolsetShowJSON(toolset, "https://example.com/toolsets/my-toolset/mcp")
+	err := printToolboxShowJSON(toolbox, "https://example.com/toolsets/my-toolbox/mcp")
 	require.NoError(t, err)
 }
 
-func TestPrintToolsetShowTable(t *testing.T) {
-	toolset := &agent_api.ToolsetObject{
-		Name:        "my-toolset",
+func TestPrintToolboxShowTable(t *testing.T) {
+	toolbox := &agent_api.ToolboxObject{
+		Name:        "my-toolbox",
 		ID:          "ts-123",
-		Description: "Test toolset",
+		Description: "Test toolbox",
 		CreatedAt:   1700000000,
 		UpdatedAt:   1700001000,
 		Tools: []json.RawMessage{
@@ -172,6 +173,6 @@ func TestPrintToolsetShowTable(t *testing.T) {
 		},
 	}
 
-	err := printToolsetShowTable(toolset, "https://example.com/toolsets/my-toolset/mcp")
+	err := printToolboxShowTable(toolbox, "https://example.com/toolsets/my-toolbox/mcp")
 	require.NoError(t, err)
 }

@@ -12,30 +12,31 @@ import (
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
 
-type toolsetShowFlags struct {
+type toolboxShowFlags struct {
 	output string
 }
 
-func newToolsetShowCommand() *cobra.Command {
-	flags := &toolsetShowFlags{}
+func newToolboxShowCommand() *cobra.Command {
+	flags := &toolboxShowFlags{}
 
 	cmd := &cobra.Command{
 		Use:   "show <name>",
-		Short: "Show details of a toolset.",
-		Long: `Show details of a Foundry toolset by name.
+		Short: "Show details of a toolbox.",
+		Long: `Show details of a Foundry toolbox by name.
 
-Displays the toolset's properties, included tools, and the MCP endpoint URL
-that can be used to connect an agent to the toolset.`,
-		Example: `  # Show toolset details as JSON (default)
-  azd ai agent toolset show my-toolset
+Displays the toolbox's properties, included tools, and the MCP endpoint URL
+that can be used to connect an agent to the toolbox.`,
+		Example: `  # Show toolbox details as JSON (default)
+  azd ai agent toolbox show my-toolbox
 
-  # Show toolset details as a table
-  azd ai agent toolset show my-toolset --output table`,
+  # Show toolbox details as a table
+  azd ai agent toolbox show my-toolbox --output table`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
@@ -57,18 +58,18 @@ that can be used to connect an agent to the toolset.`,
 			}
 
 			client := agent_api.NewAgentClient(endpoint, credential)
-			toolset, err := client.GetToolset(ctx, name, agent_api.ToolsetAPIVersion)
+			toolbox, err := client.GetToolbox(ctx, name, agent_api.ToolboxAPIVersion)
 			if err != nil {
-				return exterrors.ServiceFromAzure(err, exterrors.OpGetToolset)
+				return exterrors.ServiceFromAzure(err, exterrors.OpGetToolbox)
 			}
 
-			mcpEndpoint := fmt.Sprintf("%s/toolsets/%s/mcp", endpoint, name)
+			mcpEndpoint := project.ToolboxMcpEndpoint(endpoint, name)
 
 			switch flags.output {
 			case "table":
-				return printToolsetShowTable(toolset, mcpEndpoint)
+				return printToolboxShowTable(toolbox, mcpEndpoint)
 			default:
-				return printToolsetShowJSON(toolset, mcpEndpoint)
+				return printToolboxShowJSON(toolbox, mcpEndpoint)
 			}
 		},
 	}
@@ -78,27 +79,27 @@ that can be used to connect an agent to the toolset.`,
 	return cmd
 }
 
-// toolsetShowOutput wraps the toolset object with the computed MCP endpoint for JSON output.
-type toolsetShowOutput struct {
-	agent_api.ToolsetObject
+// toolboxShowOutput wraps the toolbox object with the computed MCP endpoint for JSON output.
+type toolboxShowOutput struct {
+	agent_api.ToolboxObject
 	MCPEndpoint string `json:"mcp_endpoint"`
 }
 
-func printToolsetShowJSON(toolset *agent_api.ToolsetObject, mcpEndpoint string) error {
-	output := toolsetShowOutput{
-		ToolsetObject: *toolset,
+func printToolboxShowJSON(toolset *agent_api.ToolboxObject, mcpEndpoint string) error {
+	output := toolboxShowOutput{
+		ToolboxObject: *toolset,
 		MCPEndpoint:   mcpEndpoint,
 	}
 
 	jsonBytes, err := json.MarshalIndent(output, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal toolset to JSON: %w", err)
+		return fmt.Errorf("failed to marshal toolbox to JSON: %w", err)
 	}
 	fmt.Println(string(jsonBytes))
 	return nil
 }
 
-func printToolsetShowTable(toolset *agent_api.ToolsetObject, mcpEndpoint string) error {
+func printToolboxShowTable(toolset *agent_api.ToolboxObject, mcpEndpoint string) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "FIELD\tVALUE")
 	fmt.Fprintln(w, "-----\t-----")

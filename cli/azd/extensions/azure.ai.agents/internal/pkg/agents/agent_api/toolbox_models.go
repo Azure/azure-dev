@@ -5,14 +5,14 @@ package agent_api
 
 import "encoding/json"
 
-// ToolsetAPIVersion is the API version for toolset operations.
-const ToolsetAPIVersion = "v1"
+// ToolboxAPIVersion is the API version for toolset operations.
+const ToolboxAPIVersion = "v1"
 
-// ToolsetFeatureHeader is the required preview feature flag header for toolset operations.
-const ToolsetFeatureHeader = "Toolsets=V1Preview"
+// ToolboxFeatureHeader is the required preview feature flag header for toolset operations.
+const ToolboxFeatureHeader = "Toolsets=V1Preview"
 
-// ToolsetObject represents a toolset returned by the Foundry Toolsets API.
-type ToolsetObject struct {
+// ToolboxObject represents a toolset returned by the Foundry Toolsets API.
+type ToolboxObject struct {
 	Object      string            `json:"object"`
 	ID          string            `json:"id"`
 	CreatedAt   int64             `json:"created_at"`
@@ -23,28 +23,28 @@ type ToolsetObject struct {
 	Tools       []json.RawMessage `json:"tools"`
 }
 
-// ToolsetList represents the paginated list response from the Toolsets API.
-type ToolsetList struct {
-	Data []ToolsetObject `json:"data"`
+// ToolboxList represents the paginated list response from the Toolsets API.
+type ToolboxList struct {
+	Data []ToolboxObject `json:"data"`
 }
 
-// DeleteToolsetResponse represents the response from deleting a toolset.
-type DeleteToolsetResponse struct {
+// DeleteToolboxResponse represents the response from deleting a toolset.
+type DeleteToolboxResponse struct {
 	Object  string `json:"object"`
 	Name    string `json:"name"`
 	Deleted bool   `json:"deleted"`
 }
 
-// CreateToolsetRequest represents the request body for creating a toolset.
-type CreateToolsetRequest struct {
+// CreateToolboxRequest represents the request body for creating a toolset.
+type CreateToolboxRequest struct {
 	Name        string            `json:"name"`
 	Description string            `json:"description,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
 	Tools       []json.RawMessage `json:"tools"`
 }
 
-// UpdateToolsetRequest represents the request body for updating a toolset.
-type UpdateToolsetRequest struct {
+// UpdateToolboxRequest represents the request body for updating a toolset.
+type UpdateToolboxRequest struct {
 	Description string            `json:"description,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
 	Tools       []json.RawMessage `json:"tools"`

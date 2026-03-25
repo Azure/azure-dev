@@ -164,19 +164,6 @@ func newPipelineConfigAction(
 
 // Run implements action interface
 func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	// Track pipeline provider and auth type
-	// Emit "auto" when the user didn't specify, so we know auto-detection was used.
-	if p.flags.PipelineProvider != "" {
-		tracing.SetUsageAttributes(fields.PipelineProviderKey.String(p.flags.PipelineProvider))
-	} else {
-		tracing.SetUsageAttributes(fields.PipelineProviderKey.String("auto"))
-	}
-	if p.flags.PipelineAuthTypeName != "" {
-		tracing.SetUsageAttributes(fields.PipelineAuthKey.String(p.flags.PipelineAuthTypeName))
-	} else {
-		tracing.SetUsageAttributes(fields.PipelineAuthKey.String("auto"))
-	}
-
 	infra, err := p.importManager.ProjectInfrastructure(ctx, p.projectConfig)
 	if err != nil {
 		return nil, err
@@ -185,6 +172,13 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 
 	// Command title
 	pipelineProviderName := p.manager.CiProviderName()
+
+	// Track the resolved pipeline provider (after CiProviderName resolves auto-detection).
+	// cmd.flags already indicates whether --provider was explicitly set by the user.
+	tracing.SetUsageAttributes(fields.PipelineProviderKey.String(pipelineProviderName))
+	if p.flags.PipelineAuthTypeName != "" {
+		tracing.SetUsageAttributes(fields.PipelineAuthKey.String(p.flags.PipelineAuthTypeName))
+	}
 	p.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title: fmt.Sprintf("Configure your %s pipeline", pipelineProviderName),
 	})

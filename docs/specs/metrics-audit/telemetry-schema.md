@@ -5,7 +5,7 @@ and data pipeline details in the Azure Developer CLI (`azd`).
 
 ## Events
 
-Events are defined in `internal/telemetry/events/events.go`. Each event is emitted as an
+Events are defined in `cli/azd/internal/tracing/events/events.go`. Each event is emitted as an
 OpenTelemetry span name or event name.
 
 | Constant | Value | Description |
@@ -22,7 +22,7 @@ OpenTelemetry span name or event name.
 
 ## Fields
 
-Fields are defined in `internal/telemetry/fields/fields.go`. Each field has a classification
+Fields are defined in `cli/azd/internal/tracing/fields/fields.go`. Each field has a classification
 and purpose that governs how it may be stored, queried, and retained.
 
 ### Application-Level (Resource Attributes)
@@ -54,7 +54,7 @@ These are set once at process startup via `resource.New()` and attached to every
 |-------|----------|----------------|---------|-------|
 | Object ID | `user_AuthenticatedId` | — | — | From Application Insights contracts |
 | Tenant ID | `ad.tenant.id` | SystemMetadata | BusinessInsight | Entra ID tenant |
-| Account type | `ad.account.type` | SystemMetadata | BusinessInsight | `"User"` or `"Service Principal"` |
+| Account type | `ad.account.type` | SystemMetadata | BusinessInsight | `"User"`, `"Service Principal"`, or `"Anonymous"` |
 | Subscription ID | `ad.subscription.id` | OrganizationalIdentifiableInformation | PerformanceAndHealth | Azure subscription |
 
 ### Project Context (azure.yaml)
@@ -272,7 +272,7 @@ Each field is tagged with one or more purposes that govern its permitted use.
 
 ## Hashing
 
-Sensitive values are hashed before emission using functions in `internal/telemetry/fields/key.go`.
+Sensitive values are hashed before emission using functions in `cli/azd/internal/tracing/fields/key.go`.
 
 | Function | Behavior |
 |----------|----------|

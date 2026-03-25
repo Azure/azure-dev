@@ -7,10 +7,10 @@ the data classification framework, hashing requirements, and a PR checklist temp
 
 A privacy review **must** be triggered when any of the following conditions are met:
 
-1. **New telemetry field** — Any new attribute key added to `fields/fields.go` or emitted
+1. **New telemetry field** — Any new attribute key added to `cli/azd/internal/tracing/fields/fields.go` or emitted
    via `SetUsageAttributes` / `tracing.SetSpanAttributes`.
 
-2. **New event** — Any new event constant added to `events/events.go` or new span name
+2. **New event** — Any new event constant added to `cli/azd/internal/tracing/events/events.go` or new span name
    introduced via `tracing.Start`.
 
 3. **Classification change** — Any change to an existing field's `Classification` or `Purpose`.
@@ -67,7 +67,7 @@ with the new shape. This includes cooked tables, LENS jobs, dashboards, and aler
 ## Data Classifications
 
 All telemetry fields must be assigned exactly one classification from the table below.
-Classifications are defined in `internal/telemetry/fields/fields.go`.
+Classifications are defined in `cli/azd/internal/tracing/fields/fields.go`.
 
 | Classification | Description | Examples | Retention |
 |----------------|-------------|----------|-----------|
@@ -107,7 +107,7 @@ Any field that could identify a user, project, or environment **must** be hashed
 
 ### Hash Functions
 
-All hashing functions are in `internal/telemetry/fields/key.go`.
+All hashing functions are in `cli/azd/internal/tracing/fields/key.go`.
 
 | Function | Signature | Behavior |
 |----------|-----------|----------|

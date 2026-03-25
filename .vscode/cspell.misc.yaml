@@ -20,6 +20,20 @@ overrides:
       words:
           - MSRC
           - msrc
+    - filename: ./docs/specs/metrics-audit/**
+      words:
+          - vsrpc
+          - Buildpacks
+          - devdeviceid
+          - appinit
+          - oneauth
+          - dashboarding
+          - Pseudonymized
+          - pseudonymized
+          - unhashed
+          - countif
+          - Angelos
+          - Entra
     - filename: ./README.md
       words:
           - VSIX

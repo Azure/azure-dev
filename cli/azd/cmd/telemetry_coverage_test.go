@@ -10,13 +10,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestTelemetryFieldsForGapCommands verifies that all new telemetry field constants
-// added for previously-uninstrumented commands are properly defined and produce valid
-// attribute key-value pairs.
+// TestTelemetryFieldConstants verifies that all telemetry field constants added for
+// command-specific instrumentation are properly defined and produce valid attribute
+// key-value pairs. This is a contract test: if a field constant is removed or renamed,
+// this test will fail, catching regressions in the telemetry schema.
 //
-// This serves as a CI telemetry coverage check: if a field constant is removed or renamed,
-// this test will fail, catching regressions in telemetry instrumentation.
-func TestTelemetryFieldsForGapCommands(t *testing.T) {
+// NOTE: This test validates field definitions, not command-level instrumentation.
+// Command-level coverage is enforced via the documented allowlist in
+// TestCommandTelemetryCoverageAllowlist (below) and the feature-telemetry-matrix.md.
+// Full AST-based scanning of SetUsageAttributes calls is a future enhancement.
+func TestTelemetryFieldConstants(t *testing.T) {
 	// Auth command telemetry fields
 	t.Run("AuthFields", func(t *testing.T) {
 		kv := fields.AuthMethodKey.String("browser")

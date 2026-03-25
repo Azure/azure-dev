@@ -164,11 +164,13 @@ func newPipelineConfigAction(
 
 // Run implements action interface
 func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	// Track pipeline provider and auth type
-	tracing.SetUsageAttributes(
-		fields.PipelineProviderKey.String(p.flags.PipelineProvider),
-		fields.PipelineAuthKey.String(p.flags.PipelineAuthTypeName),
-	)
+	// Track pipeline provider and auth type (only when explicitly specified)
+	if p.flags.PipelineProvider != "" {
+		tracing.SetUsageAttributes(fields.PipelineProviderKey.String(p.flags.PipelineProvider))
+	}
+	if p.flags.PipelineAuthTypeName != "" {
+		tracing.SetUsageAttributes(fields.PipelineAuthKey.String(p.flags.PipelineAuthTypeName))
+	}
 
 	infra, err := p.importManager.ProjectInfrastructure(ctx, p.projectConfig)
 	if err != nil {

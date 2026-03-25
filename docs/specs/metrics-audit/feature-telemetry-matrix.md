@@ -10,6 +10,7 @@ specific telemetry additions.
 |--------|---------|
 | ✅ | Covered — command-specific attributes or events are emitted |
 | ⚠️ | Global span only — no command-specific telemetry |
+| ❌ | Gap identified — needs instrumentation |
 | 🚫 | Telemetry intentionally disabled |
 
 ## Commands with Telemetry Disabled

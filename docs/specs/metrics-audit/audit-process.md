@@ -69,7 +69,29 @@ Telemetry audits run on a quarterly cycle aligned with fiscal quarters.
 - [ ] Verify `telemetry upload` still has `DisableTelemetry: true`
 - [ ] Check for any new commands with `DisableTelemetry: true` — confirm intent
 
-### 6. Data Pipeline Health
+### 6. Opt-Out Rate Estimation
+
+When `AZURE_DEV_COLLECT_TELEMETRY=no`, the entire telemetry pipeline is disabled — no
+spans are created and no data is sent. This means **opted-out users are invisible** in
+telemetry data and we cannot directly measure the opt-out rate.
+
+**Estimation approach** (indirect):
+
+- [ ] Compare total install/download counts (from package manager stats, GitHub releases,
+  winget/brew/apt download logs) against distinct active telemetry users in the same period
+- [ ] Estimate: `opt-out rate ≈ 1 − (active telemetry users / total installs)`
+- [ ] Track this ratio over time to detect trends
+
+> **⚠️ Open question for @AngelosP / Privacy team**: Should azd send a single anonymous
+> opt-out counter signal (containing zero identifying information — no machine ID, no IP,
+> just an increment) when the user has `AZURE_DEV_COLLECT_TELEMETRY=no`? This is a gray
+> area: GDPR Article 7(3) requires stopping processing on consent withdrawal, but a
+> zero-identifier counter may not constitute "personal data." The .NET SDK installer does
+> send a telemetry entry on successful installation even before the user sets the opt-out
+> variable. A decision from the privacy team would clarify whether this approach is
+> acceptable for azd.
+
+### 7. Data Pipeline Health
 
 - [ ] Verify telemetry upload process is functioning (check error rates)
 - [ ] Confirm data arrives in Azure Monitor within expected latency
@@ -185,18 +207,21 @@ jobs:
 Automatically label PRs that modify telemetry files for review.
 
 **Trigger files:**
-- `internal/telemetry/fields/fields.go`
-- `internal/telemetry/events/events.go`
-- `internal/telemetry/fields/key.go`
-- `internal/telemetry/resource/resource.go`
+- `cli/azd/internal/tracing/fields/fields.go`
+- `cli/azd/internal/tracing/events/events.go`
+- `cli/azd/internal/tracing/fields/key.go`
+- `cli/azd/internal/tracing/resource/resource.go`
 - Any file containing `SetUsageAttributes`
 
-**Implementation:** Use a GitHub Actions workflow or a CODEOWNERS entry:
+**Implementation:** Use a CODEOWNERS entry to require telemetry team review:
 
 ```
 # .github/CODEOWNERS (telemetry-related files)
-internal/telemetry/ @AzureDevCLI/telemetry-reviewers
+cli/azd/internal/tracing/ @AzureDevCLI/telemetry-reviewers
 ```
+
+This is preferred over a separate GitHub Actions workflow because it integrates directly
+with the existing PR review flow and requires no additional CI configuration.
 
 ### Telemetry Diff Report
 

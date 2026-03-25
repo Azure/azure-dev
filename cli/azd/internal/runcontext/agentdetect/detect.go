@@ -50,7 +50,7 @@ const DisableAgentDetectEnvVar = "AZD_DISABLE_AGENT_DETECT"
 func detectAgent() AgentInfo {
 	// Allow tests and tooling to suppress agent detection entirely.
 	if v := os.Getenv(DisableAgentDetectEnvVar); v != "" {
-		log.Printf("Agent detection disabled via %s=%s", DisableAgentDetectEnvVar, v)
+		log.Printf("Agent detection disabled via %s", DisableAgentDetectEnvVar)
 		return NoAgent()
 	}
 

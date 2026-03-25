@@ -153,6 +153,19 @@ rules:
 
   - errorType: "DeploymentErrorLine"
     properties:
+      Code: "InvalidResourceGroupLocation"
+    message: "The resource group location conflicts with the deployment."
+    suggestion: >
+      This usually means the resource group already exists in a different region
+      than the one you specified. Either use the existing resource group's region
+      with 'azd env set AZURE_LOCATION <existing-region>', create a new environment
+      with 'azd env new', or delete the existing resource group and retry.
+    links:
+      - url: "https://learn.microsoft.com/azure/azure-resource-manager/management/manage-resource-groups-portal"
+        title: "Manage Azure resource groups"
+
+  - errorType: "DeploymentErrorLine"
+    properties:
       Code: "AuthorizationFailed"
     message: "You do not have sufficient permissions for this deployment."
     suggestion: >
@@ -201,10 +214,11 @@ rules:
   - errorType: "DeploymentErrorLine"
     properties:
       Code: "RoleAssignmentExists"
-    message: "A role assignment with this configuration already exists."
+    message: "A role assignment already exists for this identity."
     suggestion: >
-      This is usually safe to ignore on re-deployment. The role
-      assignment was already created in a previous run.
+      This is usually safe to ignore — the required permissions are
+      already in place. If the deployment failed, retry and the
+      existing role assignment will be reused.
 
   - errorType: "DeploymentErrorLine"
     properties:
@@ -230,6 +244,21 @@ rules:
     links:
       - url: "https://learn.microsoft.com/azure/azure-resource-manager/troubleshooting/error-register-resource-provider"
         title: "Resolve resource provider registration errors"
+
+  - errorType: "DeploymentErrorLine"
+    properties:
+      Code: "InvalidTemplateDeployment"
+    patterns:
+      - "container app"
+      - "containerapp"
+    message: "The Container Apps deployment template is invalid."
+    suggestion: >
+      Check your Bicep/ARM template for Container Apps configuration errors.
+      Common issues include invalid container image references, incorrect
+      environment variable names, or unsupported regions.
+    links:
+      - url: "https://learn.microsoft.com/azure/container-apps/troubleshooting"
+        title: "Troubleshoot Container Apps"
 
   - errorType: "DeploymentErrorLine"
     properties:
@@ -295,12 +324,12 @@ rules:
   - errorType: "DeploymentErrorLine"
     properties:
       Code: "ContainerAppOperationError"
-    message: "A Container App operation failed during deployment."
-    suggestion: >
-      Inspect the container app revision logs with
-      'az containerapp logs show --name <app> -g <resource-group> --follow'.
-      Common causes include invalid environment variables, port
-      mismatches, or insufficient resources.
+    message: "A Container Apps operation failed during deployment."
+    suggestion: >-
+      Check your container image is valid and accessible, verify your ingress and networking
+      configuration, and ensure your scaling rules are correct.
+      Run 'az containerapp revision list -g <resource-group> -n <app-name>' to check revision status,
+      or inspect logs with 'az containerapp logs show --name <app> -g <resource-group> --follow'.
     links:
       - url: "https://learn.microsoft.com/azure/container-apps/troubleshooting"
         title: "Troubleshoot Azure Container Apps"
@@ -316,6 +345,56 @@ rules:
     links:
       - url: "https://learn.microsoft.com/azure/container-apps/containers"
         title: "Containers in Azure Container Apps"
+
+  - errorType: "DeploymentErrorLine"
+    properties:
+      Code: "ContainerAppInvalidName"
+    message: "The container app name is invalid."
+    suggestion: >-
+      Container app names must be 2-32 characters, start with a letter, and contain
+      only lowercase letters, numbers, and hyphens. Update the name in your Bicep
+      template or azure.yaml.
+    links:
+      - url: "https://learn.microsoft.com/azure/container-apps/environment"
+        title: "Azure Container Apps environments"
+
+  - errorType: "DeploymentErrorLine"
+    properties:
+      Code: "ManagedEnvironmentNotReadyForAppCreation"
+    message: "The Container Apps environment is not ready for app creation."
+    suggestion: >-
+      The managed environment is still provisioning or in a failed state. Wait a
+      few minutes and retry, or check the environment status in the Azure portal.
+      If the environment is in a failed state, delete and recreate it.
+
+  - errorType: "DeploymentErrorLine"
+    properties:
+      Code: "ManagedEnvironmentInvalidName"
+    message: "The Container Apps managed environment name is invalid."
+    suggestion: >-
+      Environment names must be 1-60 characters and contain only lowercase letters,
+      numbers, and hyphens. Update the environment name in your Bicep template.
+
+  - errorType: "DeploymentErrorLine"
+    properties:
+      Code: "InvalidEnvironmentId"
+    message: "The Container Apps environment ID is invalid or not found."
+    suggestion: >-
+      Verify the environment resource ID in your Bicep template. Ensure the managed
+      environment exists in the same subscription and region, or run 'azd provision'
+      to create it.
+
+  - errorType: "DeploymentErrorLine"
+    properties:
+      Code: "MaxNumberOfEnvsExceeded"
+    message: "The maximum number of Container Apps environments has been reached."
+    suggestion: >-
+      Your subscription has reached the limit for managed environments in this region.
+      Delete unused environments in the Azure portal, or deploy to a different region
+      with 'azd env set AZURE_LOCATION <region>'.
+    links:
+      - url: "https://learn.microsoft.com/azure/container-apps/quotas"
+        title: "Azure Container Apps quotas"
 
   # ============================================================================
   # PowerShell Hook Failures (errorType + properties + patterns)

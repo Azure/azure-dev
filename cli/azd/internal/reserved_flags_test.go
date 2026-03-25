@@ -11,7 +11,7 @@ import (
 
 func TestReservedFlagsRegistryPopulated(t *testing.T) {
 	// Sanity check: the registry should contain the known global flags.
-	require.GreaterOrEqual(t, len(ReservedFlags), 9, "expected at least 9 reserved flags")
+	require.GreaterOrEqual(t, len(ReservedFlags()), 9, "expected at least 9 reserved flags")
 }
 
 func TestIsReservedShortFlag(t *testing.T) {
@@ -93,7 +93,7 @@ func TestReservedFlagsNoDuplicates(t *testing.T) {
 	seenLong := make(map[string]bool)
 	seenShort := make(map[string]bool)
 
-	for _, f := range ReservedFlags {
+	for _, f := range ReservedFlags() {
 		require.NotEmpty(t, f.Long, "every reserved flag must have a long name")
 		require.False(t, seenLong[f.Long], "duplicate long flag: %s", f.Long)
 		seenLong[f.Long] = true
@@ -107,7 +107,7 @@ func TestReservedFlagsNoDuplicates(t *testing.T) {
 
 func TestReservedFlagsConsistentWithLookups(t *testing.T) {
 	// Every entry in ReservedFlags must be findable via the lookup helpers.
-	for _, f := range ReservedFlags {
+	for _, f := range ReservedFlags() {
 		require.True(t, IsReservedLongFlag(f.Long), "long flag %q not found via IsReservedLongFlag", f.Long)
 		if f.Short != "" {
 			require.True(t, IsReservedShortFlag(f.Short), "short flag %q not found via IsReservedShortFlag", f.Short)

@@ -123,7 +123,7 @@ A **reserved flag** is any flag that azd pre-parses from the command line before
 
 The canonical list is maintained in two locations that are kept in sync by a test:
 
-- **Host side**: `internal/reserved_flags.go` — `ReservedFlags` slice with lookup helpers
+- **Host side**: `internal/reserved_flags.go` — `reservedFlags` slice with `ReservedFlags()` getter and lookup helpers
 - **SDK side**: `pkg/azdext/reserved_flags.go` — `reservedGlobalFlags` slice with validation
 
 | Long Name | Short | Reason Reserved |
@@ -161,7 +161,7 @@ When azd needs a new global flag:
 
 1. Add the flag to `CreateGlobalFlagSet()` in `cmd/auto_install.go`
 2. Add parsing logic to `ParseGlobalFlags()` in `cmd/auto_install.go`
-3. Add to `ReservedFlags` in `internal/reserved_flags.go`
+3. Add to `reservedFlags` in `internal/reserved_flags.go`
 4. Add to `reservedGlobalFlags` in `pkg/azdext/reserved_flags.go`
 5. If it should be available to extensions:
    - Register it in `NewExtensionRootCommand()` in `pkg/azdext/extension_command.go`

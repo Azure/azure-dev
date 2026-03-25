@@ -70,16 +70,13 @@ func (la *logoutAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 	err := la.authManager.Logout(ctx)
 	if err != nil {
-		tracing.SetUsageAttributes(fields.AuthResultKey.String("failure"))
 		return nil, err
 	}
 
 	err = la.accountSubManager.ClearSubscriptions(ctx)
 	if err != nil {
-		tracing.SetUsageAttributes(fields.AuthResultKey.String("failure"))
 		return nil, err
 	}
 
-	tracing.SetUsageAttributes(fields.AuthResultKey.String("success"))
 	return nil, nil
 }

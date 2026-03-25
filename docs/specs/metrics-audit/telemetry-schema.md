@@ -54,7 +54,7 @@ These are set once at process startup via `resource.New()` and attached to every
 |-------|----------|----------------|---------|-------|
 | Object ID | `user_AuthenticatedId` | — | — | From Application Insights contracts |
 | Tenant ID | `ad.tenant.id` | SystemMetadata | BusinessInsight | Entra ID tenant |
-| Account type | `ad.account.type` | SystemMetadata | BusinessInsight | `"User"`, `"Service Principal"`, or `"Anonymous"` |
+| Account type | `ad.account.type` | SystemMetadata | BusinessInsight | `"User"` or `"Service Principal"` |
 | Subscription ID | `ad.subscription.id` | OrganizationalIdentifiableInformation | PerformanceAndHealth | Azure subscription |
 
 ### Project Context (azure.yaml)
@@ -232,18 +232,12 @@ The following fields are being introduced to close telemetry gaps identified in 
 
 | Field | OTel Key | Classification | Purpose | Values |
 |-------|----------|----------------|---------|--------|
-| Auth method | `auth.method` | SystemMetadata | FeatureInsight | `browser`, `device-code`, `service-principal-secret`, `service-principal-certificate`, `federated-github`, `federated-azure-pipelines`, `federated-oidc`, `managed-identity`, `external`, `oneauth`, `check-status`, `logout` |
-| Auth result | `auth.result` | SystemMetadata | FeatureInsight | `success`, `failure`, `logged-in`, `not-logged-in` |
-| Config operation | `config.operation` | SystemMetadata | FeatureInsight | show, list, get, set, unset, reset, list-alpha, options |
-| Env operation | `env.operation` | SystemMetadata | FeatureInsight | set, set-secret, select, new, remove, list, refresh, get-values, get-value, config-get, config-set, config-unset |
+| Auth method | `auth.method` | SystemMetadata | FeatureInsight | `browser`, `device-code`, `service-principal-secret`, `service-principal-certificate`, `federated-github`, `federated-azure-pipelines`, `federated-oidc`, `managed-identity`, `external`, `oneauth`, `logout` |
 | Env count | `env.count` | SystemMetadata | FeatureInsight | **Measurement** — number of environments |
 | Hooks name | `hooks.name` | SystemMetadata | FeatureInsight | Hook script name |
 | Hooks type | `hooks.type` | SystemMetadata | FeatureInsight | `project`, `service` |
-| Template operation | `template.operation` | SystemMetadata | FeatureInsight | list, show, source-list, source-add, source-remove |
 | Pipeline provider | `pipeline.provider` | SystemMetadata | FeatureInsight | `github`, `azdo`, `auto` (auto-detected) |
 | Pipeline auth | `pipeline.auth` | SystemMetadata | FeatureInsight | `federated`, `client-credentials`, `auto` (auto-detected) |
-| Monitor type | `monitor.type` | SystemMetadata | FeatureInsight | `overview`, `logs`, `live` |
-| Show output format | `show.output.format` | SystemMetadata | FeatureInsight | json, table, etc. |
 | Infra provider | `infra.provider` | SystemMetadata | FeatureInsight | `bicep`, `terraform`, `auto` (auto-detected from files) |
 
 ## Data Classifications

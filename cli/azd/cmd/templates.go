@@ -12,8 +12,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -105,7 +103,6 @@ func newTemplateListAction(
 }
 
 func (tl *templateListAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	tracing.SetUsageAttributes(fields.TemplateOperationKey.String("list"))
 	options := &templates.ListOptions{
 		Source: tl.flags.source,
 		Tags:   tl.flags.tags,
@@ -170,7 +167,6 @@ func newTemplateShowAction(
 }
 
 func (a *templateShowAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	tracing.SetUsageAttributes(fields.TemplateOperationKey.String("show"))
 	matchingTemplate, err := a.templateManager.GetTemplate(ctx, a.path)
 
 	if err != nil {
@@ -325,7 +321,6 @@ func newTemplateSourceListAction(
 }
 
 func (a *templateSourceListAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	tracing.SetUsageAttributes(fields.TemplateOperationKey.String("source-list"))
 	sourceConfigs, err := a.sourceManager.List(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list template sources: %w", err)
@@ -412,7 +407,6 @@ func newTemplateSourceAddAction(
 }
 
 func (a *templateSourceAddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	tracing.SetUsageAttributes(fields.TemplateOperationKey.String("source-add"))
 	a.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title: "Add template source (azd template source add)",
 	})
@@ -510,7 +504,6 @@ func newTemplateSourceRemoveAction(
 }
 
 func (a *templateSourceRemoveAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	tracing.SetUsageAttributes(fields.TemplateOperationKey.String("source-remove"))
 	a.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title: "Remove template source (azd template source remove)",
 	})

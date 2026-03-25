@@ -28,29 +28,7 @@ func TestNewFieldConstantsDefined(t *testing.T) {
 			classification: SystemMetadata,
 			purpose:        FeatureInsight,
 		},
-		{
-			name:           "AuthResultKey",
-			key:            AuthResultKey,
-			expectedKey:    "auth.result",
-			classification: SystemMetadata,
-			purpose:        FeatureInsight,
-		},
-		// Config fields
-		{
-			name:           "ConfigOperationKey",
-			key:            ConfigOperationKey,
-			expectedKey:    "config.operation",
-			classification: SystemMetadata,
-			purpose:        FeatureInsight,
-		},
 		// Env fields
-		{
-			name:           "EnvOperationKey",
-			key:            EnvOperationKey,
-			expectedKey:    "env.operation",
-			classification: SystemMetadata,
-			purpose:        FeatureInsight,
-		},
 		{
 			name:           "EnvCountKey",
 			key:            EnvCountKey,
@@ -74,14 +52,6 @@ func TestNewFieldConstantsDefined(t *testing.T) {
 			classification: SystemMetadata,
 			purpose:        FeatureInsight,
 		},
-		// Template fields
-		{
-			name:           "TemplateOperationKey",
-			key:            TemplateOperationKey,
-			expectedKey:    "template.operation",
-			classification: SystemMetadata,
-			purpose:        FeatureInsight,
-		},
 		// Pipeline fields
 		{
 			name:           "PipelineProviderKey",
@@ -94,22 +64,6 @@ func TestNewFieldConstantsDefined(t *testing.T) {
 			name:           "PipelineAuthKey",
 			key:            PipelineAuthKey,
 			expectedKey:    "pipeline.auth",
-			classification: SystemMetadata,
-			purpose:        FeatureInsight,
-		},
-		// Monitor fields
-		{
-			name:           "MonitorTypeKey",
-			key:            MonitorTypeKey,
-			expectedKey:    "monitor.type",
-			classification: SystemMetadata,
-			purpose:        FeatureInsight,
-		},
-		// Show fields
-		{
-			name:           "ShowOutputFormatKey",
-			key:            ShowOutputFormatKey,
-			expectedKey:    "show.output.format",
 			classification: SystemMetadata,
 			purpose:        FeatureInsight,
 		},
@@ -131,15 +85,6 @@ func TestNewFieldConstantsDefined(t *testing.T) {
 			require.Equal(t, tt.isMeasurement, tt.key.IsMeasurement, "IsMeasurement mismatch")
 		})
 	}
-}
-
-// TestAccountTypeAnonymousConstant verifies the new Anonymous account type constant.
-func TestAccountTypeAnonymousConstant(t *testing.T) {
-	require.Equal(t, "Anonymous", AccountTypeAnonymous)
-	// Verify all account types are distinct
-	require.NotEqual(t, AccountTypeUser, AccountTypeAnonymous)
-	require.NotEqual(t, AccountTypeServicePrincipal, AccountTypeAnonymous)
-	require.NotEqual(t, AccountTypeUser, AccountTypeServicePrincipal)
 }
 
 // TestFieldKeyValues verifies that field keys produce valid attribute KeyValue pairs.

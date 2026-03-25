@@ -21,8 +21,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/cmd"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -141,7 +139,6 @@ func NewShowAction(
 }
 
 func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	tracing.SetUsageAttributes(fields.ShowOutputFormatKey.String(string(s.formatter.Kind())))
 	s.console.ShowSpinner(ctx, "Gathering information about your app and its resources...", input.Step)
 	defer s.console.StopSpinner(ctx, "", input.Step)
 

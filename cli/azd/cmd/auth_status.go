@@ -14,8 +14,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
@@ -73,7 +71,6 @@ func newAuthStatusAction(
 }
 
 func (a *authStatusAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	tracing.SetUsageAttributes(fields.AuthMethodKey.String("check-status"))
 	loginMode, err := a.authManager.Mode()
 	if err != nil {
 		log.Printf("error: fetching auth mode: %v", err)
@@ -97,16 +94,13 @@ func (a *authStatusAction) Run(ctx context.Context) (*actions.ActionResult, erro
 	res := contracts.StatusResult{}
 	if err != nil {
 		res.Status = contracts.AuthStatusUnauthenticated
-		tracing.SetUsageAttributes(fields.AuthResultKey.String("not-logged-in"))
 	} else {
 		res.Status = contracts.AuthStatusAuthenticated
 		token, err := a.verifyLoggedIn(ctx, scopes)
 		if err != nil {
 			res.Status = contracts.AuthStatusUnauthenticated
-			tracing.SetUsageAttributes(fields.AuthResultKey.String("not-logged-in"))
 			log.Printf("error: verifying logged in status: %v", err)
 		} else {
-			tracing.SetUsageAttributes(fields.AuthResultKey.String("logged-in"))
 			if token != nil {
 				expiresOn := contracts.RFC3339Time(token.ExpiresOn)
 				res.ExpiresOn = &expiresOn

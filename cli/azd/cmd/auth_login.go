@@ -362,10 +362,8 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	if err := la.login(ctx); err != nil {
-		tracing.SetUsageAttributes(fields.AuthResultKey.String("failure"))
 		return nil, err
 	}
-	tracing.SetUsageAttributes(fields.AuthResultKey.String("success"))
 
 	if _, err := la.verifyLoggedIn(ctx); err != nil {
 		return nil, err

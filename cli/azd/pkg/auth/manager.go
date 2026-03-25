@@ -481,8 +481,6 @@ func (m *Manager) GetLoggedInServicePrincipalTenantID(ctx context.Context) (*str
 		tracing.SetGlobalAttributes(fields.AccountTypeKey.String(fields.AccountTypeServicePrincipal))
 	} else if currentUser.HomeAccountID != nil {
 		tracing.SetGlobalAttributes(fields.AccountTypeKey.String(fields.AccountTypeUser))
-	} else {
-		tracing.SetGlobalAttributes(fields.AccountTypeKey.String(fields.AccountTypeAnonymous))
 	}
 
 	return currentUser.TenantID, nil

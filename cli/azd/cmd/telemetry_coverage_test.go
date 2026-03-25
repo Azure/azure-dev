@@ -32,7 +32,7 @@ func TestTelemetryFieldConstants(t *testing.T) {
 			"service-principal-certificate", "federated-github",
 			"federated-azure-pipelines", "federated-oidc",
 			"managed-identity", "external", "oneauth",
-			"check-status", "logout",
+			"logout",
 		}
 		for _, method := range authMethods {
 			kv := fields.AuthMethodKey.String(method)
@@ -40,39 +40,8 @@ func TestTelemetryFieldConstants(t *testing.T) {
 		}
 	})
 
-	// Auth result telemetry fields
-	t.Run("AuthResultFields", func(t *testing.T) {
-		authResults := []string{"success", "failure", "logged-in", "not-logged-in"}
-		for _, result := range authResults {
-			kv := fields.AuthResultKey.String(result)
-			require.Equal(t, "auth.result", string(kv.Key))
-			require.Equal(t, result, kv.Value.AsString())
-		}
-	})
-
-	// Config command telemetry fields
-	t.Run("ConfigFields", func(t *testing.T) {
-		operations := []string{"show", "get", "set", "unset", "reset", "list-alpha", "options"}
-		for _, op := range operations {
-			kv := fields.ConfigOperationKey.String(op)
-			require.Equal(t, "config.operation", string(kv.Key))
-			require.Equal(t, op, kv.Value.AsString())
-		}
-	})
-
 	// Env command telemetry fields
 	t.Run("EnvFields", func(t *testing.T) {
-		operations := []string{
-			"set", "set-secret", "select", "new", "remove",
-			"list", "refresh", "get-values", "get-value",
-			"config-get", "config-set", "config-unset",
-		}
-		for _, op := range operations {
-			kv := fields.EnvOperationKey.String(op)
-			require.Equal(t, "env.operation", string(kv.Key))
-			require.Equal(t, op, kv.Value.AsString())
-		}
-
 		// Env count is a measurement
 		kvCount := fields.EnvCountKey.Int(3)
 		require.Equal(t, "env.count", string(kvCount.Key))
@@ -88,15 +57,6 @@ func TestTelemetryFieldConstants(t *testing.T) {
 		require.Equal(t, "hooks.type", string(kvType.Key))
 	})
 
-	// Template command telemetry fields
-	t.Run("TemplateFields", func(t *testing.T) {
-		operations := []string{"list", "show", "source-list", "source-add", "source-remove"}
-		for _, op := range operations {
-			kv := fields.TemplateOperationKey.String(op)
-			require.Equal(t, "template.operation", string(kv.Key))
-		}
-	})
-
 	// Pipeline command telemetry fields
 	t.Run("PipelineFields", func(t *testing.T) {
 		kv := fields.PipelineProviderKey.String("github")
@@ -104,22 +64,6 @@ func TestTelemetryFieldConstants(t *testing.T) {
 
 		kvAuth := fields.PipelineAuthKey.String("federated")
 		require.Equal(t, "pipeline.auth", string(kvAuth.Key))
-	})
-
-	// Monitor command telemetry fields
-	t.Run("MonitorFields", func(t *testing.T) {
-		types := []string{"overview", "live", "logs"}
-		for _, monitorType := range types {
-			kv := fields.MonitorTypeKey.String(monitorType)
-			require.Equal(t, "monitor.type", string(kv.Key))
-			require.Equal(t, monitorType, kv.Value.AsString())
-		}
-	})
-
-	// Show command telemetry fields
-	t.Run("ShowFields", func(t *testing.T) {
-		kv := fields.ShowOutputFormatKey.String("json")
-		require.Equal(t, "show.output.format", string(kv.Key))
 	})
 
 	// Infra command telemetry fields
@@ -130,14 +74,6 @@ func TestTelemetryFieldConstants(t *testing.T) {
 			require.Equal(t, "infra.provider", string(kv.Key))
 			require.Equal(t, provider, kv.Value.AsString())
 		}
-	})
-
-	// AccountType Anonymous constant
-	t.Run("AccountTypeAnonymous", func(t *testing.T) {
-		require.Equal(t, "Anonymous", fields.AccountTypeAnonymous)
-		kv := fields.AccountTypeKey.String(fields.AccountTypeAnonymous)
-		require.Equal(t, "ad.account.type", string(kv.Key))
-		require.Equal(t, "Anonymous", kv.Value.AsString())
 	})
 }
 
@@ -160,58 +96,58 @@ func TestCommandTelemetryCoverage(t *testing.T) {
 	// When adding a command here, ensure the command's action sets at least one
 	// command-specific attribute (e.g., auth.method, config.operation, env.operation).
 	commandsWithSpecificTelemetry := []string{
-		"auth login",             // auth.method, auth.result
-		"auth logout",            // auth.method (logout), auth.result
-		"auth status",            // auth.method (check-status), auth.result
-		"build",                  // (via hooks middleware)
-		"config get",             // config.operation
-		"config list",            // config.operation
-		"config reset",           // config.operation
-		"config set",             // config.operation
-		"config show",            // config.operation
-		"config unset",           // config.operation
-		"deploy",                 // infra.provider, service attributes (via hooks middleware)
-		"down",                   // infra.provider (via hooks middleware)
-		"env get-value",          // env.operation
-		"env get-values",         // env.operation
-		"env list",               // env.operation, env.count
-		"env new",                // env.operation
-		"env refresh",            // env.operation
-		"env select",             // env.operation
-		"env set",                // env.operation
-		"env set-secret",         // env.operation
-		"hooks run",              // hooks.name, hooks.type
-		"init",                   // init.method, appinit.* fields
-		"monitor",                // monitor.type
-		"package",                // (via hooks middleware)
-		"pipeline config",        // pipeline.provider, pipeline.auth
-		"provision",              // infra.provider (via hooks middleware)
-		"restore",                // (via hooks middleware)
-		"show",                   // show.output.format
-		"template list",          // template.operation
-		"template show",          // template.operation
-		"template source add",    // template.operation
-		"template source list",   // template.operation
-		"template source remove", // template.operation
-		"up",                     // infra.provider (via hooks middleware, composes provision+deploy)
-		"update",                 // update.* fields
+		"auth login",      // auth.method
+		"auth logout",     // auth.method (logout)
+		"build",           // (via hooks middleware)
+		"deploy",          // infra.provider, service attributes (via hooks middleware)
+		"down",            // infra.provider (via hooks middleware)
+		"env list",        // env.count
+		"hooks run",       // hooks.name, hooks.type
+		"init",            // init.method, appinit.* fields
+		"package",         // (via hooks middleware)
+		"pipeline config", // pipeline.provider, pipeline.auth
+		"provision",       // infra.provider (via hooks middleware)
+		"restore",         // (via hooks middleware)
+		"up",              // infra.provider (via hooks middleware, composes provision+deploy)
+		"update",          // update.* fields
 	}
 
 	// Commands that rely ONLY on global middleware telemetry (command name, flags,
 	// duration, errors) and do NOT emit command-specific attributes. Each entry
 	// includes a justification for why command-specific telemetry is not needed.
 	commandsWithOnlyGlobalTelemetry := []string{
-		"completion",        // Shell completion script generation — no meaningful usage signal
-		"config list-alpha", // Simple list of alpha features — no operational variance
-		"copilot",           // Copilot session telemetry handled by copilot.* fields at session level
-		"env config get",    // Thin wrapper — low cardinality, global telemetry sufficient
-		"env config set",    // Thin wrapper — low cardinality, global telemetry sufficient
-		"env config unset",  // Thin wrapper — low cardinality, global telemetry sufficient
-		"env remove",        // Destructive but simple — global telemetry captures usage
-		"mcp",               // MCP tool telemetry handled by mcp.* fields at invocation level
-		"telemetry",         // Meta-command for telemetry itself — avoid recursion
-		"version",           // Telemetry explicitly disabled (DisableTelemetry: true)
-		"vs-server",         // JSON-RPC server — telemetry handled by rpc.* fields per call
+		"auth status",           // Global telemetry sufficient — auth check is simple pass/fail
+		"completion",            // Shell completion script generation — no meaningful usage signal
+		"config get",            // Global telemetry sufficient — low cardinality
+		"config list",           // Global telemetry sufficient — low cardinality
+		"config list-alpha",     // Simple list of alpha features — no operational variance
+		"config reset",          // Global telemetry sufficient — low cardinality
+		"config set",            // Global telemetry sufficient — low cardinality
+		"config show",           // Global telemetry sufficient — low cardinality
+		"config unset",          // Global telemetry sufficient — low cardinality
+		"copilot",               // Copilot session telemetry handled by copilot.* fields at session level
+		"env config get",        // Thin wrapper — low cardinality, global telemetry sufficient
+		"env config set",        // Thin wrapper — low cardinality, global telemetry sufficient
+		"env config unset",      // Thin wrapper — low cardinality, global telemetry sufficient
+		"env get-value",         // Global telemetry sufficient — command name captures operation
+		"env get-values",        // Global telemetry sufficient — command name captures operation
+		"env new",               // Global telemetry sufficient — command name captures operation
+		"env refresh",           // Global telemetry sufficient — command name captures operation
+		"env remove",            // Destructive but simple — global telemetry captures usage
+		"env select",            // Global telemetry sufficient — command name captures operation
+		"env set",               // Global telemetry sufficient — command name captures operation
+		"env set-secret",        // Global telemetry sufficient — command name captures operation
+		"mcp",                   // MCP tool telemetry handled by mcp.* fields at invocation level
+		"monitor",               // Global telemetry sufficient — command name captures usage
+		"show",                  // Global telemetry sufficient — output format not analytically useful
+		"telemetry",             // Meta-command for telemetry itself — avoid recursion
+		"template list",         // Global telemetry sufficient — command name captures operation
+		"template show",         // Global telemetry sufficient — command name captures operation
+		"template source add",   // Global telemetry sufficient — command name captures operation
+		"template source list",  // Global telemetry sufficient — command name captures operation
+		"template source remove", // Global telemetry sufficient — command name captures operation
+		"version",               // Telemetry explicitly disabled (DisableTelemetry: true)
+		"vs-server",             // JSON-RPC server — telemetry handled by rpc.* fields per call
 	}
 
 	// Build lookup maps

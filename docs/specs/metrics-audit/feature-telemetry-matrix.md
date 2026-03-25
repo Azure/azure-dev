@@ -35,82 +35,90 @@ These commands emit attributes or events beyond the global middleware span.
 
 ## Full Inventory Matrix
 
-| Command | Subcommands | Global Span | Command-Specific Attrs | Feature Events | Gap? | Recommended Additions |
-|---------|-------------|:-----------:|:----------------------:|:--------------:|:----:|----------------------|
-| **Auth** | | | | | | |
-| `auth login` | — | ✅ | ❌ | ❌ | **Yes** | `auth.method` (browser, device-code, service-principal-secret, service-principal-certificate, federated-github, federated-azure-pipelines, federated-oidc, managed-identity, external, oneauth), `auth.result` (success/failure) |
-| `auth logout` | — | ✅ | ❌ | ❌ | **Yes** | `auth.result` |
-| `auth status` | — | ✅ | ❌ | ❌ | **Yes** | `auth.method` (check-status), `auth.result` |
-| `auth token` | — | ✅ | ❌ | ❌ | **Yes** | `auth.result` |
-| **Config** | | | | | | |
-| `config` | `show`, `list`, `get`, `set`, `unset`, `reset`, `list-alpha`, `options` | ✅ | ❌ | ❌ | **Yes** | `config.operation` (show/list/get/set/unset/reset/list-alpha/options) |
-| **Environment** | | | | | | |
-| `env` | `set`, `set-secret`, `select`, `new`, `remove`, `list`, `refresh`, `get-values`, `get-value` | ✅ | ❌ | ❌ | **Yes** | `env.operation` (set/set-secret/select/new/remove/list/refresh/get-values/get-value), `env.count` (measurement — number of environments) |
-| `env config` | `get`, `set`, `unset` | ✅ | ❌ | ❌ | **Yes** | `env.operation` (config-get/config-set/config-unset) |
-| **Hooks** | | | | | | |
-| `hooks run` | — | ✅ | ❌ | ❌ | **Yes** | `hooks.name`, `hooks.type` (project/service) |
-| **Templates** | | | | | | |
-| `template` | `list`, `show` | ✅ | ❌ | ❌ | **Yes** | `template.operation` (list/show) |
-| `template source` | `list`, `add`, `remove` | ✅ | ❌ | ❌ | **Yes** | `template.operation` (source-list/source-add/source-remove) |
-| **Pipeline** | | | | | | |
-| `pipeline config` | — | ✅ | ❌ | ❌ | **Yes** | `pipeline.provider` (github/azdo), `pipeline.auth` (federated/client-credentials) |
-| **Monitor** | | | | | | |
-| `monitor` | — | ✅ | ❌ | ❌ | **Yes** | `monitor.type` (overview/logs/live) |
-| **Show** | | | | | | |
-| `show` | — | ✅ | ❌ | ❌ | **Yes** | `show.output.format` (json/table/etc.) |
-| **Infrastructure** | | | | | | |
-| `infra generate` | — | ✅ | ❌ | ❌ | **Yes** | `infra.provider` (bicep/terraform) |
-| `infra synth` | — | ✅ | ❌ | ❌ | **Yes** | `infra.provider` (bicep/terraform) |
-| `infra create` | — (hidden, deprecated) | ✅ | ❌ | ❌ | Low | Wraps `provision`; inherits its telemetry once added |
-| `infra delete` | — (hidden, deprecated) | ✅ | ❌ | ❌ | Low | Wraps `down`; inherits its telemetry once added |
-| **Core Lifecycle** | | | | | | |
-| `restore` | — | ✅ | ❌ | ❌ | **Yes** | Service-level attrs (language, host, count) |
-| `build` | — | ✅ | ❌ | ❌ | **Yes** | Service-level attrs (language, host, count) |
-| `provision` | — | ✅ | ❌ | ❌ | **Yes** | `infra.provider`, resource count, duration breakdown |
-| `package` | — | ✅ | ❌ | ❌ | **Yes** | Service-level attrs (language, host, count) |
-| `deploy` | — | ✅ | ❌ | ❌ | **Yes** | Service host type, target count, deployment strategy |
-| `publish` | — | ✅ | ❌ | ❌ | **Yes** | Same as `deploy` (alias behavior) |
-| `up` | — | ✅ | ❌ | ❌ | **Yes** | Orchestration attrs: which phases ran, total service count |
-| `down` | — | ✅ | ❌ | ❌ | **Yes** | `infra.provider`, resource count, purge flag |
-| **Add** | | | | | | |
-| `add` | — | ✅ | ❌ | ❌ | **Yes** | Component type added, source (template/manual) |
-| **Completion** | | | | | | |
-| `completion` | `bash`, `zsh`, `fish`, `powershell`, `fig` | ✅ | ❌ | ❌ | Low | Shell type — low priority, minimal analytical value |
-| **VS Server** | | | | | | |
-| `vs-server` | — | ✅ | ❌ | ❌ | Low | Long-running RPC; covered by `vsrpc.*` events |
-| **Copilot Consent** | | | | | | |
-| `copilot consent` | `list`, `revoke`, `grant` | ✅ | ❌ | ❌ | **Yes** | Consent operation type, scope |
-| **Extension Management** | | | | | | |
-| `extension` | `list`, `show`, `install`, `uninstall`, `upgrade` | ✅ | ❌ | ❌ | **Yes** | `extension.id`, `extension.version`, operation type |
-| `extension source` | `list`, `add`, `remove`, `validate` | ✅ | ❌ | ❌ | **Yes** | Source operation type |
-| **Init** | | | | | | |
-| `init` | — | ✅ | ✅ | ✅ | No | — Already covered |
-| **Update** | | | | | | |
-| `update` | — | ✅ | ✅ | ✅ | No | — Already covered |
-| **MCP** | | | | | | |
-| `mcp start` | — | ✅ | ✅ | ✅ | No | — Already covered |
-| **Disabled** | | | | | | |
-| `version` | — | 🚫 | — | — | No | Intentionally disabled |
-| `telemetry upload` | — | 🚫 | — | — | No | Intentionally disabled |
+| Command | Subcommands | Global Span | Command-Specific Attrs | Feature Events | Notes |
+|---------|-------------|:-----------:|:----------------------:|:--------------:|-------|
+| **Auth** | | | | | |
+| `auth login` | — | ✅ | ✅ | ❌ | `auth.method` (browser, device-code, service-principal-secret, etc.) |
+| `auth logout` | — | ✅ | ✅ | ❌ | `auth.method` (logout) |
+| `auth status` | — | ✅ | ❌ | ❌ | Global telemetry sufficient — simple pass/fail check |
+| `auth token` | — | ✅ | ❌ | ❌ | Global telemetry sufficient |
+| **Config** | | | | | |
+| `config` | `show`, `list`, `get`, `set`, `unset`, `reset`, `list-alpha`, `options` | ✅ | ❌ | ❌ | Redundant — command name in global span captures operation |
+| **Environment** | | | | | |
+| `env` | `set`, `set-secret`, `select`, `new`, `remove`, `refresh`, `get-values`, `get-value` | ✅ | ❌ | ❌ | Redundant — command name in global span captures operation |
+| `env list` | — | ✅ | ✅ | ❌ | `env.count` (measurement — number of environments) |
+| `env config` | `get`, `set`, `unset` | ✅ | ❌ | ❌ | Thin wrappers — global telemetry sufficient |
+| **Hooks** | | | | | |
+| `hooks run` | — | ✅ | ✅ | ❌ | `hooks.name`, `hooks.type` (project/service) |
+| **Templates** | | | | | |
+| `template` | `list`, `show` | ✅ | ❌ | ❌ | Redundant — command name in global span captures operation |
+| `template source` | `list`, `add`, `remove` | ✅ | ❌ | ❌ | Redundant — command name in global span captures operation |
+| **Pipeline** | | | | | |
+| `pipeline config` | — | ✅ | ✅ | ❌ | `pipeline.provider` (github/azdo), `pipeline.auth` (federated/client-credentials) |
+| **Monitor** | | | | | |
+| `monitor` | — | ✅ | ❌ | ❌ | Redundant — command name in global span is sufficient |
+| **Show** | | | | | |
+| `show` | — | ✅ | ❌ | ❌ | Redundant — output format not analytically useful |
+| **Infrastructure** | | | | | |
+| `infra generate` | — | ✅ | ✅ | ❌ | `infra.provider` (bicep/terraform) |
+| `infra synth` | — | ✅ | ✅ | ❌ | `infra.provider` (bicep/terraform) |
+| `infra create` | — (hidden, deprecated) | ✅ | ❌ | ❌ | Wraps `provision`; inherits its telemetry |
+| `infra delete` | — (hidden, deprecated) | ✅ | ❌ | ❌ | Wraps `down`; inherits its telemetry |
+| **Core Lifecycle** | | | | | |
+| `restore` | — | ✅ | ❌ | ❌ | Via hooks middleware |
+| `build` | — | ✅ | ❌ | ❌ | Via hooks middleware |
+| `provision` | — | ✅ | ❌ | ❌ | `infra.provider` set via hooks middleware |
+| `package` | — | ✅ | ❌ | ❌ | Via hooks middleware |
+| `deploy` | — | ✅ | ❌ | ❌ | `infra.provider`, service attributes via hooks middleware |
+| `publish` | — | ✅ | ❌ | ❌ | Same as `deploy` (alias behavior) |
+| `up` | — | ✅ | ❌ | ❌ | `infra.provider` via hooks middleware (composes provision+deploy) |
+| `down` | — | ✅ | ❌ | ❌ | `infra.provider` via hooks middleware |
+| **Add** | | | | | |
+| `add` | — | ✅ | ❌ | ❌ | Low priority |
+| **Completion** | | | | | |
+| `completion` | `bash`, `zsh`, `fish`, `powershell`, `fig` | ✅ | ❌ | ❌ | Low priority — minimal analytical value |
+| **VS Server** | | | | | |
+| `vs-server` | — | ✅ | ❌ | ❌ | Long-running RPC; covered by `vsrpc.*` events |
+| **Copilot Consent** | | | | | |
+| `copilot consent` | `list`, `revoke`, `grant` | ✅ | ❌ | ❌ | Low priority |
+| **Extension Management** | | | | | |
+| `extension` | `list`, `show`, `install`, `uninstall`, `upgrade` | ✅ | ❌ | ❌ | Covered by `extension.*` fields |
+| `extension source` | `list`, `add`, `remove`, `validate` | ✅ | ❌ | ❌ | Low priority |
+| **Init** | | | | | |
+| `init` | — | ✅ | ✅ | ✅ | Comprehensive coverage via `appinit.*` fields |
+| **Update** | | | | | |
+| `update` | — | ✅ | ✅ | ✅ | Covered by `update.*` fields |
+| **MCP** | | | | | |
+| `mcp start` | — | ✅ | ✅ | ✅ | Per-tool spans via `mcp.*` |
+| **Disabled** | | | | | |
+| `version` | — | 🚫 | — | — | Intentionally disabled |
+| `telemetry upload` | — | 🚫 | — | — | Intentionally disabled |
 
-## Gap Summary
+## Retained Fields Summary
 
-| Priority | Count | Commands |
-|----------|-------|----------|
-| **High** | 8 | `auth login/logout/status/token`, `provision`, `deploy`, `up`, `down` |
-| **Medium** | 14 | `config *`, `env *`, `pipeline config`, `hooks run`, `template *`, `monitor`, `show`, `infra generate/synth`, `restore`, `build`, `package`, `add` |
-| **Low** | 6 | `completion *`, `vs-server`, `infra create/delete` (deprecated), `copilot consent *`, `extension *` management |
+After the redundancy audit (per PR review feedback from @weikanglim), the following
+command-specific telemetry fields provide analytical value beyond the command name:
 
-## Implementation Priority
+| Field | OTel Key | Commands | Justification |
+|-------|----------|----------|---------------|
+| Auth method | `auth.method` | `auth login`, `auth logout` | Distinguishes authentication flow type (browser, device-code, SP, federated, etc.) |
+| Env count | `env.count` | `env list` | Measurement — number of environments is a quantitative metric |
+| Hooks name | `hooks.name` | `hooks run` | Identifies which hook script ran |
+| Hooks type | `hooks.type` | `hooks run` | Distinguishes project vs service hooks |
+| Pipeline provider | `pipeline.provider` | `pipeline config` | Distinguishes GitHub vs Azure DevOps |
+| Pipeline auth | `pipeline.auth` | `pipeline config` | Distinguishes federated vs client-credentials |
+| Infra provider | `infra.provider` | `infra generate`, `infra synth` | Distinguishes Bicep vs Terraform |
 
-1. **Phase 1 — Auth & Core Lifecycle**: `auth login`, `provision`, `deploy`, `up`, `down`
-   — These are the highest-traffic commands with the most analytical value.
+### Removed Fields (Redundant with Command Name)
 
-2. **Phase 2 — Config, Env, Pipeline**: `config *`, `env *`, `pipeline config`, `hooks run`
-   — Understanding user configuration patterns and environment workflows.
+The following fields were removed because the command name in the global span already
+captures the operation type, making the attribute redundant:
 
-3. **Phase 3 — Templates & Infrastructure**: `template *`, `monitor`, `show`, `infra generate/synth`
-   — Template discovery and infrastructure generation insights.
-
-4. **Phase 4 — Remaining**: `restore`, `build`, `package`, `add`, `completion`, extension management
-   — Lower traffic or lower analytical value.
+| Removed Field | Reason |
+|---------------|--------|
+| `auth.result` | Success/failure already captured by span status |
+| `config.operation` | Each config subcommand has its own command name |
+| `env.operation` | Each env subcommand has its own command name |
+| `template.operation` | Each template subcommand has its own command name |
+| `monitor.type` | Single command — no distinguishing value |
+| `show.output.format` | Output format not analytically useful |

@@ -9,8 +9,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
@@ -101,15 +99,6 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	if !m.flags.monitorLive && !m.flags.monitorLogs && !m.flags.monitorOverview {
 		m.flags.monitorOverview = true
 	}
-
-	// Track which monitor type was selected
-	monitorType := "overview"
-	if m.flags.monitorLive {
-		monitorType = "live"
-	} else if m.flags.monitorLogs {
-		monitorType = "logs"
-	}
-	tracing.SetUsageAttributes(fields.MonitorTypeKey.String(monitorType))
 
 	if m.env.GetSubscriptionId() == "" {
 		return nil, &internal.ErrorWithSuggestion{

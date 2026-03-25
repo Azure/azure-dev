@@ -36,6 +36,8 @@ func createDeployableZip(svc *ServiceConfig, root string) (string, error) {
 		if errors.Is(err, fs.ErrNotExist) {
 			// no ignore file, use defaults below
 		} else if err != nil {
+			zipFile.Close()
+			os.Remove(zipFile.Name()) //nolint:gosec // G703: zipFile.Name() is our own temp file, not user-controlled
 			return "", fmt.Errorf("reading ignore file: %w", err)
 		} else {
 			// Strip UTF-8 BOM if present, then parse from in-memory contents.

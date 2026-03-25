@@ -205,13 +205,51 @@ This project uses Go 1.26. Use modern standard library features:
 - **Range over integers**: `for i := range 10 { }`
 
 ### Modern Go Patterns (Go 1.26+)
+- Use `new(val)` not `x := val; &x` - returns pointer to any value.  
+    Go 1.26 extends `new()` to accept expressions, not just types.  
+    Type is inferred: `new(0) → *int`, `new("s") → *string`, `new(T{}) → *T`.  
+    DO NOT use `x := val; &x` pattern — always use `new(val)` directly.  
+    DO NOT use redundant casts like `new(int(0))` — just write `new(0)`.  
+    Before:
+    ```go
+    timeout := 30
+    debug := true
+    cfg := Config{
+        Timeout: &timeout,
+        Debug:   &debug,
+    }
+    ```
 
-- Use `errors.AsType[*MyError](err)` instead of `var e *MyError; errors.As(err, &e)`
+    After:
+    ```go
+    cfg := Config{
+        Timeout: new(30),   // *int
+        Debug:   new(true), // *bool
+    }
+    ```
+
+- Use `errors.AsType[T](err)` not `errors.As(err, &target)`.
+    ALWAYS use errors.AsType when checking if error matches a specific type.
+
+    Before:
+    ```go
+    var pathErr *os.PathError
+    if errors.As(err, &pathErr) {
+        handle(pathErr)
+    }
+    ```
+
+    After:
+    ```go
+    if pathErr, ok := errors.AsType[*os.PathError](err); ok {
+        handle(pathErr)
+    }
+    ```
+
 - Use `slices.SortFunc(items, func(a, b T) int { return cmp.Compare(a.Name, b.Name) })` instead of `sort.Slice`
 - Use `slices.Clone(s)` instead of `append([]T{}, s...)`
 - Use `slices.Sorted(maps.Keys(m))` instead of collecting keys and sorting them separately
 - Use `http.NewRequestWithContext(ctx, method, url, body)` instead of `http.NewRequest(...)`
-- Use `new(expr)` instead of `to.Ptr(expr)`; `go fix ./...` applies this automatically
 - Use `wg.Go(func() { ... })` instead of `wg.Add(1); go func() { defer wg.Done(); ... }()`
 - Use `for i := range n` instead of `for i := 0; i < n; i++` for simple counted loops
 - Use `t.Context()` instead of `context.Background()` in tests

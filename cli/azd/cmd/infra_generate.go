@@ -88,8 +88,13 @@ func newInfraGenerateAction(
 
 func (a *infraGenerateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Track infra provider from project configuration
-	if a.projectConfig != nil && a.projectConfig.Infra.Provider != "" {
-		tracing.SetUsageAttributes(fields.InfraProviderKey.String(string(a.projectConfig.Infra.Provider)))
+	// Emit "auto" when provider is empty, so we know auto-detection was used.
+	if a.projectConfig != nil {
+		provider := string(a.projectConfig.Infra.Provider)
+		if provider == "" {
+			provider = "auto"
+		}
+		tracing.SetUsageAttributes(fields.InfraProviderKey.String(provider))
 	}
 
 	if a.calledAs == "synth" {

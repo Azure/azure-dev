@@ -164,12 +164,17 @@ func newPipelineConfigAction(
 
 // Run implements action interface
 func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	// Track pipeline provider and auth type (only when explicitly specified)
+	// Track pipeline provider and auth type
+	// Emit "auto" when the user didn't specify, so we know auto-detection was used.
 	if p.flags.PipelineProvider != "" {
 		tracing.SetUsageAttributes(fields.PipelineProviderKey.String(p.flags.PipelineProvider))
+	} else {
+		tracing.SetUsageAttributes(fields.PipelineProviderKey.String("auto"))
 	}
 	if p.flags.PipelineAuthTypeName != "" {
 		tracing.SetUsageAttributes(fields.PipelineAuthKey.String(p.flags.PipelineAuthTypeName))
+	} else {
+		tracing.SetUsageAttributes(fields.PipelineAuthKey.String("auto"))
 	}
 
 	infra, err := p.importManager.ProjectInfrastructure(ctx, p.projectConfig)

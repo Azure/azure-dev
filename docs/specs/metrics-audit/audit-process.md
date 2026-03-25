@@ -223,6 +223,59 @@ cli/azd/internal/tracing/ @AzureDevCLI/telemetry-reviewers
 This is preferred over a separate GitHub Actions workflow because it integrates directly
 with the existing PR review flow and requires no additional CI configuration.
 
+## Telemetry Validation Pipeline
+
+### 1. Local Validation
+
+Use `--trace-log-file <path>` to dump all telemetry spans to a JSON file, then inspect for
+expected attributes.
+
+```bash
+azd pipeline config --trace-log-file telemetry-dump.json
+# Then inspect telemetry-dump.json for pipeline.provider, pipeline.auth.type fields
+```
+
+```bash
+azd infra synth --trace-log-file telemetry-dump.json
+# Inspect for infra.provider field
+```
+
+This flag is available on all azd commands and writes the full span tree (with all attributes)
+to the specified file. Use `jq` or similar tools to filter for specific keys.
+
+### 2. Functional Tests
+
+The repo has existing functional telemetry tests at
+`cli/azd/test/functional/telemetry_test.go` that run real commands and validate trace
+attributes. New telemetry fields should be covered here.
+
+When adding a new field, add a test case that:
+1. Runs the command that emits the field.
+2. Reads the trace output.
+3. Asserts the expected attribute key and value are present.
+
+### 3. PR Builds
+
+Azure Pipelines publishes PR-specific builds via `eng/pipelines/release-cli.yml`. Install a
+PR build with:
+
+```bash
+azd version install pr/<PRNumber>
+```
+
+Then manually test commands and inspect `--trace-log-file` output to verify the new telemetry
+attributes are present with expected values.
+
+### 4. Pre-Production Checklist
+
+Before merging telemetry changes:
+
+- [ ] Unit tests pass (`go test ./cmd/... ./internal/tracing/...`)
+- [ ] Functional telemetry tests pass
+- [ ] Local `--trace-log-file` validation for each new field
+- [ ] PR build smoke test with real Azure subscription
+- [ ] Dev telemetry endpoint receives expected attributes (non-prod builds auto-target dev App Insights)
+
 ### Telemetry Diff Report
 
 Generate a diff report on every PR that modifies telemetry, showing:

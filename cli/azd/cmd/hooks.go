@@ -125,7 +125,7 @@ func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		hookType = "service"
 	}
 	tracing.SetUsageAttributes(
-		fields.StringHashed(fields.HooksNameKey, hookName),
+		fields.HooksNameKey.String(hookName),
 		fields.HooksTypeKey.String(hookType),
 	)
 

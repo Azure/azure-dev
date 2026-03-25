@@ -240,11 +240,11 @@ The following fields are being introduced to close telemetry gaps identified in 
 | Hooks name | `hooks.name` | SystemMetadata | FeatureInsight | Hook script name |
 | Hooks type | `hooks.type` | SystemMetadata | FeatureInsight | `project`, `service` |
 | Template operation | `template.operation` | SystemMetadata | FeatureInsight | list, show, source-list, source-add, source-remove |
-| Pipeline provider | `pipeline.provider` | SystemMetadata | FeatureInsight | `github`, `azdo` |
-| Pipeline auth | `pipeline.auth` | SystemMetadata | FeatureInsight | `federated`, `client-credentials` |
+| Pipeline provider | `pipeline.provider` | SystemMetadata | FeatureInsight | `github`, `azdo`, `auto` (auto-detected) |
+| Pipeline auth | `pipeline.auth` | SystemMetadata | FeatureInsight | `federated`, `client-credentials`, `auto` (auto-detected) |
 | Monitor type | `monitor.type` | SystemMetadata | FeatureInsight | `overview`, `logs`, `live` |
 | Show output format | `show.output.format` | SystemMetadata | FeatureInsight | json, table, etc. |
-| Infra provider | `infra.provider` | SystemMetadata | FeatureInsight | `bicep`, `terraform` |
+| Infra provider | `infra.provider` | SystemMetadata | FeatureInsight | `bicep`, `terraform`, `auto` (auto-detected from files) |
 
 ## Data Classifications
 

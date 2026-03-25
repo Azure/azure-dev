@@ -369,6 +369,15 @@ func Test_ShouldSkipErrorAnalysis(t *testing.T) {
 		wrapped := fmt.Errorf("prompt failed: %w", surveyterm.InterruptErr)
 		require.True(t, shouldSkipErrorAnalysis(wrapped))
 	})
+
+	t.Run("ErrAbortedByUser is skipped", func(t *testing.T) {
+		require.True(t, shouldSkipErrorAnalysis(internal.ErrAbortedByUser))
+	})
+
+	t.Run("Wrapped ErrAbortedByUser is skipped", func(t *testing.T) {
+		wrapped := fmt.Errorf("preflight declined: %w", internal.ErrAbortedByUser)
+		require.True(t, shouldSkipErrorAnalysis(wrapped))
+	})
 }
 
 func Test_TroubleshootCategory_Constants(t *testing.T) {

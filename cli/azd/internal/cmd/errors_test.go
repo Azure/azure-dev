@@ -1018,6 +1018,7 @@ func Test_ClassifySuggestionType_MatchesMapError(t *testing.T) {
 		{name: "ErrKeyNotFound", err: internal.ErrKeyNotFound},
 		{name: "ErrExtensionNotFound", err: internal.ErrExtensionNotFound},
 		{name: "ErrOperationCancelled", err: internal.ErrOperationCancelled},
+		{name: "ErrAbortedByUser", err: internal.ErrAbortedByUser},
 		// Network error
 		{
 			name: "DNSError",

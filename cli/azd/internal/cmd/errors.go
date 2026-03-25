@@ -271,6 +271,8 @@ func classifySentinel(err error) string {
 		return "internal.resource_not_found"
 	case errors.Is(err, internal.ErrOperationCancelled):
 		return "internal.operation_cancelled"
+	case errors.Is(err, internal.ErrAbortedByUser):
+		return "internal.operation_aborted"
 	case errors.Is(err, terminal.InterruptErr),
 		errors.Is(err, context.Canceled):
 		return "user.canceled"

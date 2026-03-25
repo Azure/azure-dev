@@ -27,7 +27,7 @@ import (
 )
 
 type updateFlags struct {
-	channel string
+	channel            string
 	checkIntervalHours int
 	global             *internal.GlobalCommandOptions
 }

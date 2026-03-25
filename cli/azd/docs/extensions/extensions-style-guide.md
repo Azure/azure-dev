@@ -73,7 +73,7 @@ Reserved flags: environment, cwd, debug, no-prompt, output, help, docs, trace-lo
 
 For the full technical specification of how flags flow between azd and extensions, including
 the pre-parsing pipeline, environment variable propagation, and enforcement implementation,
-see [Extension Flag Architecture Spec](../specs/extension-flags/spec.md).
+see [Extension Flag Architecture Spec](../design/extension-flag-architecture.md).
 
 ### 3. **Help and Discoverability**
 

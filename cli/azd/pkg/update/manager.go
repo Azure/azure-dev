@@ -507,10 +507,10 @@ func (m *Manager) updateViaMSI(ctx context.Context, cfg *UpdateConfig, writer io
 			fmt.Errorf("failed to hash safety copy before install: %w", hashErr))
 	}
 
-	log.Printf("Running install script: powershell %s", strings.Join(psArgs, " "))
+	log.Printf("Running install script: pwsh %s", strings.Join(psArgs, " "))
 	fmt.Fprintf(writer, "Installing azd %s channel...\n", cfg.Channel)
 
-	runArgs := exec.NewRunArgs("powershell", psArgs...).
+	runArgs := exec.NewRunArgs("pwsh", psArgs...).
 		WithStdOut(writer).
 		WithStdErr(writer)
 

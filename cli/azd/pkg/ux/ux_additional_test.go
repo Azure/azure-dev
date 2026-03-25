@@ -197,7 +197,9 @@ func TestPrinter_SetCursorPosition_same_position_noop(t *testing.T) {
 	p.SetCursorPosition(pos)
 	afterFirst := buf.Len()
 	if afterFirst <= beforeFirst {
-		t.Fatalf("expected first SetCursorPosition to write initialization escape codes, len before = %d, after = %d", beforeFirst, afterFirst)
+		t.Fatalf(
+			"expected first SetCursorPosition to write escape codes, before = %d, after = %d",
+			beforeFirst, afterFirst)
 	}
 
 	// Setting same position should not write additional escape codes
@@ -205,7 +207,9 @@ func TestPrinter_SetCursorPosition_same_position_noop(t *testing.T) {
 	afterSecond := buf.Len()
 
 	if afterSecond != afterFirst {
-		t.Fatalf("expected second SetCursorPosition with same position to be a no-op, len after first = %d, after second = %d", afterFirst, afterSecond)
+		t.Fatalf(
+			"expected same-position SetCursorPosition to be a no-op, first = %d, second = %d",
+			afterFirst, afterSecond)
 	}
 }
 

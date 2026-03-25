@@ -127,7 +127,7 @@ func TestRFC3339Time_roundtrip(t *testing.T) {
 func TestAuthTokenResult_JSON(t *testing.T) {
 	expiresOn := time.Date(2024, 6, 15, 12, 0, 0, 0, time.UTC)
 	result := AuthTokenResult{
-		Token:     "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9",
+		Token:     "test-token-value", //nolint:gosec // test data, not a real credential
 		ExpiresOn: RFC3339Time(expiresOn),
 	}
 
@@ -138,7 +138,7 @@ func TestAuthTokenResult_JSON(t *testing.T) {
 	err = json.Unmarshal(data, &parsed)
 	require.NoError(t, err)
 
-	assert.Equal(t, "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9", parsed["token"])
+	assert.Equal(t, "test-token-value", parsed["token"])
 	assert.Equal(t, "2024-06-15T12:00:00Z", parsed["expiresOn"])
 }
 

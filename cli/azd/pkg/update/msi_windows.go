@@ -150,35 +150,34 @@ func isStandardMSIInstall() error {
 	return nil
 }
 
-// versionFlag returns the install script parameter value for the given channel.
-func versionFlag(channel Channel) string {
-	switch channel {
-	case ChannelDaily:
-		return "daily"
-	case ChannelStable:
-		return "stable"
-	default:
-		return "stable"
-	}
-}
-
-// buildInstallScriptArgs constructs the PowerShell arguments to download and run
-// install-azd.ps1 with the appropriate -Version flag.
-// The -SkipVerify flag is passed because Authenticode verification via
-// Get-AuthenticodeSignature failed.
-// The MSI is already downloaded over HTTPS from a Microsoft-controlled domain,
-// so the transport-level integrity is sufficient.
+// buildInstallScriptArgs constructs the PowerShell arguments to run install-azd.ps1.
+//
+// For the stable channel the script is piped directly through Invoke-Expression.
+// No named parameters are needed because the default MSI install location is correct.
+//
+// For other channels (e.g. daily) the script must be downloaded to a temp directory
+// first, because Invoke-Expression from a pipe does not support passing named
+// parameters such as -Version or -InstallFolder to the script.
+//
+// installDir is the target installation directory (e.g. %LOCALAPPDATA%\Programs\Azure Dev CLI).
+//
 // Returns the arguments to pass to the "powershell" command.
 func buildInstallScriptArgs(channel Channel) []string {
-	version := versionFlag(channel)
-	// Download the script to a temp file, then invoke it with the appropriate -Version flag.
-	// Using -ExecutionPolicy Bypass ensures the script runs even if the system policy is restrictive.
-	script := fmt.Sprintf(
-		`$script = Join-Path $env:TEMP 'install-azd.ps1'; `+
-			`Invoke-RestMethod '%s' -OutFile $script; `+
-			`& $script -Version '%s' -SkipVerify; `+
-			`Remove-Item $script -Force -ErrorAction SilentlyContinue`,
-		installScriptURL, version,
-	)
-	return []string{"-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script}
+	switch channel {
+	case ChannelDaily:
+		script := fmt.Sprintf(
+			"$tmpDir = Join-Path $env:TEMP 'azd-install.ps1'; "+
+				"Invoke-RestMethod '%s' -OutFile $tmpDir; "+
+				"& $tmpDir -Version 'daily' -InstallFolder '%s'; "+
+				"Remove-Item $tmpDir -Force -ErrorAction SilentlyContinue",
+			installScriptURL, expectedPerUserInstallDir(),
+		)
+		return []string{"-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script}
+	default:
+		script := fmt.Sprintf(
+			"Invoke-RestMethod '%s' | Invoke-Expression",
+			installScriptURL,
+		)
+		return []string{"-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script}
+	}
 }

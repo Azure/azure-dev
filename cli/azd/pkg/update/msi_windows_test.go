@@ -42,31 +42,16 @@ func TestExpectedPerUserInstallDir(t *testing.T) {
 	}
 }
 
-func TestVersionFlag(t *testing.T) {
-	tests := []struct {
-		name    string
-		channel Channel
-		want    string
-	}{
-		{"stable channel", ChannelStable, "stable"},
-		{"daily channel", ChannelDaily, "daily"},
-		{"unknown defaults to stable", Channel("nightly"), "stable"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := versionFlag(tt.channel)
-			require.Equal(t, tt.want, got)
-		})
-	}
-}
-
 func TestBuildInstallScriptArgs(t *testing.T) {
+	t.Setenv("LOCALAPPDATA", `C:\Users\testuser\AppData\Local`)
+	expectedDir := expectedPerUserInstallDir()
+
 	tests := []struct {
 		name    string
 		channel Channel
 		// We check that certain substrings appear in the constructed args
-		wantContains []string
+		wantContains    []string
+		wantNotContains []string
 	}{
 		{
 			name:    "stable",
@@ -76,8 +61,12 @@ func TestBuildInstallScriptArgs(t *testing.T) {
 				"-ExecutionPolicy", "Bypass",
 				"-Command",
 				installScriptURL,
-				"-Version 'stable'",
-				"-SkipVerify",
+				"Invoke-Expression",
+			},
+			wantNotContains: []string{
+				"-Version",
+				"-InstallFolder",
+				"Remove-Item",
 			},
 		},
 		{
@@ -89,7 +78,9 @@ func TestBuildInstallScriptArgs(t *testing.T) {
 				"-Command",
 				installScriptURL,
 				"-Version 'daily'",
-				"-SkipVerify",
+				"-InstallFolder",
+				expectedDir,
+				"Remove-Item",
 			},
 		},
 	}
@@ -105,26 +96,46 @@ func TestBuildInstallScriptArgs(t *testing.T) {
 			for _, s := range tt.wantContains {
 				require.Contains(t, joined, s, "expected args to contain %q", s)
 			}
+			for _, s := range tt.wantNotContains {
+				require.NotContains(t, joined, s, "expected args NOT to contain %q", s)
+			}
 		})
 	}
 }
 
 func TestBuildInstallScriptArgs_Structure(t *testing.T) {
+	t.Setenv("LOCALAPPDATA", `C:\Users\testuser\AppData\Local`)
+	expectedDir := expectedPerUserInstallDir()
+
 	args := buildInstallScriptArgs(ChannelStable)
 
-	// The args should be: ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", <script>]
+	// Stable: ["-NoProfile", "-ExecutionPolicy", "AllSigned", "-Command", <script>]
 	require.Equal(t, 5, len(args), "expected exactly 5 args")
 	require.Equal(t, "-NoProfile", args[0])
 	require.Equal(t, "-ExecutionPolicy", args[1])
 	require.Equal(t, "Bypass", args[2])
 	require.Equal(t, "-Command", args[3])
 
-	// The script (args[4]) should be a single string containing the full PowerShell pipeline
+	// Stable pipes directly — no temp file download
 	script := args[4]
 	require.Contains(t, script, "Invoke-RestMethod")
 	require.Contains(t, script, installScriptURL)
-	require.Contains(t, script, "-SkipVerify")
-	require.Contains(t, script, "Remove-Item")
+	require.Contains(t, script, "Invoke-Expression")
+	require.NotContains(t, script, "-InstallFolder")
+	require.NotContains(t, script, "Remove-Item")
+	require.NotContains(t, script, "-Version")
+
+	// Daily downloads to temp file with -Version 'daily'
+	argsDaily := buildInstallScriptArgs(ChannelDaily)
+	require.Equal(t, 5, len(argsDaily))
+	require.Equal(t, "Bypass", argsDaily[2])
+	scriptDaily := argsDaily[4]
+	require.Contains(t, scriptDaily, "Invoke-RestMethod")
+	require.Contains(t, scriptDaily, installScriptURL)
+	require.Contains(t, scriptDaily, "-Version 'daily'")
+	require.Contains(t, scriptDaily, "-InstallFolder")
+	require.Contains(t, scriptDaily, expectedDir)
+	require.Contains(t, scriptDaily, "Remove-Item")
 }
 
 func TestIsStandardMSIInstall_StandardPath(t *testing.T) {

@@ -548,6 +548,12 @@ func createNewEnvironment(
 	azdClient *azdext.AzdClient,
 	envName string,
 ) (*azdext.Environment, error) {
+	if envName != "" {
+		if existingEnv := getExistingEnvironment(ctx, &initFlags{env: envName}, azdClient); existingEnv != nil {
+			return existingEnv, nil
+		}
+	}
+
 	envArgs := []string{"env", "new"}
 	if envName != "" {
 		envArgs = append(envArgs, envName)
@@ -567,6 +573,11 @@ func createNewEnvironment(
 		if exterrors.IsCancellation(err) {
 			return nil, exterrors.Cancelled("environment creation was cancelled")
 		}
+		if envName != "" && isEnvironmentAlreadyExistsError(err) {
+			if existingEnv := getExistingEnvironment(ctx, &initFlags{env: envName}, azdClient); existingEnv != nil {
+				return existingEnv, nil
+			}
+		}
 		return nil, exterrors.Dependency(
 			exterrors.CodeEnvironmentCreationFailed,
 			fmt.Sprintf("failed to create new azd environment: %s", err),
@@ -585,6 +596,11 @@ func createNewEnvironment(
 	}
 
 	return env, nil
+}
+
+func isEnvironmentAlreadyExistsError(err error) bool {
+	errText := strings.ToLower(err.Error())
+	return strings.Contains(errText, "environment") && strings.Contains(errText, "already exists")
 }
 
 // loadAzureContext reads the current Azure context values (tenant, subscription, location)

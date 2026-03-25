@@ -280,9 +280,14 @@ func Test_DeriveDirectoryName(t *testing.T) {
 			expected: "owner-..",
 		},
 		{
-			name:     "BareDotDotIsSanitized",
+			name:     "BareDotDotFallsBackToDefault",
 			input:    "..",
-			expected: "..",
+			expected: "new-project",
+		},
+		{
+			name:     "BareDotFallsBackToDefault",
+			input:    ".",
+			expected: "new-project",
 		},
 	}
 

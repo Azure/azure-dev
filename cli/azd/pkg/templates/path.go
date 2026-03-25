@@ -151,6 +151,14 @@ func DeriveDirectoryName(templatePath string) string {
 		// Fall back to a sanitized version of the full path
 		name = strings.NewReplacer("/", "-", "\\", "-", ":", "-").Replace(
 			strings.TrimRight(templatePath, "/"))
+		// Trim leading dots and dashes from the sanitized name
+		name = strings.TrimLeft(name, ".-")
+	}
+
+	// Final safety: if the name is still empty or unsafe after sanitization,
+	// use a generic fallback
+	if name == "" || name == "." || name == ".." {
+		name = "new-project"
 	}
 
 	return name

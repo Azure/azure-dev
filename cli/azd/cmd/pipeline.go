@@ -10,6 +10,8 @@ import (
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -162,6 +164,12 @@ func newPipelineConfigAction(
 
 // Run implements action interface
 func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	// Track pipeline provider and auth type
+	tracing.SetUsageAttributes(
+		fields.PipelineProviderKey.String(p.flags.PipelineProvider),
+		fields.PipelineAuthKey.String(p.flags.PipelineAuthTypeName),
+	)
+
 	infra, err := p.importManager.ProjectInfrastructure(ctx, p.projectConfig)
 	if err != nil {
 		return nil, err

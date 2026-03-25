@@ -9,6 +9,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
@@ -117,6 +119,15 @@ const (
 
 func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	hookName := hra.args[0]
+
+	hookType := "project"
+	if hra.flags.service != "" {
+		hookType = "service"
+	}
+	tracing.SetUsageAttributes(
+		fields.HooksNameKey.String(hookName),
+		fields.HooksTypeKey.String(hookType),
+	)
 
 	// Command title
 	hra.console.MessageUxItem(ctx, &ux.MessageTitle{

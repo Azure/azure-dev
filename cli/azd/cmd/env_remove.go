@@ -12,6 +12,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -111,6 +113,7 @@ func newEnvRemoveAction(
 }
 
 func (er *envRemoveAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	tracing.SetUsageAttributes(fields.EnvOperationKey.String("remove"))
 	// Command title
 	er.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title: "Remove an environment (azd env remove)",

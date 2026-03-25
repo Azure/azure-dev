@@ -17,6 +17,8 @@ import (
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -207,6 +209,7 @@ func newConfigShowAction(
 
 // Executes the `azd config show` action
 func (a *configShowAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	tracing.SetUsageAttributes(fields.ConfigOperationKey.String("show"))
 	azdConfig, err := a.configManager.Load()
 	if err != nil {
 		return nil, err
@@ -276,6 +279,7 @@ func newConfigGetAction(
 
 // Executes the `azd config get <path>` action
 func (a *configGetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	tracing.SetUsageAttributes(fields.ConfigOperationKey.String("get"))
 	azdConfig, err := a.configManager.Load()
 	if err != nil {
 		return nil, err
@@ -317,6 +321,7 @@ func newConfigSetAction(configManager config.UserConfigManager, args []string) a
 
 // Executes the `azd config set <path> <value>` action
 func (a *configSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	tracing.SetUsageAttributes(fields.ConfigOperationKey.String("set"))
 	azdConfig, err := a.configManager.Load()
 	if err != nil {
 		return nil, err
@@ -349,6 +354,7 @@ func newConfigUnsetAction(configManager config.UserConfigManager, args []string)
 
 // Executes the `azd config unset <path>` action
 func (a *configUnsetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	tracing.SetUsageAttributes(fields.ConfigOperationKey.String("unset"))
 	azdConfig, err := a.configManager.Load()
 	if err != nil {
 		return nil, err
@@ -399,6 +405,7 @@ func newConfigResetAction(
 
 // Executes the `azd config reset` action
 func (a *configResetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	tracing.SetUsageAttributes(fields.ConfigOperationKey.String("reset"))
 	a.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title: "Reset configuration (azd config reset)",
 	})
@@ -473,6 +480,7 @@ type configListAlphaAction struct {
 }
 
 func (a *configListAlphaAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	tracing.SetUsageAttributes(fields.ConfigOperationKey.String("list-alpha"))
 	features, err := a.alphaFeaturesManager.ListFeatures()
 	if err != nil {
 		return nil, err
@@ -569,6 +577,7 @@ func newConfigOptionsAction(
 }
 
 func (a *configOptionsAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	tracing.SetUsageAttributes(fields.ConfigOperationKey.String("options"))
 	options := config.GetAllConfigOptions()
 
 	// Load current config to show current values

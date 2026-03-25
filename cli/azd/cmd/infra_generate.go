@@ -13,6 +13,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -85,6 +87,11 @@ func newInfraGenerateAction(
 }
 
 func (a *infraGenerateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	// Track infra provider from project configuration
+	if a.projectConfig != nil && a.projectConfig.Infra.Provider != "" {
+		tracing.SetUsageAttributes(fields.InfraProviderKey.String(string(a.projectConfig.Infra.Provider)))
+	}
+
 	if a.calledAs == "synth" {
 		fmt.Fprintln(
 			a.console.Handles().Stderr,

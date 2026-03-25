@@ -20,6 +20,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/runcontext"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
@@ -307,6 +309,7 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	if la.flags.onlyCheckStatus {
+		tracing.SetUsageAttributes(fields.AuthMethodKey.String("check-status"))
 		// In check status mode, we always print the final status to stdout.
 		// We print any non-setup related errors to stderr.
 		// We always return a zero exit code.
@@ -359,8 +362,10 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	if err := la.login(ctx); err != nil {
+		tracing.SetUsageAttributes(fields.AuthResultKey.String("failure"))
 		return nil, err
 	}
+	tracing.SetUsageAttributes(fields.AuthResultKey.String("success"))
 
 	if _, err := la.verifyLoggedIn(ctx); err != nil {
 		return nil, err
@@ -452,6 +457,11 @@ func runningOnCodespacesBrowser(ctx context.Context, commandRunner exec.CommandR
 }
 
 func (la *loginAction) login(ctx context.Context) error {
+	// Track hashed tenant ID if provided (before resolving from env vars)
+	if la.flags.tenantID != "" {
+		tracing.SetUsageAttributes(fields.StringHashed(fields.TenantIdKey, la.flags.tenantID))
+	}
+
 	if la.flags.federatedTokenProvider == azurePipelinesProvider {
 		if la.flags.clientID == "" {
 			log.Printf("setting client id from environment variable %s", azurePipelinesClientIDEnvVarName)
@@ -465,6 +475,7 @@ func (la *loginAction) login(ctx context.Context) error {
 	}
 
 	if la.flags.managedIdentity {
+		tracing.SetUsageAttributes(fields.AuthMethodKey.String("managed-identity"))
 		if _, err := la.authManager.LoginWithManagedIdentity(
 			ctx, la.flags.clientID,
 		); err != nil {
@@ -494,6 +505,7 @@ func (la *loginAction) login(ctx context.Context) error {
 
 		switch {
 		case la.flags.clientSecret.ptr != nil:
+			tracing.SetUsageAttributes(fields.AuthMethodKey.String("service-principal-secret"))
 			if *la.flags.clientSecret.ptr == "" {
 				v, err := la.console.Prompt(ctx, input.ConsoleOptions{
 					Message: "Enter your client secret",
@@ -510,6 +522,7 @@ func (la *loginAction) login(ctx context.Context) error {
 				return fmt.Errorf("logging in: %w", err)
 			}
 		case la.flags.clientCertificate != "":
+			tracing.SetUsageAttributes(fields.AuthMethodKey.String("service-principal-certificate"))
 			certFile, err := os.Open(la.flags.clientCertificate)
 			if err != nil {
 				return fmt.Errorf("reading certificate: %w", err)
@@ -527,12 +540,14 @@ func (la *loginAction) login(ctx context.Context) error {
 				return fmt.Errorf("logging in: %w", err)
 			}
 		case la.flags.federatedTokenProvider == "github":
+			tracing.SetUsageAttributes(fields.AuthMethodKey.String("federated-github"))
 			if _, err := la.authManager.LoginWithGitHubFederatedTokenProvider(
 				ctx, la.flags.tenantID, la.flags.clientID,
 			); err != nil {
 				return fmt.Errorf("logging in: %w", err)
 			}
 		case la.flags.federatedTokenProvider == azurePipelinesProvider:
+			tracing.SetUsageAttributes(fields.AuthMethodKey.String("federated-azure-pipelines"))
 			serviceConnectionID := os.Getenv(azurePipelinesServiceConnectionIDEnvVarName)
 
 			if serviceConnectionID == "" {
@@ -546,6 +561,7 @@ func (la *loginAction) login(ctx context.Context) error {
 				return fmt.Errorf("logging in: %w", err)
 			}
 		case la.flags.federatedTokenProvider == "oidc": // generic oidc provider
+			tracing.SetUsageAttributes(fields.AuthMethodKey.String("federated-oidc"))
 			if _, err := la.authManager.LoginWithOidcFederatedTokenProvider(
 				ctx, la.flags.tenantID, la.flags.clientID,
 			); err != nil {
@@ -557,6 +573,7 @@ func (la *loginAction) login(ctx context.Context) error {
 	}
 
 	if la.authManager.UseExternalAuth() {
+		tracing.SetUsageAttributes(fields.AuthMethodKey.String("external"))
 		// Request a token and assume the external auth system will prompt the user to log in.
 		//
 		// TODO(ellismg): We may want instead to call some explicit `/login` endpoint on the external auth system instead
@@ -581,6 +598,7 @@ func (la *loginAction) login(ctx context.Context) error {
 	}
 
 	if useDevCode {
+		tracing.SetUsageAttributes(fields.AuthMethodKey.String("device-code"))
 		_, err = la.authManager.LoginWithDeviceCode(ctx, la.flags.tenantID, la.flags.scopes, claims,
 			func(url string) error {
 				if !la.flags.global.NoPrompt {
@@ -598,8 +616,10 @@ func (la *loginAction) login(ctx context.Context) error {
 	}
 
 	if oneauth.Supported && !la.flags.browser {
+		tracing.SetUsageAttributes(fields.AuthMethodKey.String("oneauth"))
 		err = la.authManager.LoginWithOneAuth(ctx, la.flags.tenantID, la.flags.scopes)
 	} else {
+		tracing.SetUsageAttributes(fields.AuthMethodKey.String("browser"))
 		_, err = la.authManager.LoginInteractive(ctx, la.flags.scopes, claims,
 			&auth.LoginInteractiveOptions{
 				TenantID:     la.flags.tenantID,

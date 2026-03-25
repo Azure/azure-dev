@@ -17,6 +17,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -213,6 +215,7 @@ func newEnvSetAction(
 }
 
 func (e *envSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	tracing.SetUsageAttributes(fields.EnvOperationKey.String("set"))
 	// To track case conflicts
 	dotEnv := e.env.Dotenv()
 	keyValues := make(map[string]string)
@@ -364,6 +367,7 @@ type envSetSecretAction struct {
 }
 
 func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	tracing.SetUsageAttributes(fields.EnvOperationKey.String("set-secret"))
 	if len(e.args) < 1 {
 		return nil, &internal.ErrorWithSuggestion{
 			Err:        internal.ErrNoArgsProvided,
@@ -784,6 +788,7 @@ func newEnvSelectAction(
 }
 
 func (e *envSelectAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	tracing.SetUsageAttributes(fields.EnvOperationKey.String("select"))
 	var environmentName string
 
 	// If no argument provided, prompt the user to select an environment
@@ -868,11 +873,14 @@ func newEnvListAction(
 }
 
 func (e *envListAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	tracing.SetUsageAttributes(fields.EnvOperationKey.String("list"))
 	envs, err := e.envManager.List(ctx)
 
 	if err != nil {
 		return nil, fmt.Errorf("listing environments: %w", err)
 	}
+
+	tracing.SetUsageAttributes(fields.EnvCountKey.Int(len(envs)))
 
 	if e.formatter.Kind() == output.TableFormat {
 		columns := []output.Column{
@@ -967,6 +975,7 @@ func newEnvNewAction(
 }
 
 func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	tracing.SetUsageAttributes(fields.EnvOperationKey.String("new"))
 	environmentName := ""
 	if len(en.args) >= 1 {
 		environmentName = en.args[0]
@@ -1141,6 +1150,7 @@ func newEnvRefreshAction(
 }
 
 func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	tracing.SetUsageAttributes(fields.EnvOperationKey.String("refresh"))
 	// Command title
 	ef.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title: fmt.Sprintf("Refreshing environment %s (azd env refresh)", ef.env.Name()),
@@ -1301,6 +1311,7 @@ func newEnvGetValuesAction(
 }
 
 func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	tracing.SetUsageAttributes(fields.EnvOperationKey.String("get-values"))
 	name, err := eg.azdCtx.GetDefaultEnvironmentName()
 	if err != nil {
 		return nil, err
@@ -1393,6 +1404,7 @@ func newEnvGetValueAction(
 }
 
 func (eg *envGetValueAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	tracing.SetUsageAttributes(fields.EnvOperationKey.String("get-value"))
 	if len(eg.args) < 1 {
 		return nil, &internal.ErrorWithSuggestion{
 			Err:        internal.ErrNoKeyNameProvided,
@@ -1497,6 +1509,7 @@ func newEnvConfigGetAction(
 }
 
 func (a *envConfigGetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	tracing.SetUsageAttributes(fields.EnvOperationKey.String("config-get"))
 	name, err := a.azdCtx.GetDefaultEnvironmentName()
 	if err != nil {
 		return nil, err
@@ -1595,6 +1608,7 @@ func newEnvConfigSetAction(
 }
 
 func (a *envConfigSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	tracing.SetUsageAttributes(fields.EnvOperationKey.String("config-set"))
 	name, err := a.azdCtx.GetDefaultEnvironmentName()
 	if err != nil {
 		return nil, err
@@ -1695,6 +1709,7 @@ func newEnvConfigUnsetAction(
 }
 
 func (a *envConfigUnsetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	tracing.SetUsageAttributes(fields.EnvOperationKey.String("config-unset"))
 	name, err := a.azdCtx.GetDefaultEnvironmentName()
 	if err != nil {
 		return nil, err

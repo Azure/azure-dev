@@ -312,6 +312,139 @@ const (
 	AccountTypeUser = "User"
 	// A service principal, typically an application.
 	AccountTypeServicePrincipal = "Service Principal"
+	// An anonymous (unauthenticated) user.
+	AccountTypeAnonymous = "Anonymous"
+)
+
+// Auth command related fields
+var (
+	// The authentication method used for login.
+	//
+	// Example: "browser", "device-code", "service-principal-secret", "managed-identity"
+	AuthMethodKey = AttributeKey{
+		Key:            attribute.Key("auth.method"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// The result of the auth operation.
+	//
+	// Example: "success", "failure"
+	AuthResultKey = AttributeKey{
+		Key:            attribute.Key("auth.result"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+)
+
+// Config command related fields
+var (
+	// The config operation being performed.
+	//
+	// Example: "show", "get", "set", "unset", "reset", "list-alpha", "options"
+	ConfigOperationKey = AttributeKey{
+		Key:            attribute.Key("config.operation"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+)
+
+// Environment command related fields
+var (
+	// The environment operation being performed.
+	//
+	// Example: "new", "select", "list", "refresh", "set", "get-values"
+	EnvOperationKey = AttributeKey{
+		Key:            attribute.Key("env.operation"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// The number of environments that exist for the current project.
+	EnvCountKey = AttributeKey{
+		Key:            attribute.Key("env.count"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
+)
+
+// Hooks command related fields
+var (
+	// The name of the hook being run.
+	HooksNameKey = AttributeKey{
+		Key:            attribute.Key("hooks.name"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// The type of the hook (project or service).
+	HooksTypeKey = AttributeKey{
+		Key:            attribute.Key("hooks.type"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+)
+
+// Template command related fields
+var (
+	// The template operation being performed.
+	//
+	// Example: "list", "show", "source-list", "source-add", "source-remove"
+	TemplateOperationKey = AttributeKey{
+		Key:            attribute.Key("template.operation"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+)
+
+// Pipeline command related fields
+var (
+	// The pipeline provider being configured.
+	//
+	// Example: "github", "azdo"
+	PipelineProviderKey = AttributeKey{
+		Key:            attribute.Key("pipeline.provider"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// The authentication type used for pipeline configuration.
+	PipelineAuthKey = AttributeKey{
+		Key:            attribute.Key("pipeline.auth"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+)
+
+// Monitor command related fields
+var (
+	// The type of monitoring dashboard selected.
+	//
+	// Example: "overview", "live", "logs"
+	MonitorTypeKey = AttributeKey{
+		Key:            attribute.Key("monitor.type"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+)
+
+// Show command related fields
+var (
+	// The output format requested for the show command.
+	ShowOutputFormatKey = AttributeKey{
+		Key:            attribute.Key("show.output.format"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+)
+
+// Infrastructure command related fields
+var (
+	// The IaC provider used for infrastructure generation.
+	//
+	// Example: "bicep", "terraform"
+	InfraProviderKey = AttributeKey{
+		Key:            attribute.Key("infra.provider"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 )
 
 // The value used for ServiceNameKey

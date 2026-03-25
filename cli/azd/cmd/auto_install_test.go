@@ -568,3 +568,102 @@ func TestParseGlobalFlags_NonInteractiveAliasAndEnvVar(t *testing.T) {
 		agentdetect.ResetDetection()
 	})
 }
+
+func TestParseGlobalFlags_EnvironmentName(t *testing.T) {
+	tests := []struct {
+		name            string
+		args            []string
+		expectedEnvName string
+	}{
+		{
+			name:            "valid env name with -e",
+			args:            []string{"-e", "dev", "up"},
+			expectedEnvName: "dev",
+		},
+		{
+			name:            "valid env name with --environment",
+			args:            []string{"--environment", "production", "deploy"},
+			expectedEnvName: "production",
+		},
+		{
+			name:            "valid env name with equals syntax",
+			args:            []string{"--environment=staging", "deploy"},
+			expectedEnvName: "staging",
+		},
+		{
+			name:            "env name with dots and hyphens",
+			args:            []string{"-e", "my-env.v2", "up"},
+			expectedEnvName: "my-env.v2",
+		},
+		{
+			name:            "empty value",
+			args:            []string{"up"},
+			expectedEnvName: "",
+		},
+		{
+			name:            "env name alongside other global flags",
+			args:            []string{"--debug", "-e", "myenv", "--no-prompt", "deploy"},
+			expectedEnvName: "myenv",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Clear agent detection to avoid NoPrompt side effects
+			clearAgentEnvVarsForTest(t)
+			agentdetect.ResetDetection()
+
+			opts := &internal.GlobalCommandOptions{}
+			err := ParseGlobalFlags(tt.args, opts)
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.expectedEnvName, opts.EnvironmentName,
+				"EnvironmentName should be %q for test case: %s", tt.expectedEnvName, tt.name)
+
+			agentdetect.ResetDetection()
+		})
+	}
+}
+
+func TestParseGlobalFlags_InvalidEnvironmentName(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "URL value",
+			args: []string{"-e", "https://foo.services.ai.azure.com/api/projects/bar", "model", "custom", "create"},
+		},
+		{
+			name: "value with colons",
+			args: []string{"-e", "host:port", "model", "custom", "create"},
+		},
+		{
+			name: "value with slashes",
+			args: []string{"-e", "path/to/thing", "model", "custom", "create"},
+		},
+		{
+			name: "value with spaces",
+			args: []string{"-e", "env name with spaces"},
+		},
+		{
+			name: "special characters",
+			args: []string{"-e", "env@#$%"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clearAgentEnvVarsForTest(t)
+			agentdetect.ResetDetection()
+
+			opts := &internal.GlobalCommandOptions{}
+			err := ParseGlobalFlags(tt.args, opts)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "is invalid")
+			assert.Empty(t, opts.EnvironmentName)
+
+			agentdetect.ResetDetection()
+		})
+	}
+}

@@ -11,11 +11,12 @@ Available Commands
   validate	: Validate an extension source's registry.json file.
 
 Global Flags
-    -C, --cwd string 	: Sets the current working directory.
-        --debug      	: Enables debugging and diagnostics logging.
-        --docs       	: Opens the documentation for azd extension source in your web browser.
-    -h, --help       	: Gets help for source.
-        --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
+    -C, --cwd string         	: Sets the current working directory.
+        --debug              	: Enables debugging and diagnostics logging.
+        --docs               	: Opens the documentation for azd extension source in your web browser.
+    -e, --environment string 	: The name of the environment to use.
+    -h, --help               	: Gets help for source.
+        --no-prompt          	: Accepts the default value instead of prompting, or it fails if there is no default.
 
 Use azd extension source [command] --help to view examples and more information about a specific command.
 

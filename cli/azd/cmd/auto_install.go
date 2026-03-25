@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -623,6 +624,7 @@ func CreateGlobalFlagSet() *pflag.FlagSet {
 		false,
 		"Alias for --no-prompt.")
 	_ = globalFlags.MarkHidden("non-interactive")
+	globalFlags.StringP("environment", "e", "", "The name of the environment to use.")
 
 	// The telemetry system is responsible for reading these flags value and using it to configure the telemetry
 	// system, but we still need to add it to our flag set so that when we parse the command line with Cobra we
@@ -703,6 +705,17 @@ func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error 
 				)
 			}
 		}
+	}
+
+	// Parse -e/--environment with strict validation.
+	// Invalid environment names are rejected with an error so users get clear feedback on typos.
+	// Extensions have been migrated off -e (see reserved flags registry), so any -e value
+	// should be a valid environment name.
+	if strVal, err := globalFlagSet.GetString("environment"); err == nil && strVal != "" {
+		if !environment.IsValidEnvironmentName(strVal) {
+			return environment.InvalidEnvironmentNameError(strVal)
+		}
+		opts.EnvironmentName = strVal
 	}
 
 	// Agent Detection: If no explicit flag or env var was set and we detect an AI coding

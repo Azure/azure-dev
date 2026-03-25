@@ -227,11 +227,11 @@ const completionSpec: Fig.Spec = {
 							description: 'Initialize a new AI agent project. (Preview)',
 							options: [
 								{
-									name: ['--environment', '-e'],
-									description: 'The name of the azd environment to use.',
+									name: ['--host'],
+									description: 'For container based agents, can override the default host to target a container app instead. Accepted values: \'containerapp\'',
 									args: [
 										{
-											name: 'environment',
+											name: 'host',
 										},
 									],
 								},
@@ -426,15 +426,6 @@ const completionSpec: Fig.Spec = {
 							name: ['init'],
 							description: 'Initialize a new AI Fine-tuning project. (Preview)',
 							options: [
-								{
-									name: ['--environment', '-n'],
-									description: 'The name of the azd environment to use.',
-									args: [
-										{
-											name: 'environment',
-										},
-									],
-								},
 								{
 									name: ['--from-job', '-j'],
 									description: 'Clone configuration from an existing job ID',
@@ -1149,15 +1140,6 @@ const completionSpec: Fig.Spec = {
 							name: ['init'],
 							description: 'Initialize a new AI models project. (Preview)',
 							options: [
-								{
-									name: ['--environment', '-n'],
-									description: 'The name of the azd environment to use',
-									args: [
-										{
-											name: 'environment',
-										},
-									],
-								},
 								{
 									name: ['--project-endpoint', '-e'],
 									description: 'Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)',
@@ -3688,6 +3670,16 @@ const completionSpec: Fig.Spec = {
 			name: ['--debug'],
 			description: 'Enables debugging and diagnostics logging.',
 			isPersistent: true,
+		},
+		{
+			name: ['--environment', '-e'],
+			description: 'The name of the environment to use.',
+			isPersistent: true,
+			args: [
+				{
+					name: 'environment',
+				},
+			],
 		},
 		{
 			name: ['--no-prompt'],

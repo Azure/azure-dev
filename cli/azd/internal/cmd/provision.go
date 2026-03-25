@@ -424,10 +424,10 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 			}, nil
 		}
 
-		skipped := deployResult.SkippedReason == provisioning.DeploymentStateSkipped
+		skipped := isDeploymentSkipped(deployResult)
 		allSkipped = allSkipped && skipped
 		if skipped {
-			// Simply continue here; message is printed in the provider implementation
+			// Simply continue here; message is printed in the provider implementation.
 			continue
 		}
 
@@ -549,4 +549,13 @@ func GetCmdProvisionHelpDescription(c *cobra.Command) string {
 			fmt.Sprintf("\nWhen <layer> is specified, only provisions resources for the given layer." +
 				" When omitted, provisions resources for all layers defined in the project."),
 		})
+}
+
+// isDeploymentSkipped returns true if the deployment was skipped and the caller
+// should not access deployResult.Deployment (which may be nil).
+// A deployment is considered skipped when SkippedReason is non-empty, which includes
+// states such as DeploymentStateSkipped (no changes) and PreflightAbortedSkipped
+// (user declined after preflight warnings).
+func isDeploymentSkipped(deployResult *provisioning.DeployResult) bool {
+	return deployResult != nil && deployResult.SkippedReason != ""
 }

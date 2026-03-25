@@ -35,6 +35,7 @@ overrides:
           - Angelos
           - Entra
           - CODEOWNERS
+          - weikanglim
     - filename: ./README.md
       words:
           - VSIX

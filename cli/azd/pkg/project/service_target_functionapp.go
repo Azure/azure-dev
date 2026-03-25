@@ -44,6 +44,11 @@ func resolveFunctionAppRemoteBuild(serviceConfig *ServiceConfig) (remoteBuild bo
 			return false, fmt.Errorf("reading ignore file: %w", err)
 		}
 
+		// Strip UTF-8 BOM if present. Some Windows editors (e.g. Notepad) prepend a BOM which
+		// causes the gitignore parser to treat the first pattern as having invisible prefix bytes,
+		// breaking pattern matching.
+		ignoreFileContents = stripUTF8BOM(ignoreFileContents)
+
 		// Parse from in-memory contents so we don't hold an open file handle (important on Windows temp dirs).
 		ignore := gitignore.New(bytes.NewReader(ignoreFileContents), serviceConfig.Path(), nil)
 

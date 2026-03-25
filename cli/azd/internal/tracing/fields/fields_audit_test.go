@@ -86,16 +86,3 @@ func TestNewFieldConstantsDefined(t *testing.T) {
 		})
 	}
 }
-
-// TestFieldKeyValues verifies that field keys produce valid attribute KeyValue pairs.
-func TestFieldKeyValues(t *testing.T) {
-	// Test string attribute creation
-	kv := AuthMethodKey.String("browser")
-	require.Equal(t, "auth.method", string(kv.Key))
-	require.Equal(t, "browser", kv.Value.AsString())
-
-	// Test int attribute creation
-	kvInt := EnvCountKey.Int(5)
-	require.Equal(t, "env.count", string(kvInt.Key))
-	require.Equal(t, int64(5), kvInt.Value.AsInt64())
-}

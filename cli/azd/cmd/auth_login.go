@@ -455,9 +455,9 @@ func runningOnCodespacesBrowser(ctx context.Context, commandRunner exec.CommandR
 }
 
 func (la *loginAction) login(ctx context.Context) error {
-	// Track hashed tenant ID if provided (before resolving from env vars)
+	// Track tenant ID if provided (before resolving from env vars)
 	if la.flags.tenantID != "" {
-		tracing.SetUsageAttributes(fields.StringHashed(fields.TenantIdKey, la.flags.tenantID))
+		tracing.SetUsageAttributes(fields.TenantIdKey.String(la.flags.tenantID))
 	}
 
 	if la.flags.federatedTokenProvider == azurePipelinesProvider {

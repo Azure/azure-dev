@@ -9,8 +9,6 @@ import (
 	"io"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -56,8 +54,6 @@ func newLogoutAction(
 }
 
 func (la *logoutAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	tracing.SetUsageAttributes(fields.AuthMethodKey.String("logout"))
-
 	if la.annotations[loginCmdParentAnnotation] == "" {
 		fmt.Fprintln(
 			la.console.Handles().Stderr,

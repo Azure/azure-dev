@@ -32,7 +32,6 @@ func TestTelemetryFieldConstants(t *testing.T) {
 			"service-principal-certificate", "federated-github",
 			"federated-azure-pipelines", "federated-oidc",
 			"managed-identity", "external", "oneauth",
-			"logout",
 		}
 		for _, method := range authMethods {
 			kv := fields.AuthMethodKey.String(method)
@@ -97,7 +96,6 @@ func TestCommandTelemetryCoverage(t *testing.T) {
 	// command-specific attribute (e.g., auth.method, config.operation, env.operation).
 	commandsWithSpecificTelemetry := []string{
 		"auth login",      // auth.method
-		"auth logout",     // auth.method (logout)
 		"build",           // (via hooks middleware)
 		"deploy",          // infra.provider, service attributes (via hooks middleware)
 		"down",            // infra.provider (via hooks middleware)
@@ -116,6 +114,7 @@ func TestCommandTelemetryCoverage(t *testing.T) {
 	// duration, errors) and do NOT emit command-specific attributes. Each entry
 	// includes a justification for why command-specific telemetry is not needed.
 	commandsWithOnlyGlobalTelemetry := []string{
+		"auth logout",            // No command-specific telemetry — logout is a simple operation
 		"auth status",            // Global telemetry sufficient — auth check is simple pass/fail
 		"completion",             // Shell completion script generation — no meaningful usage signal
 		"config get",             // Global telemetry sufficient — low cardinality

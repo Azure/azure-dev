@@ -157,6 +157,10 @@ func (a *myAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 - **Shell-safe output**: When emitting shell commands in user-facing messages (e.g., `cd <path>`), quote paths that may contain spaces. Use `fmt.Sprintf("cd %q", path)` or conditionally wrap in quotes
 - **Consistent JSON types**: When adding fields to JSON output (`--output json`), match the types used by similar fields across commands. Don't mix `*time.Time` and custom timestamp wrappers (e.g., `*RFC3339Time`) in the same API surface
 
+### CLI UX & Style
+
+When designing CLI output, terminal UX, spinners, progress states, or colors, follow the guidelines in `docs/style-guidelines/azd-style-guide.md`.
+
 ### Code Organization
 
 - **Import order**: stdlib → external → azure/azd internal → local
@@ -298,6 +302,7 @@ go build
 
 Feature-specific docs are in `docs/` — refer to them as needed. Some key docs include:
 
+- `docs/style-guidelines/azd-style-guide.md` - CLI style guide (colors, spinners, progress states, terminal UX)
 - `docs/style-guidelines/new-azd-command.md` - Adding new commands
 - `docs/extensions/extension-framework.md` - Extension development using gRPC extension framework
 - `docs/style-guidelines/guiding-principles.md` - Design principles

@@ -18,6 +18,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // FoundryProjectInfo holds information about a discovered or parsed Foundry project.
@@ -598,9 +600,22 @@ func createNewEnvironment(
 	return env, nil
 }
 
+// isEnvironmentAlreadyExistsError detects the duplicate-environment failure returned from
+// `azd env new`. Today the workflow surfaces this as a gRPC Internal error whose message
+// embeds the underlying azd error text, so we fall back to checking the status message
+// after confirming the status code when no dedicated AlreadyExists status is available.
 func isEnvironmentAlreadyExistsError(err error) bool {
-	errText := strings.ToLower(err.Error())
-	return strings.Contains(errText, "environment") && strings.Contains(errText, "already exists")
+	if status.Code(err) == codes.AlreadyExists {
+		return true
+	}
+
+	if status.Code(err) != codes.Internal {
+		return false
+	}
+
+	errText := strings.ToLower(status.Convert(err).Message())
+	return strings.Contains(errText, "creating new environment: environment") &&
+		strings.Contains(errText, "already exists")
 }
 
 // loadAzureContext reads the current Azure context values (tenant, subscription, location)

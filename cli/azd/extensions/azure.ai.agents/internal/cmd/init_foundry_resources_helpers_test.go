@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"testing"
 
@@ -14,6 +15,15 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+func duplicateEnvironmentWorkflowError(envName string) string {
+	return fmt.Sprintf(
+		"failed to run workflow: error executing step command 'env new %s': "+
+			"creating new environment: environment '%s' already exists",
+		envName,
+		envName,
+	)
+}
 
 func TestExtractProjectDetails(t *testing.T) {
 	t.Parallel()
@@ -133,25 +143,26 @@ func TestCreateNewEnvironment_ReturnsExistingNamedEnvironment(t *testing.T) {
 func TestCreateNewEnvironment_ReusesExistingEnvironmentAfterAlreadyExistsError(t *testing.T) {
 	t.Parallel()
 
+	const envName = "agent-dev"
+
 	envServer := &testEnvironmentServiceServer{
 		environments: make(map[string]*azdext.Environment),
 	}
 	workflowServer := &testWorkflowServiceServer{
 		runErr: status.Error(
 			codes.Internal,
-			"failed to run workflow: error executing step command 'env new agent-dev': "+
-				"creating new environment: environment 'agent-dev' already exists",
+			duplicateEnvironmentWorkflowError(envName),
 		),
 		runHook: func() {
-			envServer.environments["agent-dev"] = &azdext.Environment{Name: "agent-dev"}
+			envServer.environments[envName] = &azdext.Environment{Name: envName}
 		},
 	}
 	azdClient := newTestAzdClient(t, envServer, workflowServer)
 
-	env, err := createNewEnvironment(t.Context(), azdClient, "agent-dev")
+	env, err := createNewEnvironment(t.Context(), azdClient, envName)
 
 	require.NoError(t, err)
-	require.Equal(t, "agent-dev", env.Name)
+	require.Equal(t, envName, env.Name)
 	require.Equal(t, 1, workflowServer.runCalls)
 }
 
@@ -211,13 +222,21 @@ func newTestAzdClient(
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 
+	serveErr := make(chan error, 1)
 	go func() {
-		_ = grpcServer.Serve(listener)
+		if err := grpcServer.Serve(listener); err != nil {
+			serveErr <- err
+		}
 	}()
 
 	t.Cleanup(func() {
 		grpcServer.Stop()
 		_ = listener.Close()
+		select {
+		case err := <-serveErr:
+			require.ErrorIs(t, err, grpc.ErrServerStopped)
+		default:
+		}
 	})
 
 	azdClient, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))

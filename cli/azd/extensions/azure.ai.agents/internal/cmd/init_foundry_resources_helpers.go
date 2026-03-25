@@ -551,7 +551,7 @@ func createNewEnvironment(
 	envName string,
 ) (*azdext.Environment, error) {
 	if envName != "" {
-		if existingEnv := getExistingEnvironment(ctx, &initFlags{env: envName}, azdClient); existingEnv != nil {
+		if existingEnv := getExistingEnvironment(ctx, envName, azdClient); existingEnv != nil {
 			return existingEnv, nil
 		}
 	}
@@ -575,8 +575,11 @@ func createNewEnvironment(
 		if exterrors.IsCancellation(err) {
 			return nil, exterrors.Cancelled("environment creation was cancelled")
 		}
-		if envName != "" && isEnvironmentAlreadyExistsError(err) {
-			if existingEnv := getExistingEnvironment(ctx, &initFlags{env: envName}, azdClient); existingEnv != nil {
+		// The workflow may have created the environment on disk before returning
+		// an "already exists" error (e.g. a concurrent process raced, or a previous
+		// partial run left env files behind). Re-fetch so we can reuse it.
+		if envName != "" && status.Code(err) == codes.AlreadyExists {
+			if existingEnv := getExistingEnvironment(ctx, envName, azdClient); existingEnv != nil {
 				return existingEnv, nil
 			}
 		}
@@ -588,7 +591,7 @@ func createNewEnvironment(
 	}
 
 	// Re-fetch the environment after creation
-	env := getExistingEnvironment(ctx, &initFlags{env: envName}, azdClient)
+	env := getExistingEnvironment(ctx, envName, azdClient)
 	if env == nil {
 		return nil, exterrors.Dependency(
 			exterrors.CodeEnvironmentNotFound,
@@ -598,24 +601,6 @@ func createNewEnvironment(
 	}
 
 	return env, nil
-}
-
-// isEnvironmentAlreadyExistsError detects the duplicate-environment failure returned from
-// `azd env new`. Today the workflow surfaces this as a gRPC Internal error whose message
-// embeds the underlying azd error text, so we fall back to checking the status message
-// after confirming the status code when no dedicated AlreadyExists status is available.
-func isEnvironmentAlreadyExistsError(err error) bool {
-	if status.Code(err) == codes.AlreadyExists {
-		return true
-	}
-
-	if status.Code(err) != codes.Internal {
-		return false
-	}
-
-	errText := strings.ToLower(status.Convert(err).Message())
-	return strings.Contains(errText, "creating new environment: environment") &&
-		strings.Contains(errText, "already exists")
 }
 
 // loadAzureContext reads the current Azure context values (tenant, subscription, location)

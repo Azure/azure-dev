@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"testing"
 
@@ -15,15 +14,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
-
-func duplicateEnvironmentWorkflowError(envName string) string {
-	return fmt.Sprintf(
-		"failed to run workflow: error executing step command 'env new %s': "+
-			"creating new environment: environment '%s' already exists",
-		envName,
-		envName,
-	)
-}
 
 func TestExtractProjectDetails(t *testing.T) {
 	t.Parallel()
@@ -150,8 +140,8 @@ func TestCreateNewEnvironment_ReusesExistingEnvironmentAfterAlreadyExistsError(t
 	}
 	workflowServer := &testWorkflowServiceServer{
 		runErr: status.Error(
-			codes.Internal,
-			duplicateEnvironmentWorkflowError(envName),
+			codes.AlreadyExists,
+			"environment already exists",
 		),
 		runHook: func() {
 			envServer.environments[envName] = &azdext.Environment{Name: envName}

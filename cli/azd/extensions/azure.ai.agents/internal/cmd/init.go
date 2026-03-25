@@ -117,7 +117,7 @@ func runInitFromManifest(
 	}
 
 	// Get or create environment
-	env := getExistingEnvironment(ctx, flags, azdClient)
+	env := getExistingEnvironment(ctx, flags.env, azdClient)
 	if env == nil {
 		fmt.Println("Lets create a new default azd environment for your project.")
 		env, err = createNewEnvironment(ctx, azdClient, flags.env)
@@ -498,15 +498,15 @@ func ensureProject(ctx context.Context, flags *initFlags, azdClient *azdext.AzdC
 	return projectResponse.Project, nil
 }
 
-func getExistingEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.AzdClient) *azdext.Environment {
+func getExistingEnvironment(ctx context.Context, envName string, azdClient *azdext.AzdClient) *azdext.Environment {
 	var env *azdext.Environment
-	if flags.env == "" {
+	if envName == "" {
 		if envResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{}); err == nil {
 			env = envResponse.Environment
 		}
 	} else {
 		if envResponse, err := azdClient.Environment().Get(ctx, &azdext.GetEnvironmentRequest{
-			Name: flags.env,
+			Name: envName,
 		}); err == nil {
 			env = envResponse.Environment
 		}

@@ -116,38 +116,38 @@ func TestCommandTelemetryCoverage(t *testing.T) {
 	// duration, errors) and do NOT emit command-specific attributes. Each entry
 	// includes a justification for why command-specific telemetry is not needed.
 	commandsWithOnlyGlobalTelemetry := []string{
-		"auth status",           // Global telemetry sufficient — auth check is simple pass/fail
-		"completion",            // Shell completion script generation — no meaningful usage signal
-		"config get",            // Global telemetry sufficient — low cardinality
-		"config list",           // Global telemetry sufficient — low cardinality
-		"config list-alpha",     // Simple list of alpha features — no operational variance
-		"config reset",          // Global telemetry sufficient — low cardinality
-		"config set",            // Global telemetry sufficient — low cardinality
-		"config show",           // Global telemetry sufficient — low cardinality
-		"config unset",          // Global telemetry sufficient — low cardinality
-		"copilot",               // Copilot session telemetry handled by copilot.* fields at session level
-		"env config get",        // Thin wrapper — low cardinality, global telemetry sufficient
-		"env config set",        // Thin wrapper — low cardinality, global telemetry sufficient
-		"env config unset",      // Thin wrapper — low cardinality, global telemetry sufficient
-		"env get-value",         // Global telemetry sufficient — command name captures operation
-		"env get-values",        // Global telemetry sufficient — command name captures operation
-		"env new",               // Global telemetry sufficient — command name captures operation
-		"env refresh",           // Global telemetry sufficient — command name captures operation
-		"env remove",            // Destructive but simple — global telemetry captures usage
-		"env select",            // Global telemetry sufficient — command name captures operation
-		"env set",               // Global telemetry sufficient — command name captures operation
-		"env set-secret",        // Global telemetry sufficient — command name captures operation
-		"mcp",                   // MCP tool telemetry handled by mcp.* fields at invocation level
-		"monitor",               // Global telemetry sufficient — command name captures usage
-		"show",                  // Global telemetry sufficient — output format not analytically useful
-		"telemetry",             // Meta-command for telemetry itself — avoid recursion
-		"template list",         // Global telemetry sufficient — command name captures operation
-		"template show",         // Global telemetry sufficient — command name captures operation
-		"template source add",   // Global telemetry sufficient — command name captures operation
-		"template source list",  // Global telemetry sufficient — command name captures operation
+		"auth status",            // Global telemetry sufficient — auth check is simple pass/fail
+		"completion",             // Shell completion script generation — no meaningful usage signal
+		"config get",             // Global telemetry sufficient — low cardinality
+		"config list",            // Global telemetry sufficient — low cardinality
+		"config list-alpha",      // Simple list of alpha features — no operational variance
+		"config reset",           // Global telemetry sufficient — low cardinality
+		"config set",             // Global telemetry sufficient — low cardinality
+		"config show",            // Global telemetry sufficient — low cardinality
+		"config unset",           // Global telemetry sufficient — low cardinality
+		"copilot",                // Copilot session telemetry handled by copilot.* fields at session level
+		"env config get",         // Thin wrapper — low cardinality, global telemetry sufficient
+		"env config set",         // Thin wrapper — low cardinality, global telemetry sufficient
+		"env config unset",       // Thin wrapper — low cardinality, global telemetry sufficient
+		"env get-value",          // Global telemetry sufficient — command name captures operation
+		"env get-values",         // Global telemetry sufficient — command name captures operation
+		"env new",                // Global telemetry sufficient — command name captures operation
+		"env refresh",            // Global telemetry sufficient — command name captures operation
+		"env remove",             // Destructive but simple — global telemetry captures usage
+		"env select",             // Global telemetry sufficient — command name captures operation
+		"env set",                // Global telemetry sufficient — command name captures operation
+		"env set-secret",         // Global telemetry sufficient — command name captures operation
+		"mcp",                    // MCP tool telemetry handled by mcp.* fields at invocation level
+		"monitor",                // Global telemetry sufficient — command name captures usage
+		"show",                   // Global telemetry sufficient — output format not analytically useful
+		"telemetry",              // Meta-command for telemetry itself — avoid recursion
+		"template list",          // Global telemetry sufficient — command name captures operation
+		"template show",          // Global telemetry sufficient — command name captures operation
+		"template source add",    // Global telemetry sufficient — command name captures operation
+		"template source list",   // Global telemetry sufficient — command name captures operation
 		"template source remove", // Global telemetry sufficient — command name captures operation
-		"version",               // Telemetry explicitly disabled (DisableTelemetry: true)
-		"vs-server",             // JSON-RPC server — telemetry handled by rpc.* fields per call
+		"version",                // Telemetry explicitly disabled (DisableTelemetry: true)
+		"vs-server",              // JSON-RPC server — telemetry handled by rpc.* fields per call
 	}
 
 	// Build lookup maps

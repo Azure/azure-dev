@@ -109,7 +109,6 @@ func TestBuildInstallScriptArgs_Structure(t *testing.T) {
 
 	args := buildInstallScriptArgs(ChannelStable)
 
-	// Stable: ["-NoProfile", "-ExecutionPolicy", "AllSigned", "-Command", <script>]
 	require.Equal(t, 5, len(args), "expected exactly 5 args")
 	require.Equal(t, "-NoProfile", args[0])
 	require.Equal(t, "-ExecutionPolicy", args[1])

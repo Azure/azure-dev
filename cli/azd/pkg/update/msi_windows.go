@@ -159,17 +159,15 @@ func isStandardMSIInstall() error {
 // first, because Invoke-Expression from a pipe does not support passing named
 // parameters such as -Version or -InstallFolder to the script.
 //
-// installDir is the target installation directory (e.g. %LOCALAPPDATA%\Programs\Azure Dev CLI).
-//
 // Returns the arguments to pass to the "powershell" command.
 func buildInstallScriptArgs(channel Channel) []string {
 	switch channel {
 	case ChannelDaily:
 		script := fmt.Sprintf(
-			"$tmpDir = Join-Path $env:TEMP 'azd-install.ps1'; "+
-				"Invoke-RestMethod '%s' -OutFile $tmpDir; "+
-				"& $tmpDir -Version 'daily' -InstallFolder '%s'; "+
-				"Remove-Item $tmpDir -Force -ErrorAction SilentlyContinue",
+			"$tmpScript = Join-Path $env:TEMP 'azd-install.ps1'; "+
+				"Invoke-RestMethod '%s' -OutFile $tmpScript; "+
+				"& $tmpScript -Version 'daily' -InstallFolder '%s'; "+
+				"Remove-Item $tmpScript -Force -ErrorAction SilentlyContinue",
 			installScriptURL, expectedPerUserInstallDir(),
 		)
 		return []string{"-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script}

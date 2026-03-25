@@ -78,7 +78,7 @@ Progress reports provide real-time feedback during a single command's execution,
 
 #### Progress Report States
 
-Items in a progress report list can be in one of five states:
+Items in a progress report list can be in one of six states:
 
 1. **Loading**: `|===    | [Verb] Message goes here`
    - Indicates operation in progress
@@ -100,6 +100,11 @@ Items in a progress report list can be in one of five states:
    - Gray dash indicates intentionally skipped step
    - Different from failed - this is expected behavior
 
+6. **Cancelled**: `(!) Cancelled: [Verb] Message goes here – [reason]`
+   - Yellow exclamation indicates the operation was cancelled due to another failure
+   - Includes the reason (typically which sibling operation failed)
+   - Used in multi-service scenarios when a failure in one service causes others to be cancelled
+
 #### Progress Report Guidelines
 
 - **Indentation**: Progress items are always indented under the main command
@@ -111,42 +116,64 @@ Items in a progress report list can be in one of five states:
 
 **Success scenario:**
 
-```
-Provisioning Azure resources (azd provision)
+<pre>
+<b>Provisioning Azure resources (azd provision)</b>
 Provisioning Azure resources can take some time.
 
-  (✓) Done: Creating App Service Plan: plan-r2w2adrz3rvwxu
-  (✓) Done: Creating Log Analytics workspace: log-r2w2adrz3rvwxu
-  (✓) Done: Creating Application Insights: appi-r2w2adrz3rvwxu
-  (✓) Done: Creating App Service: app-api-r2w2adrz3rvwxu
-```
+  <span style="color:green">(✓) Done:</span> Creating App Service Plan: plan-r2w2adrz3rvwxu
+  <span style="color:green">(✓) Done:</span> Creating Log Analytics workspace: log-r2w2adrz3rvwxu
+  <span style="color:green">(✓) Done:</span> Creating Application Insights: appi-r2w2adrz3rvwxu
+  <span style="color:green">(✓) Done:</span> Creating App Service: app-api-r2w2adrz3rvwxu
+</pre>
 
 **Failure scenario:**
 
-```
-Provisioning Azure resources (azd provision)
+<pre>
+<b>Provisioning Azure resources (azd provision)</b>
 
-  (✓) Done: Creating App Service Plan: plan-r2w2adrz3rvwxu
-  (✓) Done: Creating Log Analytics workspace: log-r2w2adrz3rvwxu
-  (✗) Failed: Creating Cosmos DB: cosmos-r2w2adrz3rvwxu
-  
+  <span style="color:green">(✓) Done:</span> Creating App Service Plan: plan-r2w2adrz3rvwxu
+  <span style="color:green">(✓) Done:</span> Creating Log Analytics workspace: log-r2w2adrz3rvwxu
+  <span style="color:red">(✗) Failed:</span> Creating Cosmos DB: cosmos-r2w2adrz3rvwxu
+
   The '{US} West US 2 (westus)' region is currently experiencing high demand
   and cannot fulfill your request. Failed to create Cosmos DB account.
 
-ERROR: Unable to complete provisioning of Azure resources, 'azd up' failed
-```
+<span style="color:red">ERROR:</span> Unable to complete provisioning of Azure resources, 'azd up' failed
+</pre>
 
 **Skipped scenario:**
 
-```
+<pre>
 Note: Steps were skipped because _____ (directory, or specified service name)
 If you want to deploy all services, you can run azd deploy --all or
 move to root directory.
 
-  (✓) Done: [Verb] Message goes here
-  (✓) Done: [Verb] Message goes here
-  (-) Skipped: [Verb] Message goes here
-```
+  <span style="color:green">(✓) Done:</span> [Verb] Message goes here
+  <span style="color:green">(✓) Done:</span> [Verb] Message goes here
+  <span style="color:gray">(-) Skipped:</span> [Verb] Message goes here
+</pre>
+
+**Cancelled scenario (multi-service deployment with failure):**
+
+<pre>
+<b>Deploying services (6)</b>
+
+  <span style="color:#c5a332">(!) Cancelled:</span> postgres (59s) – catalogservice failed
+  <span style="color:#c5a332">(!) Cancelled:</span> basketcache (45s) – catalogservice failed
+  <span style="color:green">(✓) Done:</span> basketservice (25s)
+  - Endpoint: <span style="color:cyan">https://basketservice-yo2mecxyj3dmw.azurewebsites.net/</span>
+  <span style="color:green">(✓) Done:</span> catalogdbmanager (58s)
+  <span style="color:red">(✗) Failed:</span>  catalogservice (51s)
+  <span style="color:red">Required Azure Developer CLI dependencies are missing:</span>
+  - git CLI version ≥ 2.0.0 (current: 1.9.0), see https://git-scm.com/downloads to install.
+  Log:  <span style="color:cyan">/path/to/.azure/logs/deploy/deploy-catalogservice.log</span>
+  <span style="color:green">(✓) Done:</span> frontend (27s)
+
+<span style="color:red">ERROR:</span> Unable to complete deployment, 'azd concurx up' failed.
+To complete the operation, install the required dependencies and try again.
+</pre>
+
+When one service fails in a concurrent deployment, sibling services that cannot continue are **cancelled** (not failed). The cancelled message includes the reason (e.g., `– catalogservice failed`) so the user knows which service caused the cancellation.
 
 ### Success / Error / Warning Logs
 
@@ -440,6 +467,74 @@ Note: There is a discrepancy in the naming convention between ANSI Color coding 
 **Recommendation**: Use standard 3/4-bit colors (30-37, 90-97) as they adapt to the user's terminal theme preferences (dark/light mode). Only use 24-bit RGB colors when exact color matching is required. For complete ANSI escape code documentation, see [ANSI escape code - Colors](https://en.wikipedia.org/wiki/ANSI_escape_code#Colors).
 
 </details>
+
+### Loading Animation (Progress Spinner)
+
+`azd` uses a **bar-fill spinner** to indicate ongoing operations. The animation displays a pair of `|` border characters with `=` fill characters that bounce back and forth, alongside a status message describing the current operation.
+
+#### Animation Behavior
+
+The spinner **animates in place** on a single line by overwriting itself. The `=` fill characters grow and bounce back and forth between the `|` borders, creating a fluid loading effect:
+
+```
+|=====  | Creating App Service: my-app-r2w2adrz3rvwxu
+```
+
+The full animation cycle frames are:
+
+```
+|       |  →  |=      |  →  |==     |  →  |===    |  →  |====   |  →  |=====  |  →  |====== |  →  |=======|
+|=======|  →  | ======|  →  |  =====|  →  |   ====|  →  |    ===|  →  |     ==|  →  |      =|  →  |       |
+```
+
+These frames repeat continuously on the **same line** until the operation completes. The spinner bar is displayed in **hint-colored** text (gray) to keep focus on the status message.
+
+#### When to Use: Bar Spinner vs. Braille Spinner
+
+The **bar-fill spinner** (`|=======|`) is designed for **single-operation progress** — one task happening at a time on one line. When **multiple concurrent operations** are displayed as a list (e.g., deploying several services simultaneously), use the **braille spinner** instead. The bar spinner would be visually overwhelming when repeated across many lines.
+
+The braille spinner animates in place with dot patterns that fill in clockwise, then drain away:
+
+```
+⠁ → ⠃ → ⠇ → ⡇ → ⡏ → ⡟ → ⡿ → ⣿ → ⣾ → ⣴ → ⣠ → ⣀ → ...repeats
+```
+
+**Multi-service deployment example:**
+
+```
+Deploying 6 services
+
+  ⠙  Deploying: postgres (5s)
+  ⠙  Deploying: basketcache (5s)
+ (•) Queued: basketservice
+ (•) Queued: catalogdbmanager
+  ⠙  Deploying: catalogservice (5s)
+ (•) Queued: frontend
+```
+
+| Scenario | Spinner Type | Reason |
+| --- | --- | --- |
+| Single long-running operation (provisioning, creating a resource) | **Bar-fill** (`\|===   \|`) | Clear progress indicator for one task |
+| Multiple concurrent operations shown as a list | **Braille** (`⠋⠙⠹...`) | Compact — doesn't clutter multi-line lists |
+| Queued / waiting items in a list | **Static dot** `(•)` | No animation needed — item hasn't started |
+
+#### Character Sets
+
+There are three spinner variants based on terminal capability:
+
+| Variant | Characters | When Used |
+| --- | --- | --- |
+| **Bar-fill** | `\|=======\|` (bouncing fill bar) | Single-operation progress in interactive terminal |
+| **Braille** | `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏` | Multi-item concurrent progress lists |
+| **Short** | `.`, `..`, `...` | Non-interactive or limited terminals |
+| **No Terminal** | *(empty)* | No terminal attached (e.g., piped output) |
+
+#### Guidelines
+
+- **Use the bar-fill spinner** for single in-progress operations (resource creation, provisioning)
+- **Use the braille spinner** when showing a list of multiple concurrent operations
+- **Use `(•)` static indicator** for queued items that haven't started yet
+- **Keep status messages concise** — use the format `"<Verb>ing <Resource Type>: <resource-name>"`
 
 ## Testing Standards
 

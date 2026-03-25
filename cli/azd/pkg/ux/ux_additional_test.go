@@ -6,7 +6,6 @@ package ux
 import (
 	"bytes"
 	"errors"
-	"os"
 	"testing"
 )
 
@@ -30,7 +29,7 @@ func TestConsoleWidth_invalid_COLUMNS_fallback(t *testing.T) {
 }
 
 func TestConsoleWidth_empty_COLUMNS_uses_default(t *testing.T) {
-	os.Unsetenv("COLUMNS")
+	t.Setenv("COLUMNS", "")
 
 	width := ConsoleWidth()
 	if width <= 0 {
@@ -191,21 +190,23 @@ func TestPrinter_ClearCanvas(t *testing.T) {
 
 func TestPrinter_SetCursorPosition_same_position_noop(t *testing.T) {
 	var buf bytes.Buffer
-	printer := NewPrinter(&buf)
+	p := NewPrinter(&buf)
+	pos := CursorPosition{Row: 5, Col: 3}
 
-	printer.Fprintf("test\n")
+	beforeFirst := buf.Len()
+	p.SetCursorPosition(pos)
+	afterFirst := buf.Len()
+	if afterFirst <= beforeFirst {
+		t.Fatalf("expected first SetCursorPosition to write initialization escape codes, len before = %d, after = %d", beforeFirst, afterFirst)
+	}
 
-	pos := printer.CursorPosition()
-	before := buf.Len()
-	printer.SetCursorPosition(pos)
 	// Setting same position should not write additional escape codes
-	// (or write minimal — the first call initializes cursorPosition)
-	printer.SetCursorPosition(pos)
-	after := buf.Len()
+	p.SetCursorPosition(pos)
+	afterSecond := buf.Len()
 
-	// The second call should produce no output since position hasn't changed
-	_ = before
-	_ = after
+	if afterSecond != afterFirst {
+		t.Fatalf("expected second SetCursorPosition with same position to be a no-op, len after first = %d, after second = %d", afterFirst, afterSecond)
+	}
 }
 
 func TestNewCanvasSize(t *testing.T) {

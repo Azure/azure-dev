@@ -134,7 +134,7 @@ func TestAuthTokenResult_JSON(t *testing.T) {
 	data, err := json.Marshal(result)
 	require.NoError(t, err)
 
-	var parsed map[string]interface{}
+	var parsed map[string]any
 	err = json.Unmarshal(data, &parsed)
 	require.NoError(t, err)
 
@@ -170,7 +170,7 @@ func TestLoginResult_JSON(t *testing.T) {
 		data, err := json.Marshal(result)
 		require.NoError(t, err)
 
-		var parsed map[string]interface{}
+		var parsed map[string]any
 		err = json.Unmarshal(data, &parsed)
 		require.NoError(t, err)
 
@@ -186,7 +186,7 @@ func TestLoginResult_JSON(t *testing.T) {
 		data, err := json.Marshal(result)
 		require.NoError(t, err)
 
-		var parsed map[string]interface{}
+		var parsed map[string]any
 		err = json.Unmarshal(data, &parsed)
 		require.NoError(t, err)
 
@@ -206,7 +206,7 @@ func TestStatusResult_JSON(t *testing.T) {
 		data, err := json.Marshal(result)
 		require.NoError(t, err)
 
-		var parsed map[string]interface{}
+		var parsed map[string]any
 		err = json.Unmarshal(data, &parsed)
 		require.NoError(t, err)
 
@@ -226,7 +226,7 @@ func TestStatusResult_JSON(t *testing.T) {
 		data, err := json.Marshal(result)
 		require.NoError(t, err)
 
-		var parsed map[string]interface{}
+		var parsed map[string]any
 		err = json.Unmarshal(data, &parsed)
 		require.NoError(t, err)
 
@@ -244,7 +244,7 @@ func TestStatusResult_JSON(t *testing.T) {
 		data, err := json.Marshal(result)
 		require.NoError(t, err)
 
-		var parsed map[string]interface{}
+		var parsed map[string]any
 		err = json.Unmarshal(data, &parsed)
 		require.NoError(t, err)
 
@@ -275,26 +275,26 @@ func TestShowResult_JSON(t *testing.T) {
 	data, err := json.Marshal(result)
 	require.NoError(t, err)
 
-	var parsed map[string]interface{}
+	var parsed map[string]any
 	err = json.Unmarshal(data, &parsed)
 	require.NoError(t, err)
 
 	assert.Equal(t, "my-app", parsed["name"])
 
 	// IngresUrl should be excluded (json:"-")
-	services := parsed["services"].(map[string]interface{})
-	api := services["api"].(map[string]interface{})
+	services := parsed["services"].(map[string]any)
+	api := services["api"].(map[string]any)
 	assert.NotContains(t, api, "ingresUrl")
 	assert.NotContains(t, api, "IngresUrl")
 
 	// Project fields should be present
-	project := api["project"].(map[string]interface{})
+	project := api["project"].(map[string]any)
 	assert.Equal(t, "./src/api", project["path"])
 	assert.Equal(t, "dotnet", project["language"])
 
 	// Target should be present
-	target := api["target"].(map[string]interface{})
-	resourceIds := target["resourceIds"].([]interface{})
+	target := api["target"].(map[string]any)
+	resourceIds := target["resourceIds"].([]any)
 	assert.Len(t, resourceIds, 1)
 }
 
@@ -310,7 +310,7 @@ func TestShowService_JSON_nil_target(t *testing.T) {
 	data, err := json.Marshal(result)
 	require.NoError(t, err)
 
-	var parsed map[string]interface{}
+	var parsed map[string]any
 	err = json.Unmarshal(data, &parsed)
 	require.NoError(t, err)
 
@@ -334,11 +334,11 @@ func TestVersionResult_JSON(t *testing.T) {
 	data, err := json.Marshal(result)
 	require.NoError(t, err)
 
-	var parsed map[string]interface{}
+	var parsed map[string]any
 	err = json.Unmarshal(data, &parsed)
 	require.NoError(t, err)
 
-	azd := parsed["azd"].(map[string]interface{})
+	azd := parsed["azd"].(map[string]any)
 	assert.Equal(t, "1.5.0", azd["version"])
 	assert.Equal(t, "abc123", azd["commit"])
 }
@@ -357,7 +357,7 @@ func TestVsServerResult_JSON(t *testing.T) {
 		data, err := json.Marshal(result)
 		require.NoError(t, err)
 
-		var parsed map[string]interface{}
+		var parsed map[string]any
 		err = json.Unmarshal(data, &parsed)
 		require.NoError(t, err)
 
@@ -366,7 +366,7 @@ func TestVsServerResult_JSON(t *testing.T) {
 		assert.Equal(t, "MIIC+zCCAeOgAwIBAgIJAL...", parsed["certificateBytes"])
 
 		// Embedded VersionResult
-		azd := parsed["azd"].(map[string]interface{})
+		azd := parsed["azd"].(map[string]any)
 		assert.Equal(t, "1.5.0", azd["version"])
 		assert.Equal(t, "abc123", azd["commit"])
 	})
@@ -380,7 +380,7 @@ func TestVsServerResult_JSON(t *testing.T) {
 		data, err := json.Marshal(result)
 		require.NoError(t, err)
 
-		var parsed map[string]interface{}
+		var parsed map[string]any
 		err = json.Unmarshal(data, &parsed)
 		require.NoError(t, err)
 
@@ -394,7 +394,7 @@ func TestConsoleMessage_JSON(t *testing.T) {
 	data, err := json.Marshal(msg)
 	require.NoError(t, err)
 
-	var parsed map[string]interface{}
+	var parsed map[string]any
 	err = json.Unmarshal(data, &parsed)
 	require.NoError(t, err)
 
@@ -412,7 +412,7 @@ func TestEventEnvelope_JSON(t *testing.T) {
 	data, err := json.Marshal(envelope)
 	require.NoError(t, err)
 
-	var parsed map[string]interface{}
+	var parsed map[string]any
 	err = json.Unmarshal(data, &parsed)
 	require.NoError(t, err)
 
@@ -431,7 +431,7 @@ func TestEnvListEnvironment_JSON(t *testing.T) {
 	data, err := json.Marshal(env)
 	require.NoError(t, err)
 
-	var parsed map[string]interface{}
+	var parsed map[string]any
 	err = json.Unmarshal(data, &parsed)
 	require.NoError(t, err)
 
@@ -467,18 +467,18 @@ func TestEnvRefreshResult_JSON(t *testing.T) {
 	data, err := json.Marshal(result)
 	require.NoError(t, err)
 
-	var parsed map[string]interface{}
+	var parsed map[string]any
 	err = json.Unmarshal(data, &parsed)
 	require.NoError(t, err)
 
-	outputs := parsed["outputs"].(map[string]interface{})
+	outputs := parsed["outputs"].(map[string]any)
 	assert.Len(t, outputs, 3)
 
-	endpoint := outputs["endpoint"].(map[string]interface{})
+	endpoint := outputs["endpoint"].(map[string]any)
 	assert.Equal(t, "string", endpoint["type"])
 	assert.Equal(t, "https://app.example.com", endpoint["value"])
 
-	resources := parsed["resources"].([]interface{})
+	resources := parsed["resources"].([]any)
 	assert.Len(t, resources, 2)
 }
 

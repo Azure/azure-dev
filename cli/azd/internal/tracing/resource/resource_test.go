@@ -230,8 +230,10 @@ func TestIsValidMacAddress(t *testing.T) {
 
 func TestExecEnvForHosts_codespaces(t *testing.T) {
 	clearCIEnvVars(t)
-	// Clear host vars
+	// Clear host vars — t.Setenv registers cleanup, os.Unsetenv removes for LookupEnv checks
+	t.Setenv("AZD_IN_CLOUDSHELL", "")
 	os.Unsetenv("AZD_IN_CLOUDSHELL")
+	t.Setenv("CODESPACES", "")
 	os.Unsetenv("CODESPACES")
 
 	t.Setenv("CODESPACES", "true")
@@ -243,7 +245,9 @@ func TestExecEnvForHosts_codespaces(t *testing.T) {
 }
 
 func TestExecEnvForHosts_no_host(t *testing.T) {
+	t.Setenv("AZD_IN_CLOUDSHELL", "")
 	os.Unsetenv("AZD_IN_CLOUDSHELL")
+	t.Setenv("CODESPACES", "")
 	os.Unsetenv("CODESPACES")
 
 	result := execEnvForHosts()
@@ -254,8 +258,11 @@ func TestExecEnvForHosts_no_host(t *testing.T) {
 
 func TestNew_returns_non_nil_resource(t *testing.T) {
 	clearCIEnvVars(t)
+	t.Setenv("AZD_IN_CLOUDSHELL", "")
 	os.Unsetenv("AZD_IN_CLOUDSHELL")
+	t.Setenv("CODESPACES", "")
 	os.Unsetenv("CODESPACES")
+	t.Setenv("AZURE_DEV_USER_AGENT", "")
 	os.Unsetenv("AZURE_DEV_USER_AGENT")
 
 	r := New()

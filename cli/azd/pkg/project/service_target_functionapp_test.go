@@ -49,63 +49,84 @@ func TestNewFunctionAppTargetTypeValidation(t *testing.T) {
 	}
 }
 
+// TestResolveFunctionAppRemoteBuild_JavaScriptMatrix covers the full 3×3 matrix of remoteBuild
+// (nil, true, false) × funcignore state (excludes node_modules, doesn't exclude, absent).
+// Customer case numbers refer to the 9 scenarios reported in the GitHub issue for traceability.
 func TestResolveFunctionAppRemoteBuild_JavaScriptMatrix(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name              string
 		remoteBuild       *bool
-		funcIgnoreContent string
+		funcIgnoreContent string // empty string = no funcignore file
 		expectRemoteBuild bool
 		expectError       string
 	}{
+		// Customer Case 1: No flag + funcignore excludes node_modules → auto-detect remote build
 		{
-			name:              "NoRemoteBuildAndFuncIgnoreExcludesNodeModules_RemoteBuildEnabled",
+			name:              "NilRemoteBuild_FuncignoreExcludesNodeModules",
 			remoteBuild:       nil,
 			funcIgnoreContent: "node_modules\n",
 			expectRemoteBuild: true,
 		},
+		// Customer Case 2: No flag + funcignore doesn't exclude node_modules → local build
 		{
-			name:              "NoRemoteBuildAndFuncIgnoreDoesNotExcludeNodeModules_RemoteBuildDisabled",
+			name:              "NilRemoteBuild_FuncignoreDoesNotExcludeNodeModules",
 			remoteBuild:       nil,
 			funcIgnoreContent: "dist\n",
 			expectRemoteBuild: false,
 		},
+		// Customer Case 3: No flag + no funcignore → defaults to remote build
 		{
-			name:              "NoRemoteBuildAndMissingFuncIgnore_RemoteBuildEnabled",
+			name:              "NilRemoteBuild_NoFuncignore",
 			remoteBuild:       nil,
 			funcIgnoreContent: "",
 			expectRemoteBuild: true,
 		},
+		// Customer Case 4: Explicit false + no funcignore → local build
 		{
-			name:              "RemoteBuildFalseAndMissingFuncIgnore_RemoteBuildDisabled",
+			name:              "FalseRemoteBuild_NoFuncignore",
 			remoteBuild:       new(false),
 			funcIgnoreContent: "",
 			expectRemoteBuild: false,
 		},
+		// Customer Case 5: Explicit false + funcignore excludes node_modules → ERROR
+		// (remoteBuild: false conflicts with funcignore excluding node_modules)
 		{
-			name:              "RemoteBuildFalseAndFuncIgnoreExcludesNodeModules_Errors",
+			name:              "FalseRemoteBuild_FuncignoreExcludesNodeModules_Errors",
 			remoteBuild:       new(false),
 			funcIgnoreContent: "node_modules\n",
 			expectError:       "'remoteBuild: false' cannot be used when '.funcignore' excludes node_modules",
 		},
+		// Customer Case 6: Explicit false + funcignore doesn't exclude node_modules → local build
 		{
-			name:              "RemoteBuildFalseAndFuncIgnoreDoesNotExcludeNodeModules_Succeeds",
+			name:              "FalseRemoteBuild_FuncignoreDoesNotExcludeNodeModules",
 			remoteBuild:       new(false),
 			funcIgnoreContent: "dist\n",
 			expectRemoteBuild: false,
 		},
+		// Customer Case 7: Explicit true + funcignore excludes node_modules → remote build
 		{
-			name:              "RemoteBuildTrueAndFuncIgnoreExcludesNodeModules_Succeeds",
+			name:              "TrueRemoteBuild_FuncignoreExcludesNodeModules",
 			remoteBuild:       new(true),
 			funcIgnoreContent: "node_modules\n",
 			expectRemoteBuild: true,
 		},
+		// Customer Case 8: Explicit true + funcignore doesn't exclude node_modules → ERROR
+		// (remoteBuild: true requires funcignore to exclude node_modules so server can npm install)
 		{
-			name:              "RemoteBuildTrueAndFuncIgnoreDoesNotExcludeNodeModules_Errors",
+			name:              "TrueRemoteBuild_FuncignoreDoesNotExcludeNodeModules_Errors",
 			remoteBuild:       new(true),
 			funcIgnoreContent: "dist\n",
 			expectError:       "'remoteBuild: true' requires '.funcignore' to exclude node_modules",
+		},
+		// Customer Case 9: Explicit true + no funcignore → remote build
+		// (hardcoded defaults exclude node_modules, consistent with remoteBuild: true)
+		{
+			name:              "TrueRemoteBuild_NoFuncignore",
+			remoteBuild:       new(true),
+			funcIgnoreContent: "",
+			expectRemoteBuild: true,
 		},
 	}
 
@@ -257,121 +278,6 @@ func TestStripUTF8BOM(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := stripUTF8BOM(tt.input)
 			require.Equal(t, tt.expected, result)
-		})
-	}
-}
-
-// TestResolveFunctionAppRemoteBuild_CustomerScenarios maps 1:1 to the 9 scenarios reported by the
-// customer in the GitHub issue, using the same numbering for traceability.
-func TestResolveFunctionAppRemoteBuild_CustomerScenarios(t *testing.T) {
-	t.Parallel()
-
-	ptrTrue := new(true)
-	ptrFalse := new(false)
-
-	tests := []struct {
-		name              string
-		remoteBuild       *bool
-		funcIgnoreContent string // empty string = no funcignore file
-		expectRemoteBuild bool
-		expectError       string
-	}{
-		// Customer Case 1: No flag + funcignore excludes node_modules → deploys successfully
-		{
-			name:              "Case1_NilRemoteBuild_FuncignoreExcludesNodeModules",
-			remoteBuild:       nil,
-			funcIgnoreContent: "node_modules\n",
-			expectRemoteBuild: true,
-		},
-		// Customer Case 2: No flag + funcignore doesn't exclude node_modules → deploys successfully
-		{
-			name:              "Case2_NilRemoteBuild_FuncignoreDoesNotExcludeNodeModules",
-			remoteBuild:       nil,
-			funcIgnoreContent: "dist\n",
-			expectRemoteBuild: false,
-		},
-		// Customer Case 3: No flag + no funcignore file → deploys successfully
-		{
-			name:              "Case3_NilRemoteBuild_NoFuncignore",
-			remoteBuild:       nil,
-			funcIgnoreContent: "",
-			expectRemoteBuild: true,
-		},
-		// Customer Case 4: Explicit false + no funcignore → deploys successfully
-		{
-			name:              "Case4_FalseRemoteBuild_NoFuncignore",
-			remoteBuild:       ptrFalse,
-			funcIgnoreContent: "",
-			expectRemoteBuild: false,
-		},
-		// Customer Case 5: Explicit false + funcignore excludes node_modules → ERROR
-		// (remoteBuild: false conflicts with funcignore excluding node_modules)
-		{
-			name:              "Case5_FalseRemoteBuild_FuncignoreExcludesNodeModules",
-			remoteBuild:       ptrFalse,
-			funcIgnoreContent: "node_modules\n",
-			expectError:       "'remoteBuild: false' cannot be used when '.funcignore' excludes node_modules",
-		},
-		// Customer Case 6: Explicit false + funcignore doesn't exclude node_modules → deploys successfully
-		{
-			name:              "Case6_FalseRemoteBuild_FuncignoreDoesNotExcludeNodeModules",
-			remoteBuild:       ptrFalse,
-			funcIgnoreContent: "dist\n",
-			expectRemoteBuild: false,
-		},
-		// Customer Case 7: Explicit true + funcignore excludes node_modules → deploys successfully
-		{
-			name:              "Case7_TrueRemoteBuild_FuncignoreExcludesNodeModules",
-			remoteBuild:       ptrTrue,
-			funcIgnoreContent: "node_modules\n",
-			expectRemoteBuild: true,
-		},
-		// Customer Case 8: Explicit true + funcignore doesn't exclude node_modules → ERROR
-		// (remoteBuild: true requires funcignore to exclude node_modules so server can npm install)
-		{
-			name:              "Case8_TrueRemoteBuild_FuncignoreDoesNotExcludeNodeModules",
-			remoteBuild:       ptrTrue,
-			funcIgnoreContent: "dist\n",
-			expectError:       "'remoteBuild: true' requires '.funcignore' to exclude node_modules",
-		},
-		// Customer Case 9: Explicit true + no funcignore → deploys successfully
-		// (hardcoded defaults exclude node_modules, consistent with remoteBuild: true)
-		{
-			name:              "Case9_TrueRemoteBuild_NoFuncignore",
-			remoteBuild:       ptrTrue,
-			funcIgnoreContent: "",
-			expectRemoteBuild: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			serviceConfig := createTestServiceConfig(t.TempDir(), AzureFunctionTarget, ServiceLanguageJavaScript)
-			serviceConfig.RemoteBuild = tt.remoteBuild
-
-			if tt.funcIgnoreContent != "" {
-				err := os.WriteFile(
-					filepath.Join(serviceConfig.Path(), ".funcignore"),
-					[]byte(tt.funcIgnoreContent),
-					0600,
-				)
-				require.NoError(t, err)
-			}
-
-			remoteBuild, err := resolveFunctionAppRemoteBuild(serviceConfig)
-			if tt.expectError != "" {
-				require.Error(t, err)
-				require.ErrorContains(t, err, tt.expectError)
-
-				var suggestionErr *internal.ErrorWithSuggestion
-				require.ErrorAs(t, err, &suggestionErr)
-				return
-			}
-
-			require.NoError(t, err)
-			require.Equal(t, tt.expectRemoteBuild, remoteBuild)
 		})
 	}
 }

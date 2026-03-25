@@ -331,8 +331,13 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		if relErr != nil {
 			cdPath = createdProjectDir // Fall back to absolute path
 		}
+		// Quote the path when it contains whitespace so the hint is copy/paste-safe
+		cdPathDisplay := cdPath
+		if strings.ContainsAny(cdPath, " \t") {
+			cdPathDisplay = fmt.Sprintf("%q", cdPath)
+		}
 		followUp += fmt.Sprintf("\n\nChange to the project directory:\n  %s",
-			output.WithHighLightFormat("cd %s", cdPath))
+			output.WithHighLightFormat("cd %s", cdPathDisplay))
 	}
 
 	if i.featuresManager.IsEnabled(agentcopilot.FeatureCopilot) {
@@ -867,12 +872,20 @@ func (i *initAction) initializeExtensions(ctx context.Context, azdCtx *azdcontex
 }
 
 func getCmdInitHelpDescription(*cobra.Command) string {
-	return generateCmdHelpDescription("Initialize a new application in your current directory.",
+	return generateCmdHelpDescription(
+		"Initialize a new application. When using --template, creates a project directory automatically.",
 		[]string{
 			formatHelpNote(
 				fmt.Sprintf("Running %s without flags specified will prompt "+
 					"you to initialize using your existing code, or from a template.",
 					output.WithHighLightFormat("init"),
+				)),
+			formatHelpNote(
+				fmt.Sprintf("When using %s, a new directory is created "+
+					"(named after the template) and the project is initialized inside it. "+
+					"Pass %s as the directory to use the current directory instead.",
+					output.WithHighLightFormat("--template"),
+					output.WithHighLightFormat("."),
 				)),
 			formatHelpNote(
 				"To view all available sample templates, including those submitted by the azd community, visit: " +
@@ -882,11 +895,16 @@ func getCmdInitHelpDescription(*cobra.Command) string {
 
 func getCmdInitHelpFooter(*cobra.Command) string {
 	return generateCmdHelpSamplesBlock(map[string]string{
-		"Initialize a template to your current local directory from a GitHub repo.": fmt.Sprintf("%s %s",
+		"Initialize a template into a new project directory.": fmt.Sprintf("%s %s",
 			output.WithHighLightFormat("azd init --template"),
 			output.WithWarningFormat("[GitHub repo URL]"),
 		),
-		"Initialize a template to your current local directory from a branch other than main.": fmt.Sprintf("%s %s %s %s",
+		"Initialize a template into the current directory.": fmt.Sprintf("%s %s %s",
+			output.WithHighLightFormat("azd init --template"),
+			output.WithWarningFormat("[GitHub repo URL]"),
+			output.WithHighLightFormat("."),
+		),
+		"Initialize a template from a branch other than main.": fmt.Sprintf("%s %s %s %s",
 			output.WithHighLightFormat("azd init --template"),
 			output.WithWarningFormat("[GitHub repo URL]"),
 			output.WithHighLightFormat("--branch"),
@@ -996,7 +1014,7 @@ func (i *initAction) resolveTargetDirectory(wd string) (string, error) {
 // If it already exists and is non-empty, it prompts the user for confirmation
 // or returns an error in non-interactive mode.
 func (i *initAction) validateTargetDirectory(ctx context.Context, targetDir string) error {
-	entries, err := os.ReadDir(targetDir)
+	f, err := os.Open(targetDir)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil // Directory doesn't exist yet — will be created
 	}
@@ -1004,7 +1022,11 @@ func (i *initAction) validateTargetDirectory(ctx context.Context, targetDir stri
 		return fmt.Errorf("reading directory '%s': %w", filepath.Base(targetDir), err)
 	}
 
-	if len(entries) == 0 {
+	// Read a single entry to check emptiness without loading the full listing.
+	names, _ := f.Readdirnames(1)
+	f.Close()
+
+	if len(names) == 0 {
 		return nil // Empty directory is fine
 	}
 

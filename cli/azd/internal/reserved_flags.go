@@ -16,12 +16,12 @@ type ReservedFlag struct {
 	Description string
 }
 
-// ReservedFlags is the canonical list of global flags that extensions must not reuse.
+// reservedFlags is the canonical list of global flags that extensions must not reuse.
 // It is derived from CreateGlobalFlagSet (auto_install.go), the root command's
 // persistent flags, and the extension SDK's built-in flag set (extension_command.go).
 //
 // Keep this list in sync whenever a new global flag is added to azd.
-var ReservedFlags = []ReservedFlag{
+var reservedFlags = []ReservedFlag{
 	{Long: "environment", Short: "e", Description: "The name of the environment to use."},
 	{Long: "cwd", Short: "C", Description: "Sets the current working directory."},
 	{Long: "debug", Short: "", Description: "Enables debugging and diagnostics logging."},
@@ -30,25 +30,36 @@ var ReservedFlags = []ReservedFlag{
 	{Long: "help", Short: "h", Description: "Help for the current command."},
 	{Long: "docs", Short: "", Description: "Opens the documentation for the current command."},
 	{Long: "trace-log-file", Short: "", Description: "Write a diagnostics trace to a file."},
-	{Long: "trace-log-url", Short: "", Description: "Send traces to an Open Telemetry compatible endpoint."},
+	{Long: "trace-log-url", Short: "", Description: "Send traces to an OpenTelemetry-compatible endpoint."},
 }
 
-// reservedShortFlags is an index of short flag names built once at init time.
-var reservedShortFlags map[string]ReservedFlag
+// ReservedFlags returns a copy of the reserved flags list.
+// The copy prevents callers from mutating the canonical list.
+func ReservedFlags() []ReservedFlag {
+	out := make([]ReservedFlag, len(reservedFlags))
+	copy(out, reservedFlags)
+	return out
+}
 
-// reservedLongFlags is an index of long flag names built once at init time.
-var reservedLongFlags map[string]ReservedFlag
-
-func init() {
-	reservedShortFlags = make(map[string]ReservedFlag, len(ReservedFlags))
-	reservedLongFlags = make(map[string]ReservedFlag, len(ReservedFlags))
-	for _, f := range ReservedFlags {
-		reservedLongFlags[f.Long] = f
+// reservedShortFlags is an index of short flag names built once at initialization time.
+var reservedShortFlags = func() map[string]ReservedFlag {
+	m := make(map[string]ReservedFlag, len(reservedFlags))
+	for _, f := range reservedFlags {
 		if f.Short != "" {
-			reservedShortFlags[f.Short] = f
+			m[f.Short] = f
 		}
 	}
-}
+	return m
+}()
+
+// reservedLongFlags is an index of long flag names built once at initialization time.
+var reservedLongFlags = func() map[string]ReservedFlag {
+	m := make(map[string]ReservedFlag, len(reservedFlags))
+	for _, f := range reservedFlags {
+		m[f.Long] = f
+	}
+	return m
+}()
 
 // IsReservedShortFlag returns true when the given single-character flag name
 // (without the leading "-") is reserved by azd as a global flag.

@@ -121,7 +121,7 @@ func TestReservedFlagsInSyncWithInternal(t *testing.T) {
 	// Verify the SDK reserved flag list stays in sync with the internal registry.
 	// If this test fails, you added a flag to one list but not the other.
 	sdkNames := ReservedFlagNames()
-	internalFlags := internal.ReservedFlags
+	internalFlags := internal.ReservedFlags()
 
 	sdkSet := make(map[string]bool, len(sdkNames))
 	for _, name := range sdkNames {
@@ -135,13 +135,13 @@ func TestReservedFlagsInSyncWithInternal(t *testing.T) {
 
 	for name := range sdkSet {
 		require.True(t, internalSet[name],
-			"azdext reserved_flags.go has %q but internal.ReservedFlags does not — add it to internal/reserved_flags.go",
+			"azdext reserved_flags.go has %q but internal.ReservedFlags() does not — add it to internal/reserved_flags.go",
 			name)
 	}
 
 	for name := range internalSet {
 		require.True(t, sdkSet[name],
-			"internal.ReservedFlags has %q but azdext reserved_flags.go does not — add it to pkg/azdext/reserved_flags.go",
+			"internal.ReservedFlags() has %q but azdext reserved_flags.go does not — add it to pkg/azdext/reserved_flags.go",
 			name)
 	}
 }

@@ -154,6 +154,13 @@ func (a *myAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 - Commands can support multiple output formats via `--output` flag like `json` and`table`
 - Use structured output for machine consumption
+- **Shell-safe output**: When printing shell commands (e.g., `cd <path>`), quote or escape paths that may contain spaces. Use `fmt.Sprintf("cd %q", path)` or conditionally quote
+- **Consistent JSON contracts**: When adding new fields to JSON output (e.g., `--output json`), ensure the field type and format are consistent with similar fields across commands. For example, don't mix `*time.Time` and `*RFC3339Time` for timestamp fields in the same API surface
+
+### Path Safety
+
+- **Never use user-derived path components without validation**: When deriving directory names from user input or template paths, always validate the result is not `.`, `..`, empty, or contains path separators. These can cause path traversal
+- **Quote paths in user-facing messages**: File paths in error messages, suggestions, and follow-up hints should be quoted when they may contain spaces
 
 ### Code Organization
 
@@ -165,13 +172,23 @@ func (a *myAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 - Wrap errors with `fmt.Errorf("context: %w", err)` to preserve the error chain
 - Consider using `internal.ErrorWithSuggestion` for straightforward, deterministic user-fixable issues
+- When using `ErrorWithSuggestion`, always populate **all** relevant fields (`Err`, `Suggestion`, and `Links` if applicable). Don't leave `Message` or `Links` empty if the YAML pipeline rule would have provided them — `ErrorMiddleware` skips the YAML pipeline for errors that are already `ErrorWithSuggestion`
 - Handle context cancellations appropriately
+- **Telemetry service attribution**: Only set `error.service.name` (e.g., `"aad"`) when an external service actually returned the error. For locally-generated errors (e.g., "not logged in" state checks), don't attribute them to an external service
+- **Scope-agnostic messages**: Error messages and suggestions in `error_suggestions.yaml` should be scope-agnostic when the error can occur at multiple scopes (subscription, resource group, etc.). Use "target scope" instead of hardcoding "resource group"
 
 ### Documentation Standards
 
 - Public functions and types must have Go doc comments
 - Comments should start with the function/type name
 - Document non-obvious dependencies or assumptions
+- **Help text consistency**: When changing command behavior, update **all** help text that references the old behavior — including `Short`, `Long`, command descriptions used by help generators, and snapshot files. Stale help text is a common review finding
+- **Environment variable docs**: When documenting env vars, verify against the actual implementation — check the parsing method (`os.LookupEnv` presence-check vs `strconv.ParseBool`, `time.ParseDuration` vs integer seconds), default values, and which component reads them. Don't assume behavior from the name alone
+
+### Architecture Boundaries
+
+- **`pkg/project/` is target-agnostic**: The project manager and service manager should not contain service-target-specific logic (e.g., Container Apps, App Service). Service-target-specific behavior belongs in the target implementations under `pkg/project/` service target files or in the YAML error suggestions pipeline
+- **Extension-specific concerns**: Keep extension-specific environment variables and configuration documented in the extension's own docs, not in core azd documentation, unless they are consumed by the core CLI
 
 ### Modern Go
 
@@ -195,6 +212,15 @@ This project uses Go 1.26. Use modern standard library features:
 - Use `t.Context()` instead of `context.Background()` in tests
 - Use `t.Chdir(dir)` instead of `os.Chdir` plus a deferred restore in tests
 - Run `go fix ./...` before committing; CI enforces these modernizations
+
+### Testing Best Practices
+
+- **Test the actual rules, not just the framework**: When adding YAML-based error suggestion rules, write tests that exercise the YAML rules end-to-end through the pipeline, not just tests that validate the framework's generic matching behavior
+- **Extract shared test helpers**: Don't duplicate test utilities across files. Extract common helpers (e.g., shell wrappers, auth token fetchers, CLI runners) into shared `test_utils` or `test/mocks` packages
+- **Use correct env vars**: For forcing non-interactive mode in tests, use `AZD_FORCE_TTY=false` (not `AZD_DEBUG_FORCE_NO_TTY`). For no-prompt, use `AZD_NO_PROMPT=true`
+- **TypeScript tests**: Use `catch (e: unknown)` with type assertions, not `catch (e: any)`. Set `NO_COLOR=1` in test env to prevent ANSI escape codes from breaking regex assertions
+- **Reasonable timeouts**: Set Jest/test timeouts proportional to expected execution time. Don't use 5-minute timeouts for tests that should complete in seconds
+- **Efficient directory checks**: To check if a directory is empty, use `os.Open` + `f.Readdirnames(1)` instead of `os.ReadDir` which reads the entire listing into memory
 
 ## MCP Tools
 
@@ -227,3 +253,13 @@ Feature-specific docs are in `docs/` — refer to them as needed. Some key docs 
 - `docs/extensions/extension-framework.md` - Extension development using gRPC extension framework
 - `docs/style-guidelines/guiding-principles.md` - Design principles
 - `docs/tracing-in-azd.md` - Tracing/telemetry guidelines
+
+## CI / GitHub Actions Patterns
+
+When creating or modifying GitHub Actions workflows:
+
+- **Always declare `permissions:`** explicitly with least-privilege (e.g., `contents: read`)
+- **Don't overwrite `PATH`** using `${{ env.PATH }}` — it's not defined in GitHub Actions expressions. Use `echo "$DIR" >> $GITHUB_PATH` instead
+- **`actions/download-artifact@v4`** without `run-id` only downloads artifacts from the current run, not from other workflows. Cross-workflow artifact sharing requires `run-id` and `repository` parameters
+- **Prefer Azure DevOps internal pipelines** for jobs that need secrets or Azure credentials — the team prefers `azdo` over GitHub Actions for authenticated workloads in this public repo
+- **No placeholder steps**: Don't add workflow steps that echo "TODO" or are no-ops. If downstream steps depend on generated files, implement the generation or remove the dependency

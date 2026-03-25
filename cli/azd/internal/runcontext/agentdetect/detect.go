@@ -5,6 +5,7 @@ package agentdetect
 
 import (
 	"log"
+	"os"
 	"sync"
 )
 
@@ -34,12 +35,25 @@ func IsRunningInAgent() bool {
 	return GetCallingAgent().Detected
 }
 
+// DisableAgentDetectEnvVar is the environment variable that, when set to any non-empty value,
+// disables all agent detection. This is used by functional tests that spawn azd as a child
+// process and need to test interactive prompt behavior without the parent process tree
+// (which may include an AI agent like Copilot CLI) triggering no-prompt mode.
+const DisableAgentDetectEnvVar = "AZD_DISABLE_AGENT_DETECT"
+
 // detectAgent performs the actual agent detection.
 // Detection is performed in priority order:
+// 0. AZD_DISABLE_AGENT_DETECT env var (test override — skips all detection)
 // 1. Environment variables (most reliable)
 // 2. User agent string (AZURE_DEV_USER_AGENT)
 // 3. Parent process inspection (fallback)
 func detectAgent() AgentInfo {
+	// Allow tests and tooling to suppress agent detection entirely.
+	if v := os.Getenv(DisableAgentDetectEnvVar); v != "" {
+		log.Printf("Agent detection disabled via %s=%s", DisableAgentDetectEnvVar, v)
+		return NoAgent()
+	}
+
 	// Try environment variable detection first (most reliable)
 	if agent := detectFromEnvVars(); agent.Detected {
 		return agent

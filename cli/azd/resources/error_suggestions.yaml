@@ -480,6 +480,34 @@ rules:
         title: "azd auth login reference"
 
   # ============================================================================
+  # Tool Missing Errors — Docker / Container Runtime
+  # ============================================================================
+
+  - errorType: "MissingToolErrors"
+    patterns:
+      - "is not running"
+    message: "The container runtime (Docker/Podman) is not running."
+    suggestion: >-
+      Start your container runtime, or build on Azure instead by setting
+      'remoteBuild: true' under the 'docker:' section for each service in azure.yaml.
+
+  - errorType: "MissingToolErrors"
+    patterns:
+      - "Docker"
+    message: "No container runtime (Docker/Podman) is installed."
+    suggestion: >-
+      If your services use Container Apps or AKS, you can build on Azure instead
+      of locally. Set 'remoteBuild: true' under the 'docker:' section for each
+      service in azure.yaml. Otherwise, install Docker or Podman.
+    links:
+      - url: "https://aka.ms/azure-dev/docker-install"
+        title: "Install Docker"
+      - url: "https://aka.ms/azure-dev/podman-install"
+        title: "Install Podman"
+      - url: "https://learn.microsoft.com/azure/developer/azure-developer-cli/azd-schema"
+        title: "azure.yaml schema reference"
+
+  # ============================================================================
   # Text Pattern Rules — Specific patterns first
   # These are fallbacks for errors without typed Go structs.
   # ============================================================================

@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -122,10 +123,8 @@ func (p *DotNetProvider) resolveEntryPoint(infraPath string) (string, error) {
 		if ext == ".cs" {
 			return infraPath, nil
 		}
-		for _, e := range dotnet.DotNetProjectExtensions {
-			if ext == e {
-				return infraPath, nil
-			}
+		if slices.Contains(dotnet.DotNetProjectExtensions, ext) {
+			return infraPath, nil
 		}
 		return "", fmt.Errorf(
 			"'%s' is not a valid .NET infrastructure file. Expected a .cs file or project file (.csproj, .fsproj, .vbproj)",

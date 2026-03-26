@@ -15,4 +15,4 @@
 - id: language.custom
   description: "Enables support for services to use custom language."
 - id: update
-  description: "Enables the azd update command for self-updating azd, including channel management and auto-update."
+  description: "Enables the azd update command for channel management."

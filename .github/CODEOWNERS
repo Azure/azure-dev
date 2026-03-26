@@ -1,30 +1,33 @@
 # https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners#codeowners-syntax
+#
+# CODEOWNERS uses last-match-wins. More specific paths must come AFTER general
+# paths so they override correctly. The root catch-all (/**) covers /cli/ and
+# everything else not listed below -- no need for a separate /cli/ rule.
 
-/**                @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050
+# ── Default (core team) ──────────────────────────────────────────────────────
+/**                                         @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @jongio
 
-/cli/              @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050
-/cli/installer/    @danieljurek @vhvb1989 @tg-msft @rajeshkamal5050
+# ── CLI installer ─────────────────────────────────────────────────────────────
+/cli/installer/                             @danieljurek @vhvb1989 @tg-msft @rajeshkamal5050
 
-/ext/              @karolz-ms @vhvb1989 @tg-msft @rajeshkamal5050
+# ── CLI extensions (AI) ──────────────────────────────────────────────────────
+/cli/azd/extensions/azure.ai.agents/        @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @trangevi @trrwilson @therealjohn
+/cli/azd/extensions/azure.ai.finetune/      @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @trangevi @achauhan-scc @kingernupur @rabollin @saanikaguptamicrosoft
+/cli/azd/extensions/azure.ai.models/        @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @trangevi @achauhan-scc @kingernupur @rabollin @saanikaguptamicrosoft
 
-/ext/azuredevops/  @vhvb1989 @hemarina @tg-msft @rajeshkamal5050
+# ── Extensions ────────────────────────────────────────────────────────────────
+/ext/                                       @karolz-ms @vhvb1989 @tg-msft @rajeshkamal5050
+/ext/azuredevops/                           @vhvb1989 @hemarina @tg-msft @rajeshkamal5050
+/ext/devcontainer/                          @vhvb1989 @hemarina @tg-msft @rajeshkamal5050
+/ext/vscode/                                @bwateratmsft @vhvb1989 @tg-msft @rajeshkamal5050 @karolz-ms
 
-/ext/devcontainer/ @vhvb1989 @hemarina @tg-msft @rajeshkamal5050
+# ── Infra / CI / Engineering ─────────────────────────────────────────────────
+/.github/                                   @danieljurek @vhvb1989 @tg-msft @rajeshkamal5050
+/eng/                                       @danieljurek @vhvb1989 @tg-msft @rajeshkamal5050
+/.config/1espt/                             @Azure/azure-sdk-eng
 
-/ext/vscode/       @bwateratmsft @vhvb1989 @tg-msft @rajeshkamal5050 @karolz-ms
+# ── Schemas ───────────────────────────────────────────────────────────────────
+/schemas/                                   @wbreza @vhvb1989 @tg-msft @rajeshkamal5050
 
-/.github/          @danieljurek @vhvb1989 @tg-msft @rajeshkamal5050
-
-/.config/1espt/    @Azure/azure-sdk-eng
-
-/eng/              @danieljurek @vhvb1989 @tg-msft @rajeshkamal5050
-
-/schemas/          @wbreza @vhvb1989 @tg-msft @rajeshkamal5050
-
-/.github/CODEOWNERS   @rajeshkamal5050 @Azure/azure-sdk-eng
-
-/cli/azd/extensions/azure.ai.agents/  @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @trangevi @trrwilson @therealjohn
-
-/cli/azd/extensions/azure.ai.finetune/  @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @trangevi @achauhan-scc @kingernupur @rabollin @saanikaguptamicrosoft
-
-/cli/azd/extensions/azure.ai.models/  @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @trangevi @achauhan-scc @kingernupur @rabollin @saanikaguptamicrosoft
+# ── This file (most specific -- must be last for /.github/) ───────────────────
+/.github/CODEOWNERS                         @rajeshkamal5050 @Azure/azure-sdk-eng

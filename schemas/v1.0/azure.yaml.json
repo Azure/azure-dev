@@ -1,6 +1,8 @@
 {
     "$schema": "https://json-schema.org/draft/2019-09/schema",
     "$id": "https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json",
+    "title": "Azure Developer CLI configuration",
+    "description": "Configuration file for the Azure Developer CLI (azd)",
     "type": "object",
     "required": [
         "name"

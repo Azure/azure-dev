@@ -194,12 +194,55 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("getting cwd: %w", err)
 	}
 
+	if i.flags.templateBranch != "" && i.flags.templatePath == "" {
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        internal.ErrBranchRequiresTemplate,
+			Suggestion: "Add '--template <repo-url>' when using '--branch'.",
+		}
+	}
+
+	// Validate init-mode combinations before any filesystem side effects.
+	isTemplateInit := i.flags.templatePath != "" || len(i.flags.templateTags) > 0
+	initModeCount := 0
+	if isTemplateInit {
+		initModeCount++
+	}
+	if i.flags.fromCode {
+		initModeCount++
+	}
+	if i.flags.minimal {
+		initModeCount++
+	}
+	if initModeCount > 1 {
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        internal.ErrMultipleInitModes,
+			Suggestion: "Choose one: 'azd init --template <url>', 'azd init --from-code', or 'azd init --minimal'.",
+		}
+	}
+
+	// The positional [directory] argument is only valid with --template.
+	if len(i.args) > 0 && !isTemplateInit {
+		return nil, &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf("positional [directory] argument requires --template"),
+			Suggestion: "Use 'azd init --template <url> [directory]' to initialize " +
+				"a template into a new directory.",
+		}
+	}
+
+	// Resolve local template paths to absolute before any chdir so that
+	// relative paths like ../my-template resolve against the original CWD.
+	if i.flags.templatePath != "" && templates.LooksLikeLocalPath(i.flags.templatePath) {
+		absPath, err := filepath.Abs(i.flags.templatePath)
+		if err == nil {
+			i.flags.templatePath = absPath
+		}
+	}
+
 	// When a template is specified, auto-create a project directory (like git clone).
 	// The user can pass a positional [directory] argument to override the folder name,
 	// or pass "." to use the current directory (preserving existing behavior).
 	createdProjectDir := ""
 	originalWd := wd
-	isTemplateInit := i.flags.templatePath != "" || len(i.flags.templateTags) > 0
 
 	if isTemplateInit {
 		targetDir, err := i.resolveTargetDirectory(wd)
@@ -230,13 +273,6 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	azdCtx := azdcontext.NewAzdContextWithDirectory(wd)
 	i.lazyAzdCtx.SetValue(azdCtx)
-
-	if i.flags.templateBranch != "" && i.flags.templatePath == "" {
-		return nil, &internal.ErrorWithSuggestion{
-			Err:        internal.ErrBranchRequiresTemplate,
-			Suggestion: "Add '--template <repo-url>' when using '--branch'.",
-		}
-	}
 
 	// ensure that git is available
 	if err := tools.EnsureInstalled(ctx, []tools.ExternalTool{i.gitCli}...); err != nil {
@@ -282,25 +318,10 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	var initTypeSelect initType = initUnknown
-	initTypeCount := 0
-	if i.flags.templatePath != "" || len(i.flags.templateTags) > 0 {
-		initTypeCount++
+	if isTemplateInit {
 		initTypeSelect = initAppTemplate
-	}
-	if i.flags.fromCode {
-		initTypeCount++
+	} else if i.flags.fromCode || i.flags.minimal {
 		initTypeSelect = initFromApp
-	}
-	if i.flags.minimal {
-		initTypeCount++
-		initTypeSelect = initFromApp // Minimal now also uses initFromApp path
-	}
-
-	if initTypeCount > 1 {
-		return nil, &internal.ErrorWithSuggestion{
-			Err:        internal.ErrMultipleInitModes,
-			Suggestion: "Choose one: 'azd init --template <url>', 'azd init --from-code', or 'azd init --minimal'.",
-		}
 	}
 
 	if initTypeSelect == initUnknown {

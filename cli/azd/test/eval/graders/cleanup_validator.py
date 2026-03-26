@@ -71,7 +71,10 @@ def grade(context: dict) -> dict:
     except RuntimeError as e:
         return {"score": 0.0, "reason": str(e)}
 
-    rg_status = check_resource_group_exists(subscription_id, resource_group, token)
+    try:
+        rg_status = check_resource_group_exists(subscription_id, resource_group, token)
+    except HTTPError as e:
+        return {"score": 0.0, "reason": f"HTTP error checking resource group: {e.code} {e.reason}"}
 
     if not rg_status["exists"]:
         return {"score": 1.0, "reason": f"Resource group '{resource_group}' successfully deleted"}

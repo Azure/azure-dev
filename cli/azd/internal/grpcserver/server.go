@@ -140,11 +140,7 @@ func (s *Server) Start() (*ServerInfo, error) {
 
 	log.Printf("azd gRPC Server listening on port %d", randomPort)
 
-	return &ServerInfo{
-		Address:    fmt.Sprintf("127.0.0.1:%d", randomPort),
-		Port:       randomPort,
-		SigningKey: signingKey,
-	}, nil
+	return &serverInfo, nil
 }
 
 func (s *Server) Stop() error {

@@ -183,7 +183,7 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 
 			// Wait for the extension to signal readiness or failure.
 			// If AZD_EXT_DEBUG is set to a truthy value, wait indefinitely for debugger attachment
-			// If AZD_EXT_TIMEOUT is set to a number (seconds), use that as the timeout (default: 5 seconds)
+			// If AZD_EXT_TIMEOUT is set to a number (seconds), use that as the timeout (default: 15 seconds)
 			readyCtx, cancel := getReadyContext(ctx)
 			defer cancel()
 

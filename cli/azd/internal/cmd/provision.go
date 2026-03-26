@@ -259,15 +259,16 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	layer := ""
 	var extraArgs []string
 	if len(p.args) > 0 {
-		// If the first arg starts with "--" it's an extra arg, not a layer name.
-		// Layer names are plain identifiers and never start with dashes.
-		if strings.HasPrefix(p.args[0], "-") {
-			extraArgs = p.args
-		} else {
+		// Check if the first arg matches a configured layer name.
+		// If it does, treat it as a layer selector; otherwise, all args are extra args
+		// forwarded to the provisioning provider (e.g., the C# program in the dotnet provider).
+		if _, err := infra.Options.GetLayer(p.args[0]); err == nil {
 			layer = p.args[0]
 			if len(p.args) > 1 {
 				extraArgs = p.args[1:]
 			}
+		} else {
+			extraArgs = p.args
 		}
 	}
 

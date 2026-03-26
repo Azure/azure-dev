@@ -117,6 +117,28 @@ const (
 	hookContextService hookContextType = "service"
 )
 
+// knownHookNames is the set of built-in azd hook names.
+// Extension-defined hooks are not included here; they are hashed in telemetry.
+// See https://github.com/Azure/azure-dev/issues/7348 for tracking.
+var knownHookNames = map[string]bool{
+	"prebuild":      true,
+	"postbuild":     true,
+	"predeploy":     true,
+	"postdeploy":    true,
+	"predown":       true,
+	"postdown":      true,
+	"prepackage":    true,
+	"postpackage":   true,
+	"preprovision":  true,
+	"postprovision": true,
+	"prepublish":    true,
+	"postpublish":   true,
+	"prerestore":    true,
+	"postrestore":   true,
+	"preup":         true,
+	"postup":        true,
+}
+
 func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	hookName := hra.args[0]
 
@@ -124,8 +146,14 @@ func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, erro
 	if hra.flags.service != "" {
 		hookType = "service"
 	}
+
+	// Log known hook names raw; hash unknown names to avoid logging arbitrary user input.
+	hookNameAttr := fields.StringHashed(fields.HooksNameKey, hookName)
+	if knownHookNames[hookName] {
+		hookNameAttr = fields.HooksNameKey.String(hookName)
+	}
 	tracing.SetUsageAttributes(
-		fields.HooksNameKey.String(hookName),
+		hookNameAttr,
 		fields.HooksTypeKey.String(hookType),
 	)
 

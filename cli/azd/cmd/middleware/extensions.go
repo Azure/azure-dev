@@ -183,7 +183,7 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 
 			// Wait for the extension to signal readiness or failure.
 			// If AZD_EXT_DEBUG is set to a truthy value, wait indefinitely for debugger attachment
-			// If AZD_EXT_TIMEOUT is set to a number (seconds), use that as the timeout (default: 5 seconds)
+			// If AZD_EXT_TIMEOUT is set to a number (seconds), use that as the timeout (default: 15 seconds)
 			readyCtx, cancel := getReadyContext(ctx)
 			defer cancel()
 
@@ -345,8 +345,9 @@ func getReadyContext(ctx context.Context) (context.Context, context.CancelFunc) 
 		return context.WithCancel(ctx)
 	}
 
-	// Use custom timeout from environment variable or default to 5 seconds
-	timeout := 5 * time.Second
+	// Use custom timeout from environment variable or default to 15 seconds.
+	// 15s accommodates Windows cold-start overhead (Defender scanning, process creation).
+	timeout := 15 * time.Second
 	if timeoutValue := os.Getenv("AZD_EXT_TIMEOUT"); timeoutValue != "" {
 		if seconds, err := strconv.Atoi(timeoutValue); err == nil && seconds > 0 {
 			timeout = time.Duration(seconds) * time.Second

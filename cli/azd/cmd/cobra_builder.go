@@ -131,7 +131,15 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 		actionName := createActionName(cmd)
 		_, err = middlewareRunner.RunAction(ctx, runOptions, actionName)
 
-		// At this point, we know that there might be an error, so we can silence cobra from showing it after us.
+		// Only silence Cobra if the command-scoped console can resolve. When console resolution fails
+		// (for example, because output formatter validation failed before UX middleware ran), we want
+		// Cobra to print the raw error instead of suppressing it.
+		if err != nil {
+			var console input.Console
+			cmd.SilenceErrors = cmdContainer.Resolve(&console) == nil
+			return err
+		}
+
 		cmd.SilenceErrors = true
 
 		return err

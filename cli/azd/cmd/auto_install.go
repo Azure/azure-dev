@@ -421,17 +421,18 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 		// Known command, proceed with normal execution
 		err := rootCmd.ExecuteContext(ctx)
 
+		// Only attempt service-host auto-install when the command failed with that specific error.
+		// Other command errors (for example, unsupported output formats) should be returned directly.
+		unsupportedErr, ok := errors.AsType[*project.UnsupportedServiceHostError](err)
+		if !ok {
+			return err
+		}
+
 		if err := rootContainer.Resolve(&extensionManager); err != nil {
 			log.Panic("failed to resolve extension manager for auto-install:", err)
 		}
 		if err := rootContainer.Resolve(&console); err != nil {
 			log.Panic("failed to resolve console for unknown flags error:", err)
-		}
-
-		// auto-install for target service
-		unsupportedErr, ok := errors.AsType[*project.UnsupportedServiceHostError](err)
-		if !ok {
-			return err
 		}
 
 		requiredHost := unsupportedErr.Host

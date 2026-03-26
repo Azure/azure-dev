@@ -474,5 +474,3 @@ func Test_findFilter_matches(t *testing.T) {
 		})
 	}
 }
-
-

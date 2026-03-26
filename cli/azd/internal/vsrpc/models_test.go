@@ -278,4 +278,3 @@ func TestAspireHost_Fields(t *testing.T) {
 	assert.Equal(t, "my-aspire-host", host.Name)
 	assert.Len(t, host.Services, 2)
 }
-

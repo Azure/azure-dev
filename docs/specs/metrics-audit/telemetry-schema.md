@@ -53,7 +53,7 @@ These are set once at process startup via `resource.New()` and attached to every
 | Field | OTel Key | Classification | Purpose | Notes |
 |-------|----------|----------------|---------|-------|
 | Object ID | `user_AuthenticatedId` | — | — | From Application Insights contracts |
-| Tenant ID | `ad.tenant.id` | SystemMetadata | BusinessInsight | Entra ID tenant |
+| Tenant ID | `auth.tenant.id` | SystemMetadata | BusinessInsight | Entra ID tenant |
 | Account type | `ad.account.type` | SystemMetadata | BusinessInsight | `"User"` or `"Service Principal"` |
 | Subscription ID | `ad.subscription.id` | OrganizationalIdentifiableInformation | PerformanceAndHealth | Azure subscription |
 
@@ -232,7 +232,7 @@ The following fields are being introduced to close telemetry gaps identified in 
 
 | Field | OTel Key | Classification | Purpose | Values |
 |-------|----------|----------------|---------|--------|
-| Auth method | `auth.method` | SystemMetadata | FeatureInsight | `browser`, `device-code`, `service-principal-secret`, `service-principal-certificate`, `federated-github`, `federated-azure-pipelines`, `federated-oidc`, `managed-identity`, `external`, `oneauth`, `logout` |
+| Auth method | `auth.method` | SystemMetadata | FeatureInsight | `browser`, `device-code`, `service-principal-secret`, `service-principal-certificate`, `federated-github`, `federated-azure-pipelines`, `federated-oidc`, `managed-identity`, `external`, `oneauth`, `check-status` |
 | Env count | `env.count` | SystemMetadata | FeatureInsight | **Measurement** — number of environments |
 | Hooks name | `hooks.name` | SystemMetadata | FeatureInsight | Hook script name |
 | Hooks type | `hooks.type` | SystemMetadata | FeatureInsight | `project`, `service` |

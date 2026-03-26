@@ -101,6 +101,7 @@ func TestCommandTelemetryCoverage(t *testing.T) {
 		"down",            // infra.provider (via hooks middleware)
 		"env list",        // env.count
 		"hooks run",       // hooks.name, hooks.type
+		"infra generate",  // infra.provider
 		"init",            // init.method, appinit.* fields
 		"package",         // (via hooks middleware)
 		"pipeline config", // pipeline.provider, pipeline.auth

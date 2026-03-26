@@ -112,7 +112,7 @@ func NewProvisionFlagsFromEnvAndOptions(envFlag *internal.EnvFlag, global *inter
 
 func NewProvisionCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "provision [<layer>] [-- <extra-args>]",
+		Use:   "provision [<layer>] [flags]",
 		Short: "Provision Azure resources for your project.",
 	}
 	cmd.Args = cobra.ArbitraryArgs

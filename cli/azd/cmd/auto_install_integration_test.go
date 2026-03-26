@@ -98,7 +98,7 @@ func TestExecuteWithAutoInstall_ReturnsCommandErrorWithoutPanicForOutputFlags(t 
 		"--tenant-id",
 		"00000000-0000-0000-0000-000000000000",
 		"--output",
-		"none",
+		"unknown",
 	}
 
 	rootContainer := ioc.NewNestedContainer(nil)
@@ -121,9 +121,9 @@ func TestExecuteWithAutoInstall_ReturnsCommandErrorWithoutPanicForOutputFlags(t 
 	stderrBytes, err := io.ReadAll(stderrReader)
 	require.NoError(t, err)
 
-	require.ErrorContains(t, execErr, "unsupported format 'none'")
+	require.ErrorContains(t, execErr, "unsupported format 'unknown'")
 	require.NotContains(t, string(stderrBytes), "panic:")
-	require.Contains(t, string(stderrBytes), "Error: unsupported format 'none'")
+	require.Contains(t, string(stderrBytes), "Error: unsupported format 'unknown'")
 }
 
 // TestAgentDetectionIntegration tests the full agent detection integration flow.

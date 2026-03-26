@@ -56,6 +56,22 @@ func TestResolveEntryPoint_DirectoryWithCsproj(t *testing.T) {
 	require.Equal(t, tempDir, result)
 }
 
+func TestResolveEntryPoint_DirectoryWithCsprojAndSingleCs(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// A typical small project: one .csproj + one .cs file
+	err := os.WriteFile(filepath.Join(tempDir, "Infra.csproj"), []byte("<Project/>"), 0600)
+	require.NoError(t, err)
+	err = os.WriteFile(filepath.Join(tempDir, "Program.cs"), []byte("// main"), 0600)
+	require.NoError(t, err)
+
+	provider := &DotNetProvider{}
+	result, err := provider.resolveEntryPoint(tempDir)
+	require.NoError(t, err)
+	// .csproj takes priority over single .cs file — directory is returned for project-based run
+	require.Equal(t, tempDir, result)
+}
+
 func TestResolveEntryPoint_DirectoryWithMultipleCsFilesNoCsproj(t *testing.T) {
 	tempDir := t.TempDir()
 

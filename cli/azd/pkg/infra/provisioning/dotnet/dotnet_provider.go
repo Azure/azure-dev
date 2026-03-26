@@ -144,18 +144,16 @@ func (p *DotNetProvider) resolveEntryPoint(infraPath string) (string, error) {
 			infraPath)
 	}
 
-	// Directory — prefer a single .cs file (dotnet 10 file-based app), then fall back to project files
+	// Directory — check for .csproj first (takes priority over single .cs file)
+	csprojFiles, _ := filepath.Glob(filepath.Join(infraPath, "*.csproj"))
+	if len(csprojFiles) > 0 {
+		return infraPath, nil
+	}
+
+	// No .csproj — look for a single .cs file (dotnet 10+ file-based app)
 	csFiles, _ := filepath.Glob(filepath.Join(infraPath, "*.cs"))
 	if len(csFiles) == 1 {
 		return csFiles[0], nil
-	}
-
-	// Look for project files
-	for _, ext := range dotnet.DotNetProjectExtensions {
-		matches, _ := filepath.Glob(filepath.Join(infraPath, "*"+ext))
-		if len(matches) > 0 {
-			return infraPath, nil
-		}
 	}
 
 	if len(csFiles) > 1 {

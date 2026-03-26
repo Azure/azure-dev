@@ -39,7 +39,12 @@ jobs:
 
       - name: Validate Waza task YAML
         working-directory: cli/azd/test/eval
-        run: npm run waza:validate
+        run: |
+          if command -v waza &>/dev/null; then
+            npm run waza:validate
+          else
+            echo "waza CLI not installed, skipping YAML validation"
+          fi
 
       - uses: actions/setup-python@v5
         with:

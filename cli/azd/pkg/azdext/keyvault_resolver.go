@@ -152,8 +152,7 @@ func (r *KeyVaultResolver) Resolve(ctx context.Context, ref string) (string, err
 		// server explicitly returns 401/403.
 		reason := ResolveReasonServiceError
 
-		var respErr *azcore.ResponseError
-		if errors.As(err, &respErr) {
+		if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
 			switch respErr.StatusCode {
 			case http.StatusNotFound:
 				reason = ResolveReasonNotFound

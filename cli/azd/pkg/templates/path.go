@@ -47,7 +47,7 @@ func Absolute(path string) (string, error) {
 	// reference (./..., ../..., or an absolute path). Bare names like "my-template" or
 	// "owner/repo" always resolve to GitHub URLs, even if a same-named local directory exists,
 	// to avoid silently overriding remote template resolution.
-	if looksLikeLocalPath(path) {
+	if LooksLikeLocalPath(path) {
 		// Use Lstat to reject symlinks consistently with copyLocalTemplate.
 		if info, err := os.Lstat(path); err == nil {
 			if info.Mode()&os.ModeSymlink != 0 {
@@ -97,9 +97,9 @@ func IsLocalPath(resolvedPath string) bool {
 	return !isRemoteURI(resolvedPath)
 }
 
-// looksLikeLocalPath returns true if the path appears to be an explicit local filesystem reference
+// LooksLikeLocalPath returns true if the path appears to be an explicit local filesystem reference
 // (e.g., ".", "..", starts with ./, ../, or is an absolute path).
-func looksLikeLocalPath(path string) bool {
+func LooksLikeLocalPath(path string) bool {
 	return path == "." ||
 		path == ".." ||
 		strings.HasPrefix(path, "./") ||

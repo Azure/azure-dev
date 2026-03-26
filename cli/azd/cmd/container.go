@@ -992,6 +992,11 @@ func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context, args []string) 
 // extractGlobalArgs extracts global flag arguments from the process command line.
 // It parses os.Args against the global flag set and returns only the flags that were
 // explicitly set by the user, formatted as command-line arguments.
+//
+// The "environment" flag is intentionally excluded: workflow steps may define their own
+// -e/--environment (e.g. `azd: env set KEY VALUE -e env1`), and appending the parent's
+// --environment would override the step-level value. Environment propagation to workflow
+// steps is handled by the globalOptions DI fallback in the EnvFlag resolver instead.
 func extractGlobalArgs() []string {
 	globalFlagSet := CreateGlobalFlagSet()
 	globalFlagSet.SetOutput(io.Discard)
@@ -1000,7 +1005,7 @@ func extractGlobalArgs() []string {
 
 	var result []string
 	globalFlagSet.VisitAll(func(f *pflag.Flag) {
-		if f.Changed {
+		if f.Changed && f.Name != internal.EnvironmentNameFlagName {
 			// Use --flag=value syntax to avoid ambiguity. The two-arg form (--flag value)
 			// doesn't work for boolean flags, where the value is treated as a positional arg.
 			result = append(result, fmt.Sprintf("--%s=%s", f.Name, f.Value.String()))

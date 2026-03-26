@@ -127,7 +127,7 @@ func (s *Server) Start() (*ServerInfo, error) {
 	azdext.RegisterAiModelServiceServer(s.grpcServer, s.aiModelService)
 	azdext.RegisterCopilotServiceServer(s.grpcServer, s.copilotService)
 
-	serverInfo.Address = fmt.Sprintf("localhost:%d", randomPort)
+	serverInfo.Address = fmt.Sprintf("127.0.0.1:%d", randomPort)
 	serverInfo.Port = randomPort
 	serverInfo.SigningKey = signingKey
 
@@ -141,7 +141,7 @@ func (s *Server) Start() (*ServerInfo, error) {
 	log.Printf("azd gRPC Server listening on port %d", randomPort)
 
 	return &ServerInfo{
-		Address:    fmt.Sprintf("localhost:%d", randomPort),
+		Address:    fmt.Sprintf("127.0.0.1:%d", randomPort),
 		Port:       randomPort,
 		SigningKey: signingKey,
 	}, nil

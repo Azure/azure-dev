@@ -116,10 +116,16 @@ func ValidateNoReservedFlagConflicts(root *cobra.Command) error {
 func collectConflicts(root, cmd *cobra.Command) []FlagConflict {
 	var conflicts []FlagConflict
 
-	// Check flags defined directly on this command (not inherited from parents).
-	// We use cmd.Flags() instead of cmd.LocalFlags() because LocalFlags()
-	// triggers cobra's mergePersistentFlags, which panics on shorthand conflicts.
-	cmd.Flags().VisitAll(func(f *pflag.Flag) {
+	// Track which flags we've already checked to avoid duplicate reports
+	// when a flag appears in both Flags() and PersistentFlags().
+	checked := make(map[string]struct{})
+
+	checkFlagOnce := func(f *pflag.Flag) {
+		if _, seen := checked[f.Name]; seen {
+			return
+		}
+		checked[f.Name] = struct{}{}
+
 		// Skip flags that are defined on the root's persistent flag set.
 		// Those are the SDK-provided azd-compatible flags and are intentional.
 		if rootFlag := root.PersistentFlags().Lookup(f.Name); rootFlag != nil {
@@ -129,7 +135,17 @@ func collectConflicts(root, cmd *cobra.Command) []FlagConflict {
 		if c, ok := checkFlag(cmd, f); ok {
 			conflicts = append(conflicts, c)
 		}
-	})
+	}
+
+	// Check flags defined directly on this command (not inherited from parents).
+	// We use cmd.Flags() instead of cmd.LocalFlags() because LocalFlags()
+	// triggers cobra's mergePersistentFlags, which panics on shorthand conflicts.
+	cmd.Flags().VisitAll(checkFlagOnce)
+
+	// Also check persistent flags defined on this command. This catches cases where
+	// an extension defines a persistent flag (e.g. on a subcommand) that conflicts
+	// with a reserved flag but wouldn't appear in cmd.Flags().
+	cmd.PersistentFlags().VisitAll(checkFlagOnce)
 
 	// Recurse into subcommands.
 	for _, sub := range cmd.Commands() {

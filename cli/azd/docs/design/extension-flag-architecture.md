@@ -72,19 +72,35 @@ This is not a new restriction — it has been true since the extension system wa
 
 ## Global Flags (Host Side)
 
-These flags are registered in `CreateGlobalFlagSet()` (`cmd/auto_install.go`) and pre-parsed by `ParseGlobalFlags()` before command dispatch:
+azd's global flags are registered through several mechanisms. All of them are reserved — extensions must not reuse these names regardless of how they are registered.
+
+### Pre-parsed Global Flags
+
+These flags are registered in `CreateGlobalFlagSet()` (`cmd/auto_install.go`) and pre-parsed by `ParseGlobalFlags()` **before** command dispatch. They are available to middleware and DI resolution even for extension commands:
 
 | Long Name | Short | Type | Default | Hidden | Description |
 |-----------|-------|------|---------|--------|-------------|
-| `environment` | `e` | string | `$AZURE_ENV_NAME` | No | The name of the environment to use |
 | `cwd` | `C` | string | `""` | No | Sets the current working directory |
 | `debug` | — | bool | `false` | No | Enables debugging and diagnostics logging |
 | `no-prompt` | — | bool | `false` | No | Accepts default value instead of prompting |
-| `output` | `o` | string | `"default"` | No | The output format (json, table, none) |
-| `help` | `h` | — | — | No | Help for the current command (cobra built-in) |
-| `docs` | — | — | — | No | Opens documentation for the current command |
 | `trace-log-file` | — | string | `""` | Yes | Write a diagnostics trace to a file |
-| `trace-log-url` | — | string | `""` | Yes | Send traces to an OpenTelemetry endpoint |
+| `trace-log-url` | — | string | `""` | Yes | Send traces to an OpenTelemetry-compatible endpoint |
+
+### Root Command Persistent Flags
+
+These flags are registered on the root command's persistent flag set in `root.go` and are available to all subcommands:
+
+| Long Name | Short | Type | Default | Description |
+|-----------|-------|------|---------|-------------|
+| `environment` | `e` | string | `$AZURE_ENV_NAME` | The name of the environment to use |
+| `output` | `o` | string | `"default"` | The output format (json, table, none) |
+
+### Cobra Built-in and Custom Command Flags
+
+| Long Name | Short | Description |
+|-----------|-------|-------------|
+| `help` | `h` | Help for the current command (cobra built-in) |
+| `docs` | — | Opens documentation for the current command |
 
 ### Pre-parsing Behavior
 
@@ -153,7 +169,7 @@ Any extension built with the azd SDK gets this check automatically — no opt-in
 
 ### Sync Test
 
-A test (`TestReservedFlagNames_SyncWithInternal`) ensures the SDK-side and host-side reserved flag lists stay in sync. If a developer adds a new global flag to one list but not the other, the test fails.
+A test (`TestReservedFlagsInSyncWithInternal`) ensures the SDK-side and host-side reserved flag lists stay in sync. If a developer adds a new global flag to one list but not the other, the test fails.
 
 ## Adding a New Global Flag
 

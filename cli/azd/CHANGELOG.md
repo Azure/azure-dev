@@ -13,8 +13,6 @@
 - [[#7346]](https://github.com/Azure/azure-dev/pull/7346) Fix extension startup failures on Windows caused by IPv4/IPv6 address mismatch in the gRPC server address, and increase extension startup timeout from 5s to 15s. Thanks @spboyer for the contribution!
 - [[#7311]](https://github.com/Azure/azure-dev/pull/7311) Fix `.funcignore` parsing failures caused by UTF-8 BOM and incorrect negation pattern handling in zip packaging. Thanks @jongio for the contribution!
 - [[#7250]](https://github.com/Azure/azure-dev/pull/7250) Add targeted error suggestions for common Container Apps and ARM deployment failures including `ContainerAppOperationError`, `InvalidTemplateDeployment`, `RoleAssignmentExists`, and `InvalidResourceGroupLocation`. Thanks @spboyer for the contribution!
-- [[#7293]](https://github.com/Azure/azure-dev/pull/7293) Fix `azd update --channel daily` error suggestion on Windows to use PowerShell instead of `curl`/`bash` when azd is installed via WinGet.
-
 ### Other Changes
 
 - [[#7235]](https://github.com/Azure/azure-dev/pull/7235) Fix auth error telemetry classification to properly categorize `login_required`, `not_logged_in`, and authentication failures under the `aad` service name. Thanks @spboyer for the contribution!

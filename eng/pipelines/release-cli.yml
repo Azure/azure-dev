@@ -39,6 +39,7 @@ pr:
       - cli/azd/extensions/**
       - cli/azd/.vscode/cspell.yaml
       - cli/azd/.vscode/cspell-azd-dictionary.txt
+      - cli/azd/AGENTS.md
 
 extends: 
   template: /eng/pipelines/templates/stages/1es-redirect.yml

@@ -307,7 +307,7 @@ func populateContainerSettings(ctx context.Context, azdClient *azdext.AzdClient,
 			MinReplicas: containerSettings.Scale.MinReplicas,
 			MaxReplicas: containerSettings.Scale.MaxReplicas,
 		}
-	} else if !isVNextEnabled(ctx) {
+	} else if !isVNextEnabled(ctx, azdClient) {
 		result.Scale = &project.ScaleSettings{}
 	}
 

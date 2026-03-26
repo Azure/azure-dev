@@ -1238,7 +1238,7 @@ func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.Co
 		},
 	}
 
-	if !isVNextEnabled(ctx) {
+	if !isVNextEnabled(ctx, a.azdClient) {
 		containerSettings.Scale = &project.ScaleSettings{
 			MinReplicas: project.DefaultMinReplicas,
 			MaxReplicas: project.DefaultMaxReplicas,

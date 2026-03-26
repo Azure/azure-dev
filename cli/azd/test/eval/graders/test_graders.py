@@ -165,7 +165,7 @@ class TestCleanupValidatorGrader:
         assert result["score"] == 0.0
         assert "Missing" in result["reason"]
 
-    @patch("azure_auth.get_access_token")
+    @patch("cleanup_validator.get_access_token")
     @patch("cleanup_validator.urlopen")
     def test_resource_group_deleted(self, mock_urlopen, mock_token):
         mock_token.return_value = "fake-token"
@@ -182,7 +182,7 @@ class TestCleanupValidatorGrader:
         assert result["score"] == 1.0
         assert "successfully deleted" in result["reason"]
 
-    @patch("azure_auth.get_access_token")
+    @patch("cleanup_validator.get_access_token")
     @patch("cleanup_validator.urlopen")
     def test_resource_group_still_exists(self, mock_urlopen, mock_token):
         mock_token.return_value = "fake-token"
@@ -208,7 +208,7 @@ class TestCleanupValidatorGrader:
         assert result["score"] == 0.0
         assert "still exists" in result["reason"]
 
-    @patch("azure_auth.get_access_token")
+    @patch("cleanup_validator.get_access_token")
     @patch("cleanup_validator.urlopen")
     def test_resource_group_deleting(self, mock_urlopen, mock_token):
         mock_token.return_value = "fake-token"
@@ -241,7 +241,7 @@ class TestInfraValidatorGrader:
         assert result["score"] == 0.0
         assert "Missing" in result["reason"]
 
-    @patch("azure_auth.get_access_token")
+    @patch("infra_validator.get_access_token")
     @patch("infra_validator.urlopen")
     def test_resource_group_not_found(self, mock_urlopen, mock_token):
         mock_token.return_value = "fake-token"
@@ -258,7 +258,7 @@ class TestInfraValidatorGrader:
         assert result["score"] == 0.0
         assert "does not exist" in result["reason"]
 
-    @patch("azure_auth.get_access_token")
+    @patch("infra_validator.get_access_token")
     @patch("infra_validator.urlopen")
     def test_all_expected_resources_found(self, mock_urlopen, mock_token):
         mock_token.return_value = "fake-token"
@@ -289,7 +289,7 @@ class TestInfraValidatorGrader:
         assert result["score"] == 1.0
         assert "All expected resources found" in result["reason"]
 
-    @patch("azure_auth.get_access_token")
+    @patch("infra_validator.get_access_token")
     @patch("infra_validator.urlopen")
     def test_missing_expected_resources(self, mock_urlopen, mock_token):
         mock_token.return_value = "fake-token"
@@ -317,7 +317,7 @@ class TestInfraValidatorGrader:
         assert result["score"] == 0.5
         assert "Missing resources" in result["reason"]
 
-    @patch("azure_auth.get_access_token")
+    @patch("infra_validator.get_access_token")
     @patch("infra_validator.urlopen")
     def test_rg_exists_no_expected_resources(self, mock_urlopen, mock_token):
         mock_token.return_value = "fake-token"

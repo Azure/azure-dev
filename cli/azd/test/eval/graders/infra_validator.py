@@ -68,7 +68,12 @@ def grade(context: dict) -> dict:
         return {"score": 0.0, "reason": str(e)}
 
     # Check resource group exists
-    if not check_resource_group_exists(subscription_id, resource_group, token):
+    try:
+        rg_exists = check_resource_group_exists(subscription_id, resource_group, token)
+    except HTTPError as e:
+        return {"score": 0.0, "reason": f"HTTP error checking resource group: {e.code} {e.reason}"}
+
+    if not rg_exists:
         return {"score": 0.0, "reason": f"Resource group '{resource_group}' does not exist"}
 
     if not expected_resources:

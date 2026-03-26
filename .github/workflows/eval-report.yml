@@ -29,7 +29,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p cli/azd/test/eval/reports/waza
-          RUN_ID=$(gh api repos/${{ github.repository }}/actions/workflows/eval-waza.yml/runs \
+          RUN_ID=$(gh api "repos/${{ github.repository }}/actions/workflows/eval-waza.yml/runs?branch=main" \
             --jq '.workflow_runs | map(select(.conclusion == "success")) | .[0].id // empty' 2>/dev/null)
           if [ -n "$RUN_ID" ]; then
             gh run download "$RUN_ID" -D cli/azd/test/eval/reports/waza 2>/dev/null || echo "No waza artifacts found"
@@ -42,7 +42,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p cli/azd/test/eval/reports/e2e
-          RUN_ID=$(gh api repos/${{ github.repository }}/actions/workflows/eval-e2e.yml/runs \
+          RUN_ID=$(gh api "repos/${{ github.repository }}/actions/workflows/eval-e2e.yml/runs?branch=main" \
             --jq '.workflow_runs | map(select(.conclusion == "success")) | .[0].id // empty' 2>/dev/null)
           if [ -n "$RUN_ID" ]; then
             gh run download "$RUN_ID" -D cli/azd/test/eval/reports/e2e 2>/dev/null || echo "No e2e artifacts found"

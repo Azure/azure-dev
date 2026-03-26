@@ -40,7 +40,17 @@ jobs:
       - name: Validate Waza task YAML
         working-directory: cli/azd/test/eval
         run: npm run waza:validate
-        continue-on-error: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install grader test dependencies
+        run: pip install pytest
+
+      - name: Run grader tests
+        working-directory: cli/azd/test/eval/graders
+        run: python -m pytest test_graders.py -v
 
       - name: Upload test results
         if: always()

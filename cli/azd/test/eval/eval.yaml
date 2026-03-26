@@ -25,7 +25,7 @@ executor:
       - azd env set <key> <value>: Set an environment variable
       - azd env get-values: Get all environment values
       - azd env select <name>: Switch active environment
-      - azd env delete <name>: Delete an environment
+      - azd env remove <name>: Remove an environment
       - azd monitor: Open application monitoring dashboard
       - azd show: Display project and environment information
       - azd auth login: Authenticate with Azure

@@ -2,7 +2,7 @@ id: env-delete-001
 description: >
   User wants to delete a dev environment and its Azure resources.
   LLM should suggest azd down to tear down resources first, then
-  azd env delete to remove the local environment configuration.
+  azd env remove to remove the local environment configuration.
 inputs:
   prompt: "I no longer need my dev environment. How do I completely remove it and all its Azure resources?"
   context: "User has an azd project with a 'dev' environment that has provisioned Azure resources."
@@ -12,7 +12,7 @@ graders:
     config:
       must_match:
         - "azd down"
-        - "azd env delete"
+        - "azd env remove"
       must_not_match:
         - "azd env new"
         - "azd init"
@@ -21,7 +21,7 @@ graders:
     config:
       expected_order:
         - "azd down"
-        - "azd env delete"
+        - "azd env remove"
   - type: text
     weight: 0.3
     config:

@@ -169,14 +169,14 @@ def get_azure_token():
     except Exception:
         return os.environ.get("AZURE_ACCESS_TOKEN")
 
-def grade(inputs: dict, params: dict) -> dict:
+def grade(context: dict) -> dict:
     """
     Called by Waza with:
-      - inputs: the task inputs (prompt, context, etc.)
-      - params: the config.params from the task YAML
+      - context: dict containing "params" from the task YAML, plus run metadata
 
     Must return: {"score": 0.0-1.0, "reason": "explanation"}
     """
+    params = context.get("params", {})
     subscription_id = params.get("subscription_id", os.environ.get("AZURE_SUBSCRIPTION_ID"))
     resource_group = params.get("resource_group")
     token = get_azure_token()
@@ -198,9 +198,8 @@ def grade(inputs: dict, params: dict) -> dict:
         return {"score": 0.0, "reason": str(e)}
 
 if __name__ == "__main__":
-    inputs = json.loads(sys.argv[1]) if len(sys.argv) > 1 else {}
-    params = json.loads(sys.argv[2]) if len(sys.argv) > 2 else {}
-    print(json.dumps(grade(inputs, params)))
+    context = json.loads(sys.argv[1]) if len(sys.argv) > 1 else {}
+    print(json.dumps(grade(context)))
 ```
 
 **Step 2: Reference it from a task YAML**

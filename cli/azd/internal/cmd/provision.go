@@ -285,7 +285,7 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 			return nil, fmt.Errorf("initializing provisioning manager: %w", err)
 		}
 
-		if i == 0 { // only display once
+		if i == 0 && p.subManager != nil { // only display once
 			// Get Subscription to Display in Command Title Note
 			// Subscription and Location are ONLY displayed when they are available (found from env), otherwise, this message
 			// is not displayed.
@@ -429,6 +429,13 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		if skipped {
 			// Simply continue here; message is printed in the provider implementation
 			continue
+		}
+
+		if deployResult.SkippedReason == provisioning.PreflightAbortedSkipped {
+			p.console.MessageUxItem(ctx, &ux.ActionResult{
+				SuccessMessage: "Provisioning was cancelled.",
+			})
+			return nil, internal.ErrAbortedByUser
 		}
 
 		servicesStable, err := p.importManager.ServiceStable(ctx, p.projectConfig)

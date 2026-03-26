@@ -139,7 +139,7 @@ var (
 	ObjectIdKey = attribute.Key(contracts.UserAuthUserId) // user_AuthenticatedId
 	// Tenant ID of the principal.
 	TenantIdKey = AttributeKey{
-		Key:            attribute.Key("auth.tenant.id"),
+		Key:            attribute.Key("ad.tenant.id"),
 		Classification: SystemMetadata,
 		Purpose:        BusinessInsight,
 	}

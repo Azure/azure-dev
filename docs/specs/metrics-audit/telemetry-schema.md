@@ -53,7 +53,7 @@ These are set once at process startup via `resource.New()` and attached to every
 | Field | OTel Key | Classification | Purpose | Notes |
 |-------|----------|----------------|---------|-------|
 | Object ID | `user_AuthenticatedId` | — | — | From Application Insights contracts |
-| Tenant ID | `auth.tenant.id` | SystemMetadata | BusinessInsight | Entra ID tenant |
+| Tenant ID | `ad.tenant.id` | SystemMetadata | BusinessInsight | Entra ID tenant |
 | Account type | `ad.account.type` | SystemMetadata | BusinessInsight | `"User"` or `"Service Principal"` |
 | Subscription ID | `ad.subscription.id` | OrganizationalIdentifiableInformation | PerformanceAndHealth | Azure subscription |
 

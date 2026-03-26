@@ -92,6 +92,12 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 	projectConfig.Infra.Path = filepath.FromSlash(projectConfig.Infra.Path)
 
 	for key, svc := range projectConfig.Services {
+		if svc == nil {
+			return nil, fmt.Errorf(
+				"service '%s' has empty configuration, must specify at least 'host' and either 'language' or 'image'",
+				key,
+			)
+		}
 		svc.Name = key
 		svc.Project = &projectConfig
 		svc.EventDispatcher = ext.NewEventDispatcher[ServiceLifecycleEventArgs]()

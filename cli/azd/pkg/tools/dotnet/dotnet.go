@@ -481,6 +481,32 @@ func (cli *Cli) IsSingleFileAspireHost(filePath string) (bool, error) {
 	return strings.Contains(string(content), AspireSdkDirective), nil
 }
 
+// Run executes a dotnet project or file-based app, passing additional arguments after `--`.
+// If project ends in .cs, it uses `dotnet run file.cs` (dotnet 10+ file-based apps).
+// Otherwise, it uses `dotnet run --project <path>`.
+func (cli *Cli) Run(ctx context.Context, project string, args []string, env []string) (exec.RunResult, error) {
+	var runArgs exec.RunArgs
+	if strings.HasSuffix(strings.ToLower(project), ".cs") {
+		// dotnet 10+ file-based app: dotnet run file.cs -- <args>
+		runArgs = newDotNetRunArgs("run", project)
+	} else {
+		// Traditional project: dotnet run --project <dir> -- <args>
+		runArgs = newDotNetRunArgs("run", "--project", project)
+	}
+	if len(args) > 0 {
+		runArgs = runArgs.AppendParams("--")
+		runArgs = runArgs.AppendParams(args...)
+	}
+	if len(env) > 0 {
+		runArgs = runArgs.WithEnv(append(runArgs.Env, env...))
+	}
+	result, err := cli.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return result, fmt.Errorf("dotnet run on '%s' failed: %w", project, err)
+	}
+	return result, nil
+}
+
 func NewCli(commandRunner exec.CommandRunner) *Cli {
 	return &Cli{
 		commandRunner: commandRunner,

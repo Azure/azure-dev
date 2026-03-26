@@ -1,0 +1,4 @@
+name: dotnet-provisioning-test
+infra:
+  provider: dotnet
+  path: infra

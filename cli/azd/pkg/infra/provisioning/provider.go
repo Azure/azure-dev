@@ -21,6 +21,7 @@ const (
 	Arm          ProviderKind = "arm"
 	Terraform    ProviderKind = "terraform"
 	Pulumi       ProviderKind = "pulumi"
+	DotNet       ProviderKind = "dotnet"
 	Test         ProviderKind = "test"
 )
 
@@ -49,6 +50,9 @@ type Options struct {
 	IgnoreDeploymentState bool `yaml:"-"`
 	// The mode in which the deployment is being run.
 	Mode Mode `yaml:"-"`
+	// ExtraArgs holds additional command-line arguments forwarded from `azd provision -- <args>`.
+	// These are passed through to provider-specific tooling (e.g., the C# program in the dotnet provider).
+	ExtraArgs []string `yaml:"-"`
 }
 
 // GetWithDefaults merges the provided infra options with the default provisioning options

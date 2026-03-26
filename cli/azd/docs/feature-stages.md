@@ -34,6 +34,7 @@ As of `1.21.1`, each Azure Developer CLI feature has been evaluated and assigned
 | CI/CD        | Azure Pipelines          | Stable    |
 | IaC          | Bicep                    | Stable    |
 | IaC          | Terraform                | Beta      |
+| IaC          | DotNet (Azure.Provisioning) | Alpha  |
 | IaC          | Resource Group-Scope Deployments | Beta      |
 | IaC          | Deployment Stacks        | Alpha     |
 | IaC          | Layered Provisioning     | Beta      |

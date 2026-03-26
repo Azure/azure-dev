@@ -21,7 +21,7 @@ for each environment.
 | `AZURE_RESOURCE_GROUP` | The default resource group name. |
 | `AZURE_CONTAINER_REGISTRY_ENDPOINT` | The endpoint of the Azure Container Registry. |
 | `AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN` | The default domain of the Container Apps environment. |
-| `AZURE_APP_SERVICE_DASHBOARD_URI` | The URI for the Azure App Service dashboard. |
+| `AZURE_APP_SERVICE_DASHBOARD_URI` | The URI for the .NET Aspire dashboard hosted on Azure App Service. |
 | `AZURE_AKS_CLUSTER_NAME` | The name of the Azure Kubernetes Service cluster. |
 
 ## Dev Center Variables
@@ -102,6 +102,9 @@ specific version of the tool installed on the machine.
 
 ## Extension-Specific Variables
 
+> **Note**: These variables are defined and consumed by individual azd extensions. As the extension
+> ecosystem grows, extension-specific variables may move to each extension's own documentation.
+
 ### azure.ai.agents
 
 | Variable | Description |
@@ -117,6 +120,7 @@ specific version of the tool installed on the machine.
 | `AI_PROJECT_DEPENDENT_RESOURCES` | JSON-encoded dependent resource metadata populated by the extension for agent workflows. |
 | `ENABLE_HOSTED_AGENTS` | If set, indicates that hosted agents are enabled for the current azd environment. |
 | `ENABLE_CONTAINER_AGENTS` | If set, indicates that container agents are enabled for the current azd environment. |
+| `AGENT_DEFINITION_PATH` | Path to an agent definition file for AI agent workflows. |
 
 ## UI Prompt Integration
 
@@ -132,8 +136,8 @@ specific version of the tool installed on the machine.
 | --- | --- |
 | `AZURE_DEV_COLLECT_TELEMETRY` | If false, disables telemetry collection. Telemetry is enabled by default. |
 | `AZURE_DEV_USER_AGENT` | Appends a custom string to the `User-Agent` header sent with Azure requests. |
-| `TRACEPARENT` | The W3C Trace Context `traceparent` header for distributed tracing. Automatically set by azd on extension processes for trace propagation. Not typically set by users. |
-| `TRACESTATE` | The W3C Trace Context `tracestate` header for vendor-specific trace data. Automatically set by azd alongside `TRACEPARENT`. Not typically set by users. |
+| `TRACEPARENT` | The W3C Trace Context `traceparent` header for distributed tracing. Automatically set by `azd` on extension processes for trace propagation. Not typically set by users. |
+| `TRACESTATE` | The W3C Trace Context `tracestate` header for vendor-specific trace data. Automatically set by `azd` alongside `TRACEPARENT`. Not typically set by users. |
 
 ## CI/CD Variables
 
@@ -165,6 +169,12 @@ These variables are read by `azd` to detect and integrate with CI/CD systems.
 | `AZURE_OIDC_REQUEST_URL` | The request URL for Azure OIDC in GitHub Actions. |
 | `ACTIONS_ID_TOKEN_REQUEST_TOKEN` | The GitHub Actions OIDC request token. |
 | `ACTIONS_ID_TOKEN_REQUEST_URL` | The GitHub Actions OIDC request URL. |
+
+### GitHub Codespaces
+
+| Variable | Description |
+| --- | --- |
+| `CODESPACES` | Set to `true` when running in GitHub Codespaces. Used by `azd` for environment detection and tracing. |
 
 ### General CI
 
@@ -205,14 +215,13 @@ These variables are used by the Terraform provider integration to authenticate w
 | `AZD_DEBUG_LOGIN_FORCE_SUBSCRIPTION_REFRESH` | If true, forces a refresh of the subscription list on login. |
 | `AZD_DEBUG_SYNTHETIC_SUBSCRIPTION` | If set, provides a synthetic subscription for testing. |
 | `AZD_DEBUG_NO_ALPHA_WARNINGS` | If true, suppresses alpha feature warnings. |
-| `AZD_DEBUG_PROVISION_PROGRESS_DISABLE` | If true, disables provision progress display. |
+| `AZD_DEBUG_PROVISION_PROGRESS_DISABLE` | If true, disables provision progress display. Read by both the Bicep provider and the Dev Center provisioner. |
 | `AZD_DEBUG_DOTNET_APPHOST_USE_FIXED_MANIFEST` | If true, uses a fixed manifest for .NET Aspire app host. |
 | `AZD_DEBUG_DOTNET_APPHOST_IGNORE_UNSUPPORTED_RESOURCES` | If true, ignores unsupported resources in .NET Aspire app host. |
 | `AZD_DEBUG_SERVER_DEBUG_ENDPOINTS` | If true, enables debug endpoints in server mode. |
 | `AZD_DEBUG_EXPERIMENTATION_TAS_ENDPOINT` | Overrides the experimentation TAS endpoint URL. |
 | `AZD_SUBSCRIPTIONS_FETCH_MAX_CONCURRENCY` | Limits the maximum concurrency when fetching subscriptions. |
 | `DEPLOYMENT_STACKS_BYPASS_STACK_OUT_OF_SYNC_ERROR` | If true, bypasses Deployment Stacks out-of-sync errors. |
-| `AGENT_DEFINITION_PATH` | Path to an agent definition file for AI agent workflows. |
 
 ## Test Variables
 

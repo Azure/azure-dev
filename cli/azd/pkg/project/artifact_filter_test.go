@@ -475,14 +475,4 @@ func Test_findFilter_matches(t *testing.T) {
 	}
 }
 
-// helper to create pointers for filter fields
-//
-//go:fix inline
-func kindPtr(k ArtifactKind) *ArtifactKind {
-	return new(k)
-}
 
-//go:fix inline
-func locKindPtr(lk LocationKind) *LocationKind {
-	return new(lk)
-}

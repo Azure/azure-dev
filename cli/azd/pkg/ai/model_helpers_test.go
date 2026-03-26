@@ -11,9 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-//go:fix inline
-func ptrTo[T any](v T) *T { return new(v) }
-
 func TestModelHasDefaultVersion(t *testing.T) {
 	tests := []struct {
 		name     string

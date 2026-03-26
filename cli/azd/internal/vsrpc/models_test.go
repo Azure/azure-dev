@@ -279,7 +279,3 @@ func TestAspireHost_Fields(t *testing.T) {
 	assert.Len(t, host.Services, 2)
 }
 
-//go:fix inline
-func strPtr(s string) *string {
-	return new(s)
-}

@@ -78,7 +78,13 @@ func (p *DotNetProvider) Initialize(ctx context.Context, projectPath string, opt
 	bicepOptions.Provider = provisioning.Bicep
 	bicepOptions.Path = generatedDir
 
-	return p.bicepProvider.Initialize(ctx, projectPath, bicepOptions)
+	err = p.bicepProvider.Initialize(ctx, projectPath, bicepOptions)
+	if err != nil {
+		p.cleanupGeneratedBicep()
+		return fmt.Errorf("initializing bicep provider: %w", err)
+	}
+
+	return nil
 }
 
 func (p *DotNetProvider) EnsureEnv(ctx context.Context) error {

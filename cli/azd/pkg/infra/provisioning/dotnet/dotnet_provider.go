@@ -12,7 +12,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	infraBicep "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -25,7 +24,6 @@ type DotNetProvider struct {
 	bicepProvider *infraBicep.BicepProvider
 	dotnetCli     *dotnet.Cli
 	console       input.Console
-	commandRunner exec.CommandRunner
 
 	projectPath string
 	options     provisioning.Options
@@ -256,12 +254,10 @@ func NewDotNetProvider(
 	bicepProvider *infraBicep.BicepProvider,
 	dotnetCli *dotnet.Cli,
 	console input.Console,
-	commandRunner exec.CommandRunner,
 ) provisioning.Provider {
 	return &DotNetProvider{
 		bicepProvider: bicepProvider,
 		dotnetCli:     dotnetCli,
 		console:       console,
-		commandRunner: commandRunner,
 	}
 }

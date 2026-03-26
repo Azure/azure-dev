@@ -532,8 +532,13 @@ func configureAppInsightsConnection(
 		selectedConnection = &appInsightsConnections[int(*selectResp.Value)]
 	}
 
-	if selectedConnection != nil && selectedConnection.Credentials.Key != "" {
-		if err := setEnvValue(ctx, azdClient, envName, "APPLICATIONINSIGHTS_CONNECTION_STRING", selectedConnection.Credentials.Key); err != nil {
+	if selectedConnection != nil {
+		if err := setEnvValue(ctx, azdClient, envName, "APPLICATIONINSIGHTS_CONNECTION_NAME", selectedConnection.Name); err != nil {
+			return err
+		}
+		if err := setEnvValue(
+			ctx, azdClient, envName, "APPLICATIONINSIGHTS_CONNECTION_STRING", selectedConnection.Credentials.Key,
+		); err != nil {
 			return err
 		}
 	}

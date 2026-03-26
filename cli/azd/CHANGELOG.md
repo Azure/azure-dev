@@ -1,14 +1,24 @@
 # Release History
 
-## 1.24.0-beta.1 (Unreleased)
+## 1.23.13 (2026-03-26)
 
 ### Features Added
 
-### Breaking Changes
+- [[#7247]](https://github.com/Azure/azure-dev/pull/7247) Add actionable suggestion to set `remoteBuild: true` for Container Apps and AKS services when Docker is not installed or not running. Thanks @spboyer for the contribution!
+- [[#7236]](https://github.com/Azure/azure-dev/pull/7236) Improve `azd auth status --output json` to exit non-zero when unauthenticated and include an `expiresOn` field, making it suitable as an auth validation endpoint for AI agents. Thanks @spboyer for the contribution!
 
 ### Bugs Fixed
 
+- [[#7329]](https://github.com/Azure/azure-dev/pull/7329) Fix nil panic and incorrect workflow continuation when user declines preflight validation warnings; `azd provision` and `azd up` now exit cleanly with exit code 0.
+- [[#7346]](https://github.com/Azure/azure-dev/pull/7346) Fix extension startup failures on Windows caused by IPv4/IPv6 address mismatch in the gRPC server address, and increase extension startup timeout from 5s to 15s. Thanks @spboyer for the contribution!
+- [[#7311]](https://github.com/Azure/azure-dev/pull/7311) Fix `.funcignore` parsing failures caused by UTF-8 BOM and incorrect negation pattern handling in zip packaging. Thanks @jongio for the contribution!
+- [[#7250]](https://github.com/Azure/azure-dev/pull/7250) Add targeted error suggestions for common Container Apps and ARM deployment failures including `ContainerAppOperationError`, `InvalidTemplateDeployment`, `RoleAssignmentExists`, and `InvalidResourceGroupLocation`. Thanks @spboyer for the contribution!
+- [[#7293]](https://github.com/Azure/azure-dev/pull/7293) Fix `azd update --channel daily` error suggestion on Windows to use PowerShell instead of `curl`/`bash` when azd is installed via WinGet.
+
 ### Other Changes
+
+- [[#7235]](https://github.com/Azure/azure-dev/pull/7235) Fix auth error telemetry classification to properly categorize `login_required`, `not_logged_in`, and authentication failures under the `aad` service name. Thanks @spboyer for the contribution!
+- [[#7330]](https://github.com/Azure/azure-dev/pull/7330) Add `azure.yaml` schema metadata to enable automatic schema association in JetBrains IDEs, Neovim, and other editors via the SchemaStore catalog.
 
 ## 1.23.12 (2026-03-24)
 

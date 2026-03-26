@@ -742,10 +742,13 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 			Memory: project.DefaultMemory,
 			Cpu:    project.DefaultCpu,
 		},
-		Scale: &project.ScaleSettings{
+	}
+
+	if !isVNextEnabled(ctx) {
+		agentConfig.Container.Scale = &project.ScaleSettings{
 			MinReplicas: project.DefaultMinReplicas,
 			MaxReplicas: project.DefaultMaxReplicas,
-		},
+		}
 	}
 
 	agentConfig.Deployments = a.deploymentDetails

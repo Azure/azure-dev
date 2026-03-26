@@ -1231,16 +1231,21 @@ func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.Co
 
 	selected := project.ResourceTiers[*resp.Value]
 
-	return &project.ContainerSettings{
+	containerSettings := &project.ContainerSettings{
 		Resources: &project.ResourceSettings{
 			Memory: selected.Memory,
 			Cpu:    selected.Cpu,
 		},
-		Scale: &project.ScaleSettings{
+	}
+
+	if !isVNextEnabled(ctx) {
+		containerSettings.Scale = &project.ScaleSettings{
 			MinReplicas: project.DefaultMinReplicas,
 			MaxReplicas: project.DefaultMaxReplicas,
-		},
-	}, nil
+		}
+	}
+
+	return containerSettings, nil
 }
 
 func downloadGithubManifest(

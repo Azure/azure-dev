@@ -25,12 +25,19 @@ const (
 )
 
 // Client is an HTTP client for Azure AI Foundry project APIs.
+// It supports both data plane calls (via project endpoint) and ARM
+// control plane calls (via SetARMContext).
 type Client struct {
 	baseURL    string
 	subPath    string
 	apiVersion string
 	credential azcore.TokenCredential
 	httpClient *http.Client
+
+	// ARM context fields (set via SetARMContext)
+	subscriptionID string
+	resourceGroup  string
+	accountName    string
 }
 
 // NewClient creates a new client from a project endpoint URL.
@@ -72,6 +79,48 @@ func NewClient(projectEndpoint string, credential azcore.TokenCredential) (*Clie
 		credential: credential,
 		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}, nil
+}
+
+// SetARMContext configures the client for ARM control plane calls.
+// Required before calling ARM methods like GetCompute.
+func (c *Client) SetARMContext(subscriptionID, resourceGroup, accountName string) {
+	c.subscriptionID = subscriptionID
+	c.resourceGroup = resourceGroup
+	c.accountName = accountName
+}
+
+// doARM executes an authenticated HTTP request against the ARM control plane.
+// The path should be relative to https://management.azure.com/ (no leading slash).
+func (c *Client) doARM(ctx context.Context, method, path string, body interface{}, apiVersion string) (*http.Response, error) {
+	reqURL := fmt.Sprintf("https://management.azure.com/%s?api-version=%s", path, apiVersion)
+
+	fmt.Printf("[DEBUG] %s %s\n", method, reqURL)
+
+	var bodyReader io.Reader
+	if body != nil {
+		data, err := json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal request body: %w", err)
+		}
+		bodyReader = bytes.NewReader(data)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, reqURL, bodyReader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	if err := c.addAuth(ctx, req, ARMScope); err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+
+	return resp, nil
 }
 
 // doDataPlane executes an authenticated HTTP request against the data plane.

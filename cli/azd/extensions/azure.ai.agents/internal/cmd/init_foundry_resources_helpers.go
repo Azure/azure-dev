@@ -60,16 +60,14 @@ func setEnvValue(ctx context.Context, azdClient *azdext.AzdClient, envName, key,
 	return nil
 }
 
+// projectResourceIdRegex is the precompiled regex for parsing Foundry project ARM resource IDs.
+var projectResourceIdRegex = regexp.MustCompile(
+	`^/subscriptions/([^/]+)/resourceGroups/([^/]+)/providers/Microsoft\.CognitiveServices/accounts/([^/]+)/projects/([^/]+)$`,
+)
+
 // extractProjectDetails parses an ARM resource ID into a FoundryProjectInfo.
 func extractProjectDetails(projectResourceId string) (*FoundryProjectInfo, error) {
-	pattern := `^/subscriptions/([^/]+)/resourceGroups/([^/]+)/providers/Microsoft\.CognitiveServices/accounts/([^/]+)/projects/([^/]+)$`
-
-	regex, err := regexp.Compile(pattern)
-	if err != nil {
-		return nil, fmt.Errorf("failed to compile regex pattern: %w", err)
-	}
-
-	matches := regex.FindStringSubmatch(projectResourceId)
+	matches := projectResourceIdRegex.FindStringSubmatch(projectResourceId)
 	if matches == nil || len(matches) != 5 {
 		return nil, fmt.Errorf(
 			"the given Microsoft Foundry project ID does not match expected format: " +
@@ -930,7 +928,7 @@ func selectFoundryProject(
 	}
 	if err != nil {
 		if projectResourceId != "" {
-			return nil, fmt.Errorf("failed to get Foundry project: %w", err)
+			return nil, err
 		}
 		return nil, fmt.Errorf("failed to list Foundry projects: %w", err)
 	}

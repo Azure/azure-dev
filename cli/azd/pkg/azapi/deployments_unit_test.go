@@ -6,7 +6,6 @@ package azapi
 import (
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeploymentstacks"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/stretchr/testify/assert"
@@ -237,13 +236,13 @@ func TestGroupByResourceGroup(t *testing.T) {
 	t.Run("groups_resources_correctly", func(t *testing.T) {
 		t.Parallel()
 		refs := []*armresources.ResourceReference{
-			{ID: to.Ptr(
+			{ID: new(
 				"/subscriptions/sub1/resourceGroups/rg1" +
 					"/providers/Microsoft.Web/sites/app1")},
-			{ID: to.Ptr(
+			{ID: new(
 				"/subscriptions/sub1/resourceGroups/rg1" +
 					"/providers/Microsoft.Storage/storageAccounts/sa1")},
-			{ID: to.Ptr(
+			{ID: new(
 				"/subscriptions/sub1/resourceGroups/rg2" +
 					"/providers/Microsoft.Web/sites/app2")},
 		}
@@ -258,9 +257,9 @@ func TestGroupByResourceGroup(t *testing.T) {
 	t.Run("excludes_resource_group_type", func(t *testing.T) {
 		t.Parallel()
 		refs := []*armresources.ResourceReference{
-			{ID: to.Ptr(
+			{ID: new(
 				"/subscriptions/sub1/resourceGroups/rg1")},
-			{ID: to.Ptr(
+			{ID: new(
 				"/subscriptions/sub1/resourceGroups/rg1" +
 					"/providers/Microsoft.Web/sites/app1")},
 		}
@@ -276,7 +275,7 @@ func TestGroupByResourceGroup(t *testing.T) {
 	t.Run("invalid_resource_id", func(t *testing.T) {
 		t.Parallel()
 		refs := []*armresources.ResourceReference{
-			{ID: to.Ptr("not-a-valid-resource-id")},
+			{ID: new("not-a-valid-resource-id")},
 		}
 
 		_, err := GroupByResourceGroup(refs)
@@ -286,7 +285,7 @@ func TestGroupByResourceGroup(t *testing.T) {
 	t.Run("subscription_level_resources_skipped", func(t *testing.T) {
 		t.Parallel()
 		refs := []*armresources.ResourceReference{
-			{ID: to.Ptr(
+			{ID: new(
 				"/subscriptions/sub1/providers" +
 					"/Microsoft.Resources/deployments/deploy1")},
 		}

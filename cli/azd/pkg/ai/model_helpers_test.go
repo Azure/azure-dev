@@ -11,7 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func ptrTo[T any](v T) *T { return &v }
+//go:fix inline
+func ptrTo[T any](v T) *T { return new(v) }
 
 func TestModelHasDefaultVersion(t *testing.T) {
 	tests := []struct {
@@ -86,13 +87,13 @@ func TestConvertSku(t *testing.T) {
 		{
 			name: "fully populated",
 			input: &armcognitiveservices.ModelSKU{
-				Name:      ptrTo("GlobalStandard"),
-				UsageName: ptrTo("OpenAI.GlobalStandard.gpt-4o"),
+				Name:      new("GlobalStandard"),
+				UsageName: new("OpenAI.GlobalStandard.gpt-4o"),
 				Capacity: &armcognitiveservices.CapacityConfig{
-					Default: ptrTo(int32(10)),
-					Minimum: ptrTo(int32(1)),
-					Maximum: ptrTo(int32(100)),
-					Step:    ptrTo(int32(5)),
+					Default: new(int32(10)),
+					Minimum: new(int32(1)),
+					Maximum: new(int32(100)),
+					Step:    new(int32(5)),
 				},
 			},
 			expected: AiModelSku{
@@ -107,8 +108,8 @@ func TestConvertSku(t *testing.T) {
 		{
 			name: "nil capacity",
 			input: &armcognitiveservices.ModelSKU{
-				Name:      ptrTo("Standard"),
-				UsageName: ptrTo("OpenAI.Standard.gpt-4o"),
+				Name:      new("Standard"),
+				UsageName: new("OpenAI.Standard.gpt-4o"),
 				Capacity:  nil,
 			},
 			expected: AiModelSku{
@@ -126,7 +127,7 @@ func TestConvertSku(t *testing.T) {
 				Name:      nil,
 				UsageName: nil,
 				Capacity: &armcognitiveservices.CapacityConfig{
-					Default: ptrTo(int32(5)),
+					Default: new(int32(5)),
 				},
 			},
 			expected: AiModelSku{
@@ -141,13 +142,13 @@ func TestConvertSku(t *testing.T) {
 		{
 			name: "partial capacity fields",
 			input: &armcognitiveservices.ModelSKU{
-				Name:      ptrTo("ProvisionedManaged"),
-				UsageName: ptrTo("OpenAI.ProvisionedManaged"),
+				Name:      new("ProvisionedManaged"),
+				UsageName: new("OpenAI.ProvisionedManaged"),
 				Capacity: &armcognitiveservices.CapacityConfig{
 					Default: nil,
-					Minimum: ptrTo(int32(10)),
+					Minimum: new(int32(10)),
 					Maximum: nil,
-					Step:    ptrTo(int32(10)),
+					Step:    new(int32(10)),
 				},
 			},
 			expected: AiModelSku{
@@ -182,12 +183,12 @@ func TestSafeString(t *testing.T) {
 		},
 		{
 			name:     "non-nil returns value",
-			input:    ptrTo("hello"),
+			input:    new("hello"),
 			expected: "hello",
 		},
 		{
 			name:     "empty string returns empty",
-			input:    ptrTo(""),
+			input:    new(""),
 			expected: "",
 		},
 	}
@@ -212,17 +213,17 @@ func TestSafeFloat64(t *testing.T) {
 		},
 		{
 			name:     "non-nil returns value",
-			input:    ptrTo(42.5),
+			input:    new(42.5),
 			expected: 42.5,
 		},
 		{
 			name:     "zero value returns zero",
-			input:    ptrTo(0.0),
+			input:    new(0.0),
 			expected: 0,
 		},
 		{
 			name:     "negative value",
-			input:    ptrTo(-1.5),
+			input:    new(-1.5),
 			expected: -1.5,
 		},
 	}

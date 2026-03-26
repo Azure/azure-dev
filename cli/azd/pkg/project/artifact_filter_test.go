@@ -397,7 +397,7 @@ func Test_findFilter_matches(t *testing.T) {
 		{
 			name: "kind filter match",
 			filter: findFilter{
-				kind: kindPtr(ArtifactKindContainer),
+				kind: new(ArtifactKindContainer),
 			},
 			artifact: &Artifact{
 				Kind:         ArtifactKindContainer,
@@ -408,7 +408,7 @@ func Test_findFilter_matches(t *testing.T) {
 		{
 			name: "kind filter mismatch",
 			filter: findFilter{
-				kind: kindPtr(ArtifactKindContainer),
+				kind: new(ArtifactKindContainer),
 			},
 			artifact: &Artifact{
 				Kind:         ArtifactKindDirectory,
@@ -419,7 +419,7 @@ func Test_findFilter_matches(t *testing.T) {
 		{
 			name: "locationKind filter match",
 			filter: findFilter{
-				locationKind: locKindPtr(LocationKindRemote),
+				locationKind: new(LocationKindRemote),
 			},
 			artifact: &Artifact{
 				Kind:         ArtifactKindContainer,
@@ -430,7 +430,7 @@ func Test_findFilter_matches(t *testing.T) {
 		{
 			name: "locationKind filter mismatch",
 			filter: findFilter{
-				locationKind: locKindPtr(LocationKindRemote),
+				locationKind: new(LocationKindRemote),
 			},
 			artifact: &Artifact{
 				Kind:         ArtifactKindContainer,
@@ -441,8 +441,8 @@ func Test_findFilter_matches(t *testing.T) {
 		{
 			name: "both filters match",
 			filter: findFilter{
-				kind:         kindPtr(ArtifactKindArchive),
-				locationKind: locKindPtr(LocationKindLocal),
+				kind:         new(ArtifactKindArchive),
+				locationKind: new(LocationKindLocal),
 			},
 			artifact: &Artifact{
 				Kind:         ArtifactKindArchive,
@@ -453,8 +453,8 @@ func Test_findFilter_matches(t *testing.T) {
 		{
 			name: "kind matches but locationKind does not",
 			filter: findFilter{
-				kind:         kindPtr(ArtifactKindArchive),
-				locationKind: locKindPtr(LocationKindRemote),
+				kind:         new(ArtifactKindArchive),
+				locationKind: new(LocationKindRemote),
 			},
 			artifact: &Artifact{
 				Kind:         ArtifactKindArchive,
@@ -476,10 +476,13 @@ func Test_findFilter_matches(t *testing.T) {
 }
 
 // helper to create pointers for filter fields
+//
+//go:fix inline
 func kindPtr(k ArtifactKind) *ArtifactKind {
-	return &k
+	return new(k)
 }
 
+//go:fix inline
 func locKindPtr(lk LocationKind) *LocationKind {
-	return &lk
+	return new(lk)
 }

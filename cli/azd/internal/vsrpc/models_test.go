@@ -216,15 +216,15 @@ func TestInitializeServerOptions_JSON(t *testing.T) {
 		{
 			name: "all set",
 			opts: InitializeServerOptions{
-				AuthenticationEndpoint:    strPtr("https://auth.local"),
-				AuthenticationKey:         strPtr("secret-key"),
-				AuthenticationCertificate: strPtr("base64cert=="),
+				AuthenticationEndpoint:    new("https://auth.local"),
+				AuthenticationKey:         new("secret-key"),
+				AuthenticationCertificate: new("base64cert=="),
 			},
 		},
 		{
 			name: "partial",
 			opts: InitializeServerOptions{
-				AuthenticationEndpoint: strPtr("https://auth.local"),
+				AuthenticationEndpoint: new("https://auth.local"),
 			},
 		},
 	}
@@ -279,6 +279,7 @@ func TestAspireHost_Fields(t *testing.T) {
 	assert.Len(t, host.Services, 2)
 }
 
+//go:fix inline
 func strPtr(s string) *string {
-	return &s
+	return new(s)
 }

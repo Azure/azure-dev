@@ -693,6 +693,9 @@ func (p *BicepProvider) waitForActiveDeployments(
 		case <-ticker.C:
 			active, err = infra.ListActiveDeployments(ctx, scope)
 			if err != nil {
+				if errors.Is(err, infra.ErrDeploymentsNotFound) {
+					return nil
+				}
 				return fmt.Errorf(
 					"checking active deployments: %w", err)
 			}

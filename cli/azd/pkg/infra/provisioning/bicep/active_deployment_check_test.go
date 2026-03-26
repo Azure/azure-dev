@@ -161,6 +161,30 @@ func TestWaitForActiveDeployments_PollError(t *testing.T) {
 	require.Contains(t, err.Error(), "transient ARM failure")
 }
 
+func TestWaitForActiveDeployments_PollNotFound(t *testing.T) {
+	// If the resource group is deleted externally while polling,
+	// ListDeployments returns ErrDeploymentsNotFound. The wait should
+	// treat this as "no active deployments" and return nil.
+	running := []*azapi.ResourceDeployment{
+		{
+			Name:              "deploy-1",
+			ProvisioningState: azapi.DeploymentProvisioningStateRunning,
+		},
+	}
+	scope := &activeDeploymentScope{
+		activePerCall: map[int][]*azapi.ResourceDeployment{
+			0: running,
+		},
+		errOnCall: map[int]error{
+			1: infra.ErrDeploymentsNotFound,
+		},
+	}
+	p := newTestProvider()
+
+	err := p.waitForActiveDeployments(t.Context(), scope)
+	require.NoError(t, err)
+}
+
 func TestWaitForActiveDeployments_Timeout(t *testing.T) {
 	running := []*azapi.ResourceDeployment{
 		{

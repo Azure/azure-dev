@@ -90,6 +90,19 @@ func (cli *Cli) CheckInstalled(ctx context.Context) error {
 	return nil
 }
 
+// SdkVersion returns the installed .NET SDK major version (e.g., 8, 9, 10).
+func (cli *Cli) SdkVersion(ctx context.Context) (int, error) {
+	dotnetRes, err := cli.commandRunner.Run(ctx, newDotNetRunArgs("--version"))
+	if err != nil {
+		return 0, fmt.Errorf("checking %s version: %w", cli.Name(), err)
+	}
+	dotnetSemver, err := tools.ExtractVersion(dotnetRes.Stdout)
+	if err != nil {
+		return 0, fmt.Errorf("parsing dotnet version: %w", err)
+	}
+	return int(dotnetSemver.Major), nil
+}
+
 func (cli *Cli) Restore(ctx context.Context, project string, env []string) error {
 	runArgs := newDotNetRunArgs("restore", project)
 	// Append user env vars to preserve base env set by newDotNetRunArgs (DOTNET_NOLOGO, etc.)

@@ -107,6 +107,19 @@ func TestValidateNoReservedFlagConflicts_SDKRootWithCollision(t *testing.T) {
 	require.Contains(t, err.Error(), "long flag --docs is reserved")
 }
 
+func TestValidateNoReservedFlagConflicts_PersistentFlagCollision(t *testing.T) {
+	// A subcommand that defines a persistent flag colliding with a reserved name
+	// should be caught even though it uses PersistentFlags() not Flags().
+	root := newPlainRoot("test")
+	sub := &cobra.Command{Use: "deploy"}
+	sub.PersistentFlags().Bool("debug", false, "extension debug mode")
+	root.AddCommand(sub)
+
+	err := ValidateNoReservedFlagConflicts(root)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "long flag --debug is reserved")
+}
+
 func TestReservedFlagNames(t *testing.T) {
 	names := ReservedFlagNames()
 	require.NotEmpty(t, names)
@@ -120,28 +133,39 @@ func TestReservedFlagNames(t *testing.T) {
 func TestReservedFlagsInSyncWithInternal(t *testing.T) {
 	// Verify the SDK reserved flag list stays in sync with the internal registry.
 	// If this test fails, you added a flag to one list but not the other.
-	sdkNames := ReservedFlagNames()
+	sdkFlags := reservedGlobalFlags
 	internalFlags := internal.ReservedFlags()
 
-	sdkSet := make(map[string]bool, len(sdkNames))
-	for _, name := range sdkNames {
-		sdkSet[name] = true
+	// Build maps of long name -> short name for both sides.
+	sdkMap := make(map[string]string, len(sdkFlags))
+	for _, f := range sdkFlags {
+		sdkMap[f.Long] = f.Short
 	}
 
-	internalSet := make(map[string]bool, len(internalFlags))
+	internalMap := make(map[string]string, len(internalFlags))
 	for _, f := range internalFlags {
-		internalSet[f.Long] = true
+		internalMap[f.Long] = f.Short
 	}
 
-	for name := range sdkSet {
-		require.True(t, internalSet[name],
+	// Check every SDK flag exists in internal with matching short name.
+	for long, short := range sdkMap {
+		internalShort, ok := internalMap[long]
+		require.True(t, ok,
 			"azdext reserved_flags.go has %q but internal.ReservedFlags() does not — add it to internal/reserved_flags.go",
-			name)
+			long)
+		require.Equal(t, internalShort, short,
+			"short name mismatch for %q: internal has %q, SDK has %q",
+			long, internalShort, short)
 	}
 
-	for name := range internalSet {
-		require.True(t, sdkSet[name],
+	// Check every internal flag exists in SDK with matching short name.
+	for long, short := range internalMap {
+		sdkShort, ok := sdkMap[long]
+		require.True(t, ok,
 			"internal.ReservedFlags() has %q but azdext reserved_flags.go does not — add it to pkg/azdext/reserved_flags.go",
-			name)
+			long)
+		require.Equal(t, sdkShort, short,
+			"short name mismatch for %q: SDK has %q, internal has %q",
+			long, sdkShort, short)
 	}
 }

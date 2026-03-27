@@ -32,11 +32,9 @@ hooks:
 
 services:
   app:
-    project: src/app
-    host: containerapp
-    language: docker
-    docker:
-      remoteBuild: true
+    project: .
+    host: appservice
+    language: js
     hooks:
       predeploy:
         windows:
@@ -44,4 +42,11 @@ services:
           shell: pwsh
         posix:
           run: 'echo service-predeploy >> "$HOOK_TRACE_FILE"'
+          shell: sh
+      prerestore:
+        windows:
+          run: 'Add-Content -Path $env:HOOK_TRACE_FILE -Value "service-prerestore"'
+          shell: pwsh
+        posix:
+          run: 'echo service-prerestore >> "$HOOK_TRACE_FILE"'
           shell: sh

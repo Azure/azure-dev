@@ -17,6 +17,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -873,6 +875,8 @@ func (e *envListAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	if err != nil {
 		return nil, fmt.Errorf("listing environments: %w", err)
 	}
+
+	tracing.SetUsageAttributes(fields.EnvCountKey.Int(len(envs)))
 
 	if e.formatter.Kind() == output.TableFormat {
 		columns := []output.Column{

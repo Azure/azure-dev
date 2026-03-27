@@ -18,6 +18,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // FoundryProjectInfo holds information about a discovered or parsed Foundry project.
@@ -548,6 +550,12 @@ func createNewEnvironment(
 	azdClient *azdext.AzdClient,
 	envName string,
 ) (*azdext.Environment, error) {
+	if envName != "" {
+		if existingEnv := getExistingEnvironment(ctx, envName, azdClient); existingEnv != nil {
+			return existingEnv, nil
+		}
+	}
+
 	envArgs := []string{"env", "new"}
 	if envName != "" {
 		envArgs = append(envArgs, envName)
@@ -567,6 +575,14 @@ func createNewEnvironment(
 		if exterrors.IsCancellation(err) {
 			return nil, exterrors.Cancelled("environment creation was cancelled")
 		}
+		// The workflow may have created the environment on disk before returning
+		// an "already exists" error (e.g. a concurrent process raced, or a previous
+		// partial run left env files behind). Re-fetch so we can reuse it.
+		if envName != "" && status.Code(err) == codes.AlreadyExists {
+			if existingEnv := getExistingEnvironment(ctx, envName, azdClient); existingEnv != nil {
+				return existingEnv, nil
+			}
+		}
 		return nil, exterrors.Dependency(
 			exterrors.CodeEnvironmentCreationFailed,
 			fmt.Sprintf("failed to create new azd environment: %s", err),
@@ -575,7 +591,7 @@ func createNewEnvironment(
 	}
 
 	// Re-fetch the environment after creation
-	env := getExistingEnvironment(ctx, &initFlags{env: envName}, azdClient)
+	env := getExistingEnvironment(ctx, envName, azdClient)
 	if env == nil {
 		return nil, exterrors.Dependency(
 			exterrors.CodeEnvironmentNotFound,

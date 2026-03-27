@@ -28,7 +28,6 @@ import (
 
 type updateFlags struct {
 	channel            string
-	autoUpdate         string
 	checkIntervalHours int
 	global             *internal.GlobalCommandOptions
 }
@@ -47,12 +46,6 @@ func (f *updateFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		"channel",
 		"",
 		"Update channel: stable or daily.",
-	)
-	local.StringVar(
-		&f.autoUpdate,
-		"auto-update",
-		"",
-		"Enable or disable auto-update: on or off.",
 	)
 	local.IntVar(
 		&f.checkIntervalHours,
@@ -126,7 +119,7 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 
 		a.console.MessageUxItem(ctx, &ux.MessageTitle{
-			Title: "azd update is in alpha. Auto-update and channel-aware version checks are now enabled.\n",
+			Title: "azd update is in alpha. Channel-aware version checks are now enabled.\n",
 		})
 	}
 
@@ -315,21 +308,10 @@ func (a *updateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}, nil
 }
 
-// persistNonChannelFlags saves auto-update and check-interval flags to config.
+// persistNonChannelFlags saves check-interval flags to config.
 // Channel is handled separately to allow confirmation before persisting.
 func (a *updateAction) persistNonChannelFlags(cfg config.Config) (bool, error) {
 	changed := false
-
-	if a.flags.autoUpdate != "" {
-		enabled := a.flags.autoUpdate == "on"
-		if a.flags.autoUpdate != "on" && a.flags.autoUpdate != "off" {
-			return false, fmt.Errorf("invalid auto-update value %q, must be \"on\" or \"off\"", a.flags.autoUpdate)
-		}
-		if err := update.SaveAutoUpdate(cfg, enabled); err != nil {
-			return false, err
-		}
-		changed = true
-	}
 
 	if a.flags.checkIntervalHours > 0 {
 		if err := update.SaveCheckIntervalHours(cfg, a.flags.checkIntervalHours); err != nil {
@@ -343,6 +325,5 @@ func (a *updateAction) persistNonChannelFlags(cfg config.Config) (bool, error) {
 
 // onlyConfigFlagsSet returns true if only config flags were provided (no channel that requires an update).
 func (a *updateAction) onlyConfigFlagsSet() bool {
-	return a.flags.channel == "" &&
-		(a.flags.autoUpdate != "" || a.flags.checkIntervalHours > 0)
+	return a.flags.channel == "" && a.flags.checkIntervalHours > 0
 }

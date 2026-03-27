@@ -314,6 +314,75 @@ const (
 	AccountTypeServicePrincipal = "Service Principal"
 )
 
+// Auth command related fields
+var (
+	// The authentication method used for login.
+	//
+	// Example: "browser", "device-code", "service-principal-secret", "managed-identity"
+	AuthMethodKey = AttributeKey{
+		Key:            attribute.Key("auth.method"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+)
+
+// Environment command related fields
+var (
+	// The number of environments that exist for the current project.
+	EnvCountKey = AttributeKey{
+		Key:            attribute.Key("env.count"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
+)
+
+// Hooks command related fields
+var (
+	// The name of the hook being run.
+	HooksNameKey = AttributeKey{
+		Key:            attribute.Key("hooks.name"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// The type of the hook (project or service).
+	HooksTypeKey = AttributeKey{
+		Key:            attribute.Key("hooks.type"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+)
+
+// Pipeline command related fields
+var (
+	// The pipeline provider being configured.
+	//
+	// Example: "github", "azdo"
+	PipelineProviderKey = AttributeKey{
+		Key:            attribute.Key("pipeline.provider"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// The authentication type used for pipeline configuration.
+	PipelineAuthKey = AttributeKey{
+		Key:            attribute.Key("pipeline.auth"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+)
+
+// Infrastructure command related fields
+var (
+	// The IaC provider used for infrastructure generation.
+	//
+	// Example: "bicep", "terraform"
+	InfraProviderKey = AttributeKey{
+		Key:            attribute.Key("infra.provider"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+)
+
 // The value used for ServiceNameKey
 const ServiceNameAzd = "azd"
 

@@ -13,6 +13,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -85,6 +87,16 @@ func newInfraGenerateAction(
 }
 
 func (a *infraGenerateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	// Track infra provider from project configuration
+	// Emit "auto" when provider is empty, so we know auto-detection was used.
+	if a.projectConfig != nil {
+		provider := string(a.projectConfig.Infra.Provider)
+		if provider == "" {
+			provider = "auto"
+		}
+		tracing.SetUsageAttributes(fields.InfraProviderKey.String(provider))
+	}
+
 	if a.calledAs == "synth" {
 		fmt.Fprintln(
 			a.console.Handles().Stderr,

@@ -87,8 +87,8 @@ stages:
 
       - pwsh: |
           # Collect and analyze test timing from all platform artifacts
-          $timingFiles = Get-ChildItem cover-*/test-timing-unit.json -ErrorAction SilentlyContinue
-          if ($timingFiles.Count -eq 0) {
+          $timingFiles = @(Get-ChildItem cover-*/test-timing-unit.json -ErrorAction SilentlyContinue)
+          if (-not $timingFiles -or $timingFiles.Count -eq 0) {
               Write-Host "No test timing files found. Skipping timing analysis."
               exit 0
           }

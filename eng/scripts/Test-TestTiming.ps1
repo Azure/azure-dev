@@ -142,7 +142,7 @@ if ($null -ne $firstTimestamp -and $null -ne $lastTimestamp) {
 $sorted = $packageTimes.GetEnumerator() |
     Sort-Object { $_.Value.Elapsed } -Descending
 
-$totalSeconds = ($sorted | Measure-Object -Property { $_.Value.Elapsed } -Sum).Sum
+$totalSeconds = ($sorted | ForEach-Object { $_.Value.Elapsed } | Measure-Object -Sum).Sum
 
 # Display report
 Write-Host ""

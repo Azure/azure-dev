@@ -130,15 +130,15 @@ func TestShowContainerApp_SingleContainer(t *testing.T) {
 				Containers: []*armappcontainers.Container{
 					{
 						Name:  &appName,
-						Image: strPtr("myregistry.azurecr.io/myimage:latest"),
+						Image: new("myregistry.azurecr.io/myimage:latest"),
 						Env: []*armappcontainers.EnvironmentVar{
 							{
-								Name:  strPtr("APP_ENV"),
-								Value: strPtr("production"),
+								Name:  new("APP_ENV"),
+								Value: new("production"),
 							},
 							{
-								Name:  strPtr("APP_PORT"),
-								Value: strPtr("8080"),
+								Name:  new("APP_PORT"),
+								Value: new("8080"),
 							},
 						},
 					},
@@ -184,12 +184,12 @@ func TestShowContainerApp_SecretRef_NoShowSecrets(t *testing.T) {
 						Name: &appName,
 						Env: []*armappcontainers.EnvironmentVar{
 							{
-								Name:      strPtr("DB_PASSWORD"),
-								SecretRef: strPtr("db-password-secret"),
+								Name:      new("DB_PASSWORD"),
+								SecretRef: new("db-password-secret"),
 							},
 							{
-								Name:  strPtr("APP_ENV"),
-								Value: strPtr("prod"),
+								Name:  new("APP_ENV"),
+								Value: new("prod"),
 							},
 						},
 					},
@@ -259,11 +259,11 @@ func TestShowContainerApp_MultiContainer_MatchByName(t *testing.T) {
 			Template: &armappcontainers.Template{
 				Containers: []*armappcontainers.Container{
 					{
-						Name: strPtr("sidecar"),
+						Name: new("sidecar"),
 						Env: []*armappcontainers.EnvironmentVar{
 							{
-								Name:  strPtr("SIDECAR_VAR"),
-								Value: strPtr("side"),
+								Name:  new("SIDECAR_VAR"),
+								Value: new("side"),
 							},
 						},
 					},
@@ -271,8 +271,8 @@ func TestShowContainerApp_MultiContainer_MatchByName(t *testing.T) {
 						Name: &appName,
 						Env: []*armappcontainers.EnvironmentVar{
 							{
-								Name:  strPtr("MAIN_VAR"),
-								Value: strPtr("main"),
+								Name:  new("MAIN_VAR"),
+								Value: new("main"),
 							},
 						},
 					},
@@ -312,10 +312,10 @@ func TestShowContainerApp_MultiContainer_NoMatch(t *testing.T) {
 			Template: &armappcontainers.Template{
 				Containers: []*armappcontainers.Container{
 					{
-						Name: strPtr("worker-a"),
+						Name: new("worker-a"),
 					},
 					{
-						Name: strPtr("worker-b"),
+						Name: new("worker-b"),
 					},
 				},
 			},
@@ -358,8 +358,8 @@ func TestShowContainerApp_NilEnvName(t *testing.T) {
 								Name: nil, // nil env name should be skipped
 							},
 							{
-								Name:  strPtr("GOOD_VAR"),
-								Value: strPtr("good"),
+								Name:  new("GOOD_VAR"),
+								Value: new("good"),
 							},
 						},
 					},
@@ -461,8 +461,8 @@ func TestShowAppService_BasicSettings(t *testing.T) {
 	}
 
 	settings := map[string]*string{
-		"APP_ENV": strPtr("production"),
-		"PORT":    strPtr("3000"),
+		"APP_ENV": new("production"),
+		"PORT":    new("3000"),
 	}
 
 	mockContext := mocks.NewMockContext(context.Background())
@@ -494,10 +494,10 @@ func TestShowAppService_SecretsAreMasked(t *testing.T) {
 	}
 
 	settings := map[string]*string{
-		"POSTGRES_PASSWORD":     strPtr("supersecret"),
-		"REDIS_URL":             strPtr("redis://host:6379"),
-		"NORMAL_SETTING":        strPtr("visible"),
-		"KEY_VAULT_REF_SETTING": strPtr("@Microsoft.KeyVault(SecretUri=https://myvault.vault.azure.net/secrets/mysecret)"),
+		"POSTGRES_PASSWORD":     new("supersecret"),
+		"REDIS_URL":             new("redis://host:6379"),
+		"NORMAL_SETTING":        new("visible"),
+		"KEY_VAULT_REF_SETTING": new("@Microsoft.KeyVault(SecretUri=https://myvault.vault.azure.net/secrets/mysecret)"),
 	}
 
 	mockContext := mocks.NewMockContext(context.Background())
@@ -533,8 +533,8 @@ func TestShowAppService_ShowSecretsRevealsValues(t *testing.T) {
 	}
 
 	settings := map[string]*string{
-		"POSTGRES_PASSWORD": strPtr("supersecret"),
-		"NORMAL_SETTING":    strPtr("visible"),
+		"POSTGRES_PASSWORD": new("supersecret"),
+		"NORMAL_SETTING":    new("visible"),
 	}
 
 	mockContext := mocks.NewMockContext(context.Background())
@@ -566,7 +566,7 @@ func TestShowAppService_NilSettingValue(t *testing.T) {
 	}
 
 	settings := map[string]*string{
-		"GOOD_KEY":    strPtr("value"),
+		"GOOD_KEY":    new("value"),
 		"NIL_VAL_KEY": nil,
 	}
 
@@ -637,9 +637,9 @@ func TestShowAppService_AllKnownSecretKeys(t *testing.T) {
 
 	settings := make(map[string]*string)
 	for _, key := range knownSecretKeys {
-		settings[key] = strPtr("secret-value-for-" + key)
+		settings[key] = new("secret-value-for-" + key)
 	}
-	settings["SAFE_KEY"] = strPtr("not-a-secret")
+	settings["SAFE_KEY"] = new("not-a-secret")
 
 	mockContext := mocks.NewMockContext(context.Background())
 	mockAppServiceGetResponse(mockContext, appName, site)
@@ -701,5 +701,3 @@ func TestServiceEndpoint_LazyServiceManagerError(t *testing.T) {
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
-
-func strPtr(s string) *string { return &s }

@@ -72,6 +72,7 @@ func Test_DockerBuild(t *testing.T) {
 			buildArgs,
 			nil,
 			nil,
+			"",
 			nil,
 		)
 
@@ -131,6 +132,7 @@ func Test_DockerBuild(t *testing.T) {
 			buildArgs,
 			nil,
 			nil,
+			"",
 			nil,
 		)
 
@@ -188,7 +190,7 @@ func Test_DockerBuildEmptyPlatform(t *testing.T) {
 	})
 
 	result, err := docker.Build(
-		context.Background(), cwd, dockerFile, "", "", dockerContext, imageName, buildArgs, nil, nil, nil)
+		context.Background(), cwd, dockerFile, "", "", dockerContext, imageName, buildArgs, nil, nil, "", nil)
 
 	require.Equal(t, true, ran)
 	require.Nil(t, err)
@@ -237,7 +239,7 @@ func Test_DockerBuildArgsEmpty(t *testing.T) {
 	})
 
 	result, err := docker.Build(
-		context.Background(), cwd, dockerFile, "", "", dockerContext, imageName, buildArgs, nil, nil, nil)
+		context.Background(), cwd, dockerFile, "", "", dockerContext, imageName, buildArgs, nil, nil, "", nil)
 
 	require.Equal(t, true, ran)
 	require.Nil(t, err)
@@ -288,11 +290,71 @@ func Test_DockerBuildArgsMultiple(t *testing.T) {
 	})
 
 	result, err := docker.Build(
-		context.Background(), cwd, dockerFile, "", "", dockerContext, imageName, buildArgs, nil, nil, nil)
+		context.Background(), cwd, dockerFile, "", "", dockerContext, imageName, buildArgs, nil, nil, "", nil)
 
 	require.Equal(t, true, ran)
 	require.Nil(t, err)
 	require.Equal(t, mockedDockerImgId, result)
+}
+
+func Test_DockerBuildNetwork(t *testing.T) {
+	tests := []struct {
+		name     string
+		network  string
+		expectIn bool
+	}{
+		{"WithHostNetwork", "host", true},
+		{"WithEmptyNetwork", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ran := false
+			cwd := "."
+			dockerFile := "./Dockerfile"
+			dockerContext := "../"
+			imageName := "IMAGE_NAME"
+
+			mockContext := mocks.NewMockContext(context.Background())
+			docker := NewCli(mockContext.CommandRunner)
+
+			mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+				return strings.Contains(command, "docker build")
+			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				ran = true
+
+				argsNoFile := args.Args[:len(args.Args)-2]
+				value := args.Args[len(args.Args)-1]
+
+				if tt.expectIn {
+					require.Contains(t, argsNoFile, "--network")
+					require.Contains(t, argsNoFile, tt.network)
+				} else {
+					require.NotContains(t, argsNoFile, "--network")
+				}
+
+				err := os.WriteFile(value, []byte(mockedDockerImgId), 0600)
+				require.NoError(t, err)
+
+				return exec.RunResult{
+					Stdout:   mockedDockerImgId,
+					ExitCode: 0,
+				}, nil
+			})
+
+			result, err := docker.Build(
+				context.Background(),
+				cwd, dockerFile, "", "",
+				dockerContext, imageName,
+				nil, nil, nil,
+				tt.network, nil,
+			)
+
+			require.True(t, ran)
+			require.NoError(t, err)
+			require.Equal(t, mockedDockerImgId, result)
+		})
+	}
 }
 
 func Test_DockerTag(t *testing.T) {

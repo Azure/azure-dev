@@ -957,6 +957,11 @@
                         "type": "string"
                     }
                 },
+                "network": {
+                    "type": "string",
+                    "title": "Optional. The networking mode for RUN instructions during docker build",
+                    "description": "Sets the networking mode for RUN instructions during build. Passed as --network to docker build. For example, use 'host' to allow the build container to access the host network."
+                },
                 "remoteBuild": {
                     "type": "boolean",
                     "title": "Optional. Whether to build the image remotely",

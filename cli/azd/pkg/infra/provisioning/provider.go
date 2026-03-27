@@ -43,6 +43,10 @@ type Options struct {
 	// Provisioning options for each individually defined layer.
 	Layers []Options `yaml:"layers,omitempty"`
 
+	// Tags specifies custom Azure resource tags to apply to deployments.
+	// These are merged with built-in azd tags; built-in tags take precedence.
+	Tags map[string]string `yaml:"-"`
+
 	// Runtime options
 
 	// IgnoreDeploymentState when true, skips the deployment state check.

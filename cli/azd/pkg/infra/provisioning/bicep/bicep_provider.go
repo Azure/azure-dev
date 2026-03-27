@@ -678,6 +678,14 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		deploymentTags[azure.TagKeyAzdDeploymentStateParamHashName] = new(currentParamsHash)
 	}
 
+	// Merge user-specified custom tags from azure.yaml.
+	// Built-in azd tags (set above) take precedence over user tags.
+	for k, v := range p.options.Tags {
+		if _, exists := deploymentTags[k]; !exists {
+			deploymentTags[k] = new(v)
+		}
+	}
+
 	optionsMap, err := convert.ToMap(p.options)
 	if err != nil {
 		return nil, err

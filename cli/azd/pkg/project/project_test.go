@@ -1010,3 +1010,77 @@ func TestAdditionalPropertiesExtraction(t *testing.T) {
 		assert.Equal(t, 3, finalExtensionConfig.Retries) // Unchanged
 	})
 }
+
+func TestLoadProjectTagsPropagateToInfra(t *testing.T) {
+	const yamlContent = `
+name: test-proj
+tags:
+  environment: production
+  team: platform
+services:
+  web:
+    project: src/web
+    language: js
+    host: appservice
+`
+	dir := t.TempDir()
+	projectFile := filepath.Join(dir, "azure.yaml")
+	err := os.WriteFile(projectFile, []byte(yamlContent), osutil.PermissionFile)
+	require.NoError(t, err)
+
+	// Create the src/web directory so service resolution doesn't fail
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "src/web"), osutil.PermissionDirectory))
+
+	cfg, err := Load(t.Context(), projectFile)
+	require.NoError(t, err)
+
+	// Project-level tags should be set
+	require.Equal(t, "production", cfg.Tags["environment"])
+	require.Equal(t, "platform", cfg.Tags["team"])
+
+	// Tags should be propagated into the infra options
+	require.Equal(t, "production", cfg.Infra.Tags["environment"])
+	require.Equal(t, "platform", cfg.Infra.Tags["team"])
+}
+
+func TestLoadProjectTagsPropagateToLayers(t *testing.T) {
+	const yamlContent = `
+name: test-proj
+tags:
+  environment: production
+  team: platform
+infra:
+  provider: bicep
+  layers:
+    - name: network
+      path: infra/network
+      module: main
+    - name: compute
+      path: infra/compute
+      module: main
+services:
+  web:
+    project: src/web
+    language: js
+    host: appservice
+`
+	dir := t.TempDir()
+	projectFile := filepath.Join(dir, "azure.yaml")
+	err := os.WriteFile(projectFile, []byte(yamlContent), osutil.PermissionFile)
+	require.NoError(t, err)
+
+	// Create required directories
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "src/web"), osutil.PermissionDirectory))
+
+	cfg, err := Load(t.Context(), projectFile)
+	require.NoError(t, err)
+
+	// Each layer should have the project-level tags propagated
+	require.Len(t, cfg.Infra.Layers, 2)
+	for _, layer := range cfg.Infra.Layers {
+		require.Equal(t, "production", layer.Tags["environment"],
+			"layer %q should have project-level tag 'environment'", layer.Name)
+		require.Equal(t, "platform", layer.Tags["team"],
+			"layer %q should have project-level tag 'team'", layer.Name)
+	}
+}

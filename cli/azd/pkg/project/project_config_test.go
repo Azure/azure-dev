@@ -592,3 +592,69 @@ resources:
 	require.Equal(t, "FOO", cap.Env[0].Name)
 	require.Equal(t, "BAR", cap.Env[0].Value)
 }
+
+func TestProjectConfigTags(t *testing.T) {
+	tests := []struct {
+		name         string
+		yaml         string
+		expectedTags map[string]string
+	}{
+		{
+			name: "WithTags",
+			yaml: heredoc.Doc(`
+				name: test-proj
+				tags:
+				  environment: production
+				  team: platform
+				  cost-center: "12345"
+				services:
+				  web:
+				    project: src/web
+				    language: js
+				    host: appservice
+			`),
+			expectedTags: map[string]string{
+				"environment": "production",
+				"team":        "platform",
+				"cost-center": "12345",
+			},
+		},
+		{
+			name: "WithoutTags",
+			yaml: heredoc.Doc(`
+				name: test-proj
+				services:
+				  web:
+				    project: src/web
+				    language: js
+				    host: appservice
+			`),
+			expectedTags: nil,
+		},
+		{
+			name: "EmptyTags",
+			yaml: heredoc.Doc(`
+				name: test-proj
+				tags: {}
+				services:
+				  web:
+				    project: src/web
+				    language: js
+				    host: appservice
+			`),
+			expectedTags: map[string]string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(context.Background())
+			projectConfig, err := Parse(
+				*mockContext.Context, tt.yaml,
+			)
+			require.NoError(t, err)
+			require.NotNil(t, projectConfig)
+			require.Equal(t, tt.expectedTags, projectConfig.Tags)
+		})
+	}
+}

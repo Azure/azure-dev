@@ -1910,3 +1910,40 @@ func TestHelperEvalParamEnvSubst(t *testing.T) {
 	require.Contains(t, substResult.mappedEnvVars, "VAR2")
 	require.False(t, substResult.hasUnsetEnvVar)
 }
+
+func TestDeploymentTagMergePrecedence(t *testing.T) {
+	// Simulate the tag-merge logic from Deploy (lines 673-687 of
+	// bicep_provider.go).  Custom user tags should be included, but
+	// must never override the built-in azd tags.
+	envName := "my-env"
+	layerName := ""
+
+	// Built-in tags that azd always sets.
+	deploymentTags := map[string]*string{
+		azure.TagKeyAzdEnvName:   new(envName),
+		azure.TagKeyAzdLayerName: &layerName,
+	}
+
+	// User-specified tags: one non-conflicting, one colliding with
+	// the built-in azd-env-name tag.
+	customTags := map[string]string{
+		"team":                 "platform",
+		azure.TagKeyAzdEnvName: "should-not-override",
+	}
+
+	// Merge — same logic as Deploy().
+	for k, v := range customTags {
+		if _, exists := deploymentTags[k]; !exists {
+			deploymentTags[k] = new(v)
+		}
+	}
+
+	// Non-conflicting custom tag should be present.
+	require.NotNil(t, deploymentTags["team"])
+	require.Equal(t, "platform", *deploymentTags["team"])
+
+	// Built-in azd-env-name must NOT be overridden by user tag.
+	require.NotNil(t, deploymentTags[azure.TagKeyAzdEnvName])
+	require.Equal(t, envName, *deploymentTags[azure.TagKeyAzdEnvName],
+		"built-in azd-env-name tag must not be overridden by user-specified tags")
+}

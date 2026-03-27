@@ -41,6 +41,11 @@ type ProjectConfig struct {
 	Cloud             *cloud.Config              `yaml:"cloud,omitempty"`
 	Resources         map[string]*ResourceConfig `yaml:"resources,omitempty"`
 
+	// Tags specifies custom Azure resource tags to apply to deployments.
+	// These tags are merged with the default azd tags (e.g. azd-env-name).
+	// User-specified tags cannot override built-in azd tags.
+	Tags map[string]string `yaml:"tags,omitempty"`
+
 	// AdditionalProperties captures any unknown YAML fields for extension support
 	AdditionalProperties map[string]any `yaml:",inline"`
 

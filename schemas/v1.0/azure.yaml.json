@@ -35,6 +35,14 @@
                 }
             }
         },
+        "tags": {
+            "type": "object",
+            "title": "Custom Azure resource tags",
+            "description": "Optional. Custom Azure resource tags to apply to deployments. These tags are merged with the default azd tags (e.g. azd-env-name). Built-in azd tags take precedence and cannot be overridden.",
+            "additionalProperties": {
+                "type": "string"
+            }
+        },
         "infra": {
             "type": "object",
             "title": "The infrastructure configuration used for the application",

@@ -168,6 +168,33 @@ func Load(ctx context.Context, projectFilePath string) (*ProjectConfig, error) {
 
 	projectConfig.Path = filepath.Dir(projectFilePath)
 
+	// Propagate project-level tags into the infra options so that
+	// provisioning providers can apply them to deployments.
+	if len(projectConfig.Tags) > 0 {
+		if projectConfig.Infra.Tags == nil {
+			projectConfig.Infra.Tags = make(map[string]string)
+		}
+		for k, v := range projectConfig.Tags {
+			// Only set if not already specified at the infra level
+			if _, exists := projectConfig.Infra.Tags[k]; !exists {
+				projectConfig.Infra.Tags[k] = v
+			}
+		}
+
+		// Also propagate into each layer's options so layered
+		// deployments receive the same custom tags.
+		for i := range projectConfig.Infra.Layers {
+			if projectConfig.Infra.Layers[i].Tags == nil {
+				projectConfig.Infra.Layers[i].Tags = make(map[string]string)
+			}
+			for k, v := range projectConfig.Tags {
+				if _, exists := projectConfig.Infra.Layers[i].Tags[k]; !exists {
+					projectConfig.Infra.Layers[i].Tags[k] = v
+				}
+			}
+		}
+	}
+
 	provisioningOptions := provisioning.Options{}
 	mergo.Merge(&provisioningOptions, projectConfig.Infra)
 	mergo.Merge(&provisioningOptions, DefaultProvisioningOptions)

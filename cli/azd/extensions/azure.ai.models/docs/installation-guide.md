@@ -77,7 +77,7 @@ azd auth login
 
 ## Step 5: Use Custom Model Commands
 
-You can use the custom model commands by providing `--project-endpoint (-e)` and `--subscription (-s)` flags directly.
+You can use the custom model commands by providing `--project-endpoint` and `--subscription (-s)` flags directly.
 
 ### 5.1 List Custom Models
 

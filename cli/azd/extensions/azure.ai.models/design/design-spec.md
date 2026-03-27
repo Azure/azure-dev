@@ -482,7 +482,7 @@ Custom commands resolve the project endpoint using a 3-tier priority:
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                     Project Endpoint Resolution                             │
 │                                                                             │
-│   Priority 1: Explicit --project-endpoint (-e) flag                         │
+│   Priority 1: Explicit --project-endpoint flag                              │
 │              └─► Use directly, highest priority                             │
 │                                                                             │
 │   Priority 2: azd environment variables                                     │

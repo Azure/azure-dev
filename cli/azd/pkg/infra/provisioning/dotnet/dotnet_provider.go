@@ -108,19 +108,16 @@ func (p *DotNetProvider) State(ctx context.Context, options *provisioning.StateO
 }
 
 func (p *DotNetProvider) Deploy(ctx context.Context) (*provisioning.DeployResult, error) {
-	defer p.cleanupGeneratedBicep()
 	return p.bicepProvider.Deploy(ctx)
 }
 
 func (p *DotNetProvider) Preview(ctx context.Context) (*provisioning.DeployPreviewResult, error) {
-	defer p.cleanupGeneratedBicep()
 	return p.bicepProvider.Preview(ctx)
 }
 
 func (p *DotNetProvider) Destroy(
 	ctx context.Context, options provisioning.DestroyOptions,
 ) (*provisioning.DestroyResult, error) {
-	defer p.cleanupGeneratedBicep()
 	return p.bicepProvider.Destroy(ctx, options)
 }
 

@@ -204,7 +204,7 @@ func (p *DotNetProvider) compileCSharpToBicep(ctx context.Context, entryPoint st
 
 	// Run the C# entry point, passing the output directory and extra arguments.
 	// For .cs files this uses `dotnet run file.cs -- <outputDir> <extraArgs>` (dotnet 10+).
-	// For project directories this uses `dotnet run --project <dir> -- <outputDir> <extraArgs>`.
+	// For project directories or .csproj files this uses `dotnet run --project <project> -- <outputDir> <extraArgs>`.
 	result, err := p.dotnetCli.Run(ctx, entryPoint, runArgs, nil)
 	if err != nil {
 		os.RemoveAll(tempDir)

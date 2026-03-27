@@ -150,35 +150,32 @@ func isStandardMSIInstall() error {
 	return nil
 }
 
+func escapeForPSSingleQuote(s string) string {
+	return strings.ReplaceAll(s, "'", "''")
+}
+
 // buildInstallScriptArgs constructs the PowerShell arguments to run install-azd.ps1.
-//
-// For the stable channel the script is piped directly through Invoke-Expression.
-// No named parameters are needed because the default MSI install location is correct.
-//
-// For other channels (e.g. daily) the script must be downloaded to a temp directory
-// first, because Invoke-Expression from a pipe does not support passing named
-// parameters such as -Version or -InstallFolder to the script.
-//
+// For all channels, the script is downloaded to a temp directory.
+// For daily channel, additional parameters (-Version, -InstallFolder) are passed
+// to the script. The install folder is escaped for PowerShell single-quoted strings
+// to handle paths containing apostrophes (e.g. O'Connor).
 // Returns the arguments to pass to the "powershell" command.
 func buildInstallScriptArgs(channel Channel) []string {
+	var scriptArgs string
 	switch channel {
 	case ChannelDaily:
-		script := fmt.Sprintf(
-			"$tmpScript = Join-Path $env:TEMP 'azd-install.ps1'; "+
-				"Invoke-RestMethod '%s' -OutFile $tmpScript; "+
-				"& $tmpScript -Version 'daily' -InstallFolder '%s'; "+
-				"Remove-Item $tmpScript -Force -ErrorAction SilentlyContinue",
-			installScriptURL, expectedPerUserInstallDir(),
-		)
-		return []string{"-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script}
+		scriptArgs = fmt.Sprintf(" -Version 'daily' -InstallFolder '%s'",
+			escapeForPSSingleQuote(expectedPerUserInstallDir()))
 	default:
-		script := fmt.Sprintf(
-			"$tmpScript = Join-Path $env:TEMP 'azd-install.ps1'; "+
-				"Invoke-RestMethod '%s' -OutFile $tmpScript; "+
-				"& $tmpScript; "+
-				"Remove-Item $tmpScript -Force -ErrorAction SilentlyContinue",
-			installScriptURL,
-		)
-		return []string{"-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script}
+		scriptArgs = " -Version 'stable'"
 	}
+
+	script := fmt.Sprintf(
+		"$tmpScript = Join-Path $env:TEMP 'azd-install.ps1'; "+
+			"Invoke-RestMethod '%s' -OutFile $tmpScript; "+
+			"& $tmpScript%s; "+
+			"Remove-Item $tmpScript -Force -ErrorAction SilentlyContinue",
+		installScriptURL, scriptArgs,
+	)
+	return []string{"-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script}
 }

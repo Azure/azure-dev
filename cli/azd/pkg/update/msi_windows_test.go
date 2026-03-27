@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
 	"github.com/stretchr/testify/require"
 )
@@ -61,12 +62,11 @@ func TestBuildInstallScriptArgs(t *testing.T) {
 				"-ExecutionPolicy", "Bypass",
 				"-Command",
 				installScriptURL,
-				"Invoke-Expression",
+				"-Version 'stable'",
+				"Remove-Item",
 			},
 			wantNotContains: []string{
-				"-Version",
 				"-InstallFolder",
-				"Remove-Item",
 			},
 		},
 		{
@@ -103,6 +103,36 @@ func TestBuildInstallScriptArgs(t *testing.T) {
 	}
 }
 
+func TestEscapeForPSSingleQuote(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"no quotes", `C:\Users\testuser`, `C:\Users\testuser`},
+		{"single apostrophe", `C:\Users\O'Connor`, `C:\Users\O''Connor`},
+		{"multiple apostrophes", `C:\it's\a'path`, `C:\it''s\a''path`},
+		{"empty string", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, escapeForPSSingleQuote(tt.input))
+		})
+	}
+}
+
+func TestBuildInstallScriptArgs_ApostropheInPath(t *testing.T) {
+	t.Setenv("LOCALAPPDATA", `C:\Users\O'Connor\AppData\Local`)
+
+	args := buildInstallScriptArgs(ChannelDaily)
+	script := args[4]
+
+	// The apostrophe must be doubled for a valid PowerShell single-quoted string.
+	require.Contains(t, script, `O''Connor`)
+	// Must NOT contain unescaped apostrophe inside the -InstallFolder value.
+	require.NotContains(t, script, `-InstallFolder 'C:\Users\O'Connor`)
+}
+
 func TestBuildInstallScriptArgs_Structure(t *testing.T) {
 	t.Setenv("LOCALAPPDATA", `C:\Users\testuser\AppData\Local`)
 	expectedDir := expectedPerUserInstallDir()
@@ -115,14 +145,13 @@ func TestBuildInstallScriptArgs_Structure(t *testing.T) {
 	require.Equal(t, "Bypass", args[2])
 	require.Equal(t, "-Command", args[3])
 
-	// Stable pipes directly — no temp file download
+	// Stable downloads to temp file — passes -Version 'stable' explicitly
 	script := args[4]
 	require.Contains(t, script, "Invoke-RestMethod")
 	require.Contains(t, script, installScriptURL)
-	require.Contains(t, script, "Invoke-Expression")
+	require.Contains(t, script, "Remove-Item")
+	require.Contains(t, script, "-Version 'stable'")
 	require.NotContains(t, script, "-InstallFolder")
-	require.NotContains(t, script, "Remove-Item")
-	require.NotContains(t, script, "-Version")
 
 	// Daily downloads to temp file with -Version 'daily'
 	argsDaily := buildInstallScriptArgs(ChannelDaily)
@@ -252,4 +281,58 @@ func TestUpdateViaMSI_NonStandardInstallBlocks(t *testing.T) {
 	var updateErr *UpdateError
 	require.True(t, errors.As(err, &updateErr))
 	require.Equal(t, CodeNonStandardInstall, updateErr.Code)
+}
+
+// TestUpdateViaMSI_InvokesPowerShellWithCorrectArgs verifies that updateViaMSI calls
+// "powershell" with the arguments produced by buildInstallScriptArgs.
+func TestUpdateViaMSI_InvokesPowerShellWithCorrectArgs(t *testing.T) {
+	// Point LOCALAPPDATA at the test binary so isStandardMSIInstall passes.
+	exePath, err := os.Executable()
+	require.NoError(t, err)
+	exePath, err = filepath.EvalSymlinks(exePath)
+	require.NoError(t, err)
+
+	actualDir := filepath.Dir(exePath)
+	suffix := filepath.Join("Programs", "Azure Dev CLI")
+	if !strings.HasSuffix(strings.ToLower(filepath.Clean(actualDir)), strings.ToLower(suffix)) {
+		t.Skipf("test binary dir %q does not end with %q; skipping", actualDir, suffix)
+	}
+
+	localAppData := strings.TrimSuffix(filepath.Clean(actualDir), filepath.Clean(suffix))
+	localAppData = strings.TrimRight(localAppData, string(filepath.Separator))
+	t.Setenv("LOCALAPPDATA", localAppData)
+
+	for _, channel := range []Channel{ChannelStable, ChannelDaily} {
+		t.Run(string(channel), func(t *testing.T) {
+			var capturedArgs exec.RunArgs
+			captured := false
+
+			mockRunner := mockexec.NewMockCommandRunner()
+			mockRunner.When(func(args exec.RunArgs, command string) bool {
+				return strings.HasPrefix(command, "powershell")
+			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				capturedArgs = args
+				captured = true
+				return exec.NewRunResult(0, "", ""), nil
+			})
+
+			m := NewManager(mockRunner, nil)
+			var buf strings.Builder
+			cfg := &UpdateConfig{Channel: channel}
+
+			// updateViaMSI will likely fail at backup/hash stage in test, but
+			// if the mock is reached we can validate the invocation.
+			_ = m.updateViaMSI(context.Background(), cfg, &buf)
+
+			if !captured {
+				t.Skip("powershell mock was not reached (backupCurrentExe failed in test env)")
+			}
+
+			require.Equal(t, "powershell", capturedArgs.Cmd, "expected powershell executable")
+
+			// Verify args match buildInstallScriptArgs output.
+			expectedArgs := buildInstallScriptArgs(channel)
+			require.Equal(t, expectedArgs, capturedArgs.Args)
+		})
+	}
 }

@@ -140,8 +140,8 @@ func (p *DotNetProvider) cleanupGeneratedBicep() {
 // It supports:
 //   - A direct .cs file path (dotnet 10+ file-based app)
 //   - A directory containing a single .cs file
-//   - A directory containing a .csproj/.fsproj/.vbproj project
-//   - A direct .csproj/.fsproj/.vbproj file path
+//   - A directory containing a .csproj project
+//   - A direct .csproj file path
 func (p *DotNetProvider) resolveEntryPoint(infraPath string) (string, error) {
 	info, err := os.Stat(infraPath)
 	if err != nil {

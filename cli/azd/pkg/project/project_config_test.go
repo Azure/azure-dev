@@ -55,6 +55,10 @@ func TestProjectConfigParse_Invalid(t *testing.T) {
 					azd: notarange
 			`),
 		},
+		{
+			name:          "EmptyServiceDefinition",
+			projectConfig: "name: test-empty-service\nservices:\n  web:\n",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -63,6 +67,15 @@ func TestProjectConfigParse_Invalid(t *testing.T) {
 			require.Error(t, err)
 		})
 	}
+}
+
+func TestProjectConfigParse_EmptyServiceReturnsError(t *testing.T) {
+	projectYaml := "name: test-empty-service\nservices:\n  web:\n"
+	ctx := t.Context()
+	_, err := Parse(ctx, projectYaml)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "web")
+	require.Contains(t, err.Error(), "empty configuration")
 }
 
 func TestProjectConfigDefaults(t *testing.T) {

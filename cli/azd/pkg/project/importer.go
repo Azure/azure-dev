@@ -55,6 +55,9 @@ func (im *ImportManager) ServiceStable(ctx context.Context, projectConfig *Proje
 	allServices := make(map[string]*ServiceConfig)
 
 	for name, svcConfig := range projectConfig.Services {
+		if svcConfig == nil {
+			continue
+		}
 		if svcConfig.Language == ServiceLanguageDotNet {
 			if canImport, err := im.dotNetImporter.CanImport(ctx, svcConfig.Path()); canImport {
 				if len(projectConfig.Services) != 1 {
@@ -267,6 +270,9 @@ func (im *ImportManager) validateServiceDependencies(services []*ServiceConfig, 
 // HasAppHost returns true when there is one AppHost (Aspire) in the project.
 func (im *ImportManager) HasAppHost(ctx context.Context, projectConfig *ProjectConfig) bool {
 	for _, svcConfig := range projectConfig.Services {
+		if svcConfig == nil {
+			continue
+		}
 		if svcConfig.Language == ServiceLanguageDotNet {
 			if canImport, err := im.dotNetImporter.CanImport(ctx, svcConfig.Path()); canImport {
 				return true
@@ -329,6 +335,9 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 
 	// Temp infra from AppHost
 	for _, svcConfig := range projectConfig.Services {
+		if svcConfig == nil {
+			continue
+		}
 		if svcConfig.Language == ServiceLanguageDotNet {
 			if canImport, err := im.dotNetImporter.CanImport(ctx, svcConfig.Path()); canImport {
 				if len(projectConfig.Services) != 1 {
@@ -425,6 +434,9 @@ func pathHasModule(path, module string) (bool, error) {
 // rooted at the project directory.
 func (im *ImportManager) GenerateAllInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (fs.FS, error) {
 	for _, svcConfig := range projectConfig.Services {
+		if svcConfig == nil {
+			continue
+		}
 		if svcConfig.Language == ServiceLanguageDotNet {
 			if canImport, err := im.dotNetImporter.CanImport(ctx, svcConfig.Path()); canImport {
 				if len(projectConfig.Services) != 1 {

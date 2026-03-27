@@ -173,7 +173,10 @@ func buildInstallScriptArgs(channel Channel) []string {
 		return []string{"-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script}
 	default:
 		script := fmt.Sprintf(
-			"Invoke-RestMethod '%s' | Invoke-Expression",
+			"$tmpScript = Join-Path $env:TEMP 'azd-install.ps1'; "+
+				"Invoke-RestMethod '%s' -OutFile $tmpScript; "+
+				"& $tmpScript; "+
+				"Remove-Item $tmpScript -Force -ErrorAction SilentlyContinue",
 			installScriptURL,
 		)
 		return []string{"-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script}

@@ -100,7 +100,7 @@ func (cli *Cli) SdkVersion(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("parsing dotnet version: %w", err)
 	}
-	return int(dotnetSemver.Major), nil
+	return int(dotnetSemver.Major), nil //nolint:gosec // SDK major version will never overflow int
 }
 
 func (cli *Cli) Restore(ctx context.Context, project string, env []string) error {

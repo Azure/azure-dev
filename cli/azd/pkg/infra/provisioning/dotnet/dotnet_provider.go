@@ -208,7 +208,9 @@ func (p *DotNetProvider) compileCSharpToBicep(ctx context.Context, entryPoint st
 	result, err := p.dotnetCli.Run(ctx, entryPoint, runArgs, nil)
 	if err != nil {
 		os.RemoveAll(tempDir)
-		return "", fmt.Errorf("running C# infrastructure project: %w\nStdout: %s\nStderr: %s", err, result.Stdout, result.Stderr)
+		return "", fmt.Errorf(
+			"running C# infrastructure project: %w\nStdout: %s\nStderr: %s",
+			err, result.Stdout, result.Stderr)
 	}
 
 	// Verify that at least one .bicep file was generated

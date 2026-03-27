@@ -86,6 +86,21 @@ const (
 	CodeInvalidFilePath  = "invalid_file_path"
 )
 
+// Error codes for toolbox operations.
+const (
+	CodeToolboxNotFound       = "toolbox_not_found"
+	CodeInvalidToolboxPayload = "invalid_toolbox_payload"
+)
+
+// Operation names for toolbox [ServiceFromAzure] errors.
+const (
+	OpListToolboxes  = "list_toolboxes"
+	OpGetToolbox     = "get_toolbox"
+	OpCreateToolbox  = "create_toolbox"
+	OpUpdateToolbox  = "update_toolbox"
+	OpDeleteToolbox  = "delete_toolbox"
+)
+
 // Error codes commonly used for internal errors.
 //
 // These are usually paired with [Internal] for unexpected failures

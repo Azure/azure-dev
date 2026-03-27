@@ -170,6 +170,12 @@ func ExtractResourceDefinitions(manifestYamlContent []byte) ([]any, error) {
 				return nil, fmt.Errorf("failed to unmarshal to ToolResource: %w", err)
 			}
 			resourceDefs = append(resourceDefs, toolDef)
+		case ResourceKindToolbox:
+			var toolboxDef ToolboxResource
+			if err := yaml.Unmarshal(resourceBytes, &toolboxDef); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal to ToolboxResource: %w", err)
+			}
+			resourceDefs = append(resourceDefs, toolboxDef)
 		default:
 			return nil, fmt.Errorf("unrecognized resource kind: %s", resourceDef.Kind)
 		}

@@ -60,7 +60,7 @@ When you run `azd provision` (or `azd up`), the dotnet provider:
 
 1. **Resolves** the C# entry point (a `.cs` file or `.csproj` project in the `infra.path` directory)
 2. **Runs** `dotnet run <file.cs> -- <temp-dir>` to compile the C# code
-3. **Generates** Bicep files into a temporary directory via `infrastructure.Build().Save()`
+3. **Generates** Bicep files into a temporary directory by calling `Build().Save(...)` on the `Infrastructure` instance
 4. **Delegates** to the built-in Bicep provider for ARM deployment, parameter prompting, state tracking, and destruction
 
 Bicep is never exposed to the user—it is a transparent intermediate format.
@@ -117,7 +117,7 @@ For complex scenarios with multiple files, use a traditional `.csproj`:
 Your C# program must:
 
 1. **Accept an output directory** as the first command-line argument (`args[0]`)
-2. **Write `.bicep` files** to that directory (typically via `infrastructure.Build().Save(outputDir)`)
+2. **Write `.bicep` files** to that directory (typically via `infra.Build().Save(outputDir)`)
 3. **Generate a `main.bicep`** file (or the name matching `infra.module`, which defaults to `main`)
 
 ## Passing Parameters

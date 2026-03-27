@@ -6,6 +6,7 @@ Usage
 
 Flags
     -e, --environment string 	: The name of the environment to use.
+        --export             	: Output in shell-ready format (export KEY="VALUE").
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

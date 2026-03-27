@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -1263,17 +1264,32 @@ func newEnvGetValuesCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "get-values",
 		Short: "Get all environment values.",
-		Args:  cobra.NoArgs,
+		Long: "Get all environment values.\n\n" +
+			"Use --export to output in shell-ready format " +
+			"(export KEY=\"VALUE\").\n" +
+			"This enables shell integration:\n\n" +
+			"  eval \"$(azd env get-values --export)\"",
+		Args: cobra.NoArgs,
 	}
 }
 
 type envGetValuesFlags struct {
 	internal.EnvFlag
 	global *internal.GlobalCommandOptions
+	export bool
 }
 
-func (eg *envGetValuesFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+func (eg *envGetValuesFlags) Bind(
+	local *pflag.FlagSet,
+	global *internal.GlobalCommandOptions,
+) {
 	eg.EnvFlag.Bind(local, global)
+	local.BoolVar(
+		&eg.export,
+		"export",
+		false,
+		"Output in shell-ready format (export KEY=\"VALUE\").",
+	)
 	eg.global = global
 }
 
@@ -1305,6 +1321,13 @@ func newEnvGetValuesAction(
 }
 
 func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	if eg.flags.export && eg.formatter.Kind() != output.EnvVarsFormat {
+		return nil, fmt.Errorf(
+			"--export and --output are mutually exclusive: %w",
+			internal.ErrInvalidFlagCombination,
+		)
+	}
+
 	name, err := eg.azdCtx.GetDefaultEnvironmentName()
 	if err != nil {
 		return nil, err
@@ -1338,7 +1361,40 @@ func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, e
 		return nil, fmt.Errorf("ensuring environment exists: %w", err)
 	}
 
+	if eg.flags.export {
+		return nil, writeExportedEnv(
+			env.Dotenv(), eg.writer,
+		)
+	}
+
 	return nil, eg.formatter.Format(env.Dotenv(), eg.writer, nil)
+}
+
+// writeExportedEnv writes environment variables in shell-ready
+// format (export KEY="VALUE") to the given writer. Values are
+// double-quoted with embedded backslashes, double quotes, dollar
+// signs, backticks, newlines, and carriage returns escaped.
+func writeExportedEnv(
+	values map[string]string,
+	writer io.Writer,
+) error {
+	keys := slices.Sorted(maps.Keys(values))
+	for _, key := range keys {
+		val := values[key]
+		escaped := strings.NewReplacer(
+			`\`, `\\`,
+			`"`, `\"`,
+			`$`, `\$`,
+			"`", "\\`",
+			"\n", `\n`,
+			"\r", `\r`,
+		).Replace(val)
+		line := fmt.Sprintf("export %s=\"%s\"\n", key, escaped)
+		if _, err := io.WriteString(writer, line); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func newEnvGetValueFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *envGetValueFlags {

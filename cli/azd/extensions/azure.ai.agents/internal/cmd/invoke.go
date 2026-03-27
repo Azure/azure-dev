@@ -11,10 +11,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -24,6 +26,7 @@ import (
 
 type invokeFlags struct {
 	message         string
+	inputFile       string
 	local           bool
 	name            string
 	port            int
@@ -51,6 +54,10 @@ argument is provided it is treated as the message and the agent name
 is auto-detected from azure.yaml. With two arguments the first is the
 agent name and the second is the message.
 
+Use --input-file/-f to send the contents of a file as the request body
+instead of a positional message argument. This is useful for structured
+or large payloads with the invocations protocol.
+
 Use --local to target a locally running agent (started via 'azd ai agent run')
 instead of Foundry.
 
@@ -62,25 +69,58 @@ session automatically. Pass --new-session to force a reset.`,
   # Invoke a specific remote agent by name
   azd ai agent invoke my-agent "Hello!"
 
+  # Invoke with a file as the request body
+  azd ai agent invoke -f request.json
+
+  # Invoke a named agent with a file body
+  azd ai agent invoke my-agent -f request.json
+
   # Invoke locally (agent must be running via 'azd ai agent run')
   azd ai agent invoke --local "Hello!"
 
   # Start a new session (discard conversation history)
   azd ai agent invoke --new-session "Hello!"`,
-		Args: cobra.RangeArgs(1, 2),
+		Args: cobra.RangeArgs(0, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			setupDebugLogging(cmd.Flags())
 
-			if len(args) == 2 {
+			switch len(args) {
+			case 2:
 				flags.name = args[0]
 				flags.message = args[1]
-			} else {
-				flags.message = args[0]
+			case 1:
+				// Single arg could be a name (when -f is used) or a message
+				if flags.inputFile != "" {
+					flags.name = args[0]
+				} else {
+					flags.message = args[0]
+				}
+			case 0:
+				// Only valid when -f is provided
+			}
+
+			if flags.inputFile != "" && flags.message != "" {
+				return exterrors.Validation(
+					exterrors.CodeInvalidParameter,
+					"cannot use --input-file and a message argument together",
+					"provide either a message argument or --input-file, not both",
+				)
+			}
+			if flags.inputFile == "" && flags.message == "" {
+				return exterrors.Validation(
+					exterrors.CodeInvalidParameter,
+					"a message argument or --input-file is required",
+					"provide a message as a positional argument, or use --input-file/-f to send a file",
+				)
 			}
 
 			if flags.name != "" && flags.local {
-				return fmt.Errorf("cannot use --local with a named agent; named agents are always invoked remotely on Foundry")
+				return exterrors.Validation(
+					exterrors.CodeInvalidParameter,
+					"cannot use --local with a named agent; named agents are always invoked remotely on Foundry",
+					"omit the agent name for local invocation, or remove --local for remote",
+				)
 			}
 
 			action := &InvokeAction{flags: flags}
@@ -89,6 +129,7 @@ session automatically. Pass --new-session to force a reset.`,
 	}
 
 	cmd.Flags().BoolVarP(&flags.local, "local", "l", false, "Invoke on localhost instead of Foundry")
+	cmd.Flags().StringVarP(&flags.inputFile, "input-file", "f", "", "Path to a file whose contents are sent as the request body")
 	cmd.Flags().IntVar(&flags.port, "port", DefaultPort, "Local server port")
 	cmd.Flags().IntVarP(&flags.timeout, "timeout", "t", 120, "Request timeout in seconds (0 for no timeout)")
 	cmd.Flags().StringVarP(&flags.session, "session", "s", "", "Explicit session ID override")
@@ -104,18 +145,18 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 		protocol := a.resolveLocalProtocol(ctx)
 		switch protocol {
 		case agent_api.AgentProtocolInvocations:
-			return a.invokeLocalInvocations(ctx)
+			return a.invocationsLocal(ctx)
 		default:
-			return a.invokeLocal(ctx)
+			return a.responsesLocal(ctx)
 		}
 	}
 
 	protocol := a.resolveRemoteProtocol(ctx)
 	switch protocol {
 	case agent_api.AgentProtocolInvocations:
-		return a.invokeRemoteInvocations(ctx)
+		return a.invocationsRemote(ctx)
 	default:
-		return a.invokeRemote(ctx)
+		return a.responsesRemote(ctx)
 	}
 }
 
@@ -148,17 +189,37 @@ func (a *InvokeAction) httpTimeout() time.Duration {
 	return time.Duration(a.flags.timeout) * time.Second
 }
 
-func (a *InvokeAction) invokeLocal(ctx context.Context) error {
+// resolveBody returns the request body for invoke calls.
+// When --input-file is set, the file contents are returned; otherwise the message string is used.
+func (a *InvokeAction) resolveBody() ([]byte, string, error) {
+	if a.flags.inputFile != "" {
+		//nolint:gosec // G304: inputFile is a user-provided CLI flag
+		data, err := os.ReadFile(a.flags.inputFile)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to read input file %q: %w", a.flags.inputFile, err)
+		}
+		return data, fmt.Sprintf("(from file %s)", a.flags.inputFile), nil
+	}
+	return []byte(a.flags.message), fmt.Sprintf("%q", a.flags.message), nil
+}
+
+func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 	port := a.flags.port
-	msg := a.flags.message
+
+	body, bodyLabel, err := a.resolveBody()
+	if err != nil {
+		return err
+	}
+
+	msg := string(body)
 
 	fmt.Printf("Target:  localhost:%d (local)\n", port)
-	fmt.Printf("Message: %q\n\n", msg)
+	fmt.Printf("Message: %s\n\n", bodyLabel)
 
-	body := map[string]any{
+	reqBody := map[string]any{
 		"input": msg,
 	}
-	payload, err := json.Marshal(body)
+	payload, err := json.Marshal(reqBody)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
@@ -200,7 +261,7 @@ func (a *InvokeAction) invokeLocal(ctx context.Context) error {
 	return printAgentResponse(result, "local")
 }
 
-func (a *InvokeAction) invokeRemote(ctx context.Context) error {
+func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
 		return fmt.Errorf("failed to create azd client: %w", err)
@@ -225,10 +286,15 @@ func (a *InvokeAction) invokeRemote(ctx context.Context) error {
 		return err
 	}
 
-	msg := a.flags.message
+	body, bodyLabel, err := a.resolveBody()
+	if err != nil {
+		return err
+	}
+
+	msg := string(body)
 
 	// Build request body — uses streaming to receive the full agent response.
-	body := map[string]any{
+	reqBody := map[string]any{
 		"input": msg,
 		"agent": map[string]string{
 			"name": name,
@@ -242,7 +308,7 @@ func (a *InvokeAction) invokeRemote(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	body["session_id"] = sid
+	reqBody["session_id"] = sid
 
 	// Acquire credential and token — used for both conversation creation and the invoke request
 	credential, err := newAgentCredential()
@@ -270,15 +336,15 @@ func (a *InvokeAction) invokeRemote(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	body["conversation"] = map[string]string{"id": convID}
+	reqBody["conversation"] = map[string]string{"id": convID}
 
 	fmt.Printf("Agent:        %s (remote)\n", name)
-	fmt.Printf("Message:      %q\n", msg)
+	fmt.Printf("Message:      %s\n", bodyLabel)
 	fmt.Printf("Session:      %s\n", sid)
 	fmt.Printf("Conversation: %s\n", convID)
 	fmt.Println()
 
-	payload, err := json.Marshal(body)
+	payload, err := json.Marshal(reqBody)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
@@ -312,14 +378,18 @@ func (a *InvokeAction) invokeRemote(ctx context.Context) error {
 	return readSSEStream(resp.Body, name)
 }
 
-// invokeLocalInvocations sends the user's message to a locally running agent using
+// invocationsLocal sends the user's message to a locally running agent using
 // the invocations protocol (POST /invocations).
-func (a *InvokeAction) invokeLocalInvocations(ctx context.Context) error {
+func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 	port := a.flags.port
-	msg := a.flags.message
+
+	body, bodyLabel, err := a.resolveBody()
+	if err != nil {
+		return err
+	}
 
 	fmt.Printf("Target:   localhost:%d (local, invocations protocol)\n", port)
-	fmt.Printf("Message:  %q\n\n", msg)
+	fmt.Printf("Input:    %s\n\n", bodyLabel)
 
 	url := fmt.Sprintf("http://localhost:%d/invocations", port)
 
@@ -328,7 +398,7 @@ func (a *InvokeAction) invokeLocalInvocations(ctx context.Context) error {
 		url += "?agent_session_id=" + sid
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(msg))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -347,9 +417,9 @@ func (a *InvokeAction) invokeLocalInvocations(ctx context.Context) error {
 	return handleInvocationResponse(resp, "", "", "local", a.httpTimeout())
 }
 
-// invokeRemoteInvocations sends the user's message to Foundry using
+// invocationsRemote sends the user's message to Foundry using
 // the invocations protocol (POST /agents/{name}/versions/{version}/invocations).
-func (a *InvokeAction) invokeRemoteInvocations(ctx context.Context) error {
+func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
 		return fmt.Errorf("failed to create azd client: %w", err)
@@ -384,7 +454,10 @@ func (a *InvokeAction) invokeRemoteInvocations(ctx context.Context) error {
 		return err
 	}
 
-	msg := a.flags.message
+	body, bodyLabel, err := a.resolveBody()
+	if err != nil {
+		return err
+	}
 
 	// Session ID — routes to the same container instance
 	sid, err := resolveSessionID(ctx, azdClient, name, a.flags.session, a.flags.newSession)
@@ -407,7 +480,7 @@ func (a *InvokeAction) invokeRemoteInvocations(ctx context.Context) error {
 
 	fmt.Printf("Agent:    %s (remote, invocations protocol)\n", name)
 	fmt.Printf("Version:  %s\n", version)
-	fmt.Printf("Message:  %q\n", msg)
+	fmt.Printf("Input:    %s\n", bodyLabel)
 	fmt.Printf("Session:  %s\n\n", sid)
 
 	url := fmt.Sprintf(
@@ -415,7 +488,7 @@ func (a *InvokeAction) invokeRemoteInvocations(ctx context.Context) error {
 		endpoint, name, version, DefaultAgentAPIVersion, sid,
 	)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(msg))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}

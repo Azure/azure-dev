@@ -21,6 +21,7 @@ const (
 	CodeInvalidServiceConfig      = "invalid_service_config"
 	CodeInvalidAgentRequest       = "invalid_agent_request"
 	CodeInvalidSessionId          = "invalid_session_id"
+	CodeInvalidParameter          = "invalid_parameter"
 	CodeUnsupportedHost           = "unsupported_host"
 	CodeUnsupportedAgentKind      = "unsupported_agent_kind"
 	CodeMissingAgentKind          = "missing_agent_kind"

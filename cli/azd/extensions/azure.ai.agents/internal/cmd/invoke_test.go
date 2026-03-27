@@ -6,6 +6,8 @@ package cmd
 import (
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -457,4 +459,66 @@ func TestHandleInvocationResponse_Routing(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestResolveBody(t *testing.T) {
+	t.Parallel()
+
+	t.Run("message string", func(t *testing.T) {
+		t.Parallel()
+
+		action := &InvokeAction{
+			flags: &invokeFlags{message: "Hello!"},
+		}
+		body, label, err := action.resolveBody()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if string(body) != "Hello!" {
+			t.Errorf("body = %q, want %q", string(body), "Hello!")
+		}
+		if !strings.Contains(label, "Hello!") {
+			t.Errorf("label = %q, want it to contain the message", label)
+		}
+	})
+
+	t.Run("input file", func(t *testing.T) {
+		t.Parallel()
+
+		tmpDir := t.TempDir()
+		filePath := filepath.Join(tmpDir, "request.json")
+		content := `{"task": "summarize", "text": "long text..."}`
+		if err := os.WriteFile(filePath, []byte(content), 0600); err != nil {
+			t.Fatalf("failed to write temp file: %v", err)
+		}
+
+		action := &InvokeAction{
+			flags: &invokeFlags{inputFile: filePath},
+		}
+		body, label, err := action.resolveBody()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if string(body) != content {
+			t.Errorf("body = %q, want %q", string(body), content)
+		}
+		if !strings.Contains(label, "request.json") {
+			t.Errorf("label = %q, want it to contain the filename", label)
+		}
+	})
+
+	t.Run("missing file returns error", func(t *testing.T) {
+		t.Parallel()
+
+		action := &InvokeAction{
+			flags: &invokeFlags{inputFile: "/nonexistent/path/file.json"},
+		}
+		_, _, err := action.resolveBody()
+		if err == nil {
+			t.Fatal("expected error for missing file, got nil")
+		}
+		if !strings.Contains(err.Error(), "failed to read input file") {
+			t.Errorf("error = %q, want it to mention failed to read", err.Error())
+		}
+	})
 }

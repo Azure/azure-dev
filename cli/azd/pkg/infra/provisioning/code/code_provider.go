@@ -11,8 +11,8 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
-	codeDotnet "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/code/dotnet"
 	infraBicep "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
+	codeDotnet "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/code/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	toolDotnet "github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 )

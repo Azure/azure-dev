@@ -20,6 +20,7 @@ import (
 
 const (
 	DefaultAPIVersion = "2026-01-15-preview"
+	DatasetAPIVersion = "v1"
 	DataPlaneScope    = "https://ai.azure.com/.default"
 	ARMScope          = "https://management.azure.com/.default"
 )
@@ -74,9 +75,9 @@ func NewClient(projectEndpoint string, credential azcore.TokenCredential) (*Clie
 	}, nil
 }
 
-// doDataPlane executes an authenticated HTTP request against the data plane.
-func (c *Client) doDataPlane(ctx context.Context, method, path string, body interface{}, queryParams ...string) (*http.Response, error) {
-	reqURL := fmt.Sprintf("%s%s/%s?api-version=%s", c.baseURL, c.subPath, path, c.apiVersion)
+// doDataPlaneWithVersion executes an authenticated HTTP request with a specific API version.
+func (c *Client) doDataPlaneWithVersion(ctx context.Context, method, path, apiVersion string, body interface{}, queryParams ...string) (*http.Response, error) {
+	reqURL := fmt.Sprintf("%s%s/%s?api-version=%s", c.baseURL, c.subPath, path, apiVersion)
 	for i := 0; i+1 < len(queryParams); i += 2 {
 		reqURL += fmt.Sprintf("&%s=%s", queryParams[i], url.QueryEscape(queryParams[i+1]))
 	}
@@ -108,6 +109,11 @@ func (c *Client) doDataPlane(ctx context.Context, method, path string, body inte
 	}
 
 	return resp, nil
+}
+
+// doDataPlane executes an authenticated HTTP request against the data plane.
+func (c *Client) doDataPlane(ctx context.Context, method, path string, body interface{}, queryParams ...string) (*http.Response, error) {
+	return c.doDataPlaneWithVersion(ctx, method, path, c.apiVersion, body, queryParams...)
 }
 
 // addAuth adds a bearer token to the request.

@@ -25,7 +25,7 @@ func (c *Client) StartPendingUpload(
 		PendingUploadType: "BlobReference",
 	}
 
-	resp, err := c.doDataPlane(ctx, http.MethodPost, path, reqBody)
+	resp, err := c.doDataPlaneWithVersion(ctx, http.MethodPost, path, DatasetAPIVersion, reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start pending upload for dataset %s: %w", datasetName, err)
 	}
@@ -44,14 +44,14 @@ func (c *Client) StartPendingUpload(
 }
 
 // CreateOrUpdateDatasetVersion creates or updates a dataset version.
-// PATCH .../datasets/{name}/versions/{version}
+// PUT .../datasets/{name}/versions/{version}
 func (c *Client) CreateOrUpdateDatasetVersion(
 	ctx context.Context, datasetName, version string, dataset *models.DatasetVersion,
 ) (*models.DatasetVersion, error) {
 	path := fmt.Sprintf("datasets/%s/versions/%s",
 		url.PathEscape(datasetName), url.PathEscape(version))
 
-	resp, err := c.doDataPlane(ctx, http.MethodPatch, path, dataset)
+	resp, err := c.doDataPlaneWithVersion(ctx, http.MethodPut, path, DatasetAPIVersion, dataset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create/update dataset %s: %w", datasetName, err)
 	}
@@ -80,7 +80,7 @@ func (c *Client) GetDatasetVersion(
 	path := fmt.Sprintf("datasets/%s/versions/%s",
 		url.PathEscape(datasetName), url.PathEscape(version))
 
-	resp, err := c.doDataPlane(ctx, http.MethodGet, path, nil)
+	resp, err := c.doDataPlaneWithVersion(ctx, http.MethodGet, path, DatasetAPIVersion, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dataset %s: %w", datasetName, err)
 	}
@@ -111,7 +111,7 @@ func (c *Client) DeleteDatasetVersion(
 	path := fmt.Sprintf("datasets/%s/versions/%s",
 		url.PathEscape(datasetName), url.PathEscape(version))
 
-	resp, err := c.doDataPlane(ctx, http.MethodDelete, path, nil)
+	resp, err := c.doDataPlaneWithVersion(ctx, http.MethodDelete, path, DatasetAPIVersion, nil)
 	if err != nil {
 		return fmt.Errorf("failed to delete dataset %s: %w", datasetName, err)
 	}

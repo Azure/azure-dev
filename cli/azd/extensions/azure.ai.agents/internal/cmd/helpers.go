@@ -20,6 +20,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/google/uuid"
+	"go.yaml.in/yaml/v3"
 )
 
 const (
@@ -441,21 +442,16 @@ func resolveAgentProtocol(
 		return agent_api.AgentProtocolResponses
 	}
 
-	manifestPath := filepath.Join(project.Path, svc.RelativePath, "agent.yaml")
-	data, err := os.ReadFile(manifestPath) //nolint:gosec // G304: path constructed from azd project root
+	agentYamlPath := filepath.Join(project.Path, svc.RelativePath, "agent.yaml")
+	data, err := os.ReadFile(agentYamlPath) //nolint:gosec // G304: path constructed from azd project root
 	if err != nil {
 		return agent_api.AgentProtocolResponses
 	}
 
-	agentDef, err := agent_yaml.ExtractAgentDefinition(data)
-	if err != nil {
-		return agent_api.AgentProtocolResponses
+	var hosted agent_yaml.ContainerAgent
+	if err := yaml.Unmarshal(data, &hosted); err == nil && len(hosted.Protocols) > 0 {
+		return agent_api.AgentProtocol(hosted.Protocols[0].Protocol)
 	}
 
-	hosted, ok := agentDef.(agent_yaml.ContainerAgent)
-	if !ok || len(hosted.Protocols) == 0 {
-		return agent_api.AgentProtocolResponses
-	}
-
-	return agent_api.AgentProtocol(hosted.Protocols[0].Protocol)
+	return agent_api.AgentProtocolResponses
 }

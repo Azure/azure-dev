@@ -126,9 +126,10 @@ func collectConflicts(root, cmd *cobra.Command) []FlagConflict {
 		}
 		checked[f.Name] = struct{}{}
 
-		// Skip flags that are defined on the root's persistent flag set.
-		// Those are the SDK-provided azd-compatible flags and are intentional.
-		if rootFlag := root.PersistentFlags().Lookup(f.Name); rootFlag != nil {
+		// Skip flags that are the SDK-provided root persistent flags (same object).
+		// Use pointer equality so that a subcommand defining its own flag with the
+		// same name as a root persistent flag is still validated.
+		if rootFlag := root.PersistentFlags().Lookup(f.Name); rootFlag != nil && rootFlag == f {
 			return
 		}
 

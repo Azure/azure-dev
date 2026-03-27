@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -185,6 +186,19 @@ func kindEnvUpdate(ctx context.Context, azdClient *azdext.AzdClient, project *az
 	case string(agent_yaml.AgentKindHosted):
 		if err := setEnvVar(ctx, azdClient, envName, "ENABLE_HOSTED_AGENTS", "true"); err != nil {
 			return err
+		}
+
+		vnextValue := os.Getenv("enableHostedAgentVNext")
+		if vnextValue == "" {
+			azdEnv, err := loadAzdEnvironment(ctx, azdClient)
+			if err == nil {
+				vnextValue = azdEnv["enableHostedAgentVNext"]
+			}
+		}
+		if enabled, err := strconv.ParseBool(vnextValue); err == nil && enabled {
+			if err := setEnvVar(ctx, azdClient, envName, "ENABLE_CAPABILITY_HOST", "false"); err != nil {
+				return err
+			}
 		}
 	}
 

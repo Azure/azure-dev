@@ -266,8 +266,7 @@ Text input captures a single line of input from the user.
 
 **Initial state:**
 
-TODO: this is not shown as magenta in actual azd. confirm this. also i see that 'type' is not mentioned in azd either. 
-The prompt is displayed with a `[Type ? for hint]` helper in hi-magenta bold text, followed by ghost-text (secondary text color) as placeholder content.
+The prompt is displayed with a `[Type ? for hint]` helper in hi-blue bold text (via `WithHighLightFormat`), followed by ghost-text (secondary text color) as placeholder content.
 
 ```
 ? This captures a single line of input: [Type ? for hint] This is ghost-text
@@ -375,7 +374,7 @@ The CLI uses consistent color formatting through helper functions defined in [`c
 
 **Important**: Colors will appear differently depending on which terminal and theme (dark/light) the customer prefers. Always test output in both dark and light terminal themes.
 
-TODO: add something about using Magenta for agentic experience
+**Magenta for agentic experiences**: Agentic flows use magenta as their primary accent color (see [Agentic Flow UX](#agentic-flow-ux) below). Use `color.MagentaString()` for tool names, agent labels, status messages, and spinner characters in agent mode. Use `color.HiMagentaString()` for the agent badge (`🤖 [azd] Agent`), subagent names, and next-steps headers.
 
 #### Standard Color Helper Functions
 
@@ -535,6 +534,116 @@ There are three spinner variants based on terminal capability:
 - **Use the braille spinner** when showing a list of multiple concurrent operations
 - **Use `(•)` static indicator** for queued items that haven't started yet
 - **Keep status messages concise** — use the format `"<Verb>ing <Resource Type>: <resource-name>"`
+
+### Agentic Flow UX
+
+Any command or flow that involves **AI-driven or agentic operations** — such as `azd init` → "Use agent mode", `azd ai agent` commands, or future agentic features — should follow the UX patterns in this section. These patterns visually differentiate AI-driven operations from standard CLI output and should be applied consistently across all agentic experiences.
+
+#### When Agentic Flow Applies
+
+| Entry Point | Description |
+| --- | --- |
+| `azd init` → "Use agent mode" | Initializes a project using Copilot agent |
+| `azd ai agent *` commands | All agent subcommands follow agentic UX |
+
+#### Agentic Spinner
+
+The agentic spinner uses the **same default character set** as the standard spinner (`|`, `/`, `-`, `\`) rendered in **magenta** via `WithHintFormat()`, cycling at 250ms intervals. This is different from the bar-fill spinner (`|=======|`) used for standard provisioning/deployment progress.
+
+**Animation frames:**
+
+```
+|  →  /  →  -  →  \  →  (repeats)
+```
+
+The spinner characters appear in **magenta** while the accompanying text describes the current operation:
+
+<pre>
+<span style="color:magenta">/</span> Thinking...
+</pre>
+
+<pre>
+<span style="color:magenta">-</span> Running <span style="color:magenta">powershell</span> <span style="color:gray">azd env list...</span> <span style="color:gray">(5s)</span>
+</pre>
+
+| Scenario | Spinner Type | Reason |
+| --- | --- | --- |
+| Standard single operation (provisioning, creating a resource) | **Bar-fill** (`\|===   \|`) | Clear progress for deterministic operations |
+| Agentic flow (agent thinking, tool execution) | **Character rotation** (`\| / - \`) | Lightweight indicator for non-deterministic AI operations |
+| Multiple concurrent operations in a list | **Braille** (`⠋⠙⠹...`) | Compact for multi-line lists |
+
+#### Agentic Display Layers
+
+The agentic display uses a canvas with multiple visual layers rendered together:
+
+1. **Reasoning display** — Shows the last ~5 lines of the agent's reasoning in **gray** text above the spinner
+2. **Spinner** — The rotating `| / - \` character in **magenta** with a status message
+3. **Sub-detail lines** — Optional tree-structured lines below the spinner showing command arguments or file paths, using ASCII connectors (`├`, `└`)
+4. **Cancel hint** — A `Press Ctrl+C to cancel` message at the bottom
+
+**Example — agent thinking:**
+
+<pre>
+<span style="color:magenta">/</span> Thinking...
+</pre>
+
+**Example — tool execution with elapsed time:**
+
+<pre>
+<span style="color:magenta">\</span> Running <span style="color:magenta">powershell</span> <span style="color:gray">npm install... (12s)</span>
+</pre>
+
+**Example — tool completion:**
+
+<pre>
+<span style="color:green">✔︎</span> Ran <span style="color:magenta">powershell</span> <span style="color:gray">npm install</span>
+</pre>
+
+**Example — tool failure:**
+
+<pre>
+<span style="color:red">✖</span> <span style="color:magenta">powershell</span> <span style="color:gray">npm install</span>
+  <span style="color:gray">└ Error: ENOENT: no such file or directory</span>
+</pre>
+
+#### Agentic Hint Text
+
+The hint mechanism (`?` key) works the same way in agentic flow as in standard flow — pressing `?` reveals help text, pressing `Escape` dismisses it. In both cases, the hint label and message are rendered in **magenta** via `WithHintFormat()`:
+
+<pre>
+? Enter your environment name: <span style="color:magenta"><b>[Type ? for hint]</b></span> <span style="color:gray">my-env</span>
+<span style="color:magenta"><b>Hint:</b></span> <span style="color:magenta">The environment name is used to create a resource group and identify resources in Azure.</span>
+</pre>
+
+#### Agentic Status Messages
+
+Key status messages in agentic flow use magenta to reinforce the agentic context:
+
+<pre>
+<span style="color:magenta">Preparing application for Azure deployment...</span>
+</pre>
+
+<pre>
+<span style="color:magenta"><b>(->) Next steps:</b></span> Run <span style="color:blue">azd up</span> to provision and deploy your application.
+</pre>
+
+#### Color Summary for Agentic Flow
+
+| Element | Color | Function |
+| --- | --- | --- |
+| Spinner character (`\| / - \`) | Magenta | `WithHintFormat()` |
+| Tool names in spinner text | Magenta | `color.MagentaString()` |
+| Hint label and text | Magenta | `WithHintFormat()` |
+| Status messages (e.g., "Preparing...") | Magenta | `color.MagentaString()` |
+| Next-steps header | Hi-Magenta | `color.HiMagentaString()` |
+| Reasoning text | Gray | `color.HiBlackString()` |
+| Elapsed time / secondary info | Gray | `color.HiBlackString()` |
+| Tool success checkmark | Green | `color.GreenString()` |
+| Tool failure X | Red | `color.RedString()` |
+
+#### Implementation Reference
+
+The agentic display is implemented in [`internal/agent/display.go`](../../internal/agent/display.go) via the `AgentDisplay` struct, which subscribes to Copilot SDK session events and manages a multi-layer canvas for rendering.
 
 ## Testing Standards
 

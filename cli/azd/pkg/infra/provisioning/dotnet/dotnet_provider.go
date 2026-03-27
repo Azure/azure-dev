@@ -9,7 +9,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -65,7 +64,11 @@ func (p *DotNetProvider) Initialize(ctx context.Context, projectPath string, opt
 	// If the entry point is a single .cs file, verify .NET 10+ is installed (required for file-based apps)
 	if strings.HasSuffix(strings.ToLower(entryPoint), ".cs") {
 		sdkVersion, err := p.dotnetCli.SdkVersion(ctx)
-		if err == nil && sdkVersion < 10 {
+		if err != nil {
+			return fmt.Errorf(
+				"unable to determine .NET SDK version (required for single-file .cs entry points): %w", err)
+		}
+		if sdkVersion < 10 {
 			return fmt.Errorf(
 				"single-file .cs entry points require .NET 10 or later (found .NET %d). "+
 					"Either upgrade your .NET SDK or use a .csproj project instead",
@@ -148,14 +151,11 @@ func (p *DotNetProvider) resolveEntryPoint(infraPath string) (string, error) {
 	// Direct file reference
 	if !info.IsDir() {
 		ext := strings.ToLower(filepath.Ext(infraPath))
-		if ext == ".cs" {
-			return infraPath, nil
-		}
-		if slices.Contains(dotnet.DotNetProjectExtensions, ext) {
+		if ext == ".cs" || ext == ".csproj" {
 			return infraPath, nil
 		}
 		return "", fmt.Errorf(
-			"'%s' is not a valid .NET infrastructure file. Expected a .cs file or project file (.csproj, .fsproj, .vbproj)",
+			"'%s' is not a valid .NET infrastructure file. Expected a .cs file or .csproj project",
 			infraPath)
 	}
 
@@ -179,8 +179,8 @@ func (p *DotNetProvider) resolveEntryPoint(infraPath string) (string, error) {
 	}
 
 	return "", fmt.Errorf(
-		"no .cs or .NET project file found in '%s'. "+
-			"Provide a .cs file (dotnet 10+) or a project with .csproj for the 'dotnet' infrastructure provider",
+		"no .cs or .csproj file found in '%s'. "+
+			"Provide a .cs file (dotnet 10+) or a .csproj project for the 'dotnet' infrastructure provider",
 		infraPath)
 }
 

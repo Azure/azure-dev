@@ -92,7 +92,7 @@ func TestResolveEntryPoint_EmptyDirectory(t *testing.T) {
 	provider := &DotNetProvider{}
 	_, err := provider.resolveEntryPoint(tempDir)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "no .cs or .NET project file found")
+	require.Contains(t, err.Error(), "no .cs or .csproj file found")
 }
 
 func TestResolveEntryPoint_InvalidFileExtension(t *testing.T) {

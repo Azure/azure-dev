@@ -1,4 +1,4 @@
 name: dotnet-provisioning-params-test
 infra:
-  provider: dotnet
+  provider: code
   path: infra

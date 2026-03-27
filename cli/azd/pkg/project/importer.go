@@ -358,7 +358,7 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 }
 
 // detectProviderFromFiles scans the infra directory and detects the IaC provider
-// based on file extensions present. Returns an error if both bicep and terraform files exist.
+// based on file extensions present. Returns an error if multiple provider types are detected.
 func detectProviderFromFiles(infraPath string) (provisioning.ProviderKind, error) {
 	files, err := os.ReadDir(infraPath)
 	if err != nil {
@@ -370,6 +370,7 @@ func detectProviderFromFiles(infraPath string) (provisioning.ProviderKind, error
 
 	hasBicep := false
 	hasTerraform := false
+	hasCode := false
 
 	for _, file := range files {
 		if file.IsDir() {
@@ -382,25 +383,38 @@ func detectProviderFromFiles(infraPath string) (provisioning.ProviderKind, error
 			hasBicep = true
 		case ".tf", ".tfvars":
 			hasTerraform = true
+		case ".cs", ".csproj":
+			hasCode = true
 		}
+	}
 
-		// Early exit if both found
-		if hasBicep && hasTerraform {
-			break
-		}
+	// Count how many provider types were detected
+	detected := 0
+	if hasBicep {
+		detected++
+	}
+	if hasTerraform {
+		detected++
+	}
+	if hasCode {
+		detected++
+	}
+
+	if detected > 1 {
+		return provisioning.NotSpecified, fmt.Errorf(
+			"multiple infrastructure provider types detected in %s. "+
+				"Please specify 'infra.provider' in azure.yaml (supported: 'bicep', 'terraform', 'code')",
+			infraPath)
 	}
 
 	// Decision logic
 	switch {
-	case hasBicep && hasTerraform:
-		return provisioning.NotSpecified, fmt.Errorf(
-			"both Bicep and Terraform files detected in %s. "+
-				"Please specify 'infra.provider' in azure.yaml as either 'bicep' or 'terraform'",
-			infraPath)
 	case hasBicep:
 		return provisioning.Bicep, nil
 	case hasTerraform:
 		return provisioning.Terraform, nil
+	case hasCode:
+		return provisioning.Code, nil
 	default:
 		return provisioning.NotSpecified, nil
 	}

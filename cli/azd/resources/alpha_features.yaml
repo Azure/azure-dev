@@ -16,3 +16,5 @@
   description: "Enables support for services to use custom language."
 - id: update
   description: "Enables the azd update command for self-updating azd, including channel management and auto-update."
+- id: code
+  description: "Enables the code-based infrastructure provider (Azure.Provisioning) for defining Azure infrastructure in C# instead of Bicep."

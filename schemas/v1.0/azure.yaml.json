@@ -48,7 +48,7 @@
                     "enum": [
                         "bicep",
                         "terraform",
-                        "dotnet"
+                        "code"
                     ]
                 },
                 "path": {

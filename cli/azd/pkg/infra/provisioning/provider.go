@@ -21,7 +21,7 @@ const (
 	Arm          ProviderKind = "arm"
 	Terraform    ProviderKind = "terraform"
 	Pulumi       ProviderKind = "pulumi"
-	DotNet       ProviderKind = "dotnet"
+	Code         ProviderKind = "code"
 	Test         ProviderKind = "test"
 )
 

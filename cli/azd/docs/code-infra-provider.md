@@ -1,6 +1,6 @@
-# DotNet Infrastructure Provider
+# Code Infrastructure Provider
 
-The `dotnet` infrastructure provider enables defining Azure infrastructure in C# using the
+The `code` infrastructure provider enables defining Azure infrastructure in C# using the
 [Azure.Provisioning](https://learn.microsoft.com/dotnet/api/overview/azure/provisioning-readme) library.
 Bicep is generated automatically as an intermediate step—you never need to write or manage Bicep files directly.
 
@@ -44,7 +44,7 @@ infra.Build().Save(outputDir);
 ```yaml
 name: my-app
 infra:
-  provider: dotnet
+  provider: code
   path: infra
 ```
 
@@ -56,7 +56,7 @@ azd up
 
 ## How It Works
 
-When you run `azd provision` (or `azd up`), the dotnet provider:
+When you run `azd provision` (or `azd up`), the code provider:
 
 1. **Resolves** the C# entry point (a `.cs` file or `.csproj` project in the `infra.path` directory)
 2. **Runs** `dotnet run <file.cs> -- <temp-dir>` to compile the C# code

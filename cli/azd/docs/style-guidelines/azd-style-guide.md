@@ -80,27 +80,27 @@ Progress reports provide real-time feedback during a single command's execution,
 
 Items in a progress report list can be in one of six states:
 
-1. **Loading**: `|===    | [Verb] Message goes here`
+1. **Loading**: <code><span style="color:gray">|===    |</span> [Verb] Message goes here</code>
    - Indicates operation in progress
    - Shows loading bar animation
 
-2. **Done**: `(✓) Done: [Verb] Message goes here`
+2. **Done**: <code><span style="color:green">(✓) Done:</span> [Verb] Message goes here</code>
    - Green checkmark indicates successful completion
    - Past tense verb
 
-3. **Failed**: `(✗) Failed: [Verb] Message goes here`
+3. **Failed**: <code><span style="color:red">(✗) Failed:</span> [Verb] Message goes here</code>
    - Red X indicates error
    - Include specific error message below
 
-4. **Warning**: `(!) Warning: [Verb] Message goes here`
+4. **Warning**: <code><span style="color:#c5a332">(!) Warning:</span> [Verb] Message goes here</code>
    - Yellow exclamation for non-blocking issues
    - Command continues but user should be aware
 
-5. **Skipped**: `(-) Skipped: [Verb] Message goes here`
+5. **Skipped**: <code><span style="color:gray">(-) Skipped:</span> [Verb] Message goes here</code>
    - Gray dash indicates intentionally skipped step
    - Different from failed - this is expected behavior
 
-6. **Cancelled**: `(!) Cancelled: [Verb] Message goes here – [reason]`
+6. **Cancelled**: <code><span style="color:#c5a332">(!) Cancelled:</span> [Verb] Message goes here – [reason]</code>
    - Yellow exclamation indicates the operation was cancelled due to another failure
    - Includes the reason (typically which sibling operation failed)
    - Used in multi-service scenarios when a failure in one service causes others to be cancelled
@@ -196,25 +196,28 @@ PREFIX: Message goes here.
 #### Log Types
 
 **Success logs** — Indicate the success of a specific command or action. Success logs use the green (or bright green) color variable (`WithSuccessFormat`).
-```
-SUCCESS: Message goes here.
-```
+
+<pre>
+<span style="color:green">SUCCESS: Message goes here.</span>
+</pre>
 
 **Error logs** — Indicate when an error occurs, or indicate overall command failure. Error logs use the red (or bright red) color variable (`WithErrorFormat`). Error logs should attempt to follow a `[Reason] [Outcome]` structure when possible.
-```
-ERROR: Message goes here.
-```
+
+<pre>
+<span style="color:red">ERROR: Message goes here.</span>
+</pre>
 
 **Warning logs** — Used when a command or action has an outcome that may provide unexpected results, or when the user needs to be made aware of something potentially destructive. Warning logs use the yellow (or bright yellow) color variable (`WithWarningFormat`).
-```
-WARNING: Message goes here.
-```
+
+<pre>
+<span style="color:#c5a332">WARNING: Message goes here.</span>
+</pre>
 
 **Next steps logs** — The arrow indicates the next step. Used when the command output includes follow-up actions or recommended next steps for the user. Next steps logs use the format `(->) NEXT STEPS:` followed by the message.
 
-```
+<pre>
 (->) NEXT STEPS: Message goes here.
-```
+</pre>
 
 #### Hint Text
 
@@ -228,25 +231,25 @@ Hint copy can directly follow any Success, Error, or Warning log. Hint text shou
 
 **Success example:**
 
-```
-SUCCESS: Your Azure app has been deployed!
+<pre>
+<span style="color:green">SUCCESS: Your Azure app has been deployed!</span>
 You can view the resources created under the resource group case-code-test-rg in Azure Portal:
-https://portal.azure.com/#@/resource/subscriptions/.../resourceGroups/case-code-test-rg
-```
+<span style="color:cyan">https://portal.azure.com/#@/resource/subscriptions/.../resourceGroups/case-code-test-rg</span>
+</pre>
 
 **Error example:**
 
-```
-ERROR: 'todo-mongojs' is misspelled or missing a recognized flag.
-Run azd up --help to see all available flags.
-```
+<pre>
+<span style="color:red">ERROR: 'todo-mongojs' is misspelled or missing a recognized flag.</span>
+Run <span style="color:blue">azd up --help</span> to see all available flags.
+</pre>
 
 **Warning example:**
 
-```
-WARNING: You have already provisioned Azure resources to the (US) West US (westus) region.
-You may want to run azd down to delete your existing resources before provisioning to a new region.
-```
+<pre>
+<span style="color:#c5a332">WARNING: You have already provisioned Azure resources to the (US) West US (westus) region.</span>
+You may want to run <span style="color:blue">azd down</span> to delete your existing resources before provisioning to a new region.
+</pre>
 
 ### User Inputs
 
@@ -268,26 +271,26 @@ Text input captures a single line of input from the user.
 
 The prompt is displayed with a `[Type ? for hint]` helper in hi-blue bold text (via `WithHighLightFormat`), followed by ghost-text (secondary text color) as placeholder content.
 
-```
-? This captures a single line of input: [Type ? for hint] This is ghost-text
-```
+<pre>
+<span style="color:blue"><b>?</b></span> This captures a single line of input: <span style="color:blue"><b>[Type ? for hint]</b></span> <span style="color:gray">This is ghost-text</span>
+</pre>
 
 **Hint feature:**
 
 If the user types `?`, a hint line appears below the prompt to provide additional guidance. The hint label is displayed in magenta.
 
-```
-? This captures a single line of input: [Type ? for hint] This is ghost-text
-Hint: This is a help message
-```
+<pre>
+<span style="color:blue"><b>?</b></span> This captures a single line of input: <span style="color:blue"><b>[Type ? for hint]</b></span> <span style="color:gray">This is ghost-text</span>
+<span style="color:magenta"><b>Hint:</b></span> <span style="color:magenta">This is a help message</span>
+</pre>
 
 **User input (before submitting):**
 
 As the user types, their input replaces the ghost-text and appears in primary text color.
 
-```
-? This captures a single line of input: [Type ? for hint] Input
-```
+<pre>
+<span style="color:blue"><b>?</b></span> This captures a single line of input: <span style="color:blue"><b>[Type ? for hint]</b></span> Input
+</pre>
 
 **After submitting:**
 
@@ -297,9 +300,9 @@ Once the user submits their answer:
 - The `[Type ? for hint]` helper disappears
 - If the hint line was visible, it also disappears
 
-```
-? This captures a single line of input: Input
-```
+<pre>
+<span style="color:blue"><b>?</b></span> This captures a single line of input: <span style="color:blue">Input</span>
+</pre>
 
 #### Yes or No Input
 
@@ -307,15 +310,15 @@ Once the user submits their answer:
 - Users can either input `y`/`n` or hit the return key which will select the capitalized choice in the `(Y/n)` delineator.
 - Once a user has selected y or n, the result should be printed in blue text (**yes** or **no**).
 
-```
-? Do you want to initialize a new Git repository in this directory? (Y/n):
-```
+<pre>
+<span style="color:blue"><b>?</b></span> Do you want to initialize a new Git repository in this directory? (Y/n):
+</pre>
 
 With input provided:
 
-```
-? Do you want to initialize a new Git repository in this directory? (Y/n): Yes
-```
+<pre>
+<span style="color:blue"><b>?</b></span> Do you want to initialize a new Git repository in this directory? (Y/n): <span style="color:blue">Yes</span>
+</pre>
 
 #### List Select
 
@@ -325,17 +328,17 @@ The list select pattern presents a list of options for the user to choose from.
 
 The prompt is displayed with a `Filter:` line showing ghost-text ("Type to filter list") and a footer hint ("Use arrows to move, type ? for hint"). The active selection is indicated by `>` and displayed in bold blue text.
 
-```
-? Select an single option:  [Use arrows to move, type to filter]
+<pre>
+<span style="color:blue"><b>?</b></span> Select an single option:  <span style="color:gray">[Use arrows to move, type to filter]</span>
 
-  > Option 1
+  <span style="color:blue"><b>> Option 1</b></span>
     Option 2
     Option 3
     Option 4
     Option 5
     Option 6
     ...
-```
+</pre>
 
 **Display rules:**
 
@@ -346,7 +349,7 @@ The prompt is displayed with a `Filter:` line showing ghost-text ("Type to filte
 
 **Hint:**
 
-- The `[Type ? for hint]` pattern follows the same behavior as Text Input — hi-magenta in bold, with ghost-text in secondary text color.
+- The `[Type ? for hint]` pattern follows the same behavior as Text Input — hi-blue in bold (via `WithHighLightFormat`), with ghost-text in secondary text color.
 
 **After submitting:**
 
@@ -357,9 +360,9 @@ Once the user makes their selection:
 - If the hint line was visible, it also disappears
 - The list collapses and the selected value is printed in blue text next to the prompt
 
-```
-? Select an Azure location to use: (US) East US 2 (eastus2)
-```
+<pre>
+<span style="color:blue"><b>?</b></span> Select an Azure location to use: <span style="color:blue">(US) East US 2 (eastus2)</span>
+</pre>
 
 ### Command Output Standards
 

@@ -11,10 +11,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
 	"github.com/stretchr/testify/require"
 )
+
+// NOTE: Automated testing of updateViaMSI invoking PowerShell with the correct
+// arguments and isStandardMSIInstall succeeding on a standard path are limited
+// because go test compiles to temp directories that never match the expected MSI
+// install path (Programs\Azure Dev CLI), and backupCurrentExe cannot rename the
+// running test binary. We rely on manual testing on actual per-user MSI installs
+// to validate these code paths.
 
 func TestExpectedPerUserInstallDir(t *testing.T) {
 	tests := []struct {
@@ -67,6 +73,7 @@ func TestBuildInstallScriptArgs(t *testing.T) {
 			},
 			wantNotContains: []string{
 				"-InstallFolder",
+				"-SkipVerify",
 			},
 		},
 		{
@@ -81,6 +88,9 @@ func TestBuildInstallScriptArgs(t *testing.T) {
 				"-InstallFolder",
 				expectedDir,
 				"Remove-Item",
+			},
+			wantNotContains: []string{
+				"-SkipVerify",
 			},
 		},
 	}
@@ -164,32 +174,6 @@ func TestBuildInstallScriptArgs_Structure(t *testing.T) {
 	require.Contains(t, scriptDaily, "-InstallFolder")
 	require.Contains(t, scriptDaily, expectedDir)
 	require.Contains(t, scriptDaily, "Remove-Item")
-}
-
-func TestIsStandardMSIInstall_StandardPath(t *testing.T) {
-	// Get the actual exe path and set LOCALAPPDATA so that
-	// expectedPerUserInstallDir() == filepath.Dir(exePath).
-	// expectedPerUserInstallDir = LOCALAPPDATA + \Programs\Azure Dev CLI
-	// So we need LOCALAPPDATA = filepath.Dir(exePath) stripped of "\Programs\Azure Dev CLI".
-	exePath, err := os.Executable()
-	require.NoError(t, err)
-	exePath, err = filepath.EvalSymlinks(exePath)
-	require.NoError(t, err)
-
-	actualDir := filepath.Dir(exePath)
-	suffix := filepath.Join("Programs", "Azure Dev CLI")
-	if !strings.HasSuffix(strings.ToLower(filepath.Clean(actualDir)), strings.ToLower(suffix)) {
-		// The test binary isn't in the expected suffix path (typical in CI/dev).
-		// Skip this test since we can't synthetically set LOCALAPPDATA to match.
-		t.Skipf("test binary dir %q does not end with %q; skipping standard-path test", actualDir, suffix)
-	}
-
-	localAppData := strings.TrimSuffix(filepath.Clean(actualDir), filepath.Clean(suffix))
-	localAppData = strings.TrimRight(localAppData, string(filepath.Separator))
-	t.Setenv("LOCALAPPDATA", localAppData)
-
-	err = isStandardMSIInstall()
-	require.NoError(t, err)
 }
 
 func TestIsStandardMSIInstall_NonStandardPath(t *testing.T) {
@@ -281,58 +265,4 @@ func TestUpdateViaMSI_NonStandardInstallBlocks(t *testing.T) {
 	var updateErr *UpdateError
 	require.True(t, errors.As(err, &updateErr))
 	require.Equal(t, CodeNonStandardInstall, updateErr.Code)
-}
-
-// TestUpdateViaMSI_InvokesPowerShellWithCorrectArgs verifies that updateViaMSI calls
-// "powershell" with the arguments produced by buildInstallScriptArgs.
-func TestUpdateViaMSI_InvokesPowerShellWithCorrectArgs(t *testing.T) {
-	// Point LOCALAPPDATA at the test binary so isStandardMSIInstall passes.
-	exePath, err := os.Executable()
-	require.NoError(t, err)
-	exePath, err = filepath.EvalSymlinks(exePath)
-	require.NoError(t, err)
-
-	actualDir := filepath.Dir(exePath)
-	suffix := filepath.Join("Programs", "Azure Dev CLI")
-	if !strings.HasSuffix(strings.ToLower(filepath.Clean(actualDir)), strings.ToLower(suffix)) {
-		t.Skipf("test binary dir %q does not end with %q; skipping", actualDir, suffix)
-	}
-
-	localAppData := strings.TrimSuffix(filepath.Clean(actualDir), filepath.Clean(suffix))
-	localAppData = strings.TrimRight(localAppData, string(filepath.Separator))
-	t.Setenv("LOCALAPPDATA", localAppData)
-
-	for _, channel := range []Channel{ChannelStable, ChannelDaily} {
-		t.Run(string(channel), func(t *testing.T) {
-			var capturedArgs exec.RunArgs
-			captured := false
-
-			mockRunner := mockexec.NewMockCommandRunner()
-			mockRunner.When(func(args exec.RunArgs, command string) bool {
-				return strings.HasPrefix(command, "powershell")
-			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-				capturedArgs = args
-				captured = true
-				return exec.NewRunResult(0, "", ""), nil
-			})
-
-			m := NewManager(mockRunner, nil)
-			var buf strings.Builder
-			cfg := &UpdateConfig{Channel: channel}
-
-			// updateViaMSI will likely fail at backup/hash stage in test, but
-			// if the mock is reached we can validate the invocation.
-			_ = m.updateViaMSI(context.Background(), cfg, &buf)
-
-			if !captured {
-				t.Skip("powershell mock was not reached (backupCurrentExe failed in test env)")
-			}
-
-			require.Equal(t, "powershell", capturedArgs.Cmd, "expected powershell executable")
-
-			// Verify args match buildInstallScriptArgs output.
-			expectedArgs := buildInstallScriptArgs(channel)
-			require.Equal(t, expectedArgs, capturedArgs.Args)
-		})
-	}
 }

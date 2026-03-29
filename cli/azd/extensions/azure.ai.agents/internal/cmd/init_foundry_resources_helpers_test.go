@@ -8,6 +8,8 @@ import (
 	"net"
 	"testing"
 
+	armcognitiveservices "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -237,4 +239,98 @@ func newTestAzdClient(
 	})
 
 	return azdClient
+}
+
+func TestFoundryProjectInfoFromResource(t *testing.T) {
+	t.Parallel()
+
+	resourceId := "/subscriptions/sub-id/resourceGroups/my-rg/providers/Microsoft.CognitiveServices/accounts/my-account/projects/my-project"
+
+	tests := []struct {
+		name     string
+		resource *armresources.GenericResourceExpanded
+		want     *FoundryProjectInfo
+	}{
+		{
+			name: "maps filtered subscription resource",
+			resource: &armresources.GenericResourceExpanded{
+				ID:       new(resourceId),
+				Location: new("eastus"),
+			},
+			want: &FoundryProjectInfo{
+				SubscriptionId:    "sub-id",
+				ResourceGroupName: "my-rg",
+				AccountName:       "my-account",
+				ProjectName:       "my-project",
+				Location:          "eastus",
+				ResourceId:        resourceId,
+			},
+		},
+		{
+			name:     "skips resource without id",
+			resource: &armresources.GenericResourceExpanded{},
+		},
+		{
+			name: "skips malformed project resource id",
+			resource: &armresources.GenericResourceExpanded{
+				ID: new("/subscriptions/sub-id/resourceGroups/my-rg/providers/Microsoft.CognitiveServices/accounts/my-account"),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, ok := foundryProjectInfoFromResource(tt.resource)
+			if tt.want == nil {
+				require.False(t, ok)
+				require.Nil(t, got)
+				return
+			}
+
+			require.True(t, ok)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestUpdateFoundryProjectInfo(t *testing.T) {
+	t.Parallel()
+
+	project := &FoundryProjectInfo{
+		SubscriptionId:    "sub-id",
+		ResourceGroupName: "my-rg",
+		AccountName:       "my-account",
+		ProjectName:       "my-project",
+		ResourceId:        "/subscriptions/sub-id/resourceGroups/my-rg/providers/Microsoft.CognitiveServices/accounts/my-account/projects/my-project",
+	}
+
+	updateFoundryProjectInfo(project, &armcognitiveservices.Project{
+		ID:       new("/subscriptions/sub-id/resourceGroups/my-rg/providers/Microsoft.CognitiveServices/accounts/my-account/projects/my-project"),
+		Name:     new("my-account/updated-project"),
+		Location: new("westus"),
+	})
+
+	require.Equal(t, "updated-project", project.ProjectName)
+	require.Equal(t, "westus", project.Location)
+	require.Equal(
+		t,
+		"/subscriptions/sub-id/resourceGroups/my-rg/providers/Microsoft.CognitiveServices/accounts/my-account/projects/my-project",
+		project.ResourceId,
+	)
+}
+
+func TestGetFoundryProject_SubscriptionMismatch(t *testing.T) {
+	t.Parallel()
+
+	_, err := getFoundryProject(
+		t.Context(),
+		nil,
+		"selected-subscription",
+		"/subscriptions/other-subscription/resourceGroups/my-rg/providers/Microsoft.CognitiveServices/accounts/my-account/projects/my-project",
+	)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "does not match the selected subscription")
 }

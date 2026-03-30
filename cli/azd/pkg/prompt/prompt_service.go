@@ -110,6 +110,9 @@ type SelectOptions struct {
 	Hint string
 	// EnableFiltering specifies whether to enable filtering of choices.
 	EnableFiltering *bool
+	// AllowedValues limits candidates for prompts that support value filtering,
+	// such as PromptLocation.
+	AllowedValues []string
 	// Writer is the writer to use for output.
 	Writer io.Writer
 }
@@ -377,6 +380,8 @@ func (ps *promptService) PromptLocation(
 			return nil, fmt.Errorf("failed to load locations: %w", err)
 		}
 
+		locationList = filterLocationOptions(locationList, mergedOptions.AllowedValues)
+
 		for _, location := range locationList {
 			if location.Name == defaultLocation {
 				return &account.Location{
@@ -388,7 +393,7 @@ func (ps *promptService) PromptLocation(
 		}
 
 		return nil, fmt.Errorf(
-			"default location '%s' not found. "+
+			"default location '%s' not found in the available location options. "+
 				"Update your default location using 'azd config set defaults.location <location-name>'",
 			defaultLocation)
 	}
@@ -403,6 +408,8 @@ func (ps *promptService) PromptLocation(
 			if err != nil {
 				return nil, err
 			}
+
+			locationList = filterLocationOptions(locationList, mergedOptions.AllowedValues)
 
 			locations := make([]*account.Location, len(locationList))
 			for i, location := range locationList {
@@ -422,6 +429,34 @@ func (ps *promptService) PromptLocation(
 			return resource.Name == defaultLocation
 		},
 	})
+}
+
+func filterLocationOptions(locations []account.Location, allowed []string) []account.Location {
+	if len(allowed) == 0 {
+		return locations
+	}
+
+	allowedSet := make(map[string]struct{}, len(allowed))
+	for _, location := range allowed {
+		normalized := normalizePromptLocationName(location)
+		if normalized == "" {
+			continue
+		}
+		allowedSet[normalized] = struct{}{}
+	}
+
+	if len(allowedSet) == 0 {
+		return nil
+	}
+
+	return slices.DeleteFunc(slices.Clone(locations), func(location account.Location) bool {
+		_, ok := allowedSet[normalizePromptLocationName(location.Name)]
+		return !ok
+	})
+}
+
+func normalizePromptLocationName(location string) string {
+	return strings.TrimSpace(strings.ToLower(location))
 }
 
 // PromptResourceGroup prompts the user to select an Azure resource group.

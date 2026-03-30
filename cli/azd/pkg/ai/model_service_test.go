@@ -301,6 +301,68 @@ func TestResolveCapacity(t *testing.T) {
 	}
 }
 
+func TestResolveCapacityWithQuota(t *testing.T) {
+	t.Run("uses default when it fits in remaining quota", func(t *testing.T) {
+		capacity, ok := ResolveCapacityWithQuota(AiModelSku{
+			DefaultCapacity: 25,
+			MinCapacity:     1,
+			MaxCapacity:     100,
+			CapacityStep:    1,
+		}, nil, 50)
+
+		require.True(t, ok)
+		require.Equal(t, int32(25), capacity)
+	})
+
+	t.Run("falls back below default when no preferred capacity is set", func(t *testing.T) {
+		capacity, ok := ResolveCapacityWithQuota(AiModelSku{
+			DefaultCapacity: 5000,
+			MinCapacity:     0,
+			MaxCapacity:     5000,
+			CapacityStep:    0,
+		}, nil, 1000)
+
+		require.True(t, ok)
+		require.Equal(t, int32(1000), capacity)
+	})
+
+	t.Run("respects min and step when falling back", func(t *testing.T) {
+		capacity, ok := ResolveCapacityWithQuota(AiModelSku{
+			DefaultCapacity: 3000,
+			MinCapacity:     100,
+			MaxCapacity:     3000,
+			CapacityStep:    100,
+		}, nil, 950)
+
+		require.True(t, ok)
+		require.Equal(t, int32(900), capacity)
+	})
+
+	t.Run("fails when explicit preferred capacity does not fit", func(t *testing.T) {
+		capacity, ok := ResolveCapacityWithQuota(AiModelSku{
+			DefaultCapacity: 5000,
+			MinCapacity:     0,
+			MaxCapacity:     5000,
+			CapacityStep:    0,
+		}, new(int32(5000)), 1000)
+
+		require.False(t, ok)
+		require.Equal(t, int32(5000), capacity)
+	})
+
+	t.Run("fails when remaining quota is below effective minimum", func(t *testing.T) {
+		capacity, ok := ResolveCapacityWithQuota(AiModelSku{
+			DefaultCapacity: 0,
+			MinCapacity:     100,
+			MaxCapacity:     3000,
+			CapacityStep:    100,
+		}, nil, 50)
+
+		require.False(t, ok)
+		require.Equal(t, int32(0), capacity)
+	})
+}
+
 func TestMaxModelRemainingQuota(t *testing.T) {
 	model := AiModel{
 		Name: "gpt-4o",

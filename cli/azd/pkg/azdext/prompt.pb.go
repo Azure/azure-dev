@@ -121,10 +121,11 @@ func (x *PromptSubscriptionResponse) GetSubscription() *Subscription {
 }
 
 type PromptLocationRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AzureContext  *AzureContext          `protobuf:"bytes,1,opt,name=azure_context,json=azureContext,proto3" json:"azure_context,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	AzureContext     *AzureContext          `protobuf:"bytes,1,opt,name=azure_context,json=azureContext,proto3" json:"azure_context,omitempty"`
+	AllowedLocations []string               `protobuf:"bytes,2,rep,name=allowed_locations,json=allowedLocations,proto3" json:"allowed_locations,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *PromptLocationRequest) Reset() {
@@ -160,6 +161,13 @@ func (*PromptLocationRequest) Descriptor() ([]byte, []int) {
 func (x *PromptLocationRequest) GetAzureContext() *AzureContext {
 	if x != nil {
 		return x.AzureContext
+	}
+	return nil
+}
+
+func (x *PromptLocationRequest) GetAllowedLocations() []string {
+	if x != nil {
+		return x.AllowedLocations
 	}
 	return nil
 }
@@ -2131,9 +2139,10 @@ const file_prompt_proto_rawDesc = "" +
 	"\aMessage\x18\x01 \x01(\tR\aMessage\x12 \n" +
 	"\vHelpMessage\x18\x02 \x01(\tR\vHelpMessage\"V\n" +
 	"\x1aPromptSubscriptionResponse\x128\n" +
-	"\fsubscription\x18\x01 \x01(\v2\x14.azdext.SubscriptionR\fsubscription\"R\n" +
+	"\fsubscription\x18\x01 \x01(\v2\x14.azdext.SubscriptionR\fsubscription\"\x7f\n" +
 	"\x15PromptLocationRequest\x129\n" +
-	"\razure_context\x18\x01 \x01(\v2\x14.azdext.AzureContextR\fazureContext\"F\n" +
+	"\razure_context\x18\x01 \x01(\v2\x14.azdext.AzureContextR\fazureContext\x12+\n" +
+	"\x11allowed_locations\x18\x02 \x03(\tR\x10allowedLocations\"F\n" +
 	"\x16PromptLocationResponse\x12,\n" +
 	"\blocation\x18\x01 \x01(\v2\x10.azdext.LocationR\blocation\"\x95\x01\n" +
 	"\x1aPromptResourceGroupRequest\x129\n" +

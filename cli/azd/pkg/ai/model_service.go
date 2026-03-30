@@ -62,19 +62,15 @@ func (s *AiModelService) ListModels(
 	return s.convertToAiModels(rawModels), nil
 }
 
-// ListLocations returns subscription location names that can be used for model queries.
+// ListLocations returns AI Services-supported location names that can be used for model queries.
 func (s *AiModelService) ListLocations(
 	ctx context.Context,
 	subscriptionId string,
 ) ([]string, error) {
-	subLocations, err := s.subManager.GetLocations(ctx, subscriptionId)
+	locations, err := s.azureClient.GetResourceSkuLocations(
+		ctx, subscriptionId, "AIServices", "S0", "Standard", "accounts")
 	if err != nil {
-		return nil, fmt.Errorf("listing locations: %w", err)
-	}
-
-	locations := make([]string, 0, len(subLocations))
-	for _, loc := range subLocations {
-		locations = append(locations, loc.Name)
+		return nil, fmt.Errorf("listing AI Services locations: %w", err)
 	}
 
 	return locations, nil
@@ -456,9 +452,8 @@ func (s *AiModelService) resolveDeployments(
 				continue
 			}
 
-			capacity := ResolveCapacity(sku, options.Capacity)
-
 			// Quota check
+			capacity := ResolveCapacity(sku, options.Capacity)
 			if quotaOpts != nil && usageMap != nil {
 				usage, ok := usageMap[sku.UsageName]
 				if !ok {
@@ -470,9 +465,15 @@ func (s *AiModelService) resolveDeployments(
 				if minReq <= 0 {
 					minReq = 1
 				}
-				if remaining < minReq || (capacity > 0 && float64(capacity) > remaining) {
+				if remaining < minReq {
 					continue
 				}
+
+				resolvedCapacity, fitsQuota := ResolveCapacityWithQuota(sku, options.Capacity, remaining)
+				if !fitsQuota {
+					continue
+				}
+				capacity = resolvedCapacity
 			}
 
 			// Only set location when exactly one was provided — never guess.
@@ -741,6 +742,84 @@ func ResolveCapacity(sku AiModelSku, preferred *int32) int32 {
 	return sku.DefaultCapacity
 }
 
+// ResolveCapacityWithQuota resolves the deployment capacity for a SKU while considering remaining quota.
+// If preferred is set, it must fit within the remaining quota or resolution fails.
+// When preferred is unset and the default capacity exceeds remaining quota, it falls back to the highest
+// valid capacity within the SKU constraints that still fits in the remaining quota.
+func ResolveCapacityWithQuota(sku AiModelSku, preferred *int32, remaining float64) (int32, bool) {
+	capacity := ResolveCapacity(sku, preferred)
+	if preferred != nil {
+		return capacity, capacityFitsWithinQuota(sku, capacity, remaining)
+	}
+
+	if capacityFitsWithinQuota(sku, capacity, remaining) {
+		return capacity, true
+	}
+
+	return fallbackCapacityWithinQuota(sku, remaining)
+}
+
+func capacityFitsWithinQuota(sku AiModelSku, capacity int32, remaining float64) bool {
+	if capacity <= 0 {
+		return false
+	}
+
+	if sku.MinCapacity > 0 && capacity < sku.MinCapacity {
+		return false
+	}
+
+	if sku.MaxCapacity > 0 && capacity > sku.MaxCapacity {
+		return false
+	}
+
+	if sku.CapacityStep > 0 {
+		baseline := sku.MinCapacity
+		if baseline <= 0 {
+			baseline = sku.CapacityStep
+		}
+		if capacity < baseline || (capacity-baseline)%sku.CapacityStep != 0 {
+			return false
+		}
+	}
+
+	return float64(capacity) <= remaining
+}
+
+func fallbackCapacityWithinQuota(sku AiModelSku, remaining float64) (int32, bool) {
+	upperBound := int32(remaining)
+	if upperBound <= 0 {
+		return 0, false
+	}
+
+	if sku.MaxCapacity > 0 && upperBound > sku.MaxCapacity {
+		upperBound = sku.MaxCapacity
+	}
+
+	lowerBound := sku.MinCapacity
+	if lowerBound <= 0 {
+		if sku.CapacityStep > 0 {
+			lowerBound = sku.CapacityStep
+		} else {
+			lowerBound = 1
+		}
+	}
+
+	if upperBound < lowerBound {
+		return 0, false
+	}
+
+	if sku.CapacityStep <= 0 {
+		return upperBound, true
+	}
+
+	candidate := upperBound - (upperBound-lowerBound)%sku.CapacityStep
+	if candidate < lowerBound {
+		return 0, false
+	}
+
+	return candidate, true
+}
+
 // ModelHasDefaultVersion returns true if any version of the model is marked as default.
 func ModelHasDefaultVersion(model AiModel) bool {
 	for _, v := range model.Versions {
@@ -758,6 +837,9 @@ func modelHasQuota(model AiModel, usageMap map[string]AiModelUsage, minRemaining
 			if ok {
 				remaining := usage.Limit - usage.CurrentValue
 				if remaining >= minRemaining {
+					if _, ok := ResolveCapacityWithQuota(sku, nil, remaining); !ok {
+						continue
+					}
 					return true
 				}
 			}
@@ -777,6 +859,9 @@ func maxModelRemainingQuota(model AiModel, usageMap map[string]AiModelUsage) (fl
 			}
 
 			remaining := usage.Limit - usage.CurrentValue
+			if _, ok := ResolveCapacityWithQuota(sku, nil, remaining); !ok {
+				continue
+			}
 			if !found || remaining > maxRemaining {
 				maxRemaining = remaining
 			}

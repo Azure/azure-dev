@@ -36,7 +36,7 @@ When a user asks Copilot CLI a question like "deploy my Python app to Azure", th
 npm install
 
 # Build azd (required for CLI tests)
-cd ../../../ && go build && cd test/eval
+cd ../../ && go build -o ./azd . && cd test/eval
 
 # Run Jest unit tests (no LLM, no Azure)
 npm run test:unit

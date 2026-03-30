@@ -66,6 +66,13 @@ func askOneFailOnPrompt(p survey.Prompt, _ any) error {
 			v.Message,
 			strings.Join(v.Options, ", "),
 		)
+	case *survey.Password:
+		return fmt.Errorf(
+			"interactive prompt not allowed in strict mode: %q"+
+				" (provide the value via command-line flags"+
+				" or environment variables)",
+			v.Message,
+		)
 	default:
 		return fmt.Errorf(
 			"interactive prompt not allowed in strict mode" +

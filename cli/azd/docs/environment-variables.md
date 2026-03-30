@@ -50,6 +50,7 @@ integration.
 | `AZD_CONTAINER_RUNTIME` | The container runtime to use (e.g., `docker`, `podman`). |
 | `AZD_ALLOW_NON_EMPTY_FOLDER` | If set, allows `azd init` to run in a non-empty directory without prompting. |
 | `AZD_BUILDER_IMAGE` | The builder docker image used to perform Dockerfile-less builds. |
+| `AZD_DEPLOY_TIMEOUT` | Timeout for deployment operations, parsed as an integer number of seconds (for example, `1200`). Defaults to `1200` seconds (20 minutes). |
 
 ## Extension Variables
 
@@ -91,6 +92,7 @@ specific version of the tool installed on the machine.
 | `AZD_BICEP_TOOL_PATH` | The Bicep tool override path. The direct path to `bicep` or `bicep.exe`. |
 | `AZD_GH_TOOL_PATH` | The `gh` tool override path. The direct path to `gh` or `gh.exe`. |
 | `AZD_PACK_TOOL_PATH` | The `pack` tool override path. The direct path to `pack` or `pack.exe`. |
+| `AZD_COPILOT_CLI_PATH` | The Copilot CLI tool override path. When set, skips automatic download and uses the specified path. |
 
 ## Extension Configuration
 
@@ -128,7 +130,7 @@ specific version of the tool installed on the machine.
 | --- | --- |
 | `AZD_UI_PROMPT_ENDPOINT` | The endpoint for external UI prompt service integration. |
 | `AZD_UI_PROMPT_KEY` | The authentication key for the external UI prompt service. |
-| `AZD_UI_NO_PROMPT_DIALOG` | If true, disables prompt dialog UI. |
+| `AZD_UI_NO_PROMPT_DIALOG` | Set to any non-empty value to disable prompt dialog UI. |
 
 ## Telemetry & Tracing
 
@@ -198,7 +200,7 @@ These variables are used by the Terraform provider integration to authenticate w
 | Variable | Description |
 | --- | --- |
 | `NO_COLOR` | If set, disables color output. See [no-color.org](https://no-color.org). |
-| `FORCE_COLOR` | If set, forces color output regardless of terminal detection. |
+| `FORCE_COLOR` | Set to `1` to force color output regardless of terminal detection. Only the exact value `1` is recognized. |
 | `COLUMNS` | Overrides the detected terminal width (in columns). |
 | `TERM` | The terminal type. Used to detect terminal capabilities. |
 | `BROWSER` | The browser command to use for opening URLs (e.g., during `azd auth login`). |

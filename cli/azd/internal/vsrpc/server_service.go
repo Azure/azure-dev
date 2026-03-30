@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
@@ -33,6 +34,14 @@ func (s *serverService) InitializeAsync(
 	id, session, err := s.server.newSession()
 	if err != nil {
 		return nil, err
+	}
+
+	if rootPath != "" {
+		if fi, err := os.Stat(rootPath); err != nil {
+			return nil, fmt.Errorf("invalid root path %q: %w", rootPath, err)
+		} else if !fi.IsDir() {
+			return nil, fmt.Errorf("root path %q is not a directory", rootPath)
+		}
 	}
 
 	session.rootPath = rootPath

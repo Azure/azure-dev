@@ -264,7 +264,9 @@ func TestOptions_GetWithDefaults(t *testing.T) {
 }
 
 func TestOptions_AbsolutePath(t *testing.T) {
-	projectPath := filepath.Join(string(filepath.Separator), "tmp", "project")
+	rootPath := t.TempDir()
+	projectPath := filepath.Join(rootPath, "project")
+	absoluteLayerPath := filepath.Join(rootPath, "shared", "infra")
 
 	tests := []struct {
 		name     string
@@ -281,9 +283,9 @@ func TestOptions_AbsolutePath(t *testing.T) {
 		{
 			name: "keeps absolute path",
 			options: Options{
-				Path: filepath.Join(string(filepath.Separator), "shared", "infra"),
+				Path: absoluteLayerPath,
 			},
-			expected: filepath.Join(string(filepath.Separator), "shared", "infra"),
+			expected: absoluteLayerPath,
 		},
 	}
 

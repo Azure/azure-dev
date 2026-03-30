@@ -26,6 +26,7 @@ const middlewareAName contextKey = "middleware-A"
 const middlewareBName contextKey = "middleware-B"
 
 func Test_BuildAndRunSimpleCommand(t *testing.T) {
+	t.Parallel()
 	ran := false
 	container := ioc.NewNestedContainer(nil)
 
@@ -53,6 +54,7 @@ func Test_BuildAndRunSimpleCommand(t *testing.T) {
 }
 
 func Test_BuildAndRunSimpleAction(t *testing.T) {
+	t.Parallel()
 	container := ioc.NewNestedContainer(nil)
 	setup(container)
 
@@ -74,6 +76,7 @@ func Test_BuildAndRunSimpleAction(t *testing.T) {
 }
 
 func Test_BuildAndRunSimpleActionWithMiddleware(t *testing.T) {
+	t.Parallel()
 	container := ioc.NewNestedContainer(nil)
 	setup(container)
 
@@ -104,6 +107,7 @@ func Test_BuildAndRunSimpleActionWithMiddleware(t *testing.T) {
 }
 
 func Test_BuildAndRunActionWithNestedMiddleware(t *testing.T) {
+	t.Parallel()
 	container := ioc.NewNestedContainer(nil)
 	setup(container)
 
@@ -140,6 +144,7 @@ func Test_BuildAndRunActionWithNestedMiddleware(t *testing.T) {
 }
 
 func Test_BuildAndRunActionWithNestedAndConditionalMiddleware(t *testing.T) {
+	t.Parallel()
 	container := ioc.NewNestedContainer(nil)
 	setup(container)
 
@@ -182,6 +187,7 @@ func Test_BuildAndRunActionWithNestedAndConditionalMiddleware(t *testing.T) {
 }
 
 func Test_BuildCommandsWithAutomaticHelpAndOutputFlags(t *testing.T) {
+	t.Parallel()
 	container := ioc.NewNestedContainer(nil)
 
 	root := actions.NewActionDescriptor("root", &actions.ActionDescriptorOptions{
@@ -221,6 +227,7 @@ func Test_BuildCommandsWithAutomaticHelpAndOutputFlags(t *testing.T) {
 }
 
 func Test_RunDocsFlow(t *testing.T) {
+	t.Parallel()
 	container := ioc.NewNestedContainer(nil)
 	testCtx := mocks.NewMockContext(context.Background())
 	container.MustRegisterSingleton(func() input.Console {
@@ -238,9 +245,9 @@ func Test_RunDocsFlow(t *testing.T) {
 	})
 
 	var calledUrl string
-	overrideBrowser = func(ctx context.Context, console input.Console, url string) {
+	ctx := WithBrowserOverride(*testCtx.Context, func(_ context.Context, _ input.Console, url string) {
 		calledUrl = url
-	}
+	})
 
 	cobraBuilder := NewCobraBuilder(container)
 	cmd, err := cobraBuilder.BuildCommand(root)
@@ -249,12 +256,13 @@ func Test_RunDocsFlow(t *testing.T) {
 	require.NotNil(t, cmd)
 
 	cmd.SetArgs([]string{"--docs"})
-	err = cmd.ExecuteContext(*testCtx.Context)
+	err = cmd.ExecuteContext(ctx)
 	require.NoError(t, err)
 	require.Equal(t, referenceDocumentationUrl+"root", calledUrl)
 }
 
 func Test_RunDocsAndHelpFlow(t *testing.T) {
+	t.Parallel()
 	container := ioc.NewNestedContainer(nil)
 	testCtx := mocks.NewMockContext(context.Background())
 	container.MustRegisterSingleton(func() input.Console {
@@ -272,9 +280,9 @@ func Test_RunDocsAndHelpFlow(t *testing.T) {
 	})
 
 	var calledUrl string
-	overrideBrowser = func(ctx context.Context, console input.Console, url string) {
+	ctx := WithBrowserOverride(*testCtx.Context, func(_ context.Context, _ input.Console, url string) {
 		calledUrl = url
-	}
+	})
 
 	cobraBuilder := NewCobraBuilder(container)
 	cmd, err := cobraBuilder.BuildCommand(root)
@@ -284,7 +292,7 @@ func Test_RunDocsAndHelpFlow(t *testing.T) {
 
 	// having both args should honor help
 	cmd.SetArgs([]string{"--docs", "--help"})
-	err = cmd.ExecuteContext(*testCtx.Context)
+	err = cmd.ExecuteContext(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "", calledUrl)
 }

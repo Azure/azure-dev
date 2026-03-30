@@ -65,6 +65,7 @@ func setupTestEnvironment(t *testing.T, envName string, configData map[string]an
 
 // TestEnvConfigGet tests the azd env config get command
 func TestEnvConfigGet(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name          string
 		configData    map[string]any
@@ -134,6 +135,7 @@ func TestEnvConfigGet(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			envName := "test-env"
 			azdCtx, envManager, _ := setupTestEnvironment(t, envName, tt.configData)
 
@@ -173,6 +175,7 @@ func TestEnvConfigGet(t *testing.T) {
 
 // TestEnvConfigSet tests the azd env config set command
 func TestEnvConfigSet(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name           string
 		initialConfig  map[string]any
@@ -356,6 +359,7 @@ func TestEnvConfigSet(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			envName := "test-env"
 			azdCtx, envManager, _ := setupTestEnvironment(t, envName, tt.initialConfig)
 
@@ -390,6 +394,7 @@ func TestEnvConfigSet(t *testing.T) {
 
 // TestEnvConfigUnset tests the azd env config unset command
 func TestEnvConfigUnset(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name           string
 		initialConfig  map[string]any
@@ -472,6 +477,7 @@ func TestEnvConfigUnset(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			envName := "test-env"
 			azdCtx, envManager, _ := setupTestEnvironment(t, envName, tt.initialConfig)
 
@@ -506,6 +512,7 @@ func TestEnvConfigUnset(t *testing.T) {
 
 // TestEnvConfigNonExistentEnvironment tests error handling when environment doesn't exist
 func TestEnvConfigNonExistentEnvironment(t *testing.T) {
+	t.Parallel()
 	tempDir := t.TempDir()
 	azdCtx := azdcontext.NewAzdContextWithDirectory(tempDir)
 
@@ -529,6 +536,7 @@ func TestEnvConfigNonExistentEnvironment(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("GetWithNonExistentEnv", func(t *testing.T) {
+		t.Parallel()
 		buf := &bytes.Buffer{}
 		flags := &envConfigGetFlags{}
 		flags.EnvironmentName = "nonexistent"
@@ -547,6 +555,7 @@ func TestEnvConfigNonExistentEnvironment(t *testing.T) {
 	})
 
 	t.Run("SetWithNonExistentEnv", func(t *testing.T) {
+		t.Parallel()
 		flags := &envConfigSetFlags{}
 		flags.EnvironmentName = "nonexistent"
 		action := newEnvConfigSetAction(
@@ -562,6 +571,7 @@ func TestEnvConfigNonExistentEnvironment(t *testing.T) {
 	})
 
 	t.Run("UnsetWithNonExistentEnv", func(t *testing.T) {
+		t.Parallel()
 		flags := &envConfigUnsetFlags{}
 		flags.EnvironmentName = "nonexistent"
 		action := newEnvConfigUnsetAction(
@@ -579,6 +589,7 @@ func TestEnvConfigNonExistentEnvironment(t *testing.T) {
 
 // TestEnvConfigWithDefaultEnvironment tests commands work with default environment
 func TestEnvConfigWithDefaultEnvironment(t *testing.T) {
+	t.Parallel()
 	envName := "default-env"
 	azdCtx, envManager, _ := setupTestEnvironment(t, envName, map[string]any{
 		"test": "value",
@@ -589,6 +600,7 @@ func TestEnvConfigWithDefaultEnvironment(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("GetWithDefaultEnv", func(t *testing.T) {
+		t.Parallel()
 		buf := &bytes.Buffer{}
 		flags := &envConfigGetFlags{}
 		flags.EnvironmentName = "" // Use default
@@ -613,6 +625,7 @@ func TestEnvConfigWithDefaultEnvironment(t *testing.T) {
 
 // TestEnvConfigMultipleOperations tests multiple operations on the same environment
 func TestEnvConfigMultipleOperations(t *testing.T) {
+	t.Parallel()
 	envName := "multi-op-env"
 	azdCtx, envManager, _ := setupTestEnvironment(t, envName, map[string]any{})
 

@@ -19,6 +19,7 @@ import (
 )
 
 func Test_Lazy_Project_Config_Resolution(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	container := ioc.NewNestedContainer(nil)
 	ioc.RegisterInstance(container, ctx)
@@ -88,6 +89,7 @@ func Test_Lazy_Project_Config_Resolution(t *testing.T) {
 }
 
 func Test_Lazy_AzdContext_Resolution(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	container := ioc.NewNestedContainer(nil)
 	ioc.RegisterInstance(container, ctx)

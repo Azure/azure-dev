@@ -383,7 +383,7 @@ func (ps *promptService) PromptLocation(
 		locationList = filterLocationOptions(locationList, mergedOptions.AllowedValues)
 
 		for _, location := range locationList {
-			if location.Name == defaultLocation {
+			if strings.EqualFold(location.Name, defaultLocation) {
 				return &account.Location{
 					Name:                location.Name,
 					DisplayName:         location.DisplayName,
@@ -411,6 +411,12 @@ func (ps *promptService) PromptLocation(
 
 			locationList = filterLocationOptions(locationList, mergedOptions.AllowedValues)
 
+			if len(locationList) == 0 {
+				return nil, fmt.Errorf(
+					"no locations matched the allowed locations filter. " +
+						"Verify the allowed locations configuration is correct")
+			}
+
 			locations := make([]*account.Location, len(locationList))
 			for i, location := range locationList {
 				locations[i] = &account.Location{
@@ -426,7 +432,7 @@ func (ps *promptService) PromptLocation(
 			return fmt.Sprintf("%s %s", location.RegionalDisplayName, output.WithGrayFormat("(%s)", location.Name)), nil
 		},
 		Selected: func(resource *account.Location) bool {
-			return resource.Name == defaultLocation
+			return strings.EqualFold(resource.Name, defaultLocation)
 		},
 	})
 }
@@ -445,8 +451,9 @@ func filterLocationOptions(locations []account.Location, allowed []string) []acc
 		allowedSet[normalized] = struct{}{}
 	}
 
+	// If all allowed entries normalize to empty/whitespace, treat as "no filtering".
 	if len(allowedSet) == 0 {
-		return nil
+		return locations
 	}
 
 	return slices.DeleteFunc(slices.Clone(locations), func(location account.Location) bool {

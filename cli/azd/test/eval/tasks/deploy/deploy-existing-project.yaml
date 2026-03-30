@@ -32,7 +32,7 @@ graders:
     weight: 0.2
     config:
       must_match_any:
-        - "--no-prompt"
-        - "azure.yaml"
+        - "application code"
+        - "code changes"
         - "service"
-        - "--all"
+        - "already (provisioned|initialized|set up)"

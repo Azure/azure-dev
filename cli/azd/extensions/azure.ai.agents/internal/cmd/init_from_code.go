@@ -744,7 +744,7 @@ func (a *InitFromCodeAction) addToProject(ctx context.Context, targetDir string,
 		},
 	}
 
-	if !isVNextEnabled(ctx) {
+	if !isVNextEnabled(ctx, a.azdClient) {
 		agentConfig.Container.Scale = &project.ScaleSettings{
 			MinReplicas: project.DefaultMinReplicas,
 			MaxReplicas: project.DefaultMaxReplicas,

@@ -38,7 +38,6 @@ func isVNextEnabled(ctx context.Context, client ...*azdext.AzdClient) bool {
 
 	// Use provided client or create one for best-effort azd env check
 	var azdClient *azdext.AzdClient
-	var closeClient bool
 	if len(client) > 0 && client[0] != nil {
 		azdClient = client[0]
 	} else {
@@ -47,9 +46,6 @@ func isVNextEnabled(ctx context.Context, client ...*azdext.AzdClient) bool {
 		if err != nil {
 			return false
 		}
-		closeClient = true
-	}
-	if closeClient {
 		defer azdClient.Close()
 	}
 

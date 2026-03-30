@@ -1,6 +1,6 @@
 # Release History
 
-## 0.1.19-preview (2026-03-30)
+## 0.1.19-preview (2026-03-31)
 
 - [[#7327]](https://github.com/Azure/azure-dev/pull/7327) Fix `azd ai agent init` reruns to reuse an existing azd environment instead of failing when a previous attempt already created it.
 - [[#7332]](https://github.com/Azure/azure-dev/pull/7332) Improve `azd ai agent init` performance when discovering existing Foundry projects, including faster `--project-id` validation.

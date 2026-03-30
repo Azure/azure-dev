@@ -661,7 +661,8 @@ func (p *BicepProvider) waitForActiveDeployments(
 
 	p.console.ShowSpinner(ctx,
 		"Waiting for active deployment(s) to complete", input.Step)
-	defer p.console.StopSpinner(ctx, "", input.StepDone)
+	spinnerResult := input.StepFailed
+	defer func() { p.console.StopSpinner(ctx, "", spinnerResult) }()
 
 	pollInterval := p.activeDeployPollInterval
 	if pollInterval == 0 {
@@ -694,12 +695,14 @@ func (p *BicepProvider) waitForActiveDeployments(
 			active, err = infra.ListActiveDeployments(ctx, scope)
 			if err != nil {
 				if errors.Is(err, infra.ErrDeploymentsNotFound) {
+					spinnerResult = input.StepDone
 					return nil
 				}
 				return fmt.Errorf(
-					"checking active deployments: %w", err)
+					"checking for active deployments: %w", err)
 			}
 			if len(active) == 0 {
+				spinnerResult = input.StepDone
 				return nil
 			}
 		}
@@ -824,6 +827,8 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		if err := p.waitForActiveDeployments(ctx, activeScope); err != nil {
 			return nil, err
 		}
+	} else {
+		log.Printf("active-deployment-check: skipping, unable to determine scope: %v", err)
 	}
 
 	progressCtx, cancelProgress := context.WithCancel(ctx)

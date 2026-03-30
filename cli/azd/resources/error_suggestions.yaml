@@ -52,10 +52,11 @@ rules:
   - errorType: "DeploymentErrorLine"
     properties:
       Code: "DeploymentActive"
-    message: "Another deployment is already in progress on this scope."
+    message: "Another deployment is already in progress in the target scope."
     suggestion: >
       Wait for the current deployment to complete, then retry.
-      You can check deployment status in the Azure portal under the Deployments blade.
+      You can check deployment status in the Azure portal under the
+      Deployments view for the target scope.
     links:
       - url: "https://learn.microsoft.com/azure/azure-resource-manager/troubleshooting/error-deployment-active"
         title: "Troubleshoot DeploymentActive errors"

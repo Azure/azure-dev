@@ -316,17 +316,17 @@ func TestAskerConsole_Message_JsonQueryFilter(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			buf := &strings.Builder{}
+			stderrBuf := &strings.Builder{}
 			formatter := &output.JsonFormatter{Query: tc.query}
 
 			c := NewConsole(
 				true,
 				false,
-				Writers{Output: writerAdapter{buf}},
+				Writers{Output: writerAdapter{stderrBuf}},
 				ConsoleHandles{
-					Stderr: os.Stderr,
+					Stderr: writerAdapter{stderrBuf},
 					Stdin:  os.Stdin,
-					Stdout: writerAdapter{buf},
+					Stdout: writerAdapter{&strings.Builder{}},
 				},
 				formatter,
 				nil,
@@ -334,23 +334,23 @@ func TestAskerConsole_Message_JsonQueryFilter(t *testing.T) {
 
 			c.Message(context.Background(), "hello world")
 
-			tc.assert(t, buf.String())
+			tc.assert(t, stderrBuf.String())
 		})
 	}
 }
 
 func TestAskerConsole_Message_InvalidQuery_FallsBack(t *testing.T) {
-	buf := &strings.Builder{}
+	stderrBuf := &strings.Builder{}
 	formatter := &output.JsonFormatter{Query: "[invalid"}
 
 	c := NewConsole(
 		true,
 		false,
-		Writers{Output: writerAdapter{buf}},
+		Writers{Output: writerAdapter{stderrBuf}},
 		ConsoleHandles{
-			Stderr: os.Stderr,
+			Stderr: writerAdapter{stderrBuf},
 			Stdin:  os.Stdin,
-			Stdout: writerAdapter{buf},
+			Stdout: writerAdapter{&strings.Builder{}},
 		},
 		formatter,
 		nil,
@@ -359,9 +359,154 @@ func TestAskerConsole_Message_InvalidQuery_FallsBack(t *testing.T) {
 	// Should not panic; falls back to unfiltered output
 	c.Message(context.Background(), "hello world")
 
-	got := buf.String()
+	got := stderrBuf.String()
 	require.Contains(t, got, `"consoleMessage"`,
 		"invalid query should fall back to full envelope")
+}
+
+func TestAskerConsole_JsonOutputMode_StderrRouting(t *testing.T) {
+	const waitTime = 50 * time.Millisecond
+
+	tests := []struct {
+		name         string
+		format       string
+		action       func(ctx context.Context, c Console)
+		wantOnStderr string
+		wantStdout   bool
+	}{
+		{
+			name:   "JsonMode_Message_GoesToStderr",
+			format: string(output.JsonFormat),
+			action: func(ctx context.Context, c Console) {
+				c.Message(ctx, "deploying resources")
+			},
+			wantOnStderr: "deploying resources",
+			wantStdout:   false,
+		},
+		{
+			name:   "JsonMode_ShowSpinner_GoesToStderr",
+			format: string(output.JsonFormat),
+			action: func(ctx context.Context, c Console) {
+				c.ShowSpinner(ctx, "Provisioning...", Step)
+			},
+			wantOnStderr: "Provisioning...",
+			wantStdout:   false,
+		},
+		{
+			name:   "JsonMode_StopSpinner_GoesToStderr",
+			format: string(output.JsonFormat),
+			action: func(
+				ctx context.Context, c Console,
+			) {
+				c.StopSpinner(ctx, "Done", StepDone)
+			},
+			wantOnStderr: "Done",
+			wantStdout:   false,
+		},
+		{
+			name:   "TableMode_Message_GoesToWriter",
+			format: string(output.TableFormat),
+			action: func(ctx context.Context, c Console) {
+				c.Message(ctx, "deploying resources")
+			},
+			wantOnStderr: "",
+			wantStdout:   true,
+		},
+		{
+			name:   "NoneMode_Spinner_GoesToWriter",
+			format: string(output.NoneFormat),
+			action: func(ctx context.Context, c Console) {
+				c.ShowSpinner(ctx, "Working...", Step)
+				time.Sleep(waitTime)
+				c.StopSpinner(ctx, "Complete", StepDone)
+				time.Sleep(waitTime)
+			},
+			wantOnStderr: "",
+			wantStdout:   true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			stdoutBuf := &strings.Builder{}
+			stderrBuf := &strings.Builder{}
+			formatter, err := output.NewFormatter(tc.format)
+			require.NoError(t, err)
+
+			c := NewConsole(
+				true,
+				false,
+				Writers{
+					Output: writerAdapter{stdoutBuf},
+				},
+				ConsoleHandles{
+					Stderr: writerAdapter{stderrBuf},
+					Stdin:  os.Stdin,
+					Stdout: writerAdapter{stdoutBuf},
+				},
+				formatter,
+				nil,
+			)
+
+			ctx := t.Context()
+			tc.action(ctx, c)
+
+			if tc.wantOnStderr != "" {
+				require.Contains(
+					t,
+					stderrBuf.String(),
+					tc.wantOnStderr,
+					"expected message on stderr",
+				)
+				require.Empty(
+					t,
+					stdoutBuf.String(),
+					"stdout should be empty in JSON mode",
+				)
+			}
+
+			if tc.wantStdout {
+				require.NotEmpty(
+					t,
+					stdoutBuf.String(),
+					"expected output on stdout/writer",
+				)
+				require.Empty(
+					t,
+					stderrBuf.String(),
+					"stderr should be empty in non-JSON mode",
+				)
+			}
+		})
+	}
+}
+
+func TestAskerConsole_JsonMode_EnsureBlankLine(t *testing.T) {
+	stdoutBuf := &strings.Builder{}
+	stderrBuf := &strings.Builder{}
+	formatter := &output.JsonFormatter{}
+
+	c := NewConsole(
+		true,
+		false,
+		Writers{Output: writerAdapter{stdoutBuf}},
+		ConsoleHandles{
+			Stderr: writerAdapter{stderrBuf},
+			Stdin:  os.Stdin,
+			Stdout: writerAdapter{stdoutBuf},
+		},
+		formatter,
+		nil,
+	)
+
+	ctx := t.Context()
+	c.Message(ctx, "first line")
+	c.EnsureBlankLine(ctx)
+
+	require.Empty(t, stdoutBuf.String(),
+		"stdout should be empty in JSON mode")
+	require.NotEmpty(t, stderrBuf.String(),
+		"EnsureBlankLine output should go to stderr")
 }
 
 // writerAdapter wraps *strings.Builder to satisfy io.Writer for test purposes.

@@ -145,6 +145,11 @@ type AskerConsole struct {
 	writer    io.Writer
 	formatter output.Formatter
 
+	// jsonOutputMode tracks whether JSON output format is active.
+	// When true, human-readable messages are routed to handles.Stderr
+	// so stdout contains only valid, parseable JSON.
+	jsonOutputMode bool
+
 	// isTerminal controls whether terminal-style input/output will be used.
 	//
 	// When isTerminal is false, the following notable behaviors apply:
@@ -213,6 +218,16 @@ func (c *AskerConsole) IsUnformatted() bool {
 	return c.formatter == nil || c.formatter.Kind() == output.NoneFormat
 }
 
+// messageWriter returns the writer for human-readable messages.
+// In JSON output mode, returns stderr to keep stdout clean for
+// structured JSON. Otherwise, returns the current console writer.
+func (c *AskerConsole) messageWriter() io.Writer {
+	if c.jsonOutputMode {
+		return c.handles.Stderr
+	}
+	return c.writer
+}
+
 // Prints out a message to the underlying console write
 func (c *AskerConsole) Message(ctx context.Context, message string) {
 	// Disable output when formatting is enabled
@@ -231,7 +246,7 @@ func (c *AskerConsole) Message(ctx context.Context, message string) {
 		if err != nil {
 			panic(fmt.Sprintf("Message: unexpected error during marshaling for a valid object: %v", err))
 		}
-		fmt.Fprintln(c.writer, string(jsonMessage))
+		fmt.Fprintln(c.messageWriter(), string(jsonMessage))
 	} else if c.formatter != nil {
 		c.println(ctx, message)
 	} else {
@@ -297,7 +312,7 @@ func (c *AskerConsole) MessageUxItem(ctx context.Context, item ux.UxItem) {
 		if err != nil {
 			panic(err)
 		}
-		fmt.Fprintln(c.writer, string(jsonBytes))
+		fmt.Fprintln(c.messageWriter(), string(jsonBytes))
 		return
 	}
 
@@ -308,13 +323,14 @@ func (c *AskerConsole) MessageUxItem(ctx context.Context, item ux.UxItem) {
 }
 
 func (c *AskerConsole) println(ctx context.Context, msg string) {
-	if c.IsSpinnerInteractive() && c.spinner.Status() == yacspin.SpinnerRunning {
+	w := c.messageWriter()
+	if c.IsSpinnerInteractive() &&
+		c.spinner.Status() == yacspin.SpinnerRunning {
 		c.StopSpinner(ctx, "", Step)
-		// default non-format
-		fmt.Fprintln(c.writer, msg)
+		fmt.Fprintln(w, msg)
 		_ = c.spinner.Start()
 	} else {
-		fmt.Fprintln(c.writer, msg)
+		fmt.Fprintln(w, msg)
 	}
 }
 
@@ -418,8 +434,10 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 	c.showProgressMu.Lock()
 	defer c.showProgressMu.Unlock()
 
-	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
-		// Spinner is disabled when using json format.
+	if c.jsonOutputMode {
+		// In JSON mode, emit spinner title as plain text to stderr
+		// so stdout remains clean for structured JSON output.
+		fmt.Fprintln(c.messageWriter(), title)
 		return
 	}
 
@@ -489,9 +507,18 @@ func (c *AskerConsole) getIndent() string {
 	return c.currentIndent.Load()
 }
 
-func (c *AskerConsole) StopSpinner(ctx context.Context, lastMessage string, format SpinnerUxType) {
-	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
-		// Spinner is disabled when using json format.
+func (c *AskerConsole) StopSpinner(
+	ctx context.Context,
+	lastMessage string,
+	format SpinnerUxType,
+) {
+	if c.jsonOutputMode {
+		// In JSON mode, emit the stop message as plain text to
+		// stderr so stdout remains clean for structured JSON.
+		if lastMessage != "" {
+			msg := c.getStopChar(format) + " " + lastMessage
+			fmt.Fprintln(c.messageWriter(), msg)
+		}
 		return
 	}
 
@@ -502,15 +529,13 @@ func (c *AskerConsole) StopSpinner(ctx context.Context, lastMessage string, form
 
 	c.spinnerLineMu.Lock()
 	c.spinnerCurrentTitle = ""
-	// Update style according to MessageUxType
 	if lastMessage != "" {
 		lastMessage = c.getStopChar(format) + " " + lastMessage
 	}
 
 	_ = c.spinner.Stop()
 	if lastMessage != "" {
-		// Avoid using StopMessage() as it may result in an extra Message line print in non-tty scenarios
-		fmt.Fprintln(c.writer, lastMessage)
+		fmt.Fprintln(c.messageWriter(), lastMessage)
 	}
 
 	c.spinnerLineMu.Unlock()
@@ -1026,15 +1051,19 @@ func NewConsole(
 	externalPromptCfg *ExternalPromptConfiguration) Console {
 	asker := NewAsker(noPrompt, isTerminal, handles.Stdout, handles.Stdin)
 
+	jsonMode := formatter != nil &&
+		formatter.Kind() == output.JsonFormat
+
 	c := &AskerConsole{
-		asker:         asker,
-		handles:       handles,
-		defaultWriter: writers.Output,
-		writer:        writers.Output,
-		formatter:     formatter,
-		isTerminal:    isTerminal,
-		currentIndent: atomic.NewString(""),
-		noPrompt:      noPrompt,
+		asker:          asker,
+		handles:        handles,
+		defaultWriter:  writers.Output,
+		writer:         writers.Output,
+		formatter:      formatter,
+		jsonOutputMode: jsonMode,
+		isTerminal:     isTerminal,
+		currentIndent:  atomic.NewString(""),
+		noPrompt:       noPrompt,
 	}
 
 	if writers.Spinner == nil {

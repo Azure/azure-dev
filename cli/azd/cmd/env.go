@@ -1375,7 +1375,7 @@ func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, e
 // format (export KEY="VALUE") to the given writer. Values are
 // double-quoted with embedded backslashes, double quotes, dollar
 // signs, backticks, and carriage returns escaped. Newlines use
-// ANSI-C quoting ($'...') to ensure correct roundtripping through eval.
+// ANSI-C quoting ($'...') to ensure correct round-tripping through eval.
 func writeExportedEnv(
 	values map[string]string,
 	writer io.Writer,

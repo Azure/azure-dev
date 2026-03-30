@@ -2179,26 +2179,6 @@ func (p *BicepProvider) validatePreflight(
 		Fn:     p.checkRoleAssignmentPermissions,
 	})
 
-	// Register the storage account policy check. This uses deny policies
-	// fetched from the subscription's policy assignments (including
-	// management-group-inherited policies) to detect restrictions that
-	// would block deployment of storage accounts.
-	localPreflight.AddCheck(p.checkStorageAccountPolicy)
-
-	// Set up the deny policy fetch function so policies are loaded in
-	// parallel with the Bicep snapshot.
-	localPreflight.SetDenyPoliciesFn(
-		func(ctx context.Context) ([]azapi.DenyPolicy, error) {
-			var policyService *azapi.PolicyService
-			if err := p.serviceLocator.Resolve(&policyService); err != nil {
-				return nil, err
-			}
-			return policyService.FindDenyPolicies(
-				ctx, p.env.GetSubscriptionId(),
-			)
-		},
-	)
-
 	results, err := localPreflight.validate(ctx, p.console, armTemplate, armParameters)
 	if err != nil {
 		p.setPreflightOutcome(span, preflightOutcomeError, nil)
@@ -2259,7 +2239,6 @@ func (p *BicepProvider) validatePreflight(
 		}
 
 		if report.HasWarnings() {
-			p.console.Message(ctx, "")
 			continueDeployment, promptErr := p.console.Confirm(ctx, input.ConsoleOptions{
 				Message: "Preflight validation found warnings that may cause the " +
 					"deployment to fail. Do you want to continue?",
@@ -2418,76 +2397,6 @@ func (p *BicepProvider) resolveResourceTenantPrincipalId(
 	}
 
 	return principalId, nil
-}
-
-// checkStorageAccountPolicy is a PreflightCheckFn that uses deny policies from
-// the subscription's policy assignments to detect policies requiring local
-// authentication to be disabled on storage accounts. It filters the
-// pre-fetched deny policies to those targeting storage accounts with local
-// auth fields and warns when any storage account in the template doesn't
-// have local authentication disabled.
-func (p *BicepProvider) checkStorageAccountPolicy(
-	ctx context.Context, valCtx *validationContext,
-) (*PreflightCheckResult, error) {
-	// Collect storage accounts from the snapshot.
-	var storageAccounts []armTemplateResource
-	for _, resource := range valCtx.SnapshotResources {
-		if strings.EqualFold(
-			resource.Type, "Microsoft.Storage/storageAccounts",
-		) {
-			storageAccounts = append(storageAccounts, resource)
-		}
-	}
-	if len(storageAccounts) == 0 {
-		return nil, nil
-	}
-
-	// Filter deny policies to those targeting storage accounts with
-	// local auth fields.
-	hasStoragePolicy := false
-	for _, policy := range valCtx.DenyPolicies {
-		if strings.EqualFold(
-			policy.ResourceType,
-			"Microsoft.Storage/storageAccounts",
-		) && azapi.IsLocalAuthField(policy.FieldPath) {
-			hasStoragePolicy = true
-			break
-		}
-	}
-	if !hasStoragePolicy {
-		return nil, nil
-	}
-
-	// Count how many storage accounts don't have local auth disabled.
-	affectedCount := 0
-	for _, account := range storageAccounts {
-		if !azapi.ResourceHasLocalAuthDisabled(
-			account.Type, account.Properties,
-		) {
-			affectedCount++
-		}
-	}
-	if affectedCount == 0 {
-		return nil, nil
-	}
-
-	msg := "an Azure Policy on this subscription requires storage accounts " +
-		"to disable local authentication (shared key access). "
-	if affectedCount == 1 {
-		msg += "1 storage account in this deployment does not have " +
-			"'allowSharedKeyAccess' set to false."
-	} else {
-		msg += fmt.Sprintf(
-			"%d storage accounts in this deployment do not have "+
-				"'allowSharedKeyAccess' set to false.",
-			affectedCount,
-		)
-	}
-
-	return &PreflightCheckResult{
-		Severity: PreflightCheckWarning,
-		Message:  msg,
-	}, nil
 }
 
 // Deploys the specified Bicep module and parameters with the selected provisioning scope (subscription vs resource group)

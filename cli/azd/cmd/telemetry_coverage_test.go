@@ -20,8 +20,10 @@ import (
 // TestCommandTelemetryCoverageAllowlist (below) and the feature-telemetry-matrix.md.
 // Full AST-based scanning of SetUsageAttributes calls is a future enhancement.
 func TestTelemetryFieldConstants(t *testing.T) {
+	t.Parallel()
 	// Auth command telemetry fields
 	t.Run("AuthFields", func(t *testing.T) {
+		t.Parallel()
 		kv := fields.AuthMethodKey.String("browser")
 		require.Equal(t, "auth.method", string(kv.Key))
 		require.Equal(t, "browser", kv.Value.AsString())
@@ -41,6 +43,7 @@ func TestTelemetryFieldConstants(t *testing.T) {
 
 	// Env command telemetry fields
 	t.Run("EnvFields", func(t *testing.T) {
+		t.Parallel()
 		// Env count is a measurement
 		kvCount := fields.EnvCountKey.Int(3)
 		require.Equal(t, "env.count", string(kvCount.Key))
@@ -49,6 +52,7 @@ func TestTelemetryFieldConstants(t *testing.T) {
 
 	// Hooks command telemetry fields
 	t.Run("HooksFields", func(t *testing.T) {
+		t.Parallel()
 		kv := fields.HooksNameKey.String("predeploy")
 		require.Equal(t, "hooks.name", string(kv.Key))
 
@@ -58,6 +62,7 @@ func TestTelemetryFieldConstants(t *testing.T) {
 
 	// Pipeline command telemetry fields
 	t.Run("PipelineFields", func(t *testing.T) {
+		t.Parallel()
 		kv := fields.PipelineProviderKey.String("github")
 		require.Equal(t, "pipeline.provider", string(kv.Key))
 
@@ -67,6 +72,7 @@ func TestTelemetryFieldConstants(t *testing.T) {
 
 	// Infra command telemetry fields
 	t.Run("InfraFields", func(t *testing.T) {
+		t.Parallel()
 		providers := []string{"bicep", "terraform"}
 		for _, provider := range providers {
 			kv := fields.InfraProviderKey.String(provider)
@@ -88,6 +94,7 @@ func TestTelemetryFieldConstants(t *testing.T) {
 //   - A command appears in neither list (unclassified — forces developer action)
 //   - The lists are not sorted (maintainability)
 func TestCommandTelemetryCoverage(t *testing.T) {
+	t.Parallel()
 	// Commands that have command-specific telemetry attributes emitted via
 	// tracing.SetUsageAttributes (beyond the global middleware that tracks
 	// command name, flags, duration, and errors for all commands).

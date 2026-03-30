@@ -21,6 +21,7 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestValidateServiceName(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		input     string
@@ -73,6 +74,7 @@ func TestValidateServiceName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			prj := &project.ProjectConfig{
 				Services: tt.services,
 			}
@@ -92,6 +94,7 @@ func TestValidateServiceName(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestValidateResourceName(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		input     string
@@ -132,6 +135,7 @@ func TestValidateResourceName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			prj := &project.ProjectConfig{
 				Resources: tt.resources,
 			}
@@ -151,6 +155,7 @@ func TestValidateResourceName(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestValidateContainerName(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		input     string
@@ -207,6 +212,7 @@ func TestValidateContainerName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			err := validateContainerName(tt.input)
 			if tt.wantError != "" {
 				require.Error(t, err)
@@ -223,6 +229,7 @@ func TestValidateContainerName(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestResourceType(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name         string
 		azureResType string
@@ -267,6 +274,7 @@ func TestResourceType(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := resourceType(tt.azureResType)
 			assert.Equal(t, tt.want, got)
 		})
@@ -278,6 +286,7 @@ func TestResourceType(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAllStorageDataTypes(t *testing.T) {
+	t.Parallel()
 	types := allStorageDataTypes()
 	require.Len(t, types, 1)
 	assert.Equal(t, StorageDataTypeBlob, types[0])
@@ -288,6 +297,7 @@ func TestAllStorageDataTypes(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestFillAiProjectName(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		rName     string
@@ -329,6 +339,7 @@ func TestFillAiProjectName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			r := &project.ResourceConfig{Name: tt.rName}
 			opts := PromptOptions{
 				PrjConfig: &project.ProjectConfig{
@@ -349,6 +360,7 @@ func TestFillAiProjectName(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestConfigure_SingletonResources(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		resType   project.ResourceType
@@ -402,6 +414,7 @@ func TestConfigure_SingletonResources(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			r := &project.ResourceConfig{Type: tt.resType}
 			opts := PromptOptions{
 				PrjConfig: &project.ProjectConfig{
@@ -427,6 +440,7 @@ func TestConfigure_SingletonResources(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestServiceFromDetect(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		root    string
@@ -577,6 +591,7 @@ func TestServiceFromDetect(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			svc, err := ServiceFromDetect(
 				tt.root, tt.svcName, tt.prj, tt.svcKind,
 			)
@@ -596,6 +611,7 @@ func TestServiceFromDetect(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDiffNotEq(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		in   []dmp.Diff
@@ -632,6 +648,7 @@ func TestDiffNotEq(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tt.want, diffNotEq(tt.in))
 		})
 	}
@@ -642,6 +659,7 @@ func TestDiffNotEq(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestLineDiffsFromStr(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		op     dmp.Operation
@@ -681,6 +699,7 @@ func TestLineDiffsFromStr(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			result := lineDiffsFromStr(tt.op, tt.input)
 			assert.Len(t, result, tt.wantN)
 			for _, r := range result {
@@ -695,6 +714,7 @@ func TestLineDiffsFromStr(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestLinesDiffsFromTextDiffs(t *testing.T) {
+	t.Parallel()
 	diffs := []dmp.Diff{
 		{Type: dmp.DiffEqual, Text: "line1\nline2"},
 		{Type: dmp.DiffInsert, Text: "new"},
@@ -715,6 +735,7 @@ func TestLinesDiffsFromTextDiffs(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestFormatLine(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		op     dmp.Operation
@@ -758,6 +779,7 @@ func TestFormatLine(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			out := formatLine(tt.op, tt.text, tt.indent)
 			tt.check(t, out)
 		})
@@ -769,6 +791,7 @@ func TestFormatLine(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDiffBlocks_NewEntry(t *testing.T) {
+	t.Parallel()
 	old := map[string]*project.ResourceConfig{}
 	r := &project.ResourceConfig{
 		Type: project.ResourceTypeDbRedis,
@@ -786,6 +809,7 @@ func TestDiffBlocks_NewEntry(t *testing.T) {
 }
 
 func TestDiffBlocks_NoChanges(t *testing.T) {
+	t.Parallel()
 	r := &project.ResourceConfig{
 		Type: project.ResourceTypeDbRedis,
 		Name: "redis",
@@ -800,6 +824,7 @@ func TestDiffBlocks_NoChanges(t *testing.T) {
 }
 
 func TestDiffBlocks_EmptyMaps(t *testing.T) {
+	t.Parallel()
 	result, err := DiffBlocks(
 		map[string]*project.ResourceConfig{},
 		map[string]*project.ResourceConfig{},
@@ -813,6 +838,7 @@ func TestDiffBlocks_EmptyMaps(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPreviewWriter(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		input string
@@ -860,6 +886,7 @@ func TestPreviewWriter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			var buf bytes.Buffer
 			pw := &previewWriter{w: &buf}
 			n, err := pw.Write([]byte(tt.input))
@@ -875,6 +902,7 @@ func TestPreviewWriter(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestMetadata(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		res        *project.ResourceConfig
@@ -911,6 +939,7 @@ func TestMetadata(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			meta := Metadata(tt.res)
 			if tt.wantType == "" {
 				assert.Empty(t, meta.ResourceType)
@@ -934,6 +963,7 @@ func TestMetadata(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDbMap(t *testing.T) {
+	t.Parallel()
 	expected := map[appdetect.DatabaseDep]project.ResourceType{
 		appdetect.DbMongo:    project.ResourceTypeDbMongo,
 		appdetect.DbPostgres: project.ResourceTypeDbPostgres,
@@ -948,6 +978,7 @@ func TestDbMap(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestLanguageMap(t *testing.T) {
+	t.Parallel()
 	assert.Equal(
 		t,
 		project.ServiceLanguageDotNet,
@@ -981,6 +1012,7 @@ func TestLanguageMap(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHostMap(t *testing.T) {
+	t.Parallel()
 	assert.Equal(
 		t,
 		project.AppServiceTarget,
@@ -999,6 +1031,7 @@ func TestHostMap(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestServiceLanguageMap(t *testing.T) {
+	t.Parallel()
 	pyRuntime := ServiceLanguageMap[project.ServiceLanguagePython]
 	assert.Equal(
 		t,
@@ -1030,6 +1063,7 @@ func TestServiceLanguageMap(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestProvisionSelectionConstants(t *testing.T) {
+	t.Parallel()
 	// iota constants: verify ordering and distinct values
 	assert.Equal(t, 0, int(provisionUnknown))
 	assert.Equal(t, 1, int(provision))

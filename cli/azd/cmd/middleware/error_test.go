@@ -32,6 +32,7 @@ import (
 )
 
 func Test_ErrorMiddleware_SuccessNoError(t *testing.T) {
+	t.Parallel()
 	mockContext := mocks.NewMockContext(context.Background())
 	cfg := config.NewConfig(map[string]any{
 		"alpha": map[string]any{
@@ -69,6 +70,7 @@ func Test_ErrorMiddleware_SuccessNoError(t *testing.T) {
 }
 
 func Test_ErrorMiddleware_LLMAlphaFeatureDisabled(t *testing.T) {
+	t.Parallel()
 	mockContext := mocks.NewMockContext(context.Background())
 	cfg := config.NewEmptyConfig()
 	featureManager := alpha.NewFeaturesManagerWithConfig(cfg)
@@ -101,6 +103,7 @@ func Test_ErrorMiddleware_LLMAlphaFeatureDisabled(t *testing.T) {
 }
 
 func Test_ErrorMiddleware_ChildAction(t *testing.T) {
+	t.Parallel()
 	mockContext := mocks.NewMockContext(context.Background())
 	cfg := config.NewConfig(map[string]any{
 		"alpha": map[string]any{
@@ -137,6 +140,7 @@ func Test_ErrorMiddleware_ChildAction(t *testing.T) {
 }
 
 func Test_ErrorMiddleware_ErrorWithSuggestion(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("TF_BUILD") != "" || os.Getenv("GITHUB_ACTIONS") != "" || os.Getenv("CI") != "" {
 		t.Skip("Skipping test in CI/CD environment")
 	}
@@ -185,6 +189,7 @@ func Test_ErrorMiddleware_ErrorWithSuggestion(t *testing.T) {
 }
 
 func Test_ErrorMiddleware_PatternMatchingSuggestion(t *testing.T) {
+	t.Parallel()
 	mockContext := mocks.NewMockContext(context.Background())
 	cfg := config.NewEmptyConfig()
 	featureManager := alpha.NewFeaturesManagerWithConfig(cfg)
@@ -222,6 +227,7 @@ func Test_ErrorMiddleware_PatternMatchingSuggestion(t *testing.T) {
 }
 
 func Test_ErrorMiddleware_NoPatternMatch(t *testing.T) {
+	t.Parallel()
 	mockContext := mocks.NewMockContext(context.Background())
 	cfg := config.NewEmptyConfig()
 	featureManager := alpha.NewFeaturesManagerWithConfig(cfg)
@@ -258,8 +264,10 @@ func Test_ErrorMiddleware_NoPatternMatch(t *testing.T) {
 }
 
 func Test_ClassifyError(t *testing.T) {
+	t.Parallel()
 	// --- Machine context: typed errors ---
 	t.Run("MissingToolErrors classifies as MachineContext", func(t *testing.T) {
+		t.Parallel()
 		err := &tools.MissingToolErrors{
 			Errs:      []error{errors.New("docker not found")},
 			ToolNames: []string{"docker"},
@@ -268,6 +276,7 @@ func Test_ClassifyError(t *testing.T) {
 	})
 
 	t.Run("Wrapped MissingToolErrors classifies as MachineContext", func(t *testing.T) {
+		t.Parallel()
 		inner := &tools.MissingToolErrors{
 			Errs:      []error{errors.New("node not found")},
 			ToolNames: []string{"node"},
@@ -277,6 +286,7 @@ func Test_ClassifyError(t *testing.T) {
 	})
 
 	t.Run("ErrSemver classifies as MachineContext", func(t *testing.T) {
+		t.Parallel()
 		err := &tools.ErrSemver{
 			ToolName: "node",
 			VersionInfo: tools.VersionInfo{
@@ -288,6 +298,7 @@ func Test_ClassifyError(t *testing.T) {
 	})
 
 	t.Run("ExtensionRunError classifies as MachineContext", func(t *testing.T) {
+		t.Parallel()
 		err := &extensions.ExtensionRunError{
 			ExtensionId: "my-extension",
 			Err:         errors.New("extension crashed"),
@@ -296,6 +307,7 @@ func Test_ClassifyError(t *testing.T) {
 	})
 
 	t.Run("StatusCodeError classifies as MachineContext", func(t *testing.T) {
+		t.Parallel()
 		err := &pack.StatusCodeError{
 			Code: 1,
 			Err:  errors.New("pack build failed"),
@@ -305,11 +317,13 @@ func Test_ClassifyError(t *testing.T) {
 
 	// --- User context: typed errors ---
 	t.Run("ReLoginRequiredError classifies as UserContext", func(t *testing.T) {
+		t.Parallel()
 		err := &auth.ReLoginRequiredError{}
 		require.Equal(t, UserContextError, classifyError(err))
 	})
 
 	t.Run("AuthFailedError classifies as UserContext", func(t *testing.T) {
+		t.Parallel()
 		err := &auth.AuthFailedError{}
 		require.Equal(t, UserContextError, classifyError(err))
 	})
@@ -343,10 +357,12 @@ func Test_ClassifyError(t *testing.T) {
 
 	for _, tc := range userContextSentinels {
 		t.Run(tc.name+" classifies as UserContext", func(t *testing.T) {
+			t.Parallel()
 			require.Equal(t, UserContextError, classifyError(tc.err))
 		})
 
 		t.Run("Wrapped "+tc.name+" classifies as UserContext", func(t *testing.T) {
+			t.Parallel()
 			wrapped := fmt.Errorf("operation failed: %w", tc.err)
 			require.Equal(t, UserContextError, classifyError(wrapped))
 		})
@@ -354,33 +370,40 @@ func Test_ClassifyError(t *testing.T) {
 
 	// --- Azure context: defaults ---
 	t.Run("Generic error defaults to AzureContext", func(t *testing.T) {
+		t.Parallel()
 		err := errors.New("deploying to Azure: InternalServerError")
 		require.Equal(t, AzureContextAndOtherError, classifyError(err))
 	})
 }
 
 func Test_ShouldSkipErrorAnalysis(t *testing.T) {
+	t.Parallel()
 	t.Run("Wrapped context.Canceled is skipped", func(t *testing.T) {
+		t.Parallel()
 		wrapped := fmt.Errorf("operation aborted: %w", context.Canceled)
 		require.True(t, shouldSkipErrorAnalysis(wrapped))
 	})
 
 	t.Run("Wrapped InterruptErr is skipped", func(t *testing.T) {
+		t.Parallel()
 		wrapped := fmt.Errorf("prompt failed: %w", surveyterm.InterruptErr)
 		require.True(t, shouldSkipErrorAnalysis(wrapped))
 	})
 
 	t.Run("ErrAbortedByUser is skipped", func(t *testing.T) {
+		t.Parallel()
 		require.True(t, shouldSkipErrorAnalysis(internal.ErrAbortedByUser))
 	})
 
 	t.Run("Wrapped ErrAbortedByUser is skipped", func(t *testing.T) {
+		t.Parallel()
 		wrapped := fmt.Errorf("preflight declined: %w", internal.ErrAbortedByUser)
 		require.True(t, shouldSkipErrorAnalysis(wrapped))
 	})
 }
 
 func Test_TroubleshootCategory_Constants(t *testing.T) {
+	t.Parallel()
 	// Verify constant values match expected strings used in config
 	require.Equal(t, troubleshootCategory("explain"), categoryExplain)
 	require.Equal(t, troubleshootCategory("guidance"), categoryGuidance)
@@ -389,6 +412,7 @@ func Test_TroubleshootCategory_Constants(t *testing.T) {
 }
 
 func Test_BuildPromptForCategory(t *testing.T) {
+	t.Parallel()
 	middleware := &ErrorMiddleware{
 		options: &Options{CommandPath: "azd provision"},
 	}
@@ -423,6 +447,7 @@ func Test_BuildPromptForCategory(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			prompt := middleware.buildPromptForCategory(tt.category, testErr)
 			for _, s := range tt.contains {
 				require.Contains(t, prompt, s)
@@ -432,6 +457,7 @@ func Test_BuildPromptForCategory(t *testing.T) {
 }
 
 func Test_BuildFixPrompt(t *testing.T) {
+	t.Parallel()
 	middleware := &ErrorMiddleware{
 		options: &Options{CommandPath: "azd up"},
 	}
@@ -445,6 +471,7 @@ func Test_BuildFixPrompt(t *testing.T) {
 }
 
 func Test_ConfigKeyErrorHandlingCategory(t *testing.T) {
+	t.Parallel()
 	// Verify the config key is properly namespaced
 	require.Equal(t, "copilot.errorHandling.category", agentcopilot.ConfigKeyErrorHandlingCategory)
 }

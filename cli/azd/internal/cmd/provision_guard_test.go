@@ -12,6 +12,7 @@ import (
 )
 
 func Test_EnvFlagGuard(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name          string
 		existingSub   string
@@ -75,6 +76,7 @@ func Test_EnvFlagGuard(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			env := environment.New("test-env")
 			if tt.existingSub != "" {
 				env.SetSubscriptionId(tt.existingSub)

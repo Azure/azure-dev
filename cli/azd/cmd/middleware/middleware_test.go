@@ -14,8 +14,10 @@ import (
 )
 
 func Test_Middleware_RunAction(t *testing.T) {
+	t.Parallel()
 	// In a standard success case both the action and the middleware will succeed
 	t.Run("success", func(t *testing.T) {
+		t.Parallel()
 		preRan := false
 		postRan := false
 		runLog := []string{}
@@ -53,6 +55,7 @@ func Test_Middleware_RunAction(t *testing.T) {
 	// This is a middleware implementation details and is controlled
 	// by the middleware developer
 	t.Run("error", func(t *testing.T) {
+		t.Parallel()
 		preRan := false
 		postRan := false
 		runLog := []string{}
@@ -87,6 +90,7 @@ func Test_Middleware_RunAction(t *testing.T) {
 	})
 
 	t.Run("multiple middleware components", func(t *testing.T) {
+		t.Parallel()
 		mockContext := mocks.NewMockContext(context.Background())
 		middlewareRunner := NewMiddlewareRunner(mockContext.Container)
 		runLog := []string{}
@@ -129,6 +133,7 @@ func Test_Middleware_RunAction(t *testing.T) {
 	})
 
 	t.Run("context propagated to action", func(t *testing.T) {
+		t.Parallel()
 		mockContext := mocks.NewMockContext(context.Background())
 		middlewareRunner := NewMiddlewareRunner(mockContext.Container)
 

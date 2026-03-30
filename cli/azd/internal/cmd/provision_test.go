@@ -106,6 +106,7 @@ func (p *mockProvider) Parameters(_ context.Context) ([]provisioning.Parameter, 
 //
 // Regression test for https://github.com/Azure/azure-dev/issues/7305
 func TestProvisionAction_PreflightAborted(t *testing.T) {
+	t.Parallel()
 	// Set up a temp project with a minimal infra directory so ImportManager works.
 	projectDir := t.TempDir()
 	infraDir := filepath.Join(projectDir, "infra")

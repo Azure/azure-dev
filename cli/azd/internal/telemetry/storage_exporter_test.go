@@ -21,6 +21,7 @@ import (
 )
 
 func TestExportSpans(t *testing.T) {
+	t.Parallel()
 	queue := InMemoryQueue{[][]byte{}}
 	exporter := NewExporter(&queue, "iKey")
 	assert.False(t, exporter.ExportedAny())

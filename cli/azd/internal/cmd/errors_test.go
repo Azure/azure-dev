@@ -42,6 +42,7 @@ import (
 )
 
 func Test_MapError(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name           string
 		err            error
@@ -816,6 +817,7 @@ func Test_MapError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			span := &mocktracing.Span{}
 			MapError(tt.err, span)
 
@@ -839,6 +841,7 @@ func Test_MapError(t *testing.T) {
 // When the inner error matches a known sentinel, the descriptive code is used
 // instead of the raw Go type name.
 func TestMapError_ErrorWithSuggestionSetsErrorType(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		err         error
@@ -905,6 +908,7 @@ func TestMapError_ErrorWithSuggestionSetsErrorType(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			span := &mocktracing.Span{}
 			MapError(tt.err, span)
 
@@ -922,6 +926,7 @@ func TestMapError_ErrorWithSuggestionSetsErrorType(t *testing.T) {
 // the same errCode as MapError for every structured error type and sentinel.
 // This catches drift if someone updates the classification logic in one function but not the other.
 func Test_ClassifySuggestionType_MatchesMapError(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		err  error
@@ -1028,6 +1033,7 @@ func Test_ClassifySuggestionType_MatchesMapError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			// Get errCode from MapError
 			span := &mocktracing.Span{}
 			MapError(tt.err, span)
@@ -1043,6 +1049,7 @@ func Test_ClassifySuggestionType_MatchesMapError(t *testing.T) {
 }
 
 func Test_cmdAsName(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		cmd  string
@@ -1057,12 +1064,14 @@ func Test_cmdAsName(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			require.Equal(t, tt.want, cmdAsName(tt.cmd))
 		})
 	}
 }
 
 func Test_normalizeCodeSegment(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		value    string
@@ -1081,12 +1090,14 @@ func Test_normalizeCodeSegment(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			require.Equal(t, tt.want, normalizeCodeSegment(tt.value, tt.fallback))
 		})
 	}
 }
 
 func Test_errorType(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		err  error
@@ -1153,6 +1164,7 @@ func Test_errorType(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := errorType(tt.err)
 			require.Equal(t, tt.want, got)
 		})
@@ -1194,6 +1206,7 @@ func mustMarshalJson(v any) string {
 }
 
 func Test_isNetworkError(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		err  error
@@ -1252,6 +1265,7 @@ func Test_isNetworkError(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			require.Equal(t, tt.want, isNetworkError(tt.err))
 		})
 	}
@@ -1268,6 +1282,7 @@ func Test_isNetworkError(t *testing.T) {
 // 1. Add an errors.Is() check for your error variable in MapError (errors.go), OR
 // 2. Add it to the excludedErrors list below with a comment explaining why.
 func Test_PackageLevelErrorsMapped(t *testing.T) {
+	t.Parallel()
 	// Package-level error variables that are intentionally NOT mapped in MapError, with reasons:
 	//nolint:gosec // G101: map variable name, not credentials
 	excludedErrors := map[string]string{
@@ -1474,6 +1489,7 @@ func isErrorConstructorCall(call *ast.CallExpr) bool {
 // These errors reach MapError via the telemetry middleware and must use typed sentinels or wrap
 // an existing error with %w for proper classification.
 func Test_RunMethodsNoBareErrors(t *testing.T) {
+	t.Parallel()
 	azdRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	require.NoError(t, err)
 

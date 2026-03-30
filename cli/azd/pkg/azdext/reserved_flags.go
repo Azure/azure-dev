@@ -5,6 +5,7 @@ package azdext
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -32,22 +33,25 @@ var reservedGlobalFlags = []reservedFlag{
 	{Long: "trace-log-url", Short: ""},
 }
 
-// reservedShorts and reservedLongs are lookup maps built at init time.
-var (
-	reservedShorts map[string]string // short -> long
-	reservedLongs  map[string]bool
-)
-
-func init() {
-	reservedShorts = make(map[string]string, len(reservedGlobalFlags))
-	reservedLongs = make(map[string]bool, len(reservedGlobalFlags))
+// reservedShorts is an index of short flag names built once at initialization time.
+var reservedShorts = func() map[string]string {
+	m := make(map[string]string, len(reservedGlobalFlags))
 	for _, f := range reservedGlobalFlags {
-		reservedLongs[f.Long] = true
 		if f.Short != "" {
-			reservedShorts[f.Short] = f.Long
+			m[f.Short] = f.Long
 		}
 	}
-}
+	return m
+}()
+
+// reservedLongs is an index of long flag names built once at initialization time.
+var reservedLongs = func() map[string]bool {
+	m := make(map[string]bool, len(reservedGlobalFlags))
+	for _, f := range reservedGlobalFlags {
+		m[f.Long] = true
+	}
+	return m
+}()
 
 // ReservedFlagNames returns the long names of all reserved global flags.
 // This is intended for documentation and error messages.
@@ -133,9 +137,7 @@ func collectConflicts(root, cmd *cobra.Command) []FlagConflict {
 			return
 		}
 
-		if c, ok := checkFlag(cmd, f); ok {
-			conflicts = append(conflicts, c)
-		}
+		conflicts = append(conflicts, checkFlag(cmd, f)...)
 	}
 
 	// Check flags defined directly on this command (not inherited from parents).
@@ -156,43 +158,46 @@ func collectConflicts(root, cmd *cobra.Command) []FlagConflict {
 	return conflicts
 }
 
-// checkFlag checks a single flag against the reserved lists.
-func checkFlag(cmd *cobra.Command, f *pflag.Flag) (FlagConflict, bool) {
+// checkFlag checks a single flag against the reserved lists and returns all
+// conflicts found (short-name and long-name may both collide).
+func checkFlag(cmd *cobra.Command, f *pflag.Flag) []FlagConflict {
 	cmdPath := commandPath(cmd)
+	var conflicts []FlagConflict
 
 	// Check short flag collision.
 	if f.Shorthand != "" {
 		if reservedLong, ok := reservedShorts[f.Shorthand]; ok {
-			return FlagConflict{
+			conflicts = append(conflicts, FlagConflict{
 				Command:      cmdPath,
 				FlagName:     f.Name,
 				FlagShort:    f.Shorthand,
 				ReservedLong: reservedLong,
 				Reason:       fmt.Sprintf("short flag -%s is reserved by azd for --%s", f.Shorthand, reservedLong),
-			}, true
+			})
 		}
 	}
 
 	// Check long flag collision (only if the long name is the same but used for
 	// a different purpose — identified by being on a subcommand, not root).
 	if reservedLongs[f.Name] {
-		return FlagConflict{
+		conflicts = append(conflicts, FlagConflict{
 			Command:      cmdPath,
 			FlagName:     f.Name,
 			FlagShort:    f.Shorthand,
 			ReservedLong: f.Name,
 			Reason:       fmt.Sprintf("long flag --%s is reserved by azd", f.Name),
-		}, true
+		})
 	}
 
-	return FlagConflict{}, false
+	return conflicts
 }
 
 // commandPath returns the space-separated command path (excluding root).
 func commandPath(cmd *cobra.Command) string {
 	var parts []string
 	for c := cmd; c != nil && c.HasParent(); c = c.Parent() {
-		parts = append([]string{c.Name()}, parts...)
+		parts = append(parts, c.Name())
 	}
+	slices.Reverse(parts)
 	return strings.Join(parts, " ")
 }

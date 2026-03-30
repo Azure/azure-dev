@@ -84,7 +84,7 @@ func (o Options) GetWithDefaults(other ...Options) (Options, error) {
 // AbsolutePath returns the layer path resolved against the project path when needed.
 func (o Options) AbsolutePath(projectPath string) string {
 	if filepath.IsAbs(o.Path) {
-		return filepath.Clean(o.Path)
+		return o.Path
 	}
 
 	return filepath.Join(projectPath, o.Path)

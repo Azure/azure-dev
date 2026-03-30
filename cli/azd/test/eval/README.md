@@ -8,8 +8,8 @@ When a user asks Copilot CLI a question like "deploy my Python app to Azure", th
 
 1. **Does the LLM suggest the right commands?** (text graders)
 2. **Are the commands in the right order?** (action_sequence graders)
-3. **Do the commands succeed when executed?** (code graders)
-4. **Is the deployed infrastructure correct and the app running?** (code graders with ARM + HTTP validation)
+3. **Do the suggested commands actually succeed?** (Jest unit + human tests validate CLI behavior)
+4. **Is the deployed infrastructure correct?** (Python code graders with ARM + HTTP validation, used in E2E lifecycle evals only)
 
 ## Architecture
 
@@ -26,7 +26,7 @@ When a user asks Copilot CLI a question like "deploy my Python app to Azure", th
 
 - Node.js 20+
 - Go (to build azd)
-- [Waza CLI](https://github.com/microsoft/waza) (`azd extension install waza` or `go install github.com/microsoft/waza@latest`)
+- [Waza CLI](https://github.com/microsoft/waza) (`npm install -g waza`)
 - Python 3.x (for custom graders)
 
 ### Run Tests
@@ -229,23 +229,7 @@ Unit tests validate `azd` CLI behavior directly — no LLM, no Azure. They run f
 
 ```typescript
 // tests/unit/my-new-test.test.ts
-import { execSync } from "child_process";
-import { resolve } from "path";
-
-const AZD_BIN = resolve(__dirname, "../../../../azd");
-
-function azd(args: string): { stdout: string; stderr: string; exitCode: number } {
-  try {
-    const stdout = execSync(`${AZD_BIN} ${args}`, {
-      encoding: "utf-8",
-      timeout: 30_000,
-      env: { ...process.env, NO_COLOR: "1" },
-    });
-    return { stdout, stderr: "", exitCode: 0 };
-  } catch (e: any) {
-    return { stdout: e.stdout || "", stderr: e.stderr || "", exitCode: e.status || 1 };
-  }
-}
+import { azd } from "../test-utils";
 
 describe("my new azd tests", () => {
   test("version outputs a semver string", () => {
@@ -256,7 +240,7 @@ describe("my new azd tests", () => {
 });
 ```
 
-> **Important:** Always pass `NO_COLOR: "1"` in the env to strip ANSI codes. Without it, regex matches against help text will fail.
+> **Important:** The shared `azd()` helper in `tests/test-utils.ts` sets `NO_COLOR: "1"` and `AZD_FORCE_TTY: "false"` automatically. Always import from there — don't create local helpers.
 
 **Step 2: Run it**
 
@@ -277,23 +261,7 @@ Human tests validate CLI usability patterns — things like "can a user discover
 
 ```typescript
 // tests/human/my-scenario.test.ts
-import { execSync } from "child_process";
-import { resolve } from "path";
-
-const AZD_BIN = resolve(__dirname, "../../../../azd");
-
-function azd(args: string): { stdout: string; stderr: string; exitCode: number } {
-  try {
-    const stdout = execSync(`${AZD_BIN} ${args}`, {
-      encoding: "utf-8",
-      timeout: 30_000,
-      env: { ...process.env, NO_COLOR: "1", AZD_DEBUG_FORCE_NO_TTY: "true" },
-    });
-    return { stdout, stderr: "", exitCode: 0 };
-  } catch (e: any) {
-    return { stdout: e.stdout || "", stderr: e.stderr || "", exitCode: e.status || 1 };
-  }
-}
+import { azd } from "../test-utils";
 
 describe("deploy command discovery", () => {
   test("user can find deploy command from root help", () => {
@@ -336,7 +304,6 @@ cli/azd/test/eval/
 │       ├── command-discovery.test.ts
 │       └── error-recovery.test.ts
 ├── reports/                # Generated reports (gitignored)
-└── scripts/                # Report generation + telemetry analysis
 ```
 
 ## Scenario Categories
@@ -356,7 +323,7 @@ cli/azd/test/eval/
 | `eval-unit.yml` | On PR | Jest unit tests + `waza validate` |
 | `eval-waza.yml` | 3x daily (Tue-Sat) | Waza evals via Copilot SDK |
 | `eval-e2e.yml` | Weekly | Waza E2E with Azure resource validation |
-| `eval-report.yml` | Weekly | Comparison report + auto-issue creation |
+| `eval-report.yml` | Weekly | Aggregates results from Waza + E2E runs |
 
 ## Authentication & Secrets
 

@@ -1,12 +1,12 @@
 
-Runs the specified hook for the project, infrastructure layers, and services
+Runs the specified hook for the project, provisioning layers, and services
 
 Usage
   azd hooks run <name> [flags]
 
 Flags
     -e, --environment string 	: The name of the environment to use.
-        --layer string       	: Only runs hooks for the specified infrastructure layer.
+        --layer string       	: Only runs hooks for the specified provisioning layer.
         --platform string    	: Forces hooks to run for the specified platform.
         --service string     	: Only runs hooks for the specified service.
 

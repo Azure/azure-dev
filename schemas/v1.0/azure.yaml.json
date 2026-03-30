@@ -60,7 +60,6 @@
                     "title": "Name of the default module within the Azure provisioning templates",
                     "description": "Optional. The name of the Azure provisioning module used when provisioning resources. (Default: main)"
                 },
-                "hooks": false,
                 "layers": {
                     "type": "array",
                     "title": "Provisioning layers.",

@@ -2276,7 +2276,7 @@ const completionSpec: Fig.Spec = {
 			subcommands: [
 				{
 					name: ['run'],
-					description: 'Runs the specified hook for the project, infrastructure layers, and services',
+					description: 'Runs the specified hook for the project, provisioning layers, and services',
 					options: [
 						{
 							name: ['--environment', '-e'],
@@ -2289,7 +2289,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--layer'],
-							description: 'Only runs hooks for the specified infrastructure layer.',
+							description: 'Only runs hooks for the specified provisioning layer.',
 							args: [
 								{
 									name: 'layer',
@@ -3552,7 +3552,7 @@ const completionSpec: Fig.Spec = {
 					subcommands: [
 						{
 							name: ['run'],
-							description: 'Runs the specified hook for the project, infrastructure layers, and services',
+							description: 'Runs the specified hook for the project, provisioning layers, and services',
 						},
 					],
 				},

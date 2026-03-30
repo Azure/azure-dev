@@ -5,7 +5,7 @@ Usage
   azd hooks [command]
 
 Available Commands
-  run	: Runs the specified hook for the project, infrastructure layers, and services
+  run	: Runs the specified hook for the project, provisioning layers, and services
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

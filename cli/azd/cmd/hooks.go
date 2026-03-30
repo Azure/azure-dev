@@ -54,7 +54,7 @@ func newHooksRunFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions)
 func newHooksRunCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "run <name>",
-		Short: "Runs the specified hook for the project, infrastructure layers, and services",
+		Short: "Runs the specified hook for the project, provisioning layers, and services",
 		Args:  cobra.ExactArgs(1),
 	}
 }
@@ -71,7 +71,7 @@ func (f *hooksRunFlags) Bind(local *pflag.FlagSet, global *internal.GlobalComman
 	f.EnvFlag.Bind(local, global)
 	f.global = global
 
-	local.StringVar(&f.layer, "layer", "", "Only runs hooks for the specified infrastructure layer.")
+	local.StringVar(&f.layer, "layer", "", "Only runs hooks for the specified provisioning layer.")
 	local.StringVar(&f.platform, "platform", "", "Forces hooks to run for the specified platform.")
 	local.StringVar(&f.service, "service", "", "Only runs hooks for the specified service.")
 }

@@ -222,7 +222,7 @@ func Test_askOneNoPrompt_UnknownType_Panics(t *testing.T) {
 }
 
 func Test_NewAsker_NoPrompt(t *testing.T) {
-	asker := NewAsker(true, false, nil, nil)
+	asker := NewAsker(true, false, false, nil, nil)
 	prompt := &survey.Confirm{
 		Message: "OK?",
 		Default: true,
@@ -239,7 +239,7 @@ func Test_NewAsker_NonTerminal_Input(t *testing.T) {
 	r := strings.NewReader(input)
 	w := &bytes.Buffer{}
 
-	asker := NewAsker(false, false, w, r)
+	asker := NewAsker(false, false, false, w, r)
 	prompt := &survey.Input{
 		Message: "Name:",
 	}
@@ -256,7 +256,7 @@ func Test_NewAsker_NonTerminal_InputWithDefault(t *testing.T) {
 	r := strings.NewReader(input)
 	w := &bytes.Buffer{}
 
-	asker := NewAsker(false, false, w, r)
+	asker := NewAsker(false, false, false, w, r)
 	prompt := &survey.Input{
 		Message: "Name:",
 		Default: "Bob",
@@ -288,7 +288,7 @@ func Test_NewAsker_NonTerminal_Confirm(t *testing.T) {
 			r := strings.NewReader(tt.input)
 			w := &bytes.Buffer{}
 
-			asker := NewAsker(false, false, w, r)
+			asker := NewAsker(false, false, false, w, r)
 			prompt := &survey.Confirm{
 				Message: "Continue?",
 				Default: tt.defVal,
@@ -339,7 +339,7 @@ func Test_NewAsker_NonTerminal_Select(t *testing.T) {
 			r := strings.NewReader(tt.input)
 			w := &bytes.Buffer{}
 
-			asker := NewAsker(false, false, w, r)
+			asker := NewAsker(false, false, false, w, r)
 			prompt := &survey.Select{
 				Message: "Pick:",
 				Options: tt.options,
@@ -363,7 +363,7 @@ func Test_NewAsker_NonTerminal_Password(t *testing.T) {
 	r := strings.NewReader("s3cret\n")
 	w := &bytes.Buffer{}
 
-	asker := NewAsker(false, false, w, r)
+	asker := NewAsker(false, false, false, w, r)
 	prompt := &survey.Password{
 		Message: "Password:",
 	}
@@ -375,7 +375,7 @@ func Test_NewAsker_NonTerminal_Password(t *testing.T) {
 }
 
 func Test_NewAsker_NonTerminal_UnknownType_Panics(t *testing.T) {
-	asker := NewAsker(false, false, &bytes.Buffer{}, strings.NewReader(""))
+	asker := NewAsker(false, false, false, &bytes.Buffer{}, strings.NewReader(""))
 
 	require.Panics(t, func() {
 		var result string
@@ -538,4 +538,138 @@ func Test_choicesFromOptions(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_askOneFailOnPrompt(t *testing.T) {
+	tests := []struct {
+		name        string
+		prompt      survey.Prompt
+		errContains []string
+	}{
+		{
+			name: "Input_WithDefault",
+			prompt: &survey.Input{
+				Message: "Enter name:",
+				Default: "Alice",
+			},
+			errContains: []string{
+				"interactive prompt not allowed in strict mode",
+				"Enter name:",
+				"command-line flags or environment variables",
+			},
+		},
+		{
+			name: "Input_WithoutDefault",
+			prompt: &survey.Input{
+				Message: "Enter value:",
+			},
+			errContains: []string{
+				"interactive prompt not allowed in strict mode",
+				"Enter value:",
+			},
+		},
+		{
+			name: "Select_ListsOptions",
+			prompt: &survey.Select{
+				Message: "Pick region:",
+				Options: []string{"eastus", "westus", "westeurope"},
+				Default: "eastus",
+			},
+			errContains: []string{
+				"interactive prompt not allowed in strict mode",
+				"Pick region:",
+				"eastus",
+				"westeurope",
+			},
+		},
+		{
+			name: "Confirm_WithDefault",
+			prompt: &survey.Confirm{
+				Message: "Continue?",
+				Default: true,
+			},
+			errContains: []string{
+				"interactive prompt not allowed in strict mode",
+				"Continue?",
+			},
+		},
+		{
+			name: "MultiSelect_ListsOptions",
+			prompt: &survey.MultiSelect{
+				Message: "Select features:",
+				Options: []string{"auth", "storage", "compute"},
+			},
+			errContains: []string{
+				"interactive prompt not allowed in strict mode",
+				"Select features:",
+				"auth",
+				"storage",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var response any
+			switch tt.prompt.(type) {
+			case *survey.Input:
+				response = new(string)
+			case *survey.Select:
+				response = new(int)
+			case *survey.Confirm:
+				response = new(bool)
+			case *survey.MultiSelect:
+				response = new([]string)
+			}
+
+			err := askOneFailOnPrompt(tt.prompt, response)
+			require.Error(t, err)
+
+			errMsg := err.Error()
+			for _, substr := range tt.errContains {
+				require.Contains(t, errMsg, substr)
+			}
+		})
+	}
+}
+
+func Test_askOneFailOnPrompt_UnknownType(t *testing.T) {
+	var result string
+	err := askOneFailOnPrompt(
+		&survey.Editor{Message: "Edit:"},
+		&result,
+	)
+	require.Error(t, err)
+	require.Contains(
+		t, err.Error(),
+		"interactive prompt not allowed in strict mode",
+	)
+}
+
+func Test_NewAsker_FailOnPrompt_ReturnsError(t *testing.T) {
+	asker := NewAsker(false, true, false, nil, nil)
+	prompt := &survey.Input{
+		Message: "Name:",
+		Default: "default-val",
+	}
+	var result string
+	err := asker(prompt, &result)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "strict mode")
+	// Result should not be populated
+	require.Empty(t, result)
+}
+
+func Test_NoPrompt_StillUsesDefaults(t *testing.T) {
+	asker := NewAsker(true, false, false, nil, nil)
+	prompt := &survey.Input{
+		Message: "Name:",
+		Default: "default-val",
+	}
+	var result string
+	err := asker(prompt, &result)
+
+	require.NoError(t, err)
+	require.Equal(t, "default-val", result)
 }

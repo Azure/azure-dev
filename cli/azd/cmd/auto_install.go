@@ -624,6 +624,11 @@ func CreateGlobalFlagSet() *pflag.FlagSet {
 		false,
 		"Alias for --no-prompt.")
 	_ = globalFlags.MarkHidden("non-interactive")
+	globalFlags.Bool(
+		"fail-on-prompt",
+		false,
+		"Fails with an actionable error whenever a prompt is encountered, even if a default exists."+
+			" Implies --no-prompt.")
 	globalFlags.StringP(internal.EnvironmentNameFlagName, "e", "", "The name of the environment to use.")
 
 	// The telemetry system is responsible for reading these flags value and using it to configure the telemetry
@@ -725,10 +730,22 @@ func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error 
 		}
 	}
 
-	// Agent Detection: If no explicit flag or env var was set and we detect an AI coding
-	// agent as the caller, automatically enable no-prompt mode for non-interactive execution.
-	if !flagExplicitlySet && !envVarPresent && agentdetect.IsRunningInAgent() {
+	if boolVal, err := globalFlagSet.GetBool("fail-on-prompt"); err == nil {
+		opts.FailOnPrompt = boolVal
+		if boolVal {
+			// --fail-on-prompt implies --no-prompt
+			opts.NoPrompt = true
+		}
+	}
+
+	// Agent Detection: If --no-prompt was not explicitly set and we detect an AI coding agent
+	// as the caller, automatically enable fail-on-prompt mode for strict non-interactive execution.
+	failOnPromptFlag := globalFlagSet.Lookup("fail-on-prompt")
+	failOnPromptExplicitlySet := failOnPromptFlag != nil && failOnPromptFlag.Changed
+	if !flagExplicitlySet && !failOnPromptExplicitlySet &&
+		!envVarPresent && agentdetect.IsRunningInAgent() {
 		opts.NoPrompt = true
+		opts.FailOnPrompt = true
 	}
 
 	return nil

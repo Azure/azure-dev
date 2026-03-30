@@ -17,13 +17,61 @@ import (
 
 type Asker func(p survey.Prompt, response any) error
 
-func NewAsker(noPrompt bool, isTerminal bool, w io.Writer, r io.Reader) Asker {
+// NewAsker returns an Asker configured for the given prompt mode.
+// When failOnPrompt is true, every prompt immediately returns an actionable error.
+// When noPrompt is true, prompts silently use their default values.
+func NewAsker(noPrompt bool, failOnPrompt bool, isTerminal bool, w io.Writer, r io.Reader) Asker {
+	if failOnPrompt {
+		return askOneFailOnPrompt
+	}
+
 	if noPrompt {
 		return askOneNoPrompt
 	}
 
 	return func(p survey.Prompt, response any) error {
 		return askOnePrompt(p, response, isTerminal, w, r)
+	}
+}
+
+func askOneFailOnPrompt(p survey.Prompt, _ any) error {
+	switch v := p.(type) {
+	case *survey.Input:
+		return fmt.Errorf(
+			"interactive prompt not allowed in strict mode: %q"+
+				" (provide the value via command-line flags"+
+				" or environment variables)",
+			v.Message,
+		)
+	case *survey.Select:
+		return fmt.Errorf(
+			"interactive prompt not allowed in strict mode: %q"+
+				" (available options: %s — specify via"+
+				" command-line flags or environment variables)",
+			v.Message,
+			strings.Join(v.Options, ", "),
+		)
+	case *survey.Confirm:
+		return fmt.Errorf(
+			"interactive prompt not allowed in strict mode: %q"+
+				" (provide the value via command-line flags"+
+				" or environment variables)",
+			v.Message,
+		)
+	case *survey.MultiSelect:
+		return fmt.Errorf(
+			"interactive prompt not allowed in strict mode: %q"+
+				" (available options: %s — specify via"+
+				" command-line flags or environment variables)",
+			v.Message,
+			strings.Join(v.Options, ", "),
+		)
+	default:
+		return fmt.Errorf(
+			"interactive prompt not allowed in strict mode" +
+				" (provide the value via command-line flags" +
+				" or environment variables)",
+		)
 	}
 }
 

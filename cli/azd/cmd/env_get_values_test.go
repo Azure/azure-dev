@@ -62,7 +62,7 @@ func TestEnvGetValuesExport(t *testing.T) {
 			},
 			export: true,
 			expected: "export AZURE_ENV_NAME=\"test\"\n" +
-				"export MULTILINE=\"line1\\nline2\\nline3\"\n",
+				"export MULTILINE=$'line1\\nline2\\nline3'\n",
 		},
 		{
 			name: "export values with backslashes",
@@ -99,6 +99,19 @@ func TestEnvGetValuesExport(t *testing.T) {
 			export: false,
 			expected: "AZURE_ENV_NAME=\"test\"\n" +
 				"KEY=\"value\"\n",
+		},
+		{
+			name: "export skips invalid shell keys",
+			envVars: map[string]string{
+				"VALID_KEY":   "ok",
+				"bad;key":     "injected",
+				"has spaces":  "nope",
+				"_UNDERSCORE": "fine",
+			},
+			export: true,
+			expected: "export AZURE_ENV_NAME=\"test\"\n" +
+				"export VALID_KEY=\"ok\"\n" +
+				"export _UNDERSCORE=\"fine\"\n",
 		},
 	}
 

@@ -11,6 +11,7 @@ import (
 	"io"
 	"maps"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -1373,23 +1374,42 @@ func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, e
 // writeExportedEnv writes environment variables in shell-ready
 // format (export KEY="VALUE") to the given writer. Values are
 // double-quoted with embedded backslashes, double quotes, dollar
-// signs, backticks, newlines, and carriage returns escaped.
+// signs, backticks, and carriage returns escaped. Newlines use
+// ANSI-C quoting ($'...') to ensure correct roundtripping through eval.
 func writeExportedEnv(
 	values map[string]string,
 	writer io.Writer,
 ) error {
+	escaper := strings.NewReplacer(
+		`\`, `\\`,
+		`"`, `\"`,
+		`$`, `\$`,
+		"`", "\\`",
+		"\r", `\r`,
+	)
+
+	// Valid shell identifier: starts with letter or underscore, then alphanumerics/underscores
+	validKey := regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
+
 	keys := slices.Sorted(maps.Keys(values))
 	for _, key := range keys {
+		if !validKey.MatchString(key) {
+			continue
+		}
+
 		val := values[key]
-		escaped := strings.NewReplacer(
-			`\`, `\\`,
-			`"`, `\"`,
-			`$`, `\$`,
-			"`", "\\`",
-			"\n", `\n`,
-			"\r", `\r`,
-		).Replace(val)
-		line := fmt.Sprintf("export %s=\"%s\"\n", key, escaped)
+		escaped := escaper.Replace(val)
+
+		// Use $'...' quoting for values containing newlines so \n is
+		// interpreted as an actual newline by the shell.
+		var line string
+		if strings.Contains(val, "\n") {
+			escaped = strings.ReplaceAll(escaped, "\n", `\n`)
+			line = fmt.Sprintf("export %s=$'%s'\n", key, strings.ReplaceAll(escaped, `'`, `\'`))
+		} else {
+			line = fmt.Sprintf("export %s=\"%s\"\n", key, escaped)
+		}
+
 		if _, err := io.WriteString(writer, line); err != nil {
 			return err
 		}

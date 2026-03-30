@@ -344,6 +344,13 @@ func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewer
 	c.showProgressMu.Lock()
 	defer c.showProgressMu.Unlock()
 
+	// In JSON output mode, skip the visual frame rendering (which writes to
+	// stdout via goterm) and return a writer that routes previewer output to
+	// stderr so it doesn't corrupt the JSON on stdout.
+	if c.jsonOutputMode {
+		return c.handles.Stderr
+	}
+
 	// Pause any active spinner
 	currentMsg := c.spinnerCurrentTitle
 	_ = c.spinner.Pause()
@@ -372,6 +379,11 @@ func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewer
 }
 
 func (c *AskerConsole) StopPreviewer(ctx context.Context, keepLogs bool) {
+	// In JSON output mode the previewer was never started — nothing to stop.
+	if c.jsonOutputMode {
+		return
+	}
+
 	c.previewer.Stop(keepLogs)
 	c.previewer = nil
 	c.writer = c.defaultWriter

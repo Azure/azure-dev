@@ -13,7 +13,7 @@ graders:
         - "azd env select"
       must_not_match:
         - "azd env new"
-        - "azd env delete"
+        - "azd env remove"
         - "azd down"
   - type: text
     weight: 0.3

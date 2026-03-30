@@ -1,5 +1,12 @@
 # Release History
 
+## 0.1.19-preview (2026-03-30)
+
+- [[#7327]](https://github.com/Azure/azure-dev/pull/7327) Fix `azd ai agent init` reruns to reuse an existing azd environment instead of failing when a previous attempt already created it.
+- [[#7332]](https://github.com/Azure/azure-dev/pull/7332) Improve `azd ai agent init` performance when discovering existing Foundry projects, including faster `--project-id` validation.
+- [[#7355]](https://github.com/Azure/azure-dev/pull/7355) Update generated Application Insights environment variables to reuse the selected connection and avoid redundant connection creation during deployment.
+- [[#7373]](https://github.com/Azure/azure-dev/pull/7373) Fix `postdeploy` hook failures in projects without hosted agents so unrelated azd projects no longer error during deploy.
+
 ## 0.1.18-preview (2026-03-23)
 
 - [[#7147]](https://github.com/Azure/azure-dev/pull/7147) Add `azd ai agent init` support for initializing from an agent template.

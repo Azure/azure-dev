@@ -16,6 +16,7 @@ import (
 )
 
 func TestNewAzdErrorTroubleShootingTool(t *testing.T) {
+	t.Parallel()
 	tool := NewAzdErrorTroubleShootingTool()
 
 	assert.Equal(t, "error_troubleshooting", tool.Tool.Name)
@@ -34,6 +35,7 @@ func TestNewAzdErrorTroubleShootingTool(t *testing.T) {
 }
 
 func TestNewAzdProvisionCommonErrorTool(t *testing.T) {
+	t.Parallel()
 	tool := NewAzdProvisionCommonErrorTool()
 
 	assert.Equal(t, "provision_common_error", tool.Tool.Name)
@@ -52,6 +54,7 @@ func TestNewAzdProvisionCommonErrorTool(t *testing.T) {
 }
 
 func TestNewAzdYamlSchemaTool(t *testing.T) {
+	t.Parallel()
 	tool := NewAzdYamlSchemaTool()
 
 	assert.Equal(t, "validate_azure_yaml", tool.Tool.Name)
@@ -79,6 +82,7 @@ func TestNewAzdYamlSchemaTool(t *testing.T) {
 }
 
 func TestHandleAzdErrorTroubleShooting(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	req := mcp.CallToolRequest{}
 
@@ -96,6 +100,7 @@ func TestHandleAzdErrorTroubleShooting(t *testing.T) {
 }
 
 func TestHandleAzdProvisionCommonError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	req := mcp.CallToolRequest{}
 
@@ -113,6 +118,7 @@ func TestHandleAzdProvisionCommonError(t *testing.T) {
 }
 
 func TestErrorResult(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		msg  string
@@ -154,6 +160,7 @@ func TestErrorResult(t *testing.T) {
 }
 
 func TestErrorResponse_JSONRoundTrip(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		resp ErrorResponse
@@ -189,6 +196,7 @@ func TestErrorResponse_JSONRoundTrip(t *testing.T) {
 }
 
 func TestEmbeddedPrompts_NonEmpty(t *testing.T) {
+	t.Parallel()
 	assert.NotEmpty(
 		t, prompts.AzdErrorTroubleShootingPrompt,
 		"embedded prompt should not be empty",
@@ -200,11 +208,13 @@ func TestEmbeddedPrompts_NonEmpty(t *testing.T) {
 }
 
 func TestNewHttpsUrlLoader(t *testing.T) {
+	t.Parallel()
 	loader := newHttpsUrlLoader()
 	require.NotNil(t, loader)
 }
 
 func TestToolAnnotations_AllToolsSharePattern(t *testing.T) {
+	t.Parallel()
 	// All three tools share the same annotation pattern:
 	// read-only, idempotent, non-destructive, closed-world
 	tools := []struct {

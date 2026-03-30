@@ -672,14 +672,11 @@ func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error 
 		opts.EnableDebugLogging = boolVal
 	}
 
-	if boolVal, err := globalFlagSet.GetBool("no-prompt"); err == nil {
-		opts.NoPrompt = boolVal
-	}
-
-	// --non-interactive is an alias for --no-prompt
-	if boolVal, err := globalFlagSet.GetBool("non-interactive"); err == nil && boolVal {
-		opts.NoPrompt = true
-	}
+	// --non-interactive is an alias for --no-prompt; either flag sets NoPrompt.
+	// When both are present, true wins (either flag opting in is sufficient).
+	noPromptVal, _ := globalFlagSet.GetBool("no-prompt")
+	nonInteractiveVal, _ := globalFlagSet.GetBool("non-interactive")
+	opts.NoPrompt = noPromptVal || nonInteractiveVal
 
 	// Check if either flag was explicitly provided on the command line
 	noPromptFlag := globalFlagSet.Lookup("no-prompt")

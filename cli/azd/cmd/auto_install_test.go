@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -515,8 +516,11 @@ func TestParseGlobalFlags_NonInteractiveAliasAndEnvVar(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Clear agent detection to isolate from ambient environment
+			// Clear agent detection and AZD_NON_INTERACTIVE to isolate
+			// from the ambient environment.
 			clearAgentEnvVarsForTest(t)
+			t.Setenv("AZD_NON_INTERACTIVE", "")
+			os.Unsetenv("AZD_NON_INTERACTIVE")
 			agentdetect.ResetDetection()
 
 			// Skip if we're inside an agent and expect false

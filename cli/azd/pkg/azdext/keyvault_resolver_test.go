@@ -9,10 +9,13 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets"
+	"github.com/stretchr/testify/require"
 )
 
 // stubSecretGetter is a test double for the Key Vault data-plane client.
@@ -35,8 +38,8 @@ func (s *stubSecretGetter) GetSecret(
 }
 
 // stubSecretFactory returns a factory that always returns the given stubSecretGetter.
-func stubSecretFactory(g secretGetter, factoryErr error) func(string, azcore.TokenCredential) (secretGetter, error) {
-	return func(_ string, _ azcore.TokenCredential) (secretGetter, error) {
+func stubSecretFactory(g SecretGetter, factoryErr error) func(string, azcore.TokenCredential) (SecretGetter, error) {
+	return func(_ string, _ azcore.TokenCredential) (SecretGetter, error) {
 		if factoryErr != nil {
 			return nil, factoryErr
 		}
@@ -103,8 +106,8 @@ func TestIsSecretReference(t *testing.T) {
 		{"@Microsoft.KeyVault(SecretUri=https://v.vault.azure.net/secrets/s)", true},
 		// case-insensitive prefix (matches Azure App Service behavior)
 		{"@microsoft.keyvault(secreturi=https://v.vault.azure.net/secrets/s)", true},
-		// VaultName/SecretName form is not supported
-		{"@Microsoft.KeyVault(VaultName=v;SecretName=s)", false},
+		// VaultName/SecretName form is now supported
+		{"@Microsoft.KeyVault(VaultName=v;SecretName=s)", true},
 	}
 
 	for _, tt := range tests {
@@ -742,4 +745,575 @@ func TestResolveReason_String(t *testing.T) {
 			t.Errorf("ResolveReason(%d).String() = %q, want %q", tt.reason, got, tt.want)
 		}
 	}
+}
+
+// --- VaultName/SecretName format ---
+
+func TestIsSecretReference_VaultNameFormat(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{"basic", "@Microsoft.KeyVault(VaultName=myvault;SecretName=mysecret)", true},
+		{"with_version", "@Microsoft.KeyVault(VaultName=myvault;SecretName=mysecret;SecretVersion=v1)", true},
+		{"case_insensitive", "@microsoft.keyvault(vaultname=v;secretname=s)", true},
+		{"mixed_case", "@Microsoft.KeyVault(vaultName=v;secretName=s)", true},
+		{"missing_secret_name", "@Microsoft.KeyVault(VaultName=v)", false},
+		{"empty_inner", "@Microsoft.KeyVault()", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, IsSecretReference(tt.input),
+				"IsSecretReference(%q)", tt.input)
+		})
+	}
+}
+
+func TestIsSecretReference_QuoteStripping(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{"double_quoted_akvs", `"akvs://sub/vault/secret"`, true},
+		{"single_quoted_akvs", `'akvs://sub/vault/secret'`, true},
+		{"whitespace_akvs", "  akvs://sub/vault/secret  ", true},
+		{"quoted_with_whitespace", `  "akvs://sub/vault/secret"  `, true},
+		{"double_quoted_appref",
+			`"@Microsoft.KeyVault(SecretUri=https://v.vault.azure.net/secrets/s)"`, true},
+		{"single_quoted_vaultname",
+			`'@Microsoft.KeyVault(VaultName=v;SecretName=s)'`, true},
+		{"empty_after_strip", `""`, false},
+		{"only_whitespace", "   ", false},
+		{"mismatched_quotes", `"akvs://sub/vault/secret'`, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, IsSecretReference(tt.input),
+				"IsSecretReference(%q)", tt.input)
+		})
+	}
+}
+
+func TestParseSecretReference_VaultNameFormat(t *testing.T) {
+	t.Parallel()
+
+	ref, err := ParseSecretReference(
+		"@Microsoft.KeyVault(VaultName=myvault;SecretName=mysecret)")
+	require.NoError(t, err)
+
+	require.Equal(t, "myvault", ref.VaultName)
+	require.Equal(t, "mysecret", ref.SecretName)
+	require.Empty(t, ref.SecretVersion, "SecretVersion should be empty when not specified")
+	require.Empty(t, ref.SubscriptionID, "SubscriptionID should be empty for VaultName format")
+	require.Empty(t, ref.VaultURL, "VaultURL should be empty for VaultName format (derived by resolver)")
+}
+
+func TestParseSecretReference_VaultNameWithVersion(t *testing.T) {
+	t.Parallel()
+
+	ref, err := ParseSecretReference(
+		"@Microsoft.KeyVault(VaultName=myvault;SecretName=mysecret;SecretVersion=abc123)")
+	require.NoError(t, err)
+
+	require.Equal(t, "myvault", ref.VaultName)
+	require.Equal(t, "mysecret", ref.SecretName)
+	require.Equal(t, "abc123", ref.SecretVersion)
+}
+
+func TestParseSecretReference_VaultNameMissingSecretName(t *testing.T) {
+	t.Parallel()
+
+	_, err := ParseSecretReference("@Microsoft.KeyVault(VaultName=myvault)")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "SecretName must not be empty")
+}
+
+func TestParseSecretReference_VaultNameMissingVaultName(t *testing.T) {
+	t.Parallel()
+
+	_, err := ParseSecretReference("@Microsoft.KeyVault(VaultName=;SecretName=mysecret)")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "VaultName must not be empty")
+}
+
+func TestParseSecretReference_QuotedInput(t *testing.T) {
+	t.Parallel()
+
+	ref, err := ParseSecretReference(`"akvs://sub-123/my-vault/my-secret"`)
+	require.NoError(t, err)
+	require.Equal(t, "sub-123", ref.SubscriptionID)
+	require.Equal(t, "my-vault", ref.VaultName)
+	require.Equal(t, "my-secret", ref.SecretName)
+}
+
+// --- ResolveEnvironment ---
+
+func TestResolveEnvironment_MixedValues(t *testing.T) {
+	t.Parallel()
+
+	secretValue := "resolved-env-secret" //nolint:gosec // test data, not a real credential
+	getter := &stubSecretGetter{
+		resp: azsecrets.GetSecretResponse{
+			Secret: azsecrets.Secret{
+				Value: &secretValue,
+			},
+		},
+	}
+
+	cred := &stubCredential{}
+	resolver, err := NewKeyVaultResolver(cred, &KeyVaultResolverOptions{
+		ClientFactory: stubSecretFactory(getter, nil),
+	})
+	require.NoError(t, err)
+
+	env := map[string]string{ //nolint:gosec // G101 false positive: test fixture, not real credentials
+		"DATABASE_URL": "postgres://localhost/mydb",
+		"API_KEY":      "akvs://sub/vault/api-key",
+		"APP_NAME":     "my-app",
+	}
+
+	result, err := resolver.ResolveEnvironment(t.Context(), env)
+	require.NoError(t, err)
+
+	// Plain values pass through unchanged.
+	require.Equal(t, "postgres://localhost/mydb", result["DATABASE_URL"])
+	require.Equal(t, "my-app", result["APP_NAME"])
+
+	// Secret reference is resolved.
+	require.Equal(t, secretValue, result["API_KEY"])
+
+	// All keys are present.
+	require.Len(t, result, 3)
+}
+
+func TestResolveEnvironment_NoRefs(t *testing.T) {
+	t.Parallel()
+
+	cred := &stubCredential{}
+	resolver, err := NewKeyVaultResolver(cred, &KeyVaultResolverOptions{
+		ClientFactory: stubSecretFactory(&stubSecretGetter{}, nil),
+	})
+	require.NoError(t, err)
+
+	env := map[string]string{
+		"PLAIN1": "value1",
+		"PLAIN2": "value2",
+	}
+
+	result, err := resolver.ResolveEnvironment(t.Context(), env)
+	require.NoError(t, err)
+	require.Equal(t, env, result)
+}
+
+func TestResolveEnvironment_Empty(t *testing.T) {
+	t.Parallel()
+
+	cred := &stubCredential{}
+	resolver, err := NewKeyVaultResolver(cred, &KeyVaultResolverOptions{
+		ClientFactory: stubSecretFactory(&stubSecretGetter{}, nil),
+	})
+	require.NoError(t, err)
+
+	result, err := resolver.ResolveEnvironment(t.Context(), map[string]string{})
+	require.NoError(t, err)
+	require.Empty(t, result)
+}
+
+func TestResolveEnvironment_PartialError(t *testing.T) {
+	t.Parallel()
+
+	getter := &stubSecretGetter{
+		err: &azcore.ResponseError{StatusCode: http.StatusNotFound},
+	}
+
+	cred := &stubCredential{}
+	resolver, err := NewKeyVaultResolver(cred, &KeyVaultResolverOptions{
+		ClientFactory: stubSecretFactory(getter, nil),
+	})
+	require.NoError(t, err)
+
+	env := map[string]string{ //nolint:gosec // G101 false positive: test fixture, not real credentials
+		"PLAIN":  "hello",
+		"SECRET": "akvs://sub/vault/missing",
+	}
+
+	result, err := resolver.ResolveEnvironment(t.Context(), env)
+	require.Error(t, err)
+
+	// Partial result should contain all keys.
+	require.NotNil(t, result)
+	require.Equal(t, "hello", result["PLAIN"])
+
+	// Failed ref is preserved as original value.
+	require.Equal(t, "akvs://sub/vault/missing", result["SECRET"])
+}
+
+func TestResolveEnvironment_NilContext(t *testing.T) {
+	t.Parallel()
+
+	cred := &stubCredential{}
+	resolver, _ := NewKeyVaultResolver(cred, &KeyVaultResolverOptions{
+		ClientFactory: stubSecretFactory(&stubSecretGetter{}, nil),
+	})
+
+	//nolint:staticcheck // intentionally testing nil context
+	//lint:ignore SA1012 intentionally testing nil context handling
+	_, err := resolver.ResolveEnvironment(nil, map[string]string{"k": "v"})
+	require.Error(t, err)
+}
+
+// --- Resolve with VaultName format ---
+
+func TestResolve_VaultNameFormat(t *testing.T) {
+	t.Parallel()
+
+	secretValue := "vaultname-secret-value" //nolint:gosec // test data, not a real credential
+	getter := &stubSecretGetter{
+		resp: azsecrets.GetSecretResponse{
+			Secret: azsecrets.Secret{
+				Value: &secretValue,
+			},
+		},
+	}
+
+	cred := &stubCredential{}
+	resolver, err := NewKeyVaultResolver(cred, &KeyVaultResolverOptions{
+		ClientFactory: stubSecretFactory(getter, nil),
+	})
+	require.NoError(t, err)
+
+	val, err := resolver.Resolve(t.Context(),
+		"@Microsoft.KeyVault(VaultName=myvault;SecretName=mysecret)")
+	require.NoError(t, err)
+	require.Equal(t, secretValue, val)
+
+	require.Equal(t, "mysecret", getter.calledName)
+	require.Empty(t, getter.calledVersion)
+}
+
+func TestResolve_VaultNameFormatWithVersion(t *testing.T) {
+	t.Parallel()
+
+	secretValue := "versioned-vaultname-value" //nolint:gosec // test data, not a real credential
+	getter := &stubSecretGetter{
+		resp: azsecrets.GetSecretResponse{
+			Secret: azsecrets.Secret{
+				Value: &secretValue,
+			},
+		},
+	}
+
+	cred := &stubCredential{}
+	resolver, err := NewKeyVaultResolver(cred, &KeyVaultResolverOptions{
+		ClientFactory: stubSecretFactory(getter, nil),
+	})
+	require.NoError(t, err)
+
+	val, err := resolver.Resolve(t.Context(),
+		"@Microsoft.KeyVault(VaultName=myvault;SecretName=mysecret;SecretVersion=v42)")
+	require.NoError(t, err)
+	require.Equal(t, secretValue, val)
+
+	require.Equal(t, "mysecret", getter.calledName)
+	require.Equal(t, "v42", getter.calledVersion)
+}
+
+// --- Additional edge-case tests ---
+
+func TestParseSecretReference_VaultNameEmptySecretName(t *testing.T) {
+	t.Parallel()
+
+	_, err := ParseSecretReference("@Microsoft.KeyVault(VaultName=myvault;SecretName=)")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "SecretName must not be empty")
+}
+
+func TestParseSecretReference_VaultNameMalformedParameter(t *testing.T) {
+	t.Parallel()
+
+	_, err := ParseSecretReference("@Microsoft.KeyVault(VaultName=v;badparam;SecretName=s)")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "malformed parameter")
+}
+
+func TestParseSecretReference_VaultNameMixedCaseKeys(t *testing.T) {
+	t.Parallel()
+
+	ref, err := ParseSecretReference(
+		"@Microsoft.KeyVault(vaultName=myvault;secretName=mysecret;secretVersion=v1)")
+	require.NoError(t, err)
+
+	require.Equal(t, "myvault", ref.VaultName)
+	require.Equal(t, "mysecret", ref.SecretName)
+	require.Equal(t, "v1", ref.SecretVersion)
+}
+
+func TestParseSecretReference_VaultNameInvalidVaultName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"too_short", "@Microsoft.KeyVault(VaultName=ab;SecretName=s)"},
+		{"starts_with_digit", "@Microsoft.KeyVault(VaultName=1vault;SecretName=s)"},
+		{"special_chars", "@Microsoft.KeyVault(VaultName=my_vault!;SecretName=s)"},
+		{"ends_with_hyphen", "@Microsoft.KeyVault(VaultName=my-vault-;SecretName=s)"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := ParseSecretReference(tt.input)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "must be 3-24 characters")
+		})
+	}
+}
+
+func TestParseSecretReference_QuotedWithInnerWhitespace(t *testing.T) {
+	t.Parallel()
+
+	// Quotes with internal whitespace — the whitespace inside quotes should be trimmed.
+	ref, err := ParseSecretReference(`"  akvs://sub-123/my-vault/my-secret  "`)
+	require.NoError(t, err)
+	require.Equal(t, "sub-123", ref.SubscriptionID)
+	require.Equal(t, "my-vault", ref.VaultName)
+	require.Equal(t, "my-secret", ref.SecretName)
+}
+
+func TestParseSecretReference_NestedQuotesFails(t *testing.T) {
+	t.Parallel()
+
+	// Only one layer of quotes is stripped; the inner quotes remain and break parsing.
+	_, err := ParseSecretReference(`'"akvs://sub/vault/secret"'`)
+	require.Error(t, err)
+}
+
+func TestResolveEnvironment_NilMap(t *testing.T) {
+	t.Parallel()
+
+	cred := &stubCredential{}
+	resolver, err := NewKeyVaultResolver(cred, &KeyVaultResolverOptions{
+		ClientFactory: stubSecretFactory(&stubSecretGetter{}, nil),
+	})
+	require.NoError(t, err)
+
+	result, err := resolver.ResolveEnvironment(t.Context(), nil)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Empty(t, result)
+}
+
+func TestResolveEnvironment_AllRefs(t *testing.T) {
+	t.Parallel()
+
+	secretValue := "all-refs-value" //nolint:gosec // test data, not a real credential
+	getter := &stubSecretGetter{
+		resp: azsecrets.GetSecretResponse{
+			Secret: azsecrets.Secret{
+				Value: &secretValue,
+			},
+		},
+	}
+
+	cred := &stubCredential{}
+	resolver, err := NewKeyVaultResolver(cred, &KeyVaultResolverOptions{
+		ClientFactory: stubSecretFactory(getter, nil),
+	})
+	require.NoError(t, err)
+
+	env := map[string]string{ //nolint:gosec // G101 false positive: test fixture, not real credentials
+		"SECRET1": "akvs://sub/vault/secret1",
+		"SECRET2": "akvs://sub/vault/secret2",
+	}
+
+	result, err := resolver.ResolveEnvironment(t.Context(), env)
+	require.NoError(t, err)
+	require.Len(t, result, 2)
+	require.Equal(t, secretValue, result["SECRET1"])
+	require.Equal(t, secretValue, result["SECRET2"])
+}
+
+func TestIsSecretReference_QuotesWithInnerWhitespace(t *testing.T) {
+	t.Parallel()
+
+	// Whitespace inside quotes should be trimmed after quote removal.
+	require.True(t, IsSecretReference(`"  akvs://sub/vault/secret  "`))
+	require.True(t, IsSecretReference(`'  akvs://sub/vault/secret  '`))
+}
+
+// --- CR-010: Verify VaultSuffix is used in URL construction ---
+
+func TestResolve_VaultSuffixUsedInURL(t *testing.T) {
+	t.Parallel()
+
+	secretValue := "suffix-test" //nolint:gosec // test data, not a real credential
+	getter := &stubSecretGetter{
+		resp: azsecrets.GetSecretResponse{
+			Secret: azsecrets.Secret{Value: &secretValue},
+		},
+	}
+
+	var capturedURL string
+	factory := func(vaultURL string, _ azcore.TokenCredential) (SecretGetter, error) {
+		capturedURL = vaultURL
+		return getter, nil
+	}
+
+	cred := &stubCredential{}
+	resolver, err := NewKeyVaultResolver(cred, &KeyVaultResolverOptions{
+		VaultSuffix:   "vault.azure.cn",
+		ClientFactory: factory,
+	})
+	require.NoError(t, err)
+
+	_, err = resolver.Resolve(t.Context(), "akvs://sub/myvault/mysecret")
+	require.NoError(t, err)
+
+	require.Equal(t, "https://myvault.vault.azure.cn", capturedURL,
+		"vault URL should use the custom VaultSuffix")
+}
+
+// --- CR-007: NewKeyVaultResolver does not mutate caller opts ---
+
+func TestNewKeyVaultResolver_DoesNotMutateCallerOpts(t *testing.T) {
+	t.Parallel()
+
+	cred := &stubCredential{}
+	opts := &KeyVaultResolverOptions{} // VaultSuffix intentionally empty
+
+	_, err := NewKeyVaultResolver(cred, opts)
+	require.NoError(t, err)
+
+	// Caller's opts should not be mutated.
+	require.Empty(t, opts.VaultSuffix,
+		"NewKeyVaultResolver must not mutate the caller's options struct")
+}
+
+// --- CR-006: Duplicate parameter keys are rejected ---
+
+func TestParseSecretReference_VaultNameDuplicateKeyRejected(t *testing.T) {
+	t.Parallel()
+
+	_, err := ParseSecretReference(
+		"@Microsoft.KeyVault(VaultName=vault1;VaultName=vault2;SecretName=s)")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "duplicate parameter")
+}
+
+// --- CR-012: Nil client from factory returns error ---
+
+func TestResolve_NilClientFromFactory(t *testing.T) {
+	t.Parallel()
+
+	factory := func(_ string, _ azcore.TokenCredential) (SecretGetter, error) {
+		return nil, nil // buggy factory: no error but nil client
+	}
+
+	cred := &stubCredential{}
+	resolver, err := NewKeyVaultResolver(cred, &KeyVaultResolverOptions{
+		ClientFactory: factory,
+	})
+	require.NoError(t, err)
+
+	_, err = resolver.Resolve(t.Context(), "akvs://sub/vault/secret")
+	require.Error(t, err, "should fail when factory returns nil client without error")
+
+	var resolveErr *KeyVaultResolveError
+	require.ErrorAs(t, err, &resolveErr)
+	require.Equal(t, ResolveReasonClientCreation, resolveErr.Reason)
+}
+
+// --- CR-011: Concurrent getOrCreateClient ---
+
+func TestResolve_ConcurrentSameVault(t *testing.T) {
+	t.Parallel()
+
+	secretValue := "concurrent-value" //nolint:gosec // test data, not a real credential
+	getter := &stubSecretGetter{
+		resp: azsecrets.GetSecretResponse{
+			Secret: azsecrets.Secret{Value: &secretValue},
+		},
+	}
+
+	var callCount atomic.Int64
+	factory := func(_ string, _ azcore.TokenCredential) (SecretGetter, error) {
+		callCount.Add(1)
+		return getter, nil
+	}
+
+	cred := &stubCredential{}
+	resolver, err := NewKeyVaultResolver(cred, &KeyVaultResolverOptions{
+		ClientFactory: factory,
+	})
+	require.NoError(t, err)
+
+	const goroutines = 10
+	var wg sync.WaitGroup
+	errs := make(chan error, goroutines)
+
+	for i := range goroutines {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			ref := fmt.Sprintf("akvs://sub/vault/secret%d", idx)
+			_, resolveErr := resolver.Resolve(t.Context(), ref)
+			errs <- resolveErr
+		}(i)
+	}
+
+	wg.Wait()
+	close(errs)
+
+	for resolveErr := range errs {
+		require.NoError(t, resolveErr)
+	}
+}
+
+// --- CR-008: Cache key normalization (case-insensitive) ---
+
+func TestResolve_CacheKeyNormalization(t *testing.T) {
+	t.Parallel()
+
+	secretValue := "cache-norm-value" //nolint:gosec // test data, not a real credential
+	getter := &stubSecretGetter{
+		resp: azsecrets.GetSecretResponse{
+			Secret: azsecrets.Secret{Value: &secretValue},
+		},
+	}
+
+	var factoryCalls int
+	factory := func(_ string, _ azcore.TokenCredential) (SecretGetter, error) {
+		factoryCalls++
+		return getter, nil
+	}
+
+	cred := &stubCredential{}
+	resolver, err := NewKeyVaultResolver(cred, &KeyVaultResolverOptions{
+		ClientFactory: factory,
+	})
+	require.NoError(t, err)
+
+	// Two references to the same vault with different casing — should share one client.
+	_, err = resolver.Resolve(t.Context(),
+		"@Microsoft.KeyVault(SecretUri=https://MyVault.vault.azure.net/secrets/s1)")
+	require.NoError(t, err)
+
+	_, err = resolver.Resolve(t.Context(),
+		"@Microsoft.KeyVault(SecretUri=https://MYVAULT.vault.azure.net/secrets/s2)")
+	require.NoError(t, err)
+
+	require.Equal(t, 1, factoryCalls,
+		"same vault with different URL casing should reuse cached client")
 }

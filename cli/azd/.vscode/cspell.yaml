@@ -110,7 +110,10 @@ words:
   - preconfigured
   - Println
   - sctx
+  - secretname
+  - secretversion
   - TTLs
+  - vaultname
 languageSettings:
   - languageId: go
     ignoreRegExpList:

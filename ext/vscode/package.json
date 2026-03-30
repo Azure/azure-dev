@@ -681,7 +681,7 @@
     },
     "devDependencies": {
         "@azure/core-auth": "~1",
-        "@microsoft/vscode-azext-eng": "1.0.0-alpha.11",
+        "@microsoft/vscode-azext-eng": "1.0.0-alpha.16",
         "@types/node": "~22",
         "@types/semver": "~7",
         "@types/sinon": "~21",

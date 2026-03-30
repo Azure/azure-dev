@@ -1366,6 +1366,9 @@ func Test_PackageLevelErrorsMapped(t *testing.T) {
 		"ErrExtensionNotFound":          "pkg/extensions: caught in extension manager callers",
 		"ErrInstalledExtensionNotFound": "pkg/extensions: caught in extension manager callers",
 		"ErrRegistryExtensionNotFound":  "pkg/extensions: caught in extension manager callers",
+
+		// Extension SDK errors used by extensions, never reach host MapError
+		"ErrProjectNotFound": "pkg/azdext: extension SDK helper, used by extensions not the host",
 	}
 
 	// Find the azd root directory (two levels up from internal/cmd)

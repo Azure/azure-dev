@@ -91,4 +91,9 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
+// replace: The extension lives inside the azd monorepo and depends on the parent
+// module at cli/azd. During local development (and in CI for this repo) the
+// replace directive lets `go build` resolve the dependency from the working tree
+// instead of requiring a published module version. It is stripped automatically
+// by `go mod tidy` when the module is consumed as a standalone dependency.
 replace github.com/azure/azure-dev/cli/azd => ../..

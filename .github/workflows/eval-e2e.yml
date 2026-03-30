@@ -66,8 +66,6 @@ jobs:
       - name: Cleanup Azure resources
         if: always()
         working-directory: cli/azd/test/eval
-        run: |
-          cd /tmp
-          azd down --purge --force --no-prompt 2>/dev/null || true
+        run: azd down --purge --force --no-prompt 2>/dev/null || true
         env:
           AZURE_ENV_NAME: eval-e2e-${{ github.run_id }}

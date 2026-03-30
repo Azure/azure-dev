@@ -1371,6 +1371,21 @@ func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, e
 	return nil, eg.formatter.Format(env.Dotenv(), eg.writer, nil)
 }
 
+// shellEscaper escapes characters that are special inside double-quoted
+// shell strings: backslashes, double quotes, dollar signs, backticks,
+// and carriage returns. Built once at package level to avoid re-allocation.
+var shellEscaper = strings.NewReplacer(
+	`\`, `\\`,
+	`"`, `\"`,
+	`$`, `\$`,
+	"`", "\\`",
+	"\r", `\r`,
+)
+
+// validShellKey matches valid POSIX shell identifiers:
+// starts with a letter or underscore, followed by alphanumerics or underscores.
+var validShellKey = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
+
 // writeExportedEnv writes environment variables in shell-ready
 // format (export KEY="VALUE") to the given writer. Values are
 // double-quoted with embedded backslashes, double quotes, dollar
@@ -1380,25 +1395,14 @@ func writeExportedEnv(
 	values map[string]string,
 	writer io.Writer,
 ) error {
-	escaper := strings.NewReplacer(
-		`\`, `\\`,
-		`"`, `\"`,
-		`$`, `\$`,
-		"`", "\\`",
-		"\r", `\r`,
-	)
-
-	// Valid shell identifier: starts with letter or underscore, then alphanumerics/underscores
-	validKey := regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
-
 	keys := slices.Sorted(maps.Keys(values))
 	for _, key := range keys {
-		if !validKey.MatchString(key) {
+		if !validShellKey.MatchString(key) {
 			continue
 		}
 
 		val := values[key]
-		escaped := escaper.Replace(val)
+		escaped := shellEscaper.Replace(val)
 
 		// Use $'...' quoting for values containing newlines so \n is
 		// interpreted as an actual newline by the shell.

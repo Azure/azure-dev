@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -617,6 +618,11 @@ func CreateGlobalFlagSet() *pflag.FlagSet {
 		"no-prompt",
 		false,
 		"Accepts the default value instead of prompting, or it fails if there is no default.")
+	globalFlags.Bool(
+		"non-interactive",
+		false,
+		"Alias for --no-prompt.")
+	_ = globalFlags.MarkHidden("non-interactive")
 
 	// The telemetry system is responsible for reading these flags value and using it to configure the telemetry
 	// system, but we still need to add it to our flag set so that when we parse the command line with Cobra we
@@ -670,11 +676,35 @@ func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error 
 		opts.NoPrompt = boolVal
 	}
 
-	// Agent Detection: If --no-prompt was not explicitly set and we detect an AI coding agent
-	// as the caller, automatically enable no-prompt mode for non-interactive execution.
+	// --non-interactive is an alias for --no-prompt
+	if boolVal, err := globalFlagSet.GetBool("non-interactive"); err == nil && boolVal {
+		opts.NoPrompt = true
+	}
+
+	// Check if either flag was explicitly provided on the command line
 	noPromptFlag := globalFlagSet.Lookup("no-prompt")
-	noPromptExplicitlySet := noPromptFlag != nil && noPromptFlag.Changed
-	if !noPromptExplicitlySet && agentdetect.IsRunningInAgent() {
+	nonInteractiveFlag := globalFlagSet.Lookup("non-interactive")
+	flagExplicitlySet := (noPromptFlag != nil && noPromptFlag.Changed) ||
+		(nonInteractiveFlag != nil && nonInteractiveFlag.Changed)
+
+	// Environment variable: AZD_NON_INTERACTIVE enables no-prompt mode when set to a
+	// truthy value (parsed via strconv.ParseBool: "true", "1", "TRUE", etc.).
+	// Explicit flags take precedence over this env var.
+	// When this env var is present (regardless of value), it also suppresses
+	// agent auto-detection since the user has made an explicit choice.
+	envVarPresent := false
+	if !flagExplicitlySet {
+		if envVal, ok := os.LookupEnv("AZD_NON_INTERACTIVE"); ok {
+			envVarPresent = true
+			if parsed, err := strconv.ParseBool(envVal); err == nil && parsed {
+				opts.NoPrompt = true
+			}
+		}
+	}
+
+	// Agent Detection: If no explicit flag or env var was set and we detect an AI coding
+	// agent as the caller, automatically enable no-prompt mode for non-interactive execution.
+	if !flagExplicitlySet && !envVarPresent && agentdetect.IsRunningInAgent() {
 		opts.NoPrompt = true
 	}
 

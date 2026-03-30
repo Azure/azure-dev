@@ -14,8 +14,15 @@ type GlobalCommandOptions struct {
 	// launched tools. It's enabled with `--debug`, for any command.
 	EnableDebugLogging bool
 
-	// when true, interactive prompts should behave as if the user selected the default value.
-	// if there is no default value the prompt returns an error.
+	// NoPrompt controls non-interactive mode. When true, interactive prompts should behave as
+	// if the user selected the default value. If there is no default value the prompt returns
+	// an error.
+	//
+	// Can be enabled via:
+	//   - --no-prompt flag
+	//   - --non-interactive flag (alias for --no-prompt)
+	//   - AZD_NON_INTERACTIVE=true environment variable
+	//   - Automatic agent detection (lowest priority)
 	NoPrompt bool
 
 	// EnableTelemetry indicates if telemetry should be sent.

@@ -10,7 +10,7 @@
 ## 0.0.16-preview (2026-02-03)
 
 - Simplified init flow: reduced prompts from 4 to 2 for faster setup
-- Added implicit init to all job commands: use `--subscription` (`-s`) and `--project-endpoint` (`-e`) flags to configure and run in a single command
+- Added implicit init to all job commands: use `--subscription` (`-s`) and `--project-endpoint` flags to configure and run in a single command
 
 ## 0.0.14-preview (2026-01-28)
 

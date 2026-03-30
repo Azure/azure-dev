@@ -55,13 +55,13 @@ Present the version and date to the user for confirmation before writing any fil
 Per [references/scope-rules.md](references/scope-rules.md) § Commit Discovery.
 
 1. Inspect changelog git history to find the cutoff commit SHA.
-2. List commits from cutoff to HEAD (extensions: scoped to extension path).
+2. List commits from cutoff to origin/main (extensions: scoped to extension path).
 3. If >30 commits in the range, display the count and ask the user if they want to see the full list or proceed directly to PR processing.
 4. Present the commit list to the user. This is a manual pre-filter opportunity — ask if any commits should be explicitly included or excluded before automated processing.
 
 ### Step 4 — Process Each PR
 
-For **each** commit remaining after the user's pre-filter in Step 3, apply the automated exclusion rules and complete the full sub-workflow before moving to the next. **Do not batch, skip, or abbreviate — even for large release trains.**
+For **each** commit remaining after the user's pre-filter in Step 3, apply the automated exclusion rules and complete the full sub-workflow before moving to the next. **Do not batch or abbreviate — and do not skip a PR unless an explicit error-handling rule applies and the user confirms skipping.**
 
 Track processed PR numbers. If a PR number was already processed in a previous commit, skip it. If the commit subject starts with `Revert`, skip both the revert commit and note the original PR number to avoid including the reverted change.
 

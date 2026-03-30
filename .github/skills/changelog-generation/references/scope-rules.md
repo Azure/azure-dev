@@ -28,9 +28,9 @@ Files to update:
 **Version derivation:**
 1. Ask the user for the new version (SemVer, optional `-preview` suffix).
 2. Update `version.txt` and `extension.yaml` — they **must** match exactly.
-3. Add new top entry: `## {version} ({YYYY-MM-DD})` using today's date.
+3. Add new top entry: `## {version} (YYYY-MM-DD)` using today's date.
 
-**Do NOT** update `cli/azd/CHANGELOG.md`, `cli/version.txt`, or `registry.json`.
+**Do NOT** update `cli/azd/CHANGELOG.md`, `cli/version.txt`, or `cli/azd/extensions/registry.json` (CI-generated; editing by hand can break install checksums).
 
 ## Commit Discovery
 

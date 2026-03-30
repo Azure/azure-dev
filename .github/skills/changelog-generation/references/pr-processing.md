@@ -1,5 +1,16 @@
 # PR Processing
 
+## PR Number Extraction
+
+Extract the PR number from the commit subject using these patterns (in order):
+
+1. **Squash merge**: look for `(#1234)` in the commit subject line.
+2. **Merge commit**: look for `Merge pull request #1234 from user/branch`.
+3. **Fallback** (if neither pattern matches): query by commit SHA:
+   ```bash
+   gh pr list --search "<SHA>" --state merged --json number --jq '.[0].number'
+   ```
+
 ## Exclusion Rules
 
 Exclude changes that are **primarily**:
@@ -21,7 +32,7 @@ When uncertain whether a change has user impact, **include it** — the user can
 ## External Contributor Detection
 
 1. Get the PR author's GitHub handle.
-2. Check if the handle appears anywhere in `.github/CODEOWNERS`.
+2. Check if `@{handle}` appears as a whitespace-delimited token in `.github/CODEOWNERS`.
 3. If **not found** in CODEOWNERS, treat as an external contributor.
 
 This is approximate — CODEOWNERS maps file ownership, not team membership. Err on the side of attributing (a core member getting a "thanks" is harmless; an external contributor not getting one is not).

@@ -7,13 +7,14 @@
 Files to update:
 - `cli/azd/CHANGELOG.md` — add release entry
 - `cli/version.txt` — set to released version
-- `cli/azd/.vscode/cspell-github-user-aliases.txt` — if spell check additions needed
+- `.vscode/cspell-github-user-aliases.txt` — if spell check additions needed
 
 **Version derivation:**
 1. Find the top-most section in `cli/azd/CHANGELOG.md` (e.g., `## X.Y.Z-beta.N (Unreleased)`).
 2. Strip the `-beta.N` suffix and `(Unreleased)` marker.
 3. Format as: `## X.Y.Z (YYYY-MM-DD)` using today's date.
 4. Set `cli/version.txt` to `X.Y.Z`.
+5. If no unreleased header is found in the changelog, ask the user for the release version number via `ask_user`.
 
 **Do NOT** update any extension files.
 
@@ -41,10 +42,13 @@ Files to update:
    ```
    Identify the commit SHA that added the **previous released version's** changelog entries — the last section with actual content (not just an empty placeholder). Ignore bot commits that only add unreleased headers with empty categories.
 
-2. List all commits from cutoff to HEAD:
+2. Ensure refs are up to date, then list all commits from cutoff to HEAD:
    ```bash
+   git fetch origin main
    git --no-pager log --oneline --pretty=format:"%h (%ad)%d %s" --date=short {cutoff_sha}..origin/main
    ```
+
+   If no previous version section exists in CHANGELOG.md (first release), treat all commits on `origin/main` as in-scope.
 
 ### Extension
 
@@ -54,9 +58,12 @@ Files to update:
    ```
    Identify the commit that added the previous version's entries.
 
-2. List commits scoped to the extension path:
+2. Ensure refs are up to date, then list commits scoped to the extension path:
    ```bash
+   git fetch origin main
    git --no-pager log --oneline --pretty=format:"%h (%ad)%d %s" --date=short {cutoff_sha}..origin/main -- <extension>/
    ```
+
+   If no previous version section exists in CHANGELOG.md (first release), treat all commits on `origin/main` scoped to the extension path as in-scope.
 
 Note: using `{cutoff_sha}..origin/main` (range syntax) instead of a fixed `-N` limit ensures all commits are captured regardless of release train size.

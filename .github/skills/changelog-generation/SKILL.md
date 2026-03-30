@@ -22,42 +22,31 @@ description: >-
 
 INVOKES: GitHub MCP tools, `git` CLI, `gh` CLI, `cspell` CLI, `ask_user`.
 
-## Usage
-
-**USE FOR:**
-- Generate core azd release changelog
-- Generate extension release changelog
-- Bump version for a release
-- Write changelog entries from merged PRs
-
-**DO NOT USE FOR:**
-- Code review (use `code-review`)
-- Creating pull requests (use `pull-request`)
-- Publishing extensions to registry
-- Deploying releases to production
-
----
-
 ## Workflow
 
 ### Step 1 — Determine Scope
 
-If not clear from context, ask via `ask_user`:
+Auto-detect scope from the current working directory:
 
-> What are you releasing?
+1. Check if the cwd is inside a `cli/azd/extensions/<name>/` directory.
+   - If **yes** → infer **extension** scope, with `<name>` as the target extension.
+   - If **no** → infer **core** scope.
+2. Present the detected scope to the user for confirmation via `ask_user`:
 
-Choices:
-- **Core azd CLI** — updates `cli/azd/CHANGELOG.md` and `cli/version.txt`
-- **An extension** — updates extension `CHANGELOG.md`, `version.txt`, and `extension.yaml`
+   > I detected you're in `<cwd>`, so I'll generate changelog for **[core azd CLI | extension `<name>`]**. Is that correct?
 
-If **extension**: list folders under `cli/azd/extensions/` and ask the user to confirm the target. Verify it contains `CHANGELOG.md`, `version.txt`, and `extension.yaml`.
+   Choices:
+   - **Yes, that's correct** *(Recommended)*
+   - **No, switch to [core | an extension]**
+
+3. If **extension** and not auto-detected: list folders under `cli/azd/extensions/` and ask the user to select the target. Verify it contains `CHANGELOG.md`, `version.txt`, and `extension.yaml`.
 
 ### Step 2 — Determine Version & Update Files
 
 Per [references/scope-rules.md](references/scope-rules.md) § Version Files.
 
 - **Core**: derive version from the existing unreleased header (strip `-beta.*` and `(Unreleased)`), use today's date.
-- **Extension**: ask the user for the new version number.
+- **Extension**: ask the user for the new version number via `ask_user`.
 
 Present the version and date to the user for confirmation before writing any files.
 
@@ -67,11 +56,14 @@ Per [references/scope-rules.md](references/scope-rules.md) § Commit Discovery.
 
 1. Inspect changelog git history to find the cutoff commit SHA.
 2. List commits from cutoff to HEAD (extensions: scoped to extension path).
-3. Present the commit list to the user. Ask if any should be explicitly included or excluded before processing.
+3. If >30 commits in the range, display the count and ask the user if they want to see the full list or proceed directly to PR processing.
+4. Present the commit list to the user. This is a manual pre-filter opportunity — ask if any commits should be explicitly included or excluded before automated processing.
 
 ### Step 4 — Process Each PR
 
-For **each** commit in scope, complete the full sub-workflow before moving to the next. **Do not batch, skip, or abbreviate — even for large release trains.**
+For **each** commit remaining after the user's pre-filter in Step 3, apply the automated exclusion rules and complete the full sub-workflow before moving to the next. **Do not batch, skip, or abbreviate — even for large release trains.**
+
+Track processed PR numbers. If a PR number was already processed in a previous commit, skip it. If the commit subject starts with `Revert`, skip both the revert commit and note the original PR number to avoid including the reverted change.
 
 Per [references/pr-processing.md](references/pr-processing.md):
 
@@ -86,7 +78,12 @@ Per [references/pr-processing.md](references/pr-processing.md):
 
 1. Remove any empty category sections from the new release entry.
 2. For extensions using flat bullet lists (no category headings), match the existing style.
-3. Present the **complete changelog entry** to the user for review via `ask_user`. Loop until approved.
+3. Present the **complete changelog entry** to the user for review via `ask_user`.
+
+   Choices:
+   - **Approve** — accept and proceed to spell check
+   - **Edit** — provide feedback for revisions (loop back)
+   - **Abort** — cancel the entire workflow
 
 ### Step 6 — Spell Check
 
@@ -94,13 +91,13 @@ Per [references/pr-processing.md](references/pr-processing.md):
 cspell lint "<changelog-path>" --relative --config cli/azd/.vscode/cspell.yaml --no-progress
 ```
 
-If new names or handles trigger errors, add them to `cli/azd/.vscode/cspell-github-user-aliases.txt`.
+If new names or handles trigger errors, add them to `.vscode/cspell-github-user-aliases.txt`.
 
 ---
 
 ## Error Handling
 
-- GitHub MCP unavailable → fall back to `gh` CLI: `gh pr view {number} --json title,author,body,labels`
+- GitHub MCP unavailable → fall back to `gh` CLI: `gh pr view {number} --json title,author,body,labels,files`
 - No new commits since cutoff → inform user, no changelog entry needed
 - PR deleted or inaccessible → log warning, skip with user confirmation
 - cspell not installed → warn, skip spell check, note in summary

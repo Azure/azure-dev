@@ -156,7 +156,7 @@ func escapeForPSSingleQuote(s string) string {
 
 // buildInstallScriptArgs constructs the PowerShell arguments to run install-azd.ps1.
 // For all channels, the script is downloaded to a temp directory.
-// For daily channel, additional parameters (-Version, -InstallFolder) are passed
+// For daily channel, an additional parameter (-InstallFolder) is passed
 // to the script. The install folder is escaped for PowerShell single-quoted strings
 // to handle paths containing apostrophes (e.g. O'Connor).
 // Returns the arguments to pass to the "powershell" command.

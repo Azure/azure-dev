@@ -1,5 +1,3 @@
-# yaml-language-server: $schema=/Users/weilim/repos/azd2/schemas/v1.0/azure.yaml.json
-
 name: hooks
 
 infra:

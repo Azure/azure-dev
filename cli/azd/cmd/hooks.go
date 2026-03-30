@@ -145,8 +145,20 @@ var knownHookNames = map[string]bool{
 func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	hookName := hra.args[0]
 
+	if hra.flags.service != "" && hra.flags.layer != "" {
+		return nil,
+
+			&internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"--service and --layer cannot be used together: %w", internal.ErrInvalidFlagCombination),
+				Suggestion: "Choose either '--service' to run service hooks or '--layer' to run provisioning layer hooks.",
+			}
+	}
+
 	hookType := "project"
-	if hra.flags.service != "" {
+	if hra.flags.layer != "" {
+		hookType = "layer"
+	} else if hra.flags.service != "" {
 		hookType = "service"
 	}
 

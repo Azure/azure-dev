@@ -429,6 +429,24 @@ func TestOptions_Validate_Hooks(t *testing.T) {
 		require.ErrorContains(t, err, "only 'preprovision' and 'postprovision' hooks are supported")
 	})
 
+	t.Run("duplicate layer names are not allowed", func(t *testing.T) {
+		err := (&Options{
+			Layers: []Options{
+				{
+					Name: "infra-core",
+					Path: "infra/core",
+				},
+				{
+					Name: "infra-core",
+					Path: "infra/shared",
+				},
+			},
+		}).Validate()
+
+		require.Error(t, err)
+		require.ErrorContains(t, err, "duplicate layer name 'infra-core' is not allowed")
+	})
+
 	t.Run("layers cannot be mixed with root hooks", func(t *testing.T) {
 		err := (&Options{
 			Path: "infra",

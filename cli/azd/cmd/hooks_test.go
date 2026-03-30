@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
@@ -151,4 +153,77 @@ func Test_HooksRunAction_FiltersLayerHooks(t *testing.T) {
 	require.Equal(t, []string{
 		filepath.Join(projectPath, "infra/shared"),
 	}, gotCwds)
+}
+
+func Test_HooksRunAction_SetsTelemetryTypeForLayer(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	env := environment.NewWithValues("test", nil)
+	envManager := &mockenv.MockEnvManager{}
+	envManager.On("Reload", mock.Anything, mock.Anything).Return(nil)
+
+	t.Cleanup(func() {
+		tracing.SetUsageAttributes()
+	})
+	tracing.SetUsageAttributes()
+
+	projectConfig := &project.ProjectConfig{
+		Name:     "test",
+		Path:     t.TempDir(),
+		Services: map[string]*project.ServiceConfig{},
+		Infra: provisioning.Options{
+			Layers: []provisioning.Options{
+				{
+					Name: "core",
+					Path: "infra/core",
+					Hooks: provisioning.HooksConfig{
+						"preprovision": {{
+							Shell: ext.ShellTypeBash,
+							Run:   "echo core",
+						}},
+					},
+				},
+			},
+		},
+	}
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return true
+	}).Respond(exec.NewRunResult(0, "", ""))
+
+	action := &hooksRunAction{
+		projectConfig:  projectConfig,
+		env:            env,
+		envManager:     envManager,
+		importManager:  project.NewImportManager(nil),
+		commandRunner:  mockContext.CommandRunner,
+		console:        mockContext.Console,
+		flags:          &hooksRunFlags{layer: "core"},
+		args:           []string{"preprovision"},
+		serviceLocator: mockContext.Container,
+	}
+
+	_, err := action.Run(*mockContext.Context)
+	require.NoError(t, err)
+
+	var hookType string
+	for _, attr := range tracing.GetUsageAttributes() {
+		if attr.Key == fields.HooksTypeKey.Key {
+			hookType = attr.Value.AsString()
+			break
+		}
+	}
+
+	require.Equal(t, "layer", hookType)
+}
+
+func Test_HooksRunAction_RejectsServiceAndLayerTogether(t *testing.T) {
+	action := &hooksRunAction{
+		env:   environment.NewWithValues("test", nil),
+		flags: &hooksRunFlags{service: "api", layer: "core"},
+		args:  []string{"preprovision"},
+	}
+
+	_, err := action.Run(context.Background())
+	require.Error(t, err)
+	require.ErrorContains(t, err, "--service and --layer cannot be used together")
 }

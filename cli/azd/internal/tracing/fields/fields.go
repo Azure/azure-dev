@@ -345,7 +345,7 @@ var (
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
-	// The type of the hook (project or service).
+	// The type of the hook run scope (project, layer, or service).
 	HooksTypeKey = AttributeKey{
 		Key:            attribute.Key("hooks.type"),
 		Classification: SystemMetadata,

@@ -64,7 +64,6 @@
                     "type": "array",
                     "title": "Provisioning layers.",
                     "description": "Optional. Layers for Azure infrastructure provisioning.",
-                    "additionalProperties": false,
                     "uniqueItems": true,
                     "items": {
                         "type": "object",

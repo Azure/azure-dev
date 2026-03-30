@@ -115,6 +115,10 @@ func (s *PolicyService) FindDenyPolicies(
 	setDefCache := make(map[string]*armpolicy.SetDefinition)
 
 	for _, assignment := range assignments {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
 		if assignment.Properties == nil ||
 			assignment.Properties.PolicyDefinitionID == nil {
 			continue
@@ -130,8 +134,7 @@ func (s *PolicyService) FindDenyPolicies(
 		// parameterized effects.
 		assignmentParams := extractAssignmentParams(assignment)
 
-		if isBuiltInPolicyDefinition(defID) ||
-			isCustomPolicyDefinition(defID) {
+		if !isPolicySetDefinition(defID) {
 			policies := s.checkPolicyDefinition(
 				ctx, definitionsClient, defID, assignmentName,
 				assignmentParams, defCache,
@@ -732,16 +735,6 @@ func isBuiltInPolicyDefinition(id string) bool {
 		strings.ToLower(id),
 		"/providers/microsoft.authorization/policydefinitions/",
 	)
-}
-
-// isCustomPolicyDefinition returns true if the definition ID is a
-// subscription-scoped custom policy.
-func isCustomPolicyDefinition(id string) bool {
-	lower := strings.ToLower(id)
-	return strings.Contains(
-		lower,
-		"/providers/microsoft.authorization/policydefinitions/",
-	) && !isBuiltInPolicyDefinition(id)
 }
 
 // isPolicySetDefinition returns true if the definition ID references a policy

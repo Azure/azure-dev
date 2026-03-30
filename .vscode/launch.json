@@ -25,9 +25,8 @@
             "request": "launch",
             "mode": "debug",
             "program": "${workspaceFolder}/cli/azd",
-            "args": "up",
+            "args": "${input:cliArgs}",
             "console": "integratedTerminal",
-            "cwd": "/home/vivazqu/workspace/build/debug/preflight-agentic"
         }
     ],
     "inputs": [

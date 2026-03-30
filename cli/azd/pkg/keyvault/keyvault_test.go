@@ -4,14 +4,15 @@
 package keyvault
 
 import (
-"context"
-"errors"
-"strings"
-"testing"
+	"context"
+	"errors"
+	"strings"
+	"testing"
 
-"github.com/stretchr/testify/assert"
-"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
 func TestIsAzureKeyVaultSecret(t *testing.T) {
 	tests := []struct {
 		name     string

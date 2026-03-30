@@ -147,7 +147,7 @@ type AskerConsole struct {
 
 	// jsonOutputMode tracks whether JSON output format is active.
 	// When true, human-readable messages are routed to handles.Stderr
-	// so stdout contains only valid, parseable JSON.
+	// so stdout contains only valid JSON.
 	jsonOutputMode bool
 
 	// isTerminal controls whether terminal-style input/output will be used.

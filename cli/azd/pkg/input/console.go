@@ -151,8 +151,9 @@ type AskerConsole struct {
 	//   - Spinner progress will be written as standard newline messages.
 	//   - Prompting assumes a non-terminal environment, where output written and input received are machine-friendly text,
 	//     stripped of formatting characters.
-	isTerminal bool
-	noPrompt   bool
+	isTerminal   bool
+	noPrompt     bool
+	failOnPrompt bool
 	// when non nil, use this client instead of prompting ourselves on the console.
 	promptClient *externalPromptClient
 	// noPromptDialog when true, disables SupportsPromptDialog() even when promptClient is set.
@@ -905,7 +906,7 @@ func (c *AskerConsole) EnsureBlankLine(ctx context.Context) {
 
 // wait until the next enter
 func (c *AskerConsole) WaitForEnter() {
-	if c.noPrompt {
+	if c.noPrompt || c.failOnPrompt {
 		return
 	}
 
@@ -1019,12 +1020,13 @@ type ExternalPromptConfiguration struct {
 // instead of prompting on the console.
 func NewConsole(
 	noPrompt bool,
+	failOnPrompt bool,
 	isTerminal bool,
 	writers Writers,
 	handles ConsoleHandles,
 	formatter output.Formatter,
 	externalPromptCfg *ExternalPromptConfiguration) Console {
-	asker := NewAsker(noPrompt, isTerminal, handles.Stdout, handles.Stdin)
+	asker := NewAsker(noPrompt, failOnPrompt, isTerminal, handles.Stdout, handles.Stdin)
 
 	c := &AskerConsole{
 		asker:         asker,
@@ -1035,6 +1037,7 @@ func NewConsole(
 		isTerminal:    isTerminal,
 		currentIndent: atomic.NewString(""),
 		noPrompt:      noPrompt,
+		failOnPrompt:  failOnPrompt,
 	}
 
 	if writers.Spinner == nil {

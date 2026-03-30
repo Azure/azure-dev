@@ -79,6 +79,7 @@ func TestExternalPromptFromEnvironmentVariables(t *testing.T) {
 	// Create the console with external prompting configured
 	console := input.NewConsole(
 		rootOptions.NoPrompt,
+		rootOptions.FailOnPrompt,
 		isTerminal,
 		input.Writers{Output: writer},
 		input.ConsoleHandles{

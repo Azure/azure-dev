@@ -5,6 +5,8 @@ package utils
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -61,8 +63,9 @@ func (r *ValidationResult) WarningCount() int {
 }
 
 // ValidateJobOffline performs offline validation of a job definition.
+// yamlDir is the directory containing the YAML file, used to resolve relative paths.
 // It returns all findings (errors and warnings) rather than stopping at the first error.
-func ValidateJobOffline(job *JobDefinition) *ValidationResult {
+func ValidateJobOffline(job *JobDefinition, yamlDir string) *ValidationResult {
 	result := &ValidationResult{}
 
 	// 1. command field is required
@@ -104,5 +107,35 @@ func ValidateJobOffline(job *JobDefinition) *ValidationResult {
 		}
 	}
 
+	// 5. Local path existence checks
+	validateLocalPath(result, "code", job.Code, yamlDir)
+	for name, input := range job.Inputs {
+		if input.Value == "" {
+			validateLocalPath(result, fmt.Sprintf("inputs.%s.path", name), input.Path, yamlDir)
+		}
+	}
+
 	return result
+}
+
+// validateLocalPath checks that a local path exists on disk.
+// Remote URIs (azureml://, https://, http://) and empty paths are skipped.
+func validateLocalPath(result *ValidationResult, field string, path string, yamlDir string) {
+	if path == "" || IsRemoteURI(path) {
+		return
+	}
+
+	// Resolve relative paths against the YAML file directory
+	resolved := path
+	if !filepath.IsAbs(path) {
+		resolved = filepath.Join(yamlDir, path)
+	}
+
+	if _, err := os.Stat(resolved); os.IsNotExist(err) {
+		result.Findings = append(result.Findings, ValidationFinding{
+			Field:    field,
+			Severity: SeverityError,
+			Message:  fmt.Sprintf("local path does not exist: '%s'", path),
+		})
+	}
 }

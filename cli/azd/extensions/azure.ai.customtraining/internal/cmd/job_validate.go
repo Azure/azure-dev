@@ -6,6 +6,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"azure.ai.customtraining/internal/utils"
 
@@ -38,7 +39,8 @@ func newJobValidateCommand() *cobra.Command {
 			}
 
 			// Run offline validation — collects all findings
-			result := utils.ValidateJobOffline(&jobDef)
+			yamlDir := filepath.Dir(filePath)
+			result := utils.ValidateJobOffline(&jobDef, yamlDir)
 
 			// Print findings
 			if len(result.Findings) == 0 {

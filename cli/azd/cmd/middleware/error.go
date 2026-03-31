@@ -204,7 +204,6 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 	originalError := err
 	azdAgent, err := e.agentFactory.Create(
 		ctx,
-		agent.WithMode(agent.AgentModeInteractive),
 		agent.WithMode(agent.AgentModePlan),
 		agent.WithDebug(e.global.EnableDebugLogging),
 	)
@@ -243,6 +242,8 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		}
 
 		// Skip agent troubleshooting for errors that are not classified as fixable
+		// No need to return error message again as it is already printed above
+		// just return to the main message loop for next steps
 		if !fixableError(originalError) {
 			return nil, nil
 		}
@@ -254,6 +255,8 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			return nil, fmt.Errorf("prompting for troubleshoot category: %w", err)
 		}
 
+		// No need to return error message again as it is already printed above
+		// just return to the main message loop for next steps
 		if category == categorySkip {
 			span.SetStatus(codes.Error, "agent.troubleshoot.skip")
 			return nil, nil

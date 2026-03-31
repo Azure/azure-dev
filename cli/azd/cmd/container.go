@@ -156,10 +156,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			isTerminal,
 			input.Writers{Output: writer},
 			input.ConsoleHandles{
-			Stdin:  cmd.InOrStdin(),
-			Stdout: cmd.OutOrStdout(),
-			Stderr: cmd.ErrOrStderr(),
-		}, formatter, externalPromptCfg)
+				Stdin:  cmd.InOrStdin(),
+				Stdout: cmd.OutOrStdout(),
+				Stderr: cmd.ErrOrStderr(),
+			}, formatter, externalPromptCfg)
 	})
 
 	container.MustRegisterSingleton(

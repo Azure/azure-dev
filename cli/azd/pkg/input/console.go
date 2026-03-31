@@ -1068,15 +1068,15 @@ func NewConsole(
 		formatter.Kind() == output.JsonFormat
 
 	c := &AskerConsole{
-		asker:          asker,
-		handles:        handles,
-		defaultWriter:  writers.Output,
-		writer:         writers.Output,
-		formatter:      formatter,
+		asker:                asker,
+		handles:              handles,
+		defaultWriter:        writers.Output,
+		writer:               writers.Output,
+		formatter:            formatter,
 		structuredOutputMode: structuredMode,
-		isTerminal:     isTerminal,
-		currentIndent:  atomic.NewString(""),
-		noPrompt:       noPrompt,
+		isTerminal:           isTerminal,
+		currentIndent:        atomic.NewString(""),
+		noPrompt:             noPrompt,
 	}
 
 	if writers.Spinner == nil {

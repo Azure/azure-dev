@@ -270,6 +270,17 @@ func TestResolveCapacity(t *testing.T) {
 			expected:  10,
 		},
 		{
+			name: "preferred capacity aligned relative to minimum",
+			sku: AiModelSku{
+				DefaultCapacity: 7,
+				MinCapacity:     7,
+				MaxCapacity:     100,
+				CapacityStep:    5,
+			},
+			preferred: new(int32(12)),
+			expected:  12,
+		},
+		{
 			name: "no preferred uses default",
 			sku: AiModelSku{
 				DefaultCapacity: 25,
@@ -299,6 +310,80 @@ func TestResolveCapacity(t *testing.T) {
 			require.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+func TestResolveCapacityWithQuota(t *testing.T) {
+	t.Run("uses default when it fits in remaining quota", func(t *testing.T) {
+		capacity, ok := ResolveCapacityWithQuota(AiModelSku{
+			DefaultCapacity: 25,
+			MinCapacity:     1,
+			MaxCapacity:     100,
+			CapacityStep:    1,
+		}, nil, 50)
+
+		require.True(t, ok)
+		require.Equal(t, int32(25), capacity)
+	})
+
+	t.Run("falls back below default when no preferred capacity is set", func(t *testing.T) {
+		capacity, ok := ResolveCapacityWithQuota(AiModelSku{
+			DefaultCapacity: 5000,
+			MinCapacity:     0,
+			MaxCapacity:     5000,
+			CapacityStep:    0,
+		}, nil, 1000)
+
+		require.True(t, ok)
+		require.Equal(t, int32(1000), capacity)
+	})
+
+	t.Run("respects min and step when falling back", func(t *testing.T) {
+		capacity, ok := ResolveCapacityWithQuota(AiModelSku{
+			DefaultCapacity: 3000,
+			MinCapacity:     100,
+			MaxCapacity:     3000,
+			CapacityStep:    100,
+		}, nil, 950)
+
+		require.True(t, ok)
+		require.Equal(t, int32(900), capacity)
+	})
+
+	t.Run("fails when explicit preferred capacity does not fit", func(t *testing.T) {
+		capacity, ok := ResolveCapacityWithQuota(AiModelSku{
+			DefaultCapacity: 5000,
+			MinCapacity:     0,
+			MaxCapacity:     5000,
+			CapacityStep:    0,
+		}, new(int32(5000)), 1000)
+
+		require.False(t, ok)
+		require.Equal(t, int32(5000), capacity)
+	})
+
+	t.Run("fails when remaining quota is below effective minimum", func(t *testing.T) {
+		capacity, ok := ResolveCapacityWithQuota(AiModelSku{
+			DefaultCapacity: 0,
+			MinCapacity:     100,
+			MaxCapacity:     3000,
+			CapacityStep:    100,
+		}, nil, 50)
+
+		require.False(t, ok)
+		require.Equal(t, int32(0), capacity)
+	})
+
+	t.Run("falls back using step alignment relative to minimum", func(t *testing.T) {
+		capacity, ok := ResolveCapacityWithQuota(AiModelSku{
+			DefaultCapacity: 27,
+			MinCapacity:     7,
+			MaxCapacity:     100,
+			CapacityStep:    5,
+		}, nil, 20)
+
+		require.True(t, ok)
+		require.Equal(t, int32(17), capacity)
+	})
 }
 
 func TestMaxModelRemainingQuota(t *testing.T) {

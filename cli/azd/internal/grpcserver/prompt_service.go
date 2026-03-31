@@ -266,7 +266,14 @@ func (s *promptService) PromptLocation(
 		return nil, err
 	}
 
-	selectedLocation, err := s.prompter.PromptLocation(ctx, azureContext, nil)
+	var selectorOptions *prompt.SelectOptions
+	if len(req.AllowedLocations) > 0 {
+		selectorOptions = &prompt.SelectOptions{
+			AllowedValues: req.AllowedLocations,
+		}
+	}
+
+	selectedLocation, err := s.prompter.PromptLocation(ctx, azureContext, selectorOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -843,6 +850,18 @@ func (s *promptService) PromptAiDeployment(
 
 	// --- Step 3: Resolve capacity, optionally prompting ---
 	capacity := ai.ResolveCapacity(selectedSku.sku, options.Capacity)
+	if req.Quota != nil && selectedSku.remaining != nil {
+		resolvedCapacity, ok := ai.ResolveCapacityWithQuota(selectedSku.sku, options.Capacity, *selectedSku.remaining)
+		if !ok {
+			return nil, aiStatusError(
+				codes.FailedPrecondition,
+				azdext.AiErrorReasonNoDeploymentMatch,
+				fmt.Sprintf("no deployment match for model %q with the selected SKU and quota", req.ModelName),
+				map[string]string{"model_name": req.ModelName},
+			)
+		}
+		capacity = resolvedCapacity
+	}
 
 	if !req.UseDefaultCapacity {
 		sku := selectedSku.sku
@@ -1229,8 +1248,6 @@ func buildSkuCandidatesForVersion(
 			continue
 		}
 
-		capacity := ai.ResolveCapacity(sku, options.Capacity)
-
 		var remaining *float64
 		if quota != nil {
 			if usageMap == nil {
@@ -1244,7 +1261,11 @@ func buildSkuCandidatesForVersion(
 
 			rem := usage.Limit - usage.CurrentValue
 			remaining = &rem
-			if rem < minReq || (capacity > 0 && float64(capacity) > rem) {
+			if rem < minReq {
+				continue
+			}
+
+			if _, ok := ai.ResolveCapacityWithQuota(sku, options.Capacity, rem); !ok {
 				continue
 			}
 		}

@@ -6,6 +6,7 @@ package grpcserver
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -213,6 +214,39 @@ func Test_PromptService_PromptLocation(t *testing.T) {
 	require.Equal(t, expectedLocation.Name, resp.Location.Name)
 	require.Equal(t, expectedLocation.DisplayName, resp.Location.DisplayName)
 	require.Equal(t, expectedLocation.RegionalDisplayName, resp.Location.RegionalDisplayName)
+	mockPrompter.AssertExpectations(t)
+}
+
+func Test_PromptService_PromptLocation_WithAllowedLocations(t *testing.T) {
+	mockPrompter := &mockprompt.MockPromptService{}
+	globalOptions := &internal.GlobalCommandOptions{NoPrompt: false}
+
+	expectedLocation := &account.Location{
+		Name:                "westus3",
+		DisplayName:         "West US 3",
+		RegionalDisplayName: "(US) West US 3",
+	}
+
+	mockPrompter.
+		On("PromptLocation", mock.Anything, mock.Anything, mock.MatchedBy(func(opts *prompt.SelectOptions) bool {
+			return opts != nil && slices.Equal(opts.AllowedValues, []string{"westus3", "eastus2"})
+		})).
+		Return(expectedLocation, nil)
+
+	service := NewPromptService(mockPrompter, nil, nil, globalOptions)
+
+	resp, err := service.PromptLocation(context.Background(), &azdext.PromptLocationRequest{
+		AzureContext: &azdext.AzureContext{
+			Scope: &azdext.AzureScope{
+				SubscriptionId: "sub-123",
+			},
+		},
+		AllowedLocations: []string{"westus3", "eastus2"},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, resp.Location)
+	require.Equal(t, expectedLocation.Name, resp.Location.Name)
 	mockPrompter.AssertExpectations(t)
 }
 
@@ -825,6 +859,38 @@ func Test_buildSkuCandidatesForVersion(t *testing.T) {
 		require.Equal(t, "OpenAI.Standard.gpt-4o-finetune", candidates[0].sku.UsageName)
 		require.NotNil(t, candidates[0].remaining)
 		require.Equal(t, float64(10), *candidates[0].remaining)
+	})
+
+	t.Run("falls back to lower capacity that fits remaining quota", func(t *testing.T) {
+		deepSeekVersion := ai.AiModelVersion{
+			Version: "1",
+			Skus: []ai.AiModelSku{
+				{
+					Name:            "GlobalStandard",
+					UsageName:       "AIServices.GlobalStandard.DeepSeek-R1-0528",
+					DefaultCapacity: 5000,
+					MinCapacity:     0,
+					MaxCapacity:     5000,
+					CapacityStep:    0,
+				},
+			},
+		}
+		quota := &azdext.QuotaCheckOptions{
+			MinRemainingCapacity: 1,
+		}
+		usageMap := map[string]ai.AiModelUsage{
+			"AIServices.GlobalStandard.DeepSeek-R1-0528": {
+				Name:         "AIServices.GlobalStandard.DeepSeek-R1-0528",
+				CurrentValue: 0,
+				Limit:        1000,
+			},
+		}
+
+		candidates := buildSkuCandidatesForVersion(deepSeekVersion, nil, quota, usageMap, false)
+		require.Len(t, candidates, 1)
+		require.Equal(t, "AIServices.GlobalStandard.DeepSeek-R1-0528", candidates[0].sku.UsageName)
+		require.NotNil(t, candidates[0].remaining)
+		require.Equal(t, float64(1000), *candidates[0].remaining)
 	})
 }
 

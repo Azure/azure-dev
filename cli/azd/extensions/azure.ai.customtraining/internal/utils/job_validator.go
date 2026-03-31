@@ -191,6 +191,7 @@ func validatePlaceholders(result *ValidationResult, job *JobDefinition) {
 		kind := match[1] // "inputs" or "outputs"
 		key := match[2]
 
+		// Only validate input placeholders — outputs are auto-provisioned by the backend
 		if kind == "inputs" {
 			if optionalInputs[key] {
 				continue // skip optional inputs
@@ -206,20 +207,6 @@ func validatePlaceholders(result *ValidationResult, job *JobDefinition) {
 					Field:    "command",
 					Severity: SeverityError,
 					Message:  fmt.Sprintf("command references '${{inputs.%s}}' but '%s' is not defined in inputs", key, key),
-				})
-			}
-		} else if kind == "outputs" {
-			if job.Outputs == nil {
-				result.Findings = append(result.Findings, ValidationFinding{
-					Field:    "command",
-					Severity: SeverityWarning,
-					Message:  fmt.Sprintf("command references '${{outputs.%s}}' but no outputs are defined", key),
-				})
-			} else if _, exists := job.Outputs[key]; !exists {
-				result.Findings = append(result.Findings, ValidationFinding{
-					Field:    "command",
-					Severity: SeverityWarning,
-					Message:  fmt.Sprintf("command references '${{outputs.%s}}' but '%s' is not defined in outputs", key, key),
 				})
 			}
 		}

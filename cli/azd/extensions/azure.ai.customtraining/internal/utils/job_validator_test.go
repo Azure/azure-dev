@@ -146,46 +146,36 @@ func TestValidate_LocalPaths(t *testing.T) {
 	}
 }
 
-// Tests ${{inputs.xxx}} and ${{outputs.xxx}} placeholder validation in command.
+// Tests ${{inputs.xxx}} placeholder validation in command.
+// Output placeholders are NOT validated here — outputs are auto-provisioned by the backend.
 func TestValidate_PlaceholderMapping(t *testing.T) {
-	// YAML — typos in placeholder keys:
+	// YAML — typo in input placeholder key:
 	//   command: >-
 	//     python train.py
 	//     --data ${{inputs.training_data}}
 	//     --val ${{inputs.validation_data}}     ← "validation_data" NOT in inputs → error
-	//     --out ${{outputs.model_output}}        ← "model_output" NOT in outputs → warning
 	//   inputs:
 	//     training_data:
 	//       type: uri_folder
 	//       path: azureml://datastores/blob/data
-	//   outputs:
-	//     model:                                  ← key is "model", not "model_output"
-	//       type: uri_folder
 	job := validJob()
-	job.Command = "python train.py --data ${{inputs.training_data}} --val ${{inputs.validation_data}} --out ${{outputs.model_output}}"
+	job.Command = "python train.py --data ${{inputs.training_data}} --val ${{inputs.validation_data}}"
 	job.Inputs = map[string]InputDefinition{
 		"training_data": {Type: "uri_folder", Path: "azureml://datastores/blob/data"},
 	}
-	job.Outputs = map[string]OutputDefinition{"model": {Type: "uri_folder"}}
 	result := ValidateJobOffline(job, ".")
 	if f := findFindingByMessage(result, "'validation_data' is not defined in inputs"); f == nil || f.Severity != SeverityError {
 		t.Error("expected error for unmapped input 'validation_data'")
 	}
-	if f := findFindingByMessage(result, "'model_output' is not defined in outputs"); f == nil || f.Severity != SeverityWarning {
-		t.Error("expected warning for unmapped output 'model_output'")
-	}
 
-	// YAML — placeholders but no inputs/outputs section at all:
-	//   command: python train.py --data ${{inputs.data}} --out ${{outputs.model}}
-	//   (no inputs: or outputs: defined)
+	// YAML — input placeholders but no inputs section at all:
+	//   command: python train.py --data ${{inputs.data}}
+	//   (no inputs: defined)
 	job = validJob()
-	job.Command = "python train.py --data ${{inputs.data}} --out ${{outputs.model}}"
+	job.Command = "python train.py --data ${{inputs.data}}"
 	result = ValidateJobOffline(job, ".")
 	if f := findFindingByMessage(result, "no inputs are defined"); f == nil {
 		t.Error("expected error when inputs section missing entirely")
-	}
-	if f := findFindingByMessage(result, "no outputs are defined"); f == nil {
-		t.Error("expected warning when outputs section missing entirely")
 	}
 
 	// YAML — optional inputs inside [...] brackets:

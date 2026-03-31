@@ -115,8 +115,7 @@ func (s *eventService) onSubscribeProjectEvent(
 		return err
 	}
 
-	for i := range len(subscribeMsg.EventNames) {
-		eventName := subscribeMsg.EventNames[i]
+	for i, eventName := range subscribeMsg.EventNames {
 		if eventName == "" {
 			return status.Errorf(
 				codes.InvalidArgument,
@@ -210,8 +209,7 @@ func (s *eventService) onSubscribeServiceEvent(
 		return err
 	}
 
-	for i := range len(subscribeMsg.EventNames) {
-		eventName := subscribeMsg.EventNames[i]
+	for i, eventName := range subscribeMsg.EventNames {
 		if eventName == "" {
 			return status.Errorf(
 				codes.InvalidArgument,

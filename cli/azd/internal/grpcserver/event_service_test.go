@@ -366,7 +366,7 @@ func TestEventService_New(t *testing.T) {
 func TestEventService_EmptyEventNameInArray(t *testing.T) {
 	service, _ := createTestEventService()
 	extension := createTestExtension()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	t.Run("project_event_with_empty_name", func(t *testing.T) {
 		var mockBroker *grpcbroker.MessageBroker[azdext.EventMessage]

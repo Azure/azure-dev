@@ -19,12 +19,11 @@ func newJobValidateCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "validate",
-		Short: "Validate a job YAML definition file without submitting",
-		Long:  "Validate a job YAML definition file for schema correctness and surface issues early.\n\nExample:\n  azd ai training job validate --file job.yaml",
+		Short: "Validate a job YAML definition file offline without submitting",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if filePath == "" {
-				return fmt.Errorf("--file (-f) is required: provide a path to a YAML job definition file")
+				return fmt.Errorf("--file is required: provide a path to a YAML job definition file")
 			}
 
 			// Read and parse the YAML file (without running ValidateJobDefinition which stops at first error)

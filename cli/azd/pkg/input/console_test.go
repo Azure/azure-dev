@@ -509,7 +509,8 @@ func TestAskerConsole_JsonMode_EnsureBlankLine(t *testing.T) {
 	)
 
 	ctx := t.Context()
-	c.Message(ctx, "first line")
+	// Call EnsureBlankLine directly without a preceding Message call.
+	// EnsureBlankLine internally calls Message, so stderr gets output only from it.
 	c.EnsureBlankLine(ctx)
 
 	require.Empty(t, stdoutBuf.String(),
@@ -571,6 +572,8 @@ func TestAskerConsole_JsonMode_StopPreviewer_NoOp(t *testing.T) {
 	require.NotPanics(t, func() {
 		c.StopPreviewer(ctx, false)
 	})
+	require.Empty(t, stdoutBuf.String(), "StopPreviewer no-op should not write to stdout")
+	require.Empty(t, stderrBuf.String(), "StopPreviewer no-op should not write to stderr")
 }
 
 // writerAdapter wraps *strings.Builder to satisfy io.Writer for test purposes.

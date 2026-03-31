@@ -8,7 +8,7 @@ Extract the PR number from the commit subject using these patterns (in order):
 2. **Merge commit**: look for `Merge pull request #1234 from user/branch`.
 3. **Fallback** (if neither pattern matches): query by commit SHA:
    ```bash
-   gh pr list --search "<SHA>" --state merged --json number --jq '.[0].number'
+   gh api repos/Azure/azure-dev/commits/<SHA>/pulls --jq '.[0].number'
    ```
 
 ## Exclusion Rules

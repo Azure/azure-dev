@@ -39,7 +39,9 @@ Auto-detect scope from the current working directory:
    - **Yes, that's correct** *(Recommended)*
    - **No, switch to [core | an extension]**
 
-3. If **extension** and not auto-detected: list folders under `cli/azd/extensions/` and ask the user to select the target. Verify it contains `CHANGELOG.md`, `version.txt`, and `extension.yaml`.
+3. If **extension** and not auto-detected: list folders under `cli/azd/extensions/` and ask the user to select the target.
+
+4. After extension scope is confirmed (whether auto-detected or manually selected), verify the target extension contains `CHANGELOG.md`, `version.txt`, and `extension.yaml`. If any are missing, stop and list which files are absent.
 
 ### Step 2 — Determine Version & Update Files
 
@@ -88,7 +90,7 @@ Per [references/pr-processing.md](references/pr-processing.md):
 ### Step 6 — Spell Check
 
 ```bash
-cspell lint "<changelog-path>" --relative --config cli/azd/.vscode/cspell.yaml --no-progress
+cspell lint "<changelog-path>" --relative --config "$(git rev-parse --show-toplevel)/cli/azd/.vscode/cspell.yaml" --no-progress
 ```
 
 If new names or handles trigger errors, add them to `.vscode/cspell-github-user-aliases.txt`.

@@ -42,7 +42,7 @@ Files to update:
    ```
    Identify the commit SHA that added the **previous released version's** changelog entries — the last section with actual content (not just an empty placeholder). Ignore bot commits that only add unreleased headers with empty categories.
 
-2. Ensure refs are up to date, then list all commits from cutoff to HEAD:
+2. Ensure refs are up to date, then list all commits from cutoff to `origin/main`:
    ```bash
    git fetch origin main
    git --no-pager log --oneline --pretty=format:"%h (%ad)%d %s" --date=short {cutoff_sha}..origin/main

@@ -4,7 +4,6 @@
 package cmd
 
 import (
-	"os"
 	"strings"
 	"testing"
 
@@ -512,6 +511,13 @@ func TestParseGlobalFlags_NonInteractiveAliasAndEnvVar(t *testing.T) {
 			args:         []string{"--no-prompt", "--non-interactive"},
 			wantNoPrompt: true,
 		},
+		{
+			name:         "AZD_NON_INTERACTIVE=yes is unparseable, suppresses agent detection",
+			args:         []string{},
+			envKey:       "AZD_NON_INTERACTIVE",
+			envVal:       "yes",
+			wantNoPrompt: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -519,8 +525,6 @@ func TestParseGlobalFlags_NonInteractiveAliasAndEnvVar(t *testing.T) {
 			// Clear agent detection and AZD_NON_INTERACTIVE to isolate
 			// from the ambient environment.
 			clearAgentEnvVarsForTest(t)
-			t.Setenv("AZD_NON_INTERACTIVE", "")
-			os.Unsetenv("AZD_NON_INTERACTIVE")
 			agentdetect.ResetDetection()
 
 			// Skip if we're inside an agent and expect false

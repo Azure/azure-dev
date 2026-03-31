@@ -695,6 +695,12 @@ func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error 
 			envVarPresent = true
 			if parsed, err := strconv.ParseBool(envVal); err == nil && parsed {
 				opts.NoPrompt = true
+			} else if err != nil {
+				log.Printf(
+					"warning: AZD_NON_INTERACTIVE=%q is not a valid boolean"+
+						" (expected true/false/1/0), ignoring",
+					envVal,
+				)
 			}
 		}
 	}

@@ -31,17 +31,17 @@ func newServerService(server *Server) *serverService {
 func (s *serverService) InitializeAsync(
 	ctx context.Context, rootPath string, options InitializeServerOptions,
 ) (*Session, error) {
-	id, session, err := s.server.newSession()
-	if err != nil {
-		return nil, err
-	}
-
 	if rootPath != "" {
 		if fi, err := os.Stat(rootPath); err != nil {
 			return nil, fmt.Errorf("invalid root path %q: %w", rootPath, err)
 		} else if !fi.IsDir() {
 			return nil, fmt.Errorf("root path %q is not a directory", rootPath)
 		}
+	}
+
+	id, session, err := s.server.newSession()
+	if err != nil {
+		return nil, err
 	}
 
 	session.rootPath = rootPath

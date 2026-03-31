@@ -65,9 +65,6 @@ func (s *accountService) LookupTenant(
 	ctx context.Context,
 	req *azdext.LookupTenantRequest,
 ) (*azdext.LookupTenantResponse, error) {
-	if req == nil {
-		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
-	}
 	if req.SubscriptionId == "" {
 		return nil, status.Error(codes.InvalidArgument, "subscription id is required")
 	}

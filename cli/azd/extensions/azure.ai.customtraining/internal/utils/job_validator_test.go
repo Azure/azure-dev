@@ -290,16 +290,16 @@ func TestValidate_EmptyInputDefinition(t *testing.T) {
 		}
 	}
 
-	// YAML — empty output definition is VALID (backend auto-provisions uri_folder + rw_mount):
+	// YAML — empty output definition shows warning (backend defaults to uri_folder + rw_mount):
 	//   command: python train.py --out ${{outputs.model}}
 	//   outputs:
-	//     model:              ← empty is fine for outputs
+	//     model:              ← empty definition → warning
 	job = validJob()
 	job.Command = "python train.py --out ${{outputs.model}}"
 	job.Outputs = map[string]OutputDefinition{"model": {}}
 	result = ValidateJobOffline(job, ".")
-	if f := findFindingByMessage(result, "model"); f != nil {
-		t.Errorf("did not expect error/warning for empty output definition: %s", f.Message)
+	if f := findFindingByMessage(result, "default values will be used"); f == nil || f.Severity != SeverityWarning {
+		t.Error("expected warning for empty output definition")
 	}
 }
 

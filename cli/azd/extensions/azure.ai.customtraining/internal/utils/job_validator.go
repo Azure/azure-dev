@@ -250,8 +250,9 @@ func validateSingleBracePlaceholders(result *ValidationResult, command string) {
 	}
 }
 
-// validateInputOutputDefinitions checks that inputs referenced in command
+// validateInputOutputDefinitions checks that inputs/outputs referenced in command
 // are not empty/nil definitions (all fields zero-valued).
+// Empty inputs are errors; empty outputs are warnings (backend uses defaults).
 func validateInputOutputDefinitions(result *ValidationResult, job *JobDefinition) {
 	command := job.Command
 
@@ -266,6 +267,16 @@ func validateInputOutputDefinitions(result *ValidationResult, job *JobDefinition
 						Field:    fmt.Sprintf("inputs.%s", key),
 						Severity: SeverityError,
 						Message:  fmt.Sprintf("input '%s' is referenced in command but has an empty definition", key),
+					})
+				}
+			}
+		} else if kind == "outputs" && job.Outputs != nil {
+			if output, exists := job.Outputs[key]; exists {
+				if (output == OutputDefinition{}) {
+					result.Findings = append(result.Findings, ValidationFinding{
+						Field:    fmt.Sprintf("outputs.%s", key),
+						Severity: SeverityWarning,
+						Message:  fmt.Sprintf("output '%s' has an empty definition — default values will be used", key),
 					})
 				}
 			}

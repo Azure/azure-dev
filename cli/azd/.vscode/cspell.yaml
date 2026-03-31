@@ -85,6 +85,8 @@ words:
   - yarnpkg
   - azconfig
   - hostnames
+  - managedhsm
+  - microsoftazure
   - seekable
   - seekability
   - APFS
@@ -108,7 +110,10 @@ words:
   - preconfigured
   - Println
   - sctx
+  - secretname
+  - secretversion
   - TTLs
+  - vaultname
 languageSettings:
   - languageId: go
     ignoreRegExpList:

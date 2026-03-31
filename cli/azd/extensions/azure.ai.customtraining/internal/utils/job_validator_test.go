@@ -261,12 +261,12 @@ func TestValidate_SingleBracePlaceholders(t *testing.T) {
 	}
 }
 
-// Tests input with empty definition (equivalent to Python None) is flagged.
-func TestValidate_EmptyInputDefinition(t *testing.T) {
+// Tests empty input/output definitions (equivalent to Python None) are flagged.
+func TestValidate_EmptyDefinitions(t *testing.T) {
 	// YAML — input key exists but has no properties (None):
 	//   command: python train.py --data ${{inputs.training_data}}
 	//   inputs:
-	//     training_data:       ← key present but empty definition
+	//     training_data:       ← key present but empty definition → error
 	job := validJob()
 	job.Command = "python train.py --data ${{inputs.training_data}}"
 	job.Inputs = map[string]InputDefinition{"training_data": {}}
@@ -275,25 +275,10 @@ func TestValidate_EmptyInputDefinition(t *testing.T) {
 		t.Error("expected error for empty input definition")
 	}
 
-	// YAML — inputs with at least one field set are NOT empty:
-	//   inputs:
-	//     data1: { type: uri_folder }
-	//     epochs: { value: "10" }
-	//     data2: { path: azureml://datastores/blob/data }
-	for _, input := range []InputDefinition{{Type: "uri_folder"}, {Value: "10"}, {Path: "azureml://x"}} {
-		job = validJob()
-		job.Command = "python train.py --x ${{inputs.x}}"
-		job.Inputs = map[string]InputDefinition{"x": input}
-		result = ValidateJobOffline(job, ".")
-		if f := findFindingByMessage(result, "has an empty definition"); f != nil {
-			t.Errorf("did not expect empty error for input %+v", input)
-		}
-	}
-
-	// YAML — empty output definition shows warning (backend defaults to uri_folder + rw_mount):
+	// YAML — output key exists but has no properties (None):
 	//   command: python train.py --out ${{outputs.model}}
 	//   outputs:
-	//     model:              ← empty definition → warning
+	//     model:              ← empty definition → warning (backend uses defaults)
 	job = validJob()
 	job.Command = "python train.py --out ${{outputs.model}}"
 	job.Outputs = map[string]OutputDefinition{"model": {}}

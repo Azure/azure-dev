@@ -1,5 +1,6 @@
 """Shared Azure authentication helper for eval graders."""
 import os
+import subprocess
 
 
 def get_access_token() -> str:
@@ -9,13 +10,15 @@ def get_access_token() -> str:
     the AZURE_ACCESS_TOKEN environment variable.
     """
     try:
-        import subprocess
         result = subprocess.run(
             ["az", "account", "get-access-token", "--query", "accessToken", "-o", "tsv"],
             capture_output=True, text=True, check=True
         )
-        return result.stdout.strip()
-    except Exception:
+        token = result.stdout.strip()
+        if token:
+            return token
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        # az CLI not found or returned non-zero — try fallback
         pass
 
     token = os.environ.get("AZURE_ACCESS_TOKEN")

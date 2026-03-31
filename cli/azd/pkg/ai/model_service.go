@@ -732,10 +732,7 @@ func convertSku(sku *armcognitiveservices.ModelSKU) AiModelSku {
 func ResolveCapacity(sku AiModelSku, preferred *int32) int32 {
 	if preferred != nil {
 		cap := *preferred
-		if cap > 0 &&
-			(sku.MinCapacity <= 0 || cap >= sku.MinCapacity) &&
-			(sku.MaxCapacity <= 0 || cap <= sku.MaxCapacity) &&
-			(sku.CapacityStep <= 0 || cap%sku.CapacityStep == 0) {
+		if capacityValidForSku(sku, cap) {
 			return cap
 		}
 	}
@@ -759,7 +756,7 @@ func ResolveCapacityWithQuota(sku AiModelSku, preferred *int32, remaining float6
 	return fallbackCapacityWithinQuota(sku, remaining)
 }
 
-func capacityFitsWithinQuota(sku AiModelSku, capacity int32, remaining float64) bool {
+func capacityValidForSku(sku AiModelSku, capacity int32) bool {
 	if capacity <= 0 {
 		return false
 	}
@@ -773,13 +770,38 @@ func capacityFitsWithinQuota(sku AiModelSku, capacity int32, remaining float64) 
 	}
 
 	if sku.CapacityStep > 0 {
-		baseline := sku.MinCapacity
-		if baseline <= 0 {
-			baseline = sku.CapacityStep
-		}
+		baseline := capacityStepBaseline(sku)
 		if capacity < baseline || (capacity-baseline)%sku.CapacityStep != 0 {
 			return false
 		}
+	}
+
+	return true
+}
+
+func capacityStepBaseline(sku AiModelSku) int32 {
+	if sku.MinCapacity > 0 {
+		return sku.MinCapacity
+	}
+
+	return sku.CapacityStep
+}
+
+func minimumValidCapacity(sku AiModelSku) int32 {
+	if sku.MinCapacity > 0 {
+		return sku.MinCapacity
+	}
+
+	if sku.CapacityStep > 0 {
+		return sku.CapacityStep
+	}
+
+	return 1
+}
+
+func capacityFitsWithinQuota(sku AiModelSku, capacity int32, remaining float64) bool {
+	if !capacityValidForSku(sku, capacity) {
+		return false
 	}
 
 	return float64(capacity) <= remaining
@@ -795,14 +817,7 @@ func fallbackCapacityWithinQuota(sku AiModelSku, remaining float64) (int32, bool
 		upperBound = sku.MaxCapacity
 	}
 
-	lowerBound := sku.MinCapacity
-	if lowerBound <= 0 {
-		if sku.CapacityStep > 0 {
-			lowerBound = sku.CapacityStep
-		} else {
-			lowerBound = 1
-		}
-	}
+	lowerBound := minimumValidCapacity(sku)
 
 	if upperBound < lowerBound {
 		return 0, false

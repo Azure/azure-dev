@@ -270,6 +270,17 @@ func TestResolveCapacity(t *testing.T) {
 			expected:  10,
 		},
 		{
+			name: "preferred capacity aligned relative to minimum",
+			sku: AiModelSku{
+				DefaultCapacity: 7,
+				MinCapacity:     7,
+				MaxCapacity:     100,
+				CapacityStep:    5,
+			},
+			preferred: new(int32(12)),
+			expected:  12,
+		},
+		{
 			name: "no preferred uses default",
 			sku: AiModelSku{
 				DefaultCapacity: 25,
@@ -360,6 +371,18 @@ func TestResolveCapacityWithQuota(t *testing.T) {
 
 		require.False(t, ok)
 		require.Equal(t, int32(0), capacity)
+	})
+
+	t.Run("falls back using step alignment relative to minimum", func(t *testing.T) {
+		capacity, ok := ResolveCapacityWithQuota(AiModelSku{
+			DefaultCapacity: 27,
+			MinCapacity:     7,
+			MaxCapacity:     100,
+			CapacityStep:    5,
+		}, nil, 20)
+
+		require.True(t, ok)
+		require.Equal(t, int32(17), capacity)
 	})
 }
 

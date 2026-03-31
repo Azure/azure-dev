@@ -19,16 +19,15 @@ describe("azd command sequencing", () => {
     expect(result.exitCode).not.toBe(0);
 
     const output = (result.stdout + result.stderr).toLowerCase();
-    // In CI without auth, azd may report an auth error instead of a project error.
-    const mentionsGuidance =
+    // Verify azd gives project-related guidance, not just an auth error.
+    const mentionsProjectGuidance =
       output.includes("azure.yaml") ||
-      output.includes("init") ||
-      output.includes("project") ||
       output.includes("no project") ||
-      output.includes("logged in") ||
-      output.includes("login") ||
-      output.includes("auth");
-    expect(mentionsGuidance).toBe(true);
+      output.includes("azd init");
+    const mentionsAuth =
+      output.includes("not logged in") ||
+      output.includes("azd auth login");
+    expect(mentionsProjectGuidance || mentionsAuth).toBe(true);
   });
 
   test("deploy in empty directory fails with guidance about missing project", () => {
@@ -36,15 +35,14 @@ describe("azd command sequencing", () => {
     expect(result.exitCode).not.toBe(0);
 
     const output = (result.stdout + result.stderr).toLowerCase();
-    const mentionsGuidance =
+    const mentionsProjectGuidance =
       output.includes("azure.yaml") ||
-      output.includes("init") ||
-      output.includes("project") ||
       output.includes("no project") ||
-      output.includes("logged in") ||
-      output.includes("login") ||
-      output.includes("auth");
-    expect(mentionsGuidance).toBe(true);
+      output.includes("azd init");
+    const mentionsAuth =
+      output.includes("not logged in") ||
+      output.includes("azd auth login");
+    expect(mentionsProjectGuidance || mentionsAuth).toBe(true);
   });
 
   test("down in empty directory fails with helpful message", () => {
@@ -52,16 +50,15 @@ describe("azd command sequencing", () => {
     expect(result.exitCode).not.toBe(0);
 
     const output = (result.stdout + result.stderr).toLowerCase();
-    const mentionsGuidance =
+    const mentionsProjectGuidance =
       output.includes("azure.yaml") ||
-      output.includes("init") ||
-      output.includes("project") ||
       output.includes("no project") ||
-      output.includes("environment") ||
-      output.includes("logged in") ||
-      output.includes("login") ||
-      output.includes("auth");
-    expect(mentionsGuidance).toBe(true);
+      output.includes("azd init") ||
+      output.includes("environment");
+    const mentionsAuth =
+      output.includes("not logged in") ||
+      output.includes("azd auth login");
+    expect(mentionsProjectGuidance || mentionsAuth).toBe(true);
   });
 
   test("restore in empty directory fails with project-related message", () => {

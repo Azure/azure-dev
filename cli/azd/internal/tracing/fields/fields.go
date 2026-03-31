@@ -387,7 +387,8 @@ var (
 var (
 	// PreflightOutcomeKey records the outcome of preflight validation.
 	//
-	// Example: "passed", "warnings_accepted", "aborted_by_errors", "aborted_by_user"
+	// Example: "passed", "warnings_accepted", "aborted_by_errors",
+	//          "aborted_by_user", "skipped", "error"
 	PreflightOutcomeKey = AttributeKey{
 		Key:            attribute.Key("validation.preflight.outcome"),
 		Classification: SystemMetadata,

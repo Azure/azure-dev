@@ -25,6 +25,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/drone/envsubst"
+
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -49,7 +51,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/password"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
-	"github.com/drone/envsubst"
 )
 
 type bicepFileMode int
@@ -2186,15 +2187,18 @@ func (p *BicepProvider) validatePreflight(
 
 	// Record the rule IDs that actually executed. This is done after validate()
 	// because validate() may skip checks entirely (e.g. when the bicep snapshot
-	// is unavailable). A nil results with nil error means checks were skipped.
+	// is unavailable). A nil result with nil error means checks were skipped.
 	if results == nil {
 		p.setPreflightOutcome(span, preflightOutcomeSkipped, nil)
+		// No rules actually executed; record an empty slice for telemetry.
+		span.SetAttributes(fields.PreflightRulesKey.StringSlice([]string{}))
+	} else {
+		ruleIDs := make([]string, len(localPreflight.checks))
+		for i, check := range localPreflight.checks {
+			ruleIDs[i] = check.RuleID
+		}
+		span.SetAttributes(fields.PreflightRulesKey.StringSlice(ruleIDs))
 	}
-	ruleIDs := make([]string, len(localPreflight.checks))
-	for i, check := range localPreflight.checks {
-		ruleIDs[i] = check.RuleID
-	}
-	span.SetAttributes(fields.PreflightRulesKey.StringSlice(ruleIDs))
 
 	// Compute telemetry metrics from the results.
 	var diagnosticIDs []string

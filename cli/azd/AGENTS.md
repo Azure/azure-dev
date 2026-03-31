@@ -195,6 +195,15 @@ func (a *myAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 - **No dead references**: Don't reference files, scripts, directories, or workflows that don't exist in the PR. If a README lists `scripts/generate-report.ts`, it must exist. If a CI table lists `eval-human.yml`, it must be included
 - **PR description accuracy**: Keep the PR description in sync with the actual implementation. If the description says "server-side filtering" but the code does client-side filtering, update the description
 
+#### Environment Variables Documentation
+
+The file `cli/azd/docs/environment-variables.md` is the single source of truth for every environment
+variable `azd` reads. When adding or modifying an `os.Getenv` / `os.LookupEnv` call:
+
+1. Add the variable to the appropriate section in `environment-variables.md`.
+2. Include a one-line description that explains what it controls and its default if non-obvious.
+3. Place debug/internal variables under **Debug Variables** with the unsupported warning.
+
 ### Modern Go
 
 This project uses Go 1.26. Use modern standard library features:

@@ -1266,10 +1266,18 @@ func newEnvGetValuesCmd() *cobra.Command {
 		Use:   "get-values",
 		Short: "Get all environment values.",
 		Long: "Get all environment values.\n\n" +
-			"Use --export to output in shell-ready format " +
-			"(export KEY=\"VALUE\").\n" +
+			"Use --export to output in shell-ready " +
+			"POSIX format (export KEY=\"VALUE\").\n" +
 			"This enables shell integration:\n\n" +
-			"  eval \"$(azd env get-values --export)\"",
+			"  eval \"$(azd env get-values --export)\"\n\n" +
+			"The output uses POSIX shell syntax " +
+			"compatible with bash, zsh, and ksh.\n" +
+			"Values containing newlines or carriage " +
+			"returns use $'...' (ANSI-C) quoting,\n" +
+			"which requires bash, zsh, or ksh.\n\n" +
+			"For PowerShell, use:\n\n" +
+			"  azd env get-values --output json " +
+			"| ConvertFrom-Json",
 		Args: cobra.NoArgs,
 	}
 }
@@ -1289,7 +1297,8 @@ func (eg *envGetValuesFlags) Bind(
 		&eg.export,
 		"export",
 		false,
-		"Output in shell-ready format (export KEY=\"VALUE\").",
+		"Output in POSIX shell-ready format "+
+			"(export KEY=\"VALUE\").",
 	)
 	eg.global = global
 }
@@ -1323,10 +1332,14 @@ func newEnvGetValuesAction(
 
 func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if eg.flags.export && eg.formatter.Kind() != output.EnvVarsFormat {
-		return nil, fmt.Errorf(
-			"--export and --output are mutually exclusive: %w",
-			internal.ErrInvalidFlagCombination,
-		)
+		return nil, &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf(
+				"--export and --output are mutually exclusive: %w",
+				internal.ErrInvalidFlagCombination,
+			),
+			Suggestion: "Use '--export' without '--output', " +
+				"or remove '--export' to use '--output json'.",
+		}
 	}
 
 	name, err := eg.azdCtx.GetDefaultEnvironmentName()
@@ -1398,6 +1411,12 @@ func writeExportedEnv(
 	keys := slices.Sorted(maps.Keys(values))
 	for _, key := range keys {
 		if !validShellKey.MatchString(key) {
+			fmt.Fprintf(
+				os.Stderr,
+				"warning: skipping key %q "+
+					"(not a valid shell identifier)\n",
+				key,
+			)
 			continue
 		}
 
@@ -1407,7 +1426,7 @@ func writeExportedEnv(
 		// Use $'...' quoting for values containing newlines so \n is
 		// interpreted as an actual newline by the shell.
 		var line string
-		if strings.Contains(val, "\n") {
+		if strings.Contains(val, "\n") || strings.Contains(val, "\r") {
 			escaped = strings.ReplaceAll(escaped, "\n", `\n`)
 			line = fmt.Sprintf("export %s=$'%s'\n", key, strings.ReplaceAll(escaped, `'`, `\'`))
 		} else {

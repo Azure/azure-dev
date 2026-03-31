@@ -89,7 +89,7 @@ func TestEnvGetValuesExport(t *testing.T) {
 			},
 			export: true,
 			expected: "export AZURE_ENV_NAME=\"test\"\n" +
-				"export CR_VALUE=\"line1\\rline2\"\n",
+				"export CR_VALUE=$'line1\\rline2'\n",
 		},
 		{
 			name: "no export outputs dotenv format",

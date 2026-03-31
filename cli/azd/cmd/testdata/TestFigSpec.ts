@@ -1919,7 +1919,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--export'],
-							description: 'Output in shell-ready format (export KEY="VALUE").',
+							description: 'Output in POSIX shell-ready format (export KEY="VALUE").',
 						},
 					],
 				},

@@ -278,6 +278,12 @@ Tools follow `server.ServerTool` interface from `github.com/mark3labs/mcp-go/ser
 - Handler: `handleXXX(ctx, request) (*mcp.CallToolResult, error)`
 - Snake_case names (e.g., `azd_plan_init`)
 
+### Go Module Versioning
+
+Go module version tags (`cli/azd/vX.Y.Z`) are created alongside each CLI release tag (`azure-dev-cli_X.Y.Z`). Extension developers should use semver references in `go.mod` instead of pseudo-versions. See `docs/sdk-versioning.md` for details.
+
+When cutting a release, `eng/scripts/Update-CliVersion.ps1` automatically updates both `cli/version.txt` and `pkg/azdext/version.go` to keep versions in sync.
+
 ## Extensions
 
 First-party azd extensions live in `cli/azd/extensions/`.
@@ -302,6 +308,7 @@ Feature-specific docs are in `docs/` — refer to them as needed. Some key docs 
 - `docs/extensions/extension-framework.md` - Extension development using gRPC extension framework
 - `docs/style-guidelines/guiding-principles.md` - Design principles
 - `docs/tracing-in-azd.md` - Tracing/telemetry guidelines
+- `docs/sdk-versioning.md` - Go module versioning for extension developers
 
 ## CI / GitHub Actions
 

@@ -26,7 +26,7 @@ func newJobValidateCommand() *cobra.Command {
 				return fmt.Errorf("--file is required: provide a path to a YAML job definition file")
 			}
 
-			// Read and parse the YAML file (without running ValidateJobDefinition which stops at first error)
+			// Read and parse the YAML file
 			data, err := os.ReadFile(filePath)
 			if err != nil {
 				return fmt.Errorf("failed to read job file '%s': %w", filePath, err)

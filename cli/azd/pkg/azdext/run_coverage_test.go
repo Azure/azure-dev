@@ -4,6 +4,7 @@
 package azdext
 
 import (
+	"regexp"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -113,7 +114,10 @@ func (e *testGenericError) Error() string {
 
 func TestVersion_IsSet(t *testing.T) {
 	require.NotEmpty(t, Version)
-	require.Equal(t, "0.1.0", Version)
+	// Validate semver format (major.minor.patch with optional pre-release)
+	// instead of an exact value, since Update-CliVersion.ps1 auto-bumps this on each release.
+	semverPattern := regexp.MustCompile(`^\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?$`)
+	require.Regexp(t, semverPattern, Version)
 }
 
 func TestAiErrorConstants(t *testing.T) {

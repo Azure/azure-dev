@@ -74,6 +74,11 @@ steps:
           ConvertFrom-Json
         $sha = $tagRef.object.sha
 
+        if (-not $sha) {
+          Write-Error "Failed to resolve commit SHA from release tag $(GH_RELEASE_TAG)"
+          exit 1
+        }
+
         # For annotated tags, dereference to get the underlying commit SHA
         if ($tagRef.object.type -eq 'tag') {
           $tagObj = gh api "repos/$(Build.Repository.Name)/git/tags/$sha" | ConvertFrom-Json

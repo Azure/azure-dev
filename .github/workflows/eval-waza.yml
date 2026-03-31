@@ -39,13 +39,12 @@ jobs:
 
       - name: Run Waza evaluations
         working-directory: cli/azd/test/eval
-        continue-on-error: true
         env:
           COPILOT_CLI_TOKEN: ${{ secrets.COPILOT_CLI_TOKEN }}
         run: waza run --executor copilot-sdk
 
       - name: Upload Waza results
-        if: always()
+        if: always()  # Upload results even when evals fail
         uses: actions/upload-artifact@v4
         with:
           name: waza-results-${{ github.run_id }}

@@ -24,6 +24,8 @@ type stubSecretGetter struct {
 	resp azsecrets.GetSecretResponse
 	err  error
 
+	// mu guards calledName and calledVersion for concurrent test access.
+	mu sync.Mutex
 	// Recorded call args (set on each GetSecret call).
 	calledName    string
 	calledVersion string
@@ -32,8 +34,10 @@ type stubSecretGetter struct {
 func (s *stubSecretGetter) GetSecret(
 	_ context.Context, name string, version string, _ *azsecrets.GetSecretOptions,
 ) (azsecrets.GetSecretResponse, error) {
+	s.mu.Lock()
 	s.calledName = name
 	s.calledVersion = version
+	s.mu.Unlock()
 	return s.resp, s.err
 }
 
@@ -254,13 +258,12 @@ func TestResolve_InvalidReference(t *testing.T) {
 		t.Fatal("expected error for invalid reference")
 	}
 
-	var resolveErr *KeyVaultResolveError
-	if !errors.As(err, &resolveErr) {
+	if resolveErr, ok := errors.AsType[*KeyVaultResolveError](err); ok {
+		if resolveErr.Reason != ResolveReasonInvalidReference {
+			t.Errorf("Reason = %v, want %v", resolveErr.Reason, ResolveReasonInvalidReference)
+		}
+	} else {
 		t.Fatalf("error type = %T, want *KeyVaultResolveError", err)
-	}
-
-	if resolveErr.Reason != ResolveReasonInvalidReference {
-		t.Errorf("Reason = %v, want %v", resolveErr.Reason, ResolveReasonInvalidReference)
 	}
 }
 
@@ -277,13 +280,12 @@ func TestResolve_ClientCreationFailure(t *testing.T) {
 		t.Fatal("expected error for client creation failure")
 	}
 
-	var resolveErr *KeyVaultResolveError
-	if !errors.As(err, &resolveErr) {
+	if resolveErr, ok := errors.AsType[*KeyVaultResolveError](err); ok {
+		if resolveErr.Reason != ResolveReasonClientCreation {
+			t.Errorf("Reason = %v, want %v", resolveErr.Reason, ResolveReasonClientCreation)
+		}
+	} else {
 		t.Fatalf("error type = %T, want *KeyVaultResolveError", err)
-	}
-
-	if resolveErr.Reason != ResolveReasonClientCreation {
-		t.Errorf("Reason = %v, want %v", resolveErr.Reason, ResolveReasonClientCreation)
 	}
 }
 
@@ -319,13 +321,12 @@ func TestResolve_HTTPErrorClassification(t *testing.T) {
 				t.Fatalf("expected error for HTTP %d", tt.statusCode)
 			}
 
-			var resolveErr *KeyVaultResolveError
-			if !errors.As(err, &resolveErr) {
+			if resolveErr, ok := errors.AsType[*KeyVaultResolveError](err); ok {
+				if resolveErr.Reason != tt.wantReason {
+					t.Errorf("Reason = %v, want %v", resolveErr.Reason, tt.wantReason)
+				}
+			} else {
 				t.Fatalf("error type = %T, want *KeyVaultResolveError", err)
-			}
-
-			if resolveErr.Reason != tt.wantReason {
-				t.Errorf("Reason = %v, want %v", resolveErr.Reason, tt.wantReason)
 			}
 		})
 	}
@@ -352,13 +353,12 @@ func TestResolve_NilValue(t *testing.T) {
 		t.Fatal("expected error for nil secret value")
 	}
 
-	var resolveErr *KeyVaultResolveError
-	if !errors.As(err, &resolveErr) {
+	if resolveErr, ok := errors.AsType[*KeyVaultResolveError](err); ok {
+		if resolveErr.Reason != ResolveReasonNotFound {
+			t.Errorf("Reason = %v, want %v", resolveErr.Reason, ResolveReasonNotFound)
+		}
+	} else {
 		t.Fatalf("error type = %T, want *KeyVaultResolveError", err)
-	}
-
-	if resolveErr.Reason != ResolveReasonNotFound {
-		t.Errorf("Reason = %v, want %v", resolveErr.Reason, ResolveReasonNotFound)
 	}
 }
 
@@ -379,15 +379,14 @@ func TestResolve_NonResponseError(t *testing.T) {
 		t.Fatal("expected error for network failure")
 	}
 
-	var resolveErr *KeyVaultResolveError
-	if !errors.As(err, &resolveErr) {
+	if resolveErr, ok := errors.AsType[*KeyVaultResolveError](err); ok {
+		// Non-ResponseError defaults to service_error (not access_denied),
+		// since non-HTTP errors are typically connectivity/network issues.
+		if resolveErr.Reason != ResolveReasonServiceError {
+			t.Errorf("Reason = %v, want %v", resolveErr.Reason, ResolveReasonServiceError)
+		}
+	} else {
 		t.Fatalf("error type = %T, want *KeyVaultResolveError", err)
-	}
-
-	// Non-ResponseError defaults to service_error (not access_denied),
-	// since non-HTTP errors are typically connectivity/network issues.
-	if resolveErr.Reason != ResolveReasonServiceError {
-		t.Errorf("Reason = %v, want %v", resolveErr.Reason, ResolveReasonServiceError)
 	}
 }
 
@@ -683,13 +682,12 @@ func TestResolve_AppRefInvalidHostReturnsError(t *testing.T) {
 		t.Fatal("expected error for invalid vault host")
 	}
 
-	var resolveErr *KeyVaultResolveError
-	if !errors.As(err, &resolveErr) {
+	if resolveErr, ok := errors.AsType[*KeyVaultResolveError](err); ok {
+		if resolveErr.Reason != ResolveReasonInvalidReference {
+			t.Errorf("Reason = %v, want %v", resolveErr.Reason, ResolveReasonInvalidReference)
+		}
+	} else {
 		t.Fatalf("error type = %T, want *KeyVaultResolveError", err)
-	}
-
-	if resolveErr.Reason != ResolveReasonInvalidReference {
-		t.Errorf("Reason = %v, want %v", resolveErr.Reason, ResolveReasonInvalidReference)
 	}
 }
 
@@ -1264,13 +1262,11 @@ func TestResolve_ConcurrentSameVault(t *testing.T) {
 	errs := make(chan error, goroutines)
 
 	for i := range goroutines {
-		wg.Add(1)
-		go func(idx int) {
-			defer wg.Done()
-			ref := fmt.Sprintf("akvs://sub/vault/secret%d", idx)
+		wg.Go(func() {
+			ref := fmt.Sprintf("akvs://sub/vault/secret%d", i)
 			_, resolveErr := resolver.Resolve(t.Context(), ref)
 			errs <- resolveErr
-		}(i)
+		})
 	}
 
 	wg.Wait()

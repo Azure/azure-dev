@@ -178,6 +178,16 @@ func TestValidate_PlaceholderMapping(t *testing.T) {
 		t.Error("expected error when inputs section missing entirely")
 	}
 
+	// YAML — output placeholders but no outputs section at all:
+	//   command: python train.py --out ${{outputs.model}}
+	//   (no outputs: defined — backend auto-provisions, so no error or warning)
+	job = validJob()
+	job.Command = "python train.py --out ${{outputs.model}}"
+	result = ValidateJobOffline(job, ".")
+	if f := findFindingByMessage(result, "outputs"); f != nil {
+		t.Errorf("did not expect any output finding when outputs section missing: %s", f.Message)
+	}
+
 	// YAML — optional inputs inside [...] brackets:
 	//   command: >-
 	//     python train.py
@@ -215,6 +225,16 @@ func TestValidate_SingleBracePlaceholders(t *testing.T) {
 	}
 	if f := findFindingByMessage(result, "single-brace '{outputs.model}'"); f == nil || f.Severity != SeverityError {
 		t.Error("expected error for single-brace output placeholder")
+	}
+
+	// YAML (incorrect) — single-brace inside [...] brackets:
+	//   command: python train.py [--data {inputs.optional_data}]
+	// Single-brace is wrong syntax even inside optional blocks → still error
+	job = validJob()
+	job.Command = "python train.py [--data {inputs.optional_data}]"
+	result = ValidateJobOffline(job, ".")
+	if f := findFindingByMessage(result, "single-brace '{inputs.optional_data}'"); f == nil || f.Severity != SeverityError {
+		t.Error("expected error for single-brace inside optional brackets")
 	}
 
 	// YAML (correct):

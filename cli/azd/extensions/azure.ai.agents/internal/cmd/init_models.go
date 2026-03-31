@@ -42,6 +42,7 @@ func (a *InitAction) loadAiCatalog(ctx context.Context) error {
 
 	modelResp, err := a.azdClient.Ai().ListModels(ctx, &azdext.ListModelsRequest{
 		AzureContext: a.azureContext,
+		Filter:       agentModelFilter(nil, nil),
 	})
 	stopErr := spinner.Stop(ctx)
 	if err != nil {
@@ -69,13 +70,20 @@ func mapModelsByName(models []*azdext.AiModel) map[string]*azdext.AiModel {
 }
 
 func (a *InitAction) updateEnvLocation(ctx context.Context, selectedLocation string) error {
-	envResponse, err := a.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil {
-		return fmt.Errorf("failed to get current azd environment: %w", err)
+	envName := ""
+	var err error
+	if a.environment != nil {
+		envName = a.environment.Name
+	} else {
+		envResponse, err := a.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+		if err != nil {
+			return fmt.Errorf("failed to get current azd environment: %w", err)
+		}
+		envName = envResponse.Environment.Name
 	}
 
 	_, err = a.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-		EnvName: envResponse.Environment.Name,
+		EnvName: envName,
 		Key:     "AZURE_LOCATION",
 		Value:   selectedLocation,
 	})
@@ -539,15 +547,14 @@ func (a *InitAction) promptForAlternativeModel(
 
 	promptReq := &azdext.PromptAiModelRequest{
 		AzureContext: a.azureContext,
+		Filter:       agentModelFilter(nil, nil),
 		SelectOptions: &azdext.SelectOptions{
 			Message: "Select a model",
 		},
 	}
 
 	if regionChoices[*regionResp.Value].Value == "region" {
-		promptReq.Filter = &azdext.AiModelFilterOptions{
-			Locations: []string{a.azureContext.Scope.Location},
-		}
+		promptReq.Filter = agentModelFilter([]string{a.azureContext.Scope.Location}, nil)
 	}
 
 	modelResp, err := a.azdClient.Prompt().PromptAiModel(ctx, promptReq)
@@ -648,9 +655,7 @@ func (a *InitAction) promptForModelLocationMismatch(
 		if selectedChoice == "model_all_regions" {
 			modelResp, err := a.azdClient.Prompt().PromptAiModel(ctx, &azdext.PromptAiModelRequest{
 				AzureContext: a.azureContext,
-				Filter: &azdext.AiModelFilterOptions{
-					ExcludeModelNames: []string{currentModel.Name},
-				},
+				Filter:       agentModelFilter(nil, []string{currentModel.Name}),
 				Quota: &azdext.QuotaCheckOptions{
 					MinRemainingCapacity: 1,
 				},
@@ -701,9 +706,7 @@ func (a *InitAction) promptForModelLocationMismatch(
 
 		promptReq := &azdext.PromptAiModelRequest{
 			AzureContext: a.azureContext,
-			Filter: &azdext.AiModelFilterOptions{
-				Locations: []string{currentLocation},
-			},
+			Filter:       agentModelFilter([]string{currentLocation}, nil),
 			SelectOptions: &azdext.SelectOptions{
 				Message: fmt.Sprintf("Select a model available in '%s'", currentLocation),
 			},

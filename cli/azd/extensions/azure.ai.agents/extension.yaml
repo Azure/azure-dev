@@ -6,7 +6,7 @@ description: Ship agents with Microsoft Foundry from your terminal. (Preview)
 usage: azd ai agent <command> [options]
 # NOTE: Make sure version.txt is in sync with this version.
 version: 0.1.20-preview
-requiredAzdVersion: ">1.23.6"
+requiredAzdVersion: ">1.23.14"
 language: go
 capabilities:
   - custom-commands

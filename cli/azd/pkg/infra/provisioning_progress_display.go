@@ -140,7 +140,7 @@ func (display *ProvisioningProgressDisplay) ReportProgress(
 					if display.terminalOperationPollCounts[*operation.ID] >= 2 {
 						// we poll terminal operations twice to ensure we have properly seen it,
 						// to avoid missing any resources that are created right at the end of the deployment operation
-						return SkipExpand
+						return SkipExpand()
 					}
 
 				} else {
@@ -158,9 +158,15 @@ func (display *ProvisioningProgressDisplay) ReportProgress(
 				return nil
 			}
 
+			// Build dedup key consistent with the key used when marking displayed
+			lookupKey := *operation.Properties.TargetResource.ID
+			if lookupKey == "" && operation.Properties.TargetResource.ResourceName != nil {
+				lookupKey = *operation.Properties.TargetResource.ResourceName
+			}
+
 			if *operation.Properties.ProvisioningOperation == armresources.ProvisioningOperationCreate &&
 				operation.Properties.Timestamp.After(*queryStart) &&
-				!display.displayedResources[*operation.Properties.TargetResource.ID] {
+				!display.displayedResources[lookupKey] {
 				switch *operation.Properties.ProvisioningState {
 				case string(armresources.ProvisioningStateSucceeded):
 					newlyDeployedResources = append(newlyDeployedResources, operation)
@@ -230,7 +236,14 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 			resourceTypeName,
 			*resource.Properties.TargetResource.ResourceName)
 
-		display.displayedResources[*resource.Properties.TargetResource.ID] = true
+		// Use ResourceID as the dedup key when available; fall back to ResourceName
+		// if ResourceID is empty (e.g., during early provisioning when the ID is not yet assigned).
+		dedupKey := *resource.Properties.TargetResource.ID
+		if dedupKey == "" && resource.Properties.TargetResource.ResourceName != nil {
+			dedupKey = *resource.Properties.TargetResource.ResourceName
+		}
+
+		display.displayedResources[dedupKey] = true
 	}
 	// update progress
 	inProgress := []string{}

@@ -34,6 +34,12 @@ type serverToolEntry struct {
 }
 
 // MCPServerBuilder provides a fluent API for building MCP servers with middleware.
+//
+// NOTE: This builder and the associated types ([MCPToolHandler], [MCPToolOptions],
+// [ToolArgs], MCP result helpers) depend on [github.com/mark3labs/mcp-go].
+// If alternative Go MCP libraries gain traction, these symbols are candidates for
+// extraction into an azdext/mcpgo sub-package so the core SDK remains
+// MCP-library-agnostic.
 type MCPServerBuilder struct {
 	name           string
 	version        string

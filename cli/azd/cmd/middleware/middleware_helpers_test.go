@@ -13,6 +13,7 @@ import (
 )
 
 func TestWithChildAction_IsChildAction(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		ctx  context.Context
@@ -39,12 +40,14 @@ func TestWithChildAction_IsChildAction(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			require.Equal(t, tt.want, IsChildAction(tt.ctx))
 		})
 	}
 }
 
 func TestIsChildAction_WrongType(t *testing.T) {
+	t.Parallel()
 	// Manually set a non-bool value under the same key
 	ctx := context.WithValue(
 		context.Background(),
@@ -55,6 +58,7 @@ func TestIsChildAction_WrongType(t *testing.T) {
 }
 
 func TestIsChildAction_FalseValue(t *testing.T) {
+	t.Parallel()
 	ctx := context.WithValue(
 		context.Background(),
 		childActionKey,
@@ -64,6 +68,7 @@ func TestIsChildAction_FalseValue(t *testing.T) {
 }
 
 func TestOptions_WithContainer(t *testing.T) {
+	t.Parallel()
 	mockContext := mocks.NewMockContext(context.Background())
 
 	opts := &Options{
@@ -77,6 +82,7 @@ func TestOptions_WithContainer(t *testing.T) {
 }
 
 func TestMiddlewareRunner_Use_AddsSingleEntry(t *testing.T) {
+	t.Parallel()
 	mockContext := mocks.NewMockContext(context.Background())
 	runner := NewMiddlewareRunner(mockContext.Container)
 
@@ -96,6 +102,7 @@ func TestMiddlewareRunner_Use_AddsSingleEntry(t *testing.T) {
 }
 
 func TestMiddlewareRunner_Use_MultipleMiddleware(t *testing.T) {
+	t.Parallel()
 	mockContext := mocks.NewMockContext(context.Background())
 	runner := NewMiddlewareRunner(mockContext.Container)
 
@@ -121,6 +128,7 @@ func TestMiddlewareRunner_Use_MultipleMiddleware(t *testing.T) {
 }
 
 func TestMiddlewareRunner_RunAction_WithOptionsContainer(t *testing.T) {
+	t.Parallel()
 	// Verify that Options.container is used when set
 	mockContext := mocks.NewMockContext(context.Background())
 	runner := NewMiddlewareRunner(mockContext.Container)
@@ -156,6 +164,7 @@ func TestMiddlewareRunner_RunAction_WithOptionsContainer(t *testing.T) {
 }
 
 func TestMiddlewareRunner_RunAction_NoMiddleware(t *testing.T) {
+	t.Parallel()
 	// When no middleware is registered, the action runs directly
 	mockContext := mocks.NewMockContext(context.Background())
 	runner := NewMiddlewareRunner(mockContext.Container)
@@ -187,6 +196,7 @@ func TestMiddlewareRunner_RunAction_NoMiddleware(t *testing.T) {
 }
 
 func TestMiddlewareRunner_RunAction_InvalidAction(t *testing.T) {
+	t.Parallel()
 	mockContext := mocks.NewMockContext(context.Background())
 	runner := NewMiddlewareRunner(mockContext.Container)
 

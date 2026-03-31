@@ -45,7 +45,6 @@ type initFlags struct {
 	model             string
 	manifestPointer   string
 	src               string
-	host              string
 	env               string
 }
 
@@ -79,7 +78,6 @@ type GitHubUrlInfo struct {
 }
 
 const AiAgentHost = "azure.ai.agent"
-const ContainerAppHost = "containerapp"
 
 // checkAiModelServiceAvailable is a temporary check to ensure the azd host supports
 // required gRPC services. Remove once azd core enforces requiredAzdVersion.
@@ -354,9 +352,6 @@ func newInitCommand(rootFlags *rootFlagsDefinition) *cobra.Command {
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "",
 		"Directory to download the agent definition to (defaults to 'src/<agent-id>')")
 
-	cmd.Flags().StringVarP(&flags.host, "host", "", "",
-		"For container based agents, can override the default host to target a container app instead. Accepted values: 'containerapp'")
-
 	cmd.Flags().StringVarP(&flags.env, "environment", "e", "", "The name of the azd environment to use.")
 
 	return cmd
@@ -383,14 +378,6 @@ func (a *InitAction) Run(ctx context.Context) error {
 		// Validate that the manifest pointer is either a valid URL or existing file path
 		isValidURL := false
 		isValidFile := false
-
-		if a.flags.host != "" && a.flags.host != "containerapp" {
-			return exterrors.Validation(
-				exterrors.CodeUnsupportedHost,
-				fmt.Sprintf("unsupported host value: '%s' is not supported", a.flags.host),
-				"use '--host containerapp' or omit '--host'",
-			)
-		}
 
 		if _, err := url.ParseRequestURI(a.flags.manifestPointer); err == nil {
 			isValidURL = true
@@ -424,7 +411,7 @@ func (a *InitAction) Run(ctx context.Context) error {
 		}
 
 		// Add the agent to the azd project (azure.yaml) services
-		if err := a.addToProject(ctx, targetDir, agentManifest, a.flags.host); err != nil {
+		if err := a.addToProject(ctx, targetDir, agentManifest); err != nil {
 			return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
 		}
 
@@ -1083,7 +1070,7 @@ func writeAgentDefinitionFile(targetDir string, agentManifest *agent_yaml.AgentM
 	return nil
 }
 
-func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentManifest *agent_yaml.AgentManifest, host string) error {
+func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentManifest *agent_yaml.AgentManifest) error {
 	// Convert the template to bytes
 	templateBytes, err := json.Marshal(agentManifest.Template)
 	if err != nil {
@@ -1106,15 +1093,6 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	var agentDef agent_yaml.AgentDefinition
 	if err := json.Unmarshal(dictJsonBytes, &agentDef); err != nil {
 		return fmt.Errorf("failed to unmarshal JSON to AgentDefinition: %w", err)
-	}
-
-	var serviceHost string
-
-	switch host {
-	case "containerapp":
-		serviceHost = ContainerAppHost
-	default:
-		serviceHost = AiAgentHost
 	}
 
 	var agentConfig = project.ServiceTargetAgentConfig{}
@@ -1178,7 +1156,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	serviceConfig := &azdext.ServiceConfig{
 		Name:         strings.ReplaceAll(agentDef.Name, " ", ""),
 		RelativePath: targetDir,
-		Host:         serviceHost,
+		Host:         AiAgentHost,
 		Language:     "docker",
 		Config:       agentConfigStruct,
 	}

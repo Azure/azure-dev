@@ -421,8 +421,8 @@ func TestSSRFSafeRedirect_HostnameResolvesPrivateBlocked(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for redirect hostname resolving to private IP")
 	}
-	if !strings.Contains(err.Error(), "resolved to private/loopback") {
-		t.Errorf("error = %q, want mention of resolved private/loopback", err.Error())
+	if !strings.Contains(err.Error(), "resolved to blocked IP") {
+		t.Errorf("error = %q, want mention of resolved blocked IP", err.Error())
 	}
 }
 
@@ -446,16 +446,14 @@ func TestMCPSecurityOnBlocked_URLCallback(t *testing.T) {
 	t.Parallel()
 
 	var (
-		gotAction string
-		gotDetail string
-		callCount int
+		gotViolation string
+		callCount    int
 	)
 
 	policy := NewMCPSecurityPolicy().
 		RequireHTTPS().
-		OnBlocked(func(action, detail string) {
-			gotAction = action
-			gotDetail = detail
+		OnBlocked(func(violation string) {
+			gotViolation = violation
 			callCount++
 		})
 
@@ -468,18 +466,15 @@ func TestMCPSecurityOnBlocked_URLCallback(t *testing.T) {
 	if callCount != 1 {
 		t.Errorf("callCount = %d, want 1", callCount)
 	}
-	if gotAction != "url_blocked" {
-		t.Errorf("action = %q, want %q", gotAction, "url_blocked")
-	}
-	if !strings.Contains(gotDetail, "HTTPS required") {
-		t.Errorf("detail = %q, want to contain %q", gotDetail, "HTTPS required")
+	if !strings.Contains(gotViolation, "HTTPS required") {
+		t.Errorf("violation = %q, want to contain %q", gotViolation, "HTTPS required")
 	}
 }
 
 func TestMCPSecurityOnBlocked_PathCallback(t *testing.T) {
 	t.Parallel()
 
-	var gotAction string
+	var gotViolation string
 
 	base := t.TempDir()
 	outside := t.TempDir()
@@ -490,8 +485,8 @@ func TestMCPSecurityOnBlocked_PathCallback(t *testing.T) {
 
 	policy := NewMCPSecurityPolicy().
 		ValidatePathsWithinBase(base).
-		OnBlocked(func(action, detail string) {
-			gotAction = action
+		OnBlocked(func(violation string) {
+			gotViolation = violation
 		})
 
 	err := policy.CheckPath(outsideFile)
@@ -499,8 +494,8 @@ func TestMCPSecurityOnBlocked_PathCallback(t *testing.T) {
 		t.Fatal("expected error for path outside base")
 	}
 
-	if gotAction != "path_blocked" {
-		t.Errorf("action = %q, want %q", gotAction, "path_blocked")
+	if gotViolation == "" {
+		t.Error("expected OnBlocked callback to be invoked with violation message")
 	}
 }
 

@@ -25,6 +25,9 @@ graders:
         - "azd init"
         - "azd provision"
         - "azd deploy"
+      alternate_sequences:
+        - - "azd init"
+          - "azd up"
   - type: behavior
     weight: 0.2
     config:

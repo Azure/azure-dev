@@ -12,6 +12,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type environmentService struct {
@@ -152,6 +154,13 @@ func (s *environmentService) GetValues(
 
 // GetValue retrieves the value of a specific key in the specified environment.
 func (s *environmentService) GetValue(ctx context.Context, req *azdext.GetEnvRequest) (*azdext.KeyValueResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
+	}
+	if req.Key == "" {
+		return nil, status.Error(codes.InvalidArgument, "key is required")
+	}
+
 	env, err := s.resolveEnvironment(ctx, req.EnvName)
 	if err != nil {
 		return nil, err
@@ -167,6 +176,13 @@ func (s *environmentService) GetValue(ctx context.Context, req *azdext.GetEnvReq
 
 // SetValue sets the value of a key in the specified environment.
 func (s *environmentService) SetValue(ctx context.Context, req *azdext.SetEnvRequest) (*azdext.EmptyResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
+	}
+	if req.Key == "" {
+		return nil, status.Error(codes.InvalidArgument, "key is required")
+	}
+
 	envManager, err := s.lazyEnvManager.GetValue()
 	if err != nil {
 		return nil, err

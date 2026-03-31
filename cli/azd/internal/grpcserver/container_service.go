@@ -14,6 +14,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type containerService struct {
@@ -45,6 +47,13 @@ func (c *containerService) Build(
 	ctx context.Context,
 	req *azdext.ContainerBuildRequest,
 ) (*azdext.ContainerBuildResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
+	}
+	if req.ServiceName == "" {
+		return nil, status.Error(codes.InvalidArgument, "service name is required")
+	}
+
 	projectConfig, err := c.lazyProject.GetValue()
 	if err != nil {
 		return nil, err
@@ -95,6 +104,13 @@ func (c *containerService) Package(
 	ctx context.Context,
 	req *azdext.ContainerPackageRequest,
 ) (*azdext.ContainerPackageResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
+	}
+	if req.ServiceName == "" {
+		return nil, status.Error(codes.InvalidArgument, "service name is required")
+	}
+
 	projectConfig, err := c.lazyProject.GetValue()
 	if err != nil {
 		return nil, err
@@ -145,6 +161,13 @@ func (c *containerService) Publish(
 	ctx context.Context,
 	req *azdext.ContainerPublishRequest,
 ) (*azdext.ContainerPublishResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
+	}
+	if req.ServiceName == "" {
+		return nil, status.Error(codes.InvalidArgument, "service name is required")
+	}
+
 	projectConfig, err := c.lazyProject.GetValue()
 	if err != nil {
 		return nil, err

@@ -20,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type promptService struct {
@@ -47,6 +48,10 @@ func NewPromptService(
 }
 
 func (s *promptService) Confirm(ctx context.Context, req *azdext.ConfirmRequest) (*azdext.ConfirmResponse, error) {
+	if req == nil || req.Options == nil {
+		return nil, status.Error(codes.InvalidArgument, "request and options are required")
+	}
+
 	if s.globalOptions.NoPrompt {
 		if req.Options.DefaultValue == nil {
 			return nil, fmt.Errorf("no default response for prompt '%s'", req.Options.Message)
@@ -80,6 +85,10 @@ func (s *promptService) Confirm(ctx context.Context, req *azdext.ConfirmRequest)
 }
 
 func (s *promptService) Select(ctx context.Context, req *azdext.SelectRequest) (*azdext.SelectResponse, error) {
+	if req == nil || req.Options == nil {
+		return nil, status.Error(codes.InvalidArgument, "request and options are required")
+	}
+
 	if s.globalOptions.NoPrompt {
 		if req.Options.SelectedIndex == nil {
 			return nil, fmt.Errorf("no default selection for prompt '%s'", req.Options.Message)
@@ -126,6 +135,10 @@ func (s *promptService) MultiSelect(
 	ctx context.Context,
 	req *azdext.MultiSelectRequest,
 ) (*azdext.MultiSelectResponse, error) {
+	if req == nil || req.Options == nil {
+		return nil, status.Error(codes.InvalidArgument, "request and options are required")
+	}
+
 	if s.globalOptions.NoPrompt {
 		var selectedChoices []*azdext.MultiSelectChoice
 		for _, choice := range req.Options.Choices {
@@ -385,6 +398,13 @@ func (s *promptService) PromptResourceGroupResource(
 }
 
 func (s *promptService) createAzureContext(wire *azdext.AzureContext) (*prompt.AzureContext, error) {
+	if wire == nil {
+		return nil, status.Error(codes.InvalidArgument, "azure context is required")
+	}
+	if wire.Scope == nil {
+		return nil, status.Error(codes.InvalidArgument, "azure context scope is required")
+	}
+
 	scope := prompt.AzureScope{
 		TenantId:       wire.Scope.TenantId,
 		SubscriptionId: wire.Scope.SubscriptionId,

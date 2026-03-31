@@ -178,7 +178,7 @@ func TestEventService_handleSubscribeProjectEvent(t *testing.T) {
 			subscribeMsg: &azdext.SubscribeProjectEvent{
 				EventNames: []string{},
 			},
-			expectError: false,
+			expectError: true,
 		},
 	}
 

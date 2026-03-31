@@ -8,6 +8,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type accountService struct {
@@ -63,6 +65,13 @@ func (s *accountService) LookupTenant(
 	ctx context.Context,
 	req *azdext.LookupTenantRequest,
 ) (*azdext.LookupTenantResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
+	}
+	if req.SubscriptionId == "" {
+		return nil, status.Error(codes.InvalidArgument, "subscription id is required")
+	}
+
 	tenantId, err := s.subscriptionsManager.LookupTenant(ctx, req.SubscriptionId)
 	if err != nil {
 		return nil, err

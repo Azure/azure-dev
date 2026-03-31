@@ -673,7 +673,8 @@ func (p *BicepProvider) waitForActiveDeployments(
 		timeout = defaultActiveDeploymentTimeout
 	}
 
-	deadline := time.After(timeout)
+	deadlineTimer := time.NewTimer(timeout)
+	defer deadlineTimer.Stop()
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 
@@ -681,7 +682,7 @@ func (p *BicepProvider) waitForActiveDeployments(
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-deadline:
+		case <-deadlineTimer.C:
 			// Refresh names from latest poll for an accurate timeout message
 			currentNames := make([]string, len(active))
 			for i, d := range active {

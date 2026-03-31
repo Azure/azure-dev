@@ -126,8 +126,13 @@ func TestWaitForActiveDeployments_CancelledContext(t *testing.T) {
 	}
 	scope := &activeDeploymentScope{
 		// Always return active deployments.
+		// Seed multiple indices so a tick before ctx.Done doesn't hit a missing key.
 		activePerCall: map[int][]*azapi.ResourceDeployment{
 			0: running,
+			1: running,
+			2: running,
+			3: running,
+			4: running,
 		},
 	}
 	p := newTestProvider()

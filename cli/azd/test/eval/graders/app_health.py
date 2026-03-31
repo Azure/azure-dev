@@ -60,6 +60,14 @@ def check_endpoint(
 
         except HTTPError as e:
             if e.code == expected_status:
+                if expected_body_contains:
+                    body = e.read().decode("utf-8", errors="replace")
+                    if expected_body_contains not in body:
+                        last_error = (
+                            f"Status {e.code} matched but body missing "
+                            f"'{expected_body_contains}'"
+                        )
+                        continue
                 return {"passed": True, "reason": f"Status {e.code} matches expected"}
             last_error = f"HTTP {e.code}: {e.reason}"
         except URLError as e:

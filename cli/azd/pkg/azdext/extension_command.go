@@ -73,6 +73,9 @@ func NewExtensionRootCommand(opts ExtensionCommandOptions) (*cobra.Command, *Ext
 		Short:   opts.Short,
 		Long:    opts.Long,
 		Version: opts.Version,
+		Annotations: map[string]string{
+			"azd-sdk-root": "true",
+		},
 	}
 
 	// Register persistent flags

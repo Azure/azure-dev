@@ -246,7 +246,7 @@ describe("my new azd tests", () => {
 
 ```bash
 # Build azd first (tests shell out to the binary)
-cd ../../../ && go build && cd test/eval
+cd ../../ && go build && cd test/eval
 
 # Run just your test
 npx jest tests/unit/my-new-test.test.ts

@@ -169,3 +169,18 @@ func TestReservedFlagsInSyncWithInternal(t *testing.T) {
 			long, sdkShort, short)
 	}
 }
+
+func TestValidateNoReservedFlagConflicts_NonSDKRootPersistentFlag(t *testing.T) {
+	// An extension that manually adds a root persistent flag colliding with a
+	// reserved global (not via the SDK) should still be caught. This verifies
+	// the tightened exemption: only known SDK globals are exempt, not arbitrary
+	// root persistent flags.
+	root := newPlainRoot("test")
+	root.PersistentFlags().StringP("environment", "e", "", "custom env flag")
+	sub := &cobra.Command{Use: "run"}
+	root.AddCommand(sub)
+
+	err := ValidateNoReservedFlagConflicts(root)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "long flag --environment is reserved")
+}

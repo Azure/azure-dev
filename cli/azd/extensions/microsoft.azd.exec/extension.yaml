@@ -1,0 +1,11 @@
+capabilities:
+    - custom-commands
+    - metadata
+description: Execute scripts and commands with Azure Developer CLI context and environment variables.
+displayName: Exec
+id: microsoft.azd.exec
+language: go
+namespace: exec
+requiredAzdVersion: ">1.23.6"
+usage: azd exec <command> [options]
+version: 0.5.0

@@ -145,6 +145,39 @@ func TestErrorMessage(t *testing.T) {
 	}
 }
 
+func TestWithExitCode(t *testing.T) {
+	called := false
+	extractor := func(err error) (int, bool) {
+		called = true
+		return 42, true
+	}
+
+	opt := WithExitCode(extractor)
+
+	var cfg runConfig
+	opt(&cfg)
+
+	require.NotNil(t, cfg.exitCodeFunc)
+
+	code, ok := cfg.exitCodeFunc(errors.New("test"))
+	require.True(t, called)
+	require.True(t, ok)
+	require.Equal(t, 42, code)
+}
+
+func TestWithExitCode_NotMatched(t *testing.T) {
+	extractor := func(err error) (int, bool) {
+		return 0, false
+	}
+
+	var cfg runConfig
+	WithExitCode(extractor)(&cfg)
+
+	code, ok := cfg.exitCodeFunc(errors.New("test"))
+	require.False(t, ok)
+	require.Equal(t, 0, code)
+}
+
 func TestVersion_IsSet(t *testing.T) {
 	require.NotEmpty(t, Version)
 	// Validate semver format (major.minor.patch with optional pre-release)

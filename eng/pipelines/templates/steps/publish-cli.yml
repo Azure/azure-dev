@@ -89,7 +89,21 @@ steps:
           -f sha=$sha
 
         if ($LASTEXITCODE -ne 0) {
-          Write-Error "Failed to create Go module tag: $goModuleTag"
+          Write-Warning "Failed to create Go module tag $goModuleTag. Checking if the tag was created concurrently..."
+
+          # Re-check for the tag to handle the race where another job created it
+          $existingRefs = @(
+            gh api "repos/$(Build.Repository.Name)/git/matching-refs/tags/$goModuleTag" |
+              ConvertFrom-Json
+          )
+          $exactMatch = $existingRefs | Where-Object { $_.ref -eq "refs/tags/$goModuleTag" }
+
+          if ($exactMatch) {
+            Write-Host "Tag $goModuleTag already exists (likely created by another job). Treating as success."
+            exit 0
+          }
+
+          Write-Error "Failed to create Go module tag $goModuleTag"
           exit 1
         }
 

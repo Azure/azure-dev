@@ -44,8 +44,9 @@ Set-Content -Path $CLI_VERSION_FILE -Value $version
 
 # Also update the azdext SDK version to stay in sync with the CLI version
 $AZDEXT_VERSION_FILE = "$PSScriptRoot/../../cli/azd/pkg/azdext/version.go"
-(Get-Content $AZDEXT_VERSION_FILE) -replace 'const Version = ".*?"', "const Version = `"$version`"" |
-    Set-Content -Path $AZDEXT_VERSION_FILE -NoNewline
+$azdExtVersionContent = Get-Content -Path $AZDEXT_VERSION_FILE -Raw
+$azdExtVersionContent -replace 'const Version = ".*?"', "const Version = `"$version`"" |
+    Set-Content -Path $AZDEXT_VERSION_FILE -Encoding utf8
 
 . "$PSScriptRoot/../common/scripts/Update-ChangeLog.ps1" `
     -Version $version.ToString() `

@@ -1064,6 +1064,7 @@ type DockerProjectOptions struct {
 	Tag           string                 `protobuf:"bytes,7,opt,name=tag,proto3" json:"tag,omitempty"`
 	RemoteBuild   bool                   `protobuf:"varint,8,opt,name=remote_build,json=remoteBuild,proto3" json:"remote_build,omitempty"`
 	BuildArgs     []string               `protobuf:"bytes,9,rep,name=build_args,json=buildArgs,proto3" json:"build_args,omitempty"`
+	Network       string                 `protobuf:"bytes,10,opt,name=network,proto3" json:"network,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1159,6 +1160,13 @@ func (x *DockerProjectOptions) GetBuildArgs() []string {
 		return x.BuildArgs
 	}
 	return nil
+}
+
+func (x *DockerProjectOptions) GetNetwork() string {
+	if x != nil {
+		return x.Network
+	}
+	return ""
 }
 
 // ServiceContext defines the shared pipeline state across all phases of the service lifecycle
